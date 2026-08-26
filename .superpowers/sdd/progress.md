@@ -55,3 +55,34 @@ confirmed "ignored" is correct in both. Byte-compatibility verified by
 trace, not by structural resemblance.
 
 Task 2: dispatched.
+Task 2: COMPLETE pending review (commit ed9065a1, 16/16 tests).
+  Implementer reported two cosmetic plan inaccuracies, both fixed:
+  clang says "use of undeclared identifier" not "no member named ... in
+  namespace" (unqualified calls from inside the namespace), and gtest
+  isolates the death test so combined runs print two PASSED lines, not one.
+
+Pre-flight for Task 3 found one compile-blocking defect:
+- ConfigScope had a private constructor befriending GlobalScope. But
+  base::NoDestructor placement-news T inside its own constructor, so it is
+  NoDestructor that needs the friendship, not GlobalScope. Fixed to
+  `friend class base::NoDestructor<ConfigScope>;` with the header include;
+  components/ carries several precedents for exactly this.
+Verified clean and needing no change: base::Environment::GetVar takes
+cstring_view and std::string converts to it implicitly (cstring_view.h:94-121),
+so Task 3's lambda is fine; the two BUILD.gn insertion anchors are unmoved.
+
+Task 2: COMPLETE pending review (commit ed9065a1, 16/16 tests).
+  Implementer reported two cosmetic plan inaccuracies, both fixed:
+  clang says "use of undeclared identifier" not "no member named ... in
+  namespace" (unqualified calls from inside the namespace), and gtest
+  isolates the death test so combined runs print two PASSED lines, not one.
+
+Pre-flight for Task 3 found one compile-blocking defect:
+- ConfigScope had a private constructor befriending GlobalScope. But
+  base::NoDestructor placement-news T inside its own constructor, so it is
+  NoDestructor that needs the friendship, not GlobalScope. Fixed, with the
+  header include; components/ carries several precedents.
+Verified clean and needing no change: base::Environment::GetVar takes
+cstring_view and std::string converts to it implicitly (cstring_view.h:94-121),
+so Task 3's lambda is fine; the two BUILD.gn insertion anchors are unmoved.
+
