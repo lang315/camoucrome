@@ -483,3 +483,29 @@ Two smaller corrections from the same report:
   FileNotFoundError naming the path, the process can exit during startup, or
   it can live without ever opening a port. The docstring said two.
 
+Task 7: COMPLETE (commits 9b552df partially, 964de71). SP0 IS DURABLE.
+  Reconstruction reproduced a passing verification, which is the whole point
+  of the task: fresh branch off the pinned base revision, scripts/apply.sh
+  applied cleanly, git diff --stat matched the extracted patch at 132 lines
+  across 7 files, the patch reverses cleanly, content_shell rebuilt in 40s,
+  and verify_sp0.py against the RECONSTRUCTED tree gave 11/11 PASS, exit 0.
+  Remote returned to camoucrome/sp0, clean.
+
+PROCESS FAILURE, MINE. I ran `git add -A` in the Camoucrome repository while
+Task 7 was actively writing additions/, patches/ and scripts/apply.sh into
+its working tree. Commit 9b552df therefore carries 1117 insertions and the
+whole of SP0's extracted change set, under a message describing an exception
+handling fix in a test script. Task 7's own copies are byte-identical to what
+landed, so the deliverable is correct -- but git log now misdescribes how it
+got there, and Task 7 could not use its own commit boundary or message.
+
+Not rewritten. Nothing is pushed, so a rebase would be safe, but erasing the
+mistake would also erase the evidence of it, and this repository's present
+value is largely its record of how each defect was found. Corrected in the
+record instead.
+
+RULE for the rest of this project: never `git add -A` in a repository another
+agent may be writing to. Stage explicit paths. The cost of the habit is one
+misleading commit here; in a shared checkout with several agents it is
+arbitrary work landing under arbitrary messages.
+
