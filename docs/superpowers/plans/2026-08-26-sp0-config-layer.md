@@ -210,6 +210,22 @@ TEST(AssembleRawConfigTest, NumberedChunksWinOverUnnumbered) {
   EXPECT_EQ(AssembleRawConfig(env), "used");
 }
 
+// The one case that tells the two candidate semantics apart. The fallback
+// fires on the concatenation being empty, not on CAMOU_CONFIG_1 being
+// absent, so a present-but-empty chunk still falls through to the
+// unnumbered variable. Camoufox's MaskConfig.hpp behaves identically, and
+// the byte-compatibility constraint makes that binding: a future change to
+// presence-tracking would return "" here and silently diverge from the
+// reference on identical environment bytes.
+TEST(AssembleRawConfigTest, PresentButEmptyChunkFallsBackToUnnumbered) {
+  std::map<std::string, std::string> vars{
+      {"CAMOU_CONFIG_1", ""},
+      {"CAMOU_CONFIG", "ignored"},
+  };
+  auto env = EnvFrom(vars);
+  EXPECT_EQ(AssembleRawConfig(env), "ignored");
+}
+
 }  // namespace
 }  // namespace camoucfg::internal
 ```
@@ -239,13 +255,21 @@ using EnvGetter =
     base::FunctionRef<std::optional<std::string>(const std::string&)>;
 
 // Concatenates CAMOU_CONFIG_1, CAMOU_CONFIG_2, ... in index order, stopping
-// at the first index that is absent. If CAMOU_CONFIG_1 is absent, falls back
-// to the unnumbered CAMOU_CONFIG. Returns an empty string when neither is
-// set, which is the normal case for a stock run.
+// at the first index that is absent. Falls back to the unnumbered
+// CAMOU_CONFIG when that concatenation comes out **empty** — which covers
+// both "no numbered variable was set at all" and "every numbered variable
+// that was set held an empty string". Returns an empty string when neither
+// form yields anything, the normal case for a stock run.
+//
+// The trigger is emptiness of the result, not absence of CAMOU_CONFIG_1.
+// Those differ when a numbered variable is present but empty, and the
+// difference is deliberate: Camoufox's MaskConfig.hpp checks
+// `if (jsonString.empty())` after the same loop, and this transport has to
+// stay byte-compatible with it. PresentButEmptyChunkFallsBackToUnnumbered
+// is the test that pins the distinction.
 //
 // The chunking exists because Windows caps a single environment variable
-// near 32KB and a full fingerprint exceeds that. The scheme is deliberately
-// byte-compatible with Camoufox.
+// near 32KB and a full fingerprint exceeds that.
 std::string AssembleRawConfig(EnvGetter get);
 
 }  // namespace camoucfg::internal
@@ -323,7 +347,7 @@ autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='AssembleRawConfigTest.*'
 ```
 
-Expected: `[  PASSED  ] 5 tests.`
+Expected: `[  PASSED  ] 6 tests.`
 
 - [ ] **Step 8: Commit**
 
@@ -709,7 +733,7 @@ Run:
   --gtest_filter='AssembleRawConfig*:ParseConfig*:GettersTest*'
 ```
 
-Expected: `[  PASSED  ] 15 tests.`
+Expected: `[  PASSED  ] 16 tests.`
 
 - [ ] **Step 13: Commit**
 
@@ -944,7 +968,7 @@ autoninja -C out/Default components_unittests && \
     --gtest_filter='AssembleRawConfig*:ParseConfig*:MaskConfigTest*'
 ```
 
-Expected: `[  PASSED  ] 11 tests.`
+Expected: `[  PASSED  ] 12 tests.`
 
 - [ ] **Step 7: Commit**
 
@@ -1324,7 +1348,7 @@ autoninja -C out/Default components_unittests && \
     --gtest_filter='AssembleRawConfig*:ParseConfig*:GettersTest*:MaskConfigTest*'
 ```
 
-Expected: `[  PASSED  ] 16 tests.` — five assembly, five parsing, five getter, one public-API.
+Expected: `[  PASSED  ] 17 tests.` — six assembly, five parsing, five getter, one public-API.
 
 - [ ] **Step 4: Run the runtime verification (criteria 2 through 6)**
 
