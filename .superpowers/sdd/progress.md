@@ -311,3 +311,20 @@ each file's own convention rather than carrying one across.
 Minor 2: the brief's Files header listed only browser_main_loop.cc. Now
 lists DEPS and BUILD.gn too.
 
+Task 5: COMPLETE (commits f9b7b21c..a90c2cdc).
+  Review: spec PASS, code quality PASS. One Important finding (VLOG lazy
+  evaluation meant the parse never ran at default verbosity) and one Minor
+  that turned out to be a real defect (missing content/browser/DEPS grant),
+  both fixed.
+  Independently verified both properties, which must hold together:
+    invalid config + no --vmodule -> ERROR fires from the browser process
+      (before the fix this printed nothing: proof the parse is unconditional)
+    valid config  + no --vmodule -> zero camoucfg lines (silent normal path)
+  HasKey is outside the VLOG (grep 0), DEPS grant present, checkout clean,
+  19/19 unit tests still pass.
+  Recorded in conventions that this parse is load-bearing rather than
+  diagnostic, that folding HasKey back inside the VLOG restores the bug
+  exactly, and that strict mode depending on a logging line's side effect is
+  an open weakness for SP6a or SP7 to resolve properly.
+
+Task 6: dispatched. Full acceptance verification against all six criteria.
