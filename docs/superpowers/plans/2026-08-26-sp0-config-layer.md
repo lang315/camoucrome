@@ -1162,10 +1162,14 @@ Expected: one line, `  unsigned int hardwareConcurrency() const override;`.
 In `third_party/blink/renderer/core/execution_context/navigator_base.cc`, add to the include block:
 
 ```cpp
-#include "base/system/sys_info.h"
 #include "components/camoucfg/blink_scope.h"
 #include "components/camoucfg/mask_config.h"
 ```
+
+Only those two. An earlier draft also listed `base/system/sys_info.h`, which nothing
+in this file references — the fallback calls
+`NavigatorConcurrentHardware::hardwareConcurrency()`, and it is that mixin's own
+translation unit that uses `base::SysInfo`.
 
 The method already exists at `navigator_base.cc:72` and already does something. **Modify
 it; do not write a new one.** It currently reads:
