@@ -209,3 +209,24 @@ Task 4: DONE pending review (commit a7de8516, build succeeded).
   a 15-second job would survive almost anything, so duration rather than the
   pattern may explain it. Do not rely on this for a long build.
 
+Task 4 review: spec PASS, code quality APPROVE, zero Critical, zero
+Important. Reviewer independently confirmed the probe survives and runs
+first, the DEPS grant is exactly the two includes and no more, blink_scope.h
+only forward-declares ExecutionContext so camoucfg gains no Blink dependency,
+and the self-caught sed mistake never reached the commit.
+
+Two Minor items, both mine:
+- dead #include base/system/sys_info.h in committed code -> fix dispatched.
+- 00-conventions.md told later SPs to add a directory-wide DEPS grant while
+  the code uses per-header entries. Per-header is the better choice and is
+  what shipped; conventions corrected. Reviewing that section surfaced a
+  second drift: the config-format paragraph still named base::Value::Dict
+  and implied NoDestructor is universal. Both corrected, and the three
+  API facts that each cost SP0 a build cycle are now recorded there.
+
+Pre-flight for Task 6 found an ordering defect: its verification reads the
+baseline from ~/camoucrome/..., but the repository does not reach the build
+machine until Task 7. Task 6 Step 1 now pushes the baseline to
+~/camoucrome-verify/baselines/ and verifies it arrived intact. Pushed and
+confirmed on the machine: 222 window keys, 36 navigator props, hc 16.
+

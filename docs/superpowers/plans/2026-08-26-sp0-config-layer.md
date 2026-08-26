@@ -1364,6 +1364,21 @@ python3 -m venv ~/camoucrome-verify/venv
 ~/camoucrome-verify/venv/bin/pip install playwright==1.55.0
 ```
 
+Then push the recorded baseline to the build machine, because Step 4's check reads it
+and the Camoucrome repository does not arrive there until Task 7. From the controlling
+machine:
+
+```bash
+cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
+echo 'mkdir -p ~/camoucrome-verify/baselines'  | "$PCWSL"
+{ echo 'cat > ~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json'; \
+  cat baselines/content_shell-0e8d4a9268-stock.json; } | "$PCWSL"
+echo 'python3 -c "import json;d=json.load(open(\"'"$HOME"'/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json\"));print(len(d[\"window_keys\"]),\"keys\")"' | "$PCWSL"
+```
+
+Expected: `222 keys`. An empty or truncated file means the transfer failed and every
+later comparison would be meaningless rather than failing loudly.
+
 Playwright is used only as a CDP client here; no browser download is needed because it connects to the locally built `content_shell`.
 
 - [ ] **Step 2: Write the verification script**
@@ -1451,7 +1466,7 @@ results["5 worker agrees when unconfigured"] = real_worker == real_window
 # property this change adds unconditionally, because both runs execute the
 # same modified code.
 BASELINE = os.path.expanduser(
-    "~/camoucrome/baselines/content_shell-0e8d4a9268-stock.json")
+    "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
 with open(BASELINE) as f:
     baseline = json.load(f)
 results["4 window keys match the pre-spoof baseline"] = (
