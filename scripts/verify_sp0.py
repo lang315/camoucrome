@@ -5,11 +5,13 @@ import os
 import subprocess
 import sys
 import time
+import urllib.request
 
 from playwright.sync_api import sync_playwright
 
 SHELL = os.path.expanduser("~/chromium/src/out/Default/content_shell")
 PORT = 9333
+STDERR_LOG = "/tmp/camoucrome_verify_stderr.log"
 
 
 def launch(config):
@@ -20,12 +22,32 @@ def launch(config):
     # content_shell has no --headless switch; --ozone-platform=headless is the
     # equivalent and is verified working against this build. CDP is served on
     # --remote-debugging-port exactly as chrome serves it.
+    # stderr goes to a file, not a pipe. Criterion 6 reads it after the
+    # process is gone, and a pipe would also deadlock the child if Chromium's
+    # startup noise ever filled the buffer. Each launch truncates it, so a
+    # read only ever sees its own run.
+    stderr_file = open(STDERR_LOG, "wb")
     proc = subprocess.Popen(
         [SHELL, "--no-sandbox", "--ozone-platform=headless",
          f"--remote-debugging-port={PORT}", "about:blank"],
-        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    time.sleep(5)
-    return proc
+        env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
+
+    # Poll the DevTools endpoint rather than sleeping a fixed interval. A
+    # five-second sleep flaked roughly one run in four: content_shell usually
+    # binds well inside it, but not always. An intermittently failing
+    # verification is worse than a slow one -- it teaches people to re-run
+    # until green, and then it is measuring nothing.
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{PORT}/json/version", timeout=1).read()
+            return proc
+        except Exception:
+            time.sleep(0.2)
+    proc.terminate()
+    raise RuntimeError(
+        f"content_shell opened no DevTools endpoint on {PORT} within 30s")
 
 
 def evaluate(expressions):
@@ -99,7 +121,8 @@ results["4 Navigator prototype unchanged"] = (
 proc = launch("{not json")
 malformed_value = evaluate(["navigator.hardwareConcurrency"])[0]
 proc.terminate()
-stderr = proc.stderr.read().decode("utf-8", "replace")
+with open(STDERR_LOG, "rb") as f:
+    stderr = f.read().decode("utf-8", "replace")
 results["6 malformed config reports the real value"] = malformed_value == 16
 results["6 malformed config logs an error"] = "camoucfg" in stderr
 
