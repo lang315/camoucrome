@@ -28,3 +28,22 @@ GetExecutionContext() is available; base::Value::Dict::Find takes
 std::string_view; components_unittests is declared at components/BUILD.gn:105;
 the three BUILD.gn insertion points are lines 206/411/153 respectively.
 
+Task 1: complete pending re-review (commits 59d65cb..696ca6b, 6/6 tests).
+  Review found one Important item -- the doc comment described the wrong
+  fallback trigger and no test discriminated it. Fixed. The review's
+  proposed expected value ("") was itself wrong; verified against Camoufox
+  MaskConfig.hpp that "ignored" is correct.
+
+Pre-flight for Task 2 found four more plan defects, all compile-blocking:
+- base::Value::Dict does not exist in this revision. The type is
+  base::DictValue, a standalone class at base/values.h:242. components/
+  has 4520 uses of the latter and zero of the former. 33 occurrences
+  renamed in the plan.
+- base::JSONReader::Read takes a required int options parameter with no
+  default. Switched to ReadDict(raw, base::JSON_PARSE_RFC), which also
+  rejects non-object JSON in the same call.
+- EXPECT_DEATH matching "camoucfg" would fail in configurations where
+  CHECK message text is stripped. base/test/gtest_util.h branches on
+  CHECK_WILL_STREAM(); EXPECT_CHECK_DEATH_WITH handles both.
+- The unit_tests target needs //base/test:test_support for that macro.
+
