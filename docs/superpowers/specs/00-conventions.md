@@ -66,6 +66,24 @@ to its real value. Malformed JSON logs an error once per process; if
 warning naming the key and returns `nullopt`. Bad config must never crash a renderer:
 a crash is itself a fingerprint.
 
+**The browser-process parse is load-bearing, not diagnostic.** The configuration is
+parsed lazily on first access, and the first surface to touch it lives in a *renderer*.
+That means strict mode, left to itself, would fire its `CHECK` in a renderer — turning
+"refuse to start" into a renderer crash, which is precisely what the rule above
+forbids. SP0 avoids this by forcing the parse in the browser process during
+`BrowserMainLoop::EarlyInitialization`, so a malformed configuration under strict mode
+refuses startup before any renderer exists.
+
+That call currently sits next to a `VLOG` and reads like a diagnostic. It is not. Do
+not delete it while tidying, and do not fold the `HasKey` call back inside the `VLOG`
+— `VLOG` expands through `LAZY_STREAM`, so an expression inside it is never evaluated
+at default verbosity and the parse would silently stop happening.
+
+**Open weakness, for SP6a or SP7 to resolve:** making strict mode depend on the side
+effect of a line whose stated purpose is logging is fragile. A future sub-project
+should give startup validation its own explicit call rather than leaving it as an
+operand.
+
 ## Non-negotiable rules for every SP
 
 1. **No JavaScript injection into page-visible scopes.** If a surface can only be
