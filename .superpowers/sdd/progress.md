@@ -401,3 +401,28 @@ Task 6: COMPLETE. Flake fix applied and verified.
 
 Task 7: dispatched. Until it lands, SP0 exists only as a branch inside a
 directory gclient regenerates.
+Task 6 second flake: the implementer ran EIGHT times where I had run four,
+and found 6/8 -- two failures in a mode never seen before, TargetClosedError
+on the first evaluate(). My 4/4 was luck. I had told it a one-in-four flake
+makes a single green run meaningless, then stopped at four and treated that
+as settled. Under-applied my own rule.
+
+It hypothesised port reuse (terminate() without wait(), fixed PORT). Reading
+the script I think there was a third cause it did not name and which fits the
+symptom better: --user-data-dir was absent entirely, so consecutive runs
+shared the default profile and the next instance could start while the
+previous still held the profile lock. The poll then reaches the dying
+instance's endpoint and the target vanishes.
+
+Rather than guess which cause it was, closed all three: a fresh
+--user-data-dir per launch, --remote-debugging-port=0 with the port read
+back from DevToolsActivePort so the browser picks and we read its choice,
+and terminate() followed by wait() with kill() on timeout. Added an explicit
+check for content_shell exiting during startup, so that reports itself
+instead of masquerading as a 30-second timeout.
+
+Verified with TEN consecutive runs: 9/9 PASS and exit 0 every time, md5
+matched between repo and build machine. Criterion 4 passed in all ten, which
+also disposes of the risk I created by changing the launch flags -- the
+baseline was captured without --user-data-dir, and it still matches.
+
