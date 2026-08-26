@@ -876,12 +876,23 @@ bool HasKey(const ConfigScope& scope, std::string_view key);
 Append inside the anonymous namespace of `components/camoucfg/mask_config_unittest.cc`:
 
 ```cpp
+// All seven, not a representative sample. std::optional's converting
+// constructor means several plausible miswirings compile cleanly: GetDouble
+// forwarding to GetInt32From, GetInt32 to GetUint32From, or GetBool to
+// HasKeyIn all build without complaint. The last one is the dangerous one --
+// HasKeyIn returns false for an absent key, which becomes an *engaged*
+// optional(false), so a caller would treat "not configured" as "configured
+// to false" and stop falling back to the real value. Asserting every getter
+// on an absent key catches exactly that.
 TEST(MaskConfigTest, AbsentKeysReturnNullopt) {
   const camoucfg::ConfigScope& scope = camoucfg::GlobalScope();
-  EXPECT_FALSE(camoucfg::GetUint32(scope, "nope.not.here").has_value());
   EXPECT_FALSE(camoucfg::GetString(scope, "nope.not.here").has_value());
-  EXPECT_FALSE(camoucfg::HasKey(scope, "nope.not.here"));
+  EXPECT_FALSE(camoucfg::GetUint32(scope, "nope.not.here").has_value());
+  EXPECT_FALSE(camoucfg::GetInt32(scope, "nope.not.here").has_value());
+  EXPECT_FALSE(camoucfg::GetDouble(scope, "nope.not.here").has_value());
+  EXPECT_FALSE(camoucfg::GetBool(scope, "nope.not.here").has_value());
   EXPECT_TRUE(camoucfg::GetStringList(scope, "nope.not.here").empty());
+  EXPECT_FALSE(camoucfg::HasKey(scope, "nope.not.here"));
 }
 ```
 
@@ -912,8 +923,6 @@ Create `components/camoucfg/mask_config.cc`:
 // found in the LICENSE file.
 
 #include "components/camoucfg/mask_config.h"
-
-#include <utility>
 
 #include "base/environment.h"
 #include "base/logging.h"

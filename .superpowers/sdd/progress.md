@@ -146,3 +146,26 @@ modified code, so a property added unconditionally would appear in both and
 the comparison would pass regardless. It now diffs against the recorded
 baseline, and additionally checks Navigator.prototype (36 properties).
 
+Task 3 review: spec PASS, code quality PASS with one Important finding to
+adjudicate. The reviewer independently verified the NoDestructor deviation
+(magic-statics thread safety, singleton invariant airtight, no dangle) and
+verified all seven forwarders target the correct Task 2 function.
+
+Adjudicated: extend the absent-key test to all seven getters. std::optional's
+converting constructor lets GetDouble->GetInt32From, GetInt32->GetUint32From
+and GetBool->HasKeyIn all compile; the last silently turns an absent key into
+an engaged optional(false), so a caller stops falling back to the real value.
+Asserting every getter on an absent key catches that one.
+
+DECLINED for SP0, carried to SP1: a value-level test proving the numeric
+getters forward to the right function (GetDouble on a 1.5 must not reach
+GetInt32From). It needs CAMOU_CONFIG set before the singleton latches on
+first touch, so it is order-sensitive within the gtest process or needs a
+subprocess. A fragile test is worse than a recorded gap. SP1 is the first
+sub-project with real call sites for those getters and should add value-level
+coverage when it wires them.
+
+Also from the review, both from my brief rather than the implementer:
+unused #include <utility>, and the GlobalScope comment drifting from the
+corrected brief. Both folded into the fix.
+
