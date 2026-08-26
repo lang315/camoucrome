@@ -18,8 +18,16 @@ consult.
 ## Decided architecture
 
 **Config component.** `//components/camoucfg/` — one GN target usable from the
-browser, renderer, and GPU processes. Blink reaches it through a single added line in
-`third_party/blink/renderer/DEPS` (`"+components/camoucfg",`).
+browser, renderer, and GPU processes. Blink reaches it through **per-header** entries
+in `third_party/blink/renderer/DEPS`, one line per header a Blink file actually
+includes — `"+components/camoucfg/mask_config.h",` and
+`"+components/camoucfg/blink_scope.h",` — not a directory-wide
+`"+components/camoucfg",` grant.
+
+Per-header is what that file already does for other components, and it keeps the grant
+to least privilege: a later SP that includes a third camoucfg header has to add a line
+and, in doing so, has to think about whether Blink should see it. `gn check` is enabled
+for blink core, so a missing entry is a hard build failure rather than a warning.
 
 **Config transport.** Environment variables `CAMOU_CONFIG_1`, `CAMOU_CONFIG_2`, …
 concatenated in order, falling back to a single `CAMOU_CONFIG`. Chunking exists
@@ -29,8 +37,17 @@ generator can eventually drive both forks.
 
 **Config format.** A flat JSON object whose keys are dotted or colon-separated
 strings (`"navigator.userAgent"`, `"webGl:parameters"`). Parsed once per process into
-a `base::Value::Dict` held by a `base::NoDestructor`. Uses `base::JSONReader`; no
-third-party JSON library is vendored.
+a **`base::DictValue`** held by a `base::NoDestructor`, via
+`base::JSONReader::ReadDict(raw, base::JSON_PARSE_RFC)`. No third-party JSON library
+is vendored.
+
+Three API details that cost SP0 a build cycle each, recorded so no later SP repeats
+them. `base::Value::Dict` does **not** exist in this Chromium revision — the type is
+`base::DictValue`, and `components/` contains 4520 uses of the latter and none of the
+former. `JSONReader::Read` and `ReadDict` take a **required** `int options` argument
+with no default. And `base::NoDestructor` static_asserts against a trivially
+destructible `T`, so it suits the dictionary but not an empty tag type like
+`ConfigScope`, which uses a plain function-local static instead.
 
 **API shape.** Every getter takes a `ConfigScope` as its first argument:
 
