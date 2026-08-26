@@ -282,3 +282,32 @@ Task 5: DONE pending review (commit f9b7b21c, browser process verified).
     job in an ssh session held open by ControlMaster/ControlPersist, or
     chunked `timeout -k 15 540 autoninja` calls. Recorded in project memory.
 
+Task 5 review: spec PASS, code quality PASS, one Important finding for
+adjudication and two Minor. The Important one is the sharpest of the run.
+
+VLOG(1) << ... HasKey(...) never evaluates HasKey at default verbosity.
+VLOG expands to LAZY_STREAM(stream, VLOG_IS_ON(1)), and LAZY_STREAM is
+`!(condition) ? (void)0 : ...(stream)` (base/logging.h:374). So the parse
+this task exists to force did not happen on a normal launch at all.
+
+Verified empirically rather than by reading alone: with an invalid config
+and NO --vmodule, zero camoucfg lines appear -- including the LOG(ERROR)
+for malformed JSON, which is not verbosity-gated. With --vmodule, three.
+
+Adjudicated remedy (a), compute the bool before the VLOG, and the reason is
+bigger than the diagnostic. CAMOU_CONFIG_STRICT is specified to refuse
+startup on malformed config. With a lazy parse the CHECK fires in whichever
+process touches config first -- a renderer -- turning "refuse to start" into
+a renderer crash, which conventions rule 5 explicitly forbids because a
+crash is itself a fingerprint. Forcing the parse in the browser process at
+EarlyInitialization makes strict mode mean what it says.
+
+Minor 1 turned out to be a real defect, not just a flag: content/browser/DEPS
+exists with 53 +components rules and no camoucfg grant. autoninja does not
+run checkdeps.py, so it builds locally and presubmit would reject it. Note
+that file grants per DIRECTORY while blink's DEPS grants per HEADER -- match
+each file's own convention rather than carrying one across.
+
+Minor 2: the brief's Files header listed only browser_main_loop.cc. Now
+lists DEPS and BUILD.gn too.
+
