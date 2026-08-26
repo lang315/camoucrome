@@ -230,3 +230,19 @@ machine until Task 7. Task 6 Step 1 now pushes the baseline to
 ~/camoucrome-verify/baselines/ and verifies it arrived intact. Pushed and
 confirmed on the machine: 222 window keys, 36 navigator props, hc 16.
 
+Task 4: COMPLETE (commits a7de8516..031d2b04, tracer bullet verified working).
+  Review: spec PASS, code quality APPROVE, zero Critical, zero Important.
+  Both Minor items closed.
+  Independently re-verified after the fix: 19/19 unit tests, sys_info refs 0,
+  checkout clean, and the tracer still reports 8 with config / native
+  descriptor / 222 window keys.
+  The implementer noted that content_shell was NOT relinked when the include
+  was removed -- Siso's content hashing found no output change -- which is
+  stronger evidence the include was dead than reading the source is.
+
+  setsid finding upgraded from "not confirmed" to "one step past": the fix
+  build survived genuinely separate SSH/WSL reconnects rather than one
+  held-open session. Still only ~19s of wall time, so untested on a long
+  build. Do not rely on it for one.
+
+Task 5: dispatched.
