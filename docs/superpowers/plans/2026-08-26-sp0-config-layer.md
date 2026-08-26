@@ -76,6 +76,26 @@ the last prints `camoucrome/sp0`. If the first prints a different hash, the chec
 moved since the plan was written — stop and report it rather than continuing, because
 every patch in Task 7 is generated against that revision.
 
+Then configure a git identity. A fresh gclient checkout has none, and `git commit`
+fails with `Author identity unknown`:
+
+```bash
+git config --local user.name "Lãng"
+git config --local user.email "30039912+lang315@users.noreply.github.com"
+git config --local --get user.name
+git config --local --get user.email
+```
+
+`--local` is deliberate. The same WSL distro is where Camoufox is built, and a global
+identity would reach into unrelated work. Confirm both `--get` commands echo the name
+back unmangled before committing — it contains non-ASCII characters, and a bad
+encoding here is baked into every commit that follows.
+
+This identity does not reach the deliverable. Task 7 extracts with
+`git diff BASE HEAD -- <paths>`, which emits content only and carries no author,
+committer, or date headers; author identity would travel only if Task 7 used
+`git format-patch`, which it does not.
+
 - [ ] **Step 1: Create the BUILD.gn**
 
 Create `components/camoucfg/BUILD.gn`:
