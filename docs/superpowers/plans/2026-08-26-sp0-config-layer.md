@@ -1400,7 +1400,7 @@ results = {}
 proc = launch('{"navigator.hardwareConcurrency":8}')
 window_value, worker_value, descriptor, keys = evaluate(
     ["navigator.hardwareConcurrency", WORKER_PROBE, DESCRIPTOR_PROBE,
-     "Object.keys(window).join(',')"])
+     "Object.keys(window).sort().join(',')"])
 proc.terminate()
 results["2 spoofed value is 8"] = window_value == 8
 results["5 worker agrees when spoofed"] = worker_value == 8
@@ -1412,12 +1412,25 @@ spoofed_keys = keys
 proc = launch(None)
 real_window, real_worker, stock_keys = evaluate(
     ["navigator.hardwareConcurrency", WORKER_PROBE,
-     "Object.keys(window).join(',')"])
+     "Object.keys(window).sort().join(',')"])
 proc.terminate()
 results["3 falls back to the real 16"] = real_window == 16
 results["5 worker agrees when unconfigured"] = real_worker == real_window
-# Criterion 4, second half: no property was added or removed.
-results["4 window keys unchanged"] = spoofed_keys == stock_keys
+# Criterion 4, second half: no property was added or removed, measured
+# against the binary as it was BEFORE any Camoucrome call site was wired in.
+# Comparing the spoofed run against the unconfigured run would not catch a
+# property this change adds unconditionally, because both runs execute the
+# same modified code.
+BASELINE = os.path.expanduser(
+    "~/camoucrome/baselines/content_shell-0e8d4a9268-stock.json")
+with open(BASELINE) as f:
+    baseline = json.load(f)
+results["4 window keys match the pre-spoof baseline"] = (
+    spoofed_keys.split(",") == baseline["window_keys"]
+    and stock_keys.split(",") == baseline["window_keys"])
+results["4 Navigator prototype unchanged"] = (
+    sorted(evaluate(["Object.getOwnPropertyNames(Navigator.prototype)"])[0])
+    == baseline["navigator_prototype_props"])
 
 # Criterion 6: malformed configuration does not crash and reports the truth.
 proc = launch("{not json")
@@ -1456,7 +1469,7 @@ Run:
 
 Expected: eight `PASS` lines and exit status 0.
 
-The one to read carefully is `4 window keys unchanged`. That assertion is what separates a C++ implementation from an injected one, and it is the single most important line in this plan. If it fails, something added a property to `window`, and the change is detectable no matter how correct the value is.
+The one to read carefully is `4 window keys match the pre-spoof baseline`. That assertion is what separates a C++ implementation from an injected one, and it is the single most important line in this plan. If it fails, something added a property to `window`, and the change is detectable no matter how correct the value is.
 
 - [ ] **Step 5: Commit the verification script to the Camoucrome repository**
 

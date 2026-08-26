@@ -126,3 +126,23 @@ Task 3: DONE_WITH_CONCERNS pending review (commit bd3b12ed, 19/19 tests).
   Note base::NoDestructor<base::DictValue> in Config() is unaffected --
   DictValue holds a map and is not trivially destructible.
 
+Pre-flight for Task 6, run while waiting on the Task 3 review, validated the
+whole verification approach and fixed a weak assertion.
+
+Smoke-tested Playwright connect_over_cdp against the built content_shell:
+ATTACH OK, hardwareConcurrency 16, descriptor "[native code]", worker 16,
+222 window keys. content_shell is not a full Chrome and attachability was
+an open assumption underneath criteria 2 through 6.
+
+Captured the pre-spoof baseline from that same binary -- it IS the stock
+one, since no call site is wired until Task 4 -- and committed it to
+baselines/content_shell-0e8d4a9268-stock.json. Criterion 4 previously said
+to compare against "a stock content_shell built from the same revision",
+which read literally means building a second binary for hours.
+
+Also fixed a weak assertion: the script compared the spoofed run against
+the unconfigured run of the SAME binary. After Task 4 both runs execute the
+modified code, so a property added unconditionally would appear in both and
+the comparison would pass regardless. It now diffs against the recorded
+baseline, and additionally checks Navigator.prototype (36 properties).
+
