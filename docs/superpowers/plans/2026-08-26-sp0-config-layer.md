@@ -1642,15 +1642,32 @@ cd ~/chromium/src
 git diff $(cat /tmp/camoucrome_base_revision) HEAD -- \
   components/BUILD.gn \
   content/browser/BUILD.gn \
+  content/browser/DEPS \
   content/browser/browser_main_loop.cc \
   third_party/blink/renderer/DEPS \
   third_party/blink/renderer/core/BUILD.gn \
   third_party/blink/renderer/core/execution_context/navigator_base.cc \
   > /tmp/sp0-config-layer.patch
 wc -l /tmp/sp0-config-layer.patch
+grep -c '^diff --git' /tmp/sp0-config-layer.patch
 ```
 
-Expected: a patch of roughly 50 to 80 lines touching exactly six files. `navigator_base.h` is deliberately absent — Task 4 reads it but does not modify it, because the override declaration was already there. Copy it to `patches/sp0-config-layer.patch` in the Camoucrome repository.
+Then prove the patch describes the tree exactly, before anything relies on it:
+
+```bash
+git apply --check --reverse /tmp/sp0-config-layer.patch && \
+  echo "reverses cleanly"
+```
+
+Expected: `reverses cleanly`. A patch that will not reverse against the tree it was
+extracted from is missing a hunk or a file, and applying it elsewhere would produce a
+tree that differs from the one actually verified — quietly.
+
+Expected: about 132 lines touching exactly **seven** files. `navigator_base.h` is
+deliberately absent — Task 4 reads it but does not modify it, because the override
+declaration was already there. `content/browser/DEPS` **is** present: Task 5's review
+found it needs an explicit checkdeps grant, and omitting it from the extraction would
+yield a patch that builds and runs but fails presubmit, with nothing local to catch it. Copy it to `patches/sp0-config-layer.patch` in the Camoucrome repository.
 
 Note how small it is. Every line in `patches/` is a line that can conflict on a Chromium rebase, while `additions/` never conflicts. Keeping that ratio is why SP6a promotes additions-over-patches from a preference to a policy.
 
