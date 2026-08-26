@@ -37,7 +37,7 @@
 | `components/camoucfg/mask_config_unittest.cc` | Tests for assembly, parsing, failure modes, and every getter. |
 | `components/BUILD.gn` | Modified: registers `//components/camoucfg:unit_tests` in `components_unittests`. |
 | `third_party/blink/renderer/DEPS` | Modified: two added `include_rules` entries. |
-| `third_party/blink/renderer/core/execution_context/navigator_base.h` | Modified: declares the `hardwareConcurrency` override. |
+| `third_party/blink/renderer/core/execution_context/navigator_base.h` | Read only. Already declares the override at line 57; not modified. |
 | `third_party/blink/renderer/core/execution_context/navigator_base.cc` | Modified: the override body — the tracer bullet. |
 | `content/browser/browser_main_loop.cc` | Modified: one browser-process smoke log. |
 
@@ -1046,7 +1046,7 @@ git commit -m "camoucfg: add the scope-shaped public API and typed getters"
 - Create: `components/camoucfg/blink_scope.h`
 - Modify: `components/camoucfg/BUILD.gn`
 - Modify: `third_party/blink/renderer/DEPS`
-- Modify: `third_party/blink/renderer/core/execution_context/navigator_base.h`
+- Read, not modified: `third_party/blink/renderer/core/execution_context/navigator_base.h` — the declaration already exists at line 57
 - Modify: `third_party/blink/renderer/core/execution_context/navigator_base.cc`
 
 **Interfaces:**
@@ -1251,7 +1251,6 @@ cd ~/chromium/src
 git add components/camoucfg/ \
         third_party/blink/renderer/DEPS \
         third_party/blink/renderer/core/BUILD.gn \
-        third_party/blink/renderer/core/execution_context/navigator_base.h \
         third_party/blink/renderer/core/execution_context/navigator_base.cc
 git commit -m "camoucfg: drive navigator.hardwareConcurrency through the config layer"
 ```
@@ -1574,13 +1573,12 @@ git diff $(cat /tmp/camoucrome_base_revision) HEAD -- \
   content/browser/browser_main_loop.cc \
   third_party/blink/renderer/DEPS \
   third_party/blink/renderer/core/BUILD.gn \
-  third_party/blink/renderer/core/execution_context/navigator_base.h \
   third_party/blink/renderer/core/execution_context/navigator_base.cc \
   > /tmp/sp0-config-layer.patch
 wc -l /tmp/sp0-config-layer.patch
 ```
 
-Expected: a patch of roughly 60 to 90 lines touching exactly seven files. Copy it to `patches/sp0-config-layer.patch` in the Camoucrome repository.
+Expected: a patch of roughly 50 to 80 lines touching exactly six files. `navigator_base.h` is deliberately absent — Task 4 reads it but does not modify it, because the override declaration was already there. Copy it to `patches/sp0-config-layer.patch` in the Camoucrome repository.
 
 Note how small it is. Every line in `patches/` is a line that can conflict on a Chromium rebase, while `additions/` never conflicts. Keeping that ratio is why SP6a promotes additions-over-patches from a preference to a policy.
 
