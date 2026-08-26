@@ -246,3 +246,15 @@ Task 4: COMPLETE (commits a7de8516..031d2b04, tracer bullet verified working).
   build. Do not rely on it for one.
 
 Task 5: dispatched.
+Dry-ran Task 7's extraction mechanism ahead of time, read-only:
+  git diff BASE HEAD -- <the six paths> currently yields 67 lines across 4
+  files (Task 5 will add content/browser/BUILD.gn and browser_main_loop.cc,
+  reaching the six the plan predicts). components/camoucfg/ holds exactly
+  the seven files Task 7 expects to copy into additions/. No stashes.
+  The plan's estimate of "50 to 80 lines touching exactly six files" holds.
+
+  Worth noting the ratio: seven whole new files against 67 diff lines. That
+  is the additions-over-patches policy SP6 promotes from preference to rule,
+  since every line in patches/ is a line that can conflict on each Chromium
+  rebase. SP0 lands on the good side of it.
+
