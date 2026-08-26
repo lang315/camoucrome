@@ -240,7 +240,19 @@ autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='AssembleRawConfigTest.*'
 ```
 
-Expected: the build fails with `undefined reference to camoucfg::internal::AssembleRawConfig`, because the header is declared but `mask_config_internal.cc` does not exist yet.
+Expected: the build fails with
+
+```
+"../../components/camoucfg/mask_config_internal.cc", needed by
+"obj/components/camoucfg/camoucfg/mask_config_internal.o",
+missing and no known rule to make it
+```
+
+because `BUILD.gn` already lists a source file that has not been written. Siso stops at
+source resolution and never reaches the link stage, so this is a build-graph error
+rather than the `undefined reference` a linker would report. The cause is the same —
+`AssembleRawConfig` is declared and not implemented — and this is the correct failure
+to observe before Step 6.
 
 - [ ] **Step 6: Write the minimal implementation**
 
@@ -792,7 +804,9 @@ autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='MaskConfigTest.*'
 ```
 
-Expected: the build fails with `'components/camoucfg/mask_config.h' file not found` resolved but `undefined reference to camoucfg::GlobalScope()`.
+Expected: `mask_config.h` exists and compiles, but `mask_config.cc` has not been written and is not yet in `BUILD.gn`, so the test links against nothing and the build fails with `undefined reference to camoucfg::GlobalScope()`.
+
+Note the difference from Task 1 Step 5, and do not mistake one for the other. There, `BUILD.gn` named a `.cc` that did not exist, so Siso failed at source resolution with `missing and no known rule to make it`. Here `BUILD.gn` names no such file, compilation succeeds, and the failure is a genuine link error. If you see the Task 1 shape of error at this step, `BUILD.gn` was edited too early.
 
 - [ ] **Step 4: Implement**
 
