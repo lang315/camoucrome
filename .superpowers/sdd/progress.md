@@ -111,3 +111,18 @@ Task 2: COMPLETE (commits ed9065a1..2a9768ca, 18/18 tests).
   Independently re-ran the suite: 18/18, both new tests named OK.
 
 Task 3: dispatched.
+Task 3: DONE_WITH_CONCERNS pending review (commit bd3b12ed, 19/19 tests).
+  The implementer found that my own earlier "fix" was wrong.
+  base/no_destructor.h static_asserts !is_trivially_destructible_v<T>.
+  ConfigScope is an empty class, so NoDestructor rejects it outright and
+  the assert's own text prescribes a function-local static instead.
+  The ORIGINAL plan's `friend const ConfigScope& GlobalScope();` was
+  correct all along; commit 773e362 changed it to befriend NoDestructor,
+  reinforcing the wrong half. The real defect was NoDestructor, not the
+  friend declaration. Plan now uses a plain function-local static.
+  Lesson: verifying a mechanism (placement new, friendship) is not the
+  same as verifying the template accepts the type. Read the constraints,
+  not just the construction site.
+  Note base::NoDestructor<base::DictValue> in Config() is unaffected --
+  DictValue holds a map and is not trivially destructible.
+
