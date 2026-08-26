@@ -449,7 +449,7 @@ browser be safe against a stock client, but implements none of it.
 The `$group` all-or-nothing coherence enforcement belongs to SP5; SP6 provides only the
 registry field in which such groups are declared.
 
-Chromium's own auto-updater, crash reporting, and metrics are not merely out of scope
-but should be disabled — they phone home and are themselves a fingerprint. Which
-`gn` args and which patches accomplish that is a hardening concern not yet assigned to
-an SP, and is flagged here as a gap in the sub-project map rather than claimed by SP6.
+Chromium's own auto-updater, crash reporting, and metrics belong to **SP7**, which was
+created in response to this gap being flagged here. SP7 also owns `proprietary_codecs`,
+`ffmpeg_branding`, and Widevine, which SP5 originally assigned to SP6 before SP7
+existed. SP6 supplies the `gn` args plumbing; SP7 decides what goes in it.

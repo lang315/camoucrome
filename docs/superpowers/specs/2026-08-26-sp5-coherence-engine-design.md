@@ -2,6 +2,14 @@
 
 Assumes everything in [00-conventions.md](00-conventions.md).
 
+This spec covers two phases that land at very different times, and the sub-project map
+names them separately. **SP5a** — the invariant registry file, its C++ reader, the
+browser-process validator, the derivation helpers and the generated test harness —
+depends only on SP0 and should land immediately after it. **SP5b** — the invariant
+catalogue itself and the preset path — depends on SP1, SP3 and SP4, because an
+invariant over a key that nothing reads is untestable. Each section below is marked
+with the phase it belongs to.
+
 ## 1. Goal
 
 SP1 through SP4 each give an operator independent control over a set of surfaces. Used
@@ -21,35 +29,44 @@ rejected or repaired at launch rather than discovered by a detector.
 
 ## 2. Depends on
 
-SP1, SP3 and SP4 must exist before their invariants can be enforced, because an
-invariant over a key that nothing reads is untestable. But SP5 is better understood as
-a cross-cutting concern than as a later phase: the registry file, its C++ reader and
-the validator harness can land as soon as SP0 does, and each of SP1, SP3 and SP4 then
-contributes its own invariants as part of its definition of done.
+**SP5a depends on SP0 alone.** The registry file, its C++ reader, the validator, the
+derivation helpers in `derive.{h,cc}` and the generated test harness need nothing but a
+parsed config to exist. They should land immediately after SP0 and before SP1, because
+SP1 is the first sub-project that both adds many keys and needs the claimed-OS helper
+that lives here.
 
-That imposes a process cost on the earlier sub-projects which is easy to leave
-implicit and should not be: **an SP is not complete until its invariants are in the
-registry with a passing mutation test.** If that discipline slips, SP5 degenerates into
-a late audit of work already shipped, which is precisely the failure mode Camoufox
-exhibits today.
+**SP5b depends on SP1, SP3 and SP4.** An invariant over a key that nothing reads is
+untestable, so the catalogue fills in as those sub-projects land. The preset path
+additionally depends on SP1 for user-agent and client-hint plumbing, since a Chrome
+preset is mostly an identity claim and identity is SP1's surface.
 
-SP5's preset path additionally depends on SP1 for user-agent and client-hint plumbing,
-since a Chrome preset is mostly an identity claim and identity is SP1's surface.
+Splitting the two is not bookkeeping. Treating the whole of SP5 as a late phase imposes
+a process cost on the earlier sub-projects that is easy to leave implicit and should
+not be: **an SP is not complete until its invariants are in the registry with a passing
+mutation test.** That discipline is only available if the registry already exists when
+SP1 starts. If it slips, SP5 degenerates into a late audit of work already shipped,
+which is precisely the failure mode Camoufox exhibits today.
 
 ## 3. What this sub-project owns
 
 SP5 controls no page-visible value directly. It owns the relationships between values,
 plus the machinery that enforces them.
 
-| Artifact | Location | Process |
-|---|---|---|
-| Invariant registry | `settings/invariants.json` | data, consumed by C++ and by the generator |
-| Registry reader and validator | `additions/camoucfg/coherence_validator.{h,cc}` | browser |
-| Validator invocation at startup | patch to Chromium browser startup, after config parse, before any renderer launch | browser |
-| Preset store | `settings/presets/chromium-<milestone>.json` | data |
-| Preset loader and expander | `additions/camoucfg/preset_loader.{h,cc}` | browser |
-| Derived-value helpers | `additions/camoucfg/derive.{h,cc}` | shared |
-| Property and mutation test suite | `additions/camoucfg/coherence_validator_unittest.cc` | test |
+| Phase | Artifact | Location | Process |
+|---|---|---|---|
+| SP5a | Invariant registry file (schema and mechanism) | `settings/invariants.json` | data, consumed by C++ and by the generator |
+| SP5a | Registry reader and validator | `additions/camoucfg/coherence_validator.{h,cc}` | browser |
+| SP5a | Validator invocation at startup | patch to Chromium browser startup, after config parse, before any renderer launch | browser |
+| SP5a | Derived-value helpers, including the claimed-OS function | `additions/camoucfg/derive.{h,cc}` | shared |
+| SP5a | Property and mutation test harness | `additions/camoucfg/coherence_validator_unittest.cc` | test |
+| SP5b | The invariant catalogue itself (§4.3 contents) | `settings/invariants.json` | data |
+| SP5b | Preset store | `settings/presets/chromium-<milestone>.json` | data |
+| SP5b | Preset loader and expander | `additions/camoucfg/preset_loader.{h,cc}` | browser |
+
+The registry *file and its mechanism* are SP5a; the *entries in it* are SP5b, filled in
+by SP1, SP3 and SP4 as each lands. That division is what lets the discipline in §2 —
+no SP is done until its invariants have a passing mutation test — apply from SP1
+onward.
 
 The exact Chromium startup file to patch is left to implementation; the requirement is
 that validation runs after the config is parsed and before the first renderer process
@@ -57,7 +74,7 @@ is spawned, so that a rejection can still prevent launch.
 
 ## 4. Design
 
-### 4.1 Where coherence belongs
+### 4.1 Where coherence belongs (SP5a)
 
 Camoufox enforces coherence in three uncoordinated places: C++ patches that derive one
 value from another at read time, all-or-nothing `$group` declarations in the
@@ -85,13 +102,21 @@ to start, which the conventions' fail-closed model requires.
 Two mechanisms sit alongside load-time validation and are deliberately not folded into
 it:
 
-**Derivation.** Some values are strictly a function of another spoofed value and have
-no independent config key — `screen.orientation.type` and its angle follow from whether
-the spoofed screen is wider than it is tall; the CSS `system-ui` generic family and the
-CSS2 system-font keywords follow from the spoofed platform. These are computed at read
-time from a shared helper in `derive.{h,cc}`. That is not fragmentation, because the
-value has exactly one definition; giving such a value its own config key would create
-the opportunity for incoherence rather than remove it.
+**Derivation (SP5a).** Some values are strictly a function of another spoofed value and
+have no independent config key — `screen.orientation.type` and its angle follow from
+whether the spoofed screen is wider than it is tall; the CSS `system-ui` generic family
+and the CSS2 system-font keywords follow from the spoofed platform. These are computed
+at read time from a shared helper in `derive.{h,cc}`. That is not fragmentation,
+because the value has exactly one definition. The conventions state the general rule
+under *Config key naming*: a derived value gets no key at all, because an independent
+override key creates the opportunity for incoherence rather than removing it.
+
+`derive.{h,cc}` also holds **the single function that answers "what operating system
+are we claiming"**, and the conventions assign that ownership to SP5a explicitly. SP1
+populates the inputs it derives from; SP4 and SP7 consume it. No sub-project re-derives
+the target OS from a user-agent string locally, because two derivations of the same
+fact are two chances to disagree — and every OS-dependent surface in §4.3 hangs off
+this one answer.
 
 **Propagation.** Seeds and identity values that must be byte-identical in the window,
 in every worker, and in the GPU process are not a validation problem but a transport
@@ -100,7 +125,7 @@ case, since every child process inherits the environment. It is unsolved for the
 per-context case and is listed as an open decision below. Camoufox needed a dedicated
 `cross-process-storage.patch` precisely because Firefox had no equivalent inheritance.
 
-### 4.2 Registry format and repair policy
+### 4.2 Registry format and repair policy (SP5a)
 
 Each entry names the keys it constrains, the relation, and what to do on violation.
 Three policies:
@@ -119,10 +144,11 @@ fingerprint is active when it silently is not.
 A repair must be deterministic and idempotent. Running the validator on its own output
 must produce no further changes, and the test suite asserts this.
 
-### 4.3 The invariant catalogue
+### 4.3 The invariant catalogue (SP5b)
 
-What follows is the initial catalogue. It is not exhaustive and is expected to grow as
-SP1, SP3 and SP4 land.
+What follows is the initial catalogue. It is not exhaustive, and it is SP5b work: each
+entry can only be enforced once the sub-project owning its keys has landed, so the
+catalogue fills in alongside SP1, SP3 and SP4 rather than being written up front.
 
 **Geometry.** `screen.availWidth ≤ screen.width` and `screen.availHeight ≤
 screen.height`, with the availHeight comparison strict on desktop platforms — CreepJS
@@ -140,8 +166,9 @@ resolves this by resampling to a known real DPR-1 display; Camoucrome needs the
 equivalent, and the invariant is that the geometry cluster and the reported DPR must
 originate from the same capture.
 
-**Operating system.** The target OS is derived once from the user agent and is then the
-sole authority for every OS-dependent surface: `navigator.platform`, the UA-CH
+**Operating system.** The target OS is derived once, by the single helper in
+`derive.{h,cc}` described in §4.1, and is then the sole authority for every
+OS-dependent surface: `navigator.platform`, the UA-CH
 `platform` and `platformVersion`, `navigator.userAgentData.platform`, the
 `Sec-CH-UA-Platform` request header, the font list, the voice list, plausibility of the
 WebGL vendor and renderer pair, CSS system-font resolution and the `system-ui` family,
@@ -181,7 +208,7 @@ and device identifiers must be stable per origin for the lifetime of a session.
 important enough to have its own section below. WebRTC ICE candidates must not
 contradict the claimed public address.
 
-### 4.4 Chromium-specific traps with no Camoufox counterpart
+### 4.4 Chromium-specific traps with no Camoufox counterpart (SP5b)
 
 **Three user-agent channels rather than one.** Firefox exposes browser identity through
 the user-agent string and little else. Chromium exposes it three times: the UA string,
@@ -210,7 +237,7 @@ milestone and spoof only the identity dimensions that genuinely vary between rea
 a milestone or two looks like a user who has not restarted their browser, which is an
 enormous and unremarkable population. A fork that claims a version it does not
 implement looks like a fork. The consequence is a maintenance obligation — the fork
-must track upstream reasonably closely — which belongs to SP6.
+must track upstream reasonably closely — which belongs to SP6b.
 
 **Proprietary codecs.** Stock Chromium is built without proprietary codec support,
 while Chrome ships with it. A build claiming to be Chrome that answers
@@ -218,8 +245,12 @@ while Chrome ships with it. A build claiming to be Chrome that answers
 `probably` is trivially detectable, and no C++ spoofing of the answer will make the
 media pipeline actually decode the stream if a detector tests playback rather than the
 advertisement. This is a build-configuration invariant, not a runtime one: the fork
-must be built with proprietary codecs and Chrome ffmpeg branding enabled. SP6 owns the
-flag; SP5 owns the assertion that the codec answer matrix matches the claimed browser.
+must be built with proprietary codecs and Chrome ffmpeg branding enabled. **SP7 owns
+the flags** — it did not exist when this spec was first written and the obligation was
+provisionally assigned to SP6 — and SP7 additionally identifies Widevine as a second
+discriminator of the same shape, reached through `requestMediaKeySystemAccess`. SP5
+owns the assertion that the codec and key-system answer matrix matches the claimed
+browser.
 
 **GPU process versus renderer.** The renderer reports WebGL strings, but the GPU
 process holds `gpu::GPUInfo`, which is also surfaced through `chrome://gpu`, through
@@ -234,11 +265,12 @@ Camoufox has nothing to port here; this surface is new and unguarded.
 
 **The `window.chrome` object.** Real Chrome exposes a `chrome` object with `runtime`,
 `loadTimes` and `csi` members whose presence and shape vary between Chrome, plain
-Chromium, and headless. Its absence or wrong shape is a classic check. Construction of
-that object belongs to SP2; the invariant that it matches the claimed browser lives
-here.
+Chromium, and headless. Its absence or wrong shape is a classic check. The conventions
+assign construction of that object to **SP2** — the historically important failure,
+headless Chrome lacking the object entirely, is an automation tell rather than a
+branding one — and the invariant that its shape matches the claimed browser lives here.
 
-### 4.5 The preset path
+### 4.5 The preset path (SP5b)
 
 Camoufox ships `fingerprint-presets-v150.json`, a set of real captured fingerprints
 version-matched to its Firefox build, and can replay one instead of synthesising a
@@ -274,11 +306,18 @@ common now — which is a refresh cadence question rather than a correctness one
 SP5 is the coherence constraints, so this section instead records what SP5 itself must
 stay consistent with.
 
-The registry must stay consistent with the key registry in `settings/` that SP1
-introduces. An invariant naming a key that does not exist, or a key with no invariant
-in a cluster where its siblings have one, is itself a defect and the test suite checks
-for both. This is the specific failure Camoufox exhibits, and catching it mechanically
-is the only reliable defence.
+The invariant registry must stay consistent with the **key** registry,
+`settings/keys.json`, which **SP6a** introduces. These are two different files with two
+different jobs and neither subsumes the other: `settings/keys.json` declares which keys
+exist and what type each holds, while `settings/invariants.json` declares which
+relationships between those keys must hold. The conventions record both.
+
+An invariant naming a key that does not exist in `settings/keys.json`, or a key with no
+invariant in a cluster where its siblings have one, is itself a defect and the test
+suite checks for both. This is the specific failure Camoufox exhibits — keys read by
+C++ but declared nowhere, and a casing split between schema and reader — and catching
+it mechanically is the only reliable defence. It is also why SP6a must land before SP1
+rather than at the end.
 
 The derivation helpers must be the same code the surfaces use. If `derive.cc` computes
 an orientation from screen dimensions and the screen surface computes its own, they
@@ -346,7 +385,7 @@ both sides. Not yet decided.
 design, so extending Camoufox's `pythonlib` is tempting. But the fingerprint *content*
 diverges substantially — client hints, GREASE, WebGPU, a different OS-to-platform
 mapping — so a shared package with a per-engine module is likely cleaner than a fork of
-the existing generator. Not yet decided, and it interacts with SP6.
+the existing generator. Not yet decided, and it interacts with SP6b.
 
 **Preset sourcing.** Presets must come from real devices to be worth having. Whether
 they are captured by the operator, drawn from an existing dataset, or contributed,
@@ -369,8 +408,9 @@ The surfaces themselves belong to SP1, SP3 and SP4; this spec constrains their
 relationships and does not describe how any individual value is substituted. The
 `window.chrome` object and every other automation-hiding concern belongs to SP2, which
 this spec references only where an invariant crosses into it. The build flags that make
-the codec matrix match a real Chrome — proprietary codecs and ffmpeg branding — belong
-to SP6, as does the obligation to track upstream milestones closely enough that
-claiming the real version stays credible. The implementation of the fingerprint
-generator belongs to SP6; SP5 defines the contract it must satisfy, not how it
-satisfies it.
+the codec matrix match a real Chrome — proprietary codecs, ffmpeg branding and Widevine
+— belong to **SP7**. The key registry `settings/keys.json` belongs to SP6a. The
+obligation to track upstream milestones closely enough that claiming the real version
+stays credible belongs to SP6b, as does the implementation of the fingerprint
+generator; SP5 defines the contract that generator must satisfy, not how it satisfies
+it.

@@ -118,8 +118,12 @@ page-reachable API that reports GPU identity and close each at its own Blink ent
 point, using the same config keys so the answers agree. The one known candidate is
 WebGPU — `GPUAdapterInfo` exposes vendor, architecture, device, and description to the
 page (unverified: locate the Blink implementation and confirm which fields are
-populated on this revision). A page that reads an NVIDIA string from WebGL and an
-Intel string from WebGPU has learned more than if neither were spoofed. Media
+populated on this revision). **WebGPU is in SP3's scope, not SP4's.** §5 already makes
+SP3 responsible for the invariant that WebGPU adapter identity agrees with the WebGL
+strings, and an invariant whose implementer sits in a different sub-project is exactly
+the ownership gap this project is trying to avoid. A page that reads an NVIDIA string
+from WebGL and an Intel string from WebGPU has learned more than if neither were
+spoofed. Media
 Capabilities hardware-decode answers are a second candidate, but those belong to SP4's
 codec work and must consume the same config.
 
@@ -167,6 +171,25 @@ draw-order-dependent or call-count-dependent value:
 noise(seed, width, height, x, y, channel) -> int8 delta
 ```
 
+That signature is canvas-specific. Underneath it sits a smaller, surface-agnostic
+primitive that SP3 also ships and that other sub-projects consume:
+
+```
+derive_delta(seed, domain, index, bound) -> int32 delta in [-bound, +bound]
+```
+
+`domain` is a short constant string naming the caller (`"canvas"`, `"audio"`,
+`"fontmetric"`) so that two surfaces sharing a seed still produce uncorrelated
+sequences; `index` is any stable integer the caller can reproduce — a flattened pixel
+offset, an audio sample number, a glyph id. `noise()` is a thin wrapper over it.
+
+The split exists because SP4 needs the same determinism guarantee for data of a
+different shape: audio readback is a one-dimensional sample stream and font metric
+jitter is a per-glyph scalar, and neither fits a two-dimensional pixel signature. SP4
+consumes `derive_delta` by that name and does not grow a second implementation. Both
+live in `//components/camoucfg/`, so the dependency is on a shared utility rather than
+on SP3's canvas code.
+
 Reading the same canvas twice must yield identical bytes. A fingerprinting script that
 hashes a canvas twice and gets two different hashes has learned that the browser is
 lying, which is a stronger signal than the true hash would have been. This is the
@@ -209,9 +232,11 @@ parameters — returning the same error a real context returns for an unsupporte
 is the lesser evil.
 
 The flag is per-namespace and defaults to false, so the shared rule holds unless the
-operator opts out. This exception is documented here rather than in
-`00-conventions.md` because it is specific to the GL parameter table; do not generalise
-it to other surfaces.
+operator opts out. Conventions rule 5 sanctions exactly this exception and cites
+`blockIfNotDefined` by name; what is specific to SP3, and the reason it is argued here,
+is that the GL parameter table is a *set* whose members are only meaningful together.
+Do not read the exception as licence to fail closed on surfaces where a real value is
+merely inconvenient.
 
 ## 5. Coherence constraints
 
@@ -285,10 +310,16 @@ at all; without it the first silently does nothing.
     `Object.getOwnPropertyDescriptor(...).value.toString()` still contains
     `[native code]`, and `Object.keys(window)` is unchanged against stock. Conventions
     rule 2.
-12. **No contradicting GPU identity.** Query WebGPU adapter info on the same page and
-    assert it does not report the host GPU while WebGL reports the configured one. If
+12. **No contradicting GPU identity.** Query `GPUAdapterInfo` on the same page and assert
+    every populated field is consistent with the configured WebGL vendor and renderer —
+    not merely that it fails to name the host GPU. Because §4.1 places WebGPU in SP3's
+    scope, this item asserts a spoof SP3 implements, not an absence it hopes for. If
     WebGPU is unavailable in `content_shell` under SwiftShader, record that as a gap to
     be closed on the Windows host build rather than declaring the item passed.
+13. **Seed domains are independent.** For one seed, assert that `derive_delta` produces
+    uncorrelated sequences across the `"canvas"`, `"audio"` and `"fontmetric"` domains,
+    and that each is reproducible across processes. A unit test suffices. SP4 depends on
+    both properties, so they are established here rather than discovered there.
 
 Items 1, 6, and 9 must pass before any other item is meaningful.
 
@@ -326,15 +357,7 @@ hardware, and how many profiles constitute useful coverage, is an SP5 question.
 page-visible leak that cannot be closed at a Blink entry point — not by principle.
 Record any such leak here.
 
-### 7.3 WebGPU scope
-
-Whether WebGPU adapter identity belongs to SP3 (as a WebGL coherence obligation) or to
-SP4 (as another surface in the long tail) is unresolved. The argument for SP3 is that
-an unspoofed WebGPU adapter directly invalidates SP3's own work. The argument for SP4
-is scope discipline. Recommendation: SP3 closes it, because §5 already makes SP3
-responsible for the invariant.
-
-### 7.4 Noise algorithm details
+### 7.3 Noise algorithm details
 
 The specific PRNG, the mapping from `noiseDensity` to a pixel-selection predicate, and
 the exact role of `aaOffset` are not specified here beyond the determinism requirement
@@ -347,8 +370,10 @@ is open. Matching is attractive and should be evaluated once SP0 lands.
 
 Font rendering and text metrics, which also affect canvas hashes, belong to SP4 —
 Camoufox needed a 55KB `anti-font-fingerprinting.patch` for text-metric jitter alone,
-and mixing it into SP3 would double this spec. Audio fingerprints, media codec
-capability answers, and WebRTC belong to SP4. Cross-surface coherence enforcement and
+and mixing it into SP3 would double this spec. SP3 ships the shared `derive_delta`
+primitive those surfaces build on (§4.3), but not their call sites. Audio fingerprints,
+media codec capability answers, and WebRTC belong to SP4. WebGPU adapter identity does
+**not** — §4.1 places it in SP3. Cross-surface coherence enforcement and
 the fingerprint preset database belong to SP5, per §7.1. The navigator identity and
 UA Client Hints that a GPU profile must ultimately agree with belong to SP1. Verifying
 against real GPU hardware requires the Windows host build and belongs to SP6.
