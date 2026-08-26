@@ -112,6 +112,13 @@ rebuild after touching one Blink source file is one to three minutes. The primar
 build target for verification is `content_shell`, not `chrome` — it is far smaller and
 still exposes the DevTools protocol.
 
+**`content_shell` is not a complete browser, and the gap is load-bearing.** Anything
+implemented under `//chrome` is absent from it. `window.chrome` is the known case: every
+installer lives in `chrome/renderer/` and `content/shell/BUILD.gn` links none of them, so
+`content_shell` has no `window.chrome` at all. A surface in that position needs a `chrome`
+build to verify, which is a much slower loop. Check which target owns a surface before
+planning its verification, and say so in the spec rather than discovering it mid-task.
+
 ## Spec format
 
 Each spec uses these sections, in order:

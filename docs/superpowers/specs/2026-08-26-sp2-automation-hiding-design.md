@@ -37,7 +37,7 @@ Paths verified against the real checkout at `~/chromium/src` unless marked
 | `Runtime.enable` console side effects | `automation:hideRuntimeDomain` | `v8/src/inspector/v8-console.cc`, `v8/src/inspector/v8-inspector-impl.cc` | renderer (V8) |
 | Inspector attach observability | as above | `core/inspector/main_thread_debugger.cc`, `core/inspector/thread_debugger_common_impl.cc` | renderer |
 | Worker inspector attach | as above | `core/inspector/worker_inspector_controller.cc` | worker |
-| `window.chrome` presence and shape | `automation:chromeObject` | `chrome/renderer/chrome_render_frame_observer.cc`, `chrome/renderer/loadtimes_extension_bindings.cc` *(unverified)* | renderer |
+| `window.chrome` presence and shape | `automation:chromeObject` | `chrome/renderer/chrome_render_frame_observer.cc`, `chrome/renderer/loadtimes_bindings.cc` (both verified; `//chrome` only, absent from `content_shell` — see D7) | renderer |
 | Synthesized input trust | `automation:trustedInput` | `content/browser/devtools/protocol/input_handler.cc`, `content/browser/renderer_host/render_widget_host_impl.cc` | browser |
 | CDP session/target plumbing | — | `content/browser/devtools/devtools_agent_host_impl.cc`, `protocol/page_handler.cc`, `protocol/target_handler.cc` | browser |
 | Humanized cursor paths | `humanize`, `humanize:minTime`, `humanize:maxTime`, `showcursor` | new `//components/camoucfg/mouse_trajectories.*` + `input_handler.cc` | browser |
@@ -327,12 +327,26 @@ execution contexts leak to page JS, whether V8's inspector can cleanly scope sid
 world, whether coalesced pointer events are distinguishable. Each is written above as a
 question, not an answer. None should be closed without a measurement.
 
-**D7 — Which target populates `window.chrome`.** If the object comes from `chrome/renderer`
-code that `content_shell` does not link, then SP2 cannot verify section 4.7 against the fast
-build target that conventions names, and either this sub-project's verification loop grows a
-slow `chrome` build or the object must be supplied from `//content` instead. Settle it by
-inspection before writing any code for 4.7 — the answer changes whether the work is a patch
-or a new file, and it interacts with SP7's branding decision.
+**D7 — Which target populates `window.chrome`. RESOLVED by inspection of the checkout.**
+Every installer of the object lives under `chrome/renderer/` — `loadtimes_bindings.cc`,
+`searchbox/searchbox_extension.cc`, `trusted_vault_encryption_keys_extension.cc`,
+`google_accounts_private_api_extension.cc` and others — and `content/shell/BUILD.gn`
+references none of them. **`content_shell` therefore has no `window.chrome` at all.**
+
+Two consequences. First, section 4.7 cannot be verified against the fast build target;
+that one surface needs a `chrome` build, which is a materially slower loop than the rest
+of SP2. Schedule 4.7 accordingly rather than discovering it mid-task. Second, the object
+is genuinely a `//chrome` feature rather than a `//content` one, so supplying it from
+`//content` would mean *adding* a surface Chromium does not have there — a larger and
+more detectable change than patching the existing one. Patch the existing installers.
+
+The cited path `chrome/renderer/loadtimes_extension_bindings.cc` does not exist; the file
+is `chrome/renderer/loadtimes_bindings.cc`. `chrome/renderer/chrome_render_frame_observer.cc`
+does exist.
+
+What remains open is only the interaction with SP7's branding decision: if Camoucrome
+presents as Chromium rather than Chrome, some of these installers may not run at all, and
+4.7 becomes a different task. That stays contingent on SP7 D1.
 
 ## 8. Explicitly out of scope
 
