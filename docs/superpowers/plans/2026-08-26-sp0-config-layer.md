@@ -427,7 +427,7 @@ autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='ParseConfig*'
 ```
 
-Expected: the build fails with `no member named 'ParseConfig' in namespace 'camoucfg::internal'`.
+Expected: the build fails with `use of undeclared identifier 'ParseConfig'`. The test calls it unqualified from inside the namespace, so clang reports an undeclared identifier rather than a missing namespace member.
 
 - [ ] **Step 3: Declare ParseConfig**
 
@@ -577,7 +577,7 @@ autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='GettersTest.*'
 ```
 
-Expected: the build fails with `no member named 'GetStringFrom' in namespace 'camoucfg::internal'`.
+Expected: the build fails with `use of undeclared identifier 'GetStringFrom'` — unqualified call from inside the namespace, so clang reports an undeclared identifier.
 
 - [ ] **Step 9: Declare the getters**
 
@@ -733,7 +733,7 @@ same conclusion for `MVoices()` and says so in a comment there.
 - [ ] **Step 11: Run the getter tests to verify they pass**
 
 Run:
-
+Expected: sixteen tests pass in total. gtest's launcher isolates the death test into its own batch, so this prints as two lines — `[  PASSED  ] 10 tests.` then `[  PASSED  ] 6 tests.` — followed by `SUCCESS: all tests passed.` Read the total, not a single line.
 ```bash
 autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='GettersTest.*'
@@ -985,7 +985,7 @@ autoninja -C out/Default components_unittests && \
     --gtest_filter='AssembleRawConfig*:ParseConfig*:MaskConfigTest*'
 ```
 
-Expected: `[  PASSED  ] 12 tests.`
+Expected: twelve tests pass in total — six assembly, five parsing, one public-API. gtest isolates the death test into its own batch, so the total arrives as two `[  PASSED  ] N tests.` lines rather than one. Read the total and the closing `SUCCESS: all tests passed.`
 
 - [ ] **Step 7: Commit**
 
@@ -1365,7 +1365,7 @@ autoninja -C out/Default components_unittests && \
     --gtest_filter='AssembleRawConfig*:ParseConfig*:GettersTest*:MaskConfigTest*'
 ```
 
-Expected: `[  PASSED  ] 17 tests.` — six assembly, five parsing, five getter, one public-API.
+Expected: seventeen tests pass in total — six assembly, five parsing, five getter, one public-API — reported across two batches because gtest isolates the death test, and closing with `SUCCESS: all tests passed.`
 
 - [ ] **Step 4: Run the runtime verification (criteria 2 through 6)**
 
