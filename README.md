@@ -3,8 +3,13 @@
 An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
-**Status: design phase.** No code yet. The specs in
+**Status: SP0 landed.** The configuration layer exists and drives
+`navigator.hardwareConcurrency`. Apply it to a Chromium checkout with
+`scripts/apply.sh <chromium-src>`. The specs in
 `docs/superpowers/specs/` define the work.
+
+The change set is generated against Chromium revision
+`0e8d4a9268118d323f62ca207b40514df39dcaa9`. Rebasing onto a newer revision is SP6a's job.
 
 ## The defining constraint
 
