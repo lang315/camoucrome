@@ -1325,14 +1325,22 @@ Run:
 The equivalent here is `--ozone-platform=headless`, verified working against this
 build. The shell does not exit on its own, so `timeout` ends it.
 
+Redirect to a file rather than piping into `grep`. `timeout` kills `content_shell`
+mid-stream, and a plain `grep` in that pipeline reproducibly prints nothing — its
+buffer is lost with the pipe. The output is there; the pipeline eats it.
+
 ```bash
 cd ~/chromium/src
 CAMOU_CONFIG='{"navigator.hardwareConcurrency":8}' \
   timeout 15 ./out/Default/content_shell --no-sandbox \
   --ozone-platform=headless \
   --vmodule=browser_main_loop=1,mask_config=1 \
-  about:blank 2>&1 | grep camoucfg
+  about:blank > /tmp/t5.log 2>&1
+grep -a camoucfg /tmp/t5.log
 ```
+
+`grep --line-buffered` in the original pipeline also works. The file redirect is
+preferred because it leaves the full log behind when the expected lines are missing.
 
 Expected: two lines, one reading `camoucfg: parsed 1 key(s)` and one reading `camoucfg: browser process configuration reachable, navigator.hardwareConcurrency configured=1`.
 
