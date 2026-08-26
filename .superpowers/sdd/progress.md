@@ -458,3 +458,28 @@ silently evaporates. The real script under the same injection: 11/11 PASS.
 Assertions went from 9 to 11 (non-crash, and descriptor checked in both
 sessions).
 
+Task 6 fault injection (cross-check, 5 induced faults): 4 of 5 behaved as
+the session() rewrite intends -- browser exits during startup, browser
+binary missing, an assertion forced false, and a browser killed mid-session
+all degraded their own group to FAIL and left the rest reporting real
+results. The fifth found the gap.
+
+The baseline load sat bare at module level, before any session() call, so a
+missing or malformed baseline produced a traceback and ZERO PASS/FAIL lines
+-- the exact collapse session() exists to prevent, on the one path it did
+not cover, and on the file the most important assertion depends on. The
+cross-checker predicted this from reading the code, then confirmed it by
+running. Right order.
+
+Fixed and verified by re-injecting the same fault: 7 PASS, 4 FAIL (exactly
+the baseline-dependent assertions), one note naming the path and cause,
+exit 1. Normal run still 11/11.
+
+Two smaller corrections from the same report:
+- Assertion key names embedded the machine's core count via f-string, so an
+  assertion's identity changed with the machine running it and a FAIL line
+  would not grep on another box. Now fixed strings.
+- launch() has THREE distinguishable startup failures, not two: Popen raises
+  FileNotFoundError naming the path, the process can exit during startup, or
+  it can live without ever opening a port. The docstring said two.
+
