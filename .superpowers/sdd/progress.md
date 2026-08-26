@@ -28,7 +28,7 @@ GetExecutionContext() is available; base::Value::Dict::Find takes
 std::string_view; components_unittests is declared at components/BUILD.gn:105;
 the three BUILD.gn insertion points are lines 206/411/153 respectively.
 
-Task 1: complete pending re-review (commits 59d65cb..696ca6b, 6/6 tests).
+Task 1: COMPLETE (commits 59d65cb..696ca6b, 6/6 tests, re-review clean:
   Review found one Important item -- the doc comment described the wrong
   fallback trigger and no test discriminated it. Fixed. The review's
   proposed expected value ("") was itself wrong; verified against Camoufox
@@ -47,3 +47,11 @@ Pre-flight for Task 2 found four more plan defects, all compile-blocking:
   CHECK_WILL_STREAM(); EXPECT_CHECK_DEATH_WITH handles both.
 - The unit_tests target needs //base/test:test_support for that macro.
 
+Task 1 re-review verdicts: spec compliance PASS, code quality APPROVED,
+no new findings. The reviewer retracted its own earlier false claim that
+the shipped code returns "" for a present-but-empty chunk; hand-traced
+both our implementation and Camoufox MaskConfig.hpp on identical input and
+confirmed "ignored" is correct in both. Byte-compatibility verified by
+trace, not by structural resemblance.
+
+Task 2: dispatched.
