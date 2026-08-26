@@ -129,6 +129,16 @@ rebuild after touching one Blink source file is one to three minutes. The primar
 build target for verification is `content_shell`, not `chrome` — it is far smaller and
 still exposes the DevTools protocol.
 
+**A job on that machine lives only while a `wsl.exe` client is attached.** The WSL2 VM
+itself is torn down seconds after the last one disconnects — confirmed by `uptime`
+reading `up 0 min` immediately after a build vanished. So `nohup`, `setsid ... &
+disown` and Windows-side `Start-Process` do not fail because they were used wrongly;
+they cannot work. Run long jobs in the foreground of an ssh session held open from the
+client side (`ControlMaster` plus `ControlPersist` carried a four-hour build through a
+laptop sleep), or issue chunked `timeout -k 15 540 autoninja ...` calls. A client-side
+task exiting 255 does not mean the remote job died; check `pgrep -c "siso|ninja"` first,
+and never start a second build in the same output directory.
+
 **`content_shell` is not a complete browser, and the gap is load-bearing.** Anything
 implemented under `//chrome` is absent from it. `window.chrome` is the known case: every
 installer lives in `chrome/renderer/` and `content/shell/BUILD.gn` links none of them, so
