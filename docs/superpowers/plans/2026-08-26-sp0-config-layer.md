@@ -792,6 +792,8 @@ Create `components/camoucfg/mask_config.h`:
 #include <string_view>
 #include <vector>
 
+#include "base/no_destructor.h"
+
 namespace camoucfg {
 
 // Identifies which configuration a lookup reads.
@@ -809,7 +811,12 @@ class ConfigScope {
   ConfigScope& operator=(const ConfigScope&) = delete;
 
  private:
-  friend const ConfigScope& GlobalScope();
+  // base::NoDestructor constructs the singleton in place with a placement
+  // new inside its own constructor, so it is NoDestructor — not
+  // GlobalScope — that needs access to this constructor. Befriending
+  // GlobalScope instead does not compile. This is the established Chromium
+  // idiom; components/ carries several precedents.
+  friend class base::NoDestructor<ConfigScope>;
   ConfigScope() = default;
 };
 
