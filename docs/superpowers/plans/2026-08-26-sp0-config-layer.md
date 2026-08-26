@@ -1266,6 +1266,8 @@ git commit -m "camoucfg: drive navigator.hardwareConcurrency through the config 
 
 **Files:**
 - Modify: `content/browser/browser_main_loop.cc`
+- Modify: `content/browser/DEPS`
+- Modify: `content/browser/BUILD.gn`
 
 **Interfaces:**
 - Consumes: `camoucfg::GlobalScope()`, `camoucfg::HasKey` from Task 3.
@@ -1284,13 +1286,47 @@ In `content/browser/browser_main_loop.cc`, add to the include block:
 Then inside `int BrowserMainLoop::EarlyInitialization()` — the function begins at line 542 with a `TRACE_EVENT0("startup", ...)` on the following line — add immediately after that `TRACE_EVENT0` line:
 
 ```cpp
-  // Touches the configuration so that its one-time parse happens here, in the
-  // browser process, and its VLOG(1) confirms the non-renderer path works.
-  // SP1 is the first sub-project to depend on this path for real.
+  // Force the one-time parse here, in the browser process, on every start.
+  //
+  // The bool must be computed BEFORE the VLOG, not inside it. VLOG expands to
+  // LAZY_STREAM(stream, VLOG_IS_ON(1)), which is
+  // `!(condition) ? (void)0 : ... (stream)` — so at default verbosity the
+  // entire stream expression, including any call in it, is never evaluated.
+  // A HasKey() call written inside the VLOG would not run on a normal launch,
+  // and this task's whole purpose is that it does.
+  //
+  // Two things depend on the parse happening here rather than lazily at first
+  // surface access. SP1 patches user_agent_utils.cc in this process and needs
+  // the path proven before it depends on it. And CAMOU_CONFIG_STRICT is
+  // specified to refuse startup on malformed configuration — with a lazy
+  // parse the CHECK would instead fire in whichever process touched config
+  // first, which is a renderer, turning a refusal to start into a renderer
+  // crash. Conventions rule 5 forbids exactly that: a crash is itself a
+  // fingerprint.
+  const bool camou_configured = camoucfg::HasKey(
+      camoucfg::GlobalScope(), "navigator.hardwareConcurrency");
   VLOG(1) << "camoucfg: browser process configuration reachable, "
-          << "navigator.hardwareConcurrency configured="
-          << camoucfg::HasKey(camoucfg::GlobalScope(),
-                              "navigator.hardwareConcurrency");
+          << "navigator.hardwareConcurrency configured=" << camou_configured;
+```
+
+The cost on every browser start is one `getenv` and one `JSONReader::ReadDict` of a
+small string. Nothing is logged at default verbosity: the "parsed N key(s)" line is
+itself `VLOG(1)`-gated, and a malformed configuration still logs its error exactly
+once.
+
+- [ ] **Step 1b: Add the checkdeps grant**
+
+`content/browser/DEPS` gates includes independently of `gn check`, and `autoninja`
+does not run `checkdeps.py` — so a missing grant here builds fine locally and is
+rejected by presubmit. That file carries 53 `+components` rules and grants them **per
+directory**, for example `"+components/discardable_memory/common",` at line 8. Note
+this differs from blink's DEPS, which grants per header; match each file's own
+convention rather than carrying one across.
+
+Add, in alphabetical position among the existing `+components` entries:
+
+```
+  "+components/camoucfg",
 ```
 
 - [ ] **Step 2: Add the build dependency**
