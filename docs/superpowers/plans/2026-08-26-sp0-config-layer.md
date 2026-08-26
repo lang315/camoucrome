@@ -402,6 +402,17 @@ TEST(ParseConfigTest, NonObjectJsonYieldsEmptyDict) {
   EXPECT_TRUE(dict.empty());
 }
 
+// The empty-input guard is load-bearing and easy to delete by accident,
+// because EmptyInputYieldsEmptyDict passes without it: ReadDict("") also
+// returns nullopt and reaches the same malformed branch. The difference
+// only shows in strict mode, where losing the guard would CHECK-abort
+// every ordinary unconfigured launch. This is the one test that fails if
+// the guard goes away.
+TEST(ParseConfigTest, EmptyInputIsNotAnErrorEvenInStrictMode) {
+  base::DictValue dict = ParseConfig("", /*strict=*/true);
+  EXPECT_TRUE(dict.empty());
+}
+
 // EXPECT_CHECK_DEATH_WITH rather than a bare EXPECT_DEATH matching the
 // message. base/test/gtest_util.h branches on CHECK_WILL_STREAM(): in build
 // configurations that strip CHECK message text it degrades to matching "",
@@ -499,7 +510,7 @@ autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='ParseConfig*'
 ```
 
-Expected: `[  PASSED  ] 5 tests.`
+Expected: six ParseConfig tests pass. gtest isolates the death test into its own batch, so this arrives as `[  PASSED  ] 5 tests.` plus `[  PASSED  ] 1 test.` — read the total.
 
 - [ ] **Step 7: Write the failing getter tests**
 
@@ -563,6 +574,18 @@ TEST(GettersTest, NegativeIntegerIsNotAnUnsigned) {
 TEST(GettersTest, WholeNumberWidensToDouble) {
   base::DictValue cfg = Fixture();
   EXPECT_EQ(GetDoubleFrom(cfg, "u"), 8.0);
+}
+
+// GetStringListFrom returns {} for an absent key, a wrong-typed key, and a
+// genuinely empty list alike. That collapse is accepted rather than
+// accidental: all three mean "no list configured" and the caller falls back
+// to the real value either way. A caller that needs to tell them apart has
+// HasKeyIn. Pinned so the ambiguity stays a recorded decision.
+TEST(GettersTest, ExplicitEmptyListIsEmptyButPresent) {
+  base::DictValue cfg = ParseConfig(R"({"empty": []})", /*strict=*/false);
+  EXPECT_TRUE(GetStringListFrom(cfg, "empty").empty());
+  EXPECT_TRUE(HasKeyIn(cfg, "empty"));
+  EXPECT_FALSE(HasKeyIn(cfg, "absent"));
 }
 ```
 
@@ -733,13 +756,13 @@ same conclusion for `MVoices()` and says so in a comment there.
 - [ ] **Step 11: Run the getter tests to verify they pass**
 
 Run:
-Expected: sixteen tests pass in total. gtest's launcher isolates the death test into its own batch, so this prints as two lines — `[  PASSED  ] 10 tests.` then `[  PASSED  ] 6 tests.` — followed by `SUCCESS: all tests passed.` Read the total, not a single line.
+Expected: eighteen tests pass in total — six assembly, six parsing, six getter. gtest isolates the death test into its own batch, so the total arrives across two `[  PASSED  ] N tests.` lines rather than one, closing with `SUCCESS: all tests passed.`
 ```bash
 autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests --gtest_filter='GettersTest.*'
 ```
 
-Expected: `[  PASSED  ] 5 tests.`
+Expected: `[  PASSED  ] 6 tests.`
 
 - [ ] **Step 12: Run the whole component's tests**
 
@@ -992,7 +1015,7 @@ autoninja -C out/Default components_unittests && \
     --gtest_filter='AssembleRawConfig*:ParseConfig*:MaskConfigTest*'
 ```
 
-Expected: twelve tests pass in total — six assembly, five parsing, one public-API. gtest isolates the death test into its own batch, so the total arrives as two `[  PASSED  ] N tests.` lines rather than one. Read the total and the closing `SUCCESS: all tests passed.`
+Expected: thirteen tests pass in total — six assembly, six parsing, one public-API. gtest isolates the death test into its own batch, so the total arrives across two lines. Read the total and the closing `SUCCESS: all tests passed.`
 
 - [ ] **Step 7: Commit**
 
@@ -1372,7 +1395,7 @@ autoninja -C out/Default components_unittests && \
     --gtest_filter='AssembleRawConfig*:ParseConfig*:GettersTest*:MaskConfigTest*'
 ```
 
-Expected: seventeen tests pass in total — six assembly, five parsing, five getter, one public-API — reported across two batches because gtest isolates the death test, and closing with `SUCCESS: all tests passed.`
+Expected: nineteen tests pass in total — six assembly, six parsing, six getter, one public-API — reported across two batches because gtest isolates the death test, closing with `SUCCESS: all tests passed.`
 
 - [ ] **Step 4: Run the runtime verification (criteria 2 through 6)**
 
