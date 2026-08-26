@@ -185,3 +185,27 @@ correctly stayed inside the three-item scope it was given.
 
 Task 4: dispatched. This is the tracer bullet -- the first surface actually
 driven through the config layer.
+Task 4: DONE pending review (commit a7de8516, build succeeded).
+  THE TRACER BULLET WORKS. Smoke-tested the built binary myself:
+    with CAMOU_CONFIG={"navigator.hardwareConcurrency":8} -> window 8, worker 8
+    without config                                        -> window 16, worker 16
+    both: descriptor "[native code]", 222 window keys (baseline is 222)
+  Fallback returns the machine's real value, not a constant. Worker parity
+  comes free from overriding in NavigatorBase, the common base of Navigator
+  and WorkerNavigator -- the architectural bet made when the plan moved off
+  NavigatorConcurrentHardware paid off exactly there.
+  Caveat: the smoke test compares key COUNT, not the key LIST. Task 6 does
+  the full diff against baselines/content_shell-0e8d4a9268-stock.json.
+  probe::ApplyHardwareConcurrencyOverride confirmed still present.
+
+  Implementer self-caught a sed mistake before building: an unanchored
+  pattern briefly added the dep to a second deps list, source_set("unit_tests"),
+  in core/BUILD.gn. Caught via git diff, removed pre-build; the committed
+  diff has exactly one. Verified independently: grep -c finds 1.
+
+  It also reported that `nohup ... & disown` gets silently killed over the
+  wrapper while `setsid <cmd> </dev/null >log 2>&1 & disown -a` survived.
+  RECORDED BUT NOT CONFIRMED: the surviving build was 8 steps in 15.5s, and
+  a 15-second job would survive almost anything, so duration rather than the
+  pattern may explain it. Do not rely on this for a long build.
+
