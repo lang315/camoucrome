@@ -52,41 +52,48 @@ DESCRIPTOR_PROBE = """
 
 results = {}
 
+# Every read must happen while its own content_shell is still alive. Each
+# evaluate() call opens a fresh CDP connection, so anything asked for after
+# proc.terminate() fails with ECONNREFUSED before a single result is printed.
+PROTO_PROBE = "Object.getOwnPropertyNames(Navigator.prototype).sort().join(',')"
+KEYS_PROBE = "Object.keys(window).sort().join(',')"
+
+BASELINE = os.path.expanduser(
+    "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
+with open(BASELINE) as f:
+    baseline = json.load(f)
+
 # Criteria 2 and 5: spoofed value, and worker parity under spoofing.
 proc = launch('{"navigator.hardwareConcurrency":8}')
-window_value, worker_value, descriptor, keys = evaluate(
+window_value, worker_value, descriptor, spoofed_keys, spoofed_proto = evaluate(
     ["navigator.hardwareConcurrency", WORKER_PROBE, DESCRIPTOR_PROBE,
-     "Object.keys(window).sort().join(',')"])
+     KEYS_PROBE, PROTO_PROBE])
 proc.terminate()
 results["2 spoofed value is 8"] = window_value == 8
 results["5 worker agrees when spoofed"] = worker_value == 8
 # Criterion 4, first half: the accessor still looks native.
 results["4 accessor reports [native code]"] = "[native code]" in descriptor
-spoofed_keys = keys
 
 # Criteria 3 and 5: real value, and worker parity without configuration.
 proc = launch(None)
-real_window, real_worker, stock_keys = evaluate(
-    ["navigator.hardwareConcurrency", WORKER_PROBE,
-     "Object.keys(window).sort().join(',')"])
+real_window, real_worker, stock_keys, stock_proto = evaluate(
+    ["navigator.hardwareConcurrency", WORKER_PROBE, KEYS_PROBE, PROTO_PROBE])
 proc.terminate()
 results["3 falls back to the real 16"] = real_window == 16
 results["5 worker agrees when unconfigured"] = real_worker == real_window
+
 # Criterion 4, second half: no property was added or removed, measured
 # against the binary as it was BEFORE any Camoucrome call site was wired in.
 # Comparing the spoofed run against the unconfigured run would not catch a
 # property this change adds unconditionally, because both runs execute the
-# same modified code.
-BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
-with open(BASELINE) as f:
-    baseline = json.load(f)
+# same modified code. Both runs are checked against the baseline for the
+# same reason.
 results["4 window keys match the pre-spoof baseline"] = (
     spoofed_keys.split(",") == baseline["window_keys"]
     and stock_keys.split(",") == baseline["window_keys"])
 results["4 Navigator prototype unchanged"] = (
-    sorted(evaluate(["Object.getOwnPropertyNames(Navigator.prototype)"])[0])
-    == baseline["navigator_prototype_props"])
+    spoofed_proto.split(",") == baseline["navigator_prototype_props"]
+    and stock_proto.split(",") == baseline["navigator_prototype_props"])
 
 # Criterion 6: malformed configuration does not crash and reports the truth.
 proc = launch("{not json")
