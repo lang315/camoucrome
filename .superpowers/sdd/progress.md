@@ -101,3 +101,13 @@ Pre-flight for Task 4 found the most consequential plan defect so far:
   apply configuration last. Same collision class as SP2's webdriver finding
   and the SP1/SP2 coupling through Emulation.setUserAgentOverride.
 
+Task 2: COMPLETE (commits ed9065a1..2a9768ca, 18/18 tests).
+  Review verdicts: spec compliance PASS, code quality APPROVED, zero
+  Critical, zero Important. Two Minor findings, both gaps in the brief's
+  test coverage rather than implementation defects, closed immediately
+  rather than deferred because the test shape propagates to Tasks 3-7.
+  No separate re-review round: approval preceded the fix, and the fix was
+  test-only (23 insertions, 0 deletions, verified by git show --stat).
+  Independently re-ran the suite: 18/18, both new tests named OK.
+
+Task 3: dispatched.
