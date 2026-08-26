@@ -1136,11 +1136,17 @@ Expected: build succeeds.
 
 Run:
 
+`content_shell` has no `--headless` or `--dump-dom` switch; those belong to `chrome`.
+The equivalent here is `--ozone-platform=headless`, verified working against this
+build. The shell does not exit on its own, so `timeout` ends it.
+
 ```bash
+cd ~/chromium/src
 CAMOU_CONFIG='{"navigator.hardwareConcurrency":8}' \
-  ./out/Default/content_shell --no-sandbox --headless \
+  timeout 15 ./out/Default/content_shell --no-sandbox \
+  --ozone-platform=headless \
   --vmodule=browser_main_loop=1,mask_config=1 \
-  --dump-dom about:blank 2>&1 | grep camoucfg
+  about:blank 2>&1 | grep camoucfg
 ```
 
 Expected: two lines, one reading `camoucfg: parsed 1 key(s)` and one reading `camoucfg: browser process configuration reachable, navigator.hardwareConcurrency configured=1`.
@@ -1199,11 +1205,14 @@ def launch(config):
     env.pop("CAMOU_CONFIG", None)
     if config is not None:
         env["CAMOU_CONFIG"] = config
+    # content_shell has no --headless switch; --ozone-platform=headless is the
+    # equivalent and is verified working against this build. CDP is served on
+    # --remote-debugging-port exactly as chrome serves it.
     proc = subprocess.Popen(
-        [SHELL, "--no-sandbox", "--headless",
+        [SHELL, "--no-sandbox", "--ozone-platform=headless",
          f"--remote-debugging-port={PORT}", "about:blank"],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    time.sleep(3)
+    time.sleep(5)
     return proc
 
 
