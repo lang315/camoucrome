@@ -169,3 +169,19 @@ Also from the review, both from my brief rather than the implementer:
 unused #include <utility>, and the GlobalScope comment drifting from the
 corrected brief. Both folded into the fix.
 
+Task 3: COMPLETE (commits bd3b12ed..c3782700, 19/19 tests).
+  Review verdicts: spec compliance PASS, code quality PASS. The reviewer
+  independently verified the NoDestructor deviation rather than deferring to
+  my acceptance of it, and verified all seven forwarders against Task 2's
+  signatures. One Important finding (absent-key test covered 4 of 7 getters,
+  and the 3 skipped are where a miswiring compiles) adjudicated and fixed.
+  Independently re-verified: 7 camoucfg:: assertions in the test, no
+  <utility> include, 19/19, checkout clean.
+
+ACCEPTED DRIFT, not worth a build cycle: mask_config.h's friend comment
+keeps the implementer's original wording rather than the plan's regenerated
+wording. Same reasoning, both correct. Flagged by the implementer, which
+correctly stayed inside the three-item scope it was given.
+
+Task 4: dispatched. This is the tracer bullet -- the first surface actually
+driven through the config layer.
