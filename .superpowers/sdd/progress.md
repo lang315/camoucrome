@@ -353,3 +353,21 @@ And recorded a real environment finding -- autoninja is not on PATH in a
 non-interactive ssh session, because ~/.bashrc only runs for interactive
 shells. Every build script must export it explicitly.
 
+Task 6: DONE pending review (commits 7d34db9..5063195).
+  SP0 IS VERIFIED. I ran the committed script myself, independently:
+  nine PASS lines, exit 0. Plus 19/19 unit tests for criterion 1.
+  Six of six acceptance criteria.
+
+  The full sorted-list comparison -- never actually run until now, since my
+  own smoke tests only ever compared counts -- passes. Object.keys(window)
+  and Object.getOwnPropertyNames(Navigator.prototype) match the pre-spoof
+  baseline element for element, in BOTH the spoofed and unconfigured runs.
+  That is the assertion separating a C++ implementation from an injected
+  one, and it now has evidence rather than inference.
+
+  The implementer checksum-verified the script on both machines, ran it
+  twice back to back, and deleted the supplement so no second script can
+  drift from the real one.
+
+Task 7: dispatched. The task that makes all of it durable -- until it runs,
+SP0 exists only as a branch inside a directory gclient regenerates.
