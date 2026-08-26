@@ -86,3 +86,18 @@ Verified clean and needing no change: base::Environment::GetVar takes
 cstring_view and std::string converts to it implicitly (cstring_view.h:94-121),
 so Task 3's lambda is fine; the two BUILD.gn insertion anchors are unmoved.
 
+Pre-flight for Task 4 found the most consequential plan defect so far:
+- NavigatorBase ALREADY overrides hardwareConcurrency (navigator_base.h:57,
+  .cc:72). The plan said to add the declaration and the method, which is a
+  duplicate definition and will not compile.
+- Worse, the existing body calls probe::ApplyHardwareConcurrencyOverride --
+  the instrumentation behind CDP Emulation.setHardwareConcurrencyOverride.
+  The obvious way to resolve a duplicate-definition error is to delete the
+  old method, which would have silently broken DevTools emulation.
+- Task 4 now modifies the existing method and applies configuration AFTER
+  the probe, so configuration wins and the unconfigured path is untouched.
+- Generalised into 00-conventions.md: assume a probe::Apply*Override hook
+  already sits on any surface being spoofed, never delete one, and always
+  apply configuration last. Same collision class as SP2's webdriver finding
+  and the SP1/SP2 coupling through Emulation.setUserAgentOverride.
+

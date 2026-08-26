@@ -1121,15 +1121,24 @@ Add `"blink_scope.h",` to the `sources` list of the `camoucfg` target in `compon
 
 - [ ] **Step 4: Declare the override**
 
-In `third_party/blink/renderer/core/execution_context/navigator_base.h`, inside the `public:` section of `class CORE_EXPORT NavigatorBase`, add:
+**No header change is needed.** `NavigatorBase` already declares this override at
+`navigator_base.h:57`:
 
 ```cpp
-  // NavigatorConcurrentHardware override. Reports the configured value when
-  // one is set, and the machine's real processor count otherwise. Overriding
-  // here rather than in the mixin gives Navigator and WorkerNavigator the
-  // same answer by construction.
-  unsigned hardwareConcurrency() const override;
+  unsigned int hardwareConcurrency() const override;
 ```
+
+Adding it again is a duplicate declaration and will not compile. Note the return type
+is `unsigned int`, not `unsigned` — match the existing declaration exactly. This step
+is a verification, not an edit:
+
+```bash
+cd ~/chromium/src
+grep -n "hardwareConcurrency" \
+  third_party/blink/renderer/core/execution_context/navigator_base.h
+```
+
+Expected: one line, `  unsigned int hardwareConcurrency() const override;`.
 
 - [ ] **Step 5: Implement the override**
 
@@ -1141,21 +1150,57 @@ In `third_party/blink/renderer/core/execution_context/navigator_base.cc`, add to
 #include "components/camoucfg/mask_config.h"
 ```
 
-and add inside `namespace blink {`:
+The method already exists at `navigator_base.cc:72` and already does something. **Modify
+it; do not write a new one.** It currently reads:
 
 ```cpp
-unsigned NavigatorBase::hardwareConcurrency() const {
-  std::optional<uint32_t> configured = camoucfg::GetUint32(
-      camoucfg::ScopeFor(GetExecutionContext()),
-      "navigator.hardwareConcurrency");
-  if (configured.has_value()) {
-    return *configured;
-  }
-  return static_cast<unsigned>(base::SysInfo::NumberOfProcessors());
+unsigned int NavigatorBase::hardwareConcurrency() const {
+  unsigned int hardware_concurrency =
+      NavigatorConcurrentHardware::hardwareConcurrency();
+
+  probe::ApplyHardwareConcurrencyOverride(
+      probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
+  return hardware_concurrency;
 }
 ```
 
-The fallback repeats the original expression from `NavigatorConcurrentHardware` verbatim rather than a constant. That is the pattern every later surface copies.
+`probe::ApplyHardwareConcurrencyOverride` is the DevTools instrumentation hook behind
+CDP's `Emulation.setHardwareConcurrencyOverride`. **Leave that call in place.** Deleting
+it silently breaks DevTools emulation, and is the obvious-looking way to resolve a
+duplicate-definition error — do not take it.
+
+Add the configuration lookup **after** the probe, so it reads:
+
+```cpp
+unsigned int NavigatorBase::hardwareConcurrency() const {
+  unsigned int hardware_concurrency =
+      NavigatorConcurrentHardware::hardwareConcurrency();
+
+  probe::ApplyHardwareConcurrencyOverride(
+      probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
+
+  // Camoucrome configuration is authoritative. It is the identity this
+  // browser is presenting, and a CDP emulation override must not be able to
+  // contradict it, so it is applied last. When no key is set this is a no-op
+  // and the real value plus any emulation override survives unchanged.
+  if (std::optional<uint32_t> configured = camoucfg::GetUint32(
+          camoucfg::ScopeFor(GetExecutionContext()),
+          "navigator.hardwareConcurrency")) {
+    hardware_concurrency = *configured;
+  }
+  return hardware_concurrency;
+}
+```
+
+Two properties follow from this shape and both matter. The unconfigured path is
+untouched, so a stock run behaves exactly as before including DevTools emulation. And
+when a key is set it wins over the emulation override, which is the precedence an
+anti-detect browser needs: the fingerprint is the identity, not a per-session
+convenience a driver can change out from under it.
+
+Note the return type is `unsigned int`, and that the fallback is the *existing*
+expression rather than a re-derived one. That two-part shape — leave what is there,
+apply configuration last — is the pattern every later surface copies.
 
 - [ ] **Step 6: Add the build dependency**
 

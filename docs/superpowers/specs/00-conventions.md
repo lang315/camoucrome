@@ -228,6 +228,26 @@ runtime feature and a `probe::ApplyAutomationOverride` instrumentation hook both
 the same getter, so the widely cited `--disable-blink-features=AutomationControlled`
 switch closes only one of them. Owned by SP2.
 
+**Assume a `probe::Apply*Override` hook already sits on the surface you are about to
+spoof, and check before writing.** This is not confined to `webdriver`. SP0's tracer
+surface turned out to have one too: `NavigatorBase::hardwareConcurrency()` already
+calls `probe::ApplyHardwareConcurrencyOverride`, the instrumentation behind CDP's
+`Emulation.setHardwareConcurrencyOverride`. Chromium exposes a large emulation surface
+through DevTools, and much of it lands on exactly the accessors a fingerprint spoof
+targets.
+
+Two rules follow. **Never delete a probe call** to resolve a conflict — it silently
+breaks DevTools emulation, and removing it is the obvious-looking fix when a
+duplicate-definition error appears. And **apply configuration last, after the probe**,
+so the configured value wins: the fingerprint is the identity the browser is
+presenting, and a driver's emulation override must not be able to contradict it. When
+no key is set the lookup is a no-op and the stock behaviour, emulation included,
+survives untouched.
+
+The same collision is why SP1 and SP2 are coupled through
+`Emulation.setUserAgentOverride`. Expect to find more of these; each one is a
+precedence decision, and the answer is the same every time.
+
 **SP1 and SP2 are coupled through CDP.** A pre-existing `platform_override` in
 `navigator.cc`, driven by CDP's `Emulation.setUserAgentOverride`, flows through the
 same channels SP1 patches. Neutralising it is SP2 work that SP1 depends on.
