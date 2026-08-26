@@ -6,7 +6,7 @@
 
 **Architecture:** A new GN component parses a JSON object out of chunked environment variables exactly once per process and serves typed lookups. Every lookup takes a `ConfigScope` first argument that today always resolves to one process-global configuration; the parameter exists so a later per-context store changes one function instead of every call site. Blink reaches the component through one added line in its DEPS allowlist. The tracer surface overrides `NavigatorConcurrentHardware::hardwareConcurrency()` in `NavigatorBase`, which is where an `ExecutionContext` is actually available and which both `Navigator` and `WorkerNavigator` inherit.
 
-**Tech Stack:** C++20, Chromium `//base` (`base::Environment`, `base::JSONReader`, `base::Value::Dict`, `base::NoDestructor`, `base::FunctionRef`), GN/Siso build, gtest, Blink, the Chrome DevTools Protocol for runtime verification.
+**Tech Stack:** C++20, Chromium `//base` (`base::Environment`, `base::JSONReader`, `base::DictValue`, `base::NoDestructor`, `base::FunctionRef`), GN/Siso build, gtest, Blink, the Chrome DevTools Protocol for runtime verification.
 
 ## Global Constraints
 
@@ -373,7 +373,7 @@ git commit -m "camoucfg: assemble config from chunked environment variables"
 
 **Interfaces:**
 - Consumes: `AssembleRawConfig` from Task 1.
-- Produces: `camoucfg::internal::ParseConfig(std::string_view raw, bool strict) -> base::Value::Dict`.
+- Produces: `camoucfg::internal::ParseConfig(std::string_view raw, bool strict) -> base::DictValue`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -381,33 +381,42 @@ Append inside the anonymous namespace of `components/camoucfg/mask_config_unitte
 
 ```cpp
 TEST(ParseConfigTest, EmptyInputYieldsEmptyDict) {
-  base::Value::Dict dict = ParseConfig("", /*strict=*/false);
+  base::DictValue dict = ParseConfig("", /*strict=*/false);
   EXPECT_TRUE(dict.empty());
 }
 
 TEST(ParseConfigTest, ParsesFlatObject) {
-  base::Value::Dict dict =
+  base::DictValue dict =
       ParseConfig(R"({"navigator.hardwareConcurrency":8})", /*strict=*/false);
   ASSERT_EQ(dict.size(), 1u);
   EXPECT_EQ(dict.FindInt("navigator.hardwareConcurrency"), 8);
 }
 
 TEST(ParseConfigTest, MalformedJsonYieldsEmptyDictWhenNotStrict) {
-  base::Value::Dict dict = ParseConfig("{not json", /*strict=*/false);
+  base::DictValue dict = ParseConfig("{not json", /*strict=*/false);
   EXPECT_TRUE(dict.empty());
 }
 
 TEST(ParseConfigTest, NonObjectJsonYieldsEmptyDict) {
-  base::Value::Dict dict = ParseConfig("[1,2,3]", /*strict=*/false);
+  base::DictValue dict = ParseConfig("[1,2,3]", /*strict=*/false);
   EXPECT_TRUE(dict.empty());
 }
 
+// EXPECT_CHECK_DEATH_WITH rather than a bare EXPECT_DEATH matching the
+// message. base/test/gtest_util.h branches on CHECK_WILL_STREAM(): in build
+// configurations that strip CHECK message text it degrades to matching "",
+// so a hand-written EXPECT_DEATH(..., "camoucfg") would fail there and read
+// as a defect in the code rather than in the assertion.
 TEST(ParseConfigDeathTest, MalformedJsonAbortsWhenStrict) {
-  EXPECT_DEATH(ParseConfig("{not json", /*strict=*/true), "camoucfg");
+  EXPECT_CHECK_DEATH_WITH(ParseConfig("{not json", /*strict=*/true),
+                          "camoucfg");
 }
 ```
 
-Add `#include "base/values.h"` to the test file's include block.
+Add `#include "base/values.h"` and `#include "base/test/gtest_util.h"` to the test
+file's include block, and add `"//base/test:test_support",` to the `unit_tests`
+target's `deps` in `components/camoucfg/BUILD.gn` — that is where
+`EXPECT_CHECK_DEATH_WITH` comes from.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -434,7 +443,7 @@ In `components/camoucfg/mask_config_internal.h`, add `#include "base/values.h"` 
 // surface then falls back to its real value. When `strict` is true the same
 // conditions abort the process instead, so that a misconfigured run fails
 // loudly rather than silently exposing the real machine.
-base::Value::Dict ParseConfig(std::string_view raw, bool strict);
+base::DictValue ParseConfig(std::string_view raw, bool strict);
 ```
 
 - [ ] **Step 4: Implement ParseConfig**
@@ -449,25 +458,33 @@ In `components/camoucfg/mask_config_internal.cc`, add these includes:
 and add before the closing namespace:
 
 ```cpp
-base::Value::Dict ParseConfig(std::string_view raw, bool strict) {
+base::DictValue ParseConfig(std::string_view raw, bool strict) {
   if (raw.empty()) {
-    return base::Value::Dict();
+    return base::DictValue();
   }
 
-  std::optional<base::Value> parsed = base::JSONReader::Read(raw);
-  if (!parsed.has_value() || !parsed->is_dict()) {
+  // ReadDict rejects both malformed JSON and valid JSON that is not an
+  // object, in one call. `options` has no default in this revision and must
+  // be passed; JSON_PARSE_RFC is the strict reading, which is right for a
+  // machine-generated configuration — comments and trailing commas in a
+  // fingerprint would mean the generator is broken.
+  std::optional<base::DictValue> parsed =
+      base::JSONReader::ReadDict(raw, base::JSON_PARSE_RFC);
+  if (!parsed.has_value()) {
     LOG(ERROR) << "camoucfg: configuration is not a JSON object; "
                << "all spoofing is disabled and real values will be reported";
     CHECK(!strict) << "camoucfg: refusing to start with an invalid "
                    << "configuration because CAMOU_CONFIG_STRICT is set";
-    return base::Value::Dict();
+    return base::DictValue();
   }
 
-  return std::move(*parsed).TakeDict();
+  return std::move(*parsed);
 }
 ```
 
 `CHECK` is used rather than a bare `LOG(FATAL)` so the strict path produces a stack trace naming this function.
+
+Two API notes for this Chromium revision, both verified against the checkout. The dictionary type is `base::DictValue`, a standalone class at `base/values.h:242` — `base::Value::Dict` does not exist here, and `components/` contains 4520 uses of the former and none of the latter. And `base::JSONReader::Read` takes a required `int options` parameter with no default, which is why `ReadDict` is called with one.
 
 - [ ] **Step 5: Add the values dependency**
 
@@ -491,7 +508,7 @@ every type path is testable with an ordinary fixture. Append inside the anonymou
 namespace of `components/camoucfg/mask_config_unittest.cc`:
 
 ```cpp
-base::Value::Dict Fixture() {
+base::DictValue Fixture() {
   return ParseConfig(R"({
     "s": "text",
     "u": 8,
@@ -505,7 +522,7 @@ base::Value::Dict Fixture() {
 }
 
 TEST(GettersTest, ReadCorrectTypes) {
-  base::Value::Dict cfg = Fixture();
+  base::DictValue cfg = Fixture();
   EXPECT_EQ(GetStringFrom(cfg, "s"), "text");
   EXPECT_EQ(GetUint32From(cfg, "u"), 8u);
   EXPECT_EQ(GetInt32From(cfg, "neg"), -3);
@@ -517,7 +534,7 @@ TEST(GettersTest, ReadCorrectTypes) {
 }
 
 TEST(GettersTest, AbsentKeysAreSilentlyEmpty) {
-  base::Value::Dict cfg = Fixture();
+  base::DictValue cfg = Fixture();
   EXPECT_FALSE(GetStringFrom(cfg, "missing").has_value());
   EXPECT_FALSE(GetUint32From(cfg, "missing").has_value());
   EXPECT_FALSE(GetInt32From(cfg, "missing").has_value());
@@ -528,7 +545,7 @@ TEST(GettersTest, AbsentKeysAreSilentlyEmpty) {
 }
 
 TEST(GettersTest, WrongTypesReturnEmpty) {
-  base::Value::Dict cfg = Fixture();
+  base::DictValue cfg = Fixture();
   EXPECT_FALSE(GetStringFrom(cfg, "u").has_value());
   EXPECT_FALSE(GetUint32From(cfg, "s").has_value());
   EXPECT_FALSE(GetInt32From(cfg, "s").has_value());
@@ -539,12 +556,12 @@ TEST(GettersTest, WrongTypesReturnEmpty) {
 }
 
 TEST(GettersTest, NegativeIntegerIsNotAnUnsigned) {
-  base::Value::Dict cfg = Fixture();
+  base::DictValue cfg = Fixture();
   EXPECT_FALSE(GetUint32From(cfg, "neg").has_value());
 }
 
 TEST(GettersTest, WholeNumberWidensToDouble) {
-  base::Value::Dict cfg = Fixture();
+  base::DictValue cfg = Fixture();
   EXPECT_EQ(GetDoubleFrom(cfg, "u"), 8.0);
 }
 ```
@@ -577,19 +594,19 @@ In `components/camoucfg/mask_config_internal.h`, add `#include <cstdint>`, `#inc
 // These take the dictionary explicitly rather than reading process-global
 // state so that every type path is testable. The public API in
 // mask_config.h forwards to them with the process configuration.
-std::optional<std::string> GetStringFrom(const base::Value::Dict& cfg,
+std::optional<std::string> GetStringFrom(const base::DictValue& cfg,
                                          std::string_view key);
-std::optional<uint32_t> GetUint32From(const base::Value::Dict& cfg,
+std::optional<uint32_t> GetUint32From(const base::DictValue& cfg,
                                       std::string_view key);
-std::optional<int32_t> GetInt32From(const base::Value::Dict& cfg,
+std::optional<int32_t> GetInt32From(const base::DictValue& cfg,
                                     std::string_view key);
-std::optional<double> GetDoubleFrom(const base::Value::Dict& cfg,
+std::optional<double> GetDoubleFrom(const base::DictValue& cfg,
                                     std::string_view key);
-std::optional<bool> GetBoolFrom(const base::Value::Dict& cfg,
+std::optional<bool> GetBoolFrom(const base::DictValue& cfg,
                                 std::string_view key);
-std::vector<std::string> GetStringListFrom(const base::Value::Dict& cfg,
+std::vector<std::string> GetStringListFrom(const base::DictValue& cfg,
                                            std::string_view key);
-bool HasKeyIn(const base::Value::Dict& cfg, std::string_view key);
+bool HasKeyIn(const base::DictValue& cfg, std::string_view key);
 ```
 
 - [ ] **Step 10: Implement the getters**
@@ -606,7 +623,7 @@ void WarnWrongType(std::string_view key, const char* expected) {
 
 }  // namespace
 
-std::optional<std::string> GetStringFrom(const base::Value::Dict& cfg,
+std::optional<std::string> GetStringFrom(const base::DictValue& cfg,
                                          std::string_view key) {
   const base::Value* value = cfg.Find(key);
   if (!value) {
@@ -619,7 +636,7 @@ std::optional<std::string> GetStringFrom(const base::Value::Dict& cfg,
   return value->GetString();
 }
 
-std::optional<uint32_t> GetUint32From(const base::Value::Dict& cfg,
+std::optional<uint32_t> GetUint32From(const base::DictValue& cfg,
                                       std::string_view key) {
   const base::Value* value = cfg.Find(key);
   if (!value) {
@@ -637,7 +654,7 @@ std::optional<uint32_t> GetUint32From(const base::Value::Dict& cfg,
   return static_cast<uint32_t>(as_int);
 }
 
-std::optional<int32_t> GetInt32From(const base::Value::Dict& cfg,
+std::optional<int32_t> GetInt32From(const base::DictValue& cfg,
                                     std::string_view key) {
   const base::Value* value = cfg.Find(key);
   if (!value) {
@@ -650,7 +667,7 @@ std::optional<int32_t> GetInt32From(const base::Value::Dict& cfg,
   return value->GetInt();
 }
 
-std::optional<double> GetDoubleFrom(const base::Value::Dict& cfg,
+std::optional<double> GetDoubleFrom(const base::DictValue& cfg,
                                     std::string_view key) {
   const base::Value* value = cfg.Find(key);
   if (!value) {
@@ -668,7 +685,7 @@ std::optional<double> GetDoubleFrom(const base::Value::Dict& cfg,
   return value->GetDouble();
 }
 
-std::optional<bool> GetBoolFrom(const base::Value::Dict& cfg,
+std::optional<bool> GetBoolFrom(const base::DictValue& cfg,
                                 std::string_view key) {
   const base::Value* value = cfg.Find(key);
   if (!value) {
@@ -681,7 +698,7 @@ std::optional<bool> GetBoolFrom(const base::Value::Dict& cfg,
   return value->GetBool();
 }
 
-std::vector<std::string> GetStringListFrom(const base::Value::Dict& cfg,
+std::vector<std::string> GetStringListFrom(const base::DictValue& cfg,
                                            std::string_view key) {
   const base::Value* value = cfg.Find(key);
   if (!value) {
@@ -703,7 +720,7 @@ std::vector<std::string> GetStringListFrom(const base::Value::Dict& cfg,
   return out;
 }
 
-bool HasKeyIn(const base::Value::Dict& cfg, std::string_view key) {
+bool HasKeyIn(const base::DictValue& cfg, std::string_view key) {
   return cfg.Find(key) != nullptr;
 }
 ```
@@ -878,15 +895,15 @@ namespace {
 
 // Parsed exactly once per process, on first access, in whichever process
 // touches the configuration first.
-const base::Value::Dict& Config() {
-  static const base::NoDestructor<base::Value::Dict> dict([] {
+const base::DictValue& Config() {
+  static const base::NoDestructor<base::DictValue> dict([] {
     std::unique_ptr<base::Environment> env = base::Environment::Create();
     auto get = [&env](const std::string& name) -> std::optional<std::string> {
       return env->GetVar(name);
     };
     const std::string raw = internal::AssembleRawConfig(get);
     const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
-    base::Value::Dict parsed = internal::ParseConfig(raw, strict);
+    base::DictValue parsed = internal::ParseConfig(raw, strict);
     VLOG(1) << "camoucfg: parsed " << parsed.size() << " key(s)";
     return parsed;
   }());
