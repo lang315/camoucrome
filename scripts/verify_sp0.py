@@ -39,6 +39,12 @@ def launch(config):
     previous instance that is still shutting down, which looks identical to
     the browser under test misbehaving.
 
+    Startup can fail in three distinguishable ways, which is deliberate:
+    Popen itself raises FileNotFoundError naming the path if SHELL does not
+    exist, the process exiting during startup reports its exit code, and a
+    process that lives but never opens a port reports the timeout. Three
+    different causes should not arrive as one message.
+
     Polling the endpoint rather than sleeping a fixed interval. A five-second
     sleep flaked one run in four, and an intermittently failing verification
     is worse than a slow one: it teaches people to re-run until green, and
@@ -164,13 +170,34 @@ KEYS_PROBE = "Object.keys(window).sort().join(',')"
 
 BASELINE = os.path.expanduser(
     "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
-with open(BASELINE) as f:
-    baseline = json.load(f)
 
+
+def load_baseline(path):
+    """Loads the recorded pre-spoof surface; returns (data, error).
+
+    Guarded for the same reason session() is. This load used to sit bare at
+    module level, so a missing or malformed baseline produced a traceback
+    and zero PASS/FAIL lines -- the exact collapse session() exists to
+    prevent, on the one path it did not cover, and on the file the most
+    important assertion here depends on.
+    """
+    try:
+        with open(path) as handle:
+            data = json.load(handle)
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        return None, exc
+    missing = [k for k in ("window_keys", "navigator_prototype_props",
+                           "hardware_concurrency") if k not in data]
+    if missing:
+        return None, KeyError(f"baseline lacks {', '.join(missing)}")
+    return data, None
+
+
+baseline, baseline_err = load_baseline(BASELINE)
 # The real processor count comes from the baseline rather than a literal, so
-# this runs on a machine with a different core count without silently
-# failing for a reason nothing in the script explains.
-REAL = baseline["hardware_concurrency"]
+# this runs on a machine with a different core count without failing for a
+# reason nothing in the script explains.
+REAL = baseline["hardware_concurrency"] if baseline else None
 
 results = {}
 notes = []
@@ -202,7 +229,7 @@ else:
         "[native code]" in descriptor)
 
 # Criteria 3, 4 and 5 without configuration.
-STOCK_KEYS = [f"3 falls back to the real {REAL}",
+STOCK_KEYS = ["3 falls back to the real processor count",
               "4 accessor reports [native code] when unconfigured",
               "5 worker agrees when unconfigured"]
 stock, err = session(None,
@@ -213,7 +240,8 @@ if err is not None:
     stock_keys = stock_proto = None
 else:
     real_window, real_worker, descriptor, stock_keys, stock_proto = stock
-    results[f"3 falls back to the real {REAL}"] = real_window == REAL
+    results["3 falls back to the real processor count"] = (
+        REAL is not None and real_window == REAL)
     results["5 worker agrees when unconfigured"] = real_worker == real_window
     results["4 accessor reports [native code] when unconfigured"] = (
         "[native code]" in descriptor)
@@ -223,7 +251,11 @@ else:
 # spoofed run against the unconfigured run would not catch a property this
 # change adds unconditionally, because both runs execute the same modified
 # code. Both runs are checked against the baseline for that reason.
-if spoofed_keys is not None and stock_keys is not None:
+if baseline_err is not None:
+    failed(["4 window keys match the pre-spoof baseline",
+            "4 Navigator prototype unchanged"],
+           f"baseline load from {BASELINE}", baseline_err)
+elif spoofed_keys is not None and stock_keys is not None:
     results["4 window keys match the pre-spoof baseline"] = (
         spoofed_keys.split(",") == baseline["window_keys"]
         and stock_keys.split(",") == baseline["window_keys"])
@@ -236,7 +268,7 @@ if spoofed_keys is not None and stock_keys is not None:
 # it describes would arrive as an uncaught traceback rather than a FAIL, and
 # the spec is explicit that a crash on bad input is itself a fingerprint.
 MALFORMED_KEYS = ["6 malformed config does not crash the browser",
-                  f"6 malformed config reports the real {REAL}",
+                  "6 malformed config reports the real processor count",
                   "6 malformed config logs an error"]
 bad, err = session("{not json", ["navigator.hardwareConcurrency"])
 if err is not None:
@@ -245,7 +277,8 @@ else:
     results["6 malformed config does not crash the browser"] = True
     with open(STDERR_LOG, "rb") as f:
         stderr = f.read().decode("utf-8", "replace")
-    results[f"6 malformed config reports the real {REAL}"] = bad[0] == REAL
+    results["6 malformed config reports the real processor count"] = (
+        REAL is not None and bad[0] == REAL)
     # Substring match against the implementation's own wording. Direction of
     # failure is a false FAIL, never a false PASS, but a later rename of the
     # log tag would need this updated with it.
