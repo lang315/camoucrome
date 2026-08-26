@@ -22,13 +22,25 @@ Nothing. SP0 is the foundation; every other SP depends on it.
 
 | Value | Config key | Chromium location | Process |
 |---|---|---|---|
-| `navigator.hardwareConcurrency` | `navigator.hardwareConcurrency` | `third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc` | renderer |
-| `WorkerNavigator.hardwareConcurrency` | same key | same class, worker binding | renderer (worker) |
-| parsed-key count at startup | — (diagnostic only) | browser process startup | browser |
+| `navigator.hardwareConcurrency` | `navigator.hardwareConcurrency` | `third_party/blink/renderer/core/execution_context/navigator_base.cc` | renderer |
+| `WorkerNavigator.hardwareConcurrency` | same key | same override, inherited | renderer (worker) |
+| parsed-key count at startup | — (diagnostic only) | `content/browser/browser_main_loop.cc` | browser |
 
-Both Blink paths were verified against the real checkout at `~/chromium/src`; the
-`.idl` file `navigator_concurrent_hardware.idl` sits beside the `.cc` and is what
-generates both bindings.
+**Correction from implementation planning.** This spec originally named
+`core/frame/navigator_concurrent_hardware.cc`. That location is unusable:
+`NavigatorConcurrentHardware::hardwareConcurrency()` takes no arguments and is a bare
+mixin with no access to an `ExecutionContext`, so the scope-shaped API this whole SP
+exists to establish could not be exercised there at all.
+
+The method is `virtual`, and `NavigatorBase`
+(`core/execution_context/navigator_base.h:41`, verified) inherits the mixin, lives in
+the execution-context directory, and is the common base of both `Navigator` and
+`WorkerNavigator`. Overriding there gives the lookup a real execution context to scope
+by, and makes window-and-worker agreement structural rather than something a separate
+mechanism has to maintain. Section 5's parity requirement is satisfied by construction.
+
+This is exactly what a tracer bullet is for: the first surface found the flaw in the
+pattern before twenty surfaces had copied it.
 
 ## 4. Design
 
@@ -105,10 +117,11 @@ what a reviewer needs to see.
 ### 4.4 Call-site pattern
 
 `NavigatorConcurrentHardware::hardwareConcurrency()` currently returns
-`base::SysInfo::NumberOfProcessors()`. It becomes a config lookup that falls back to
-that same expression when the key is absent. This two-line shape — look up, fall back
-to the original expression — is the pattern every later SP repeats, and it is why the
-real value must never be replaced by a constant.
+`base::SysInfo::NumberOfProcessors()`. `NavigatorBase` gains an override that consults
+the configuration and falls back to that same expression when the key is absent. This
+two-line shape — look up, fall back to the *original expression* rather than to a
+constant — is the pattern every later SP repeats, and copying the real expression
+verbatim is what keeps a stock run honest.
 
 ### 4.5 Browser-process smoke check
 
