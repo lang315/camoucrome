@@ -1,0 +1,132 @@
+diff --git a/components/BUILD.gn b/components/BUILD.gn
+index 4ecc66416a..22c24c9a31 100644
+--- a/components/BUILD.gn
++++ b/components/BUILD.gn
+@@ -204,6 +204,7 @@ test("components_unittests") {
+     "//components/browser_actuator:unit_tests",
+     "//components/browser_sync:unit_tests",
+     "//components/browsing_data/core:unit_tests",
++    "//components/camoucfg:unit_tests",
+     "//components/captive_portal/core:unit_tests",
+     "//components/cbor:unit_tests",
+     "//components/certificate_matching:unit_tests",
+diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
+index e7e168a10b..b5f7bbb524 100644
+--- a/content/browser/BUILD.gn
++++ b/content/browser/BUILD.gn
+@@ -147,6 +147,7 @@ source_set("browser") {
+     "//cc/paint",
+     "//components/back_forward_cache:enum",
+     "//components/browsing_data/core:cookie_or_cache_deletion_choice",
++    "//components/camoucfg",
+     "//components/cbor",
+     "//components/discardable_memory/common",
+     "//components/discardable_memory/service",
+diff --git a/content/browser/DEPS b/content/browser/DEPS
+index 8b644c2b87..f92dabe664 100644
+--- a/content/browser/DEPS
++++ b/content/browser/DEPS
+@@ -45,6 +45,7 @@ include_rules = [
+   "+components/viz",
+   "+components/web_package",
+   "+components/webauthn/json",
++  "+components/camoucfg",
+   "+components/cbor",
+   "+components/os_crypt/common/os_crypt_switches.h",
+   "+components/vrp_flags",
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index 90d60c44cc..fe01f49a5f 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -60,6 +60,7 @@
+ #include "build/build_config.h"
+ #include "build/chromecast_buildflags.h"
+ #include "cc/base/histograms.h"
++#include "components/camoucfg/mask_config.h"
+ #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
+ #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
+ #include "components/power_monitor/make_power_monitor_device_source.h"
+@@ -542,6 +543,28 @@ void BrowserMainLoop::Init() {
+ int BrowserMainLoop::EarlyInitialization() {
+   TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
+ 
++  // Force the one-time parse here, in the browser process, on every start.
++  //
++  // The bool must be computed BEFORE the VLOG, not inside it. VLOG expands to
++  // LAZY_STREAM(stream, VLOG_IS_ON(1)), which is
++  // `!(condition) ? (void)0 : ... (stream)` — so at default verbosity the
++  // entire stream expression, including any call in it, is never evaluated.
++  // A HasKey() call written inside the VLOG would not run on a normal launch,
++  // and this task's whole purpose is that it does.
++  //
++  // Two things depend on the parse happening here rather than lazily at first
++  // surface access. SP1 patches user_agent_utils.cc in this process and needs
++  // the path proven before it depends on it. And CAMOU_CONFIG_STRICT is
++  // specified to refuse startup on malformed configuration — with a lazy
++  // parse the CHECK would instead fire in whichever process touched config
++  // first, which is a renderer, turning a refusal to start into a renderer
++  // crash. Conventions rule 5 forbids exactly that: a crash is itself a
++  // fingerprint.
++  const bool camou_configured = camoucfg::HasKey(
++      camoucfg::GlobalScope(), "navigator.hardwareConcurrency");
++  VLOG(1) << "camoucfg: browser process configuration reachable, "
++          << "navigator.hardwareConcurrency configured=" << camou_configured;
++
+ #if BUILDFLAG(USE_ZYGOTE)
+   // The initialization of the sandbox host ends up with forking the Zygote
+   // process and requires no thread been forked. The initialization has happened
+diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
+index d5142fdb5a..9bbb476156 100644
+--- a/third_party/blink/renderer/DEPS
++++ b/third_party/blink/renderer/DEPS
+@@ -92,6 +92,8 @@ include_rules = [
+     "+build",
+     "+cc/input/hit_test_opaqueness.h",
+     "+cc/paint",
++    "+components/camoucfg/blink_scope.h",
++    "+components/camoucfg/mask_config.h",
+     "+components/crash/core/common/crash_key.h",
+     "+net/base/features.h",
+     "+net/cookies",
+diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
+index 3422559392..4663a75ff6 100644
+--- a/third_party/blink/renderer/core/BUILD.gn
++++ b/third_party/blink/renderer/core/BUILD.gn
+@@ -408,6 +408,7 @@ component("core") {
+     ":make_deprecation_info",
+     ":xml_ffi",
+     "//base",
++    "//components/camoucfg",
+     "//components/paint_preview/common",
+     "//components/performance_manager/public/mojom:mojom_blink",
+     "//components/shared_highlighting/core/common",
+diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+index cccfafe8f9..620bfa290d 100644
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+@@ -6,6 +6,8 @@
+ 
+ #include "base/feature_list.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+@@ -75,6 +77,16 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
+ 
+   probe::ApplyHardwareConcurrencyOverride(
+       probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
++
++  // Camoucrome configuration is authoritative. It is the identity this
++  // browser is presenting, and a CDP emulation override must not be able to
++  // contradict it, so it is applied last. When no key is set this is a no-op
++  // and the real value plus any emulation override survives unchanged.
++  if (std::optional<uint32_t> configured = camoucfg::GetUint32(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          "navigator.hardwareConcurrency")) {
++    hardware_concurrency = *configured;
++  }
+   return hardware_concurrency;
+ }
+ 

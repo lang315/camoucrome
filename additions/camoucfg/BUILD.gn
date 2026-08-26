@@ -1,0 +1,27 @@
+# Copyright 2026 The Camoucrome Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+static_library("camoucfg") {
+  sources = [
+    "blink_scope.h",
+    "mask_config.cc",
+    "mask_config.h",
+    "mask_config_internal.cc",
+    "mask_config_internal.h",
+  ]
+
+  deps = [ "//base" ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "mask_config_unittest.cc" ]
+
+  deps = [
+    ":camoucfg",
+    "//base",
+    "//base/test:test_support",
+    "//testing/gtest",
+  ]
+}

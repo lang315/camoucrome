@@ -426,3 +426,35 @@ matched between repo and build machine. Criterion 4 passed in all ten, which
 also disposes of the risk I created by changing the launch flags -- the
 baseline was captured without --user-data-dir, and it still matches.
 
+Task 6 review (of the pre-flake-fix script): compliant, one Critical class,
+four Important. Two were already closed by e794336 (proc.wait, fixed port,
+sleep). Three were new and all correct:
+
+CRITICAL -- no assertion tested "does not crash", and the script had zero
+exception handling in a single linear sequence with one print loop at the
+end. Any exception discarded EVERY already-computed result behind an
+unattributed traceback. The fault most likely to trigger it is precisely the
+one criterion 6 exists to detect. Fixed: session() returns exceptions rather
+than raising, each group degrades to FAIL independently, and criterion 6 has
+its own named "does not crash the browser" assertion. DESCRIPTOR_PROBE now
+reads defensively too -- a getter demoted to a data property used to throw
+inside the page, so a regression in SP0's most important assertion crashed
+the harness instead of printing FAIL.
+
+IMPORTANT -- launch() cleared only CAMOU_CONFIG, not CAMOU_CONFIG_1..N or
+CAMOU_CONFIG_STRICT. Numbered chunks take precedence, and this machine is
+exactly where stale ones get made. Fixed by stripping every CAMOU_CONFIG*.
+
+IMPORTANT -- the literal 16 was retyped twice while the loaded baseline
+already carried hardware_concurrency. Now derived from it.
+
+PROVED the env fix is load-bearing rather than merely consistent with
+passing: ran a mutant with the old env handling under an injected leftover
+CAMOU_CONFIG_1={"navigator.hardwareConcurrency":99}. Five of eleven
+assertions go red, including "malformed config logs an error" -- the
+leftover is valid JSON so nothing logs an error, and the run's premise
+silently evaporates. The real script under the same injection: 11/11 PASS.
+
+Assertions went from 9 to 11 (non-crash, and descriptor checked in both
+sessions).
+
