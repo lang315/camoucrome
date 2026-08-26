@@ -22,6 +22,8 @@
 - **A gclient checkout is in detached HEAD, so Task 1 must create a branch before its first commit.** Commits made in detached HEAD belong to no branch, and the next `gclient sync` or checkout discards them with no entry in `git log` to recover from. Every task in this plan commits, so this is not optional — it is the difference between the work existing and not.
 - Build directory is `out/Default`. Never run `gn gen` with different args; the existing `args.gn` is `is_debug=false`, `is_component_build=true`, `symbol_level=0`, `blink_symbol_level=0`, `dcheck_always_on=false`, `use_remoteexec=false`.
 - Every command in this plan runs inside WSL. From the controlling machine, pipe a script to `wsl -d Ubuntu-24.04 -u lang -- bash -s` over an ssh connection with `ControlMaster` and `ControlPersist` enabled. A long build must run in the foreground of that session; detaching with `nohup` or `setsid` gets the process killed.
+- **Prefix every `tar` on the macOS side with `COPYFILE_DISABLE=1`.** macOS `tar` embeds AppleDouble sidecar files (`._name`) for any file carrying extended attributes, and they arrive in the Chromium checkout as untracked junk. Task 1 shipped six of them. They do not break the build, but `additions/` would copy them into the repository and every later `git status` reads dirty. Clean any that already exist with `find . -name '._*' -delete` inside the affected directory.
+- A `git commit` in the Chromium checkout must never fail with `Author identity unknown`. Configure the identity repo-locally in Task 1 Step 0, before any commit.
 
 ## File Structure
 
@@ -1473,7 +1475,7 @@ machine:
 
 ```bash
 cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
-tar czf - additions patches scripts | \
+COPYFILE_DISABLE=1 tar czf - additions patches scripts | \
   base64 | \
   { echo 'mkdir -p ~/camoucrome && cd ~/camoucrome && base64 -d | tar xzf -'; cat; } | \
   "$PCWSL"
