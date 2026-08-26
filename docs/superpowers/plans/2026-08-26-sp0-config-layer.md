@@ -815,8 +815,6 @@ Create `components/camoucfg/mask_config.h`:
 #include <string_view>
 #include <vector>
 
-#include "base/no_destructor.h"
-
 namespace camoucfg {
 
 // Identifies which configuration a lookup reads.
@@ -834,12 +832,15 @@ class ConfigScope {
   ConfigScope& operator=(const ConfigScope&) = delete;
 
  private:
-  // base::NoDestructor constructs the singleton in place with a placement
-  // new inside its own constructor, so it is NoDestructor — not
-  // GlobalScope — that needs access to this constructor. Befriending
-  // GlobalScope instead does not compile. This is the established Chromium
-  // idiom; components/ carries several precedents.
-  friend class base::NoDestructor<ConfigScope>;
+  // base::NoDestructor static_asserts against a trivially destructible T
+  // (base/no_destructor.h): "T is trivially destructible; please use a
+  // function-local static of type T directly instead". ConfigScope has no
+  // members and an implicit destructor, so it is trivially destructible —
+  // and a plain function-local static already has no exit-time destructor
+  // to skip, so NoDestructor would buy nothing here even if it compiled.
+  // GlobalScope() constructs the singleton directly, so it is GlobalScope,
+  // not NoDestructor, that needs access to this constructor.
+  friend const ConfigScope& GlobalScope();
   ConfigScope() = default;
 };
 
@@ -943,8 +944,11 @@ const base::DictValue& Config() {
 }  // namespace
 
 const ConfigScope& GlobalScope() {
-  static const base::NoDestructor<ConfigScope> scope;
-  return *scope;
+  // A plain function-local static, not base::NoDestructor. ConfigScope is
+  // empty and therefore trivially destructible, which NoDestructor
+  // static_asserts against, and there is no exit-time destructor to avoid.
+  static ConfigScope scope;
+  return scope;
 }
 
 std::optional<std::string> GetString(const ConfigScope& scope,
