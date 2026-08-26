@@ -59,16 +59,29 @@ assumes the architecture decisions recorded there.
 | SP | Scope | Depends on |
 |----|-------|-----------|
 | SP0 | Config layer plus a tracer-bullet surface | — |
-| SP1 | Navigator identity and UA / UA-CH coherence | SP0 |
+| SP6a | Patch management and the key registry | SP0 |
+| SP5a | Invariant registry, reader, load-time validator | SP0 |
+| SP1 | Navigator identity and UA / UA-CH coherence | SP0, SP6a, SP5a |
 | SP2 | Automation hiding and CDP invisibility | SP0 |
 | SP3 | WebGL and canvas fingerprints | SP0 |
-| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP0 |
-| SP5 | Coherence engine and real fingerprint presets | SP1, SP3, SP4 |
-| SP6 | Build system, packaging, driver API | all |
+| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1, SP3, SP5a |
+| SP5b | Invariant catalogue and fingerprint presets | SP1, SP3, SP4 |
+| SP6b | Packaging and driver API | SP1–SP5 |
 | SP7 | Phone-home removal and build-level hardening | — |
 
-SP2 and SP3 are independent of each other. SP7 is GN arguments and build
+SP5 and SP6 are each split. Both specs argue that half their content is needed far
+earlier than the other half: a branch in the Chromium tree is at risk from the next
+`gclient sync` the moment SP0's first commit exists, and a key registry that arrives
+after twenty keys have been added as string literals has already failed. Deferring
+either to the end is the mistake the split prevents.
+
+SP2 and SP3 are independent of each other and of SP1. SP7 is GN arguments and build
 configuration, so it depends on nothing and can start at any time.
+
+TLS, JA3 and HTTP/2 fingerprinting are deliberately not a sub-project. Camoucrome is a
+real Chromium build on BoringSSL and Chromium's own network stack, so those
+fingerprints are already Chrome's. The exposure is a proxy or driver in front that
+re-terminates TLS — a deployment constraint to verify, not a surface to build.
 
 ## Why coherence matters more than coverage
 

@@ -27,16 +27,25 @@ yet *generate* one; that is SP5.
 **SP0** for the config component and the `ConfigScope`-shaped API. Every surface here is
 a config read.
 
-**SP1** for the platform-derivation helper. Several surfaces here (CSS2 system fonts, the
+**SP5a** for claimed-OS derivation. Several surfaces here (CSS2 system fonts, the
 `system-ui` generic family, the codec matrix, speech voice URIs) must resolve from the
-*claimed* OS rather than the host OS. SP1 owns the single function that answers "what OS
-are we claiming"; SP4 consumes it and must not re-derive it from the user-agent string
+*claimed* OS rather than the host OS. The conventions assign that function to SP5a, where
+it lives in `additions/camoucfg/derive.{h,cc}` alongside the other derived values. SP4
+consumes the derived answer and must not re-derive it from the user-agent string
 independently. Two independent derivations that disagree is precisely the failure this
 project exists to avoid.
 
-**SP3** for the seeded-noise helper. Audio and font-metric jitter use the same
-seed-derivation and stability rules as canvas. SP3 writes that helper; SP4 reuses it
-rather than growing a second one.
+**SP1** for the identity values that derivation reads from — user agent, platform, and the
+language list. SP4 depends on those existing, but reads the derived answer rather than the
+raw strings.
+
+**SP3** for the seed-derivation primitive: a function taking a seed and an index and
+returning a stable per-index delta. This is *not* SP3's canvas pixel function
+`noise(seed, width, height, x, y, channel)`, which is two-dimensional and specific to
+image data. Audio readback is a one-dimensional sample stream and font-metric jitter is a
+per-glyph scalar; neither fits that signature, and both need the underlying seed-to-delta
+primitive instead. SP3 scopes that primitive separately from its pixel function; SP4
+reuses it rather than growing a second one.
 
 SP4 does not depend on SP2 and may run alongside it.
 
@@ -60,7 +69,7 @@ Paths were checked against the real checkout at `~/chromium/src`
 | `document.body.clientWidth` / `.clientHeight` | `document.body.client*` | `core/dom/element.cc` *(unverified)* | renderer |
 | scroll min/max, `pageXOffset` / `pageYOffset` | `window.scroll*`, `window.pageX/YOffset` | `core/frame/local_dom_window.cc` | renderer |
 | CSS `device-width` / `device-height` | *derived from `screen.*`* | `core/css/media_values.cc`, `media_values.h` | renderer |
-| `screen.orientation.type` / `.angle` | `screen:orientation`, `screen:orientationAngle` | `modules/screen_orientation/screen_orientation.cc` | renderer |
+| `screen.orientation.type` / `.angle` | *derived from `screen.*`; no key* | `modules/screen_orientation/screen_orientation.cc` | renderer |
 
 `core/css/media_values.cc` is the Chromium counterpart to Firefox's `nsMediaFeatures`.
 `core/css/media_feature_names.json5` confirms `device-width`, `min-device-width` and
@@ -162,10 +171,30 @@ Open decisions.
 | `Date` timezone offset and name | `timezone` | `v8/src/date/date.cc` | renderer (V8) |
 | `Intl.DateTimeFormat().resolvedOptions().timeZone` | `timezone` | `v8/src/objects/js-date-time-format.cc` | renderer (V8) |
 | Process default timezone | `timezone` | `base/i18n/timezone.cc`, `base/i18n/icu_util.cc` | all |
-| `navigator.language` / `.languages` | `locale:language`, `locale:all` | SP1 owns these | renderer |
+| `navigator.language` / `.languages` | `navigator.language`, `navigator.languages` | SP1 owns these | renderer |
 | `Accept-Language` header | `headers.Accept-Language` | SP1 owns this | browser |
-| `Intl` collation, number and date formatting | `locale:*` | ICU default locale | renderer |
+| `Intl` collation, number and date formatting | `locale:region`, `locale:script` | ICU default locale | renderer |
 | Geolocation position | `geolocation:latitude`, `:longitude`, `:accuracy` | `services/device/geolocation/geolocation_impl.cc` | **device service, not renderer** |
+
+**The language value has exactly one name, and it is SP1's.** The page-visible list is
+`navigator.language` and `navigator.languages`, owned by SP1, dotted because those keys
+mirror JavaScript property paths exactly. SP4 owns a separate, non-overlapping `locale:*`
+namespace for the parts of the ICU default locale that are *not* the language subtag —
+`locale:region` and `locale:script`. There is deliberately no `locale:language` and no
+`locale:all`: the language subtag of the ICU default locale is read from
+`navigator.languages[0]`, never from a second key.
+
+That rule is the whole point. Two keys naming one value is how a config that validates
+against the published schema gets silently rejected by the code that consumes it, which is
+the `voiceURI` / `voiceUri` failure described in section 4. Here the divergence is made
+structurally impossible rather than merely discouraged: there is no second key to
+disagree with the first.
+
+One naming inconsistency is inherited rather than introduced. `headers.Accept-Language`
+uses a dot although it mirrors an HTTP header name, not a JavaScript property path, so
+under the conventions' naming rule it should be `headers:Accept-Language`. The key belongs
+to SP1; SP4 notes the discrepancy so SP6a settles it once in the registry, before
+generated C++ constants make a rename breaking.
 
 Geolocation is the one surface in SP4 that does not live in Blink at all. It is served by
 the device service over Mojo, which means the config read happens outside the renderer and
@@ -195,8 +224,11 @@ contradicts the JS-visible value, which is trivially detectable and is exactly t
 Camoufox's `screen-spoofing.patch` exists to close on the Firefox side. Both call sites
 must read the same config key through the same helper. The same applies to
 `screen.orientation`, whose type and angle are derived quantities: a spoofed 1920×1080
-screen reporting `portrait-primary` is a contradiction. Derive orientation from the
-spoofed dimensions by default and treat the explicit config keys as an override.
+screen reporting `portrait-primary` is a contradiction. Orientation is therefore always
+computed from the spoofed dimensions and has **no config key of its own**. Per the
+conventions, a derived value that also accepts an override merely creates the opportunity
+for the incoherence the derivation exists to prevent — an override is a second source of
+truth wearing a convenience label.
 
 **Font work splits into three problems of very different difficulty.** Enumeration —
 making `font_cache.cc` report only the configured list — is straightforward. Blocking
@@ -272,22 +304,22 @@ exists anywhere in the tree.
 | `window.outer*` | `screen.avail*` | outer ≤ avail, both axes |
 | `window.screenX` / `.screenY` | `screen.*`, `window.outer*` | 0 ≤ position ≤ screen − outer |
 | `devicePixelRatio` | `screen.*`, `window.inner*` | Geometry must be expressed in the CSS pixels that ratio implies |
-| CSS2 system fonts, `system-ui` | claimed OS (SP1) | Resolved from the claimed platform, never the host |
-| `fonts` list | claimed OS (SP1) | Every listed font plausible for that OS; marker fonts present |
+| CSS2 system fonts, `system-ui` | claimed OS (SP5a) | Resolved from the claimed platform, never the host |
+| `fonts` list | claimed OS (SP5a) | Every listed font plausible for that OS; marker fonts present |
 | Local Font Access enumeration | `fonts` list | Identical set, or the API is disabled |
 | `decodingInfo()` | `canPlayType()` | Same underlying table; no MIME type answered differently |
-| Codec matrix | claimed OS (SP1) | Hardware-decode claims plausible for that OS and GPU (SP3) |
-| Speech voice URIs and names | claimed OS (SP1) | OS-shaped URIs; a macOS profile must not list Microsoft voices |
-| `timezone` | `geolocation:*` and proxy egress (SP5) | Zone consistent with the coordinates and the exit IP |
+| Codec matrix | claimed OS (SP5a) | Hardware-decode claims plausible for that OS and GPU (SP3) |
+| Speech voice URIs and names | claimed OS (SP5a) | OS-shaped URIs; a macOS profile must not list Microsoft voices |
+| `timezone` | `geolocation:*` and proxy egress (SP5b) | Zone consistent with the coordinates and the exit IP |
 | `Intl` timezone | `Date` timezone | Byte-identical zone identifier |
-| `locale:*` | `navigator.languages`, `Accept-Language` (SP1) | One source; SP1 owns the value, SP4 owns ICU application |
+| `locale:region` / `locale:script` | `navigator.languages` (SP1) | Distinct keys, no overlap; the ICU language subtag is read from `navigator.languages[0]` and never from a second key |
 | `audio:seed` in a worker | same seed in its window | Identical; a worker disagreeing is a tell |
-| `webrtc:*` addresses | proxy egress IP (SP5) | Candidate address must match the address the site sees |
+| `webrtc:*` addresses | proxy egress IP (SP5b) | Candidate address must match the address the site sees |
 
 The last one deserves emphasis. Spoofing a WebRTC address to a value that differs from
 the IP the HTTP request arrived from is worse than leaving WebRTC alone: it converts a
 passive leak into an active contradiction. The address must come from the same source
-that knows the egress IP, which is SP5's job.
+that knows the egress IP, which is SP5b's job.
 
 ## 6. Verification
 
@@ -298,9 +330,11 @@ explicit `CAMOU_CONFIG` and inspected over the DevTools protocol.
    width differs, a page evaluating `screen.width` and
    `matchMedia('(device-width: 1920px)').matches` must report `1920` and `true`. Run the
    same check with a deliberately wrong media query width and require `false`.
-2. **Orientation derivation.** With a 1920×1080 config and no explicit orientation keys,
-   `screen.orientation.type` must be `landscape-primary` and `.angle` must be `0`.
-   With 1080×1920, `portrait-primary`.
+2. **Orientation derivation.** With a 1920×1080 config, `screen.orientation.type` must be
+   `landscape-primary` and `.angle` must be `0`. With 1080×1920, `portrait-primary`.
+   Additionally, a config containing a `screen:orientation` key must be **rejected at
+   load** rather than silently ignored — an override key that is quietly dropped is
+   indistinguishable, to whoever wrote the config, from one that was honoured.
 3. **Geometry invariants.** For twenty randomly generated screen configs, assert
    `inner ≤ outer ≤ avail ≤ screen` on both axes and `availHeight < height` in every case.
    This is a unit test over the clamping helper, not a browser launch.
@@ -386,6 +420,15 @@ revisit when the per-context store is designed.*
 **`document.body.clientWidth` path unverified.** Camoufox spoofs it; the Chromium call
 site was not confirmed in this pass. Confirm before including it in the surface list.
 
+**The inherited `window.scrollMin*` / `scrollMax*` keys may have no Chromium counterpart.**
+These are Firefox properties, and Camoufox spoofs them because Firefox exposes them. Under
+the conventions' naming rule a dotted key asserts that it mirrors a real JavaScript
+property path, so carrying these over unchanged would make the registry claim something
+false about Chromium. `pageXOffset` and `pageYOffset` are standard and stay.
+*Recommendation: confirm what Chromium actually exposes and drop the keys that have no
+counterpart rather than inventing a synthetic namespace for them.* This matters before
+SP6a generates constants, not after.
+
 **Do speech voices matter enough to build?** `speechSynthesis.getVoices()` is a real
 fingerprinting surface, but a considerably rarer one than fonts or canvas.
 *Recommendation: implement enumeration, skip `voices:fakeCompletion` timing until there
@@ -393,19 +436,33 @@ is evidence a real detector uses it.*
 
 ## 8. Explicitly out of scope
 
-Navigator identity, user-agent string, UA Client Hints, `navigator.languages` and the
-`Accept-Language` header are **SP1**. SP4 consumes SP1's claimed-OS helper but never
-derives the OS itself.
+Navigator identity, user-agent string, UA Client Hints, `navigator.language`,
+`navigator.languages` and the `Accept-Language` header are **SP1**.
 
-Automation hiding, `navigator.webdriver`, and CDP invisibility are **SP2**.
+Claimed-OS derivation is **SP5a**, in `additions/camoucfg/derive.{h,cc}`. SP4 consumes the
+derived answer and never derives the OS itself.
 
-WebGL parameters, the canvas noise implementation, and the shared seed helper are **SP3**.
-SP4 reuses SP3's helper.
+Automation hiding, `navigator.webdriver`, `window.chrome`, and CDP invisibility are
+**SP2**.
 
-Generating a coherent fingerprint, real device presets, proxy-to-geolocation-to-timezone
-consistency, and cross-surface validation are **SP5**. SP4 enforces invariants it is given;
-it does not choose values.
+WebGL parameters, the canvas noise implementation, and the seed-derivation primitive are
+**SP3**. SP4 reuses the primitive, not SP3's two-dimensional canvas pixel function.
 
-Build integration, packaging, and the driver API are **SP6**.
+**WebGPU is SP3**, including `navigator.gpu`, `GPUAdapter.info`, and the invariant that
+adapter information agrees with the WebGL vendor and renderer strings and with the claimed
+OS. SP4 does not touch it, despite adapter information reading like exactly the kind of
+device detail SP4 otherwise collects — SP3 owns the GPU identity end to end so there is
+one place a contradiction between the two GPU-facing APIs can be caught.
+
+The invariant registry, reader, and load-time validator are **SP5a**. Generating a
+coherent fingerprint, real device presets, and proxy-to-geolocation-to-timezone
+consistency are **SP5b**. SP4 enforces invariants it is given; it does not choose values.
+
+Patch management and the key registry are **SP6a**; packaging and the driver API are
+**SP6b**.
+
+Proprietary codecs, Widevine, and the build-level changes that make the codec matrix
+honourable are **SP7**. SP4 spoofs the codec *answers*; SP7 makes the build able to honour
+them. Shipping only SP4's half leaves a page able to request the media and watch it fail.
 
 Font metric jitter is deferred to SP4b pending the decision in section 7.

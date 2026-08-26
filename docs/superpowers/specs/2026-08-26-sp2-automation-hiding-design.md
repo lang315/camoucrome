@@ -37,6 +37,7 @@ Paths verified against the real checkout at `~/chromium/src` unless marked
 | `Runtime.enable` console side effects | `automation:hideRuntimeDomain` | `v8/src/inspector/v8-console.cc`, `v8/src/inspector/v8-inspector-impl.cc` | renderer (V8) |
 | Inspector attach observability | as above | `core/inspector/main_thread_debugger.cc`, `core/inspector/thread_debugger_common_impl.cc` | renderer |
 | Worker inspector attach | as above | `core/inspector/worker_inspector_controller.cc` | worker |
+| `window.chrome` presence and shape | `automation:chromeObject` | `chrome/renderer/chrome_render_frame_observer.cc`, `chrome/renderer/loadtimes_extension_bindings.cc` *(unverified)* | renderer |
 | Synthesized input trust | `automation:trustedInput` | `content/browser/devtools/protocol/input_handler.cc`, `content/browser/renderer_host/render_widget_host_impl.cc` | browser |
 | CDP session/target plumbing | — | `content/browser/devtools/devtools_agent_host_impl.cc`, `protocol/page_handler.cc`, `protocol/target_handler.cc` | browser |
 | Humanized cursor paths | `humanize`, `humanize:minTime`, `humanize:maxTime`, `showcursor` | new `//components/camoucfg/mouse_trajectories.*` + `input_handler.cc` | browser |
@@ -202,6 +203,35 @@ tell and they require no C++ work at all: driving CDP directly, or through Playw
 patchright, never introduces them. The design consequence is a constraint on the driver
 layer (SP6) rather than a patch here: **Camoucrome must not be driven through ChromeDriver.**
 
+### 4.7 `window.chrome`
+
+Conventions assigns this object to SP2. The division that matters is between *presence and
+shape*, which is an automation question and lives here, and *whether the build is Chrome or
+Chromium*, which is a branding question and lives in SP7 alongside Widevine and proprietary
+codecs. The two must agree, so they cross-reference: SP7 decides what the browser claims to
+be, and SP2 makes the object consistent with that claim.
+
+The historically important failure is the reason it belongs to SP2. Old headless Chrome
+omitted `window.chrome` entirely, which made `typeof window.chrome === 'undefined'` the
+canonical headless tell and is still checked by every public bot-detection page. That is an
+automation signal, not a branding one.
+
+Three members carry the detail. `chrome.runtime` exists in real Chrome but its shape depends
+on whether an extension context is present, and naive spoofs give it properties that a real
+unprivileged page never sees — an over-complete `runtime` is as much a tell as a missing one.
+`chrome.loadTimes()` and `chrome.csi()` are deprecated timing shims that still exist in
+Chrome; their absence, or a return value with implausible internal relationships (a
+`firstPaintTime` preceding `startLoadTime`), is checkable. Values must derive from the real
+navigation timing rather than being invented, which is the same fall-back-to-real rule that
+governs every other surface.
+
+Whether Chromium already populates this object under the `chrome` branding flag, or whether
+it is supplied by `chrome/renderer` code that a `content_shell` build does not link at all,
+is **unverified and decides the shape of the work**. If `content_shell` lacks it, SP2's
+verification must run against a `chrome` target, which is a meaningful change to this
+sub-project's build loop — conventions currently names `content_shell` as the verification
+target for its speed. This is recorded as D7.
+
 ## 5. Coherence constraints
 
 | This surface | Must agree with | Invariant |
@@ -251,6 +281,13 @@ Each item is independently runnable against `content_shell` built from
 11. **Differential against patchright.** Run the same battery against stock Chromium driven
     by patchright. Any vector where patchright already passes and Camoucrome gains nothing is
     a candidate for removal from scope (section 7).
+12. **`window.chrome` shape.** Assert `typeof window.chrome === 'object'`, that
+    `chrome.runtime` exists with no property a real unprivileged page lacks, and that
+    `chrome.loadTimes()` and `chrome.csi()` return values whose internal ordering is
+    plausible — `startLoadTime <= firstPaintTime`, `csi().pageT >= 0`. Diff the full
+    recursive property tree against real Chrome of the same milestone; expected: empty diff.
+    Run this against both `content_shell` and a `chrome` target, because which of them
+    populates the object is what D7 resolves.
 
 ## 7. Open decisions
 
@@ -290,11 +327,28 @@ execution contexts leak to page JS, whether V8's inspector can cleanly scope sid
 world, whether coalesced pointer events are distinguishable. Each is written above as a
 question, not an answer. None should be closed without a measurement.
 
+**D7 — Which target populates `window.chrome`.** If the object comes from `chrome/renderer`
+code that `content_shell` does not link, then SP2 cannot verify section 4.7 against the fast
+build target that conventions names, and either this sub-project's verification loop grows a
+slow `chrome` build or the object must be supplied from `//content` instead. Settle it by
+inspection before writing any code for 4.7 — the answer changes whether the work is a patch
+or a new file, and it interacts with SP7's branding decision.
+
 ## 8. Explicitly out of scope
 
 Fingerprint *values* — user agent, WebGL strings, canvas noise, screen geometry — belong to
 SP1, SP3 and SP4. Cross-surface consistency checking belongs to SP5. The driver API and the
 prohibition on ChromeDriver belong to SP6, though 4.6 records the constraint here because it
-originates in this analysis. TLS/JA3 and HTTP/2 fingerprinting are network-layer concerns
-outside every SP in the current map; the Camoufox notes record that TLS is a strength of the
-Firefox fork rather than a gap, and the equivalent claim for Chromium is untested.
+originates in this analysis.
+
+Whether the build presents as Chrome or as Chromium belongs to SP7, along with Widevine and
+proprietary codecs. SP2 owns only the presence and shape of `window.chrome` (4.7), which must
+be consistent with whatever SP7 decides.
+
+TLS, JA3 and HTTP/2 fingerprinting are out of the roadmap entirely, for the reason recorded
+under *Out of roadmap* in the conventions: Camoucrome is a real Chromium build on BoringSSL
+and Chromium's own network stack, so those fingerprints are already Chrome's. The one
+SP2-specific observation worth keeping is that this property is undone by anything in front
+of the browser that re-terminates TLS — which includes some interception proxies used during
+automation testing, so a Camoucrome test rig can defeat it accidentally. Verify the driver
+and proxy chain, not the browser.

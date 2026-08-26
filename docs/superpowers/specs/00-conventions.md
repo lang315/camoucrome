@@ -138,17 +138,70 @@ about fifteen lines; describe the change instead of transcribing it.
 | SP | Scope | Depends on |
 |----|-------|-----------|
 | SP0 | Config layer + tracer-bullet surface | — |
-| SP1 | Navigator identity and UA / UA-CH coherence | SP0 |
+| SP6a | Patch management and the key registry | SP0 |
+| SP5a | Invariant registry, reader, and load-time validator | SP0 |
+| SP1 | Navigator identity and UA / UA-CH coherence | SP0, SP6a, SP5a |
 | SP2 | Automation hiding and CDP invisibility | SP0 |
 | SP3 | WebGL and canvas fingerprints | SP0 |
-| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP0, patterns from SP1/SP3 |
-| SP5 | Coherence engine and real fingerprint presets | SP1, SP3, SP4 |
-| SP6 | Build system, packaging, driver API | all |
-| SP7 | Phone-home removal and build-level hardening | — (GN args, independent) |
+| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1, SP3, SP5a |
+| SP5b | Invariant catalogue and fingerprint presets | SP1, SP3, SP4 |
+| SP6b | Packaging and driver API | SP1–SP5 |
+| SP7 | Phone-home removal and build-level hardening | — |
 
-SP2 and SP3 are independent of each other and may proceed in parallel. SP7 is
-independent of the config layer entirely — it is GN arguments and build configuration
-— so it can proceed at any time.
+SP5 and SP6 are each split, because both specs argue in their own dependency sections
+that half their content is needed far earlier than the other half. SP6's patch
+management is needed immediately after SP0's first commit — a branch in the Chromium
+tree is at risk from the next `gclient sync` — and its key registry must exist before
+SP1 adds twenty keys as string literals. SP5's registry and validator can land as soon
+as SP0 does, and SP5 warns that deferring them is precisely the failure mode Camoufox
+exhibits. Deferring either to the end is the mistake this split prevents.
+
+SP2 and SP3 are independent of each other and of SP1. SP7 is GN arguments and build
+configuration, so it depends on nothing and can start at any time.
+
+## Config key naming
+
+A key uses a **dot** when it mirrors a JavaScript property path exactly
+(`navigator.userAgent`, `screen.width`, `window.outerHeight`) and a **colon** when it
+names a synthetic namespace with no direct JS counterpart (`webGl:renderer`,
+`canvas:seed`, `locale:region`). Camoufox follows this rule in practice without ever
+stating it; stating it matters here because SP6a generates C++ constants from the key
+registry, which makes a later rename a breaking change.
+
+A value that is *derived* from another gets no key at all. If `screen.orientation` is
+always computable from the spoofed dimensions, an independent override key creates the
+opportunity for incoherence rather than removing it.
+
+## Ownership decisions
+
+These resolve gaps found while cross-checking the spec set, and override any
+contradicting statement left in an individual spec.
+
+**Claimed-OS derivation belongs to SP5a.** The single function answering "what OS are
+we claiming" lives in `additions/camoucfg/derive.{h,cc}`, alongside the other derived
+values. SP1 populates the inputs it derives from; SP4 and SP7 consume it. No spec
+re-derives the OS from a user-agent string locally.
+
+**`window.chrome` belongs to SP2.** Its `runtime`, `loadTimes` and `csi` members are a
+page-observable discriminator, and the historically important failure — headless Chrome
+lacking the object entirely — is an automation tell rather than a branding one. SP7
+owns the build-identity discriminators (Widevine, proprietary codecs); SP2 owns this
+one, and the two cross-reference.
+
+**Proprietary codecs and Widevine belong to SP7,** not SP6. SP7 did not exist when SP5
+assigned them.
+
+## Out of roadmap: TLS and HTTP/2 fingerprinting
+
+JA3, JA4 and HTTP/2 frame-ordering fingerprints are deliberately **not** an SP, and this
+is a decision rather than an oversight. Camoucrome is a real Chromium build using
+BoringSSL and Chromium's own network stack, so its TLS and HTTP/2 fingerprints are
+already those of Chrome — the same reason this was a strength rather than a gap in
+Camoufox. The exposure is not the browser but what sits in front of it: a driver, proxy,
+or interception layer that re-terminates TLS will substitute its own fingerprint and
+undo this for free. Treat it as a deployment constraint to verify, not a surface to
+build. Revisit only if measurement shows the built binary's fingerprint diverging from
+stock Chrome of the same milestone.
 
 ## Cross-cutting findings
 

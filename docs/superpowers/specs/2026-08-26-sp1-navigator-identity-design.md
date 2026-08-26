@@ -5,15 +5,25 @@ Assumes: [00-conventions.md](00-conventions.md)
 
 ## 1. Goal
 
-SP1 makes the browser able to claim a different device and browser identity than the
-one it is running on, consistently across every channel that reveals it. After SP1, a
-config that says "Chrome 141 on Windows 11 x64" produces a `navigator.userAgent` string,
-a `navigator.userAgentData` object, a set of `Sec-CH-UA*` request headers, an
-`Accept-Language` header, and a dozen `navigator.*` scalars that all agree with each
-other and with what a real Chrome 141 on Windows 11 emits. This is the single
-highest-value surface in the project: it is what nearly every detector reads first, and
-it is also where Chromium differs most sharply from Firefox, so almost none of
-Camoufox's implementation experience transfers.
+SP1 makes the browser able to claim a different *device* identity than the one it is
+running on — a different operating system, architecture, and locale — consistently
+across every channel that reveals it. After SP1, a config that says "Windows 11 x64,
+en-US" produces a `navigator.userAgent` string, a `navigator.userAgentData` object, a
+set of `Sec-CH-UA*` request headers, an `Accept-Language` header, and a dozen
+`navigator.*` scalars that all agree with each other and with what a real Chrome of
+*this build's own version* running on Windows 11 emits.
+
+The browser version is deliberately not part of what SP1 spoofs. Conventions settles
+this: a claimed version that contradicts the feature set actually compiled into the
+binary is a contradiction no value substitution repairs, and feature availability cannot
+be made to track an arbitrary version number. Every UA channel therefore reports the
+build's real Chromium milestone, and SP1's work is to change the OS, hardware, and
+locale dimensions around it. That is a narrowing of what an earlier draft of this spec
+assumed, and it removes a class of failure rather than adding one.
+
+This is the single highest-value surface in the project: it is what nearly every
+detector reads first, and it is also where Chromium differs most sharply from Firefox,
+so almost none of Camoufox's implementation experience transfers.
 
 ## 2. Depends on
 
@@ -23,7 +33,18 @@ that path with a startup log line; SP1 depends on it working for real, because t
 producer lives in the browser process. If SP0's browser-process probe fails, SP1 is
 blocked until it is fixed.
 
-Nothing else. SP1 does not depend on SP2 or SP3.
+**SP6a** — the key registry. SP1 introduces roughly twenty keys at once, which is the
+point past which string literals at call sites stop being acceptable. `settings/keys.json`
+must exist first, so SP1's keys are generated constants from the start rather than being
+retrofitted afterwards.
+
+**SP5a** — the invariant registry and the derivation helpers in
+`additions/camoucfg/derive.{h,cc}`. SP1 does not itself answer the question "what OS are
+we claiming"; see section 4.
+
+SP1 does not depend on SP3 or SP4. It is coupled to **SP2** in one direction: Chromium's
+existing CDP emulation override flows through the same channels SP1 patches, and
+neutralising it is SP2 work. See open decision D1.
 
 ## 3. Surfaces
 
@@ -123,6 +144,21 @@ must be patched in Blink individually:
 For each of these, the patch reads config and falls back to the real computed value
 when the key is absent, per conventions rule 5.
 
+### SP1 populates the OS inputs; it does not derive the OS
+
+Several later sub-projects need to know which operating system the current config is
+claiming. SP4 resolves system fonts, CSS system-font keywords and codec answers from
+it; SP7 reasons about platform-specific update machinery from it. That question has
+exactly one answer function, and conventions places it in SP5a's
+`additions/camoucfg/derive.{h,cc}` alongside the other derived values.
+
+SP1's relationship to it runs one way. SP1 populates the inputs the derivation reads —
+the UA-CH `platform` field, `navigator.platform`, and the OS token inside the UA string
+— and then consumes the derived answer like every other sub-project. **SP1 must not
+parse a user-agent string locally to work out the OS.** Two independent parsers of the
+same string is exactly how surfaces drift apart, and avoiding it is why Camoufox keeps
+`utils.py::determine_ua_os` as the only such function in its codebase.
+
 ### Worker parity
 
 Rule 3 requires a worker to report the same values as its window. The design satisfies
@@ -157,21 +193,46 @@ explicit override for cases where the q-value formatting must be controlled prec
 When only `navigator.languages` is set, the `Accept-Language` header is generated from
 it using Chromium's normal formatting, so the two cannot disagree.
 
+**The boundary with SP4's `locale:*` keys.** `navigator.language` and
+`navigator.languages` are the page-visible values and keep their `navigator.` names,
+per the key-naming rule in conventions: they mirror a JavaScript property path exactly.
+SP4's `locale:*` keys are a **separate, non-overlapping namespace** covering what ICU
+consumes — collation order, date and number formatting, the default calendar — none of
+which is readable as a `navigator` property. Neither namespace is an alias for the
+other. The mapping between them is stated once, in the key registry: an unset `locale:*`
+value defaults from `navigator.languages[0]`, and setting both to values that disagree
+is an invariant violation for SP5a's validator to reject, not something SP1 silently
+reconciles.
+
+One deliberate exception to the naming rule: `headers.Accept-Language` keeps its dot
+even though `headers` is not a JavaScript property path. Camoufox uses that exact
+spelling, and conventions commits to a transport its generator can drive unchanged.
+Renaming it would buy internal consistency at the cost of the compatibility the
+transport exists for.
+
 ### Reduced User-Agent
 
 Modern Chromium ships a *reduced* User-Agent string by default: the minor version is
-frozen and platform detail is coarsened. Whether a given Chrome emits the reduced or
-full form depends on the version and on feature state. A config-supplied UA string that
-uses the full form while claiming a version that would have emitted the reduced form is
-a detectable inconsistency, and vice versa. The producer patch must not silently mix the
-two. The safest rule is that the config supplies the complete final UA string and the
-complete metadata, and SP5's preset generator — which samples real captured Chrome
-fingerprints — is responsible for them being in the right form for the claimed version.
+frozen and platform detail is coarsened. Whether a build emits the reduced or the full
+form depends on its version and feature state.
+
+Because SP1 no longer spoofs the version, most of this resolves itself. The build emits
+whichever form its own milestone emits, and that is by definition the correct form for
+the version being reported — the mismatch an earlier draft worried about cannot arise
+if the version is never substituted.
+
+What remains is narrower and still real: the OS token inside the string has to be
+substituted, and the reduced form coarsens platform detail in a way the full form does
+not, so the substitution differs between the two. The producer patch must therefore read
+which form the build is emitting and rewrite the OS token within it, rather than
+assembling a UA string from scratch. Assembling from scratch is the thing that would let
+the two forms get mixed.
 
 ## 5. Coherence constraints
 
 | This surface | Must agree with | Invariant |
 |---|---|---|
+| every UA channel | the binary itself | The Chromium version reported in the UA string, in `userAgentData.brands`, in `fullVersionList`, and in the `Sec-CH-UA` header must all equal the version this build was compiled from. Config cannot override it. This is SP1's primary invariant; verification item 1 asserts it. |
 | `navigator.userAgent` | `navigator.userAgentData.brands`, `fullVersionList` | The major version in the UA string must equal the Chromium brand's version in the brands list. |
 | `navigator.userAgent` | `Sec-CH-UA` header | Same brand list, same versions, same order and GREASE placement. |
 | `navigator.userAgent` | `navigator.platform`, `navigator.appVersion` | The OS token in the UA string must map to the platform string a real Chrome on that OS reports (`Win32`, `MacIntel`, `Linux x86_64`). |
@@ -192,11 +253,21 @@ adopt the same all-or-nothing rule, extended to cover the UA-CH fields, in the
 ## 6. Verification
 
 Each item is runnable against a `content_shell` build with `--remote-debugging-port`.
-`CFG` below stands for a `CAMOU_CONFIG` value describing Chrome 141 on Windows 11 x64
-while the host is Linux x86_64.
+`CFG` below stands for a `CAMOU_CONFIG` value describing **Windows 11 x64, en-US**,
+while the host is Linux x86_64. `CFG` carries no version field of any kind: the reported
+Chromium version is always this build's own.
 
-1. **UA string.** Launch with `CFG`; evaluate `navigator.userAgent`. Expect exactly the
-   configured string. Launch with no config; expect the stock Linux UA.
+1. **The version is never spoofed; everything else in the UA string is.** Launch with
+   `CFG` and evaluate `navigator.userAgent`: expect a Windows-shaped OS token and a
+   version segment byte-identical to stock. Then extract the Chromium version from four
+   places — the UA string, `navigator.userAgentData.brands`, the `fullVersionList`
+   high-entropy hint, and the `Sec-CH-UA` request header — and confirm all four equal the
+   version this binary was built from, read independently from `chrome://version` or
+   `chrome/VERSION`. Then relaunch with a `CFG` that attempts to set a version: the
+   attempt must be rejected or ignored, and all four channels must still report the build
+   version. Finally launch with no config at all and expect the stock Linux UA,
+   byte-identical. This item is what stops the spoofed identity from contradicting the
+   binary underneath it, and it is the one to run first after any change to the producer.
 2. **UA-CH object.** Evaluate `navigator.userAgentData.platform`. Expect `"Windows"`.
    Evaluate `navigator.userAgentData.brands` and confirm the Chromium entry's version
    equals the major version in the UA string from item 1.
@@ -256,6 +327,11 @@ incoherence appears — the parser's idea of "Windows 11" and the real Chrome's 
 the platformVersion encoding. The cost is roughly eight more config keys, which SP5's
 preset generator fills from real captured fingerprints rather than a human typing them.
 
+The version-bearing fields are excluded from this decision entirely. The brand versions
+and `fullVersionList` are not config keys under either option, because the version is
+not spoofed; the producer fills them from the build's own version regardless of what
+config says.
+
 **D3 — Whether the Chrome constants are configurable at all.** `productSub`, `vendor`,
 `appCodeName`, `appName`, `product` are fixed in real Chrome. Exposing them as config
 keys invites a user to set them to something that instantly reveals the fork.
@@ -285,6 +361,8 @@ Cross-surface validation — deciding whether a given combination of UA, platfor
 renderer, and font list describes a machine that could actually exist — is **SP5**. SP1
 declares the invariants in section 5 but does not enforce them. A config that sets a
 Windows UA and a macOS platform will produce exactly that incoherent result in SP1, by
-design; catching it is SP5's job.
+design; catching it is SP5's job. Concretely: SP5a supplies the validator and the
+derivation helpers SP1 depends on, and SP5b supplies the catalogue of invariants that
+validator enforces.
 
-Generating realistic values is also **SP5**. SP1 consumes whatever config it is given.
+Generating realistic values is also **SP5b**. SP1 consumes whatever config it is given.

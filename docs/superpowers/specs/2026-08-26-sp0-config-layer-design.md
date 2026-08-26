@@ -177,11 +177,12 @@ alternative is a plain opaque integer handle, which is cheaper to pass but harde
 extend. Recommendation: class, because the extension is a known requirement rather
 than a speculative one.
 
-**Where the key registry lives.** SP0 has one key and needs no registry. SP6 specifies
-the `settings/properties.json` equivalent that both the C++ validator and the client
-consume. Until then keys are string literals at call sites, which is acceptable for one
-key and would not be for twenty — SP1 should not add many keys before the registry
-exists.
+**Where the key registry lives.** SP0 has one key and needs no registry. SP6a owns
+`settings/keys.json`, from which both the C++ constants and the client's validation
+table are generated. Until it exists, keys are string literals at call sites —
+acceptable for one key and not for twenty, which is why the amended sub-project map
+places SP6a immediately after SP0 and before SP1. SP5a's `settings/invariants.json` is
+a different file with a different job; neither subsumes the other.
 
 ## 8. Explicitly out of scope
 
