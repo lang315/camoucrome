@@ -18,6 +18,8 @@
 - No third-party JSON library is vendored. Chromium ships `base::JSONReader`.
 - Environment transport is `CAMOU_CONFIG_1`, `CAMOU_CONFIG_2`, … concatenated in index order, falling back to a single `CAMOU_CONFIG`. This is byte-compatible with Camoufox on purpose.
 - All code is written in the Chromium checkout at `~/chromium/src` on the build machine, as WSL user `lang`. depot_tools refuses to run as root.
+- **The base revision is `0e8d4a9268118d323f62ca207b40514df39dcaa9`.** Verified as the checkout's `HEAD` before any task ran. Every patch extracted in Task 7 is generated against this revision, and it is what the Camoucrome README records.
+- **A gclient checkout is in detached HEAD, so Task 1 must create a branch before its first commit.** Commits made in detached HEAD belong to no branch, and the next `gclient sync` or checkout discards them with no entry in `git log` to recover from. Every task in this plan commits, so this is not optional — it is the difference between the work existing and not.
 - Build directory is `out/Default`. Never run `gn gen` with different args; the existing `args.gn` is `is_debug=false`, `is_component_build=true`, `symbol_level=0`, `blink_symbol_level=0`, `dcheck_always_on=false`, `use_remoteexec=false`.
 - Every command in this plan runs inside WSL. From the controlling machine, pipe a script to `wsl -d Ubuntu-24.04 -u lang -- bash -s` over an ssh connection with `ControlMaster` and `ControlPersist` enabled. A long build must run in the foreground of that session; detaching with `nohup` or `setsid` gets the process killed.
 
@@ -54,6 +56,25 @@ Splitting the pure functions into `mask_config_internal.h` is what makes Tasks 1
 **Interfaces:**
 - Consumes: nothing.
 - Produces: `camoucfg::internal::AssembleRawConfig(base::FunctionRef<std::optional<std::string>(const std::string&)> get) -> std::string`.
+
+- [ ] **Step 0: Create the working branch**
+
+The checkout is in detached HEAD. Commit there and the work belongs to no branch, and
+the next `gclient sync` discards it with nothing left in `git log` to recover from.
+
+Run:
+
+```bash
+cd ~/chromium/src
+git rev-parse HEAD
+git checkout -b camoucrome/sp0
+git rev-parse --abbrev-ref HEAD
+```
+
+Expected: the first command prints `0e8d4a9268118d323f62ca207b40514df39dcaa9`, and
+the last prints `camoucrome/sp0`. If the first prints a different hash, the checkout
+moved since the plan was written — stop and report it rather than continuing, because
+every patch in Task 7 is generated against that revision.
 
 - [ ] **Step 1: Create the BUILD.gn**
 
@@ -914,17 +935,25 @@ git commit -m "camoucfg: add the scope-shaped public API and typed getters"
 
 The override goes in `NavigatorBase`, not in `NavigatorConcurrentHardware`, for two reasons. `NavigatorConcurrentHardware::hardwareConcurrency()` takes no arguments and is a bare mixin with no access to an execution context, so the scope-shaped API could not be exercised there at all. `NavigatorBase` at `third_party/blink/renderer/core/execution_context/navigator_base.h:41` inherits that mixin, lives in the execution-context directory, and is the common base of both `Navigator` and `WorkerNavigator` — so one override gives window and worker the same answer by construction, which is exactly the parity the conventions require.
 
-- [ ] **Step 1: Confirm the base class exposes an execution context**
+- [ ] **Step 1: Confirm the base class still exposes an execution context**
 
-Run:
+Already verified against this checkout: `NavigatorBase` inherits `ScriptWrappable`,
+`NavigatorConcurrentHardware`, `NavigatorDeviceMemory`, `NavigatorID`,
+`NavigatorLanguage`, `NavigatorOnLine`, `NavigatorUA`, **`ExecutionContextClient`**
+(at `navigator_base.h:47`), and `Supplementable<NavigatorBase>`.
+`ExecutionContextClient` is what supplies `ExecutionContext* GetExecutionContext() const`.
+
+Re-confirm before editing, since this is the one assumption the whole task rests on:
 
 ```bash
 cd ~/chromium/src
-grep -n "class CORE_EXPORT NavigatorBase" -A 12 \
+grep -n "ExecutionContextClient" \
   third_party/blink/renderer/core/execution_context/navigator_base.h
 ```
 
-Expected: the class declaration lists `public ExecutionContextClient` among its bases, which supplies `ExecutionContext* GetExecutionContext() const`. If it does not, use `GetExecutionContext()` from whichever base the output names; the call in Step 5 is the only line that depends on it.
+Expected: a line reading `public ExecutionContextClient,`. If it is absent, stop and
+report — Step 5's call is the only line that depends on it, but there is no correct
+way to write that line without knowing which base provides the context.
 
 - [ ] **Step 2: Write the Blink scope adapter**
 
@@ -1023,7 +1052,9 @@ The fallback repeats the original expression from `NavigatorConcurrentHardware` 
 
 - [ ] **Step 6: Add the build dependency**
 
-In `third_party/blink/renderer/core/BUILD.gn`, find the `deps` list of the `core` target — search for `"//components/` to locate the existing component dependencies — and add:
+In `third_party/blink/renderer/core/BUILD.gn`, the `deps` list's `//components/`
+entries begin at line 411 with `"//components/paint_preview/common",` and are
+alphabetical. Insert immediately **above** that line:
 
 ```gn
     "//components/camoucfg",
@@ -1086,11 +1117,10 @@ Then inside `int BrowserMainLoop::EarlyInitialization()` — the function begins
 
 - [ ] **Step 2: Add the build dependency**
 
-In `content/browser/BUILD.gn`, find the `deps` list of the `browser` target and add:
-
-```gn
-    "//components/camoucfg",
-```
+In `content/browser/BUILD.gn`, the `deps` list already carries `//components/`
+entries — `"//components/download/database",` is at line 153 — and they are
+alphabetical. Insert `"//components/camoucfg",` in alphabetical position among them,
+which is above the `download` entries.
 
 - [ ] **Step 3: Build**
 
@@ -1296,17 +1326,25 @@ script was instead authored directly on the build machine, pull it back with the
 
 This is the task that makes the previous six durable. Until it runs, all of SP0 exists only as commits on a branch inside a generated directory that the next `gclient sync` can rewrite.
 
-- [ ] **Step 1: Record the base revision**
+- [ ] **Step 1: Confirm the base revision**
+
+The base revision is pinned in this plan's Global Constraints, not derived from a
+commit count. `HEAD~5` would be wrong the moment a review loop adds a fix commit, and
+would silently produce a patch missing part of the work.
 
 Run on the build machine:
 
 ```bash
 cd ~/chromium/src
-git rev-parse HEAD~5 > /tmp/camoucrome_base_revision
-cat /tmp/camoucrome_base_revision
+echo 0e8d4a9268118d323f62ca207b40514df39dcaa9 > /tmp/camoucrome_base_revision
+git merge-base --is-ancestor $(cat /tmp/camoucrome_base_revision) HEAD && \
+  echo "base is an ancestor of HEAD: OK"
+git log --oneline $(cat /tmp/camoucrome_base_revision)..HEAD
 ```
 
-Expected: a 40-character commit hash. `HEAD~5` is the revision before Task 1's commit, given the five commits made in Tasks 1 through 5.
+Expected: `base is an ancestor of HEAD: OK`, followed by the commits from Tasks 1
+through 5 — five of them if no review loop added a fix, more if one did. Either count
+is fine; that is the point of pinning the revision rather than counting backwards.
 
 - [ ] **Step 2: Copy the whole new files into `additions/`**
 
