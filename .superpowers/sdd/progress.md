@@ -389,3 +389,15 @@ Fixed a latent second flake in the same pass: stderr was a PIPE read after
 terminate, which would deadlock the child if Chromium's startup noise ever
 filled the buffer. It now goes to a file that each launch truncates.
 
+Task 6: COMPLETE. Flake fix applied and verified.
+  I applied the launch() change myself rather than nudge a fourth time --
+  mechanical text substitution in a file I wrote, no fresh-eyes value.
+  Pushed, md5-matched both sides (f78a1e13...), ran FOUR consecutive times:
+  9/9 PASS, exit 0, every run. Before the fix it was 3 of 4.
+  Four is deliberate: a one-in-four flake makes a single green run
+  meaningless.
+  Note the Task 6 review was dispatched against the pre-flake-fix script,
+  so any finding about launch()'s sleep is already addressed.
+
+Task 7: dispatched. Until it lands, SP0 exists only as a branch inside a
+directory gclient regenerates.
