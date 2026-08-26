@@ -258,3 +258,27 @@ Dry-ran Task 7's extraction mechanism ahead of time, read-only:
   since every line in patches/ is a line that can conflict on each Chromium
   rebase. SP0 lands on the good side of it.
 
+Task 5: DONE pending review (commit f9b7b21c, browser process verified).
+  Independently confirmed: 2 files, 10 insertions, exactly one camoucfg dep
+  in content/browser/BUILD.gn, checkout clean. With a real config the browser
+  logs "parsed 1 key(s)" and the reachability line. With CAMOU_CONFIG=1
+  (invalid JSON) it logs the error once, "parsed 0 key(s)", still reaches the
+  line, and does not crash -- criterion 6 demonstrated early, in the browser
+  process.
+
+  Two plan defects found and fixed:
+  - The verification command piped into plain grep. timeout kills
+    content_shell mid-stream and grep's buffer is lost with the pipe, so it
+    reproducibly printed nothing while the output was in fact correct. Now a
+    file redirect, which also leaves the full log when lines are missing.
+
+  - THE WSL DETACHMENT MYSTERY IS SOLVED, and it is not process-level.
+    The entire WSL2 VM is torn down seconds after the last attached wsl.exe
+    client disconnects -- confirmed by `uptime` reading "up 0 min" right
+    after a build vanished. Nothing inside can outlive the last client, so
+    nohup, setsid+disown and Start-Process all fail by construction, and
+    Task 4's "setsid survived" was a 19-second job outliving the teardown
+    window by luck. What works is keeping a client attached: a foreground
+    job in an ssh session held open by ControlMaster/ControlPersist, or
+    chunked `timeout -k 15 540 autoninja` calls. Recorded in project memory.
+
