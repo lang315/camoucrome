@@ -22,6 +22,7 @@
 - **A gclient checkout is in detached HEAD, so Task 1 must create a branch before its first commit.** Commits made in detached HEAD belong to no branch, and the next `gclient sync` or checkout discards them with no entry in `git log` to recover from. Every task in this plan commits, so this is not optional — it is the difference between the work existing and not.
 - Build directory is `out/Default`. Never run `gn gen` with different args; the existing `args.gn` is `is_debug=false`, `is_component_build=true`, `symbol_level=0`, `blink_symbol_level=0`, `dcheck_always_on=false`, `use_remoteexec=false`.
 - Every command in this plan runs inside WSL. From the controlling machine, pipe a script to `wsl -d Ubuntu-24.04 -u lang -- bash -s` over an ssh connection with `ControlMaster` and `ControlPersist` enabled.
+- **`autoninja` is not on `PATH` in a non-interactive ssh session.** `~/.bashrc` sets it, and bash only sources `.bashrc` for interactive shells, so a piped script gets a bare `PATH`. Export it explicitly at the top of any script that builds: `export PATH="$HOME/depot_tools:$PATH"`.
 - **The WSL2 VM is torn down seconds after the last attached `wsl.exe` client disconnects.** Confirmed by reading `uptime` right after a vanished build: `up 0 min`. Nothing inside can outlive the last client, so `nohup`, `setsid ... & disown`, and Windows-side `Start-Process` all fail by construction rather than by being used wrongly. Two things work: run the job in the **foreground** of an ssh session held open from the client side, which is what carried a four-hour build; or issue chunked foreground calls, `timeout -k 15 540 autoninja -C out/Default <target>` repeated inside single ssh calls. A client-side task exiting 255 does **not** mean the remote job died — check `pgrep -c "siso|ninja"` and the log's mtime before concluding anything, and never start a second build in `out/Default`.
 - **Prefix every `tar` on the macOS side with `COPYFILE_DISABLE=1`.** macOS `tar` embeds AppleDouble sidecar files (`._name`) for any file carrying extended attributes, and they arrive in the Chromium checkout as untracked junk. Task 1 shipped six of them. They do not break the build, but `additions/` would copy them into the repository and every later `git status` reads dirty. Clean any that already exist with `find . -name '._*' -delete` inside the affected directory.
 - A `git commit` in the Chromium checkout must never fail with `Author identity unknown`. Configure the identity repo-locally in Task 1 Step 0, before any commit.
@@ -1485,41 +1486,48 @@ DESCRIPTOR_PROBE = """
 
 results = {}
 
+# Every read must happen while its own content_shell is still alive. Each
+# evaluate() call opens a fresh CDP connection, so anything asked for after
+# proc.terminate() fails with ECONNREFUSED before a single result is printed.
+PROTO_PROBE = "Object.getOwnPropertyNames(Navigator.prototype).sort().join(',')"
+KEYS_PROBE = "Object.keys(window).sort().join(',')"
+
+BASELINE = os.path.expanduser(
+    "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
+with open(BASELINE) as f:
+    baseline = json.load(f)
+
 # Criteria 2 and 5: spoofed value, and worker parity under spoofing.
 proc = launch('{"navigator.hardwareConcurrency":8}')
-window_value, worker_value, descriptor, keys = evaluate(
+window_value, worker_value, descriptor, spoofed_keys, spoofed_proto = evaluate(
     ["navigator.hardwareConcurrency", WORKER_PROBE, DESCRIPTOR_PROBE,
-     "Object.keys(window).sort().join(',')"])
+     KEYS_PROBE, PROTO_PROBE])
 proc.terminate()
 results["2 spoofed value is 8"] = window_value == 8
 results["5 worker agrees when spoofed"] = worker_value == 8
 # Criterion 4, first half: the accessor still looks native.
 results["4 accessor reports [native code]"] = "[native code]" in descriptor
-spoofed_keys = keys
 
 # Criteria 3 and 5: real value, and worker parity without configuration.
 proc = launch(None)
-real_window, real_worker, stock_keys = evaluate(
-    ["navigator.hardwareConcurrency", WORKER_PROBE,
-     "Object.keys(window).sort().join(',')"])
+real_window, real_worker, stock_keys, stock_proto = evaluate(
+    ["navigator.hardwareConcurrency", WORKER_PROBE, KEYS_PROBE, PROTO_PROBE])
 proc.terminate()
 results["3 falls back to the real 16"] = real_window == 16
 results["5 worker agrees when unconfigured"] = real_worker == real_window
+
 # Criterion 4, second half: no property was added or removed, measured
 # against the binary as it was BEFORE any Camoucrome call site was wired in.
 # Comparing the spoofed run against the unconfigured run would not catch a
 # property this change adds unconditionally, because both runs execute the
-# same modified code.
-BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
-with open(BASELINE) as f:
-    baseline = json.load(f)
+# same modified code. Both runs are checked against the baseline for the
+# same reason.
 results["4 window keys match the pre-spoof baseline"] = (
     spoofed_keys.split(",") == baseline["window_keys"]
     and stock_keys.split(",") == baseline["window_keys"])
 results["4 Navigator prototype unchanged"] = (
-    sorted(evaluate(["Object.getOwnPropertyNames(Navigator.prototype)"])[0])
-    == baseline["navigator_prototype_props"])
+    spoofed_proto.split(",") == baseline["navigator_prototype_props"]
+    and stock_proto.split(",") == baseline["navigator_prototype_props"])
 
 # Criterion 6: malformed configuration does not crash and reports the truth.
 proc = launch("{not json")
@@ -1556,7 +1564,7 @@ Run:
 ~/camoucrome-verify/venv/bin/python ~/camoucrome-verify/verify_sp0.py
 ```
 
-Expected: eight `PASS` lines and exit status 0.
+Expected: nine `PASS` lines and exit status 0.
 
 The one to read carefully is `4 window keys match the pre-spoof baseline`. That assertion is what separates a C++ implementation from an injected one, and it is the single most important line in this plan. If it fails, something added a property to `window`, and the change is detectable no matter how correct the value is.
 
@@ -1741,7 +1749,7 @@ autoninja -C out/Default content_shell && \
   ~/camoucrome-verify/venv/bin/python ~/camoucrome-verify/verify_sp0.py
 ```
 
-Expected: eight `PASS` lines and exit status 0.
+Expected: nine `PASS` lines and exit status 0.
 
 - [ ] **Step 6: Update the repository status**
 

@@ -328,3 +328,28 @@ Task 5: COMPLETE (commits f9b7b21c..a90c2cdc).
   an open weakness for SP6a or SP7 to resolve properly.
 
 Task 6: dispatched. Full acceptance verification against all six criteria.
+Task 6: DONE_WITH_CONCERNS pending fix. 6/6 criteria pass (19/19 unit tests,
+9/9 runtime assertions) -- but criteria 2-6 were only observable through a
+sequencing-corrected copy, because the committed script crashes.
+
+The crash is mine. When I patched criterion 4 to add the Navigator.prototype
+comparison, I put the evaluate() call in the results-assignment block, which
+runs after both proc.terminate() calls. Each evaluate() opens a fresh CDP
+connection, so it dies with ECONNREFUSED -- before the print loop, so the
+script emits zero PASS/FAIL lines and never reaches criterion 6.
+
+The implementer did the right thing three times over: did not edit the
+committed script since it was told to use the brief verbatim, wrote an
+uncommitted supplement that only moves the read to while the browser is
+alive, and stated plainly that the evidence came from the corrected copy.
+It could have quietly fixed it and reported 9/9.
+
+Fixed in the plan by hoisting both probes into the live evaluate() batches,
+which is also strictly better: Navigator.prototype is now checked in BOTH
+runs against the baseline, not one.
+
+Also fixed: the brief said "eight PASS lines" while the script defines nine.
+And recorded a real environment finding -- autoninja is not on PATH in a
+non-interactive ssh session, because ~/.bashrc only runs for interactive
+shells. Every build script must export it explicitly.
+
