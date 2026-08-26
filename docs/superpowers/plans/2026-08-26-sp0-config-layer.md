@@ -1295,9 +1295,17 @@ Then inside `int BrowserMainLoop::EarlyInitialization()` — the function begins
 - [ ] **Step 2: Add the build dependency**
 
 In `content/browser/BUILD.gn`, the `deps` list's `//components/` entries are
-alphabetical and begin with `"//components/cbor",` just above
-`"//components/discardable_memory/common",`. `camoucfg` sorts before `cbor`, so insert
-`"//components/camoucfg",` **immediately above the `//components/cbor` line**.
+alphabetical and begin with `"//components/cbor",` at line 150, just above
+`"//components/discardable_memory/common",`. That list belongs to
+`source_set("browser")`, declared at line 101 — confirm you are in that target and not
+a neighbouring one. `camoucfg` sorts before `cbor`, so insert `"//components/camoucfg",`
+**immediately above the `//components/cbor` line**.
+
+There are already 91 `//components/` dependencies in this target, so this is a
+well-worn edge rather than a new layering direction.
+
+`base/logging.h` is already included at line 23 and the file already makes six
+`LOG`/`VLOG` calls, so Step 1 needs no logging include — only the `mask_config.h` one.
 
 - [ ] **Step 3: Build**
 
