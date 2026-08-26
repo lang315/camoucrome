@@ -1125,7 +1125,11 @@ Add `"blink_scope.h",` to the `sources` list of the `camoucfg` target in `compon
 
 - [ ] **Step 3: Allow Blink to include the component**
 
-`third_party/blink/renderer/DEPS` lists individual headers, for example `"+components/crash/core/common/crash_key.h",` at line 95. Follow that convention: add these two entries to the `include_rules` list, alphabetically among the other `+components` entries:
+`third_party/blink/renderer/DEPS` lists individual headers and is ordered by
+top-level directory. Its only `+components` entry today is
+`"+components/crash/core/common/crash_key.h",` at line 95, sitting between
+`"+cc/paint",` and `"+net/base/features.h",`. `camoucfg` sorts before `crash`, so
+insert these two entries **immediately above line 95**:
 
 ```
     "+components/camoucfg/blink_scope.h",
@@ -1219,7 +1223,9 @@ apply configuration last — is the pattern every later surface copies.
 
 In `third_party/blink/renderer/core/BUILD.gn`, the `deps` list's `//components/`
 entries begin at line 411 with `"//components/paint_preview/common",` and are
-alphabetical. Insert immediately **above** that line:
+alphabetical. That list belongs to `component("core")`, declared at line 257, which is
+the target that compiles `navigator_base.cc` (listed in
+`core/execution_context/build.gni:16`). Insert immediately **above** line 411:
 
 ```gn
     "//components/camoucfg",
@@ -1233,7 +1239,10 @@ Run:
 autoninja -C out/Default content_shell
 ```
 
-Expected: build succeeds. A DEPS violation would report `Illegal include: "components/camoucfg/mask_config.h"`; if that appears, Step 3 was not applied correctly.
+Expected: build succeeds. `gn check` is enabled for this target — blink core's
+BUILD.gn sets no `check_includes = false` — so a missing DEPS entry is a hard build
+failure reading `Illegal include: "components/camoucfg/mask_config.h"`, not a warning.
+If that appears, Step 3 was not applied correctly.
 
 - [ ] **Step 8: Commit**
 
@@ -1282,10 +1291,10 @@ Then inside `int BrowserMainLoop::EarlyInitialization()` — the function begins
 
 - [ ] **Step 2: Add the build dependency**
 
-In `content/browser/BUILD.gn`, the `deps` list already carries `//components/`
-entries — `"//components/download/database",` is at line 153 — and they are
-alphabetical. Insert `"//components/camoucfg",` in alphabetical position among them,
-which is above the `download` entries.
+In `content/browser/BUILD.gn`, the `deps` list's `//components/` entries are
+alphabetical and begin with `"//components/cbor",` just above
+`"//components/discardable_memory/common",`. `camoucfg` sorts before `cbor`, so insert
+`"//components/camoucfg",` **immediately above the `//components/cbor` line**.
 
 - [ ] **Step 3: Build**
 
