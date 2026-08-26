@@ -371,3 +371,21 @@ Task 6: DONE pending review (commits 7d34db9..5063195).
 
 Task 7: dispatched. The task that makes all of it durable -- until it runs,
 SP0 exists only as a branch inside a directory gclient regenerates.
+Task 6 follow-up: the fixed script still flaked, 1 run in 4, with
+ECONNREFUSED on the FIRST evaluate() -- a different failure from the
+reconnect-after-terminate bug. The implementer ruled out stray processes and
+ports, confirmed content_shell normally binds well inside the 5s sleep, re-ran
+unmodified to 9/9, and did not patch it. Correct call: it is a startup timing
+race, not a logic defect.
+
+Fixed anyway, because an intermittently failing verification is worse than a
+slow one. When it goes red the natural reading is "the code regressed" and
+someone hunts a bug that is not there; worse, people learn to re-run until
+green, and then the script measures nothing. A fixed sleep is hope. launch()
+now polls the DevTools endpoint until it answers, with a 30s deadline and a
+loud RuntimeError if it never does.
+
+Fixed a latent second flake in the same pass: stderr was a PIPE read after
+terminate, which would deadlock the child if Chromium's startup noise ever
+filled the buffer. It now goes to a file that each launch truncates.
+
