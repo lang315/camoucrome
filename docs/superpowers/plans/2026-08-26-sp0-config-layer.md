@@ -405,22 +405,263 @@ autoninja -C out/Default components_unittests && \
 
 Expected: `[  PASSED  ] 5 tests.`
 
-- [ ] **Step 7: Run the whole component's tests**
+- [ ] **Step 7: Write the failing getter tests**
+
+The typed getters take a dictionary rather than reading process-global state, so
+every type path is testable with an ordinary fixture. Append inside the anonymous
+namespace of `components/camoucfg/mask_config_unittest.cc`:
+
+```cpp
+base::Value::Dict Fixture() {
+  return ParseConfig(R"({
+    "s": "text",
+    "u": 8,
+    "neg": -3,
+    "d": 1.5,
+    "b": true,
+    "list": ["a", "b"],
+    "mixed": ["a", 1]
+  })",
+                     /*strict=*/false);
+}
+
+TEST(GettersTest, ReadCorrectTypes) {
+  base::Value::Dict cfg = Fixture();
+  EXPECT_EQ(GetStringFrom(cfg, "s"), "text");
+  EXPECT_EQ(GetUint32From(cfg, "u"), 8u);
+  EXPECT_EQ(GetInt32From(cfg, "neg"), -3);
+  EXPECT_EQ(GetDoubleFrom(cfg, "d"), 1.5);
+  EXPECT_EQ(GetBoolFrom(cfg, "b"), true);
+  EXPECT_EQ(GetStringListFrom(cfg, "list"),
+            (std::vector<std::string>{"a", "b"}));
+  EXPECT_TRUE(HasKeyIn(cfg, "s"));
+}
+
+TEST(GettersTest, AbsentKeysAreSilentlyEmpty) {
+  base::Value::Dict cfg = Fixture();
+  EXPECT_FALSE(GetStringFrom(cfg, "missing").has_value());
+  EXPECT_FALSE(GetUint32From(cfg, "missing").has_value());
+  EXPECT_FALSE(GetInt32From(cfg, "missing").has_value());
+  EXPECT_FALSE(GetDoubleFrom(cfg, "missing").has_value());
+  EXPECT_FALSE(GetBoolFrom(cfg, "missing").has_value());
+  EXPECT_TRUE(GetStringListFrom(cfg, "missing").empty());
+  EXPECT_FALSE(HasKeyIn(cfg, "missing"));
+}
+
+TEST(GettersTest, WrongTypesReturnEmpty) {
+  base::Value::Dict cfg = Fixture();
+  EXPECT_FALSE(GetStringFrom(cfg, "u").has_value());
+  EXPECT_FALSE(GetUint32From(cfg, "s").has_value());
+  EXPECT_FALSE(GetInt32From(cfg, "s").has_value());
+  EXPECT_FALSE(GetDoubleFrom(cfg, "s").has_value());
+  EXPECT_FALSE(GetBoolFrom(cfg, "u").has_value());
+  EXPECT_TRUE(GetStringListFrom(cfg, "s").empty());
+  EXPECT_TRUE(GetStringListFrom(cfg, "mixed").empty());
+}
+
+TEST(GettersTest, NegativeIntegerIsNotAnUnsigned) {
+  base::Value::Dict cfg = Fixture();
+  EXPECT_FALSE(GetUint32From(cfg, "neg").has_value());
+}
+
+TEST(GettersTest, WholeNumberWidensToDouble) {
+  base::Value::Dict cfg = Fixture();
+  EXPECT_EQ(GetDoubleFrom(cfg, "u"), 8.0);
+}
+```
+
+Add `#include <vector>` to the test file's include block.
+
+- [ ] **Step 8: Run the getter tests to verify they fail**
 
 Run:
 
 ```bash
-./out/Default/components_unittests --gtest_filter='AssembleRawConfig*:ParseConfig*'
+autoninja -C out/Default components_unittests && \
+  ./out/Default/components_unittests --gtest_filter='GettersTest.*'
 ```
 
-Expected: `[  PASSED  ] 10 tests.`
+Expected: the build fails with `no member named 'GetStringFrom' in namespace 'camoucfg::internal'`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Declare the getters**
+
+In `components/camoucfg/mask_config_internal.h`, add `#include <cstdint>`, `#include <vector>`, and `#include <string_view>` to the include block, then add before the closing namespace:
+
+```cpp
+// Typed lookups over an already-parsed configuration.
+//
+// Each returns nullopt when the key is absent, and logs a warning naming the
+// key and returns nullopt when the key is present with the wrong type. A
+// caller that gets nullopt falls back to the real value; never to a
+// placeholder.
+//
+// These take the dictionary explicitly rather than reading process-global
+// state so that every type path is testable. The public API in
+// mask_config.h forwards to them with the process configuration.
+std::optional<std::string> GetStringFrom(const base::Value::Dict& cfg,
+                                         std::string_view key);
+std::optional<uint32_t> GetUint32From(const base::Value::Dict& cfg,
+                                      std::string_view key);
+std::optional<int32_t> GetInt32From(const base::Value::Dict& cfg,
+                                    std::string_view key);
+std::optional<double> GetDoubleFrom(const base::Value::Dict& cfg,
+                                    std::string_view key);
+std::optional<bool> GetBoolFrom(const base::Value::Dict& cfg,
+                                std::string_view key);
+std::vector<std::string> GetStringListFrom(const base::Value::Dict& cfg,
+                                           std::string_view key);
+bool HasKeyIn(const base::Value::Dict& cfg, std::string_view key);
+```
+
+- [ ] **Step 10: Implement the getters**
+
+In `components/camoucfg/mask_config_internal.cc`, add inside the namespace, above the getters:
+
+```cpp
+namespace {
+
+void WarnWrongType(std::string_view key, const char* expected) {
+  LOG(WARNING) << "camoucfg: key '" << key << "' is not " << expected
+               << "; falling back to the real value";
+}
+
+}  // namespace
+
+std::optional<std::string> GetStringFrom(const base::Value::Dict& cfg,
+                                         std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (!value->is_string()) {
+    WarnWrongType(key, "a string");
+    return std::nullopt;
+  }
+  return value->GetString();
+}
+
+std::optional<uint32_t> GetUint32From(const base::Value::Dict& cfg,
+                                      std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (!value->is_int()) {
+    WarnWrongType(key, "an integer");
+    return std::nullopt;
+  }
+  const int as_int = value->GetInt();
+  if (as_int < 0) {
+    WarnWrongType(key, "a non-negative integer");
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(as_int);
+}
+
+std::optional<int32_t> GetInt32From(const base::Value::Dict& cfg,
+                                    std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (!value->is_int()) {
+    WarnWrongType(key, "an integer");
+    return std::nullopt;
+  }
+  return value->GetInt();
+}
+
+std::optional<double> GetDoubleFrom(const base::Value::Dict& cfg,
+                                    std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return std::nullopt;
+  }
+  // A JSON number with no fractional part parses as an int. Widening it is
+  // what a configuration author expects, so accept both.
+  if (value->is_int()) {
+    return static_cast<double>(value->GetInt());
+  }
+  if (!value->is_double()) {
+    WarnWrongType(key, "a number");
+    return std::nullopt;
+  }
+  return value->GetDouble();
+}
+
+std::optional<bool> GetBoolFrom(const base::Value::Dict& cfg,
+                                std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return std::nullopt;
+  }
+  if (!value->is_bool()) {
+    WarnWrongType(key, "a boolean");
+    return std::nullopt;
+  }
+  return value->GetBool();
+}
+
+std::vector<std::string> GetStringListFrom(const base::Value::Dict& cfg,
+                                           std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return {};
+  }
+  if (!value->is_list()) {
+    WarnWrongType(key, "a list");
+    return {};
+  }
+
+  std::vector<std::string> out;
+  for (const base::Value& entry : value->GetList()) {
+    if (!entry.is_string()) {
+      WarnWrongType(key, "a list of strings");
+      return {};
+    }
+    out.push_back(entry.GetString());
+  }
+  return out;
+}
+
+bool HasKeyIn(const base::Value::Dict& cfg, std::string_view key) {
+  return cfg.Find(key) != nullptr;
+}
+```
+
+A wrong-typed entry in a list rejects the whole list rather than skipping the bad
+entry. Silently dropping one entry would leave a shorter list that still looks
+plausible, which is worse than falling back to the real value — Camoufox reached the
+same conclusion for `MVoices()` and says so in a comment there.
+
+- [ ] **Step 11: Run the getter tests to verify they pass**
+
+Run:
+
+```bash
+autoninja -C out/Default components_unittests && \
+  ./out/Default/components_unittests --gtest_filter='GettersTest.*'
+```
+
+Expected: `[  PASSED  ] 5 tests.`
+
+- [ ] **Step 12: Run the whole component's tests**
+
+Run:
+
+```bash
+./out/Default/components_unittests \
+  --gtest_filter='AssembleRawConfig*:ParseConfig*:GettersTest*'
+```
+
+Expected: `[  PASSED  ] 15 tests.`
+
+- [ ] **Step 13: Commit**
 
 ```bash
 cd ~/chromium/src
 git add components/camoucfg/
-git commit -m "camoucfg: parse configuration JSON with a strict failure mode"
+git commit -m "camoucfg: parse configuration JSON and add typed lookups"
 ```
 
 ---
@@ -519,7 +760,7 @@ TEST(MaskConfigTest, AbsentKeysReturnNullopt) {
 
 Add `#include "components/camoucfg/mask_config.h"` to the test file's include block.
 
-This test asserts the stock behaviour that matters most: with no configuration set, every getter is silent and empty, so every surface falls back to its real value. Type-conversion behaviour is covered by the `ParseConfig` tests plus the runtime checks in Task 6, because the singleton can only be initialised once per process and cannot be re-pointed at different fixtures.
+This test asserts the stock behaviour that matters most: with no configuration set, every getter is silent and empty, so every surface falls back to its real value. It is deliberately the only unit test at this layer — every type path is already covered by Task 2's `GettersTest` cases against explicit fixtures, and these functions are one-line forwards to those. Re-testing conversion here would only exercise the forwarding.
 
 - [ ] **Step 3: Run the test to verify it fails**
 
@@ -571,15 +812,6 @@ const base::Value::Dict& Config() {
   return *dict;
 }
 
-const base::Value* Find(std::string_view key) {
-  return Config().Find(key);
-}
-
-void WarnWrongType(std::string_view key, const char* expected) {
-  LOG(WARNING) << "camoucfg: key '" << key << "' is not " << expected
-               << "; falling back to the real value";
-}
-
 }  // namespace
 
 const ConfigScope& GlobalScope() {
@@ -589,108 +821,48 @@ const ConfigScope& GlobalScope() {
 
 std::optional<std::string> GetString(const ConfigScope& scope,
                                      std::string_view key) {
-  const base::Value* value = Find(key);
-  if (!value) {
-    return std::nullopt;
-  }
-  if (!value->is_string()) {
-    WarnWrongType(key, "a string");
-    return std::nullopt;
-  }
-  return value->GetString();
+  return internal::GetStringFrom(Config(), key);
 }
 
 std::optional<uint32_t> GetUint32(const ConfigScope& scope,
                                   std::string_view key) {
-  const base::Value* value = Find(key);
-  if (!value) {
-    return std::nullopt;
-  }
-  if (!value->is_int()) {
-    WarnWrongType(key, "an integer");
-    return std::nullopt;
-  }
-  const int as_int = value->GetInt();
-  if (as_int < 0) {
-    WarnWrongType(key, "a non-negative integer");
-    return std::nullopt;
-  }
-  return static_cast<uint32_t>(as_int);
+  return internal::GetUint32From(Config(), key);
 }
 
 std::optional<int32_t> GetInt32(const ConfigScope& scope,
                                 std::string_view key) {
-  const base::Value* value = Find(key);
-  if (!value) {
-    return std::nullopt;
-  }
-  if (!value->is_int()) {
-    WarnWrongType(key, "an integer");
-    return std::nullopt;
-  }
-  return value->GetInt();
+  return internal::GetInt32From(Config(), key);
 }
 
 std::optional<double> GetDouble(const ConfigScope& scope,
                                 std::string_view key) {
-  const base::Value* value = Find(key);
-  if (!value) {
-    return std::nullopt;
-  }
-  // A JSON number without a fractional part parses as an int; widening it is
-  // correct and matches what a configuration author expects.
-  if (value->is_int()) {
-    return static_cast<double>(value->GetInt());
-  }
-  if (!value->is_double()) {
-    WarnWrongType(key, "a number");
-    return std::nullopt;
-  }
-  return value->GetDouble();
+  return internal::GetDoubleFrom(Config(), key);
 }
 
 std::optional<bool> GetBool(const ConfigScope& scope, std::string_view key) {
-  const base::Value* value = Find(key);
-  if (!value) {
-    return std::nullopt;
-  }
-  if (!value->is_bool()) {
-    WarnWrongType(key, "a boolean");
-    return std::nullopt;
-  }
-  return value->GetBool();
+  return internal::GetBoolFrom(Config(), key);
 }
 
 std::vector<std::string> GetStringList(const ConfigScope& scope,
                                        std::string_view key) {
-  const base::Value* value = Find(key);
-  if (!value) {
-    return {};
-  }
-  if (!value->is_list()) {
-    WarnWrongType(key, "a list");
-    return {};
-  }
-
-  std::vector<std::string> out;
-  for (const base::Value& entry : value->GetList()) {
-    if (!entry.is_string()) {
-      WarnWrongType(key, "a list of strings");
-      return {};
-    }
-    out.push_back(entry.GetString());
-  }
-  return out;
+  return internal::GetStringListFrom(Config(), key);
 }
 
 bool HasKey(const ConfigScope& scope, std::string_view key) {
-  return Find(key) != nullptr;
+  return internal::HasKeyIn(Config(), key);
 }
 
 }  // namespace camoucfg
 ```
 
-The `scope` parameter is intentionally unused in every function body. That is the point: the signature is the contract, and the body is what changes when a per-context store lands.
+The `scope` parameter is intentionally unused in every body. That is the point:
+resolving a scope to a configuration happens in exactly one place — `Config()` today,
+a per-context lookup later — and the signature is what keeps every call site from
+having to change when that happens.
+
+Each public getter is a one-line forward to the tested function from Task 2. The
+duplication of the seven names is deliberate and not worth a macro: the header is the
+project's public contract and reads better spelled out.
 
 - [ ] **Step 5: Add the new files to the build**
 
@@ -1074,10 +1246,10 @@ Run:
 cd ~/chromium/src
 autoninja -C out/Default components_unittests && \
   ./out/Default/components_unittests \
-    --gtest_filter='AssembleRawConfig*:ParseConfig*:MaskConfigTest*'
+    --gtest_filter='AssembleRawConfig*:ParseConfig*:GettersTest*:MaskConfigTest*'
 ```
 
-Expected: `[  PASSED  ] 11 tests.`
+Expected: `[  PASSED  ] 16 tests.` — five assembly, five parsing, five getter, one public-API.
 
 - [ ] **Step 4: Run the runtime verification (criteria 2 through 6)**
 
@@ -1093,13 +1265,20 @@ The one to read carefully is `4 window keys unchanged`. That assertion is what s
 
 - [ ] **Step 5: Commit the verification script to the Camoucrome repository**
 
+The script was authored on the controlling machine in Step 2 and pushed to the build
+machine; commit the local copy, which is the source of truth.
+
 ```bash
 cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
 mkdir -p scripts
-# copy verify_sp0.py from the build machine into scripts/
+cp "$STAGED_VERIFY_SCRIPT" scripts/verify_sp0.py
 git add scripts/verify_sp0.py
 git commit -m "test: add the SP0 runtime verification script"
 ```
+
+where `STAGED_VERIFY_SCRIPT` is the path the file was written to in Step 2. If the
+script was instead authored directly on the build machine, pull it back with the same
+`cat`-over-ssh pattern Task 7 Step 2 uses.
 
 ---
 
@@ -1131,7 +1310,23 @@ Expected: a 40-character commit hash. `HEAD~5` is the revision before Task 1's c
 
 - [ ] **Step 2: Copy the whole new files into `additions/`**
 
-Every file under `components/camoucfg/` is new, so it is an addition rather than a diff. Copy all seven files from `~/chromium/src/components/camoucfg/` into `additions/camoucfg/` in the Camoucrome repository, preserving names.
+Every file under `components/camoucfg/` is new, so it is an addition rather than a
+diff. Pull all seven back to the Camoucrome repository. `PCWSL` is the wrapper that
+pipes a script to `wsl -d Ubuntu-24.04 -u lang -- bash -s` over the persistent ssh
+connection:
+
+```bash
+cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
+mkdir -p additions/camoucfg
+for f in BUILD.gn blink_scope.h mask_config.h mask_config.cc \
+         mask_config_internal.h mask_config_internal.cc mask_config_unittest.cc; do
+  echo "cat ~/chromium/src/components/camoucfg/$f" | "$PCWSL" > "additions/camoucfg/$f"
+done
+wc -l additions/camoucfg/*
+```
+
+Expected: seven files, none of them empty. An empty file means the `cat` failed and
+the redirect truncated it — check the path before continuing.
 
 - [ ] **Step 3: Generate the patch for pre-existing files**
 
@@ -1192,11 +1387,28 @@ Make it executable with `chmod +x scripts/apply.sh`.
 
 Run on the build machine:
 
+First push the Camoucrome change set to the build machine. From the controlling
+machine:
+
+```bash
+cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
+tar czf - additions patches scripts | \
+  base64 | \
+  { echo 'mkdir -p ~/camoucrome && cd ~/camoucrome && base64 -d | tar xzf -'; cat; } | \
+  "$PCWSL"
+echo 'ls -R ~/camoucrome | head -20' | "$PCWSL"
+```
+
+Expected: the listing shows `additions/camoucfg` with seven files, `patches` with one
+`.patch`, and `scripts/apply.sh`.
+
+Then, on the build machine:
+
 ```bash
 cd ~/chromium/src
 git stash list  # expected: empty
 git checkout -b camoucrome-verify $(cat /tmp/camoucrome_base_revision)
-# from the controlling machine, copy the Camoucrome repo to ~/camoucrome, then:
+chmod +x ~/camoucrome/scripts/apply.sh
 ~/camoucrome/scripts/apply.sh ~/chromium/src
 git -C ~/chromium/src diff --stat
 ```
