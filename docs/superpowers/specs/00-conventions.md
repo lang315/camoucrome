@@ -66,11 +66,28 @@ not treat a green build as evidence:
 python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" path/to/dir
 ```
 
-This is the third instance in one day of a check reporting success while measuring almost
-nothing — after `scp` silently copying nothing and a `--gtest_filter` matching 2 of 21
-tests. All three were caught by someone noticing the result was *smaller than it should
-be*, never by a failure. Assert the expected count or the expected failure; an exit code
-of 0 is not evidence that anything was examined.
+## The dominant failure mode of this project
+
+Not a check that fails. **A check that reports success while measuring almost nothing.**
+
+Four were found on 2026-08-27 alone, during SP1a Tasks 1–3:
+
+| The check | What it actually measured |
+|---|---|
+| `scp` a script across, then run the verification | the *previous* script — `scp` had landed on the Windows filesystem while the WSL shell read its own `/tmp`, the `cp` printed `cannot stat`, and the shell continued. 11 PASS, proving nothing about the edit. |
+| `--gtest_filter='Camoucfg*'` as a regression gate | 2 tests of 21, and printed `PASSED`. Only `CamoucfgKeysTest` carries that prefix; SP0's five suites do not. |
+| `autoninja` after adding a disallowed `#include` | nothing — neither gate runs on a `.cc`-only change, as above. |
+| `cmd 2>&1 \| tail -5` then `echo "exit=$?"` | `tail`'s exit status. A failed build prints `exit=0`. This was every build command in the SP1a plan. |
+
+Three of the four were written by the same person who then had to find them. **None was
+caught by anything failing.** Every one was caught by someone reading the output and
+noticing it was *smaller than it should have been* — two tests where twenty-one were
+expected, a build that finished too fast, a green run on a tree that should not compile.
+
+So: **assert the expected count, or the expected failure.** An exit code of 0 is not
+evidence that anything was examined, and "it ran green" carries almost no information here
+until you know what it measured. Where a check is meant to catch a regression, make it
+fail once on purpose and confirm it says so.
 
 **Config transport.** Environment variables `CAMOU_CONFIG_1`, `CAMOU_CONFIG_2`, …
 concatenated in order, falling back to a single `CAMOU_CONFIG`. Chunking exists
