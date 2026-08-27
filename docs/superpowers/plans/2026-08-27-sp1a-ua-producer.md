@@ -1838,7 +1838,12 @@ else:
 cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
-Expected: **16 PASS, exit=0.**
+Expected: **9 PASS, exit=0** — the five criterion-1 assertions from Task 4 plus these four.
+
+*Corrected 2026-08-27.* This said 16, arithmetic written when Task 5 was still expected to
+add seven browser assertions to this file. The amendment moved those to Task 8 against
+`chrome` and the count downstream was never revisited. If you are looking for the missing
+seven, they exist — in Task 8.
 
 A failure here is not a test problem. It means a substitution fires when no key is set,
 which violates conventions rule 5 and would make the browser detectable *by default* —
@@ -1852,19 +1857,41 @@ one fault and confirm the report distinguishes it, then revert.
 Temporarily change `OsInfoOverrideOr` to return the configured value or
 `"X11; Linux x86_64 CAMOUCROME"`, rebuild, and re-run.
 
-Expected: `1 unconfigured UA is byte-identical to the baseline` and
-`8 unconfigured request headers match the baseline` FAIL while the spoofed criteria still
-PASS. Then revert the change, rebuild, and confirm 16 PASS again.
+Expected: **3 FAIL, 6 PASS.** The three, and the reason each one trips:
 
-Record both outputs in the task report.
+| Assertion | Why the mutation reaches it |
+|---|---|
+| `1 unconfigured UA is byte-identical to the baseline` | its session sets no key at all, so it takes the fallback |
+| `1 navigator.userAgent is refused, not half-honoured` | its session sets `navigator.userAgent` but **no `ua:osInfo`**, so it also takes the fallback, and the assertion checks byte-identity against the baseline |
+| `8 unconfigured request headers match the baseline` | the `user-agent` header in the no-config session |
+
+*Corrected 2026-08-27, before this step ran.* The plan predicted two and Task 6 predicted
+three. Task 6 was right. I had reasoned about which assertions *mention* the unconfigured
+case rather than which ones *exercise the fallback path*, and those are different sets —
+the second being the one that matters. Three assertions sensitive to this mutation is more
+coverage than was designed, not less.
+
+The spoofed criteria must still PASS: they set `ua:osInfo`, so they take the override path
+and never see the mutation.
+
+**A fourth failure is worth pausing on** — it would mean the mutation reaches something
+neither prediction accounted for. Name the cause of every failure you observe, and if one
+has no explanation, stop and report rather than accepting the number.
+
+Then revert, rebuild, and confirm 9 PASS again. Record every output in the report.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
-git add scripts/verify_sp1a.py
+git add scripts/verify_sp1a.py scripts/lib_shell.py scripts/capture_ua_baseline.py
 git commit -m "verify: diff the whole unconfigured UA surface against the baseline"
 ```
+
+All three files, in one commit. Step 1 moved the shared constants into `lib_shell.py` and
+made `capture_ua_baseline.py` import them, so committing `verify_sp1a.py` alone leaves a
+HEAD where `from lib_shell import ACCEPT_CH, HIGH_ENTROPY` fails on a fresh checkout — and
+nothing in the sweep would catch it, because the sweep could not run at all.
 
 ---
 
