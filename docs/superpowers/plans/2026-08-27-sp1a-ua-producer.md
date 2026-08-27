@@ -2021,7 +2021,7 @@ cd ~/chromium/src
 ```
 
 Expected: `apply.sh` succeeds with no fuzz; `git diff --stat` matches the file list from
-Step 1; both verifications report **11 PASS exit=0** and **16 PASS exit=0**.
+Step 1; both verifications report **11 PASS exit=0** and **9 PASS exit=0**.
 
 Then return to the working branch:
 
