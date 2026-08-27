@@ -23,7 +23,21 @@ cp "$ROOT"/additions/camoucfg/* "$SRC/components/camoucfg/"
 cp "$ROOT/settings/invariants.json" "$SRC/components/camoucfg/invariants.json"
 
 echo "applying patches"
-for patch in "$ROOT"/patches/*.patch; do
+# Order is semantic, not alphabetical, and is listed explicitly rather than
+# globbed. Each patch after the first is a diff generated from a checkout
+# that already had every earlier one applied, so a patch's base is the
+# previous patch's output for any file they share -- content/browser/
+# browser_main_loop.cc is edited by all three of these. A glob sorts
+# lexicographically, which matches this order today only by luck: "sp2-*"
+# will sort between "sp1a-*" and "sp5a-*", but SP2 is extracted from a tree
+# that already has SP5a applied (00-conventions.md's sub-project order), so a
+# glob would apply it too early and fail on a base that does not match.
+PATCHES=(
+  "$ROOT/patches/sp0-config-layer.patch"
+  "$ROOT/patches/sp1a-ua-producer.patch"
+  "$ROOT/patches/sp5a-coherence-validator.patch"
+)
+for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
   git -C "$SRC" apply --3way "$patch"
 done

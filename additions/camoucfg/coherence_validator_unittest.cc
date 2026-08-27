@@ -31,6 +31,14 @@ using invariants::kAllInvariants;
 // A registry that has drifted from the code enforcing it is worse than no
 // registry, because it reads as coverage while providing none. Until SP6a
 // generates the header from the JSON, this is what keeps the two in step.
+//
+// Comparing `id` sets is not enough: it would pass a JSON edited to swap
+// `keys` order (which surface is authoritative), or one whose `relation` or
+// `policy` string no longer matches the header's enum, or one with a
+// duplicate entry masking a missing one (set equality hides a count
+// mismatch). So this compares every field, `keys` element-by-element and IN
+// ORDER -- keys[0] is authoritative per invariants.h -- and asserts the
+// entry counts match before comparing entries at all.
 TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
   base::FilePath root;
   ASSERT_TRUE(base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &root));
@@ -46,17 +54,56 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
   const base::ListValue* entries = parsed->FindList("invariants");
   ASSERT_TRUE(entries);
 
-  std::set<std::string> in_json;
+  // A JSON entry with no header counterpart, or vice versa, must fail even
+  // if every entry that IS matched by id agrees field-for-field.
+  ASSERT_EQ(entries->size(), kAllInvariants.size());
+
   for (const base::Value& entry : *entries) {
-    const std::string* id = entry.GetDict().FindString("id");
+    const base::DictValue& dict = entry.GetDict();
+    const std::string* id = dict.FindString("id");
     ASSERT_TRUE(id);
-    in_json.insert(*id);
+
+    const invariants::Invariant* header_entry = nullptr;
+    for (const invariants::Invariant& inv : kAllInvariants) {
+      if (inv.id == *id) {
+        header_entry = &inv;
+      }
+    }
+    ASSERT_TRUE(header_entry) << "id in JSON but not in header: " << *id;
+
+    const base::ListValue* json_keys = dict.FindList("keys");
+    ASSERT_TRUE(json_keys) << *id;
+    ASSERT_EQ(json_keys->size(), header_entry->keys.size()) << *id;
+    size_t index = 0;
+    for (const base::Value& key_value : *json_keys) {
+      const std::string* key = key_value.GetIfString();
+      ASSERT_TRUE(key) << *id;
+      EXPECT_EQ(*key, header_entry->keys[index])
+          << *id << " keys[" << index << "]";
+      ++index;
+    }
+
+    const std::string* relation = dict.FindString("relation");
+    ASSERT_TRUE(relation) << *id;
+    if (*relation == "same-os-family") {
+      EXPECT_EQ(header_entry->relation, invariants::Relation::kSameOsFamily)
+          << *id;
+    } else {
+      ADD_FAILURE() << *id << " has a relation this test does not know: "
+                    << *relation;
+    }
+
+    const std::string* policy = dict.FindString("policy");
+    ASSERT_TRUE(policy) << *id;
+    if (*policy == "repair") {
+      EXPECT_EQ(header_entry->policy, invariants::Policy::kRepair) << *id;
+    } else if (*policy == "reject") {
+      EXPECT_EQ(header_entry->policy, invariants::Policy::kReject) << *id;
+    } else {
+      ADD_FAILURE() << *id << " has a policy this test does not know: "
+                    << *policy;
+    }
   }
-  std::set<std::string> in_header;
-  for (const invariants::Invariant& inv : kAllInvariants) {
-    in_header.insert(std::string(inv.id));
-  }
-  EXPECT_EQ(in_json, in_header);
 }
 
 // Found while writing the registry, not planned: an entry naming a key that
@@ -146,7 +193,16 @@ TEST(CoherenceValidatorTest, MutationIsCaughtAndNothingElseIs) {
 // Without this, a validator that reported a violation unconditionally would
 // pass every test above. Also driven with an explicit CAMOU_CONFIG, for the
 // latching reason given above.
+//
+// The comment above always claimed this runs with an explicit config; nothing
+// enforced it. Run bare -- no CAMOU_CONFIG -- both keys resolve kUnknown,
+// Validate() has nothing to compare, and the EXPECT_TRUE below passed anyway,
+// against a validator that was never actually exercised. The assertion below
+// fails closed on that case instead.
 TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
+  ASSERT_TRUE(GetString(GlobalScope(), keys::kUaOsInfo).has_value())
+      << "run with CAMOU_CONFIG set to a coherent configuration; see the "
+         "runner";
   EXPECT_TRUE(Validate(GlobalScope()).empty());
 }
 

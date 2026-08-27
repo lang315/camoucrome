@@ -8,6 +8,8 @@
 #include <array>
 #include <string_view>
 
+#include "components/camoucfg/keys.h"
+
 // The invariant registry, in the form C++ compiles against.
 //
 // settings/invariants.json is the source of truth: it is what the fingerprint
@@ -62,6 +64,58 @@ inline constexpr std::array<Invariant, 1> kAllInvariants = {{
      Policy::kRepair,
      {"ua:osInfo", "ua:platform"}},
 }};
+
+namespace {
+
+// coherence_validator.cc's ValidateAtStartup() does not read `policy` at
+// all -- it branches only on CAMOU_CONFIG_STRICT, which is correct only
+// because every entry today is Policy::kRepair. A Policy::kReject entry
+// would compile, pass every existing test, and be reported and treated
+// exactly like a kRepair one: read and NOT refused outside strict mode. This
+// assertion is what makes that assumption falsifiable at build time instead
+// of silently wrong -- the first kReject entry must fail here, forcing
+// ValidateAtStartup() to actually branch on it, rather than fail nowhere.
+constexpr bool AllPoliciesAreRepair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.policy != Policy::kRepair) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// coherence_validator.cc's CheckSameOsFamily() dispatches which string
+// format applies with `key == keys::kUaOsInfo` and treats every other key as
+// a UA-CH platform token, then always repairs keys[1] to
+// CanonicalUaChPlatformFor(OsFamilyOfKey(keys[0])). A kSameOsFamily entry
+// whose keys[0] is not kUaOsInfo would still compile and still run: it would
+// read keys[0] with the wrong parser and repair keys[1] to a value derived
+// from a misread, with nothing anywhere naming the mistake.
+constexpr bool EverySameOsFamilyEntryHasOsInfoFirst() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kSameOsFamily &&
+        inv.keys[0] != keys::kUaOsInfo) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+static_assert(
+    AllPoliciesAreRepair(),
+    "a Policy::kReject entry would be silently read and reported as though "
+    "it were kRepair -- coherence_validator.cc's ValidateAtStartup() does "
+    "not branch on policy. Implement kReject handling there first.");
+
+static_assert(
+    EverySameOsFamilyEntryHasOsInfoFirst(),
+    "a kSameOsFamily entry must list kUaOsInfo as keys[0] -- "
+    "coherence_validator.cc's CheckSameOsFamily() dispatches on "
+    "`key == keys::kUaOsInfo` and repairs the other key unconditionally, so "
+    "any other keys[0] would be read and repaired wrongly with no "
+    "diagnostic.");
 
 }  // namespace camoucfg::invariants
 
