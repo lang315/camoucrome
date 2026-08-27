@@ -181,9 +181,21 @@ C78 = ["7 no property was added to navigator or window",
        "8 unconfigured high-entropy values match the baseline",
        "8 unconfigured request headers match the baseline"]
 
-base_url, headers_for, stop = echo_server.start(ACCEPT_CH)
+# Guarded like every other external interaction here. The bind is to port 0
+# so the kernel picks it and a clash is near impossible -- but "near
+# impossible" is not the standard this file holds itself to. Its whole point
+# is that no single fault discards results already collected, and start() was
+# the one call outside a guard. capture_ua_baseline.py leaves it bare on
+# purpose: that script exits 1 on any failure by design. This one must not.
 try:
-    values, err = lib_shell.session(
+    base_url, headers_for, stop = echo_server.start(ACCEPT_CH)
+except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+    failed(C78, "echo_server.start", exc)
+    base_url = headers_for = stop = None
+
+try:
+    values, err = (None, RuntimeError("listener never started")) \
+        if base_url is None else lib_shell.session(
         None,
         ["navigator.userAgentData.platform",
          "navigator.userAgentData.mobile",
@@ -193,11 +205,12 @@ try:
          "Object.keys(window).sort().join(',')",
          "Object.getOwnPropertyNames(Navigator.prototype).sort().join(',')"],
         navigate_to=base_url)
-    wire = headers_for("/probe.js") if err is None else None
+    wire = headers_for("/probe.js") if err is None and headers_for else None
 finally:
-    stop()
+    if stop is not None:
+        stop()
 
-if err is not None:
+if err is not None and base_url is not None:
     failed(C78, "no-config session", err)
 elif baseline_err is not None:
     failed(C78, f"baseline load from {BASELINE}", baseline_err)

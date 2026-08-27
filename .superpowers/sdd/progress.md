@@ -806,3 +806,21 @@ and the test then fails with architecture empty -- the predicted symptom.
 
 Rule this earns, for every mutation test from here: CONFIRM THE MUTANT BUILT.
 A mutation that does not compile does not test anything, and it reports a pass.
+
+Task 6: complete (Mac 6b34d4f), review Approved, 0 Critical, 0 Important.
+9 PASS verified by me independently; assertion count 9; remote baseline md5
+identical to the Mac's committed copy; HIGH_ENTROPY/ACCEPT_CH now grep to one
+definition each, both in lib_shell.
+
+Mutation did its job: mutant BUILD CONFIRMED first (the Task 5 lesson), then
+6 PASS / 3 FAIL, the three predicted, each with a named cause. Restored green.
+
+One Minor fixed rather than filed: echo_server.start() was the single external
+call outside a guard in a file whose entire premise is that no one fault
+discards results already collected. Near-zero probability -- port 0, kernel
+assigned -- but Task 8 clones this file, so the fix travels. Re-ran: 9 PASS,
+md5 matched.
+
+Reviewer note worth keeping: capture_ua_baseline.py leaves the same call bare
+ON PURPOSE, because that script exits 1 on any failure by design. Same code,
+different contract. Not every unguarded call is a defect.
