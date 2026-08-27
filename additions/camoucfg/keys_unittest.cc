@@ -38,5 +38,43 @@ TEST(CamoucfgKeysTest, EveryKeyIsNamespaced) {
   }
 }
 
+// kUaMetadataKeys is a hand-written subset, and a subset that has drifted from
+// its parent is the silent kind of wrong: the startup check that iterates it
+// would simply stop covering whatever fell out, while still reporting success
+// on everything it does cover.
+//
+// Both halves matter. Every member must be a real key, so a typo here cannot
+// create a group entry that matches nothing; and kUaOsInfo must stay OUT,
+// because the whole point of the group is "the client-hint keys, as distinct
+// from the one that reaches the user-agent string".
+TEST(CamoucfgKeysTest, UaMetadataKeysIsASubsetOfAllKeys) {
+  std::set<std::string_view> all(kAllKeys.begin(), kAllKeys.end());
+  for (std::string_view key : kUaMetadataKeys) {
+    EXPECT_TRUE(all.count(key)) << "not a declared key: " << key;
+    EXPECT_NE(key, std::string_view(kUaOsInfo))
+        << "kUaOsInfo is the user-agent string's key and must not be in the "
+           "client-hint group";
+  }
+  std::set<std::string_view> unique(kUaMetadataKeys.begin(),
+                                    kUaMetadataKeys.end());
+  EXPECT_EQ(unique.size(), kUaMetadataKeys.size());
+}
+
+// The count is asserted, not just the membership. Adding a ua: key to keys.h
+// and forgetting this group would leave the startup coherence warning blind to
+// it -- and nothing else would notice, because every existing assertion would
+// still pass.
+TEST(CamoucfgKeysTest, EveryUaKeyExceptOsInfoIsInTheMetadataGroup) {
+  std::set<std::string_view> group(kUaMetadataKeys.begin(),
+                                   kUaMetadataKeys.end());
+  for (std::string_view key : kAllKeys) {
+    if (key.substr(0, 3) != "ua:" || key == std::string_view(kUaOsInfo)) {
+      continue;
+    }
+    EXPECT_TRUE(group.count(key))
+        << key << " is a ua: key but is missing from kUaMetadataKeys";
+  }
+}
+
 }  // namespace
 }  // namespace camoucfg::keys

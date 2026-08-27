@@ -4,10 +4,13 @@
 
 #include "components/camoucfg/mask_config.h"
 
+#include <algorithm>
+
 #include "base/environment.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/values.h"
+#include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config_internal.h"
 
 namespace camoucfg {
@@ -71,6 +74,17 @@ std::vector<std::string> GetStringList(const ConfigScope& scope,
 
 bool HasKey(const ConfigScope& scope, std::string_view key) {
   return internal::HasKeyIn(Config(), key);
+}
+
+std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope) {
+  std::vector<std::string> unrecognised;
+  for (const auto [key, value] : Config()) {
+    if (std::find(keys::kAllKeys.begin(), keys::kAllKeys.end(), key) ==
+        keys::kAllKeys.end()) {
+      unrecognised.push_back(key);
+    }
+  }
+  return unrecognised;
 }
 
 }  // namespace camoucfg

@@ -62,6 +62,19 @@ std::vector<std::string> GetStringList(const ConfigScope& scope,
 
 bool HasKey(const ConfigScope& scope, std::string_view key);
 
+// The keys present in the configuration that keys.h does not declare.
+//
+// A mistyped key is otherwise completely SILENT. Nothing matches it, every
+// getter falls back to the real value, and the browser runs entirely
+// unspoofed while the operator believes it is disguised. For an anti-detect
+// build that is worse than a crash: it fails in the one direction the user
+// cannot observe, and the page cannot tell them either.
+//
+// Returns the unrecognised keys rather than the whole dictionary, so the
+// parsed configuration stays encapsulated and callers cannot start reading
+// keys that bypass the typed getters above.
+std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope);
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_MASK_CONFIG_H_
