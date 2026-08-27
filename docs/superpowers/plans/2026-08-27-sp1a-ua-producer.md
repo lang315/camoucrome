@@ -946,6 +946,13 @@ else:
         "Windows NT 10.0; Win64; x64" in ua)
     results["1 spoofed UA carries no Linux token"] = (
         "Linux" not in ua and "X11" not in ua)
+    # Note on what this asserts, since the name reads bigger than the claim.
+    # content_shell's UA reports Chrome/999.0.0.0 -- its own fake version, not
+    # this checkout's Chromium milestone. REAL_VERSION comes from the baseline,
+    # so it is 999.0.0.0 here, and the assertion is version INVARIANCE: whatever
+    # the binary reported before the patch, it must still report. That is the
+    # invariant SP1a needs, and it holds in either binary. Task 8, against
+    # chrome, is where the number is also the true milestone.
     results["1 spoofed UA reports the build's own version"] = (
         REAL_VERSION is not None and f"Chrome/{REAL_VERSION}" in ua)
 
