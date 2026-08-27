@@ -36,6 +36,18 @@ namespace camoucfg::keys {
 // its binary was compiled from — so accepting one would mean either emitting a
 // contradiction or parsing the string to extract the part we want, and SP1
 // forbids parsing user agents locally.
+// KNOWN LIMITATION: one value cannot express both user-agent forms. Chromium
+// emits either the reduced or the full string, and the substitution point sits
+// below that choice, so whichever form the build picked gets this value whole.
+// macOS is the clearest case -- reduced is the frozen literal
+// "Macintosh; Intel Mac OS X 10_15_7" while full carries the real version,
+// "... 14_5_0" -- so a value written for one form is wrong for the other.
+//
+// Latent today, because a given build emits one form and a profile is written
+// for that build. It becomes live when profiles are shared across builds that
+// differ. SP6's generator owns it: it knows which build a profile targets, and
+// having the browser translate between forms would mean parsing this value,
+// which SP1 forbids for the same reason it refuses navigator.userAgent.
 inline constexpr char kUaOsInfo[] = "ua:osInfo";
 
 // SP0's tracer-bullet surface, read in NavigatorBase::hardwareConcurrency()
