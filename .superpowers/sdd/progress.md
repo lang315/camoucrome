@@ -890,3 +890,32 @@ call so the build survives WSL teardown between them. Build state lives in
 
 Nothing depended on Task 7's review to start it, and it is the longest pole
 left.
+
+SP5a Task 1: WRITTEN AND LOGIC-VERIFIED ON THE MAC, not yet built.
+
+The checkout is unavailable on two counts -- it sits on the base revision, so
+components/camoucfg does not exist there, and out/Default is occupied by the
+chrome build for SP1a Task 8. Switching branches would change inputs under a
+running siso. So Task 1 splits: write and check locally now, build and run the
+gtest suite when the checkout frees.
+
+What was actually verified on the Mac, which is more than syntax:
+  - derive.cc compiles clean under -std=c++20 -Wall -Wextra -Werror against
+    the REAL keys.h and a mask_config.h stubbed to exactly what it touches.
+  - A gtest-free harness ran the same 28 assertions the unit test will. All
+    pass.
+  - MUTATION: moving the Linux entry to the front of kForms produced 3
+    failures -- osinfo Android, "Android not read as Linux", and the round
+    trip. The ordering assertions are real.
+
+AND THE MUTATION FOUND A DEFECT IN MY OWN TEST. "CrOS not read as Linux"
+PASSED under that mutant, because "X11; CrOS x86_64 14541.0.0" contains no
+"Linux" token at all. It cannot fail under any permutation of kForms.
+
+Not deleted: real ChromeOS user agents are sometimes spelled
+"X11; CrOS Linux x86_64", so it guards a future change to the canonical
+string. But it does NOT guard the current ordering, and presenting two
+assertions as if both did is the same overclaim counted eleven times today.
+Split into two named tests, each saying what it actually protects.
+
+Plan corrected: 6 DeriveTest cases -> 7, union filter 27 -> 28.

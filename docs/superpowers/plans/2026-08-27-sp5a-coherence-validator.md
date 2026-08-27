@@ -235,8 +235,20 @@ TEST(DeriveTest, RecognisesOsInfoSegments) {
 
 // Android and ChromeOS both contain "Linux"; order of matching decides the
 // answer, so the ambiguity is asserted rather than left to reading order.
-TEST(DeriveTest, AndroidAndChromeOsAreNotMistakenForLinux) {
+// Verified by mutation before the file was written: moving the Linux entry to
+// the front of kForms fails the Android assertion and PASSES the ChromeOS one,
+// because "Linux; Android 10; K" contains the token "Linux" and
+// "X11; CrOS x86_64 14541.0.0" does not. So they are split, and each says what
+// it actually guards -- the first the current ordering, the second a future
+// change to the canonical string, since real ChromeOS user agents are
+// sometimes spelled "X11; CrOS Linux x86_64".
+//
+// Merged, they read as two checks on the ordering. They are one.
+TEST(DeriveTest, AndroidIsNotMistakenForLinux) {
   EXPECT_NE(OsFamilyFromOsInfo("Linux; Android 10; K"), OsFamily::kLinux);
+}
+
+TEST(DeriveTest, ChromeOsIsNotMistakenForLinux) {
   EXPECT_NE(OsFamilyFromOsInfo("X11; CrOS x86_64 14541.0.0"), OsFamily::kLinux);
 }
 
@@ -485,7 +497,11 @@ cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests
 ./out/Default/components_unittests --gtest_filter='DeriveTest.*'
 ```
 
-Expected: **6 tests pass**. Assert the number.
+Expected: **7 tests pass**. Assert the number.
+
+*Corrected 2026-08-27 while writing the file.* The draft above showed six, with one test
+named `AndroidAndChromeOsAreNotMistakenForLinux`. It is split in two, because mutation
+testing showed the two halves are not equally load-bearing and merging them hid that.
 
 - [ ] **Step 6: Confirm nothing regressed**
 
@@ -494,7 +510,7 @@ Expected: **6 tests pass**. Assert the number.
   --gtest_filter='Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*:DeriveTest*'
 ```
 
-Expected: **27** — the 21 that existed before plus these 6.
+Expected: **28** — the 21 that existed before plus these 7.
 
 - [ ] **Step 7: Commit, both repositories**
 
