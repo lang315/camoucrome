@@ -109,13 +109,32 @@ turn if assumed otherwise:
   verification uses `venv/bin/python` from `~/camoucrome-verify`, and it is `venv/bin/python3.12`
   underneath.
 
+**Do not use `scp`.** The ssh server is Windows PowerShell, so `scp` lands on the *Windows*
+filesystem, while `wsl -d Ubuntu-24.04 -- ...` sees WSL's own. They are two different
+`/tmp`, and the failure is quiet in the worst way: `cp /tmp/verify-drop/*.py ~/...` prints
+`cannot stat`, the shell keeps going, and the verification then runs the **previous**
+version of the script and passes. A green run that proves nothing.
+
+Send file contents through the same stdin script instead, and check the hashes:
+
 ```bash
+{
+  for f in verify_sp0.py lib_shell.py; do
+    echo "cat > ~/camoucrome-verify/$f <<'CAMOU_EOF_$f'"
+    cat "scripts/$f"
+    echo "CAMOU_EOF_$f"
+  done
+  echo 'cd ~/camoucrome-verify && md5sum verify_sp0.py lib_shell.py'
+  echo 'venv/bin/python verify_sp0.py; echo "exit=$?"'
+} > /tmp/xfer.sh
 CM=~/.ssh/cm-buildpc
-# Mac -> build PC
-/usr/bin/scp -o ControlPath=$CM -P 2222 scripts/<name>.py \
-  lang315@100.81.40.76:/tmp/verify-drop/
-# then on the build PC: cp /tmp/verify-drop/*.py ~/camoucrome-verify/
+/usr/bin/ssh -o ControlPath=$CM -p 2222 lang315@100.81.40.76 \
+  "wsl -d Ubuntu-24.04 -u lang -- bash -s" < /tmp/xfer.sh
+md5 -q scripts/verify_sp0.py scripts/lib_shell.py   # compare
 ```
+
+Compare the hashes every time. Any task that runs a verification without confirming the
+remote copy is the one it just edited is not verifying its own work.
 
 ## Branch
 

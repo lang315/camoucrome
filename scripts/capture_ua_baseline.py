@@ -54,9 +54,19 @@ finally:
 # ClientHintsControllerDelegate (so Accept-CH can't be persisted) and hardcodes
 # "Unknown" in GetShellUserAgentMetadata(). Recorded explicitly so no later task
 # misreads these values as what real Chrome would report.
-commit = subprocess.run(
-    ["git", "-C", os.path.expanduser("~/chromium/src"), "rev-parse", "--short", "HEAD"],
-    capture_output=True, text=True, check=True).stdout.strip()
+# Guarded like every other failure path here. check=True would raise a bare
+# CalledProcessError, which is the one way this script can still die with a
+# traceback instead of a "capture failed" line -- and it would do so AFTER the
+# browser work succeeded, discarding a capture that cost a browser launch.
+try:
+    commit = subprocess.run(
+        ["git", "-C", os.path.expanduser("~/chromium/src"),
+         "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, check=True).stdout.strip()
+except Exception as exc:  # noqa: BLE001 - provenance must never lose a capture
+    print(f"capture failed: could not read the checkout's revision: "
+          f"{type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(1)
 
 baseline = {
     "user_agent": user_agent,

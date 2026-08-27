@@ -594,3 +594,27 @@ Decisions (user's, 2026-08-27):
 Task 1 status: unblocked with option A. Capture what content_shell truly is,
 including the empty header set, plus a `provenance` block naming the binary,
 the commit, both producers, and what is known-absent and why.
+
+Task 1: complete (commit 30790b9, review clean -- Approved, no Critical, no
+Important). Controller follow-ups landed after the review:
+  - baseline provenance.known_absent contradicted its own request_headers
+    (my dictation error, not the implementer's). Corrected, plus the two
+    places the plan repeated it.
+  - reviewer's one WARN, provenance.ua_string_producer, resolved: I had
+    verified it in my own probe (shell_content_browser_client.cc:747) but the
+    evidence was outside both the diff and the report. Both producer entries
+    now cite file:line so the artifact supports its own claims.
+  - Minor findings fixed: unused imports trimmed from verify_sp0.py, the
+    unguarded git subprocess in capture_ua_baseline.py guarded.
+  - Minor finding RECORDED, not fixed, for the final whole-branch review:
+    baselines/content_shell-sp0-stock-ua.json navigator_keys is [""] not [],
+    because "".split(",") == [""]. Faithful data, and symmetric with the
+    comparison side which also uses .split(","), so both sides agree. Only a
+    hazard for anyone writing a naive `!= []` check.
+
+ENVIRONMENT TRAP, cost one false-green run, do not repeat:
+  scp lands on the WINDOWS filesystem; `wsl -- ...` sees WSL's. Two different
+  /tmp. `cp /tmp/verify-drop/*.py ~/...` printed "cannot stat", the script
+  kept going, and verify_sp0.py ran the PREVIOUS version and reported 11 PASS.
+  Transfer file contents through the stdin script and md5sum both ends.
+  Recorded in the plan's Environment section.

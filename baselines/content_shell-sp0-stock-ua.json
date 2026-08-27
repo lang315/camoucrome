@@ -116,8 +116,8 @@
       "the low-entropy triple sec-ch-ua / sec-ch-ua-mobile / sec-ch-ua-platform IS sent on subresource requests, with no Accept-CH needed. Its values come from GetShellUserAgentMetadata, not from embedder_support, so they are content_shell's own and are NOT evidence about the SP1a patch either way.",
       "brand \"content_shell\" v999 and Chrome/999.0.0.0 in the UA string are content_shell's fake version, not this checkout's Chromium milestone."
     ],
-    "metadata_producer": "content/shell/browser/shell_content_browser_client.cc:348 GetShellUserAgentMetadata",
-    "ua_string_producer": "components/embedder_support/user_agent_utils.cc BuildUnifiedPlatformUserAgentFromProduct"
+    "metadata_producer": "content/shell/browser/shell_content_browser_client.cc:348 GetShellUserAgentMetadata, reached via ShellContentBrowserClient::GetUserAgentMetadata() at :750. It never calls embedder_support::GetUserAgentMetadata, so nothing SP1a Task 5 patches can change any metadata value in this file.",
+    "ua_string_producer": "content/shell/browser/shell_content_browser_client.cc:747 ShellContentBrowserClient::GetUserAgent() -> embedder_support::BuildUnifiedPlatformUserAgentFromProduct. This is one of the two functions SP1a Task 4 patches, which is why the UA string in this baseline is a meaningful pre-patch value while the metadata below is not."
   },
   "request_headers": {
     "sec-ch-ua": "\"content_shell\";v=\"999\"",
