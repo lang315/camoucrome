@@ -210,7 +210,18 @@ finally:
     if stop is not None:
         stop()
 
-if err is not None and base_url is not None:
+# `and base_url is not None` was here, and it made the guard unreachable in
+# the one case it was written for. When echo_server.start() raises, base_url
+# is None AND err is the "listener never started" RuntimeError -- so this
+# branch was skipped, the elif was skipped on a good baseline, and the else
+# unpacked `values`, which is None: TypeError, before the print loop, taking
+# criterion 1's five already-collected results with it.
+#
+# That is precisely the collapse this file's docstring says its structure
+# exists to prevent, so the bug was invisible to a reader who trusted the
+# docstring. verify_sp1a_chrome.py does not have it -- its run() returns the
+# error to the caller instead of splitting the failure across two variables.
+if err is not None:
     failed(C78, "no-config session", err)
 elif baseline_err is not None:
     failed(C78, f"baseline load from {BASELINE}", baseline_err)
