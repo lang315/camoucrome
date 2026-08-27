@@ -1021,3 +1021,51 @@ says nothing about whether the browser still answers the same way.
 
 THE HAZARD ABOVE IS STILL ACTIVE. out/Default/content_shell remains an
 undefined mixture. Nothing in this entry touched the checkout -- reads only.
+
+---
+
+2026-08-27, later. TASK 8 COMPLETE. HAZARD CLEARED.
+
+Build at 0e8d4a9268 finished; proved by a second autoninja returning "no work
+to do", 0 steps -- not by the task's exit 0, whose log was empty.
+
+Baseline captured, then checkout returned to camoucrome/sp0 (07cadeac4c) and
+BOTH binaries rebuilt. The undefined-mixture hazard recorded above is gone.
+
+  verify_sp0.py          11 PASS, 0 FAIL
+  verify_sp1a.py          9 PASS, 0 FAIL, exit 0
+  verify_sp1a_chrome.py  17 PASS, 0 FAIL, exit 0   <- criteria 1,2,3,4,8
+
+SP1a's central claim -- one producer, three coherent channels -- is verified
+end to end. Criterion 4 checks the channels against EACH OTHER in one session,
+which is the only formulation that catches a bypassed path.
+
+CRITERION 4 WAS WEAK AND THE MUTATION FOUND IT. The clause
+    ua_platform != "Windows" or "Windows NT" in ua
+is true for every non-Windows value, so it asserted nothing outside the case
+under test. Discovered by trying to design a mutation and finding none could
+fail. Replaced with an explicit mapping where an unknown platform FAILS.
+Mutant (ua:platform=Linux beside a Windows ua:osInfo): 16 PASS, exit nonzero,
+exactly one FAIL, the predicted one. The old clause passes that mutant.
+
+NEW DEFECT, NOT SP1a's: the UA product token is HeadlessChrome/154.0.0.0.
+user_agent_utils.cc:218 does product.insert(0, "Headless") under
+HasSwitch(kHeadless) -- inside the patched function, three lines above SP1a's
+substitution point, unreachable because product never crosses it. A Windows
+fingerprint therefore emits "...Windows NT 10.0... HeadlessChrome/154.0.0.0".
+Filed to SP2's surface table with file and line. Stock chrome is ALREADY
+incoherent here: UA says headless, brands and sec-ch-ua say Chromium, so SP2
+must assert the token on all three channels. NOT an SP5 registry entry -- that
+registry compares config keys and this has no key.
+
+STALE COUNT FOUND: the plan said verify_sp1a.py gives 5 PASS in two current
+instructions. True when Tasks 4-5 wrote it; Task 6 grew the file to 9. Both
+corrected; the two historical mentions annotated rather than edited.
+
+TOOLING TRAP, hit four times today, now in conventions: $? and $(...) sent
+over ssh are expanded by PowerShell 5.1 BEFORE wsl runs. $? is a PowerShell
+boolean, so a failing command prints "True"; $(git ...) runs on the Windows
+side in C:\. Only && / || markers and grep -c counts survive the trip.
+
+NEXT: SP1a whole-branch review (SDD requires it after the last task), then
+SP5a Tasks 1-3 against a real compiler, then Tasks 4-7.

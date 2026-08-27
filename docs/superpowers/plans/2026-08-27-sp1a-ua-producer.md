@@ -1676,6 +1676,11 @@ cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 Expected: **5 PASS, exit=0** — criterion 1 only. This task adds no browser assertions; see
 the amendment note at the top of this task.
 
+> Historical count. Task 6 grows `verify_sp1a.py` with criteria 7 and 8, so re-running it
+> after Task 6 gives **9 PASS**, not 5. Both numbers are right for their moment; if you are
+> reading this to decide what a green run should say *today*, the answer is 9. The 5 here
+> is left in place because changing it would misdescribe what Tasks 4 and 5 actually saw.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -2091,7 +2096,7 @@ rather than working around.
 > Switching branches inside the existing tree avoids the problem entirely, and costs less:
 > one full `chrome` build instead of a full build plus a second output directory.
 
-- [ ] **Step 1: Build `chrome` at the pinned base revision**
+- [x] **Step 1: Build `chrome` at the pinned base revision**
 
 Use a real branch, not a detached HEAD. Nothing here commits, so detached would be safe in
 principle — but conventions warns about detached HEAD for a reason and a named branch costs
@@ -2177,7 +2182,7 @@ the env comprehension with `dict(os.environ)` fails *CAMOU_CONFIG\* is still scr
 Restoring the file returns 7 PASS.
 
 This does **not** replace Step 2's original instruction to re-run `verify_sp0.py` (11 PASS)
-and `verify_sp1a.py` (5 PASS) once the checkout frees. The argv test proves the launch line
+and `verify_sp1a.py` (9 PASS) once the checkout frees. The argv test proves the launch line
 is unchanged; only those two prove the browser still answers the same way.
 
 *Original instruction, for reference:*
@@ -2206,11 +2211,11 @@ def launch(config, shell=None, extra_flags=None):
 Thread `shell` and `extra_flags` through `session()` the same way `navigate_to` already is.
 Then give `capture_ua_baseline.py` a `--shell` argument that passes them.
 
-**Re-run `verify_sp0.py` and `verify_sp1a.py` after this change** — 11 PASS and 5 PASS, both
+**Re-run `verify_sp0.py` and `verify_sp1a.py` after this change** — 11 PASS and 9 PASS, both
 exit 0. They call `session()` with the old signature and must be unaffected. A default that
 quietly changed the flags would break every earlier verification at once.
 
-- [ ] **Step 3: Capture the `chrome` baseline, then build the patched `chrome`**
+- [x] **Step 3: Capture the `chrome` baseline, then build the patched `chrome`**
 
 ```bash
 cd ~/camoucrome-verify
@@ -2284,7 +2289,7 @@ than `content_shell`, so expect the link alone to take a while. Rebuild `content
 before running the earlier verifications again, since switching branches invalidated its
 objects as well.
 
-- [ ] **Step 4: Write and run the three-channel verification**
+- [x] **Step 4: Write and run the three-channel verification**
 
 Create `scripts/verify_sp1a_chrome.py`. Its assertions are the ones held in the superseded
 Steps 1–2 of Task 5 — they were correct; only the binary was wrong. Take them from there
@@ -2311,7 +2316,39 @@ If the headers disagree with `navigator.userAgentData`, the producer patch is be
 bypassed on one path — that is precisely what item 4 exists to detect, and it is a blocking
 defect, not a test to relax.
 
-- [ ] **Step 5: Clean up and commit**
+> **Done 2026-08-27: 17 PASS, 0 FAIL, exit 0.** Criteria 1, 2, 3, 4 and 8, against `chrome`
+> at `07cadeac4c` with both binaries rebuilt on `camoucrome/sp0`. Every header the config
+> names arrives with the configured value, `navigator.userAgentData` agrees with the wire on
+> all six high-entropy fields, and the UA request header is byte-identical to
+> `navigator.userAgent`. Preceded by `verify_sp0.py` **11 PASS** and `verify_sp1a.py`
+> **9 PASS** on the rebuilt `content_shell`, which is what Step 2 required.
+>
+> **Criterion 4 was weak when first written, and the mutation is what exposed it.** The
+> clause read `ua_platform != "Windows" or "Windows NT" in ua` — true for every value that
+> is not `"Windows"`, so it asserted nothing outside the single case under test. Found
+> while trying to design a mutation for it and discovering none could fail: a config naming
+> Windows in `ua:osInfo` and Linux in `ua:platform` leaves channels 2 and 3 agreeing with
+> each other, and the old clause exempted the UA string from the comparison.
+>
+> Replaced with `UA_TOKEN_FOR_PLATFORM`, an explicit mapping in which **an unrecognised
+> platform fails rather than passes**. Re-run: still 17 PASS. Then mutated by setting
+> `ua:platform` to `"Linux"` beside a Windows `ua:osInfo` — **16 PASS, exit nonzero, and
+> exactly one FAIL**:
+>
+> ```
+> FAIL  4 UA string, userAgentData and Sec-CH-UA agree on the platform
+> ```
+>
+> One failure, the predicted one, no others. The superseded clause passes that same mutant.
+>
+> **A new assertion records the `HeadlessChrome` gap as a measurement rather than as prose:**
+> *1 spoofed UA leaves the product token untouched*. It holds SP1a to substituting `os_info`
+> and nothing else, and it fails loudly in both directions — if SP1a ever starts editing the
+> product token, and if SP2's eventual removal of the `Headless` prefix lands without this
+> file being updated to expect it. Until SP2 acts, it is what keeps the leak ours to fix
+> rather than a detector's to find.
+
+- [x] **Step 5: Clean up and commit**
 
 ```bash
 cd ~/chromium/src
