@@ -1646,13 +1646,26 @@ precedence change in Step 3 alters a branch those tests exercise. Run the whole 
 just the new tests:
 
 ```bash
-./out/Default/components_unittests --gtest_filter='UserAgentUtils*'
+env -u CAMOU_CONFIG ./out/Default/components_unittests \
+  --gtest_filter='UserAgentUtilsTest.*'
 echo "exit=$?"
 ```
 
-Expected: every pre-existing `UserAgentUtils*` test still passes. A failure here is a real
-regression in stock behaviour, not a test to update — the `custom_ua` early return must
-behave exactly as before whenever no `ua:osInfo` key is set.
+Expected: **23 tests**, all passing. A failure here is a real regression in stock
+behaviour, not a test to update — the `custom_ua` early return must behave exactly as
+before whenever no `ua:osInfo` key is set.
+
+**The filter is `UserAgentUtilsTest.*`, not `UserAgentUtils*`.** Task 5 caught this and it
+is corrected here. The bare prefix also matches `UserAgentUtilsCamoucfgTest`, which needs
+one process per configuration, so running it unconfigured reports three failures that are
+the new suite behaving exactly as designed. Verified: `UserAgentUtils*` lists 27 tests,
+`UserAgentUtilsTest.*` lists 23, and the four-test difference is the new suite.
+
+That is the mirror image of this project's usual failure — a false **red** rather than a
+false green — and it is worth naming as such. It costs less than a false green, because
+someone investigates, but the cost is real: an investigation that ends in "the check was
+wrong" teaches people to distrust the check, which is how a later true failure gets waved
+through.
 
 Also confirm SP1a's Task 4 work is untouched:
 

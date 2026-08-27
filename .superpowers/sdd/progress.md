@@ -749,3 +749,39 @@ Task 4: review Approved, 0 Critical, 1 Important, 2 Minor.
   Reviewer's two "cannot verify from diff" items both resolve to things I had
   already checked and it could not see: GetUserAgentInternal's structure, and
   lib_shell's fault handling. Neither is a gap in the change.
+
+Task 5: complete (Chromium 3109506535). Four config invocations verified by me
+independently, each in its own process: fallback / configured / version-cannot-
+move / formFactors -- all exit 0. Upstream UserAgentUtilsTest.* 23/23.
+verify_sp1a 5/5. SP0's filter still 21/21.
+
+Two concerns, both mine, both real:
+
+  (1) SDD SCRATCH NAMESPACE COLLISION, AND SP0 WORK WAS LOST.
+      .superpowers/sdd/ is gitignored (.gitignore is "*"), and SP0 and SP1a
+      both write task-N-brief.md / task-N-report.md. SP1a's runs overwrote
+      SP0's task-1..5 reports, which existed in no other copy. Task 5's
+      implementer noticed and backed up the two files it was about to clobber;
+      the earlier four were already gone before anyone looked.
+
+      What survives is the durable record -- commit messages, the specs, this
+      ledger -- which is where SP0's findings actually live. What was lost is
+      the working notes behind them. Not catastrophic, and the SDD skill does
+      treat this directory as scratch that `git clean -fdx` may destroy. But
+      it was avoidable and I did not think about it.
+
+      Fixed: SP0's survivors moved to sp0-archive/, SP1a's renamed
+      sp1a-task-N-*.md. Every later sub-project prefixes its own.
+
+  (2) FALSE RED, the mirror of this project's usual failure. Step 5's
+      --gtest_filter='UserAgentUtils*' also prefix-matches the new
+      UserAgentUtilsCamoucfgTest suite, which needs one process per config, so
+      unconfigured it reports three failures that are the new tests working as
+      designed. Verified: UserAgentUtils* lists 27, UserAgentUtilsTest.* lists
+      23, difference is the new suite. Corrected to UserAgentUtilsTest.* with
+      the count asserted.
+
+      Worth distinguishing from the false greens: a false red costs less,
+      because someone investigates. But an investigation ending in "the check
+      was wrong" teaches people to distrust the check, and that is how a later
+      true failure gets waved through.
