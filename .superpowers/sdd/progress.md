@@ -1323,3 +1323,45 @@ Site bypass, 3.4/3.5/3.6 documentation, 4.1/4.2 stale comments. 1.1 is next --
 it is user_agent_utils.cc, SP1a's file, and deserves its own commit.
 
 NEXT: SP5a Task 6 (browser-level verification), Task 7 (patch extraction).
+
+---
+
+REVIEW FINDINGS 1.1, 4.1, 4.2 CLOSED. Checkout e934e39da2 and the follow-up.
+
+1.1 the gate counted keys it could not read. HasKey() is cfg.Find() != nullptr,
+type-blind, so {"ua:wow64":"no"} made ConfigPresentsUserAgentIdentity() true,
+which dropped --user-agent, while GetBool() rejected the same value and fell
+back to real. Ask for Windows two ways, get Linux. Stock Chromium honours the
+switch there. Gate now asks whether a key yields a VALUE, dispatching to the
+getter matching the key's type -- the two booleans by name, because asking
+GetString() about a boolean logs "not a string" and answers no, the same bug
+mirrored.
+
+  MUTATION, and this time the restore rebuilt. New test
+  WrongTypedKeyDoesNotOutrankCommandLine passes; reverting the gate to HasKey
+  and REBUILDING fails it with GetUserAgent() returning
+  "Mozilla/5.0 (X11; Linux x86_64) ... Chrome/154.0.0.0" instead of the switch
+  value; restoring AND REBUILDING passes again. Confirmed by re-running, not
+  assumed -- that is the error from earlier today, not repeated.
+
+4.1 the comment block explaining why the reported version cannot move -- the
+only place stating it -- was attached to the gate, which returns a bool, takes
+no `real` and is not a substitution point. OsInfoOverrideOr() had no comment at
+all. Moved. A reader asking "where is the version protected" was landing on the
+wrong function.
+
+4.2 keys.h promised converting "the two call sites" was incremental, having
+converted one. navigator_base.cc still held the literal, so the comment was
+false on landing and the tree held the exact hazard the registry exists to end.
+Converted; keys.h now names which sites use the constant instead of promising.
+
+FULL REGRESSION after all three, both binaries rebuilt:
+  camoucfg unit          29 OK
+  validator              ALL_SIX_PASS
+  verify_sp0.py          11 PASS, exit 0
+  verify_sp1a.py          9 PASS, exit 0
+  verify_sp1a_chrome.py  34 PASS, exit 0
+
+STILL OPEN from the review: 1.4 (SetAndroidOsForTabletSite bypasses the
+substitution on desktop; the two in-file bypasses are #if IS_ANDROID and do not
+compile here), 3.4/3.5/3.6 documentation and spec drift.

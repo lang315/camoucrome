@@ -45,7 +45,11 @@ inline constexpr char kUaOsInfo[] = "ua:osInfo";
 // string literal. That is exactly what the registry exists to end -- a key
 // mistyped at one of two sites that must agree is invisible to the compiler
 // and to a reviewer reading either file alone. Listing it here makes the
-// registry complete; converting the two call sites is incremental.
+// registry complete.
+//
+// Both call sites now use this constant: browser_main_loop.cc and
+// navigator_base.cc. They are in different processes and must agree, which is
+// the whole reason the key is here rather than typed twice.
 inline constexpr char kNavigatorHardwareConcurrency[] =
     "navigator.hardwareConcurrency";
 
