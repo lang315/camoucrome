@@ -1529,10 +1529,14 @@ is invisible to every other criterion because they all run *with* a config.
 >   exercises `GetShellUserAgentMetadata()`, which Task 5 does not patch. It proves this
 >   change did not disturb the shell's own producer. It says nothing about ours. Keep it;
 >   Task 8 is where the equivalent assertion becomes load-bearing.
-> - `8 unconfigured request headers match the baseline` — compares an empty set to an empty
->   set, because `content_shell` emits no `Sec-CH-UA*` headers at all. That is still worth
->   asserting: it would catch this patch *causing* headers to appear. Say so in the report
->   rather than presenting it as a coherence check.
+> - `8 unconfigured request headers match the baseline` — **corrected 2026-08-27**, after
+>   Task 1's capture contradicted the sentence that stood here. `content_shell` is not
+>   header-silent: it sends the low-entropy triple `sec-ch-ua`, `sec-ch-ua-mobile` and
+>   `sec-ch-ua-platform` on **subresource** requests with no `Accept-CH` needed, and sends
+>   nothing at all on **navigation** requests. Only the high-entropy hints are truly absent.
+>   Those three values come from `GetShellUserAgentMetadata`, so the assertion is a
+>   regression check on the shell's producer, not evidence about ours. It would catch this
+>   patch changing or adding headers. Report it as exactly that.
 > - `1 unconfigured UA is byte-identical to the baseline` (from Task 4) is the one no-config
 >   assertion that genuinely covers this task's producer, because the UA string path does
 >   run through `embedder_support` in `content_shell`.
@@ -1554,10 +1558,12 @@ HIGH_ENTROPY = """
     ["architecture","bitness","platformVersion","model","fullVersionList"])
 """
 
-# content_shell emits none of these, because
+# content_shell emits none of these HIGH-ENTROPY hints, because
 # ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr
-# outside test harnesses. Advertising them anyway keeps this script identical
-# to the one Task 8 runs against `chrome`, where they do arrive.
+# outside test harnesses; advertising Accept-CH does not change that. It does
+# still send the low-entropy triple on subresource requests. Advertising them
+# anyway keeps this script identical to the one Task 8 runs against `chrome`,
+# where the high-entropy hints do arrive.
 ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version",
              "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
