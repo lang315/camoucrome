@@ -12,12 +12,7 @@ import sys
 
 import echo_server
 import lib_shell
-
-HIGH_ENTROPY = """
-() => navigator.userAgentData.getHighEntropyValues(
-    ["architecture","bitness","platformVersion","model","fullVersionList",
-     "wow64","formFactors"])
-"""
+from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 
 EXPRESSIONS = [
     "navigator.userAgent",
@@ -29,9 +24,6 @@ EXPRESSIONS = [
     "Object.keys(navigator).sort().join(',')",
     "Object.keys(window).sort().join(',')",
 ]
-
-ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version",
-             "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
 base_url, headers_for, stop = echo_server.start(ACCEPT_CH)
 try:

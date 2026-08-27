@@ -20,6 +20,26 @@ from playwright.sync_api import sync_playwright
 SHELL = os.path.expanduser("~/chromium/src/out/Default/content_shell")
 STDERR_LOG = "/tmp/camoucrome_verify_stderr.log"
 
+# The exact hint list the baseline was captured with. getHighEntropyValues
+# returns these plus the three low-entropy values, so a baseline captured with
+# this list holds ten keys. Any verification comparing against that baseline
+# must request the SAME list -- a shorter request returns fewer keys and an
+# equality check against the baseline can then only fail.
+HIGH_ENTROPY = """
+() => navigator.userAgentData.getHighEntropyValues(
+    ["architecture","bitness","platformVersion","model","fullVersionList",
+     "wow64","formFactors"])
+"""
+
+# content_shell emits none of these high-entropy hints, because
+# ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr
+# outside test harnesses; advertising Accept-CH does not change that. It does
+# still send the low-entropy triple on subresource requests. Advertising them
+# anyway keeps this script identical to the one Task 8 runs against `chrome`,
+# where the high-entropy hints do arrive.
+ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version",
+             "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
+
 
 def launch(config):
     """Starts content_shell and returns it once its DevTools port answers.
