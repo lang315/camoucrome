@@ -130,6 +130,16 @@ Three habits follow, each earned by one of the eight:
 - Where a check exists to catch a regression, **make it fail once on purpose** and confirm
   it says so — and **confirm the mutant compiled**, because a mutation that does not build
   leaves the old binary in place and reports a pass.
+- **`git clean -fd` in the Chromium checkout is a footgun, and `apply.sh` hands you the
+  reason to reach for it.** `scripts/apply.sh` copies `additions/` into the tree as
+  UNTRACKED files, and untracked files block a branch switch — so the obvious remedy is
+  `git clean -fd`. Run at the checkout root that deletes the 247 gclient-managed
+  directories `.gclient_entries` lists, including `third_party/llvm-build`, which is the
+  toolchain. Recovery is a full `gclient sync`. **Always scope it to a path**
+  (`git clean -fd components/camoucfg/`), and confirm the toolchain is still there before
+  trusting the next build. Verified on 2026-08-27 after SP5a's reconstruction: 248 entries,
+  `third_party/llvm-build` and `buildtools/linux64` present.
+
 - **Restoring the source is not restoring the binary.** A mutation script must rebuild
   *after* it restores, and re-run the baseline to prove the restore took effect. On
   2026-08-27 a script ended `cp uau.bak … ; echo "restored"` with no rebuild, so
