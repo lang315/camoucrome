@@ -720,3 +720,32 @@ version invariant depend on continued care.
 Coverage limit, stated rather than buried: content_shell exercises only
 BuildUnifiedPlatformUserAgentFromProduct. The sibling is patched but unrun
 until Task 8.
+
+Task 4: review Approved, 0 Critical, 1 Important, 2 Minor.
+
+  Important (mine -- the brief mandated the line): verify_sp1a.py read
+  STDERR_LOG unguarded, the one fault path in that file not wrapped. An
+  unreadable log would have exited by traceback before the print loop,
+  discarding assertions already collected. Fixed in the script and in the
+  plan, before Tasks 5 and 6 extend the same file. Re-ran: 5/5, md5 matched.
+
+  The reviewer's WARN alongside it was the sharper question, and it could
+  have been false green number five: if lib_shell APPENDED to STDERR_LOG,
+  stale "ua:osInfo" text from an earlier run would satisfy the substring
+  check spuriously. It could not check; I did, two ways. launch() opens the
+  log "wb", which truncates, and empirically a warning written by one session
+  is gone after the next. The assertion is sound.
+
+  Minor 1: the kNavigatorHardwareConcurrency swap in browser_main_loop.cc was
+  NOT in the brief. It was authorised -- I put it in the dispatch prompt
+  explicitly, having added the constant during Task 3. The reviewer was right
+  to ask rather than assume; a diff hunk with no line in the brief behind it
+  is exactly what an unrequested change looks like.
+
+  Minor 2 (ua:osInfo embedded unescaped) matches the project-wide trust model:
+  config is operator-supplied, like every other camoucfg value. Recorded, not
+  actioned.
+
+  Reviewer's two "cannot verify from diff" items both resolve to things I had
+  already checked and it could not see: GetUserAgentInternal's structure, and
+  lib_shell's fault handling. Neither is a gap in the change.
