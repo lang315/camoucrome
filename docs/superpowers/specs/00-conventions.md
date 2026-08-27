@@ -241,6 +241,18 @@ rebuild after touching one Blink source file is one to three minutes. The primar
 build target for verification is `content_shell`, not `chrome` — it is far smaller and
 still exposes the DevTools protocol.
 
+**`/tmp` on the build machine does not survive between ssh invocations.** The WSL2 VM is
+torn down when the last client disconnects and `/tmp` is a tmpfs, so a script written to
+`/tmp` in one `ssh` call is gone by the next. Write throwaway scripts on the *client* and
+pipe them in on stdin; anything that must persist goes under `~`. Found in SP1a Task 7,
+which lost a file between two calls it had every reason to expect would still be there.
+
+**Two git behaviours that mislead during patch work,** both found the same way:
+`git apply --3way` stages its result, so `git diff --stat` immediately afterwards reads
+empty and looks like the patch did nothing — use `git diff --cached --stat`. And
+`git checkout -- .` will not clear an unmerged index left by a conflicted apply;
+`git reset --hard` will.
+
 **A job on that machine lives only while a `wsl.exe` client is attached.** The WSL2 VM
 itself is torn down seconds after the last one disconnects — confirmed by `uptime`
 reading `up 0 min` immediately after a build vanished. So `nohup`, `setsid ... &

@@ -824,3 +824,29 @@ md5 matched.
 Reviewer note worth keeping: capture_ua_baseline.py leaves the same call bare
 ON PURPOSE, because that script exits 1 on any failure by design. Same code,
 different contract. Not every unguarded call is a defect.
+
+Task 7: complete (Mac 4bfc2e3). Patch verified by me: exactly 6 files matching
+the derived table, 346 lines, and apply.sh needed no edit -- it already globs
+patches/*.patch, so the new patch was picked up unmodified.
+
+Reconstruction from the pinned base through apply.sh alone: patch-owned files
+diff empty against camoucrome/sp0, all additions/camoucfg files md5-identical,
+and every suite RUN rather than listed -- verify_sp0 11/11, verify_sp1a 9/9,
+camoucfg union 21/21, UserAgentUtilsCamoucfgTest 5/5 each in its own process,
+upstream UserAgentUtilsTest 23/23.
+
+My own duplicate-file check was wrong and I nearly reported a collision: I
+stripped directories before comparing, so embedder_support/BUILD.gn and
+camoucfg/BUILD.gn collapsed to the same string. Different files, different
+directories. The check was broken, not the work -- and it is the ninth thing
+today whose output could not be trusted at face value, this one mine and
+caught by reading what I had actually compared.
+
+Three environment facts recorded in conventions, all found by Task 7:
+  - /tmp on the build PC does NOT survive between ssh invocations. The VM is
+    torn down when the last client disconnects and /tmp is tmpfs. Write
+    throwaway scripts on the client and pipe on stdin; persist under ~.
+  - git apply --3way stages its result, so git diff --stat immediately after
+    reads EMPTY and looks like the patch did nothing. Use --cached.
+  - git checkout -- . will not clear an unmerged index from a conflicted
+    apply; git reset --hard will.
