@@ -315,6 +315,21 @@ present as Chrome, because the entire premise of an anti-detect browser is blend
 into the common case, and Chromium's rarity defeats that — but this is contingent on
 D2 and the user should decide both together.
 
+**RESOLVED 2026-08-27: present as Chrome.**
+
+The recommendation stands, but the reason above understates it. "Chromium is rarer" is
+true and mild. The sharper fact is *who* runs a browser reporting Chromium in its brand
+list: overwhelmingly developers and automation. That is precisely the population a
+detector wants to flag, so claiming Chromium is closer to self-identifying as automation
+than to wearing a narrower disguise.
+
+The decision was also already half-made. SP1a has landed and produces Chrome-shaped
+user-agent strings; reversing would mean rewriting a surface that is already verified.
+
+What follows, now binding rather than contingent: D2's codecs must be enabled, because a
+browser claiming Chrome that cannot decode H.264 is caught by any page willing to
+request the media.
+
 **D2 — Proprietary codecs and distribution.** Building with `proprietary_codecs = true`
 for local use is a different act from distributing such binaries. If Camoucrome is only
 ever built and run by its author, the question is narrow. If binaries are distributed,
@@ -322,6 +337,28 @@ the patent-pool licences are a real obligation that Google's Chrome licence does
 extend to third-party builds. Recommendation: enable for local builds now, and settle
 the distribution question before SP6 produces anything shippable. No recommendation is
 offered on the licensing itself — that is not a technical call.
+
+**RESOLVED 2026-08-27, in two parts, and only one of them is settled.**
+
+**Enable for the build:** `proprietary_codecs = true` and `ffmpeg_branding = "Chrome"`.
+D1 makes this obligatory rather than optional. Conventions already forbids SP4 claiming
+codec support the build lacks, so with D1 = Chrome there are exactly two coherent
+positions: enable the codecs, or have SP4 not spoof codec queries at all and accept a
+live tell. The first is a GN argument; the second forfeits a surface.
+
+**Distribution remains open, deliberately.** Building and running locally is a narrow
+question. Distributing binaries carries patent-pool obligations that Google's licence for
+Chrome does not extend to third-party builds. That is not a call to make from a technical
+reading, it blocks nothing before SP6, and it should be settled with real legal input when
+something shippable exists — not inferred from this document.
+
+**Widevine: deferred, and explicitly NOT spoofed.** The same trap as codecs at a higher
+price. `enable_widevine` is a GN argument but the CDM is a binary Google distributes
+separately, so no flag produces a working Widevine. If SP4 spoofed
+`requestMediaKeySystemAccess` while the CDM is absent, a page that actually opens a key
+session catches it — the exact contradiction conventions forbids. So the build ships
+without Widevine, SP4 leaves the query honest, and this is a known gap to measure rather
+than one to paper over. Revisit only if detectors are observed probing it.
 
 **D3 — Ship a captured variations seed?** §4.2 leaves the browser at compiled-in
 defaults, which is a stable and therefore fingerprintable position. The alternative is
@@ -332,6 +369,28 @@ captured seed would make every Camoucrome instance identical to every other — 
 "defaults" fingerprint for a "same seed" fingerprint, which may be worse. Recommendation:
 defer, and revisit only if a detector is observed checking feature state. Measure before
 building.
+
+**RESOLVED 2026-08-27: no captured seed. Do the two things §4.2 already specifies.**
+
+A shared baked-in seed would make every Camoucrome instance identical to every other,
+which is not a neutral trade. A "defaults" fingerprint is at least a position real
+browsers also occupy; a "this fork's seed" fingerprint is a cohort marker existing
+nowhere else, identifying the fork rather than merely failing to hide it. The right
+long-term answer is a per-instance seed derived from configuration, which is SP5b's
+territory once presets exist.
+
+**One argument for disabling variations that §4.2 does not make, and which raises its
+priority.** This project has committed to never spoofing the browser version, precisely
+because feature availability must match the version claimed. A browser whose feature set
+shifts with a fetched seed makes that invariant *unverifiable* — there is no fixed answer
+to "what does this build support". Disabling the seed fetch is therefore not only
+phone-home removal; it is what makes the version-honesty rule checkable at all.
+
+**And `--disable-field-trial-config` is a defect being fixed, not a preference.** §4.2 is
+right that an unbranded build applies `fieldtrial_testing_config.json` while real Chrome
+does not, leaving the build at a third position matching neither seeded Chrome nor default
+Chrome. That is wrong today, independently of everything else here, and it is the
+highest-priority item in this section despite being the least discussed.
 
 **D4 — Unverified GN argument sites.** `enable_reporting`, `enable_crash_reporter`,
 `enable_widevine`, and `ffmpeg_branding` were not located by the single probe this spec

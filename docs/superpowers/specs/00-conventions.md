@@ -362,6 +362,21 @@ SP5a is still owed before SP4, and SP6a before packaging. Neither now blocks SP1
 SP2 and SP3 are independent of each other and of SP1. SP7 is GN arguments and build
 configuration, so it depends on nothing and can start at any time.
 
+**Order settled 2026-08-27: SP5a (finish) → SP2 → SP3 → SP1b → SP4.**
+
+SP2 comes before SP3 for a reason worth stating, because it inverts the obvious priority.
+As things stand the browser is **identifiable as automated regardless of how good the
+identity spoofing is** — a perfect Windows user agent on a browser reporting
+`navigator.webdriver: true` is worth nothing. Detectors check automation markers first and
+cheaply; one line ends the conversation. Device identity only starts to matter once that
+check is survived.
+
+SP5a finishes first only because it is nearly done, and unverified code left in place rots
+faster than it would cost to finish. Note also that its *machinery* is worth having early
+while its *value* arrives late: with ten keys there is little to enforce, and the registry
+becomes useful as SP2, SP3 and SP4 add surfaces — which is exactly why the spec insists it
+exist before those, so each lands its invariants rather than being audited afterwards.
+
 ## Config key naming
 
 A key uses a **dot** when it mirrors a JavaScript property path exactly
@@ -393,6 +408,64 @@ one, and the two cross-reference.
 
 **Proprietary codecs and Widevine belong to SP7,** not SP6. SP7 did not exist when SP5
 assigned them.
+
+**The fork presents as Chrome, not Chromium.** *(SP7 D1, resolved 2026-08-27.)* The
+premise of an anti-detect browser is blending into the common case, and the population
+that actually reports Chromium in its brand list is overwhelmingly developers and
+automation — the exact group a detector wants to flag. Claiming Chromium is nearer to
+self-identifying as automation than to a narrower disguise. SP1a already produces
+Chrome-shaped user agents, so this confirms a position rather than choosing one.
+
+Three consequences bind other sub-projects:
+
+- **The build must earn the claim.** Anything Chrome can do that this build cannot is a
+  contradiction a page can demonstrate, not merely a value that differs. Codecs are the
+  live case; see below.
+- **Branding leaks into fingerprint surfaces, so check for it.** Found while probing SP1a:
+  `GetPlatformForUAMetadata()` in `user_agent_utils.cc` returns `"Chrome OS"` under
+  `BUILDFLAG(GOOGLE_CHROME_BRANDING)` and `"Chromium OS"` otherwise — a branding buildflag
+  reaching `navigator.userAgentData.platform` and the `Sec-CH-UA-Platform` header. SP1a's
+  `ua:platform` key overrides that particular one, but the pattern is what matters: grep
+  for `GOOGLE_CHROME_BRANDING` near any surface before assuming it is branding-neutral.
+- **`is_chrome_branded = true` is not the mechanism.** It needs internal Google assets
+  this project does not have. The build stays unbranded and matches Chrome's *behaviour*
+  through targeted arguments — `ffmpeg_branding = "Chrome"` being the first.
+
+**Proprietary codecs are enabled; Widevine is absent and must not be spoofed.**
+*(SP7 D2, resolved 2026-08-27.)* `proprietary_codecs = true` and
+`ffmpeg_branding = "Chrome"` follow from D1: with the fork claiming Chrome, a build that
+cannot decode H.264 is caught by any page willing to request the media rather than merely
+ask about it.
+
+Widevine is the same trap at a higher price — `enable_widevine` is a GN argument but the
+CDM is a binary distributed separately, so no flag produces a working one. **SP4 must
+leave `requestMediaKeySystemAccess` honest.** Spoofing it while the CDM is absent fails
+the moment a page opens a key session, which is the contradiction rule 4 forbids. Recorded
+as a known gap to measure, not one to paper over.
+
+Distribution licensing is deliberately *not* settled here. Building and running locally is
+a narrow question; distributing binaries carries patent-pool obligations that Google's
+Chrome licence does not extend to third-party builds. It blocks nothing before SP6 and is
+not a call to make from a technical reading.
+
+**Variations are disabled and no seed is shipped.** *(SP7 D3, resolved 2026-08-27.)* Two
+actions, one of which is more urgent than its placement suggests.
+
+`--disable-field-trial-config` fixes a defect that exists **today**: an unbranded build
+applies `testing/variations/fieldtrial_testing_config.json` and real Chrome does not, so
+the build currently sits at a third position matching neither seeded Chrome nor default
+Chrome. That is wrong independently of every other decision here.
+
+Disabling the seed fetch also does something the phone-home framing hides. This project
+never spoofs the browser version, precisely because feature availability must match the
+version claimed — and a browser whose feature set shifts with a fetched seed makes that
+invariant **unverifiable**, since there is no fixed answer to "what does this build
+support". Disabling variations is what makes the version-honesty rule checkable at all.
+
+A captured seed baked into the fork is rejected: it would make every instance identical to
+every other, trading a "defaults" fingerprint for a cohort marker that exists nowhere but
+here. A per-instance seed derived from configuration is the right answer and belongs to
+SP5b.
 
 ## Out of roadmap: TLS and HTTP/2 fingerprinting
 
