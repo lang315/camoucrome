@@ -3,8 +3,11 @@
 An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
-**Status: SP0 landed.** The configuration layer exists and drives
-`navigator.hardwareConcurrency`. Apply it to a Chromium checkout with
+**Status: SP0 and SP1a landed.** The configuration layer exists and drives
+`navigator.hardwareConcurrency`, and the browser-process UA producer —
+`navigator.userAgent`, `navigator.userAgentData`, and the `Sec-CH-UA*` request
+headers — is spoofable and coherent, all read from one site in
+`user_agent_utils.cc`. Apply both to a Chromium checkout with
 `scripts/apply.sh <chromium-src>`. The specs in
 `docs/superpowers/specs/` define the work.
 
@@ -66,7 +69,8 @@ assumes the architecture decisions recorded there.
 | SP0 | Config layer plus a tracer-bullet surface | — |
 | SP6a | Patch management and the key registry | SP0 |
 | SP5a | Invariant registry, reader, load-time validator | SP0 |
-| SP1 | Navigator identity and UA / UA-CH coherence | SP0, SP6a, SP5a |
+| SP1a | Browser-process UA producer: `navigator.userAgent`, `userAgentData`, `Sec-CH-UA*` headers | SP0 |
+| SP1b | Blink-side leaf accessors and languages | SP1a, SP6a, SP5a |
 | SP2 | Automation hiding and CDP invisibility | SP0 |
 | SP3 | WebGL and canvas fingerprints | SP0 |
 | SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1, SP3, SP5a |

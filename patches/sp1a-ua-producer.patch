@@ -1,0 +1,346 @@
+diff --git a/components/embedder_support/BUILD.gn b/components/embedder_support/BUILD.gn
+index 847ba42327..bdcc1bdaa5 100644
+--- a/components/embedder_support/BUILD.gn
++++ b/components/embedder_support/BUILD.gn
+@@ -58,6 +58,7 @@ static_library("user_agent") {
+   deps = [
+     ":embedder_support",
+     "//build:branding_buildflags",
++    "//components/camoucfg",
+     "//components/policy/core/common",
+     "//components/prefs",
+     "//components/version_info",
+diff --git a/components/embedder_support/DEPS b/components/embedder_support/DEPS
+index 85fc43cfc0..65c510a965 100644
+--- a/components/embedder_support/DEPS
++++ b/components/embedder_support/DEPS
+@@ -1,5 +1,6 @@
+ include_rules = [
+   "+components/background_sync",
++  "+components/camoucfg",
+   "+components/content_settings/browser",
+   "+components/content_settings/core/browser",
+   "+components/content_settings/core/common",
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index 3f87ec84fb..58563e1623 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -26,6 +26,8 @@
+ #include "base/version.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "components/embedder_support/pref_names.h"
+ #include "components/embedder_support/switches.h"
+ #include "components/policy/core/common/policy_pref_names.h"
+@@ -298,6 +300,55 @@ std::string GetUserAgentPlatform() {
+ #endif
+ }
+ 
++// Returns the OS segment of the user-agent string that configuration asks this
++// build to claim, or `real` when no key is set.
++//
++// This is the only substitution point for the user-agent string, and where it
++// sits is the design. It is BELOW GetUserAgentInternal()'s choice between the
++// reduced and the full form, so a build keeps emitting whichever form is
++// correct for it. It is BELOW GetUserAgent()'s --user-agent short-circuit, so
++// that switch keeps its meaning. And `product` -- the token carrying the
++// Chromium version -- is never routed through here, so the version this build
++// reports cannot move no matter what configuration says.
++//
++// Nothing in a Linux binary can compute a Windows OS string: every arm of
++// GetUserAgentPlatform(), GetOSVersion() and GetUnifiedPlatform() is selected
++// by BUILDFLAG at compile time, so only one is present in the image. The value
++// therefore has to arrive whole from configuration, and an absent key falls
++// back to the real platform's string, which is what conventions rule 5 wants
++// anyway.
++// True when configuration is presenting a user-agent identity at all.
++//
++// The gate is every ua: key, not kUaOsInfo alone. A generator can perfectly
++// well set ua:platform without ua:osInfo, and gating on osInfo would then let
++// --user-agent win for the string while configuration still won for the
++// metadata -- a user-agent string and a Sec-CH-UA-Platform header that
++// disagree, which conventions rule 4 calls worse than not spoofing at all.
++//
++// Derived from the registry rather than a second hand-written list, so a ua:
++// key added by a later sub-project is covered without anyone remembering to
++// come back here.
++//
++// This does not make a partial configuration coherent -- ua:platform without
++// ua:osInfo still yields a Linux string beside a Windows platform. Rejecting
++// that combination is SP5a's invariant validator, and SP1's spec assigns it
++// there explicitly. What this fixes is narrower and ours: not letting the
++// command line and the configuration each win one channel.
++bool ConfigPresentsUserAgentIdentity(const camoucfg::ConfigScope& scope) {
++  for (std::string_view key : camoucfg::keys::kAllKeys) {
++    if (key.starts_with("ua:") && camoucfg::HasKey(scope, key)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++std::string OsInfoOverrideOr(std::string real) {
++  std::optional<std::string> configured = camoucfg::GetString(
++      camoucfg::GlobalScope(), camoucfg::keys::kUaOsInfo);
++  return configured.has_value() ? std::move(*configured) : std::move(real);
++}
++
+ std::string GetUnifiedPlatform() {
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
+   // This constant is only used on Android (desktop) and Linux.
+@@ -464,7 +515,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
+ 
+ std::string GetUserAgent() {
+   std::optional<std::string> custom_ua = GetUserAgentFromCommandLine();
+-  if (custom_ua.has_value()) {
++  // Same precedence rule as GetUserAgentMetadata below, and it has to be the
++  // same test. Honouring --user-agent here while configuration governs the
++  // metadata would put the two channels in disagreement, which is the one
++  // outcome both are patched to prevent.
++  if (custom_ua.has_value() &&
++      !ConfigPresentsUserAgentIdentity(camoucfg::GlobalScope())) {
+     return custom_ua.value();
+   }
+ 
+@@ -647,6 +703,7 @@ std::string GetPlatformForUAMetadata() {
+ 
+ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+   blink::UserAgentMetadata metadata;
++  const camoucfg::ConfigScope& scope = camoucfg::GlobalScope();
+ 
+   // Low entropy client hints.
+   metadata.brand_version_list =
+@@ -654,14 +711,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+   metadata.mobile = GetMobileBitForUAMetadata();
+   metadata.platform = GetPlatformForUAMetadata();
+ 
++  // The brand list is deliberately not configurable: it carries the Chromium
++  // version, and this build always reports the version it was compiled from.
++  if (std::optional<bool> mobile =
++          camoucfg::GetBool(scope, camoucfg::keys::kUaMobile)) {
++    metadata.mobile = *mobile;
++  }
++  if (std::optional<std::string> platform =
++          camoucfg::GetString(scope, camoucfg::keys::kUaPlatform)) {
++    metadata.platform = *std::move(platform);
++  }
++
+   // For users providing a valid user-agent override via the command line:
+   // If kUACHOverrideBlank is enabled, set user-agent metadata with the
+   // default blank values, otherwise return the default UserAgentMetadata values
+   // to populate and send only the low entropy client hints.
+   // Notes: Sending low entropy hints with empty values may cause requests being
+   // blocked by web application firewall software, etc.
++  //
++  // Camoucrome: when configuration is present it takes precedence over the
++  // command line, per the precedence rule in 00-conventions.md. Letting
++  // --user-agent through here would blank the hints while the string above
++  // still claims Windows, which is an incoherence this patch would have
++  // created rather than one it inherited.
+   std::optional<std::string> custom_ua = GetUserAgentFromCommandLine();
+-  if (custom_ua.has_value()) {
++  if (custom_ua.has_value() && !ConfigPresentsUserAgentIdentity(scope)) {
+     return base::FeatureList::IsEnabled(blink::features::kUACHOverrideBlank)
+                ? blink::UserAgentMetadata()
+                : metadata;
+@@ -681,6 +755,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+   metadata.bitness = GetCpuBitness();
+   metadata.wow64 = IsWoW64();
+   metadata.platform_version = GetPlatformVersion();
++
++  // brand_full_version_list and full_version are absent here for the same
++  // reason brand_version_list is: they carry the version.
++  //
++  // form_factors is absent for a different reason -- it is derived from
++  // `mobile` just above, so it already follows the configured value, and an
++  // independent key would only create the chance for the two to disagree.
++  if (std::optional<std::string> architecture =
++          camoucfg::GetString(scope, camoucfg::keys::kUaArchitecture)) {
++    metadata.architecture = *std::move(architecture);
++  }
++  if (std::optional<std::string> model =
++          camoucfg::GetString(scope, camoucfg::keys::kUaModel)) {
++    metadata.model = *std::move(model);
++  }
++  if (std::optional<std::string> bitness =
++          camoucfg::GetString(scope, camoucfg::keys::kUaBitness)) {
++    metadata.bitness = *std::move(bitness);
++  }
++  if (std::optional<bool> wow64 =
++          camoucfg::GetBool(scope, camoucfg::keys::kUaWow64)) {
++    metadata.wow64 = *wow64;
++  }
++  if (std::optional<std::string> platform_version = camoucfg::GetString(
++          scope, camoucfg::keys::kUaPlatformVersion)) {
++    metadata.platform_version = *std::move(platform_version);
++  }
+   return metadata;
+ }
+ 
+@@ -709,6 +810,10 @@ std::string GetUnifiedPlatformForTesting() {
+   return GetUnifiedPlatform();
+ }
+ 
++std::string GetPlatformForUAMetadataForTesting() {
++  return GetPlatformForUAMetadata();
++}
++
+ // Return the CPU architecture in Windows/Mac/POSIX/Fuchsia and the empty string
+ // on Android or if unknown.
+ std::string GetCpuArchitecture() {
+@@ -838,7 +943,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+ 
+ std::string BuildUnifiedPlatformUserAgentFromProduct(
+     const std::string& product) {
+-  return BuildUserAgentFromOSAndProduct(GetUnifiedPlatform(), product);
++  return BuildUserAgentFromOSAndProduct(OsInfoOverrideOr(GetUnifiedPlatform()),
++                                        product);
+ }
+ 
+ std::string BuildUserAgentFromProduct(const std::string& product) {
+@@ -847,7 +953,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
+                       BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
+                                      IncludeAndroidModel::Include)
+                           .c_str());
+-  return BuildUserAgentFromOSAndProduct(os_info, product);
++  return BuildUserAgentFromOSAndProduct(OsInfoOverrideOr(std::move(os_info)),
++                                        product);
+ }
+ 
+ std::string BuildModelInfo() {
+diff --git a/components/embedder_support/user_agent_utils.h b/components/embedder_support/user_agent_utils.h
+index 39a9d06956..90c5d88a71 100644
+--- a/components/embedder_support/user_agent_utils.h
++++ b/components/embedder_support/user_agent_utils.h
+@@ -112,6 +112,10 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+ // Return the <unifiedPlatform> token of a reduced User-Agent header.
+ std::string GetUnifiedPlatformForTesting();
+ 
++// GetPlatformForUAMetadata() is not declared in this header, so this shim
++// exposes the real computed platform value to tests.
++std::string GetPlatformForUAMetadataForTesting();
++
+ // Helper function to generate a full user agent string from a short
+ // product name.
+ std::string BuildUserAgentFromProduct(const std::string& product);
+diff --git a/components/embedder_support/user_agent_utils_unittest.cc b/components/embedder_support/user_agent_utils_unittest.cc
+index a0696b7bff..dcd336618a 100644
+--- a/components/embedder_support/user_agent_utils_unittest.cc
++++ b/components/embedder_support/user_agent_utils_unittest.cc
+@@ -1189,4 +1189,78 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
+ #endif
+ }
+ 
++// These four cases each need a different CAMOU_CONFIG, and camoucfg reads the
++// environment once per process and caches it (mask_config.cc:18). So each is
++// run in its own invocation of components_unittests with the environment set
++// by the runner -- see the command in the step below. Running them together in
++// one process would silently test whichever config happened to be latched
++// first.
++//
++// Each case asserts something that is false under the wrong configuration, so
++// a mis-run fails loudly instead of quietly exercising the fallback path.
++
++TEST(UserAgentUtilsCamoucfgTest, MetadataFallsBackWhenUnconfigured) {
++  // Run with no CAMOU_CONFIG. Every field must be the real computed value.
++  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
++  EXPECT_EQ(metadata.platform, GetPlatformForUAMetadataForTesting());
++  EXPECT_EQ(metadata.architecture, GetCpuArchitecture());
++  EXPECT_EQ(metadata.bitness, GetCpuBitness());
++  EXPECT_EQ(metadata.wow64, IsWoW64());
++}
++
++TEST(UserAgentUtilsCamoucfgTest, MetadataTakesConfiguredValues) {
++  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
++  EXPECT_EQ(metadata.platform, "Windows");
++  EXPECT_EQ(metadata.platform_version, "15.0.0");
++  EXPECT_EQ(metadata.architecture, "x86");
++  EXPECT_EQ(metadata.bitness, "64");
++  EXPECT_FALSE(metadata.mobile);
++  EXPECT_FALSE(metadata.wow64);
++}
++
++// The version is never spoofed, and this is the assertion that says so. It must
++// hold even though the config it runs under sets every other field and tries to
++// set the version-bearing ones too.
++TEST(UserAgentUtilsCamoucfgTest, ConfigurationCannotMoveTheVersion) {
++  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
++  EXPECT_EQ(metadata.platform, "Windows");  // proves the config did arrive
++  EXPECT_EQ(metadata.full_version, version_info::GetVersionNumber());
++  for (const blink::UserAgentBrandVersion& brand :
++       metadata.brand_full_version_list) {
++    if (brand.brand.find("Not") == std::string::npos) {
++      EXPECT_EQ(brand.version, version_info::GetVersionNumber());
++    }
++  }
++}
++
++// form_factors is derived from `mobile` and has no key of its own. Configuring
++// mobile must carry it, which is what makes the absence of a key correct rather
++// than an omission.
++TEST(UserAgentUtilsCamoucfgTest, FormFactorsFollowConfiguredMobile) {
++  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
++  EXPECT_TRUE(metadata.mobile);
++  EXPECT_THAT(metadata.form_factors,
++              testing::Contains(blink::kMobileFormFactor));
++}
++
++
++// --user-agent must not win one channel while configuration wins the other.
++// Run with CAMOU_CONFIG setting ua:platform and ua:bitness but NOT ua:osInfo:
++// the case the original gate missed, because it asked only about osInfo.
++//
++// Under the old gate the early return fired, so the high-entropy fields were
++// never assigned and `architecture` came back empty while `platform` already
++// carried the configured value -- the disagreement in miniature.
++TEST(UserAgentUtilsCamoucfgTest, CommandLineDoesNotOutrankPartialConfig) {
++  base::test::ScopedCommandLine scoped_command_line;
++  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(
++      kUserAgent, "Mozilla/5.0 (Fake) Chrome/1.2.3.4 Safari/537.36");
++
++  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
++  EXPECT_EQ(metadata.platform, "Windows");
++  EXPECT_FALSE(metadata.architecture.empty())
++      << "high-entropy fields were skipped: the command line outranked config";
++  EXPECT_EQ(metadata.bitness, "32");
++}
++
+ }  // namespace embedder_support
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index fe01f49a5f..ca073899e4 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -60,6 +60,7 @@
+ #include "build/build_config.h"
+ #include "build/chromecast_buildflags.h"
+ #include "cc/base/histograms.h"
++#include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
+ #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
+@@ -561,10 +562,22 @@ int BrowserMainLoop::EarlyInitialization() {
+   // crash. Conventions rule 5 forbids exactly that: a crash is itself a
+   // fingerprint.
+   const bool camou_configured = camoucfg::HasKey(
+-      camoucfg::GlobalScope(), "navigator.hardwareConcurrency");
++      camoucfg::GlobalScope(), camoucfg::keys::kNavigatorHardwareConcurrency);
+   VLOG(1) << "camoucfg: browser process configuration reachable, "
+           << "navigator.hardwareConcurrency configured=" << camou_configured;
+ 
++  if (camoucfg::HasKey(camoucfg::GlobalScope(),
++                       camoucfg::keys::kNavigatorUserAgent)) {
++    LOG(WARNING)
++        << "camoucfg: '" << camoucfg::keys::kNavigatorUserAgent
++        << "' is not supported and has been ignored. A whole user-agent string "
++           "carries a browser version, and Camoucrome always reports the "
++           "version its binary was built from. Set '"
++        << camoucfg::keys::kUaOsInfo
++        << "' to the OS segment instead, for example "
++           "\"Windows NT 10.0; Win64; x64\".";
++  }
++
+ #if BUILDFLAG(USE_ZYGOTE)
+   // The initialization of the sandbox host ends up with forking the Zygote
+   // process and requires no thread been forked. The initialization has happened
