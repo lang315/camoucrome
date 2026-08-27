@@ -1409,3 +1409,51 @@ disable the command, on D1's reasoning: a control that lets a user
 desynchronise their own fingerprint is a liability in a browser whose job is to
 present one identity.
 
+
+---
+
+SP5a TASK 6 COMPLETE, review clean. Commits 99d8cda (implementer), e954e2b
+(fix), plus two closing mutations run by the controller.
+
+Review returned SPEC MET with one Important finding and one rigor note. Both
+addressed, and I ran two further mutations the fix left open.
+
+FINDING 1, real and confirmed by me before acting: assertion 3 tested
+  "code 13" not in str(err)
+against lib_shell's "... exited during startup, code {N}". "code 13" is a
+SUBSTRING of "code 130", so a process dying on 128+SIGINT would have been
+accepted as the deliberate refusal. The comment two lines above claimed the
+exactness the code lacked. Now parses the trailing integer and compares == 13.
+
+FINDING 2: only assertion 1 had falsification evidence, and only half of it --
+the mutation flipped the invariant conjunct while the UA conjunct still passed.
+
+EVERY CONJUNCT OF ALL FOUR ASSERTIONS NOW HAS A MUTATION. Each predicted before
+running, each landing exactly where predicted, each restored-redeployed-rerun
+to 4 PASS with sha256 matched on both sides:
+
+  C1 invariant half   implementer: COHERENT -> INCOHERENT
+  C1 UA half          MINE: COHERENT retargeted to macOS -- still coherent, so
+                      no invariant line, but no "Windows NT" either. 3 PASS,
+                      1 FAIL, and the FAIL is assertion 1.
+  C2                  fixer: fed COHERENT, invariant line absent
+  C3 started branch    fixer: dropped strict=True
+  C3 wrong-code branch fixer: binary exiting 130. Also confirmed the OLD
+                      substring check would have ACCEPTED 130 as 13.
+  C4 UA half          fixer: fed a config
+  C4 stderr half      MINE: fed a typo'd key {"ua:platfrom":"Windows"} --
+                      emits a camoucfg warning while leaving the UA at the
+                      stock baseline, so the FAIL isolates the stderr conjunct.
+                      3 PASS, 1 FAIL, and the FAIL is assertion 4.
+
+The fixer had called C4's stderr half an honest out-of-scope gap. It was one
+mutation away, and an unexercised conjunct is exactly where this project keeps
+finding its bugs.
+
+Note on the fixer's own report: it initially claimed mutation (d) fired a
+camoucfg VLOG line, then checked and corrected itself -- there is no VLOG any
+more, Task 5 replaced it, and the remaining camoucfg lines are LOG(WARNING)/
+LOG(ERROR) which always appear. Its conclusion was right, its mechanism was
+not, and it said so.
+
+NEXT: Task 7, patch extraction, closes SP5a.
