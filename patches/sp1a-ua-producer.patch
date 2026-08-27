@@ -22,7 +22,7 @@ index 85fc43cfc0..65c510a965 100644
    "+components/content_settings/core/browser",
    "+components/content_settings/core/common",
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 3f87ec84fb..58563e1623 100644
+index 3f87ec84fb..7e70997f57 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
 @@ -26,6 +26,8 @@
@@ -34,10 +34,56 @@ index 3f87ec84fb..58563e1623 100644
  #include "components/embedder_support/pref_names.h"
  #include "components/embedder_support/switches.h"
  #include "components/policy/core/common/policy_pref_names.h"
-@@ -298,6 +300,55 @@ std::string GetUserAgentPlatform() {
+@@ -298,6 +300,75 @@ std::string GetUserAgentPlatform() {
  #endif
  }
  
++// True when configuration is presenting a user-agent identity at all.
++//
++// The gate is every ua: key, not kUaOsInfo alone. A generator can perfectly
++// well set ua:platform without ua:osInfo, and gating on osInfo would then let
++// --user-agent win for the string while configuration still won for the
++// metadata -- a user-agent string and a Sec-CH-UA-Platform header that
++// disagree, which conventions rule 4 calls worse than not spoofing at all.
++//
++// It asks whether a key yields a VALUE, not whether the key is present.
++// HasKey() answers a different question: it is type-blind, so
++// {"ua:wow64":"no"} -- a string where a boolean belongs -- made this return
++// true, which dropped --user-agent, while GetBool() then rejected the value
++// and fell back to the real one. The operator asked for Windows two ways and
++// got Linux, and the only diagnostic named the type and never the
++// consequence. Not counting a value this build cannot read means the command
++// line keeps its meaning in exactly that case.
++//
++// Derived from the registry rather than a second hand-written list, so a ua:
++// key added by a later sub-project is covered without anyone remembering to
++// come back here. kUaMetadataKeys is pinned by test to be exactly the ua: keys
++// other than kUaOsInfo.
++//
++// This does not make a partial configuration coherent -- ua:platform without
++// ua:osInfo still yields a Linux string beside a Windows platform. Rejecting
++// that combination is SP5a's invariant validator, and SP1's spec assigns it
++// there explicitly. What this fixes is narrower and ours: not letting the
++// command line and the configuration each win one channel.
++bool ConfigPresentsUserAgentIdentity(const camoucfg::ConfigScope& scope) {
++  if (camoucfg::GetString(scope, camoucfg::keys::kUaOsInfo).has_value()) {
++    return true;
++  }
++  for (std::string_view key : camoucfg::keys::kUaMetadataKeys) {
++    // The expected type is a property of the key, and exactly two are
++    // booleans. Asking GetString() about a boolean key would log "not a
++    // string" and answer no, which is this same bug in the other direction.
++    const bool expects_bool =
++        key == std::string_view(camoucfg::keys::kUaMobile) ||
++        key == std::string_view(camoucfg::keys::kUaWow64);
++    if (expects_bool ? camoucfg::GetBool(scope, key).has_value()
++                     : camoucfg::GetString(scope, key).has_value()) {
++      return true;
++    }
++  }
++  return false;
++}
++
 +// Returns the OS segment of the user-agent string that configuration asks this
 +// build to claim, or `real` when no key is set.
 +//
@@ -55,32 +101,6 @@ index 3f87ec84fb..58563e1623 100644
 +// therefore has to arrive whole from configuration, and an absent key falls
 +// back to the real platform's string, which is what conventions rule 5 wants
 +// anyway.
-+// True when configuration is presenting a user-agent identity at all.
-+//
-+// The gate is every ua: key, not kUaOsInfo alone. A generator can perfectly
-+// well set ua:platform without ua:osInfo, and gating on osInfo would then let
-+// --user-agent win for the string while configuration still won for the
-+// metadata -- a user-agent string and a Sec-CH-UA-Platform header that
-+// disagree, which conventions rule 4 calls worse than not spoofing at all.
-+//
-+// Derived from the registry rather than a second hand-written list, so a ua:
-+// key added by a later sub-project is covered without anyone remembering to
-+// come back here.
-+//
-+// This does not make a partial configuration coherent -- ua:platform without
-+// ua:osInfo still yields a Linux string beside a Windows platform. Rejecting
-+// that combination is SP5a's invariant validator, and SP1's spec assigns it
-+// there explicitly. What this fixes is narrower and ours: not letting the
-+// command line and the configuration each win one channel.
-+bool ConfigPresentsUserAgentIdentity(const camoucfg::ConfigScope& scope) {
-+  for (std::string_view key : camoucfg::keys::kAllKeys) {
-+    if (key.starts_with("ua:") && camoucfg::HasKey(scope, key)) {
-+      return true;
-+    }
-+  }
-+  return false;
-+}
-+
 +std::string OsInfoOverrideOr(std::string real) {
 +  std::optional<std::string> configured = camoucfg::GetString(
 +      camoucfg::GlobalScope(), camoucfg::keys::kUaOsInfo);
@@ -90,7 +110,7 @@ index 3f87ec84fb..58563e1623 100644
  std::string GetUnifiedPlatform() {
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
    // This constant is only used on Android (desktop) and Linux.
-@@ -464,7 +515,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
+@@ -464,7 +535,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
  
  std::string GetUserAgent() {
    std::optional<std::string> custom_ua = GetUserAgentFromCommandLine();
@@ -104,7 +124,7 @@ index 3f87ec84fb..58563e1623 100644
      return custom_ua.value();
    }
  
-@@ -647,6 +703,7 @@ std::string GetPlatformForUAMetadata() {
+@@ -647,6 +723,7 @@ std::string GetPlatformForUAMetadata() {
  
  blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    blink::UserAgentMetadata metadata;
@@ -112,7 +132,7 @@ index 3f87ec84fb..58563e1623 100644
  
    // Low entropy client hints.
    metadata.brand_version_list =
-@@ -654,14 +711,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -654,14 +731,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.mobile = GetMobileBitForUAMetadata();
    metadata.platform = GetPlatformForUAMetadata();
  
@@ -145,7 +165,7 @@ index 3f87ec84fb..58563e1623 100644
      return base::FeatureList::IsEnabled(blink::features::kUACHOverrideBlank)
                 ? blink::UserAgentMetadata()
                 : metadata;
-@@ -681,6 +755,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -681,6 +775,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.bitness = GetCpuBitness();
    metadata.wow64 = IsWoW64();
    metadata.platform_version = GetPlatformVersion();
@@ -179,7 +199,7 @@ index 3f87ec84fb..58563e1623 100644
    return metadata;
  }
  
-@@ -709,6 +810,10 @@ std::string GetUnifiedPlatformForTesting() {
+@@ -709,6 +830,10 @@ std::string GetUnifiedPlatformForTesting() {
    return GetUnifiedPlatform();
  }
  
@@ -190,7 +210,7 @@ index 3f87ec84fb..58563e1623 100644
  // Return the CPU architecture in Windows/Mac/POSIX/Fuchsia and the empty string
  // on Android or if unknown.
  std::string GetCpuArchitecture() {
-@@ -838,7 +943,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+@@ -838,7 +963,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
  
  std::string BuildUnifiedPlatformUserAgentFromProduct(
      const std::string& product) {
@@ -200,7 +220,7 @@ index 3f87ec84fb..58563e1623 100644
  }
  
  std::string BuildUserAgentFromProduct(const std::string& product) {
-@@ -847,7 +953,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
+@@ -847,7 +973,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
                        BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
                                       IncludeAndroidModel::Include)
                            .c_str());
@@ -226,10 +246,10 @@ index 39a9d06956..90c5d88a71 100644
  // product name.
  std::string BuildUserAgentFromProduct(const std::string& product);
 diff --git a/components/embedder_support/user_agent_utils_unittest.cc b/components/embedder_support/user_agent_utils_unittest.cc
-index a0696b7bff..dcd336618a 100644
+index a0696b7bff..7b66dd0874 100644
 --- a/components/embedder_support/user_agent_utils_unittest.cc
 +++ b/components/embedder_support/user_agent_utils_unittest.cc
-@@ -1189,4 +1189,78 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
+@@ -1189,4 +1189,99 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
  #endif
  }
  
@@ -305,6 +325,27 @@ index a0696b7bff..dcd336618a 100644
 +  EXPECT_FALSE(metadata.architecture.empty())
 +      << "high-entropy fields were skipped: the command line outranked config";
 +  EXPECT_EQ(metadata.bitness, "32");
++}
++
++// A ua: key present with the WRONG TYPE must not count as a configuration.
++//
++// HasKey() is type-blind, so {"ua:wow64":"no"} -- a string where a boolean
++// belongs -- used to make ConfigPresentsUserAgentIdentity() return true. That
++// dropped --user-agent, and then GetBool() rejected the same value and fell
++// back to the real one, so the operator asked for Windows two ways and got
++// Linux. The only diagnostic named the type and never the consequence, and
++// stock Chromium would have honoured the switch.
++//
++// Run with CAMOU_CONFIG={"ua:wow64":"no"} -- its own process, because the
++// configuration latches per process.
++TEST(UserAgentUtilsCamoucfgTest, WrongTypedKeyDoesNotOutrankCommandLine) {
++  const std::string custom = "Mozilla/5.0 (Fake) Chrome/1.2.3.4 Safari/537.36";
++  base::test::ScopedCommandLine scoped_command_line;
++  scoped_command_line.GetProcessCommandLine()->AppendSwitchASCII(kUserAgent,
++                                                                 custom);
++  EXPECT_EQ(GetUserAgent(), custom)
++      << "a key this build cannot read counted as a configuration and "
++         "suppressed --user-agent, leaving nothing spoofed either";
 +}
 +
  }  // namespace embedder_support

@@ -101,19 +101,20 @@ index 3422559392..4663a75ff6 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-index cccfafe8f9..620bfa290d 100644
+index cccfafe8f9..c9332e1fdf 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
 +++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-@@ -6,6 +6,8 @@
+@@ -6,6 +6,9 @@
  
  #include "base/feature_list.h"
  #include "build/build_config.h"
 +#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
 +#include "components/camoucfg/mask_config.h"
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/renderer/core/execution_context/execution_context.h"
  #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
-@@ -75,6 +77,16 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
+@@ -75,6 +78,16 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
  
    probe::ApplyHardwareConcurrencyOverride(
        probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
@@ -124,7 +125,7 @@ index cccfafe8f9..620bfa290d 100644
 +  // and the real value plus any emulation override survives unchanged.
 +  if (std::optional<uint32_t> configured = camoucfg::GetUint32(
 +          camoucfg::ScopeFor(GetExecutionContext()),
-+          "navigator.hardwareConcurrency")) {
++          camoucfg::keys::kNavigatorHardwareConcurrency)) {
 +    hardware_concurrency = *configured;
 +  }
    return hardware_concurrency;

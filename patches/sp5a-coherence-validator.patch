@@ -1,0 +1,112 @@
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index ca073899e4..c1bd79f6df 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -60,6 +60,7 @@
+ #include "build/build_config.h"
+ #include "build/chromecast_buildflags.h"
+ #include "cc/base/histograms.h"
++#include "components/camoucfg/coherence_validator.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
+@@ -544,27 +545,80 @@ void BrowserMainLoop::Init() {
+ int BrowserMainLoop::EarlyInitialization() {
+   TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
+ 
+-  // Force the one-time parse here, in the browser process, on every start.
++  // Validate the configuration here, in the browser process, before any
++  // renderer exists.
+   //
+-  // The bool must be computed BEFORE the VLOG, not inside it. VLOG expands to
+-  // LAZY_STREAM(stream, VLOG_IS_ON(1)), which is
+-  // `!(condition) ? (void)0 : ... (stream)` — so at default verbosity the
+-  // entire stream expression, including any call in it, is never evaluated.
+-  // A HasKey() call written inside the VLOG would not run on a normal launch,
+-  // and this task's whole purpose is that it does.
++  // This replaces the arrangement SP0 left behind, where the one-time parse
++  // was forced by the side effect of a HasKey() in a logging line. Conventions
++  // recorded that fragility as an open weakness: strict mode depended on a
++  // statement whose stated purpose was logging, so deleting or moving the log
++  // would have silently moved the parse into a renderer. Validation is real
++  // work that has to happen here, and forcing the parse is now its byproduct
++  // rather than its purpose.
+   //
+-  // Two things depend on the parse happening here rather than lazily at first
+-  // surface access. SP1 patches user_agent_utils.cc in this process and needs
+-  // the path proven before it depends on it. And CAMOU_CONFIG_STRICT is
+-  // specified to refuse startup on malformed configuration — with a lazy
+-  // parse the CHECK would instead fire in whichever process touched config
+-  // first, which is a renderer, turning a refusal to start into a renderer
+-  // crash. Conventions rule 5 forbids exactly that: a crash is itself a
+-  // fingerprint.
+-  const bool camou_configured = camoucfg::HasKey(
+-      camoucfg::GlobalScope(), camoucfg::keys::kNavigatorHardwareConcurrency);
+-  VLOG(1) << "camoucfg: browser process configuration reachable, "
+-          << "navigator.hardwareConcurrency configured=" << camou_configured;
++  // Two things still depend on it happening here rather than lazily at first
++  // surface access. The first surface to touch configuration is in a RENDERER,
++  // and CAMOU_CONFIG_STRICT is specified to refuse startup — so a lazy parse
++  // would fire its refusal in a renderer, turning "refuse to start" into a
++  // renderer crash, which conventions rule 5 forbids because a crash is itself
++  // a fingerprint. And a relational invariant needs to see the whole
++  // configuration at once, which only the browser process can.
++  if (!camoucfg::ValidateAtStartup(camoucfg::GlobalScope())) {
++    LOG(ERROR) << "camoucfg: configuration is incoherent and "
++                  "CAMOU_CONFIG_STRICT is set; refusing to start.";
++    // Not a bare 1: that is RESULT_CODE_KILLED, and reporting a deliberate,
++    // explained refusal as a kill would misfile it in crash reporting.
++    //
++    // content::ResultCode is frozen -- a static_assert pins
++    // RESULT_CODE_LAST_CODE at 5 and result_codes.h forbids new values -- so
++    // there is no content-level code meaning "bad configuration". 13 is what
++    // chrome::ResultCode calls RESULT_CODE_UNSUPPORTED_PARAM, and
++    // CrashExitCodeToString(13) already prints that name, so the number is
++    // accurate even though the symbol is out of reach from //content.
++    constexpr int kResultCodeUnsupportedParam = 13;
++    return kResultCodeUnsupportedParam;
++  }
++
++  // A key this build does not know is otherwise completely silent: nothing
++  // matches it, every getter falls back to the real value, and the browser
++  // runs entirely unspoofed while the operator believes it is disguised.
++  // A single transposition -- "ua:platfrom" -- is enough, and it is
++  // indistinguishable from having passed no configuration at all.
++  //
++  // This is the one failure an anti-detect build must not have, because it
++  // fails in the direction the user cannot observe: the page sees the truth
++  // and says nothing, and so did we until now.
++  for (const std::string& key :
++       camoucfg::UnrecognisedKeys(camoucfg::GlobalScope())) {
++    LOG(WARNING) << "camoucfg: '" << key
++                 << "' is not a configuration key this build knows, and has "
++                    "been ignored. Check the spelling; nothing else will "
++                    "report this.";
++  }
++
++  // A ua: fingerprint without ua:osInfo is guaranteed incoherent rather than
++  // merely incomplete. The client hints follow the configuration while the
++  // user-agent string keeps this machine's real OS, so a page that reads both
++  // -- which costs it nothing -- sees them disagree. That is a stronger
++  // signal than either value would be on its own if it were simply honest.
++  //
++  // Warned, not repaired. Repair belongs to the invariant registry, which owns
++  // relations between keys that are both present; this is a key that is
++  // absent, and guessing an OS for the operator would be inventing a
++  // fingerprint they did not choose.
++  if (!camoucfg::HasKey(camoucfg::GlobalScope(), camoucfg::keys::kUaOsInfo)) {
++    for (std::string_view key : camoucfg::keys::kUaMetadataKeys) {
++      if (camoucfg::HasKey(camoucfg::GlobalScope(), key)) {
++        LOG(WARNING) << "camoucfg: '" << key << "' is set but '"
++                     << camoucfg::keys::kUaOsInfo
++                     << "' is not, so the user-agent string still reports this "
++                        "machine's real operating system while the client "
++                        "hints report the configured one. Set '"
++                     << camoucfg::keys::kUaOsInfo << "' as well.";
++        break;
++      }
++    }
++  }
+ 
+   if (camoucfg::HasKey(camoucfg::GlobalScope(),
+                        camoucfg::keys::kNavigatorUserAgent)) {
