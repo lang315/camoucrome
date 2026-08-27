@@ -29,6 +29,41 @@ to least privilege: a later SP that includes a third camoucfg header has to add 
 and, in doing so, has to think about whether Blink should see it. `gn check` is enabled
 for blink core, so a missing entry is a hard build failure rather than a warning.
 
+*Corrected 2026-08-27 — the sentence above is true only under a precondition it does not
+state, and the gap is dangerous enough to spell out.*
+
+**Neither dependency gate fires on a `.cc`-only change.** `gn check` runs during
+`gn gen`, and `autoninja` regenerates the build graph only when a `BUILD.gn` or `.gni`
+file changes. `checkdeps.py` is never run by the build at all. So adding a disallowed
+`#include` to a `.cc` file and building produces a clean, green build from both gates —
+Chromium's include paths are src-root-relative, so the compile succeeds regardless of what
+the GN graph permits.
+
+Demonstrated on this checkout during SP1a Task 3: two disallowed includes added to
+`components/embedder_support/user_agent_utils.cc`, then
+`autoninja -C out/Default content_shell` exited **0**. Run explicitly,
+`gn check out/Default "//components/embedder_support:user_agent"` exited **1** and named
+both includes, and `checkdeps.py` also failed. The gates work; the build simply does not
+consult them.
+
+This does not contradict SP0, it explains it. SP0's `gn check` failure was real because its
+include arrived alongside a `BUILD.gn` edit, which forced the regeneration. The rule above
+was generalised from that single observation and the generalisation was wrong.
+
+**So run both gates explicitly whenever a change adds a cross-component include**, and do
+not treat a green build as evidence:
+
+```bash
+~/depot_tools/gn check out/Default "//the/target:name"
+python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" path/to/dir
+```
+
+This is the third instance in one day of a check reporting success while measuring almost
+nothing — after `scp` silently copying nothing and a `--gtest_filter` matching 2 of 21
+tests. All three were caught by someone noticing the result was *smaller than it should
+be*, never by a failure. Assert the expected count or the expected failure; an exit code
+of 0 is not evidence that anything was examined.
+
 **Config transport.** Environment variables `CAMOU_CONFIG_1`, `CAMOU_CONFIG_2`, …
 concatenated in order, falling back to a single `CAMOU_CONFIG`. Chunking exists
 because Windows caps a single environment variable near 32KB. This is deliberately

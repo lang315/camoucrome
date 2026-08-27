@@ -759,11 +759,23 @@ git commit -m "camoucfg: add the configuration key registry"
 
 ### Task 3: Let `embedder_support` depend on `camoucfg`
 
-Two independent gates block this include, and only one of them fails at build time. SP0
-lost a cycle to exactly this: `autoninja` runs `gn check`, which enforces the GN
-dependency graph, but it does **not** run `checkdeps.py`, which enforces `DEPS`
-`include_rules`. A missing `DEPS` line therefore builds cleanly and fails presubmit later.
-Both edits belong to this task, and the task verifies both.
+Two independent gates block this include and **neither fires on a `.cc`-only change**, so
+a normal build stays green with a disallowed include in it.
+
+`gn check` runs during `gn gen`, which `autoninja` triggers only when a `BUILD.gn` or
+`.gni` changes — a `.cc` edit alone never regenerates the graph. `checkdeps.py` is not run
+by the build at any time. Chromium's include paths are src-root-relative, so the compile
+itself succeeds no matter what the GN graph permits.
+
+*Corrected 2026-08-27, mid-task.* This section previously said `autoninja` runs `gn check`
+and only `checkdeps.py` was missed. Task 3 demonstrated otherwise on this checkout:
+after adding both includes, `autoninja -C out/Default content_shell` exited **0**, while
+`gn check` invoked directly exited 1 and named them. SP0's `gn check` failure was real but
+came with a `BUILD.gn` edit that forced the regeneration; I generalised from that one
+observation and was wrong.
+
+Both gates must therefore be run **explicitly**, and this task's value is demonstrating
+each one failing and then passing. A green build proves nothing here.
 
 **Files:**
 - Modify: `components/embedder_support/DEPS`
@@ -790,16 +802,25 @@ file on 2026-08-27: `camoucfg` sorts before `embedder_support`, so the two lines
 
 Build:
 
+Do **not** expect the build to fail — it will not, and that is the point.
+
 ```bash
-cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -20
+cd ~/chromium/src
+~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
+echo "autoninja exit=$?   # expect 0, and that is the finding, not a pass"
+~/depot_tools/gn check out/Default "//components/embedder_support:user_agent"
+echo "gn check exit=$?    # expect 1"
+python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" components/embedder_support
+echo "checkdeps exit=$?   # expect 1"
 ```
 
-Expected: FAIL, with a `gn check` error naming
-`//components/embedder_support:user_agent` and reporting that it does not have a
-dependency on `//components/camoucfg`.
+Expected: `autoninja` **0**; `gn check` **1**, naming
+`//components/embedder_support:user_agent` and both includes, and suggesting
+`deps = [ "//components/camoucfg:camoucfg" ]`; `checkdeps` **1**, reporting
+`Illegal include` for both headers.
 
-Record the exact error text in the task report. It is the evidence that the GN gate is
-real and that the next step is what closes it.
+Record all three verbatim. The `autoninja` zero is as important as the two failures: it is
+the evidence that the normal build loop would have let this through.
 
 - [ ] **Step 2: Add the GN dependency**
 
