@@ -641,3 +641,18 @@ almost nothing is the failure mode of this project, not a test that fails.
 Both catches today (scp silently copying nothing, gtest filter matching 2 of
 21) came from someone reading output and finding it SMALLER than it should be
 -- never from a failure. Assert the expected COUNT, not just the exit code.
+
+Controller edit during Task 3: added kNavigatorHardwareConcurrency to keys.h
+(kAllKeys 9 -> 10). SP0's key was missing from a registry whose stated purpose
+is that keys stop being string literals, while browser_main_loop.cc:564 still
+used the literal. Built and tested: 21/21, md5 matched both ends.
+
+DEFERRED ON PURPOSE: the Chromium-side commit of that keys.h change waits
+until Task 3 reports. Task 3 is staging in the same checkout right now, and a
+`git add` landing between its add and its commit would sweep my file into its
+commit -- the exact failure I caused in SP0 with `git add -A`. Explicit paths
+narrow that window; they do not close it. File is on disk and builds; the
+commit can wait.
+
+navigator_base.cc keeps its literal for now. Converting it means pulling an
+unrelated file into Task 4. Recorded for SP1b or the final review.
