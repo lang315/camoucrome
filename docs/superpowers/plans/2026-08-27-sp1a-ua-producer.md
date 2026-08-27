@@ -1832,25 +1832,52 @@ durable form.
 Everything else is an edit to a file Chromium already has.
 
 ```bash
+set -o pipefail
 cd ~/chromium/src
 BASE=a90c2cdcb3   # SP0's head; SP1a's commits start after it
-git diff $BASE..HEAD -- \
-  components/embedder_support/DEPS \
-  components/embedder_support/BUILD.gn \
-  components/embedder_support/user_agent_utils.cc \
-  content/browser/browser_main_loop.cc \
-  content/browser/DEPS \
-  > /tmp/sp1a-ua-producer.patch
+
+# Derive the list instead of trusting one written in advance. A file this plan
+# forgot to name would be silently dropped from the patch, and the
+# reconstruction check in Step 4 would still pass -- verify_sp1a.py does not
+# run unit tests, so losing user_agent_utils_unittest.cc costs nothing it can
+# see. That is the fifth false green this project would have shipped.
+echo "=== everything SP1a changed ==="
 git diff --stat $BASE..HEAD
+
+echo "=== what additions/ owns, and must NOT be in the patch ==="
+git diff --name-only $BASE..HEAD -- components/camoucfg/
+
+echo "=== what the patch owns: edits to files Chromium already had ==="
+git diff --name-only $BASE..HEAD -- . ':!components/camoucfg/'
+```
+
+Expected at this point in the plan — check against what the commands print, and reconcile
+any difference before extracting rather than after:
+
+| Path | Owner |
+|---|---|
+| `components/camoucfg/BUILD.gn` | `additions/` |
+| `components/camoucfg/keys.h` | `additions/` |
+| `components/camoucfg/keys_unittest.cc` | `additions/` |
+| `components/embedder_support/DEPS` | patch |
+| `components/embedder_support/BUILD.gn` | patch |
+| `components/embedder_support/user_agent_utils.cc` | patch |
+| `components/embedder_support/user_agent_utils_unittest.cc` | patch — **Task 5's tests** |
+| `content/browser/browser_main_loop.cc` | patch |
+
+`content/browser/DEPS` is deliberately absent: its `camoucfg` grant predates SP1a, so
+Task 4 changed nothing there.
+
+Then extract exactly what the third command listed:
+
+```bash
+git diff $BASE..HEAD -- . ':!components/camoucfg/' > /tmp/sp1a-ua-producer.patch
+grep -c '^diff --git' /tmp/sp1a-ua-producer.patch   # assert the file count
 wc -l /tmp/sp1a-ua-producer.patch
 ```
 
-`components/camoucfg/BUILD.gn` is also excluded: it is an `additions/` file copied whole,
-and Task 2 already updated the copy on the Mac.
-
-Confirm `git diff --stat` lists exactly seven files — the five above plus the two
-`components/camoucfg/` files that are handled by `additions/`. Any eighth file is scope
-that leaked in; investigate before continuing.
+Assert the count the `grep` prints against the table. A patch with fewer files than the
+tree changed is the failure this step exists to prevent, and it is invisible downstream.
 
 - [ ] **Step 2: Confirm it reverses cleanly**
 
@@ -1884,6 +1911,17 @@ set -o pipefail  # without this, $? below is tail's, not the build's
 cd ~/camoucrome-verify
 venv/bin/python verify_sp0.py;  echo "sp0 exit=$?"
 venv/bin/python verify_sp1a.py; echo "sp1a exit=$?"
+
+# The browser verifications cannot see a missing unit-test file, so check the
+# unit tests too -- by COUNT, not exit code. This is what makes a patch that
+# silently dropped user_agent_utils_unittest.cc fail here instead of shipping.
+cd ~/chromium/src
+~/depot_tools/autoninja -C out/Default components_unittests
+./out/Default/components_unittests \
+  --gtest_filter='Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*' \
+  --gtest_list_tests | grep -c '^  '     # expect 21
+./out/Default/components_unittests \
+  --gtest_filter='UserAgentUtilsCamoucfgTest.*' --gtest_list_tests | grep -c '^  '
 ```
 
 Expected: `apply.sh` succeeds with no fuzz; `git diff --stat` matches the file list from
