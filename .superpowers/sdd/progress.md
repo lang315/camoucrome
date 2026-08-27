@@ -954,3 +954,38 @@ THREE CHANGES TO THE PLAN, made while writing:
 
 Remaining for when the checkout frees: build all three tasks against Chromium,
 run the gtest suites by count, then Tasks 4-7.
+
+HAZARD, ACTIVE RIGHT NOW -- DO NOT RUN verify_sp0.py OR verify_sp1a.py.
+
+The checkout is on camoucrome/base-for-baseline and out/Default has been
+building chrome AT THE BASE REVISION for the last hour. This is a component
+build, so shared libraries content_shell links have been rebuilt from
+unpatched source. out/Default/content_shell is therefore neither the SP1a
+binary nor a clean base binary -- it is an undefined mixture.
+
+Running either verification against it would produce numbers that look
+meaningful and are not. Depending on which libraries got rebuilt it could
+report 11 PASS, or fail in ways that read as a regression in work that is
+actually fine. Both outcomes are worse than not running it.
+
+Safe only AFTER: git checkout camoucrome/sp0, then rebuild BOTH content_shell
+and chrome. Task 8 Step 3 already says to rebuild content_shell; this is why.
+
+SP5a API RISK RETIRED. The ~500 lines written today were checked only against
+stubs I wrote myself, which is circular. Read the real headers on the checkout
+-- reading is safe, only writes and builds conflict with siso, and I had been
+over-restricting myself:
+  base::ListValue          exists; 570 files in components/ use it, 0 use
+                           base::Value::List. The plan's usage is correct.
+  DictValue::FindList      const ListValue* FindList(std::string_view) const
+  DIR_SRC_TEST_DATA_ROOT   base/base_paths.h:71
+  Environment::Create()    std::unique_ptr<Environment>
+  Environment::GetVar()    virtual std::optional<std::string> GetVar(cstring_view)
+  ReadFileToString         (const FilePath&, std::string*)
+All six match what the unbuilt code assumes, and SP0's own call site agrees.
+
+STOPPING SP5a CODE HERE. Tasks 1-3 is already more unverified code than one
+build cycle should have to validate at once, and Tasks 4-7 all need the
+checkout regardless -- 4 needs gtest, 5 patches Chromium, 6 needs a browser,
+7 needs git. Writing Task 4 now would add unverified surface without adding
+verification: its logic is already proven by the local harness.
