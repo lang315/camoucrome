@@ -1063,12 +1063,27 @@ if err is not None:
     failed(["1 navigator.userAgent is refused, not half-honoured"],
            "refusal session", err)
 else:
-    with open(lib_shell.STDERR_LOG, "rb") as handle:
-        stderr = handle.read().decode("utf-8", "replace")
-    results["1 navigator.userAgent is refused, not half-honoured"] = (
-        "1.2.3.4" not in refused[0]
-        and (baseline is not None and refused[0] == baseline["user_agent"])
-        and "ua:osInfo" in stderr)
+    # Guarded like every other fault path here. This was the one exception,
+    # and an unreadable log would have exited by traceback before the print
+    # loop, discarding the assertions already collected -- the exact collapse
+    # this file's structure exists to prevent.
+    #
+    # Reading the log is sound because lib_shell.launch() opens it "wb", which
+    # truncates: each session sees only its own stderr. Verified empirically
+    # as well as by reading -- a warning written by one session is gone after
+    # the next. Without that, stale text from an earlier run could satisfy the
+    # substring check and turn this assertion into a false pass.
+    try:
+        with open(lib_shell.STDERR_LOG, "rb") as handle:
+            stderr = handle.read().decode("utf-8", "replace")
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        failed(["1 navigator.userAgent is refused, not half-honoured"],
+               f"stderr read from {lib_shell.STDERR_LOG}", exc)
+    else:
+        results["1 navigator.userAgent is refused, not half-honoured"] = (
+            "1.2.3.4" not in refused[0]
+            and (baseline is not None and refused[0] == baseline["user_agent"])
+            and "ua:osInfo" in stderr)
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
