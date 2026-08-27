@@ -1590,3 +1590,47 @@ during reconstruction: 248 gclient entries, llvm-build and buildtools present,
 both binaries current. It had scoped the clean correctly. Recorded the footgun
 in conventions anyway, because apply.sh's untracked copies are what make
 someone reach for it and the unscoped form deletes the toolchain.
+
+---
+
+SP5a COMPLETE. Round 3 verdict: READY TO MERGE.
+
+Three review rounds. Each found the same shape: a fix right in substance with
+one hole where the mechanism was more specific than the guard around it.
+Round 3 traced S1 and S4 exhaustively -- every drift shape enumerable against
+the registry guard, every assumption CheckSameOsFamily makes -- and could
+construct no surviving case.
+
+Closed after the verdict, none blocking:
+  L1  the runner cleared CAMOU_CONFIG but not CAMOU_CONFIG_*. Numbered chunks
+      OUTRANK the bare name in AssembleRawConfig, so a leftover CAMOU_CONFIG_1
+      beat everything the script set. lib_shell.py has scrubbed the whole
+      prefix from the start; the shell runner never inherited it.
+      PROVEN, not assumed: with a hostile CAMOU_CONFIG_1 exported, removing the
+      scrub gives 4/6 with the two config-dependent cases red; with the scrub
+      it is 6/6. "Fails closed" was true of today's test set, not of the
+      mechanism -- which is why it is closed rather than noted.
+  L2  EverySameOsFamilyEntryHasOsInfoFirst now pins keys[1] too, so the name
+      understated it. Renamed. Same rule that made it ValidateAtStartup rather
+      than ValidateAndRepairAtStartup.
+  L3  FAIL_COUNT was incremented in run_case AND in the summary loop, so a
+      typo'd argument counted twice and printed "5/7 PASS" for six cases.
+      Counting now happens only in the ORDER loop.
+
+THE TRANSFERABLE LESSON, now in conventions and sharper than "check your
+checks": ALL FOUR residual holes were found by READING THE FIX'S OWN COMMENT
+AGAINST THE FIX. The comment named the full mechanism every time -- "always
+repairs keys[1]", "a duplicate entry masking a missing one", "a runner that
+silently ran fewer than six cases" -- and the code guarded one step short of
+it. The comment was never the failure; it was the detector, and it runs at
+reading speed with no build.
+
+SP5a's five sub-project deliverables all stand: the derive layer, the invariant
+registry with its generated header, the validator, the startup wiring with
+three diagnostics that were previously silent failures, and a patch set proven
+to reconstruct the tree from the pinned base.
+
+NEXT: SP2 (automation hiding), per the settled order SP5a -> SP2 -> SP3 ->
+SP1b -> SP4. SP2 already carries two constraints from earlier today: the
+HeadlessChrome product token is its surface, and it must assert that token on
+all three channels rather than the UA string alone.

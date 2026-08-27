@@ -107,7 +107,7 @@ constexpr bool AllPoliciesAreRepair() {
 // somehow did, repairing it to a UA-CH token rather than whatever format that
 // key actually expects. Checked here alongside keys[0] for the same reason:
 // nothing else in the codebase would ever notice.
-constexpr bool EverySameOsFamilyEntryHasOsInfoFirst() {
+constexpr bool EverySameOsFamilyEntryUsesTheUaKeyPair() {
   for (const Invariant& inv : kAllInvariants) {
     if (inv.relation == Relation::kSameOsFamily &&
         (inv.keys[0] != keys::kUaOsInfo || inv.keys[1] != keys::kUaPlatform)) {
@@ -124,7 +124,7 @@ static_assert(
     "not branch on policy. Implement kReject handling there first.");
 
 static_assert(
-    EverySameOsFamilyEntryHasOsInfoFirst(),
+    EverySameOsFamilyEntryUsesTheUaKeyPair(),
     "a kSameOsFamily entry must list kUaOsInfo as keys[0] and kUaPlatform as "
     "keys[1] -- coherence_validator.cc's CheckSameOsFamily() dispatches on "
     "`key == keys::kUaOsInfo` and always repairs keys[1] via "
