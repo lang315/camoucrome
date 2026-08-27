@@ -23,8 +23,10 @@ struct OsForms {
 // Order matters for `marker`. "Linux; Android 10; K" and
 // "X11; CrOS x86_64 14541.0.0" both contain text a Linux match would also
 // accept, so the more specific markers are tested first.
-// DeriveTest.AndroidAndChromeOsAreNotMistakenForLinux asserts that ordering
-// rather than leaving it to whoever next edits this array.
+// DeriveTest.AndroidIsNotMistakenForLinux asserts that ordering rather than
+// leaving it to whoever next edits this array. Its ChromeOS sibling does not:
+// "X11; CrOS x86_64 14541.0.0" contains no "Linux", so only the Android case
+// can fail if this order changes. The test file says the same beside both.
 //
 // The os_info and ua_ch_platform strings are Chromium's own, from
 // GetUnifiedPlatform() and GetPlatformForUAMetadata() in

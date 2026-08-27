@@ -1085,3 +1085,43 @@ would have "built" with its central component never compiled, and the Task 4
 tests would have failed to link with a message pointing at the test rather
 than at the omission. Added. derive.cc was there; only the validator was
 missing, which is why the omission was invisible.
+
+---
+
+SP5a TASKS 1-3 NOW BUILD AND PASS ON A REAL COMPILER. The ~500 lines that had
+only ever been checked against stubs I wrote myself are no longer circular.
+
+  branch                 camoucrome/sp5a (off camoucrome/sp0)
+  autoninja              BUILD_OK, 11 steps; gn gen re-ran because BUILD.gn
+                         changed, so gn check ran on the new files too
+  objects                coherence_validator.o (21096 B) and derive.o (6080 B)
+                         both present -- coherence_validator.o exists ONLY
+                         because of the BUILD.gn fix above
+  components_unittests   27/27 SUCCESS, exit 0
+                         DeriveTest 7 (as planned) + SP0's 20
+
+Union filter used, never Camoucfg*, which selects 2 of 27:
+  DeriveTest.*:CamoucfgKeysTest.*:AssembleRawConfigTest.*:ParseConfigTest.*:
+  GettersTest.*:MaskConfigTest.*
+
+MUTATION, against the real build rather than my stubs. Moved the kForms Linux
+entry to the front. MUTANT_COMPILED confirmed first (derive.o rebuilt), so the
+run was not against a stale binary -- the failure this project has already had
+once. Predicted three failures by name before running; got exactly those three
+and no others:
+  AndroidIsNotMistakenForLinux   "Linux; Android 10; K" contains "Linux"
+  RecognisesOsInfoSegments       same string, asserted positively
+  CanonicalFormsRoundTrip        Android's canonical os_info, same reason
+ChromeOsIsNotMistakenForLinux PASSED under the mutant, which confirms in the
+real build what derive_unittest.cc's comment already said: that assertion
+cannot fail on ordering and is kept only against a future "X11; CrOS Linux"
+spelling. The comment was right; no change needed.
+
+Restored, rebuilt, 27/27 again, derive.cc sha verified identical on both sides.
+
+FIXED: derive.cc's comment named DeriveTest.AndroidAndChromeOsAreNotMistaken-
+ForLinux, a test that stopped existing when it was split in two. A comment
+pointing at a nonexistent test is unfalsifiable by anything.
+
+STILL TO DO for SP5a: Tasks 4-7 (validator unittest, Chromium wiring, browser
+check, patch extraction). Task 4 is next and now has a working build to land in.
