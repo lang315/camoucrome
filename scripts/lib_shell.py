@@ -67,7 +67,7 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
              "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
 
-def launch(config, shell=None, extra_flags=None):
+def launch(config, shell=None, extra_flags=None, strict=False):
     """Starts the browser and returns it once its DevTools port answers.
 
     Four details here exist because of failures that were actually observed,
@@ -111,6 +111,8 @@ def launch(config, shell=None, extra_flags=None):
            if not k.startswith("CAMOU_CONFIG")}
     if config is not None:
         env["CAMOU_CONFIG"] = config
+    if strict:
+        env["CAMOU_CONFIG_STRICT"] = "1"
 
     profile = tempfile.mkdtemp(prefix="camoucrome-verify-")
     # stderr goes to a file, not a pipe. Criterion 6 reads it after the
@@ -176,7 +178,8 @@ def evaluate(proc, expressions, navigate_to=None):
         return [page.evaluate(e) for e in expressions]
 
 
-def session(config, expressions, navigate_to=None, shell=None, extra_flags=None):
+def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
+            strict=False):
     """Runs one browser session; returns (values, error).
 
     An exception is returned rather than raised. Without this the script is
@@ -194,7 +197,7 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None)
     """
     proc = None
     try:
-        proc = launch(config, shell=shell, extra_flags=extra_flags)
+        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict)
         return evaluate(proc, expressions, navigate_to), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
