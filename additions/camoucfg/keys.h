@@ -38,6 +38,17 @@ namespace camoucfg::keys {
 // forbids parsing user agents locally.
 inline constexpr char kUaOsInfo[] = "ua:osInfo";
 
+// SP0's tracer-bullet surface, read in NavigatorBase::hardwareConcurrency()
+// and probed once at startup in BrowserMainLoop::EarlyInitialization().
+//
+// It predates this registry, so both of those sites were written with the
+// string literal. That is exactly what the registry exists to end -- a key
+// mistyped at one of two sites that must agree is invisible to the compiler
+// and to a reviewer reading either file alone. Listing it here makes the
+// registry complete; converting the two call sites is incremental.
+inline constexpr char kNavigatorHardwareConcurrency[] =
+    "navigator.hardwareConcurrency";
+
 // Not supported. Present in the registry so the startup validator can warn
 // that it was ignored and name kUaOsInfo instead. Camoufox uses this key, so a
 // config written for Camoufox will contain it; failing loudly beats producing
@@ -78,10 +89,17 @@ inline constexpr char kUaWow64[] = "ua:wow64";
 
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 9> kAllKeys = {
-    kUaOsInfo,     kNavigatorUserAgent, kUaPlatform,
-    kUaPlatformVersion, kUaArchitecture, kUaBitness,
-    kUaModel,      kUaMobile,           kUaWow64,
+inline constexpr std::array<std::string_view, 10> kAllKeys = {
+    kUaOsInfo,
+    kNavigatorHardwareConcurrency,
+    kNavigatorUserAgent,
+    kUaPlatform,
+    kUaPlatformVersion,
+    kUaArchitecture,
+    kUaBitness,
+    kUaModel,
+    kUaMobile,
+    kUaWow64,
 };
 
 }  // namespace camoucfg::keys

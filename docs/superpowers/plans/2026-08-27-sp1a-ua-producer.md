@@ -185,6 +185,15 @@ Eight. All are optional; each absent key falls through to the real value.
 | `ua:mobile` | bool | `false` | `false` |
 | `ua:wow64` | bool | `false` | `false` |
 
+Plus one key that predates SP1a: `navigator.hardwareConcurrency`, SP0's tracer-bullet
+surface, added to the registry on 2026-08-27 as `kNavigatorHardwareConcurrency`. It is not
+new configuration — SP0 already reads it — but both of its call sites were written with the
+string literal, which is the thing the registry exists to end. Listing it makes the
+registry complete. Converting the call sites is incremental: Task 4 converts
+`browser_main_loop.cc`, because it is already editing that file;
+`navigator_base.cc` keeps its literal for now rather than pulling an unrelated file into
+this task.
+
 `formFactors` gets **no key**: `GetFormFactorsClientHint()` derives it from `mobile`, and
 conventions forbids an independent override for a derived value — it would create the
 opportunity for incoherence rather than remove it.
