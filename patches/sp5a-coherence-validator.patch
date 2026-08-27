@@ -1,5 +1,5 @@
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index ca073899e4..e1ba4ece91 100644
+index ca073899e4..eea8e78eae 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
 @@ -60,6 +60,7 @@
@@ -10,7 +10,7 @@ index ca073899e4..e1ba4ece91 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
-@@ -541,30 +542,131 @@ void BrowserMainLoop::Init() {
+@@ -541,30 +542,148 @@ void BrowserMainLoop::Init() {
  
  // BrowserMainLoop stages ==================================================
  
@@ -126,6 +126,15 @@ index ca073899e4..e1ba4ece91 100644
 +      break;
 +    }
 +  }
++  // Asked separately from any_metadata_configured: the mirrored branch below
++  // must fire whenever ua:platform specifically has no value, not merely
++  // when every one of the seven ua: metadata keys is unset. Gating it on
++  // any_metadata_configured let six unrelated keys (ua:mobile, ua:wow64,
++  // ua:architecture, ...) mask a missing ua:platform -- a Windows ua:osInfo
++  // with only ua:mobile set left Sec-CH-UA-Platform reporting the real OS
++  // and nothing said so, because any_metadata_configured was already true.
++  const bool ua_platform_configured =
++      UaMetadataKeyHasValue(camoucfg::keys::kUaPlatform);
 +
 +  // Warned, not repaired, in both directions below. Repair belongs to the
 +  // invariant registry, which owns relations between keys that are both
@@ -137,31 +146,39 @@ index ca073899e4..e1ba4ece91 100644
 +      if (UaMetadataKeyHasValue(key)) {
 +        LOG(WARNING) << "camoucfg: '" << key << "' is set but '"
 +                     << camoucfg::keys::kUaOsInfo
-+                     << "' is not, so the user-agent string still reports this "
-+                        "machine's real operating system while the client "
-+                        "hints report the configured one. Set '"
++                     << "' is not set to a value this build can read, so "
++                        "the user-agent string still reports this machine's "
++                        "real operating system while the client hints report "
++                        "the configured one. Set '"
 +                     << camoucfg::keys::kUaOsInfo << "' as well.";
 +        break;
 +      }
 +    }
-+  } else if (os_info_configured && !any_metadata_configured) {
++  } else if (os_info_configured && !ua_platform_configured) {
 +    // The mirrored case, and plausibly the likelier operator mistake of the
-+    // two: set the user-agent string and forget every client-hint key --
-+    // exactly what porting a Camoufox profile would do, since Camoufox has
-+    // no equivalent of these keys. The hints then still report this
-+    // machine's real OS while the user-agent string claims the configured
-+    // one, and nothing else in this function reported it until now.
++    // two: set the user-agent string and forget ua:platform -- exactly what
++    // porting a Camoufox profile would do, since Camoufox has no equivalent
++    // of these keys. navigator.userAgentData.platform and Sec-CH-UA-Platform
++    // then still report this machine's real OS while the user-agent string
++    // claims the configured one, and nothing else in this function reported
++    // it until now.
++    //
++    // Gated on ua:platform alone, not on any_metadata_configured: six of the
++    // seven ua: metadata keys say nothing about the OS, so a config setting
++    // only e.g. ua:mobile alongside ua:osInfo is exactly as incoherent as one
++    // setting no metadata key at all, and must warn the same way.
 +    LOG(WARNING) << "camoucfg: '" << camoucfg::keys::kUaOsInfo
-+                 << "' is set but no ua: client-hint key is, so "
-+                    "navigator.userAgentData.platform and Sec-CH-UA-Platform "
-+                    "still report this machine's real operating system while "
-+                    "the user-agent string reports the configured one. Set '"
++                 << "' is set but '" << camoucfg::keys::kUaPlatform
++                 << "' is not, so navigator.userAgentData.platform and "
++                    "Sec-CH-UA-Platform still report this machine's real "
++                    "operating system while the user-agent string reports "
++                    "the configured one. Set '"
 +                 << camoucfg::keys::kUaPlatform << "' as well.";
 +  }
  
    if (camoucfg::HasKey(camoucfg::GlobalScope(),
                         camoucfg::keys::kNavigatorUserAgent)) {
-@@ -578,6 +680,22 @@ int BrowserMainLoop::EarlyInitialization() {
+@@ -578,6 +697,22 @@ int BrowserMainLoop::EarlyInitialization() {
             "\"Windows NT 10.0; Win64; x64\".";
    }
  

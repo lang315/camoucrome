@@ -19,8 +19,10 @@ struct Violation {
   // line and a test can both name WHICH value the wrong one disagrees with,
   // rather than reporting a contradiction without saying against what.
   std::string authoritative_key;
-  // The key this violation would change. Empty when the policy is kReject and
-  // no repair is defined.
+  // The key this violation would change. Every registry entry is
+  // Policy::kRepair -- invariants.h's AllPoliciesAreRepair static_assert
+  // enforces it, since kReject is declared but not handled below -- so this
+  // is always populated for a reported violation.
   std::string repaired_key;
   std::string old_value;
   std::string new_value;
