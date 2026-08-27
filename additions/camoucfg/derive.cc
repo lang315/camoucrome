@@ -30,9 +30,19 @@ struct OsForms {
 //
 // The os_info and ua_ch_platform strings are Chromium's own, from
 // GetUnifiedPlatform() and GetPlatformForUAMetadata() in
-// components/embedder_support/user_agent_utils.cc. Taking them from that
-// source rather than typing them means a repaired value is byte-identical to
-// what a real Chrome on that OS emits.
+// components/embedder_support/user_agent_utils.cc, so a repaired value is
+// byte-identical to what a real BRANDED Chrome on that OS emits.
+//
+// "Branded" is not a hedge. GetPlatformForUAMetadata() returns "Chrome OS"
+// only under BUILDFLAG(GOOGLE_CHROME_BRANDING) and "Chromium OS" otherwise,
+// and this build is unbranded -- so the value below deliberately does NOT
+// match what this binary's own copy of that function returns. "Chrome OS" is
+// still the right repair target, because SP7 decision D1 has the fork present
+// as Chrome; the earlier wording claimed these strings came back from this
+// tree's function, which is false and was unfalsifiable by any test.
+//
+// Consequence worth knowing: "Chromium OS" as a configured value resolves to
+// kUnknown and is therefore never validated.
 constexpr std::array<OsForms, 5> kForms = {{
     {OsFamily::kAndroid, "Android", "Linux; Android 10; K", "Android"},
     {OsFamily::kChromeOs, "Chrome OS", "X11; CrOS x86_64 14541.0.0", "CrOS"},

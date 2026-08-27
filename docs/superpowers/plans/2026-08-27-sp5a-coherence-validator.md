@@ -151,7 +151,7 @@ something failing.
 | Filter | Expected |
 |---|---|
 | `'Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*'` | 21 before this plan |
-| `'UserAgentUtilsCamoucfgTest.*'` | 5, each needing **its own process** (config is latched per process) |
+| `'UserAgentUtilsCamoucfgTest.*'` | **6**, each needing **its own process** (config is latched per process). Was 5 until SP1a's review fix added `WrongTypedKeyDoesNotOutrankCommandLine`. |
 | `'UserAgentUtilsTest.*'` | 23 — upstream regression. Never `'UserAgentUtils*'`, which sweeps in the new suite |
 | `venv/bin/python verify_sp0.py` | 11 PASS |
 | `venv/bin/python verify_sp1a.py` | 9 PASS |
@@ -1284,7 +1284,7 @@ every suite **run**, not listed:
 | `verify_sp1a.py` | 9 PASS |
 | `verify_sp5a.py` | 4 PASS |
 | `'Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*:DeriveTest*:CoherenceValidatorTest*'` | count it and record it |
-| `'UserAgentUtilsCamoucfgTest.*'` | 5, each in its own process |
+| `'UserAgentUtilsCamoucfgTest.*'` | **6**, each in its own process (5 until SP1a's review fix) |
 | `'UserAgentUtilsTest.*'` | 23 |
 
 Then return the checkout to the working branch and rebuild.
