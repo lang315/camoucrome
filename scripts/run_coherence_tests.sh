@@ -42,6 +42,23 @@ if [ ! -x "$BINARY" ]; then
   exit 1
 fi
 
+# Clear every CAMOU_CONFIG* variable, not just the bare name. The transport
+# gives NUMBERED chunks precedence -- AssembleRawConfig() returns the
+# concatenated chunks whenever they are non-empty and only FALLS BACK to the
+# unnumbered variable -- so a leftover CAMOU_CONFIG_1 in the operator's shell
+# outranks everything the run_case lines below set. This machine is exactly
+# where such leftovers are made. lib_shell.py has done this from the start;
+# this runner is the one artifact that did not inherit the hardening.
+#
+# It fails closed today rather than green: a stale chunk almost never carries
+# both ua:osInfo and ua:platform, so CleanConfigProducesNoViolations' asserts
+# catch it, and one that carried both incoherently turns
+# MutationIsCaughtAndNothingElseIs red. Closed anyway -- "fails closed" is a
+# property of today's test set, not of the mechanism.
+while IFS='=' read -r var _; do
+  case "$var" in CAMOU_CONFIG*) unset "$var" ;; esac
+done < <(env)
+
 COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows"}'
 INCOHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"}'
 
@@ -65,8 +82,10 @@ declare -A STATUS
 for name in "${ORDER[@]}"; do
   STATUS[$name]=MISSING
 done
-PASS_COUNT=0
-FAIL_COUNT=0
+# Counted from ORDER in the summary loop, NOT incremented in run_case. A
+# typo'd run_case argument writes STATUS under a key ORDER does not contain, so
+# incrementing in both places counted that invocation and the MISSING entry it
+# left behind -- a real failure, reported as "5/7 PASS" for six cases.
 
 # (b) Ask the binary how many CoherenceValidatorTest cases it actually has,
 # rather than trusting that ORDER above still lists them all. --gtest_list_tests
@@ -100,10 +119,8 @@ run_case() {
   code=$?
   if [ "$code" -eq 0 ] && grep -qE '^\[  PASSED  \] 1 test\.$' <<<"$out"; then
     STATUS[$name]=PASS
-    PASS_COUNT=$((PASS_COUNT + 1))
   else
     STATUS[$name]=FAIL
-    FAIL_COUNT=$((FAIL_COUNT + 1))
     echo "--- $name: exit=$code, no '[  PASSED  ] 1 test.' in output ---" >&2
     echo "$out" >&2
   fi
@@ -127,18 +144,23 @@ run_case CleanConfigProducesNoViolations \
 run_case MutationIsCaughtAndNothingElseIs \
   env CAMOUCFG_TEST_INVARIANT=ua-os-family-agrees CAMOU_CONFIG="$INCOHERENT" "$BINARY"
 
+PASS_COUNT=0
+FAIL_COUNT=0
 for name in "${ORDER[@]}"; do
   if [ "${STATUS[$name]}" = MISSING ]; then
     echo "error: no run_case call ran for '$name' -- ORDER lists it but" \
          "nothing invoked it (a typo in the run_case argument, or the call" \
          "was deleted)." >&2
+  fi
+  if [ "${STATUS[$name]}" = PASS ]; then
+    PASS_COUNT=$((PASS_COUNT + 1))
+  else
     FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
   echo "${STATUS[$name]}  $name"
 done
 
-TOTAL=$((PASS_COUNT + FAIL_COUNT))
-echo "$PASS_COUNT/$TOTAL PASS"
+echo "$PASS_COUNT/${#ORDER[@]} PASS"
 
 if [ "$FAIL_COUNT" -ne 0 ]; then
   exit 1

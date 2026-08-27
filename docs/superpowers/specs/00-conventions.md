@@ -126,6 +126,26 @@ So: **assert the expected count, or the expected failure.** An exit code of 0 is
 evidence that anything was examined, and "it ran green" carries almost no information here
 until you know what it measured.
 
+**The cheapest detector found so far: read the fix's own comment against the fix.**
+
+SP5a's whole-branch review took three rounds, and every round found the same shape — a fix
+correct in substance with one hole left where the mechanism was more specific than the
+guard around it. All four of those residual holes were found the same way, and not by
+running anything:
+
+| The comment said | The code guarded |
+|---|---|
+| "always repairs `keys[1]` to …" | only `keys[0]` |
+| "a duplicate entry masking a missing one" | counts, which duplicates leave equal |
+| "a runner that silently ran fewer than six cases and still exited 0" | the number of `report` calls in its own file |
+| "an absent key is already covered by the fall-back rule" | a rule the same change had just disproved |
+
+The comment was accurate every time. It described the whole mechanism, the code implemented
+part of it, and the gap between them was visible at reading speed — no build, no browser, no
+mutation. **A precise comment beside an imprecise guard is a defect report someone already
+wrote for you.** That makes writing the mechanism out in full doubly worth it: it is how the
+next reader finds what you missed.
+
 Three habits follow, each earned by one of the eight:
 
 - Where a check exists to catch a regression, **make it fail once on purpose** and confirm
