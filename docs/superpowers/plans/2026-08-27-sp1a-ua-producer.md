@@ -94,12 +94,27 @@ every task that *produces* a file there (Task 1's baseline) pulls it back before
 committing. State the direction in the task report; a verification run against a stale copy
 of its own script is the failure this note exists to prevent.
 
+Two facts about that directory, both verified on 2026-08-27, both of which will waste a
+turn if assumed otherwise:
+
+- **The layout is flat.** Scripts sit directly in `~/camoucrome-verify/`, not in a
+  `scripts/` subdirectory — `verify_sp0.py`, `capture_baseline.py`, `smoke.py`. Only
+  `baselines/` and `venv/` are subdirectories. In the Mac repository the same files live
+  under `scripts/`; the paths differ by design and are not a mistake to correct.
+  A flat layout is also what makes `import lib_shell` and `import echo_server` work with no
+  path manipulation.
+- **Use `venv/bin/python`, never `python3`.** The system interpreter has no Playwright
+  (`ModuleNotFoundError: No module named 'playwright'`), so `python3 verify_sp0.py` fails
+  in a way that reads like a broken script. Every command in this plan that runs a
+  verification uses `venv/bin/python` from `~/camoucrome-verify`, and it is `venv/bin/python3.12`
+  underneath.
+
 ```bash
 CM=~/.ssh/cm-buildpc
 # Mac -> build PC
 /usr/bin/scp -o ControlPath=$CM -P 2222 scripts/<name>.py \
   lang315@100.81.40.76:/tmp/verify-drop/
-# then on the build PC: cp /tmp/verify-drop/*.py ~/camoucrome-verify/scripts/
+# then on the build PC: cp /tmp/verify-drop/*.py ~/camoucrome-verify/
 ```
 
 ## Branch
@@ -235,7 +250,7 @@ and delete the now-duplicated bodies. Leave everything else in that file alone.
 Run on the build PC:
 
 ```bash
-cd ~/camoucrome-verify && python3 scripts/verify_sp0.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp0.py; echo "exit=$?"
 ```
 
 Expected: the same **11 PASS, exit=0** it produced before. If any line changed, the
@@ -411,9 +426,9 @@ Re-run `verify_sp0.py` and confirm **11 PASS, exit=0** again.
 
 ```bash
 cd ~/camoucrome-verify
-python3 scripts/capture_ua_baseline.py > baselines/content_shell-sp0-stock-ua.json
+venv/bin/python capture_ua_baseline.py > baselines/content_shell-sp0-stock-ua.json
 echo "exit=$?"
-python3 -c "import json;d=json.load(open('baselines/content_shell-sp0-stock-ua.json'));print(d['user_agent']);print(d['platform']);print(sorted(d['request_headers']))"
+venv/bin/python -c "import json;d=json.load(open('baselines/content_shell-sp0-stock-ua.json'));print(d['user_agent']);print(d['platform']);print(sorted(d['request_headers']))"
 ```
 
 Expected: exit=0; a user agent containing `X11; Linux x86_64`; platform `Linux`; and a
@@ -976,7 +991,7 @@ sys.exit(0 if results and all(results.values()) else 1)
 - [ ] **Step 2: Run it and confirm every criterion-1 assertion fails**
 
 ```bash
-cd ~/camoucrome-verify && python3 scripts/verify_sp1a.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
 Expected: the two "unconfigured" and version assertions PASS (nothing has changed yet), and
@@ -1089,7 +1104,7 @@ If only `mask_config.h` is listed, add `"+components/camoucfg/keys.h",` beside i
 
 ```bash
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
-cd ~/camoucrome-verify && python3 scripts/verify_sp1a.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
 Expected: **5 PASS, exit=0.**
@@ -1097,7 +1112,7 @@ Expected: **5 PASS, exit=0.**
 - [ ] **Step 8: Confirm SP0 has not regressed**
 
 ```bash
-cd ~/camoucrome-verify && python3 scripts/verify_sp0.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp0.py; echo "exit=$?"
 cd ~/chromium/src && ./out/Default/components_unittests --gtest_filter='Camoucfg*'
 ```
 
@@ -1215,7 +1230,7 @@ if wire is not None:
 - [ ] **Step 2: Run and confirm the new assertions fail**
 
 ```bash
-cd ~/camoucrome-verify && python3 scripts/verify_sp1a.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
 Expected: criterion 1's 5 assertions still PASS; **the 7 new ones FAIL**, exit=1. In
@@ -1323,7 +1338,7 @@ value without needing a key of its own.
 
 ```bash
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
-cd ~/camoucrome-verify && python3 scripts/verify_sp1a.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
 Expected: **12 PASS, exit=0.**
@@ -1421,7 +1436,7 @@ else:
 - [ ] **Step 2: Run**
 
 ```bash
-cd ~/camoucrome-verify && python3 scripts/verify_sp1a.py; echo "exit=$?"
+cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
 Expected: **16 PASS, exit=0.**
@@ -1525,8 +1540,8 @@ bash /path/to/camoucrome/scripts/apply.sh "$(pwd)"
 git diff --stat
 ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
 cd ~/camoucrome-verify
-python3 scripts/verify_sp0.py;  echo "sp0 exit=$?"
-python3 scripts/verify_sp1a.py; echo "sp1a exit=$?"
+venv/bin/python verify_sp0.py;  echo "sp0 exit=$?"
+venv/bin/python verify_sp1a.py; echo "sp1a exit=$?"
 ```
 
 Expected: `apply.sh` succeeds with no fuzz; `git diff --stat` matches the file list from
