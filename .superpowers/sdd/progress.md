@@ -785,3 +785,24 @@ Two concerns, both mine, both real:
       because someone investigates. But an investigation ending in "the check
       was wrong" teaches people to distrust the check, and that is how a later
       true failure gets waved through.
+
+Task 5: review Approved, 0 Critical, 0 Important. Both WARNs resolved by me:
+camoucfg includes are present (user_agent_utils.cc:29-30, added by Task 3);
+and the registry contains no version or brand key at all -- kUaPlatformVersion
+is an OS version, not a browser one -- while ParseConfig keeps no whitelist,
+so unknown keys land in the dict and are simply never read.
+
+Acted on one Minor rather than filing it. The gate asked only about ua:osInfo
+while D1 states the rule for any ua: key. A config setting ua:platform without
+ua:osInfo let --user-agent win the string while config won the metadata.
+Widened at BOTH sites, derived from the registry so later keys are covered
+automatically. Partial-config incoherence stays SP5a's, explicitly.
+
+AND I NEARLY RECORDED A FALSE MUTATION RESULT. The first mutant reverted the
+gate, which left the helper unused; the build failed on -Wunused-function, the
+test ran against the STALE binary, and printed OK. Same shape as everything
+else today. The second mutant narrows the helper instead so it still compiles,
+and the test then fails with architecture empty -- the predicted symptom.
+
+Rule this earns, for every mutation test from here: CONFIRM THE MUTANT BUILT.
+A mutation that does not compile does not test anything, and it reports a pass.
