@@ -656,3 +656,32 @@ commit can wait.
 
 navigator_base.cc keeps its literal for now. Converting it means pulling an
 unrelated file into Task 4. Recorded for SP1b or the final review.
+
+Task 3: complete (Chromium 9a15333574, 3 files +4 lines; 21/21 union filter;
+both gates demonstrated failing then passing). Review dispatched.
+
+TASK 3 FOUND TWO DEFECTS IN MY PLAN, both false greens:
+
+  (3) Neither dependency gate fires on a .cc-only change. gn check runs during
+      gn gen, which autoninja triggers only on a BUILD.gn/.gni change;
+      checkdeps.py is never run by the build. autoninja exited 0 with two
+      disallowed includes in place. Ruled out the "it did nothing" objection:
+      4 real steps, .o 14s newer than .cc -- and the object compiled while the
+      include was disallowed was REUSED by the later build, going into the
+      final binary unexamined. Conventions corrected; it had said a missing
+      entry is "a hard build failure", generalised from SP0's single case
+      where a concurrent BUILD.gn edit forced the regen.
+
+  (4) Every build command in the plan swallowed its own exit code.
+      `autoninja ... 2>&1 | tail -5` then `echo "exit=$?"` reports tail's
+      status. Six occurrences -- all of them. Demonstrated: `false | tail -1;
+      echo $?` prints 0, with pipefail prints 1. All six guarded.
+
+FOUR FALSE GREENS IN ONE DAY. scp copying nothing; gtest filter matching 2 of
+21; neither dep gate firing; build exit code eaten by a pipe. Three of the
+four were mine. NONE was caught by a failure -- every one was caught by
+someone noticing a result was smaller than it should be.
+
+Standing rule for every remaining task: assert the expected COUNT or the
+expected FAILURE. An exit code of 0 is not evidence that anything was
+examined.

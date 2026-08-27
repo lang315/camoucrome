@@ -46,6 +46,14 @@ Demonstrated on this checkout during SP1a Task 3: two disallowed includes added 
 both includes, and `checkdeps.py` also failed. The gates work; the build simply does not
 consult them.
 
+The obvious objection — that the build exited 0 because it did nothing — was ruled out.
+That build ran four real steps (CXX, AR, SOLINK, LINK), and the `.o` is fourteen seconds
+newer than the `.cc`. Worse, the object compiled under the unwired state was **reused**:
+the later build, after the `BUILD.gn` and `DEPS` entries were added, ran only link steps
+and never recompiled that translation unit. So the artifact produced while the include was
+disallowed went straight into the final binary unexamined. Nothing downstream re-inspects
+an object once it exists.
+
 This does not contradict SP0, it explains it. SP0's `gn check` failure was real because its
 include arrived alongside a `BUILD.gn` edit, which forced the regeneration. The rule above
 was generalised from that single observation and the generalisation was wrong.
