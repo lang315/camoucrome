@@ -23,6 +23,7 @@ static_library("camoucfg") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "coherence_validator_unittest.cc",
     "derive_unittest.cc",
     "keys_unittest.cc",
     "mask_config_unittest.cc",
