@@ -3,9 +3,9 @@
 An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
-**Status: SP0 landed; SP1a landed, partially verified.** Apply both to a Chromium checkout
-with `scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
-work.
+**Status: SP0 landed; SP1a landed, partially verified; SP5a landed and verified at the
+tracer-bullet level.** Apply all three to a Chromium checkout with `scripts/apply.sh
+<chromium-src>`. The specs in `docs/superpowers/specs/` define the work.
 
 The configuration layer exists and drives `navigator.hardwareConcurrency`. The
 browser-process UA producer in `user_agent_utils.cc` is patched so that one site feeds
@@ -27,6 +27,37 @@ high-entropy `Sec-CH-UA*` headers under any configuration. Closing all three row
 
 Cross-channel coherence is the whole thesis of this sub-project, so it is worth stating
 plainly that it is the row still open.
+
+**SP5a — the invariant registry, reader and load-time validator — is verified at the
+tracer-bullet level**: one real invariant (`ua-os-family-agrees`, over the `ua:osInfo` /
+`ua:platform` keys SP1a already reads), enforced from `BrowserMainLoop::EarlyInitialization`
+before any renderer exists. The catalogue of further invariants is SP5b's job, once SP1b,
+SP3 and SP4 give it more keys to constrain.
+
+| Case | Evidence |
+|---|---|
+| Coherent config | Untouched: the UA carries the configured OS token, no `camoucfg: invariant` line in stderr. |
+| Incoherent config | Detected and logged (`camoucfg: invariant 'ua-os-family-agrees' violated. 'ua:platform' is 'Linux', which disagrees with 'ua:osInfo'. It should be 'Windows'.`) — browser still starts. Detection only; repair is a later sub-project (SP0's `mask_config.cc` needs a write path first). |
+| Incoherent config, `CAMOU_CONFIG_STRICT` | Refuses to start, exit 13, before any renderer opens. |
+| No config | Silent — no `camoucfg:` line at all, UA byte-identical to the pre-patch baseline. |
+
+All four verified end to end in a running `content_shell`, via CDP, against a
+pre-patch baseline — the same discipline as the `navigator.userAgent` row above. Backing
+unit coverage: 36 tests across the registry, reader, derivation and validator (`Camoucfg*`,
+`MaskConfig*`, `ParseConfig*`, `AssembleRawConfig*`, `Getters*`, `DeriveTest*`,
+`CoherenceValidatorTest*`), including a mutation test proving the one registered invariant
+fires on exactly its own violation and nothing else, and a structural test
+(`MutationsExistForEveryInvariant`) that fails the build if an invariant is ever added to the
+registry without a mutation test to prove it fires. `RegistryMatchesGeneratedHeader` keeps
+`settings/invariants.json` and the hand-written `additions/camoucfg/invariants.h` in step
+until SP6a generates the header from the JSON.
+
+The change set has been reconstructed from a pristine Chromium checkout at the pinned
+revision below, using only `scripts/apply.sh` and the three patches in `patches/`, and
+proven byte-identical to the built and verified tree: all patch-owned files empty-diff
+against the working checkout, all 17 files under `components/camoucfg/` (16 from
+`additions/` plus `settings/invariants.json`) match by hash, and every suite above passes
+against the reconstructed, rebuilt binary — not merely the reapplied source.
 
 The change set is generated against Chromium revision
 `0e8d4a9268118d323f62ca207b40514df39dcaa9`. Rebasing onto a newer revision is SP6a's job.
