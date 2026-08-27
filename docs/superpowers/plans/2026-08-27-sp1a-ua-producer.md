@@ -1947,8 +1947,19 @@ any difference before extracting rather than after:
 | `components/embedder_support/DEPS` | patch |
 | `components/embedder_support/BUILD.gn` | patch |
 | `components/embedder_support/user_agent_utils.cc` | patch |
+| `components/embedder_support/user_agent_utils.h` | patch — Task 5's `GetPlatformForUAMetadataForTesting` shim |
 | `components/embedder_support/user_agent_utils_unittest.cc` | patch — **Task 5's tests** |
 | `content/browser/browser_main_loop.cc` | patch |
+
+Nine files: three owned by `additions/`, six by the patch. Across **seven** Chromium
+commits, `a90c2cdcb3..HEAD`.
+
+*Corrected 2026-08-27, by reading this table against the tree before running the step.* It
+listed eight and omitted `user_agent_utils.h`, which Task 5 touched for the testing shim.
+The commands above derive the list rather than trusting this table, so the extraction would
+have been right either way — but a table disagreeing with the commands would have forced
+whoever runs this to work out which of the two to believe, in the one step where getting
+the file set wrong is invisible downstream.
 
 `content/browser/DEPS` is deliberately absent: its `camoucfg` grant predates SP1a, so
 Task 4 changed nothing there.
