@@ -705,11 +705,18 @@ Expected: **2 tests from 1 test suite ran. [ PASSED ] 2 tests.**, exit=0.
 - [ ] **Step 6: Confirm SP0's tests still pass**
 
 ```bash
-./out/Default/components_unittests --gtest_filter='Camoucfg*'
+./out/Default/components_unittests --gtest_filter='Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*'
 ```
 
-Expected: 21 tests pass — SP0's 19 plus the 2 new ones. A drop below 19 means the BUILD.gn
-edit dropped a source; fix it before continuing.
+Expected: **21 tests pass** — SP0's 19 plus the 2 new ones. A drop below 19 means the
+BUILD.gn edit dropped a source; fix it before continuing.
+
+The filter is a union of suite names and not `'Camoucfg*'`, which is what this step said
+until Task 2 caught it. Only `CamoucfgKeysTest` carries that prefix; SP0's five suites are
+named `AssembleRawConfigTest`, `ParseConfigTest`, `ParseConfigDeathTest`, `GettersTest`
+and `MaskConfigTest`. `--gtest_filter='Camoucfg*'` therefore selects **2 of 21** and
+reports `PASSED`, which is a false green of exactly the kind that makes a regression check
+worthless. Verified on the checkout: the prefix filter runs 2, the union runs 21.
 
 - [ ] **Step 7: Commit — both repositories**
 
@@ -1151,10 +1158,11 @@ Expected: **5 PASS, exit=0.**
 
 ```bash
 cd ~/camoucrome-verify && venv/bin/python verify_sp0.py; echo "exit=$?"
-cd ~/chromium/src && ./out/Default/components_unittests --gtest_filter='Camoucfg*'
+cd ~/chromium/src && ./out/Default/components_unittests --gtest_filter='Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*'
 ```
 
-Expected: 11 PASS exit=0, and 21 unit tests passing.
+Expected: 11 PASS exit=0, and **21** unit tests passing. Use the union filter, not
+`'Camoucfg*'` — see Task 2 Step 6 for why that one silently runs 2 of 21.
 
 - [ ] **Step 9: Commit**
 
