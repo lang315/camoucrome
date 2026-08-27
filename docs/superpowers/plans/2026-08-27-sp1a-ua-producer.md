@@ -1145,6 +1145,21 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
 
 Only the argument changes in each. Do not restructure the surrounding code.
 
+**One of these two edits is not exercised by `content_shell`, and the report must say so.**
+`ShellContentBrowserClient::GetUserAgent()` (`shell_content_browser_client.cc:747`) calls
+`BuildUnifiedPlatformUserAgentFromProduct` *directly*, bypassing `GetUserAgentInternal()`
+and therefore the reduced-versus-full choice entirely. So `BuildUserAgentFromProduct` never
+runs in the binary this task verifies against.
+
+Patch it anyway. Leaving one of two sibling builders unpatched is how a surface ends up
+spoofed on one path and honest on the other, which is worse than either — and `chrome`
+routes through `GetUserAgentInternal()`, so the unpatched branch would be live there.
+Task 8 is where it gets exercised.
+
+State it plainly in the report rather than letting a green Task 4 imply both edits were
+tested. This is the same class of claim as the four false greens recorded in
+`00-conventions.md`: the run is real, it simply covers less than its name suggests.
+
 - [ ] **Step 5: Warn about the unsupported key at startup**
 
 `content/browser/browser_main_loop.cc` already forces the browser-process parse in
