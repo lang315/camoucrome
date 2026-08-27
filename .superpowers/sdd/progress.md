@@ -1509,3 +1509,36 @@ include the death test. The narrow filter is mine, not its.
 CANONICAL FILTER GOING FORWARD is the wildcard form. Assert 36.
 
 NEXT: SP5a whole-branch review -- SDD requires it after the final task.
+
+---
+
+THE "3 PASS" TRANSIENT WAS A REAL BUG. Reproduced deterministically and fixed.
+
+Task 7's implementer saw verify_sp5a.py report 3 PASS once, re-ran five times
+clean, and recorded it as an unreproduced transient RATHER THAN re-running
+until green. That is the only reason it was still there to explain.
+
+CAUSE, and it is mine twice over. lib_shell.STDERR_LOG was one fixed path,
+"/tmp/camoucrome_verify_stderr.log", opened "wb" -- truncating -- on every
+launch. Three of verify_sp5a.py's four assertions read it after their session.
+Two verifications running at once therefore shared one file, and one run
+truncated it under the other. I had also committed to the shared checkout
+while their task was still live, which is what put two runs in flight at once;
+they had reported DONE and I took that as finished. Coordination error.
+
+PROVEN, not argued:
+  per-process path, two concurrent runs   4 PASS / 4 PASS
+  shared fixed path, two concurrent runs  3 PASS+1 FAIL / 3 PASS+1 FAIL
+  restored, single run                    4 PASS
+
+THE VISIBLE SYMPTOM WAS THE LESSER HALF. The two assertions that failed are
+the ones checking a line is PRESENT (2 and 3). Assertions 1 and 4 check a line
+is ABSENT, so against a truncated file they pass VACUOUSLY. Concurrency here
+does not merely cause flaky failures -- it causes SILENT FALSE PASSES on
+exactly the assertions written to detect absence, which is the dominant
+failure mode of this project arriving through a race.
+
+Fixed: STDERR_LOG is now per-process. Readers go through lib_shell.STDERR_LOG,
+so the read pattern is unchanged and test_lib_shell_launch.py still gives
+7 PASS.
+

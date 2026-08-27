@@ -27,7 +27,24 @@ from playwright.sync_api import sync_playwright
 
 SHELL = os.path.expanduser("~/chromium/src/out/Default/content_shell")
 CHROME = os.path.expanduser("~/chromium/src/out/Default/chrome")
-STDERR_LOG = "/tmp/camoucrome_verify_stderr.log"
+# Per PROCESS, not a fixed path, and that distinction was earned. This was
+# "/tmp/camoucrome_verify_stderr.log" for every run, opened "wb" -- truncating
+# -- on every launch. Two verifications running at once therefore shared one
+# file, and three of verify_sp5a.py's four assertions read it after their
+# session, so one run truncating under another silently removed the evidence
+# the other was about to read.
+#
+# Observed on 2026-08-27: verify_sp5a.py reported 3 PASS once while a second
+# verification ran concurrently, then 4 PASS on five immediate re-runs. The
+# implementer recorded it as an unreproduced transient rather than re-running
+# until green, which is the only reason it was still there to explain.
+#
+# That is exactly the failure launch()'s own docstring warns about: an
+# intermittently green verification is worse than a slow one, because it
+# teaches people to re-run until it passes, and then it measures nothing.
+# Readers go through lib_shell.STDERR_LOG, so each process gets its own file
+# and the read pattern is unchanged.
+STDERR_LOG = f"/tmp/camoucrome_verify_stderr.{os.getpid()}.log"
 
 # content_shell has no --headless switch; --ozone-platform=headless is the
 # equivalent. This is the default so that every call written before Task 8
