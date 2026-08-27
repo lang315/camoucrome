@@ -919,3 +919,38 @@ assertions as if both did is the same overclaim counted eleven times today.
 Split into two named tests, each saying what it actually protects.
 
 Plan corrected: 6 DeriveTest cases -> 7, union filter 27 -> 28.
+
+SP5a Tasks 2 and 3: WRITTEN AND LOGIC-VERIFIED ON THE MAC, not yet built.
+
+Task 2, the registry: invariants.h compiles clean under -Werror, the JSON
+parses, and -- run now rather than waiting for the suite -- the two AGREE, so
+the file was never committed in a drifted state. A fourth check the plan did
+not ask for found something worth a test: every key an entry names must be
+declared in keys.h, because an entry naming a nonexistent key is SILENT. The
+validator asks, gets nullopt, treats it as absent, skips. The entry reads as
+protection and provides none -- the registry's own version of the failure the
+registry exists to prevent. Added as EveryInvariantKeyIsDeclaredInTheRegistry.
+
+Task 3, the validator: 12 assertions run against the real functions with a
+scripted config, all pass, including REPAIR IDEMPOTENCE -- verification item 2,
+which the plan had deferred to Task 4 and which turns out to be three lines
+here.
+
+Two mutants, both built before being believed:
+  agreement no longer exempts  -> "coherent config" and "idempotent" fail
+  authority/repaired swapped   -> both naming assertions fail
+Right assertions, right reasons.
+
+THREE CHANGES TO THE PLAN, made while writing:
+  - ValidateAndRepairAtStartup renamed ValidateAtStartup. It does not repair.
+    A name claiming an action it does not perform is the overclaim counted
+    repeatedly today, and in an identifier it misleads at every call site
+    rather than once at the console. Renaming beat writing a comment
+    apologising for the name.
+  - Violation gained authoritative_key. Reporting that a value is wrong
+    without naming what it disagrees with is half a report, and two harness
+    assertions depend on it.
+  - Idempotence moved earlier, since it costs three lines here.
+
+Remaining for when the checkout frees: build all three tasks against Chromium,
+run the gtest suites by count, then Tasks 4-7.
