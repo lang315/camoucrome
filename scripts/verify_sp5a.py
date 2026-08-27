@@ -127,7 +127,14 @@ if err is None:
         "3: browser started (DevTools opened) under CAMOU_CONFIG_STRICT=1 "
         "with an incoherent configuration; expected exit 13")
 elif "exited during startup" in str(err):
-    if "code 13" not in str(err):
+    # Parse the trailing integer rather than substring-match "code 13" --
+    # that substring also matches code 130, 131, ..., 139, 1300, etc.
+    code_text = str(err).rsplit("code ", 1)[-1]
+    try:
+        code = int(code_text)
+    except ValueError:
+        code = None
+    if code != 13:
         results[C3] = False
         notes.append(f"3: exited, but with the wrong code: {err}")
     else:
