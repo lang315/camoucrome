@@ -1726,9 +1726,40 @@ is invisible to every other criterion because they all run *with* a config.
 >   assertion that genuinely covers this task's producer, because the UA string path does
 >   run through `embedder_support` in `content_shell`.
 
-- [ ] **Step 1: Write the assertions**
+- [ ] **Step 1: Move the shared probes into `lib_shell`, then write the assertions**
 
-Append to `scripts/verify_sp1a.py`, before the printing loop:
+First, in `scripts/lib_shell.py`, add the two constants that the capture and every
+verification must agree on, and make `capture_ua_baseline.py` import them rather than
+keeping its own copy:
+
+```python
+# The exact hint list the baseline was captured with. getHighEntropyValues
+# returns these plus the three low-entropy values, so a baseline captured with
+# this list holds ten keys. Any verification comparing against that baseline
+# must request the SAME list -- a shorter request returns fewer keys and an
+# equality check against the baseline can then only fail.
+HIGH_ENTROPY = """
+() => navigator.userAgentData.getHighEntropyValues(
+    ["architecture","bitness","platformVersion","model","fullVersionList",
+     "wow64","formFactors"])
+"""
+
+# content_shell emits none of these high-entropy hints, because
+# ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr
+# outside test harnesses; advertising Accept-CH does not change that. It does
+# still send the low-entropy triple on subresource requests. Advertising them
+# anyway keeps this script identical to the one Task 8 runs against `chrome`,
+# where the high-entropy hints do arrive.
+ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version",
+             "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
+```
+
+Re-run `capture_ua_baseline.py` is **not** required and must not be done — the committed
+baseline is the pre-patch surface and re-capturing it now would record the patched build.
+The import only has to produce the same list the capture used, which is why it is copied
+verbatim from that file.
+
+Then append to `scripts/verify_sp1a.py`, before the printing loop:
 
 ```python
 # --- Criteria 7 and 8: nothing changed when nothing was asked for ---
@@ -1738,19 +1769,18 @@ Append to `scripts/verify_sp1a.py`, before the printing loop:
 # each other would not catch a substitution that fires unconditionally,
 # because both runs execute the same modified code.
 
-HIGH_ENTROPY = """
-() => navigator.userAgentData.getHighEntropyValues(
-    ["architecture","bitness","platformVersion","model","fullVersionList"])
-"""
-
-# content_shell emits none of these HIGH-ENTROPY hints, because
-# ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr
-# outside test harnesses; advertising Accept-CH does not change that. It does
-# still send the low-entropy triple on subresource requests. Advertising them
-# anyway keeps this script identical to the one Task 8 runs against `chrome`,
-# where the high-entropy hints do arrive.
-ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version",
-             "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
+# Imported, not redefined. An earlier draft of this step declared its own
+# HIGH_ENTROPY asking for five hints while capture_ua_baseline.py asked for
+# seven. getHighEntropyValues returns the requested hints plus the three
+# low-entropy ones, so the baseline holds ten keys and a five-hint request
+# returns eight -- and the assertion below compares them with ==, so it could
+# only ever fail. A guaranteed false red, from two copies of one list drifting.
+#
+# So the list lives in lib_shell, where the capture and every verification
+# read the same object and cannot disagree. Move both constants there in this
+# step and update capture_ua_baseline.py to import them; do not leave a second
+# copy behind.
+from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 
 C78 = ["7 no property was added to navigator or window",
        "8 unconfigured userAgentData matches the baseline",
