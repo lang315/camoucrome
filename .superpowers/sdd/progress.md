@@ -1542,3 +1542,51 @@ Fixed: STDERR_LOG is now per-process. Readers go through lib_shell.STDERR_LOG,
 so the read pattern is unchanged and test_lib_shell_launch.py still gives
 7 PASS.
 
+
+---
+
+SP5a WHOLE-BRANCH REVIEW: CHANGES NEEDED -> all blockers fixed -> re-review out.
+
+The review found four blockers, and every one was the dominant failure mode:
+
+  F1  RegistryMatchesGeneratedHeader compared only the id SETS. Swapping the
+      keys order in invariants.json -- changing which surface is authoritative
+      -- left every test green while JSON and header disagreed. The one
+      artifact whose stated purpose is preventing drift reported success.
+  F2  Policy was declared, documented, and read NOWHERE. Zero grep hits.
+      coherence_validator.h claimed "a kReject entry refuses"; false today,
+      silently false forever once SP5b adds one.
+  F3a the partial-ua warning fired only when ua:osInfo was ABSENT. The mirror
+      -- osInfo set, hint forgotten, very plausibly the commonest operator
+      mistake -- was silent end to end.
+  F3b the block used HasKey, TYPE-BLIND, which SP1a had been fixed away from
+      hours earlier. {"ua:osInfo":10,"ua:platform":"Windows"} produced zero
+      output from all three new diagnostics.
+  F4  no committed runner, and --gtest_filter='CoherenceValidatorTest.*' is
+      RED BY CONSTRUCTION: two cases need different configs and the config
+      latches per process.
+  F5  CleanConfigProducesNoViolations passed with no config at all -- against
+      an unwired validator, an empty registry, or a Validate() returning {}.
+
+F1 AND F5 ARE THE PATTERN OCCURRING INSIDE THE TESTS WRITTEN TO PREVENT IT,
+and both were written by someone who had just read the conventions table. That
+is the sharpest statement of it this project has.
+
+Fixed, each mutation-tested with the prediction stated first, including the
+reviewer's own F1 mutation. kReject deliberately NOT implemented -- two
+static_asserts make the assumption fail the BUILD instead. F7/F8/F9 and the
+apply.sh ordering hazard closed too.
+
+DEFERRED, deliberately, and put to the reviewer as explicit questions:
+  F10  UnrecognisedKeys() reports unknown KEYS, never unusable VALUES.
+       {"ua:platform": 5} still produces no startup diagnostic. A real feature,
+       wanting its own task, not something to smuggle into a review-fix commit.
+  F12  the forced browser-process parse is STILL a side effect, now
+       UnrecognisedKeys() calling Config() rather than Validate(). Property
+       holds; shape is the one conventions asked SP5a to retire.
+
+CHECKOUT HEALTH VERIFIED after the fix agent reported using `git clean -fd`
+during reconstruction: 248 gclient entries, llvm-build and buildtools present,
+both binaries current. It had scoped the clean correctly. Recorded the footgun
+in conventions anyway, because apply.sh's untracked copies are what make
+someone reach for it and the unscoped form deletes the toolchain.
