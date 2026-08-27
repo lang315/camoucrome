@@ -618,3 +618,26 @@ ENVIRONMENT TRAP, cost one false-green run, do not repeat:
   kept going, and verify_sp0.py ran the PREVIOUS version and reported 11 PASS.
   Transfer file contents through the stdin script and md5sum both ends.
   Recorded in the plan's Environment section.
+
+Task 2: complete (Mac e60e5a5, Chromium 04b16e1c39; review Approved, no
+Critical). Follow-ups landed:
+  - Task 2 CAUGHT A FALSE GREEN IN MY PLAN: --gtest_filter='Camoucfg*' selects
+    2 of 21 tests and prints PASSED, because only CamoucfgKeysTest carries that
+    prefix; SP0's suites are AssembleRawConfigTest, ParseConfigTest,
+    ParseConfigDeathTest, GettersTest, MaskConfigTest. Verified both filters on
+    the checkout (2 vs 21, both exit 0). Union filter now used everywhere.
+  - Review's one Important, plan-mandated: navigator.uaData is not a property
+    path (real API is navigator.userAgentData), so the dot promised a JS path
+    that does not resolve -- my error in the SP1 spec, faithfully transcribed.
+    RENAMED to a single synthetic ua: namespace (ua:platform, ua:bitness, ...)
+    with constants kUaPlatform etc. Done now because zero call sites existed;
+    conventions warns a rename after SP6a generates constants is breaking.
+    Rebuilt and re-ran: 21/21, md5 matched both ends.
+  - Minor RECORDED for the final review: kAllKeys initializer alignment is not
+    clang-format output. Cosmetic.
+
+RULE EARNED, THE HARD WAY, TWICE: a check that reports success while measuring
+almost nothing is the failure mode of this project, not a test that fails.
+Both catches today (scp silently copying nothing, gtest filter matching 2 of
+21) came from someone reading output and finding it SMALLER than it should be
+-- never from a failure. Assert the expected COUNT, not just the exit code.
