@@ -1457,3 +1457,55 @@ LOG(ERROR) which always appear. Its conclusion was right, its mechanism was
 not, and it said so.
 
 NEXT: Task 7, patch extraction, closes SP5a.
+
+---
+
+SP5a TASK 7 DONE (implementer, Mac c9be7db) + two controller follow-ups.
+
+RECONSTRUCTION PROVEN. apply.sh alone, from pristine 0e8d4a9268, reproduces
+the tree: 12 patch-owned files empty-diff, 17/17 components/camoucfg files
+hash-matched. verify_sp0 11, verify_sp1a 9, verify_sp5a 4, union gtest 36,
+UserAgentUtilsCamoucfgTest 6/6 (one process each), UserAgentUtilsTest 23/23.
+Three patches now: sp0-config-layer, sp1a-ua-producer (regenerated), and the
+new sp5a-coherence-validator. The implementer confirmed my A/B/C corrections
+against the tree before generating, and derived the boundaries rather than
+trusting the brief.
+
+FOLLOW-UP 1: keys.h sync, checkout 3a13c6e2c6. The implementer flagged that
+additions/camoucfg/keys.h in the repo carried the finding-3.5 KNOWN LIMITATION
+note and the checkout did not, and stopped rather than resolving it. Correct
+call, and the divergence was MINE -- I edited it on the Mac in a7b7587 and
+never mirrored it, having transferred that file twice earlier and assumed it
+current. I authorised the sync; it did not land before the task closed, so I
+did it. Rebuilt, re-verified: 11 / 9 / 4 / 34 all PASS, validator ALL_SIX_PASS.
+keys.h is an addition copied by apply.sh and is in no patch, so the patch
+boundaries are untouched and the reconstruction proof needed no re-run -- only
+that one hash, now equal on both sides.
+
+FOLLOW-UP 2, AND IT IS A REAL FIND: THE CANONICAL UNION FILTER HAS BEEN
+SKIPPING A TEST SINCE TASK 5.
+
+Noticed as an unexplained count: 30 where Task 5 recorded 29, with nothing
+added in between. Chased instead of waved past. Cause: Task 5's filter is
+fully qualified --
+  CamoucfgKeysTest.*:DeriveTest.*:AssembleRawConfigTest.*:ParseConfigTest.*:
+  GettersTest.*:MaskConfigTest.*
+and "ParseConfigTest.*" does NOT match ParseConfigDeathTest. The skipped test
+is ParseConfigDeathTest.MalformedJsonAbortsWhenStrict -- SP0's fail-closed
+guarantee, that malformed JSON under CAMOU_CONFIG_STRICT must CHECK-die. That
+is precisely the property SP5a Task 5's refusal path is built on. It passes;
+it simply was never being selected.
+
+Second instance of the class that produced "--gtest_filter=Camoucfg* selects
+2 of 21". A filter that silently selects fewer tests than intended reports
+success while measuring less than it claims.
+
+Task 7 is VINDICATED by the same arithmetic: its wildcard filter
+  Camoucfg*:MaskConfig*:ParseConfig*:AssembleRawConfig*:Getters*:DeriveTest*:
+  CoherenceValidatorTest*
+gives 30 + 6 = 36, exactly the count it reported, so its verification did
+include the death test. The narrow filter is mine, not its.
+
+CANONICAL FILTER GOING FORWARD is the wildcard form. Assert 36.
+
+NEXT: SP5a whole-branch review -- SDD requires it after the final task.
