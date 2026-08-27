@@ -544,3 +544,53 @@ Task 6's whole no-config regression sweep is worthless without it.
 
 Order of the rest is not arbitrary either: Task 6 reuses HIGH_ENTROPY and
 ACCEPT_CH defined in Task 5.
+
+### Mid-execution amendment, 2026-08-27 (during Task 1)
+
+Task 1 escalated BLOCKED at Step 6 and was right to. Root cause, verified
+independently and one level deeper than the escalation found it:
+
+  content_shell NEVER CALLS embedder_support::GetUserAgentMetadata().
+  ShellContentBrowserClient::GetUserAgentMetadata()  shell_content_browser_client.cc:750
+    -> GetShellUserAgentMetadata()                   shell_content_browser_client.cc:348
+       builds the struct from scratch; platform = "Unknown" hardcoded.
+  Only ChromeContentBrowserClient::GetUserAgentMetadata() calls it
+    (chrome/browser/chrome_content_browser_client.cc:7702).
+
+  But the UA STRING path is fine:
+  ShellContentBrowserClient::GetUserAgent()          shell_content_browser_client.cc:732
+    -> embedder_support::BuildUnifiedPlatformUserAgentFromProduct  (:747)
+  which is one of the exact two functions Task 4 patches. Two sibling methods
+  on one class, one delegating to shared code and one not.
+
+  Two further walls behind that: ShellBrowserContext::GetClientHintsControllerDelegate()
+  returns nullptr outside test harnesses, so content_shell emits no Sec-CH-UA*
+  headers at all; and --run-web-tests wires a mock delegate but perturbs window
+  with web-test-only globals, destroying the surface the baseline protects.
+
+MY ERROR, not the subagent's and not the plan's. 00-conventions.md already
+warned "check which target owns a surface before planning its verification"
+and I planned SP1a without checking. Conventions is now amended with the
+stronger rule the case actually teaches: confirm the binary under test CALLS
+THE FUNCTION BEING PATCHED. Grep the patched symbol's callers, not the
+feature's name.
+
+Rejected: wiring a ClientHintsControllerDelegate into content_shell. It would
+produce headers built from GetShellUserAgentMetadata -- a test verifying code
+that never ships. Testing the mock.
+
+Decisions (user's, 2026-08-27):
+  - Task 5 verifies via components_unittests now (calls the shipping function
+    directly, seconds, no browser). Its browser assertions are kept in the plan
+    inside a <details> block because Task 8 reuses them almost unchanged.
+  - NEW TASK 8, runs last and alone: build chrome at the pinned base in a git
+    worktree + out/Base, capture the chrome baseline, build patched chrome,
+    verify items 2/3/4 end to end. Long pole, hours. Alone so it never competes
+    for CPU with the content_shell rebuild loop Tasks 3-6 need.
+  - Backup done: github.com/lang315/camoucrome, private, 52 commits pushed.
+    Scanned first -- no password in tracked files or history. The Tailscale IP
+    100.81.40.76 is in the SP1a plan; private repo, flagged to the user.
+
+Task 1 status: unblocked with option A. Capture what content_shell truly is,
+including the empty header set, plus a `provenance` block naming the binary,
+the commit, both producers, and what is known-absent and why.

@@ -1148,9 +1148,127 @@ why Tasks 4 and 5 must not be left half-done.
 - Consumes: everything from Tasks 2–4.
 - Produces: criteria 2, 3 and 4 assertions in `verify_sp1a.py`.
 
-- [ ] **Step 1: Write the failing assertions**
+> **Amended 2026-08-27, mid-execution — read this before Step 1.**
+>
+> Task 1 discovered, and an independent check confirmed, that **`content_shell` never calls
+> the function this task patches.** `ShellContentBrowserClient::GetUserAgentMetadata()`
+> (`content/shell/browser/shell_content_browser_client.cc:750`) returns
+> `GetShellUserAgentMetadata()` at `:348`, which builds a `blink::UserAgentMetadata` from
+> scratch with `platform = "Unknown"` hardcoded. Only `ChromeContentBrowserClient` calls
+> `embedder_support::GetUserAgentMetadata()`.
+>
+> A browser-driven assertion here would therefore report shell-authored values and could
+> never pass, no matter how correct the patch is. Two further walls sit behind that one:
+> `ShellBrowserContext::GetClientHintsControllerDelegate()` returns `nullptr` outside test
+> harnesses, so `content_shell` emits no `Sec-CH-UA*` headers at all.
+>
+> **This task's verification moves to `components_unittests`,** which calls
+> `GetUserAgentMetadata()` directly — the exact function that ships, in seconds, with no
+> browser. `components/embedder_support/user_agent_utils_unittest.cc` already does this at
+> `:427`, `:601` and `:684`, so the scaffolding exists.
+>
+> The end-to-end check that all three channels agree — verification items 2, 3 and 4, and
+> SP1a's whole thesis — moves to **Task 8**, against a `chrome` build. It is not dropped.
+> Do not add browser assertions for `userAgentData` to `verify_sp1a.py` in this task; they
+> would fail for a reason that has nothing to do with your work.
+>
+> Steps 1 and 2 below are superseded by Steps 1a and 2a. Step 3 is unchanged and is still
+> the substance of this task.
 
-Append to `scripts/verify_sp1a.py`, before the printing loop:
+- [ ] **Step 1a: Write the failing unit tests**
+
+Append to `components/embedder_support/user_agent_utils_unittest.cc`. Follow the file's
+existing style; it already has helpers for driving `GetUserAgentMetadata()`.
+
+The configuration is read from the environment on first touch and cached for the process,
+which shapes these tests: set the environment **before** the first `GetUserAgentMetadata()`
+call in the process, and give each expectation its own `TEST` so gtest's per-test process
+reuse cannot leak a latched config between them. If the singleton proves to latch across
+tests in one binary — SP0 saw this and declined a value-level test for exactly this reason
+— use `--gtest_filter` to run each individually and say so in your report, rather than
+weakening the assertions.
+
+```cpp
+TEST(UserAgentUtilsCamoucfgTest, MetadataFallsBackWhenUnconfigured) {
+  // No CAMOU_CONFIG set: every field must be the real computed value.
+  blink::UserAgentMetadata configured = GetUserAgentMetadata();
+  EXPECT_EQ(configured.platform, GetPlatformForUAMetadataForTesting());
+  EXPECT_EQ(configured.architecture, GetCpuArchitecture());
+  EXPECT_EQ(configured.bitness, GetCpuBitness());
+  EXPECT_EQ(configured.wow64, IsWoW64());
+}
+
+TEST(UserAgentUtilsCamoucfgTest, MetadataTakesConfiguredValues) {
+  base::test::ScopedEnvironmentVariableOverride env(
+      "CAMOU_CONFIG",
+      R"({"navigator.uaData:platform":"Windows",)"
+      R"("navigator.uaData:platformVersion":"15.0.0",)"
+      R"("navigator.uaData:architecture":"x86",)"
+      R"("navigator.uaData:bitness":"64",)"
+      R"("navigator.uaData:mobile":false,)"
+      R"("navigator.uaData:wow64":false})");
+  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
+  EXPECT_EQ(metadata.platform, "Windows");
+  EXPECT_EQ(metadata.platform_version, "15.0.0");
+  EXPECT_EQ(metadata.architecture, "x86");
+  EXPECT_EQ(metadata.bitness, "64");
+  EXPECT_FALSE(metadata.mobile);
+  EXPECT_FALSE(metadata.wow64);
+}
+
+// The version is never spoofed, and this is the assertion that says so. It must
+// hold even though the config above sets every other field.
+TEST(UserAgentUtilsCamoucfgTest, ConfigurationCannotMoveTheVersion) {
+  base::test::ScopedEnvironmentVariableOverride env(
+      "CAMOU_CONFIG",
+      R"({"navigator.uaData:platform":"Windows",)"
+      R"("navigator.uaData:fullVersionList":"99.0.0.0",)"
+      R"("navigator.uaData:brands":"Bogus"})");
+  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
+  EXPECT_EQ(metadata.full_version, version_info::GetVersionNumber());
+  for (const blink::UserAgentBrandVersion& brand :
+       metadata.brand_full_version_list) {
+    if (brand.brand.find("Not") == std::string::npos) {
+      EXPECT_EQ(brand.version, version_info::GetVersionNumber());
+    }
+  }
+}
+
+// form_factors is derived from `mobile` and has no key of its own. Configuring
+// mobile must carry it, which is what makes the absence of a key correct rather
+// than an omission.
+TEST(UserAgentUtilsCamoucfgTest, FormFactorsFollowConfiguredMobile) {
+  base::test::ScopedEnvironmentVariableOverride env(
+      "CAMOU_CONFIG", R"({"navigator.uaData:mobile":true})");
+  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
+  EXPECT_TRUE(metadata.mobile);
+  EXPECT_THAT(metadata.form_factors, testing::Contains(blink::kMobileFormFactor));
+}
+```
+
+`GetPlatformForUAMetadata()` is in the anonymous namespace, so
+`MetadataFallsBackWhenUnconfigured` cannot call it directly. Either compare against the
+literal that `version_info::GetOSType()` yields on this build, or add a
+`GetPlatformForUAMetadataForTesting()` shim beside the existing
+`GetUnifiedPlatformForTesting()` at `:709`, which is the pattern this file already uses.
+Prefer the shim; note in your report which you chose.
+
+- [ ] **Step 2a: Run them and confirm they fail**
+
+```bash
+cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests
+./out/Default/components_unittests --gtest_filter='UserAgentUtilsCamoucfgTest.*'
+echo "exit=$?"
+```
+
+Expected: `MetadataFallsBackWhenUnconfigured` PASSES (nothing has changed yet) and the
+other three FAIL, exit non-zero. Record the exact failure output.
+
+If `MetadataTakesConfiguredValues` passes before Step 3, something else is already reading
+those keys — stop and investigate.
+
+<details>
+<summary>Superseded Steps 1 and 2 (browser assertions) — kept for the record</summary>
 
 ```python
 # --- Criteria 2, 3 and 4: the object, the hints, and the wire ---
@@ -1236,6 +1354,11 @@ cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 Expected: criterion 1's 5 assertions still PASS; **the 7 new ones FAIL**, exit=1. In
 particular `4 Sec-CH-UA-Platform matches userAgentData.platform` fails while the UA string
 already says Windows — that is the incoherence this task exists to close, visible.
+
+</details>
+
+These two steps are kept rather than deleted because the assertions themselves are correct
+and Task 8 reuses them almost unchanged against `chrome`. Only the binary was wrong.
 
 - [ ] **Step 3: Substitute the metadata fields**
 
@@ -1334,25 +1457,47 @@ Note the ordering detail: `mobile` and `platform` are overridden **before** the
 `form_factors` is computed **after** `mobile` was overridden, so it follows the configured
 value without needing a key of its own.
 
-- [ ] **Step 4: Build and re-run**
+- [ ] **Step 4: Build and re-run the unit tests**
 
 ```bash
-cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
+cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests
+./out/Default/components_unittests --gtest_filter='UserAgentUtilsCamoucfgTest.*'
+echo "exit=$?"
+```
+
+Expected: **4 tests pass, exit=0.**
+
+- [ ] **Step 5: Confirm nothing upstream regressed**
+
+This task edits a function with an existing upstream test suite, and the `--user-agent`
+precedence change in Step 3 alters a branch those tests exercise. Run the whole file, not
+just the new tests:
+
+```bash
+./out/Default/components_unittests --gtest_filter='UserAgentUtils*'
+echo "exit=$?"
+```
+
+Expected: every pre-existing `UserAgentUtils*` test still passes. A failure here is a real
+regression in stock behaviour, not a test to update — the `custom_ua` early return must
+behave exactly as before whenever no `ua:osInfo` key is set.
+
+Also confirm SP1a's Task 4 work is untouched:
+
+```bash
 cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
 
-Expected: **12 PASS, exit=0.**
+Expected: **5 PASS, exit=0** — criterion 1 only. This task adds no browser assertions; see
+the amendment note at the top of this task.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd ~/chromium/src
-git add components/embedder_support/user_agent_utils.cc
+git add components/embedder_support/user_agent_utils.cc \
+        components/embedder_support/user_agent_utils_unittest.cc
 git commit -m "embedder_support: let configuration supply the UA client hints"
-
-cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
-git add scripts/verify_sp1a.py
-git commit -m "verify: assert all three UA channels agree"
 ```
 
 ---
@@ -1371,6 +1516,27 @@ is invisible to every other criterion because they all run *with* a config.
 - Consumes: the baseline from Task 1; everything from Tasks 4 and 5.
 - Produces: criteria 7 and 8 assertions.
 
+> **Amended 2026-08-27.** Task 5's browser assertions were superseded, so `HIGH_ENTROPY`
+> and `ACCEPT_CH` are no longer defined earlier in the file — this task defines them itself
+> (they appear in the code below).
+>
+> Be clear about what each assertion here proves in `content_shell`, so nobody later reads
+> more into a green run than it earned:
+>
+> - `7 no property was added` and the `window`/`navigator` key diffs — **fully load-bearing.**
+>   They are the rule-2 guarantee and they work in `content_shell`.
+> - `8 unconfigured userAgentData matches the baseline` — a real regression check, but it
+>   exercises `GetShellUserAgentMetadata()`, which Task 5 does not patch. It proves this
+>   change did not disturb the shell's own producer. It says nothing about ours. Keep it;
+>   Task 8 is where the equivalent assertion becomes load-bearing.
+> - `8 unconfigured request headers match the baseline` — compares an empty set to an empty
+>   set, because `content_shell` emits no `Sec-CH-UA*` headers at all. That is still worth
+>   asserting: it would catch this patch *causing* headers to appear. Say so in the report
+>   rather than presenting it as a coherence check.
+> - `1 unconfigured UA is byte-identical to the baseline` (from Task 4) is the one no-config
+>   assertion that genuinely covers this task's producer, because the UA string path does
+>   run through `embedder_support` in `content_shell`.
+
 - [ ] **Step 1: Write the assertions**
 
 Append to `scripts/verify_sp1a.py`, before the printing loop:
@@ -1382,6 +1548,18 @@ Append to `scripts/verify_sp1a.py`, before the printing loop:
 # from the binary BEFORE this patch existed. Comparing the two runs against
 # each other would not catch a substitution that fires unconditionally,
 # because both runs execute the same modified code.
+
+HIGH_ENTROPY = """
+() => navigator.userAgentData.getHighEntropyValues(
+    ["architecture","bitness","platformVersion","model","fullVersionList"])
+"""
+
+# content_shell emits none of these, because
+# ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr
+# outside test harnesses. Advertising them anyway keeps this script identical
+# to the one Task 8 runs against `chrome`, where they do arrive.
+ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version",
+             "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
 C78 = ["7 no property was added to navigator or window",
        "8 unconfigured userAgentData matches the baseline",
@@ -1570,9 +1748,129 @@ git commit -m "sp1a: extract the producer change set and prove it reconstructs"
 
 ---
 
+### Task 8: Prove the three channels agree, against `chrome`
+
+*Added 2026-08-27, after Task 1 established that `content_shell` never calls the patched
+metadata producer.* This is verification items 2, 3 and 4 — SP1a's central claim, that one
+producer feeds three coherent channels. Without this task SP1a lands with its thesis
+untested end to end, and the spec is explicit that item 4 is "the item that fails if the
+producer patch is bypassed anywhere."
+
+**This task is the long pole: a full `chrome` build is hours.** It runs last, alone, so it
+never competes for CPU with the fast `content_shell` rebuild loop that Tasks 3–6 depend on.
+
+**Files:**
+- Create: `scripts/verify_sp1a_chrome.py`
+- Create: `baselines/chrome-0e8d4a9268-stock-ua.json`
+
+**Interfaces:**
+- Consumes: `lib_shell`, `echo_server` (Task 1); the landed producer patch (Tasks 4–5).
+- Produces: nothing later depends on it. It is a gate, not a component.
+
+- [ ] **Step 1: Build `chrome` at the pinned base revision, in its own output directory**
+
+The baseline must come from an *unpatched* `chrome`, and a separate output directory keeps
+`out/Default` — which every other task rebuilds — untouched.
+
+```bash
+cd ~/chromium/src
+git worktree add ~/chromium-base 0e8d4a9268118d323f62ca207b40514df39dcaa9
+cd ~/chromium-base
+mkdir -p out/Base && cp ~/chromium/src/out/Default/args.gn out/Base/args.gn
+~/depot_tools/gn gen out/Base
+```
+
+Then build, in the **foreground** of a ControlPersist-held ssh session. It will take
+hours. If the client drops, check `pgrep -c "siso|ninja"` before assuming the job died,
+and never start a second build in the same output directory.
+
+```bash
+cd ~/chromium-base && ~/depot_tools/autoninja -C out/Base chrome
+```
+
+A worktree is used rather than a branch checkout so `out/Default` and its incremental state
+survive untouched. Confirm `df -h ~/chromium` still shows comfortable headroom before
+starting; a second full build directory is tens of gigabytes.
+
+- [ ] **Step 2: Capture the `chrome` baseline**
+
+Reuse Task 1's capture script, pointed at the other binary. Add a `--shell` argument to
+`capture_ua_baseline.py` rather than duplicating it, and give the output the same
+`provenance` block naming `chrome` and the base revision.
+
+```bash
+cd ~/camoucrome-verify
+venv/bin/python capture_ua_baseline.py --shell ~/chromium-base/out/Base/chrome \
+  > baselines/chrome-0e8d4a9268-stock-ua.json
+venv/bin/python -c "import json;d=json.load(open('baselines/chrome-0e8d4a9268-stock-ua.json'));print(d['user_agent']);print(d['platform']);print(sorted(d['request_headers']))"
+```
+
+Expected, and this is the step that proves the whole task is worth doing: `platform` is
+`"Linux"` — **not** `"Unknown"` — and the header list contains `sec-ch-ua-arch` and
+`sec-ch-ua-bitness`. If it does not, `chrome` is not delivering client hints either and the
+premise of this task is wrong; stop and report rather than working around it.
+
+Pull the file back to the Mac and re-parse it, as in Task 1 Step 6.
+
+- [ ] **Step 3: Build the patched `chrome`**
+
+```bash
+cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default chrome
+```
+
+Incremental against the `content_shell` build already in `out/Default`, but `chrome` links
+far more, so expect this to be long the first time even so.
+
+- [ ] **Step 4: Write and run the three-channel verification**
+
+Create `scripts/verify_sp1a_chrome.py`. Its assertions are the ones held in the superseded
+Steps 1–2 of Task 5 — they were correct; only the binary was wrong. Take them from there
+almost unchanged, with three adjustments:
+
+- point `lib_shell.SHELL` at `~/chromium/src/out/Default/chrome`, and add
+  `--headless=new` plus `--no-first-run --no-default-browser-check` to the launch flags;
+  `--ozone-platform=headless` is a `content_shell` idiom
+- load `baselines/chrome-0e8d4a9268-stock-ua.json`
+- keep the criterion-1 assertions too, so this run independently re-confirms the UA string
+  in the binary that actually ships
+
+```bash
+cd ~/camoucrome-verify && venv/bin/python verify_sp1a_chrome.py; echo "exit=$?"
+```
+
+Expected: every assertion PASSes, exit=0 — including `Sec-CH-UA-Platform: "Windows"`,
+`Sec-CH-UA-Arch: "x86"`, `Sec-CH-UA-Bitness: "64"`, a `userAgentData.platform` of
+`"Windows"`, and a `fullVersionList` still reporting the build's own version.
+
+If the headers disagree with `navigator.userAgentData`, the producer patch is being
+bypassed on one path — that is precisely what item 4 exists to detect, and it is a blocking
+defect, not a test to relax.
+
+- [ ] **Step 5: Clean up and commit**
+
+```bash
+cd ~/chromium/src && git worktree remove ~/chromium-base --force
+```
+
+Removing the worktree reclaims the disk. The baseline JSON is committed, so it does not
+need rebuilding to be re-read; regenerating it needs the worktree again, which is why the
+`provenance` block records the revision.
+
+```bash
+cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
+git add scripts/verify_sp1a_chrome.py scripts/capture_ua_baseline.py \
+        baselines/chrome-0e8d4a9268-stock-ua.json
+git commit -m "verify: prove all three UA channels agree, against chrome"
+```
+
+---
+
 ## Verification items deferred out of SP1a
 
 Stated so nobody reads a green SP1a run as SP1 being complete.
+
+Items 2, 3 and 4 are **not** in this table any more: they moved to Task 8, which verifies
+them against `chrome`. They are deferred within SP1a, not out of it.
 
 | Item | Why deferred |
 |---|---|
