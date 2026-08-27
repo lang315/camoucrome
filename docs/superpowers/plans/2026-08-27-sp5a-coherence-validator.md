@@ -1117,7 +1117,7 @@ forces the parse as a byproduct of doing real work, so the fragile arrangement c
 - Consumes: `ValidateAtStartup` (Task 3).
 - Produces: nothing.
 
-- [ ] **Step 1: Read what is there now**
+- [x] **Step 1: Read what is there now**
 
 ```bash
 grep -n "camoucfg" ~/chromium/src/content/browser/browser_main_loop.cc
@@ -1129,7 +1129,31 @@ SP0's forced parse and SP1a's unsupported-key warning are both in
 `"+components/camoucfg",` directory-wide, so the new include needs no DEPS change — confirm
 rather than assume, and say so in the report.
 
-- [ ] **Step 2: Replace the side effect with the call**
+- [x] **Step 2: Replace the side effect with the call**
+
+> **Two deviations, both recorded rather than quietly absorbed.**
+>
+> **`return 1` became a named 13.** `EarlyInitialization()` does return `int`, so the plan's
+> `return 1` compiles — but 1 is `RESULT_CODE_KILLED`, and reporting a deliberate, explained
+> refusal as a kill misfiles it in crash reporting. There is no content-level code for "bad
+> configuration" and there cannot be one: `content::ResultCode` is frozen behind a
+> `static_assert` pinning `RESULT_CODE_LAST_CODE` at 5, and `result_codes.h` forbids new
+> values. 13 is what `chrome::ResultCode` calls `RESULT_CODE_UNSUPPORTED_PARAM`, and
+> `CrashExitCodeToString(13)` already prints that name, so the number is accurate even
+> though the symbol is unreachable from `//content`. Written as a named local constant with
+> that reasoning beside it.
+>
+> **Three review findings landed here.** SP1a's whole-branch review left 1.1, 1.2 and 1.3
+> open, and 1.2 and 1.3 are startup diagnostics — the same insertion point, the same build.
+> Doing them elsewhere would have meant a second cycle for four lines each.
+> **1.1 is NOT done**: it changes `ConfigPresentsUserAgentIdentity` in
+> `user_agent_utils.cc`, a different file and SP1a's concern, and belongs in its own commit
+> rather than smuggled into this task.
+>
+> `keys::kUaMetadataKeys` and `camoucfg::UnrecognisedKeys()` are new, both needed by the
+> diagnostics. The first has two guard tests, because a hand-written subset that drifts from
+> `kAllKeys` would silently stop covering whatever fell out while every existing assertion
+> still passed.
 
 Add `#include "components/camoucfg/coherence_validator.h"` beside the existing camoucfg
 includes. Then replace SP0's `camou_configured` statement and its `VLOG` with:
@@ -1163,7 +1187,7 @@ Keep SP1a's `navigator.userAgent` warning exactly where it is.
 Check `EarlyInitialization`'s signature before writing `return 1` — if it does not return
 `int`, use whatever the surrounding code uses to abort startup, and say which in the report.
 
-- [ ] **Step 3: Build and verify both paths**
+- [x] **Step 3: Build and verify both paths**
 
 ```bash
 set -o pipefail
@@ -1176,7 +1200,7 @@ venv/bin/python verify_sp1a.py; echo "sp1a exit=$?"   # expect 9 PASS
 Both must still pass. SP0's criterion 6 covers malformed configuration under strict mode and
 is the one most likely to notice if this refactor broke the fail-closed path.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ---
 

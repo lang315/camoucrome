@@ -1272,3 +1272,54 @@ was exercised by nothing. The fix -- two non-host profiles plus the structural
 guard -- is correct and is what now gives 34 PASS.
 
 SP1a's producer is sound. The verification is now honest about it.
+
+---
+
+SP5a TASK 5 COMPLETE. Checkout commit e249e76434 on camoucrome/sp5a.
+
+SP0's fragile arrangement is retired: the parse was forced by the side effect
+of a HasKey() inside a logging statement, so deleting the log would have moved
+the parse into a renderer. ValidateAtStartup() is now the explicit call.
+
+THREE PREVIOUSLY SILENT FAILURES NOW SPEAK. All three were review findings.
+
+  a  typo key            {"ua:platfrom":"Windows"} matched nothing, every
+                         getter fell back to real, browser ran fully unspoofed
+                         and indistinguishable from no config at all
+  b  partial ua: config  hints followed the config, UA string kept the real OS
+  c  incoherent config   reported; under CAMOU_CONFIG_STRICT now refuses
+
+EVIDENCE, observed not assumed -- five content_shell launches:
+  a typo             warning fires, browser runs (143 = my SIGTERM)
+  b partial          warning fires, browser runs
+  c incoherent+STRICT EXIT 13, refuses to start
+  d incoherent lax   violation logged, browser runs
+  e clean control    NO camoucfg output at all  <- no false positives
+
+  build              content_shell + components_unittests OK
+  unit               29/29 (was 27; +2 kUaMetadataKeys guards)
+  validator          ALL_SIX_PASS, one process per config
+  verify_sp0.py      11 PASS, exit 0
+  verify_sp1a.py      9 PASS, exit 0
+
+DEVIATION: the plan said `return 1`. EarlyInitialization does return int, so
+it would compile, but 1 is RESULT_CODE_KILLED and would report a deliberate
+refusal as a kill. content::ResultCode is FROZEN -- static_assert pins
+RESULT_CODE_LAST_CODE at 5 and the header forbids new values -- so no
+content-level code means "bad configuration". Used a named constant 13, which
+is chrome's RESULT_CODE_UNSUPPORTED_PARAM and which CrashExitCodeToString
+already prints by that name.
+
+NEW API, both minimal and both guarded:
+  camoucfg::UnrecognisedKeys()  returns the offending keys, NOT the dict, so
+                                callers cannot start reading config around the
+                                typed getters
+  keys::kUaMetadataKeys         the client-hint group; two tests pin it as a
+                                subset of kAllKeys excluding kUaOsInfo
+
+STILL OPEN from the SP1a review: 1.1 (HasKey is type-blind, so a wrong-typed
+ua: key suppresses --user-agent AND fails to spoof), 1.4 SetAndroidOsForTablet-
+Site bypass, 3.4/3.5/3.6 documentation, 4.1/4.2 stale comments. 1.1 is next --
+it is user_agent_utils.cc, SP1a's file, and deserves its own commit.
+
+NEXT: SP5a Task 6 (browser-level verification), Task 7 (patch extraction).

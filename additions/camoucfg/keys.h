@@ -102,6 +102,20 @@ inline constexpr std::array<std::string_view, 10> kAllKeys = {
     kUaWow64,
 };
 
+// The UA client-hint keys, without kUaOsInfo.
+//
+// The split is what the list is for. These seven reach
+// navigator.userAgentData and the Sec-CH-UA-* headers; kUaOsInfo reaches the
+// user-agent string. Setting any of these without kUaOsInfo produces a
+// fingerprint that contradicts itself on two surfaces a page reads for free,
+// so startup warns about exactly that combination and needs the group by name
+// rather than as seven open-coded HasKey calls that a later key would silently
+// fall out of.
+inline constexpr std::array<std::string_view, 7> kUaMetadataKeys = {
+    kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
+    kUaModel,    kUaMobile,          kUaWow64,
+};
+
 }  // namespace camoucfg::keys
 
 #endif  // COMPONENTS_CAMOUCFG_KEYS_H_
