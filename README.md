@@ -3,13 +3,30 @@
 An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
-**Status: SP0 and SP1a landed.** The configuration layer exists and drives
-`navigator.hardwareConcurrency`, and the browser-process UA producer —
-`navigator.userAgent`, `navigator.userAgentData`, and the `Sec-CH-UA*` request
-headers — is spoofable and coherent, all read from one site in
-`user_agent_utils.cc`. Apply both to a Chromium checkout with
-`scripts/apply.sh <chromium-src>`. The specs in
-`docs/superpowers/specs/` define the work.
+**Status: SP0 landed; SP1a landed, partially verified.** Apply both to a Chromium checkout
+with `scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
+work.
+
+The configuration layer exists and drives `navigator.hardwareConcurrency`. The
+browser-process UA producer in `user_agent_utils.cc` is patched so that one site feeds
+`navigator.userAgent`, `navigator.userAgentData` and the `Sec-CH-UA*` request headers. What
+is *verified* is narrower than what is patched, and the difference matters:
+
+| Channel | Evidence today |
+|---|---|
+| `navigator.userAgent` | **Verified end to end** in a running browser — spoofed, unconfigured, malformed-config and refused-key cases, all diffed against a pre-patch baseline. |
+| `navigator.userAgentData` | **Unit tests only.** `GetUserAgentMetadata()` is called directly, with no browser. |
+| `Sec-CH-UA*` headers | **Not yet verified at all.** |
+| the three agreeing with each other | **Not yet verified.** |
+
+The gap is not neglect, it is the test binary. `content_shell` reimplements
+`GetUserAgentMetadata()` in shell code — hardcoding `platform = "Unknown"` — and never calls
+the patched function, and its `ClientHintsControllerDelegate` is `nullptr`, so it emits no
+high-entropy `Sec-CH-UA*` headers under any configuration. Closing all three rows needs a
+`chrome` build, which is SP1a's Task 8.
+
+Cross-channel coherence is the whole thesis of this sub-project, so it is worth stating
+plainly that it is the row still open.
 
 The change set is generated against Chromium revision
 `0e8d4a9268118d323f62ca207b40514df39dcaa9`. Rebasing onto a newer revision is SP6a's job.
@@ -73,9 +90,9 @@ assumes the architecture decisions recorded there.
 | SP1b | Blink-side leaf accessors and languages | SP1a, SP6a, SP5a |
 | SP2 | Automation hiding and CDP invisibility | SP0 |
 | SP3 | WebGL and canvas fingerprints | SP0 |
-| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1, SP3, SP5a |
-| SP5b | Invariant catalogue and fingerprint presets | SP1, SP3, SP4 |
-| SP6b | Packaging and driver API | SP1–SP5 |
+| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1a, SP1b, SP3, SP5a |
+| SP5b | Invariant catalogue and fingerprint presets | SP1a, SP1b, SP3, SP4 |
+| SP6b | Packaging and driver API | SP1a–SP5b |
 | SP7 | Phone-home removal and build-level hardening | — |
 
 SP5 and SP6 are each split. Both specs argue that half their content is needed far
