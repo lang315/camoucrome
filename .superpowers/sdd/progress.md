@@ -698,3 +698,25 @@ asking, since re-running is cheaper than a round trip and stronger than a log:
     compile command, so ninja never redid it. The object compiled while the
     include was disallowed is the one in the binary right now. Recorded in
     conventions with the timestamps.
+
+Task 4: complete (Chromium aab538cfab, Mac b3720dc). RED 3 FAIL/2 PASS then
+GREEN 5/5; verify_sp0 11/11; unit tests 21/21 union filter.
+
+I observed the four behaviours on the running binary myself rather than
+trusting the report, given the day's four false greens:
+  no config            -> Mozilla/5.0 (X11; Linux x86_64) ... Chrome/999.0.0.0
+  ua:osInfo = Windows  -> Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... Chrome/999.0.0.0
+  {not json            -> X11; Linux x86_64, no crash
+  navigator.userAgent  -> ignored, warns, names ua:osInfo
+
+The OS moves and Chrome/999.0.0.0 does not, including under a config that
+tries to set a version. That holds because the substitution point is the
+os_info argument and `product` never passes through it -- the shape of the
+code, not an assertion someone has to remember to run. This is the payoff for
+amending the spec after reading the real producer: the original design routed
+the finished string through the patch every time, which would have made the
+version invariant depend on continued care.
+
+Coverage limit, stated rather than buried: content_shell exercises only
+BuildUnifiedPlatformUserAgentFromProduct. The sibling is patched but unrun
+until Task 8.
