@@ -1,7 +1,23 @@
 # SP1 — Navigator identity and UA / UA-CH coherence
 
-Status: draft, not yet approved
+Status: approved, amended 2026-08-27 after probing the real producer
 Assumes: [00-conventions.md](00-conventions.md)
+
+**Amendment, 2026-08-27.** Sections 3, 4 and 7 were written from a partial read of
+`user_agent_utils.cc`. A full read of the producer changed three things: where the patch
+goes, what the config key for the user-agent string is, and how many override channels
+exist. Every change is marked *(amended)* and the superseded text is left in place where
+it still explains why. All five open decisions are now resolved; section 7 records each
+answer and what settled it.
+
+**SP1 is split into SP1a and SP1b** for implementation, along the seam section 4 already
+draws. SP1a is the browser-process producer — the user-agent string, `userAgentData`, and
+the `Sec-CH-UA*` headers, all three from one site — and satisfies verification items 1–4
+and 8. SP1b is the Blink-side leaf accessors and languages, and satisfies items 5, 6, 7
+and 9. The split is not arbitrary: SP1a carries essentially all of this sub-project's
+architectural risk and is where a failure would invalidate the approach, while SP1b is
+repetition of the pattern SP0 already proved. Landing them separately means the risky
+half is verified before twelve mechanical edits are built on top of it.
 
 ## 1. Goal
 
@@ -53,7 +69,7 @@ Paths were verified against the real checkout at `~/chromium/src` unless marked
 
 | Value | Config key | Location | Process |
 |---|---|---|---|
-| `userAgent` | `navigator.userAgent` | `components/embedder_support/user_agent_utils.cc` (producer) | browser |
+| `userAgent` | `ua:osInfo` *(amended, was `navigator.userAgent`)* | `components/embedder_support/user_agent_utils.cc:844` `BuildUserAgentFromProduct`, `:839` `BuildUnifiedPlatformUserAgentFromProduct` | browser |
 | UA-CH brands, platform, platformVersion, architecture, bitness, model, fullVersionList, wow64 | `navigator.uaData:*` | `components/embedder_support/user_agent_utils.cc` → `blink::UserAgentMetadata` (`third_party/blink/public/common/user_agent/user_agent_metadata.h:46`) | browser |
 | `navigator.userAgentData` | *(derived)* | `third_party/blink/renderer/core/frame/navigator_ua_data.cc`, `navigator_ua.cc` | renderer |
 | `Sec-CH-UA*` request headers | *(derived)* | `services/network/public/cpp/client_hints.cc` | network service |
@@ -122,6 +138,94 @@ This is a real architectural divergence from Camoufox. Camoufox's
 `network-patches.patch` must separately rewrite the on-the-wire `User-Agent` header in
 `nsHttpHandler`, because Firefox has no equivalent single producer. Chromium's client
 hints design accidentally gives us a better seam. We should use it.
+
+### The Windows path is not compiled in *(amended 2026-08-27)*
+
+The seam is real, but the text above described it from the outside. Reading the producer
+changes what "patch the producer" means, in a way that is load-bearing for every task.
+
+Every OS-dependent value in `user_agent_utils.cc` is selected by **compile-time**
+`BUILDFLAG` branches, not runtime dispatch. `GetUserAgentPlatform()` at `:281` is six
+`#elif` arms each returning a literal, of which a Linux build compiles exactly one —
+`"X11; "`. `GetOSVersion()` picks its `StringAppendF` format string the same way, and so
+do `GetCpuArchitecture()`, `GetCpuBitness()`, `GetPlatformVersion()`,
+`GetPlatformForUAMetadata()` and `IsWoW64()`.
+
+The consequence is the opposite of the intuition the earlier draft was written on, so it
+is worth stating plainly. **There is no "switch the browser to the Windows code path" to
+perform. The Windows code is not in the binary.** Claiming Windows from a Linux build
+means supplying every Windows-shaped string from configuration, because nothing in the
+compiled image can compute one.
+
+Two things follow. Explicit UA-CH keys (D2) become the only workable option rather than
+the better of two. And a missing key cannot fall back to "the Windows value" — it falls
+back to the Linux value, which is the honest one, and is therefore the correct fallback
+under conventions rule 5 rather than a limitation.
+
+### The substitution point is `os_info`, not the finished string *(amended 2026-08-27)*
+
+This section originally required the patch to "read which form the build is emitting and
+rewrite the OS token within it", assuming reduced and full user-agent strings are
+assembled by separate code a patch would have to tell apart. They are not. Both converge
+on one public function:
+
+```
+BuildUserAgentFromProduct(product)                → BuildUserAgentFromOSAndProduct(<computed os_info>, product)
+BuildUnifiedPlatformUserAgentFromProduct(product) → BuildUserAgentFromOSAndProduct(GetUnifiedPlatform(), product)
+```
+
+`GetUserAgentInternal()` at `:216` chooses between the two according to
+`ShouldSendUserAgentUnifiedPlatform()`. So the substitution point is the **`os_info`
+argument at each of those two call sites** — two edits of about four lines each.
+
+Three properties the earlier design had to achieve deliberately now fall out for free:
+
+- **The version cannot move.** `product` carries the Chromium version and is never
+  touched, so §5's primary invariant holds structurally rather than by test. Verification
+  item 1 still asserts it, because "structurally impossible" is a claim that decays.
+- **The reduced/full distinction is preserved.** The choice between forms happens above
+  the substitution, in code the patch does not modify.
+- **`--user-agent` keeps its meaning.** `GetUserAgent()` at `:465` returns the
+  command-line override before reaching `GetUserAgentInternal()` at all, so a substitution
+  below that point cannot interfere with it.
+
+### `ua:osInfo`, not `navigator.userAgent` *(amended 2026-08-27)*
+
+The surfaces table originally gave this value the key `navigator.userAgent`, matching
+Camoufox. That key cannot be honoured here without breaking a rule this spec sets
+elsewhere.
+
+A whole user-agent string carries a version. Accepting `navigator.userAgent` therefore
+means either emitting a version the binary contradicts — forbidden by §5's primary
+invariant — or extracting the OS segment from the supplied string, which is user-agent
+parsing, forbidden by "SP1 must not parse a user-agent string locally" a few paragraphs
+below. The earlier draft did not notice that its own two rules had closed the door on its
+own key.
+
+So the key is **`ua:osInfo`**, colon-namespaced per the conventions naming rule because it
+names a substring with no JavaScript counterpart, and carrying only the OS segment —
+`"Windows NT 10.0; Win64; x64"`. `navigator.userAgent` is *not* silently accepted: when
+present it logs a warning naming `ua:osInfo`, and is ignored. That is verification item
+1's "the attempt must be rejected or ignored", generalised from the version field to the
+whole string.
+
+**Cost, recorded rather than hidden.** Conventions commits to a transport Camoufox's
+generator can drive unchanged, and this is the first key where that compatibility breaks.
+It breaks in the safe direction — a Camoufox config produces an unspoofed user agent and a
+warning, never an incoherent one — but SP5b's generator must emit `ua:osInfo`, and the key
+registry must record the alias so the warning can name it.
+
+### Three override channels, not two *(amended 2026-08-27)*
+
+The spec knew about CDP's `Emulation.setUserAgentOverride` (D1). The probe found a third:
+`--user-agent` on the command line, read by `GetUserAgentFromCommandLine()` at `:453`,
+which short-circuits `GetUserAgent()` **and** makes `GetUserAgentMetadata()` at `:663`
+return either blank metadata or low-entropy-only metadata depending on
+`kUACHOverrideBlank`.
+
+That is a pre-existing incoherence in stock Chromium — `--user-agent` desynchronises the
+UA string from the UA-CH headers — and repairing it is not SP1's job. Not being surprised
+by it is. Precedence over all three channels is stated once, in §7 D1.
 
 ### What the producer patch cannot cover
 
@@ -318,6 +422,27 @@ automation channel SP2 exists to hide. Recommendation: (b), neutralize, and revi
 SP2 once the CDP hiding design is settled — but this genuinely couples SP1 and SP2 and
 the user should decide.
 
+**Resolved (2026-08-27): (b), and conventions had already decided it.** This was written
+as a user decision, but the cross-cutting findings in `00-conventions.md` settle the
+general form of it: *"apply configuration last, after the probe, so the configured value
+wins... a driver's emulation override must not be able to contradict it,"* followed by
+*"Expect to find more of these; each one is a precedence decision, and the answer is the
+same every time."* `Emulation.setUserAgentOverride` is one of those. Option (c) is
+excluded on its own terms — routing the spoof through the automation channel SP2 exists
+to hide is self-defeating — which leaves (a) and (b) differing by about ten lines, not
+enough to be worth blocking on.
+
+**The rule, covering all three channels.** Configuration wins. When a `ua:*` or
+`navigator.uaData:*` key is set, the CDP emulation override does not apply to that field,
+and a `--user-agent` command-line value does not apply to it either. When no key is set,
+all three channels behave exactly as stock — including their pre-existing mutual
+incoherence, which is stock Chromium's behaviour and not ours to repair.
+
+SP2 owns revisiting this once CDP hiding is designed. One caveat inherited from the
+probe: the `--user-agent` path also blanks UA-CH metadata, so neutralising it for the UA
+string alone would *create* an incoherence rather than remove one. The two must be
+neutralised together or not at all.
+
 **D2 — Explicit UA-CH keys versus deriving them from the UA string.** The UA-CH fields
 are structured (brands array, platformVersion, architecture, bitness, model,
 fullVersionList, wow64) while the UA string is flat text. Either the config carries all
@@ -326,6 +451,11 @@ Recommendation: explicit keys. Parsing is lossy, and derivation is precisely whe
 incoherence appears — the parser's idea of "Windows 11" and the real Chrome's differ in
 the platformVersion encoding. The cost is roughly eight more config keys, which SP5's
 preset generator fills from real captured fingerprints rather than a human typing them.
+
+**Resolved (2026-08-27): explicit keys.** The probe made the alternative untenable rather
+than merely unattractive. Deriving the UA-CH fields from the UA string would mean deriving
+them from a string this build cannot produce — see "The Windows path is not compiled in"
+in §4.
 
 The version-bearing fields are excluded from this decision entirely. The brand versions
 and `fullVersionList` are not config keys under either option, because the version is
@@ -339,14 +469,30 @@ Recommendation: implement them as config-readable but leave them out of the docu
 key registry, and have SP5's validator reject any value that disagrees with the claimed
 brand. Alternative: hardcode them and do not read config at all.
 
+**Resolved (2026-08-27): config-readable, undocumented, validator-guarded** — the
+recommendation as written. These are SP1b keys, so nothing depends on this before SP1b
+begins. Recorded now so the decision is not re-opened then.
+
 **D4 — `NavigatorBase`'s real location.** Confirmed to exist but not located. The
 implementation plan's first task must find it, because whether the Blink-side scalars can
 be patched once or must be patched twice depends on it.
+
+**Resolved (2026-08-27): `third_party/blink/renderer/core/execution_context/navigator_base.{h,cc}`.**
+Not by SP1's first task but by SP0's, which patched
+`NavigatorBase::hardwareConcurrency()` there as its tracer bullet. The answer the decision
+was waiting for is favourable: `Navigator` and `WorkerNavigator` share the base, so the
+Blink-side scalars are patched **once**, and SP0's verification already demonstrated
+window/worker parity through it empirically. SP1b inherits both the location and the
+proof.
 
 **D5 — Which values belong to SP1 versus SP4.** `onLine`, `cookieEnabled`, and
 `pdfViewerEnabled` are navigator properties but are not identity in any real sense. They
 could reasonably move to SP4's long tail. Recommendation: keep them here, because they
 live in the same files and moving them means touching `navigator.cc` twice.
+
+**Resolved (2026-08-27): keep them in SP1b** — the recommendation as written, and the
+SP1a/SP1b split does not disturb it. All three live in `navigator.cc`, which SP1b already
+opens.
 
 ## 8. Explicitly out of scope
 

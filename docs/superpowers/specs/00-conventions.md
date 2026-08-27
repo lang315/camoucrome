@@ -192,7 +192,8 @@ about fifteen lines; describe the change instead of transcribing it.
 | SP0 | Config layer + tracer-bullet surface | — |
 | SP6a | Patch management and the key registry | SP0 |
 | SP5a | Invariant registry, reader, and load-time validator | SP0 |
-| SP1 | Navigator identity and UA / UA-CH coherence | SP0, SP6a, SP5a |
+| SP1a | UA / UA-CH producer: user-agent string, `userAgentData`, `Sec-CH-UA*` | SP0 |
+| SP1b | Blink-side navigator scalars, languages, `Accept-Language` | SP1a |
 | SP2 | Automation hiding and CDP invisibility | SP0 |
 | SP3 | WebGL and canvas fingerprints | SP0 |
 | SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1, SP3, SP5a |
@@ -207,6 +208,20 @@ tree is at risk from the next `gclient sync` — and its key registry must exist
 SP1 adds twenty keys as string literals. SP5's registry and validator can land as soon
 as SP0 does, and SP5 warns that deferring them is precisely the failure mode Camoufox
 exhibits. Deferring either to the end is the mistake this split prevents.
+
+*Amended 2026-08-27:* **SP1 is split too, and its dependencies shrank.** SP1a is the
+browser-process producer, SP1b the Blink-side leaves; SP1a carries nearly all the
+architectural risk while SP1b repeats the pattern SP0 proved, so verifying the risky half
+before building twelve mechanical edits on it is worth one extra boundary.
+
+SP1a depends on **SP0 alone**. The two dependencies the map recorded both dissolved on
+inspection rather than being waived. SP6a's key registry reduces to a hand-written header
+SP1a writes itself (see "Two registries" above). SP5a's contribution was the claimed-OS
+derivation — but SP1 *populates* the inputs that function reads and never consumes its
+answer; SP4 and SP7 are the consumers. A prerequisite nothing in the dependent actually
+calls is not a prerequisite.
+
+SP5a is still owed before SP4, and SP6a before packaging. Neither now blocks SP1a.
 
 SP2 and SP3 are independent of each other and of SP1. SP7 is GN arguments and build
 configuration, so it depends on nothing and can start at any time.
@@ -315,3 +330,25 @@ validation table are generated. `settings/invariants.json` (SP5) is the registry
 cross-surface invariants, consumed by the browser-process validator, the generator's
 self-check, and a generated mutation-test suite. They are different files and neither
 subsumes the other.
+
+*Amended 2026-08-27:* the **key registry starts as a hand-written C++ header**,
+`additions/camoucfg/keys.h`, and becomes `settings/keys.json` plus a generator in SP6a
+when a second consumer exists. The reason the registry has to exist before SP1 is that
+keys must stop being string literals scattered across call sites; a header of
+`constexpr char[]` constants achieves that completely. Generation buys one further
+thing — one source feeding both the C++ constants and the client's validation table —
+and that is worth building when the client's table exists to be fed, not before. SP1a
+introduces the header; the SP6a task that replaces it must keep the constant names
+identical so no call site moves.
+
+**OS-dependent values in Chromium are chosen at compile time, not at run time.** The
+whole user-agent producer selects its platform strings through `#if BUILDFLAG(IS_WIN)` /
+`IS_MAC` / `IS_LINUX` arms, so a Linux build contains no Windows string to switch to.
+There is no code path to redirect: claiming another OS means supplying every value for it
+from configuration. Assume this shape wherever a surface reports something
+platform-specific, and check for it before designing a patch around a runtime switch that
+does not exist. It also fixes what a missing key must do — falling back yields the *real*
+platform's value, which is what conventions rule 5 requires anyway.
+
+Discovered in SP1's producer probe; stated in full in
+[SP1 §4](2026-08-26-sp1-navigator-identity-design.md).
