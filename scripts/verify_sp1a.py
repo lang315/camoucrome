@@ -156,6 +156,75 @@ else:
             and (baseline is not None and refused[0] == baseline["user_agent"])
             and "ua:osInfo" in stderr)
 
+# --- Criteria 7 and 8: nothing changed when nothing was asked for ---
+#
+# Both spoofed and unconfigured runs are checked against a baseline captured
+# from the binary BEFORE this patch existed. Comparing the two runs against
+# each other would not catch a substitution that fires unconditionally,
+# because both runs execute the same modified code.
+
+# Imported, not redefined. An earlier draft of this step declared its own
+# HIGH_ENTROPY asking for five hints while capture_ua_baseline.py asked for
+# seven. getHighEntropyValues returns the requested hints plus the three
+# low-entropy ones, so the baseline holds ten keys and a five-hint request
+# returns eight -- and the assertion below compares them with ==, so it could
+# only ever fail. A guaranteed false red, from two copies of one list drifting.
+#
+# So the list lives in lib_shell, where the capture and every verification
+# read the same object and cannot disagree. Move both constants there in this
+# step and update capture_ua_baseline.py to import them; do not leave a second
+# copy behind.
+from lib_shell import ACCEPT_CH, HIGH_ENTROPY
+
+C78 = ["7 no property was added to navigator or window",
+       "8 unconfigured userAgentData matches the baseline",
+       "8 unconfigured high-entropy values match the baseline",
+       "8 unconfigured request headers match the baseline"]
+
+base_url, headers_for, stop = echo_server.start(ACCEPT_CH)
+try:
+    values, err = lib_shell.session(
+        None,
+        ["navigator.userAgentData.platform",
+         "navigator.userAgentData.mobile",
+         "JSON.stringify(navigator.userAgentData.brands)",
+         HIGH_ENTROPY,
+         "Object.keys(navigator).sort().join(',')",
+         "Object.keys(window).sort().join(',')",
+         "Object.getOwnPropertyNames(Navigator.prototype).sort().join(',')"],
+        navigate_to=base_url)
+    wire = headers_for("/probe.js") if err is None else None
+finally:
+    stop()
+
+if err is not None:
+    failed(C78, "no-config session", err)
+elif baseline_err is not None:
+    failed(C78, f"baseline load from {BASELINE}", baseline_err)
+else:
+    (platform, mobile, brands_json, entropy,
+     nav_keys, win_keys, proto_props) = values
+    results["7 no property was added to navigator or window"] = (
+        nav_keys.split(",") == baseline["navigator_keys"]
+        and win_keys.split(",") == baseline["window_keys"]
+        and proto_props.split(",") == baseline["navigator_prototype_props"])
+    results["8 unconfigured userAgentData matches the baseline"] = (
+        platform == baseline["platform"]
+        and mobile == baseline["mobile"]
+        and json.loads(brands_json) == baseline["brands"])
+    results["8 unconfigured high-entropy values match the baseline"] = (
+        entropy == baseline["high_entropy"])
+    if wire is None:
+        failed(["8 unconfigured request headers match the baseline"],
+               "wire headers",
+               RuntimeError("the subresource request was never observed"))
+    else:
+        observed = {k.lower(): v for k, v in wire.items()
+                    if k.lower().startswith("sec-ch-ua")
+                    or k.lower() == "user-agent"}
+        results["8 unconfigured request headers match the baseline"] = (
+            observed == baseline["request_headers"])
+
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
 for note in notes:
