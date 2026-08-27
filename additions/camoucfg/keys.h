@@ -44,32 +44,44 @@ inline constexpr char kUaOsInfo[] = "ua:osInfo";
 // an unspoofed user agent in silence.
 inline constexpr char kNavigatorUserAgent[] = "navigator.userAgent";
 
-// The blink::UserAgentMetadata fields. One colon namespace for one struct:
-// `platform` and `mobile` do have JavaScript counterparts, but `architecture`,
-// `bitness`, `platformVersion`, `model` and `wow64` are reachable only through
-// getHighEntropyValues() and are not properties at all. Splitting one struct
-// across two naming conventions would be worse than a namespace that is a
-// little loose.
+// The blink::UserAgentMetadata fields, in one fully synthetic `ua:` namespace
+// alongside kUaOsInfo above.
+//
+// An earlier draft spelled these "navigator.uaData:platform". A reviewer caught
+// that `navigator.uaData` is not a property path at all -- the real API is
+// `navigator.userAgentData` -- so the dot segment promised a JS path that does
+// not resolve, which is exactly what the conventions naming rule exists to stop.
+//
+// The fix is not to lengthen it to `navigator.userAgentData:`. Most of this
+// struct is not a property under any spelling: `architecture`, `bitness`,
+// `platformVersion`, `model` and `wow64` are reachable only through
+// getHighEntropyValues(), and `mobile` and `platform` reach the wire as
+// Sec-CH-UA-* headers whether or not any script ever reads them. A dotted
+// prefix would claim a correspondence that holds for two of seven members.
+//
+// So: `navigator.*` keys are reserved for values that mirror a real JS property
+// path exactly, which SP1b's keys do. Everything describing the UA identity
+// itself lives under `ua:`, next to `webGl:` and `canvas:`. One namespace, one
+// subject, no false promise.
 //
 // Absent from this list on purpose: `brands`, `fullVersionList` and
 // `formFactors`. The first two carry the version, which is never spoofed. The
 // third is derived from `mobile` by GetFormFactorsClientHint(), and conventions
 // gives a derived value no key of its own.
-inline constexpr char kUaDataPlatform[] = "navigator.uaData:platform";
-inline constexpr char kUaDataPlatformVersion[] =
-    "navigator.uaData:platformVersion";
-inline constexpr char kUaDataArchitecture[] = "navigator.uaData:architecture";
-inline constexpr char kUaDataBitness[] = "navigator.uaData:bitness";
-inline constexpr char kUaDataModel[] = "navigator.uaData:model";
-inline constexpr char kUaDataMobile[] = "navigator.uaData:mobile";
-inline constexpr char kUaDataWow64[] = "navigator.uaData:wow64";
+inline constexpr char kUaPlatform[] = "ua:platform";
+inline constexpr char kUaPlatformVersion[] = "ua:platformVersion";
+inline constexpr char kUaArchitecture[] = "ua:architecture";
+inline constexpr char kUaBitness[] = "ua:bitness";
+inline constexpr char kUaModel[] = "ua:model";
+inline constexpr char kUaMobile[] = "ua:mobile";
+inline constexpr char kUaWow64[] = "ua:wow64";
 
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
 inline constexpr std::array<std::string_view, 9> kAllKeys = {
-    kUaOsInfo,          kNavigatorUserAgent,    kUaDataPlatform,
-    kUaDataPlatformVersion, kUaDataArchitecture, kUaDataBitness,
-    kUaDataModel,       kUaDataMobile,          kUaDataWow64,
+    kUaOsInfo,     kNavigatorUserAgent, kUaPlatform,
+    kUaPlatformVersion, kUaArchitecture, kUaBitness,
+    kUaModel,      kUaMobile,           kUaWow64,
 };
 
 }  // namespace camoucfg::keys

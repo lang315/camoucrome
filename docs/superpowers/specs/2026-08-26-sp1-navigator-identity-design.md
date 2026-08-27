@@ -70,7 +70,7 @@ Paths were verified against the real checkout at `~/chromium/src` unless marked
 | Value | Config key | Location | Process |
 |---|---|---|---|
 | `userAgent` | `ua:osInfo` *(amended, was `navigator.userAgent`)* | `components/embedder_support/user_agent_utils.cc:844` `BuildUserAgentFromProduct`, `:839` `BuildUnifiedPlatformUserAgentFromProduct` | browser |
-| UA-CH brands, platform, platformVersion, architecture, bitness, model, fullVersionList, wow64 | `navigator.uaData:*` | `components/embedder_support/user_agent_utils.cc` → `blink::UserAgentMetadata` (`third_party/blink/public/common/user_agent/user_agent_metadata.h:46`) | browser |
+| UA-CH brands, platform, platformVersion, architecture, bitness, model, fullVersionList, wow64 | `ua:*` | `components/embedder_support/user_agent_utils.cc` → `blink::UserAgentMetadata` (`third_party/blink/public/common/user_agent/user_agent_metadata.h:46`) | browser |
 | `navigator.userAgentData` | *(derived)* | `third_party/blink/renderer/core/frame/navigator_ua_data.cc`, `navigator_ua.cc` | renderer |
 | `Sec-CH-UA*` request headers | *(derived)* | `services/network/public/cpp/client_hints.cc` | network service |
 | `appCodeName` | `navigator.appCodeName` | `core/frame/navigator_id.cc:47` | renderer |
@@ -433,7 +433,7 @@ to hide is self-defeating — which leaves (a) and (b) differing by about ten li
 enough to be worth blocking on.
 
 **The rule, covering all three channels.** Configuration wins. When a `ua:*` or
-`navigator.uaData:*` key is set, the CDP emulation override does not apply to that field,
+`ua:*` key is set, the CDP emulation override does not apply to that field,
 and a `--user-agent` command-line value does not apply to it either. When no key is set,
 all three channels behave exactly as stock — including their pre-existing mutual
 incoherence, which is stock Chromium's behaviour and not ours to repair.

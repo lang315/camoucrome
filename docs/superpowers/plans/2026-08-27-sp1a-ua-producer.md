@@ -177,13 +177,13 @@ Eight. All are optional; each absent key falls through to the real value.
 | Key | Type | Example (claiming Windows 11 x64) | Real value on this Linux build |
 |---|---|---|---|
 | `ua:osInfo` | string | `Windows NT 10.0; Win64; x64` | `X11; Linux x86_64` |
-| `navigator.uaData:platform` | string | `Windows` | `Linux` |
-| `navigator.uaData:platformVersion` | string | `15.0.0` | `` (empty) |
-| `navigator.uaData:architecture` | string | `x86` | `x86` |
-| `navigator.uaData:bitness` | string | `64` | `64` |
-| `navigator.uaData:model` | string | `` (empty) | `` (empty) |
-| `navigator.uaData:mobile` | bool | `false` | `false` |
-| `navigator.uaData:wow64` | bool | `false` | `false` |
+| `ua:platform` | string | `Windows` | `Linux` |
+| `ua:platformVersion` | string | `15.0.0` | `` (empty) |
+| `ua:architecture` | string | `x86` | `x86` |
+| `ua:bitness` | string | `64` | `64` |
+| `ua:model` | string | `` (empty) | `` (empty) |
+| `ua:mobile` | bool | `false` | `false` |
+| `ua:wow64` | bool | `false` | `false` |
 
 `formFactors` gets **no key**: `GetFormFactorsClientHint()` derives it from `mobile`, and
 conventions forbids an independent override for a derived value — it would create the
@@ -192,11 +192,23 @@ opportunity for incoherence rather than remove it.
 The brand list, `full_version` and `brand_full_version_list` get no keys either, because
 the version is never spoofed.
 
-The `navigator.uaData:` prefix is colon-namespaced even though `platform` and `mobile` have
-real JavaScript counterparts, because the group as a whole names the `UserAgentMetadata`
-struct and most of its members — `architecture`, `bitness`, `platformVersion`, `model`,
-`wow64` — are reachable only through `getHighEntropyValues()` and are not properties at
-all. One namespace for one struct beats splitting the struct across two naming conventions.
+**Renamed 2026-08-27, during Task 2's review, while zero call sites existed.** These were
+`navigator.uaData:*` until a reviewer pointed out that `navigator.uaData` is not a property
+path — the real API is `navigator.userAgentData` — so the dot segment promised a JS path
+that does not resolve. That is precisely what the conventions naming rule exists to
+prevent, and it was my error in the SP1 spec, faithfully transcribed by Task 2.
+
+Lengthening it to `navigator.userAgentData:` was rejected. Most of this struct is not a
+property under any spelling: `architecture`, `bitness`, `platformVersion`, `model` and
+`wow64` come only from `getHighEntropyValues()`, and `mobile` and `platform` reach the wire
+as `Sec-CH-UA-*` headers whether or not script reads them. A dotted prefix would claim a
+correspondence that holds for two of seven members.
+
+So `navigator.*` is reserved for keys that mirror a real JS property path exactly — which
+SP1b's keys do — and everything describing the UA identity itself lives under `ua:`,
+beside `webGl:` and `canvas:`. Conventions warns that renaming a key after SP6a generates
+constants from it is a breaking change; doing it now cost nothing because nothing reads
+these yet.
 
 ---
 
@@ -492,9 +504,9 @@ git commit -m "verify: capture the unspoofed UA surface before patching the prod
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `camoucfg::keys::kUaOsInfo`, `kNavigatorUserAgent`, `kUaDataPlatform`,
-  `kUaDataPlatformVersion`, `kUaDataArchitecture`, `kUaDataBitness`, `kUaDataModel`,
-  `kUaDataMobile`, `kUaDataWow64`, and `camoucfg::keys::kAllKeys` (a span over all of them).
+- Produces: `camoucfg::keys::kUaOsInfo`, `kNavigatorUserAgent`, `kUaPlatform`,
+  `kUaPlatformVersion`, `kUaArchitecture`, `kUaBitness`, `kUaModel`,
+  `kUaMobile`, `kUaWow64`, and `camoucfg::keys::kAllKeys` (a span over all of them).
   Tasks 4 and 5 use these instead of string literals.
 
 - [ ] **Step 1: Write the failing test**
@@ -618,21 +630,21 @@ inline constexpr char kNavigatorUserAgent[] = "navigator.userAgent";
 // `formFactors`. The first two carry the version, which is never spoofed. The
 // third is derived from `mobile` by GetFormFactorsClientHint(), and conventions
 // gives a derived value no key of its own.
-inline constexpr char kUaDataPlatform[] = "navigator.uaData:platform";
-inline constexpr char kUaDataPlatformVersion[] =
-    "navigator.uaData:platformVersion";
-inline constexpr char kUaDataArchitecture[] = "navigator.uaData:architecture";
-inline constexpr char kUaDataBitness[] = "navigator.uaData:bitness";
-inline constexpr char kUaDataModel[] = "navigator.uaData:model";
-inline constexpr char kUaDataMobile[] = "navigator.uaData:mobile";
-inline constexpr char kUaDataWow64[] = "navigator.uaData:wow64";
+inline constexpr char kUaPlatform[] = "ua:platform";
+inline constexpr char kUaPlatformVersion[] =
+    "ua:platformVersion";
+inline constexpr char kUaArchitecture[] = "ua:architecture";
+inline constexpr char kUaBitness[] = "ua:bitness";
+inline constexpr char kUaModel[] = "ua:model";
+inline constexpr char kUaMobile[] = "ua:mobile";
+inline constexpr char kUaWow64[] = "ua:wow64";
 
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
 inline constexpr std::array<std::string_view, 9> kAllKeys = {
-    kUaOsInfo,          kNavigatorUserAgent,    kUaDataPlatform,
-    kUaDataPlatformVersion, kUaDataArchitecture, kUaDataBitness,
-    kUaDataModel,       kUaDataMobile,          kUaDataWow64,
+    kUaOsInfo,          kNavigatorUserAgent,    kUaPlatform,
+    kUaPlatformVersion, kUaArchitecture, kUaBitness,
+    kUaModel,       kUaMobile,          kUaWow64,
 };
 
 }  // namespace camoucfg::keys
@@ -904,12 +916,12 @@ BASELINE = os.path.expanduser(
 # matches what a real Chrome on Windows emits by construction.
 WIN = {
     "ua:osInfo": "Windows NT 10.0; Win64; x64",
-    "navigator.uaData:platform": "Windows",
-    "navigator.uaData:platformVersion": "15.0.0",
-    "navigator.uaData:architecture": "x86",
-    "navigator.uaData:bitness": "64",
-    "navigator.uaData:mobile": False,
-    "navigator.uaData:wow64": False,
+    "ua:platform": "Windows",
+    "ua:platformVersion": "15.0.0",
+    "ua:architecture": "x86",
+    "ua:bitness": "64",
+    "ua:mobile": False,
+    "ua:wow64": False,
 }
 
 results = {}
@@ -1329,15 +1341,15 @@ env -u CAMOU_CONFIG $T \
   --gtest_filter='UserAgentUtilsCamoucfgTest.MetadataFallsBackWhenUnconfigured'
 echo "fallback exit=$?"
 
-CAMOU_CONFIG='{"navigator.uaData:platform":"Windows","navigator.uaData:platformVersion":"15.0.0","navigator.uaData:architecture":"x86","navigator.uaData:bitness":"64","navigator.uaData:mobile":false,"navigator.uaData:wow64":false}' \
+CAMOU_CONFIG='{"ua:platform":"Windows","ua:platformVersion":"15.0.0","ua:architecture":"x86","ua:bitness":"64","ua:mobile":false,"ua:wow64":false}' \
   $T --gtest_filter='UserAgentUtilsCamoucfgTest.MetadataTakesConfiguredValues'
 echo "configured exit=$?"
 
-CAMOU_CONFIG='{"navigator.uaData:platform":"Windows","navigator.uaData:fullVersionList":"99.0.0.0","navigator.uaData:brands":"Bogus"}' \
+CAMOU_CONFIG='{"ua:platform":"Windows","ua:fullVersionList":"99.0.0.0","ua:brands":"Bogus"}' \
   $T --gtest_filter='UserAgentUtilsCamoucfgTest.ConfigurationCannotMoveTheVersion'
 echo "version exit=$?"
 
-CAMOU_CONFIG='{"navigator.uaData:mobile":true}' \
+CAMOU_CONFIG='{"ua:mobile":true}' \
   $T --gtest_filter='UserAgentUtilsCamoucfgTest.FormFactorsFollowConfiguredMobile'
 echo "formfactors exit=$?"
 ```
@@ -1466,11 +1478,11 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
   // The brand list is deliberately not configurable: it carries the Chromium
   // version, and this build always reports the version it was compiled from.
   if (std::optional<bool> mobile =
-          camoucfg::GetBool(scope, camoucfg::keys::kUaDataMobile)) {
+          camoucfg::GetBool(scope, camoucfg::keys::kUaMobile)) {
     metadata.mobile = *mobile;
   }
   if (std::optional<std::string> platform =
-          camoucfg::GetString(scope, camoucfg::keys::kUaDataPlatform)) {
+          camoucfg::GetString(scope, camoucfg::keys::kUaPlatform)) {
     metadata.platform = *std::move(platform);
   }
 
@@ -1516,23 +1528,23 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
   // `mobile` just above, so it already follows the configured value, and an
   // independent key would only create the chance for the two to disagree.
   if (std::optional<std::string> architecture =
-          camoucfg::GetString(scope, camoucfg::keys::kUaDataArchitecture)) {
+          camoucfg::GetString(scope, camoucfg::keys::kUaArchitecture)) {
     metadata.architecture = *std::move(architecture);
   }
   if (std::optional<std::string> model =
-          camoucfg::GetString(scope, camoucfg::keys::kUaDataModel)) {
+          camoucfg::GetString(scope, camoucfg::keys::kUaModel)) {
     metadata.model = *std::move(model);
   }
   if (std::optional<std::string> bitness =
-          camoucfg::GetString(scope, camoucfg::keys::kUaDataBitness)) {
+          camoucfg::GetString(scope, camoucfg::keys::kUaBitness)) {
     metadata.bitness = *std::move(bitness);
   }
   if (std::optional<bool> wow64 =
-          camoucfg::GetBool(scope, camoucfg::keys::kUaDataWow64)) {
+          camoucfg::GetBool(scope, camoucfg::keys::kUaWow64)) {
     metadata.wow64 = *wow64;
   }
   if (std::optional<std::string> platform_version = camoucfg::GetString(
-          scope, camoucfg::keys::kUaDataPlatformVersion)) {
+          scope, camoucfg::keys::kUaPlatformVersion)) {
     metadata.platform_version = *std::move(platform_version);
   }
   return metadata;
