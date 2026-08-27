@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-from lib_shell import SHELL, STDERR_LOG, launch, shutdown, evaluate, session
+from lib_shell import STDERR_LOG, session
 
 WORKER_PROBE = """
 () => new Promise(resolve => {
