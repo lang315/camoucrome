@@ -1985,59 +1985,108 @@ never competes for CPU with the fast `content_shell` rebuild loop that Tasks 3�
 - Consumes: `lib_shell`, `echo_server` (Task 1); the landed producer patch (Tasks 4–5).
 - Produces: nothing later depends on it. It is a gate, not a component.
 
-- [ ] **Step 1: Build `chrome` at the pinned base revision, in its own output directory**
+> **Rewritten 2026-08-27, before dispatch.** The original Steps 1–3 used
+> `git worktree add` to get an unpatched tree. That cannot work here. A Chromium checkout
+> is a gclient checkout: `.gclient_entries` lists **247** directories that are separate
+> repositories, not tracked by `src.git` — including `third_party/llvm-build`, which is the
+> toolchain, and `buildtools/linux64`. A worktree would contain none of them and the build
+> would fail for lack of a compiler before it reached any Camoucrome code.
+>
+> Switching branches inside the existing tree avoids the problem entirely, and costs less:
+> one full `chrome` build instead of a full build plus a second output directory.
 
-The baseline must come from an *unpatched* `chrome`, and a separate output directory keeps
-`out/Default` — which every other task rebuilds — untouched.
+- [ ] **Step 1: Build `chrome` at the pinned base revision**
+
+Use a real branch, not a detached HEAD. Nothing here commits, so detached would be safe in
+principle — but conventions warns about detached HEAD for a reason and a named branch costs
+one command.
 
 ```bash
+set -o pipefail
 cd ~/chromium/src
-git worktree add ~/chromium-base 0e8d4a9268118d323f62ca207b40514df39dcaa9
-cd ~/chromium-base
-mkdir -p out/Base && cp ~/chromium/src/out/Default/args.gn out/Base/args.gn
-~/depot_tools/gn gen out/Base
+git branch camoucrome/base-for-baseline 0e8d4a9268118d323f62ca207b40514df39dcaa9
+git checkout camoucrome/base-for-baseline
+git log --oneline -1     # must be 0e8d4a9268
 ```
 
-Then build, in the **foreground** of a ControlPersist-held ssh session. It will take
-hours. If the client drops, check `pgrep -c "siso|ninja"` before assuming the job died,
-and never start a second build in the same output directory.
-
-```bash
-cd ~/chromium-base && ~/depot_tools/autoninja -C out/Base chrome
-```
-
-A worktree is used rather than a branch checkout so `out/Default` and its incremental state
-survive untouched. Confirm `df -h ~/chromium` still shows comfortable headroom before
-starting; a second full build directory is tens of gigabytes.
-
-- [ ] **Step 2: Capture the `chrome` baseline**
-
-Reuse Task 1's capture script, pointed at the other binary. Add a `--shell` argument to
-`capture_ua_baseline.py` rather than duplicating it, and give the output the same
-`provenance` block naming `chrome` and the base revision.
-
-```bash
-cd ~/camoucrome-verify
-venv/bin/python capture_ua_baseline.py --shell ~/chromium-base/out/Base/chrome \
-  > baselines/chrome-0e8d4a9268-stock-ua.json
-venv/bin/python -c "import json;d=json.load(open('baselines/chrome-0e8d4a9268-stock-ua.json'));print(d['user_agent']);print(d['platform']);print(sorted(d['request_headers']))"
-```
-
-Expected, and this is the step that proves the whole task is worth doing: `platform` is
-`"Linux"` — **not** `"Unknown"` — and the header list contains `sec-ch-ua-arch` and
-`sec-ch-ua-bitness`. If it does not, `chrome` is not delivering client hints either and the
-premise of this task is wrong; stop and report rather than working around it.
-
-Pull the file back to the Mac and re-parse it, as in Task 1 Step 6.
-
-- [ ] **Step 3: Build the patched `chrome`**
+Then build, in the **foreground** of a ControlPersist-held ssh session. This is hours.
+If the client drops, check `pgrep -c "siso|ninja"` before assuming the job died, and never
+start a second build in the same output directory.
 
 ```bash
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default chrome
 ```
 
-Incremental against the `content_shell` build already in `out/Default`, but `chrome` links
-far more, so expect this to be long the first time even so.
+`out/Default` already holds `content_shell` at 8.8 GB; `chrome` adds to it rather than
+replacing it. Confirm `df -h ~/chromium` has room before starting — there were 888 GB free
+on 2026-08-27, so this is a formality, but a build that dies on a full disk after four
+hours is worth one command to avoid.
+
+- [ ] **Step 2: Teach the capture and launch helpers to drive `chrome`**
+
+`lib_shell.SHELL` is a module-level constant and `launch()` reads it at call time, so
+assigning to it works. The launch flags differ: `--ozone-platform=headless` is a
+`content_shell` idiom, while `chrome` wants `--headless=new` plus `--no-first-run` and
+`--no-default-browser-check`.
+
+Add both as parameters rather than forking the file — a second copy of `launch()` is how the
+five hardening fixes in the original drift apart from their copy.
+
+```python
+# lib_shell.py -- add a parameter, keep the default identical to today's behaviour
+def launch(config, shell=None, extra_flags=None):
+    binary = shell or SHELL
+    flags = extra_flags if extra_flags is not None else ["--ozone-platform=headless"]
+    ...
+    proc = subprocess.Popen(
+        [binary, "--no-sandbox", *flags,
+         f"--user-data-dir={profile}", "--remote-debugging-port=0",
+         "about:blank"],
+        env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
+```
+
+Thread `shell` and `extra_flags` through `session()` the same way `navigate_to` already is.
+Then give `capture_ua_baseline.py` a `--shell` argument that passes them.
+
+**Re-run `verify_sp0.py` and `verify_sp1a.py` after this change** — 11 PASS and 5 PASS, both
+exit 0. They call `session()` with the old signature and must be unaffected. A default that
+quietly changed the flags would break every earlier verification at once.
+
+- [ ] **Step 3: Capture the `chrome` baseline, then build the patched `chrome`**
+
+```bash
+cd ~/camoucrome-verify
+venv/bin/python capture_ua_baseline.py \
+  --shell ~/chromium/src/out/Default/chrome \
+  > baselines/chrome-0e8d4a9268-stock-ua.json
+venv/bin/python -c "import json;d=json.load(open('baselines/chrome-0e8d4a9268-stock-ua.json'));print(d['user_agent']);print(d['platform']);print(sorted(d['request_headers']))"
+```
+
+Expected, and this is the step that proves the whole task was worth doing: `platform` is
+`"Linux"` — **not** `"Unknown"` — and the header list contains `sec-ch-ua-arch` and
+`sec-ch-ua-bitness`. Those are exactly what `content_shell` cannot produce, and their
+presence confirms `chrome` routes through `embedder_support::GetUserAgentMetadata()` and
+has a real `ClientHintsControllerDelegate`.
+
+If they are absent, stop and report. It would mean `chrome` does not deliver client hints
+either and the premise of this task is wrong — do not work around it.
+
+Give the file the same `provenance` block shape as the `content_shell` baseline, naming
+`chrome`, the base revision, and both producers. Pull it back to the Mac and re-parse it,
+as in Task 1 Step 6.
+
+Only then switch back and rebuild:
+
+```bash
+cd ~/chromium/src
+git checkout camoucrome/sp0
+~/depot_tools/autoninja -C out/Default chrome
+```
+
+This rebuild is incremental — roughly six source files differ — but `chrome` links far more
+than `content_shell`, so expect the link alone to take a while. Rebuild `content_shell` too
+before running the earlier verifications again, since switching branches invalidated its
+objects as well.
 
 - [ ] **Step 4: Write and run the three-channel verification**
 
@@ -2067,12 +2116,15 @@ defect, not a test to relax.
 - [ ] **Step 5: Clean up and commit**
 
 ```bash
-cd ~/chromium/src && git worktree remove ~/chromium-base --force
+cd ~/chromium/src
+git branch -d camoucrome/base-for-baseline   # the revision is pinned in the plan and in provenance
+git log --oneline -1                          # confirm you are back on camoucrome/sp0
 ```
 
-Removing the worktree reclaims the disk. The baseline JSON is committed, so it does not
-need rebuilding to be re-read; regenerating it needs the worktree again, which is why the
-`provenance` block records the revision.
+Deleting the throwaway branch loses nothing: the base revision is pinned in this plan, in
+the README, and in the baseline's own `provenance` block, so the state is reproducible by
+name. Leave `out/Default` alone — rebuilding `chrome` from scratch is the expensive part
+and nothing about it needs discarding.
 
 ```bash
 cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
