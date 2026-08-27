@@ -509,3 +509,38 @@ agent may be writing to. Stage explicit paths. The cost of the habit is one
 misleading commit here; in a shared checkout with several agents it is
 arbitrary work landing under arbitrary messages.
 
+
+---
+
+## SP1a — UA / UA-CH producer
+
+Spec amended 2026-08-27 (commit e88ff2d) after reading the whole of
+user_agent_utils.cc. Plan at docs/superpowers/plans/2026-08-27-sp1a-ua-producer.md.
+Seven tasks. None started.
+
+Chromium branch stays camoucrome/sp0; SP1a's base is a90c2cdcb3 (SP0's head).
+Pinned checkout base revision is unchanged: 0e8d4a9268118d323f62ca207b40514df39dcaa9.
+
+Facts probed from the real tree on 2026-08-27, so no task re-derives them:
+
+  NavigatorBase          third_party/blink/renderer/core/execution_context/navigator_base.{h,cc}
+  UA producer            components/embedder_support/user_agent_utils.cc
+    GetUserAgentInternal        :216   picks reduced vs full
+    GetUserAgentPlatform        :281   compile-time BUILDFLAG arms
+    GetUnifiedPlatform          :301   holds "Windows NT 10.0; Win64; x64" in its IS_WIN arm
+    GetUserAgentFromCommandLine :453   --user-agent short-circuit
+    GetUserAgent                :465
+    GetPlatformForUAMetadata    :616
+    GetUserAgentMetadata        :648
+    BuildUnifiedPlatformUserAgentFromProduct :839
+    BuildUserAgentFromProduct                :844
+  GN target              static_library("user_agent") in components/embedder_support/BUILD.gn
+  DEPS                   components/embedder_support/DEPS, directory-granted, alphabetical
+
+TASK 1 MUST RUN FIRST AND MUST NOT BE REORDERED. It captures the unspoofed UA
+surface from the current binary. After Task 4 edits the producer there is no way
+to capture that file again without rebuilding from the pinned base revision, and
+Task 6's whole no-config regression sweep is worthless without it.
+
+Order of the rest is not arbitrary either: Task 6 reuses HIGH_ENTROPY and
+ACCEPT_CH defined in Task 5.
