@@ -248,6 +248,41 @@ must be patched in Blink individually:
 For each of these, the patch reads config and falls back to the real computed value
 when the key is absent, per conventions rule 5.
 
+#### One producer bypass survives: "Request tablet site" *(found 2026-08-27, SP1b owns it)*
+
+`ToggleRequestTabletSite()` (`chrome/browser/ui/browser_commands.cc:2809`) calls
+`SetAndroidOsForTabletSite()` (`:2828`), which builds a user agent by calling
+`embedder_support::BuildUserAgentFromOSAndProduct()` **directly** with a hardcoded
+`kOsOverrideForTabletSite = "Linux; Android 9; Chrome tablet"`. That function sits below
+SP1a's substitution point, so `ua:osInfo` is not consulted at all.
+
+Three things bound how bad this is, and they are worth stating precisely rather than
+filing it as "a bypass":
+
+- **It is not page-reachable.** The only caller is a browser menu command, so it needs a
+  deliberate human click in a headful window. Automation over CDP never reaches it, which
+  is how Camoucrome is actually driven.
+- **It is internally coherent.** It overrides the metadata in the same breath — `mobile`,
+  `form_factors = {Tablet}`, and `platform = "Android"` — so the UA string and the client
+  hints agree with each other. This is not the split-channel failure conventions rule 4 is
+  about.
+- **The two sibling bypasses do not compile here.** `BuildUserAgentFromProductAndExtraOSInfo`
+  and `BuildUnifiedPlatformUAFromProductAndExtraOs` are both inside `#if BUILDFLAG(IS_ANDROID)`,
+  and `arc_util.cc`'s copy is ChromeOS. Verified by reading, not assumed.
+
+**What is genuinely wrong is wider than the user agent.** The override makes the browser
+claim an Android tablet while every other spoofed surface keeps saying whatever the
+configuration says — SP3's WebGL vendor and renderer, SP4's screen metrics and timezone.
+An Android tablet reporting a desktop GPU and a 2560×1440 screen is a sharper signal than
+an honest desktop would ever be. The defect is not that the UA ignores `ua:osInfo`; it is
+that one surface can be moved independently of the fingerprint the operator chose.
+
+So the fix is not to route `kOsOverrideForTabletSite` through `OsInfoOverrideOr` — that
+would break a feature whose entire purpose is to claim Android. **SP1b should disable the
+command in Camoucrome**, on the same reasoning D1 uses for presenting as Chrome: a control
+that lets a user desynchronise their own fingerprint is a liability, not a feature, in a
+browser whose job is to present one coherent identity.
+
 ### SP1 populates the OS inputs; it does not derive the OS
 
 Several later sub-projects need to know which operating system the current config is

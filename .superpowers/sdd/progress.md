@@ -1365,3 +1365,47 @@ FULL REGRESSION after all three, both binaries rebuilt:
 STILL OPEN from the review: 1.4 (SetAndroidOsForTabletSite bypasses the
 substitution on desktop; the two in-file bypasses are #if IS_ANDROID and do not
 compile here), 3.4/3.5/3.6 documentation and spec drift.
+
+---
+
+SP1a REVIEW FULLY TRIAGED. All twelve findings are now closed, refuted, or
+assigned with reasoning. Nothing left unaddressed.
+
+  1.1 gate counted unreadable keys      FIXED, mutation-verified (e934e39da2)
+  1.2 partial ua: config silent         FIXED in SP5a Task 5
+  1.3 typo'd key silent                 FIXED in SP5a Task 5
+  1.4 producer bypass                   ASSIGNED to SP1b, scoped below
+  1.6 lifetime/threading                reviewer found nothing; agreed
+  1.7 browser-vs-renderer               reviewer found nothing; agreed
+  2.1 arch/bitness vs UA string         FIXED, criterion 4 now compares CPU
+  3.1 non-discriminating assertions     FIXED, two non-host profiles + guard
+  3.2 --user-agent untested             FIXED, criterion 1b
+  3.3 traceback discards results        FIXED
+  3.4 "9 PASS" overstated               RECORDED (a7b7587)
+  3.5 spec section 4 drift              FIXED, limitation moved onto kUaOsInfo
+  3.6 hand-authored provenance          ANNOTATED
+  3.7 baseline ancestry                 RESOLVED: 0e8d4a9268 IS an ancestor of
+                                        a90c2cdcb3 and nothing touched
+                                        user_agent_utils.cc between them
+  4.1 comment on the wrong function     FIXED
+  4.2 keys.h stale "two call sites"     FIXED, second site converted
+  PrefService overload guess            REFUTED: the header declares exactly
+                                        one GetUserAgentMetadata
+
+1.4 SCOPED, and the scoping changed the fix. ToggleRequestTabletSite ->
+SetAndroidOsForTabletSite calls BuildUserAgentFromOSAndProduct directly with a
+hardcoded "Linux; Android 9; Chrome tablet", below SP1a's substitution point.
+But: only a browser MENU command reaches it (never a page, never CDP), and it
+overrides the metadata in the same breath, so the UA string and client hints
+agree. The two sibling bypasses are #if IS_ANDROID and arc_util.cc is ChromeOS
+-- neither compiles here. Verified by reading.
+
+The real defect is wider than the user agent: the override claims an Android
+tablet while SP3's WebGL and SP4's screen and timezone keep saying whatever the
+configuration says. An Android tablet with a desktop GPU is a sharper signal
+than an honest desktop. So routing it through OsInfoOverrideOr is the WRONG
+fix -- that breaks a feature whose purpose is to claim Android. SP1b should
+disable the command, on D1's reasoning: a control that lets a user
+desynchronise their own fingerprint is a liability in a browser whose job is to
+present one identity.
+
