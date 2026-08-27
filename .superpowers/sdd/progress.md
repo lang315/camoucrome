@@ -1125,3 +1125,45 @@ pointing at a nonexistent test is unfalsifiable by anything.
 
 STILL TO DO for SP5a: Tasks 4-7 (validator unittest, Chromium wiring, browser
 check, patch extraction). Task 4 is next and now has a working build to land in.
+
+---
+
+SP5a TASK 4 DONE, and it closed three more Task 3 omissions.
+
+Task 4's file list says "Modify coherence_validator_unittest.cc". The file did
+not exist. Task 3 was supposed to create it, with three guard tests, and was
+also supposed to have apply.sh copy settings/invariants.json into the tree --
+RegistryMatchesGeneratedHeader reads it from DIR_SRC_TEST_DATA_ROOT. Neither
+happened. With BUILD.gn earlier, that is THREE omissions from Task 3, all of
+the same kind: work named in the task's own file list, silently skipped, and
+none of it detectable by anything that was run at the time.
+
+Now written: coherence_validator_unittest.cc with all six tests (Task 3's
+three guards + Task 4's three), BUILD.gn wired, apply.sh copying the JSON.
+Compiled first try. ALL_SIX_PASS, each configuration-dependent case in its own
+process because camoucfg::Config() latches.
+
+MUTATIONS -- five, every one predicted by name before running, every one
+landing exactly where predicted:
+
+  no rebuild needed (the JSON is read at runtime, configs are env):
+    clean-config test fed the DIRTY config      -> FAIL, as predicted
+    mutation test fed the CLEAN config          -> FAIL, "Which is: 0" vs 1
+    extra entry in invariants.json only         -> FAIL, names ghost-entry
+    restore                                     -> passes again
+
+  header mutant (second invariant, undeclared key), MUTANT_COMPILED confirmed:
+    RegistryMatchesGeneratedHeader              -> FAIL   predicted
+    EveryInvariantKeyIsDeclaredInTheRegistry    -> FAIL   predicted
+    MutationsExistForEveryInvariant             -> FAIL   predicted
+    EveryInvariantIdIsUnique                    -> PASS   predicted: the
+      mutant id IS unique, so this guard has nothing to say about it
+    restore + rebuild                           -> ALL_SIX_PASS
+
+The four-of-four prediction match is the point. A guard that fires on
+everything is as useless as one that fires on nothing, and EveryInvariantIdIs-
+Unique staying green is what shows these four are distinguishing cases rather
+than all reacting to any perturbation.
+
+REMAINING FOR SP5a: Task 5 (wire ValidateAtStartup into Chromium), Task 6
+(browser-level check), Task 7 (patch extraction).

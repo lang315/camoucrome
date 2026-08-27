@@ -15,6 +15,13 @@ echo "copying additions"
 mkdir -p "$SRC/components/camoucfg"
 cp "$ROOT"/additions/camoucfg/* "$SRC/components/camoucfg/"
 
+# The invariant registry lives in settings/ in this repository and beside the
+# header in the tree. That is the one place the two layouts differ, and it is
+# deliberate: settings/ is where a human edits configuration, while
+# CoherenceValidatorTest.RegistryMatchesGeneratedHeader reads it from
+# DIR_SRC_TEST_DATA_ROOT and so needs it inside the checkout.
+cp "$ROOT/settings/invariants.json" "$SRC/components/camoucfg/invariants.json"
+
 echo "applying patches"
 for patch in "$ROOT"/patches/*.patch; do
   echo "  $(basename "$patch")"
