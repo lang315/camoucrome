@@ -37,8 +37,12 @@ std::vector<Violation> Validate(const ConfigScope& scope);
 // Called once from the browser process before any renderer exists. Returns
 // false when startup must be refused.
 //
-// Under CAMOU_CONFIG_STRICT every violation refuses. Otherwise a kRepair entry
-// is reported loudly and a kReject entry refuses.
+// It does not branch on `policy` at all -- only on CAMOU_CONFIG_STRICT.
+// Every entry in the registry is Policy::kRepair; invariants.h static_asserts
+// that, so a Policy::kReject entry fails the build instead of being silently
+// read and reported as though it were kRepair. Under strict mode every
+// violation refuses startup; otherwise every violation is reported loudly
+// and none of them is applied.
 //
 // It does not repair, and it is not named as though it does. Applying repairs
 // needs a write path into the cached configuration -- a change to a component

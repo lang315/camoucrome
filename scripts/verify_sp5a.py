@@ -73,7 +73,7 @@ baseline, baseline_err = load_baseline(BASELINE)
 
 # --- Assertion 1: a coherent configuration is untouched ---
 
-C1 = "1 coherent config produces a Windows UA and logs no invariant line"
+C1 = "1 coherent config produces a Windows UA and logs no camoucfg: line at all"
 
 values, err = lib_shell.session(json.dumps(COHERENT), ["navigator.userAgent"])
 if err is not None:
@@ -85,7 +85,7 @@ else:
     else:
         results[C1] = (
             "Windows NT 10.0; Win64; x64" in values[0]
-            and "invariant" not in stderr)
+            and "camoucfg:" not in stderr)
 
 # --- Assertion 2: an incoherent configuration is detected and says so ---
 
