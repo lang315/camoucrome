@@ -749,10 +749,11 @@ Both edits belong to this task, and the task verifies both.
 
 - [ ] **Step 1: Add the include, and watch it fail**
 
-In `components/embedder_support/user_agent_utils.cc`, add to the include block (Chromium
-sorts `components/` includes alphabetically, so these go after
-`#include "components/camoucfg/..."`'s alphabetical neighbours — place them with the other
-`components/` includes):
+In `components/embedder_support/user_agent_utils.cc`. The exact position, checked in the
+file on 2026-08-27: `camoucfg` sorts before `embedder_support`, so the two lines go
+**immediately after line 24 `#include "build/build_config.h"` and before line 25
+`#include "components/embedder_support/pref_names.h"`** — the first entries in the
+`components/` group.
 
 ```cpp
 #include "components/camoucfg/keys.h"
@@ -828,10 +829,15 @@ python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" components/embedder_su
 echo "checkdeps exit=$?"
 ```
 
-Expected: build succeeds; `checkdeps` prints `SUCCESS` and exits 0.
+Expected: build succeeds; `checkdeps` prints `SUCCESS` and exits 0. That invocation was
+run against this checkout on 2026-08-27 and passed, so a failure here is your DEPS edit,
+not a broken command.
 
-If `checkdeps.py` is not at that path, find it with
-`find . -name checkdeps.py -not -path '*/node_modules/*' | head`. Report the path used.
+Because it passes today, it is also worth running checkdeps **once before Step 3**, after
+the include is added but before the DEPS line. It should fail there, naming the
+disallowed include. That is the whole reason this is its own task: `autoninja` runs
+`gn check` but never runs `checkdeps.py`, so without that failure nothing in the normal
+build loop would ever have told you the grant was missing.
 
 - [ ] **Step 5: Commit**
 
@@ -1117,14 +1123,20 @@ exists, which is the same argument that put the forced parse here.
 
 - [ ] **Step 6: Check `content/browser`'s DEPS grant covers the new header**
 
-SP0 added a per-header grant for `mask_config.h`. `keys.h` needs its own line, for the same
-reason the grant is per-header: including a new one should require thinking about it.
+Checked on 2026-08-27: `content/browser/DEPS:48` already reads `"+components/camoucfg",`
+— a **directory-wide** grant, so `keys.h` is already covered and **this step is a no-op**.
+Confirm it rather than assuming:
 
 ```bash
 grep -n "camoucfg" ~/chromium/src/content/browser/DEPS
 ```
 
-If only `mask_config.h` is listed, add `"+components/camoucfg/keys.h",` beside it.
+Expected: one line, `"+components/camoucfg",`. If instead you find a per-header grant
+naming only `mask_config.h`, add `"+components/camoucfg/keys.h",` beside it.
+
+The per-header rule in conventions applies to `third_party/blink/renderer/DEPS`, which is
+written that way and where least privilege is worth the friction. `content/browser/DEPS`
+grants by directory like its neighbours, and SP0 followed that file's own style.
 
 - [ ] **Step 7: Build and re-run**
 
