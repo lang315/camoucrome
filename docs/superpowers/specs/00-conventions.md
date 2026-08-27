@@ -97,6 +97,7 @@ the ninth could not have been measured by anything.
 | `bash -lc '...; echo EXIT=$?'` | not the inner command's status. Nesting a command string inside `-lc` loses it the same way a pipe does. Found by Task 6 in its own tooling, during the mutant run. |
 | a regression filter that also matched the new suite | a false **red**: `--gtest_filter='UserAgentUtils*'` swept in `UserAgentUtilsCamoucfgTest`, which needs one process per configuration, so it reported three failures that were the new tests working as designed. |
 | an equality check against a baseline captured with a different probe | nothing it could ever pass. `capture_ua_baseline.py` requested seven high-entropy hints and a draft of the verification requested five; `getHighEntropyValues` returns the requested hints plus three low-entropy ones, so ten keys were compared against eight. Caught by reading the baseline, not by running. |
+| a runner's own count guard | **the number of times a function is called in the file it lives in.** `run_coherence_tests.sh` computed `TOTAL=$((PASS_COUNT+FAIL_COUNT))` and errored unless it was 6; both counters were incremented only inside `report()`, called exactly six times as literals, so `TOTAL` was unconditionally 6. It compared the count of `report` calls against the `6` two lines below. Meanwhile each `--gtest_filter` was a *separate* literal from the name passed to `report`, output was `>/dev/null`, and a zero-match filter **exits 0 printing `SUCCESS: all tests passed`** — measured. So a mistyped filter printed `PASS`. The script's own comment said it existed to stop "a runner that silently ran fewer than six cases and still exited 0". |
 | a hardcoded `provenance` block on a captured artifact | **nothing at all, by construction — no code reads it.** `capture_ua_baseline.py` asserted `"binary": "content_shell"` and a `known_absent` list claiming no `sec-ch-ua-*` header arrives. Task 8 reuses that script against `chrome`, which sends them, so the block would have described the file as the opposite of its own contents. Nothing would have failed; the file would simply have been cited. Found on 2026-08-27 by reading Task 8's steps against the script, before its build finished. |
 
 **A ninth, and the worst kind: a claim no check could ever reach.** Provenance blocks,
@@ -130,6 +131,16 @@ Three habits follow, each earned by one of the eight:
 - Where a check exists to catch a regression, **make it fail once on purpose** and confirm
   it says so — and **confirm the mutant compiled**, because a mutation that does not build
   leaves the old binary in place and reports a pass.
+- **A restored file can be OLDER than the mutant object it replaces, and then the rebuild
+  is a no-op.** `mv`-ing a `.bak` back gives the restored source the BACKUP's mtime, which
+  ninja can read as not-newer than the `.o` built from the mutant. It prints
+  `no work to do`, the mutant binary stays, and every subsequent run measures it — with a
+  correct-looking source tree on disk to reassure you. Found on 2026-08-27 by an agent
+  mutation-testing its own fix, on the first restore it attempted. **`touch` the file after
+  restoring, and require the rebuild to report real work rather than `no work to do`.**
+  This is the sharper form of the rule below: there, the restore never rebuilt; here it
+  rebuilt and still changed nothing.
+
 - **`git clean -fd` in the Chromium checkout is a footgun, and `apply.sh` hands you the
   reason to reach for it.** `scripts/apply.sh` copies `additions/` into the tree as
   UNTRACKED files, and untracked files block a branch switch — so the obvious remedy is
