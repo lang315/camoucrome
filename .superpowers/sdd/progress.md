@@ -989,3 +989,35 @@ build cycle should have to validate at once, and Tasks 4-7 all need the
 checkout regardless -- 4 needs gtest, 5 patches Chromium, 6 needs a browser,
 7 needs git. Writing Task 4 now would add unverified surface without adding
 verification: its logic is already proven by the local harness.
+
+---
+
+2026-08-27, while the base-revision chrome build runs (commit b66095a).
+
+TASK 8 STEP 2 IS DONE, out of order and deliberately. It needs no checkout and
+no browser, so doing it during the build costs nothing and removes it from the
+window where the binary is finally available. Steps 1, 3, 4, 5 still pending.
+
+Two defects found by reading Task 8 against its own script, before running it:
+
+  provenance was hardcoded    binary="content_shell" plus a known_absent list
+                              asserting no sec-ch-ua-* header arrives. Step 3
+                              expects chrome to produce the opposite of both.
+                              Nothing reads provenance -- verified, verify_sp0
+                              and verify_sp1a read only surface keys -- so the
+                              contradiction would never have failed anything.
+                              Now derived; unknown binaries refused.
+  --headless=new justified    by a "deprecated alias" claim this tree does not
+                              support. IsHeadlessMode() is HasSwitch(kHeadless)
+                              and no code reads the value. Reverted to bare
+                              --headless, which is what the plan said.
+
+New: scripts/test_lib_shell_launch.py, 7 PASS exit 0, runs anywhere -- no
+browser, no checkout. Two mutants confirmed, each failing exactly one check.
+
+STILL REQUIRED when the checkout frees: verify_sp0.py (11 PASS) and
+verify_sp1a.py (5 PASS). The argv test proves the launch line is unchanged; it
+says nothing about whether the browser still answers the same way.
+
+THE HAZARD ABOVE IS STILL ACTIVE. out/Default/content_shell remains an
+undefined mixture. Nothing in this entry touched the checkout -- reads only.
