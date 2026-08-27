@@ -82,7 +82,8 @@ python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" path/to/dir
 
 Not a check that fails. **A check that reports success while measuring almost nothing.**
 
-Four were found on 2026-08-27 alone, during SP1a Tasks 1–3:
+Eight were found on 2026-08-27 alone, during SP1a Tasks 1–6. Seven reported success while
+measuring almost nothing; the eighth reported failure while measuring the wrong thing.
 
 | The check | What it actually measured |
 |---|---|
@@ -90,16 +91,37 @@ Four were found on 2026-08-27 alone, during SP1a Tasks 1–3:
 | `--gtest_filter='Camoucfg*'` as a regression gate | 2 tests of 21, and printed `PASSED`. Only `CamoucfgKeysTest` carries that prefix; SP0's five suites do not. |
 | `autoninja` after adding a disallowed `#include` | nothing — neither gate runs on a `.cc`-only change, as above. |
 | `cmd 2>&1 \| tail -5` then `echo "exit=$?"` | `tail`'s exit status. A failed build prints `exit=0`. This was every build command in the SP1a plan. |
+| a mutation test whose mutant did not compile | nothing. The build failed, the **previous** binary stayed in place, the test ran against it and printed `OK`. Found while mutation-testing a gate change: reverting it left a helper unused, `-Wunused-function` failed the build, and the "mutation survived" result was meaningless. |
+| `bash -lc '...; echo EXIT=$?'` | not the inner command's status. Nesting a command string inside `-lc` loses it the same way a pipe does. Found by Task 6 in its own tooling, during the mutant run. |
+| a regression filter that also matched the new suite | a false **red**: `--gtest_filter='UserAgentUtils*'` swept in `UserAgentUtilsCamoucfgTest`, which needs one process per configuration, so it reported three failures that were the new tests working as designed. |
+| an equality check against a baseline captured with a different probe | nothing it could ever pass. `capture_ua_baseline.py` requested seven high-entropy hints and a draft of the verification requested five; `getHighEntropyValues` returns the requested hints plus three low-entropy ones, so ten keys were compared against eight. Caught by reading the baseline, not by running. |
 
-Three of the four were written by the same person who then had to find them. **None was
-caught by anything failing.** Every one was caught by someone reading the output and
-noticing it was *smaller than it should have been* — two tests where twenty-one were
-expected, a build that finished too fast, a green run on a tree that should not compile.
+Most were written by the same person who then had to find them. **Not one was caught by
+anything failing.** Every one was caught by someone reading output and noticing it was
+*smaller than it should have been*, or reading a document against the tree and noticing the
+two disagreed — two tests where twenty-one were expected, a build that finished too fast, a
+green run on a tree that should not compile, a comparison whose two sides could never have
+matched.
+
+Three of the eight were found by reading a task brief against the actual code **before
+running anything**. That has been the cheapest place this project finds defects, by a wide
+margin: no build, no browser, no waiting.
 
 So: **assert the expected count, or the expected failure.** An exit code of 0 is not
 evidence that anything was examined, and "it ran green" carries almost no information here
-until you know what it measured. Where a check is meant to catch a regression, make it
-fail once on purpose and confirm it says so.
+until you know what it measured.
+
+Three habits follow, each earned by one of the eight:
+
+- Where a check exists to catch a regression, **make it fail once on purpose** and confirm
+  it says so — and **confirm the mutant compiled**, because a mutation that does not build
+  leaves the old binary in place and reports a pass.
+- **Predict what should fail, then name the cause of every failure you observe.** A count
+  that matches the prediction is weak evidence; an unexplained extra failure means the
+  check reaches something nobody has accounted for.
+- **Read the brief against the tree before running it.** Three of the eight were stale
+  expected counts, drifted duplicate constants, and an incomplete commit list — all visible
+  by reading, none of which would have announced themselves in a green run.
 
 **Config transport.** Environment variables `CAMOU_CONFIG_1`, `CAMOU_CONFIG_2`, …
 concatenated in order, falling back to a single `CAMOU_CONFIG`. Chunking exists
