@@ -685,3 +685,16 @@ someone noticing a result was smaller than it should be.
 Standing rule for every remaining task: assert the expected COUNT or the
 expected FAILURE. An exit code of 0 is not evidence that anything was
 examined.
+
+Task 3: review Approved, 0 Critical, 0 Important. Two Minor, both about the
+quality of evidence rather than the change; I settled both myself rather than
+asking, since re-running is cheaper than a round trip and stronger than a log:
+  - test count: 21, confirmed twice independently -- the [21/21] progress
+    counter in the raw run, and --gtest_list_tests | grep -c '^  ' = 21. The
+    (10,10,1) PASSED lines the reviewer could not account for are Chromium's
+    test launcher sharding across child batches, each printing its own line.
+  - the .o mtime is still 07:41:39, the Step 1 build, taken after Task 3 had
+    added BUILD.gn + DEPS and rebuilt. Adding a dep changed the link, not the
+    compile command, so ninja never redid it. The object compiled while the
+    include was disallowed is the one in the binary right now. Recorded in
+    conventions with the timestamps.
