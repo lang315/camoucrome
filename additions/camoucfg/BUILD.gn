@@ -5,6 +5,8 @@
 static_library("camoucfg") {
   sources = [
     "blink_scope.h",
+    "coherence_validator.cc",
+    "coherence_validator.h",
     "derive.cc",
     "derive.h",
     "invariants.h",
