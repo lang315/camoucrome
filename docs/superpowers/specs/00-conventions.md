@@ -82,8 +82,9 @@ python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" path/to/dir
 
 Not a check that fails. **A check that reports success while measuring almost nothing.**
 
-Eight were found on 2026-08-27 alone, during SP1a Tasks 1–6. Seven reported success while
-measuring almost nothing; the eighth reported failure while measuring the wrong thing.
+Nine were found on 2026-08-27 alone, during SP1a Tasks 1–8. Seven reported success while
+measuring almost nothing, the eighth reported failure while measuring the wrong thing, and
+the ninth could not have been measured by anything.
 
 | The check | What it actually measured |
 |---|---|
@@ -95,6 +96,18 @@ measuring almost nothing; the eighth reported failure while measuring the wrong 
 | `bash -lc '...; echo EXIT=$?'` | not the inner command's status. Nesting a command string inside `-lc` loses it the same way a pipe does. Found by Task 6 in its own tooling, during the mutant run. |
 | a regression filter that also matched the new suite | a false **red**: `--gtest_filter='UserAgentUtils*'` swept in `UserAgentUtilsCamoucfgTest`, which needs one process per configuration, so it reported three failures that were the new tests working as designed. |
 | an equality check against a baseline captured with a different probe | nothing it could ever pass. `capture_ua_baseline.py` requested seven high-entropy hints and a draft of the verification requested five; `getHighEntropyValues` returns the requested hints plus three low-entropy ones, so ten keys were compared against eight. Caught by reading the baseline, not by running. |
+| a hardcoded `provenance` block on a captured artifact | **nothing at all, by construction — no code reads it.** `capture_ua_baseline.py` asserted `"binary": "content_shell"` and a `known_absent` list claiming no `sec-ch-ua-*` header arrives. Task 8 reuses that script against `chrome`, which sends them, so the block would have described the file as the opposite of its own contents. Nothing would have failed; the file would simply have been cited. Found on 2026-08-27 by reading Task 8's steps against the script, before its build finished. |
+
+**A ninth, and the worst kind: a claim no check could ever reach.** Provenance blocks,
+comments and plan prose are read by people and by nothing else, so they never fail — they
+are cited. The fix that landed is the shape to copy: **derive the claim from what was
+observed, and refuse rather than default when the input is unrecognised.** `known_absent`
+is now computed from the headers that actually arrived, and an unknown binary is rejected
+with a message saying to go read the source, because a default there would be an assertion
+about code nobody read. The same day, a comment justifying `--headless=new` as avoiding "a
+deprecated alias" turned out to describe no property of this tree; `IsHeadlessMode()` never
+reads the switch's value. Both were confident, both were unfalsifiable by any test, and one
+grep settled each.
 
 Most were written by the same person who then had to find them. **Not one was caught by
 anything failing.** Every one was caught by someone reading output and noticing it was

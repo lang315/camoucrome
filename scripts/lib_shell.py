@@ -1,9 +1,17 @@
-"""Shared content_shell driving helpers.
+"""Shared browser driving helpers.
 
 Extracted verbatim from verify_sp0.py so that later verifications inherit the
 hardening rather than re-deriving it. Every non-obvious detail in launch() and
 session() exists because of a failure that was observed, not defensively; the
 docstrings say which.
+
+Drives content_shell by default and `chrome` when asked. Task 8 needs the
+second because content_shell cannot exercise SP1a's central claim: it builds
+its own UserAgentMetadata instead of calling the patched producer, and wires
+no ClientHintsControllerDelegate, so two of the three channels do not exist
+there. The parameters are threaded through rather than forked into a second
+copy of launch(), because the five hardening fixes above are exactly what a
+copy would drift away from.
 """
 
 import json
@@ -18,7 +26,25 @@ import urllib.request
 from playwright.sync_api import sync_playwright
 
 SHELL = os.path.expanduser("~/chromium/src/out/Default/content_shell")
+CHROME = os.path.expanduser("~/chromium/src/out/Default/chrome")
 STDERR_LOG = "/tmp/camoucrome_verify_stderr.log"
+
+# content_shell has no --headless switch; --ozone-platform=headless is the
+# equivalent. This is the default so that every call written before Task 8
+# keeps its exact argv.
+SHELL_FLAGS = ["--ozone-platform=headless"]
+
+# `chrome` wants the real switch. Bare, with no value: IsHeadlessMode() at
+# chrome/browser/headless/headless_mode_util.cc:21 is
+# HasSwitch(switches::kHeadless) and nothing in the tree reads the switch's
+# VALUE -- the only kHeadless value read anywhere is prefs::kHeadlessMode, an
+# unrelated integer pref. So --headless=new would behave identically and would
+# imply a distinction this revision does not make.
+#
+# The other two are not cosmetic. A first-run dialog or a default-browser
+# prompt on startup means the page under test is not the page that loads, and
+# that failure arrives as a Playwright timeout, which looks like flake.
+CHROME_FLAGS = ["--headless", "--no-first-run", "--no-default-browser-check"]
 
 # The exact hint list the baseline was captured with. getHighEntropyValues
 # returns these plus the three low-entropy values, so a baseline captured with
@@ -41,8 +67,8 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
              "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
 
-def launch(config):
-    """Starts content_shell and returns it once its DevTools port answers.
+def launch(config, shell=None, extra_flags=None):
+    """Starts the browser and returns it once its DevTools port answers.
 
     Four details here exist because of failures that were actually observed,
     not defensively.
@@ -65,16 +91,22 @@ def launch(config):
     the browser under test misbehaving.
 
     Startup can fail in three distinguishable ways, which is deliberate:
-    Popen itself raises FileNotFoundError naming the path if SHELL does not
-    exist, the process exiting during startup reports its exit code, and a
-    process that lives but never opens a port reports the timeout. Three
-    different causes should not arrive as one message.
+    Popen itself raises FileNotFoundError naming the path if the binary does
+    not exist, the process exiting during startup reports its exit code, and
+    a process that lives but never opens a port reports the timeout. Three
+    different causes should not arrive as one message. The messages name the
+    binary for the same reason -- once two of them can be driven, "exited
+    during startup" without a name does not say which one exited.
 
     Polling the endpoint rather than sleeping a fixed interval. A five-second
     sleep flaked one run in four, and an intermittently failing verification
     is worse than a slow one: it teaches people to re-run until green, and
     then it measures nothing.
     """
+    binary = shell if shell is not None else SHELL
+    name = os.path.basename(binary)
+    flags = SHELL_FLAGS if extra_flags is None else list(extra_flags)
+
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("CAMOU_CONFIG")}
     if config is not None:
@@ -86,10 +118,10 @@ def launch(config):
     # startup noise filled the buffer. Each launch truncates it, so a read
     # only ever sees its own run.
     stderr_file = open(STDERR_LOG, "wb")
-    # content_shell has no --headless switch; --ozone-platform=headless is
-    # the equivalent. CDP is served on --remote-debugging-port as in chrome.
+    # CDP is served on --remote-debugging-port by both binaries; only the
+    # headless switch differs, which is what SHELL_FLAGS/CHROME_FLAGS carry.
     proc = subprocess.Popen(
-        [SHELL, "--no-sandbox", "--ozone-platform=headless",
+        [binary, "--no-sandbox", *flags,
          f"--user-data-dir={profile}", "--remote-debugging-port=0",
          "about:blank"],
         env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
@@ -101,7 +133,7 @@ def launch(config):
         if proc.poll() is not None:
             shutdown(proc)
             raise RuntimeError(
-                f"content_shell exited during startup, code {proc.returncode}")
+                f"{name} exited during startup, code {proc.returncode}")
         if port_file.exists():
             first = port_file.read_text().splitlines()[:1]
             if first and first[0].strip().isdigit():
@@ -117,7 +149,7 @@ def launch(config):
         time.sleep(0.1)
 
     shutdown(proc)
-    raise RuntimeError("content_shell opened no DevTools endpoint within 30s")
+    raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
 
 
 def shutdown(proc):
@@ -144,8 +176,8 @@ def evaluate(proc, expressions, navigate_to=None):
         return [page.evaluate(e) for e in expressions]
 
 
-def session(config, expressions, navigate_to=None):
-    """Runs one content_shell session; returns (values, error).
+def session(config, expressions, navigate_to=None, shell=None, extra_flags=None):
+    """Runs one browser session; returns (values, error).
 
     An exception is returned rather than raised. Without this the script is
     a linear sequence with one print loop at the end, so a fault anywhere
@@ -162,7 +194,7 @@ def session(config, expressions, navigate_to=None):
     """
     proc = None
     try:
-        proc = launch(config)
+        proc = launch(config, shell=shell, extra_flags=extra_flags)
         return evaluate(proc, expressions, navigate_to), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc

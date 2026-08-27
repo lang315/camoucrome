@@ -2118,7 +2118,69 @@ replacing it. Confirm `df -h ~/chromium` has room before starting — there were
 on 2026-08-27, so this is a formality, but a build that dies on a full disk after four
 hours is worth one command to avoid.
 
-- [ ] **Step 2: Teach the capture and launch helpers to drive `chrome`**
+- [x] **Step 2: Teach the capture and launch helpers to drive `chrome`** — done 2026-08-27,
+  off the critical path, while the Step 1 build ran. It needs no checkout and no browser,
+  so doing it during the build costs nothing and removes it from the window where the
+  binary is finally available.
+
+> **Two corrections made while implementing it.**
+>
+> **The provenance block was hardcoded, and Step 3 expected it to be false.**
+> `capture_ua_baseline.py` wrote `"binary": "content_shell"` as a literal, together with a
+> `known_absent` list asserting that no `sec-ch-ua-*` header arrives and that
+> `userAgentData.platform` is `"Unknown"`. Step 3 below expects `chrome` to produce exactly
+> the opposite on both counts. Run as written, this task would have committed a baseline
+> file whose provenance contradicted its own contents — and since nothing reads
+> `provenance` (checked: `verify_sp0.py` and `verify_sp1a.py` read only surface keys), the
+> contradiction would never have failed anything. It would simply have sat in the
+> repository being cited.
+>
+> The block is now derived. `binary` comes from the path; `known_absent` is computed from
+> what was actually observed, so it reports "advertised via Accept-CH and not sent" rather
+> than asserting an absence a priori; and the producer function names come from a
+> `PRODUCERS` table keyed by binary, which **refuses an unknown binary** rather than
+> defaulting. A default there would be a claim about source code nobody read.
+>
+> Both entries in that table were verified by reading the checkout at `0e8d4a9268`:
+> `ChromeContentBrowserClient::GetUserAgent` (`:7696`) is `embedder_support::GetUserAgent()`
+> and `::GetUserAgentMetadata` (`:7700`) is `embedder_support::GetUserAgentMetadata()`,
+> against `ShellContentBrowserClient::GetUserAgent` (`:732`), which builds its product from
+> `CONTENT_SHELL_MAJOR_VERSION`. **That last detail is why `chrome`'s baseline UA will
+> differ from `content_shell`'s by more than the OS segment**: the `Chrome/999.0.0.0` in
+> every SP1a observation so far is a content_shell constant, and `chrome` reports a real
+> version. Expect it; it is not a regression.
+>
+> **`--headless=new` was written first, then corrected to bare `--headless`.** The
+> justification offered for `=new` — that the bare form is a deprecated alias — is not
+> supported by this tree. `IsHeadlessMode()` (`headless_mode_util.cc:21`) is
+> `HasSwitch(switches::kHeadless)` and nothing reads the switch's value; the only
+> `kHeadless` value read anywhere is `prefs::kHeadlessMode`, an unrelated integer pref. The
+> plan's original reasoning was right and the reason is now recorded next to the constant.
+>
+> **`baselines/content_shell-sp0-stock-ua.json` keeps the old provenance shape and is not
+> being regenerated.** It cannot be: the producer patch has landed, and reproducing it
+> would mean another base-revision build. Its two `known_absent` strings say the same thing
+> the derived form now says, in prose rather than as observations, and every surface key it
+> holds is unaffected. A reader comparing the two files should expect the shapes to differ.
+
+**Verification, and why it could run today.** The plan's own warning about this change —
+"a default that quietly changed the flags would break every earlier verification at once" —
+is checkable without a browser, a checkout or a build, because it is a claim about an argv.
+`scripts/test_lib_shell_launch.py` fakes `Popen`, freezes the default command line as a
+literal, and asserts the `CAMOU_CONFIG*` scrub survives for both binaries. **7 PASS,
+exit 0.** The expectation is written out rather than rebuilt from the module's constants:
+a test that derives its expectation from the code under test passes by construction.
+
+Two mutants confirm it measures something, each failing exactly one check and no other:
+changing `SHELL_FLAGS` to `["--headless=new"]` fails *default argv is unchanged*; replacing
+the env comprehension with `dict(os.environ)` fails *CAMOU_CONFIG\* is still scrubbed*.
+Restoring the file returns 7 PASS.
+
+This does **not** replace Step 2's original instruction to re-run `verify_sp0.py` (11 PASS)
+and `verify_sp1a.py` (5 PASS) once the checkout frees. The argv test proves the launch line
+is unchanged; only those two prove the browser still answers the same way.
+
+*Original instruction, for reference:*
 
 `lib_shell.SHELL` is a module-level constant and `launch()` reads it at call time, so
 assigning to it works. The launch flags differ: `--ozone-platform=headless` is a
@@ -2190,11 +2252,11 @@ Create `scripts/verify_sp1a_chrome.py`. Its assertions are the ones held in the 
 Steps 1–2 of Task 5 — they were correct; only the binary was wrong. Take them from there
 almost unchanged, with three adjustments:
 
-- point `lib_shell.SHELL` at `~/chromium/src/out/Default/chrome`, and use
-  `--headless --no-first-run --no-default-browser-check` as the launch flags;
-  `--ozone-platform=headless` is a `content_shell` idiom. Bare `--headless` is correct:
-  `IsHeadlessMode()` tests only for the switch's presence, so `--headless=new` would work
-  identically and adds nothing
+- pass `shell=lib_shell.CHROME, extra_flags=lib_shell.CHROME_FLAGS` to `session()`.
+  **Do not assign to `lib_shell.SHELL`** — Step 2 replaced that approach with parameters,
+  and a module-level assignment would silently change the binary for anything else the
+  process imports. `CHROME_FLAGS` already holds the verified bare `--headless` plus
+  `--no-first-run --no-default-browser-check`
 - load `baselines/chrome-0e8d4a9268-stock-ua.json`
 - keep the criterion-1 assertions too, so this run independently re-confirms the UA string
   in the binary that actually ships
@@ -2226,8 +2288,7 @@ and nothing about it needs discarding.
 
 ```bash
 cd /Users/lang/GolandProjects/github.com/lang315/camoucrome
-git add scripts/verify_sp1a_chrome.py scripts/capture_ua_baseline.py \
-        baselines/chrome-0e8d4a9268-stock-ua.json
+git add scripts/verify_sp1a_chrome.py baselines/chrome-0e8d4a9268-stock-ua.json
 git commit -m "verify: prove all three UA channels agree, against chrome"
 ```
 
