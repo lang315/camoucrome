@@ -850,3 +850,43 @@ Three environment facts recorded in conventions, all found by Task 7:
     reads EMPTY and looks like the patch did nothing. Use --cached.
   - git checkout -- . will not clear an unmerged index from a conflicted
     apply; git reset --hard will.
+
+Task 7: review returned NEEDS FIXES -- one Critical, one Important, both in
+the README rather than in the patch or the reconstruction, which it called
+excellent and byte-verified.
+
+  Critical: the status line claimed navigator.userAgent, navigator.userAgentData
+  and the Sec-CH-UA* headers were "spoofable and coherent". All three are
+  patched; only the first is verified end to end. userAgentData has unit tests
+  and no browser; the headers have no verification at all; and cross-channel
+  coherence -- this sub-project's whole thesis -- is precisely the row still
+  open, pending Task 8.
+
+  That is the tenth instance today of a claim reporting more than it measured,
+  and the worst placed: in the one artifact whose job is to state status
+  truthfully. A test that overclaims misleads whoever reads its output; a
+  README that overclaims misleads everyone who never runs anything.
+
+  Replaced with a per-channel table naming the evidence behind each row, plus
+  the reason the gap exists -- content_shell reimplements
+  GetUserAgentMetadata() and returns a nullptr ClientHintsControllerDelegate,
+  so the gap is the test binary rather than neglect.
+
+  Important: three rows still depended on "SP1" after that entry was split
+  into SP1a and SP1b -- a dependency on a row the table no longer contained.
+
+  PROCESS NOTE, recorded rather than left implicit: I fixed both myself as
+  controller and did NOT re-dispatch the reviewer, which the SDD loop asks
+  for. The finding was precise, the fix is one README section, and a fresh
+  agent to re-read a paragraph is disproportionate. If a later reader thinks
+  that was the wrong call, the fix is in commit history to judge.
+
+Task 8: STARTED EARLY, in parallel with Task 7's review. The checkout is on
+camoucrome/base-for-baseline at the pinned base 0e8d4a9268, confirmed
+unpatched (OsInfoOverrideOr absent, components/camoucfg absent), and a chunked
+chrome build is running in the background -- 9-minute chunks, each its own ssh
+call so the build survives WSL teardown between them. Build state lives in
+~/chromium, which persists; only /tmp is tmpfs.
+
+Nothing depended on Task 7's review to start it, and it is the longest pole
+left.
