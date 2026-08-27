@@ -2058,6 +2058,21 @@ producer patch is bypassed anywhere."
 **This task is the long pole: a full `chrome` build is hours.** It runs last, alone, so it
 never competes for CPU with the fast `content_shell` rebuild loop that Tasks 3–6 depend on.
 
+**Its premise was verified by reading, before committing to the build** — the whole task is
+worthless if `chrome` turns out not to reach the patched code, and that is answerable in
+three greps:
+
+| Question | Answer, read on this checkout 2026-08-27 |
+|---|---|
+| Does `chrome` call the function Task 5 patched? | Yes. `ChromeContentBrowserClient::GetUserAgentMetadata()` at `chrome/browser/chrome_content_browser_client.cc:7700` is `return embedder_support::GetUserAgentMetadata();` — unlike `content_shell`, which builds its own. |
+| Will it emit high-entropy `Sec-CH-UA-*` headers? | Yes. `ProfileImpl::GetClientHintsControllerDelegate()` (`chrome/browser/profiles/profile_impl.cc:1447`) returns `ClientHintsFactory::GetForBrowserContext(this)` — a real delegate, where `content_shell`'s returns `nullptr`. |
+| What is the headless switch? | `headless::IsHeadlessMode()` (`chrome/browser/headless/headless_mode_util.cc:24`) is `HasSwitch(switches::kHeadless)` — bare presence, the value is never inspected. So `--headless` alone is sufficient. |
+
+Both differences from `content_shell` are the ones that made Tasks 5 and 6 unable to test
+end to end, and both resolve favourably in `chrome`. If the capture in Step 3 nonetheless
+shows no high-entropy headers, that contradicts this reading and is worth stopping for
+rather than working around.
+
 **Files:**
 - Create: `scripts/verify_sp1a_chrome.py`
 - Create: `baselines/chrome-0e8d4a9268-stock-ua.json`
@@ -2175,9 +2190,11 @@ Create `scripts/verify_sp1a_chrome.py`. Its assertions are the ones held in the 
 Steps 1–2 of Task 5 — they were correct; only the binary was wrong. Take them from there
 almost unchanged, with three adjustments:
 
-- point `lib_shell.SHELL` at `~/chromium/src/out/Default/chrome`, and add
-  `--headless=new` plus `--no-first-run --no-default-browser-check` to the launch flags;
-  `--ozone-platform=headless` is a `content_shell` idiom
+- point `lib_shell.SHELL` at `~/chromium/src/out/Default/chrome`, and use
+  `--headless --no-first-run --no-default-browser-check` as the launch flags;
+  `--ozone-platform=headless` is a `content_shell` idiom. Bare `--headless` is correct:
+  `IsHeadlessMode()` tests only for the switch's presence, so `--headless=new` would work
+  identically and adds nothing
 - load `baselines/chrome-0e8d4a9268-stock-ua.json`
 - keep the criterion-1 assertions too, so this run independently re-confirms the UA string
   in the binary that actually ships
