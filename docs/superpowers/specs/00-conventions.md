@@ -130,6 +130,20 @@ Three habits follow, each earned by one of the eight:
 - Where a check exists to catch a regression, **make it fail once on purpose** and confirm
   it says so — and **confirm the mutant compiled**, because a mutation that does not build
   leaves the old binary in place and reports a pass.
+- **Restoring the source is not restoring the binary.** A mutation script must rebuild
+  *after* it restores, and re-run the baseline to prove the restore took effect. On
+  2026-08-27 a script ended `cp uau.bak … ; echo "restored"` with no rebuild, so
+  `out/Default/chrome` stayed the mutant. The next hour of diagnostics — five failing
+  assertions, a per-key probe, a no-CDP run — all measured that mutant, and were written up
+  as a product bug in four config keys. There was no bug. The mutant was doing exactly what
+  it was built to do.
+
+  The tell was available twice and read past twice. An in-process gtest showed the same
+  four substitutions working, which got filed as an in-process-versus-browser contradiction
+  rather than as a reason to suspect the *binary*. Then instrumenting the producer forced a
+  rebuild and printed the correct values — credited to the instrumentation, when the
+  rebuild was the variable. **When a fresh build disagrees with an earlier run, suspect the
+  earlier binary before inventing a mechanism that explains both.**
 - **Predict what should fail, then name the cause of every failure you observe.** A count
   that matches the prediction is weak evidence; an unexplained extra failure means the
   check reaches something nobody has accounted for.
