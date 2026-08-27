@@ -2229,6 +2229,44 @@ has a real `ClientHintsControllerDelegate`.
 If they are absent, stop and report. It would mean `chrome` does not deliver client hints
 either and the premise of this task is wrong — do not work around it.
 
+> **Done 2026-08-27. The premise held, and one thing nobody predicted turned up.**
+>
+> `chrome` at `0e8d4a9268` reports `platform` `'Linux'` — not `"Unknown"` — and sends all
+> nine advertised hints, `sec-ch-ua-arch: "x86"` and `sec-ch-ua-bitness: "64"` among them.
+> Both differences from `content_shell` resolve as the task's premise table predicted, so
+> Tasks 5 and 6 were right to defer their end-to-end checks here.
+>
+> The derived `known_absent` came out `[]`. The hardcoded version this task was about to
+> ship would have asserted every one of those nine headers was missing, in a file that
+> lists all nine.
+>
+> The version reads `154.0.0.0`, not `999` — expected, per Step 2's note on
+> `CONTENT_SHELL_MAJOR_VERSION`.
+>
+> **Unpredicted, and it changes what Step 4 may assert: the UA product token is
+> `HeadlessChrome/154.0.0.0`.** `user_agent_utils.cc:218` does
+> `product.insert(0, "Headless")` under `HasSwitch(kHeadless)` — inside the very function
+> SP1a patched, three lines above SP1a's substitution point, and unreachable from it
+> because `product` never passes that point.
+>
+> **Step 4 must expect `HeadlessChrome` in the spoofed UA and must not read it as an SP1a
+> failure.** SP1a's claim is that the OS segment is substituted coherently across three
+> channels; it never claimed the product token. Asserting the spoofed UA equals a
+> real-Chrome UA would fail on a surface SP1a does not own, and relaxing SP1a to make that
+> assertion pass would be worse still.
+>
+> It is a genuine defect — a fingerprint claiming Windows currently emits
+> `Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... HeadlessChrome/154.0.0.0` — and it is
+> **SP2's**, now recorded in that spec's surface table with the file and line. It also
+> exposes a cross-channel disagreement present in stock Chrome: the UA string says headless
+> while `brands` and `sec-ch-ua` say `Chromium`. That shapes SP2's verification, which must
+> assert the product token on all three channels rather than on the UA string alone.
+>
+> It is *not* an SP5 registry entry, though the first draft of this note said so. The
+> registry validates configuration for contradictions between config keys; `HeadlessChrome`
+> has no config key, so no entry in it could ever reach the defect. Filing it there would
+> have made the registry read as covering something it cannot see.
+
 Give the file the same `provenance` block shape as the `content_shell` baseline, naming
 `chrome`, the base revision, and both producers. Pull it back to the Mac and re-parse it,
 as in Task 1 Step 6.
