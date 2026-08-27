@@ -164,6 +164,36 @@ installer lives in `chrome/renderer/` and `content/shell/BUILD.gn` links none of
 build to verify, which is a much slower loop. Check which target owns a surface before
 planning its verification, and say so in the spec rather than discovering it mid-task.
 
+*Amended 2026-08-27, and the amendment is the point:* the gap is not only about missing
+features. **`content_shell` sometimes reimplements a surface rather than omitting it**, and
+that shape is far more dangerous, because the surface is present, plausible, and wrong.
+
+The case that cost SP1a a task: `ShellContentBrowserClient::GetUserAgentMetadata()`
+(`content/shell/browser/shell_content_browser_client.cc:750`) returns
+`GetShellUserAgentMetadata()` at `:348`, which assembles a `blink::UserAgentMetadata` from
+scratch — hardcoding `platform = "Unknown"` and a `content_shell` brand. It never calls
+`embedder_support::GetUserAgentMetadata()`. Only
+`ChromeContentBrowserClient::GetUserAgentMetadata()` does. So a patch to the
+`embedder_support` producer is entirely invisible in `content_shell`, and a verification
+run against it would report the unpatched shell values while looking like a working test.
+
+The user-agent *string* does not have this problem — `ShellContentBrowserClient::GetUserAgent()`
+at `:732` calls `embedder_support::BuildUnifiedPlatformUserAgentFromProduct` directly. Two
+sibling methods on the same class, one delegating to shared code and one not. Nothing
+announces which is which.
+
+Two further walls sit behind that one, both worth knowing before anyone tries to verify
+client hints in `content_shell`: `ShellBrowserContext::GetClientHintsControllerDelegate()`
+returns `nullptr` outside test harnesses, so no `Sec-CH-UA*` request header is emitted at
+all; and `--run-web-tests` does wire a mock delegate but perturbs `window` with
+web-test-only globals, destroying the very surface a baseline exists to protect.
+
+**So the rule is stronger than "check which target owns a surface."** Before planning a
+verification, confirm that the binary under test actually *calls the function being
+patched*. Grep for the patched symbol's callers, not for the feature's name. Wiring a
+delegate into `content_shell` to make headers appear would have produced headers built
+from shell-authored metadata — a test verifying code that never ships.
+
 ## Spec format
 
 Each spec uses these sections, in order:
