@@ -1223,36 +1223,50 @@ why Tasks 4 and 5 must not be left half-done.
 
 - [ ] **Step 1a: Write the failing unit tests**
 
-Append to `components/embedder_support/user_agent_utils_unittest.cc`. Follow the file's
-existing style; it already has helpers for driving `GetUserAgentMetadata()`.
+> **Corrected 2026-08-27, before dispatch, after probing the checkout.** An earlier draft
+> of this step used `base::test::ScopedEnvironmentVariableOverride` and put four
+> differently-configured tests in one binary. Both halves were wrong.
+>
+> The class is `base::ScopedEnvironmentVariableOverride`, declared in
+> `base/scoped_environment_variable_override.h` — there is no `base::test::` one, so the
+> draft would not have compiled.
+>
+> And it would not have worked even spelled correctly. `camoucfg::Config()`
+> (`components/camoucfg/mask_config.cc:18`) is a `base::NoDestructor` function-local
+> static: the environment is read **once per process, at first access**, and cached for
+> the life of the binary. An override applied after that first touch changes nothing.
+> `components_unittests` runs every case in one process, and SP0's own
+> `MaskConfigTest.AbsentKeysReturnNullopt` (`mask_config_unittest.cc:208`) calls
+> `GlobalScope()` and the real getters — so the config can already be latched before any
+> test of yours runs. This is the same property that made SP0 decline a value-level test.
+>
+> **So the configuration is set outside the process, and each case gets its own
+> invocation.** No env-override class, no fixture, no ordering assumptions.
 
-The configuration is read from the environment on first touch and cached for the process,
-which shapes these tests: set the environment **before** the first `GetUserAgentMetadata()`
-call in the process, and give each expectation its own `TEST` so gtest's per-test process
-reuse cannot leak a latched config between them. If the singleton proves to latch across
-tests in one binary — SP0 saw this and declined a value-level test for exactly this reason
-— use `--gtest_filter` to run each individually and say so in your report, rather than
-weakening the assertions.
+Append to `components/embedder_support/user_agent_utils_unittest.cc`, following the file's
+existing style:
 
 ```cpp
+// These four cases each need a different CAMOU_CONFIG, and camoucfg reads the
+// environment once per process and caches it (mask_config.cc:18). So each is
+// run in its own invocation of components_unittests with the environment set
+// by the runner -- see the command in the step below. Running them together in
+// one process would silently test whichever config happened to be latched
+// first.
+//
+// Each case asserts something that is false under the wrong configuration, so
+// a mis-run fails loudly instead of quietly exercising the fallback path.
+
 TEST(UserAgentUtilsCamoucfgTest, MetadataFallsBackWhenUnconfigured) {
-  // No CAMOU_CONFIG set: every field must be the real computed value.
-  blink::UserAgentMetadata configured = GetUserAgentMetadata();
-  EXPECT_EQ(configured.platform, GetPlatformForUAMetadataForTesting());
-  EXPECT_EQ(configured.architecture, GetCpuArchitecture());
-  EXPECT_EQ(configured.bitness, GetCpuBitness());
-  EXPECT_EQ(configured.wow64, IsWoW64());
+  // Run with no CAMOU_CONFIG. Every field must be the real computed value.
+  blink::UserAgentMetadata metadata = GetUserAgentMetadata();
+  EXPECT_EQ(metadata.platform, GetPlatformForUAMetadataForTesting());
+  EXPECT_EQ(metadata.architecture, GetCpuArchitecture());
+  EXPECT_EQ(metadata.bitness, GetCpuBitness());
+  EXPECT_EQ(metadata.wow64, IsWoW64());
 }
 
 TEST(UserAgentUtilsCamoucfgTest, MetadataTakesConfiguredValues) {
-  base::test::ScopedEnvironmentVariableOverride env(
-      "CAMOU_CONFIG",
-      R"({"navigator.uaData:platform":"Windows",)"
-      R"("navigator.uaData:platformVersion":"15.0.0",)"
-      R"("navigator.uaData:architecture":"x86",)"
-      R"("navigator.uaData:bitness":"64",)"
-      R"("navigator.uaData:mobile":false,)"
-      R"("navigator.uaData:wow64":false})");
   blink::UserAgentMetadata metadata = GetUserAgentMetadata();
   EXPECT_EQ(metadata.platform, "Windows");
   EXPECT_EQ(metadata.platform_version, "15.0.0");
@@ -1263,14 +1277,11 @@ TEST(UserAgentUtilsCamoucfgTest, MetadataTakesConfiguredValues) {
 }
 
 // The version is never spoofed, and this is the assertion that says so. It must
-// hold even though the config above sets every other field.
+// hold even though the config it runs under sets every other field and tries to
+// set the version-bearing ones too.
 TEST(UserAgentUtilsCamoucfgTest, ConfigurationCannotMoveTheVersion) {
-  base::test::ScopedEnvironmentVariableOverride env(
-      "CAMOU_CONFIG",
-      R"({"navigator.uaData:platform":"Windows",)"
-      R"("navigator.uaData:fullVersionList":"99.0.0.0",)"
-      R"("navigator.uaData:brands":"Bogus"})");
   blink::UserAgentMetadata metadata = GetUserAgentMetadata();
+  EXPECT_EQ(metadata.platform, "Windows");  // proves the config did arrive
   EXPECT_EQ(metadata.full_version, version_info::GetVersionNumber());
   for (const blink::UserAgentBrandVersion& brand :
        metadata.brand_full_version_list) {
@@ -1284,34 +1295,64 @@ TEST(UserAgentUtilsCamoucfgTest, ConfigurationCannotMoveTheVersion) {
 // mobile must carry it, which is what makes the absence of a key correct rather
 // than an omission.
 TEST(UserAgentUtilsCamoucfgTest, FormFactorsFollowConfiguredMobile) {
-  base::test::ScopedEnvironmentVariableOverride env(
-      "CAMOU_CONFIG", R"({"navigator.uaData:mobile":true})");
   blink::UserAgentMetadata metadata = GetUserAgentMetadata();
   EXPECT_TRUE(metadata.mobile);
-  EXPECT_THAT(metadata.form_factors, testing::Contains(blink::kMobileFormFactor));
+  EXPECT_THAT(metadata.form_factors,
+              testing::Contains(blink::kMobileFormFactor));
 }
 ```
 
-`GetPlatformForUAMetadata()` is in the anonymous namespace, so
-`MetadataFallsBackWhenUnconfigured` cannot call it directly. Either compare against the
-literal that `version_info::GetOSType()` yields on this build, or add a
-`GetPlatformForUAMetadataForTesting()` shim beside the existing
-`GetUnifiedPlatformForTesting()` at `:709`, which is the pattern this file already uses.
-Prefer the shim; note in your report which you chose.
+`GetPlatformForUAMetadata()` lives in the anonymous namespace, so the first test cannot
+call it. Add a shim beside the two the file already has — `GetUnifiedPlatformForTesting()`
+at `user_agent_utils.h:113` and `.cc:708` are the pattern to copy:
 
-- [ ] **Step 2a: Run them and confirm they fail**
+```cpp
+// user_agent_utils.h, beside GetUnifiedPlatformForTesting()
+std::string GetPlatformForUAMetadataForTesting();
 
-```bash
-cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests
-./out/Default/components_unittests --gtest_filter='UserAgentUtilsCamoucfgTest.*'
-echo "exit=$?"
+// user_agent_utils.cc, beside GetUnifiedPlatformForTesting() at :708
+std::string GetPlatformForUAMetadataForTesting() {
+  return GetPlatformForUAMetadata();
+}
 ```
 
-Expected: `MetadataFallsBackWhenUnconfigured` PASSES (nothing has changed yet) and the
-other three FAIL, exit non-zero. Record the exact failure output.
+- [ ] **Step 2a: Run them and confirm three fail**
 
-If `MetadataTakesConfiguredValues` passes before Step 3, something else is already reading
-those keys — stop and investigate.
+One invocation per configuration. `components_unittests` is already built from Task 2, so
+this needs no rebuild yet.
+
+```bash
+cd ~/chromium/src
+T=./out/Default/components_unittests
+
+env -u CAMOU_CONFIG $T \
+  --gtest_filter='UserAgentUtilsCamoucfgTest.MetadataFallsBackWhenUnconfigured'
+echo "fallback exit=$?"
+
+CAMOU_CONFIG='{"navigator.uaData:platform":"Windows","navigator.uaData:platformVersion":"15.0.0","navigator.uaData:architecture":"x86","navigator.uaData:bitness":"64","navigator.uaData:mobile":false,"navigator.uaData:wow64":false}' \
+  $T --gtest_filter='UserAgentUtilsCamoucfgTest.MetadataTakesConfiguredValues'
+echo "configured exit=$?"
+
+CAMOU_CONFIG='{"navigator.uaData:platform":"Windows","navigator.uaData:fullVersionList":"99.0.0.0","navigator.uaData:brands":"Bogus"}' \
+  $T --gtest_filter='UserAgentUtilsCamoucfgTest.ConfigurationCannotMoveTheVersion'
+echo "version exit=$?"
+
+CAMOU_CONFIG='{"navigator.uaData:mobile":true}' \
+  $T --gtest_filter='UserAgentUtilsCamoucfgTest.FormFactorsFollowConfiguredMobile'
+echo "formfactors exit=$?"
+```
+
+Expected before Step 3: **`MetadataFallsBackWhenUnconfigured` passes** (nothing has changed
+yet, so the real values are still reported) and the other three **fail**, because nothing
+reads those keys.
+
+`env -u CAMOU_CONFIG` on the first one is deliberate. A leftover `CAMOU_CONFIG` in the
+shell would make the fallback test compare real values against spoofed ones and fail for a
+reason that has nothing to do with the code — SP0 hit exactly this class of leftover and
+its verification script filters the whole `CAMOU_CONFIG*` family for it.
+
+If `MetadataTakesConfiguredValues` passes here, before Step 3, something else is already
+reading those keys — stop and investigate rather than proceeding.
 
 <details>
 <summary>Superseded Steps 1 and 2 (browser assertions) — kept for the record</summary>
@@ -1505,13 +1546,16 @@ value without needing a key of its own.
 
 - [ ] **Step 4: Build and re-run the unit tests**
 
+Rebuild, then re-run the **same four invocations from Step 2a** — one per configuration,
+not `--gtest_filter='UserAgentUtilsCamoucfgTest.*'`, which would run all four against
+whichever config was latched first and is meaningless here.
+
 ```bash
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests
-./out/Default/components_unittests --gtest_filter='UserAgentUtilsCamoucfgTest.*'
-echo "exit=$?"
 ```
 
-Expected: **4 tests pass, exit=0.**
+Expected: **all four invocations exit 0.** Paste all four exit codes into the report; a
+single summary line cannot show that each ran under its own configuration.
 
 - [ ] **Step 5: Confirm nothing upstream regressed**
 
