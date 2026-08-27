@@ -1225,3 +1225,50 @@ most likely place given the field split, and it is one LOG away from certain.
 
 The checkout is clean: instrumentation reverted, chrome and components_unittests
 rebuilt, zero CAMOUPROBE lines in a fresh run.
+
+---
+
+CORRECTION. THE "REAL BUG" IN THE ENTRY ABOVE DOES NOT EXIST. It was my own
+mutation still resident in out/Default/chrome.
+
+The mutation script for review finding 3.1 ended with
+
+    cp /home/lang/uau.bak .../user_agent_utils.cc
+    echo "restored"
+
+It restored the SOURCE and never rebuilt. out/Default/chrome stayed the mutant
+-- the binary with the ua:architecture / ua:bitness / ua:mobile / ua:wow64
+substitutions deleted. Every "failing" diagnostic afterwards ran against it:
+the five FAILs, the one-key-at-a-time probe, and the no-CDP run. All four keys
+"not applying" is exactly what that mutant is built to do.
+
+After a clean rebuild: verify_sp1a_chrome.py gives 34 PASS, 0 FAIL, exit 0,
+including all fourteen new discriminating 2b assertions. ua:architecture=arm,
+ua:bitness=32, ua:mobile=true, ua:wow64=true and ua:model all reach both
+channels correctly.
+
+I HAD THE DISPROOF TWICE AND READ PAST IT BOTH TIMES:
+  - the in-process gtest showed all four substitutions working. I called that
+    a contradiction between "in-process" and "browser" instead of suspecting
+    the browser BINARY.
+  - instrumenting GetUserAgentMetadata forced a REBUILD, and that run printed
+    arch=arm bitness=32 mobile=1 wow64=1. I read it as "producer right,
+    downstream wrong" when it was "the previous binary was stale". The rebuild
+    was the variable, not the instrumentation.
+
+This is the dominant failure mode again, in a form conventions did not yet
+name: not a mutant that failed to compile, but a mutant that compiled, was
+never rebuilt away, and outlived the experiment it was written for.
+
+RULE: a mutation script must rebuild AFTER restoring, and must re-run the
+baseline to prove the restore took effect. Restoring the source is not
+restoring the binary.
+
+WHAT SURVIVES, AND IT MATTERS: review finding 3.1 is REAL and confirmed. That
+mutation DID rebuild before running, and the original 17 assertions all passed
+against a binary with the four substitutions deleted. The old profile asked
+for the host's own values, so four of seven keys were unverified and ua:model
+was exercised by nothing. The fix -- two non-host profiles plus the structural
+guard -- is correct and is what now gives 34 PASS.
+
+SP1a's producer is sound. The verification is now honest about it.
