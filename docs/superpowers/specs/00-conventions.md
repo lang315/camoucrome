@@ -48,11 +48,23 @@ consult them.
 
 The obvious objection — that the build exited 0 because it did nothing — was ruled out.
 That build ran four real steps (CXX, AR, SOLINK, LINK), and the `.o` is fourteen seconds
-newer than the `.cc`. Worse, the object compiled under the unwired state was **reused**:
-the later build, after the `BUILD.gn` and `DEPS` entries were added, ran only link steps
-and never recompiled that translation unit. So the artifact produced while the include was
-disallowed went straight into the final binary unexamined. Nothing downstream re-inspects
-an object once it exists.
+newer than the `.cc`.
+
+The stronger half was then measured rather than argued. The object compiled under the
+unwired state is **never recompiled afterwards**:
+
+```
+2026-08-27 07:41:25  components/embedder_support/user_agent_utils.cc
+2026-08-27 07:41:39  out/Default/obj/.../user_agent/user_agent_utils.o
+```
+
+The `.o` still carried that timestamp long after the `BUILD.gn` and `DEPS` entries were
+added and the tree rebuilt. Adding the dependency changed the link, not the compile
+command, so ninja saw no reason to redo it. The artifact produced while the include was
+disallowed is the one sitting in the binary.
+
+So the window in which a bad include is visible at all is exactly one `gn gen`, and only if
+something independently forces one. Miss it and nothing downstream ever looks again.
 
 This does not contradict SP0, it explains it. SP0's `gn check` failure was real because its
 include arrived alongside a `BUILD.gn` edit, which forced the regeneration. The rule above
