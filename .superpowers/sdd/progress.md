@@ -1069,3 +1069,19 @@ side in C:\. Only && / || markers and grep -c counts survive the trip.
 
 NEXT: SP1a whole-branch review (SDD requires it after the last task), then
 SP5a Tasks 1-3 against a real compiler, then Tasks 4-7.
+
+SP1a DRIFT CHECK, before dispatching the whole-branch review: NO DRIFT.
+The SP1a-only range (a90c2cdcb3..07cadeac4c) is 9 files, 531 lines. Six live
+in patches/sp1a-ua-producer.patch; three (keys.h, keys_unittest.cc, BUILD.gn)
+live in additions/, per the repo's patch-vs-addition split. All nine camoucfg
+files hash-match between the Mac repo and the checkout except BUILD.gn, and
+that difference is entirely SP5a's unbuilt files. SP1a is faithfully
+represented by what is committed.
+
+SP5a DEFECT FOUND BY THAT CHECK: coherence_validator.cc/.h were NOT in
+BUILD.gn sources, though Task 3's own file list says to modify BUILD.gn. A
+file absent from sources is simply not compiled and nothing errors -- SP5a
+would have "built" with its central component never compiled, and the Task 4
+tests would have failed to link with a message pointing at the test rather
+than at the omission. Added. derive.cc was there; only the validator was
+missing, which is why the omission was invisible.
