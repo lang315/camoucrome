@@ -108,8 +108,13 @@
     "binary": "content_shell",
     "captured_at_commit": "a90c2cdcb3",
     "known_absent": [
-      "all sec-ch-ua-* request headers: ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr outside test harnesses",
-      "userAgentData.platform is the literal \"Unknown\", hardcoded in GetShellUserAgentMetadata"
+      "high-entropy sec-ch-ua-* request headers (Arch, Bitness, Platform-Version, Model, Full-Version-List, WoW64): never emitted, because ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr outside test harnesses. Advertising Accept-CH does not change this.",
+      "all sec-ch-ua-* headers on NAVIGATION requests: verified empirically, a reload of an origin that had already advertised Accept-CH still carries none, not even the low-entropy triple.",
+      "userAgentData.platform is the literal \"Unknown\", hardcoded in GetShellUserAgentMetadata (shell_content_browser_client.cc:356)."
+    ],
+    "known_present_but_shell_authored": [
+      "the low-entropy triple sec-ch-ua / sec-ch-ua-mobile / sec-ch-ua-platform IS sent on subresource requests, with no Accept-CH needed. Its values come from GetShellUserAgentMetadata, not from embedder_support, so they are content_shell's own and are NOT evidence about the SP1a patch either way.",
+      "brand \"content_shell\" v999 and Chrome/999.0.0.0 in the UA string are content_shell's fake version, not this checkout's Chromium milestone."
     ],
     "metadata_producer": "content/shell/browser/shell_content_browser_client.cc:348 GetShellUserAgentMetadata",
     "ua_string_producer": "components/embedder_support/user_agent_utils.cc BuildUnifiedPlatformUserAgentFromProduct"
