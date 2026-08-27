@@ -42,6 +42,61 @@ WIN = {
     "ua:wow64": False,
 }
 
+# WIN alone is not enough, and the reason is worth stating because it took a
+# mutation to see. This build runs on 64-bit x86 Linux, so the unpatched
+# browser ALREADY reports architecture "x86", bitness "64", mobile false and
+# wow64 false. WIN asks for exactly those four. Every assertion about them
+# therefore passes whether or not the config reached the field.
+#
+# Measured, not reasoned: disabling those four substitutions in
+# GetUserAgentMetadata() and rebuilding chrome left this file printing
+# 17 PASS, exit 0. Four of the seven metadata keys were unverified and one
+# (ua:model) was executed by nothing at all.
+#
+# So each key must be exercised at least once with a value the unpatched build
+# does NOT report. These two profiles do that, and EveryMetadataKeyIsExercised
+# below fails if a future key is added without one.
+#
+# Both are real configurations rather than scrambles. An anti-detect browser
+# should not have test profiles that describe machines nobody owns, because a
+# profile is also an example, and examples get copied.
+
+# A 32-bit process on 64-bit Windows: that is precisely what WoW64 means.
+# Differs from the host in bitness and wow64.
+WOW64 = {
+    "ua:osInfo": "Windows NT 10.0; Win64; x64",
+    "ua:platform": "Windows",
+    "ua:platformVersion": "15.0.0",
+    "ua:architecture": "x86",
+    "ua:bitness": "32",
+    "ua:mobile": False,
+    "ua:wow64": True,
+}
+
+# A Pixel. Android reports empty architecture and bitness, a populated model,
+# and mobile true -- differing from the host in five of the seven.
+ANDROID = {
+    "ua:osInfo": "Linux; Android 10; K",
+    "ua:platform": "Android",
+    "ua:platformVersion": "13",
+    "ua:architecture": "",
+    "ua:bitness": "",
+    "ua:model": "Pixel 7",
+    "ua:mobile": True,
+    "ua:wow64": False,
+}
+
+# config key -> (getHighEntropyValues field, request header, is it a boolean)
+METADATA_KEYS = [
+    ("ua:platform", "platform", "sec-ch-ua-platform", False),
+    ("ua:platformVersion", "platformVersion", "sec-ch-ua-platform-version", False),
+    ("ua:architecture", "architecture", "sec-ch-ua-arch", False),
+    ("ua:bitness", "bitness", "sec-ch-ua-bitness", False),
+    ("ua:model", "model", "sec-ch-ua-model", False),
+    ("ua:mobile", "mobile", "sec-ch-ua-mobile", True),
+    ("ua:wow64", "wow64", "sec-ch-ua-wow64", True),
+]
+
 results = {}
 notes = []
 
@@ -118,6 +173,36 @@ def ua_carries_platform(ua, platform):
     return token is not None and token in ua
 
 
+# The CPU tokens a UA string carries for each (architecture, bitness) pair, as
+# real Chrome emits them. Windows-on-ARM is the case that makes this subtle:
+# Chrome there reports "Win64; x64" in the STRING while reporting
+# architecture "arm" in the hints, deliberately, because the string's tokens
+# are a compatibility fiction that the hints exist to replace. So the mapping
+# below is not "arch appears in the string" -- it is "this pair is a
+# combination real Chrome actually produces".
+#
+# Empty architecture and bitness are what Android and iOS report; there the UA
+# string carries no CPU token to agree with, so anything is consistent.
+CPU_CONSISTENT = {
+    ("x86", "64"): ["Win64; x64", "x86_64", "Intel Mac OS X", "WOW64"],
+    ("x86", "32"): ["WOW64", "Win64; x64", "i686", "i586"],
+    ("arm", "64"): ["Win64; x64", "aarch64", "Mac OS X", "Android"],
+    ("arm", "32"): ["Win64; x64", "armv7", "armv8", "Android"],
+}
+
+
+def ua_agrees_on_cpu(ua, architecture, bitness):
+    """Whether the UA string's CPU tokens can coexist with the hint values.
+
+    An unmapped pair is a FAIL, not a pass -- the same rule as
+    UA_TOKEN_FOR_PLATFORM, and for the same reason.
+    """
+    if architecture == "" and bitness == "":
+        return True  # Android/iOS: no CPU token in the string to contradict.
+    tokens = CPU_CONSISTENT.get((architecture, bitness))
+    return tokens is not None and any(t in ua for t in tokens)
+
+
 def unquote(value):
     """sec-ch-ua-* values are RFC 8941 strings: "x86" -> x86."""
     return value.strip().strip('"')
@@ -128,7 +213,7 @@ def is_true(value):
     return value.strip() == "?1"
 
 
-def run(config, expressions):
+def run(config, expressions, extra=None):
     """One `chrome` session with the echo server up; returns (values, headers).
 
     Both channels come from the SAME session by construction. Criterion 4
@@ -143,7 +228,8 @@ def run(config, expressions):
     try:
         values, err = lib_shell.session(
             config, expressions, navigate_to=base_url,
-            shell=lib_shell.CHROME, extra_flags=lib_shell.CHROME_FLAGS)
+            shell=lib_shell.CHROME,
+            extra_flags=lib_shell.CHROME_FLAGS + (extra or []))
         if err is not None:
             return None, None, err
         wire = headers_for("/probe.js")
@@ -261,6 +347,123 @@ else:
     # the bypass criterion 4 exists to find.
     results["4 the UA request header is the UA string"] = (
         wire.get("user-agent") == ua)
+
+    # Criterion 4 compared the metadata channel to the wire channel and the
+    # platform to the UA string, and stopped there -- so architecture and
+    # bitness were never compared to the UA string at all. SP1 §5 names that
+    # invariant explicitly, and without it this config passes every other
+    # assertion here:
+    #
+    #   ua:osInfo "Windows NT 10.0; Win64; x64" + ua:architecture "arm"
+    #                                           + ua:bitness "32"
+    #
+    # navigator.userAgent says Win64; x64 while Sec-CH-UA-Arch says arm. Both
+    # channels are individually plausible and they contradict each other,
+    # which is the exact shape criterion 4 claims to catch.
+    results["4 UA string, userAgentData and Sec-CH-UA agree on the CPU"] = (
+        ua_agrees_on_cpu(ua, entropy.get("architecture"),
+                         entropy.get("bitness")))
+
+# --- Criterion 2b/3b: every metadata key reaches BOTH channels, proven with
+#     a value the unpatched build does not report ---
+
+def check_profile(label, cfg):
+    """Asserts each configured metadata key reached both channels.
+
+    Returns the set of keys this profile proved DISCRIMINATINGLY -- those whose
+    configured value differs from what the unpatched build reports. A key
+    confirmed only with the host's own value is not counted, because that
+    assertion would hold with the substitution deleted.
+    """
+    names = [f"2b {label}: {key} reaches userAgentData and the wire"
+             for key, _, _, _ in METADATA_KEYS if key in cfg]
+    values, wire, err = run(json.dumps(cfg), EXPRESSIONS)
+    if err is not None:
+        failed(names, f"{label} session", err)
+        return set()
+    if baseline_err is not None:
+        failed(names, f"baseline load from {BASELINE}", baseline_err)
+        return set()
+
+    entropy = values[4]
+    stock = baseline["high_entropy"]
+    discriminating = set()
+    for key, field, header, is_bool in METADATA_KEYS:
+        if key not in cfg:
+            continue
+        want = cfg[key]
+        got_js = entropy.get(field)
+        got_wire = (is_true(wire.get(header, "?0")) if is_bool
+                    else unquote(wire.get(header, "")))
+        name = f"2b {label}: {key} reaches userAgentData and the wire"
+        results[name] = (got_js == want and got_wire == want)
+        if not results[name]:
+            notes.append(f"{name}: wanted {want!r}, js={got_js!r}, "
+                         f"wire={got_wire!r}")
+        if want != stock.get(field):
+            discriminating.add(key)
+    return discriminating
+
+
+proved = set()
+for label, cfg in (("wow64", WOW64), ("android", ANDROID)):
+    proved |= check_profile(label, cfg)
+
+# The structural guard. Without it, the defect this section exists to fix
+# returns the moment someone adds an eighth key and tests it with whatever the
+# host happens to report. Modelled on SP5a's MutationsExistForEveryInvariant:
+# the loop is over the key list, so a key with no discriminating profile is a
+# failing assertion rather than a silent gap.
+unexercised = [key for key, _, _, _ in METADATA_KEYS if key not in proved]
+results["2b every metadata key is exercised with a non-host value"] = (
+    not unexercised)
+if unexercised:
+    notes.append(
+        "2b every metadata key is exercised with a non-host value: "
+        f"{', '.join(unexercised)} were only ever confirmed with the value "
+        "this machine already reports, so those assertions would hold with "
+        "the substitution deleted. Add a profile that differs.")
+
+# --- Criterion 1b: --user-agent must not outrank a configuration ---
+#
+# Commit 07cadeac4c exists to change GetUserAgent()'s gate. Nothing tested it:
+# the gtest it added calls GetUserAgentMetadata() only, and neither harness
+# ever passed --user-agent. Reverting the added conjunct left every check in
+# the deliverable passing, so the commit's own subject was unverified for the
+# channel it names.
+#
+# The switch value below is deliberately a plausible REAL Chrome UA claiming
+# macOS. If the switch won, the string would be byte-identical to it; if the
+# config wins, the OS segment is the configured Windows one and the product
+# token is this build's. Those two outcomes cannot be confused.
+
+C1B = ["1b --user-agent loses to a configuration",
+       "1b --user-agent still wins when no configuration is present"]
+
+SWITCH_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 "
+             "Safari/537.36")
+
+switched, _, err = run(json.dumps(WIN), ["navigator.userAgent"],
+                       extra=[f"--user-agent={SWITCH_UA}"])
+if err is not None:
+    failed([C1B[0]], "--user-agent with config session", err)
+else:
+    results[C1B[0]] = (
+        switched[0] != SWITCH_UA
+        and "Windows NT 10.0; Win64; x64" in switched[0]
+        and "Macintosh" not in switched[0])
+
+# The other half of the gate, and the half that keeps this a narrowing rather
+# than a removal: with no configuration at all, --user-agent must behave
+# exactly as stock Chromium does. A patch that made the switch stop working
+# would pass the assertion above and break every non-Camoucrome use of it.
+unswitched, _, err = run(None, ["navigator.userAgent"],
+                         extra=[f"--user-agent={SWITCH_UA}"])
+if err is not None:
+    failed([C1B[1]], "--user-agent without config session", err)
+else:
+    results[C1B[1]] = (unswitched[0] == SWITCH_UA)
 
 # --- Criterion 8: unconfigured chrome is unchanged, on all three channels ---
 #

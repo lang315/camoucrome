@@ -1167,3 +1167,61 @@ than all reacting to any perturbation.
 
 REMAINING FOR SP5a: Task 5 (wire ValidateAtStartup into Chromium), Task 6
 (browser-level check), Task 7 (patch extraction).
+
+---
+
+SP1a IS NOT COMPLETE. I said "verified end to end" earlier today. That was
+wrong, and the review is what exposed it.
+
+WHAT THE REVIEW FOUND (3.1): the WIN profile asks for architecture "x86",
+bitness "64", mobile false, wow64 false -- which are EXACTLY what this
+x86_64 Linux host already reports unpatched. So every assertion about those
+four passed whether or not the config reached the field.
+
+Confirmed by mutation, not by reading: deleting all four substitutions from
+GetUserAgentMetadata() and rebuilding chrome left verify_sp1a_chrome.py
+printing 17 PASS, exit 0. ua:model was executed by nothing at all -- no config
+in the repo set it.
+
+THEN THE FIXED TEST FOUND A REAL BUG. Adding two profiles whose values differ
+from the host (WOW64: bitness 32, wow64 true; ANDROID: arch "", bitness "",
+mobile true, model Pixel 7) produced five failures on the FIRST run:
+
+  ua:architecture  arm -> page sees x86     NOT APPLIED
+  ua:bitness       32  -> page sees 64      NOT APPLIED
+  ua:mobile        true -> page sees false  NOT APPLIED
+  ua:wow64         true -> page sees false  NOT APPLIED
+  ua:platform / ua:platformVersion / ua:model   all APPLIED
+
+Reproduced one key at a time. Both channels agree on the WRONG value, so this
+is not a renderer-only loss.
+
+WHERE IT IS NOT:
+  not the key names      keys.h has ua:architecture, ua:bitness, ua:mobile,
+                         ua:wow64 exactly as the configs spell them
+  not the C++ producer   in-process gtest, full WIN config with ONE field
+                         changed against a passing control: all four apply
+                         (arm, 32, true, true)
+  not CDP/Playwright     reproduced with NO CDP client, launching chrome
+                         directly at the echo server. SP1 defers "CDP
+                         emulation interaction" to SP2; this is not that.
+  not a second writer    GetCpuArchitecture/GetCpuBitness/IsWoW64 have no
+                         caller in the desktop chrome path outside
+                         user_agent_utils.cc; the only other assignments are
+                         content_shell, android_webview, chromedriver and the
+                         CDP emulation agent.
+
+WHERE IT IS: downstream of the producer, inside chrome, affecting exactly
+these four fields and not platform/platformVersion/model. Instrumenting
+GetUserAgentMetadata() in the real browser process printed
+  CAMOUPROBE arch=arm bitness=32 mobile=1 wow64=1 model=Pixel 7
+while the wire header for the same run said arch="x86" bitness="64". So the
+producer is right and something between it and both consumers is not.
+
+NEXT SESSION STARTS HERE. Instrument content/browser/client_hints/client_hints.cc
+around :709-712 -- the branch where ua_metadata may already have a value and
+delegate->GetUserAgentMetadata() is therefore never called. That is the single
+most likely place given the field split, and it is one LOG away from certain.
+
+The checkout is clean: instrumentation reverted, chrome and components_unittests
+rebuilt, zero CAMOUPROBE lines in a fresh run.
