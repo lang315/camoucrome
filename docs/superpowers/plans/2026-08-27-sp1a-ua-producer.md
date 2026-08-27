@@ -2316,6 +2316,13 @@ If the headers disagree with `navigator.userAgentData`, the producer patch is be
 bypassed on one path — that is precisely what item 4 exists to detect, and it is a blocking
 defect, not a test to relax.
 
+> **Superseded — see the correction below this block.** The 17 PASS reported here was real
+> but weak: four of seven metadata keys were confirmed only with values this host already
+> reports, so those assertions held with the substitutions deleted. The suite now stands at
+> **34 PASS, 0 FAIL, exit 0** with two non-host profiles and a structural guard. A "bug in
+> four config keys" reported during that work was a stale mutant binary, not a defect; the
+> producer is sound. Full account in `.superpowers/sdd/progress.md` and commit 6adde3e.
+>
 > **Done 2026-08-27: 17 PASS, 0 FAIL, exit 0.** Criteria 1, 2, 3, 4 and 8, against `chrome`
 > at `07cadeac4c` with both binaries rebuilt on `camoucrome/sp0`. Every header the config
 > names arrives with the configured value, `navigator.userAgentData` agrees with the wire on
