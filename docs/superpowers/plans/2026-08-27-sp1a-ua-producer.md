@@ -84,6 +84,12 @@ A client-side task exiting 255 does not mean the remote job died: check
 `autoninja` is not on `PATH` in a non-interactive ssh session, because `.bashrc` returns
 early when non-interactive. Use `~/depot_tools/autoninja` explicitly.
 
+**`set -o pipefail` before any command whose exit code you intend to read through a pipe.**
+`cmd 2>&1 | tail -5; echo "exit=$?"` reports **`tail`'s** status, not `cmd`'s, so a failed
+build prints `exit=0`. Demonstrated: `false | tail -1; echo $?` → `0`; with `pipefail` → `1`.
+Every build command in this plan had this shape until Task 3 caught it. If you write a new
+one, guard it or capture `${PIPESTATUS[0]}`.
+
 Incremental rebuild after touching `user_agent_utils.cc` is roughly one to three minutes;
 `is_component_build=true` and `symbol_level=0` are already set.
 
@@ -572,6 +578,7 @@ TEST(CamoucfgKeysTest, EveryKeyIsNamespaced) {
 On the build PC:
 
 ```bash
+set -o pipefail  # without this, $? below is tail's, not the build's
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests 2>&1 | tail -20
 ```
 
@@ -806,6 +813,7 @@ Do **not** expect the build to fail — it will not, and that is the point.
 
 ```bash
 cd ~/chromium/src
+set -o pipefail  # without this, $? below is tail's, not the build's
 ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
 echo "autoninja exit=$?   # expect 0, and that is the finding, not a pass"
 ~/depot_tools/gn check out/Default "//components/embedder_support:user_agent"
@@ -872,6 +880,7 @@ style of every other entry in it. The per-header rule in conventions is specific
 
 ```bash
 cd ~/chromium/src
+set -o pipefail  # without this, $? below is tail's, not the build's
 ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
 echo "build exit=$?"
 python3 buildtools/checkdeps/checkdeps.py --root="$(pwd)" components/embedder_support
@@ -1190,6 +1199,7 @@ grants by directory like its neighbours, and SP0 followed that file's own style.
 - [ ] **Step 7: Build and re-run**
 
 ```bash
+set -o pipefail  # without this, $? below is tail's, not the build's
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
 cd ~/camoucrome-verify && venv/bin/python verify_sp1a.py; echo "exit=$?"
 ```
@@ -1854,6 +1864,7 @@ cd ~/chromium/src
 git checkout -b camoucrome/reconstruct-sp1a 0e8d4a9268118d323f62ca207b40514df39dcaa9
 bash /path/to/camoucrome/scripts/apply.sh "$(pwd)"
 git diff --stat
+set -o pipefail  # without this, $? below is tail's, not the build's
 ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -5
 cd ~/camoucrome-verify
 venv/bin/python verify_sp0.py;  echo "sp0 exit=$?"
@@ -1867,6 +1878,7 @@ Then return to the working branch:
 
 ```bash
 cd ~/chromium/src && git checkout camoucrome/sp0 && \
+  set -o pipefail  # without this, $? below is tail's, not the build's
   ~/depot_tools/autoninja -C out/Default content_shell 2>&1 | tail -3
 ```
 
