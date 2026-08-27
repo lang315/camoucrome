@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "The registry of cross-surface invariants.",
+    "",
+    "Source of truth for the fingerprint generator's post-generation",
+    "self-check and for the generated mutation tests. C++ compiles against",
+    "additions/camoucfg/invariants.h, which SP6a will generate from this file;",
+    "until then the two are kept in step by hand and",
+    "CoherenceValidatorTest.RegistryMatchesGeneratedHeader asserts they agree.",
+    "",
+    "Entries are added by the sub-project that owns the keys they constrain.",
+    "An SP is not complete until its invariants are here with a passing",
+    "mutation test -- an entry without one is documentation, not enforcement,",
+    "and reads as coverage while providing none."
+  ],
+  "invariants": [
+    {
+      "id": "ua-os-family-agrees",
+      "keys": ["ua:osInfo", "ua:platform"],
+      "relation": "same-os-family",
+      "policy": "repair",
+      "repair": "set ua:platform to the canonical UA-CH platform for the OS family of ua:osInfo",
+      "why": [
+        "ua:osInfo lands in the user-agent string. ua:platform lands in",
+        "navigator.userAgentData.platform and in the Sec-CH-UA-Platform request",
+        "header. A page reads both without effort, and a Windows user agent",
+        "beside a Linux platform is a stronger signal than either value would",
+        "be if it were simply honest.",
+        "",
+        "ua:osInfo wins because it is the more visible of the two, so repairing",
+        "the other changes less of what pages actually see.",
+        "",
+        "A key that is absent, or present but unrecognised, constrains nothing.",
+        "This entry catches values that CONTRADICT one another; an absent key",
+        "is already covered by the fall-back-to-real rule, and an unrecognised",
+        "value is a per-key type question rather than a relational one.",
+        "",
+        "SP1a ships this incoherence today and names SP5a as its owner -- see",
+        "the comment above ConfigPresentsUserAgentIdentity in",
+        "patches/sp1a-ua-producer.patch."
+      ]
+    }
+  ]
+}
