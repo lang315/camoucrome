@@ -2211,6 +2211,14 @@ def launch(config, shell=None, extra_flags=None):
 Thread `shell` and `extra_flags` through `session()` the same way `navigate_to` already is.
 Then give `capture_ua_baseline.py` a `--shell` argument that passes them.
 
+> **Do not cite that 9 as coverage of SP1a.** Four of the nine cannot respond to anything
+> SP1a did. `content_shell` authors its own metadata and wires no client-hints delegate, so
+> the three criterion-8 assertions compare against a baseline recording `platform:
+> "Unknown"` and shell-authored brands — values the patched producer never touches. And
+> criterion 7 checks that no property was added to `navigator` or `window`, which SP1a
+> cannot have done because it edits no Blink code. They are worth keeping as cheap guards;
+> they are not evidence. The `chrome` run is the evidence, which is why Task 8 exists.
+
 **Re-run `verify_sp0.py` and `verify_sp1a.py` after this change** — 11 PASS and 9 PASS, both
 exit 0. They call `session()` with the old signature and must be unaffected. A default that
 quietly changed the flags would break every earlier verification at once.

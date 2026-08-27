@@ -327,10 +327,33 @@ if the version is never substituted.
 
 What remains is narrower and still real: the OS token inside the string has to be
 substituted, and the reduced form coarsens platform detail in a way the full form does
-not, so the substitution differs between the two. The producer patch must therefore read
-which form the build is emitting and rewrite the OS token within it, rather than
-assembling a UA string from scratch. Assembling from scratch is the thing that would let
-the two forms get mixed.
+not.
+
+> **Amended 2026-08-27, after SP1a shipped.** The two paragraphs above used to end with
+> "so the substitution differs between the two. The producer patch must therefore read
+> which form the build is emitting and rewrite the OS token within it." **SP1a does
+> neither, deliberately, and this text was stale on the day it landed.**
+>
+> The substitution point sits *below* `GetUserAgentInternal()`'s choice between the forms,
+> at the single `os_info` argument both `BuildUserAgentFromProduct()` and
+> `BuildUnifiedPlatformUserAgentFromProduct()` converge on. So the patch never reads which
+> form is being emitted: whichever one the build chose calls the same substitution with
+> its own `os_info`, and `ua:osInfo` replaces it whole. That is simpler than reading the
+> form, and it cannot mix them, which was the original worry.
+>
+> **The cost is a real limitation, and it belongs on the key rather than buried here.**
+> One `ua:osInfo` value cannot express both forms at once. macOS is the clearest case:
+> the reduced form is `Macintosh; Intel Mac OS X 10_15_7` — a frozen literal — while the
+> full form carries the actual version, `... 14_5_0`. A configuration written for one is
+> wrong for the other.
+>
+> Today this is latent rather than live: a given build emits one form, and a fingerprint
+> generator targeting that build writes the matching string. It becomes live the moment
+> Camoucrome ships builds that differ in form, or a generator produces one profile for
+> several builds. **SP6's fingerprint generator owns that**, because it is the component
+> that knows which build a profile is for; `ua:osInfo` is a whole OS segment by design and
+> asking the browser to translate between forms would mean parsing the value, which SP1
+> forbids for the same reason it refuses `navigator.userAgent`.
 
 ## 5. Coherence constraints
 
