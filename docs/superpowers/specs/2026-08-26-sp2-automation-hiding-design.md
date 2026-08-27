@@ -42,6 +42,61 @@ Paths verified against the real checkout at `~/chromium/src` unless marked
 | CDP session/target plumbing | — | `content/browser/devtools/devtools_agent_host_impl.cc`, `protocol/page_handler.cc`, `protocol/target_handler.cc` | browser |
 | Humanized cursor paths | `humanize`, `humanize:minTime`, `humanize:maxTime`, `showcursor` | new `//components/camoucfg/mouse_trajectories.*` + `input_handler.cc` | browser |
 | `cdc_$…` globals | — | not in Chromium; injected by ChromeDriver | n/a |
+| **`HeadlessChrome` product prefix** | none (always suppressed) | `components/embedder_support/user_agent_utils.cc:218` | browser |
+
+### 3.1 The `HeadlessChrome` prefix — added 2026-08-27, found by measurement
+
+Observed, not predicted. The `chrome` baseline captured for SP1a Task 8 reports:
+
+```
+Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36
+```
+
+The cause is three lines, in `GetUserAgentInternal()`:
+
+```cpp
+if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
+    product.insert(0, "Headless");
+}
+```
+
+**This belongs to SP2, not SP1a, and SP1a cannot reach it.** SP1a substitutes `os_info`
+only; `product` never passes that substitution point, which is the same structural reason
+the version never moves. So a fingerprint claiming Windows produces, today:
+
+```
+Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... HeadlessChrome/154.0.0.0 Safari/537.36
+```
+
+A spoofed OS beside a self-announced headless browser is worse than no spoofing at all: it
+is a browser that both lies and confesses in one string.
+
+**It is also a live cross-channel incoherence in stock Chrome**, which is the more useful
+half of the finding. The same capture shows `navigator.userAgentData.brands` reporting
+`Chromium`, with no `Headless` anywhere — and `sec-ch-ua` agrees with the brands, not with
+the UA string. So channel 1 says headless and channels 2 and 3 do not. Any detector
+comparing them separates headless Chrome from real Chrome without needing either value to
+be implausible on its own.
+
+Two consequences:
+
+- SP2 suppresses the prefix unconditionally. There is no configuration key: a Camoucrome
+  that announces headless has failed at its one job, so this is not a preference. The check
+  is `HasSwitch(kHeadless)`, and the fix belongs at line 218 rather than at the call site,
+  because `--headless` must keep working as a headless switch — only its advertisement goes.
+- SP2's verification asserts the product token across all three channels — the UA string,
+  `brands`, and `sec-ch-ua` — with `--headless` present. Asserting it only on the UA string
+  would pass on a build that suppressed the prefix in one channel.
+
+  **This does not belong in SP5's invariant registry**, and the distinction is worth
+  keeping sharp: that registry validates the *configuration* for internal contradictions
+  between config keys, before the browser starts. `HeadlessChrome` has no config key —
+  SP2 removes it unconditionally — so there is nothing for a config validator to compare.
+  Filing it there would have made the registry look like it covered a defect no entry in
+  it could reach.
+
+Recorded here rather than fixed in place: SP1a is a producer patch under review, and
+widening it to a second sub-project's surface mid-review is how scope stops being legible.
 
 ## 4. Design
 
