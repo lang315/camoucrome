@@ -43,10 +43,14 @@ OsFamily OsFamilyFromOsInfo(std::string_view os_info);
 
 // The canonical spelling of each form, for repairs.
 //
-// These are Chromium's own literals from GetUnifiedPlatform() in
+// The os_info column is Chromium's own literal from GetUnifiedPlatform();
+// the ua_ch_platform column is from GetPlatformForUAMetadata(). Both live in
 // components/embedder_support/user_agent_utils.cc, so a repaired value is
-// byte-identical to what a real Chrome on that OS emits rather than something
-// this project invented. kUnknown yields the empty string in both.
+// byte-identical to what a real BRANDED Chrome on that OS emits -- not
+// something this project invented, and, for kChromeOs, not what this
+// (unbranded) binary's own copy of GetPlatformForUAMetadata() returns
+// either; see the kForms comment in derive.cc for why that distinction
+// matters. kUnknown yields the empty string in both.
 std::string_view CanonicalOsInfoFor(OsFamily os);
 std::string_view CanonicalUaChPlatformFor(OsFamily os);
 

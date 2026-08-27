@@ -33,11 +33,14 @@ OsFamily OsFamilyOfKey(const ConfigScope& scope, std::string_view key) {
 //
 // That is deliberate and worth stating, because "unrecognised" looks like
 // something a validator should complain about. This entry's job is catching
-// values that CONTRADICT each other. An absent key is already covered by the
-// fall-back-to-the-real-value rule, and an unrecognised value is a per-key type
-// question rather than a relational one -- SP5b's to reject, not this entry's
-// to guess about. Treating an unparseable string as a disagreement would make
-// the validator report a contradiction it cannot actually demonstrate.
+// values that CONTRADICT each other. An absent key constrains nothing FOR
+// THIS RELATIONAL ENTRY -- the incoherence an absent partner creates (one
+// channel spoofed, the other silently reporting the real OS) is reported by
+// the startup diagnostic in content/browser/browser_main_loop.cc, not here.
+// An unrecognised value is a per-key type question rather than a relational
+// one -- SP5b's to reject, not this entry's to guess about. Treating an
+// unparseable string as a disagreement would make the validator report a
+// contradiction it cannot actually demonstrate.
 std::vector<Violation> CheckSameOsFamily(const ConfigScope& scope,
                                          const invariants::Invariant& inv) {
   OsFamily first = OsFamilyOfKey(scope, inv.keys[0]);

@@ -65,8 +65,14 @@ inline constexpr std::array<Invariant, 1> kAllInvariants = {{
      {"ua:osInfo", "ua:platform"}},
 }};
 
-namespace {
-
+// Not wrapped in an anonymous namespace: Google's style guide forbids one in
+// a header (cpplint's build/namespaces_headers) because it gives every
+// including translation unit its own private copy of these entities instead
+// of sharing one. A `constexpr` free function is implicitly `inline`
+// ([dcl.constexpr]), which already gives it the external-with-shared-
+// -definition linkage a header needs -- the anonymous namespace bought
+// nothing here except the lint violation.
+//
 // coherence_validator.cc's ValidateAtStartup() does not read `policy` at
 // all -- it branches only on CAMOU_CONFIG_STRICT, which is correct only
 // because every entry today is Policy::kRepair. A Policy::kReject entry
@@ -91,17 +97,25 @@ constexpr bool AllPoliciesAreRepair() {
 // whose keys[0] is not kUaOsInfo would still compile and still run: it would
 // read keys[0] with the wrong parser and repair keys[1] to a value derived
 // from a misread, with nothing anywhere naming the mistake.
+//
+// The same is true of keys[1]: CheckSameOsFamily() always repairs it as a
+// UA-CH platform token via CanonicalUaChPlatformFor(), so an entry whose
+// keys[1] is not kUaPlatform -- e.g. {kUaOsInfo, "navigator.platform"} --
+// would compile and run too, reading that key with
+// OsFamilyFromUaChPlatform() (which does not understand navigator.platform's
+// values, e.g. "Win32", so the entry would simply never fire) and, if it
+// somehow did, repairing it to a UA-CH token rather than whatever format that
+// key actually expects. Checked here alongside keys[0] for the same reason:
+// nothing else in the codebase would ever notice.
 constexpr bool EverySameOsFamilyEntryHasOsInfoFirst() {
   for (const Invariant& inv : kAllInvariants) {
     if (inv.relation == Relation::kSameOsFamily &&
-        inv.keys[0] != keys::kUaOsInfo) {
+        (inv.keys[0] != keys::kUaOsInfo || inv.keys[1] != keys::kUaPlatform)) {
       return false;
     }
   }
   return true;
 }
-
-}  // namespace
 
 static_assert(
     AllPoliciesAreRepair(),
@@ -111,11 +125,11 @@ static_assert(
 
 static_assert(
     EverySameOsFamilyEntryHasOsInfoFirst(),
-    "a kSameOsFamily entry must list kUaOsInfo as keys[0] -- "
-    "coherence_validator.cc's CheckSameOsFamily() dispatches on "
-    "`key == keys::kUaOsInfo` and repairs the other key unconditionally, so "
-    "any other keys[0] would be read and repaired wrongly with no "
-    "diagnostic.");
+    "a kSameOsFamily entry must list kUaOsInfo as keys[0] and kUaPlatform as "
+    "keys[1] -- coherence_validator.cc's CheckSameOsFamily() dispatches on "
+    "`key == keys::kUaOsInfo` and always repairs keys[1] via "
+    "CanonicalUaChPlatformFor(), so any other keys[0] or keys[1] would be "
+    "read or repaired wrongly with no diagnostic.");
 
 }  // namespace camoucfg::invariants
 

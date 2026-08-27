@@ -58,6 +58,16 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
   // if every entry that IS matched by id agrees field-for-field.
   ASSERT_EQ(entries->size(), kAllInvariants.size());
 
+  // The loop below matches JSON -> header only, so on its own it cannot
+  // notice a header entry that nothing in the JSON ever matched: two JSON
+  // entries with a duplicate id both resolve to the same header entry and
+  // compare clean, the sizes are equal (checked above), and a genuinely new
+  // header entry is never looked at. Recording which header ids were
+  // actually matched, and asserting that set covers every header entry,
+  // closes that -- and as a side effect covers JSON-side id uniqueness too,
+  // since a duplicate JSON id can only ever add one id to this set.
+  std::set<std::string> matched_ids;
+
   for (const base::Value& entry : *entries) {
     const base::DictValue& dict = entry.GetDict();
     const std::string* id = dict.FindString("id");
@@ -70,6 +80,7 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
       }
     }
     ASSERT_TRUE(header_entry) << "id in JSON but not in header: " << *id;
+    matched_ids.insert(*id);
 
     const base::ListValue* json_keys = dict.FindList("keys");
     ASSERT_TRUE(json_keys) << *id;
@@ -104,6 +115,14 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
                     << *policy;
     }
   }
+
+  // A JSON with a duplicate id (e.g. two "ua-os-family-agrees" entries)
+  // alongside a header that gained a genuinely new entry would still pass
+  // the size check above and every per-entry comparison in the loop -- both
+  // JSON entries just resolve to the same header entry. This is what
+  // actually notices the missing header entry, and it also covers JSON-side
+  // id uniqueness: a duplicate JSON id can add at most one id to the set.
+  EXPECT_EQ(matched_ids.size(), kAllInvariants.size());
 }
 
 // Found while writing the registry, not planned: an entry naming a key that
@@ -200,7 +219,14 @@ TEST(CoherenceValidatorTest, MutationIsCaughtAndNothingElseIs) {
 // against a validator that was never actually exercised. The assertion below
 // fails closed on that case instead.
 TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
+  // Both keys, not just kUaOsInfo -- asserting one resolved would let a
+  // config that only sets kUaOsInfo satisfy this test without CheckSameOsFamily
+  // ever comparing two present values, since OsFamilyOfKey(kUnknown) short-
+  // circuits Validate() to "no violations" for the wrong reason.
   ASSERT_TRUE(GetString(GlobalScope(), keys::kUaOsInfo).has_value())
+      << "run with CAMOU_CONFIG set to a coherent configuration; see the "
+         "runner";
+  ASSERT_TRUE(GetString(GlobalScope(), keys::kUaPlatform).has_value())
       << "run with CAMOU_CONFIG set to a coherent configuration; see the "
          "runner";
   EXPECT_TRUE(Validate(GlobalScope()).empty());
