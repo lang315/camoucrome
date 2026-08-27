@@ -711,6 +711,7 @@ mutation harness is Task 4; these two are what make the registry trustworthy at 
 #include "base/json/json_reader.h"
 #include "base/path_service.h"
 #include "components/camoucfg/invariants.h"
+#include "components/camoucfg/keys.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace camoucfg {
@@ -747,6 +748,22 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
     in_header.insert(std::string(inv.id));
   }
   EXPECT_EQ(in_json, in_header);
+}
+
+// Found while writing the registry, not planned: an entry naming a key that
+// does not exist in keys.h is SILENT. The validator asks for it, gets nullopt,
+// treats the key as absent, and skips -- so the entry reads as protection and
+// provides none. That is the registry's own version of the failure it exists
+// to prevent, and it costs four lines to close.
+TEST(CoherenceValidatorTest, EveryInvariantKeyIsDeclaredInTheRegistry) {
+  std::set<std::string_view> declared(keys::kAllKeys.begin(),
+                                      keys::kAllKeys.end());
+  for (const invariants::Invariant& inv : kAllInvariants) {
+    for (std::string_view key : inv.keys) {
+      EXPECT_TRUE(declared.count(key))
+          << "invariant '" << inv.id << "' names an undeclared key: " << key;
+    }
+  }
 }
 
 TEST(CoherenceValidatorTest, EveryInvariantIdIsUnique) {
@@ -943,7 +960,7 @@ cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default components_unittests
 ./out/Default/components_unittests --gtest_filter='CoherenceValidatorTest.*'
 ```
 
-Expected: **2 tests pass**.
+Expected: **3 tests pass**.
 
 - [ ] **Step 6: Commit, both repositories**
 

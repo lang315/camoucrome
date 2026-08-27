@@ -7,6 +7,7 @@ static_library("camoucfg") {
     "blink_scope.h",
     "derive.cc",
     "derive.h",
+    "invariants.h",
     "keys.h",
     "mask_config.cc",
     "mask_config.h",
