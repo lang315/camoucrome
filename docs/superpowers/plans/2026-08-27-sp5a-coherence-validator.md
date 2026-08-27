@@ -688,7 +688,7 @@ git commit -m "camoucfg: the invariant registry and its generated form"
 **Interfaces:**
 - Consumes: `derive.h` (Task 1), `invariants.h` (Task 2), `mask_config.h`.
 - Produces: `struct Violation`, `std::vector<Violation> Validate(const ConfigScope&)`,
-  `bool ValidateAndRepairAtStartup(const ConfigScope&)`. Task 5 calls the second.
+  `bool ValidateAtStartup(const ConfigScope&)`. Task 5 calls the second.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -835,7 +835,7 @@ std::vector<Violation> Validate(const ConfigScope& scope);
 // browser process is the only point at which the fork can still decline to
 // start. It is also the only place that can see the whole configuration at
 // once, which a global invariant needs.
-bool ValidateAndRepairAtStartup(const ConfigScope& scope);
+bool ValidateAtStartup(const ConfigScope& scope);
 
 }  // namespace camoucfg
 
@@ -916,7 +916,7 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
   return violations;
 }
 
-bool ValidateAndRepairAtStartup(const ConfigScope& scope) {
+bool ValidateAtStartup(const ConfigScope& scope) {
   std::vector<Violation> violations = Validate(scope);
   if (violations.empty()) {
     return true;
@@ -1107,14 +1107,14 @@ Conventions records this as an open weakness left by SP0:
 > fragile. A future sub-project should give startup validation its own explicit call rather
 > than leaving it as an operand.
 
-**This is that sub-project.** `ValidateAndRepairAtStartup()` is the explicit call, and it
+**This is that sub-project.** `ValidateAtStartup()` is the explicit call, and it
 forces the parse as a byproduct of doing real work, so the fragile arrangement can go.
 
 **Files:**
 - Modify: `content/browser/browser_main_loop.cc`, `content/browser/DEPS` (verify only)
 
 **Interfaces:**
-- Consumes: `ValidateAndRepairAtStartup` (Task 3).
+- Consumes: `ValidateAtStartup` (Task 3).
 - Produces: nothing.
 
 - [ ] **Step 1: Read what is there now**
@@ -1151,7 +1151,7 @@ includes. Then replace SP0's `camou_configured` statement and its `VLOG` with:
   // renderer crash, which conventions forbids because a crash is itself a
   // fingerprint. And a global invariant needs to see the whole configuration
   // at once, which only the browser process can.
-  if (!camoucfg::ValidateAndRepairAtStartup(camoucfg::GlobalScope())) {
+  if (!camoucfg::ValidateAtStartup(camoucfg::GlobalScope())) {
     LOG(ERROR) << "camoucfg: configuration is incoherent and "
                   "CAMOU_CONFIG_STRICT is set; refusing to start.";
     return 1;
@@ -1291,7 +1291,7 @@ startup invocation (5). Verification items 1 and 2 are Task 4; the rest are tabl
 
 **Type consistency.** `OsFamily`, `OsFamilyFromUaChPlatform`, `OsFamilyFromOsInfo`,
 `CanonicalOsInfoFor`, `CanonicalUaChPlatformFor`, `ClaimedOs` are defined in Task 1 and used
-with those signatures in Tasks 3 and 4. `Violation`, `Validate`, `ValidateAndRepairAtStartup`
+with those signatures in Tasks 3 and 4. `Violation`, `Validate`, `ValidateAtStartup`
 are defined in Task 3 and used in Tasks 4 and 5. `invariants::{Policy,Relation,Invariant,kAllInvariants}`
 are defined in Task 2 and used in Tasks 3 and 4.
 
