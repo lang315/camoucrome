@@ -84,11 +84,24 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
              "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
 
-def launch(config, shell=None, extra_flags=None, strict=False):
+def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     """Starts the browser and returns it once its DevTools port answers.
 
     Four details here exist because of failures that were actually observed,
     not defensively.
+
+    A fixed `debug_port`, when given, replaces the ephemeral
+    --remote-debugging-port=0 and is used directly instead of being read
+    back from DevToolsActivePort. This exists for criteria that need the
+    AutomationControlled runtime feature to stay OFF: runtime_features.cc
+    reads the literal 0 as ChromeDriver's own launch pattern and
+    force-enables that feature regardless of any blink-features flag, so a
+    session that needs the feature off cannot use the default port. Callers
+    should get the port from a just-closed ephemeral socket, not a literal --
+    a hardcoded number lets a run attach to a previous instance still
+    shutting down, which looks identical to the browser under test
+    misbehaving. When `debug_port` is None, this path is untouched -- every
+    other verification script depends on it.
 
     Every CAMOU_CONFIG* variable is cleared, not just the bare name. The
     transport gives numbered chunks precedence over the unnumbered variable,
@@ -139,9 +152,10 @@ def launch(config, shell=None, extra_flags=None, strict=False):
     stderr_file = open(STDERR_LOG, "wb")
     # CDP is served on --remote-debugging-port by both binaries; only the
     # headless switch differs, which is what SHELL_FLAGS/CHROME_FLAGS carry.
+    port_arg = f"--remote-debugging-port={debug_port if debug_port else 0}"
     proc = subprocess.Popen(
         [binary, "--no-sandbox", *flags,
-         f"--user-data-dir={profile}", "--remote-debugging-port=0",
+         f"--user-data-dir={profile}", port_arg,
          "about:blank"],
         env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
     proc.profile_dir = profile
@@ -153,7 +167,17 @@ def launch(config, shell=None, extra_flags=None, strict=False):
             shutdown(proc)
             raise RuntimeError(
                 f"{name} exited during startup, code {proc.returncode}")
-        if port_file.exists():
+        if debug_port is not None:
+            # The port is already known -- no DevToolsActivePort read-back.
+            try:
+                urllib.request.urlopen(
+                    f"http://127.0.0.1:{debug_port}/json/version",
+                    timeout=1).read()
+                proc.cdp_port = debug_port
+                return proc
+            except Exception:
+                pass
+        elif port_file.exists():
             first = port_file.read_text().splitlines()[:1]
             if first and first[0].strip().isdigit():
                 port = int(first[0].strip())
@@ -203,7 +227,7 @@ def evaluate(proc, expressions, navigate_to=None, cdp=None):
 
 
 def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
-            strict=False, cdp=None):
+            strict=False, cdp=None, debug_port=None):
     """Runs one browser session; returns (values, error).
 
     An exception is returned rather than raised. Without this the script is
@@ -221,7 +245,8 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
     """
     proc = None
     try:
-        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict)
+        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
+                      debug_port=debug_port)
         return evaluate(proc, expressions, navigate_to, cdp=cdp), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
