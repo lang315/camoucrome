@@ -8,8 +8,9 @@ them. On a stock build both come back `true` (FAIL).
 The isolation problem this criteria set exists to solve:
 content/child/runtime_features.cc force-enables the AutomationControlled
 runtime feature under several conditions, including
---remote-debugging-port=0 -- read as ChromeDriver's own launch pattern. That
-switch is exactly what lib_shell.launch() hardcodes by default, so source 1
+--remote-debugging-port=0 -- read as ChromeDriver's own launch pattern -- and,
+independently, --headless (runtime_features.cc:378). The first is exactly
+what lib_shell.launch() hardcodes by default, so source 1
 (RuntimeEnabledFeatures::AutomationControlledEnabled()) is already ON in
 every session the harness starts unless a fixed, non-zero debug_port is
 supplied instead. Criterion 1 uses the harness default deliberately, to
@@ -18,6 +19,13 @@ already forced the feature on. Criteria 2a/2b use a fixed port so source 1
 stays off and probe::ApplyAutomationOverride (behind CDP's
 Emulation.setAutomationOverride) is the only thing that can flip the value --
 without 2a as a guard, 2b's isolation claim would be unfalsifiable.
+
+2a/2b's isolation has a second precondition, unguarded until now:
+content_shell must not be launched with --headless either, or that switch
+alone would force source 1 on regardless of debug_port. lib_shell.SHELL_FLAGS
+carries --ozone-platform=headless -- content_shell's actual headless switch --
+and not --headless, which is what keeps 2a/2b isolating the probe path. The
+assertion below holds that fact down so it cannot drift silently.
 
 There is no worker criterion, and that is deliberate. `webdriver` is
 declared on the NavigatorAutomationInformation mixin, and
@@ -44,6 +52,13 @@ DESCRIPTOR = ("Object.getOwnPropertyDescriptor("
 
 results = {}
 notes = []
+
+# 2a/2b's isolation depends on SHELL_FLAGS never carrying --headless (see the
+# module docstring) -- content/child/runtime_features.cc:378 force-enables
+# AutomationControlled on that switch independent of debug_port.
+assert "--headless" not in lib_shell.SHELL_FLAGS, \
+    "SHELL_FLAGS now carries --headless, which runtime_features.cc:378 maps onto " \
+    "AutomationControlled; criteria 2a/2b would stop isolating the probe path"
 
 
 def failed(keys, label, exc):
@@ -81,18 +96,22 @@ else:
 
 # --- Criteria 2a/2b: fixed non-zero port, isolating the probe path ---
 #
-# 2a's PASS is only meaningful if the feature really is off in this
-# configuration. If runtime_features.cc ever force-enables on a non-zero
-# port too, 2a stays green and 2b silently stops isolating the probe.
-# The stock-build run recorded in Step 5 is what establishes this; re-check
-# it after any Chromium roll.
-
-# Also false on a stock build. The guard that makes 2b's isolation claim
-# real: a fixed non-zero port leaves AutomationControlledEnabled() unset
-# (runtime_features.cc's own comment: such a port "is more likely for
-# attaching a debugger, so we should leave EnableAutomationControlled
-# unset"). A FAIL here means the feature is on despite the non-zero port,
-# and 2b would then be proving nothing about the probe path specifically.
+# 2a is a stock-build gate, consumed once at Step 5, not a live guard in the
+# shipped suite. On the unpatched tree, a fixed non-zero port leaves
+# AutomationControlledEnabled() unset (runtime_features.cc's own comment:
+# such a port "is more likely for attaching a debugger, so we should leave
+# EnableAutomationControlled unset") -- so on a stock build a FAIL here means
+# the feature is on despite the non-zero port, and 2b would then be proving
+# nothing about the probe path specifically. That is exactly what Step 5's
+# stock run confirmed; re-check it after any Chromium roll.
+#
+# On a patched build 2a cannot fail for that reason: Navigator::webdriver()
+# returns false unconditionally, regardless of debug_port, so the paragraph
+# above describes a stock-build failure mode this run cannot hit. What 2a is,
+# here, is a harness canary: it shares 2b's exact launch configuration minus
+# the CDP override, so a regression in the debug_port plumbing itself (e.g.
+# --remote-debugging-port=0 leaking back in) surfaces as a 2a FAIL instead of
+# a confusing 2b FAIL.
 C2A = "2a fixed port, no override: navigator.webdriver === false"
 values, err = lib_shell.session(None, [WEBDRIVER], debug_port=free_port())
 if err is not None:
@@ -104,6 +123,14 @@ else:
 # this is the one configuration in which probe::ApplyAutomationOverride is
 # what flips the value -- proves source 2 is closed, the one
 # --disable-blink-features=AutomationControlled misses entirely.
+#
+# 2b's isolation claim -- that context.new_cdp_session(page) targets the same
+# page page.evaluate() reads -- is established once, by inspection, not
+# re-checked per run. Unlike 2a it has no stock-build gate: it would degrade
+# to a guaranteed PASS with nothing to notice if that stopped holding.
+# Re-check it after any Chromium roll, and after any Playwright upgrade too --
+# new_cdp_session's session-to-page targeting is Playwright's contract, not
+# Chromium's.
 C2B = "2b fixed port, Emulation.setAutomationOverride(enabled=true): still false"
 values, err = lib_shell.session(
     None, [WEBDRIVER], debug_port=free_port(),

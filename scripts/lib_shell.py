@@ -87,7 +87,7 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
 def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     """Starts the browser and returns it once its DevTools port answers.
 
-    Four details here exist because of failures that were actually observed,
+    Six details here exist because of failures that were actually observed,
     not defensively.
 
     A fixed `debug_port`, when given, replaces the ephemeral
@@ -116,9 +116,11 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     first evaluate() in two runs out of eight.
 
     --remote-debugging-port=0, with the chosen port read back from the
-    profile's DevToolsActivePort. A fixed port lets a run connect to a
-    previous instance that is still shutting down, which looks identical to
-    the browser under test misbehaving.
+    profile's DevToolsActivePort, when `debug_port` is None. A literal fixed
+    port lets a run connect to a previous instance that is still shutting
+    down, which looks identical to the browser under test misbehaving --
+    which is why callers that do pass `debug_port` are required to source it
+    from a just-closed ephemeral socket (see above), not a hardcoded number.
 
     Startup can fail in three distinguishable ways, which is deliberate:
     Popen itself raises FileNotFoundError naming the path if the binary does
@@ -152,7 +154,7 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     stderr_file = open(STDERR_LOG, "wb")
     # CDP is served on --remote-debugging-port by both binaries; only the
     # headless switch differs, which is what SHELL_FLAGS/CHROME_FLAGS carry.
-    port_arg = f"--remote-debugging-port={debug_port if debug_port else 0}"
+    port_arg = f"--remote-debugging-port={0 if debug_port is None else debug_port}"
     proc = subprocess.Popen(
         [binary, "--no-sandbox", *flags,
          f"--user-data-dir={profile}", port_arg,
