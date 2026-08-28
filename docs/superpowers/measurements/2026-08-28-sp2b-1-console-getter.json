@@ -1,0 +1,34 @@
+{
+  "measurement": "sp2b-1-console-getter",
+  "runs": [
+    {
+      "label": "content_shell, Playwright (Runtime domain enabled)",
+      "debug_immediate": false,
+      "debug_after_roundtrip": false,
+      "dir_immediate": false,
+      "dir_after_roundtrip": false,
+      "control_getter_can_fire": true,
+      "control_console_messages_received": [
+        "debug",
+        "dir"
+      ]
+    },
+    {
+      "label": "chrome, Playwright (Runtime domain enabled)",
+      "debug_immediate": false,
+      "debug_after_roundtrip": false,
+      "dir_immediate": false,
+      "dir_after_roundtrip": false,
+      "control_getter_can_fire": true,
+      "control_console_messages_received": [
+        "debug",
+        "dir"
+      ]
+    }
+  ],
+  "provenance": {
+    "checkout_commit": "70cb99fedc",
+    "driver": "playwright 1.55.0 via connect_over_cdp",
+    "note": "Both controls are part of the record deliberately. Without control_getter_can_fire the false readings are indistinguishable from a broken probe, and without control_console_messages_received they are indistinguishable from the Runtime domain never being enabled."
+  }
+}
