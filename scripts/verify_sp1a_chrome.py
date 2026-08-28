@@ -19,6 +19,7 @@ becomes FAIL lines rather than a traceback that discards results already
 collected.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -39,6 +40,20 @@ BASELINE = os.path.expanduser(
 # deltas (SP2a's Headless-prefix removal, for one) are reconciled in code at
 # the comparison sites below, not by moving this constant.
 STOCK_BASE_COMMIT = "0e8d4a9268"
+
+# The digest of the stock capture itself, because the commit above is a
+# SELF-REPORTED LABEL and this is the file's actual identity. Pinning both
+# turns "the file says it is stock" into "the file IS the stock capture", and
+# catches repo/deployment drift for free -- the deployed copy under
+# ~/camoucrome-verify/baselines/ is not covered by check_checkout_sync.sh,
+# which reaches additions/ and settings/ only.
+#
+# Safe to pin because this file must never legitimately change again: it is a
+# recording of an upstream revision that is itself pinned. Every fork-side
+# deviation is reconciled in code below instead. If this ever needs updating,
+# that is the signal to stop and ask why, not to paste a new digest.
+STOCK_BASELINE_SHA256 = (
+    "c437166e95ff0a47a5806e245938e44afe15f3c2b8dd0abb16854efe83b04fbf")
 
 # Identical to verify_sp1a.py's. Kept in step by hand rather than imported:
 # importing it would execute that file, which runs its own browser sessions.
@@ -134,8 +149,21 @@ def load_baseline(path):
     this file did not cause.
     """
     try:
-        with open(path) as handle:
-            data = json.load(handle)
+        with open(path, "rb") as handle:
+            raw = handle.read()
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        return None, exc
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != STOCK_BASELINE_SHA256:
+        return None, RuntimeError(
+            f"baseline content does not match the pinned stock capture: "
+            f"{path} hashes to {digest}, expected {STOCK_BASELINE_SHA256}. "
+            f"The captured_at_commit check below reads a self-reported label; "
+            f"this reads the bytes. Restore from git rather than recapturing, "
+            f"and if the repo copy is correct, redeploy it -- "
+            f"check_checkout_sync.sh does not reach baselines/.")
+    try:
+        data = json.loads(raw)
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     missing = [k for k in ("user_agent", "brands", "platform", "mobile",

@@ -364,10 +364,7 @@ EXPECTED = 9  # criteria 1, 2a, 2b, 3, 5, 6, 7, 8, 9
 # project for being tautological, since it only fails when a criterion is
 # added AND the code that would populate it is forgotten too -- a narrower
 # bug than the one that actually happened here, which forgot only the count.
-if len(results) != EXPECTED:
-    raise RuntimeError(
-        f"expected {EXPECTED} criteria in `results`, found {len(results)}: "
-        "a criterion was added or removed without updating EXPECTED")
+
 
 
 def label_key(name):
@@ -377,15 +374,33 @@ def label_key(name):
     to 9 criteria: ASCII orders "10 ..." before "2a ...". Splitting the
     leading digits from the rest of the label and comparing the digits as an
     int rather than a string is what keeps this correct past a ninth.
+
+    A label with no leading digit sorts first rather than raising. int("")
+    is a ValueError, and this runs inside the print loop -- so a single
+    off-convention label would measure all nine criteria and then discard
+    every line. That is N1's shape a third time on this branch, in the code
+    added to fix the second one.
     """
     head = name.split(maxsplit=1)[0]
     digits = "".join(ch for ch in head if ch.isdigit())
-    return (int(digits), head[len(digits):])
+    return (int(digits or "0"), head[len(digits):])
 
 
 for name, ok in sorted(results.items(), key=lambda item: label_key(item[0])):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
+
+# Checked AFTER the print loop, not before. Raising on a count mismatch would
+# discard nine results already in hand and print nothing -- the same
+# traceback-over-FAIL-line failure this file's docstring forbids, in the guard
+# added to catch a different one. It still fails the run; it just reports
+# first.
+if len(results) != EXPECTED:
+    notes.append(
+        f"expected {EXPECTED} criteria in `results`, found {len(results)}: "
+        "a criterion was added or removed without updating EXPECTED")
+
 for note in notes:
     print(f"      {note}")
 
-sys.exit(0 if results and all(results.values()) else 1)
+sys.exit(0 if results and len(results) == EXPECTED and all(results.values())
+         else 1)
