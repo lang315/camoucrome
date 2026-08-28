@@ -99,6 +99,11 @@ the ninth could not have been measured by anything.
 | an equality check against a baseline captured with a different probe | nothing it could ever pass. `capture_ua_baseline.py` requested seven high-entropy hints and a draft of the verification requested five; `getHighEntropyValues` returns the requested hints plus three low-entropy ones, so ten keys were compared against eight. Caught by reading the baseline, not by running. |
 | a runner's own count guard | **the number of times a function is called in the file it lives in.** `run_coherence_tests.sh` computed `TOTAL=$((PASS_COUNT+FAIL_COUNT))` and errored unless it was 6; both counters were incremented only inside `report()`, called exactly six times as literals, so `TOTAL` was unconditionally 6. It compared the count of `report` calls against the `6` two lines below. Meanwhile each `--gtest_filter` was a *separate* literal from the name passed to `report`, output was `>/dev/null`, and a zero-match filter **exits 0 printing `SUCCESS: all tests passed`** — measured. So a mistyped filter printed `PASS`. The script's own comment said it existed to stop "a runner that silently ran fewer than six cases and still exited 0". |
 | a hardcoded `provenance` block on a captured artifact | **nothing at all, by construction — no code reads it.** `capture_ua_baseline.py` asserted `"binary": "content_shell"` and a `known_absent` list claiming no `sec-ch-ua-*` header arrives. Task 8 reuses that script against `chrome`, which sends them, so the block would have described the file as the opposite of its own contents. Nothing would have failed; the file would simply have been cited. Found on 2026-08-27 by reading Task 8's steps against the script, before its build finished. |
+| a mutation, cited as evidence for criteria its mutant could not reach | **which function was edited, not which criteria are sound.** SP2a Task 2 restored the `Headless` insert in `GetUserAgentInternal()`, criteria 5 and 8 reddened, 6 and 7 stayed green — and that was written up as proof the three-channel requirement earns its place. Backwards: `brands` and `Sec-CH-UA` come from `GetUserAgentMetadata()`, so the mutant could not redden 6 and 7 whatever their quality, and criterion 5 *is* the UA-string-only assertion the write-up claimed would have been insufficient. **A mutation falsifies only the criteria whose producer it edits.** Green under a mutant that cannot reach you is not a result. |
+| absence-asserting criteria that treat a missing surface as a PASS | **nothing, silently, in exactly the criteria that never move.** `"Headless" not in wire.get("sec-ch-ua", "")` passes when the header is absent; `not any("Headless" in b for b in brands)` passes on an empty list. Both were written as the three-channel guarantee and both would have survived a roll that stopped sending the header. The inverse idiom is safe by accident: an *equality* comparison against a non-empty expected value fails when the surface disappears, which is why the same `.get(h, "")` shape is correct three files over and wrong here. **Assert presence before asserting absence.** |
+| a `grep -c` for a symbol, run after a step that mandates writing a comment naming that symbol | **the text the step just wrote.** SP2a Task 1 Step 6 asked whether `probe::` was still used and decided an include's fate on the count; the mandated comment contains `probe::ApplyAutomationOverride`, so the count was 1 by construction and the "drop it" branch was unreachable. Task 2 Step 3 had the same shape and expected `0`, which its own mandated comment made impossible. The rule read as "is this symbol still used?" and measured "does this string appear in the file?" — the same substitution as the runner that counted its own `report()` calls. **When one step writes prose into a file and a later step greps it, the grep sees what the step just wrote.** |
+| verifying the `HeadlessChrome` fix against `content_shell` | nothing. `ShellContentBrowserClient::GetUserAgent()` builds its own product string and never calls `GetUserAgentInternal()`, so the shell has no `HeadlessChrome` under any switch. This table already recorded the trap for `GetUserAgentMetadata` and explicitly cleared `GetUserAgent` as the safe sibling — the clearance was about which *function* it calls, and the headless prefix lives one level below that, inside a caller the shell also skips. |
+| a `git commit -m` body containing backticks | **whatever text zsh leaves after running the backticked span as a command substitution first.** A commit message stating a rule "raises X, not asserts Y" lost both backtick-quoted words silently — no error, no non-zero exit, a committed message reading "is now , not ." Same family as the `$?`/`$(...)` row above: the login shell interprets the string before the intended program ever sees it. **Write commit prose with `git commit -F <file>` whenever it contains backticks**, not `-m`. |
 
 **A ninth, and the worst kind: a claim no check could ever reach.** Provenance blocks,
 comments and plan prose are read by people and by nothing else, so they never fail — they
@@ -322,6 +327,16 @@ empty and looks like the patch did nothing — use `git diff --cached --stat`. A
 `git checkout -- .` will not clear an unmerged index left by a conflicted apply;
 `git reset --hard` will.
 
+**The ssh `ControlMaster` socket fails around ~32KB of base64 payload,** with
+`mm_send_fd: sendmsg(1): Message too long`. Transfer one file per `ssh` call rather
+than batching several through one multiplexed session. Found transferring
+`lib_shell.py` and `verify_sp2.py` together.
+
+**Bare `python3` on the build machine has no `playwright`.** The verify scripts need
+`~/camoucrome-verify/venv/bin/python3`; the system `python3` fails loudly
+(`ModuleNotFoundError` at `import lib_shell`) rather than silently, but SP2a's own
+plan still wrote the bare interpreter in seven places before this was caught.
+
 **A job on that machine lives only while a `wsl.exe` client is attached.** The WSL2 VM
 itself is torn down seconds after the last one disconnects — confirmed by `uptime`
 reading `up 0 min` immediately after a build vanished. So `nohup`, `setsid ... &
@@ -399,7 +414,8 @@ about fifteen lines; describe the change instead of transcribing it.
 | SP5a | Invariant registry, reader, and load-time validator | SP0 |
 | SP1a | UA / UA-CH producer: user-agent string, `userAgentData`, `Sec-CH-UA*` | SP0 |
 | SP1b | Blink-side navigator scalars, languages, `Accept-Language` | SP1a |
-| SP2 | Automation hiding and CDP invisibility | SP0 |
+| SP2a | Automation hiding: `navigator.webdriver`, the `HeadlessChrome` product token | SP0 |
+| SP2b | Automation hiding: the measurement-gated remainder of SP2's spec | SP0, SP2a |
 | SP3 | WebGL and canvas fingerprints | SP0 |
 | SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1, SP3, SP5a |
 | SP5b | Invariant catalogue and fingerprint presets | SP1, SP3, SP4 |
@@ -428,10 +444,23 @@ calls is not a prerequisite.
 
 SP5a is still owed before SP4, and SP6a before packaging. Neither now blocks SP1a.
 
+*Amended 2026-08-28:* **SP2 is split too, on a different line than SP1 or SP5/SP6.**
+Those splits separated risk from repetition, or an early-needed half from a
+late-needed one. SP2 splits where its own spec stops deciding and starts asking:
+of the spec's six open decisions (§7, D1–D6), four — D1 (`Runtime.enable`
+mitigation), D2 (reimplementing what patchright already covers), D3 (trusted input,
+C++ or driver-side) and D6 (the empirical limits, explicitly "none should be closed
+without a measurement") — are each written as depending on a measurement the spec
+does not yet have, on real Chrome, before there is anything to plan. SP2a is the part
+already decided: `navigator.webdriver` and the `HeadlessChrome` product token, both
+unconditional fixes with no open question behind them. SP2b is everything still
+gated on running an experiment first. A plan for an outcome nobody has measured yet
+is a plan of placeholders, so the placeholders are deferred rather than written.
+
 SP2 and SP3 are independent of each other and of SP1. SP7 is GN arguments and build
 configuration, so it depends on nothing and can start at any time.
 
-**Order settled 2026-08-27: SP5a (finish) → SP2 → SP3 → SP1b → SP4.**
+**Order settled 2026-08-27: SP5a (finish) → SP2a → SP2b → SP3 → SP1b → SP4.**
 
 SP2 comes before SP3 for a reason worth stating, because it inverts the obvious priority.
 As things stand the browser is **identifiable as automated regardless of how good the
