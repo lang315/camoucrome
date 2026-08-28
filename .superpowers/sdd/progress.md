@@ -1727,3 +1727,145 @@ FINDINGS E AND F ARE NOW IN THE PLAN's Task 3 Step 7 conventions rows:
   F. Assert presence before asserting absence -- a missing surface satisfies
      an absence assertion having examined nothing. The .get(h, "") idiom is
      safe for EQUALITY comparisons and unsafe for absence ones.
+
+Task 3: COMPLETE (repo 8d5b0cb, eaba15c, 797de05, d95f196; checkout unchanged at
+  70cb99fedc -- Task 3 extracts and verifies the patch, it adds no new checkout
+  commits). Patch reconstruction proven byte-identical: all patch-owned files
+  empty-diff against the working checkout, all 17 additions/ files match by
+  hash (scripts/check_checkout_sync.sh), and every suite passed against the
+  rebuilt binary, not merely the reapplied source (README.md now states this).
+
+  Two corrections to the plan, found running the branch's own verification
+  rather than by a formal review:
+    eaba15c  Step 1's bare `git diff -- <files>` reads the working tree, which
+             Tasks 1/2 had already committed -- 0 lines, structurally valid,
+             no error. Now a range against 8f0635af04 (the last pre-SP2a
+             commit) with the four SP2a checkout commits named so the
+             endpoints can be checked, plus a changed-line guard alongside
+             the existing `diff --git` header count (three empty-hunk
+             headers would satisfy that count alone).
+    d95f196  Step 5 predicted UNIT_OK with CoherenceValidator* in the filter.
+             Unreachable: two of its cases refuse to run without CAMOU_CONFIG
+             and CAMOUCFG_TEST_INVARIANT -- SP5a's own fix, not a fault,
+             since camoucfg::Config() latches per process. Corrected to 8
+             pass + 2 refuse; run_coherence_tests.sh named as the invocation
+             that actually drives all six one process each.
+
+BASELINE EPISODE (whole-branch review, between Task 3 and this entry): commit
+  9f1040e recaptured baselines/chrome-0e8d4a9268-stock-ua.json from the
+  CURRENT, SP2a-patched checkout instead of restoring the pre-SP2a stock
+  capture, then added a guard comparing captured_at_commit against the
+  checkout's CURRENT HEAD -- which made the staleness permanent rather than
+  catching it: every later commit moves HEAD, so the comparison is refused
+  forever, never made. The diagnosis was right (a stale baseline broke four
+  assertions) and the four affected assertions were correctly named as a
+  superset of the one the original regression report cited; only the fix
+  was wrong. This branch's own plan ("Deliberately deferred, with the
+  reason") had already declined to capture a comparable window-keys
+  baseline for exactly this reason: "Capturing a baseline from an
+  already-patched build now would bake in any leak it was meant to catch."
+
+  Fixed in this review pass, not by reverting to the HEAD-tracking guard:
+    - baselines/chrome-0e8d4a9268-stock-ua.json restored verbatim from git
+      history (git show 9f1040e~1:...) -- three lines differ from 9f1040e's
+      version (captured_at_commit, request_headers["user-agent"],
+      user_agent), confirmed before and after.
+    - SP2a's one intended delta (GetUserAgentInternal's unconditional
+      Headless-prefix removal) applied at the comparison sites instead of
+      baked into the fixture: verify_sp1a_chrome.py gained
+      sp2a_expected_ua(), used at the four affected assertions -- two in
+      the criterion-1 block (old :343-367: "reports the build's own
+      version" and "leaves the product token untouched", both reading
+      base_token) and two in the criterion-8 block (old :559-569:
+      "byte-identical to the baseline" and "request headers match the
+      baseline"). Not the reviewer's guessed split of one product-token
+      assertion plus three "8 unconfigured" ones: "8 unconfigured
+      userAgentData matches the baseline" never touches the UA string
+      (platform/mobile/brands/high_entropy only) and was never broken, so
+      C8 contributes two, not three.
+    - load_baseline()'s guard inverted: refuses unless
+      provenance.captured_at_commit == the pinned stock revision
+      (0e8d4a9268), not unless it equals the checkout's current HEAD. The
+      now-dead current_checkout_commit() helper and its CHECKOUT/subprocess
+      dependencies were removed with it.
+  Verified on the build machine (checkout 70cb99fedc, unchanged):
+  verify_sp1a_chrome.py 34 PASS, exit 0, against the restored baseline.
+  Guard proven both ways: captured_at_commit mutated to a patched-build hash
+  (70cb99fedc) refuses loudly at every consumption site with the new
+  message, sha-restored, reran clean.
+
+WHOLE-BRANCH REVIEW (this entry): eight more items closed (I1, I2, M1, M6,
+  m1-m4), all in files already open for the baseline fix.
+    I1  Plan fact 3 undercounted: grepping `"Headless"` (quoted, string
+        literals only) across components/, chrome/, content/, headless/
+        returns well over a dozen non-test hits, not the 1 an earlier
+        `head -10`-truncated pass found (the exact count is filter-
+        sensitive -- re-run with three different reasonable exclusions and
+        got 16, 23 and 31; not pinned to one number here). Confirmed on the
+        build machine. Only one hit is load-bearing:
+        headless/lib/browser/headless_browser_impl.cc:67 defines its own
+        kHeadlessProductName and regenerates userAgentData's brand version
+        lists with it (:111-116) -- but its only caller,
+        HeadlessContentBrowserClient::GetProduct(), is headless_shell's own
+        client, not ChromeContentBrowserClient; chrome --headless never
+        reaches it, corroborated by the stock capture's clean brands list.
+        Fact 3 corrected to scope the fix to chrome/content_shell; the
+        headless_shell residual filed under spec D4 (2026-08-26-sp2-
+        automation-hiding-design.md), since criteria 5-9 run against chrome
+        and would not notice it.
+    I2  The plan called criterion 8 "a proof" from the --headless finding,
+        700 lines before its own later, correct statement that falsifiability
+        holds for criterion 5 and for criterion 8 only through its
+        criterion-5 term. First passage corrected to match. Conventions row E
+        (both the plan's copy and 00-conventions.md) gained "a conjunction
+        reddened by a mutant that reaches only one conjunct proves only that
+        conjunct," and its reddened-set claim corrected from "5 and 8" to
+        "5, 8 and 9" (m5, folded in -- 797de05 already recorded 9 as
+        observed; the convention row just hadn't been updated to match).
+    M1  (declined at Task 1, now fixed on the merits) lib_shell.launch()
+        computes port_arg as `0 if debug_port is None else debug_port` but
+        branches the poll loop on `debug_port is not None` -- so
+        debug_port=0 gives Chromium an ephemeral port while the loop polls
+        literal port 0, a 30s timeout blaming the browser. No caller passes
+        0 today. Closed with a RuntimeError precondition, same shape as
+        verify_sp2.py's two module-level guards. Proven: raises in 0.00s
+        instead of timing out.
+    M6  (declined at Task 1, now fixed on the merits) verify_sp2.py gained
+        EXPECTED = 9 with a raise on mismatch (not derived from a count of
+        report()/results[...] calls -- the shape declined elsewhere for
+        being tautological), and the report loop's sort key now parses each
+        label's leading digits as an int instead of sorting the raw string
+        ("10 ..." no longer sorts before "2a ..."). Proven: commenting out
+        criterion 3's block drops the count to 8 and raises immediately;
+        restored, sha-verified, reran 9 PASS.
+    m1  verify_sp2.py's C5 (`"Headless" not in ua`) had no presence guard --
+        N1's exact shape, which c897f13 fixed for `brands` and only
+        `brands`. C8 inherits it via results[C5]. Guarded:
+        `isinstance(ua, str) and bool(ua) and "Headless" not in ua`.
+    m2  load_baseline()'s refusal message named a bare `python3` recapture
+        command (no playwright) writing to the deployed checkout's copy
+        only, leaving the repo's baselines/ stale. Now names the venv
+        interpreter and the repo-tracked path explicitly, folded into C1's
+        message.
+    m3  Task 1 Step 10's prescribed commit message described five criteria
+        including a "criterion 4" the plan had already deleted. Replaced
+        with the message actually committed (923853f): four criteria.
+    m4  Task 3 Step 5's suite table had the "Two latent items" paragraph
+        sitting between the verify_sp2.py and run_coherence_tests.sh rows,
+        pushing the last row outside the table. Moved below the table.
+
+  Declined, not re-opened -- verified correct on the merits stated at
+  decline time: M3 (pinned line numbers, swept, all correct today), M4
+  (free_port() race, can only produce FAIL), I1a (guards check the module
+  global, named in-file with the consequence).
+
+  Verified on the build machine (checkout 70cb99fedc, unchanged): all six
+  suites clean --
+    verify_sp1a_chrome.py  34 PASS, exit 0
+    verify_sp2.py            9 PASS, exit 0
+    verify_sp0.py            11 PASS, exit 0
+    verify_sp1a.py            9 PASS, exit 0
+    verify_sp5a.py            4 PASS, exit 0
+    run_coherence_tests.sh    6/6 PASS
+  -- plus the two guard fault-injections above, both restored and
+  sha-confirmed before the clean reruns.
