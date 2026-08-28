@@ -698,7 +698,7 @@ runs compares two browsers.
 | 6 | `brands` is non-empty **and** no brand contains `Headless` | also passes. An unfalsified pin; see below. |
 | 7 | the `Sec-CH-UA` header **is present** and contains no `Headless` | also passes. Same. |
 | 8 | in this same session, `navigator.webdriver === false` **and** criterion 5 holds | **fails on both halves.** `--headless` is itself one of the switches `runtime_features.cc:378` maps onto `AutomationControlled`, so stock Chrome run headless answers `webdriver: true` with nothing attached. The §5 coherence tie. |
-| 9 | the `User-Agent` request header contains no `Headless` | **fails.** The channel closest to the defect, already sitting in `wire` at zero marginal cost, and reached by a different code path than `navigator.userAgent`. |
+| 9 | the `User-Agent` request header contains no `Headless` | **predicted to fail, not yet observed** — it was added after Step 8 ran, so no stock or mutant run has included it. It shares 5's producer, so it cannot diverge for *this* defect; what it pins is the transport, since the UA reaches `navigator.userAgent` and the wire header by different paths. Redden it once at Task 3's verification and mark it observed — recording an inferred falsification in the same notation as a measured one is the habit the mutation row above exists to break. |
 
 **On an absence assertion, a missing surface is a PASS, and that is the trap.** Criteria 6,
 7 and 9 all assert that something is *not* there, so an empty brand list, an absent header,
@@ -969,6 +969,12 @@ Then the four browser-level suites, each with its expected count:
 | `verify_sp5a.py` | 4 PASS, exit 0 |
 | `verify_sp1a_chrome.py` | 34 PASS, exit 0 |
 | `verify_sp2.py` | 9 PASS, exit 0 |
+
+**Two latent items in `verify_sp2.py`, for the whole-branch review rather than now.** The
+count moved 8 → 9 inside a review-fix commit and nothing in-script noticed — it lives only
+in the docstring and this table. And the report loop is `sorted(results.items())` on label
+strings, which is correct at 9 and wrong at 10: `"10 …"` sorts before `"2a …"`. The suite is
+one addition away from both.
 | `run_coherence_tests.sh` | 6/6 |
 
 Run each as `script > log 2>&1 && echo OK || echo FAILED` and count `^PASS` lines. A count
