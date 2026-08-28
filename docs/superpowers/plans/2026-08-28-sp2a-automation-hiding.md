@@ -155,6 +155,9 @@ requirements implicitly include this section.
 - **`cmd 2>&1 | tail -5` then `echo exit=$?` reports `tail`'s status.** Use
   `cmd > log 2>&1 && echo OK || echo FAILED`. Over ssh to the build machine only `&&`/`||`
   markers and `grep -c` counts survive; PowerShell eats `$?` and `$(...)` before `wsl` runs.
+- **The ssh ControlMaster socket dies around ~32KB of base64 payload** with
+  `mm_send_fd: sendmsg(1): Message too long`. Transfer one file per ssh call rather than
+  batching several. Found in Task 1 sending `lib_shell.py` and `verify_sp2.py` together.
 - **A green build does not run `gn check` or `checkdeps`.** Neither gate fires on a
   `.cc`-only change. Neither task here adds a cross-component include, so neither needs
   them — but do not add one without running both explicitly.
@@ -429,15 +432,31 @@ bool Navigator::webdriver() const {
 }
 ```
 
-Then check whether `RuntimeEnabledFeatures` and `probe::` are still used elsewhere in
-`navigator.cc`, and remove only an include that *this* change orphaned:
+**Do not touch the include block.** This is a behaviour change inside one function, and
+leaving the includes alone keeps the whole change to one contiguous hunk — which is what a
+fork that rebases onto upstream wants in the churniest region of the file.
 
-```bash
-grep -c "RuntimeEnabledFeatures::" third_party/blink/renderer/core/frame/navigator.cc
-grep -c "probe::" third_party/blink/renderer/core/frame/navigator.cc
+Two specific reasons, beyond diff hygiene. `core/probe/core_probes.h` is still needed by
+the Step 8 mutation, which restores the upstream body and will not compile without it; the
+plan's own falsifiability check depends on that include surviving. And
+`runtime_enabled_features.h` is not in this file's include block at all —
+`RuntimeEnabledFeatures::` resolved transitively — so there is nothing to remove for it.
+
+Add one line to the comment block you just wrote, so the retained include is not deleted
+by a later tidy-up:
+
+```cpp
+  // core_probes.h stays in the include block though nothing below calls
+  // probe:: any more. The plan's mutation check restores the upstream body,
+  // which does, and an unexplained unused include is exactly what a future
+  // cleanup removes.
 ```
-If either count is 0, drop the corresponding include; if not, leave both. Do not remove
-anything this change did not orphan.
+
+An earlier draft of this step instead said to `grep -c` for `probe::` and
+`RuntimeEnabledFeatures::` and drop an include whose count came back 0. **That check could
+not fail**: the comment this same step mandates contains the literal `probe::ApplyAutomationOverride`,
+so the count is at least 1 by construction and the "drop it" branch is unreachable. It
+produced the right answer here by accident. See the conventions entry Task 3 adds.
 
 - [ ] **Step 7: Build and re-run**
 
@@ -618,16 +637,18 @@ std::string GetUserAgentInternal() {
   // suppressing the prefix in one channel would leave the disagreement.
 ```
 
-Then confirm `kHeadless` is still used elsewhere in the file before assuming the include
-can go:
+**Do not touch the include block**, for the same reason as Task 1 Step 6: this is a
+behaviour change inside one function, and `components/embedder_support/switches.h` supplies
+other switch names this file uses regardless.
 
-```bash
-grep -c "kHeadless" components/embedder_support/user_agent_utils.cc
-```
-Expected: `0`. `components/embedder_support/switches.h` also supplies other switch names
-used by this file, so **do not remove the include** — check with
-`grep -c "kUseMobileUserAgent\|kUserAgent" components/embedder_support/user_agent_utils.cc`
-and leave the include if anything remains.
+An earlier draft of this step said to run
+`grep -c "kHeadless" components/embedder_support/user_agent_utils.cc` and expect `0`. That
+expectation was **unreachable** — the comment this same step mandates contains
+`HasSwitch(kHeadless)`, so the count is at least 1 by construction, and an implementer
+following the step literally would have hard-stopped on a count it could never produce.
+Task 1 shipped the same defect in a milder form, where it happened to yield the right
+answer. If you want to know whether executable code still references a symbol, exclude
+comment lines explicitly; do not grep a file a previous step just wrote prose into.
 
 - [ ] **Step 4: Run the test and watch it pass**
 
@@ -934,6 +955,7 @@ Add to the "dominant failure mode" table the row this plan earned before running
 
 | The check | What it actually measured |
 |---|---|
+| a `grep -c` for a symbol, run after a step that mandates writing a comment naming that symbol | **the text the step just wrote.** Task 1 Step 6 asked whether `probe::` was still used and decided an include's fate on the count; the mandated comment contains `probe::ApplyAutomationOverride`, so the count was 1 by construction and the "drop it" branch was unreachable. Task 2 Step 3 had the same shape and expected `0`, which its own mandated comment made impossible. The rule read as "is this symbol still used?" and measured "does this string appear in the file?" — the same substitution as the runner that counted its own `report()` calls. **When one step writes prose into a file and a later step greps it, the grep sees what the step just wrote.** |
 | verifying the `HeadlessChrome` fix against `content_shell` | nothing. `ShellContentBrowserClient::GetUserAgent()` builds its own product string and never calls `GetUserAgentInternal()`, so the shell has no `HeadlessChrome` under any switch. Conventions already recorded this trap for `GetUserAgentMetadata` and explicitly cleared `GetUserAgent` as the safe sibling — the clearance was about which *function* it calls, and the headless prefix lives one level below that, inside a caller the shell also skips. |
 
 - [ ] **Step 8: Commit**
