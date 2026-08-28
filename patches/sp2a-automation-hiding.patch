@@ -1,0 +1,102 @@
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index 7e70997f57..1adc7fb452 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -217,9 +217,30 @@ const blink::UserAgentBrandList GetUserAgentBrandFullVersionListInternal(
+ // depending on the Reduce User-Agent reduction phase features.
+ std::string GetUserAgentInternal() {
+   std::string product = GetProductAndVersion();
+-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
+-    product.insert(0, "Headless");
+-  }
++  // Camoucrome: upstream inserts "Headless" here under --headless. Removed
++  // unconditionally, with no config key -- a fork that can be configured to
++  // announce itself as automated has failed at its one job.
++  //
++  // The HasSwitch(kHeadless) test is deliberately gone rather than kept with
++  // its body emptied: nothing else in this function reads it. --headless
++  // itself is untouched everywhere else and still means headless; only the
++  // advertisement goes.
++  //
++  // This is also the fix for a live cross-channel incoherence in stock
++  // Chrome, which is the more useful half. Channel 1 (this string) says
++  // Headless while channels 2 and 3 -- navigator.userAgentData.brands and
++  // Sec-CH-UA -- report Chromium with no Headless anywhere. A detector
++  // comparing the three separates headless Chrome from real Chrome without
++  // either value having to be implausible alone. Removing the prefix is what
++  // ENDS that disagreement -- the defect spans channel 1 only, so there is no
++  // reachable state in which fixing it leaves channels 2 and 3 out of step.
++  //
++  // Criteria 6 and 7 are therefore PINS on two surfaces that are already
++  // clean, not proofs that this fix reached them: they hold the line against
++  // a Chromium roll that adds a headless brand, or a fork change routing the
++  // brand list through the product string. Nothing that mutates THIS function
++  // can redden them, because neither channel is produced here --
++  // GetUserAgentMetadata() is.
+ 
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(kUseMobileUserAgent)) {
+diff --git a/components/embedder_support/user_agent_utils_unittest.cc b/components/embedder_support/user_agent_utils_unittest.cc
+index 7b66dd0874..19183db9ef 100644
+--- a/components/embedder_support/user_agent_utils_unittest.cc
++++ b/components/embedder_support/user_agent_utils_unittest.cc
+@@ -1043,8 +1043,13 @@ TEST_F(UserAgentUtilsTest, HeadlessUserAgent) {
+   command_line->AppendSwitch(kHeadless);
+   ASSERT_TRUE(command_line->HasSwitch(kHeadless));
+ 
+-  // In headless mode product name should have the Headless prefix.
+-  EXPECT_THAT(GetUserAgent(), testing::HasSubstr("HeadlessChrome/"));
++  // Camoucrome: inverted. Upstream asserted HasSubstr("HeadlessChrome/") here,
++  // because upstream wants headless mode advertised. This fork suppresses the
++  // prefix unconditionally (user_agent_utils.cc, GetUserAgentInternal), so the
++  // upstream assertion is exactly the regression this test now guards against.
++  // The switch itself is untouched and still means headless -- only the
++  // advertisement is gone, which is why the AppendSwitch above stays.
++  EXPECT_THAT(GetUserAgent(), testing::Not(testing::HasSubstr("Headless")));
+ }
+ 
+ namespace {
+diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
+index 583f05f8dd..9da1f2bf93 100644
+--- a/third_party/blink/renderer/core/frame/navigator.cc
++++ b/third_party/blink/renderer/core/frame/navigator.cc
+@@ -98,12 +98,33 @@ bool Navigator::cookieEnabled() const {
+ }
+ 
+ bool Navigator::webdriver() const {
+-  if (RuntimeEnabledFeatures::AutomationControlledEnabled())
+-    return true;
+-
+-  bool automation_enabled = false;
+-  probe::ApplyAutomationOverride(GetExecutionContext(), automation_enabled);
+-  return automation_enabled;
++  // Camoucrome: unconditionally false, and deliberately before BOTH sources.
++  //
++  // Two independent things set this true upstream. RuntimeEnabledFeatures::
++  // AutomationControlledEnabled() is what --disable-blink-features=
++  // AutomationControlled turns off, which is why that switch is only half a
++  // fix. The second is probe::ApplyAutomationOverride, the instrumentation
++  // behind CDP's Emulation.setAutomationOverride
++  // (Emulation.pdl:603 -> inspector_emulation_agent.cc:1222), which any
++  // client that speaks the protocol can issue at any time.
++  //
++  // Dropping the probe call is a deliberate exception to the project rule
++  // "never delete a probe call", and the argument is narrow enough to state.
++  // That rule exists because a probe usually drives a legitimate DevTools
++  // emulation feature that a fingerprint override should win over but not
++  // break -- hardwareConcurrency is the precedent. Here the probe's ONLY
++  // consumer is the value being discarded: automation_override_ is read at
++  // exactly one place, inspector_emulation_agent.cc:1271, inside
++  // ApplyAutomationOverride itself. So nothing else observes it, the agent
++  // still records the state and still answers Success, and the sole effect
++  // removed is a driver's ability to re-announce itself -- which is the
++  // requirement, not a casualty of it.
++  //
++  // core_probes.h stays in the include block though nothing below calls
++  // probe:: any more. The plan's mutation check restores the upstream body,
++  // which does, and an unexplained unused include is exactly what a future
++  // cleanup removes.
++  return false;
+ }
+ 
+ String Navigator::GetAcceptLanguages() {

@@ -36,6 +36,7 @@ PATCHES=(
   "$ROOT/patches/sp0-config-layer.patch"
   "$ROOT/patches/sp1a-ua-producer.patch"
   "$ROOT/patches/sp5a-coherence-validator.patch"
+  "$ROOT/patches/sp2a-automation-hiding.patch"
 )
 for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
