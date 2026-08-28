@@ -39,11 +39,17 @@ any build). Spawning a real worker to confirm a property the IDL never
 declares would be testing Blink's bindings generator, not this change.
 
 Criteria 5-9 test the second signal, the HeadlessChrome product token
-(GetUserAgentInternal(), in user_agent_utils.cc), across the channels a
-UA-CH-aware detector can read: the UA string, navigator.userAgentData.brands,
-the Sec-CH-UA request header, and the User-Agent request header. 5 is the
-proof; 9 is the channel closest to the defect, reached by a different code
-path than navigator.userAgent. 6 and 7 pass on a stock build already and are
+(GetUserAgentInternal(), in user_agent_utils.cc), across four channels: the
+UA string, navigator.userAgentData.brands, the Sec-CH-UA request header, and
+the User-Agent request header. Four, not all -- Sec-CH-UA-Full-Version-List
+and getHighEntropyValues().fullVersionList are readable too and are not
+asserted here; they come from the brand list, so 6 already pins their source.
+
+5 is the proof. 9 shares 5's producer and so cannot diverge from it for THIS
+defect -- it pins the transport rather than the value, because the UA reaches
+navigator.userAgent and the wire header by different paths, and a later SP
+rewriting the header in the network service would show up here and nowhere
+else. 6 and 7 pass on a stock build already and are
 PINS, not proofs: channel 1 is the only one the defect ever spanned, so
 nothing in this task's mutation (Step 8) can redden them -- it edits
 GetUserAgentInternal() alone, and neither channel is produced there;
@@ -99,10 +105,13 @@ if "--headless" in lib_shell.SHELL_FLAGS:
 # execution would otherwise reach this check, so a RuntimeError there escaped
 # module scope and discarded those four results before the print loop ever
 # ran -- exactly the traceback-over-FAIL-line failure this file's docstring
-# says must not happen. Every criterion below asserts the ABSENCE of a token
-# that only appears under --headless, so dropping the switch would turn all
-# five green while measuring nothing -- the project's dominant failure mode,
-# arriving through a file this script does not own.
+# says must not happen. Every criterion in the 5-9 block asserts the ABSENCE
+# of a token that only appears under --headless, so dropping the switch would
+# turn all five green while measuring nothing -- the project's dominant
+# failure mode, arriving through a file this script does not own. ("Every
+# criterion below" was right where this comment used to sit and became wrong
+# when it moved: hoisting put criteria 1-3 below it too, and they assert
+# nothing of the kind.)
 #
 # `raise`, not `assert`: python3 -O strips assert statements, and a guard
 # that vanishes under a flag is that same failure mode wearing a guard's
@@ -296,27 +305,46 @@ if err is not None:
     failed([C5, C6, C7, C8, C9], "criteria 5-9 session", err)
 else:
     ua, brands_json, webdriver = values
+
+    # ua and wire are both in hand here, so C5, C7, C8 and C9 are computed
+    # BEFORE the brands parse can fail. Only C6 reads `brands`. Failing all
+    # five on a parse error would report "the product token leaked into the
+    # UA string" for what is really "the brands channel could not be read" --
+    # and an hour was lost in this project once to a misattributed failure.
+    results[C5] = "Headless" not in ua
+
+    # "sec-ch-ua" in wire first: wire.get(..., "") would let a missing or
+    # renamed header PASS silently. This criterion asserts an ABSENCE, which
+    # inverts the safety of the .get default -- an equality comparison fails
+    # when the surface disappears, an absence assertion passes.
+    results[C7] = ("sec-ch-ua" in wire
+                   and "Headless" not in wire["sec-ch-ua"])
+
+    results[C8] = webdriver is False and results[C5]
+
+    results[C9] = ("user-agent" in wire
+                   and "Headless" not in wire["user-agent"])
+
+    # TypeError as well as ValueError, and the TypeError is the reachable one.
+    # json.loads raises JSONDecodeError (a ValueError) on a malformed string
+    # but TypeError on a non-string -- and JSON.stringify(undefined) returns
+    # JS undefined, which Playwright hands back as None. So if
+    # navigator.userAgentData.brands ever goes missing -- THE regression C6
+    # exists to pin -- an uncaught TypeError would take the whole run down
+    # with no output at all, instead of printing FAIL 6.
+    #
+    # The two neighbouring cases already behave: brands === null gives "null",
+    # which parses to None and fails C6 on bool(None); userAgentData itself
+    # being undefined throws in-page and is caught by session().
     try:
         brands = json.loads(brands_json)
-    except ValueError as exc:
-        failed([C5, C6, C7, C8, C9], "criteria 5-9 brands parse", exc)
+    except (ValueError, TypeError) as exc:
+        failed([C6], "criterion 6 brands parse", exc)
     else:
-        results[C5] = "Headless" not in ua
-
         # bool(brands) first: an empty list satisfies `not any(...)` having
         # examined nothing, so absence alone would PASS this criterion.
         results[C6] = bool(brands) and not any(
             "Headless" in b.get("brand", "") for b in brands)
-
-        # "sec-ch-ua" in wire first, for the same reason: wire.get(..., "")
-        # would let a missing or renamed header PASS silently.
-        results[C7] = ("sec-ch-ua" in wire
-                        and "Headless" not in wire["sec-ch-ua"])
-
-        results[C8] = webdriver is False and results[C5]
-
-        results[C9] = ("user-agent" in wire
-                        and "Headless" not in wire["user-agent"])
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
