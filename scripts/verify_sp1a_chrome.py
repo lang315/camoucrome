@@ -21,7 +21,6 @@ collected.
 
 import json
 import os
-import subprocess
 import sys
 
 import echo_server
@@ -31,12 +30,15 @@ from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 BASELINE = os.path.expanduser(
     "~/camoucrome-verify/baselines/chrome-0e8d4a9268-stock-ua.json")
 
-# Same literal capture_ua_baseline.py uses to find the checkout it captures
-# from. Duplicated rather than imported for the same reason BASELINE's path
-# is duplicated across every verify_*.py in this project: importing
-# capture_ua_baseline would run its argparse/subprocess module-level code as
-# a side effect of loading this file.
-CHECKOUT = os.path.expanduser("~/chromium/src")
+# The pinned upstream revision this baseline must be a capture of (README.md).
+# Not the checkout's current HEAD: a HEAD-tracking guard is refused the
+# moment ANY patch lands, including ones that never touch the UA surface, and
+# its only escape hatch is recapturing from whatever is currently built --
+# which is what commit 9f1040e did, and which makes the baseline compare the
+# fork against a recording of itself instead of against stock. Fork-side UA
+# deltas (SP2a's Headless-prefix removal, for one) are reconciled in code at
+# the comparison sites below, not by moving this constant.
+STOCK_BASE_COMMIT = "0e8d4a9268"
 
 # Identical to verify_sp1a.py's. Kept in step by hand rather than imported:
 # importing it would execute that file, which runs its own browser sessions.
@@ -115,38 +117,21 @@ def failed(keys, label, exc):
     notes.append(f"{label}: {type(exc).__name__}: {exc}")
 
 
-def current_checkout_commit():
-    """Short git HEAD of the Chromium checkout, mirroring capture_ua_baseline.py.
-
-    Every Camoucrome patch lands there as a commit (confirmed on the build
-    machine: `git log` in the checkout shows the SP2a commits by subject, and
-    `git status` is clean), so this is not a guess about what is built into
-    the binary -- it is the checkout's own record of it. A fault reading it
-    must refuse rather than assume the baseline is still fresh: an unreadable
-    checkout tells us nothing either way.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "-C", CHECKOUT, "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, check=True)
-    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
-        return None, exc
-    return result.stdout.strip(), None
-
-
 def load_baseline(path):
-    """Loads the baseline and refuses it if the checkout has moved since capture.
+    """Loads the baseline and refuses it if it is not a stock capture.
 
-    capture_ua_baseline.py already records provenance.captured_at_commit --
-    the checkout's own git HEAD at capture time, not asserted, read off the
-    checkout the same way this function reads it now. What was missing was a
-    reader on this side: nothing compared that recorded commit against the
-    checkout's CURRENT one, so a baseline captured before a patch changed
-    unconfigured behaviour (SP2a's HeadlessChrome removal did exactly this)
-    would go on being silently compared against, producing FAILs that read
-    like a regression instead of what they actually were -- a stale fixture.
-    Refusing here, the same way an unrecognised binary is refused at capture
-    time, turns that into one named cause instead of several confusing ones.
+    A baseline's whole value is that it predates every fork patch. capture_
+    ua_baseline.py records provenance.captured_at_commit -- the checkout's
+    git HEAD at capture time -- so this only has to compare that recorded
+    value against STOCK_BASE_COMMIT, the pinned revision it must equal.
+    Nothing here reads the checkout's CURRENT commit: a baseline captured
+    from an already-patched checkout is wrong regardless of what the
+    checkout has since moved to or away from, and checking against a moving
+    target is what let commit 9f1040e recapture the baseline from a patched
+    build and have the guard call it fresh. Refusing here, the same way an
+    unrecognised binary is refused at capture time, gives that failure one
+    named cause instead of four confusing FAILs that read like a regression
+    this file did not cause.
     """
     try:
         with open(path) as handle:
@@ -162,20 +147,28 @@ def load_baseline(path):
     if not captured_commit:
         return None, KeyError(
             "baseline's provenance lacks captured_at_commit")
-    current_commit, err = current_checkout_commit()
-    if err is not None:
+    if captured_commit != STOCK_BASE_COMMIT:
         return None, RuntimeError(
-            "could not read the checkout's current commit to check the "
-            f"baseline's freshness: {type(err).__name__}: {err}")
-    if current_commit != captured_commit:
-        return None, RuntimeError(
-            f"baseline is stale: captured at checkout commit "
-            f"{captured_commit!r}, but the checkout at {CHECKOUT} is now at "
-            f"{current_commit!r}. A patch has landed since capture that may "
-            f"have changed the unconfigured build's output -- exactly what "
-            f"SP2a's HeadlessChrome removal did. Recapture with: "
-            f"python3 capture_ua_baseline.py --shell {lib_shell.CHROME} "
-            f"> {path}")
+            f"baseline is not a stock capture: provenance.captured_at_commit "
+            f"is {captured_commit!r}, expected {STOCK_BASE_COMMIT!r} -- the "
+            f"pinned upstream revision this project builds from (README.md), "
+            f"captured before any Camoucrome patch landed. This file must "
+            f"stay that stock capture; a fork-side UA delta (SP2a's "
+            f"Headless-prefix removal, for one) belongs in code at the "
+            f"comparison site -- see product_token()'s caller and the "
+            f"criterion-8 block below -- not in this file. If {path} was "
+            f"genuinely overwritten, restore it from git history rather than "
+            f"recapturing: git show <last-good-commit>:baselines/"
+            f"chrome-{STOCK_BASE_COMMIT}-stock-ua.json. Only recapture if "
+            f"you have rebuilt `chrome` from the unpatched "
+            f"{STOCK_BASE_COMMIT} checkout, with the venv interpreter (bare "
+            f"python3 has no playwright): "
+            f"~/camoucrome-verify/venv/bin/python3 capture_ua_baseline.py "
+            f"--shell {lib_shell.CHROME} > "
+            f"baselines/chrome-{STOCK_BASE_COMMIT}-stock-ua.json in the "
+            f"camoucrome repo (git-tracked), then redeploy that file to "
+            f"{path} -- writing only to {path} updates this checkout's copy "
+            f"and leaves the repo one stale.")
     return data, None
 
 
@@ -199,6 +192,20 @@ def product_token(ua):
         if "Chrome/" in token:
             return token
     return None
+
+
+def sp2a_expected_ua(raw):
+    """What SP2a's own build reports, given the pre-SP2a stock UA string.
+
+    BASELINE must stay a stock, pre-SP2a capture (load_baseline() refuses it
+    otherwise), so it still carries the "Headless" prefix that SP2a
+    (user_agent_utils.cc, GetUserAgentInternal) removes unconditionally.
+    Every comparison against the baseline needs that same removal applied
+    here, or it compares a live SP2a build's output against a token no build
+    produces anymore -- not a regression, just the one delta this task
+    intends.
+    """
+    return raw.replace("HeadlessChrome/", "Chrome/")
 
 
 # The UA string carries the OS as a free-form segment while userAgentData
@@ -340,7 +347,7 @@ else:
         "Windows NT 10.0; Win64; x64" in ua)
     results["1 spoofed UA carries no Linux token"] = (
         "Linux" not in ua and "X11" not in ua)
-    base_token = product_token(baseline["user_agent"])
+    base_token = product_token(sp2a_expected_ua(baseline["user_agent"]))
     results["1 spoofed UA reports the build's own version"] = (
         base_token is not None and base_token in ua)
 
@@ -353,16 +360,16 @@ else:
     # This carried a live KNOWN GAP until SP2a: the token stayed
     # HeadlessChrome because SP2 (see its surface table) had not yet removed
     # the prefix. SP2a closed that (user_agent_utils.cc, GetUserAgentInternal,
-    # commit b04b4e77f4) -- the token this file observes now is
+    # commit b04b4e77f4) -- the token every session observes now is
     # "Chrome/<version>" on both the spoofed and unconfigured sessions, and
     # this assertion no longer has a known-failing case to carry.
     #
-    # What keeps the comparison meaningful rather than just quiet is that
-    # `baseline` is the unconfigured build's OWN current output, not a
-    # snapshot from before SP2a landed: load_baseline() refuses to run this
-    # comparison at all once the checkout has moved past the commit the
-    # baseline was captured at, rather than silently comparing against a
-    # token an old build produced.
+    # What keeps the comparison meaningful rather than just quiet is
+    # sp2a_expected_ua() above, not the baseline file itself: `baseline` is
+    # pinned to the pre-SP2a stock capture (load_baseline() refuses anything
+    # else), so base_token is SP2a's one intended delta applied to that
+    # stock value, not a token an old, un-rebuilt baseline happens to still
+    # contain.
     results["1 spoofed UA leaves the product token untouched"] = (
         base_token is not None and product_token(ua) == base_token)
 
@@ -556,8 +563,16 @@ elif baseline_err is not None:
     failed(C8, f"baseline load from {BASELINE}", baseline_err)
 else:
     ua, ua_platform, ua_mobile, brands_json, entropy = stock
+
+    # SP2a's delta again: the unconfigured session runs headless too
+    # (CHROME_FLAGS), so it no longer reports the Headless-prefixed token
+    # the stock baseline was captured with. Comparing it against the raw
+    # baseline is what broke these two assertions -- and the product-token
+    # ones above -- when 9f1040e's guard first caught the baseline going
+    # stale; fixed here at the comparison site instead of by recapturing.
+    baseline_ua = sp2a_expected_ua(baseline["user_agent"])
     results["8 unconfigured UA is byte-identical to the baseline"] = (
-        ua == baseline["user_agent"])
+        ua == baseline_ua)
     results["8 unconfigured userAgentData matches the baseline"] = (
         ua_platform == baseline["platform"]
         and ua_mobile == baseline["mobile"]
@@ -565,8 +580,10 @@ else:
         and entropy == baseline["high_entropy"])
     observed = {k: v for k, v in stock_wire.items()
                 if k.startswith("sec-ch-ua") or k == "user-agent"}
+    baseline_headers = dict(baseline["request_headers"])
+    baseline_headers["user-agent"] = baseline_ua
     results["8 unconfigured request headers match the baseline"] = (
-        observed == baseline["request_headers"])
+        observed == baseline_headers)
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
