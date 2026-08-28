@@ -21,6 +21,7 @@ collected.
 
 import json
 import os
+import subprocess
 import sys
 
 import echo_server
@@ -29,6 +30,13 @@ from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 
 BASELINE = os.path.expanduser(
     "~/camoucrome-verify/baselines/chrome-0e8d4a9268-stock-ua.json")
+
+# Same literal capture_ua_baseline.py uses to find the checkout it captures
+# from. Duplicated rather than imported for the same reason BASELINE's path
+# is duplicated across every verify_*.py in this project: importing
+# capture_ua_baseline would run its argparse/subprocess module-level code as
+# a side effect of loading this file.
+CHECKOUT = os.path.expanduser("~/chromium/src")
 
 # Identical to verify_sp1a.py's. Kept in step by hand rather than imported:
 # importing it would execute that file, which runs its own browser sessions.
@@ -107,17 +115,67 @@ def failed(keys, label, exc):
     notes.append(f"{label}: {type(exc).__name__}: {exc}")
 
 
+def current_checkout_commit():
+    """Short git HEAD of the Chromium checkout, mirroring capture_ua_baseline.py.
+
+    Every Camoucrome patch lands there as a commit (confirmed on the build
+    machine: `git log` in the checkout shows the SP2a commits by subject, and
+    `git status` is clean), so this is not a guess about what is built into
+    the binary -- it is the checkout's own record of it. A fault reading it
+    must refuse rather than assume the baseline is still fresh: an unreadable
+    checkout tells us nothing either way.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", CHECKOUT, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True)
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        return None, exc
+    return result.stdout.strip(), None
+
+
 def load_baseline(path):
+    """Loads the baseline and refuses it if the checkout has moved since capture.
+
+    capture_ua_baseline.py already records provenance.captured_at_commit --
+    the checkout's own git HEAD at capture time, not asserted, read off the
+    checkout the same way this function reads it now. What was missing was a
+    reader on this side: nothing compared that recorded commit against the
+    checkout's CURRENT one, so a baseline captured before a patch changed
+    unconfigured behaviour (SP2a's HeadlessChrome removal did exactly this)
+    would go on being silently compared against, producing FAILs that read
+    like a regression instead of what they actually were -- a stale fixture.
+    Refusing here, the same way an unrecognised binary is refused at capture
+    time, turns that into one named cause instead of several confusing ones.
+    """
     try:
         with open(path) as handle:
             data = json.load(handle)
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     missing = [k for k in ("user_agent", "brands", "platform", "mobile",
-                           "high_entropy", "request_headers")
+                           "high_entropy", "request_headers", "provenance")
                if k not in data]
     if missing:
         return None, KeyError(f"baseline lacks {', '.join(missing)}")
+    captured_commit = data["provenance"].get("captured_at_commit")
+    if not captured_commit:
+        return None, KeyError(
+            "baseline's provenance lacks captured_at_commit")
+    current_commit, err = current_checkout_commit()
+    if err is not None:
+        return None, RuntimeError(
+            "could not read the checkout's current commit to check the "
+            f"baseline's freshness: {type(err).__name__}: {err}")
+    if current_commit != captured_commit:
+        return None, RuntimeError(
+            f"baseline is stale: captured at checkout commit "
+            f"{captured_commit!r}, but the checkout at {CHECKOUT} is now at "
+            f"{current_commit!r}. A patch has landed since capture that may "
+            f"have changed the unconfigured build's output -- exactly what "
+            f"SP2a's HeadlessChrome removal did. Recapture with: "
+            f"python3 capture_ua_baseline.py --shell {lib_shell.CHROME} "
+            f"> {path}")
     return data, None
 
 
@@ -127,11 +185,15 @@ baseline, baseline_err = load_baseline(BASELINE)
 def product_token(ua):
     """The 'Chrome/<version>' token, whatever prefix it carries.
 
-    NOT startswith("Chrome/"), which is what verify_sp1a.py uses and what this
-    file used first. Under --headless the token is HeadlessChrome/154.0.0.0 --
-    user_agent_utils.cc:218 does product.insert(0, "Headless") -- so a prefix
-    match returns None here and the version assertion fails for a reason that
-    has nothing to do with the version. An `in` test reads both forms.
+    NOT startswith("Chrome/"), which is what verify_sp1a.py uses and what
+    this file used first. That distinction used to matter here: under
+    --headless the token was HeadlessChrome/154.0.0.0, upstream inserting the
+    prefix in GetUserAgentInternal(). SP2a (user_agent_utils.cc, that same
+    function) removed the insert unconditionally, so every token this file
+    observes today is plain "Chrome/<version>" and a prefix match would
+    already work. The `in` form is kept anyway -- it costs nothing, and it is
+    what still reads correctly if some prefix, upstream's or a future fork
+    addition, ever gets inserted again.
     """
     for token in ua.split():
         if "Chrome/" in token:
@@ -282,14 +344,25 @@ else:
     results["1 spoofed UA reports the build's own version"] = (
         base_token is not None and base_token in ua)
 
-    # Records a KNOWN GAP as a measured fact rather than as prose, and guards
-    # it in both directions. SP1a substitutes os_info only; product never
-    # passes that substitution point, so the token must be byte-identical to
-    # the unspoofed one -- today that means the spoofed Windows UA still says
-    # HeadlessChrome. That is SP2's to remove (see its surface table), and
-    # until it does, this assertion is what stops the leak from being
-    # rediscovered by a detector instead of by us. It fails just as loudly if
-    # SP1a ever starts touching the token, which it must not.
+    # Guards SP1a's boundary in both directions: SP1a substitutes os_info
+    # only, so the product token must stay byte-identical to whatever the
+    # unspoofed build reports, regardless of what that token is. It fails
+    # just as loudly if SP1a ever starts touching the token, which it must
+    # not.
+    #
+    # This carried a live KNOWN GAP until SP2a: the token stayed
+    # HeadlessChrome because SP2 (see its surface table) had not yet removed
+    # the prefix. SP2a closed that (user_agent_utils.cc, GetUserAgentInternal,
+    # commit b04b4e77f4) -- the token this file observes now is
+    # "Chrome/<version>" on both the spoofed and unconfigured sessions, and
+    # this assertion no longer has a known-failing case to carry.
+    #
+    # What keeps the comparison meaningful rather than just quiet is that
+    # `baseline` is the unconfigured build's OWN current output, not a
+    # snapshot from before SP2a landed: load_baseline() refuses to run this
+    # comparison at all once the checkout has moved past the commit the
+    # baseline was captured at, rather than silently comparing against a
+    # token an old build produced.
     results["1 spoofed UA leaves the product token untouched"] = (
         base_token is not None and product_token(ua) == base_token)
 
