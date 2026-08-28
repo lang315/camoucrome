@@ -373,6 +373,16 @@ GPU, fonts, and permissions. Camoufox's answer is a virtual display rather than 
 The equivalent question for Chromium — headless, Xvfb, or both — affects SP4 (screen, fonts)
 and needs its own decision.
 
+A residual from SP2a's `HeadlessChrome` product-token fix belongs here. That fix
+(`components/embedder_support/user_agent_utils.cc`) covers `chrome` and `content_shell`, the
+two binaries this project ships and verifies. It does not cover `headless_shell`:
+`headless/lib/browser/headless_browser_impl.cc:67` defines its own `kHeadlessProductName =
+"HeadlessChrome"` and uses it to build `userAgentData`'s brand version lists
+(`:111-116`), reached through `HeadlessContentBrowserClient::GetProduct()`, a code path
+`chrome --headless` never enters. If this decision is ever answered "ship or test
+`headless_shell`", that binary needs the same fix `user_agent_utils.cc` got, and SP2a's
+verification (criteria 5-9, which run against `chrome`) would not notice its absence.
+
 **D5 — Rebase cost.** Any change inside `v8/src/inspector` will conflict on most Chromium
 rolls. If D1 lands on option (b) or (c), the maintenance cost belongs in SP6's planning and
 should be estimated before, not after.

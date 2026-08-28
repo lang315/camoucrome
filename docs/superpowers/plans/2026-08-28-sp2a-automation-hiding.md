@@ -78,10 +78,26 @@ TEST_F(UserAgentUtilsTest, HeadlessUserAgent) {
 Inverted, it becomes an in-process regression gate that runs in seconds and needs no
 browser — strictly better than a browser-level check alone. The spec never mentions it.
 
-**3. `user_agent_utils.cc:221` is the only producer of the prefix in the tree.** Verified by
-grepping `"Headless"` across `components/`, `chrome/`, `content/` and `headless/`: the only
-other non-test hit is `chrome/install_static/user_data_dir.cc:131`, a temp-directory name.
-The fix is complete at one site rather than being one of several.
+**3. `user_agent_utils.cc:221` is the only producer of the prefix for the binaries this
+project ships.** Verified by grepping `"Headless"` across `components/`, `chrome/`,
+`content/` and `headless/`: an initial pass, truncated by `head -10`, undercounted --
+re-run untruncated, grep returns well over a dozen non-test hits, not the one it originally
+cited. Most are log strings, flag descriptions, or C++ identifiers with no UA effect. Of the
+rest, `chrome/install_static/user_data_dir.cc:131` is a temp-directory name, and the ones
+that remain live under `headless/`, none of which `chrome` or `content_shell` link into --
+except one that matters: `headless/lib/browser/headless_browser_impl.cc:67` defines
+`kHeadlessProductName = "HeadlessChrome"`, and `:111-116` uses it to regenerate
+`userAgentData`'s brand version lists, so on the `headless_shell` binary the name reaches
+more channels than just the UA string. It is still out of scope here:
+`HeadlessBrowser::GetProductNameAndVersion()`'s only caller is
+`HeadlessContentBrowserClient::GetProduct()`
+(`headless/lib/browser/headless_content_browser_client.cc:435`), not
+`ChromeContentBrowserClient`, and `chrome --headless` never reaches it -- corroborated by the
+stock capture, whose `brands` list is clean. The fix is complete for `chrome` and
+`content_shell`; `headless_shell` carries its own, unpatched product name. Filed under the
+spec's D4 (whether Camoucrome ships headless mode at all): if that is ever answered "ship or
+test `headless_shell`", this residual is what closing it would need, and criteria 5-9 would
+not notice its absence, because they run `chrome`.
 
 **4. `Emulation.setAutomationOverride` is confirmed, not inferred.** The spec marked the
 probe→CDP mapping *(unverified)*. It is real:
@@ -117,8 +133,12 @@ Two things follow, and the second is the more important:
 - **Stock Chrome run with `--headless` reports `navigator.webdriver === true` with no
   automation client attached at all.** The leak is not merely "a driver can flip it"; the
   switch that makes it headless has already flipped it. That is a stronger justification for
-  this sub-project than the spec gives, and it means Task 2's criterion 8 is a proof rather
-  than the coherence bookkeeping it was written as.
+  this sub-project than the spec gives. Criterion 8 conjoins a UA-string term with a
+  `webdriver` term, and only the UA-string term is falsifiable within Task 2's own mutation
+  (Step 8 restores the insert in `GetUserAgentInternal()`, which the `webdriver` term's
+  producer, `navigator.cc`, is never touched by) — so criterion 8 is a proof through that
+  term and an unfalsified pin through the other, not simply "a proof rather than the
+  coherence bookkeeping it was written as."
 
 The spec's line number for the insert (218) is now 220; SP1a's own patch added lines above
 it. Use the symbol, not the number.
@@ -544,11 +564,19 @@ separately — they are two repositories.
 git add scripts/verify_sp2.py
 git commit -m "sp2a: verify navigator.webdriver is false through both of its sources
 
-Five criteria; two of them (1b and 2) fail on a stock build and are the
-ones that prove anything. Criterion 1 is a regression guard and says so.
-Criterion 4 asserts webdriver is ABSENT from WorkerNavigator rather than
-asserting a value: it lives on the NavigatorAutomationInformation mixin,
-which no worker interface includes."
+Four criteria; 1 and 2b are the ones that fail on a stock build and
+prove anything. Criterion 1 uses the harness's default launch (port
+0), which content/child/runtime_features.cc reads as ChromeDriver's
+launch pattern and force-enables RuntimeEnabledFeatures::
+AutomationControlledEnabled() regardless of any blink-features flag --
+so this proves the fix wins even when that source is already forced
+on. Criteria 2a/2b use a fixed non-zero debug_port so the feature
+stays off and Emulation.setAutomationOverride is the only thing that
+can flip the value; 2a is the guard that makes 2b's isolation
+claim falsifiable. No worker criterion: webdriver lives on the
+NavigatorAutomationInformation mixin, which worker_navigator.idl's
+Exposed=Worker does not include, so WorkerNavigator is not even a
+window global and the property cannot exist there by construction."
 ```
 
 ---
@@ -992,13 +1020,13 @@ Then the four browser-level suites, each with its expected count:
 | `verify_sp5a.py` | 4 PASS, exit 0 |
 | `verify_sp1a_chrome.py` | 34 PASS, exit 0 |
 | `verify_sp2.py` | 9 PASS, exit 0 |
+| `run_coherence_tests.sh` | 6/6 |
 
 **Two latent items in `verify_sp2.py`, for the whole-branch review rather than now.** The
 count moved 8 → 9 inside a review-fix commit and nothing in-script noticed — it lives only
 in the docstring and this table. And the report loop is `sorted(results.items())` on label
 strings, which is correct at 9 and wrong at 10: `"10 …"` sorts before `"2a …"`. The suite is
 one addition away from both.
-| `run_coherence_tests.sh` | 6/6 |
 
 Run each as `script > log 2>&1 && echo OK || echo FAILED` and count `^PASS` lines. A count
 that is lower than the table and still exits 0 is the thing this table exists to catch.
@@ -1024,7 +1052,7 @@ Add to the "dominant failure mode" table the row this plan earned before running
 
 | The check | What it actually measured |
 |---|---|
-| a mutation, cited as evidence for criteria its mutant could not reach | **which function was edited, not which criteria are sound.** Task 2 restored the `Headless` insert in `GetUserAgentInternal()`, criteria 5 and 8 reddened, 6 and 7 stayed green — and that was written up as proof the three-channel requirement earns its place. Backwards: `brands` and `Sec-CH-UA` come from `GetUserAgentMetadata()`, so the mutant could not redden 6 and 7 whatever their quality, and criterion 5 *is* the UA-string-only assertion the write-up claimed would have been insufficient. **A mutation falsifies only the criteria whose producer it edits.** Green under a mutant that cannot reach you is not a result. |
+| a mutation, cited as evidence for criteria its mutant could not reach | **which function was edited, not which criteria are sound.** Task 2 restored the `Headless` insert in `GetUserAgentInternal()`, criteria 5, 8 and 9 reddened, 6 and 7 stayed green — and that was written up as proof the three-channel requirement earns its place. Backwards: `brands` and `Sec-CH-UA` come from `GetUserAgentMetadata()`, so the mutant could not redden 6 and 7 whatever their quality, and criterion 5 *is* the UA-string-only assertion the write-up claimed would have been insufficient. Criterion 8 conjoins a UA-string term with a `navigator.webdriver` term the same mutant never touches, so it reddened only through the half it shares with criterion 5 — **a conjunction reddened by a mutant that reaches only one conjunct proves only that conjunct.** **A mutation falsifies only the criteria whose producer it edits.** Green under a mutant that cannot reach you is not a result. |
 | absence-asserting criteria that treat a missing surface as a PASS | **nothing, silently, in exactly the criteria that never move.** `"Headless" not in wire.get("sec-ch-ua", "")` passes when the header is absent; `not any("Headless" in b for b in brands)` passes on an empty list. Both were written as the three-channel guarantee and both would have survived a roll that stopped sending the header. The inverse idiom is safe by accident: an *equality* comparison against a non-empty expected value fails when the surface disappears, which is why the same `.get(h, "")` shape is correct three files over and wrong here. **Assert presence before asserting absence.** |
 | a `grep -c` for a symbol, run after a step that mandates writing a comment naming that symbol | **the text the step just wrote.** Task 1 Step 6 asked whether `probe::` was still used and decided an include's fate on the count; the mandated comment contains `probe::ApplyAutomationOverride`, so the count was 1 by construction and the "drop it" branch was unreachable. Task 2 Step 3 had the same shape and expected `0`, which its own mandated comment made impossible. The rule read as "is this symbol still used?" and measured "does this string appear in the file?" — the same substitution as the runner that counted its own `report()` calls. **When one step writes prose into a file and a later step greps it, the grep sees what the step just wrote.** |
 | verifying the `HeadlessChrome` fix against `content_shell` | nothing. `ShellContentBrowserClient::GetUserAgent()` builds its own product string and never calls `GetUserAgentInternal()`, so the shell has no `HeadlessChrome` under any switch. Conventions already recorded this trap for `GetUserAgentMetadata` and explicitly cleared `GetUserAgent` as the safe sibling — the clearance was about which *function* it calls, and the headless prefix lives one level below that, inside a caller the shell also skips. |
