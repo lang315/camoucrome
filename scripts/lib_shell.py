@@ -137,6 +137,27 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     is worse than a slow one: it teaches people to re-run until green, and
     then it measures nothing.
     """
+    # `debug_port=0` is a conflict, not a valid fixed port, and this is a
+    # precondition rather than a value the code below could ever make sense
+    # of: port_arg below reads `0 if debug_port is None else debug_port`, so
+    # 0 goes on the argv as --remote-debugging-port=0, telling CHROMIUM to
+    # pick an ephemeral port -- but the poll loop below branches on
+    # `debug_port is not None`, which 0 satisfies, so it polls literal port
+    # 0 instead of reading back the one Chromium actually opened. That port
+    # never answers, so the browser starts fine and this still times out at
+    # 30s reporting "opened no DevTools endpoint", which reads exactly like
+    # the browser hung. `raise`, not `assert`: python3 -O strips assert
+    # statements, and a guard that vanishes under a flag is this project's
+    # named failure mode wearing a guard's clothes -- verify_sp2.py's two
+    # module-level guards use the same shape.
+    if debug_port == 0:
+        raise RuntimeError(
+            "launch(debug_port=0) is a conflict: 0 on the argv tells "
+            "Chromium to pick an ephemeral port, but debug_port is not None "
+            "makes this poll literal port 0 instead of reading back the one "
+            "Chromium opened. Pass debug_port=None for an ephemeral port, "
+            "or a real fixed port (e.g. from free_port()).")
+
     binary = shell if shell is not None else SHELL
     name = os.path.basename(binary)
     flags = SHELL_FLAGS if extra_flags is None else list(extra_flags)
