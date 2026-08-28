@@ -889,17 +889,29 @@ nothing drifted while the tree was being edited.
 
 - [ ] **Step 1: Extract the diff**
 
-On the build machine, from a tree in the post-SP5a state plus the Task 1 and 2 edits:
+Tasks 1 and 2 **committed** their edits in the checkout — four commits,
+`448b8fdd62`, `80c1c2d456`, `b04b4e77f4`, `70cb99fedc` — so the diff is a range against
+the last pre-SP2a commit, `8f0635af04`. A bare `git diff` reads the *working tree*, which
+is clean, and would produce an **empty patch that is structurally valid**: no error, no
+warning, and `apply.sh` would go on applying a file that changes nothing. Measured on this
+tree: the bare form gives 0 lines, the range form gives 3 files.
 
 ```bash
 cd ~/chromium/src
-git diff -- third_party/blink/renderer/core/frame/navigator.cc \
+git diff 8f0635af04..HEAD -- \
+             third_party/blink/renderer/core/frame/navigator.cc \
              components/embedder_support/user_agent_utils.cc \
              components/embedder_support/user_agent_utils_unittest.cc \
   > /home/lang/sp2a.patch
 grep -c '^diff --git' /home/lang/sp2a.patch
+grep -c '^[+-][^+-]' /home/lang/sp2a.patch
 ```
-Expected: `3`. Anything else means a file is missing or an unrelated one was swept in.
+Expected: `3`, and a changed-line count **greater than 0** — the second grep exists because
+the first one is also satisfied by three file headers with empty hunks. Anything else means
+a file is missing, an unrelated one was swept in, or the range is wrong.
+
+Confirm the range endpoints before trusting the output: `git log --oneline 8f0635af04..HEAD`
+must list exactly the four SP2a commits and nothing else.
 
 Note the pathspec is passed as separate arguments. In `zsh` an unquoted `$PATHS` variable
 is **not** word-split, so `git diff -- $PATHS` sends one giant pathspec and produces an
