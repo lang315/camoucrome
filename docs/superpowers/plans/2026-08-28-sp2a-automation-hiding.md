@@ -46,8 +46,13 @@ session can assert both, which criterion 8 does.
 
 ## What reading the tree changed before any code was written
 
-Five facts, each checked against `~/chromium/src` at `8f0635af04`. Three of them would have
-cost a task if discovered during implementation.
+Six facts, each checked against `~/chromium/src` at `8f0635af04`. Facts 1–4 came from
+reading the tree before writing the plan. **Facts 5 and 6 came from the Task 1 implementer
+stopping at the Step 5 gate rather than adjusting the criteria to match the count** — the
+gate found two defects in this plan, one of which (fact 6) broke its central claim. That is
+the gate working exactly as intended, and it is recorded here rather than quietly patched
+because the plan's own self-review had called those counts load-bearing and still got them
+wrong.
 
 **1. `content_shell` never reaches the `Headless` insert, so it cannot verify the fix.**
 `ShellContentBrowserClient::GetUserAgent()`
@@ -85,12 +90,35 @@ probe→CDP mapping *(unverified)*. It is real:
 `inspector_emulation_agent.cc:1222`, which sets `automation_override_`, which
 `ApplyAutomationOverride` reads at `:1271`. That is the whole chain.
 
-**5. `webdriver` is a window-only surface.** It is declared on the
-`NavigatorAutomationInformation` mixin
+**5. `webdriver` is a window-only surface, and it cannot be checked at runtime.** It is
+declared on the `NavigatorAutomationInformation` mixin
 (`third_party/blink/renderer/core/frame/navigator_automation_information.idl:8`), which no
-worker interface includes. So conventions rule 3 is satisfied here by **absence**, not by a
-matching value — and criterion 4 asserts the absence rather than asserting a value that
-does not exist, which would have thrown.
+worker interface includes; `worker_navigator.idl:32` is `Exposed=Worker`, so
+`WorkerNavigator` is not even a constructor in the window context. Conventions rule 3 is
+therefore satisfied by **absence**, and the IDL is the whole evidence. A first draft of this
+plan asserted `'webdriver' in WorkerNavigator.prototype` from the window and would have
+shipped a criterion that fails on every build ever made. Found by the Task 1 implementer at
+the Step 5 gate.
+
+**6. The `AutomationControlled` feature is force-enabled by the harness itself, and by
+`--headless`.** `content/child/runtime_features.cc:377-379` maps `--enable-automation`,
+**`--headless`** and `--remote-debugging-pipe` onto it, and lines 428–435 add
+`--remote-debugging-port=0` — the comment there says outright that an ephemeral port "is how
+ChromeDriver launches the browser by default". `lib_shell.launch()` hardcodes exactly that,
+so source 1 is on in every session the harness starts.
+
+Two things follow, and the second is the more important:
+
+- The first draft's criterion 2 could not prove what it claimed. With the feature already
+  forced on, `webdriver` is `true` before any override is issued, so a build that closed only
+  the feature path would have passed it. Criteria 2a/2b now run on a fixed non-zero port,
+  which the same file leaves the feature *unset* for, so the probe is the only thing that can
+  flip the value. Also found at the Step 5 gate, by the count being 4 instead of 2.
+- **Stock Chrome run with `--headless` reports `navigator.webdriver === true` with no
+  automation client attached at all.** The leak is not merely "a driver can flip it"; the
+  switch that makes it headless has already flipped it. That is a stronger justification for
+  this sub-project than the spec gives, and it means Task 2's criterion 8 is a proof rather
+  than the coherence bookkeeping it was written as.
 
 The spec's line number for the insert (218) is now 220; SP1a's own patch added lines above
 it. Use the symbol, not the number.
@@ -104,7 +132,9 @@ requirements implicitly include this section.
   native C++ producers; neither creates a binding, a property, or a global.
 - **Native-looking accessors.** `Object.getOwnPropertyDescriptor(Navigator.prototype,
   'webdriver').get.toString()` must still contain `[native code]`. Criterion 3.
-- **Worker parity.** Satisfied by absence here; see fact 5. Assert the absence.
+- **Worker parity.** Satisfied by absence here, and the IDL is the evidence: `webdriver`
+  is on the `NavigatorAutomationInformation` mixin, and `worker_navigator.idl:32` is
+  `Exposed=Worker` without it. There is no runtime worker criterion — see Task 1 Step 4.
 - **Coherence over coverage.** `webdriver === false` and a `Headless`-free UA must hold in
   the *same* session. Criterion 8.
 - **Fall back to the real value when config is absent** — with one argued exception, and
@@ -218,15 +248,33 @@ def evaluate(proc, expressions, navigate_to=None, cdp=None):
         return [page.evaluate(e) for e in expressions]
 ```
 
-In `session`, add `cdp=None` to the signature and pass it through:
+In `launch`, add `debug_port=None`. When given it replaces the hardcoded
+`--remote-debugging-port=0` and is used directly, skipping the `DevToolsActivePort`
+read-back. Criteria 2a and 2b need this: `runtime_features.cc` reads the literal `0` as
+ChromeDriver's launch pattern and force-enables the very feature they are trying to hold
+off (see Step 4).
+
+```python
+def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
+    ...
+    port_arg = f"--remote-debugging-port={debug_port if debug_port else 0}"
+```
+
+and, after `Popen`, when `debug_port` is given, poll `http://127.0.0.1:{debug_port}/json/version`
+on the same 30-second deadline and the same three distinguishable failures instead of
+waiting for the port file. Keep the existing path untouched when `debug_port` is `None` —
+every other verification script depends on it.
+
+In `session`, add both parameters to the signature and pass them through:
 
 ```python
 def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
-            strict=False, cdp=None):
+            strict=False, cdp=None, debug_port=None):
 ```
 
 ```python
-        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict)
+        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
+                      debug_port=debug_port)
         return evaluate(proc, expressions, navigate_to, cdp=cdp), None
 ```
 
@@ -247,57 +295,92 @@ under test and then read navigator.webdriver from the same session. Sent
 after navigation, immediately before evaluation."
 ```
 
-- [ ] **Step 4: Write `scripts/verify_sp2.py` with the five window-side criteria**
+- [ ] **Step 4: Write `scripts/verify_sp2.py` with the four window-side criteria**
 
 Model the structure on `scripts/verify_sp1a.py`: collect into a dict, print one line per
 criterion, exit non-zero on any FAIL, and let an exception become FAIL lines rather than a
 traceback that discards results already gathered.
 
-The five criteria, and — stated explicitly, because it is the whole point — **which of them
-can fail on a stock build**:
+**The isolation problem this criteria set exists to solve.** `content/child/runtime_features.cc`
+force-enables the `AutomationControlled` runtime feature under four separate conditions —
+`--enable-automation`, `--headless`, `--remote-debugging-pipe` (lines 377–379), and
+`--remote-debugging-port=0`, the ephemeral-port heuristic at lines 428–435 whose own comment
+says it exists because "this is how ChromeDriver launches the browser by default". The
+harness hardcodes `--remote-debugging-port=0`, so **source 1 is already on in every session
+`lib_shell.launch()` starts.**
 
-| # | Criterion | On stock `content_shell` |
-|---|---|---|
-| 1 | bare launch: `navigator.webdriver === false` | **also false.** A regression guard, not a proof. Say so in the file. |
-| 1b | `--enable-blink-features=AutomationControlled`: still `false` | **true.** Proves source 1 is closed. |
-| 2 | after `Emulation.setAutomationOverride {enabled:true}`: still `false` | **true.** Proves source 2 is closed — the one the popular switch misses. |
-| 3 | descriptor getter `.toString()` contains `[native code]` | also passes. Guards rule 2. |
-| 4 | `'webdriver' in WorkerNavigator.prototype === false` | also passes. Structural: rule 3 is met by absence. |
+That is why criterion 2 must use a *fixed non-zero* port. With the ephemeral port, the
+feature is on, `webdriver` is already `true` before any override is issued, and a build that
+closed only the feature path would pass an override-based criterion for a reason having
+nothing to do with the probe. The same file says a specific port "is more likely for
+attaching a debugger, so we should leave EnableAutomationControlled unset" — which is
+exactly the configuration in which the probe is the only thing that can flip the value.
 
-Criterion 1 passing on a stock build is not a defect in the criterion; it is a fact about
-the criterion that has to be written down, or the suite reads as five proofs when it holds
-two. Put that sentence in the file.
+| # | Criterion | Launch | On stock `content_shell` |
+|---|---|---|---|
+| 1 | `navigator.webdriver === false` | harness default (port 0) | **true.** Proves source 1 is closed. |
+| 2a | `navigator.webdriver === false` | fixed non-zero port, no override | **also false.** The guard that makes 2b's isolation real — without it, 2b cannot claim the probe was what it closed. |
+| 2b | still `false` after `Emulation.setAutomationOverride {enabled:true}` | fixed non-zero port | **true.** Proves source 2 is closed — the one the popular switch misses. |
+| 3 | descriptor getter `.toString()` contains `[native code]` | harness default | also passes. Guards rule 2. |
+
+Criterion 2a passing on a stock build is not a defect in it; it is what it is for, and the
+file must say so. Without 2a the suite reads as three proofs when it holds two, and 2b's
+stated claim would be unfalsifiable.
 
 ```python
 WEBDRIVER = "navigator.webdriver"
 DESCRIPTOR = ("Object.getOwnPropertyDescriptor("
               "Navigator.prototype, 'webdriver').get.toString()")
-# Asserted on the prototype, not on an instance: `webdriver` lives on the
-# NavigatorAutomationInformation mixin and no worker interface includes it,
-# so the surface is absent in workers rather than present-and-agreeing.
-# Reading it off a live WorkerNavigator would throw instead of reporting.
-WORKER_ABSENT = "typeof WorkerNavigator === 'undefined' ? null : 'webdriver' in WorkerNavigator.prototype"
 ```
 
-Criterion 2 is driven by:
+Criteria 2a and 2b need `lib_shell.launch()` to accept a port. Add an optional
+`debug_port=None` parameter alongside the `cdp` work in Step 1: when given, it replaces
+`--remote-debugging-port=0`, and the port is used directly instead of being read back from
+`DevToolsActivePort`. Pick the port by binding an ephemeral socket and closing it, rather
+than hardcoding a number — a fixed port lets a run connect to a previous instance that is
+still shutting down, which looks identical to the browser under test misbehaving:
 
 ```python
-values, err = lib_shell.session(
-    None, [WEBDRIVER],
-    cdp=[("Emulation.setAutomationOverride", {"enabled": True})])
-```
+def free_port():
+    """A port the kernel just handed out, so no two runs collide.
 
-Criterion 1b is driven by:
+    Not the same as --remote-debugging-port=0: that makes CHROMIUM pick, and
+    runtime_features.cc reads the literal 0 as ChromeDriver's launch pattern
+    and force-enables AutomationControlled. Criteria 2a/2b need the feature
+    OFF so the probe is the only thing that can set webdriver.
+    """
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+```
 
 ```python
+port = free_port()
+values, err = lib_shell.session(None, [WEBDRIVER], debug_port=port)          # 2a
 values, err = lib_shell.session(
-    None, [WEBDRIVER],
-    extra_flags=lib_shell.SHELL_FLAGS + [
-        "--enable-blink-features=AutomationControlled"])
+    None, [WEBDRIVER], debug_port=free_port(),
+    cdp=[("Emulation.setAutomationOverride", {"enabled": True})])             # 2b
 ```
 
-Criterion 4 runs in the window context — `WorkerNavigator` is a global constructor there,
-so the `in` test needs no worker to be spawned. Expected value: `False`.
+Add an assertion beside them that the isolation actually held, so a future change to the
+harness cannot turn 2a/2b vacuous:
+
+```python
+# 2a's PASS is only meaningful if the feature really is off in this
+# configuration. If runtime_features.cc ever force-enables on a non-zero
+# port too, 2a stays green and 2b silently stops isolating the probe.
+# The stock-build run recorded in Step 5 is what establishes this; re-check
+# it after any Chromium roll.
+```
+
+**There is no worker criterion, and that is deliberate.** `webdriver` is declared on the
+`NavigatorAutomationInformation` mixin, and `worker_navigator.idl:32` is `Exposed=Worker`
+with no such mixin — so `WorkerNavigator` is not a window global and the surface does not
+exist in workers at all. An earlier draft of this plan asserted
+`'webdriver' in WorkerNavigator.prototype` from the window, which can never pass on any
+build: `typeof WorkerNavigator === 'undefined'` there. Spawning a real worker to confirm a
+property the IDL never declares would be testing Blink's bindings generator, not this
+change. Conventions rule 3 is satisfied by the IDL, and the IDL is the evidence.
 
 - [ ] **Step 5: Run it against the UNPATCHED tree and record which criteria are red**
 
@@ -306,11 +389,14 @@ Run on the build machine:
 cd ~/chromium/src && python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-before.log 2>&1 \
   && echo ALL_PASS || echo SOME_FAIL
 grep -c '^FAIL' ~/sp2-before.log
+grep '^FAIL' ~/sp2-before.log
 ```
-Expected: `SOME_FAIL`, and **exactly 2** FAIL lines — criteria 1b and 2. Any other count
+Expected: `SOME_FAIL`, and **exactly 2** FAIL lines — criteria **1 and 2b**. Any other count
 means a criterion measures something other than what the table above claims; stop and find
-out which before writing the fix. This step is the plan's own predict-then-name-every-
-failure check, and it is cheaper now than after the fix makes everything green.
+out which before writing the fix. In particular a FAIL on 2a means the feature is on despite
+the non-zero port, and 2b's isolation claim is void — that is the specific thing this step
+exists to catch. This is the plan's own predict-then-name-every-failure check, and it is
+cheaper now than after the fix makes everything green.
 
 - [ ] **Step 6: Make the change**
 
@@ -366,13 +452,14 @@ incremental build, not a header cascade.
 python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-after.log 2>&1 && echo ALL_PASS || echo SOME_FAIL
 grep -c '^PASS' ~/sp2-after.log
 ```
-Expected: `ALL_PASS` and `5`.
+Expected: `ALL_PASS` and `4`.
 
-- [ ] **Step 8: Mutation — make criteria 1b and 2 fail on purpose**
+- [ ] **Step 8: Mutation — make criteria 1 and 2b fail on purpose**
 
 Restore the original body, rebuild, and confirm the two criteria that are supposed to prove
-the fix actually go red. Both halves matter: a mutation that only flips criterion 2 would
-leave criterion 1b unproven.
+the fix actually go red. Both halves matter, and they cover different sources: a mutation
+that only flips criterion 2b would leave the feature path unproven, and one that only flips
+criterion 1 would leave the probe path unproven.
 
 ```bash
 cd ~/chromium/src
@@ -404,9 +491,10 @@ same thing by a different route.
 python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-mut.log 2>&1 && echo UNEXPECTED_ALL_PASS || echo FAILED_AS_PREDICTED
 grep '^FAIL' ~/sp2-mut.log
 ```
-Expected: `FAILED_AS_PREDICTED`, and the FAIL lines are **exactly criteria 1b and 2** —
+Expected: `FAILED_AS_PREDICTED`, and the FAIL lines are **exactly criteria 1 and 2b** —
 the same two that were red in Step 5. Name the cause of any third failure before
-continuing.
+continuing. A FAIL on 2a here would mean the mutation changed something other than what it
+was meant to.
 
 - [ ] **Step 9: Restore, rebuild, confirm the restore took effect**
 
@@ -453,7 +541,9 @@ which no worker interface includes."
 - Consumes: `lib_shell.CHROME`, `lib_shell.CHROME_FLAGS` (which already carries
   `--headless`), `lib_shell.ACCEPT_CH`, `echo_server.start(accept_ch)` returning
   `(base_url, headers_for, stop)` — the same shape `verify_sp1a_chrome.py` uses.
-- Produces: `verify_sp2.py` at nine criteria total.
+- Produces: `verify_sp2.py` at eight criteria total (Task 1 contributes 1, 2a, 2b, 3;
+  this task adds 5, 6, 7, 8 — the numbers are labels, not indices, and 4 is deliberately
+  unused: it was the worker criterion Task 1 removed).
 
 **Background the brief cannot carry.** This runs against `chrome`, not `content_shell`, and
 the reason is not preference: `ShellContentBrowserClient::GetUserAgent()` builds its own
@@ -574,7 +664,7 @@ runs compares two browsers.
 | 5 | `navigator.userAgent` contains no `Headless` | **fails** — `HeadlessChrome/154.0.0.0`. The proof. |
 | 6 | no brand in `navigator.userAgentData.brands` contains `Headless` | also passes. Guards the one-channel fix. |
 | 7 | the `Sec-CH-UA` request header contains no `Headless` | also passes. Same. |
-| 8 | in this same session, `navigator.webdriver === false` **and** criterion 5 holds | fails on both halves. The §5 coherence tie. |
+| 8 | in this same session, `navigator.webdriver === false` **and** criterion 5 holds | **fails on both halves.** `--headless` is itself one of the switches `runtime_features.cc:378` maps onto `AutomationControlled`, so stock Chrome run headless answers `webdriver: true` with nothing attached. The §5 coherence tie, and a proof rather than bookkeeping. |
 
 Criteria 6 and 7 pass on a stock build, and that is exactly why the spec demands them:
 "Asserting it only on the UA string would pass on a build that suppressed the prefix in one
@@ -639,7 +729,7 @@ cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default chrome content_shell
 python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-full.log 2>&1 && echo ALL_PASS || echo SOME_FAIL
 grep -c '^PASS' ~/sp2-full.log
 ```
-Expected: `BUILD_OK`, `ALL_PASS`, `9`.
+Expected: `BUILD_OK`, `ALL_PASS`, `8`.
 
 - [ ] **Step 8: Mutation — restore the insert and confirm criteria 5 and 8 go red**
 
@@ -817,7 +907,7 @@ Then the four browser-level suites, each with its expected count:
 | `verify_sp1a.py` | 9 PASS, exit 0 |
 | `verify_sp5a.py` | 4 PASS, exit 0 |
 | `verify_sp1a_chrome.py` | 34 PASS, exit 0 |
-| `verify_sp2.py` | 9 PASS, exit 0 |
+| `verify_sp2.py` | 8 PASS, exit 0 |
 | `run_coherence_tests.sh` | 6/6 |
 
 Run each as `script > log 2>&1 && echo OK || echo FAILED` and count `^PASS` lines. A count
@@ -866,16 +956,18 @@ sibling method conventions previously cleared as safe."
 
 ## Self-review
 
-**Spec coverage.** Of SP2's twelve verification items, this plan implements 1, 2, 3 and the
-window/worker part of 8, plus §3.1's three-channel requirement and §5's first coherence row.
-Items 4, 5, 6, 7, 9, 10, 11 and 12 are listed under *Deliberately deferred* or belong to
-SP2b, each with the reason. Nothing in the spec is silently dropped.
+**Spec coverage.** Of SP2's twelve verification items, this plan implements 1, 2 and 3,
+plus §3.1's three-channel requirement and §5's first coherence row. Item 8 (worker parity)
+is discharged by the IDL rather than by a runtime check, for the reason in fact 5 — the
+surface does not exist in workers, so there is nothing to run. Items 4, 5, 6, 7, 9, 10, 11
+and 12 are listed under *Deliberately deferred* or belong to SP2b, each with the reason.
+Nothing in the spec is silently dropped.
 
 **Placeholders.** None. Every step has its command, its expected output, and — where a step
 runs a suite — the expected count.
 
-**Type consistency.** `lib_shell.session(..., cdp=...)` is defined in Task 1 Step 1 and
-consumed in Task 1 Step 4; `run_chrome` in Task 2 Step 6 mirrors `verify_sp1a_chrome.py:216`
+**Type consistency.** `lib_shell.session(..., cdp=..., debug_port=...)` is defined in
+Task 1 Step 1 and consumed in Task 1 Step 4; `run_chrome` in Task 2 Step 6 mirrors `verify_sp1a_chrome.py:216`
 including its three-value return. `echo_server.start` returns `(base_url, headers_for, stop)`
 as the existing callers use it.
 
