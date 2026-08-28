@@ -311,7 +311,14 @@ else:
     # five on a parse error would report "the product token leaked into the
     # UA string" for what is really "the brands channel could not be read" --
     # and an hour was lost in this project once to a misattributed failure.
-    results[C5] = "Headless" not in ua
+    #
+    # isinstance/bool guard first, N1's shape: if navigator.userAgent ever
+    # came back empty or None -- the same way navigator.userAgentData.brands
+    # did for C6, before that got the same treatment -- "Headless" not in ua
+    # either raises TypeError at module scope (on None, taking the whole run
+    # down with it) or passes on "" having examined nothing. C8 inherits
+    # this via results[C5], so one guard closes both.
+    results[C5] = isinstance(ua, str) and bool(ua) and "Headless" not in ua
 
     # "sec-ch-ua" in wire first: wire.get(..., "") would let a missing or
     # renamed header PASS silently. This criterion asserts an ABSENCE, which
@@ -346,7 +353,37 @@ else:
         results[C6] = bool(brands) and not any(
             "Headless" in b.get("brand", "") for b in brands)
 
-for name, ok in sorted(results.items()):
+EXPECTED = 9  # criteria 1, 2a, 2b, 3, 5, 6, 7, 8, 9
+
+# Guards against exactly what happened once already: the count moved 8 -> 9
+# inside a review-fix commit (criterion 9 added) and nothing in this script
+# noticed, because the loop below iterates `results` itself rather than a
+# fixed list of criteria -- it would print 8 PASS lines just as happily as
+# 9. EXPECTED is a literal, not derived from a count of report()/results[...]
+# calls in this file: that shape was tried and declined elsewhere in this
+# project for being tautological, since it only fails when a criterion is
+# added AND the code that would populate it is forgotten too -- a narrower
+# bug than the one that actually happened here, which forgot only the count.
+if len(results) != EXPECTED:
+    raise RuntimeError(
+        f"expected {EXPECTED} criteria in `results`, found {len(results)}: "
+        "a criterion was added or removed without updating EXPECTED")
+
+
+def label_key(name):
+    """Sorts "2a"/"2b" right after "2", and a future "10 ..." after "9 ...".
+
+    sorted(results.items()) on the raw label is correct only by accident, up
+    to 9 criteria: ASCII orders "10 ..." before "2a ...". Splitting the
+    leading digits from the rest of the label and comparing the digits as an
+    int rather than a string is what keeps this correct past a ninth.
+    """
+    head = name.split(maxsplit=1)[0]
+    digits = "".join(ch for ch in head if ch.isdigit())
+    return (int(digits), head[len(digits):])
+
+
+for name, ok in sorted(results.items(), key=lambda item: label_key(item[0])):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
 for note in notes:
     print(f"      {note}")
