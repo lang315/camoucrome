@@ -182,7 +182,7 @@ def shutdown(proc):
     shutil.rmtree(getattr(proc, "profile_dir", ""), ignore_errors=True)
 
 
-def evaluate(proc, expressions, navigate_to=None):
+def evaluate(proc, expressions, navigate_to=None, cdp=None):
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(
             f"http://127.0.0.1:{proc.cdp_port}")
@@ -192,11 +192,18 @@ def evaluate(proc, expressions, navigate_to=None):
             # wait_until="load" so the subresource request the header
             # assertions read has certainly been issued.
             page.goto(navigate_to, wait_until="load")
+        # Sent after navigation and before evaluation: these set inspector
+        # agent state that the very next expression reads, and ordering them
+        # here removes any question of a navigation clearing it.
+        if cdp:
+            cdp_session = context.new_cdp_session(page)
+            for method, params in cdp:
+                cdp_session.send(method, params)
         return [page.evaluate(e) for e in expressions]
 
 
 def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
-            strict=False):
+            strict=False, cdp=None):
     """Runs one browser session; returns (values, error).
 
     An exception is returned rather than raised. Without this the script is
@@ -215,7 +222,7 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
     proc = None
     try:
         proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict)
-        return evaluate(proc, expressions, navigate_to), None
+        return evaluate(proc, expressions, navigate_to, cdp=cdp), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:
