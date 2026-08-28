@@ -87,8 +87,10 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
 def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     """Starts the browser and returns it once its DevTools port answers.
 
-    Six details here exist because of failures that were actually observed,
-    not defensively.
+    Six details here are deliberate, not defensive. Most were earned by a
+    failure that was actually observed; the debug_port paragraph is a design
+    requirement rather than a scar, which is why this no longer claims all six
+    came from observation.
 
     A fixed `debug_port`, when given, replaces the ephemeral
     --remote-debugging-port=0 and is used directly instead of being read

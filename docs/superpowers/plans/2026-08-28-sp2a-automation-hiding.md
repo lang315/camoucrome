@@ -155,6 +155,10 @@ requirements implicitly include this section.
 - **`cmd 2>&1 | tail -5` then `echo exit=$?` reports `tail`'s status.** Use
   `cmd > log 2>&1 && echo OK || echo FAILED`. Over ssh to the build machine only `&&`/`||`
   markers and `grep -c` counts survive; PowerShell eats `$?` and `$(...)` before `wsl` runs.
+- **The verification scripts need `~/camoucrome-verify/venv/bin/python3`,** not the
+  system `python3` — playwright is installed only in that venv, and a bare `python3` dies
+  at `import lib_shell` with `ModuleNotFoundError: No module named 'playwright'`. That is a
+  loud failure rather than a silent one, but it costs a round trip every time.
 - **The ssh ControlMaster socket dies around ~32KB of base64 payload** with
   `mm_send_fd: sendmsg(1): Message too long`. Transfer one file per ssh call rather than
   batching several. Found in Task 1 sending `lib_shell.py` and `verify_sp2.py` together.
@@ -389,7 +393,7 @@ change. Conventions rule 3 is satisfied by the IDL, and the IDL is the evidence.
 
 Run on the build machine:
 ```bash
-cd ~/chromium/src && python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-before.log 2>&1 \
+cd ~/chromium/src && ~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-before.log 2>&1 \
   && echo ALL_PASS || echo SOME_FAIL
 grep -c '^FAIL' ~/sp2-before.log
 grep '^FAIL' ~/sp2-before.log
@@ -468,7 +472,7 @@ Expected: `BUILD_OK`. `navigator.cc` is a Blink core `.cc`, so this is a one-to-
 incremental build, not a header cascade.
 
 ```bash
-python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-after.log 2>&1 && echo ALL_PASS || echo SOME_FAIL
+~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-after.log 2>&1 && echo ALL_PASS || echo SOME_FAIL
 grep -c '^PASS' ~/sp2-after.log
 ```
 Expected: `ALL_PASS` and `4`.
@@ -507,7 +511,7 @@ binary in place and every subsequent result is meaningless; a `no work to do` me
 same thing by a different route.
 
 ```bash
-python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-mut.log 2>&1 && echo UNEXPECTED_ALL_PASS || echo FAILED_AS_PREDICTED
+~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-mut.log 2>&1 && echo UNEXPECTED_ALL_PASS || echo FAILED_AS_PREDICTED
 grep '^FAIL' ~/sp2-mut.log
 ```
 Expected: `FAILED_AS_PREDICTED`, and the FAIL lines are **exactly criteria 1 and 2b** —
@@ -524,7 +528,7 @@ touch third_party/blink/renderer/core/frame/navigator.cc
 ~/depot_tools/autoninja -C out/Default content_shell > ~/res.log 2>&1 \
   && echo RESTORE_BUILD_OK || echo RESTORE_BUILD_FAILED
 grep -c "no work to do" ~/res.log
-python3 ~/camoucrome-verify/verify_sp2.py > /dev/null 2>&1 && echo ALL_PASS || echo SOME_FAIL
+~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > /dev/null 2>&1 && echo ALL_PASS || echo SOME_FAIL
 ```
 Expected: `RESTORE_BUILD_OK`, `0`, `ALL_PASS`. The `touch` is not defensive: `cp` from a
 backup can give the restored file an mtime ninja reads as not-newer than the object built
@@ -738,8 +742,13 @@ Add an assertion that `--headless` is actually in the flags used, so a future ed
 # only appears under --headless, so dropping the switch would turn all four
 # green while measuring nothing -- the project's dominant failure mode,
 # arriving through a file this script does not own.
-assert "--headless" in lib_shell.CHROME_FLAGS, \
-    "CHROME_FLAGS no longer carries --headless; criteria 5-8 would be vacuous"
+#
+# `raise`, not `assert`: python3 -O strips assert statements, and a guard that
+# vanishes under a flag is that same failure mode wearing a guard's clothes.
+# Task 1's SHELL_FLAGS mirror uses this shape; keep the two identical.
+if "--headless" not in lib_shell.CHROME_FLAGS:
+    raise RuntimeError(
+        "CHROME_FLAGS no longer carries --headless; criteria 5-8 would be vacuous")
 ```
 
 - [ ] **Step 7: Build `chrome` and run the full suite**
@@ -747,7 +756,7 @@ assert "--headless" in lib_shell.CHROME_FLAGS, \
 ```bash
 cd ~/chromium/src && ~/depot_tools/autoninja -C out/Default chrome content_shell > ~/b4.log 2>&1 \
   && echo BUILD_OK || { echo BUILD_FAILED; grep -E "error:" ~/b4.log | head -5; }
-python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-full.log 2>&1 && echo ALL_PASS || echo SOME_FAIL
+~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-full.log 2>&1 && echo ALL_PASS || echo SOME_FAIL
 grep -c '^PASS' ~/sp2-full.log
 ```
 Expected: `BUILD_OK`, `ALL_PASS`, `8`.
@@ -772,7 +781,7 @@ PY
 ~/depot_tools/autoninja -C out/Default chrome > ~/mut2.log 2>&1 \
   && echo MUTANT_BUILD_OK || { echo MUTANT_BUILD_FAILED; grep -E "error:" ~/mut2.log | head -5; }
 grep -c "no work to do" ~/mut2.log
-python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-mut2.log 2>&1 && echo UNEXPECTED_ALL_PASS || echo FAILED_AS_PREDICTED
+~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > ~/sp2-mut2.log 2>&1 && echo UNEXPECTED_ALL_PASS || echo FAILED_AS_PREDICTED
 grep '^FAIL' ~/sp2-mut2.log
 ```
 Expected: `MUTANT_BUILD_OK`, `0`, `FAILED_AS_PREDICTED`, and the FAIL lines are **exactly
@@ -793,7 +802,7 @@ touch components/embedder_support/user_agent_utils.cc
 ~/depot_tools/autoninja -C out/Default chrome > ~/res2.log 2>&1 \
   && echo RESTORE_BUILD_OK || echo RESTORE_BUILD_FAILED
 grep -c "no work to do" ~/res2.log
-python3 ~/camoucrome-verify/verify_sp2.py > /dev/null 2>&1 && echo ALL_PASS || echo SOME_FAIL
+~/camoucrome-verify/venv/bin/python3 ~/camoucrome-verify/verify_sp2.py > /dev/null 2>&1 && echo ALL_PASS || echo SOME_FAIL
 ```
 Expected: `RESTORE_BUILD_OK`, `0`, `ALL_PASS`. This is the step whose omission on
 2026-08-27 produced an hour of diagnostics against a mutant binary and a retracted bug
