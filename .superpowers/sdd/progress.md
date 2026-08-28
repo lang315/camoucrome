@@ -1869,3 +1869,56 @@ WHOLE-BRANCH REVIEW (this entry): eight more items closed (I1, I2, M1, M6,
     run_coherence_tests.sh    6/6 PASS
   -- plus the two guard fault-injections above, both restored and
   sha-confirmed before the clean reruns.
+
+=== SP2a COMPLETE, whole-branch review READY TO MERGE ===
+Repo ed2266e..a6bfb10 (25 commits). Checkout 8f0635af04..70cb99fedc (4 commits),
+extracted as patches/sp2a-automation-hiding.patch, applied last in apply.sh.
+
+Final state, all verified against correctly-deployed files:
+  verify_sp0 11 | verify_sp1a 9 | verify_sp5a 4 | verify_sp1a_chrome 34 |
+  verify_sp2 9 | run_coherence_tests 6/6 | check_checkout_sync 17/17 |
+  check_additions_build 15/15 | test_lib_shell_launch 7 -- all exit 0.
+
+THE BLOCKER, and it was mine. When Task 3 surfaced verify_sp1a_chrome at 30
+PASS, I dispatched a fix saying "re-capture the baseline". That file was a
+STOCK reference -- captured at the pinned upstream base 0e8d4a9268 on a
+throwaway branch, verified unpatched, paid for with a chunked multi-hour
+build. The recapture replaced fork-vs-stock with patched-build-vs-recording-
+of-itself, and its HEAD-equality guard made that permanent: every future
+commit moves HEAD, so the comparison would never be MADE, only REFUSED, with
+instructions to re-record from whatever build existed then. My own plan
+refuses this exact reasoning 200 lines earlier, for the window-keys baseline.
+
+The reviewer's sharpest line: the stale baseline BROKE FOUR ASSERTIONS. The
+detector worked. Only the FAIL text misattributed the cause -- and I replaced
+a working detector with a mandatory re-record.
+
+Fixed by restoring the stock blob from git (byte-identical, sha
+c437166e95ff0a47...), reconciling SP2a's one delta in code via
+sp2a_expected_ua() applied to the EXPECTED side only, and INVERTING the
+guard to refuse when the baseline is not stock. Re-review confirmed the
+transformation cannot absorb a future delta: it never touches the observed
+value, so a second fork-side UA change reddens both assertions and forces a
+visible new reconciliation. The name is the guard -- generalising it to
+"strip any known prefix" would restore the absorbing shape.
+
+CARRY FORWARD (filed, not blocking): M3 pinned line numbers, 7 sites, all
+correct today -- de-number the one inside a raise message first. M4
+free_port race, FAIL-only. I1a both flag guards check the module global, one
+level from the argv.
+
+LATE FINDINGS FOR CONVENTIONS, beyond A-F already recorded:
+  G. A completeness claim from truncated output. My probe ran `head -10` and
+     I wrote "the only other non-test hit is..." into the document that
+     catalogues this failure mode. There are well over a dozen; the count is
+     filter-sensitive and three agents got 12/16/23/31. Never quote a bare
+     count from a filtered grep -- quote the command or nothing.
+  H. Hiding a transfer's stderr converts a loud failure into a measurement of
+     the previous file. verify_sp1a_chrome.py's deployment silently failed at
+     38352 bytes of base64 (past the ~32KB ControlMaster limit ALREADY in this
+     ledger as finding B), I had sent ssh output to /dev/null, and the suite
+     then reported 34 PASS against the old file. Only the sha comparison
+     caught it. Chunk at 20KB and never discard transfer stderr.
+  I. A conjunction reddened by a mutant reaching only one conjunct proves
+     only that conjunct. Criterion 8 is proof on its UA term, pin on its
+     webdriver term -- no run has ever produced webdriver===true on chrome.
