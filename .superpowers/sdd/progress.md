@@ -1691,3 +1691,39 @@ THIRD FINDING FOR TASK 3's CONVENTIONS EDIT (added to A and B above):
      `raise` and `assert` vanished from a message, leaving "is now , not .".
      Commit prose with -F from a heredoc file, not -m, when it contains
      backticks. Same family as PowerShell eating $? over ssh.
+
+Task 2: COMPLETE (repo fc6c7f8, 1df21d9, c897f13; checkout b04b4e77f4, 70cb99fedc).
+  Review: spec PASS, quality changes-requested -> 3 Important + 5 Minor, ALL accepted.
+  Re-review: all closed; one new Important (N1) found and fixed; approved.
+  verify_sp2.py now 9 criteria, 9 PASS. verify_sp0 11, verify_sp1a 9, verify_sp5a 4.
+
+  N1, the sharpest finding of the sub-project: json.loads raises ValueError on
+  a malformed STRING but TypeError on a NON-string, and JSON.stringify(undefined)
+  comes back as Python None. `except ValueError` therefore caught the
+  unreachable half and missed the reachable one -- and the reachable one is
+  navigator.userAgentData.brands going missing, THE regression criterion 6
+  exists to pin. That regression crashed the run with no output instead of
+  printing FAIL 6. Proven fixed: mutant gives 8 PASS + FAIL 6, 0 tracebacks.
+
+  DECLINED / carried to whole-branch review (with Task 1's M1/M3/M4/M6/I1a):
+    n2-done  C5/C7/C8/C9 now computed before the brands parse; only C6 fails
+             on a parse error. Was: all five red for one unreadable channel.
+    n3       criterion 9's expected FAIL is PREDICTED, never observed -- it
+             was added after Step 8 ran. Task 3 must redden it once and mark
+             it observed.
+    M6+      count moved 8->9 in a review-fix commit, nothing in-script
+             noticed. AND sorted(results.items()) on label strings is correct
+             at 9, wrong at 10 ("10 ..." sorts before "2a ..."). One addition
+             from both.
+    M3+      pinned line numbers roughly flat, not down: two removed, one
+             added (lib_shell.py:57-59). Give them all m5's treatment (name
+             the function) when swept.
+    I1a+     TWO guards now share the property: they check the module global,
+             one level from the argv each session uses.
+
+FINDINGS E AND F ARE NOW IN THE PLAN's Task 3 Step 7 conventions rows:
+  E. A mutation falsifies only the criteria whose producer it edits. Green
+     under a mutant that cannot reach you is not a result.
+  F. Assert presence before asserting absence -- a missing surface satisfies
+     an absence assertion having examined nothing. The .get(h, "") idiom is
+     safe for EQUALITY comparisons and unsafe for absence ones.
