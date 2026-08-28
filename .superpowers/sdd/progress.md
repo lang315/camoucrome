@@ -1634,3 +1634,60 @@ NEXT: SP2 (automation hiding), per the settled order SP5a -> SP2 -> SP3 ->
 SP1b -> SP4. SP2 already carries two constraints from earlier today: the
 HeadlessChrome product token is its surface, and it must assert that token on
 all three channels rather than the UA string alone.
+
+=== SP2a (plan docs/superpowers/plans/2026-08-28-sp2a-automation-hiding.md) ===
+Repo BASE ed2266e. SP2 split into SP2a (decided) / SP2b (measurement-gated).
+
+Task 1: implementer DONE_WITH_CONCERNS, review dispatched (not yet complete).
+  Repo commits 2c70042, bc3b27b, 923853f. Checkout commit 448b8fdd62.
+  Step 5 unpatched = 2 FAIL (criteria 1, 2b) as predicted; Step 7 = 4 PASS;
+  Step 8 mutation reddened exactly 1 and 2b; Step 9 restore clean.
+
+TWO FINDINGS FOR TASK 3 TO PUT IN 00-conventions.md -- do not lose these:
+
+  A. A grep-count gate can be satisfied by the COMMENT the same step told you
+     to write. Task 1 Step 6 said "grep -c for RuntimeEnabledFeatures:: and
+     probe::; if not 0, leave the includes". Both returned 1, and both hits
+     were inside the mandated comment, not in executable code. The rule read
+     as "is this symbol still used?" and measured "does this string appear in
+     the file?". Same family as the runner that counted its own report()
+     calls. When a step writes text and a later step greps the file, the grep
+     sees what the step just wrote.
+
+  B. The ssh ControlMaster socket fails around ~32KB of base64 payload with
+     `mm_send_fd: sendmsg(1): Message too long`. Transfer one file per ssh
+     call rather than batching. Found transferring lib_shell.py and
+     verify_sp2.py together.
+
+Task 1: COMPLETE (repo 2c70042..2b29b78, checkout 448b8fdd62 + 80c1c2d456).
+  Review: spec PASS, quality Approved. Re-review: 5 of 6 closed, M1 retracted
+  BY THE REVIEWER as its own error (the two debug_port expressions were
+  behaviourally identical for every input; the hazard was never touched).
+  Residuals closed in 2b29b78. Verified: verify_sp2 4, verify_sp0 11,
+  verify_sp1a 9, verify_sp5a 4, all exit 0.
+
+  DECLINED, carry to whole-branch review -- re-decide on merits, not precedent:
+    M1  debug_port=0 gives Chromium an ephemeral port while the loop polls
+        literal 0 -> 30s timeout blaming the browser. No caller passes 0. Only
+        a value guard would fix it; the expression cannot.
+    M3  pinned upstream line numbers, now 7 sites (4 in verify_sp2.py incl.
+        one inside the raise MESSAGE, 3 in navigator.cc). All correct today.
+        The message one misdirects whoever just tripped the guard -- de-number
+        that one first.
+    M4  free_port() race: real, but can only produce FAIL, never false PASS.
+    M6  no in-script criterion-count guard. Premise moved (scripts/ now has
+        its first precondition guard) but substance stands: the count lives in
+        the plan's suite table, and checkout 306572bfb7 removed a tautological
+        in-script version.
+    I1a the SHELL_FLAGS guard covers the module global, one level from the
+        argv used. extra_flags=SHELL_FLAGS + ["--headless"] slips past it.
+
+THIRD FINDING FOR TASK 3's CONVENTIONS EDIT (added to A and B above):
+  C. Bare `python3` on the build machine has no playwright. The verify
+     scripts need /home/lang/camoucrome-verify/venv/bin/python3. Fails loudly
+     (ModuleNotFoundError at import lib_shell), but the plan said bare
+     python3 in 7 places and Tasks 2-3 would have inherited it.
+  D. zsh eats backticks in a git commit -m body as command substitution --
+     `raise` and `assert` vanished from a message, leaving "is now , not .".
+     Commit prose with -F from a heredoc file, not -m, when it contains
+     backticks. Same family as PowerShell eating $? over ssh.
