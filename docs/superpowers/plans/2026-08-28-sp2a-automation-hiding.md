@@ -968,10 +968,21 @@ If the apply conflicts, `git checkout -- .` will **not** clear the unmerged inde
 cd ~/chromium/src
 ~/depot_tools/autoninja -C out/Default chrome content_shell components_unittests > ~/b5.log 2>&1 \
   && echo BUILD_OK || { echo BUILD_FAILED; grep -E "error:" ~/b5.log | head -5; }
-out/Default/components_unittests --gtest_filter='Camoucfg*:ParseConfig*:CoherenceValidator*:Derive*:UserAgentUtilsTest.*' \
+out/Default/components_unittests --gtest_filter='Camoucfg*:ParseConfig*:Derive*:UserAgentUtilsTest.*' \
   > ~/t5.log 2>&1 && echo UNIT_OK || echo UNIT_FAILED
-grep -E '\[  PASSED  \]' ~/t5.log
+grep -E '\[  PASSED  \]|\[  FAILED  \]' ~/t5.log
 ```
+**`CoherenceValidator*` is deliberately NOT in that filter**, and adding it back gives a
+`UNIT_FAILED` that looks like a regression and is not. Two of its cases —
+`MutationIsCaughtAndNothingElseIs` and `CleanConfigProducesNoViolations` — assert their own
+preconditions and refuse to run without `CAMOU_CONFIG` and `CAMOUCFG_TEST_INVARIANT`, because
+`camoucfg::Config()` latches per process. That refusal is SP5a's fix, not a fault: before it,
+the clean-config case passed against a validator that had never been exercised.
+`run_coherence_tests.sh` is the correct invocation and drives all six one process each.
+
+Measured on this tree: with `CoherenceValidator*` in the filter, 8 pass and those 2 fail
+with "set CAMOUCFG_TEST_INVARIANT and CAMOU_CONFIG; this case is driven one process per
+mutation". Same family as the `UserAgentUtils*` false red conventions already records.
 Then the four browser-level suites, each with its expected count:
 
 | Suite | Expected |
