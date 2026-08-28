@@ -1,7 +1,10 @@
-"""Verifies the SP2a acceptance criteria for navigator.webdriver.
+"""Verifies the SP2a acceptance criteria: navigator.webdriver, and the
+HeadlessChrome product token.
 
-Four criteria. 1 and 2b are the ones that prove anything: navigator.webdriver
-has two independent sources, and the widely-cited
+Eight criteria across two automation signals: navigator.webdriver (1-3) and
+the HeadlessChrome product token (5-8; 4 is deliberately unused, see below).
+1 and 2b are the ones that prove anything for the first signal:
+navigator.webdriver has two independent sources, and the widely-cited
 --disable-blink-features=AutomationControlled switch closes only one of
 them. On a stock build both come back `true` (FAIL).
 
@@ -35,15 +38,28 @@ workers at all (`typeof WorkerNavigator === 'undefined'` from window, on
 any build). Spawning a real worker to confirm a property the IDL never
 declares would be testing Blink's bindings generator, not this change.
 
+Criteria 5-8 test the second signal, the HeadlessChrome product token
+(user_agent_utils.cc:218), across all three channels a UA-CH-aware detector
+can read: the UA string, navigator.userAgentData.brands, and the Sec-CH-UA
+request header. 5 is the proof; 6 and 7 pass on a stock build already and
+exist to catch a fix applied to the UA string alone -- asserting it only
+there would pass on a build that suppressed the prefix in one channel and
+left the other two disagreeing with it. 8 ties the token to
+navigator.webdriver in the same session: --headless is itself one of the
+switches that forces AutomationControlled on (see criteria 1-3's own
+paragraph above), so a stock headless build fails both halves at once.
+
 Structured like verify_sp1a.py, and for the same reason: a fault in any one
 session must become a FAIL line rather than a traceback that discards every
 result already collected. session() already returns faults as (None, exc)
 instead of raising, so each block below only needs to check `err`.
 """
 
+import json
 import socket
 import sys
 
+import echo_server
 import lib_shell
 
 WEBDRIVER = "navigator.webdriver"
@@ -174,6 +190,95 @@ if err is not None:
     failed([C3], "criterion 3 session", err)
 else:
     results[C3] = "[native code]" in values[0]
+
+# --- Criteria 5-8: the HeadlessChrome product token, on all three channels ---
+#
+# Criterion 5 is the proof: on a stock `chrome --headless` build,
+# navigator.userAgent carries "HeadlessChrome/154.0.0.0"
+# (user_agent_utils.cc:218).
+#
+# Criteria 6 and 7 pass on a stock build already, and that is exactly why the
+# spec demands them (2026-08-26-sp2-automation-hiding-design.md §3.1):
+# "Asserting it only on the UA string would pass on a build that suppressed
+# the prefix in one channel." They are guards, not proofs -- the same honesty
+# criterion 1 above gets -- confirming a fix applied to the UA string alone
+# would still leave the other two channels agreeing with it, uncaught.
+#
+# Criterion 8 is SP2's section 5 coherence tie: --headless is itself one of
+# the switches runtime_features.cc:378 maps onto AutomationControlled, so a
+# stock headless build answers navigator.webdriver === true with nothing else
+# attached -- a false webdriver beside a headless UA is louder than either
+# alone, so both are asserted together in the same session as criterion 5.
+#
+# All four run in one `chrome` session with the echo server up, for the same
+# reason verify_sp1a_chrome.py gives: criterion 8 compares two channels
+# (webdriver and the UA string), and reading them from two runs would compare
+# two browsers.
+
+# Not defensive. Every criterion below asserts the ABSENCE of a token that
+# only appears under --headless, so dropping the switch would turn all four
+# green while measuring nothing -- the project's dominant failure mode,
+# arriving through a file this script does not own.
+#
+# `raise`, not `assert`: python3 -O strips assert statements, and a guard that
+# vanishes under a flag is that same failure mode wearing a guard's clothes.
+# Task 1's SHELL_FLAGS mirror uses this shape; keep the two identical.
+if "--headless" not in lib_shell.CHROME_FLAGS:
+    raise RuntimeError(
+        "CHROME_FLAGS no longer carries --headless; criteria 5-8 would be vacuous")
+
+
+def run_chrome(config, expressions):
+    """One `chrome` session with the echo server up; returns (values, headers, err).
+
+    chrome, not content_shell: ShellContentBrowserClient::GetUserAgent builds
+    its own product string and never calls GetUserAgentInternal, so the shell
+    has no HeadlessChrome under any switch and would pass this vacuously.
+
+    CHROME_FLAGS already carries --headless, which is the whole precondition
+    for the prefix; asserting its absence without it would measure nothing.
+    """
+    try:
+        base_url, headers_for, stop = echo_server.start(lib_shell.ACCEPT_CH)
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        return None, None, exc
+    try:
+        values, err = lib_shell.session(
+            config, expressions, navigate_to=base_url,
+            shell=lib_shell.CHROME, extra_flags=lib_shell.CHROME_FLAGS)
+        if err is not None:
+            return None, None, err
+        wire = headers_for("/probe.js")
+    finally:
+        stop()
+    if wire is None:
+        return None, None, RuntimeError("the subresource request was never observed")
+    return values, {k.lower(): v for k, v in wire.items()}, None
+
+
+C5 = "5 navigator.userAgent contains no Headless"
+C6 = "6 no brand in navigator.userAgentData.brands contains Headless"
+C7 = "7 the Sec-CH-UA request header contains no Headless"
+C8 = "8 navigator.webdriver === false and criterion 5 holds, same session"
+
+values, wire, err = run_chrome(
+    None, ["navigator.userAgent",
+           "JSON.stringify(navigator.userAgentData.brands)",
+           "navigator.webdriver"])
+if err is not None:
+    failed([C5, C6, C7, C8], "criteria 5-8 session", err)
+else:
+    ua, brands_json, webdriver = values
+    brands = json.loads(brands_json)
+
+    results[C5] = "Headless" not in ua
+
+    results[C6] = not any("Headless" in b.get("brand", "") for b in brands)
+
+    sec_ch_ua = wire.get("sec-ch-ua", "")
+    results[C7] = "Headless" not in sec_ch_ua
+
+    results[C8] = webdriver is False and results[C5]
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
