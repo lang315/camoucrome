@@ -56,9 +56,22 @@ notes = []
 # 2a/2b's isolation depends on SHELL_FLAGS never carrying --headless (see the
 # module docstring) -- content/child/runtime_features.cc:378 force-enables
 # AutomationControlled on that switch independent of debug_port.
-assert "--headless" not in lib_shell.SHELL_FLAGS, \
-    "SHELL_FLAGS now carries --headless, which runtime_features.cc:378 maps onto " \
-    "AutomationControlled; criteria 2a/2b would stop isolating the probe path"
+# Deliberately `raise`, not `assert`: python3 -O strips assert statements, and
+# a precondition that vanishes under a flag is this project's named failure
+# mode wearing a guard's clothes. Task 2's CHROME_FLAGS mirror uses the same
+# shape, so there is one idiom rather than two.
+#
+# It guards the module global, which is one level away from the argv each
+# session actually uses -- launch() takes SHELL_FLAGS only when extra_flags is
+# None, which is true of 2a and 2b today. A future criterion written as
+# extra_flags=SHELL_FLAGS + ["--headless"] would pass this and lose the
+# isolation anyway. Recorded rather than closed: a helper wrapping two call
+# sites costs more than it protects, and the message below names the
+# consequence for whoever adds the third.
+if "--headless" in lib_shell.SHELL_FLAGS:
+    raise RuntimeError(
+        "SHELL_FLAGS now carries --headless, which runtime_features.cc maps onto "
+        "AutomationControlled; criteria 2a/2b would stop isolating the probe path")
 
 
 def failed(keys, label, exc):
@@ -109,9 +122,15 @@ else:
 # returns false unconditionally, regardless of debug_port, so the paragraph
 # above describes a stock-build failure mode this run cannot hit. What 2a is,
 # here, is a harness canary: it shares 2b's exact launch configuration minus
-# the CDP override, so a regression in the debug_port plumbing itself (e.g.
-# --remote-debugging-port=0 leaking back in) surfaces as a 2a FAIL instead of
-# a confusing 2b FAIL.
+# the CDP override, so a debug_port regression that breaks CONNECTIVITY -- the
+# fixed port never being polled, or the parameter accepted and ignored --
+# surfaces as a 2a FAIL instead of a confusing 2b FAIL.
+#
+# It does not catch a silent revert to port 0: the browser would connect, the
+# feature would be force-on, and on a patched build webdriver is still false,
+# so 2a passes green. Catching that needs an assertion on the argv, which
+# session() does not expose. Named because the obvious example to reach for
+# here is the one case the canary misses.
 C2A = "2a fixed port, no override: navigator.webdriver === false"
 values, err = lib_shell.session(None, [WEBDRIVER], debug_port=free_port())
 if err is not None:
@@ -125,10 +144,16 @@ else:
 # --disable-blink-features=AutomationControlled misses entirely.
 #
 # 2b's isolation claim -- that context.new_cdp_session(page) targets the same
-# page page.evaluate() reads -- is established once, by inspection, not
-# re-checked per run. Unlike 2a it has no stock-build gate: it would degrade
-# to a guaranteed PASS with nothing to notice if that stopped holding.
-# Re-check it after any Chromium roll, and after any Playwright upgrade too --
+# page page.evaluate() reads -- is established EMPIRICALLY, by Step 5's stock
+# run and the Step 8 mutation, in both of which 2b FAILed. A FAIL is only
+# possible if the override reached the evaluated page, so the claim rests on
+# an observed failure rather than on reading Playwright's source.
+#
+# Nothing re-checks it per run. Unlike 2a's port precondition, which the guard
+# at the top of this file holds down, the targeting assumption has no in-suite
+# check, so it would degrade to a guaranteed PASS with nothing to notice.
+# The re-check procedure is therefore RE-RUN THE MUTATION, not re-read the
+# code -- after any Chromium roll, and after any Playwright upgrade too, since
 # new_cdp_session's session-to-page targeting is Playwright's contract, not
 # Chromium's.
 C2B = "2b fixed port, Emulation.setAutomationOverride(enabled=true): still false"
