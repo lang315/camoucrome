@@ -219,6 +219,40 @@ TEST(MouseTrajectoriesTest, PathStaysWithinBoundingBoxSlack) {
     EXPECT_LE(p.y, 80);
   }
 }
+
+// The four tests above prove "returns steps+1 points from start to end". They
+// do NOT prove the path is HUMAN-like -- a straight line with even timing and
+// the seed ignored passes all four. These three prove the feature itself, and
+// the degenerate mutant in Step 5a demonstrates the gap: it leaves the four
+// green and reddens these three.
+
+TEST(MouseTrajectoriesTest, DifferentSeedsGiveDifferentPaths) {
+  auto a = camoucfg::HumanizeTrajectory({0, 0}, {200, 200}, 24, 40, 120, 1);
+  auto b = camoucfg::HumanizeTrajectory({0, 0}, {200, 200}, 24, 40, 120, 2);
+  ASSERT_EQ(a.size(), b.size());
+  bool any_differs = false;
+  for (size_t i = 0; i < a.size(); ++i)
+    if (a[i].x != b[i].x || a[i].y != b[i].y) any_differs = true;
+  EXPECT_TRUE(any_differs) << "seed is ignored: two seeds gave one path";
+}
+
+TEST(MouseTrajectoriesTest, PathBowsOffTheStraightLine) {
+  auto path = camoucfg::HumanizeTrajectory({0, 0}, {100, 0}, 24, 40, 120, 9);
+  double max_abs_y = 0;
+  for (size_t i = 1; i + 1 < path.size(); ++i)
+    max_abs_y = std::max(max_abs_y, std::abs(path[i].y));
+  EXPECT_GT(max_abs_y, 1.0) << "path is a straight line; no spatial humanization";
+}
+
+TEST(MouseTrajectoriesTest, InterPointTimingIsNotUniform) {
+  auto path = camoucfg::HumanizeTrajectory({0, 0}, {100, 100}, 24, 40, 120, 9);
+  ASSERT_GE(path.size(), 3u);
+  base::TimeDelta first = path[1].offset - path[0].offset;
+  bool any_differs = false;
+  for (size_t i = 2; i < path.size(); ++i)
+    if ((path[i].offset - path[i - 1].offset) != first) any_differs = true;
+  EXPECT_TRUE(any_differs) << "intervals uniform; timing not humanized";
+}
 ```
 
 - [ ] **Step 2: Add the sources to `BUILD.gn`, run, expect link/compile red**
@@ -231,15 +265,31 @@ Translate `BezierCalculator` + `HumanizeMouseTrajectory` from the camoufox `Mous
 
 - [ ] **Step 4: Run the tests, expect all four PASS**
 
-Run: `components_unittests --gtest_filter='MouseTrajectoriesTest.*'` — expect `[  PASSED  ] 4 tests.` Grep for that literal line, not the exit code (a zero-match filter exits 0 printing SUCCESS).
+Run: `components_unittests --gtest_filter='MouseTrajectoriesTest.*'` — expect `[  PASSED  ] 7 tests.` Grep for that literal line, not the exit code (a zero-match filter exits 0 printing SUCCESS).
 
 - [ ] **Step 5: Confirm no `<random>` slipped in**
 
 Run: `grep -c '#include <random>' additions/camoucfg/mouse_trajectories.cc` — expect `0`. This is a real gate: the file builds fine with `<random>` locally and only fails in the full tree, so catch it here.
 
+- [ ] **Step 5a: The degenerate mutant — prove the three humanization tests are non-vacuous**
+
+Replacing the missing RED phase with something stronger. Temporarily mutate
+`mouse_trajectories.cc` to a degenerate form — plain linear interpolation
+start→end, evenly-spaced timing, seed unused (lerp instead of the Bézier +
+jitter). Rebuild (confirm the mutant COMPILED — a mutant that fails to build
+leaves the old binary and reports a false pass) and run the filter:
+
+- the **four original** tests must still PASS on the mutant — this is the
+  vacuity, demonstrated: they never tested humanization;
+- the **three new** tests must FAIL on the mutant — this is the closure.
+
+That one mutant is the whole argument. Then restore, `touch` the file, rebuild,
+require real work (not `no work to do`), and confirm all **7** pass. Paste the
+mutant's 4-green/3-red split and the restored 7-green into the report.
+
 - [ ] **Step 6: `check_additions_build.py` and commit**
 
-Run: `python3 scripts/check_additions_build.py` — expect PASS with the count risen by the two new source files. Then commit.
+Run: `python3 scripts/check_additions_build.py` — expect PASS with the count risen by THREE files (`.h`, `.cc`, `_unittest.cc` — the unittest matches the `.cc` filter too). Then commit.
 
 ---
 
