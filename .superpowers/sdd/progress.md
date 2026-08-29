@@ -1963,3 +1963,16 @@ Task 2: implementer DONE (7b19148 port, 486122d +3 humanization tests), review d
   Implementer self-caught: FP-noise mutant (fixed to integer TimeDelta), and
   the mv-restore-older-mtime "no work to do" trap (fixed with touch, CXX
   confirmed in ninja log). check_additions_build 15->18.
+
+Task 2: REVIEW PASS/PASS (opus, reproduced all 7 tests numerically). No Crit/Imp.
+  3 Minors:
+  #1 (product decision, pending user) port dropped the reference's
+     distortPoints Gaussian y-tremor -- smooth cubic vs tremored. Not
+     compelled by brief/plan; real anti-detect fidelity question (a perfect
+     Bezier is its own tell). Asking user (threat-model call).
+  #2 (carry to branch review, MY brief) PathStaysWithinBoundingBoxSlack
+     x-slack [-50,150] < hull [-80,180]; safe at pinned seed 9 but not
+     seed-safe -- flag so nobody re-seeds and gets spurious red.
+  #3 (cosmetic) interior points funnel through gfx::PointF float32, so the
+     double struct fields carry only float precision. Irrelevant at pixel
+     scale.
