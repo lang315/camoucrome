@@ -1951,3 +1951,15 @@ Task 1: COMPLETE (commit 25d3af3, review clean PASS/PASS).
   Comment slightly overclaims. Closable only by a grep-keys.h script
   (extend check_additions_build.py); reviewer: not worth a follow-up alone.
   Fix comment when keys_unittest.cc next genuinely touched.
+
+Task 2: implementer DONE (7b19148 port, 486122d +3 humanization tests), review dispatched (opus).
+  MY brief defect, caught via implementer's disclosed unobserved-RED: the 4
+  curve tests were VACUOUS re humanization -- a lerp/even-timing/seed-ignoring
+  mutant passed all 4. Added DifferentSeedsGiveDifferentPaths,
+  PathBowsOffTheStraightLine, InterPointTimingIsNotUniform. One degenerate
+  mutant proves it: 4 orig green, 3 new red, mutant compiled. 7/7 restored.
+  Impl real: SplitMix64 seeded PRNG (base::RandUint64 not seedable), bowed
+  control points, timing jitter [0.5,1.5), <random> gate 0.
+  Implementer self-caught: FP-noise mutant (fixed to integer TimeDelta), and
+  the mv-restore-older-mtime "no work to do" trap (fixed with touch, CXX
+  confirmed in ninja log). check_additions_build 15->18.
