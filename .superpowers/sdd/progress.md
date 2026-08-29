@@ -1922,3 +1922,10 @@ LATE FINDINGS FOR CONVENTIONS, beyond A-F already recorded:
   I. A conjunction reddened by a mutant reaching only one conjunct proves
      only that conjunct. Criterion 8 is proof on its UA term, pin on its
      webdriver term -- no run has ever produced webdriver===true on chrome.
+
+=== SP2b (plan docs/superpowers/plans/2026-08-29-sp2b-humanized-cursor.md) ===
+Repo BASE 732af27. Checkout base 70cb99fedc (user lang315, master open).
+SP2b = humanized cursor ONLY (measurement collapsed rest to SP6/SP7).
+4 tasks: (1) config keys, (2) trajectory generator port + curve unit tests,
+(3) injection hook at input_handler.cc:757 + browser suite, (4) patch extract.
+showcursor overlay deferred; window.chrome (4.7) waits on SP7.
