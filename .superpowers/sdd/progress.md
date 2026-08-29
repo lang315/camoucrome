@@ -1929,3 +1929,17 @@ SP2b = humanized cursor ONLY (measurement collapsed rest to SP6/SP7).
 4 tasks: (1) config keys, (2) trajectory generator port + curve unit tests,
 (3) injection hook at input_handler.cc:757 + browser suite, (4) patch extract.
 showcursor overlay deferred; window.chrome (4.7) waits on SP7.
+
+Task 1: implementer DONE (commit 25d3af3), review dispatched.
+  TWO plan defects caught at the stop-gate, both mine:
+  1. plan's red-green assumed an "expected keys" test that keys_unittest.cc
+     never had. Fixed by ADDING EveryDeclaredConstantIsInAllKeys -- which
+     also closes keys.h:106's unenforced claim (declare a constant, forget
+     kAllKeys, all 4 old tests stay green). Same comment-promises-what-code-
+     does-not shape SP5a/SP2a kept finding.
+  2. plan's literal values "humanize"/"showcursor" are bare words; the
+     EveryKeyIsNamespaced invariant rejects them. Renamed to the ua: scheme:
+     humanize:enabled, humanize:minTime, humanize:maxTime, cursor:show.
+     Symbol kHumanize -> kHumanizeEnabled (SP6a generates from registry;
+     rename is breaking later, no consumer yet).
+  Plan corrected f2d6bbe + 93fe2f0. 5/5 tests. repo/checkout sha-match.
