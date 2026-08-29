@@ -1,0 +1,69 @@
+{
+  "measurement": "sp2b-2-stack-timing",
+  "binary": "chrome",
+  "trials": 7,
+  "errors_per_trial": 10000,
+  "states": [
+    {
+      "state": "A no debugging port",
+      "median_ms": 27.1,
+      "min_ms": 25.3,
+      "max_ms": 30.7,
+      "ns_per_error": 2710.0,
+      "times_ms": [
+        30.7,
+        27.1,
+        25.3,
+        27,
+        27.4,
+        27,
+        27.6
+      ],
+      "stack_trace_limit": 10,
+      "prepare_stack_trace": "undefined"
+    },
+    {
+      "state": "B port open, no client",
+      "median_ms": 24.5,
+      "min_ms": 23.1,
+      "max_ms": 27.8,
+      "ns_per_error": 2450.0,
+      "times_ms": [
+        27.8,
+        24.2,
+        23.1,
+        24.3,
+        24.8,
+        24.5,
+        24.8
+      ],
+      "stack_trace_limit": 10,
+      "prepare_stack_trace": "undefined"
+    },
+    {
+      "state": "C port open, Playwright attached",
+      "median_ms": 29.8,
+      "min_ms": 28.1,
+      "max_ms": 35,
+      "ns_per_error": 2980.0,
+      "times_ms": [
+        35,
+        28.6,
+        28.1,
+        29.6,
+        30,
+        29.9,
+        29.8
+      ],
+      "stack_trace_limit": 10,
+      "prepare_stack_trace": "undefined"
+    }
+  ],
+  "provenance": {
+    "checkout_commit": "70cb99fedc",
+    "driver": "playwright 1.55.0; state C navigates via page.goto",
+    "runs_summary": "5 runs total; in the tight 3-run batch A 24.6-25.8ms, B 24.3-25.1ms, C 30.6-31.4ms medians; C does not overlap A or B",
+    "confound": "state C loads the page through Playwright, whose page agent runs concurrently; states A and B load the URL from the command line. The ~24% C excess may be that agent rather than V8 stack-capture cost. The raw-CDP client that attaches WITHOUT enabling Runtime and without a Playwright agent is what separates the two -- measurement 3.",
+    "invariant": "stack_trace_limit is 10 and prepare_stack_trace is undefined in ALL three states. The two properties the literature says shift under an inspector do not shift here; only a self-timing of Error.stack construction differs, and only while a client is attached."
+  }
+}
