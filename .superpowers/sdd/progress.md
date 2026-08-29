@@ -1976,3 +1976,8 @@ Task 2: REVIEW PASS/PASS (opus, reproduced all 7 tests numerically). No Crit/Imp
   #3 (cosmetic) interior points funnel through gfx::PointF float32, so the
      double struct fields carry only float precision. Irrelevant at pixel
      scale.
+
+Task 2: COMPLETE (7b19148+486122d, review PASS/PASS). Tremor DEFERRED by
+user decision 2026-08-29 (ship smooth; core humanization proven; tremor's
+value unmeasured; smooth Bezier fine for basic bot-detection). Recorded in
+plan's Deferred section as a self-contained follow-up.
