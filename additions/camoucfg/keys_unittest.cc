@@ -38,6 +38,26 @@ TEST(CamoucfgKeysTest, EveryKeyIsNamespaced) {
   }
 }
 
+// keys.h's comment claims adding a constant means adding it to kAllKeys,
+// but nothing enforced that until this test: a constant declared and left
+// out of kAllKeys was invisible. Enumerate every constant by name here and
+// assert the set equals kAllKeys, so declaring one and forgetting kAllKeys
+// (or vice versa) fails, and a duplicate in kAllKeys masking a missing key
+// fails the size check rather than passing on set equality.
+TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
+  const std::set<std::string_view> declared = {
+      kUaOsInfo, kNavigatorHardwareConcurrency, kNavigatorUserAgent,
+      kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
+      kUaModel, kUaMobile, kUaWow64,
+      kHumanizeEnabled, kHumanizeMinTime, kHumanizeMaxTime, kShowCursor,
+  };
+  const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
+  EXPECT_EQ(declared, in_array);
+  EXPECT_EQ(declared.size(), kAllKeys.size());  // a duplicate in kAllKeys
+                                                // would shrink in_array below
+                                                // declared and be caught here
+}
+
 // kUaMetadataKeys is a hand-written subset, and a subset that has drifted from
 // its parent is the silent kind of wrong: the startup check that iterates it
 // would simply stop covering whatever fell out, while still reporting success
