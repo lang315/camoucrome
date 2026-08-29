@@ -1,0 +1,315 @@
+{
+  "measurement": "sp2b-4-trusted-input",
+  "binary": "chrome",
+  "reps": 5,
+  "screen": {
+    "width": 800,
+    "height": 600,
+    "windowScreenX": 10,
+    "windowScreenY": 10
+  },
+  "cdp_click": {
+    "label": "CDP click (page.mouse.click -> Input.dispatchMouseEvent)",
+    "reps": 5,
+    "sequences_per_rep": [
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ]
+    ],
+    "sequence_stable": true,
+    "isTrusted_per_event_all_reps": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ],
+    "isTrusted_stable": true,
+    "isTrusted": true,
+    "screenXY_in_bounds_all_events": true,
+    "fields_first_rep": [
+      {
+        "type": "pointerdown",
+        "isTrusted": true,
+        "screenX": 260,
+        "screenY": 353,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 1,
+        "detail": 0,
+        "pointerId": 1,
+        "pointerType": "mouse",
+        "isPrimary": true
+      },
+      {
+        "type": "mousedown",
+        "isTrusted": true,
+        "screenX": 260,
+        "screenY": 353,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 1,
+        "detail": 1,
+        "pointerId": null,
+        "pointerType": null,
+        "isPrimary": null
+      },
+      {
+        "type": "pointerup",
+        "isTrusted": true,
+        "screenX": 260,
+        "screenY": 353,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 0,
+        "detail": 0,
+        "pointerId": 1,
+        "pointerType": "mouse",
+        "isPrimary": true
+      },
+      {
+        "type": "mouseup",
+        "isTrusted": true,
+        "screenX": 260,
+        "screenY": 353,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 0,
+        "detail": 1,
+        "pointerId": null,
+        "pointerType": null,
+        "isPrimary": null
+      },
+      {
+        "type": "click",
+        "isTrusted": true,
+        "screenX": 260,
+        "screenY": 353,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 0,
+        "detail": 1,
+        "pointerId": 1,
+        "pointerType": "mouse",
+        "isPrimary": false
+      }
+    ]
+  },
+  "control_page_js_click": {
+    "label": "page-JS dispatchEvent click (control, KNOWN isTrusted=false)",
+    "reps": 5,
+    "sequences_per_rep": [
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ],
+      [
+        "pointerdown",
+        "mousedown",
+        "pointerup",
+        "mouseup",
+        "click"
+      ]
+    ],
+    "sequence_stable": true,
+    "isTrusted_per_event_all_reps": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "isTrusted_stable": true,
+    "isTrusted": false,
+    "screenXY_in_bounds_all_events": true,
+    "fields_first_rep": [
+      {
+        "type": "pointerdown",
+        "isTrusted": false,
+        "screenX": 250,
+        "screenY": 200,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 1,
+        "detail": 0,
+        "pointerId": 1,
+        "pointerType": "mouse",
+        "isPrimary": true
+      },
+      {
+        "type": "mousedown",
+        "isTrusted": false,
+        "screenX": 250,
+        "screenY": 200,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 1,
+        "detail": 0,
+        "pointerId": null,
+        "pointerType": null,
+        "isPrimary": null
+      },
+      {
+        "type": "pointerup",
+        "isTrusted": false,
+        "screenX": 250,
+        "screenY": 200,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 0,
+        "detail": 0,
+        "pointerId": 1,
+        "pointerType": "mouse",
+        "isPrimary": true
+      },
+      {
+        "type": "mouseup",
+        "isTrusted": false,
+        "screenX": 250,
+        "screenY": 200,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 0,
+        "detail": 0,
+        "pointerId": null,
+        "pointerType": null,
+        "isPrimary": null
+      },
+      {
+        "type": "click",
+        "isTrusted": false,
+        "screenX": 250,
+        "screenY": 200,
+        "clientX": 250,
+        "clientY": 200,
+        "button": 0,
+        "buttons": 0,
+        "detail": 1,
+        "pointerId": null,
+        "pointerType": null,
+        "isPrimary": null
+      }
+    ]
+  },
+  "control_valid": true,
+  "provenance": {
+    "checkout_commit": "70cb99fedcbbaeaad05cd16390efc14a1cc79fb0",
+    "checkout_commit_note": "HEAD of /home/lang/chromium/src (the patched Chromium source tree the shipping `chrome` binary was built from), same tag used by measurements 1-3 ('70cb99fedc' there is this SHA's 10-char short form). Working tree was clean and the binary (out/Default/chrome, mtime 2026-08-28 08:20) predates this measurement -- nothing was rebuilt for it.",
+    "driver": "Playwright (sync API) connect_over_cdp against `chrome --headless --no-first-run --no-default-browser-check`. page.mouse.click(x, y) -- which is Input.dispatchMouseEvent -- for the CDP click; page.evaluate() calling a page-JS dispatchEvent() sequence for the control. Both write into the SAME five listeners (pointerdown/mousedown/pointerup/mouseup/click) on the same element, so one recording path is used for both, per REPS=5 repetitions.",
+    "control_readings": {
+      "cdp_isTrusted": true,
+      "cdp_isTrusted_stable_across_25_events": true,
+      "page_js_isTrusted": false,
+      "page_js_isTrusted_stable_across_25_events": true,
+      "cdp_and_control_differ": true,
+      "note": "Control read isTrusted=false on all 25 events (5 reps x 5 handlers), CDP click read isTrusted=true on all 25 -- they differ as required, so the listener is proven capable of telling trusted and untrusted events apart and every number above is usable."
+    },
+    "mousedown_mouseup_detail_note": "cdp_click.fields_first_rep shows mousedown/mouseup with detail=1 while control_page_js_click's mousedown/mouseup show detail=0. This is NOT a trusted-vs-synthetic discriminator: the control's dispatchEvent() calls never set `detail` on the down/up MouseEventInit (only on `click`), so it defaults to 0 -- a construction artifact of this script's control, not a Chromium behavior difference. click.detail=1 matches on both sides."
+  },
+  "interpretation": "isTrusted is already true on every CDP-synthesized event (25/25 across 5 reps: pointerdown, mousedown, pointerup, mouseup, click), and the page-JS dispatchEvent() control on the identical listeners reads false on all 25 -- confirming the probe distinguishes them and the true reading is not a listener bug. Section 4.4's assumption holds: Input.dispatchMouseEvent already produces isTrusted===true because injection happens in the browser process via RenderWidgetHostImpl. The full pointerdown->mousedown->pointerup->mouseup->click sequence arrived in the expected order on every rep (sequence_stable=true both sides). screenX/screenY fell inside the current (unspoofed -- SP4 has not landed) screen bounds on every event. No other readable field (button, buttons, pointerId, pointerType, isPrimary) showed a CDP-vs-hardware-shaped anomaly; the one field difference observed (mousedown/mouseup detail) traces to the control script's own construction, not to Chromium. D3 CONSEQUENCE: does NOT need a C++ patch to input_handler.cc for the isTrusted flag itself. D3 resolves to the driver-side branch: the residual risk section 4.4 already named is the stream SHAPE -- a real mouse produces dense jittered mousemove/pointerrawupdate with plausible timing between a teleport and a bare down/up pair, which this measurement did not probe and is not a C++/input_handler.cc concern -- it belongs to the driver/humanized-cursor layer (SP6, camoufox's MouseTrajectories.hpp precedent), not to this decision."
+}
