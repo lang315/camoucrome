@@ -4,6 +4,9 @@
 
 #include "components/camoucfg/mouse_trajectories.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -54,6 +57,42 @@ TEST(MouseTrajectoriesTest, PathStaysWithinBoundingBoxSlack) {
     EXPECT_GE(p.y, -80);
     EXPECT_LE(p.y, 80);
   }
+}
+
+// The four tests above only prove HumanizeTrajectory returns steps+1 points
+// from start to end within a slack box -- a degenerate straight-line, even-
+// timing, seed-ignoring implementation passes all of them. These three close
+// that gap by asserting the humanization itself: seed-dependence, spatial
+// bow, and timing jitter.
+
+TEST(MouseTrajectoriesTest, DifferentSeedsGiveDifferentPaths) {
+  auto a = camoucfg::HumanizeTrajectory({0, 0}, {200, 200}, 24, 40, 120, 1);
+  auto b = camoucfg::HumanizeTrajectory({0, 0}, {200, 200}, 24, 40, 120, 2);
+  ASSERT_EQ(a.size(), b.size());
+  bool any_differs = false;
+  for (size_t i = 0; i < a.size(); ++i)
+    if (a[i].x != b[i].x || a[i].y != b[i].y) any_differs = true;
+  EXPECT_TRUE(any_differs) << "seed is ignored: two seeds gave one path";
+}
+
+TEST(MouseTrajectoriesTest, PathBowsOffTheStraightLine) {
+  // {0,0}->{100,0} is horizontal, so a straight interpolation has y==0
+  // everywhere. A humanized curve bows off it.
+  auto path = camoucfg::HumanizeTrajectory({0, 0}, {100, 0}, 24, 40, 120, 9);
+  double max_abs_y = 0;
+  for (size_t i = 1; i + 1 < path.size(); ++i)
+    max_abs_y = std::max(max_abs_y, std::abs(path[i].y));
+  EXPECT_GT(max_abs_y, 1.0) << "path is a straight line; no spatial humanization";
+}
+
+TEST(MouseTrajectoriesTest, InterPointTimingIsNotUniform) {
+  auto path = camoucfg::HumanizeTrajectory({0, 0}, {100, 100}, 24, 40, 120, 9);
+  ASSERT_GE(path.size(), 3u);
+  base::TimeDelta first = path[1].offset - path[0].offset;
+  bool any_differs = false;
+  for (size_t i = 2; i < path.size(); ++i)
+    if ((path[i].offset - path[i - 1].offset) != first) any_differs = true;
+  EXPECT_TRUE(any_differs) << "intervals uniform; timing not humanized";
 }
 
 }  // namespace
