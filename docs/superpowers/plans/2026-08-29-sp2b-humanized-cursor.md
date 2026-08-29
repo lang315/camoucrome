@@ -92,17 +92,36 @@ Copied from `docs/superpowers/specs/00-conventions.md` and the SP2 spec. Every t
 
 **Background.** `keys.h` holds `constexpr char[]` constants and a `kAllKeys` array that two guard tests police (every constant is in the array; the array has no duplicates). The naming rule (conventions): a **colon** for a synthetic namespace with no JS counterpart. `humanize`, `humanize:minTime`, `humanize:maxTime`, `showcursor` all qualify — none mirrors a JS property path — so `humanize` is a bare synthetic key and the two times are colon-namespaced under it. Follow the existing `ua:*` entries exactly.
 
-- [ ] **Step 1: Write the failing guard-test extension**
+- [ ] **Step 1: Write a completeness guard test that names the constants**
 
-In `keys_unittest.cc`, add the four new constants to whatever list the "every key is in `kAllKeys`" test iterates, so the test fails until `keys.h` declares them.
+CORRECTED mid-execution: the plan assumed `keys_unittest.cc` already had an
+"expected keys" list to extend. It does not — its four tests all iterate
+`kAllKeys` generically and name no constant, so editing it could not produce a
+compile-time red state. Worse, that means nothing enforced keys.h:106's own
+claim ("A new constant must be added here too, which is what makes the
+uniqueness test meaningful") — a constant declared and left out of `kAllKeys`
+was invisible. So Task 1 first CLOSES that gap, which is also what gives the
+red-green cycle a test to fail. `keys_unittest.cc` is inside
+`namespace camoucfg::keys`, so constants are referenced UNQUALIFIED
+(`kHumanize`, not `keys::kHumanize`).
 
 ```cpp
-// in the expected-keys set the guard test checks:
-keys::kHumanize, keys::kHumanizeMinTime, keys::kHumanizeMaxTime,
-keys::kShowCursor,
+TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
+  const std::set<std::string_view> declared = {
+      kUaOsInfo, kNavigatorHardwareConcurrency, kNavigatorUserAgent,
+      kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
+      kUaModel, kUaMobile, kUaWow64,
+      kHumanize, kHumanizeMinTime, kHumanizeMaxTime, kShowCursor,
+  };
+  const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
+  EXPECT_EQ(declared, in_array);
+  EXPECT_EQ(declared.size(), kAllKeys.size());  // a duplicate in kAllKeys
+                                                // shrinks in_array and is
+                                                // caught by the size check
+}
 ```
 
-- [ ] **Step 2: Run it, expect a compile failure** (the symbols do not exist yet)
+- [ ] **Step 2: Run it, expect a compile failure** (the four new symbols do not exist yet)
 
 Run: `components_unittests --gtest_filter='CamoucfgKeysTest.*'` — expect the build to fail with `no member named 'kHumanize'`. A compile failure IS the red state here; there is nothing to run until it compiles.
 
@@ -119,7 +138,7 @@ and add all four to `kAllKeys`.
 
 - [ ] **Step 4: Run the guard tests, expect pass**
 
-Run: `components_unittests --gtest_filter='CamoucfgKeysTest.*'` — expect the existing count + the new keys, all PASS. State the number you see; if a duplicate slipped into `kAllKeys` the uniqueness guard fails and names it.
+Run: `components_unittests --gtest_filter='CamoucfgKeysTest.*'` — expect `[  PASSED  ] 5 tests.` (the four originals plus the new completeness guard). Grep for that literal line; the exit code lies on a zero-match filter. If a duplicate slipped into `kAllKeys`, both the uniqueness guard and the new size check fail and name it.
 
 - [ ] **Step 5: Commit** — `git add additions/camoucfg/keys.h additions/camoucfg/keys_unittest.cc` then commit.
 
