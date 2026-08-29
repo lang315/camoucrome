@@ -1981,3 +1981,18 @@ Task 2: COMPLETE (7b19148+486122d, review PASS/PASS). Tremor DEFERRED by
 user decision 2026-08-29 (ship smooth; core humanization proven; tremor's
 value unmeasured; smooth Bezier fine for basic bot-detection). Recorded in
 plan's Deferred section as a self-contained follow-up.
+
+Task 3: BLOCKED on a real async-delivery bug (NOT build, NOT test).
+  Infra detour: build box SSH wedged after the rebuild link was killed mid-VM-
+  teardown; box recovered, master re-established (user lang315).
+  MTIME TRAP hit and caught: after VM restart, input_handler.o was ~4000s
+  NEWER than the .cc, so autoninja said "0 steps / Build Succeeded" and the
+  binary was the PRE-redesign one. verify gave 1/2-fail = unpatched baseline.
+  Forced touch+rebuild -> 4 real steps -> freshly-linked redesign binary.
+  Conventions finding B (restored file older than mutant .o) in a new guise.
+  STILL 1 PASS / 2 FAIL on the fresh binary: only ONE event reaches the page
+  on the humanized (second) move. verify_sp2b.py is correct -- it does a PRIME
+  move then a TARGET move, so previous-position IS known. Posting looks right
+  (PostDelayedTask per interior point, delay = path[i].offset, final at
+  path.back().offset). So the synthetic delayed events are not reaching the
+  renderer. Handed back to implementer to debug with debug_run.py.
