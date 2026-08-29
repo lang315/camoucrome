@@ -72,7 +72,8 @@ Copied from `docs/superpowers/specs/00-conventions.md` and the SP2 spec. Every t
 | `additions/camoucfg/mouse_trajectories.cc` | Create | The ported curve + timing generator, `base/rand_util.h` not `<random>` |
 | `additions/camoucfg/mouse_trajectories_unittest.cc` | Create | Deterministic curve-math tests |
 | `additions/camoucfg/BUILD.gn` | Modify | Add the two new source files (both directions, per `check_additions_build.py`) |
-| `content/browser/devtools/protocol/input_handler.cc` | Modify (`InjectMouseEvent`, ~`:739`) | When `humanize:enabled` set and the event is a move, inject the trajectory sequence instead of one event |
+| `content/browser/devtools/protocol/input_handler.cc` | Modify (`InjectMouseEvent` + `InputHandler` state, ~`:739`) | When `humanize:enabled` set and the event is a move, deliver the trajectory as delayed tasks over real time, real event last |
+| `content/browser/devtools/protocol/input_handler.h` | Modify | `InputHandler` gains the session-lifetime path state (`last_move_widget_`, `last_move_position_`) + include |
 | `settings/invariants.json` + `additions/camoucfg/invariants.h` | Modify (only if a coherence tie is added) | See Task 3 note |
 | `scripts/verify_sp2b.py` | Create | Browser-level: a humanized move produces N jittered intermediate events; an un-configured move produces exactly one |
 | `patches/sp2b-humanized-cursor.patch` | Create | The `input_handler.cc` edit, extracted last |
@@ -305,13 +306,22 @@ Run: `python3 scripts/check_additions_build.py` — expect PASS with the count r
 - Consumes: `camoucfg::HumanizeTrajectory` (Task 2), `camoucfg::keys::kHumanizeEnabled`/`kHumanizeMinTime`/`kHumanizeMaxTime` (Task 1), `camoucfg::GetBool`/`GetString`/`GetInt` with `camoucfg::GlobalScope()`.
 - Produces: the observable behaviour `verify_sp2b.py` asserts.
 
-**Background — where and how, exactly.** The hook goes in `InputInjector::InjectMouseEvent` (`input_handler.cc:739`), around the `widget_host_->ForwardMouseEvent(mouse_event)` at `:757`. The logic:
+**Background — where and how, exactly.** The hook goes at `input_handler.cc:739`'s `InjectMouseEvent`, around `widget_host_->ForwardMouseEvent(mouse_event)` at `:757` — but the delivery is ASYNCHRONOUS, and getting that wrong is the defect Task 3's first attempt found. The logic:
 
-- Read `humanize:enabled` once. If absent → forward the single event exactly as today. This is the fall-back-to-real safety property, and it must be the first branch so an un-configured build's code path is unchanged.
-- If set, and the event is a **move** (`WebInputEvent::Type::kMouseMove`) with a known previous position → generate a trajectory from the previous position to the event's position, and `ForwardMouseEvent` one synthesized move per intermediate point, spacing them by the point offsets. The final forwarded event is the original, so the destination and all its other fields are untouched.
-- A down/up/click is **not** humanized — those are discrete, not paths. Only moves get a trajectory. (A future refinement could curve the approach before a click; out of scope here.)
+- Read `humanize:enabled` once. If absent → forward the single event exactly as today. First branch, the fall-back-to-real safety property; an un-configured build's path is unchanged.
+- If set, and the event is a **move** (`WebInputEvent::Type::kMouseMove`) with a known previous position (same widget) → generate a trajectory and deliver it over real wall-clock time, then forward the real event last.
+- A down/up/click is **not** humanized. Only moves get a trajectory.
 
-Two hazards from conventions: **apply config last** (this reads config and only acts when the key is present, so stock behaviour including emulation survives when it is absent), and the previous-position tracking must not leak across widgets — reset it when the target widget changes.
+**Why synchronous forwarding does not work, and the async design that does** (discovered in execution, 2026-08-29). Forwarding all N `ForwardMouseEvent` calls back-to-back in one C++ call fails two ways at once: Chromium's input router **coalesces** queued mousemoves the renderer has not yet consumed (only ~2 of 24 reach the page), and with zero wall-clock time between sends even the survivors carry near-identical `timeStamp`s, so criterion 3 fails. The manufactured per-point timestamps do nothing — what a page reads is real delivery time.
+
+So each intermediate point is a **delayed task posted at its cumulative offset**, and the real event is deferred to the END of the path. Required properties:
+
+- **Drive from `InputHandler`, not the per-command `InputInjector`.** The injector self-destructs the moment `pending_mouse_callbacks_` drains — which, once the callback is deferred, is immediately. So the path state and the delayed tasks must be owned by the session-lifetime `InputHandler`, not the doomed injector. (`last_move_widget_` as `WeakPtr<RenderWidgetHostImpl>` + `last_move_position_` live here; "reset on widget change" is `last_move_widget_.get() == widget_host_.get()` identity comparison.) `input_handler.h` gains an include and these members — editing the header is in scope.
+- **Each synthetic task is bound to a `WeakPtr<InputHandler>` and re-checks the widget weak-ptr before forwarding — no-op, no crash, if either is gone when it fires.** This lifetime safety is what the async version needs and the sync one did not.
+- **The final delayed task, at the full duration, forwards the real `mouse_event` (kFromDebugger intact so its ack resolves the callback) and thereby completes the CDP command.** The callback ownership moves out of the injector into that deferred task. So `Input.dispatchMouseEvent` completes when the humanized move FINISHES (~`min_ms`..`max_ms`) — which is correct and desirable: a human move takes that long, and deferring serializes against Playwright's awaited next command (completing early races two paths into interleaved, out-of-order events).
+- Synthetic intermediate events **clear `kFromDebugger`** (so they do not wrongly pop the single queued callback) and are **skipped if outside the widget** (reuse `PointIsWithinContents`). `last_move_position_`/`last_move_widget_` are set to the target when the path is scheduled.
+
+Two conventions hazards remain: **apply config last** (act only when the key is present, so stock behaviour incl. emulation survives its absence), and the previous-position state must not leak across widgets (the identity comparison above).
 
 - [ ] **Step 1: Write `scripts/verify_sp2b.py`**
 
@@ -388,7 +398,7 @@ grep -c '^[+-][^+-]' ~/sp2b.patch    # expect > 0 — an empty patch also satisf
 
 - [ ] **Step 5: Rebuild from the reconstructed tree, re-run every suite** with its expected count: `verify_sp0` 11, `verify_sp1a` 9, `verify_sp5a` 4, `verify_sp1a_chrome` 34, `verify_sp2` 9, `verify_sp2b` 3, `run_coherence_tests` 6/6, `check_checkout_sync` (rises by the two new additions files), `check_additions_build` (rises by two).
 
-- [ ] **Step 6: Record the SP2 outcome in `00-conventions.md`.** Add to the sub-project map: SP2 is complete across SP2a (binary leaks) and SP2b (humanized cursor); D1 and D3 resolved to SP6 driver constraints by measurement; `window.chrome` (4.7) deferred to post-SP7. Point at `D1-resolution.md`. One paragraph, in the style of the existing SP1/SP5 split notes.
+- [ ] **Step 6: Record the SP2 outcome in `00-conventions.md`.** Also add the coalescing finding: **one synchronous C++ call forwarding N mousemove events is coalesced by the input router to ~2 that reach the page, and the survivors carry near-identical timestamps** — a page-visible multi-event sequence requires delayed tasks spaced by real wall-clock time, and the CDP command completing when the path finishes. Manufactured `WebInputEvent::TimeStamp()` values do nothing; what a page reads is delivery time. First hit in SP2b Task 3; applies to any future multi-event input synthesis. Add to the sub-project map: SP2 is complete across SP2a (binary leaks) and SP2b (humanized cursor); D1 and D3 resolved to SP6 driver constraints by measurement; `window.chrome` (4.7) deferred to post-SP7. Point at `D1-resolution.md`. One paragraph, in the style of the existing SP1/SP5 split notes.
 
 - [ ] **Step 7: Commit** patch + `apply.sh` + conventions together.
 
