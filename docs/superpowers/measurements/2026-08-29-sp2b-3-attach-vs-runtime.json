@@ -1,0 +1,47 @@
+{
+  "measurement": "sp2b-3-attach-vs-runtime",
+  "binary": "chrome",
+  "trials": 7,
+  "errors_per_trial": 10000,
+  "n_batches_per_state": 9,
+  "state_D_no_runtime_medians_ms": [
+    21,
+    21.3,
+    22.5,
+    23.9,
+    24.4,
+    24.5,
+    24.9,
+    25.6,
+    26.3
+  ],
+  "state_E_runtime_enable_medians_ms": [
+    26.7,
+    27,
+    28,
+    28.8,
+    29.5,
+    29.6,
+    29.8,
+    30.1,
+    30.5
+  ],
+  "reference_from_measurement_2": {
+    "A_no_port": "24.6-25.8",
+    "B_port_no_client": "24.3-25.1",
+    "C_playwright": "30.6-31.4"
+  },
+  "result": {
+    "D_median_ms": 24.4,
+    "E_median_ms": 29.5,
+    "delta_ms": 5.1,
+    "overlap": "none: D max 26.3 < E min 26.7"
+  },
+  "provenance": {
+    "checkout_commit": "70cb99fedc",
+    "driver": "raw CDP over websocket-client 1.9.0; NO Playwright, no injected page agent",
+    "attach_detail": "chrome rejects a WebSocket whose Origin it did not expect (403). --remote-allow-origins=* plus suppress_origin=True are set; both are client-attach concerns and change nothing the page measures.",
+    "invariant": "stack_trace_limit=10 and prepare_stack_trace=undefined in every run of both states"
+  },
+  "interpretation": "Runtime.enable is the specific cause of the attached-state timing signal measurement 2 found. State D (bare CDP attach, Page domain only) is indistinguishable from the unattached baseline; state E (same plus Runtime.enable) is elevated ~21% with ZERO distribution overlap across 9 batches each. C's small excess over E (measurement 2) is the Playwright page agent, the confound this measurement removed. D1 option (a) -- never enable the Runtime domain -- therefore closes this vector at the driver layer, and option (b), patching v8/src/inspector, is not warranted by it."
+}
