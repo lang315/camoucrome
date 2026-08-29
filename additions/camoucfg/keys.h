@@ -103,9 +103,21 @@ inline constexpr char kUaModel[] = "ua:model";
 inline constexpr char kUaMobile[] = "ua:mobile";
 inline constexpr char kUaWow64[] = "ua:wow64";
 
+// The humanized-cursor generator's knobs, in their own synthetic `humanize:`
+// namespace -- none mirrors a JS property path. `humanize:` is a pure
+// namespace with no bare `humanize` key, the same shape as `ua:` above.
+inline constexpr char kHumanizeEnabled[] = "humanize:enabled";
+inline constexpr char kHumanizeMinTime[] = "humanize:minTime";
+inline constexpr char kHumanizeMaxTime[] = "humanize:maxTime";
+
+// Cursor visibility. A separate namespace from `humanize:` on purpose: it is
+// a rendering concern (a visible cursor overlay), not part of humanizing the
+// movement path/timing itself.
+inline constexpr char kShowCursor[] = "cursor:show";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 10> kAllKeys = {
+inline constexpr std::array<std::string_view, 14> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -116,6 +128,10 @@ inline constexpr std::array<std::string_view, 10> kAllKeys = {
     kUaModel,
     kUaMobile,
     kUaWow64,
+    kHumanizeEnabled,
+    kHumanizeMinTime,
+    kHumanizeMaxTime,
+    kShowCursor,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
