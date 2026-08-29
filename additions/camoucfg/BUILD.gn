@@ -15,9 +15,14 @@ static_library("camoucfg") {
     "mask_config.h",
     "mask_config_internal.cc",
     "mask_config_internal.h",
+    "mouse_trajectories.cc",
+    "mouse_trajectories.h",
   ]
 
-  deps = [ "//base" ]
+  deps = [
+    "//base",
+    "//ui/gfx/geometry",
+  ]
 }
 
 source_set("unit_tests") {
@@ -27,6 +32,7 @@ source_set("unit_tests") {
     "derive_unittest.cc",
     "keys_unittest.cc",
     "mask_config_unittest.cc",
+    "mouse_trajectories_unittest.cc",
   ]
 
   deps = [
@@ -34,5 +40,6 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//testing/gtest",
+    "//ui/gfx/geometry",
   ]
 }
