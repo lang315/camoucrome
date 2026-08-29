@@ -1943,3 +1943,11 @@ Task 1: implementer DONE (commit 25d3af3), review dispatched.
      Symbol kHumanize -> kHumanizeEnabled (SP6a generates from registry;
      rename is breaking later, no consumer yet).
   Plan corrected f2d6bbe + 93fe2f0. 5/5 tests. repo/checkout sha-match.
+
+Task 1: COMPLETE (commit 25d3af3, review clean PASS/PASS).
+  Minor carried to whole-branch review: EveryDeclaredConstantIsInAllKeys's
+  `declared` set is itself a hand list -- a constant added to keys.h with
+  NEITHER kAllKeys NOR the test updated is invisible (no C++ reflection).
+  Comment slightly overclaims. Closable only by a grep-keys.h script
+  (extend check_additions_build.py); reviewer: not worth a follow-up alone.
+  Fix comment when keys_unittest.cc next genuinely touched.
