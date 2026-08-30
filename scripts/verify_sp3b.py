@@ -1,10 +1,10 @@
-"""Verifies the SP3b WebGL vendor/renderer string substitution: with
-webGl:/webGl2: vendor+renderer configured, a page reading the UNMASKED_*
-strings through the WEBGL_debug_renderer_info extension gets EXACTLY the
-configured values, the two namespaces stay separated, and an unconfigured
-build returns a stable SwiftShader baseline.
+"""Verifies the SP3b WebGL substitution: the unmasked vendor/renderer strings
+(V1-V3) plus the numeric/array getParameter table and blockIfNotDefined
+fail-closed behaviour (V4-V5). With webGl:/webGl2: keys configured, a page
+reads EXACTLY the configured values, the two namespaces stay separated, and an
+unconfigured build returns a stable SwiftShader baseline.
 
-Three criteria, driven with Playwright's sync API over content_shell's CDP,
+Five criteria, driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp3a.py -- a fault in any one session becomes a FAIL
 line, never a traceback that discards results already collected. All sessions
 run under SwiftShader (--use-angle=swiftshader --enable-unsafe-swiftshader) so
@@ -21,12 +21,20 @@ reproducible (SP3 spec Section 6).
   V3 both namespaces: a webgl2 context with webGl2:renderer/webGl2:vendor
      returns those; a webgl context is UNAFFECTED by webGl2: keys (returns
      baseline); and a webgl2 context is UNAFFECTED by webGl: keys (baseline).
+  V4 parameter table: with webGl:parameters set, getParameter returns the
+     configured value with the JS type stock returns for that pname -- an int
+     (MAX_TEXTURE_SIZE) as a number, an int array (MAX_VIEWPORT_DIMS) as an
+     Int32Array, a float range (ALIASED_LINE_WIDTH_RANGE) as a Float32Array.
+  V5 fail-closed: with webGl:parameters:blockIfNotDefined true, a blockable but
+     unconfigured pname (MAX_TEXTURE_SIZE) returns null AND raises INVALID_ENUM
+     exactly like a real unsupported enum; with the flag false the same call
+     returns the host value.
 
-RED-FIRST: run this against a stock/SP3a content_shell (no SP3b edit) and V2/V3
-FAIL while V1 passes -- the required red evidence. The unmasked strings are only
-readable after gl.getExtension('WEBGL_debug_renderer_info'); a session that
-cannot get the extension is a FAIL (not a fake pass), matching verify_sp3a's C6
-discipline.
+RED-FIRST: run this against a stock/SP3a content_shell (no SP3b edit) and
+V2-V5 FAIL while V1 passes -- the required red evidence. The unmasked strings
+are only readable after gl.getExtension('WEBGL_debug_renderer_info'); a session
+that cannot get the extension is a FAIL (not a fake pass), matching
+verify_sp3a's C6 discipline.
 """
 
 import json
@@ -50,6 +58,24 @@ V3_VENDOR = "Google Inc. (AMD)"
 
 V2CFG = json.dumps({"webGl:renderer": V2_RENDERER, "webGl:vendor": V2_VENDOR})
 V3CFG = json.dumps({"webGl2:renderer": V3_RENDERER, "webGl2:vendor": V3_VENDOR})
+
+# V4: the getParameter table. Decimal pname keys mirror GLParamFrom's
+# base::NumberToString(pname). MAX_TEXTURE_SIZE (int scalar), MAX_VIEWPORT_DIMS
+# (int array -> Int32Array), ALIASED_LINE_WIDTH_RANGE (float range ->
+# Float32Array). The line range [1, 2048] is deliberately unlike any real GL's
+# (which is [1, 1]) so V4 is unambiguously red on a build without the table.
+V4CFG = json.dumps({"webGl:parameters": {
+    "3379": 16384,               # 0x0D33 MAX_TEXTURE_SIZE  (host: 8192)
+    "3386": [16384, 16384],      # 0x0D3A MAX_VIEWPORT_DIMS (host: 8192,8192)
+    "33902": [1, 2048],          # 0x846E ALIASED_LINE_WIDTH_RANGE (host: 1,1)
+}})
+
+# V5: fail-closed. MAX_TEXTURE_SIZE is blockable (NOT in the always-present
+# exclude set) and left undefined, so blockIfNotDefined must null it out and
+# raise INVALID_ENUM. With the flag false the same read returns the host value.
+V5_PNAME = 0x0D33
+V5_BLOCK_CFG = json.dumps({"webGl:parameters:blockIfNotDefined": True})
+V5_OPEN_CFG = json.dumps({"webGl:parameters:blockIfNotDefined": False})
 
 # Reads the two unmasked strings on the requested context type, plus a full
 # sweep of every string-returning (and a broad set of other) getParameter
@@ -88,10 +114,45 @@ PROBE = """(type) => {
 }
 """
 
+# V4: read the three configured pnames and report each value's exact JS type
+# (a typed array must arrive as Int32Array / Float32Array, not a plain array).
+PROBE_V4 = """(type) => {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const gl = c.getContext(type);
+  if (!gl) return { err: 'no-context:' + type };
+  const read = (p) => {
+    const v = gl.getParameter(p);
+    const arr = (v && typeof v === 'object' && v.length !== undefined)
+      ? Array.from(v) : null;
+    return { value: arr !== null ? arr : v, type: typeof v,
+             int32: v instanceof Int32Array, float32: v instanceof Float32Array };
+  };
+  return { max_texture: read(0x0D33), max_viewport: read(0x0D3A),
+           line_range: read(0x846E) };
+}
+"""
 
-def probe(config, ctx_type):
-    """One content_shell session under SwiftShader. Runs PROBE for ctx_type
-    ('webgl' or 'webgl2'). Returns (value, err); any fault becomes a FAIL."""
+# V5: read one pname and report both the returned value and the GL error it
+# raised, so a fail-closed null can be distinguished from -- and checked to
+# match -- a real unsupported-enum null (both null + INVALID_ENUM).
+PROBE_PARAM = """(args) => {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const gl = c.getContext(args.type);
+  if (!gl) return { err: 'no-context:' + args.type };
+  while (gl.getError() !== gl.NO_ERROR) {}   // drain any pre-existing error
+  const v = gl.getParameter(args.pname);
+  const glError = gl.getError();
+  const arr = (v && typeof v === 'object' && v.length !== undefined)
+    ? Array.from(v) : null;
+  return { isNull: v === null, value: arr !== null ? arr : v,
+           glError, INVALID_ENUM: gl.INVALID_ENUM };
+}
+"""
+
+
+def probe_with(config, probe_js, arg):
+    """One content_shell session under SwiftShader. Runs probe_js(arg) in the
+    page. Returns (value, err); any fault becomes a FAIL, never a traceback."""
     proc = None
     try:
         proc = lib_shell.launch(config, extra_flags=GL_FLAGS)
@@ -101,12 +162,17 @@ def probe(config, ctx_type):
             context = browser.contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
             page.goto("about:blank", wait_until="load")
-            return page.evaluate(PROBE, ctx_type), None
+            return page.evaluate(probe_js, arg), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:
         if proc is not None:
             lib_shell.shutdown(proc)
+
+
+def probe(config, ctx_type):
+    """Runs the V1-V3 unmasked-string PROBE for ctx_type ('webgl'|'webgl2')."""
+    return probe_with(config, PROBE, ctx_type)
 
 
 results = {}
@@ -126,9 +192,20 @@ v3g2, v3g2e = probe(V3CFG, "webgl2")        # webgl2 + webGl2: -> spoofed
 v3g1x, v3g1xe = probe(V3CFG, "webgl")       # webgl  + webGl2: -> baseline
 v2g2x, v2g2xe = probe(V2CFG, "webgl2")      # webgl2 + webGl:  -> baseline
 
+# --- V4: numeric/array parameter table on a webgl context. ---
+v4, v4e = probe_with(V4CFG, PROBE_V4, "webgl")
+
+# --- V5: blockIfNotDefined fail-closed (block) vs open on a webgl context. ---
+v5b, v5be = probe_with(V5_BLOCK_CFG, PROBE_PARAM,
+                       {"type": "webgl", "pname": V5_PNAME})
+v5o, v5oe = probe_with(V5_OPEN_CFG, PROBE_PARAM,
+                       {"type": "webgl", "pname": V5_PNAME})
+
 V1 = "V1 unconfigured unmasked strings stable across two launches"
 V2 = "V2 webGl:vendor/renderer substituted exactly; baseline absent from sweep"
 V3 = "V3 webGl2: substituted; namespaces isolated (webgl<->webgl2)"
+V4 = "V4 parameter table: int number + Int32Array + Float32Array as configured"
+V5 = "V5 blockIfNotDefined: unconfigured pname -> null+INVALID_ENUM; open -> host"
 
 
 def ok(v):
@@ -215,7 +292,37 @@ results[V3] = all(v3_parts) and len(v3_parts) == 3
 for r in v3_reasons:
     notes.append(f"V3: {r}")
 
-EXPECTED = 3
+# --- V4: parameter table types ---
+if not ok(v4):
+    results[V4] = False
+    notes.append(f"V4: {v4.get('err') if v4 else f'{type(v4e).__name__}: {v4e}'}")
+else:
+    mt, mv, lr = v4["max_texture"], v4["max_viewport"], v4["line_range"]
+    c_int = mt["type"] == "number" and mt["value"] == 16384
+    c_i32 = mv["int32"] and mv["value"] == [16384, 16384]
+    c_f32 = lr["float32"] and lr["value"] == [1, 2048]
+    results[V4] = c_int and c_i32 and c_f32
+    if not results[V4]:
+        notes.append(f"V4: int={c_int}(type={mt['type']} value={mt['value']!r}) "
+                     f"int32={c_i32}(is={mv['int32']} value={mv['value']!r}) "
+                     f"float32={c_f32}(is={lr['float32']} value={lr['value']!r})")
+
+# --- V5: blockIfNotDefined fail-closed vs open ---
+if not ok(v5b) or not ok(v5o):
+    results[V5] = False
+    for tag, val, err in (("block", v5b, v5be), ("open", v5o, v5oe)):
+        if not ok(val):
+            notes.append(f"V5 {tag}: {val.get('err') if val else f'{type(err).__name__}: {err}'}")
+else:
+    blocked = v5b["isNull"] and v5b["glError"] == v5b["INVALID_ENUM"]
+    opened = (not v5o["isNull"]) and isinstance(v5o["value"], (int, float))
+    results[V5] = blocked and opened
+    if not results[V5]:
+        notes.append(f"V5: blocked={blocked} (isNull={v5b['isNull']} "
+                     f"glError={v5b['glError']:#x} want_INVALID_ENUM={v5b['INVALID_ENUM']:#x}) "
+                     f"opened={opened} (open value={v5o['value']!r})")
+
+EXPECTED = 5
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
