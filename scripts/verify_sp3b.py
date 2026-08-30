@@ -77,6 +77,16 @@ V5_PNAME = 0x0D33
 V5_BLOCK_CFG = json.dumps({"webGl:parameters:blockIfNotDefined": True})
 V5_OPEN_CFG = json.dumps({"webGl:parameters:blockIfNotDefined": False})
 
+# WebGL2 variants: the table + blockIfNotDefined must be proven on a webgl2
+# context too. WebGL2's getParameter has its OWN generic-lookup glue (not a
+# shared code path with WebGL1 -- only the two pure helpers are shared), so a
+# webgl-only V4/V5 would leave that glue unexercised. Same pnames, webGl2: keys.
+V4CFG2 = json.dumps({"webGl2:parameters": {
+    "3379": 16384, "3386": [16384, 16384], "33902": [1, 2048],
+}})
+V5_BLOCK_CFG2 = json.dumps({"webGl2:parameters:blockIfNotDefined": True})
+V5_OPEN_CFG2 = json.dumps({"webGl2:parameters:blockIfNotDefined": False})
+
 # Reads the two unmasked strings on the requested context type, plus a full
 # sweep of every string-returning (and a broad set of other) getParameter
 # pnames JSON-stringified, so a baseline string leaking through ANY parameter
@@ -192,20 +202,25 @@ v3g2, v3g2e = probe(V3CFG, "webgl2")        # webgl2 + webGl2: -> spoofed
 v3g1x, v3g1xe = probe(V3CFG, "webgl")       # webgl  + webGl2: -> baseline
 v2g2x, v2g2xe = probe(V2CFG, "webgl2")      # webgl2 + webGl:  -> baseline
 
-# --- V4: numeric/array parameter table on a webgl context. ---
+# --- V4: numeric/array parameter table on webgl AND webgl2 contexts. ---
 v4, v4e = probe_with(V4CFG, PROBE_V4, "webgl")
+v4_2, v4_2e = probe_with(V4CFG2, PROBE_V4, "webgl2")
 
-# --- V5: blockIfNotDefined fail-closed (block) vs open on a webgl context. ---
+# --- V5: blockIfNotDefined fail-closed (block) vs open on webgl AND webgl2. ---
 v5b, v5be = probe_with(V5_BLOCK_CFG, PROBE_PARAM,
                        {"type": "webgl", "pname": V5_PNAME})
 v5o, v5oe = probe_with(V5_OPEN_CFG, PROBE_PARAM,
                        {"type": "webgl", "pname": V5_PNAME})
+v5b_2, v5b_2e = probe_with(V5_BLOCK_CFG2, PROBE_PARAM,
+                           {"type": "webgl2", "pname": V5_PNAME})
+v5o_2, v5o_2e = probe_with(V5_OPEN_CFG2, PROBE_PARAM,
+                           {"type": "webgl2", "pname": V5_PNAME})
 
 V1 = "V1 unconfigured unmasked strings stable across two launches"
 V2 = "V2 webGl:vendor/renderer substituted exactly; baseline absent from sweep"
 V3 = "V3 webGl2: substituted; namespaces isolated (webgl<->webgl2)"
-V4 = "V4 parameter table: int number + Int32Array + Float32Array as configured"
-V5 = "V5 blockIfNotDefined: unconfigured pname -> null+INVALID_ENUM; open -> host"
+V4 = "V4 parameter table (webgl+webgl2): int + Int32Array + Float32Array as configured"
+V5 = "V5 blockIfNotDefined (webgl+webgl2): unconfigured pname -> null+INVALID_ENUM; open -> host"
 
 
 def ok(v):
@@ -292,35 +307,42 @@ results[V3] = all(v3_parts) and len(v3_parts) == 3
 for r in v3_reasons:
     notes.append(f"V3: {r}")
 
-# --- V4: parameter table types ---
-if not ok(v4):
-    results[V4] = False
-    notes.append(f"V4: {v4.get('err') if v4 else f'{type(v4e).__name__}: {v4e}'}")
-else:
-    mt, mv, lr = v4["max_texture"], v4["max_viewport"], v4["line_range"]
+# --- V4: parameter table types (webgl AND webgl2) ---
+def v4_checks(r):
+    if not ok(r):
+        return False, "probe failed"
+    mt, mv, lr = r["max_texture"], r["max_viewport"], r["line_range"]
     c_int = mt["type"] == "number" and mt["value"] == 16384
     c_i32 = mv["int32"] and mv["value"] == [16384, 16384]
     c_f32 = lr["float32"] and lr["value"] == [1, 2048]
-    results[V4] = c_int and c_i32 and c_f32
-    if not results[V4]:
-        notes.append(f"V4: int={c_int}(type={mt['type']} value={mt['value']!r}) "
-                     f"int32={c_i32}(is={mv['int32']} value={mv['value']!r}) "
-                     f"float32={c_f32}(is={lr['float32']} value={lr['value']!r})")
+    return (c_int and c_i32 and c_f32,
+            f"int={c_int}(type={mt['type']} value={mt['value']!r}) "
+            f"int32={c_i32}(value={mv['value']!r}) "
+            f"float32={c_f32}(value={lr['value']!r})")
 
-# --- V5: blockIfNotDefined fail-closed vs open ---
-if not ok(v5b) or not ok(v5o):
-    results[V5] = False
-    for tag, val, err in (("block", v5b, v5be), ("open", v5o, v5oe)):
-        if not ok(val):
-            notes.append(f"V5 {tag}: {val.get('err') if val else f'{type(err).__name__}: {err}'}")
-else:
-    blocked = v5b["isNull"] and v5b["glError"] == v5b["INVALID_ENUM"]
-    opened = (not v5o["isNull"]) and isinstance(v5o["value"], (int, float))
-    results[V5] = blocked and opened
-    if not results[V5]:
-        notes.append(f"V5: blocked={blocked} (isNull={v5b['isNull']} "
-                     f"glError={v5b['glError']:#x} want_INVALID_ENUM={v5b['INVALID_ENUM']:#x}) "
-                     f"opened={opened} (open value={v5o['value']!r})")
+v4_1_ok, v4_1_why = v4_checks(v4)
+v4_2_ok, v4_2_why = v4_checks(v4_2)
+results[V4] = v4_1_ok and v4_2_ok
+if not results[V4]:
+    notes.append(f"V4 webgl: {v4_1_why} | webgl2: {v4_2_why}")
+
+# --- V5: blockIfNotDefined fail-closed vs open (webgl AND webgl2) ---
+def v5_checks(vb, vbe, vo, voe):
+    if not ok(vb) or not ok(vo):
+        bad = vb if not ok(vb) else vo
+        err = vbe if not ok(vb) else voe
+        return False, (bad.get('err') if bad else f"{type(err).__name__}: {err}")
+    blocked = vb["isNull"] and vb["glError"] == vb["INVALID_ENUM"]
+    opened = (not vo["isNull"]) and isinstance(vo["value"], (int, float))
+    return blocked and opened, (f"blocked={blocked}(isNull={vb['isNull']} "
+                                f"glError={vb['glError']:#x}) opened={opened}"
+                                f"(value={vo['value']!r})")
+
+v5_1_ok, v5_1_why = v5_checks(v5b, v5be, v5o, v5oe)
+v5_2_ok, v5_2_why = v5_checks(v5b_2, v5b_2e, v5o_2, v5o_2e)
+results[V5] = v5_1_ok and v5_2_ok
+if not results[V5]:
+    notes.append(f"V5 webgl: {v5_1_why} | webgl2: {v5_2_why}")
 
 EXPECTED = 5
 
