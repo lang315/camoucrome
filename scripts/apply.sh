@@ -39,6 +39,7 @@ PATCHES=(
   "$ROOT/patches/sp2a-automation-hiding.patch"
   "$ROOT/patches/sp2b-humanized-cursor.patch"
   "$ROOT/patches/sp3a-canvas-noise.patch"
+  "$ROOT/patches/sp3b-webgl-profile.patch"
 )
 for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
