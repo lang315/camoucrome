@@ -2026,3 +2026,19 @@ Repo 06ec231. Both re-verified 3 PASS. Delta re-review dispatched.
 Carried to whole-branch review: ForwardHumanizedMouseEventCompletion skips
 drag/Focus (configured-only, ack-side covers drag); teardown sendFailure vs
 stock sendSuccess (protocol-safe behaviour delta).
+
+Task 3: COMPLETE. Delta re-review: CRITICAL CLOSED, both verdicts PASS,
+mergeable. Hoist verified complete (forward is last statement, no trailing
+this-access). C3 spatial fix accepted (30% threshold geometry-scaled, robust).
+Reviewer confirmed recording-on-discarded-move is fine/better. Checkout
+a727b57805, repo 06ec231.
+CARRY to whole-branch review: (a) C3 is x-axis-only -- fine while PRIME->TARGET
+is horizontal-dominant (dx 320 >> dy 140); revisit if fixtures go vertical.
+(b) ForwardHumanizedMouseEventCompletion skips dispatch drag/Focus (ack-side
+covers drag-start; Focus staleness negligible). (c) teardown sendFailure vs
+stock sendSuccess (protocol-safe behaviour delta).
+
+Task 4: doing it MYSELF, not dispatching -- implementers died twice (Mac sleep
+kills in-process subagents AND my connections together); I hold the master and
+resume across drops, a dead subagent is just gone. Whole-branch review is the
+real gate for Task 4.
