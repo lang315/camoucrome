@@ -2042,3 +2042,12 @@ Task 4: doing it MYSELF, not dispatching -- implementers died twice (Mac sleep
 kills in-process subagents AND my connections together); I hold the master and
 resume across drops, a dead subagent is just gone. Whole-branch review is the
 real gate for Task 4.
+
+Task 4: COMPLETE. patches/sp2b-humanized-cursor.patch (2 files, 200 lines,
+sha f73c296b) extracted from a727b57805~1..a727b57805; apply.sh gets it LAST;
+reconstruction proven byte-identical (revert->apply->diff=0). Full branch
+green from reconstructed tree: verify_sp0 11, sp1a 9, sp5a 4, sp1a_chrome 34,
+sp2 9, sp2b 3, coherence 6/6, camoucfg unit 49 (MouseTrajectories 7),
+check_additions_build 18, check_checkout_sync 20/20. Conventions: SP2-complete
+note + coalescing finding. Repo bad3606. Done by controller (implementers kept
+dying to Mac sleep). WHOLE-BRANCH REVIEW dispatched (opus).
