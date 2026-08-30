@@ -13,6 +13,7 @@
 
 #include "base/functional/function_ref.h"
 #include "base/values.h"
+#include "components/camoucfg/gl_params.h"
 
 namespace camoucfg::internal {
 
@@ -73,6 +74,22 @@ std::optional<bool> GetBoolFrom(const base::DictValue& cfg,
 std::vector<std::string> GetStringListFrom(const base::DictValue& cfg,
                                            std::string_view key);
 bool HasKeyIn(const base::DictValue& cfg, std::string_view key);
+
+// The process-wide parsed configuration, owned here (rather than as a
+// file-local in mask_config.cc) so that mask_config.cc's getters and
+// gl_params.cc's GLParam() / GLBlockIfNotDefined() read the same parsed
+// singleton instead of each parsing the environment separately.
+const base::DictValue& ParsedConfig();
+
+// Real logic behind camoucfg::GLParam() -- see gl_params.h for the public
+// API this backs. `cfg` is a namespaced flat dict whose "webGl:parameters" /
+// "webGl2:parameters" entry is itself a nested map, keyed by the decimal
+// string of a GLenum pname, of whatever getParameter(pname) should return.
+std::optional<GLValue> GLParamFrom(const base::DictValue& cfg,
+                                   uint32_t pname, bool is_webgl2);
+
+// Real logic behind camoucfg::GLBlockIfNotDefined().
+bool GLBlockFrom(const base::DictValue& cfg, bool is_webgl2);
 
 }  // namespace camoucfg::internal
 

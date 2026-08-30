@@ -6,34 +6,10 @@
 
 #include <algorithm>
 
-#include "base/environment.h"
-#include "base/logging.h"
-#include "base/no_destructor.h"
-#include "base/values.h"
 #include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config_internal.h"
 
 namespace camoucfg {
-namespace {
-
-// Parsed exactly once per process, on first access, in whichever process
-// touches the configuration first.
-const base::DictValue& Config() {
-  static const base::NoDestructor<base::DictValue> dict([] {
-    std::unique_ptr<base::Environment> env = base::Environment::Create();
-    auto get = [&env](const std::string& name) -> std::optional<std::string> {
-      return env->GetVar(name);
-    };
-    const std::string raw = internal::AssembleRawConfig(get);
-    const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
-    base::DictValue parsed = internal::ParseConfig(raw, strict);
-    VLOG(1) << "camoucfg: parsed " << parsed.size() << " key(s)";
-    return parsed;
-  }());
-  return *dict;
-}
-
-}  // namespace
 
 const ConfigScope& GlobalScope() {
   // A plain function-local static, not base::NoDestructor. ConfigScope is
@@ -45,40 +21,40 @@ const ConfigScope& GlobalScope() {
 
 std::optional<std::string> GetString(const ConfigScope& scope,
                                      std::string_view key) {
-  return internal::GetStringFrom(Config(), key);
+  return internal::GetStringFrom(internal::ParsedConfig(), key);
 }
 
 std::optional<uint32_t> GetUint32(const ConfigScope& scope,
                                   std::string_view key) {
-  return internal::GetUint32From(Config(), key);
+  return internal::GetUint32From(internal::ParsedConfig(), key);
 }
 
 std::optional<int32_t> GetInt32(const ConfigScope& scope,
                                 std::string_view key) {
-  return internal::GetInt32From(Config(), key);
+  return internal::GetInt32From(internal::ParsedConfig(), key);
 }
 
 std::optional<double> GetDouble(const ConfigScope& scope,
                                 std::string_view key) {
-  return internal::GetDoubleFrom(Config(), key);
+  return internal::GetDoubleFrom(internal::ParsedConfig(), key);
 }
 
 std::optional<bool> GetBool(const ConfigScope& scope, std::string_view key) {
-  return internal::GetBoolFrom(Config(), key);
+  return internal::GetBoolFrom(internal::ParsedConfig(), key);
 }
 
 std::vector<std::string> GetStringList(const ConfigScope& scope,
                                        std::string_view key) {
-  return internal::GetStringListFrom(Config(), key);
+  return internal::GetStringListFrom(internal::ParsedConfig(), key);
 }
 
 bool HasKey(const ConfigScope& scope, std::string_view key) {
-  return internal::HasKeyIn(Config(), key);
+  return internal::HasKeyIn(internal::ParsedConfig(), key);
 }
 
 std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope) {
   std::vector<std::string> unrecognised;
-  for (const auto [key, value] : Config()) {
+  for (const auto [key, value] : internal::ParsedConfig()) {
     if (std::find(keys::kAllKeys.begin(), keys::kAllKeys.end(), key) ==
         keys::kAllKeys.end()) {
       unrecognised.push_back(key);

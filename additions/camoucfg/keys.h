@@ -128,9 +128,39 @@ inline constexpr char kCanvasSeed[] = "canvas:seed";
 inline constexpr char kCanvasNoiseDensity[] = "canvas:noiseDensity";
 inline constexpr char kCanvasNoiseStrength[] = "canvas:noiseStrength";
 
+// The WebGL identity and parameter-table knobs, in their own `webGl:` /
+// `webGl2:` namespaces -- one pair per context type, because a page can
+// probe a WebGLRenderingContext and a WebGL2RenderingContext side by side
+// and a coherent spoof must be free to answer each independently.
+//
+// kWebGl(2)Vendor / kWebGl(2)Renderer are the UNMASKED_VENDOR_WEBGL /
+// UNMASKED_RENDERER_WEBGL strings a page reads through the
+// WEBGL_debug_renderer_info extension.
+//
+// kWebGl(2)Parameters names a nested map, not a scalar: its value is itself
+// a JSON object keyed by the DECIMAL STRING of a GLenum pname (e.g. "3379"
+// for MAX_TEXTURE_SIZE), holding whatever getParameter(pname) should return
+// for that enum. A pname absent from the map falls back to the real value,
+// same as every other absent key in this registry.
+//
+// kWebGl(2)ParamsBlock (`...:parameters:blockIfNotDefined`) opts a pname
+// missing from the map out of that fallback -- from "answer with the real
+// value" to "block/deny it" -- for callers that would rather getParameter()
+// come back empty than leak an unspoofed value. Defaults to false.
+inline constexpr char kWebGlVendor[] = "webGl:vendor";
+inline constexpr char kWebGlRenderer[] = "webGl:renderer";
+inline constexpr char kWebGl2Vendor[] = "webGl2:vendor";
+inline constexpr char kWebGl2Renderer[] = "webGl2:renderer";
+inline constexpr char kWebGlParameters[] = "webGl:parameters";
+inline constexpr char kWebGl2Parameters[] = "webGl2:parameters";
+inline constexpr char kWebGlParamsBlock[] =
+    "webGl:parameters:blockIfNotDefined";
+inline constexpr char kWebGl2ParamsBlock[] =
+    "webGl2:parameters:blockIfNotDefined";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 17> kAllKeys = {
+inline constexpr std::array<std::string_view, 25> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -148,6 +178,14 @@ inline constexpr std::array<std::string_view, 17> kAllKeys = {
     kCanvasSeed,
     kCanvasNoiseDensity,
     kCanvasNoiseStrength,
+    kWebGlVendor,
+    kWebGlRenderer,
+    kWebGl2Vendor,
+    kWebGl2Renderer,
+    kWebGlParameters,
+    kWebGl2Parameters,
+    kWebGlParamsBlock,
+    kWebGl2ParamsBlock,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
