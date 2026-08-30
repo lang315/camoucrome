@@ -2067,3 +2067,12 @@ WHOLE-BRANCH REVIEW (opus): READY TO MERGE, zero Critical.
   71d38fd. Confirm sent to reviewer.
   Minors all correctly closed/filed (C3 x-axis, drag/Focus skip, teardown
   delta, keys hand-list, distortPoints tremor, cursor:show reserved).
+
+SP2b COMPLETE, whole-branch review CONFIRMED merge-ready ("ship it").
+Reviewer retracted its call-site suggestion -- generator is the better home
+(single choke point, unit-testable, input_handler untouched so patch/recon
+stand). Silent-correct confirmed right: "fall back to real value" is for VALUE
+spoofs; a behavioural spoof's real value IS the robot tell (teleport), so
+degrading to it is more detectable. Added as a conventions refinement.
+All Minors correctly deferred; none escalate. 25 commits unpushed, awaiting
+user push decision. SP2 (SP2a + SP2b) DONE.
