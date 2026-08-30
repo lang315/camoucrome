@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_CAMOUCFG_DERIVE_H_
 #define COMPONENTS_CAMOUCFG_DERIVE_H_
 
+#include <cstdint>
 #include <string_view>
 
 #include "components/camoucfg/mask_config.h"
@@ -62,6 +63,23 @@ std::string_view CanonicalUaChPlatformFor(OsFamily os);
 // which is different from claiming the host's real OS. A caller that needs the
 // real one should ask the platform, not this function.
 OsFamily ClaimedOs(const ConfigScope& scope);
+
+// A deterministic signed delta in [-|bound|, +|bound|]. A pure function of its
+// arguments: the same (seed, domain, index, bound) yields the same value in
+// any process with no shared state -- that purity is exactly the cross-process
+// reproducibility that lets canvas readback, a worker's OffscreenCanvas, and
+// (SP4) audio and font-metric jitter all reproduce one config's noise. `domain`
+// ("canvas", "audio", "fontmetric") separates surfaces that share a seed so
+// their sequences do not correlate. `index` is any stable integer the caller
+// can reproduce -- a flattened pixel offset, an audio sample number, a glyph
+// id. bound == 0 returns 0; a negative bound is taken by magnitude.
+int32_t DeriveDelta(uint64_t seed, std::string_view domain, uint64_t index,
+                    int32_t bound);
+
+// A deterministic double in [0, 1), same purity contract as DeriveDelta.
+// Canvas uses it as the per-channel density gate; SP4 surfaces reuse it for
+// any reproduce-across-processes probability decision.
+double DeriveUnit(uint64_t seed, std::string_view domain, uint64_t index);
 
 }  // namespace camoucfg
 
