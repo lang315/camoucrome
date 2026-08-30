@@ -53,7 +53,7 @@ index 1e2b512f07..52b07d32a4 100644
      case GL_SHADING_LANGUAGE_VERSION: {
        return WebGLAny(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 91f4b179a6..343b200617 100644
+index 91f4b179a6..7cf16d53eb 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -27,6 +27,8 @@
@@ -65,7 +65,53 @@ index 91f4b179a6..343b200617 100644
  
  #include <inttypes.h>
  
-@@ -3831,6 +3833,26 @@ bool WebGLRenderingContextBase::ExtensionTracker::MatchesName(
+@@ -3799,6 +3801,45 @@ WebGLContextAttributes* WebGLRenderingContextBase::getContextAttributes()
+   result->setAntialias(GetDrawingBuffer()->Multisample());
+   result->setXrCompatible(xr_compatible_);
+   result->setDesynchronized(Host()->LowLatencyEnabled());
++  // Camoucrome (SP3b): overlay any configured webGl:contextAttributes /
++  // webGl2:contextAttributes fields onto the honored attributes the page reads
++  // back. Each field present in the dict replaces its counterpart; an absent
++  // field keeps the real (possibly adjusted) value (rule 5). Placed after the
++  // depth/stencil/antialias adjustments so a configured field wins.
++  if (auto* camou_ec = Host()->GetTopExecutionContext()) {
++    if (const base::DictValue* camou_attrs = camoucfg::GLContextAttrs(
++            camoucfg::ScopeFor(camou_ec), IsWebGL2())) {
++      if (auto camou_v = camou_attrs->FindBool("alpha"))
++        result->setAlpha(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("depth"))
++        result->setDepth(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("stencil"))
++        result->setStencil(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("antialias"))
++        result->setAntialias(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("premultipliedAlpha"))
++        result->setPremultipliedAlpha(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("preserveDrawingBuffer"))
++        result->setPreserveDrawingBuffer(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("failIfMajorPerformanceCaveat"))
++        result->setFailIfMajorPerformanceCaveat(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("desynchronized"))
++        result->setDesynchronized(*camou_v);
++      if (auto camou_v = camou_attrs->FindBool("xrCompatible"))
++        result->setXrCompatible(*camou_v);
++      if (const std::string* camou_pp =
++              camou_attrs->FindString("powerPreference")) {
++        if (*camou_pp == "default")
++          result->setPowerPreference(V8WebGLPowerPreference::Enum::kDefault);
++        else if (*camou_pp == "low-power")
++          result->setPowerPreference(V8WebGLPowerPreference::Enum::kLowPower);
++        else if (*camou_pp == "high-performance")
++          result->setPowerPreference(
++              V8WebGLPowerPreference::Enum::kHighPerformance);
++        // An unrecognized string leaves powerPreference untouched.
++      }
++    }
++  }
+   return result;
+ }
+ 
+@@ -3831,6 +3872,26 @@ bool WebGLRenderingContextBase::ExtensionTracker::MatchesName(
  
  bool WebGLRenderingContextBase::ExtensionSupportedAndAllowed(
      const ExtensionTracker* tracker) {
@@ -92,7 +138,7 @@ index 91f4b179a6..343b200617 100644
    if (tracker->Draft() &&
        !RuntimeEnabledFeatures::WebGLDraftExtensionsEnabled())
      return false;
-@@ -3990,10 +4012,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+@@ -3990,10 +4051,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
                              webgl_angle_implementation);
  }
  
@@ -220,7 +266,7 @@ index 91f4b179a6..343b200617 100644
    const int kIntZero = 0;
    switch (pname) {
      case GL_ACTIVE_TEXTURE:
-@@ -4203,6 +4342,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4203,6 +4381,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -245,7 +291,7 @@ index 91f4b179a6..343b200617 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4212,6 +4369,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4212,6 +4408,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -264,7 +310,7 @@ index 91f4b179a6..343b200617 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));
        }
-@@ -4509,6 +4678,23 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
+@@ -4509,6 +4717,23 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
        return nullptr;
    }
  
@@ -288,7 +334,7 @@ index 91f4b179a6..343b200617 100644
    GLint range[2] = {0, 0};
    GLint precision = 0;
    ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
-@@ -4528,6 +4714,24 @@ WebGLRenderingContextBase::getSupportedExtensions() {
+@@ -4528,6 +4753,24 @@ WebGLRenderingContextBase::getSupportedExtensions() {
    if (isContextLost())
      return std::nullopt;
  
