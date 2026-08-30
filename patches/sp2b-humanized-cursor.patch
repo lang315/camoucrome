@@ -1,0 +1,272 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index b92fdbe057..443c6f06c9 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -17,12 +17,17 @@
+ #include "base/functional/callback.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/memory/raw_ptr.h"
++#include "base/location.h"
++#include "base/rand_util.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/trace_event/trace_event.h"
+ #include "base/types/expected.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
++#include "components/camoucfg/mouse_trajectories.h"
+ #include "components/input/render_widget_host_input_event_router.h"
+ #include "content/browser/devtools/devtools_agent_host_impl.h"
+ #include "content/browser/devtools/protocol/native_input_event_builder.h"
+@@ -749,6 +754,72 @@ class InputHandler::InputInjector
+     }
+ 
+     widget_host_->Focus();
++
++    // Read humanize:enabled once, first, before anything else below. When
++    // it's absent -- the common case, an un-configured build -- this whole
++    // block is skipped and ForwardMouseEventNow() runs exactly what ran
++    // before this hook existed: the safety property an un-configured
++    // Camoucrome must keep, one forwarded event, byte-identical to stock,
++    // emulation included. Down/up/click are never humanized (only
++    // kMouseMove is), and neither is a move whose target widget has no
++    // known previous position.
++    //
++    // owner_->last_move_widget_ (not a member of THIS class) is what
++    // tracks that across calls: an InputInjector self-destructs once it
++    // has no pending callback, and this one queues none of its own for a
++    // humanized move (see SchedulePath) -- so a member scoped to
++    // InputInjector would never survive from one move to the next.
++    // Comparing against last_move_widget_ is also what resets this when
++    // the target widget changes: a stale or mismatched WeakPtr compares
++    // unequal to widget_host_ regardless of why.
++    if (camoucfg::GetBool(camoucfg::GlobalScope(),
++                          camoucfg::keys::kHumanizeEnabled)
++            .value_or(false) &&
++        mouse_event.GetType() == blink::WebInputEvent::Type::kMouseMove &&
++        owner_->last_move_widget_.get() == widget_host_.get()) {
++      SchedulePath(mouse_event, std::move(callback));
++      // No pending callback was queued on this injector (it now belongs to
++      // the deferred completion task instead), so it has no more work to
++      // do. Self-destructing here, rather than leaving it idle-but-alive,
++      // matches every other exit from this class: an injector with an
++      // empty callback queue does not linger as a registered input
++      // observer. The deferred completion re-acquires (or recreates) an
++      // injector for this widget when it fires.
++      MaybeSelfDestruct();
++      return;
++    }
++
++    // A move that did not humanize -- the first move to this widget, or a
++    // widget change -- still establishes the previous position so the NEXT
++    // move to this widget humanizes from here. Without it the first move
++    // never seeds last_move_widget_ and no later move ever matches, so
++    // humanization never triggers. Only moves seed a path; down/up/click do
++    // not.
++    //
++    // Recorded BEFORE the forward, not after: ForwardMouseEventNow can delete
++    // this injector synchronously -- a kFromDebugger ack reaches
++    // OnInputEventAck -> MaybeSelfDestruct, and an unqueued event self-
++    // destructs directly -- so any member access after it is a
++    // use-after-free of `this`. last_move_* is only ever read by a LATER
++    // InjectMouseEvent, never within this call, so recording first is
++    // behaviour-identical, and it mirrors SchedulePath, which likewise
++    // records before its own MaybeSelfDestruct.
++    if (mouse_event.GetType() == blink::WebInputEvent::Type::kMouseMove) {
++      owner_->last_move_widget_ = widget_host_;
++      owner_->last_move_position_ = mouse_event.PositionInWidget();
++    }
++    ForwardMouseEventNow(mouse_event, std::move(callback));
++  }
++
++  // Forwards `mouse_event` right now through this injector: queues
++  // `callback` for its ack and resolves it once the renderer processes (or
++  // synchronously discards) the event. This is InjectMouseEvent's entire
++  // pre-hook body, factored out so the deferred completion of a humanized
++  // path (ForwardHumanizedMouseEventCompletion, below) can reuse it
++  // without re-entering the humanize decision above -- which would try to
++  // draw a path from the just-delivered target to itself.
++  void ForwardMouseEventNow(const blink::WebMouseEvent& mouse_event,
++                            std::unique_ptr<DispatchMouseEventCallback> callback) {
+     input_queued_ = false;
+     pending_mouse_callbacks_.push_back(std::move(callback));
+     // This may destroy the injector if the events get discarded.
+@@ -765,6 +836,83 @@ class InputHandler::InputInjector
+     }
+   }
+ 
++  // Schedules a humanized path from owner_->last_move_position_ to
++  // mouse_event's own destination: one delayed synthetic ForwardMouseEvent
++  // per interior point, spaced by HumanizeTrajectory's offsets, and a
++  // final delayed task -- at the path's full duration -- that forwards
++  // mouse_event itself UNCHANGED and completes `callback`.
++  //
++  // Real delay, not just a stamped timestamp: Chromium's input router
++  // coalesces mousemoves the renderer hasn't yet consumed, so a
++  // synchronous burst of ForwardMouseEvent calls collapses to whatever the
++  // renderer drains on its next turn regardless of what timestamp each one
++  // carries (observed: 24 forwarded, 2 delivered to the page). Spacing the
++  // POSTS in real time, not just the timestamps, is what makes the
++  // renderer actually consume each one before the next arrives.
++  //
++  // The command completes at the path's end, not now. Deferring the
++  // callback is what serializes back-to-back moves: if this completed
++  // early, Playwright -- which awaits each command before sending the next
++  // -- would dispatch the next move while this path's tasks are still in
++  // flight; that move would read last_move_position_ already at THIS
++  // move's target and start its own path, and the two paths' synthetic
++  // events would interleave out of order on the widget.
++  void SchedulePath(const blink::WebMouseEvent& mouse_event,
++                    std::unique_ptr<DispatchMouseEventCallback> callback) {
++    constexpr int kHumanizeSteps = 24;
++    constexpr int kDefaultMinTimeMs = 40;
++    constexpr int kDefaultMaxTimeMs = 120;
++    int min_ms = camoucfg::GetInt32(camoucfg::GlobalScope(),
++                                    camoucfg::keys::kHumanizeMinTime)
++                    .value_or(kDefaultMinTimeMs);
++    int max_ms = camoucfg::GetInt32(camoucfg::GlobalScope(),
++                                    camoucfg::keys::kHumanizeMaxTime)
++                    .value_or(kDefaultMaxTimeMs);
++    std::vector<camoucfg::TrajectoryPoint> path = camoucfg::HumanizeTrajectory(
++        owner_->last_move_position_, mouse_event.PositionInWidget(),
++        kHumanizeSteps, min_ms, max_ms, base::RandUint64());
++
++    gfx::Vector2dF screen_offset =
++        mouse_event.PositionInScreen() - mouse_event.PositionInWidget();
++    base::WeakPtr<InputHandler> handler = owner_->weak_factory_.GetWeakPtr();
++    scoped_refptr<base::SingleThreadTaskRunner> task_runner =
++        base::SingleThreadTaskRunner::GetCurrentDefault();
++
++    // path[0] is owner_->last_move_position_, already delivered by the
++    // previous move; path.back() is mouse_event's own destination, posted
++    // separately below via the real, unmodified event. Only the interior
++    // points are synthetic.
++    for (size_t i = 1; i + 1 < path.size(); ++i) {
++      blink::WebMouseEvent synthetic(mouse_event);
++      synthetic.SetPositionInWidget(path[i].x, path[i].y);
++      synthetic.SetPositionInScreen(gfx::PointF(path[i].x, path[i].y) +
++                                    screen_offset);
++      // Not from the debugger: OnInputEventAck only pops
++      // pending_mouse_callbacks_ for events carrying kFromDebugger, and
++      // this path's only queued callback belongs to the FINAL real event
++      // below -- a synthetic point that kept the bit would race that
++      // callback against whichever ack happens to arrive first.
++      synthetic.SetModifiers(mouse_event.GetModifiers() &
++                             ~blink::WebInputEvent::kFromDebugger);
++      task_runner->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&InputHandler::ForwardSyntheticMouseMove, handler,
++                         widget_host_, synthetic),
++          path[i].offset);
++    }
++
++    task_runner->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(&InputHandler::ForwardHumanizedMouseEventCompletion,
++                       handler, widget_host_,
++                       std::make_unique<blink::WebMouseEvent>(mouse_event),
++                       std::move(callback)),
++        path.back().offset);
++
++    owner_->last_move_widget_ = widget_host_;
++    owner_->last_move_position_ = mouse_event.PositionInWidget();
++  }
++
+   void InjectKeyboardEvent(const input::NativeWebKeyboardEvent& keyboard_event,
+                            std::unique_ptr<Array<std::string>> commands,
+                            std::unique_ptr<DispatchKeyEventCallback> callback) {
+@@ -2317,6 +2465,44 @@ bool InputHandler::PointIsWithinContents(gfx::PointF point) const {
+   return bounds.Contains(point.x(), point.y());
+ }
+ 
++// static
++void InputHandler::ForwardSyntheticMouseMove(
++    base::WeakPtr<InputHandler> handler,
++    base::WeakPtr<RenderWidgetHostImpl> widget,
++    blink::WebMouseEvent synthetic_event) {
++  if (!handler || !widget) {
++    return;
++  }
++  if (!handler->PointIsWithinContents(synthetic_event.PositionInWidget())) {
++    return;
++  }
++  // Stamped with the real time it actually fires, not a value computed at
++  // schedule time: with a real posted delay (see InputInjector::
++  // SchedulePath's own comment on why), "now" already carries the
++  // non-uniform spacing HumanizeTrajectory generated.
++  synthetic_event.SetTimeStamp(base::TimeTicks::Now());
++  widget->ForwardMouseEvent(synthetic_event);
++}
++
++// static
++void InputHandler::ForwardHumanizedMouseEventCompletion(
++    base::WeakPtr<InputHandler> handler,
++    base::WeakPtr<RenderWidgetHostImpl> widget,
++    std::unique_ptr<blink::WebMouseEvent> mouse_event,
++    std::unique_ptr<DispatchMouseEventCallback> callback) {
++  if (!handler || !widget) {
++    callback->sendFailure(Response::InternalError());
++    return;
++  }
++  // EnsureInjector may return a fresh InputInjector: the one that scheduled
++  // this path self-destructed once it queued no callback of its own (see
++  // InputInjector::InjectMouseEvent). ForwardMouseEventNow is the same
++  // stock delivery path a non-humanized move takes -- callback resolves on
++  // this event's ack, exactly like today.
++  handler->EnsureInjector(widget.get())
++      ->ForwardMouseEventNow(*mouse_event, std::move(callback));
++}
++
+ InputHandler::InputInjector* InputHandler::EnsureInjector(
+     RenderWidgetHostImpl* widget_host) {
+   for (auto& it : injectors_) {
+diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
+index 4c25a8c1c2..0362697afd 100644
+--- a/content/browser/devtools/protocol/input_handler.h
++++ b/content/browser/devtools/protocol/input_handler.h
+@@ -28,6 +28,7 @@
+ #include "third_party/blink/public/common/input/web_input_event.h"
+ #include "third_party/blink/public/common/input/web_mouse_event.h"
+ #include "third_party/blink/public/mojom/page/widget.mojom.h"
++#include "ui/gfx/geometry/point_f.h"
+ 
+ namespace content {
+ class DevToolsAgentHostImpl;
+@@ -343,12 +344,35 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+   void ClearInputState();
+   bool PointIsWithinContents(gfx::PointF point) const;
+   InputInjector* EnsureInjector(RenderWidgetHostImpl* widget_host);
++  // Delayed-task callbacks for InputInjector::SchedulePath. Static: a
++  // posted task must not depend on any InputInjector surviving until it
++  // fires (it self-destructs once idle -- see SchedulePath's own
++  // comment), so these are bound to a WeakPtr<InputHandler> instead,
++  // which outlives any single command.
++  static void ForwardSyntheticMouseMove(
++      base::WeakPtr<InputHandler> handler,
++      base::WeakPtr<RenderWidgetHostImpl> widget,
++      blink::WebMouseEvent synthetic_event);
++  static void ForwardHumanizedMouseEventCompletion(
++      base::WeakPtr<InputHandler> handler,
++      base::WeakPtr<RenderWidgetHostImpl> widget,
++      std::unique_ptr<blink::WebMouseEvent> mouse_event,
++      std::unique_ptr<DispatchMouseEventCallback> callback);
+ 
+   RenderWidgetHostViewBase* GetRootView();
+ 
+   float ScaleFactor();
+ 
+   raw_ptr<RenderFrameHostImpl> host_ = nullptr;
++  // The end of the previously forwarded mouse move's path, and the
++  // widget it was forwarded to. Read/written by InputInjector::
++  // InjectMouseEvent (input_handler.cc), which explains why this lives
++  // on InputHandler rather than InputInjector: an InputInjector
++  // self-destructs once it has no pending callback, i.e. after every
++  // CDP command that is awaited before the next is issued, so a member
++  // scoped to it would never survive from one move to the next.
++  base::WeakPtr<RenderWidgetHostImpl> last_move_widget_;
++  gfx::PointF last_move_position_;
+   // WebContents associated with the |host_|.
+   raw_ptr<WebContentsImpl> web_contents_ = nullptr;
+   std::unique_ptr<Input::Frontend> frontend_;
