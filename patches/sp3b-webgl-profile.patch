@@ -1,0 +1,56 @@
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 91f4b179a6..967c380cad 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -27,6 +27,7 @@
+ 
+ #include "components/camoucfg/blink_scope.h"
+ #include "components/camoucfg/canvas_noise.h"
++#include "components/camoucfg/gl_params.h"
+ 
+ #include <inttypes.h>
+ 
+@@ -4203,6 +4204,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        // Camoucrome (SP3b): substitute the configured UNMASKED_RENDERER
++        // string before the real driver query. webGl:renderer /
++        // webGl2:renderer wins; otherwise a webGl:parameters entry for
++        // 0x9246 holding a string is honored (mirrors Camoufox's #44
++        // parameter-table fallback). No config -> the real driver string,
++        // unchanged. Placed inside the extension gate so a page reading
++        // UNMASKED_* without the extension still gets INVALID_ENUM exactly
++        // as stock -- no divergence tell.
++        if (auto* ec = Host()->GetTopExecutionContext()) {
++          if (auto v = camoucfg::GLRenderer(camoucfg::ScopeFor(ec), IsWebGL2()))
++            return WebGLAny(script_state, String::FromUtf8(*v));
++          if (auto p = camoucfg::GLParam(camoucfg::ScopeFor(ec),
++                                         /*UNMASKED_RENDERER_WEBGL=*/0x9246u,
++                                         IsWebGL2());
++              p && std::holds_alternative<std::string>(*p))
++            return WebGLAny(script_state,
++                            String::FromUtf8(std::get<std::string>(*p)));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_RENDERER)));
+       }
+@@ -4212,6 +4231,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        // Camoucrome (SP3b): substitute the configured UNMASKED_VENDOR
++        // string. Symmetric with the renderer case above (0x9245 fallback).
++        if (auto* ec = Host()->GetTopExecutionContext()) {
++          if (auto v = camoucfg::GLVendor(camoucfg::ScopeFor(ec), IsWebGL2()))
++            return WebGLAny(script_state, String::FromUtf8(*v));
++          if (auto p = camoucfg::GLParam(camoucfg::ScopeFor(ec),
++                                         /*UNMASKED_VENDOR_WEBGL=*/0x9245u,
++                                         IsWebGL2());
++              p && std::holds_alternative<std::string>(*p))
++            return WebGLAny(script_state,
++                            String::FromUtf8(std::get<std::string>(*p)));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_VENDOR)));
+       }
