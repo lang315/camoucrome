@@ -1,10 +1,11 @@
 """Verifies the SP3b WebGL substitution: the unmasked vendor/renderer strings
-(V1-V3) plus the numeric/array getParameter table and blockIfNotDefined
-fail-closed behaviour (V4-V5). With webGl:/webGl2: keys configured, a page
+(V1-V3), the numeric/array getParameter table and blockIfNotDefined
+fail-closed behaviour (V4-V5), the supported-extension whitelist (V6), and the
+shader precision formats (V7). With webGl:/webGl2: keys configured, a page
 reads EXACTLY the configured values, the two namespaces stay separated, and an
 unconfigured build returns a stable SwiftShader baseline.
 
-Five criteria, driven with Playwright's sync API over content_shell's CDP,
+Seven criteria, driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp3a.py -- a fault in any one session becomes a FAIL
 line, never a traceback that discards results already collected. All sessions
 run under SwiftShader (--use-angle=swiftshader --enable-unsafe-swiftshader) so
@@ -29,6 +30,16 @@ reproducible (SP3 spec Section 6).
      unconfigured pname (MAX_TEXTURE_SIZE) returns null AND raises INVALID_ENUM
      exactly like a real unsupported enum; with the flag false the same call
      returns the host value.
+  V6 extension whitelist: with webGl:supportedExtensions set,
+     getSupportedExtensions() returns EXACTLY that list, an in-list extension
+     is gettable (gate true-branch), and a real out-of-list extension
+     (WEBGL_debug_renderer_info) is refused by getExtension (the list and
+     getExtension share one gate, so they cannot disagree). Covered on webgl2.
+  V7 shader precision: with webGl:shaderPrecisionFormats set, the configured
+     (VERTEX_SHADER, HIGH_FLOAT) pair returns the spoofed rangeMin/rangeMax/
+     precision; with blockIfNotDefined true an unlisted-but-valid pair returns
+     null, and with the flag absent that pair falls back to the host value.
+     Covered on webgl2.
 
 RED-FIRST: run this against a stock/SP3a content_shell (no SP3b edit) and
 V2-V5 FAIL while V1 passes -- the required red evidence. The unmasked strings
@@ -86,6 +97,36 @@ V4CFG2 = json.dumps({"webGl2:parameters": {
 }})
 V5_BLOCK_CFG2 = json.dumps({"webGl2:parameters:blockIfNotDefined": True})
 V5_OPEN_CFG2 = json.dumps({"webGl2:parameters:blockIfNotDefined": False})
+
+# V6: the supported-extension whitelist. A configured webGl:supportedExtensions
+# list is authoritative -- getSupportedExtensions() returns EXACTLY it, an
+# in-list extension is gettable, and a real extension NOT in the list
+# (WEBGL_debug_renderer_info) is reported unsupported by getExtension (the list
+# and getExtension share one gate, so they cannot disagree). The names are real
+# WebGL trackers so the in-list getExtension returns a live object; the webgl2
+# list is distinct so a namespace leak would be visible.
+V6_EXTS = ["EXT_texture_filter_anisotropic", "OES_element_index_uint"]
+V6_EXTS2 = ["EXT_texture_filter_anisotropic", "EXT_color_buffer_float"]
+V6CFG = json.dumps({"webGl:supportedExtensions": V6_EXTS})
+V6CFG2 = json.dumps({"webGl2:supportedExtensions": V6_EXTS2})
+
+# V7: shader precision formats. VERTEX_SHADER (0x8B31=35633) + HIGH_FLOAT
+# (0x8DF2=36338) is configured to an unmistakable [100,100,20] (a real GL
+# reports [127,127,23] for highp float) so the read is unambiguously spoofed.
+# blockIfNotDefined nulls an unlisted-but-valid pair (VERTEX_SHADER, LOW_FLOAT);
+# without it that pair falls back to the real value.
+V7_KEY = "35633:36338"
+V7_VALUE = [100, 100, 20]
+V7CFG = json.dumps({"webGl:shaderPrecisionFormats": {V7_KEY: V7_VALUE}})
+V7CFG_BLOCK = json.dumps({
+    "webGl:shaderPrecisionFormats": {V7_KEY: V7_VALUE},
+    "webGl:shaderPrecisionFormats:blockIfNotDefined": True,
+})
+V7CFG2 = json.dumps({"webGl2:shaderPrecisionFormats": {V7_KEY: V7_VALUE}})
+V7CFG2_BLOCK = json.dumps({
+    "webGl2:shaderPrecisionFormats": {V7_KEY: V7_VALUE},
+    "webGl2:shaderPrecisionFormats:blockIfNotDefined": True,
+})
 
 # Reads the two unmasked strings on the requested context type, plus a full
 # sweep of every string-returning (and a broad set of other) getParameter
@@ -159,6 +200,40 @@ PROBE_PARAM = """(args) => {
 }
 """
 
+# V6: the full getSupportedExtensions() list, whether an in-list extension is
+# gettable (gate true-branch), and whether a real out-of-list extension is
+# refused (gate false-branch -> null). Both share one C++ gate.
+PROBE_EXT = """(cfg) => {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const gl = c.getContext(cfg.type);
+  if (!gl) return { err: 'no-context:' + cfg.type };
+  const list = gl.getSupportedExtensions();
+  return {
+    list,
+    inListNonNull: gl.getExtension(cfg.inList) !== null,
+    omittedIsNull: gl.getExtension('WEBGL_debug_renderer_info') === null,
+  };
+}
+"""
+
+# V7: read the configured (VERTEX_SHADER, HIGH_FLOAT) format and an unlisted
+# but valid (VERTEX_SHADER, LOW_FLOAT) format. The configured pair must carry
+# the spoofed ints; the unlisted pair is null under blockIfNotDefined and a
+# real (non-null) object otherwise.
+PROBE_PREC = """(cfg) => {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const gl = c.getContext(cfg.type);
+  if (!gl) return { err: 'no-context:' + cfg.type };
+  const d = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.HIGH_FLOAT);
+  const other = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.LOW_FLOAT);
+  return {
+    defined: d ? { rangeMin: d.rangeMin, rangeMax: d.rangeMax,
+                   precision: d.precision } : null,
+    otherIsNull: other === null,
+  };
+}
+"""
+
 
 def probe_with(config, probe_js, arg):
     """One content_shell session under SwiftShader. Runs probe_js(arg) in the
@@ -216,11 +291,25 @@ v5b_2, v5b_2e = probe_with(V5_BLOCK_CFG2, PROBE_PARAM,
 v5o_2, v5o_2e = probe_with(V5_OPEN_CFG2, PROBE_PARAM,
                            {"type": "webgl2", "pname": V5_PNAME})
 
+# --- V6: extension whitelist on webgl AND webgl2 contexts. ---
+v6, v6e = probe_with(V6CFG, PROBE_EXT,
+                     {"type": "webgl", "inList": V6_EXTS[0]})
+v6_2, v6_2e = probe_with(V6CFG2, PROBE_EXT,
+                         {"type": "webgl2", "inList": V6_EXTS2[0]})
+
+# --- V7: shader precision formats + blockIfNotDefined on webgl AND webgl2. ---
+v7, v7e = probe_with(V7CFG, PROBE_PREC, {"type": "webgl"})
+v7b, v7be = probe_with(V7CFG_BLOCK, PROBE_PREC, {"type": "webgl"})
+v7_2, v7_2e = probe_with(V7CFG2, PROBE_PREC, {"type": "webgl2"})
+v7b_2, v7b_2e = probe_with(V7CFG2_BLOCK, PROBE_PREC, {"type": "webgl2"})
+
 V1 = "V1 unconfigured unmasked strings stable across two launches"
 V2 = "V2 webGl:vendor/renderer substituted exactly; baseline absent from sweep"
 V3 = "V3 webGl2: substituted; namespaces isolated (webgl<->webgl2)"
 V4 = "V4 parameter table (webgl+webgl2): int + Int32Array + Float32Array as configured"
 V5 = "V5 blockIfNotDefined (webgl+webgl2): unconfigured pname -> null+INVALID_ENUM; open -> host"
+V6 = "V6 supportedExtensions (webgl+webgl2): list is exactly the whitelist; in-list ext gettable; out-of-list ext refused"
+V7 = "V7 shaderPrecisionFormats (webgl+webgl2): configured pair spoofed; blockIfNotDefined nulls unlisted pair, else host"
 
 
 def ok(v):
@@ -344,7 +433,50 @@ results[V5] = v5_1_ok and v5_2_ok
 if not results[V5]:
     notes.append(f"V5 webgl: {v5_1_why} | webgl2: {v5_2_why}")
 
-EXPECTED = 5
+
+# --- V6: the whitelist governs both getSupportedExtensions and getExtension ---
+def v6_checks(r, expected):
+    if not ok(r):
+        return False, (r.get("err") if r else "probe failed")
+    exact = sorted(r["list"]) == sorted(expected)
+    return (exact and r["inListNonNull"] and r["omittedIsNull"],
+            f"exact={exact}(got={r['list']!r}) "
+            f"in_list_gettable={r['inListNonNull']} "
+            f"omitted_null={r['omittedIsNull']}")
+
+
+v6_1_ok, v6_1_why = v6_checks(v6, V6_EXTS)
+v6_2_ok, v6_2_why = v6_checks(v6_2, V6_EXTS2)
+results[V6] = v6_1_ok and v6_2_ok
+if not results[V6]:
+    notes.append(f"V6 webgl: {v6_1_why} | webgl2: {v6_2_why}")
+
+
+# --- V7: configured pair spoofed; block nulls unlisted pair, open falls back ---
+SPOOFED = {"rangeMin": 100, "rangeMax": 100, "precision": 20}
+
+
+def v7_checks(vc, vce, vb, vbe):
+    if not ok(vc) or not ok(vb):
+        bad, err = (vc, vce) if not ok(vc) else (vb, vbe)
+        return False, (bad.get("err") if bad else f"{type(err).__name__}: {err}")
+    spoofed = vc["defined"] == SPOOFED
+    open_fallback = not vc["otherIsNull"]      # no block -> unlisted pair real
+    blocked = vb["otherIsNull"]                # block -> unlisted pair null
+    still_spoofed = vb["defined"] == SPOOFED   # block never touches the listed pair
+    return (spoofed and open_fallback and blocked and still_spoofed,
+            f"spoofed={spoofed}(got={vc['defined']!r}) "
+            f"open_fallback={open_fallback} blocked={blocked} "
+            f"still_spoofed={still_spoofed}")
+
+
+v7_1_ok, v7_1_why = v7_checks(v7, v7e, v7b, v7be)
+v7_2_ok, v7_2_why = v7_checks(v7_2, v7_2e, v7b_2, v7b_2e)
+results[V7] = v7_1_ok and v7_2_ok
+if not results[V7]:
+    notes.append(f"V7 webgl: {v7_1_why} | webgl2: {v7_2_why}")
+
+EXPECTED = 7
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
