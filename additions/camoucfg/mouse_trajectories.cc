@@ -96,7 +96,21 @@ std::vector<TrajectoryPoint> HumanizeTrajectory(
     gfx::PointF start, gfx::PointF end, int steps,
     int min_ms, int max_ms, uint64_t seed) {
   CHECK_GE(steps, 1);
-  CHECK_LE(min_ms, max_ms);
+
+  // min_ms/max_ms flow from untrusted config (humanize:minTime/maxTime), and
+  // there is no schema layer that clamps them. A hand-written or mis-generated
+  // config can invert the range or send a negative -- an inverted range would
+  // be fatal at the old CHECK_LE, and a negative min yields negative delays
+  // that fire immediately and coalesce to nothing. Sanitize here, at the one
+  // place every caller funnels through, rather than trusting each call site:
+  // swap an inverted pair, then floor the low end at 1ms so every offset stays
+  // positive. steps and seed are programmatic, not config, so their contract
+  // stays a CHECK.
+  if (min_ms > max_ms) {
+    std::swap(min_ms, max_ms);
+  }
+  min_ms = std::max(1, min_ms);
+  max_ms = std::max(min_ms, max_ms);
 
   SplitMix64 rng(seed);
 
