@@ -4,10 +4,13 @@
 
 #include "components/camoucfg/mask_config_internal.h"
 
+#include "base/environment.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
+#include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "components/camoucfg/keys.h"
 
 namespace camoucfg::internal {
 
@@ -161,6 +164,65 @@ std::vector<std::string> GetStringListFrom(const base::DictValue& cfg,
 
 bool HasKeyIn(const base::DictValue& cfg, std::string_view key) {
   return cfg.Find(key) != nullptr;
+}
+
+const base::DictValue& ParsedConfig() {
+  static const base::NoDestructor<base::DictValue> dict([] {
+    std::unique_ptr<base::Environment> env = base::Environment::Create();
+    auto get = [&env](const std::string& name) -> std::optional<std::string> {
+      return env->GetVar(name);
+    };
+    const std::string raw = AssembleRawConfig(get);
+    const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
+    base::DictValue parsed = ParseConfig(raw, strict);
+    VLOG(1) << "camoucfg: parsed " << parsed.size() << " key(s)";
+    return parsed;
+  }());
+  return *dict;
+}
+
+std::optional<GLValue> GLParamFrom(const base::DictValue& cfg,
+                                   uint32_t pname, bool is_webgl2) {
+  const base::DictValue* params = cfg.FindDict(
+      is_webgl2 ? keys::kWebGl2Parameters : keys::kWebGlParameters);
+  if (!params) {
+    return std::nullopt;
+  }
+  const base::Value* v = params->Find(base::NumberToString(pname));
+  if (!v) {
+    return std::nullopt;
+  }
+  switch (v->type()) {
+    case base::Value::Type::INTEGER:
+      return GLValue(int64_t{v->GetInt()});
+    case base::Value::Type::DOUBLE:
+      return GLValue(v->GetDouble());
+    case base::Value::Type::BOOLEAN:
+      return GLValue(v->GetBool());
+    case base::Value::Type::STRING:
+      return GLValue(v->GetString());
+    case base::Value::Type::LIST: {
+      std::vector<double> out;
+      for (const base::Value& e : v->GetList()) {
+        if (e.is_int()) {
+          out.push_back(e.GetInt());
+        } else if (e.is_double()) {
+          out.push_back(e.GetDouble());
+        } else {
+          return std::nullopt;  // heterogeneous/garbage list
+        }
+      }
+      return GLValue(std::move(out));
+    }
+    default:
+      return std::nullopt;
+  }
+}
+
+bool GLBlockFrom(const base::DictValue& cfg, bool is_webgl2) {
+  return cfg.FindBool(is_webgl2 ? keys::kWebGl2ParamsBlock
+                                : keys::kWebGlParamsBlock)
+      .value_or(false);
 }
 
 }  // namespace camoucfg::internal
