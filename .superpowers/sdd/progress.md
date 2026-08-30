@@ -2011,3 +2011,18 @@ criterion 1 to FAIL, 2/3 green -- guard proven. Commits: checkout abcf535051
 Infra during Task 3: SSH master dropped ~4x (Mac sleep, relay flakiness, box
 thrash); mtime-trap hit TWICE across VM teardowns, caught both by forcing
 touch+rebuild and requiring real steps. No code lost.
+
+Task 3 review: CRITICAL use-after-free found IN MY FIX. The non-humanized tail
+recorded last_move_* AFTER ForwardMouseEventNow, which can synchronously delete
+the injector (kFromDebugger ack -> MaybeSelfDestruct, or unqueued event) ->
+member access on freed `this`. On the STOCK path (every move), so it broke
+"un-configured = byte-identical to stock" by adding a crash mode. Tests green
+only because about:blank queues moves (input_queued_ true), so neither destroy
+route fires. Fixed by HOISTING the writes above the forward (reviewer's exact
+rec) -- behaviour-identical, mirrors SchedulePath. Checkout amended a727b57805.
+Also strengthened C3 (Minor): was len(set(intervals))>1 (scheduler jitter
+satisfies it), now spatial -- events' x-span > 30% of start->target distance.
+Repo 06ec231. Both re-verified 3 PASS. Delta re-review dispatched.
+Carried to whole-branch review: ForwardHumanizedMouseEventCompletion skips
+drag/Focus (configured-only, ack-side covers drag); teardown sendFailure vs
+stock sendSuccess (protocol-safe behaviour delta).
