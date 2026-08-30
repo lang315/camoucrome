@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 4d531fe25a..449a1c523d 100644
+index 4d531fe25a..2c12c855bc 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -120,6 +120,11 @@
@@ -14,7 +14,7 @@ index 4d531fe25a..449a1c523d 100644
  #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_to_video_frame_copier.h"
  #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
  #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
-@@ -1327,6 +1332,38 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
+@@ -1327,6 +1332,48 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
    return image_bitmap;
  }
  
@@ -35,6 +35,16 @@ index 4d531fe25a..449a1c523d 100644
 +  if (!sk_image) {
 +    return image;
 +  }
++  // 8-bit RGBA/BGRA only. PerturbRgba treats the buffer as 8-bit RGBA (alpha at
++  // byte 3, true for both channel orderings), so N32 -- BGRA on macOS/Windows,
++  // RGBA on Linux -- is fine either way. A float (kRGBA_F16) canvas must be
++  // skipped: its half-float bytes would be corrupted, not noised, and returning
++  // the original image keeps a float readback byte-identical to stock.
++  const SkColorType camou_ct = sk_image->colorType();
++  if (camou_ct != kRGBA_8888_SkColorType &&
++      camou_ct != kBGRA_8888_SkColorType) {
++    return image;
++  }
 +  SkBitmap bitmap;
 +  if (!bitmap.tryAllocPixels(sk_image->imageInfo()) ||
 +      !sk_image->readPixels(bitmap.pixmap(), 0, 0)) {
@@ -53,7 +63,7 @@ index 4d531fe25a..449a1c523d 100644
  String HTMLCanvasElement::ToDataURLInternal(
      const String& mime_type,
      const double& quality,
-@@ -1339,6 +1376,8 @@ String HTMLCanvasElement::ToDataURLInternal(
+@@ -1339,6 +1386,8 @@ String HTMLCanvasElement::ToDataURLInternal(
        ImageEncoderUtils::ToEncodingMimeType(mime_type);
  
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
@@ -62,7 +72,7 @@ index 4d531fe25a..449a1c523d 100644
    if (image_bitmap) {
      std::unique_ptr<ImageDataBuffer> data_buffer =
          ImageDataBuffer::Create(image_bitmap);
-@@ -1443,6 +1482,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+@@ -1443,6 +1492,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
  
    CanvasAsyncBlobCreator* async_creator = nullptr;
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
@@ -72,7 +82,7 @@ index 4d531fe25a..449a1c523d 100644
      auto* options = ImageEncodeOptions::Create();
      options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
 diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-index 6218b60863..c0e8d0a9a9 100644
+index 6218b60863..29e1cfb78e 100644
 --- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 +++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 @@ -48,6 +48,10 @@
@@ -86,7 +96,7 @@ index 6218b60863..c0e8d0a9a9 100644
  #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
  #include "third_party/blink/renderer/platform/heap/thread_state.h"
  #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
-@@ -454,6 +458,38 @@ DOMMatrix* OffscreenCanvas::getElementTransform(
+@@ -454,6 +458,48 @@ DOMMatrix* OffscreenCanvas::getElementTransform(
    return DOMMatrix::Create();
  }
  
@@ -107,6 +117,16 @@ index 6218b60863..c0e8d0a9a9 100644
 +  if (!sk_image) {
 +    return image;
 +  }
++  // 8-bit RGBA/BGRA only. PerturbRgba treats the buffer as 8-bit RGBA (alpha at
++  // byte 3, true for both channel orderings), so N32 -- BGRA on macOS/Windows,
++  // RGBA on Linux -- is fine either way. A float (kRGBA_F16) canvas must be
++  // skipped: its half-float bytes would be corrupted, not noised, and returning
++  // the original image keeps a float readback byte-identical to stock.
++  const SkColorType camou_ct = sk_image->colorType();
++  if (camou_ct != kRGBA_8888_SkColorType &&
++      camou_ct != kBGRA_8888_SkColorType) {
++    return image;
++  }
 +  SkBitmap bitmap;
 +  if (!bitmap.tryAllocPixels(sk_image->imageInfo()) ||
 +      !sk_image->readPixels(bitmap.pixmap(), 0, 0)) {
@@ -125,7 +145,7 @@ index 6218b60863..c0e8d0a9a9 100644
  ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
      ScriptState* script_state,
      const ImageEncodeOptions* options,
-@@ -501,6 +537,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+@@ -501,6 +547,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
  
    base::TimeTicks start_time = base::TimeTicks::Now();
    scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
@@ -195,7 +215,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..6371a8e7ce 100644
+index 26c0a088cc..91f4b179a6 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,9 @@
@@ -208,7 +228,7 @@ index 26c0a088cc..6371a8e7ce 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,22 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5359,30 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -219,6 +239,14 @@ index 26c0a088cc..6371a8e7ce 100644
 +  // framebuffer -- app-owned data, not a fingerprint surface -- are untouched).
 +  // Assumes default PACK alignment (RGBA8 rows are 4-aligned). No-op when
 +  // canvas:seed is unset.
++  //
++  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
++  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
++  // so `buffer` handling above skips it; a later getBufferSubData() copies
++  // those default-framebuffer pixels to a CPU array UN-noised. Covering it
++  // needs buffer-provenance tracking (was this PACK buffer filled from the
++  // default FB?), which is out of SP3a's scope -- see the plan's Out-of-
++  // scope note and spec 7.4.
 +  if (!buffer && !framebuffer && format == GL_RGBA &&
 +      type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
 +    if (auto* ec = Host()->GetTopExecutionContext()) {
