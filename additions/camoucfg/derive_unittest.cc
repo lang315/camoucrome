@@ -83,5 +83,96 @@ TEST(DeriveTest, CanonicalFormsOfUnknownAreEmpty) {
 // covers it that way; adding a sixth per-process invocation here for one
 // function would buy nothing the validator's tests do not already give.
 
+// DeriveDelta / DeriveUnit are pure: no config, no state. That purity is the
+// cross-process reproducibility guarantee (§6 item 13) -- a renderer, a worker
+// in its own process, and a unit test all get the same value from the same
+// arguments -- so it is tested here as "same args, same result".
+
+TEST(DeriveDeltaTest, IsDeterministic) {
+  for (uint64_t i = 0; i < 50; ++i) {
+    EXPECT_EQ(DeriveDelta(1234, "canvas", i, 3),
+              DeriveDelta(1234, "canvas", i, 3));
+    EXPECT_EQ(DeriveUnit(1234, "canvas", i), DeriveUnit(1234, "canvas", i));
+  }
+}
+
+TEST(DeriveDeltaTest, StaysWithinBound) {
+  for (uint64_t i = 0; i < 1000; ++i) {
+    int32_t d = DeriveDelta(99, "canvas", i, 4);
+    EXPECT_GE(d, -4);
+    EXPECT_LE(d, 4);
+  }
+  // A negative bound is treated by magnitude, not left to signed modulo.
+  for (uint64_t i = 0; i < 1000; ++i) {
+    int32_t d = DeriveDelta(99, "canvas", i, -4);
+    EXPECT_GE(d, -4);
+    EXPECT_LE(d, 4);
+  }
+}
+
+TEST(DeriveDeltaTest, ZeroBoundIsZero) {
+  for (uint64_t i = 0; i < 20; ++i)
+    EXPECT_EQ(DeriveDelta(7, "canvas", i, 0), 0);
+}
+
+TEST(DeriveDeltaTest, CoversTheFullRange) {
+  // Bound 1 must actually produce -1, 0 and +1 across indices, or the range
+  // mapping is stuck. A degenerate "always 0" passes IsDeterministic and
+  // StaysWithinBound; this catches it.
+  bool saw_neg = false, saw_zero = false, saw_pos = false;
+  for (uint64_t i = 0; i < 300; ++i) {
+    switch (DeriveDelta(5, "canvas", i, 1)) {
+      case -1: saw_neg = true; break;
+      case 0: saw_zero = true; break;
+      case 1: saw_pos = true; break;
+    }
+  }
+  EXPECT_TRUE(saw_neg && saw_zero && saw_pos);
+}
+
+TEST(DeriveDeltaTest, DomainsAreUncorrelated) {
+  // §6 item 13: two surfaces sharing a seed must not produce the same
+  // sequence. Assert the three domains disagree at most indices for one seed.
+  int canvas_audio_diff = 0, canvas_font_diff = 0;
+  for (uint64_t i = 0; i < 500; ++i) {
+    if (DeriveDelta(42, "canvas", i, 127) != DeriveDelta(42, "audio", i, 127))
+      ++canvas_audio_diff;
+    if (DeriveDelta(42, "canvas", i, 127) !=
+        DeriveDelta(42, "fontmetric", i, 127))
+      ++canvas_font_diff;
+  }
+  EXPECT_GT(canvas_audio_diff, 450);
+  EXPECT_GT(canvas_font_diff, 450);
+}
+
+TEST(DeriveDeltaTest, DifferentSeedsDiffer) {
+  int diff = 0;
+  for (uint64_t i = 0; i < 500; ++i)
+    if (DeriveDelta(1, "canvas", i, 127) != DeriveDelta(2, "canvas", i, 127))
+      ++diff;
+  EXPECT_GT(diff, 450);
+}
+
+TEST(DeriveUnitTest, StaysInUnitInterval) {
+  for (uint64_t i = 0; i < 1000; ++i) {
+    double u = DeriveUnit(3, "canvas-gate", i);
+    EXPECT_GE(u, 0.0);
+    EXPECT_LT(u, 1.0);
+  }
+}
+
+TEST(DeriveUnitTest, IsRoughlyUniform) {
+  // A gate that clusters would make canvas density meaningless. Assert the
+  // mean of many draws is near 0.5 -- loose bounds, this is a smoke test not
+  // a statistics suite.
+  double sum = 0;
+  const int n = 5000;
+  for (uint64_t i = 0; i < static_cast<uint64_t>(n); ++i)
+    sum += DeriveUnit(11, "canvas-gate", i);
+  double mean = sum / n;
+  EXPECT_GT(mean, 0.45);
+  EXPECT_LT(mean, 0.55);
+}
+
 }  // namespace
 }  // namespace camoucfg
