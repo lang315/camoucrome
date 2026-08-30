@@ -95,5 +95,28 @@ TEST(MouseTrajectoriesTest, InterPointTimingIsNotUniform) {
   EXPECT_TRUE(any_differs) << "intervals uniform; timing not humanized";
 }
 
+// Config values are untrusted (humanize:minTime/maxTime, no schema clamps
+// them), so an inverted or negative range must be sanitized here rather than
+// being fatal at the old CHECK_LE or producing negative delays. Whole-branch
+// review found the crash: {minTime:200, maxTime:100} killed the browser on the
+// first humanized move.
+TEST(MouseTrajectoriesTest, InvertedOrNegativeRangeIsSanitizedNotFatal) {
+  // Inverted 200/100 sanitizes to a valid [100, 200] duration -- no CHECK,
+  // strictly increasing (hence positive) offsets, endpoints exact.
+  auto a = camoucfg::HumanizeTrajectory({0, 0}, {100, 100}, 24, 200, 100, 3);
+  ASSERT_EQ(a.size(), 25u);
+  EXPECT_EQ(a.front().x, 0.0);
+  EXPECT_EQ(a.back().x, 100.0);
+  for (size_t i = 1; i < a.size(); ++i)
+    EXPECT_GT(a[i].offset, a[i - 1].offset);
+  EXPECT_GE(a.back().offset, base::Milliseconds(100));
+  EXPECT_LE(a.back().offset, base::Milliseconds(200));
+
+  // A negative min floors to 1ms, so the first interval is still positive.
+  auto b = camoucfg::HumanizeTrajectory({0, 0}, {50, 50}, 10, -5, 30, 3);
+  ASSERT_GE(b.size(), 2u);
+  EXPECT_GT(b[1].offset, base::TimeDelta());
+}
+
 }  // namespace
 }  // namespace camoucfg
