@@ -5,6 +5,8 @@
 static_library("camoucfg") {
   sources = [
     "blink_scope.h",
+    "canvas_noise.cc",
+    "canvas_noise.h",
     "coherence_validator.cc",
     "coherence_validator.h",
     "derive.cc",
@@ -28,6 +30,7 @@ static_library("camoucfg") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "canvas_noise_unittest.cc",
     "coherence_validator_unittest.cc",
     "derive_unittest.cc",
     "keys_unittest.cc",
