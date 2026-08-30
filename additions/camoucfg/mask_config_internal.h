@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_CAMOUCFG_MASK_CONFIG_INTERNAL_H_
 #define COMPONENTS_CAMOUCFG_MASK_CONFIG_INTERNAL_H_
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -90,6 +91,22 @@ std::optional<GLValue> GLParamFrom(const base::DictValue& cfg,
 
 // Real logic behind camoucfg::GLBlockIfNotDefined().
 bool GLBlockFrom(const base::DictValue& cfg, bool is_webgl2);
+
+// Real logic behind camoucfg::GLShaderPrecision() -- see gl_params.h. `cfg`'s
+// "webGl:shaderPrecisionFormats" / "webGl2:shaderPrecisionFormats" entry is a
+// nested map keyed by the compound decimal string "<shadertype>:<precisiontype>",
+// holding [rangeMin, rangeMax, precision]. Malformed entries (wrong length, or
+// any element not an int) return nullopt rather than a partial/garbage array.
+std::optional<std::array<int, 3>> GLShaderPrecisionFrom(
+    const base::DictValue& cfg, uint32_t shadertype, uint32_t precisiontype,
+    bool is_webgl2);
+
+// Real logic behind camoucfg::GLShaderPrecisionBlock().
+bool GLShaderPrecisionBlockFrom(const base::DictValue& cfg, bool is_webgl2);
+
+// Real logic behind camoucfg::GLContextAttrs().
+const base::DictValue* GLContextAttrsFrom(const base::DictValue& cfg,
+                                          bool is_webgl2);
 
 }  // namespace camoucfg::internal
 

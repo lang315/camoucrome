@@ -30,4 +30,22 @@ bool GLBlockIfNotDefined(const ConfigScope& scope, bool is_webgl2) {
   return internal::GLBlockFrom(internal::ParsedConfig(), is_webgl2);
 }
 
+std::optional<std::array<int, 3>> GLShaderPrecision(const ConfigScope& scope,
+                                                    uint32_t shadertype,
+                                                    uint32_t precisiontype,
+                                                    bool is_webgl2) {
+  return internal::GLShaderPrecisionFrom(internal::ParsedConfig(), shadertype,
+                                         precisiontype, is_webgl2);
+}
+
+bool GLShaderPrecisionBlock(const ConfigScope& scope, bool is_webgl2) {
+  return internal::GLShaderPrecisionBlockFrom(internal::ParsedConfig(),
+                                              is_webgl2);
+}
+
+const base::DictValue* GLContextAttrs(const ConfigScope& scope,
+                                      bool is_webgl2) {
+  return internal::GLContextAttrsFrom(internal::ParsedConfig(), is_webgl2);
+}
+
 }  // namespace camoucfg
