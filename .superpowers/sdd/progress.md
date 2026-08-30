@@ -2051,3 +2051,19 @@ sp2 9, sp2b 3, coherence 6/6, camoucfg unit 49 (MouseTrajectories 7),
 check_additions_build 18, check_checkout_sync 20/20. Conventions: SP2-complete
 note + coalescing finding. Repo bad3606. Done by controller (implementers kept
 dying to Mac sleep). WHOLE-BRANCH REVIEW dispatched (opus).
+
+WHOLE-BRANCH REVIEW (opus): READY TO MERGE, zero Critical.
+  Confirmed: async lifetime sound, the hoist genuinely fixes the UAF, stock-
+  path byte-identical, patch reconstructs identical, keys/signature line up
+  end-to-end, tests de-vacuified, conventions rows accurate.
+  ONE IMPORTANT (config-triggered, four per-task reviews + plan missed it):
+  HumanizeTrajectory's CHECK_LE(min_ms,max_ms) is fatal, SchedulePath fed it
+  unclamped config -> {minTime:200,maxTime:100} crashes the browser on first
+  humanized move; negative min -> negative delays -> silent no-op. FIXED at the
+  generator (swap inverted, floor low at 1ms) + test InvertedOrNegativeRange
+  IsSanitizedNotFatal (proof by construction: without the guard its 200/100
+  call hits the fatal CHECK). input_handler unchanged so patch/reconstruction
+  still stand. MouseTrajectories 8, camoucfg unit 50, sync 20/20. Commit
+  71d38fd. Confirm sent to reviewer.
+  Minors all correctly closed/filed (C3 x-axis, drag/Focus skip, teardown
+  delta, keys hand-list, distortPoints tremor, cursor:show reserved).
