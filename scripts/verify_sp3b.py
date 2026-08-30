@@ -1,11 +1,12 @@
 """Verifies the SP3b WebGL substitution: the unmasked vendor/renderer strings
 (V1-V3), the numeric/array getParameter table and blockIfNotDefined
-fail-closed behaviour (V4-V5), the supported-extension whitelist (V6), and the
-shader precision formats (V7). With webGl:/webGl2: keys configured, a page
+fail-closed behaviour (V4-V5), the supported-extension whitelist (V6), the
+shader precision formats (V7), and the context attributes (V8). With
+webGl:/webGl2: keys configured, a page
 reads EXACTLY the configured values, the two namespaces stay separated, and an
 unconfigured build returns a stable SwiftShader baseline.
 
-Seven criteria, driven with Playwright's sync API over content_shell's CDP,
+Eight criteria, driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp3a.py -- a fault in any one session becomes a FAIL
 line, never a traceback that discards results already collected. All sessions
 run under SwiftShader (--use-angle=swiftshader --enable-unsafe-swiftshader) so
@@ -40,6 +41,10 @@ reproducible (SP3 spec Section 6).
      precision; with blockIfNotDefined true an unlisted-but-valid pair returns
      null, and with the flag absent that pair falls back to the host value.
      Covered on webgl2.
+  V8 context attributes: with webGl:contextAttributes set,
+     getContextAttributes() reflects each configured field (antialias,
+     powerPreference, preserveDrawingBuffer); a field left unconfigured (alpha)
+     keeps its real boolean value (rule 5). Covered on webgl2.
 
 RED-FIRST: run this against a stock/SP3a content_shell (no SP3b edit) and
 V2-V5 FAIL while V1 passes -- the required red evidence. The unmasked strings
@@ -127,6 +132,18 @@ V7CFG2_BLOCK = json.dumps({
     "webGl2:shaderPrecisionFormats": {V7_KEY: V7_VALUE},
     "webGl2:shaderPrecisionFormats:blockIfNotDefined": True,
 })
+
+# V8: context attributes. getContextAttributes() reflects each configured
+# field; a field left unconfigured keeps its real value (rule 5). antialias
+# false / preserveDrawingBuffer true / powerPreference high-performance are the
+# spoof; alpha is deliberately UNCONFIGURED so it must equal the unconfigured
+# (real) value. preserveDrawingBuffer (real default false) and powerPreference
+# (real default "default") are the unambiguous RED discriminators; antialias
+# may already be false under SwiftShader. The webGl2: key proves the namespace.
+V8_ATTRS = {"antialias": False, "powerPreference": "high-performance",
+            "preserveDrawingBuffer": True}
+V8CFG = json.dumps({"webGl:contextAttributes": V8_ATTRS})
+V8CFG2 = json.dumps({"webGl2:contextAttributes": V8_ATTRS})
 
 # Reads the two unmasked strings on the requested context type, plus a full
 # sweep of every string-returning (and a broad set of other) getParameter
@@ -234,6 +251,23 @@ PROBE_PREC = """(cfg) => {
 }
 """
 
+# V8: read back the honored context attributes. Reports the three spoofed
+# fields plus alpha (left unconfigured, so it must equal the unconfigured run)
+# and alpha's JS type, so a non-boolean or a changed unset field is caught.
+PROBE_ATTRS = """(type) => {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const gl = c.getContext(type);
+  if (!gl) return { err: 'no-context:' + type };
+  const a = gl.getContextAttributes();
+  if (!a) return { err: 'no-attributes:' + type };
+  return {
+    antialias: a.antialias, powerPreference: a.powerPreference,
+    preserveDrawingBuffer: a.preserveDrawingBuffer,
+    alpha: a.alpha, alphaType: typeof a.alpha,
+  };
+}
+"""
+
 
 def probe_with(config, probe_js, arg):
     """One content_shell session under SwiftShader. Runs probe_js(arg) in the
@@ -303,6 +337,13 @@ v7b, v7be = probe_with(V7CFG_BLOCK, PROBE_PREC, {"type": "webgl"})
 v7_2, v7_2e = probe_with(V7CFG2, PROBE_PREC, {"type": "webgl2"})
 v7b_2, v7b_2e = probe_with(V7CFG2_BLOCK, PROBE_PREC, {"type": "webgl2"})
 
+# --- V8: context attributes on webgl AND webgl2, each with its unconfigured
+#         baseline so an unset field (alpha) can be proven unchanged. ---
+v8base, v8basee = probe_with(None, PROBE_ATTRS, "webgl")
+v8base2, v8base2e = probe_with(None, PROBE_ATTRS, "webgl2")
+v8, v8e = probe_with(V8CFG, PROBE_ATTRS, "webgl")
+v8_2, v8_2e = probe_with(V8CFG2, PROBE_ATTRS, "webgl2")
+
 V1 = "V1 unconfigured unmasked strings stable across two launches"
 V2 = "V2 webGl:vendor/renderer substituted exactly; baseline absent from sweep"
 V3 = "V3 webGl2: substituted; namespaces isolated (webgl<->webgl2)"
@@ -310,6 +351,7 @@ V4 = "V4 parameter table (webgl+webgl2): int + Int32Array + Float32Array as conf
 V5 = "V5 blockIfNotDefined (webgl+webgl2): unconfigured pname -> null+INVALID_ENUM; open -> host"
 V6 = "V6 supportedExtensions (webgl+webgl2): list is exactly the whitelist; in-list ext gettable; out-of-list ext refused"
 V7 = "V7 shaderPrecisionFormats (webgl+webgl2): configured pair spoofed; blockIfNotDefined nulls unlisted pair, else host"
+V8 = "V8 contextAttributes (webgl+webgl2): configured antialias/powerPreference/preserveDrawingBuffer reflected; unset alpha unchanged & boolean"
 
 
 def ok(v):
@@ -476,7 +518,33 @@ results[V7] = v7_1_ok and v7_2_ok
 if not results[V7]:
     notes.append(f"V7 webgl: {v7_1_why} | webgl2: {v7_2_why}")
 
-EXPECTED = 7
+
+# --- V8: configured fields reflected; an unset field (alpha) stays a boolean
+#         equal to its unconfigured value (rule 5). vc = configured run, vb =
+#         unconfigured baseline for the same context type. ---
+def v8_checks(vc, vce, vb, vbe):
+    if not ok(vc) or not ok(vb):
+        bad, err = (vc, vce) if not ok(vc) else (vb, vbe)
+        return False, (bad.get("err") if bad else f"{type(err).__name__}: {err}")
+    reflected = (vc["antialias"] is False and
+                 vc["powerPreference"] == "high-performance" and
+                 vc["preserveDrawingBuffer"] is True)
+    unset_ok = vc["alphaType"] == "boolean" and vc["alpha"] == vb["alpha"]
+    return reflected and unset_ok, (
+        f"reflected={reflected}(antialias={vc['antialias']!r} "
+        f"powerPreference={vc['powerPreference']!r} "
+        f"preserveDrawingBuffer={vc['preserveDrawingBuffer']!r}) "
+        f"unset_alpha_ok={unset_ok}(alpha={vc['alpha']!r} "
+        f"baseline_alpha={vb['alpha']!r})")
+
+
+v8_1_ok, v8_1_why = v8_checks(v8, v8e, v8base, v8basee)
+v8_2_ok, v8_2_why = v8_checks(v8_2, v8_2e, v8base2, v8base2e)
+results[V8] = v8_1_ok and v8_2_ok
+if not results[V8]:
+    notes.append(f"V8 webgl: {v8_1_why} | webgl2: {v8_2_why}")
+
+EXPECTED = 8
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
