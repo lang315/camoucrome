@@ -250,6 +250,31 @@ merely inconvenient.
 > operation. This is not an operator typo; the profile generator / SP3b-iii
 > coherence validator owns the `list ⊆ host-backed` constraint.
 
+> **Deferred obligations for SP3b-iii (consolidated from the SP3b whole-branch
+> reviews) — logged so nothing ships as a silent overclaim:**
+> 1. `webGl:renderer` ↔ `webGl:vendor` all-or-nothing (a renderer without its
+>    vendor is invalid) — parse-time rejection. SP3b-i exposes the knobs; the
+>    validator enforces the pairing.
+> 2. **Parameter-table array/type sanity** — `webGl:parameters` values are
+>    returned as-typed with no arity/type check, so a garbage entry (a 3-element
+>    MAX_VIEWPORT_DIMS, a string for MAX_TEXTURE_SIZE) yields a wrong-shaped
+>    result. SP3b-i's plan promised this to "SP3b-ii's coherence validator";
+>    SP3b-ii did not implement it (it only added exact-arity checks for its own
+>    shaderPrecisionFormats surface), so it is re-deferred here explicitly.
+> 3. `webGl:supportedExtensions` ⊆ host tracker-backed extensions (the
+>    advertised⟹gettable ceiling above). Tighten "tracker-backed" to mean a
+>    tracker whose own capability check also passes.
+> 4. WebGPU (`GPUAdapterInfo`) adapter identity must agree with the WebGL
+>    strings (spec §4.1 obligation) — the WebGPU hook + its coherence.
+> 5. **WebGL-in-Worker (OffscreenCanvas) parity — UNVERIFIED.** verify_sp3b's
+>    V1–V8 exercise only main-thread `document.createElement('canvas')`
+>    contexts. All six WebGL hooks use `Host()->GetTopExecutionContext()` (NOT
+>    `GetDocument()`, the pattern behind the font-spoofing worker bug) and
+>    `ScopeFor()` is a context-type-agnostic passthrough, so parity is
+>    structurally expected — but not proven. SP3b-iii must add a worker WebGL
+>    parity check (mirroring §6 item 7 for canvas) before the WebGL spoof is
+>    claimed complete off the main thread.
+
 
 | This surface | Must agree with | Invariant |
 |---|---|---|
