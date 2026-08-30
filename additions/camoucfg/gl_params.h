@@ -5,12 +5,14 @@
 #ifndef COMPONENTS_CAMOUCFG_GL_PARAMS_H_
 #define COMPONENTS_CAMOUCFG_GL_PARAMS_H_
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include "base/values.h"
 #include "components/camoucfg/mask_config.h"
 
 namespace camoucfg {
@@ -39,6 +41,28 @@ std::optional<std::string> GLRenderer(const ConfigScope& scope,
 // webGl:parameters:blockIfNotDefined / webGl2:parameters:blockIfNotDefined.
 // Defaults to false when absent.
 bool GLBlockIfNotDefined(const ConfigScope& scope, bool is_webgl2);
+
+// getShaderPrecisionFormat(shadertype, precisiontype)'s return value, read
+// from the webGl:shaderPrecisionFormats map (or webGl2: when is_webgl2) keyed
+// by the compound string "<shadertype>:<precisiontype>". nullopt when the
+// map, or the compound key within it, is absent -- the caller falls back to
+// the real value, never a placeholder.
+std::optional<std::array<int, 3>> GLShaderPrecision(const ConfigScope& scope,
+                                                    uint32_t shadertype,
+                                                    uint32_t precisiontype,
+                                                    bool is_webgl2);
+
+// webGl:shaderPrecisionFormats:blockIfNotDefined /
+// webGl2:shaderPrecisionFormats:blockIfNotDefined. Defaults to false when
+// absent.
+bool GLShaderPrecisionBlock(const ConfigScope& scope, bool is_webgl2);
+
+// webGl:contextAttributes / webGl2:contextAttributes -- the
+// WebGLContextAttributes dict a page reads back through
+// getContextAttributes(). Returns nullptr when the key is absent; callers
+// read individual bool/string fields off the returned dict.
+const base::DictValue* GLContextAttrs(const ConfigScope& scope,
+                                      bool is_webgl2);
 
 }  // namespace camoucfg
 

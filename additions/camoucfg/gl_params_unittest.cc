@@ -56,5 +56,32 @@ TEST(GLParamsTest, BlockIfNotDefined) {
   EXPECT_FALSE(internal::GLBlockFrom(Parse("{}"), false));  // default false
 }
 
+TEST(GLParamsTest, ReadsShaderPrecision) {
+  auto cfg = Parse(R"({"webGl:shaderPrecisionFormats":{"35633:36338":[127,127,23]}})");
+  // 35633 VERTEX_SHADER, 36338 HIGH_FLOAT
+  auto v = internal::GLShaderPrecisionFrom(cfg, 35633, 36338, false);
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ((*v)[0], 127); EXPECT_EQ((*v)[2], 23);
+  EXPECT_FALSE(internal::GLShaderPrecisionFrom(cfg, 35633, 36338, true).has_value());  // webGl2 unset
+  EXPECT_FALSE(internal::GLShaderPrecisionFrom(Parse("{}"), 35633, 36338, false).has_value());
+}
+
+TEST(GLParamsTest, ShaderPrecisionRejectsMalformed) {
+  // wrong-length or non-int array -> nullopt, not a partial/garbage array
+  EXPECT_FALSE(internal::GLShaderPrecisionFrom(
+      Parse(R"({"webGl:shaderPrecisionFormats":{"1:2":[1,2]}})"), 1, 2, false).has_value());
+  EXPECT_FALSE(internal::GLShaderPrecisionFrom(
+      Parse(R"({"webGl:shaderPrecisionFormats":{"1:2":[1,2,"x"]}})"), 1, 2, false).has_value());
+}
+
+TEST(GLParamsTest, ReadsContextAttrs) {
+  auto cfg = Parse(R"({"webGl:contextAttributes":{"antialias":false,"powerPreference":"high-performance"}})");
+  const base::DictValue* d = internal::GLContextAttrsFrom(cfg, false);
+  ASSERT_NE(d, nullptr);
+  EXPECT_EQ(d->FindBool("antialias"), std::optional<bool>(false));
+  EXPECT_EQ(*d->FindString("powerPreference"), "high-performance");
+  EXPECT_EQ(internal::GLContextAttrsFrom(cfg, true), nullptr);  // webGl2 unset
+}
+
 }  // namespace
 }  // namespace camoucfg

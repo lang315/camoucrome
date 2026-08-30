@@ -225,4 +225,39 @@ bool GLBlockFrom(const base::DictValue& cfg, bool is_webgl2) {
       .value_or(false);
 }
 
+std::optional<std::array<int, 3>> GLShaderPrecisionFrom(
+    const base::DictValue& cfg, uint32_t shadertype, uint32_t precisiontype,
+    bool is_webgl2) {
+  const base::DictValue* m = cfg.FindDict(
+      is_webgl2 ? keys::kWebGl2ShaderPrecision : keys::kWebGlShaderPrecision);
+  if (!m) {
+    return std::nullopt;
+  }
+  const base::Value* v = m->Find(base::NumberToString(shadertype) + ":" +
+                                 base::NumberToString(precisiontype));
+  if (!v || !v->is_list() || v->GetList().size() != 3) {
+    return std::nullopt;
+  }
+  std::array<int, 3> out{};
+  for (int i = 0; i < 3; ++i) {
+    if (!v->GetList()[i].is_int()) {
+      return std::nullopt;
+    }
+    out[i] = v->GetList()[i].GetInt();
+  }
+  return out;
+}
+
+bool GLShaderPrecisionBlockFrom(const base::DictValue& cfg, bool is_webgl2) {
+  return cfg.FindBool(is_webgl2 ? keys::kWebGl2ShaderPrecisionBlock
+                                : keys::kWebGlShaderPrecisionBlock)
+      .value_or(false);
+}
+
+const base::DictValue* GLContextAttrsFrom(const base::DictValue& cfg,
+                                          bool is_webgl2) {
+  return cfg.FindDict(is_webgl2 ? keys::kWebGl2ContextAttrs
+                                : keys::kWebGlContextAttrs);
+}
+
 }  // namespace camoucfg::internal

@@ -158,9 +158,40 @@ inline constexpr char kWebGlParamsBlock[] =
 inline constexpr char kWebGl2ParamsBlock[] =
     "webGl2:parameters:blockIfNotDefined";
 
+// getSupportedExtensions()'s return value: the list of WEBGL_* / OES_* /
+// ANGLE_* extension name strings the context reports as supported. A plain
+// list of strings needs no accessor of its own -- it is read through the
+// existing GetStringList(scope, key), the same reason kCanvasSeed etc. reuse
+// GetString() instead of a bespoke getter.
+inline constexpr char kWebGlExtensions[] = "webGl:supportedExtensions";
+inline constexpr char kWebGl2Extensions[] = "webGl2:supportedExtensions";
+
+// getShaderPrecisionFormat(shadertype, precisiontype)'s return value, keyed
+// the same way kWebGl(2)Parameters is but on a COMPOUND key: the decimal
+// string "<shadertype>:<precisiontype>" (e.g. "35633:36338" for
+// VERTEX_SHADER, HIGH_FLOAT), holding [rangeMin, rangeMax, precision].
+//
+// kWebGl(2)ShaderPrecisionBlock (`...:shaderPrecisionFormats:blockIfNotDefined`)
+// is the same block-vs-fallback switch as kWebGl(2)ParamsBlock, scoped to
+// this map. Defaults to false.
+inline constexpr char kWebGlShaderPrecision[] = "webGl:shaderPrecisionFormats";
+inline constexpr char kWebGl2ShaderPrecision[] =
+    "webGl2:shaderPrecisionFormats";
+inline constexpr char kWebGlShaderPrecisionBlock[] =
+    "webGl:shaderPrecisionFormats:blockIfNotDefined";
+inline constexpr char kWebGl2ShaderPrecisionBlock[] =
+    "webGl2:shaderPrecisionFormats:blockIfNotDefined";
+
+// The WebGLContextAttributes dict a page reads back through
+// getContextAttributes() -- antialias, powerPreference, and the like.
+// Returned whole (as a base::DictValue*); callers read individual fields, the
+// same shape kWebGl(2)Parameters's per-pname value takes but one level up.
+inline constexpr char kWebGlContextAttrs[] = "webGl:contextAttributes";
+inline constexpr char kWebGl2ContextAttrs[] = "webGl2:contextAttributes";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 25> kAllKeys = {
+inline constexpr std::array<std::string_view, 33> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -186,6 +217,14 @@ inline constexpr std::array<std::string_view, 25> kAllKeys = {
     kWebGl2Parameters,
     kWebGlParamsBlock,
     kWebGl2ParamsBlock,
+    kWebGlExtensions,
+    kWebGl2Extensions,
+    kWebGlShaderPrecision,
+    kWebGl2ShaderPrecision,
+    kWebGlShaderPrecisionBlock,
+    kWebGl2ShaderPrecisionBlock,
+    kWebGlContextAttrs,
+    kWebGl2ContextAttrs,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
