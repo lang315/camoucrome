@@ -1,0 +1,148 @@
+diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
+index 9bbb476156..9b4622dd50 100644
+--- a/third_party/blink/renderer/DEPS
++++ b/third_party/blink/renderer/DEPS
+@@ -93,6 +93,7 @@ include_rules = [
+     "+cc/input/hit_test_opaqueness.h",
+     "+cc/paint",
+     "+components/camoucfg/blink_scope.h",
++    "+components/camoucfg/canvas_noise.h",
+     "+components/camoucfg/mask_config.h",
+     "+components/crash/core/common/crash_key.h",
+     "+net/base/features.h",
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 4d531fe25a..449a1c523d 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -120,6 +120,11 @@
+ #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
+ #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkImage.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_to_video_frame_copier.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
+ #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
+@@ -1327,6 +1332,38 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
+   return image_bitmap;
+ }
+ 
++namespace {
++
++// Camoucrome canvas readback noise (SP3a). Perturbs a COPY of the snapshot
++// pixels leaving the canvas -- never the canvas's own store -- so on-screen
++// output is unchanged. The copy preserves the source SkImageInfo exactly and
++// PerturbRgbaFromConfig is a no-op when canvas:seed is unset/zero, so an
++// unconfigured build is byte-identical to stock (SP3 rule 5).
++scoped_refptr<StaticBitmapImage> PerturbCanvasReadback(
++    scoped_refptr<StaticBitmapImage> image,
++    ExecutionContext* execution_context) {
++  if (!image) {
++    return image;
++  }
++  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
++  if (!sk_image) {
++    return image;
++  }
++  SkBitmap bitmap;
++  if (!bitmap.tryAllocPixels(sk_image->imageInfo()) ||
++      !sk_image->readPixels(bitmap.pixmap(), 0, 0)) {
++    return image;
++  }
++  camoucfg::PerturbRgbaFromConfig(static_cast<uint8_t*>(bitmap.getPixels()),
++                                  bitmap.computeByteSize(),
++                                  camoucfg::ScopeFor(execution_context));
++  bitmap.setImmutable();
++  return UnacceleratedStaticBitmapImage::Create(
++      SkImages::RasterFromBitmap(bitmap), image->Orientation());
++}
++
++}  // namespace
++
+ String HTMLCanvasElement::ToDataURLInternal(
+     const String& mime_type,
+     const double& quality,
+@@ -1339,6 +1376,8 @@ String HTMLCanvasElement::ToDataURLInternal(
+       ImageEncoderUtils::ToEncodingMimeType(mime_type);
+ 
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
++  image_bitmap = PerturbCanvasReadback(std::move(image_bitmap),
++                                       GetExecutionContext());
+   if (image_bitmap) {
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+@@ -1443,6 +1482,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+ 
+   CanvasAsyncBlobCreator* async_creator = nullptr;
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
++  image_bitmap = PerturbCanvasReadback(std::move(image_bitmap),
++                                       GetExecutionContext());
+   if (image_bitmap) {
+     auto* options = ImageEncodeOptions::Create();
+     options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index 6218b60863..c0e8d0a9a9 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -48,6 +48,10 @@
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
+ #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkImage.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
+ #include "third_party/blink/renderer/platform/heap/thread_state.h"
+ #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
+@@ -454,6 +458,38 @@ DOMMatrix* OffscreenCanvas::getElementTransform(
+   return DOMMatrix::Create();
+ }
+ 
++namespace {
++
++// Camoucrome canvas readback noise (SP3a). Perturbs a COPY of the snapshot
++// pixels leaving the canvas -- never the canvas's own store -- so on-screen
++// output is unchanged. The copy preserves the source SkImageInfo exactly and
++// PerturbRgbaFromConfig is a no-op when canvas:seed is unset/zero, so an
++// unconfigured build is byte-identical to stock (SP3 rule 5).
++scoped_refptr<StaticBitmapImage> PerturbCanvasReadback(
++    scoped_refptr<StaticBitmapImage> image,
++    ExecutionContext* execution_context) {
++  if (!image) {
++    return image;
++  }
++  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
++  if (!sk_image) {
++    return image;
++  }
++  SkBitmap bitmap;
++  if (!bitmap.tryAllocPixels(sk_image->imageInfo()) ||
++      !sk_image->readPixels(bitmap.pixmap(), 0, 0)) {
++    return image;
++  }
++  camoucfg::PerturbRgbaFromConfig(static_cast<uint8_t*>(bitmap.getPixels()),
++                                  bitmap.computeByteSize(),
++                                  camoucfg::ScopeFor(execution_context));
++  bitmap.setImmutable();
++  return UnacceleratedStaticBitmapImage::Create(
++      SkImages::RasterFromBitmap(bitmap), image->Orientation());
++}
++
++}  // namespace
++
+ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+     ScriptState* script_state,
+     const ImageEncodeOptions* options,
+@@ -501,6 +537,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+ 
+   base::TimeTicks start_time = base::TimeTicks::Now();
+   scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
++  image_bitmap = PerturbCanvasReadback(std::move(image_bitmap),
++                                       GetTopExecutionContext());
+   if (image_bitmap) {
+     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+         script_state, exception_state.GetContext());
