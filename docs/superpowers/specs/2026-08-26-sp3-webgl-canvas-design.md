@@ -240,6 +240,17 @@ merely inconvenient.
 
 ## 5. Coherence constraints
 
+> **Enforced obligation (added from SP3b-ii Task 2 review):** the configured
+> `webGl:supportedExtensions` / `webGl2:supportedExtensions` list MUST be a
+> subset of the host's tracker-backed extensions. The Blink hook makes
+> `getExtension(X)` non-null ⟹ X advertised (closed by construction), but it
+> CANNOT make advertised ⟹ gettable — Blink cannot fabricate a WebGLExtension
+> object without a real tracker. So a scraped profile advertising an extension
+> the spoofing host lacks yields an advertised-but-ungettable tell in normal
+> operation. This is not an operator typo; the profile generator / SP3b-iii
+> coherence validator owns the `list ⊆ host-backed` constraint.
+
+
 | This surface | Must agree with | Invariant |
 |---|---|---|
 | `webGl:renderer` | `webGl:vendor` | Bound all-or-nothing, as Camoufox's `$__WEBGL` group does. A renderer string without its matching vendor is invalid config and must be rejected at parse time, not silently half-applied. |
