@@ -50,6 +50,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
       kUaModel, kUaMobile, kUaWow64,
       kHumanizeEnabled, kHumanizeMinTime, kHumanizeMaxTime, kShowCursor,
+      kCanvasSeed, kCanvasNoiseDensity, kCanvasNoiseStrength,
   };
   const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
   EXPECT_EQ(declared, in_array);

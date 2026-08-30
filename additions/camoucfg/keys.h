@@ -115,9 +115,22 @@ inline constexpr char kHumanizeMaxTime[] = "humanize:maxTime";
 // movement path/timing itself.
 inline constexpr char kShowCursor[] = "cursor:show";
 
+// The canvas readback-noise knobs, in their own synthetic `canvas:` namespace
+// -- none mirrors a JS property path. `canvas:` is a pure namespace with no
+// bare `canvas` key, the same shape as `ua:` and `humanize:` above. A page
+// never reads these; they steer noise applied as pixels leave the canvas.
+//
+// aaOffset / aaCapOffset from the SP3 spec §3 table are deliberately absent:
+// the reference (Camoufox canvas-spoofing.patch) applies no anti-alias offset
+// on readback, so there is no mechanism for those keys to steer. Adding them
+// would be a knob with no effect, which rule 5 forbids.
+inline constexpr char kCanvasSeed[] = "canvas:seed";
+inline constexpr char kCanvasNoiseDensity[] = "canvas:noiseDensity";
+inline constexpr char kCanvasNoiseStrength[] = "canvas:noiseStrength";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 14> kAllKeys = {
+inline constexpr std::array<std::string_view, 17> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -132,6 +145,9 @@ inline constexpr std::array<std::string_view, 14> kAllKeys = {
     kHumanizeMinTime,
     kHumanizeMaxTime,
     kShowCursor,
+    kCanvasSeed,
+    kCanvasNoiseDensity,
+    kCanvasNoiseStrength,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
