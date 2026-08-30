@@ -1,5 +1,59 @@
+diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+index 1e2b512f07..52b07d32a4 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -38,6 +38,8 @@
+ #include "third_party/blink/renderer/modules/webgl/webgl_vertex_array_object.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/gl_params.h"
+ 
+ // Populates all parameters for texImage2D, including width, height, depth (set
+ // to 1), and border. Many callers will need to zero-out border in order to
+@@ -4836,10 +4838,40 @@ void WebGL2RenderingContextBase::deleteFramebuffer(
+   }
+ }
+ 
++// Camoucrome (SP3b): defined with external linkage in
++// webgl_rendering_context_base.cc; both getParameter overrides share this one
++// copy so the table dispatch never diverges between the two namespaces.
++std::optional<ScriptValue> CamoucromeBuildSpoofedGLParam(
++    ScriptState* script_state, GLenum pname, const camoucfg::GLValue& value);
++bool CamoucromeIsBlockableGLParam(GLenum pname);
++
+ ScriptValue WebGL2RenderingContextBase::getParameter(ScriptState* script_state,
+                                                      GLenum pname) {
+   if (isContextLost())
+     return ScriptValue::CreateNull(script_state->GetIsolate());
++  // Camoucrome (SP3b): the configurable getParameter table + blockIfNotDefined.
++  // A webGl:parameters / webGl2:parameters entry for `pname` is returned with
++  // the JS type stock returns for it; with blockIfNotDefined set, an
++  // unconfigured but normally present pname fails closed exactly like an
++  // unsupported enum. The unmasked vendor/renderer enums own their dedicated
++  // cases (SP3b Task 2) and must not be shadowed here (the Camoufox #44 trap).
++  if (auto* camou_ec = Host()->GetTopExecutionContext();
++      camou_ec && pname != 0x9245u && pname != 0x9246u) {
++    const auto& camou_scope = camoucfg::ScopeFor(camou_ec);
++    if (auto camou_v = camoucfg::GLParam(camou_scope, pname, IsWebGL2())) {
++      if (auto camou_spoofed =
++              CamoucromeBuildSpoofedGLParam(script_state, pname, *camou_v)) {
++        return *camou_spoofed;
++      }
++      // Defined but the configured type cannot match this pname's stock JS
++      // type -- fall through to the real query rather than return garbage.
++    } else if (camoucfg::GLBlockIfNotDefined(camou_scope, IsWebGL2()) &&
++               CamoucromeIsBlockableGLParam(pname)) {
++      SynthesizeGLError(GL_INVALID_ENUM, "getParameter",
++                        "invalid parameter name");
++      return ScriptValue::CreateNull(script_state->GetIsolate());
++    }
++  }
+   switch (pname) {
+     case GL_SHADING_LANGUAGE_VERSION: {
+       return WebGLAny(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 91f4b179a6..967c380cad 100644
+index 91f4b179a6..e5b7d43cad 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -27,6 +27,7 @@
@@ -10,7 +64,135 @@ index 91f4b179a6..967c380cad 100644
  
  #include <inttypes.h>
  
-@@ -4203,6 +4204,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -3990,10 +3991,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+                             webgl_angle_implementation);
+ }
+ 
++// Camoucrome (SP3b): shared getParameter-table helpers, defined here with
++// external linkage and forward-declared in webgl2_rendering_context_base.cc so
++// both getParameter overrides dispatch through one copy (never divergent).
++std::optional<ScriptValue> CamoucromeBuildSpoofedGLParam(
++    ScriptState* script_state, GLenum pname, const camoucfg::GLValue& value);
++bool CamoucromeIsBlockableGLParam(GLenum pname);
++
++// Turns a configured GLValue into the ScriptValue getParameter would return for
++// `pname`, matching the JS type the stock switch produces. Returns nullopt when
++// the configured type cannot sensibly represent this pname (a string for a
++// numeric pname, or a scalar where an array is expected) so the caller falls
++// back to the real query rather than returning a wrong-typed tell.
++std::optional<ScriptValue> CamoucromeBuildSpoofedGLParam(
++    ScriptState* script_state, GLenum pname, const camoucfg::GLValue& value) {
++  const bool float_array =
++      pname == GL_ALIASED_POINT_SIZE_RANGE ||
++      pname == GL_ALIASED_LINE_WIDTH_RANGE || pname == GL_DEPTH_RANGE ||
++      pname == GL_BLEND_COLOR || pname == GL_COLOR_CLEAR_VALUE;
++  const bool int_array = pname == GL_MAX_VIEWPORT_DIMS ||
++                         pname == GL_SCISSOR_BOX || pname == GL_VIEWPORT;
++  const bool array_expected = float_array || int_array;
++  const bool string_pname =
++      pname == GL_VENDOR || pname == GL_RENDERER || pname == GL_VERSION ||
++      pname == GL_SHADING_LANGUAGE_VERSION;
++
++  if (const auto* vec = std::get_if<std::vector<double>>(&value)) {
++    if (float_array) {
++      std::vector<float> out(vec->begin(), vec->end());
++      return WebGLAny(script_state, DOMFloat32Array::Create(base::span(out)));
++    }
++    if (int_array) {
++      std::vector<int32_t> out;
++      out.reserve(vec->size());
++      for (double d : *vec) {
++        out.push_back(static_cast<int32_t>(d));
++      }
++      return WebGLAny(script_state, DOMInt32Array::Create(base::span(out)));
++    }
++    return std::nullopt;  // array configured for a non-array pname
++  }
++
++  // A scalar or string can never be the right answer for an array pname.
++  if (array_expected) {
++    return std::nullopt;
++  }
++
++  if (const bool* b = std::get_if<bool>(&value)) {
++    return WebGLAny(script_state, *b);
++  }
++  if (const auto* s = std::get_if<std::string>(&value)) {
++    if (!string_pname) {
++      return std::nullopt;  // string for a numeric pname
++    }
++    return WebGLAny(script_state, String::FromUtf8(*s));
++  }
++  if (const int64_t* i = std::get_if<int64_t>(&value)) {
++    return WebGLAny(script_state, *i);
++  }
++  if (const double* d = std::get_if<double>(&value)) {
++    // base::Value INTEGER is 32-bit, so a JSON int > int32 (or a real GLint64
++    // param) arrives here in the double arm. Keep an integral value exact as an
++    // int64 Number; treat only a genuinely fractional value as a float.
++    if (*d >= -9.007199254740992e15 && *d <= 9.007199254740992e15 &&
++        *d == static_cast<double>(static_cast<int64_t>(*d))) {
++      return WebGLAny(script_state, static_cast<int64_t>(*d));
++    }
++    return WebGLAny(script_state, static_cast<float>(*d));
++  }
++  return std::nullopt;
++}
++
++// blockIfNotDefined must not null out a pname a real context always answers
++// (WebGL spec 6.5): the range/array queries, COMPRESSED_TEXTURE_FORMATS,
++// COLOR_WRITEMASK, and the two unmasked-string enums.
++bool CamoucromeIsBlockableGLParam(GLenum pname) {
++  switch (pname) {
++    case GL_DEPTH_RANGE:
++    case GL_ALIASED_POINT_SIZE_RANGE:
++    case GL_ALIASED_LINE_WIDTH_RANGE:
++    case GL_COLOR_CLEAR_VALUE:
++    case GL_BLEND_COLOR:
++    case GL_MAX_VIEWPORT_DIMS:
++    case GL_SCISSOR_BOX:
++    case GL_VIEWPORT:
++    case GL_COMPRESSED_TEXTURE_FORMATS:
++    case GL_COLOR_WRITEMASK:
++    case 0x9245:  // UNMASKED_VENDOR_WEBGL
++    case 0x9246:  // UNMASKED_RENDERER_WEBGL
++      return false;
++    default:
++      return true;
++  }
++}
++
+ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+                                                     GLenum pname) {
+   if (isContextLost())
+     return ScriptValue::CreateNull(script_state->GetIsolate());
++  // Camoucrome (SP3b): the configurable getParameter table + blockIfNotDefined.
++  // A webGl:parameters / webGl2:parameters entry for `pname` is returned with
++  // the JS type stock returns for it; with blockIfNotDefined set, an
++  // unconfigured but normally present pname fails closed exactly like an
++  // unsupported enum. The unmasked vendor/renderer enums own their dedicated
++  // cases (SP3b Task 2) and must not be shadowed here (the Camoufox #44 trap).
++  if (auto* camou_ec = Host()->GetTopExecutionContext();
++      camou_ec && pname != 0x9245u && pname != 0x9246u) {
++    const auto& camou_scope = camoucfg::ScopeFor(camou_ec);
++    if (auto camou_v = camoucfg::GLParam(camou_scope, pname, IsWebGL2())) {
++      if (auto camou_spoofed =
++              CamoucromeBuildSpoofedGLParam(script_state, pname, *camou_v)) {
++        return *camou_spoofed;
++      }
++      // Defined but the configured type cannot match this pname's stock JS
++      // type -- fall through to the real query rather than return garbage.
++    } else if (camoucfg::GLBlockIfNotDefined(camou_scope, IsWebGL2()) &&
++               CamoucromeIsBlockableGLParam(pname)) {
++      SynthesizeGLError(GL_INVALID_ENUM, "getParameter",
++                        "invalid parameter name");
++      return ScriptValue::CreateNull(script_state->GetIsolate());
++    }
++  }
+   const int kIntZero = 0;
+   switch (pname) {
+     case GL_ACTIVE_TEXTURE:
+@@ -4203,6 +4321,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -35,7 +217,7 @@ index 91f4b179a6..967c380cad 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4212,6 +4231,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4212,6 +4348,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
