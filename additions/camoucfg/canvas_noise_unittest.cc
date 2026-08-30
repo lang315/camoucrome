@@ -5,7 +5,6 @@
 #include "components/camoucfg/canvas_noise.h"
 
 #include <cstdint>
-#include <numeric>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"

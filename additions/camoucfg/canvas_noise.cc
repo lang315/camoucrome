@@ -2,20 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// This file indexes a raw (uint8_t*, size_t) buffer -- the contract shared
-// with the Blink readback call sites that will pass canvas pixel storage
-// directly. Every index is bounds-checked against `length` before use.
-// TODO(camoucrome): convert to base::span when those call sites are wired up.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/camoucfg/canvas_noise.h"
 
 #include <algorithm>
 #include <optional>
 #include <string>
 
+#include "base/containers/span.h"
 #include "components/camoucfg/derive.h"
 #include "components/camoucfg/keys.h"
 
@@ -25,9 +18,9 @@ namespace {
 // FNV-1a 64 over the first min(length, 1024) bytes. The 1024-byte window is
 // Camoufox's (HashContent), chosen so the hash is cheap yet content-sensitive:
 // enough to distinguish drawings without walking a multi-megabyte buffer.
-uint64_t ContentHash(const uint8_t* data, size_t length) {
+uint64_t ContentHash(base::span<const uint8_t> data) {
   constexpr size_t kMaxBytes = 1024;
-  const size_t n = std::min(length, kMaxBytes);
+  const size_t n = std::min(data.size(), kMaxBytes);
   uint64_t h = 0xCBF29CE484222325ULL;
   for (size_t i = 0; i < n; ++i) {
     h ^= data[i];
@@ -43,10 +36,12 @@ void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
   if (seed == 0 || data == nullptr || length < 4 || density <= 0.0) {
     return;
   }
+  // SAFETY: `data` and `length` are the caller's buffer bounds.
+  base::span<uint8_t> pixels = UNSAFE_BUFFERS(base::span(data, length));
   // Fold content into the seed: same drawing reproduces, different drawings
   // diverge. seed != 0 is already guaranteed; if the XOR lands on 0 the mixer
   // still behaves, so no special case is needed.
-  const uint64_t eseed = seed ^ ContentHash(data, length);
+  const uint64_t eseed = seed ^ ContentHash(pixels);
   for (size_t i = 0; i < length; ++i) {
     if ((i & 3u) == 3u) {
       continue;  // skip alpha
@@ -55,8 +50,8 @@ void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
       continue;  // channel not selected this session
     }
     const int32_t delta = DeriveDelta(eseed, "canvas", i, strength);
-    int32_t v = static_cast<int32_t>(data[i]) + delta;
-    data[i] = static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
+    int32_t v = static_cast<int32_t>(pixels[i]) + delta;
+    pixels[i] = static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
   }
 }
 
