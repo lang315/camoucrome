@@ -276,6 +276,17 @@ operand.
 5. **Fall back to the real value** whenever config is absent, never to a hardcoded
    placeholder.
 
+   *Refined 2026-08-30 (SP2b).* This rule targets **value** spoofs, where a
+   wrong spoofed value creates a detectable incoherence and the browser's real
+   value is the safe fallback. It does **not** map to a **behavioral** spoof,
+   where the "real value" is the very signature the spoof exists to hide. A
+   humanized cursor's real behaviour is the teleport — the robot tell — so a
+   malformed humanize range must be *corrected* (clamp the bounds, keep the
+   path), never degraded to the single teleport event, which would be strictly
+   more detectable while overriding an author who asked to humanize. When the
+   malformed input is a parameter of the behaviour rather than the decision to
+   apply it, fix the parameter and keep the behaviour.
+
    One scoped exception is allowed, and only where a spec argues it explicitly: a
    surface may fail *closed* — refusing to answer rather than answering honestly — when
    a partially spoofed profile would be more detectable than a blocked one. Camoufox's
