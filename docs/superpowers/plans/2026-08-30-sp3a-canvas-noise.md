@@ -21,6 +21,8 @@
 - `scripts/check_additions_build.py` (BUILD.gn sources ⊇ files) and `scripts/check_checkout_sync.sh` (checkout tree == `additions/`) must stay green.
 - §7.3 is **decided**: position-based `DeriveDelta`; the canvas content hash is folded into the per-canvas seed *at the applier* so per-drawing shift and reread-determinism both hold. Camoucrome does **not** match Camoufox's byte output.
 
+**Known readback gap (documented, not covered — from the whole-branch review):** the WebGL2 `readPixels` overload that targets a bound `PIXEL_PACK_BUFFER` writes pixels to GPU buffer memory (the `!buffer`/CPU-destination hook does not fire), and a later `getBufferSubData()` copies those default-framebuffer pixels to a CPU array **un-noised**. This is a page-reachable readback of the default framebuffer inside the "readPixels" surface, but covering it needs buffer-provenance tracking (was this PACK buffer filled from the default FB?) that is out of SP3a's scope. Recorded here and in spec §7.4 as a follow-up rather than shipped silently; the `ReadPixelsHelper` hook carries the same note.
+
 **Out of scope for SP3a (deliberate, YAGNI-checked against the reference):** `canvas:aaOffset` / `canvas:aaCapOffset`. The spec §3 lists them, but Camoufox's `canvas-spoofing.patch` readback perturbation (`CanvasSeedManager::Perturb`) uses only seed/density/strength — there is no anti-alias-offset readback mechanism to port. Adding keys for an unimplemented mechanism violates rule-5's "no knob without an effect." Revisit only if a real anti-aliasing tell is measured. Also out of scope: WebGL `readPixels` string/parameter spoofing and WebGPU coherence (SP3b); audio/font-metric call sites (SP4 — but the `DeriveDelta` primitive they consume ships here).
 
 ---

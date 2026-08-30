@@ -366,6 +366,24 @@ to study before choosing. Whether Camoucrome should match Camoufox's output exac
 which would let one fingerprint generator serve both forks — or choose independently,
 is open. Matching is attractive and should be evaluated once SP0 lands.
 
+### 7.4 Known readback gap: WebGL2 PIXEL_PACK_BUFFER
+
+The whole-branch review of SP3a found a page-reachable readback of the default
+framebuffer that the canvas-noise hooks do not cover. The WebGL2 `readPixels`
+overload that targets a bound `PIXEL_PACK_BUFFER` writes pixels into GPU buffer
+memory rather than a CPU `ArrayBufferView`, so the `ReadPixelsHelper` noise hook
+(which perturbs only a CPU destination) does not fire; a subsequent
+`getBufferSubData()` then copies those un-noised default-framebuffer pixels to a
+CPU array. An anti-detect-aware fingerprinter who knows the ArrayBufferView path
+is noised can switch to the PACK path to recover clean pixels.
+
+SP3a documents this rather than covering it: perturbing at `getBufferSubData`
+correctly requires tracking whether the source buffer was filled from the
+default framebuffer (perturbing every `getBufferSubData` would corrupt vertex,
+index, and uniform-buffer reads that are app data, not fingerprints). That
+buffer-provenance tracking is a self-contained follow-up. Until it lands,
+"canvas readback covered" excludes the WebGL2 PACK-buffer path.
+
 ## 8. Explicitly out of scope
 
 Font rendering and text metrics, which also affect canvas hashes, belong to SP4 —
