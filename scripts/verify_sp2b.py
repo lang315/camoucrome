@@ -10,10 +10,12 @@ interpolation, not the browser-side hook this file exists to prove):
   1. un-configured: a move produces exactly one mousemove DOM event.
   2. configured (humanize:enabled): the same kind of move produces MORE
      than one, the last one landing on the target.
-  3. configured: the mousemove events' timeStamps are not all evenly
-     spaced -- the reason for a path rather than a fixed-interval
-     interpolation, which would satisfy 2 while remaining exactly as
-     detectable as no path at all.
+  3. configured: the mousemove events trace the path spatially -- their
+     x-coordinates span a real fraction of the start-to-target distance,
+     rather than clustering at the target. A synchronous burst coalesces
+     to events at the endpoint; real async delivery spreads them along the
+     path. (The generator's timing non-uniformity is proven stably by the
+     Task 2 unit test, not by a wall-clock assertion here.)
 
 Each session performs two page.mouse.move calls, not one. InjectMouseEvent's
 humanization only ever triggers for a move with a KNOWN previous position --
@@ -97,7 +99,7 @@ notes = []
 
 C1 = "1 un-configured move produces exactly one mousemove"
 C2 = "2 humanize:enabled move produces more than one mousemove, ending at the target"
-C3 = "3 humanize:enabled inter-event intervals are not all equal"
+C3 = "3 humanize:enabled events trace the path, not just the endpoint"
 
 events, err = run(None)
 if err is not None:
@@ -115,15 +117,26 @@ else:
     n = len(events)
     results[C2] = (n > 1 and events[-1]["x"] == TARGET[0]
                    and events[-1]["y"] == TARGET[1])
-    # Fewer than two events means there is no interval to compare -- treat
-    # that as FAIL rather than raising, same reasoning as C2's `n > 1`: a
-    # single-event "path" is exactly what criterion 3 exists to catch.
+    # Criterion 3 asserts the events TRACE THE PATH rather than clustering at
+    # the target. The earlier form -- "inter-event timeStamps are not all
+    # equal" -- was too weak: OS scheduler jitter satisfies it for any n>=3
+    # even for a robotic generator, so it did not discriminate what it
+    # claimed (whole-branch review, Minor). Spatial spread does: a synchronous
+    # burst coalesces to events clustered at the target (x-span ~0), while
+    # real async delivery spreads them from near the start toward the target.
+    # Position-based, so it does not hinge on wall-clock timing precision.
+    # The generator's TIMING non-uniformity is proven separately and stably by
+    # MouseTrajectoriesTest.InterPointTimingIsNotUniform (Task 2).
     if n < 2:
         results[C3] = False
-        notes.append("criterion 3: fewer than two events, no interval to compare")
+        notes.append("criterion 3: fewer than two events, no path to trace")
     else:
-        intervals = [events[i + 1]["t"] - events[i]["t"] for i in range(n - 1)]
-        results[C3] = len(set(intervals)) > 1
+        x_span = max(e["x"] for e in events) - min(e["x"] for e in events)
+        path_dx = abs(TARGET[0] - PRIME[0])  # 320 for (100 -> 420)
+        results[C3] = x_span > path_dx * 0.3  # > ~96px of the 320px path
+        if not results[C3]:
+            notes.append(f"criterion 3: events clustered, x_span={x_span:.0f} "
+                         f"of path {path_dx:.0f} -- not traced along the path")
 
 EXPECTED = 3  # criteria 1, 2, 3
 
