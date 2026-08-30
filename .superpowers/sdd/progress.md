@@ -1996,3 +1996,18 @@ Task 3: BLOCKED on a real async-delivery bug (NOT build, NOT test).
   (PostDelayedTask per interior point, delay = path[i].offset, final at
   path.back().offset). So the synthetic delayed events are not reaching the
   renderer. Handed back to implementer to debug with debug_run.py.
+
+Task 3: COMPLETE. Async delivery bug FIXED (root cause: non-humanized move
+path never recorded last_move_widget_/last_move_position_, so the first move
+never seeded state and no later move matched -> humanization never triggered).
+Found by rebuilding with the implementer's SP2B_DEBUG logs (branch-check
+showed widget_match=0, last_widget=0 on both moves), fixed with a 4-line
+record in the non-humanized tail. IMPLEMENTER DIED mid-fix (Mac slept, API
+error) after applying the fix + removing logs; I rebuilt and finished.
+Verified: verify_sp2b 3 PASS, 9 events reach the page (was 1), gn check clean.
+Safety mutation (value_or(false)->true, un-configured humanizes) flips
+criterion 1 to FAIL, 2/3 green -- guard proven. Commits: checkout abcf535051
+(input_handler.cc/.h), repo verify_sp2b.py.
+Infra during Task 3: SSH master dropped ~4x (Mac sleep, relay flakiness, box
+thrash); mtime-trap hit TWICE across VM teardowns, caught both by forcing
+touch+rebuild and requiring real steps. No code lost.
