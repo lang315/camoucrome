@@ -186,6 +186,21 @@ CHECK_JS = """() => ({
   checkAbsent:   document.fonts.check('40px "NoSuchFontXYZ123"'),
 })""" % (UNLISTED_FAMILY, LISTED_FAMILY)
 
+# F4, second surface: document.fonts.load() for the same three families. The
+# measurement doc (§3) named load() a verify target alongside check(). load()
+# only matches page-registered @font-face rules; a bare local family name has
+# none, so it resolves immediately with an empty FontFace array regardless of
+# host presence -- listed, unlisted (gate-hidden), or plainly absent alike, with
+# no timing side-channel. The resolved-face count is the observable; F4 asserts
+# it can't tell unlisted-present from absent, in configured and stock sessions.
+LOAD_JS = """() => Promise.all([
+  document.fonts.load('40px "%s"'),
+  document.fonts.load('40px "%s"'),
+  document.fonts.load('40px "NoSuchFontXYZ123"'),
+]).then(([u, l, a]) => ({
+  loadUnlisted: u.length, loadListed: l.length, loadAbsent: a.length,
+}))""" % (UNLISTED_FAMILY, LISTED_FAMILY)
+
 
 def failed(obj, err):
     return obj is None or err is not None
@@ -199,22 +214,24 @@ def errtxt(obj, err):
 # (F1+F2), the worker read (F3), and the configured check() read (F4). A fault
 # becomes (None, exc), never a traceback that discards results already
 # collected.
-vals, err = lib_shell.session(CONFIG, [WINDOW_JS, WORKER_JS, CHECK_JS])
+vals, err = lib_shell.session(CONFIG, [WINDOW_JS, WORKER_JS, CHECK_JS, LOAD_JS])
 if err is not None:
-    win, worker, chk = None, None, None
-    win_e = worker_e = chk_e = err
+    win, worker, chk, ld = None, None, None, None
+    win_e = worker_e = chk_e = ld_e = err
 else:
-    win, worker, chk = vals[0], vals[1], vals[2]
-    win_e = worker_e = chk_e = None
+    win, worker, chk, ld = vals[0], vals[1], vals[2], vals[3]
+    win_e = worker_e = chk_e = ld_e = None
 
 # F4's second half: the SAME check() read taken in a fresh, unconfigured
 # (stock, no CAMOU_CONFIG) session -- a separate launch, since config is fixed
 # per-session.
-stock_vals, stock_err = lib_shell.session(None, [CHECK_JS])
+stock_vals, stock_err = lib_shell.session(None, [CHECK_JS, LOAD_JS])
 if stock_err is not None:
     chk_stock, chk_stock_e = None, stock_err
+    ld_stock, ld_stock_e = None, stock_err
 else:
     chk_stock, chk_stock_e = stock_vals[0], None
+    ld_stock, ld_stock_e = stock_vals[1], None
 
 results = {}
 notes = []
@@ -222,7 +239,7 @@ notes = []
 F1 = "F1 window probe: listed family distinct from fallback; unlisted family equals fallback (hidden)"
 F2 = "F2 generics render: serif != monospace generics, both non-zero, under an active fonts:list"
 F3 = "F3 worker parity: OffscreenCanvas reproduces F1's verdict AND matches the window's F1 numbers"
-F4 = "F4 availability non-probe: check() can't tell unlisted-present from absent; fonts:list changes nothing it reports"
+F4 = "F4 availability non-probe: check()/load() can't tell unlisted-present from absent; fonts:list changes nothing they report"
 
 # --- F1 ---
 if failed(win, win_e):
@@ -284,9 +301,12 @@ else:
             f"listed_match={listed_match} unlisted_match={unlisted_match} mono_match={mono_match}")
 
 # --- F4 ---
-if failed(chk, chk_e) or failed(chk_stock, chk_stock_e):
+if (failed(chk, chk_e) or failed(chk_stock, chk_stock_e)
+        or failed(ld, ld_e) or failed(ld_stock, ld_stock_e)):
     results[F4] = False
-    notes.append(f"F4: configured={errtxt(chk, chk_e)} stock={errtxt(chk_stock, chk_stock_e)}")
+    notes.append(
+        f"F4: check configured={errtxt(chk, chk_e)} stock={errtxt(chk_stock, chk_stock_e)}; "
+        f"load configured={errtxt(ld, ld_e)} stock={errtxt(ld_stock, ld_stock_e)}")
 else:
     # (a) not a probe: check() answers the SAME for the unlisted (gate-hidden,
     # host-present) family as for a name that plainly does not exist -- in
@@ -295,13 +315,23 @@ else:
     not_a_probe_stock = chk_stock["checkUnlisted"] == chk_stock["checkAbsent"]
     # (b) no new surface: turning fonts:list on changes nothing check() reports.
     no_new_surface = chk == chk_stock
-    results[F4] = not_a_probe_configured and not_a_probe_stock and no_new_surface
-    notes.append(f"F4 measured: configured={chk!r} stock={chk_stock!r}")
+    # (c) load() held to the same three conditions -- the second availability
+    # surface named in the measurement doc. Resolved-face count can't tell
+    # unlisted-present from absent, and fonts:list changes nothing it reports.
+    load_not_a_probe_configured = ld["loadUnlisted"] == ld["loadAbsent"]
+    load_not_a_probe_stock = ld_stock["loadUnlisted"] == ld_stock["loadAbsent"]
+    load_no_new_surface = ld == ld_stock
+    results[F4] = (not_a_probe_configured and not_a_probe_stock and no_new_surface
+                   and load_not_a_probe_configured and load_not_a_probe_stock
+                   and load_no_new_surface)
+    notes.append(f"F4 measured: check configured={chk!r} stock={chk_stock!r}")
+    notes.append(f"F4 measured: load  configured={ld!r} stock={ld_stock!r}")
     if not results[F4]:
         notes.append(
-            f"F4: not_a_probe_configured(checkUnlisted==checkAbsent)={not_a_probe_configured} "
-            f"not_a_probe_stock={not_a_probe_stock} "
-            f"no_new_surface(configured==stock)={no_new_surface}")
+            f"F4 check[cfg_np={not_a_probe_configured} stock_np={not_a_probe_stock} "
+            f"no_new_surface={no_new_surface}] "
+            f"load[cfg_np={load_not_a_probe_configured} stock_np={load_not_a_probe_stock} "
+            f"no_new_surface={load_no_new_surface}]")
 
 EXPECTED = 4
 
