@@ -1,6 +1,7 @@
 """Verifies the SP1b navigator scalar/near-constant substitution: platform
 (N1), appVersion (N2), deviceMemory (N3), the six near-constants (N4),
-maxTouchPoints (N5), worker platform parity (N6), and language/languages (N7).
+maxTouchPoints (N5), worker platform parity (N6), language/languages (N7), and
+full-profile worker parity across every exposed leaf (N8).
 With the matching navigator.* key configured, a page reads EXACTLY the
 configured value; unconfigured, it reads the real computed value unchanged
 (rule 5) -- and the six near-constants keep real Chrome's fixed strings until an
@@ -46,6 +47,19 @@ collected. No SwiftShader: these are navigator scalars, no GL context involved.
      the cached member, so languages() returns a stable reference across calls);
      unconfigured -> navigator.languages is a non-empty array whose first element
      equals navigator.language (the real Accept-Languages, unchanged).
+  N8 full-profile worker parity: with a full profile configured
+     (navigator.platform, appVersion, deviceMemory, language+languages, and one
+     near-constant navigator.vendor), a DEDICATED worker reads self.navigator and
+     asserts, per value, that every WORKER-EXPOSED leaf carries the configured
+     value -- platform, appVersion, deviceMemory, language, languages, i.e. the
+     shared NavigatorID / NavigatorDeviceMemory / NavigatorLanguage mixins -- while
+     every WINDOW-ONLY leaf is `typeof self.navigator.X === 'undefined'` in the
+     worker (vendor, vendorSub, productSub, maxTouchPoints). This is the empirical
+     per-value proof the spoof holds in the worker scope for ALL exposed leaves,
+     not IDL-reading. A window-only leaf that IS defined in the worker AND returns
+     the real value while the window is spoofed would be a new I1-class coherence
+     tell (reported here as FAIL, needing its own shared-mixin hook), not papered
+     over.
 
 RED-FIRST: run this against a stock/SP3b content_shell (no SP1b edit) and the
 configured cases N1-N5 FAIL -- the required red evidence. N6 is RED against a
@@ -55,7 +69,10 @@ leaking the real host platform is the coherence tell N6 exists to catch. N7 is
 RED against the Task-2 binary (no navigator_language.cc hook): the configured
 language/languages are ignored and the real host locale leaks. The configured
 deviceMemory (N3) is deliberately a bucket the build box does not report, so a
-real (unhooked) read cannot coincidentally match it.
+real (unhooked) read cannot coincidentally match it. N8 reuses the N1/N3/N7
+hooks in the worker scope, so it is RED wherever those are unhooked; its
+window-only-undefined half additionally goes RED if a future edit ever exposes
+one of those four leaves in a worker carrying the real value.
 
 Out of scope here: the "Request tablet site" desync command (Task 4,
 browser_commands.cc) is a chrome/browser menu command, not a page-reachable
@@ -103,6 +120,11 @@ N5_MAXTOUCHPOINTS = 5
 # emits). The RED (unhooked) read leaks the host locale, which is not fr-FR.
 N7_LANGUAGE = "fr-FR"
 N7_LANGUAGES = ["fr-FR", "fr", "en"]
+# N8: one near-constant override (vendor) set on the window, so N8 can assert the
+# worker does NOT expose it (window-only) rather than leaking the real or the
+# spoofed value. Distinct from real Chrome's "Google Inc." so an accidental
+# worker exposure of the REAL vendor is still != this configured value.
+N8_VENDOR = "Camou Test Vendor"
 
 # Real Chrome's fixed near-constant strings, identical on every platform.
 NEAR_CONSTANT_DEFAULTS = {
@@ -145,6 +167,39 @@ WORKER_PLATFORM_JS = """() => new Promise((resolve, reject) => {
   } catch (e) { reject(e); }
 })"""
 
+# N8: a dedicated worker reads EVERY leaf this task touches. The worker-exposed
+# leaves (platform/appVersion/deviceMemory via the shared NavigatorID +
+# NavigatorDeviceMemory mixins, language/languages via NavigatorLanguage) are
+# returned as values so the parent can assert each equals the configured value.
+# The window-only leaves (vendor/vendorSub/productSub/maxTouchPoints) are
+# returned as `typeof self.navigator.X`, which must be 'undefined' in a worker;
+# anything else is a leaf leaking into the worker scope.
+FULL_WORKER_JS = """() => new Promise((resolve, reject) => {
+  const src = `self.onmessage = () => {
+    try {
+      const n = self.navigator;
+      self.postMessage({ok: true, read: {
+        platform: n.platform,
+        appVersion: n.appVersion,
+        deviceMemory: n.deviceMemory,
+        language: n.language,
+        languages: n.languages,
+        vendor_type: typeof n.vendor,
+        vendorSub_type: typeof n.vendorSub,
+        productSub_type: typeof n.productSub,
+        maxTouchPoints_type: typeof n.maxTouchPoints,
+      }});
+    } catch (e) { self.postMessage({ok: false, err: 'err:' + e}); }
+  };`;
+  try {
+    const w = new Worker(URL.createObjectURL(
+      new Blob([src], {type: 'text/javascript'})));
+    w.onmessage = (e) => resolve(e.data);
+    w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    w.postMessage('go');
+  } catch (e) { reject(e); }
+})"""
+
 # N7: language + languages in one read, plus a second read of languages so the
 # stability of the returned list (a stable cached-member reference) is checked
 # in the same session -- two consecutive reads must carry identical contents.
@@ -169,6 +224,17 @@ def read_worker(config, base_url):
     platform strings. A broken worker path leaves the probe promise unresolved,
     which lib_shell.session turns into an (obj=None, err) FAIL, not a hang."""
     vals, err = lib_shell.session(config, [WORKER_PLATFORM_JS], navigate_to=base_url)
+    if err is not None:
+        return None, err
+    return vals[0], None
+
+
+def read_worker_full(config, base_url):
+    """One session that spawns a dedicated worker and returns {ok, read} where
+    read carries every worker-exposed leaf's value plus the typeof of every
+    window-only leaf. Returns (obj, err); any fault becomes a FAIL, never a
+    traceback or a hang (an unresolved worker promise -> lib_shell err)."""
+    vals, err = lib_shell.session(config, [FULL_WORKER_JS], navigate_to=base_url)
     if err is not None:
         return None, err
     return vals[0], None
@@ -208,6 +274,16 @@ try:
     lg, lg_e = read_langs(
         json.dumps({"navigator.language": N7_LANGUAGE,
                     "navigator.languages": N7_LANGUAGES}), BASE_URL)
+    # N8: full profile set at once; a dedicated worker reads every leaf. The
+    # worker-exposed leaves must equal the configured value; the window-only
+    # leaves must be undefined in the worker.
+    w8, w8_e = read_worker_full(
+        json.dumps({"navigator.platform": N1_PLATFORM,
+                    "navigator.appVersion": N2_APPVERSION,
+                    "navigator.deviceMemory": N3_DEVICEMEMORY,
+                    "navigator.language": N7_LANGUAGE,
+                    "navigator.languages": N7_LANGUAGES,
+                    "navigator.vendor": N8_VENDOR}), BASE_URL)
 finally:
     _stop()
 
@@ -218,6 +294,7 @@ N4 = "N4 near-constants: six Chrome defaults intact unconfigured; all six config
 N5 = "N5 navigator.maxTouchPoints: configured exact (hooked, not deferred); unconfigured recorded"
 N6 = "N6 worker navigator.platform: dedicated worker sees the spoofed platform (equal to the window)"
 N7 = "N7 navigator.language/languages: configured exact & stable; unconfigured language is languages[0]"
+N8 = "N8 full-profile worker parity: shared-mixin leaves spoofed in-worker, window-only leaves undefined in-worker"
 
 
 def failed(obj, err):
@@ -348,7 +425,50 @@ else:
         notes.append(f"N7: lang_exact={lang_exact} langs_exact={langs_exact} stable={stable} "
                      f"unconfigured_coherent(language==languages[0])={coherent}")
 
-EXPECTED = 7
+# --- N8 full-profile worker parity ---
+if failed(w8, w8_e):
+    results[N8] = False
+    notes.append(f"N8: worker probe {errtxt(w8, w8_e)}")
+elif not w8.get("ok"):
+    results[N8] = False
+    notes.append(f"N8: worker read threw: {w8.get('err')!r}")
+else:
+    r = w8["read"]
+    # Worker-EXPOSED leaves (shared mixins) must carry the configured value.
+    spoofed = {
+        "platform": (r["platform"], N1_PLATFORM),
+        "appVersion": (r["appVersion"], N2_APPVERSION),
+        "deviceMemory": (r["deviceMemory"], N3_DEVICEMEMORY),
+        "language": (r["language"], N7_LANGUAGE),
+        "languages": (r["languages"], N7_LANGUAGES),
+    }
+    spoof_mismatches = {k: {"got": got, "want": want}
+                        for k, (got, want) in spoofed.items() if got != want}
+    spoofed_ok = not spoof_mismatches
+    # Window-ONLY leaves must be undefined in the worker. A defined value here
+    # (especially the REAL one while the window is spoofed) is a new I1-class
+    # coherence tell -- FAIL, do not paper over.
+    window_only_types = {
+        "vendor": r["vendor_type"],
+        "vendorSub": r["vendorSub_type"],
+        "productSub": r["productSub_type"],
+        "maxTouchPoints": r["maxTouchPoints_type"],
+    }
+    exposed_leaks = {k: t for k, t in window_only_types.items() if t != "undefined"}
+    undefined_ok = not exposed_leaks
+    results[N8] = spoofed_ok and undefined_ok
+    notes.append(
+        f"N8 worker spoofed: platform={r['platform']!r} appVersion={r['appVersion']!r} "
+        f"deviceMemory={r['deviceMemory']!r} language={r['language']!r} languages={r['languages']!r}; "
+        f"worker window-only typeof: vendor={r['vendor_type']} vendorSub={r['vendorSub_type']} "
+        f"productSub={r['productSub_type']} maxTouchPoints={r['maxTouchPoints_type']}")
+    if spoof_mismatches:
+        notes.append(f"N8: shared-mixin leaves NOT spoofed in worker: {spoof_mismatches}")
+    if exposed_leaks:
+        notes.append(f"N8: window-only leaf EXPOSED in worker (NEW I1-class tell, needs a "
+                     f"shared-mixin hook): {exposed_leaks}")
+
+EXPECTED = 8
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")

@@ -153,7 +153,7 @@ index 9da1f2bf93..71d4a3c057 100644
    // the platform with a frozen platform to distinguish between
    // mobile and desktop when ReduceUserAgent is enabled.
 diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-index 05fa33e456..1bc972820a 100644
+index 05fa33e456..9b21f16dd4 100644
 --- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
 @@ -4,6 +4,9 @@
@@ -166,12 +166,14 @@ index 05fa33e456..1bc972820a 100644
  #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
  #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
  #include "third_party/blink/renderer/core/dom/document.h"
-@@ -12,6 +15,12 @@
+@@ -12,6 +15,14 @@
  namespace blink {
  
  float NavigatorDeviceMemory::deviceMemory() const {
 +  // Context-less mixin (shared by Navigator and WorkerNavigator): resolve the
 +  // process-global scope directly, as NavigatorID does. No-op when absent.
++  // ScopeFor ignores its argument today (returns GlobalScope()); if it ever
++  // becomes context-sensitive this context-less mixin hook must be revisited.
 +  if (std::optional<double> configured = camoucfg::GetDouble(
 +          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorDeviceMemory)) {
 +    return static_cast<float>(*configured);
@@ -180,7 +182,7 @@ index 05fa33e456..1bc972820a 100644
  }
  
 diff --git a/third_party/blink/renderer/core/frame/navigator_id.cc b/third_party/blink/renderer/core/frame/navigator_id.cc
-index 22243ebf5e..5c656cf49c 100644
+index 22243ebf5e..256db394ae 100644
 --- a/third_party/blink/renderer/core/frame/navigator_id.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_id.cc
 @@ -33,6 +33,9 @@
@@ -193,14 +195,17 @@ index 22243ebf5e..5c656cf49c 100644
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
  
-@@ -45,14 +48,32 @@
+@@ -45,20 +48,50 @@
  namespace blink {
  
  String NavigatorID::appCodeName() {
 +  // NavigatorID is a context-less mixin shared by Navigator and
 +  // WorkerNavigator, so it has no ExecutionContext to resolve; ScopeFor
 +  // ignores its argument today (every context maps to the one process-global
-+  // configuration), so nullptr resolves the same scope every clean site does.
++  // configuration, returning GlobalScope()), so nullptr resolves the same scope
++  // every clean site does. If ScopeFor ever becomes context-sensitive, these
++  // context-less mixin hooks (here and navigator_device_memory.cc) must be
++  // revisited.
 +  // appCodeName/appName/product are expert-override-only near-constants: the
 +  // key defaults absent, so real Chrome's fixed strings are returned unchanged.
 +  if (std::optional<std::string> configured = camoucfg::GetString(
@@ -226,7 +231,22 @@ index 22243ebf5e..5c656cf49c 100644
    // Version is everything in the user agent string past the "Mozilla/" prefix.
    const String& agent = userAgent();
    return agent.substr(agent.find('/') + 1);
-@@ -84,6 +105,10 @@ String NavigatorID::platform() const {
+ }
+ 
+ String NavigatorID::platform() const {
++  // Camoucrome platform override, applied here as well: NavigatorBase::platform()
++  // has an #if(IS_ANDROID)-guarded early-return to NavigatorID::platform() that
++  // bypasses the window hook, so hooking only NavigatorBase would leak the real
++  // platform on that path. This closes that #if-guard bypass. ScopeFor(nullptr):
++  // context-less mixin, same idiom as the sibling hooks above. No-op when absent.
++  if (std::optional<std::string> configured = camoucfg::GetString(
++          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorPlatform)) {
++    return String::FromUtf8(*configured);
++  }
+ #if BUILDFLAG(IS_MAC)
+   // Match Safari and Mozilla on Mac x86.
+   return "MacIntel";
+@@ -84,6 +117,10 @@ String NavigatorID::platform() const {
  }
  
  String NavigatorID::product() {

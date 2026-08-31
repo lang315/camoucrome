@@ -283,6 +283,16 @@ command in Camoucrome**, on the same reasoning D1 uses for presenting as Chrome:
 that lets a user desynchronise their own fingerprint is a liability, not a feature, in a
 browser whose job is to present one coherent identity.
 
+> **Note (SP1b review):** Two upstream `browser_tests`,
+> `chrome/browser/client_hints/client_hints_browsertest.cc` (`ToggleRequestTabletSite`)
+> and `chrome/browser/referrer_policy_browsertest.cc`, assert that the tablet toggle
+> changes the user agent; they will FAIL if upstream `browser_tests` is ever run against
+> this fork. This fork's CI does not run `browser_tests` — it runs `build-tester`,
+> `service-tester`, and `tests` — so these failures are not observed by CI and are
+> accepted. Note also that the "Request tablet site" menu item itself remains
+> visible-but-inert after the fix: the goal was to remove the desync *capability* (the
+> early return before `SetAndroidOsForTabletSite()`), not the UI element. Accepted.
+
 ### SP1 populates the OS inputs; it does not derive the OS
 
 Several later sub-projects need to know which operating system the current config is
