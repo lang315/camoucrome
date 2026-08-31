@@ -4,12 +4,19 @@ detected via canvas measureText -- it resolves exactly as the generic fallback
 would, in both the window and a dedicated Worker/OffscreenCanvas -- while a
 listed family and the CSS generics themselves render unchanged.
 
-Three criteria, driven with Playwright's sync API over content_shell's CDP via
+Five criteria, driven with Playwright's sync API over content_shell's CDP via
 lib_shell.session -- the same shape as verify_sp1b.py: a fault in a session
 becomes a FAIL line, never a traceback that discards results already
-collected. No echo_server/secure-context origin is needed -- measureText and
-Worker/OffscreenCanvas are not [SecureContext]-gated, so every session runs on
-content_shell's default about:blank page (session()'s navigate_to=None).
+collected. F1-F4 need no echo_server/secure-context origin -- measureText,
+Worker/OffscreenCanvas, and document.fonts.check()/load() are not
+[SecureContext]-gated, so those sessions run on content_shell's default
+about:blank page (session()'s navigate_to=None). F5 is the exception:
+window.queryLocalFonts is [SecureContext]-gated
+(modules/font_access/window_font_access.idl), so it runs in its own session
+navigated to a localhost origin via echo_server -- the same pattern
+verify_sp1b.py uses for navigator.deviceMemory (N3), and for the same reason:
+about:blank's opaque origin is not potentially-trustworthy, so the API is
+simply absent there regardless of whether the runtime feature is enabled.
 
   F1 window probe: with LISTED_FAMILY (present on the host, in fonts:list)
      and UNLISTED_FAMILY (present on the host, NOT in fonts:list) requested
@@ -55,6 +62,17 @@ content_shell's default about:blank page (session()'s navigate_to=None).
      result was negative (see the note below): F4 is therefore a standing
      regression assertion, not a before/after gate check, and NO Blink code
      was changed for it -- see the note below for why.
+  F5 Local Font Access disabled (Task 4): `typeof window.queryLocalFonts`,
+     measured on a localhost origin (see the echo_server note above), is
+     asserted to be "undefined". The FontAccess runtime feature
+     (third_party/blink/renderer/platform/runtime_enabled_features.json5)
+     ships its `default` status as "stable", which installs
+     window.queryLocalFonts -- a local-font enumeration API real desktop
+     Chrome exposes but that is unreachable from an automated/headless
+     context, itself a fingerprintable tell. Task 4 flips `default` to ""
+     (disabled), which removes the binding entirely at build time -- not a
+     stub that rejects when called, the property is simply absent, same as
+     it is on Android's own "" status. F5 measures exactly that absence.
 
 QUOTING NOTE (why F1/F3 quote their family names but F2 does not): a
 font-family value is only parsed as one of the five CSS-generic keywords when
@@ -104,11 +122,30 @@ this task's brief explicitly says not to ship. No Blink file was modified for
 Task 3; F4 stands as a regression assertion (see its body below) that this
 stays true and that configuring fonts:list adds no new observable behaviour
 on this path.
+
+F5 RED-FIRST FINDING (Task 4): first written and run on about:blank (the
+same session as F1-F4, navigate_to=None) it measured "undefined" even
+PRE-EDIT, with FontAccess still "stable" -- a false GREEN. Reading
+window_font_access.idl explained why: the interface is `[SecureContext]`,
+and about:blank's opaque origin is not potentially-trustworthy, so
+queryLocalFonts is absent there independent of the runtime feature's
+status -- indistinguishable from "the feature is disabled" by this
+probe alone. This is the exact "guard that only answers the question it
+was asked" trap this repo's CLAUDE.md warns about, caught empirically
+before trusting the RED-first result rather than after. Moved to its own
+session navigated to a localhost origin via echo_server (matching N3's
+navigator.deviceMemory pattern in verify_sp1b.py): run against the CURRENT
+(pre-edit) content_shell there, F5 correctly goes RED -- `typeof
+window.queryLocalFonts` measures "function", not "undefined". After the
+json5 edit lands and content_shell rebuilds (runtime_enabled_features.json5
+is codegen input, so this is a full regen, not a stale .o no-op), F5 goes
+GREEN.
 """
 
 import json
 import sys
 
+import echo_server
 import lib_shell
 
 # Two REAL families confirmed present on the build host (`fc-list : family`):
@@ -201,6 +238,16 @@ LOAD_JS = """() => Promise.all([
   loadUnlisted: u.length, loadListed: l.length, loadAbsent: a.length,
 }))""" % (UNLISTED_FAMILY, LISTED_FAMILY)
 
+# F5 (Task 4): the FontAccess feature's binding itself -- present ("function")
+# pre-edit, absent ("undefined") once `default` is disabled in
+# runtime_enabled_features.json5. No CAMOU_CONFIG dependency -- fonts:list
+# plays no part in whether this API surface exists. Run on its OWN
+# echo_server localhost session, not the CONFIG session F1-F4 share: the IDL
+# is [SecureContext], so on about:blank (F1-F4's navigate_to=None page) it
+# reads "undefined" regardless of the runtime feature's status -- see the
+# RED-FIRST FINDING above.
+QLF_JS = """() => typeof window.queryLocalFonts"""
+
 
 def failed(obj, err):
     return obj is None or err is not None
@@ -210,10 +257,10 @@ def errtxt(obj, err):
     return f"{type(err).__name__}: {err}" if err is not None else "no value"
 
 
-# One session, one fonts:list config, three expressions: the window read
-# (F1+F2), the worker read (F3), and the configured check() read (F4). A fault
-# becomes (None, exc), never a traceback that discards results already
-# collected.
+# One session, one fonts:list config, four expressions: the window read
+# (F1+F2), the worker read (F3), the configured check() read (F4), and the
+# configured load() read (F4). A fault becomes (None, exc), never a
+# traceback that discards results already collected.
 vals, err = lib_shell.session(CONFIG, [WINDOW_JS, WORKER_JS, CHECK_JS, LOAD_JS])
 if err is not None:
     win, worker, chk, ld = None, None, None, None
@@ -221,6 +268,20 @@ if err is not None:
 else:
     win, worker, chk, ld = vals[0], vals[1], vals[2], vals[3]
     win_e = worker_e = chk_e = ld_e = None
+
+# F5's own session: window.queryLocalFonts is [SecureContext]-gated, so it
+# needs a potentially-trustworthy origin (localhost via echo_server), not
+# F1-F4's about:blank -- see the RED-FIRST FINDING above. No fonts:list
+# config is relevant to this probe.
+QLF_BASE_URL, _qlf_headers_for, _qlf_stop = echo_server.start([])
+try:
+    qlf_vals, qlf_err = lib_shell.session(None, [QLF_JS], navigate_to=QLF_BASE_URL)
+finally:
+    _qlf_stop()
+if qlf_err is not None:
+    qlf, qlf_e = None, qlf_err
+else:
+    qlf, qlf_e = qlf_vals[0], None
 
 # F4's second half: the SAME check() read taken in a fresh, unconfigured
 # (stock, no CAMOU_CONFIG) session -- a separate launch, since config is fixed
@@ -240,6 +301,7 @@ F1 = "F1 window probe: listed family distinct from fallback; unlisted family equ
 F2 = "F2 generics render: serif != monospace generics, both non-zero, under an active fonts:list"
 F3 = "F3 worker parity: OffscreenCanvas reproduces F1's verdict AND matches the window's F1 numbers"
 F4 = "F4 availability non-probe: check()/load() can't tell unlisted-present from absent; fonts:list changes nothing they report"
+F5 = "F5 Local Font Access disabled: typeof window.queryLocalFonts === 'undefined'"
 
 # --- F1 ---
 if failed(win, win_e):
@@ -333,7 +395,15 @@ else:
             f"load[cfg_np={load_not_a_probe_configured} stock_np={load_not_a_probe_stock} "
             f"no_new_surface={load_no_new_surface}]")
 
-EXPECTED = 4
+# --- F5 ---
+if failed(qlf, qlf_e):
+    results[F5] = False
+    notes.append(f"F5: queryLocalFonts probe {errtxt(qlf, qlf_e)}")
+else:
+    results[F5] = qlf == "undefined"
+    notes.append(f"F5 measured: typeof window.queryLocalFonts = {qlf!r}")
+
+EXPECTED = 5
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
