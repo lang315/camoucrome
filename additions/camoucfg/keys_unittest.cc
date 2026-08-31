@@ -30,12 +30,6 @@ TEST(CamoucfgKeysTest, EveryKeyIsUnique) {
 // collide with a future namespace.
 TEST(CamoucfgKeysTest, EveryKeyIsNamespaced) {
   for (std::string_view key : kAllKeys) {
-    // kFonts is the one deliberate exception: it must match Camoufox's
-    // font-hijacker key name exactly ("fonts", no separator) for config
-    // byte-compatibility, which is the naming rule's whole reason to bend.
-    if (key == std::string_view(kFonts)) {
-      continue;
-    }
     EXPECT_NE(key.find_first_of(".:"), std::string_view::npos)
         << "key is not namespaced: " << key;
     EXPECT_EQ(key.find(' '), std::string_view::npos)

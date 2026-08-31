@@ -233,8 +233,9 @@ inline constexpr char kScreenColorDepth[] = "screen.colorDepth";
 // The font allowlist (SP4-fonts). An array of family names; a specific
 // (non-generic) family absent from the list is made unresolvable so measureText
 // cannot detect it. Absent key => every host font visible (rule 5). Case-
-// insensitive. Same key name as Camoufox's font-hijacker.
-inline constexpr char kFonts[] = "fonts";
+// insensitive. Colon-namespaced per the naming rule (a synthetic control with no
+// direct JS property path); the future jitter key is fonts:spacing_seed.
+inline constexpr char kFonts[] = "fonts:list";
 
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.

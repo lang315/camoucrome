@@ -131,7 +131,7 @@ a niche vector, and is grouped with the Layer-2 deferral.
 
 ### Config helper
 
-`kFonts` key (`"fonts"`, array of strings) + a small **new** camoucfg accessor
+`kFonts` key (`"fonts:list"`, array of strings) + a small **new** camoucfg accessor
 `bool camoucfg::IsFontAllowed(const ConfigScope&, std::string_view family)` —
 returns `true` when no `fonts` key is set (rule 5 — every host font visible) or
 the family is in the list (case-insensitive). Unlike screen/navigator (which
@@ -170,8 +170,8 @@ is the SP1b/SP3b worker-parity discipline applied to fonts.
 
 ## Config
 
-New key **`fonts`** — an array of strings (family names), read via the existing
-`camoucfg::GetStringList(scope, keys::kFonts)`. Same key name as Camoufox. The
+New key **`fonts:list`** (`kFonts`) — an array of strings (family names), read via the existing
+`camoucfg::GetStringList(scope, keys::kFonts)`. Colon-namespaced per the naming rule (Camoufox uses bare `fonts`; the convention requires a colon for a synthetic control). The
 allowlist match is **case-insensitive** (Camoufox lowercases both sides —
 `GetStringListLower`); camoucfg has no lowercasing list accessor, so the gate
 lowercases inline (or a small `camoucfg` helper is added — decide in the plan; a
