@@ -37,6 +37,24 @@ content_shell's default about:blank page (session()'s navigate_to=None).
      answers the question it was asked" trap this repo's CLAUDE.md warns
      about. F3 checks both, so it cannot pass by the two sides agreeing to be
      equally wrong.
+  F4 availability non-probe (Task 3): document.fonts.check() -- which for a
+     plain, non-generic family routes through
+     FontSelector::IsPlatformFamilyMatchAvailable ->
+     FontCache::IsPlatformFamilyMatchAvailable -> GetFontPlatformData(),
+     entirely bypassing Task 2's FontFallbackList gate -- is measured directly
+     to see whether it can distinguish UNLISTED_FAMILY (host-present, hidden
+     by the metric gate) from a font name that plainly does not exist. F4
+     asserts NO observable difference, on two independent axes: (a)
+     checkUnlisted == checkAbsent, in both a fonts:list-configured session and
+     an unconfigured (stock) one -- check() cannot tell "present but hidden"
+     from "never existed"; (b) the full {checkUnlisted, checkListed,
+     checkAbsent} triple is IDENTICAL between the configured and stock
+     sessions -- turning fonts:list on introduces no new observable behaviour
+     on this path at all. This is Task 2's own scenario probed through a
+     different predicate, RED-first exactly like F1-F3, but the RED-first
+     result was negative (see the note below): F4 is therefore a standing
+     regression assertion, not a before/after gate check, and NO Blink code
+     was changed for it -- see the note below for why.
 
 QUOTING NOTE (why F1/F3 quote their family names but F2 does not): a
 font-family value is only parsed as one of the five CSS-generic keywords when
@@ -60,6 +78,32 @@ RED -- UNLISTED_FAMILY's measured width differs from the fallback in BOTH the
 window and the worker, because the host face still resolves with no gate to
 stop it. F2 already PASSES unpatched (generics were never gated). After both
 selector edits land and content_shell rebuilds, all three go GREEN.
+
+F4 RED-FIRST FINDING (Task 3, no gate added): probed empirically against the
+CURRENT content_shell (Task 2's gate already landed) with a scratch script
+before writing this criterion. Measured, with fonts:list=[LISTED_FAMILY]:
+  checkUnlisted (UNLISTED_FAMILY, host-present, hidden by the metric gate) = True
+  checkListed   (LISTED_FAMILY)                                            = True
+  checkAbsent   ("NoSuchFontXYZ123", does not exist on the host)           = True
+and identically True/True/True with NO CAMOU_CONFIG at all (stock). F4 could
+NOT be made RED: check() answers the same for a real-but-hidden family and a
+font name that flatly does not exist, configured or not. Reading
+FontFaceSet::check (font_face_set.cc:229-266) explains why this is not a
+coincidence: for a plain, non-generic family with no matching @font-face rule
+on the page, IsPlatformFamilyMatchAvailable's return value never reaches the
+result either way --
+  * True  -> `continue` (family treated as satisfied, loop moves on)
+  * False -> `font_face_cache->Get(...)` returns null (nothing was ever
+    registered under this name) -> the `face && ...` guard is false -> the
+    loop ALSO just continues
+so `check()` returns true regardless of what the platform-match predicate
+answers, for any family string a page did not itself register via
+@font-face. Gating IsPlatformFamilyMatchAvailable would change a return value
+that this call site provably discards -- an untestable no-op guard, which
+this task's brief explicitly says not to ship. No Blink file was modified for
+Task 3; F4 stands as a regression assertion (see its body below) that this
+stays true and that configuring fonts:list adds no new observable behaviour
+on this path.
 """
 
 import json
@@ -131,6 +175,17 @@ WORKER_JS = """() => new Promise((resolve, reject) => {
   } catch (e) { reject(e); }
 })""" % (LISTED_FAMILY, UNLISTED_FAMILY)
 
+# F4: document.fonts.check() against the same three families -- the unlisted
+# (host-present, gate-hidden) family, the listed one, and a name that plainly
+# does not exist on the host. Run once inside the fonts:list-configured
+# session (with WINDOW_JS/WORKER_JS) and once more in a separate, unconfigured
+# (stock, CAMOU_CONFIG unset) session -- F4 compares both.
+CHECK_JS = """() => ({
+  checkUnlisted: document.fonts.check('40px "%s"'),
+  checkListed:   document.fonts.check('40px "%s"'),
+  checkAbsent:   document.fonts.check('40px "NoSuchFontXYZ123"'),
+})""" % (UNLISTED_FAMILY, LISTED_FAMILY)
+
 
 def failed(obj, err):
     return obj is None or err is not None
@@ -140,16 +195,26 @@ def errtxt(obj, err):
     return f"{type(err).__name__}: {err}" if err is not None else "no value"
 
 
-# One session, one fonts:list config, two expressions: the window read (F1+F2)
-# and the worker read (F3). A fault becomes (None, exc), never a traceback that
-# discards results already collected.
-vals, err = lib_shell.session(CONFIG, [WINDOW_JS, WORKER_JS])
+# One session, one fonts:list config, three expressions: the window read
+# (F1+F2), the worker read (F3), and the configured check() read (F4). A fault
+# becomes (None, exc), never a traceback that discards results already
+# collected.
+vals, err = lib_shell.session(CONFIG, [WINDOW_JS, WORKER_JS, CHECK_JS])
 if err is not None:
-    win, worker = None, None
-    win_e = worker_e = err
+    win, worker, chk = None, None, None
+    win_e = worker_e = chk_e = err
 else:
-    win, worker = vals[0], vals[1]
-    win_e = worker_e = None
+    win, worker, chk = vals[0], vals[1], vals[2]
+    win_e = worker_e = chk_e = None
+
+# F4's second half: the SAME check() read taken in a fresh, unconfigured
+# (stock, no CAMOU_CONFIG) session -- a separate launch, since config is fixed
+# per-session.
+stock_vals, stock_err = lib_shell.session(None, [CHECK_JS])
+if stock_err is not None:
+    chk_stock, chk_stock_e = None, stock_err
+else:
+    chk_stock, chk_stock_e = stock_vals[0], None
 
 results = {}
 notes = []
@@ -157,6 +222,7 @@ notes = []
 F1 = "F1 window probe: listed family distinct from fallback; unlisted family equals fallback (hidden)"
 F2 = "F2 generics render: serif != monospace generics, both non-zero, under an active fonts:list"
 F3 = "F3 worker parity: OffscreenCanvas reproduces F1's verdict AND matches the window's F1 numbers"
+F4 = "F4 availability non-probe: check() can't tell unlisted-present from absent; fonts:list changes nothing it reports"
 
 # --- F1 ---
 if failed(win, win_e):
@@ -217,7 +283,27 @@ else:
             f"worker_unlisted_hidden(unlisted==mono)={worker_unlisted_hidden} "
             f"listed_match={listed_match} unlisted_match={unlisted_match} mono_match={mono_match}")
 
-EXPECTED = 3
+# --- F4 ---
+if failed(chk, chk_e) or failed(chk_stock, chk_stock_e):
+    results[F4] = False
+    notes.append(f"F4: configured={errtxt(chk, chk_e)} stock={errtxt(chk_stock, chk_stock_e)}")
+else:
+    # (a) not a probe: check() answers the SAME for the unlisted (gate-hidden,
+    # host-present) family as for a name that plainly does not exist -- in
+    # both the configured and the stock session.
+    not_a_probe_configured = chk["checkUnlisted"] == chk["checkAbsent"]
+    not_a_probe_stock = chk_stock["checkUnlisted"] == chk_stock["checkAbsent"]
+    # (b) no new surface: turning fonts:list on changes nothing check() reports.
+    no_new_surface = chk == chk_stock
+    results[F4] = not_a_probe_configured and not_a_probe_stock and no_new_surface
+    notes.append(f"F4 measured: configured={chk!r} stock={chk_stock!r}")
+    if not results[F4]:
+        notes.append(
+            f"F4: not_a_probe_configured(checkUnlisted==checkAbsent)={not_a_probe_configured} "
+            f"not_a_probe_stock={not_a_probe_stock} "
+            f"no_new_surface(configured==stock)={no_new_surface}")
+
+EXPECTED = 4
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
