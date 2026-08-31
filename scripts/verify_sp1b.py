@@ -25,16 +25,27 @@ collected. No SwiftShader: these are navigator scalars, no GL context involved.
      configured value is chosen so it cannot coincide with that real number.
   N4 near-constants: UNCONFIGURED, appCodeName==="Mozilla", appName==="Netscape",
      product==="Gecko", productSub==="20030107", vendor==="Google Inc.",
-     vendorSub===""; and one CONFIGURED example (navigator.vendor) is reflected.
+     vendorSub===""; and CONFIGURED, all six keys (appCodeName/appName/product/
+     productSub/vendor/vendorSub) are individually reflected.
   N5 maxTouchPoints: with navigator.maxTouchPoints=5, navigator.maxTouchPoints
      === 5 (hooked in NavigatorEvents::maxTouchPoints, core/events/); the
      unconfigured value is recorded. NOT deferred -- maxTouchPoints is a clean
      single accessor, so this is a real pass.
+  N6 worker platform parity: a DEDICATED worker reads self.navigator.platform
+     (WorkerNavigator has no platform() of its own, so it resolves through
+     NavigatorBase::platform()); with navigator.platform="Win32" set it reads
+     "Win32", equal to the window. RED against a build without the
+     NavigatorBase::platform() hook, where the worker leaks the real host
+     platform (e.g. "Linux x86_64") while the window is already spoofed -- the
+     self-introduced coherence tell this criterion closes.
 
 RED-FIRST: run this against a stock/SP3b content_shell (no SP1b edit) and the
-configured cases N1-N5 FAIL -- the required red evidence. The configured
-deviceMemory (N3) is deliberately a bucket the build box does not report, so a
-real (unhooked) read cannot coincidentally match it.
+configured cases N1-N5 FAIL -- the required red evidence. N6 is RED against a
+build carrying the four window-path SP1b edits but NOT the
+NavigatorBase::platform() hook: the window is already spoofed, so the worker
+leaking the real host platform is the coherence tell N6 exists to catch. The
+configured deviceMemory (N3) is deliberately a bucket the build box does not
+report, so a real (unhooked) read cannot coincidentally match it.
 
 Out of scope here (other SP1b tasks): navigator.language/languages (Task 3) and
 the "Request tablet site" desync command (Task 4). Coherence between these
@@ -69,7 +80,6 @@ N2_APPVERSION = "5.0 (Windows NT 10.0; Win64; x64)"
 # value is captured by the unconfigured read below and asserted != this, so the
 # RED run cannot pass N3 by coincidence.
 N3_DEVICEMEMORY = 2
-N4_VENDOR = "Camou Test Vendor"
 N5_MAXTOUCHPOINTS = 5
 
 # Real Chrome's fixed near-constant strings, identical on every platform.
@@ -82,11 +92,52 @@ NEAR_CONSTANT_DEFAULTS = {
     "vendorSub": "",
 }
 
+# One config that overrides all six near-constants at once, each to a distinct
+# non-default value, so N4 exercises the CONFIGURED direction for every one of
+# them (M1) rather than vendor alone. The config key is "navigator.<prop>" and
+# the read property is that same <prop>.
+NEAR_CONSTANT_OVERRIDES = {
+    "navigator.appCodeName": "CamouCodeName",
+    "navigator.appName": "CamouAppName",
+    "navigator.product": "CamouProduct",
+    "navigator.productSub": "20200101",
+    "navigator.vendor": "Camou Test Vendor",
+    "navigator.vendorSub": "camou-sub",
+}
+
+# N6: a dedicated worker reports self.navigator.platform. WorkerNavigator has no
+# platform() override, so this resolves through NavigatorBase::platform() -- the
+# shared path the fix hooks. Reads the window's platform in the same probe so
+# the assertion is worker === window === configured, not just a bare literal.
+WORKER_PLATFORM_JS = """() => new Promise((resolve, reject) => {
+  const src = `self.onmessage = () => {
+    try { self.postMessage({worker: self.navigator.platform}); }
+    catch (e) { self.postMessage({worker: 'err:' + e}); }
+  };`;
+  try {
+    const w = new Worker(URL.createObjectURL(
+      new Blob([src], {type: 'text/javascript'})));
+    w.onmessage = (e) => resolve({main: navigator.platform, worker: e.data.worker});
+    w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    w.postMessage('go');
+  } catch (e) { reject(e); }
+})"""
+
 
 def read(config, base_url):
     """One content_shell session on the localhost origin. Returns (obj, err);
     any fault becomes a FAIL, never a traceback."""
     vals, err = lib_shell.session(config, [READ_JS], navigate_to=base_url)
+    if err is not None:
+        return None, err
+    return vals[0], None
+
+
+def read_worker(config, base_url):
+    """One session that spawns a dedicated worker and returns {main, worker}
+    platform strings. A broken worker path leaves the probe promise unresolved,
+    which lib_shell.session turns into an (obj=None, err) FAIL, not a hang."""
+    vals, err = lib_shell.session(config, [WORKER_PLATFORM_JS], navigate_to=base_url)
     if err is not None:
         return None, err
     return vals[0], None
@@ -103,20 +154,23 @@ try:
     # Unconfigured baseline (feeds N1-N5 real-value checks and N4 defaults).
     base, base_e = read(None, BASE_URL)
 
-    # Configured sessions, one focused key each.
+    # Configured sessions, one focused key each (N4 sets all six at once).
     p, p_e = read(json.dumps({"navigator.platform": N1_PLATFORM}), BASE_URL)
     a, a_e = read(json.dumps({"navigator.appVersion": N2_APPVERSION}), BASE_URL)
     d, d_e = read(json.dumps({"navigator.deviceMemory": N3_DEVICEMEMORY}), BASE_URL)
-    v, v_e = read(json.dumps({"navigator.vendor": N4_VENDOR}), BASE_URL)
+    v, v_e = read(json.dumps(NEAR_CONSTANT_OVERRIDES), BASE_URL)
     m, m_e = read(json.dumps({"navigator.maxTouchPoints": N5_MAXTOUCHPOINTS}), BASE_URL)
+    # N6: worker platform parity with the window's spoofed platform.
+    w6, w6_e = read_worker(json.dumps({"navigator.platform": N1_PLATFORM}), BASE_URL)
 finally:
     _stop()
 
 N1 = "N1 navigator.platform: configured exact; unconfigured real non-empty string"
 N2 = "N2 navigator.appVersion: configured exact; unconfigured real non-empty string"
 N3 = "N3 navigator.deviceMemory: configured exact; unconfigured a positive number (SecureContext)"
-N4 = "N4 near-constants: six Chrome defaults intact unconfigured; one configured (vendor) reflected"
+N4 = "N4 near-constants: six Chrome defaults intact unconfigured; all six configured reflected"
 N5 = "N5 navigator.maxTouchPoints: configured exact (hooked, not deferred); unconfigured recorded"
+N6 = "N6 worker navigator.platform: dedicated worker sees the spoofed platform (equal to the window)"
 
 
 def failed(obj, err):
@@ -183,15 +237,21 @@ else:
     default_mismatches = {k: base[k] for k, want in NEAR_CONSTANT_DEFAULTS.items()
                           if base[k] != want}
     defaults_ok = not default_mismatches
-    vendor_configured = v["vendor"] == N4_VENDOR
-    results[N4] = defaults_ok and vendor_configured
+    # Configured direction for ALL SIX near-constants (M1), not vendor alone.
+    override_mismatches = {}
+    for key, want in NEAR_CONSTANT_OVERRIDES.items():
+        prop = key.split(".", 1)[1]
+        if v[prop] != want:
+            override_mismatches[prop] = {"got": v[prop], "want": want}
+    overrides_ok = not override_mismatches
+    results[N4] = defaults_ok and overrides_ok
     if not defaults_ok:
         notes.append(f"N4: near-constant defaults changed: {default_mismatches}")
-    if not vendor_configured:
-        notes.append(f"N4: configured vendor got {v['vendor']!r}, want {N4_VENDOR!r}")
+    if not overrides_ok:
+        notes.append(f"N4: configured overrides not reflected: {override_mismatches}")
     if results[N4]:
         notes.append("N4 defaults intact (Mozilla/Netscape/Gecko/20030107/Google Inc./'') "
-                     "and configured vendor reflected")
+                     "and all six configured overrides reflected")
 
 # --- N5 maxTouchPoints ---
 if failed(base, base_e) or failed(m, m_e):
@@ -207,7 +267,21 @@ else:
         notes.append(f"N5: exact={exact} (got {m['maxTouchPoints']!r}, want {N5_MAXTOUCHPOINTS}) "
                      f"discriminating(real!=configured)={discriminating}")
 
-EXPECTED = 5
+# --- N6 worker platform parity ---
+if failed(w6, w6_e):
+    results[N6] = False
+    notes.append(f"N6: worker probe {errtxt(w6, w6_e)}")
+else:
+    worker_ok = w6["worker"] == N1_PLATFORM
+    main_ok = w6["main"] == N1_PLATFORM
+    parity = w6["worker"] == w6["main"]
+    results[N6] = worker_ok and main_ok and parity
+    notes.append(f"N6 worker platform={w6['worker']!r} window platform={w6['main']!r}")
+    if not results[N6]:
+        notes.append(f"N6: worker=={N1_PLATFORM!r}? {worker_ok}; window=={N1_PLATFORM!r}? {main_ok}; "
+                     f"parity(worker==window)? {parity}")
+
+EXPECTED = 6
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")

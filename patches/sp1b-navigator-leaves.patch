@@ -25,6 +25,32 @@ index a57561775c..0ebcd52cdc 100644
    LocalDOMWindow* window = navigator.DomWindow();
    return window ? window->GetFrame()->GetSettings()->GetMaxTouchPoints() : 0;
  }
+diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+index c9332e1fdf..f94e3e6a3b 100644
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+@@ -62,7 +62,20 @@ String NavigatorBase::platform() const {
+     return NavigatorID::platform();
+   }
+ #endif
+-  return GetReducedNavigatorPlatform();
++  String platform = GetReducedNavigatorPlatform();
++
++  // Camoucrome configuration is authoritative. WorkerNavigator does not
++  // override platform(), so this shared path is the only hook that reaches a
++  // worker; applying the override here keeps a worker's navigator.platform
++  // coherent with the window's (Navigator::platform() applies the same key on
++  // the window path). No-op when the key is absent, so the real reduced
++  // platform plus any DevTools override on the window survives unchanged.
++  if (std::optional<std::string> configured = camoucfg::GetString(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kNavigatorPlatform)) {
++    platform = String::FromUtf8(*configured);
++  }
++  return platform;
+ }
+ 
+ void NavigatorBase::Trace(Visitor* visitor) const {
 diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
 index 9da1f2bf93..71d4a3c057 100644
 --- a/third_party/blink/renderer/core/frame/navigator.cc
