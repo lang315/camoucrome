@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/strings/string_util.h"
 #include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config_internal.h"
 
@@ -50,6 +51,36 @@ std::vector<std::string> GetStringList(const ConfigScope& scope,
 
 bool HasKey(const ConfigScope& scope, std::string_view key) {
   return internal::HasKeyIn(internal::ParsedConfig(), key);
+}
+
+namespace internal {
+
+namespace {
+bool AsciiEqualsIgnoreCase(std::string_view a, std::string_view b) {
+  if (a.size() != b.size())
+    return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (base::ToLowerASCII(a[i]) != base::ToLowerASCII(b[i]))
+      return false;
+  }
+  return true;
+}
+}  // namespace
+
+bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family) {
+  if (!HasKeyIn(cfg, keys::kFonts))
+    return true;  // rule 5: unconfigured => every host font visible.
+  for (const std::string& allowed : GetStringListFrom(cfg, keys::kFonts)) {
+    if (AsciiEqualsIgnoreCase(allowed, family))
+      return true;
+  }
+  return false;
+}
+
+}  // namespace internal
+
+bool IsFontAllowed(const ConfigScope& scope, std::string_view family) {
+  return internal::IsFontAllowedFrom(internal::ParsedConfig(), family);
 }
 
 std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope) {

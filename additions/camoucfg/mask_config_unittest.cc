@@ -216,5 +216,39 @@ TEST(MaskConfigTest, AbsentKeysReturnNullopt) {
   EXPECT_FALSE(camoucfg::HasKey(scope, "nope.not.here"));
 }
 
+// camoucfg::IsFontAllowed(scope, family) always reads the process-wide
+// ParsedConfig() singleton (parsed once, on first use, for the life of the
+// binary -- same as every other camoucfg:: getter above), so it cannot be
+// driven through three different "fonts" configurations within one test
+// binary. IsFontAllowedFrom is the testable core that takes an
+// already-parsed base::DictValue instead, the same split GettersTest above
+// and gl_params_unittest.cc's GLParamsTest use for exactly this reason.
+TEST(IsFontAllowedTest, AbsentKeyAllowsEveryFamily) {
+  base::DictValue cfg = ParseConfig("{}", /*strict=*/false);
+  EXPECT_TRUE(IsFontAllowedFrom(cfg, "Arial"));
+}
+
+TEST(IsFontAllowedTest, PresentListAllowsMembersCaseInsensitively) {
+  base::DictValue cfg =
+      ParseConfig(R"({"fonts": ["Arial", "Helvetica"]})", /*strict=*/false);
+  EXPECT_TRUE(IsFontAllowedFrom(cfg, "Arial"));
+  EXPECT_TRUE(IsFontAllowedFrom(cfg, "arial"));
+  EXPECT_FALSE(IsFontAllowedFrom(cfg, "Calibri"));
+}
+
+TEST(IsFontAllowedTest, PresentButEmptyListAllowsNoFamily) {
+  base::DictValue cfg = ParseConfig(R"({"fonts": []})", /*strict=*/false);
+  EXPECT_FALSE(IsFontAllowedFrom(cfg, "Arial"));
+}
+
+// Exercises the real public entry point end-to-end, on the one scenario the
+// process-wide singleton can safely stand in for: the same "nothing sets
+// this key" assumption MaskConfigTest.AbsentKeysReturnNullopt above already
+// makes about the test environment.
+TEST(IsFontAllowedTest, PublicApiForwardsForTheAbsentCase) {
+  EXPECT_TRUE(
+      camoucfg::IsFontAllowed(camoucfg::GlobalScope(), "Arial"));
+}
+
 }  // namespace
 }  // namespace camoucfg::internal

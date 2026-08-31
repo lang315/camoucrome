@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+#include "base/values.h"
+
 namespace camoucfg {
 
 // Identifies which configuration a lookup reads.
@@ -60,6 +62,11 @@ std::optional<bool> GetBool(const ConfigScope& scope, std::string_view key);
 std::vector<std::string> GetStringList(const ConfigScope& scope,
                                        std::string_view key);
 
+// True when |family| may resolve to a real host face: no "fonts" key is set
+// (every host font visible), or |family| is in the list (case-insensitive).
+// The gate applies this only to non-generic families (generics always render).
+bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
+
 bool HasKey(const ConfigScope& scope, std::string_view key);
 
 // The keys present in the configuration that keys.h does not declare.
@@ -74,6 +81,18 @@ bool HasKey(const ConfigScope& scope, std::string_view key);
 // parsed configuration stays encapsulated and callers cannot start reading
 // keys that bypass the typed getters above.
 std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope);
+
+// IsFontAllowed's testable core: the same logic, operating on an
+// already-parsed configuration instead of the process-wide ParsedConfig()
+// singleton, so every case (absent key, populated list, present-but-empty
+// list) is testable without depending on process-launch environment state.
+// Mirrors mask_config_internal.h's GetStringFrom/HasKeyIn split and
+// gl_params.h's GLParam()/GLParamFrom() split; declared here rather than in
+// mask_config_internal.h because this task's file scope is limited to
+// mask_config.h/.cc — see the SP4-fonts Task 1 report for the follow-up.
+namespace internal {
+bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family);
+}  // namespace internal
 
 }  // namespace camoucfg
 

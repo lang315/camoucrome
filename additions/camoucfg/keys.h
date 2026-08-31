@@ -230,9 +230,15 @@ inline constexpr char kScreenAvailLeft[] = "screen.availLeft";
 inline constexpr char kScreenAvailTop[] = "screen.availTop";
 inline constexpr char kScreenColorDepth[] = "screen.colorDepth";
 
+// The font allowlist (SP4-fonts). An array of family names; a specific
+// (non-generic) family absent from the list is made unresolvable so measureText
+// cannot detect it. Absent key => every host font visible (rule 5). Case-
+// insensitive. Same key name as Camoufox's font-hijacker.
+inline constexpr char kFonts[] = "fonts";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 52> kAllKeys = {
+inline constexpr std::array<std::string_view, 53> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -285,6 +291,7 @@ inline constexpr std::array<std::string_view, 52> kAllKeys = {
     kScreenAvailLeft,
     kScreenAvailTop,
     kScreenColorDepth,
+    kFonts,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
