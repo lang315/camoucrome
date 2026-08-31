@@ -1,11 +1,12 @@
 """Verifies the SP1b navigator scalar/near-constant substitution: platform
-(N1), appVersion (N2), deviceMemory (N3), the six near-constants (N4), and
-maxTouchPoints (N5). With the matching navigator.* key configured, a page reads
-EXACTLY the configured value; unconfigured, it reads the real computed value
-unchanged (rule 5) -- and the six near-constants keep real Chrome's fixed
-strings until an explicit expert override sets one.
+(N1), appVersion (N2), deviceMemory (N3), the six near-constants (N4),
+maxTouchPoints (N5), worker platform parity (N6), and language/languages (N7).
+With the matching navigator.* key configured, a page reads EXACTLY the
+configured value; unconfigured, it reads the real computed value unchanged
+(rule 5) -- and the six near-constants keep real Chrome's fixed strings until an
+explicit expert override sets one.
 
-Five criteria, driven with Playwright's sync API over content_shell's CDP via
+Seven criteria, driven with Playwright's sync API over content_shell's CDP via
 lib_shell.session -- the same shape as verify_sp3b.py, a fault in any one
 session becomes a FAIL line, never a traceback that discards results already
 collected. No SwiftShader: these are navigator scalars, no GL context involved.
@@ -38,19 +39,28 @@ collected. No SwiftShader: these are navigator scalars, no GL context involved.
      NavigatorBase::platform() hook, where the worker leaks the real host
      platform (e.g. "Linux x86_64") while the window is already spoofed -- the
      self-introduced coherence tell this criterion closes.
+  N7 language/languages: with navigator.language="fr-FR" and
+     navigator.languages=["fr-FR","fr","en"], navigator.language === "fr-FR" and
+     navigator.languages deep-equals that list, and two consecutive reads of
+     navigator.languages return the same contents (the override is populated into
+     the cached member, so languages() returns a stable reference across calls);
+     unconfigured -> navigator.languages is a non-empty array whose first element
+     equals navigator.language (the real Accept-Languages, unchanged).
 
 RED-FIRST: run this against a stock/SP3b content_shell (no SP1b edit) and the
 configured cases N1-N5 FAIL -- the required red evidence. N6 is RED against a
 build carrying the four window-path SP1b edits but NOT the
 NavigatorBase::platform() hook: the window is already spoofed, so the worker
-leaking the real host platform is the coherence tell N6 exists to catch. The
-configured deviceMemory (N3) is deliberately a bucket the build box does not
-report, so a real (unhooked) read cannot coincidentally match it.
+leaking the real host platform is the coherence tell N6 exists to catch. N7 is
+RED against the Task-2 binary (no navigator_language.cc hook): the configured
+language/languages are ignored and the real host locale leaks. The configured
+deviceMemory (N3) is deliberately a bucket the build box does not report, so a
+real (unhooked) read cannot coincidentally match it.
 
-Out of scope here (other SP1b tasks): navigator.language/languages (Task 3) and
-the "Request tablet site" desync command (Task 4). Coherence between these
-leaves and SP1a's UA/Accept-Language is the profile generator's job (different
-keys), not enforced by these hooks.
+Out of scope here (remaining SP1b task): the "Request tablet site" desync
+command (Task 4). Coherence between navigator.languages and SP1a's
+Accept-Language header (a different key) is the profile generator's job, not
+enforced by these hooks.
 """
 
 import json
@@ -81,6 +91,11 @@ N2_APPVERSION = "5.0 (Windows NT 10.0; Win64; x64)"
 # RED run cannot pass N3 by coincidence.
 N3_DEVICEMEMORY = 2
 N5_MAXTOUCHPOINTS = 5
+# N7: a locale distinct from the build box's real one, with a multi-entry list
+# whose first element equals navigator.language (the coherent shape a generator
+# emits). The RED (unhooked) read leaks the host locale, which is not fr-FR.
+N7_LANGUAGE = "fr-FR"
+N7_LANGUAGES = ["fr-FR", "fr", "en"]
 
 # Real Chrome's fixed near-constant strings, identical on every platform.
 NEAR_CONSTANT_DEFAULTS = {
@@ -123,6 +138,15 @@ WORKER_PLATFORM_JS = """() => new Promise((resolve, reject) => {
   } catch (e) { reject(e); }
 })"""
 
+# N7: language + languages in one read, plus a second read of languages so the
+# stability of the returned list (a stable cached-member reference) is checked
+# in the same session -- two consecutive reads must carry identical contents.
+LANGUAGES_JS = """() => ({
+  language: navigator.language,
+  languages: navigator.languages,
+  languages_again: navigator.languages,
+})"""
+
 
 def read(config, base_url):
     """One content_shell session on the localhost origin. Returns (obj, err);
@@ -138,6 +162,15 @@ def read_worker(config, base_url):
     platform strings. A broken worker path leaves the probe promise unresolved,
     which lib_shell.session turns into an (obj=None, err) FAIL, not a hang."""
     vals, err = lib_shell.session(config, [WORKER_PLATFORM_JS], navigate_to=base_url)
+    if err is not None:
+        return None, err
+    return vals[0], None
+
+
+def read_langs(config, base_url):
+    """One session that reads language + languages (twice). Returns (obj, err);
+    any fault becomes a FAIL, never a traceback."""
+    vals, err = lib_shell.session(config, [LANGUAGES_JS], navigate_to=base_url)
     if err is not None:
         return None, err
     return vals[0], None
@@ -162,6 +195,12 @@ try:
     m, m_e = read(json.dumps({"navigator.maxTouchPoints": N5_MAXTOUCHPOINTS}), BASE_URL)
     # N6: worker platform parity with the window's spoofed platform.
     w6, w6_e = read_worker(json.dumps({"navigator.platform": N1_PLATFORM}), BASE_URL)
+    # N7: language + languages configured together (the coherent shape); plus the
+    # unconfigured baseline so the real language==languages[0] invariant is checked.
+    base_lg, base_lg_e = read_langs(None, BASE_URL)
+    lg, lg_e = read_langs(
+        json.dumps({"navigator.language": N7_LANGUAGE,
+                    "navigator.languages": N7_LANGUAGES}), BASE_URL)
 finally:
     _stop()
 
@@ -171,6 +210,7 @@ N3 = "N3 navigator.deviceMemory: configured exact; unconfigured a positive numbe
 N4 = "N4 near-constants: six Chrome defaults intact unconfigured; all six configured reflected"
 N5 = "N5 navigator.maxTouchPoints: configured exact (hooked, not deferred); unconfigured recorded"
 N6 = "N6 worker navigator.platform: dedicated worker sees the spoofed platform (equal to the window)"
+N7 = "N7 navigator.language/languages: configured exact & stable; unconfigured language is languages[0]"
 
 
 def failed(obj, err):
@@ -281,7 +321,27 @@ else:
         notes.append(f"N6: worker=={N1_PLATFORM!r}? {worker_ok}; window=={N1_PLATFORM!r}? {main_ok}; "
                      f"parity(worker==window)? {parity}")
 
-EXPECTED = 6
+# --- N7 language / languages ---
+if failed(base_lg, base_lg_e) or failed(lg, lg_e):
+    results[N7] = False
+    notes.append(f"N7: base={errtxt(base_lg, base_lg_e)} configured={errtxt(lg, lg_e)}")
+else:
+    lang_exact = lg["language"] == N7_LANGUAGE
+    langs_exact = lg["languages"] == N7_LANGUAGES
+    # Two consecutive reads must carry identical contents (stable reference).
+    stable = lg["languages"] == lg["languages_again"]
+    real_langs = base_lg["languages"]
+    real_ok = isinstance(real_langs, list) and len(real_langs) > 0
+    # Unconfigured invariant: navigator.language is the first of navigator.languages.
+    coherent = real_ok and base_lg["language"] == real_langs[0]
+    results[N7] = lang_exact and langs_exact and stable and coherent
+    notes.append(f"N7 unconfigured language={base_lg['language']!r} languages={real_langs!r}; "
+                 f"configured language={lg['language']!r} languages={lg['languages']!r}")
+    if not results[N7]:
+        notes.append(f"N7: lang_exact={lang_exact} langs_exact={langs_exact} stable={stable} "
+                     f"unconfigured_coherent(language==languages[0])={coherent}")
+
+EXPECTED = 7
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
