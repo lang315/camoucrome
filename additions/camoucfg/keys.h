@@ -189,9 +189,33 @@ inline constexpr char kWebGl2ShaderPrecisionBlock[] =
 inline constexpr char kWebGlContextAttrs[] = "webGl:contextAttributes";
 inline constexpr char kWebGl2ContextAttrs[] = "webGl2:contextAttributes";
 
+// navigator.* scalar and near-constant overrides, one key per real JS
+// property path -- dotted, per the naming rule above, mirroring
+// kNavigatorHardwareConcurrency's precedent.
+//
+// kNavigatorAppCodeName, kNavigatorAppName, kNavigatorProduct,
+// kNavigatorProductSub, kNavigatorVendor and kNavigatorVendorSub are
+// expert-override-only: every real Chrome reports the same fixed strings for
+// these ("Mozilla", "Netscape", "Gecko", "20030107", "Google Inc.", "")
+// regardless of platform, so they default to Chrome's real values and setting
+// them to anything else while the UA still claims Chrome is a tell, not a
+// spoof.
+inline constexpr char kNavigatorPlatform[] = "navigator.platform";
+inline constexpr char kNavigatorAppVersion[] = "navigator.appVersion";
+inline constexpr char kNavigatorDeviceMemory[] = "navigator.deviceMemory";
+inline constexpr char kNavigatorMaxTouchPoints[] = "navigator.maxTouchPoints";
+inline constexpr char kNavigatorLanguage[] = "navigator.language";
+inline constexpr char kNavigatorLanguages[] = "navigator.languages";
+inline constexpr char kNavigatorAppCodeName[] = "navigator.appCodeName";
+inline constexpr char kNavigatorAppName[] = "navigator.appName";
+inline constexpr char kNavigatorProduct[] = "navigator.product";
+inline constexpr char kNavigatorProductSub[] = "navigator.productSub";
+inline constexpr char kNavigatorVendor[] = "navigator.vendor";
+inline constexpr char kNavigatorVendorSub[] = "navigator.vendorSub";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 33> kAllKeys = {
+inline constexpr std::array<std::string_view, 45> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -225,6 +249,18 @@ inline constexpr std::array<std::string_view, 33> kAllKeys = {
     kWebGl2ShaderPrecisionBlock,
     kWebGlContextAttrs,
     kWebGl2ContextAttrs,
+    kNavigatorPlatform,
+    kNavigatorAppVersion,
+    kNavigatorDeviceMemory,
+    kNavigatorMaxTouchPoints,
+    kNavigatorLanguage,
+    kNavigatorLanguages,
+    kNavigatorAppCodeName,
+    kNavigatorAppName,
+    kNavigatorProduct,
+    kNavigatorProductSub,
+    kNavigatorVendor,
+    kNavigatorVendorSub,
 };
 
 // The UA client-hint keys, without kUaOsInfo.

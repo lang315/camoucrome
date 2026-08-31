@@ -58,6 +58,10 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kWebGlShaderPrecision, kWebGl2ShaderPrecision,
       kWebGlShaderPrecisionBlock, kWebGl2ShaderPrecisionBlock,
       kWebGlContextAttrs, kWebGl2ContextAttrs,
+      kNavigatorPlatform, kNavigatorAppVersion, kNavigatorDeviceMemory,
+      kNavigatorMaxTouchPoints, kNavigatorLanguage, kNavigatorLanguages,
+      kNavigatorAppCodeName, kNavigatorAppName, kNavigatorProduct,
+      kNavigatorProductSub, kNavigatorVendor, kNavigatorVendorSub,
   };
   const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
   EXPECT_EQ(declared, in_array);
