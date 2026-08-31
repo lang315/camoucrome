@@ -213,9 +213,26 @@ inline constexpr char kNavigatorProductSub[] = "navigator.productSub";
 inline constexpr char kNavigatorVendor[] = "navigator.vendor";
 inline constexpr char kNavigatorVendorSub[] = "navigator.vendorSub";
 
+// screen.* monitor-geometry overrides (SP4a). Dotted, mirroring the real JS
+// property paths. The monitor is decoupled from the browser window, so these
+// spoof coherently against a truthful (smaller) viewport.
+//
+// There is deliberately no screen.pixelDepth key: pixelDepth() returns
+// colorDepth() in Blink and in every real browser, so kScreenColorDepth carries
+// it -- a second key is a second source of truth that can disagree. There is
+// likewise no screen.orientation key: orientation is derived from the spoofed
+// width/height (SP4a Task 4), never overridden.
+inline constexpr char kScreenWidth[] = "screen.width";
+inline constexpr char kScreenHeight[] = "screen.height";
+inline constexpr char kScreenAvailWidth[] = "screen.availWidth";
+inline constexpr char kScreenAvailHeight[] = "screen.availHeight";
+inline constexpr char kScreenAvailLeft[] = "screen.availLeft";
+inline constexpr char kScreenAvailTop[] = "screen.availTop";
+inline constexpr char kScreenColorDepth[] = "screen.colorDepth";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 45> kAllKeys = {
+inline constexpr std::array<std::string_view, 52> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -261,6 +278,13 @@ inline constexpr std::array<std::string_view, 45> kAllKeys = {
     kNavigatorProductSub,
     kNavigatorVendor,
     kNavigatorVendorSub,
+    kScreenWidth,
+    kScreenHeight,
+    kScreenAvailWidth,
+    kScreenAvailHeight,
+    kScreenAvailLeft,
+    kScreenAvailTop,
+    kScreenColorDepth,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
