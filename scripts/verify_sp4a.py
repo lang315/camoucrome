@@ -2,16 +2,20 @@
 screen.* config keys set, screen.width/height/availWidth/availHeight/
 availLeft/availTop/colorDepth honor the configured values, and
 screen.pixelDepth always mirrors colorDepth. Unconfigured, every one of
-these reports the real host values unchanged (rule 5).
+these reports the real host values unchanged (rule 5). It also verifies
+that screen.orientation.type/.angle are DERIVED from the spoofed
+screen.width/height (Task 4's ScreenOrientation change) rather than a
+separate, independently-settable surface.
 
-Two criteria (S1a for the screen.* Web API, S1b for the CSS device-* media
-features it must agree with), each driven with Playwright's sync API over
-content_shell's CDP via lib_shell.session -- the same shape as
-verify_sp1b.py, a fault in any one session becomes a FAIL line, never a
-traceback that discards results already collected. screen.* is not
-SecureContext-gated, so no echo_server / localhost origin is needed here;
-navigate_to is left at the default (the initial about:blank page), same as
-verify_sp0.py.
+Four criteria (S1a for the screen.* Web API, S1b for the CSS device-* media
+features it must agree with, S2 for orientation derived from spoofed dims,
+S3 for a stray non-existent config key being ignored), each driven with
+Playwright's sync API over content_shell's CDP via lib_shell.session -- the
+same shape as verify_sp1b.py, a fault in any one session becomes a FAIL
+line, never a traceback that discards results already collected. screen.*
+is not SecureContext-gated, so no echo_server / localhost origin is needed
+here; navigate_to is left at the default (the initial about:blank page),
+same as verify_sp0.py.
 
   S1a screen dimensions + depth: with the seven screen.* keys configured
      (width 1920, height 1080, availWidth 1920, availHeight 1040,
@@ -57,9 +61,32 @@ are all false, because CSS device-width/height still evaluate against the
 real host rect (e.g. a 1x1 headless screen) while screen.width/height
 already read 1920/1080 -- the exact two-surface contradiction Task 3 closes.
 
-Out of scope here: screen_orientation.cc (Task 4) is a separate criterion
-in a separate script; this file reads the screen.* Web API surface (Task 2)
-and the CSS device-* media features (Task 3).
+  S2 orientation derives from spoofed dims: with only screen.width/height
+     configured (1920x1080, a wider-than-tall pair), screen.orientation.type
+     reads 'landscape-primary' and .angle reads 0; with the pair swapped
+     (1080x1920, taller-than-wide), type reads 'portrait-primary' and angle
+     still reads 0. There is no screen.orientation config key -- Task 4
+     derives the value from width/height alone, so this is the only way to
+     drive it.
+
+S2 is RED-FIRST against screen_orientation.cc before Task 4's edit: type()/
+angle() return the stored type_/angle_ (whatever ScreenOrientationController
+set from the real host display), not a value derived from the configured
+1920x1080 pair, so with a headless host that is not already exactly
+1920x1080-shaped landscape, S2 fails.
+
+  S3 stray config key is ignored: adding a bogus "screen.orientation":
+     "portrait-primary" entry alongside width:1920/height:1080 does not
+     change screen.orientation.type -- it still reads 'landscape-primary',
+     derived from the dims. There is no such config key; camoucfg's
+     UnrecognisedKeys() surfaces it as unrecognised (a load-time hard-reject
+     is SP5a's validator, out of SP4a scope), but Task 4's derivation must
+     not accidentally special-case or honor it either.
+
+S3 is RED-FIRST for the same reason S2 is: pre-Task-4, type() reads the
+stored type_ regardless of any screen.* config, so it reflects the real host
+display rather than 'landscape-primary', and the stray key is moot because
+nothing derives from width/height at all yet.
 """
 
 import json
@@ -119,6 +146,31 @@ MEDIA_WANT = {
     "agree": True,
 }
 
+ORIENTATION_JS = """() => ({
+  type: screen.orientation.type,
+  angle: screen.orientation.angle,
+})"""
+
+# S2: only width/height set (landscape pair, then the same pair swapped to
+# portrait). No screen.orientation key exists -- orientation is derived.
+CONFIG_LANDSCAPE = json.dumps({
+    "screen.width": 1920,
+    "screen.height": 1080,
+})
+
+CONFIG_PORTRAIT = json.dumps({
+    "screen.width": 1080,
+    "screen.height": 1920,
+})
+
+# S3: same landscape pair as CONFIG_LANDSCAPE, plus a bogus key that names no
+# real config surface. Must be ignored -- derivation from dims wins.
+CONFIG_STRAY_KEY = json.dumps({
+    "screen.width": 1920,
+    "screen.height": 1080,
+    "screen.orientation": "portrait-primary",
+})
+
 
 def read(config):
     """One content_shell session. Returns (obj, err); any fault becomes a
@@ -132,6 +184,14 @@ def read(config):
 def read_media(config):
     """Same shape as read(), for the matchMedia device-*/screen.width probes."""
     vals, err = lib_shell.session(config, [MEDIA_JS])
+    if err is not None:
+        return None, err
+    return vals[0], None
+
+
+def read_orientation(config):
+    """Same shape as read(), for screen.orientation.type/.angle."""
+    vals, err = lib_shell.session(config, [ORIENTATION_JS])
     if err is not None:
         return None, err
     return vals[0], None
@@ -198,7 +258,40 @@ else:
     if not results[S1B]:
         notes.append(f"S1b: mismatches={media_mismatches}")
 
-EXPECTED = 2
+land, land_e = read_orientation(CONFIG_LANDSCAPE)
+port, port_e = read_orientation(CONFIG_PORTRAIT)
+
+S2 = ("S2 screen.orientation derives from spoofed dims: 1920x1080 -> "
+      "landscape-primary/0, 1080x1920 -> portrait-primary/0")
+
+if failed(land, land_e) or failed(port, port_e):
+    results[S2] = False
+    notes.append(f"S2: landscape={errtxt(land, land_e)} portrait={errtxt(port, port_e)}")
+else:
+    land_ok = land["type"] == "landscape-primary" and land["angle"] == 0
+    port_ok = port["type"] == "portrait-primary" and port["angle"] == 0
+    results[S2] = land_ok and port_ok
+    notes.append(f"S2 landscape config (1920x1080) orientation: {land!r}")
+    notes.append(f"S2 portrait config (1080x1920) orientation: {port!r}")
+    if not results[S2]:
+        notes.append(f"S2: land_ok={land_ok} port_ok={port_ok}")
+
+stray, stray_e = read_orientation(CONFIG_STRAY_KEY)
+
+S3 = ("S3 stray 'screen.orientation' config key is ignored: derivation from "
+      "dims wins (1920x1080 + stray key -> landscape-primary, not the "
+      "stray's portrait-primary)")
+
+if failed(stray, stray_e):
+    results[S3] = False
+    notes.append(f"S3: configured={errtxt(stray, stray_e)}")
+else:
+    results[S3] = stray["type"] == "landscape-primary"
+    notes.append(f"S3 stray-key config orientation: {stray!r}")
+    if not results[S3]:
+        notes.append(f"S3: got type={stray['type']!r} want 'landscape-primary'")
+
+EXPECTED = 4
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
