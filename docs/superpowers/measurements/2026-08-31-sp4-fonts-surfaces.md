@@ -153,11 +153,16 @@ on generic families before calling `font_selector->IsPlatformFamilyMatchAvailabl
 `IsPlatformFamilyMatchAvailable` (shared FontSelector level, covers window +
 worker `check()`): `if (!camoucfg::IsFontAllowed(scope, family)) return false;`.
 
-**Deferred to fonts-ii — `local("PostScript name")`.**
-`IsPlatformFontUniqueNameMatchAvailable` matches by full/PostScript unique name,
-not family, so a family-name allowlist can't gate it cleanly (the #44
-full/PostScript-name path). It needs `@font-face { src: local(...) }` to reach, is
-a niche vector, and is grouped with the Layer-2 deferral.
+**Deferred to fonts-ii — `@font-face { src: local(...) }`.** This is a SEPARATE
+resolution path from the gated `FontFallbackList` retry: `LocalFontFaceSource::CreateFontData`
+calls `FontCache::GetFontData` **directly**, upstream of `FontFallbackList`, so the
+selector returns the segmented face non-null and the Task-2 gate is never reached.
+It covers BOTH `local("Family Name")` — the **mainstream** CSS font-detection
+technique, not niche — and `local("PostScript name")` (matched by full/PostScript
+unique name via `IsPlatformFontUniqueNameMatchAvailable`, which a family-name
+allowlist can't gate cleanly — the #44 name path). Grouped with the Layer-2
+deferral. **Leaving it open while the direct probe is blocked is itself a tell —
+see "Known Layer-1 tell" below.**
 
 ### Config helper
 
@@ -175,9 +180,12 @@ test-the-primitive discipline.
 `FontFaceSet::check` (`core/css/font_face_set.cc:232`) skips a family when
 `f->FamilyIsGeneric() || font_selector->IsPlatformFamilyMatchAvailable(...)`
 (font_face_set.cc:270-272), then consults the web-`@font-face` cache. Because it
-keys off `IsPlatformFamilyMatchAvailable` — which routes through the gated
-`GetFontPlatformData` — **`check()` inherits the gate**: an unlisted family becomes
-not-platform-available and is answered from the web-font path only. (Note: for a
+keys off `IsPlatformFamilyMatchAvailable`. **[SUPERSEDED — see "Resolution —
+CORRECTED".** The first plan gated `GetFontPlatformData`, so this paragraph said
+`check()` "inherits the gate." The shipped gate is a call-site guard in
+`FontFallbackList`, which `check()` does NOT traverse. `check()` is safe not
+because it inherits any gate but because it is a **non-probe**, per the note below,
+empirically confirmed by verify F4.]** (Note: for a
 purely-local unlisted family with no `@font-face`, Chrome's `check()` returns
 `true` regardless — it reports web-font *load* state, not local presence — so
 `check()` is a weak probe; the metric measure is the real one. Verify anyway.)
@@ -231,3 +239,32 @@ mechanism, **not** cross-OS coherence — the #44 lesson #3.
   measureText / layout / OffscreenCanvas / graphics). Perturbs the exact glyph
   advances of *listed* fonts so the font file/version can't be fingerprinted.
   Independent of Layer 1's enumeration filter.
+
+## Known Layer-1 tell (whole-branch review 2026-08-31)
+
+Blocking the direct `measureText` probe (Task 2) while deferring the `local()`
+path (fonts-ii) creates a **cross-method inconsistency** no stock browser
+produces: for a host font *present but not on `fonts:list`*, the direct method now
+reports it *absent* while `@font-face { src: local(X) }` + `measureText` still
+reports it *present*. A page that runs both methods sees the disagreement and can
+conclude a font-blocking modification is active — a positive "anti-detect tool"
+fingerprint, arguably worse than the raw leak it half-closes. It fires precisely
+on **native Windows/macOS** hosts, where the host font set is a strict superset of
+any single-OS list (the #44 lesson-3 class); the Linux-only verify is structurally
+blind to it. For a *listed* font both methods agree ("present"), so the
+inconsistency is confined to host-present-but-unlisted fonts. Closing it (gating
+`LocalFontFaceSource`'s direct `FontCache::GetFontData`) is fonts-ii work; until
+then, SP5b should prefer lists matching the host font set on native hosts, or
+fonts-ii should land before native-host shipping.
+
+## Rule-5 asymmetry between the two deliverables (whole-branch review)
+
+The metric gate honors rule 5 (no `fonts:list` ⇒ every host font visible, stock
+rendering), but the Local Font Access disable is **unconditional** (a build-level
+`FontAccess: ""`), so even an *unconfigured* Camoucrome — meant to be stock —
+diverges from stock Chrome by missing `window.queryLocalFonts` (verify F7 asserts
+this explicitly). Defensible for Layer 1 (the API is permission+gesture-gated,
+can't fire silently, and enterprise policy legitimately disables it), but not
+rule-5-coherent. The coherent eventual answer is the drive-from-list upgrade path:
+make Local Font Access availability track whether a profile/list is active rather
+than disabling it at build time.
