@@ -266,14 +266,16 @@ merely inconvenient.
 >    tracker whose own capability check also passes.
 > 4. WebGPU (`GPUAdapterInfo`) adapter identity must agree with the WebGL
 >    strings (spec §4.1 obligation) — the WebGPU hook + its coherence.
-> 5. **WebGL-in-Worker (OffscreenCanvas) parity — UNVERIFIED.** verify_sp3b's
->    V1–V8 exercise only main-thread `document.createElement('canvas')`
->    contexts. All six WebGL hooks use `Host()->GetTopExecutionContext()` (NOT
->    `GetDocument()`, the pattern behind the font-spoofing worker bug) and
->    `ScopeFor()` is a context-type-agnostic passthrough, so parity is
->    structurally expected — but not proven. SP3b-iii must add a worker WebGL
->    parity check (mirroring §6 item 7 for canvas) before the WebGL spoof is
->    claimed complete off the main thread.
+> 5. **WebGL-in-Worker (OffscreenCanvas) parity — VERIFIED (verify_sp3b V9).**
+>    A dedicated-worker OffscreenCanvas `getParameter` returns the spoofed value
+>    identically to the main thread (empirically: `webGl:parameters`
+>    MAX_TEXTURE_SIZE reads 16384 in both, vs host 8192), confirming the six
+>    hooks reach worker scope via `Host()->GetTopExecutionContext()` and the
+>    context-agnostic `ScopeFor()` passthrough — NOT `GetDocument()`, the
+>    pattern behind the font-spoofing worker bug. Remaining (SP3b-iii, minor): a
+>    SHARED worker (own process) exercises the cross-process env-inheritance a
+>    same-process dedicated worker does not — a fast-follow, not a blocker; it is
+>    the same mechanism SP3a's canvas worker-parity (§6 item 7 / C8) proved.
 
 
 | This surface | Must agree with | Invariant |
