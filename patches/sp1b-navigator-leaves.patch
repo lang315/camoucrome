@@ -1,3 +1,38 @@
+diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
+index 555f574e14..df5ecc9982 100644
+--- a/chrome/browser/ui/browser_commands.cc
++++ b/chrome/browser/ui/browser_commands.cc
+@@ -2807,22 +2807,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
+ }
+ 
+ void ToggleRequestTabletSite(BrowserWindowInterface* browser) {
+-  WebContents* current_tab =
+-      browser->GetTabStripModel()->GetActiveWebContents();
+-  if (!current_tab) {
+-    return;
+-  }
+-  NavigationController& controller = current_tab->GetController();
+-  NavigationEntry* entry = controller.GetLastCommittedEntry();
+-  if (!entry) {
+-    return;
+-  }
+-  if (entry->GetIsOverridingUserAgent()) {
+-    entry->SetIsOverridingUserAgent(false);
+-  } else {
+-    SetAndroidOsForTabletSite(current_tab);
+-  }
+-  controller.LoadOriginalRequestURL();
++  // Camoufox/Camoucrome: disabled. This command lets a user desynchronise
++  // one surface (an Android tablet UA) from the fingerprint the operator
++  // chose -- a control that lets a user desynchronise their own fingerprint
++  // is a liability, not a feature, in a browser whose job is to present one
++  // coherent identity (SP1 spec, docs/superpowers/specs/
++  // 2026-08-26-sp1-navigator-identity-design.md). SetAndroidOsForTabletSite()
++  // below is left defined but is no longer called from here.
++  return;
+ }
+ 
+ void SetAndroidOsForTabletSite(content::WebContents* current_tab) {
 diff --git a/third_party/blink/renderer/core/events/navigator_events.cc b/third_party/blink/renderer/core/events/navigator_events.cc
 index a57561775c..0ebcd52cdc 100644
 --- a/third_party/blink/renderer/core/events/navigator_events.cc

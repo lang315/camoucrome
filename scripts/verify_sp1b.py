@@ -57,10 +57,17 @@ language/languages are ignored and the real host locale leaks. The configured
 deviceMemory (N3) is deliberately a bucket the build box does not report, so a
 real (unhooked) read cannot coincidentally match it.
 
-Out of scope here (remaining SP1b task): the "Request tablet site" desync
-command (Task 4). Coherence between navigator.languages and SP1a's
-Accept-Language header (a different key) is the profile generator's job, not
-enforced by these hooks.
+Out of scope here: the "Request tablet site" desync command (Task 4,
+browser_commands.cc) is a chrome/browser menu command, not a page-reachable
+surface -- content_shell has no chrome/browser UI, so unlike every criterion
+above there is no CDP call that can drive it, the same way SP3a's C9
+screen-unchanged criterion has to name a surface (the composited screen) a
+page script has no API to read and reach for an out-of-band check instead;
+here there is no out-of-band check available either, so this task is verified
+by reading the diff (an early return before SetAndroidOsForTabletSite) and a
+clean compile of chrome/browser/ui, not by a runtime criterion. Coherence
+between navigator.languages and SP1a's Accept-Language header (a different
+key) is the profile generator's job, not enforced by these hooks.
 """
 
 import json
