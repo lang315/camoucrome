@@ -1,0 +1,86 @@
+diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
+index 233618cf12..7bd6e6083c 100644
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -1826,6 +1826,7 @@ component("platform") {
+     "//build:chromecast_buildflags",
+     "//cc",
+     "//cc/mojo_embedder",
++    "//components/camoucfg",
+     "//components/input",
+     "//components/language_detection/content/common",
+     "//components/language_detection/content/common:common_blink",
+diff --git a/third_party/blink/renderer/platform/fonts/DEPS b/third_party/blink/renderer/platform/fonts/DEPS
+index fd79f44bed..5eda8ecc4d 100644
+--- a/third_party/blink/renderer/platform/fonts/DEPS
++++ b/third_party/blink/renderer/platform/fonts/DEPS
+@@ -6,6 +6,9 @@ include_rules = [
+     "+third_party/blink/renderer/platform/fonts",
+ 
+     # Dependencies.
++    "+components/camoucfg/mask_config.h",
++    "+components/camoucfg/keys.h",
++    "+components/camoucfg/blink_scope.h",
+     "+base/apple",
+     "+base/mac",
+     "+base/win",
+diff --git a/third_party/blink/renderer/platform/fonts/font_fallback_list.cc b/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
+index a35f4d61b2..01ebc8b777 100644
+--- a/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
++++ b/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
+@@ -29,6 +29,9 @@
+ #include "third_party/blink/renderer/platform/fonts/font_fallback_list.h"
+ 
+ #include "base/timer/elapsed_timer.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/renderer/platform/font_family_names.h"
+ #include "third_party/blink/renderer/platform/fonts/alternate_font_family.h"
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+@@ -156,7 +159,14 @@ const FontData* FontFallbackList::GetFontData(
+     family_index_++;
+     if (!font_selector_) {
+       // Don't query system fonts for empty font family name.
+-      if (!curr_family->FamilyName().empty()) {
++      // Camoucrome (SP4-fonts): skip the direct host lookup for an unlisted
++      // specific family so measureText can't detect it; the loop then
++      // advances to the next CSS family. Generics are allowed through
++      // unconditionally.
++      if (!curr_family->FamilyName().empty() &&
++          (curr_family->FamilyIsGeneric() ||
++           camoucfg::IsFontAllowed(camoucfg::ScopeFor(nullptr),
++                                   curr_family->FamilyName().Utf8()))) {
+         if (auto* result = FontCache::Get().GetFontData(
+                 font_description, curr_family->FamilyName())) {
+           return result;
+@@ -168,7 +178,15 @@ const FontData* FontFallbackList::GetFontData(
+     const FontData* result =
+         font_selector_->GetFontData(font_description, *curr_family);
+     // Don't query system fonts for empty font family name.
+-    if (!result && !curr_family->FamilyName().empty()) {
++    // Camoucrome (SP4-fonts): skip the direct host lookup for an unlisted
++    // specific family so measureText can't detect it; the loop then advances
++    // to the next CSS family (e.g. a trailing generic). Generics reach here
++    // only if the selector could not resolve them, so guard on genericness
++    // too.
++    if (!result && !curr_family->FamilyName().empty() &&
++        (curr_family->FamilyIsGeneric() ||
++         camoucfg::IsFontAllowed(camoucfg::ScopeFor(nullptr),
++                                 curr_family->FamilyName().Utf8()))) {
+       result = FontCache::Get().GetFontData(font_description,
+                                             curr_family->FamilyName());
+     }
+diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+index ce4a2bcb32..6290ecb62b 100644
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -3185,7 +3185,7 @@
+     },
+     {
+       name: "FontAccess",
+-      status: {"Android": "", "default": "stable"},
++      status: {"Android": "", "default": ""},
+     },
+     {
+       name: "FontDataServiceForCSSLocalFonts",
