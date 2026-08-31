@@ -230,14 +230,14 @@ TEST(IsFontAllowedTest, AbsentKeyAllowsEveryFamily) {
 
 TEST(IsFontAllowedTest, PresentListAllowsMembersCaseInsensitively) {
   base::DictValue cfg =
-      ParseConfig(R"({"fonts": ["Arial", "Helvetica"]})", /*strict=*/false);
+      ParseConfig(R"({"fonts:list": ["Arial", "Helvetica"]})", /*strict=*/false);
   EXPECT_TRUE(IsFontAllowedFrom(cfg, "Arial"));
   EXPECT_TRUE(IsFontAllowedFrom(cfg, "arial"));
   EXPECT_FALSE(IsFontAllowedFrom(cfg, "Calibri"));
 }
 
 TEST(IsFontAllowedTest, PresentButEmptyListAllowsNoFamily) {
-  base::DictValue cfg = ParseConfig(R"({"fonts": []})", /*strict=*/false);
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": []})", /*strict=*/false);
   EXPECT_FALSE(IsFontAllowedFrom(cfg, "Arial"));
 }
 
