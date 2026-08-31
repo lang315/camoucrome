@@ -73,6 +73,67 @@ simply absent there regardless of whether the runtime feature is enabled.
      (disabled), which removes the binding entirely at build time -- not a
      stub that rejects when called, the property is simply absent, same as
      it is on Android's own "" status. F5 measures exactly that absence.
+  F6 no new observable surface (Task 5): Object.keys(window) and
+     Object.keys(navigator), captured on the SAME echo_server localhost
+     session as F5 (queryLocalFonts is [SecureContext]-gated, so this is the
+     one origin where it would actually be present on a stock build -- see
+     F5's RED-FIRST FINDING), differ from a genuinely STOCK content_shell
+     (this task's four Blink edits reverted, then rebuilt) by EXACTLY the
+     removal of "queryLocalFonts" from window: nothing else added, nothing
+     else removed, and navigator is unchanged entirely. Plus a standing
+     native-accessor regression check: CanvasRenderingContext2D.prototype.
+     measureText.toString() still matches /\\[native code\\]/ -- the gate in
+     FontFallbackList::GetFontData is a C++-side branch, not a JS override of
+     the accessor itself, so this should never move.
+     The stock reference is a PERSISTED baseline, captured once from a real
+     stock content_shell (this task's four files reverted to HEAD, rebuilt)
+     into baselines/, exactly as verify_sp3a's C10 does for its own
+     Object.keys(window) check -- run with --capture-baseline against that
+     stock binary first (see the CAPTURE NOTE below); every later run reads
+     the frozen file. Comparing against a bare/no-CAMOU_CONFIG session on the
+     SAME (already-patched) binary, by contrast, would be vacuous: Task 4's
+     removal is a build-time change (see F5), so it is equally absent in
+     both a configured and a bare session there -- no diff would ever show.
+     Only a genuinely pre-patch binary has queryLocalFonts to lose.
+     NAVIGATOR NOTE (caught empirically capturing the stock baseline): in
+     this content_shell, Object.keys(navigator) measures EMPTY (0 own-
+     enumerable keys) on both the stock and the patched binary -- Navigator's
+     real surface (appCodeName, userAgent, etc.) lives on Navigator.prototype,
+     not on the instance, so this half of F6 is a real but structurally
+     vacuous check: it can never observe a change on this engine, because
+     there is nothing for a change to remove or add own-keys to. It is kept
+     (not dropped) because the brief specifies it and it costs nothing to
+     assert; the window half above is the one doing the actual work.
+  F7 stock fallback (Task 5): with NO CAMOU_CONFIG at all (bare), on the
+     SAME already-patched (post Task 2/4) content_shell used everywhere else
+     in this file -- two independent facts, both asserted: (1) the metric
+     gate is config-gated, not unconditional -- rule 5 (absent key => every
+     host font visible) means UNLISTED_FAMILY measures DISTINCT from the
+     fallback again, exactly reversing F1's hidden verdict, and the unquoted
+     generics still render distinct/non-zero; (2) window.queryLocalFonts
+     stays "undefined" even bare -- this is Task 4's build-level disable
+     (see F5), which is deliberately NOT config-gated, so "undefined
+     whether or not CAMOU_CONFIG is set" is the intended, correct state, not
+     a gap. F7 reuses F5's own session and its `qlf` reading for fact (2),
+     since that session already runs with config=None.
+
+CAPTURE NOTE (F6's stock baseline): this script's F1-F5/F7 all run against
+the CURRENT (already-patched) binary under test, matching every other
+verify_* script in this repo. F6 is the one criterion that additionally
+needs a reading from a binary that does NOT have this task's four-file patch
+applied at all, because Task 4's queryLocalFonts removal is invisible to any
+same-binary configured-vs-bare comparison (see F6's own paragraph above).
+Recapturing after this task lands requires: `git checkout HEAD -- <the four
+sp4-fonts files>` in the checkout, rebuild content_shell, run this script
+with `--capture-baseline` (writes
+~/camoucrome-verify/baselines/content_shell-sp4fonts-stock-keys.json; other
+criteria are expected to read FAIL or RED during that capture run, since the
+gate/disable are not present in that binary -- that is the required
+RED-first evidence, not a bug in the capture), then `git apply` the patch
+back and rebuild again before running normally. The baseline JSON is NOT
+committed to this repo (same as verify_sp3a's canvas baseline) -- it is
+regenerable, build-host state, tracked only in ~/camoucrome-verify/baselines/
+on the verify machine.
 
 QUOTING NOTE (why F1/F3 quote their family names but F2 does not): a
 font-family value is only parsed as one of the five CSS-generic keywords when
@@ -143,6 +204,7 @@ GREEN.
 """
 
 import json
+import os
 import sys
 
 import echo_server
@@ -248,6 +310,24 @@ LOAD_JS = """() => Promise.all([
 # RED-FIRST FINDING above.
 QLF_JS = """() => typeof window.queryLocalFonts"""
 
+# F6 (Task 5): the observable JS surface itself -- Object.keys(window) /
+# Object.keys(navigator), plus a standing native-accessor check on
+# measureText. Run in the SAME echo_server session as QLF_JS (see F6's
+# docstring paragraph for why this has to be the secure/localhost origin,
+# not about:blank). Sorted so the baseline JSON is diff-friendly.
+KEYS_JS = """() => ({
+  windowKeys: Object.keys(window).sort(),
+  navigatorKeys: Object.keys(navigator).sort(),
+  measureTextNative: /\\[native code\\]/.test(
+    CanvasRenderingContext2D.prototype.measureText.toString()),
+})"""
+
+# F6's persisted stock reference -- see the CAPTURE NOTE in the module
+# docstring. Not committed to the repo, same as verify_sp3a's canvas
+# baseline: regenerable, build-host-local state.
+BASELINE = os.path.expanduser(
+    "~/camoucrome-verify/baselines/content_shell-sp4fonts-stock-keys.json")
+
 
 def failed(obj, err):
     return obj is None or err is not None
@@ -272,16 +352,22 @@ else:
 # F5's own session: window.queryLocalFonts is [SecureContext]-gated, so it
 # needs a potentially-trustworthy origin (localhost via echo_server), not
 # F1-F4's about:blank -- see the RED-FIRST FINDING above. No fonts:list
-# config is relevant to this probe.
+# config is relevant to this probe. F6's KEYS_JS rides along in the same
+# session -- it needs the identical secure origin (see F6's docstring
+# paragraph), and F7 reuses this same `qlf` reading (this session already
+# runs with config=None, i.e. bare).
 QLF_BASE_URL, _qlf_headers_for, _qlf_stop = echo_server.start([])
 try:
-    qlf_vals, qlf_err = lib_shell.session(None, [QLF_JS], navigate_to=QLF_BASE_URL)
+    qlf_vals, qlf_err = lib_shell.session(
+        None, [QLF_JS, KEYS_JS], navigate_to=QLF_BASE_URL)
 finally:
     _qlf_stop()
 if qlf_err is not None:
     qlf, qlf_e = None, qlf_err
+    keys, keys_e = None, qlf_err
 else:
     qlf, qlf_e = qlf_vals[0], None
+    keys, keys_e = qlf_vals[1], None
 
 # F4's second half: the SAME check() read taken in a fresh, unconfigured
 # (stock, no CAMOU_CONFIG) session -- a separate launch, since config is fixed
@@ -294,14 +380,53 @@ else:
     chk_stock, chk_stock_e = stock_vals[0], None
     ld_stock, ld_stock_e = stock_vals[1], None
 
+# F7's window half: WINDOW_JS reused verbatim, but in a fresh, unconfigured
+# (bare, no CAMOU_CONFIG) session on the SAME (already-patched) binary --
+# fact (1) of F7 (see its docstring paragraph). No echo_server needed:
+# WINDOW_JS is not [SecureContext]-gated, same as F1's own session.
+bare_vals, bare_err = lib_shell.session(None, [WINDOW_JS])
+if bare_err is not None:
+    bare_win, bare_win_e = None, bare_err
+else:
+    bare_win, bare_win_e = bare_vals[0], None
+
 results = {}
 notes = []
+
+# --capture-baseline: write F6's stock reference from THIS run's keys
+# capture, then exit-code-wise this run still scores F1-F5/F7 normally --
+# see the CAPTURE NOTE in the module docstring for why this must be run
+# against a genuinely stock (patch-reverted) binary, and why the other
+# criteria are expected to read FAIL/RED during that run.
+capture = "--capture-baseline" in sys.argv[1:]
+if capture:
+    if keys is not None:
+        os.makedirs(os.path.dirname(BASELINE), exist_ok=True)
+        with open(BASELINE, "w") as fh:
+            json.dump(
+                {"windowKeys": keys["windowKeys"],
+                 "navigatorKeys": keys["navigatorKeys"]},
+                fh, indent=2)
+        notes.append(f"capture: wrote stock key baseline to {BASELINE}")
+    else:
+        notes.append(
+            f"capture: keys probe failed ({errtxt(keys, keys_e)}); "
+            f"baseline NOT written")
+
+key_baseline = None
+try:
+    with open(BASELINE) as fh:
+        key_baseline = json.load(fh)
+except Exception as exc:  # noqa: BLE001
+    notes.append(f"F6 baseline load from {BASELINE}: {type(exc).__name__}: {exc}")
 
 F1 = "F1 window probe: listed family distinct from fallback; unlisted family equals fallback (hidden)"
 F2 = "F2 generics render: serif != monospace generics, both non-zero, under an active fonts:list"
 F3 = "F3 worker parity: OffscreenCanvas reproduces F1's verdict AND matches the window's F1 numbers"
 F4 = "F4 availability non-probe: check()/load() can't tell unlisted-present from absent; fonts:list changes nothing they report"
 F5 = "F5 Local Font Access disabled: typeof window.queryLocalFonts === 'undefined'"
+F6 = "F6 no new observable surface: window/navigator keys match stock except queryLocalFonts removed; measureText still native"
+F7 = "F7 stock fallback (bare): gate is config-gated (unlisted visible again, generics render); queryLocalFonts stays undefined (build-level, intended)"
 
 # --- F1 ---
 if failed(win, win_e):
@@ -403,7 +528,69 @@ else:
     results[F5] = qlf == "undefined"
     notes.append(f"F5 measured: typeof window.queryLocalFonts = {qlf!r}")
 
-EXPECTED = 5
+# --- F6 ---
+if capture:
+    # This run's own purpose was writing the baseline (see above), not
+    # scoring itself against it -- comparing a stock capture to itself as
+    # "current" would trivially pass and prove nothing. Same treatment as
+    # F1/F3 going RED on a genuinely stock binary: expected, not a failure
+    # of this script.
+    results[F6] = False
+    notes.append("F6: this run wrote the baseline (--capture-baseline); "
+                 "re-run without the flag against the patched binary to score F6")
+elif failed(keys, keys_e):
+    results[F6] = False
+    notes.append(f"F6: keys probe {errtxt(keys, keys_e)}")
+elif key_baseline is None:
+    results[F6] = False
+    notes.append("F6: no stock key baseline loaded (see F6 baseline load note above)")
+else:
+    stock_win = set(key_baseline["windowKeys"])
+    cur_win = set(keys["windowKeys"])
+    win_removed = stock_win - cur_win
+    win_added = cur_win - stock_win
+    stock_nav = set(key_baseline["navigatorKeys"])
+    cur_nav = set(keys["navigatorKeys"])
+    nav_removed = stock_nav - cur_nav
+    nav_added = cur_nav - stock_nav
+    window_ok = win_removed == {"queryLocalFonts"} and not win_added
+    navigator_ok = not nav_removed and not nav_added
+    native_ok = bool(keys.get("measureTextNative", False))
+    results[F6] = window_ok and navigator_ok and native_ok
+    notes.append(
+        f"F6 measured: window removed={sorted(win_removed)!r} added={sorted(win_added)!r} "
+        f"(stock had {len(stock_win)} keys, current has {len(cur_win)}); "
+        f"navigator removed={sorted(nav_removed)!r} added={sorted(nav_added)!r}; "
+        f"measureText native={native_ok}")
+    if not results[F6]:
+        notes.append(
+            f"F6: window_ok={window_ok} navigator_ok={navigator_ok} native_ok={native_ok}")
+
+# --- F7 ---
+if failed(bare_win, bare_win_e) or failed(qlf, qlf_e):
+    results[F7] = False
+    notes.append(
+        f"F7: bare window probe {errtxt(bare_win, bare_win_e)}; "
+        f"qlf probe {errtxt(qlf, qlf_e)}")
+else:
+    gate_off = bare_win["unlisted"] != bare_win["mono"]
+    listed_visible = bare_win["listed"] != bare_win["mono"]
+    serif_b = bare_win["serif_generic"]
+    mono_b = bare_win["monospace_generic"]
+    generics_ok = serif_b != mono_b and serif_b > 0 and mono_b > 0
+    qlf_still_undefined = qlf == "undefined"
+    results[F7] = gate_off and listed_visible and generics_ok and qlf_still_undefined
+    notes.append(
+        f"F7 measured (bare, no CAMOU_CONFIG): unlisted({UNLISTED_FAMILY!r})="
+        f"{bare_win['unlisted']!r} listed({LISTED_FAMILY!r})={bare_win['listed']!r} "
+        f"mono={bare_win['mono']!r} serif_generic={serif_b!r} monospace_generic={mono_b!r}; "
+        f"typeof window.queryLocalFonts (bare) = {qlf!r}")
+    if not results[F7]:
+        notes.append(
+            f"F7: gate_off(unlisted!=mono)={gate_off} listed_visible(listed!=mono)={listed_visible} "
+            f"generics_ok={generics_ok} qlf_still_undefined={qlf_still_undefined}")
+
+EXPECTED = 7
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")

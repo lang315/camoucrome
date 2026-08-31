@@ -42,6 +42,7 @@ PATCHES=(
   "$ROOT/patches/sp3b-webgl-profile.patch"
   "$ROOT/patches/sp1b-navigator-leaves.patch"
   "$ROOT/patches/sp4a-screen.patch"
+  "$ROOT/patches/sp4-fonts.patch"
 )
 for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
