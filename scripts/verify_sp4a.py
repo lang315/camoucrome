@@ -7,9 +7,10 @@ that screen.orientation.type/.angle are DERIVED from the spoofed
 screen.width/height (Task 4's ScreenOrientation change) rather than a
 separate, independently-settable surface.
 
-Four criteria (S1a for the screen.* Web API, S1b for the CSS device-* media
+Six criteria (S1a for the screen.* Web API, S1b for the CSS device-* media
 features it must agree with, S2 for orientation derived from spoofed dims,
-S3 for a stray non-existent config key being ignored), each driven with
+S3 for a stray non-existent config key being ignored, S4 for no new
+observable surface, S5 for full stock fallback), each driven with
 Playwright's sync API over content_shell's CDP via lib_shell.session -- the
 same shape as verify_sp1b.py, a fault in any one session becomes a FAIL
 line, never a traceback that discards results already collected. screen.*
@@ -19,7 +20,7 @@ same as verify_sp0.py.
 
   S1a screen dimensions + depth: with the seven screen.* keys configured
      (width 1920, height 1080, availWidth 1920, availHeight 1040,
-     availLeft 0, availTop 0, colorDepth 30), a page reads EXACTLY that
+     availLeft 17, availTop 43, colorDepth 30), a page reads EXACTLY that
      tuple for width/height/availWidth/availHeight/availLeft/availTop/
      colorDepth, and pixelDepth === colorDepth (30, not the stock 24 --
      colorDepth carries both, no separate pixelDepth key exists).
@@ -29,10 +30,13 @@ same as verify_sp0.py.
      do NOT coincide with the configured 30 / 1040 -- the discriminating
      check that makes RED non-vacuous: an unhooked build reporting the real
      screen could otherwise pass by accident if the real box happened to
-     already report 30-bit colour or a 1040px available height. availLeft /
-     availTop are NOT required to discriminate: a real headless display is
-     very likely already at (0, 0), so an equal real/configured value there
-     is expected, not a sign the hook is missing.
+     already report 30-bit colour or a 1040px available height. availLeft
+     and availTop are deliberately DISTINCT non-zero values (17 vs 43, not
+     the earlier 0/0): the per-field equality check below already requires
+     each to equal its own expected number, so a set_x/set_y swap in
+     Screen::GetRect (availLeft getting availTop's value or vice versa)
+     shows up as a mismatch on exactly one field instead of being masked by
+     both sides being 0 either way.
 
 RED-FIRST: run this against a stock/unpatched content_shell (no
 Screen::GetRect / Screen::colorDepth edit) and S1a FAILS -- the configured
@@ -87,6 +91,39 @@ S3 is RED-FIRST for the same reason S2 is: pre-Task-4, type() reads the
 stored type_ regardless of any screen.* config, so it reflects the real host
 display rather than 'landscape-primary', and the stray key is moot because
 nothing derives from width/height at all yet.
+
+  S4 no new observable surface: with S1a's CONFIG applied, Object.keys(window)
+     and Object.keys(navigator) are byte-identical to the same probe run
+     unconfigured (this build's own stock, live-captured in this same run --
+     rule 5 means unconfigured and "before these patches" are the same
+     surface), and each touched accessor -- Screen.prototype.width,
+     Screen.prototype.colorDepth, ScreenOrientation.prototype.type,
+     ScreenOrientation.prototype.angle -- still stringifies to
+     "[native code]" when read from the CONFIGURED session, i.e. with the
+     spoof actually active, not merely when it is a no-op.
+
+S4 needs no separate RED run: Tasks 2-4 add C++ logic behind existing
+getters, never a new JS-visible property or a getter replaced by a plain
+value, so this criterion is a standing guarantee rather than one that was
+ever expected to fail; it is included here because Task 5 is where the
+complete, patch-extracted feature is verified end to end.
+
+  S5 full stock fallback: with NO CAMOU_CONFIG at all, the screen tuple, the
+     CSS device-*/screen.width agreement, and screen.orientation.type/.angle
+     are each captured twice from two INDEPENDENT bare launches; both
+     captures must be identical (the "frozen stock capture" -- captured live
+     in this run, the same discipline S1a's `base` uses, not read back from a
+     persisted file), CSS device-width/device-height must still agree with
+     the real screen.width/height with no config present, and none of the
+     bare values may coincide with S1a's configured width/colorDepth/
+     availHeight -- the same discriminating shape S1a uses, so a build that
+     spoofs even without configuration cannot pass by accident.
+
+S5 needs no separate RED run for the same reason S4 does not: it is a
+guarantee about the unconfigured path, which Tasks 2-4 built as strictly
+opt-in from the start (every hook is `if (std::optional<uint32_t> v = ...)`),
+so it has been true since each task's own RED->GREEN cycle; Task 5 is where
+it is checked once more, together with the fully patch-extracted feature.
 """
 
 import json
@@ -110,20 +147,22 @@ CONFIG = json.dumps({
     "screen.height": 1080,
     "screen.availWidth": 1920,
     "screen.availHeight": 1040,
-    "screen.availLeft": 0,
-    "screen.availTop": 0,
+    "screen.availLeft": 17,
+    "screen.availTop": 43,
     "screen.colorDepth": 30,
 })
 
 # The exact configured tuple every leaf must equal, including pixelDepth --
 # there is no separate pixelDepth key, so it is expected to mirror colorDepth.
+# availLeft/availTop are distinct non-zero values (17, 43) so a set_x/set_y
+# swap in Screen::GetRect shows up as a mismatch on exactly one field.
 WANT = {
     "width": 1920,
     "height": 1080,
     "availWidth": 1920,
     "availHeight": 1040,
-    "availLeft": 0,
-    "availTop": 0,
+    "availLeft": 17,
+    "availTop": 43,
     "colorDepth": 30,
     "pixelDepth": 30,
 }
@@ -171,6 +210,35 @@ CONFIG_STRAY_KEY = json.dumps({
     "screen.orientation": "portrait-primary",
 })
 
+# S4: window/navigator key sets plus a [native code] probe on the four
+# accessors Tasks 2/4 touch. `nat` reads the GETTER (these are WebIDL
+# attributes, not methods, so .get not .value) and never throws past the
+# criterion -- a demoted accessor (data property, no .get) is a FAIL, not a
+# traceback.
+NATIVE_KEYS_JS = """() => {
+  const nat = (proto, prop) => {
+    try { return /\\[native code\\]/.test(
+      Object.getOwnPropertyDescriptor(proto, prop).get.toString()); }
+    catch (e) { return false; }
+  };
+  return {
+    windowKeys: Object.keys(window).sort(),
+    navigatorKeys: Object.keys(navigator).sort(),
+    widthNative: nat(Screen.prototype, 'width'),
+    colorDepthNative: nat(Screen.prototype, 'colorDepth'),
+    orientTypeNative: nat(ScreenOrientation.prototype, 'type'),
+    orientAngleNative: nat(ScreenOrientation.prototype, 'angle'),
+  };
+}"""
+
+# S5: CSS device-*/screen.width agreement built from the LIVE (real) width/
+# height, not a hardcoded value -- there is no fixed expected number to
+# assert against when unconfigured, only that CSS and JS still agree.
+BARE_MEDIA_JS = """() => ({
+  agreeWidth: matchMedia('(device-width: ' + screen.width + 'px)').matches,
+  agreeHeight: matchMedia('(device-height: ' + screen.height + 'px)').matches,
+})"""
+
 
 def read(config):
     """One content_shell session. Returns (obj, err); any fault becomes a
@@ -195,6 +263,27 @@ def read_orientation(config):
     if err is not None:
         return None, err
     return vals[0], None
+
+
+def read_native(config):
+    """Same shape as read(), for the S4 window/navigator-keys + native-code
+    probe."""
+    vals, err = lib_shell.session(config, [NATIVE_KEYS_JS])
+    if err is not None:
+        return None, err
+    return vals[0], None
+
+
+def read_stock_all():
+    """One bare (no CAMOU_CONFIG) session reading the screen tuple, the CSS
+    device-*/screen.width agreement, and orientation type/angle in a single
+    page load -- one of S5's two independent "frozen stock capture" launches.
+    Same (obj, err) shape as read()."""
+    vals, err = lib_shell.session(None, [READ_JS, BARE_MEDIA_JS, ORIENTATION_JS])
+    if err is not None:
+        return None, err
+    screen_v, media_v, orient_v = vals
+    return {**screen_v, **media_v, **orient_v}, None
 
 
 def failed(obj, err):
@@ -291,7 +380,59 @@ else:
     if not results[S3]:
         notes.append(f"S3: got type={stray['type']!r} want 'landscape-primary'")
 
-EXPECTED = 4
+nat_cfg, nat_cfg_e = read_native(CONFIG)
+nat_bare, nat_bare_e = read_native(None)
+
+S4 = ("S4 no new observable surface: Object.keys(window)/navigator byte-identical "
+      "configured vs stock, and screen.width/colorDepth/orientation.type/angle "
+      "accessors still [native code]")
+
+if failed(nat_cfg, nat_cfg_e) or failed(nat_bare, nat_bare_e):
+    results[S4] = False
+    notes.append(f"S4: configured={errtxt(nat_cfg, nat_cfg_e)} bare={errtxt(nat_bare, nat_bare_e)}")
+else:
+    window_keys_same = nat_cfg["windowKeys"] == nat_bare["windowKeys"]
+    navigator_keys_same = nat_cfg["navigatorKeys"] == nat_bare["navigatorKeys"]
+    # Checked in the CONFIGURED session -- the point is that the accessor is
+    # still native while the spoof is actually active, not merely at rest.
+    all_native = (nat_cfg["widthNative"] and nat_cfg["colorDepthNative"] and
+                  nat_cfg["orientTypeNative"] and nat_cfg["orientAngleNative"])
+    results[S4] = window_keys_same and navigator_keys_same and all_native
+    notes.append(f"S4 window keys: configured={len(nat_cfg['windowKeys'])} "
+                 f"bare={len(nat_bare['windowKeys'])}; native flags (configured): "
+                 f"width={nat_cfg['widthNative']} colorDepth={nat_cfg['colorDepthNative']} "
+                 f"orientType={nat_cfg['orientTypeNative']} orientAngle={nat_cfg['orientAngleNative']}")
+    if not results[S4]:
+        added = sorted(set(nat_cfg["windowKeys"]) - set(nat_bare["windowKeys"]))
+        removed = sorted(set(nat_bare["windowKeys"]) - set(nat_cfg["windowKeys"]))
+        notes.append(
+            f"S4: window_keys_same={window_keys_same} navigator_keys_same={navigator_keys_same} "
+            f"all_native={all_native} added={added} removed={removed}")
+
+stock_a, stock_a_e = read_stock_all()
+stock_b, stock_b_e = read_stock_all()
+
+S5 = ("S5 full stock fallback: with no CAMOU_CONFIG, screen/device-*/orientation "
+      "values are identical across two independent launches (the frozen stock "
+      "capture), CSS still agrees with the real screen.width/height, and none "
+      "of S1a's configured values leak in bare mode")
+
+if failed(stock_a, stock_a_e) or failed(stock_b, stock_b_e):
+    results[S5] = False
+    notes.append(f"S5: launchA={errtxt(stock_a, stock_a_e)} launchB={errtxt(stock_b, stock_b_e)}")
+else:
+    stable = stock_a == stock_b
+    media_agrees = stock_a["agreeWidth"] and stock_a["agreeHeight"]
+    no_leak = (stock_a["width"] != WANT["width"] and
+               stock_a["colorDepth"] != WANT["colorDepth"] and
+               stock_a["availHeight"] != WANT["availHeight"])
+    results[S5] = stable and media_agrees and no_leak
+    notes.append(f"S5 stock capture (launch A): {stock_a!r}")
+    notes.append(f"S5 stock capture (launch B): {stock_b!r}")
+    if not results[S5]:
+        notes.append(f"S5: stable={stable} media_agrees={media_agrees} no_leak={no_leak}")
+
+EXPECTED = 6
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
