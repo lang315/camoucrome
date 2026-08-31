@@ -62,8 +62,8 @@ std::optional<bool> GetBool(const ConfigScope& scope, std::string_view key);
 std::vector<std::string> GetStringList(const ConfigScope& scope,
                                        std::string_view key);
 
-// True when |family| may resolve to a real host face: no "fonts" key is set
-// (every host font visible), or |family| is in the list (case-insensitive).
+// True when |family| may resolve to a real host face: no "fonts:list" key is
+// set (every host font visible), or |family| is in the list (case-insensitive).
 // The gate applies this only to non-generic families (generics always render).
 bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
 
@@ -86,10 +86,9 @@ std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope);
 // already-parsed configuration instead of the process-wide ParsedConfig()
 // singleton, so every case (absent key, populated list, present-but-empty
 // list) is testable without depending on process-launch environment state.
-// Mirrors mask_config_internal.h's GetStringFrom/HasKeyIn split and
-// gl_params.h's GLParam()/GLParamFrom() split; declared here rather than in
-// mask_config_internal.h because this task's file scope is limited to
-// mask_config.h/.cc — see the SP4-fonts Task 1 report for the follow-up.
+// Mirrors mask_config_internal.h's GetStringFrom/HasKeyIn and GLParamFrom
+// public/-From split; declared here rather than in mask_config_internal.h
+// because this task's file scope was limited to mask_config.h/.cc.
 namespace internal {
 bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family);
 }  // namespace internal
