@@ -4,12 +4,14 @@ availLeft/availTop/colorDepth honor the configured values, and
 screen.pixelDepth always mirrors colorDepth. Unconfigured, every one of
 these reports the real host values unchanged (rule 5).
 
-One criterion, driven with Playwright's sync API over content_shell's CDP
-via lib_shell.session -- the same shape as verify_sp1b.py, a fault in any
-one session becomes a FAIL line, never a traceback that discards results
-already collected. screen.* is not SecureContext-gated, so no echo_server /
-localhost origin is needed here; navigate_to is left at the default (the
-initial about:blank page), same as verify_sp0.py.
+Two criteria (S1a for the screen.* Web API, S1b for the CSS device-* media
+features it must agree with), each driven with Playwright's sync API over
+content_shell's CDP via lib_shell.session -- the same shape as
+verify_sp1b.py, a fault in any one session becomes a FAIL line, never a
+traceback that discards results already collected. screen.* is not
+SecureContext-gated, so no echo_server / localhost origin is needed here;
+navigate_to is left at the default (the initial about:blank page), same as
+verify_sp0.py.
 
   S1a screen dimensions + depth: with the seven screen.* keys configured
      (width 1920, height 1080, availWidth 1920, availHeight 1040,
@@ -39,9 +41,25 @@ they cannot coincidentally match a real display (24-bit colour and a
 taller-than-1040 available height are the universal real values), so the
 RED failure is guaranteed rather than accidental.
 
-Out of scope here: media_values.cc (CSS device-width/height etc., Task 3)
-and screen_orientation.cc (Task 4) are separate criteria in separate
-scripts; this file only reads the screen.* Web API surface Task 2 patches.
+  S1b CSS device-width/device-height agreement: with screen.width/height
+     configured to 1920/1080 (the same CONFIG as S1a), matchMedia
+     '(device-width: 1920px)' and '(device-height: 1080px)' both match, the
+     wrong-value probes '(device-width: 1280px)' / '(device-height: 800px)'
+     both do NOT match, and a matchMedia query built from the live
+     screen.width value itself matches -- CSS device-* and JS screen.* can
+     never read two different numbers. This is what MediaValues::
+     CalculateDeviceWidth/Height (Task 3) closes; Task 2's screen.cc alone
+     leaves CSS reading the real host size while JS reads the spoofed one.
+
+S1b is RED-FIRST the same way, but against media_values.cc: with Task 2's
+screen.cc applied and Task 3's media_values.cc NOT yet, dw1920/dh1080/agree
+are all false, because CSS device-width/height still evaluate against the
+real host rect (e.g. a 1x1 headless screen) while screen.width/height
+already read 1920/1080 -- the exact two-surface contradiction Task 3 closes.
+
+Out of scope here: screen_orientation.cc (Task 4) is a separate criterion
+in a separate script; this file reads the screen.* Web API surface (Task 2)
+and the CSS device-* media features (Task 3).
 """
 
 import json
@@ -83,11 +101,37 @@ WANT = {
     "pixelDepth": 30,
 }
 
+MEDIA_JS = """() => ({
+  dw1920: matchMedia('(device-width: 1920px)').matches,
+  dwWrong: matchMedia('(device-width: 1280px)').matches,
+  dh1080: matchMedia('(device-height: 1080px)').matches,
+  dhWrong: matchMedia('(device-height: 800px)').matches,
+  agree: matchMedia('(device-width: ' + screen.width + 'px)').matches,
+})"""
+
+# Every leaf's expected value with the same CONFIG as S1a (screen.width:1920,
+# screen.height:1080) applied.
+MEDIA_WANT = {
+    "dw1920": True,
+    "dwWrong": False,
+    "dh1080": True,
+    "dhWrong": False,
+    "agree": True,
+}
+
 
 def read(config):
     """One content_shell session. Returns (obj, err); any fault becomes a
     FAIL, never a traceback."""
     vals, err = lib_shell.session(config, [READ_JS])
+    if err is not None:
+        return None, err
+    return vals[0], None
+
+
+def read_media(config):
+    """Same shape as read(), for the matchMedia device-*/screen.width probes."""
+    vals, err = lib_shell.session(config, [MEDIA_JS])
     if err is not None:
         return None, err
     return vals[0], None
@@ -138,7 +182,23 @@ else:
             f"real_all_numbers={real_ok} pixel_eq_color(real)={pixel_eq_color_real} "
             f"discriminating(real colorDepth!=30 and real availHeight!=1040)={discriminating}")
 
-EXPECTED = 1
+media, media_e = read_media(CONFIG)
+
+S1B = ("S1b CSS device-width/height agree with screen.width/height: matchMedia "
+       "device-width:1920/device-height:1080 true, wrong values false, agree true")
+
+if failed(media, media_e):
+    results[S1B] = False
+    notes.append(f"S1b: configured={errtxt(media, media_e)}")
+else:
+    media_mismatches = {k: {"got": media[k], "want": want}
+                         for k, want in MEDIA_WANT.items() if media[k] != want}
+    results[S1B] = not media_mismatches
+    notes.append(f"S1b configured matchMedia tuple: {media!r}")
+    if not results[S1B]:
+        notes.append(f"S1b: mismatches={media_mismatches}")
+
+EXPECTED = 2
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
