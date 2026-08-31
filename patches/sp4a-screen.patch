@@ -1,0 +1,192 @@
+diff --git a/third_party/blink/renderer/core/css/media_values.cc b/third_party/blink/renderer/core/css/media_values.cc
+index 0d60244742..7150d2ea2a 100644
+--- a/third_party/blink/renderer/core/css/media_values.cc
++++ b/third_party/blink/renderer/core/css/media_values.cc
+@@ -4,6 +4,9 @@
+ 
+ #include "third_party/blink/renderer/core/css/media_values.h"
+ 
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/css/scripting.h"
+ #include "third_party/blink/renderer/core/css/css_resolution_units.h"
+ #include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
+@@ -16,6 +19,7 @@
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/dom/element.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+@@ -167,6 +171,12 @@ int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
+   const display::ScreenInfo& screen_info =
+       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
+   int device_width = screen_info.rect.width();
++  // Camoucrome (SP4a): same key as Screen::width(), so CSS device-width can
++  // never diverge from JS screen.width.
++  if (std::optional<uint32_t> v = camoucfg::GetUint32(
++          camoucfg::ScopeFor(frame->DomWindow()), camoucfg::keys::kScreenWidth)) {
++    device_width = static_cast<int>(*v);
++  }
+   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     device_width = static_cast<int>(
+         lroundf(device_width * screen_info.device_scale_factor));
+@@ -179,6 +189,12 @@ int MediaValues::CalculateDeviceHeight(LocalFrame* frame) {
+   const display::ScreenInfo& screen_info =
+       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
+   int device_height = screen_info.rect.height();
++  // Camoucrome (SP4a): same key as Screen::height(), so CSS device-height can
++  // never diverge from JS screen.height.
++  if (std::optional<uint32_t> v = camoucfg::GetUint32(
++          camoucfg::ScopeFor(frame->DomWindow()), camoucfg::keys::kScreenHeight)) {
++    device_height = static_cast<int>(*v);
++  }
+   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     device_height = static_cast<int>(
+         lroundf(device_height * screen_info.device_scale_factor));
+diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
+index ed5028943e..291a3f250e 100644
+--- a/third_party/blink/renderer/core/frame/screen.cc
++++ b/third_party/blink/renderer/core/frame/screen.cc
+@@ -29,6 +29,9 @@
+ #include "third_party/blink/renderer/core/frame/screen.h"
+ 
+ #include "base/numerics/safe_conversions.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/event_target_names.h"
+@@ -109,6 +112,13 @@ unsigned Screen::colorDepth() const {
+   if (!DomWindow()) {
+     return unknown_color_depth;
+   }
++  // Camoucrome (SP4a): config override. pixelDepth() returns colorDepth(), so
++  // this one key carries both -- no separate pixelDepth key exists.
++  if (std::optional<uint32_t> v = camoucfg::GetUint32(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kScreenColorDepth)) {
++    return *v;
++  }
+   return GetScreenInfo().depth == 0
+              ? unknown_color_depth
+              : base::saturated_cast<unsigned>(GetScreenInfo().depth);
+@@ -175,6 +185,31 @@ gfx::Rect Screen::GetRect(bool available) const {
+   LocalFrame* frame = DomWindow()->GetFrame();
+   const display::ScreenInfo& screen_info = GetScreenInfo();
+   gfx::Rect rect = available ? screen_info.available_rect : screen_info.rect;
++  // Camoucrome (SP4a): config override, authoritative over the host display.
++  // Same keys media_values.cc reads, so JS screen.* and CSS device-* agree.
++  ExecutionContext* camou_ctx = GetExecutionContext();
++  const camoucfg::ConfigScope& camou_scope = camoucfg::ScopeFor(camou_ctx);
++  if (available) {
++    if (std::optional<uint32_t> v =
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailLeft))
++      rect.set_x(static_cast<int>(*v));
++    if (std::optional<uint32_t> v =
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailTop))
++      rect.set_y(static_cast<int>(*v));
++    if (std::optional<uint32_t> v =
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailWidth))
++      rect.set_width(static_cast<int>(*v));
++    if (std::optional<uint32_t> v =
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailHeight))
++      rect.set_height(static_cast<int>(*v));
++  } else {
++    if (std::optional<uint32_t> v =
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenWidth))
++      rect.set_width(static_cast<int>(*v));
++    if (std::optional<uint32_t> v =
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenHeight))
++      rect.set_height(static_cast<int>(*v));
++  }
+   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk())
+     return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
+   if (frame->GetDocument() && frame->GetDocument()->TextScaleMetaTagPresent()) {
+diff --git a/third_party/blink/renderer/modules/screen_orientation/BUILD.gn b/third_party/blink/renderer/modules/screen_orientation/BUILD.gn
+index 03f509c853..3f72299dc4 100644
+--- a/third_party/blink/renderer/modules/screen_orientation/BUILD.gn
++++ b/third_party/blink/renderer/modules/screen_orientation/BUILD.gn
+@@ -18,6 +18,7 @@ blink_modules_sources("screen_orientation") {
+     "web_lock_orientation_error.h",
+   ]
+   deps = [
++    "//components/camoucfg",
+     "//services/service_manager/public/cpp",
+     "//third_party/blink/renderer/platform",
+   ]
+diff --git a/third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc b/third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc
+index fce1a975e3..877dff8024 100644
+--- a/third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc
++++ b/third_party/blink/renderer/modules/screen_orientation/screen_orientation.cc
+@@ -7,6 +7,9 @@
+ #include <memory>
+ 
+ #include "base/memory/raw_ptr_exclusion.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "services/network/public/mojom/web_sandbox_flags.mojom-blink.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+@@ -87,11 +90,32 @@ ExecutionContext* ScreenOrientation::GetExecutionContext() const {
+   return ExecutionContextClient::GetExecutionContext();
+ }
+ 
++std::optional<display::mojom::blink::ScreenOrientation>
++ScreenOrientation::CamoucromeDerivedOrientation() const {
++  const camoucfg::ConfigScope& scope =
++      camoucfg::ScopeFor(GetExecutionContext());
++  std::optional<uint32_t> w =
++      camoucfg::GetUint32(scope, camoucfg::keys::kScreenWidth);
++  std::optional<uint32_t> h =
++      camoucfg::GetUint32(scope, camoucfg::keys::kScreenHeight);
++  if (!w || !h)
++    return std::nullopt;
++  return *w > *h
++             ? display::mojom::blink::ScreenOrientation::kLandscapePrimary
++             : display::mojom::blink::ScreenOrientation::kPortraitPrimary;
++}
++
+ V8OrientationType ScreenOrientation::type() const {
++  if (std::optional<display::mojom::blink::ScreenOrientation> derived =
++          CamoucromeDerivedOrientation()) {
++    return V8OrientationType(OrientationTypeToV8Enum(*derived));
++  }
+   return V8OrientationType(OrientationTypeToV8Enum(type_));
+ }
+ 
+ uint16_t ScreenOrientation::angle() const {
++  if (CamoucromeDerivedOrientation())
++    return 0;  // primary orientation of either axis sits at 0 degrees.
+   return angle_;
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/screen_orientation/screen_orientation.h b/third_party/blink/renderer/modules/screen_orientation/screen_orientation.h
+index 7f78348131..6752cb9b23 100644
+--- a/third_party/blink/renderer/modules/screen_orientation/screen_orientation.h
++++ b/third_party/blink/renderer/modules/screen_orientation/screen_orientation.h
+@@ -5,6 +5,8 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_SCREEN_ORIENTATION_SCREEN_ORIENTATION_H_
+ #define THIRD_PARTY_BLINK_RENDERER_MODULES_SCREEN_ORIENTATION_SCREEN_ORIENTATION_H_
+ 
++#include <optional>
++
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_orientation_type.h"
+ #include "third_party/blink/renderer/core/dom/events/event_target.h"
+@@ -61,6 +63,11 @@ class MODULES_EXPORT ScreenOrientation final : public EventTarget,
+  private:
+   ScreenOrientationController* Controller();
+ 
++  // Camoucrome (SP4a): derived orientation from spoofed screen.width/height,
++  // or nullopt when the dims are not both configured.
++  std::optional<display::mojom::blink::ScreenOrientation>
++  CamoucromeDerivedOrientation() const;
++
+   display::mojom::blink::ScreenOrientation type_;
+   uint16_t angle_;
+ };
