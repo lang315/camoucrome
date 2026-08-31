@@ -352,6 +352,7 @@ V5 = "V5 blockIfNotDefined (webgl+webgl2): unconfigured pname -> null+INVALID_EN
 V6 = "V6 supportedExtensions (webgl+webgl2): list is exactly the whitelist; in-list ext gettable; out-of-list ext refused"
 V7 = "V7 shaderPrecisionFormats (webgl+webgl2): configured pair spoofed; blockIfNotDefined nulls unlisted pair, else host"
 V8 = "V8 contextAttributes (webgl+webgl2): configured antialias/powerPreference/preserveDrawingBuffer reflected; unset alpha unchanged & boolean"
+V9 = "V9 worker parity: a WebGL hook fires identically on a dedicated-worker OffscreenCanvas context, not just the main thread"
 
 
 def ok(v):
@@ -544,7 +545,43 @@ results[V8] = v8_1_ok and v8_2_ok
 if not results[V8]:
     notes.append(f"V8 webgl: {v8_1_why} | webgl2: {v8_2_why}")
 
-EXPECTED = 8
+# --- V9: worker parity. A WebGL getParameter hook must fire identically on a
+#         dedicated-worker OffscreenCanvas context (config is env-inherited,
+#         and the hook resolves the scope via Host()->GetTopExecutionContext()
+#         -> the worker global, not GetDocument()). Closes the SP3b whole-branch
+#         "WebGL-in-worker parity unverified" gap. ---
+PROBE_WORKER = """(arg) => new Promise((resolve, reject) => {
+  const readMain = () => {
+    const gl = document.createElement('canvas').getContext('webgl');
+    return gl ? gl.getParameter(0x0D33) : 'no-gl';  // MAX_TEXTURE_SIZE
+  };
+  const src = `self.onmessage = () => {
+    try { const gl = new OffscreenCanvas(16, 16).getContext('webgl');
+      self.postMessage({worker: gl ? gl.getParameter(0x0D33) : 'no-gl'}); }
+    catch (e) { self.postMessage({worker: 'err:' + e}); }
+  };`;
+  try {
+    const w = new Worker(URL.createObjectURL(
+      new Blob([src], {type: 'text/javascript'})));
+    w.onmessage = (e) => resolve({main: readMain(), worker: e.data.worker});
+    w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    w.postMessage('go');
+  } catch (e) { reject(e); }
+})"""
+V9CFG = json.dumps({"webGl:parameters": {"3379": 16384}})  # host reports 8192
+v9, v9e = probe_with(V9CFG, PROBE_WORKER, None)
+if not ok(v9):
+    results[V9] = False
+    notes.append(f"V9: {v9.get('err') if v9 else f'{type(v9e).__name__}: {v9e}'}")
+else:
+    # both threads must see the spoofed 16384 (hence differ from host 8192);
+    # a worker seeing 8192 would prove the hook does not reach worker scope.
+    results[V9] = v9.get("main") == 16384 and v9.get("worker") == 16384
+    if not results[V9]:
+        notes.append(f"V9: main={v9.get('main')!r} worker={v9.get('worker')!r} "
+                     "(worker must equal the spoofed 16384, not host 8192)")
+
+EXPECTED = 9
 
 for name, passed in sorted(results.items()):
     print(f"{'PASS' if passed else 'FAIL'}  {name}")
