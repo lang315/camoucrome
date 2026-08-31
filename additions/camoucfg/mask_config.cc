@@ -55,23 +55,11 @@ bool HasKey(const ConfigScope& scope, std::string_view key) {
 
 namespace internal {
 
-namespace {
-bool AsciiEqualsIgnoreCase(std::string_view a, std::string_view b) {
-  if (a.size() != b.size())
-    return false;
-  for (size_t i = 0; i < a.size(); ++i) {
-    if (base::ToLowerASCII(a[i]) != base::ToLowerASCII(b[i]))
-      return false;
-  }
-  return true;
-}
-}  // namespace
-
 bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family) {
   if (!HasKeyIn(cfg, keys::kFonts))
     return true;  // rule 5: unconfigured => every host font visible.
   for (const std::string& allowed : GetStringListFrom(cfg, keys::kFonts)) {
-    if (AsciiEqualsIgnoreCase(allowed, family))
+    if (base::EqualsCaseInsensitiveASCII(allowed, family))
       return true;
   }
   return false;
