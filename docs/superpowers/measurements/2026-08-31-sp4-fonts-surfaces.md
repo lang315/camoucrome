@@ -94,28 +94,58 @@ minimal set against RED/GREEN, mirroring how `font-hijacker.patch` structures it
 handles generic/system fonts in separate OS-derivation patches (out of Layer-1 scope
 here); Layer 1 must leave generic rendering intact, not derive it.
 
-### Resolution (after reading both selectors)
+### Resolution — CORRECTED empirically (Task 2, 2026-08-31)
 
-`CSSFontSelector::GetFontData` (css_font_selector.cc:250-255) and
-`OffscreenFontSelector::GetFontData` (offscreen_font_selector.cc:38-55, the
-worker/`OffscreenCanvas` selector) have the **identical** tail:
+The first resolution (gate the two selectors' `GetFontData` before their
+`FontCache::Get().GetFontData(...)` call) was **wrong, and RED-first caught it** —
+the gate landed but the unlisted host font still resolved. Confirmed with an
+instrumented rebuild:
 
-```cpp
-if (!font_family.FamilyIsGeneric()) {
-  if (auto* face = font_face_cache_->Get(...)) return face->GetFontData(...);  // @font-face
-}
-AtomicString settings_family_name = FamilyNameFromSettings(request_description, font_family);
-if (settings_family_name.empty()) return nullptr;
-return FontCache::Get().GetFontData(request_description, settings_family_name);  // host lookup
-```
+- For a specific (non-generic) `font-family` with no `@font-face`,
+  `FamilyNameFromSettings` returns **empty**, so the selector's *pre-existing*
+  `if (settings_family_name.empty()) return nullptr;` fires **before** the gate —
+  the gate is dead code on that path. (The selector's `FontCache` call is reached
+  only for generics, which resolve to a settings font name.)
+- The specific family is instead resolved one level up, in
+  **`FontFallbackList::GetFontData`** (`platform/fonts/font_fallback_list.cc:149`):
+  after the selector returns null for a non-empty family name, it **retries**
+  `FontCache::Get().GetFontData(font_description, curr_family->FamilyName())` on
+  the **literal** family name (line 172; and line 160 on the no-`font_selector_`
+  path). That retry is the actual metric-probe resolution.
 
-So the metric-probe gate is: in **both** methods, immediately before the
-`FontCache::Get().GetFontData(...)` call, `if (!font_family.FamilyIsGeneric() &&
-!camoucfg::IsFontAllowed(scope, family_name)) return nullptr;`. This is
-generic-safe (genericness still known), leaves `@font-face` web fonts untouched,
-and editing both selectors covers **window + worker parity** in one design. This
-is the chosen Layer-1 gate — option A extended to the worker selector, not the
-lower `GetFontPlatformData`.
+**The corrected gate is `FontFallbackList::GetFontData`'s retry**, and it is a
+*better* choke than the selector:
+
+- The retry fires ONLY for specific families the selector returned null for;
+  generics resolve at the selector and never reach it — so gating it is
+  generic-safe by position (belt-and-braces: also guard `!curr_family->FamilyIsGeneric()`).
+- `FontFallbackList` is the **shared** window + worker/`OffscreenCanvas` fallback
+  machinery (the worker path builds a `FontFallbackList` with the
+  `OffscreenFontSelector`), so **one gate covers both parities** — better than
+  editing two selectors.
+
+Gate both retry calls (lines 160 and 172): only call `FontCache::Get().GetFontData(...)`
+when `curr_family->FamilyIsGeneric() || camoucfg::IsFontAllowed(scope,
+curr_family->FamilyName().Utf8())`; otherwise leave `result` null so the loop
+falls through to the next CSS family (e.g. the trailing `monospace`) → the probe
+measures the fallback width. A substitute-FontData return from the selector
+(returning the fallback face instead of null) is **wrong** — it stops CSS
+fallback at the blocked family instead of advancing to the next one.
+
+**Layering cost (the price of the correct gate):** `font_fallback_list.cc` is in
+`platform/fonts`, which does **not** dep `//components/camoucfg` (only
+`core/BUILD.gn` does), and `platform/fonts/DEPS` admits `components/` only via
+specific rules. So the gate requires adding `//components/camoucfg` to
+`platform/BUILD.gn` deps and `+components/camoucfg/{mask_config.h,keys.h,blink_scope.h}`
+to `platform/fonts/DEPS` (per-header, the sanctioned incremental grant — camoucfg
+is by design a config layer usable from every process; `gn check` enforces it).
+`ScopeFor` ignores its argument today, so `camoucfg::ScopeFor(nullptr)` /
+`GlobalScope()` is safe where `FontFallbackList` has no execution context
+(the no-selector path); use the selector's context where available for
+forward-compatibility.
+
+The two inert selector edits from the first Task 2 attempt must be **reverted**
+to pristine.
 
 **Companion — `check()` availability.** `FontFaceSet::check` already `continue`s
 on generic families before calling `font_selector->IsPlatformFamilyMatchAvailable`
