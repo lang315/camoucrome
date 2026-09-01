@@ -16,7 +16,7 @@ namespace {
 // FNV-1a over the raw sample bytes -- same construction as canvas_noise.cc's
 // ContentHash, so different buffers diverge and identical buffers reproduce.
 uint64_t ContentHash(base::span<const float> samples) {
-  uint64_t h = 1469598103934665603ULL;
+  uint64_t h = 14695981039346656037ULL;
   // float has no unique object representation (+0/-0 compare equal but
   // differ bitwise), so as_bytes() needs the explicit allow_nonunique_obj
   // opt-in. That's fine here: this hash only needs to be content-sensitive
