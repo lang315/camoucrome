@@ -237,9 +237,18 @@ inline constexpr char kScreenColorDepth[] = "screen.colorDepth";
 // direct JS property path); the future jitter key is fonts:spacing_seed.
 inline constexpr char kFonts[] = "fonts:list";
 
+// Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or
+// 0 => no perturbation (rule 5).
+inline constexpr char kAudioSeed[] = "audio:seed";
+// AudioContext scalar getters. Synthetic AudioContext: namespace (mirrors JS but
+// grouped like webGl:). sampleRate is deliberately absent -- see the measurement.
+inline constexpr char kAudioOutputLatency[] = "AudioContext:outputLatency";
+inline constexpr char kAudioBaseLatency[] = "AudioContext:baseLatency";
+inline constexpr char kAudioMaxChannelCount[] = "AudioContext:maxChannelCount";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 53> kAllKeys = {
+inline constexpr std::array<std::string_view, 57> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -293,6 +302,10 @@ inline constexpr std::array<std::string_view, 53> kAllKeys = {
     kScreenAvailTop,
     kScreenColorDepth,
     kFonts,
+    kAudioSeed,
+    kAudioOutputLatency,
+    kAudioBaseLatency,
+    kAudioMaxChannelCount,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
