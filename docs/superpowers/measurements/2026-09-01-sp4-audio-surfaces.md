@@ -110,3 +110,38 @@ No `AudioContext:sampleRate` key. Documented as a scope limitation, the audio
 analog of the screen monitor-only call. (If future evidence shows a detector keys
 on sampleRate and a coherent whole-pipeline spoof is worth it, that is a follow-on,
 like fonts-ii.)
+
+## What the ε calibration actually protects (Task 3 review, 2026-09-01)
+
+The noise magnitudes chosen — freq `magnitude_buffer_` relative ε `1e-3`, raw
+samples additive ε `1e-4` — are deliberately imperceptible, and that has a
+consequence worth stating plainly (the "state what the guard covers" discipline):
+**the noise survives on the float-precision surfaces but is quantized away on the
+8-bit ones.**
+
+- `getFloatFrequencyData` (float dB) and `getChannelData` / `getFloatTimeDomainData`
+  (float samples): a `1e-3` relative magnitude perturbation shifts a dB value by
+  ~0.0087 dB, and `1e-4` shifts a raw sample by ~1e-4 — both change the float bits,
+  so any float-precision hash of these surfaces is perturbed. These are the
+  high-value audio-fingerprint vectors (the OfflineAudioContext compressor-sum via
+  `getChannelData`; the float FFT). **Effectively protected** — verified by A1
+  (getChannelData seed-stability + divergence) and A2 (float freq seed-stability).
+- `getByteFrequencyData` (0–255): one byte step is ~0.27 dB (16× the 0.017 dB the
+  ε produces), so the perturbation is quantized away — the byte spectrum is
+  effectively **un-perturbed** (though still coherent with the noised float at byte
+  resolution). `getByteTimeDomainData` likewise: one byte step is 1/128 ≈ 0.0078 in
+  sample units, ~78× the additive ε, so its noise is quantized away too.
+
+This is an accepted calibration trade, not a defect: the 8-bit readbacks are
+low-precision visualizer surfaces with little device entropy (an OfflineAudioContext
+software FFT is largely device-independent), and raising ε ~30× to make them
+byte-effective would perturb the **high-value float** surfaces more than necessary
+and less imperceptibly. If a real detector is ever shown to key on a byte readback,
+the lever is a larger ε on the shared freq source (both float and byte inherit it
+coherently) — a follow-on calibration, recorded here so the boundary is explicit.
+
+Corollary for verification: a Float/Byte coherence check expressed in **byte** units
+(`byte == byte-scale(noised float) ± 1`) is **non-discriminating** at this ε — it
+passes whether the two readbacks share a noise field or not, because the noise is
+sub-quantization. The committed coherence discriminator is therefore expressed in
+**float** units (A3/A3b), not byte tolerance.
