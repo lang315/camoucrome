@@ -11,7 +11,7 @@ index e49c0234d1..8d3668cf1c 100644
      "//media/mojo/mojom:speech_recognition_audio_forwarder_blink",
      "//third_party/blink/renderer/modules/mediastream",
 diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
-index 891a81543b..c00ffb6233 100644
+index 891a81543b..b463dfbdf9 100644
 --- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 +++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 @@ -27,8 +27,14 @@
@@ -98,7 +98,7 @@ index 891a81543b..c00ffb6233 100644
  void SpeechSynthesis::StartSpeakingImmediately() {
    SpeechSynthesisUtterance* utterance = CurrentSpeechUtterance();
    DCHECK(utterance);
-@@ -239,6 +286,37 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+@@ -239,6 +286,52 @@ void SpeechSynthesis::StartSpeakingImmediately() {
    utterance->SetStartTime(millis / 1000.0);
    is_paused_ = false;
  
@@ -107,7 +107,6 @@ index 891a81543b..c00ffb6233 100644
 +    if (camoucfg::GetBool(camoucfg::ScopeFor(nullptr),
 +                          camoucfg::keys::kVoicesFakeCompletion)
 +            .value_or(true)) {
-+      DidStartSpeaking(utterance);  // fires 'start'
 +      const double cps =
 +          camoucfg::GetDouble(camoucfg::ScopeFor(nullptr),
 +                              camoucfg::keys::kVoicesFakeCompletionCharsPerSecond)
@@ -115,19 +114,35 @@ index 891a81543b..c00ffb6233 100644
 +      const double rate = utterance->rate() > 0 ? utterance->rate() : 1.0;
 +      const double secs =
 +          static_cast<double>(utterance->text().length()) / (cps * rate);
-+      GetSupplementable()
-+          ->GetTaskRunner(TaskType::kMiscPlatformAPI)
-+          ->PostDelayedTask(
-+              FROM_HERE,
-+              BindOnce(
-+                  [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
-+                    if (self && u == self->CurrentSpeechUtterance()) {
-+                      self->DidFinishSpeaking(
-+                          u, mojom::blink::SpeechSynthesisErrorCode::kNoError);
-+                    }
-+                  },
-+                  WrapWeakPersistent(this), WrapWeakPersistent(utterance)),
-+              base::Seconds(secs));
++      auto runner =
++          GetSupplementable()->GetTaskRunner(TaskType::kMiscPlatformAPI);
++      // FIX B: fire 'start' ASYNC (a real TTS backend fires start after speak()
++      // returns; a synchronous start is a trivial fingerprint tell).
++      runner->PostTask(
++          FROM_HERE,
++          BindOnce(
++              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
++                // FIX A: u may be null (WeakPersistent after GC); without the
++                // `u &&` check, `u == CurrentSpeechUtterance()` is nullptr==nullptr
++                // on an empty queue -> DidStartSpeaking(nullptr) crash.
++                if (self && u && u == self->CurrentSpeechUtterance()) {
++                  self->DidStartSpeaking(u);
++                }
++              },
++              WrapWeakPersistent(this), WrapWeakPersistent(utterance)));
++      // Delayed 'end' (>= the async start, since secs > 0 for non-empty text and
++      // same-runner FIFO orders the two 0-delay tasks for empty text).
++      runner->PostDelayedTask(
++          FROM_HERE,
++          BindOnce(
++              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
++                if (self && u && u == self->CurrentSpeechUtterance()) {
++                  self->DidFinishSpeaking(
++                      u, mojom::blink::SpeechSynthesisErrorCode::kNoError);
++                }
++              },
++              WrapWeakPersistent(this), WrapWeakPersistent(utterance)),
++          base::Seconds(secs));
 +    } else {
 +      SpeakingErrorOccurred(utterance);  // deterministic error
 +    }
