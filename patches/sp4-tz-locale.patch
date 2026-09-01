@@ -1,60 +1,38 @@
 diff --git a/third_party/blink/renderer/core/core_initializer.cc b/third_party/blink/renderer/core/core_initializer.cc
-index 948451b578..0b5c9ddd05 100644
+index 0b5c9ddd05..5a9f8a7b36 100644
 --- a/third_party/blink/renderer/core/core_initializer.cc
 +++ b/third_party/blink/renderer/core/core_initializer.cc
-@@ -30,6 +30,10 @@
+@@ -30,6 +30,7 @@
  
  #include "third_party/blink/renderer/core/core_initializer.h"
  
-+#include "base/no_destructor.h"
-+#include "components/camoucfg/blink_scope.h"
-+#include "components/camoucfg/keys.h"
-+#include "components/camoucfg/mask_config.h"
- #include "third_party/blink/public/platform/platform.h"
- #include "third_party/blink/public/web/blink.h"
- #include "third_party/blink/renderer/bindings/core/v8/binding_security.h"
-@@ -49,6 +53,7 @@
- #include "third_party/blink/renderer/core/html_names.h"
- #include "third_party/blink/renderer/core/html_tokenizer_names.h"
- #include "third_party/blink/renderer/core/input_type_names.h"
-+#include "third_party/blink/renderer/core/inspector/locale_controller.h"
- #include "third_party/blink/renderer/core/keywords.h"
- #include "third_party/blink/renderer/core/lcp_critical_path_predictor/element_locator.h"
- #include "third_party/blink/renderer/core/mathml_names.h"
-@@ -174,6 +179,36 @@ void CoreInitializer::Initialize() {
++#include "base/logging.h"
+ #include "base/no_destructor.h"
+ #include "components/camoucfg/blink_scope.h"
+ #include "components/camoucfg/keys.h"
+@@ -188,6 +189,11 @@ void CoreInitializer::Initialize() {
+         tz && !tz->empty()) {
+       auto result =
+           TimeZoneController::SetTimeZoneOverride(String::FromUtf8(*tz));
++      if (result.status ==
++          TimeZoneController::TimeZoneOverrideStatus::kInvalidTimezone) {
++        LOG(WARNING) << "camoucfg: timezone:id '" << *tz
++                     << "' invalid; real timezone retained";
++      }
+       // Keep the RAII handle alive for the whole process (never clear).
+       static base::NoDestructor<
+           std::unique_ptr<TimeZoneController::TimeZoneOverride>>
+@@ -204,8 +210,12 @@ void CoreInitializer::Initialize() {
+       locale = *nl;
+     }
+     if (!locale.empty()) {
+-      LocaleController::instance().SetLocaleOverride(
++      String locale_error = LocaleController::instance().SetLocaleOverride(
+           String::FromUtf8(locale), /*is_claiming_override=*/true);
++      if (!locale_error.empty()) {
++        LOG(WARNING) << "camoucfg: locale '" << locale << "' rejected: "
++                     << locale_error.Utf8().c_str() << "; real locale retained";
++      }
+     }
+   }
  
-   TimeZoneController::Init();
- 
-+  // SP4-timezone/locale: drive the native timezone/locale overrides from
-+  // CAMOU_CONFIG so a standalone (non-CDP) launch is coherent, incl. workers.
-+  {
-+    const camoucfg::ConfigScope& camou_scope = camoucfg::ScopeFor(nullptr);
-+    if (std::optional<std::string> tz =
-+            camoucfg::GetString(camou_scope, camoucfg::keys::kTimezoneId);
-+        tz && !tz->empty()) {
-+      auto result =
-+          TimeZoneController::SetTimeZoneOverride(String::FromUtf8(*tz));
-+      // Keep the RAII handle alive for the whole process (never clear).
-+      static base::NoDestructor<
-+          std::unique_ptr<TimeZoneController::TimeZoneOverride>>
-+          kTimeZoneHandle(std::move(result.handle));
-+    }
-+    std::string locale;
-+    if (std::optional<std::string> l =
-+            camoucfg::GetString(camou_scope, camoucfg::keys::kLocaleTag);
-+        l && !l->empty()) {
-+      locale = *l;
-+    } else if (std::optional<std::string> nl = camoucfg::GetString(
-+                   camou_scope, camoucfg::keys::kNavigatorLanguage);
-+               nl && !nl->empty()) {
-+      locale = *nl;
-+    }
-+    if (!locale.empty()) {
-+      LocaleController::instance().SetLocaleOverride(
-+          String::FromUtf8(locale), /*is_claiming_override=*/true);
-+    }
-+  }
-+
-   FontGlobalContext::Init();
- 
-   CSSDefaultStyleSheets::Init();
