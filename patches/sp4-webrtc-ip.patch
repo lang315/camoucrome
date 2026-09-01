@@ -1,0 +1,58 @@
+diff --git a/content/renderer/BUILD.gn b/content/renderer/BUILD.gn
+index 5a4051158c..8433e7bc67 100644
+--- a/content/renderer/BUILD.gn
++++ b/content/renderer/BUILD.gn
+@@ -236,6 +236,7 @@ target(link_target_type, "renderer") {
+     "//cc/mojo_embedder",
+     "//cc/mojom",
+     "//cc/paint",
++    "//components/camoucfg",
+     "//components/discardable_memory/client",
+     "//components/history/core/browser:features",
+     "//components/input",
+diff --git a/content/renderer/renderer_blink_platform_impl.cc b/content/renderer/renderer_blink_platform_impl.cc
+index 4341f407c4..4f98a2bcce 100644
+--- a/content/renderer/renderer_blink_platform_impl.cc
++++ b/content/renderer/renderer_blink_platform_impl.cc
+@@ -34,6 +34,9 @@
+ #include "base/time/time_delta_from_string.h"
+ #include "build/build_config.h"
+ #include "cc/base/features.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "components/content_settings/core/common/content_settings_pattern.h"
+ #include "components/input/features.h"
+ #include "components/input/input_constants.h"
+@@ -89,6 +92,7 @@
+ #include "storage/common/database/database_identifier.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
++#include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
+ #include "third_party/blink/public/common/security/protocol_handler_security_level.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/mojom/cpu_performance.mojom.h"
+@@ -675,6 +679,23 @@ void RendererBlinkPlatformImpl::GetWebRTCRendererPreferences(
+     }
+   }
+ 
++  // SP4-webrtc-ip: config overrides the effective IP-handling policy so a
++  // standalone (non-CDP) launch controls WebRTC IP exposure. Absent => real
++  // pref. An unrecognized value warns rather than silently degrading.
++  if (std::optional<std::string> policy = camoucfg::GetString(
++          camoucfg::ScopeFor(nullptr), camoucfg::keys::kWebrtcIpHandlingPolicy);
++      policy && !policy->empty()) {
++    if (*policy == blink::kWebRTCIPHandlingDefault ||
++        *policy == blink::kWebRTCIPHandlingDefaultPublicAndPrivateInterfaces ||
++        *policy == blink::kWebRTCIPHandlingDefaultPublicInterfaceOnly ||
++        *policy == blink::kWebRTCIPHandlingDisableNonProxiedUdp) {
++      *ip_handling_policy = blink::ToWebRTCIPHandlingPolicy(*policy);
++    } else {
++      LOG(WARNING) << "camoucfg: webrtc:ipHandlingPolicy '" << *policy
++                   << "' unrecognized; real policy retained";
++    }
++  }
++
+   *udp_min_port = render_frame->GetRendererPreferences().webrtc_udp_min_port;
+   *udp_max_port = render_frame->GetRendererPreferences().webrtc_udp_max_port;
+   const std::string url(web_frame->GetSecurityOrigin().ToString().Utf8());
