@@ -62,6 +62,20 @@ std::optional<bool> GetBool(const ConfigScope& scope, std::string_view key);
 std::vector<std::string> GetStringList(const ConfigScope& scope,
                                        std::string_view key);
 
+// One entry of the injected speechSynthesis voice list (SP4-voices). Field
+// names map to the mojom SpeechSynthesisVoice struct.
+struct VoiceConfig {
+  std::string voice_uri;
+  std::string name;
+  std::string lang;
+  bool is_local_service = true;
+  bool is_default = false;
+};
+
+// The configured voice list ("voices:list"): empty when the key is absent or
+// is not a list of voice objects.
+std::vector<VoiceConfig> GetVoices(const ConfigScope& scope);
+
 // True when |family| may resolve to a real host face: no "fonts:list" key is
 // set (every host font visible), or |family| is in the list (case-insensitive).
 // The gate applies this only to non-generic families (generics always render).

@@ -197,6 +197,30 @@ TEST(GettersTest, ExplicitEmptyListIsEmptyButPresent) {
   EXPECT_FALSE(HasKeyIn(cfg, "absent"));
 }
 
+TEST(GettersTest, GetVoicesParsesObjects) {
+  base::DictValue cfg = ParseConfig(R"({"voices:list": [
+      {"voiceURI":"urn:x","name":"Alex","lang":"en-US","localService":true,"default":true},
+      {"name":"Zira","lang":"en-GB"}
+  ]})", /*strict=*/false);
+  std::vector<VoiceConfig> v = GetVoicesFrom(cfg, "voices:list");
+  ASSERT_EQ(v.size(), 2u);
+  EXPECT_EQ(v[0].voice_uri, "urn:x");
+  EXPECT_EQ(v[0].name, "Alex");
+  EXPECT_EQ(v[0].lang, "en-US");
+  EXPECT_TRUE(v[0].is_local_service);
+  EXPECT_TRUE(v[0].is_default);
+  EXPECT_EQ(v[1].voice_uri, "Zira");   // falls back to name
+  EXPECT_FALSE(v[1].is_default);       // default false
+  EXPECT_TRUE(v[1].is_local_service);  // default true
+}
+
+TEST(GettersTest, GetVoicesEmptyWhenAbsentOrWrongType) {
+  base::DictValue a = ParseConfig(R"({})", /*strict=*/false);
+  EXPECT_TRUE(GetVoicesFrom(a, "voices:list").empty());
+  base::DictValue b = ParseConfig(R"({"voices:list": "notalist"})", /*strict=*/false);
+  EXPECT_TRUE(GetVoicesFrom(b, "voices:list").empty());
+}
+
 // All seven, not a representative sample. std::optional's converting
 // constructor means several plausible miswirings compile cleanly: GetDouble
 // forwarding to GetInt32From, GetInt32 to GetUint32From, or GetBool to

@@ -162,6 +162,42 @@ std::vector<std::string> GetStringListFrom(const base::DictValue& cfg,
   return out;
 }
 
+std::vector<VoiceConfig> GetVoicesFrom(const base::DictValue& cfg,
+                                       std::string_view key) {
+  const base::Value* value = cfg.Find(key);
+  if (!value) {
+    return {};
+  }
+  if (!value->is_list()) {
+    WarnWrongType(key, "a list");
+    return {};
+  }
+  std::vector<VoiceConfig> out;
+  for (const base::Value& entry : value->GetList()) {
+    if (!entry.is_dict()) {
+      WarnWrongType(key, "a list of voice objects");
+      return {};
+    }
+    const base::DictValue& d = entry.GetDict();
+    VoiceConfig v;
+    if (const std::string* s = d.FindString("name")) {
+      v.name = *s;
+    }
+    if (const std::string* s = d.FindString("lang")) {
+      v.lang = *s;
+    }
+    if (const std::string* s = d.FindString("voiceURI")) {
+      v.voice_uri = *s;
+    } else {
+      v.voice_uri = v.name;  // fall back to the display name
+    }
+    v.is_local_service = d.FindBool("localService").value_or(true);
+    v.is_default = d.FindBool("default").value_or(false);
+    out.push_back(std::move(v));
+  }
+  return out;
+}
+
 bool HasKeyIn(const base::DictValue& cfg, std::string_view key) {
   return cfg.Find(key) != nullptr;
 }
