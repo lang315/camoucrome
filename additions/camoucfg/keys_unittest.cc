@@ -67,6 +67,8 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kFonts,
       kAudioSeed, kAudioOutputLatency, kAudioBaseLatency,
       kAudioMaxChannelCount,
+      kMediaDevicesEnabled, kMediaDevicesMicros, kMediaDevicesWebcams,
+      kMediaDevicesSpeakers,
   };
   const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
   EXPECT_EQ(declared, in_array);

@@ -246,9 +246,18 @@ inline constexpr char kAudioOutputLatency[] = "AudioContext:outputLatency";
 inline constexpr char kAudioBaseLatency[] = "AudioContext:baseLatency";
 inline constexpr char kAudioMaxChannelCount[] = "AudioContext:maxChannelCount";
 
+// Media-device enumeration counts (SP4-media). Synthetic mediaDevices: namespace
+// (micros/webcams/speakers/enabled are not properties of the mediaDevices
+// object) -> colon, matching Camoufox. Absent/false enabled => real device list
+// untouched (rule 5).
+inline constexpr char kMediaDevicesEnabled[] = "mediaDevices:enabled";
+inline constexpr char kMediaDevicesMicros[] = "mediaDevices:micros";
+inline constexpr char kMediaDevicesWebcams[] = "mediaDevices:webcams";
+inline constexpr char kMediaDevicesSpeakers[] = "mediaDevices:speakers";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 57> kAllKeys = {
+inline constexpr std::array<std::string_view, 61> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -306,6 +315,10 @@ inline constexpr std::array<std::string_view, 57> kAllKeys = {
     kAudioOutputLatency,
     kAudioBaseLatency,
     kAudioMaxChannelCount,
+    kMediaDevicesEnabled,
+    kMediaDevicesMicros,
+    kMediaDevicesWebcams,
+    kMediaDevicesSpeakers,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
