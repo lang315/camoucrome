@@ -15,6 +15,7 @@
 #include "base/functional/function_ref.h"
 #include "base/values.h"
 #include "components/camoucfg/gl_params.h"
+#include "components/camoucfg/mask_config.h"
 
 namespace camoucfg::internal {
 
@@ -74,6 +75,8 @@ std::optional<bool> GetBoolFrom(const base::DictValue& cfg,
                                 std::string_view key);
 std::vector<std::string> GetStringListFrom(const base::DictValue& cfg,
                                            std::string_view key);
+std::vector<VoiceConfig> GetVoicesFrom(const base::DictValue& cfg,
+                                       std::string_view key);
 bool HasKeyIn(const base::DictValue& cfg, std::string_view key);
 
 // The process-wide parsed configuration, owned here (rather than as a

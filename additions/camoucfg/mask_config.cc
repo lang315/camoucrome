@@ -49,6 +49,11 @@ std::vector<std::string> GetStringList(const ConfigScope& scope,
   return internal::GetStringListFrom(internal::ParsedConfig(), key);
 }
 
+std::vector<VoiceConfig> GetVoices(const ConfigScope& scope) {
+  return internal::GetVoicesFrom(internal::ParsedConfig(),
+                                 keys::kVoicesList);
+}
+
 bool HasKey(const ConfigScope& scope, std::string_view key) {
   return internal::HasKeyIn(internal::ParsedConfig(), key);
 }

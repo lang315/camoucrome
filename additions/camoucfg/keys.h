@@ -269,9 +269,18 @@ inline constexpr char kLocaleTag[] = "locale:tag";
 // renderer's webrtc_ip_handling_policy. Absent => real pref unchanged (rule 5).
 inline constexpr char kWebrtcIpHandlingPolicy[] = "webrtc:ipHandlingPolicy";
 
+// Speech-synthesis voice injection + fake speak() completion (SP4-voices).
+// Synthetic voices: namespace. voices:list is a JSON array of voice objects
+// ({voiceURI,name,lang,localService,default}); fakeCompletion gates whether
+// speak() on an injected voice fake-succeeds (true, default) or errors.
+inline constexpr char kVoicesList[] = "voices:list";
+inline constexpr char kVoicesFakeCompletion[] = "voices:fakeCompletion";
+inline constexpr char kVoicesFakeCompletionCharsPerSecond[] =
+    "voices:fakeCompletion:charsPerSecond";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 64> kAllKeys = {
+inline constexpr std::array<std::string_view, 67> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -336,6 +345,9 @@ inline constexpr std::array<std::string_view, 64> kAllKeys = {
     kTimezoneId,
     kLocaleTag,
     kWebrtcIpHandlingPolicy,
+    kVoicesList,
+    kVoicesFakeCompletion,
+    kVoicesFakeCompletionCharsPerSecond,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
