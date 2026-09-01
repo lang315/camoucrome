@@ -4,6 +4,8 @@
 
 static_library("camoucfg") {
   sources = [
+    "audio_noise.cc",
+    "audio_noise.h",
     "blink_scope.h",
     "canvas_noise.cc",
     "canvas_noise.h",
@@ -32,6 +34,7 @@ static_library("camoucfg") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "audio_noise_unittest.cc",
     "canvas_noise_unittest.cc",
     "coherence_validator_unittest.cc",
     "derive_unittest.cc",
