@@ -68,10 +68,21 @@ Single hook in `GetWebRTCRendererPreferences`
 and the per-URL loop (so config is the source of truth, overriding both):
 
 ```cpp
+// As shipped: validate against the four known policy strings first, so an
+// unrecognized value warns and keeps the real pref rather than silently
+// degrading to `default` (ToWebRTCIPHandlingPolicy maps unknown -> default).
 if (std::optional<std::string> policy = camoucfg::GetString(
         camoucfg::ScopeFor(nullptr), camoucfg::keys::kWebrtcIpHandlingPolicy);
     policy && !policy->empty()) {
-  *ip_handling_policy = blink::ToWebRTCIPHandlingPolicy(*policy);
+  if (*policy == blink::kWebRTCIPHandlingDefault ||
+      *policy == blink::kWebRTCIPHandlingDefaultPublicAndPrivateInterfaces ||
+      *policy == blink::kWebRTCIPHandlingDefaultPublicInterfaceOnly ||
+      *policy == blink::kWebRTCIPHandlingDisableNonProxiedUdp) {
+    *ip_handling_policy = blink::ToWebRTCIPHandlingPolicy(*policy);
+  } else {
+    LOG(WARNING) << "camoucfg: webrtc:ipHandlingPolicy '" << *policy
+                 << "' unrecognized; real policy retained";
+  }
 }
 ```
 
@@ -84,9 +95,25 @@ if (std::optional<std::string> policy = camoucfg::GetString(
 - **Why this choke:** `GetWebRTCRendererPreferences` is the single point where the
   effective `ip_handling_policy` is produced for the peer-connection factory;
   overriding `*ip_handling_policy` here feeds the port allocator's interface
-  selection. Setting `default_public_interface_only` suppresses local private-IP
+  selection. The override reads `GlobalScope` (not the frame's `RendererPreferences`),
+  so it is frame-independent — any caller of this function, including a
+  dedicated-worker peer connection (same `RendererBlinkPlatformImpl`), gets the
+  override. Setting `default_public_interface_only` suppresses local private-IP
   host candidates AT GATHERING — subsuming the mDNS-permission gap (§1) — and
   `disable_non_proxied_udp` additionally forces WebRTC through the proxy.
+  (Worker/worklet PC routing was reasoned, not re-verified against upstream
+  source; the frame-independent read makes a bypass unlikely.)
+- **Measured effect of the protective policies (whole-branch characterization).**
+  On the WSL box (a single private interface, no STUN/public route), BOTH
+  `default_public_interface_only` and `disable_non_proxied_udp` produce **ZERO ICE
+  candidates** — the raw `172.22.x` host candidate (2 of them, udp+tcp, in the
+  no-config baseline) simply disappears; there is no public interface to emit and
+  no STUN reflexive candidate. So "suppresses local-IP candidates" here means
+  **empties the candidate set**, NOT masks-to-a-public-IP. On a real deployment
+  WITH a public route + STUN/TURN, `default_public_interface_only` emits a
+  public-only srflx candidate (the intended mask) and `disable_non_proxied_udp`
+  routes via the proxy — the empty result is a harness artifact. The
+  detectability/connectivity consequences of the empty set are in §5.
 - **content/renderer needs the camoucfg dep** — `content/renderer/BUILD.gn` has
   none today (this is the first camoucrome hook in content/renderer). Add
   `//components/camoucfg`. `camoucfg::ScopeFor(nullptr)` returns GlobalScope
@@ -99,17 +126,25 @@ if (std::optional<std::string> policy = camoucfg::GetString(
 
 ## 4. Verification plan
 
-Verify proves the policy is APPLIED, observed via candidate suppression (the
-public-IP routing benefit is not reproducible without a STUN server + proxy in
-the WSL harness — stated as a limitation):
+Verify is a **"hook-took-effect" gate, NOT a "masking works" gate.** It proves
+the config key changes the candidate set end-to-end; it does NOT prove
+real-world public-IP masking (no STUN/proxy in the WSL harness — a stated
+limitation). Because both protective policies EMPTY the set here (§3
+characterization), W1's "no private IP" passes on an empty candidate list
+(`any([]) == False`); its causal force comes from the RED-first record (pre-hook
+W1 FAIL with `172.22.x` present) plus the captured baseline JSON containing the
+private IP — NOT from W1 alone on the shipped binary.
 
-- **W1 (policy suppresses local IP):** launch with the fake-device flags (which
-  leak `172.22.x` in stock, §1) AND `CAMOU_CONFIG {"webrtc:ipHandlingPolicy":
-  "default_public_interface_only"}` → NO private IP (10./172.16-31./192.168.) in
-  any candidate. RED pre-hook: the private IP is present. GREEN: absent.
+- **W1 (hook took effect):** fake-device flags (which leak `172.22.x` in stock,
+  §1) + `CAMOU_CONFIG {"webrtc:ipHandlingPolicy":"default_public_interface_only"}`
+  → NO private IP (10./172.16-31./192.168.) in any candidate. RED pre-hook: the
+  private IP is present. GREEN: absent (empty set on this box).
 - **W2 (no-op absent):** no config → candidate set equals the stock
-  `--capture-baseline` (rule 5).
-- Optionally **W3 (`disable_non_proxied_udp`):** no `typ host` UDP candidate.
+  `--capture-baseline` (rule 5) — and that baseline contains the `172.22.x` leak,
+  which is what makes W1's GREEN meaningful.
+- Optional (not shipped) hardening: have W2 also assert the baseline is
+  non-empty / contains a private IP, making the verify self-contained rather
+  than dependent on the one-time RED record.
 
 ## 5. Residual / out of scope (documented)
 
@@ -119,6 +154,15 @@ the WSL harness — stated as a limitation):
   (local suppression), not the public-IP routing. The launcher/proxy layer must
   choose a policy value coherent with its proxy (e.g. `disable_non_proxied_udp`
   for a UDP-incapable HTTP proxy).
+- **Empty-candidate-set is itself a tell, and breaks connectivity.** When a
+  protective policy yields zero candidates (the §3 no-public-route/no-STUN case),
+  that is detectable: a normal browser on a real network returns ≥1 candidate
+  (an mDNS host, or a STUN srflx), so an otherwise-normal browser with zero
+  candidates is anomalous. It also means WebRTC cannot connect at all. Therefore
+  a protective policy is only coherent alongside a working TURN/relay (or a
+  UDP-capable proxy) that supplies a plausible non-local candidate; setting
+  `disable_non_proxied_udp`/`default_public_interface_only` without one degrades
+  from "masked" to "empty + broken". The launcher/proxy layer owns this pairing.
 - **Opt-in, not default-on.** Protection is only as strong as the configured
   policy value. Key absent → stock `default` (mDNS hides local IP with the
   permission-case gap of §1 still open). Closing the permission-case local leak
