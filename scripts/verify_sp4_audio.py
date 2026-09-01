@@ -22,6 +22,24 @@ results already collected.
      sum (the seed actually perturbs the samples). OfflineAudioContext
      renders in software, so this needs no GPU and runs headless.
 
+  A7 Additive-mode zero-preservation (whole-branch-review fix, RED-first):
+     AudioBuffer.getChannelData's readback noise (audio_buffer.cc) is
+     additive (relative=false), and PerturbAudioSamples' additive branch
+     used to do samples[i] += delta unconditionally -- so the first read of
+     an ALL-ZERO (silent) channel, e.g. a freshly constructed
+     `new AudioContext().createBuffer(1, N, rate)`, came back with every
+     sample in +/-1e-4 instead of exact 0.0. Stock is exact 0.0 for a
+     silent buffer, so this is a targeted "does this browser tamper with
+     audio buffers?" tell. With audio:seed=777, constructs a fresh
+     1-channel/2048-frame buffer and asserts getChannelData(0) is EVERY
+     element exactly 0.0. RED against the pre-fix binary (additive noise
+     makes them all nonzero); GREEN once PerturbAudioSamples skips
+     exact-zero samples in additive mode. A second assertion, in the SAME
+     session, writes a ramp (nonzero samples) into a second buffer and
+     confirms getChannelData still comes back perturbed (nonzero deltas
+     from the ramp) -- so the fix is confirmed to still noise real signal,
+     not just to have disabled additive noise outright.
+
   A2 AnalyserNode frequency-domain seed-stability: render a steady sine tone
      (OscillatorNode -> AnalyserNode -> destination) in an OfflineAudioContext,
      using suspend()/resume() to pause the render mid-stream (at 0.5s, well
@@ -118,6 +136,24 @@ results already collected.
      rationale as A3). Matching proves both time-domain readbacks derive
      from the same frozen input_buffer_ window, not two independently-noised
      destinations that happen to look similar.
+
+  TD-A3b Time-domain length-independence (whole-branch-review fix,
+     RED-first): same class of bug as the A3b frequency-domain fix, but in
+     the time domain. GetFloatTimeDomainData perturbed destination.first(len)
+     and GetByteTimeDomainData built a noised(len) scratch -- both hashed
+     only the caller's [0, len) destination window, so PerturbAudioSamples'
+     content-hash fold made every per-index delta depend on the caller's
+     requested length, even though both getters read the same frozen
+     input_buffer_ window. At a single suspend point, calls
+     getFloatTimeDomainData twice on the SAME analyser with two different
+     destination lengths -- fftSize (full) and fftSize/2 (half) -- and
+     asserts the full read's [0, half) prefix is EXACTLY bit-identical to
+     the half read (same frozen window, so a length-independent derivation
+     must agree exactly, no rounding involved). RED against the pre-fix
+     binary (the length-dependent hash makes the two reads diverge over
+     their shared prefix); GREEN once both time-domain getters build their
+     scratch over the full fft_size window (mirroring the A3b frequency-domain
+     fix) before slicing to len for output.
 
   A4 AudioContext scalar overrides: with AudioContext:baseLatency=0.01,
      AudioContext:outputLatency=0.05, AudioContext:maxChannelCount=6 all
@@ -239,6 +275,45 @@ def render_sum(config):
     Any fault becomes (None, exc), never a traceback that discards results
     already collected from other sessions."""
     vals, err = lib_shell.session(config, [RENDER_AND_SUM])
+    if err is not None or vals is None:
+        return None, err
+    return vals[0], None
+
+
+# A7: a plain real-time AudioContext (matches A4's shape -- no rendering or
+# suspend point needed). A fresh `createBuffer` is silent (stock: all-zero)
+# before anything writes to it, so getChannelData on it directly exercises
+# the additive-mode zero-preservation fix. A second buffer, with a ramp
+# written into it first, confirms the fix still perturbs real (non-zero)
+# signal -- so this criterion cannot be satisfied by simply disabling
+# additive noise outright.
+AUDIO_ZERO_PRESERVE = """() => {
+  const ctx = new AudioContext();
+  const silent = ctx.createBuffer(1, 2048, 44100);
+  const silentData = Array.from(silent.getChannelData(0));
+
+  // copyToChannel is a write path (not noised, does not set the
+  // did_camou_noise_ guard), so it lets us seed a buffer with real (nonzero)
+  // signal BEFORE the first noised read -- getChannelData() below is then
+  // genuinely the first read of non-zero content, exercising the same
+  // additive-noise path as silentData above but on real signal.
+  const ramp = ctx.createBuffer(1, 2048, 44100);
+  const rampValues = new Float32Array(ramp.length);
+  for (let i = 0; i < rampValues.length; i++) {
+    rampValues[i] = (i / rampValues.length) * 2 - 1;  // -1 .. 1, nonzero
+  }
+  ramp.copyToChannel(rampValues, 0);
+  const rampBefore = Array.from(rampValues);
+  const rampAfter = Array.from(ramp.getChannelData(0));  // first noised read
+  return { silentData, rampBefore, rampAfter };
+}
+"""
+
+
+def render_audio_zero_preserve(config):
+    """One content_shell session: renders AUDIO_ZERO_PRESERVE, returns
+    (data, err). Same fault contract as render_sum."""
+    vals, err = lib_shell.session(config, [AUDIO_ZERO_PRESERVE])
     if err is not None or vals is None:
         return None, err
     return vals[0], None
@@ -458,6 +533,52 @@ def render_td_analyser(config):
     return vals[0], None
 
 
+# Same shape and suspend point as TD_ANALYSER_READ, but calls
+# getFloatTimeDomainData TWICE at two different destination lengths -- full
+# (fftSize) and half (fftSize/2) -- the time-domain analog of A3b's
+# different-length frequency probe. Both reads are taken at the same suspend
+# point (input_buffer_ frozen, no WriteInput between them), so a
+# length-independent derivation must agree exactly over the shared prefix.
+TD_ANALYSER_READ_DIFFLEN = """() => new Promise((resolve, reject) => {
+  try {
+    const ctx = new OfflineAudioContext(1, 88200, 44100);
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 1000;
+    const analyser = ctx.createAnalyser();
+    osc.connect(analyser);
+    analyser.connect(ctx.destination);
+    osc.start(0);
+
+    ctx.suspend(0.5).then(() => {
+      const fullLen = analyser.fftSize;
+      const halfLen = Math.floor(fullLen / 2);
+      const floatFull = new Float32Array(fullLen);
+      analyser.getFloatTimeDomainData(floatFull);
+      const floatHalf = new Float32Array(halfLen);
+      analyser.getFloatTimeDomainData(floatHalf);
+      resolve({
+        floatFull: Array.from(floatFull),
+        floatHalf: Array.from(floatHalf),
+      });
+      ctx.resume().catch(() => {});
+    }).catch(reject);
+
+    ctx.startRendering().catch(() => {});
+  } catch (e) { reject(e); }
+})
+"""
+
+
+def render_td_analyser_difflen(config):
+    """One content_shell session: renders TD_ANALYSER_READ_DIFFLEN, returns
+    (data, err). Same fault contract as render_td_analyser."""
+    vals, err = lib_shell.session(config, [TD_ANALYSER_READ_DIFFLEN])
+    if err is not None or vals is None:
+        return None, err
+    return vals[0], None
+
+
 # A plain real-time AudioContext (not Offline), read synchronously right
 # after construction. baseLatency/outputLatency/maxChannelCount are all
 # reported at construction time -- no rendering, suspend point, or seed
@@ -558,6 +679,30 @@ else:
     notes.append(f"A1 seed=777 sum(a)={sum_a!r} sum(b)={sum_b!r} seed=888 sum={sum_c!r}")
     if not results[A1]:
         notes.append(f"A1: stable={stable} differs={differs}")
+
+# One content_shell process: a fresh (all-zero) buffer's getChannelData vs. a
+# ramp (nonzero-signal) buffer's getChannelData, both with audio:seed=777.
+data_a7, err_a7 = render_audio_zero_preserve(SEED_777)
+
+A7 = "A7 additive-mode zero-preservation: silent buffer stays exact 0.0, non-zero signal still perturbed"
+
+if data_a7 is None:
+    results[A7] = False
+    notes.append(f"A7: {type(err_a7).__name__}: {err_a7}")
+else:
+    silent_data = data_a7["silentData"]
+    ramp_before = data_a7["rampBefore"]
+    ramp_after = data_a7["rampAfter"]
+    silent_ok = len(silent_data) > 0 and all(v == 0.0 for v in silent_data)
+    ramp_changed = len(ramp_before) == len(ramp_after) and any(
+        b != a for b, a in zip(ramp_before, ramp_after))
+    results[A7] = silent_ok and ramp_changed
+    nonzero_silent = [v for v in silent_data if v != 0.0]
+    notes.append(f"A7 silent buffer all-zero: {silent_ok} "
+                 f"({len(nonzero_silent)}/{len(silent_data)} nonzero); "
+                 f"ramp signal perturbed: {ramp_changed}")
+    if not silent_ok:
+        notes.append(f"A7 first nonzero silent samples: {nonzero_silent[:5]}")
 
 # Three separate content_shell processes, same shape as A1: same seed twice
 # (reread-stability must not depend on anything process-random), then a
@@ -759,6 +904,31 @@ else:
         notes.append(f"TD-A3 first mismatches (i, floatSample, byte, expected): "
                      f"{mismatches[:5]}")
 
+# TD-A3b: time-domain length-independence. getFloatTimeDomainData at full
+# (fftSize) and half (fftSize/2) length must agree EXACTLY over the shared
+# [0, half) prefix -- proving the per-index noise is derived from a fixed
+# full window (FIX C), not the caller's destination length. RED pre-fix (the
+# len-window content hash differed between the two reads); GREEN after the
+# full-window scratch. Same shape as the frequency A3b length check.
+td_difflen, td_difflen_err = render_td_analyser_difflen(SEED_777)
+
+TD_A3B = "TD-A3b time-domain length-independence: full/half reads agree over the shared prefix"
+
+if td_difflen is None:
+    results[TD_A3B] = False
+    notes.append(f"TD-A3b: no data ({td_difflen_err})")
+else:
+    ff = td_difflen["floatFull"]
+    fh = td_difflen["floatHalf"]
+    n = len(fh)
+    prefix_mismatches = [i for i in range(n) if ff[i] != fh[i]]
+    results[TD_A3B] = (n > 0 and len(ff) >= n and not prefix_mismatches)
+    notes.append(f"TD-A3b checked {n} prefix samples, "
+                 f"mismatches={len(prefix_mismatches)}")
+    if prefix_mismatches:
+        notes.append(f"TD-A3b first mismatches (i, full, half): "
+                     f"{[(i, ff[i], fh[i]) for i in prefix_mismatches[:5]]}")
+
 # One content_shell session: a plain `new AudioContext()` with all three
 # scalar overrides configured, read synchronously right after construction.
 data_a4, err_a4 = render_audio_scalars(CONFIG_A4)
@@ -899,7 +1069,7 @@ else:
     if not results[A6]:
         notes.append(f"A6: sum_ok={sum_ok} float_ok={float_ok} scalars_ok={scalars_ok}")
 
-EXPECTED = 10
+EXPECTED = 12
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
