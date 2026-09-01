@@ -43,6 +43,39 @@ results already collected.
      readbacks are reading the SAME perturbed magnitude buffer, not two
      independently-noised destinations that happen to look similar.
 
+  A3b Different-length Float/Byte frequency-domain coherence: same suspend
+     point and apparatus as A3, but read at THREE different lengths in one
+     session: getFloatFrequencyData at FULL length (frequencyBinCount),
+     getFloatFrequencyData again at HALF length (frequencyBinCount/2), and
+     getByteFrequencyData at HALF length -- the shape a deliberate probe
+     would use, since a real fingerprinter calls both getters with the same
+     frequencyBinCount (A3's shape). PerturbAudioSamples folds a content
+     hash of the span it's given into its seed, so a getter that only
+     hashes its own [0..len) destination window derives a DIFFERENT
+     per-index delta field depending on len, even though both getters read
+     the same underlying magnitude_buffer_.
+
+     The primary, RED-capable check is float-vs-float: the full-length
+     read's [0, frequencyBinCount/2) prefix must be EXACTLY bit-identical
+     to the half-length read (same suspend point, same magnitude_buffer_
+     content, so a length-independent derivation must agree exactly with
+     no rounding involved). This is the actual discriminator -- measured
+     directly against the pre-fix binary, all 512 shared bins differ, by
+     up to ~0.017 dB.
+
+     A secondary check mirrors A3's byte-vs-scaled-float form (round(255*
+     (floatDb-minDecibels)/(maxDecibels-minDecibels)), +/-1 tolerance) over
+     the half-length byte read vs the full-length float read, matching the
+     probe shape a page would actually use. This form is NOT the
+     discriminator: getByteFrequencyData's 8-bit quantization is ~0.27 dB
+     per step (255 levels over the 70 dB default range) -- about 16x
+     coarser than the ~0.017 dB max divergence the length-dependent bug
+     produces, so it is mathematically incapable of separating "coherent"
+     from "incoherent" at this epsilon through +/-1 byte tolerance (it
+     passes both pre- and post-fix). It is kept only so the criterion still
+     exercises the byte API surface a real probe would use; the float-vs-
+     float check above is what makes this criterion RED-first.
+
   A2b AnalyserNode frequency-domain no-drift at smoothingTimeConstant=1.0:
      magnitude_buffer_ is an EMA (k*prev + (1-k)*new). At the spec-legal
      upper bound k=1.0 the fresh FFT term drops out entirely, so a real
@@ -178,6 +211,61 @@ def render_analyser(config):
     """One content_shell session: renders ANALYSER_READ, returns (data, err).
     Same fault contract as render_sum: any exception becomes (None, exc)."""
     vals, err = lib_shell.session(config, [ANALYSER_READ])
+    if err is not None or vals is None:
+        return None, err
+    return vals[0], None
+
+
+# Same shape and same suspend point as ANALYSER_READ, but deliberately reads
+# at THREE different lengths: getFloatFrequencyData at full length
+# (frequencyBinCount), getFloatFrequencyData again at half length
+# (frequencyBinCount/2), and getByteFrequencyData at half length. A real
+# fingerprinter calls both getters with frequencyBinCount (A3 above already
+# covers that); this is the deliberate-probe shape that catches a getter
+# whose noise derivation depends on the caller's destination length rather
+# than only on the underlying magnitude buffer's content. The two float
+# reads (bypassing byte quantization) are the actual discriminator -- see
+# the A3b docstring above for why the byte read alone cannot be.
+ANALYSER_READ_DIFFLEN = """() => new Promise((resolve, reject) => {
+  try {
+    const ctx = new OfflineAudioContext(1, 88200, 44100);
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 1000;
+    const analyser = ctx.createAnalyser();
+    osc.connect(analyser);
+    analyser.connect(ctx.destination);
+    osc.start(0);
+
+    ctx.suspend(0.5).then(() => {
+      const fullLen = analyser.frequencyBinCount;
+      const halfLen = Math.floor(fullLen / 2);
+      const floatFull = new Float32Array(fullLen);
+      analyser.getFloatFrequencyData(floatFull);
+      const floatHalf = new Float32Array(halfLen);
+      analyser.getFloatFrequencyData(floatHalf);
+      const byteHalf = new Uint8Array(halfLen);
+      analyser.getByteFrequencyData(byteHalf);
+      resolve({
+        floatFull: Array.from(floatFull),
+        floatHalf: Array.from(floatHalf),
+        byteHalf: Array.from(byteHalf),
+        minDecibels: analyser.minDecibels,
+        maxDecibels: analyser.maxDecibels,
+      });
+      ctx.resume().catch(() => {});
+    }).catch(reject);
+
+    ctx.startRendering().catch(() => {});
+  } catch (e) { reject(e); }
+})
+"""
+
+
+def render_analyser_difflen(config):
+    """One content_shell session: renders ANALYSER_READ_DIFFLEN, returns
+    (data, err). Same fault contract as render_analyser."""
+    vals, err = lib_shell.session(config, [ANALYSER_READ_DIFFLEN])
     if err is not None or vals is None:
         return None, err
     return vals[0], None
@@ -376,6 +464,75 @@ else:
         notes.append(f"A3 first mismatches (bin, floatDb, byte, expected): "
                      f"{mismatches[:5]}")
 
+# One content_shell process: same suspend point as A2/A3, but reads
+# getFloatFrequencyData at frequencyBinCount (full length), then again at
+# frequencyBinCount/2 (half length), then getByteFrequencyData at
+# frequencyBinCount/2 (half length).
+data_a3b, err_a3b = render_analyser_difflen(SEED_777)
+
+A3B = ("A3b different-length Float/Byte freq coherence: half-length reads "
+       "agree with the full-length read's shared prefix")
+
+if data_a3b is None:
+    results[A3B] = False
+    notes.append(f"A3b: {type(err_a3b).__name__}: {err_a3b}")
+else:
+    float_full = data_a3b["floatFull"]
+    float_half = data_a3b["floatHalf"]
+    byte_half = data_a3b["byteHalf"]
+    min_db = data_a3b["minDecibels"]
+    max_db = data_a3b["maxDecibels"]
+    half_len = len(float_half)
+
+    # Primary, RED-capable check: the full-length float read's shared
+    # prefix must be EXACTLY bit-identical to the half-length float read
+    # (same suspend point, same magnitude_buffer_ content -- a
+    # length-independent derivation must agree exactly, no rounding
+    # involved). getByteFrequencyData's 8-bit quantization (~0.27 dB per
+    # step) is ~16x coarser than the ~0.017 dB max divergence the
+    # length-dependent bug produces, so a byte-vs-byte or byte-vs-float
+    # comparison with any tolerance loose enough to absorb normal
+    # truncate-vs-round noise cannot discriminate; only the exact
+    # float-vs-float comparison can. See the module docstring for the
+    # measured numbers.
+    float_prefix_mismatches = [
+        (i, f, h) for i, (f, h) in enumerate(zip(float_full, float_half))
+        if f != h
+    ]
+    float_prefix_ok = (
+        half_len > 0 and half_len < len(float_full) and not float_prefix_mismatches
+    )
+
+    # Secondary check, kept only to exercise the byte API surface a real
+    # probe would use (same formula as A3): NOT the discriminator -- see
+    # above and the module docstring for why it passes on both binaries.
+    scale = 1.0 if max_db == min_db else 255.0 / (max_db - min_db)
+    byte_mismatches = []
+    for i, (fdb, bval) in enumerate(zip(float_full, byte_half)):
+        expected = round((fdb - min_db) * scale)
+        expected = max(0, min(255, expected))
+        if abs(expected - bval) > 1:
+            byte_mismatches.append((i, fdb, bval, expected))
+    byte_form_ok = (
+        len(byte_half) > 0 and len(byte_half) < len(float_full) and not byte_mismatches
+    )
+
+    results[A3B] = float_prefix_ok and byte_form_ok
+    notes.append(
+        f"A3b float-prefix mismatches={len(float_prefix_mismatches)}/{half_len} "
+        f"(discriminator); byte-form mismatches={len(byte_mismatches)}/{half_len} "
+        f"(non-discriminating, minDecibels={min_db} maxDecibels={max_db})"
+    )
+    if float_prefix_mismatches:
+        maxdiff = max(abs(f - h) for _, f, h in float_prefix_mismatches)
+        notes.append(
+            f"A3b float-prefix max |diff|={maxdiff} dB; first mismatches "
+            f"(bin, full, half): {float_prefix_mismatches[:5]}"
+        )
+    if byte_mismatches:
+        notes.append(f"A3b byte-form first mismatches (bin, floatDb, byte, "
+                     f"expected): {byte_mismatches[:5]}")
+
 # One content_shell process: 4 suspend-point reads, the first seeding
 # magnitude_buffer_ with the default smoothingTimeConstant, the remaining
 # three taken after switching to the spec-legal upper bound (1.0).
@@ -452,7 +609,7 @@ else:
         notes.append(f"TD-A3 first mismatches (i, floatSample, byte, expected): "
                      f"{mismatches[:5]}")
 
-EXPECTED = 6
+EXPECTED = 7
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
