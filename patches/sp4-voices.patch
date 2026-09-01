@@ -1,0 +1,167 @@
+diff --git a/third_party/blink/renderer/modules/speech/BUILD.gn b/third_party/blink/renderer/modules/speech/BUILD.gn
+index e49c0234d1..8d3668cf1c 100644
+--- a/third_party/blink/renderer/modules/speech/BUILD.gn
++++ b/third_party/blink/renderer/modules/speech/BUILD.gn
+@@ -40,6 +40,7 @@ blink_modules_sources("speech") {
+   ]
+ 
+   deps = [
++    "//components/camoucfg",
+     "//media",
+     "//media/mojo/mojom:speech_recognition_audio_forwarder_blink",
+     "//third_party/blink/renderer/modules/mediastream",
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+index 891a81543b..c00ffb6233 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+@@ -27,8 +27,14 @@
+ 
+ #include <tuple>
+ 
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
++#include "third_party/blink/public/mojom/speech/speech_synthesis.mojom-blink.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_speech_synthesis_error_event_init.h"
+@@ -43,7 +49,9 @@
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis_error_event.h"
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis_event.h"
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis_voice.h"
++#include "third_party/blink/renderer/platform/heap/persistent.h"
+ #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
++#include "third_party/blink/renderer/platform/wtf/functional.h"
+ 
+ namespace blink {
+ 
+@@ -89,12 +97,37 @@ void SpeechSynthesis::OnSetVoiceList(
+     voice_list_.push_back(
+         MakeGarbageCollected<SpeechSynthesisVoice>(std::move(mojom_voice)));
+   }
++  camou_voices_applied_ = false;  // force re-apply over the fresh mojo list
++  ApplyCamouVoices();
+   VoicesDidChange();
+ }
+ 
++void SpeechSynthesis::ApplyCamouVoices() {
++  std::vector<camoucfg::VoiceConfig> voices =
++      camoucfg::GetVoices(camoucfg::ScopeFor(nullptr));
++  if (voices.empty()) {
++    return;  // rule 5: no config -> leave the real list
++  }
++  voice_list_.clear();
++  for (const camoucfg::VoiceConfig& v : voices) {
++    auto mojom_voice = mojom::blink::SpeechSynthesisVoice::New();
++    mojom_voice->voice_uri = String::FromUtf8(v.voice_uri);
++    mojom_voice->name = String::FromUtf8(v.name);
++    mojom_voice->lang = String::FromUtf8(v.lang);
++    mojom_voice->is_local_service = v.is_local_service;
++    mojom_voice->is_default = v.is_default;
++    voice_list_.push_back(
++        MakeGarbageCollected<SpeechSynthesisVoice>(std::move(mojom_voice)));
++  }
++  camou_voices_applied_ = true;
++}
++
+ const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices() {
+   // Kick off initialization here to ensure voice list gets populated.
+   std::ignore = TryEnsureMojomSynthesis();
++  if (!camou_voices_applied_) {
++    ApplyCamouVoices();
++  }
+   return voice_list_;
+ }
+ 
+@@ -228,6 +261,20 @@ void SpeechSynthesis::VoicesDidChange() {
+   DispatchEvent(*Event::Create(event_type_names::kVoiceschanged));
+ }
+ 
++bool SpeechSynthesis::IsCamouVoice(SpeechSynthesisUtterance* utterance) const {
++  if (!utterance || !utterance->voice()) {
++    return false;
++  }
++  const String& uri = utterance->voice()->voiceURI();
++  for (const camoucfg::VoiceConfig& v :
++       camoucfg::GetVoices(camoucfg::ScopeFor(nullptr))) {
++    if (String::FromUtf8(v.voice_uri) == uri) {
++      return true;
++    }
++  }
++  return false;
++}
++
+ void SpeechSynthesis::StartSpeakingImmediately() {
+   SpeechSynthesisUtterance* utterance = CurrentSpeechUtterance();
+   DCHECK(utterance);
+@@ -239,6 +286,37 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+   utterance->SetStartTime(millis / 1000.0);
+   is_paused_ = false;
+ 
++  if (IsCamouVoice(utterance)) {
++    // Fake completion: never touch the (backend-less) mojo path.
++    if (camoucfg::GetBool(camoucfg::ScopeFor(nullptr),
++                          camoucfg::keys::kVoicesFakeCompletion)
++            .value_or(true)) {
++      DidStartSpeaking(utterance);  // fires 'start'
++      const double cps =
++          camoucfg::GetDouble(camoucfg::ScopeFor(nullptr),
++                              camoucfg::keys::kVoicesFakeCompletionCharsPerSecond)
++              .value_or(12.5);
++      const double rate = utterance->rate() > 0 ? utterance->rate() : 1.0;
++      const double secs =
++          static_cast<double>(utterance->text().length()) / (cps * rate);
++      GetSupplementable()
++          ->GetTaskRunner(TaskType::kMiscPlatformAPI)
++          ->PostDelayedTask(
++              FROM_HERE,
++              BindOnce(
++                  [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
++                    if (self && u == self->CurrentSpeechUtterance()) {
++                      self->DidFinishSpeaking(
++                          u, mojom::blink::SpeechSynthesisErrorCode::kNoError);
++                    }
++                  },
++                  WrapWeakPersistent(this), WrapWeakPersistent(utterance)),
++              base::Seconds(secs));
++    } else {
++      SpeakingErrorOccurred(utterance);  // deterministic error
++    }
++    return;
++  }
+   if (TryEnsureMojomSynthesis())
+     utterance->Start(this);
+ }
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.h b/third_party/blink/renderer/modules/speech/speech_synthesis.h
+index 0199d00326..a0cc038fc0 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.h
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.h
+@@ -118,6 +118,12 @@ class MODULES_EXPORT SpeechSynthesis final
+   // Returns the utterance at the front of the queue.
+   SpeechSynthesisUtterance* CurrentSpeechUtterance() const;
+ 
++  // SP4-voices: true if `utterance` targets a voice injected via
++  // "voices:list" (matched by voiceURI). Gates the fake-completion path in
++  // StartSpeakingImmediately() so injected voices never touch the
++  // (backend-less) mojo path.
++  bool IsCamouVoice(SpeechSynthesisUtterance*) const;
++
+   // Gets a timestamp in millis that is safe to expose to the web.
+   // Returns false if it cannot get a timestamp.
+   bool GetElapsedTimeMillis(double* millis);
+@@ -136,6 +142,11 @@ class MODULES_EXPORT SpeechSynthesis final
+   HeapDeque<Member<SpeechSynthesisUtterance>> utterance_queue_;
+   bool is_paused_ = false;
+ 
++  // SP4-voices: replace voice_list_ with the configured voices when
++  // "voices:list" is set. Idempotent (guarded by camou_voices_applied_).
++  void ApplyCamouVoices();
++  bool camou_voices_applied_ = false;
++
+   // EventTarget
+   const AtomicString& InterfaceName() const override;
+ };
