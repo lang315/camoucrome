@@ -22,8 +22,11 @@ namespace camoucfg {
 //   - A content hash of the buffer is folded into the seed, so different buffers
 //     get different noise fields while an identical buffer reproduces.
 //   - delta_i = (DeriveUnit(eseed, domain, i) - 0.5) * 2 * epsilon.
-//     relative == false: samples[i] += delta_i   (raw samples in [-1, 1]).
+//     relative == false: samples[i] += delta_i, UNLESS samples[i] == 0.0f, in
+//       which case it is left exactly 0.0 (raw samples in [-1, 1]).
 //     relative == true : samples[i] *= (1 + delta_i)  (magnitudes of any scale).
+//   - Both modes preserve an exact-zero sample, so an all-silent buffer stays
+//     byte-identical to stock.
 //
 // Caller responsibility for reread-determinism: perturb a buffer's backing store
 // at most once (AudioBuffer guards with a flag), or perturb a per-frame-rebuilt

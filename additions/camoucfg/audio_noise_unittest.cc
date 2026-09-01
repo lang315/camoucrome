@@ -90,6 +90,38 @@ TEST(PerturbAudioTest, RelativeModeKeepsZeroSampleAtZero) {
   EXPECT_TRUE(changed) << "no non-zero sample was perturbed in relative mode";
 }
 
+TEST(PerturbAudioTest, AdditiveModeKeepsAllZeroBufferExactlyZero) {
+  // Regression test: unconditional additive noise (samples[i] += delta) would
+  // turn every element of a silent (all-zero) buffer into a small nonzero
+  // value -- a targeted "does this browser tamper with audio buffers?" probe,
+  // since a fresh, unrendered AudioBuffer is genuinely all-zero on stock.
+  std::vector<float> a(64, 0.0f);
+  PerturbAudioSamples(base::span(a), /*seed=*/777, "audio", /*epsilon=*/1e-4f,
+                      /*relative=*/false);
+  for (float v : a) {
+    EXPECT_EQ(v, 0.0f) << "additive noise must preserve an all-zero buffer";
+  }
+}
+
+TEST(PerturbAudioTest, AdditiveModeKeepsZeroSamplesExactWhilePerturbingRest) {
+  // Mixed buffer: the zero sample must stay exactly 0.0, while non-zero
+  // (real signal) samples are still perturbed -- the fix must not disable
+  // additive noise on genuine signal.
+  auto a = Buffer(64);
+  ASSERT_EQ(a[0], 0.0f);
+  auto orig = a;
+  PerturbAudioSamples(base::span(a), 777, "audio", 0.01f, /*relative=*/false);
+  EXPECT_EQ(a[0], 0.0f) << "additive mode must preserve an exact-zero sample";
+  bool changed = false;
+  for (size_t i = 1; i < a.size(); ++i) {
+    if (a[i] != orig[i]) {
+      changed = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(changed) << "no non-zero sample was perturbed in additive mode";
+}
+
 TEST(PerturbAudioTest, DifferentBuffersGetDifferentNoiseFields) {
   // Content-hash fold: the SAME seed on two DIFFERENT buffers must diverge at
   // indices other than the one that differs, so an attacker cannot map the

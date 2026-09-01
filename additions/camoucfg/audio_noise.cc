@@ -42,7 +42,13 @@ void PerturbAudioSamples(base::span<float> samples, uint64_t seed,
     const float delta = static_cast<float>((u - 0.5) * 2.0) * epsilon;
     if (relative) {
       samples[i] *= (1.0f + delta);
-    } else {
+    } else if (samples[i] != 0.0f) {
+      // Preserve exact-zero samples: a silent (all-zero) channel is a common
+      // stock baseline (a fresh, unrendered AudioBuffer), and unconditional
+      // additive noise would turn every zero into a nonzero value -- a
+      // targeted "does this browser tamper with audio buffers?" probe. This
+      // mirrors the relative branch above, where 0 * (1 + delta) == 0 already
+      // holds for free.
       samples[i] += delta;
     }
   }

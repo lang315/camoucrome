@@ -145,3 +145,49 @@ Corollary for verification: a Float/Byte coherence check expressed in **byte** u
 passes whether the two readbacks share a noise field or not, because the noise is
 sub-quantization. The committed coherence discriminator is therefore expressed in
 **float** units (A3/A3b), not byte tolerance.
+
+## Residual audio-fingerprint paths + follow-on gating (whole-branch review, 2026-09-01)
+
+SP4-audio closes the high-value vectors (OfflineAudioContext render → `getChannelData`/
+`copyFromChannel`; float FFT via `getFloatFrequencyData`) and characterizes the byte
+readbacks (above). The whole-branch review enumerated the paths it does NOT gate —
+recorded here so the boundary is explicit (the #44 "state what's ungated" discipline),
+each deferred to a follow-on audio-ii slice:
+
+- **`AudioWorklet.process()` raw input — confirmed residual, ungated.**
+  `AudioWorkletProcessor::Process(const Vector<scoped_refptr<AudioBus>>&, ...)` copies
+  AudioBus channels straight into the worklet's JS backing stores on the render thread;
+  it never routes through the `AudioBuffer` choke. A worklet reading `inputs[0][0]` sees
+  un-noised samples. Real, deferred (render-thread gating is its own slice).
+- **`ScriptProcessorNode.onaudioprocess` — residual, ungated (guard-defeating).**
+  `inputBuffer.getChannelData` DOES route through the hooked overload, but the node
+  reuses ONE `Member<AudioBuffer>` input buffer for every callback; the one-shot
+  `did_camou_noise_` guard noises it only on the first read, then the render thread
+  overwrites the backing store with fresh real samples, so callbacks after the first
+  leak the real device value. A legacy ScriptProcessor-based audio fingerprint recovers
+  it. Deferred with AudioWorklet (both are render-thread sample access; the one-shot
+  guard is the wrong tool there — the audio-ii slice needs a render-thread perturbation).
+- **`DynamicsCompressorNode.reduction` — residual, ungated (low value).** A single
+  scalar not on any noised path. Blink's software compressor is largely
+  device-independent (same argument as the byte-FFT), so low fingerprint value, but it
+  is a real un-gated readback. Deferred; gate only if a detector is shown to key on it.
+
+## Latency ↔ real-sampleRate coherence (preset-layer obligation, SP5b)
+
+`baseLatency`/`outputLatency` are spoofable (SP0 override), but `sampleRate` is left at
+the host's REAL rate (scope decision). Stock latencies are `frames / sampleRate`, so
+`latency * sampleRate` is an integer frame count. A preset-supplied latency override
+must therefore be derived from the **real host sampleRate** so `latency * realSampleRate`
+stays integral — otherwise a detector can compute a non-integer frame count and flag it.
+The C++ faithfully returns whatever the config gives; enforcing the frame-integrality
+relationship is the profile generator's job (SP5b), not this layer's. These are also
+low-entropy estimates — reconsider whether spoofing them is worth it at all in SP5b.
+
+## Additive-zero artifact (fixed in the whole-branch fix)
+
+Additive perturbation of an exact-`0.0` sample turned a silent buffer non-zero
+(±1e-4), which stock never does — a "does this browser tamper with audio?" tell. Fixed:
+`PerturbAudioSamples` additive mode now skips exact-`0.0` samples (preserving silence,
+matching stock, while still perturbing every real signal sample); relative mode was
+already zero-safe. Verified by A7 (fresh silent buffer stays exactly 0.0 with a seed
+set; a non-silent buffer is still perturbed).

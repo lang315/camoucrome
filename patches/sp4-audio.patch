@@ -157,7 +157,7 @@ index 1d2302a9c4..7e6b5afd9e 100644
  }
  
 diff --git a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
-index 5fe1fb2e55..12303ac227 100644
+index 5fe1fb2e55..1294d77855 100644
 --- a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
 +++ b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
 @@ -32,6 +32,8 @@
@@ -236,39 +236,55 @@ index 5fe1fb2e55..12303ac227 100644
        const double db_mag = audio_utilities::LinearToDecibels(linear_value);
  
        // The range m_minDecibels to m_maxDecibels will be scaled to byte values
-@@ -191,6 +238,18 @@ void RealtimeAnalyser::GetFloatTimeDomainData(
+@@ -182,14 +229,28 @@ void RealtimeAnalyser::GetFloatTimeDomainData(
  
-       destination[i] = value;
-     }
-+
-+    // Camoucrome (SP4-audio): perturb the destination copy, not
-+    // input_buffer_ itself. input_buffer_ is WriteInput()'s live target on
-+    // the audio render thread and is read again by every future
-+    // DoFFTAnalysis/Get*TimeDomainData call, so mutating it in place would
-+    // compound noise across reads and frames. GetByteTimeDomainData mirrors
-+    // this exact derivation over the same raw-sample window, so both stay
-+    // coherent without either touching the shared backing store.
-+    camoucfg::PerturbAudioFromConfig(destination.first(len),
-+                                     "audio-analyser-time", 1e-4f,
+     const unsigned write_index = GetWriteIndex();
+ 
+-    base::span<float> destination = destination_array->AsSpan();
+-    for (unsigned i = 0; i < len; ++i) {
++    // Camoucrome (SP4-audio): perturb the FULL fft_size window, not just the
++    // caller's [0, len) slice, so the per-index noise field is
++    // length-independent -- a shorter destination gets the same deltas as a
++    // full read (reread-determinism across lengths). GetByteTimeDomainData
++    // hashes the identical full window, so the two readbacks stay coherent.
++    // We copy the window out rather than perturbing input_buffer_
++    // (WriteInput()'s live render-thread target) in place.
++    AudioFloatArray window(fft_size);
++    base::span<float> window_span = window.as_span();
++    for (unsigned i = 0; i < fft_size; ++i) {
+       // Buffer access is protected due to modulo operation.
+-      float value =
++      window_span[i] =
+           input_buffer_[(i + write_index - fft_size + kInputBufferSize) %
+                         kInputBufferSize];
++    }
++    camoucfg::PerturbAudioFromConfig(window_span, "audio-analyser-time", 1e-4f,
 +                                     /*relative=*/false,
 +                                     camoucfg::ScopeFor(nullptr));
+ 
+-      destination[i] = value;
++    base::span<float> destination = destination_array->AsSpan();
++    for (unsigned i = 0; i < len; ++i) {
++      destination[i] = window_span[i];
+     }
    }
  }
- 
-@@ -207,12 +266,27 @@ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
+@@ -207,12 +268,28 @@ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
  
      const unsigned write_index = GetWriteIndex();
  
 -    base::span<unsigned char> destination = destination_array->AsSpan();
-+    // Camoucrome (SP4-audio): read the same raw-sample window into a local
-+    // buffer and perturb it with the identical (domain, epsilon, relative)
-+    // derivation GetFloatTimeDomainData uses. PerturbAudioSamples is a pure
-+    // function of the sample content, so the same raw window yields the
-+    // same noised values here as there -- coherent without perturbing
-+    // input_buffer_ itself (see the comment in GetFloatTimeDomainData).
-+    AudioFloatArray noised_samples(len);
+-    for (unsigned i = 0; i < len; ++i) {
++    // Camoucrome (SP4-audio): perturb the FULL fft_size window with the
++    // identical (domain, epsilon, relative) derivation GetFloatTimeDomainData
++    // uses, then byte-scale the first len. Hashing the full window (not the
++    // [0, len) slice) makes the noise length-independent and keeps the two
++    // readbacks coherent -- PerturbAudioSamples is a pure function of the
++    // window content. input_buffer_ (WriteInput()'s live target) is not
++    // touched in place.
++    AudioFloatArray noised_samples(fft_size);
 +    base::span<float> noised = noised_samples.as_span();
-     for (unsigned i = 0; i < len; ++i) {
++    for (unsigned i = 0; i < fft_size; ++i) {
        // Buffer access is protected due to modulo operation.
 -      const float value =
 +      noised[i] =
