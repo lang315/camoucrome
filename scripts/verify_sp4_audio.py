@@ -118,6 +118,16 @@ results already collected.
      rationale as A3). Matching proves both time-domain readbacks derive
      from the same frozen input_buffer_ window, not two independently-noised
      destinations that happen to look similar.
+
+  A4 AudioContext scalar overrides: with AudioContext:baseLatency=0.01,
+     AudioContext:outputLatency=0.05, AudioContext:maxChannelCount=6 all
+     configured, a plain `new AudioContext()` reports .baseLatency,
+     .outputLatency, and .destination.maxChannelCount exactly equal to the
+     configured values (real-value-first, config-override-last per the SP0
+     hook; sampleRate is deliberately untouched, out of scope). These
+     getters are synchronous and answer immediately after construction, so
+     unlike A1-TD-A3 this needs no rendering, suspend point, or seed --one
+     content_shell session, one read.
 """
 
 import json
@@ -127,6 +137,12 @@ import lib_shell
 
 SEED_777 = json.dumps({"audio:seed": 777})
 SEED_888 = json.dumps({"audio:seed": 888})
+
+CONFIG_A4 = json.dumps({
+    "AudioContext:outputLatency": 0.05,
+    "AudioContext:baseLatency": 0.01,
+    "AudioContext:maxChannelCount": 6,
+})
 
 # OscillatorNode -> DynamicsCompressor -> destination: the canonical
 # OfflineAudioContext fingerprinting graph. 1 channel, 44100 frames @ 44100Hz
@@ -382,6 +398,31 @@ def render_td_analyser(config):
     return vals[0], None
 
 
+# A plain real-time AudioContext (not Offline), read synchronously right
+# after construction. baseLatency/outputLatency/maxChannelCount are all
+# reported at construction time -- no rendering, suspend point, or seed
+# needed. A plain `new AudioContext()` constructs fine headless under
+# content_shell's --ozone-platform=headless.
+AUDIO_SCALARS = """() => {
+  const ctx = new AudioContext();
+  return {
+    baseLatency: ctx.baseLatency,
+    outputLatency: ctx.outputLatency,
+    maxChannelCount: ctx.destination.maxChannelCount,
+  };
+}
+"""
+
+
+def render_audio_scalars(config):
+    """One content_shell session: renders AUDIO_SCALARS, returns (data, err).
+    Same fault contract as render_analyser."""
+    vals, err = lib_shell.session(config, [AUDIO_SCALARS])
+    if err is not None or vals is None:
+        return None, err
+    return vals[0], None
+
+
 results = {}
 notes = []
 
@@ -609,7 +650,27 @@ else:
         notes.append(f"TD-A3 first mismatches (i, floatSample, byte, expected): "
                      f"{mismatches[:5]}")
 
-EXPECTED = 7
+# One content_shell session: a plain `new AudioContext()` with all three
+# scalar overrides configured, read synchronously right after construction.
+data_a4, err_a4 = render_audio_scalars(CONFIG_A4)
+
+A4 = "A4 AudioContext scalar overrides: baseLatency/outputLatency/maxChannelCount honor config"
+
+if data_a4 is None:
+    results[A4] = False
+    notes.append(f"A4: {type(err_a4).__name__}: {err_a4}")
+else:
+    base_ok = data_a4["baseLatency"] == 0.01
+    output_ok = data_a4["outputLatency"] == 0.05
+    max_ok = data_a4["maxChannelCount"] == 6
+    results[A4] = base_ok and output_ok and max_ok
+    notes.append(f"A4 baseLatency={data_a4['baseLatency']!r} (expect 0.01) "
+                 f"outputLatency={data_a4['outputLatency']!r} (expect 0.05) "
+                 f"maxChannelCount={data_a4['maxChannelCount']!r} (expect 6)")
+    if not results[A4]:
+        notes.append(f"A4: base_ok={base_ok} output_ok={output_ok} max_ok={max_ok}")
+
+EXPECTED = 8
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
