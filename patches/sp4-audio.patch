@@ -1,0 +1,287 @@
+diff --git a/third_party/blink/renderer/modules/webaudio/BUILD.gn b/third_party/blink/renderer/modules/webaudio/BUILD.gn
+index 723759fed6..100ee04ba0 100644
+--- a/third_party/blink/renderer/modules/webaudio/BUILD.gn
++++ b/third_party/blink/renderer/modules/webaudio/BUILD.gn
+@@ -188,6 +188,7 @@ blink_modules_sources("webaudio") {
+     sources += [ "cpu/arm/oscillator_kernel_neon.cc" ]
+   }
+   deps = [
++    "//components/camoucfg",
+     "//services/metrics/public/cpp:ukm_builders",
+     "//third_party/blink/renderer/modules/mediastream",
+     "//third_party/blink/renderer/modules/peerconnection",
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index bc4c0c6ca0..b50db59a86 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -32,6 +32,9 @@
+ 
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
++#include "base/strings/string_number_conversions.h"
++#include "components/camoucfg/audio_noise.h"
++#include "components/camoucfg/blink_scope.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
+@@ -201,6 +204,24 @@ AudioBuffer::AudioBuffer(AudioBus* bus)
+   }
+ }
+ 
++void AudioBuffer::CamouEnsureNoised() {
++  if (did_camou_noise_) {
++    return;
++  }
++  did_camou_noise_ = true;
++  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
++  for (unsigned c = 0; c < channels_.size(); ++c) {
++    DOMFloat32Array* array = channels_[c].Get();
++    if (!array) {
++      continue;
++    }
++    // Per-channel domain so channels don't share a noise field.
++    const std::string domain = "audio-buffer-" + base::NumberToString(c);
++    camoucfg::PerturbAudioFromConfig(array->AsSpan(), domain, /*epsilon=*/1e-4f,
++                                     /*relative=*/false, scope);
++  }
++}
++
+ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+     unsigned channel_index,
+     ExceptionState& exception_state) {
+@@ -213,6 +234,15 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+     return NotShared<DOMFloat32Array>(nullptr);
+   }
+ 
++  // Camoucrome (SP4-audio): this is the ONLY call site JS reaches (the IDL
++  // binding is [RaisesException], so it always funnels through this
++  // overload). The exceptionless getChannelData(unsigned) below is also
++  // called internally -- by SharedAudioBuffer's constructor, BEFORE offline
++  // rendering writes real samples into the (aliased) backing store, and by
++  // Zero() -- so noising there would consume the one-shot guard on
++  // uninitialized data and leave the real rendered audio unperturbed.
++  CamouEnsureNoised();
++
+   return getChannelData(channel_index);
+ }
+ 
+@@ -251,6 +281,11 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+     return;
+   }
+ 
++  // Camoucrome (SP4-audio): see getChannelData's ExceptionState overload for
++  // why this call site is safe (JS-only; copyFromChannel has no internal
++  // C++ callers).
++  CamouEnsureNoised();
++
+   base::span<const float> src = channels_[channel_number].Get()->AsSpan();
+   base::span<float> dst = destination->AsSpan();
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+index 4bbf70b439..6e89d82897 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+@@ -119,6 +119,10 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {
+  private:
+   bool CreatedSuccessfully(unsigned desired_number_of_channels) const;
+ 
++  // Camoucrome (SP4-audio): perturb channel stores once, on first readback.
++  void CamouEnsureNoised();
++  bool did_camou_noise_ = false;
++
+   float sample_rate_;
+   uint32_t length_;
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_context.cc b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+index 9136c6e6c1..fdc15936e5 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_context.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+@@ -14,6 +14,9 @@
+ #include "base/strings/to_string.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "media/audio/audio_device_description.h"
+ #include "media/base/output_device_info.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+@@ -1242,6 +1245,11 @@ double AudioContext::baseLatency() const {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+   DCHECK(destinationNode());
+ 
++  if (std::optional<double> v = camoucfg::GetDouble(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kAudioBaseLatency)) {
++    return *v;
++  }
+   return base_latency_;
+ }
+ 
+@@ -1252,6 +1260,11 @@ double AudioContext::outputLatency() const {
+   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
+ 
+   double factor = GetOutputLatencyQuantizingFactor();
++  if (std::optional<double> v = camoucfg::GetDouble(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kAudioOutputLatency)) {
++    return *v;
++  }
+   return std::round(output_position_.hardware_output_latency / factor) * factor;
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc b/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc
+index 1d2302a9c4..7e6b5afd9e 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc
+@@ -25,6 +25,9 @@
+ 
+ #include "third_party/blink/renderer/modules/webaudio/audio_destination_node.h"
+ 
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_destination_handler.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
+ 
+@@ -39,6 +42,11 @@ AudioDestinationHandler& AudioDestinationNode::GetAudioDestinationHandler()
+ }
+ 
+ uint32_t AudioDestinationNode::maxChannelCount() const {
++  if (std::optional<uint32_t> v = camoucfg::GetUint32(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kAudioMaxChannelCount)) {
++    return *v;
++  }
+   return GetAudioDestinationHandler().MaxChannelCount();
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+index 5fe1fb2e55..12303ac227 100644
+--- a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
++++ b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+@@ -32,6 +32,8 @@
+ #include <complex>
+ 
+ #include "base/compiler_specific.h"
++#include "components/camoucfg/audio_noise.h"
++#include "components/camoucfg/blink_scope.h"
+ #include "media/base/audio_bus.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
+ #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+@@ -118,9 +120,35 @@ void RealtimeAnalyser::GetFloatFrequencyData(DOMFloat32Array* destination_array,
+   const size_t source_length = magnitude_buffer_.size();
+   const size_t len = std::min(source_length, destination_array->length());
+   if (len > 0) {
++    // Camoucrome (SP4-audio): perturb a scratch copy of magnitude_buffer_,
++    // not magnitude_buffer_ itself. magnitude_buffer_ is an EMA
++    // (k*prev + (1-k)*new) that DoFFTAnalysis reads back every frame, so an
++    // in-place perturbation compounds across frames -- unbounded at k=1.0
++    // (smoothingTimeConstant's spec-legal upper bound), where the fresh term
++    // drops out and the reported magnitude random-walks.
++    //
++    // The scratch copies the FULL buffer (source_length), not just the
++    // destination-length window: PerturbAudioSamples folds a content hash of
++    // the span it's given into the seed, so hashing only [0..len) would make
++    // every per-index delta depend on the caller's destination length -- a
++    // page calling getFloatFrequencyData with a full-length array and
++    // getByteFrequencyData with a half-length array would then see
++    // incoherent deltas over their shared prefix. Hashing the full buffer
++    // (whose content is independent of len) keeps eseed -- and so every
++    // per-index delta -- identical regardless of the requested length, which
++    // is what keeps both frequency getters coherent at any length.
++    AudioFloatArray scratch(source_length);
++    base::span<float> perturbed = scratch.as_span();
++    for (unsigned i = 0; i < source_length; ++i) {
++      perturbed[i] = magnitude_buffer_[i];
++    }
++    camoucfg::PerturbAudioFromConfig(perturbed, "audio-analyser-freq", 1e-3f,
++                                     /*relative=*/true,
++                                     camoucfg::ScopeFor(nullptr));
++
+     base::span<float> destination = destination_array->AsSpan();
+     for (unsigned i = 0; i < len; ++i) {
+-      const float linear_value = magnitude_buffer_[i];
++      const float linear_value = perturbed[i];
+       const double db_mag = audio_utilities::LinearToDecibels(linear_value);
+       destination[i] = static_cast<float>(db_mag);
+     }
+@@ -151,9 +179,28 @@ void RealtimeAnalyser::GetByteFrequencyData(DOMUint8Array* destination_array,
+                                        : 1.0 / (max_decibels_ - min_decibels_);
+     const double min_decibels = min_decibels_;
+ 
++    // Camoucrome (SP4-audio): mirror GetFloatFrequencyData's scratch-copy
++    // perturbation exactly (same domain, epsilon, relative) over the same
++    // FULL magnitude_buffer_ -- see the comment there for why
++    // magnitude_buffer_ itself is never mutated, and why the scratch copies
++    // source_length rather than len (so the content hash PerturbAudioSamples
++    // folds into the seed, and therefore every per-index delta, does not
++    // depend on this getter's destination length). PerturbAudioSamples is a
++    // pure function of the sample content, so the identical un-noised full
++    // buffer yields identical noised values here as in the float getter, at
++    // any requested length.
++    AudioFloatArray scratch(source_length);
++    base::span<float> perturbed = scratch.as_span();
++    for (unsigned i = 0; i < source_length; ++i) {
++      perturbed[i] = magnitude_buffer_[i];
++    }
++    camoucfg::PerturbAudioFromConfig(perturbed, "audio-analyser-freq", 1e-3f,
++                                     /*relative=*/true,
++                                     camoucfg::ScopeFor(nullptr));
++
+     base::span<unsigned char> destination = destination_array->AsSpan();
+     for (unsigned i = 0; i < len; ++i) {
+-      const float linear_value = magnitude_buffer_[i];
++      const float linear_value = perturbed[i];
+       const double db_mag = audio_utilities::LinearToDecibels(linear_value);
+ 
+       // The range m_minDecibels to m_maxDecibels will be scaled to byte values
+@@ -191,6 +238,18 @@ void RealtimeAnalyser::GetFloatTimeDomainData(
+ 
+       destination[i] = value;
+     }
++
++    // Camoucrome (SP4-audio): perturb the destination copy, not
++    // input_buffer_ itself. input_buffer_ is WriteInput()'s live target on
++    // the audio render thread and is read again by every future
++    // DoFFTAnalysis/Get*TimeDomainData call, so mutating it in place would
++    // compound noise across reads and frames. GetByteTimeDomainData mirrors
++    // this exact derivation over the same raw-sample window, so both stay
++    // coherent without either touching the shared backing store.
++    camoucfg::PerturbAudioFromConfig(destination.first(len),
++                                     "audio-analyser-time", 1e-4f,
++                                     /*relative=*/false,
++                                     camoucfg::ScopeFor(nullptr));
+   }
+ }
+ 
+@@ -207,12 +266,27 @@ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
+ 
+     const unsigned write_index = GetWriteIndex();
+ 
+-    base::span<unsigned char> destination = destination_array->AsSpan();
++    // Camoucrome (SP4-audio): read the same raw-sample window into a local
++    // buffer and perturb it with the identical (domain, epsilon, relative)
++    // derivation GetFloatTimeDomainData uses. PerturbAudioSamples is a pure
++    // function of the sample content, so the same raw window yields the
++    // same noised values here as there -- coherent without perturbing
++    // input_buffer_ itself (see the comment in GetFloatTimeDomainData).
++    AudioFloatArray noised_samples(len);
++    base::span<float> noised = noised_samples.as_span();
+     for (unsigned i = 0; i < len; ++i) {
+       // Buffer access is protected due to modulo operation.
+-      const float value =
++      noised[i] =
+           input_buffer_[(i + write_index - fft_size + kInputBufferSize) %
+                         kInputBufferSize];
++    }
++    camoucfg::PerturbAudioFromConfig(noised, "audio-analyser-time", 1e-4f,
++                                     /*relative=*/false,
++                                     camoucfg::ScopeFor(nullptr));
++
++    base::span<unsigned char> destination = destination_array->AsSpan();
++    for (unsigned i = 0; i < len; ++i) {
++      const float value = noised[i];
+ 
+       // Scale from nominal -1 -> +1 to unsigned byte.
+       const double scaled_value = 128 * (value + 1);
