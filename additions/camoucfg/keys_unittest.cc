@@ -70,6 +70,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kMediaDevicesEnabled, kMediaDevicesMicros, kMediaDevicesWebcams,
       kMediaDevicesSpeakers,
       kTimezoneId, kLocaleTag,
+      kWebrtcIpHandlingPolicy,
   };
   const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
   EXPECT_EQ(declared, in_array);
