@@ -255,9 +255,17 @@ inline constexpr char kMediaDevicesMicros[] = "mediaDevices:micros";
 inline constexpr char kMediaDevicesWebcams[] = "mediaDevices:webcams";
 inline constexpr char kMediaDevicesSpeakers[] = "mediaDevices:speakers";
 
+// Timezone + locale overrides (SP4-timezone/locale). Synthetic namespaces
+// (bare `timezone`/`locale` are banned by EveryKeyIsNamespaced) -> colon.
+// timezone:id is an IANA id (e.g. "America/New_York"); locale:tag is a BCP-47
+// tag (e.g. "fr-FR"). Both absent => real OS values (rule 5). These drive the
+// native blink::TimeZoneController / blink::LocaleController.
+inline constexpr char kTimezoneId[] = "timezone:id";
+inline constexpr char kLocaleTag[] = "locale:tag";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 61> kAllKeys = {
+inline constexpr std::array<std::string_view, 63> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -319,6 +327,8 @@ inline constexpr std::array<std::string_view, 61> kAllKeys = {
     kMediaDevicesMicros,
     kMediaDevicesWebcams,
     kMediaDevicesSpeakers,
+    kTimezoneId,
+    kLocaleTag,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
