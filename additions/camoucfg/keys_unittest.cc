@@ -72,6 +72,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kTimezoneId, kLocaleTag,
       kWebrtcIpHandlingPolicy,
       kVoicesList, kVoicesFakeCompletion, kVoicesFakeCompletionCharsPerSecond,
+      kGeolocationLatitude, kGeolocationLongitude, kGeolocationAccuracy,
   };
   const std::set<std::string_view> in_array(kAllKeys.begin(), kAllKeys.end());
   EXPECT_EQ(declared, in_array);
