@@ -190,7 +190,7 @@ In `CoreInitializer::Initialize()`, immediately AFTER the `TimeZoneController::I
             camoucfg::GetString(camou_scope, camoucfg::keys::kTimezoneId);
         tz && !tz->empty()) {
       auto result =
-          TimeZoneController::SetTimeZoneOverride(String::FromUTF8(*tz));
+          TimeZoneController::SetTimeZoneOverride(String::FromUtf8(*tz));
       // Keep the RAII handle alive for the whole process (never clear).
       static base::NoDestructor<
           std::unique_ptr<TimeZoneController::TimeZoneOverride>>
@@ -208,7 +208,7 @@ In `CoreInitializer::Initialize()`, immediately AFTER the `TimeZoneController::I
     }
     if (!locale.empty()) {
       LocaleController::instance().SetLocaleOverride(
-          String::FromUTF8(locale), /*is_claiming_override=*/true);
+          String::FromUtf8(locale), /*is_claiming_override=*/true);
     }
   }
 ```

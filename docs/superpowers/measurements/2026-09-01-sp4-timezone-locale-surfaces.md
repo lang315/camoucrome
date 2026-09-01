@@ -26,10 +26,16 @@ Firefox-engine rewrite.
 - `Intl.NumberFormat` / `DateTimeFormat` / `Collator` formatting (separators,
   currency, sort order)
 
-**Out of this slice:** `navigator.language` / `navigator.languages` are already
-spoofed by SP1b (keys `navigator.language` / `navigator.languages`,
-`navigator_base.cc`). They are the Accept-Language surface, distinct from the
-ICU/Intl locale — but they must stay COHERENT with it (see §4).
+**Out of this slice:** `navigator.language` / `navigator.languages` are the
+JS-visible language getters, already spoofed by SP1b (keys `navigator.language`
+/ `navigator.languages`, `navigator_base.cc`). Locale therefore spans THREE
+distinct surfaces that must all agree: (a) the ICU/Intl locale — this slice; (b)
+the `navigator.language(s)` JS getters — SP1b; (c) the real `Accept-Language`
+HTTP request header — owned by SP1a / the profile-generator layer (SP1b's getter
+override does NOT set the HTTP header; its own comment says coherence with the
+Accept-Language header is the generator's job). This slice stays in lane (ICU
+only) and introduces no new mismatch; keeping (a)/(b)/(c) coherent is the
+generator's responsibility (see §5).
 
 ---
 
@@ -85,7 +91,7 @@ const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
 // Timezone
 if (auto tz = camoucfg::GetString(scope, camoucfg::keys::kTimezoneId);
     tz && !tz->empty()) {
-  auto r = TimeZoneController::SetTimeZoneOverride(String::FromUTF8(*tz));
+  auto r = TimeZoneController::SetTimeZoneOverride(String::FromUtf8(*tz));
   // Keep the RAII handle alive for the whole process (never clear).
   static base::NoDestructor<std::unique_ptr<TimeZoneController::TimeZoneOverride>>
       kHandle(std::move(r.handle));
@@ -100,7 +106,7 @@ if (auto l = camoucfg::GetString(scope, camoucfg::keys::kLocaleTag);
   locale = *nl;  // single primary tag (navigator.languages is the list)
 }
 if (!locale.empty()) {
-  LocaleController::instance().SetLocaleOverride(String::FromUTF8(locale),
+  LocaleController::instance().SetLocaleOverride(String::FromUtf8(locale),
                                                  /*is_claiming_override=*/true);
 }
 ```
@@ -146,6 +152,22 @@ main + worker — this is the RED (pre-hook: UTC/en-US) → GREEN gate.
   preset layer both come together; document that timezone and locale should be
   set as a coherent pair (and ideally consistent with the proxy's IP geolocation,
   which is the proxy layer's concern, not Blink's).
+- **Reverse incoherence (`locale:tag` vs `navigator.language`).** The fallback is
+  one-way by design (explicit `locale:tag` wins; absent → derive from
+  `navigator.language`). So if the operator sets `locale:tag=fr-FR` AND SP1b
+  `navigator.language=en-US` inconsistently, `Intl` reports fr-FR while
+  `navigator.language`/Accept-Language report en-US — a tell. No bidirectional
+  guard is added (it would be scope creep); `locale:tag`, `navigator.language(s)`,
+  and the Accept-Language header must be set as ONE coherent set by the
+  preset/generator layer, which is where they come together.
+- **Malformed input fails LOUD, not silent (whole-branch fix).** A malformed
+  `timezone:id` (`SetTimeZoneOverride` → `kInvalidTimezone`) or `locale:tag`
+  (`SetLocaleOverride` → non-empty error) leaves the REAL OS value in place — and
+  a present-but-invalid `locale:tag` does NOT fall through to `navigator.language`
+  (the fallback triggers only on absent/empty). The hook now emits a
+  `LOG(WARNING)` in each case so a config typo is diagnosable rather than a silent
+  real-value leak. No auto-fallback (papering a typo with a different wrong value
+  is worse).
 - **`navigator.languages` (the list) vs the single Intl tag:** Intl uses one
   primary tag; the fallback reads `navigator.language` (singular). If a config
   sets `navigator.languages` but not `navigator.language`, the Intl fallback is
@@ -160,6 +182,6 @@ main + worker — this is the RED (pre-hook: UTC/en-US) → GREEN gate.
 |---|---|
 | Intl timezone + Date offset/render | **spoof** — config-drive `TimeZoneController`, key `timezone:id` |
 | Intl locale + NumberFormat/DateTimeFormat/Collator | **spoof** — config-drive `LocaleController`, key `locale:tag` (fallback navigator.language) |
-| worker coverage | inherited from the native controllers (measured, P2) |
+| worker coverage | dedicated worker measured (P2); shared/service workers + worklets covered-by-reasoning (process-global ICU default set before isolates exist + the hook re-runs per renderer process on the inherited CAMOU_CONFIG), not yet measured |
 | `navigator.language(s)` | already SP1b — kept coherent via the locale fallback |
 | CDP/Playwright timezone_id/locale | route through CAMOU_CONFIG instead (single-owner conflict) — launcher note |
