@@ -66,23 +66,33 @@ Absent `voices` → helper is a no-op, stock behavior (rule 5).
 ### 3.2 speak() fake completion
 
 In `StartSpeakingImmediately()`, before `utterance->Start(this)`: if the current
-utterance's voice URI is one of the injected voices, DON'T go to mojo. Instead:
-- `voices:fakeCompletion` true (default): `DidStartSpeaking(utterance)` (fires
-  `start`), then `PostDelayedTask` to fire `DidFinishSpeaking(utterance,
+utterance's voice URI is one of the injected voices, DON'T go to mojo. Instead
+(final shape, after the whole-branch review):
+- `voices:fakeCompletion` true (default): **`PostTask`** the `DidStartSpeaking`
+  (fires `start` — a real TTS backend fires `start` asynchronously *after*
+  `speak()` returns, so a synchronous start is a trivial tell; the start is
+  posted, not called inline), then `PostDelayedTask` the `DidFinishSpeaking(…,
   kNoError)` (fires `end`) after `fakeElapsedTime = utterance.text.length /
   (charsPerSecond * utterance.rate)` seconds — `charsPerSecond` from
-  `voices:fakeCompletion:charsPerSecond` (default 12.5). The delayed task guards
-  `utterance == CurrentSpeechUtterance()` so `cancel()` (which clears the queue)
-  is respected. Delaying `end` by the wall-clock fake duration is more faithful
-  than Camoufox's fire-immediately-with-a-fake-elapsed-field (which a wall-clock
-  probe defeats).
+  `voices:fakeCompletion:charsPerSecond` (default 12.5). Since `secs > 0` for
+  non-empty text (and same-runner FIFO orders two 0-delay tasks for empty text),
+  `start` precedes `end`. **Both** posted tasks guard
+  `self && u && u == self->CurrentSpeechUtterance()` — the `u &&` is load-bearing:
+  `u` is a `WrapWeakPersistent` that is null after GC, and `CurrentSpeechUtterance()`
+  is null on an empty queue, so without it a `cancel()`+GC in the delay window
+  makes the guard `nullptr == nullptr` → true → `DidFinishSpeaking(nullptr)` →
+  `pop_front()` on an empty deque + a null deref (a renderer crash reachable in
+  normal operation). Delaying `end` by the wall-clock fake duration is more
+  faithful than Camoufox's fire-immediately-with-a-fake-elapsed-field.
 - `voices:fakeCompletion` false: `SpeakingErrorOccurred(utterance)` (a
-  deterministic error, matching Camoufox's DispatchError path).
+  deterministic, synchronous error — Camoufox's DispatchError path).
 
-This closes the `speak()`-probe: a site that calls `speak()` on an injected voice
-and listens for `onstart`/`onend`/`onerror` sees a coherent start→end (or a
-deterministic error), not the "voice exists in the list but speak() silently
-does nothing / errors unexpectedly" mismatch.
+This closes the two common `speak()`-probes: a site listening for
+`onstart`/`onend`/`onerror` sees an **async** `start` → wall-clock-delayed `end`
+(or a deterministic error), not "voice in the list but speak() silently does
+nothing / errors unexpectedly", and not the synchronous-start tell. Residual
+tells that a *determined* probe can still read are enumerated in §4 (linear `end`
+timing; no boundary/word events; pause/resume divergence; default-voice path).
 
 ### 3.3 Config accessor + keys
 
@@ -125,19 +135,45 @@ Keys 64 → 67.
 - **`voices:blockIfNotDefined` folded away:** when `voices:list` is present the
   config voices are authoritative (real platform voices replaced); there is no
   partial-merge mode. On content_shell the platform list is empty anyway.
-- **Delayed-end task vs cancel/navigation:** the fake `end` task guards on
-  `CurrentSpeechUtterance()`; a document teardown mid-delay is handled by the
-  utterance/queue being cleared. Worker scope: SpeechSynthesis is window-only
-  (not exposed to workers), so no worker path.
+- **Posted tasks vs cancel/navigation:** both the async `start` and delayed `end`
+  tasks guard `self && u && u == CurrentSpeechUtterance()`; `cancel()` clears the
+  queue (→ current is null → guard fails, nothing fires), and window teardown
+  nulls `self` (WeakPersistent). Worker scope: SpeechSynthesis is window-only
+  (`Exposed=Window`), so no worker path.
+- **Stale-timer on utterance-object REUSE (residual, voices-ii):** if a page
+  `cancel()`s then re-`speak()`s the SAME `SpeechSynthesisUtterance` object, it
+  becomes current again, and the first (stale) delayed task can no longer be told
+  apart from the fresh one by the `== CurrentSpeechUtterance()` guard → a possibly
+  EARLY `end`. Not a crash/UAF/double-fire (the later legitimate task finds the
+  queue advanced and no-ops); a per-speak generation token would close it.
+  Deferred.
+- **Linear `end` timing is itself a tell (residual, voices-ii):** `end` fires at
+  exactly `text.length / (charsPerSecond * rate)`; a probe varying length/rate
+  reads a perfectly linear signal unlike real TTS jitter. The wall-clock delay
+  fixes the *synchronous-end* tell but not the *deterministic-formula* tell.
+- **Default-voice speak takes the real path (residual):** an utterance with
+  `u.voice` unset → `IsCamouVoice` false → the real (backend-less on
+  content_shell) mojo path, so it behaves differently from an explicitly-injected
+  voice. Benign where a real OS TTS backend exists; a tell on backend-less
+  targets. Deferred (voices-ii).
 - **pause()/resume()/boundary events** on a fake voice are not synthesized (they
   go to mojo and no-op with no backend) — a deeper probe surface, deferred
-  (voices-ii). start/end/error (the common probe) are covered.
+  (voices-ii). async-start / end / error (the common probes) are covered.
+- **Verification honesty:** V1 (list injected) and V3 (async start→delayed end)
+  are genuine RED→GREEN proofs. V2 (`{}`→count 0) is DEGENERATE — content_shell's
+  stock voice list is empty, so it cannot distinguish rule-5 (real list preserved)
+  from a buggy unconditional clear; rule-5's non-destructiveness (the
+  `voices.empty()` early-return before `voice_list_.clear()`) rests on code
+  inspection, and "config absent + a nonempty real list" is not exercisable in
+  this TTS-backend-less harness. V4 (fakeCompletion:false) pins the exact error
+  contract (`error:synthesis-failed`, synchronous) after the whole-branch tightening.
 
 ## 5. Slice scope summary
 
 | surface | this slice |
 |---|---|
 | `getVoices()` list | **inject** — config `voices:list` replaces the list (getVoices + OnSetVoiceList) |
-| `speak()` on an injected voice | **fake completion** — start→delayed-end (`voices:fakeCompletion` + `:charsPerSecond`) or deterministic error |
+| `speak()` on an injected voice | **fake completion** — async `start` → wall-clock-delayed `end` (`voices:fakeCompletion` + `:charsPerSecond`) or deterministic synchronous error |
 | voice lang ↔ locale coherence | operator/preset responsibility (documented) |
+| linear `end` timing / default-voice path / utterance-reuse early-end | residual tells, defer (voices-ii) |
 | pause/resume/boundary on fake voice | defer (voices-ii) |
