@@ -27,6 +27,27 @@ SPEAK = r"""(async () => {
   });
 })()"""
 
+# V5: prove 'start' fires asynchronously -- set a flag synchronously right
+# after speak() returns, and have onstart record whether that flag was
+# already set. If onstart could ever fire inside the speak() call itself,
+# it observes speakReturned === false.
+SPEAK_ASYNC_START = r"""(async () => {
+  speechSynthesis.getVoices();
+  await new Promise(r => setTimeout(r, 300));
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return {error:'no injected voice'};
+  const u = new SpeechSynthesisUtterance('hello world');
+  u.voice = voices[0]; u.rate = 1.0;
+  let speakReturned = false;
+  return await new Promise((res) => {
+    u.onstart = () => res({startWasAsync: speakReturned});
+    u.onerror = (e) => res({error:'error:'+e.error});
+    speechSynthesis.speak(u);
+    speakReturned = true;
+    setTimeout(() => res({timeout:true}), 4000);
+  });
+})()"""
+
 def run(config):
     v, e = lib_shell.session(config, [PROBE], navigate_to="about:blank")
     if e: raise e
@@ -57,15 +78,32 @@ def main():
     c = run2(cfg(ONE_VOICE), SPEAK)
     r["V3"] = (c.get("events") == ["start", "end"] and c.get("ms", 0) > 400)
 
-    # V4: fakeCompletion explicitly false -> deterministic error, no end.
+    # V4: fakeCompletion explicitly false -> deterministic, SYNCHRONOUS error
+    # (the false branch calls SpeakingErrorOccurred() directly, no posted
+    # task), no end. Pin the exact error string and the timing: this is the
+    # "generic error" path (TODO in HandleSpeakingCompleted), which maps
+    # kErrorOccurred -> V8SpeechSynthesisErrorCode::kSynthesisFailed ->
+    # "synthesis-failed" per speech_synthesis_error_event.idl.
     d_cfg = dict(ONE_VOICE)
     d_cfg["voices:fakeCompletion"] = False
     d = run2(cfg(d_cfg), SPEAK)
     events = d.get("events", [])
-    r["V4"] = (any(ev.startswith("error:") for ev in events) and "end" not in events)
+    ms = d.get("ms", 0)
+    r["V4"] = (events == ["error:synthesis-failed"] and ms < 100)
+    if not r["V4"]:
+        print(f"  V4 actual: events={events!r} ms={ms!r}")
 
-    EXPECTED=4
-    for k in ("V1","V2","V3","V4"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    # V5: fakeCompletion default true -> 'start' must fire ASYNCHRONOUSLY,
+    # i.e. after speak() has already returned to the caller. A synchronous
+    # start is a trivial fingerprint tell (no real TTS backend can report
+    # 'start' before speak() returns).
+    f = run2(cfg(ONE_VOICE), SPEAK_ASYNC_START)
+    r["V5"] = (f.get("startWasAsync") is True)
+    if not r["V5"]:
+        print(f"  V5 actual: {f!r}")
+
+    EXPECTED=5
+    for k in ("V1","V2","V3","V4","V5"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
     n=sum(r.values()); print(f"{n}/{EXPECTED} " + ("ALL_PASS" if n==EXPECTED else "FAIL"))
     sys.exit(0 if n==EXPECTED else 1)
 
