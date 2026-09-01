@@ -263,9 +263,15 @@ inline constexpr char kMediaDevicesSpeakers[] = "mediaDevices:speakers";
 inline constexpr char kTimezoneId[] = "timezone:id";
 inline constexpr char kLocaleTag[] = "locale:tag";
 
+// WebRTC IP-handling policy (SP4-webrtc-ip). Synthetic webrtc: namespace. Value
+// is one of the native policy strings ("default", "default_public_interface_only",
+// "default_public_and_private_interfaces", "disable_non_proxied_udp"); drives the
+// renderer's webrtc_ip_handling_policy. Absent => real pref unchanged (rule 5).
+inline constexpr char kWebrtcIpHandlingPolicy[] = "webrtc:ipHandlingPolicy";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 63> kAllKeys = {
+inline constexpr std::array<std::string_view, 64> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -329,6 +335,7 @@ inline constexpr std::array<std::string_view, 63> kAllKeys = {
     kMediaDevicesSpeakers,
     kTimezoneId,
     kLocaleTag,
+    kWebrtcIpHandlingPolicy,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
