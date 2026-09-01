@@ -278,9 +278,16 @@ inline constexpr char kVoicesFakeCompletion[] = "voices:fakeCompletion";
 inline constexpr char kVoicesFakeCompletionCharsPerSecond[] =
     "voices:fakeCompletion:charsPerSecond";
 
+// Geolocation position synthesis (SP4-geo). Synthetic geolocation: namespace
+// (matching Camoufox). latitude+longitude both required to activate; accuracy
+// defaults to 100 m. Drives a synthesized position at QueryNextPosition.
+inline constexpr char kGeolocationLatitude[] = "geolocation:latitude";
+inline constexpr char kGeolocationLongitude[] = "geolocation:longitude";
+inline constexpr char kGeolocationAccuracy[] = "geolocation:accuracy";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 67> kAllKeys = {
+inline constexpr std::array<std::string_view, 70> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -348,6 +355,9 @@ inline constexpr std::array<std::string_view, 67> kAllKeys = {
     kVoicesList,
     kVoicesFakeCompletion,
     kVoicesFakeCompletionCharsPerSecond,
+    kGeolocationLatitude,
+    kGeolocationLongitude,
+    kGeolocationAccuracy,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
