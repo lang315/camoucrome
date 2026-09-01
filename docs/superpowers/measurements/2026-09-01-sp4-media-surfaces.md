@@ -54,6 +54,13 @@ hardware detail). The WSL box has no camera → 0 `videoinput`. The fingerprint 
 site reads without `getUserMedia` permission is therefore the **per-kind
 count** with empty labels/ids.
 
+**Baseline caveat (whole-branch review):** this baseline is `content_shell`, not
+consumer Chrome. Real Chrome pre-permission may surface a `default` /
+`communications` audio pseudo-device and a `groupId` pairing that the all-empty
+spoof does not reproduce. The empty-field *shape* is validated against the
+measured `content_shell` stock (§1.3), NOT against real Chrome — do not read
+"coherent" as "byte-identical to Chrome".
+
 ### 1.4 Camoufox precedent (`patches/media-device-spoofing.patch`)
 
 Camoufox spoofs device enumeration and **nothing else** in the media surface. In
@@ -85,6 +92,43 @@ friction, rare for fingerprinting) and unique stable id synthesis (extra
 surface). Documented, deferred — same shape as the fonts `local()` deferral.
 Firefox's own `mCanExposeMicrophoneInfo` speaker-gating nuance folds into the
 same follow-on.
+
+### 1.5b Residual read paths NOT gated by this slice (whole-branch review)
+
+`DevicesEnumerated` is the only `enumerateDevices` resolution point, but device
+topology leaks through other surfaces the override does not touch. Each is a
+`local()`-shaped cross-surface tell — the spoof asserts a device set that another
+surface can contradict. All are Layer-1-deferred (media-ii), listed so the gap is
+named, not silent:
+
+- **`getUserMedia` count-coherence (pre-permission, no grant needed — the sharp
+  one).** The override injects a configured *count* with no check that the host
+  can back it. Default `webcams=1`; on a camera-less host (the build box itself,
+  §1.3) `enumerateDevices()` then reports 1 `videoinput`, but
+  `getUserMedia({video:true})` rejects with `NotFoundError` (Chromium fails
+  without even prompting when zero capture devices exist). A site cross-checking
+  the two sees a **phantom webcam**. Audio is far less exposed (over-counting mics
+  is hard to probe with empty ids; `getUserMedia({audio:true})` uses the default).
+  The verify cannot see this: it measures counts only, over `content_shell` with
+  `--use-fake-device-for-media-stream`, where `getUserMedia` always succeeds. The
+  tell manifests only in the shipped browser against real hardware.
+- **`MediaStreamTrack.getSettings()` / `getCapabilities()`** read the real
+  platform `device_id`/`group_id`/`label` (`media_stream_track_impl.cc`,
+  `component_->GetSettings(...)`), bypassing `DevicesEnumerated` entirely. After a
+  grant, `enumerateDevices()` still emits empty ids while the granted track's
+  `getSettings().deviceId` returns a real salted id that is NOT one of the spoofed
+  empties — an enumerate-vs-track incoherence the spoof *introduces*. Needs a
+  permission grant (bounded severity).
+- **`MediaDevices.selectAudioOutput()`** returns a real chosen-output `deviceId`
+  + `label`, ungated. Very high friction (explicit user picker).
+- **`ondevicechange`** fires on real hotplug while the spoofed list is static — a
+  change event with no diff in the (spoofed) list. Situational (mid-session
+  hotplug).
+- **Operator config, not a browser tell:** `micros`/`webcams`/`speakers` are
+  unclamped `uint32` (matches Camoufox — it does not clamp either). An absurd
+  count is a self-inflicted foot-gun; keep configured counts small and realistic
+  (a real machine is ~1–3 of each). No clamp added — that would be code+rebuild
+  for an operator-only mistake.
 
 ### 1.6 Config keys (colon namespace)
 
@@ -151,4 +195,19 @@ rebuild (multibuild/args work), not a Blink patch. Deferred to its own SP per th
 |---|---|
 | `enumerateDevices` device counts | **spoof** — Blink `DevicesEnumerated`, 4 keys |
 | device labels/ids post-permission | defer (media-ii) — emit empty, coherent pre-permission |
+| `getUserMedia` count-coherence (phantom webcam) | defer (media-ii) — §1.5b, pre-permission tell on real hardware |
+| track `getSettings()`/`getCapabilities()` real ids | defer (media-ii) — §1.5b, post-grant enumerate-vs-track incoherence |
+| `selectAudioOutput()` / `ondevicechange` | defer (media-ii) — §1.5b, high-friction / situational |
 | codec matrix (canPlayType/isTypeSupported/decodingInfo) | **honest** — build-flag SP, not Blink |
+
+### 3.1 Open verify item (needs browser-side read)
+
+The override replaces `enumeration` **unconditionally**. In a
+permissions-policy-restricted cross-origin subframe (no `camera`/`microphone`
+grant) the browser process normally delivers a reduced/suppressed list; the spoof
+would show full counts there → a top-frame-vs-subframe inflation tell. Not
+confirmed — `content_shell` grants everything, so the verify cannot exercise it,
+and confirming the restricted-subframe list shape needs
+`content/browser/renderer_host/media/media_devices_dispatcher_host.*` +
+the Blink permissions-policy gate. Flagged as a media-ii follow-up check, not a
+ship blocker.
