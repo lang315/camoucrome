@@ -36,6 +36,28 @@ STANDING_WATCH = r"""(async () => {
   });
 })()"""
 
+# G6: a standing watchPosition (left un-cleared) delivers its first callback,
+# then a getCurrentPosition() issued while that watch is still active must
+# still resolve with the synthesized config position (not hang/timeout).
+# This is the starvation regression: updating_ getting stuck true after the
+# watch's delivery must not block a subsequent request from re-arming it.
+G6_DURING_WATCH = r"""(async () => {
+  return await new Promise((res) => {
+    let watchFired = false;
+    const wid = navigator.geolocation.watchPosition(
+      (p)=>{ watchFired = true; },
+      (e)=>{ /* ignore, just need the watch standing */ },
+      {timeout:4000});
+    setTimeout(() => {
+      navigator.geolocation.getCurrentPosition(
+        (p)=>{ navigator.geolocation.clearWatch(wid); res({ok:true, watchFired, lat:p.coords.latitude, lon:p.coords.longitude}); },
+        (e)=>{ navigator.geolocation.clearWatch(wid); res({ok:false, watchFired, code:e.code}); },
+        {timeout:4000});
+      setTimeout(()=>{ navigator.geolocation.clearWatch(wid); res({ok:false, watchFired, timeout:true}); }, 5000);
+    }, 500);
+  });
+})()"""
+
 def run(config, expr):
     url, _, stop = echo_server.start([])
     try:
@@ -58,11 +80,14 @@ def main():
     d = run(cfg({"geolocation:latitude":48.8566,"geolocation:longitude":2.3522,"geolocation:accuracy":25}), WATCH)
     r["G4"] = d.get("ok") and d["lat"]==48.8566
     e5 = run(cfg({"geolocation:latitude":48.8566,"geolocation:longitude":2.3522,"geolocation:accuracy":25}), STANDING_WATCH)
-    r["G5"] = e5.get("lastLat")==48.8566 and 1 <= e5.get("count", 0) <= 3
-    EXPECTED=5
-    for k in ("G1","G2","G3","G4","G5"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    r["G5"] = e5.get("lastLat")==48.8566 and e5.get("count", 0) == 1
+    f6 = run(cfg({"geolocation:latitude":48.8566,"geolocation:longitude":2.3522,"geolocation:accuracy":25}), G6_DURING_WATCH)
+    r["G6"] = f6.get("ok") and f6.get("watchFired") and f6.get("lat")==48.8566
+    EXPECTED=6
+    for k in ("G1","G2","G3","G4","G5","G6"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
     if "count" in e5:
         print(f"  (G5 detail: count={e5.get('count')}, lastLat={e5.get('lastLat')})")
+    print(f"  (G6 detail: {f6})")
     n=sum(r.values()); print(f"{n}/{EXPECTED} " + ("ALL_PASS" if n==EXPECTED else "FAIL"))
     sys.exit(0 if n==EXPECTED else 1)
 
