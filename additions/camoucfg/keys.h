@@ -285,9 +285,17 @@ inline constexpr char kGeolocationLatitude[] = "geolocation:latitude";
 inline constexpr char kGeolocationLongitude[] = "geolocation:longitude";
 inline constexpr char kGeolocationAccuracy[] = "geolocation:accuracy";
 
+// Battery status getters (SP4-battery). Synthetic battery: namespace (matching
+// Camoufox). Each absent => the real battery_status_ value (rule 5). charging
+// is a bool; the three times/level are doubles (level 0..1, times in seconds).
+inline constexpr char kBatteryCharging[] = "battery:charging";
+inline constexpr char kBatteryLevel[] = "battery:level";
+inline constexpr char kBatteryChargingTime[] = "battery:chargingTime";
+inline constexpr char kBatteryDischargingTime[] = "battery:dischargingTime";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 70> kAllKeys = {
+inline constexpr std::array<std::string_view, 74> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -358,6 +366,10 @@ inline constexpr std::array<std::string_view, 70> kAllKeys = {
     kGeolocationLatitude,
     kGeolocationLongitude,
     kGeolocationAccuracy,
+    kBatteryCharging,
+    kBatteryLevel,
+    kBatteryChargingTime,
+    kBatteryDischargingTime,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
