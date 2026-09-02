@@ -1,0 +1,67 @@
+diff --git a/third_party/blink/renderer/modules/battery/BUILD.gn b/third_party/blink/renderer/modules/battery/BUILD.gn
+index a648fb3384..589b9ba5d7 100644
+--- a/third_party/blink/renderer/modules/battery/BUILD.gn
++++ b/third_party/blink/renderer/modules/battery/BUILD.gn
+@@ -13,5 +13,8 @@ blink_modules_sources("battery") {
+     "battery_status.h",
+   ]
+ 
+-  deps = [ "//services/service_manager/public/cpp" ]
++  deps = [
++    "//components/camoucfg",
++    "//services/service_manager/public/cpp",
++  ]
+ }
+diff --git a/third_party/blink/renderer/modules/battery/battery_manager.cc b/third_party/blink/renderer/modules/battery/battery_manager.cc
+index 51cdc75cee..085adc0276 100644
+--- a/third_party/blink/renderer/modules/battery/battery_manager.cc
++++ b/third_party/blink/renderer/modules/battery/battery_manager.cc
+@@ -4,6 +4,9 @@
+ 
+ #include "third_party/blink/renderer/modules/battery/battery_manager.h"
+ 
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+@@ -80,18 +83,38 @@ ScriptPromise<BatteryManager> BatteryManager::StartRequest(
+ }
+ 
+ bool BatteryManager::charging() {
++  if (std::optional<bool> v = camoucfg::GetBool(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kBatteryCharging)) {
++    return *v;
++  }
+   return battery_status_.Charging();
+ }
+ 
+ double BatteryManager::chargingTime() {
++  if (std::optional<double> v = camoucfg::GetDouble(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kBatteryChargingTime)) {
++    return *v;
++  }
+   return battery_status_.charging_time().InSecondsF();
+ }
+ 
+ double BatteryManager::dischargingTime() {
++  if (std::optional<double> v = camoucfg::GetDouble(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kBatteryDischargingTime)) {
++    return *v;
++  }
+   return battery_status_.discharging_time().InSecondsF();
+ }
+ 
+ double BatteryManager::level() {
++  if (std::optional<double> v = camoucfg::GetDouble(
++          camoucfg::ScopeFor(GetExecutionContext()),
++          camoucfg::keys::kBatteryLevel)) {
++    return *v;
++  }
+   return battery_status_.Level();
+ }
+ 
