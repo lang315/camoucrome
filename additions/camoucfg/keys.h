@@ -293,9 +293,18 @@ inline constexpr char kBatteryLevel[] = "battery:level";
 inline constexpr char kBatteryChargingTime[] = "battery:chargingTime";
 inline constexpr char kBatteryDischargingTime[] = "battery:dischargingTime";
 
+// Window-geometry getters (window-geometry slice). Dot-namespaced (mirror the JS
+// property path). Coherence-coupled to the sp4a screen.* spoof (operator keeps
+// outer* <= screen.*, screenX/Y within avail). inner*/dpr are launcher-layer, not
+// here. Each absent => the real RootWindowRect value (rule 5).
+inline constexpr char kWindowOuterWidth[] = "window.outerWidth";
+inline constexpr char kWindowOuterHeight[] = "window.outerHeight";
+inline constexpr char kWindowScreenX[] = "window.screenX";
+inline constexpr char kWindowScreenY[] = "window.screenY";
+
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 74> kAllKeys = {
+inline constexpr std::array<std::string_view, 78> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -370,6 +379,10 @@ inline constexpr std::array<std::string_view, 74> kAllKeys = {
     kBatteryLevel,
     kBatteryChargingTime,
     kBatteryDischargingTime,
+    kWindowOuterWidth,
+    kWindowOuterHeight,
+    kWindowScreenX,
+    kWindowScreenY,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
