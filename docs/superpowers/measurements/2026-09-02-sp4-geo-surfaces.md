@@ -59,7 +59,7 @@ of the mojo hanging-get:
 
 ```cpp
 void Geolocation::QueryNextPosition() {
-  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
+  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(GetExecutionContext());
   std::optional<double> lat =
       camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationLatitude);
   std::optional<double> lon =
@@ -156,6 +156,32 @@ compiles under the monolithic `core` target which already deps
 - **`altitude`/`heading`/`speed`/`altitudeAccuracy`** are left at the mojom
   bad-sentinels → JS `null`, matching a typical network-geolocation fix (no
   altitude/heading). Coherent.
+- **No positional jitter; timestamp advances (residual, geo-ii).** The synthesized
+  coords are byte-identical on every delivery while `timestamp` is a fresh `Now()`
+  each query. Real GPS/network fixes drift slightly between `watchPosition`
+  callbacks. This is NOT a Camoucrome-specific tell: it is byte-identical to CDP
+  `Emulation.setGeolocationOverride` (fixed coords, fresh timestamp), the override
+  every Playwright/Puppeteer user emits. Jitter synthesis is deferred to geo-ii
+  alongside the accuracy-precision derivation.
+- **Out-of-range config → silent timeout (residual, operator-facing, geo-ii /
+  SP5a).** A config `latitude=91` (or `accuracy<0`) fails `ValidateGeoposition`
+  inside the posted `OnPositionUpdated`, which returns before both the callback and
+  the `HasListeners` re-arm → no callback, no error → the request times out; state
+  recovers on the next request (the entry resets cover it). Not page-weaponizable
+  (a probe cannot inject config), but it silently disables geolocation for a
+  mistyped config. Recommend range-checking these keys in the SP5a coherence
+  validator (they postdate it).
+- **Visibility race (residual, not weaponizable, no fix).** If the page hides in the
+  sub-ms window between the synth `PostTask` and the task running, the posted
+  `OnPositionUpdated` drops the update (the hidden-page guard) while
+  `camou_geo_delivered_` stays true, so visibility-regain does not re-synthesize
+  and a request can time out where stock would recover. Page JS cannot control its
+  own visibility, so no probe can weaponize it; the symptom is a rare timeout, not
+  a leak. No code fix — patching the hidden-drop path would expand the diff for a
+  non-adversarial sub-ms window.
+- **`is_precise`** is left at its mojom default. It is an internal
+  `ApproximateGeolocation` accuracy-mode field, not surfaced on the JS
+  `GeolocationCoordinates` interface — not a page-side tell.
 
 ## 5. Slice scope summary
 
