@@ -1,0 +1,66 @@
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index 91f3d4d522..2292da6682 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -37,6 +37,9 @@
+ #include "base/trace_event/typed_macros.h"
+ #include "build/build_config.h"
+ #include "cc/input/snap_selection_strategy.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+ #include "net/storage_access_api/status.h"
+ #include "third_party/blink/public/common/features.h"
+@@ -1682,6 +1685,12 @@ int LocalDOMWindow::outerHeight() const {
+     return 0;
+   }
+ 
++  if (std::optional<int32_t> v = camoucfg::GetInt32(
++          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
++          camoucfg::keys::kWindowOuterHeight)) {
++    return *v;
++  }
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+@@ -1714,6 +1723,12 @@ int LocalDOMWindow::outerWidth() const {
+     return 0;
+   }
+ 
++  if (std::optional<int32_t> v = camoucfg::GetInt32(
++          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
++          camoucfg::keys::kWindowOuterWidth)) {
++    return *v;
++  }
++
+   ChromeClient& chrome_client = page->GetChromeClient();
+   if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
+     return static_cast<int>(
+@@ -1780,6 +1795,12 @@ int LocalDOMWindow::innerWidth() const {
+ }
+ 
+ int LocalDOMWindow::screenX() const {
++  if (std::optional<int32_t> v = camoucfg::GetInt32(
++          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
++          camoucfg::keys::kWindowScreenX)) {
++    return *v;
++  }
++
+   LocalFrame* frame = GetFrame();
+   if (!frame) {
+     return 0;
+@@ -1805,6 +1826,12 @@ int LocalDOMWindow::screenX() const {
+ }
+ 
+ int LocalDOMWindow::screenY() const {
++  if (std::optional<int32_t> v = camoucfg::GetInt32(
++          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
++          camoucfg::keys::kWindowScreenY)) {
++    return *v;
++  }
++
+   LocalFrame* frame = GetFrame();
+   if (!frame) {
+     return 0;
