@@ -108,8 +108,22 @@ Why this shape:
   first synth post, and checked at the top of the config branch so a re-arm
   returns quietly. A stationary config position thus fires **once** per request and
   then stays quiet — exactly like a real stationary device (whose hanging-get never
-  resolves again). Verified by G5 (a standing `watchPosition` fires a small bounded
-  number of times, not a flood).
+  resolves again). Verified by G5 (a standing `watchPosition` fires exactly once).
+- **Starvation follow-on (second correction).** The delivered-flag's quiet-return
+  leaves `updating_` stuck `true` (no `OnPositionUpdated` fires to reset it, and
+  `UpdateGeolocationState` sets it `true` after every `QueryNextPosition`). That
+  starves any request issued while a watch still stands: a `getCurrentPosition`
+  (or a second `watchPosition`) then hits `if (!updating_)` == false → its query
+  is skipped → it hangs forever (getCurrentPosition's default timeout is
+  Infinity). A ~10-line probe (`watchPosition` then `getCurrentPosition`) would
+  hang where stock Chrome resolves — a tell. Fix: a `HasCamouGeoConfig()` helper
+  gates a `updating_ = false` reset (alongside the delivered-flag reset) at both
+  request entry points — safe because the config synth path never issues a real
+  mojo query, so no outstanding query can be double-invoked, and CAMOU_CONFIG is
+  process-static so the gate never flips mid-session. A fresh request then
+  re-issues `QueryNextPosition` and gets its synth delivery; a bounded duplicate
+  callback to the standing watch is harmless. Verified by G6 (getCurrentPosition
+  during a standing watchPosition resolves with the config coords, no hang).
 - **Permission-respecting (deliberate divergence from Camoufox).** `QueryNextPosition`
   is only reached after `EnsureGeolocationConnection` has driven the permission
   request to *granted*. So a page whose geolocation permission was DENIED still
