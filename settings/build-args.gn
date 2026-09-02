@@ -1,0 +1,36 @@
+# Camoucrome required GN build args
+#
+# The arguments a Camoucrome build MUST set beyond Chromium's defaults for
+# behavioural parity with the Chrome the fork claims. NOT a full args.gn — a
+# developer adds their own dev conveniences (is_component_build, symbol_level,
+# out dir, etc.). Consumed manually today: append these to your
+# out/<dir>/args.gn and re-run `gn gen`. The SP6 build/packaging pipeline will
+# consume this file directly once built.
+
+# --- SP7: codec parity ---
+# RESOLVED 2026-08-27 (docs/superpowers/specs/00-conventions.md, SP7 D2);
+# APPLIED + VERIFIED 2026-09-02 (scripts/verify_sp7_codecs.py: C1 canPlayType
+# H.264/AAC -> "probably", C2 MSE.isTypeSupported -> true, C3 functional H.264
+# decode of bear.mp4 (videoWidth 320), C4 no regression -- all PASS).
+#
+# A fork claiming Chrome that cannot decode H.264/AAC is caught by any page that
+# LOADS the media rather than merely asks about it. Stock Chromium ships
+# ffmpeg_branding="Chromium" (no proprietary decoders); these two args build the
+# real decoders so canPlayType/isTypeSupported/decodingInfo AND actual playback
+# match Chrome -- coherently, not as a Blink lie (a lie diverges on real
+# playback, a worse tell).
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+
+# --- DISTRIBUTION LICENSING: OPEN, deliberately (SP7 D2 part 2) ---
+# Enabling proprietary_codecs for a LOCAL build is settled. DISTRIBUTING the
+# resulting binaries carries H.264/AAC patent-pool obligations that Google's
+# Chrome licence does NOT extend to third-party builds. That is a legal/business
+# decision -- not a technical one -- to settle before SP6 ships anything. This
+# file does not resolve it.
+
+# --- Widevine: stays absent + honest (do NOT enable) ---
+# enable_widevine is a GN arg, but the CDM is a binary distributed separately;
+# no flag produces a working one. requestMediaKeySystemAccess must remain real
+# (SP4 was scoped to leave it alone). Do NOT set enable_widevine=true expecting
+# a working CDM -- that would be a spoof the build cannot honour.
