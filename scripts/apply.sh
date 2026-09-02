@@ -48,6 +48,7 @@ PATCHES=(
   "$ROOT/patches/sp4-tz-locale.patch"
   "$ROOT/patches/sp4-webrtc-ip.patch"
   "$ROOT/patches/sp4-voices.patch"
+  "$ROOT/patches/sp4-geo.patch"
 )
 for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
