@@ -94,9 +94,22 @@ Why this shape:
   as `QueryNextPosition(); updating_ = true;`. Calling `OnPositionUpdated`
   synchronously would set `updating_ = false` and then the caller would set it
   back to `true`, wedging the flag; posting delivers on a clean task (mirroring
-  the async mojo callback) and avoids re-entrancy. It delivers **once** per arm
-  (exactly like the mojo one-shot), so a static config position fires once — no
-  watcher re-arm loop.
+  the async mojo callback) and avoids re-entrancy.
+- **Watcher re-arm loop — the trap, and the fix (whole-branch correction).** An
+  earlier draft of this doc claimed the synth "delivers once, no loop" — that was
+  WRONG. `OnPositionUpdated`'s tail runs `if (HasListeners()) UpdateGeolocationState();`,
+  which for a standing `watchPosition` re-arms `QueryNextPosition()`. The mojo
+  path there is a hanging-get that only resolves on an actual position change, but
+  the synth resolves INSTANTLY every re-arm → an infinite instant loop (main-thread
+  CPU burn + a flood of identical callbacks + a timing tell). `getCurrentPosition`
+  is unaffected (its one-shot notifier is removed → `HasListeners()` false →
+  `StopUpdating`). Fix: a `camou_geo_delivered_` flag — reset at each request entry
+  (`getCurrentPositionForBindings` / `watchPositionForBindings`), set after the
+  first synth post, and checked at the top of the config branch so a re-arm
+  returns quietly. A stationary config position thus fires **once** per request and
+  then stays quiet — exactly like a real stationary device (whose hanging-get never
+  resolves again). Verified by G5 (a standing `watchPosition` fires a small bounded
+  number of times, not a flood).
 - **Permission-respecting (deliberate divergence from Camoufox).** `QueryNextPosition`
   is only reached after `EnsureGeolocationConnection` has driven the permission
   request to *granted*. So a page whose geolocation permission was DENIED still
