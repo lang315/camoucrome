@@ -20,6 +20,22 @@ WATCH = r"""(async () => {
   });
 })()"""
 
+# G5: register watchPosition WITHOUT clearing it, count how many times the
+# success callback fires over ~1200ms. A stationary config position must
+# fire once and then stay quiet (no busy-loop re-synthesis on the
+# OnPositionUpdated -> UpdateGeolocationState re-arm).
+STANDING_WATCH = r"""(async () => {
+  return await new Promise((res) => {
+    let count = 0;
+    let lastLat = null;
+    navigator.geolocation.watchPosition(
+      (p)=>{ count++; lastLat = p.coords.latitude; },
+      (e)=>{ /* ignore errors, just keep counting successes */ },
+      {timeout:4000});
+    setTimeout(()=>res({count, lastLat}), 1200);
+  });
+})()"""
+
 def run(config, expr):
     url, _, stop = echo_server.start([])
     try:
@@ -41,8 +57,12 @@ def main():
     r["G3"] = c.get("ok") and c["acc"]==100
     d = run(cfg({"geolocation:latitude":48.8566,"geolocation:longitude":2.3522,"geolocation:accuracy":25}), WATCH)
     r["G4"] = d.get("ok") and d["lat"]==48.8566
-    EXPECTED=4
-    for k in ("G1","G2","G3","G4"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    e5 = run(cfg({"geolocation:latitude":48.8566,"geolocation:longitude":2.3522,"geolocation:accuracy":25}), STANDING_WATCH)
+    r["G5"] = e5.get("lastLat")==48.8566 and 1 <= e5.get("count", 0) <= 3
+    EXPECTED=5
+    for k in ("G1","G2","G3","G4","G5"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    if "count" in e5:
+        print(f"  (G5 detail: count={e5.get('count')}, lastLat={e5.get('lastLat')})")
     n=sum(r.values()); print(f"{n}/{EXPECTED} " + ("ALL_PASS" if n==EXPECTED else "FAIL"))
     sys.exit(0 if n==EXPECTED else 1)
 
