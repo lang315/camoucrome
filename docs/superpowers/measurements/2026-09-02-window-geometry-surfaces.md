@@ -93,6 +93,15 @@ today) is fine. `GetInt32` because these are integer pixel values.
 - **`getScreenDetails()`/`ScreenDetailed`/`screen.isExtended`** (permission-gated
   multi-monitor, sp4a's third path) — audit is deferred; `isExtended==false` is
   coherent with any single spoofed monitor.
+- **Fenced-frame guard (respected).** `outerWidth()`/`outerHeight()` carry a stock
+  guard `if (frame->IsInFencedFrameTree()) return innerWidth();` — a deliberate
+  isolation so a fenced frame cannot read the embedder's outer window size. The
+  config override is placed AFTER that guard (not at the very top), so a fenced
+  frame keeps stock's `return innerWidth()` and only a non-fenced frame gets the
+  configured value — matching real Chrome in fenced-frame context. `screenX()`/
+  `screenY()` have no such guard, so their override sits at the top. (The
+  fenced-frame path is correct-by-construction; a `<fencedframe>` is not exercised
+  by the W1–W7 verify.)
 
 ## 5. Slice scope summary
 
