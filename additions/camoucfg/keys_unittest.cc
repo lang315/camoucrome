@@ -69,6 +69,8 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kAudioMaxChannelCount,
       kMediaDevicesEnabled, kMediaDevicesMicros, kMediaDevicesWebcams,
       kMediaDevicesSpeakers,
+      kMediaDevicesSeed, kMediaDevicesCameraLabel, kMediaDevicesMicrophoneLabel,
+      kMediaDevicesSpeakerLabel,
       kTimezoneId, kLocaleTag,
       kWebrtcIpHandlingPolicy,
       kVoicesList, kVoicesFakeCompletion, kVoicesFakeCompletionCharsPerSecond,
