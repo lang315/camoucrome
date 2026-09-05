@@ -5,6 +5,7 @@
 #include "components/camoucfg/canvas_noise.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string>
 
@@ -66,6 +67,23 @@ void PerturbRgbaFromConfig(uint8_t* data, size_t length,
   const int32_t strength =
       GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
   PerturbRgba(data, length, static_cast<uint64_t>(*seed), density, strength);
+}
+
+double PerturbMetric(double stock, uint64_t seed, uint64_t index,
+                     std::string_view domain) {
+  if (seed == 0 || stock == 0.0) {
+    return stock;
+  }
+  if (stock == std::trunc(stock)) {  // integer field -> integer delta, on-grid
+    return stock + DeriveDelta(seed, domain, index, /*bound=*/1);
+  }
+  // dyadic-fractional field -> sub-pixel delta on a 1/64 grid (a multiple of any
+  // finer dyadic grid the stock already sits on), bounded to +-8/64 = 0.125 px.
+  return stock + DeriveDelta(seed, domain, index, /*bound=*/8) / 64.0;
+}
+
+uint64_t CanvasSeed(const ConfigScope& scope) {
+  return GetUint32(scope, keys::kCanvasSeed).value_or(0);
 }
 
 }  // namespace camoucfg

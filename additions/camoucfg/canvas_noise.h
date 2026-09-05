@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 #include "components/camoucfg/mask_config.h"
 
@@ -42,6 +43,26 @@ void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
 // no-op.
 void PerturbRgbaFromConfig(uint8_t* data, size_t length,
                            const ConfigScope& scope);
+
+// Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter
+// slice). Pure: the same (stock, seed, index, domain) yields the same output, so
+// a page re-reading the same (text, font) sees identical metrics and cannot
+// detect the jitter by re-measuring.
+//   - seed == 0  -> stock unchanged (rule 5: no canvas:seed -> real value).
+//   - stock == 0 -> stock unchanged (zero guard: real Chrome returns exact 0 for
+//     empty ink / empty string / zero baseline; a non-zero there is a tell).
+//   - integer stock -> stock + DeriveDelta(seed, domain, index, 1)      (integer grid).
+//   - fractional    -> stock + DeriveDelta(seed, domain, index, 8)/64.0 (dyadic, <=0.125px).
+// `domain` separates fields so each derives an independent delta from one seed.
+// `index` is a caller-supplied content hash: for text-dependent fields
+// hash(text)^hash(font); for font-constant fields hash(font) only (keeps them
+// text-independent). See metric-jitter measurement §3-4.
+double PerturbMetric(double stock, uint64_t seed, uint64_t index,
+                     std::string_view domain);
+
+// canvas:seed as a uint64 (0 if absent). The one place the metric path reads the
+// seed key; Blink reads it once per measureText and calls PerturbMetric per field.
+uint64_t CanvasSeed(const ConfigScope& scope);
 
 }  // namespace camoucfg
 
