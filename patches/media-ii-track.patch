@@ -1,0 +1,147 @@
+diff --git a/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc b/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
+index 018980a5c6..9e37a6455a 100644
+--- a/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
++++ b/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
+@@ -31,6 +31,11 @@
+ #include "base/functional/callback_helpers.h"
+ #include "build/build_config.h"
+ #include "media/base/media_switches.h"
++// Camoucrome media-ii: origin-salted synthetic device ids + mediaDevices keys.
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/device_ids.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/mediastream/media_stream_request.h"
+ #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
+@@ -75,6 +80,7 @@
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
+ #include "third_party/blink/renderer/platform/webrtc/peer_connection_remote_audio_source.h"
++#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+ #include "third_party/blink/renderer/platform/wtf/text/format.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ 
+@@ -227,6 +233,70 @@ String GetDisplaySurfaceString(media::mojom::DisplayCaptureSurfaceType value) {
+   NOTREACHED();
+ }
+ 
++// Camoucrome media-ii: make a granted track's ids/label coherent with the
++// sp4-media-spoofed enumerateDevices(). The device-id fold uses the SAME
++// camoucfg::SyntheticDeviceId (over the SAME real id, kind, origin and seed)
++// that media_devices.cc's post-grant enumerate transform uses, so a track and
++// its enumerate entry agree by construction. Active only when mediaDevices
++// spoofing is enabled AND a non-zero seed is configured; otherwise the real
++// value is returned unchanged.
++bool CamouMediaSpoofActive(ExecutionContext* ec, uint32_t& seed) {
++  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(ec);
++  seed = camoucfg::GetUint32(scope, camoucfg::keys::kMediaDevicesSeed)
++             .value_or(0);
++  return ec != nullptr &&
++         camoucfg::GetBool(scope, camoucfg::keys::kMediaDevicesEnabled)
++             .value_or(false) &&
++         seed != 0;
++}
++
++// Origin-salted synthetic form of a real device/group id, or the real id
++// unchanged when spoofing is off. Empty real ids (non-device tracks such as
++// canvas.captureStream()/getDisplayMedia()) pass through untouched, and
++// SyntheticDeviceId preserves the "default" audio sentinel. `group` selects
++// the "group" kind fold; otherwise the track's audioinput/videoinput kind --
++// the kind strings are shared VERBATIM with media_devices.cc.
++String CamouMaskDeviceId(ExecutionContext* ec,
++                         MediaStreamSource::StreamType source_type,
++                         const String& real_id,
++                         bool group) {
++  uint32_t seed = 0;
++  if (real_id.empty() || !CamouMediaSpoofActive(ec, seed)) {
++    return real_id;
++  }
++  const std::string origin = ec->GetSecurityOrigin()->ToString().Utf8();
++  const std::string_view kind =
++      group ? std::string_view("group")
++            : (source_type == MediaStreamSource::kTypeVideo
++                   ? std::string_view("videoinput")
++                   : std::string_view("audioinput"));
++  return String::FromUtf8(
++      camoucfg::SyntheticDeviceId(seed, kind, real_id.Utf8(), origin));
++}
++
++// Configured generic label for a real *device* track's kind, or the real
++// source name when spoofing is off. Non-device tracks (empty device_id) keep
++// their real source name so a screen/canvas track is not mislabelled as a
++// camera. Matches the label media_devices.cc writes for the same kind.
++String CamouMaskLabel(ExecutionContext* ec,
++                      MediaStreamSource::StreamType source_type,
++                      const String& real_device_id,
++                      const String& real_label) {
++  uint32_t seed = 0;
++  if (real_device_id.empty() || !CamouMediaSpoofActive(ec, seed)) {
++    return real_label;
++  }
++  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(ec);
++  if (source_type == MediaStreamSource::kTypeVideo) {
++    return String::FromUtf8(
++        camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesCameraLabel)
++            .value_or("Integrated Camera"));
++  }
++  return String::FromUtf8(
++      camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesMicrophoneLabel)
++          .value_or("Microphone (Realtek Audio)"));
++}
++
+ }  // namespace
+ 
+ MediaStreamTrack* MediaStreamTrackImpl::Create(ExecutionContext* context,
+@@ -337,7 +407,13 @@ String MediaStreamTrackImpl::id() const {
+ }
+ 
+ String MediaStreamTrackImpl::label() const {
+-  return component_->GetSourceName();
++  // Camoucrome media-ii: a configured generic label for real device tracks
++  // (coherent with the spoofed enumerate); non-device tracks keep their name.
++  MediaStreamTrackPlatform::Settings platform_settings;
++  component_->GetSettings(platform_settings);
++  return CamouMaskLabel(GetExecutionContext(), component_->GetSourceType(),
++                        platform_settings.device_id,
++                        component_->GetSourceName());
+ }
+ 
+ bool MediaStreamTrackImpl::enabled() const {
+@@ -482,9 +558,15 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
+   }
+   auto platform_capabilities = component_->Source()->GetCapabilities();
+ 
+-  capabilities->setDeviceId(platform_capabilities.device_id);
++  // Camoucrome media-ii: same synthetic fold as getSettings(), so
++  // getCapabilities().deviceId == getSettings().deviceId (coherence).
++  capabilities->setDeviceId(
++      CamouMaskDeviceId(GetExecutionContext(), component_->GetSourceType(),
++                        platform_capabilities.device_id, /*group=*/false));
+   if (!platform_capabilities.group_id.IsNull()) {
+-    capabilities->setGroupId(platform_capabilities.group_id);
++    capabilities->setGroupId(
++        CamouMaskDeviceId(GetExecutionContext(), component_->GetSourceType(),
++                          platform_capabilities.group_id, /*group=*/true));
+   }
+ 
+   if (component_->GetSourceType() == MediaStreamSource::kTypeAudio) {
+@@ -631,9 +713,16 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
+   if (platform_settings.HasAspectRatio()) {
+     settings->setAspectRatio(platform_settings.aspect_ratio);
+   }
+-  settings->setDeviceId(platform_settings.device_id);
++  // Camoucrome media-ii: fold the real device/group id into its origin-salted
++  // synthetic form so the granted track is coherent with the spoofed
++  // enumerateDevices() (real id passes through when spoofing is off).
++  settings->setDeviceId(
++      CamouMaskDeviceId(GetExecutionContext(), component_->GetSourceType(),
++                        platform_settings.device_id, /*group=*/false));
+   if (!platform_settings.group_id.IsNull()) {
+-    settings->setGroupId(platform_settings.group_id);
++    settings->setGroupId(
++        CamouMaskDeviceId(GetExecutionContext(), component_->GetSourceType(),
++                          platform_settings.group_id, /*group=*/true));
+   }
+   if (platform_settings.HasFacingMode()) {
+     switch (platform_settings.facing_mode) {

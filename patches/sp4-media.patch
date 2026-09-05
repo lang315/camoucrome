@@ -1,65 +1,136 @@
-diff --git a/third_party/blink/renderer/modules/mediastream/BUILD.gn b/third_party/blink/renderer/modules/mediastream/BUILD.gn
-index d6a91ebb3b..a13d9e73e0 100644
---- a/third_party/blink/renderer/modules/mediastream/BUILD.gn
-+++ b/third_party/blink/renderer/modules/mediastream/BUILD.gn
-@@ -137,6 +137,7 @@ blink_modules_sources("mediastream") {
-   ]
-   deps = [
-     "//build:chromecast_buildflags",
-+    "//components/camoucfg",
-     "//media/capture/mojom:image_capture_blink",
-     "//media/webrtc",
-     "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index 6bf79535d9..a78b4c66b7 100644
+index 6bf79535d9..6271bd9703 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-@@ -14,6 +14,9 @@
+@@ -14,6 +14,10 @@
  #include "base/strings/stringprintf.h"
  #include "base/uuid.h"
  #include "build/build_config.h"
 +#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/device_ids.h"
 +#include "components/camoucfg/keys.h"
 +#include "components/camoucfg/mask_config.h"
  #include "media/base/media_permission.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-@@ -1493,6 +1496,40 @@ void MediaDevices::DevicesEnumerated(
+@@ -1493,6 +1497,122 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  
-+  // SP4-media: override the enumerated device list with configured counts of
-+  // empty-field devices per kind. Absent/false gate => real list untouched.
++  // SP4-media / media-ii: rewrite enumerateDevices() when configured.
++  //  - Pre-grant (real input ids empty): configured counts of empty-field
++  //    devices per kind (the original sp4-media spoof, unchanged).
++  //  - Post-grant (a getUserMedia grant populated real ids) AND a non-zero
++  //    seed: transform each REAL device into an origin-salted synthetic
++  //    deviceId/groupId via the SAME camoucfg::SyntheticDeviceId the track
++  //    getters use (=> the granted track is coherent with this list) plus a
++  //    configured generic per-kind label, keeping the real count.
++  // A zero/absent seed post-grant falls through to the real list, matching the
++  // track getters' `seed != 0` guard so the two surfaces never disagree.
++  // Absent/false enabled => real list untouched.
 +  const camoucfg::ConfigScope& camou_scope =
 +      camoucfg::ScopeFor(GetExecutionContext());
 +  if (camoucfg::GetBool(camou_scope, camoucfg::keys::kMediaDevicesEnabled)
 +          .value_or(false)) {
-+    const uint32_t micros =
-+        camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesMicros)
-+            .value_or(3);
-+    const uint32_t webcams =
-+        camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesWebcams)
-+            .value_or(1);
-+    const uint32_t speakers =
-+        camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesSpeakers)
-+            .value_or(1);
-+    MediaDeviceInfoVector spoofed;
-+    for (uint32_t k = 0; k < micros; ++k) {
-+      spoofed.push_back(MakeGarbageCollected<InputDeviceInfo>(
-+          g_empty_string, g_empty_string, g_empty_string,
-+          mojom::blink::MediaDeviceType::kMediaAudioInput));
++    if (!result_contains_nonempty_input_device_ids) {
++      const uint32_t micros =
++          camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesMicros)
++              .value_or(3);
++      const uint32_t webcams =
++          camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesWebcams)
++              .value_or(1);
++      const uint32_t speakers =
++          camoucfg::GetUint32(camou_scope,
++                              camoucfg::keys::kMediaDevicesSpeakers)
++              .value_or(1);
++      MediaDeviceInfoVector spoofed;
++      for (uint32_t k = 0; k < micros; ++k) {
++        spoofed.push_back(MakeGarbageCollected<InputDeviceInfo>(
++            g_empty_string, g_empty_string, g_empty_string,
++            mojom::blink::MediaDeviceType::kMediaAudioInput));
++      }
++      for (uint32_t k = 0; k < webcams; ++k) {
++        spoofed.push_back(MakeGarbageCollected<InputDeviceInfo>(
++            g_empty_string, g_empty_string, g_empty_string,
++            mojom::blink::MediaDeviceType::kMediaVideoInput));
++      }
++      for (uint32_t k = 0; k < speakers; ++k) {
++        spoofed.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++            g_empty_string, g_empty_string, g_empty_string,
++            mojom::blink::MediaDeviceType::kMediaAudioOutput));
++      }
++      media_devices = std::move(spoofed);
++    } else if (const uint32_t seed =
++                   camoucfg::GetUint32(camou_scope,
++                                       camoucfg::keys::kMediaDevicesSeed)
++                       .value_or(0);
++               seed != 0) {
++      const std::string origin =
++          GetExecutionContext()
++              ? GetExecutionContext()->GetSecurityOrigin()->ToString().Utf8()
++              : std::string();
++      const String camera_label = String::FromUtf8(
++          camoucfg::GetString(camou_scope,
++                              camoucfg::keys::kMediaDevicesCameraLabel)
++              .value_or("Integrated Camera"));
++      const String microphone_label = String::FromUtf8(
++          camoucfg::GetString(camou_scope,
++                              camoucfg::keys::kMediaDevicesMicrophoneLabel)
++              .value_or("Microphone (Realtek Audio)"));
++      const String speaker_label = String::FromUtf8(
++          camoucfg::GetString(camou_scope,
++                              camoucfg::keys::kMediaDevicesSpeakerLabel)
++              .value_or("Speakers (Realtek Audio)"));
++      MediaDeviceInfoVector transformed;
++      for (wtf_size_t i = 0;
++           i < static_cast<wtf_size_t>(
++                   mojom::blink::MediaDeviceType::kNumMediaDeviceTypes);
++           ++i) {
++        for (wtf_size_t j = 0; j < enumeration[i].size(); ++j) {
++          const mojom::blink::MediaDeviceType device_type =
++              static_cast<mojom::blink::MediaDeviceType>(i);
++          const WebMediaDeviceInfo& device_info = enumeration[i][j];
++          std::string_view kind;
++          String label;
++          switch (device_type) {
++            case mojom::blink::MediaDeviceType::kMediaVideoInput:
++              kind = "videoinput";
++              label = camera_label;
++              break;
++            case mojom::blink::MediaDeviceType::kMediaAudioOutput:
++              kind = "audiooutput";
++              label = speaker_label;
++              break;
++            default:
++              kind = "audioinput";
++              label = microphone_label;
++              break;
++          }
++          const String synth_device_id = String::FromUtf8(
++              camoucfg::SyntheticDeviceId(seed, kind, device_info.device_id,
++                                          origin));
++          const String synth_group_id = String::FromUtf8(
++              camoucfg::SyntheticDeviceId(seed, "group", device_info.group_id,
++                                          origin));
++          // An ungranted-kind placeholder (empty real device_id, emitted for a
++          // kind not covered by a partial grant) keeps an empty label: an empty
++          // deviceId with a non-empty label is a shape real Chrome never emits,
++          // and would be a self-evident tell. Mirrors the track getters, whose
++          // CamouMaskLabel passes an empty-device_id track through unchanged.
++          const String device_label =
++              device_info.device_id.empty() ? g_empty_string : label;
++          if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput ||
++              device_type == mojom::blink::MediaDeviceType::kMediaVideoInput) {
++            transformed.push_back(MakeGarbageCollected<InputDeviceInfo>(
++                synth_device_id, device_label, synth_group_id, device_type));
++          } else {
++            transformed.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++                synth_device_id, device_label, synth_group_id, device_type));
++          }
++        }
++      }
++      media_devices = std::move(transformed);
 +    }
-+    for (uint32_t k = 0; k < webcams; ++k) {
-+      spoofed.push_back(MakeGarbageCollected<InputDeviceInfo>(
-+          g_empty_string, g_empty_string, g_empty_string,
-+          mojom::blink::MediaDeviceType::kMediaVideoInput));
-+    }
-+    for (uint32_t k = 0; k < speakers; ++k) {
-+      spoofed.push_back(MakeGarbageCollected<MediaDeviceInfo>(
-+          g_empty_string, g_empty_string, g_empty_string,
-+          mojom::blink::MediaDeviceType::kMediaAudioOutput));
-+    }
-+    media_devices = std::move(spoofed);
 +  }
 +
    ReportCompletedEnumerateDevices(result_contains_nonempty_input_device_ids);
