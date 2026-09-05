@@ -78,7 +78,12 @@ GRANT_PROBE = r"""(async () => {
       label: t.label}));
     const devs = await navigator.mediaDevices.enumerateDevices();
     s.getTracks().forEach(t => t.stop());
-    return {secure: window.isSecureContext, tracks,
+    // Post-stop: label()/getSettings() must stay masked (a stopped track that
+    // reverts to the real device name/id is a fingerprinter's exact pattern).
+    const postStop = s.getTracks().map(t => ({
+      kind: t.kind, label: t.label,
+      settingsDeviceId: t.getSettings().deviceId}));
+    return {secure: window.isSecureContext, tracks, postStop,
             enumerate: devs.map(d => ({kind:d.kind, deviceId:d.deviceId,
                                        groupId:d.groupId, label:d.label}))};
   } catch(e) { return {error: String(e)}; }
@@ -287,13 +292,38 @@ def main():
               and el.get("audiooutput") == "Camo Speaker")
         results["M11"] = (ok, "track+enumerate labels == configured generic")
 
-    order = [f"M{i}" for i in range(1, 12)]
+    # ---------------- M12: groupId coherence (track in enumerate) -----------
+    if is_err(spoofA1):
+        results["M12"] = (False, f"error {spoofA1}")
+    else:
+        gbk = {}
+        for d in spoofA1["enumerate"]:
+            gbk.setdefault(d["kind"], set()).add(d["groupId"])
+        ok = len(spoofA1["tracks"]) > 0 and all(
+            t["settingsGroupId"] in gbk.get(ENUMK[t["kind"]], set())
+            for t in spoofA1["tracks"])
+        results["M12"] = (ok, "track getSettings().groupId in enumerate groupIds "
+                              "(by kind) -- the groupId leg of coherence")
+
+    # ---------------- M13: post-stop label stays masked ---------------------
+    if is_err(spoofA1):
+        results["M13"] = (False, f"error {spoofA1}")
+    else:
+        pre = {t["kind"]: t["label"] for t in spoofA1["tracks"]}
+        ps = spoofA1.get("postStop", [])
+        ok = len(ps) > 0 and all(
+            p["label"] != "fake_device_0"
+            and p["label"] == pre.get(p["kind"]) for p in ps)
+        results["M13"] = (ok, "post-stop track.label stays the generic mask "
+                              "(no revert to real source name)")
+
+    order = [f"M{i}" for i in range(1, 14)]
     for k in order:
         ok, note = results.get(k, (False, "MISSING"))
         print(f"{k}: {'PASS' if ok else 'FAIL'}  -- {note}")
     npass = sum(1 for k in order if results.get(k, (False,))[0])
-    print(f"{npass}/11 " + ("ALL_PASS" if npass == 11 else "FAIL"))
-    sys.exit(0 if npass == 11 else 1)
+    print(f"{npass}/13 " + ("ALL_PASS" if npass == 13 else "FAIL"))
+    sys.exit(0 if npass == 13 else 1)
 
 
 if __name__ == "__main__":

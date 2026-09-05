@@ -1,3 +1,15 @@
+diff --git a/third_party/blink/renderer/modules/mediastream/BUILD.gn b/third_party/blink/renderer/modules/mediastream/BUILD.gn
+index d6a91ebb3b..a13d9e73e0 100644
+--- a/third_party/blink/renderer/modules/mediastream/BUILD.gn
++++ b/third_party/blink/renderer/modules/mediastream/BUILD.gn
+@@ -137,6 +137,7 @@ blink_modules_sources("mediastream") {
+   ]
+   deps = [
+     "//build:chromecast_buildflags",
++    "//components/camoucfg",
+     "//media/capture/mojom:image_capture_blink",
+     "//media/webrtc",
+     "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 index 6bf79535d9..6271bd9703 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
