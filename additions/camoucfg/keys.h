@@ -255,6 +255,18 @@ inline constexpr char kMediaDevicesMicros[] = "mediaDevices:micros";
 inline constexpr char kMediaDevicesWebcams[] = "mediaDevices:webcams";
 inline constexpr char kMediaDevicesSpeakers[] = "mediaDevices:speakers";
 
+// media-ii: the seed for SyntheticDeviceId (device_ids.h) and the label
+// overrides for the one synthetic device of each kind that enumeration
+// fabricates. Colon-namespaced, same mediaDevices: namespace as above. Absent
+// or 0 seed => SyntheticDeviceId is a no-op (rule 5). Consumed by media-ii
+// Task 2's enumerate/track-getter sites.
+inline constexpr char kMediaDevicesSeed[] = "mediaDevices:seed";
+inline constexpr char kMediaDevicesCameraLabel[] = "mediaDevices:cameraLabel";
+inline constexpr char kMediaDevicesMicrophoneLabel[] =
+    "mediaDevices:microphoneLabel";
+inline constexpr char kMediaDevicesSpeakerLabel[] =
+    "mediaDevices:speakerLabel";
+
 // Timezone + locale overrides (SP4-timezone/locale). Synthetic namespaces
 // (bare `timezone`/`locale` are banned by EveryKeyIsNamespaced) -> colon.
 // timezone:id is an IANA id (e.g. "America/New_York"); locale:tag is a BCP-47
@@ -304,7 +316,7 @@ inline constexpr char kWindowScreenY[] = "window.screenY";
 
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 78> kAllKeys = {
+inline constexpr std::array<std::string_view, 82> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -366,6 +378,10 @@ inline constexpr std::array<std::string_view, 78> kAllKeys = {
     kMediaDevicesMicros,
     kMediaDevicesWebcams,
     kMediaDevicesSpeakers,
+    kMediaDevicesSeed,
+    kMediaDevicesCameraLabel,
+    kMediaDevicesMicrophoneLabel,
+    kMediaDevicesSpeakerLabel,
     kTimezoneId,
     kLocaleTag,
     kWebrtcIpHandlingPolicy,
