@@ -1,0 +1,214 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.cc b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
+index a78150b4a6..7b249feb5c 100644
+--- a/third_party/blink/renderer/core/html/canvas/text_metrics.cc
++++ b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
+@@ -4,7 +4,14 @@
+ 
+ #include "third_party/blink/renderer/core/html/canvas/text_metrics.h"
+ 
++#include <cstdint>
++#include <optional>
++
++#include "base/bit_cast.h"
+ #include "base/numerics/checked_math.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/canvas_noise.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_canvas_text_align.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_canvas_text_baseline.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_text_cluster_options.h"
+@@ -32,6 +39,65 @@ namespace blink {
+ 
+ constexpr int kHangingAsPercentOfAscent = 80;
+ 
++namespace {
++
++// FNV-1a 64. Folds are over launch-stable *content* (font family name, size /
++// weight / slope bits, text code units) -- never pointers -- so the jitter index
++// is reproducible across process launches (J3).
++constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ULL;
++constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
++
++inline uint64_t FnvByte(uint64_t h, uint8_t b) {
++  return (h ^ b) * kFnvPrime;
++}
++
++inline uint64_t FnvU32(uint64_t h, uint32_t v) {
++  for (int i = 0; i < 4; ++i) {
++    h = FnvByte(h, static_cast<uint8_t>(v & 0xffu));
++    v >>= 8;
++  }
++  return h;
++}
++
++// operator[] widens LChar to UChar, so the hash is identical whether the backing
++// store is 8- or 16-bit -- representation-independent, hence launch-stable.
++inline uint64_t FnvString(uint64_t h, const String& s) {
++  for (unsigned i = 0; i < s.length(); ++i) {
++    const UChar c = s[i];
++    h = FnvByte(h, static_cast<uint8_t>(c & 0xffu));
++    h = FnvByte(h, static_cast<uint8_t>((c >> 8) & 0xffu));
++  }
++  return h;
++}
++
++// Reproduces GetFontBaseline's switch on the jittered metric set M' so that the
++// single baseline_y' used by the y-block stays coherent with the (jittered)
++// font metrics. Kept byte-for-byte in step with GetFontBaseline, INCLUDING the
++// /100.0 (double) here vs the /100.0f (float) in the setHanging fallback below;
++// stock's tb=hanging residual depends on that asymmetry and J11 checks it.
++float MirroredBaseline(V8CanvasTextBaseline::Enum tb, float fa, float fd,
++                       float nta, float ntd, std::optional<float> hb,
++                       std::optional<float> ib, std::optional<float> ab) {
++  switch (tb) {
++    case V8CanvasTextBaseline::Enum::kTop:
++      return nta;
++    case V8CanvasTextBaseline::Enum::kHanging:
++      return hb ? *hb : fa * kHangingAsPercentOfAscent / 100.0;
++    case V8CanvasTextBaseline::Enum::kIdeographic:
++      return ib ? *ib : -fd;
++    case V8CanvasTextBaseline::Enum::kBottom:
++      return -ntd;
++    case V8CanvasTextBaseline::Enum::kMiddle:
++      return (nta - ntd) / 2.0f;
++    case V8CanvasTextBaseline::Enum::kAlphabetic:
++      return ab ? *ab : 0;
++    default:
++      return 0;
++  }
++}
++
++}  // namespace
++
+ float TextMetrics::GetFontBaseline(
+     const V8CanvasTextBaseline::Enum text_baseline,
+     const SimpleFontData& font_data) {
+@@ -106,7 +172,33 @@ void TextMetrics::Update(const Font* font,
+   font_ = font;
+   direction_ = direction;
+ 
++  // Metric-jitter: seed once (config is process-global; worker-safe), and fold a
++  // launch-stable content hash over the RESOLVED font (not the requested family)
++  // so the per-field delta is reproducible across launches. f_index keys the
++  // font-constant fields (text-independent); tf_index adds the text for the
++  // text-dependent ones. seed == 0 -> every PerturbMetric is a no-op (rule 5).
++  const uint64_t seed = camoucfg::CanvasSeed(camoucfg::ScopeFor(nullptr));
++  uint64_t f_index = 0, tf_index = 0;
++  if (seed) {
++    const FontDescription& jitter_fd = font->GetFontDescription();
++    f_index = FnvString(kFnvOffset, font_data->PlatformData().FontFamilyName());
++    f_index = FnvU32(f_index, base::bit_cast<uint32_t>(jitter_fd.ComputedSize()));
++    f_index = FnvU32(f_index,
++                     static_cast<uint16_t>(jitter_fd.Weight().RawValue()));
++    f_index = FnvU32(f_index,
++                     static_cast<uint16_t>(jitter_fd.Style().RawValue()));
++    tf_index = f_index ^ FnvString(kFnvOffset, text_);
++  }
++
+   auto [xpos, glyph_bounds] = MeasureRuns(text_painter);
++  if (seed) {
++    xpos = camoucfg::PerturbMetric(xpos, seed, tf_index, "tm.w");
++    const float jx = camoucfg::PerturbMetric(glyph_bounds.x(), seed, tf_index, "tm.l");
++    const float jr = camoucfg::PerturbMetric(glyph_bounds.right(), seed, tf_index, "tm.r");
++    const float jy = camoucfg::PerturbMetric(glyph_bounds.y(), seed, tf_index, "tm.a");
++    const float jb = camoucfg::PerturbMetric(glyph_bounds.bottom(), seed, tf_index, "tm.d");
++    glyph_bounds.SetRect(jx, jy, jr - jx, jb - jy);  // 4 independent jittered edges
++  }
+   double real_width = xpos;
+   width_ = real_width;
+ 
+@@ -130,43 +222,61 @@ void TextMetrics::Update(const Font* font,
+ 
+   // y direction
+   const FontMetrics& font_metrics = font_data->GetFontMetrics();
+-  const float ascent = font_metrics.FloatAscent(
+-      kAlphabeticBaseline, FontMetrics::ApplyBaselineTable(true));
+-  const float descent = font_metrics.FloatDescent(
+-      kAlphabeticBaseline, FontMetrics::ApplyBaselineTable(true));
+-  baseline_y = GetFontBaseline(baseline, *font_data);
+-  font_bounding_box_ascent_ = ascent - baseline_y;
+-  font_bounding_box_descent_ = descent + baseline_y;
+-  actual_bounding_box_ascent_ = -glyph_bounds.y() - baseline_y;
+-  actual_bounding_box_descent_ = glyph_bounds.bottom() + baseline_y;
++  // M' -- read each font metric ONCE and jitter it ONCE (font-only f_index, so
++  // these stay text-independent: J9), then derive every y-field from ONLY these
++  // + a single baseline_y'. The derived members must not be jittered again --
++  // that would break the identities a page can invert (J11).
++  float fa = font_metrics.FloatAscent(kAlphabeticBaseline,
++                                      FontMetrics::ApplyBaselineTable(true));
++  float fd = font_metrics.FloatDescent(kAlphabeticBaseline,
++                                       FontMetrics::ApplyBaselineTable(true));
++  const FontHeight typo = font_data->NormalizedTypoAscentAndDescent();
++  float nta = typo.ascent.ToFloat();
++  float ntd = typo.descent.ToFloat();
++  std::optional<float> hb =
++      font_metrics.HangingBaseline()
++          ? std::optional<float>(font_metrics.HangingBaseline().value())
++          : std::nullopt;
++  std::optional<float> ib =
++      font_metrics.IdeographicBaseline()
++          ? std::optional<float>(font_metrics.IdeographicBaseline().value())
++          : std::nullopt;
++  std::optional<float> ab =
++      font_metrics.AlphabeticBaseline()
++          ? std::optional<float>(font_metrics.AlphabeticBaseline().value())
++          : std::nullopt;
++  if (seed) {
++    fa = camoucfg::PerturbMetric(fa, seed, f_index, "tm.fa");
++    fd = camoucfg::PerturbMetric(fd, seed, f_index, "tm.fd");
++    nta = camoucfg::PerturbMetric(nta, seed, f_index, "tm.nta");
++    ntd = camoucfg::PerturbMetric(ntd, seed, f_index, "tm.ntd");
++    if (hb)
++      hb = camoucfg::PerturbMetric(*hb, seed, f_index, "tm.bh");
++    if (ib)
++      ib = camoucfg::PerturbMetric(*ib, seed, f_index, "tm.bi");
++    if (ab)
++      ab = camoucfg::PerturbMetric(*ab, seed, f_index, "tm.ba");
++  }
++  // baseline_y' mirrors GetFontBaseline on M' (see MirroredBaseline; keep the
++  // /100.0 double vs /100.0f float asymmetry byte-for-byte).
++  const float baseline_y_p =
++      MirroredBaseline(baseline, fa, fd, nta, ntd, hb, ib, ab);
++  baseline_y = baseline_y_p;
++  font_bounding_box_ascent_ = fa - baseline_y_p;
++  font_bounding_box_descent_ = fd + baseline_y_p;
++  actual_bounding_box_ascent_ = -glyph_bounds.y() - baseline_y_p;
++  actual_bounding_box_descent_ = glyph_bounds.bottom() + baseline_y_p;
+   // TODO(kojii): We use normalized sTypoAscent/Descent here, but this should be
+   // revisited when the spec evolves.
+-  const FontHeight normalized_typo_metrics =
+-      font_data->NormalizedTypoAscentAndDescent();
+-  em_height_ascent_ = normalized_typo_metrics.ascent - baseline_y;
+-  em_height_descent_ = normalized_typo_metrics.descent + baseline_y;
++  em_height_ascent_ = nta - baseline_y_p;
++  em_height_descent_ = ntd + baseline_y_p;
+ 
+   // Setting baselines:
+-  if (font_metrics.AlphabeticBaseline().has_value()) {
+-    baselines_->setAlphabetic(font_metrics.AlphabeticBaseline().value() -
+-                              baseline_y);
+-  } else {
+-    baselines_->setAlphabetic(-baseline_y);
+-  }
+-
+-  if (font_metrics.HangingBaseline().has_value()) {
+-    baselines_->setHanging(font_metrics.HangingBaseline().value() - baseline_y);
+-  } else {
+-    baselines_->setHanging(ascent * kHangingAsPercentOfAscent / 100.0f -
+-                           baseline_y);
+-  }
+-
+-  if (font_metrics.IdeographicBaseline().has_value()) {
+-    baselines_->setIdeographic(font_metrics.IdeographicBaseline().value() -
+-                               baseline_y);
+-  } else {
+-    baselines_->setIdeographic(-descent - baseline_y);
+-  }
++  baselines_->setAlphabetic(ab ? *ab - baseline_y_p : -baseline_y_p);
++  baselines_->setHanging(hb ? *hb - baseline_y_p
++                            : fa * kHangingAsPercentOfAscent / 100.0f -
++                                  baseline_y_p);
++  baselines_->setIdeographic(ib ? *ib - baseline_y_p : -fd - baseline_y_p);
+ }
+ 
+ std::pair<float, gfx::RectF> TextMetrics::MeasureRuns(
