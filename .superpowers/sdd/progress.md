@@ -2709,3 +2709,23 @@ fonts-ii local() gate (2026-09-06): shipped @font-face{src:local()} allowlist ga
   (sp4a-screen); checkdeps flags it, latent because checkdeps doesn't run on .cc-only
   builds. One-line blink-renderer-DEPS fix, deferred. PUSHED origin/main
   0bc9553..5bbafa9 (2026-09-06): feat 2ed0036 + docs 5bbafa9. fonts-ii local() gate shipped.
+
+FOLLOW-ON TAIL COMPLETION (2026-09-06, subagent-driven, plan
+  docs/superpowers/plans/2026-09-06-followon-tail-completion.md): execute all four
+  remaining directions in order. Box constraint: one out/Default, so build/verify
+  serial under controller; review = fresh subagent per task + final whole-branch.
+  Order: 1 geo-ii accuracy-derive, 2 voices-ii pause/resume, 3 webrtc-ii
+  (feasibility-gated), 4 consolidate.
+  - Task 1 geo-ii accuracy-derive: REJECTED 2026-09-06 (built GREEN 5/5, reviewed,
+    REVERTED). DeriveAccuracyFromPrecision derived accuracy from coord decimal
+    precision when geolocation:accuracy absent. Review (0 Crit, 2 Imp) + advisor:
+    net-negative. Real coords.accuracy is method-based (Wi-Fi ~20-150m), NOT tied
+    to coordinate decimals (an artifact of the author's paste); flat 100m is
+    Wi-Fi-plausible; derived values are the tell (implausible 11.132; Maps-paste
+    6-7-decimal coords floor to GPS-implying 1m). Also a real scientific-notation
+    bug (|coord|<1e-6 -> NumberToString gives "1e-07", fractional_digits misfires).
+    Rule 4 forbids the trade. Reverted: patches/sp4-geo.patch + verify_sp4_geo.py
+    to HEAD, verify_geo_ii.py deleted; box reverted + verify_sp4_geo 6/6 with G3
+    back at 100 (proof in binary). Measured dead-end, like audio-ii AudioWorklet /
+    fonts-ii PS-name. Real geo-ii lever = positional/accuracy jitter (method-based
+    drift), future slice. NO code shipped; deliverable is this rejection record.
