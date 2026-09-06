@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/geolocation/geolocation.cc b/third_party/blink/renderer/core/geolocation/geolocation.cc
-index 0e1e07b79f..a437c39895 100644
+index 0e1e07b79f..f1b5ad4f75 100644
 --- a/third_party/blink/renderer/core/geolocation/geolocation.cc
 +++ b/third_party/blink/renderer/core/geolocation/geolocation.cc
 @@ -31,7 +31,11 @@
@@ -14,37 +14,53 @@ index 0e1e07b79f..a437c39895 100644
  #include "services/device/public/mojom/geoposition.mojom-blink.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
  #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
-@@ -235,6 +239,14 @@ void Geolocation::getCurrentPositionForBindings(
+@@ -235,6 +239,16 @@ void Geolocation::getCurrentPositionForBindings(
      V8PositionCallback* success_callback,
      V8PositionErrorCallback* error_callback,
      const PositionOptions* v8_options) {
-+  // SP4-geo: a new request wants a fresh synthesized position. Clear the
-+  // delivered flag, and (config path only — no real mojo query is ever
-+  // outstanding there) clear updating_ so UpdateGeolocationState re-issues
-+  // QueryNextPosition even when a standing watchPosition left it stuck true.
++  // SP4-geo / geo-ii: a new request wants a fresh synthesized position. Reset
++  // the delivery-count cadence to 0, and (config path only — no real mojo query
++  // is ever outstanding there) clear updating_ so UpdateGeolocationState
++  // re-issues QueryNextPosition even when a standing watchPosition left it stuck
++  // true. QueryNextPosition cancels any queued re-fire before posting, so this
++  // reset cannot leak a second chain.
 +  if (HasCamouGeoConfig()) {
-+    camou_geo_delivered_ = false;
++    camou_geo_delivery_count_ = 0;
 +    updating_ = false;
 +  }
    const PositionOptions* options =
  #if BUILDFLAG(IS_ANDROID)
        RuntimeEnabledFeatures::ApproximateGeolocationPermissionEnabled()
-@@ -286,6 +298,14 @@ int Geolocation::watchPositionForBindings(
+@@ -286,6 +300,16 @@ int Geolocation::watchPositionForBindings(
      V8PositionCallback* success_callback,
      V8PositionErrorCallback* error_callback,
      const PositionOptions* v8_options) {
-+  // SP4-geo: a new request wants a fresh synthesized position. Clear the
-+  // delivered flag, and (config path only — no real mojo query is ever
-+  // outstanding there) clear updating_ so UpdateGeolocationState re-issues
-+  // QueryNextPosition even when a standing watchPosition left it stuck true.
++  // SP4-geo / geo-ii: a new request wants a fresh synthesized position. Reset
++  // the delivery-count cadence to 0, and (config path only — no real mojo query
++  // is ever outstanding there) clear updating_ so UpdateGeolocationState
++  // re-issues QueryNextPosition even when a standing watchPosition left it stuck
++  // true. QueryNextPosition cancels any queued re-fire before posting, so this
++  // reset cannot leak a second chain.
 +  if (HasCamouGeoConfig()) {
-+    camou_geo_delivered_ = false;
++    camou_geo_delivery_count_ = 0;
 +    updating_ = false;
 +  }
    const PositionOptions* options =
  #if BUILDFLAG(IS_ANDROID)
        RuntimeEnabledFeatures::ApproximateGeolocationPermissionEnabled()
-@@ -674,7 +694,56 @@ void Geolocation::ResetGeolocationConnection() {
+@@ -639,6 +663,11 @@ void Geolocation::UpdateGeolocationState() {
+ }
+ 
+ void Geolocation::StopUpdating() {
++  // geo-ii: kill any queued synthesized re-fire. StopUpdating is the common exit
++  // (clearWatch with no listeners, tab hide via PageVisibilityChanged,
++  // ContextDestroyed), so cancelling here stops the chain and prevents a stray
++  // delivery to a cleared watch or a torn-down context.
++  camou_geo_refire_task_.Cancel();
+   ResetGeolocationConnection();
+   accuracy_ = mojom::blink::GeolocationAccuracy::kApproximate;
+   enable_high_accuracy_ = false;
+@@ -674,7 +703,105 @@ void Geolocation::ResetGeolocationConnection() {
    geolocation_service_.reset();
  }
  
@@ -55,6 +71,56 @@ index 0e1e07b79f..a437c39895 100644
 +             .has_value() &&
 +         camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationLongitude)
 +             .has_value();
++}
++
++namespace {
++// geo-ii: the re-fire delay for the Nth synthesized delivery, mirroring a
++// stationary device's WiFi poll backoff (Chrome wifi_data_provider_chromeos.cc:
++// kDefaultPollingInterval 10s -> kNoChangePollingInterval 2min ->
++// kTwoNoChangePollingInterval 10min). Count 0 is the first fix, delivered
++// promptly (CDP-quality); later counts are the stationary re-arm cadence.
++base::TimeDelta CamouGeoRefireDelay(int delivery_count) {
++  switch (delivery_count) {
++    case 0:
++      return base::TimeDelta();  // first fix: prompt
++    case 1:
++      return base::Seconds(10);
++    case 2:
++      return base::Minutes(2);
++    default:
++      return base::Minutes(10);
++  }
++}
++}  // namespace
++
++void Geolocation::DeliverSynthesizedGeoposition() {
++  // Runs from the delayed re-fire task. StopUpdating() cancels this on
++  // ContextDestroyed, but guard defensively: deliver nothing to a torn-down
++  // context (OnPositionUpdated bails on a null context too, but returning here
++  // also avoids re-reading config off a dead frame).
++  if (!GetExecutionContext()) {
++    return;
++  }
++  // Re-read config (a no-op if it was cleared in the meantime) and deliver a
++  // fresh-timestamp position with the configured, unchanged coordinates.
++  const camoucfg::ConfigScope& scope =
++      camoucfg::ScopeFor(GetExecutionContext());
++  std::optional<double> latitude =
++      camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationLatitude);
++  std::optional<double> longitude =
++      camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationLongitude);
++  if (!latitude.has_value() || !longitude.has_value()) {
++    return;
++  }
++  auto position = device::mojom::blink::Geoposition::New();
++  position->latitude = latitude.value();
++  position->longitude = longitude.value();
++  position->accuracy =
++      camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationAccuracy)
++          .value_or(100.0);
++  position->timestamp = base::Time::Now();
++  OnPositionUpdated(device::mojom::blink::GeopositionResult::NewPosition(
++      std::move(position)));
 +}
 +
  void Geolocation::QueryNextPosition() {
@@ -69,43 +135,50 @@ index 0e1e07b79f..a437c39895 100644
 +  std::optional<double> longitude =
 +      camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationLongitude);
 +  if (latitude.has_value() && longitude.has_value()) {
-+    if (camou_geo_delivered_) {
-+      // Static config position already delivered; do not re-synthesize on the
-+      // watchPosition re-arm (OnPositionUpdated -> UpdateGeolocationState), which
-+      // would busy-loop. A stationary position fires once then stays quiet.
-+      return;
-+    }
-+    auto position = device::mojom::blink::Geoposition::New();
-+    position->latitude = latitude.value();
-+    position->longitude = longitude.value();
-+    position->accuracy =
-+        camoucfg::GetDouble(scope, camoucfg::keys::kGeolocationAccuracy)
-+            .value_or(100.0);
-+    position->timestamp = base::Time::Now();
-+    // PostTask rather than calling OnPositionUpdated synchronously: the
-+    // caller (UpdateGeolocationState) does `QueryNextPosition();
-+    // updating_ = true;` immediately after this returns. OnPositionUpdated
-+    // sets updating_ = false, so a synchronous call would have the caller's
-+    // `updating_ = true` clobber that and wedge the state machine.
-+    GetExecutionContext()
-+        ->GetTaskRunner(TaskType::kMiscPlatformAPI)
-+        ->PostTask(FROM_HERE,
-+                   blink::BindOnce(
-+                       &Geolocation::OnPositionUpdated,
-+                       WrapWeakPersistent(this),
-+                       device::mojom::blink::GeopositionResult::NewPosition(
-+                           std::move(position))));
-+    camou_geo_delivered_ = true;
++    // geo-ii: re-deliver the synthesized position on each re-arm at a stationary
++    // WiFi-poll backoff cadence (CamouGeoRefireDelay), each with a fresh
++    // timestamp and identical coordinates (a fixed config position is a
++    // stationary device; coordinate jitter would wrongly imply motion).
++    // PostDelayedTask (never synchronous): the caller (UpdateGeolocationState)
++    // sets updating_ = true right after this returns and OnPositionUpdated sets
++    // it false, so a synchronous delivery would let the caller clobber that and
++    // wedge the state machine. The DELAY additionally breaks the
++    // OnPositionUpdated -> UpdateGeolocationState re-arm busy-loop (a real
++    // stationary device fires at the poll interval, not in a tight loop). A
++    // one-shot getCurrentPosition delivers once (count 0) then does not re-arm;
++    // only watchPosition re-arms and advances the cadence.
++    // Cancel any still-queued re-fire so exactly one chain is ever in flight: a
++    // request entry reset (getCurrentPosition/2nd watchPosition) or StopUpdating
++    // (tab hide / clearWatch / detach) can clear updating_ with a task still
++    // pending, and without this the next re-arm would post a parallel,
++    // self-perpetuating chain that degrades the cadence to N x.
++    camou_geo_refire_task_.Cancel();
++    base::TimeDelta delay = CamouGeoRefireDelay(camou_geo_delivery_count_);
++    ++camou_geo_delivery_count_;
++    camou_geo_refire_task_ = blink::PostDelayedCancellableTask(
++        *GetExecutionContext()->GetTaskRunner(TaskType::kMiscPlatformAPI),
++        FROM_HERE,
++        blink::BindOnce(&Geolocation::DeliverSynthesizedGeoposition,
++                        WrapWeakPersistent(this)),
++        delay);
 +    return;
 +  }
    geolocation_->QueryNextPosition(
        blink::BindOnce(&Geolocation::OnPositionUpdated, WrapPersistent(this)));
  }
 diff --git a/third_party/blink/renderer/core/geolocation/geolocation.h b/third_party/blink/renderer/core/geolocation/geolocation.h
-index f671a0dbb5..f8860a27d6 100644
+index f671a0dbb5..0e42feb8dc 100644
 --- a/third_party/blink/renderer/core/geolocation/geolocation.h
 +++ b/third_party/blink/renderer/core/geolocation/geolocation.h
-@@ -249,6 +249,12 @@ class CORE_EXPORT Geolocation final
+@@ -47,6 +47,7 @@
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
+ #include "third_party/blink/renderer/platform/supplementable.h"
++#include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
+ #include "third_party/blink/renderer/platform/timer.h"
+ 
+ namespace blink {
+@@ -249,6 +250,17 @@ class CORE_EXPORT Geolocation final
  
    mojom::blink::GeolocationAccuracy GetAccuracyLevel() const;
  
@@ -115,20 +188,34 @@ index f671a0dbb5..f8860a27d6 100644
 +  // real mojo QueryNextPosition is never outstanding on the config path.
 +  bool HasCamouGeoConfig() const;
 +
++  // geo-ii: synthesize a config position with a FRESH timestamp and deliver it
++  // through OnPositionUpdated. Bound into the delayed re-fire task scheduled by
++  // QueryNextPosition; a no-op if the config was cleared in the meantime.
++  void DeliverSynthesizedGeoposition();
++
    Member<GeoNotifierSet> one_shots_;
    Member<GeolocationWatchers> watchers_;
    // GeoNotifiers that are in the middle of invocation.
-@@ -284,6 +290,13 @@ class CORE_EXPORT Geolocation final
+@@ -284,6 +296,22 @@ class CORE_EXPORT Geolocation final
    // Whether a QueryNextPosition request sent and we are waiting for a position
    // update.
    bool updating_ = false;
-+  // SP4-geo: whether the synthesized config position has already been
-+  // delivered for the current request. Prevents QueryNextPosition from
-+  // re-synthesizing (and busy-looping) on the watchPosition re-arm
-+  // (OnPositionUpdated -> UpdateGeolocationState), since a stationary
-+  // config position never "changes". Reset to false at the start of each
-+  // new getCurrentPosition/watchPosition call.
-+  bool camou_geo_delivered_ = false;
++  // SP4-geo / geo-ii: count of synthesized config positions delivered for the
++  // current request. Was a deliver-once bool; geo-ii re-delivers on each
++  // watchPosition re-arm (OnPositionUpdated -> UpdateGeolocationState) at a
++  // stationary WiFi-poll backoff cadence keyed on this count (CamouGeoRefireDelay
++  // in the .cc: ~0 -> 10s -> 2min -> 10min). The re-fire DELAY -- not a suppress
++  // flag -- is what breaks the busy-loop the old bool guarded against. Reset to 0
++  // at the start of each new getCurrentPosition/watchPosition call.
++  int camou_geo_delivery_count_ = 0;
++  // geo-ii: the single outstanding delayed re-fire task. Kept cancelable so at
++  // most ONE re-fire chain is ever queued: without this, any path that clears
++  // updating_ without cancelling (a request entry reset, StopUpdating on tab
++  // hide / clearWatch / ContextDestroyed) would let the next re-arm post a
++  // SECOND self-perpetuating chain, degrading the watch cadence to N x. Cancel it
++  // before re-posting in QueryNextPosition and in StopUpdating(). Not GC-traced
++  // (TaskHandle holds no GC pointers); it self-cancels on destruction.
++  TaskHandle camou_geo_refire_task_;
    bool permission_request_in_progress_ = false;
  };
  
