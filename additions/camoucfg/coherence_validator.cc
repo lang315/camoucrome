@@ -10,6 +10,7 @@
 #include "base/environment.h"
 #include "base/logging.h"
 #include "components/camoucfg/derive.h"
+#include "components/camoucfg/domain_validator.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
 
@@ -81,7 +82,12 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
 
 bool ValidateAtStartup(const ConfigScope& scope) {
   std::vector<Violation> violations = Validate(scope);
-  if (violations.empty()) {
+  // Single-key domain checks (SP5b) run alongside the relational ones. They
+  // must be collected BEFORE the early return: a configuration with no
+  // relational violation can still carry an out-of-range value, and returning
+  // true on an empty relational result would skip the domain check entirely.
+  std::vector<DomainViolation> domain_violations = ValidateDomains(scope);
+  if (violations.empty() && domain_violations.empty()) {
     return true;
   }
 
@@ -106,6 +112,20 @@ bool ValidateAtStartup(const ConfigScope& scope) {
                << "'. Not repaired: set it yourself, or set "
                   "CAMOU_CONFIG_STRICT=1 to refuse startup instead of running "
                   "an incoherent fingerprint.";
+  }
+
+  for (const DomainViolation& v : domain_violations) {
+    // Same report-don't-repair posture: the value is wrong and untouched, so
+    // the surface it feeds will not be spoofed. Said loudly because the
+    // alternative -- a silently dropped value and a stock-looking result -- is
+    // exactly the footgun this check exists to remove.
+    LOG(ERROR) << "camoucfg: '" << v.key << "' is '" << v.value
+               << "', out of range: " << v.reason
+               << ". The spoof for this surface will not apply -- a consumer "
+                  "that rejects one field rejects the whole surface, so a valid "
+                  "neighbour is lost with it. Fix it, or set "
+                  "CAMOU_CONFIG_STRICT=1 to refuse startup instead of running "
+                  "with it silently dropped.";
   }
   return !strict;
 }
