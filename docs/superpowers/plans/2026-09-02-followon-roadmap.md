@@ -24,9 +24,11 @@ Six of the ten items below have since landed on `main`: **1 codec build-flag**,
 **8 audio-ii**. Three of those six are **partial** — voices-ii, media-ii and
 audio-ii each shipped one slice and left a named, documented remainder. Since
 the 2026-09-06 tail-completion pass, **9 fonts-ii** (local() gate) and **10
-webrtc-ii** (force-mDNS) are also **partial-shipped**, and **3 geo-ii** was
-**REJECTED** (its accuracy-derivation lever measured net-negative — see §3).
-Still genuinely open: **4 battery-ii** only, plus the partial remainders. Each
+webrtc-ii** (force-mDNS) are also **partial-shipped**. **3 geo-ii** is now
+**partial**: its `watchPosition` re-fire cadence + SP5b domain validation shipped,
+its accuracy-derivation lever was REJECTED (net-negative), and coordinate jitter
+is deferred (probably never for a stationary position — see §3). Still genuinely
+open: **4 battery-ii** only, plus the partial remainders. Each
 item's `Status` cell and its `**Status:**` line below name what landed; the
 residual detail lives in that slice's measurement doc, not here.
 
@@ -38,7 +40,7 @@ residual detail lives in that slice's measurement doc, not here.
 |---|---|---|---|---|---|---|---|
 | 1 | **codec build-flag SP** | **shipped** 09-02 | ★★★ | S (heavy rebuild) | Low | GN / build config | — |
 | 2 | **window-geometry** | **shipped** 09-02 | ★★☆ | S–M | Low | Blink core | sp4a (coherence) |
-| 3 | **geo-ii** | **REJECTED** 09-06 | ★☆☆ | S | Low | Blink core + SP5a | sp4-geo |
+| 3 | **geo-ii** | **partial** 09-06 (cadence + SP5b shipped; accuracy-derive rejected; coord-jitter deferred) | ★☆☆ | S | Low | Blink core + SP5a | sp4-geo |
 | 4 | **battery-ii** | open | ★☆☆ | S | Low | Blink modules | sp4-battery |
 | 5 | **voices-ii** | **partial** 09-06 | ★★☆ | M | Low–Med | Blink modules | sp4-voices |
 | 6 | **media-ii** | **partial** 09-05/09-06 | ★★☆ | M | Med | Blink modules (+browser) | sp4-media |
@@ -142,11 +144,22 @@ what that leaves.*
   incoherence this bullet assumed; the derived values are the tell instead
   (implausibly precise `11.132`, and Maps-paste 6-7-decimal coords floor to a
   GPS-implying 1 m). Rule 4 forbids trading a coherent default for that.
-- **Positional jitter** between `watchPosition` callbacks (real Wi-Fi fixes drift
-  in BOTH position and accuracy; ours is byte-identical). Small per-callback delta
-  from a seed. **This is the geo-ii lever with real value** — the method-based
-  framing that killed the derivation above is exactly what jitter models. Still
-  open; marked risky (seed/coupling design), a future slice.
+- **`watchPosition` re-fire cadence** — **SHIPPED 2026-09-06** (folded into
+  `patches/sp4-geo.patch`, verified by `scripts/verify_geo_ii_cadence.py`;
+  measurement `2026-09-06-geo-ii-watch-cadence.md`). This bullet was originally
+  framed as "positional jitter"; Gate 0 reframed it. The real tell was not that
+  successive fixes are byte-identical — it is that sp4-geo delivered ONCE then
+  went silent (`camou_geo_delivered_`), while real Chrome re-fires a stationary
+  `watchPosition` at the WiFi poll backoff (10s → 2min → 10min, `GeolocationImpl`
+  does not dedup unchanged positions). Fixed by re-delivering at that cadence with
+  a fresh timestamp and IDENTICAL coordinates. Also closed a functional gap (a
+  page awaiting a 2nd callback waited forever).
+- **Coordinate jitter itself: deferred, and probably never for a stationary
+  position** — a fixed configured position IS a stationary device; drifting its
+  coordinates would wrongly imply motion (less coherent, not more), and modeling a
+  provider's meters-scale noise without a real capture is the accuracy-derivation
+  trap in a new coat. If a future slice models a *moving* profile it belongs
+  there, fit to a real capture.
 - **Out-of-range config validation** — **SHIPPED 2026-09-06** as SP5b
   (`d9e8d51`, `additions/camoucfg/domain_validator.{h,cc}`, verified by
   `scripts/verify_sp5b_domain.py`; measurement

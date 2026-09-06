@@ -2912,3 +2912,51 @@ FULL RECONSTRUCTION (advisor pushed back: targeted proof NOT adequate; "needs fr
   voices-ii-relayer (7050f28 voices-ii + 7b3f992 webrtc-ii already on origin). sp2b left as
   its committed original; live-checkout contamination is a pre-existing box hygiene issue
   (ledger 2504), out of this tail's scope.
+
+geo-ii watchPosition re-fire cadence (2026-09-06, post-tail; user picked "geo-ii jitter"):
+  REFRAMED at the advisor checkpoint. My initial reject argument ("CDP override is
+  byte-identical so byte-identical isn't a tell") had a hole (detector baseline is real
+  browsers, not CDP). Advisor: the real tell isn't jitter, it's that sp4-geo delivers
+  ONCE then goes silent (camou_geo_delivered_) while real Chrome re-fires a stationary
+  watchPosition at the WiFi poll backoff. Gate 0 (services/device/geolocation): GeolocationImpl
+  ::OnLocationUpdate reports EVERY provider update to the page with NO dedup on unchanged
+  coords; wifi_data_provider_chromeos.cc backoff = kDefaultPollingInterval 10s ->
+  kNoChange 2min -> kTwoNoChange 10min. So real stationary watch re-fires with fresh
+  TIMESTAMPS, identical coords. => JITTER IS WRONG (a fixed config position is stationary;
+  coord drift implies motion = less coherent). Slice = watchPosition re-fire cadence, NOT
+  jitter (jitter deferred, and probably never for a stationary position). Also a functional
+  gap (a page awaiting a 2nd callback waited forever).
+  DESIGN (folded into sp4-geo.patch, geolocation.cc/.h): replace deliver-once bool with
+  int camou_geo_delivery_count_; on each QueryNextPosition config hit, PostDelayedTask
+  DeliverSynthesizedGeoposition (new method: fresh Now() timestamp, identical coords) after
+  CamouGeoRefireDelay(count) (file-local: 0=~immediate, 1=10s, 2=2min, >=3=10min = Chrome's
+  real constants). The DELAY (not a suppress flag) breaks the re-arm busy-loop; getCurrentPosition
+  one-shot naturally (count 0, no re-arm); watchPosition re-arms + advances cadence. No new
+  key, no BUILD/apply.sh change (sp4-geo owns geolocation.cc/.h, already wired; keys reused).
+  EVIDENCE: RED verify_geo_ii_cadence.py = watch fires 1x (GC-REFIRE/TIMESTAMP/STATIONARY/
+  INTERVAL FAIL, GC-ONESHOT PASS). GREEN 5/5: 2 fixes, gap exactly 10001ms (=kDefaultPollingInterval),
+  2nd ts>1st, coords identical, getCurrentPosition count 1. verify_sp4_geo 6/6 regression (G5
+  count==1 within 1200ms preserved: re-fire at 10s is outside the window). Re-extract sp4-geo.patch
+  git-native: a-blobs UNCHANGED (0e1e07b79f/f671a0dbb5 = pristine, geolocation not co-owned),
+  b-blobs changed (my content) = the SAFE re-extract kind. Round-trip: revert geolocation dir ->
+  apply --3way clean -> checkdeps SUCCESS -> rebuild 12 steps -> reverify 5/5 + 6/6. Files:
+  patches/sp4-geo.patch (re-extract), scripts/verify_geo_ii_cadence.py (new),
+  docs/.../2026-09-06-geo-ii-watch-cadence.md (new).
+  REVIEW (agent-skills:code-reviewer): REQUEST CHANGES -> 1 CRITICAL + 1 Important + 3 Minor,
+  ALL FIXED. Concerns 1/2/5/6 clean from-source; coherence net-positive confirmed (NOT the
+  accuracy-derive mistake). CRITICAL: first impl used a fire-and-forget PostDelayedTask with no
+  handle, so any path clearing updating_ WITHOUT cancelling (request entry reset; StopUpdating on
+  tab hide / clearWatch / ContextDestroyed) let the next re-arm post a SECOND self-perpetuating
+  chain -> cadence degrades to N x (each tab switch adds a chain permanently). Safe under sp4-geo
+  deliver-once (nothing in flight); geo-ii regression. FIX: single cancelable TaskHandle
+  camou_geo_refire_task_ (post_cancellable_task.h) -> blink::PostDelayedCancellableTask; Cancel()
+  before re-post in QueryNextPosition AND in StopUpdating(). Both needed: StopUpdating covers
+  hide/clearWatch/detach; cancel-before-repost covers the gCP-entry-reset path (bypasses
+  StopUpdating). Important: DeliverSynthesizedGeoposition guarded if(!GetExecutionContext())return
+  (ScopeFor(nullptr) is actually null-safe -> GlobalScope, so defensive belt; StopUpdating cancel
+  on ContextDestroyed already closes it). Minors: stale bool comments fixed, exact-regularity +
+  verify-blind-spots documented (doc §4/§5). NEW TEST GC-NODOUBLE (RED-first): gCP at t=2s during
+  standing watch, count watch fires over 15s -> RED buggy watchCount=4 (2 chains), GREEN
+  watchCount=3 (1 chain). Full verify 6/6, sp4-geo 6/6. Re-extract a-blobs still pristine, b-blobs
+  f1b5ad4f75/0e42feb8dc; round-trip apply --3way clean + rebuild 12 steps + reverify 6/6+6/6.
+  GREEN, committing.
