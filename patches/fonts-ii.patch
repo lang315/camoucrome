@@ -1,0 +1,55 @@
+diff --git a/third_party/blink/renderer/core/css/local_font_face_source.cc b/third_party/blink/renderer/core/css/local_font_face_source.cc
+index ab4e6a9bed..bd812ded17 100644
+--- a/third_party/blink/renderer/core/css/local_font_face_source.cc
++++ b/third_party/blink/renderer/core/css/local_font_face_source.cc
+@@ -6,6 +6,8 @@
+ 
+ #include "base/metrics/histogram_functions.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/renderer/core/css/css_custom_font_data.h"
+ #include "third_party/blink/renderer/core/css/css_font_face.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+@@ -42,6 +44,17 @@ bool LocalFontFaceSource::IsLocalNonBlocking() const {
+ 
+ bool LocalFontFaceSource::IsLocalFontAvailable(
+     const FontDescription& font_description) const {
++  // Camoucrome (fonts-ii): an unlisted local() family must report unavailable,
++  // so @font-face{src:local(X)} cannot resolve a host font that the direct
++  // measureText path (sp4-fonts) already hides -- the direct-vs-local()
++  // inconsistency is itself a detection signature. Same fonts:list allowlist,
++  // keyed on the local() argument. This also closes the resolved path in
++  // CreateFontData, since IsValid() == IsLoading() || IsLocalFontAvailable().
++  if (!camoucfg::IsFontAllowed(
++          camoucfg::ScopeFor(font_selector_->GetExecutionContext()),
++          font_name_.Utf8())) {
++    return false;
++  }
+   // TODO(crbug.com/1025945): Properly handle Windows prior to 10 and Android.
+   bool font_available = FontCache::Get().IsPlatformFontUniqueNameMatchAvailable(
+       font_description, font_name_);
+@@ -77,6 +90,23 @@ const SimpleFontData* LocalFontFaceSource::CreateFontData(
+     return nullptr;
+   }
+ 
++  // Camoucrome (fonts-ii): refuse an unlisted local() family here too, placed
++  // after the probe (SP0: config applies after DevTools emulation) and before
++  // the loading-fallback block below. This is the ONE state the gate in
++  // IsLocalFontAvailable cannot reach: when the unique-name lookup is still
++  // async (IsLoading()==true), IsValid() short-circuits to true without calling
++  // IsLocalFontAvailable, so the block below would hand back a visible loading
++  // fallback for a font we mean to hide. DEFENSIVE-BY-REASONING: on a host with
++  // a synchronous lookup (Linux/fontconfig, the verify host) IsLoading() is
++  // never true, so a gate-1-only build already passes every verify case -- this
++  // branch is exercised only where the lookup is async (Android GMSCore, the
++  // Windows font service) and is NOT measured by verify_fonts_ii.py.
++  if (!camoucfg::IsFontAllowed(
++          camoucfg::ScopeFor(font_selector_->GetExecutionContext()),
++          font_name_.Utf8())) {
++    return nullptr;
++  }
++
+   if (IsValid() && IsLoading()) {
+     const SimpleFontData* fallback_font_data =
+         CreateLoadingFallbackFontData(font_description);

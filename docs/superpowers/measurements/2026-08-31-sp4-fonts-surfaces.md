@@ -257,6 +257,12 @@ inconsistency is confined to host-present-but-unlisted fonts. Closing it (gating
 then, SP5b should prefer lists matching the host font set on native hosts, or
 fonts-ii should land before native-host shipping.
 
+**Update 2026-09-06:** the `local("Family")` gate shipped (`patches/fonts-ii.patch`,
+`2026-09-06-fonts-ii-local-surfaces.md`) — the direct-vs-`local()` inconsistency is
+closed for family-name probes and verified on Linux with a host-present font. The
+`local("PostScript name")` half and native-host completeness of this tell remain
+open there.
+
 ## Rule-5 asymmetry between the two deliverables (whole-branch review)
 
 The metric gate honors rule 5 (no `fonts:list` ⇒ every host font visible, stock
