@@ -97,17 +97,21 @@ Highest value (local-IP leak = deanonymization) but the deepest surgery:
   `checkdeps` now SUCCESS. This makes `webrtc-ii`'s per-dir `platform/p2p/DEPS`
   grant redundant → dropped, `webrtc-ii.patch` is now `.cc`-only. (`fonts`'
   per-dir grant left as harmless redundancy.)
-- **Full from-scratch PRISTINE reconstruction deferred.** The box
-  `/home/lang/chromium/src` is a hybrid (early slices committed at HEAD `a727b57805`
-  + later slices as live edits), not a pristine Chromium checkout; a true
-  from-scratch `apply.sh` run needs a fresh `gclient` checkout (hours + ~100GB),
-  out of this session's reach. Achieved instead: both CHANGED patches
-  (`sp0-config-layer` DEPS section, `webrtc-ii` `.cc`) verified apply cleanly to
-  pristine; whole-renderer `checkdeps` SUCCESS; `gn check` OK. Task 4's changes are
-  non-behavioral (DEPS = build-hygiene only; the `webrtc-ii` `.cc` is byte-identical),
-  so no spoof regression is possible — `verify_webrtc_ii.py` re-run GREEN as a smoke
-  check. The remaining gap is purely "does the whole patch stack apply+build from
-  true zero," which only a fresh checkout can prove.
+- **Full from-scratch PRISTINE reconstruction: RUN (not deferred).** The "needs a
+  fresh gclient checkout, hours + ~100GB" worry was wrong — a `git worktree add
+  --detach /home/lang/rebuild 0e8d4a9268` (the pinned base) shares the existing
+  `.git` and is minutes of I/O. `scripts/apply.sh` against that worktree applied
+  **all 25 patches `git apply --3way` clean in sequence, exit 0**; `checkdeps` on
+  the reconstructed tree SUCCESS. A content-drift scan reconstructed-vs-live across
+  every patched file confirmed the stack reproduces the committed tested tree
+  (additions content also identical). The run earned its keep by catching a
+  divergence in `input_handler.cc` (sp2b) — which investigation resolved as a
+  KNOWN live-checkout contamination (another session's uncommitted UAF-rework,
+  ledger 2504), NOT a patch defect: committed HEAD = the original patch's blob,
+  and the SP2b review deliberately records state before `ForwardMouseEventNow`
+  (UAF fix). The original sp2b patch is correct and left untouched. A comprehensive
+  co-ownership chain check across all 25 patches (not just the `-ii` set) found
+  every co-owned file's blob chain intact.
 - README / roadmap / ledger reconciled; `.memsearch/` gitignored.
 
 ## Order & review

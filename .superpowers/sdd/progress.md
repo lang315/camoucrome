@@ -2862,3 +2862,53 @@ FINAL WHOLE-BRANCH REVIEW (agent-skills:code-reviewer on opus, 854fbae..1debf22)
   (§3); (2) sp4-fonts per-dir fonts/DEPS grant now redundant like p2p's was -> left,
   clean when fonts next touched; (3) sp4-geo-surfaces.md:192 stale "defer" pointer ->
   fixed to REJECTED. TAIL COMPLETE after the voices-ii fix.
+
+FULL RECONSTRUCTION (advisor pushed back: targeted proof NOT adequate; "needs fresh
+  100GB checkout" was a FALSE premise — a git worktree at sp0's base shares .git, is
+  minutes of I/O). DONE, and it earned its keep:
+  - Comprehensive co-ownership chain check (chain_check.py, ALL 25 patches not just the
+    4 -ii): 10 co-owned files, every b-blob chains to the next a-blob in apply order,
+    0 broken (incl fixed voices-ii 891a->b463->b80c, audio-ii, navigator.cc sp2a->sp1b).
+  - Base = 0e8d4a9268 (pinned base revision, 0 camoucfg grants = true pristine, = parent
+    of first camoucfg commit 59d65cb). git worktree add --detach /home/lang/rebuild
+    0e8d4a9268; synced full repo (patches+additions+scripts, 354KB tar) to
+    /home/lang/camoucrome-fresh; bash apply.sh /home/lang/rebuild.
+  - RESULT: all 25 patches git apply --3way CLEAN in sequence, exit 0. sp4-voices THEN
+    voices-ii both clean, NO CONFLICT (the fix holds in the full stack). checkdeps on the
+    reconstructed tree SUCCESS (DEPS grants reproduce). Tail files (filtering_network_manager.cc,
+    renderer/DEPS, speech_synthesis.cc/.h) reproduce byte-IDENTICAL.
+  - The content-drift scan recon-vs-live found input_handler.cc (sp2b-humanized-cursor)
+    as the SOLE file where the ORIGINAL patch differed from the live WORKING tree. I FIRST
+    misread it as a stale patch and re-extracted from the live file (commit b49d089) — THAT
+    WAS WRONG, reverted. Advisor caught the direction error and the checks proved it:
+      * committed HEAD blob = 443c6f06c9 = the ORIGINAL sp2b patch's b-blob (the patch
+        matched the reviewed committed slice; my "fix" changed what ships to ac1b09c5ad).
+      * ledger 2016: the committed slice deliberately records last_move_* BEFORE
+        ForwardMouseEventNow because that call "can synchronously delete this injector"
+        (a UAF fix from SP2b's own review). ledger 2504 already FLAGGED the live checkout's
+        input_handler.cc as an "uncommitted UAF-rework ... from OTHER live sp2b sessions
+        sharing this WSL checkout (contamination hazard)."
+      * So the live working tree (ac1b09c5ad) is that contamination, NOT the tested version;
+        the ORIGINAL patch (443c6f06c9) is correct. verify_sp2b 3/3 does NOT clear the live
+        version — the coarse move-count test never exercises the UAF path.
+    RESOLUTION: b49d089 reverted (git reset --soft; sp2b patch restored from backup =
+    original 443c6f06c9). LESSON (voices-ii vs sp2b): a re-extract whose b-blob is UNCHANGED
+    (voices-ii b80c4643f5->b80c4643f5, only base moved) is safe; one whose b-blob CHANGES
+    (sp2b 443c6f06c9->ac1b09c5ad) changes what ships and MUST verify which side is the
+    tested/committed truth first. "Live checkout = tested" is false when other sessions
+    share the WSL tree.
+  - RECONSTRUCTION VERDICT (with the ORIGINAL, correct patch set): all 25 patches apply
+    --3way CLEAN in sequence, exit 0; every patched file reproduces the COMMITTED tested
+    tree; input_handler.cc reconstructs to 443c6f06c9 = committed HEAD (by construction, the
+    patch's b-blob), and the live working tree's ac1b09c5ad is the known contamination the
+    patch set correctly does NOT carry. checkdeps SUCCESS on the reconstructed tree.
+  - Gap checks (advisor): additions content diff (fresh-clone additions/camoucfg vs box
+    components/camoucfg) = IDENTICAL, only macOS ._* AppleDouble junk in the tarball copy
+    (harmless; box built from exactly what ships). The 18 "extra" recon files are camoucfg
+    additions UNTRACKED in the box git index (present on disk) — a box index artifact, not a
+    patch defect; apply.sh copies them from additions/.
+  ALL FOUR TASKS COMPLETE + patch stack reconstruction-proven (25/25 apply clean, faithful
+  to the committed tested tree). Commits to push: 1debf22 deps-consolidate, 3825ffd
+  voices-ii-relayer (7050f28 voices-ii + 7b3f992 webrtc-ii already on origin). sp2b left as
+  its committed original; live-checkout contamination is a pre-existing box hygiene issue
+  (ledger 2504), out of this tail's scope.
