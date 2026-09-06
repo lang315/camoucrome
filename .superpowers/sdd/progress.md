@@ -2671,3 +2671,18 @@ Slice 2 review (sonnet): "With fixes" -- code sound (gate/scope/patch-hygiene/DE
   unexercised here. Off-switch/webcams=0/default-parity/combined-OR-gate all confirmed correct.
   Slice 2 merge-ready.
 PUSHED origin/main 7a45194..ec0f379 (2026-09-06). Slice 2 phantom-webcam shipped.
+
+SP5b config-domain validator (2026-09-06): shipped single-key numeric-domain check.
+  domain_validator.{h,cc} — pure CheckDomain(key,value) + ValidateDomains(scope);
+  geo-only table mirroring ValidateGeoposition byte-for-byte ([-90,90]/[-180,180]/
+  accuracy>=0, all inclusive); wired into ValidateAtStartup (early-return restructured
+  so a clean-relational/out-of-range config is still caught; strict refuses, non-strict
+  logs). Pure additions/, no Blink patch, no round-trip. Generalized mechanism, geo-only
+  table (entry earns place by mirroring a real downstream rejection). Evidence:
+  check_additions_build PASS, DomainValidatorTest 6/6, verify_sp5b_domain.py RED (2 FAIL
+  vs pre-change binary) -> GREEN 4/4 (D-STRICT exit13 / D-WARN / D-TYPE / D-CLEAN),
+  run_coherence_tests.sh 6/6 regression, gn check OK, apply.sh glob + check_checkout_sync
+  35/35 byte-parity, reworded string present in libcontent.so. Reviewed
+  (agent-skills:code-reviewer): no Critical/Important; 3/5 Minor applied (type guard,
+  NaN test, log wording), 2 declined. COMMITTED local main d9e8d51 (+ docs commit),
+  awaiting user push.

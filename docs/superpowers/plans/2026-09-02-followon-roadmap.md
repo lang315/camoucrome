@@ -137,9 +137,17 @@ what that leaves.*
   the fixed 100 m default).
 - **Positional jitter** between `watchPosition` callbacks (real fixes drift; ours
   is byte-identical). Small per-callback delta from a seed.
-- **Out-of-range config validation** — range-check `geolocation:latitude/longitude/
-  accuracy` in the SP5a coherence validator (currently a mistyped `latitude=91`
-  silently times out). Effort S.
+- **Out-of-range config validation** — **SHIPPED 2026-09-06** as SP5b
+  (`d9e8d51`, `additions/camoucfg/domain_validator.{h,cc}`, verified by
+  `scripts/verify_sp5b_domain.py`; measurement
+  `2026-09-06-sp5b-domain-validator.md`). Landed as a *generalized* single-key
+  domain validator (a separate table + file, not the SP5a relational registry),
+  populated so far with the geo range-checks only — an entry earns its place by
+  mirroring a real downstream rejection (`ValidateGeoposition`), so the
+  mechanism is generic but the table is geo-only until another such rejection is
+  found. A mistyped `latitude=91` now logs loudly and refuses startup under
+  `CAMOU_CONFIG_STRICT=1` instead of silently timing out. The other two geo-ii
+  bullets above remain open.
 
 ### 4. battery-ii  (source: sp4-battery §4)
 - **Event synthesis/timing:** `onchargingchange`/`onlevelchange` are not fired
