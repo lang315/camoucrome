@@ -19,7 +19,10 @@ devices, timezone/locale, WebRTC IP, voices, geolocation, battery; the proprieta
 codec build (SP7 D2); and the follow-on slices that close residual tells the SP4
 measurements deferred — window geometry, canvas metric jitter, media-device
 getSettings/id coherence, phantom-webcam error coherence, render-thread audio input
-masking, and SpeechSynthesis boundary/jitter/generation fixes.
+masking, and SpeechSynthesis boundary/jitter/generation fixes. SP5b adds a
+single-key config-domain validator (a generalized mechanism, populated with the
+geolocation range-checks) so an out-of-range value is refused loudly at startup
+instead of being dropped silently downstream.
 
 **Verification is per-slice and RED-first.** Each slice ships a `scripts/verify_*.py`
 that drives a real `content_shell` over CDP, is confirmed to go red against the
