@@ -37,8 +37,8 @@ the project exists.
   catalogue of ways a check can report success while measuring nothing. Read it
   before writing or verifying anything.
 - **[`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md)**
-  — the ordered/scoped list of remaining slices (the `-ii` residual closers and
-  the two high-risk deep-surgery items).
+  — slice ordering and per-slice status (shipped / partial / open); each slice's
+  residual detail lives in its own measurement doc, not in the roadmap.
 
 ## Repository layout
 
@@ -49,7 +49,7 @@ the project exists.
 | `settings/` | `invariants.json` (cross-surface invariant registry, SP5) and `build-args.gn` (canonical GN args, incl. the proprietary-codec pair) |
 | `scripts/` | `apply.sh` (the applier) and `verify_*.py` (per-slice browser verifications) |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
-| `baselines/` | regenerable, build-host-local stock reference captures (git-ignored; not committed) |
+| `baselines/` | stock reference captures; three are committed (`git ls-files baselines`), the rest are build-host-local and regenerable |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
 split (from Camoufox, held across ~64 patches) keeps rebase conflicts confined to
@@ -91,14 +91,29 @@ non-root user `lang` at `~/chromium/src`, out dir `out/Default`
 Blink file is 1–3 min. The verification target is **`content_shell`** (small,
 still exposes the DevTools protocol), not `chrome`.
 
+Repo lives on the Mac; the build and every `verify_*.py` run on the WSL box
+(`ssh buildpc`). Config reaches a build through the environment: `CAMOU_CONFIG`
+holding a JSON object (or `CAMOU_CONFIG_1..N` concatenated in order, for
+argv-length limits). `CAMOU_CONFIG_STRICT=1` turns unparseable config into a
+startup abort instead of a silent fall-back to real values.
+
 - Apply the change set: `scripts/apply.sh <chromium-src>` (copies `additions/`,
   then `git apply --3way` each patch in the explicit, semantic order in the
   script — not alphabetical).
 - Browser verifications are `scripts/verify_*.py`, run under
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.
-- Unit tests: the `components_unittests` target (`--gtest_filter='Camoucfg*'`
-  covers only a subset — filter deliberately, see below).
+- Unit tests: the `components_unittests` target. `--gtest_filter='Camoucfg*'`
+  matches **1 of 17** suites (only `CamoucfgKeysTest`) — filter by suite name.
+  `CoherenceValidatorTest.*` cannot run in one invocation: config is read once
+  per process and cached, so one process can only latch one `CAMOU_CONFIG`. Use
+  `scripts/run_coherence_tests.sh` (one process per case, asserts 6/6).
+- Pre-flight, both cheap and both exist because the omission already happened:
+  `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
+  must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there
+  uncompiled for a full build cycle while everything reported green) and
+  `bash scripts/check_checkout_sync.sh` (repo↔checkout byte drift; happened
+  twice in one day, both found by accident).
 
 **`content_shell` is not a complete browser, and the gap is load-bearing.**
 Anything under `//chrome` is absent (`window.chrome` has no installer linked).
