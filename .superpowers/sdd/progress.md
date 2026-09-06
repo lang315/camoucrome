@@ -2684,5 +2684,6 @@ SP5b config-domain validator (2026-09-06): shipped single-key numeric-domain che
   run_coherence_tests.sh 6/6 regression, gn check OK, apply.sh glob + check_checkout_sync
   35/35 byte-parity, reworded string present in libcontent.so. Reviewed
   (agent-skills:code-reviewer): no Critical/Important; 3/5 Minor applied (type guard,
-  NaN test, log wording), 2 declined. COMMITTED local main d9e8d51 (+ docs commit),
-  awaiting user push.
+  NaN test, log wording), 2 declined. PUSHED origin/main d00ed45..2c3d5e2
+  (2026-09-06): feat d9e8d51 + docs 2c3d5e2 (also carried the earlier CLAUDE.md
+  docs commit 7941782). SP5b config-domain validator shipped.
