@@ -2960,3 +2960,37 @@ geo-ii watchPosition re-fire cadence (2026-09-06, post-tail; user picked "geo-ii
   watchCount=3 (1 chain). Full verify 6/6, sp4-geo 6/6. Re-extract a-blobs still pristine, b-blobs
   f1b5ad4f75/0e42feb8dc; round-trip apply --3way clean + rebuild 12 steps + reverify 6/6+6/6.
   GREEN, committing.
+
+---
+
+battery-ii: REJECTED 2026-09-07 (advisor checkpoint, NO code written). Roadmap's only
+remaining "open" item; evaluated before building, rejected. Source: sp4-battery §4 deferral
+(onchargingchange/onlevelchange event synthesis / level drift).
+DISQUALIFIERS (first fatal alone):
+  1. UNMEASURABLE on this harness. WSL build box has no battery -> real BatteryManager never
+     fires an event there (sp4-battery §3 already notes "on the no-battery build box no updates
+     arrive"). Nothing to RED-baseline, no way to verify a synthesis. Shipping a discharge-curve
+     model fit to nothing = CLAUDE.md lesson 3 (host-lacking measurement not evidence about a
+     device) at max sensitivity + breaks the geo-ii rule: don't build what you can't measure.
+  2. MANUFACTURED DISTRIBUTION. Modeling a level/charge curve w/o a real capture = same class as
+     the REJECTED geo accuracy-derivation.
+  3. LOW VALUE. Battery Status API deprecated/removed elsewhere, rarely event-probed, real battery
+     barely moves over a short scraping session so static "no events" is normal short-term.
+RELATIONAL-COHERENCE ALTERNATIVE also rejected as a battery slice: JSON has no Infinity, so a
+valid "charging" preset structurally can't carry dischargingTime (sp4-battery §3 rule 5 falls
+through to real value) -> "charging => dischargingTime=Infinity" is unwritable in config; and
+"charging=false => dischargingTime finite" is FALSE for a device the OS can't estimate
+(BatteryStatus defaults both times to +inf). A rule the real world violates, no Chrome check to
+mirror (unlike SP5b ValidateGeoposition). Coherence work, if ever, = SP5a registry territory,
+not a Blink slice. Deferred until a real battery device is in the harness.
+GEO-II POST-HOC BELT (advisor asked): (a) clang GC plugin ON (default, no override in
+out/Default/args.gn) + TaskHandle is DISALLOW_NEW() plain (no GarbageCollected/Member<>), so the
+untraced camou_geo_refire_task_ member is correct -- plugin would've rejected else, build passed.
+(b) already closed by the geo-ii commit's own round-trip evidence (re-extracted patch applied
+--3way to reverted dir -> checkdeps -> rebuild 12 steps -> reverify 6/6+6/6).
+ROADMAP NOW EXHAUSTED for the current harness: every item shipped, rejected-with-record, or
+harness-gated (real network for webrtc-ii residual, cross-OS host for fonts-ii fallback, battery
+device for battery-ii, AudioWorklet harness for audio-ii). geo-ii cadence was the last un-gated
+real item and it shipped (9939555). No manufactured slice to invent a next one (rule 4).
+Files: docs/.../2026-09-02-followon-roadmap.md (row 4 REJECTED, intro, §4 body, execution note),
+docs/.../2026-09-02-sp4-battery-surfaces.md (§6 REJECTED). No patch, no code, no key change.
