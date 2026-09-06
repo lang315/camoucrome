@@ -132,11 +132,19 @@ what that leaves.*
   outer/inner to the spoofed screen automatically. Effort S–M (getter cluster).
 
 ### 3. geo-ii  (source: sp4-geo §3/§4)
-- **Accuracy decimal-precision derivation** (Camoufox-style: derive accuracy from
-  the coordinate decimal places when `geolocation:accuracy` absent, instead of
-  the fixed 100 m default).
-- **Positional jitter** between `watchPosition` callbacks (real fixes drift; ours
-  is byte-identical). Small per-callback delta from a seed.
+- **Accuracy decimal-precision derivation** — **REJECTED 2026-09-06** (built,
+  reviewed, reverted; measurement in the ledger). Real `coords.accuracy` reflects
+  the positioning METHOD (Wi-Fi ~20-150 m, cell ~km, GPS ~5 m), not the
+  coordinate's decimal count — that count is an artifact of the config author's
+  paste. A flat 100 m is Wi-Fi-plausible for a desktop UA and was never the
+  incoherence this bullet assumed; the derived values are the tell instead
+  (implausibly precise `11.132`, and Maps-paste 6-7-decimal coords floor to a
+  GPS-implying 1 m). Rule 4 forbids trading a coherent default for that.
+- **Positional jitter** between `watchPosition` callbacks (real Wi-Fi fixes drift
+  in BOTH position and accuracy; ours is byte-identical). Small per-callback delta
+  from a seed. **This is the geo-ii lever with real value** — the method-based
+  framing that killed the derivation above is exactly what jitter models. Still
+  open; marked risky (seed/coupling design), a future slice.
 - **Out-of-range config validation** — **SHIPPED 2026-09-06** as SP5b
   (`d9e8d51`, `additions/camoucfg/domain_validator.{h,cc}`, verified by
   `scripts/verify_sp5b_domain.py`; measurement
