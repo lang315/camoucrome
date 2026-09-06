@@ -1,0 +1,74 @@
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index b50db59a86..782d29fb8e 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -208,6 +208,10 @@ void AudioBuffer::CamouEnsureNoised() {
+   if (did_camou_noise_) {
+     return;
+   }
++  CamouNoiseNow();
++}
++
++void AudioBuffer::CamouNoiseNow() {
+   did_camou_noise_ = true;
+   const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
+   for (unsigned c = 0; c < channels_.size(); ++c) {
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+index 6e89d82897..6a4b3418df 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+@@ -116,6 +116,14 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {
+ 
+   std::unique_ptr<SharedAudioBuffer> CreateSharedAudioBuffer();
+ 
++  // Camoucrome (audio-ii): perturb every channel store NOW and set the
++  // did_camou_noise_ guard, so a later getChannelData one-shot won't
++  // double-noise. ScriptProcessorNode reuses one AudioBuffer across
++  // onaudioprocess callbacks and calls this every callback -- the one-shot
++  // CamouEnsureNoised alone masks only the first callback, leaking raw
++  // samples on every callback after it.
++  void CamouNoiseNow();
++
+  private:
+   bool CreatedSuccessfully(unsigned desired_number_of_channels) const;
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/script_processor_node.cc b/third_party/blink/renderer/modules/webaudio/script_processor_node.cc
+index fe57574a0a..608ee02e1c 100644
+--- a/third_party/blink/renderer/modules/webaudio/script_processor_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/script_processor_node.cc
+@@ -277,6 +277,9 @@ void ScriptProcessorNode::DispatchEvent(double playback_time,
+   ScriptProcessorHandler& handler =
+       static_cast<ScriptProcessorHandler&>(Handler());
+ 
++  // Camoucrome (audio-ii): set when this callback actually has an input bus, so
++  // the mask below runs only when there is real input to mask.
++  bool has_input = false;
+   {
+     base::AutoLock locker(handler.GetBufferLock());
+     TRACE_EVENT1(
+@@ -290,6 +293,7 @@ void ScriptProcessorNode::DispatchEvent(double playback_time,
+     // The backing buffer can be `nullptr`, when the number of input channels
+     // is 0.
+     if (backing_input_buffer) {
++      has_input = true;
+       // Also the author code might have transferred `external_input_buffer_` to
+       // other threads or replaced it with a different AudioBuffer object. Then
+       // re-create a new buffer instance.
+@@ -313,6 +317,17 @@ void ScriptProcessorNode::DispatchEvent(double playback_time,
+     }
+   }
+ 
++  // Camoucrome (audio-ii): mask the input samples JS is about to read via
++  // event.inputBuffer. external_input_buffer_ is one reused AudioBuffer, so the
++  // getChannelData one-shot masks only the first callback -- perturb every
++  // callback here, after the backing->external copy and outside the render
++  // thread's buffer lock (this runs on the main thread; see CHECK(IsMainThread)
++  // at the top). The noise is a pure function of content and seed, so an
++  // identical input block always masks identically -- deterministic per content.
++  if (has_input && external_input_buffer_) {
++    external_input_buffer_->CamouNoiseNow();
++  }
++
+   external_output_buffer_->Zero();
+ 
+   AudioNode::DispatchEvent(*AudioProcessingEvent::Create(
