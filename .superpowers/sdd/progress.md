@@ -2729,3 +2729,25 @@ FOLLOW-ON TAIL COMPLETION (2026-09-06, subagent-driven, plan
     back at 100 (proof in binary). Measured dead-end, like audio-ii AudioWorklet /
     fonts-ii PS-name. Real geo-ii lever = positional/accuracy jitter (method-based
     drift), future slice. NO code shipped; deliverable is this rejection record.
+    (committed a91fb2d)
+  - Task 2 voices-ii pause/resume: IMPLEMENTATION GREEN + round-tripped, review
+    dispatched. Fake-path pause() routed to null mojo = inert (no pause event, paused
+    stays false, boundary/end keep firing = RED, all 5 signals). Fix folded into
+    patches/voices-ii.patch (speech_synthesis.cc/.h + BUILD.gn): pause()/resume()
+    fake branches (set is_paused_ sync + async DidPause/ResumeSpeaking), cancel()
+    clears is_paused_; boundary+finish lambdas refactored to member methods
+    MaybeFireFakeBoundary/MaybeFinishFakeSpeak that re-post (50ms poll) while paused
+    (defer not drop); new camou_pending_boundaries_ counter so finish waits for
+    boundaries (a resume reorders delayed tasks -> end could retire pending
+    boundaries; caught mid-build as boundariesFinal=1, counter fixed to 8). Evidence:
+    RED all 5 FAIL -> GREEN verify_voices_pause.py 5/5 + verify_voices_ii.py 5/5
+    regression, round-trip --3way 3 files clean, gn check OK, rebuild 9 steps.
+    Reviewed (agent-skills:code-reviewer): 1 CRITICAL + 1 Imp + 3 Minor, all fixed.
+    CRITICAL: pause()/resume() posted DidPause/ResumeSpeaking WITHOUT the generation
+    guard every other fake task uses -> pause->cancel->respeak wedged the new speak
+    (its deferred tasks poll forever; verified: u2End=False, u2Boundaries=0, paused
+    stuck True), plus a null-deref if the utterance was GC'd. Fixed: guarded lambda
+    (gen + CurrentSpeechUtterance + null), mirroring the 'start' task. Added
+    VP-RESPEAK (RED on unguarded -> GREEN 6/6). Minors: zero counter on error branch,
+    50ms->100ms named poll constant, widened test window. Round-trip re-run after
+    fixes: 6/6 + 5/5. GREEN, ready to commit.
