@@ -588,8 +588,8 @@ Decisions (user's, 2026-08-27):
     verify items 2/3/4 end to end. Long pole, hours. Alone so it never competes
     for CPU with the content_shell rebuild loop Tasks 3-6 need.
   - Backup done: github.com/lang315/camoucrome, private, 52 commits pushed.
-    Scanned first -- no password in tracked files or history. The Tailscale IP
-    100.81.40.76 is in the SP1a plan; private repo, flagged to the user.
+    Scanned first -- no password in tracked files or history. The build-PC
+    Tailscale IP (redacted) is in the SP1a plan; private repo, flagged to the user.
 
 Task 1 status: unblocked with option A. Capture what content_shell truly is,
 including the empty header set, plus a `provenance` block naming the binary,
@@ -2076,3 +2076,598 @@ spoofs; a behavioural spoof's real value IS the robot tell (teleport), so
 degrading to it is more detectable. Added as a conventions refinement.
 All Minors correctly deferred; none escalate. 25 commits unpushed, awaiting
 user push decision. SP2 (SP2a + SP2b) DONE.
+
+========================================================================
+SP3a — Canvas readback noise + DeriveDelta primitive
+Plan: docs/superpowers/plans/2026-08-30-sp3a-canvas-noise.md
+BASE commit (before any SP3a code): 21cd502
+Branch: main (project convention; user drives push)
+Tasks: 1 keys | 2 DeriveDelta/DeriveUnit | 3 PerturbRgba | 4 snapshot-path | 5 direct-read+verify
+------------------------------------------------------------------------
+Task 1 (canvas keys): impl DONE_WITH_CONCERNS, commit 26f9285, review dispatched.
+  Concern (VALID, implementer-fixed): EveryDeclaredConstantIsInAllKeys is TWO
+  hand-lists that must agree (hardcoded `declared` literal), NOT reflection —
+  plan/brief "covers automatically" was FALSE. Implementer added the 3 keys to
+  keys_unittest.cc `declared` literal (outside brief file list), committed both;
+  tree never red, 5/5 green. CONTAINED to Task 1 (tasks 2-5 add no keys).
+  CARRY TO SP3b: adding webGl:/webGl2: keys must also update that literal.
+Task 1: complete (commit 26f9285, review Approved, 1 Minor=plan false-premise contained)
+Task 2 (DeriveDelta/DeriveUnit): impl DONE commit 50e601b (RED 16 errs, GREEN 15/15, regr 47/47), review dispatched.
+Task 2: complete (commit 50e601b, review Approved). Minors (brief-inherited, for whole-branch):
+  M1 DeriveDelta INT32_MIN bound edge → int32 truncation (unreachable, bounds ≤127).
+  M2 DeriveUnit has NO standalone variance/spread test — constant-0.5 mutant passes its 3 tests
+     (transitively covered via shared Draw() w/ pinned DeriveDelta, but not pinned alone). ADD a
+     DeriveUnit spread+seed-sensitivity test in the whole-branch fix wave.
+  M3 report log cosmetic (15 vs 16 err count).
+Task 3 (PerturbRgba/FromConfig + canvas_noise.{h,cc}): impl DONE commit e989b7f
+  (RED missing-header, GREEN 8/8, regression 55/55, check_additions_build PASS), review dispatched.
+  Deviation: -Wunsafe-buffer-usage/-Werror rejected raw uint8_t* indexing → #pragma
+  allow_unsafe_buffers (whole-file opt-out, precedent wtf/hash_table.h). CARRY: Task 4/5
+  Blink buffer perturbation hits same warning class.
+Task 3: review ⚠️ Needs fixes — Important: pragma→base::span (fix dispatched). Minors: unused <numeric> (fixing), no FromConfig unit test (browser-covered Task 4, left).
+Task 3: complete (impl e989b7f + fix 7d690eb pragma→base::span, re-verified controller-side: pragma gone, UNSAFE_BUFFERS+SAFETY at boundary, span thereafter, sigs unchanged, 8/8 + check_additions_build green). FromConfig-test gap left (browser-covered Task 4).
+Task 4 (snapshot-path Blink: toDataURL/toBlob/convertToBlob) dispatched (opus).
+  MEASURED chokepoint: HTMLCanvasElement::Snapshot() (html_canvas_element.cc:1300) — both
+  toDataURL(via ToDataURLInternal:1341) + toBlob(:1445). ImageDataBuffer::PixelData() is CONST
+  → perturb StaticBitmapImage upstream. OffscreenCanvas snapshot offscreen_canvas.cc:386.
+  Design: readPixels→PerturbRgbaFromConfig→UnacceleratedStaticBitmapImage::Create. verify_sp3a.py
+  C1-4 (determinism/spoof-visible/off-default/toBlob), red-first, mutant proof, patch+apply.sh.
+Task 4: impl COMPLETE commit f59daa6 (ALL_PASS C1-4, mutant-proven, patch byte-identical), review dispatched (opus).
+  DEVIATION (disclosed, looks correct): wired 3 page-facing sites (ToDataURLInternal, toBlob,
+  convertToBlob via offscreen GetImage:503) NOT Snapshot() — Snapshot() has 3 non-page callers
+  (drag/copy, WebElement::ImageContents, print) that'd over-apply → break screen-unchanged.
+  Concerns: convertToBlob no dedicated verify criterion (Task 5 coverage must exercise it);
+  C3 stock baseline is non-committed file on box (reproducibility).
+Task 4: complete (commit f59daa6, review ✅ Approved — call-graph-verified: 3-site deviation
+  complete/non-overlapping/no double-perturb/draw-time excluded). Minors (whole-branch):
+  M1 stock baseline box-local uncommitted (hash-only) — sibling convention, reproducibility.
+  M2 single-scene verify can't detect content-independence (content-fold owned by Task3 units).
+  M3 PerturbCanvasReadback ~25 lines duped in html_canvas_element.cc + offscreen_canvas.cc.
+  M4 include order nit.
+  WHOLE-BRANCH NOTES: getImageData ungated (Task 5 scope, confirmed); fail-open if
+  GetSwSkImage/readPixels fails → spoof silently no-ops on odd backends; C3 byte-identity
+  proven Linux-only (GPU-vs-SW equality platform-sensitive per CLAUDE.md).
+Task 5 (direct-read getImageData/readPixels + full verify C1-10) dispatched (opus). Extends patch + verify_sp3a.
+Task 5: opus subagent STALLED (SSH master dropped → 600s watchdog kill), ZERO durable progress
+  (Blink targets clean, verify still C1-4, nothing committed; Task 4 state intact). Master
+  re-established. Executing Task 5 INLINE as controller (robust to master drops — I recover
+  with password; whole-branch review still gates, SP2b precedent).
+Task 5: COMPLETE inline (controller — infra-robust). Commit 8079939. getImageData
+  (getImageDataInternal, RGBA8 guard) + readPixels (ReadPixelsHelper, RGBA/UBYTE
+  default-fb guard) → PerturbRgbaFromConfig on readback copy. LINK FIX: added
+  //components/camoucfg dep to modules/canvas + modules/webgl BUILD.gn (core had it).
+  verify_sp3a.py → 10 criteria; RED-first on stock (C2,4,5,6,7,8 FAIL), ALL_PASS on
+  edited (C1-10 incl getImageData/readPixels/convertToBlob/worker-parity/screen-unchanged/
+  native). Patch now 6 files/232 lines, reconstructs cleanly via git apply --3way.
+  NOT independently reviewed (controller-written) — whole-branch must scrutinize.
+  C9 draw-time mutant SKIPPED (readback-only structurally guaranteed: edits confined to
+  2 readback fns, Task-4 call-graph proved paint paths separate; C9 passed cross-binary;
+  RED-first showed 6 sibling criteria can fail). Flagged for whole-branch.
+========================================================================
+SP3a IMPLEMENTATION COMPLETE — all 5 tasks. Whole-branch review next.
+WHOLE-BRANCH REVIEW (opus): Ready to merge WITH FIXES. No Critical. Strengths: readback-vs-draw
+  distinction correct+live-verified, guarantees pinned vs frozen stock baseline.
+  I1 (Important): WebGL2 PIXEL_PACK_BUFFER + getBufferSubData bypasses noise (readPixels variant
+    → un-noised default-FB pixels reach JS). Cover OR document-as-gap. DECISION: document (provenance
+    tracking too complex for SP3a; honest ceiling).
+  I2 (Important): snapshot applier no colortype guard → F16 canvas corrupted (half-floats mangled).
+    FIX: guard 8-bit, allow RGBA8 || BGRA8 (N32=BGRA on Mac/Win; bare RGBA check would no-op snapshot
+    spoof there, invisible to Linux CI — font-lesson #3). FIXING INLINE.
+  Minors M1-M7 non-blocking. C9 mutant: reviewer agrees structurally guaranteed (edits confined to
+    readback fns), recommended-not-blocking.
+Review fixes: commit 4636c0d. I2 FIXED (8-bit RGBA8||BGRA8 guard on snapshot applier, both
+  files; F16 returns unperturbed=stock). I1 DOCUMENTED (code comment + plan out-of-scope + spec 7.4).
+  Final verify ALL_PASS 10/10. Whole-branch "clean merge" condition met.
+========================================================================
+SP3a COMPLETE — 5 tasks + review fixes. Commits 21cd502..4636c0d on main, UNPUSHED.
+  All green: verify_sp3a 10/10; camoucfg unit 55/55; patch 6 files reconstructs via git apply --3way.
+  Awaiting user push decision (project convention: user drives push). SP3b (WebGL profile +
+  WebGPU coherence) is next per settled order.
+
+========================================================================
+SP3b-i — WebGL profile (vendor/renderer strings + parameter table)
+Plan: docs/superpowers/plans/2026-08-30-sp3b-i-webgl-profile.md
+BASE: 90f8230 | Branch: main
+Tasks: 1 keys+GLParam config-map accessor | 2 vendor/renderer strings | 3 parameter table+blockIfNotDefined
+------------------------------------------------------------------------
+Task 1 (webGl keys + GLParam accessor): impl DONE commit e21348e (RED→GREEN GLParamsTest 6/6, regr 61/61, check_additions_build PASS), review dispatched. 3 documented adaptations: GLValue single-def, keys:: constants (no orphans), base::DictValue (live-tree spelling).
+Task 1: complete (commit e21348e, review ✅ Approved). Minors: heterogeneous-list/BOOLEAN-arm test
+  gaps (brief-inherited, code correct); IWYU transitive-include nit.
+  CARRY TO TASK 3: base::Value::Type::INTEGER is 32-bit — a JSON int > int32 (large GLint64 params)
+  parses as DOUBLE, so lands in GLValue's `double` arm not int64. BuildSpoofedParam must handle the
+  double arm for large integer pnames (build the right JS number type).
+Task 2 (WebGL vendor/renderer strings) dispatched (opus, browser). Interception: getParameter
+  unmasked cases :4204/:4213, IsWebGL2() selects namespace, GLVendor/GLRenderer + GLParam(0x9245/9246)
+  fallback (#44). verify_sp3b V1-3 (SwiftShader). PATCH-SEPARATION FLAGGED: sp3b WebGL edits share
+  webgl_rendering_context_base.cc with sp3a's readPixels hunk → controller separates sp3b-only into
+  patches/sp3b-webgl-profile.patch (git diff --no-index vs reconstructed sp3a-only, or commit sp3a on
+  checkout). Anti-hang: implementer reports BLOCKED on master drop, no retry loop.
+PATCH-SEP PRIMITIVE VALIDATED: /tmp/recon/.../webgl.cc = sp3a-only (stock HEAD + sliced sp3a webgl hunk). Post-Task2/3: git diff --no-index recon vs checkout webgl → sp3b hunks; webgl2 = plain git diff HEAD (no sp3a edit). Assemble patches/sp3b-webgl-profile.patch from both.
+Task 2 (WebGL strings): impl DONE commit 683c2ce (RED→GREEN V1-3 ALL_PASS, namespace isolation both ways), review dispatched. Patch ISOLATED (0 sp3a contamination, verified). Deviations: spoof inside ExtensionEnabled gate (no-ext errors like stock), String::FromUtf8. Checkout webgl LEFT STAGED (index=sp3a baseline) so Task 3 regenerates combined sp3b patch via git diff (working-vs-index).
+Task 2: complete (commit 683c2ce, review ✅ Approved — blob-chain + hunk arithmetic verified,
+  extension-gate deviation correct/improvement). Minors (whole-branch): GetTopExecutionContext()
+  null → spoof-skip (cross-cutting ScopeFor concern, not task-specific); webgl2 baseline single-launch;
+  cosmetic ternaries.
+Task 3 (WebGL parameter table + blockIfNotDefined) dispatched (opus, browser). Generic GLParam lookup
+  at getParameter tops (WebGL1 :3993 + WebGL2 :4839), BuildSpoofedParam variant→typed (Float32/Int32Array
+  per pname; double-arm for large ints; nullopt-fallthrough on type mismatch), IsBlockablePname exclude set.
+  V4 (param types) + V5 (fail-closed). Patch regen git diff -- webgl webgl2 (index-baseline both SP3b-only).
+  Regression guard: verify_sp3a still ALL_PASS.
+Task 3 (WebGL param table): impl DONE commit ac1b67f (RED→GREEN V1-5 ALL_PASS, verify_sp3a regr 10/10,
+  camoucfg 11/11, patch 0-contamination both webgl files), review dispatched (opus). Concern: helpers
+  external-linkage in namespace blink (fwd-decl across 2 TUs, forced by .cc-only patch). Good catch: host
+  MAX_VIEWPORT_DIMS coincidentally [8192,8192] → spoof [16384,16384] to discriminate.
+Task 3: complete (commit ac1b67f, review ✅ Approved — type partition verified vs stock, double-arm
+  mandatory, #44 both TUs, external-linkage helpers correct call, patch clean). Minors→SP3b-ii:
+  array built from config-vector length not pname-canonical (length tell = operator garbage);
+  COMPRESSED_TEXTURE_FORMATS/COLOR_WRITEMASK return host under block (not GLValue-representable).
+========================================================================
+SP3b-i IMPLEMENTATION COMPLETE — 3 tasks (config accessor + WebGL strings + parameter table).
+  verify_sp3b V1-5 ALL_PASS; verify_sp3a regression 10/10; camoucfg 11/11. Whole-branch review next.
+SP3b-i WHOLE-BRANCH REVIEW (sonnet): Ready to merge YES. No Critical. Important #1 (V4/V5 WebGL1-only)
+  CLOSED — commit extends V4/V5 to webgl2, ALL_PASS 5/5. Minors non-blocking (ScopeFor systemic;
+  array-length→SP3b-ii; double-eval + dead-case cosmetic).
+========================================================================
+SP3b-i COMPLETE + whole-branch clean. Commits 90f8230..<verify fix> on main, UNPUSHED
+  (with SP3a-ii measurements + SP3b measurements + plan). Mergeable. SP3b-ii next.
+
+========================================================================
+SP3b-ii — WebGL extensions + shaderPrecision + contextAttributes
+Plan: docs/superpowers/plans/2026-08-31-sp3b-ii-webgl-extras.md
+BASE: 4092ce6 | Branch: main | User chose: continue SP3b-ii, push all SP3b at end
+Tasks: 1 keys+GLShaderPrecision/GLContextAttrs accessors | 2 getSupportedExtensions+getShaderPrecisionFormat | 3 getContextAttributes
+WebGPU coherence + renderer↔vendor validator DEFERRED to SP3b-iii.
+------------------------------------------------------------------------
+SP3b-ii Task 1 (shaderPrecision/contextAttrs/extension keys+accessors): impl DONE commit c537601
+  (GLParamsTest 9/9, regr 64/64, check_additions_build PASS), review dispatched. Deviations sound
+  (base::DictValue, keys:: constants). Process note: RED reconstructed retroactively not live-first.
+SP3b-ii Task 1: complete (commit c537601, review ✅ Approved — malformed-reject correct, both hand-lists
+  agree 25→33, deviations tree-verified). Minors (brief-inherited): GLShaderPrecisionBlockFrom + non-list
+  case correct-by-inspection but untested.
+Task 2 (getSupportedExtensions + getShaderPrecisionFormat) dispatched (opus, browser). Extensions
+  list-replace + getExtension/IsSupported whitelist coherence; shaderPrecision map→WebGLShaderPrecisionFormat
+  or block-null. V6/V7 both namespaces. Patch index-baseline regen, verify_sp3a regression guard.
+Task 2 (getSupportedExtensions + getShaderPrecisionFormat): impl DONE commit b56b4de (RED→GREEN V1-7
+  ALL_PASS, verify_sp3a 10/10, camoucfg green), review dispatched (opus). Single gate ExtensionSupportedAndAllowed:3833
+  for list+getExtension coherence; shaderPrecision ctor after enum-validation; WebGL2 overrides none. Patch 0-contam.
+  Ceiling: whitelist superset (host-absent ext) lists-but-getExtension-null → operator curation, SP3b-iii.
+Task 2: complete (commit b56b4de, review ✅ Approved — coherence gate verified via call graph,
+  shaderPrecision after enum-validation, WebGL2 overrides none, patch clean). IMPORTANT deferred
+  obligation LOGGED (spec §5 commit): webGl:supportedExtensions ⊆ host tracker-backed extensions —
+  advertised⟹gettable not closable in Blink; profile-gen/SP3b-iii owns it. Minors: V7 no invalid-enum-
+  under-config test (structural, verified); EXPECTED=7 correct intermediate.
+Task 3 (getContextAttributes) dispatched (opus, browser, final SP3b-ii task). Per-field override after
+  ToWebGLContextAttributes: bool setters + powerPreference string→enum; absent untouched (rule 5). V8 both
+  namespaces. Patch index-baseline regen. Then SP3b-ii whole-branch review → push all SP3b.
+Task 3 (getContextAttributes): impl DONE commit f7ad64e (RED V8→GREEN V1-8 ALL_PASS, verify_sp3a 10/10,
+  camoucfg 14/14, patch 0-contam T1/T2/webgl2 intact), review dispatched. getContextAttributes:3787 per-field,
+  9 bool setters + setPowerPreference(V8WebGLPowerPreference), WebGL2 inherits. Brief drift correct (live spellings).
+Task 3: complete (commit f7ad64e, review ✅ Approved — live-tree verified: FindBool optional semantics,
+  V8WebGLPowerPreference enum+setter overload, WebGL2 inherits, patch 0-contam/prior-hunks-intact, V8
+  non-vacuous). ZERO issues.
+========================================================================
+SP3b-ii IMPLEMENTATION COMPLETE — 3 tasks. verify_sp3b V1-8 ALL_PASS; verify_sp3a 10/10; camoucfg 14/14.
+FULL-CHAIN APPLY VERIFIED (controller): sp3b-webgl-profile.patch git-apply-checks clean onto (stock+sp3a).
+SP3b-ii whole-branch review dispatched (final gate). On approval → secret-scan + push all SP3b (i+ii).
+SP3b-ii WHOLE-BRANCH REVIEW: Ready to merge WITH FIXES (both Important DOC-ONLY). FIXED (commit 304c0bb):
+  (1) param-table sanity re-deferred to SP3b-iii explicitly; (2) WebGL-in-Worker parity logged UNVERIFIED
+  (structurally expected, GetTopExecutionContext not GetDocument). Consolidated all 5 SP3b-iii obligations
+  in spec §5. Minors (tracker-backed wording, empty-list==unset) noted.
+========================================================================
+SP3b COMPLETE (i + ii). 6 WebGL surfaces spoofed: vendor/renderer + parameter table + extensions +
+  shaderPrecision + contextAttributes, both namespaces. verify_sp3b 8/8; verify_sp3a 10/10; camoucfg 14/14;
+  full-chain apply OK. All tasks + both whole-branch reviews clean. Pushing all SP3b.
+SP3b-iii (deferred): WebGPU coherence + renderer↔vendor validator + param-table sanity + worker-parity verify.
+SP3b-iii probe: WebGPU UNVERIFIABLE in content_shell (navigator.gpu undefined, 3 flag combos) →
+  host-build-gated (spec §6.12 anticipated). Worker-parity VERIFIED: verify_sp3b V9 (dedicated-worker
+  OffscreenCanvas getParameter == main == spoofed 16384). V1-V9 ALL_PASS. Whole-branch Important #2 closed.
+  Remaining SP3b-iii (host-gated/coherence-engine): WebGPU spoof, renderer↔vendor validator, param sanity,
+  shared-worker check.
+
+========================================================================
+SP1b — navigator leaf accessors + languages
+Plan: docs/superpowers/plans/2026-08-31-sp1b-navigator-leaves.md | BASE: 688e0db | Branch: main
+Tasks: 1 navigator.* keys | 2 scalars (platform/appVersion/deviceMemory/maxTouchPoints/near-constants) | 3 languages | 4 disable tablet-site
+Pristine files → clean git-diff patch (no index-baseline needed). No new accessor. Fully content_shell-verifiable.
+------------------------------------------------------------------------
+SP1b Task 1 (navigator.* keys): impl DONE commit 8f9b4b1 (5/5 keys, kAllKeys 33→45, check_additions_build PASS, 20-step rebuild), review dispatched. Cosmetic: comment placement near kAllKeys not grouped.
+SP1b Task 1: complete (commit 8f9b4b1, review ✅ Approved — 12 keys, both hand-lists verified element-by-element 33→45, zero issues). Cosmetic comment placement only.
+Task 2 (navigator scalars) dispatched (opus, browser). Sites: Navigator::platform() navigator.cc:58 (before
+  DevTools override), NavigatorID::appVersion/appCodeName/appName/product navigator_id.cc, productSub/vendor/
+  vendorSub navigator.cc, deviceMemory navigator_device_memory.cc:14 (GetDouble→float), maxTouchPoints
+  locate-or-defer. SP0 hook pattern. verify_sp1b N1-N5, clean git-diff patch (pristine files). Measure-then-
+  implement the ExecutionContext accessor per NavigatorID/DeviceMemory mixin.
+Task 2 (navigator scalars): impl DONE commit d746be3 (N1-5 GREEN, maxTouchPoints HOOKED in navigator_events.cc,
+  RED-first, regr sp3a 10/10 + sp3b V1-9 + camoucfg 5/5, patch 4 files 0-contam apply.sh-last), review dispatched (opus).
+  Scope: platform+productSub/vendor/vendorSub on Navigator via ScopeFor(GetExecutionContext()); appVersion/near-const
+  (NavigatorID) + deviceMemory context-less mixin → ScopeFor(nullptr); maxTouchPoints navigator.GetExecutionContext().
+  CONCERN: worker-scope navigator.platform NOT overridden (window-only) — asymmetry tell vs mixin leaves that DO reach
+  workers. Likely needs WorkerNavigator/NavigatorBase hook fix.
+Task 2 review (opus): Approved vs brief. IMPORTANT I1 (self-introduced tell): worker navigator.platform
+  un-spoofed (Navigator::platform window-only; WorkerNavigator→NavigatorBase::platform=real) WHILE appVersion/
+  deviceMemory (NavigatorBase mixins) ARE spoofed in workers → internal contradiction, worse than baseline.
+  FIX REQUIRED (my bar = no self-tells). I1a: correct fix = hook NavigatorBase::platform()/GetReducedNavigatorPlatform,
+  NOT NavigatorID::platform() (Android-only). Keep Navigator::platform() hook for config-over-DevTools.
+  navigator_base.cc SHARED w/ SP0 → index-baseline separation. Minors: M1 N4 tests only vendor override (add other 5);
+  M2 verify window-only; M3 keys.h not in DEPS (latent presubmit). ScopeFor(nullptr) verified safe.
+I1 fix dispatched (opus): hook NavigatorBase::platform() (covers window-fallback + worker), keep Navigator::platform()
+  hook, M1 (N4 all 6 near-constants configured), new worker-platform parity criterion. Patch index-baseline set up
+  (navigator_base.cc STAGED at SP0; git diff -- 5 files = SP1b-only). Verify 0 hardwareConcurrency contamination.
+Task 2 (+I1 fix 6b46f09): COMPLETE. Worker-platform tell CLOSED (NavigatorBase::platform hook → worker sees
+  spoofed platform; N6 RED Linux-vs-Win32 → GREEN Win32=Win32). M1 done (N4 all 6 near-constants). verify_sp1b
+  6/6; regr sp3a 10/10 + sp3b 9/9 + camoucfg 5/5. Patch 5 files, 0 SP0-hardwareConcurrency + 0 sp3 contamination,
+  navigator_base hunk = platform-only, chain-verified (applies after sp0). Controller-verified (reviewer-prescribed
+  fix). CHECKOUT MODEL LEARNED: HEAD has SP0-SP2-SP5a COMMITTED; SP3a/SP3b/SP1b are working-tree → git diff HEAD
+  gives clean SP-only patches for pristine files (no index-baseline needed unless sharing a working-tree SP's file).
+  Minor M3 (keys.h not in DEPS, latent presubmit) deferred.
+Task 2: complete (commits d746be3 + 6b46f09, review Approved w/ I1 fixed).
+Task 3 (navigator.language/languages) dispatched (opus, browser). navigator_language.cc:39/43 (pristine).
+  GetString + GetStringList; caching wrinkle (languages() returns const Vector<String>& → integrate with cache).
+  Coherence w/ Accept-Language = generator's job (note). Patch git diff HEAD (6 files now), 0-contam verify.
+Task 3 (navigator.language/languages): impl DONE commit aa1d22a (RED N7→GREEN N1-7 ALL_PASS, deep-eq + stable,
+  regr sp3a 10/10 + sp3b 9/9 + camoucfg 5/5, patch 6 files 0-contam Task-2-intact), review dispatched. languages()
+  cache filled in EnsureUpdatedLanguage() before DevTools override; ScopeFor(execution_context_). No concerns.
+Task 3: complete (commit aa1d22a, review ✅ Approved — source-verified config-wins-every-call, stable ref,
+  covers WorkerNavigator free via shared mixin). Minors: V8-cache stability-test corroborating-not-proof;
+  partial-config drift out-of-scope/documented.
+Task 4 (disable Request-tablet-site) dispatched (sonnet, final). Early-return ToggleRequestTabletSite
+  browser_commands.cc:2809 (chrome/browser, NOT content_shell → inspection/compile-verified, not page). Patch
+  git diff HEAD (7 files incl browser_commands.cc), 0-contam. Then SP1b whole-branch review → push all SP1b.
+Task 4 (disable tablet-site): impl DONE commit 4a22598 (ToggleRequestTabletSite no-op, body deleted not
+  unreachable-dead-code — compiler -Wunreachable-code-aggressive caught it; SetAndroidOsForTabletSite defined+uncalled;
+  chrome/browser/ui COMPILED; regr verify_sp1b N1-7 + camoucfg 5/5; patch 7 files 0-contam 6-nav-intact), review
+  dispatched. Concern: 2 upstream browser_tests call it (fork doesn't run browser_tests, out-of-scope).
+Task 4: complete (commit 4a22598, review ✅ Approved — live-verified no-op, uncalled SetAndroid... external linkage,
+  config not routed, patch clean 7 files 6-nav-intact apply.sh-last). Minor: 2 upstream browser_tests (out of fork CI).
+  Noted-not-raised: menu item stays visible-but-inert (removing UI = scope creep, out of brief).
+========================================================================
+SP1b IMPLEMENTATION COMPLETE — 4 tasks. verify_sp1b N1-N7 ALL_PASS; regr sp3a 10/10 + sp3b V1-9 + camoucfg 5/5.
+  Worker story now COHERENT: platform (I1 fix via NavigatorBase), languages (shared mixin free), appVersion/
+  deviceMemory (mixins) all reach workers spoofed. Whole-branch review next → push all SP1b.
+SP1b WHOLE-BRANCH REVIEW (sonnet): Merge WITH FIXES. No Critical. 3 Important (bounded, not redesign):
+  I-A: worker-parity for non-platform leaves ASSERTED in comments, NOT empirically verified (spec MANDATES
+       empirical per-value worker check, not IDL-reading — my IDL grep insufficient by project discipline).
+       FIX: extend verify_sp1b worker probe → appVersion/deviceMemory/languages (spoofed) + vendor/vendorSub/
+       productSub/maxTouchPoints (undefined, window-only) read in a DEDICATED worker.
+  I-B: NavigatorBase::platform() I1 hook sits AFTER a #if-guarded `return NavigatorID::platform()` (unhooked
+       bypass, Android/UA-reduction-off path). FIX: also hook NavigatorID::platform() → platform spoofed every path.
+  I-C: 2 upstream browser_tests (client_hints, referrer_policy) call disabled command, undocumented. FIX: doc note.
+  Minors: ScopeFor(nullptr) coupling comment; inert-but-visible tablet menu note. Consolidated fix dispatched.
+SP1b whole-branch fix dispatched (opus): I-B NavigatorID::platform hook (close #if bypass), I-A empirical
+  dedicated-worker parity criterion (appVersion/deviceMemory/languages spoofed + vendor/vendorSub/productSub/
+  maxTouchPoints undefined), I-C docs (browser_tests + inert menu) + ScopeFor(nullptr) comment. Re-extract + re-verify.
+  On GREEN + clean patch → push all SP1b.
+SP1b whole-branch fix (f0bcfcb): I-B NavigatorID::platform hooked (all 3 paths, #if bypass closed).
+  I-A EMPIRICAL worker parity N8 ALL_PASS: worker SPOOFED platform/appVersion/deviceMemory/language/languages,
+  UNDEFINED vendor/vendorSub/productSub/maxTouchPoints (no leak) + RED tripwire non-vacuous. I-C docs (browser_tests +
+  inert menu in SP1 spec) + ScopeFor(nullptr) comment. Patch 0-contam, regr sp3a 10/10 + sp3b 9/9 + camoucfg 5/5.
+========================================================================
+SP1b COMPLETE — navigator identity (platform/appVersion/deviceMemory/maxTouchPoints/near-constants/language/languages)
+  + tablet-site disable. Worker-coherent (empirically proven). verify_sp1b N1-N8 ALL_PASS. All 4 tasks + 2 whole-branch
+  reviews clean. Pushing.
+
+========================================================================
+SP4a START (base 4bb0d11) — screen/monitor geometry, monitor-only scope (user-confirmed).
+  Plan: docs/superpowers/plans/2026-08-31-sp4a-screen-geometry.md (5 tasks).
+  Measurement: docs/superpowers/measurements/2026-08-31-sp4a-screen-surfaces.md.
+  Keys 45->52 (screen.width/height/availWidth/availHeight/availLeft/availTop/colorDepth).
+  Choke points: Screen::GetRect + colorDepth, MediaValues::CalculateDeviceWidth/Height, ScreenOrientation::type/angle.
+Task 1: complete (commits 4bb0d11..59f0565, review clean) — 7 screen.* keys, 45->52, 5/5 CamoucfgKeysTest on real 25-step build.
+Task 2: complete (commits 59f0565..6faee18, review clean) — Screen::GetRect+colorDepth spoof, verify_sp4a.py S1a RED->GREEN, no-op-when-absent proven (byte-identical bare tuple). Stock screen headless=1x1.
+  MINORS (carry to Task 5 verify): (a) availLeft/Top both 0 in S1a -> cannot catch set_x/set_y swap; use non-zero unequal avail offsets in later criteria. (b) checkout-clean asserted, confirm at patch-extract.
+Task 3: complete (commits 6faee18..066f3fd, review clean) — MediaValues::CalculateDeviceWidth/Height read IDENTICAL kScreenWidth/kScreenHeight (binding invariant verified vs screen.cc, no swap). verify_sp4a.py S1b RED->GREEN, S1a intact. Added local_dom_window.h include (ExecutionContext upcast, complete type) — auto-carried by Task 5 git-diff extract.
+Task 4: complete (commits 066f3fd..a6267ae, review clean) — ScreenOrientation type/angle DERIVED from spoofed dims (both consult same helper, both-dims-present gate, no-op absent, no orientation key), BUILD.gn camoucfg dep added. verify_sp4a.py S2/S3 RED->GREEN (S2 discriminating across 2 configs), S1a/S1b intact. 15-step build.
+Task 5: complete (commits a6267ae..c4185f7, self-verified) — patches/sp4a-screen.patch extracted (5 files, 0 contam), APPLY_OK round-trip proof (git apply --check + apply reproduces tree), apply.sh wired (sp4a LAST after sp1b), verify_sp4a.py S4(no-new-surface)+S5(stock-fallback) added, S1a offsets->17/43 (swap-catch, Task2 minor resolved). Full verify S1a-S5 ALL_PASS on patch-reproduced tree + bare==stock. Regression: camoucfg 55/55, sp1b N1-N8, sp3a 10/10, sp3b V1-V9 all green. NOTE: on-disk task-5-brief stale (SP3a leftover); impl used plan Task 5 section.
+SP4a WHOLE-BRANCH REVIEW: SHIP (opus). No Critical/Important code defects. Two-place invariant + orientation agreement + no-op-all confirmed by inspection; patch 5-file 0-contam, apply.sh LAST.
+  CARRIED (docs, commit follows): IMPORTANT directional-coherence caveat (dont spoof monitor < real window; SP5a cant catch, outer truthful) -> measurement operator-caveat + window-slice re-couple note. MINOR width/height-pair -> SP5a validator obligation. MINOR verify config geometric-nonsense = evidence non-enforcement total (no change). LOGGED getScreenDetails/ScreenDetailed third path -> window slice.
+  Verify cannot see (headless 1x1, dsf=1): physical-pixels-quirk/text-scale/emulation/Mac-Win avail-rect paths; correct-by-inspection (override=last write before all post-transforms).
+SP4a COMPLETE — 5 tasks + 5 per-task reviews + whole-branch all clean.
+
+========================================================================
+SP4-fonts (Layer 1) START (base d611a19) — Local Font Access disable + family-probe blocking. User scope 2026-08-31: "Layer 1 now, log 2+3" (codepoint fallback=fonts-ii, metric jitter=own SP, both deferred/documented).
+  Plan: docs/superpowers/plans/2026-08-31-sp4-fonts.md (5 tasks). Measurement: docs/superpowers/measurements/2026-08-31-sp4-fonts-surfaces.md.
+  Choke: gate CSSFontSelector::GetFontData + OffscreenFontSelector::GetFontData (window+worker, before FontCache call, !FamilyIsGeneric+!IsFontAllowed->nullptr) + disable FontAccess feature (queryLocalFonts). New accessor IsFontAllowed. Key fonts (52->53).
+SP4-fonts Task 1 (8cd2cc0) DONE_WITH_CONCERNS -> controller fix (7048c7f): key renamed bare "fonts"->"fonts:list" (00-conventions colon=synthetic; byte-compat rationale false), EveryKeyIsNamespaced exception REMOVED (guard restored), test configs + docs updated. 9/9 pass, 29-step build, clean guard. Testable core internal::IsFontAllowedFrom (GLParamsTest precedent) = fine. Reviewing.
+Task 1: complete (commits d611a19..d3b4fd8, review clean ✅ Approved) — fonts:list key + IsFontAllowed(+ testable IsFontAllowedFrom). Review 4 Minors: F4 redundant helper -> base::EqualsCaseInsensitiveASCII (fixed), stale comments (fixed). 9/9 keys+font tests. Task-1 report stale re carve-out (superseded by fix commits, left as-is).
+SP4-fonts Task 2 ATTEMPT 1 (verify e5e2ac5) NEEDS_CONTEXT: RED-first caught selector gate INERT. Root cause (instrumented rebuild): FamilyNameFromSettings empty for specific family -> selector returns null before gate; FontFallbackList::GetFontData retries FontCache directly on literal name (font_fallback_list.cc:172, +:160 no-selector path). CORRECTED gate = FontFallbackList retry (generic-safe by position, shared window+worker=1 file). Cost: platform->camoucfg layering (BUILD.gn dep + platform/fonts/DEPS grant). Docs corrected. Re-dispatching fresh; revert 2 inert selector edits. verify_sp4_fonts.py (e5e2ac5) correct, kept.
+Task 2 (corrected, checkout-only edits): complete (review clean ✅ Approved). Gate = FontFallbackList::GetFontData both retries (FamilyIsGeneric||IsFontAllowed), last-resort untouched, null-not-return (confirmed by control-flow + numbers), generic-safe, rule-5. platform->camoucfg grant (BUILD.gn component("platform") dep + platform/fonts/DEPS 3 includes; keys.h load-bearing, other 2 cascade-redundant harmless). verify F1/F2/F3 RED->GREEN (unlisted 303.16->288.98==mono, worker=window exact). No Mac commit (verify e5e2ac5 unchanged). MINOR logged: DEPS redundancy, ScopeFor(nullptr) fwd-compat.
+Task 3 (branch B non-probe) recovered from crashed agent (Mac sleep mid-response, pre-commit). Controller verified durably: no stray Blink edit, F1-F4 ALL_PASS re-run, F4 non-vacuous. Committed 418a288, WSL fonts-scratch cleaned. Reviewing (incl. load() gap).
+Task 3: complete (commits 5a775c0..43add53, review clean ✅ Approved). Branch B non-probe: check() AND load() cannot distinguish present-unlisted from absent (check True/True/True, load 0/0/0, configured==stock both). NO gate (disciplined, not vacuous). load() gap from measurement §3 CLOSED empirically (review Minor). local()/unique-name route = real surface but already tracked fonts-ii (not a new gap). NOTE: .superpowers/sdd/task-3-report.md is STALE (SP4a media_values, name collision) — do NOT hand to whole-branch review; use commit 418a288+43add53 bodies.
+Task 4: complete (commits 43add53..83d8008, review clean ✅ Approved, 0 findings). FontAccess default stable->"" (single-line json5), window.queryLocalFonts undefined. F5 = REAL secure-context test (127.0.0.1 echo_server, mirrors verify_sp1b N3) — caught + fixed an about:blank false-GREEN (queryLocalFonts SecureContext-gated). F1-F4 byte-identical, EXPECTED 4->5. 27-step build. Blink edit checkout-only (runtime_enabled_features.json5).
+Task 5: complete (commits 83d8008..fc2ca8e, self-verified). patches/sp4-fonts.patch (4 files: font_fallback_list.cc, platform/BUILD.gn, platform/fonts/DEPS, runtime_enabled_features.json5; NO selectors), APPLY_OK round-trip, apply.sh wired LAST after sp4a-screen. verify_sp4_fonts F6(no-new-surface, --capture-baseline 2-rebuild)+F7(stock-fallback: gate config-gated bare->host-visible, queryLocalFonts build-disabled bare->undefined). F1-F7 ALL_PASS. Regression: camoucfg 59/59, sp4a+sp1b+sp3a+sp3b ALL_PASS. CONCERN(minor, for whole-branch): Object.keys(navigator)==0 on content_shell (keys on Navigator.prototype) -> F6 navigator-half structurally vacuous, documented; window/queryLocalFonts half meaningful.
+SP4-fonts WHOLE-BRANCH REVIEW: SHIP as Layer-1 (opus). Code ships as-is (all findings doc/verify). Residual-path enum: no UNDOCUMENTED leak; direct measureText CLOSED window+worker, queryLocalFonts CLOSED, check()/load() NON-PROBE; local()+codepoint-fallback residual (both fonts-ii documented).
+  Finding1 IMPORTANT (doc, FIXED): direct-vs-local() cross-method inconsistency = anti-detect tell on native Win/mac (host superset); local(\"Family\") mainstream not niche. -> measurement Known-Layer-1-tell + expanded deferral.
+  Finding2 MINOR (FIXED): stale GetFontPlatformData/check()-inherits claim marked superseded.
+  Finding3 MINOR (FIXED doc): rule-5 asymmetry (LFA unconditional vs metric config-gated) + drive-from-list upgrade.
+  Finding4 MINOR (LOG): F6 navigator-half vacuous (Object.keys(navigator)==0, prototype); window/queryLocalFonts half meaningful. Left documented.
+SP4-fonts COMPLETE — 5 tasks + per-task reviews + whole-branch, all clean. Verify F1-F7 ALL_PASS, regression camoucfg 59/59 + sp4a/sp1b/sp3a/sp3b green.
+
+========================================================================
+SP4-audio START (base 7bbb72b) — readback noise (AnalyserNode+AudioBuffer, reuse DeriveDelta) + outputLatency/baseLatency/maxChannelCount scalars. User scope 2026-09-01: sampleRate KEPT REAL (buffer-length coherence risk, low entropy).
+  Plan: docs/superpowers/plans/2026-09-01-sp4-audio.md (5 tasks). Measurement: docs/superpowers/measurements/2026-09-01-sp4-audio-surfaces.md.
+  Design: PerturbAudioSamples helper (additive raw / relative magnitude, content-hash folded, seed0 no-op); AudioBuffer perturb-once-guarded (getChannelData live array); AnalyserNode perturb magnitude_buffer_ (Float/Byte coherent). Keys 53->57.
+Task 1: complete (commits 7bbb72b..22ebdab, review clean ✅ Approved). 4 audio keys (57), PerturbAudioSamples (DeriveUnit reuse, content-hash, seed0 no-op, additive/relative). 11/11 tests. Review Low: FNV basis typo (MY plan doc line 128) -> fixed canonical in audio_noise.cc + plan. as_bytes(allow_nonunique_obj) genuine span.h opt-in for float (flagged for T2-4). Nits (unused cstring/optional/80col) left.
+Task 2: complete (commits 22ebdab..9432ab3, review clean ✅ Approved). AudioBuffer noise via CamouEnsureNoised (perturb channels once, guard did_camou_noise_). CRUX FIX: brief said instrument getChannelData(unsigned) but that overload is called internally by SharedAudioBuffer ctor PRE-render (burns guard on garbage, real samples reach JS unperturbed via aliased store). Fixed: hook on JS-reachable getChannelData(ExceptionState) + copyFromChannel(4-arg body; 3-arg delegates in), NOT the internal unsigned overload. A1 RED(777==888)->GREEN(777 stable x2 proc, 888 diverges). modules/webaudio BUILD.gn camoucfg dep. 41-step build. WARN carried to T3/T4: check internal callers of nominally-JS-only accessors before wiring noise.
+Task 3: APPROVED with 2 fast-follow findings (review clean ✅). Freq A2/A3 committed GREEN (1024/1024 coherent), time-domain coherent-by-construction (same pure derivation on same raw window) smoke-tested.
+  Finding3 MEDIUM (real tell, FIXING): magnitude_buffer_ is EMA not rebuilt-fresh; in-place perturb compounds -> unbounded random walk at smoothingTimeConstant=1.0. Fix: perturb scratch copy at readback (Float+Byte same derivation, coherent), magnitude_buffer_ never mutated -> no compounding any k.
+  Finding4 (verify gap, FIXING): promote time-domain smoke test to committed TD-A2/TD-A3 via OfflineAudioContext+suspend (freezes input_buffer_, same apparatus as A2/A3).
+  Dispatching fix.
+Task 3 fix1 (fe99d21): k=1 drift CLOSED (A2b RED-first pre-fix drift 1024/1024 -> bit-identical; scratch-copy at readback, magnitude_buffer_ never mutated). TD-A2/TD-A3 committed. A1/A2/A3 stayed GREEN. 6/6.
+  NEW concern (fix introduced): ContentHash over [0..len) slice -> Float/Byte coherence length-DEPENDENT (Float(1024)+Byte(512) hash different windows -> incoherent shared prefix). Real fp uses frequencyBinCount both (coherent) but deliberate probe defeats. FIXING: hash FULL magnitude_buffer_ (length-independent) + A3b different-length RED-first criterion.
+Task 3: COMPLETE (commits 9432ab3..716a093 + doc 625d543, reviewed ✅ + 2 fixes + characterization). Freq: perturb full-buffer scratch at readback (no EMA-compound any k, length-independent Float/Byte coherence). Time-domain: destination-copy same-derivation coherent. 7 verify GREEN (A1 A2 A3 A2b A3b TD-A2 TD-A3). CHARACTERIZED: eps 1e-3/1e-4 -> float readbacks+getChannelData effectively noised (high-value fp protected), 8-bit byte readbacks quantized-away (low-value visualizer, accepted trade; byte-unit coherence checks non-discriminating -> float-unit discriminator committed). AudioWorklet raw-sample = possible residual (noted).
+Task 4: complete (commits 625d543..6d29bf5, review clean ✅ Approved). 3 SP0 scalar overrides (baseLatency/outputLatency GetDouble, maxChannelCount GetUint32), no-op-absent confirmed byte-identical. sampleRate NOT added (scope). Internal-caller: only audio_context.cc:590 (UMA histogram maxChannelCount, report-only safe); controller confirmed BLINK-WIDE grep = zero other internal callers (Low finding closed). A4 RED->GREEN, 8/8 ALL_PASS.
+Task 5: complete (commits 6d29bf5..1fbd3c3, self-verified). patches/sp4-audio.patch (6 files: audio_buffer.cc/.h, realtime_analyser.cc, audio_context.cc, audio_destination_node.cc, BUILD.gn), APPLY_OK, apply.sh LAST after sp4-fonts. A5(no-new-surface, real non-vacuous — WebAudio prototypes carry own-keys)+A6(stock-fallback) via --capture-baseline. 10/10 ALL_PASS. Regression camoucfg 65/65 + sp4-fonts+sp4a+sp1b+sp3a+sp3b ALL_PASS. 44-step build.
+SP4-audio WHOLE-BRANCH REVIEW: SHIP code / fix-then-ship docs (opus). High-value vectors CLOSED (getChannelData/copyFromChannel, float FFT); byte readbacks documented-limitation; primitive/guard/scratch/scalars confirmed correct.
+  FindingA IMPORTANT (real tell, FIXING code): additive samples[i]+=delta turns all-zero silent buffer to +-1e-4 (stock=exact 0.0) -> tamper probe. Fix: additive skip exact-0.0 (relative already zero-safe).
+  FindingC MINOR (FIXING code): TD getters hash len-window not full fft_size -> length-dependent noise (A3b class, half-fixed). Fix: scratch over full window mirror freq.
+  DOCUMENTING residuals (follow-on gate): AudioWorklet process() raw input (confirmed real), ScriptProcessorNode onaudioprocess (guard leaks callback>=3), DynamicsCompressor.reduction, latency-vs-real-sampleRate frame-integrality caveat (preset layer).
+SP4-audio WHOLE-BRANCH FIX (commit 1df1949): FindingA additive-zero (A7 GREEN silent=0.0), FindingC TD length-independence (TD-A3b RED 1024/1024 -> GREEN 0/1024, full fft_size scratch both TD getters). Residuals documented (AudioWorklet/ScriptProcessor/reduction/latency-coherence). 12/12 ALL_PASS, camoucfg 47/47. Patch re-extracted 6-file + FIX C. NOTE: fix agent crashed twice (API errors) mid-work; controller completed inline (verify TD-A3b scoring + EXPECTED 12 + FIX C realtime_analyser).
+
+========================================================================
+SP4-media START (base 33c49ed) — enumerateDevices device-count spoof (port Camoufox 4-key). User scope 2026-09-01: DEVICES ONLY; codec matrix (canPlayType/isTypeSupported/decodingInfo) documented as build-flag SP (proprietary_codecs+ffmpeg_branding=Chrome), NOT a Blink lie (functional-mismatch tell).
+  Plan: docs/superpowers/plans/2026-09-01-sp4-media.md (3 tasks). Measurement: docs/superpowers/measurements/2026-09-01-sp4-media-surfaces.md.
+  Design: DevicesEnumerated override media_devices with configured counts (micros/webcams/speakers) empty-field devices when mediaDevices:enabled; defaults 3/1/1. Keys 57->61. Secure-context verify (127.0.0.1 echo_server). Post-permission id/label = media-ii deferred.
+Task 1: complete (commits 33c49ed..6e87e23, review clean ✅ Spec+Quality). 4 mediaDevices: keys (61), colon-namespaced, triple-consistency 61/61/61 verified in-repo. 5/5 CamoucfgKeysTest on 33-step build. Minor(LOG): commit lacks Co-Authored-By (brief verbatim msg; consistent w/ prior SP commits, not rebasing hash chain).
+Task 2: complete (Mac commit fdf2fbf verify-only, Blink edits in checkout; review clean ✅ Spec+Quality). DevicesEnumerated override before ReportCompletedEnumerateDevices, gated kMediaDevicesEnabled, defaults 3/1/1, g_empty_string, std::move; BUILD.gn +//components/camoucfg. RED M1/M3 FAIL (4-step build) -> GREEN 4/4. Correctness: absent-key no-op structural; UMA bool report-only (not leak); empty-cap InputDeviceInfo coherent pre-permission. M2 pre-hook PASS coincidence (stock empty) but meaningful post-hook across 9 devices. Minor(LOG): comment prefix SP4-media: vs Camoucrome:.
+Task 3: complete (commit 3554406, self+regression). patches/sp4-media.patch (2 files: media_devices.cc, mediastream/BUILD.gn), APPLY_OK round-trip (3-step rebuild, sp4_media 4/4). apply.sh wired LAST after sp4-audio. Regression: unittests 55/55, sp4_media 4/4, sp4_audio 12/12, sp4_fonts 7/7, sp4a 6/6, sp1b 8/8 — zero regression. Concern(none): used verify_sp4a.py (verify_sp4a_screen.py doesn't exist).
+SP4-media WHOLE-BRANCH REVIEW (opus): SHIP as Layer-1, fix-then-ship docs. Code CORRECT (ctor arity/order, insertion point = single JS resolution, SP0 rule-5 no-op structural, keys 61 triple-consistency, BUILD/apply all verified). Codec §2 deferral accurate (no action).
+  All findings DOC-ONLY (controller applied inline, commit 2d3fafc):
+  F1 IMPORTANT(undoc->FIXED): getUserMedia count-coherence phantom-webcam pre-permission (default webcams=1 on camera-less host -> NotFoundError vs enumerate=1); verify can't see (content_shell fake-device+counts-only). -> §1.5b.
+  F2 IMPORTANT(partial->FIXED): track getSettings()/getCapabilities() real deviceId/groupId/label bypass DevicesEnumerated; spoof CREATES enumerate-vs-track incoherence post-grant. -> §1.5b.
+  F3/F4 MINOR(undoc->FIXED): selectAudioOutput() real output, ondevicechange real hotplug ungated. -> §1.5b.
+  F5 VERIFY-ITEM(undoc->FIXED doc): iframe/permissions-policy unconditional replace could inflate restricted subframe; needs browser-side read, content_shell can't test. -> §3.1 open item.
+  F6 MINOR: unclamped uint32 counts (matches Camoufox, no clamp) -> doc note counts stay realistic. NO code (operator self-config).
+  Test notes(LOG, not blocking): M2 all() vacuous-pass neutralized by M1 count==9 gate; captured 4/4+non-zero-build evidence lives in task-2/task-3 reports (goes in PR body).
+SP4-media COMPLETE — 3 tasks + per-task reviews + whole-branch, all clean. Code correct, ships Layer-1. Verify sp4_media 4/4; regression unittests 55/55, sp4_audio 12/12, sp4_fonts 7/7, sp4a 6/6, sp1b 8/8 zero-loss.
+
+========================================================================
+SP4-timezone/locale START (base f53c675) — config-drive Chromium's NATIVE TimeZoneController + LocaleController (reuse, NOT reimplement Camoufox FF-engine rewrite). Measured: P1 CAMOU_CONFIG keys unread=gap (main+worker leak real UTC/en-US); P2 CDP native override fully coherent incl workers (America/New_York+fr-FR, DST offset, localized names). User scope 2026-09-01: single locale key + fallback to SP1b navigator.language.
+  Plan: docs/superpowers/plans/2026-09-01-sp4-timezone-locale.md (3 tasks). Measurement: .../measurements/2026-09-01-sp4-timezone-locale-surfaces.md.
+  Design: hook CoreInitializer::Initialize() after TimeZoneController::Init(); read timezone:id -> SetTimeZoneOverride (RAII handle held in static NoDestructor), locale:tag (fallback kNavigatorLanguage) -> LocaleController::SetLocaleOverride(claiming). Keys 61->63. NO BUILD change (core already deps camoucfg). Timing = open impl Q, RED-first gate + first-frame fallback. Interaction: single-owner override vs Playwright CDP timezone_id/locale (launcher must route via CAMOU_CONFIG).
+Task 1: complete (commit 34a3d25, inline review clean ✅ Spec+Quality). 2 keys timezone:id + locale:tag (63), colon-namespaced, triple 63/63/63 enforced. 5/5 CamoucfgKeysTest on 34-step build.
+Task 2: complete (Mac commit c5c78f0 verify-only, Blink edit in checkout; review clean ✅ Spec+Quality). Hook in core_initializer.cc after TimeZoneController::Init(): timezone:id->SetTimeZoneOverride (RAII handle static NoDestructor), locale:tag(fallback kNavigatorLanguage)->SetLocaleOverride(claiming). RED 1/6 (T1-T5 FAIL) -> GREEN 6/6, 4-step build, no relocation (no crash 5 launches). DEVIATION(verified correct): String::FromUTF8->FromUtf8 (repo convention, prior patches use FromUtf8). Correctness: NoDestructor correct, null-handle harmless, once-per-process safe, timing better-than-CDP (runs before isolates), verify NO-CDP proves CONFIG path.
+  WHOLE-BRANCH ITEM (Important, non-blocking): discarded return values -> malformed timezone:id OR locale:tag silently keeps REAL OS value, NO fallback (symmetric gap, both surfaces; implementer noted only locale). Operator-input not page-input, matches CDP-path behavior, doesn't break rule 5. Reviewer: acceptable Layer-1 best-effort; recommend follow-up warn-log via camoucfg bad-input pattern. -> decide in whole-branch (batch any code fix).
+Task 3: complete (commit 726d7da, self+regression). patches/sp4-tz-locale.patch (1 file core_initializer.cc), APPLY_OK round-trip (reset RESET_CLEAN, reapply-only left sp1b 8/8 green = 0 contamination). apply.sh wired LAST after sp4-media. Regression: unittests 55/55 (0-step, no camoucfg src touched), sp4_tzlocale 6/6, sp4_media 4/4, sp4_audio 12/12, sp4_fonts 7/7, sp4a 6/6, sp1b 8/8 — zero regression. Note: this commit carries Co-Authored-By trailer (deviates from prior trailer-less SP commits; correct per global rule).
+Fix (whole-branch Finding 3): complete (commit af3924b). 2 LOG(WARNING) in core_initializer.cc (kInvalidTimezone; SetLocaleOverride non-empty error) -> malformed timezone:id/locale:tag warn not silently leak. No behavior change, no auto-fallback. 3-step build, verify STAYED 6/6, patch re-extracted 1-file both LOG present. Docs (Findings 1/2/4+casing) committed aeac3d1 inline.
+SP4-timezone/locale COMPLETE — 3 tasks + per-task reviews + whole-branch (opus, SHIP Layer-1) + 1 code fix + doc fixes. verify 6/6, regression unittests 55/55 + sp4_media 4/4 + sp4_audio 12/12 + sp4_fonts 7/7 + sp4a 6/6 + sp1b 8/8 zero-loss.
+
+========================================================================
+SP4-webrtc-ip START (base 431f549) — config-drive Chromium's NATIVE webrtc_ip_handling_policy renderer pref (reuse, like tz/locale). User scope 2026-09-01: IP-handling-policy lever (NOT Camoufox fake-IP rewrite, NOT force-mDNS). Measured: stock mDNS-hides local IP by default (.local); RAW local IP 172.22.42.251 leaks under fake-device flags (media-perm gap); public-IP via STUN = proxy-defeating leak, harness-unverifiable (no STUN/proxy).
+  Plan: docs/superpowers/plans/2026-09-01-sp4-webrtc-ip.md (3 tasks). Measurement: .../measurements/2026-09-01-sp4-webrtc-ip-surfaces.md.
+  Design: hook GetWebRTCRendererPreferences (content/renderer/renderer_blink_platform_impl.cc:649) after per-URL loop; override *ip_handling_policy from webrtc:ipHandlingPolicy via blink::ToWebRTCIPHandlingPolicy; validate against 4 k* string constants, LOG(WARNING) on unrecognized (tz-locale lesson up front). Key 63->64. content/renderer/BUILD.gn NEEDS +//components/camoucfg (FIRST content/renderer hook). Verify W1(policy suppresses private IP under fake-device flags)+W2(no-op) RED-first; public-IP benefit harness-unverifiable. Deferred webrtc-ii: fake-local-IP (webrtc:localipv4/ipv6, libwebrtc port allocator), force-mDNS-always-on.
+Task 1: complete (commit 09cd423, inline review clean ✅ Spec+Quality). 1 key webrtc:ipHandlingPolicy (64), colon-namespaced, triple 64/64/64. 5/5 CamoucfgKeysTest on 35-step build.
+Task 2: complete (Mac commit c76b3f9 verify-only, checkout edits in WSL; review clean ✅ Spec+Quality). Override in GetWebRTCRendererPreferences after per-URL loop: webrtc:ipHandlingPolicy validated vs 4 blink::kWebRTCIPHandling* -> ToWebRTCIPHandlingPolicy, else LOG(WARNING). content/renderer/BUILD.gn +//components/camoucfg (first content/renderer hook). ScopeFor(nullptr) compiled first try (blink_scope.h fwd-declares ExecutionContext). RED 1/2 W1 FAIL leaked 172.22.42.251 -> GREEN 2/2, 7-step build.
+  CONTROLLER CHARACTERIZATION (resolves reviewer Important): on WSL box (single private iface, no STUN), default_public_interface_only AND disable_non_proxied_udp both -> 0 candidates (empty), NOT masked/replaced. So W1 GREEN = empty-set (vacuous-ish) but paired W2 (no-op -> 172.x leaks) still proves HOOK TAKES EFFECT (RED 172.x -> GREEN empty = config caused change). Real deploy w/ public route+STUN would emit public-only (intended mask); empty here = harness artifact (no public route/STUN).
+  WHOLE-BRANCH ITEMS (residuals): (1) verify W1 proves hook-took-effect via candidate-set change, NOT real-world masking (harness no STUN) — doc limitation. (2) empty/host-less candidate set is itself a detectable anomaly (tell); protective policy w/o working TURN/proxy BREAKS WebRTC connectivity rather than masks — product caveat. (3) opt-in: absent config -> stock leak (rule 5). (4) deferred webrtc-ii: fake-IP + force-mDNS = the invisible levers.
+Task 3: complete (commit 65ef789, self+regression). patches/sp4-webrtc-ip.patch (2 files: renderer_blink_platform_impl.cc, content/renderer/BUILD.gn), APPLY_OK round-trip byte-identical. apply.sh wired LAST after sp4-tz-locale. Regression: unittests 55/55, webrtc 2/2, tzlocale 6/6, media 4/4, audio 12/12, fonts 7/7, sp4a 6/6, sp1b 8/8 — zero regression.
+SP4-webrtc-ip WHOLE-BRANCH REVIEW (opus): SHIP as Layer-1, NO code change (doc-only). Mechanical all pass (64 triple, placement config-wins, 4-constant validate+LOG(WARNING) stricter than snippet, BUILD dep, ScopeFor(nullptr) valid, apply LAST). Correctness pass: rule-5, unrecognized->real-pref-retained, single choke frame-independent (GlobalScope read) -> covers worker PCs.
+  Doc fixes applied inline (commit 4f681ee): F1 empty-set characterization (both policies -> 0 candidates on no-STUN box = tell + connectivity break w/o TURN/proxy; real deploy masks to public-only); F2 verify relabeled hook-took-effect gate (causality = RED record + non-empty baseline, W1 passes on empty any([])==False); Minor align §3 snippet to shipped validating version + worker-path note. F5 benign (base/logging.h transitive, no action). Optional W2-nonempty-assert NOT done (reviewer: not required; causality proven).
+SP4-webrtc-ip COMPLETE — 3 tasks + reviews + whole-branch, all clean. verify webrtc 2/2, regression unittests 55/55 + tzlocale 6/6 + media 4/4 + audio 12/12 + fonts 7/7 + sp4a 6/6 + sp1b 8/8 zero-loss.
+
+========================================================================
+SP4-voices START (base 04787d9) — inject speechSynthesis.getVoices() list + fake speak() completion. User scope 2026-09-02: FULL PARITY (list + fake speak, not list-only). Measured: stock content_shell getVoices()=0 voices (empty=tell); choke SpeechSynthesis::getVoices()/OnSetVoiceList (voice_list_) + StartSpeakingImmediately (speak path); mojom SpeechSynthesisVoice{voice_uri,name,lang,is_local_service,is_default}=exact Camoufox match.
+  Plan: docs/superpowers/plans/2026-09-02-sp4-voices.md (4 tasks). Measurement: .../measurements/2026-09-02-sp4-voices-surfaces.md.
+  Design: camoucfg typed GetVoices accessor (VoiceConfig struct, parses voices:list JSON array, keeps base::Value out of public API) + 3 keys (voices:list, voices:fakeCompletion default true, voices:fakeCompletion:charsPerSecond default 12.5); keys 64->67. Blink: ApplyCamouVoices() builds voice_list_ from config (getVoices guarded + OnSetVoiceList re-apply); StartSpeakingImmediately intercept for injected voice -> fake start + PostDelayedTask end (text.len/(cps*rate)) or SpeakingErrorOccurred. modules/speech BUILD +camoucfg. Deferred voices-ii: pause/resume/boundary on fake voice, blockIfNotDefined partial-merge.
+  Tasks: 1 camoucfg(GetVoices+keys+unittests) 2 getVoices-injection+V1/V2 3 speak-fake-completion+V3/V4 4 patch+apply+regression.
+Task 1: complete (commit 37fa3f8, review clean ✅ Spec+Quality). camoucfg VoiceConfig + GetVoices typed accessor (base::Value out of public API) + GetVoicesFrom (mirrors GetStringListFrom) + 3 keys (voices:list/fakeCompletion/:charsPerSecond, 67 triple verified). 19/19 tests incl 2 new GetVoices + EveryDeclaredConstantIsInAllKeys, 41-step build. DEVIATION approved: base::Value::Dict->base::DictValue (fork idiom, 13+ sites, coherence_validator_unittest precedent). Minor(LOG whole-branch): non-dict-list-entry branch shipped but untested (brief specced absent+not-a-list only; GetStringList has same untested mixed-list path).
+Task 2: complete (Mac commit 3911326 verify-only, checkout edits speech_synthesis.cc/.h + modules/speech/BUILD.gn; review clean ✅ Spec+Quality). ApplyCamouVoices() builds voice_list_ from GetVoices (mojom SpeechSynthesisVoice::New, String::FromUtf8); getVoices guarded + OnSetVoiceList reset-guard+re-apply+single VoicesDidChange (config wins over mojo push). BUILD +//components/camoucfg. RED 1/2 V1 FAIL count0 -> GREEN 2/2, 17-step build no compile fixes. Rule-5 early-return-before-clear (guard stays false) verified by inspection.
+  WHOLE-BRANCH NOTE: V2({}->count0) DEGENERATE on content_shell (stock voices empty -> 0==0 can't distinguish rule-5 from a buggy unconditional clear); rule-5 ordering rests on CODE INSPECTION only, NO test exercises config-absent+nonempty-real-list (harness has no TTS backend -> inherently unverifiable, same shape as webrtc empty-set honesty). OnSetVoiceList "replaced"=prose slip (diff inserts before existing VoicesDidChange; single fire, correct). Task 3 edits SAME checkout files -> must build on Task 2 edits.
+Task 3: complete (Mac commit a588a31 verify-only, checkout edits build on Task2 same files; review clean ✅ Spec+Quality, no blocking). IsCamouVoice (voiceURI match vs GetVoices) + StartSpeakingImmediately intercept: fakeCompletion true -> DidStartSpeaking + weak-guarded PostDelayedTask(kMiscPlatformAPI) DidFinishSpeaking(kNoError) after text.len/(cps*rate); false -> SpeakingErrorOccurred; non-injected -> original mojo path. RED V3 FAIL -> GREEN 4/4, 14-step build. DEVIATION approved: WTF::BindOnce->BindOnce (fork idiom, 0 WTF:: hits, blink namespace). Correctness verified from source: queue-advancement sound (DidFinishSpeaking->HandleSpeakingCompleted pops+re-enters StartSpeakingImmediately, re-checks IsCamouVoice per utterance), cancel/teardown guard sound, re-entrancy (sync start->cancel/speak) traced clean, early-return gates mojo, rate>0 div-guard.
+  WHOLE-BRANCH NOTES: (1) V4(fakeCompletion:false) WEAK - already errored at RED for wrong reason; V3 is the real proof. FIX: tighten V4 to events==["error:synthesis-failed"] (verify exact IDL string) + ms upper bound (synchronous SpeakingErrorOccurred->kErrorOccurred). Verify-only, no rebuild. (2) stale-timer on utterance-object REUSE (cancel then re-speak same obj) -> possible early 'end' from stale task; narrow, NOT UAF/double-fire. Doc. (3) pause()/resume() on faked utterance diverges (mojo Pause to backend never Started; delayed end fires regardless) - out of Task3 scope, voices-ii. Doc.
+Task 4: complete (commit fdb2cbf, self+regression). patches/sp4-voices.patch (3 files: speech_synthesis.cc/.h, modules/speech/BUILD.gn), git status pre-extract = exactly 3 files (no stray), 3 diff --git headers, APPLY_OK round-trip (9-step), sp4_voices 4/4. apply.sh wired LAST after sp4-webrtc-ip. Regression: unittests 57/57, voices 4/4, webrtc 2/2, tzlocale 6/6, media 4/4, audio 12/12, fonts 7/7, sp4a 6/6, sp1b 8/8 — zero regression.
+SP4-voices WHOLE-BRANCH REVIEW (opus): ONE C++ fix REQUIRED (disputes per-task "no code change"). Mechanical all correct; getVoices leak-enum CLEAN (getVoices only enum path, no pre-injection window, onvoiceschanged post-inject, no worker path Exposed=Window); coherence adequate.
+  FINDING A CRITICAL (undoc, MUST fix code): delayed fake-completion lambda guard `self && u == CurrentSpeechUtterance()` -> u is WeakPersistent(null after GC), CurrentSpeechUtterance null on empty queue -> after cancel()+GC in delay window: nullptr==nullptr TRUE -> DidFinishSpeaking(nullptr) -> HandleSpeakingCompleted pop_front on empty deque + FireEvent(kEnd,nullptr) null-deref = RENDERER CRASH in NORMAL op (long fake utterance+cancel+GC). Per-task #3 missed empty-queue null path. FIX: add `u &&` to guard.
+  FINDING B IMPORTANT (undoc, should-fix code, honors full-parity scope): onstart fires SYNCHRONOUSLY inside speak() on fake path (DidStartSpeaking->sync DispatchEvent) vs real backend async -> trivial probe (flag before/after speak). FIX: PostTask(start,0-delay) async, keep before delayed end, guard both.
+  FINDING C MINOR (verify): V4 weak -> assert events==["error:synthesis-failed"] (kSynthesisFailed confirmed) + ms<~100 (SpeakingErrorOccurred synchronous).
+  FINDING D MINOR (doc): V2 rule-5 non-destructiveness by-inspection only (content_shell stock empty, no TTS backend -> config-absent+nonempty-real-list unexercisable).
+  FINDING E MINOR (doc): deterministic LINEAR end timing len/(cps*rate) = tell; default-voice (u.voice unset) -> IsCamouVoice false -> real backend-less mojo path (tell on backend-less targets).
+  PLAN: fix subagent A+B code (patches/sp4-voices.patch) + C+new V5(async-start probe) verify; controller inline D+E+measurement honesty. Then re-verify 5/5, re-extract patch, push.
+SP4-voices WHOLE-BRANCH FIX: doc ea00f7d (async-start/null-guard honesty + D/E residuals + verification honesty) + code b9989e0 (FIX A u&& null-guard, FIX B async onstart PostTask, C tightened V4=['error:synthesis-failed']+ms<100, new V5 async-start proof). Compiles 3-step, verify 5/5 ALL_PASS. Patch re-extracted 3-file via 'git diff HEAD' (staged files). auto runner (GetTaskRunner=scoped_refptr). SP4-voices COMPLETE — 4 tasks + reviews + whole-branch (opus, caught CRITICAL crash per-task missed) + 1 code fix + doc fixes.
+
+========================================================================
+SP4-geo START (base ddc70da) — synthesize navigator.geolocation position from CAMOU_CONFIG at Blink QueryNextPosition. Measured: P0 stock getCurrentPosition -> code 3 TIMEOUT (content_shell auto-grants perm, no backend); P1 CDP setGeolocationOverride -> full success (native synthesizes, no backend). tz/locale/webrtc pattern again.
+  Plan: docs/superpowers/plans/2026-09-02-sp4-geo.md (3 tasks). Measurement: .../measurements/2026-09-02-sp4-geo-surfaces.md.
+  Design: intercept Geolocation::QueryNextPosition (core/geolocation/geolocation.cc): lat+long both present -> build device::mojom::blink::GeopositionResult (accuracy value_or 100, timestamp Now, ValidateGeoposition-valid) -> POST OnPositionUpdated WrapWeakPersistent (NOT inline -> avoids updating_ re-entrancy; once-per-arm no watcher loop) -> bypass mojo. Permission RESPECTED (QueryNextPosition only post-grant; NO auto-grant unlike Camoufox — deny-then-spoof incoherent + browser-process). Keys 67->70 (geolocation:latitude/longitude/accuracy). NO BUILD change (core deps camoucfg, geoposition.mojom-blink already included). Deferred geo-ii: accuracy decimal-precision derivation. Verify secure-context (127.0.0.1) G1-G4.
+Task 1: complete (commit 08afb2d, inline review clean ✅ Spec+Quality). 3 keys geolocation:latitude/longitude/accuracy (70 triple), colon-namespaced. 5/5 CamoucfgKeysTest on 37-step build.
+Task 2: complete-with-fix (Mac commits 1761b63 verify + f1f4081 G5, checkout edits geolocation.cc/.h; review pending). Synth at QueryNextPosition (POST OnPositionUpdated WrapWeakPersistent, ValidateGeoposition-valid, accuracy value_or 100, timestamp Now). RED 1/4 -> GREEN 4/4 (10-step). BUSY-LOOP BUG (my measurement §3 was WRONG): OnPositionUpdated tail line762 `if(HasListeners()) UpdateGeolocationState()` re-arms QueryNextPosition for standing watchPosition -> synth resolves instantly -> infinite loop. FIXED via camou_geo_delivered_ flag (reset at getCurrentPositionForBindings+watchPositionForBindings entry, check+set in QueryNextPosition config branch -> deliver once, quiet on re-arm = stationary position). G5 (standing watch count=1) GREEN, 5/5, 12-step. Measurement §3 corrected (commit after ddc70da).
+  WHOLE-BRANCH ITEM (real edge, undoc): after standing-watch quiet-return, updating_ stuck true (no OnPositionUpdated to reset) -> a getCurrentPosition issued WHILE watchPosition stands (maximumAge=0) skips QueryNextPosition in UpdateGeolocationState -> hangs (no default timeout = forever). Real jittery hw wouldn't; perfectly-static synth does. Narrow (page must watch+getCurrentPosition concurrently). Candidate fix: reset updating_=false too at request entry when config present (safe: no real mojo query pending in config path). Whole-branch to adjudicate fix-vs-document.
+Task 2: COMPLETE (synth + 2 fixes; Mac verify commits 1761b63/f1f4081/a39698b; checkout edits geolocation.cc+.h; task-review clean ✅ Spec+Quality). QueryNextPosition synth (POST OnPositionUpdated). FIX1 busy-loop: camou_geo_delivered_ flag (G5==1). FIX2 starvation: HasCamouGeoConfig() helper gates updating_=false reset at 2 ForBindings entry points -> getCurrentPosition-during-standing-watch resolves (G6 RED code:3 -> GREEN). 6/6 ALL_PASS, 18-step. Measurement §3 corrected twice (loop + starvation). NON-ISSUE (logged): internal non-bindings GetCurrentPosition/WatchPosition (C++ callers) lack reset but not JS-reachable -> no fingerprint gap. Patch is now 2 files (geolocation.cc + geolocation.h).
+Task 3: complete (commit d3a36d2, self+regression). patches/sp4-geo.patch (2 files: geolocation.cc + geolocation.h, synth + both fixes), git status = 2 files, 2 diff --git headers, APPLY_OK round-trip (12-step). apply.sh wired LAST after sp4-voices. Regression: unittests 57/57, geo 6/6, voices 5/5, webrtc 2/2, tzlocale 6/6, media 4/4, audio 12/12, fonts 7/7, sp4a 6/6, sp1b 8/8 — zero regression.
+SP4-geo WHOLE-BRANCH REVIEW (opus): SHIP, NO further code change. Both fixes coherent — all 6 state-machine traces hold (getCurrentPosition alone / standing watch / getCurrentPosition-during-watch / 2 concurrent watches / clearWatch-then-request / visibility), duplicate delivery bounded, updating_ never starves an uncovered request (only entry points create new requests, both reset; HasCamouGeoConfig safety holds — config path never issues real mojo). Keys 70 triple, synth+factory, apply LAST, no BUILD change all confirmed. G1-G6 non-degenerate (each fix's test fails without its fix; G2 distinguishes). No third bug.
+  Doc fixes applied inline (commit 797c146): §4 no-jitter/advancing-timestamp (=CDP setGeolocationOverride, geo-ii), out-of-range-config silent-timeout (SP5a validator follow-on), visibility-race (sub-ms, not weaponizable, no fix), is_precise not JS-visible; §3 ScopeFor(nullptr)->ScopeFor(GetExecutionContext()) match shipped.
+SP4-geo COMPLETE — 3 tasks + reviews + 2 code fixes (busy-loop + starvation, both caught pre-ship) + whole-branch (opus, confirmed fixes coherent, no 3rd bug). verify geo 6/6, regression unittests 57/57 + all prior verifies green.
+
+========================================================================
+SP4-battery START (base 2f931aa) — config-override 4 BatteryManager getters (last tail slice, trivial). Measured: getBattery [SecureContext]-gated (undefined about:blank; use 127.0.0.1); stock secure = charging:true/level:1/chargingTime:0/dischargingTime:Infinity (desktop plugged-full default, already coherent for desktop). Choke: battery_manager.cc charging()/chargingTime()/dischargingTime()/level() trivial getters over battery_status_.
+  Plan: docs/superpowers/plans/2026-09-02-sp4-battery.md (3 tasks). Measurement: .../measurements/2026-09-02-sp4-battery-surfaces.md.
+  Design: SP0 per-getter override (config first, real fallback, no-op absent). Keys 70->74 (battery:charging bool + level/chargingTime/dischargingTime double). modules/battery BUILD +camoucfg. dischargingTime Infinity kept by omitting key (JSON no Infinity). Deferred battery-ii: onchargingchange/onlevelchange event timing. Verify secure-context B1-B5.
+Task 1: complete (commit a4fd6ab, inline review clean ✅ Spec+Quality). 4 keys battery:charging/level/chargingTime/dischargingTime (74 triple), colon-namespaced. 5/5 CamoucfgKeysTest on 38-step build.
+Task 2: complete (Mac commit c59a014 verify-only, checkout edits battery_manager.cc + modules/battery/BUILD.gn; inline review clean ✅ Spec+Quality, no issues). 4 getters SP0 override (charging GetBool, level/chargingTime/dischargingTime GetDouble; config-first, battery_status_ fallback), ScopeFor(GetExecutionContext()) clean member. BUILD +//components/camoucfg. RED B1-B4 FAIL -> GREEN 5/5, 4-step build. Textbook SP0, no subtleties.
+Task 3: complete (commit 486366e, self+regression). patches/sp4-battery.patch (2 files: battery_manager.cc + modules/battery/BUILD.gn), 2 diff headers, APPLY_OK round-trip (3-step). apply.sh LAST after sp4-geo. Regression: unittests 57/57, battery 5/5, geo 6/6, voices 5/5, webrtc 2/2, tzlocale 6/6, media 4/4, audio 12/12, fonts 7/7, sp4a 6/6, sp1b 8/8 — zero regression.
+SP4-battery WHOLE-BRANCH REVIEW: INLINE (controller, not opus dispatch) — justified: 4 identical textbook SP0 getter overrides, near-zero bug surface, no state machine (unlike voices/geo which warranted opus). Mechanical 74 triple + 4 getters correct types + BUILD dep + apply LAST all confirmed (regression green). Correctness: 4 independent rule-5 getters, no shared state, absent->stock (B5). Residuals §4-documented (event-timing battery-ii, coherence tuple, level-precision); getBattery only surface. Test honesty: B5 NON-degenerate (stock 4 distinct non-empty values true/1/0/Infinity genuinely proves rule-5, unlike voices/media empty no-ops). No code/doc change. SHIP.
+SP4-battery COMPLETE — 3 tasks + reviews (2 inline + 1 dispatched-none-needed) + inline whole-branch. verify battery 5/5, regression all green. LAST SP4 TAIL SLICE.
+
+========================================================================
+SP7-CODECS (Wave A #1) COMPLETE (commit 77d80ab, pushed). Executed SP7 D2 resolved decision (00-conventions 2026-08-27) — NOT a new scope decision, NOT a Blink patch, controller-driven (no SDD subagent). Applied proprietary_codecs=true + ffmpeg_branding="Chrome" to checkout args.gn + gn gen + content_shell rebuild (~43min ffmpeg+media; foreground hit 10min Bash cap -> resumed background b8pz69xdp). Verify C1-C4 PASS: H.264/AAC canPlayType "probably" + isTypeSupported true (were ""/false), bear.mp4 H.264 functional decode videoWidth=320, VP9/etc unchanged. Regression sp4-media 4/4 + sp4-audio 12/12 + camoucfg green. Persisted settings/build-args.gn (tracked GN args, SP6 consumes; NOT apply.sh). Distribution licensing OPEN (SP7 D2 part2, legal). Widevine honest. Chromium-branding codec tell CLOSED.
+
+========================================================================
+WINDOW-GEOMETRY (Wave A #2) START (base 5df9cc4) — config-drive LocalDOMWindow getters, close sp4a coherence gap. User scope 2026-09-02: getter cluster ONLY (outer*/screenX-Y); inner*/client*/dpr = LAUNCHER-layer (layout-driven, getter-lie breaks coherence); history.length truthful (dubious). Measured stock: outerWidth 812/inner 800 (chrome delta tell), screenX/Y=0 (origin tell). Choke: LocalDOMWindow::outerWidth/outerHeight/screenX/screenY all read chrome_client.RootWindowRect. screenLeft/Top = IDL alias of screenX/Y (W5 verifies).
+  Plan: docs/superpowers/plans/2026-09-02-window-geometry.md (3 tasks). Measurement: .../measurements/2026-09-02-window-geometry-surfaces.md.
+  Design: SP0 per-getter override (GetInt32, config-first, RootWindowRect fallback), ScopeFor(this). Keys 74->78 (window.outerWidth/outerHeight/screenX/screenY, DOT). NO BUILD change (core deps camoucfg). Verify W1-W7 (W7 = inner* untouched proof). Coherence outer*<=screen operator/preset. Deferred: getScreenDetails audit.
+Task 1: complete (commit 57c7b4e, inline review clean ✅ Spec+Quality). 4 keys window.outerWidth/outerHeight/screenX/screenY (78 triple), DOT-namespaced (mirror JS). 5/5 CamoucfgKeysTest on 39-step build.
+Task 2: COMPLETE (Mac verify commit 536499f, checkout edit local_dom_window.cc; inline review + fenced-frame fix). 4 getter SP0 overrides (GetInt32, config-first, RootWindowRect fallback). screenLeft/Top = inline header wrappers over screenX/Y -> W5 free. FIX (fenced-frame): moved config override below IsInFencedFrameTree()->innerWidth() guard in outerWidth/outerHeight (fenced frames keep stock innerWidth; screenX/Y no guard, top placement). RED 2/7 -> GREEN 7/7 (W7 = inner* untouched proof). 3-step rebuild. Patch = 1 file (local_dom_window.cc).
+Task 3: complete (commit fde4087, self+regression). patches/window-geometry.patch (1 file local_dom_window.cc), APPLY_OK round-trip, apply.sh LAST after sp4-battery. Regression unittests 57/57, window-geometry 7/7, sp4a 6/6, battery 5/5, geo 6/6, sp1b 8/8 — zero regression.
+WINDOW-GEOMETRY (Wave A #2) COMPLETE — 3 tasks + inline reviews + fenced-frame fix. verify 7/7.
+  Task 3 flagged 3 PRE-EXISTING drift items (unrelated to window-geometry):
+  (1) FIXED (commit 5de9474): patches/sp4-tz-locale.patch was DELTA-ONLY (the af3924b warn-fix re-extraction used bare `git diff` while the original hook was staged in the index -> captured only the LOG(WARNING) delta, original hook+includes as context -> would FAIL apply.sh on a fresh checkout). Re-extracted via `git diff HEAD` (full), round-tripped pristine->apply->build 3-step->verify_sp4_tzlocale 6/6. Audited ALL 7 SP patches: only tz-locale was affected (others have camoucfg-include as +).
+  (2) NOT MINE (flag): patches/sp3a-canvas-noise.patch missing a DEPS include-rule line for canvas_noise.h (sp3a slice, pre-existing).
+  (3) NOT MINE (flag): content/browser/devtools/protocol/input_handler.cc uncommitted UAF-rework in the checkout — from OTHER live sp2b sessions sharing this WSL checkout (contamination hazard).
+
+========================================================================
+metric-jitter — canvas TextMetrics seed-jitter (Wave C)
+Plan: docs/superpowers/plans/2026-09-05-metric-jitter.md
+Measurement: docs/superpowers/measurements/2026-09-05-metric-jitter-surfaces.md
+BASE commit (before any metric-jitter code): 5de9474
+Branch: main (project convention; user drives push)
+Scope decision (user, 2026-09-05): FULL coherent-all — jitter every JS-readable
+  TextMetrics field, font-constants included (accepted the GetFontBaseline-mirror
+  fragility). Reuse canvas:seed (NO new key, count stays 78). NO DEPS/BUILD change.
+Design: perturb SOURCES not derived members. Text-dependent: xpos + 4 glyph edges
+  (tf_index). Font-constant: metric set M' (fa/fd/nta/ntd/hb/ib/ab, f_index) +
+  file-local MirroredBaseline reproducing GetFontBaseline on M'. Value-branch grid
+  (int->+-1, dyadic->k/64), zero-guard, resolved-font key. Two advisor reconciles:
+  (1) source-not-tail perturbation; (2) mirror IS needed (baseline_y re-reads the
+  jittered metrics; own-baseline-zero identities fail without it).
+Tasks: 1 canvas_noise PerturbMetric+CanvasSeed+unittest | 2 text_metrics.cc source
+  jitter + M'/mirror + verify J1-J11 | 3 patch + apply.sh + regression.
+REBASE-COUPLED: MirroredBaseline must track GetFontBaseline + y-block formulas.
+------------------------------------------------------------------------
+Task 1 (canvas_noise PerturbMetric + CanvasSeed + unittest): complete
+  (commit 67e7f81, review Spec ✅ / Approved, 14/14 build NON-ZERO 13 steps).
+  Minors (for whole-branch): M1 report elides raw gtest log at suite-split (cosmetic,
+  14/14 tally correct). M2 seed-grid {1,2,1234,0xDEADBEEF}×[0,20) duplicated across
+  IntegerStaysInteger/FractionalStaysDyadic tests, no shared helper (cosmetic, matches
+  file's non-parameterized style). No Critical/Important.
+Task 2 (Blink text_metrics.cc source-jitter + M'/mirror + verify J1-J11):
+  impl DONE (verify committed b470cd3; text_metrics.cc edit in checkout, extracted
+  to .superpowers/sdd/task-2-blink.diff — clean git-diff-HEAD, includes as +).
+  Evidence: RED-first J1/J4 FAIL + J11 PASS on stock (9/11); build NON-ZERO 13 steps;
+  GREEN 11/11, mirror gate live (seeds jitter fd +-1 yet B_ideographic/B_hanging stay
+  exactly 0 -> baseline_y' on jittered M'). Agent stalled during final cleanup when the
+  ssh box went unreachable (600s watchdog); substantive work complete before stall.
+  Impl deviations (reviewer to confirm): J6 scoped to (left,alphabetic); identity-4
+  corrected to aBBR(right)-aBBR(left)=-width. Review dispatched (opus, Mac-only).
+  BLOCKER: ssh box DOWN (timed out) -> Task 3 (patch round-trip + regression) blocked.
+Task 2: complete (verify commit b470cd3; text_metrics.cc delta in task-2-blink.diff,
+  patched in Task 3). Review Approved / Spec ✅, zero Critical/Important. Reviewer
+  independently verified mirror byte-exact (Risk 1 discharged: standalone NormalizedTypo*
+  delegate to the pair), seed=0 true no-op, J6/identity-4/J8 deviations all sound.
+  Minors (whole-branch): (a) J11 structurally blind to top/bottom/middle mirror-desync
+  (baseline_y-invariant + no own-named field) and to nta/ntd jitter (no witness field) --
+  both code-review-enforced, verified by inspection. (b) verify does 6 extra content_shell
+  launches (wasteful print-only). (c) Weight/Style RawValue cast to uint16 (lossless).
+  Task-3 follow-ups: run gn check on camoucfg dep; note mirror-coherence is CR-enforced.
+Task 3 driven by CONTROLLER (not subagent) -- long rebuild + ssh-flaky box; subagent
+  dies on ssh drop (killed Task 2 agent), controller is drop-resilient.
+Task 3 (patch + apply.sh + regression): complete (controller-driven).
+  patches/metric-jitter.patch extracted (git diff HEAD, 9699B, 3 camoucfg includes as +,
+  NOT delta-only). Round-trip: revert-to-pristine + git apply --3way = "Applied cleanly".
+  gn check //third_party/blink/renderer/core:core = "Header dependency check OK" (no
+  BUILD/DEPS change confirmed). Rebuild current. Regression ALL GREEN: metric_jitter
+  11/11, sp3a canvas-pixel ALL_PASS (shared canvas_noise.cc safe), window_geometry 7/7,
+  camoucfg unittests 43/43. apply.sh: +metric-jitter.patch after window-geometry (surgical).
+  Commits: feat 6ea7d01 (patch+apply), docs 30295ce (measurement+plan). Task 2 J11-blindness
+  note added to measurement §5.
+metric-jitter SLICE code-complete (5de9474..30295ce). Whole-branch review pending.
+Whole-branch review (opus): READY TO MERGE — Yes. Zero Critical/must-fix. Verified
+  vs pinned source: seed==0 byte-identity closed (NormalizedTypo delegation
+  simple_font_data.cc:351-359), worker thread-safe (ParsedConfig NoDestructor static),
+  patch hygiene clean. All issues deferrable for default build.
+DEFERRED FOLLOW-UPS (roadmap):
+  [IMPORTANT, must-not-forget] ExtendedTextMetrics geometry methods (getActualBoundingBox/
+    getSelectionRects/getTextClusters) leak real full-precision width — off by default
+    (status:experimental). Revisit BEFORE shipping --enable-experimental-web-platform-features.
+    (camoucrome normal posture = experimental OFF, so unreachable now.)
+  [minor] edge-order clamp: at <=4px integer glyph bounds, jr<jx possible (~1/9 seed) ->
+    SetRect clamps neg width to 0 -> zero-ink incoherence. Fix: jr=max(jr,jx); jb=max(jb,jy).
+  [minor] DCHECK_EQ(baseline_y_p, GetFontBaseline) under if(!seed) as mirror-desync tripwire.
+  [minor] ≤0.125px fractional jitter defeats full-precision measureText fp but not a ≥0.25px
+    bucketing attacker (sound tradeoff, named).
+  [recs] pristine-vs-patched seed-0 field diff as rebase tripwire; shared unit-test seed-grid
+    helper; make experimental-features posture an explicit gate in merge record.
+metric-jitter SLICE COMPLETE + merge-approved (5de9474..30295ce). Secret-scan next.
+PUSHED to origin/main (5de9474..30295ce) 2026-09-05. metric-jitter shipped.
+
+========================================================================
+media-ii Slice 1 — getSettings/getCapabilities/label coherence
+Plan: docs/superpowers/plans/2026-09-05-media-ii-getsettings.md
+Measurement: docs/superpowers/measurements/2026-09-05-media-ii-getsettings-surfaces.md
+BASE commit: 30295ce   Branch: main
+Scope (user "do all" of media-ii + phantom + audio-ii): this is Slice 1 of 3.
+4 advisor calls settled design: grant-aware (result_contains_nonempty_input_device_ids
+  discriminator), STATELESS transform-real-ids post-grant, hash keyed
+  (seed,kind,real_id,ORIGIN) -- origin fold critical (else cross-origin linkable id
+  for our users; Chromium salts per-origin). One helper both sites (enumerate + 3
+  track getters) = coherence by construction. Labels generic config-driven. Keys 78->82.
+  Preserve "default" sentinel. REVISES sp4-media patch. Residuals: pre-N/post-M count
+  (Slice 2), applyConstraints reverse-map (doc), selectAudioOutput/ondevicechange.
+Tasks: 1 SyntheticDeviceId helper + keys + BUILD | 2 media_devices.cc grant-aware
+  transform + media_stream_track_impl.cc 3 getters + verify M1-M11 | 3 patches
+  (re-extract sp4-media + new track patch) + apply.sh + regression.
+------------------------------------------------------------------------
+Task 1 (SyntheticDeviceId + keys 82 + BUILD): complete (commit 5a48835, review
+  Spec ✅ / Approved, 15/15 build NON-ZERO 42 steps). Implementer's advisor caught a
+  real hash-quality bug pre-commit (round counter folded LAST -> 4 output words
+  linearly related, distinguishable from HMAC-SHA256 by a linear oracle; 8 ids->2
+  deltas); fixed by folding round FIRST + InterWordDeltaIsNotAFixedConstant regression
+  test. Reviewer independently re-derived the algebra + confirmed the test catches the
+  mutant. Minors (whole-branch): continuation-indent cosmetic; doc-comment "indistinguishable
+  from HMAC-SHA256" is brief-inherited shape-claim not a full crypto proof (fine for scope).
+Task 2 (Blink grant-aware transform + 3 track getters + verify M1-M11): complete
+  (verify commit e9253f6; two Blink diffs task-2-{media_devices,track}.diff).
+  Review "Needs fixes" -> ONE Important blocker Issue 1 (partial-grant label leak:
+  any-input flag true on audio-only grant -> generic label stamped on ungranted-video
+  placeholder device_id="" -> {videoinput,"","","Integrated Camera"} impossible shape).
+  Reviewer ENDORSED the seed!=0 enumerate guard (keep, not veto). M6/M7/M8 legit env
+  reformulation (fake-device id rotates per launch). Cross-file kind/origin/group
+  byte-identical (M3 by construction).
+Task 3 (CONTROLLER-driven, box-flaky): Issue 1 FIXED (device_label gate on empty
+  device_id, symmetric w/ CamouMaskLabel). Confirmed --use-fake-ui grants ALL kinds
+  -> partial-grant unexpressible on content_shell -> fix inspection-verified. M1-M11
+  stay 11/11. Patches re-extracted (sp4-media.patch REVISED w/ grant-aware+fix 6950B;
+  media-ii-track.patch new 7439B; includes as +, not delta-only). Round-trip: git
+  checkout HEAD -- (not bare checkout, which reverts to staged) + apply --3way both =
+  clean. gn check OK. Regression: media_ii 11/11, sp4-media 4/4 (pre-grant unchanged),
+  camoucfg unittests 30/30. apply.sh +media-ii-track LAST. Measurement §7b: partial-grant
+  fix + getCapabilities{} (Slice 2) + seed==0 footgun documented.
+  Commits: helper 5a48835, verify e9253f6, patches 54eaba9, docs 0a40334.
+Deferred minors (whole-branch triage): #4 groupId assertion in M3 (coverage), #5 no
+  standing browser guard for origin/seed fold (unit+CR covered), T1 cosmetics.
+media-ii Slice 1 code-complete (30295ce..0a40334). Whole-branch review pending.
+Whole-branch review (opus): "No -- blocked solely on C1" then RESOLVED.
+  C1 (Critical, my Task-3 bug): re-extraction `git diff HEAD -- media_devices.cc`
+  DROPPED sp4-media.patch's modules/mediastream/BUILD.gn '//components/camoucfg' dep.
+  media-ii-track adds camoucfg includes same target -> fresh apply.sh fails gn check.
+  MASKED by every green (checkout already had dep; round-trip reverted only .cc).
+  FIXED: re-extracted sp4-media.patch WITH BUILD.gn; verified via whole-dir revert of
+  modules/mediastream/ + apply all 3 + gn check = "Header dependency check OK". Commit 7a45194.
+  I1 (post-stop label revert): tested via new M13 -> PASS (mask holds after stop, no leak).
+  I2 (groupId unasserted): added M12 -> PASS. verify M1-M13 all green.
+  Deferred minors: M-a null-check order, M-b label GetSettings round-trip cost, T1 cosmetics, #5.
+  LESSON (durable): re-extracting an existing patch must enumerate ALL paths from the OLD
+  patch's `diff --git` headers (git diff HEAD -- <every path>), and the round-trip revert
+  must cover every path the original touched -- NOT just the file edited. gn check must run
+  against a whole-dir revert, not the re-extracted files (which mask a dropped BUILD.gn dep).
+media-ii Slice 1 COMPLETE + merge-approved (30295ce..7a45194). Secret-scan next.
+PUSHED origin/main 30295ce..7a45194 (2026-09-06). media-ii Slice 1 shipped (5 commits).
+NEXT (do all): Slice 2 phantom-webcam (count coherence + getUserMedia openability), Slice 3 audio-ii.
+
+========================================================================
+media-ii Slice 2 — phantom-webcam (getUserMedia NotReadableError remap)
+Measurement: docs/superpowers/measurements/2026-09-06-phantom-webcam-surfaces.md
+BASE: 7a45194  Branch: main. CONTROLLER-driven (small ~25-line slice, box-flaky).
+Advisor reframed: NOT --use-fake-device (coherence trap: replaces whole list 3/1/3 +
+  test-pattern frames + auto-grant), NOT deep synthesis. The fix = Blink error remap:
+  a configured-but-unbacked device must reject getUserMedia with NotReadableError
+  (present, unstartable -- camera-in-use) not NotFoundError (absent, contradicts the
+  listed device = phantom tell). One case in UserMediaRequest::Fail (user_media_request.cc
+  NO_HARDWARE), gate mediaDevices:enabled && (Video()&&webcams>0 || Audio()&&micros>0).
+  No new key/helper; dep from sp4-media BUILD.gn (same mediastream target).
+Measured: phantom CONFIRMED on box (Run A: enumerate 1 video, gUM NotFoundError; Run B
+  fake-device gUM ok). Audio anomaly: gUM({audio}) -> NotSupportedError on headless box
+  (no audio subsystem, never reaches NO_HARDWARE) -> audio remap unexercised, video is
+  the tested vector; audio low-priority per sp4 §1.5b. verify_phantom P1-P6:
+  P1 stock NotFound, P2 spoof NotReadable (fix), P3 webcams=0 NotFound, P4 {} NotFound,
+  P5 fake-device ok, P6 audio NotSupported (no-regression). RED P2/P6 fail -> GREEN 6/6.
+  gn check OK; round-trip clean; media_ii 13/13 + sp4-media 4/4 regression.
+Commits: feat 292a2bb, docs 4515c86. Review dispatched (sonnet). Residuals: consumer
+  still gets no stream (black-track synthesis = Slice 2b browser-process); pre-N/post-M
+  count (Slice 2b); combined {video,audio} single-kind-spoofed edge (OR gate, documented).
+Slice 2 review (sonnet): "With fixes" -- code sound (gate/scope/patch-hygiene/DEPS all
+  independently verified vs sp4-media.patch/keys.h/apply.sh). ONE Important: measurement
+  §6 P6 overclaimed "audio -> NotReadableError" (the original plan) while the shipped
+  verify asserts NotSupportedError (audio path differs, remap unexercised). #44 trap.
+  FIXED (doc-only, amended docs commit): §6 P6 now states audio branch is coded-by-symmetry,
+  unexercised here. Off-switch/webcams=0/default-parity/combined-OR-gate all confirmed correct.
+  Slice 2 merge-ready.
+PUSHED origin/main 7a45194..ec0f379 (2026-09-06). Slice 2 phantom-webcam shipped.
