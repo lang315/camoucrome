@@ -1,0 +1,175 @@
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+index b463dfbdf9..83610ca422 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+@@ -25,6 +25,7 @@
+ 
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis.h"
+ 
++#include <cstdint>
+ #include <tuple>
+ 
+ #include "base/task/single_thread_task_runner.h"
+@@ -286,6 +287,16 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+   utterance->SetStartTime(millis / 1000.0);
+   is_paused_ = false;
+ 
++  // voices-ii: bump the per-speak generation for EVERY speak start, not only the
++  // fake branch. A page can speak() a camou voice, cancel(), then reassign the
++  // utterance's voice to a non-camou one and re-speak() the SAME object -- that
++  // re-speak takes the real/mojo path and would leave the counter untouched, so
++  // the first speak's stale fake tasks (which capture the old value and see the
++  // object current again) would still fire. Bumping here invalidates them
++  // regardless of which path the re-speak takes. Bumped in exactly this one
++  // place, so it stays monotonic.
++  const uint64_t gen = ++camou_fake_generation_;
++
+   if (IsCamouVoice(utterance)) {
+     // Fake completion: never touch the (backend-less) mojo path.
+     if (camoucfg::GetBool(camoucfg::ScopeFor(nullptr),
+@@ -296,36 +307,107 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+                               camoucfg::keys::kVoicesFakeCompletionCharsPerSecond)
+               .value_or(12.5);
+       const double rate = utterance->rate() > 0 ? utterance->rate() : 1.0;
++      const String text = utterance->text();
++      const unsigned text_len = text.length();
++      // voices-ii: deterministic per-utterance timing jitter in [-0.15, 0.15],
++      // from an FNV-1a-64 hash of (text, voiceURI) UTF-8. Breaks the exact linear
++      // text.length/(cps*rate) formula a probe could verify, while staying
++      // reread-stable (same text + voiceURI -> same delta -> same end), matching
++      // the sp3a/audio determinism discipline. Inlined rather than reusing
++      // canvas_noise's DeriveUnit so modules/speech stays decoupled from the
++      // noise primitives.
++      uint64_t hash = 0xcbf29ce484222325ULL;
++      const auto fold = [&hash](const std::string& bytes) {
++        for (unsigned char b : bytes) {
++          hash ^= b;
++          hash *= 0x100000001b3ULL;
++        }
++      };
++      fold(text.Utf8());
++      fold(utterance->voice()->voiceURI().Utf8());
++      const double unit = static_cast<double>(hash >> 11) /
++                          static_cast<double>(1ULL << 53);  // [0, 1)
++      const double jitter = (unit - 0.5) * 2.0 * 0.15;      // [-0.15, 0.15]
+       const double secs =
+-          static_cast<double>(utterance->text().length()) / (cps * rate);
++          (static_cast<double>(text_len) / (cps * rate)) * (1.0 + jitter);
++
++      // `gen` (bumped at the top of this method) is captured by value in every
++      // posted task below, which no-ops if it no longer matches -- this is what
++      // tells a stale delayed task (from a cancel()'d speak) apart from the
++      // fresh one when a page re-speak()s the SAME utterance object.
+       auto runner =
+           GetSupplementable()->GetTaskRunner(TaskType::kMiscPlatformAPI);
+       // FIX B: fire 'start' ASYNC (a real TTS backend fires start after speak()
+-      // returns; a synchronous start is a trivial fingerprint tell).
++      // returns; a synchronous start is a trivial fingerprint tell). Posted
++      // FIRST so same-runner FIFO keeps it before a charIndex==0 boundary (also
++      // delay 0) and before 'end'.
+       runner->PostTask(
+           FROM_HERE,
+           BindOnce(
+-              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
++              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u,
++                 uint64_t task_gen) {
+                 // FIX A: u may be null (WeakPersistent after GC); without the
+                 // `u &&` check, `u == CurrentSpeechUtterance()` is nullptr==nullptr
+                 // on an empty queue -> DidStartSpeaking(nullptr) crash.
+-                if (self && u && u == self->CurrentSpeechUtterance()) {
++                if (self && u && self->camou_fake_generation_ == task_gen &&
++                    u == self->CurrentSpeechUtterance()) {
+                   self->DidStartSpeaking(u);
+                 }
+               },
+-              WrapWeakPersistent(this), WrapWeakPersistent(utterance)));
+-      // Delayed 'end' (>= the async start, since secs > 0 for non-empty text and
+-      // same-runner FIFO orders the two 0-delay tasks for empty text).
++              WrapWeakPersistent(this), WrapWeakPersistent(utterance), gen));
++      // voices-ii: one 'boundary' (name "word") per word, at its proportional
++      // offset into the (jittered) duration. Skip empty runs -- a charLength==0
++      // boundary would itself be a tell.
++      const auto is_ws = [](UChar c) {
++        return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
++      };
++      // ponytail: cap synthesized boundary tasks. A realistic utterance is far
++      // under this; an enormous one (megabytes of words) would otherwise post
++      // O(words) pending delayed tasks synchronously at speak() time.
++      constexpr unsigned kMaxBoundaryEvents = 4096;
++      unsigned emitted = 0;
++      for (unsigned i = 0; i < text_len && emitted < kMaxBoundaryEvents;) {
++        if (is_ws(text[i])) {
++          ++i;
++          continue;
++        }
++        const unsigned word_start = i;
++        while (i < text_len && !is_ws(text[i])) {
++          ++i;
++        }
++        const unsigned word_len = i - word_start;
++        const double frac =
++            text_len ? static_cast<double>(word_start) / text_len : 0.0;
++        runner->PostDelayedTask(
++            FROM_HERE,
++            BindOnce(
++                [](SpeechSynthesis* self, SpeechSynthesisUtterance* u,
++                   uint64_t task_gen, unsigned char_index, unsigned char_length) {
++                  if (self && u && self->camou_fake_generation_ == task_gen &&
++                      u == self->CurrentSpeechUtterance()) {
++                    self->WordBoundaryEventOccurred(u, char_index, char_length);
++                  }
++                },
++                WrapWeakPersistent(this), WrapWeakPersistent(utterance), gen,
++                word_start, word_len),
++            base::Seconds(secs * frac));
++        ++emitted;
++      }
++      // Delayed 'end' at the full (jittered) duration (>= the async start, since
++      // secs > 0 for non-empty text and same-runner FIFO orders the two 0-delay
++      // tasks for empty text).
+       runner->PostDelayedTask(
+           FROM_HERE,
+           BindOnce(
+-              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
+-                if (self && u && u == self->CurrentSpeechUtterance()) {
++              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u,
++                 uint64_t task_gen) {
++                if (self && u && self->camou_fake_generation_ == task_gen &&
++                    u == self->CurrentSpeechUtterance()) {
+                   self->DidFinishSpeaking(
+                       u, mojom::blink::SpeechSynthesisErrorCode::kNoError);
+                 }
+               },
+-              WrapWeakPersistent(this), WrapWeakPersistent(utterance)),
++              WrapWeakPersistent(this), WrapWeakPersistent(utterance), gen),
+           base::Seconds(secs));
+     } else {
+       SpeakingErrorOccurred(utterance);  // deterministic error
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.h b/third_party/blink/renderer/modules/speech/speech_synthesis.h
+index a0cc038fc0..6cf359c2f5 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.h
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.h
+@@ -26,6 +26,8 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_SPEECH_SPEECH_SYNTHESIS_H_
+ #define THIRD_PARTY_BLINK_RENDERER_MODULES_SPEECH_SPEECH_SYNTHESIS_H_
+ 
++#include <cstdint>
++
+ #include "third_party/blink/public/mojom/speech/speech_synthesis.mojom-blink-forward.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_speech_synthesis_error_code.h"
+ #include "third_party/blink/renderer/modules/event_target_modules.h"
+@@ -147,6 +149,14 @@ class MODULES_EXPORT SpeechSynthesis final
+   void ApplyCamouVoices();
+   bool camou_voices_applied_ = false;
+ 
++  // voices-ii: per-speak generation token for the fake-completion tasks. Bumped
++  // once per fake speak() start; a posted start/boundary/end task fires only
++  // while its captured value still matches. Distinguishes a stale task (from a
++  // cancel()'d speak) from the fresh task after a page re-speak()s the SAME
++  // utterance object -- a case == CurrentSpeechUtterance() alone cannot tell
++  // apart (it would let the stale task fire an early 'end').
++  uint64_t camou_fake_generation_ = 0;
++
+   // EventTarget
+   const AtomicString& InterfaceName() const override;
+ };
