@@ -2828,3 +2828,37 @@ FOLLOW-ON TAIL COMPLETION (2026-09-06, subagent-driven, plan
     sp0-config-layer.patch (renderer/DEPS section), patches/webrtc-ii.patch (.cc-only),
     scripts/apply.sh (webrtc-ii wired), .gitignore, 2 plan docs. NEXT: SDD final
     whole-branch review (MERGE_BASE a91fb2d^ -> HEAD).
+
+FINAL WHOLE-BRANCH REVIEW (agent-skills:code-reviewer on opus, 854fbae..1debf22):
+  REQUEST CHANGES -> 1 CRITICAL (fixed), 1 Important, 3 Minor. Three of four tasks
+  clean-to-excellent from-source: geo revert genuine (sp4-geo.patch + verify byte-
+  identical to base, DeriveAccuracy survives only in rejection docs); DEPS
+  consolidation "exactly right" (reviewer enumerated every camoucfg include by target
+  file -> the 7 renderer-subtree headers match sp0's grant exactly; coherence_validator.h
+  + mouse_trajectories.h correctly NOT granted, content/browser-only); webrtc-ii sound;
+  key registry 83 coherent.
+  CRITICAL (THE catch, = the reconstruction gap Task 4 deferred, now a LIVE instance):
+  voices-ii.patch had REGRESSED its baseline to PRISTINE (7050f28 re-extract diffed
+  against pristine, not the sp4-voices post-image). Its .cc a-blob 891a81543b == sp4-
+  voices's a-blob (both pristine); BUILD.gn hunk byte-identical to sp4-voices's. So
+  voices-ii DUPLICATED all of sp4-voices + would 3-way CONFLICT at StartSpeakingImmediately
+  when apply.sh applies sp4-voices (line 50) then voices-ii (line 58) in sequence. The
+  6/6 verify never caught it — it ran on the hybrid box where the file was already in
+  the final combined state. VERIFIED independently (a-blobs + identical BUILD.gn hunk).
+  FIX: regenerated voices-ii.patch as the DELTA layered on sp4-voices post-image (git-
+  native: apply sp4-voices to pristine speech files -> git add (stages post-image, blobs
+  b463dfbdf9/a0cc038fc0) -> cp final combined into working tree -> git diff = the delta
+  with correct a-blobs, BUILD.gn hunk DROPPED). Size 20776 -> 17892B. SEQUENCE PROOF
+  (apply.sh's exact git apply --3way): pristine -> sp4-voices --3way OK -> new voices-ii
+  --3way OK NO CONFLICT -> result .cc+.h MATCH final combined byte-for-byte. SIBLING -ii
+  SCAN (same failure class): audio-ii a-blobs == sp4-audio b-blobs (LAYERED, clean);
+  media-ii-track + fonts-ii touch files no base patch owns (pristine a-blobs, clean).
+  voices-ii was the SOLE duplication (audio-ii was re-extracted correctly against
+  sp4-audio-post; voices-ii against pristine). Important (full apply.sh still wanted):
+  proved the ONE broken co-owned sequence + scanned all siblings clean -> covers the
+  failure CLASS; a full from-zero apply.sh on the whole ~50-patch stack still wants a
+  fresh gclient checkout (deferred, disjoint-file patches are low-risk). Minors: (1)
+  webrtc-ii .cc links via sp4-fonts's platform BUILD.gn camoucfg dep -> doc note added
+  (§3); (2) sp4-fonts per-dir fonts/DEPS grant now redundant like p2p's was -> left,
+  clean when fonts next touched; (3) sp4-geo-surfaces.md:192 stale "defer" pointer ->
+  fixed to REJECTED. TAIL COMPLETE after the voices-ii fix.

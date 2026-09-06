@@ -99,6 +99,13 @@ conditions, short-circuiting to force the responder on:
   is set and the responder is null.
 - **No BUILD.gn hunk:** `filtering_network_manager.cc` compiles in
   `platform/BUILD.gn`, which already deps `//components/camoucfg` (sp4-fonts).
+  **Cross-patch build coupling (noted per final review):** this `.cc`-only patch
+  links only because `sp4-fonts.patch` adds `//components/camoucfg` to the
+  `component("platform")` target — the same way core-target files ride sp0's
+  `core/BUILD.gn` dep. `gn check //third_party/blink/renderer/platform:*` passes
+  with the stack applied, so it is not a defect, but a future `sp4-fonts` revert
+  that dropped that dep would silently break this patch's build. (Task 4
+  consolidated the *checkdeps* grants into sp0; the *gn* deps still live per-slice.)
 - **DEPS:** `platform/p2p/DEPS` gains `+components/camoucfg/keys.h` only —
   `blink_scope.h`/`mask_config.h` are already granted renderer-wide
   (`third_party/blink/renderer/DEPS:95-97`). (The parallel `media_values.cc`

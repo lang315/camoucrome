@@ -189,5 +189,5 @@ compiles under the monolithic `core` target which already deps
 |---|---|
 | `getCurrentPosition` / `watchPosition` coords | **synthesize** — config `geolocation:latitude/longitude/accuracy` at `QueryNextPosition`, delivered via `OnPositionUpdated` |
 | permission | respected (spoof only post-grant; no auto-grant) |
-| accuracy decimal-precision derivation | defer (geo-ii) — fixed 100 m default |
+| accuracy decimal-precision derivation | **REJECTED** (geo-ii, 2026-09-06) — net-negative; accuracy is method-based, not decimal-derived. Fixed 100 m default retained |
 | position ↔ timezone ↔ IP-geo coherence | operator/preset responsibility |
