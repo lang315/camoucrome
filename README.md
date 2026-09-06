@@ -3,64 +3,47 @@
 An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
-**Status: SP0 landed; SP1a landed, partially verified; SP5a landed and verified at the
-tracer-bullet level.** Apply all three to a Chromium checkout with `scripts/apply.sh
-<chromium-src>`. The specs in `docs/superpowers/specs/` define the work.
+**Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
+landed on `main`** — 23 patches in `patches/` (applied in the semantic order in
+`scripts/apply.sh`) plus the proprietary-codec GN args in `settings/build-args.gn`.
+Apply the whole set to a pristine Chromium checkout with
+`scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
+design; `docs/superpowers/measurements/` records the per-surface measurement each
+slice was built from.
 
-The configuration layer exists and drives `navigator.hardwareConcurrency`. The
-browser-process UA producer in `user_agent_utils.cc` is patched so that one site feeds
-`navigator.userAgent`, `navigator.userAgentData` and the `Sec-CH-UA*` request headers. What
-is *verified* is narrower than what is patched, and the difference matters:
+Shipped: the config layer and load-time coherence validator (SP0, SP5a); the
+browser-process UA / UA-CH producer and Blink-side navigator leaves (SP1a, SP1b);
+automation hiding and the humanized cursor (SP2a, SP2b); canvas and WebGL
+fingerprints (SP3a, SP3b); the SP4 device-faking arc — screen, fonts, audio, media
+devices, timezone/locale, WebRTC IP, voices, geolocation, battery; the proprietary
+codec build (SP7 D2); and the follow-on slices that close residual tells the SP4
+measurements deferred — window geometry, canvas metric jitter, media-device
+getSettings/id coherence, phantom-webcam error coherence, render-thread audio input
+masking, and SpeechSynthesis boundary/jitter/generation fixes.
 
-| Channel | Evidence today |
-|---|---|
-| `navigator.userAgent` | **Verified end to end** in a running browser — spoofed, unconfigured, malformed-config and refused-key cases, all diffed against a pre-patch baseline. |
-| `navigator.userAgentData` | **Unit tests only.** `GetUserAgentMetadata()` is called directly, with no browser. |
-| `Sec-CH-UA*` headers | **Not yet verified at all.** |
-| the three agreeing with each other | **Not yet verified.** |
+**Verification is per-slice and RED-first.** Each slice ships a `scripts/verify_*.py`
+that drives a real `content_shell` over CDP, is confirmed to go red against the
+pre-change binary, and is re-run after a full revert-and-reapply round-trip
+(`gn check` + rebuild) so the committed patches — not just the working tree — are
+what passed. Unit coverage backs the config layer and the invariant validator.
 
-The gap is not neglect, it is the test binary. `content_shell` reimplements
-`GetUserAgentMetadata()` in shell code — hardcoding `platform = "Unknown"` — and never calls
-the patched function, and its `ClientHintsControllerDelegate` is `nullptr`, so it emits no
-high-entropy `Sec-CH-UA*` headers under any configuration. Closing all three rows needs a
-`chrome` build, which is SP1a's Task 8.
+**What `content_shell` cannot reach is stated, not hidden.** Some surfaces need a
+`chrome` build or a backend this headless host lacks, and so cannot be exercised here
+— the `Sec-CH-UA*` header and `userAgentData` channels (SP1a Task 8), `AudioWorklet`
+input (its worklet thread never starts headless), and the backend-present
+SpeechSynthesis paths. These are documented as residuals in the owning slice's
+measurement doc rather than claimed as verified. Coherence across channels is the
+project's thesis (see below), and the rows that remain unproven are named where they
+live.
 
-Cross-channel coherence is the whole thesis of this sub-project, so it is worth stating
-plainly that it is the row still open.
+Remaining work is the follow-on roadmap's low-value residuals (geo-ii, battery-ii)
+and its two high-risk, infrastructure-gated items (fonts-ii, which needs real
+Windows/macOS testing; webrtc-ii, browser-process/libwebrtc surgery). See
+[`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-**SP5a — the invariant registry, reader and load-time validator — is verified at the
-tracer-bullet level**: one real invariant (`ua-os-family-agrees`, over the `ua:osInfo` /
-`ua:platform` keys SP1a already reads), enforced from `BrowserMainLoop::EarlyInitialization`
-before any renderer exists. The catalogue of further invariants is SP5b's job, once SP1b,
-SP3 and SP4 give it more keys to constrain.
-
-| Case | Evidence |
-|---|---|
-| Coherent config | Untouched: the UA carries the configured OS token, no `camoucfg: invariant` line in stderr. |
-| Incoherent config | Detected and logged (`camoucfg: invariant 'ua-os-family-agrees' violated. 'ua:platform' is 'Linux', which disagrees with 'ua:osInfo'. It should be 'Windows'.`) — browser still starts. Detection only; repair is a later sub-project (SP0's `mask_config.cc` needs a write path first). |
-| Incoherent config, `CAMOU_CONFIG_STRICT` | Refuses to start, exit 13, before any renderer opens. |
-| No config | Silent — no `camoucfg:` line at all, UA byte-identical to the pre-patch baseline. |
-
-All four verified end to end in a running `content_shell`, via CDP, against a
-pre-patch baseline — the same discipline as the `navigator.userAgent` row above. Backing
-unit coverage: 36 tests across the registry, reader, derivation and validator (`Camoucfg*`,
-`MaskConfig*`, `ParseConfig*`, `AssembleRawConfig*`, `Getters*`, `DeriveTest*`,
-`CoherenceValidatorTest*`), including a mutation test proving the one registered invariant
-fires on exactly its own violation and nothing else, and a structural test
-(`MutationsExistForEveryInvariant`) that fails the build if an invariant is ever added to the
-registry without a mutation test to prove it fires. `RegistryMatchesGeneratedHeader` keeps
-`settings/invariants.json` and the hand-written `additions/camoucfg/invariants.h` in step
-until SP6a generates the header from the JSON.
-
-The change set has been reconstructed from a pristine Chromium checkout at the pinned
-revision below, using only `scripts/apply.sh` and the three patches in `patches/`, and
-proven byte-identical to the built and verified tree: all patch-owned files empty-diff
-against the working checkout, all 17 files under `components/camoucfg/` (16 from
-`additions/` plus `settings/invariants.json`) match by hash, and every suite above passes
-against the reconstructed, rebuilt binary — not merely the reapplied source.
-
-The change set is generated against Chromium revision
-`0e8d4a9268118d323f62ca207b40514df39dcaa9`. Rebasing onto a newer revision is SP6a's job.
+The change set is generated against Chromium revision **`a727b57805`** (an early
+subset was first cut against `0e8d4a9268`, then rebased onto `a727b57805`). Rebasing
+onto a newer revision is SP6a's job.
 
 ## The defining constraint
 
@@ -98,14 +81,19 @@ Two things explicitly do **not** port:
 | Path | Contents |
 |---|---|
 | `docs/superpowers/specs/` | design specs, one per sub-project |
+| `docs/superpowers/plans/` | implementation plans, one per slice |
+| `docs/superpowers/measurements/` | per-surface measurements each slice was built from |
 | `additions/` | whole new files, copied into the Chromium tree verbatim |
 | `patches/` | diffs against files that already exist in Chromium |
-| `settings/` | the registry of spoofable keys and their types |
-| `scripts/` | apply, extract, and build helpers |
+| `settings/` | the invariant registry (`invariants.json`) and canonical GN args (`build-args.gn`) |
+| `scripts/` | apply, and per-slice `verify_*.py` browser verifications |
 
 New files go in `additions/` and edits to existing files go in `patches/`. This split
 held up across Camoufox's ~64 patches and keeps rebase conflicts confined to the small
 diffs.
+
+`CLAUDE.md` at the repo root is the operational guide for agents working here; it
+distills the apply/verify loop, the config-layer API, and the patch-extraction traps.
 
 ## Sub-projects
 
