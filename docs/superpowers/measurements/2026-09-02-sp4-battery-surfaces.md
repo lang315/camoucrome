@@ -95,3 +95,33 @@ and likewise `charging()` via `GetBool(kBatteryCharging)`, `chargingTime()` via
 | `charging` / `level` / `chargingTime` / `dischargingTime` getters | **config override** — SP0 per-getter, keys `battery:charging/level/chargingTime/dischargingTime` |
 | `onchargingchange` / `onlevelchange` timing | defer (battery-ii) |
 | tuple coherence | operator/preset responsibility |
+
+## 6. battery-ii disposition — REJECTED (2026-09-07)
+
+The follow-on slice this doc's §4 deferred (`onchargingchange`/`onlevelchange`
+event synthesis / `level` drift) was evaluated at the advisor checkpoint and
+**rejected without writing code.** Reasons (fatal one first):
+
+1. **Unmeasurable on this harness.** The WSL build box has no battery, so a real
+   `BatteryManager` never fires an event there (§3, lines 72-75 already note "on
+   the no-battery build box no updates arrive"). There is nothing to RED-baseline
+   and no way to verify a synthesis — shipping a discharge-curve model fit to
+   nothing is CLAUDE.md lesson 3 (a host-lacking measurement is not evidence about
+   a device) at maximum sensitivity, and breaks the geo-ii rule: don't build what
+   you can't measure.
+2. **Manufactured distribution.** Modeling a level/charge curve without a real
+   capture is the same class as the REJECTED geo accuracy-derivation.
+3. **Low value.** Deprecated API, rarely event-probed, and a real battery barely
+   moves over a short scraping session, so static "no events" is normal.
+
+**Relational-coherence validation (the alternative) also rejected here.** §4's
+coherence note is real, but enforcing it is itself a small manufacture: per §3
+(lines 67-69) JSON has no `Infinity`, so a valid "charging" preset structurally
+cannot carry `dischargingTime` (rule 5 falls through to the real value), which
+makes "charging ⟹ dischargingTime=Infinity" unwritable in config; and
+"charging=false ⟹ dischargingTime finite" is FALSE for a device the OS can't
+estimate (`BatteryStatus` defaults both times to `+inf`). A rule the real world
+violates, with no Chrome check to mirror (unlike SP5b's `ValidateGeoposition`) —
+coherence work, if ever justified, is SP5a-registry territory, not a battery
+slice, and not on this evidence. **Deferred until a real battery device is in the
+harness**, when event timing can be measured instead of modeled.

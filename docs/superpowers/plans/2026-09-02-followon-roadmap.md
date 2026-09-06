@@ -27,9 +27,14 @@ the 2026-09-06 tail-completion pass, **9 fonts-ii** (local() gate) and **10
 webrtc-ii** (force-mDNS) are also **partial-shipped**. **3 geo-ii** is now
 **partial**: its `watchPosition` re-fire cadence + SP5b domain validation shipped,
 its accuracy-derivation lever was REJECTED (net-negative), and coordinate jitter
-is deferred (probably never for a stationary position — see §3). Still genuinely
-open: **4 battery-ii** only, plus the partial remainders. Each
-item's `Status` cell and its `**Status:**` line below name what landed; the
+is deferred (probably never for a stationary position — see §3). **4 battery-ii**
+was **REJECTED 2026-09-07** (event synthesis is unmeasurable on a battery-less
+harness and the relational-coherence alternative has no capture to fit; see §4),
+which leaves **no genuinely-open item** — every remaining lever is either
+shipped, rejected-with-record, or gated on a harness this program does not have
+(a real network for the webrtc-ii residual, a cross-OS host for fonts-ii
+fallback, a battery device for battery-ii, an AudioWorklet harness for audio-ii).
+Each item's `Status` cell and its `**Status:**` line below name what landed; the
 residual detail lives in that slice's measurement doc, not here.
 
 ---
@@ -41,7 +46,7 @@ residual detail lives in that slice's measurement doc, not here.
 | 1 | **codec build-flag SP** | **shipped** 09-02 | ★★★ | S (heavy rebuild) | Low | GN / build config | — |
 | 2 | **window-geometry** | **shipped** 09-02 | ★★☆ | S–M | Low | Blink core | sp4a (coherence) |
 | 3 | **geo-ii** | **partial** 09-06 (cadence + SP5b shipped; accuracy-derive rejected; coord-jitter deferred) | ★☆☆ | S | Low | Blink core + SP5a | sp4-geo |
-| 4 | **battery-ii** | open | ★☆☆ | S | Low | Blink modules | sp4-battery |
+| 4 | **battery-ii** | **REJECTED** 09-07 (unmeasurable on a battery-less harness) | ★☆☆ | S | Low | Blink modules | sp4-battery |
 | 5 | **voices-ii** | **partial** 09-06 | ★★☆ | M | Low–Med | Blink modules | sp4-voices |
 | 6 | **media-ii** | **partial** 09-05/09-06 | ★★☆ | M | Med | Blink modules (+browser) | sp4-media |
 | 7 | **metric-jitter SP** | **shipped** 09-05 | ★★☆ | M | Med | Blink platform/fonts | sp3a seed (coherence) |
@@ -173,11 +178,39 @@ what that leaves.*
   bullets above remain open.
 
 ### 4. battery-ii  (source: sp4-battery §4)
-- **Event synthesis/timing:** `onchargingchange`/`onlevelchange` are not fired
-  (static). Synthesize plausible transitions (e.g. slow `level` drift on
-  discharge) from config so a probe watching over time sees realistic updates.
-- **Choke:** `battery_manager.cc` `DidUpdateData`/the property update path.
-  Effort S; low value (deprecated API).
+- **Event synthesis/timing** — **REJECTED 2026-09-07** (evaluated at the advisor
+  checkpoint, no code written). The roadmap framing was: `onchargingchange`/
+  `onlevelchange` don't fire (static), so synthesize plausible transitions
+  (e.g. slow `level` drift on discharge) from config. Three disqualifiers, the
+  first fatal on its own:
+  1. **Unmeasurable on this harness.** The WSL build box has no battery, so a
+     real `BatteryManager` never fires an event there — there is nothing to
+     RED-baseline against and no way to verify a synthesis. Shipping a
+     discharge-curve model fit to nothing is the #44 lesson-3 trap
+     (a Linux-only measurement is not evidence about a device the host lacks)
+     at maximum sensitivity, and violates the geo-ii rule already adopted: do
+     not build what you cannot measure.
+  2. **Manufactured distribution.** Modeling a level/charge curve without a
+     capture is the same class as the REJECTED geo accuracy-derivation — a
+     plausible-looking distribution asserted without evidence.
+  3. **Low value.** The Battery Status API is deprecated/removed in other
+     engines, rarely event-probed, and over a short scraping session a real
+     battery barely changes, so "no events" is normal short-term behavior.
+- **Relational coherence (the alternative) — also rejected as a battery-ii
+  slice.** The measurement's §4 notes `charging`/`level`/`chargingTime`/
+  `dischargingTime` must be mutually consistent. But this is a small manufacture
+  too: JSON has no `Infinity`, so a valid "charging" preset structurally cannot
+  carry `dischargingTime` (§3 rule 5 falls through to the real value), making the
+  rule "charging ⟹ dischargingTime=Infinity" unwritable in config; and
+  "charging=false ⟹ dischargingTime finite" is FALSE for real devices the OS
+  can't estimate (`BatteryStatus` defaults both times to `+inf`). It would assert
+  a coherence rule the real world violates, with no Chrome check to mirror (unlike
+  SP5b's `ValidateGeoposition`). Coherence validation, if ever justified, is SP5a
+  registry territory, not a Blink slice — and not on this evidence.
+- **Choke (for the record):** `battery_manager.cc` `DidUpdateData`/the property
+  update path. Effort S; low value (deprecated API). **Deferred until a real
+  battery device is in the test harness**, at which point event timing could be
+  measured rather than modeled.
 
 ### 5. voices-ii  (source: sp4-voices §4)
 - **Status: PARTIAL, shipped 2026-09-06** (`a7316c6`, `patches/voices-ii.patch`,
@@ -336,15 +369,18 @@ what that leaves.*
 ## Execution note
 
 This roadmap is the ordering/scoping layer. After the 2026-09-06 tail-completion
-pass, most items have landed (see the `Status` column); what remains is
-**battery-ii** (small, unstarted), **geo-ii positional jitter** (the accuracy-
-derivation lever was REJECTED; jitter is the surviving future slice), and the
-partial remainders: voices-ii `pause()`/`resume()` **now shipped** (`7050f28`),
-media-ii Slice 2b, the audio-ii AudioWorklet mask (blocked on a harness), fonts-ii
-codepoint/system fallback (the local() gate shipped), and webrtc-ii fake-local-IP
-(the force-mDNS shipped; only the libwebrtc IP-rewrite residual remains). fonts-ii
-fallback and the webrtc-ii residual still want their out-of-Linux / real-network
-test story before starting.
-Each still gets measurement doc → plan → SDD as usual. Do not batch-execute the
-remainder autonomously; each carries its own scope decision the operator should
-see.
+pass and the 2026-09-07 battery-ii rejection, **every item has landed, been
+rejected-with-record, or is gated on a test harness this program does not have.**
+No un-gated, un-decided slice remains. The dispositions: **battery-ii** REJECTED
+(unmeasurable on a battery-less box); **geo-ii positional jitter** deferred
+(a moving-profile concern, and the accuracy-derivation lever was REJECTED); and
+the harness-gated remainders — media-ii Slice 2b (browser-process phantom track),
+the audio-ii AudioWorklet mask (needs an AudioWorklet-running host), fonts-ii
+codepoint/system fallback (needs a real Windows/macOS harness), and webrtc-ii
+fake-local-IP (needs a real network / libwebrtc port-allocator surgery).
+voices-ii `pause()`/`resume()` shipped (`7050f28`); the geo-ii cadence slice was
+the last un-gated real item and it shipped (`9939555`).
+Each gated item still gets measurement doc → plan → SDD once its harness exists;
+none should be batch-executed autonomously, and none should be manufactured into
+a Blink slice just to have a next slice (rule 4). The roadmap is exhausted for
+the current harness.
