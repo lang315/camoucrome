@@ -281,6 +281,14 @@ inline constexpr char kLocaleTag[] = "locale:tag";
 // renderer's webrtc_ip_handling_policy. Absent => real pref unchanged (rule 5).
 inline constexpr char kWebrtcIpHandlingPolicy[] = "webrtc:ipHandlingPolicy";
 
+// WebRTC local-IP obfuscation force (webrtc-ii). Synthetic webrtc: namespace.
+// bool. When true, the mDNS responder is forced on in FilteringNetworkManager
+// so host ICE candidates are emitted as "<uuid>.local" even under camera/mic
+// permission (which normally sets ENUMERATION_ALLOWED and exposes the raw local
+// IP) and even when an enterprise policy set allow_mdns_obfuscation=false.
+// Absent/false => stock behavior (rule 5).
+inline constexpr char kWebrtcHideLocalIps[] = "webrtc:hideLocalIps";
+
 // Speech-synthesis voice injection + fake speak() completion (SP4-voices).
 // Synthetic voices: namespace. voices:list is a JSON array of voice objects
 // ({voiceURI,name,lang,localService,default}); fakeCompletion gates whether
@@ -316,7 +324,7 @@ inline constexpr char kWindowScreenY[] = "window.screenY";
 
 // Every key above. A new constant must be added here too, which is what makes
 // the uniqueness test meaningful.
-inline constexpr std::array<std::string_view, 82> kAllKeys = {
+inline constexpr std::array<std::string_view, 83> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -385,6 +393,7 @@ inline constexpr std::array<std::string_view, 82> kAllKeys = {
     kTimezoneId,
     kLocaleTag,
     kWebrtcIpHandlingPolicy,
+    kWebrtcHideLocalIps,
     kVoicesList,
     kVoicesFakeCompletion,
     kVoicesFakeCompletionCharsPerSecond,

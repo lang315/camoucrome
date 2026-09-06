@@ -72,7 +72,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kMediaDevicesSeed, kMediaDevicesCameraLabel, kMediaDevicesMicrophoneLabel,
       kMediaDevicesSpeakerLabel,
       kTimezoneId, kLocaleTag,
-      kWebrtcIpHandlingPolicy,
+      kWebrtcIpHandlingPolicy, kWebrtcHideLocalIps,
       kVoicesList, kVoicesFakeCompletion, kVoicesFakeCompletionCharsPerSecond,
       kGeolocationLatitude, kGeolocationLongitude, kGeolocationAccuracy,
       kBatteryCharging, kBatteryLevel, kBatteryChargingTime,

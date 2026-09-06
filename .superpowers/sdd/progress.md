@@ -2751,3 +2751,47 @@ FOLLOW-ON TAIL COMPLETION (2026-09-06, subagent-driven, plan
     VP-RESPEAK (RED on unguarded -> GREEN 6/6). Minors: zero counter on error branch,
     50ms->100ms named poll constant, widened test window. Round-trip re-run after
     fixes: 6/6 + 5/5. GREEN, ready to commit.
+    PUSHED origin/main 854fbae..7050f28 (2026-09-06): Task 1 geo-ii rejection record
+    a91fb2d + Task 2 voices-ii commit 7050f28. Tasks 1+2 durable.
+  - Task 3 webrtc-ii force-mDNS: IMPLEMENTATION GREEN + round-tripped, review
+    dispatched. Gate 0 (feasibility) PASSED: raw WSL LAN IP 172.22.42.251 leaks in
+    2 host candidates under media-permission flags (--use-fake-{device,ui}), 0 .local
+    = RED reproduces, fix WSL-verifiable. Lever = FilteringNetworkManager::
+    GetMdnsResponder (third_party/blink/renderer/platform/p2p/filtering_network_manager.cc:115)
+    — a SINGLE Blink platform/p2p conditional (roadmap over-estimated deep libwebrtc).
+    Stock returns null responder (=raw IP) when enumeration_permission()==
+    ENUMERATION_ALLOWED (media permission) OR !allow_mdns_obfuscation_ (enterprise
+    WebRtcLocalIpsAllowedUrls). New key webrtc:hideLocalIps (bool) forces the
+    responder ON unconditionally after the existing null-guard -> host candidates
+    emit .local even under both bypasses. Advisor checkpoint (before implementing):
+    key named for EFFECT not lever (it overrides BOTH branches incl the enterprise
+    one sp4 §5 left as real pref); 3-case verify; verify-before-writing (callers/
+    caching, ParsedConfig thread-safety, platform/p2p DEPS). Config read from
+    signaling thread safe (ParsedConfig = static NoDestructor function-local static,
+    immutable, GetBool lock-free); force unconditional so libwebrtc caching can't
+    defeat it. patches/webrtc-ii.patch (2 files: filtering_network_manager.cc +
+    platform/p2p/DEPS; +components/camoucfg/keys.h grant only — blink_scope.h/
+    mask_config.h renderer-wide-granted). NO BUILD.gn (platform/BUILD.gn already
+    deps //components/camoucfg, sp4-fonts). Keys triple 82->83 (kWebrtcHideLocalIps),
+    5/5 CamoucfgKeysTest on 45-step build. RED verify_webrtc_ii.py: R-LEAK FAIL
+    (2 raw, 0 .local; key ignored by unfixed binary), R-STOCK + R-NOPERM already
+    GREEN (guards). GREEN post-fix: R-LEAK 0 raw / 2 .local, R-STOCK 2 raw (rule 5),
+    R-NOPERM 1 cand 0 raw 1 .local (force no-op where mDNS already on). Round-trip:
+    revert platform/p2p -> apply --3way both clean -> gn check OK + checkdeps SUCCESS
+    -> rebuild 3 steps -> reverify all GREEN. Residual (doc §5): public srflx leak
+    harness-unverifiable (no STUN); .local-under-permission is a mild distinguishability
+    signal (real Chrome shows raw IP there) — strictly-more-private, the fully-coherent
+    fake-LAN-IP answer stays the deferred webrtc:localipv4 libwebrtc residual. Review
+    (agent-skills:code-reviewer): APPROVE, 0 Crit, 0 Imp. Coherence adjudicated
+    NET-POSITIVE (does NOT repeat geo-ii): precondition to observe the .local-under-
+    permission tell = precondition for the raw-IP leak it closes; only a path already
+    leaking is rewritten; pure trade of a durable per-machine correlation key for a
+    one-bit class signal via a genuine Chrome artifact (.local, never a fabricated
+    value). Advisor concurred. 3 Minor/doc, all folded into doc §5: (1) residual is
+    candidate SHAPE not just .local name (permission path still enumerates all
+    interfaces -> R-LEAK 2 udp+tcp-active vs R-NOPERM 1; a shape no real Chrome
+    no-permission state emits; real-Chrome multi-homed capture unavailable on WSL);
+    (2) enterprise branch !allow_mdns_obfuscation_ verified by INSPECTION not runtime
+    (force returns before the || is evaluated; same mDNS mechanism R-LEAK proves);
+    (3) opt-in default OFF -> default-config fleets NOT protected. Rule-5/thread-safety/
+    null-deref/naming all PASS from-source. GREEN, committing.

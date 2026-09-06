@@ -1,0 +1,46 @@
+diff --git a/third_party/blink/renderer/platform/p2p/DEPS b/third_party/blink/renderer/platform/p2p/DEPS
+index 2a3589b6bd..2483332977 100644
+--- a/third_party/blink/renderer/platform/p2p/DEPS
++++ b/third_party/blink/renderer/platform/p2p/DEPS
+@@ -1,5 +1,8 @@
+ include_rules = [
+     "+crypto/random.h",
++    # blink_scope.h + mask_config.h are granted renderer-wide (../../DEPS);
++    # keys.h is not, so grant it here (webrtc-ii, key webrtc:hideLocalIps).
++    "+components/camoucfg/keys.h",
+     "+components/webrtc/net_address_utils.h",
+     "+media/base/media_permission.h",
+     "+net/base/address_family.h",
+diff --git a/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc b/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc
+index d9b3eb4152..f310a252ea 100644
+--- a/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc
++++ b/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc
+@@ -9,6 +9,9 @@
+ #include "base/location.h"
+ #include "base/logging.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "media/base/media_permission.h"
+ #include "third_party/blink/renderer/platform/p2p/ipc_network_manager.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+@@ -119,6 +122,18 @@ webrtc::MdnsResponderInterface* FilteringNetworkManager::GetMdnsResponder()
+   if (!network_manager_for_signaling_thread_)
+     return nullptr;
+ 
++  // webrtc-ii: webrtc:hideLocalIps forces the mDNS responder on unconditionally,
++  // so host candidates emit as "<uuid>.local" even under media permission
++  // (ENUMERATION_ALLOWED, which normally exposes the raw local IP) or an
++  // enterprise policy that set allow_mdns_obfuscation=false. Placed after the
++  // null-guard above so it can never deref a null manager; absent/false key =>
++  // stock behavior (rule 5).
++  if (camoucfg::GetBool(camoucfg::ScopeFor(nullptr),
++                        camoucfg::keys::kWebrtcHideLocalIps)
++          .value_or(false)) {
++    return network_manager_for_signaling_thread_->GetMdnsResponder();
++  }
++
+   // mDNS responder is set to null if we have the enumeration permission or the
+   // mDNS obfuscation of IPs is disallowed.
+   if (enumeration_permission() == ENUMERATION_ALLOWED ||
