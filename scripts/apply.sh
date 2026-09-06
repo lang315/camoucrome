@@ -53,6 +53,7 @@ PATCHES=(
   "$ROOT/patches/window-geometry.patch"
   "$ROOT/patches/metric-jitter.patch"
   "$ROOT/patches/media-ii-track.patch"
+  "$ROOT/patches/phantom-webcam.patch"
 )
 for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
