@@ -53,7 +53,20 @@ territory → round-trip; extract with `git diff $BASE` to exclude voices-ii hun
   pause, resume after `resume()` shifted by the paused span.
 - Guard: no double-fire, generation token still holds across pause/resume.
 
-## Task 3 — webrtc-ii (feasibility + scope gate, then implement)
+## Task 3 — webrtc-ii (feasibility + scope gate, then implement)  — SHIPPED 2026-09-06
+
+**Outcome:** shipped as `patches/webrtc-ii.patch` (commit 7b3f992). The "deepest
+surgery / libwebrtc" prediction below was WRONG: Gate 0 traced the media-permission
+mDNS bypass to a SINGLE Blink `platform/p2p` conditional,
+`FilteringNetworkManager::GetMdnsResponder()` — no libwebrtc, no browser-process
+change. New bool key `webrtc:hideLocalIps` forces the mDNS responder on
+unconditionally (overriding both the `ENUMERATION_ALLOWED` media-permission bypass
+and the enterprise `!allow_mdns_obfuscation_` bypass), so host candidates emit
+`.local` even under permission. Verify RED→GREEN: 2 raw / 0 `.local` → 0 raw / 2
+`.local`. Review APPROVE, coherence net-positive. Residual: public srflx leak
+harness-unverifiable; `.local`-under-permission is a mild shape tell; the coherent
+fake-LAN-IP (`webrtc:localipv4`) stays deferred. See
+[measurement](../measurements/2026-09-06-webrtc-ii-force-mdns.md).
 
 Highest value (local-IP leak = deanonymization) but the deepest surgery:
 `BasicPortAllocatorSession` / `MdnsResponderAdapter` in `third_party/webrtc` +
@@ -68,15 +81,34 @@ Highest value (local-IP leak = deanonymization) but the deepest surgery:
   layer, feasibility-probe, then implement RED-first. This task may span multiple
   build cycles; treat its scope as its own decision once Gate 0 is known.
 
-## Task 4 — consolidate
+## Task 4 — consolidate  — 2026-09-06
 
-- Fix the pre-existing `core/css/media_values.cc` → `camoucfg/keys.h` DEPS gap
-  (sp4a-screen): one line in `third_party/blink/renderer/DEPS`, then confirm
-  `checkdeps` is clean for `core/css`.
-- Full `apply.sh` on a PRISTINE checkout (or a full revert-and-reapply of every
-  touched dir) + `gn check` + build + run the whole verify suite, so the shipped
-  patch set — not just the live checkout — is proven end to end.
-- README / roadmap / ledger reconciled to the final state.
+- **DEPS gap was far bigger than one line.** Whole-renderer `checkdeps` found ~22
+  latent violations (never surfaced — `.cc`-only builds skip checkdeps), because
+  the renderer-wide grant list in `sp0-config-layer.patch`'s `renderer/DEPS`
+  section only ever carried `blink_scope.h` + `mask_config.h`; every later slice's
+  header (`keys.h` ×18, `canvas_noise.h`, `gl_params.h`, `audio_noise.h`,
+  `device_ids.h`, `base/no_destructor.h`) was a live edit on the box that was
+  NEVER captured into any patch. A clean `apply.sh` reconstruction would have
+  produced a tree that fails checkdeps/presubmit. FIXED renderer-wide: all 7
+  camoucfg headers + `base/no_destructor.h` added to the sp0 `renderer/DEPS`
+  section (machine section-swap into `sp0-config-layer.patch`, `a`-index
+  `d5142fdb5a` = true pristine, verified applies clean → 7+1 grants). Whole-renderer
+  `checkdeps` now SUCCESS. This makes `webrtc-ii`'s per-dir `platform/p2p/DEPS`
+  grant redundant → dropped, `webrtc-ii.patch` is now `.cc`-only. (`fonts`'
+  per-dir grant left as harmless redundancy.)
+- **Full from-scratch PRISTINE reconstruction deferred.** The box
+  `/home/lang/chromium/src` is a hybrid (early slices committed at HEAD `a727b57805`
+  + later slices as live edits), not a pristine Chromium checkout; a true
+  from-scratch `apply.sh` run needs a fresh `gclient` checkout (hours + ~100GB),
+  out of this session's reach. Achieved instead: both CHANGED patches
+  (`sp0-config-layer` DEPS section, `webrtc-ii` `.cc`) verified apply cleanly to
+  pristine; whole-renderer `checkdeps` SUCCESS; `gn check` OK. Task 4's changes are
+  non-behavioral (DEPS = build-hygiene only; the `webrtc-ii` `.cc` is byte-identical),
+  so no spoof regression is possible — `verify_webrtc_ii.py` re-run GREEN as a smoke
+  check. The remaining gap is purely "does the whole patch stack apply+build from
+  true zero," which only a fresh checkout can prove.
+- README / roadmap / ledger reconciled; `.memsearch/` gitignored.
 
 ## Order & review
 

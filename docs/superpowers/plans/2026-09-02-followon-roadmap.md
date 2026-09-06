@@ -22,11 +22,13 @@ measurement doc's deferral section — no new surface was invented.
 Six of the ten items below have since landed on `main`: **1 codec build-flag**,
 **2 window-geometry**, **5 voices-ii**, **6 media-ii**, **7 metric-jitter**,
 **8 audio-ii**. Three of those six are **partial** — voices-ii, media-ii and
-audio-ii each shipped one slice and left a named, documented remainder. Still
-open: **3 geo-ii**, **4 battery-ii**, **9 fonts-ii**, **10 webrtc-ii**, plus the
-three partial remainders. Each item's `Status` cell and its `**Status:**` line
-below name what landed; the residual detail lives in that slice's measurement
-doc, not here.
+audio-ii each shipped one slice and left a named, documented remainder. Since
+the 2026-09-06 tail-completion pass, **9 fonts-ii** (local() gate) and **10
+webrtc-ii** (force-mDNS) are also **partial-shipped**, and **3 geo-ii** was
+**REJECTED** (its accuracy-derivation lever measured net-negative — see §3).
+Still genuinely open: **4 battery-ii** only, plus the partial remainders. Each
+item's `Status` cell and its `**Status:**` line below name what landed; the
+residual detail lives in that slice's measurement doc, not here.
 
 ---
 
@@ -36,14 +38,14 @@ doc, not here.
 |---|---|---|---|---|---|---|---|
 | 1 | **codec build-flag SP** | **shipped** 09-02 | ★★★ | S (heavy rebuild) | Low | GN / build config | — |
 | 2 | **window-geometry** | **shipped** 09-02 | ★★☆ | S–M | Low | Blink core | sp4a (coherence) |
-| 3 | **geo-ii** | open | ★☆☆ | S | Low | Blink core + SP5a | sp4-geo |
+| 3 | **geo-ii** | **REJECTED** 09-06 | ★☆☆ | S | Low | Blink core + SP5a | sp4-geo |
 | 4 | **battery-ii** | open | ★☆☆ | S | Low | Blink modules | sp4-battery |
 | 5 | **voices-ii** | **partial** 09-06 | ★★☆ | M | Low–Med | Blink modules | sp4-voices |
 | 6 | **media-ii** | **partial** 09-05/09-06 | ★★☆ | M | Med | Blink modules (+browser) | sp4-media |
 | 7 | **metric-jitter SP** | **shipped** 09-05 | ★★☆ | M | Med | Blink platform/fonts | sp3a seed (coherence) |
 | 8 | **audio-ii** | **partial** 09-06 | ★★☆ | M–L | Med | Blink modules (render thread) | sp4-audio |
 | 9 | **fonts-ii** | **partial** 09-06 | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
-| 10 | **webrtc-ii** | open | ★★☆ | L | **High** | libwebrtc / browser process | sp4-webrtc-ip |
+| 10 | **webrtc-ii** | **partial** 09-06 | ★★☆ | S (shipped) / L (residual) | Low (shipped) | Blink platform/p2p (shipped); libwebrtc (residual) | sp4-webrtc-ip |
 
 Value = anti-detect impact × how commonly the surface is probed. Effort/Risk =
 implementation depth + how host/platform/thread-sensitive it is.
@@ -278,23 +280,31 @@ what that leaves.*
   Effort L; risk HIGH. Do not start without the cross-platform test story.
 
 ### 10. webrtc-ii  (source: sp4-webrtc-ip §5)
-- **Fake-local-IP** — rewrite host ICE candidate IPs to a configured plausible
-  LAN IP (`webrtc:localipv4/localipv6`), stealthier than the current policy's
-  empty-candidate-set (itself an anomaly). Requires libwebrtc port-allocator /
-  mDNS-responder surgery in the browser/network process.
-- **Force-mDNS-always-on** — close the media-permission local-IP leak
-  unconditionally (a different lever from the ip-handling policy).
-- **Choke:** `BasicPortAllocatorSession` / `MdnsResponderAdapter` (browser
-  process, `third_party/webrtc` + `//content`). Effort L; risk HIGH (deepest
-  surgery in the set; not a Blink patch).
+- **Force-mDNS-always-on** — **SHIPPED 2026-09-06** (`7b3f992`,
+  `patches/webrtc-ii.patch`, key `webrtc:hideLocalIps`, verified by
+  `scripts/verify_webrtc_ii.py`; measurement
+  `2026-09-06-webrtc-ii-force-mdns.md`). Closes the media-permission local-IP
+  leak unconditionally. **The "deepest surgery / libwebrtc / browser process /
+  not a Blink patch" prediction below was WRONG:** the lever is a SINGLE Blink
+  `platform/p2p` conditional, `FilteringNetworkManager::GetMdnsResponder()` — no
+  libwebrtc, no browser-process change. Effort turned out S, risk Low.
+- **Fake-local-IP** — **still open.** Rewrite host ICE candidate IPs to a
+  configured plausible LAN IP (`webrtc:localipv4/localipv6`), stealthier than
+  both the shipped `.local` (a mild shape tell under permission) and the policy's
+  empty-candidate-set. THIS one does need libwebrtc port-allocator surgery.
+- **Choke (residual only):** the fake-local-IP rewrite touches the libwebrtc port
+  allocator; the shipped force-mDNS did not. Public-srflx masking stays
+  harness-unverifiable (no STUN/public route on WSL).
 
 ---
 
 ## Cross-cutting notes
 
-- **Two are NOT Blink patches:** codec (GN build config) and webrtc-ii (libwebrtc
-  / browser process). They break the "one Blink patch per slice" rhythm — plan
-  their build/test loops accordingly.
+- **One is NOT a Blink patch:** codec (GN build config). It breaks the "one Blink
+  patch per slice" rhythm — plan its build/test loop accordingly. (webrtc-ii was
+  expected to be a second such item; the shipped force-mDNS turned out to be a
+  plain Blink `platform/p2p` patch, and only its deferred fake-local-IP residual
+  reaches libwebrtc.)
 - **Two need out-of-Linux testing:** fonts-ii (host/platform-sensitive) and the
   codec build (verify the proprietary matrix on the actual target OS builds).
 - **Coherence dependencies:** window-geometry ↔ sp4a screen; metric-jitter ↔ sp3a
@@ -312,12 +322,16 @@ what that leaves.*
 
 ## Execution note
 
-This roadmap is the ordering/scoping layer. Six items have landed (see the
-`Status` column); what remains is **geo-ii** and **battery-ii** (both small, both
-still unstarted), the three partial remainders (voices-ii `pause()`/`resume()`,
-media-ii Slice 2b, the audio-ii AudioWorklet mask — that last one blocked on a
-harness, not on effort), and the two high-risk deep-surgery items **fonts-ii** and
-**webrtc-ii**, neither of which should start without its out-of-Linux test story.
+This roadmap is the ordering/scoping layer. After the 2026-09-06 tail-completion
+pass, most items have landed (see the `Status` column); what remains is
+**battery-ii** (small, unstarted), **geo-ii positional jitter** (the accuracy-
+derivation lever was REJECTED; jitter is the surviving future slice), and the
+partial remainders: voices-ii `pause()`/`resume()` **now shipped** (`7050f28`),
+media-ii Slice 2b, the audio-ii AudioWorklet mask (blocked on a harness), fonts-ii
+codepoint/system fallback (the local() gate shipped), and webrtc-ii fake-local-IP
+(the force-mDNS shipped; only the libwebrtc IP-rewrite residual remains). fonts-ii
+fallback and the webrtc-ii residual still want their out-of-Linux / real-network
+test story before starting.
 Each still gets measurement doc → plan → SDD as usual. Do not batch-execute the
 remainder autonomously; each carries its own scope decision the operator should
 see.

@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.memsearch/
 sp1a-review-package.md
 sp5a-review-package.md
 /wsl-build-server.md

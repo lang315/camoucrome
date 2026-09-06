@@ -2795,3 +2795,36 @@ FOLLOW-ON TAIL COMPLETION (2026-09-06, subagent-driven, plan
     (force returns before the || is evaluated; same mDNS mechanism R-LEAK proves);
     (3) opt-in default OFF -> default-config fleets NOT protected. Rule-5/thread-safety/
     null-deref/naming all PASS from-source. GREEN, committing.
+    PUSHED origin/main 7050f28..7b3f992 (2026-09-06): commit 7b3f992. Task 3 durable.
+  - Task 4 consolidate: DONE (commit pending push). BIGGEST FINDING of the tail:
+    the DEPS gap was NOT "one line for media_values" — whole-renderer checkdeps found
+    ~22 LATENT violations (never surfaced: .cc-only builds skip checkdeps). Root cause:
+    sp0-config-layer.patch's renderer/DEPS section only ever carried blink_scope.h +
+    mask_config.h; EVERY later slice's header (keys.h x18, canvas_noise.h, gl_params.h,
+    audio_noise.h, device_ids.h, base/no_destructor.h) existed ONLY as a box live edit,
+    NEVER captured into any patch. A clean apply.sh reconstruction would produce a tree
+    that FAILS checkdeps/presubmit. FIX (renderer-wide, per advisor — matches the
+    existing 3-header pattern; canvas_noise.h precedent proves sp0's renderer/DEPS IS
+    the fork's grant registry): added all 7 camoucfg headers + base/no_destructor.h to
+    the sp0 renderer/DEPS section via machine section-swap (splice_deps.py; diff --git
+    count 7 unchanged; a-index d5142fdb5a = true pristine, git-native regen from
+    pristine=HEAD-minus-2-grants). Verified: sp0 DEPS section git apply --check OK on
+    true pristine -> 7 camoucfg + 1 no_destructor; whole-renderer checkdeps SUCCESS
+    (all ~22 gone). Made webrtc-ii's per-dir p2p/DEPS grant redundant -> DROPPED
+    (reverted p2p/DEPS pristine, re-extracted webrtc-ii.patch = .cc-only now, 1774B);
+    fonts/DEPS per-dir grant left as harmless redundancy. webrtc-ii .cc-only round-trip
+    --3way clean, checkdeps p2p SUCCESS (renderer-wide covers keys.h), smoke
+    verify_webrtc_ii 3/3 GREEN (binary unchanged — Task 4 changes are NON-behavioral:
+    DEPS = checkdeps-only, .cc byte-identical). FULL from-scratch pristine reconstruction
+    DEFERRED: box /home/lang/chromium/src is a hybrid (early slices committed at HEAD
+    a727b57805 + later slices as live edits), not pristine Chromium; a true from-zero
+    apply.sh needs a fresh gclient checkout (hours + ~100GB), out of session reach.
+    Achieved instead: both CHANGED patches apply-to-pristine + whole-renderer checkdeps
+    SUCCESS + gn check OK. Synced sp0-config-layer.patch/webrtc-ii.patch/apply.sh to the
+    /home/lang/camoucrome reconstruction copy. Docs reconciled (tail-completion plan
+    Task 3 SHIPPED + Task 4 findings; followon-roadmap geo-ii REJECTED / webrtc-ii
+    partial-shipped + corrected the wrong libwebrtc/browser-process layer claim to Blink
+    platform/p2p; §3 geo-ii already reconciled). .memsearch/ gitignored. Files: patches/
+    sp0-config-layer.patch (renderer/DEPS section), patches/webrtc-ii.patch (.cc-only),
+    scripts/apply.sh (webrtc-ii wired), .gitignore, 2 plan docs. NEXT: SDD final
+    whole-branch review (MERGE_BASE a91fb2d^ -> HEAD).
