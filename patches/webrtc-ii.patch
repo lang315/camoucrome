@@ -1,16 +1,3 @@
-diff --git a/third_party/blink/renderer/platform/p2p/DEPS b/third_party/blink/renderer/platform/p2p/DEPS
-index 2a3589b6bd..2483332977 100644
---- a/third_party/blink/renderer/platform/p2p/DEPS
-+++ b/third_party/blink/renderer/platform/p2p/DEPS
-@@ -1,5 +1,8 @@
- include_rules = [
-     "+crypto/random.h",
-+    # blink_scope.h + mask_config.h are granted renderer-wide (../../DEPS);
-+    # keys.h is not, so grant it here (webrtc-ii, key webrtc:hideLocalIps).
-+    "+components/camoucfg/keys.h",
-     "+components/webrtc/net_address_utils.h",
-     "+media/base/media_permission.h",
-     "+net/base/address_family.h",
 diff --git a/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc b/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc
 index d9b3eb4152..f310a252ea 100644
 --- a/third_party/blink/renderer/platform/p2p/filtering_network_manager.cc
