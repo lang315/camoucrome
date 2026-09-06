@@ -42,7 +42,7 @@ doc, not here.
 | 6 | **media-ii** | **partial** 09-05/09-06 | ★★☆ | M | Med | Blink modules (+browser) | sp4-media |
 | 7 | **metric-jitter SP** | **shipped** 09-05 | ★★☆ | M | Med | Blink platform/fonts | sp3a seed (coherence) |
 | 8 | **audio-ii** | **partial** 09-06 | ★★☆ | M–L | Med | Blink modules (render thread) | sp4-audio |
-| 9 | **fonts-ii** | open | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
+| 9 | **fonts-ii** | **partial** 09-06 | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
 | 10 | **webrtc-ii** | open | ★★☆ | L | **High** | libwebrtc / browser process | sp4-webrtc-ip |
 
 Value = anti-detect impact × how commonly the surface is probed. Effort/Risk =
@@ -248,11 +248,19 @@ what that leaves.*
   Effort M–L; risk med.
 
 ### 9. fonts-ii  (source: sp4-fonts whole-branch review)
-- **local() src gating** — `@font-face { src: local(X) }` reaches `SetStatus` via
-  `FontFaceSet::InsertRuleFontFace`, un-gated; on native Win/mac the host font
-  superset leaks (host-present fonts read as present even when the whitelist would
-  hide them) — the direct-vs-local() cross-method inconsistency = a real
-  anti-detect signature.
+- **local() src gating** — **PARTIAL, shipped 2026-09-06**
+  (`patches/fonts-ii.patch`, verified by `scripts/verify_fonts_ii.py`;
+  measurement `2026-09-06-fonts-ii-local-surfaces.md`). The real gate point is
+  `LocalFontFaceSource::CreateFontData` / `IsLocalFontAvailable` (which call
+  `FontCache::GetFontData` directly, upstream of the sp4-fonts `FontFallbackList`
+  gate), not `SetStatus`. Gated on `fonts:list`, closing the mainstream
+  `local("Family")` cross-method inconsistency (direct `absent` vs `local()`
+  `present`), verified on Linux with a host-present font (DejaVu Sans) via
+  `FontFace.status`. **Residuals:** `local("PostScript name")` of a *listed* font
+  is over-blocked (family allowlist can't match a PS name — the #44 name path,
+  measured by F-PSNAME); the `IsLoading()==true` async-lookup branch of gate 2 is
+  defensive-by-reasoning, unexercised on the sync-lookup verify host; and native
+  Win/mac completeness still needs the cross-platform harness below.
 - **Codepoint / system fallback** — `SystemFindFontForChar` / `GlobalFontFallback`
   / `CommonFontFallback`, plus `LookupLocalFont`/`LookupInFaceNameLists` (matched
   by full/PostScript name), none gated by sp4-fonts.

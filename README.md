@@ -4,7 +4,7 @@ An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
 **Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
-landed on `main`** — 23 patches in `patches/` (applied in the semantic order in
+landed on `main`** — 24 patches in `patches/` (applied in the semantic order in
 `scripts/apply.sh`) plus the proprietary-codec GN args in `settings/build-args.gn`.
 Apply the whole set to a pristine Chromium checkout with
 `scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
@@ -22,7 +22,11 @@ getSettings/id coherence, phantom-webcam error coherence, render-thread audio in
 masking, and SpeechSynthesis boundary/jitter/generation fixes. SP5b adds a
 single-key config-domain validator (a generalized mechanism, populated with the
 geolocation range-checks) so an out-of-range value is refused loudly at startup
-instead of being dropped silently downstream.
+instead of being dropped silently downstream. fonts-ii extends the sp4-fonts
+allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local()
+cross-method inconsistency (a listed font still resolves; an unlisted one no
+longer leaks) — the codepoint-fallback and native-host completeness parts remain
+open, gated on a real Windows/macOS harness.
 
 **Verification is per-slice and RED-first.** Each slice ships a `scripts/verify_*.py`
 that drives a real `content_shell` over CDP, is confirmed to go red against the
