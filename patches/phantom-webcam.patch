@@ -1,0 +1,52 @@
+diff --git a/third_party/blink/renderer/modules/mediastream/user_media_request.cc b/third_party/blink/renderer/modules/mediastream/user_media_request.cc
+index 074b2f3bfc..19a24654e4 100644
+--- a/third_party/blink/renderer/modules/mediastream/user_media_request.cc
++++ b/third_party/blink/renderer/modules/mediastream/user_media_request.cc
+@@ -35,6 +35,9 @@
+ 
+ #include "base/metrics/histogram_functions.h"
+ #include "base/strings/stringprintf.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "media/base/media_switches.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
+@@ -966,10 +969,34 @@ void UserMediaRequest::Fail(Result error, const String& message) {
+       exception_code = DOMExceptionCode::kNotAllowedError;
+       result_enum = UserMediaRequestResult::kNotAllowedByUserError;
+       break;
+-    case Result::NO_HARDWARE:
+-      exception_code = DOMExceptionCode::kNotFoundError;
+-      result_enum = UserMediaRequestResult::kNotFoundError;
++    case Result::NO_HARDWARE: {
++      // camoucrome media-ii Slice 2 (phantom-webcam): the sp4 count spoof lists a
++      // camera/mic the host may lack. NO_HARDWARE -> NotFoundError means "device
++      // absent", which contradicts the device the spoofed enumerateDevices() lists
++      // (the phantom tell). When the spoof claims the requested kind is present,
++      // remap to NotReadableError ("present, cannot start" -- e.g. camera in use),
++      // which is coherent with a listed device. Only the claimed kind is remapped;
++      // a genuinely-absent, un-spoofed kind keeps the real NotFoundError.
++      const camoucfg::ConfigScope& camou_scope =
++          camoucfg::ScopeFor(GetExecutionContext());
++      const bool camou_present =
++          camoucfg::GetBool(camou_scope, camoucfg::keys::kMediaDevicesEnabled)
++              .value_or(false) &&
++          ((Video() &&
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesWebcams)
++                    .value_or(1) > 0) ||
++           (Audio() &&
++            camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesMicros)
++                    .value_or(3) > 0));
++      if (camou_present) {
++        exception_code = DOMExceptionCode::kNotReadableError;
++        result_enum = UserMediaRequestResult::kNotReadableError;
++      } else {
++        exception_code = DOMExceptionCode::kNotFoundError;
++        result_enum = UserMediaRequestResult::kNotFoundError;
++      }
+       break;
++    }
+     case Result::INVALID_STATE:
+     case Result::INVALID_VIDEO_DEVICE_ID:
+     case Result::FAILED_DUE_TO_SHUTDOWN_OTHER:
