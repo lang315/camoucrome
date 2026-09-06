@@ -2687,3 +2687,24 @@ SP5b config-domain validator (2026-09-06): shipped single-key numeric-domain che
   NaN test, log wording), 2 declined. PUSHED origin/main d00ed45..2c3d5e2
   (2026-09-06): feat d9e8d51 + docs 2c3d5e2 (also carried the earlier CLAUDE.md
   docs commit 7941782). SP5b config-domain validator shipped.
+
+fonts-ii local() gate (2026-09-06): shipped @font-face{src:local()} allowlist gate.
+  patches/fonts-ii.patch — two IsFontAllowed(font_name_) guards in core/css/
+  local_font_face_source.cc (IsLocalFontAvailable + CreateFontData), closing the
+  direct-vs-local() cross-method leak sp4-fonts left open (LocalFontFaceSource calls
+  FontCache::GetFontData directly, upstream of the gated FontFallbackList). No new
+  key (reuses fonts:list); core/css already deps camoucfg + DEPS grants
+  mask_config.h/blink_scope.h, so no BUILD.gn/DEPS hunk. Scope: local("Family") only.
+  Evidence: feasibility probe (local("DejaVu Sans")=loaded on box), RED baseline
+  (F-LEAK+F-WORKER FAIL=loaded), GREEN 6/6 (F-LEAK/F-WORKER->error, F-LISTED/
+  F-WORKER-LISTED not over-blocked, F-STOCK/F-DIRECT intact), F-PSNAME residual
+  measured=error. Round-trip: --3way clean (no .rej), gn check OK, rebuild 3 steps,
+  reverify 6/6. Reviewed (agent-skills:code-reviewer): APPROVE, 0 Crit/0 Imp-after-fix;
+  discriminating run confirmed gate-1-only passes 6/6 (gate 2's IsLoading branch is
+  defensive-by-reasoning for async-lookup platforms, unmeasured here) -> doc+comment
+  made honest; added F-WORKER-LISTED; confirmed font_selector_ non-null invariant.
+  Residuals: PS-name over-block (#44 name path), codepoint fallback (per-OS), native
+  Win/mac completeness (needs cross-platform harness). FOUND (pre-existing, NOT this
+  slice): core/css/media_values.cc includes camoucfg/keys.h with no DEPS grant
+  (sp4a-screen); checkdeps flags it, latent because checkdeps doesn't run on .cc-only
+  builds. One-line blink-renderer-DEPS fix, deferred. COMMITTED local, awaiting push.
