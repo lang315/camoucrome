@@ -2707,4 +2707,5 @@ fonts-ii local() gate (2026-09-06): shipped @font-face{src:local()} allowlist ga
   Win/mac completeness (needs cross-platform harness). FOUND (pre-existing, NOT this
   slice): core/css/media_values.cc includes camoucfg/keys.h with no DEPS grant
   (sp4a-screen); checkdeps flags it, latent because checkdeps doesn't run on .cc-only
-  builds. One-line blink-renderer-DEPS fix, deferred. COMMITTED local, awaiting push.
+  builds. One-line blink-renderer-DEPS fix, deferred. PUSHED origin/main
+  0bc9553..5bbafa9 (2026-09-06): feat 2ed0036 + docs 5bbafa9. fonts-ii local() gate shipped.
