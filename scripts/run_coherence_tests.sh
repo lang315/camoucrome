@@ -64,7 +64,7 @@ done < <(env)
 # no-taskbar state the fits-within relation must accept). The screen keys are
 # what makes CleanConfigProducesNoViolations exercise the equality boundary; a
 # `<` typo in CheckFitsWithin would turn this config incoherent and fail here.
-COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080}'
+COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080,"navigator.platform":"Win32"}'
 INCOHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"}'
 
 # One incoherent config per registry invariant, each violating exactly that
@@ -79,6 +79,7 @@ declare -A MUTATIONS=(
   [ua-os-family-agrees]="$INCOHERENT"
   [screen-avail-width-fits]='{"screen.width":1920,"screen.availWidth":2560}'
   [screen-avail-height-fits]='{"screen.height":1080,"screen.availHeight":1440}'
+  [navigator-platform-matches-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","navigator.platform":"MacIntel"}'
 )
 
 declare -a ORDER=(

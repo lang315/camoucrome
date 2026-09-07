@@ -102,6 +102,10 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
     } else if (*relation == "fits-within") {
       EXPECT_EQ(header_entry->relation, invariants::Relation::kFitsWithin)
           << *id;
+    } else if (*relation == "same-platform-bucket") {
+      EXPECT_EQ(header_entry->relation,
+                invariants::Relation::kSamePlatformBucket)
+          << *id;
     } else {
       ADD_FAILURE() << *id << " has a relation this test does not know: "
                     << *relation;
@@ -166,7 +170,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 3> kMutations = {{
+constexpr std::array<Mutation, 4> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -180,6 +184,12 @@ constexpr std::array<Mutation, 3> kMutations = {{
     {"screen-avail-height-fits",
      R"({"screen.height":1080,"screen.availHeight":1440})",
      "screen.availHeight"},
+    // A Windows UA beside an explicit macOS navigator.platform. ua:platform is
+    // absent, so ua-os-family-agrees stays silent and exactly one violation is
+    // produced -- navigator.platform, which should be "Win32".
+    {"navigator-platform-matches-os",
+     R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","navigator.platform":"MacIntel"})",
+     "navigator.platform"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {
@@ -276,6 +286,14 @@ TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
             *GetUint32(GlobalScope(), keys::kScreenWidth));
   ASSERT_EQ(*GetUint32(GlobalScope(), keys::kScreenAvailHeight),
             *GetUint32(GlobalScope(), keys::kScreenHeight));
+  // The coherent config sets navigator.platform to "Win32", the canonical
+  // reduced platform of the Windows ua:osInfo above, so this test exercises the
+  // same-platform-bucket relation at its coherent boundary. Without the key
+  // set, CheckSamePlatformBucket short-circuits on an absent navigator.platform
+  // and this test would pass having never compared the two -- the same vacuous
+  // pass the UA and screen assertions above guard against.
+  ASSERT_TRUE(GetString(GlobalScope(), keys::kNavigatorPlatform).has_value())
+      << "coherent config must set navigator.platform; see the runner";
   EXPECT_TRUE(Validate(GlobalScope()).empty());
 }
 
