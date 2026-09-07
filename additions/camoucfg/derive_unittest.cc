@@ -77,6 +77,22 @@ TEST(DeriveTest, CanonicalFormsOfUnknownAreEmpty) {
   EXPECT_TRUE(CanonicalUaChPlatformFor(OsFamily::kUnknown).empty());
 }
 
+// navigator.platform derives from the claimed OS using GetReducedNavigatorPlatform's
+// frozen per-OS literals -- "Win32"/"MacIntel"/"Linux x86_64"/"Linux armv81",
+// NOT the UA-CH tokens (RecognisesEachUaChPlatformString above pins "Win32" as
+// kUnknown for the UA-CH parser, so the two must not be conflated). Under UA
+// reduction these are arch-independent, so the Linux family has a single
+// byte-identical value too. Only kUnknown is empty: with no OS claimed the
+// caller keeps the host's own value.
+TEST(DeriveTest, CanonicalNavigatorPlatformMatchesReducedLiterals) {
+  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kWindows), "Win32");
+  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kMac), "MacIntel");
+  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kLinux), "Linux x86_64");
+  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kChromeOs), "Linux x86_64");
+  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kAndroid), "Linux armv81");
+  EXPECT_TRUE(CanonicalNavigatorPlatformFor(OsFamily::kUnknown).empty());
+}
+
 // ClaimedOs() is absent on purpose. It reads configuration, which camoucfg
 // latches once per process (mask_config.cc:18), so exercising it needs its own
 // process invocation with CAMOU_CONFIG set externally. The coherence validator

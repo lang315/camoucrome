@@ -61,10 +61,18 @@ index a57561775c..0ebcd52cdc 100644
    return window ? window->GetFrame()->GetSettings()->GetMaxTouchPoints() : 0;
  }
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-index c9332e1fdf..f94e3e6a3b 100644
+index c9332e1fdf..88df693058 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
 +++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-@@ -62,7 +62,20 @@ String NavigatorBase::platform() const {
+@@ -7,6 +7,7 @@
+ #include "base/feature_list.h"
+ #include "build/build_config.h"
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/derive.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/features.h"
+@@ -62,7 +63,33 @@ String NavigatorBase::platform() const {
      return NavigatorID::platform();
    }
  #endif
@@ -73,14 +81,27 @@ index c9332e1fdf..f94e3e6a3b 100644
 +
 +  // Camoucrome configuration is authoritative. WorkerNavigator does not
 +  // override platform(), so this shared path is the only hook that reaches a
-+  // worker; applying the override here keeps a worker's navigator.platform
-+  // coherent with the window's (Navigator::platform() applies the same key on
-+  // the window path). No-op when the key is absent, so the real reduced
-+  // platform plus any DevTools override on the window survives unchanged.
-+  if (std::optional<std::string> configured = camoucfg::GetString(
-+          camoucfg::ScopeFor(GetExecutionContext()),
-+          camoucfg::keys::kNavigatorPlatform)) {
++  // worker; applying the override (and the derive below) here keeps a worker's
++  // navigator.platform coherent with the window's (Navigator::platform()
++  // applies the same key on the window path). A DevTools override on the window
++  // is applied in Navigator::platform() before this runs, so it still wins;
++  // this path is reached only when there is no such override.
++  const camoucfg::ConfigScope& scope =
++      camoucfg::ScopeFor(GetExecutionContext());
++  if (std::optional<std::string> configured =
++          camoucfg::GetString(scope, camoucfg::keys::kNavigatorPlatform)) {
 +    platform = String::FromUtf8(*configured);
++  } else if (std::string_view derived = camoucfg::CanonicalNavigatorPlatformFor(
++                 camoucfg::ClaimedOs(scope));
++             !derived.empty()) {
++    // No navigator.platform configured, but the UA claims an OS (ClaimedOs reads
++    // ua:osInfo first, then ua:platform). The reduced host platform above would
++    // otherwise disagree with the claimed UA -- e.g. a Windows UA beside the
++    // host's "Linux x86_64". CanonicalNavigatorPlatformFor returns the frozen
++    // reduced literal for that OS (Win32 / MacIntel / Linux x86_64 / Linux
++    // armv81); empty only when nothing is claimed, leaving the host value. SP1
++    // design section 410 names this mapping; SP5 owns the coherence SP1b deferred.
++    platform = String::FromUtf8(derived);
 +  }
 +  return platform;
  }

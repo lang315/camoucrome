@@ -120,6 +120,44 @@ std::string_view CanonicalUaChPlatformFor(OsFamily os) {
   return {};
 }
 
+std::string_view CanonicalNavigatorPlatformFor(OsFamily os) {
+  // navigator.platform does not fit kForms: real Chrome reports a fixed string
+  // that is NOT the UA-CH platform token -- "Win32" (not "Windows"), "MacIntel"
+  // (not "macOS"), "Linux x86_64" (not "Linux"). These are the FROZEN per-OS
+  // literals GetReducedNavigatorPlatform() (navigator_base.cc) returns under the
+  // reduced User-Agent, which is the live path NavigatorBase::platform() serves
+  // and the default in a modern Chrome. Freezing them independent of the host's
+  // real architecture is the whole point of UA reduction, so "Linux x86_64" is
+  // what a real reduced Chrome reports on ANY Linux, any arch -- there is a
+  // single byte-identical value for the Linux family after all, and deriving it
+  // satisfies the same discipline CanonicalUaChPlatformFor holds. (The
+  // non-reduced navigator_id.cc #else builds "Linux <arch>" from uname, but that
+  // branch is compiled out on every desktop target and is not what runs.)
+  // kUnknown -> empty: no OS is claimed, so the caller keeps the host's own
+  // value rather than inventing one.
+  //
+  // These are a hand-kept copy of GetReducedNavigatorPlatform()'s literals with
+  // no build-time tie to it, and DeriveTest pins them against this copy -- so an
+  // upstream change to the frozen reduced strings would pass the unit test. The
+  // guard against that drift is the end-to-end RP-* cases in
+  // verify_navplatform_derive.py, which read the real reduced path for Win/Mac/
+  // Android, not the unit test.
+  switch (os) {
+    case OsFamily::kWindows:
+      return "Win32";
+    case OsFamily::kMac:
+      return "MacIntel";
+    case OsFamily::kLinux:
+    case OsFamily::kChromeOs:
+      return "Linux x86_64";
+    case OsFamily::kAndroid:
+      return "Linux armv81";
+    case OsFamily::kUnknown:
+      return {};
+  }
+  return {};  // GCC: enum switch is exhaustive but control-flow analysis needs it.
+}
+
 OsFamily ClaimedOs(const ConfigScope& scope) {
   // osInfo first: it lands in the user-agent string, the surface a detector
   // reads first. An osInfo that is set but unrecognised falls through to
