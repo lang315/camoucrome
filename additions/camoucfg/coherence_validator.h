@@ -67,6 +67,35 @@ std::optional<PairingViolation> CheckPairing(bool renderer_resolves,
 // the owner of this pairing; a renderer without its vendor is invalid config.
 std::vector<PairingViolation> ValidatePairing(const ConfigScope& scope);
 
+// A spoofed WebGL capability surface (parameters, extensions, shader precision,
+// or context attributes) configured while the API's identity strings
+// (renderer + vendor) are both absent -- so a page reads the configured GPU
+// capability beside this machine's real GPU identity. There is no value to
+// substitute (repairing would mean inventing renderer/vendor), so the report
+// names the capability key and both identity keys.
+struct CapabilityViolation {
+  std::string capability_key;  // the spoofed surface the operator configured
+  std::string renderer_key;    // webGl:renderer / webGl2:renderer, both absent
+  std::string vendor_key;      // webGl:vendor / webGl2:vendor, both absent
+};
+
+// Pure: a configured capability leaks the identity iff it is configured AND
+// neither the renderer nor the vendor resolves. Gated on BOTH identity strings
+// absent because when exactly one resolves ValidatePairing already names the
+// missing one -- reporting here too would double-report. Reads no config, so it
+// is testable with literals like CheckPairing.
+bool CapabilityLeaksIdentity(bool capability_configured,
+                             bool renderer_resolves,
+                             bool vendor_resolves);
+
+// Reads the configuration and reports, per API, each capability surface that is
+// configured while the identity strings are both absent. One-directional:
+// identity set without capabilities is the fork's own simple spoof (design
+// sec.284 assigns its value coherence to whole-profile shipping), so it is NOT
+// reported here.
+std::vector<CapabilityViolation> ValidateCapabilityIdentity(
+    const ConfigScope& scope);
+
 // Called once from the browser process before any renderer exists. Returns
 // false when startup must be refused.
 //

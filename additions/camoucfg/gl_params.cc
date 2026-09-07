@@ -48,4 +48,27 @@ const base::DictValue* GLContextAttrs(const ConfigScope& scope,
   return internal::GLContextAttrsFrom(internal::ParsedConfig(), is_webgl2);
 }
 
+bool GLParamsConfigured(const ConfigScope& scope, bool is_webgl2) {
+  const base::DictValue* d = internal::ParsedConfig().FindDict(
+      is_webgl2 ? keys::kWebGl2Parameters : keys::kWebGlParameters);
+  return d && !d->empty();
+}
+
+bool GLShaderPrecisionConfigured(const ConfigScope& scope, bool is_webgl2) {
+  const base::DictValue* d = internal::ParsedConfig().FindDict(
+      is_webgl2 ? keys::kWebGl2ShaderPrecision : keys::kWebGlShaderPrecision);
+  return d && !d->empty();
+}
+
+bool GLContextAttrsConfigured(const ConfigScope& scope, bool is_webgl2) {
+  const base::DictValue* d = GLContextAttrs(scope, is_webgl2);
+  return d && !d->empty();
+}
+
+bool GLExtensionsConfigured(const ConfigScope& scope, bool is_webgl2) {
+  return !GetStringList(scope, is_webgl2 ? keys::kWebGl2Extensions
+                                         : keys::kWebGlExtensions)
+              .empty();
+}
+
 }  // namespace camoucfg

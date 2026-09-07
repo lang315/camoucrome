@@ -341,5 +341,44 @@ TEST(PairingTest, NeitherResolvedIsCoherent) {
                    .has_value());
 }
 
+// --- WebGL capability <-> identity presence ---
+//
+// CapabilityLeaksIdentity is pure (reads no configuration), so like PairingTest
+// these run in a plain filter with literals. The config-reading half
+// (ValidateCapabilityIdentity, and the type-aware presence getters it calls) is
+// proven end-to-end by verify_webgl_capability_identity.py, where a real
+// getParameter() read confirms the leak and its presence semantics.
+
+TEST(CapabilityIdentityTest, CapabilityWithBothIdentityAbsentLeaks) {
+  EXPECT_TRUE(CapabilityLeaksIdentity(/*capability_configured=*/true,
+                                      /*renderer_resolves=*/false,
+                                      /*vendor_resolves=*/false));
+}
+
+TEST(CapabilityIdentityTest, PartialIdentityIsThePairingChecksToReport) {
+  // Exactly one identity string resolving is ValidatePairing's to report, not
+  // this entry's -- so this gate stays closed in both directions.
+  EXPECT_FALSE(CapabilityLeaksIdentity(/*capability_configured=*/true,
+                                       /*renderer_resolves=*/true,
+                                       /*vendor_resolves=*/false));
+  EXPECT_FALSE(CapabilityLeaksIdentity(/*capability_configured=*/true,
+                                       /*renderer_resolves=*/false,
+                                       /*vendor_resolves=*/true));
+}
+
+TEST(CapabilityIdentityTest, CapabilityWithFullIdentityIsCoherent) {
+  EXPECT_FALSE(CapabilityLeaksIdentity(/*capability_configured=*/true,
+                                       /*renderer_resolves=*/true,
+                                       /*vendor_resolves=*/true));
+}
+
+TEST(CapabilityIdentityTest, NoCapabilityNeverLeaks) {
+  // Identity absent but nothing spoofed: the one-directional rule -- identity
+  // without capabilities is the fork's own simple spoof, not this entry's.
+  EXPECT_FALSE(CapabilityLeaksIdentity(/*capability_configured=*/false,
+                                       /*renderer_resolves=*/false,
+                                       /*vendor_resolves=*/false));
+}
+
 }  // namespace
 }  // namespace camoucfg
