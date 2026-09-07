@@ -224,6 +224,58 @@ std::vector<PairingViolation> ValidatePairing(const ConfigScope& scope) {
   return violations;
 }
 
+bool CapabilityLeaksIdentity(bool capability_configured,
+                             bool renderer_resolves,
+                             bool vendor_resolves) {
+  return capability_configured && !renderer_resolves && !vendor_resolves;
+}
+
+std::vector<CapabilityViolation> ValidateCapabilityIdentity(
+    const ConfigScope& scope) {
+  std::vector<CapabilityViolation> violations;
+  for (bool is_webgl2 : {false, true}) {
+    // Both identity strings must be absent for this entry to fire: when exactly
+    // one resolves, ValidatePairing already names the missing one. GLStringResolves
+    // (the pairing check's helper) mirrors the consumer's full resolution, so a
+    // renderer supplied through the parameters table counts as resolved here too.
+    const bool renderer_resolves =
+        GLStringResolves(scope, is_webgl2, /*vendor=*/false);
+    const bool vendor_resolves =
+        GLStringResolves(scope, is_webgl2, /*vendor=*/true);
+
+    struct Cap {
+      std::string_view key;
+      bool configured;
+    };
+    // present-AND-non-empty per gl_params (empty map/list resolves to the host
+    // value on every read, so it spoofs nothing and is not a leak).
+    const Cap caps[] = {
+        {is_webgl2 ? keys::kWebGl2Parameters : keys::kWebGlParameters,
+         GLParamsConfigured(scope, is_webgl2)},
+        {is_webgl2 ? keys::kWebGl2Extensions : keys::kWebGlExtensions,
+         GLExtensionsConfigured(scope, is_webgl2)},
+        {is_webgl2 ? keys::kWebGl2ShaderPrecision : keys::kWebGlShaderPrecision,
+         GLShaderPrecisionConfigured(scope, is_webgl2)},
+        {is_webgl2 ? keys::kWebGl2ContextAttrs : keys::kWebGlContextAttrs,
+         GLContextAttrsConfigured(scope, is_webgl2)},
+    };
+    for (const Cap& cap : caps) {
+      if (!CapabilityLeaksIdentity(cap.configured, renderer_resolves,
+                                   vendor_resolves)) {
+        continue;
+      }
+      CapabilityViolation v;
+      v.capability_key = std::string(cap.key);
+      v.renderer_key = std::string(is_webgl2 ? keys::kWebGl2Renderer
+                                             : keys::kWebGlRenderer);
+      v.vendor_key =
+          std::string(is_webgl2 ? keys::kWebGl2Vendor : keys::kWebGlVendor);
+      violations.push_back(v);
+    }
+  }
+  return violations;
+}
+
 bool ValidateAtStartup(const ConfigScope& scope) {
   std::vector<Violation> violations = Validate(scope);
   // Single-key domain checks (SP5b) run alongside the relational ones. They
@@ -240,8 +292,12 @@ bool ValidateAtStartup(const ConfigScope& scope) {
   // rejection there (sp1-navigator-identity-design.md:419-423) but sp5a shipped
   // it warn-only; realigning ua: is that block's business, not this slice's.
   std::vector<PairingViolation> pairing_violations = ValidatePairing(scope);
+  // A spoofed GL capability with both identity strings absent (design sec.7.1:
+  // the unit of configuration is a whole captured profile, not editable fields).
+  std::vector<CapabilityViolation> capability_violations =
+      ValidateCapabilityIdentity(scope);
   if (violations.empty() && domain_violations.empty() &&
-      pairing_violations.empty()) {
+      pairing_violations.empty() && capability_violations.empty()) {
     return true;
   }
 
@@ -293,6 +349,20 @@ bool ValidateAtStartup(const ConfigScope& scope) {
                   "beside this machine's real one -- an incoherent pair. Set "
                   "both, or neither, or set CAMOU_CONFIG_STRICT=1 to refuse "
                   "startup.";
+  }
+
+  for (const CapabilityViolation& v : capability_violations) {
+    // A capability without its identity: a spoofed GPU capability beside the
+    // real GPU identity. No repair target -- inventing renderer/vendor would be
+    // inventing a fingerprint -- so the message names the capability and both
+    // identity keys and stops.
+    LOG(ERROR) << "camoucfg: '" << v.capability_key
+               << "' is set but neither '" << v.renderer_key << "' nor '"
+               << v.vendor_key
+               << "' is. A page reads the configured GPU capability beside this "
+                  "machine's real GPU identity -- an incoherent profile. Set "
+                  "the identity strings from the same capture, or set "
+                  "CAMOU_CONFIG_STRICT=1 to refuse startup.";
   }
   return !strict;
 }

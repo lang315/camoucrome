@@ -64,6 +64,24 @@ bool GLShaderPrecisionBlock(const ConfigScope& scope, bool is_webgl2);
 const base::DictValue* GLContextAttrs(const ConfigScope& scope,
                                       bool is_webgl2);
 
+// Whether the operator configured a spoofed capability VALUE for each WebGL
+// surface: the map/list is present AND non-empty. An empty map or list
+// configures no value -- every value read resolves to the host exactly as an
+// absent key does (verified against each consumer: FindDict-missing pnames, and
+// the extension hook's `if (!list.empty())` fall-through). (A bare
+// `...:blockIfNotDefined` flag with an empty/absent map is a separate case: it
+// can make blockable pnames error rather than return the host value, but it
+// spoofs no value, so it is deliberately not treated as "configured" here.)
+// Type-aware: a wrong-typed value (FindDict / GetStringList returns null /
+// empty) reads as not configured. SP5's coherence validator uses these to
+// require the identity strings (webGl:renderer / webGl:vendor) whenever any
+// capability value is spoofed, so a spoofed GPU capability never sits beside
+// this machine's real GPU identity.
+bool GLParamsConfigured(const ConfigScope& scope, bool is_webgl2);
+bool GLShaderPrecisionConfigured(const ConfigScope& scope, bool is_webgl2);
+bool GLContextAttrsConfigured(const ConfigScope& scope, bool is_webgl2);
+bool GLExtensionsConfigured(const ConfigScope& scope, bool is_webgl2);
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_GL_PARAMS_H_

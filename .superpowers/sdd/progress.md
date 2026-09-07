@@ -3282,3 +3282,43 @@ be) = ValidatePairing sibling in coherence_validator.cc, ADDITIONS-ONLY. Open qu
 real gap? design:284 assigns parameters<->strings to whole-profile shipping (7.1). MEASURE first
 ({"webGl:parameters":{"3379":16384}} alone -> page reads spoofed MAX_TEXTURE_SIZE beside real renderer?),
 advisor, THEN decide (check vs rejection record).
+
+Slice #3 (WebGL capability<->identity presence, "Do 1 2 3" #3): COMPLETE. A spoofed WebGL capability
+surface (webGl:parameters / supportedExtensions / shaderPrecisionFormats / contextAttributes, + webGl2
+mirrors) set while NEITHER webGl:renderer NOR webGl:vendor resolves lets a page read the fake GPU
+capability beside this machine's real GPU identity. Reports at startup; refuses under CAMOU_CONFIG_STRICT.
+ADDITIONS-ONLY (no patch): 4 type-aware presence getters in gl_params.{h,cc} (GLParamsConfigured /
+GLShaderPrecisionConfigured / GLContextAttrsConfigured / GLExtensionsConfigured, each present-AND-non-empty
+mirroring its consumer's empty-handling); CapabilityLeaksIdentity + ValidateCapabilityIdentity in
+coherence_validator.{h,cc}, wired into ValidateAtStartup's collect+early-return; CapabilityIdentityTest
+suite in the unittest; verify_webgl_capability_identity.py (13 rows). One-directional: capability => identity,
+NOT the reverse -- identity-only is the fork's own supported simple spoof (verify_sp3b V2) and design:284
+assigns "do numeric limits match the claimed GPU" to whole-profile shipping (SP5 profile database, not yet
+built), so requiring capabilities whenever identity is set would refuse every simple spoof. Gated on BOTH
+identity strings absent so it never double-reports with the renderer<->vendor pairing check (db71830), which
+owns the exactly-one-set case -- proven by CP-PARTIAL-IDENTITY, not assumed. Presence semantics (empty =
+absent, uniformly) were READ FROM THE CONSUMERS not analogy: advisor guessed an empty list "advertises
+nothing"; reading the extension hook (sp3b:129, `if (!list.empty())`) showed an empty list falls through to
+the REAL extension set = absent, the opposite of the guess (CLAUDE.md #2). Presence PROVEN BY MUTATION for
+both structurally-distinct getters: flip the dict getter GLParamsConfigured to type-blind HasKey -> exactly
+CP-EMPTY-DICT + CP-WRONG-TYPE red; separately flip the list getter GLExtensionsConfigured to HasKey ->
+exactly CP-EMPTY-LIST red; each time others green, restore -> 13/13. Three per-field webGl2 rows were
+TRIALED then DROPPED: adding them surfaced an intermittent (~1-in-6 full runs) content_shell startup miss on
+ONE row only (webGl2:shaderPrecisionFormats, 3 of 3 identified misses), cause NOT diagnosed -- the check path
+is deterministic so the miss is upstream, but where is unknown; single-row evidence is weak for
+harness-general. Retained 13 ran clean ~6x (does not rule out a low-rate flake reaching them). If a future
+run shows a lone 12/13, this is the prior. Build "Build Succeeded: 18 steps" (real recompile of gl_params.o +
+coherence_validator.o + unittest, relink both). GREEN: unit 8/8, e2e 13/13. Ext leak MEASURED not reasoned
+(advisor fold): {"webGl:supportedExtensions":["WEBGL_debug_renderer_info","OES_element_index_uint"]} alone ->
+extCount 2 beside host SwiftShader renderer. Regressions since ValidateAtStartup changed: verify_webgl_pairing
+9/9, run_coherence_tests 6/6, verify_sp5a 6/6, verify_navplatform_bucket 7/7, verify_ua_halfconfig_reject 6/6.
+NOTE: the tested box binary was built with the pre-review gl_params.h (comment-only revision after; the .h
+comment change is behaviorally identical, no rebuild needed to re-verify). Report-not-repair: CP-MOTIVATION
+reads maxTex 16384 beside host SwiftShader identically before AND after (repairing would mean inventing
+renderer/vendor strings the operator did not choose). Two known over-report edges (safe: never miss, only
+over-refuse under strict): a non-empty map of only unrecognized pnames reads "configured" though it spoofs
+nothing (value-coherence job, SP5 profile database owns); a bare `...:blockIfNotDefined` flag with no map is
+deliberately NOT "configured". RESIDUAL: value coherence (do the numbers match the claimed GPU) = design:284,
+needs the SP5 profile database. DEFERRED once, list-and-stop: SP5 profile database (:284 value coherence); the
+bare-blockIfNotDefined-beside-real-identity coherence question (design owner); the undiagnosed webGl2
+shaderPrec harness flake.
