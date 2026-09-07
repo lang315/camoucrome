@@ -1,5 +1,14 @@
 # webrtc-ii fake-local-IP Implementation Plan
 
+> **SUPERSEDED — slice REJECTED 2026-09-07.** Tasks 1–5 were executed to GREEN
+> (verify 6/6; both review Criticals fixed) before the whole-slice review found a
+> structural real-IP leak (peer-reflexive candidates bypass the hook and expose
+> the real IP via `getStats()` on any completed ICE connectivity check). Root
+> cause: a fake literal IP cannot resolve to the real socket, so force-mDNS is
+> prflx-safe and this approach structurally cannot be. Reverted. See the
+> measurement doc's VERDICT banner and §7. This plan is kept as the record of
+> what was built.
+
 > **For agentic workers:** Executed INLINE on the WSL build box by the controller
 > (box access is a single shared tree over one SSH master — fresh per-task
 > subagents cannot each drive it). Each task ends with a build/verify gate; a

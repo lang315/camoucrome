@@ -334,13 +334,26 @@ what that leaves.*
   not a Blink patch" prediction below was WRONG:** the lever is a SINGLE Blink
   `platform/p2p` conditional, `FilteringNetworkManager::GetMdnsResponder()` — no
   libwebrtc, no browser-process change. Effort turned out S, risk Low.
-- **Fake-local-IP** — **still open.** Rewrite host ICE candidate IPs to a
-  configured plausible LAN IP (`webrtc:localipv4/localipv6`), stealthier than
-  both the shipped `.local` (a mild shape tell under permission) and the policy's
-  empty-candidate-set. THIS one does need libwebrtc port-allocator surgery.
-- **Choke (residual only):** the fake-local-IP rewrite touches the libwebrtc port
-  allocator; the shipped force-mDNS did not. Public-srflx masking stays
-  harness-unverifiable (no STUN/public route on WSL).
+- **Fake-local-IP** — **REJECTED 2026-09-07** (built to GREEN 6/6 across host +
+  srflx-raddr, both review Criticals fixed, then rejected on a structural leak the
+  passive probe could not see; measurement
+  `2026-09-07-webrtc-ii-fake-local-ip.md`, VERDICT banner + §7). Correcting this
+  row's earlier framing: the local-IP half was NOT "needs a real network" — host
+  candidates gather locally and it built+verified fully on WSL. The lever is a
+  Blink `FilteringNetworkManager` provider + a small vendored-libwebrtc
+  `Port::AddAddress` hunk (NOT deep port-allocator surgery). It fails for a
+  fundamental reason: a fake **literal** IP cannot carry `SetResolvedIP(real)`
+  (the serialization trap), which is exactly what makes mDNS connectivity-
+  coherent — so on any completed ICE connectivity check a **peer-reflexive
+  candidate** (`Connection::MaybeUpdateLocalCandidate`, bypassing the hook) exposes
+  the real IP via `getStats()`, and preserving the real port hands a page a
+  brute-force. **force-mDNS (shipped) is prflx-safe; fake-IP structurally cannot
+  be** → net-negative (the geo accuracy-derive class). Remains rejected until a
+  libwebrtc mechanism can advertise a fake that *resolves* to the real socket
+  (which is what mDNS already is).
+- **Choke (residual only):** only the **public-IP srflx *address*** masking
+  remains open — harness-unverifiable (no STUN/public route on WSL), and it needs
+  the libwebrtc port allocator. The fake-*local*-IP rewrite is closed as rejected.
 
 ---
 
