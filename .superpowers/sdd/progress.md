@@ -3134,3 +3134,52 @@ upstream literal drift.
 DEFERRED: kSamePlatformBucket relational invariant (catch an EXPLICIT navigator.platform disagreeing
 with the UA) -- complementary to this fallback derive, SP5a. Half-config (ua:platform without
 ua:osInfo) is pre-existing (keys.h:413-424, startup already warns), not introduced.
+
+## webGl renderer <-> vendor all-or-nothing pairing (SP5, reject-under-strict) -- SHIPPED 2026-09-07
+User chose "renderer<->vendor all-or-nothing" (after I reframed the WebGL renderer<->OS task and
+REJECTED the renderer->OS field-invariant, recorded in the measurement doc). webGl:renderer /
+webGl:vendor are independent config keys; the getParameter() consumer (sp3b patch 281-311) resolves
+each on its own, falling back to the REAL driver GL_RENDERER/GL_VENDOR when unset. So a half-config
+(renderer set, vendor unset) makes a page read the spoofed renderer beside this machine's real GL
+vendor through WEBGL_debug_renderer_info -- an incoherent pair, firing by default on the obvious
+operator mistake. Design sp3-webgl-canvas-design.md:283 + deferred obligation :256-257: "must be
+rejected at parse time; the validator enforces the pairing."
+MECHANISM (advisor-reconciled, differs from first advisor plan): NOT a registry relation. The
+codebase has a documented split -- the invariant registry (kAllInvariants/Validate) owns relations
+between keys BOTH PRESENT; presence/absence incoherence is a startup diagnostic (coherence_validator.cc
+37-48 comment; sp5a patch 139-143). renderer<->vendor is a PRESENCE relation, so it goes in
+coherence_validator.cc as a sibling of ValidateDomains -- NOT a new Relation/invariants.json/mutation-
+harness entry, NOT the browser_main_loop warn block (validator owns `strict`, is unit-testable, feeds
+the existing refusal). Rejected the first advisor idea (kBoundTogether registry relation +
+PresenceViolation type) and HasKey (type-blind; sp5a:112-118 already litigated that -- {"webGl:vendor":10}
+would suppress the warning for exactly the config that leaks).
+FIX: PairingViolation{present_key,absent_key}; pure CheckPairing(renderer_resolves,vendor_resolves,
+keys) (both-or-none XOR, testable with literals like CheckDomain); ValidatePairing(scope) loops webGl
++ webGl2 independently. "Resolves" mirrors the consumer's FULL resolution via GLStringResolves: the
+dedicated key OR a STRING entry in the parameters table at the pname (0x9245 vendor / 0x9246 renderer,
+decimal 37445/37446) -- reading only the key would false-refuse a config spoofing via the params table
+under strict. Wired into ValidateAtStartup beside ValidateDomains, own LOG(ERROR) (presence, no "should
+be X" -- inventing a value = inventing a fingerprint), feeds existing `return !strict` (exit 13).
+REJECT-not-repair: does NOT change what the page sees under non-strict.
+FILES (all additions/, patch re-extraction CLEAN -- no patches/ change): additions/camoucfg/
+coherence_validator.{h,cc} + coherence_validator_unittest.cc (PairingTest, 4 pure cases); scripts/
+verify_webgl_pairing.py (new); measurement doc (new, incl. renderer->OS REJECTION record).
+VERIFY (box GREEN, final binary): PairingTest 4/4; verify_webgl_pairing.py RED baseline (HALF-LOG/
+HALF-STRICT/VENDOR-ONLY/CROSS FAIL on current binary) -> GREEN 9/9 after; regressions verify_sp5a.py
+6/6 + run_coherence_tests.sh 6/6 (registry untouched). WP-MOTIVATION reads IDENTICAL before/after
+(host SwiftShader ANGLE vendor "Google Inc. (Google)" beside spoofed "NVIDIA GeForce RTX 4090") --
+proves leak real + unchanged (reject-not-repair); host renderer != NVIDIA = differ-guarantee.
+REVIEW: 1 round, REQUEST CHANGES (1 Important, no Critical; production code confirmed correct incl.
+GLStringResolves pname mapping traced vs consumer). Important: params-table guard only tested VENDOR
+arm (37445); renderer arm (37446) untested and un-unit-testable (config singleton) -> verify script
+the only surface -> FIXED: added WP-PARAMS-GUARD-RENDERER (9th case). Suggestions applied: moved
+#include <variant> to stdlib block; renamed RENDERER_ABSENT/VENDOR_ABSENT -> *_MISSING_MSG.
+ADVISOR (pre-commit) caught a FALSE comment "why" (CLAUDE.md #1/#6): I claimed "SP1 never asked to
+reject" the ua: half-config -- FALSE, sp1-design:419-423 asked for the SAME all-or-nothing rejection;
+sp5a shipped ua: warn-only anyway. Corrected code comment + doc to the honest framing. Also fixed
+drifted line cites (coherence_validator.cc 35-46 -> 37-48; patch-file vs source-file clarity).
+DEFERRED: align the sp5a ua: half-config to REJECT under strict (per sp1-design:419-423; currently
+warn-only -- a pre-existing gap, not this slice's). renderer-absent startup diagnostic + whole-profile
+renderer<->OS coherence (sp3-design:287/7.1) remain the profile-generator's (renderer->OS field-
+invariant REJECTED -- bare in-repo format defeats classifier, tokens not closed-set, no canonical to
+derive; see measurement doc).
