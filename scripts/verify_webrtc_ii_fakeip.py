@@ -1,4 +1,14 @@
-"""Verifies webrtc-ii fake-local-IP (webrtc:localipv4).
+"""RED record for webrtc-ii fake-local-IP -- a REJECTED slice (2026-09-07).
+
+The fake-local-IP lever (webrtc:localipv4) was built to GREEN 6/6 here, then
+rejected in whole-slice review: a fake literal host IP cannot resolve to the real
+socket (unlike an mDNS .local name), so on any completed ICE connectivity check a
+peer-reflexive candidate carries the real IP into getStats() -- a leak this
+passive probe (iceServers:[], no connectivity phase) cannot see. force-mDNS
+(webrtc:hideLocalIps) is prflx-safe and strictly more robust. See
+docs/superpowers/measurements/2026-09-07-webrtc-ii-fake-local-ip.md §7. This
+script is kept as the RED record + a guard against re-attempting the dead lever;
+against the reverted (force-mDNS) tree every case below is RED again.
 
 Under a media-permission (bypass) context (--use-fake-device flags), stock leaks
 the raw LAN IP (172.22.x) in host candidates. With webrtc:localipv4 set, every

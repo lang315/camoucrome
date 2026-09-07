@@ -2994,3 +2994,55 @@ device for battery-ii, AudioWorklet harness for audio-ii). geo-ii cadence was th
 real item and it shipped (9939555). No manufactured slice to invent a next one (rule 4).
 Files: docs/.../2026-09-02-followon-roadmap.md (row 4 REJECTED, intro, §4 body, execution note),
 docs/.../2026-09-02-sp4-battery-surfaces.md (§6 REJECTED). No patch, no code, no key change.
+
+---
+
+webrtc-ii fake-local-IP: REJECTED 2026-09-07 (built to GREEN, whole-slice review found a
+STRUCTURAL leak, reverted). User picked this after the Windows fonts-ii harness was blocked
+(VS C++ workload + Windows SDK not installed on buildpc -> user-run GUI). Corrected the
+roadmap mis-shelf: the local-IP half is NOT "needs a real network" -- host candidates gather
+locally, built+verified fully on WSL under --use-fake-device flags.
+WHAT WAS BUILT (all reverted): new key webrtc:localipv4 (additions/camoucfg keys, 83->84);
+libwebrtc bridge (GetFakeLocalIp() on MdnsResponderProvider + Network delegate + Port::AddAddress
+branch, in the SEPARATE third_party/webrtc DEPS repo -> its own webrtc-fakeip-libwebrtc.patch
+applied to $SRC/third_party/webrtc); Chromium FilteringNetworkManager::GetFakeLocalIp() reading
+camoucfg bypass-only + a GetMdnsResponder() clause. Reached GREEN 6/6 (fake IP coherent across
+onicecandidate + localDescription.sdp + getStats; anti-tell RI-NOPERM keeps .local; force-mDNS
+regression intact). Round-trip --3way clean from correct bases; checkdeps SUCCESS; gn OK.
+REVIEW round 1 (agent-skills:code-reviewer, source-verified vs upstream libwebrtc): 2 Criticals
+-- (1) srflx related_address leaks real local IP (stun_port.cc:568 = socket_->GetLocalAddress()),
+host-only branch missed it; (2) IPv6 host candidate corrupted (is_local() family-blind, v4 fake
+overwrites v6 addr + desyncs priority byte). BOTH FIXED: AF_INET family guard + srflx raddr rewrite.
+Rebuilt, re-verified 6/6, re-extracted + round-trip clean.
+REVIEW round 2: both fixes RESOLVED, but NEW Critical (structural, fatal): peer-reflexive (prflx)
+candidates. Connection::MaybeUpdateLocalCandidate creates a prflx from a STUN binding response's
+XOR-MAPPED-ADDRESS (the REAL socket source IP) and calls Port::AddPrflxCandidate -> pushes
+directly, BYPASSING Port::AddAddress, so no substitution touches it. SanitizeCandidate gates prflx
+on MdnsObfuscationEnabled() (false in the fake path) -> real IP passes raw into getStats() on ANY
+completed ICE connectivity check. Zero-infra repro: two same-page PCs, guess LAN IP + the REAL
+port this slice preserves -> STUN round-trip -> prflx with real IP in seconds. verify (iceServers:[],
+no connectivity phase) is blind to it.
+ROOT CAUSE (advisor + my analysis, decisive): a fake LITERAL IP cannot carry SetResolvedIP(real)
+(HostAsURIString serializes ip_ = the real addr -> the same trap that killed the mDNS-responder
+approach (a)). SetResolvedIP is EXACTLY what makes mDNS connectivity-coherent: a .local candidate
+resolves to the real IP internally, so the connectivity mapped-address matches it -> no prflx ->
+no leak. force-mDNS (SHIPPED, webrtc:hideLocalIps) is prflx-safe; fake-IP structurally cannot be.
+Intercepting MaybeUpdateLocalCandidate doesn't fix it (prflx addr IS the real mapped addr; the
+STUN round-trip itself reveals the socket; faking the port too = the policy lever's empty set with
+extra steps, losing the whole "matches real-Chrome shape" value). NET-NEGATIVE vs the shipped lever
+= the geo accuracy-derive class (my §1 "geo-cadence class, not battery class" claim was WRONG).
+Reviewer's Important #2 was ALSO correct + the same root cause: hideLocalIps+localipv4 both set ->
+fake-engaged GetMdnsResponder()->nullptr is family-blind -> silently disables v6 .local protection
+the operator asked for (forcing obfuscation OFF to emit a literal fake defeats the mechanism that
+protects everything else).
+REVERT: third_party/webrtc git checkout HEAD -- 3 files; filtering_network_manager.h <- pristine
+(webrtc-ii is .cc-only), .cc <- post-webrtc-ii (git show 440212c from the local fnm-extract repo);
+keys.h/keys_unittest.cc <- git checkout local additions; patches deleted; apply.sh git checkout.
+Rebuilt 243 steps -> verify_webrtc_ii.py 3/3 (force-mDNS intact), keys 5/5 (count 83),
+verify_webrtc_ii_fakeip.py back to Task-1 RED (raw 172.22.x returned) = revert complete.
+KEPT AS RECORD (this is the valuable artifact -- why fake-local-IP is a dead libwebrtc lever, so
+nobody re-opens it): measurement doc (VERDICT banner + §7 "Why rejected"), plan (superseded banner),
+verify script (RED-record docstring), roadmap §10 (REJECTED). No code, no key, no patch ships.
+LESSON: a GREEN passive verify (candidate-read only) does not prove a WebRTC IP mitigation --
+connectivity-phase surfaces (prflx via STUN mapped-address) leak the real socket IP and need a
+two-PC connectivity test. Any future "just fake the IP" attempt must add that test first.
