@@ -1,8 +1,16 @@
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index ca073899e4..eea8e78eae 100644
+index ca073899e4..9ac1d3d021 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
-@@ -60,6 +60,7 @@
+@@ -17,6 +17,7 @@
+ #include "base/callback_list.h"
+ #include "base/command_line.h"
+ #include "base/debug/leak_annotations.h"
++#include "base/environment.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/location.h"
+@@ -60,6 +61,7 @@
  #include "build/build_config.h"
  #include "build/chromecast_buildflags.h"
  #include "cc/base/histograms.h"
@@ -10,7 +18,7 @@ index ca073899e4..eea8e78eae 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
-@@ -541,30 +542,148 @@ void BrowserMainLoop::Init() {
+@@ -541,30 +543,155 @@ void BrowserMainLoop::Init() {
  
  // BrowserMainLoop stages ==================================================
  
@@ -140,8 +148,14 @@ index ca073899e4..eea8e78eae 100644
 +  // invariant registry, which owns relations between keys that are both
 +  // present; these are warnings about a key that is absent, and guessing a
 +  // value for it would be inventing a fingerprint the operator did not
-+  // choose.
++  // choose. Under CAMOU_CONFIG_STRICT the refusal at the bottom of this block
++  // fires on either direction too (ua_half_configured, below): a ua: identity
++  // that spoofs one channel and leaks the real OS on the other is the
++  // all-or-nothing incoherence sp1-navigator-identity-design.md:419-423 named
++  // as SP5's to reject. Below strict it is still warned only, unchanged.
++  bool ua_half_configured = false;
 +  if (!os_info_configured && any_metadata_configured) {
++    ua_half_configured = true;
 +    for (std::string_view key : camoucfg::keys::kUaMetadataKeys) {
 +      if (UaMetadataKeyHasValue(key)) {
 +        LOG(WARNING) << "camoucfg: '" << key << "' is set but '"
@@ -155,6 +169,7 @@ index ca073899e4..eea8e78eae 100644
 +      }
 +    }
 +  } else if (os_info_configured && !ua_platform_configured) {
++    ua_half_configured = true;
 +    // The mirrored case, and plausibly the likelier operator mistake of the
 +    // two: set the user-agent string and forget ua:platform -- exactly what
 +    // porting a Camoufox profile would do, since Camoufox has no equivalent
@@ -178,11 +193,19 @@ index ca073899e4..eea8e78eae 100644
  
    if (camoucfg::HasKey(camoucfg::GlobalScope(),
                         camoucfg::keys::kNavigatorUserAgent)) {
-@@ -578,6 +697,22 @@ int BrowserMainLoop::EarlyInitialization() {
+@@ -578,6 +705,30 @@ int BrowserMainLoop::EarlyInitialization() {
             "\"Windows NT 10.0; Win64; x64\".";
    }
  
-+  if (!coherent) {
++  // `coherent` already encodes strict for the registry/domain/pairing checks
++  // (ValidateAtStartup returns !strict when it finds one). The ua: half-config
++  // above is detected here, not there -- it needs the two mirrored warnings and
++  // their metadata-key iteration -- so its strict refusal is wired in here, with
++  // its own read of the same env var. A half-configured ua: identity refuses
++  // startup only under strict; below strict it is warned only, above.
++  const bool strict =
++      base::Environment::Create()->GetVar("CAMOU_CONFIG_STRICT").has_value();
++  if (!coherent || (ua_half_configured && strict)) {
 +    LOG(ERROR) << "camoucfg: configuration is incoherent and "
 +                  "CAMOU_CONFIG_STRICT is set; refusing to start.";
 +    // Not a bare 1: that is RESULT_CODE_KILLED, and reporting a deliberate,

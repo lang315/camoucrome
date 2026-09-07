@@ -3232,3 +3232,53 @@ warn-only) -- NOTE has design tension (Camoufox-port sets osInfo w/o platform, r
 be too g?), resolve at #2 advisor checkpoint; #2 and #3 both edit the browser_main_loop.cc diagnostic
 block = a PATCH edit (patches/sp5a-coherence-validator.patch), first patch edit this run -- re-extraction
 rules apply, orient base-blob + co-owners before coding.
+
+## ua: half-config refuses under CAMOU_CONFIG_STRICT (was warn-only) -- SHIPPED 2026-09-08
+Slice #2 of "Do 1 2 3". Broken-contract fix: CAMOU_CONFIG_STRICT is specified to refuse an incoherent
+fingerprint, but a ua:osInfo-only config (UA string spoofed, UA-CH/Sec-CH-UA-Platform leaking the real
+OS) only WARNED and strict started anyway. sp1-navigator-identity-design.md:419-423 named this all-or-
+nothing rule ("a partial config is rejected... Validating it is SP5's job"); sp5a shipped it warn-only.
+After #1 (bucket) and db71830 (pairing) both reject-under-strict, the ua: half-config was the odd one
+out AND the one the spec most explicitly asked to reject.
+MECHANISM (a) IN-PLACE, not (b) relocate-to-validator. ADVISOR RECONCILE: advisor first said (b) (move
+the two branches into coherence_validator.cc as a pairing check, patch becomes a deletion). My evidence
+flipped it to (a): (1) the two branches carry DISTINCT channel-specific messages (osInfo-absent explains
+UA-string leak; platform-absent explains UA-CH leak) that PairingViolation's WebGL-shaped log can't
+express without generalizing the struct; (2) UaMetadataKeyHasValue + type-aware metadata iteration are
+coupled to the block, and its comments record bugs actually hit (HasKey type-blindness). Moving working
+code with those comments = regression surface, no user gain. Advisor agreed (a) after seeing the evidence.
+FIX (browser_main_loop.cc, 4 edits): +#include "base/environment.h"; bool ua_half_configured=false set
+true in each of the two existing warn branches; const bool strict = base::Environment::Create()->GetVar
+("CAMOU_CONFIG_STRICT").has_value(); refusal condition !coherent -> (!coherent || (ua_half_configured &&
+strict)). coherent already encodes strict for registry/domain/pairing (ValidateAtStartup returns !strict);
+ua: detected here not there so its strict read is local (one extra startup lookup, two env reads can't
+diverge -- same var, single-threaded startup, no setenv between). Comment updated (Warned-not-repaired ->
++ strict-refusal note). Non-strict UNCHANGED (same warnings, starts). No repair (refuse = enforcement,
+not guessing the missing value).
+FIRST PATCH EDIT THIS RUN. browser_main_loop.cc owned by sp0->sp1a->sp5a (apply.sh order); sp5a TERMINAL
+(no later patch touches it, grep-proven) -> single-file round-trip suffices. Re-extracted: base blob
+ca073899e4 (git cat-file -t = blob, the sp1a-applied state) -> git diff base live -> spliced
+PROGRAMMATICALLY (reextract_sp5a.py, never Edit tool -- blank-context-line trap). New b-blob 9ac1d3d021.
+STRICT round-trip: git apply -p1 (no --recount) onto base == live byte-for-byte (cmp clean), matching
+apply.sh's git apply --3way mechanism. sp1a's own browser_main_loop hunk warns about the WHOLE
+navigator.userAgent key (different condition) -> no double-report.
+VERIFY (box GREEN, build 2 steps): verify_ua_halfconfig_reject.py RED baseline (UH-OSINFO-STRICT +
+UH-PLATFORM-STRICT FAIL/started) -> GREEN 6/6 (both strict rows exit 13; non-strict warns byte-unchanged;
+full-coherent + type-blind-guard start). Regressions: verify_sp5a 6/6, verify_navplatform_bucket 7/7
+(NB-MISMATCH-STRICT now exit 13 for TWO reasons -- bucket + ua half-config), verify_webgl_pairing 9/9.
+REVIEW: logic correct, no blocking. 1 Important on TEST EVIDENCE: UH-TYPE-BLIND-GUARD was a FALSE control
+-- old config {ua:osInfo,ua:platform,ua:mobile:"yes"} had platform validly set so neither branch depended
+on ua:mobile's type; couldn't go RED for the type-blind defect (CLAUDE.md #4). FIXED: config -> lone
+{"ua:mobile":"yes"} (type-aware UaMetadataKeyHasValue false -> no branch -> starts; type-blind HasKey ->
+branch 1 fires -> refuses). ADVISOR pre-commit: PROVED the guard's RED BY MUTATION (flipped
+UaMetadataKeyHasValue to HasKey, rebuilt -> UH-TYPE-BLIND-GUARD FAIL + 5 green; restored -> 6/6) so the
+"goes RED" claim is OBSERVED not reasoned. Added blast-radius note: branch 1 fires on ANY of 7
+kUaMetadataKeys (platform, platformVersion, architecture, bitness, model, mobile, wow64) w/o osInfo, so
+e.g. {"ua:architecture":"x86"} alone now refuses under strict -- spec-intended (sp1 UA-CH all-or-nothing
+extension). Fixed a memory slip in the doc (wrote "fullVersion", actual is "platformVersion").
+DEFERRED: #3 renderer-absent GPU-profile diagnostic. ADVISOR CORRECTION: #3 is NOT a browser_main_loop
+patch edit -- it's a presence relation over webGl keys (webGl:parameters set => renderer/vendor should
+be) = ValidatePairing sibling in coherence_validator.cc, ADDITIONS-ONLY. Open question is PRIOR: is it a
+real gap? design:284 assigns parameters<->strings to whole-profile shipping (7.1). MEASURE first
+({"webGl:parameters":{"3379":16384}} alone -> page reads spoofed MAX_TEXTURE_SIZE beside real renderer?),
+advisor, THEN decide (check vs rejection record).
