@@ -3093,3 +3093,44 @@ page-visible, is window-geometry-owned, and the real bound is avail not screen -
 is the WRONG bound, a window overlapping the taskbar); window position 0 <= screenX <= width-outer
 and the availLeft/availTop offset nesting (both 3-key -- widening Invariant.keys beyond 2 is a
 deliberate flagged moment, not a side effect).
+
+## navigator.platform derives from ClaimedOs when unset (SP5 coherence) -- SHIPPED 2026-09-07
+User chose this ("navigator.platform coherence") but investigation reframed it (surfaced via
+AskUserQuestion, user picked path B). navigator.platform is a direct config key (SP1b) whose DEFAULT
+when unset is the real HOST (GetReducedNavigatorPlatform / navigator_id.cc #if), NOT the claimed OS --
+so spoof UA->Windows on a Linux host leaks "Linux x86_64". A relational INVARIANT can't catch this
+(absent key constrains nothing); the fix is a DERIVE. SP1b deliberately left unset->host and DEFERRED
+the coherence to SP5 (sp1-design 410/411/416 name it + the Win32/MacIntel/Linux x86_64 mapping).
+FIX: when navigator.platform absent, derive from ClaimedOs via new CanonicalNavigatorPlatformFor:
+kWindows->"Win32", kMac->"MacIntel", kLinux/kChromeOs->"Linux x86_64", kAndroid->"Linux armv81",
+kUnknown->empty (keep host). These are GetReducedNavigatorPlatform()'s FROZEN reduced-UA literals
+(arch-independent by design of UA reduction), byte-identical to real Chrome -- the discipline
+CanonicalUaChPlatformFor holds. Placed in NavigatorBase::platform() (below Navigator::platform()'s
+DevTools override, and the shared window+worker path).
+FILES: additions/camoucfg/derive.{h,cc} (+CanonicalNavigatorPlatformFor), derive_unittest.cc (+test
+all 6 families); patches/sp1b-navigator-leaves.patch (navigator_base.cc: +derive.h include hunk +
+platform-derive branch); patches/sp0-config-layer.patch (+components/camoucfg/derive.h to blink
+renderer DEPS allow-list); scripts/verify_navplatform_derive.py (new); measurement doc (new).
+PATCH RE-EXTRACTION: navigator_base.cc co-owned SP0(includes+hwConc)+sp1b(platform); DEPS is SP0's.
+derive.h include -> sp1b (consumer); DEPS rule -> sp0 (owner). Each section regenerated as git diff
+vs its TRUE base (sp0 DEPS a-blob d5142fdb5a=pristine; sp1b navbase a-blob c9332e1fdf=SP0-applied,
+unchanged since I didn't touch SP0's navbase hunks) so derive.h lands in sp1b with post-SP0 context.
+Blobs abbreviated 10-char to match siblings. Single-file round-trip byte-identical both files. FULL
+reconstruction SKIPPED (justified): its unique catch is baseline drift into a downstream co-owner,
+grep-proven absent (only sp0 touches blink/renderer/DEPS; only sp0+sp1b touch navigator_base.cc; sp1b
+terminal). b-blob change matches live GREEN truth (git hash-object of built file).
+VERIFY (box GREEN): DeriveTest 8/8; checkdeps RED->GREEN for the derive.h blink DEPS rule (autoninja
+does NOT run checkdeps -- advisor blind spot); verify_navplatform_derive.py 7/7 -- RED baseline leaked
+host "Linux x86_64" for windows/mac/worker/android, GREEN after (windows->Win32, mac->MacIntel,
+worker->Win32, android->Linux armv81, explicit FreeBSD wins, none/linux->host). RP-ANDROID is the
+differ-guaranteed control (Linux armv81 != Linux host) proving the Linux-family derive fires.
+REVIEW: 2 rounds. R1 Important: Linux-family "no byte-identical value / uname" justification cited a
+COMPILED-OUT path (navigator_id.cc #else); live path is GetReducedNavigatorPlatform (frozen literals),
+so Linux IS derivable -> FIXED (derive all families + RP-ANDROID control + corrected attribution).
+R1 suggestions all applied (return {} for GCC; ClaimedOs/osInfo note; abbreviated blobs). R2:
+code byte-exact correct (literals independently confirmed vs Chromium main), only blocker was the new
+verify+doc being untracked -> staged in this commit. Sug: noted RP-* cases (not unit test) guard
+upstream literal drift.
+DEFERRED: kSamePlatformBucket relational invariant (catch an EXPLICIT navigator.platform disagreeing
+with the UA) -- complementary to this fallback derive, SP5a. Half-config (ua:platform without
+ua:osInfo) is pre-existing (keys.h:413-424, startup already warns), not introduced.

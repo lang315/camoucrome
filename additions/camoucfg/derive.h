@@ -55,6 +55,17 @@ OsFamily OsFamilyFromOsInfo(std::string_view os_info);
 std::string_view CanonicalOsInfoFor(OsFamily os);
 std::string_view CanonicalUaChPlatformFor(OsFamily os);
 
+// The navigator.platform string a real reduced-UA Chrome on |os| reports, for
+// deriving that leaf from the claimed OS when it is not explicitly configured.
+// These are GetReducedNavigatorPlatform()'s frozen per-OS literals ("Win32",
+// "MacIntel", "Linux x86_64", "Linux armv81"), arch-independent by design of UA
+// reduction, so a derived value is byte-identical to what a real Chrome on the
+// claimed OS emits. EMPTY only for kUnknown: with no OS claimed the caller keeps
+// the host's own value rather than inventing one. Distinct from
+// CanonicalUaChPlatformFor because navigator.platform is not the UA-CH token
+// ("Win32" != "Windows").
+std::string_view CanonicalNavigatorPlatformFor(OsFamily os);
+
 // The operating system this configuration is claiming.
 //
 // `ua:osInfo` is consulted first because it lands in the user-agent string,

@@ -76,7 +76,7 @@ index 90d60c44cc..fe01f49a5f 100644
    // The initialization of the sandbox host ends up with forking the Zygote
    // process and requires no thread been forked. The initialization has happened
 diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
-index d5142fdb5a..6be9779f8e 100644
+index d5142fdb5a..16862468f5 100644
 --- a/third_party/blink/renderer/DEPS
 +++ b/third_party/blink/renderer/DEPS
 @@ -43,6 +43,7 @@ include_rules = [
@@ -87,13 +87,14 @@ index d5142fdb5a..6be9779f8e 100644
      "+base/not_fatal_until.h",
      "+base/numerics/angle_conversions.h",
      "+base/numerics/byte_conversions.h",
-@@ -92,6 +93,13 @@ include_rules = [
+@@ -92,6 +93,14 @@ include_rules = [
      "+build",
      "+cc/input/hit_test_opaqueness.h",
      "+cc/paint",
 +    "+components/camoucfg/audio_noise.h",
 +    "+components/camoucfg/blink_scope.h",
 +    "+components/camoucfg/canvas_noise.h",
++    "+components/camoucfg/derive.h",
 +    "+components/camoucfg/device_ids.h",
 +    "+components/camoucfg/gl_params.h",
 +    "+components/camoucfg/keys.h",
