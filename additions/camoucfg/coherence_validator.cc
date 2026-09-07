@@ -4,11 +4,13 @@
 
 #include "components/camoucfg/coherence_validator.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
 #include "base/environment.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "components/camoucfg/derive.h"
 #include "components/camoucfg/domain_validator.h"
 #include "components/camoucfg/invariants.h"
@@ -64,6 +66,35 @@ std::vector<Violation> CheckSameOsFamily(const ConfigScope& scope,
   return {v};
 }
 
+// keys[1] must be <= keys[0]. Both are read with GetUint32 because that is how
+// sp4a-screen consumes them; a value that is absent, or present with a type
+// GetUint32 rejects, yields nullopt and constrains nothing -- the same
+// boundary CheckSameOsFamily draws, and for the same reasons. A lone spoofed
+// key (keys[1] configured, keys[0] left real) is not a contradiction this
+// entry can demonstrate: with only one value present there is nothing to
+// compare. Equality is allowed -- availWidth == width is the real no-taskbar /
+// fullscreen state, so the check fires only on strictly greater.
+std::vector<Violation> CheckFitsWithin(const ConfigScope& scope,
+                                       const invariants::Invariant& inv) {
+  std::optional<uint32_t> bound = GetUint32(scope, inv.keys[0]);
+  std::optional<uint32_t> value = GetUint32(scope, inv.keys[1]);
+  if (!bound.has_value() || !value.has_value() || *value <= *bound) {
+    return {};
+  }
+
+  // keys[0] is the authoritative bound -- the display the work area is carved
+  // out of -- so the log names keys[1] as the value to lower and suggests the
+  // bound as its new value. Not applied: ValidateAtStartup reports, it does
+  // not write (see the LOG below).
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = base::NumberToString(*value);
+  v.new_value = base::NumberToString(*bound);
+  return {v};
+}
+
 }  // namespace
 
 std::vector<Violation> Validate(const ConfigScope& scope) {
@@ -72,6 +103,11 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
     switch (inv.relation) {
       case invariants::Relation::kSameOsFamily: {
         std::vector<Violation> found = CheckSameOsFamily(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kFitsWithin: {
+        std::vector<Violation> found = CheckFitsWithin(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }

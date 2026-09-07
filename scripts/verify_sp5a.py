@@ -174,6 +174,75 @@ else:
             "camoucfg:" not in stderr
             and values[0] == baseline["user_agent"])
 
+# --- Assertion 5: a non-UA relation travels the same browser-process path ---
+#
+# The registry gained a numeric fits-within relation (screen geometry). C1-C4
+# only exercise the UA relation; nothing here would notice if ValidateAtStartup
+# -> browser_main_loop's LOG path handled kSameOsFamily but not kFitsWithin.
+# availWidth > width is the violation. The full log line is matched, as C2 does
+# for UA, because it pins base::NumberToString's formatting of old/new values --
+# the one thing the unit test, which checks the repaired KEY not the message,
+# cannot see (a stray "2560.000000" would pass every unit case).
+
+GEO_INCOHERENT = {"screen.width": 1920, "screen.availWidth": 2560}
+
+C5 = "5 incoherent geometry logs screen-avail-width-fits naming availWidth, and starts"
+
+values, err = lib_shell.session(
+    json.dumps(GEO_INCOHERENT), ["navigator.userAgent"])
+if err is not None:
+    failed([C5], "geometry session", err)
+else:
+    stderr, read_err = read_stderr()
+    if read_err is not None:
+        failed([C5], f"stderr read from {lib_shell.STDERR_LOG}", read_err)
+    else:
+        results[C5] = (
+            "camoucfg: invariant 'screen-avail-width-fits' violated. "
+            "'screen.availWidth' is '2560', which disagrees with "
+            "'screen.width'. It should be '1920'." in stderr)
+
+# --- Assertion 6: geometry incoherence refuses under strict mode too ---
+#
+# The refusal is invariant-agnostic (the deferred refusal at the bottom of the
+# diagnostic block), so this proves kFitsWithin reaches it, not a second code
+# path. Same exit-13 discrimination as C3.
+
+C6 = "6 incoherent geometry under CAMOU_CONFIG_STRICT exits 13 before starting"
+
+values, err = lib_shell.session(
+    json.dumps(GEO_INCOHERENT), ["navigator.userAgent"], strict=True)
+if err is None:
+    results[C6] = False
+    notes.append(
+        "6: browser started under CAMOU_CONFIG_STRICT=1 with an incoherent "
+        "geometry configuration; expected exit 13")
+elif "exited during startup" in str(err):
+    code_text = str(err).rsplit("code ", 1)[-1]
+    try:
+        code = int(code_text)
+    except ValueError:
+        code = None
+    if code != 13:
+        results[C6] = False
+        notes.append(f"6: exited, but with the wrong code: {err}")
+    else:
+        stderr, read_err = read_stderr()
+        if read_err is not None:
+            failed([C6], f"stderr read from {lib_shell.STDERR_LOG}", read_err)
+        else:
+            results[C6] = (
+                "camoucfg: configuration is incoherent and "
+                "CAMOU_CONFIG_STRICT is set; refusing to start." in stderr)
+            if not results[C6]:
+                notes.append(
+                    f"6: exited 13 but stderr lacked the refusal message: "
+                    f"{stderr!r}")
+else:
+    results[C6] = False
+    notes.append(
+        f"6: not an exit-during-startup failure: {type(err).__name__}: {err}")
+
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
 for note in notes:

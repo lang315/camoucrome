@@ -59,8 +59,27 @@ while IFS='=' read -r var _; do
   case "$var" in CAMOU_CONFIG*) unset "$var" ;; esac
 done < <(env)
 
-COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows"}'
+# Coherent across every relation: a Windows UA with a Windows platform, and a
+# screen cluster with availWidth == width and availHeight == height (the real
+# no-taskbar state the fits-within relation must accept). The screen keys are
+# what makes CleanConfigProducesNoViolations exercise the equality boundary; a
+# `<` typo in CheckFitsWithin would turn this config incoherent and fail here.
+COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080}'
 INCOHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"}'
+
+# One incoherent config per registry invariant, each violating exactly that
+# invariant. MutationIsCaughtAndNothingElseIs is run once per entry, in its own
+# process (the config latches per process). Keyed by invariant id; must mirror
+# coherence_validator_unittest.cc's kMutations and settings/invariants.json.
+# The drift guard below asserts this map covers every invariant in the registry
+# -- a mutation defined in kMutations but never driven here is "documentation,
+# not enforcement", the exact failure MutationIsCaughtAndNothingElseIs exists
+# to prevent, silently un-run.
+declare -A MUTATIONS=(
+  [ua-os-family-agrees]="$INCOHERENT"
+  [screen-avail-width-fits]='{"screen.width":1920,"screen.availWidth":2560}'
+  [screen-avail-height-fits]='{"screen.height":1080,"screen.availHeight":1440}'
+)
 
 declare -a ORDER=(
   RegistryMatchesGeneratedHeader
@@ -99,6 +118,33 @@ if [ "$LISTED_COUNT" -ne "${#ORDER[@]}" ]; then
        "this script's ORDER lists ${#ORDER[@]}. A case was added to the .cc" \
        "and not to ORDER (or vice versa)." >&2
   echo "$LISTING" >&2
+  exit 1
+fi
+
+# Drift guard for MUTATIONS, in the same spirit as (b): derive the expected
+# count from the source of truth rather than hardcode it. invariants.json sits
+# at <src>/components/camoucfg/invariants.json, and the binary lives under
+# <src>/out/..., so strip at /out/ to find the src root. Each invariant is one
+# `"id":` line; the $comment block's strings never start with that key.
+JSON="${BINARY%/out/*}/components/camoucfg/invariants.json"
+if [ ! -f "$JSON" ]; then
+  echo "error: cannot find invariants.json at '$JSON' (derived from the" \
+       "binary path) to check that every registry invariant has a mutation" \
+       "driven here." >&2
+  exit 1
+fi
+REGISTRY_COUNT=$(grep -cE '^[[:space:]]*"id"[[:space:]]*:' "$JSON")
+if [ "$REGISTRY_COUNT" -eq 0 ]; then
+  echo "error: found no invariant ids in '$JSON' -- the grep pattern has" \
+       "drifted from the file's shape, or the file is empty. Zero would make" \
+       "the mutation loop below run zero times and pass vacuously." >&2
+  exit 1
+fi
+if [ "$REGISTRY_COUNT" -ne "${#MUTATIONS[@]}" ]; then
+  echo "error: invariants.json declares $REGISTRY_COUNT invariant(s), this" \
+       "runner drives ${#MUTATIONS[@]} mutation(s). An invariant was added to" \
+       "the registry without a mutation run here -- its" \
+       "MutationIsCaughtAndNothingElseIs case would never execute." >&2
   exit 1
 fi
 
@@ -141,8 +187,35 @@ run_case MutationsExistForEveryInvariant \
 run_case CleanConfigProducesNoViolations \
   env -u CAMOUCFG_TEST_INVARIANT CAMOU_CONFIG="$COHERENT" "$BINARY"
 
-run_case MutationIsCaughtAndNothingElseIs \
-  env CAMOUCFG_TEST_INVARIANT=ua-os-family-agrees CAMOU_CONFIG="$INCOHERENT" "$BINARY"
+# MutationIsCaughtAndNothingElseIs is one gtest case driven once per registry
+# mutation, each in its own process with the config that violates exactly that
+# invariant. The single ORDER/STATUS slot for the case passes only if every
+# per-mutation run passes -- a run_case per id would clobber the shared slot,
+# recording only the last mutation's result.
+mutation_all_pass=1
+for id in "${!MUTATIONS[@]}"; do
+  mout=$(env CAMOUCFG_TEST_INVARIANT="$id" CAMOU_CONFIG="${MUTATIONS[$id]}" \
+    "$BINARY" \
+    --gtest_filter="CoherenceValidatorTest.MutationIsCaughtAndNothingElseIs" \
+    2>&1)
+  mcode=$?
+  if [ "$mcode" -eq 0 ] && grep -qE '^\[  PASSED  \] 1 test\.$' <<<"$mout"; then
+    # One line per driven mutation, so the transcript records that every
+    # registry entry was actually exercised -- the single ORDER slot below
+    # cannot show how many ran.
+    echo "PASS  MutationIsCaughtAndNothingElseIs[$id]"
+    continue
+  fi
+  mutation_all_pass=0
+  echo "--- MutationIsCaughtAndNothingElseIs[$id]: exit=$mcode, no" \
+       "'[  PASSED  ] 1 test.' in output ---" >&2
+  echo "$mout" >&2
+done
+if [ "$mutation_all_pass" -eq 1 ]; then
+  STATUS[MutationIsCaughtAndNothingElseIs]=PASS
+else
+  STATUS[MutationIsCaughtAndNothingElseIs]=FAIL
+fi
 
 PASS_COUNT=0
 FAIL_COUNT=0

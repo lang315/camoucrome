@@ -42,6 +42,52 @@
         "the comment above ConfigPresentsUserAgentIdentity in",
         "patches/sp1a-ua-producer.patch."
       ]
+    },
+    {
+      "id": "screen-avail-width-fits",
+      "keys": ["screen.width", "screen.availWidth"],
+      "relation": "fits-within",
+      "policy": "repair",
+      "repair": "lower screen.availWidth to screen.width",
+      "why": [
+        "The available screen area is the display minus the OS chrome",
+        "(taskbar, dock, menu bar), so it is physically a subset of the",
+        "display: screen.availWidth <= screen.width on every real machine,",
+        "with equality in the no-taskbar / fullscreen-kiosk case. A",
+        "configuration reporting availWidth > width describes a work area",
+        "larger than the screen containing it -- a state no real device",
+        "produces, and a contradiction a detector reads by comparing two",
+        "screen properties.",
+        "",
+        "screen.width is authoritative: it is the display the work area is",
+        "carved out of, so the work area is what gives when they disagree.",
+        "Both keys are read as GetUint32, the getter sp4a-screen consumes",
+        "them with; a value that is absent, or present with the wrong type",
+        "(GetUint32 wants a non-negative integer), constrains nothing.",
+        "",
+        "Absent-key posture matches ua-os-family-agrees: this entry catches a",
+        "contradiction between two configured values. A lone spoofed key",
+        "(availWidth set, width real) is one channel spoofed with the other",
+        "reporting the truth, which is the startup diagnostic's to report, not",
+        "a relational entry's -- with one value configured there is no",
+        "disagreement to demonstrate. An out-of-range single value is SP5b's",
+        "to reject."
+      ]
+    },
+    {
+      "id": "screen-avail-height-fits",
+      "keys": ["screen.height", "screen.availHeight"],
+      "relation": "fits-within",
+      "policy": "repair",
+      "repair": "lower screen.availHeight to screen.height",
+      "why": [
+        "The height axis of screen-avail-width-fits: screen.availHeight <=",
+        "screen.height for the same physical reason, and the same absent-key,",
+        "wrong-type and authoritative-key posture applies. Split per axis",
+        "rather than folded into one entry because Relation is a binary",
+        "comparison over two keys, and the two axes are independent",
+        "contradictions -- a config can violate one without the other."
+      ]
     }
   ]
 }
