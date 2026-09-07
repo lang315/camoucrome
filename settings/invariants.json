@@ -88,6 +88,38 @@
         "comparison over two keys, and the two axes are independent",
         "contradictions -- a config can violate one without the other."
       ]
+    },
+    {
+      "id": "navigator-platform-matches-os",
+      "keys": ["ua:osInfo", "navigator.platform"],
+      "relation": "same-platform-bucket",
+      "policy": "repair",
+      "repair": "set navigator.platform to the canonical reduced platform for the OS family of ua:osInfo",
+      "why": [
+        "ua:osInfo lands in the user-agent string; navigator.platform is its",
+        "own JS property. A page reads both, and a Windows user agent beside",
+        "navigator.platform === 'MacIntel' is a textbook OS tell. The reduced",
+        "User-Agent freezes one canonical platform per OS -- Win32, MacIntel,",
+        "Linux x86_64, Linux armv81 -- so the correct value is a function of",
+        "the claimed OS, and any other explicit value contradicts it.",
+        "",
+        "A canonical-STRING compare, not a same-OS-family one: Linux and",
+        "ChromeOS both report 'Linux x86_64' under UA reduction, so they share",
+        "one platform bucket. A family-level check would wrongly flag a ChromeOS",
+        "claim beside 'Linux x86_64' as a mismatch.",
+        "",
+        "ua:osInfo is authoritative, so navigator.platform is the value the log",
+        "names as wrong. This is the EXPLICIT-value complement of the SP1b",
+        "navigator.platform derive, which fills the key from the claimed OS only",
+        "when it is ABSENT (an explicit value wins over the derive). The two are",
+        "disjoint: the derive fires on an absent key, this entry on a present",
+        "one. Same absent-key and unrecognised-value posture as",
+        "ua-os-family-agrees; a ua:platform-only OS claim (no ua:osInfo) is out",
+        "of this entry's reach, and the startup diagnostic warns on it instead.",
+        "",
+        "Deferred to SP5a by the derive's measurement doc",
+        "(2026-09-07-navigator-platform-derive.md) as kSamePlatformBucket."
+      ]
     }
   ]
 }

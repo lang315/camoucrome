@@ -3183,3 +3183,52 @@ warn-only -- a pre-existing gap, not this slice's). renderer-absent startup diag
 renderer<->OS coherence (sp3-design:287/7.1) remain the profile-generator's (renderer->OS field-
 invariant REJECTED -- bare in-repo format defeats classifier, tokens not closed-set, no canonical to
 derive; see measurement doc).
+
+## navigator.platform <-> claimed OS registry invariant (kSamePlatformBucket) -- SHIPPED 2026-09-08
+User chose "Do 1 2 3" (all three deferred SP5 slices); this is #1. The navigator.platform DERIVE
+(shipped a6e0045) fills the key from ClaimedOs only when ABSENT -- an EXPLICIT value wins (derive is
+a fallback). So UA=Windows + explicit navigator.platform="MacIntel" ships an incoherence the derive
+leaves alone. Both keys present -> value contradiction -> belongs in the REGISTRY (unlike db71830's
+renderer/vendor pairing, a presence relation). Deferred by the derive doc:164-167 as kSamePlatformBucket.
+NEW RELATION required: kSameOsFamily can't be reused (static_asserted to ua:osInfo/ua:platform pair;
+repairs keys[1] via CanonicalUaChPlatformFor -> would log "should be 'Windows'" not "Win32"). And a
+FAMILY-level compare false-fires the bucket: ChromeOS + navigator.platform="Linux x86_64" is COHERENT
+(both Linux and ChromeOs canonicalize to "Linux x86_64"). Correct primitive = canonical navigator.
+platform STRING compare, which collapses Linux+ChromeOs into one bucket -> hence "platform bucket".
+FIX: Relation::kSamePlatformBucket + CheckSamePlatformBucket(scope,inv): family = OsFamilyOfKey(scope,
+keys[0]=ua:osInfo); if kUnknown -> {}; if navigator.platform absent -> {} (derive's job); canonical =
+CanonicalNavigatorPlatformFor(family); if canonical.empty() (forward-proof: future OsFamily member w/o
+a case, avoids "should be ''") OR configured==canonical -> {}; else Violation(repaired=navigator.platform,
+new=canonical). Registry entry keys [ua:osInfo, navigator.platform], Policy kRepair. Reuses the existing
+Violation struct + ValidateAtStartup LOG loop + strict-refusal path.
+ADVISOR CORRECTION (approach checkpoint): originally planned ClaimedOs(scope) for the family -- advisor
+caught it lies in the log (ClaimedOs falls back to ua:platform, so a ua:platform-only config would log
+"disagrees with 'ua:osInfo'" naming an absent key). Switched to OsFamilyOfKey(scope,keys[0]) -- keeps
+keys[0] literally authoritative, honest log. Cost: ua:platform-only OS claim out of reach (same boundary
+ua-os-family-agrees has; the sp5a half-config diagnostic warns on it). DISJOINT from the derive: derive
+fires on ABSENT navigator.platform (renderer read-time, never writes config), invariant on PRESENT
+(browser startup). Never both fire on one config.
+STATIC_ASSERT: added EverySamePlatformBucketEntryUsesTheNavigatorPlatformPair (mirrors the kSameOsFamily
+one) -- keys[1] is repaired via CanonicalNavigatorPlatformFor so a mis-keyed entry must fail at compile.
+FILES (all additions/settings/scripts -- no patches/ change): invariants.h (enum + entry [4th] +
+static_assert), settings/invariants.json (4th entry, source of truth, pushed to $CAMOUCFG/invariants.json),
+coherence_validator.{cc} (CheckSamePlatformBucket + switch case), coherence_validator_unittest.cc
+(kMutations 3->4, same-platform-bucket branch in RegistryMatchesGeneratedHeader, CleanConfig navigator.
+platform assert), run_coherence_tests.sh (COHERENT +navigator.platform:"Win32", MUTATIONS +entry;
+drift guard now 4==4), scripts/verify_navplatform_bucket.py (new), measurement doc (new).
+VERIFY (box GREEN, 10-step build, both static_asserts compiled): run_coherence_tests.sh 6/6 (4 mutations
+incl navigator-platform-matches-os = exactly one violation repaired_key=navigator.platform); verify_
+navplatform_bucket.py RED baseline (NB-MISMATCH-LOG/STRICT FAIL) -> GREEN 7/7 (mismatch logs "should be
+Win32" + strict exit 13; NB-BUCKET-CROS + NB-BUCKET-LINUX both silent = bucket proven; coherent/no-UA
+silent; NB-MOTIVATION reads MacIntel under Windows UA before+after = report-not-repair). Regression
+verify_navplatform_derive.py 7/7 (derive still fills absent key -> disjointness confirmed empirically).
+REVIEW: 1 round APPROVE, no Critical/Important. 1 suggestion applied (doc: hypothetical
+"OsFamilyFromNavigatorPlatform" in backticks read as real symbol -> prose). Advisor pre-commit: fixed
+stale cite invariants.h:146-152 -> :161-166; added kForms marker-ordering (CrOS-before-Linux) load-
+bearing note to RESULT; clarified NB-MOTIVATION preserved by TWO layers (derive honours explicit key +
+validator report-only) so a future repair write-path changes the validator not the derive.
+DEFERRED (from this slice): #2 ua: half-config -> reject under strict (sp1-design:419-423; sp5a shipped
+warn-only) -- NOTE has design tension (Camoufox-port sets osInfo w/o platform, refuse-under-strict may
+be too g?), resolve at #2 advisor checkpoint; #2 and #3 both edit the browser_main_loop.cc diagnostic
+block = a PATCH edit (patches/sp5a-coherence-validator.patch), first patch edit this run -- re-extraction
+rules apply, orient base-blob + co-owners before coding.

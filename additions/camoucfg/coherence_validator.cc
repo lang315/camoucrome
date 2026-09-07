@@ -97,6 +97,50 @@ std::vector<Violation> CheckFitsWithin(const ConfigScope& scope,
   return {v};
 }
 
+// keys[0] (ua:osInfo) claims an OS; keys[1] (navigator.platform) must be that
+// OS's canonical reduced platform ("Win32", "MacIntel", "Linux x86_64",
+// "Linux armv81"). Only the OS family of keys[0] is read, with OsFamilyOfKey --
+// the same helper CheckSameOsFamily uses -- so keys[0] stays literally
+// authoritative and the log names a key that is actually set. A ua:platform-
+// only OS claim is therefore out of this entry's reach, the same boundary
+// CheckSameOsFamily draws, and the startup diagnostic warns on it instead.
+//
+// A canonical-STRING compare, not a family one: Linux and ChromeOS both report
+// "Linux x86_64" (CanonicalNavigatorPlatformFor collapses them), so comparing
+// the strings accepts either OS beside that value -- the "platform bucket".
+// Fires only when the OS is known AND navigator.platform is configured AND its
+// value is not the canonical one. An ABSENT navigator.platform is the SP1b
+// derive's job (it fills the key from the claimed OS); this entry and the
+// derive never both fire on one config.
+std::vector<Violation> CheckSamePlatformBucket(
+    const ConfigScope& scope, const invariants::Invariant& inv) {
+  OsFamily claimed = OsFamilyOfKey(scope, inv.keys[0]);
+  if (claimed == OsFamily::kUnknown) {
+    return {};
+  }
+  std::optional<std::string> configured = GetString(scope, inv.keys[1]);
+  if (!configured.has_value()) {
+    return {};
+  }
+  std::string_view canonical = CanonicalNavigatorPlatformFor(claimed);
+  // A known OS family always maps to a non-empty canonical platform (only
+  // kUnknown, excluded above, yields empty). Guarded anyway so that if the
+  // OsFamily enum ever grows a member without a CanonicalNavigatorPlatformFor
+  // case, this reports nothing rather than "should be ''" -- the misleading
+  // repair target this project forbids.
+  if (canonical.empty() || *configured == canonical) {
+    return {};
+  }
+
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = *configured;
+  v.new_value = std::string(canonical);
+  return {v};
+}
+
 // Whether an API's renderer (or vendor, when `vendor` is true) resolves to a
 // value the page would actually read. This mirrors the two-step resolution
 // getParameter() performs in webgl_rendering_context_base.cc (sp3b patch,
@@ -129,6 +173,11 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
       }
       case invariants::Relation::kFitsWithin: {
         std::vector<Violation> found = CheckFitsWithin(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kSamePlatformBucket: {
+        std::vector<Violation> found = CheckSamePlatformBucket(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }

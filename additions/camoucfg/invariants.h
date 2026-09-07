@@ -50,6 +50,16 @@ enum class Relation {
   // entry actually fires (rather than reading a non-numeric key that always
   // returns nullopt) is its required mutation test, not a static_assert.
   kFitsWithin,
+  // keys[1] (navigator.platform) must equal the canonical reduced platform of
+  // the OS family keys[0] (ua:osInfo) claims -- "Win32", "MacIntel",
+  // "Linux x86_64", "Linux armv81". A canonical-STRING compare, not a family
+  // one, so Linux and ChromeOS share one bucket ("Linux x86_64"), which is why
+  // it is a "platform bucket" and not a same-OS-family check. keys[0] is
+  // authoritative; CheckSamePlatformBucket() names keys[1] as the value to
+  // change. Like kSameOsFamily it hardcodes both keys' semantics (keys[1] is
+  // repaired via CanonicalNavigatorPlatformFor()), so a static_assert below
+  // pins the key pair.
+  kSamePlatformBucket,
 };
 
 struct Invariant {
@@ -66,7 +76,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 3> kAllInvariants = {{
+inline constexpr std::array<Invariant, 4> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
@@ -83,6 +93,10 @@ inline constexpr std::array<Invariant, 3> kAllInvariants = {{
      Relation::kFitsWithin,
      Policy::kRepair,
      {keys::kScreenHeight, keys::kScreenAvailHeight}},
+    {"navigator-platform-matches-os",
+     Relation::kSamePlatformBucket,
+     Policy::kRepair,
+     {keys::kUaOsInfo, keys::kNavigatorPlatform}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
@@ -150,6 +164,33 @@ static_assert(
     "`key == keys::kUaOsInfo` and always repairs keys[1] via "
     "CanonicalUaChPlatformFor(), so any other keys[0] or keys[1] would be "
     "read or repaired wrongly with no diagnostic.");
+
+// The kSamePlatformBucket sibling of the assert above, and for the same
+// reason: CheckSamePlatformBucket() reads keys[0] as the OS-claiming UA key via
+// OsFamilyOfKey() and repairs keys[1] via CanonicalNavigatorPlatformFor(). An
+// entry with a different keys[0] would take the OS family from a key
+// OsFamilyOfKey() reads as a UA-CH token (never navigator.platform's format),
+// and a different keys[1] would be repaired to a navigator.platform literal it
+// does not expect -- both compile and run silently wrong, exactly as the
+// kSameOsFamily case does.
+constexpr bool EverySamePlatformBucketEntryUsesTheNavigatorPlatformPair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kSamePlatformBucket &&
+        (inv.keys[0] != keys::kUaOsInfo ||
+         inv.keys[1] != keys::kNavigatorPlatform)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static_assert(
+    EverySamePlatformBucketEntryUsesTheNavigatorPlatformPair(),
+    "a kSamePlatformBucket entry must list kUaOsInfo as keys[0] and "
+    "kNavigatorPlatform as keys[1] -- coherence_validator.cc's "
+    "CheckSamePlatformBucket() reads keys[0]'s OS family via OsFamilyOfKey() "
+    "and repairs keys[1] via CanonicalNavigatorPlatformFor(), so any other "
+    "keys[0] or keys[1] would be read or repaired wrongly with no diagnostic.");
 
 }  // namespace camoucfg::invariants
 
