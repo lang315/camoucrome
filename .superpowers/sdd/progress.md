@@ -3046,3 +3046,50 @@ verify script (RED-record docstring), roadmap §10 (REJECTED). No code, no key, 
 LESSON: a GREEN passive verify (candidate-read only) does not prove a WebRTC IP mitigation --
 connectivity-phase surfaces (prflx via STUN mapped-address) leak the real socket IP and need a
 two-PC connectivity test. Any future "just fake the IP" attempt must add that test first.
+
+## SP5a registry extension -- screen geometry invariant (avail <= screen) -- SHIPPED 2026-09-07
+Added two relational invariants to the SP5a coherence registry via a new Relation::kFitsWithin:
+screen-avail-width-fits (screen.availWidth <= screen.width) and screen-avail-height-fits
+(availHeight <= height). keys[0] authoritative (the display the work area is carved from); fires
+only on strictly-greater (equality == the real no-taskbar state). Read with GetUint32 (the getter
+sp4a-screen consumes them with); absent/wrong-typed constrains nothing. Report-only, same posture
+as ua-os-family-agrees (ValidateAtStartup logs, does not write; AllPoliciesAreRepair holds).
+WHY REAL (discipline gate): available area = display minus OS chrome => physical subset; a config
+reporting availWidth > width describes a work area larger than its screen, a state no real device
+produces and a detector reads by comparing two screen properties. Contrast rejected battery-ii
+(manufactured -- no cross-surface physical constraint the config could violate). SP5 design 4.3
+names it explicitly. Owned by sp4a (both keys are sp4a's).
+FILES (all whole-file additions or scripts, NO patch hunk touched): settings/invariants.json (+2,
+source of truth), additions/camoucfg/invariants.h (+kFitsWithin, +2 entries via keys:: constants,
+array 1->3), coherence_validator.cc (+CheckFitsWithin + switch case), coherence_validator_unittest.cc
+(+2 mutations, +fits-within relation branch in RegistryMatchesGeneratedHeader, +equality-boundary
+coverage in CleanConfig, +config-mirror assert), scripts/run_coherence_tests.sh (per-mutation driver
++ registry drift guard deriving count from invariants.json), scripts/verify_sp5a.py (+C5/C6).
+HARNESS SURGERY: run_coherence_tests.sh hardcoded ONE MutationIsCaughtAndNothingElseIs invocation
+for the UA id; a new mutation defined in kMutations but not driven there is "documentation, not
+enforcement". Restructured to drive the case once per registry mutation (each its own process --
+config latches per process), with a drift guard (grep -c "id" invariants.json == #MUTATIONS, and
+> 0) so a future invariant cannot be silently undriven. Count guard + gtest ASSERT_TRUE(mutation)
+lookup + ASSERT_EQ(size,1u) compose airtight.
+VERIFY (box, GREEN): run_coherence_tests.sh 6/6, all 3 mutations driven per-id, equality boundary
+covered. RED RUN EMPIRICALLY (not just reasoned): flip CheckFitsWithin <= to >= -> both screen
+mutations red (ASSERT_EQ size), ua + guards green, 5/6 exit 1; restore -> 6/6. (First RED attempt
+used early return {} -> -Werror unreachable-code -> build FAILED and runner ran the STALE good
+binary, falsely 6/6 -- caught by checking "Build Succeeded: N steps", the stale-object trap.)
+verify_sp5a.py 6/6: C5 matches the FULL geometry log line (pins base::NumberToString integer
+formatting end-to-end, which the unit test -- checking the repaired key not the message -- cannot
+see), C6 strict exit-13 via the invariant-agnostic refusal, C1-C4 unchanged (no UA regression).
+REVIEW: code-reviewer APPROVE, no Critical/Important, 3 Minors all fixed: (1) equality claimed but
+not enforced -> added ASSERT_EQ(avail==screen) so the boundary is actually under test; (2)
+Mutation::config was dead data (gtest read invariant_id/expect_repaired, never config) -> added
+ASSERT_EQ(CAMOU_CONFIG == mutation->config) making the C++/bash config lists a verified mirror,
+closing drift incl. the pre-existing UA entry; (3) availLeft+availWidth>width offset nesting is a
+necessary-not-sufficient gap -> documented in the measurement doc's Deferred list (3-key, same
+limit class as window position; fits-within is the gross-tell bound not full work-area validation).
+No invariants.json consumer switches on relation strings (checked scripts/+pythonlib/), so
+"fits-within" breaks nothing; apply.sh:23 copies settings/invariants.json -> components/camoucfg/.
+DEFERRED (named, not this slice): outer <= avail (needs confirming outerWidth is config-driven +
+page-visible, is window-geometry-owned, and the real bound is avail not screen -- outer <= screen
+is the WRONG bound, a window overlapping the taskbar); window position 0 <= screenX <= width-outer
+and the availLeft/availTop offset nesting (both 3-key -- widening Invariant.keys beyond 2 is a
+deliberate flagged moment, not a side effect).

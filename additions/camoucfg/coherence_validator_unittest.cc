@@ -99,6 +99,9 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
     if (*relation == "same-os-family") {
       EXPECT_EQ(header_entry->relation, invariants::Relation::kSameOsFamily)
           << *id;
+    } else if (*relation == "fits-within") {
+      EXPECT_EQ(header_entry->relation, invariants::Relation::kFitsWithin)
+          << *id;
     } else {
       ADD_FAILURE() << *id << " has a relation this test does not know: "
                     << *relation;
@@ -163,10 +166,20 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 1> kMutations = {{
+constexpr std::array<Mutation, 3> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
+    // availWidth > width: a work area wider than the display containing it.
+    // Sets only the width axis, so screen-avail-height-fits stays absent and
+    // exactly one violation is produced. Numbers, not strings -- GetUint32
+    // wants a JSON integer.
+    {"screen-avail-width-fits",
+     R"({"screen.width":1920,"screen.availWidth":2560})",
+     "screen.availWidth"},
+    {"screen-avail-height-fits",
+     R"({"screen.height":1080,"screen.availHeight":1440})",
+     "screen.availHeight"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {
@@ -200,6 +213,15 @@ TEST(CoherenceValidatorTest, MutationIsCaughtAndNothingElseIs) {
   }
   ASSERT_TRUE(mutation) << "no mutation named " << *which;
 
+  // The runner drives this case with CAMOU_CONFIG set from its OWN bash copy of
+  // the config, keyed by the same id. Pinning it against kMutations' copy makes
+  // the two config lists a verified mirror rather than two hand-kept copies
+  // that drift silently -- mutation->config is read by nothing else, so without
+  // this the C++ config strings are dead data and the comment beside them
+  // ("violates exactly this invariant") is unchecked.
+  ASSERT_EQ(env->GetVar("CAMOU_CONFIG").value_or(std::string()),
+            std::string(mutation->config));
+
   // Exactly one, and exactly the right one. An entry that also fires on an
   // unrelated corruption is as useless as one that never fires: it would make
   // every future violation report look like this one.
@@ -229,6 +251,31 @@ TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
   ASSERT_TRUE(GetString(GlobalScope(), keys::kUaPlatform).has_value())
       << "run with CAMOU_CONFIG set to a coherent configuration; see the "
          "runner";
+  // The coherent config sets the screen cluster with availWidth == width and
+  // availHeight == height -- the real no-taskbar state, which the fits-within
+  // relation must accept (it fires only on strictly greater). Asserting the
+  // four keys resolved, exactly as the UA keys above are asserted, keeps that
+  // coverage from silently vanishing if a screen key in the runner's COHERENT
+  // config is typo'd: without this, a mistyped key would leave the geometry
+  // relation with nothing to compare and this test would pass having never
+  // exercised the equality boundary at all.
+  ASSERT_TRUE(GetUint32(GlobalScope(), keys::kScreenWidth).has_value())
+      << "coherent config must set screen.width; see the runner";
+  ASSERT_TRUE(GetUint32(GlobalScope(), keys::kScreenHeight).has_value())
+      << "coherent config must set screen.height; see the runner";
+  ASSERT_TRUE(GetUint32(GlobalScope(), keys::kScreenAvailWidth).has_value())
+      << "coherent config must set screen.availWidth; see the runner";
+  ASSERT_TRUE(GetUint32(GlobalScope(), keys::kScreenAvailHeight).has_value())
+      << "coherent config must set screen.availHeight; see the runner";
+  // Presence is not enough: this test claims to exercise the equality boundary
+  // (availWidth == width, the no-taskbar state fits-within must accept), and a
+  // config with availWidth simply < width would pass identically without ever
+  // testing it. Pin equality so the boundary is actually the thing under test
+  // -- the control is only useful if the two sides are guaranteed equal.
+  ASSERT_EQ(*GetUint32(GlobalScope(), keys::kScreenAvailWidth),
+            *GetUint32(GlobalScope(), keys::kScreenWidth));
+  ASSERT_EQ(*GetUint32(GlobalScope(), keys::kScreenAvailHeight),
+            *GetUint32(GlobalScope(), keys::kScreenHeight));
   EXPECT_TRUE(Validate(GlobalScope()).empty());
 }
 

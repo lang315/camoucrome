@@ -42,6 +42,14 @@ enum class Relation {
   // OS family, as camoucfg::OsFamily computes it. keys[0] is authoritative
   // when they disagree.
   kSameOsFamily,
+  // keys[1] must be <= keys[0], both read as GetUint32 (a non-negative
+  // integer; absent or wrong-typed on either side constrains nothing).
+  // keys[0] is the authoritative bound and keys[1] the value the log names
+  // as too large. Unlike kSameOsFamily, CheckFitsWithin() hardcodes no key,
+  // so any uint32 key pair is read correctly -- what proves a kFitsWithin
+  // entry actually fires (rather than reading a non-numeric key that always
+  // returns nullopt) is its required mutation test, not a static_assert.
+  kFitsWithin,
 };
 
 struct Invariant {
@@ -58,11 +66,23 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 1> kAllInvariants = {{
+inline constexpr std::array<Invariant, 3> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
      {"ua:osInfo", "ua:platform"}},
+    // keys named via keys:: constants rather than string literals (as the UA
+    // entry above does): a rename in keys.h then fails to compile here instead
+    // of silently drifting from the declared key. RegistryMatchesGeneratedHeader
+    // still checks these against invariants.json's literal strings.
+    {"screen-avail-width-fits",
+     Relation::kFitsWithin,
+     Policy::kRepair,
+     {keys::kScreenWidth, keys::kScreenAvailWidth}},
+    {"screen-avail-height-fits",
+     Relation::kFitsWithin,
+     Policy::kRepair,
+     {keys::kScreenHeight, keys::kScreenAvailHeight}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
