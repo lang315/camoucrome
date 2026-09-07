@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_CAMOUCFG_COHERENCE_VALIDATOR_H_
 #define COMPONENTS_CAMOUCFG_COHERENCE_VALIDATOR_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,6 +36,36 @@ struct Violation {
 // suite assert "this configuration violates exactly this entry and no other"
 // without also asserting a policy decision.
 std::vector<Violation> Validate(const ConfigScope& scope);
+
+// A configured WebGL identity string whose pair is absent. Unlike a Violation
+// (two present keys disagreeing on a value), this is a PRESENCE incoherence:
+// one of {renderer, vendor} for an API is configured and the other is left to
+// leak this machine's real value. There is no value to substitute -- repairing
+// would mean inventing the missing string -- so the report names the two keys
+// and asks the operator to set both or neither.
+struct PairingViolation {
+  std::string present_key;  // the channel the operator configured
+  std::string absent_key;   // its pair, which still reports the real value
+};
+
+// Pure pairing check: given whether each side of an API's {renderer, vendor}
+// pair resolves, returns a violation when EXACTLY ONE does, naming the present
+// key and the absent one. nullopt when both resolve or neither does. Reads no
+// configuration -- factored out from ValidatePairing so the both-or-none branch
+// (a security decision: == vs != silently disables or over-fires the check)
+// is testable with literals, exactly as CheckDomain is for ValidateDomains.
+std::optional<PairingViolation> CheckPairing(bool renderer_resolves,
+                                             bool vendor_resolves,
+                                             std::string_view renderer_key,
+                                             std::string_view vendor_key);
+
+// Reads the configuration and reports each API (webGl, webGl2) whose renderer
+// and vendor are not both-present-or-both-absent. "Resolves" mirrors the
+// getParameter() consumer's FULL resolution (webgl_rendering_context_base.cc,
+// sp3b): the dedicated key OR a string entry in the parameters table at the
+// pname. Design sp3-webgl-canvas-design.md:256-257 and :283 make the validator
+// the owner of this pairing; a renderer without its vendor is invalid config.
+std::vector<PairingViolation> ValidatePairing(const ConfigScope& scope);
 
 // Called once from the browser process before any renderer exists. Returns
 // false when startup must be refused.

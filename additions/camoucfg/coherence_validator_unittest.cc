@@ -279,5 +279,49 @@ TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
   EXPECT_TRUE(Validate(GlobalScope()).empty());
 }
 
+// --- WebGL renderer/vendor pairing ---
+//
+// CheckPairing is pure (it reads no configuration), so these run in a plain
+// filter, one process for all of them, and assert the both-or-none branch with
+// literals -- the same split domain_validator draws between the pure CheckDomain
+// (unit-tested here) and the config-reading ValidateDomains (exercised on the
+// box). The config-reading half, ValidatePairing -- including the parameters-
+// table resolution and the strict-refusal wiring -- is proven end-to-end by
+// verify_webgl_pairing.py, where a real getParameter() read confirms the
+// resolution mirrors the consumer.
+
+TEST(PairingTest, RendererWithoutVendorNamesVendorAbsent) {
+  std::optional<PairingViolation> v = CheckPairing(
+      /*renderer_resolves=*/true, /*vendor_resolves=*/false,
+      keys::kWebGlRenderer, keys::kWebGlVendor);
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(v->present_key, keys::kWebGlRenderer);
+  EXPECT_EQ(v->absent_key, keys::kWebGlVendor);
+}
+
+TEST(PairingTest, VendorWithoutRendererNamesRendererAbsent) {
+  std::optional<PairingViolation> v = CheckPairing(
+      /*renderer_resolves=*/false, /*vendor_resolves=*/true,
+      keys::kWebGlRenderer, keys::kWebGlVendor);
+  ASSERT_TRUE(v.has_value());
+  EXPECT_EQ(v->present_key, keys::kWebGlVendor);
+  EXPECT_EQ(v->absent_key, keys::kWebGlRenderer);
+}
+
+TEST(PairingTest, BothResolvedIsCoherent) {
+  EXPECT_FALSE(CheckPairing(/*renderer_resolves=*/true,
+                            /*vendor_resolves=*/true, keys::kWebGlRenderer,
+                            keys::kWebGlVendor)
+                   .has_value());
+}
+
+TEST(PairingTest, NeitherResolvedIsCoherent) {
+  // The unconfigured case: nothing is spoofed, so there is nothing to pair.
+  EXPECT_FALSE(CheckPairing(/*renderer_resolves=*/false,
+                            /*vendor_resolves=*/false, keys::kWebGlRenderer,
+                            keys::kWebGlVendor)
+                   .has_value());
+}
+
 }  // namespace
 }  // namespace camoucfg

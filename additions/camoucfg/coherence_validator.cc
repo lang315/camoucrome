@@ -7,12 +7,14 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <variant>
 
 #include "base/environment.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/camoucfg/derive.h"
 #include "components/camoucfg/domain_validator.h"
+#include "components/camoucfg/gl_params.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
 
@@ -95,6 +97,25 @@ std::vector<Violation> CheckFitsWithin(const ConfigScope& scope,
   return {v};
 }
 
+// Whether an API's renderer (or vendor, when `vendor` is true) resolves to a
+// value the page would actually read. This mirrors the two-step resolution
+// getParameter() performs in webgl_rendering_context_base.cc (sp3b patch,
+// UNMASKED_*_WEBGL cases): the dedicated key wins, else a STRING entry in the
+// parameters table at that pname. Reading only the dedicated key here would
+// call a config that spoofs via the parameters table "absent" -- and under
+// strict that refuses a fingerprint the page sees whole. 0x9245 is
+// UNMASKED_VENDOR_WEBGL, 0x9246 UNMASKED_RENDERER_WEBGL; GLParam reads
+// ParsedConfig() and ignores `scope`, which is correct at browser startup.
+bool GLStringResolves(const ConfigScope& scope, bool is_webgl2, bool vendor) {
+  if ((vendor ? GLVendor(scope, is_webgl2) : GLRenderer(scope, is_webgl2))
+          .has_value()) {
+    return true;
+  }
+  std::optional<GLValue> param =
+      GLParam(scope, vendor ? 0x9245u : 0x9246u, is_webgl2);
+  return param.has_value() && std::holds_alternative<std::string>(*param);
+}
+
 }  // namespace
 
 std::vector<Violation> Validate(const ConfigScope& scope) {
@@ -116,6 +137,44 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
   return violations;
 }
 
+std::optional<PairingViolation> CheckPairing(bool renderer_resolves,
+                                             bool vendor_resolves,
+                                             std::string_view renderer_key,
+                                             std::string_view vendor_key) {
+  // Both set or both absent is coherent. Only the exclusive-or is a violation:
+  // one channel spoofed while the other reports the real GPU.
+  if (renderer_resolves == vendor_resolves) {
+    return std::nullopt;
+  }
+  PairingViolation v;
+  if (renderer_resolves) {
+    v.present_key = std::string(renderer_key);
+    v.absent_key = std::string(vendor_key);
+  } else {
+    v.present_key = std::string(vendor_key);
+    v.absent_key = std::string(renderer_key);
+  }
+  return v;
+}
+
+std::vector<PairingViolation> ValidatePairing(const ConfigScope& scope) {
+  std::vector<PairingViolation> violations;
+  // webGl and webGl2 are independent surfaces: a page can read one, the other,
+  // or both, so each pair is checked on its own. A config spoofing webGl:
+  // renderer beside webGl2:vendor is two violations, not zero.
+  for (bool is_webgl2 : {false, true}) {
+    std::optional<PairingViolation> v = CheckPairing(
+        GLStringResolves(scope, is_webgl2, /*vendor=*/false),
+        GLStringResolves(scope, is_webgl2, /*vendor=*/true),
+        is_webgl2 ? keys::kWebGl2Renderer : keys::kWebGlRenderer,
+        is_webgl2 ? keys::kWebGl2Vendor : keys::kWebGlVendor);
+    if (v.has_value()) {
+      violations.push_back(*v);
+    }
+  }
+  return violations;
+}
+
 bool ValidateAtStartup(const ConfigScope& scope) {
   std::vector<Violation> violations = Validate(scope);
   // Single-key domain checks (SP5b) run alongside the relational ones. They
@@ -123,7 +182,17 @@ bool ValidateAtStartup(const ConfigScope& scope) {
   // relational violation can still carry an out-of-range value, and returning
   // true on an empty relational result would skip the domain check entirely.
   std::vector<DomainViolation> domain_violations = ValidateDomains(scope);
-  if (violations.empty() && domain_violations.empty()) {
+  // WebGL renderer/vendor pairing: a presence incoherence, not a value one, so
+  // it is collected here beside the domain checks rather than in the invariant
+  // registry (which owns relations between keys that are both present). Design
+  // sp3-webgl-canvas-design.md:283 requires rejection, so it feeds the
+  // strict-refusal path below. The analogous ua: half-config in the sp5a
+  // diagnostic block only WARNS -- SP1 asked for the same all-or-nothing
+  // rejection there (sp1-navigator-identity-design.md:419-423) but sp5a shipped
+  // it warn-only; realigning ua: is that block's business, not this slice's.
+  std::vector<PairingViolation> pairing_violations = ValidatePairing(scope);
+  if (violations.empty() && domain_violations.empty() &&
+      pairing_violations.empty()) {
     return true;
   }
 
@@ -162,6 +231,19 @@ bool ValidateAtStartup(const ConfigScope& scope) {
                   "neighbour is lost with it. Fix it, or set "
                   "CAMOU_CONFIG_STRICT=1 to refuse startup instead of running "
                   "with it silently dropped.";
+  }
+
+  for (const PairingViolation& v : pairing_violations) {
+    // Presence, not value: naming a "should be" here would mean inventing the
+    // missing string, which is exactly the fingerprint the operator did not
+    // choose. So the message names the two keys and the leak, and stops there.
+    LOG(ERROR) << "camoucfg: '" << v.present_key << "' is set but its pair '"
+               << v.absent_key
+               << "' is not. A page reads both through "
+                  "WEBGL_debug_renderer_info, so the configured value sits "
+                  "beside this machine's real one -- an incoherent pair. Set "
+                  "both, or neither, or set CAMOU_CONFIG_STRICT=1 to refuse "
+                  "startup.";
   }
   return !strict;
 }
