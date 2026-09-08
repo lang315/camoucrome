@@ -178,21 +178,20 @@ leak, they can only over-refuse under strict):
   reasoned); each time the other rows stayed green and restoring returned 13/13.
   `GLShaderPrecisionConfigured` and `GLContextAttrsConfigured` share the dict
   getter's `FindDict`+non-empty structure already mutation-covered.
-- **An undiagnosed low-rate flake, disclosed:** three per-field webGl2 rows
-  (extensions, shaderPrec, contextAttrs) were trialed to widen webGl2 coverage.
-  Adding them surfaced an intermittent (~1-in-6 full runs) content_shell startup
-  miss on **one** row only — `webGl2:shaderPrecisionFormats`, three of three
-  identified misses. Cause not diagnosed. The check path is deterministic by
-  construction (config → `FindDict` → violation → `LOG`), so the miss is upstream
-  of the check, but where is unknown; the single affected row is weak evidence for
-  a harness-general flake and equally consistent with something about that one
-  config. The three rows were dropped rather than ship intermittent green: the
-  webGl/webGl2 mixup they guard against is structurally impossible (the `Cap[]`
-  loop keys all four fields off one `is_webgl2` and sets the identity keys once per
-  iteration), and CP-WEBGL2 already exercises the `is_webgl2=true` wiring. The
-  retained 13 rows ran clean across ~6 repeats — which does not rule out a low-rate
-  flake reaching them, only that none was observed. If a future run shows a lone
-  12/13 or 13/14, this is the prior.
+- **A low-rate flake, now diagnosed and fixed** (see
+  `2026-09-08-verify-stderr-interleave-flake.md`): three per-field webGl2 rows
+  were trialed and surfaced an intermittent (~1 launch in 100) miss of the
+  expected diagnostic line — not `shaderPrecisionFormats`-specific after all (the
+  committed `CP-WEBGL2` row also missed; the "one row" impression was observation
+  bias). Root cause was in the shared harness, not this check: `lib_shell` opened
+  the per-PID stderr file truncating (`"wb"`, no `O_APPEND`), so content_shell's
+  browser and GPU processes overwrote one another and the GPU's WSL libEGL
+  warnings could split the coherence line mid-string, failing the exact-substring
+  match. Fixed by opening `O_APPEND` (0 misses in 420 launches after, was 1/128).
+  The three per-field webGl2 rows stay dropped — their justification was
+  structural redundancy (the `Cap[]` loop keys all four fields off one `is_webgl2`
+  and `CP-WEBGL2` covers the `is_webgl2=true` wiring), which stands on its own now
+  that the flake is fixed.
 - **CP-MOTIVATION, before AND after (unchanged):** maxTex 16384 beside the host
   SwiftShader renderer — the leak is real and this slice reports rather than
   repairs it.
