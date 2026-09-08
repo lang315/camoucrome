@@ -3322,3 +3322,41 @@ deliberately NOT "configured". RESIDUAL: value coherence (do the numbers match t
 needs the SP5 profile database. DEFERRED once, list-and-stop: SP5 profile database (:284 value coherence); the
 bare-blockIfNotDefined-beside-real-identity coherence question (design owner); the undiagnosed webGl2
 shaderPrec harness flake.
+
+Verify-harness flake FIX (the undiagnosed webgl2 flake from Slice #3): DIAGNOSED + FIXED. User picked
+"Diagnose webGl2 flake" from the deferred list. systematic-debugging: reproduced (single-config 50x clean ->
+NOT per-launch; faithful 16-row sequence caught 1 LINE-ABSENT in 128 launches). ROOT CAUSE read from the
+captured bytes, not inferred: lib_shell.launch() opened the per-PID stderr file open(STDERR_LOG,"wb") --
+O_TRUNC, NO O_APPEND. content_shell is multi-process; in WSL the GPU process spams libEGL warnings as EGL
+init fails. The miss dump showed those warnings landing INSIDE the coherence LOG line:
+"[...coherence_validator.cc:359] camoucfg: " + interleaved "libEGL warning:" lines + tail "y -- an incoherent
+profile...", so the exact-substring assertion missed the clobbered middle ~1/100. A write landing inside
+another means the writers held offsets not serialized against each other (a shared open-file description
+serializes on Linux via f_pos_lock), so at least one writer reached the file through a separate description --
+WHICH process and how it got a separate offset was NOT resolved; O_APPEND does not need that answer (seeks EOF
+atomically regardless). Deterministic
+check path (config->FindDict->violation->LOG) + ValidateAtStartup runs in BrowserMainLoop::Init() BEFORE the
+DevTools port opens (killed the emit-vs-shutdown-race hypothesis: line always emitted before launch() returns).
+So it's the CAPTURE, not the check. NOT shaderPrec-pinned (committed CP-WEBGL2 also missed historically =
+observation bias). FIX: O_APPEND (truncate "wb"+close for per-run-fresh, reopen "ab") in launch() -- every
+write() seeks EOF atomically, whole log lines stay contiguous. Argv-NEUTRAL (Popen argv untouched) so
+test_lib_shell_launch.py stays 7/7; shared-harness fix hardens ALL verify scripts (sp5a/pairing/bucket/ua/
+capability) at once. VERIFIED: pre-fix 1 LINE-ABSENT in 128; post-fix 0 in 420 (two 210 chunks) -- BUT those
+420 were nogl (dropped the GL MOTIVATION row, which exhausts WSLg display under rapid repeat), while every
+PRE-fix observation had the GL row present; GL-inclusive post-fix exposure is the real-script reruns (~92
+launches, 5x13 + 3x9, 0 LINE-ABSENT). The libEGL splitter is present in every headless launch too (GPU EGL
+fails regardless of GL flags), so headless stress does exercise the race. Corroboration: min captured stderr
+len rose 479->754->1593 (no write inside another = interleaved content preserved, exactly as O_APPEND predicts).
+Argv-freeze 7/7. Real scripts on fixed harness: verify_webgl_capability_identity 13/13, verify_webgl_pairing
+9/9, verify_sp5a 6/6. NOT-THIS-BUG (recorded): CP-MOTIVATION/WP-MOTIVATION SIGABRT code -6 is a SEPARATE
+X11/Ozone DeviceDataManagerX11 abort (pure X11 stack), appearing after RAPID repeated GL launches (my stress)
+exhausting the WSLg display -- those rows drop --ozone-platform=headless (GL flags replace SHELL_FLAGS) so they
+need the real display. Recovery was NOT from reaping (0 procs reaped, rows still 12/13, 8/9); cleared on their
+own ~minutes later, trigger unresolved, abort CHECK message never captured. Unrelated to the stderr change
+(MOTIVATION succeeded WITH the O_APPEND harness once display recovered). Prior for recurrence: WSLg display
+state -- wait it out or restart WSLg, NOT reap processes. Files: scripts/lib_shell.py (the fix + inline
+scar comment), docs/.../2026-09-08-verify-stderr-interleave-flake.md (NEW record), and the flake paragraph in
+2026-09-08-webgl-capability-identity-presence.md updated undiagnosed->diagnosed+fixed. No synthetic unit test:
+the exact multi-process fd topology (shared-vs-independent description) was not fully resolved, so a synthetic
+two-writer test would bake in an unproven model; the honest verification is the 420-launch empirical + argv
+freeze. NO decision to re-add the 3 webgl2 rows (structurally redundant regardless).

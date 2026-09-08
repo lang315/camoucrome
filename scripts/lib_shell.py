@@ -174,7 +174,23 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     # process is gone, and a pipe would deadlock the child if Chromium's
     # startup noise filled the buffer. Each launch truncates it, so a read
     # only ever sees its own run.
-    stderr_file = open(STDERR_LOG, "wb")
+    #
+    # Opened O_APPEND, not plain "wb". content_shell is multi-process and in
+    # WSL its GPU process spams libEGL warnings as EGL init fails. Observed
+    # 2026-09-08: the captured bytes showed those warnings landing INSIDE a
+    # coherence_validator LOG line ("...camoucfg: " then libEGL noise then
+    # "y -- an incoherent profile..."), so an exact-substring assertion missed
+    # it about one launch in a hundred -- an intermittently green verification.
+    # A write landing inside another means the two writers held offsets that
+    # were not serialized against each other (a shared open-file description
+    # would serialize on Linux, so at least one writer reached this file
+    # through a separate description); which process and how it got a separate
+    # offset was not resolved. O_APPEND does not need that answer: it makes
+    # every write() seek to EOF atomically regardless of offset, so each whole
+    # log line stays contiguous. Truncate first ("wb") to keep the
+    # per-run-fresh property, then reopen append-only.
+    open(STDERR_LOG, "wb").close()
+    stderr_file = open(STDERR_LOG, "ab")
     # CDP is served on --remote-debugging-port by both binaries; only the
     # headless switch differs, which is what SHELL_FLAGS/CHROME_FLAGS carry.
     port_arg = f"--remote-debugging-port={0 if debug_port is None else debug_port}"
