@@ -34,16 +34,23 @@
     ""
   ],
   "navigator_prototype_props": [
+    "adAuctionComponents",
     "appCodeName",
     "appName",
     "appVersion",
+    "canLoadAdAuctionFencedFrame",
     "clearAppBadge",
+    "clearOriginJoinedAdInterestGroups",
     "clipboard",
     "connection",
     "constructor",
     "cookieEnabled",
     "cpuPerformance",
+    "createAuctionNonce",
     "credentials",
+    "deprecatedReplaceInURN",
+    "deprecatedRunAdAuctionEnforcesKAnonymity",
+    "deprecatedURNToURL",
     "deviceMemory",
     "devicePosture",
     "doNotTrack",
@@ -51,15 +58,18 @@
     "getBattery",
     "getGamepads",
     "getInstalledRelatedApps",
+    "getInterestGroupAdAuctionData",
     "getUserMedia",
     "gpu",
     "hardwareConcurrency",
     "hid",
     "ink",
     "javaEnabled",
+    "joinAdInterestGroup",
     "keyboard",
     "language",
     "languages",
+    "leaveAdInterestGroup",
     "locks",
     "login",
     "managed",
@@ -76,9 +86,11 @@
     "presentation",
     "product",
     "productSub",
+    "protectedAudience",
     "registerProtocolHandler",
     "requestMIDIAccess",
     "requestMediaKeySystemAccess",
+    "runAdAuction",
     "scheduling",
     "sendBeacon",
     "serial",
@@ -87,6 +99,7 @@
     "storage",
     "storageBuckets",
     "unregisterProtocolHandler",
+    "updateAdInterestGroups",
     "usb",
     "userActivation",
     "userAgent",
@@ -105,20 +118,32 @@
   ],
   "platform": "Unknown",
   "provenance": {
+    "accept_ch_advertised": [
+      "sec-ch-ua-arch",
+      "sec-ch-ua-bitness",
+      "sec-ch-ua-platform-version",
+      "sec-ch-ua-model",
+      "sec-ch-ua-full-version-list",
+      "sec-ch-ua-wow64"
+    ],
     "binary": "content_shell",
-    "captured_at_commit": "a90c2cdcb3",
+    "captured_at_commit": "a727b57805",
     "known_absent": [
-      "high-entropy sec-ch-ua-* request headers (Arch, Bitness, Platform-Version, Model, Full-Version-List, WoW64): never emitted, because ShellBrowserContext::GetClientHintsControllerDelegate() returns nullptr outside test harnesses. Advertising Accept-CH does not change this.",
-      "all sec-ch-ua-* headers on NAVIGATION requests: verified empirically, a reload of an origin that had already advertised Accept-CH still carries none, not even the low-entropy triple.",
-      "userAgentData.platform is the literal \"Unknown\", hardcoded in GetShellUserAgentMetadata (shell_content_browser_client.cc:356)."
+      "high-entropy request headers advertised via Accept-CH but not sent: sec-ch-ua-arch, sec-ch-ua-bitness, sec-ch-ua-full-version-list, sec-ch-ua-model, sec-ch-ua-platform-version, sec-ch-ua-wow64",
+      "userAgentData.platform is the literal \"Unknown\""
     ],
-    "known_present_but_shell_authored": [
-      "the low-entropy triple sec-ch-ua / sec-ch-ua-mobile / sec-ch-ua-platform IS sent on subresource requests, with no Accept-CH needed. Its values come from GetShellUserAgentMetadata, not from embedder_support, so they are content_shell's own and are NOT evidence about the SP1a patch either way.",
-      "brand \"content_shell\" v999 and Chrome/999.0.0.0 in the UA string are content_shell's fake version, not this checkout's Chromium milestone."
-    ],
-    "metadata_producer": "content/shell/browser/shell_content_browser_client.cc:348 GetShellUserAgentMetadata, reached via ShellContentBrowserClient::GetUserAgentMetadata() at :750. It never calls embedder_support::GetUserAgentMetadata, so nothing SP1a Task 5 patches can change any metadata value in this file.",
-    "provenance_is_hand_authored": "This block was written by hand, not emitted by capture_ua_baseline.py. It predates the 2026-08-27 change that derives provenance from what was actually observed, and 'known_present_but_shell_authored' is a key that script has never emitted, so re-running it would produce a differently shaped block. Kept rather than regenerated because the capture cannot be reproduced: the producer patch has landed, and redoing it means another build at the base revision. The surface values are unaffected and are what verify_sp1a.py compares against; only this block is hand-written. A provenance block asserting facts no code checks is what conventions calls the worst kind of claim, so it says so about itself.",
-    "ua_string_producer": "content/shell/browser/shell_content_browser_client.cc:747 ShellContentBrowserClient::GetUserAgent() -> embedder_support::BuildUnifiedPlatformUserAgentFromProduct. This is one of the two functions SP1a Task 4 patches, which is why the UA string in this baseline is a meaningful pre-patch value while the metadata below is not."
+    "metadata_producer": "content/shell/browser/shell_content_browser_client.cc:348 GetShellUserAgentMetadata -- content_shell's own, NOT embedder_support::GetUserAgentMetadata",
+    "recaptured_2026-09-09": {
+      "everything_else": "user_agent, platform, mobile, brands, high_entropy, request_headers, navigator_keys byte-identical to the previous capture.",
+      "sp7_disable_fieldtrial_testing_config": [
+        "Navigator.prototype GAINED 13 Protected Audience members (adAuctionComponents, canLoadAdAuctionFencedFrame, clearOriginJoinedAdInterestGroups, createAuctionNonce, deprecatedReplaceInURN, deprecatedRunAdAuctionEnforcesKAnonymity, deprecatedURNToURL, getInterestGroupAdAuctionData, joinAdInterestGroup, leaveAdInterestGroup, protectedAudience, runAdAuction, updateAdInterestGroups): the testing/variations/fieldtrial_testing_config.json study ProtectedAudienceDeprecation disables Fledge + AdInterestGroupAPI on every platform; the compiled defaults (json5 status stable) expose them. Whether real Chrome stable currently exposes them depends on the live Finch seed, which this harness cannot observe -- recorded as an SP5b feature-state question in docs/superpowers/measurements/2026-09-09-sp7-fieldtrial-config.md section 8."
+      ],
+      "upstream_rebase_0e8d4a9268_to_a727b57805": [
+        "window.queryLocalFonts REMOVED: runtime_enabled_features.json5 FontAccess status went from {default: stable} to {default: \"\"} between the two revisions; absent with the arg both true and false, so not the SP7 slice. The old baseline had been latent-stale since the rebase."
+      ],
+      "why": "The 2026-08-27 capture (repo commit a90c2cdcb3, checkout 0e8d4a9268) no longer matched this binary. verify_sp1a.py criterion 7 compares Object.keys(window) and Navigator.prototype against this file, and the full-sweep run after the SP7 field-trial slice showed exactly 14 names changed, all attributed by mutation (control rebuild with disable_fieldtrial_testing_config=false, then true) and by reading the tree."
+    },
+    "ua_string_producer": "content/shell/browser/shell_content_browser_client.cc:732 ShellContentBrowserClient::GetUserAgent -> embedder_support::BuildUnifiedPlatformUserAgentFromProduct, with product built from CONTENT_SHELL_MAJOR_VERSION (hence Chrome/999)"
   },
   "request_headers": {
     "sec-ch-ua": "\"content_shell\";v=\"999\"",
@@ -320,7 +345,6 @@
     "postMessage",
     "print",
     "prompt",
-    "queryLocalFonts",
     "queueMicrotask",
     "releaseEvents",
     "reportError",
