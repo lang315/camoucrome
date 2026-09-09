@@ -11,9 +11,15 @@
 # committed change set -- a hand-extracted patch that lost a hunk, an edit that
 # never left the checkout -- and the branch, not the repo, is what was built.
 #
-# The branch lives in the checkout; the repo lives on the Mac. Run this on the
-# build box against a copy of the repo (tar additions settings/invariants.json
-# patches upstream.env scripts/export.sh), then bring the four outputs back.
+# The branch lives in the checkout; the repo lives on the Mac, with no clone on
+# the box. The round trip, from the repo root:
+#   tar czf changeset.tgz additions settings/invariants.json patches upstream.env scripts
+#   <copy it to the box>; on the box: mkdir -p ~/camoucrome-cs && tar xzf changeset.tgz -C ~/camoucrome-cs
+#   on the box: bash ~/camoucrome-cs/scripts/export.sh ~/chromium/src
+#   on the box: (cd ~/camoucrome-cs && tar czf - additions patches settings/invariants.json | base64 -w0)
+#   on the Mac: base64 -d > export.tgz && tar xzf export.tgz && git status --porcelain additions patches settings
+# If the branch is lost (gclient sync, worktree prune), scripts/rebuild_branch.sh
+# recreates it from the repo; the first export after that must still gate empty.
 set -euo pipefail
 
 SRC="${1:?usage: export.sh <chromium-src-dir> [branch]}"

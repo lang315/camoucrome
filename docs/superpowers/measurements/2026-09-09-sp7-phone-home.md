@@ -114,8 +114,9 @@ chrome-dependent regressions (`verify_sp7_fieldtrial`, `verify_sp1a_chrome`,
 `verify_sp2`, `verify_sp2b`) are recorded in the plan's Task 5 and the
 ledger.
 
-**Still open, named:** SP7 D5 (bundle CRLSet / origin-trial data the updater
-no longer delivers); longer windows and real navigation (Safe Browsing
+**Still open, named:** SP7 D5 — measured and decided in
+`2026-09-09-sp7-components.md` (the page-visible loss is `hyphen-data`, not
+CRLSet; pre-seeding is an A5 item); longer windows and real navigation (Safe Browsing
 lookups, DoH probes, `google.com` cookie-change ListAccounts are all
 un-measured beyond 75 s on `about:blank`); the `X-Client-Data` header (no
 seed, no ids — but assert it on a navigation to a Google host under B1);
