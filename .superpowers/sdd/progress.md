@@ -3410,7 +3410,7 @@ baselines/content_shell-sp0-stock-ua.json, docs/superpowers/measurements/2026-09
 docs/superpowers/plans/2026-09-09-sp7-fieldtrial-config.md, docs/superpowers/plans/2026-09-09-completion-roadmap.md,
 README.md.
 
-SP7-PHONE-HOME (completion roadmap A1 #3/#4) COMPLETE 2026-09-09. Measured, not assumed: netlog
+SP7-PHONE-HOME (completion roadmap A1 #3/#4) COMPLETE 2026-09-09 (commits d1266bb test, b3e7ddd feat, 6b53b1e docs; pin check 0d3f5b0). Measured, not assumed: netlog
 (--log-net-log, REQUEST_ALIVE URLs + traffic-annotation hash) of a fresh headless chrome on about:blank
 for 75 s = 7 Google hosts / ~40 requests: update.googleapis.com + edgedl.me.gvt1.com (component updater,
 ann 54845618), android.clients.google.com /checkin + /c2dm/register3 (GCM, persistent android id),

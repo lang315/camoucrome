@@ -71,7 +71,7 @@ two "unrelated" sessions links them regardless of fingerprint quality.
    `enable_reporting` is the W3C Reporting API — page-observable, untouched.
 4. **Component updater / GCM / ListAccounts / network time / omnibox AIM
    eligibility / spellcheck dictionary** — **SHIPPED 2026-09-09**
-   (`patches/sp7-phone-home.patch`, 9 files; `scripts/verify_sp7_phonehome.py`;
+   (`b3e7ddd` feat, `d1266bb` test, `6b53b1e` docs; `patches/sp7-phone-home.patch`, 9 files; `scripts/verify_sp7_phonehome.py`;
    measurement `2026-09-09-sp7-phone-home.md`). Netlog of a fresh headless
    `chrome` on `about:blank`: 7 Google hosts in 75 s (RED) → `{}` (GREEN),
    four rounds. Auto-update (Omaha) is not built on Linux; Safe Browsing,
@@ -93,9 +93,9 @@ two "unrelated" sessions links them regardless of fingerprint quality.
 
 Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
 
-1. **`upstream.env` + pin check in `apply.sh`** — today `apply.sh` never verifies
-   `HEAD == a727b57805`; a fresh checkout at the wrong revision fails late and
-   confusingly.
+1. **`upstream.env` + pin check in `apply.sh`** — **SHIPPED 2026-09-09**
+   (`0d3f5b0`): `apply.sh` sources `upstream.env` and refuses any other HEAD;
+   `CAMOU_PIN_OVERRIDE=1` warns and continues for the rebase drill.
 2. **`scripts/export.sh`** — regenerate every patch from the `camoucrome/main`
    branch in the checkout. Today patches are hand-extracted, which is how the
    ~22 latent `DEPS` violations and the dropped `BUILD.gn` dep line happened
