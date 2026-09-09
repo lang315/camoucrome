@@ -63,13 +63,20 @@ two "unrelated" sessions links them regardless of fingerprint quality.
    answer in a build that still has it). Re-verify on the `chrome` target
    under B1 together with `X-Client-Data`. Resolved D3: no captured seed;
    per-instance seed is SP5b's later concern.
-3. **Crash reporting** (Crashpad upload — module list, paths, username) and
-   **metrics/UMA** (client GUID). D4 says the GN sites `enable_crash_reporter` /
-   `enable_reporting` are *unverified* — locate first.
-4. **Component updater / auto-update (Omaha) / Safe Browsing
-   (`safe_browsing_mode=0`) / Domain Reliability / Network Time / Google API keys
-   (`use_official_google_api_keys=false`)** — compile out where a GN arg exists,
-   patch where not.
+3. **Crash reporting / metrics** — **measured-off 2026-09-09**, no lever:
+   `ChromeCrashReporterClient::GetCollectStatsConsent()` returns false in any
+   non-`GOOGLE_CHROME_BRANDING` build and `kMetricsReportingEnabled` defaults
+   false, so neither uploads (Crashpad still writes dumps locally). D4's GN
+   guesses were wrong: `enable_crash_reporter` does not exist upstream and
+   `enable_reporting` is the W3C Reporting API — page-observable, untouched.
+4. **Component updater / GCM / ListAccounts / network time / omnibox AIM
+   eligibility / spellcheck dictionary** — **SHIPPED 2026-09-09**
+   (`patches/sp7-phone-home.patch`, 9 files; `scripts/verify_sp7_phonehome.py`;
+   measurement `2026-09-09-sp7-phone-home.md`). Netlog of a fresh headless
+   `chrome` on `about:blank`: 7 Google hosts in 75 s (RED) → `{}` (GREEN),
+   four rounds. Auto-update (Omaha) is not built on Linux; Safe Browsing,
+   Domain Reliability and API keys produced no traffic in the window and get
+   their own measurement before any lever.
 5. **CRLSet + Origin Trials keys** (D5) — bundle milestone-matched data at build
    time in place of what the removed component updater delivered; decide the
    refresh story.

@@ -3409,3 +3409,41 @@ rc was the signal. Files: settings/build-args.gn, scripts/verify_sp7_fieldtrial.
 baselines/content_shell-sp0-stock-ua.json, docs/superpowers/measurements/2026-09-09-sp7-fieldtrial-config.md,
 docs/superpowers/plans/2026-09-09-sp7-fieldtrial-config.md, docs/superpowers/plans/2026-09-09-completion-roadmap.md,
 README.md.
+
+SP7-PHONE-HOME (completion roadmap A1 #3/#4) COMPLETE 2026-09-09. Measured, not assumed: netlog
+(--log-net-log, REQUEST_ALIVE URLs + traffic-annotation hash) of a fresh headless chrome on about:blank
+for 75 s = 7 Google hosts / ~40 requests: update.googleapis.com + edgedl.me.gvt1.com (component updater,
+ann 54845618), android.clients.google.com /checkin + /c2dm/register3 (GCM, persistent android id),
+accounts.google.com/ListAccounts, clients2.google.com/time (network time), www.google.com/async/folae
+(omnibox AIM eligibility, sends locale+country), redirector.gvt1.com bdic (spellcheck dictionary).
+ABSENT by code: UMA/crash upload (GetCollectStatsConsent false unbranded; kMetricsReportingEnabled default
+false), variations seed. SP7 D4's GN guesses were WRONG: enable_crash_reporter does not exist upstream;
+enable_reporting (net/features.gni:36) is the W3C Reporting API, page-observable, NOT touched.
+Verify scripts/verify_sp7_phonehome.py: P1 external host set == {} (assert empty SET, not "the known
+hosts are gone"), P2 presence guard (page navigated to echo_server so chrome issues a loopback URLRequest
+-- the DevTools /json/version poll is INBOUND and never appears in a netlog; first draft assumed it
+would and P2 went FAIL on RED, the guard doing its job), P3 config-layer control. RED: 7 hosts.
+FOUR ROUNDS to GREEN, each a leaf-.cc rebuild (82/12/2 steps): round 1 (six levers from the annotation
+table: no RegisterComponentsForUpdate + SODA false; GCMDriverDesktop::EnsureStarted -> GCM_DISABLED while
+!gcm_started_; ComputeAccountConsistencyMethod kDice -> kDisabled; kNetworkTimeServiceQuerying off;
+kAimEnabled off; no DownloadDictionary on init) left {accounts 1, update 3, edgedl 1} -- on-demand
+registrants (IWA keys, optimization guide, on-device translation) bypass RegisterComponentsForUpdate;
+round 2 (ConfiguratorImpl::UpdateUrl() -> {} unless url-source override => update_client MISSING_URLS
+before any socket; drop IdentityManager::OnNetworkInitialized ListAccounts) left {accounts 1}; round 3:
+the OnNetworkInitialized edit sat under kAvoidAutoTriggerListAccountsOnStale which is DISABLED by default
+(signin_switches.cc:90), so GetAccountsInCookieJar() still fetched on a stale jar (BtmBrowserSigninDetector
+at profile start, btm_browser_signin_detector.cc:39); flipped the feature ON -> {}. LESSON: a verify that
+asserted "the six are gone" would have shipped after round 1. patches/sp7-phone-home.patch: 9 files
+(chrome_browser_main.cc, gcm_driver_desktop.cc, account_consistency_mode_manager.cc,
+network_time_tracker.cc, aim_eligibility_service_features.cc, spellcheck_hunspell_dictionary.cc,
+configurator_impl.cc, identity_manager.cc, signin_switches.cc), none co-owned, applied LAST in apply.sh.
+Round-trip: checkout HEAD the nine -> git apply --3way -> diff md5 identical -> rebuild 87 steps ->
+phone-home 3/3; regressions on that chrome: verify_sp7_fieldtrial 7/7, verify_sp1a_chrome, verify_sp2,
+verify_sp2b all PASS rc=0. content_shell links none of these subsystems: no lever needed, unaffected.
+OPEN (named): SP7 D5 bundle CRLSet/sslErrorAssistant/origin-trial data the updater no longer delivers;
+windows >75 s and real navigation (Safe Browsing, DoH, google.com cookie-change ListAccounts) unmeasured;
+X-Client-Data assert on a Google-host navigation under B1; .bdic bundling (SP6b).
+ALSO SHIPPED same day, A2 #1: upstream.env (CHROMIUM_REV full SHA) + pin check in scripts/apply.sh
+(refuses HEAD != pin; CAMOU_PIN_OVERRIDE=1 warns and continues, for the rebase drill). Tested on the Mac
+against a fake git checkout: refuse path exit 1 with the exact message, override path warns and proceeds
+to copying additions. Positive path = apply.sh on a worktree at the pin, run after push (see below).
