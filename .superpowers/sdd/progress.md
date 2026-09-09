@@ -3509,3 +3509,9 @@ widevine granted. Claude-in-Chrome extension was not connected, so the Mac probe
 pings -- added to phone-home §3); bundling mechanism = restore RegisterComponentsForUpdate + keep choke +
 pre-seed payloads in the profile dir, built in A5 when a payload exists; seeding order hyphen-data, MEI,
 SubresourceFilter, then CRLSet/PKIMetadata/OriginTrials as hygiene refreshed per milestone.
+Review follow-ups (same day): scripts/rebuild_branch.sh recreates camoucrome/main from the repo (worktree at
+the pin, additions + invariants, one commit per series entry). Tested on the box with the real branch
+renamed aside: 26 commits, `git diff --stat` rebuilt-vs-original empty; refuses while the branch exists
+(RED). export.sh header now carries the tar|base64 round trip. check_checkout_sync.sh also lists untracked
+files in the build tree (git diff cannot see them): RED with a stray .cc -> "?? components/network_time/
+stray_new.cc"; GREEN PASS 35. Phone-home §5's D5 line points at the components measurement.

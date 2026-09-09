@@ -55,7 +55,10 @@ done
 # the branch and the repo carried the reviewed one) is what this line is for.
 # camoucfg is excluded because it is untracked in the build tree and would read
 # as 26 deletions; the sha256 loop above already covers it.
-remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg'; echo BUILDTREE_END"$'\n'
+# `git diff` cannot see an untracked file, so a new .cc added in the build tree
+# and never committed to the branch is listed separately (out/ and camoucfg
+# excluded for the reasons above).
+remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
 remote_out=$(ssh -o ControlPath="$CONTROL" -o ControlMaster=no "$SSH_TARGET" \
   "wsl -d Ubuntu-24.04 -u lang -- bash -lc \"echo $(printf '%s' "$remote_script" | base64 | tr -d '\n') | base64 -d > /tmp/sync.sh; bash /tmp/sync.sh\"" 2>/dev/null)
 
