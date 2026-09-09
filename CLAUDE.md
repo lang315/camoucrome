@@ -102,8 +102,15 @@ argv-length limits). `CAMOU_CONFIG_STRICT=1` turns unparseable config into a
 startup abort instead of a silent fall-back to real values.
 
 - Apply the change set: `scripts/apply.sh <chromium-src>` (copies `additions/`,
-  then `git apply --3way` each patch in the explicit, semantic order in the
-  script — not alphabetical).
+  then `git apply --3way` each patch in `patches/series` order — semantic, not
+  alphabetical).
+- The change set is **exported, not hand-extracted**: the build box's checkout
+  carries branch `camoucrome/main` (worktree `/home/lang/camoumain`), one commit
+  per patch above the pin, commit subject == patch stem. `scripts/export.sh
+  <chromium-src>` regenerates `patches/`, `patches/series`, `additions/` and
+  `settings/invariants.json` from it; the gate is `git status --porcelain
+  additions patches settings` empty afterwards. A new slice is a commit on that
+  branch, then an export — never a `git diff` pasted into `patches/`.
 - Browser verifications are `scripts/verify_*.py`, run under
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.

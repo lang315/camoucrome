@@ -101,11 +101,18 @@ Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
    clean onto a fresh worktree at the pin (70 files, 2655+/109−). The first
    attempt, on a worktree at `a727b57805`, conflicted on sp0 — which is how the
    pin mix-up was found.
-2. **`scripts/export.sh`** — regenerate every patch from the `camoucrome/main`
-   branch in the checkout. Today patches are hand-extracted, which is how the
-   ~22 latent `DEPS` violations and the dropped `BUILD.gn` dep line happened
-   (tail-completion Task 4). The tail pass proved a pristine worktree
-   reconstruction is minutes, not hours — make it a script and a gate.
+2. **`scripts/export.sh`** — **SHIPPED 2026-09-09.** Branch `camoucrome/main`
+   built on the box (worktree `/home/lang/camoumain`, 26 commits above the
+   pin, subject == patch stem); `export.sh` regenerates `patches/*.patch`,
+   `patches/series`, `additions/`, `settings/invariants.json` from it and
+   `apply.sh` now reads `series`. First export reproduced all 26 hand-extracted
+   patches byte-identically (gate empty); `apply.sh` on a fresh worktree at the
+   pin reproduces the branch tree exactly. RED: a branch with non-stem subjects
+   is refused before anything is deleted; a drift commit shows up as a new
+   patch + a `series` line. Side effect of the branch diff: the box's
+   `browser_commands.cc` "contamination" is sp1b's own hunk (no contamination),
+   and the box's `input_handler.cc` was the known un-reviewed UAF rework
+   (ledger) — restored to the reviewed blob `443c6f06c9` and rebuilt.
 3. **Key registry codegen** — `settings/keys.json` → generated `keys.h` + the
    client validation table. The triple-edit discipline in `keys.h` /
    `kAllKeys` / `keys_unittest.cc` works but is exactly the hand-maintained

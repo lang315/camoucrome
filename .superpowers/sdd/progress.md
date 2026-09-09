@@ -3463,3 +3463,26 @@ content/test/setup_field_trials.cc, shell_content_browser_client.cc) appears in 
 `^diff --git a/<path>` over patches/, checked), so their text at a727 is their text at 0e8d. "The pin" in
 that sentence means the checkout HEAD, not the base.
 Worktree /home/lang/pincheck removed after the test.
+
+## export.sh + patches/series (SP6a, A2 #2) -- SHIPPED 2026-09-09
+Branch camoucrome/main built on the box in worktree /home/lang/camoumain: 0e8d4a9268 + additions in the
+sp0 commit + one commit per patch in apply.sh order, subject == patch stem (26 commits). Diff of the box's
+working tree against that tip: only components/camoucfg files untracked-but-identical, and
+input_handler.cc = the un-reviewed UAF rework the ledger already flagged (restored to the reviewed
+443c6f06c9, rebuilt). browser_commands.cc, flagged 09-09 as "unowned contamination", is sp1b's hunk --
+the flag was wrong (the box branch never committed sp1b, so `git diff HEAD` showed it as a stray edit).
+scripts/export.sh <src> [branch]: refuses a branch not based on the pin; validates every subject
+([a-z0-9-]+, unique) BEFORE deleting anything; writes patches/<stem>.patch via `git diff c^ c` excluding
+components/camoucfg, patches/series in branch order, additions/ from the tip, invariants.json to settings/.
+apply.sh reads patches/series (explicit array removed). Gate = `git status --porcelain additions patches
+settings` empty after export: first export reproduced all 26 patches + additions + invariants BYTE-IDENTICAL
+(only `?? patches/series`). apply.sh (series) on a fresh worktree at the pin: APPLY_RC=0, `git diff --cached
+--stat camoucrome/main` empty. RED 1: export from camoucrome/sp5a -> "subject '...' is not a patch stem",
+rc=1, patches/ untouched (the first draft deleted patches before validating; fixed). RED 2: throwaway
+branch with one extra commit `drift-test` -> drift-test.patch appears, series grows to 27 lines.
+Transport: repo has no clone on the box; export runs against a tarball copy (~/camoucrome-cs) and the
+outputs come back as tar|base64 over the ssh link. Rebuild after the input_handler.cc restore + verify_sp2b
+recorded below.
+Rebuild after the input_handler.cc restore: content_shell + chrome, 3 steps (BUILD_RC=0, non-zero steps
+confirmed). verify_sp2b 3 PASS rc=0, verify_sp2 9 PASS rc=0 on the reviewed blob. Box working tree now
+matches camoucrome/main for every patched file.
