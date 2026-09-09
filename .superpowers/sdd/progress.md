@@ -3515,3 +3515,20 @@ renamed aside: 26 commits, `git diff --stat` rebuilt-vs-original empty; refuses 
 (RED). export.sh header now carries the tar|base64 round trip. check_checkout_sync.sh also lists untracked
 files in the build tree (git diff cannot see them): RED with a stray .cc -> "?? components/network_time/
 stray_new.cc"; GREEN PASS 35. Phone-home §5's D5 line points at the components measurement.
+
+## keys.json codegen (SP6a, A2 #3) -- SHIPPED 2026-09-09
+settings/keys.json is the registry (83 entries; name/key/type/doc, doc lines carried verbatim from keys.h
+by a one-off converter; `gap:false` on kAudioOutputLatency keeps the one glued comment block). Types from
+call-site getters (GetString/Uint32/Int32/Double/Bool/StringList, FindDict -> dict, voices -> list,
+navigator.userAgent -> unsupported; the webGl: twins take webGl2:'s reads). scripts/gen_keys.py renders
+additions/camoucfg/keys.h (preamble now says GENERATED; kMediaDevicesSpeakerLabel unwrapped at 80 cols;
+kAllKeys comment shortened) -- the only diffs against the hand-written header. Committed header, not a GN
+action: additions/ carries it like every file, --check is the gate. --check: header stale, `declared` set
+in keys_unittest.cc != JSON names, string literal in key position of Get*/HasKey in patches/ or additions/
+(non-unittest). RED: stale header (before generating) rc=1; kWindowScreenY removed from `declared` ->
+"lacks kWindowScreenY"; a patch line `camoucfg::GetString(scope, "navigator.platform")` -> named with
+file:line; duplicate key value -> AssertionError at load. GREEN: PASS 83 keys. Box: keys.h synced to
+~/chromium/src (md5 98917f51...) and committed on camoucrome/main as `sp6a-keys-codegen` (additions-only
+commit -> no patch, no series line); check_checkout_sync PASS 35.
+Rebuild with the generated header: content_shell + components_unittests, 81 steps (BUILD_RC=0).
+CamoucfgKeysTest 5/5 PASSED; verify_sp1a 9 PASS rc=0. Export gate re-run after the branch commit: empty.
