@@ -11,6 +11,22 @@ if [ ! -d "$SRC/third_party/blink" ]; then
   exit 1
 fi
 
+# Every patch below is a diff against ONE revision, recorded in upstream.env.
+# On any other HEAD `git apply --3way` may still succeed on most hunks and
+# fail late on one, or worse succeed with a shifted context -- so refuse up
+# front. A deliberate rebase sets CAMOU_PIN_OVERRIDE=1 and expects conflicts.
+# shellcheck source=../upstream.env
+. "$ROOT/upstream.env"
+HEAD_REV="$(git -C "$SRC" rev-parse HEAD)"
+if [ "$HEAD_REV" != "$CHROMIUM_REV" ]; then
+  if [ "${CAMOU_PIN_OVERRIDE:-0}" = "1" ]; then
+    echo "warning: HEAD $HEAD_REV is not the pinned $CHROMIUM_REV; continuing because CAMOU_PIN_OVERRIDE=1" >&2
+  else
+    echo "error: HEAD $HEAD_REV is not the pinned $CHROMIUM_REV (upstream.env); set CAMOU_PIN_OVERRIDE=1 to rebase" >&2
+    exit 1
+  fi
+fi
+
 echo "copying additions"
 mkdir -p "$SRC/components/camoucfg"
 cp "$ROOT"/additions/camoucfg/* "$SRC/components/camoucfg/"
