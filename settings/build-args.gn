@@ -34,3 +34,21 @@ ffmpeg_branding = "Chrome"
 # no flag produces a working one. requestMediaKeySystemAccess must remain real
 # (SP4 was scoped to leave it alone). Do NOT set enable_widevine=true expecting
 # a working CDM -- that would be a spoof the build cannot honour.
+
+# --- SP7: field-trial testing config (SP7 §4.2 / D3, resolved 2026-08-27) ---
+# An unbranded build applies testing/variations/fieldtrial_testing_config.json at
+# startup; real Chrome does not. That puts the fork's feature state at a third
+# position matching neither seeded nor default Chrome, and the testing config is
+# a public per-milestone file. Compile it out (FIELDTRIAL_TESTING_ENABLED=0,
+# components/variations/service/BUILD.gn) so the position is a property of the
+# binary, not of whether a driver remembered --disable-field-trial-config.
+# content_shell applies the config too (content/test/setup_field_trials.cc,
+# linked via //content/test:test_support), so this is verified on the dev
+# target: scripts/verify_sp7_fieldtrial.py (F1 VLOG count 0, F2 exit code 1 on
+# --enable-field-trial-config). Measurement:
+# docs/superpowers/measurements/2026-09-09-sp7-fieldtrial-config.md.
+# The seed fetch needs no arg: IsFetchingEnabled() is false in a non-branded
+# build unless --variations-server-url is passed -- a driver must never pass it
+# (it would also flip the testing-config answer back on in a build that still
+# has it).
+disable_fieldtrial_testing_config = true
