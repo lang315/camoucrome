@@ -78,9 +78,14 @@ two "unrelated" sessions links them regardless of fingerprint quality.
    four rounds. Auto-update (Omaha) is not built on Linux; Safe Browsing,
    Domain Reliability and API keys produced no traffic in the window and get
    their own measurement before any lever.
-5. **CRLSet + Origin Trials keys** (D5) — bundle milestone-matched data at build
-   time in place of what the removed component updater delivered; decide the
-   refresh story.
+5. **Component payloads** (D5) — **MEASURED + DECIDED 2026-09-09**
+   (`measurements/2026-09-09-sp7-components.md`): CRLSet / origin-trial keys
+   are not page-observable; the tells are `hyphen-data` (`hyphens:auto`
+   scrollWidth 152 here vs 60 on real Chrome), MediaEngagementPreload and
+   SubresourceFilter (site-specific). Widevine is GN-off on this build, an A5
+   licensing item. Mechanism decided: registration back on + `UpdateUrl()`
+   choke kept + payloads pre-seeded into the profile dir — built in A5 when
+   there is a payload to load.
 6. Deliverables: `settings/build-args.gn` grows from 2 args to the full set;
    `patches/sp7-*.patch` for the source levers; a verify that launches the
    binary behind `scripts/echo_server.py`-style capture (or a local proxy) and
