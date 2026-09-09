@@ -3532,3 +3532,21 @@ file:line; duplicate key value -> AssertionError at load. GREEN: PASS 83 keys. B
 commit -> no patch, no series line); check_checkout_sync PASS 35.
 Rebuild with the generated header: content_shell + components_unittests, 81 steps (BUILD_RC=0).
 CamoucfgKeysTest 5/5 PASSED; verify_sp1a 9 PASS rc=0. Export gate re-run after the branch commit: empty.
+
+## SP6a A2 #4 rebase onto Chrome stable -- IN PROGRESS 2026-09-09
+Step 0 inverted the roadmap's premise: pin 0e8d4a9268 has chrome/VERSION 154.0.8026.0 (main snapshot
+between the M153 branch point 8010 and the M154 branch point 8037); Chrome stable on 2026-09-09 is
+153.0.8010.36 (M153, 507c6ee3e2f3). The fork advertises a build number only Dev/Canary ever carried -- the
+tell is "never shipped", not "old". Decision (closes SP6 §4.2 open question): pin to the current stable TAG
+(not branch head, not main); refresh per milestone; A5 asserts chrome/VERSION is a shipped stable version.
+Doc: measurements/2026-09-09-sp6a-version-honesty.md.
+Fetch: `git fetch --depth=1 origin refs/tags/153.0.8010.36:refs/tags/153.0.8010.36` on the shallow box clone
+(1.6G -> 1.7G, 72 s); tag's chrome/VERSION confirmed 153.0.8010.36.
+Drill (drill.sh, worktree /home/lang/camou8010, series order, --3way, commit per stem): prediction = 20 of
+the stack's 70 files changed upstream (+257/-556); result 25/26 clean, 1 conflict = media-ii-track.patch,
+media_stream_track_impl.cc include block (upstream dropped wtf/text/format.h next to our added
+security_origin.h include); resolved keep-ours, 0 logic lines. text_metrics.cc/.h unchanged upstream, so
+metric-jitter's MirroredBaseline needs no re-diff. Branch camoucrome/main-8010 = 26 commits above the tag.
+Detach probes for the hours-scale build: setsid inside WSL dies, Windows Start-Process dies, Task Scheduler
+wsl dies -> builds stay in foreground 560 s chunks (autoninja resumable); one more probe (setsid under a
+concurrent keepalive session) pending.
