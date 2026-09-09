@@ -3361,7 +3361,7 @@ the exact multi-process fd topology (shared-vs-independent description) was not 
 two-writer test would bake in an unproven model; the honest verification is the 420-launch empirical + argv
 freeze. NO decision to re-add the 3 webgl2 rows (structurally redundant regardless).
 
-SP7-FIELDTRIAL (completion roadmap A1 #1) COMPLETE 2026-09-09. First slice of the new completion roadmap
+SP7-FIELDTRIAL (completion roadmap A1 #1) COMPLETE 2026-09-09 (commits 0a7ddb6 test, 4ae816a feat, 7f7f710 docs; roadmap 609b5b5; NOT pushed). First slice of the new completion roadmap
 (docs/superpowers/plans/2026-09-09-completion-roadmap.md; gap analysis vs the SP map + Camoufox inventory).
 Executed the SP7 spec's own "highest-priority item": an unbranded build applies
 testing/variations/fieldtrial_testing_config.json (1119 studies on main, 718 features flipped on linux),
