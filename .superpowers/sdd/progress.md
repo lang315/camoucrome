@@ -3493,3 +3493,19 @@ output. GREEN: PASS 35 files, rc=0. RED: one "// drift" line appended to network
 build tree -> "FAIL the build tree differs from camoucrome/main ... 1 file changed", rc=1; reverted.
 CLAUDE.md names the loop (edit/build in src, `git diff camoucrome/main -- <files> | git -C camoumain apply`,
 commit with the stem subject, export).
+
+## SP7 D5 component payloads -- MEASURED + DECIDED 2026-09-09 (no code)
+Roadmap said "bundle CRLSet + origin-trial keys"; neither is page-observable. Went through all 34
+registrants in RegisterComponentsForUpdate: page-visible = Hyphenation (USE_MINIKIN_HYPHENATION = !is_apple,
+so Linux/Windows hyphens:auto needs the hyphen-data component), MediaEngagementPreload (autoplay on listed
+sites), SubresourceFilter (blocked requests on flagged sites); Widevine is enable_widevine=false at GN on
+this unbranded build, so not a D5 item (A5 + licensing). Measured on the built chrome via
+scripts/measure_sp7_components.py (loopback page: EME is [SecureContext], undefined on headless
+about:blank): hyphens auto 152 == manual 152 (no hyphenation), widevine NotSupportedError, clearkey granted
+(control). Real Google Chrome 151.0.7922.138 macOS headless, same page over python http.server: auto 60 vs
+manual 119 (hyphenated; CoreText path on mac, so a Win/Linux real-Chrome capture is the follow-up),
+widevine granted. Claude-in-Chrome extension was not connected, so the Mac probe ran chrome --headless=new
+--dump-dom --virtual-time-budget. Decision: updater stays off (PingUrl() returns UpdateUrl(), choke covers
+pings -- added to phone-home §3); bundling mechanism = restore RegisterComponentsForUpdate + keep choke +
+pre-seed payloads in the profile dir, built in A5 when a payload exists; seeding order hyphen-data, MEI,
+SubresourceFilter, then CRLSet/PKIMetadata/OriginTrials as hygiene refreshed per milestone.
