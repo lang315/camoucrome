@@ -4,8 +4,9 @@ An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
 **Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
-landed on `main`** — 26 patches in `patches/` (applied in the semantic order in
-`scripts/apply.sh`) plus the proprietary-codec GN args in `settings/build-args.gn`.
+landed on `main`** — 26 patches in `patches/` (applied in the order of
+`patches/series`, which `scripts/export.sh` regenerates from the checkout's
+`camoucrome/main` branch) plus the proprietary-codec GN args in `settings/build-args.gn`.
 Apply the whole set to a pristine Chromium checkout with
 `scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
 design; `docs/superpowers/measurements/` records the per-surface measurement each
