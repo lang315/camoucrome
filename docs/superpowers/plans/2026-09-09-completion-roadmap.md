@@ -53,8 +53,9 @@ two "unrelated" sessions links them regardless of fingerprint quality.
    **measure item for A3: capture `Object.getOwnPropertyNames(Navigator.
    prototype)` / `Object.keys(window)` from real Chrome stable on the claimed
    OS and diff.** Also surfaced that `verify_sp1a.py`'s baseline had been
-   stale since the `0e8d4a9268`→`a727b57805` rebase (`queryLocalFonts`
-   unshipped upstream); recaptured with provenance.
+   stale since sp4-fonts landed (`queryLocalFonts` removed by sp4-fonts's
+   deliberate `FontAccess` flip, NOT upstream — first attributed wrongly,
+   corrected the same day); recaptured with provenance.
 2. **Variations / Finch seed fetch** — **measured-off 2026-09-09**, no patch:
    `IsFetchingEnabled()` (`variations_service.cc:271`) is false in a
    non-branded build unless `--variations-server-url` is passed, and
@@ -94,8 +95,12 @@ two "unrelated" sessions links them regardless of fingerprint quality.
 Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
 
 1. **`upstream.env` + pin check in `apply.sh`** — **SHIPPED 2026-09-09**
-   (`0d3f5b0`): `apply.sh` sources `upstream.env` and refuses any other HEAD;
-   `CAMOU_PIN_OVERRIDE=1` warns and continues for the rebase drill.
+   (`0d3f5b0`, pin corrected to `0e8d4a9268` the same day): `apply.sh` sources
+   `upstream.env` and refuses any other HEAD; `CAMOU_PIN_OVERRIDE=1` warns and
+   continues for the rebase drill. Positive path proven: all 26 patches applied
+   clean onto a fresh worktree at the pin (70 files, 2655+/109−). The first
+   attempt, on a worktree at `a727b57805`, conflicted on sp0 — which is how the
+   pin mix-up was found.
 2. **`scripts/export.sh`** — regenerate every patch from the `camoucrome/main`
    branch in the checkout. Today patches are hand-extracted, which is how the
    ~22 latent `DEPS` violations and the dropped `BUILD.gn` dep line happened
@@ -107,8 +112,11 @@ Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
    registry SP6 §4.6 argues against; it becomes mandatory the moment a client
    (A4) needs the same list. Presubmit: no string literal in the key position of
    any `camoucfg::Get*` call.
-4. **Rebase onto the current Chromium milestone** — the pin is `a727b57805`.
-   Step 0: check that pin's milestone against current stable. Chromium rolls
+4. **Rebase onto the current Chromium milestone** — the pin is `0e8d4a9268`
+   (2026-08-26; `upstream.env`). NOT `a727b57805`, which the docs called the
+   pin until 2026-09-09 and which is the box's branch tip with sp0–sp2b
+   committed on top of the real base. Step 0: check the pin's milestone
+   against current stable. Chromium rolls
    every four weeks and the fork's UA claims the real version, so an old pin is
    a page-visible tell (`Sec-CH-UA` `fullVersionList`, feature detection). Run
    the SP6 §6.7 rebase drill:

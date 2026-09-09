@@ -3447,3 +3447,16 @@ ALSO SHIPPED same day, A2 #1: upstream.env (CHROMIUM_REV full SHA) + pin check i
 (refuses HEAD != pin; CAMOU_PIN_OVERRIDE=1 warns and continues, for the rebase drill). Tested on the Mac
 against a fake git checkout: refuse path exit 1 with the exact message, override path warns and proceeds
 to copying additions. Positive path = apply.sh on a worktree at the pin, run after push (see below).
+
+CORRECTION 2026-09-09 (found by the apply.sh positive-path test): a727b57805 is NOT a Chromium revision.
+It is the tip of the box's camoucrome/sp5a branch -- 12+ camoucrome commits (sp0..sp2b, sp5a fixes) on
+top of the real upstream base 0e8d4a9268118d323f62ca207b40514df39dcaa9 (2026-08-26, "Allow
+ServiceWorkerAutoPreload..."); the rest of the stack lives as uncommitted edits in that working tree.
+Applying the 26 patches onto a worktree at a727b57805 conflicted on sp0 (browser_main_loop.cc, blink DEPS
+already contain it); onto a worktree at 0e8d4a9268 all 26 applied clean (70 files, 2655+/109-). Fixed:
+upstream.env pin -> 0e8d full SHA; CLAUDE.md/README/roadmap wording; the SP7-FIELDTRIAL entry's
+queryLocalFonts attribution -- it is sp4-fonts's DELIBERATE FontAccess flip (patches/sp4-fonts.patch:81-83),
+not upstream; baseline provenance rewritten accordingly (repo + box). The two 09-09 measurements' "confirmed
+at the pin a727b57805" line checks are unaffected (the upstream files read are untouched by camoucrome
+commits between 0e8d and a727), but "the pin" in that sentence means the checkout HEAD, not the base.
+Worktree /home/lang/pincheck removed after the test.

@@ -217,7 +217,7 @@ to navigator or window"). Investigated, not waved through:
 
 | delta vs the 2026-08-27 baseline | cause | attribution |
 |---|---|---|
-| `window.queryLocalFonts` gone | upstream: `runtime_enabled_features.json5` `FontAccess` status `{default: "stable"}` at `0e8d4a9268` → `{default: ""}` at `a727b57805` | present with the arg `false` AND `true` → the rebase, not this slice. The baseline had been latent-stale since the rebase; nobody had re-run `verify_sp1a.py` on `a727b57805` |
+| `window.queryLocalFonts` gone | **sp4-fonts**, deliberately: `patches/sp4-fonts.patch` flips `runtime_enabled_features.json5` `FontAccess` from `{default: "stable"}` to `{default: ""}` so Local Font Access cannot enumerate the host's fonts. *(First written up as an upstream change between `0e8d4a9268` and `a727b57805`; wrong — `a727b57805` is the box's camoucrome branch tip, not an upstream revision, and the json5 diff is sp4-fonts's own hunk. Corrected 2026-09-09.)* | present with the arg `false` AND `true` → not this slice. The baseline (captured 08-27, sp0 only) had been latent-stale since sp4-fonts landed 08-31; nobody had re-run `verify_sp1a.py` since |
 | `Navigator.prototype` gains 13 Protected Audience members (`joinAdInterestGroup`, `runAdAuction`, `protectedAudience`, …) | the testing config's `ProtectedAudienceDeprecation` study disables `Fledge` + `AdInterestGroupAPI` on every platform; compiled defaults (json5 `status: "stable"`) expose them | absent with the arg `false`, present with `true` → this slice |
 
 Everything else in the baseline (UA string, brands, high-entropy values,
@@ -227,10 +227,10 @@ binary with a `recaptured_2026-09-09` provenance block naming both deltas;
 `verify_sp1a.py` is 9/9 on it.
 
 **Rule-2 evidence this produced, stated precisely.** The old baseline came
-from an sp0-only binary at `0e8d4a9268`; the new one from the full 25-patch
-stack at `a727b57805`. The diff between them is exactly 14 names, every one
-attributed to upstream or to the testing config. So across the rebase and 24
-further patches, `Object.keys(window)`, `Object.keys(navigator)` and
+from an sp0-only binary; the new one from the full 25-patch stack, both on
+upstream base `0e8d4a9268`. The diff between them is exactly 14 names: one is
+sp4-fonts's intentional removal of `queryLocalFonts`, thirteen are the testing
+config. So across 24 further patches, `Object.keys(window)`, `Object.keys(navigator)` and
 `Object.getOwnPropertyNames(Navigator.prototype)` gained nothing from the
 fork — the strongest rule-2 evidence recorded so far, bounded to those three
 lists (it says nothing about `Screen.prototype`, worker scopes, or other

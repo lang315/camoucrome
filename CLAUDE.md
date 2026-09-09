@@ -10,9 +10,13 @@ Camoucrome is an anti-detect fork of **Chromium** — the Chromium counterpart t
 plus diffs in `patches/` — that `scripts/apply.sh` lays onto a pristine Chromium
 checkout to produce a fingerprint-spoofing browser.
 
-The change set is generated against Chromium revision **`a727b57805`** (an early
-subset was first cut against `0e8d4a9268`, then rebased). Rebasing onto a newer
-revision is SP6a's job.
+The change set is generated against Chromium revision **`0e8d4a9268`**
+(`upstream.env` holds the full SHA; `scripts/apply.sh` refuses any other HEAD).
+The build box's checkout sits on branch `camoucrome/sp5a` whose tip `a727b57805`
+is a *camoucrome* commit (sp0–sp2b committed on top of `0e8d4a9268`, the rest of
+the stack as uncommitted edits) — do not read that tip as an upstream revision;
+docs before 2026-09-09 did, and the mistake surfaced when the stack conflicted
+on a worktree at `a727b57805`. Rebasing onto a newer revision is SP6a's job.
 
 ## The defining constraint (never violate)
 

@@ -135,13 +135,13 @@
     "metadata_producer": "content/shell/browser/shell_content_browser_client.cc:348 GetShellUserAgentMetadata -- content_shell's own, NOT embedder_support::GetUserAgentMetadata",
     "recaptured_2026-09-09": {
       "everything_else": "user_agent, platform, mobile, brands, high_entropy, request_headers, navigator_keys byte-identical to the previous capture.",
+      "sp4_fonts": [
+        "window.queryLocalFonts REMOVED by sp4-fonts, deliberately: patches/sp4-fonts.patch flips runtime_enabled_features.json5 FontAccess {default: stable} -> {default: \"\"} so Local Font Access cannot enumerate host fonts. Absent with the field-trial arg both true and false. (First attributed to an upstream change between 0e8d4a9268 and a727b57805 -- wrong: a727b57805 is the build box's camoucrome branch tip, not an upstream revision. Corrected 2026-09-09.)"
+      ],
       "sp7_disable_fieldtrial_testing_config": [
         "Navigator.prototype GAINED 13 Protected Audience members (adAuctionComponents, canLoadAdAuctionFencedFrame, clearOriginJoinedAdInterestGroups, createAuctionNonce, deprecatedReplaceInURN, deprecatedRunAdAuctionEnforcesKAnonymity, deprecatedURNToURL, getInterestGroupAdAuctionData, joinAdInterestGroup, leaveAdInterestGroup, protectedAudience, runAdAuction, updateAdInterestGroups): the testing/variations/fieldtrial_testing_config.json study ProtectedAudienceDeprecation disables Fledge + AdInterestGroupAPI on every platform; the compiled defaults (json5 status stable) expose them. Whether real Chrome stable currently exposes them depends on the live Finch seed, which this harness cannot observe -- recorded as an SP5b feature-state question in docs/superpowers/measurements/2026-09-09-sp7-fieldtrial-config.md section 8."
       ],
-      "upstream_rebase_0e8d4a9268_to_a727b57805": [
-        "window.queryLocalFonts REMOVED: runtime_enabled_features.json5 FontAccess status went from {default: stable} to {default: \"\"} between the two revisions; absent with the arg both true and false, so not the SP7 slice. The old baseline had been latent-stale since the rebase."
-      ],
-      "why": "The 2026-08-27 capture (repo commit a90c2cdcb3, checkout 0e8d4a9268) no longer matched this binary. verify_sp1a.py criterion 7 compares Object.keys(window) and Navigator.prototype against this file, and the full-sweep run after the SP7 field-trial slice showed exactly 14 names changed, all attributed by mutation (control rebuild with disable_fieldtrial_testing_config=false, then true) and by reading the tree."
+      "why": "The 2026-08-27 capture (repo commit a90c2cdcb3, upstream base 0e8d4a9268, sp0 only) no longer matched this binary. verify_sp1a.py criterion 7 compares Object.keys(window) and Navigator.prototype against this file, and the full-sweep run after the SP7 field-trial slice showed exactly 14 names changed, all attributed by mutation (control rebuild with disable_fieldtrial_testing_config=false, then true) and by reading the tree."
     },
     "ua_string_producer": "content/shell/browser/shell_content_browser_client.cc:732 ShellContentBrowserClient::GetUserAgent -> embedder_support::BuildUnifiedPlatformUserAgentFromProduct, with product built from CONTENT_SHELL_MAJOR_VERSION (hence Chrome/999)"
   },
