@@ -3360,3 +3360,52 @@ scar comment), docs/.../2026-09-08-verify-stderr-interleave-flake.md (NEW record
 the exact multi-process fd topology (shared-vs-independent description) was not fully resolved, so a synthetic
 two-writer test would bake in an unproven model; the honest verification is the 420-launch empirical + argv
 freeze. NO decision to re-add the 3 webgl2 rows (structurally redundant regardless).
+
+SP7-FIELDTRIAL (completion roadmap A1 #1) COMPLETE 2026-09-09. First slice of the new completion roadmap
+(docs/superpowers/plans/2026-09-09-completion-roadmap.md; gap analysis vs the SP map + Camoufox inventory).
+Executed the SP7 spec's own "highest-priority item": an unbranded build applies
+testing/variations/fieldtrial_testing_config.json (1119 studies on main, 718 features flipped on linux),
+putting feature state at a third position matching neither seeded nor default Chrome. LEVER: GN arg
+disable_fieldtrial_testing_config = true (components/variations/service/BUILD.gn:14 ->
+FIELDTRIAL_TESTING_ENABLED=0 -> ApplyFieldTrialTestingConfig compiled out of
+variations_field_trial_creator.cc:609-616), NOT the --disable-field-trial-config switch (driver discipline,
+the class SP7 4.1 argues against). NOT a patch; persisted in settings/build-args.gn beside the codec pair.
+Gate 0 read from Chromium main over gitiles while the box was offline, then confirmed at the pin: every
+line identical. KEY GATE-0 FINDING that changed the plan: content_shell APPLIES the testing config
+(content/test/setup_field_trials.cc:100 "Needed so that content_shell can use fieldtrial_testing_config",
+linked via //content/test:test_support public_deps content/test/BUILD.gn:522), so the slice verifies on
+the dev target, no chrome build required for it. Second finding: VariationsServiceClient::ExitWithMessage
+is puts()+exit(1) -> STDOUT, which lib_shell.launch() DEVNULLs, so F2 asserts "exited during startup,
+code 1", never the message text. Verify scripts/verify_sp7_fieldtrial.py: F1 stderr count of the
+VLOG(1) "Applying FieldTrialTestingConfig" (--enable-logging=stderr --v=0
+--vmodule=variations_field_trial_creator=1) == 0; F2 --enable-field-trial-config hard-exits code 1;
+F3 control hardwareConcurrency=8 (proves the fork binary); F4 presence guard ("DevTools listening on")
+so F1's absence is not an empty capture. RED on the 09-07 binary: F1 count 1, F2 started normally,
+EXIT=1. GREEN after gn gen + rebuild (102 steps first pass; a nohup'd background autoninja was KILLED
+when the wsl session ended -- foreground over ssh with run_in_background on the Mac side is the working
+pattern): F1-F4 PASS. CONTROL BY MUTATION: arg false -> rebuild (14 steps) -> RED shape back; arg true ->
+GREEN back; final binary is the true one (content_shell 06:47:43). FULL SWEEP of all 35 verify_*.py on
+the rebuilt binary (webrtc_ii_fakeip excluded as a rejected RED record): 34 exit 0, 1 exit 1 =
+verify_sp1a.py criterion 7 (Object.keys(window)/Navigator.prototype vs baseline). Investigated, not
+re-baselined blind: exactly 14 names differ. (a) window.queryLocalFonts GONE = UPSTREAM: FontAccess json5
+status {default: stable} at 0e8d4a9268 -> {default: ""} at a727b57805; present with the arg both false
+and true -> the baseline (captured 08-27 at 0e8d) had been latent-stale since the rebase and nobody had
+re-run sp1a on a727. (b) Navigator.prototype GAINS 13 Protected Audience members (joinAdInterestGroup,
+runAdAuction, protectedAudience, ...) = THIS SLICE: the testing config's ProtectedAudienceDeprecation
+study disables Fledge + AdInterestGroupAPI on every platform, compiled defaults (json5 status stable)
+expose them; absent with arg false, present with true. Everything else in the baseline byte-identical.
+Baseline recaptured from the final binary with a recaptured_2026-09-09 provenance block naming both
+deltas (baselines/content_shell-sp0-stock-ua.json, on the box and in the repo); verify_sp1a 9/9.
+OPEN (recorded, not fixed): whether real Chrome STABLE exposes the 13 Protected Audience members depends
+on the live Finch seed (the study name says Google is winding it down) -- the exact "defaults != seeded"
+gap SP7 D3 accepted; needs a real-Chrome-stable capture of Navigator.prototype/Object.keys(window) on the
+claimed OS -> completion roadmap A3 measure item. Seed fetch: measured-off, no patch
+(IsFetchingEnabled() false unbranded without --variations-server-url; content_shell builds no
+VariationsService); driver constraint: never pass --variations-server-url. chrome target: same buildflag;
+the pre-existing 08-30 chrome showed the RED shape (C1 count 1, C2 starts); rebuild (2915 steps over three
+resumed autoninja runs, binary 07:16:46) -> C1 count 0, C2 exit code 1: script 7/7 on both binaries. Harness notes: box lib_shell.py synced to HEAD (was a
+comment-only local variant); sweep summary grep for "X: PASS" lines matched only some scripts' formats,
+rc was the signal. Files: settings/build-args.gn, scripts/verify_sp7_fieldtrial.py,
+baselines/content_shell-sp0-stock-ua.json, docs/superpowers/measurements/2026-09-09-sp7-fieldtrial-config.md,
+docs/superpowers/plans/2026-09-09-sp7-fieldtrial-config.md, docs/superpowers/plans/2026-09-09-completion-roadmap.md,
+README.md.
