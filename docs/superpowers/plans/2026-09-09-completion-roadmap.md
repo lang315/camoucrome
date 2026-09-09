@@ -118,12 +118,16 @@ Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
    `browser_commands.cc` "contamination" is sp1b's own hunk (no contamination),
    and the box's `input_handler.cc` was the known un-reviewed UAF rework
    (ledger) — restored to the reviewed blob `443c6f06c9` and rebuilt.
-3. **Key registry codegen** — `settings/keys.json` → generated `keys.h` + the
-   client validation table. The triple-edit discipline in `keys.h` /
-   `kAllKeys` / `keys_unittest.cc` works but is exactly the hand-maintained
-   registry SP6 §4.6 argues against; it becomes mandatory the moment a client
-   (A4) needs the same list. Presubmit: no string literal in the key position of
-   any `camoucfg::Get*` call.
+3. **Key registry codegen** — **SHIPPED 2026-09-09.** `settings/keys.json`
+   (83 entries: name, key, type, doc carried verbatim from the old header) →
+   `scripts/gen_keys.py` → `additions/camoucfg/keys.h`, committed rather than
+   a GN action (no build-time python in the patch; `--check` is the drift
+   gate). `--check` also holds the `declared` set in `keys_unittest.cc` to the
+   JSON and rejects a string literal in the key position of any `Get*`/`HasKey`
+   call (the §4.6 presubmit). RED ×3: stale header, missing `declared` name,
+   literal key; duplicate key value asserts at load. Types (`string`, `uint32`,
+   `int32`, `double`, `bool`, `string_list`, `list`, `dict`, `unsupported`) are
+   the client validation table's input (A4). No call site moved.
 4. **Rebase onto the current Chromium milestone** — the pin is `0e8d4a9268`
    (2026-08-26; `upstream.env`). NOT `a727b57805`, which the docs called the
    pin until 2026-09-09 and which is the box's branch tip with sp0–sp2b

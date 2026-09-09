@@ -73,10 +73,13 @@ line).
   once into a `base::NoDestructor<base::DictValue>` (immutable after parse, so
   worker/render-thread reads are safe). **Never write a getter that omits the
   scope.**
-- **Keys** live in `additions/camoucfg/keys.h` as `constexpr char[]` constants.
-  Adding a key is a **triple edit that must stay consistent**: (1) the `k…`
-  constant, (2) the `kAllKeys` array plus its `std::array<…, N>` size, (3) the
-  `declared` set in `keys_unittest.cc`. A dropped entry fails the unit tests.
+- **Keys** are declared in `settings/keys.json` (name, key, type, doc) and
+  `additions/camoucfg/keys.h` is **generated** from it by `scripts/gen_keys.py`
+  — never edit the header. Adding a key: add the JSON entry, run the script,
+  add the name to the `declared` set in `keys_unittest.cc`, commit all three.
+  `scripts/gen_keys.py --check` fails on a stale header, a `declared` set that
+  disagrees with the JSON, or a string literal in the key position of any
+  `camoucfg::Get*` / `HasKey` call in `patches/` or `additions/`.
 - **Naming** — a **dot** mirrors a JS property path exactly
   (`navigator.userAgent`, `window.outerHeight`); a **colon** names a synthetic
   namespace (`canvas:seed`, `webGl:renderer`). A value derived from another gets

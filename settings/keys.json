@@ -1,0 +1,649 @@
+{
+  "$comment": "The key registry. Source of truth for additions/camoucfg/keys.h (scripts/gen_keys.py) and for the client's validation table (A4). Naming: a dot mirrors a JS property path exactly, a colon names a synthetic namespace. Types: string, uint32, int32, double, bool, string_list, list, dict, unsupported. A doc block starts a group; a key without doc continues the previous group; gap:false glues a documented key to the previous one without a blank line.",
+  "keys": [
+    {
+      "name": "kUaOsInfo",
+      "key": "ua:osInfo",
+      "type": "string",
+      "doc": [
+        "The OS segment of the user-agent string, e.g. \"Windows NT 10.0; Win64; x64\".",
+        "Colon-namespaced: it names a substring of a JS property, not the property.",
+        "",
+        "It is deliberately not the whole user-agent string. A whole string carries a",
+        "browser version, and Camoucrome never reports a version other than the one",
+        "its binary was compiled from — so accepting one would mean either emitting a",
+        "contradiction or parsing the string to extract the part we want, and SP1",
+        "forbids parsing user agents locally.",
+        "KNOWN LIMITATION: one value cannot express both user-agent forms. Chromium",
+        "emits either the reduced or the full string, and the substitution point sits",
+        "below that choice, so whichever form the build picked gets this value whole.",
+        "macOS is the clearest case -- reduced is the frozen literal",
+        "\"Macintosh; Intel Mac OS X 10_15_7\" while full carries the real version,",
+        "\"... 14_5_0\" -- so a value written for one form is wrong for the other.",
+        "",
+        "Latent today, because a given build emits one form and a profile is written",
+        "for that build. It becomes live when profiles are shared across builds that",
+        "differ. SP6's generator owns it: it knows which build a profile targets, and",
+        "having the browser translate between forms would mean parsing this value,",
+        "which SP1 forbids for the same reason it refuses navigator.userAgent."
+      ]
+    },
+    {
+      "name": "kNavigatorHardwareConcurrency",
+      "key": "navigator.hardwareConcurrency",
+      "type": "uint32",
+      "doc": [
+        "SP0's tracer-bullet surface, read in NavigatorBase::hardwareConcurrency()",
+        "and probed once at startup in BrowserMainLoop::EarlyInitialization().",
+        "",
+        "It predates this registry, so both of those sites were written with the",
+        "string literal. That is exactly what the registry exists to end -- a key",
+        "mistyped at one of two sites that must agree is invisible to the compiler",
+        "and to a reviewer reading either file alone. Listing it here makes the",
+        "registry complete.",
+        "",
+        "Both call sites now use this constant: browser_main_loop.cc and",
+        "navigator_base.cc. They are in different processes and must agree, which is",
+        "the whole reason the key is here rather than typed twice."
+      ]
+    },
+    {
+      "name": "kNavigatorUserAgent",
+      "key": "navigator.userAgent",
+      "type": "unsupported",
+      "doc": [
+        "Not supported. Present in the registry so the startup validator can warn",
+        "that it was ignored and name kUaOsInfo instead. Camoufox uses this key, so a",
+        "config written for Camoufox will contain it; failing loudly beats producing",
+        "an unspoofed user agent in silence."
+      ]
+    },
+    {
+      "name": "kUaPlatform",
+      "key": "ua:platform",
+      "type": "string",
+      "doc": [
+        "The blink::UserAgentMetadata fields, in one fully synthetic `ua:` namespace",
+        "alongside kUaOsInfo above.",
+        "",
+        "An earlier draft spelled these \"navigator.uaData:platform\". A reviewer caught",
+        "that `navigator.uaData` is not a property path at all -- the real API is",
+        "`navigator.userAgentData` -- so the dot segment promised a JS path that does",
+        "not resolve, which is exactly what the conventions naming rule exists to stop.",
+        "",
+        "The fix is not to lengthen it to `navigator.userAgentData:`. Most of this",
+        "struct is not a property under any spelling: `architecture`, `bitness`,",
+        "`platformVersion`, `model` and `wow64` are reachable only through",
+        "getHighEntropyValues(), and `mobile` and `platform` reach the wire as",
+        "Sec-CH-UA-* headers whether or not any script ever reads them. A dotted",
+        "prefix would claim a correspondence that holds for two of seven members.",
+        "",
+        "So: `navigator.*` keys are reserved for values that mirror a real JS property",
+        "path exactly, which SP1b's keys do. Everything describing the UA identity",
+        "itself lives under `ua:`, next to `webGl:` and `canvas:`. One namespace, one",
+        "subject, no false promise.",
+        "",
+        "Absent from this list on purpose: `brands`, `fullVersionList` and",
+        "`formFactors`. The first two carry the version, which is never spoofed. The",
+        "third is derived from `mobile` by GetFormFactorsClientHint(), and conventions",
+        "gives a derived value no key of its own."
+      ]
+    },
+    {
+      "name": "kUaPlatformVersion",
+      "key": "ua:platformVersion",
+      "type": "string"
+    },
+    {
+      "name": "kUaArchitecture",
+      "key": "ua:architecture",
+      "type": "string"
+    },
+    {
+      "name": "kUaBitness",
+      "key": "ua:bitness",
+      "type": "string"
+    },
+    {
+      "name": "kUaModel",
+      "key": "ua:model",
+      "type": "string"
+    },
+    {
+      "name": "kUaMobile",
+      "key": "ua:mobile",
+      "type": "bool"
+    },
+    {
+      "name": "kUaWow64",
+      "key": "ua:wow64",
+      "type": "bool"
+    },
+    {
+      "name": "kHumanizeEnabled",
+      "key": "humanize:enabled",
+      "type": "bool",
+      "doc": [
+        "The humanized-cursor generator's knobs, in their own synthetic `humanize:`",
+        "namespace -- none mirrors a JS property path. `humanize:` is a pure",
+        "namespace with no bare `humanize` key, the same shape as `ua:` above."
+      ]
+    },
+    {
+      "name": "kHumanizeMinTime",
+      "key": "humanize:minTime",
+      "type": "int32"
+    },
+    {
+      "name": "kHumanizeMaxTime",
+      "key": "humanize:maxTime",
+      "type": "int32"
+    },
+    {
+      "name": "kShowCursor",
+      "key": "cursor:show",
+      "type": "bool",
+      "doc": [
+        "Cursor visibility. A separate namespace from `humanize:` on purpose: it is",
+        "a rendering concern (a visible cursor overlay), not part of humanizing the",
+        "movement path/timing itself."
+      ]
+    },
+    {
+      "name": "kCanvasSeed",
+      "key": "canvas:seed",
+      "type": "uint32",
+      "doc": [
+        "The canvas readback-noise knobs, in their own synthetic `canvas:` namespace",
+        "-- none mirrors a JS property path. `canvas:` is a pure namespace with no",
+        "bare `canvas` key, the same shape as `ua:` and `humanize:` above. A page",
+        "never reads these; they steer noise applied as pixels leave the canvas.",
+        "",
+        "aaOffset / aaCapOffset from the SP3 spec §3 table are deliberately absent:",
+        "the reference (Camoufox canvas-spoofing.patch) applies no anti-alias offset",
+        "on readback, so there is no mechanism for those keys to steer. Adding them",
+        "would be a knob with no effect, which rule 5 forbids."
+      ]
+    },
+    {
+      "name": "kCanvasNoiseDensity",
+      "key": "canvas:noiseDensity",
+      "type": "double"
+    },
+    {
+      "name": "kCanvasNoiseStrength",
+      "key": "canvas:noiseStrength",
+      "type": "int32"
+    },
+    {
+      "name": "kWebGlVendor",
+      "key": "webGl:vendor",
+      "type": "string",
+      "doc": [
+        "The WebGL identity and parameter-table knobs, in their own `webGl:` /",
+        "`webGl2:` namespaces -- one pair per context type, because a page can",
+        "probe a WebGLRenderingContext and a WebGL2RenderingContext side by side",
+        "and a coherent spoof must be free to answer each independently.",
+        "",
+        "kWebGl(2)Vendor / kWebGl(2)Renderer are the UNMASKED_VENDOR_WEBGL /",
+        "UNMASKED_RENDERER_WEBGL strings a page reads through the",
+        "WEBGL_debug_renderer_info extension.",
+        "",
+        "kWebGl(2)Parameters names a nested map, not a scalar: its value is itself",
+        "a JSON object keyed by the DECIMAL STRING of a GLenum pname (e.g. \"3379\"",
+        "for MAX_TEXTURE_SIZE), holding whatever getParameter(pname) should return",
+        "for that enum. A pname absent from the map falls back to the real value,",
+        "same as every other absent key in this registry.",
+        "",
+        "kWebGl(2)ParamsBlock (`...:parameters:blockIfNotDefined`) opts a pname",
+        "missing from the map out of that fallback -- from \"answer with the real",
+        "value\" to \"block/deny it\" -- for callers that would rather getParameter()",
+        "come back empty than leak an unspoofed value. Defaults to false."
+      ]
+    },
+    {
+      "name": "kWebGlRenderer",
+      "key": "webGl:renderer",
+      "type": "string"
+    },
+    {
+      "name": "kWebGl2Vendor",
+      "key": "webGl2:vendor",
+      "type": "string"
+    },
+    {
+      "name": "kWebGl2Renderer",
+      "key": "webGl2:renderer",
+      "type": "string"
+    },
+    {
+      "name": "kWebGlParameters",
+      "key": "webGl:parameters",
+      "type": "dict"
+    },
+    {
+      "name": "kWebGl2Parameters",
+      "key": "webGl2:parameters",
+      "type": "dict"
+    },
+    {
+      "name": "kWebGlParamsBlock",
+      "key": "webGl:parameters:blockIfNotDefined",
+      "type": "bool"
+    },
+    {
+      "name": "kWebGl2ParamsBlock",
+      "key": "webGl2:parameters:blockIfNotDefined",
+      "type": "bool"
+    },
+    {
+      "name": "kWebGlExtensions",
+      "key": "webGl:supportedExtensions",
+      "type": "string_list",
+      "doc": [
+        "getSupportedExtensions()'s return value: the list of WEBGL_* / OES_* /",
+        "ANGLE_* extension name strings the context reports as supported. A plain",
+        "list of strings needs no accessor of its own -- it is read through the",
+        "existing GetStringList(scope, key), the same reason kCanvasSeed etc. reuse",
+        "GetString() instead of a bespoke getter."
+      ]
+    },
+    {
+      "name": "kWebGl2Extensions",
+      "key": "webGl2:supportedExtensions",
+      "type": "string_list"
+    },
+    {
+      "name": "kWebGlShaderPrecision",
+      "key": "webGl:shaderPrecisionFormats",
+      "type": "dict",
+      "doc": [
+        "getShaderPrecisionFormat(shadertype, precisiontype)'s return value, keyed",
+        "the same way kWebGl(2)Parameters is but on a COMPOUND key: the decimal",
+        "string \"<shadertype>:<precisiontype>\" (e.g. \"35633:36338\" for",
+        "VERTEX_SHADER, HIGH_FLOAT), holding [rangeMin, rangeMax, precision].",
+        "",
+        "kWebGl(2)ShaderPrecisionBlock (`...:shaderPrecisionFormats:blockIfNotDefined`)",
+        "is the same block-vs-fallback switch as kWebGl(2)ParamsBlock, scoped to",
+        "this map. Defaults to false."
+      ]
+    },
+    {
+      "name": "kWebGl2ShaderPrecision",
+      "key": "webGl2:shaderPrecisionFormats",
+      "type": "dict"
+    },
+    {
+      "name": "kWebGlShaderPrecisionBlock",
+      "key": "webGl:shaderPrecisionFormats:blockIfNotDefined",
+      "type": "bool"
+    },
+    {
+      "name": "kWebGl2ShaderPrecisionBlock",
+      "key": "webGl2:shaderPrecisionFormats:blockIfNotDefined",
+      "type": "bool"
+    },
+    {
+      "name": "kWebGlContextAttrs",
+      "key": "webGl:contextAttributes",
+      "type": "dict",
+      "doc": [
+        "The WebGLContextAttributes dict a page reads back through",
+        "getContextAttributes() -- antialias, powerPreference, and the like.",
+        "Returned whole (as a base::DictValue*); callers read individual fields, the",
+        "same shape kWebGl(2)Parameters's per-pname value takes but one level up."
+      ]
+    },
+    {
+      "name": "kWebGl2ContextAttrs",
+      "key": "webGl2:contextAttributes",
+      "type": "dict"
+    },
+    {
+      "name": "kNavigatorPlatform",
+      "key": "navigator.platform",
+      "type": "string",
+      "doc": [
+        "navigator.* scalar and near-constant overrides, one key per real JS",
+        "property path -- dotted, per the naming rule above, mirroring",
+        "kNavigatorHardwareConcurrency's precedent.",
+        "",
+        "kNavigatorAppCodeName, kNavigatorAppName, kNavigatorProduct,",
+        "kNavigatorProductSub, kNavigatorVendor and kNavigatorVendorSub are",
+        "expert-override-only: every real Chrome reports the same fixed strings for",
+        "these (\"Mozilla\", \"Netscape\", \"Gecko\", \"20030107\", \"Google Inc.\", \"\")",
+        "regardless of platform, so they default to Chrome's real values and setting",
+        "them to anything else while the UA still claims Chrome is a tell, not a",
+        "spoof."
+      ]
+    },
+    {
+      "name": "kNavigatorAppVersion",
+      "key": "navigator.appVersion",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorDeviceMemory",
+      "key": "navigator.deviceMemory",
+      "type": "double"
+    },
+    {
+      "name": "kNavigatorMaxTouchPoints",
+      "key": "navigator.maxTouchPoints",
+      "type": "int32"
+    },
+    {
+      "name": "kNavigatorLanguage",
+      "key": "navigator.language",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorLanguages",
+      "key": "navigator.languages",
+      "type": "string_list"
+    },
+    {
+      "name": "kNavigatorAppCodeName",
+      "key": "navigator.appCodeName",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorAppName",
+      "key": "navigator.appName",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorProduct",
+      "key": "navigator.product",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorProductSub",
+      "key": "navigator.productSub",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorVendor",
+      "key": "navigator.vendor",
+      "type": "string"
+    },
+    {
+      "name": "kNavigatorVendorSub",
+      "key": "navigator.vendorSub",
+      "type": "string"
+    },
+    {
+      "name": "kScreenWidth",
+      "key": "screen.width",
+      "type": "uint32",
+      "doc": [
+        "screen.* monitor-geometry overrides (SP4a). Dotted, mirroring the real JS",
+        "property paths. The monitor is decoupled from the browser window, so these",
+        "spoof coherently against a truthful (smaller) viewport.",
+        "",
+        "There is deliberately no screen.pixelDepth key: pixelDepth() returns",
+        "colorDepth() in Blink and in every real browser, so kScreenColorDepth carries",
+        "it -- a second key is a second source of truth that can disagree. There is",
+        "likewise no screen.orientation key: orientation is derived from the spoofed",
+        "width/height (SP4a Task 4), never overridden."
+      ]
+    },
+    {
+      "name": "kScreenHeight",
+      "key": "screen.height",
+      "type": "uint32"
+    },
+    {
+      "name": "kScreenAvailWidth",
+      "key": "screen.availWidth",
+      "type": "uint32"
+    },
+    {
+      "name": "kScreenAvailHeight",
+      "key": "screen.availHeight",
+      "type": "uint32"
+    },
+    {
+      "name": "kScreenAvailLeft",
+      "key": "screen.availLeft",
+      "type": "uint32"
+    },
+    {
+      "name": "kScreenAvailTop",
+      "key": "screen.availTop",
+      "type": "uint32"
+    },
+    {
+      "name": "kScreenColorDepth",
+      "key": "screen.colorDepth",
+      "type": "uint32"
+    },
+    {
+      "name": "kFonts",
+      "key": "fonts:list",
+      "type": "string_list",
+      "doc": [
+        "The font allowlist (SP4-fonts). An array of family names; a specific",
+        "(non-generic) family absent from the list is made unresolvable so measureText",
+        "cannot detect it. Absent key => every host font visible (rule 5). Case-",
+        "insensitive. Colon-namespaced per the naming rule (a synthetic control with no",
+        "direct JS property path); the future jitter key is fonts:spacing_seed."
+      ]
+    },
+    {
+      "name": "kAudioSeed",
+      "key": "audio:seed",
+      "type": "uint32",
+      "doc": [
+        "Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or",
+        "0 => no perturbation (rule 5)."
+      ]
+    },
+    {
+      "name": "kAudioOutputLatency",
+      "key": "AudioContext:outputLatency",
+      "type": "double",
+      "doc": [
+        "AudioContext scalar getters. Synthetic AudioContext: namespace (mirrors JS but",
+        "grouped like webGl:). sampleRate is deliberately absent -- see the measurement."
+      ],
+      "gap": false
+    },
+    {
+      "name": "kAudioBaseLatency",
+      "key": "AudioContext:baseLatency",
+      "type": "double"
+    },
+    {
+      "name": "kAudioMaxChannelCount",
+      "key": "AudioContext:maxChannelCount",
+      "type": "uint32"
+    },
+    {
+      "name": "kMediaDevicesEnabled",
+      "key": "mediaDevices:enabled",
+      "type": "bool",
+      "doc": [
+        "Media-device enumeration counts (SP4-media). Synthetic mediaDevices: namespace",
+        "(micros/webcams/speakers/enabled are not properties of the mediaDevices",
+        "object) -> colon, matching Camoufox. Absent/false enabled => real device list",
+        "untouched (rule 5)."
+      ]
+    },
+    {
+      "name": "kMediaDevicesMicros",
+      "key": "mediaDevices:micros",
+      "type": "uint32"
+    },
+    {
+      "name": "kMediaDevicesWebcams",
+      "key": "mediaDevices:webcams",
+      "type": "uint32"
+    },
+    {
+      "name": "kMediaDevicesSpeakers",
+      "key": "mediaDevices:speakers",
+      "type": "uint32"
+    },
+    {
+      "name": "kMediaDevicesSeed",
+      "key": "mediaDevices:seed",
+      "type": "uint32",
+      "doc": [
+        "media-ii: the seed for SyntheticDeviceId (device_ids.h) and the label",
+        "overrides for the one synthetic device of each kind that enumeration",
+        "fabricates. Colon-namespaced, same mediaDevices: namespace as above. Absent",
+        "or 0 seed => SyntheticDeviceId is a no-op (rule 5). Consumed by media-ii",
+        "Task 2's enumerate/track-getter sites."
+      ]
+    },
+    {
+      "name": "kMediaDevicesCameraLabel",
+      "key": "mediaDevices:cameraLabel",
+      "type": "string"
+    },
+    {
+      "name": "kMediaDevicesMicrophoneLabel",
+      "key": "mediaDevices:microphoneLabel",
+      "type": "string"
+    },
+    {
+      "name": "kMediaDevicesSpeakerLabel",
+      "key": "mediaDevices:speakerLabel",
+      "type": "string"
+    },
+    {
+      "name": "kTimezoneId",
+      "key": "timezone:id",
+      "type": "string",
+      "doc": [
+        "Timezone + locale overrides (SP4-timezone/locale). Synthetic namespaces",
+        "(bare `timezone`/`locale` are banned by EveryKeyIsNamespaced) -> colon.",
+        "timezone:id is an IANA id (e.g. \"America/New_York\"); locale:tag is a BCP-47",
+        "tag (e.g. \"fr-FR\"). Both absent => real OS values (rule 5). These drive the",
+        "native blink::TimeZoneController / blink::LocaleController."
+      ]
+    },
+    {
+      "name": "kLocaleTag",
+      "key": "locale:tag",
+      "type": "string"
+    },
+    {
+      "name": "kWebrtcIpHandlingPolicy",
+      "key": "webrtc:ipHandlingPolicy",
+      "type": "string",
+      "doc": [
+        "WebRTC IP-handling policy (SP4-webrtc-ip). Synthetic webrtc: namespace. Value",
+        "is one of the native policy strings (\"default\", \"default_public_interface_only\",",
+        "\"default_public_and_private_interfaces\", \"disable_non_proxied_udp\"); drives the",
+        "renderer's webrtc_ip_handling_policy. Absent => real pref unchanged (rule 5)."
+      ]
+    },
+    {
+      "name": "kWebrtcHideLocalIps",
+      "key": "webrtc:hideLocalIps",
+      "type": "bool",
+      "doc": [
+        "WebRTC local-IP obfuscation force (webrtc-ii). Synthetic webrtc: namespace.",
+        "bool. When true, the mDNS responder is forced on in FilteringNetworkManager",
+        "so host ICE candidates are emitted as \"<uuid>.local\" even under camera/mic",
+        "permission (which normally sets ENUMERATION_ALLOWED and exposes the raw local",
+        "IP) and even when an enterprise policy set allow_mdns_obfuscation=false.",
+        "Absent/false => stock behavior (rule 5)."
+      ]
+    },
+    {
+      "name": "kVoicesList",
+      "key": "voices:list",
+      "type": "list",
+      "doc": [
+        "Speech-synthesis voice injection + fake speak() completion (SP4-voices).",
+        "Synthetic voices: namespace. voices:list is a JSON array of voice objects",
+        "({voiceURI,name,lang,localService,default}); fakeCompletion gates whether",
+        "speak() on an injected voice fake-succeeds (true, default) or errors."
+      ]
+    },
+    {
+      "name": "kVoicesFakeCompletion",
+      "key": "voices:fakeCompletion",
+      "type": "bool"
+    },
+    {
+      "name": "kVoicesFakeCompletionCharsPerSecond",
+      "key": "voices:fakeCompletion:charsPerSecond",
+      "type": "double"
+    },
+    {
+      "name": "kGeolocationLatitude",
+      "key": "geolocation:latitude",
+      "type": "double",
+      "doc": [
+        "Geolocation position synthesis (SP4-geo). Synthetic geolocation: namespace",
+        "(matching Camoufox). latitude+longitude both required to activate; accuracy",
+        "defaults to 100 m. Drives a synthesized position at QueryNextPosition."
+      ]
+    },
+    {
+      "name": "kGeolocationLongitude",
+      "key": "geolocation:longitude",
+      "type": "double"
+    },
+    {
+      "name": "kGeolocationAccuracy",
+      "key": "geolocation:accuracy",
+      "type": "double"
+    },
+    {
+      "name": "kBatteryCharging",
+      "key": "battery:charging",
+      "type": "bool",
+      "doc": [
+        "Battery status getters (SP4-battery). Synthetic battery: namespace (matching",
+        "Camoufox). Each absent => the real battery_status_ value (rule 5). charging",
+        "is a bool; the three times/level are doubles (level 0..1, times in seconds)."
+      ]
+    },
+    {
+      "name": "kBatteryLevel",
+      "key": "battery:level",
+      "type": "double"
+    },
+    {
+      "name": "kBatteryChargingTime",
+      "key": "battery:chargingTime",
+      "type": "double"
+    },
+    {
+      "name": "kBatteryDischargingTime",
+      "key": "battery:dischargingTime",
+      "type": "double"
+    },
+    {
+      "name": "kWindowOuterWidth",
+      "key": "window.outerWidth",
+      "type": "int32",
+      "doc": [
+        "Window-geometry getters (window-geometry slice). Dot-namespaced (mirror the JS",
+        "property path). Coherence-coupled to the sp4a screen.* spoof (operator keeps",
+        "outer* <= screen.*, screenX/Y within avail). inner*/dpr are launcher-layer, not",
+        "here. Each absent => the real RootWindowRect value (rule 5)."
+      ]
+    },
+    {
+      "name": "kWindowOuterHeight",
+      "key": "window.outerHeight",
+      "type": "int32"
+    },
+    {
+      "name": "kWindowScreenX",
+      "key": "window.screenX",
+      "type": "int32"
+    },
+    {
+      "name": "kWindowScreenY",
+      "key": "window.screenY",
+      "type": "int32"
+    }
+  ]
+}
