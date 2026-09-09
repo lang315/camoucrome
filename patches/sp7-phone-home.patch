@@ -1,0 +1,177 @@
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index 47d731a72a..122505eed0 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -636,7 +636,8 @@ bool ShouldInstallSodaDuringPostProfileInit(
+              ash::features::kOnDeviceSpeechRecognition) &&
+          ash::IsUserBrowserContext(const_cast<Profile*>(profile));
+ #else
+-  return !command_line.HasSwitch(switches::kDisableComponentUpdate);
++  // camoucrome (SP7): SODA is a component; the updater is never started.
++  return false;
+ #endif
+ }
+ #endif  // !BUILDFLAG(IS_ANDROID)
+@@ -1941,12 +1942,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+     g_browser_process->CreateDevToolsAutoOpener();
+   }
+ 
+-  // Needs to be done before PostProfileInit, since the SODA Installer setup is
+-  // called inside PostProfileInit and depends on it.
+-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+-          switches::kDisableComponentUpdate)) {
+-    component_updater::RegisterComponentsForUpdate();
+-  }
++  // camoucrome (SP7): components are never registered for update. The
++  // component updater polls update.googleapis.com and downloads from gvt1.com
++  // on every fresh profile, which is a per-install callout that links
++  // sessions meant to be unrelated. Behaves as if --disable-component-update
++  // were always passed, so a driver cannot forget it. CRLSet / origin-trial
++  // data that the updater would have delivered is SP7 D5's open item.
+ 
+   // `profile` may be nullptr if the profile picker is shown.
+   Profile* profile = profile_info.profile;
+diff --git a/chrome/browser/signin/account_consistency_mode_manager.cc b/chrome/browser/signin/account_consistency_mode_manager.cc
+index 7d4c893cbc..fd61872501 100644
+--- a/chrome/browser/signin/account_consistency_mode_manager.cc
++++ b/chrome/browser/signin/account_consistency_mode_manager.cc
+@@ -101,7 +101,10 @@ signin::AccountConsistencyMethod ComputeAccountConsistencyMethod(
+     return AccountConsistencyMethod::kDisabled;
+   }
+ 
+-  return AccountConsistencyMethod::kDice;
++  // camoucrome (SP7): never DICE. With DICE the AccountReconcilor issues
++  // accounts.google.com/ListAccounts on every fresh profile at startup. This
++  // is the same state BrowserSignin=Disabled policy produces.
++  return AccountConsistencyMethod::kDisabled;
+ #else
+   NOTREACHED();
+ #endif
+diff --git a/chrome/browser/spellchecker/spellcheck_hunspell_dictionary.cc b/chrome/browser/spellchecker/spellcheck_hunspell_dictionary.cc
+index f2a1050455..6129ba0e5a 100644
+--- a/chrome/browser/spellchecker/spellcheck_hunspell_dictionary.cc
++++ b/chrome/browser/spellchecker/spellcheck_hunspell_dictionary.cc
+@@ -421,12 +421,10 @@ void SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete(
+       browser_context_ = nullptr;
+     }
+ 
+-    if (browser_context_) {
+-      // Download from the UI thread to check that |browser_context_| is
+-      // still valid.
+-      DownloadDictionary(GetDictionaryURL());
+-      return;
+-    }
++    // camoucrome (SP7): no dictionary download. A missing dictionary means
++    // Hunspell spellcheck stays inactive for the language, which is the state
++    // an offline Chrome is in; RetryDownloadDictionary (a user action) is
++    // untouched. Bundling dictionaries is packaging work (SP6b).
+   }
+ 
+   InformListenersOfInitialization();
+diff --git a/components/component_updater/configurator_impl.cc b/components/component_updater/configurator_impl.cc
+index 2ff9716b24..b23eb0ef60 100644
+--- a/components/component_updater/configurator_impl.cc
++++ b/components/component_updater/configurator_impl.cc
+@@ -76,6 +76,14 @@ base::TimeDelta ConfiguratorImpl::UpdateDelay() const {
+ 
+ std::vector<GURL> ConfiguratorImpl::UpdateUrl() const {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  // camoucrome (SP7): no update URL at all. update_client fails every check
++  // with ProtocolError::MISSING_URLS before opening a socket, which is the
++  // one choke every registrant -- startup, on-demand, and ping -- shares.
++  // An explicit --component-updater=url-source override is honoured so a
++  // developer can still point the updater at a local server.
++  if (!url_source_override_.is_valid()) {
++    return {};
++  }
+   if (url_source_override_.is_valid()) {
+     return {GURL(url_source_override_)};
+   }
+diff --git a/components/gcm_driver/gcm_driver_desktop.cc b/components/gcm_driver/gcm_driver_desktop.cc
+index 16e142aed3..e5b016d869 100644
+--- a/components/gcm_driver/gcm_driver_desktop.cc
++++ b/components/gcm_driver/gcm_driver_desktop.cc
+@@ -1189,6 +1189,14 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted(
+     GCMClient::StartMode start_mode) {
+   DCHECK(ui_thread_->RunsTasksInCurrentSequence());
+ 
++  // camoucrome (SP7): never start the GCM client. Checkin carries a
++  // persistent android id and register3 follows it on every fresh profile.
++  // Callers already handle GCM_DISABLED (it is what policy-disabled GCM
++  // returns), and gcm_started_ can never become true, so the rest of this
++  // function is dead at runtime without being dead to the compiler.
++  if (!gcm_started_)
++    return GCMClient::GCM_DISABLED;
++
+   if (gcm_started_)
+     return GCMClient::SUCCESS;
+ 
+diff --git a/components/network_time/network_time_tracker.cc b/components/network_time/network_time_tracker.cc
+index ada5634005..2ebdebb8c9 100644
+--- a/components/network_time/network_time_tracker.cc
++++ b/components/network_time/network_time_tracker.cc
+@@ -62,7 +62,9 @@ namespace network_time {
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
+ BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_DISABLED_BY_DEFAULT);
+ #else
+-BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_ENABLED_BY_DEFAULT);
++// camoucrome (SP7): off by default -- the query hits clients2.google.com at
++// startup and the spoofed timezone must not depend on a Google clock anyway.
++BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_DISABLED_BY_DEFAULT);
+ #endif
+ 
+ namespace {
+diff --git a/components/omnibox/browser/aim_eligibility_service_features.cc b/components/omnibox/browser/aim_eligibility_service_features.cc
+index 89d1205f90..cc3676f882 100644
+--- a/components/omnibox/browser/aim_eligibility_service_features.cc
++++ b/components/omnibox/browser/aim_eligibility_service_features.cc
+@@ -8,7 +8,9 @@
+ 
+ namespace omnibox {
+ 
+-BASE_FEATURE(kAimEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
++// camoucrome (SP7): off -- the eligibility service fetches
++// www.google.com/async/folae at startup with locale and country.
++BASE_FEATURE(kAimEnabled, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE(kAimServerEligibilityEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
+index 39a5a7addd..d2c8fa0ac1 100644
+--- a/components/signin/public/base/signin_switches.cc
++++ b/components/signin/public/base/signin_switches.cc
+@@ -87,8 +87,12 @@ base::TimeDelta GetAvatarSyncPromoFeatureMinimumCookeAgeParam() {
+ #endif
+ }
+ 
++// camoucrome (SP7): on. With it off, any GetAccountsInCookieJar() on a
++// stale jar (the BTM sign-in detector does one at profile start) fetches
++// accounts.google.com/ListAccounts. On, the jar is read from cache and only
++// an explicit trigger (cookie change, cookie mutator) fetches.
+ BASE_FEATURE(kAvoidAutoTriggerListAccountsOnStale,
+-             base::FEATURE_DISABLED_BY_DEFAULT);
++             base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+ BASE_FEATURE(kBeforeFirstRunDesktopRefreshSurvey,
+diff --git a/components/signin/public/identity_manager/identity_manager.cc b/components/signin/public/identity_manager/identity_manager.cc
+index 37f6f396ed..3526b875ac 100644
+--- a/components/signin/public/identity_manager/identity_manager.cc
++++ b/components/signin/public/identity_manager/identity_manager.cc
+@@ -458,12 +458,10 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
+ void IdentityManager::OnNetworkInitialized() {
+   gaia_cookie_manager_service_->InitCookieListener();
+   account_fetcher_service_->OnNetworkInitialized();
+-  // Trigger ListAccounts once the network is initialized to ensure the accounts
+-  // in cookie jar are up to date.
+-  if (base::FeatureList::IsEnabled(
+-          switches::kAvoidAutoTriggerListAccountsOnStale)) {
+-    gaia_cookie_manager_service_->ListAccounts();
+-  }
++  // camoucrome (SP7): no startup ListAccounts. Upstream fetches
++  // accounts.google.com/ListAccounts here on every fresh profile the moment
++  // the network is up. The cookie-change trigger (a page actually setting a
++  // google.com cookie) is untouched, so a signed-in session still reconciles.
+ }
+ 
+ CoreAccountId IdentityManager::PickAccountIdForAccount(
