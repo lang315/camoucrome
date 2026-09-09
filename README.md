@@ -22,7 +22,10 @@ getSettings/id coherence, phantom-webcam error coherence, render-thread audio in
 masking, and SpeechSynthesis boundary/jitter/generation fixes. SP5b adds a
 single-key config-domain validator (a generalized mechanism, populated with the
 geolocation range-checks) so an out-of-range value is refused loudly at startup
-instead of being dropped silently downstream. fonts-ii extends the sp4-fonts
+instead of being dropped silently downstream. SP7 also compiles the field-trial
+testing config out of the build (`disable_fieldtrial_testing_config`), so feature
+state is the build's compiled defaults rather than the public per-milestone
+testing set that an unbranded Chromium applies. fonts-ii extends the sp4-fonts
 allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local()
 cross-method inconsistency (a listed font still resolves; an unlisted one no
 longer leaks) — the codepoint-fallback and native-host completeness parts remain
