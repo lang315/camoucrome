@@ -3,9 +3,11 @@
 Target: checkout HEAD `a727b57805`, `out/Default` (content_shell,
 `is_component_build`). Source facts below were first read from Chromium `main`
 (chrome/VERSION 155.0.8049.0) over gitiles while the build box was offline,
-then **confirmed at the pin on 2026-09-09 (plan Task 0): every cited line
-number is identical at `a727b57805`.** Three Gate 0 findings beyond the line
-check:
+then **confirmed at the checkout HEAD on 2026-09-09 (plan Task 0): every cited
+line number is identical at `a727b57805`.** (`a727b57805` is the box's
+camoucrome branch tip, not the upstream pin — see `upstream.env`; none of the
+four files read here is touched by any patch, so the lines are the same at
+`0e8d4a9268`.) Three Gate 0 findings beyond the line check:
 
 - `content_shell` links `content/test/setup_field_trials.cc` for real:
   `content/shell/BUILD.gn:359` depends on `//content/test:test_support`, whose

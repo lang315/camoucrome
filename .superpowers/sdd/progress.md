@@ -3457,6 +3457,9 @@ already contain it); onto a worktree at 0e8d4a9268 all 26 applied clean (70 file
 upstream.env pin -> 0e8d full SHA; CLAUDE.md/README/roadmap wording; the SP7-FIELDTRIAL entry's
 queryLocalFonts attribution -- it is sp4-fonts's DELIBERATE FontAccess flip (patches/sp4-fonts.patch:81-83),
 not upstream; baseline provenance rewritten accordingly (repo + box). The two 09-09 measurements' "confirmed
-at the pin a727b57805" line checks are unaffected (the upstream files read are untouched by camoucrome
-commits between 0e8d and a727), but "the pin" in that sentence means the checkout HEAD, not the base.
+at the pin a727b57805" line checks are unaffected: none of the 13 files those Gate 0 reads cite (the
+nine sp7-phone-home edits, variations/service/BUILD.gn, variations_field_trial_creator.cc,
+content/test/setup_field_trials.cc, shell_content_browser_client.cc) appears in any other patch (grep
+`^diff --git a/<path>` over patches/, checked), so their text at a727 is their text at 0e8d. "The pin" in
+that sentence means the checkout HEAD, not the base.
 Worktree /home/lang/pincheck removed after the test.
