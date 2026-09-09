@@ -41,7 +41,8 @@ All page-invisible except where noted, but a per-install identifier emitted from
 two "unrelated" sessions links them regardless of fingerprint quality.
 
 1. **`fieldtrial_testing_config.json` must not be applied** — **SHIPPED
-   2026-09-09** (`settings/build-args.gn` `disable_fieldtrial_testing_config =
+   2026-09-09** (`4ae816a` feat, `0a7ddb6` test, `7f7f710` docs;
+   `settings/build-args.gn` `disable_fieldtrial_testing_config =
    true`, `scripts/verify_sp7_fieldtrial.py`, measurement
    `2026-09-09-sp7-fieldtrial-config.md`). GN lever, not the switch;
    verified RED→GREEN on `content_shell` (which applies the config too, via
