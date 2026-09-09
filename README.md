@@ -4,7 +4,7 @@ An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
 **Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
-landed on `main`** — 24 patches in `patches/` (applied in the semantic order in
+landed on `main`** — 26 patches in `patches/` (applied in the semantic order in
 `scripts/apply.sh`) plus the proprietary-codec GN args in `settings/build-args.gn`.
 Apply the whole set to a pristine Chromium checkout with
 `scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
@@ -25,7 +25,11 @@ geolocation range-checks) so an out-of-range value is refused loudly at startup
 instead of being dropped silently downstream. SP7 also compiles the field-trial
 testing config out of the build (`disable_fieldtrial_testing_config`), so feature
 state is the build's compiled defaults rather than the public per-milestone
-testing set that an unbranded Chromium applies. fonts-ii extends the sp4-fonts
+testing set that an unbranded Chromium applies, and `sp7-phone-home.patch`
+stops the component updater, GCM check-in, the startup `ListAccounts`, network
+time, the omnibox AI-mode eligibility fetch and the spellcheck dictionary
+download — a fresh headless `chrome` now issues zero outbound requests in 75 s
+(`scripts/verify_sp7_phonehome.py`). fonts-ii extends the sp4-fonts
 allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local()
 cross-method inconsistency (a listed font still resolves; an unlisted one no
 longer leaks) — the codepoint-fallback and native-host completeness parts remain
