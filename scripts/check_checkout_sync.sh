@@ -49,6 +49,13 @@ remote_script="cd $SRC || exit 1"$'\n'
 for t in "${TREE_FILES[@]}"; do
   remote_script+="sha256sum '$t' 2>/dev/null || echo \"MISSING $t\""$'\n'
 done
+# The patched files are covered the other way round: the build tree must equal
+# the camoucrome/main branch that scripts/export.sh exports from. The 09-09
+# input_handler.cc drift (an un-reviewed rework sitting in the build tree while
+# the branch and the repo carried the reviewed one) is what this line is for.
+# camoucfg is excluded because it is untracked in the build tree and would read
+# as 26 deletions; the sha256 loop above already covers it.
+remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg'; echo BUILDTREE_END"$'\n'
 remote_out=$(ssh -o ControlPath="$CONTROL" -o ControlMaster=no "$SSH_TARGET" \
   "wsl -d Ubuntu-24.04 -u lang -- bash -lc \"echo $(printf '%s' "$remote_script" | base64 | tr -d '\n') | base64 -d > /tmp/sync.sh; bash /tmp/sync.sh\"" 2>/dev/null)
 
@@ -78,6 +85,14 @@ for i in "${!REPO_FILES[@]}"; do
     fails=$((fails + 1))
   fi
 done
+
+buildtree=$(printf '%s\n' "$remote_out" | sed -n '/^BUILDTREE_BEGIN/,/^BUILDTREE_END/p' | sed '1d;$d')
+if [ -n "$buildtree" ]; then
+  echo "FAIL  the build tree differs from camoucrome/main (what export.sh exports):"
+  printf '%s\n' "$buildtree" | sed 's/^/      /'
+  echo "      commit it on the branch (worktree /home/lang/camoumain) or check it out of the branch."
+  fails=$((fails + 1))
+fi
 
 if [ "$fails" -ne 0 ]; then
   echo "$fails file(s) drifted. The repo is the source of truth: copy TO the"

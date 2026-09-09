@@ -3486,3 +3486,10 @@ recorded below.
 Rebuild after the input_handler.cc restore: content_shell + chrome, 3 steps (BUILD_RC=0, non-zero steps
 confirmed). verify_sp2b 3 PASS rc=0, verify_sp2 9 PASS rc=0 on the reviewed blob. Box working tree now
 matches camoucrome/main for every patched file.
+Gap closed after review: the export gate proves repo == camoucrome/main, nothing proved build tree ==
+branch (today's input_handler.cc was that direction). check_checkout_sync.sh now also runs
+`git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg'` in the build tree and fails on any
+output. GREEN: PASS 35 files, rc=0. RED: one "// drift" line appended to network_time_tracker.cc in the
+build tree -> "FAIL the build tree differs from camoucrome/main ... 1 file changed", rc=1; reverted.
+CLAUDE.md names the loop (edit/build in src, `git diff camoucrome/main -- <files> | git -C camoumain apply`,
+commit with the stem subject, export).

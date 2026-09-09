@@ -109,8 +109,12 @@ startup abort instead of a silent fall-back to real values.
   per patch above the pin, commit subject == patch stem. `scripts/export.sh
   <chromium-src>` regenerates `patches/`, `patches/series`, `additions/` and
   `settings/invariants.json` from it; the gate is `git status --porcelain
-  additions patches settings` empty afterwards. A new slice is a commit on that
-  branch, then an export — never a `git diff` pasted into `patches/`.
+  additions patches settings` empty afterwards. The loop: edit and build in
+  `~/chromium/src`, verify, then `git -C ~/chromium/src diff camoucrome/main --
+  <files> | git -C /home/lang/camoumain apply` and commit there with the patch
+  stem as subject, then export — never a `git diff` pasted into `patches/`.
+  `scripts/check_checkout_sync.sh` fails while the build tree and the branch
+  differ, which is the state between "edited" and "committed on the branch".
 - Browser verifications are `scripts/verify_*.py`, run under
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.
