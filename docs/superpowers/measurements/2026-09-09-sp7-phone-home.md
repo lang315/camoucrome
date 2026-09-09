@@ -26,7 +26,7 @@ lever list. `scripts/verify_sp7_phonehome.py` automates exactly this.
 | 0.0 s | `redirector.gvt1.com` → `r6---sn-….gvt1.com` | `/edgedl/chrome/dict/en-us-10-2.bdic` | 117649486 | `SpellcheckHunspellDictionary::InitializeDictionaryLocationComplete` → `DownloadDictionary` (`spellcheck_hunspell_dictionary.cc:425-428`) |
 | 0.0 s, 2.0 s, then every ~1.5 s from 59.8 s | `update.googleapis.com` | `/service/update2/json` (×12) | 54845618 | component updater, registered by `ChromeBrowserMainParts` (`chrome_browser_main.cc:1946-1949`, gated only on `--disable-component-update`) |
 | 0.7 s, 60–72 s | `edgedl.me.gvt1.com` | `/edgedl/release2/chrome_component/…` and `/edgedl/diffgen-puffin/…` (×10) | 54845618 | the same updater downloading CRXs (sslErrorAssistant among them) |
-| 0.0 s | `accounts.google.com` | `/ListAccounts?…source=ChromiumBrowser` | 35565745 | `AccountReconcilor::Initialize` → `StartReconcile(kInitialized)` under DICE (`account_consistency_mode_manager.cc:96-101` returns `kDice` for any profile with sign-in allowed) |
+| 0.0 s | `accounts.google.com` | `/ListAccounts?…source=ChromiumBrowser` | 35565745 | `BtmBrowserSigninDetector` (`btm_browser_signin_detector.cc:39`) → `IdentityManager::GetAccountsInCookieJar()` → `GaiaCookieManagerService::ListAccounts()` on the stale fresh-profile jar (`kAvoidAutoTriggerListAccountsOnStale` DISABLED, `signin_switches.cc:90`). First attributed from the annotation to `AccountReconcilor::StartReconcile` under DICE; the round-1 rebuild with DICE off still showed the host, which is what forced the re-read (§5) |
 | 0.0 s | `www.google.com` | `/async/folae?…client_locale=en-US&client_country=ZZ` | 109231476 | omnibox `AimEligibilityService` (`kAimEnabled` + `kAimServerRequestOnStartupEnabled`, both ENABLED, `aim_eligibility_service_features.cc:11,35`) |
 | 1.9 s | `android.clients.google.com` | `/checkin` | 65957842 | GCM `GCMClientImpl` checkin — carries the persistent android id |
 | 2.4 s ×3, 23.7 s, 30.2 s, 67.8 s | `android.clients.google.com` | `/c2dm/register3` (×6) | 61656965 | GCM app registrations following the checkin (`GCMDriverDesktop::EnsureStarted`, `gcm_driver_desktop.cc:1188`) |
@@ -58,7 +58,7 @@ path, so the resulting state is one real Chrome installs also occupy.
 
 | caller | lever | file |
 |---|---|---|
-| component updater | never call `RegisterComponentsForUpdate()`; `ShouldInstallSodaDuringPostProfileInit` → false | `chrome/browser/chrome_browser_main.cc` |
+| component updater | never call `RegisterComponentsForUpdate()`; `ShouldInstallSodaDuringPostProfileInit` → false. **Not load-bearing** once the `UpdateUrl()` choke below is in (the choke alone stops every check); kept for the "nothing registered at all" intent. A rebaser who loses this hunk loses no measured behaviour | `chrome/browser/chrome_browser_main.cc` |
 | GCM | `GCMDriverDesktop::EnsureStarted` returns `GCM_DISABLED` while `gcm_started_` is false (which it now always is) — the result policy-disabled GCM already produces | `components/gcm_driver/gcm_driver_desktop.cc` |
 | ListAccounts | `ComputeAccountConsistencyMethod` returns `kDisabled` instead of `kDice` — the `BrowserSignin=Disabled` state | `chrome/browser/signin/account_consistency_mode_manager.cc` |
 | network time | `kNetworkTimeServiceQuerying` default → DISABLED | `components/network_time/network_time_tracker.cc` |
