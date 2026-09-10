@@ -128,8 +128,8 @@ Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
    literal key; duplicate key value asserts at load. Types (`string`, `uint32`,
    `int32`, `double`, `bool`, `string_list`, `list`, `dict`, `unsupported`) are
    the client validation table's input (A4). No call site moved.
-4. **Rebase onto Chrome stable** — **SHIPPED 2026-09-10** (content_shell
-   sweep; `chrome` rows follow its rebuild). Step 0 inverted the premise:
+4. **Rebase onto Chrome stable** — **SHIPPED 2026-09-10** (full sweep: 33
+   content_shell + 5 chrome verifies, all green). Step 0 inverted the premise:
    the old pin's `chrome/VERSION` was `154.0.8026.0`, a Dev/Canary-only build
    number; stable was `153.0.8010.36`. Pin policy decided: the current stable
    **tag**, refreshed per milestone (`measurements/2026-09-09-sp6a-version-
