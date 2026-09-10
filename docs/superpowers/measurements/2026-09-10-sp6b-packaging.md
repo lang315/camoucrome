@@ -39,3 +39,49 @@ registered key, `bash -n` on every script, the Python client and packager
 tests, the Go client tests. Full builds stay on the box until a release
 cadence exists; a patch-applies-clean check needs a checkout and is not in
 CI.
+
+## 3. The first archive (box, `out/Release`, 2026-09-11)
+
+Build: `settings/release-args.gn` in `out/Release`, `autoninja chrome`, 6 ×
+55 min chunks (62421 steps; the last chunk 3354 steps in 30 min; the
+`chrome` binary 519 MB, `symbol_level=0`). `gn desc out/Release
+//chrome:chrome runtime_deps` is not a manifest as printed, and the first
+run staged 10 files — three things measured, each now in `package.py` with
+a test:
+
+| what gn printed | lines | handling |
+|---|---|---|
+| its build-arg WARNING block, on stdout, ahead of the paths (`enable_nacl` no longer exists in 153; dropped from `release-args.gn`) | 9 | a path line is one whitespace-free token not starting with `^` — out-dir paths come **bare** (`chrome`, `locales/en-US.pak`; the first filter wanted `./` and kept 10 lines), source-tree ones `../../` |
+| `gen/third_party/devtools-frontend/src/front_end/**` — the frontend sources the devtools targets mark as `data` for their own tests; the shipped copy is `resources.pak` (upstream's `installer.py` ships none of them) | 4803 | pruned |
+| `pyproto/google/protobuf/**` — protobuf Python bindings a build tool lists as data | 36 | pruned |
+| duplicates (`resources.pak`, `snapshot_blob.bin`, `v8_context_snapshot.bin`, two angledata jsons) | 5 | once each |
+
+What remains: **254 files** (228 `locales/*.pak`, the binary, 9 `.so`,
+crashpad handler, 4 pak, icudtl, two snapshots, angledata, the three
+preloaded data dirs), all present on disk; `chrome_crashpad_handler` is
+staged but SP7 keeps the reporter off. Staging 651 MB; archive
+`camoucrome-153.0.8010.36-linux-x64.tar.xz` **155,904,424 bytes (149 MiB)**,
+205 s to stage+pack, 8 s to extract. Stamp:
+`chromium_tag 153.0.8010.36`, `chromium_rev 507c6ee3e2…`, `changeset_commit
+dfe16b8` (passed by `--changeset-commit`: the box's copy is a tar extract,
+not a checkout), `branch_tip 04e1dc8ff6`, the eleven `args.gn` values,
+`runtime_deps 259` (the pre-dedupe count; the next run says 254).
+`--check` on the one stamp: agree. RED first: `--out out/Default` was
+refused ("refusing a component build").
+
+**Self-contained, measured on the extracted tree, not the build dir:**
+
+- DevTools opens from the archive: `devtools://devtools/bundled/devtools_app.html`
+  loads (title `DevTools`, body text "DevTools is undocked"). RED: with
+  `resources.pak` renamed the binary logs `Failed to load …/resources.pak`
+  and the check never prints OPEN — so the pak, not the pruned `gen/`
+  tree, is what carries the front end.
+- The driver-contract sweep with `CAMOU_EXE=<extracted>/chrome`:
+  `ALL_PASS`, six rows (Python/Go/Node × stock/patchright; the stock rows
+  RED as expected), C4 argv 11 = the contract's set, 1223 own names, C5
+  patchright −1 / +0 / +2 %. A missing `.pak`, `icudtl.dat` or `libEGL.so`
+  fails here and nowhere else.
+
+Not measured: a host without the build box's system libraries (the
+archive carries no libc/GTK; the same is true of upstream's tarball), and
+the `.zip` path on a real Windows tree.

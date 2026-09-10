@@ -65,12 +65,12 @@ the contract runs on `chrome`.
 
 ## 3. The contract (`scripts/verify_sp6b_driver.py`, `settings/launcher.json`)
 
-One verify, one probe page, four drivers through one CLI shape
-(`python -m camoucrome.probe`, `camoucrome-probe`): the stock rows are the
+One verify, one probe page, six drivers through one CLI shape
+(`python -m camoucrome.probe`, `camoucrome-probe`, `node probe.js`): the stock rows are the
 RED rows and must fail, the patchright rows must pass. Stock is the *same
 version* as patchright on each side (`playwright==1.62.0` in a second venv,
-`playwright-core@1.62.1` in a second driver dir), so the only variable is
-the patch set.
+`playwright-core@1.62.1` in a second driver dir, which the Node rows
+`require` directly), so the only variable is the patch set.
 
 | item | closed by | how it is observed |
 |---|---|---|
@@ -87,6 +87,13 @@ the patch set.
 | python-patchright | 0 / 433 | ok | ok | ok | −1% / −1% | ok | PASS |
 | go-stock | 1 / 384 | ok | ok | ok | +22% / +21% | ok | RED as expected |
 | go-patchright | 0 / 429 | ok | ok | ok | +3% / +2% | ok | PASS |
+| node-stock | `Runtime.enable=1`, 362 sends | ok | ok | ok | +15% | ok | RED as expected |
+| node-patchright | 0 / 405 | ok | ok | ok | +2% | ok | PASS |
+
+The Node rows ran once, 2026-09-11, on the **extracted release archive's
+`chrome`** (packaging doc §3) together with the other four (`ALL_PASS`,
+1224 own names with the probe global, baseline 1223); the Python/Go pairs
+above are the `out/Default` runs.
 
 Two consecutive `ALL_PASS` runs before C6 was added (the C5 pairs are those
 two runs) and one after. Baseline: 235 window keys, 1223 own names,
