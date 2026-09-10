@@ -21,7 +21,8 @@ build-arg WARNINGs to stdout ahead of the paths (path lines are the
 whitespace-free ones; out-dir paths are bare, source-tree ones `../../`); and 4803 of the entries are `gen/third_party/devtools-frontend/`
 sources that the frontend targets mark as `data` for their own tests while
 the shipped copy lives in resources.pak (upstream's installer.py ships none
-of them) -- PRUNE drops that tree, and the extracted archive is verified to
+of them) -- PRUNE drops that tree (and pyproto/, 36 protobuf Python files a
+build tool lists as data), and the extracted archive is verified to
 open the bundled DevTools front end.
 
 Refusals, each a measured trap: a component build (out/Default -- the .so
@@ -46,7 +47,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
-PRUNE = ("gen/third_party/devtools-frontend/",)
+PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf Python bindings, a tool data dep
 
 
 def read_args_gn(out):
