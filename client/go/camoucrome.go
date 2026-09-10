@@ -106,7 +106,10 @@ func BuildArgs(o Options) []string {
 	return append(args, o.ExtraArgs...)
 }
 
-// Launch starts a persistent context (one profile per identity).
+// Launch starts a persistent context (one profile per identity). Never
+// AddInitScript anything a page could enumerate: the driver runs a user's
+// init script in the MAIN world (measured 2026-09-10); Evaluate runs in an
+// isolated world, use that.
 func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, error) {
 	env, err := BuildEnv(o, os.Environ())
 	if err != nil {

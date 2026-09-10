@@ -50,6 +50,9 @@ def main():
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
                      args=["--no-sandbox"])
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        # SP2 4.2: a driver's init script must not be observable from the
+        # main world. The probe page reports typeof window.__camou_init.
+        page.add_init_script("window.__camou_init = 1")
         page.goto(a.url, wait_until="load")
         report = page.locator("#o").text_content()
         argv = browser_argv(a.executable)

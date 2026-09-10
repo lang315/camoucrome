@@ -68,6 +68,10 @@ def launch(playwright, executable_path, *, config=None, preset=None,
            headless=True, args=(), **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
+    Never add_init_script anything a page could enumerate: both patchright
+    and stock run a user's init script in the MAIN world (measured
+    2026-09-10). patchright's evaluate runs in an isolated world; use that.
+
     `playwright` is the object from patchright.sync_api.sync_playwright() (or
     the async one); passing stock playwright's works too but loses the
     Runtime.enable guarantee -- scripts/verify_sp6b_driver.py measures the

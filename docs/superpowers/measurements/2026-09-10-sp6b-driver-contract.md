@@ -79,22 +79,33 @@ the patch set.
 | C3 `navigator.webdriver` false | browser | probe page |
 | C4 browser argv **equals** the contract's set (+ profile dir, + the probe's `--no-sandbox`) | launcher | `/proc` cmdline; equality, not just absence of the four forbidden flags, so a new default cannot slip in |
 | C5 7×10000 `new Error().stack` median within 15% of the baseline (median of 3 no-driver launches) | driver | probe page; D1's +21% signal |
+| C6 with the probe's own `add_init_script("window.__camou_init = 1")` registered, `Object.getOwnPropertyNames(window).length` == baseline + exactly 1 | browser (SP2) + driver | probe page; own names catch a non-enumerable binding that `keys()` misses |
 
-| driver | C1 | C2 | C3 | C4 | C5 | row |
-|---|---|---|---|---|---|---|
-| python-stock | `Runtime.enable=1`, 383 sends | ok | ok | ok | +20% / +27% | RED as expected |
-| python-patchright | 0 / 404 | ok | ok | ok | −1% / −1% | PASS |
-| go-stock | 1 / 383 | ok | ok | ok | +22% / +21% | RED as expected |
-| go-patchright | 0 / 410 | ok | ok | ok | +3% / +2% | PASS |
+| driver | C1 | C2 | C3 | C4 | C5 | C6 | row |
+|---|---|---|---|---|---|---|---|
+| python-stock | `Runtime.enable=1`, 384 sends | ok | ok | ok | +20% / +27% | ok | RED as expected |
+| python-patchright | 0 / 433 | ok | ok | ok | −1% / −1% | ok | PASS |
+| go-stock | 1 / 384 | ok | ok | ok | +22% / +21% | ok | RED as expected |
+| go-patchright | 0 / 429 | ok | ok | ok | +3% / +2% | ok | PASS |
 
-Two consecutive runs, both `ALL_PASS`; the C5 pairs are the two runs.
-Baseline: 235 window keys, `webdriver=false`, stack median 19.6 / 19.3 ms.
-Before the three-run baseline one run wobbled to 17.8 ms and put patchright
-at +11% against a 10% tolerance — the reason for both the median-of-three and
-the 15%. C2 passing on the stock rows means the SP2 browser-level closures
-hold against stock Playwright too (bindings and init scripts leave no
-enumerable window key), which is exactly SP6's threat model; C1 and C5 are
-what only the driver closes.
+Two consecutive `ALL_PASS` runs before C6 was added (the C5 pairs are those
+two runs) and one after. Baseline: 235 window keys, 1223 own names,
+`webdriver=false`, stack median 19.6 / 19.3 ms. Before the three-run
+baseline one run wobbled to 17.8 ms and put patchright at +11% against a 10%
+tolerance — the reason for both the median-of-three and the 15%.
+
+**What C2 and C6 do and do not show.** They pass on the stock rows too, so
+the browser-level SP2 closures hold against stock Playwright — a driver's
+own machinery (utility scripts, bindings) leaves no own property on
+`window` — which is exactly SP6's threat model. C1 and C5 are what only the
+driver closes. C6's first version expected the probe's *own* init script to
+be invisible (`typeof undefined`); it was `number` on all four drivers:
+**both patchright and stock run a user's `add_init_script` in the main
+world**, by design, since that is what the caller asked for. So the
+launcher docs say never to init-script anything a page could enumerate
+(patchright's `evaluate` is the isolated-world path), and SP2 §4.2's
+"isolated world not observable from the main world" is closed here for the
+driver's own scripts and left to the caller for theirs.
 
 ## 4. The clients
 
@@ -114,8 +125,11 @@ and a test pins that none appears. Each client has one test that builds its
 args and compares them with `settings/launcher.json`, so the two cannot
 drift apart silently.
 
-Box layout: `~/camoucrome-verify/venv` (patchright + `pip install -e
-client/python`), `venv-stock` (playwright 1.62.0, `--no-deps`),
+Box layout: `~/camoucrome-client` (this repo's `client/`, `settings/launcher.json`
+and the verify, shipped as one tarball; the verify falls back to that
+contract path when run from the sweep dir), `~/camoucrome-verify/venv`
+(patchright + `pip install -e ~/camoucrome-client/client/python`),
+`venv-stock` (playwright 1.62.0, `--no-deps`),
 `~/camoucrome-driver` and `~/camoucrome-driver-stock`, the Go probe at
 `~/camoucrome-go/camoucrome-probe`; the verify takes these as `CAMOU_*` /
 `PLAYWRIGHT_NODEJS_PATH` environment overrides.

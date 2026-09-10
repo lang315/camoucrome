@@ -23,7 +23,19 @@ Per driver:
      (a --disable-features list moves feature state) slip in
   C5 median of 7x10000 `new Error().stack` within TIMING_TOLERANCE of the
      baseline (median of BASELINE_RUNS launches; D1: Runtime.enable costs +21%)
-Verdict: every patchright row passes C1-C5; every stock row fails C1 (RED).
+  C6 the probe registers add_init_script("window.__camou_init = 1") before
+     navigating. Measured: BOTH drivers run it in the main world (that is
+     what a caller asks for -- never add_init_script anything a page could
+     enumerate; patchright's evaluate is the isolated-world path). The
+     contract is that nothing of the driver's OWN appears:
+     Object.getOwnPropertyNames(window).length == baseline + exactly 1 (own
+     names catch a non-enumerable binding that keys() misses). SP2 4.2's
+     "isolated world not observable from the main world", as far as a
+     driver's own machinery is concerned.
+Verdict: every patchright row passes C1-C6; every stock row fails C1 (RED).
+C2 and C6 pass on the stock rows too: the browser-level SP2 closures hold
+against stock Playwright, which is SP6's threat model; C1 and C5 are what
+only the driver closes.
 """
 import html
 import http.server
@@ -44,8 +56,14 @@ GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-pr
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
-CONTRACT = json.loads((pathlib.Path(__file__).resolve().parent.parent
-                       / "settings" / "launcher.json").read_text())
+# Repo layout first; on the box the sweep copy lives outside the repo, so
+# fall back to the shipped client tree (or CAMOU_CONTRACT).
+_CONTRACT_PATHS = [
+    os.environ.get("CAMOU_CONTRACT", ""),
+    str(pathlib.Path(__file__).resolve().parent.parent / "settings" / "launcher.json"),
+    f"{HOME}/camoucrome-client/settings/launcher.json",
+]
+CONTRACT = json.loads(pathlib.Path(next(p for p in _CONTRACT_PATHS if p and os.path.exists(p))).read_text())
 FORBIDDEN_FLAGS = CONTRACT["browser_argv_must_not_contain"]
 EXPECTED_ARGS = set(CONTRACT["browser_argv_expected"]["args"])
 HEADLESS_SELF_ADDED = set(CONTRACT["browser_argv_expected"]["headless_self_added"]["args"])
@@ -63,6 +81,8 @@ for (let t = 0; t < TRIALS; t++) {
 }
 document.getElementById('o').textContent = JSON.stringify({
   windowKeys: Object.keys(window),
+  ownNames: Object.getOwnPropertyNames(window).length,
+  initScript: typeof window.__camou_init,
   webdriver: navigator.webdriver,
   timesMs: times,
   stackTraceLimit: Error.stackTraceLimit,
@@ -143,7 +163,8 @@ def check(label, result, log, base):
     rows["C1 no Runtime.enable, logger alive"] = (
         runtime_enable == 0 and sends >= MIN_METHODS,
         f"Runtime.enable={runtime_enable} sends={sends}")
-    extra = sorted(set(rep["windowKeys"]) - set(base["windowKeys"]))
+    # The probe's own init-script global is accounted for by C6.
+    extra = sorted(set(rep["windowKeys"]) - set(base["windowKeys"]) - {"__camou_init"})
     missing = sorted(set(base["windowKeys"]) - set(rep["windowKeys"]))
     rows["C2 Object.keys(window) == no-driver baseline"] = (
         not extra and not missing, f"extra={extra} missing={missing}")
@@ -158,6 +179,14 @@ def check(label, result, log, base):
     rows["C4 argv == launcher.json expected set"] = (
         bool(argv) and not hits and not unexpected and not absent,
         f"hits={hits} unexpected={unexpected[:6]}{'...' if len(unexpected) > 6 else ''} absent={absent} argc={len(argv)}")
+    # Measured 2026-09-10: BOTH drivers run a user's add_init_script in the
+    # main world (typeof number) -- by design, that is what the caller asked
+    # for. What must not appear is anything of the driver's own: own-name
+    # count == baseline + exactly the probe's one global (own names catch a
+    # non-enumerable binding that keys() misses).
+    rows["C6 no driver-owned global; only the probe's own init script"] = (
+        rep["initScript"] == "number" and rep["ownNames"] == base["ownNames"] + 1,
+        f"typeof __camou_init={rep['initScript']} ownNames={rep['ownNames']} baseline={base['ownNames']}")
     med = statistics.median(rep["timesMs"])
     bmed = statistics.median(base["timesMs"])
     rows[f"C5 stack timing within {int(TIMING_TOLERANCE*100)}% of baseline"] = (
