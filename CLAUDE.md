@@ -16,9 +16,9 @@ tag `153.0.8010.36`** (`upstream.env` holds the full SHA and the tag;
 `main` and not a branch head, so the fork reports a version real users have;
 re-pin to the newest stable tag whenever chromiumdash's stable milestone moves
 (`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`). The
-build box's checkout is on branch `camoucrome/main-8010` (the exported branch);
-`camoucrome/main` is the retired 0e8d4a9268 branch, `a727b57805` was never an
-upstream revision.
+build box's checkout is on branch `camoucrome/main` (the exported branch, on
+this pin); `camoucrome/main-0e8d` is the retired branch on the old pin, and
+`a727b57805` was never an upstream revision.
 
 ## The defining constraint (never violate)
 

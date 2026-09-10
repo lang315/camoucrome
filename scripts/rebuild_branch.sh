@@ -6,7 +6,9 @@
 # branch is disposable -- the repo stays the source of truth.
 #
 # Usage: scripts/rebuild_branch.sh <chromium-src-dir> [worktree-dir]
-# Refuses to run while camoucrome/main exists: delete it first, on purpose.
+# Refuses to run while camoucrome/main exists: delete it first, on purpose
+# (if ~/chromium/src is checked out on it, detach src first, then delete;
+# afterwards `git -C src checkout camoucrome/main` and drop the worktree).
 set -euo pipefail
 
 SRC="${1:?usage: rebuild_branch.sh <chromium-src-dir> [worktree-dir]}"
