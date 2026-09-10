@@ -1,8 +1,8 @@
 """SP6b driver contract (A4 #1): the CDP driver never sends Runtime.enable,
 leaves no trace in the main world, adds no forbidden flag, and does not move
-the stack-timing signal SP2 D1 measured. One verify, one probe page, several
-drivers -- the stock ones are the RED rows and must fail, the patchright ones
-must pass. Run on the box under ~/camoucrome-verify/venv.
+the stack-timing signal SP2 D1 measured. One verify, one probe page, six
+drivers (Python, Go, Node; stock and patchright each) -- the stock ones are
+the RED rows and must fail, the patchright ones must pass. Run on the box under ~/camoucrome-verify/venv.
 
 The page's own script (main world, synchronous, so a --dump-dom run captures
 it too) writes the report into #o; each probe command reads that text through
@@ -56,6 +56,7 @@ GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-pr
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
+NODE_PROBE = os.environ.get("CAMOU_NODE_PROBE", f"{HOME}/camoucrome-client/client/node/probe.js")
 # Repo layout first; on the box the sweep copy lives outside the repo, so
 # fall back to the shipped client tree (or CAMOU_CONTRACT).
 _CONTRACT_PATHS = [
@@ -140,6 +141,12 @@ DRIVERS = [
                          "--executable", EXE]),
     ("go-patchright", "GREEN", [GO_PROBE, "--driver-dir", DRIVER_PATCHRIGHT,
                                 "--label", "go-patchright", "--executable", EXE]),
+    # The Node client requires the driver package directly (patchright-core
+    # and playwright-core both export chromium), the same two dirs as Go.
+    ("node-stock", "RED", [NODE, NODE_PROBE, "--driver", f"{DRIVER_STOCK}/package",
+                           "--label", "node-stock", "--executable", EXE]),
+    ("node-patchright", "GREEN", [NODE, NODE_PROBE, "--driver", f"{DRIVER_PATCHRIGHT}/package",
+                                  "--label", "node-patchright", "--executable", EXE]),
 ]
 
 

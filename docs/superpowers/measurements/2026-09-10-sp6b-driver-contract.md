@@ -109,6 +109,11 @@ driver's own scripts and left to the caller for theirs.
 
 ## 4. The clients
 
+Three: `client/python/camoucrome`, `client/go`, and `client/node` (the Node
+front-end is nearly free since patchright ships one; the module takes the
+`chromium` object from `patchright` or from a `patchright-core` package
+directory, and its probe joins the contract verify as two more rows).
+
 `client/python/camoucrome` (`launch(playwright, executable_path, config=,
 preset=, strict=, user_data_dir=, window=, dpr=, headless=, args=)`) and
 `client/go` (`camoucrome.Launch(pw, Options{...})`) do the same four
