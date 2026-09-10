@@ -3588,3 +3588,15 @@ Pairing, ParseConfigDeath, ParseConfig, PerturbAudio, PerturbRgba) 109 PASSED rc
 6/6. Review doc fixes: Protected Audience wording (consistency, not an answer), B2 content_shell half
 credited, sync-check FAIL string, baseline count 5. Housekeeping open: origin rebase/8010 (merged), box
 out/Default/chrome.stale-0e8d (175 MB), verify_sp1a still compares against the fork's own recording.
+
+## SP5b catalogue, first fill (A3 #1) -- 2026-09-10
+5 entries added (registry 4 -> 9), 3 new relations (kListHeadEquals, kSameString, kRendererBackendFitsOs)
++ static_assert pinning the renderer entry to {kUaOsInfo, kWebGlRenderer}; renderer resolved via
+GLRenderer() so the parameters["37446"] path counts. Backend tokens conservative: Direct3D -> Windows,
+Metal -> Mac, else unknown (Linux stock M153 chrome measured: SwiftShader Vulkan; Mac headless gave no
+WebGL context so that row is from ANGLE's string format). RED: 9-entry JSON vs old 4-entry binary ->
+RegistryMatchesGeneratedHeader FAIL on entries->size(). Two compile fails on the way: R"(...)" raw strings
+terminated by `)"` inside the ANGLE strings -> R"json(...)json". GREEN: 19 suites 109 PASS,
+run_coherence_tests 6/6 with 9 mutations (MutationIsCaughtAndNothingElseIs per id), COHERENT extended with
+all new pairs so CleanConfig exercises them (unittest asserts their presence). Deferred (doc §4): presence
+relations (need a Presence violation kind), geo<->tz table, DPR key, Accept-Language.

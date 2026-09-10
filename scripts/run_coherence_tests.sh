@@ -64,7 +64,10 @@ done < <(env)
 # no-taskbar state the fits-within relation must accept). The screen keys are
 # what makes CleanConfigProducesNoViolations exercise the equality boundary; a
 # `<` typo in CheckFitsWithin would turn this config incoherent and fail here.
-COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080,"navigator.platform":"Win32"}'
+# SP5b pairs are all present and coherent (Windows OS with a Direct3D11
+# renderer on both context types, one locale on all three language keys), so
+# CleanConfigProducesNoViolations exercises every relation.
+COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080,"navigator.platform":"Win32","locale:tag":"en-US","navigator.language":"en-US","navigator.languages":["en-US","en"],"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
 INCOHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"}'
 
 # One incoherent config per registry invariant, each violating exactly that
@@ -80,6 +83,11 @@ declare -A MUTATIONS=(
   [screen-avail-width-fits]='{"screen.width":1920,"screen.availWidth":2560}'
   [screen-avail-height-fits]='{"screen.height":1080,"screen.availHeight":1440}'
   [navigator-platform-matches-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","navigator.platform":"MacIntel"}'
+  [navigator-language-heads-languages]='{"navigator.languages":["fr-FR","en-US"],"navigator.language":"en-US"}'
+  [locale-tag-matches-navigator-language]='{"locale:tag":"fr-FR","navigator.language":"en-US"}'
+  [webgl2-vendor-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (AMD)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
+  [webgl2-renderer-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
+  [webgl-renderer-backend-fits-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","webGl:vendor":"Google Inc. (Apple)","webGl:renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"}'
 )
 
 declare -a ORDER=(

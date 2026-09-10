@@ -106,6 +106,16 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
       EXPECT_EQ(header_entry->relation,
                 invariants::Relation::kSamePlatformBucket)
           << *id;
+    } else if (*relation == "list-head-equals") {
+      EXPECT_EQ(header_entry->relation, invariants::Relation::kListHeadEquals)
+          << *id;
+    } else if (*relation == "same-string") {
+      EXPECT_EQ(header_entry->relation, invariants::Relation::kSameString)
+          << *id;
+    } else if (*relation == "renderer-backend-fits-os") {
+      EXPECT_EQ(header_entry->relation,
+                invariants::Relation::kRendererBackendFitsOs)
+          << *id;
     } else {
       ADD_FAILURE() << *id << " has a relation this test does not know: "
                     << *relation;
@@ -170,7 +180,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 4> kMutations = {{
+constexpr std::array<Mutation, 9> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -190,6 +200,28 @@ constexpr std::array<Mutation, 4> kMutations = {{
     {"navigator-platform-matches-os",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","navigator.platform":"MacIntel"})",
      "navigator.platform"},
+    // No locale:tag, so locale-tag-matches-navigator-language stays quiet.
+    {"navigator-language-heads-languages",
+     R"({"navigator.languages":["fr-FR","en-US"],"navigator.language":"en-US"})",
+     "navigator.language"},
+    // No navigator.languages, so navigator-language-heads-languages stays quiet.
+    {"locale-tag-matches-navigator-language",
+     R"({"locale:tag":"fr-FR","navigator.language":"en-US"})",
+     "navigator.language"},
+    // Renderers equal, vendors differ; no ua:osInfo, so the backend entry
+    // has no OS to compare against.
+    {"webgl2-vendor-agrees-with-webgl",
+     R"json({"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (AMD)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"})json",
+     "webGl2:vendor"},
+    // Vendors equal, renderers differ.
+    {"webgl2-renderer-agrees-with-webgl",
+     R"json({"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"})json",
+     "webGl2:renderer"},
+    // A Metal renderer under a Windows OS. No ua:platform / navigator.platform
+    // / webGl2:* keys, so no other entry has both of its keys.
+    {"webgl-renderer-backend-fits-os",
+     R"json({"ua:osInfo":"Windows NT 10.0; Win64; x64","webGl:vendor":"Google Inc. (Apple)","webGl:renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"})json",
+     "webGl:renderer"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {
@@ -294,6 +326,17 @@ TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
   // pass the UA and screen assertions above guard against.
   ASSERT_TRUE(GetString(GlobalScope(), keys::kNavigatorPlatform).has_value())
       << "coherent config must set navigator.platform; see the runner";
+  // SP5b entries: the clean config must carry BOTH keys of every pair, or
+  // the relation has nothing to compare and this test passes having never
+  // exercised it.
+  for (std::string_view key :
+       {keys::kLocaleTag, keys::kNavigatorLanguage, keys::kWebGlVendor,
+        keys::kWebGlRenderer, keys::kWebGl2Vendor, keys::kWebGl2Renderer}) {
+    ASSERT_TRUE(GetString(GlobalScope(), key).has_value())
+        << "coherent config must set " << key << "; see the runner";
+  }
+  ASSERT_FALSE(GetStringList(GlobalScope(), keys::kNavigatorLanguages).empty())
+      << "coherent config must set navigator.languages; see the runner";
   EXPECT_TRUE(Validate(GlobalScope()).empty());
 }
 
