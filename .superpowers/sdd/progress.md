@@ -3607,3 +3607,19 @@ mutation supplies WebGL1 via the map. Also verified GLVendor/GLRenderer have NO 
 one-context-only identity is a presence gap, added to the deferred list. Box commit amended in place.
 Fix-forward GREEN: 10 steps, suites 109 OK, coherence 6/6 with 9 mutations (renderer via parameters map),
 box commit amended 7d54ea20df, export gate empty, sync PASS.
+
+## SP5b catalogue, presence relations (A3 #1 second fill) -- SHIPPED 2026-09-10
+Registry 9 -> 12: requires-key (timezone-set-with-locale, mediadevices-seed-when-enabled) and
+gl-identity-set-together (webgl-identity-set-on-both-contexts). No Presence violation kind: empty old_value
+is the marker, ValidateAtStartup prints "'A' is set but 'B' is not. It should be ...". RED:
+RegistryMatchesGeneratedHeader FAIL on the 9-entry binary. First run 10/12 mutations: two older mutations
+collided with the new entries (locale:tag-only config trips timezone-set-with-locale; WebGL1-only Metal
+trips set-together) -> extra key in each. Review defect: KeyIsSet probed GetBool/GetUint32 and each getter
+LOG(WARNING)s "falling back to the real value" on the wrong type -> 5 false warnings per startup on a
+coherent config. Fixed to read the raw base::Value; runner check (c) counts "falling back" on the
+coherent run and needs --test-launcher-print-test-stdio=always (launcher swallows passing child stderr;
+count was 0 on the known-bad binary until the flag). RED 5 warnings on pre-fix .cc, GREEN 0. Final: 10
+steps, suites 109 OK, coherence 6/6 with 12 mutations, content_shell logs the timezone-set-with-locale line
+for {"locale:tag":"fr-FR"} with 0 falling-back lines, box commit sp5b-presence 60127a801d, export gate
+empty, sync PASS. Deferred: geo<->tz table, DPR key, Accept-Language, empty-string-vs-presence ambiguity.
+

@@ -91,3 +91,52 @@ Result after the fix: build 10 steps; 19 suites 109 OK; `run_coherence_tests.sh`
 6/6 with all nine mutations caught alone — the renderer one now through the
 parameter map; box commit `sp5b-catalogue` amended (`7d54ea20df`); export gate
 empty; `check_checkout_sync` PASS.
+
+## 7. Second fill, same day: the presence relations
+
+The deferred list's first three items needed a relation that fires on
+*absence*. Two relations, three entries, registry 9 → 12:
+
+| id | keys | relation | fires when |
+|---|---|---|---|
+| `timezone-set-with-locale` | `locale:tag` → `timezone:id` | `requires-key` | `locale:tag` set, `timezone:id` unset |
+| `mediadevices-seed-when-enabled` | `mediaDevices:enabled` → `mediaDevices:seed` | `requires-key` | enabled **true**, seed absent **or 0** (the consumer's own no-op rule) |
+| `webgl-identity-set-on-both-contexts` | `webGl:renderer` ↔ `webGl2:renderer` | `gl-identity-set-together` | exactly one context type resolves an identity (vendor or renderer, key or map); the missing side is the repaired key and the resolved strings are the repair value |
+
+No new violation kind after all: `Violation.old_value` empty is the presence
+marker, and `ValidateAtStartup` prints the "'A' is set but 'B' is not. It
+should be …" form for those instead of quoting an empty wrong value. The
+`requires-key` entries' `new_value` is descriptive (no canonical zone for a
+locale, no canonical seed); the GL one is concrete.
+
+Registry 9 → 12, `kMutations` 12. Two of the earlier mutations collided with
+the new entries (a `locale:tag`-only config also trips `timezone-set-with-locale`;
+a WebGL1-only Metal renderer also trips the set-together entry) and now carry
+the extra key so each still produces exactly one violation.
+
+One defect found by review, not by any gate: the first `KeyIsSet` probed the
+key through `GetBool` then `GetUint32`, and each getter logs
+`key '…' is not a boolean; falling back to the real value` on a type it does
+not expect — five false warnings per startup on a coherent config, for values
+that were in fact used. It reads the raw `base::Value` now. The runner grew a
+check (c) that counts `falling back` lines on the coherent run, which needed
+`--test-launcher-print-test-stdio=always`: the launcher swallows a passing
+child's stderr, and the count was 0 against the binary known to warn until
+the flag was added.
+
+| check | result |
+|---|---|
+| RED: 12-entry registry vs the 9-entry binary | `RegistryMatchesGeneratedHeader` FAILED |
+| RED: pre-fix `KeyIsSet` under check (c) | `5 wrong-type warning(s) on the coherent config`, 5/6 |
+| `components_unittests`, 19 Camoucfg suites | 109 PASSED |
+| `run_coherence_tests.sh` | 6/6 PASS, all twelve mutation ids, 0 wrong-type warnings |
+| startup path (content_shell) | `{"locale:tag":"fr-FR"}` logs `invariant 'timezone-set-with-locale' violated. 'locale:tag' is set but 'timezone:id' is not. It should be set, because 'locale:tag' is.`; 0 `falling back` lines |
+| branch / repo | `camoucrome/main` `sp5b-presence` 60127a801d (additions-only); export gate empty; `check_checkout_sync` PASS |
+
+Still deferred from §4: geolocation ↔ timezone (zone table), DPR (no key),
+`Accept-Language` (generator obligation), parameter-table value coherence
+(A3 #2). Not done, noted: an explicitly configured empty string
+(`"navigator.language":""`) would print in the presence wording because the
+marker is an empty `old_value`; an explicit flag on `Violation` would remove
+the ambiguity.
+

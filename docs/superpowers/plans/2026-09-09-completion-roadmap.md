@@ -153,10 +153,13 @@ Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
    `locale-tag-matches-navigator-language`, `webgl2-vendor-agrees-with-webgl`,
    `webgl2-renderer-agrees-with-webgl`, `webgl-renderer-backend-fits-os`
    (Direct3D → Windows, Metal → macOS, everything else constrains nothing).
-   Deferred with reasons in the doc §4: the two presence relations
-   (`timezone:id` with `locale:tag`, `mediaDevices:seed` when enabled) need a
-   `Presence` violation kind; geolocation ↔ timezone needs a zone table; DPR
-   has no key; `Accept-Language` is a generator obligation. Spec §4.3's
+   **Second fill SHIPPED 2026-09-10** (doc §7): 9 → 12 with the presence
+   relations `requires-key` (`timezone-set-with-locale`,
+   `mediadevices-seed-when-enabled`) and `gl-identity-set-together`
+   (`webgl-identity-set-on-both-contexts`); no new violation kind, an empty
+   `old_value` is the presence marker. Still deferred: geolocation ↔ timezone
+   needs a zone table; DPR has no key; `Accept-Language` is a generator
+   obligation; parameter-table value coherence is #2. Spec §4.3's
    original list, for what remains:
    DPR (screen/window in CSS px at one DPR), locale/time
    (`navigator.language == languages[0]`, `locale:tag` ↔ `navigator.language`

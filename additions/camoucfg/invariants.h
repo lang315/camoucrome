@@ -74,6 +74,16 @@ enum class Relation {
   // resolved through GLRenderer(). Violated when the renderer's ANGLE backend
   // token (Direct3D -> Windows, Metal -> macOS) names a different OS family.
   kRendererBackendFitsOs,
+  // Presence: keys[0] set (a bool counts only when true) but keys[1] not set
+  // (a uint32 counts as unset when 0). No canonical repair value exists, so
+  // the Violation's new_value is descriptive and old_value is empty; the
+  // startup log prints the "is set but ... is not" form for these.
+  kRequiresKey,
+  // Exactly one of the two WebGL context types resolves an identity (vendor
+  // or renderer, key or parameters map). The resolved strings are the
+  // repair value. keys must be {kWebGlRenderer, kWebGl2Renderer}; the
+  // missing side is the repaired key.
+  kGlIdentitySetTogether,
 };
 
 struct Invariant {
@@ -90,7 +100,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 9> kAllInvariants = {{
+inline constexpr std::array<Invariant, 12> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
@@ -131,6 +141,18 @@ inline constexpr std::array<Invariant, 9> kAllInvariants = {{
      Relation::kRendererBackendFitsOs,
      Policy::kRepair,
      {keys::kUaOsInfo, keys::kWebGlRenderer}},
+    {"timezone-set-with-locale",
+     Relation::kRequiresKey,
+     Policy::kRepair,
+     {keys::kLocaleTag, keys::kTimezoneId}},
+    {"mediadevices-seed-when-enabled",
+     Relation::kRequiresKey,
+     Policy::kRepair,
+     {keys::kMediaDevicesEnabled, keys::kMediaDevicesSeed}},
+    {"webgl-identity-set-on-both-contexts",
+     Relation::kGlIdentitySetTogether,
+     Policy::kRepair,
+     {keys::kWebGlRenderer, keys::kWebGl2Renderer}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
@@ -246,6 +268,23 @@ static_assert(
     "the WebGL2 side of the SAME identity string (vendor when keys[0] is "
     "kWebGlVendor, renderer otherwise), so any other pair would compare the "
     "wrong values with no diagnostic.");
+
+constexpr bool EveryGlIdentitySetTogetherEntryUsesTheRendererPair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kGlIdentitySetTogether &&
+        (inv.keys[0] != keys::kWebGlRenderer ||
+         inv.keys[1] != keys::kWebGl2Renderer)) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(
+    EveryGlIdentitySetTogetherEntryUsesTheRendererPair(),
+    "a kGlIdentitySetTogether entry must be {kWebGlRenderer, kWebGl2Renderer} "
+    "-- coherence_validator.cc's CheckGlIdentitySetTogether() resolves both "
+    "context types' identities regardless of the keys and names keys[0] or "
+    "keys[1] as the missing side, so any other pair would mislabel it.");
 
 constexpr bool EveryRendererBackendEntryUsesTheOsRendererPair() {
   for (const Invariant& inv : kAllInvariants) {

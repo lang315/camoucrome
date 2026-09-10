@@ -67,7 +67,7 @@ done < <(env)
 # SP5b pairs are all present and coherent (Windows OS with a Direct3D11
 # renderer on both context types, one locale on all three language keys), so
 # CleanConfigProducesNoViolations exercises every relation.
-COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080,"navigator.platform":"Win32","locale:tag":"en-US","navigator.language":"en-US","navigator.languages":["en-US","en"],"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
+COHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Windows","screen.width":1920,"screen.height":1080,"screen.availWidth":1920,"screen.availHeight":1080,"navigator.platform":"Win32","locale:tag":"en-US","navigator.language":"en-US","navigator.languages":["en-US","en"],"timezone:id":"America/New_York","mediaDevices:enabled":true,"mediaDevices:seed":7,"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
 INCOHERENT='{"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"}'
 
 # One incoherent config per registry invariant, each violating exactly that
@@ -84,10 +84,13 @@ declare -A MUTATIONS=(
   [screen-avail-height-fits]='{"screen.height":1080,"screen.availHeight":1440}'
   [navigator-platform-matches-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","navigator.platform":"MacIntel"}'
   [navigator-language-heads-languages]='{"navigator.languages":["fr-FR","en-US"],"navigator.language":"en-US"}'
-  [locale-tag-matches-navigator-language]='{"locale:tag":"fr-FR","navigator.language":"en-US"}'
+  [locale-tag-matches-navigator-language]='{"locale:tag":"fr-FR","navigator.language":"en-US","timezone:id":"Europe/Paris"}'
   [webgl2-vendor-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (AMD)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
   [webgl2-renderer-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:parameters":{"37446":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"},"webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
-  [webgl-renderer-backend-fits-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","webGl:vendor":"Google Inc. (Apple)","webGl:renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"}'
+  [webgl-renderer-backend-fits-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","webGl:vendor":"Google Inc. (Apple)","webGl:renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)","webGl2:vendor":"Google Inc. (Apple)","webGl2:renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"}'
+  [timezone-set-with-locale]='{"locale:tag":"fr-FR"}'
+  [mediadevices-seed-when-enabled]='{"mediaDevices:enabled":true}'
+  [webgl-identity-set-on-both-contexts]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
 )
 
 declare -a ORDER=(
@@ -170,8 +173,14 @@ run_case() {
   local name="$1"
   shift
   local out code
-  out=$("$@" --gtest_filter="CoherenceValidatorTest.$name" 2>&1)
+  # --test-launcher-print-test-stdio=always: the launcher runs the case in a
+  # child process and swallows its stderr on success, so without it check (c)
+  # below would count zero warnings on any binary. Measured: 0 on a binary
+  # known to warn, before the flag was added.
+  out=$("$@" --gtest_filter="CoherenceValidatorTest.$name" \
+        --test-launcher-print-test-stdio=always 2>&1)
   code=$?
+  LAST_OUT="$out"
   if [ "$code" -eq 0 ] && grep -qE '^\[  PASSED  \] 1 test\.$' <<<"$out"; then
     STATUS[$name]=PASS
   else
@@ -195,6 +204,18 @@ run_case MutationsExistForEveryInvariant \
 
 run_case CleanConfigProducesNoViolations \
   env -u CAMOUCFG_TEST_INVARIANT CAMOU_CONFIG="$COHERENT" "$BINARY"
+
+# (c) The coherent config must also produce zero wrong-type warnings. A check
+# that probes a key through a getter of another type (KeyIsSet did, before it
+# read the raw value) logs "falling back to the real value" for a value that
+# is in fact used -- a false warning on every startup, invisible to gtest.
+WARN_COUNT=$(grep -c 'falling back to the real value' <<<"$LAST_OUT" || true)
+if [ "$WARN_COUNT" -ne 0 ]; then
+  echo "--- CleanConfigProducesNoViolations: $WARN_COUNT wrong-type warning(s)" \
+       "on the coherent config ---" >&2
+  grep 'falling back to the real value' <<<"$LAST_OUT" >&2
+  STATUS[CleanConfigProducesNoViolations]=FAIL
+fi
 
 # MutationIsCaughtAndNothingElseIs is one gtest case driven once per registry
 # mutation, each in its own process with the config that violates exactly that

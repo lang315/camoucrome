@@ -255,6 +255,68 @@
         "supplied via webGl:parameters[\"37446\"] is checked too.",
         "There is no canonical repair value; new_value is descriptive."
       ]
+    },
+    {
+      "id": "timezone-set-with-locale",
+      "keys": [
+        "locale:tag",
+        "timezone:id"
+      ],
+      "relation": "requires-key",
+      "policy": "repair",
+      "repair": "set timezone:id to an IANA zone plausible for locale:tag",
+      "why": [
+        "A presence relation: locale:tag set, timezone:id absent. The 2026-09-01",
+        "tz-locale measurement §5 names this operator tell -- a French locale",
+        "beside the machine's real zone (here Asia/Ho_Chi_Minh) is a pair no",
+        "real French user produces, and Intl.DateTimeFormat().resolvedOptions()",
+        "exposes both in one call. There is no canonical zone for a locale",
+        "(fr-FR spans Europe/Paris and the overseas zones), so this entry can",
+        "only insist the key is set; new_value is descriptive.",
+        "Absent locale:tag constrains nothing: both values are then real and",
+        "agree by construction."
+      ]
+    },
+    {
+      "id": "mediadevices-seed-when-enabled",
+      "keys": [
+        "mediaDevices:enabled",
+        "mediaDevices:seed"
+      ],
+      "relation": "requires-key",
+      "policy": "repair",
+      "repair": "set mediaDevices:seed to a non-zero uint32",
+      "why": [
+        "mediaDevices:enabled true fabricates synthetic devices; media-ii's",
+        "SyntheticDeviceId is a no-op when mediaDevices:seed is absent or 0, so",
+        "the fabricated devices carry the REAL deviceId hashes -- a spoofed count",
+        "beside real identifiers, which is the incoherence rule 4 exists for.",
+        "A bool keys[0] counts as present only when true; a uint32 keys[1]",
+        "counts as absent when 0, matching the consumer's own no-op rule.",
+        "enabled false or absent constrains nothing."
+      ]
+    },
+    {
+      "id": "webgl-identity-set-on-both-contexts",
+      "keys": [
+        "webGl:renderer",
+        "webGl2:renderer"
+      ],
+      "relation": "gl-identity-set-together",
+      "policy": "repair",
+      "repair": "set the other context's vendor and renderer to the same strings",
+      "why": [
+        "GLVendor/GLRenderer have no WebGL1->WebGL2 fallback (gl_params.cc), so a",
+        "profile that sets an identity on one context type only shows a spoofed",
+        "GPU on WebGL1 beside the real one on WebGL2 (or the reverse) -- two",
+        "GPUs to a page that creates both contexts. Fires when exactly one",
+        "context resolves an identity (vendor or renderer, key or parameters",
+        "map); the resolved strings are the repair value, so this one is",
+        "concrete. keys[1] is named as repaired when WebGL2 is the missing side",
+        "and keys[0] when WebGL1 is; the log line names the side.",
+        "Neither set constrains nothing (both real); both set is the agreement",
+        "entries' job."
+      ]
     }
   ]
 }
