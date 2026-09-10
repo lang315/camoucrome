@@ -90,3 +90,22 @@ kept until the sweep on the new base passes.
   of 26 patches re-cut. Every diff is an `index` line or a hunk offset except
   `media-ii-track.patch`, which now adds `security_origin.h` without the
   upstream-removed `wtf/text/format.h` beside it.
+- `chrome` target on the branch: 3506 steps, 34 min. Rows: `verify_sp2` 9/9,
+  `verify_sp2b` 3/3, `verify_sp7_fieldtrial` 7/7, `verify_sp7_phonehome`
+  3/3 (`{}` in 75 s holds on M153). `verify_sp1a_chrome` went 29/34: all
+  five reds were its pinned stock baseline (`chrome-0e8d4a9268-stock-ua.json`
+  plus a sha256), whose header says a moved digest is "the signal to stop
+  and ask why". The why is this re-pin, so the baseline was recaptured the
+  only legitimate way — detached checkout of the tag, pristine `chrome`
+  rebuild (234 steps), `capture_ua_baseline.py --shell chrome` — as
+  `baselines/chrome-507c6ee3e2-stock-ua.json` (sha256 `367385ff…`; the
+  capture is deterministic: two independent runs hashed identically). With
+  the script re-pinned to it: **34/34**. Stock M153 chrome headless reports
+  `HeadlessChrome/153.0.0.0`; the fork reports `Chrome/153.0.0.0` (SP2a).
+- Box branches renamed: `camoucrome/main` is now the M153 stack, checked out
+  in `~/chromium/src` (no separate worktree); `camoucrome/main-0e8d` is the
+  retired one. Export gate against it: empty. `check_checkout_sync`: PASS.
+
+**Result: 38 verifies green on Chrome stable 153.0.8010.36** (the 39th,
+`verify_webrtc_ii_fakeip.py`, is the rejected slice's RED record and fails
+by design). The fork now reports a version that stable users have.

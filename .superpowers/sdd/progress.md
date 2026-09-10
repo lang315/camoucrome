@@ -3566,3 +3566,18 @@ chrome target build started (Monitor, 55-min chunks) for verify_sp1a_chrome/sp2/
 sp7_fieldtrial chrome rows; merge rebase/8010 -> main after those pass.
 Round-trip of the re-cut stack: apply.sh (pin check now 507c6ee3) on a fresh worktree at the tag ->
 APPLY_RC=0, `git diff --cached --stat camoucrome/main-8010` empty. rebase/8010 pushed (f3c0337).
+chrome target on the branch: 34 min, 3506 steps (first attempt died "interrupt by signal" at 3 min while
+a concurrent apply-test worktree ran; second attempt clean). chrome verifies: verify_sp2 9/9, verify_sp2b
+3/3, verify_sp7_fieldtrial 7/7, verify_sp7_phonehome 3/3 ({} in 75 s on M153 too). verify_sp1a_chrome
+29 PASS 5 FAIL -- all five are the stock-chrome baseline pin: the script hardcodes
+baselines/chrome-0e8d4a9268-stock-ua.json + STOCK_BASE_COMMIT + its sha256 and says "if this ever needs
+updating, stop and ask why". Why: the pin moved. Recapturing from a PRISTINE chrome at the tag (detached
+checkout, rebuild, capture, checkout branch, rebuild) rather than from the fork's build, per the script's
+own rule against comparing the fork with a recording of itself.
+Re-pin FINISHED 2026-09-10: pristine chrome baseline recaptured into /home/lang (the first capture into
+/tmp was lost when the master died and WSL restarted -- never park artifacts in /tmp on the box); sha
+367385ff... identical across two captures. verify_sp1a_chrome re-pinned (BASELINE path, STOCK_BASE_COMMIT
+507c6ee3e2, sha) -> 34/34. Box branches: camoucrome/main = M153 stack checked out in src (worktree
+camoumain dropped), camoucrome/main-0e8d retired. Export gate vs the renamed branch: empty.
+check_checkout_sync PASS 35. Totals on 153.0.8010.36: 33 content_shell + 5 chrome verifies green.
+Merging rebase/8010 -> main.
