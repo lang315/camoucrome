@@ -36,8 +36,45 @@ type Options struct {
 	UserDataDir    string // one profile per identity; a temp dir when empty
 	Window         [2]int // --window-size, so inner/outer widths cohere with screen.*
 	DPR            float64
-	Headless       *bool // nil = headless
+	Headless       *bool    // nil = headless
+	Extensions     []string // unpacked extension dirs (--load-extension)
+	SPKIList       []string // base64 SHA-256 SPKI hashes whose cert errors are ignored (a MITM CA)
 	ExtraArgs      []string
+}
+
+// AcceptLangOf is the --accept-lang value the config implies:
+// navigator.languages joined, else locale:tag, else "". Measured
+// 2026-09-10: without the flag a French config still sends
+// Accept-Language: en-US,en;q=0.9; with it Chrome sends fr-FR,fr;q=0.9.
+func AcceptLangOf(config any) string {
+	if config == nil {
+		return ""
+	}
+	var m map[string]any
+	switch c := config.(type) {
+	case string:
+		if json.Unmarshal([]byte(c), &m) != nil {
+			return ""
+		}
+	default:
+		b, err := json.Marshal(c)
+		if err != nil || json.Unmarshal(b, &m) != nil {
+			return ""
+		}
+	}
+	if langs, ok := m["navigator.languages"].([]any); ok && len(langs) > 0 {
+		parts := make([]string, 0, len(langs))
+		for _, l := range langs {
+			if s, ok := l.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, ",")
+	}
+	if tag, ok := m["locale:tag"].(string); ok {
+		return tag
+	}
+	return ""
 }
 
 func asJSON(v any) (string, error) {
@@ -102,6 +139,16 @@ func BuildArgs(o Options) []string {
 	}
 	if o.DPR != 0 {
 		args = append(args, fmt.Sprintf("--force-device-scale-factor=%g", o.DPR))
+	}
+	if al := AcceptLangOf(o.Config); al != "" {
+		args = append(args, "--accept-lang="+al)
+	}
+	if len(o.Extensions) > 0 {
+		paths := strings.Join(o.Extensions, ",")
+		args = append(args, "--disable-extensions-except="+paths, "--load-extension="+paths)
+	}
+	if len(o.SPKIList) > 0 {
+		args = append(args, "--ignore-certificate-errors-spki-list="+strings.Join(o.SPKIList, ","))
 	}
 	return append(args, o.ExtraArgs...)
 }

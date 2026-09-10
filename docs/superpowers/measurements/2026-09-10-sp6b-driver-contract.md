@@ -139,13 +139,20 @@ Sweep with the verify in the set (the box, two halves): 39 ok, 1 FAIL =
 `verify_sp6b_driver.py` takes 17 s (three baseline launches + four drivers),
 which is mid-pack (`verify_sp7_phonehome.py` 79 s), so nothing to trim.
 
-## 5. Not done, named
+## 5. Launcher duties, measured (`scripts/verify_sp6b_launcher.py`, A4 #3)
 
-- Headed launches: the contract ran headless only (`--headless=new`). A
-  headed run drops Chrome's four self-added flags and needs a display;
-  the verify's C4 handles the absence, nothing measured it.
-- `--load-extension` (uBO) and a custom CA for MITM proxies: not in either
-  launcher yet.
+| item | result |
+|---|---|
+| L1 `Accept-Language` follows the config | RED first: a `fr-FR,fr` config still sent `en-US,en;q=0.9` (the tree derives nothing for the header; `--lang` does not change it either). Both launchers now derive `--accept-lang=<navigator.languages joined>` (else `locale:tag`); Chrome sends `fr-FR,fr;q=0.9`, adding the q-values itself |
+| L2 `--load-extension` on `--headless=new` | an MV3 extension written by the verify (document_start content script stamps `documentElement.dataset.ext`) is seen by the page; without it, nothing. `extensions=` / `Extensions` pass `--disable-extensions-except` + `--load-extension` |
+| L3 custom CA | `--ignore-certificate-errors-spki-list=<base64 sha256 SPKI>`: a self-signed HTTPS server started by the verify loads with the hash and fails without. `spki_list=` / `SPKIList` |
+| L4 headed launch | WSLg `DISPLAY=:0` on the box: starts, argv equals the contract's set minus `--headless=new` and Chrome's four headless-only flags |
+| L5 `navigator.deviceMemory` domain entry | 16 (what the pool says) refused under strict with `'navigator.deviceMemory' is '16' … [0.25, 8]`, logged non-strict. `domain_validator.cc` gained the range; 7 `DomainValidatorTest` cases; box commit `sp5b-domain-devicememory` 04e1dc8ff6, export gate empty |
+
+5/5 first run. The box `chrome` binary is relinked with the preset loader
+and the domain entry (54 steps) as of this run.
+
+## 6. Not done, named
 - Generator (A4 #2): the Go client takes a preset + per-instance seeds
   today; the statistical generator stays Python, to be exposed as a CLI the
   Go client can exec. Not started.

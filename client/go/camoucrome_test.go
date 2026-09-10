@@ -18,6 +18,9 @@ type contract struct {
 		DPRArg            string   `json:"dpr_arg"`
 		HeadlessArg       string   `json:"headless_arg"`
 		IgnoreDefaultArgs bool     `json:"ignore_default_args"`
+		AcceptLangArg     string   `json:"accept_lang_arg"`
+		ExtensionArgs     []string `json:"extension_args"`
+		SPKIArg           string   `json:"spki_arg"`
 	} `json:"launch"`
 }
 
@@ -132,5 +135,30 @@ func TestParseGenerated(t *testing.T) {
 	// The parsed options launch with the generator's geometry flags.
 	if got := BuildArgs(o); !reflect.DeepEqual(got[len(got)-2:], []string{"--window-size=1536,824", "--force-device-scale-factor=1.25"}) {
 		t.Fatalf("args %v", got)
+	}
+}
+
+func TestAcceptLangExtensionsAndSPKIMatchTheContract(t *testing.T) {
+	c := load(t)
+	if got := AcceptLangOf(map[string]any{"navigator.languages": []string{"fr-FR", "fr"}}); got != "fr-FR,fr" {
+		t.Fatalf("accept-lang %q", got)
+	}
+	if got := AcceptLangOf(`{"locale:tag":"de-DE"}`); got != "de-DE" {
+		t.Fatalf("accept-lang %q", got)
+	}
+	if got := AcceptLangOf(map[string]any{"screen.width": 1}); got != "" {
+		t.Fatalf("accept-lang %q", got)
+	}
+	headed := false
+	args := BuildArgs(Options{Headless: &headed, Config: `{"navigator.languages":["fr-FR","fr"]}`,
+		Extensions: []string{"/e1", "/e2"}, SPKIList: []string{"AAA=", "BBB="}})
+	want := []string{
+		strings.Replace(c.Launch.AcceptLangArg, "{languages}", "fr-FR,fr", 1),
+		strings.Replace(c.Launch.ExtensionArgs[0], "{paths}", "/e1,/e2", 1),
+		strings.Replace(c.Launch.ExtensionArgs[1], "{paths}", "/e1,/e2", 1),
+		strings.Replace(c.Launch.SPKIArg, "{hashes}", "AAA=,BBB=", 1),
+	}
+	if got := args[len(c.Launch.BaseArgs)+1:]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("args %v != %v", got, want)
 	}
 }

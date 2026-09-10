@@ -70,3 +70,19 @@ def test_per_instance_seeds_match_the_contract_and_are_nonzero_uint32():
     assert set(cfg) == set(camoucrome.SEED_KEYS)
     assert all(1 <= v <= 0xFFFFFFFF for v in cfg.values())
     assert cfg != camoucrome.per_instance_config(random.Random(8))
+
+
+def test_accept_lang_follows_the_config_and_the_contract():
+    launch = CONTRACT["launch"]
+    assert camoucrome.accept_lang_of({"navigator.languages": ["fr-FR", "fr"]}) == "fr-FR,fr"
+    assert camoucrome.accept_lang_of('{"locale:tag": "de-DE"}') == "de-DE"
+    assert camoucrome.accept_lang_of({"screen.width": 1}) is None and camoucrome.accept_lang_of(None) is None
+    args = camoucrome.build_args(headless=False, accept_lang="fr-FR,fr", extensions=["/e1", "/e2"],
+                                 spki_list=["AAA=", "BBB="])
+    assert args[len(launch["base_args"]) + 1:] == [
+        launch["accept_lang_arg"].format(languages="fr-FR,fr"),
+        *[a.format(paths="/e1,/e2") for a in launch["extension_args"]],
+        launch["spki_arg"].format(hashes="AAA=,BBB=")]
+    pw = FakePlaywright()
+    camoucrome.launch(pw, "/x/chrome", config={"navigator.languages": ["fr-FR", "fr"]}, user_data_dir="/p")
+    assert "--accept-lang=fr-FR,fr" in pw.chromium.kw["args"]

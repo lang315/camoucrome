@@ -3693,3 +3693,11 @@ test (found: browserforge raises TypeError on every draw with os=None passed exp
 now counts every camoucfg: line; N=10 verify = 81 s (sweep budget 400 s); Go Generate() exec'd on the box:
 window [1920 1032] dpr 1, 33 keys. 17 py tests, 5 go tests.
 
+## A4 #3 launcher duties + deviceMemory domain entry -- SHIPPED 2026-09-10
+Measured: fr config still sends Accept-Language en-US (tree derives nothing; --lang no effect), --accept-lang
+fixes it (Chrome adds q). Both launchers derive it from navigator.languages/locale:tag; extensions= and
+spki_list= options (contract fields). verify_sp6b_launcher.py L1-L5 (extension written on the fly, self-signed
+HTTPS + SPKI hash via openssl, headed under WSLg argv == set minus headless flags, deviceMemory 16 refused
+under strict) 5/5 first run. domain_validator.cc + unittest (7 cases), chrome relinked with loader (54 steps),
+box commit sp5b-domain-devicememory 04e1dc8ff6, export gate empty, sync 39. driver + generator regress ok.
+

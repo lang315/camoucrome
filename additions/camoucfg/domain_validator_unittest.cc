@@ -44,6 +44,15 @@ TEST(DomainValidatorTest, AccuracyLowerBoundOnly) {
   EXPECT_TRUE(CheckDomain(keys::kGeolocationAccuracy, -1e-9).has_value());
 }
 
+TEST(DomainValidatorTest, DeviceMemoryBoundariesInclusive) {
+  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 0.25).has_value());
+  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 8.0).has_value());
+  // The motivating cases: what the pool says and Chrome never does.
+  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 16.0).has_value());
+  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 32.0).has_value());
+  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 0.0).has_value());
+}
+
 TEST(DomainValidatorTest, ReportNamesKeyValueAndRange) {
   std::optional<DomainViolation> v =
       CheckDomain(keys::kGeolocationLatitude, 91.0);

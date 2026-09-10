@@ -233,9 +233,12 @@ Source: SP6 §4.5, SP2 D1 resolution, tz-locale measurement §5.
    `virtual_display`. What changes: BrowserForge `browser='chrome'`, Chrome UA /
    UA-CH brand generation, Chrome WebGL strings (A3.2), Chrome voice names.
 3. **Launcher-layer duties the C++ deliberately left to it** (each is a tell if
-   forgotten) — window size, DPR, per-identity profile, env-only
-   timezone/locale, `no_viewport` and `ignore_default_args` **shipped in both
-   clients 2026-09-10**; extensions and custom CA still open: size the window via `--window-size` / `Browser.setWindowBounds`
+   forgotten) — **all shipped in both clients 2026-09-10** (driver-contract
+   doc §5): window size, DPR, per-identity profile, env-only
+   timezone/locale, `no_viewport`, `ignore_default_args`, `--accept-lang`
+   derived from the config (RED: the header stayed `en-US` under a French
+   config), `--load-extension` on headless=new, SPKI allow-list for a MITM
+   CA, headed launch measured under WSLg: size the window via `--window-size` / `Browser.setWindowBounds`
    so `innerWidth`/`clientWidth`/`outerWidth` cohere with `screen.*`;
    `--force-device-scale-factor` for DPR; route timezone/locale ONLY through
    `CAMOU_CONFIG` (a second Playwright `timezone_id`/`locale` fails with
