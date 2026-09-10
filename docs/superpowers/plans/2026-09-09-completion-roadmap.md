@@ -339,7 +339,12 @@ removal, addon pinning/private-mode (headful UI — SP7 §8 scopes these out) ·
    Do this before the patch stack grows further; the version-honesty rule makes
    the rebase an anti-detect requirement, not hygiene.
 3. **B2** — one stock build, run the `Object.getOwnPropertyNames(window)` diff.
-   Cheapest way to falsify rule 2 across 25 patches at once.
+   Cheapest way to falsify rule 2 across 25 patches at once. **content_shell
+   half DONE 2026-09-10** as a by-product of the re-pin: pristine M153
+   `content_shell` (`baselines/content_shell-8010-stock-ua.json`) vs the fork's
+   build — window keys 235 vs 234, the delta is exactly `queryLocalFonts`
+   (sp4-fonts's documented flip); `Navigator.prototype` 81 = 81. The `chrome`
+   half is open (no fork-chrome window-keys capture exists yet).
 4. **A3 → A4** — catalogue + Chrome WebGL profile DB + presets, then the client
    on top of them (the client has nothing to generate until A3 exists).
 5. **A5** — packaging and the Windows/macOS hosts; licensing decision first.
