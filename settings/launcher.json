@@ -74,5 +74,13 @@
         "--use-angle=swiftshader-webgl"
       ]
     }
+  },
+  "per_instance_seeds": {
+    "why": "A preset is a device identity; these are per instance and never part of it (preset_loader.cc emits none). Each client draws them fresh, non-zero uint32, unless the caller pins them.",
+    "keys": [
+      "canvas:seed",
+      "audio:seed",
+      "mediaDevices:seed"
+    ]
   }
 }

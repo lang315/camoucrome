@@ -134,6 +134,11 @@ contract path when run from the sweep dir), `~/camoucrome-verify/venv`
 `~/camoucrome-go/camoucrome-probe`; the verify takes these as `CAMOU_*` /
 `PLAYWRIGHT_NODEJS_PATH` environment overrides.
 
+Sweep with the verify in the set (the box, two halves): 39 ok, 1 FAIL =
+`verify_webrtc_ii_fakeip.py`, the rejected slice's RED record (expected).
+`verify_sp6b_driver.py` takes 17 s (three baseline launches + four drivers),
+which is mid-pack (`verify_sp7_phonehome.py` 79 s), so nothing to trim.
+
 ## 5. Not done, named
 
 - Headed launches: the contract ran headless only (`--headless=new`). A

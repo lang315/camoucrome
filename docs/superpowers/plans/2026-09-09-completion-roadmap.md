@@ -216,7 +216,15 @@ Source: SP6 §4.5, SP2 D1 resolution, tz-locale measurement §5.
    Playwright is the candidate. **Then actually run SP2's isolated-world
    verification items** (spec items owned by "SP6") — they are unmeasured:
    never executed against any driver, so "closed" is not yet a claim.
-2. **Client package** — extend Camoufox's generator into a shared,
+2. **v1 SHIPPED 2026-09-10** (`measurements/2026-09-10-sp6b-generator.md`):
+   `python -m camoucrome.gen` from BrowserForge's Chrome pool (Brave/Edge/
+   mobile/odd-DPR redrawn), three Camoufox helpers copied not shared (the
+   §4.5 deviation is recorded), `--timezone` required, no `webGl:*`/fonts/
+   voices/geo (each with its unblocker), Go execs it. Oracle: 30 configs
+   start under strict with zero invariant lines and the page sees the
+   emitted values; a mutated config is refused. Found and encoded: headless
+   adds 2 px to `--window-size` at DPR 1.25/1.75. Original brief follows.
+   **Client package** — extend Camoufox's generator into a shared,
    target-parameterised core rather than fork it (SP6 recommendation). What
    ports as-is: `fix_navigator_arch`, `clamp_window_dimensions`,
    `clamp_window_position`, `fix_screen_no_taskbar`, `resample_screen_for_dpr1`,

@@ -61,3 +61,12 @@ def test_launch_uses_persistent_context_without_viewport_emulation():
     assert kw["env"]["CAMOU_CONFIG"] == '{"a": 1}'
     assert kw["args"] == ["--no-first-run", "--no-default-browser-check", "--headless=new",
                           "--remote-debugging-pipe", "--user-data-dir=/tmp/p", "--window-size=800,600"]
+
+
+def test_per_instance_seeds_match_the_contract_and_are_nonzero_uint32():
+    assert list(camoucrome.SEED_KEYS) == CONTRACT["per_instance_seeds"]["keys"]
+    import random
+    cfg = camoucrome.per_instance_config(random.Random(7))
+    assert set(cfg) == set(camoucrome.SEED_KEYS)
+    assert all(1 <= v <= 0xFFFFFFFF for v in cfg.values())
+    assert cfg != camoucrome.per_instance_config(random.Random(8))

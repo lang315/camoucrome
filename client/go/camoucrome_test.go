@@ -82,3 +82,55 @@ func TestEnvDropsStaleCamouVarsAndSetsTheTransport(t *testing.T) {
 		t.Fatalf("env %v != %v", env, want)
 	}
 }
+
+func TestPerInstanceSeedsMatchTheContract(t *testing.T) {
+	raw, _ := os.ReadFile("../../settings/launcher.json")
+	var c struct {
+		Seeds struct {
+			Keys []string `json:"keys"`
+		} `json:"per_instance_seeds"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(SeedKeys, c.Seeds.Keys) {
+		t.Fatalf("seed keys %v != %v", SeedKeys, c.Seeds.Keys)
+	}
+	n := 0
+	zeroThenCount := func(b []byte) (int, error) { // first draw is zero and must be redrawn
+		n++
+		if n == 1 {
+			return copy(b, []byte{0, 0, 0, 0}), nil
+		}
+		return copy(b, []byte{byte(n), 1, 2, 3}), nil
+	}
+	cfg, err := PerInstanceConfig(zeroThenCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg) != len(SeedKeys) || n != len(SeedKeys)+1 {
+		t.Fatalf("cfg %v draws %d", cfg, n)
+	}
+	for k, v := range cfg {
+		if v.(uint32) == 0 {
+			t.Fatalf("%s is zero", k)
+		}
+	}
+}
+
+func TestParseGenerated(t *testing.T) {
+	o, err := ParseGenerated([]byte(`{"config":{"screen.width":1536,"ua:platform":"Windows","canvas:seed":7},"launch":{"window":[1536,824],"dpr":1.25}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Window != [2]int{1536, 824} || o.DPR != 1.25 || o.Config.(map[string]any)["ua:platform"] != "Windows" {
+		t.Fatalf("parsed %+v", o)
+	}
+	if _, err := ParseGenerated([]byte(`{"launch":{}}`)); err == nil {
+		t.Fatal("empty config must be an error")
+	}
+	// The parsed options launch with the generator's geometry flags.
+	if got := BuildArgs(o); !reflect.DeepEqual(got[len(got)-2:], []string{"--window-size=1536,824", "--force-device-scale-factor=1.25"}) {
+		t.Fatalf("args %v", got)
+	}
+}

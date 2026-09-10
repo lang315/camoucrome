@@ -3674,3 +3674,17 @@ Clients: client/python/camoucrome (5 tests, forbidden-option guard), client/go (
 by construction), both parity-tested against settings/launcher.json. Open: headed runs, --load-extension,
 custom CA, generator (A4 #2), Node front-end.
 
+## SP6b C6 rework + seeds + generator v1 (A4 #2) -- SHIPPED 2026-09-10
+C6 first expected the probe's own init script invisible -> typeof number on all 4 drivers: user init scripts
+are main-world in patchright AND stock; reframed to "no driver-owned global" (ownNames == baseline + 1), C2
+excludes the probe global, verify falls back to ~/camoucrome-client/settings for the sweep dir. Sweep with
+it in: 39 ok + fakeip expected RED; sp6b_driver 17 s. per_instance_config()/PerInstanceConfig (3 seed keys,
+contract parity). Generator: BrowserForge chrome pool (60 draws: 55 chrome/5 brave; platforms W30 M21 ''6
+L2 A1; DPR 1x38 2x15 1.25x4), filter Brave/Edge/mobile/no-platform/odd DPR; OS_FORMS parity test parses
+kForms from derive.cc; --timezone required (no locale->zone table anywhere, Camoufox uses GeoIP); no webGl
+(reason: parameter-table gap, not invented strings), no fonts/voices/geo. Oracle verify: 30 configs strict
+start, 0 invariant lines, page == emitted; RED mutated ua:platform refused (ua-os-family-agrees). First run
+26/31: innerWidth = outer+2 at DPR 1.25/1.75 (constant, measured 12 launches; a rounding/alignment guess
+was wrong and removed) -> launch.window = outer - offset. Final 31/31 ALL_PASS. Go: Generate() execs the
+CLI, ParseGenerated tested on a literal.
+
