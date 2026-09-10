@@ -253,25 +253,40 @@ Source: SP6 §4.5, SP2 D1 resolution, tz-locale measurement §5.
 
 Source: SP6 §4.3, §4.4, §6.
 
-1. **`scripts/package.py` from `--runtime-deps-list-file`**; portable
+1. **SHIPPED 2026-09-10** (`measurements/2026-09-10-sp6b-packaging.md`):
+   `scripts/package.py` from `gn desc … runtime_deps`, tar.xz/zip, stamp,
+   `--check` across stamps; `settings/release-args.gn`; first Linux archive
+   from `out/Release` on the box recorded in the doc. Original brief:
+   **`scripts/package.py` from `--runtime-deps-list-file`**; portable
    `tar.xz`/`zip`, no installer, no launcher binary. Release build = full
    `chrome` target, non-component (a different build than the dev loop).
-2. **Windows native build** (own checkout on `D:`, VS, serialised with WSL —
+2. **NOT REACHABLE FROM HERE** (2026-09-10): no Windows checkout or VS on
+   the box's host, and a macOS Chromium build on the user's Mac is a
+   10+ hour, 100 GB job nobody asked for; `package.py --platform win-x64 /
+   mac-arm64` and `--check` are ready for when a host exists.
+   **Windows native build** (own checkout on `D:`, VS, serialised with WSL —
    the build scripts should refuse to run both) and **macOS build** (the Mac,
    Xcode). Chromium cannot cross-compile; this is the sharpest divergence from
    Camoufox's `multibuild.py`.
-3. **Font bundles** — Camoufox ships Windows/macOS/Linux font sets +
+3. **BLOCKED ON A DECISION (C)**: redistributing Windows/macOS font
+   files is a licensing call, not a packaging step; until it is made the
+   generator emits no `fonts:list` (sp6b-generator doc). **Font bundles**
+   — Camoufox ships Windows/macOS/Linux font sets +
    fontconfig so a Linux host can *have* the fonts a Windows UA implies.
    `fonts:list` today can only *hide* host fonts; a Linux host claiming Windows
    with no Segoe UI resolvable is a tell the allowlist cannot fix. This is a
    packaging deliverable plus a verify that every listed family actually
    resolves (`document.fonts.check` / layout width), plus hinting/AA posture.
-4. **Cheap CI now** (SP6 says immediately): `check_additions_build.py`,
+4. **SHIPPED 2026-09-10** (`.github/workflows/checks.yml`; the
+   patch-applies-clean check needs a checkout and stays on the box).
+   **Cheap CI now** (SP6 says immediately): `check_additions_build.py`,
    `check_checkout_sync.sh`, the keys/invariants consistency unit test, a
    patch-applies-clean check against a pinned worktree. Full builds stay
    local/manual until a release cadence exists.
-5. **Release stamp coherence** across platform archives; runtime-deps
-   completeness check (SP6 §6.9/6.10).
+5. **SHIPPED 2026-09-10** in `package.py`: the stamp (tag, revision,
+   change-set commit, branch tip, args.gn) and `--check`; every listed
+   runtime dep must exist on disk. **Release stamp coherence** across
+   platform archives; runtime-deps completeness check (SP6 §6.9/6.10).
 
 ---
 
@@ -296,7 +311,10 @@ The next lever is therefore the harness itself. Each row names what it unblocks.
 
 - **Codec distribution licensing** (SP7 D2 part 2) — building locally is
   settled; distributing H.264/AAC binaries is a legal/business call that gates
-  A5 shipping anything.
+  A5 shipping anything. `package.py` stamps `args.gn` into every archive so
+  the codec state of a given archive is on record; it does not decide.
+- **Font redistribution** (A5 #3) — same kind of call; the generator emits no
+  `fonts:list` until it is made.
 - **CRLSet / Origin Trials refresh** (SP7 D5) — how bundled data ages.
 - **SP7 D4 GN arg sites** — verify before writing into `build-args.gn`.
 - **One client package or two** (SP6 open decision) — decide when the shared
