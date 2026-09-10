@@ -1,0 +1,136 @@
+diff --git a/third_party/blink/renderer/core/css/media_values.cc b/third_party/blink/renderer/core/css/media_values.cc
+index 7150d2ea2a..2410152945 100644
+--- a/third_party/blink/renderer/core/css/media_values.cc
++++ b/third_party/blink/renderer/core/css/media_values.cc
+@@ -5,6 +5,7 @@
+ #include "third_party/blink/renderer/core/css/media_values.h"
+ 
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/derive.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/css/scripting.h"
+@@ -365,16 +366,66 @@ bool MediaValues::CalculateThreeDEnabled(LocalFrame* frame) {
+   return frame->GetPage()->GetSettings().GetAcceleratedCompositingEnabled();
+ }
+ 
++namespace {
++
++// D gaps (docs/superpowers/measurements/2026-09-11-d-gaps.md): under
++// --ozone-platform=headless the host has no pointing device, so every pointer
++// and hover media query answers `none` while the UA claims a desktop. The
++// answer is derived from the claimed OS family and the configured
++// navigator.maxTouchPoints -- no key of its own, because an independent
++// override would only let `pointer` disagree with the OS. No claim
++// (OsFamily::kUnknown): the host's real value, untouched.
++struct ClaimedPointerHoverTypes {
++  int available_pointer_types;
++  mojom::blink::PointerType primary_pointer_type;
++  int available_hover_types;
++  mojom::blink::HoverType primary_hover_type;
++};
++
++std::optional<ClaimedPointerHoverTypes> ClaimedPointerHover(LocalFrame* frame) {
++  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(frame->DomWindow());
++  const camoucfg::OsFamily os = camoucfg::ClaimedOs(scope);
++  if (os == camoucfg::OsFamily::kUnknown) {
++    return std::nullopt;
++  }
++  using mojom::blink::HoverType;
++  using mojom::blink::PointerType;
++  if (os == camoucfg::OsFamily::kAndroid) {
++    return ClaimedPointerHoverTypes{
++        static_cast<int>(PointerType::kPointerCoarseType),
++        PointerType::kPointerCoarseType, static_cast<int>(HoverType::kHoverNone),
++        HoverType::kHoverNone};
++  }
++  int pointer_types = static_cast<int>(PointerType::kPointerFineType);
++  if (camoucfg::GetUint32(scope, camoucfg::keys::kNavigatorMaxTouchPoints)
++          .value_or(0) > 0) {
++    pointer_types |= static_cast<int>(PointerType::kPointerCoarseType);
++  }
++  return ClaimedPointerHoverTypes{
++      pointer_types, PointerType::kPointerFineType,
++      static_cast<int>(HoverType::kHoverHoverType), HoverType::kHoverHoverType};
++}
++
++}  // namespace
++
+ mojom::blink::PointerType MediaValues::CalculatePrimaryPointerType(
+     LocalFrame* frame) {
+   DCHECK(frame);
+   DCHECK(frame->GetSettings());
++  if (std::optional<ClaimedPointerHoverTypes> claimed =
++          ClaimedPointerHover(frame)) {
++    return claimed->primary_pointer_type;
++  }
+   return frame->GetSettings()->GetPrimaryPointerType();
+ }
+ 
+ int MediaValues::CalculateAvailablePointerTypes(LocalFrame* frame) {
+   DCHECK(frame);
+   DCHECK(frame->GetSettings());
++  if (std::optional<ClaimedPointerHoverTypes> claimed =
++          ClaimedPointerHover(frame)) {
++    return claimed->available_pointer_types;
++  }
+   return frame->GetSettings()->GetAvailablePointerTypes();
+ }
+ 
+@@ -382,6 +433,10 @@ mojom::blink::HoverType MediaValues::CalculatePrimaryHoverType(
+     LocalFrame* frame) {
+   DCHECK(frame);
+   DCHECK(frame->GetSettings());
++  if (std::optional<ClaimedPointerHoverTypes> claimed =
++          ClaimedPointerHover(frame)) {
++    return claimed->primary_hover_type;
++  }
+   return frame->GetSettings()->GetPrimaryHoverType();
+ }
+ 
+@@ -395,6 +450,10 @@ MediaValues::CalculateOutputDeviceUpdateAbilityType(LocalFrame* frame) {
+ int MediaValues::CalculateAvailableHoverTypes(LocalFrame* frame) {
+   DCHECK(frame);
+   DCHECK(frame->GetSettings());
++  if (std::optional<ClaimedPointerHoverTypes> claimed =
++          ClaimedPointerHover(frame)) {
++    return claimed->available_hover_types;
++  }
+   return frame->GetSettings()->GetAvailableHoverTypes();
+ }
+ 
+diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
+index 0426141ab1..9e1f0e83b6 100644
+--- a/third_party/blink/renderer/core/exported/web_view_impl.cc
++++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
+@@ -29,6 +29,10 @@
+  */
+ #include "third_party/blink/renderer/core/exported/web_view_impl.h"
+ 
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
++
+ #include <algorithm>
+ #include <memory>
+ #include <utility>
+@@ -1712,8 +1716,18 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
+   settings->SetPrefersReducedTransparency(prefs.prefers_reduced_transparency);
+   settings->SetInvertedColors(prefs.inverted_colors);
+ 
++  // D gaps (docs/superpowers/measurements/2026-09-11-d-gaps.md): a page
++  // feature-detects touch by `'ontouchstart' in window`, which this flag
++  // controls; it must agree with the configured navigator.maxTouchPoints
++  // (> 0 means a touch screen is claimed). Unset: the host's answer.
++  bool touch_event_feature_detection_enabled =
++      prefs.touch_event_feature_detection_enabled;
++  if (std::optional<uint32_t> max_touch_points = camoucfg::GetUint32(
++          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorMaxTouchPoints)) {
++    touch_event_feature_detection_enabled = *max_touch_points > 0;
++  }
+   RuntimeEnabledFeatures::SetTouchEventFeatureDetectionEnabled(
+-      prefs.touch_event_feature_detection_enabled);
++      touch_event_feature_detection_enabled);
+   settings->SetMaxTouchPoints(prefs.pointer_events_max_touch_points);
+   settings->SetAvailablePointerTypes(prefs.available_pointer_types);
+   settings->SetPrimaryPointerType(prefs.primary_pointer_type);

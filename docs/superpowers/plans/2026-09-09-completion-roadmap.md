@@ -338,8 +338,8 @@ measurement, never an implementation.
 | Camoufox | Chromium status | Task |
 |---|---|---|
 | `cssMedia:colorGamut`, `cssMedia:dynamicRange`, `cssMedia:prefersColorScheme` | **MEASURED 2026-09-11, not a tell** (`measurements/2026-09-11-d-gaps.md`: srgb/standard/light on every headless Chrome incl. the Mac reference; no key). Was: not spoofed. All three are host/display-driven and unmeasured; `color-gamut` is OS-correlated in practice (wide-gamut displays cluster on macOS), so a headless Linux answer beside a spoofed UA is a candidate tell; `prefers-color-scheme` follows the host theme | measure `MediaValues` (sp4a already patched `media_values.cc` for `device-*`); derive from claimed OS where a derivation is defensible, key only what cannot be derived |
-| `force-default-pointer` (`pointer`/`hover`/`any-pointer`) | **MEASURED 2026-09-11, tell**: `--headless=new` reports `pointer: none`/`hover: none`/`any-pointer: none` under any claim, headed reports fine/hover; derivation from `ua:platform` + `maxTouchPoints` designed in the d-gaps doc §2, not built. Was: unmeasured on `--headless=new` and under Xvfb | measure; a headless `pointer: none` beside `maxTouchPoints: 0` desktop UA is the #26-class tell |
-| touchscreen coherence (`maxTouchPoints` ↔ `'ontouchstart' in window` ↔ `TouchEvent`) | **MEASURED 2026-09-11, tell**: `maxTouchPoints 5` with `ontouchstart` absent; `TouchEvent` is a function everywhere (no signal); derivation designed in the d-gaps doc §2, needs a touch-condition window-keys baseline first. Was: `maxTouchPoints` is spoofed; TouchEvent feature detection is host-driven | measure; note the rule-2 tension (window keys must match the stock build *for the claimed device*, which a touch-capable claim changes) |
+| `force-default-pointer` (`pointer`/`hover`/`any-pointer`) | **MEASURED 2026-09-11, tell**: `--headless=new` reports `pointer: none`/`hover: none`/`any-pointer: none` under any claim, headed reports fine/hover; **SHIPPED 2026-09-11** `d-pointer-touch.patch` (d-gaps doc §3: derived from the claimed OS family + `maxTouchPoints`, `verify_d_pointer_touch.py` 5/5, RED 1/5). Was: unmeasured on `--headless=new` and under Xvfb | measure; a headless `pointer: none` beside `maxTouchPoints: 0` desktop UA is the #26-class tell |
+| touchscreen coherence (`maxTouchPoints` ↔ `'ontouchstart' in window` ↔ `TouchEvent`) | **MEASURED 2026-09-11, tell**: `maxTouchPoints 5` with `ontouchstart` absent; `TouchEvent` is a function everywhere (no signal); **SHIPPED 2026-09-11** in `d-pointer-touch.patch` (touch feature detection follows `maxTouchPoints`; window keys under the claim == stock `--touch-events=enabled`, 240 = 240). Was: `maxTouchPoints` is spoofed; TouchEvent feature detection is host-driven | measure; note the rule-2 tension (window keys must match the stock build *for the claimed device*, which a touch-capable claim changes) |
 | `system-ui-font-spoofing`, CSS2 system font keywords (`caption`, `menu`, …) | **MEASURED 2026-09-11**: CSS2 keywords are Arial/16px on Linux and macOS alike (not a tell); `system-ui` is the host default sans vs San Francisco/Segoe UI (tell, blocked on A5 #3 fonts). Was: `system-ui` resolves to the host's fontconfig default on Linux, not the claimed OS's UI font; a CreepJS probe | measure `LayoutTheme::SystemFont` / font cache; derive from claimed OS |
 | bundled OS fonts + fontconfig | see A5.3 — the allowlist hides, it cannot add | packaging deliverable + resolve-verify |
 | `showcursor` overlay | key `cursor:show` exists; the overlay was deferred in SP2b | small follow-on if a visible cursor matters for screencasts |
@@ -418,9 +418,10 @@ removal, addon pinning/private-mode (headful UI — SP7 §8 scopes these out) ·
    on top of them (the client has nothing to generate until A3 exists).
 5. **A5** — packaging and the Windows/macOS hosts; licensing decision first.
 6. **D gaps** — **MEASURED 2026-09-11** (`measurements/2026-09-11-d-gaps.md`):
-   css media and CSS2 keywords not tells; headless pointer/hover and touch
-   feature detection are tells with derivations designed (§2), not built;
-   system-ui waits on fonts.
+   css media trio not a tell; headless pointer/hover and touch feature
+   detection were tells and are **shipped** (`d-pointer-touch.patch`, §3);
+   `system-ui` and the CSS2 keyword fonts are the font-presence tell,
+   waiting on the A5 #3 decision.
 7. Harness-gated residuals (B3–B6) as their hosts appear.
 
 **First slice: SP7 Task 1 — stop the field-trial testing config from being
