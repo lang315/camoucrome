@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <variant>
 
 #include "base/environment.h"
@@ -112,6 +114,89 @@ std::vector<Violation> CheckFitsWithin(const ConfigScope& scope,
 // value is not the canonical one. An ABSENT navigator.platform is the SP1b
 // derive's job (it fills the key from the claimed OS); this entry and the
 // derive never both fire on one config.
+// keys[0] is a string list, keys[1] a string. Fires only when both are
+// present and disagree; the list is authoritative (it carries the whole
+// preference order), so keys[1] is repaired to its head.
+std::vector<Violation> CheckListHeadEquals(const ConfigScope& scope,
+                                           const invariants::Invariant& inv) {
+  std::vector<std::string> list = GetStringList(scope, inv.keys[0]);
+  std::optional<std::string> value = GetString(scope, inv.keys[1]);
+  if (list.empty() || !value.has_value() || list[0] == *value) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = *value;
+  v.new_value = list[0];
+  return {v};
+}
+
+// Both strings present and unequal. Exact, case-sensitive: every value these
+// entries compare is one Chrome reports canonically (BCP-47 tags, ANGLE
+// strings), so a case difference is itself a wrong value, not a spelling.
+std::vector<Violation> CheckSameString(const ConfigScope& scope,
+                                       const invariants::Invariant& inv) {
+  std::optional<std::string> first = GetString(scope, inv.keys[0]);
+  std::optional<std::string> second = GetString(scope, inv.keys[1]);
+  if (!first.has_value() || !second.has_value() || *first == *second) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = *second;
+  v.new_value = *first;
+  return {v};
+}
+
+// The OS family an ANGLE renderer description commits to, from the backend
+// token it carries. Only tokens exclusive to one family are recognised:
+// Direct3D ships on Windows alone, Metal on Apple platforms alone. OpenGL and
+// Vulkan renderers exist on Linux, Android and older macOS, so they return
+// kUnknown and constrain nothing -- the registry's rule for unrecognised
+// values. Measured shapes on 2026-09-10 are in invariants.json's `why`.
+OsFamily OsFamilyOfRendererBackend(std::string_view renderer) {
+  if (renderer.find("Direct3D") != std::string_view::npos) {
+    return OsFamily::kWindows;
+  }
+  if (renderer.find("Metal") != std::string_view::npos) {
+    return OsFamily::kMac;
+  }
+  return OsFamily::kUnknown;
+}
+
+// keys[0] is kUaOsInfo; the renderer is resolved through GLRenderer() -- the
+// helper the pairing check uses -- so a renderer supplied through
+// webGl:parameters["37446"] rather than webGl:renderer is checked too. There
+// is no canonical renderer for an OS, so new_value is descriptive; the
+// mutation test asserts repaired_key, which is the contract.
+std::vector<Violation> CheckRendererBackendFitsOs(
+    const ConfigScope& scope, const invariants::Invariant& inv) {
+  OsFamily claimed = OsFamilyOfKey(scope, inv.keys[0]);
+  std::optional<std::string> renderer = GLRenderer(scope, /*is_webgl2=*/false);
+  if (claimed == OsFamily::kUnknown || !renderer.has_value()) {
+    return {};
+  }
+  OsFamily backend = OsFamilyOfRendererBackend(*renderer);
+  if (backend == OsFamily::kUnknown || backend == claimed) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = *renderer;
+  v.new_value = std::string("a renderer whose ANGLE backend runs on ") +
+                std::string(CanonicalUaChPlatformFor(claimed)) +
+                (claimed == OsFamily::kWindows ? " (Direct3D11)"
+                 : claimed == OsFamily::kMac   ? " (Metal)"
+                                               : " (OpenGL or Vulkan)");
+  return {v};
+}
+
 std::vector<Violation> CheckSamePlatformBucket(
     const ConfigScope& scope, const invariants::Invariant& inv) {
   OsFamily claimed = OsFamilyOfKey(scope, inv.keys[0]);
@@ -178,6 +263,21 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
       }
       case invariants::Relation::kSamePlatformBucket: {
         std::vector<Violation> found = CheckSamePlatformBucket(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kListHeadEquals: {
+        std::vector<Violation> found = CheckListHeadEquals(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kSameString: {
+        std::vector<Violation> found = CheckSameString(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kRendererBackendFitsOs: {
+        std::vector<Violation> found = CheckRendererBackendFitsOs(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }

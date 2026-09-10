@@ -60,6 +60,15 @@ enum class Relation {
   // repaired via CanonicalNavigatorPlatformFor()), so a static_assert below
   // pins the key pair.
   kSamePlatformBucket,
+  // keys[0] is a string list, keys[1] a string; violated when both are
+  // present and keys[1] != keys[0][0]. Repair: keys[1] <- keys[0][0].
+  kListHeadEquals,
+  // Both strings present and unequal (exact compare). Repair: keys[1] <- keys[0].
+  kSameString,
+  // keys[0] names the claimed OS (kUaOsInfo); keys[1] is kWebGlRenderer,
+  // resolved through GLRenderer(). Violated when the renderer's ANGLE backend
+  // token (Direct3D -> Windows, Metal -> macOS) names a different OS family.
+  kRendererBackendFitsOs,
 };
 
 struct Invariant {
@@ -76,7 +85,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 4> kAllInvariants = {{
+inline constexpr std::array<Invariant, 9> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
@@ -97,6 +106,26 @@ inline constexpr std::array<Invariant, 4> kAllInvariants = {{
      Relation::kSamePlatformBucket,
      Policy::kRepair,
      {keys::kUaOsInfo, keys::kNavigatorPlatform}},
+    {"navigator-language-heads-languages",
+     Relation::kListHeadEquals,
+     Policy::kRepair,
+     {keys::kNavigatorLanguages, keys::kNavigatorLanguage}},
+    {"locale-tag-matches-navigator-language",
+     Relation::kSameString,
+     Policy::kRepair,
+     {keys::kLocaleTag, keys::kNavigatorLanguage}},
+    {"webgl2-vendor-agrees-with-webgl",
+     Relation::kSameString,
+     Policy::kRepair,
+     {keys::kWebGlVendor, keys::kWebGl2Vendor}},
+    {"webgl2-renderer-agrees-with-webgl",
+     Relation::kSameString,
+     Policy::kRepair,
+     {keys::kWebGlRenderer, keys::kWebGl2Renderer}},
+    {"webgl-renderer-backend-fits-os",
+     Relation::kRendererBackendFitsOs,
+     Policy::kRepair,
+     {keys::kUaOsInfo, keys::kWebGlRenderer}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
@@ -191,6 +220,23 @@ static_assert(
     "CheckSamePlatformBucket() reads keys[0]'s OS family via OsFamilyOfKey() "
     "and repairs keys[1] via CanonicalNavigatorPlatformFor(), so any other "
     "keys[0] or keys[1] would be read or repaired wrongly with no diagnostic.");
+
+constexpr bool EveryRendererBackendEntryUsesTheOsRendererPair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kRendererBackendFitsOs &&
+        (inv.keys[0] != keys::kUaOsInfo || inv.keys[1] != keys::kWebGlRenderer)) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(
+    EveryRendererBackendEntryUsesTheOsRendererPair(),
+    "a kRendererBackendFitsOs entry must list kUaOsInfo as keys[0] and "
+    "kWebGlRenderer as keys[1] -- coherence_validator.cc's "
+    "CheckRendererBackendFitsOs() reads the OS via OsFamilyOfKey(keys[0]) and "
+    "the renderer via GLRenderer(scope, /*is_webgl2=*/false) regardless of "
+    "keys[1], so any other pair would be checked wrongly with no diagnostic.");
 
 }  // namespace camoucfg::invariants
 

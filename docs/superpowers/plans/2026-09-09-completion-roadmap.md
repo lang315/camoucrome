@@ -147,8 +147,17 @@ Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
 
 Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
 
-1. **Catalogue** — 4 entries exist (`ua-os-family-agrees`, two screen-fits,
-   `navigator-platform-matches-os`). Spec §4.3 lists the families still owed:
+1. **Catalogue** — **first fill SHIPPED 2026-09-10**
+   (`measurements/2026-09-10-sp5b-catalogue.md`): 4 → 9 entries, each with a
+   mutation test — `navigator-language-heads-languages`,
+   `locale-tag-matches-navigator-language`, `webgl2-vendor-agrees-with-webgl`,
+   `webgl2-renderer-agrees-with-webgl`, `webgl-renderer-backend-fits-os`
+   (Direct3D → Windows, Metal → macOS, everything else constrains nothing).
+   Deferred with reasons in the doc §4: the two presence relations
+   (`timezone:id` with `locale:tag`, `mediaDevices:seed` when enabled) need a
+   `Presence` violation kind; geolocation ↔ timezone needs a zone table; DPR
+   has no key; `Accept-Language` is a generator obligation. Spec §4.3's
+   original list, for what remains:
    DPR (screen/window in CSS px at one DPR), locale/time
    (`navigator.language == languages[0]`, `locale:tag` ↔ `navigator.language`
    ↔ `Accept-Language`, `timezone:id` set with `locale:tag` — the tz-locale
