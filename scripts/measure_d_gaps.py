@@ -7,7 +7,8 @@ Camoucrome does not:
   touch      navigator.maxTouchPoints, 'ontouchstart' in window, typeof TouchEvent
   system-ui  which candidate family renders at the same width as `system-ui`
              (canvas measureText), the CSS2 keyword fonts (caption, menu,
-             small-caption, status-bar, message-box) as computed family/size,
+             small-caption, status-bar, message-box) as computed family/size and
+             the rendered width of one string (what a fingerprinter measures),
              and whether the UI font each OS implies is installed (width with a
              monospace fallback differs from bare monospace; document.fonts.check
              is useless here, it answers true for any never-loaded family).
@@ -58,7 +59,7 @@ const cands = ['Segoe UI', 'Tahoma', 'Arial', '-apple-system', 'BlinkMacSystemFo
                'sans-serif', 'serif', 'monospace'];
 const widths = Object.fromEntries(cands.map(f => [f, width(`"${f}"`)]));
 const k = document.getElementById('k');
-const keyword = kw => { k.style.font = kw; const cs = getComputedStyle(k); return (k.style.font || '<rejected>') + ' => ' + cs.fontFamily + ' / ' + cs.fontSize; };
+const keyword = kw => { k.style.font = kw; k.textContent = S; const cs = getComputedStyle(k); return (k.style.font || '<rejected>') + ' => ' + cs.fontFamily + ' / ' + cs.fontSize + ' / rendered ' + k.getBoundingClientRect().width.toFixed(2) + 'px'; };
 const installed = f => width(`"${f}", monospace`) !== width('monospace');
 document.getElementById('o').textContent = JSON.stringify({
   media, touch,
@@ -67,7 +68,7 @@ document.getElementById('o').textContent = JSON.stringify({
     matches: cands.filter(f => widths[f] === sysW),
     widths,
     keywords: Object.fromEntries(['caption', 'menu', 'small-caption', 'status-bar', 'message-box'].map(kw => [kw, keyword(kw)])),
-    installed: Object.fromEntries(['Segoe UI', 'Tahoma', '.AppleSystemUIFont', 'Helvetica Neue', 'Ubuntu', 'Cantarell', 'DejaVu Sans', 'Noto Sans', 'Roboto']
+    installed: Object.fromEntries(['Arial', 'Segoe UI', 'Tahoma', '.AppleSystemUIFont', 'Helvetica Neue', 'Ubuntu', 'Cantarell', 'DejaVu Sans', 'Noto Sans', 'Roboto']
       .map(f => [f, installed(f)])),
   },
   ua: { platform: navigator.platform, ch: navigator.userAgentData && navigator.userAgentData.platform },
