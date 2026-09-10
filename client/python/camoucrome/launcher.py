@@ -34,7 +34,22 @@ def build_env(config=None, preset=None, strict=False, base=None):
     return env
 
 
-def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=None):
+def accept_lang_of(config):
+    """The --accept-lang value the config implies: navigator.languages joined,
+    else locale:tag, else None. Measured 2026-09-10: without the flag a French
+    config still sends Accept-Language: en-US,en;q=0.9; with it Chrome sends
+    fr-FR,fr;q=0.9, adding the q-values itself."""
+    if config is None:
+        return None
+    if isinstance(config, str):
+        config = json.loads(config)
+    languages = config.get("navigator.languages") or (
+        [config["locale:tag"]] if config.get("locale:tag") else [])
+    return ",".join(languages) or None
+
+
+def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=None,
+               accept_lang=None, extensions=(), spki_list=()):
     """Launch flags the C++ deliberately left to the launcher: window size so
     inner/outer/client widths cohere with screen.*, and the device scale
     factor. Timezone, locale and UA are NOT flags: they come through config.
@@ -59,13 +74,20 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
         args.append(f"--window-size={window[0]},{window[1]}")
     if dpr is not None:
         args.append(f"--force-device-scale-factor={dpr}")
+    if accept_lang:
+        args.append(f"--accept-lang={accept_lang}")
+    if extensions:
+        paths = ",".join(str(e) for e in extensions)
+        args += [f"--disable-extensions-except={paths}", f"--load-extension={paths}"]
+    if spki_list:
+        args.append("--ignore-certificate-errors-spki-list=" + ",".join(spki_list))
     args.extend(extra)
     return args
 
 
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None,
-           headless=True, args=(), **options):
+           headless=True, args=(), extensions=(), spki_list=(), **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
     Never add_init_script anything a page could enumerate: both patchright
@@ -76,7 +98,10 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     the async one); passing stock playwright's works too but loses the
     Runtime.enable guarantee -- scripts/verify_sp6b_driver.py measures the
     difference. Any option in FORBIDDEN_OPTIONS raises: those surfaces are
-    configured through CAMOU_CONFIG only.
+    configured through CAMOU_CONFIG only. `extensions` are unpacked
+    extension directories (--load-extension); `spki_list` are base64
+    SHA-256 SPKI hashes whose certificate errors are ignored (a MITM proxy's
+    CA). The Accept-Language header follows the config's languages.
     """
     bad = FORBIDDEN_OPTIONS.intersection(options)
     if bad:
@@ -91,7 +116,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         headless=headless,
         ignore_default_args=True,
         env=build_env(config, preset, strict),
-        args=build_args(window, dpr, args, headless, user_data_dir),
+        args=build_args(window, dpr, args, headless, user_data_dir,
+                        accept_lang_of(config), extensions, spki_list),
         # Playwright otherwise emulates a 1280x720 viewport through
         # Emulation.setDeviceMetricsOverride, which fights screen.* and the
         # window size above.

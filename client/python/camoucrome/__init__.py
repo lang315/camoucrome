@@ -15,7 +15,7 @@ configuration into the process and refuses the options that would fight it.
 The contract it implements is settings/launcher.json in the repository.
 """
 from .identity import SEED_KEYS, per_instance_config
-from .launcher import FORBIDDEN_OPTIONS, build_args, build_env, launch
+from .launcher import FORBIDDEN_OPTIONS, accept_lang_of, build_args, build_env, launch
 
-__all__ = ["FORBIDDEN_OPTIONS", "SEED_KEYS", "build_args", "build_env", "launch",
+__all__ = ["FORBIDDEN_OPTIONS", "SEED_KEYS", "accept_lang_of", "build_args", "build_env", "launch",
            "per_instance_config"]

@@ -49,7 +49,14 @@
     },
     "ignore_default_args": true,
     "headless_arg": "--headless=new",
-    "why_ignore_default_args": "Playwright's default argv carries --disable-features=<18 features>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType=2,..., --hide-scrollbars, --mute-audio, --force-color-profile=srgb, --use-angle=swiftshader-webgl, --disable-blink-features=AutomationControlled and more (measured 2026-09-10 on patchright 1.62). Each moves a page-visible surface off the compiled-defaults position SP7 D3 accepted, so the launcher passes ignore_default_args and exactly the list below."
+    "why_ignore_default_args": "Playwright's default argv carries --disable-features=<18 features>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType=2,..., --hide-scrollbars, --mute-audio, --force-color-profile=srgb, --use-angle=swiftshader-webgl, --disable-blink-features=AutomationControlled and more (measured 2026-09-10 on patchright 1.62). Each moves a page-visible surface off the compiled-defaults position SP7 D3 accepted, so the launcher passes ignore_default_args and exactly the list below.",
+    "accept_lang_arg": "--accept-lang={languages}",
+    "why_accept_lang": "Measured 2026-09-10: a config with locale:tag/navigator.languages fr-FR,fr still sends Accept-Language: en-US,en;q=0.9 (the tree derives nothing for the header; --lang does not change it either). --accept-lang=fr-FR,fr gives fr-FR,fr;q=0.9, Chrome adding the q-values itself. The launcher derives the flag from the config's navigator.languages (else locale:tag).",
+    "extension_args": [
+      "--disable-extensions-except={paths}",
+      "--load-extension={paths}"
+    ],
+    "spki_arg": "--ignore-certificate-errors-spki-list={hashes}"
   },
   "browser_argv_must_not_contain": [
     "--remote-debugging-port",
