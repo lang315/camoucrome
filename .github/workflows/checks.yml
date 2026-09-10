@@ -43,3 +43,7 @@ jobs:
           python3 -m pytest -q client/python/tests scripts/test_package.py
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: node client tests
+        run: cd client/node && npm test

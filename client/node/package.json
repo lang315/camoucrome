@@ -1,0 +1,10 @@
+{
+  "name": "camoucrome",
+  "version": "0.1.0",
+  "description": "Launcher for the Camoucrome browser: CAMOU_CONFIG / CAMOU_PRESET transport over a patchright driver",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": { "test": "node --test test/launcher.test.js" },
+  "peerDependencies": { "patchright": "1.62.1" },
+  "license": "MPL-2.0"
+}
