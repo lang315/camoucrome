@@ -3643,3 +3643,14 @@ ReadDict + log line ("preset is not a JSON object; ignored, explicit configurati
 recursive-Merge note, settings/presets in the export recipe. Final box commit 44fa83ef0e, export gate empty,
 sync 39 PASS. Blocker for A3 #2 recorded: no real-hardware capture reachable from here.
 
+## A3 #4 variations seed from config -- MEASURED, DEFERRED 2026-09-10; A3 #2 BLOCKED
+D3 said measure before building. Probe page (Navigator.prototype, window names, Privacy Sandbox members) on
+the Mac's real Chrome 151.0.7922.138 (seeded, macOS) vs the fork's chrome on the box (defaults, Linux, M153).
+Confounds stated: two milestones and an OS apart, nothing closer reachable. Navigator/window deltas all
+OS (Bluetooth, Web Share, queryLocalFonts, BarcodeDetector) or milestone (cpuPerformance, HTMLCameraElement
+etc. upstream at the pin, no patch names them). One feature-state delta, window.sharedStorage: json5 entry
+status "stable" at 151, no status at 153 (DeprecateAs) -> milestone; --enable-blink-features=SharedStorageAPI
+flips it; the only testing-config study disables it. Seed-attributable delta: none. Disposition: not built;
+unblockers = captured real seed on the pin, or an observed feature-state detector. A3 #2 marked BLOCKED
+(real-hardware capture unreachable). Housekeeping: out/Default/chrome.stale-0e8d (175 MB) removed on the box.
+

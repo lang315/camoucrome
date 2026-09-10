@@ -169,7 +169,11 @@ Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
    (`mediaDevices:seed` non-zero when enabled, counts ≈ real), network (three UA
    channels agree). Each entry lands with its mutation test or it is
    documentation, not enforcement.
-2. **WebGL profile database** — value coherence ("do the numeric limits match
+2. **WebGL profile database** — **BLOCKED 2026-09-10**: needs captures on
+   real hardware on the OS they claim; the box gives SwiftShader, the Mac
+   gives no WebGL headless, a non-headless launch opens a window on the
+   user's machine. `scripts/capture_preset.py` exists and produces the file
+   shape; run it where real hardware is. Value coherence ("do the numeric limits match
    the claimed GPU") was deferred by the capability-identity slice to "the SP5
    profile database, not yet built". This is the Chrome analogue of Camoufox's
    `webgl_data.db` sampled by market share, but with **Chrome-shaped** strings
@@ -184,8 +188,14 @@ Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
    smoke capture of the box (Linux/SwiftShader), not a distributable
    identity — real presets are #2's output, captured by
    `scripts/capture_preset.py` on real hardware.
-4. **Per-instance variations seed derived from config** — the long-term answer
-   SP7 D3 handed to SP5b once presets exist.
+4. **Per-instance variations seed derived from config** — **MEASURED,
+   DEFERRED 2026-09-10** (`measurements/2026-09-10-sp7-d3-seeded-vs-defaults.md`):
+   seeded Chrome 151 (Mac) vs the fork's defaults shows no seed-attributable
+   delta (the one feature-state difference, `window.sharedStorage`, is the
+   M153 deprecation). Unblockers: a captured real seed on the pinned
+   milestone as the study source, or an observed detector probing feature
+   state. Assigning groups from an invented distribution is the same
+   fabrication as an invented GPU table.
 
 ### A4. SP6b — driver / client
 
