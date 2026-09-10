@@ -102,7 +102,8 @@ Two things explicitly do **not** port:
 | `additions/` | whole new files, copied into the Chromium tree verbatim |
 | `patches/` | diffs against files that already exist in Chromium |
 | `settings/` | the invariant registry (`invariants.json`), the key registry (`keys.json`), captured device presets (`presets/`), the launcher contract (`launcher.json`) and canonical GN args (`build-args.gn`) |
-| `client/` | launchers for Python (`camoucrome` on patchright) and Go (`playwright-go` on the `patchright-core` driver) |
+| `client/` | launchers for Python (`camoucrome` on patchright) and Go (`playwright-go` on the `patchright-core` driver), plus the generator (`python -m camoucrome.gen`) |
+| `dist/` | release archives from `scripts/package.py` (not committed) |
 | `scripts/` | apply, and per-slice `verify_*.py` browser verifications |
 
 New files go in `additions/` and edits to existing files go in `patches/`. This split
