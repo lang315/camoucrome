@@ -1,0 +1,78 @@
+{
+  "doc": [
+    "The launcher contract every Camoucrome client (client/python, client/go)",
+    "implements. Each client has one test that builds its launch arguments and",
+    "compares them against this file; scripts/verify_sp6b_driver.py measures",
+    "the running browser against the driver contract. Edit here first."
+  ],
+  "driver": {
+    "why": "SP2 D1: the only measured Runtime-domain leak is closed by a CDP driver that never sends Runtime.enable. patchright is that driver; the Go binding uses patchright's Node driver unchanged.",
+    "python": {
+      "package": "patchright",
+      "version": "1.62.3"
+    },
+    "go": {
+      "module": "github.com/mxschmitt/playwright-go",
+      "version": "v0.6201.1",
+      "driver_npm": "patchright-core",
+      "driver_version": "1.62.1",
+      "note": "The module declares its path as github.com/mxschmitt/playwright-go; the playwright-community path fails to resolve. Driver dir layout: <dir>/package/cli.js from `npm pack patchright-core@1.62.1`, <dir>/node from the patchright wheel (driver/node, Node 24); the box's Node 18 is refused by the driver."
+    }
+  },
+  "forbidden_context_options": {
+    "why": "Each duplicates a CAMOU_CONFIG key. A second emulation of the same surface either fails (timezone: kAlreadyInEffect) or silently overrides the fork's value.",
+    "options": [
+      "locale",
+      "timezone_id",
+      "user_agent",
+      "viewport",
+      "screen",
+      "device_scale_factor",
+      "geolocation",
+      "color_scheme",
+      "extra_http_headers"
+    ]
+  },
+  "launch": {
+    "persistent_context": true,
+    "no_viewport": true,
+    "base_args": [
+      "--no-first-run",
+      "--no-default-browser-check"
+    ],
+    "window_size_arg": "--window-size={width},{height}",
+    "dpr_arg": "--force-device-scale-factor={dpr}",
+    "env": {
+      "config": "CAMOU_CONFIG",
+      "preset": "CAMOU_PRESET",
+      "strict": "CAMOU_CONFIG_STRICT"
+    },
+    "ignore_default_args": true,
+    "headless_arg": "--headless=new",
+    "why_ignore_default_args": "Playwright's default argv carries --disable-features=<18 features>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType=2,..., --hide-scrollbars, --mute-audio, --force-color-profile=srgb, --use-angle=swiftshader-webgl, --disable-blink-features=AutomationControlled and more (measured 2026-09-10 on patchright 1.62). Each moves a page-visible surface off the compiled-defaults position SP7 D3 accepted, so the launcher passes ignore_default_args and exactly the list below."
+  },
+  "browser_argv_must_not_contain": [
+    "--remote-debugging-port",
+    "--enable-automation",
+    "--variations-server-url",
+    "--enable-field-trial-config"
+  ],
+  "browser_argv_expected": {
+    "why": "C4 of verify_sp6b_driver.py asserts the browser argv EQUALS this set plus --user-data-dir=<dir> and the probe's --no-sandbox; absence of the forbidden flags alone would let a new default slip in.",
+    "args": [
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--headless=new",
+      "--remote-debugging-pipe"
+    ],
+    "headless_self_added": {
+      "why": "Chrome's own --headless=new relaunch appends these; they appear identically with no driver at all (the --dump-dom baseline), so they are Chrome's, not the driver's.",
+      "args": [
+        "--noerrdialogs",
+        "--ozone-platform=headless",
+        "--ozone-override-screen-size=800,600",
+        "--use-angle=swiftshader-webgl"
+      ]
+    }
+  }
+}
