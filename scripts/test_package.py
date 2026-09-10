@@ -28,12 +28,12 @@ def tree(tmp_path):
     (src / "chrome" / "data.txt").write_text("x")
     deps = out / "deps.txt"
     deps.write_text("WARNING at build arg file: Build argument has no effect.\nenable_nacl = false\n\n"
-                    "chrome\nlocales/en-US.pak\n../../chrome/data.txt\n"
-                    "gen/third_party/devtools-frontend/src/front_end/Tests.js\n")
+                    "chrome\nlocales/en-US.pak\n../../chrome/data.txt\nchrome\n"
+                    "gen/third_party/devtools-frontend/src/front_end/Tests.js\npyproto/google/protobuf/x.py\n")
     return src, out, deps
 
 
-def test_runtime_deps_keeps_only_paths_and_prunes_the_devtools_sources(tree):
+def test_runtime_deps_keeps_only_paths_once_and_prunes_the_tool_data(tree):
     src, out, deps = tree
     assert package.runtime_deps(src, out, deps) == ["chrome", "locales/en-US.pak", "../../chrome/data.txt"]
 

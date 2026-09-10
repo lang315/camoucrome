@@ -82,7 +82,8 @@ def runtime_deps(src, out, file=None):
     # come bare ("chrome", "locales/en-US.pak"), source-tree ones as "../../x".
     lines = [l.strip() for l in raw.splitlines()]
     paths = [l for l in lines if l and " " not in l and not l.startswith("^")]
-    return [p for p in paths if not p.startswith(PRUNE)]
+    # gn lists a few files twice (resources.pak, snapshot_blob.bin, the angledata jsons): once each.
+    return list(dict.fromkeys(p for p in paths if not p.startswith(PRUNE)))
 
 
 def changeset_commit(explicit=None):

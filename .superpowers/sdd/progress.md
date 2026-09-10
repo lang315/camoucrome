@@ -3701,3 +3701,16 @@ HTTPS + SPKI hash via openssl, headed under WSLg argv == set minus headless flag
 under strict) 5/5 first run. domain_validator.cc + unittest (7 cases), chrome relinked with loader (54 steps),
 box commit sp5b-domain-devicememory 04e1dc8ff6, export gate empty, sync 39. driver + generator regress ok.
 
+## A5 packaging: first archive + Node driver rows + D gaps measured -- 2026-09-11
+Release build out/Release (release-args.gn) 6 x 55 min chunks, chrome 519 MB. gn desc runtime_deps 5108 lines
+was not a manifest: WARNING block on stdout (enable_nacl gone in 153, dropped), 4803 devtools-frontend sources
+(data for their tests; resources.pak carries the front end), 36 pyproto, 5 dups. First package run staged 10
+files (./-prefix filter vs bare out-dir paths) -> filter by shape; --changeset-commit for the box's tar copy;
+launcher.json added to the export recipe. Final: 254 files, tar.xz 155,904,424 B (149 MiB), 205 s pack, 8 s
+extract, --check ok, RED out/Default refused. Extracted tree: DevTools opens (RED: pak renamed -> "Failed to
+load resources.pak"); driver sweep with CAMOU_EXE=<extracted>/chrome ALL_PASS six rows (Node rows first run:
+node-stock RED Runtime.enable=1 +15%, node-patchright 0/405 +2%). CI green on both runs.
+D gaps (measure_d_gaps.py on the release chrome + Mac Chrome reference): css media trio srgb/standard/light
+everywhere (not a tell); headless pointer/hover/any-* = none under any claim (tell); maxTouchPoints 5 with
+ontouchstart absent (tell); CSS2 keyword fonts Arial/16px on Linux and Mac (not a tell); system-ui = host
+default sans vs BlinkMacSystemFont on Mac (tell, blocked on fonts). Derivations designed, not built.
