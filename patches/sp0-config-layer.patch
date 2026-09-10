@@ -1,8 +1,8 @@
 diff --git a/components/BUILD.gn b/components/BUILD.gn
-index 4ecc66416a..22c24c9a31 100644
+index 451de1c8c1..46d0f9075a 100644
 --- a/components/BUILD.gn
 +++ b/components/BUILD.gn
-@@ -204,6 +204,7 @@ test("components_unittests") {
+@@ -207,6 +207,7 @@ test("components_unittests") {
      "//components/browser_actuator:unit_tests",
      "//components/browser_sync:unit_tests",
      "//components/browsing_data/core:unit_tests",
@@ -11,7 +11,7 @@ index 4ecc66416a..22c24c9a31 100644
      "//components/cbor:unit_tests",
      "//components/certificate_matching:unit_tests",
 diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
-index e7e168a10b..b5f7bbb524 100644
+index ac8af97f18..d6e56fd302 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
 @@ -147,6 +147,7 @@ source_set("browser") {
@@ -23,7 +23,7 @@ index e7e168a10b..b5f7bbb524 100644
      "//components/discardable_memory/common",
      "//components/discardable_memory/service",
 diff --git a/content/browser/DEPS b/content/browser/DEPS
-index 8b644c2b87..f92dabe664 100644
+index 6ddfcb4ff6..4428d9c62d 100644
 --- a/content/browser/DEPS
 +++ b/content/browser/DEPS
 @@ -45,6 +45,7 @@ include_rules = [
@@ -76,10 +76,10 @@ index 90d60c44cc..fe01f49a5f 100644
    // The initialization of the sandbox host ends up with forking the Zygote
    // process and requires no thread been forked. The initialization has happened
 diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
-index d5142fdb5a..16862468f5 100644
+index b8dce981d8..c215db1856 100644
 --- a/third_party/blink/renderer/DEPS
 +++ b/third_party/blink/renderer/DEPS
-@@ -43,6 +43,7 @@ include_rules = [
+@@ -44,6 +44,7 @@ include_rules = [
      "+base/metrics/histogram_functions.h",
      "+base/metrics/histogram_macros.h",
      "+base/metrics/single_sample_metrics.h",
@@ -87,7 +87,7 @@ index d5142fdb5a..16862468f5 100644
      "+base/not_fatal_until.h",
      "+base/numerics/angle_conversions.h",
      "+base/numerics/byte_conversions.h",
-@@ -92,6 +93,14 @@ include_rules = [
+@@ -93,6 +94,14 @@ include_rules = [
      "+build",
      "+cc/input/hit_test_opaqueness.h",
      "+cc/paint",
@@ -103,7 +103,7 @@ index d5142fdb5a..16862468f5 100644
      "+net/base/features.h",
      "+net/cookies",
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 3422559392..4663a75ff6 100644
+index 8969a71c82..73de8195c0 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -408,6 +408,7 @@ component("core") {

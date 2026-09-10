@@ -56,10 +56,10 @@ and its two high-risk, infrastructure-gated items (fonts-ii, which needs real
 Windows/macOS testing; webrtc-ii, browser-process/libwebrtc surgery). See
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium revision **`0e8d4a9268`** (full SHA
-in `upstream.env`; `scripts/apply.sh` refuses any other HEAD). The build box's
-branch tip `a727b57805` is a camoucrome commit on top of that base, not an
-upstream revision. Rebasing onto a newer revision is SP6a's job.
+The change set is generated against Chromium **`507c6ee3e2`, the Chrome stable
+tag `153.0.8010.36`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+refuses any other HEAD). The pin is the current stable tag so the fork reports
+a version real users run; it moves to the newest stable tag each milestone.
 
 ## The defining constraint
 

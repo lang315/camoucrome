@@ -3550,3 +3550,17 @@ metric-jitter's MirroredBaseline needs no re-diff. Branch camoucrome/main-8010 =
 Detach probes for the hours-scale build: setsid inside WSL dies, Windows Start-Process dies, Task Scheduler
 wsl dies -> builds stay in foreground 560 s chunks (autoninja resumable); one more probe (setsid under a
 concurrent keepalive session) pending.
+2026-09-10 (cont.): box reconnected (Tailscale drop, not a crash; branches/worktrees intact). Base switch:
+sync PASS -> checkout tag detached -> gclient sync (3 x 560 s chunks, SYNC_RC=0) -> runhooks (HOOKS_RC=0);
+chrome/VERSION 153.0.8010.36, tree clean. Pristine content_shell from scratch ~41500 steps / ~4 h; chunk
+mechanics: Bash 600 s limit -> Monitor tool (no limit) running 55-min `timeout 3300 autoninja` chunks; a
+killed ssh client does NOT kill siso while the ControlMaster lives (observed). Stock baseline captured:
+baselines/content_shell-8010-stock-ua.json (235 window keys; = 0e8d fork baseline + queryLocalFonts; proto
+81 incl. the 13 Protected Audience members -> present in stock M153 with the testing config compiled out).
+Stale 0e8d chrome binary moved to out/Default/chrome.stale-0e8d so no verify measures it. Checkout
+camoucrome/main-8010, rebuild 164 steps. Sweep (SKIP verify_and_mutate.py [box-only stray] + the 5
+chrome-dependent): 33 ok, 1 FAIL = verify_webrtc_ii_fakeip.py, the rejected slice's RED record (expected).
+Export from camoucrome/main-8010 -> repo branch rebase/8010: 10 patches re-cut (index/offset only, except
+media-ii-track's resolved include). upstream.env: CHROMIUM_REV=507c6ee3e2f3... + CHROMIUM_TAG=153.0.8010.36.
+chrome target build started (Monitor, 55-min chunks) for verify_sp1a_chrome/sp2/sp2b/sp7_phonehome/
+sp7_fieldtrial chrome rows; merge rebase/8010 -> main after those pass.

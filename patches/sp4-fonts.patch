@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
-index 233618cf12..7bd6e6083c 100644
+index 9bfa9565f0..a10a773742 100644
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
-@@ -1826,6 +1826,7 @@ component("platform") {
+@@ -1828,6 +1828,7 @@ component("platform") {
      "//build:chromecast_buildflags",
      "//cc",
      "//cc/mojo_embedder",
@@ -72,10 +72,10 @@ index a35f4d61b2..01ebc8b777 100644
                                              curr_family->FamilyName());
      }
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index ce4a2bcb32..6290ecb62b 100644
+index 22bb1b8232..f18211f3ab 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -3185,7 +3185,7 @@
+@@ -3196,7 +3196,7 @@
      },
      {
        name: "FontAccess",

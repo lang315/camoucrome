@@ -157,7 +157,7 @@ index 1d2302a9c4..7e6b5afd9e 100644
  }
  
 diff --git a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
-index 5fe1fb2e55..1294d77855 100644
+index 74b3068ba2..318cb2f839 100644
 --- a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
 +++ b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
 @@ -32,6 +32,8 @@
@@ -169,7 +169,7 @@ index 5fe1fb2e55..1294d77855 100644
  #include "media/base/audio_bus.h"
  #include "third_party/blink/renderer/platform/audio/audio_bus.h"
  #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
-@@ -118,9 +120,35 @@ void RealtimeAnalyser::GetFloatFrequencyData(DOMFloat32Array* destination_array,
+@@ -113,9 +115,35 @@ void RealtimeAnalyser::GetFloatFrequencyData(DOMFloat32Array* destination_array,
    const size_t source_length = magnitude_buffer_.size();
    const size_t len = std::min(source_length, destination_array->length());
    if (len > 0) {
@@ -206,7 +206,7 @@ index 5fe1fb2e55..1294d77855 100644
        const double db_mag = audio_utilities::LinearToDecibels(linear_value);
        destination[i] = static_cast<float>(db_mag);
      }
-@@ -151,9 +179,28 @@ void RealtimeAnalyser::GetByteFrequencyData(DOMUint8Array* destination_array,
+@@ -146,9 +174,28 @@ void RealtimeAnalyser::GetByteFrequencyData(DOMUint8Array* destination_array,
                                         : 1.0 / (max_decibels_ - min_decibels_);
      const double min_decibels = min_decibels_;
  
@@ -236,7 +236,7 @@ index 5fe1fb2e55..1294d77855 100644
        const double db_mag = audio_utilities::LinearToDecibels(linear_value);
  
        // The range m_minDecibels to m_maxDecibels will be scaled to byte values
-@@ -182,14 +229,28 @@ void RealtimeAnalyser::GetFloatTimeDomainData(
+@@ -177,14 +224,28 @@ void RealtimeAnalyser::GetFloatTimeDomainData(
  
      const unsigned write_index = GetWriteIndex();
  
@@ -269,7 +269,7 @@ index 5fe1fb2e55..1294d77855 100644
      }
    }
  }
-@@ -207,12 +268,28 @@ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
+@@ -202,12 +263,28 @@ void RealtimeAnalyser::GetByteTimeDomainData(DOMUint8Array* destination_array) {
  
      const unsigned write_index = GetWriteIndex();
  

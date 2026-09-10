@@ -11,7 +11,7 @@ index d6a91ebb3b..a13d9e73e0 100644
      "//media/webrtc",
      "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index 6bf79535d9..6271bd9703 100644
+index 4fe2cb45a0..b035c701fa 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 @@ -14,6 +14,10 @@
@@ -25,7 +25,7 @@ index 6bf79535d9..6271bd9703 100644
  #include "media/base/media_permission.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-@@ -1493,6 +1497,122 @@ void MediaDevices::DevicesEnumerated(
+@@ -1486,6 +1490,122 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  
