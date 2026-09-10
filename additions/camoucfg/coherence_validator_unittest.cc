@@ -304,6 +304,30 @@ TEST(CoherenceValidatorTest, MutationIsCaughtAndNothingElseIs) {
 // Validate() has nothing to compare, and the EXPECT_TRUE below passed anyway,
 // against a validator that was never actually exercised. The assertion below
 // fails closed on that case instead.
+// The property the preset path exists for: a shipped preset, expanded through
+// the real ParsedConfig() hook (CAMOU_PRESET set, CAMOU_CONFIG unset), gives a
+// configuration the twelve entries accept. Driven by the runner once per
+// settings/presets/*.json; the key assertions fail closed on a preset that
+// expanded to nothing, for the same reason CleanConfigProducesNoViolations
+// asserts its keys resolved.
+TEST(CoherenceValidatorTest, ShippedPresetProducesNoViolations) {
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  ASSERT_TRUE(env->GetVar("CAMOU_PRESET").has_value())
+      << "run with CAMOU_PRESET set to a shipped preset; see the runner";
+  ASSERT_FALSE(env->GetVar("CAMOU_CONFIG").has_value())
+      << "CAMOU_CONFIG must be unset so every key comes from the preset";
+  for (const char* key :
+       {keys::kUaOsInfo, keys::kUaPlatform, keys::kWebGlRenderer,
+        keys::kWebGl2Renderer, keys::kLocaleTag, keys::kNavigatorLanguage,
+        keys::kTimezoneId}) {
+    EXPECT_TRUE(GetString(GlobalScope(), key).has_value())
+        << key << " did not come out of the preset";
+  }
+  EXPECT_TRUE(GetUint32(GlobalScope(), keys::kScreenWidth).has_value());
+  EXPECT_FALSE(GetStringList(GlobalScope(), keys::kNavigatorLanguages).empty());
+  EXPECT_TRUE(Validate(GlobalScope()).empty());
+}
+
 TEST(CoherenceValidatorTest, CleanConfigProducesNoViolations) {
   // Both keys, not just kUaOsInfo -- asserting one resolved would let a
   // config that only sets kUaOsInfo satisfy this test without CheckSameOsFamily

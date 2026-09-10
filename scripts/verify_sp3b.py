@@ -63,7 +63,13 @@ import lib_shell
 # SwiftShader gives a stable, host-independent GL context so the unmasked
 # strings are reproducible; --enable-unsafe-swiftshader is required on current
 # Chromium for the fallback to engage at all (SP3 spec Section 6).
-GL_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+# SHELL_FLAGS first: extra_flags REPLACES lib_shell's default flag list, and
+# without --ozone-platform=headless content_shell opens the WSLg X display,
+# whose connection drops mid-run ("X connection error received"; the probe
+# then sees "Target page, context or browser has been closed"). Measured
+# 2026-09-10: V2-V8 failed that way, and passed with the flag restored.
+GL_FLAGS = lib_shell.SHELL_FLAGS + [
+    "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 
 # Distinct, realistic spoof strings per namespace so cross-namespace isolation
 # is unambiguous (a webgl2 leak of the webgl value, or vice versa, is visible).

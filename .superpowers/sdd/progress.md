@@ -3623,3 +3623,23 @@ steps, suites 109 OK, coherence 6/6 with 12 mutations, content_shell logs the ti
 for {"locale:tag":"fr-FR"} with 0 falling-back lines, box commit sp5b-presence 60127a801d, export gate
 empty, sync PASS. Deferred: geo<->tz table, DPR key, Accept-Language, empty-string-vs-presence ambiguity.
 
+## SP5b preset loader (A3 #3) -- SHIPPED 2026-09-10
+CAMOU_PRESET env (chunked like CAMOU_CONFIG: AssembleRawConfig got a prefix parameter) -> ParseConfig (same
+strict rule) -> ExpandPreset(preset, version_info::GetMajorVersionNumberAsInt()) -> explicit config Merge'd
+over it inside ParsedConfig(), so ValidateAtStartup covers the merged result for free. Field table at the top
+of preset_loader.cc; not emitted: navigator.platform, colorDepth/window/dpr, seeds, sampleRate, anything
+version-bearing -> milestone mismatch is a WARNING with an empty rewrite set (spec 4.5 "rewrite" resolved).
+Shipped preset = smoke capture of the box (capture_preset.py on chrome + loopback page: userAgentData needs a
+secure context; content_shell reports platform Unknown); no invented GPU. Verify fixture IS invented and says
+so. RED: runner ORDER 6 vs 7; verify 2/7 on old binary. GREEN: 21 steps, 20 suites 116 OK, runner 7/7 with
+the shipped preset, verify 7/7, gn check OK. checkdeps had never run on components/camoucfg: -components
+rule blocked version_info AND ui/gfx/geometry had no rule -> additions/camoucfg/DEPS, SUCCESS. Box commit
+sp5b-preset-loader 137b28df52, export gate empty, sync 39 PASS. lib_shell now strips every CAMOU_* and takes
+preset=. Sweep 38: 37 ok, webrtc_ii_fakeip = rejected-slice RED record (expected), sp3b V2-V8 "Target closed"
+-> its GL_FLAGS replaced SHELL_FLAGS (no --ozone-platform=headless) so content_shell hit the WSLg X display
+("X connection error received"); SHELL_FLAGS + GL restored, ALL_PASS. Review amend: preset parsed with its own
+ReadDict + log line ("preset is not a JSON object; ignored, explicit configuration still applies" -- ParseConfig's
+"all spoofing is disabled" was false beside a CAMOU_CONFIG; P5 asserts absence), unrecognised-field WARNING,
+recursive-Merge note, settings/presets in the export recipe. Final box commit 44fa83ef0e, export gate empty,
+sync 39 PASS. Blocker for A3 #2 recorded: no real-hardware capture reachable from here.
+

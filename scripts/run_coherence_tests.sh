@@ -56,7 +56,7 @@ fi
 # MutationIsCaughtAndNothingElseIs red. Closed anyway -- "fails closed" is a
 # property of today's test set, not of the mechanism.
 while IFS='=' read -r var _; do
-  case "$var" in CAMOU_CONFIG*) unset "$var" ;; esac
+  case "$var" in CAMOU_CONFIG*|CAMOU_PRESET*) unset "$var" ;; esac
 done < <(env)
 
 # Coherent across every relation: a Windows UA with a Windows platform, and a
@@ -100,7 +100,9 @@ declare -a ORDER=(
   MutationsExistForEveryInvariant
   CleanConfigProducesNoViolations
   MutationIsCaughtAndNothingElseIs
+  ShippedPresetProducesNoViolations
 )
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 declare -A STATUS
 # Seeded with a sentinel for every ORDER entry before any run_case call, so
 # that a call site whose name argument does not match ORDER exactly -- a
@@ -245,6 +247,42 @@ if [ "$mutation_all_pass" -eq 1 ]; then
   STATUS[MutationIsCaughtAndNothingElseIs]=PASS
 else
   STATUS[MutationIsCaughtAndNothingElseIs]=FAIL
+fi
+
+# ShippedPresetProducesNoViolations, one process per settings/presets/*.json
+# with the file's content in CAMOU_PRESET and no CAMOU_CONFIG at all -- the
+# preset path end to end, through the same ParsedConfig() hook the browser
+# uses. One ORDER slot, same shape as the mutation loop above; zero preset
+# files is a failure, not a vacuous pass.
+preset_all_pass=1
+preset_count=0
+for preset in "$ROOT"/settings/presets/*.json; do
+  [ -e "$preset" ] || continue
+  preset_count=$((preset_count + 1))
+  pout=$(env -u CAMOU_CONFIG -u CAMOUCFG_TEST_INVARIANT \
+    CAMOU_PRESET="$(cat "$preset")" "$BINARY" \
+    --gtest_filter="CoherenceValidatorTest.ShippedPresetProducesNoViolations" \
+    --test-launcher-print-test-stdio=always 2>&1)
+  pcode=$?
+  pwarn=$(grep -c 'falling back to the real value' <<<"$pout" || true)
+  if [ "$pcode" -eq 0 ] && [ "$pwarn" -eq 0 ] &&
+     grep -qE '^\[  PASSED  \] 1 test\.$' <<<"$pout"; then
+    echo "PASS  ShippedPresetProducesNoViolations[$(basename "$preset")]"
+    continue
+  fi
+  preset_all_pass=0
+  echo "--- ShippedPresetProducesNoViolations[$(basename "$preset")]:" \
+       "exit=$pcode, wrong-type warnings=$pwarn ---" >&2
+  echo "$pout" >&2
+done
+if [ "$preset_count" -eq 0 ]; then
+  echo "error: no settings/presets/*.json under $ROOT" >&2
+  preset_all_pass=0
+fi
+if [ "$preset_all_pass" -eq 1 ]; then
+  STATUS[ShippedPresetProducesNoViolations]=PASS
+else
+  STATUS[ShippedPresetProducesNoViolations]=FAIL
 fi
 
 PASS_COUNT=0

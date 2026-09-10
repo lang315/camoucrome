@@ -52,7 +52,7 @@ the project exists.
 |---|---|
 | `additions/` | whole new files, **copied** into the Chromium tree verbatim (esp. `additions/camoucfg/` — the C++ config layer) |
 | `patches/` | diffs against files that **already exist** in Chromium |
-| `settings/` | `invariants.json` (cross-surface invariant registry, SP5) and `build-args.gn` (canonical GN args, incl. the proprietary-codec pair) |
+| `settings/` | `invariants.json` (cross-surface invariant registry, SP5), `keys.json` (key registry), `presets/` (captured device presets, SP5b) and `build-args.gn` (canonical GN args, incl. the proprietary-codec pair) |
 | `scripts/` | `apply.sh` (the applier) and `verify_*.py` (per-slice browser verifications) |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
 | `baselines/` | stock reference captures; five are committed (`git ls-files baselines`; the two `*-8010-*`/`*-507c6ee3e2-*` files are true pristine captures at the pin), the rest are build-host-local and regenerable |
@@ -103,7 +103,10 @@ still exposes the DevTools protocol), not `chrome`.
 Repo lives on the Mac; the build and every `verify_*.py` run on the WSL box
 (`ssh buildpc`). Config reaches a build through the environment: `CAMOU_CONFIG`
 holding a JSON object (or `CAMOU_CONFIG_1..N` concatenated in order, for
-argv-length limits). `CAMOU_CONFIG_STRICT=1` turns unparseable config into a
+argv-length limits). `CAMOU_PRESET` (same transport) carries a preset from
+`settings/presets/` that `ParsedConfig()` expands into keys underneath the
+explicit config (explicit wins; `preset_loader.cc` has the field table).
+`CAMOU_CONFIG_STRICT=1` turns unparseable config into a
 startup abort instead of a silent fall-back to real values.
 
 - Apply the change set: `scripts/apply.sh <chromium-src>` (copies `additions/`,

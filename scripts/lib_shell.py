@@ -84,7 +84,8 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
              "Sec-CH-UA-Model", "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"]
 
 
-def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
+def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
+           preset=None):
     """Starts the browser and returns it once its DevTools port answers.
 
     Six details here are deliberate, not defensive. Most were earned by a
@@ -105,7 +106,10 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     misbehaving. When `debug_port` is None, this path is untouched -- every
     other verification script depends on it.
 
-    Every CAMOU_CONFIG* variable is cleared, not just the bare name. The
+    Every CAMOU_* variable is cleared (CAMOU_CONFIG*, CAMOU_PRESET*,
+    CAMOU_CONFIG_STRICT), not just the bare name; `preset` is the only way a
+    CAMOU_PRESET reaches the browser, exactly as `config` is for CAMOU_CONFIG.
+    The
     transport gives numbered chunks precedence over the unnumbered variable,
     so a leftover CAMOU_CONFIG_1 in the shell -- and this machine is exactly
     where such leftovers are made -- would silently win over what a run
@@ -163,7 +167,9 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None):
     flags = SHELL_FLAGS if extra_flags is None else list(extra_flags)
 
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("CAMOU_CONFIG")}
+           if not k.startswith("CAMOU_")}
+    if preset is not None:
+        env["CAMOU_PRESET"] = preset
     if config is not None:
         env["CAMOU_CONFIG"] = config
     if strict:
@@ -268,7 +274,7 @@ def evaluate(proc, expressions, navigate_to=None, cdp=None):
 
 
 def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
-            strict=False, cdp=None, debug_port=None):
+            strict=False, cdp=None, debug_port=None, preset=None):
     """Runs one browser session; returns (values, error).
 
     An exception is returned rather than raised. Without this the script is
@@ -287,6 +293,7 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
     proc = None
     try:
         proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
+                      preset=preset,
                       debug_port=debug_port)
         return evaluate(proc, expressions, navigate_to, cdp=cdp), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL

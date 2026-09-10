@@ -40,7 +40,10 @@ using EnvGetter =
 //
 // The chunking exists because Windows caps a single environment variable
 // near 32KB and a full fingerprint exceeds that.
-std::string AssembleRawConfig(EnvGetter get);
+// `prefix` names the variable family: "CAMOU_CONFIG" (the default) or
+// "CAMOU_PRESET", which uses the same chunked transport.
+std::string AssembleRawConfig(EnvGetter get,
+                              std::string_view prefix = "CAMOU_CONFIG");
 
 // Parses the assembled configuration. The expected shape is a flat JSON
 // object whose keys are dotted or colon-separated strings.
@@ -83,6 +86,12 @@ bool HasKeyIn(const base::DictValue& cfg, std::string_view key);
 // file-local in mask_config.cc) so that mask_config.cc's getters and
 // gl_params.cc's GLParam() / GLBlockIfNotDefined() read the same parsed
 // singleton instead of each parsing the environment separately.
+// The parsed configuration: CAMOU_PRESET (expanded through ExpandPreset,
+// see preset_loader.h) with the explicit CAMOU_CONFIG keys merged over it,
+// so an explicit key always wins. The merge is base::DictValue::Merge, which
+// is recursive for dict-valued keys: an explicit webGl:parameters overrides
+// the preset's table one pname at a time and the preset's other pnames
+// survive. Either variable may be absent.
 const base::DictValue& ParsedConfig();
 
 // Real logic behind camoucfg::GLParam() -- see gl_params.h for the public

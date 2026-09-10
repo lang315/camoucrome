@@ -101,7 +101,7 @@ Two things explicitly do **not** port:
 | `docs/superpowers/measurements/` | per-surface measurements each slice was built from |
 | `additions/` | whole new files, copied into the Chromium tree verbatim |
 | `patches/` | diffs against files that already exist in Chromium |
-| `settings/` | the invariant registry (`invariants.json`) and canonical GN args (`build-args.gn`) |
+| `settings/` | the invariant registry (`invariants.json`), the key registry (`keys.json`), captured device presets (`presets/`) and canonical GN args (`build-args.gn`) |
 | `scripts/` | apply, and per-slice `verify_*.py` browser verifications |
 
 New files go in `additions/` and edits to existing files go in `patches/`. This split
