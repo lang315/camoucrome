@@ -17,8 +17,8 @@ from the same commit).
 
 Two things GN's list needs before it is a manifest, both measured on the
 first release build (2026-09-11, 5108 lines): `gn desc` prints its
-build-arg WARNINGs to stdout ahead of the paths, so only `./` and `../`
-lines are paths; and 4803 of the entries are `gen/third_party/devtools-frontend/`
+build-arg WARNINGs to stdout ahead of the paths (path lines are the
+whitespace-free ones; out-dir paths are bare, source-tree ones `../../`); and 4803 of the entries are `gen/third_party/devtools-frontend/`
 sources that the frontend targets mark as `data` for their own tests while
 the shipped copy lives in resources.pak (upstream's installer.py ships none
 of them) -- PRUNE drops that tree, and the extracted archive is verified to
@@ -76,8 +76,12 @@ def runtime_deps(src, out, file=None):
     else:
         raw = subprocess.run(["gn", "desc", str(out), TARGET, "runtime_deps"], cwd=src,
                              capture_output=True, text=True, check=True).stdout
-    paths = [l.strip() for l in raw.splitlines() if l.strip().startswith(("./", "../"))]
-    return [p for p in paths if not p.lstrip("./").startswith(PRUNE)]
+    # ponytail: a path line is one token without whitespace; the WARNING block's lines all
+    # have spaces or start with "^" (Chromium paths never contain spaces). Out-dir paths
+    # come bare ("chrome", "locales/en-US.pak"), source-tree ones as "../../x".
+    lines = [l.strip() for l in raw.splitlines()]
+    paths = [l for l in lines if l and " " not in l and not l.startswith("^")]
+    return [p for p in paths if not p.startswith(PRUNE)]
 
 
 def changeset_commit(explicit=None):
