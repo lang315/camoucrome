@@ -183,7 +183,7 @@
         "webGl:vendor",
         "webGl2:vendor"
       ],
-      "relation": "same-string",
+      "relation": "same-gl-string",
       "policy": "repair",
       "repair": "set webGl2:vendor to webGl:vendor",
       "why": [
@@ -195,7 +195,13 @@
         "independently'), but when both are set they must agree. WebGL1 is",
         "authoritative only because every profile sets it first; either",
         "absent constrains nothing (the pairing check owns half-configured",
-        "contexts, and the unset context reports the real GPU)."
+        "contexts, and the unset context reports the real GPU).",
+        "Each side is resolved the way the pairing check resolves it: the",
+        "webGl(2) key, else the string at webGl(2):parameters[\"37445\"/\"37446\"],",
+        "so an identity supplied through the parameter map is compared too.",
+        "Absent on ONE side only is a presence gap (spoofed WebGL1 beside a real",
+        "WebGL2): GLVendor/GLRenderer have no WebGL1->WebGL2 fallback. Deferred",
+        "with the other presence relations (2026-09-10 catalogue measurement §4)."
       ]
     },
     {
@@ -204,14 +210,20 @@
         "webGl:renderer",
         "webGl2:renderer"
       ],
-      "relation": "same-string",
+      "relation": "same-gl-string",
       "policy": "repair",
       "repair": "set webGl2:renderer to webGl:renderer",
       "why": [
         "Same reasoning as webgl2-vendor-agrees-with-webgl for",
         "UNMASKED_RENDERER_WEBGL: one GPU, one backend, one string on both",
         "context types. A profile that names two different GPUs across the two",
-        "contexts describes a machine that does not exist."
+        "contexts describes a machine that does not exist.",
+        "Each side is resolved the way the pairing check resolves it: the",
+        "webGl(2) key, else the string at webGl(2):parameters[\"37445\"/\"37446\"],",
+        "so an identity supplied through the parameter map is compared too.",
+        "Absent on ONE side only is a presence gap (spoofed WebGL1 beside a real",
+        "WebGL2): GLVendor/GLRenderer have no WebGL1->WebGL2 fallback. Deferred",
+        "with the other presence relations (2026-09-10 catalogue measurement §4)."
       ]
     },
     {

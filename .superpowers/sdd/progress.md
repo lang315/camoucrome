@@ -3600,3 +3600,10 @@ terminated by `)"` inside the ANGLE strings -> R"json(...)json". GREEN: 19 suite
 run_coherence_tests 6/6 with 9 mutations (MutationIsCaughtAndNothingElseIs per id), COHERENT extended with
 all new pairs so CleanConfig exercises them (unittest asserts their presence). Deferred (doc §4): presence
 relations (need a Presence violation kind), geo<->tz table, DPR key, Accept-Language.
+Fix-forward (review): agreement entries read keys only; parameters["37445"/"37446"] path unchecked, and the
+backend entry's comment overclaimed it. Added ResolvedGLString() (key else map), relation kSameGlString for
+the two agreement entries (static_assert pins the pairs), backend entry now resolves the same way; renderer
+mutation supplies WebGL1 via the map. Also verified GLVendor/GLRenderer have NO WebGL1->WebGL2 fallback ->
+one-context-only identity is a presence gap, added to the deferred list. Box commit amended in place.
+Fix-forward GREEN: 10 steps, suites 109 OK, coherence 6/6 with 9 mutations (renderer via parameters map),
+box commit amended 7d54ea20df, export gate empty, sync PASS.
