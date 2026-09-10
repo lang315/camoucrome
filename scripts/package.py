@@ -15,6 +15,15 @@ commit and the branch tip the binary was built from. `--check` refuses a set
 of stamps whose sources differ (SP6 4.2: binaries across platforms must come
 from the same commit).
 
+Two things GN's list needs before it is a manifest, both measured on the
+first release build (2026-09-11, 5108 lines): `gn desc` prints its
+build-arg WARNINGs to stdout ahead of the paths, so only `./` and `../`
+lines are paths; and 4803 of the entries are `gen/third_party/devtools-frontend/`
+sources that the frontend targets mark as `data` for their own tests while
+the shipped copy lives in resources.pak (upstream's installer.py ships none
+of them) -- PRUNE drops that tree, and the extracted archive is verified to
+open the bundled DevTools front end.
+
 Refusals, each a measured trap: a component build (out/Default -- the .so
 graph is not what ships); a chrome/VERSION that disagrees with upstream.env's
 tag (version honesty); a runtime dep GN lists that is not on disk (a build
@@ -37,6 +46,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
+PRUNE = ("gen/third_party/devtools-frontend/",)
 
 
 def read_args_gn(out):
@@ -66,7 +76,8 @@ def runtime_deps(src, out, file=None):
     else:
         raw = subprocess.run(["gn", "desc", str(out), TARGET, "runtime_deps"], cwd=src,
                              capture_output=True, text=True, check=True).stdout
-    return [l.strip() for l in raw.splitlines() if l.strip()]
+    paths = [l.strip() for l in raw.splitlines() if l.strip().startswith(("./", "../"))]
+    return [p for p in paths if not p.lstrip("./").startswith(PRUNE)]
 
 
 def changeset_commit(explicit=None):
