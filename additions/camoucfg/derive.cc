@@ -151,7 +151,7 @@ std::string_view CanonicalNavigatorPlatformFor(OsFamily os) {
     case OsFamily::kChromeOs:
       return "Linux x86_64";
     case OsFamily::kAndroid:
-      return "Linux armv81";
+      return "Linux armv8l";
     case OsFamily::kUnknown:
       return {};
   }

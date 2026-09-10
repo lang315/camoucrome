@@ -91,6 +91,7 @@ declare -A MUTATIONS=(
   [timezone-set-with-locale]='{"locale:tag":"fr-FR"}'
   [mediadevices-seed-when-enabled]='{"mediaDevices:enabled":true}'
   [webgl-identity-set-on-both-contexts]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
+  [android-claims-touch]='{"ua:osInfo":"Linux; Android 14; Pixel 8","ua:platform":"Android","navigator.platform":"Linux armv8l"}'
 )
 
 declare -a ORDER=(

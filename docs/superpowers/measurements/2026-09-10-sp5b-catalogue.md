@@ -101,6 +101,7 @@ The deferred list's first three items needed a relation that fires on
 |---|---|---|---|
 | `timezone-set-with-locale` | `locale:tag` → `timezone:id` | `requires-key` | `locale:tag` set, `timezone:id` unset |
 | `mediadevices-seed-when-enabled` | `mediaDevices:enabled` → `mediaDevices:seed` | `requires-key` | enabled **true**, seed absent **or 0** (the consumer's own no-op rule) |
+| `android-claims-touch` | `ua:osInfo` (via `ClaimedOs`) → `navigator.maxTouchPoints` | `touch-fits-os` | claimed OS Android, touch points absent **or 0** (added 2026-09-11 with `d-pointer-touch`, which derives a coarse pointer from the claim) |
 | `webgl-identity-set-on-both-contexts` | `webGl:renderer` ↔ `webGl2:renderer` | `gl-identity-set-together` | exactly one context type resolves an identity (vendor or renderer, key or map); the missing side is the repaired key and the resolved strings are the repair value |
 
 No new violation kind after all: `Violation.old_value` empty is the presence

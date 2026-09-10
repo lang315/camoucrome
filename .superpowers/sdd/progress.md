@@ -3723,3 +3723,8 @@ maxTouchPoints > 0. verify_d_pointer_touch.py RED 1/5 on unpatched chrome, GREEN
 V3 keys 240 == stock --touch-events=enabled 240. gn check core + checkdeps clean. Regressions launcher 5/5,
 driver 6 rows ALL_PASS. Box 90d3548556, export gate empty (new patch + series line), sync 39. Rendered
 keyword-font width: box 466.75 px == its system-ui fallback, Mac 410.03 px == Arial: font-presence tell.
+Follow-up (review): Android claim with maxTouchPoints unset -> derived pointer: coarse beside maxTouchPoints 0
+and no ontouchstart (V4 always passed 5). 13th invariant android-claims-touch (relation touch-fits-os, reads
+the OS via ClaimedOs like the derivation, repair 5), mutation in unittest + runner. Found: canonical Android
+navigator.platform was "Linux armv81" in derive.cc/h, its unittest, the validator comment, invariants.json,
+verify_navplatform_derive.py -- Chrome reports "Linux armv8l"; fixed in all 7 files.
