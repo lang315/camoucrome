@@ -27,8 +27,15 @@ def tree(tmp_path):
     (out / "locales" / "en-US.pak").write_bytes(b"pak")
     (src / "chrome" / "data.txt").write_text("x")
     deps = out / "deps.txt"
-    deps.write_text("./chrome\n./locales/en-US.pak\n../../chrome/data.txt\n")
+    deps.write_text("WARNING at build arg file: Build argument has no effect.\nenable_nacl = false\n\n"
+                    "./chrome\n./locales/en-US.pak\n../../chrome/data.txt\n"
+                    "./gen/third_party/devtools-frontend/src/front_end/Tests.js\n")
     return src, out, deps
+
+
+def test_runtime_deps_keeps_only_paths_and_prunes_the_devtools_sources(tree):
+    src, out, deps = tree
+    assert package.runtime_deps(src, out, deps) == ["./chrome", "./locales/en-US.pak", "../../chrome/data.txt"]
 
 
 def test_stage_copies_every_dep_and_writes_the_stamp(tree, tmp_path):
