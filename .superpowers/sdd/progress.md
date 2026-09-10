@@ -3714,3 +3714,12 @@ D gaps (measure_d_gaps.py on the release chrome + Mac Chrome reference): css med
 everywhere (not a tell); headless pointer/hover/any-* = none under any claim (tell); maxTouchPoints 5 with
 ontouchstart absent (tell); CSS2 keyword fonts Arial/16px on Linux and Mac (not a tell); system-ui = host
 default sans vs BlinkMacSystemFont on Mac (tell, blocked on fonts). Derivations designed, not built.
+
+## D pointer/hover + touch feature detection -- SHIPPED 2026-09-11
+d-pointer-touch.patch: media_values.cc Calculate{Primary,Available}{Pointer,Hover}Type(s) consult
+ClaimedPointerHover(frame) (ClaimedOs kUnknown -> host; Android -> coarse/none; desktop -> fine (+coarse if
+maxTouchPoints > 0)/hover); web_view_impl.cc SetTouchEventFeatureDetectionEnabled follows configured
+maxTouchPoints > 0. verify_d_pointer_touch.py RED 1/5 on unpatched chrome, GREEN 5/5 after (45-step relink);
+V3 keys 240 == stock --touch-events=enabled 240. gn check core + checkdeps clean. Regressions launcher 5/5,
+driver 6 rows ALL_PASS. Box 90d3548556, export gate empty (new patch + series line), sync 39. Rendered
+keyword-font width: box 466.75 px == its system-ui fallback, Mac 410.03 px == Arial: font-presence tell.
