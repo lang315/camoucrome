@@ -93,16 +93,33 @@ headless `innerHeight = outerHeight − 143` (Chrome's own window chrome,
 reported as is) and the real headless screen shrinks with the DPR (800×600
 → 640×480 at 1.25), which the `screen.*` keys override.
 
-Unit: 16 Python tests (the pool-literal table, never-taken fields, helper
-geometry, locale/timezone, ua/battery/media/seeds, `kForms` parity with
-`derive.cc`, the Brave/mobile/platform/DPR filter, `--timezone` required,
-determinism under `--seed`, the offset); Go 5 tests including
-`ParseGenerated`.
+Wall time at N=10: 81 s for 31 launches, inside the sweep's 400 s budget.
+`camoucrome.Generate` from Go against the real CLI on the box:
+`window [1920 1032] dpr 1, 33 keys, ua:platform Windows, tz Europe/Paris`.
+
+**`navigator.deviceMemory`: the pool says what Chrome never does.** 200
+draws: 8 ×76, 16 ×76, 32 ×33, 4 ×15. Chrome clamps the API to a power of
+two in [0.25, 8], so over half the pool's values are impossible on a
+Chrome UA, and the strict oracle cannot see it — `domain_validator.cc`
+ranges only the geolocation axes. The generator snaps to the largest
+allowed value ≤ the pool's; a `deviceMemory` domain entry is a C++
+follow-up. A 200-draw unseeded property test now holds the pool-wide
+invariants the fixed-seed oracle cannot (deviceMemory in the set,
+hardwareConcurrency ≥ 1, DPR in the measured set, outer ≤ avail ≤ screen,
+`languages[0] == language == locale:tag`, screenX in range, every key
+registered). Writing it found that browserforge 1.2.4 raises `TypeError`
+on every draw when `os=None` is passed explicitly — the keyword must be
+absent for "any OS".
+
+Unit: 17 Python tests; Go 5 tests including `ParseGenerated`. G2 counts
+every `camoucfg:` line (invariant, domain, wrong-type), not just the
+invariant ones.
 
 ## 4. Not done, named
 
 `webGl:*` (A3 #2), `fonts:list` (A5 bundling), `voices:*`, `geolocation:*`
-(GeoIP), a locale→timezone table, `Accept-Language` (a generator obligation
+(GeoIP), a `navigator.deviceMemory` domain entry in the C++ validator, a
+locale→timezone table, `Accept-Language` (a generator obligation
 named by SP5b; the fork derives nothing for it yet), and the shared
 generator core SP6 §4.5 asked for. Headed launches are unmeasured; the +2 px
 offset was measured headless only.

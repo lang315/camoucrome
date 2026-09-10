@@ -9,7 +9,7 @@ Per OS (windows, macos, linux) N configs, each launched through
 python -m camoucrome.probe (patchright, --strict, --window, --dpr, the
 driver's browser log via DEBUG=pw:browser):
   G1 browser starts, probe exits 0
-  G2 log has no "invariant '" and no "falling back to the real value"
+  G2 log has no camoucfg: line at all (invariant, domain, wrong-type)
   G3 page sees screen.width/height, navigator.language, languages[0],
      timezone, devicePixelRatio == emitted; window.outerWidth == emitted
   G4 innerWidth <= outerWidth (headless honours --window-size; measured, not
@@ -93,7 +93,9 @@ def main():
             if rc != 0 or rep is None:
                 bad.append(f"G1 probe rc={rc}: {log[-300:]}")
             else:
-                inv = [l for l in log.splitlines() if "invariant '" in l or "falling back to the real value" in l]
+                # Every camoucfg: line -- invariant, domain ('<key>' is '<v>'),
+                # wrong-type -- a clean config produces none.
+                inv = [l for l in log.splitlines() if "camoucfg:" in l]
                 if inv:
                     bad.append("G2 " + inv[0][-160:])
                 exp = {"width": cfg["screen.width"], "height": cfg["screen.height"],
