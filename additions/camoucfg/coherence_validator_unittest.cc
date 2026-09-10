@@ -126,6 +126,9 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
       EXPECT_EQ(header_entry->relation,
                 invariants::Relation::kGlIdentitySetTogether)
           << *id;
+    } else if (*relation == "touch-fits-os") {
+      EXPECT_EQ(header_entry->relation, invariants::Relation::kTouchFitsOs)
+          << *id;
     } else {
       ADD_FAILURE() << *id << " has a relation this test does not know: "
                     << *relation;
@@ -190,7 +193,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 12> kMutations = {{
+constexpr std::array<Mutation, 13> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -244,6 +247,11 @@ constexpr std::array<Mutation, 12> kMutations = {{
     {"webgl-identity-set-on-both-contexts",
      R"json({"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"})json",
      "webGl2:renderer"},
+    // A coherent Android trio with no touch-point count: the OS-family and
+    // platform-bucket entries agree, only the touch entry fires.
+    {"android-claims-touch",
+     R"({"ua:osInfo":"Linux; Android 14; Pixel 8","ua:platform":"Android","navigator.platform":"Linux armv8l"})",
+     "navigator.maxTouchPoints"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {

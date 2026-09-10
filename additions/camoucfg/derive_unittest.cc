@@ -78,7 +78,7 @@ TEST(DeriveTest, CanonicalFormsOfUnknownAreEmpty) {
 }
 
 // navigator.platform derives from the claimed OS using GetReducedNavigatorPlatform's
-// frozen per-OS literals -- "Win32"/"MacIntel"/"Linux x86_64"/"Linux armv81",
+// frozen per-OS literals -- "Win32"/"MacIntel"/"Linux x86_64"/"Linux armv8l",
 // NOT the UA-CH tokens (RecognisesEachUaChPlatformString above pins "Win32" as
 // kUnknown for the UA-CH parser, so the two must not be conflated). Under UA
 // reduction these are arch-independent, so the Linux family has a single
@@ -89,7 +89,7 @@ TEST(DeriveTest, CanonicalNavigatorPlatformMatchesReducedLiterals) {
   EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kMac), "MacIntel");
   EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kLinux), "Linux x86_64");
   EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kChromeOs), "Linux x86_64");
-  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kAndroid), "Linux armv81");
+  EXPECT_EQ(CanonicalNavigatorPlatformFor(OsFamily::kAndroid), "Linux armv8l");
   EXPECT_TRUE(CanonicalNavigatorPlatformFor(OsFamily::kUnknown).empty());
 }
 

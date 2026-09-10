@@ -52,7 +52,7 @@ enum class Relation {
   kFitsWithin,
   // keys[1] (navigator.platform) must equal the canonical reduced platform of
   // the OS family keys[0] (ua:osInfo) claims -- "Win32", "MacIntel",
-  // "Linux x86_64", "Linux armv81". A canonical-STRING compare, not a family
+  // "Linux x86_64", "Linux armv8l". A canonical-STRING compare, not a family
   // one, so Linux and ChromeOS share one bucket ("Linux x86_64"), which is why
   // it is a "platform bucket" and not a same-OS-family check. keys[0] is
   // authoritative; CheckSamePlatformBucket() names keys[1] as the value to
@@ -84,6 +84,11 @@ enum class Relation {
   // repair value. keys must be {kWebGlRenderer, kWebGl2Renderer}; the
   // missing side is the repaired key.
   kGlIdentitySetTogether,
+  // The claimed OS family (ClaimedOs: ua:osInfo, then ua:platform -- the
+  // same reading d-pointer-touch derives pointer/hover from) is Android but
+  // keys[1] (navigator.maxTouchPoints) is unset or 0. keys must be
+  // {kUaOsInfo, kNavigatorMaxTouchPoints}; the repair value is 5.
+  kTouchFitsOs,
 };
 
 struct Invariant {
@@ -100,7 +105,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 12> kAllInvariants = {{
+inline constexpr std::array<Invariant, 13> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
@@ -153,6 +158,10 @@ inline constexpr std::array<Invariant, 12> kAllInvariants = {{
      Relation::kGlIdentitySetTogether,
      Policy::kRepair,
      {keys::kWebGlRenderer, keys::kWebGl2Renderer}},
+    {"android-claims-touch",
+     Relation::kTouchFitsOs,
+     Policy::kRepair,
+     {keys::kUaOsInfo, keys::kNavigatorMaxTouchPoints}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
@@ -302,6 +311,24 @@ static_assert(
     "CheckRendererBackendFitsOs() reads the OS via OsFamilyOfKey(keys[0]) and "
     "the renderer via GLRenderer(scope, /*is_webgl2=*/false) regardless of "
     "keys[1], so any other pair would be checked wrongly with no diagnostic.");
+
+// CheckTouchFitsOs() reads the claimed OS through ClaimedOs() (not keys[0]
+// alone) and repairs keys[1] as navigator.maxTouchPoints; an entry naming any
+// other pair would compile, run, and repair the wrong key.
+constexpr bool EveryTouchFitsOsEntryUsesTheOsTouchPair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kTouchFitsOs &&
+        (inv.keys[0] != keys::kUaOsInfo ||
+         inv.keys[1] != keys::kNavigatorMaxTouchPoints)) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(EveryTouchFitsOsEntryUsesTheOsTouchPair(),
+              "a kTouchFitsOs entry must name {ua:osInfo, "
+              "navigator.maxTouchPoints}: CheckTouchFitsOs() repairs keys[1] "
+              "as the touch-point count");
 
 }  // namespace camoucfg::invariants
 

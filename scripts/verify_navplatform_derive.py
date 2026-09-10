@@ -75,15 +75,15 @@ else:
     notes.append(f"worker(windows) -> {v!r}")
 
 # --- RP-ANDROID: Linux-family derive fires and differs from the Linux host ---
-# Android's frozen reduced platform is "Linux armv81", != the host's
+# Android's frozen reduced platform is "Linux armv8l", != the host's
 # "Linux x86_64" -- a differ-guaranteed control (CLAUDE.md #4) proving the Linux
 # family derives, not merely coincides with the host as RP-LINUX does here.
-A = "RP-ANDROID android claim derives Linux armv81 (differs from linux host)"
+A = "RP-ANDROID android claim derives Linux armv8l (differs from linux host)"
 v, e = read(ANDROID)
 if e:
     failed([A], "android session", e)
 else:
-    results[A] = v == "Linux armv81"
+    results[A] = v == "Linux armv8l"
     notes.append(f"android -> {v!r}")
 
 # --- RP-EXPLICIT (invariant): a configured platform wins over the derive ---

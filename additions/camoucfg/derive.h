@@ -58,7 +58,7 @@ std::string_view CanonicalUaChPlatformFor(OsFamily os);
 // The navigator.platform string a real reduced-UA Chrome on |os| reports, for
 // deriving that leaf from the claimed OS when it is not explicitly configured.
 // These are GetReducedNavigatorPlatform()'s frozen per-OS literals ("Win32",
-// "MacIntel", "Linux x86_64", "Linux armv81"), arch-independent by design of UA
+// "MacIntel", "Linux x86_64", "Linux armv8l"), arch-independent by design of UA
 // reduction, so a derived value is byte-identical to what a real Chrome on the
 // claimed OS emits. EMPTY only for kUnknown: with no OS claimed the caller keeps
 // the host's own value rather than inventing one. Distinct from

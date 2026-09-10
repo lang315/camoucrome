@@ -102,7 +102,7 @@ std::vector<Violation> CheckFitsWithin(const ConfigScope& scope,
 
 // keys[0] (ua:osInfo) claims an OS; keys[1] (navigator.platform) must be that
 // OS's canonical reduced platform ("Win32", "MacIntel", "Linux x86_64",
-// "Linux armv81"). Only the OS family of keys[0] is read, with OsFamilyOfKey --
+// "Linux armv8l"). Only the OS family of keys[0] is read, with OsFamilyOfKey --
 // the same helper CheckSameOsFamily uses -- so keys[0] stays literally
 // authoritative and the log names a key that is actually set. A ua:platform-
 // only OS claim is therefore out of this entry's reach, the same boundary
@@ -321,6 +321,27 @@ std::vector<Violation> CheckRequiresKey(const ConfigScope& scope,
   return {v};
 }
 
+// The claimed OS is Android (read exactly as d-pointer-touch's derivation
+// reads it: ClaimedOs, ua:osInfo first, ua:platform as fallback) while
+// navigator.maxTouchPoints is unset or 0. Without this the fork would report
+// pointer: coarse beside maxTouchPoints 0 and no 'ontouchstart' -- a
+// contradiction it manufactured itself. Anything but an Android claim
+// constrains nothing here.
+std::vector<Violation> CheckTouchFitsOs(const ConfigScope& scope,
+                                        const invariants::Invariant& inv) {
+  if (ClaimedOs(scope) != OsFamily::kAndroid ||
+      GetUint32(scope, inv.keys[1]).value_or(0) > 0) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = base::NumberToString(GetUint32(scope, inv.keys[1]).value_or(0));
+  v.new_value = "5";
+  return {v};
+}
+
 std::vector<Violation> CheckSamePlatformBucket(
     const ConfigScope& scope, const invariants::Invariant& inv) {
   OsFamily claimed = OsFamilyOfKey(scope, inv.keys[0]);
@@ -417,6 +438,11 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
       }
       case invariants::Relation::kGlIdentitySetTogether: {
         std::vector<Violation> found = CheckGlIdentitySetTogether(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kTouchFitsOs: {
+        std::vector<Violation> found = CheckTouchFitsOs(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }

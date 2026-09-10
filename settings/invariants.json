@@ -112,7 +112,7 @@
         "own JS property. A page reads both, and a Windows user agent beside",
         "navigator.platform === 'MacIntel' is a textbook OS tell. The reduced",
         "User-Agent freezes one canonical platform per OS -- Win32, MacIntel,",
-        "Linux x86_64, Linux armv81 -- so the correct value is a function of",
+        "Linux x86_64, Linux armv8l -- so the correct value is a function of",
         "the claimed OS, and any other explicit value contradicts it.",
         "",
         "A canonical-STRING compare, not a same-OS-family one: Linux and",
@@ -316,6 +316,27 @@
         "and keys[0] when WebGL1 is; the log line names the side.",
         "Neither set constrains nothing (both real); both set is the agreement",
         "entries' job."
+      ]
+    },
+    {
+      "id": "android-claims-touch",
+      "keys": [
+        "ua:osInfo",
+        "navigator.maxTouchPoints"
+      ],
+      "relation": "touch-fits-os",
+      "policy": "repair",
+      "repair": "set navigator.maxTouchPoints to 5 (a phone) when the claimed OS is Android",
+      "why": [
+        "d-pointer-touch (measurements/2026-09-11-d-gaps.md) derives pointer:",
+        "coarse / hover: none from an Android claim, and 'ontouchstart' in window",
+        "from navigator.maxTouchPoints > 0. An Android claim with maxTouchPoints",
+        "unset or 0 therefore reports a coarse pointer beside a touch-less",
+        "navigator and no touch handlers -- a contradiction the fork manufactures,",
+        "which rule 4 calls worse than not spoofing. The claimed OS is read the",
+        "way the derivation reads it (ua:osInfo first, ua:platform as fallback).",
+        "No desktop rule in the other direction: a Windows laptop with a touch",
+        "screen (maxTouchPoints > 0) is real."
       ]
     }
   ]
