@@ -19,6 +19,7 @@
 #include "components/camoucfg/gl_params.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
+#include "components/camoucfg/mask_config_internal.h"
 
 namespace camoucfg {
 namespace {
@@ -197,6 +198,42 @@ std::vector<Violation> CheckSameGlString(const ConfigScope& scope,
   return {v};
 }
 
+// Exactly one context type resolves an identity (vendor or renderer, key or
+// parameters map). The missing side is the repaired key and the resolved
+// strings are the repair value -- concrete, unlike the presence entries.
+std::vector<Violation> CheckGlIdentitySetTogether(
+    const ConfigScope& scope, const invariants::Invariant& inv) {
+  auto identity = [&](bool is_webgl2) {
+    std::optional<std::string> vendor =
+        ResolvedGLString(scope, is_webgl2, /*vendor=*/true);
+    std::optional<std::string> renderer =
+        ResolvedGLString(scope, is_webgl2, /*vendor=*/false);
+    std::string joined;
+    if (vendor.has_value()) {
+      joined += "vendor '" + *vendor + "'";
+    }
+    if (renderer.has_value()) {
+      joined += (joined.empty() ? "" : ", ") + std::string("renderer '") +
+                *renderer + "'";
+    }
+    return joined;  // empty when neither resolves
+  };
+  const std::string gl1 = identity(/*is_webgl2=*/false);
+  const std::string gl2 = identity(/*is_webgl2=*/true);
+  if (gl1.empty() == gl2.empty()) {
+    return {};
+  }
+  const bool webgl2_missing = gl2.empty();
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(webgl2_missing ? inv.keys[0] : inv.keys[1]);
+  v.repaired_key = std::string(webgl2_missing ? inv.keys[1] : inv.keys[0]);
+  v.old_value = std::string();
+  v.new_value = (webgl2_missing ? gl1 : gl2) + " (the same strings on " +
+                (webgl2_missing ? "webGl2:*" : "webGl:*") + ")";
+  return {v};
+}
+
 // The OS family an ANGLE renderer description commits to, from the backend
 // token it carries. Only tokens exclusive to one family are recognised:
 // Direct3D ships on Windows alone, Metal on Apple platforms alone. OpenGL and
@@ -240,6 +277,47 @@ std::vector<Violation> CheckRendererBackendFitsOs(
                 (claimed == OsFamily::kWindows ? " (Direct3D11)"
                  : claimed == OsFamily::kMac   ? " (Metal)"
                                                : " (OpenGL or Vulkan)");
+  return {v};
+}
+
+// Presence. keys[0] counts as set when present, or, for a bool, when true;
+// keys[1] counts as unset when absent, or, for a uint32, when 0 (the
+// consumers' own no-op rule for seeds). old_value stays empty, which is what
+// ValidateAtStartup keys its "is set but ... is not" wording on.
+// "Set" for a presence entry: the key is present and not a false/zero
+// value. Read the raw value rather than probing the typed getters -- each
+// getter logs "falling back to the real value" on a type it does not expect,
+// which would print a false warning for every string-typed key on every
+// startup.
+bool KeyIsSet(const ConfigScope& scope, std::string_view key) {
+  const base::Value* v = internal::ParsedConfig().Find(key);
+  if (!v) {
+    return false;
+  }
+  if (v->is_bool()) {
+    return v->GetBool();
+  }
+  if (v->is_int()) {
+    return v->GetInt() != 0;
+  }
+  if (v->is_string()) {
+    return !v->GetString().empty();
+  }
+  return true;
+}
+
+std::vector<Violation> CheckRequiresKey(const ConfigScope& scope,
+                                        const invariants::Invariant& inv) {
+  if (!KeyIsSet(scope, inv.keys[0]) || KeyIsSet(scope, inv.keys[1])) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = std::string();
+  v.new_value = std::string("set, because '") + std::string(inv.keys[0]) +
+                "' is";
   return {v};
 }
 
@@ -329,6 +407,16 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
       }
       case invariants::Relation::kRendererBackendFitsOs: {
         std::vector<Violation> found = CheckRendererBackendFitsOs(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kRequiresKey: {
+        std::vector<Violation> found = CheckRequiresKey(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kGlIdentitySetTogether: {
+        std::vector<Violation> found = CheckGlIdentitySetTogether(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }
@@ -456,6 +544,16 @@ bool ValidateAtStartup(const ConfigScope& scope) {
   const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
 
   for (const Violation& v : violations) {
+    if (v.old_value.empty()) {
+      // Presence entries: nothing to quote as the wrong value.
+      LOG(ERROR) << "camoucfg: invariant '" << v.invariant_id << "' violated. '"
+                 << v.authoritative_key << "' is set but '" << v.repaired_key
+                 << "' is not. It should be " << v.new_value
+                 << ". Not repaired: set it yourself, or set "
+                    "CAMOU_CONFIG_STRICT=1 to refuse startup instead of running "
+                    "an incoherent fingerprint.";
+      continue;
+    }
     // The message says what is true: the value is wrong and it has NOT been
     // changed. Applying repairs needs a write path into the cached
     // configuration, which is a change to a component three sub-projects
