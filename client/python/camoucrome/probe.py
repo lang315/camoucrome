@@ -43,12 +43,16 @@ def main():
     ap.add_argument("--url", required=True)
     ap.add_argument("--config")
     ap.add_argument("--preset")
+    ap.add_argument("--window", help="W,H -> --window-size")
+    ap.add_argument("--dpr", type=float)
+    ap.add_argument("--strict", action="store_true", help="CAMOU_CONFIG_STRICT=1")
     a = ap.parse_args()
+    window = tuple(int(v) for v in a.window.split(",")) if a.window else None
     module = "patchright" if a.driver == "patchright" else "playwright"
     sync_playwright = importlib.import_module(f"{module}.sync_api").sync_playwright
     with sync_playwright() as pw:
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
-                     args=["--no-sandbox"])
+                     strict=a.strict, window=window, dpr=a.dpr, args=["--no-sandbox"])
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         # SP2 4.2: a driver's init script must not be observable from the
         # main world. The probe page reports typeof window.__camou_init.
