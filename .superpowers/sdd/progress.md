@@ -3564,3 +3564,5 @@ Export from camoucrome/main-8010 -> repo branch rebase/8010: 10 patches re-cut (
 media-ii-track's resolved include). upstream.env: CHROMIUM_REV=507c6ee3e2f3... + CHROMIUM_TAG=153.0.8010.36.
 chrome target build started (Monitor, 55-min chunks) for verify_sp1a_chrome/sp2/sp2b/sp7_phonehome/
 sp7_fieldtrial chrome rows; merge rebase/8010 -> main after those pass.
+Round-trip of the re-cut stack: apply.sh (pin check now 507c6ee3) on a fresh worktree at the tag ->
+APPLY_RC=0, `git diff --cached --stat camoucrome/main-8010` empty. rebase/8010 pushed (f3c0337).
