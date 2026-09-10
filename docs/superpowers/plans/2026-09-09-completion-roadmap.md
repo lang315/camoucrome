@@ -253,17 +253,19 @@ Source: SP6 §4.5, SP2 D1 resolution, tz-locale measurement §5.
 
 Source: SP6 §4.3, §4.4, §6.
 
-1. **SHIPPED 2026-09-10** (`measurements/2026-09-10-sp6b-packaging.md`):
+1. **PACKAGER SHIPPED 2026-09-10; first archive pending** (`measurements/2026-09-10-sp6b-packaging.md`):
    `scripts/package.py` from `gn desc … runtime_deps`, tar.xz/zip, stamp,
-   `--check` across stamps; `settings/release-args.gn`; first Linux archive
-   from `out/Release` on the box recorded in the doc. Original brief:
+   `--check` across stamps; `settings/release-args.gn`; the packager has
+   only run on the fake-tree tests until the `out/Release` build on the box
+   finishes (multi-hour) and its archive is recorded in doc §3. Original brief:
    **`scripts/package.py` from `--runtime-deps-list-file`**; portable
    `tar.xz`/`zip`, no installer, no launcher binary. Release build = full
    `chrome` target, non-component (a different build than the dev loop).
-2. **NOT REACHABLE FROM HERE** (2026-09-10): no Windows checkout or VS on
-   the box's host, and a macOS Chromium build on the user's Mac is a
-   10+ hour, 100 GB job nobody asked for; `package.py --platform win-x64 /
-   mac-arm64` and `--check` are ready for when a host exists.
+2. **NOT STARTED — YOUR CALL** (2026-09-10): no Windows checkout or Visual
+   Studio on the box's host. A macOS build is possible on the user's Mac
+   (Xcode) but is a 10+ hour, ~100 GB checkout+build that was not started
+   without an explicit go-ahead; `package.py --platform win-x64 / mac-arm64`
+   and `--check` are ready for when either host exists.
    **Windows native build** (own checkout on `D:`, VS, serialised with WSL —
    the build scripts should refuse to run both) and **macOS build** (the Mac,
    Xcode). Chromium cannot cross-compile; this is the sharpest divergence from

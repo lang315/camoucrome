@@ -4,6 +4,7 @@ list (SP6 4.4: no hand-maintained manifest, no installer, no launcher binary).
 
     scripts/package.py <chromium-src> [--out out/Release] [--platform linux-x64]
                        [--dist dist] [--runtime-deps-file F] [--allow-component]
+                       [--changeset-commit SHA]
     scripts/package.py --check dist/*.release.json
 
 The archive holds every file `gn desc <out> //chrome:chrome runtime_deps`
@@ -18,6 +19,10 @@ Refusals, each a measured trap: a component build (out/Default -- the .so
 graph is not what ships); a chrome/VERSION that disagrees with upstream.env's
 tag (version honesty); a runtime dep GN lists that is not on disk (a build
 that did not finish).
+
+`--changeset-commit` is required when this script runs from an exported copy
+of the change set (the box's ~/camoucrome-cs is a tar extract, not a git
+checkout); otherwise the commit is `git rev-parse HEAD` of the repo root.
 """
 import argparse
 import datetime
@@ -64,7 +69,16 @@ def runtime_deps(src, out, file=None):
     return [l.strip() for l in raw.splitlines() if l.strip()]
 
 
-def stage(src, out, deps, platform, dist, allow_component, now=None):
+def changeset_commit(explicit=None):
+    if explicit:
+        return explicit
+    try:
+        return git(ROOT, "rev-parse", "HEAD")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        sys.exit(f"{ROOT} is not a git checkout: pass --changeset-commit <sha of the change-set commit>")
+
+
+def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None):
     args = read_args_gn(out)
     if args.get("is_component_build") == "true" and not allow_component:
         sys.exit("refusing a component build (is_component_build = true): use a release out dir "
@@ -99,7 +113,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None):
     stamp = {
         "name": name, "version": version, "platform": platform,
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
-        "changeset_commit": git(ROOT, "rev-parse", "HEAD"),
+        "changeset_commit": changeset_commit(changeset),
         "branch_tip": git(src, "rev-parse", "HEAD"),
         "args_gn": args, "runtime_deps": len(deps),
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
@@ -142,6 +156,8 @@ def main():
     ap.add_argument("--runtime-deps-file")
     ap.add_argument("--allow-component", action="store_true")
     ap.add_argument("--no-archive", action="store_true")
+    ap.add_argument("--changeset-commit", metavar="SHA",
+                    help="change-set commit to stamp (required when the script is not inside a git checkout)")
     ap.add_argument("--check", nargs="+", metavar="STAMP")
     a = ap.parse_args()
     if a.check:
@@ -151,7 +167,8 @@ def main():
     src = pathlib.Path(a.src).resolve()
     out = (src / a.out).resolve()
     deps = runtime_deps(src, out, a.runtime_deps_file)
-    staging, stamp = stage(src, out, deps, a.platform, a.dist, a.allow_component)
+    staging, stamp = stage(src, out, deps, a.platform, a.dist, a.allow_component,
+                           changeset=a.changeset_commit)
     print(f"staged {stamp['runtime_deps']} runtime deps -> {staging}")
     if not a.no_archive:
         path = archive(staging, a.platform)

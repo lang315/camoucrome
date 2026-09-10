@@ -13,8 +13,9 @@
 #
 # The branch lives in the checkout; the repo lives on the Mac, with no clone on
 # the box. The round trip, from the repo root:
-#   tar czf changeset.tgz additions settings/invariants.json settings/presets patches upstream.env scripts
-#   (settings/presets is what run_coherence_tests.sh reads from the copy; without it, 6/7)
+#   tar czf changeset.tgz additions settings/invariants.json settings/launcher.json settings/presets patches upstream.env scripts
+#   (settings/presets is what run_coherence_tests.sh reads from the copy; without it, 6/7;
+#    settings/launcher.json is what package.py ships in the archive)
 #   <copy it to the box>; on the box: mkdir -p ~/camoucrome-cs && tar xzf changeset.tgz -C ~/camoucrome-cs
 #   on the box: bash ~/camoucrome-cs/scripts/export.sh ~/chromium/src
 #   on the box: (cd ~/camoucrome-cs && tar czf - additions patches settings/invariants.json | base64 -w0)
