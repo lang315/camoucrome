@@ -128,18 +128,20 @@ Source: `specs/2026-08-26-sp6-build-packaging-design.md` §4.1, §4.2, §4.6.
    literal key; duplicate key value asserts at load. Types (`string`, `uint32`,
    `int32`, `double`, `bool`, `string_list`, `list`, `dict`, `unsupported`) are
    the client validation table's input (A4). No call site moved.
-4. **Rebase onto the current Chromium milestone** — the pin is `0e8d4a9268`
-   (2026-08-26; `upstream.env`). NOT `a727b57805`, which the docs called the
-   pin until 2026-09-09 and which is the box's branch tip with sp0–sp2b
-   committed on top of the real base. Step 0: check the pin's milestone
-   against current stable. Chromium rolls
-   every four weeks and the fork's UA claims the real version, so an old pin is
-   a page-visible tell (`Sec-CH-UA` `fullVersionList`, feature detection). Run
-   the SP6 §6.7 rebase drill:
-   record conflicting files/lines as the baseline, re-diff `MirroredBaseline`
-   against `GetFontBaseline` (metric-jitter's standing rebase checklist item),
-   re-run every `verify_*.py`. Decide the pin policy (release branch vs `main`
-   at a commit — SP6 open decision).
+4. **Rebase onto Chrome stable** — **SHIPPED 2026-09-10** (content_shell
+   sweep; `chrome` rows follow its rebuild). Step 0 inverted the premise:
+   the old pin's `chrome/VERSION` was `154.0.8026.0`, a Dev/Canary-only build
+   number; stable was `153.0.8010.36`. Pin policy decided: the current stable
+   **tag**, refreshed per milestone (`measurements/2026-09-09-sp6a-version-
+   honesty.md`). Drill: 25/26 clean, one include-block conflict, 0 logic
+   lines; `text_metrics.cc` unchanged so metric-jitter's mirror stands. New
+   base built from scratch on the box (~4 h in chunks), true stock baseline
+   captured (`baselines/content_shell-8010-stock-ua.json`, 235 window keys =
+   the fork's 234 + `queryLocalFonts`, sp4-fonts's deliberate flip), stack
+   rebuilt (164 steps), sweep 33/33 on content_shell (the one red is
+   `verify_webrtc_ii_fakeip.py`, the rejected slice's RED record). Exported
+   from `camoucrome/main-8010`: 10 patches re-cut (index/context lines; the
+   one real change is the resolved include).
 
 ### A3. SP5b — invariant catalogue, presets, generator inputs
 

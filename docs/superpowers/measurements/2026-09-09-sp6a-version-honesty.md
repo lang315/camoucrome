@@ -65,3 +65,28 @@ Baseline for §6.7's trend rule: **26 patches, 70 files, 1 conflicting file,
 (2026-08-26 `main` → M153 stable tag). Result branch `camoucrome/main-8010`
 (26 commits above the tag) on the box; `camoucrome/main` (the 0e8d branch)
 kept until the sweep on the new base passes.
+
+## 4. Base switch, build, sweep (2026-09-10)
+
+- `~/chromium/src`: `check_checkout_sync` PASS first, then `git checkout -f
+  --detach 153.0.8010.36`, `gclient sync --revision src@507c6ee3…`
+  (three 560 s chunks), `gclient runhooks`; `chrome/VERSION` reads
+  `153.0.8010.36`, tree clean.
+- Pristine `content_shell` from scratch: ~41500 steps, about 4 h on 16 cores
+  (a base move plus toolchain roll invalidates everything). Stock baseline
+  captured from it: `baselines/content_shell-8010-stock-ua.json` — 235
+  window keys, 81 navigator prototype props. Against the committed 0e8d
+  baseline (recaptured from the fork's own build) the only difference is
+  `queryLocalFonts`, which sp4-fonts removes on purpose; the 13 Protected
+  Audience members are present in stock M153 too, so the field-trial
+  measurement's open question ("does real Chrome expose them?") is answered
+  for the stock binary: yes, with the testing config compiled out.
+- `git checkout camoucrome/main-8010`, incremental rebuild: 164 steps.
+- Sweep, content_shell rows (33 scripts; the 5 that need `chrome` run after
+  its rebuild): **33 pass**. `verify_webrtc_ii_fakeip.py` fails as it must —
+  it is the RED record of the rejected fake-local-IP slice (its header says
+  so) and has been excluded from every sweep since 2026-09-07.
+- Export from `camoucrome/main-8010` into the repo branch `rebase/8010`: 10
+  of 26 patches re-cut. Every diff is an `index` line or a hunk offset except
+  `media-ii-track.patch`, which now adds `security_origin.h` without the
+  upstream-removed `wtf/text/format.h` beside it.

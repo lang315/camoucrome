@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
-index 555f574e14..df5ecc9982 100644
+index b1cbee4f63..cc46d0d4ec 100644
 --- a/chrome/browser/ui/browser_commands.cc
 +++ b/chrome/browser/ui/browser_commands.cc
-@@ -2807,22 +2807,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
+@@ -2776,22 +2776,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
  }
  
  void ToggleRequestTabletSite(BrowserWindowInterface* browser) {

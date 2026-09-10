@@ -1,9 +1,9 @@
 diff --git a/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc b/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
-index 018980a5c6..9e37a6455a 100644
+index b6b98de4da..6abc87e507 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
-@@ -31,6 +31,11 @@
- #include "base/functional/callback_helpers.h"
+@@ -32,6 +32,11 @@
+ #include "base/strings/to_string.h"
  #include "build/build_config.h"
  #include "media/base/media_switches.h"
 +// Camoucrome media-ii: origin-salted synthetic device ids + mediaDevices keys.
@@ -14,14 +14,14 @@ index 018980a5c6..9e37a6455a 100644
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/common/mediastream/media_stream_request.h"
  #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
-@@ -75,6 +80,7 @@
+@@ -76,6 +81,7 @@
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
  #include "third_party/blink/renderer/platform/webrtc/peer_connection_remote_audio_source.h"
 +#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
- #include "third_party/blink/renderer/platform/wtf/text/format.h"
  #include "third_party/blink/renderer/platform/wtf/vector.h"
  
+ namespace blink {
 @@ -227,6 +233,70 @@ String GetDisplaySurfaceString(media::mojom::DisplayCaptureSurfaceType value) {
    NOTREACHED();
  }
@@ -108,7 +108,7 @@ index 018980a5c6..9e37a6455a 100644
  }
  
  bool MediaStreamTrackImpl::enabled() const {
-@@ -482,9 +558,15 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
+@@ -483,9 +559,15 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
    }
    auto platform_capabilities = component_->Source()->GetCapabilities();
  
@@ -126,7 +126,7 @@ index 018980a5c6..9e37a6455a 100644
    }
  
    if (component_->GetSourceType() == MediaStreamSource::kTypeAudio) {
-@@ -631,9 +713,16 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
+@@ -632,9 +714,16 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
    if (platform_settings.HasAspectRatio()) {
      settings->setAspectRatio(platform_settings.aspect_ratio);
    }

@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 47d731a72a..122505eed0 100644
+index 86f985f073..3edf5aaf4c 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -636,7 +636,8 @@ bool ShouldInstallSodaDuringPostProfileInit(
+@@ -626,7 +626,8 @@ bool ShouldInstallSodaDuringPostProfileInit(
               ash::features::kOnDeviceSpeechRecognition) &&
           ash::IsUserBrowserContext(const_cast<Profile*>(profile));
  #else
@@ -12,7 +12,7 @@ index 47d731a72a..122505eed0 100644
  #endif
  }
  #endif  // !BUILDFLAG(IS_ANDROID)
-@@ -1941,12 +1942,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1931,12 +1932,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
      g_browser_process->CreateDevToolsAutoOpener();
    }
  
@@ -32,7 +32,7 @@ index 47d731a72a..122505eed0 100644
    // `profile` may be nullptr if the profile picker is shown.
    Profile* profile = profile_info.profile;
 diff --git a/chrome/browser/signin/account_consistency_mode_manager.cc b/chrome/browser/signin/account_consistency_mode_manager.cc
-index 7d4c893cbc..fd61872501 100644
+index f11db47c92..7e71e1dbfb 100644
 --- a/chrome/browser/signin/account_consistency_mode_manager.cc
 +++ b/chrome/browser/signin/account_consistency_mode_manager.cc
 @@ -101,7 +101,10 @@ signin::AccountConsistencyMethod ComputeAccountConsistencyMethod(
@@ -137,7 +137,7 @@ index 89d1205f90..cc3676f882 100644
  BASE_FEATURE(kAimServerEligibilityEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
  
 diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
-index 39a5a7addd..d2c8fa0ac1 100644
+index 775f70052c..2aadc259e6 100644
 --- a/components/signin/public/base/signin_switches.cc
 +++ b/components/signin/public/base/signin_switches.cc
 @@ -87,8 +87,12 @@ base::TimeDelta GetAvatarSyncPromoFeatureMinimumCookeAgeParam() {
@@ -155,7 +155,7 @@ index 39a5a7addd..d2c8fa0ac1 100644
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  BASE_FEATURE(kBeforeFirstRunDesktopRefreshSurvey,
 diff --git a/components/signin/public/identity_manager/identity_manager.cc b/components/signin/public/identity_manager/identity_manager.cc
-index 37f6f396ed..3526b875ac 100644
+index c6f330df6c..1fdc136695 100644
 --- a/components/signin/public/identity_manager/identity_manager.cc
 +++ b/components/signin/public/identity_manager/identity_manager.cc
 @@ -458,12 +458,10 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
