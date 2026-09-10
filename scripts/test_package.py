@@ -48,6 +48,16 @@ def test_stage_copies_every_dep_and_writes_the_stamp(tree, tmp_path):
     assert win.suffix == ".zip"
 
 
+def test_explicit_changeset_commit_wins_over_git(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    _, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False, changeset="c" * 40)
+    assert stamp["changeset_commit"] == "c" * 40
+    monkeypatch.setattr(package, "ROOT", tmp_path / "not-a-repo")
+    with pytest.raises(SystemExit, match="not a git checkout"):
+        package.changeset_commit(None)
+
+
 def test_refuses_component_build(tree, tmp_path):
     src, out, deps = tree
     (out / "args.gn").write_text("is_component_build = true\n")
