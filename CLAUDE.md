@@ -54,6 +54,7 @@ the project exists.
 | `patches/` | diffs against files that **already exist** in Chromium |
 | `settings/` | `invariants.json` (cross-surface invariant registry, SP5), `keys.json` (key registry), `presets/` (captured device presets, SP5b) and `build-args.gn` (canonical GN args, incl. the proprietary-codec pair) |
 | `scripts/` | `apply.sh` (the applier) and `verify_*.py` (per-slice browser verifications) |
+| `client/` | the launchers: `client/python/camoucrome` (patchright) and `client/go` (`playwright-go` on the `patchright-core` driver). Both implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
 | `baselines/` | stock reference captures; five are committed (`git ls-files baselines`; the two `*-8010-*`/`*-507c6ee3e2-*` files are true pristine captures at the pin), the rest are build-host-local and regenerable |
 
@@ -148,6 +149,14 @@ never calls the patched `embedder_support` producer, so a patch there is
 invisible in `content_shell`. Before planning a verification, confirm the binary
 under test actually **calls the function being patched** (grep the patched
 symbol's callers, not the feature name).
+
+**Driving the browser.** Never through a CDP client that sends
+`Runtime.enable` (SP2 D1: the one measured leak, +21% on stack timing) and
+never with Playwright's default argv (it carries `--disable-features=<18>`,
+`--blink-settings=…`, `--hide-scrollbars`, `--mute-audio`, which move
+page-visible surfaces). The clients in `client/` do both right; patchright's
+`evaluate` runs in an isolated world, so read main-world state through the
+DOM. `navigator.userAgent` is not a config key (use `ua:*`).
 
 ## The dominant failure mode: a check that measures nothing
 

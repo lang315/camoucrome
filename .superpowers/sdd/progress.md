@@ -3654,3 +3654,23 @@ flips it; the only testing-config study disables it. Seed-attributable delta: no
 unblockers = captured real seed on the pin, or an observed feature-state detector. A3 #2 marked BLOCKED
 (real-hardware capture unreachable). Housekeeping: out/Default/chrome.stale-0e8d (175 MB) removed on the box.
 
+## SP6b driver contract + Python/Go clients (A4 #1, #3 flags) -- SHIPPED 2026-09-10
+User chose Python AND Go. Key insight: the patch set lives in the Node driver, so playwright-go pointed at
+patchright-core@1.62.1 (version string must match v0.6201.1's 1.62.1; module path is mxschmitt/playwright-go;
+node from the patchright wheel, box Node 18 refused) inherits it with no Go port. Measured before writing:
+patchright evaluate = isolated world (marker invisible to a main-world script) -> contract reads the DOM;
+CAMOU_CONFIG reaches the browser via env= and inheritance; navigator.userAgent is unsupported by design;
+content_shell not launchable via Playwright (createBrowserContext fails) -> chrome. Playwright default argv
+carries --disable-features=<18>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType..,
+--hide-scrollbars, --mute-audio, --force-color-profile=srgb ... -> both launchers ignore_default_args and pass
+exactly launcher.json's list; that drops --remote-debugging-pipe (hang on Browser.getVersion) and
+--user-data-dir (chrome went --incognito) too, so the launcher adds both. Chrome's --headless=new relaunch
+self-adds 4 flags (present in the no-driver baseline) -> listed as Chrome's. C4 asserts argv EQUALITY.
+verify_sp6b_driver.py: one probe page (main-world sync script -> <pre id=o>), 4 drivers via one CLI shape,
+stock same-version RED rows. C1 Runtime.enable 1 vs 0 (sends 383 vs 404/410), C2 235 keys equal on all four
+(SP2 browser-level closure holds against stock too), C3 ok, C4 equal, C5 stock +20..27% vs patchright
+-1..+3% (baseline = median of 3 --dump-dom launches; a single run wobbled 17.8 vs 21.3 ms). ALL_PASS x2.
+Clients: client/python/camoucrome (5 tests, forbidden-option guard), client/go (3 tests, no forbidden field
+by construction), both parity-tested against settings/launcher.json. Open: headed runs, --load-extension,
+custom CA, generator (A4 #2), Node front-end.
+

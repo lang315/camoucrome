@@ -201,7 +201,15 @@ Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
 
 Source: SP6 §4.5, SP2 D1 resolution, tz-locale measurement §5.
 
-1. **Adopt (not write) a CDP driver that honours the measured constraints**:
+1. **SHIPPED 2026-09-10** (`measurements/2026-09-10-sp6b-driver-contract.md`):
+   patchright for Python, `playwright-go` pointed at `patchright-core` for Go
+   (the patch set lives in the Node driver, so Go needs no port); one contract
+   `settings/launcher.json`, one verify `scripts/verify_sp6b_driver.py` with
+   stock drivers of the same version as RED rows (C1 `Runtime.enable` 1 vs 0,
+   C5 +21% vs ±3%), `Object.keys(window)` == a no-driver `--dump-dom`
+   baseline, browser argv pinned by equality because Playwright's defaults
+   carry `--disable-features=<18>` and more. Original brief follows.
+   **Adopt (not write) a CDP driver that honours the measured constraints**:
    never `Runtime.enable` (D1 — the only *measured* SP2 leak left is the +21%
    stack-timing signal under Runtime), page-agent scripts only in isolated
    worlds, no main-world `addScriptToEvaluateOnNewDocument`. patchright-style
@@ -217,7 +225,9 @@ Source: SP6 §4.5, SP2 D1 resolution, tz-locale measurement §5.
    `virtual_display`. What changes: BrowserForge `browser='chrome'`, Chrome UA /
    UA-CH brand generation, Chrome WebGL strings (A3.2), Chrome voice names.
 3. **Launcher-layer duties the C++ deliberately left to it** (each is a tell if
-   forgotten): size the window via `--window-size` / `Browser.setWindowBounds`
+   forgotten) — window size, DPR, per-identity profile, env-only
+   timezone/locale, `no_viewport` and `ignore_default_args` **shipped in both
+   clients 2026-09-10**; extensions and custom CA still open: size the window via `--window-size` / `Browser.setWindowBounds`
    so `innerWidth`/`clientWidth`/`outerWidth` cohere with `screen.*`;
    `--force-device-scale-factor` for DPR; route timezone/locale ONLY through
    `CAMOU_CONFIG` (a second Playwright `timezone_id`/`locale` fails with
