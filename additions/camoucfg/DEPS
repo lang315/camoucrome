@@ -1,0 +1,5 @@
+include_rules = [
+  # components/DEPS forbids cross-component includes unless declared here.
+  "+components/version_info",
+  "+ui/gfx/geometry",
+]

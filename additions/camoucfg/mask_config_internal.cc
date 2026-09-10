@@ -4,6 +4,8 @@
 
 #include "components/camoucfg/mask_config_internal.h"
 
+#include <string_view>
+
 #include "base/environment.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -11,6 +13,8 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "components/camoucfg/keys.h"
+#include "components/camoucfg/preset_loader.h"
+#include "components/version_info/version_info.h"
 
 namespace camoucfg::internal {
 
@@ -23,11 +27,11 @@ void WarnWrongType(std::string_view key, const char* expected) {
 
 }  // namespace
 
-std::string AssembleRawConfig(EnvGetter get) {
+std::string AssembleRawConfig(EnvGetter get, std::string_view prefix) {
   std::string assembled;
   for (int index = 1;; ++index) {
     std::optional<std::string> chunk =
-        get(base::StrCat({"CAMOU_CONFIG_", base::NumberToString(index)}));
+        get(base::StrCat({prefix, "_", base::NumberToString(index)}));
     if (!chunk.has_value()) {
       break;
     }
@@ -38,7 +42,7 @@ std::string AssembleRawConfig(EnvGetter get) {
     return assembled;
   }
 
-  std::optional<std::string> single = get("CAMOU_CONFIG");
+  std::optional<std::string> single = get(std::string(prefix));
   return single.value_or(std::string());
 }
 
@@ -211,6 +215,27 @@ const base::DictValue& ParsedConfig() {
     const std::string raw = AssembleRawConfig(get);
     const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
     base::DictValue parsed = ParseConfig(raw, strict);
+    const std::string raw_preset = AssembleRawConfig(get, "CAMOU_PRESET");
+    if (!raw_preset.empty()) {
+      // Same rule as the config -- malformed refuses under strict, otherwise
+      // is ignored -- but its own message: ParseConfig's says all spoofing
+      // is disabled, which is untrue here, the explicit keys still apply.
+      std::optional<base::DictValue> preset =
+          base::JSONReader::ReadDict(raw_preset, base::JSON_PARSE_RFC);
+      if (!preset.has_value()) {
+        LOG(ERROR) << "camoucfg: preset is not a JSON object; ignored, "
+                   << "explicit configuration still applies";
+        CHECK(!strict) << "camoucfg: refusing to start with an invalid "
+                       << "preset because CAMOU_CONFIG_STRICT is set";
+      } else {
+        // Merge is recursive: an explicit webGl:parameters overrides the
+        // preset's table pname by pname, not as a whole.
+        base::DictValue expanded = ExpandPreset(
+            *preset, version_info::GetMajorVersionNumberAsInt());
+        expanded.Merge(std::move(parsed));
+        parsed = std::move(expanded);
+      }
+    }
     VLOG(1) << "camoucfg: parsed " << parsed.size() << " key(s)";
     return parsed;
   }());

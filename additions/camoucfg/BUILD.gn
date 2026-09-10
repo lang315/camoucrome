@@ -27,10 +27,13 @@ static_library("camoucfg") {
     "mask_config_internal.h",
     "mouse_trajectories.cc",
     "mouse_trajectories.h",
+    "preset_loader.cc",
+    "preset_loader.h",
   ]
 
   deps = [
     "//base",
+    "//components/version_info",
     "//ui/gfx/geometry",
   ]
 }
@@ -48,6 +51,7 @@ source_set("unit_tests") {
     "keys_unittest.cc",
     "mask_config_unittest.cc",
     "mouse_trajectories_unittest.cc",
+    "preset_loader_unittest.cc",
   ]
 
   deps = [

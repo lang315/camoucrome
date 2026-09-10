@@ -175,10 +175,15 @@ Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
    `webgl_data.db` sampled by market share, but with **Chrome-shaped** strings
    (`ANGLE (NVIDIA, NVIDIA GeForce ... Direct3D11 vs_5_0 ps_5_0, D3D11)`) — a
    Firefox renderer string on a Chrome UA is the incoherence rule 4 forbids.
-3. **Preset store + loader** — `settings/presets/chromium-<milestone>.json`,
-   `additions/camoucfg/preset_loader.{h,cc}`: minimum identifying set, derived
-   fields computed at load with the same helpers the validator uses, milestone
-   policy on load.
+3. **Preset store + loader** — **SHIPPED 2026-09-10**
+   (`measurements/2026-09-10-sp5b-preset-loader.md`): `CAMOU_PRESET` (env,
+   chunked like `CAMOU_CONFIG`) expanded by `ExpandPreset` inside
+   `ParsedConfig()`, explicit keys merged over it; milestone mismatch is a
+   warning (nothing version-bearing comes from a preset, so the spec's
+   "rewrite" has an empty set). `settings/presets/chromium-153.json` is a
+   smoke capture of the box (Linux/SwiftShader), not a distributable
+   identity — real presets are #2's output, captured by
+   `scripts/capture_preset.py` on real hardware.
 4. **Per-instance variations seed derived from config** — the long-term answer
    SP7 D3 handed to SP5b once presets exist.
 

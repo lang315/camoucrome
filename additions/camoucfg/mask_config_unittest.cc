@@ -60,6 +60,14 @@ TEST(AssembleRawConfigTest, StopsAtFirstMissingIndex) {
   EXPECT_EQ(AssembleRawConfig(env), "one");
 }
 
+TEST(AssembleRawConfigTest, PrefixSelectsThePresetFamily) {
+  std::map<std::string, std::string> env = {{"CAMOU_CONFIG", "config"},
+                                            {"CAMOU_PRESET_1", "pre"},
+                                            {"CAMOU_PRESET_2", "set"}};
+  EXPECT_EQ(AssembleRawConfig(EnvFrom(env), "CAMOU_PRESET"), "preset");
+  EXPECT_EQ(AssembleRawConfig(EnvFrom(env)), "config");
+}
+
 TEST(AssembleRawConfigTest, NumberedChunksWinOverUnnumbered) {
   std::map<std::string, std::string> vars{
       {"CAMOU_CONFIG", "ignored"},
