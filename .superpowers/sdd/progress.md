@@ -3687,4 +3687,9 @@ start, 0 invariant lines, page == emitted; RED mutated ua:platform refused (ua-o
 26/31: innerWidth = outer+2 at DPR 1.25/1.75 (constant, measured 12 launches; a rounding/alignment guess
 was wrong and removed) -> launch.window = outer - offset. Final 31/31 ALL_PASS. Go: Generate() execs the
 CLI, ParseGenerated tested on a literal.
+Follow-up (review): pool deviceMemory 16/32 in >50% of samples, Chrome caps at 8 and domain_validator.cc
+has no rule -> generator snaps to {0.25..8}, C++ domain entry noted as follow-up; 200-draw unseeded property
+test (found: browserforge raises TypeError on every draw with os=None passed explicitly -> omit kwarg); G2
+now counts every camoucfg: line; N=10 verify = 81 s (sweep budget 400 s); Go Generate() exec'd on the box:
+window [1920 1032] dpr 1, 33 keys. 17 py tests, 5 go tests.
 

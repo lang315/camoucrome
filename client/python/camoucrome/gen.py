@@ -10,7 +10,9 @@ Pool field -> config key (mirrors the preset loader's table style):
   userAgentData.platformVersion/architecture/bitness/model/mobile
                                   -> ua:platformVersion, ua:architecture, ua:bitness,
                                      ua:model, ua:mobile; ua:wow64 false
-  navigator.hardwareConcurrency, deviceMemory, maxTouchPoints -> same-named keys
+  navigator.hardwareConcurrency, maxTouchPoints -> same-named keys
+  navigator.deviceMemory           -> snapped to Chrome's set {0.25..8} (DEVICE_MEMORY);
+                                     the pool says 16/32 in half its samples
   screen.width/height/availWidth/availHeight -> screen.*
   screen.outerWidth/outerHeight/screenX/screenY -> window.*, and launch.window
   screen.devicePixelRatio          -> launch.dpr (a launcher flag; DPR has no key);
@@ -83,6 +85,18 @@ def dpr_of(fp):
     return fp["screen"].get("devicePixelRatio") or 1
 
 
+# Chrome clamps navigator.deviceMemory to a power of two in [0.25, 8]; the
+# pool carries 16 and 32 in over half of its samples (200 draws: 8 x76,
+# 16 x76, 32 x33, 4 x15), values no real Chrome reports. Largest allowed
+# value <= the pool's. The C++ domain validator has no rule for this key
+# (only the geolocation axes), so the strict oracle cannot catch it.
+DEVICE_MEMORY = (0.25, 0.5, 1, 2, 4, 8)
+
+
+def chrome_device_memory(value):
+    return max((m for m in DEVICE_MEMORY if m <= value), default=DEVICE_MEMORY[0])
+
+
 def acceptable(fp):
     ud = fp["navigator"].get("userAgentData") or {}
     brands = " ".join(b.get("brand", "") for b in ud.get("brands", []))
@@ -137,7 +151,7 @@ def from_pool(fp, timezone, locale=None, rng=None):
         "ua:model": ud.get("model", ""),
         "ua:mobile": False, "ua:wow64": False,
         "navigator.hardwareConcurrency": nav["hardwareConcurrency"],
-        "navigator.deviceMemory": nav["deviceMemory"],
+        "navigator.deviceMemory": chrome_device_memory(nav["deviceMemory"]),
         "navigator.maxTouchPoints": nav["maxTouchPoints"],
         "screen.width": scr["width"], "screen.height": scr["height"],
         "screen.availWidth": scr["availWidth"], "screen.availHeight": scr["availHeight"],
@@ -184,7 +198,9 @@ def generate(os=None, timezone=None, locale=None, seed=None):
     rng = random.Random(seed)
     if seed is not None:
         random.seed(seed)  # BrowserForge draws from the global RNG
-    gen = FingerprintGenerator(browser="chrome", os=os)
+    # browserforge 1.2.4 raises TypeError on every draw when os=None is
+    # passed explicitly; the keyword must be absent for "any OS".
+    gen = FingerprintGenerator(browser="chrome", **({"os": os} if os else {}))
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
