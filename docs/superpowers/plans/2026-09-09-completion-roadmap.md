@@ -21,7 +21,7 @@ Against that definition, the state of the sub-project map:
 |---|---|---|
 | SP0, SP1a, SP1b, SP2a, SP2b, SP3, SP4 (+ follow-ons), SP5a, SP5b-validator | shipped | 25 patches, 83 keys in `kAllKeys`, per-slice `verify_*.py` |
 | SP7 | **codecs only** | `settings/build-args.gn` has 2 args; no patch touches variations/crash/metrics/updater/safe-browsing/API keys |
-| SP5b catalogue + presets | **not started** | `settings/invariants.json` holds 4 entries; no `settings/presets/`, no `preset_loader` |
+| SP5b catalogue + presets | **catalogue first fill shipped 2026-09-10** | `settings/invariants.json` holds 9 entries; no `settings/presets/`, no `preset_loader` |
 | SP6a | **partial** | `apply.sh` exists but checks no pin; no `export.sh`, no `upstream.env`, no `keys.json` codegen (invariants.json still says "SP6a will generate") |
 | SP6b | **not started** | no packaging, no Windows/macOS build, no client, no CI |
 

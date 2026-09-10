@@ -152,6 +152,51 @@ std::vector<Violation> CheckSameString(const ConfigScope& scope,
   return {v};
 }
 
+// The WebGL identity string a page would read, resolved the way
+// GLStringResolves() resolves it: the webGl(2):vendor / :renderer key, else
+// the string at webGl(2):parameters["37445"] / ["37446"] (UNMASKED_VENDOR /
+// UNMASKED_RENDERER_WEBGL). A profile may supply the identity through either
+// path; a check that read only the key would pass a disagreement supplied
+// through the map -- the "check that measures nothing" failure.
+std::optional<std::string> ResolvedGLString(const ConfigScope& scope,
+                                            bool is_webgl2,
+                                            bool vendor) {
+  std::optional<std::string> direct =
+      vendor ? GLVendor(scope, is_webgl2) : GLRenderer(scope, is_webgl2);
+  if (direct.has_value()) {
+    return direct;
+  }
+  std::optional<GLValue> param =
+      GLParam(scope, vendor ? 0x9245u : 0x9246u, is_webgl2);
+  if (param.has_value() && std::holds_alternative<std::string>(*param)) {
+    return std::get<std::string>(*param);
+  }
+  return std::nullopt;
+}
+
+// kSameString for the WebGL identity pair: keys[0] is the WebGL1 side,
+// keys[1] the WebGL2 side of one identity string (vendor when keys[0] is
+// kWebGlVendor, renderer otherwise -- invariants.h's static_assert pins the
+// pairs). Both resolved through ResolvedGLString().
+std::vector<Violation> CheckSameGlString(const ConfigScope& scope,
+                                         const invariants::Invariant& inv) {
+  const bool vendor = inv.keys[0] == keys::kWebGlVendor;
+  std::optional<std::string> first =
+      ResolvedGLString(scope, /*is_webgl2=*/false, vendor);
+  std::optional<std::string> second =
+      ResolvedGLString(scope, /*is_webgl2=*/true, vendor);
+  if (!first.has_value() || !second.has_value() || *first == *second) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = *second;
+  v.new_value = *first;
+  return {v};
+}
+
 // The OS family an ANGLE renderer description commits to, from the backend
 // token it carries. Only tokens exclusive to one family are recognised:
 // Direct3D ships on Windows alone, Metal on Apple platforms alone. OpenGL and
@@ -168,15 +213,16 @@ OsFamily OsFamilyOfRendererBackend(std::string_view renderer) {
   return OsFamily::kUnknown;
 }
 
-// keys[0] is kUaOsInfo; the renderer is resolved through GLRenderer() -- the
-// helper the pairing check uses -- so a renderer supplied through
-// webGl:parameters["37446"] rather than webGl:renderer is checked too. There
+// keys[0] is kUaOsInfo; the renderer is resolved through ResolvedGLString(),
+// so a renderer supplied through webGl:parameters["37446"] rather than
+// webGl:renderer is checked too. There
 // is no canonical renderer for an OS, so new_value is descriptive; the
 // mutation test asserts repaired_key, which is the contract.
 std::vector<Violation> CheckRendererBackendFitsOs(
     const ConfigScope& scope, const invariants::Invariant& inv) {
   OsFamily claimed = OsFamilyOfKey(scope, inv.keys[0]);
-  std::optional<std::string> renderer = GLRenderer(scope, /*is_webgl2=*/false);
+  std::optional<std::string> renderer =
+      ResolvedGLString(scope, /*is_webgl2=*/false, /*vendor=*/false);
   if (claimed == OsFamily::kUnknown || !renderer.has_value()) {
     return {};
   }
@@ -273,6 +319,11 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
       }
       case invariants::Relation::kSameString: {
         std::vector<Violation> found = CheckSameString(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kSameGlString: {
+        std::vector<Violation> found = CheckSameGlString(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }

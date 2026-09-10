@@ -10,9 +10,9 @@ Five registry entries, each with its mutation test; the registry's own rule
 |---|---|---|---|
 | `navigator-language-heads-languages` | `navigator.languages` → `navigator.language` | `list-head-equals` | both set, `language != languages[0]` |
 | `locale-tag-matches-navigator-language` | `locale:tag` → `navigator.language` | `same-string` | both set, unequal (exact) |
-| `webgl2-vendor-agrees-with-webgl` | `webGl:vendor` → `webGl2:vendor` | `same-string` | both set, unequal |
-| `webgl2-renderer-agrees-with-webgl` | `webGl:renderer` → `webGl2:renderer` | `same-string` | both set, unequal |
-| `webgl-renderer-backend-fits-os` | `ua:osInfo` → `webGl:renderer` | `renderer-backend-fits-os` | OS known, renderer resolves (via `GLRenderer()`, so the `webGl:parameters["37446"]` path counts) and its backend token names another family |
+| `webgl2-vendor-agrees-with-webgl` | `webGl:vendor` → `webGl2:vendor` | `same-gl-string` | both sides resolve (key, else `parameters["37445"]`), unequal |
+| `webgl2-renderer-agrees-with-webgl` | `webGl:renderer` → `webGl2:renderer` | `same-gl-string` | both sides resolve (key, else `parameters["37446"]`), unequal |
+| `webgl-renderer-backend-fits-os` | `ua:osInfo` → `webGl:renderer` | `renderer-backend-fits-os` | OS known, renderer resolves (key, else `parameters["37446"]`) and its backend token names another family |
 
 Authority choices, each written into the entry's `why`: the list over the
 scalar (more information); `locale:tag` over `navigator.language` (the
@@ -51,6 +51,9 @@ in §5.
 - `Accept-Language` ↔ `navigator.language`: nothing in the tree derives the
   header from `locale:tag` (tz-locale measurement); a generator obligation,
   not a config invariant.
+- WebGL identity set on ONE context only (spoofed WebGL1 beside a real
+  WebGL2): `GLVendor`/`GLRenderer` have no WebGL1→WebGL2 fallback, so the
+  page sees two GPUs. A presence relation, same kind as the two above.
 - Value coherence of the WebGL parameter table against the claimed renderer:
   the profile database (A3 #2).
 
@@ -68,3 +71,23 @@ in §5.
 Two compile failures on the way, both the same: a `R"(…)"` raw string is
 terminated by the first `)"`, which every ANGLE string contains (`(NVIDIA)"`).
 The mutation literals use `R"json(…)json"`.
+
+## 6. Fix-forward the same day: the parameters supply path
+
+Review of `007ca80` found that the two agreement entries read only the
+`webGl(2):vendor` / `:renderer` keys, while the pairing check (and the
+registry's own rule) treats an identity supplied through
+`webGl(2):parameters["37445"/"37446"]` as configured — and the backend
+entry's comment claimed that path was covered when `GLRenderer()` reads the
+key alone. A profile setting WebGL1's renderer through the map and WebGL2's
+through the key, disagreeing, passed. That is the catalogued "check that
+measures nothing" for one of two supply paths. Fixed: `ResolvedGLString()`
+(key, else the map string) feeds a new `same-gl-string` relation for the two
+agreement entries and the backend entry; a `static_assert` pins the
+agreement entries to the two identity pairs; the renderer mutation now
+supplies WebGL1 through the map so the harder path is the one proven.
+
+Result after the fix: build 10 steps; 19 suites 109 OK; `run_coherence_tests.sh`
+6/6 with all nine mutations caught alone — the renderer one now through the
+parameter map; box commit `sp5b-catalogue` amended (`7d54ea20df`); export gate
+empty; `check_checkout_sync` PASS.

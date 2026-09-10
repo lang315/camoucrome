@@ -86,7 +86,7 @@ declare -A MUTATIONS=(
   [navigator-language-heads-languages]='{"navigator.languages":["fr-FR","en-US"],"navigator.language":"en-US"}'
   [locale-tag-matches-navigator-language]='{"locale:tag":"fr-FR","navigator.language":"en-US"}'
   [webgl2-vendor-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (AMD)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
-  [webgl2-renderer-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
+  [webgl2-renderer-agrees-with-webgl]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:parameters":{"37446":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"},"webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
   [webgl-renderer-backend-fits-os]='{"ua:osInfo":"Windows NT 10.0; Win64; x64","webGl:vendor":"Google Inc. (Apple)","webGl:renderer":"ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"}'
 )
 

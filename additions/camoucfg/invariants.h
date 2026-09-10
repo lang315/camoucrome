@@ -65,6 +65,11 @@ enum class Relation {
   kListHeadEquals,
   // Both strings present and unequal (exact compare). Repair: keys[1] <- keys[0].
   kSameString,
+  // kSameString for the WebGL identity pair {webGl:X, webGl2:X}: each side is
+  // resolved the way the pairing check resolves it (the webGl(2):X key, else
+  // the string at webGl(2):parameters["37445"/"37446"]), so a renderer
+  // supplied through the parameter map is compared too.
+  kSameGlString,
   // keys[0] names the claimed OS (kUaOsInfo); keys[1] is kWebGlRenderer,
   // resolved through GLRenderer(). Violated when the renderer's ANGLE backend
   // token (Direct3D -> Windows, Metal -> macOS) names a different OS family.
@@ -115,11 +120,11 @@ inline constexpr std::array<Invariant, 9> kAllInvariants = {{
      Policy::kRepair,
      {keys::kLocaleTag, keys::kNavigatorLanguage}},
     {"webgl2-vendor-agrees-with-webgl",
-     Relation::kSameString,
+     Relation::kSameGlString,
      Policy::kRepair,
      {keys::kWebGlVendor, keys::kWebGl2Vendor}},
     {"webgl2-renderer-agrees-with-webgl",
-     Relation::kSameString,
+     Relation::kSameGlString,
      Policy::kRepair,
      {keys::kWebGlRenderer, keys::kWebGl2Renderer}},
     {"webgl-renderer-backend-fits-os",
@@ -220,6 +225,27 @@ static_assert(
     "CheckSamePlatformBucket() reads keys[0]'s OS family via OsFamilyOfKey() "
     "and repairs keys[1] via CanonicalNavigatorPlatformFor(), so any other "
     "keys[0] or keys[1] would be read or repaired wrongly with no diagnostic.");
+
+constexpr bool EverySameGlStringEntryUsesAWebGlIdentityPair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kSameGlString &&
+        !((inv.keys[0] == keys::kWebGlVendor &&
+           inv.keys[1] == keys::kWebGl2Vendor) ||
+          (inv.keys[0] == keys::kWebGlRenderer &&
+           inv.keys[1] == keys::kWebGl2Renderer))) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(
+    EverySameGlStringEntryUsesAWebGlIdentityPair(),
+    "a kSameGlString entry must be {kWebGlVendor, kWebGl2Vendor} or "
+    "{kWebGlRenderer, kWebGl2Renderer} -- coherence_validator.cc's "
+    "CheckSameGlString() resolves keys[0] as the WebGL1 side and keys[1] as "
+    "the WebGL2 side of the SAME identity string (vendor when keys[0] is "
+    "kWebGlVendor, renderer otherwise), so any other pair would compare the "
+    "wrong values with no diagnostic.");
 
 constexpr bool EveryRendererBackendEntryUsesTheOsRendererPair() {
   for (const Invariant& inv : kAllInvariants) {

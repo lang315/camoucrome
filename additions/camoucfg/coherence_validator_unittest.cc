@@ -112,6 +112,9 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
     } else if (*relation == "same-string") {
       EXPECT_EQ(header_entry->relation, invariants::Relation::kSameString)
           << *id;
+    } else if (*relation == "same-gl-string") {
+      EXPECT_EQ(header_entry->relation, invariants::Relation::kSameGlString)
+          << *id;
     } else if (*relation == "renderer-backend-fits-os") {
       EXPECT_EQ(header_entry->relation,
                 invariants::Relation::kRendererBackendFitsOs)
@@ -213,9 +216,11 @@ constexpr std::array<Mutation, 9> kMutations = {{
     {"webgl2-vendor-agrees-with-webgl",
      R"json({"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (AMD)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"})json",
      "webGl2:vendor"},
-    // Vendors equal, renderers differ.
+    // Vendors equal, renderers differ -- and the WebGL1 renderer arrives
+    // through webGl:parameters["37446"], not the key, so this mutation proves
+    // the harder supply path (the key path is the same code, one branch up).
     {"webgl2-renderer-agrees-with-webgl",
-     R"json({"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"})json",
+     R"json({"webGl:vendor":"Google Inc. (NVIDIA)","webGl:parameters":{"37446":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"},"webGl2:vendor":"Google Inc. (NVIDIA)","webGl2:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"})json",
      "webGl2:renderer"},
     // A Metal renderer under a Windows OS. No ua:platform / navigator.platform
     // / webGl2:* keys, so no other entry has both of its keys.
