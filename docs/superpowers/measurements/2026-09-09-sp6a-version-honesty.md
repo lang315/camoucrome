@@ -78,9 +78,10 @@ kept until the sweep on the new base passes.
   window keys, 81 navigator prototype props. Against the committed 0e8d
   baseline (recaptured from the fork's own build) the only difference is
   `queryLocalFonts`, which sp4-fonts removes on purpose; the 13 Protected
-  Audience members are present in stock M153 too, so the field-trial
-  measurement's open question ("does real Chrome expose them?") is answered
-  for the stock binary: yes, with the testing config compiled out.
+  Audience members are present in unbranded stock M153 too when the testing
+  config is compiled out (which is exactly what exposes them, so this is
+  consistency, not an answer); real Chrome under a live server seed remains
+  the SP5b measurement item.
 - `git checkout camoucrome/main-8010`, incremental rebuild: 164 steps.
 - Sweep, content_shell rows (33 scripts; the 5 that need `chrome` run after
   its rebuild): **33 pass**. `verify_webrtc_ii_fakeip.py` fails as it must —
@@ -109,3 +110,9 @@ kept until the sweep on the new base passes.
 **Result: 38 verifies green on Chrome stable 153.0.8010.36** (the 39th,
 `verify_webrtc_ii_fakeip.py`, is the rejected slice's RED record and fails
 by design). The fork now reports a version that stable users have.
+- Round-trip's middle step, run after review caught its absence: `gn check
+  //components/camoucfg:*` and `//content/shell:content_shell` both "Header
+  dependency check OK" on the re-applied DEPS/BUILD.gn hunks (upstream had
+  touched `components/BUILD.gn`, `content/browser/DEPS`, `blink/renderer/DEPS`);
+  `components_unittests` rebuilt (6068 steps, 47 min); the 19 Camoucfg suites
+  109/109 PASSED; `run_coherence_tests.sh` 6/6.

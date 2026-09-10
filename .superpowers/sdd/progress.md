@@ -3581,3 +3581,10 @@ Re-pin FINISHED 2026-09-10: pristine chrome baseline recaptured into /home/lang 
 camoumain dropped), camoucrome/main-0e8d retired. Export gate vs the renamed branch: empty.
 check_checkout_sync PASS 35. Totals on 153.0.8010.36: 33 content_shell + 5 chrome verifies green.
 Merging rebase/8010 -> main.
+Review gap closed: gn check camoucfg + content_shell OK; components_unittests rebuilt on M153 (6068 steps);
+19 Camoucfg suites (AssembleRawConfig, CamoucfgKeys, CanvasNoise, CapabilityIdentity, DeriveDelta, Derive,
+DeriveUnit, DeviceIds, DomainValidator, GLParams, Getters, IsFontAllowed, MaskConfig, MouseTrajectories,
+Pairing, ParseConfigDeath, ParseConfig, PerturbAudio, PerturbRgba) 109 PASSED rc=0; run_coherence_tests
+6/6. Review doc fixes: Protected Audience wording (consistency, not an answer), B2 content_shell half
+credited, sync-check FAIL string, baseline count 5. Housekeeping open: origin rebase/8010 (merged), box
+out/Default/chrome.stale-0e8d (175 MB), verify_sp1a still compares against the fork's own recording.

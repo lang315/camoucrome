@@ -55,7 +55,7 @@ the project exists.
 | `settings/` | `invariants.json` (cross-surface invariant registry, SP5) and `build-args.gn` (canonical GN args, incl. the proprietary-codec pair) |
 | `scripts/` | `apply.sh` (the applier) and `verify_*.py` (per-slice browser verifications) |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
-| `baselines/` | stock reference captures; three are committed (`git ls-files baselines`), the rest are build-host-local and regenerable |
+| `baselines/` | stock reference captures; five are committed (`git ls-files baselines`; the two `*-8010-*`/`*-507c6ee3e2-*` files are true pristine captures at the pin), the rest are build-host-local and regenerable |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
 split (from Camoufox, held across ~64 patches) keeps rebase conflicts confined to

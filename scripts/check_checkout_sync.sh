@@ -93,7 +93,7 @@ buildtree=$(printf '%s\n' "$remote_out" | sed -n '/^BUILDTREE_BEGIN/,/^BUILDTREE
 if [ -n "$buildtree" ]; then
   echo "FAIL  the build tree differs from camoucrome/main (what export.sh exports):"
   printf '%s\n' "$buildtree" | sed 's/^/      /'
-  echo "      commit it on the branch (worktree /home/lang/camoumain) or check it out of the branch."
+  echo "      commit it on camoucrome/main (checked out in the build tree) or check it out of the branch."
   fails=$((fails + 1))
 fi
 
