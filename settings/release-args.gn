@@ -1,0 +1,20 @@
+# GN args for a RELEASE build (scripts/package.py refuses a component build).
+# The dev loop (out/Default) is is_component_build = true for 1-3 min
+# incremental relinks; a release is one static chrome binary plus the runtime
+# deps GN lists for it. Everything below build-args.gn's three lines is the
+# non-component, non-official, symbol-less shape used on the build box on
+# 2026-09-10 (out/Release). is_official_build (PGO/LTO) is deliberately off:
+# it multiplies build time and changes nothing page-visible.
+is_debug = false
+is_component_build = false
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+dcheck_always_on = false
+use_remoteexec = false
+enable_nacl = false
+
+# --- settings/build-args.gn, verbatim ---
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+disable_fieldtrial_testing_config = true

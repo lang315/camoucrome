@@ -4,3 +4,4 @@ __pycache__/
 sp1a-review-package.md
 sp5a-review-package.md
 /wsl-build-server.md
+dist/

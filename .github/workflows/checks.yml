@@ -1,0 +1,45 @@
+# Cheap CI (SP6 4.x, roadmap A5 #4): everything that needs no Chromium
+# checkout. Full builds stay on the build box until a release cadence exists.
+name: checks
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - name: additions are all in BUILD.gn
+        run: python3 scripts/check_additions_build.py
+      - name: keys.h matches keys.json and every call site
+        run: python3 scripts/gen_keys.py --check
+      - name: patches/series names existing patches, once each
+        run: |
+          set -e
+          while read -r p; do [ -z "$p" ] && continue; test -f "patches/$p" || { echo "missing patches/$p"; exit 1; }; done < patches/series
+          test "$(sort patches/series | uniq -d | wc -l)" -eq 0
+          for f in patches/*.patch; do grep -qx "$(basename "$f")" patches/series || { echo "$f not in series"; exit 1; }; done
+      - name: settings JSON parses and invariants/keys agree
+        run: |
+          python3 - <<'EOF2'
+          import json, pathlib
+          keys = {k["key"] for k in json.loads(pathlib.Path("settings/keys.json").read_text())["keys"]}
+          inv = json.loads(pathlib.Path("settings/invariants.json").read_text())
+          for e in inv["invariants"]:
+              for k in e["keys"]:
+                  assert k in keys, (e["id"], k)
+          json.loads(pathlib.Path("settings/launcher.json").read_text())
+          for p in pathlib.Path("settings/presets").glob("*.json"):
+              json.loads(p.read_text())
+          print(len(keys), "keys,", len(inv["invariants"]), "invariants")
+          EOF2
+      - name: shell scripts parse
+        run: for s in scripts/*.sh; do bash -n "$s"; done
+      - name: python client tests + packager tests
+        run: |
+          python3 -m pip install -q pytest browserforge==1.2.4
+          python3 -m pytest -q client/python/tests scripts/test_package.py
+      - name: go client tests
+        run: cd client/go && go vet ./... && go test ./...
