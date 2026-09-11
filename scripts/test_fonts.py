@@ -12,7 +12,7 @@ FONTS = json.loads((ROOT / "settings" / "fonts.json").read_text())
 
 def test_every_bundle_entry_is_ofl_with_a_licence_and_sha():
     for b in FONTS["bundle"]:
-        assert b["licence"] == "SIL OFL 1.1" and b["licence_url"].startswith("https://"), b["name"]
+        assert b["licence"] in ("SIL OFL 1.1", "LGPL 2.1+") and b["licence_url"].startswith("https://"), b["name"]
         if "urls" in b:
             assert len(b["sha256"]) == len(b["urls"]) == len(b["files"]) and all(len(x) == 64 for x in b["sha256"]), b["name"]
         else:
@@ -21,8 +21,12 @@ def test_every_bundle_entry_is_ofl_with_a_licence_and_sha():
 
 def test_alias_target_by_explicit_then_class_then_sans():
     assert g.alias_target(FONTS, "Windows", "Segoe UI") == "Selawik"
-    assert g.alias_target(FONTS, "Windows", "Yu Gothic") == "Noto Sans CJK SC"
-    assert g.alias_target(FONTS, "Windows", "Georgia") == "Liberation Serif"
+    assert g.alias_target(FONTS, "Windows", "Yu Gothic") == "Noto Sans CJK JP"
+    assert g.alias_target(FONTS, "Windows", "Microsoft YaHei") == "Noto Sans CJK SC"
+    assert g.alias_target(FONTS, "macOS", "PingFang HK") == "Noto Sans CJK HK"
+    assert g.alias_target(FONTS, "Windows", "Malgun Gothic") == "Noto Sans CJK KR"
+    assert g.alias_target(FONTS, "Windows", "Georgia") == "Gelasio"
+    assert g.alias_target(FONTS, "Windows", "Tahoma") == "Tahoma"  # Wine's file is named Tahoma: no alias
     assert g.alias_target(FONTS, "Windows", "Some Unknown Family") == "Selawik"
     assert g.alias_target(FONTS, "macOS", "Some Unknown Family") == "Inter Variable"
 
@@ -63,3 +67,18 @@ def test_alias_map_covers_every_captured_family_with_a_bundled_target_and_no_ide
             assert fam in m or fam in bundled, fam
         assert all(v in bundled and k != v for k, v in m.items())
         assert m["system-ui"] in bundled and "sans-serif" in m
+
+
+def test_every_cjk_family_sits_in_exactly_one_region_with_a_target():
+    regions = [k for k in FONTS["script_class"] if k.startswith("cjk_")]
+    assert sorted(regions) == ["cjk_hk", "cjk_jp", "cjk_kr", "cjk_sc", "cjk_tc"]
+    seen = [f for k in regions for f in FONTS["script_class"][k]]
+    assert len(seen) == len(set(seen)) == 69
+    bundled = {f for b in FONTS["bundle"] for f in b["provides"]}
+    for os_name in ("Windows", "macOS"):
+        assert all(FONTS["class_font"][os_name][k] in bundled for k in regions)
+
+
+def test_a_bundled_family_named_like_the_claim_is_never_an_alias_key():
+    for os_name in ("Windows", "macOS"):
+        assert "Tahoma" not in FONTS["alias_map"][os_name] and "Tahoma" in FONTS["families"][os_name]["list"]
