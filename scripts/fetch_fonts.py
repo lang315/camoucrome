@@ -14,6 +14,7 @@ import urllib.request
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 
 def get(url):
@@ -80,8 +81,13 @@ def main():
     p = ROOT / "settings" / "fonts.json"
     fonts = json.loads(p.read_text())
     filled = False
+    import fontnames
     for e in fonts["bundle"]:
         digest = fetch(e, dest)
+        faces = [f for name in e["files"] for f in fontnames.faces_of_file(dest / e["family"] / name)]
+        if e.get("faces") != faces:  # the unique names gen_fontconfig.py maps local() requests onto
+            e["faces"] = faces
+            filled = True
         size = sum(f.stat().st_size for f in (dest / e["family"]).iterdir())
         print(f"{e['name']}: {str(digest)[:12]} {size // 1024} KB -> {dest / e['family']}")
         if not e["sha256"]:

@@ -24,6 +24,11 @@ F8 emoji presence by colour, not width: U+1F600 in "Segoe UI Emoji" under the
    Windows claim + bundle paints >= 50 coloured pixels; RED: no bundle paints 0.
 F9 CJK region: 骨/直 in "Yu Gothic" (JP form) differ from "Microsoft YaHei" (SC)
    pixel-for-pixel; RED: an alias map sending Yu Gothic to the SC face gives equal.
+F10 RED (F-PSNAME): with family-level keys only, local("SegoeUI") errors.
+F11 with the unique names the generator emits: local("SegoeUI"), local("Segoe UI")
+   and local("SegoeUI-Bold") load, the loaded face is as wide as "Segoe UI";
+   local("Selawik") / local("Selawik-Regular") error (bundle names stay blocked);
+   a worker's local("SegoeUI") status equals the page's (rule 3).
 """
 import http.server
 import json
@@ -46,6 +51,7 @@ MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS",
 HOST_ONLY = ["DejaVu Sans", "Ubuntu", "Cantarell"]
 SPECIAL = ["system-ui", "Selawik", "Segoe UI", "Inter Variable", "-apple-system", "sans-serif"]
 PAR = ["Segoe UI", "Consolas", "Calibri"]  # F6: aliased under the Windows map, measured on both threads
+LOCALS = ["SegoeUI", "Segoe UI", "SegoeUI-Bold", "Selawik", "Selawik-Regular", "Tahoma-Bold"]  # F10/F11 local() names
 
 
 def text_for(family):
@@ -70,16 +76,19 @@ const widths = Object.fromEntries(%s.map(f => [f, width(f.startsWith('-') || f =
 const k = document.getElementById('k'); k.style.font = 'caption'; k.textContent = S;
 const PAR = %s;
 const par = Object.fromEntries(PAR.map(f => [f, width(`"${f}"`)]));
-const out = wpar => { document.getElementById('o').textContent = JSON.stringify({ resolves, widths, caption: k.getBoundingClientRect().width, mono, par, wpar, cjk, emoji }); };
-const src = `const c = new OffscreenCanvas(1, 1).getContext('2d'); postMessage(Object.fromEntries(${JSON.stringify(PAR)}.map(f => { c.font = '16px "' + f + '"'; return [f, c.measureText(${JSON.stringify(S)}).width]; })));`;
+const out = (wpar, local, wlocal) => { document.getElementById('o').textContent = JSON.stringify({ resolves, widths, caption: k.getBoundingClientRect().width, mono, par, wpar, cjk, emoji, local, wlocal }); };
+const LOCALS = %s;
+const localProbe = async (n, i) => { const f = new FontFace('lp' + i, 'local("' + n + '")'); try { await f.load(); document.fonts.add(f); } catch (e) {} return [n, { status: f.status, width: f.status === 'loaded' ? width('lp' + i) : null }]; };
+const localsP = Promise.all(LOCALS.map(localProbe)).then(Object.fromEntries);
+const src = `(async () => { const c = new OffscreenCanvas(1, 1).getContext('2d'); const widths = Object.fromEntries(${JSON.stringify(PAR)}.map(f => { c.font = '16px "' + f + '"'; return [f, c.measureText(${JSON.stringify(S)}).width]; })); const f = new FontFace('lp', 'local("${LOCALS[0]}")'); try { await f.load(); } catch (e) {} postMessage({ widths, local: f.status }); })();`;
 const glyph = (fam, ch) => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const x = c.getContext('2d'); x.font = '48px "' + fam + '"'; x.fillText(ch, 4, 52); return c.toDataURL(); };
 const coloured = fam => { const c = document.createElement('canvas'); c.width = 48; c.height = 48; const x = c.getContext('2d'); x.font = '32px "' + fam + '"'; x.fillText('\\u{1F600}', 4, 38); const d = x.getImageData(0, 0, 48, 48).data; let n = 0; for (let i = 0; i < d.length; i += 4) { if (d[i + 3] > 0 && Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 32) n++; } return n; };
 const cjk = { jp: ['\\u9AA8', '\\u76F4'].map(ch => glyph('Yu Gothic', ch)), sc: ['\\u9AA8', '\\u76F4'].map(ch => glyph('Microsoft YaHei', ch)) };
 const emoji = coloured('Segoe UI Emoji');
 const wk = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
-wk.onmessage = e => out(e.data);
-wk.onerror = e => out({ error: String(e.message) });
-</script>""" % (json.dumps(families), json.dumps({f: text_for(f) for f in families}), json.dumps(FONTS["probe_text"]), json.dumps(SPECIAL), json.dumps(PAR))).encode()
+wk.onmessage = e => localsP.then(loc => out(e.data.widths, loc, e.data.local));
+wk.onerror = e => out({ error: String(e.message) }, {}, null);
+</script>""" % (json.dumps(families), json.dumps({f: text_for(f) for f in families}), json.dumps(FONTS["probe_text"]), json.dumps(SPECIAL), json.dumps(PAR), json.dumps(LOCALS))).encode()
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -132,7 +141,9 @@ def main():
     notes.append(f"F8 RED coloured={r['emoji']}")
 
     H.body = page(win_list + HOST_ONLY)
-    r = probe(url, {**WIN, "fonts:list": win_list + FONTS["extra_allowed"]["Windows"], "fonts:alias": FONTS["alias_map"]["Windows"]}, fd)
+    win_keys = {"fonts:list": win_list + FONTS["extra_allowed"]["Windows"] + sorted(FONTS["families"]["Windows"]["unique_names"]),
+                "fonts:alias": {**FONTS["alias_map"]["Windows"], **FONTS["unique_map"]["Windows"]}}
+    r = probe(url, {**WIN, **win_keys}, fd)
     missing = [f for f in win_list if not r["resolves"][f]]
     leaked = [f for f in HOST_ONLY if r["resolves"][f]]
     w = r["widths"]
@@ -147,6 +158,14 @@ def main():
     results["F9 CJK region: Yu Gothic (JP) glyphs 骨/直 differ from Microsoft YaHei (SC)"] = any(a != b for a, b in zip(r["cjk"]["jp"], r["cjk"]["sc"]))
     r9 = probe(url, {**WIN, "fonts:list": win_list + FONTS["extra_allowed"]["Windows"], "fonts:alias": {**FONTS["alias_map"]["Windows"], "Yu Gothic": "Noto Sans CJK SC"}}, fd)
     results["F9 RED: Yu Gothic aliased to the SC face renders equal to Microsoft YaHei"] = r9["cjk"]["jp"] == r9["cjk"]["sc"]
+    loc = r["local"]
+    results["F11 unique names: local(SegoeUI / Segoe UI / SegoeUI-Bold) load as wide as Segoe UI, local(Selawik*) error, worker status == page"] = (
+        all(loc[n]["status"] == "loaded" for n in ("SegoeUI", "Segoe UI", "SegoeUI-Bold"))
+        and same({"a": loc["SegoeUI"]["width"], "b": loc["Segoe UI"]["width"], "c": w["Segoe UI"]}, "a", "b", "c")
+        and all(loc[n]["status"] == "error" for n in ("Selawik", "Selawik-Regular")) and r["wlocal"] == loc["SegoeUI"]["status"])
+    notes.append("F11 local=" + json.dumps({n: (v["status"], v["width"] and round(v["width"], 2)) for n, v in loc.items()}) + f" worker={r['wlocal']}")
+    r10 = probe(url, {**WIN, "fonts:list": win_list + FONTS["extra_allowed"]["Windows"], "fonts:alias": FONTS["alias_map"]["Windows"]}, fd)
+    results["F10 RED family-level keys only: local(SegoeUI) errors (F-PSNAME over-block)"] = r10["local"]["SegoeUI"]["status"] == "error"
     results["F6 worker parity: a worker's OffscreenCanvas widths of Segoe UI/Consolas/Calibri == the main thread's"] = (
         "error" not in r["wpar"] and all(round(r["par"][f], 2) == round(r["wpar"][f], 2) for f in PAR))
     notes.append(f"F6 main={ {f: round(r['par'][f], 2) for f in PAR} } worker={ {f: round(v, 2) for f, v in r['wpar'].items()} }")
@@ -165,8 +184,9 @@ def main():
     gen = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--timezone", "UTC", "--seed", "1"],
                          capture_output=True, text=True, timeout=120)
     emitted = json.loads(gen.stdout)["config"].get("fonts:list", []) if gen.returncode == 0 else None
-    results["F4 gen.py --os windows emits a fonts:list that F2 measured as resolving"] = (
-        bool(emitted) and set(emitted) <= resolving)
+    fam_part = set(emitted or []) & set(win_list)
+    results["F4 gen.py --os windows emits a fonts:list whose families F2 measured as resolving (plus unique names)"] = (
+        bool(fam_part) and fam_part <= resolving and "SegoeUI" in (emitted or []))
     if not emitted:
         notes.append("F4 gen: " + gen.stderr[-300:])
     H.body = page(["Segoe UI", "A", "B"])

@@ -16,6 +16,32 @@
    "licence": "SIL OFL 1.1",
    "provides": [
     "Selawik"
+   ],
+   "faces": [
+    {
+     "family": "Selawik",
+     "style": "Regular",
+     "full": "Selawik",
+     "ps": "Selawik-Regular"
+    },
+    {
+     "family": "Selawik",
+     "style": "Bold",
+     "full": "Selawik Bold",
+     "ps": "Selawik-Bold"
+    },
+    {
+     "family": "Selawik Light",
+     "style": "Regular",
+     "full": "Selawik Light",
+     "ps": "Selawik-Light"
+    },
+    {
+     "family": "Selawik Semibold",
+     "style": "Regular",
+     "full": "Selawik Semibold",
+     "ps": "Selawik-Semibold"
+    }
    ]
   },
   {
@@ -43,6 +69,80 @@
     "Liberation Sans",
     "Liberation Serif",
     "Liberation Mono"
+   ],
+   "faces": [
+    {
+     "family": "Liberation Sans",
+     "style": "Regular",
+     "full": "Liberation Sans",
+     "ps": "LiberationSans"
+    },
+    {
+     "family": "Liberation Sans",
+     "style": "Bold",
+     "full": "Liberation Sans Bold",
+     "ps": "LiberationSans-Bold"
+    },
+    {
+     "family": "Liberation Sans",
+     "style": "Italic",
+     "full": "Liberation Sans Italic",
+     "ps": "LiberationSans-Italic"
+    },
+    {
+     "family": "Liberation Sans",
+     "style": "Bold Italic",
+     "full": "Liberation Sans Bold Italic",
+     "ps": "LiberationSans-BoldItalic"
+    },
+    {
+     "family": "Liberation Serif",
+     "style": "Regular",
+     "full": "Liberation Serif",
+     "ps": "LiberationSerif"
+    },
+    {
+     "family": "Liberation Serif",
+     "style": "Bold",
+     "full": "Liberation Serif Bold",
+     "ps": "LiberationSerif-Bold"
+    },
+    {
+     "family": "Liberation Serif",
+     "style": "Italic",
+     "full": "Liberation Serif Italic",
+     "ps": "LiberationSerif-Italic"
+    },
+    {
+     "family": "Liberation Serif",
+     "style": "Bold Italic",
+     "full": "Liberation Serif Bold Italic",
+     "ps": "LiberationSerif-BoldItalic"
+    },
+    {
+     "family": "Liberation Mono",
+     "style": "Regular",
+     "full": "Liberation Mono",
+     "ps": "LiberationMono"
+    },
+    {
+     "family": "Liberation Mono",
+     "style": "Bold",
+     "full": "Liberation Mono Bold",
+     "ps": "LiberationMono-Bold"
+    },
+    {
+     "family": "Liberation Mono",
+     "style": "Italic",
+     "full": "Liberation Mono Italic",
+     "ps": "LiberationMono-Italic"
+    },
+    {
+     "family": "Liberation Mono",
+     "style": "Bold Italic",
+     "full": "Liberation Mono Bold Italic",
+     "ps": "LiberationMono-BoldItalic"
+    }
    ]
   },
   {
@@ -70,6 +170,32 @@
     "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Bold.ttf",
     "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Italic.ttf",
     "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-BoldItalic.ttf"
+   ],
+   "faces": [
+    {
+     "family": "Carlito",
+     "style": "Regular",
+     "full": "Carlito Regular",
+     "ps": "Carlito-Regular"
+    },
+    {
+     "family": "Carlito",
+     "style": "Bold",
+     "full": "Carlito Bold",
+     "ps": "Carlito-Bold"
+    },
+    {
+     "family": "Carlito",
+     "style": "Italic",
+     "full": "Carlito Italic",
+     "ps": "Carlito-Italic"
+    },
+    {
+     "family": "Carlito",
+     "style": "Bold Italic",
+     "full": "Carlito Bold Italic",
+     "ps": "Carlito-BoldItalic"
+    }
    ]
   },
   {
@@ -97,6 +223,32 @@
     "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Bold.ttf",
     "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Italic.ttf",
     "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-BoldItalic.ttf"
+   ],
+   "faces": [
+    {
+     "family": "Caladea",
+     "style": "Regular",
+     "full": "Caladea Regular",
+     "ps": "Caladea-Regular"
+    },
+    {
+     "family": "Caladea",
+     "style": "Bold",
+     "full": "Caladea Bold",
+     "ps": "Caladea-Bold"
+    },
+    {
+     "family": "Caladea",
+     "style": "Italic",
+     "full": "Caladea Italic",
+     "ps": "Caladea-Italic"
+    },
+    {
+     "family": "Caladea",
+     "style": "Bold Italic",
+     "full": "Caladea Bold Italic",
+     "ps": "Caladea-BoldItalic"
+    }
    ]
   },
   {
@@ -111,6 +263,14 @@
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Sans"
+   ],
+   "faces": [
+    {
+     "family": "Noto Sans",
+     "style": "Regular",
+     "full": "Noto Sans Regular",
+     "ps": "NotoSans-Regular"
+    }
    ]
   },
   {
@@ -125,6 +285,14 @@
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Serif"
+   ],
+   "faces": [
+    {
+     "family": "Noto Serif",
+     "style": "Regular",
+     "full": "Noto Serif Regular",
+     "ps": "NotoSerif-Regular"
+    }
    ]
   },
   {
@@ -139,6 +307,14 @@
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Sans Symbols 2"
+   ],
+   "faces": [
+    {
+     "family": "Noto Sans Symbols 2",
+     "style": "Regular",
+     "full": "Noto Sans Symbols 2 Regular",
+     "ps": "NotoSansSymbols2-Regular"
+    }
    ]
   },
   {
@@ -158,7 +334,69 @@
     "Noto Sans CJK TC",
     "Noto Sans CJK HK"
    ],
-   "why": "one OTC with the five regional forms (19.5 MB) replaces the SC-only OTF (16 MB): Japanese/Korean/Traditional claims render their own glyph forms"
+   "why": "one OTC with the five regional forms (19.5 MB) replaces the SC-only OTF (16 MB): Japanese/Korean/Traditional claims render their own glyph forms",
+   "faces": [
+    {
+     "family": "Noto Sans CJK JP",
+     "style": "Regular",
+     "full": "Noto Sans CJK JP",
+     "ps": "NotoSansCJKjp-Regular"
+    },
+    {
+     "family": "Noto Sans CJK KR",
+     "style": "Regular",
+     "full": "Noto Sans CJK KR",
+     "ps": "NotoSansCJKkr-Regular"
+    },
+    {
+     "family": "Noto Sans CJK SC",
+     "style": "Regular",
+     "full": "Noto Sans CJK SC",
+     "ps": "NotoSansCJKsc-Regular"
+    },
+    {
+     "family": "Noto Sans CJK TC",
+     "style": "Regular",
+     "full": "Noto Sans CJK TC",
+     "ps": "NotoSansCJKtc-Regular"
+    },
+    {
+     "family": "Noto Sans CJK HK",
+     "style": "Regular",
+     "full": "Noto Sans CJK HK",
+     "ps": "NotoSansCJKhk-Regular"
+    },
+    {
+     "family": "Noto Sans Mono CJK JP",
+     "style": "Regular",
+     "full": "Noto Sans Mono CJK JP",
+     "ps": "NotoSansMonoCJKjp-Regular"
+    },
+    {
+     "family": "Noto Sans Mono CJK KR",
+     "style": "Regular",
+     "full": "Noto Sans Mono CJK KR",
+     "ps": "NotoSansMonoCJKkr-Regular"
+    },
+    {
+     "family": "Noto Sans Mono CJK SC",
+     "style": "Regular",
+     "full": "Noto Sans Mono CJK SC",
+     "ps": "NotoSansMonoCJKsc-Regular"
+    },
+    {
+     "family": "Noto Sans Mono CJK TC",
+     "style": "Regular",
+     "full": "Noto Sans Mono CJK TC",
+     "ps": "NotoSansMonoCJKtc-Regular"
+    },
+    {
+     "family": "Noto Sans Mono CJK HK",
+     "style": "Regular",
+     "full": "Noto Sans Mono CJK HK",
+     "ps": "NotoSansMonoCJKhk-Regular"
+    }
+   ]
   },
   {
    "name": "Noto Color Emoji",
@@ -172,6 +410,14 @@
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Color Emoji"
+   ],
+   "faces": [
+    {
+     "family": "Noto Color Emoji",
+     "style": "Regular",
+     "full": "Noto Color Emoji",
+     "ps": "NotoColorEmoji"
+    }
    ]
   },
   {
@@ -187,6 +433,20 @@
    "licence": "SIL OFL 1.1",
    "provides": [
     "Inter Variable"
+   ],
+   "faces": [
+    {
+     "family": "Inter Variable",
+     "style": "Regular",
+     "full": "Inter Variable",
+     "ps": "InterVariable"
+    },
+    {
+     "family": "Inter Variable",
+     "style": "Italic",
+     "full": "Inter Variable Italic",
+     "ps": "InterVariableItalic"
+    }
    ]
   },
   {
@@ -209,7 +469,21 @@
    "provides": [
     "Gelasio"
    ],
-   "why": "designed metric-compatible with Georgia (SorkinType); kept only while verify_font_metrics M3 holds"
+   "why": "designed metric-compatible with Georgia (SorkinType); kept only while verify_font_metrics M3 holds",
+   "faces": [
+    {
+     "family": "Gelasio",
+     "style": "Regular",
+     "full": "Gelasio Regular",
+     "ps": "Gelasio-Regular"
+    },
+    {
+     "family": "Gelasio",
+     "style": "Italic",
+     "full": "Gelasio Italic",
+     "ps": "Gelasio-Italic"
+    }
+   ]
   },
   {
    "name": "Wine Tahoma",
@@ -231,7 +505,21 @@
    "provides": [
     "Tahoma"
    ],
-   "why": "the Wine project's Tahoma replacement; its name table says Tahoma, so it resolves by its own name with no alias; kept only while verify_font_metrics M4 holds"
+   "why": "the Wine project's Tahoma replacement; its name table says Tahoma, so it resolves by its own name with no alias; kept only while verify_font_metrics M4 holds",
+   "faces": [
+    {
+     "family": "Tahoma",
+     "style": "Regular",
+     "full": "Tahoma",
+     "ps": "WineTahoma"
+    },
+    {
+     "family": "Tahoma",
+     "style": "Bold",
+     "full": "Tahoma Bold",
+     "ps": "WineTahomaBold"
+    }
+   ]
   }
  ],
  "generic": {
@@ -614,11 +902,1036 @@
     "Yu Gothic UI Light",
     "Yu Gothic UI Semibold",
     "Yu Gothic UI Semilight"
-   ]
+   ],
+   "os_version": "10.0.19045",
+   "platform_version": "10.0.0",
+   "unique_names_how": "full and PostScript names (name IDs 4/6, Windows platform, en-US) of the 188 faces in 151 font files on the same host, for the captured families",
+   "unique_names": {
+    "Arial Bold": {
+     "family": "Arial",
+     "style": "Bold"
+    },
+    "Arial Bold Italic": {
+     "family": "Arial",
+     "style": "Bold Italic"
+    },
+    "Arial Italic": {
+     "family": "Arial",
+     "style": "Italic"
+    },
+    "Arial-Black": {
+     "family": "Arial Black",
+     "style": "Regular"
+    },
+    "Arial-BoldItalicMT": {
+     "family": "Arial",
+     "style": "Bold Italic"
+    },
+    "Arial-BoldMT": {
+     "family": "Arial",
+     "style": "Bold"
+    },
+    "Arial-ItalicMT": {
+     "family": "Arial",
+     "style": "Italic"
+    },
+    "ArialMT": {
+     "family": "Arial",
+     "style": "Regular"
+    },
+    "Calibri Bold": {
+     "family": "Calibri",
+     "style": "Bold"
+    },
+    "Calibri Bold Italic": {
+     "family": "Calibri",
+     "style": "Bold Italic"
+    },
+    "Calibri Italic": {
+     "family": "Calibri",
+     "style": "Italic"
+    },
+    "Calibri Light Italic": {
+     "family": "Calibri Light",
+     "style": "Italic"
+    },
+    "Calibri-Bold": {
+     "family": "Calibri",
+     "style": "Bold"
+    },
+    "Calibri-BoldItalic": {
+     "family": "Calibri",
+     "style": "Bold Italic"
+    },
+    "Calibri-Italic": {
+     "family": "Calibri",
+     "style": "Italic"
+    },
+    "Calibri-Light": {
+     "family": "Calibri Light",
+     "style": "Regular"
+    },
+    "Calibri-LightItalic": {
+     "family": "Calibri Light",
+     "style": "Italic"
+    },
+    "Cambria Bold": {
+     "family": "Cambria",
+     "style": "Bold"
+    },
+    "Cambria Bold Italic": {
+     "family": "Cambria",
+     "style": "Bold Italic"
+    },
+    "Cambria Italic": {
+     "family": "Cambria",
+     "style": "Italic"
+    },
+    "Cambria-Bold": {
+     "family": "Cambria",
+     "style": "Bold"
+    },
+    "Cambria-BoldItalic": {
+     "family": "Cambria",
+     "style": "Bold Italic"
+    },
+    "Cambria-Italic": {
+     "family": "Cambria",
+     "style": "Italic"
+    },
+    "CambriaMath": {
+     "family": "Cambria Math",
+     "style": "Regular"
+    },
+    "Candara Bold": {
+     "family": "Candara",
+     "style": "Bold"
+    },
+    "Candara Bold Italic": {
+     "family": "Candara",
+     "style": "Bold Italic"
+    },
+    "Candara Italic": {
+     "family": "Candara",
+     "style": "Italic"
+    },
+    "Candara Light Italic": {
+     "family": "Candara Light",
+     "style": "Italic"
+    },
+    "Candara-Bold": {
+     "family": "Candara",
+     "style": "Bold"
+    },
+    "Candara-BoldItalic": {
+     "family": "Candara",
+     "style": "Bold Italic"
+    },
+    "Candara-Italic": {
+     "family": "Candara",
+     "style": "Italic"
+    },
+    "Candara-Light": {
+     "family": "Candara Light",
+     "style": "Regular"
+    },
+    "Candara-LightItalic": {
+     "family": "Candara Light",
+     "style": "Italic"
+    },
+    "Cascadia Code Regular": {
+     "family": "Cascadia Code",
+     "style": "Regular"
+    },
+    "Cascadia Mono Regular": {
+     "family": "Cascadia Mono",
+     "style": "Regular"
+    },
+    "CascadiaCode-Roman": {
+     "family": "Cascadia Code",
+     "style": "Regular"
+    },
+    "CascadiaMono-Roman": {
+     "family": "Cascadia Mono",
+     "style": "Regular"
+    },
+    "Comic Sans MS Bold": {
+     "family": "Comic Sans MS",
+     "style": "Bold"
+    },
+    "Comic Sans MS Bold Italic": {
+     "family": "Comic Sans MS",
+     "style": "Bold Italic"
+    },
+    "Comic Sans MS Italic": {
+     "family": "Comic Sans MS",
+     "style": "Italic"
+    },
+    "ComicSansMS": {
+     "family": "Comic Sans MS",
+     "style": "Regular"
+    },
+    "ComicSansMS-Bold": {
+     "family": "Comic Sans MS",
+     "style": "Bold"
+    },
+    "ComicSansMS-BoldItalic": {
+     "family": "Comic Sans MS",
+     "style": "Bold Italic"
+    },
+    "ComicSansMS-Italic": {
+     "family": "Comic Sans MS",
+     "style": "Italic"
+    },
+    "Consolas Bold": {
+     "family": "Consolas",
+     "style": "Bold"
+    },
+    "Consolas Bold Italic": {
+     "family": "Consolas",
+     "style": "Bold Italic"
+    },
+    "Consolas Italic": {
+     "family": "Consolas",
+     "style": "Italic"
+    },
+    "Consolas-Bold": {
+     "family": "Consolas",
+     "style": "Bold"
+    },
+    "Consolas-BoldItalic": {
+     "family": "Consolas",
+     "style": "Bold Italic"
+    },
+    "Consolas-Italic": {
+     "family": "Consolas",
+     "style": "Italic"
+    },
+    "Constantia Bold": {
+     "family": "Constantia",
+     "style": "Bold"
+    },
+    "Constantia Bold Italic": {
+     "family": "Constantia",
+     "style": "Bold Italic"
+    },
+    "Constantia Italic": {
+     "family": "Constantia",
+     "style": "Italic"
+    },
+    "Constantia-Bold": {
+     "family": "Constantia",
+     "style": "Bold"
+    },
+    "Constantia-BoldItalic": {
+     "family": "Constantia",
+     "style": "Bold Italic"
+    },
+    "Constantia-Italic": {
+     "family": "Constantia",
+     "style": "Italic"
+    },
+    "Corbel Bold": {
+     "family": "Corbel",
+     "style": "Bold"
+    },
+    "Corbel Bold Italic": {
+     "family": "Corbel",
+     "style": "Bold Italic"
+    },
+    "Corbel Italic": {
+     "family": "Corbel",
+     "style": "Italic"
+    },
+    "Corbel Light Italic": {
+     "family": "Corbel Light",
+     "style": "Italic"
+    },
+    "Corbel-Bold": {
+     "family": "Corbel",
+     "style": "Bold"
+    },
+    "Corbel-BoldItalic": {
+     "family": "Corbel",
+     "style": "Bold Italic"
+    },
+    "Corbel-Italic": {
+     "family": "Corbel",
+     "style": "Italic"
+    },
+    "CorbelLight": {
+     "family": "Corbel Light",
+     "style": "Regular"
+    },
+    "CorbelLight-Italic": {
+     "family": "Corbel Light",
+     "style": "Italic"
+    },
+    "Courier New Bold": {
+     "family": "Courier New",
+     "style": "Bold"
+    },
+    "Courier New Bold Italic": {
+     "family": "Courier New",
+     "style": "Bold Italic"
+    },
+    "Courier New Italic": {
+     "family": "Courier New",
+     "style": "Italic"
+    },
+    "CourierNewPS-BoldItalicMT": {
+     "family": "Courier New",
+     "style": "Bold Italic"
+    },
+    "CourierNewPS-BoldMT": {
+     "family": "Courier New",
+     "style": "Bold"
+    },
+    "CourierNewPS-ItalicMT": {
+     "family": "Courier New",
+     "style": "Italic"
+    },
+    "CourierNewPSMT": {
+     "family": "Courier New",
+     "style": "Regular"
+    },
+    "Ebrima Bold": {
+     "family": "Ebrima",
+     "style": "Bold"
+    },
+    "Ebrima-Bold": {
+     "family": "Ebrima",
+     "style": "Bold"
+    },
+    "Franklin Gothic Medium Italic": {
+     "family": "Franklin Gothic Medium",
+     "style": "Italic"
+    },
+    "FranklinGothic-Medium": {
+     "family": "Franklin Gothic Medium",
+     "style": "Regular"
+    },
+    "FranklinGothic-MediumItalic": {
+     "family": "Franklin Gothic Medium",
+     "style": "Italic"
+    },
+    "Gadugi Bold": {
+     "family": "Gadugi",
+     "style": "Bold"
+    },
+    "Gadugi-Bold": {
+     "family": "Gadugi",
+     "style": "Bold"
+    },
+    "Georgia Bold": {
+     "family": "Georgia",
+     "style": "Bold"
+    },
+    "Georgia Bold Italic": {
+     "family": "Georgia",
+     "style": "Bold Italic"
+    },
+    "Georgia Italic": {
+     "family": "Georgia",
+     "style": "Italic"
+    },
+    "Georgia-Bold": {
+     "family": "Georgia",
+     "style": "Bold"
+    },
+    "Georgia-BoldItalic": {
+     "family": "Georgia",
+     "style": "Bold Italic"
+    },
+    "Georgia-Italic": {
+     "family": "Georgia",
+     "style": "Italic"
+    },
+    "HoloLensMDL2Assets": {
+     "family": "HoloLens MDL2 Assets",
+     "style": "Regular"
+    },
+    "InkFree": {
+     "family": "Ink Free",
+     "style": "Regular"
+    },
+    "JavaneseText": {
+     "family": "Javanese Text",
+     "style": "Regular"
+    },
+    "Leelawadee UI Bold": {
+     "family": "Leelawadee UI",
+     "style": "Bold"
+    },
+    "LeelawadeeUI": {
+     "family": "Leelawadee UI",
+     "style": "Regular"
+    },
+    "LeelawadeeUI-Bold": {
+     "family": "Leelawadee UI",
+     "style": "Bold"
+    },
+    "LeelawadeeUI-Semilight": {
+     "family": "Leelawadee UI Semilight",
+     "style": "Regular"
+    },
+    "LucidaConsole": {
+     "family": "Lucida Console",
+     "style": "Regular"
+    },
+    "LucidaSansUnicode": {
+     "family": "Lucida Sans Unicode",
+     "style": "Regular"
+    },
+    "MS-Gothic": {
+     "family": "MS Gothic",
+     "style": "Regular"
+    },
+    "MS-PGothic": {
+     "family": "MS PGothic",
+     "style": "Regular"
+    },
+    "MS-UIGothic": {
+     "family": "MS UI Gothic",
+     "style": "Regular"
+    },
+    "MVBoli": {
+     "family": "MV Boli",
+     "style": "Regular"
+    },
+    "Malgun Gothic Bold": {
+     "family": "Malgun Gothic",
+     "style": "Bold"
+    },
+    "MalgunGothic": {
+     "family": "Malgun Gothic",
+     "style": "Regular"
+    },
+    "MalgunGothic-Semilight": {
+     "family": "Malgun Gothic Semilight",
+     "style": "Regular"
+    },
+    "MalgunGothicBold": {
+     "family": "Malgun Gothic",
+     "style": "Bold"
+    },
+    "Microsoft JhengHei Bold": {
+     "family": "Microsoft JhengHei",
+     "style": "Bold"
+    },
+    "Microsoft JhengHei UI Bold": {
+     "family": "Microsoft JhengHei UI",
+     "style": "Bold"
+    },
+    "Microsoft New Tai Lue Bold": {
+     "family": "Microsoft New Tai Lue",
+     "style": "Bold"
+    },
+    "Microsoft PhagsPa Bold": {
+     "family": "Microsoft PhagsPa",
+     "style": "Bold"
+    },
+    "Microsoft Tai Le Bold": {
+     "family": "Microsoft Tai Le",
+     "style": "Bold"
+    },
+    "Microsoft YaHei Bold": {
+     "family": "Microsoft YaHei",
+     "style": "Bold"
+    },
+    "Microsoft YaHei UI Bold": {
+     "family": "Microsoft YaHei UI",
+     "style": "Bold"
+    },
+    "Microsoft-Yi-Baiti": {
+     "family": "Microsoft Yi Baiti",
+     "style": "Regular"
+    },
+    "MicrosoftJhengHeiBold": {
+     "family": "Microsoft JhengHei",
+     "style": "Bold"
+    },
+    "MicrosoftJhengHeiLight": {
+     "family": "Microsoft JhengHei Light",
+     "style": "Regular"
+    },
+    "MicrosoftJhengHeiRegular": {
+     "family": "Microsoft JhengHei",
+     "style": "Regular"
+    },
+    "MicrosoftJhengHeiUIBold": {
+     "family": "Microsoft JhengHei UI",
+     "style": "Bold"
+    },
+    "MicrosoftJhengHeiUILight": {
+     "family": "Microsoft JhengHei UI Light",
+     "style": "Regular"
+    },
+    "MicrosoftJhengHeiUIRegular": {
+     "family": "Microsoft JhengHei UI",
+     "style": "Regular"
+    },
+    "MicrosoftNewTaiLue": {
+     "family": "Microsoft New Tai Lue",
+     "style": "Regular"
+    },
+    "MicrosoftNewTaiLue-Bold": {
+     "family": "Microsoft New Tai Lue",
+     "style": "Bold"
+    },
+    "MicrosoftPhagsPa": {
+     "family": "Microsoft PhagsPa",
+     "style": "Regular"
+    },
+    "MicrosoftPhagsPa-Bold": {
+     "family": "Microsoft PhagsPa",
+     "style": "Bold"
+    },
+    "MicrosoftSansSerif": {
+     "family": "Microsoft Sans Serif",
+     "style": "Regular"
+    },
+    "MicrosoftTaiLe": {
+     "family": "Microsoft Tai Le",
+     "style": "Regular"
+    },
+    "MicrosoftTaiLe-Bold": {
+     "family": "Microsoft Tai Le",
+     "style": "Bold"
+    },
+    "MicrosoftYaHei": {
+     "family": "Microsoft YaHei",
+     "style": "Regular"
+    },
+    "MicrosoftYaHei-Bold": {
+     "family": "Microsoft YaHei",
+     "style": "Bold"
+    },
+    "MicrosoftYaHeiLight": {
+     "family": "Microsoft YaHei Light",
+     "style": "Regular"
+    },
+    "MicrosoftYaHeiUI": {
+     "family": "Microsoft YaHei UI",
+     "style": "Regular"
+    },
+    "MicrosoftYaHeiUI-Bold": {
+     "family": "Microsoft YaHei UI",
+     "style": "Bold"
+    },
+    "MicrosoftYaHeiUILight": {
+     "family": "Microsoft YaHei UI Light",
+     "style": "Regular"
+    },
+    "Ming-Lt-HKSCS-ExtB": {
+     "family": "MingLiU_HKSCS-ExtB",
+     "style": "Regular"
+    },
+    "MongolianBaiti": {
+     "family": "Mongolian Baiti",
+     "style": "Regular"
+    },
+    "Myanmar Text Bold": {
+     "family": "Myanmar Text",
+     "style": "Bold"
+    },
+    "MyanmarText": {
+     "family": "Myanmar Text",
+     "style": "Regular"
+    },
+    "MyanmarText-Bold": {
+     "family": "Myanmar Text",
+     "style": "Bold"
+    },
+    "Nirmala UI Bold": {
+     "family": "Nirmala UI",
+     "style": "Bold"
+    },
+    "NirmalaUI": {
+     "family": "Nirmala UI",
+     "style": "Regular"
+    },
+    "NirmalaUI-Bold": {
+     "family": "Nirmala UI",
+     "style": "Bold"
+    },
+    "NirmalaUI-Semilight": {
+     "family": "Nirmala UI Semilight",
+     "style": "Regular"
+    },
+    "Palatino Linotype Bold": {
+     "family": "Palatino Linotype",
+     "style": "Bold"
+    },
+    "Palatino Linotype Bold Italic": {
+     "family": "Palatino Linotype",
+     "style": "Bold Italic"
+    },
+    "Palatino Linotype Italic": {
+     "family": "Palatino Linotype",
+     "style": "Italic"
+    },
+    "PalatinoLinotype-Bold": {
+     "family": "Palatino Linotype",
+     "style": "Bold"
+    },
+    "PalatinoLinotype-BoldItalic": {
+     "family": "Palatino Linotype",
+     "style": "Bold Italic"
+    },
+    "PalatinoLinotype-Italic": {
+     "family": "Palatino Linotype",
+     "style": "Italic"
+    },
+    "PalatinoLinotype-Roman": {
+     "family": "Palatino Linotype",
+     "style": "Regular"
+    },
+    "Segoe Print Bold": {
+     "family": "Segoe Print",
+     "style": "Bold"
+    },
+    "Segoe Script Bold": {
+     "family": "Segoe Script",
+     "style": "Bold"
+    },
+    "Segoe UI Black Italic": {
+     "family": "Segoe UI Black",
+     "style": "Italic"
+    },
+    "Segoe UI Bold": {
+     "family": "Segoe UI",
+     "style": "Bold"
+    },
+    "Segoe UI Bold Italic": {
+     "family": "Segoe UI",
+     "style": "Bold Italic"
+    },
+    "Segoe UI Italic": {
+     "family": "Segoe UI",
+     "style": "Italic"
+    },
+    "Segoe UI Light Italic": {
+     "family": "Segoe UI Light",
+     "style": "Italic"
+    },
+    "Segoe UI Semibold Italic": {
+     "family": "Segoe UI Semibold",
+     "style": "Italic"
+    },
+    "Segoe UI Semilight Italic": {
+     "family": "Segoe UI Semilight",
+     "style": "Italic"
+    },
+    "SegoeMDL2Assets": {
+     "family": "Segoe MDL2 Assets",
+     "style": "Regular"
+    },
+    "SegoePrint": {
+     "family": "Segoe Print",
+     "style": "Regular"
+    },
+    "SegoePrint-Bold": {
+     "family": "Segoe Print",
+     "style": "Bold"
+    },
+    "SegoeScript": {
+     "family": "Segoe Script",
+     "style": "Regular"
+    },
+    "SegoeScript-Bold": {
+     "family": "Segoe Script",
+     "style": "Bold"
+    },
+    "SegoeUI": {
+     "family": "Segoe UI",
+     "style": "Regular"
+    },
+    "SegoeUI-Bold": {
+     "family": "Segoe UI",
+     "style": "Bold"
+    },
+    "SegoeUI-BoldItalic": {
+     "family": "Segoe UI",
+     "style": "Bold Italic"
+    },
+    "SegoeUI-Italic": {
+     "family": "Segoe UI",
+     "style": "Italic"
+    },
+    "SegoeUI-Light": {
+     "family": "Segoe UI Light",
+     "style": "Regular"
+    },
+    "SegoeUI-LightItalic": {
+     "family": "Segoe UI Light",
+     "style": "Italic"
+    },
+    "SegoeUI-Semibold": {
+     "family": "Segoe UI Semibold",
+     "style": "Regular"
+    },
+    "SegoeUI-SemiboldItalic": {
+     "family": "Segoe UI Semibold",
+     "style": "Italic"
+    },
+    "SegoeUI-Semilight": {
+     "family": "Segoe UI Semilight",
+     "style": "Regular"
+    },
+    "SegoeUI-SemilightItalic": {
+     "family": "Segoe UI Semilight",
+     "style": "Italic"
+    },
+    "SegoeUIBlack": {
+     "family": "Segoe UI Black",
+     "style": "Regular"
+    },
+    "SegoeUIBlack-Italic": {
+     "family": "Segoe UI Black",
+     "style": "Italic"
+    },
+    "SegoeUIEmoji": {
+     "family": "Segoe UI Emoji",
+     "style": "Regular"
+    },
+    "SegoeUIHistoric": {
+     "family": "Segoe UI Historic",
+     "style": "Regular"
+    },
+    "SegoeUISymbol": {
+     "family": "Segoe UI Symbol",
+     "style": "Regular"
+    },
+    "Sitka Banner Bold": {
+     "family": "Sitka Banner",
+     "style": "Bold"
+    },
+    "Sitka Banner Bold Italic": {
+     "family": "Sitka Banner",
+     "style": "Bold Italic"
+    },
+    "Sitka Banner Italic": {
+     "family": "Sitka Banner",
+     "style": "Italic"
+    },
+    "Sitka Display Bold": {
+     "family": "Sitka Display",
+     "style": "Bold"
+    },
+    "Sitka Display Bold Italic": {
+     "family": "Sitka Display",
+     "style": "Bold Italic"
+    },
+    "Sitka Display Italic": {
+     "family": "Sitka Display",
+     "style": "Italic"
+    },
+    "Sitka Heading Bold": {
+     "family": "Sitka Heading",
+     "style": "Bold"
+    },
+    "Sitka Heading Bold Italic": {
+     "family": "Sitka Heading",
+     "style": "Bold Italic"
+    },
+    "Sitka Heading Italic": {
+     "family": "Sitka Heading",
+     "style": "Italic"
+    },
+    "Sitka Small Bold": {
+     "family": "Sitka Small",
+     "style": "Bold"
+    },
+    "Sitka Small Bold Italic": {
+     "family": "Sitka Small",
+     "style": "Bold Italic"
+    },
+    "Sitka Small Italic": {
+     "family": "Sitka Small",
+     "style": "Italic"
+    },
+    "Sitka Subheading Bold": {
+     "family": "Sitka Subheading",
+     "style": "Bold"
+    },
+    "Sitka Subheading Bold Italic": {
+     "family": "Sitka Subheading",
+     "style": "Bold Italic"
+    },
+    "Sitka Subheading Italic": {
+     "family": "Sitka Subheading",
+     "style": "Italic"
+    },
+    "Sitka Text Bold": {
+     "family": "Sitka Text",
+     "style": "Bold"
+    },
+    "Sitka Text Bold Italic": {
+     "family": "Sitka Text",
+     "style": "Bold Italic"
+    },
+    "Sitka Text Italic": {
+     "family": "Sitka Text",
+     "style": "Italic"
+    },
+    "SitkaBanner": {
+     "family": "Sitka Banner",
+     "style": "Regular"
+    },
+    "SitkaBanner-Bold": {
+     "family": "Sitka Banner",
+     "style": "Bold"
+    },
+    "SitkaBanner-BoldItalic": {
+     "family": "Sitka Banner",
+     "style": "Bold Italic"
+    },
+    "SitkaBanner-Italic": {
+     "family": "Sitka Banner",
+     "style": "Italic"
+    },
+    "SitkaDisplay": {
+     "family": "Sitka Display",
+     "style": "Regular"
+    },
+    "SitkaDisplay-Bold": {
+     "family": "Sitka Display",
+     "style": "Bold"
+    },
+    "SitkaDisplay-BoldItalic": {
+     "family": "Sitka Display",
+     "style": "Bold Italic"
+    },
+    "SitkaDisplay-Italic": {
+     "family": "Sitka Display",
+     "style": "Italic"
+    },
+    "SitkaHeading": {
+     "family": "Sitka Heading",
+     "style": "Regular"
+    },
+    "SitkaHeading-Bold": {
+     "family": "Sitka Heading",
+     "style": "Bold"
+    },
+    "SitkaHeading-BoldItalic": {
+     "family": "Sitka Heading",
+     "style": "Bold Italic"
+    },
+    "SitkaHeading-Italic": {
+     "family": "Sitka Heading",
+     "style": "Italic"
+    },
+    "SitkaSmall": {
+     "family": "Sitka Small",
+     "style": "Regular"
+    },
+    "SitkaSmall-Bold": {
+     "family": "Sitka Small",
+     "style": "Bold"
+    },
+    "SitkaSmall-BoldItalic": {
+     "family": "Sitka Small",
+     "style": "Bold Italic"
+    },
+    "SitkaSmall-Italic": {
+     "family": "Sitka Small",
+     "style": "Italic"
+    },
+    "SitkaSubheading": {
+     "family": "Sitka Subheading",
+     "style": "Regular"
+    },
+    "SitkaSubheading-Bold": {
+     "family": "Sitka Subheading",
+     "style": "Bold"
+    },
+    "SitkaSubheading-BoldItalic": {
+     "family": "Sitka Subheading",
+     "style": "Bold Italic"
+    },
+    "SitkaSubheading-Italic": {
+     "family": "Sitka Subheading",
+     "style": "Italic"
+    },
+    "SitkaText": {
+     "family": "Sitka Text",
+     "style": "Regular"
+    },
+    "SitkaText-Bold": {
+     "family": "Sitka Text",
+     "style": "Bold"
+    },
+    "SitkaText-BoldItalic": {
+     "family": "Sitka Text",
+     "style": "Bold Italic"
+    },
+    "SitkaText-Italic": {
+     "family": "Sitka Text",
+     "style": "Italic"
+    },
+    "SymbolMT": {
+     "family": "Symbol",
+     "style": "Regular"
+    },
+    "Tahoma Bold": {
+     "family": "Tahoma",
+     "style": "Bold"
+    },
+    "Tahoma-Bold": {
+     "family": "Tahoma",
+     "style": "Bold"
+    },
+    "Times New Roman Bold": {
+     "family": "Times New Roman",
+     "style": "Bold"
+    },
+    "Times New Roman Bold Italic": {
+     "family": "Times New Roman",
+     "style": "Bold Italic"
+    },
+    "Times New Roman Italic": {
+     "family": "Times New Roman",
+     "style": "Italic"
+    },
+    "TimesNewRomanPS-BoldItalicMT": {
+     "family": "Times New Roman",
+     "style": "Bold Italic"
+    },
+    "TimesNewRomanPS-BoldMT": {
+     "family": "Times New Roman",
+     "style": "Bold"
+    },
+    "TimesNewRomanPS-ItalicMT": {
+     "family": "Times New Roman",
+     "style": "Italic"
+    },
+    "TimesNewRomanPSMT": {
+     "family": "Times New Roman",
+     "style": "Regular"
+    },
+    "Trebuchet MS Bold": {
+     "family": "Trebuchet MS",
+     "style": "Bold"
+    },
+    "Trebuchet MS Bold Italic": {
+     "family": "Trebuchet MS",
+     "style": "Bold Italic"
+    },
+    "Trebuchet MS Italic": {
+     "family": "Trebuchet MS",
+     "style": "Italic"
+    },
+    "Trebuchet-BoldItalic": {
+     "family": "Trebuchet MS",
+     "style": "Bold Italic"
+    },
+    "TrebuchetMS": {
+     "family": "Trebuchet MS",
+     "style": "Regular"
+    },
+    "TrebuchetMS-Bold": {
+     "family": "Trebuchet MS",
+     "style": "Bold"
+    },
+    "TrebuchetMS-Italic": {
+     "family": "Trebuchet MS",
+     "style": "Italic"
+    },
+    "Verdana Bold": {
+     "family": "Verdana",
+     "style": "Bold"
+    },
+    "Verdana Bold Italic": {
+     "family": "Verdana",
+     "style": "Bold Italic"
+    },
+    "Verdana Italic": {
+     "family": "Verdana",
+     "style": "Italic"
+    },
+    "Verdana-Bold": {
+     "family": "Verdana",
+     "style": "Bold"
+    },
+    "Verdana-BoldItalic": {
+     "family": "Verdana",
+     "style": "Bold Italic"
+    },
+    "Verdana-Italic": {
+     "family": "Verdana",
+     "style": "Italic"
+    },
+    "Wingdings-Regular": {
+     "family": "Wingdings",
+     "style": "Regular"
+    },
+    "Wingdings2": {
+     "family": "Wingdings 2",
+     "style": "Regular"
+    },
+    "Wingdings3": {
+     "family": "Wingdings 3",
+     "style": "Regular"
+    },
+    "Yu Gothic Bold": {
+     "family": "Yu Gothic",
+     "style": "Bold"
+    },
+    "Yu Gothic Regular": {
+     "family": "Yu Gothic",
+     "style": "Regular"
+    },
+    "Yu Gothic UI Bold": {
+     "family": "Yu Gothic UI",
+     "style": "Bold"
+    },
+    "Yu Gothic UI Regular": {
+     "family": "Yu Gothic UI",
+     "style": "Regular"
+    },
+    "YuGothic-Bold": {
+     "family": "Yu Gothic",
+     "style": "Bold"
+    },
+    "YuGothic-Light": {
+     "family": "Yu Gothic Light",
+     "style": "Regular"
+    },
+    "YuGothic-Medium": {
+     "family": "Yu Gothic Medium",
+     "style": "Regular"
+    },
+    "YuGothic-Regular": {
+     "family": "Yu Gothic",
+     "style": "Regular"
+    },
+    "YuGothicUI-Bold": {
+     "family": "Yu Gothic UI",
+     "style": "Bold"
+    },
+    "YuGothicUI-Light": {
+     "family": "Yu Gothic UI Light",
+     "style": "Regular"
+    },
+    "YuGothicUI-Regular": {
+     "family": "Yu Gothic UI",
+     "style": "Regular"
+    },
+    "YuGothicUI-Semibold": {
+     "family": "Yu Gothic UI Semibold",
+     "style": "Regular"
+    },
+    "YuGothicUI-Semilight": {
+     "family": "Yu Gothic UI Semilight",
+     "style": "Regular"
+    }
+   }
   },
   "macOS": {
    "captured": "2026-09-11",
-   "how": "system_profiler SPFontsDataType -json on the Mac (dot-prefixed system-private families dropped); families in families.exclude (user-installed under ~/Library/Fonts, seen in each family's Location) dropped",
+   "how": "system_profiler SPFontsDataType -json on the Mac (dot-prefixed system-private families dropped); families in families.exclude (vendor software on this host) dropped",
    "list": [
     "Academy Engraved LET",
     "Al Bayan",
@@ -800,7 +2113,1544 @@
     "Wingdings 3",
     "Zapf Dingbats",
     "Zapfino"
-   ]
+   ],
+   "os_version": "15.7.4",
+   "platform_version": "15.7.4",
+   "unique_names_how": "full and PostScript names (name IDs 4/6, Windows platform, en-US) of the 582 faces in 372 font files on the same host, for the captured families",
+   "unique_names": {
+    "AndaleMono": {
+     "family": "Andale Mono",
+     "style": "Regular"
+    },
+    "AppleMyungjo Regular": {
+     "family": "AppleMyungjo",
+     "style": "Regular"
+    },
+    "AppleSymbols": {
+     "family": "Apple Symbols",
+     "style": "Regular"
+    },
+    "Arial Bold": {
+     "family": "Arial",
+     "style": "Bold"
+    },
+    "Arial Bold Italic": {
+     "family": "Arial",
+     "style": "Bold Italic"
+    },
+    "Arial Italic": {
+     "family": "Arial",
+     "style": "Italic"
+    },
+    "Arial Narrow Bold": {
+     "family": "Arial Narrow",
+     "style": "Bold"
+    },
+    "Arial Narrow Bold Italic": {
+     "family": "Arial Narrow",
+     "style": "Bold Italic"
+    },
+    "Arial Narrow Italic": {
+     "family": "Arial Narrow",
+     "style": "Italic"
+    },
+    "Arial-Black": {
+     "family": "Arial Black",
+     "style": "Regular"
+    },
+    "Arial-BoldItalicMT": {
+     "family": "Arial",
+     "style": "Bold Italic"
+    },
+    "Arial-BoldMT": {
+     "family": "Arial",
+     "style": "Bold"
+    },
+    "Arial-ItalicMT": {
+     "family": "Arial",
+     "style": "Italic"
+    },
+    "ArialMT": {
+     "family": "Arial",
+     "style": "Regular"
+    },
+    "ArialNarrow": {
+     "family": "Arial Narrow",
+     "style": "Regular"
+    },
+    "ArialNarrow-Bold": {
+     "family": "Arial Narrow",
+     "style": "Bold"
+    },
+    "ArialNarrow-BoldItalic": {
+     "family": "Arial Narrow",
+     "style": "Bold Italic"
+    },
+    "ArialNarrow-Italic": {
+     "family": "Arial Narrow",
+     "style": "Italic"
+    },
+    "ArialRoundedMTBold": {
+     "family": "Arial Rounded MT Bold",
+     "style": "Regular"
+    },
+    "ArialUnicodeMS": {
+     "family": "Arial Unicode MS",
+     "style": "Regular"
+    },
+    "Avenir Next Bold": {
+     "family": "Avenir Next",
+     "style": "Bold"
+    },
+    "Avenir Next Bold Italic": {
+     "family": "Avenir Next",
+     "style": "Bold Italic"
+    },
+    "Avenir Next Condensed Bold": {
+     "family": "Avenir Next Condensed",
+     "style": "Bold"
+    },
+    "Avenir Next Condensed Bold Italic": {
+     "family": "Avenir Next Condensed",
+     "style": "Bold Italic"
+    },
+    "Avenir Next Condensed Italic": {
+     "family": "Avenir Next Condensed",
+     "style": "Italic"
+    },
+    "Avenir Next Condensed Regular": {
+     "family": "Avenir Next Condensed",
+     "style": "Regular"
+    },
+    "Avenir Next Italic": {
+     "family": "Avenir Next",
+     "style": "Italic"
+    },
+    "Avenir Next Regular": {
+     "family": "Avenir Next",
+     "style": "Regular"
+    },
+    "Avenir Oblique": {
+     "family": "Avenir",
+     "style": "Italic"
+    },
+    "Avenir Roman": {
+     "family": "Avenir",
+     "style": "Regular"
+    },
+    "Avenir-Oblique": {
+     "family": "Avenir",
+     "style": "Italic"
+    },
+    "Avenir-Roman": {
+     "family": "Avenir",
+     "style": "Regular"
+    },
+    "AvenirNext-Bold": {
+     "family": "Avenir Next",
+     "style": "Bold"
+    },
+    "AvenirNext-BoldItalic": {
+     "family": "Avenir Next",
+     "style": "Bold Italic"
+    },
+    "AvenirNext-Italic": {
+     "family": "Avenir Next",
+     "style": "Italic"
+    },
+    "AvenirNext-Regular": {
+     "family": "Avenir Next",
+     "style": "Regular"
+    },
+    "AvenirNextCondensed-Bold": {
+     "family": "Avenir Next Condensed",
+     "style": "Bold"
+    },
+    "AvenirNextCondensed-BoldItalic": {
+     "family": "Avenir Next Condensed",
+     "style": "Bold Italic"
+    },
+    "AvenirNextCondensed-Italic": {
+     "family": "Avenir Next Condensed",
+     "style": "Italic"
+    },
+    "AvenirNextCondensed-Regular": {
+     "family": "Avenir Next Condensed",
+     "style": "Regular"
+    },
+    "Bangla MN Bold": {
+     "family": "Bangla MN",
+     "style": "Bold"
+    },
+    "Bangla Sangam MN Bold": {
+     "family": "Bangla Sangam MN",
+     "style": "Bold"
+    },
+    "BanglaMN": {
+     "family": "Bangla MN",
+     "style": "Regular"
+    },
+    "BanglaMN-Bold": {
+     "family": "Bangla MN",
+     "style": "Bold"
+    },
+    "BanglaSangamMN": {
+     "family": "Bangla Sangam MN",
+     "style": "Regular"
+    },
+    "BanglaSangamMN-Bold": {
+     "family": "Bangla Sangam MN",
+     "style": "Bold"
+    },
+    "Baskerville Bold": {
+     "family": "Baskerville",
+     "style": "Bold"
+    },
+    "Baskerville Bold Italic": {
+     "family": "Baskerville",
+     "style": "Bold Italic"
+    },
+    "Baskerville Italic": {
+     "family": "Baskerville",
+     "style": "Italic"
+    },
+    "Baskerville SemiBold": {
+     "family": "Baskerville",
+     "style": "SemiBold"
+    },
+    "Baskerville SemiBold Italic": {
+     "family": "Baskerville",
+     "style": "SemiBold Italic"
+    },
+    "Baskerville-Bold": {
+     "family": "Baskerville",
+     "style": "Bold"
+    },
+    "Baskerville-BoldItalic": {
+     "family": "Baskerville",
+     "style": "Bold Italic"
+    },
+    "Baskerville-Italic": {
+     "family": "Baskerville",
+     "style": "Italic"
+    },
+    "Baskerville-SemiBold": {
+     "family": "Baskerville",
+     "style": "SemiBold"
+    },
+    "Baskerville-SemiBoldItalic": {
+     "family": "Baskerville",
+     "style": "SemiBold Italic"
+    },
+    "Bodoni 72 Bold": {
+     "family": "Bodoni 72",
+     "style": "Bold"
+    },
+    "Bodoni 72 Book": {
+     "family": "Bodoni 72",
+     "style": "Book"
+    },
+    "Bodoni 72 Book Italic": {
+     "family": "Bodoni 72",
+     "style": "Book Italic"
+    },
+    "Bodoni 72 Oldstyle Bold": {
+     "family": "Bodoni 72 Oldstyle",
+     "style": "Bold"
+    },
+    "Bodoni 72 Oldstyle Book": {
+     "family": "Bodoni 72 Oldstyle",
+     "style": "Book"
+    },
+    "Bodoni 72 Oldstyle Book Italic": {
+     "family": "Bodoni 72 Oldstyle",
+     "style": "Book Italic"
+    },
+    "Bodoni 72 Smallcaps Book": {
+     "family": "Bodoni 72 Smallcaps",
+     "style": "Book"
+    },
+    "BodoniOrnamentsITCTT": {
+     "family": "Bodoni Ornaments",
+     "style": "Regular"
+    },
+    "BodoniSvtyTwoITCTT-Bold": {
+     "family": "Bodoni 72",
+     "style": "Bold"
+    },
+    "BodoniSvtyTwoITCTT-Book": {
+     "family": "Bodoni 72",
+     "style": "Book"
+    },
+    "BodoniSvtyTwoITCTT-BookIta": {
+     "family": "Bodoni 72",
+     "style": "Book Italic"
+    },
+    "BodoniSvtyTwoOSITCTT-Bold": {
+     "family": "Bodoni 72 Oldstyle",
+     "style": "Bold"
+    },
+    "BodoniSvtyTwoOSITCTT-Book": {
+     "family": "Bodoni 72 Oldstyle",
+     "style": "Book"
+    },
+    "BodoniSvtyTwoOSITCTT-BookIt": {
+     "family": "Bodoni 72 Oldstyle",
+     "style": "Book Italic"
+    },
+    "BodoniSvtyTwoSCITCTT-Book": {
+     "family": "Bodoni 72 Smallcaps",
+     "style": "Book"
+    },
+    "Brush Script MT Italic": {
+     "family": "Brush Script MT",
+     "style": "Italic"
+    },
+    "BrushScriptMT": {
+     "family": "Brush Script MT",
+     "style": "Italic"
+    },
+    "Charter BT Bold Italic": {
+     "family": "Charter",
+     "style": "Bold Italic"
+    },
+    "Charter Bold": {
+     "family": "Charter",
+     "style": "Bold"
+    },
+    "Charter Italic": {
+     "family": "Charter",
+     "style": "Italic"
+    },
+    "Charter Roman": {
+     "family": "Charter",
+     "style": "Roman"
+    },
+    "Charter-Bold": {
+     "family": "Charter",
+     "style": "Bold"
+    },
+    "Charter-BoldItalic": {
+     "family": "Charter",
+     "style": "Bold Italic"
+    },
+    "Charter-Italic": {
+     "family": "Charter",
+     "style": "Italic"
+    },
+    "Charter-Roman": {
+     "family": "Charter",
+     "style": "Roman"
+    },
+    "Comic Sans MS Bold": {
+     "family": "Comic Sans MS",
+     "style": "Bold"
+    },
+    "ComicSansMS": {
+     "family": "Comic Sans MS",
+     "style": "Regular"
+    },
+    "ComicSansMS-Bold": {
+     "family": "Comic Sans MS",
+     "style": "Bold"
+    },
+    "Courier New Bold": {
+     "family": "Courier New",
+     "style": "Bold"
+    },
+    "Courier New Bold Italic": {
+     "family": "Courier New",
+     "style": "Bold Italic"
+    },
+    "Courier New Italic": {
+     "family": "Courier New",
+     "style": "Italic"
+    },
+    "CourierNewPS-BoldItalicMT": {
+     "family": "Courier New",
+     "style": "Bold Italic"
+    },
+    "CourierNewPS-BoldMT": {
+     "family": "Courier New",
+     "style": "Bold"
+    },
+    "CourierNewPS-ItalicMT": {
+     "family": "Courier New",
+     "style": "Italic"
+    },
+    "CourierNewPSMT": {
+     "family": "Courier New",
+     "style": "Regular"
+    },
+    "DIN Alternate Bold": {
+     "family": "DIN Alternate",
+     "style": "Bold"
+    },
+    "DIN Condensed Bold": {
+     "family": "DIN Condensed",
+     "style": "Bold"
+    },
+    "DINAlternate-Bold": {
+     "family": "DIN Alternate",
+     "style": "Bold"
+    },
+    "DINCondensed-Bold": {
+     "family": "DIN Condensed",
+     "style": "Bold"
+    },
+    "Devanagari MT Bold": {
+     "family": "Devanagari MT",
+     "style": "Bold"
+    },
+    "Devanagari Sangam MN Bold": {
+     "family": "Devanagari Sangam MN",
+     "style": "Bold"
+    },
+    "DevanagariSangamMN": {
+     "family": "Devanagari Sangam MN",
+     "style": "Regular"
+    },
+    "DevanagariSangamMN-Bold": {
+     "family": "Devanagari Sangam MN",
+     "style": "Bold"
+    },
+    "Didot Bold": {
+     "family": "Didot",
+     "style": "Bold"
+    },
+    "Didot Italic": {
+     "family": "Didot",
+     "style": "Italic"
+    },
+    "Euphemia UCAS Bold": {
+     "family": "Euphemia UCAS",
+     "style": "Bold"
+    },
+    "Euphemia UCAS Italic": {
+     "family": "Euphemia UCAS",
+     "style": "Italic"
+    },
+    "EuphemiaUCAS": {
+     "family": "Euphemia UCAS",
+     "style": "Regular"
+    },
+    "EuphemiaUCAS-Bold": {
+     "family": "Euphemia UCAS",
+     "style": "Bold"
+    },
+    "EuphemiaUCAS-Italic": {
+     "family": "Euphemia UCAS",
+     "style": "Italic"
+    },
+    "GB18030Bitmap": {
+     "family": "GB18030 Bitmap",
+     "style": "Regular"
+    },
+    "Galvji-Bold": {
+     "family": "Galvji",
+     "style": "Bold"
+    },
+    "Galvji-BoldOblique": {
+     "family": "Galvji",
+     "style": "Bold Italic"
+    },
+    "Georgia Bold": {
+     "family": "Georgia",
+     "style": "Bold"
+    },
+    "Georgia Bold Italic": {
+     "family": "Georgia",
+     "style": "Bold Italic"
+    },
+    "Georgia Italic": {
+     "family": "Georgia",
+     "style": "Italic"
+    },
+    "Georgia-Bold": {
+     "family": "Georgia",
+     "style": "Bold"
+    },
+    "Georgia-BoldItalic": {
+     "family": "Georgia",
+     "style": "Bold Italic"
+    },
+    "Georgia-Italic": {
+     "family": "Georgia",
+     "style": "Italic"
+    },
+    "Gill Sans SemiBold": {
+     "family": "Gill Sans",
+     "style": "SemiBold"
+    },
+    "Gill Sans SemiBold Italic": {
+     "family": "Gill Sans",
+     "style": "SemiBold Italic"
+    },
+    "GillSans-SemiBold": {
+     "family": "Gill Sans",
+     "style": "SemiBold"
+    },
+    "GillSans-SemiBoldItalic": {
+     "family": "Gill Sans",
+     "style": "SemiBold Italic"
+    },
+    "Grantha Sangam MN Bold": {
+     "family": "Grantha Sangam MN",
+     "style": "Regular"
+    },
+    "Grantha Sangam MN Regular": {
+     "family": "Grantha Sangam MN",
+     "style": "Regular"
+    },
+    "GranthaSangamMN-Bold": {
+     "family": "Grantha Sangam MN",
+     "style": "Regular"
+    },
+    "GranthaSangamMN-Regular": {
+     "family": "Grantha Sangam MN",
+     "style": "Regular"
+    },
+    "Gujarati Sangam MN Bold": {
+     "family": "Gujarati Sangam MN",
+     "style": "Bold"
+    },
+    "GujaratiSangamMN": {
+     "family": "Gujarati Sangam MN",
+     "style": "Regular"
+    },
+    "GujaratiSangamMN-Bold": {
+     "family": "Gujarati Sangam MN",
+     "style": "Bold"
+    },
+    "Gurmukhi MN Bold": {
+     "family": "Gurmukhi MN",
+     "style": "Bold"
+    },
+    "Gurmukhi Sangam MN Bold": {
+     "family": "Gurmukhi Sangam MN",
+     "style": "Bold"
+    },
+    "GurmukhiMN": {
+     "family": "Gurmukhi MN",
+     "style": "Regular"
+    },
+    "GurmukhiMN-Bold": {
+     "family": "Gurmukhi MN",
+     "style": "Bold"
+    },
+    "GurmukhiSangamMN": {
+     "family": "Gurmukhi Sangam MN",
+     "style": "Regular"
+    },
+    "GurmukhiSangamMN-Bold": {
+     "family": "Gurmukhi Sangam MN",
+     "style": "Bold"
+    },
+    "Heiti SC Light": {
+     "family": "Heiti SC",
+     "style": "Light"
+    },
+    "Heiti SC Medium": {
+     "family": "Heiti SC",
+     "style": "Medium"
+    },
+    "Heiti TC Light": {
+     "family": "Heiti TC",
+     "style": "Light"
+    },
+    "Heiti TC Medium": {
+     "family": "Heiti TC",
+     "style": "Medium"
+    },
+    "Helvetica Neue Thin": {
+     "family": "Helvetica Neue",
+     "style": "Thin"
+    },
+    "Helvetica Neue Thin Italic": {
+     "family": "Helvetica Neue",
+     "style": "Thin Italic"
+    },
+    "HelveticaNeue-Thin": {
+     "family": "Helvetica Neue",
+     "style": "Thin"
+    },
+    "HelveticaNeue-ThinItalic": {
+     "family": "Helvetica Neue",
+     "style": "Thin Italic"
+    },
+    "ITF Devanagari Marathi Medium": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Medium"
+    },
+    "ITFDevanagari Marathi Light": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Light"
+    },
+    "ITFDevanagari Marathi-Bold": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Bold"
+    },
+    "ITFDevanagari Marathi-Book": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Book"
+    },
+    "ITFDevanagari Marathi-Demi": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Demi"
+    },
+    "ITFDevanagari-Bold": {
+     "family": "ITF Devanagari",
+     "style": "Bold"
+    },
+    "ITFDevanagari-Book": {
+     "family": "ITF Devanagari",
+     "style": "Book"
+    },
+    "ITFDevanagari-Demi": {
+     "family": "ITF Devanagari",
+     "style": "Demi"
+    },
+    "ITFDevanagari-Light": {
+     "family": "ITF Devanagari",
+     "style": "Light"
+    },
+    "ITFDevanagari-Medium": {
+     "family": "ITF Devanagari",
+     "style": "Medium"
+    },
+    "ITFDevanagariMarathi-Bold": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Bold"
+    },
+    "ITFDevanagariMarathi-Book": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Book"
+    },
+    "ITFDevanagariMarathi-Demi": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Demi"
+    },
+    "ITFDevanagariMarathi-Light": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Light"
+    },
+    "ITFDevanagariMarathi-Medium": {
+     "family": "ITF Devanagari Marathi",
+     "style": "Medium"
+    },
+    "Kannada MN Bold": {
+     "family": "Kannada MN",
+     "style": "Bold"
+    },
+    "Kannada Sangam MN Bold": {
+     "family": "Kannada Sangam MN",
+     "style": "Bold"
+    },
+    "KannadaMN": {
+     "family": "Kannada MN",
+     "style": "Regular"
+    },
+    "KannadaMN-Bold": {
+     "family": "Kannada MN",
+     "style": "Bold"
+    },
+    "KannadaSangamMN": {
+     "family": "Kannada Sangam MN",
+     "style": "Regular"
+    },
+    "KannadaSangamMN-Bold": {
+     "family": "Kannada Sangam MN",
+     "style": "Bold"
+    },
+    "Kefa Bold": {
+     "family": "Kefa",
+     "style": "Bold"
+    },
+    "Kefa Regular": {
+     "family": "Kefa",
+     "style": "Regular"
+    },
+    "Kefa-Bold": {
+     "family": "Kefa",
+     "style": "Bold"
+    },
+    "Kefa-Regular": {
+     "family": "Kefa",
+     "style": "Regular"
+    },
+    "Khmer MN Bold": {
+     "family": "Khmer MN",
+     "style": "Bold"
+    },
+    "KhmerMN": {
+     "family": "Khmer MN",
+     "style": "Regular"
+    },
+    "KhmerMN-Bold": {
+     "family": "Khmer MN",
+     "style": "Bold"
+    },
+    "KhmerSangamMN": {
+     "family": "Khmer Sangam MN",
+     "style": "Regular"
+    },
+    "Kohinoor Bangla Bold": {
+     "family": "Kohinoor Bangla",
+     "style": "Bold"
+    },
+    "Kohinoor Bangla Light": {
+     "family": "Kohinoor Bangla",
+     "style": "Light"
+    },
+    "Kohinoor Bangla Medium": {
+     "family": "Kohinoor Bangla",
+     "style": "Medium"
+    },
+    "Kohinoor Bangla Semibold": {
+     "family": "Kohinoor Bangla",
+     "style": "Semibold"
+    },
+    "Kohinoor Devanagari Bold": {
+     "family": "Kohinoor Devanagari",
+     "style": "Bold"
+    },
+    "Kohinoor Devanagari Light": {
+     "family": "Kohinoor Devanagari",
+     "style": "Light"
+    },
+    "Kohinoor Devanagari Medium": {
+     "family": "Kohinoor Devanagari",
+     "style": "Medium"
+    },
+    "Kohinoor Devanagari Regular": {
+     "family": "Kohinoor Devanagari",
+     "style": "Regular"
+    },
+    "Kohinoor Devanagari Semibold": {
+     "family": "Kohinoor Devanagari",
+     "style": "Semibold"
+    },
+    "Kohinoor Gujarati Bold": {
+     "family": "Kohinoor Gujarati",
+     "style": "Bold"
+    },
+    "Kohinoor Gujarati Light": {
+     "family": "Kohinoor Gujarati",
+     "style": "Light"
+    },
+    "Kohinoor Gujarati Medium": {
+     "family": "Kohinoor Gujarati",
+     "style": "Medium"
+    },
+    "Kohinoor Gujarati Regular": {
+     "family": "Kohinoor Gujarati",
+     "style": "Regular"
+    },
+    "Kohinoor Gujarati Semibold": {
+     "family": "Kohinoor Gujarati",
+     "style": "Semibold"
+    },
+    "Kohinoor Telugu Bold": {
+     "family": "Kohinoor Telugu",
+     "style": "Bold"
+    },
+    "Kohinoor Telugu Light": {
+     "family": "Kohinoor Telugu",
+     "style": "Light"
+    },
+    "Kohinoor Telugu Medium": {
+     "family": "Kohinoor Telugu",
+     "style": "Medium"
+    },
+    "Kohinoor Telugu Semibold": {
+     "family": "Kohinoor Telugu",
+     "style": "Semibold"
+    },
+    "KohinoorBangla-Bold": {
+     "family": "Kohinoor Bangla",
+     "style": "Bold"
+    },
+    "KohinoorBangla-Light": {
+     "family": "Kohinoor Bangla",
+     "style": "Light"
+    },
+    "KohinoorBangla-Medium": {
+     "family": "Kohinoor Bangla",
+     "style": "Medium"
+    },
+    "KohinoorBangla-Regular": {
+     "family": "Kohinoor Bangla",
+     "style": "Regular"
+    },
+    "KohinoorBangla-Semibold": {
+     "family": "Kohinoor Bangla",
+     "style": "Semibold"
+    },
+    "KohinoorDevanagari-Bold": {
+     "family": "Kohinoor Devanagari",
+     "style": "Bold"
+    },
+    "KohinoorDevanagari-Light": {
+     "family": "Kohinoor Devanagari",
+     "style": "Light"
+    },
+    "KohinoorDevanagari-Medium": {
+     "family": "Kohinoor Devanagari",
+     "style": "Medium"
+    },
+    "KohinoorDevanagari-Regular": {
+     "family": "Kohinoor Devanagari",
+     "style": "Regular"
+    },
+    "KohinoorDevanagari-Semibold": {
+     "family": "Kohinoor Devanagari",
+     "style": "Semibold"
+    },
+    "KohinoorGujarati-Bold": {
+     "family": "Kohinoor Gujarati",
+     "style": "Bold"
+    },
+    "KohinoorGujarati-Light": {
+     "family": "Kohinoor Gujarati",
+     "style": "Light"
+    },
+    "KohinoorGujarati-Medium": {
+     "family": "Kohinoor Gujarati",
+     "style": "Medium"
+    },
+    "KohinoorGujarati-Regular": {
+     "family": "Kohinoor Gujarati",
+     "style": "Regular"
+    },
+    "KohinoorGujarati-Semibold": {
+     "family": "Kohinoor Gujarati",
+     "style": "Semibold"
+    },
+    "KohinoorTelugu-Bold": {
+     "family": "Kohinoor Telugu",
+     "style": "Bold"
+    },
+    "KohinoorTelugu-Light": {
+     "family": "Kohinoor Telugu",
+     "style": "Light"
+    },
+    "KohinoorTelugu-Medium": {
+     "family": "Kohinoor Telugu",
+     "style": "Medium"
+    },
+    "KohinoorTelugu-Regular": {
+     "family": "Kohinoor Telugu",
+     "style": "Regular"
+    },
+    "KohinoorTelugu-Semibold": {
+     "family": "Kohinoor Telugu",
+     "style": "Semibold"
+    },
+    "KufiStandardGK Regular": {
+     "family": "KufiStandardGK",
+     "style": "Regular"
+    },
+    "Lao MN Bold": {
+     "family": "Lao MN",
+     "style": "Bold"
+    },
+    "LaoMN": {
+     "family": "Lao MN",
+     "style": "Regular"
+    },
+    "LaoMN-Bold": {
+     "family": "Lao MN",
+     "style": "Bold"
+    },
+    "LaoSangamMN": {
+     "family": "Lao Sangam MN",
+     "style": "Regular"
+    },
+    "Luminari-Regular": {
+     "family": "Luminari",
+     "style": "Regular"
+    },
+    "Malayalam MN Bold": {
+     "family": "Malayalam MN",
+     "style": "Bold"
+    },
+    "Malayalam Sangam MN Bold": {
+     "family": "Malayalam Sangam MN",
+     "style": "Bold"
+    },
+    "MalayalamMN": {
+     "family": "Malayalam MN",
+     "style": "Regular"
+    },
+    "MalayalamMN-Bold": {
+     "family": "Malayalam MN",
+     "style": "Bold"
+    },
+    "MalayalamSangamMN": {
+     "family": "Malayalam Sangam MN",
+     "style": "Regular"
+    },
+    "MalayalamSangamMN-Bold": {
+     "family": "Malayalam Sangam MN",
+     "style": "Bold"
+    },
+    "MicrosoftSansSerif": {
+     "family": "Microsoft Sans Serif",
+     "style": "Regular"
+    },
+    "Myanmar MN Bold": {
+     "family": "Myanmar MN",
+     "style": "Bold"
+    },
+    "Myanmar Sangam MN Bold": {
+     "family": "Myanmar Sangam MN",
+     "style": "Bold"
+    },
+    "MyanmarMN": {
+     "family": "Myanmar MN",
+     "style": "Regular"
+    },
+    "MyanmarMN-Bold": {
+     "family": "Myanmar MN",
+     "style": "Bold"
+    },
+    "MyanmarSangamMN": {
+     "family": "Myanmar Sangam MN",
+     "style": "Regular"
+    },
+    "MyanmarSangamMN-Bold": {
+     "family": "Myanmar Sangam MN",
+     "style": "Bold"
+    },
+    "Noteworthy Bold": {
+     "family": "Noteworthy",
+     "style": "Bold"
+    },
+    "Noteworthy Light": {
+     "family": "Noteworthy",
+     "style": "Light"
+    },
+    "Noteworthy-Bold": {
+     "family": "Noteworthy",
+     "style": "Bold"
+    },
+    "Noteworthy-Light": {
+     "family": "Noteworthy",
+     "style": "Light"
+    },
+    "Noto Nastaliq Urdu Bold": {
+     "family": "Noto Nastaliq Urdu",
+     "style": "Bold"
+    },
+    "Noto Sans Batak Regular": {
+     "family": "Noto Sans Batak",
+     "style": "Regular"
+    },
+    "Noto Sans Kannada Bold": {
+     "family": "Noto Sans Kannada",
+     "style": "Bold"
+    },
+    "Noto Sans Kannada Regular": {
+     "family": "Noto Sans Kannada",
+     "style": "Regular"
+    },
+    "Noto Sans Myanmar Bold": {
+     "family": "Noto Sans Myanmar",
+     "style": "Bold"
+    },
+    "Noto Sans Myanmar Regular": {
+     "family": "Noto Sans Myanmar",
+     "style": "Regular"
+    },
+    "Noto Sans NKo Regular": {
+     "family": "Noto Sans NKo",
+     "style": "Regular"
+    },
+    "Noto Sans Oriya Bold": {
+     "family": "Noto Sans Oriya",
+     "style": "Bold"
+    },
+    "Noto Sans Syriac Regular": {
+     "family": "Noto Sans Syriac",
+     "style": "Regular"
+    },
+    "Noto Sans Tagalog Regular": {
+     "family": "Noto Sans Tagalog",
+     "style": "Regular"
+    },
+    "Noto Serif Myanmar Bold": {
+     "family": "Noto Serif Myanmar",
+     "style": "Bold"
+    },
+    "Noto Serif Myanmar Regular": {
+     "family": "Noto Serif Myanmar",
+     "style": "Regular"
+    },
+    "NotoNastaliqUrdu": {
+     "family": "Noto Nastaliq Urdu",
+     "style": "Regular"
+    },
+    "NotoNastaliqUrdu-Bold": {
+     "family": "Noto Nastaliq Urdu",
+     "style": "Bold"
+    },
+    "NotoSansBatak-Regular": {
+     "family": "Noto Sans Batak",
+     "style": "Regular"
+    },
+    "NotoSansKannada-Bold": {
+     "family": "Noto Sans Kannada",
+     "style": "Bold"
+    },
+    "NotoSansKannada-Regular": {
+     "family": "Noto Sans Kannada",
+     "style": "Regular"
+    },
+    "NotoSansMyanmar-Bold": {
+     "family": "Noto Sans Myanmar",
+     "style": "Bold"
+    },
+    "NotoSansMyanmar-Regular": {
+     "family": "Noto Sans Myanmar",
+     "style": "Regular"
+    },
+    "NotoSansNKo-Regular": {
+     "family": "Noto Sans NKo",
+     "style": "Regular"
+    },
+    "NotoSansOriya": {
+     "family": "Noto Sans Oriya",
+     "style": "Regular"
+    },
+    "NotoSansOriya-Bold": {
+     "family": "Noto Sans Oriya",
+     "style": "Bold"
+    },
+    "NotoSansSyriac-Regular": {
+     "family": "Noto Sans Syriac",
+     "style": "Regular"
+    },
+    "NotoSansTagalog-Regular": {
+     "family": "Noto Sans Tagalog",
+     "style": "Regular"
+    },
+    "NotoSerifMyanmar-Bold": {
+     "family": "Noto Serif Myanmar",
+     "style": "Bold"
+    },
+    "NotoSerifMyanmar-Regular": {
+     "family": "Noto Serif Myanmar",
+     "style": "Regular"
+    },
+    "Oriya MN Bold": {
+     "family": "Oriya MN",
+     "style": "Bold"
+    },
+    "Oriya Sangam MN Bold": {
+     "family": "Oriya Sangam MN",
+     "style": "Bold"
+    },
+    "OriyaMN": {
+     "family": "Oriya MN",
+     "style": "Regular"
+    },
+    "OriyaMN-Bold": {
+     "family": "Oriya MN",
+     "style": "Bold"
+    },
+    "OriyaSangamMN": {
+     "family": "Oriya Sangam MN",
+     "style": "Regular"
+    },
+    "OriyaSangamMN-Bold": {
+     "family": "Oriya Sangam MN",
+     "style": "Bold"
+    },
+    "PT Mono Bold": {
+     "family": "PT Mono",
+     "style": "Bold"
+    },
+    "PT Sans Bold": {
+     "family": "PT Sans",
+     "style": "Bold"
+    },
+    "PT Sans Bold Italic": {
+     "family": "PT Sans",
+     "style": "Bold Italic"
+    },
+    "PT Sans Caption Bold": {
+     "family": "PT Sans Caption",
+     "style": "Bold"
+    },
+    "PT Sans Italic": {
+     "family": "PT Sans",
+     "style": "Italic"
+    },
+    "PT Sans Narrow Bold": {
+     "family": "PT Sans Narrow",
+     "style": "Bold"
+    },
+    "PT Serif Bold": {
+     "family": "PT Serif",
+     "style": "Bold"
+    },
+    "PT Serif Bold Italic": {
+     "family": "PT Serif",
+     "style": "Bold Italic"
+    },
+    "PT Serif Caption Italic": {
+     "family": "PT Serif Caption",
+     "style": "Italic"
+    },
+    "PT Serif Italic": {
+     "family": "PT Serif",
+     "style": "Italic"
+    },
+    "PTMono-Bold": {
+     "family": "PT Mono",
+     "style": "Bold"
+    },
+    "PTMono-Regular": {
+     "family": "PT Mono",
+     "style": "Regular"
+    },
+    "PTSans-Bold": {
+     "family": "PT Sans",
+     "style": "Bold"
+    },
+    "PTSans-BoldItalic": {
+     "family": "PT Sans",
+     "style": "Bold Italic"
+    },
+    "PTSans-Caption": {
+     "family": "PT Sans Caption",
+     "style": "Regular"
+    },
+    "PTSans-CaptionBold": {
+     "family": "PT Sans Caption",
+     "style": "Bold"
+    },
+    "PTSans-Italic": {
+     "family": "PT Sans",
+     "style": "Italic"
+    },
+    "PTSans-Narrow": {
+     "family": "PT Sans Narrow",
+     "style": "Regular"
+    },
+    "PTSans-NarrowBold": {
+     "family": "PT Sans Narrow",
+     "style": "Bold"
+    },
+    "PTSans-Regular": {
+     "family": "PT Sans",
+     "style": "Regular"
+    },
+    "PTSerif-Bold": {
+     "family": "PT Serif",
+     "style": "Bold"
+    },
+    "PTSerif-BoldItalic": {
+     "family": "PT Serif",
+     "style": "Bold Italic"
+    },
+    "PTSerif-Caption": {
+     "family": "PT Serif Caption",
+     "style": "Regular"
+    },
+    "PTSerif-CaptionItalic": {
+     "family": "PT Serif Caption",
+     "style": "Italic"
+    },
+    "PTSerif-Italic": {
+     "family": "PT Serif",
+     "style": "Italic"
+    },
+    "PTSerif-Regular": {
+     "family": "PT Serif",
+     "style": "Regular"
+    },
+    "Palatino Bold": {
+     "family": "Palatino",
+     "style": "Bold"
+    },
+    "Palatino Bold Italic": {
+     "family": "Palatino",
+     "style": "Bold Italic"
+    },
+    "Palatino Italic": {
+     "family": "Palatino",
+     "style": "Italic"
+    },
+    "Palatino-Bold": {
+     "family": "Palatino",
+     "style": "Bold"
+    },
+    "Palatino-BoldItalic": {
+     "family": "Palatino",
+     "style": "Bold Italic"
+    },
+    "Palatino-Italic": {
+     "family": "Palatino",
+     "style": "Italic"
+    },
+    "Palatino-Roman": {
+     "family": "Palatino",
+     "style": "Regular"
+    },
+    "PingFangHK-Medium": {
+     "family": "PingFang HK",
+     "style": "Medium"
+    },
+    "PingFangMO-Medium": {
+     "family": "PingFang MO",
+     "style": "Medium"
+    },
+    "PingFangSC-Medium": {
+     "family": "PingFang SC",
+     "style": "Medium"
+    },
+    "PingFangTC-Medium": {
+     "family": "PingFang TC",
+     "style": "Medium"
+    },
+    "Rockwell Bold Italic": {
+     "family": "Rockwell",
+     "style": "Bold Italic"
+    },
+    "Rockwell Italic": {
+     "family": "Rockwell",
+     "style": "Italic"
+    },
+    "Rockwell-Bold": {
+     "family": "Rockwell",
+     "style": "Bold"
+    },
+    "Rockwell-BoldItalic": {
+     "family": "Rockwell",
+     "style": "Bold Italic"
+    },
+    "Rockwell-Italic": {
+     "family": "Rockwell",
+     "style": "Italic"
+    },
+    "Rockwell-Regular": {
+     "family": "Rockwell",
+     "style": "Regular"
+    },
+    "STIX Two Math Regular": {
+     "family": "STIX Two Math",
+     "style": "Regular"
+    },
+    "STIX Two Text Italic": {
+     "family": "STIX Two Text",
+     "style": "Italic"
+    },
+    "STIXTwoMath-Regular": {
+     "family": "STIX Two Math",
+     "style": "Regular"
+    },
+    "STIXTwoText": {
+     "family": "STIX Two Text",
+     "style": "Regular"
+    },
+    "STIXTwoText-Italic": {
+     "family": "STIX Two Text",
+     "style": "Italic"
+    },
+    "STSongti-SC-Black": {
+     "family": "Songti SC",
+     "style": "Black"
+    },
+    "STSongti-SC-Bold": {
+     "family": "Songti SC",
+     "style": "Bold"
+    },
+    "STSongti-SC-Regular": {
+     "family": "Songti SC",
+     "style": "Regular"
+    },
+    "STSongti-TC-Bold": {
+     "family": "Songti TC",
+     "style": "Bold"
+    },
+    "STSongti-TC-Regular": {
+     "family": "Songti TC",
+     "style": "Regular"
+    },
+    "Shree Devanagari 714 Bold": {
+     "family": "Shree Devanagari 714",
+     "style": "Bold"
+    },
+    "Shree Devanagari 714 Bold Italic": {
+     "family": "Shree Devanagari 714",
+     "style": "Bold Italic"
+    },
+    "Shree Devanagari 714 Italic": {
+     "family": "Shree Devanagari 714",
+     "style": "Italic"
+    },
+    "ShreeDev0714": {
+     "family": "Shree Devanagari 714",
+     "style": "Regular"
+    },
+    "ShreeDev0714-Bold": {
+     "family": "Shree Devanagari 714",
+     "style": "Bold"
+    },
+    "ShreeDev0714-BoldItalic": {
+     "family": "Shree Devanagari 714",
+     "style": "Bold Italic"
+    },
+    "ShreeDev0714-Italic": {
+     "family": "Shree Devanagari 714",
+     "style": "Italic"
+    },
+    "Sinhala MN Bold": {
+     "family": "Sinhala MN",
+     "style": "Bold"
+    },
+    "Sinhala Sangam MN Bold": {
+     "family": "Sinhala Sangam MN",
+     "style": "Bold"
+    },
+    "SinhalaMN": {
+     "family": "Sinhala MN",
+     "style": "Regular"
+    },
+    "SinhalaMN-Bold": {
+     "family": "Sinhala MN",
+     "style": "Bold"
+    },
+    "SinhalaSangamMN": {
+     "family": "Sinhala Sangam MN",
+     "style": "Regular"
+    },
+    "SinhalaSangamMN-Bold": {
+     "family": "Sinhala Sangam MN",
+     "style": "Bold"
+    },
+    "Snell Roundhand Black": {
+     "family": "Snell Roundhand",
+     "style": "Black"
+    },
+    "Snell Roundhand Bold": {
+     "family": "Snell Roundhand",
+     "style": "Bold"
+    },
+    "SnellRoundhand": {
+     "family": "Snell Roundhand",
+     "style": "Regular"
+    },
+    "SnellRoundhand-Black": {
+     "family": "Snell Roundhand",
+     "style": "Black"
+    },
+    "SnellRoundhand-Bold": {
+     "family": "Snell Roundhand",
+     "style": "Bold"
+    },
+    "Songti SC Black": {
+     "family": "Songti SC",
+     "style": "Black"
+    },
+    "Songti SC Bold": {
+     "family": "Songti SC",
+     "style": "Bold"
+    },
+    "Songti SC Light": {
+     "family": "Songti SC",
+     "style": "Light"
+    },
+    "Songti SC Regular": {
+     "family": "Songti SC",
+     "style": "Regular"
+    },
+    "Songti TC Bold": {
+     "family": "Songti TC",
+     "style": "Bold"
+    },
+    "Songti TC Light": {
+     "family": "Songti TC",
+     "style": "Light"
+    },
+    "Songti TC Regular": {
+     "family": "Songti TC",
+     "style": "Regular"
+    },
+    "SukhumvitSet-Bold": {
+     "family": "Sukhumvit Set",
+     "style": "Bold"
+    },
+    "SukhumvitSet-Light": {
+     "family": "Sukhumvit Set",
+     "style": "Light"
+    },
+    "SukhumvitSet-Medium": {
+     "family": "Sukhumvit Set",
+     "style": "Medium"
+    },
+    "SukhumvitSet-SemiBold": {
+     "family": "Sukhumvit Set",
+     "style": "Semi Bold"
+    },
+    "SukhumvitSet-Text": {
+     "family": "Sukhumvit Set",
+     "style": "Text"
+    },
+    "SukhumvitSet-Thin": {
+     "family": "Sukhumvit Set",
+     "style": "Thin"
+    },
+    "Tahoma Bold": {
+     "family": "Tahoma",
+     "style": "Bold"
+    },
+    "Tahoma-Bold": {
+     "family": "Tahoma",
+     "style": "Bold"
+    },
+    "Tamil MN Bold": {
+     "family": "Tamil MN",
+     "style": "Bold"
+    },
+    "Tamil Sangam MN Bold": {
+     "family": "Tamil Sangam MN",
+     "style": "Bold"
+    },
+    "TamilMN": {
+     "family": "Tamil MN",
+     "style": "Regular"
+    },
+    "TamilMN-Bold": {
+     "family": "Tamil MN",
+     "style": "Bold"
+    },
+    "TamilSangamMN": {
+     "family": "Tamil Sangam MN",
+     "style": "Regular"
+    },
+    "TamilSangamMN-Bold": {
+     "family": "Tamil Sangam MN",
+     "style": "Bold"
+    },
+    "Telugu MN Bold": {
+     "family": "Telugu MN",
+     "style": "Bold"
+    },
+    "Telugu Sangam MN Bold": {
+     "family": "Telugu Sangam MN",
+     "style": "Bold"
+    },
+    "TeluguMN": {
+     "family": "Telugu MN",
+     "style": "Regular"
+    },
+    "TeluguMN-Bold": {
+     "family": "Telugu MN",
+     "style": "Bold"
+    },
+    "TeluguSangamMN": {
+     "family": "Telugu Sangam MN",
+     "style": "Regular"
+    },
+    "TeluguSangamMN-Bold": {
+     "family": "Telugu Sangam MN",
+     "style": "Bold"
+    },
+    "Times New Roman Bold": {
+     "family": "Times New Roman",
+     "style": "Bold"
+    },
+    "Times New Roman Bold Italic": {
+     "family": "Times New Roman",
+     "style": "Bold Italic"
+    },
+    "Times New Roman Italic": {
+     "family": "Times New Roman",
+     "style": "Italic"
+    },
+    "TimesNewRomanPS-BoldItalicMT": {
+     "family": "Times New Roman",
+     "style": "Bold Italic"
+    },
+    "TimesNewRomanPS-BoldMT": {
+     "family": "Times New Roman",
+     "style": "Bold"
+    },
+    "TimesNewRomanPS-ItalicMT": {
+     "family": "Times New Roman",
+     "style": "Italic"
+    },
+    "TimesNewRomanPSMT": {
+     "family": "Times New Roman",
+     "style": "Regular"
+    },
+    "Trebuchet MS Bold": {
+     "family": "Trebuchet MS",
+     "style": "Bold"
+    },
+    "Trebuchet MS Bold Italic": {
+     "family": "Trebuchet MS",
+     "style": "Bold Italic"
+    },
+    "Trebuchet MS Italic": {
+     "family": "Trebuchet MS",
+     "style": "Italic"
+    },
+    "Trebuchet-BoldItalic": {
+     "family": "Trebuchet MS",
+     "style": "Bold Italic"
+    },
+    "TrebuchetMS": {
+     "family": "Trebuchet MS",
+     "style": "Regular"
+    },
+    "TrebuchetMS-Bold": {
+     "family": "Trebuchet MS",
+     "style": "Bold"
+    },
+    "TrebuchetMS-Italic": {
+     "family": "Trebuchet MS",
+     "style": "Italic"
+    },
+    "Verdana Bold": {
+     "family": "Verdana",
+     "style": "Bold"
+    },
+    "Verdana Bold Italic": {
+     "family": "Verdana",
+     "style": "Bold Italic"
+    },
+    "Verdana Italic": {
+     "family": "Verdana",
+     "style": "Italic"
+    },
+    "Verdana-Bold": {
+     "family": "Verdana",
+     "style": "Bold"
+    },
+    "Verdana-BoldItalic": {
+     "family": "Verdana",
+     "style": "Bold Italic"
+    },
+    "Verdana-Italic": {
+     "family": "Verdana",
+     "style": "Italic"
+    },
+    "Wingdings-Regular": {
+     "family": "Wingdings",
+     "style": "Regular"
+    },
+    "Wingdings2": {
+     "family": "Wingdings 2",
+     "style": "Regular"
+    },
+    "Wingdings3": {
+     "family": "Wingdings 3",
+     "style": "Regular"
+    }
+   }
   },
   "exclude": {
    "AniMe Matrix - MB_EN": "ASUS Armoury Crate vendor font on this host, not stock Windows",
@@ -1183,5 +4033,647 @@
    ".AppleSystemUIFont"
   ],
   "Windows": []
+ },
+ "unique_map": {
+  "Windows": {
+   "Arial Bold": "Liberation Sans Bold",
+   "Arial Bold Italic": "Liberation Sans Bold Italic",
+   "Arial Italic": "Liberation Sans Italic",
+   "Arial-Black": "Selawik",
+   "Arial-BoldItalicMT": "Liberation Sans Bold Italic",
+   "Arial-BoldMT": "Liberation Sans Bold",
+   "Arial-ItalicMT": "Liberation Sans Italic",
+   "ArialMT": "Liberation Sans",
+   "Calibri Bold": "Carlito Bold",
+   "Calibri Bold Italic": "Carlito Bold Italic",
+   "Calibri Italic": "Carlito Italic",
+   "Calibri Light Italic": "Selawik",
+   "Calibri-Bold": "Carlito Bold",
+   "Calibri-BoldItalic": "Carlito Bold Italic",
+   "Calibri-Italic": "Carlito Italic",
+   "Calibri-Light": "Selawik",
+   "Calibri-LightItalic": "Selawik",
+   "Cambria Bold": "Caladea Bold",
+   "Cambria Bold Italic": "Caladea Bold Italic",
+   "Cambria Italic": "Caladea Italic",
+   "Cambria-Bold": "Caladea Bold",
+   "Cambria-BoldItalic": "Caladea Bold Italic",
+   "Cambria-Italic": "Caladea Italic",
+   "CambriaMath": "Liberation Serif",
+   "Candara Bold": "Selawik Bold",
+   "Candara Bold Italic": "Selawik",
+   "Candara Italic": "Selawik",
+   "Candara Light Italic": "Selawik",
+   "Candara-Bold": "Selawik Bold",
+   "Candara-BoldItalic": "Selawik",
+   "Candara-Italic": "Selawik",
+   "Candara-Light": "Selawik",
+   "Candara-LightItalic": "Selawik",
+   "Cascadia Code Regular": "Liberation Mono",
+   "Cascadia Mono Regular": "Liberation Mono",
+   "CascadiaCode-Roman": "Liberation Mono",
+   "CascadiaMono-Roman": "Liberation Mono",
+   "Comic Sans MS Bold": "Selawik Bold",
+   "Comic Sans MS Bold Italic": "Selawik",
+   "Comic Sans MS Italic": "Selawik",
+   "ComicSansMS": "Selawik",
+   "ComicSansMS-Bold": "Selawik Bold",
+   "ComicSansMS-BoldItalic": "Selawik",
+   "ComicSansMS-Italic": "Selawik",
+   "Consolas Bold": "Liberation Mono Bold",
+   "Consolas Bold Italic": "Liberation Mono Bold Italic",
+   "Consolas Italic": "Liberation Mono Italic",
+   "Consolas-Bold": "Liberation Mono Bold",
+   "Consolas-BoldItalic": "Liberation Mono Bold Italic",
+   "Consolas-Italic": "Liberation Mono Italic",
+   "Constantia Bold": "Liberation Serif Bold",
+   "Constantia Bold Italic": "Liberation Serif Bold Italic",
+   "Constantia Italic": "Liberation Serif Italic",
+   "Constantia-Bold": "Liberation Serif Bold",
+   "Constantia-BoldItalic": "Liberation Serif Bold Italic",
+   "Constantia-Italic": "Liberation Serif Italic",
+   "Corbel Bold": "Selawik Bold",
+   "Corbel Bold Italic": "Selawik",
+   "Corbel Italic": "Selawik",
+   "Corbel Light Italic": "Selawik",
+   "Corbel-Bold": "Selawik Bold",
+   "Corbel-BoldItalic": "Selawik",
+   "Corbel-Italic": "Selawik",
+   "CorbelLight": "Selawik",
+   "CorbelLight-Italic": "Selawik",
+   "Courier New Bold": "Liberation Mono Bold",
+   "Courier New Bold Italic": "Liberation Mono Bold Italic",
+   "Courier New Italic": "Liberation Mono Italic",
+   "CourierNewPS-BoldItalicMT": "Liberation Mono Bold Italic",
+   "CourierNewPS-BoldMT": "Liberation Mono Bold",
+   "CourierNewPS-ItalicMT": "Liberation Mono Italic",
+   "CourierNewPSMT": "Liberation Mono",
+   "Ebrima Bold": "Selawik Bold",
+   "Ebrima-Bold": "Selawik Bold",
+   "Franklin Gothic Medium Italic": "Selawik",
+   "FranklinGothic-Medium": "Selawik",
+   "FranklinGothic-MediumItalic": "Selawik",
+   "Gadugi Bold": "Selawik Bold",
+   "Gadugi-Bold": "Selawik Bold",
+   "Georgia Bold": "Gelasio Regular",
+   "Georgia Bold Italic": "Gelasio Regular",
+   "Georgia Italic": "Gelasio Italic",
+   "Georgia-Bold": "Gelasio Regular",
+   "Georgia-BoldItalic": "Gelasio Regular",
+   "Georgia-Italic": "Gelasio Italic",
+   "HoloLensMDL2Assets": "Noto Sans Symbols 2 Regular",
+   "InkFree": "Selawik",
+   "JavaneseText": "Selawik",
+   "Leelawadee UI Bold": "Selawik Bold",
+   "LeelawadeeUI": "Selawik",
+   "LeelawadeeUI-Bold": "Selawik Bold",
+   "LeelawadeeUI-Semilight": "Selawik",
+   "LucidaConsole": "Liberation Mono",
+   "LucidaSansUnicode": "Selawik",
+   "MS-Gothic": "Noto Sans CJK JP",
+   "MS-PGothic": "Noto Sans CJK JP",
+   "MS-UIGothic": "Noto Sans CJK JP",
+   "MVBoli": "Selawik",
+   "Malgun Gothic Bold": "Noto Sans CJK KR",
+   "MalgunGothic": "Noto Sans CJK KR",
+   "MalgunGothic-Semilight": "Selawik",
+   "MalgunGothicBold": "Noto Sans CJK KR",
+   "Microsoft JhengHei Bold": "Noto Sans CJK TC",
+   "Microsoft JhengHei UI Bold": "Noto Sans CJK TC",
+   "Microsoft New Tai Lue Bold": "Selawik Bold",
+   "Microsoft PhagsPa Bold": "Selawik Bold",
+   "Microsoft Tai Le Bold": "Selawik Bold",
+   "Microsoft YaHei Bold": "Noto Sans CJK SC",
+   "Microsoft YaHei UI Bold": "Noto Sans CJK SC",
+   "Microsoft-Yi-Baiti": "Selawik",
+   "MicrosoftJhengHeiBold": "Noto Sans CJK TC",
+   "MicrosoftJhengHeiLight": "Selawik",
+   "MicrosoftJhengHeiRegular": "Noto Sans CJK TC",
+   "MicrosoftJhengHeiUIBold": "Noto Sans CJK TC",
+   "MicrosoftJhengHeiUILight": "Selawik",
+   "MicrosoftJhengHeiUIRegular": "Noto Sans CJK TC",
+   "MicrosoftNewTaiLue": "Selawik",
+   "MicrosoftNewTaiLue-Bold": "Selawik Bold",
+   "MicrosoftPhagsPa": "Selawik",
+   "MicrosoftPhagsPa-Bold": "Selawik Bold",
+   "MicrosoftSansSerif": "Selawik",
+   "MicrosoftTaiLe": "Selawik",
+   "MicrosoftTaiLe-Bold": "Selawik Bold",
+   "MicrosoftYaHei": "Noto Sans CJK SC",
+   "MicrosoftYaHei-Bold": "Noto Sans CJK SC",
+   "MicrosoftYaHeiLight": "Selawik",
+   "MicrosoftYaHeiUI": "Noto Sans CJK SC",
+   "MicrosoftYaHeiUI-Bold": "Noto Sans CJK SC",
+   "MicrosoftYaHeiUILight": "Selawik",
+   "Ming-Lt-HKSCS-ExtB": "Noto Sans CJK HK",
+   "MongolianBaiti": "Selawik",
+   "Myanmar Text Bold": "Selawik Bold",
+   "MyanmarText": "Selawik",
+   "MyanmarText-Bold": "Selawik Bold",
+   "Nirmala UI Bold": "Selawik Bold",
+   "NirmalaUI": "Selawik",
+   "NirmalaUI-Bold": "Selawik Bold",
+   "NirmalaUI-Semilight": "Selawik",
+   "Palatino Linotype Bold": "Liberation Serif Bold",
+   "Palatino Linotype Bold Italic": "Liberation Serif Bold Italic",
+   "Palatino Linotype Italic": "Liberation Serif Italic",
+   "PalatinoLinotype-Bold": "Liberation Serif Bold",
+   "PalatinoLinotype-BoldItalic": "Liberation Serif Bold Italic",
+   "PalatinoLinotype-Italic": "Liberation Serif Italic",
+   "PalatinoLinotype-Roman": "Liberation Serif",
+   "Segoe Print Bold": "Noto Sans Symbols 2 Regular",
+   "Segoe Script Bold": "Noto Sans Symbols 2 Regular",
+   "Segoe UI Black Italic": "Selawik",
+   "Segoe UI Bold": "Selawik Bold",
+   "Segoe UI Bold Italic": "Selawik",
+   "Segoe UI Italic": "Selawik",
+   "Segoe UI Light Italic": "Selawik",
+   "Segoe UI Semibold Italic": "Selawik",
+   "Segoe UI Semilight Italic": "Selawik",
+   "SegoeMDL2Assets": "Noto Sans Symbols 2 Regular",
+   "SegoePrint": "Noto Sans Symbols 2 Regular",
+   "SegoePrint-Bold": "Noto Sans Symbols 2 Regular",
+   "SegoeScript": "Noto Sans Symbols 2 Regular",
+   "SegoeScript-Bold": "Noto Sans Symbols 2 Regular",
+   "SegoeUI": "Selawik",
+   "SegoeUI-Bold": "Selawik Bold",
+   "SegoeUI-BoldItalic": "Selawik",
+   "SegoeUI-Italic": "Selawik",
+   "SegoeUI-Light": "Selawik",
+   "SegoeUI-LightItalic": "Selawik",
+   "SegoeUI-Semibold": "Selawik",
+   "SegoeUI-SemiboldItalic": "Selawik",
+   "SegoeUI-Semilight": "Selawik",
+   "SegoeUI-SemilightItalic": "Selawik",
+   "SegoeUIBlack": "Selawik",
+   "SegoeUIBlack-Italic": "Selawik",
+   "SegoeUIEmoji": "Noto Color Emoji",
+   "SegoeUIHistoric": "Noto Sans Symbols 2 Regular",
+   "SegoeUISymbol": "Noto Sans Symbols 2 Regular",
+   "Sitka Banner Bold": "Liberation Serif Bold",
+   "Sitka Banner Bold Italic": "Liberation Serif Bold Italic",
+   "Sitka Banner Italic": "Liberation Serif Italic",
+   "Sitka Display Bold": "Liberation Serif Bold",
+   "Sitka Display Bold Italic": "Liberation Serif Bold Italic",
+   "Sitka Display Italic": "Liberation Serif Italic",
+   "Sitka Heading Bold": "Liberation Serif Bold",
+   "Sitka Heading Bold Italic": "Liberation Serif Bold Italic",
+   "Sitka Heading Italic": "Liberation Serif Italic",
+   "Sitka Small Bold": "Liberation Serif Bold",
+   "Sitka Small Bold Italic": "Liberation Serif Bold Italic",
+   "Sitka Small Italic": "Liberation Serif Italic",
+   "Sitka Subheading Bold": "Liberation Serif Bold",
+   "Sitka Subheading Bold Italic": "Liberation Serif Bold Italic",
+   "Sitka Subheading Italic": "Liberation Serif Italic",
+   "Sitka Text Bold": "Liberation Serif Bold",
+   "Sitka Text Bold Italic": "Liberation Serif Bold Italic",
+   "Sitka Text Italic": "Liberation Serif Italic",
+   "SitkaBanner": "Liberation Serif",
+   "SitkaBanner-Bold": "Liberation Serif Bold",
+   "SitkaBanner-BoldItalic": "Liberation Serif Bold Italic",
+   "SitkaBanner-Italic": "Liberation Serif Italic",
+   "SitkaDisplay": "Liberation Serif",
+   "SitkaDisplay-Bold": "Liberation Serif Bold",
+   "SitkaDisplay-BoldItalic": "Liberation Serif Bold Italic",
+   "SitkaDisplay-Italic": "Liberation Serif Italic",
+   "SitkaHeading": "Liberation Serif",
+   "SitkaHeading-Bold": "Liberation Serif Bold",
+   "SitkaHeading-BoldItalic": "Liberation Serif Bold Italic",
+   "SitkaHeading-Italic": "Liberation Serif Italic",
+   "SitkaSmall": "Liberation Serif",
+   "SitkaSmall-Bold": "Liberation Serif Bold",
+   "SitkaSmall-BoldItalic": "Liberation Serif Bold Italic",
+   "SitkaSmall-Italic": "Liberation Serif Italic",
+   "SitkaSubheading": "Liberation Serif",
+   "SitkaSubheading-Bold": "Liberation Serif Bold",
+   "SitkaSubheading-BoldItalic": "Liberation Serif Bold Italic",
+   "SitkaSubheading-Italic": "Liberation Serif Italic",
+   "SitkaText": "Liberation Serif",
+   "SitkaText-Bold": "Liberation Serif Bold",
+   "SitkaText-BoldItalic": "Liberation Serif Bold Italic",
+   "SitkaText-Italic": "Liberation Serif Italic",
+   "SymbolMT": "Noto Sans Symbols 2 Regular",
+   "Tahoma-Bold": "Tahoma Bold",
+   "Times New Roman Bold": "Liberation Serif Bold",
+   "Times New Roman Bold Italic": "Liberation Serif Bold Italic",
+   "Times New Roman Italic": "Liberation Serif Italic",
+   "TimesNewRomanPS-BoldItalicMT": "Liberation Serif Bold Italic",
+   "TimesNewRomanPS-BoldMT": "Liberation Serif Bold",
+   "TimesNewRomanPS-ItalicMT": "Liberation Serif Italic",
+   "TimesNewRomanPSMT": "Liberation Serif",
+   "Trebuchet MS Bold": "Selawik Bold",
+   "Trebuchet MS Bold Italic": "Selawik",
+   "Trebuchet MS Italic": "Selawik",
+   "Trebuchet-BoldItalic": "Selawik",
+   "TrebuchetMS": "Selawik",
+   "TrebuchetMS-Bold": "Selawik Bold",
+   "TrebuchetMS-Italic": "Selawik",
+   "Verdana Bold": "Selawik Bold",
+   "Verdana Bold Italic": "Selawik",
+   "Verdana Italic": "Selawik",
+   "Verdana-Bold": "Selawik Bold",
+   "Verdana-BoldItalic": "Selawik",
+   "Verdana-Italic": "Selawik",
+   "Wingdings-Regular": "Noto Sans Symbols 2 Regular",
+   "Wingdings2": "Noto Sans Symbols 2 Regular",
+   "Wingdings3": "Noto Sans Symbols 2 Regular",
+   "Yu Gothic Bold": "Noto Sans CJK JP",
+   "Yu Gothic Regular": "Noto Sans CJK JP",
+   "Yu Gothic UI Bold": "Noto Sans CJK JP",
+   "Yu Gothic UI Regular": "Noto Sans CJK JP",
+   "YuGothic-Bold": "Noto Sans CJK JP",
+   "YuGothic-Light": "Selawik",
+   "YuGothic-Medium": "Selawik",
+   "YuGothic-Regular": "Noto Sans CJK JP",
+   "YuGothicUI-Bold": "Noto Sans CJK JP",
+   "YuGothicUI-Light": "Selawik",
+   "YuGothicUI-Regular": "Noto Sans CJK JP",
+   "YuGothicUI-Semibold": "Selawik",
+   "YuGothicUI-Semilight": "Selawik"
+  },
+  "macOS": {
+   "AndaleMono": "Liberation Mono",
+   "AppleMyungjo Regular": "Noto Sans CJK KR",
+   "AppleSymbols": "Noto Sans Symbols 2 Regular",
+   "Arial Bold": "Liberation Sans Bold",
+   "Arial Bold Italic": "Liberation Sans Bold Italic",
+   "Arial Italic": "Liberation Sans Italic",
+   "Arial Narrow Bold": "Inter Variable",
+   "Arial Narrow Bold Italic": "Inter Variable",
+   "Arial Narrow Italic": "Inter Variable Italic",
+   "Arial-Black": "Inter Variable",
+   "Arial-BoldItalicMT": "Liberation Sans Bold Italic",
+   "Arial-BoldMT": "Liberation Sans Bold",
+   "Arial-ItalicMT": "Liberation Sans Italic",
+   "ArialMT": "Liberation Sans",
+   "ArialNarrow": "Inter Variable",
+   "ArialNarrow-Bold": "Inter Variable",
+   "ArialNarrow-BoldItalic": "Inter Variable",
+   "ArialNarrow-Italic": "Inter Variable Italic",
+   "ArialRoundedMTBold": "Inter Variable",
+   "ArialUnicodeMS": "Inter Variable",
+   "Avenir Next Bold": "Inter Variable",
+   "Avenir Next Bold Italic": "Inter Variable",
+   "Avenir Next Condensed Bold": "Inter Variable",
+   "Avenir Next Condensed Bold Italic": "Inter Variable",
+   "Avenir Next Condensed Italic": "Inter Variable Italic",
+   "Avenir Next Condensed Regular": "Inter Variable",
+   "Avenir Next Italic": "Inter Variable Italic",
+   "Avenir Next Regular": "Inter Variable",
+   "Avenir Oblique": "Inter Variable Italic",
+   "Avenir Roman": "Inter Variable",
+   "Avenir-Oblique": "Inter Variable Italic",
+   "Avenir-Roman": "Inter Variable",
+   "AvenirNext-Bold": "Inter Variable",
+   "AvenirNext-BoldItalic": "Inter Variable",
+   "AvenirNext-Italic": "Inter Variable Italic",
+   "AvenirNext-Regular": "Inter Variable",
+   "AvenirNextCondensed-Bold": "Inter Variable",
+   "AvenirNextCondensed-BoldItalic": "Inter Variable",
+   "AvenirNextCondensed-Italic": "Inter Variable Italic",
+   "AvenirNextCondensed-Regular": "Inter Variable",
+   "Bangla MN Bold": "Inter Variable",
+   "Bangla Sangam MN Bold": "Inter Variable",
+   "BanglaMN": "Inter Variable",
+   "BanglaMN-Bold": "Inter Variable",
+   "BanglaSangamMN": "Inter Variable",
+   "BanglaSangamMN-Bold": "Inter Variable",
+   "Baskerville Bold": "Liberation Serif Bold",
+   "Baskerville Bold Italic": "Liberation Serif Bold Italic",
+   "Baskerville Italic": "Liberation Serif Italic",
+   "Baskerville SemiBold": "Liberation Serif",
+   "Baskerville SemiBold Italic": "Liberation Serif",
+   "Baskerville-Bold": "Liberation Serif Bold",
+   "Baskerville-BoldItalic": "Liberation Serif Bold Italic",
+   "Baskerville-Italic": "Liberation Serif Italic",
+   "Baskerville-SemiBold": "Liberation Serif",
+   "Baskerville-SemiBoldItalic": "Liberation Serif",
+   "Bodoni 72 Bold": "Liberation Serif Bold",
+   "Bodoni 72 Book": "Liberation Serif",
+   "Bodoni 72 Book Italic": "Liberation Serif",
+   "Bodoni 72 Oldstyle Bold": "Inter Variable",
+   "Bodoni 72 Oldstyle Book": "Inter Variable",
+   "Bodoni 72 Oldstyle Book Italic": "Inter Variable",
+   "Bodoni 72 Smallcaps Book": "Inter Variable",
+   "BodoniOrnamentsITCTT": "Noto Sans Symbols 2 Regular",
+   "BodoniSvtyTwoITCTT-Bold": "Liberation Serif Bold",
+   "BodoniSvtyTwoITCTT-Book": "Liberation Serif",
+   "BodoniSvtyTwoITCTT-BookIta": "Liberation Serif",
+   "BodoniSvtyTwoOSITCTT-Bold": "Inter Variable",
+   "BodoniSvtyTwoOSITCTT-Book": "Inter Variable",
+   "BodoniSvtyTwoOSITCTT-BookIt": "Inter Variable",
+   "BodoniSvtyTwoSCITCTT-Book": "Inter Variable",
+   "Brush Script MT Italic": "Liberation Serif Italic",
+   "BrushScriptMT": "Liberation Serif Italic",
+   "Charter BT Bold Italic": "Liberation Serif Bold Italic",
+   "Charter Bold": "Liberation Serif Bold",
+   "Charter Italic": "Liberation Serif Italic",
+   "Charter Roman": "Liberation Serif",
+   "Charter-Bold": "Liberation Serif Bold",
+   "Charter-BoldItalic": "Liberation Serif Bold Italic",
+   "Charter-Italic": "Liberation Serif Italic",
+   "Charter-Roman": "Liberation Serif",
+   "Comic Sans MS Bold": "Inter Variable",
+   "ComicSansMS": "Inter Variable",
+   "ComicSansMS-Bold": "Inter Variable",
+   "Courier New Bold": "Liberation Mono Bold",
+   "Courier New Bold Italic": "Liberation Mono Bold Italic",
+   "Courier New Italic": "Liberation Mono Italic",
+   "CourierNewPS-BoldItalicMT": "Liberation Mono Bold Italic",
+   "CourierNewPS-BoldMT": "Liberation Mono Bold",
+   "CourierNewPS-ItalicMT": "Liberation Mono Italic",
+   "CourierNewPSMT": "Liberation Mono",
+   "DIN Alternate Bold": "Inter Variable",
+   "DIN Condensed Bold": "Inter Variable",
+   "DINAlternate-Bold": "Inter Variable",
+   "DINCondensed-Bold": "Inter Variable",
+   "Devanagari MT Bold": "Inter Variable",
+   "Devanagari Sangam MN Bold": "Inter Variable",
+   "DevanagariSangamMN": "Inter Variable",
+   "DevanagariSangamMN-Bold": "Inter Variable",
+   "Didot Bold": "Liberation Serif Bold",
+   "Didot Italic": "Liberation Serif Italic",
+   "Euphemia UCAS Bold": "Inter Variable",
+   "Euphemia UCAS Italic": "Inter Variable Italic",
+   "EuphemiaUCAS": "Inter Variable",
+   "EuphemiaUCAS-Bold": "Inter Variable",
+   "EuphemiaUCAS-Italic": "Inter Variable Italic",
+   "GB18030Bitmap": "Inter Variable",
+   "Galvji-Bold": "Inter Variable",
+   "Galvji-BoldOblique": "Inter Variable",
+   "Georgia Bold": "Gelasio Regular",
+   "Georgia Bold Italic": "Gelasio Regular",
+   "Georgia Italic": "Gelasio Italic",
+   "Georgia-Bold": "Gelasio Regular",
+   "Georgia-BoldItalic": "Gelasio Regular",
+   "Georgia-Italic": "Gelasio Italic",
+   "Gill Sans SemiBold": "Inter Variable",
+   "Gill Sans SemiBold Italic": "Inter Variable",
+   "GillSans-SemiBold": "Inter Variable",
+   "GillSans-SemiBoldItalic": "Inter Variable",
+   "Grantha Sangam MN Bold": "Inter Variable",
+   "Grantha Sangam MN Regular": "Inter Variable",
+   "GranthaSangamMN-Bold": "Inter Variable",
+   "GranthaSangamMN-Regular": "Inter Variable",
+   "Gujarati Sangam MN Bold": "Inter Variable",
+   "GujaratiSangamMN": "Inter Variable",
+   "GujaratiSangamMN-Bold": "Inter Variable",
+   "Gurmukhi MN Bold": "Inter Variable",
+   "Gurmukhi Sangam MN Bold": "Inter Variable",
+   "GurmukhiMN": "Inter Variable",
+   "GurmukhiMN-Bold": "Inter Variable",
+   "GurmukhiSangamMN": "Inter Variable",
+   "GurmukhiSangamMN-Bold": "Inter Variable",
+   "Heiti SC Light": "Noto Sans CJK SC",
+   "Heiti SC Medium": "Noto Sans CJK SC",
+   "Heiti TC Light": "Noto Sans CJK TC",
+   "Heiti TC Medium": "Noto Sans CJK TC",
+   "Helvetica Neue Thin": "Inter Variable",
+   "Helvetica Neue Thin Italic": "Inter Variable",
+   "HelveticaNeue-Thin": "Inter Variable",
+   "HelveticaNeue-ThinItalic": "Inter Variable",
+   "ITF Devanagari Marathi Medium": "Inter Variable",
+   "ITFDevanagari Marathi Light": "Inter Variable",
+   "ITFDevanagari Marathi-Bold": "Inter Variable",
+   "ITFDevanagari Marathi-Book": "Inter Variable",
+   "ITFDevanagari Marathi-Demi": "Inter Variable",
+   "ITFDevanagari-Bold": "Inter Variable",
+   "ITFDevanagari-Book": "Inter Variable",
+   "ITFDevanagari-Demi": "Inter Variable",
+   "ITFDevanagari-Light": "Inter Variable",
+   "ITFDevanagari-Medium": "Inter Variable",
+   "ITFDevanagariMarathi-Bold": "Inter Variable",
+   "ITFDevanagariMarathi-Book": "Inter Variable",
+   "ITFDevanagariMarathi-Demi": "Inter Variable",
+   "ITFDevanagariMarathi-Light": "Inter Variable",
+   "ITFDevanagariMarathi-Medium": "Inter Variable",
+   "Kannada MN Bold": "Inter Variable",
+   "Kannada Sangam MN Bold": "Inter Variable",
+   "KannadaMN": "Inter Variable",
+   "KannadaMN-Bold": "Inter Variable",
+   "KannadaSangamMN": "Inter Variable",
+   "KannadaSangamMN-Bold": "Inter Variable",
+   "Kefa Bold": "Inter Variable",
+   "Kefa Regular": "Inter Variable",
+   "Kefa-Bold": "Inter Variable",
+   "Kefa-Regular": "Inter Variable",
+   "Khmer MN Bold": "Inter Variable",
+   "KhmerMN": "Inter Variable",
+   "KhmerMN-Bold": "Inter Variable",
+   "KhmerSangamMN": "Inter Variable",
+   "Kohinoor Bangla Bold": "Inter Variable",
+   "Kohinoor Bangla Light": "Inter Variable",
+   "Kohinoor Bangla Medium": "Inter Variable",
+   "Kohinoor Bangla Semibold": "Inter Variable",
+   "Kohinoor Devanagari Bold": "Inter Variable",
+   "Kohinoor Devanagari Light": "Inter Variable",
+   "Kohinoor Devanagari Medium": "Inter Variable",
+   "Kohinoor Devanagari Regular": "Inter Variable",
+   "Kohinoor Devanagari Semibold": "Inter Variable",
+   "Kohinoor Gujarati Bold": "Inter Variable",
+   "Kohinoor Gujarati Light": "Inter Variable",
+   "Kohinoor Gujarati Medium": "Inter Variable",
+   "Kohinoor Gujarati Regular": "Inter Variable",
+   "Kohinoor Gujarati Semibold": "Inter Variable",
+   "Kohinoor Telugu Bold": "Inter Variable",
+   "Kohinoor Telugu Light": "Inter Variable",
+   "Kohinoor Telugu Medium": "Inter Variable",
+   "Kohinoor Telugu Semibold": "Inter Variable",
+   "KohinoorBangla-Bold": "Inter Variable",
+   "KohinoorBangla-Light": "Inter Variable",
+   "KohinoorBangla-Medium": "Inter Variable",
+   "KohinoorBangla-Regular": "Inter Variable",
+   "KohinoorBangla-Semibold": "Inter Variable",
+   "KohinoorDevanagari-Bold": "Inter Variable",
+   "KohinoorDevanagari-Light": "Inter Variable",
+   "KohinoorDevanagari-Medium": "Inter Variable",
+   "KohinoorDevanagari-Regular": "Inter Variable",
+   "KohinoorDevanagari-Semibold": "Inter Variable",
+   "KohinoorGujarati-Bold": "Inter Variable",
+   "KohinoorGujarati-Light": "Inter Variable",
+   "KohinoorGujarati-Medium": "Inter Variable",
+   "KohinoorGujarati-Regular": "Inter Variable",
+   "KohinoorGujarati-Semibold": "Inter Variable",
+   "KohinoorTelugu-Bold": "Inter Variable",
+   "KohinoorTelugu-Light": "Inter Variable",
+   "KohinoorTelugu-Medium": "Inter Variable",
+   "KohinoorTelugu-Regular": "Inter Variable",
+   "KohinoorTelugu-Semibold": "Inter Variable",
+   "KufiStandardGK Regular": "Inter Variable",
+   "Lao MN Bold": "Inter Variable",
+   "LaoMN": "Inter Variable",
+   "LaoMN-Bold": "Inter Variable",
+   "LaoSangamMN": "Inter Variable",
+   "Luminari-Regular": "Inter Variable",
+   "Malayalam MN Bold": "Inter Variable",
+   "Malayalam Sangam MN Bold": "Inter Variable",
+   "MalayalamMN": "Inter Variable",
+   "MalayalamMN-Bold": "Inter Variable",
+   "MalayalamSangamMN": "Inter Variable",
+   "MalayalamSangamMN-Bold": "Inter Variable",
+   "MicrosoftSansSerif": "Inter Variable",
+   "Myanmar MN Bold": "Inter Variable",
+   "Myanmar Sangam MN Bold": "Inter Variable",
+   "MyanmarMN": "Inter Variable",
+   "MyanmarMN-Bold": "Inter Variable",
+   "MyanmarSangamMN": "Inter Variable",
+   "MyanmarSangamMN-Bold": "Inter Variable",
+   "Noteworthy Bold": "Liberation Serif Bold",
+   "Noteworthy Light": "Liberation Serif",
+   "Noteworthy-Bold": "Liberation Serif Bold",
+   "Noteworthy-Light": "Liberation Serif",
+   "Noto Nastaliq Urdu Bold": "Inter Variable",
+   "Noto Sans Batak Regular": "Inter Variable",
+   "Noto Sans Kannada Bold": "Inter Variable",
+   "Noto Sans Kannada Regular": "Inter Variable",
+   "Noto Sans Myanmar Bold": "Inter Variable",
+   "Noto Sans Myanmar Regular": "Inter Variable",
+   "Noto Sans NKo Regular": "Inter Variable",
+   "Noto Sans Oriya Bold": "Inter Variable",
+   "Noto Sans Syriac Regular": "Inter Variable",
+   "Noto Sans Tagalog Regular": "Inter Variable",
+   "Noto Serif Myanmar Bold": "Inter Variable",
+   "Noto Serif Myanmar Regular": "Inter Variable",
+   "NotoNastaliqUrdu": "Inter Variable",
+   "NotoNastaliqUrdu-Bold": "Inter Variable",
+   "NotoSansBatak-Regular": "Inter Variable",
+   "NotoSansKannada-Bold": "Inter Variable",
+   "NotoSansKannada-Regular": "Inter Variable",
+   "NotoSansMyanmar-Bold": "Inter Variable",
+   "NotoSansMyanmar-Regular": "Inter Variable",
+   "NotoSansNKo-Regular": "Inter Variable",
+   "NotoSansOriya": "Inter Variable",
+   "NotoSansOriya-Bold": "Inter Variable",
+   "NotoSansSyriac-Regular": "Inter Variable",
+   "NotoSansTagalog-Regular": "Inter Variable",
+   "NotoSerifMyanmar-Bold": "Inter Variable",
+   "NotoSerifMyanmar-Regular": "Inter Variable",
+   "Oriya MN Bold": "Inter Variable",
+   "Oriya Sangam MN Bold": "Inter Variable",
+   "OriyaMN": "Inter Variable",
+   "OriyaMN-Bold": "Inter Variable",
+   "OriyaSangamMN": "Inter Variable",
+   "OriyaSangamMN-Bold": "Inter Variable",
+   "PT Mono Bold": "Liberation Mono Bold",
+   "PT Sans Bold": "Inter Variable",
+   "PT Sans Bold Italic": "Inter Variable",
+   "PT Sans Caption Bold": "Inter Variable",
+   "PT Sans Italic": "Inter Variable Italic",
+   "PT Sans Narrow Bold": "Inter Variable",
+   "PT Serif Bold": "Inter Variable",
+   "PT Serif Bold Italic": "Inter Variable",
+   "PT Serif Caption Italic": "Inter Variable Italic",
+   "PT Serif Italic": "Inter Variable Italic",
+   "PTMono-Bold": "Liberation Mono Bold",
+   "PTMono-Regular": "Liberation Mono",
+   "PTSans-Bold": "Inter Variable",
+   "PTSans-BoldItalic": "Inter Variable",
+   "PTSans-Caption": "Inter Variable",
+   "PTSans-CaptionBold": "Inter Variable",
+   "PTSans-Italic": "Inter Variable Italic",
+   "PTSans-Narrow": "Inter Variable",
+   "PTSans-NarrowBold": "Inter Variable",
+   "PTSans-Regular": "Inter Variable",
+   "PTSerif-Bold": "Inter Variable",
+   "PTSerif-BoldItalic": "Inter Variable",
+   "PTSerif-Caption": "Inter Variable",
+   "PTSerif-CaptionItalic": "Inter Variable Italic",
+   "PTSerif-Italic": "Inter Variable Italic",
+   "PTSerif-Regular": "Inter Variable",
+   "Palatino Bold": "Inter Variable",
+   "Palatino Bold Italic": "Inter Variable",
+   "Palatino Italic": "Inter Variable Italic",
+   "Palatino-Bold": "Inter Variable",
+   "Palatino-BoldItalic": "Inter Variable",
+   "Palatino-Italic": "Inter Variable Italic",
+   "Palatino-Roman": "Inter Variable",
+   "PingFangHK-Medium": "Noto Sans CJK HK",
+   "PingFangMO-Medium": "Inter Variable",
+   "PingFangSC-Medium": "Noto Sans CJK SC",
+   "PingFangTC-Medium": "Noto Sans CJK TC",
+   "Rockwell Bold Italic": "Liberation Serif Bold Italic",
+   "Rockwell Italic": "Liberation Serif Italic",
+   "Rockwell-Bold": "Liberation Serif Bold",
+   "Rockwell-BoldItalic": "Liberation Serif Bold Italic",
+   "Rockwell-Italic": "Liberation Serif Italic",
+   "Rockwell-Regular": "Liberation Serif",
+   "STIX Two Math Regular": "Inter Variable",
+   "STIX Two Text Italic": "Inter Variable Italic",
+   "STIXTwoMath-Regular": "Inter Variable",
+   "STIXTwoText": "Inter Variable",
+   "STIXTwoText-Italic": "Inter Variable Italic",
+   "STSongti-SC-Black": "Noto Sans CJK SC",
+   "STSongti-SC-Bold": "Noto Sans CJK SC",
+   "STSongti-SC-Regular": "Noto Sans CJK SC",
+   "STSongti-TC-Bold": "Noto Sans CJK TC",
+   "STSongti-TC-Regular": "Noto Sans CJK TC",
+   "Shree Devanagari 714 Bold": "Inter Variable",
+   "Shree Devanagari 714 Bold Italic": "Inter Variable",
+   "Shree Devanagari 714 Italic": "Inter Variable Italic",
+   "ShreeDev0714": "Inter Variable",
+   "ShreeDev0714-Bold": "Inter Variable",
+   "ShreeDev0714-BoldItalic": "Inter Variable",
+   "ShreeDev0714-Italic": "Inter Variable Italic",
+   "Sinhala MN Bold": "Inter Variable",
+   "Sinhala Sangam MN Bold": "Inter Variable",
+   "SinhalaMN": "Inter Variable",
+   "SinhalaMN-Bold": "Inter Variable",
+   "SinhalaSangamMN": "Inter Variable",
+   "SinhalaSangamMN-Bold": "Inter Variable",
+   "Snell Roundhand Black": "Liberation Serif",
+   "Snell Roundhand Bold": "Liberation Serif Bold",
+   "SnellRoundhand": "Liberation Serif",
+   "SnellRoundhand-Black": "Liberation Serif",
+   "SnellRoundhand-Bold": "Liberation Serif Bold",
+   "Songti SC Black": "Noto Sans CJK SC",
+   "Songti SC Bold": "Noto Sans CJK SC",
+   "Songti SC Light": "Noto Sans CJK SC",
+   "Songti SC Regular": "Noto Sans CJK SC",
+   "Songti TC Bold": "Noto Sans CJK TC",
+   "Songti TC Light": "Noto Sans CJK TC",
+   "Songti TC Regular": "Noto Sans CJK TC",
+   "SukhumvitSet-Bold": "Inter Variable",
+   "SukhumvitSet-Light": "Inter Variable",
+   "SukhumvitSet-Medium": "Inter Variable",
+   "SukhumvitSet-SemiBold": "Inter Variable",
+   "SukhumvitSet-Text": "Inter Variable",
+   "SukhumvitSet-Thin": "Inter Variable",
+   "Tahoma-Bold": "Tahoma Bold",
+   "Tamil MN Bold": "Inter Variable",
+   "Tamil Sangam MN Bold": "Inter Variable",
+   "TamilMN": "Inter Variable",
+   "TamilMN-Bold": "Inter Variable",
+   "TamilSangamMN": "Inter Variable",
+   "TamilSangamMN-Bold": "Inter Variable",
+   "Telugu MN Bold": "Inter Variable",
+   "Telugu Sangam MN Bold": "Inter Variable",
+   "TeluguMN": "Inter Variable",
+   "TeluguMN-Bold": "Inter Variable",
+   "TeluguSangamMN": "Inter Variable",
+   "TeluguSangamMN-Bold": "Inter Variable",
+   "Times New Roman Bold": "Liberation Serif Bold",
+   "Times New Roman Bold Italic": "Liberation Serif Bold Italic",
+   "Times New Roman Italic": "Liberation Serif Italic",
+   "TimesNewRomanPS-BoldItalicMT": "Liberation Serif Bold Italic",
+   "TimesNewRomanPS-BoldMT": "Liberation Serif Bold",
+   "TimesNewRomanPS-ItalicMT": "Liberation Serif Italic",
+   "TimesNewRomanPSMT": "Liberation Serif",
+   "Trebuchet MS Bold": "Inter Variable",
+   "Trebuchet MS Bold Italic": "Inter Variable",
+   "Trebuchet MS Italic": "Inter Variable Italic",
+   "Trebuchet-BoldItalic": "Inter Variable",
+   "TrebuchetMS": "Inter Variable",
+   "TrebuchetMS-Bold": "Inter Variable",
+   "TrebuchetMS-Italic": "Inter Variable Italic",
+   "Verdana Bold": "Inter Variable",
+   "Verdana Bold Italic": "Inter Variable",
+   "Verdana Italic": "Inter Variable Italic",
+   "Verdana-Bold": "Inter Variable",
+   "Verdana-BoldItalic": "Inter Variable",
+   "Verdana-Italic": "Inter Variable Italic",
+   "Wingdings-Regular": "Noto Sans Symbols 2 Regular",
+   "Wingdings2": "Noto Sans Symbols 2 Regular",
+   "Wingdings3": "Noto Sans Symbols 2 Regular"
+  }
  }
 }

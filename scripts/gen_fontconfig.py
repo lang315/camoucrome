@@ -56,20 +56,38 @@ def alias_map(fonts, os_name):
     return out
 
 
+def unique_map(fonts, os_name):
+    """Host full/PostScript name -> the target family's face full name of the same
+    style (else Regular): what local("SegoeUI") must land on. Identities are
+    omitted (a bundled file carrying the host's own names, e.g. Wine's Tahoma)."""
+    faces = {}
+    for b in fonts["bundle"]:
+        for f in b.get("faces", []):
+            faces.setdefault(f["family"], {}).setdefault(f["style"], f["full"])
+    out = {}
+    for name, info in fonts["families"][os_name].get("unique_names", {}).items():
+        tf = faces.get(alias_target(fonts, os_name, info["family"]), {})
+        full = tf.get(info["style"]) or tf.get("Regular") or next(iter(tf.values()), None)
+        if full and full != name:
+            out[name] = full
+    return out
+
+
 def main():
     fp = ROOT / "settings" / "fonts.json"
     fonts = json.loads(fp.read_text(encoding="utf-8"))
     check = "--check" in sys.argv
     bad = 0
-    want_map = {os_name: alias_map(fonts, os_name) for os_name in FILES}
-    if fonts.get("alias_map") != want_map:
-        if check:
-            print("STALE settings/fonts.json alias_map")
-            bad += 1
-        else:
-            fonts["alias_map"] = want_map
-            fp.write_text(json.dumps(fonts, indent=1, ensure_ascii=False) + "\n")
-            print("wrote alias_map into settings/fonts.json:", {k: len(v) for k, v in want_map.items()})
+    for key, fn in (("alias_map", alias_map), ("unique_map", unique_map)):
+        want = {os_name: fn(fonts, os_name) for os_name in FILES}
+        if fonts.get(key) != want:
+            if check:
+                print(f"STALE settings/fonts.json {key}")
+                bad += 1
+            else:
+                fonts[key] = want
+                fp.write_text(json.dumps(fonts, indent=1, ensure_ascii=False) + "\n")
+                print(f"wrote {key} into settings/fonts.json:", {k: len(v) for k, v in want.items()})
     for os_name, f in FILES.items():
         p = ROOT / "settings" / "fontconfig" / f
         want = fontconfig_xml(fonts, os_name)

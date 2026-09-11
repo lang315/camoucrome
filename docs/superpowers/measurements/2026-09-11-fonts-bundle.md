@@ -118,13 +118,15 @@ font for the Latin probe string (both 373 px at 16 px); F2's resolves row
 (mono vs serif fallback) is what proves Calibri resolves, F6 only compares
 threads.
 
-## 4. Open, named
+## 4. What remained, and where it went
 
-Glyph-level metrics of Selawik vs Segoe UI unmeasured (a per-glyph width
-baseline captured on the Windows host would tell; presence ≠ identity);
-Georgia/Verdana/Tahoma/Trebuchet have no open metric clone; CJK is one
-regional font; hinting/AA posture (FreeType vs DirectWrite) is a separate
-measurement; Windows/macOS hosts get no alias layer (DirectWrite/CoreText);
-F-PSNAME (PostScript-name probes) unchanged; the emoji class is not
-presence-detectable by width on any host (no Latin glyphs, fallback
-identical either way), so its row is coverage, not a measurement.
+The residual list this section used to hold was worked on 2026-09-11 in
+`2026-09-11-fonts-metrics.md`: Selawik-vs-Segoe metrics measured (an
+approximate clone, every character within 1.1 px at 100 px); Georgia got
+Gelasio (0.984 within 0.5 px) and Tahoma Wine's Tahoma (1.6 px); Verdana,
+Trebuchet MS and Consolas have no open clone and their distances are
+numbers; CJK is five regional faces from one OTC; the emoji class is
+measured by colour; `local()` by PostScript / full name works through the
+same alias hook (F-PSNAME closed). Still open, named there: hinting/AA is
+unreachable without the real files; Windows/macOS hosts have no host build
+to measure; Caladea's Google Fonts build misses Cambria's digit widths.
