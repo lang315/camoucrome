@@ -86,7 +86,9 @@ bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
 // key is absent or names no such family. FontCache::GetFontPlatformData looks
 // the target up instead, so a claimed family the host lacks renders in the
 // bundled font it maps to.
-std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family);
+// |unique_name| selects fonts:aliasLocal (a src:local() lookup by full or
+// PostScript name, whose target is a face's full name) over fonts:alias.
+std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family, bool unique_name = false);
 
 bool HasKey(const ConfigScope& scope, std::string_view key);
 
@@ -112,7 +114,7 @@ std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope);
 // because this task's file scope was limited to mask_config.h/.cc.
 namespace internal {
 bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family);
-std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family);
+std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name = false);
 }  // namespace internal
 
 }  // namespace camoucfg

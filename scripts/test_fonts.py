@@ -87,9 +87,10 @@ def test_a_bundled_family_named_like_the_claim_is_never_an_alias_key():
 def test_unique_names_map_onto_a_bundled_face_of_the_same_style():
     m = FONTS["unique_map"]["Windows"]
     assert m == g.unique_map(FONTS, "Windows")
-    assert m["SegoeUI"] == "Selawik" and m["SegoeUI-Bold"] == "Selawik Bold"
+    assert m["SegoeUI"] == "Selawik" and m["SegoeUI-Bold"] == "Selawik Bold" and m["Segoe UI"] == "Selawik"
+    assert m["Georgia"] == "Gelasio Regular" and m["Calibri"] == "Carlito Regular"  # local("Georgia") needs the face name
     assert m["ArialMT"] == "Liberation Sans" and m["Arial-BoldMT"] == "Liberation Sans Bold"
-    assert m["Tahoma-Bold"] == "Tahoma Bold" and "Tahoma" not in m  # Wine's file carries the host's own names
+    assert m["Tahoma-Bold"] == "Tahoma Bold" and m["Tahoma"] == "Tahoma"  # Wine's file carries the host's own names (identity kept: the gate allows keys)
     bundled_full = {f["full"] for b in FONTS["bundle"] for f in b["faces"]}
     assert set(m.values()) <= bundled_full
     for os_name in ("Windows", "macOS"):

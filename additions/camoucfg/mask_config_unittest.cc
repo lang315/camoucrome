@@ -300,4 +300,14 @@ TEST(FontAliasTest, AliasIsCaseInsensitiveAndAbsentAliasesNothing) {
   EXPECT_EQ(camoucfg::internal::FontAliasFrom(cfg, "Consolas"), "Liberation Mono");
   EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Selawik").has_value());
   EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Empty").has_value());
+  // src:local() lookups read fonts:aliasLocal only: a family aliased for CSS is
+  // not aliased for local() unless that map says so, and vice versa.
+  base::DictValue local;
+  local.Set("Georgia", "Gelasio Regular");
+  local.Set("SegoeUI-Bold", "Selawik Bold");
+  cfg.Set(camoucfg::keys::kFontsAliasLocal, std::move(local));
+  EXPECT_EQ(camoucfg::internal::FontAliasFrom(cfg, "georgia", true), "Gelasio Regular");
+  EXPECT_EQ(camoucfg::internal::FontAliasFrom(cfg, "SegoeUI-Bold", true), "Selawik Bold");
+  EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Georgia", false).has_value());
+  EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Segoe UI", true).has_value());
 }

@@ -3774,3 +3774,8 @@ retries direct, digests pinned from the box first; fontnames.py's __main__ print
 last JSON line); a `cmd | tail` in an && chain hides the failure (pipe exit is tail's) -> two fetches ran at once.
 Fifth cut 2026-09-11: no relink; changeset 7eb3b81da28f tip 85dfb6b3fc; 306 files 181,868,312 B; archive-mode fonts 12/12,
 metrics 5/5 on the archived chrome, DevTools OK, sweep ALL_PASS. Fourth cut superseded (no Gelasio in its fonts/).
+Review of the slice (advisor): local("Georgia"/"Calibri"/"Symbol") errored (hop landed on the family, the unique
+lookup wants a face name) and unique names in fonts:list let font-family:"SegoeUI" resolve (fontconfig compares
+families ignoring blanks) where stock Windows does not -> 85th key fonts:aliasLocal (read for kLocalUniqueFace only),
+local() gate allows its keys, fonts:list families only, 15th invariant fonts-alias-local-requires-list; bundle 13/13
+(F12), fonts-ii 6/6, coherence 7/7 (15). platformVersion now read from stock Chrome on the Windows host ("10.0.0").

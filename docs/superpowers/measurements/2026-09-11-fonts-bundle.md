@@ -103,7 +103,7 @@ same system fallback either way and read as resolved).
 | F2 Windows claim + bundle + list + alias: **116/116** families resolve, DejaVu Sans/Ubuntu/Cantarell hidden, `system-ui` == `Segoe UI` (Selawik through the alias) ≠ the blocked width, a direct "Selawik" blocked | PASS |
 | F3 macOS claim: **180/180** resolve, host fonts hidden, `system-ui` == `-apple-system` (Inter) ≠ blocked, direct "Inter Variable" blocked | PASS |
 | F4 `gen.py --os windows` emits a `fonts:list` ⊆ what F2 measured as resolving | PASS |
-| F5 the extracted archive's chrome with `fonts/` beside it and no `--fonts-dir` (launcher finds it) | see packaging doc §3, third and fourth cuts |
+| F5 the extracted archive's chrome with `fonts/` beside it and no `--fonts-dir` (launcher finds it) | see packaging doc §3, fifth and sixth cuts |
 | F6 worker parity (rule 3): a dedicated worker's `OffscreenCanvas` widths of Segoe UI / Consolas / Calibri == the main thread's under the F2 config | PASS, 416 / 540 / 373 on both |
 | F7 cyclic `fonts:alias` `{A:B, B:A, "Segoe UI":A}`, non-strict, page requesting all three: chrome starts and the page reports | PASS (before the one-hop guard this was the renderer crash) |
 
@@ -126,7 +126,7 @@ approximate clone, every character within 1.1 px at 100 px); Georgia got
 Gelasio (0.984 within 0.5 px) and Tahoma Wine's Tahoma (1.6 px); Verdana,
 Trebuchet MS and Consolas have no open clone and their distances are
 numbers; CJK is five regional faces from one OTC; the emoji class is
-measured by colour; `local()` by PostScript / full name works through the
-same alias hook (F-PSNAME closed). Still open, named there: hinting/AA is
+measured by colour; `local()` by PostScript / full name works through a
+second map, `fonts:aliasLocal`, read by the same hook (F-PSNAME closed). Still open, named there: hinting/AA is
 unreachable without the real files; Windows/macOS hosts have no host build
 to measure; Caladea's Google Fonts build misses Cambria's digit widths.

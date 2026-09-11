@@ -51,7 +51,7 @@ residual detail lives in that slice's measurement doc, not here.
 | 6 | **media-ii** | **partial** 09-05/09-06 | ★★☆ | M | Med | Blink modules (+browser) | sp4-media |
 | 7 | **metric-jitter SP** | **shipped** 09-05 | ★★☆ | M | Med | Blink platform/fonts | sp3a seed (coherence) |
 | 8 | **audio-ii** | **partial** 09-06 | ★★☆ | M–L | Med | Blink modules (render thread) | sp4-audio |
-| 9 | **fonts-ii** | **partial** 09-06 | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
+| 9 | **fonts-ii** | **partial** 09-06, PS-name residual closed 09-11 | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
 | 10 | **webrtc-ii** | **partial** 09-06 | ★★☆ | S (shipped) / L (residual) | Low (shipped) | Blink platform/p2p (shipped); libwebrtc (residual) | sp4-webrtc-ip |
 
 Value = anti-detect impact × how commonly the surface is probed. Effort/Risk =
@@ -312,9 +312,12 @@ what that leaves.*
   gate), not `SetStatus`. Gated on `fonts:list`, closing the mainstream
   `local("Family")` cross-method inconsistency (direct `absent` vs `local()`
   `present`), verified on Linux with a host-present font (DejaVu Sans) via
-  `FontFace.status`. **Residuals:** `local("PostScript name")` of a *listed* font
-  is over-blocked (family allowlist can't match a PS name — the #44 name path,
-  measured by F-PSNAME); the `IsLoading()==true` async-lookup branch of gate 2 is
+  `FontFace.status`. **Residuals:** ~~`local("PostScript name")` of a *listed* font
+  is over-blocked~~ — closed 2026-09-11 (`measurements/2026-09-11-fonts-metrics.md`
+  §4): the captured hosts' full/PostScript names ride in `fonts:list` and a
+  second map, `fonts:aliasLocal`, lands `local()` requests on a bundled face's
+  full name (F10 RED / F11 on the box; F12 keeps PostScript names out of the CSS
+  family path, as stock Windows does); the `IsLoading()==true` async-lookup branch of gate 2 is
   defensive-by-reasoning, unexercised on the sync-lookup verify host; and native
   Win/mac completeness still needs the cross-platform harness below.
 - **Codepoint / system fallback** — `SystemFindFontForChar` / `GlobalFontFallback`

@@ -70,8 +70,8 @@ bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family) {
   return false;
 }
 
-std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family) {
-  const base::DictValue* map = cfg.FindDict(keys::kFontsAlias);
+std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name) {
+  const base::DictValue* map = cfg.FindDict(unique_name ? keys::kFontsAliasLocal : keys::kFontsAlias);
   if (!map) {
     return std::nullopt;
   }
@@ -90,8 +90,8 @@ bool IsFontAllowed(const ConfigScope& scope, std::string_view family) {
   return internal::IsFontAllowedFrom(internal::ParsedConfig(), family);
 }
 
-std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family) {
-  return internal::FontAliasFrom(internal::ParsedConfig(), family);
+std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family, bool unique_name) {
+  return internal::FontAliasFrom(internal::ParsedConfig(), family, unique_name);
 }
 
 std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope) {
