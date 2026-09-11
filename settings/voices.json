@@ -1,0 +1,26 @@
+{
+ "$comment": "speechSynthesis.getVoices() of stock Chrome 153 on the box's Windows 10 host, headed (capture_host_oracle.py, 2026-09-12); voiceURI equals the name on Windows. Emitted as voices:list under a Windows claim.",
+ "Windows": [
+  {
+   "name": "Microsoft David - English (United States)",
+   "lang": "en-US",
+   "voiceURI": "Microsoft David - English (United States)",
+   "localService": true,
+   "default": true
+  },
+  {
+   "name": "Microsoft Mark - English (United States)",
+   "lang": "en-US",
+   "voiceURI": "Microsoft Mark - English (United States)",
+   "localService": true,
+   "default": false
+  },
+  {
+   "name": "Microsoft Zira - English (United States)",
+   "lang": "en-US",
+   "voiceURI": "Microsoft Zira - English (United States)",
+   "localService": true,
+   "default": false
+  }
+ ]
+}

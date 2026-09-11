@@ -1,0 +1,160 @@
+diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
+index 94d46c0511..010ef03667 100644
+--- a/chrome/renderer/BUILD.gn
++++ b/chrome/renderer/BUILD.gn
+@@ -124,6 +124,7 @@ static_library("renderer") {
+   ]
+ 
+   deps = [
++    "//components/camoucfg",
+     ":process_state",
+     "//base/allocator:buildflags",
+     "//build:chromeos_buildflags",
+diff --git a/chrome/renderer/DEPS b/chrome/renderer/DEPS
+index 1133bac104..f7dbf56e31 100644
+--- a/chrome/renderer/DEPS
++++ b/chrome/renderer/DEPS
+@@ -7,6 +7,7 @@ include_rules = [
+   "+components/autofill/content/renderer",
+   "+components/autofill/core/common",
+   "+components/cdm/renderer",
++  "+components/camoucfg",
+   "+components/client_hints/common",
+   "+components/commerce/content/renderer",
+   "+components/commerce/core/commerce_heuristics_data_metrics_helper.h",
+diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
+index 1cfb0d2c21..49800302cc 100644
+--- a/chrome/renderer/chrome_content_renderer_client.cc
++++ b/chrome/renderer/chrome_content_renderer_client.cc
+@@ -78,6 +78,8 @@
+ #include "components/autofill/content/renderer/password_autofill_agent.h"
+ #include "components/autofill/content/renderer/password_generation_agent.h"
+ #include "components/autofill/core/common/autofill_features.h"
++#include "components/camoucfg/derive.h"
++#include "components/camoucfg/mask_config.h"
+ #include "components/commerce/content/renderer/commerce_web_extractor.h"
+ #include "components/content_capture/common/content_capture_features.h"
+ #include "components/content_capture/renderer/content_capture_sender.h"
+@@ -1448,6 +1450,19 @@ void ChromeContentRendererClient::
+     BUILDFLAG(IS_MAC)
+   blink::WebRuntimeFeatures::EnableWebShare(true);
+ #endif
++  // Camoucrome (windows-oracle): interfaces stock Chrome exposes on Windows
++  // and macOS but not on Linux (navigator.share, Web Bluetooth, Font Access)
++  // follow the claimed OS, not the build. A Linux claim keeps Linux's shape.
++  {
++    const camoucfg::OsFamily claimed =
++        camoucfg::ClaimedOs(camoucfg::GlobalScope());
++    if (claimed == camoucfg::OsFamily::kWindows ||
++        claimed == camoucfg::OsFamily::kMac) {
++      blink::WebRuntimeFeatures::EnableWebShare(true);
++      blink::WebRuntimeFeatures::EnableFeatureFromString("WebBluetooth", true);
++      blink::WebRuntimeFeatures::EnableFeatureFromString("FontAccess", true);
++    }
++  }
+ 
+   if (base::FeatureList::IsEnabled(
+           autofill::features::kAutofillPolicyControlledFeatureAutofill)) {
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index 1adc7fb452..3e7488431d 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -168,6 +168,14 @@ const blink::UserAgentBrandList GetUserAgentBrandList(
+ #if !BUILDFLAG(CHROMIUM_BRANDING)
+   brand = version_info::GetProductName();
+ #endif
++  // Camoucrome (windows-oracle): a claimed product brand ("Google Chrome")
++  // makes the list three-long in the order stock Chrome ships for this major
++  // version (Chromium's own shuffle, same seed). Absent: the build's real list.
++  if (std::optional<std::string> claimed = camoucfg::GetString(
++          camoucfg::GlobalScope(), camoucfg::keys::kUaBrand);
++      claimed && !claimed->empty()) {
++    brand = *claimed;
++  }
+ 
+   std::string brand_version =
+       output_version_type == blink::UserAgentBrandVersionType::kFullVersion
+diff --git a/third_party/blink/renderer/modules/font_access/BUILD.gn b/third_party/blink/renderer/modules/font_access/BUILD.gn
+index 60cb7a8c77..288054a2b7 100644
+--- a/third_party/blink/renderer/modules/font_access/BUILD.gn
++++ b/third_party/blink/renderer/modules/font_access/BUILD.gn
+@@ -13,6 +13,7 @@ blink_modules_sources("font_access") {
+   ]
+ 
+   deps = [
++    "//components/camoucfg",
+     "//third_party/blink/public/common:font_enumeration_table_proto",
+     "//third_party/blink/renderer/platform",
+   ]
+diff --git a/third_party/blink/renderer/modules/font_access/font_access.cc b/third_party/blink/renderer/modules/font_access/font_access.cc
+index c5984f34ce..8945daee31 100644
+--- a/third_party/blink/renderer/modules/font_access/font_access.cc
++++ b/third_party/blink/renderer/modules/font_access/font_access.cc
+@@ -8,6 +8,10 @@
+ 
+ #include "base/feature_list.h"
+ #include "base/numerics/safe_conversions.h"
++#include "base/strings/string_split.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/font_access/font_enumeration_table.pb.h"
+@@ -127,6 +131,40 @@ void FontAccess::DidGetEnumerationResponse(
+   }
+ 
+   // Font data exists; process and fill in the data.
++  // Camoucrome (windows-oracle): under a claim the list is the claimed host's
++  // faces (fonts:local: "postscript\tfull\tfamily\tstyle" per line), never
++  // this machine's or the bundle's. The permission flow above stays real; a
++  // malformed line is skipped. Absent key: the real enumeration.
++  if (camoucfg::HasKey(camoucfg::ScopeFor(nullptr),
++                       camoucfg::keys::kFontsLocal)) {
++    std::set<std::string> wanted;
++    if (options->hasPostscriptNames()) {
++      for (const String& postscript_name : options->postscriptNames()) {
++        wanted.insert(postscript_name.Utf8());
++      }
++    }
++    HeapVector<Member<FontMetadata>> claimed;
++    for (const std::string& line : camoucfg::GetStringList(
++             camoucfg::ScopeFor(nullptr), camoucfg::keys::kFontsLocal)) {
++      const std::vector<std::string> f = base::SplitString(
++          line, "\t", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++      if (f.size() != 4 || f[0].empty()) {
++        continue;
++      }
++      if (options->hasPostscriptNames() && !wanted.contains(f[0])) {
++        continue;
++      }
++      claimed.push_back(MakeGarbageCollected<FontMetadata>(FontEnumerationEntry{
++          .postscript_name = String::FromUtf8(f[0]),
++          .full_name = String::FromUtf8(f[1]),
++          .family = String::FromUtf8(f[2]),
++          .style = String::FromUtf8(f[3]),
++      }));
++    }
++    resolver->Resolve(std::move(claimed));
++    return;
++  }
++
+   base::ReadOnlySharedMemoryMapping mapping = region.Map();
+   if (mapping.size() > INT_MAX) {
+     // Cannot deserialize without overflow.
+diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+index f18211f3ab..6af0ebc770 100644
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -3197,6 +3197,11 @@
+     {
+       name: "FontAccess",
+       status: {"Android": "", "default": ""},
++      // Camoucrome (windows-oracle): the interface stays off by status (sp4-fonts) and is switched on per claimed OS in
++      // chrome_content_renderer_client.cc; the base::Feature must stay enabled or queryLocalFonts() throws NotSupported.
++      base_feature_status: "enabled",
++      // ...and the runtime flag must not copy the enabled base feature, or every claim would expose the interface.
++      copied_from_base_feature_if: "overridden",
+     },
+     {
+       name: "FontDataServiceForCSSLocalFonts",

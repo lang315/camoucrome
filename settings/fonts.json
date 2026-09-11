@@ -785,7 +785,7 @@
   "Windows": {
    "ps_names_are_css_families": false,
    "ps_names_how": "measured 2026-09-11 on stock Chrome 153, Windows 10 host: font-family ArialMT / SegoeUI / SegoeUI-Bold / TimesNewRomanPSMT unresolved (width test)",
-   "captured": "2026-09-11",
+   "captured": "2026-09-12",
    "how": "PowerShell System.Drawing.Text.InstalledFontCollection on the build box's Windows 10 host (ssh buildpc); families in families.exclude (vendor software on this host) dropped",
    "list": [
     "Arial",
@@ -2301,7 +2301,1125 @@
      "family": "Yu Gothic UI Semilight",
      "style": "Regular"
     }
-   }
+   },
+   "faces": [
+    [
+     "Arial-Black",
+     "Arial Black",
+     "Arial Black",
+     "Regular"
+    ],
+    [
+     "Arial-BoldItalicMT",
+     "Arial Bold Italic",
+     "Arial",
+     "Bold Italic"
+    ],
+    [
+     "Arial-BoldMT",
+     "Arial Bold",
+     "Arial",
+     "Bold"
+    ],
+    [
+     "Arial-ItalicMT",
+     "Arial Italic",
+     "Arial",
+     "Italic"
+    ],
+    [
+     "ArialMT",
+     "Arial",
+     "Arial",
+     "Regular"
+    ],
+    [
+     "Bahnschrift",
+     "Bahnschrift",
+     "Bahnschrift",
+     "Regular"
+    ],
+    [
+     "Calibri",
+     "Calibri",
+     "Calibri",
+     "Regular"
+    ],
+    [
+     "Calibri-Bold",
+     "Calibri Bold",
+     "Calibri",
+     "Bold"
+    ],
+    [
+     "Calibri-BoldItalic",
+     "Calibri Bold Italic",
+     "Calibri",
+     "Bold Italic"
+    ],
+    [
+     "Calibri-Italic",
+     "Calibri Italic",
+     "Calibri",
+     "Italic"
+    ],
+    [
+     "Calibri-Light",
+     "Calibri Light",
+     "Calibri Light",
+     "Regular"
+    ],
+    [
+     "Calibri-LightItalic",
+     "Calibri Light Italic",
+     "Calibri Light",
+     "Italic"
+    ],
+    [
+     "Cambria",
+     "Cambria",
+     "Cambria",
+     "Regular"
+    ],
+    [
+     "Cambria-Bold",
+     "Cambria Bold",
+     "Cambria",
+     "Bold"
+    ],
+    [
+     "Cambria-BoldItalic",
+     "Cambria Bold Italic",
+     "Cambria",
+     "Bold Italic"
+    ],
+    [
+     "Cambria-Italic",
+     "Cambria Italic",
+     "Cambria",
+     "Italic"
+    ],
+    [
+     "CambriaMath",
+     "Cambria Math",
+     "Cambria Math",
+     "Regular"
+    ],
+    [
+     "Candara",
+     "Candara",
+     "Candara",
+     "Regular"
+    ],
+    [
+     "Candara-Bold",
+     "Candara Bold",
+     "Candara",
+     "Bold"
+    ],
+    [
+     "Candara-BoldItalic",
+     "Candara Bold Italic",
+     "Candara",
+     "Bold Italic"
+    ],
+    [
+     "Candara-Italic",
+     "Candara Italic",
+     "Candara",
+     "Italic"
+    ],
+    [
+     "Candara-Light",
+     "Candara Light",
+     "Candara Light",
+     "Regular"
+    ],
+    [
+     "Candara-LightItalic",
+     "Candara Light Italic",
+     "Candara Light",
+     "Italic"
+    ],
+    [
+     "CascadiaCode-Roman",
+     "Cascadia Code Regular",
+     "Cascadia Code",
+     "Regular"
+    ],
+    [
+     "CascadiaMono-Roman",
+     "Cascadia Mono Regular",
+     "Cascadia Mono",
+     "Regular"
+    ],
+    [
+     "ComicSansMS",
+     "Comic Sans MS",
+     "Comic Sans MS",
+     "Regular"
+    ],
+    [
+     "ComicSansMS-Bold",
+     "Comic Sans MS Bold",
+     "Comic Sans MS",
+     "Bold"
+    ],
+    [
+     "ComicSansMS-BoldItalic",
+     "Comic Sans MS Bold Italic",
+     "Comic Sans MS",
+     "Bold Italic"
+    ],
+    [
+     "ComicSansMS-Italic",
+     "Comic Sans MS Italic",
+     "Comic Sans MS",
+     "Italic"
+    ],
+    [
+     "Consolas",
+     "Consolas",
+     "Consolas",
+     "Regular"
+    ],
+    [
+     "Consolas-Bold",
+     "Consolas Bold",
+     "Consolas",
+     "Bold"
+    ],
+    [
+     "Consolas-BoldItalic",
+     "Consolas Bold Italic",
+     "Consolas",
+     "Bold Italic"
+    ],
+    [
+     "Consolas-Italic",
+     "Consolas Italic",
+     "Consolas",
+     "Italic"
+    ],
+    [
+     "Constantia",
+     "Constantia",
+     "Constantia",
+     "Regular"
+    ],
+    [
+     "Constantia-Bold",
+     "Constantia Bold",
+     "Constantia",
+     "Bold"
+    ],
+    [
+     "Constantia-BoldItalic",
+     "Constantia Bold Italic",
+     "Constantia",
+     "Bold Italic"
+    ],
+    [
+     "Constantia-Italic",
+     "Constantia Italic",
+     "Constantia",
+     "Italic"
+    ],
+    [
+     "Corbel",
+     "Corbel",
+     "Corbel",
+     "Regular"
+    ],
+    [
+     "Corbel-Bold",
+     "Corbel Bold",
+     "Corbel",
+     "Bold"
+    ],
+    [
+     "Corbel-BoldItalic",
+     "Corbel Bold Italic",
+     "Corbel",
+     "Bold Italic"
+    ],
+    [
+     "Corbel-Italic",
+     "Corbel Italic",
+     "Corbel",
+     "Italic"
+    ],
+    [
+     "CorbelLight",
+     "Corbel Light",
+     "Corbel Light",
+     "Regular"
+    ],
+    [
+     "CorbelLight-Italic",
+     "Corbel Light Italic",
+     "Corbel Light",
+     "Italic"
+    ],
+    [
+     "CourierNewPS-BoldItalicMT",
+     "Courier New Bold Italic",
+     "Courier New",
+     "Bold Italic"
+    ],
+    [
+     "CourierNewPS-BoldMT",
+     "Courier New Bold",
+     "Courier New",
+     "Bold"
+    ],
+    [
+     "CourierNewPS-ItalicMT",
+     "Courier New Italic",
+     "Courier New",
+     "Italic"
+    ],
+    [
+     "CourierNewPSMT",
+     "Courier New",
+     "Courier New",
+     "Regular"
+    ],
+    [
+     "Ebrima",
+     "Ebrima",
+     "Ebrima",
+     "Regular"
+    ],
+    [
+     "Ebrima-Bold",
+     "Ebrima Bold",
+     "Ebrima",
+     "Bold"
+    ],
+    [
+     "FranklinGothic-Medium",
+     "Franklin Gothic Medium",
+     "Franklin Gothic Medium",
+     "Regular"
+    ],
+    [
+     "FranklinGothic-MediumItalic",
+     "Franklin Gothic Medium Italic",
+     "Franklin Gothic Medium",
+     "Italic"
+    ],
+    [
+     "Gabriola",
+     "Gabriola",
+     "Gabriola",
+     "Regular"
+    ],
+    [
+     "Gadugi",
+     "Gadugi",
+     "Gadugi",
+     "Regular"
+    ],
+    [
+     "Gadugi-Bold",
+     "Gadugi Bold",
+     "Gadugi",
+     "Bold"
+    ],
+    [
+     "Georgia",
+     "Georgia",
+     "Georgia",
+     "Regular"
+    ],
+    [
+     "Georgia-Bold",
+     "Georgia Bold",
+     "Georgia",
+     "Bold"
+    ],
+    [
+     "Georgia-BoldItalic",
+     "Georgia Bold Italic",
+     "Georgia",
+     "Bold Italic"
+    ],
+    [
+     "Georgia-Italic",
+     "Georgia Italic",
+     "Georgia",
+     "Italic"
+    ],
+    [
+     "HoloLensMDL2Assets",
+     "HoloLens MDL2 Assets",
+     "HoloLens MDL2 Assets",
+     "Regular"
+    ],
+    [
+     "Impact",
+     "Impact",
+     "Impact",
+     "Regular"
+    ],
+    [
+     "InkFree",
+     "Ink Free",
+     "Ink Free",
+     "Regular"
+    ],
+    [
+     "JavaneseText",
+     "Javanese Text",
+     "Javanese Text",
+     "Regular"
+    ],
+    [
+     "LeelawadeeUI",
+     "Leelawadee UI",
+     "Leelawadee UI",
+     "Regular"
+    ],
+    [
+     "LeelawadeeUI-Bold",
+     "Leelawadee UI Bold",
+     "Leelawadee UI",
+     "Bold"
+    ],
+    [
+     "LeelawadeeUI-Semilight",
+     "Leelawadee UI Semilight",
+     "Leelawadee UI Semilight",
+     "Regular"
+    ],
+    [
+     "LucidaConsole",
+     "Lucida Console",
+     "Lucida Console",
+     "Regular"
+    ],
+    [
+     "LucidaSansUnicode",
+     "Lucida Sans Unicode",
+     "Lucida Sans Unicode",
+     "Regular"
+    ],
+    [
+     "MS-Gothic",
+     "MS Gothic",
+     "MS Gothic",
+     "Regular"
+    ],
+    [
+     "MS-PGothic",
+     "MS PGothic",
+     "MS PGothic",
+     "Regular"
+    ],
+    [
+     "MS-UIGothic",
+     "MS UI Gothic",
+     "MS UI Gothic",
+     "Regular"
+    ],
+    [
+     "MVBoli",
+     "MV Boli",
+     "MV Boli",
+     "Regular"
+    ],
+    [
+     "MalgunGothic",
+     "Malgun Gothic",
+     "Malgun Gothic",
+     "Regular"
+    ],
+    [
+     "MalgunGothic-Semilight",
+     "Malgun Gothic Semilight",
+     "Malgun Gothic Semilight",
+     "Regular"
+    ],
+    [
+     "MalgunGothicBold",
+     "Malgun Gothic Bold",
+     "Malgun Gothic",
+     "Bold"
+    ],
+    [
+     "Marlett",
+     "Marlett",
+     "Marlett",
+     "Regular"
+    ],
+    [
+     "Microsoft Himalaya",
+     "Microsoft Himalaya",
+     "Microsoft Himalaya",
+     "Regular"
+    ],
+    [
+     "Microsoft-Yi-Baiti",
+     "Microsoft Yi Baiti",
+     "Microsoft Yi Baiti",
+     "Regular"
+    ],
+    [
+     "MicrosoftJhengHeiBold",
+     "Microsoft JhengHei Bold",
+     "Microsoft JhengHei",
+     "Bold"
+    ],
+    [
+     "MicrosoftJhengHeiLight",
+     "Microsoft JhengHei Light",
+     "Microsoft JhengHei Light",
+     "Regular"
+    ],
+    [
+     "MicrosoftJhengHeiRegular",
+     "Microsoft JhengHei",
+     "Microsoft JhengHei",
+     "Regular"
+    ],
+    [
+     "MicrosoftJhengHeiUIBold",
+     "Microsoft JhengHei UI Bold",
+     "Microsoft JhengHei UI",
+     "Bold"
+    ],
+    [
+     "MicrosoftJhengHeiUILight",
+     "Microsoft JhengHei UI Light",
+     "Microsoft JhengHei UI Light",
+     "Regular"
+    ],
+    [
+     "MicrosoftJhengHeiUIRegular",
+     "Microsoft JhengHei UI",
+     "Microsoft JhengHei UI",
+     "Regular"
+    ],
+    [
+     "MicrosoftNewTaiLue",
+     "Microsoft New Tai Lue",
+     "Microsoft New Tai Lue",
+     "Regular"
+    ],
+    [
+     "MicrosoftNewTaiLue-Bold",
+     "Microsoft New Tai Lue Bold",
+     "Microsoft New Tai Lue",
+     "Bold"
+    ],
+    [
+     "MicrosoftPhagsPa",
+     "Microsoft PhagsPa",
+     "Microsoft PhagsPa",
+     "Regular"
+    ],
+    [
+     "MicrosoftPhagsPa-Bold",
+     "Microsoft PhagsPa Bold",
+     "Microsoft PhagsPa",
+     "Bold"
+    ],
+    [
+     "MicrosoftSansSerif",
+     "Microsoft Sans Serif",
+     "Microsoft Sans Serif",
+     "Regular"
+    ],
+    [
+     "MicrosoftTaiLe",
+     "Microsoft Tai Le",
+     "Microsoft Tai Le",
+     "Regular"
+    ],
+    [
+     "MicrosoftTaiLe-Bold",
+     "Microsoft Tai Le Bold",
+     "Microsoft Tai Le",
+     "Bold"
+    ],
+    [
+     "MicrosoftYaHei",
+     "Microsoft YaHei",
+     "Microsoft YaHei",
+     "Regular"
+    ],
+    [
+     "MicrosoftYaHei-Bold",
+     "Microsoft YaHei Bold",
+     "Microsoft YaHei",
+     "Bold"
+    ],
+    [
+     "MicrosoftYaHeiLight",
+     "Microsoft YaHei Light",
+     "Microsoft YaHei Light",
+     "Regular"
+    ],
+    [
+     "MicrosoftYaHeiUI",
+     "Microsoft YaHei UI",
+     "Microsoft YaHei UI",
+     "Regular"
+    ],
+    [
+     "MicrosoftYaHeiUI-Bold",
+     "Microsoft YaHei UI Bold",
+     "Microsoft YaHei UI",
+     "Bold"
+    ],
+    [
+     "MicrosoftYaHeiUILight",
+     "Microsoft YaHei UI Light",
+     "Microsoft YaHei UI Light",
+     "Regular"
+    ],
+    [
+     "Ming-Lt-HKSCS-ExtB",
+     "MingLiU_HKSCS-ExtB",
+     "MingLiU_HKSCS-ExtB",
+     "Regular"
+    ],
+    [
+     "MingLiU-ExtB",
+     "MingLiU-ExtB",
+     "MingLiU-ExtB",
+     "Regular"
+    ],
+    [
+     "MongolianBaiti",
+     "Mongolian Baiti",
+     "Mongolian Baiti",
+     "Regular"
+    ],
+    [
+     "MyanmarText",
+     "Myanmar Text",
+     "Myanmar Text",
+     "Regular"
+    ],
+    [
+     "MyanmarText-Bold",
+     "Myanmar Text Bold",
+     "Myanmar Text",
+     "Bold"
+    ],
+    [
+     "NSimSun",
+     "NSimSun",
+     "NSimSun",
+     "Regular"
+    ],
+    [
+     "NirmalaUI",
+     "Nirmala UI",
+     "Nirmala UI",
+     "Regular"
+    ],
+    [
+     "NirmalaUI-Bold",
+     "Nirmala UI Bold",
+     "Nirmala UI",
+     "Bold"
+    ],
+    [
+     "NirmalaUI-Semilight",
+     "Nirmala UI Semilight",
+     "Nirmala UI Semilight",
+     "Regular"
+    ],
+    [
+     "PMingLiU-ExtB",
+     "PMingLiU-ExtB",
+     "PMingLiU-ExtB",
+     "Regular"
+    ],
+    [
+     "PalatinoLinotype-Bold",
+     "Palatino Linotype Bold",
+     "Palatino Linotype",
+     "Bold"
+    ],
+    [
+     "PalatinoLinotype-BoldItalic",
+     "Palatino Linotype Bold Italic",
+     "Palatino Linotype",
+     "Bold Italic"
+    ],
+    [
+     "PalatinoLinotype-Italic",
+     "Palatino Linotype Italic",
+     "Palatino Linotype",
+     "Italic"
+    ],
+    [
+     "PalatinoLinotype-Roman",
+     "Palatino Linotype",
+     "Palatino Linotype",
+     "Regular"
+    ],
+    [
+     "SegoeMDL2Assets",
+     "Segoe MDL2 Assets",
+     "Segoe MDL2 Assets",
+     "Regular"
+    ],
+    [
+     "SegoePrint",
+     "Segoe Print",
+     "Segoe Print",
+     "Regular"
+    ],
+    [
+     "SegoePrint-Bold",
+     "Segoe Print Bold",
+     "Segoe Print",
+     "Bold"
+    ],
+    [
+     "SegoeScript",
+     "Segoe Script",
+     "Segoe Script",
+     "Regular"
+    ],
+    [
+     "SegoeScript-Bold",
+     "Segoe Script Bold",
+     "Segoe Script",
+     "Bold"
+    ],
+    [
+     "SegoeUI",
+     "Segoe UI",
+     "Segoe UI",
+     "Regular"
+    ],
+    [
+     "SegoeUI-Bold",
+     "Segoe UI Bold",
+     "Segoe UI",
+     "Bold"
+    ],
+    [
+     "SegoeUI-BoldItalic",
+     "Segoe UI Bold Italic",
+     "Segoe UI",
+     "Bold Italic"
+    ],
+    [
+     "SegoeUI-Italic",
+     "Segoe UI Italic",
+     "Segoe UI",
+     "Italic"
+    ],
+    [
+     "SegoeUI-Light",
+     "Segoe UI Light",
+     "Segoe UI Light",
+     "Regular"
+    ],
+    [
+     "SegoeUI-LightItalic",
+     "Segoe UI Light Italic",
+     "Segoe UI Light",
+     "Italic"
+    ],
+    [
+     "SegoeUI-Semibold",
+     "Segoe UI Semibold",
+     "Segoe UI Semibold",
+     "Regular"
+    ],
+    [
+     "SegoeUI-SemiboldItalic",
+     "Segoe UI Semibold Italic",
+     "Segoe UI Semibold",
+     "Italic"
+    ],
+    [
+     "SegoeUI-Semilight",
+     "Segoe UI Semilight",
+     "Segoe UI Semilight",
+     "Regular"
+    ],
+    [
+     "SegoeUI-SemilightItalic",
+     "Segoe UI Semilight Italic",
+     "Segoe UI Semilight",
+     "Italic"
+    ],
+    [
+     "SegoeUIBlack",
+     "Segoe UI Black",
+     "Segoe UI Black",
+     "Regular"
+    ],
+    [
+     "SegoeUIBlack-Italic",
+     "Segoe UI Black Italic",
+     "Segoe UI Black",
+     "Italic"
+    ],
+    [
+     "SegoeUIEmoji",
+     "Segoe UI Emoji",
+     "Segoe UI Emoji",
+     "Regular"
+    ],
+    [
+     "SegoeUIHistoric",
+     "Segoe UI Historic",
+     "Segoe UI Historic",
+     "Regular"
+    ],
+    [
+     "SegoeUISymbol",
+     "Segoe UI Symbol",
+     "Segoe UI Symbol",
+     "Regular"
+    ],
+    [
+     "SimSun",
+     "SimSun",
+     "SimSun",
+     "Regular"
+    ],
+    [
+     "SimSun-ExtB",
+     "SimSun-ExtB",
+     "SimSun-ExtB",
+     "Regular"
+    ],
+    [
+     "SimSun-ExtG",
+     "SimSun-ExtG",
+     "SimSun-ExtG",
+     "Regular"
+    ],
+    [
+     "SitkaBanner",
+     "Sitka Banner",
+     "Sitka Banner",
+     "Regular"
+    ],
+    [
+     "SitkaBanner-Bold",
+     "Sitka Banner Bold",
+     "Sitka Banner",
+     "Bold"
+    ],
+    [
+     "SitkaBanner-BoldItalic",
+     "Sitka Banner Bold Italic",
+     "Sitka Banner",
+     "Bold Italic"
+    ],
+    [
+     "SitkaBanner-Italic",
+     "Sitka Banner Italic",
+     "Sitka Banner",
+     "Italic"
+    ],
+    [
+     "SitkaDisplay",
+     "Sitka Display",
+     "Sitka Display",
+     "Regular"
+    ],
+    [
+     "SitkaDisplay-Bold",
+     "Sitka Display Bold",
+     "Sitka Display",
+     "Bold"
+    ],
+    [
+     "SitkaDisplay-BoldItalic",
+     "Sitka Display Bold Italic",
+     "Sitka Display",
+     "Bold Italic"
+    ],
+    [
+     "SitkaDisplay-Italic",
+     "Sitka Display Italic",
+     "Sitka Display",
+     "Italic"
+    ],
+    [
+     "SitkaHeading",
+     "Sitka Heading",
+     "Sitka Heading",
+     "Regular"
+    ],
+    [
+     "SitkaHeading-Bold",
+     "Sitka Heading Bold",
+     "Sitka Heading",
+     "Bold"
+    ],
+    [
+     "SitkaHeading-BoldItalic",
+     "Sitka Heading Bold Italic",
+     "Sitka Heading",
+     "Bold Italic"
+    ],
+    [
+     "SitkaHeading-Italic",
+     "Sitka Heading Italic",
+     "Sitka Heading",
+     "Italic"
+    ],
+    [
+     "SitkaSmall",
+     "Sitka Small",
+     "Sitka Small",
+     "Regular"
+    ],
+    [
+     "SitkaSmall-Bold",
+     "Sitka Small Bold",
+     "Sitka Small",
+     "Bold"
+    ],
+    [
+     "SitkaSmall-BoldItalic",
+     "Sitka Small Bold Italic",
+     "Sitka Small",
+     "Bold Italic"
+    ],
+    [
+     "SitkaSmall-Italic",
+     "Sitka Small Italic",
+     "Sitka Small",
+     "Italic"
+    ],
+    [
+     "SitkaSubheading",
+     "Sitka Subheading",
+     "Sitka Subheading",
+     "Regular"
+    ],
+    [
+     "SitkaSubheading-Bold",
+     "Sitka Subheading Bold",
+     "Sitka Subheading",
+     "Bold"
+    ],
+    [
+     "SitkaSubheading-BoldItalic",
+     "Sitka Subheading Bold Italic",
+     "Sitka Subheading",
+     "Bold Italic"
+    ],
+    [
+     "SitkaSubheading-Italic",
+     "Sitka Subheading Italic",
+     "Sitka Subheading",
+     "Italic"
+    ],
+    [
+     "SitkaText",
+     "Sitka Text",
+     "Sitka Text",
+     "Regular"
+    ],
+    [
+     "SitkaText-Bold",
+     "Sitka Text Bold",
+     "Sitka Text",
+     "Bold"
+    ],
+    [
+     "SitkaText-BoldItalic",
+     "Sitka Text Bold Italic",
+     "Sitka Text",
+     "Bold Italic"
+    ],
+    [
+     "SitkaText-Italic",
+     "Sitka Text Italic",
+     "Sitka Text",
+     "Italic"
+    ],
+    [
+     "Sylfaen",
+     "Sylfaen",
+     "Sylfaen",
+     "Regular"
+    ],
+    [
+     "SymbolMT",
+     "Symbol",
+     "Symbol",
+     "Regular"
+    ],
+    [
+     "Tahoma",
+     "Tahoma",
+     "Tahoma",
+     "Regular"
+    ],
+    [
+     "Tahoma-Bold",
+     "Tahoma Bold",
+     "Tahoma",
+     "Bold"
+    ],
+    [
+     "TimesNewRomanPS-BoldItalicMT",
+     "Times New Roman Bold Italic",
+     "Times New Roman",
+     "Bold Italic"
+    ],
+    [
+     "TimesNewRomanPS-BoldMT",
+     "Times New Roman Bold",
+     "Times New Roman",
+     "Bold"
+    ],
+    [
+     "TimesNewRomanPS-ItalicMT",
+     "Times New Roman Italic",
+     "Times New Roman",
+     "Italic"
+    ],
+    [
+     "TimesNewRomanPSMT",
+     "Times New Roman",
+     "Times New Roman",
+     "Regular"
+    ],
+    [
+     "Trebuchet-BoldItalic",
+     "Trebuchet MS Bold Italic",
+     "Trebuchet MS",
+     "Bold Italic"
+    ],
+    [
+     "TrebuchetMS",
+     "Trebuchet MS",
+     "Trebuchet MS",
+     "Regular"
+    ],
+    [
+     "TrebuchetMS-Bold",
+     "Trebuchet MS Bold",
+     "Trebuchet MS",
+     "Bold"
+    ],
+    [
+     "TrebuchetMS-Italic",
+     "Trebuchet MS Italic",
+     "Trebuchet MS",
+     "Italic"
+    ],
+    [
+     "Verdana",
+     "Verdana",
+     "Verdana",
+     "Regular"
+    ],
+    [
+     "Verdana-Bold",
+     "Verdana Bold",
+     "Verdana",
+     "Bold"
+    ],
+    [
+     "Verdana-BoldItalic",
+     "Verdana Bold Italic",
+     "Verdana",
+     "Bold Italic"
+    ],
+    [
+     "Verdana-Italic",
+     "Verdana Italic",
+     "Verdana",
+     "Italic"
+    ],
+    [
+     "Webdings",
+     "Webdings",
+     "Webdings",
+     "Regular"
+    ],
+    [
+     "Wingdings-Regular",
+     "Wingdings",
+     "Wingdings",
+     "Regular"
+    ],
+    [
+     "Wingdings2",
+     "Wingdings 2",
+     "Wingdings 2",
+     "Regular"
+    ],
+    [
+     "Wingdings3",
+     "Wingdings 3",
+     "Wingdings 3",
+     "Regular"
+    ],
+    [
+     "YuGothic-Bold",
+     "Yu Gothic Bold",
+     "Yu Gothic",
+     "Bold"
+    ],
+    [
+     "YuGothic-Light",
+     "Yu Gothic Light",
+     "Yu Gothic Light",
+     "Regular"
+    ],
+    [
+     "YuGothic-Medium",
+     "Yu Gothic Medium",
+     "Yu Gothic Medium",
+     "Regular"
+    ],
+    [
+     "YuGothic-Regular",
+     "Yu Gothic Regular",
+     "Yu Gothic",
+     "Regular"
+    ],
+    [
+     "YuGothicUI-Bold",
+     "Yu Gothic UI Bold",
+     "Yu Gothic UI",
+     "Bold"
+    ],
+    [
+     "YuGothicUI-Light",
+     "Yu Gothic UI Light",
+     "Yu Gothic UI Light",
+     "Regular"
+    ],
+    [
+     "YuGothicUI-Regular",
+     "Yu Gothic UI Regular",
+     "Yu Gothic UI",
+     "Regular"
+    ],
+    [
+     "YuGothicUI-Semibold",
+     "Yu Gothic UI Semibold",
+     "Yu Gothic UI Semibold",
+     "Regular"
+    ],
+    [
+     "YuGothicUI-Semilight",
+     "Yu Gothic UI Semilight",
+     "Yu Gothic UI Semilight",
+     "Regular"
+    ]
+   ]
   },
   "macOS": {
    "captured": "2026-09-11",

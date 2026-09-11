@@ -3790,3 +3790,14 @@ Menlo/Monaco -> Liberation Mono 0.2/0.0 px, Helvetica Neue/system-ui/Lucida Gran
 no clone for Verdana/Trebuchet/Gill Sans/Palatino/Baskerville. Found: Blink AlternateFamilyName (Courier/Times/Helvetica)
 resolves on every stock host with no such font; the allowlist refused them -> extra_allowed both OSes, F14/F14-mac; bundle
 17/17 box + archive mode; metrics 5/5 both OSes.
+
+## Windows oracle slice (spec/plan 2026-09-12-windows-oracle) -- 2026-09-12
+capture_host_oracle.py (229 leaves on stock Chrome 153, Windows host, headed via cdp_eval + headless) + verify_host_oracle.py
+(fork under gen --os windows). First run 20 DIFF -> fork's: brands (no Google Chrome), navigator.share/canShare,
+navigator.bluetooth + 8 Bluetooth* interfaces, queryLocalFonts/FontData/local-fonts permission, voices []. Fixes: ua:brand
+(86th key, GetUserAgentBrandList product brand -> stock order via Chromium's own shuffle), claim-gated WebShare/WebBluetooth/
+FontAccess in ChromeContentRendererClient::RenderThreadStarted (chrome/renderer gets the camoucfg dep + DEPS), fonts:local
+(87th key: queryLocalFonts lists the captured host's 186 faces after the real permission flow; json5 FontAccess
+base_feature_status enabled + copied_from_base_feature_if overridden -- the RED caught the flag leaking to every claim),
+settings/voices.json + gen.voices_keys. O1 0 DIFF / O2 RED Linux / O3 186 faces; sp1a 34, sp2/sp2b, voices 5/5, bundle
+17/17, coherence 7/7. Box tip 1ae7cdb240 windows-oracle. Residual: sampleRate 48000 vs 44100 (sp4-audio decision).
