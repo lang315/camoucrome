@@ -1,0 +1,45 @@
+diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
+index 636e2ca661..1fa5f26425 100644
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -35,9 +35,13 @@
+ #include <memory>
+ 
+ #include "base/byte_size.h"
++#include "base/containers/span.h"
+ #include "base/debug/alias.h"
+ #include "base/feature_list.h"
+ #include "base/notreached.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "base/numerics/safe_conversions.h"
+ #include "base/strings/escape.h"
+ #include "base/system/sys_info.h"
+@@ -158,6 +162,26 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+     AlternateFontName alternate_font_name) {
+   TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
+ 
++  // Camoucrome (fonts-iii): a configured alias (fonts:alias) replaces the
++  // requested family before any lookup, system-ui included, so a claimed
++  // family the host lacks renders in the bundled font it maps to. Skia's
++  // fontconfig path only accepts a match whose family equals the request,
++  // which is why a fontconfig alias alone cannot do this. The allowlist
++  // (fonts:list, FontFallbackList) has already judged the requested name;
++  // pages observe widths, never the resolved name. No key: the real lookup.
++  if (creation_params.CreationType() == kCreateFontByFamily &&
++      !creation_params.Family().empty()) {
++    if (std::optional<std::string> target = camoucfg::FontAlias(
++            camoucfg::ScopeFor(nullptr), creation_params.Family().Utf8())) {
++      const AtomicString aliased = AtomicString::FromUtf8(base::as_byte_span(*target));
++      if (aliased != creation_params.Family()) {
++        return GetFontPlatformData(font_description,
++                                   FontFaceCreationParams(aliased),
++                                   alternate_font_name);
++      }
++    }
++  }
++
+ #if !BUILDFLAG(IS_MAC)
+   if (creation_params.CreationType() == kCreateFontByFamily &&
+       creation_params.Family() == font_family_names::kSystemUi) {
