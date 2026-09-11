@@ -3779,3 +3779,5 @@ lookup wants a face name) and unique names in fonts:list let font-family:"SegoeU
 families ignoring blanks) where stock Windows does not -> 85th key fonts:aliasLocal (read for kLocalUniqueFace only),
 local() gate allows its keys, fonts:list families only, 15th invariant fonts-alias-local-requires-list; bundle 13/13
 (F12), fonts-ii 6/6, coherence 7/7 (15). platformVersion now read from stock Chrome on the Windows host ("10.0.0").
+Sixth cut 2026-09-11: relink 103 steps 1m53; changeset 0a8a069fd8eb tip a35c2fa93f; 306 files 181,819,420 B; archive-mode fonts
+13/13, metrics 5/5, DevTools OK, sweep ALL_PASS. Fifth cut superseded (local("Georgia") error, "SegoeUI" resolving as CSS).
