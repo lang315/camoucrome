@@ -145,9 +145,11 @@ fifth cut is superseded: its chrome errors on `local("Georgia")` and lets
 with `windows-oracle` (122 steps, 2 m 37 s) and packaged at
 `changeset_commit 70df1c8618be` / `branch_tip 1ae7cdb240`: **306 files,
 181,799,808 bytes (173 MiB)**, 219 s, extract 9 s, stamp `fonts: true`,
-`--check` ok. On the extracted tree: `verify_host_oracle.py` **3/3** (O1 zero
-differences from stock Windows Chrome outside the named set, O2 RED Linux
-claim, O3 186 faces), fonts in archive mode **17/17**, DevTools opens,
+`--check` ok. On the extracted tree: `verify_host_oracle.py` **3/3** at the
+cut (O1 zero differences from stock Windows Chrome outside the named set,
+O2 RED Linux claim, O3 186 faces) and **4/4** after O4 (brand headers ==
+`userAgentData` == the host's order) was added on the same archive, fonts
+in archive mode **17/17**, DevTools opens,
 six-driver sweep `ALL_PASS`. The sixth cut is superseded: its chrome ships
 two brands and no `navigator.share`, `bluetooth` or `queryLocalFonts` under
 a Windows claim.
