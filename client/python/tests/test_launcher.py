@@ -7,6 +7,8 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import camoucrome  # noqa: E402
+import camoucrome.launcher  # noqa: E402
+ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 CONTRACT = json.loads((pathlib.Path(__file__).resolve().parents[3]
                        / "settings" / "launcher.json").read_text())
@@ -86,3 +88,21 @@ def test_accept_lang_follows_the_config_and_the_contract():
     pw = FakePlaywright()
     camoucrome.launch(pw, "/x/chrome", config={"navigator.languages": ["fr-FR", "fr"]}, user_data_dir="/p")
     assert "--accept-lang=fr-FR,fr" in pw.chromium.kw["args"]
+
+
+def test_fontconfig_env_follows_the_claimed_os(tmp_path):
+    launcher = camoucrome.launcher
+    (tmp_path / "fonts").mkdir()
+    (tmp_path / "settings" / "fontconfig").mkdir(parents=True)
+    (tmp_path / "settings" / "fontconfig" / "windows.conf").write_text("<fontconfig/>")
+    win = launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
+    assert win == str(tmp_path / "settings" / "fontconfig" / "windows.conf")
+    assert launcher.fontconfig_for({"ua:platform": "Linux"}, None, tmp_path / "fonts") is None
+    assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts").endswith("settings/fontconfig/macos.conf")
+    assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome") is None
+    (tmp_path / "chrome").write_bytes(b"")
+    assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "chrome") == win
+    assert launcher.build_env(fontconfig="/x/windows.conf")["FONTCONFIG_FILE"] == "/x/windows.conf"
+    assert "FONTCONFIG_FILE" not in launcher.build_env()
+    contract = json.loads((ROOT / "settings" / "launcher.json").read_text())["launch"]["fontconfig"]
+    assert contract["env"] == launcher.FONTCONFIG_ENV and contract["files"] == launcher.FONTCONFIG_FILES

@@ -61,3 +61,20 @@ test('launch refuses forbidden options and uses a persistent context without vie
   assert.deepEqual(opts.args, ['--no-first-run', '--no-default-browser-check', '--headless=new',
     '--remote-debugging-pipe', '--user-data-dir=/tmp/p', '--window-size=800,600']);
 });
+
+test('fontconfig follows the claimed OS and the contract', () => {
+  assert.deepEqual(c.FONTCONFIG_FILES, L.fontconfig.files);
+  assert.equal(L.fontconfig.env, 'FONTCONFIG_FILE');
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-fc-'));
+  fs.mkdirSync(path.join(root, 'fonts'));
+  fs.mkdirSync(path.join(root, 'settings', 'fontconfig'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'settings', 'fontconfig', 'windows.conf'), '<fontconfig/>');
+  const want = path.join(root, 'settings', 'fontconfig', 'windows.conf');
+  assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Windows' }, fontsDir: path.join(root, 'fonts') }), want);
+  assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Linux' }, fontsDir: path.join(root, 'fonts') }), null);
+  assert.ok(c.fontconfigFor({ preset: { os: 'macOS' }, fontsDir: path.join(root, 'fonts') }).endsWith('settings/fontconfig/macos.conf'));
+  fs.writeFileSync(path.join(root, 'chrome'), '');
+  assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Windows' }, executablePath: path.join(root, 'chrome') }), want);
+  assert.equal(c.buildEnv({ fontconfig: want }, {}).FONTCONFIG_FILE, want);
+  assert.equal('FONTCONFIG_FILE' in c.buildEnv({}, {}), false);
+});

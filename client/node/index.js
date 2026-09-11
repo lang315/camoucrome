@@ -28,13 +28,34 @@ const asJson = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 
 // Every CAMOU_* of the parent dropped first (a stale CAMOU_CONFIG_1 would
 // otherwise win), then config/preset/strict set.
-function buildEnv({ config, preset, strict } = {}, base = process.env) {
+function buildEnv({ config, preset, strict, fontconfig } = {}, base = process.env) {
   const env = {};
   for (const [k, v] of Object.entries(base)) if (!k.startsWith('CAMOU_')) env[k] = v;
   if (config != null) env.CAMOU_CONFIG = asJson(config);
   if (preset != null) env.CAMOU_PRESET = asJson(preset);
   if (strict) env.CAMOU_CONFIG_STRICT = '1';
+  if (fontconfig) env.FONTCONFIG_FILE = fontconfig;
   return env;
+}
+
+// Mirrors settings/launcher.json launch.fontconfig.files.
+const FONTCONFIG_FILES = { Windows: 'settings/fontconfig/windows.conf', macOS: 'settings/fontconfig/macos.conf' };
+
+// The FONTCONFIG_FILE for the claimed OS: the generated conf beside the
+// bundled fonts dir (default: `fonts` beside the executable when present).
+// Linux claim or no fonts dir: null.
+function fontconfigFor({ config, preset, fontsDir, executablePath } = {}) {
+  const parse = (v) => (v == null ? {} : typeof v === 'string' ? JSON.parse(v) : v);
+  const osName = parse(config)['ua:platform'] || parse(preset).os;
+  const file = FONTCONFIG_FILES[osName];
+  if (!file) return null;
+  let dir = fontsDir;
+  if (!dir && executablePath) {
+    const cand = path.join(path.dirname(path.resolve(String(executablePath))), 'fonts');
+    if (fs.existsSync(cand) && fs.statSync(cand).isDirectory()) dir = cand;
+  }
+  if (!dir) return null;
+  return path.resolve(dir, '..', file);
 }
 
 // --accept-lang the config implies (navigator.languages joined, else
@@ -78,7 +99,7 @@ function perInstanceConfig() {
 
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, headless = true,
-  args = [], extensions = [], spkiList = [], ...options
+  args = [], extensions = [], spkiList = [], fontsDir, ...options
 } = {}) {
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {
@@ -90,7 +111,8 @@ async function launch(chromium, executablePath, {
     executablePath: String(executablePath),
     headless,
     ignoreDefaultArgs: true,
-    env: buildEnv({ config, preset, strict }),
+    env: buildEnv({ config, preset, strict,
+      fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }) }),
     args: buildArgs({ window, dpr, extra: args, headless, userDataDir: dir,
       acceptLang: acceptLangOf(config), extensions, spkiList }),
     // Otherwise a 1280x720 viewport is emulated, fighting screen.* and the
@@ -100,5 +122,5 @@ async function launch(chromium, executablePath, {
   });
 }
 
-module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, buildEnv, buildArgs,
-  acceptLangOf, perInstanceConfig, launch };
+module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, buildEnv, buildArgs,
+  acceptLangOf, fontconfigFor, perInstanceConfig, launch };

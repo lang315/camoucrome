@@ -98,3 +98,25 @@ def test_check_refuses_mismatched_stamps(tree, tmp_path, capsys):
     (tmp_path / "b.json").write_text(json.dumps(b))
     with pytest.raises(SystemExit, match="branch_tip"):
         package.check([tmp_path / "dist" / f"{a['name']}.release.json", tmp_path / "b.json"])
+
+
+def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    root = tmp_path / "root"
+    (root / "fonts" / "Selawik").mkdir(parents=True)
+    (root / "fonts" / "Selawik" / "selawk.ttf").write_bytes(b"ttf")
+    (root / "settings" / "fontconfig").mkdir(parents=True)
+    (root / "settings" / "fontconfig" / "windows.conf").write_text("<fontconfig/>")
+    (root / "settings" / "presets").mkdir()
+    (root / "settings" / "launcher.json").write_text("{}")
+    (root / "upstream.env").write_text(package.ROOT.joinpath("upstream.env").read_text())
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], cwd=root, check=True)
+    monkeypatch.setattr(package, "ROOT", root)
+    d = package.runtime_deps(src, out, deps)
+    staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+    assert stamp["fonts"] is True
+    assert (staging / "fonts" / "Selawik" / "selawk.ttf").exists()
+    assert (staging / "settings" / "fontconfig" / "windows.conf").exists()
+    staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist2", False, no_fonts=True)
+    assert stamp["fonts"] is False and not (staging / "fonts").exists()
