@@ -8,7 +8,8 @@ W2 Windows profile on a Windows claim: vendor/renderer read back on both
 W3 macOS profile on a macOS claim: same; W3-RED: the macOS profile on a
    Windows claim is refused under strict (webgl-renderer-backend-fits-os).
 W4 informational: shaderPrecisionFormats / contextAttributes host vs profile
-   diff count per context (keys not emitted; the doc says whether they must be).
+   diff count per context (8/12 precision cells differ on the SwiftShader
+   host: the reason the generator emits them; contextAttributes agree).
 """
 import http.server
 import json
@@ -124,7 +125,7 @@ def main():
             d1 = sum(1 for k, v in mac[ctx]["shaderPrecisionFormats"].items() if host[ctx]["shaderPrecisionFormats"].get(k) != v)
             d2 = sum(1 for k, v in mac[ctx]["contextAttributes"].items() if host[ctx]["contextAttributes"].get(k) != v)
             e1 = sum(1 for k, v in win[ctx]["shaderPrecisionFormats"].items() if host[ctx]["shaderPrecisionFormats"].get(k) != v)
-            notes.append(f"W4 {ctx}: host vs macOS profile: shaderPrecisionFormats differ in {d1}/12 cells, contextAttributes in {d2}; host vs Windows profile: {e1}/12 cells (keys not emitted)")
+            notes.append(f"W4 {ctx}: host vs macOS profile: shaderPrecisionFormats differ in {d1}/12 cells, contextAttributes in {d2}; host vs Windows profile: {e1}/12 cells (why the generator emits webGl:shaderPrecisionFormats; contextAttributes agree, not emitted)")
     srv.shutdown()
     for k, v in results.items():
         print(("PASS " if v else "FAIL "), k)

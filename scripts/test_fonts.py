@@ -52,3 +52,14 @@ def test_captured_lists_have_provenance_and_no_excluded_vendor_font():
 def test_checked_in_confs_match_the_generator():
     for os_name, f in (("Windows", "windows.conf"), ("macOS", "macos.conf")):
         assert (ROOT / "settings" / "fontconfig" / f).read_text() == g.fontconfig_xml(FONTS, os_name)
+
+
+def test_alias_map_covers_every_captured_family_with_a_bundled_target_and_no_identity():
+    bundled = {f for b in FONTS["bundle"] for f in b["provides"]}
+    for os_name in ("Windows", "macOS"):
+        m = g.alias_map(FONTS, os_name)
+        assert m == FONTS["alias_map"][os_name]  # generated section is current
+        for fam in FONTS["families"][os_name]["list"]:
+            assert fam in m or fam in bundled, fam
+        assert all(v in bundled and k != v for k, v in m.items())
+        assert m["system-ui"] in bundled and "sans-serif" in m

@@ -235,6 +235,9 @@ inline constexpr char kScreenColorDepth[] = "screen.colorDepth";
 // direct JS property path); the future jitter key is fonts:spacing_seed.
 inline constexpr char kFonts[] = "fonts:list";
 
+// A family-name alias map (fonts-iii): the requested CSS family (case-insensitive) is looked up as the target family before the platform lookup, in FontCache::GetFontPlatformData. Skia's fontconfig path accepts a match only when the resolved family equals the requested one (plus its own small metric-compatible table), so a fontconfig alias alone cannot make 'Segoe UI' render as the bundled Selawik; this key can. Pages see widths, never the resolved name. The generator emits it from settings/fonts.json alias_map for the claimed OS, beside fonts:list. Absent key => no aliasing (rule 5).
+inline constexpr char kFontsAlias[] = "fonts:alias";
+
 // Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or
 // 0 => no perturbation (rule 5).
 inline constexpr char kAudioSeed[] = "audio:seed";
@@ -320,7 +323,7 @@ inline constexpr char kWindowScreenX[] = "window.screenX";
 inline constexpr char kWindowScreenY[] = "window.screenY";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 83> kAllKeys = {
+inline constexpr std::array<std::string_view, 84> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -374,6 +377,7 @@ inline constexpr std::array<std::string_view, 83> kAllKeys = {
     kScreenAvailTop,
     kScreenColorDepth,
     kFonts,
+    kFontsAlias,
     kAudioSeed,
     kAudioOutputLatency,
     kAudioBaseLatency,

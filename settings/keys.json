@@ -431,6 +431,14 @@
       ]
     },
     {
+      "name": "kFontsAlias",
+      "key": "fonts:alias",
+      "type": "dict",
+      "doc": [
+        "A family-name alias map (fonts-iii): the requested CSS family (case-insensitive) is looked up as the target family before the platform lookup, in FontCache::GetFontPlatformData. Skia's fontconfig path accepts a match only when the resolved family equals the requested one (plus its own small metric-compatible table), so a fontconfig alias alone cannot make 'Segoe UI' render as the bundled Selawik; this key can. Pages see widths, never the resolved name. The generator emits it from settings/fonts.json alias_map for the claimed OS, beside fonts:list. Absent key => no aliasing (rule 5)."
+      ]
+    },
+    {
       "name": "kAudioSeed",
       "key": "audio:seed",
       "type": "uint32",

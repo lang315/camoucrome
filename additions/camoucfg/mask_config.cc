@@ -70,10 +70,28 @@ bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family) {
   return false;
 }
 
+std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family) {
+  const base::DictValue* map = cfg.FindDict(keys::kFontsAlias);
+  if (!map) {
+    return std::nullopt;
+  }
+  for (const auto [requested, target] : *map) {
+    if (target.is_string() && !target.GetString().empty() &&
+        base::EqualsCaseInsensitiveASCII(requested, family)) {
+      return target.GetString();
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace internal
 
 bool IsFontAllowed(const ConfigScope& scope, std::string_view family) {
   return internal::IsFontAllowedFrom(internal::ParsedConfig(), family);
+}
+
+std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family) {
+  return internal::FontAliasFrom(internal::ParsedConfig(), family);
 }
 
 std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope) {

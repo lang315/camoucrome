@@ -81,6 +81,13 @@ std::vector<VoiceConfig> GetVoices(const ConfigScope& scope);
 // The gate applies this only to non-generic families (generics always render).
 bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
 
+// fonts-iii: the configured alias target for a requested CSS family
+// (fonts:alias, case-insensitive on the requested name), or nullopt when the
+// key is absent or names no such family. FontCache::GetFontPlatformData looks
+// the target up instead, so a claimed family the host lacks renders in the
+// bundled font it maps to.
+std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family);
+
 bool HasKey(const ConfigScope& scope, std::string_view key);
 
 // The keys present in the configuration that keys.h does not declare.
@@ -105,6 +112,7 @@ std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope);
 // because this task's file scope was limited to mask_config.h/.cc.
 namespace internal {
 bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family);
+std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family);
 }  // namespace internal
 
 }  // namespace camoucfg
