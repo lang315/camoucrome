@@ -3785,3 +3785,8 @@ macOS side measured (stock Chrome 151 headed): PostScript names ARE CSS families
 to PS matching) -> manifest flag ps_names_are_css_families per OS; macOS claim adds unique names to fonts:list + fonts:alias
 (family targets); F13 + F11-mac; fontnames.py reads the Mac platform-1 records (Apple fonts lack pid-3 IDs 1/4/6: Menlo,
 Helvetica Neue were invisible) -> macOS unique names 775; bundle 15/15 box + archive mode (sixth cut, no C++ change).
+2026-09-12 macOS metric grid (stock Chrome 151 headed on the Mac, 21 families): Helvetica/Times/Courier -> Liberation exact,
+Menlo/Monaco -> Liberation Mono 0.2/0.0 px, Helvetica Neue/system-ui/Lucida Grande/Geneva/Avenir -> Inter 17-31 px (numbers),
+no clone for Verdana/Trebuchet/Gill Sans/Palatino/Baskerville. Found: Blink AlternateFamilyName (Courier/Times/Helvetica)
+resolves on every stock host with no such font; the allowlist refused them -> extra_allowed both OSes, F14/F14-mac; bundle
+17/17 box + archive mode; metrics 5/5 both OSes.

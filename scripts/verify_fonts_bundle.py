@@ -34,6 +34,9 @@ F13 under the macOS claim PostScript names ARE CSS families (stock macOS 15.7 Ch
    resolves them: font_matcher_mac.mm falls back to PostScript matching), so the
    generator adds them to fonts:list and fonts:alias for that claim only;
    F11-mac: five macOS unique names load through local(), Inter's own error.
+F14 Helvetica / Times / Courier resolve at the Arial / Times New Roman / Courier New
+   widths under both claims: Blink's AlternateFamilyName pairs, which stock resolves
+   with no such font installed (measured on both hosts); extra_allowed carries them.
 F12 PostScript names are not CSS families: font-family "ArialMT" / "SegoeUI" /
    "TimesNewRomanPSMT" stay unresolved, as measured on stock Windows (RED, twice:
    with the unique names in fonts:alias they resolved; with them in fonts:list
@@ -58,7 +61,8 @@ FONTS = json.loads((CLIENT / "settings" / "fonts.json").read_text(encoding="utf-
 WIN = {"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows", "ua:platformVersion": "15.0.0", "navigator.platform": "Win32"}
 MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS", "ua:platformVersion": "14.6.1", "navigator.platform": "MacIntel"}
 HOST_ONLY = ["DejaVu Sans", "Ubuntu", "Cantarell"]
-SPECIAL = ["system-ui", "Selawik", "Segoe UI", "Inter Variable", "-apple-system", "sans-serif"]
+SPECIAL = ["system-ui", "Selawik", "Segoe UI", "Inter Variable", "-apple-system", "sans-serif",
+           "Helvetica", "Arial", "Times", "Times New Roman", "Courier", "Courier New"]  # F14: Blink alternate pairs
 PAR = ["Segoe UI", "Consolas", "Calibri"]  # F6: aliased under the Windows map, measured on both threads
 LOCALS = ["SegoeUI", "Segoe UI", "SegoeUI-Bold", "Georgia", "Calibri", "Symbol", "Selawik", "Selawik-Regular", "Tahoma-Bold"]  # F10/F11 local() names
 PSN = ["ArialMT", "SegoeUI", "TimesNewRomanPSMT"]  # F12: PostScript names as CSS families (stock Windows: unresolved)
@@ -157,6 +161,9 @@ def main():
     from camoucrome import gen as G  # the generator's own keys, so the rows measure what ships
     win_keys, mac_keys = G.fonts_keys("Windows"), G.fonts_keys("macOS")
     r = probe(url, {**WIN, **win_keys}, fd)
+    results["F14 Windows claim: Helvetica / Times / Courier resolve at Arial / Times New Roman / Courier New widths (Blink alternates; stock Windows resolves them)"] = (
+        same(r["widths"], "Helvetica", "Arial") and same(r["widths"], "Times", "Times New Roman") and same(r["widths"], "Courier", "Courier New")
+        and r["widths"]["Helvetica"] != r["widths"]["Times"])
     results["F12 PostScript names are not CSS families: ArialMT / SegoeUI / TimesNewRomanPSMT unresolved (stock Windows: unresolved)"] = (
         not any(r["resolves"][n] for n in PSN))
     missing = [f for f in win_list if not r["resolves"][f]]
@@ -187,6 +194,9 @@ def main():
 
     H.body = page(mac_list + HOST_ONLY + MAC_PSN, MAC_LOCALS)
     r = probe(url, {**MAC, **mac_keys}, fd)
+    results["F14-mac macOS claim: Helvetica / Times / Courier resolve at Arial / Times New Roman / Courier New widths (stock macOS resolves them)"] = (
+        same(r["widths"], "Helvetica", "Arial") and same(r["widths"], "Times", "Times New Roman") and same(r["widths"], "Courier", "Courier New")
+        and r["widths"]["Helvetica"] != r["widths"]["Times"])
     results["F13 macOS claim: PostScript names ARE CSS families: HelveticaNeue-Bold / ArialMT / Menlo-Regular resolve (stock macOS: resolve)"] = (
         all(r["resolves"][n] for n in MAC_PSN))
     loc = r["local"]
