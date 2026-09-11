@@ -191,3 +191,15 @@ def test_fonts_keys_carry_unique_names_and_the_platform_version_follows_the_list
     assert "HelveticaNeue-Bold" in m["fonts:list"] and m["fonts:alias"]["HelveticaNeue-Bold"] == "Inter Variable"
     assert m["fonts:aliasLocal"]["HelveticaNeue-Bold"] == "Inter Variable" and "HelveticaNeue-Bold" not in k["fonts:alias"]
     assert gen.fonts_keys("Linux") == {}
+
+
+def test_brand_voices_and_local_faces_follow_the_windows_claim():
+    cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
+    assert cfg["ua:brand"] == "Google Chrome"
+    assert [v["name"] for v in cfg["voices:list"]] == ["Microsoft David - English (United States)", "Microsoft Mark - English (United States)", "Microsoft Zira - English (United States)"]
+    assert cfg["voices:list"][0]["default"] is True and cfg["voices:list"][0]["voiceURI"] == cfg["voices:list"][0]["name"]
+    faces = cfg["fonts:local"]
+    assert len(faces) > 150 and all(len(f.split("\t")) == 4 for f in faces) and "SegoeUI\tSegoe UI\tSegoe UI\tRegular" in faces
+    assert faces == sorted(faces)  # stock returns them sorted by PostScript name
+    assert not any(f.startswith("Selawik") for f in faces)
+    assert gen.voices_keys("Linux") == {}

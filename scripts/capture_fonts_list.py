@@ -128,7 +128,10 @@ def main():
         "how": how + "; families in families.exclude (vendor software on this host) dropped", "list": fams,
         "os_version": os_version, "platform_version": platform_version,
         "unique_names_how": f"full and PostScript names (name IDs 4/6, Windows platform, en-US) of the {sum(map(len, files.values()))} faces in {len(files)} font files on the same host, for the captured families",
-        "unique_names": dict(sorted(names.items()))}
+        "unique_names": dict(sorted(names.items())),
+        # every face of a captured family, [postscriptName, fullName, family, style], sorted by PostScript name as
+        # stock queryLocalFonts() returns them (fonts:local)
+        "faces": sorted([f["ps"], f["full"], f["family"], f["style"]] for fs in files.values() for f in fs if f["family"] in set(fams) and f["ps"])}
     PATH.write_text(json.dumps(d, indent=1, ensure_ascii=False) + "\n")
     print(len(fams), "families,", len(names), "unique names,", os_version, "->", platform_version)
 

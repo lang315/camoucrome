@@ -48,7 +48,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
   const std::set<std::string_view> declared = {
       kUaOsInfo, kNavigatorHardwareConcurrency, kNavigatorUserAgent,
       kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
-      kUaModel, kUaMobile, kUaWow64,
+      kUaModel, kUaMobile, kUaWow64, kUaBrand,
       kHumanizeEnabled, kHumanizeMinTime, kHumanizeMaxTime, kShowCursor,
       kCanvasSeed, kCanvasNoiseDensity, kCanvasNoiseStrength,
       kWebGlVendor, kWebGlRenderer, kWebGl2Vendor, kWebGl2Renderer,
@@ -67,6 +67,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kFonts,
       kFontsAlias,
       kFontsAliasLocal,
+      kFontsLocal,
       kAudioSeed, kAudioOutputLatency, kAudioBaseLatency,
       kAudioMaxChannelCount,
       kMediaDevicesEnabled, kMediaDevicesMicros, kMediaDevicesWebcams,

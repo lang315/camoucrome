@@ -101,6 +101,13 @@ inline constexpr char kUaModel[] = "ua:model";
 inline constexpr char kUaMobile[] = "ua:mobile";
 inline constexpr char kUaWow64[] = "ua:wow64";
 
+// The product brand of the UA-CH brand list (navigator.userAgentData.brands, Sec-CH-UA, Sec-CH-UA-Full-Version-List): e.g.
+// "Google Chrome". A Chromium-branded build has no product brand (embedder_support's GetUserAgentBrandList adds one only under
+// !CHROMIUM_BRANDING), so it ships Chromium + Not_A Brand where real Chrome ships three; the Windows oracle (2026-09-12) read
+// Google Chrome / Not_A Brand / Chromium from stock 153. With the key set, Chromium's own GenerateBrandVersionList + ShuffleBrandList
+// produce the stock order for the same seed (the major version). Absent => the build's real list (rule 5).
+inline constexpr char kUaBrand[] = "ua:brand";
+
 // The humanized-cursor generator's knobs, in their own synthetic `humanize:`
 // namespace -- none mirrors a JS property path. `humanize:` is a pure
 // namespace with no bare `humanize` key, the same shape as `ua:` above.
@@ -248,6 +255,13 @@ inline constexpr char kFontsAlias[] = "fonts:alias";
 // Its keys are also what the src:local() gate allows (beside fonts:list), so fonts:list holds families only: fontconfig compares families ignoring blanks, and a unique name allowed for CSS ('SegoeUI') would resolve as its family where stock Windows does not.
 inline constexpr char kFontsAliasLocal[] = "fonts:aliasLocal";
 
+// What queryLocalFonts() (Font Access) enumerates under a claim: one line per face, tab-separated
+// postscriptName, fullName, family, style, in the claimed host's order (stock sorts by PostScript name). Consulted in
+// FontAccess::DidGetEnumerationResponse after the real permission flow (user activation, the local-fonts prompt) has
+// granted, replacing the host enumeration -- which would list the bundle's own faces. The generator emits the captured host's
+// faces (settings/fonts.json families.<os>.faces). A malformed line is skipped. Absent => the real enumeration (rule 5).
+inline constexpr char kFontsLocal[] = "fonts:local";
+
 // Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or
 // 0 => no perturbation (rule 5).
 inline constexpr char kAudioSeed[] = "audio:seed";
@@ -333,7 +347,7 @@ inline constexpr char kWindowScreenX[] = "window.screenX";
 inline constexpr char kWindowScreenY[] = "window.screenY";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 85> kAllKeys = {
+inline constexpr std::array<std::string_view, 87> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -344,6 +358,7 @@ inline constexpr std::array<std::string_view, 85> kAllKeys = {
     kUaModel,
     kUaMobile,
     kUaWow64,
+    kUaBrand,
     kHumanizeEnabled,
     kHumanizeMinTime,
     kHumanizeMaxTime,
@@ -389,6 +404,7 @@ inline constexpr std::array<std::string_view, 85> kAllKeys = {
     kFonts,
     kFontsAlias,
     kFontsAliasLocal,
+    kFontsLocal,
     kAudioSeed,
     kAudioOutputLatency,
     kAudioBaseLatency,
@@ -423,16 +439,16 @@ inline constexpr std::array<std::string_view, 85> kAllKeys = {
 
 // The UA client-hint keys, without kUaOsInfo.
 //
-// The split is what the list is for. These seven reach
+// The split is what the list is for. These eight reach
 // navigator.userAgentData and the Sec-CH-UA-* headers; kUaOsInfo reaches the
 // user-agent string. Setting any of these without kUaOsInfo produces a
 // fingerprint that contradicts itself on two surfaces a page reads for free,
 // so startup warns about exactly that combination and needs the group by name
-// rather than as seven open-coded HasKey calls that a later key would silently
+// rather than as eight open-coded HasKey calls that a later key would silently
 // fall out of.
-inline constexpr std::array<std::string_view, 7> kUaMetadataKeys = {
+inline constexpr std::array<std::string_view, 8> kUaMetadataKeys = {
     kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
-    kUaModel,    kUaMobile,          kUaWow64,
+    kUaModel,    kUaMobile,          kUaWow64,        kUaBrand,
 };
 
 }  // namespace camoucfg::keys

@@ -160,11 +160,19 @@ def fonts_keys(platform):
                 alias[name] = target
         allowed = allowed + sorted(fam["unique_names"])
     return {"fonts:list": allowed,
+            # queryLocalFonts() lists the captured host's faces (tab-joined ps, full, family, style), never the bundle's
+            "fonts:local": ["\t".join(f) for f in fam.get("faces", [])],
             "fonts:alias": alias,
             # src:local() names (the local() gate allows this map's keys) land on a face's full name (F-PSNAME)
             "fonts:aliasLocal": fonts["unique_map"][platform],
             # The list was captured on one OS version; the UA-CH claim follows it (rule 4).
             "ua:platformVersion": fam["platform_version"]}
+
+
+def voices_keys(platform):
+    """voices:list for the claimed OS from settings/voices.json (captured from stock); {} when the OS has no list."""
+    voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
+    return {"voices:list": voices[platform]} if platform in voices else {}
 
 
 def chrome_device_memory(value):
@@ -231,6 +239,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
         "ua:bitness": ud.get("bitness", ""),
         "ua:model": ud.get("model", ""),
         "ua:mobile": False, "ua:wow64": False,
+        "ua:brand": "Google Chrome",  # the pool's brands carry it; a Chromium build would ship two brands where Chrome ships three
         "navigator.hardwareConcurrency": nav["hardwareConcurrency"],
         "navigator.deviceMemory": chrome_device_memory(nav["deviceMemory"]),
         "navigator.maxTouchPoints": nav["maxTouchPoints"],
@@ -259,6 +268,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     if profile:
         config.update(webgl_keys(profile))
     config.update(fonts_keys(platform))
+    config.update(voices_keys(platform))
 
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)

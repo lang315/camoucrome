@@ -51,6 +51,7 @@ residual detail lives in that slice's measurement doc, not here.
 | 6 | **media-ii** | **partial** 09-05/09-06 | ★★☆ | M | Med | Blink modules (+browser) | sp4-media |
 | 7 | **metric-jitter SP** | **shipped** 09-05 | ★★☆ | M | Med | Blink platform/fonts | sp3a seed (coherence) |
 | 8 | **audio-ii** | **partial** 09-06 | ★★☆ | M–L | Med | Blink modules (render thread) | sp4-audio |
+| 8b | **windows-oracle** (fork vs stock Windows Chrome 153 on the host: brands, WebShare, WebBluetooth, Font Access, voices) | **shipped** 09-12 (`measurements/2026-09-12-windows-oracle.md`) | ★★★ | M | Low | embedder_support, chrome/renderer, blink font_access | B1 harness |
 | 9 | **fonts-ii** | **partial** 09-06, PS-name residual closed 09-11 | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
 | 10 | **webrtc-ii** | **partial** 09-06 | ★★☆ | S (shipped) / L (residual) | Low (shipped) | Blink platform/p2p (shipped); libwebrtc (residual) | sp4-webrtc-ip |
 

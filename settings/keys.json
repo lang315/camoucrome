@@ -120,6 +120,18 @@
    "type": "bool"
   },
   {
+   "name": "kUaBrand",
+   "key": "ua:brand",
+   "type": "string",
+   "doc": [
+    "The product brand of the UA-CH brand list (navigator.userAgentData.brands, Sec-CH-UA, Sec-CH-UA-Full-Version-List): e.g.",
+    "\"Google Chrome\". A Chromium-branded build has no product brand (embedder_support's GetUserAgentBrandList adds one only under",
+    "!CHROMIUM_BRANDING), so it ships Chromium + Not_A Brand where real Chrome ships three; the Windows oracle (2026-09-12) read",
+    "Google Chrome / Not_A Brand / Chromium from stock 153. With the key set, Chromium's own GenerateBrandVersionList + ShuffleBrandList",
+    "produce the stock order for the same seed (the major version). Absent => the build's real list (rule 5)."
+   ]
+  },
+  {
    "name": "kHumanizeEnabled",
    "key": "humanize:enabled",
    "type": "bool",
@@ -451,6 +463,18 @@
     "with unique names in fonts:alias, font-family: 'ArialMT' resolved on the fork where stock Windows does not.",
     "The generator emits it from settings/fonts.json unique_map for the claimed OS. Absent key => no aliasing (rule 5).",
     "Its keys are also what the src:local() gate allows (beside fonts:list), so fonts:list holds families only: fontconfig compares families ignoring blanks, and a unique name allowed for CSS ('SegoeUI') would resolve as its family where stock Windows does not."
+   ]
+  },
+  {
+   "name": "kFontsLocal",
+   "key": "fonts:local",
+   "type": "string_list",
+   "doc": [
+    "What queryLocalFonts() (Font Access) enumerates under a claim: one line per face, tab-separated",
+    "postscriptName, fullName, family, style, in the claimed host's order (stock sorts by PostScript name). Consulted in",
+    "FontAccess::DidGetEnumerationResponse after the real permission flow (user activation, the local-fonts prompt) has",
+    "granted, replacing the host enumeration -- which would list the bundle's own faces. The generator emits the captured host's",
+    "faces (settings/fonts.json families.<os>.faces). A malformed line is skipped. Absent => the real enumeration (rule 5)."
    ]
   },
   {
