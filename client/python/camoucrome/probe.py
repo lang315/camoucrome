@@ -50,6 +50,7 @@ def main():
     ap.add_argument("--extension", action="append", default=[])
     ap.add_argument("--spki", action="append", default=[])
     ap.add_argument("--arg", action="append", default=[], help="extra browser argv, verbatim")
+    ap.add_argument("--fonts-dir", help="bundled font dir (FONTCONFIG_FILE follows the claimed OS)")
     a = ap.parse_args()
     window = tuple(int(v) for v in a.window.split(",")) if a.window else None
     module = "patchright" if a.driver == "patchright" else "playwright"
@@ -57,7 +58,8 @@ def main():
     with sync_playwright() as pw:
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
-                     extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg])
+                     extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
+                     fonts_dir=a.fonts_dir)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         # SP2 4.2: a driver's init script must not be observable from the
         # main world. The probe page reports typeof window.__camou_init.

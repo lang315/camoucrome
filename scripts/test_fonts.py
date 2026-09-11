@@ -24,7 +24,7 @@ def test_alias_target_by_explicit_then_class_then_sans():
     assert g.alias_target(FONTS, "Windows", "Yu Gothic") == "Noto Sans CJK SC"
     assert g.alias_target(FONTS, "Windows", "Georgia") == "Liberation Serif"
     assert g.alias_target(FONTS, "Windows", "Some Unknown Family") == "Selawik"
-    assert g.alias_target(FONTS, "macOS", "Some Unknown Family") == "Inter"
+    assert g.alias_target(FONTS, "macOS", "Some Unknown Family") == "Inter Variable"
 
 
 def test_xml_is_strong_relative_and_covers_every_captured_family():
@@ -32,7 +32,7 @@ def test_xml_is_strong_relative_and_covers_every_captured_family():
     for os_name in ("Windows", "macOS"):
         root = ET.fromstring(g.fontconfig_xml(FONTS, os_name))
         d = root.find("dir")
-        assert d.get("prefix") == "relative" and d.text == "../fonts"
+        assert d.get("prefix") == "relative" and d.text == "../../fonts"
         assert root.find("cachedir").get("prefix") == "xdg"
         aliases = {a.find("family").text: a for a in root.findall("alias")}
         assert all(a.get("binding") == "strong" for a in aliases.values())

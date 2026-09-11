@@ -21,6 +21,10 @@ type contract struct {
 		AcceptLangArg     string   `json:"accept_lang_arg"`
 		ExtensionArgs     []string `json:"extension_args"`
 		SPKIArg           string   `json:"spki_arg"`
+		Fontconfig        struct {
+			Env   string            `json:"env"`
+			Files map[string]string `json:"files"`
+		} `json:"fontconfig"`
 	} `json:"launch"`
 }
 
@@ -160,5 +164,39 @@ func TestAcceptLangExtensionsAndSPKIMatchTheContract(t *testing.T) {
 	}
 	if got := args[len(c.Launch.BaseArgs)+1:]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("args %v != %v", got, want)
+	}
+}
+
+func TestFontconfigFollowsTheClaimedOS(t *testing.T) {
+	c := load(t)
+	if !reflect.DeepEqual(c.Launch.Fontconfig.Files, FontconfigFiles) || c.Launch.Fontconfig.Env != "FONTCONFIG_FILE" {
+		t.Fatalf("contract files %v != %v", c.Launch.Fontconfig.Files, FontconfigFiles)
+	}
+	root := t.TempDir()
+	fonts := root + "/fonts"
+	os.MkdirAll(fonts, 0o755)
+	os.MkdirAll(root+"/settings/fontconfig", 0o755)
+	os.WriteFile(root+"/settings/fontconfig/windows.conf", []byte("<fontconfig/>"), 0o644)
+	want := root + "/settings/fontconfig/windows.conf"
+	if got := FontconfigFor(Options{Config: map[string]any{"ua:platform": "Windows"}, FontsDir: fonts}); got != want {
+		t.Fatalf("windows: %q != %q", got, want)
+	}
+	if got := FontconfigFor(Options{Config: map[string]any{"ua:platform": "Linux"}, FontsDir: fonts}); got != "" {
+		t.Fatalf("linux claim must set nothing, got %q", got)
+	}
+	if got := FontconfigFor(Options{Preset: map[string]any{"os": "macOS"}, FontsDir: fonts}); !strings.HasSuffix(got, "settings/fontconfig/macos.conf") {
+		t.Fatalf("preset os: %q", got)
+	}
+	os.WriteFile(root+"/chrome", nil, 0o755)
+	if got := FontconfigFor(Options{Config: map[string]any{"ua:platform": "Windows"}, ExecutablePath: root + "/chrome"}); got != want {
+		t.Fatalf("fonts beside the executable: %q != %q", got, want)
+	}
+	env, _ := BuildEnv(Options{Config: map[string]any{"ua:platform": "Windows"}, FontsDir: fonts}, nil)
+	if env["FONTCONFIG_FILE"] != want {
+		t.Fatalf("env: %q", env["FONTCONFIG_FILE"])
+	}
+	env, _ = BuildEnv(Options{Config: map[string]any{"ua:platform": "Windows"}}, nil)
+	if _, ok := env["FONTCONFIG_FILE"]; ok {
+		t.Fatal("no fonts dir must set nothing")
 	}
 }

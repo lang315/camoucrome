@@ -4,7 +4,7 @@ list (SP6 4.4: no hand-maintained manifest, no installer, no launcher binary).
 
     scripts/package.py <chromium-src> [--out out/Release] [--platform linux-x64]
                        [--dist dist] [--runtime-deps-file F] [--allow-component]
-                       [--changeset-commit SHA]
+                       [--changeset-commit SHA] [--no-fonts]
     scripts/package.py --check dist/*.release.json
 
 The archive holds every file `gn desc <out> //chrome:chrome runtime_deps`
@@ -95,7 +95,7 @@ def changeset_commit(explicit=None):
         sys.exit(f"{ROOT} is not a git checkout: pass --changeset-commit <sha of the change-set commit>")
 
 
-def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None):
+def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False):
     args = read_args_gn(out)
     if args.get("is_component_build") == "true" and not allow_component:
         sys.exit("refusing a component build (is_component_build = true): use a release out dir "
@@ -127,12 +127,18 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)
+    # The open font bundle (scripts/fetch_fonts.py) and its per-OS fontconfig files, in the
+    # layout the launcher contract names: <root>/fonts and <root>/settings/fontconfig.
+    fonts = (ROOT / "fonts").is_dir() and not no_fonts
+    if fonts:
+        shutil.copytree(ROOT / "fonts", staging / "fonts", dirs_exist_ok=True)
+        shutil.copytree(ROOT / "settings" / "fontconfig", staging / "settings" / "fontconfig", dirs_exist_ok=True)
     stamp = {
         "name": name, "version": version, "platform": platform,
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
         "changeset_commit": changeset_commit(changeset),
         "branch_tip": git(src, "rev-parse", "HEAD"),
-        "args_gn": args, "runtime_deps": len(deps),
+        "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
     }
     (staging / "camoucrome-release.json").write_text(json.dumps(stamp, indent=2) + "\n")
@@ -173,6 +179,7 @@ def main():
     ap.add_argument("--runtime-deps-file")
     ap.add_argument("--allow-component", action="store_true")
     ap.add_argument("--no-archive", action="store_true")
+    ap.add_argument("--no-fonts", action="store_true", help="leave the font bundle out even when fonts/ exists")
     ap.add_argument("--changeset-commit", metavar="SHA",
                     help="change-set commit to stamp (required when the script is not inside a git checkout)")
     ap.add_argument("--check", nargs="+", metavar="STAMP")
@@ -185,7 +192,7 @@ def main():
     out = (src / a.out).resolve()
     deps = runtime_deps(src, out, a.runtime_deps_file)
     staging, stamp = stage(src, out, deps, a.platform, a.dist, a.allow_component,
-                           changeset=a.changeset_commit)
+                           changeset=a.changeset_commit, no_fonts=a.no_fonts)
     print(f"staged {stamp['runtime_deps']} runtime deps -> {staging}")
     if not a.no_archive:
         path = archive(staging, a.platform)

@@ -181,7 +181,7 @@
    "licence_url": "https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
-    "Inter"
+    "Inter Variable"
    ]
   }
  ],
@@ -197,11 +197,11 @@
    "emoji": "Noto Color Emoji"
   },
   "macOS": {
-   "sans-serif": "Inter",
+   "sans-serif": "Inter Variable",
    "serif": "Liberation Serif",
    "monospace": "Liberation Mono",
-   "system-ui": "Inter",
-   "ui-sans-serif": "Inter",
+   "system-ui": "Inter Variable",
+   "ui-sans-serif": "Inter Variable",
    "ui-serif": "Liberation Serif",
    "ui-monospace": "Liberation Mono",
    "emoji": "Noto Color Emoji"
@@ -218,14 +218,14 @@
   "Courier": "Liberation Mono",
   "Calibri": "Carlito",
   "Cambria": "Caladea",
-  "-apple-system": "Inter",
-  "BlinkMacSystemFont": "Inter",
-  "Helvetica Neue": "Inter",
-  ".AppleSystemUIFont": "Inter",
-  "San Francisco": "Inter",
-  "SF Pro": "Inter",
-  "SF Pro Text": "Inter",
-  "SF Pro Display": "Inter",
+  "-apple-system": "Inter Variable",
+  "BlinkMacSystemFont": "Inter Variable",
+  "Helvetica Neue": "Inter Variable",
+  ".AppleSystemUIFont": "Inter Variable",
+  "San Francisco": "Inter Variable",
+  "SF Pro": "Inter Variable",
+  "SF Pro Text": "Inter Variable",
+  "SF Pro Display": "Inter Variable",
   "Segoe UI Emoji": "Noto Color Emoji",
   "Apple Color Emoji": "Noto Color Emoji",
   "DejaVu Sans": "Selawik",
@@ -419,7 +419,7 @@
    "emoji": "Noto Color Emoji"
   },
   "macOS": {
-   "sans": "Inter",
+   "sans": "Inter Variable",
    "serif": "Liberation Serif",
    "mono": "Liberation Mono",
    "cjk": "Noto Sans CJK SC",

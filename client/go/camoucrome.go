@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mxschmitt/playwright-go"
@@ -40,6 +41,61 @@ type Options struct {
 	Extensions     []string // unpacked extension dirs (--load-extension)
 	SPKIList       []string // base64 SHA-256 SPKI hashes whose cert errors are ignored (a MITM CA)
 	ExtraArgs      []string
+	FontsDir       string // the bundled font dir; default "fonts" beside the executable when present
+}
+
+// FontconfigFiles mirrors settings/launcher.json launch.fontconfig.files:
+// the generated fontconfig of the claimed OS, relative to the fonts dir's parent.
+var FontconfigFiles = map[string]string{
+	"Windows": "settings/fontconfig/windows.conf",
+	"macOS":   "settings/fontconfig/macos.conf",
+}
+
+func claimedOS(o Options) string {
+	for _, v := range []any{o.Config, o.Preset} {
+		if v == nil {
+			continue
+		}
+		s, err := asJSON(v)
+		if err != nil {
+			continue
+		}
+		var m map[string]any
+		if json.Unmarshal([]byte(s), &m) != nil {
+			continue
+		}
+		for _, k := range []string{"ua:platform", "os"} {
+			if p, ok := m[k].(string); ok && p != "" {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+// FontconfigFor is the FONTCONFIG_FILE for the claimed OS (contract
+// launch.fontconfig): the conf beside the bundled fonts dir, which lives
+// beside the executable in an archive. Linux claim or no fonts dir: "".
+func FontconfigFor(o Options) string {
+	file, ok := FontconfigFiles[claimedOS(o)]
+	if !ok {
+		return ""
+	}
+	dir := o.FontsDir
+	if dir == "" && o.ExecutablePath != "" {
+		cand := filepath.Join(filepath.Dir(o.ExecutablePath), "fonts")
+		if st, err := os.Stat(cand); err == nil && st.IsDir() {
+			dir = cand
+		}
+	}
+	if dir == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(filepath.Join(dir, "..", file))
+	if err != nil {
+		return ""
+	}
+	return abs
 }
 
 // AcceptLangOf is the --accept-lang value the config implies:
@@ -111,6 +167,9 @@ func BuildEnv(o Options, base []string) (map[string]string, error) {
 	}
 	if o.Strict {
 		env["CAMOU_CONFIG_STRICT"] = "1"
+	}
+	if fc := FontconfigFor(o); fc != "" {
+		env["FONTCONFIG_FILE"] = fc
 	}
 	return env, nil
 }

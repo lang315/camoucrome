@@ -19,10 +19,34 @@ def _as_json(value):
     return value if isinstance(value, str) else json.dumps(value)
 
 
-def build_env(config=None, preset=None, strict=False, base=None):
+FONTCONFIG_ENV = "FONTCONFIG_FILE"
+FONTCONFIG_FILES = {"Windows": "settings/fontconfig/windows.conf", "macOS": "settings/fontconfig/macos.conf"}
+
+
+def _as_dict(v):
+    return json.loads(v) if isinstance(v, str) else (v or {})
+
+
+def fontconfig_for(config=None, preset=None, fonts_dir=None, executable_path=None):
+    """The FONTCONFIG_FILE for the claimed OS (contract launch.fontconfig): the
+    generated conf beside the bundled fonts dir, which lives beside the
+    executable in an archive. Linux claim or no fonts dir: None."""
+    os_name = _as_dict(config).get("ua:platform") or _as_dict(preset).get("os")
+    if os_name not in FONTCONFIG_FILES:
+        return None
+    if fonts_dir is None and executable_path is not None:
+        cand = os.path.join(os.path.dirname(os.path.abspath(str(executable_path))), "fonts")
+        fonts_dir = cand if os.path.isdir(cand) else None
+    if fonts_dir is None:
+        return None
+    return os.path.abspath(os.path.join(str(fonts_dir), os.pardir, FONTCONFIG_FILES[os_name]))
+
+
+def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None):
     """The child environment: every CAMOU_* of the parent dropped, then the
     given config/preset set. Dropping first is deliberate -- a stale
-    CAMOU_CONFIG_1 in the shell would otherwise win over `config`."""
+    CAMOU_CONFIG_1 in the shell would otherwise win over `config`.
+    `fontconfig` (from fontconfig_for) sets FONTCONFIG_FILE."""
     env = {k: v for k, v in (os.environ if base is None else base).items()
            if not k.startswith("CAMOU_")}
     if config is not None:
@@ -31,6 +55,8 @@ def build_env(config=None, preset=None, strict=False, base=None):
         env["CAMOU_PRESET"] = _as_json(preset)
     if strict:
         env["CAMOU_CONFIG_STRICT"] = "1"
+    if fontconfig:
+        env[FONTCONFIG_ENV] = fontconfig
     return env
 
 
@@ -87,7 +113,7 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
 
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None,
-           headless=True, args=(), extensions=(), spki_list=(), **options):
+           headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
     Never add_init_script anything a page could enumerate: both patchright
@@ -102,6 +128,9 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     extension directories (--load-extension); `spki_list` are base64
     SHA-256 SPKI hashes whose certificate errors are ignored (a MITM proxy's
     CA). The Accept-Language header follows the config's languages.
+    `fonts_dir` is the bundled font directory (default: `fonts` beside the
+    executable when present); FONTCONFIG_FILE then names the conf of the
+    claimed OS so its families resolve.
     """
     bad = FORBIDDEN_OPTIONS.intersection(options)
     if bad:
@@ -115,7 +144,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         executable_path=str(executable_path),
         headless=headless,
         ignore_default_args=True,
-        env=build_env(config, preset, strict),
+        env=build_env(config, preset, strict,
+                      fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path)),
         args=build_args(window, dpr, args, headless, user_data_dir,
                         accept_lang_of(config), extensions, spki_list),
         # Playwright otherwise emulates a 1280x720 viewport through

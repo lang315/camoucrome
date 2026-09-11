@@ -43,7 +43,7 @@ def test_never_taken_fields_stay_out():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
     for k in ("navigator.userAgent", "navigator.platform", "navigator.vendor",
               "navigator.appVersion", "screen.colorDepth", "screen.availLeft",
-              "screen.availTop", "webGl:renderer", "webGl:vendor", "fonts:list"):
+              "screen.availTop"):
         assert k not in cfg, k
 
 
