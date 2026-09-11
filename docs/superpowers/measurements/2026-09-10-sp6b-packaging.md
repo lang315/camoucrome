@@ -116,3 +116,16 @@ cyclic map that crashed the third cut's renderer), DevTools opens,
 six-driver sweep `ALL_PASS`. The third cut is superseded: its chrome
 recurses on a cyclic hand-written `fonts:alias` and its manifest carries
 the six developer fonts.
+
+**Fifth cut, 2026-09-11, the fonts-residuals bundle.** No relink (no C++
+changed: the unique-name `local()` path rides the existing alias hook);
+packaged from the same `out/Release` at `changeset_commit 7eb3b81da28f` /
+`branch_tip 85dfb6b3fc` with the twelve-family bundle (Gelasio, Wine
+Tahoma, the five-region Noto Sans CJK OTC replacing the SC OTF): **306
+files, 181,868,312 bytes (173 MiB)**, 221 s, extract 9 s, stamp `fonts:
+true`, `--check` ok. On the extracted tree: `verify_fonts_bundle.py` in
+archive mode **12/12** (F1–F11 with REDs), `verify_font_metrics.py`
+against the archived chrome and its own `fonts/` **5/5**, DevTools opens,
+six-driver sweep `ALL_PASS`. The fourth cut is superseded: its `fonts/`
+lacks Gelasio, so a Georgia request under the current manifest's alias
+would not resolve there.
