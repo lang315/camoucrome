@@ -143,7 +143,9 @@ def test_webgl_profile_keys_follow_the_claimed_os():
     assert "windows-intel-uhd-630-d3d11" in profiles
     keys = gen.webgl_keys(profiles["windows-intel-uhd-630-d3d11"])
     assert set(keys) == {"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer",
-                         "webGl:parameters", "webGl2:parameters", "webGl:supportedExtensions", "webGl2:supportedExtensions"}
+                         "webGl:parameters", "webGl2:parameters", "webGl:supportedExtensions", "webGl2:supportedExtensions",
+                         "webGl:shaderPrecisionFormats", "webGl2:shaderPrecisionFormats"}
+    assert keys["webGl:shaderPrecisionFormats"]["35633:36338"] == [127, 127, 23]  # VERTEX_SHADER, HIGH_FLOAT
     assert set(keys) <= KEYS
     assert "Direct3D11" in keys["webGl:renderer"] and keys["webGl2:renderer"] == keys["webGl:renderer"]
     assert all(k.isdigit() for k in keys["webGl:parameters"])
