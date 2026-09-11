@@ -383,6 +383,8 @@ two binaries this project ships and verifies. It does not cover `headless_shell`
 `headless_shell`", that binary needs the same fix `user_agent_utils.cc` got, and SP2a's
 verification (criteria 5-9, which run against `chrome`) would not notice its absence.
 
+**2026-09-11: closed by decision.** `headless_shell` is neither shipped nor tested — `scripts/package.py` targets `//chrome:chrome` only and the launcher contract's executable is `chrome` (`measurements/2026-09-11-chrome-binary-items.md` §4). §4.7's `window.chrome` diff against stock 153 is empty (same doc §1).
+
 **D5 — Rebase cost.** Any change inside `v8/src/inspector` will conflict on most Chromium
 rolls. If D1 lands on option (b) or (c), the maintenance cost belongs in SP6's planning and
 should be estimated before, not after.

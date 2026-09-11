@@ -124,3 +124,8 @@ named by SP5b; the fork derives nothing for it yet), and the shared
 generator core SP6 §4.5 asked for. Headed launches are unmeasured; the +2 px
 offset was measured headless only.
 
+## 5. 2026-09-11: three tables the generator now reads
+
+- **`settings/webgl/*.json`** — real-GPU profiles (`2026-09-11-webgl-profiles.md`); `--gpu <id>`, default the first profile for the claimed OS; emits identity, the numeric table, the extension list and the 12 precision cells on both contexts. The "No `webGl:*`" refusal above is closed.
+- **`settings/locale_zones.json`** — 46 locale tags → plausible IANA zones; `--timezone` is now optional (seeded choice from the row of `--locale`, else the pool's `navigator.language`); a locale outside the table still refuses with the old message. No GeoIP by decision (spec 2026-09-11 §4): a proxy-exit lookup is the caller's, this is the offline default. `test_gen.py` validates every zone against `zoneinfo`.
+- **`settings/fonts.json`** — the captured family list of the claimed OS becomes `fonts:list` (plus the macOS system-font keywords) and the generated `alias_map` becomes `fonts:alias` (`2026-09-11-fonts-bundle.md`). Linux claims get neither.

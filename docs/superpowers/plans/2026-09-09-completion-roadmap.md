@@ -272,7 +272,7 @@ Source: SP6 §4.3, §4.4, §6.
    the build scripts should refuse to run both) and **macOS build** (the Mac,
    Xcode). Chromium cannot cross-compile; this is the sharpest divergence from
    Camoufox's `multibuild.py`.
-3. **BLOCKED ON A DECISION (C)**: redistributing Windows/macOS font
+3. **SHIPPED 2026-09-11** (`measurements/2026-09-11-fonts-bundle.md`): decision C answered — no proprietary file; an OFL bundle (40 MB, `fetch_fonts.py`) + generated strong-alias fontconfig per claimed OS + the `fonts:alias` key (`fonts-iii-alias.patch`, because Skia's fontconfig path only accepts a same-name match); captured Windows (118) / macOS (186) family lists; generator emits `fonts:list` + `fonts:alias`; `verify_fonts_bundle.py` 4/4; the archive carries `fonts/`. Was: BLOCKED ON A DECISION (C): redistributing Windows/macOS font
    files is a licensing call, not a packaging step; until it is made the
    generator emits no `fonts:list` (sp6b-generator doc). **Font bundles**
    — Camoufox ships Windows/macOS/Linux font sets +
@@ -301,7 +301,7 @@ The next lever is therefore the harness itself. Each row names what it unblocks.
 
 | Harness | Unblocks |
 |---|---|
-| **B1. `chrome` target build on WSL** — **HARNESS PRESENT** since 2026-09-10 (`out/Default` component build drives every SP6b verify and the D slice; `out/Release` is the release archive). Extension loading is verified (A4 #3 L2). The rest of this cell is now a plain to-do list on that binary, not harness-gated: SP7 verification (A1); `window.chrome` shape (SP2 §4.7, deferred, now unblocked since D1 = "present as Chrome"); `Sec-CH-UA*` header + `userAgentData` channel verification (SP1a Task 8 — `content_shell` rebuilds `GetUserAgentMetadata` with `platform="Unknown"`, so the patched producer is **unverified end-to-end**); `navigator.plugins`/`pdfViewerEnabled` (Chrome has 5 PDF plugin entries, `content_shell` none); extension loading; `headless_shell`'s own `HeadlessChrome` token (SP2 D4 residual) |
+| **B1. `chrome` target build on WSL** — **HARNESS PRESENT** since 2026-09-10; the to-do list it carried is **closed 2026-09-11** (`measurements/2026-09-11-chrome-binary-items.md`): `window.chrome` tree == stock 153 (empty diff), plugins/`pdfViewerEnabled` == stock (no key), `Sec-CH-UA*`/`userAgentData` end-to-end was already 34/34 (SP1a Task 8), `X-Client-Data` absent over two launches on one profile where stock sends it on the second (SP7 P4), `headless_shell` closed by decision (not shipped, not tested). | — |
 | **B2. Stock same-revision build** | the `Object.getOwnPropertyNames(window)` diff — **non-negotiable rule 2 has never been verified**; SP2a deferred it pending a stock binary |
 | **B3. Windows + macOS hosts** | fonts-ii codepoint/system fallback and native completeness (the #44 lessons); codec matrix on the target OS; packaging (A5.2) |
 | **B4. Real network / STUN** | webrtc-ii public srflx address masking |
@@ -317,8 +317,7 @@ The next lever is therefore the harness itself. Each row names what it unblocks.
   settled; distributing H.264/AAC binaries is a legal/business call that gates
   A5 shipping anything. `package.py` stamps `args.gn` into every archive so
   the codec state of a given archive is on record; it does not decide.
-- **Font redistribution** (A5 #3) — same kind of call; the generator emits no
-  `fonts:list` until it is made.
+- **Font redistribution** (A5 #3) — **DECIDED 2026-09-11**: no proprietary file ships; open metric-compatible / coverage fonts under `fonts:alias` (`measurements/2026-09-11-fonts-bundle.md`).
 - **CRLSet / Origin Trials refresh** (SP7 D5) — how bundled data ages.
 - **SP7 D4 GN arg sites** — verify before writing into `build-args.gn`.
 - **One client package or two** (SP6 open decision) — decide when the shared
@@ -341,8 +340,8 @@ measurement, never an implementation.
 | `cssMedia:colorGamut`, `cssMedia:dynamicRange`, `cssMedia:prefersColorScheme` | **MEASURED 2026-09-11, not a tell** (`measurements/2026-09-11-d-gaps.md`: srgb/standard/light on every headless Chrome incl. the Mac reference; no key). Was: not spoofed. All three are host/display-driven and unmeasured; `color-gamut` is OS-correlated in practice (wide-gamut displays cluster on macOS), so a headless Linux answer beside a spoofed UA is a candidate tell; `prefers-color-scheme` follows the host theme | measure `MediaValues` (sp4a already patched `media_values.cc` for `device-*`); derive from claimed OS where a derivation is defensible, key only what cannot be derived |
 | `force-default-pointer` (`pointer`/`hover`/`any-pointer`) | **MEASURED 2026-09-11, tell**: `--headless=new` reports `pointer: none`/`hover: none`/`any-pointer: none` under any claim, headed reports fine/hover; **SHIPPED 2026-09-11** `d-pointer-touch.patch` (d-gaps doc §3: derived from the claimed OS family + `maxTouchPoints`, `verify_d_pointer_touch.py` 5/5, RED 1/5). Was: unmeasured on `--headless=new` and under Xvfb | measure; a headless `pointer: none` beside `maxTouchPoints: 0` desktop UA is the #26-class tell |
 | touchscreen coherence (`maxTouchPoints` ↔ `'ontouchstart' in window` ↔ `TouchEvent`) | **MEASURED 2026-09-11, tell**: `maxTouchPoints 5` with `ontouchstart` absent; `TouchEvent` is a function everywhere (no signal); **SHIPPED 2026-09-11** in `d-pointer-touch.patch` (touch feature detection follows `maxTouchPoints`; window keys under the claim == stock `--touch-events=enabled`, 240 = 240). Was: `maxTouchPoints` is spoofed; TouchEvent feature detection is host-driven | measure; note the rule-2 tension (window keys must match the stock build *for the claimed device*, which a touch-capable claim changes) |
-| `system-ui-font-spoofing`, CSS2 system font keywords (`caption`, `menu`, …) | **MEASURED 2026-09-11**: CSS2 keywords are Arial/16px on Linux and macOS alike (not a tell); `system-ui` is the host default sans vs San Francisco/Segoe UI (tell, blocked on A5 #3 fonts). Was: `system-ui` resolves to the host's fontconfig default on Linux, not the claimed OS's UI font; a CreepJS probe | measure `LayoutTheme::SystemFont` / font cache; derive from claimed OS |
-| bundled OS fonts + fontconfig | see A5.3 — the allowlist hides, it cannot add | packaging deliverable + resolve-verify |
+| `system-ui-font-spoofing`, CSS2 system font keywords (`caption`, `menu`, …) | **MEASURED 2026-09-11**: CSS2 keywords are Arial/16px on Linux and macOS alike (not a tell); `system-ui` is the host default sans vs San Francisco/Segoe UI (tell, **closed 2026-09-11** by the font bundle + `fonts:alias`, fonts-bundle doc F2/F3). Was: `system-ui` resolves to the host's fontconfig default on Linux, not the claimed OS's UI font; a CreepJS probe | measure `LayoutTheme::SystemFont` / font cache; derive from claimed OS |
+| bundled OS fonts + fontconfig | **SHIPPED 2026-09-11** (fonts-bundle doc): OFL bundle + fontconfig + `fonts:alias`, resolve-verify F1–F5 | — |
 | `showcursor` overlay | key `cursor:show` exists; the overlay was deferred in SP2b | small follow-on if a visible cursor matters for screencasts |
 | `humanize` micro-tremor (`distortPoints`) | deferred by decision 2026-08-29 (smooth cubic sufficient vs basic bot detection) | revisit only against a behavioural-biometric threat model |
 | addons (`addons`, uBO, `allowAddonNewtab`) | no extension support in `content_shell` | client-side `--load-extension` on the `chrome` target (A4.3, B1) |
@@ -421,8 +420,8 @@ removal, addon pinning/private-mode (headful UI — SP7 §8 scopes these out) ·
 6. **D gaps** — **MEASURED 2026-09-11** (`measurements/2026-09-11-d-gaps.md`):
    css media trio not a tell; headless pointer/hover and touch feature
    detection were tells and are **shipped** (`d-pointer-touch.patch`, §3);
-   `system-ui` and the CSS2 keyword fonts are the font-presence tell,
-   waiting on the A5 #3 decision.
+   `system-ui` and the CSS2 keyword fonts were the font-presence tell,
+   closed by the font bundle + `fonts:alias` (A5 #3, 2026-09-11).
 7. Harness-gated residuals (B3–B6) as their hosts appear.
 
 **First slice: SP7 Task 1 — stop the field-trial testing config from being
