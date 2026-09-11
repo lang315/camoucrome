@@ -122,3 +122,9 @@ un-measured beyond 75 s on `about:blank`); the `X-Client-Data` header (no
 seed, no ids — but assert it on a navigation to a Google host under B1);
 `content_shell` is not covered by this patch (it links none of these
 subsystems) and needs no lever.
+
+**2026-09-11, P4 (`X-Client-Data` under B1):** stock Chrome 153 on the
+box's Windows host sends `x-client-data` to `google.com/generate_204` on
+the second launch of a profile (the first stores the seed); the fork on
+the same two-launch shape: see `2026-09-11-chrome-binary-items.md` §5 and
+the ledger row for the count.

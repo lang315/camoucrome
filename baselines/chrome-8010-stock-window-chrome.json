@@ -1,0 +1,759 @@
+{
+ "provenance": {
+  "binary": "Google Chrome 153.0.8010.36 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
+  "captured": "2026-09-11",
+  "how": "scripts/capture_chrome_object.py --where winhost",
+  "ua_headless": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "ua_headed": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+ },
+ "headless": {
+  "typeofChrome": "object",
+  "protoIsObjectPrototype": true,
+  "tree": {
+   "app": {
+    "kind": "object",
+    "enumerable": true,
+    "configurable": true,
+    "writable": true,
+    "props": {
+     "InstallState": {
+      "kind": "object",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "props": {
+       "DISABLED": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "INSTALLED": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "NOT_INSTALLED": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       }
+      }
+     },
+     "RunningState": {
+      "kind": "object",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "props": {
+       "CANNOT_RUN": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "READY_TO_RUN": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "RUNNING": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       }
+      }
+     },
+     "getDetails": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "getDetails",
+      "str": "function getDetails() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     },
+     "getIsInstalled": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "getIsInstalled",
+      "str": "function getIsInstalled() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     },
+     "installState": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "installState",
+      "str": "function installState() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     },
+     "isInstalled": {
+      "kind": "boolean",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true
+     },
+     "runningState": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "runningState",
+      "str": "function runningState() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     }
+    }
+   },
+   "csi": {
+    "kind": "function",
+    "enumerable": true,
+    "configurable": true,
+    "writable": true,
+    "length": 0,
+    "name": "",
+    "str": "function () { [native code] }",
+    "props": {
+     "length": {
+      "kind": "number",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "name": {
+      "kind": "string",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "prototype": {
+      "kind": "object",
+      "enumerable": false,
+      "configurable": false,
+      "writable": true,
+      "props": {
+       "constructor": {
+        "kind": "function",
+        "enumerable": false,
+        "configurable": true,
+        "writable": true,
+        "length": 0,
+        "name": "",
+        "str": "function () { [native code] }"
+       }
+      }
+     }
+    }
+   },
+   "loadTimes": {
+    "kind": "function",
+    "enumerable": true,
+    "configurable": true,
+    "writable": true,
+    "length": 0,
+    "name": "",
+    "str": "function () { [native code] }",
+    "props": {
+     "length": {
+      "kind": "number",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "name": {
+      "kind": "string",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "prototype": {
+      "kind": "object",
+      "enumerable": false,
+      "configurable": false,
+      "writable": true,
+      "props": {
+       "constructor": {
+        "kind": "function",
+        "enumerable": false,
+        "configurable": true,
+        "writable": true,
+        "length": 0,
+        "name": "",
+        "str": "function () { [native code] }"
+       }
+      }
+     }
+    }
+   }
+  },
+  "loadTimes": {
+   "keys": [
+    "requestTime",
+    "startLoadTime",
+    "commitLoadTime",
+    "finishDocumentLoadTime",
+    "finishLoadTime",
+    "firstPaintTime",
+    "firstPaintAfterLoadTime",
+    "navigationType",
+    "wasFetchedViaSpdy",
+    "wasNpnNegotiated",
+    "npnNegotiatedProtocol",
+    "wasAlternateProtocolAvailable",
+    "connectionInfo"
+   ],
+   "startLoadTime_le_firstPaintTime": false,
+   "requestTime_le_startLoadTime": true,
+   "npn": "string"
+  },
+  "csi": {
+   "keys": [
+    "startE",
+    "onloadT",
+    "pageT",
+    "tran"
+   ],
+   "pageT_ge_0": true
+  },
+  "plugins": [
+   {
+    "name": "PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "Chrome PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "Chromium PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "Microsoft Edge PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "WebKit built-in PDF",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   }
+  ],
+  "mimeTypes": [
+   {
+    "type": "application/pdf",
+    "suffixes": "pdf",
+    "description": "Portable Document Format",
+    "plugin": "PDF Viewer"
+   },
+   {
+    "type": "text/pdf",
+    "suffixes": "pdf",
+    "description": "Portable Document Format",
+    "plugin": "PDF Viewer"
+   }
+  ],
+  "pdfViewerEnabled": true
+ },
+ "headed": {
+  "typeofChrome": "object",
+  "protoIsObjectPrototype": true,
+  "tree": {
+   "app": {
+    "kind": "object",
+    "enumerable": true,
+    "configurable": true,
+    "writable": true,
+    "props": {
+     "InstallState": {
+      "kind": "object",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "props": {
+       "DISABLED": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "INSTALLED": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "NOT_INSTALLED": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       }
+      }
+     },
+     "RunningState": {
+      "kind": "object",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "props": {
+       "CANNOT_RUN": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "READY_TO_RUN": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       },
+       "RUNNING": {
+        "kind": "string",
+        "enumerable": true,
+        "configurable": true,
+        "writable": true
+       }
+      }
+     },
+     "getDetails": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "getDetails",
+      "str": "function getDetails() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     },
+     "getIsInstalled": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "getIsInstalled",
+      "str": "function getIsInstalled() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     },
+     "installState": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "installState",
+      "str": "function installState() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     },
+     "isInstalled": {
+      "kind": "boolean",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true
+     },
+     "runningState": {
+      "kind": "function",
+      "enumerable": true,
+      "configurable": true,
+      "writable": true,
+      "length": 0,
+      "name": "runningState",
+      "str": "function runningState() { [native code] }",
+      "props": {
+       "length": {
+        "kind": "number",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       },
+       "name": {
+        "kind": "string",
+        "enumerable": false,
+        "configurable": true,
+        "writable": false
+       }
+      }
+     }
+    }
+   },
+   "csi": {
+    "kind": "function",
+    "enumerable": true,
+    "configurable": true,
+    "writable": true,
+    "length": 0,
+    "name": "",
+    "str": "function () { [native code] }",
+    "props": {
+     "length": {
+      "kind": "number",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "name": {
+      "kind": "string",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "prototype": {
+      "kind": "object",
+      "enumerable": false,
+      "configurable": false,
+      "writable": true,
+      "props": {
+       "constructor": {
+        "kind": "function",
+        "enumerable": false,
+        "configurable": true,
+        "writable": true,
+        "length": 0,
+        "name": "",
+        "str": "function () { [native code] }"
+       }
+      }
+     }
+    }
+   },
+   "loadTimes": {
+    "kind": "function",
+    "enumerable": true,
+    "configurable": true,
+    "writable": true,
+    "length": 0,
+    "name": "",
+    "str": "function () { [native code] }",
+    "props": {
+     "length": {
+      "kind": "number",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "name": {
+      "kind": "string",
+      "enumerable": false,
+      "configurable": true,
+      "writable": false
+     },
+     "prototype": {
+      "kind": "object",
+      "enumerable": false,
+      "configurable": false,
+      "writable": true,
+      "props": {
+       "constructor": {
+        "kind": "function",
+        "enumerable": false,
+        "configurable": true,
+        "writable": true,
+        "length": 0,
+        "name": "",
+        "str": "function () { [native code] }"
+       }
+      }
+     }
+    }
+   }
+  },
+  "loadTimes": {
+   "keys": [
+    "requestTime",
+    "startLoadTime",
+    "commitLoadTime",
+    "finishDocumentLoadTime",
+    "finishLoadTime",
+    "firstPaintTime",
+    "firstPaintAfterLoadTime",
+    "navigationType",
+    "wasFetchedViaSpdy",
+    "wasNpnNegotiated",
+    "npnNegotiatedProtocol",
+    "wasAlternateProtocolAvailable",
+    "connectionInfo"
+   ],
+   "startLoadTime_le_firstPaintTime": false,
+   "requestTime_le_startLoadTime": true,
+   "npn": "string"
+  },
+  "csi": {
+   "keys": [
+    "startE",
+    "onloadT",
+    "pageT",
+    "tran"
+   ],
+   "pageT_ge_0": true
+  },
+  "plugins": [
+   {
+    "name": "PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "Chrome PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "Chromium PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "Microsoft Edge PDF Viewer",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   },
+   {
+    "name": "WebKit built-in PDF",
+    "filename": "internal-pdf-viewer",
+    "description": "Portable Document Format",
+    "mimeTypes": [
+     {
+      "type": "application/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     },
+     {
+      "type": "text/pdf",
+      "suffixes": "pdf",
+      "description": "Portable Document Format"
+     }
+    ]
+   }
+  ],
+  "mimeTypes": [
+   {
+    "type": "application/pdf",
+    "suffixes": "pdf",
+    "description": "Portable Document Format",
+    "plugin": "PDF Viewer"
+   },
+   {
+    "type": "text/pdf",
+    "suffixes": "pdf",
+    "description": "Portable Document Format",
+    "plugin": "PDF Viewer"
+   }
+  ],
+  "pdfViewerEnabled": true
+ }
+}

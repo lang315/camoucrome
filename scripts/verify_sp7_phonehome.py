@@ -21,6 +21,8 @@ showed every caller firing within 2.5 s and the component updater's second
 wave at ~60 s, so 75 s covers both.
 
 Measurement: docs/superpowers/measurements/2026-09-09-sp7-phone-home.md
+P4 X-Client-Data on google.com over two launches on one profile: absent both
+   times (stock sends it on the second launch, from the seed the first stored).
 """
 import json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -119,13 +121,58 @@ def run_p3():
     notes.append(f"P3: hardwareConcurrency = {vals[0]} (expect 8)")
 
 
+def run_p4():
+    """X-Client-Data on a Google host (SP7 'still open', B1). Stock Chrome sends
+    the header only from a profile that already holds a variations seed with
+    ids, so a fresh profile proves nothing: measured 2026-09-11 on stock
+    Chrome 153 on the box's Windows host, two launches on one temp profile,
+    launch 1 -> no header on google.com/generate_204, launch 2 -> x-client-data
+    present (scripts/winhost.py cdp_headers). The fork, same two-launch shape:
+    no header either time, and no request to the variations/update hosts."""
+    import tempfile
+    from playwright.sync_api import sync_playwright
+    prof = tempfile.mkdtemp(prefix="camoucrome-p4-")
+    seen = []
+    for launch in (1, 2):
+        proc = None
+        try:
+            proc = lib_shell.launch(None, shell=lib_shell.CHROME,
+                                    extra_flags=lib_shell.CHROME_FLAGS + [f"--user-data-dir={prof}"])
+            with sync_playwright() as p:
+                browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
+                context = browser.contexts[0]
+                page = context.pages[0] if context.pages else context.new_page()
+                cdp = context.new_cdp_session(page)
+                reqs, extra = {}, []
+                cdp.on("Network.requestWillBeSent", lambda e: reqs.__setitem__(e["requestId"], e["request"]["url"]))
+                cdp.on("Network.requestWillBeSentExtraInfo", lambda e: extra.append(e))
+                cdp.send("Network.enable")
+                page.goto("https://www.google.com/generate_204", wait_until="load", timeout=30000)
+                page.wait_for_timeout(20000 if launch == 1 else 8000)
+                for e in extra:
+                    seen.append((launch, reqs.get(e["requestId"], "?"), {k.lower() for k in e["headers"]}))
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"P4 launch {launch}: {type(exc).__name__}: {exc}")
+            results["P4"] = False
+            return
+        finally:
+            if proc is not None:
+                lib_shell.shutdown(proc)
+    hosts = sorted({re.match(r"^[a-z]+://([^/?#]+)", u).group(1) for _, u, _ in seen if re.match(r"^[a-z]+://([^/?#]+)", u)})
+    xcd = [(l, u[:60]) for l, u, h in seen if "x-client-data" in h]
+    bad_hosts = [h for h in hosts if h in ("clientservices.googleapis.com", "update.googleapis.com")]
+    results["P4"] = bool(seen) and not xcd and not bad_hosts
+    notes.append(f"P4: {len(seen)} requests over two launches on one profile, hosts={hosts}, x-client-data on {xcd} (stock M153: on launch 2), variations/update hosts {bad_hosts}")
+
+
 def main():
     run_p1_p2()
     run_p3()
+    run_p4()
     for n in notes:
         print("note:", n)
     ok = True
-    for k in ("P1", "P2", "P3"):
+    for k in ("P1", "P2", "P3", "P4"):
         print(f"{k}: {'PASS' if results.get(k) else 'FAIL'}")
         ok = ok and bool(results.get(k))
     sys.exit(0 if ok else 1)
