@@ -25,10 +25,15 @@ F8 emoji presence by colour, not width: U+1F600 in "Segoe UI Emoji" under the
 F9 CJK region: 骨/直 in "Yu Gothic" (JP form) differ from "Microsoft YaHei" (SC)
    pixel-for-pixel; RED: an alias map sending Yu Gothic to the SC face gives equal.
 F10 RED (F-PSNAME): with family-level keys only, local("SegoeUI") errors.
-F11 with the unique names the generator emits: local("SegoeUI"), local("Segoe UI")
-   and local("SegoeUI-Bold") load, the loaded face is as wide as "Segoe UI";
+F11 with the unique names the generator emits (fonts:aliasLocal): local("SegoeUI"),
+   local("Segoe UI"), local("SegoeUI-Bold"), local("Georgia"), local("Calibri") and
+   local("Symbol") load, the SegoeUI face is as wide as "Segoe UI";
    local("Selawik") / local("Selawik-Regular") error (bundle names stay blocked);
    a worker's local("SegoeUI") status equals the page's (rule 3).
+F12 PostScript names are not CSS families: font-family "ArialMT" / "SegoeUI" /
+   "TimesNewRomanPSMT" stay unresolved, as measured on stock Windows (RED, twice:
+   with the unique names in fonts:alias they resolved; with them in fonts:list
+   "SegoeUI" resolved through fontconfig's blank-insensitive family compare).
 """
 import http.server
 import json
@@ -51,7 +56,8 @@ MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS",
 HOST_ONLY = ["DejaVu Sans", "Ubuntu", "Cantarell"]
 SPECIAL = ["system-ui", "Selawik", "Segoe UI", "Inter Variable", "-apple-system", "sans-serif"]
 PAR = ["Segoe UI", "Consolas", "Calibri"]  # F6: aliased under the Windows map, measured on both threads
-LOCALS = ["SegoeUI", "Segoe UI", "SegoeUI-Bold", "Selawik", "Selawik-Regular", "Tahoma-Bold"]  # F10/F11 local() names
+LOCALS = ["SegoeUI", "Segoe UI", "SegoeUI-Bold", "Georgia", "Calibri", "Symbol", "Selawik", "Selawik-Regular", "Tahoma-Bold"]  # F10/F11 local() names
+PSN = ["ArialMT", "SegoeUI", "TimesNewRomanPSMT"]  # F12: PostScript names as CSS families (stock Windows: unresolved)
 
 
 def text_for(family):
@@ -140,10 +146,12 @@ def main():
     results["F8 RED no bundle: Segoe UI Emoji paints 0 coloured pixels"] = r["emoji"] == 0
     notes.append(f"F8 RED coloured={r['emoji']}")
 
-    H.body = page(win_list + HOST_ONLY)
-    win_keys = {"fonts:list": win_list + FONTS["extra_allowed"]["Windows"] + sorted(FONTS["families"]["Windows"]["unique_names"]),
-                "fonts:alias": {**FONTS["alias_map"]["Windows"], **FONTS["unique_map"]["Windows"]}}
+    H.body = page(win_list + HOST_ONLY + PSN)
+    win_keys = {"fonts:list": win_list + FONTS["extra_allowed"]["Windows"],
+                "fonts:alias": FONTS["alias_map"]["Windows"], "fonts:aliasLocal": FONTS["unique_map"]["Windows"]}
     r = probe(url, {**WIN, **win_keys}, fd)
+    results["F12 PostScript names are not CSS families: ArialMT / SegoeUI / TimesNewRomanPSMT unresolved (stock Windows: unresolved)"] = (
+        not any(r["resolves"][n] for n in PSN))
     missing = [f for f in win_list if not r["resolves"][f]]
     leaked = [f for f in HOST_ONLY if r["resolves"][f]]
     w = r["widths"]
@@ -159,8 +167,8 @@ def main():
     r9 = probe(url, {**WIN, "fonts:list": win_list + FONTS["extra_allowed"]["Windows"], "fonts:alias": {**FONTS["alias_map"]["Windows"], "Yu Gothic": "Noto Sans CJK SC"}}, fd)
     results["F9 RED: Yu Gothic aliased to the SC face renders equal to Microsoft YaHei"] = r9["cjk"]["jp"] == r9["cjk"]["sc"]
     loc = r["local"]
-    results["F11 unique names: local(SegoeUI / Segoe UI / SegoeUI-Bold) load as wide as Segoe UI, local(Selawik*) error, worker status == page"] = (
-        all(loc[n]["status"] == "loaded" for n in ("SegoeUI", "Segoe UI", "SegoeUI-Bold"))
+    results["F11 unique names: local(SegoeUI / Segoe UI / SegoeUI-Bold / Georgia / Calibri / Symbol) load, SegoeUI as wide as Segoe UI, local(Selawik*) error, worker status == page"] = (
+        all(loc[n]["status"] == "loaded" for n in ("SegoeUI", "Segoe UI", "SegoeUI-Bold", "Georgia", "Calibri", "Symbol"))
         and same({"a": loc["SegoeUI"]["width"], "b": loc["Segoe UI"]["width"], "c": w["Segoe UI"]}, "a", "b", "c")
         and all(loc[n]["status"] == "error" for n in ("Selawik", "Selawik-Regular")) and r["wlocal"] == loc["SegoeUI"]["status"])
     notes.append("F11 local=" + json.dumps({n: (v["status"], v["width"] and round(v["width"], 2)) for n, v in loc.items()}) + f" worker={r['wlocal']}")
@@ -185,8 +193,8 @@ def main():
                          capture_output=True, text=True, timeout=120)
     emitted = json.loads(gen.stdout)["config"].get("fonts:list", []) if gen.returncode == 0 else None
     fam_part = set(emitted or []) & set(win_list)
-    results["F4 gen.py --os windows emits a fonts:list whose families F2 measured as resolving (plus unique names)"] = (
-        bool(fam_part) and fam_part <= resolving and "SegoeUI" in (emitted or []))
+    results["F4 gen.py --os windows emits a fonts:list whose families F2 measured as resolving (families only)"] = (
+        bool(fam_part) and fam_part <= resolving and "SegoeUI" not in (emitted or []))
     if not emitted:
         notes.append("F4 gen: " + gen.stderr[-300:])
     H.body = page(["Segoe UI", "A", "B"])

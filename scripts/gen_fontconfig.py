@@ -58,8 +58,11 @@ def alias_map(fonts, os_name):
 
 def unique_map(fonts, os_name):
     """Host full/PostScript name -> the target family's face full name of the same
-    style (else Regular): what local("SegoeUI") must land on. Identities are
-    omitted (a bundled file carrying the host's own names, e.g. Wine's Tahoma)."""
+    style (else Regular): what local("SegoeUI") must land on. Identities stay
+    (Wine's Tahoma carries the host's own names): the map's keys are also what
+    the local() gate allows, and fonts:list holds families only -- fontconfig
+    compares families ignoring blanks, so a unique name in the CSS allowlist
+    ("SegoeUI") would resolve as its family where stock Windows does not."""
     faces = {}
     for b in fonts["bundle"]:
         for f in b.get("faces", []):
@@ -68,7 +71,7 @@ def unique_map(fonts, os_name):
     for name, info in fonts["families"][os_name].get("unique_names", {}).items():
         tf = faces.get(alias_target(fonts, os_name, info["family"]), {})
         full = tf.get(info["style"]) or tf.get("Regular") or next(iter(tf.values()), None)
-        if full and full != name:
+        if full:
             out[name] = full
     return out
 

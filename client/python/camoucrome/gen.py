@@ -150,8 +150,10 @@ def fonts_keys(platform):
     if platform not in fonts["alias_map"]:
         return {}
     fam = fonts["families"][platform]
-    return {"fonts:list": fam["list"] + fonts["extra_allowed"][platform] + sorted(fam.get("unique_names", {})),
-            "fonts:alias": {**fonts["alias_map"][platform], **fonts.get("unique_map", {}).get(platform, {})},
+    return {"fonts:list": fam["list"] + fonts["extra_allowed"][platform],
+            "fonts:alias": fonts["alias_map"][platform],
+            # src:local() names (the local() gate allows this map's keys) land on a face's full name (F-PSNAME)
+            "fonts:aliasLocal": fonts["unique_map"][platform],
             # The list was captured on one OS version; the UA-CH claim follows it (rule 4).
             "ua:platformVersion": fam["platform_version"]}
 

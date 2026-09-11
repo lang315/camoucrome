@@ -359,6 +359,21 @@
         "fork. Absent fonts:alias constrains nothing: the list alone is the SP4",
         "allowlist and is coherent by itself."
       ]
+    },
+    {
+      "id": "fonts-alias-local-requires-list",
+      "keys": [
+        "fonts:aliasLocal",
+        "fonts:list"
+      ],
+      "relation": "requires-key",
+      "policy": "repair",
+      "repair": "set fonts:list to the families and unique names the local alias map's keys claim (gen.py emits both together)",
+      "why": [
+        "The src:local() twin of fonts-alias-requires-list: fonts:aliasLocal set, fonts:list absent. With no allowlist a",
+        "page may local(\"Selawik-Regular\") the bundle's own face beside a local(\"SegoeUI\") that lands on it -- a pair no",
+        "Windows host produces. Absent fonts:aliasLocal constrains nothing."
+      ]
     }
   ]
 }

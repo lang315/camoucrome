@@ -40,11 +40,15 @@ print(json.dumps(res))
     return json.loads([l for l in out.splitlines() if l.startswith("{")][-1])
 
 
+PV_PAGE = ("<!doctype html><title>pv</title><pre id=\"o\"></pre><script>navigator.userAgentData.getHighEntropyValues(['platformVersion'])"
+           ".then(h => { document.getElementById('o').textContent = JSON.stringify({platformVersion: h.platformVersion}); });</script>")
+
+
 def winhost_versions():
+    """OS build from CIM; UA-CH platformVersion read from stock Chrome on the same host, not from a table."""
     import winhost
     v = winhost.powershell("(Get-CimInstance Win32_OperatingSystem).Version").strip()
-    # UA-CH platformVersion: Windows 10 reports "10.0.0"; Windows 11 (build >= 22000) 13.0.0+.
-    return v, "10.0.0" if int(v.split(".")[2]) < 22000 else "15.0.0"
+    return v, winhost.dump_dom(PV_PAGE, args=("--virtual-time-budget=3000",))["platformVersion"]
 
 
 MAC_DIRS = ["/System/Library/Fonts", "/System/Library/Fonts/Supplemental", "/Library/Fonts",
@@ -63,8 +67,23 @@ def mac_names():
 
 
 def mac_versions():
+    """sw_vers, and UA-CH platformVersion from the Mac's stock Chrome headless (product version when no Chrome)."""
+    import tempfile
     v = subprocess.run(["sw_vers", "-productVersion"], capture_output=True, text=True, check=True).stdout.strip()
-    return v, v  # UA-CH platformVersion on macOS is the product version
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    if not pathlib.Path(chrome).exists():
+        return v, v
+    with tempfile.TemporaryDirectory() as td:
+        page = pathlib.Path(td) / "pv.html"
+        page.write_text(PV_PAGE)
+        try:
+            dom = subprocess.run([chrome, "--headless=new", "--disable-gpu", "--no-first-run", f"--user-data-dir={td}/p",
+                                  "--virtual-time-budget=3000", "--dump-dom", page.as_uri()], capture_output=True, text=True, timeout=60).stdout
+            import re
+            return v, json.loads(re.search(r'<pre id="o">(.*?)</pre>', dom, re.S).group(1))["platformVersion"]
+        except (subprocess.TimeoutExpired, AttributeError):  # this Mac's Chrome 151 hangs headless: the product version is what UA-CH reports on macOS
+            print("stock Chrome headless gave no platformVersion; using sw_vers", file=sys.stderr)
+            return v, v
 
 
 def unique_names(files, families):
@@ -73,8 +92,8 @@ def unique_names(files, families):
     for faces in files.values():
         for f in faces:
             if f["family"] in families:
-                for n in (f["full"], f["ps"]):
-                    if n and n != f["family"] and n not in out:
+                for n in (f["full"], f["ps"]):  # a Regular face's full name is often the family itself: local("Georgia")
+                    if n and n not in out:
                         out[n] = {"family": f["family"], "style": f["style"]}
     return out
 

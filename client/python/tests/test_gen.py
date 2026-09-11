@@ -182,7 +182,8 @@ def test_timezone_defaults_from_the_locale_table():
 
 def test_fonts_keys_carry_unique_names_and_the_platform_version_follows_the_list():
     k = gen.fonts_keys("Windows")
-    assert "SegoeUI" in k["fonts:list"] and k["fonts:alias"]["SegoeUI"] == "Selawik"
+    assert "SegoeUI" not in k["fonts:list"] and k["fonts:aliasLocal"]["SegoeUI"] == "Selawik" and "SegoeUI" not in k["fonts:alias"]
+    assert k["fonts:aliasLocal"]["Georgia"] == "Gelasio Regular" and k["fonts:alias"]["Georgia"] == "Gelasio"
     assert k["fonts:alias"]["Segoe UI"] == "Selawik" and k["ua:platformVersion"] == "10.0.0"
     assert gen.fonts_keys("macOS")["ua:platformVersion"] == gen.json.loads(
         (gen.ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))["families"]["macOS"]["platform_version"]

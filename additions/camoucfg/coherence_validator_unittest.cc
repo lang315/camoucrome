@@ -193,7 +193,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 14> kMutations = {{
+constexpr std::array<Mutation, 15> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -254,6 +254,8 @@ constexpr std::array<Mutation, 14> kMutations = {{
      "navigator.maxTouchPoints"},
     // An alias map with no allowlist: the bundle's own names would resolve.
     {"fonts-alias-requires-list", R"({"fonts:alias":{"Segoe UI":"Selawik"}})",
+     "fonts:list"},
+    {"fonts-alias-local-requires-list", R"({"fonts:aliasLocal":{"SegoeUI":"Selawik"}})",
      "fonts:list"},
 }};
 

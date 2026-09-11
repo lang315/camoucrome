@@ -238,6 +238,16 @@ inline constexpr char kFonts[] = "fonts:list";
 // A family-name alias map (fonts-iii): the requested CSS family (case-insensitive) is looked up as the target family before the platform lookup, in FontCache::GetFontPlatformData. Skia's fontconfig path accepts a match only when the resolved family equals the requested one (plus its own small metric-compatible table), so a fontconfig alias alone cannot make 'Segoe UI' render as the bundled Selawik; this key can. Pages see widths, never the resolved name. The generator emits it from settings/fonts.json alias_map for the claimed OS, beside fonts:list. Absent key => no aliasing (rule 5).
 inline constexpr char kFontsAlias[] = "fonts:alias";
 
+// The alias map for @font-face src:local() lookups (fonts-iii, F-PSNAME): the requested unique name -- a full or
+// PostScript name, or a family name used as one -- is looked up as the target FACE's full name. Consulted instead of
+// fonts:alias when FontCache::GetFontPlatformData runs a kLocalUniqueFace lookup, because the two consumers want
+// different targets (CSS wants a family, local() wants a face name: 'Georgia' -> 'Gelasio' for CSS but
+// 'Gelasio Regular' for local()) and a single map keyed by the same string cannot serve both -- measured 2026-09-11:
+// with unique names in fonts:alias, font-family: 'ArialMT' resolved on the fork where stock Windows does not.
+// The generator emits it from settings/fonts.json unique_map for the claimed OS. Absent key => no aliasing (rule 5).
+// Its keys are also what the src:local() gate allows (beside fonts:list), so fonts:list holds families only: fontconfig compares families ignoring blanks, and a unique name allowed for CSS ('SegoeUI') would resolve as its family where stock Windows does not.
+inline constexpr char kFontsAliasLocal[] = "fonts:aliasLocal";
+
 // Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or
 // 0 => no perturbation (rule 5).
 inline constexpr char kAudioSeed[] = "audio:seed";
@@ -323,7 +333,7 @@ inline constexpr char kWindowScreenX[] = "window.screenX";
 inline constexpr char kWindowScreenY[] = "window.screenY";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 84> kAllKeys = {
+inline constexpr std::array<std::string_view, 85> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -378,6 +388,7 @@ inline constexpr std::array<std::string_view, 84> kAllKeys = {
     kScreenColorDepth,
     kFonts,
     kFontsAlias,
+    kFontsAliasLocal,
     kAudioSeed,
     kAudioOutputLatency,
     kAudioBaseLatency,

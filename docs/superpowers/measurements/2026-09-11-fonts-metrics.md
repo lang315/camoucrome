@@ -108,15 +108,48 @@ data, no C++:
   484; `local("Selawik")` and `local("Selawik-Regular")` stay `error`
   (bundle names are never allowed); a dedicated worker's `local("SegoeUI")`
   status equals the page's (`loaded`). The Linux unique-name lookup does
-  see the bundle dir through `FONTCONFIG_FILE`, so no second hook was
-  needed and no archive relink. Variable fonts have one face, so a bold
-  request for Georgia lands on `Gelasio Regular` (recorded, not hidden).
+  see the bundle dir through `FONTCONFIG_FILE`. Variable fonts have one
+  face, so a bold request for Georgia lands on `Gelasio Regular`
+  (recorded, not hidden).
+
+**Review found the first version sampled the one target where a single
+map happens to work**, and it did need C++ after all. Two measurements:
+
+1. `local("Georgia")`, `local("Calibri")`, `local("Symbol")` → `error` on
+   the fork while stock Windows loads every installed family by its full
+   name. The hop landed on the *family* ("Gelasio"), and the unique-name
+   lookup matches full and PostScript names only; Gelasio's Regular face
+   is "Gelasio Regular" (Carlito, Caladea, Noto Sans Symbols 2 likewise).
+   Selawik and Liberation had passed only because their Regular faces are
+   named like their families. CSS wants a family, `local()` wants a face
+   name, and one dict keyed by "Georgia" cannot hold both.
+2. With the unique names in `fonts:alias` (or merely in `fonts:list`),
+   `font-family: "ArialMT"` / `"SegoeUI"` / `"TimesNewRomanPSMT"` resolved
+   on the fork; on stock Windows (measured, `--dump-dom`) none of them do.
+   The second cause is fontconfig's blank-insensitive family compare:
+   "SegoeUI" ≡ "Segoe UI" fires the strong alias, so any unique name that
+   passes the CSS allowlist resolves as its family.
+
+Fix, measured: a second map, **`fonts:aliasLocal`** (85th key), read by
+the `FontCache` hook only for `kLocalUniqueFace` lookups; `fonts:alias`
+stays the family map. The `local()` gate in `LocalFontFaceSource` allows
+a name that is in `fonts:list` *or* a key of the local map, so
+`fonts:list` holds families only (the generator no longer adds unique
+names to it). The manifest's `unique_map` keeps identity entries (Wine's
+"Tahoma", "Tahoma Bold") because its keys are what the gate allows; the
+one-hop guard makes an identity a no-op. The 15th invariant
+`fonts-alias-local-requires-list` is the local twin of the 14th. Rows:
+F11 now covers Georgia / Calibri / Symbol (411 / 373 / 524 px, loaded),
+**F12** keeps the three PostScript names unresolved as CSS families
+(RED twice, both recorded above). fonts-ii's six rows still pass.
 
 ## 5. The claim follows the list
 
 A family list is a fact about one OS version. The manifest now records
 where each was captured (`Windows 10.0.19045` → UA-CH `platformVersion`
-`"10.0.0"`; macOS `15.7.4` → `"15.7.4"`), and `gen.fonts_keys` emits
+`"10.0.0"`, read from stock Chrome's `getHighEntropyValues` on the host,
+not from a table; macOS `15.7.4` → `"15.7.4"` by `sw_vers`, because this
+Mac's Chrome 151 hangs headless), and `gen.fonts_keys` emits
 `ua:platformVersion` from it whenever it emits `fonts:list`, overriding
 the pool's value. Trade-off named: every generated Windows identity is a
 Windows 10 identity until a Windows 11 host is captured (Windows 11 adds
@@ -128,11 +161,12 @@ rightly lacks).
 | what | result |
 |---|---|
 | `verify_font_metrics.py` M1–M5 | 5/5 (table in §1; M2b/M6 as notes) |
-| `verify_fonts_bundle.py` F1–F11 with REDs | 12/12 (F2 116/116, F3 180/180, F6 parity, F7 cycle, F8 945 px / RED 0, F9 JP≠SC / RED equal, F10 RED, F11) |
+| `verify_fonts_bundle.py` F1–F12 with REDs | 13/13 (F2 116/116, F3 180/180, F6 parity, F7 cycle, F8 945 px / RED 0, F9 JP≠SC / RED equal, F10 RED, F11 six names, F12) |
+| `verify_fonts_ii.py` | 6/6 (the local() gate still refuses an unlisted family) |
 | `verify_sp6b_generator.py` N=10 | 36/36: 30 generated configs across 3 OSes with zero `camoucfg:` lines under strict, 5 Z rows, RED |
-| `run_coherence_tests.sh` | 7/7, 14 mutations |
+| `run_coherence_tests.sh` | 7/7, 15 mutations |
 | `test_fonts.py` + `test_gen.py` | 26 passed; `gen_fontconfig.py --check` PASS |
-| archive | fifth cut: packaging doc §3 |
+| archive | sixth cut (relinked for the local map): packaging doc §3 |
 
 ## 7. Closed by fact
 

@@ -1,5 +1,33 @@
+diff --git a/third_party/blink/renderer/core/css/local_font_face_source.cc b/third_party/blink/renderer/core/css/local_font_face_source.cc
+index bd812ded17..6f56355693 100644
+--- a/third_party/blink/renderer/core/css/local_font_face_source.cc
++++ b/third_party/blink/renderer/core/css/local_font_face_source.cc
+@@ -52,7 +52,10 @@ bool LocalFontFaceSource::IsLocalFontAvailable(
+   // CreateFontData, since IsValid() == IsLoading() || IsLocalFontAvailable().
+   if (!camoucfg::IsFontAllowed(
+           camoucfg::ScopeFor(font_selector_->GetExecutionContext()),
+-          font_name_.Utf8())) {
++          font_name_.Utf8()) &&
++      !camoucfg::FontAlias(
++          camoucfg::ScopeFor(font_selector_->GetExecutionContext()),
++          font_name_.Utf8(), /*unique_name=*/true)) {
+     return false;
+   }
+   // TODO(crbug.com/1025945): Properly handle Windows prior to 10 and Android.
+@@ -103,7 +106,10 @@ const SimpleFontData* LocalFontFaceSource::CreateFontData(
+   // Windows font service) and is NOT measured by verify_fonts_ii.py.
+   if (!camoucfg::IsFontAllowed(
+           camoucfg::ScopeFor(font_selector_->GetExecutionContext()),
+-          font_name_.Utf8())) {
++          font_name_.Utf8()) &&
++      !camoucfg::FontAlias(
++          camoucfg::ScopeFor(font_selector_->GetExecutionContext()),
++          font_name_.Utf8(), /*unique_name=*/true)) {
+     return nullptr;
+   }
+ 
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index 636e2ca661..c0dea8a047 100644
+index 636e2ca661..290ef733a4 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
 @@ -35,9 +35,13 @@
@@ -16,7 +44,7 @@ index 636e2ca661..c0dea8a047 100644
  #include "base/numerics/safe_conversions.h"
  #include "base/strings/escape.h"
  #include "base/system/sys_info.h"
-@@ -158,6 +162,31 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+@@ -158,6 +162,38 @@ const FontPlatformData* FontCache::GetFontPlatformData(
      AlternateFontName alternate_font_name) {
    TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
  
@@ -29,15 +57,22 @@ index 636e2ca661..c0dea8a047 100644
 +  // pages observe widths, never the resolved name. No key: the real lookup.
 +  if (creation_params.CreationType() == kCreateFontByFamily &&
 +      !creation_params.Family().empty()) {
++    // A src:local() lookup names a face (full or PostScript name) and lands on
++    // a face's full name (fonts:aliasLocal); a CSS request names a family and
++    // lands on a family (fonts:alias). One map cannot serve both.
++    const bool unique_name =
++        alternate_font_name == AlternateFontName::kLocalUniqueFace;
 +    if (std::optional<std::string> target = camoucfg::FontAlias(
-+            camoucfg::ScopeFor(nullptr), creation_params.Family().Utf8())) {
++            camoucfg::ScopeFor(nullptr), creation_params.Family().Utf8(),
++            unique_name)) {
 +      const AtomicString aliased =
 +          AtomicString::FromUtf8(base::as_byte_span(*target));
 +      // One hop only: a target that is itself a key of the map (a chain or a
 +      // cycle in hand-written config) is not followed, so the recursive call
 +      // below never aliases again. Bad config must not crash a renderer.
 +      if (aliased != creation_params.Family() &&
-+          !camoucfg::FontAlias(camoucfg::ScopeFor(nullptr), *target)) {
++          !camoucfg::FontAlias(camoucfg::ScopeFor(nullptr), *target,
++                               unique_name)) {
 +        return GetFontPlatformData(font_description,
 +                                   FontFaceCreationParams(aliased),
 +                                   alternate_font_name);
