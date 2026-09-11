@@ -187,4 +187,7 @@ def test_fonts_keys_carry_unique_names_and_the_platform_version_follows_the_list
     assert k["fonts:alias"]["Segoe UI"] == "Selawik" and k["ua:platformVersion"] == "10.0.0"
     assert gen.fonts_keys("macOS")["ua:platformVersion"] == gen.json.loads(
         (gen.ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))["families"]["macOS"]["platform_version"]
+    m = gen.fonts_keys("macOS")  # stock macOS resolves PostScript names as CSS families; Windows does not
+    assert "HelveticaNeue-Bold" in m["fonts:list"] and m["fonts:alias"]["HelveticaNeue-Bold"] == "Inter Variable"
+    assert m["fonts:aliasLocal"]["HelveticaNeue-Bold"] == "Inter Variable" and "HelveticaNeue-Bold" not in k["fonts:alias"]
     assert gen.fonts_keys("Linux") == {}

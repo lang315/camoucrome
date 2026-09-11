@@ -150,8 +150,17 @@ def fonts_keys(platform):
     if platform not in fonts["alias_map"]:
         return {}
     fam = fonts["families"][platform]
-    return {"fonts:list": fam["list"] + fonts["extra_allowed"][platform],
-            "fonts:alias": fonts["alias_map"][platform],
+    alias, allowed = dict(fonts["alias_map"][platform]), fam["list"] + fonts["extra_allowed"][platform]
+    if fam["ps_names_are_css_families"]:
+        # macOS Chrome resolves a PostScript/full name as a CSS family (font_matcher_mac.mm falls
+        # back to it; measured on stock); Windows does not. Same map keys, family targets.
+        for name, v in fam["unique_names"].items():
+            target = alias.get(v["family"], v["family"])
+            if target != name:
+                alias[name] = target
+        allowed = allowed + sorted(fam["unique_names"])
+    return {"fonts:list": allowed,
+            "fonts:alias": alias,
             # src:local() names (the local() gate allows this map's keys) land on a face's full name (F-PSNAME)
             "fonts:aliasLocal": fonts["unique_map"][platform],
             # The list was captured on one OS version; the UA-CH claim follows it (rule 4).

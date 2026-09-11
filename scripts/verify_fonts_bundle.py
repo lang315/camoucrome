@@ -30,6 +30,10 @@ F11 with the unique names the generator emits (fonts:aliasLocal): local("SegoeUI
    local("Symbol") load, the SegoeUI face is as wide as "Segoe UI";
    local("Selawik") / local("Selawik-Regular") error (bundle names stay blocked);
    a worker's local("SegoeUI") status equals the page's (rule 3).
+F13 under the macOS claim PostScript names ARE CSS families (stock macOS 15.7 Chrome
+   resolves them: font_matcher_mac.mm falls back to PostScript matching), so the
+   generator adds them to fonts:list and fonts:alias for that claim only;
+   F11-mac: five macOS unique names load through local(), Inter's own error.
 F12 PostScript names are not CSS families: font-family "ArialMT" / "SegoeUI" /
    "TimesNewRomanPSMT" stay unresolved, as measured on stock Windows (RED, twice:
    with the unique names in fonts:alias they resolved; with them in fonts:list
@@ -58,6 +62,8 @@ SPECIAL = ["system-ui", "Selawik", "Segoe UI", "Inter Variable", "-apple-system"
 PAR = ["Segoe UI", "Consolas", "Calibri"]  # F6: aliased under the Windows map, measured on both threads
 LOCALS = ["SegoeUI", "Segoe UI", "SegoeUI-Bold", "Georgia", "Calibri", "Symbol", "Selawik", "Selawik-Regular", "Tahoma-Bold"]  # F10/F11 local() names
 PSN = ["ArialMT", "SegoeUI", "TimesNewRomanPSMT"]  # F12: PostScript names as CSS families (stock Windows: unresolved)
+MAC_LOCALS = ["HelveticaNeue", "HelveticaNeue-Bold", "Menlo-Regular", "AppleColorEmoji", "Helvetica Neue", "Inter Variable", "InterVariable"]
+MAC_PSN = ["HelveticaNeue-Bold", "ArialMT", "Menlo-Regular"]  # F13: stock macOS resolves these as CSS families (measured 2026-09-11)
 
 
 def text_for(family):
@@ -68,7 +74,8 @@ def text_for(family):
     return FONTS["probe_text"]["sans"]
 
 
-def page(families):
+def page(families, locals_=None):
+    locals_ = locals_ or LOCALS
     return ("""<!doctype html><title>fonts</title><pre id="o"></pre><span id="k"></span><script>
 const FAM = %s, TEXT = %s, PT = %s;
 const ctx = document.createElement('canvas').getContext('2d');
@@ -94,7 +101,7 @@ const emoji = coloured('Segoe UI Emoji');
 const wk = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
 wk.onmessage = e => localsP.then(loc => out(e.data.widths, loc, e.data.local));
 wk.onerror = e => out({ error: String(e.message) }, {}, null);
-</script>""" % (json.dumps(families), json.dumps({f: text_for(f) for f in families}), json.dumps(FONTS["probe_text"]), json.dumps(SPECIAL), json.dumps(PAR), json.dumps(LOCALS))).encode()
+</script>""" % (json.dumps(families), json.dumps({f: text_for(f) for f in families}), json.dumps(FONTS["probe_text"]), json.dumps(SPECIAL), json.dumps(PAR), json.dumps(locals_))).encode()
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -147,8 +154,8 @@ def main():
     notes.append(f"F8 RED coloured={r['emoji']}")
 
     H.body = page(win_list + HOST_ONLY + PSN)
-    win_keys = {"fonts:list": win_list + FONTS["extra_allowed"]["Windows"],
-                "fonts:alias": FONTS["alias_map"]["Windows"], "fonts:aliasLocal": FONTS["unique_map"]["Windows"]}
+    from camoucrome import gen as G  # the generator's own keys, so the rows measure what ships
+    win_keys, mac_keys = G.fonts_keys("Windows"), G.fonts_keys("macOS")
     r = probe(url, {**WIN, **win_keys}, fd)
     results["F12 PostScript names are not CSS families: ArialMT / SegoeUI / TimesNewRomanPSMT unresolved (stock Windows: unresolved)"] = (
         not any(r["resolves"][n] for n in PSN))
@@ -178,8 +185,15 @@ def main():
         "error" not in r["wpar"] and all(round(r["par"][f], 2) == round(r["wpar"][f], 2) for f in PAR))
     notes.append(f"F6 main={ {f: round(r['par'][f], 2) for f in PAR} } worker={ {f: round(v, 2) for f, v in r['wpar'].items()} }")
 
-    H.body = page(mac_list + HOST_ONLY)
-    r = probe(url, {**MAC, "fonts:list": mac_list + FONTS["extra_allowed"]["macOS"], "fonts:alias": FONTS["alias_map"]["macOS"]}, fd)
+    H.body = page(mac_list + HOST_ONLY + MAC_PSN, MAC_LOCALS)
+    r = probe(url, {**MAC, **mac_keys}, fd)
+    results["F13 macOS claim: PostScript names ARE CSS families: HelveticaNeue-Bold / ArialMT / Menlo-Regular resolve (stock macOS: resolve)"] = (
+        all(r["resolves"][n] for n in MAC_PSN))
+    loc = r["local"]
+    results["F11-mac unique names: local(HelveticaNeue / HelveticaNeue-Bold / Menlo-Regular / AppleColorEmoji / Helvetica Neue) load, local(Inter Variable / InterVariable) error, worker == page"] = (
+        all(loc[n]["status"] == "loaded" for n in MAC_LOCALS[:5]) and all(loc[n]["status"] == "error" for n in MAC_LOCALS[5:])
+        and r["wlocal"] == loc[MAC_LOCALS[0]]["status"])
+    notes.append("F11-mac local=" + json.dumps({n: v["status"] for n, v in loc.items()}) + f" worker={r['wlocal']}")
     missing = [f for f in mac_list if not r["resolves"][f]]
     leaked = [f for f in HOST_ONLY if r["resolves"][f]]
     w = r["widths"]

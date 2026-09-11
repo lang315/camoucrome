@@ -109,6 +109,9 @@ cannot match a PS name. Recorded as a number, not reasoned about.
   font is over-blocked (F-PSNAME). Closing it needs a name→family resolution the
   family allowlist model does not have (`IsPlatformFontUniqueNameMatchAvailable`
   matches by unique name). The #44 name path; deferred.
+  **Closed 2026-09-11** (`2026-09-11-fonts-metrics.md` §4): the captured
+  hosts' full/PostScript names ride in `fonts:aliasLocal`, whose keys the
+  gate here also allows, landing on a bundled face's full name.
 - **Codepoint / system fallback.** `SystemFindFontForChar` / `GlobalFontFallback`
   / `CommonFontFallback` remain ungated — per-OS platform code, host-sensitive, a
   Linux measurement proves nothing (roadmap fonts-ii HIGH-risk item).

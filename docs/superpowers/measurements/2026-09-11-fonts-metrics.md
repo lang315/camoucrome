@@ -91,8 +91,12 @@ data, no C++:
   `winhost.powershell`, no fontTools there: 151 files, 188 faces) and on
   the Mac (`/System/Library/Fonts`, `Supplemental`, `/Library/Fonts`, the
   FontServices `Reserved` dir where PingFang lives) and writes
-  `families.<os>.unique_names` — 255 Windows, 383 macOS names, each with
-  its family and style — plus `os_version` / `platform_version` (§5).
+  `families.<os>.unique_names` — 348 Windows, 775 macOS names (Regular
+  faces' full names included, since `local("Georgia")` is a full-name
+  match; Apple's system fonts carry IDs 1/4/6 on the Mac platform only, so
+  the reader falls back to platform 1 — Menlo and Helvetica Neue were
+  invisible until it did), each with its family and style — plus
+  `os_version` / `platform_version` (§5).
 - `fetch_fonts.py` records each bundled file's faces; `gen_fontconfig.py`
   derives `unique_map.<os>`: host name → the target family's face full
   name of the same style (`SegoeUI-Bold` → `Selawik Bold`, `ArialMT` →
@@ -143,6 +147,23 @@ F11 now covers Georgia / Calibri / Symbol (411 / 373 / 524 px, loaded),
 **F12** keeps the three PostScript names unresolved as CSS families
 (RED twice, both recorded above). fonts-ii's six rows still pass.
 
+**macOS is the other way round, measured.** Stock Chrome 151 on the Mac
+(headed, small app window; headless hangs on this Mac) resolves
+`font-family: "HelveticaNeue-Bold"` / `"HelveticaNeue"` / `"ArialMT"` /
+`"Menlo-Regular"` as CSS families and loads every `local()` name tried;
+Blink's `font_matcher_mac.mm` `MatchFontFamily` falls back to
+PostScript-name matching by design. So the manifest records
+`ps_names_are_css_families` per OS (Windows false, macOS true, each with
+its measurement), and for a macOS claim the generator adds the unique
+names to `fonts:list` and to `fonts:alias` (mapped to the family target:
+`HelveticaNeue-Bold` → `Inter Variable`; a bold PostScript name lands on
+the family's Regular through CSS, recorded as a fidelity gap). Rows:
+**F13** the three PostScript names resolve under the macOS claim;
+**F11-mac** `local()` of five macOS names loads, Inter's own names error,
+worker status equals the page's. `verify_fonts_bundle.py` **15/15** on
+the box and in archive mode against the sixth cut (no C++ changed for the
+macOS side).
+
 ## 5. The claim follows the list
 
 A family list is a fact about one OS version. The manifest now records
@@ -161,7 +182,7 @@ rightly lacks).
 | what | result |
 |---|---|
 | `verify_font_metrics.py` M1–M5 | 5/5 (table in §1; M2b/M6 as notes) |
-| `verify_fonts_bundle.py` F1–F12 with REDs | 13/13 (F2 116/116, F3 180/180, F6 parity, F7 cycle, F8 945 px / RED 0, F9 JP≠SC / RED equal, F10 RED, F11 six names, F12) |
+| `verify_fonts_bundle.py` F1–F13 with REDs | 15/15 (F2 116/116, F3 180/180, F6 parity, F7 cycle, F8 945 px / RED 0, F9 JP≠SC / RED equal, F10 RED, F11 six names, F11-mac five names, F12, F13) |
 | `verify_fonts_ii.py` | 6/6 (the local() gate still refuses an unlisted family) |
 | `verify_sp6b_generator.py` N=10 | 36/36: 30 generated configs across 3 OSes with zero `camoucfg:` lines under strict, 5 Z rows, RED |
 | `run_coherence_tests.sh` | 7/7, 15 mutations |

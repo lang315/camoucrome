@@ -119,7 +119,11 @@ def main():
     files = winhost_names() if a.where == "winhost" else mac_names()
     os_version, platform_version = winhost_versions() if a.where == "winhost" else mac_versions()
     names = unique_names(files, set(fams))
-    d["families"]["Windows" if a.where == "winhost" else "macOS"] = {
+    os_key = "Windows" if a.where == "winhost" else "macOS"
+    old = d["families"].get(os_key, {})
+    d["families"][os_key] = {
+        # measured separately (stock Chrome's CSS matching of PostScript names), carried over
+        **{k: old[k] for k in ("ps_names_are_css_families", "ps_names_how") if k in old},
         "captured": datetime.date.today().isoformat(),
         "how": how + "; families in families.exclude (vendor software on this host) dropped", "list": fams,
         "os_version": os_version, "platform_version": platform_version,
