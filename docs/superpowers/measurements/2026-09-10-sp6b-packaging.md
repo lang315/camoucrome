@@ -85,3 +85,9 @@ refused ("refusing a component build").
 Not measured: a host without the build box's system libraries (the
 archive carries no libc/GTK; the same is true of upstream's tarball), and
 the `.zip` path on a real Windows tree.
+
+**Second cut, 2026-09-11.** `out/Release` relinked with `d-pointer-touch`
+and `android-claims-touch` (104 steps, 2 min), packaged at
+`changeset_commit 58b59ab` / `branch_tip bc91762ccd`: 254 files,
+155,877,928 bytes, 206 s, extract 8 s, `--check` ok; DevTools opens from
+the extracted tree, six-driver sweep `ALL_PASS` on its `chrome`.
