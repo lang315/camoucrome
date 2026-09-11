@@ -20,6 +20,8 @@ FILES = {"Windows": "windows.conf", "macOS": "macos.conf"}
 def alias_target(fonts, os_name, family):
     if family in fonts["alias"]:
         return fonts["alias"][family]
+    if any(family in b["provides"] for b in fonts["bundle"]):
+        return family  # a bundled file carrying the claimed name (Wine's Tahoma) resolves as itself
     for cls, names in fonts["script_class"].items():
         if family in names:
             return fonts["class_font"][os_name][cls]

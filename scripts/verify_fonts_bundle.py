@@ -20,6 +20,10 @@ F6 worker parity (rule 3): a dedicated worker's OffscreenCanvas measures the
    aliased families at the main thread's widths under the F2 config.
 F7 a cyclic fonts:alias ({A:B, B:A, Segoe UI:A}, non-strict) starts and loads
    the page: the alias is one hop, a bad map never recurses (no crash).
+F8 emoji presence by colour, not width: U+1F600 in "Segoe UI Emoji" under the
+   Windows claim + bundle paints >= 50 coloured pixels; RED: no bundle paints 0.
+F9 CJK region: 骨/直 in "Yu Gothic" (JP form) differ from "Microsoft YaHei" (SC)
+   pixel-for-pixel; RED: an alias map sending Yu Gothic to the SC face gives equal.
 """
 import http.server
 import json
@@ -66,8 +70,12 @@ const widths = Object.fromEntries(%s.map(f => [f, width(f.startsWith('-') || f =
 const k = document.getElementById('k'); k.style.font = 'caption'; k.textContent = S;
 const PAR = %s;
 const par = Object.fromEntries(PAR.map(f => [f, width(`"${f}"`)]));
-const out = wpar => { document.getElementById('o').textContent = JSON.stringify({ resolves, widths, caption: k.getBoundingClientRect().width, mono, par, wpar }); };
+const out = wpar => { document.getElementById('o').textContent = JSON.stringify({ resolves, widths, caption: k.getBoundingClientRect().width, mono, par, wpar, cjk, emoji }); };
 const src = `const c = new OffscreenCanvas(1, 1).getContext('2d'); postMessage(Object.fromEntries(${JSON.stringify(PAR)}.map(f => { c.font = '16px "' + f + '"'; return [f, c.measureText(${JSON.stringify(S)}).width]; })));`;
+const glyph = (fam, ch) => { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const x = c.getContext('2d'); x.font = '48px "' + fam + '"'; x.fillText(ch, 4, 52); return c.toDataURL(); };
+const coloured = fam => { const c = document.createElement('canvas'); c.width = 48; c.height = 48; const x = c.getContext('2d'); x.font = '32px "' + fam + '"'; x.fillText('\\u{1F600}', 4, 38); const d = x.getImageData(0, 0, 48, 48).data; let n = 0; for (let i = 0; i < d.length; i += 4) { if (d[i + 3] > 0 && Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 32) n++; } return n; };
+const cjk = { jp: ['\\u9AA8', '\\u76F4'].map(ch => glyph('Yu Gothic', ch)), sc: ['\\u9AA8', '\\u76F4'].map(ch => glyph('Microsoft YaHei', ch)) };
+const emoji = coloured('Segoe UI Emoji');
 const wk = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
 wk.onmessage = e => out(e.data);
 wk.onerror = e => out({ error: String(e.message) });
@@ -120,6 +128,8 @@ def main():
     r = probe(url)
     results["F1 RED no bundle: Segoe UI unresolvable, DejaVu Sans resolves"] = (
         r["resolves"]["Segoe UI"] is False and r["resolves"]["DejaVu Sans"] is True)
+    results["F8 RED no bundle: Segoe UI Emoji paints 0 coloured pixels"] = r["emoji"] == 0
+    notes.append(f"F8 RED coloured={r['emoji']}")
 
     H.body = page(win_list + HOST_ONLY)
     r = probe(url, {**WIN, "fonts:list": win_list + FONTS["extra_allowed"]["Windows"], "fonts:alias": FONTS["alias_map"]["Windows"]}, fd)
@@ -132,6 +142,11 @@ def main():
     if missing or leaked or not same(w, "system-ui", "Segoe UI"):
         notes.append(f"F2 missing={missing[:8]} leaked={leaked} widths={ {k: round(v, 2) for k, v in w.items()} } caption={r['caption']:.2f}")
     resolving = {f for f in win_list if r["resolves"][f]}
+    results["F8 Windows claim + bundle: U+1F600 in Segoe UI Emoji paints >= 50 coloured pixels"] = r["emoji"] >= 50
+    notes.append(f"F8 coloured={r['emoji']}")
+    results["F9 CJK region: Yu Gothic (JP) glyphs 骨/直 differ from Microsoft YaHei (SC)"] = any(a != b for a, b in zip(r["cjk"]["jp"], r["cjk"]["sc"]))
+    r9 = probe(url, {**WIN, "fonts:list": win_list + FONTS["extra_allowed"]["Windows"], "fonts:alias": {**FONTS["alias_map"]["Windows"], "Yu Gothic": "Noto Sans CJK SC"}}, fd)
+    results["F9 RED: Yu Gothic aliased to the SC face renders equal to Microsoft YaHei"] = r9["cjk"]["jp"] == r9["cjk"]["sc"]
     results["F6 worker parity: a worker's OffscreenCanvas widths of Segoe UI/Consolas/Calibri == the main thread's"] = (
         "error" not in r["wpar"] and all(round(r["par"][f], 2) == round(r["wpar"][f], 2) for f in PAR))
     notes.append(f"F6 main={ {f: round(r['par'][f], 2) for f in PAR} } worker={ {f: round(v, 2) for f, v in r['wpar'].items()} }")

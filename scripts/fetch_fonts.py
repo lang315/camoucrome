@@ -9,6 +9,7 @@ import json
 import pathlib
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -24,7 +25,16 @@ def get(url):
         ctx = ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         pass
-    return urllib.request.urlopen(req, timeout=180, context=ctx).read()
+    try:
+        return urllib.request.urlopen(req, timeout=180, context=ctx).read()
+    except urllib.error.URLError as e:
+        if "CERTIFICATE_VERIFY_FAILED" not in str(e):
+            raise
+        # A system HTTPS proxy that re-signs TLS (a local VPN/inspection app) fails
+        # verification; retry direct, still verified. The sha256 pins are the real gate.
+        print(f"  {url.rsplit('/', 1)[1]}: TLS verification failed via the system proxy, retrying without it", file=sys.stderr)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ctx))
+        return opener.open(req, timeout=180).read()
 
 
 def fetch(entry, dest):
