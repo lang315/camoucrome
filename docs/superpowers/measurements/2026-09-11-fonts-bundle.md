@@ -34,7 +34,11 @@ fonts excluded by name in `families.exclude`) and 180 from the Mac
 Hack Nerd Font ×3, JetBrains Mono ×2, Noto Emoji — excluded because their
 `Location` sits under `~/Library/Fonts`, not `/System`: a list that carries
 one developer font identifies the generator, every macOS identity claims the
-whole list), with provenance in the manifest.
+whole list). The Windows list got the same location screen after the fact:
+every entry of the `HKLM`/`HKCU` `...\CurrentVersion\Fonts` hives resolves
+under `C:\Windows\Fonts` and `%LOCALAPPDATA%\Microsoft\Windows\Fonts` is
+empty (0 non-system entries), so the two ASUS names were the whole
+remainder. Provenance in the manifest.
 
 ## 2. Two layers, because one was measured insufficient
 
@@ -103,8 +107,10 @@ same system fallback either way and read as resolved).
 | F6 worker parity (rule 3): a dedicated worker's `OffscreenCanvas` widths of Segoe UI / Consolas / Calibri == the main thread's under the F2 config | PASS, 416 / 540 / 373 on both |
 | F7 cyclic `fonts:alias` `{A:B, B:A, "Segoe UI":A}`, non-strict, page requesting all three: chrome starts and the page reports | PASS (before the one-hop guard this was the renderer crash) |
 
-Before the C++ alias (conf only): F2/F3 failed with `system-ui` 416 px vs
-Selawik 373 px and every mono/symbol family unresolved — the measurement
+Before the C++ alias (conf only): F2/F3 failed with `system-ui` at the
+system fallback's width and every aliased family at the allowlist's
+fallback width (373 px for the Latin probe string; Selawik itself measures
+416 px when allowed, which is what `Segoe UI` reads after the alias) and every mono/symbol family unresolved — the measurement
 that produced §2's second layer. `4 PASS 0 FAIL` after; `6 PASS 0 FAIL`
 with F6/F7 (the probe now waits for `#o`, since a worker reports after
 load). The width test cannot tell Carlito from the allowlist's fallback
