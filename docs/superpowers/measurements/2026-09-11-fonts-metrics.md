@@ -170,7 +170,9 @@ A family list is a fact about one OS version. The manifest now records
 where each was captured (`Windows 10.0.19045` → UA-CH `platformVersion`
 `"10.0.0"`, read from stock Chrome's `getHighEntropyValues` on the host,
 not from a table; macOS `15.7.4` → `"15.7.4"` by `sw_vers`, because this
-Mac's Chrome 151 hangs headless), and `gen.fonts_keys` emits
+Mac's Chrome 151 hangs headless — the headed stock run in §4 read the same
+`"15.7.4"` from `getHighEntropyValues`, so both sources agree), and
+`gen.fonts_keys` emits
 `ua:platformVersion` from it whenever it emits `fonts:list`, overriding
 the pool's value. Trade-off named: every generated Windows identity is a
 Windows 10 identity until a Windows 11 host is captured (Windows 11 adds

@@ -783,6 +783,8 @@
  },
  "families": {
   "Windows": {
+   "ps_names_are_css_families": false,
+   "ps_names_how": "measured 2026-09-11 on stock Chrome 153, Windows 10 host: font-family ArialMT / SegoeUI / SegoeUI-Bold / TimesNewRomanPSMT unresolved (width test)",
    "captured": "2026-09-11",
    "how": "PowerShell System.Drawing.Text.InstalledFontCollection on the build box's Windows 10 host (ssh buildpc); families in families.exclude (vendor software on this host) dropped",
    "list": [
@@ -2299,9 +2301,7 @@
      "family": "Yu Gothic UI Semilight",
      "style": "Regular"
     }
-   },
-   "ps_names_are_css_families": false,
-   "ps_names_how": "measured 2026-09-11 on stock Chrome 153, Windows 10 host: font-family ArialMT / SegoeUI / SegoeUI-Bold / TimesNewRomanPSMT unresolved (width test)"
+   }
   },
   "macOS": {
    "captured": "2026-09-11",
