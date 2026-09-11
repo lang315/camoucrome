@@ -65,6 +65,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kScreenWidth, kScreenHeight, kScreenAvailWidth, kScreenAvailHeight,
       kScreenAvailLeft, kScreenAvailTop, kScreenColorDepth,
       kFonts,
+      kFontsAlias,
       kAudioSeed, kAudioOutputLatency, kAudioBaseLatency,
       kAudioMaxChannelCount,
       kMediaDevicesEnabled, kMediaDevicesMicros, kMediaDevicesWebcams,

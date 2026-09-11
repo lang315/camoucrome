@@ -41,10 +41,33 @@ def fontconfig_xml(fonts, os_name):
     return "\n".join(out)
 
 
+def alias_map(fonts, os_name):
+    """Every captured or explicitly aliased family -> its bundled target, minus
+    identities: what the generator emits as fonts:alias (the C++ FontCache
+    alias; fontconfig's own alias cannot rename a match for Skia)."""
+    bundled = {f for b in fonts["bundle"] for f in b["provides"]}
+    out = {}
+    for fam in sorted(set(fonts["families"][os_name]["list"]) | set(fonts["alias"]) | set(fonts["generic"][os_name])):
+        target = fonts["generic"][os_name].get(fam) or alias_target(fonts, os_name, fam)
+        if fam not in bundled and target != fam:
+            out[fam] = target
+    return out
+
+
 def main():
-    fonts = json.loads((ROOT / "settings" / "fonts.json").read_text())
+    fp = ROOT / "settings" / "fonts.json"
+    fonts = json.loads(fp.read_text(encoding="utf-8"))
     check = "--check" in sys.argv
     bad = 0
+    want_map = {os_name: alias_map(fonts, os_name) for os_name in FILES}
+    if fonts.get("alias_map") != want_map:
+        if check:
+            print("STALE settings/fonts.json alias_map")
+            bad += 1
+        else:
+            fonts["alias_map"] = want_map
+            fp.write_text(json.dumps(fonts, indent=1, ensure_ascii=False) + "\n")
+            print("wrote alias_map into settings/fonts.json:", {k: len(v) for k, v in want_map.items()})
     for os_name, f in FILES.items():
         p = ROOT / "settings" / "fontconfig" / f
         want = fontconfig_xml(fonts, os_name)

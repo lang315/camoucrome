@@ -284,3 +284,19 @@ TEST(IsFontAllowedTest, PublicApiForwardsForTheAbsentCase) {
 
 }  // namespace
 }  // namespace camoucfg::internal
+
+// fonts-iii: the alias map is read case-insensitively on the requested name;
+// an absent key, an unknown family or an empty target aliases nothing.
+TEST(FontAliasTest, AliasIsCaseInsensitiveAndAbsentAliasesNothing) {
+  base::DictValue cfg;
+  EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Segoe UI").has_value());
+  base::DictValue map;
+  map.Set("Segoe UI", "Selawik");
+  map.Set("Consolas", "Liberation Mono");
+  map.Set("Empty", "");
+  cfg.Set(camoucfg::keys::kFontsAlias, std::move(map));
+  EXPECT_EQ(camoucfg::internal::FontAliasFrom(cfg, "segoe ui"), "Selawik");
+  EXPECT_EQ(camoucfg::internal::FontAliasFrom(cfg, "Consolas"), "Liberation Mono");
+  EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Selawik").has_value());
+  EXPECT_FALSE(camoucfg::internal::FontAliasFrom(cfg, "Empty").has_value());
+}

@@ -169,7 +169,7 @@ Source: `specs/2026-08-26-sp5-coherence-engine-design.md` §4.3–§4.5.
    (`mediaDevices:seed` non-zero when enabled, counts ≈ real), network (three UA
    channels agree). Each entry lands with its mutation test or it is
    documentation, not enforcement.
-2. **WebGL profile database** — **BLOCKED 2026-09-10**: needs captures on
+2. **WebGL profile database** — **SHIPPED 2026-09-11** (`measurements/2026-09-11-webgl-profiles.md`: two real-GPU profiles in `settings/webgl/`, Intel UHD 630 D3D11 from stock Chrome 153 on the box's Windows host and Apple M1 Pro Metal from the Mac; `gen.py --gpu`; `verify_webgl_profile.py` 4/4 incl. the 12 precision cells; more rows are one capture each). Was BLOCKED 2026-09-10: needs captures on
    real hardware on the OS they claim; the box gives SwiftShader, the Mac
    gives no WebGL headless, a non-headless launch opens a window on the
    user's machine. `scripts/capture_preset.py` exists and produces the file
