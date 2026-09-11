@@ -3755,3 +3755,5 @@ list carried 6 user-installed dev fonts (Hack Nerd Font x3, JetBrains Mono x2, N
 strict, zone == table); F6 worker parity for the alias (OffscreenCanvas 416/540/373 both threads); probe waits for #o;
 winhost cdp helpers delete their temp profiles (12 dirs / 247 MB cleaned on the host); CLAUDE.md layout rows for
 fonts.json/fontconfig/webgl/locale_zones/winhost. Box tip 85dfb6b3fc fonts-iii-alias (amended); export gate empty; sync 39.
+Fourth cut 2026-09-11: out/Release relink 49 steps 48 s; changeset 65014e08bf tip 85dfb6b3fc; 300 files 181,546,064 B;
+archive-mode fonts 6/6, DevTools OK, driver sweep ALL_PASS. Third cut superseded (recursive alias, 186-list manifest).

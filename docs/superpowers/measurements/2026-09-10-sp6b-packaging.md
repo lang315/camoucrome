@@ -104,3 +104,15 @@ six-driver sweep `ALL_PASS`. The first attempt at this cut shipped no
 fonts because the box's copy of `package.py` predated the fonts code — the
 stamp's `fonts: false` said so; the doc's layout rule ("copy the packager
 the repo has") is what caught it.
+
+**Fourth cut, 2026-09-11, after review.** `out/Release` relinked with the
+amended `fonts-iii-alias` (one-hop alias; 49 steps, 48 s — an incremental
+release relink after one Blink file is under a minute, the 30+ min figure
+was the first link) and packaged at `changeset_commit 65014e08bf` /
+`branch_tip 85dfb6b3fc`: **300 files, 181,546,064 bytes (173 MiB)**,
+extract 9 s, stamp `fonts: true`, `--check` ok. On the extracted tree:
+`verify_fonts_bundle.py` in archive mode **6/6** (F6 worker parity, F7 the
+cyclic map that crashed the third cut's renderer), DevTools opens,
+six-driver sweep `ALL_PASS`. The third cut is superseded: its chrome
+recurses on a cyclic hand-written `fonts:alias` and its manifest carries
+the six developer fonts.
