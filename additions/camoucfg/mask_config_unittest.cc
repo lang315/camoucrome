@@ -11,6 +11,7 @@
 
 #include "base/test/gtest_util.h"
 #include "base/values.h"
+#include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

@@ -128,17 +128,17 @@
    ]
   },
   {
-   "name": "Noto Sans Symbols",
-   "family": "Noto Sans Symbols",
-   "url": "https://github.com/google/fonts/raw/main/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
-   "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
+   "name": "Noto Sans Symbols 2",
+   "family": "Noto Sans Symbols 2",
+   "url": "https://github.com/google/fonts/raw/main/ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf",
+   "sha256": "7d5fb73b7ca67a6798101741f5d280a3d016a56a197afcd4199dbb57b4b82a21",
    "files": [
-    "NotoSansSymbols[wght].ttf"
+    "NotoSansSymbols2-Regular.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
-    "Noto Sans Symbols"
+    "Noto Sans Symbols 2"
    ]
   },
   {
@@ -415,7 +415,7 @@
    "serif": "Liberation Serif",
    "mono": "Liberation Mono",
    "cjk": "Noto Sans CJK SC",
-   "symbol": "Noto Sans Symbols",
+   "symbol": "Noto Sans Symbols 2",
    "emoji": "Noto Color Emoji"
   },
   "macOS": {
@@ -423,7 +423,7 @@
    "serif": "Liberation Serif",
    "mono": "Liberation Mono",
    "cjk": "Noto Sans CJK SC",
-   "symbol": "Noto Sans Symbols",
+   "symbol": "Noto Sans Symbols 2",
    "emoji": "Noto Color Emoji"
   }
  },
@@ -799,7 +799,7 @@
    "Georgia": "Liberation Serif",
    "Helvetica": "Liberation Sans",
    "Helvetica Neue": "Inter Variable",
-   "HoloLens MDL2 Assets": "Noto Sans Symbols",
+   "HoloLens MDL2 Assets": "Noto Sans Symbols 2",
    "Impact": "Selawik",
    "Ink Free": "Selawik",
    "Javanese Text": "Selawik",
@@ -813,7 +813,7 @@
    "MV Boli": "Selawik",
    "Malgun Gothic": "Noto Sans CJK SC",
    "Malgun Gothic Semilight": "Selawik",
-   "Marlett": "Noto Sans Symbols",
+   "Marlett": "Noto Sans Symbols 2",
    "Microsoft Himalaya": "Selawik",
    "Microsoft JhengHei": "Noto Sans CJK SC",
    "Microsoft JhengHei Light": "Selawik",
@@ -841,17 +841,17 @@
    "SF Pro Display": "Inter Variable",
    "SF Pro Text": "Inter Variable",
    "San Francisco": "Inter Variable",
-   "Segoe MDL2 Assets": "Noto Sans Symbols",
-   "Segoe Print": "Noto Sans Symbols",
-   "Segoe Script": "Noto Sans Symbols",
+   "Segoe MDL2 Assets": "Noto Sans Symbols 2",
+   "Segoe Print": "Noto Sans Symbols 2",
+   "Segoe Script": "Noto Sans Symbols 2",
    "Segoe UI": "Selawik",
    "Segoe UI Black": "Selawik",
    "Segoe UI Emoji": "Noto Color Emoji",
-   "Segoe UI Historic": "Noto Sans Symbols",
+   "Segoe UI Historic": "Noto Sans Symbols 2",
    "Segoe UI Light": "Selawik",
    "Segoe UI Semibold": "Selawik",
    "Segoe UI Semilight": "Selawik",
-   "Segoe UI Symbol": "Noto Sans Symbols",
+   "Segoe UI Symbol": "Noto Sans Symbols 2",
    "Segoe UI Variable": "Selawik",
    "SimSun": "Noto Sans CJK SC",
    "SimSun-ExtB": "Noto Sans CJK SC",
@@ -863,17 +863,17 @@
    "Sitka Subheading": "Liberation Serif",
    "Sitka Text": "Liberation Serif",
    "Sylfaen": "Selawik",
-   "Symbol": "Noto Sans Symbols",
+   "Symbol": "Noto Sans Symbols 2",
    "Tahoma": "Selawik",
    "Times": "Liberation Serif",
    "Times New Roman": "Liberation Serif",
    "Trebuchet MS": "Selawik",
    "Ubuntu": "Selawik",
    "Verdana": "Selawik",
-   "Webdings": "Noto Sans Symbols",
-   "Wingdings": "Noto Sans Symbols",
-   "Wingdings 2": "Noto Sans Symbols",
-   "Wingdings 3": "Noto Sans Symbols",
+   "Webdings": "Noto Sans Symbols 2",
+   "Wingdings": "Noto Sans Symbols 2",
+   "Wingdings 2": "Noto Sans Symbols 2",
+   "Wingdings 3": "Noto Sans Symbols 2",
    "Yu Gothic": "Noto Sans CJK SC",
    "Yu Gothic Light": "Selawik",
    "Yu Gothic Medium": "Selawik",
@@ -899,11 +899,11 @@
    "Al Tarikh": "Inter Variable",
    "American Typewriter": "Liberation Serif",
    "Andale Mono": "Liberation Mono",
-   "Apple Braille": "Noto Sans Symbols",
+   "Apple Braille": "Noto Sans Symbols 2",
    "Apple Chancery": "Liberation Serif",
    "Apple Color Emoji": "Noto Color Emoji",
    "Apple SD Gothic Neo": "Noto Sans CJK SC",
-   "Apple Symbols": "Noto Sans Symbols",
+   "Apple Symbols": "Noto Sans Symbols 2",
    "AppleGothic": "Noto Sans CJK SC",
    "AppleMyungjo": "Noto Sans CJK SC",
    "Arial": "Liberation Sans",
@@ -927,7 +927,7 @@
    "Bodoni 72": "Liberation Serif",
    "Bodoni 72 Oldstyle": "Inter Variable",
    "Bodoni 72 Smallcaps": "Inter Variable",
-   "Bodoni Ornaments": "Noto Sans Symbols",
+   "Bodoni Ornaments": "Noto Sans Symbols 2",
    "Bradley Hand": "Liberation Serif",
    "Brush Script MT": "Liberation Serif",
    "Calibri": "Carlito",
@@ -1074,7 +1074,7 @@
    "Songti SC": "Noto Sans CJK SC",
    "Songti TC": "Noto Sans CJK SC",
    "Sukhumvit Set": "Inter Variable",
-   "Symbol": "Noto Sans Symbols",
+   "Symbol": "Noto Sans Symbols 2",
    "Tahoma": "Inter Variable",
    "Tamil MN": "Inter Variable",
    "Tamil Sangam MN": "Inter Variable",
@@ -1088,12 +1088,12 @@
    "Ubuntu": "Selawik",
    "Verdana": "Inter Variable",
    "Waseem": "Inter Variable",
-   "Webdings": "Noto Sans Symbols",
-   "Wingdings": "Noto Sans Symbols",
-   "Wingdings 2": "Noto Sans Symbols",
-   "Wingdings 3": "Noto Sans Symbols",
-   "Zapf Dingbats": "Noto Sans Symbols",
-   "Zapfino": "Noto Sans Symbols",
+   "Webdings": "Noto Sans Symbols 2",
+   "Wingdings": "Noto Sans Symbols 2",
+   "Wingdings 2": "Noto Sans Symbols 2",
+   "Wingdings 3": "Noto Sans Symbols 2",
+   "Zapf Dingbats": "Noto Sans Symbols 2",
+   "Zapfino": "Noto Sans Symbols 2",
    "emoji": "Noto Color Emoji",
    "monospace": "Liberation Mono",
    "sans-serif": "Inter Variable",
@@ -1103,5 +1103,23 @@
    "ui-sans-serif": "Inter Variable",
    "ui-serif": "Liberation Serif"
   }
+ },
+ "probe_text": {
+  "$comment": "verify_fonts_bundle.py measures each family with a string both Liberation fallbacks and the class's target font have glyphs for (a glyph absent from both fallbacks is served by the same system fallback either way and would read as resolved). Latin for every class whose target has Latin glyphs (Noto Sans CJK does); the card suits for symbol and emoji fonts, which have no Latin.",
+  "sans": "The quick brown fox jumps over the lazy dog 0123456789",
+  "serif": "The quick brown fox jumps over the lazy dog 0123456789",
+  "mono": "The quick brown fox jumps over the lazy dog 0123456789",
+  "cjk": "The quick brown fox jumps over the lazy dog 0123456789",
+  "symbol": "♠♣♦♥♠♣♦♥",
+  "emoji": "♠♣♦♥♠♣♦♥"
+ },
+ "extra_allowed": {
+  "$comment": "names real Chrome resolves as specific families on that OS though no font file carries them; the generator adds them to fonts:list so the allowlist lets them reach the alias",
+  "macOS": [
+   "-apple-system",
+   "BlinkMacSystemFont",
+   ".AppleSystemUIFont"
+  ],
+  "Windows": []
  }
 }
