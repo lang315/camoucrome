@@ -3772,3 +3772,5 @@ Generator N=10 36/36, coherence 7/7 (14). Closed by fact: macOS build (47 GiB fr
 hinting/AA, validator reports only. Traps: the Mac's system HTTPS proxy (127.0.0.1, a VPN app) re-signs TLS -> fetch_fonts
 retries direct, digests pinned from the box first; fontnames.py's __main__ prints {} when pushed as a driver (take the
 last JSON line); a `cmd | tail` in an && chain hides the failure (pipe exit is tail's) -> two fetches ran at once.
+Fifth cut 2026-09-11: no relink; changeset 7eb3b81da28f tip 85dfb6b3fc; 306 files 181,868,312 B; archive-mode fonts 12/12,
+metrics 5/5 on the archived chrome, DevTools OK, sweep ALL_PASS. Fourth cut superseded (no Gelasio in its fonts/).
