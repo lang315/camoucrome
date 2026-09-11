@@ -161,7 +161,7 @@ def fonts_keys(platform):
         allowed = allowed + sorted(fam["unique_names"])
     return {"fonts:list": allowed,
             # queryLocalFonts() lists the captured host's faces (tab-joined ps, full, family, style), never the bundle's
-            "fonts:local": ["\t".join(f) for f in fam.get("faces", [])],
+            **({"fonts:local": ["\t".join(f) for f in fam["faces"]]} if fam.get("faces") else {}),  # no captured faces: real enumeration (rule 5), never an empty list
             "fonts:alias": alias,
             # src:local() names (the local() gate allows this map's keys) land on a face's full name (F-PSNAME)
             "fonts:aliasLocal": fonts["unique_map"][platform],
