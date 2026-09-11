@@ -203,3 +203,9 @@ def test_brand_voices_and_local_faces_follow_the_windows_claim():
     assert faces == sorted(faces)  # stock returns them sorted by PostScript name
     assert not any(f.startswith("Selawik") for f in faces)
     assert gen.voices_keys("Linux") == {}
+
+
+def test_local_faces_exist_for_every_os_with_a_list_and_are_never_empty():
+    for os_name in ("Windows", "macOS"):
+        faces = gen.fonts_keys(os_name)["fonts:local"]
+        assert len(faces) > 150 and faces == sorted(faces), os_name

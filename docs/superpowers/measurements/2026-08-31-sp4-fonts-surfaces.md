@@ -30,6 +30,12 @@ highest-yield font surface, and one Firefox has no equivalent of.
 **Disable it** by setting the feature status to `""` (or `"test"`) — `queryLocalFonts`
 then becomes `undefined`. This is the spec's cheaper correct answer.
 
+**Superseded 2026-09-12 (windows-oracle):** the status stays `""`, but a
+Windows or macOS claim enables the feature at render-thread start and
+`queryLocalFonts()` then lists the claimed host's captured faces from
+`fonts:local` after the real permission flow (`verify_host_oracle.py` O3).
+A Linux claim, or no claim, keeps it `undefined` as measured below.
+
 **Tell note (recorded, not blocking):** real desktop Chrome exposes
 `window.queryLocalFonts`; removing it is a mild missing-API divergence
 (`typeof window.queryLocalFonts === 'undefined'` on a claimed-desktop profile).

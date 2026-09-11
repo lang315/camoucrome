@@ -130,6 +130,7 @@ def main():
                   "windowNames has queryLocalFonts:", any("queryLocalFonts" in l for l in r.stdout.splitlines() if l.startswith("DIFF windowNames")))
         results["O2 RED Linux claim: navigator.share / bluetooth absent, queryLocalFonts absent (the gate follows the claim)"] = ok2
         results.update(font_access_rows(cfg, env))
+        results.update(brand_header_rows(cfg, env))
     n = sum(results.values())
     for k, v in results.items():
         print("PASS " if v else "FAIL ", k)
@@ -183,6 +184,42 @@ print(json.dumps(out))
     return {"O3 queryLocalFonts(): denied prompt -> [] as stock; granted + activated -> exactly the manifest's Windows faces in PostScript order, none of the bundle's": (
         r["nogrant"].get("n") == 0 and got == want and len(got or []) > 150 and not any("Selawik" in f[0] or "Liberation" in f[0] for f in got))}
 
+
+def brand_header_rows(cfg, env):
+    """O4: the brand list is produced twice, in the browser (Sec-CH-UA / Sec-CH-UA-Full-Version-List request headers)
+    and in the renderer (navigator.userAgentData). Both must carry the host's stock list in its order; O1 only saw the
+    renderer's copy."""
+    script = f"""
+import json, sys
+sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))}); sys.path.insert(0, {json.dumps(str(CLIENT / "scripts"))})
+import echo_server
+from camoucrome.launcher import launch
+from patchright.sync_api import sync_playwright
+base, headers_for, stop = echo_server.start(["Sec-CH-UA-Full-Version-List"])
+out = {{}}
+with sync_playwright() as pw:
+    ctx = launch(pw, {json.dumps(EXE)}, config=json.loads({json.dumps(json.dumps(cfg))}), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
+    page = ctx.new_page(); page.goto(base + "/"); page.goto(base + "/")  # second load carries the Accept-CH hints
+    out["js"] = page.evaluate("navigator.userAgentData.getHighEntropyValues(['fullVersionList']).then(h => ({{brands: navigator.userAgentData.brands, full: h.fullVersionList}}))")
+    h = {{k.lower(): v for k, v in (headers_for("/") or {{}}).items()}}
+    out["hdr"] = {{"ua": h.get("sec-ch-ua"), "full": h.get("sec-ch-ua-full-version-list")}}
+    ctx.close()
+stop()
+print(json.dumps(out))
+"""
+    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+    if p.returncode != 0:
+        print("O4 probe failed:", p.stderr[-900:].replace("\n", " | "))
+        return {"O4 brand headers": False}
+    r = json.loads(p.stdout.strip().splitlines()[-1])
+
+    def parse(sh):  # RFC 8941 list: "Google Chrome";v="153", ...
+        return [{"brand": i.split('";v="')[0].strip().strip('"'), "version": i.split('";v="')[1].rstrip('"')} for i in (sh or "").split(", ") if '";v="' in i]
+    host = BASE["uad"]["brands"], BASE["uadHigh"]["fullVersionList"]
+    got = (r["js"]["brands"], r["js"]["full"], parse(r["hdr"]["ua"]), parse(r["hdr"]["full"]))
+    print(f"note: O4 Sec-CH-UA={r['hdr']['ua']!r} full={r['hdr']['full']!r}")
+    return {"O4 brands: Sec-CH-UA and Sec-CH-UA-Full-Version-List request headers == navigator.userAgentData == the host's stock list in stock order": (
+        got[0] == host[0] and got[1] == host[1] and got[2] == host[0] and got[3] == host[1])}
 
 
 if __name__ == "__main__":
