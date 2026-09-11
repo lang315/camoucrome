@@ -2,7 +2,8 @@
 """OpenType name-table reader, stdlib only (it also runs on the Windows host's
 Python 3.9 through winhost.powershell). faces(data) -> one dict per face:
 family (ID 1), style (ID 2, normalised), full (ID 4), ps (ID 6); Windows
-platform 3, en-US 0x409, first seen. Handles .ttf/.otf/.ttc."""
+platform 3 en-US first, the Mac platform 1 English record as fallback (Apple's
+system fonts carry these IDs there only). Handles .ttf/.otf/.ttc."""
 import struct
 
 STYLES = {"regular": "Regular", "normal": "Regular", "bold": "Bold", "italic": "Italic", "oblique": "Italic",
@@ -16,12 +17,16 @@ def _names(data, off):
         if tag == b"name":
             n = data[to:to + ln]
             _, count, so = struct.unpack(">HHH", n[:6])
-            out = {}
+            out, mac = {}, {}
             for r in range(count):
                 pid, _, lid, nid, l, o = struct.unpack(">HHHHHH", n[6 + 12 * r:18 + 12 * r])
-                if pid == 3 and lid == 0x409 and nid in (1, 2, 4, 6) and nid not in out:
+                if nid not in (1, 2, 4, 6):
+                    continue
+                if pid == 3 and lid == 0x409 and nid not in out:
                     out[nid] = n[so + o:so + o + l].decode("utf-16-be", "replace")
-            return out
+                elif pid == 1 and lid == 0 and nid not in mac:  # Apple's system fonts carry 1/4/6 on the Mac platform only
+                    mac[nid] = n[so + o:so + o + l].decode("mac_roman", "replace")
+            return {**mac, **out}
     return {}
 
 

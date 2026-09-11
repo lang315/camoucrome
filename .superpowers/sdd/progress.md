@@ -3781,3 +3781,7 @@ local() gate allows its keys, fonts:list families only, 15th invariant fonts-ali
 (F12), fonts-ii 6/6, coherence 7/7 (15). platformVersion now read from stock Chrome on the Windows host ("10.0.0").
 Sixth cut 2026-09-11: relink 103 steps 1m53; changeset 0a8a069fd8eb tip a35c2fa93f; 306 files 181,819,420 B; archive-mode fonts
 13/13, metrics 5/5, DevTools OK, sweep ALL_PASS. Fifth cut superseded (local("Georgia") error, "SegoeUI" resolving as CSS).
+macOS side measured (stock Chrome 151 headed): PostScript names ARE CSS families there (font_matcher_mac.mm falls back
+to PS matching) -> manifest flag ps_names_are_css_families per OS; macOS claim adds unique names to fonts:list + fonts:alias
+(family targets); F13 + F11-mac; fontnames.py reads the Mac platform-1 records (Apple fonts lack pid-3 IDs 1/4/6: Menlo,
+Helvetica Neue were invisible) -> macOS unique names 775; bundle 15/15 box + archive mode (sixth cut, no C++ change).
