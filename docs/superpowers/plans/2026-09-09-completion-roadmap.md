@@ -258,7 +258,8 @@ Source: SP6 §4.3, §4.4, §6.
    filtered, devtools sources + pyproto pruned, duplicates once), tar.xz/zip,
    stamp, `--check`; `settings/release-args.gn`; first Linux archive from
    the box's `out/Release`: 254 files, 149 MiB, DevTools opens from the
-   extracted tree and the six-driver sweep passes on its `chrome`. Original brief:
+   extracted tree and the six-driver sweep passes on its `chrome`; second
+   cut at `58b59ab` carries the D patch and the 13th invariant. Original brief:
    **`scripts/package.py` from `--runtime-deps-list-file`**; portable
    `tar.xz`/`zip`, no installer, no launcher binary. Release build = full
    `chrome` target, non-component (a different build than the dev loop).
