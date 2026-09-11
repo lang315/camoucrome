@@ -129,3 +129,14 @@ against the archived chrome and its own `fonts/` **5/5**, DevTools opens,
 six-driver sweep `ALL_PASS`. The fourth cut is superseded: its `fonts/`
 lacks Gelasio, so a Georgia request under the current manifest's alias
 would not resolve there.
+
+**Sixth cut, 2026-09-11, after the slice's review.** `out/Release` relinked
+with the amended `fonts-iii-alias` (`fonts:aliasLocal` in the FontCache hook
+and the `local()` gate; 103 steps, 1 m 53 s) and packaged at
+`changeset_commit 0a8a069fd8eb` / `branch_tip a35c2fa93f`: **306 files,
+181,819,420 bytes (173 MiB)**, 221 s, extract 9 s, stamp `fonts: true`,
+`--check` ok. On the extracted tree: `verify_fonts_bundle.py` in archive
+mode **13/13** (F1–F12 with REDs), `verify_font_metrics.py` against the
+archived chrome **5/5**, DevTools opens, six-driver sweep `ALL_PASS`. The
+fifth cut is superseded: its chrome errors on `local("Georgia")` and lets
+`font-family: "SegoeUI"` resolve.
