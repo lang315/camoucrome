@@ -100,7 +100,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 def load_profiles():
     """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
-    return {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted((ROOT / "settings" / "webgl").glob("*.json"))}
+    return {p.stem: json.loads(p.read_text(encoding="utf-8"))
+            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._")}
 
 
 GL_ENUM = {"VERTEX_SHADER": 35633, "FRAGMENT_SHADER": 35632, "LOW_FLOAT": 36336, "MEDIUM_FLOAT": 36337,
@@ -148,7 +149,8 @@ def fonts_keys(platform):
     fonts = json.loads((ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))
     if platform not in fonts["alias_map"]:
         return {}
-    return {"fonts:list": fonts["families"][platform]["list"], "fonts:alias": fonts["alias_map"][platform]}
+    return {"fonts:list": fonts["families"][platform]["list"] + fonts["extra_allowed"][platform],
+            "fonts:alias": fonts["alias_map"][platform]}
 
 
 def chrome_device_memory(value):
