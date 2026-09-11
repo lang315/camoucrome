@@ -1,0 +1,151 @@
+{
+ "$comment": "Offline default for timezone:id when the generator gets no --timezone: plausible IANA zones per locale tag, first = most common (specs/2026-09-11-open-items-design.md section 4). No GeoIP by decision; a proxy-exit lookup is the caller's. Validated by client/python/tests/test_gen.py: every zone is in zoneinfo.available_timezones().",
+ "zones": {
+  "en-US": [
+   "America/New_York",
+   "America/Chicago",
+   "America/Denver",
+   "America/Los_Angeles"
+  ],
+  "en-GB": [
+   "Europe/London"
+  ],
+  "fr-FR": [
+   "Europe/Paris"
+  ],
+  "de-DE": [
+   "Europe/Berlin"
+  ],
+  "es-ES": [
+   "Europe/Madrid"
+  ],
+  "es-MX": [
+   "America/Mexico_City"
+  ],
+  "pt-BR": [
+   "America/Sao_Paulo"
+  ],
+  "ja-JP": [
+   "Asia/Tokyo"
+  ],
+  "ko-KR": [
+   "Asia/Seoul"
+  ],
+  "zh-CN": [
+   "Asia/Shanghai"
+  ],
+  "zh-TW": [
+   "Asia/Taipei"
+  ],
+  "ru-RU": [
+   "Europe/Moscow"
+  ],
+  "it-IT": [
+   "Europe/Rome"
+  ],
+  "nl-NL": [
+   "Europe/Amsterdam"
+  ],
+  "pl-PL": [
+   "Europe/Warsaw"
+  ],
+  "tr-TR": [
+   "Europe/Istanbul"
+  ],
+  "id-ID": [
+   "Asia/Jakarta"
+  ],
+  "th-TH": [
+   "Asia/Bangkok"
+  ],
+  "vi-VN": [
+   "Asia/Ho_Chi_Minh"
+  ],
+  "en-AU": [
+   "Australia/Sydney",
+   "Australia/Melbourne",
+   "Australia/Brisbane",
+   "Australia/Perth"
+  ],
+  "en-CA": [
+   "America/Toronto",
+   "America/Vancouver"
+  ],
+  "fr-CA": [
+   "America/Toronto",
+   "America/Montreal"
+  ],
+  "en-IN": [
+   "Asia/Kolkata"
+  ],
+  "hi-IN": [
+   "Asia/Kolkata"
+  ],
+  "ar-SA": [
+   "Asia/Riyadh"
+  ],
+  "ar-EG": [
+   "Africa/Cairo"
+  ],
+  "sv-SE": [
+   "Europe/Stockholm"
+  ],
+  "da-DK": [
+   "Europe/Copenhagen"
+  ],
+  "nb-NO": [
+   "Europe/Oslo"
+  ],
+  "fi-FI": [
+   "Europe/Helsinki"
+  ],
+  "cs-CZ": [
+   "Europe/Prague"
+  ],
+  "hu-HU": [
+   "Europe/Budapest"
+  ],
+  "ro-RO": [
+   "Europe/Bucharest"
+  ],
+  "uk-UA": [
+   "Europe/Kyiv"
+  ],
+  "el-GR": [
+   "Europe/Athens"
+  ],
+  "he-IL": [
+   "Asia/Jerusalem"
+  ],
+  "ms-MY": [
+   "Asia/Kuala_Lumpur"
+  ],
+  "fil-PH": [
+   "Asia/Manila"
+  ],
+  "en-NZ": [
+   "Pacific/Auckland"
+  ],
+  "en-IE": [
+   "Europe/Dublin"
+  ],
+  "en-ZA": [
+   "Africa/Johannesburg"
+  ],
+  "de-AT": [
+   "Europe/Vienna"
+  ],
+  "de-CH": [
+   "Europe/Zurich"
+  ],
+  "fr-BE": [
+   "Europe/Brussels"
+  ],
+  "nl-BE": [
+   "Europe/Brussels"
+  ],
+  "pt-PT": [
+   "Europe/Lisbon"
+  ]
+ }
+}
