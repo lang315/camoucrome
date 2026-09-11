@@ -36,13 +36,16 @@ Never taken, and why:
   screen.colorDepth / pixelDepth   the pool says 32 where real Chrome reports 24/30; the
                                    real value is coherent by construction
   screen.availLeft / availTop      multi-monitor offsets from the pool; the real 0 is fine
-  videoCard (webGl:*)              the strings are real Chrome-shaped ANGLE pairs, not
-                                   invented -- but an identity beside the host's real
-                                   parameter table (a GeForce reporting SwiftShader limits)
-                                   is the incoherence A3 #2 owns; blocked on it
-  fonts                            a whitelist the page can look up; claiming a font the
-                                   host lacks is a tell until packaging bundles fonts (A5)
-  voices, geolocation              Chrome voice names and GeoIP are their own catalogues
+  videoCard (webGl:*)              the pool's strings are not taken; webGl:* comes from
+                                   settings/webgl/ instead -- real-GPU captures whose
+                                   parameter table matches the identity (A3 #2); --gpu
+                                   picks one, default the first profile for the claimed OS
+  fonts                            fonts:list is the captured family list of the claimed OS
+                                   (settings/fonts.json), which the bundled fontconfig
+                                   layer makes resolvable; Linux claims get none
+  voices, geolocation              Chrome voice names and GeoIP are their own catalogues;
+                                   timezone:id without --timezone comes from
+                                   settings/locale_zones.json by locale
 
 Samples whose brands name Brave (font enumeration is farbled there) or Edge,
 that are mobile, or that carry no UA-CH platform are redrawn.
@@ -55,6 +58,7 @@ are copied instead, revisit when a second target appears or they diverge.
 """
 import argparse
 import json
+import pathlib
 import random
 import sys
 from dataclasses import asdict
@@ -91,6 +95,42 @@ def dpr_of(fp):
 # value <= the pool's. The C++ domain validator has no rule for this key
 # (only the geolocation axes), so the strict oracle cannot catch it.
 DEVICE_MEMORY = (0.25, 0.5, 1, 2, 4, 8)
+ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+
+def load_profiles():
+    """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
+    return {p.stem: json.loads(p.read_text()) for p in sorted((ROOT / "settings" / "webgl").glob("*.json"))}
+
+
+def webgl_keys(profile):
+    return {"webGl:vendor": profile["vendor"], "webGl:renderer": profile["renderer"],
+            "webGl2:vendor": profile["vendor"], "webGl2:renderer": profile["renderer"],
+            "webGl:parameters": profile["webgl"]["parameters"],
+            "webGl2:parameters": profile["webgl2"]["parameters"],
+            "webGl:supportedExtensions": profile["webgl"]["supportedExtensions"],
+            "webGl2:supportedExtensions": profile["webgl2"]["supportedExtensions"]}
+
+
+def profile_for(platform, gpu=None):
+    profiles = load_profiles()
+    if gpu:
+        return profiles[gpu]
+    return next((p for p in profiles.values() if p["os"] == platform), None)
+
+
+def zone_for(locale, rng):
+    table = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
+    if locale not in table:
+        raise ValueError(f"--timezone is required for {locale}: no locale->zone table row, and "
+                         "locale:tag without timezone:id trips timezone-set-with-locale")
+    return rng.choice(table[locale])
+
+
+def fonts_list(platform):
+    """The claimed OS's captured family list (settings/fonts.json); None for Linux."""
+    fams = json.loads((ROOT / "settings" / "fonts.json").read_text())["families"]
+    return fams[platform]["list"] if platform in fams else None
 
 
 def chrome_device_memory(value):
@@ -138,11 +178,18 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
-def from_pool(fp, timezone, locale=None, rng=None):
+def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch"}."""
     nav, ud, scr = fp["navigator"], fp["navigator"]["userAgentData"], fp["screen"]
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
+    rng = rng or random.Random()
+    if locale:
+        tag = locale
+        languages = [tag] if "-" not in tag else [tag, tag.split("-")[0]]
+    else:
+        tag = nav["language"]
+        languages = [tag] + [l for l in nav.get("languages", []) if l != tag]
     config = {
         "ua:osInfo": os_info, "ua:platform": ua_platform,
         "ua:platformVersion": ud.get("platformVersion", ""),
@@ -157,14 +204,8 @@ def from_pool(fp, timezone, locale=None, rng=None):
         "screen.availWidth": scr["availWidth"], "screen.availHeight": scr["availHeight"],
         "window.outerWidth": scr["outerWidth"], "window.outerHeight": scr["outerHeight"],
         "window.screenX": scr["screenX"], "window.screenY": scr.get("screenY", 0),
-        "timezone:id": timezone,
+        "timezone:id": timezone or zone_for(tag, rng),
     }
-    if locale:
-        tag = locale
-        languages = [tag] if "-" not in tag else [tag, tag.split("-")[0]]
-    else:
-        tag = nav["language"]
-        languages = [tag] + [l for l in nav.get("languages", []) if l != tag]
     config.update({"locale:tag": tag, "navigator.language": tag,
                    "navigator.languages": languages})
     bat = fp.get("battery") or {}
@@ -180,6 +221,12 @@ def from_pool(fp, timezone, locale=None, rng=None):
     for k, n in counts.items():
         config[f"mediaDevices:{k}"] = n
     config.update(per_instance_config(rng))
+    profile = profile_for(platform, gpu)
+    if profile:
+        config.update(webgl_keys(profile))
+    fonts = fonts_list(platform)
+    if fonts:
+        config["fonts:list"] = fonts
 
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)
@@ -190,10 +237,7 @@ def from_pool(fp, timezone, locale=None, rng=None):
     return {"config": config, "launch": launch}
 
 
-def generate(os=None, timezone=None, locale=None, seed=None):
-    if not timezone:
-        raise ValueError("--timezone is required: no locale->zone table exists, and "
-                         "locale:tag without timezone:id trips timezone-set-with-locale")
+def generate(os=None, timezone=None, locale=None, seed=None, gpu=None):
     from browserforge.fingerprints import FingerprintGenerator
     rng = random.Random(seed)
     if seed is not None:
@@ -204,18 +248,19 @@ def generate(os=None, timezone=None, locale=None, seed=None):
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng)
+            return from_pool(fp, timezone, locale, rng, gpu)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--os", choices=sorted(OS_ARG))
-    ap.add_argument("--timezone", required=True)
+    ap.add_argument("--timezone", help="IANA zone; default from settings/locale_zones.json by locale")
     ap.add_argument("--locale")
     ap.add_argument("--seed", type=int)
+    ap.add_argument("--gpu", help="a settings/webgl profile id; default: the first profile for the claimed OS")
     a = ap.parse_args()
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu), sys.stdout)
 
 
 if __name__ == "__main__":

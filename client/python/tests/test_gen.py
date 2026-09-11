@@ -95,9 +95,9 @@ def test_filter_redraws_brave_edge_mobile_and_unknown_platform():
         assert not gen.acceptable(bad)
 
 
-def test_timezone_is_required():
+def test_timezone_is_required_only_for_a_locale_outside_the_table():
     with pytest.raises(ValueError, match="timezone"):
-        gen.generate(os="windows")
+        gen.from_pool(POOL, None, "xx-ZZ", rng=random.Random(1))
 
 
 def test_generate_from_the_real_pool_is_registered_and_deterministic():
@@ -136,3 +136,43 @@ def test_pool_wide_properties_hold_over_unseeded_draws():
         assert cfg["navigator.languages"][0] == cfg["navigator.language"] == cfg["locale:tag"]
         assert 0 <= cfg["window.screenX"] <= cfg["screen.width"] - cfg["window.outerWidth"]
         assert set(cfg) <= KEYS
+
+
+def test_webgl_profile_keys_follow_the_claimed_os():
+    profiles = gen.load_profiles()
+    assert "windows-intel-uhd-630-d3d11" in profiles
+    keys = gen.webgl_keys(profiles["windows-intel-uhd-630-d3d11"])
+    assert set(keys) == {"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer",
+                         "webGl:parameters", "webGl2:parameters", "webGl:supportedExtensions", "webGl2:supportedExtensions"}
+    assert set(keys) <= KEYS
+    assert "Direct3D11" in keys["webGl:renderer"] and keys["webGl2:renderer"] == keys["webGl:renderer"]
+    assert all(k.isdigit() for k in keys["webGl:parameters"])
+
+
+def test_from_pool_picks_the_os_profile_and_gpu_overrides():
+    out = gen.from_pool(POOL, "America/New_York", rng=random.Random(1))
+    assert "Direct3D11" in out["config"]["webGl:renderer"]
+    mac = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="macos-apple-m1-pro-metal")
+    assert "Metal" in mac["config"]["webGl:renderer"]
+    with pytest.raises(KeyError):
+        gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="no-such-profile")
+
+
+def test_zone_table_is_valid_iana_and_tags_parse():
+    import zoneinfo
+    table = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
+    assert len(table) >= 40
+    avail = zoneinfo.available_timezones()
+    for tag, zones in table.items():
+        assert re.fullmatch(r"[a-z]{2,3}-[A-Z]{2}", tag), tag
+        assert zones and all(z in avail for z in zones), tag
+
+
+def test_timezone_defaults_from_the_locale_table():
+    out = gen.from_pool(POOL, None, "fr-FR", rng=random.Random(3))
+    assert out["config"]["timezone:id"] == "Europe/Paris"
+    a = gen.from_pool(POOL, None, None, rng=random.Random(5))["config"]["timezone:id"]
+    b = gen.from_pool(POOL, None, None, rng=random.Random(5))["config"]["timezone:id"]
+    assert a == b and a in {"America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"}
+    with pytest.raises(ValueError, match="no locale->zone"):
+        gen.from_pool(POOL, None, "xx-ZZ", rng=random.Random(1))

@@ -33,10 +33,17 @@ func ParseGenerated(raw []byte) (Options, error) {
 
 // Generate runs `python -m camoucrome.gen` (the Python client must be
 // installed in that interpreter) with the given OS ("windows", "macos",
-// "linux" or "" for any), the required IANA timezone, and an optional
-// locale. seed < 0 means unseeded.
-func Generate(python, osName, timezone, locale string, seed int) (Options, error) {
-	args := []string{"-m", "camoucrome.gen", "--timezone", timezone}
+// "linux" or "" for any), an optional IANA timezone ("" = the generator's
+// locale->zone table), an optional locale and an optional settings/webgl
+// profile id. seed < 0 means unseeded.
+func Generate(python, osName, timezone, locale, gpu string, seed int) (Options, error) {
+	args := []string{"-m", "camoucrome.gen"}
+	if timezone != "" {
+		args = append(args, "--timezone", timezone)
+	}
+	if gpu != "" {
+		args = append(args, "--gpu", gpu)
+	}
 	if osName != "" {
 		args = append(args, "--os", osName)
 	}
