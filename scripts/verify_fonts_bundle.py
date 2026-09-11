@@ -16,6 +16,10 @@ F4 gen.py --os windows: its fonts:list is a subset of what F2 measured as
    resolving (page-measured, not table-asserted).
 F5 (CAMOU_EXE = an extracted archive's chrome, no --fonts-dir): the launcher
    finds fonts/ beside the executable; the F2 rows pass.
+F6 worker parity (rule 3): a dedicated worker's OffscreenCanvas measures the
+   aliased families at the main thread's widths under the F2 config.
+F7 a cyclic fonts:alias ({A:B, B:A, Segoe UI:A}, non-strict) starts and loads
+   the page: the alias is one hop, a bad map never recurses (no crash).
 """
 import http.server
 import json
@@ -37,6 +41,7 @@ WIN = {"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows", "ua
 MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS", "ua:platformVersion": "14.6.1", "navigator.platform": "MacIntel"}
 HOST_ONLY = ["DejaVu Sans", "Ubuntu", "Cantarell"]
 SPECIAL = ["system-ui", "Selawik", "Segoe UI", "Inter Variable", "-apple-system", "sans-serif"]
+PAR = ["Segoe UI", "Consolas", "Calibri"]  # F6: aliased under the Windows map, measured on both threads
 
 
 def text_for(family):
@@ -59,8 +64,14 @@ const mono = width('monospace');
 const resolves = Object.fromEntries(FAM.map(f => [f, width(`"${f}", monospace`, TEXT[f]) === width(`"${f}", serif`, TEXT[f])]));
 const widths = Object.fromEntries(%s.map(f => [f, width(f.startsWith('-') || f === 'system-ui' || f === 'sans-serif' ? f : `"${f}"`)]));
 const k = document.getElementById('k'); k.style.font = 'caption'; k.textContent = S;
-document.getElementById('o').textContent = JSON.stringify({ resolves, widths, caption: k.getBoundingClientRect().width, mono });
-</script>""" % (json.dumps(families), json.dumps({f: text_for(f) for f in families}), json.dumps(FONTS["probe_text"]), json.dumps(SPECIAL))).encode()
+const PAR = %s;
+const par = Object.fromEntries(PAR.map(f => [f, width(`"${f}"`)]));
+const out = wpar => { document.getElementById('o').textContent = JSON.stringify({ resolves, widths, caption: k.getBoundingClientRect().width, mono, par, wpar }); };
+const src = `const c = new OffscreenCanvas(1, 1).getContext('2d'); postMessage(Object.fromEntries(${JSON.stringify(PAR)}.map(f => { c.font = '16px "' + f + '"'; return [f, c.measureText(${JSON.stringify(S)}).width]; })));`;
+const wk = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+wk.onmessage = e => out(e.data);
+wk.onerror = e => out({ error: String(e.message) });
+</script>""" % (json.dumps(families), json.dumps({f: text_for(f) for f in families}), json.dumps(FONTS["probe_text"]), json.dumps(SPECIAL), json.dumps(PAR))).encode()
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -121,6 +132,9 @@ def main():
     if missing or leaked or not same(w, "system-ui", "Segoe UI"):
         notes.append(f"F2 missing={missing[:8]} leaked={leaked} widths={ {k: round(v, 2) for k, v in w.items()} } caption={r['caption']:.2f}")
     resolving = {f for f in win_list if r["resolves"][f]}
+    results["F6 worker parity: a worker's OffscreenCanvas widths of Segoe UI/Consolas/Calibri == the main thread's"] = (
+        "error" not in r["wpar"] and all(round(r["par"][f], 2) == round(r["wpar"][f], 2) for f in PAR))
+    notes.append(f"F6 main={ {f: round(r['par'][f], 2) for f in PAR} } worker={ {f: round(v, 2) for f, v in r['wpar'].items()} }")
 
     H.body = page(mac_list + HOST_ONLY)
     r = probe(url, {**MAC, "fonts:list": mac_list + FONTS["extra_allowed"]["macOS"], "fonts:alias": FONTS["alias_map"]["macOS"]}, fd)
@@ -140,6 +154,14 @@ def main():
         bool(emitted) and set(emitted) <= resolving)
     if not emitted:
         notes.append("F4 gen: " + gen.stderr[-300:])
+    H.body = page(["Segoe UI", "A", "B"])
+    try:
+        r = probe(url, {**WIN, "fonts:alias": {"A": "B", "B": "A", "Segoe UI": "A"}}, fd)
+        ok = "resolves" in r
+    except SystemExit as e:  # probe() exits when chrome dies or the page never reports
+        ok, r = False, None
+        notes.append(f"F7: {e}")
+    results["F7 cyclic fonts:alias {A:B, B:A, Segoe UI:A} (non-strict): chrome starts and the page reports (one hop, no recursion)"] = ok
     srv.shutdown()
     for k, v in results.items():
         print(("PASS " if v else "FAIL "), k)

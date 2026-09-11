@@ -338,6 +338,27 @@
         "No desktop rule in the other direction: a Windows laptop with a touch",
         "screen (maxTouchPoints > 0) is real."
       ]
+    },
+    {
+      "id": "fonts-alias-requires-list",
+      "keys": [
+        "fonts:alias",
+        "fonts:list"
+      ],
+      "relation": "requires-key",
+      "policy": "repair",
+      "repair": "set fonts:list to the families the alias map's keys claim (gen.py emits both together)",
+      "why": [
+        "A presence relation: fonts:alias set, fonts:list absent. The alias",
+        "(fonts-iii, measurements/2026-09-11-fonts-bundle.md) renders a claimed",
+        "family in a bundled one and relies on the allowlist to refuse a direct",
+        "request for the bundle's own names (Selawik, Inter Variable, Liberation",
+        "Sans...). With no fonts:list every font under FONTCONFIG_FILE resolves by",
+        "name, so a page that asks for 'Selawik' gets it beside a 'Segoe UI' of the",
+        "same width -- a set no real Windows host produces, manufactured by the",
+        "fork. Absent fonts:alias constrains nothing: the list alone is the SP4",
+        "allowlist and is coherent by itself."
+      ]
     }
   ]
 }

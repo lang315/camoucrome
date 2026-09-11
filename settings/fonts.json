@@ -552,7 +552,7 @@
   },
   "macOS": {
    "captured": "2026-09-11",
-   "how": "system_profiler SPFontsDataType -json on the Mac (dot-prefixed system-private families dropped)",
+   "how": "system_profiler SPFontsDataType -json on the Mac (dot-prefixed system-private families dropped); families in families.exclude (user-installed under ~/Library/Fonts, seen in each family's Location) dropped",
    "list": [
     "Academy Engraved LET",
     "Al Bayan",
@@ -624,9 +624,6 @@
     "Gurmukhi MN",
     "Gurmukhi MT",
     "Gurmukhi Sangam MN",
-    "Hack Nerd Font",
-    "Hack Nerd Font Mono",
-    "Hack Nerd Font Propo",
     "Heiti SC",
     "Heiti TC",
     "Helvetica",
@@ -641,8 +638,6 @@
     "ITF Devanagari Marathi",
     "Impact",
     "InaiMathi",
-    "JetBrains Mono",
-    "JetBrains Mono NL",
     "Kailasa",
     "Kannada MN",
     "Kannada Sangam MN",
@@ -676,7 +671,6 @@
     "Nadeem",
     "New Peninim MT",
     "Noteworthy",
-    "Noto Emoji",
     "Noto Nastaliq Urdu",
     "Noto Sans Batak",
     "Noto Sans Kannada",
@@ -744,7 +738,13 @@
   },
   "exclude": {
    "AniMe Matrix - MB_EN": "ASUS Armoury Crate vendor font on this host, not stock Windows",
-   "ROG Fonts": "ASUS ROG vendor font on this host, not stock Windows"
+   "ROG Fonts": "ASUS ROG vendor font on this host, not stock Windows",
+   "Hack Nerd Font": "user-installed in ~/Library/Fonts on the capture Mac (developer font), not stock macOS",
+   "Hack Nerd Font Mono": "user-installed in ~/Library/Fonts on the capture Mac (developer font), not stock macOS",
+   "Hack Nerd Font Propo": "user-installed in ~/Library/Fonts on the capture Mac (developer font), not stock macOS",
+   "JetBrains Mono": "user-installed in ~/Library/Fonts on the capture Mac (developer font), not stock macOS",
+   "JetBrains Mono NL": "user-installed in ~/Library/Fonts on the capture Mac (developer font), not stock macOS",
+   "Noto Emoji": "user-installed in ~/Library/Fonts on the capture Mac, not stock macOS"
   }
  },
  "alias_map": {
@@ -969,9 +969,6 @@
    "Gurmukhi MN": "Inter Variable",
    "Gurmukhi MT": "Inter Variable",
    "Gurmukhi Sangam MN": "Inter Variable",
-   "Hack Nerd Font": "Inter Variable",
-   "Hack Nerd Font Mono": "Inter Variable",
-   "Hack Nerd Font Propo": "Inter Variable",
    "Heiti SC": "Noto Sans CJK SC",
    "Heiti TC": "Noto Sans CJK SC",
    "Helvetica": "Liberation Sans",
@@ -986,8 +983,6 @@
    "ITF Devanagari Marathi": "Inter Variable",
    "Impact": "Inter Variable",
    "InaiMathi": "Inter Variable",
-   "JetBrains Mono": "Inter Variable",
-   "JetBrains Mono NL": "Inter Variable",
    "Kailasa": "Inter Variable",
    "Kannada MN": "Inter Variable",
    "Kannada Sangam MN": "Inter Variable",
@@ -1021,7 +1016,6 @@
    "Nadeem": "Inter Variable",
    "New Peninim MT": "Inter Variable",
    "Noteworthy": "Liberation Serif",
-   "Noto Emoji": "Inter Variable",
    "Noto Nastaliq Urdu": "Inter Variable",
    "Noto Sans Batak": "Inter Variable",
    "Noto Sans Kannada": "Inter Variable",

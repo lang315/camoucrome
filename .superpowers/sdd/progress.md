@@ -3745,3 +3745,13 @@ stock sends on launch 2 of a profile (constructed RED), fork none (P4). headless
 Regressions all green (see chrome-binary-items doc section 6). Trap of the day: macOS tar AppleDouble ._ files
 broke glob("*.json") on the box (COPYFILE_DISABLE=1); a stale package.py copy shipped an archive without fonts
 (stamp fonts:false caught it).
+
+Review pass (advisor, 2026-09-11, after the slice): (1) fonts:alias recursed on a cyclic hand map ({A:B,B:A}) -> renderer
+stack overflow; now one hop (a target that is itself a key is not followed), F7 loads a page under that map. (2) alias
+without list leaked bundle names -> 14th invariant fonts-alias-requires-list (requires-key), runner 7/7 14 mutations.
+(3) sweep's first sp7 P1 FAIL had no note captured; 5 reruns {} -> footnoted, not folded into 4/4. Also: macOS family
+list carried 6 user-installed dev fonts (Hack Nerd Font x3, JetBrains Mono x2, Noto Emoji; Location under ~/Library/Fonts)
+-> excluded, 186 -> 180, aliases 211 -> 205; generator Z rows = browser oracle for locale->zone (5 locales, no --timezone,
+strict, zone == table); F6 worker parity for the alias (OffscreenCanvas 416/540/373 both threads); probe waits for #o;
+winhost cdp helpers delete their temp profiles (12 dirs / 247 MB cleaned on the host); CLAUDE.md layout rows for
+fonts.json/fontconfig/webgl/locale_zones/winhost. Box tip 85dfb6b3fc fonts-iii-alias (amended); export gate empty; sync 39.

@@ -103,23 +103,17 @@ $url = "file:///" + ($html -replace '\\\\', '/')
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Sleep -Seconds 2
 $p = Start-Process -FilePath "{CHROME}" -ArgumentList @({arglist}, "--user-data-dir={prof}", $url) -WindowStyle Hidden -PassThru
-"argv: " + ({arglist} -join " ") + " --user-data-dir={prof} " + $url
-Start-Sleep -Seconds 3
-"exited: " + $p.HasExited + " code: " + $p.ExitCode + " chromes: " + @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'").Count
 $ver = $null
 for ($i = 0; $i -lt 40 -and -not $ver; $i++) {{ Start-Sleep -Milliseconds 500; try {{ $ver = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:9333/json/list).Content }} catch {{ }} }}
 Start-Sleep -Milliseconds {wait_ms}
 try {{ $raw = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:9333/json/list -ErrorAction Stop).Content }} catch {{ "list error: " + $_; $raw = "[]" }}
-"ver: " + $(if ($ver) {{ $ver.Length }} else {{ "null" }}) + " raw: " + $raw.Substring(0, [Math]::Min(300, $raw.Length))
 $pages = $raw | ConvertFrom-Json
 $pg = $pages | Where-Object {{ $_.type -eq "page" -and $_.url -like "file:*" }} | Select-Object -First 1
 if (-not $pg) {{ $pg = $pages | Where-Object {{ $_.type -eq "page" }} | Select-Object -First 1 }}
-"page: " + $pg.url
 $ws = Cdp-Connect $pg.webSocketDebuggerUrl
-"state: " + $ws.State
 Cdp-Send $ws @{{ id = 1; method = "Runtime.evaluate"; params = @{{ expression = {json.dumps(expression)}; returnByValue = $true }} }}
 $resp = $null
-for ($i = 0; $i -lt 20 -and -not $resp; $i++) {{ $m = Cdp-Recv $ws 5000; "recv" + $i + ": " + $(if ($m) {{ $m.Substring(0, [Math]::Min(80, $m.Length)) }} else {{ "<null>" }}); if ($m -and $m.StartsWith('{{"id":1,')) {{ $resp = $m }} }}
+for ($i = 0; $i -lt 20 -and -not $resp; $i++) {{ $m = Cdp-Recv $ws 5000; if ($m -and $m.StartsWith('{{"id":1,')) {{ $resp = $m }} }}
 "CDP_RESULT_BEGIN"
 $resp
 "CDP_RESULT_END"
@@ -127,6 +121,7 @@ $ws.Dispose()
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Sleep -Milliseconds 500
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+{"Remove-Item -Recurse -Force " + prof + " -ErrorAction SilentlyContinue" if profile is None else "# profile kept for the caller"}
 """
     out = powershell(ps, timeout=180)
     m = re.search(r"CDP_RESULT_BEGIN\n(.*?)\nCDP_RESULT_END", out, re.S)
@@ -214,6 +209,7 @@ while ((Get-Date) -lt $deadline) {{
 "CDP_EVENTS_END"
 $ws.Dispose()
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
+{"Start-Sleep -Milliseconds 500; Remove-Item -Recurse -Force " + prof + " -ErrorAction SilentlyContinue" if profile is None else "# profile kept for the caller"}
 """
     out = powershell(ps, timeout=seconds + 120)
     m = re.search(r"CDP_EVENTS_BEGIN\n(.*?)\nCDP_EVENTS_END", out, re.S)

@@ -103,6 +103,7 @@ The deferred list's first three items needed a relation that fires on
 | `mediadevices-seed-when-enabled` | `mediaDevices:enabled` → `mediaDevices:seed` | `requires-key` | enabled **true**, seed absent **or 0** (the consumer's own no-op rule) |
 | `android-claims-touch` | `ua:osInfo` (via `ClaimedOs`) → `navigator.maxTouchPoints` | `touch-fits-os` | claimed OS Android, touch points absent **or 0** (added 2026-09-11 with `d-pointer-touch`, which derives a coarse pointer from the claim) |
 | `webgl-identity-set-on-both-contexts` | `webGl:renderer` ↔ `webGl2:renderer` | `gl-identity-set-together` | exactly one context type resolves an identity (vendor or renderer, key or map); the missing side is the repaired key and the resolved strings are the repair value |
+| `fonts-alias-requires-list` | `fonts:alias` → `fonts:list` | `requires-key` | alias map set, allowlist absent: the bundle's own names (Selawik, Inter Variable…) would resolve beside the families aliased to them (added 2026-09-11 with `fonts-iii-alias`, measurements/2026-09-11-fonts-bundle.md) |
 
 No new violation kind after all: `Violation.old_value` empty is the presence
 marker, and `ValidateAtStartup` prints the "'A' is set but 'B' is not. It

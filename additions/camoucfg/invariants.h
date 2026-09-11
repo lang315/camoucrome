@@ -105,7 +105,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 13> kAllInvariants = {{
+inline constexpr std::array<Invariant, 14> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
@@ -161,7 +161,10 @@ inline constexpr std::array<Invariant, 13> kAllInvariants = {{
     {"android-claims-touch",
      Relation::kTouchFitsOs,
      Policy::kRepair,
-     {keys::kUaOsInfo, keys::kNavigatorMaxTouchPoints}},
+     {keys::kUaOsInfo, keys::kNavigatorMaxTouchPoints}},    {"fonts-alias-requires-list",
+     Relation::kRequiresKey,
+     Policy::kRepair,
+     {keys::kFontsAlias, keys::kFonts}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
