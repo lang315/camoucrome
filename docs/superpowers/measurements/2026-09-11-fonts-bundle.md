@@ -29,8 +29,12 @@ macOS host exposes is mapped to one of them:
 
 The family lists are **captured, not authored**: 118 families from the
 box's Windows 10 host (`InstalledFontCollection` over ssh; two ASUS vendor
-fonts excluded by name in `families.exclude`) and 186 from the Mac
-(`system_profiler SPFontsDataType`), with provenance in the manifest.
+fonts excluded by name in `families.exclude`) and 180 from the Mac
+(`system_profiler SPFontsDataType`; six user-installed developer fonts —
+Hack Nerd Font ×3, JetBrains Mono ×2, Noto Emoji — excluded because their
+`Location` sits under `~/Library/Fonts`, not `/System`: a list that carries
+one developer font identifies the generator, every macOS identity claims the
+whole list), with provenance in the manifest.
 
 ## 2. Two layers, because one was measured insufficient
 
@@ -40,7 +44,7 @@ fonts excluded by name in `families.exclude`) and 186 from the Mac
 directory, so DejaVu/Ubuntu/Cantarell can never resolve by name, which is
 what closes the `system-ui`/CSS2-keyword rows — an xdg cache dir, and a
 `binding="strong"` alias for every captured family and generic (140
-Windows, 211 macOS). Both launchers and the Node client point
+Windows, 205 macOS). Both launchers and the Node client point
 `FONTCONFIG_FILE` at the conf of the claimed OS (`ua:platform`, else the
 preset's `os`) when a `fonts` dir sits beside the executable or is passed
 (`launcher.json` `launch.fontconfig`; layout `<root>/fonts` +
@@ -67,6 +71,18 @@ manifest's `alias_map` by `gen_fontconfig.py`; the generator emits
 a file) and `fonts:alias` together. `FontAliasTest` (unit) + gn check on
 `//third_party/blink/renderer/platform:platform`.
 
+Two guards found in review, both measured: **one hop.** The hook re-enters
+`GetFontPlatformData` with the target, so a hand-written map with a cycle
+(`{A:B, B:A}`) recursed until the renderer's stack ran out — a crash is a
+fingerprint (CLAUDE.md's last line). A target that is itself a key of the
+map is now not followed (the inner call finds no alias), so a chain or a
+cycle degrades to the real lookup; F7 loads a page under exactly that map.
+The generated maps have no such target (bundle names are never keys).
+**`fonts-alias-requires-list`** (14th invariant, `requires-key`, repair):
+`fonts:alias` without `fonts:list` would let a page request "Selawik" by
+name and get it beside a "Segoe UI" of the same width — a set no Windows
+host produces. Mutation in the unit test and the runner (7/7, 14).
+
 ## 3. Verify (`scripts/verify_fonts_bundle.py`, chrome through the probe)
 
 Width test only: `document.fonts.check()` answers true for any never-loaded
@@ -81,13 +97,20 @@ same system fallback either way and read as resolved).
 |---|---|
 | F1 RED, no bundle, no config: Segoe UI unresolvable, DejaVu Sans resolves | PASS |
 | F2 Windows claim + bundle + list + alias: **116/116** families resolve, DejaVu Sans/Ubuntu/Cantarell hidden, `system-ui` == `Segoe UI` (Selawik through the alias) ≠ the blocked width, a direct "Selawik" blocked | PASS |
-| F3 macOS claim: **186/186** resolve, host fonts hidden, `system-ui` == `-apple-system` (Inter) ≠ blocked, direct "Inter Variable" blocked | PASS |
+| F3 macOS claim: **180/180** resolve, host fonts hidden, `system-ui` == `-apple-system` (Inter) ≠ blocked, direct "Inter Variable" blocked | PASS |
 | F4 `gen.py --os windows` emits a `fonts:list` ⊆ what F2 measured as resolving | PASS |
-| F5 the extracted archive's chrome with `fonts/` beside it and no `--fonts-dir` (launcher finds it) | see packaging doc §3, third cut |
+| F5 the extracted archive's chrome with `fonts/` beside it and no `--fonts-dir` (launcher finds it) | see packaging doc §3, third and fourth cuts |
+| F6 worker parity (rule 3): a dedicated worker's `OffscreenCanvas` widths of Segoe UI / Consolas / Calibri == the main thread's under the F2 config | PASS, 416 / 540 / 373 on both |
+| F7 cyclic `fonts:alias` `{A:B, B:A, "Segoe UI":A}`, non-strict, page requesting all three: chrome starts and the page reports | PASS (before the one-hop guard this was the renderer crash) |
 
 Before the C++ alias (conf only): F2/F3 failed with `system-ui` 416 px vs
 Selawik 373 px and every mono/symbol family unresolved — the measurement
-that produced §2's second layer. `4 PASS 0 FAIL` after.
+that produced §2's second layer. `4 PASS 0 FAIL` after; `6 PASS 0 FAIL`
+with F6/F7 (the probe now waits for `#o`, since a worker reports after
+load). The width test cannot tell Carlito from the allowlist's fallback
+font for the Latin probe string (both 373 px at 16 px); F2's resolves row
+(mono vs serif fallback) is what proves Calibri resolves, F6 only compares
+threads.
 
 ## 4. Open, named
 

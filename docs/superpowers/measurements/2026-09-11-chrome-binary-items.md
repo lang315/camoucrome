@@ -77,11 +77,11 @@ Content); the request is sent before the abort, which the row tolerates.
 |---|---|
 | `verify_sp6b_driver.py` (on the third cut's extracted chrome) | 6 rows `ALL_PASS` |
 | `verify_sp6b_launcher.py` L1–L5 | `ALL_PASS` |
-| `verify_sp6b_generator.py` (N=3) | `ALL_PASS` |
+| `verify_sp6b_generator.py` (N=3; N=2 after the Z rows) | `ALL_PASS`, incl. Z: five locales generated with no `--timezone` report the table's zone under strict with no `camoucfg:` line |
 | `verify_d_pointer_touch.py` | 5/5 |
 | `verify_webgl_profile.py` | 4/4 |
-| `verify_fonts_bundle.py` (box copy and archive mode) | 4/4, 4/4 |
+| `verify_fonts_bundle.py` (box copy and archive mode) | 4/4, 4/4; 6/6 on the box after F6/F7 (fourth cut: packaging doc) |
 | `verify_chrome_object.py` | 4/4 |
 | `verify_sp1a_chrome.py` | 34 PASS, 0 FAIL |
-| `verify_sp7_phonehome.py` P1–P4 | 4/4 |
-| `run_coherence_tests.sh` | 7/7, 13 mutations |
+| `verify_sp7_phonehome.py` P1–P4 | 4/4, with one footnote: the sweep's first run printed `P1: FAIL` and its note (the external-host set) was not captured; five reruns (two then, three in review with the note captured) all read `external hosts in 75s = {}`. Recorded as a one-off with no host name, not as a pass without remainder |
+| `run_coherence_tests.sh` | 7/7, 13 mutations; 7/7, 14 after `fonts-alias-requires-list` |

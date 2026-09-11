@@ -193,7 +193,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 13> kMutations = {{
+constexpr std::array<Mutation, 14> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -252,6 +252,9 @@ constexpr std::array<Mutation, 13> kMutations = {{
     {"android-claims-touch",
      R"({"ua:osInfo":"Linux; Android 14; Pixel 8","ua:platform":"Android","navigator.platform":"Linux armv8l"})",
      "navigator.maxTouchPoints"},
+    // An alias map with no allowlist: the bundle's own names would resolve.
+    {"fonts-alias-requires-list", R"({"fonts:alias":{"Segoe UI":"Selawik"}})",
+     "fonts:list"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {

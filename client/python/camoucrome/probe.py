@@ -65,6 +65,8 @@ def main():
         # main world. The probe page reports typeof window.__camou_init.
         page.add_init_script("window.__camou_init = 1")
         page.goto(a.url, wait_until="load")
+        # A page that reports from a worker writes #o after load; wait for it.
+        page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
         report = page.locator("#o").text_content()
         argv = browser_argv(a.executable)
         ctx.close()
