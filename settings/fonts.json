@@ -4,22 +4,25 @@
   {
    "name": "Selawik",
    "family": "Selawik",
-   "url": "https://github.com/microsoft/Selawik/archive/refs/heads/master.zip",
-   "sha256": "",
+   "url": "https://github.com/microsoft/Selawik/releases/download/1.01/Selawik_Release.zip",
+   "sha256": "3f62c51e05e3b5a1e6241cf92a371f0be2ea1183aa87b30718bbd40832a8d423",
    "files": [
     "selawk.ttf",
     "selawkb.ttf",
     "selawkl.ttf",
     "selawksb.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/microsoft/Selawik/master/LICENSE",
-   "licence": "SIL OFL 1.1"
+   "licence_url": "https://raw.githubusercontent.com/microsoft/Selawik/master/LICENSE.txt",
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Selawik"
+   ]
   },
   {
    "name": "Liberation 2.1.5",
    "family": "Liberation",
    "url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
-   "sha256": "",
+   "sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0",
    "files": [
     "LiberationSans-Regular.ttf",
     "LiberationSans-Bold.ttf",
@@ -35,102 +38,151 @@
     "LiberationMono-BoldItalic.ttf"
    ],
    "licence_url": "https://raw.githubusercontent.com/liberationfonts/liberation-fonts/main/LICENSE",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Liberation Sans",
+    "Liberation Serif",
+    "Liberation Mono"
+   ]
   },
   {
    "name": "Carlito",
    "family": "Carlito",
-   "url": "https://github.com/googlefonts/carlito/archive/refs/heads/main.zip",
-   "sha256": "",
+   "sha256": [
+    "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595",
+    "bb5d20f79b82599ec72983597437373a80f2d2085fa91fc144fd74e876a594db",
+    "0b019225e58d702bfedcbd35c21696769f8ee115cb6343f84c2f240312450d1c",
+    "b32928186c119599e03ca6a1ffc680fdcb7fac95772f4b95d989cf6cd3861517"
+   ],
    "files": [
     "Carlito-Regular.ttf",
     "Carlito-Bold.ttf",
     "Carlito-Italic.ttf",
     "Carlito-BoldItalic.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/googlefonts/carlito/main/OFL.txt",
-   "licence": "SIL OFL 1.1"
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/carlito/OFL.txt",
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Carlito"
+   ],
+   "urls": [
+    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Regular.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Bold.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Italic.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-BoldItalic.ttf"
+   ]
   },
   {
    "name": "Caladea",
    "family": "Caladea",
-   "url": "https://github.com/googlefonts/caladea/archive/refs/heads/main.zip",
-   "sha256": "",
+   "sha256": [
+    "f1e899278b7b4491aba5b6a8253c4b04c050cc59b21865be5c37559a775153cd",
+    "ae3cb2dcbc925809dd29d2a44e9802211cab66be541bacbfc9c08c74b27c3742",
+    "4359a8e24f748b6447b1ff6d7a174febe70961d29f8bb8634b56dacd740a3deb",
+    "ccabaa7b7e2fdf253d2b1a5fa699dd8a3df8d835a9eb285ad82631a677eb76c0"
+   ],
    "files": [
     "Caladea-Regular.ttf",
     "Caladea-Bold.ttf",
     "Caladea-Italic.ttf",
     "Caladea-BoldItalic.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/googlefonts/caladea/main/OFL.txt",
-   "licence": "SIL OFL 1.1"
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/caladea/OFL.txt",
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Caladea"
+   ],
+   "urls": [
+    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Regular.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Bold.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Italic.ttf",
+    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-BoldItalic.ttf"
+   ]
   },
   {
    "name": "Noto Sans",
    "family": "Noto Sans",
    "url": "https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
-   "sha256": "",
+   "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
    "files": [
     "NotoSans[wdth,wght].ttf"
    ],
    "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/OFL.txt",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Noto Sans"
+   ]
   },
   {
    "name": "Noto Serif",
    "family": "Noto Serif",
    "url": "https://github.com/google/fonts/raw/main/ofl/notoserif/NotoSerif%5Bwdth%2Cwght%5D.ttf",
-   "sha256": "",
+   "sha256": "4d8e6761424656867019081a1a01336f3cb086982682698714054fc33f782713",
    "files": [
     "NotoSerif[wdth,wght].ttf"
    ],
    "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserif/OFL.txt",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Noto Serif"
+   ]
   },
   {
    "name": "Noto Sans Symbols",
    "family": "Noto Sans Symbols",
    "url": "https://github.com/google/fonts/raw/main/ofl/notosanssymbols/NotoSansSymbols%5Bwght%5D.ttf",
-   "sha256": "",
+   "sha256": "f7e7e04b4a24b6c78893d50cbfd2b2f6cae49617ab047bfef668d252adb128f7",
    "files": [
     "NotoSansSymbols[wght].ttf"
    ],
    "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols/OFL.txt",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Noto Sans Symbols"
+   ]
   },
   {
    "name": "Noto Sans CJK SC",
    "family": "Noto Sans CJK SC",
    "url": "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
-   "sha256": "",
+   "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
    "files": [
     "NotoSansCJKsc-Regular.otf"
    ],
    "licence_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/LICENSE",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Noto Sans CJK SC"
+   ]
   },
   {
    "name": "Noto Color Emoji",
    "family": "Noto Color Emoji",
    "url": "https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf",
-   "sha256": "",
+   "sha256": "72a635cb3d2f3524c51620cdde406b217204e8a6a06c6a096ff8ed4b5fd6e27b",
    "files": [
     "NotoColorEmoji.ttf"
    ],
    "licence_url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/fonts/LICENSE",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Noto Color Emoji"
+   ]
   },
   {
    "name": "Inter 4.1",
    "family": "Inter",
    "url": "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
-   "sha256": "",
+   "sha256": "9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e",
    "files": [
     "InterVariable.ttf",
     "InterVariable-Italic.ttf"
    ],
    "licence_url": "https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt",
-   "licence": "SIL OFL 1.1"
+   "licence": "SIL OFL 1.1",
+   "provides": [
+    "Inter"
+   ]
   }
  ],
  "generic": {
