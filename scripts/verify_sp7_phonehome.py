@@ -147,7 +147,11 @@ def run_p4():
                 cdp.on("Network.requestWillBeSent", lambda e: reqs.__setitem__(e["requestId"], e["request"]["url"]))
                 cdp.on("Network.requestWillBeSentExtraInfo", lambda e: extra.append(e))
                 cdp.send("Network.enable")
-                page.goto("https://www.google.com/generate_204", wait_until="load", timeout=30000)
+                try:
+                    page.goto("https://www.google.com/generate_204", wait_until="load", timeout=30000)
+                except Exception as nav:  # noqa: BLE001  204 No Content aborts the navigation; the request was sent
+                    if "ERR_ABORTED" not in str(nav):
+                        raise
                 page.wait_for_timeout(20000 if launch == 1 else 8000)
                 for e in extra:
                     seen.append((launch, reqs.get(e["requestId"], "?"), {k.lower() for k in e["headers"]}))

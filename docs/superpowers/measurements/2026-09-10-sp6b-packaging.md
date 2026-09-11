@@ -91,3 +91,16 @@ and `android-claims-touch` (104 steps, 2 min), packaged at
 `changeset_commit 58b59ab` / `branch_tip bc91762ccd`: 254 files,
 155,877,928 bytes, 206 s, extract 8 s, `--check` ok; DevTools opens from
 the extracted tree, six-driver sweep `ALL_PASS` on its `chrome`.
+
+**Third cut, 2026-09-11, with the font bundle.** `out/Release` relinked
+with `fonts-iii-alias` (105 steps); packaged at `changeset_commit 9474119`
+/ `branch_tip 1474cae191` with `fonts/` (10 OFL families, 40 MB) and
+`settings/fontconfig/` in the layout the launcher contract names: **300
+files, 181,505,248 bytes (173 MiB)**, 218 s, extract 9 s, stamp `fonts:
+true`, `--check` ok. On the extracted tree: `verify_fonts_bundle.py` in
+archive mode (`CAMOU_EXE=<extracted>/chrome`, no `--fonts-dir`: the
+launcher finds `fonts/` beside the executable) **4/4**, DevTools opens,
+six-driver sweep `ALL_PASS`. The first attempt at this cut shipped no
+fonts because the box's copy of `package.py` predated the fonts code — the
+stamp's `fonts: false` said so; the doc's layout rule ("copy the packager
+the repo has") is what caught it.

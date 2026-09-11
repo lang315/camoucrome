@@ -3728,3 +3728,20 @@ and no ontouchstart (V4 always passed 5). 13th invariant android-claims-touch (r
 the OS via ClaimedOs like the derivation, repair 5), mutation in unittest + runner. Found: canonical Android
 navigator.platform was "Linux armv81" in derive.cc/h, its unittest, the validator comment, invariants.json,
 verify_navplatform_derive.py -- Chrome reports "Linux armv8l"; fixed in all 7 files.
+
+## Open items slice (spec 2026-09-11-open-items-design, plan 2026-09-11-open-items) -- SHIPPED 2026-09-11
+Windows host = stock Chrome 153.0.8010.36 (the pin) + Intel UHD 630; scripts/winhost.py (dump_dom headless,
+cdp_eval/cdp_headers headed via .NET websocket on the host: PS 5.1 lacks Process.CommandLine, mux master
+refuses -L, --dump-dom silent headed). WebGL DB: 2 profiles (Intel D3D11 27/53 pnames 35/32 ext; Apple M1 Pro
+Metal from Mac Chrome 151 headed), gen --gpu, precision cells emitted (host differs 8/12), verify 4/4 incl.
+getExtension non-null. Locale table 46 tags, --timezone optional. Fonts: no proprietary file; 10 OFL sources
+40 MB; captured Windows 118 (2 ASUS excluded) / macOS 186; fontconfig strong aliases (140/211) + relative dir
++ xdg cache; measured: Skia FCI name-equality defeats fontconfig aliasing -> fonts:alias key (84th) in
+FontCache::GetFontPlatformData (fonts-iii-alias.patch, box 1474cae191); FONTCONFIG_FILE duty in all three
+launchers + contract; packager ships fonts/ (third cut 300 files 173 MiB, F5 4/4). verify_fonts_bundle F1 RED,
+F2 116/116, F3 186/186, F4. window.chrome: stock tree (32 props: app, csi, loadTimes) == fork, plugins 5 ==,
+headed == headless (no B7 tell); baseline chrome-8010-stock-window-chrome.json; RED content_shell. X-Client-Data:
+stock sends on launch 2 of a profile (constructed RED), fork none (P4). headless_shell closed by decision.
+Regressions all green (see chrome-binary-items doc section 6). Trap of the day: macOS tar AppleDouble ._ files
+broke glob("*.json") on the box (COPYFILE_DISABLE=1); a stale package.py copy shipped an archive without fonts
+(stamp fonts:false caught it).
