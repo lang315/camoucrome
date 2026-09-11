@@ -3801,3 +3801,5 @@ FontAccess in ChromeContentRendererClient::RenderThreadStarted (chrome/renderer 
 base_feature_status enabled + copied_from_base_feature_if overridden -- the RED caught the flag leaking to every claim),
 settings/voices.json + gen.voices_keys. O1 0 DIFF / O2 RED Linux / O3 186 faces; sp1a 34, sp2/sp2b, voices 5/5, bundle
 17/17, coherence 7/7. Box tip 1ae7cdb240 windows-oracle. Residual: sampleRate 48000 vs 44100 (sp4-audio decision).
+Seventh cut 2026-09-12: relink 122 steps 2m37; changeset 70df1c8618be tip 1ae7cdb240; 306 files 181,799,808 B; oracle 3/3 on the
+archived chrome, fonts archive mode 17/17, DevTools OK, sweep ALL_PASS. Sixth cut superseded.
