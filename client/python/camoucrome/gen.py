@@ -103,13 +103,28 @@ def load_profiles():
     return {p.stem: json.loads(p.read_text()) for p in sorted((ROOT / "settings" / "webgl").glob("*.json"))}
 
 
+GL_ENUM = {"VERTEX_SHADER": 35633, "FRAGMENT_SHADER": 35632, "LOW_FLOAT": 36336, "MEDIUM_FLOAT": 36337,
+           "HIGH_FLOAT": 36338, "LOW_INT": 36339, "MEDIUM_INT": 36340, "HIGH_INT": 36341}
+
+
+def precision_keys(spf):
+    """Profile cells "VERTEX_SHADER/HIGH_FLOAT" -> the key's "<shadertype>:<precisiontype>" decimal form."""
+    return {f"{GL_ENUM[s]}:{GL_ENUM[p]}": v for (s, p), v in ((k.split("/"), v) for k, v in spf.items())}
+
+
 def webgl_keys(profile):
+    """The profile's identity, numeric table, extension list and precision formats
+    on both contexts (measured 2026-09-11: the SwiftShader host's precision
+    cells differ from a real GPU's in 8 of 12, so they must be emitted too;
+    contextAttributes agreed in all and stay unemitted)."""
     return {"webGl:vendor": profile["vendor"], "webGl:renderer": profile["renderer"],
             "webGl2:vendor": profile["vendor"], "webGl2:renderer": profile["renderer"],
             "webGl:parameters": profile["webgl"]["parameters"],
             "webGl2:parameters": profile["webgl2"]["parameters"],
             "webGl:supportedExtensions": profile["webgl"]["supportedExtensions"],
-            "webGl2:supportedExtensions": profile["webgl2"]["supportedExtensions"]}
+            "webGl2:supportedExtensions": profile["webgl2"]["supportedExtensions"],
+            "webGl:shaderPrecisionFormats": precision_keys(profile["webgl"]["shaderPrecisionFormats"]),
+            "webGl2:shaderPrecisionFormats": precision_keys(profile["webgl2"]["shaderPrecisionFormats"])}
 
 
 def profile_for(platform, gpu=None):
