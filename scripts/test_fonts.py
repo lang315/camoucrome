@@ -82,3 +82,24 @@ def test_every_cjk_family_sits_in_exactly_one_region_with_a_target():
 def test_a_bundled_family_named_like_the_claim_is_never_an_alias_key():
     for os_name in ("Windows", "macOS"):
         assert "Tahoma" not in FONTS["alias_map"][os_name] and "Tahoma" in FONTS["families"][os_name]["list"]
+
+
+def test_unique_names_map_onto_a_bundled_face_of_the_same_style():
+    m = FONTS["unique_map"]["Windows"]
+    assert m == g.unique_map(FONTS, "Windows")
+    assert m["SegoeUI"] == "Selawik" and m["SegoeUI-Bold"] == "Selawik Bold"
+    assert m["ArialMT"] == "Liberation Sans" and m["Arial-BoldMT"] == "Liberation Sans Bold"
+    assert m["Tahoma-Bold"] == "Tahoma Bold" and "Tahoma" not in m  # Wine's file carries the host's own names
+    bundled_full = {f["full"] for b in FONTS["bundle"] for f in b["faces"]}
+    assert set(m.values()) <= bundled_full
+    for os_name in ("Windows", "macOS"):
+        names = FONTS["families"][os_name]["unique_names"]
+        assert len(names) > 100 and all(v["family"] in FONTS["families"][os_name]["list"] for v in names.values())
+        # a bundle face's full name is a host name only for a bundled file carrying the claimed name (Wine's Tahoma)
+        own = {f["full"] for b in FONTS["bundle"] if set(b["provides"]) & set(FONTS["families"][os_name]["list"]) for f in b["faces"]}
+        assert set(names) & bundled_full <= own
+
+
+def test_every_bundle_entry_records_its_faces():
+    for b in FONTS["bundle"]:
+        assert b["faces"] and set(b["provides"]) <= {f["family"] for f in b["faces"]}, b["name"]  # legacy families (Selawik Light) may add more

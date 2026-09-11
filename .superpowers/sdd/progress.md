@@ -3757,3 +3757,18 @@ winhost cdp helpers delete their temp profiles (12 dirs / 247 MB cleaned on the 
 fonts.json/fontconfig/webgl/locale_zones/winhost. Box tip 85dfb6b3fc fonts-iii-alias (amended); export gate empty; sync 39.
 Fourth cut 2026-09-11: out/Release relink 49 steps 48 s; changeset 65014e08bf tip 85dfb6b3fc; 300 files 181,546,064 B;
 archive-mode fonts 6/6, DevTools OK, driver sweep ALL_PASS. Third cut superseded (recursive alias, 186-list manifest).
+
+## Fonts residuals slice (spec 2026-09-11-fonts-residuals-design, plan 2026-09-11-fonts-residuals) -- 2026-09-11
+Metric grid: capture_font_metrics.py on the Windows host (12 families x 125 chars at 100 px) -> baseline; verify_font_metrics.py
+on the fork: Liberation control 0.992/1.0/1.0 within 0.5 px (noise floor), Carlito 0.984, Gelasio 0.984 (new, Georgia),
+Wine Tahoma max 1.6 px + Selawik max 1.1 px (approximate clones, 2 px threshold named), Caladea/Cambria 0.36 within,
+19.4 px on digits (Google Fonts build; numbers only), Verdana/Trebuchet/Consolas no clone (36.6/29.4/5.0 px). CJK: one OTC
+(19.5 MB) with five regional families, script_class split 22/13/21/10/3, F9 JP!=SC pixels (RED equal). F8 emoji by colour
+945 px (RED 0). F-PSNAME closed with data: fontnames.py (stdlib name-table reader, runs on the Windows host through
+winhost), unique_names 255 Windows / 383 macOS, bundle faces recorded by fetch_fonts, unique_map 254/382, generator emits
+unique names into fonts:list + fonts:alias; F11 local("SegoeUI"/"Segoe UI"/"SegoeUI-Bold") load at 416/416/437, Selawik*
+error, worker == page; no C++. ua:platformVersion follows the captured list (Win 10.0.19045 -> "10.0.0", macOS 15.7.4).
+Generator N=10 36/36, coherence 7/7 (14). Closed by fact: macOS build (47 GiB free), WebGL macOS re-capture (Chrome 151),
+hinting/AA, validator reports only. Traps: the Mac's system HTTPS proxy (127.0.0.1, a VPN app) re-signs TLS -> fetch_fonts
+retries direct, digests pinned from the box first; fontnames.py's __main__ prints {} when pushed as a driver (take the
+last JSON line); a `cmd | tail` in an && chain hides the failure (pipe exit is tail's) -> two fetches ran at once.

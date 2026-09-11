@@ -149,8 +149,11 @@ def fonts_keys(platform):
     fonts = json.loads((ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))
     if platform not in fonts["alias_map"]:
         return {}
-    return {"fonts:list": fonts["families"][platform]["list"] + fonts["extra_allowed"][platform],
-            "fonts:alias": fonts["alias_map"][platform]}
+    fam = fonts["families"][platform]
+    return {"fonts:list": fam["list"] + fonts["extra_allowed"][platform] + sorted(fam.get("unique_names", {})),
+            "fonts:alias": {**fonts["alias_map"][platform], **fonts.get("unique_map", {}).get(platform, {})},
+            # The list was captured on one OS version; the UA-CH claim follows it (rule 4).
+            "ua:platformVersion": fam["platform_version"]}
 
 
 def chrome_device_memory(value):
