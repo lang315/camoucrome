@@ -140,3 +140,14 @@ mode **13/13** (F1–F12 with REDs), `verify_font_metrics.py` against the
 archived chrome **5/5**, DevTools opens, six-driver sweep `ALL_PASS`. The
 fifth cut is superseded: its chrome errors on `local("Georgia")` and lets
 `font-family: "SegoeUI"` resolve.
+
+**Seventh cut, 2026-09-12, the Windows oracle.** `out/Release` relinked
+with `windows-oracle` (122 steps, 2 m 37 s) and packaged at
+`changeset_commit 70df1c8618be` / `branch_tip 1ae7cdb240`: **306 files,
+181,799,808 bytes (173 MiB)**, 219 s, extract 9 s, stamp `fonts: true`,
+`--check` ok. On the extracted tree: `verify_host_oracle.py` **3/3** (O1 zero
+differences from stock Windows Chrome outside the named set, O2 RED Linux
+claim, O3 186 faces), fonts in archive mode **17/17**, DevTools opens,
+six-driver sweep `ALL_PASS`. The sixth cut is superseded: its chrome ships
+two brands and no `navigator.share`, `bluetooth` or `queryLocalFonts` under
+a Windows claim.
