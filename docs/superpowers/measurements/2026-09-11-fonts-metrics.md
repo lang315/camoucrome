@@ -55,6 +55,48 @@ Readings:
   Liberation Mono's 60 vs Consolas's 55 advance). Presence only, as
   before.
 
+### 1b. The macOS grid (2026-09-12)
+
+Same page, stock Chrome 151 on the Mac (headed 300×200 app window, the
+page POSTs its report; `capture_font_metrics.py --where mac` →
+`baselines/chrome-7922-stock-font-metrics-macos.json`), the fork under the
+macOS claim with the generator's keys (`verify_font_metrics.py --os macos`).
+
+| claimed family | fork renders | within 0.5 px | max \|diff\| | row |
+|---|---|---|---|---|
+| Arial / Times New Roman / Courier New | Liberation | 0.992 / 1.000 / 1.000 | 0.5 / 0.4 / 0.0 px | M1 control PASS |
+| Helvetica / Times / Courier | Liberation Sans / Serif / Mono | 0.992 / 1.000 / 1.000 | 0.5 / 0.4 / 0.0 px | M7 PASS (Helvetica carries Arial's metrics; Times and Courier resolve on stock through Blink's alternate names, §1c) |
+| Georgia | Gelasio | 0.984 | 0.5 px | M3 PASS |
+| Tahoma | Wine Tahoma | 0.720 | 1.6 px | M4 approximate PASS |
+| Menlo / Monaco | Liberation Mono | 1.000 / 1.000 | 0.2 / 0.0 px | M8 PASS (Menlo is Vera Sans Mono's 0.602 em, Monaco 0.6: both inside the floor) |
+| Helvetica Neue | Inter Variable | 0.072 | 17 px | M9 numbers only |
+| system-ui (SF) | Inter Variable | 0.016 | 18 px | M9 numbers only |
+| Lucida Grande / Geneva / Avenir | Inter Variable | 0.08 / 0.06 / 0.12 | 31 / 27 / 20 px | M9 numbers only |
+| Verdana / Trebuchet MS / Gill Sans / Palatino / Baskerville | class fonts | ≤ 0.2 | 35 / 38 / 32 / 27 / 31 px | M6 no clone |
+| -apple-system | — | — | — | the canvas font shorthand does not take it on stock either (unresolved both sides) |
+
+So under a macOS claim the Microsoft-metric families and the two
+monospace Apple faces are exact; the Apple UI faces (Helvetica Neue, San
+Francisco, Lucida Grande, Geneva, Avenir) are presence only, Inter is
+3–5 px wider per character on average, and no open clone of their metrics
+exists. That is the honest state of "Inter for Helvetica Neue".
+
+### 1c. Blink's alternate family names (found by the macOS grid)
+
+The first macOS run failed Courier: the fork rendered it in Inter. macOS
+15 ships no "Courier" family, yet stock Chrome resolves `font-family:
+Courier` — Blink's `AlternateFamilyName` pairs Courier ↔ Courier New,
+Times ↔ Times New Roman, Helvetica ↔ Arial, on every platform. Stock
+Windows 10 resolves all three the same way (measured, `--dump-dom`:
+Helvetica 183.2 = Arial, Times 170.6 = Times New Roman, Courier 230.4 =
+Courier New). The fork's allowlist refused them before the alternate could
+fire — a name every real host resolves was unresolvable. `extra_allowed`
+now carries Helvetica / Times / Courier for Windows and Times / Courier for
+macOS (Helvetica is installed there); the alias map already sent them to
+Liberation. Row **F14 / F14-mac**: the three resolve at the widths of
+their pairs under both claims. `verify_fonts_bundle.py` **17/17**, box
+and archive mode.
+
 ## 2. Clones added (manifest `bundle`)
 
 | file | licence | claimed | kept because |
@@ -184,7 +226,8 @@ rightly lacks).
 | what | result |
 |---|---|
 | `verify_font_metrics.py` M1–M5 | 5/5 (table in §1; M2b/M6 as notes) |
-| `verify_fonts_bundle.py` F1–F13 with REDs | 15/15 (F2 116/116, F3 180/180, F6 parity, F7 cycle, F8 945 px / RED 0, F9 JP≠SC / RED equal, F10 RED, F11 six names, F11-mac five names, F12, F13) |
+| `verify_fonts_bundle.py` F1–F14 with REDs | 17/17 (F2 116/116, F3 180/180, F6 parity, F7 cycle, F8 945 px / RED 0, F9 JP≠SC / RED equal, F10 RED, F11 six names, F11-mac five names, F12, F13, F14 / F14-mac) |
+| `verify_font_metrics.py --os macos` | 5/5 (§1b) |
 | `verify_fonts_ii.py` | 6/6 (the local() gate still refuses an unlisted family) |
 | `verify_sp6b_generator.py` N=10 | 36/36: 30 generated configs across 3 OSes with zero `camoucfg:` lines under strict, 5 Z rows, RED |
 | `run_coherence_tests.sh` | 7/7, 15 mutations |

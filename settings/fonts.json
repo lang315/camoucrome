@@ -5970,13 +5970,19 @@
   "cjk_hk": "The quick brown fox jumps over the lazy dog 0123456789"
  },
  "extra_allowed": {
-  "$comment": "names real Chrome resolves as specific families on that OS though no font file carries them; the generator adds them to fonts:list so the allowlist lets them reach the alias",
+  "$comment": "names real Chrome resolves as specific families on that OS though no font file carries them; the generator adds them to fonts:list so the allowlist lets them reach the alias; Helvetica/Times/Courier are Blink's AlternateFamilyName pairs (Arial/Times New Roman/Courier New): stock resolves them on both OSes with no such font installed (measured 2026-09-12, Windows host and Mac)",
   "macOS": [
    "-apple-system",
    "BlinkMacSystemFont",
-   ".AppleSystemUIFont"
+   ".AppleSystemUIFont",
+   "Times",
+   "Courier"
   ],
-  "Windows": []
+  "Windows": [
+   "Helvetica",
+   "Times",
+   "Courier"
+  ]
  },
  "unique_map": {
   "Windows": {

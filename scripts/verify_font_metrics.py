@@ -7,7 +7,10 @@ M1 control: Arial / Times New Roman / Courier New >= 0.98 (Liberation is
 M2 Calibri (Carlito) >= 0.98; M2b Cambria (Caladea) numbers only (its Google Fonts build
    differs on digits/capitals, measured). M3 Georgia (Gelasio) >= 0.98.
 M4 Tahoma (Wine) and M5 Segoe UI (Selawik): approximate clones, every char within 2 px.
-M6 Verdana / Trebuchet MS / Consolas: numbers only (no clone exists)."""
+M6 Verdana / Trebuchet MS / Consolas: numbers only (no clone exists).
+--os macos: the macOS baseline (stock Chrome on the Mac) and claim; M7 Helvetica/Times/
+Courier onto Liberation, M8 Menlo/Monaco onto Liberation Mono, M9 Inter for the Apple
+UI fonts as numbers."""
 import http.server
 import json
 import os
@@ -23,7 +26,9 @@ NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node"
 CLIENT = pathlib.Path(os.environ.get("CAMOU_CLIENT", f"{HOME}/camoucrome-client"))
 FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
 FONTS = json.loads((CLIENT / "settings" / "fonts.json").read_text(encoding="utf-8"))
-BASE = json.loads((CLIENT / "baselines" / "chrome-8010-stock-font-metrics-windows.json").read_text(encoding="utf-8"))
+OS = sys.argv[sys.argv.index("--os") + 1] if "--os" in sys.argv else "windows"
+BASE = json.loads((CLIENT / "baselines" / {"windows": "chrome-8010-stock-font-metrics-windows.json",
+                                            "macos": "chrome-7922-stock-font-metrics-macos.json"}[OS]).read_text(encoding="utf-8"))
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_font_metrics as cap  # noqa: E402
 
@@ -40,6 +45,15 @@ THRESH = {"M1 control (Liberation)": (["Arial", "Times New Roman", "Courier New"
 # Numbers only: Cambria's Google-Fonts Caladea build differs on digits and capitals
 # (measured within 0.36, max 19.4 px); no clone exists for the M6 three.
 REPORT = {"M2b Caladea": ["Cambria"], "M6 no clone": ["Verdana", "Trebuchet MS", "Consolas"], "host-absent": ["Segoe UI Variable"]}
+MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS", "ua:platformVersion": "15.7.4", "navigator.platform": "MacIntel"}
+if OS == "macos":  # the same fonts ship on both OSes where they do; the rest is what a macOS claim renders them as
+    THRESH = {"M1 control (Liberation)": (["Arial", "Times New Roman", "Courier New"], 0.98, 0.6),
+              "M7 Helvetica / Times / Courier -> Liberation (Arial/Times/Courier metrics)": (["Helvetica", "Times", "Courier"], 0.98, 0.6),
+              "M3 Gelasio": (["Georgia"], 0.98, 0.6),
+              "M4 Wine Tahoma (approximate)": (["Tahoma"], 0.5, 2.0),
+              "M8 Menlo / Monaco -> Liberation Mono (approximate)": (["Menlo", "Monaco"], 0.5, 2.0)}
+    REPORT = {"M9 Inter for the Apple UI fonts": ["Helvetica Neue", "-apple-system", "system-ui", "Lucida Grande", "Geneva", "Avenir"],
+              "M6 no clone": ["Verdana", "Trebuchet MS", "Gill Sans", "Palatino", "Baskerville"]}
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -58,11 +72,11 @@ class H(http.server.BaseHTTPRequestHandler):
 def main():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    H.body = cap.page(cap.GRID_FAMILIES).encode()
+    H.body = cap.page(cap.FAMILIES["mac" if OS == "macos" else "winhost"]).encode()
     env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
     env["PLAYWRIGHT_NODEJS_PATH"] = NODE
-    cfg = {**WIN, "fonts:list": FONTS["families"]["Windows"]["list"] + FONTS["extra_allowed"]["Windows"],
-           "fonts:alias": FONTS["alias_map"]["Windows"]}
+    from camoucrome import gen as G
+    cfg = {**MAC, **G.fonts_keys("macOS")} if OS == "macos" else {**WIN, **G.fonts_keys("Windows")}
     p = subprocess.run([PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE,
                         "--url", f"http://127.0.0.1:{srv.server_port}/", "--config", json.dumps(cfg), "--fonts-dir", FONTS_DIR],
                        capture_output=True, text=True, timeout=180, env=env)
