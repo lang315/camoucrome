@@ -65,10 +65,23 @@ profile, headed, `Network.requestWillBeSentExtraInfo`):
 | 2 (same profile, 15 s) | 1 | **present** |
 
 The fork, same two-launch shape on the box (`verify_sp7_phonehome.py`
-P4): see the row in the ledger and §6 — expected absent both times with
-no request to `clientservices.googleapis.com` / `update.googleapis.com`.
+P4): **2 requests over the two launches, host `www.google.com` only,
+`x-client-data` on neither, no request to `clientservices.googleapis.com`
+/ `update.googleapis.com`** — `P4 PASS`, with P1–P3 (P1 external hosts in
+the 75 s window: `{}`). `generate_204` aborts the navigation (204 No
+Content); the request is sent before the abort, which the row tolerates.
 
-## 6. Regression sweep
+## 6. Regression sweep (2026-09-11, after every slice of the day)
 
-Recorded in `.superpowers/sdd/progress.md` for this date: driver 6 rows,
-launcher L1–L5, generator, d-pointer-touch, sp1a chrome, coherence runner.
+| verify | result |
+|---|---|
+| `verify_sp6b_driver.py` (on the third cut's extracted chrome) | 6 rows `ALL_PASS` |
+| `verify_sp6b_launcher.py` L1–L5 | `ALL_PASS` |
+| `verify_sp6b_generator.py` (N=3) | `ALL_PASS` |
+| `verify_d_pointer_touch.py` | 5/5 |
+| `verify_webgl_profile.py` | 4/4 |
+| `verify_fonts_bundle.py` (box copy and archive mode) | 4/4, 4/4 |
+| `verify_chrome_object.py` | 4/4 |
+| `verify_sp1a_chrome.py` | 34 PASS, 0 FAIL |
+| `verify_sp7_phonehome.py` P1–P4 | 4/4 |
+| `run_coherence_tests.sh` | 7/7, 13 mutations |
