@@ -160,11 +160,12 @@ a Windows or macOS claim (no Linux `ShareService` binder; the broker's
 `ReportBadMessage`). Superseded by the eighth cut below.
 
 **Eighth cut, 2026-09-12, Windows behaviour.** `out/Release` relinked with
-`windows-behaviour` (97 steps, 1 m 47 s; then 2 steps for the jitter amend)
-and packaged at `changeset_commit 15ac6239092e` / `branch_tip cbac91fea0`:
-**306 files, 181,858,216 bytes (173 MiB)**, 219 s, extract 9.4 s, stamp
-`fonts: true`, `--check` ok. On the extracted tree: `verify_host_oracle.py`
-**4/4**, `verify_windows_behaviour.py` **7/7** (S1 `AbortError: Share
-canceled` after 3025 ms with `share:cancelMs` 2543 + jitter, page alive —
-the seventh cut's chrome died here), DevTools opens, six-driver sweep
+`windows-behaviour` (97 steps, 1 m 43 s; the cut was re-done once after
+CI caught a stale `keys.h` doc comment, so the stamped tip is the amended
+commit) and packaged at `changeset_commit 0c7e690c61a1` / `branch_tip
+305e949a77`: **306 files, 181,920,528 bytes (173 MiB)**, 232 s, extract
+9.4 s, stamp `fonts: true`, `--check` ok. On the extracted tree:
+`verify_host_oracle.py` **4/4**, `verify_windows_behaviour.py` **7/7** (S1
+`AbortError: Share canceled` after 2708 ms with `share:cancelMs` 2543 +
+jitter, page alive — the seventh cut's chrome died here), DevTools opens, six-driver sweep
 `ALL_PASS`. The seventh cut is superseded.

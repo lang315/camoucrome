@@ -72,7 +72,7 @@ the kill.
 | `CamoucfgKeysTest` (88 keys), `gen_keys.py --check`, `check_additions_build.py`, client tests 27 | PASS |
 
 Build: `out/Default` chrome + components_unittests 95 steps, 1 m 36 s (then
-2 steps for the jitter amend). Box tip `cbac91fea0 windows-behaviour` above
+2 steps for the jitter amend). Box tip `305e949a77 windows-behaviour` (keys.h doc regen amended) above
 `1ae7cdb240 windows-oracle`; export gate empty (35 commits; the patch
 carries all three paths).
 
