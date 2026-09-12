@@ -704,6 +704,18 @@
     "broker kills the renderer for that. The generator emits 900..2600 under a Windows or macOS claim; unreachable under a Linux claim",
     "(navigator.share stays undefined)."
    ]
+  },
+  {
+   "name": "kAudioSampleRate",
+   "key": "audio:sampleRate",
+   "type": "int32",
+   "doc": [
+    "Output sample rate the audio service reports for the default output device (AudioManagerBase::GetOutputStreamParameters /",
+    "GetDefaultOutputStreamParameters, media/audio). AudioContext.sampleRate and baseLatency derive from it in every renderer; the",
+    "actual output stream keeps the device's own rate through Chromium's AudioOutputResampler, exactly as when a page asks for a",
+    "rate the device lacks, so nothing desyncs. Clamped to 8000..192000. The generator emits the claimed host's measured rate",
+    "(settings/audio.json: Windows 48000, macOS 48000). Absent => the device's real rate (rule 5)."
+   ]
   }
  ]
 }

@@ -9,6 +9,7 @@ driver's protocol log from stderr.
 import argparse
 import importlib
 import json
+import pathlib
 import os
 import sys
 
@@ -41,7 +42,7 @@ def main():
     ap.add_argument("--driver", choices=["patchright", "stock"], required=True)
     ap.add_argument("--executable", required=True)
     ap.add_argument("--url", required=True)
-    ap.add_argument("--config")
+    ap.add_argument("--config", help="JSON object, or @path to a file holding it (a macOS identity is ~140 KB, past Linux's 128 KiB single-argument limit)")
     ap.add_argument("--preset")
     ap.add_argument("--window", help="W,H -> --window-size")
     ap.add_argument("--dpr", type=float)
@@ -56,6 +57,8 @@ def main():
     module = "patchright" if a.driver == "patchright" else "playwright"
     sync_playwright = importlib.import_module(f"{module}.sync_api").sync_playwright
     with sync_playwright() as pw:
+        if a.config and a.config.startswith("@"):
+            a.config = pathlib.Path(a.config[1:]).read_text(encoding="utf-8")
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],

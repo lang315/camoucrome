@@ -44,6 +44,9 @@
   "dpr_arg": "--force-device-scale-factor={dpr}",
   "env": {
    "config": "CAMOU_CONFIG",
+   "config_chunks": "CAMOU_CONFIG_{n}",
+   "config_chunk_chars": 30000,
+   "why_chunks": "Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN); a macOS identity (191 voices, 409 faces, 775 names) is ~140 KB and spawn fails with E2BIG. A config longer than config_chunk_chars goes out as CAMOU_CONFIG_1..N in order, no CAMOU_CONFIG; the reader (AssembleRawConfig) concatenates. 30000 chars is at most 120 KB of UTF-8.",
    "preset": "CAMOU_PRESET",
    "strict": "CAMOU_CONFIG_STRICT"
   },

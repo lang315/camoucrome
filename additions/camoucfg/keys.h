@@ -354,8 +354,15 @@ inline constexpr char kWindowScreenY[] = "window.screenY";
 // (navigator.share stays undefined).
 inline constexpr char kShareCancelMs[] = "share:cancelMs";
 
+// Output sample rate the audio service reports for the default output device (AudioManagerBase::GetOutputStreamParameters /
+// GetDefaultOutputStreamParameters, media/audio). AudioContext.sampleRate and baseLatency derive from it in every renderer; the
+// actual output stream keeps the device's own rate through Chromium's AudioOutputResampler, exactly as when a page asks for a
+// rate the device lacks, so nothing desyncs. Clamped to 8000..192000. The generator emits the claimed host's measured rate
+// (settings/audio.json: Windows 48000, macOS 48000). Absent => the device's real rate (rule 5).
+inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
+
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 88> kAllKeys = {
+inline constexpr std::array<std::string_view, 89> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -444,6 +451,7 @@ inline constexpr std::array<std::string_view, 88> kAllKeys = {
     kWindowScreenX,
     kWindowScreenY,
     kShareCancelMs,
+    kAudioSampleRate,
 };
 
 // The UA client-hint keys, without kUaOsInfo.

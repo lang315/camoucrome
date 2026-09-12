@@ -2,6 +2,7 @@ package camoucrome
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -198,5 +199,34 @@ func TestFontconfigFollowsTheClaimedOS(t *testing.T) {
 	env, _ = BuildEnv(Options{Config: map[string]any{"ua:platform": "Windows"}}, nil)
 	if _, ok := env["FONTCONFIG_FILE"]; ok {
 		t.Fatal("no fonts dir must set nothing")
+	}
+}
+
+func TestALargeConfigIsChunkedIntoNumberedEnvStrings(t *testing.T) {
+	big := map[string][]string{"fonts:local": make([]string, 700)}
+	for i := range big["fonts:local"] {
+		big["fonts:local"][i] = strings.Repeat("x", 100)
+	}
+	env, err := BuildEnv(Options{Config: big}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := env["CAMOU_CONFIG"]; ok {
+		t.Fatal("CAMOU_CONFIG set for a large config")
+	}
+	joined := ""
+	for n := 1; ; n++ {
+		c, ok := env[fmt.Sprintf("CAMOU_CONFIG_%d", n)]
+		if !ok {
+			break
+		}
+		if len([]rune(c)) > configChunkRunes {
+			t.Fatalf("chunk %d has %d runes", n, len([]rune(c)))
+		}
+		joined += c
+	}
+	var back map[string][]string
+	if err := json.Unmarshal([]byte(joined), &back); err != nil || len(back["fonts:local"]) != 700 {
+		t.Fatalf("chunks do not reassemble: %v", err)
 	}
 }

@@ -42,6 +42,17 @@ def fontconfig_for(config=None, preset=None, fonts_dir=None, executable_path=Non
     return os.path.abspath(os.path.join(str(fonts_dir), os.pardir, FONTCONFIG_FILES[os_name]))
 
 
+CONFIG_CHUNK_CHARS = 30000  # Linux caps one environment string at 128 KiB; a macOS identity (191 voices, 409 faces) is ~140 KB
+
+
+def config_env(raw):
+    """CAMOU_CONFIG when it fits in one environment string, else CAMOU_CONFIG_1..N in order (the reader concatenates)."""
+    if len(raw) <= CONFIG_CHUNK_CHARS:
+        return {"CAMOU_CONFIG": raw}
+    chunks = [raw[i:i + CONFIG_CHUNK_CHARS] for i in range(0, len(raw), CONFIG_CHUNK_CHARS)]
+    return {f"CAMOU_CONFIG_{n}": c for n, c in enumerate(chunks, 1)}
+
+
 def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None):
     """The child environment: every CAMOU_* of the parent dropped, then the
     given config/preset set. Dropping first is deliberate -- a stale
@@ -50,7 +61,7 @@ def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None
     env = {k: v for k, v in (os.environ if base is None else base).items()
            if not k.startswith("CAMOU_")}
     if config is not None:
-        env["CAMOU_CONFIG"] = _as_json(config)
+        env.update(config_env(_as_json(config)))
     if preset is not None:
         env["CAMOU_PRESET"] = _as_json(preset)
     if strict:

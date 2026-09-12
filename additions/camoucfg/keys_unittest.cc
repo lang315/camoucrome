@@ -67,7 +67,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kFonts,
       kFontsAlias,
       kFontsAliasLocal,
-      kFontsLocal, kShareCancelMs,
+      kFontsLocal, kShareCancelMs, kAudioSampleRate,
       kAudioSeed, kAudioOutputLatency, kAudioBaseLatency,
       kAudioMaxChannelCount,
       kMediaDevicesEnabled, kMediaDevicesMicros, kMediaDevicesWebcams,

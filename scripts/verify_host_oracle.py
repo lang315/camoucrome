@@ -45,8 +45,6 @@ KNOWN = {
     "keyboard.KeyA": "host has no keyboard", "keyboard.KeyQ": "host has no keyboard", "keyboard.Backquote": "host has no keyboard", "keyboard.Digit1": "host has no keyboard",
     # The probe's own init-script marker (patchright's add_init_script lands in the main world; verify_sp6b_driver excludes it too).
     "windowKeys": "probe marker __camou_init", "windowNames": "probe marker __camou_init", "protoCounts.Window": "probe marker __camou_init (+1)",
-    # sp4-audio decided not to spoof the output rate (buffer-length coherence); the box renders at 44100, the host at 48000.
-    "audio.sampleRate": "sp4-audio residual: real output rate (host 48000, box 44100)",
 }
 
 

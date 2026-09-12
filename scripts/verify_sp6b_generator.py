@@ -46,6 +46,14 @@ document.getElementById('o').textContent = JSON.stringify({
 </script>"""
 
 
+def config_path(config):
+    """A macOS identity (191 voices, 409 faces, 775 names) is ~140 KB: past Linux's 128 KiB per-argument limit, so the probe reads @file."""
+    import tempfile
+    f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
+    json.dump(config, f); f.close()
+    return f.name
+
+
 def serve():
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -78,7 +86,7 @@ def probe(url, config, launch):
     env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
     env.update(DEBUG="pw:browser", PLAYWRIGHT_NODEJS_PATH=NODE)
     cmd = [PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE,
-           "--url", url, "--strict", "--config", json.dumps(config),
+           "--url", url, "--strict", "--config", "@" + config_path(config),
            "--window", f"{launch['window'][0]},{launch['window'][1]}", "--dpr", str(launch["dpr"])]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=180, env=env)
     report = json.loads(p.stdout)["report"] if p.returncode == 0 and p.stdout else None
