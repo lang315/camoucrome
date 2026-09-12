@@ -60,6 +60,13 @@ SP3a).
 | `destination.maxChannelCount` | `AudioDestinationNode::maxChannelCount` `audio_destination_node.cc:41` | low — reported channel cap | SP0 override |
 | `BaseAudioContext.sampleRate` | `BaseAudioContext::sampleRate` `base_audio_context.h:124` (returns `destination_handler_->SampleRate()`) | **HIGH — buffer-length tied** | see decision |
 
+**Superseded 2026-09-12 (windows-behaviour-ii):** the rate is now set one
+layer down, in the audio service's reported output parameters
+(`audio:sampleRate`, `AudioManagerBase::GetOutputStreamParameters`), so
+`sampleRate`, `baseLatency` and the render quantum agree by construction and
+the device keeps its own rate through `AudioOutputResampler`
+(`measurements/2026-09-12-windows-behaviour-ii.md`).
+
 **`sampleRate` coherence risk.** `sampleRate()` returns the destination handler's
 *real* render rate, and the context's buffers + `OfflineAudioContext(ch, length,
 rate)` render length are tied to that real rate. Spoofing the getter alone

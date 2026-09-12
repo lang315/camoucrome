@@ -141,6 +141,27 @@ func asJSON(v any) (string, error) {
 	return string(b), err
 }
 
+// configChunkRunes: Linux caps one environment string at 128 KiB; a macOS
+// identity (191 voices, 409 faces) is ~140 KB, so a large config goes out as
+// CAMOU_CONFIG_1..N in order (the reader concatenates).
+const configChunkRunes = 30000
+
+func configEnv(raw string) map[string]string {
+	r := []rune(raw)
+	if len(r) <= configChunkRunes {
+		return map[string]string{"CAMOU_CONFIG": raw}
+	}
+	out := map[string]string{}
+	for n, i := 1, 0; i < len(r); n, i = n+1, i+configChunkRunes {
+		j := i + configChunkRunes
+		if j > len(r) {
+			j = len(r)
+		}
+		out[fmt.Sprintf("CAMOU_CONFIG_%d", n)] = string(r[i:j])
+	}
+	return out
+}
+
 // BuildEnv is the child environment: every CAMOU_* of the parent dropped
 // (a stale CAMOU_CONFIG_1 would otherwise win), then config/preset set.
 func BuildEnv(o Options, base []string) (map[string]string, error) {
@@ -156,7 +177,9 @@ func BuildEnv(o Options, base []string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		env["CAMOU_CONFIG"] = s
+		for k, c := range configEnv(s) {
+			env[k] = c
+		}
 	}
 	if o.Preset != nil {
 		s, err := asJSON(o.Preset)

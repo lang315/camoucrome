@@ -118,11 +118,67 @@ def main():
         and all(v["lang"] == "fr-FR" for v in fr) and [v["default"] for v in fr] == [True, False, False])
     nz, uk = gen("windows", "en-NZ")["voices:list"], gen("windows", "uk-UA")["voices:list"]
     results["V2 en-NZ -> the en-AU row (same language); uk-UA -> en-US"] = nz[0]["lang"] == "en-AU" and uk[0]["lang"] == "en-US"
+    results.update(audio_rows(win, gen("linux")))
+    mac = gen("macos")["voices:list"]
+    results["V3 macOS claim: the measured Mac list (191 voices, Samantha default)"] = len(mac) == 191 and mac[0]["name"] == "Samantha" and mac[0]["default"] is True
     n = sum(results.values())
     for k, v in results.items():
         print("PASS " if v else "FAIL ", k)
     print(f"{n} PASS {len(results) - n} FAIL")
     sys.exit(0 if n == len(results) else 1)
+
+
+AUDIO_PAGE = b"""<!doctype html><title>audio</title><button id=b>go</button><pre id=o></pre><script>
+document.getElementById('b').onclick = async () => {
+  const ac = new AudioContext(); await ac.resume();
+  const off = new OfflineAudioContext(1, 4096, 44100); const osc = off.createOscillator(); osc.connect(off.destination); osc.start();
+  const buf = await off.startRendering(); let peak = 0; for (const x of buf.getChannelData(0)) peak = Math.max(peak, Math.abs(x));
+  document.getElementById('o').textContent = JSON.stringify({rate: ac.sampleRate, base: ac.baseLatency, frames: ac.baseLatency * ac.sampleRate, state: ac.state, offPeak: peak});
+  ac.close();
+};
+</script>"""
+
+
+def audio_probe(cfg):
+    script = f"""
+import json, sys
+sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))})
+from camoucrome.launcher import launch
+from patchright.sync_api import sync_playwright
+import http.server, threading
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers(); self.wfile.write({AUDIO_PAGE!r})
+    def log_message(self, *a): pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
+with sync_playwright() as pw:
+    ctx = launch(pw, {json.dumps(EXE)}, config=json.loads({json.dumps(json.dumps(cfg))}), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
+    page = ctx.new_page(); page.goto(f"http://127.0.0.1:{{srv.server_port}}/"); page.click("#b")
+    page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=20000)
+    print(page.locator("#o").text_content())
+    ctx.close()
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
+    env["PLAYWRIGHT_NODEJS_PATH"] = NODE
+    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+    if p.returncode != 0:
+        return {"error": p.stderr[-400:].replace("\n", " | ")}
+    return json.loads(p.stdout.strip().splitlines()[-1])
+
+
+def audio_rows(win, lin):
+    """A1-A3: the reported output rate follows audio:sampleRate; the render still runs and an offline render is non-silent."""
+    a = audio_probe(win)
+    bare = audio_probe({k: v for k, v in win.items() if k != "audio:sampleRate"})
+    l = audio_probe(lin)
+    print(f"note: A1 Windows claim -> {json.dumps(a)[:160]}; key absent -> {json.dumps(bare)[:100]}; Linux claim -> {json.dumps(l)[:100]}")
+    want = win["audio:sampleRate"]
+    return {
+        f"A1 Windows claim: AudioContext.sampleRate == audio:sampleRate ({want}), baseLatency*rate an integer frame count, state running, offline render non-silent (RED: the box's real rate before the hook)": (
+            a.get("rate") == want and abs(a.get("frames", 0) - round(a.get("frames", 0))) < 1e-6 and a.get("state") == "running" and a.get("offPeak", 0) > 0.5),
+        f"A2 key absent: the device's real rate ({bare.get('rate')}), which on this box differs from the claim's -- the hook is config-gated": bare.get("rate") is not None and bare.get("rate") != want,
+        "A3 Linux claim (no key emitted): the real rate, equal to A2": l.get("rate") == bare.get("rate") and l.get("rate") is not None,
+    }
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+{
+ "$comment": "AudioContext.sampleRate of stock Chrome per host (capture_voices.py); emitted as audio:sampleRate under the claim.",
+ "macOS": {
+  "sampleRate": 48000,
+  "baseLatency": 0.005333333333333333,
+  "chrome": "Google Chrome 151.0.7922.138"
+ },
+ "Windows": {
+  "sampleRate": 48000,
+  "baseLatency": 0.01,
+  "chrome": "153.0.8010.36 (host oracle baseline, headed)"
+ }
+}

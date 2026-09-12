@@ -219,3 +219,11 @@ def test_voices_follow_the_locale_and_share_cancel_is_human_paced():
     assert gen.voices_keys("Windows", "uk-UA")["voices:list"][0]["lang"] == "en-US"   # no Ukrainian pack: en-US
     assert 900 <= fr["share:cancelMs"] <= 2600
     assert "share:cancelMs" not in gen.from_pool(dict(POOL, navigator=dict(POOL["navigator"], userAgentData=dict(POOL["navigator"]["userAgentData"], platform="Linux"))), "UTC", rng=random.Random(1))["config"]
+
+
+def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
+    win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
+    assert win["audio:sampleRate"] == 48000
+    assert gen.voices_keys("macOS", "fr-FR")["voices:list"] == gen.voices_keys("macOS")["voices:list"]
+    assert len(gen.voices_keys("macOS")["voices:list"]) > 100 and gen.audio_keys("macOS") == {"audio:sampleRate": 48000}
+    assert gen.audio_keys("Linux") == {}

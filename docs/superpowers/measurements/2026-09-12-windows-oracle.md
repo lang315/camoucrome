@@ -113,8 +113,9 @@ Box tip `1ae7cdb240 windows-oracle` (new patch stem: `user_agent_utils.cc`,
   patchright's `add_init_script` lands in the main world; a caller must
   never add one a page could enumerate). The oracle excludes it by name.
 
-- `AudioContext.sampleRate`: 48000 on the host, 44100 on the box; sp4-audio's
-  decision stands (spoofing the rate desyncs buffer lengths).
+- `AudioContext.sampleRate`: 48000 on the host, 44100 on the box — **closed
+  2026-09-12 (windows-behaviour-ii)**: `audio:sampleRate` at the audio
+  service; the leaf left `KNOWN` and O1 measures it (0 DIFF, 229 leaves).
 - **Erratum 2026-09-12:** `navigator.share()` with a user gesture on the
   fork did not hang, it **killed the renderer** (the broker has no Linux
   `ShareService` binder; `ReportNoBinderForInterface`). Fixed in

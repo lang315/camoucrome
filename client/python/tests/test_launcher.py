@@ -106,3 +106,12 @@ def test_fontconfig_env_follows_the_claimed_os(tmp_path):
     assert "FONTCONFIG_FILE" not in launcher.build_env()
     contract = json.loads((ROOT / "settings" / "launcher.json").read_text())["launch"]["fontconfig"]
     assert contract["env"] == launcher.FONTCONFIG_ENV and contract["files"] == launcher.FONTCONFIG_FILES
+
+
+def test_a_large_config_is_chunked_into_numbered_env_strings():
+    big = {"fonts:local": ["x" * 100] * 700}  # ~70 KB: past one 30000-char chunk, under Linux's 128 KiB per string
+    env = camoucrome.build_env(big, base={})
+    assert "CAMOU_CONFIG" not in env
+    parts = [env[f"CAMOU_CONFIG_{n}"] for n in range(1, 4)]
+    assert "CAMOU_CONFIG_4" not in env and all(len(p) <= 30000 for p in parts)
+    assert json.loads("".join(parts)) == big

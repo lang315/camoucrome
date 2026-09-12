@@ -53,6 +53,7 @@ residual detail lives in that slice's measurement doc, not here.
 | 8 | **audio-ii** | **partial** 09-06 | ★★☆ | M–L | Med | Blink modules (render thread) | sp4-audio |
 | 8b | **windows-oracle** (fork vs stock Windows Chrome 153 on the host: brands, WebShare, WebBluetooth, Font Access, voices) | **shipped** 09-12 (`measurements/2026-09-12-windows-oracle.md`) | ★★★ | M | Low | embedder_support, chrome/renderer, blink font_access | B1 harness |
 | 8c | **windows-behaviour** (`share()` past presence: the seventh cut's chrome killed the renderer on the first call under a Windows claim — Linux `ShareService` stub cancels like a dismissed sheet, `share:cancelMs`; voices per locale) | **shipped** 09-12 (`measurements/2026-09-12-windows-behaviour.md`) | ★★★ | S | Low | chrome/browser binders | 8b |
+| 8d | **windows-behaviour-ii** (`audio:sampleRate` at the audio service — the sp4-audio residual closed, O1 measures the rate; macOS voices measured, 191) | **shipped** 09-12 (`measurements/2026-09-12-windows-behaviour-ii.md`) | ★★ | S | Low | media/audio | 8c |
 | 9 | **fonts-ii** | **partial** 09-06, PS-name residual closed 09-11 | ★★★ | L | **High** | Blink platform/fonts | sp4-fonts |
 | 10 | **webrtc-ii** | **partial** 09-06 | ★★☆ | S (shipped) / L (residual) | Low (shipped) | Blink platform/p2p (shipped); libwebrtc (residual) | sp4-webrtc-ip |
 

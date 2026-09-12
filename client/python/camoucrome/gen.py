@@ -176,9 +176,17 @@ def voices_keys(platform, locale="en-US"):
     if platform not in voices:
         return {}
     table = voices[platform]
+    if isinstance(table, list):  # macOS ships every language's voices at once (measured: 191 on a 15.7.4 Mac)
+        return {"voices:list": table}
     lang = locale.split("-")[0]
     row = table.get(locale) or next((v for t, v in table.items() if t.split("-")[0] == lang), table["en-US"])
     return {"voices:list": row}
+
+
+def audio_keys(platform):
+    """audio:sampleRate for the claimed OS from settings/audio.json (measured on stock); {} when the OS has no row."""
+    audio = json.loads((ROOT / "settings" / "audio.json").read_text(encoding="utf-8"))
+    return {"audio:sampleRate": audio[platform]["sampleRate"]} if platform in audio else {}
 
 
 def chrome_device_memory(value):
@@ -275,6 +283,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
         config.update(webgl_keys(profile))
     config.update(fonts_keys(platform))
     config.update(voices_keys(platform, tag))
+    config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
         config["share:cancelMs"] = rng.randint(900, 2600)  # a dismissed share sheet takes a human seconds, never 0 ms
 
