@@ -110,6 +110,7 @@ does it.
 | row | expectation | RED |
 |---|---|---|
 | S1 Windows claim, gesture | `AbortError: Share canceled` after ≥ `share:cancelMs` and < cancelMs + 3000 (jitter ≤ 500); the page still answers afterwards (no crash) | pre-fix: "Target crashed" (measured) |
+| S1b two gestures in one page | both within the bound, delays differ (per-call jitter 0–500 ms) | — |
 | S2 Windows claim, no gesture | `NotAllowedError` (renderer-side, unchanged) | — |
 | S3 Linux claim | `navigator.share` undefined | — |
 | S4 key absent | cancels within the jitter alone (< 700 ms), no crash | — |
