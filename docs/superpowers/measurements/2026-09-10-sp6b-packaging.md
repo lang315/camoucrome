@@ -153,3 +153,18 @@ in archive mode **17/17**, DevTools opens,
 six-driver sweep `ALL_PASS`. The sixth cut is superseded: its chrome ships
 two brands and no `navigator.share`, `bluetooth` or `queryLocalFonts` under
 a Windows claim.
+
+**Erratum (windows-behaviour, 2026-09-12):** the seventh cut's chrome
+kills its renderer on the first `navigator.share()` with a gesture under
+a Windows or macOS claim (no Linux `ShareService` binder; the broker's
+`ReportBadMessage`). Superseded by the eighth cut below.
+
+**Eighth cut, 2026-09-12, Windows behaviour.** `out/Release` relinked with
+`windows-behaviour` (97 steps, 1 m 47 s; then 2 steps for the jitter amend)
+and packaged at `changeset_commit 15ac6239092e` / `branch_tip cbac91fea0`:
+**306 files, 181,858,216 bytes (173 MiB)**, 219 s, extract 9.4 s, stamp
+`fonts: true`, `--check` ok. On the extracted tree: `verify_host_oracle.py`
+**4/4**, `verify_windows_behaviour.py` **7/7** (S1 `AbortError: Share
+canceled` after 3025 ms with `share:cancelMs` 2543 + jitter, page alive —
+the seventh cut's chrome died here), DevTools opens, six-driver sweep
+`ALL_PASS`. The seventh cut is superseded.
