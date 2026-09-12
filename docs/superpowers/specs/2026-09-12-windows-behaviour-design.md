@@ -55,7 +55,8 @@ exposes `navigator.share`, so the binder is unreachable without the claim
 gate, and a Linux claim keeps `share` undefined (O2 already measures that).
 
 Key **`share:cancelMs`** (88th, int32): the delay before the stub cancels,
-clamped to 0–60000. Absent → cancel immediately. This is the fail-closed
+clamped to 0–60000, plus 0–500 ms of per-call jitter (the key is per
+identity; two gestures in one page must not see the identical delay). Absent → cancel immediately. This is the fail-closed
 exception to rule 5: the "real" behaviour on the build OS is a renderer
 kill, which is forbidden, so absence falls back to the cheapest
 non-crashing answer rather than to the real one. No invariant row: the key
@@ -108,10 +109,10 @@ does it.
 
 | row | expectation | RED |
 |---|---|---|
-| S1 Windows claim, gesture | `AbortError: Share canceled` after ≥ `share:cancelMs` and < cancelMs + 3000; the page still answers afterwards (no crash) | pre-fix: "Target crashed" (measured) |
+| S1 Windows claim, gesture | `AbortError: Share canceled` after ≥ `share:cancelMs` and < cancelMs + 3000 (jitter ≤ 500); the page still answers afterwards (no crash) | pre-fix: "Target crashed" (measured) |
 | S2 Windows claim, no gesture | `NotAllowedError` (renderer-side, unchanged) | — |
 | S3 Linux claim | `navigator.share` undefined | — |
-| S4 key absent | cancels immediately (< 200 ms), no crash | — |
+| S4 key absent | cancels within the jitter alone (< 700 ms), no crash | — |
 | V1 fr-FR Windows identity | `voices:list` = Hortense (default), Julie, Paul, all `fr-FR` | — |
 | V2 en-NZ / uk-UA | fall back to the `en-AU` row (same language) / the `en-US` row | — |
 

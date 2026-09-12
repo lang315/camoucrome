@@ -34,7 +34,8 @@ the kill.
   `AbortError: Share canceled`. Registered unconditionally on Linux beside
   the platform binders: stock Linux never exposes `navigator.share`, so it
   is unreachable without the claim gate.
-- **Key `share:cancelMs`** (88th, int32, clamped 0–60000). Absent → cancel
+- **Key `share:cancelMs`** (88th, int32, clamped 0–60000, plus 0–500 ms of
+  per-call `base::RandIntInclusive` jitter so two gestures in one page differ). Absent → cancel
   at once: the fail-closed exception to rule 5, since the real behaviour on
   the build OS is the broker kill. No invariant (no cross-surface partner;
   the clamp bounds it). The generator emits 900–2600 ms under a Windows or
@@ -58,10 +59,11 @@ the kill.
 
 | row | result |
 |---|---|
-| S1 Windows claim + click: `AbortError: Share canceled` after 2545 ms with `share:cancelMs` 2543, page alive. **RED pre-fix: `Target crashed`** (same page, same identity) | PASS |
+| S1 Windows claim + click: `AbortError: Share canceled` after 2922 ms with `share:cancelMs` 2543 (+ jitter), page alive. **RED pre-fix: `Target crashed`** (same page, same identity) | PASS |
+| S1b two gestures in one page: 2992 ms then 2859 ms, both within the bound, the delays differ | PASS |
 | S2 Windows claim, no gesture: `NotAllowedError: … Must be handling a user gesture to perform a share request.`, page alive | PASS |
 | S3 Linux claim: `typeof navigator.share === "undefined"` | PASS |
-| S4 key absent: `AbortError: Share canceled` in 5.6 ms, page alive (fail-closed, never the kill) | PASS |
+| S4 key absent: `AbortError: Share canceled` within the jitter alone (< 700 ms), page alive (fail-closed, never the kill) | PASS |
 | V1 fr-FR Windows identity: `voices:list` = Hortense (default), Julie, Paul, all `fr-FR` | PASS |
 | V2 `en-NZ` → the `en-AU` row; `uk-UA` → `en-US` | PASS |
 | `verify_host_oracle.py` O1–O4 | 4/4 |
@@ -69,9 +71,10 @@ the kill.
 | `verify_sp6b_generator.py` N=3 (the two new keys under strict) | 15/15 |
 | `CamoucfgKeysTest` (88 keys), `gen_keys.py --check`, `check_additions_build.py`, client tests 27 | PASS |
 
-Build: `out/Default` chrome + components_unittests 95 steps, 1 m 36 s. Box
-tip `bb907b2518 windows-behaviour` above `1ae7cdb240 windows-oracle`;
-export gate empty (35 commits; the patch carries all three paths).
+Build: `out/Default` chrome + components_unittests 95 steps, 1 m 36 s (then
+2 steps for the jitter amend). Box tip `cbac91fea0 windows-behaviour` above
+`1ae7cdb240 windows-oracle`; export gate empty (35 commits; the patch
+carries all three paths).
 
 ## 4. Residuals, named
 
@@ -84,6 +87,11 @@ export gate empty (35 commits; the patch carries all three paths).
   manifest's `10.0.0` for every Windows claim, so no Windows 11 identity is
   produced and nothing is manufactured.
 - The Linux pool's empty `platformVersion` stays (Windows first).
+- A macOS claim has no voices row (`voices_keys("macOS", …)` → `{}`), so
+  it exposes the box's real `getVoices()`: **0 voices** on `out/Default/chrome`
+  (no speech-dispatcher there; a Linux claim reads the same 0). A real Mac
+  lists dozens; skipped by direction, a manufactured-silence tell to close
+  when macOS is taken up.
 - `share()` with `files` is answered the same way (CANCELED); stock Windows
   would first run the safe-browsing and file-type checks, whose rejections
   (`PERMISSION_DENIED` → `NotAllowedError`) the stub does not reproduce.

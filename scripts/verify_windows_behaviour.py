@@ -28,7 +28,7 @@ if (location.search === '?auto') go();  // no user activation: the renderer reje
 </script>"""
 
 
-def probe(cfg, gesture, budget_ms):
+def probe(cfg, gesture, budget_ms, twice=False):
     """Returns {"typeof": ..., "result": <#o JSON or None>, "alive": <page still answers>}."""
     script = f"""
 import json, sys, time
@@ -49,6 +49,10 @@ with sync_playwright() as pw:
     if out["typeof"] == "function":
         if {gesture!r}:
             page.click("#b")
+            if {twice!r}:
+                page.wait_for_function("document.getElementById('o').textContent.startsWith('{{')", timeout={budget_ms})
+                out["first"] = json.loads(page.locator("#o").text_content())
+                page.click("#b")
         t = time.time(); v = "pending"
         while time.time() - t < {budget_ms} / 1000:
             try:
@@ -90,6 +94,11 @@ def main():
     print(f"note: S1 cancelMs={ms} -> {json.dumps(r)[:200]}")
     results[f"S1 Windows claim + gesture: AbortError 'Share canceled' after >= share:cancelMs ({ms}) and < +3000, page alive (RED pre-fix: Target crashed)"] = (
         isinstance(res, dict) and res.get("err") == "AbortError: Share canceled" and ms <= res.get("ms", -1) < ms + 3000 and r.get("alive") is True)
+    r = probe(win, gesture=True, budget_ms=2 * ms + 8000, twice=True)
+    a, b = (r.get("first") or {}).get("ms"), (r.get("result") or {}).get("ms")
+    print(f"note: S1b two gestures -> {a} ms then {b} ms")
+    results["S1b two gestures in one page: both cancel within [cancelMs, cancelMs+3000) and the delays differ (per-call jitter)"] = (
+        a is not None and b is not None and ms <= a < ms + 3000 and ms <= b < ms + 3000 and round(a) != round(b) and r.get("alive") is True)
     r = probe(win, gesture=False, budget_ms=3000)
     res = r.get("result") or {}
     print(f"note: S2 no gesture -> {json.dumps(r)[:160]}")
@@ -101,8 +110,8 @@ def main():
     r = probe(bare, gesture=True, budget_ms=5000)
     res = r.get("result") or {}
     print(f"note: S4 absent -> {json.dumps(r)[:160]}")
-    results["S4 key absent: cancels at once (< 200 ms), page alive (fail-closed, never the broker kill)"] = (
-        isinstance(res, dict) and res.get("err") == "AbortError: Share canceled" and res.get("ms", 1e9) < 200 and r.get("alive") is True)
+    results["S4 key absent: cancels within the jitter alone (< 700 ms), page alive (fail-closed, never the broker kill)"] = (
+        isinstance(res, dict) and res.get("err") == "AbortError: Share canceled" and res.get("ms", 1e9) < 700 and r.get("alive") is True)
     fr = gen("windows", "fr-FR")["voices:list"]
     results["V1 fr-FR Windows identity: voices Hortense (default), Julie, Paul, all fr-FR"] = (
         [v["name"].split(" - ")[0] for v in fr] == ["Microsoft Hortense", "Microsoft Julie", "Microsoft Paul"]
