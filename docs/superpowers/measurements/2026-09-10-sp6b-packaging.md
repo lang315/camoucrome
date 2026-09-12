@@ -183,3 +183,14 @@ six-driver sweep `ALL_PASS` (the Go probe rebuilt from `client/go` with the
 chunking launcher). The eighth cut is superseded: its chrome reports the
 device's 44100 under a Windows claim and its clients cannot launch a macOS
 identity (E2BIG).
+
+**Tenth cut, 2026-09-12, Windows behaviour II revised.** `out/Release`
+relinked with the amended `windows-behaviour-ii` (`audio:bufferFrames`; 100
+steps, 1 m 50 s) and packaged at `changeset_commit b39155f4166c` /
+`branch_tip 0787dc960b`: **306 files, 181,925,708 bytes (173 MiB)**, 232 s,
+extract 9.6 s, stamp `fonts: true`, `--check` ok. On the extracted tree:
+`verify_host_oracle.py` **4/4** (0 DIFF, 229 leaves),
+`verify_windows_behaviour.py` **14/14** (A4: `baseLatency` 480/48000 =
+0.01, the host's value), DevTools opens, six-driver sweep `ALL_PASS`. The
+ninth cut is superseded: its chrome reports the box's 512-frame latency
+under a Windows claim.
