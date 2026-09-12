@@ -186,7 +186,9 @@ def voices_keys(platform, locale="en-US"):
 def audio_keys(platform):
     """audio:sampleRate for the claimed OS from settings/audio.json (measured on stock); {} when the OS has no row."""
     audio = json.loads((ROOT / "settings" / "audio.json").read_text(encoding="utf-8"))
-    return {"audio:sampleRate": audio[platform]["sampleRate"]} if platform in audio else {}
+    if platform not in audio:
+        return {}
+    return {"audio:sampleRate": audio[platform]["sampleRate"], "audio:bufferFrames": audio[platform]["bufferFrames"]}
 
 
 def chrome_device_memory(value):
@@ -248,7 +250,9 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
         languages = [tag] + [l for l in nav.get("languages", []) if l != tag]
     config = {
         "ua:osInfo": os_info, "ua:platform": ua_platform,
-        "ua:platformVersion": ud.get("platformVersion", ""),
+        # The pool's Linux rows carry no platformVersion; an empty override would replace the real kernel version
+        # (stock Linux Chrome reports it), so the key is left out and rule 5 keeps the real value.
+        **({"ua:platformVersion": ud["platformVersion"]} if ud.get("platformVersion") else {}),
         "ua:architecture": ud.get("architecture", ""),
         "ua:bitness": ud.get("bitness", ""),
         "ua:model": ud.get("model", ""),

@@ -361,8 +361,14 @@ inline constexpr char kShareCancelMs[] = "share:cancelMs";
 // (settings/audio.json: Windows 48000, macOS 48000). Absent => the device's real rate (rule 5).
 inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 
+// Frames per buffer the audio service reports for the default output device, beside audio:sampleRate (same hook,
+// AudioManagerBase::GetOutputStreamParameters). AudioContext.baseLatency = frames / rate, so a claimed host's latency needs its
+// frame count too (Windows WASAPI 480 at 48000 = 0.01 s; macOS 256 = 0.00533 s; the box's PulseAudio 512). The renderer renders
+// in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real.
+inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
+
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 89> kAllKeys = {
+inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -452,6 +458,7 @@ inline constexpr std::array<std::string_view, 89> kAllKeys = {
     kWindowScreenY,
     kShareCancelMs,
     kAudioSampleRate,
+    kAudioBufferFrames,
 };
 
 // The UA client-hint keys, without kUaOsInfo.

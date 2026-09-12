@@ -84,3 +84,27 @@ chrome (`2026-09-10-sp6b-packaging.md`).
 - The chunk size (30000 chars ≤ 120 KB UTF-8) is the clients' choice; the
   reader accepts any count. A Windows identity (37 KB) still goes out as one
   `CAMOU_CONFIG`; only macOS identities chunk today.
+
+## 5. Revision (same day): frames, Linux `platformVersion`, the host
+
+- **`audio:bufferFrames`** (90th key, clamped 64–16384) joins the hook:
+  `baseLatency` is frames / rate, so the Windows claim now reads **480 /
+  48000 = 0.01**, the host's own value (RED before the key: the box's 512
+  frames, 0.010667). macOS 256 (0.00533). `audio.json` carries
+  `bufferFrames` = round(baseLatency × sampleRate). Offline render still
+  peaks at 1.0, state `running`. Row A4.
+- **Linux `platformVersion` was never a tell.** Pristine stock Chrome 153 on
+  Linux at the pin reports `platformVersion: ""`
+  (`baselines/chrome-507c6ee3e2-stock-ua.json`), so the pool's empty value
+  matched stock. The generator now leaves the key out for an empty pool
+  value anyway (rule 5: the real value, which is `""`). Rows U1 (Linux
+  claim == no config == pristine `""`) and U2 (Windows claim `10.0.0`).
+- **Windows fr-FR, third attempt.** The ssh session runs at *High*
+  integrity (`whoami /groups`), yet `dism /Online /Add-Capability` returns
+  error 5 "Access is denied", like `Add-WindowsCapability` and the elevated
+  scheduled task. The servicing stack refuses the non-console session; the
+  row stays quoted until a console logon on the host installs the pack.
+- `verify_windows_behaviour.py` **14/14**, oracle **4/4** (0 DIFF, 229
+  leaves), keys unit (90), client tests 30, generator 15/15. Build 97
+  steps, 1 m 24 s. The `windows-behaviour-ii` commit was amended (same
+  hook), re-exported; tenth archive cut below.

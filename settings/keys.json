@@ -716,6 +716,17 @@
     "rate the device lacks, so nothing desyncs. Clamped to 8000..192000. The generator emits the claimed host's measured rate",
     "(settings/audio.json: Windows 48000, macOS 48000). Absent => the device's real rate (rule 5)."
    ]
+  },
+  {
+   "name": "kAudioBufferFrames",
+   "key": "audio:bufferFrames",
+   "type": "int32",
+   "doc": [
+    "Frames per buffer the audio service reports for the default output device, beside audio:sampleRate (same hook,",
+    "AudioManagerBase::GetOutputStreamParameters). AudioContext.baseLatency = frames / rate, so a claimed host's latency needs its",
+    "frame count too (Windows WASAPI 480 at 48000 = 0.01 s; macOS 256 = 0.00533 s; the box's PulseAudio 512). The renderer renders",
+    "in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real."
+   ]
   }
  ]
 }

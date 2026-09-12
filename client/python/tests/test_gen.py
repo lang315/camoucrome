@@ -225,5 +225,14 @@ def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
     assert win["audio:sampleRate"] == 48000
     assert gen.voices_keys("macOS", "fr-FR")["voices:list"] == gen.voices_keys("macOS")["voices:list"]
-    assert len(gen.voices_keys("macOS")["voices:list"]) > 100 and gen.audio_keys("macOS") == {"audio:sampleRate": 48000}
+    assert len(gen.voices_keys("macOS")["voices:list"]) > 100 and gen.audio_keys("macOS")["audio:sampleRate"] == 48000
     assert gen.audio_keys("Linux") == {}
+
+
+def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version():
+    win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
+    assert win["audio:bufferFrames"] == 480 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
+    assert gen.audio_keys("macOS")["audio:bufferFrames"] == 256
+    lin = json.loads(json.dumps(POOL)); lin["navigator"]["userAgentData"]["platform"] = "Linux"; lin["navigator"]["userAgentData"]["platformVersion"] = ""
+    cfg = gen.from_pool(lin, "UTC", rng=random.Random(1))["config"]
+    assert "ua:platformVersion" not in cfg and cfg["ua:platform"] == "Linux"

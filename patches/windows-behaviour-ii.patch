@@ -19,7 +19,7 @@ index e69de29bb2..76665b3535 100644
 +  "+components/camoucfg",
 +]
 diff --git a/media/audio/audio_manager_base.cc b/media/audio/audio_manager_base.cc
-index b825a26850..3d6f91c8c6 100644
+index b825a26850..17452588eb 100644
 --- a/media/audio/audio_manager_base.cc
 +++ b/media/audio/audio_manager_base.cc
 @@ -27,6 +27,8 @@
@@ -31,7 +31,7 @@ index b825a26850..3d6f91c8c6 100644
  #include "media/audio/fake_audio_input_stream.h"
  #include "media/audio/fake_audio_output_stream.h"
  #include "media/base/media_switches.h"
-@@ -778,8 +780,23 @@ void AudioManagerBase::NotifyAllOutputDeviceChangeListeners() {
+@@ -778,8 +780,30 @@ void AudioManagerBase::NotifyAllOutputDeviceChangeListeners() {
  
  AudioParameters AudioManagerBase::GetOutputStreamParameters(
      const std::string& device_id) {
@@ -52,6 +52,13 @@ index b825a26850..3d6f91c8c6 100644
 +      camoucfg::GlobalScope(), camoucfg::keys::kAudioSampleRate);
 +  if (rate && params.IsValid()) {
 +    params.set_sample_rate(std::clamp(*rate, 8000, 192000));
++  }
++  std::optional<int32_t> frames = camoucfg::GetInt32(
++      camoucfg::GlobalScope(), camoucfg::keys::kAudioBufferFrames);
++  if (frames && params.IsValid()) {
++    // baseLatency = frames / rate: a claimed host's latency needs its frame
++    // count too (WASAPI 480 at 48000; the box's PulseAudio 512).
++    params.set_frames_per_buffer(std::clamp(*frames, 64, 16384));
 +  }
 +  return params;
  }

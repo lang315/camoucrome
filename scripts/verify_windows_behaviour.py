@@ -118,7 +118,9 @@ def main():
         and all(v["lang"] == "fr-FR" for v in fr) and [v["default"] for v in fr] == [True, False, False])
     nz, uk = gen("windows", "en-NZ")["voices:list"], gen("windows", "uk-UA")["voices:list"]
     results["V2 en-NZ -> the en-AU row (same language); uk-UA -> en-US"] = nz[0]["lang"] == "en-AU" and uk[0]["lang"] == "en-US"
-    results.update(audio_rows(win, gen("linux")))
+    lin = gen("linux")
+    results.update(audio_rows(win, lin))
+    results.update(platform_version_rows(win, lin))
     mac = gen("macos")["voices:list"]
     results["V3 macOS claim: the measured Mac list (191 voices, Samantha default)"] = len(mac) == 191 and mac[0]["name"] == "Samantha" and mac[0]["default"] is True
     n = sum(results.values())
@@ -126,6 +128,54 @@ def main():
         print("PASS " if v else "FAIL ", k)
     print(f"{n} PASS {len(results) - n} FAIL")
     sys.exit(0 if n == len(results) else 1)
+
+
+PV_PAGE = b"""<!doctype html><title>pv</title><pre id=o></pre><script>
+navigator.userAgentData.getHighEntropyValues(['platformVersion']).then(h => document.getElementById('o').textContent = JSON.stringify({pv: h.platformVersion, platform: navigator.userAgentData.platform}));
+</script>"""
+
+
+def platform_version_rows(win, lin):
+    """U1: a Linux identity carries no ua:platformVersion (the pool has none); the real value shows -- and on Linux stock Chrome
+    at the pin that value is the empty string (baselines/chrome-507c6ee3e2-stock-ua.json), so the pool's "" was never a tell."""
+    def read(cfg):
+        r = probe_page(cfg, PV_PAGE)
+        return r if isinstance(r, dict) else {}
+    l, bare, w = read(lin), read({}), read(win)
+    stock = json.loads((CLIENT / "baselines" / "chrome-507c6ee3e2-stock-ua.json").read_text(encoding="utf-8"))["high_entropy"]["platformVersion"]
+    print(f"note: U1 Linux claim -> {json.dumps(l)}; no config -> {json.dumps(bare)}; Windows claim -> {json.dumps(w)}")
+    return {
+        f"U1 Linux claim: platformVersion == the no-config value == pristine stock Linux at the pin ({stock!r}); the key is not emitted": (
+            "ua:platformVersion" not in lin and l.get("pv") == bare.get("pv") == stock and l.get("platform") == "Linux"),
+        "U2 Windows claim: platformVersion 10.0.0 (the manifest's pin)": w.get("pv") == "10.0.0",
+    }
+
+
+def probe_page(cfg, page):
+    script = f"""
+import json, sys
+sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))})
+from camoucrome.launcher import launch
+from patchright.sync_api import sync_playwright
+import http.server, threading
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers(); self.wfile.write({page!r})
+    def log_message(self, *a): pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
+with sync_playwright() as pw:
+    ctx = launch(pw, {json.dumps(EXE)}, config=json.loads({json.dumps(json.dumps(cfg))}), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
+    page = ctx.new_page(); page.goto(f"http://127.0.0.1:{{srv.server_port}}/")
+    page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=20000)
+    print(page.locator("#o").text_content())
+    ctx.close()
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
+    env["PLAYWRIGHT_NODEJS_PATH"] = NODE
+    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+    if p.returncode != 0:
+        return {"error": p.stderr[-400:].replace("\n", " | ")}
+    return json.loads(p.stdout.strip().splitlines()[-1])
 
 
 AUDIO_PAGE = b"""<!doctype html><title>audio</title><button id=b>go</button><pre id=o></pre><script>
@@ -173,7 +223,10 @@ def audio_rows(win, lin):
     l = audio_probe(lin)
     print(f"note: A1 Windows claim -> {json.dumps(a)[:160]}; key absent -> {json.dumps(bare)[:100]}; Linux claim -> {json.dumps(l)[:100]}")
     want = win["audio:sampleRate"]
+    frames = win["audio:bufferFrames"]
     return {
+        f"A4 Windows claim: baseLatency == audio:bufferFrames / audio:sampleRate ({frames}/{want} = {frames / want:g}), the host's own 0.01 (RED: the box's 512 frames before the key)": (
+            a.get("frames") is not None and round(a["frames"]) == frames and abs(a.get("base", 0) - frames / want) < 1e-9),
         f"A1 Windows claim: AudioContext.sampleRate == audio:sampleRate ({want}), baseLatency*rate an integer frame count, state running, offline render non-silent (RED: the box's real rate before the hook)": (
             a.get("rate") == want and abs(a.get("frames", 0) - round(a.get("frames", 0))) < 1e-6 and a.get("state") == "running" and a.get("offPeak", 0) > 0.5),
         f"A2 key absent: the device's real rate ({bare.get('rate')}), which on this box differs from the claim's -- the hook is config-gated": bare.get("rate") is not None and bare.get("rate") != want,
