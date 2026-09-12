@@ -1,6 +1,6 @@
 # Windows behaviour Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `navigator.share()` under a Windows/macOS claim behaves like a dismissed share sheet instead of killing the renderer; voices follow the claimed locale.
 
@@ -30,8 +30,8 @@
 
 **Files (patch `windows-behaviour`):** `chrome/browser/chrome_browser_interface_binders.cc`, `chrome/browser/BUILD.gn`, `chrome/browser/DEPS`.
 
-- [ ] Widen the webshare mojom include guard to `IS_LINUX`; add `#include "components/camoucfg/keys.h"`, `mask_config.h`, `base/task/single_thread_task_runner.h`, `base/time/time.h`, `content/public/browser/document_service.h`.
-- [ ] In the anonymous namespace, under `#if BUILDFLAG(IS_LINUX)`:
+- [x] Widen the webshare mojom include guard to `IS_LINUX`; add `#include "components/camoucfg/keys.h"`, `mask_config.h`, `base/task/single_thread_task_runner.h`, `base/time/time.h`, `content/public/browser/document_service.h`.
+- [x] In the anonymous namespace, under `#if BUILDFLAG(IS_LINUX)`:
 
 ```cpp
 // windows-behaviour: a Windows/macOS claim exposes navigator.share (the
@@ -68,19 +68,19 @@ class CamouShareServiceStub
 #endif
 ```
 
-- [ ] Register beside the platform binders: `#if BUILDFLAG(IS_LINUX) map->Add<blink::mojom::ShareService>(&CamouShareServiceStub::Create); #endif`.
-- [ ] `chrome/browser/BUILD.gn`: `"//components/camoucfg",` in the `browser` target deps (next to `//components/embedder_support`); `chrome/browser/DEPS`: `"+components/camoucfg",`.
-- [ ] Push `keys.h`, `keys_unittest.cc` to `components/camoucfg/`; `autoninja -C out/Default chrome components_unittests` (non-zero steps); `gn check out/Default //chrome/browser:browser`; `checkdeps.py chrome/browser`.
+- [x] Register beside the platform binders: `#if BUILDFLAG(IS_LINUX) map->Add<blink::mojom::ShareService>(&CamouShareServiceStub::Create); #endif`.
+- [x] `chrome/browser/BUILD.gn`: `"//components/camoucfg",` in the `browser` target deps (next to `//components/embedder_support`); `chrome/browser/DEPS`: `"+components/camoucfg",`.
+- [x] Push `keys.h`, `keys_unittest.cc` to `components/camoucfg/`; `autoninja -C out/Default chrome components_unittests` (non-zero steps); `gn check out/Default //chrome/browser:browser`; `checkdeps.py chrome/browser`.
 
 ### Task 3: verify (RED first)
 
 **Files:** `scripts/verify_windows_behaviour.py`.
 
-- [ ] Rows S1–S4, V1–V2 per the spec §5; S1's RED is the pre-fix "Target crashed" line (already measured, recorded in the doc). Run on the box: expect 6/6.
-- [ ] Regressions: `verify_host_oracle.py` 4/4, `verify_sp4_voices.py` 5/5, `CamoucfgKeysTest`, `verify_sp6b_generator.py` N=3.
+- [x] Rows S1–S4, V1–V2 per the spec §5; S1's RED is the pre-fix "Target crashed" line (already measured, recorded in the doc). Run on the box: 7/7 (S1b: two gestures in one page see different delays — the per-call jitter).
+- [x] Regressions: `verify_host_oracle.py` 4/4, `verify_sp4_voices.py` 5/5, `CamoucfgKeysTest`, `verify_sp6b_generator.py` N=3.
 
 ### Task 4: export, docs, eighth cut
 
-- [ ] Commit on the box (`windows-behaviour`), `export.sh`, gate empty, `check_checkout_sync.sh`, `check_additions_build.py`.
-- [ ] Docs: measurement `2026-09-12-windows-behaviour.md`; erratum lines in the windows-oracle and packaging docs (seventh cut kills the renderer on `share()`); sp4-voices §4 superseded; roadmap row 8c; conventions catalogue rule (claim-gated interface needs a build-OS binder); CLAUDE.md layout line; sp5b catalogue if a key row table exists.
-- [ ] Release relink (`job_release.sh`), `package.py`, `post_pkg.sh`; oracle 4/4 + S1–S4 on the archived chrome; packaging doc eighth cut; commit, push, CI.
+- [x] Commit on the box (`windows-behaviour`), `export.sh`, gate empty, `check_checkout_sync.sh`, `check_additions_build.py`.
+- [x] Docs: measurement `2026-09-12-windows-behaviour.md`; erratum lines in the windows-oracle and packaging docs (seventh cut kills the renderer on `share()`); sp4-voices §4 superseded; roadmap row 8c; conventions catalogue rule (claim-gated interface needs a build-OS binder); CLAUDE.md layout line; sp5b catalogue if a key row table exists.
+- [x] Release relink (`job_release.sh`), `package.py`, `post_pkg.sh`; oracle 4/4 + S1–S4 on the archived chrome; packaging doc eighth cut; commit, push, CI.

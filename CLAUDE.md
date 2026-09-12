@@ -130,7 +130,7 @@ startup abort instead of a silent fall-back to real values.
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.
 - Unit tests: the `components_unittests` target. `--gtest_filter='Camoucfg*'`
-  matches **1 of 17** suites (only `CamoucfgKeysTest`) — filter by suite name.
+  matches **1 of 22** suites (only `CamoucfgKeysTest`) — filter by suite name.
   `CoherenceValidatorTest.*` cannot run in one invocation: config is read once
   per process and cached, so one process can only latch one `CAMOU_CONFIG`. Use
   `scripts/run_coherence_tests.sh` (one process per case, asserts 6/6).
