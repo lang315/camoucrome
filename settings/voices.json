@@ -1,26 +1,660 @@
 {
- "$comment": "speechSynthesis.getVoices() of stock Chrome 153 on the box's Windows 10 host, headed (capture_host_oracle.py, 2026-09-12); voiceURI equals the name on Windows. Emitted as voices:list under a Windows claim.",
- "Windows": [
-  {
-   "name": "Microsoft David - English (United States)",
-   "lang": "en-US",
-   "voiceURI": "Microsoft David - English (United States)",
-   "localService": true,
-   "default": true
-  },
-  {
-   "name": "Microsoft Mark - English (United States)",
-   "lang": "en-US",
-   "voiceURI": "Microsoft Mark - English (United States)",
-   "localService": true,
-   "default": false
-  },
-  {
-   "name": "Microsoft Zira - English (United States)",
-   "lang": "en-US",
-   "voiceURI": "Microsoft Zira - English (United States)",
-   "localService": true,
-   "default": false
-  }
- ]
+ "$comment": [
+  "speechSynthesis.getVoices() per Windows language pack. en-US is the stock Chrome 153 headed capture on the box's Windows 10 host",
+  "(capture_host_oracle.py, 2026-09-12): alphabetical, the first voice default, voiceURI == name, localService true. Every other row is",
+  "QUOTED, not measured: which voices a pack carries is Microsoft's 'Appendix A: Supported languages and voices' (Windows 10 and 11 tabs",
+  "identical; it spells Hortence, the token is Hortense); the display strings are the OneCore token names as published in the WebbIE",
+  "list of Windows 10 voices, kept verbatim with Windows' quirks (Korean (Korean), Catalan (Catalan), Arabic (Saudi), Norwegian (Bokmal),",
+  "English (United Kingdom)). gen.voices_keys(platform, locale): the locale's row, else the same language's first row in this order, else en-US.",
+  "Sweden's Bengt is not in Appendix A's table but is in the token list; kept."
+ ],
+ "measured": [
+  "en-US"
+ ],
+ "Windows": {
+  "ar-EG": [
+   {
+    "name": "Microsoft Hoda - Arabic (Egypt)",
+    "lang": "ar-EG",
+    "voiceURI": "Microsoft Hoda - Arabic (Egypt)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "ar-SA": [
+   {
+    "name": "Microsoft Naayf - Arabic (Saudi)",
+    "lang": "ar-SA",
+    "voiceURI": "Microsoft Naayf - Arabic (Saudi)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "bg-BG": [
+   {
+    "name": "Microsoft Ivan - Bulgarian (Bulgaria)",
+    "lang": "bg-BG",
+    "voiceURI": "Microsoft Ivan - Bulgarian (Bulgaria)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "ca-ES": [
+   {
+    "name": "Microsoft Herena - Catalan (Catalan)",
+    "lang": "ca-ES",
+    "voiceURI": "Microsoft Herena - Catalan (Catalan)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "zh-CN": [
+   {
+    "name": "Microsoft Huihui - Chinese (Simplified, PRC)",
+    "lang": "zh-CN",
+    "voiceURI": "Microsoft Huihui - Chinese (Simplified, PRC)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Kangkang - Chinese (Simplified, PRC)",
+    "lang": "zh-CN",
+    "voiceURI": "Microsoft Kangkang - Chinese (Simplified, PRC)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Yaoyao - Chinese (Simplified, PRC)",
+    "lang": "zh-CN",
+    "voiceURI": "Microsoft Yaoyao - Chinese (Simplified, PRC)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "zh-HK": [
+   {
+    "name": "Microsoft Danny - Chinese (Traditional, Hong Kong S.A.R.)",
+    "lang": "zh-HK",
+    "voiceURI": "Microsoft Danny - Chinese (Traditional, Hong Kong S.A.R.)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Tracy - Chinese (Traditional, Hong Kong S.A.R.)",
+    "lang": "zh-HK",
+    "voiceURI": "Microsoft Tracy - Chinese (Traditional, Hong Kong S.A.R.)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "zh-TW": [
+   {
+    "name": "Microsoft Hanhan - Chinese (Traditional, Taiwan)",
+    "lang": "zh-TW",
+    "voiceURI": "Microsoft Hanhan - Chinese (Traditional, Taiwan)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Yating - Chinese (Traditional, Taiwan)",
+    "lang": "zh-TW",
+    "voiceURI": "Microsoft Yating - Chinese (Traditional, Taiwan)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Zhiwei - Chinese (Traditional, Taiwan)",
+    "lang": "zh-TW",
+    "voiceURI": "Microsoft Zhiwei - Chinese (Traditional, Taiwan)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "hr-HR": [
+   {
+    "name": "Microsoft Matej - Croatian (Croatia)",
+    "lang": "hr-HR",
+    "voiceURI": "Microsoft Matej - Croatian (Croatia)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "cs-CZ": [
+   {
+    "name": "Microsoft Jakub - Czech (Czech Republic)",
+    "lang": "cs-CZ",
+    "voiceURI": "Microsoft Jakub - Czech (Czech Republic)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "da-DK": [
+   {
+    "name": "Microsoft Helle - Danish (Denmark)",
+    "lang": "da-DK",
+    "voiceURI": "Microsoft Helle - Danish (Denmark)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "nl-NL": [
+   {
+    "name": "Microsoft Frank - Dutch (Netherlands)",
+    "lang": "nl-NL",
+    "voiceURI": "Microsoft Frank - Dutch (Netherlands)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "nl-BE": [
+   {
+    "name": "Microsoft Bart - Dutch (Belgium)",
+    "lang": "nl-BE",
+    "voiceURI": "Microsoft Bart - Dutch (Belgium)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "en-AU": [
+   {
+    "name": "Microsoft Catherine - English (Australia)",
+    "lang": "en-AU",
+    "voiceURI": "Microsoft Catherine - English (Australia)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft James - English (Australia)",
+    "lang": "en-AU",
+    "voiceURI": "Microsoft James - English (Australia)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "en-CA": [
+   {
+    "name": "Microsoft Linda - English (Canada)",
+    "lang": "en-CA",
+    "voiceURI": "Microsoft Linda - English (Canada)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Richard - English (Canada)",
+    "lang": "en-CA",
+    "voiceURI": "Microsoft Richard - English (Canada)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "en-GB": [
+   {
+    "name": "Microsoft George - English (United Kingdom)",
+    "lang": "en-GB",
+    "voiceURI": "Microsoft George - English (United Kingdom)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Hazel - English (United Kingdom)",
+    "lang": "en-GB",
+    "voiceURI": "Microsoft Hazel - English (United Kingdom)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Susan - English (United Kingdom)",
+    "lang": "en-GB",
+    "voiceURI": "Microsoft Susan - English (United Kingdom)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "en-IN": [
+   {
+    "name": "Microsoft Heera - English (India)",
+    "lang": "en-IN",
+    "voiceURI": "Microsoft Heera - English (India)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Ravi - English (India)",
+    "lang": "en-IN",
+    "voiceURI": "Microsoft Ravi - English (India)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "en-IE": [
+   {
+    "name": "Microsoft Sean - English (Ireland)",
+    "lang": "en-IE",
+    "voiceURI": "Microsoft Sean - English (Ireland)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "en-US": [
+   {
+    "name": "Microsoft David - English (United States)",
+    "lang": "en-US",
+    "voiceURI": "Microsoft David - English (United States)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Mark - English (United States)",
+    "lang": "en-US",
+    "voiceURI": "Microsoft Mark - English (United States)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Zira - English (United States)",
+    "lang": "en-US",
+    "voiceURI": "Microsoft Zira - English (United States)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "fi-FI": [
+   {
+    "name": "Microsoft Heidi - Finnish (Finland)",
+    "lang": "fi-FI",
+    "voiceURI": "Microsoft Heidi - Finnish (Finland)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "fr-CA": [
+   {
+    "name": "Microsoft Caroline - French (Canada)",
+    "lang": "fr-CA",
+    "voiceURI": "Microsoft Caroline - French (Canada)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Claude - French (Canada)",
+    "lang": "fr-CA",
+    "voiceURI": "Microsoft Claude - French (Canada)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Nathalie - French (Canada)",
+    "lang": "fr-CA",
+    "voiceURI": "Microsoft Nathalie - French (Canada)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "fr-FR": [
+   {
+    "name": "Microsoft Hortense - French (France)",
+    "lang": "fr-FR",
+    "voiceURI": "Microsoft Hortense - French (France)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Julie - French (France)",
+    "lang": "fr-FR",
+    "voiceURI": "Microsoft Julie - French (France)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Paul - French (France)",
+    "lang": "fr-FR",
+    "voiceURI": "Microsoft Paul - French (France)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "fr-CH": [
+   {
+    "name": "Microsoft Guillaume - French (Switzerland)",
+    "lang": "fr-CH",
+    "voiceURI": "Microsoft Guillaume - French (Switzerland)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "de-AT": [
+   {
+    "name": "Microsoft Michael - German (Austria)",
+    "lang": "de-AT",
+    "voiceURI": "Microsoft Michael - German (Austria)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "de-DE": [
+   {
+    "name": "Microsoft Hedda - German (Germany)",
+    "lang": "de-DE",
+    "voiceURI": "Microsoft Hedda - German (Germany)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Katja - German (Germany)",
+    "lang": "de-DE",
+    "voiceURI": "Microsoft Katja - German (Germany)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Stefan - German (Germany)",
+    "lang": "de-DE",
+    "voiceURI": "Microsoft Stefan - German (Germany)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "de-CH": [
+   {
+    "name": "Microsoft Karsten - German (Switzerland)",
+    "lang": "de-CH",
+    "voiceURI": "Microsoft Karsten - German (Switzerland)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "el-GR": [
+   {
+    "name": "Microsoft Stefanos - Greek (Greece)",
+    "lang": "el-GR",
+    "voiceURI": "Microsoft Stefanos - Greek (Greece)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "he-IL": [
+   {
+    "name": "Microsoft Asaf - Hebrew (Israel)",
+    "lang": "he-IL",
+    "voiceURI": "Microsoft Asaf - Hebrew (Israel)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "hi-IN": [
+   {
+    "name": "Microsoft Hemant - Hindi (India)",
+    "lang": "hi-IN",
+    "voiceURI": "Microsoft Hemant - Hindi (India)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Kalpana - Hindi (India)",
+    "lang": "hi-IN",
+    "voiceURI": "Microsoft Kalpana - Hindi (India)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "hu-HU": [
+   {
+    "name": "Microsoft Szabolcs - Hungarian (Hungary)",
+    "lang": "hu-HU",
+    "voiceURI": "Microsoft Szabolcs - Hungarian (Hungary)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "id-ID": [
+   {
+    "name": "Microsoft Andika - Indonesian (Indonesia)",
+    "lang": "id-ID",
+    "voiceURI": "Microsoft Andika - Indonesian (Indonesia)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "it-IT": [
+   {
+    "name": "Microsoft Cosimo - Italian (Italy)",
+    "lang": "it-IT",
+    "voiceURI": "Microsoft Cosimo - Italian (Italy)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Elsa - Italian (Italy)",
+    "lang": "it-IT",
+    "voiceURI": "Microsoft Elsa - Italian (Italy)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "ja-JP": [
+   {
+    "name": "Microsoft Ayumi - Japanese (Japan)",
+    "lang": "ja-JP",
+    "voiceURI": "Microsoft Ayumi - Japanese (Japan)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Haruka - Japanese (Japan)",
+    "lang": "ja-JP",
+    "voiceURI": "Microsoft Haruka - Japanese (Japan)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Ichiro - Japanese (Japan)",
+    "lang": "ja-JP",
+    "voiceURI": "Microsoft Ichiro - Japanese (Japan)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Sayaka - Japanese (Japan)",
+    "lang": "ja-JP",
+    "voiceURI": "Microsoft Sayaka - Japanese (Japan)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "ko-KR": [
+   {
+    "name": "Microsoft Heami - Korean (Korean)",
+    "lang": "ko-KR",
+    "voiceURI": "Microsoft Heami - Korean (Korean)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "ms-MY": [
+   {
+    "name": "Microsoft Rizwan - Malay (Malaysia)",
+    "lang": "ms-MY",
+    "voiceURI": "Microsoft Rizwan - Malay (Malaysia)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "nb-NO": [
+   {
+    "name": "Microsoft Jon - Norwegian (Bokmål)",
+    "lang": "nb-NO",
+    "voiceURI": "Microsoft Jon - Norwegian (Bokmål)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "pl-PL": [
+   {
+    "name": "Microsoft Adam - Polish (Poland)",
+    "lang": "pl-PL",
+    "voiceURI": "Microsoft Adam - Polish (Poland)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Paulina - Polish (Poland)",
+    "lang": "pl-PL",
+    "voiceURI": "Microsoft Paulina - Polish (Poland)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "pt-BR": [
+   {
+    "name": "Microsoft Daniel - Portuguese (Brazil)",
+    "lang": "pt-BR",
+    "voiceURI": "Microsoft Daniel - Portuguese (Brazil)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Maria - Portuguese (Brazil)",
+    "lang": "pt-BR",
+    "voiceURI": "Microsoft Maria - Portuguese (Brazil)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "pt-PT": [
+   {
+    "name": "Microsoft Helia - Portuguese (Portugal)",
+    "lang": "pt-PT",
+    "voiceURI": "Microsoft Helia - Portuguese (Portugal)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "ro-RO": [
+   {
+    "name": "Microsoft Andrei - Romanian (Romania)",
+    "lang": "ro-RO",
+    "voiceURI": "Microsoft Andrei - Romanian (Romania)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "ru-RU": [
+   {
+    "name": "Microsoft Irina - Russian (Russia)",
+    "lang": "ru-RU",
+    "voiceURI": "Microsoft Irina - Russian (Russia)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Pavel - Russian (Russia)",
+    "lang": "ru-RU",
+    "voiceURI": "Microsoft Pavel - Russian (Russia)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "sk-SK": [
+   {
+    "name": "Microsoft Filip - Slovak (Slovakia)",
+    "lang": "sk-SK",
+    "voiceURI": "Microsoft Filip - Slovak (Slovakia)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "sl-SI": [
+   {
+    "name": "Microsoft Lado - Slovenian (Slovenia)",
+    "lang": "sl-SI",
+    "voiceURI": "Microsoft Lado - Slovenian (Slovenia)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "es-MX": [
+   {
+    "name": "Microsoft Raul - Spanish (Mexico)",
+    "lang": "es-MX",
+    "voiceURI": "Microsoft Raul - Spanish (Mexico)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Sabina - Spanish (Mexico)",
+    "lang": "es-MX",
+    "voiceURI": "Microsoft Sabina - Spanish (Mexico)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "es-ES": [
+   {
+    "name": "Microsoft Helena - Spanish (Spain)",
+    "lang": "es-ES",
+    "voiceURI": "Microsoft Helena - Spanish (Spain)",
+    "localService": true,
+    "default": true
+   },
+   {
+    "name": "Microsoft Laura - Spanish (Spain)",
+    "lang": "es-ES",
+    "voiceURI": "Microsoft Laura - Spanish (Spain)",
+    "localService": true,
+    "default": false
+   },
+   {
+    "name": "Microsoft Pablo - Spanish (Spain)",
+    "lang": "es-ES",
+    "voiceURI": "Microsoft Pablo - Spanish (Spain)",
+    "localService": true,
+    "default": false
+   }
+  ],
+  "sv-SE": [
+   {
+    "name": "Microsoft Bengt - Swedish (Sweden)",
+    "lang": "sv-SE",
+    "voiceURI": "Microsoft Bengt - Swedish (Sweden)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "ta-IN": [
+   {
+    "name": "Microsoft Valluvar - Tamil (India)",
+    "lang": "ta-IN",
+    "voiceURI": "Microsoft Valluvar - Tamil (India)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "th-TH": [
+   {
+    "name": "Microsoft Pattara - Thai (Thailand)",
+    "lang": "th-TH",
+    "voiceURI": "Microsoft Pattara - Thai (Thailand)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "tr-TR": [
+   {
+    "name": "Microsoft Tolga - Turkish (Turkey)",
+    "lang": "tr-TR",
+    "voiceURI": "Microsoft Tolga - Turkish (Turkey)",
+    "localService": true,
+    "default": true
+   }
+  ],
+  "vi-VN": [
+   {
+    "name": "Microsoft An - Vietnamese (Vietnam)",
+    "lang": "vi-VN",
+    "voiceURI": "Microsoft An - Vietnamese (Vietnam)",
+    "localService": true,
+    "default": true
+   }
+  ]
+ }
 }

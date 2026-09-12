@@ -132,6 +132,10 @@ Keys 64 → 67.
   consistent with the spoofed `locale:tag` / `navigator.language` (a fr-FR browser
   exposing only `en-US` voices is a tell). Operator/preset responsibility; the
   fingerprint-preset layer supplies a coherent voice set. Documented, not enforced.
+  **Superseded 2026-09-12 (windows-behaviour):** `settings/voices.json` is a
+  per-language-pack table (49 tags, en-US measured, the rest quoted from
+  Microsoft's Appendix A + the OneCore token strings) and `gen.voices_keys`
+  picks the row by the claimed locale, same language else, `en-US` last.
 - **`voices:blockIfNotDefined` folded away:** when `voices:list` is present the
   config voices are authoritative (real platform voices replaced); there is no
   partial-merge mode. On content_shell the platform list is empty anyway.

@@ -1,0 +1,114 @@
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index eaa7929a31..95355072cd 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1137,6 +1137,7 @@ source_set("core") {
+     "//components/device_event_log",
+     "//components/dom_distiller/content/browser",
+     "//components/dom_distiller/content/common/mojom",
++    "//components/camoucfg",
+     "//components/embedder_support",
+     "//components/embedder_support:content_settings",
+     "//components/embedder_support:user_agent",
+diff --git a/chrome/browser/DEPS b/chrome/browser/DEPS
+index e0c73d6d4e..c9af57cc60 100644
+--- a/chrome/browser/DEPS
++++ b/chrome/browser/DEPS
+@@ -146,6 +146,7 @@ include_rules = [
+   "+components/download/public/common",
+   "+components/download/public/task",
+   "+components/drive",
++  "+components/camoucfg",
+   "+components/embedder_support",
+   "+components/enterprise",
+   "+components/error_page/content/browser",
+diff --git a/chrome/browser/chrome_browser_interface_binders.cc b/chrome/browser/chrome_browser_interface_binders.cc
+index 547d96a968..1f13834d68 100644
+--- a/chrome/browser/chrome_browser_interface_binders.cc
++++ b/chrome/browser/chrome_browser_interface_binders.cc
+@@ -118,13 +118,22 @@
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+ 
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
+-    BUILDFLAG(IS_ANDROID)
++    BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC)
+ #include "chrome/browser/webshare/share_service_impl.h"
+ #include "chrome/common/chrome_features.h"
+ #endif
+ #include "third_party/blink/public/mojom/webshare/webshare.mojom.h"
+ #endif
++#if BUILDFLAG(IS_LINUX)
++#include <algorithm>
++
++#include "base/task/single_thread_task_runner.h"
++#include "base/time/time.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
++#include "content/public/browser/document_service.h"
++#endif
+ 
+ #if BUILDFLAG(ENABLE_SPEECH_SERVICE)
+ #include "chrome/browser/accessibility/live_caption/live_caption_speech_recognition_host.h"
+@@ -168,6 +177,51 @@ namespace chrome::internal {
+ 
+ namespace {
+ 
++#if BUILDFLAG(IS_LINUX)
++// windows-behaviour: a Windows/macOS claim exposes navigator.share (the
++// renderer gate in ChromeContentRendererClient::RenderThreadStarted); Linux
++// has no ShareService binder, and a frame asking the broker for an unbound
++// interface is killed (ReportNoBinderForInterface -> ReportBadMessage). This
++// stub answers as a dismissed share sheet does on both real hosts:
++// ShareError::CANCELED after share:cancelMs (absent -> at once), which Blink
++// reports as AbortError "Share canceled". Unreachable under a Linux claim,
++// where navigator.share stays undefined as on stock Linux.
++class CamouShareServiceStub
++    : public content::DocumentService<blink::mojom::ShareService> {
++ public:
++  static void Create(
++      content::RenderFrameHost* host,
++      mojo::PendingReceiver<blink::mojom::ShareService> receiver) {
++    CHECK(host);
++    new CamouShareServiceStub(*host, std::move(receiver));
++  }
++
++  void Share(const std::string& title,
++             const std::string& text,
++             const GURL& share_url,
++             std::vector<blink::mojom::SharedFilePtr> files,
++             ShareCallback callback) override {
++    int32_t ms = camoucfg::GetInt32(camoucfg::GlobalScope(),
++                                    camoucfg::keys::kShareCancelMs)
++                     .value_or(0);
++    ms = std::clamp(ms, 0, 60000);
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(std::move(callback),
++                       blink::mojom::ShareError::CANCELED),
++        base::Milliseconds(ms));
++  }
++
++ private:
++  CamouShareServiceStub(
++      content::RenderFrameHost& host,
++      mojo::PendingReceiver<blink::mojom::ShareService> receiver)
++      : content::DocumentService<blink::mojom::ShareService>(
++            host,
++            std::move(receiver)) {}
++};
++#endif  // BUILDFLAG(IS_LINUX)
++
+ #if BUILDFLAG(ENABLE_UNHANDLED_TAP)
+ void BindUnhandledTapWebContentsObserver(
+     content::RenderFrameHost* const host,
+@@ -550,6 +604,9 @@ void PopulateChromeFrameBinders(
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC)
+   map->Add<blink::mojom::ShareService>(&ShareServiceImpl::Create);
+ #endif
++#if BUILDFLAG(IS_LINUX)
++  map->Add<blink::mojom::ShareService>(&CamouShareServiceStub::Create);
++#endif
+ #if BUILDFLAG(IS_ANDROID)
+   map->Add<blink::mojom::ShareService>(
+       &ForwardToJavaWebContents<blink::mojom::ShareService>);

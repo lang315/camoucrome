@@ -169,10 +169,16 @@ def fonts_keys(platform):
             "ua:platformVersion": fam["platform_version"]}
 
 
-def voices_keys(platform):
-    """voices:list for the claimed OS from settings/voices.json (captured from stock); {} when the OS has no list."""
+def voices_keys(platform, locale="en-US"):
+    """voices:list for the claimed OS and locale from settings/voices.json: the locale's language-pack row, else the same
+    language's first row, else en-US (only en-US is measured; the rest are quoted). {} when the OS has no table."""
     voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
-    return {"voices:list": voices[platform]} if platform in voices else {}
+    if platform not in voices:
+        return {}
+    table = voices[platform]
+    lang = locale.split("-")[0]
+    row = table.get(locale) or next((v for t, v in table.items() if t.split("-")[0] == lang), table["en-US"])
+    return {"voices:list": row}
 
 
 def chrome_device_memory(value):
@@ -268,7 +274,9 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     if profile:
         config.update(webgl_keys(profile))
     config.update(fonts_keys(platform))
-    config.update(voices_keys(platform))
+    config.update(voices_keys(platform, tag))
+    if platform in ("Windows", "macOS"):
+        config["share:cancelMs"] = rng.randint(900, 2600)  # a dismissed share sheet takes a human seconds, never 0 ms
 
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)
