@@ -69,7 +69,9 @@ difference, shape-only in the oracle (`audio.baseLatency`).
 
 Build: `out/Default` 193 steps, 1 m 45 s. Box tip `2b2173c602
 windows-behaviour-ii`; export gate: the new patch (4 paths: `.cc`, `.h`,
-`BUILD.gn`, `DEPS`) plus the intended data edits; 36 commits.
+`BUILD.gn`, `DEPS`) plus the intended data edits; 36 commits. Ninth
+archive cut at `0e6f00e`: oracle 4/4 and behaviour 11/11 on the archived
+chrome (`2026-09-10-sp6b-packaging.md`).
 
 ## 4. Residuals, named
 
