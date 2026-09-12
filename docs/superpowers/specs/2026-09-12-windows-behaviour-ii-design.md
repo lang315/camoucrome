@@ -65,3 +65,21 @@ and becomes measured: `audio.sampleRate` leaves `KNOWN`.
 Regressions: oracle 4/4, `verify_sp4_audio.py`, voices 5/5, generator N=3,
 keys unit (89), `gn check //media/audio:audio`, `checkdeps media/audio`.
 Then the ninth archive cut.
+
+## 6. Revision (same day): frame count, Linux `platformVersion`, the host
+
+- **`audio:bufferFrames`** (90th, int32, clamped 64–16384) in the same hook:
+  `baseLatency` = frames / rate, so the claimed host's latency needs its
+  frame count (WASAPI 480 at 48000 = 0.01; macOS 256 = 0.00533; the box's
+  PulseAudio 512). The renderer renders in that quantum; the device stream
+  keeps its own size through the resampler's FIFO. `audio.json` derives
+  `bufferFrames` = round(baseLatency × sampleRate). Row A4.
+- **Linux `platformVersion`.** The pool's Linux rows carry no
+  `platformVersion`; the generator used to emit `ua:platformVersion: ""`,
+  which replaced the real kernel version stock Linux Chrome reports. The
+  key is now left out for an empty pool value (rule 5). Rows U1/U2.
+- **Windows fr-FR, third attempt.** The ssh session is *High* integrity
+  (`whoami /groups`), yet `dism /Online /Add-Capability` returns error 5
+  "Access is denied" like `Add-WindowsCapability` and the scheduled task.
+  The denial is not the token; it is the servicing stack refusing a
+  non-console session. Closed as needing a console logon on the host.
