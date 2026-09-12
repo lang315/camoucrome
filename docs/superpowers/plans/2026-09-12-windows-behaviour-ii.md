@@ -35,15 +35,15 @@
 
 - [x] `AudioManagerBase::GetOutputStreamParameters` returns `CamouOutputParameters(GetPreferredOutputStreamParameters(...))`; the static helper reads `kAudioSampleRate`, clamps 8000–192000, `set_sample_rate` when present and the params are valid.
 - [x] `media/audio/DEPS` (`+components/camoucfg`), `media/audio/BUILD.gn` (`//components/camoucfg` in the `audio` target deps).
-- [ ] `autoninja -C out/Default chrome components_unittests` (non-zero steps); `gn check out/Default //media/audio:audio`; `checkdeps.py media/audio`.
+- [x] `autoninja -C out/Default chrome components_unittests` (non-zero steps); `gn check out/Default //media/audio:audio`; `checkdeps.py media/audio`.
 
 ### Task 4: verify (RED first)
 
-- [ ] Rows A1–A3, V3 in `verify_windows_behaviour.py`; A1's RED is the box's real 44100 under the Windows claim before the hook (the oracle's KNOWN line). Expect 11/11.
-- [ ] `verify_host_oracle.py` with `audio.sampleRate` removed from `KNOWN`: 4/4, O1 now measures the rate. `verify_sp4_audio.py`, `verify_sp4_voices.py` 5/5, `verify_sp6b_generator.py` N=3, `CamoucfgKeysTest` (89).
+- [x] Rows A1–A3, V3 in `verify_windows_behaviour.py`; A1's RED is the box's real 44100 under the Windows claim before the hook (the oracle's KNOWN line). 11/11 (the generator verify first hit E2BIG on macOS identities: both launchers now chunk `CAMOU_CONFIG_1..N`, the probe takes `--config @file`; 15/15 after).
+- [x] `verify_host_oracle.py` with `audio.sampleRate` removed from `KNOWN`: 4/4, O1 now measures the rate. `verify_sp4_audio.py`, `verify_sp4_voices.py` 5/5, `verify_sp6b_generator.py` N=3, `CamoucfgKeysTest` (89).
 
 ### Task 5: export, docs, ninth cut
 
-- [ ] Commit on the box (`windows-behaviour-ii`), `export.sh`, gate empty, sync, `check_additions_build.py`.
-- [ ] Docs: measurement `2026-09-12-windows-behaviour-ii.md`; windows-oracle doc residual line closed; sp4-audio doc superseded note; roadmap row 8d; keys count in CLAUDE.md if named; ledger.
-- [ ] Release relink, `pkg9_job.sh`, `post_pkg.sh`; oracle 4/4 + behaviour 11/11 on the archived chrome; packaging doc ninth cut; commit, push, CI.
+- [x] Commit on the box (`windows-behaviour-ii`), `export.sh`, gate empty, sync, `check_additions_build.py`.
+- [x] Docs: measurement `2026-09-12-windows-behaviour-ii.md`; windows-oracle doc residual line closed; sp4-audio doc superseded note; roadmap row 8d; keys count in CLAUDE.md if named; ledger.
+- [x] Release relink, `pkg9_job.sh`, `post_pkg.sh`; oracle 4/4 + behaviour 11/11 on the archived chrome; packaging doc ninth cut; commit, push, CI.

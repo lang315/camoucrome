@@ -169,3 +169,17 @@ commit) and packaged at `changeset_commit 0c7e690c61a1` / `branch_tip
 `AbortError: Share canceled` after 2708 ms with `share:cancelMs` 2543 +
 jitter, page alive — the seventh cut's chrome died here), DevTools opens, six-driver sweep
 `ALL_PASS`. The seventh cut is superseded.
+
+
+**Ninth cut, 2026-09-12, Windows behaviour II.** `out/Release` relinked
+with `windows-behaviour-ii` (113 steps, 2 m 04 s) and packaged at
+`changeset_commit 0e6f00e1b0b7` / `branch_tip 2b2173c602`: **306 files,
+181,865,480 bytes (173 MiB)**, 218 s, extract 9.5 s, stamp `fonts: true`,
+`--check` ok. On the extracted tree: `verify_host_oracle.py` **4/4** with
+`audio.sampleRate` now measured (O1 0 DIFF, 229 leaves),
+`verify_windows_behaviour.py` **11/11** (A1 `sampleRate` 48000 under the
+Windows claim, 512 frames, offline render peak 1.0), DevTools opens,
+six-driver sweep `ALL_PASS` (the Go probe rebuilt from `client/go` with the
+chunking launcher). The eighth cut is superseded: its chrome reports the
+device's 44100 under a Windows claim and its clients cannot launch a macOS
+identity (E2BIG).
