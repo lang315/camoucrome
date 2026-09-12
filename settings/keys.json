@@ -11,7 +11,7 @@
     "",
     "It is deliberately not the whole user-agent string. A whole string carries a",
     "browser version, and Camoucrome never reports a version other than the one",
-    "its binary was compiled from — so accepting one would mean either emitting a",
+    "its binary was compiled from \u2014 so accepting one would mean either emitting a",
     "contradiction or parsing the string to extract the part we want, and SP1",
     "forbids parsing user agents locally.",
     "KNOWN LIMITATION: one value cannot express both user-agent forms. Chromium",
@@ -171,7 +171,7 @@
     "bare `canvas` key, the same shape as `ua:` and `humanize:` above. A page",
     "never reads these; they steer noise applied as pixels leave the canvas.",
     "",
-    "aaOffset / aaCapOffset from the SP3 spec §3 table are deliberately absent:",
+    "aaOffset / aaCapOffset from the SP3 spec \u00a73 table are deliberately absent:",
     "the reference (Camoufox canvas-spoofing.patch) applies no anti-alias offset",
     "on readback, so there is no mechanism for those keys to steer. Adding them",
     "would be a knob with no effect, which rule 5 forbids."
@@ -691,6 +691,18 @@
    "name": "kWindowScreenY",
    "key": "window.screenY",
    "type": "int32"
+  },
+  {
+   "name": "kShareCancelMs",
+   "key": "share:cancelMs",
+   "type": "int32",
+   "doc": [
+    "Milliseconds before the Linux ShareService stub (chrome_browser_interface_binders.cc, windows-behaviour) completes",
+    "navigator.share() with ShareError::CANCELED -- the outcome of a user dismissing the Windows/macOS share sheet, which Blink maps",
+    "to AbortError 'Share canceled'. Clamped to 0..60000. Absent => cancels immediately: the fail-closed exception to rule 5, since",
+    "the real behaviour on the build OS is no binder at all, and the broker kills the renderer for that. The generator emits 900..2600",
+    "under a Windows or macOS claim; unreachable under a Linux claim (navigator.share stays undefined)."
+   ]
   }
  ]
 }

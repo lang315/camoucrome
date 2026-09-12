@@ -209,3 +209,13 @@ def test_local_faces_exist_for_every_os_with_a_list_and_are_never_empty():
     for os_name in ("Windows", "macOS"):
         faces = gen.fonts_keys(os_name)["fonts:local"]
         assert len(faces) > 150 and faces == sorted(faces), os_name
+
+
+def test_voices_follow_the_locale_and_share_cancel_is_human_paced():
+    fr = gen.from_pool(POOL, "Europe/Paris", locale="fr-FR", rng=random.Random(1))["config"]
+    assert [v["name"] for v in fr["voices:list"]] == ["Microsoft Hortense - French (France)", "Microsoft Julie - French (France)", "Microsoft Paul - French (France)"]
+    assert all(v["lang"] == "fr-FR" for v in fr["voices:list"]) and fr["voices:list"][0]["default"] is True
+    assert gen.voices_keys("Windows", "en-NZ")["voices:list"][0]["lang"] == "en-AU"   # same language, first row
+    assert gen.voices_keys("Windows", "uk-UA")["voices:list"][0]["lang"] == "en-US"   # no Ukrainian pack: en-US
+    assert 900 <= fr["share:cancelMs"] <= 2600
+    assert "share:cancelMs" not in gen.from_pool(dict(POOL, navigator=dict(POOL["navigator"], userAgentData=dict(POOL["navigator"]["userAgentData"], platform="Linux"))), "UTC", rng=random.Random(1))["config"]

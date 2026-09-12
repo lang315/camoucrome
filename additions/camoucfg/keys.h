@@ -346,8 +346,15 @@ inline constexpr char kWindowOuterHeight[] = "window.outerHeight";
 inline constexpr char kWindowScreenX[] = "window.screenX";
 inline constexpr char kWindowScreenY[] = "window.screenY";
 
+// Milliseconds before the Linux ShareService stub (chrome_browser_interface_binders.cc, windows-behaviour) completes
+// navigator.share() with ShareError::CANCELED -- the outcome of a user dismissing the Windows/macOS share sheet, which Blink maps
+// to AbortError 'Share canceled'. Clamped to 0..60000. Absent => cancels immediately: the fail-closed exception to rule 5, since
+// the real behaviour on the build OS is no binder at all, and the broker kills the renderer for that. The generator emits 900..2600
+// under a Windows or macOS claim; unreachable under a Linux claim (navigator.share stays undefined).
+inline constexpr char kShareCancelMs[] = "share:cancelMs";
+
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 87> kAllKeys = {
+inline constexpr std::array<std::string_view, 88> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -435,6 +442,7 @@ inline constexpr std::array<std::string_view, 87> kAllKeys = {
     kWindowOuterHeight,
     kWindowScreenX,
     kWindowScreenY,
+    kShareCancelMs,
 };
 
 // The UA client-hint keys, without kUaOsInfo.

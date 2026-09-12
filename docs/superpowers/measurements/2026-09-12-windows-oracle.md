@@ -115,8 +115,11 @@ Box tip `1ae7cdb240 windows-oracle` (new patch stem: `user_agent_utils.cc`,
 
 - `AudioContext.sampleRate`: 48000 on the host, 44100 on the box; sp4-audio's
   decision stands (spoofing the rate desyncs buffer lengths).
-- `navigator.share()` with a user gesture on the fork reaches no share
-  service on Linux (the promise hangs); without a gesture it rejects
+- **Erratum 2026-09-12:** `navigator.share()` with a user gesture on the
+  fork did not hang, it **killed the renderer** (the broker has no Linux
+  `ShareService` binder; `ReportNoBinderForInterface`). Fixed in
+  `windows-behaviour` (`measurements/2026-09-12-windows-behaviour.md`); the
+  seventh cut ships the defect. Without a gesture it rejects
   `NotAllowedError` as stock. `navigator.bluetooth.getAvailability()` reports
   the box's BlueZ answer. Presence is what pages enumerate; behaviour past
   the first call is unmeasured here.
