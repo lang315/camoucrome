@@ -49,6 +49,30 @@ cap. It never edits `~/chromium/src`:
 
 The cheap `checks` workflow stays on `ubuntu-latest`.
 
-## 3. First run
+## 3. First runs, and what the runner found
 
-See the rows below (filled in from the first push).
+- Run 1 (`2420508`): the gate passed, `check_checkout_sync.sh` failed — it
+  was written to cross the ssh link from the Mac; it now takes `local` (or
+  detects `$SRC/.git` beside it) and hashes in place, with a `sha256sum`
+  fallback for `shasum`.
+- Run 2 (`2805c44`): gate, sync (39), pre-flight, build (`Build Succeeded:
+  1 steps` — the checkout was already built), 21 camoucfg suites SUCCESS,
+  coherence 7/7, client tests 40 + `go test` ok, sp1a, voices 5/5, fonts
+  17/17 — then **`verify_host_oracle.py` 3/4: `DIFF audio.sampleRate:
+  host=48000 fork=44100`** with `audio:sampleRate` set. The runner runs
+  under systemd with no PulseAudio session, so the audio manager reports
+  *invalid* output parameters, the hook (which only rewrote valid ones) did
+  nothing, and Blink fell back to its own 44100 default. That is exactly a
+  headless deployment box. Reproduced by hand with `env -u PULSE_SERVER -u
+  XDG_RUNTIME_DIR -u DISPLAY -u WAYLAND_DISPLAY`: 44100 / 441 frames even
+  with the keys — the audio service's helper returns *no* parameters when
+  `HasAudioOutputDevices()` is false (before the manager hook is reached),
+  and the renderer falls back to `AudioParameters::UnavailableDeviceParams()`
+  (44100, 10 ms). Fix in `windows-behaviour-ii`: that fallback now takes the
+  claimed rate and quantum too (`media/base/audio_parameters.cc`, fake sink
+  unchanged), so a claimed host reads the same with or without a device.
+  A first attempt that synthesized parameters inside the manager hook was
+  dead code (never reached) and was removed. Measured by the runner, not by
+  hand.
+- The verify step now runs every verify and reports all failures, not the
+  first.
