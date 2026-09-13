@@ -16,7 +16,7 @@
 # what every verification here does. A comment-only drift still invalidates
 # "reconstruction is byte-identical", which is SP5a Task 7's whole claim.
 #
-# Usage: scripts/check_checkout_sync.sh [ssh-target] [checkout-path]
+# Usage: scripts/check_checkout_sync.sh [ssh-target|local] [checkout-path]
 # Defaults match this project's build machine.
 
 set -u
@@ -59,8 +59,14 @@ done
 # and never committed to the branch is listed separately (out/ and camoucfg
 # excluded for the reasons above).
 remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
-remote_out=$(ssh -o ControlPath="$CONTROL" -o ControlMaster=no "$SSH_TARGET" \
-  "wsl -d Ubuntu-24.04 -u lang -- bash -lc \"echo $(printf '%s' "$remote_script" | base64 | tr -d '\n') | base64 -d > /tmp/sync.sh; bash /tmp/sync.sh\"" 2>/dev/null)
+# On the build box itself (the self-hosted runner, or a shell in WSL) there is
+# no link to cross: SSH_TARGET=local runs the same script against $SRC directly.
+if [ "$SSH_TARGET" = local ] || { [ -z "${1:-}" ] && [ -d "$SRC/.git" ]; }; then
+  remote_out=$(bash -c "$remote_script" 2>/dev/null)
+else
+  remote_out=$(ssh -o ControlPath="$CONTROL" -o ControlMaster=no "$SSH_TARGET" \
+    "wsl -d Ubuntu-24.04 -u lang -- bash -lc \"echo $(printf '%s' "$remote_script" | base64 | tr -d '\n') | base64 -d > /tmp/sync.sh; bash /tmp/sync.sh\"" 2>/dev/null)
+fi
 
 if [ -z "$remote_out" ]; then
   # Deliberately does NOT guess a cause. The first version of this said "is the
@@ -76,7 +82,7 @@ fi
 
 fails=0
 for i in "${!REPO_FILES[@]}"; do
-  local_sha=$(shasum -a 256 "${REPO_FILES[$i]}" | cut -d' ' -f1)
+  local_sha=$( (shasum -a 256 "${REPO_FILES[$i]}" 2>/dev/null || sha256sum "${REPO_FILES[$i]}") | cut -d' ' -f1)
   tree="${TREE_FILES[$i]}"
   remote_sha=$(printf '%s\n' "$remote_out" | awk -v f="$tree" '$2 == f {print $1}')
   base=$(basename "${REPO_FILES[$i]}")
