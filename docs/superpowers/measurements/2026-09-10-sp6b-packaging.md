@@ -194,3 +194,14 @@ extract 9.6 s, stamp `fonts: true`, `--check` ok. On the extracted tree:
 0.01, the host's value), DevTools opens, six-driver sweep `ALL_PASS`. The
 ninth cut is superseded: its chrome reports the box's 512-frame latency
 under a Windows claim.
+
+**Eleventh cut, 2026-09-13, no-device audio fallback.** `out/Release`
+relinked with the amended `windows-behaviour-ii` (47 steps, 56 s) and
+packaged at `changeset_commit e71143b8aefe` / `branch_tip ada4cdcfa4`:
+**306 files, 181,917,496 bytes (173 MiB)**, 248 s, extract 8.4 s, stamp
+`fonts: true`, `--check` ok. On the extracted tree: `verify_host_oracle.py`
+**4/4** run with the PulseAudio session stripped from the environment (the
+runner's condition: 0 DIFF, 229 leaves), `verify_windows_behaviour.py`
+**14/14**, DevTools opens, six-driver sweep `ALL_PASS`. The tenth cut is
+superseded: on a box with no audio device its chrome reads 44100 / 441
+frames under a Windows claim.
