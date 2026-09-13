@@ -1,0 +1,87 @@
+# Build + verify on the build box (self-hosted runner `buildpc-wsl`, WSL2 Ubuntu
+# 24.04 with the Chromium checkout at ~/chromium/src on branch camoucrome/main).
+#
+# What it proves per push: the pushed change set is byte-identical to the built
+# checkout (check_checkout_sync.sh), out/Default rebuilds from it (autoninja
+# reports its step count), the camoucfg unit suites pass, and the browser
+# verifies that matter most run green against that binary. It never edits the
+# checkout: when the checkout has uncommitted work (a slice in progress) the job
+# fails fast with "checkout dirty" and is re-run later by hand
+# (workflow_dispatch). It also refuses to start while a ninja is already running
+# in out/Default, so a manual build is never raced.
+name: build-verify
+on:
+  push:
+    branches: [main]
+    paths: [patches/**, additions/**, settings/**, scripts/**, client/**, upstream.env, .github/workflows/build-verify.yml]
+  workflow_dispatch:
+concurrency:
+  group: buildpc
+  cancel-in-progress: false
+jobs:
+  build-verify:
+    runs-on: [self-hosted, buildpc-wsl]
+    timeout-minutes: 180
+    env:
+      SRC: /home/lang/chromium/src
+      VERIFY: /home/lang/camoucrome-verify
+      CLIENT: /home/lang/camoucrome-client
+      PLAYWRIGHT_NODEJS_PATH: /home/lang/camoucrome-driver/node
+    steps:
+      - uses: actions/checkout@v4
+      - name: checkout is clean and no build is running
+        run: |
+          set -e
+          cd "$SRC"
+          test "$(git rev-parse --abbrev-ref HEAD)" = camoucrome/main || { echo "not on camoucrome/main"; exit 1; }
+          n=$(git status --porcelain | wc -l); test "$n" -eq 0 || { echo "checkout dirty ($n paths): a slice is in progress, re-run later"; exit 1; }
+          ! pgrep -f "ninja -C out/(Default|Release)" >/dev/null || { echo "a ninja is already running in this checkout"; exit 1; }
+      - name: pushed change set == built checkout
+        run: bash scripts/check_checkout_sync.sh
+      - name: pre-flight checks
+        run: |
+          python3 scripts/check_additions_build.py
+          python3 scripts/gen_keys.py --check
+          python3 scripts/gen_fontconfig.py --check
+      - name: sync the client tree the verifies import
+        run: |
+          rsync -a client/ "$CLIENT/client/"
+          rsync -a settings/ "$CLIENT/settings/"
+          rsync -a baselines/ "$CLIENT/baselines/"
+          rsync -a scripts/ "$CLIENT/scripts/"
+          cp scripts/verify_*.py scripts/lib_shell.py scripts/capture_host_oracle.py scripts/echo_server.py "$VERIFY/" 2>/dev/null || true
+          (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
+      - name: build out/Default (chrome, content_shell, components_unittests)
+        run: |
+          export PATH=/home/lang/depot_tools:$PATH
+          cd "$SRC"
+          autoninja -C out/Default chrome content_shell components_unittests 2>&1 | tail -3 | tee /tmp/build.txt
+          grep -q "Build Succeeded" /tmp/build.txt
+      - name: camoucfg unit suites
+        run: |
+          cd "$SRC"
+          F=$(grep -ho '^TEST(\w*' components/camoucfg/*_unittest.cc | sed 's/TEST(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
+          out/Default/components_unittests --gtest_filter="$F" 2>&1 | grep -E 'SUCCESS|FAIL' | tail -3
+          out/Default/components_unittests --gtest_filter="$F" 2>&1 | grep -q "SUCCESS: all tests passed"
+          bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
+      - name: client tests
+        run: |
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py 2>&1 | tail -1
+          (cd client/go && go test ./... 2>&1 | tail -2)
+      - name: browser verifies
+        run: |
+          cd "$VERIFY"
+          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 || { tail -20 "/tmp/$1.log"; return 1; }; tail -1 "/tmp/$1.log"; }
+          run verify_sp1a_chrome.py
+          run verify_sp4_voices.py
+          run verify_fonts_bundle.py
+          run verify_host_oracle.py
+          run verify_windows_behaviour.py
+          CAMOU_GEN_N=2 run verify_sp6b_generator.py
+      - name: logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-logs-${{ github.run_number }}
+          path: /tmp/verify_*.log
+          if-no-files-found: ignore
