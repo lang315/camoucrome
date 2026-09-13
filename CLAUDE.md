@@ -134,6 +134,12 @@ startup abort instead of a silent fall-back to real values.
   `CoherenceValidatorTest.*` cannot run in one invocation: config is read once
   per process and cached, so one process can only latch one `CAMOU_CONFIG`. Use
   `scripts/run_coherence_tests.sh` (one process per case, asserts 6/6).
+- **CI on the box:** `.github/workflows/build-verify.yml` runs on the
+  self-hosted runner `buildpc-wsl` (WSL on the build PC) at every push that
+  touches the change set: sync gate, `out/Default` build, every camoucfg
+  suite, client tests, the main browser verifies. It refuses a dirty checkout
+  or a running ninja rather than racing them; `gh workflow run build-verify`
+  re-runs by hand (`measurements/2026-09-13-ci-build-verify.md`).
 - Pre-flight, both cheap and both exist because the omission already happened:
   `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
   must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there

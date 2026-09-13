@@ -76,3 +76,21 @@ The cheap `checks` workflow stays on `ubuntu-latest`.
   hand.
 - The verify step now runs every verify and reports all failures, not the
   first.
+- Run 3 (`e71143b`, after the fix): **success** — gate, sync 39,
+  pre-flight, build (`0 steps`: built by hand minutes before; the count is
+  in the log, as intended), 21 suites SUCCESS, coherence 7/7, client tests
+  + `go test`, sp1a, voices 5/5, fonts 17/17, oracle 4/4, behaviour 14/14,
+  generator ALL_PASS. Wall time about 4 minutes on an already-built
+  checkout; a slice's incremental rebuild adds its ninja time.
+
+## 4. How to use it
+
+- Push to `main` touching the change set, settings, scripts or clients →
+  the box builds and verifies. A red "checkout dirty" gate means a slice is
+  mid-edit on the box; finish it (commit on `camoucrome/main`, export,
+  push) and the next push, or `gh workflow run build-verify`, re-runs.
+- `gh run list --workflow build-verify`, `gh run view <id> --log`; the
+  per-verify logs are the `verify-logs-<n>` artifact.
+- The runner survives reboots only through the `CamouWslKeepAlive` logon
+  task (WSL stops without a Windows-side process); `sudo ./svc.sh status`
+  in `~/actions-runner` shows the service.
