@@ -71,13 +71,15 @@ jobs:
       - name: browser verifies
         run: |
           cd "$VERIFY"
-          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 || { tail -20 "/tmp/$1.log"; return 1; }; tail -1 "/tmp/$1.log"; }
+          rc=0
+          run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12; rc=1; fi; }
           run verify_sp1a_chrome.py
           run verify_sp4_voices.py
           run verify_fonts_bundle.py
           run verify_host_oracle.py
           run verify_windows_behaviour.py
           CAMOU_GEN_N=2 run verify_sp6b_generator.py
+          exit $rc
       - name: logs
         if: always()
         uses: actions/upload-artifact@v4

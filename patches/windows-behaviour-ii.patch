@@ -77,3 +77,65 @@ index 05dd85b2e2..4732b169d4 100644
    AudioParameters GetInputStreamParameters(
        const std::string& device_id) override;
    std::string GetAssociatedOutputDeviceID(
+diff --git a/media/base/BUILD.gn b/media/base/BUILD.gn
+index 3a1e7f595f..1098ddbf98 100644
+--- a/media/base/BUILD.gn
++++ b/media/base/BUILD.gn
+@@ -414,6 +414,7 @@ source_set("base") {
+     "//ui/gl",
+   ]
+   deps = [
++    "//components/camoucfg",
+     "//base",
+     "//base/allocator:buildflags",
+     "//components/system_media_controls/linux/buildflags",
+diff --git a/media/base/DEPS b/media/base/DEPS
+index d91b0bc706..bacc7b61e0 100644
+--- a/media/base/DEPS
++++ b/media/base/DEPS
+@@ -1,4 +1,5 @@
+ include_rules = [
++  "+components/camoucfg",
+   "+ash/constants",
+   "+third_party/widevine/cdm/widevine_cdm_common.h",
+ ]
+diff --git a/media/base/audio_parameters.cc b/media/base/audio_parameters.cc
+index 0c6f8ae628..bdd4aef3db 100644
+--- a/media/base/audio_parameters.cc
++++ b/media/base/audio_parameters.cc
+@@ -4,6 +4,11 @@
+ 
+ #include "media/base/audio_parameters.h"
+ 
++#include <algorithm>
++
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
++
+ #include <sstream>
+ 
+ #include "base/check_op.h"
+@@ -361,6 +366,23 @@ bool AudioParameters::RequireOffload() const {
+ 
+ // static
+ AudioParameters AudioParameters::UnavailableDeviceParams() {
++  // windows-behaviour-ii: with no output device at all (a headless box, the
++  // CI runner under systemd) the audio service reports no parameters and the
++  // renderer falls back to these -- 44100 / 441 frames, which no claimed
++  // desktop host reports. A claimed host has a device: use its rate and
++  // quantum (audio:sampleRate / audio:bufferFrames) for the fake sink too, so
++  // AudioContext.sampleRate and baseLatency read the same with or without a
++  // device. Absent keys -> Chromium's own defaults below.
++  std::optional<int32_t> rate = camoucfg::GetInt32(
++      camoucfg::GlobalScope(), camoucfg::keys::kAudioSampleRate);
++  std::optional<int32_t> frames = camoucfg::GetInt32(
++      camoucfg::GlobalScope(), camoucfg::keys::kAudioBufferFrames);
++  if (rate || frames) {
++    const int r = std::clamp(rate.value_or(kAudioCDSampleRate), 8000, 192000);
++    return media::AudioParameters(
++        media::AudioParameters::AUDIO_FAKE, ChannelLayoutConfig::Stereo(), r,
++        std::clamp(frames.value_or(r / 100), 64, 16384));
++  }
+   // Using 10 ms buffer since WebAudioMediaStreamSource::DeliverRebufferedAudio
+   // deals incorrectly with reference time calculation if output buffer size
+   // significantly differs from 10 ms used there, see http://crbug/701000.

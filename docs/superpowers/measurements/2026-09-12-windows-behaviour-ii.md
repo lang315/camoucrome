@@ -108,3 +108,16 @@ chrome (`2026-09-10-sp6b-packaging.md`).
   leaves), keys unit (90), client tests 30, generator 15/15. Build 97
   steps, 1 m 24 s. The `windows-behaviour-ii` commit was amended (same
   hook), re-exported; tenth archive cut below.
+
+## 6. Revision 2 (2026-09-13, found by CI): no audio device at all
+
+The self-hosted runner (systemd, no PulseAudio session) read
+`AudioContext.sampleRate` 44100 under a Windows claim with the keys set:
+with no output device the audio service returns no parameters and the
+renderer uses `AudioParameters::UnavailableDeviceParams()` (44100, 441
+frames), never reaching the manager hook. That is a headless deployment
+box, the fork's main habitat. `UnavailableDeviceParams()` now returns the
+claimed rate and quantum for its fake sink when the keys are present
+(`media/base` gained the camoucfg dep and DEPS grant). Rows: behaviour
+14/14 and oracle 4/4 both with the WSLg PulseAudio session and with it
+stripped from the environment (`measurements/2026-09-13-ci-build-verify.md`).
