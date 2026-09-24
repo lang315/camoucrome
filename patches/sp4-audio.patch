@@ -11,7 +11,7 @@ index 723759fed6..100ee04ba0 100644
      "//third_party/blink/renderer/modules/mediastream",
      "//third_party/blink/renderer/modules/peerconnection",
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-index bc4c0c6ca0..b50db59a86 100644
+index bc4c0c6ca0..ec85b03dbd 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 @@ -32,6 +32,9 @@
@@ -77,6 +77,19 @@ index bc4c0c6ca0..b50db59a86 100644
    base::span<const float> src = channels_[channel_number].Get()->AsSpan();
    base::span<float> dst = destination->AsSpan();
  
+@@ -295,6 +330,12 @@ void AudioBuffer::copyToChannel(NotShared<DOMFloat32Array> source,
+     return;
+   }
+ 
++  // Camoucrome (SP4-audio): noise whatever the buffer held BEFORE the page's
++  // write, and set the one-shot guard, so the samples the page writes read
++  // back exactly (copyToChannel then copyFromChannel is an identity in stock;
++  // a later first read noising them was a two-call probe).
++  CamouEnsureNoised();
++
+   base::span<float> dst = channels_[channel_number].Get()->AsSpan();
+ 
+   if (buffer_offset >= dst.size()) {
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
 index 4bbf70b439..6e89d82897 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h

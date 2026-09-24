@@ -11,7 +11,7 @@ index d6a91ebb3b..a13d9e73e0 100644
      "//media/webrtc",
      "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index 4fe2cb45a0..b035c701fa 100644
+index 4fe2cb45a0..e233465408 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 @@ -14,6 +14,10 @@
@@ -25,7 +25,7 @@ index 4fe2cb45a0..b035c701fa 100644
  #include "media/base/media_permission.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-@@ -1486,6 +1490,122 @@ void MediaDevices::DevicesEnumerated(
+@@ -1486,6 +1490,126 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  
@@ -55,18 +55,22 @@ index 4fe2cb45a0..b035c701fa 100644
 +          camoucfg::GetUint32(camou_scope,
 +                              camoucfg::keys::kMediaDevicesSpeakers)
 +              .value_or(1);
++      // Before a grant, Chrome lists at most ONE blank entry per kind
++      // (the spec's pre-permission exposure limit), however many devices
++      // exist: a count above one here is a shape stock never produces, so a
++      // count only decides whether the kind is present.
 +      MediaDeviceInfoVector spoofed;
-+      for (uint32_t k = 0; k < micros; ++k) {
++      for (uint32_t k = 0; k < std::min(micros, 1u); ++k) {
 +        spoofed.push_back(MakeGarbageCollected<InputDeviceInfo>(
 +            g_empty_string, g_empty_string, g_empty_string,
 +            mojom::blink::MediaDeviceType::kMediaAudioInput));
 +      }
-+      for (uint32_t k = 0; k < webcams; ++k) {
++      for (uint32_t k = 0; k < std::min(webcams, 1u); ++k) {
 +        spoofed.push_back(MakeGarbageCollected<InputDeviceInfo>(
 +            g_empty_string, g_empty_string, g_empty_string,
 +            mojom::blink::MediaDeviceType::kMediaVideoInput));
 +      }
-+      for (uint32_t k = 0; k < speakers; ++k) {
++      for (uint32_t k = 0; k < std::min(speakers, 1u); ++k) {
 +        spoofed.push_back(MakeGarbageCollected<MediaDeviceInfo>(
 +            g_empty_string, g_empty_string, g_empty_string,
 +            mojom::blink::MediaDeviceType::kMediaAudioOutput));
