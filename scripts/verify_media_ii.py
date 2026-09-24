@@ -169,10 +169,12 @@ def main():
     else:
         allempty = all(d["deviceId"] == "" and d["groupId"] == "" and d["label"] == ""
                        for d in m1["enumerate"])
+        # Configured 2/2/2, but pre-grant stock lists one blank entry per
+        # kind at most (media_devices_util.cc TranslateMediaDeviceInfoArray).
         results["M1"] = (by_kind_counts(m1["enumerate"]) ==
-                         {"audioinput": 2, "videoinput": 2, "audiooutput": 2}
+                         {"audioinput": 1, "videoinput": 1, "audiooutput": 1}
                          and allempty and m1["secure"] is True,
-                         "pre-grant empties, counts 2/2/2")
+                         "pre-grant empties, one per kind")
 
     # ---------------- M2: post-grant enumerate shaped, real count -----------
     if is_err(spoofA1) or is_err(stock1):
