@@ -23,7 +23,7 @@ index 1133bac104..f7dbf56e31 100644
    "+components/commerce/content/renderer",
    "+components/commerce/core/commerce_heuristics_data_metrics_helper.h",
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index 1cfb0d2c21..49800302cc 100644
+index 1cfb0d2c21..52e0fcd7a4 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
 @@ -78,6 +78,8 @@
@@ -35,13 +35,15 @@ index 1cfb0d2c21..49800302cc 100644
  #include "components/commerce/content/renderer/commerce_web_extractor.h"
  #include "components/content_capture/common/content_capture_features.h"
  #include "components/content_capture/renderer/content_capture_sender.h"
-@@ -1448,6 +1450,19 @@ void ChromeContentRendererClient::
+@@ -1448,6 +1450,20 @@ void ChromeContentRendererClient::
      BUILDFLAG(IS_MAC)
    blink::WebRuntimeFeatures::EnableWebShare(true);
  #endif
 +  // Camoucrome (windows-oracle): interfaces stock Chrome exposes on Windows
-+  // and macOS but not on Linux (navigator.share, Web Bluetooth, Font Access)
-+  // follow the claimed OS, not the build. A Linux claim keeps Linux's shape.
++  // and macOS but not on Linux (navigator.share, Web Bluetooth) follow the
++  // claimed OS, not the build. A Linux claim keeps Linux's shape. Font Access
++  // is stock on all three (baselines/chrome-507c6ee3e2-stock-ua.json), so it
++  // keeps its stock status; font_access.cc answers with fonts:local.
 +  {
 +    const camoucfg::OsFamily claimed =
 +        camoucfg::ClaimedOs(camoucfg::GlobalScope());
@@ -49,7 +51,6 @@ index 1cfb0d2c21..49800302cc 100644
 +        claimed == camoucfg::OsFamily::kMac) {
 +      blink::WebRuntimeFeatures::EnableWebShare(true);
 +      blink::WebRuntimeFeatures::EnableFeatureFromString("WebBluetooth", true);
-+      blink::WebRuntimeFeatures::EnableFeatureFromString("FontAccess", true);
 +    }
 +  }
  
@@ -87,7 +88,7 @@ index 60cb7a8c77..288054a2b7 100644
      "//third_party/blink/renderer/platform",
    ]
 diff --git a/third_party/blink/renderer/modules/font_access/font_access.cc b/third_party/blink/renderer/modules/font_access/font_access.cc
-index c5984f34ce..8945daee31 100644
+index c5984f34ce..87bc29843e 100644
 --- a/third_party/blink/renderer/modules/font_access/font_access.cc
 +++ b/third_party/blink/renderer/modules/font_access/font_access.cc
 @@ -8,6 +8,10 @@
@@ -142,19 +143,16 @@ index c5984f34ce..8945daee31 100644
    base::ReadOnlySharedMemoryMapping mapping = region.Map();
    if (mapping.size() > INT_MAX) {
      // Cannot deserialize without overflow.
-diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index f18211f3ab..6af0ebc770 100644
---- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
-+++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -3197,6 +3197,11 @@
-     {
-       name: "FontAccess",
-       status: {"Android": "", "default": ""},
-+      // Camoucrome (windows-oracle): the interface stays off by status (sp4-fonts) and is switched on per claimed OS in
-+      // chrome_content_renderer_client.cc; the base::Feature must stay enabled or queryLocalFonts() throws NotSupported.
-+      base_feature_status: "enabled",
-+      // ...and the runtime flag must not copy the enabled base feature, or every claim would expose the interface.
-+      copied_from_base_feature_if: "overridden",
-     },
-     {
-       name: "FontDataServiceForCSSLocalFonts",
+@@ -159,6 +197,12 @@ void FontAccess::DidGetEnumerationResponse(
+         !selection_utf8.contains(element.postscript_name())) {
+       continue;
+     }
++    // Camoucrome: with no fonts:local, the real enumeration still honours the
++    // fonts:list allowlist the CSS font gate applies (absent: every face).
++    if (!camoucfg::IsFontAllowed(camoucfg::ScopeFor(nullptr),
++                                 element.family())) {
++      continue;
++    }
+ 
+     auto entry = FontEnumerationEntry{
+         .postscript_name = String::FromUtf8(element.postscript_name()),

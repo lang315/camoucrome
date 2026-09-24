@@ -68,7 +68,8 @@ std::string SyntheticDeviceId(uint64_t seed, std::string_view kind,
   if (seed == 0 || real_id.empty()) {
     return std::string(real_id);
   }
-  if (real_id == "default") {
+  // Chrome's audio sentinels (media::AudioDeviceDescription), not device ids.
+  if (real_id == "default" || real_id == "communications") {
     return std::string(real_id);
   }
   static constexpr char kHex[] = "0123456789abcdef";

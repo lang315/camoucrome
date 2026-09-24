@@ -9,6 +9,7 @@
 
 #include "base/json/json_reader.h"
 #include "base/values.h"
+#include "components/camoucfg/derive.h"
 #include "components/camoucfg/keys.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -121,6 +122,67 @@ TEST(PresetLoaderTest, WrongTypedFieldIsSkipped) {
   EXPECT_FALSE(out.contains(keys::kScreenWidth));
   EXPECT_EQ(out.FindInt(keys::kScreenHeight), 1080);
   EXPECT_FALSE(out.contains(keys::kFonts));
+}
+
+
+// The preset derives ua:osInfo and ua:platform from one field. An explicit
+// key for either must re-derive the pair, or ClaimedOs (osInfo first) keeps
+// answering with the preset's OS (review 2026-09-24 #7).
+TEST(OverridePresetGroupsTest, ExplicitPlatformRederivesOsInfo) {
+  base::DictValue expanded = ExpandPreset(Preset(R"({"os": "macOS"})"), kMilestone);
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kUaPlatform, "Windows");
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_EQ(*expanded.FindString(keys::kUaOsInfo),
+            CanonicalOsInfoFor(OsFamily::kWindows));
+  EXPECT_EQ(*expanded.FindString(keys::kUaPlatform), "Windows");
+}
+
+TEST(OverridePresetGroupsTest, ExplicitOsInfoRederivesPlatform) {
+  base::DictValue expanded = ExpandPreset(Preset(R"({"os": "Windows"})"), kMilestone);
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kUaOsInfo,
+                   std::string(CanonicalOsInfoFor(OsFamily::kMac)));
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_EQ(*expanded.FindString(keys::kUaPlatform),
+            CanonicalUaChPlatformFor(OsFamily::kMac));
+}
+
+// Explicit navigator.languages re-derives the preset's language and tag.
+TEST(OverridePresetGroupsTest, ExplicitLanguagesRederivesLocale) {
+  base::DictValue expanded =
+      ExpandPreset(Preset(R"({"locale": "fr-FR"})"), kMilestone);
+  base::DictValue explicit_cfg;
+  base::ListValue langs;
+  langs.Append("de-DE");
+  langs.Append("de");
+  explicit_cfg.Set(keys::kNavigatorLanguages, std::move(langs));
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_EQ(*expanded.FindString(keys::kNavigatorLanguage), "de-DE");
+  EXPECT_EQ(*expanded.FindString(keys::kLocaleTag), "de-DE");
+}
+
+TEST(OverridePresetGroupsTest, ExplicitLanguageRederivesTheList) {
+  base::DictValue expanded =
+      ExpandPreset(Preset(R"({"locale": "fr-FR"})"), kMilestone);
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kNavigatorLanguage, "ja-JP");
+  OverridePresetGroups(expanded, explicit_cfg);
+  const base::ListValue* langs = expanded.FindList(keys::kNavigatorLanguages);
+  ASSERT_TRUE(langs);
+  ASSERT_EQ(langs->size(), 2u);
+  EXPECT_EQ((*langs)[0].GetString(), "ja-JP");
+  EXPECT_EQ((*langs)[1].GetString(), "ja");
+  EXPECT_EQ(*expanded.FindString(keys::kLocaleTag), "ja-JP");
+}
+
+TEST(OverridePresetGroupsTest, UnrelatedExplicitKeyLeavesGroupsAlone) {
+  base::DictValue expanded = ExpandPreset(Preset(kFull), kMilestone);
+  base::DictValue before = expanded.Clone();
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kTimezoneId, "Asia/Tokyo");
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_EQ(expanded, before);
 }
 
 }  // namespace

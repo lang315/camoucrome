@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/core_initializer.cc b/third_party/blink/renderer/core/core_initializer.cc
-index 948451b578..5a9f8a7b36 100644
+index 948451b578..eaf144fa6c 100644
 --- a/third_party/blink/renderer/core/core_initializer.cc
 +++ b/third_party/blink/renderer/core/core_initializer.cc
 @@ -30,6 +30,11 @@
@@ -22,7 +22,7 @@ index 948451b578..5a9f8a7b36 100644
  #include "third_party/blink/renderer/core/keywords.h"
  #include "third_party/blink/renderer/core/lcp_critical_path_predictor/element_locator.h"
  #include "third_party/blink/renderer/core/mathml_names.h"
-@@ -174,6 +180,45 @@ void CoreInitializer::Initialize() {
+@@ -174,6 +180,51 @@ void CoreInitializer::Initialize() {
  
    TimeZoneController::Init();
  
@@ -54,6 +54,12 @@ index 948451b578..5a9f8a7b36 100644
 +                   camou_scope, camoucfg::keys::kNavigatorLanguage);
 +               nl && !nl->empty()) {
 +      locale = *nl;
++    } else if (std::vector<std::string> langs = camoucfg::GetStringList(
++                   camou_scope, camoucfg::keys::kNavigatorLanguages);
++               !langs.empty()) {
++      // navigator.language is languages[0] when only the list is set; Intl
++      // must follow the same head.
++      locale = langs.front();
 +    }
 +    if (!locale.empty()) {
 +      String locale_error = LocaleController::instance().SetLocaleOverride(

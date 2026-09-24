@@ -82,6 +82,11 @@ std::vector<VoiceConfig> GetVoicesFrom(const base::DictValue& cfg,
                                        std::string_view key);
 bool HasKeyIn(const base::DictValue& cfg, std::string_view key);
 
+// Merges the explicit configuration over an expanded preset: explicit wins,
+// dict-valued keys merge recursively (see ParsedConfig below).
+base::DictValue MergeExplicitOverPreset(base::DictValue expanded_preset,
+                                        base::DictValue explicit_cfg);
+
 // The process-wide parsed configuration, owned here (rather than as a
 // file-local in mask_config.cc) so that mask_config.cc's getters and
 // gl_params.cc's GLParam() / GLBlockIfNotDefined() read the same parsed

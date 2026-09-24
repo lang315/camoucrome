@@ -4,6 +4,8 @@
 
 #include "components/camoucfg/mask_config_internal.h"
 
+#include <cmath>
+#include <limits>
 #include <string_view>
 
 #include "base/environment.h"
@@ -23,6 +25,27 @@ namespace {
 void WarnWrongType(std::string_view key, const char* expected) {
   LOG(WARNING) << "camoucfg: key '" << key << "' is not " << expected
                << "; falling back to the real value";
+}
+
+// A JSON number as an integer in [lo, hi]. JSONReader stores whole numbers
+// outside int's range (every seed above 2^31-1) and any number written with
+// a fraction part ("1920.0") as a double; those are integers too when they
+// are whole and in range.
+std::optional<int64_t> IntegralIn(const base::Value& value, int64_t lo,
+                                  int64_t hi) {
+  double d;
+  if (value.is_int()) {
+    d = value.GetInt();
+  } else if (value.is_double()) {
+    d = value.GetDouble();
+  } else {
+    return std::nullopt;
+  }
+  if (!(d >= static_cast<double>(lo) && d <= static_cast<double>(hi)) ||
+      d != std::trunc(d)) {
+    return std::nullopt;
+  }
+  return static_cast<int64_t>(d);
 }
 
 }  // namespace
@@ -59,8 +82,9 @@ base::DictValue ParseConfig(std::string_view raw, bool strict) {
   std::optional<base::DictValue> parsed =
       base::JSONReader::ReadDict(raw, base::JSON_PARSE_RFC);
   if (!parsed.has_value()) {
-    LOG(ERROR) << "camoucfg: configuration is not a JSON object; "
-               << "all spoofing is disabled and real values will be reported";
+    LOG(ERROR) << "camoucfg: configuration is not a JSON object; its keys "
+               << "are ignored and report real values (a CAMOU_PRESET, if "
+               << "set, still applies)";
     CHECK(!strict) << "camoucfg: refusing to start with an invalid "
                    << "configuration because CAMOU_CONFIG_STRICT is set";
     return base::DictValue();
@@ -88,16 +112,13 @@ std::optional<uint32_t> GetUint32From(const base::DictValue& cfg,
   if (!value) {
     return std::nullopt;
   }
-  if (!value->is_int()) {
-    WarnWrongType(key, "an integer");
+  std::optional<int64_t> v =
+      IntegralIn(*value, 0, std::numeric_limits<uint32_t>::max());
+  if (!v) {
+    WarnWrongType(key, "an integer in [0, 2^32)");
     return std::nullopt;
   }
-  const int as_int = value->GetInt();
-  if (as_int < 0) {
-    WarnWrongType(key, "a non-negative integer");
-    return std::nullopt;
-  }
-  return static_cast<uint32_t>(as_int);
+  return static_cast<uint32_t>(*v);
 }
 
 std::optional<int32_t> GetInt32From(const base::DictValue& cfg,
@@ -106,11 +127,14 @@ std::optional<int32_t> GetInt32From(const base::DictValue& cfg,
   if (!value) {
     return std::nullopt;
   }
-  if (!value->is_int()) {
-    WarnWrongType(key, "an integer");
+  std::optional<int64_t> v =
+      IntegralIn(*value, std::numeric_limits<int32_t>::min(),
+                 std::numeric_limits<int32_t>::max());
+  if (!v) {
+    WarnWrongType(key, "a 32-bit integer");
     return std::nullopt;
   }
-  return value->GetInt();
+  return static_cast<int32_t>(*v);
 }
 
 std::optional<double> GetDoubleFrom(const base::DictValue& cfg,
@@ -206,6 +230,23 @@ bool HasKeyIn(const base::DictValue& cfg, std::string_view key) {
   return cfg.Find(key) != nullptr;
 }
 
+base::DictValue MergeExplicitOverPreset(base::DictValue expanded_preset,
+                                        base::DictValue explicit_cfg) {
+  // An explicit null means "not set": it must not erase a preset value.
+  std::vector<std::string> nulls;
+  for (const auto [key, value] : explicit_cfg) {
+    if (value.is_none()) {
+      nulls.push_back(key);
+    }
+  }
+  for (const std::string& key : nulls) {
+    explicit_cfg.Remove(key);
+  }
+  OverridePresetGroups(expanded_preset, explicit_cfg);
+  expanded_preset.Merge(std::move(explicit_cfg));
+  return expanded_preset;
+}
+
 const base::DictValue& ParsedConfig() {
   static const base::NoDestructor<base::DictValue> dict([] {
     std::unique_ptr<base::Environment> env = base::Environment::Create();
@@ -230,10 +271,9 @@ const base::DictValue& ParsedConfig() {
       } else {
         // Merge is recursive: an explicit webGl:parameters overrides the
         // preset's table pname by pname, not as a whole.
-        base::DictValue expanded = ExpandPreset(
-            *preset, version_info::GetMajorVersionNumberAsInt());
-        expanded.Merge(std::move(parsed));
-        parsed = std::move(expanded);
+        parsed = MergeExplicitOverPreset(
+            ExpandPreset(*preset, version_info::GetMajorVersionNumberAsInt()),
+            std::move(parsed));
       }
     }
     VLOG(1) << "camoucfg: parsed " << parsed.size() << " key(s)";

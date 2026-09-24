@@ -64,6 +64,24 @@ void CopyInt(const base::DictValue& from, std::string_view field,
   }
 }
 
+void SetOsKeys(base::DictValue& out, OsFamily family) {
+  out.Set(keys::kUaOsInfo, std::string(CanonicalOsInfoFor(family)));
+  out.Set(keys::kUaPlatform, std::string(CanonicalUaChPlatformFor(family)));
+}
+
+// locale:tag, navigator.language, navigator.languages = [tag, primary].
+void SetLocaleKeys(base::DictValue& out, const std::string& locale) {
+  out.Set(keys::kLocaleTag, locale);
+  out.Set(keys::kNavigatorLanguage, locale);
+  base::ListValue languages;
+  languages.Append(locale);
+  std::string primary = locale.substr(0, locale.find('-'));
+  if (primary != locale) {
+    languages.Append(primary);
+  }
+  out.Set(keys::kNavigatorLanguages, std::move(languages));
+}
+
 }  // namespace
 
 base::DictValue ExpandPreset(const base::DictValue& preset,
@@ -100,9 +118,7 @@ base::DictValue ExpandPreset(const base::DictValue& preset,
       LOG(WARNING) << "camoucfg: preset os '" << *os
                    << "' is not a UA-CH platform name; no OS keys emitted";
     } else {
-      out.Set(keys::kUaOsInfo, std::string(CanonicalOsInfoFor(family)));
-      out.Set(keys::kUaPlatform,
-              std::string(CanonicalUaChPlatformFor(family)));
+      SetOsKeys(out, family);
     }
   }
   CopyString(preset, "platformVersion", out, keys::kUaPlatformVersion);
@@ -130,19 +146,46 @@ base::DictValue ExpandPreset(const base::DictValue& preset,
   }
 
   if (const std::string* locale = preset.FindString("locale")) {
-    out.Set(keys::kLocaleTag, *locale);
-    out.Set(keys::kNavigatorLanguage, *locale);
-    base::ListValue languages;
-    languages.Append(*locale);
-    std::string primary = locale->substr(0, locale->find('-'));
-    if (primary != *locale) {
-      languages.Append(primary);
-    }
-    out.Set(keys::kNavigatorLanguages, std::move(languages));
+    SetLocaleKeys(out, *locale);
   }
 
   CopyString(preset, "timezone", out, keys::kTimezoneId);
   return out;
+}
+
+void OverridePresetGroups(base::DictValue& expanded,
+                          const base::DictValue& explicit_cfg) {
+  // The OS pair: explicit osInfo decides first, as ClaimedOs does.
+  OsFamily os = OsFamily::kUnknown;
+  if (const std::string* v = explicit_cfg.FindString(keys::kUaOsInfo)) {
+    os = OsFamilyFromOsInfo(*v);
+  }
+  if (os == OsFamily::kUnknown) {
+    if (const std::string* v = explicit_cfg.FindString(keys::kUaPlatform)) {
+      os = OsFamilyFromUaChPlatform(*v);
+    }
+  }
+  if (os != OsFamily::kUnknown &&
+      (expanded.contains(keys::kUaOsInfo) ||
+       expanded.contains(keys::kUaPlatform))) {
+    SetOsKeys(expanded, os);
+  }
+
+  // The locale triple, headed by the most specific explicit key.
+  const std::string* head = nullptr;
+  if (const base::ListValue* langs =
+          explicit_cfg.FindList(keys::kNavigatorLanguages);
+      langs && !langs->empty() && (*langs)[0].is_string()) {
+    head = &(*langs)[0].GetString();
+  } else if (const std::string* language =
+                 explicit_cfg.FindString(keys::kNavigatorLanguage)) {
+    head = language;
+  } else if (const std::string* tag = explicit_cfg.FindString(keys::kLocaleTag)) {
+    head = tag;
+  }
+  if (head && expanded.contains(keys::kLocaleTag)) {
+    SetLocaleKeys(expanded, *head);
+  }
 }
 
 }  // namespace camoucfg

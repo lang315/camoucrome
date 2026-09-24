@@ -342,7 +342,7 @@
   {
    "name": "kNavigatorMaxTouchPoints",
    "key": "navigator.maxTouchPoints",
-   "type": "int32"
+   "type": "uint32"
   },
   {
    "name": "kNavigatorLanguage",

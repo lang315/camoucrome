@@ -5,6 +5,7 @@
 #include "components/camoucfg/canvas_noise.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <optional>
 #include <string>
@@ -32,41 +33,125 @@ uint64_t ContentHash(base::span<const uint8_t> data) {
 
 }  // namespace
 
-void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
-                 int32_t strength) {
-  if (seed == 0 || data == nullptr || length < 4 || density <= 0.0) {
+void PerturbRgbaAt(uint8_t* data, size_t width, size_t height,
+                   size_t row_bytes, int64_t x0, int64_t y0, uint64_t seed,
+                   double density, int32_t strength) {
+  // NaN-safe: !(density > 0) catches it.
+  if (seed == 0 || data == nullptr || !(density > 0.0) || strength <= 0) {
     return;
   }
-  // SAFETY: `data` and `length` are the caller's buffer bounds.
-  base::span<uint8_t> pixels = UNSAFE_BUFFERS(base::span(data, length));
-  // Fold content into the seed: same drawing reproduces, different drawings
-  // diverge. seed != 0 is already guaranteed; if the XOR lands on 0 the mixer
-  // still behaves, so no special case is needed.
-  const uint64_t eseed = seed ^ ContentHash(pixels);
-  for (size_t i = 0; i < length; ++i) {
-    if ((i & 3u) == 3u) {
-      continue;  // skip alpha
+  density = std::min(density, 1.0);
+  strength = std::min(strength, 255);
+  static constexpr std::array<std::string_view, 3> kGate = {
+      "canvas-gate-r", "canvas-gate-g", "canvas-gate-b"};
+  static constexpr std::array<std::string_view, 3> kDelta = {
+      "canvas-r", "canvas-g", "canvas-b"};
+  for (size_t r = 0; r < height; ++r) {
+    // SAFETY: the caller's buffer holds `height` rows of `row_bytes`, each at
+    // least `width` * 4 bytes.
+    base::span<uint8_t> row =
+        UNSAFE_BUFFERS(base::span(data + r * row_bytes, width * 4));
+    const uint32_t y = static_cast<uint32_t>(y0 + static_cast<int64_t>(r));
+    for (size_t c = 0; c < width; ++c) {
+      base::span<uint8_t> px = row.subspan(c * 4, 4u);
+      // Only opaque pixels: stock never shows RGB under alpha 0, and an
+      // unpremultiplied value under a partial alpha sits on a grid that a
+      // +-1 step would leave.
+      if (px[3] != 255) {
+        continue;
+      }
+      const uint32_t x = static_cast<uint32_t>(x0 + static_cast<int64_t>(c));
+      // The canvas position, not the index in this buffer: any rect of the
+      // same canvas state reads the same noise for the same pixel.
+      const uint64_t index = (uint64_t{x} << 32) | y;
+      for (size_t ch = 0; ch < 3; ++ch) {
+        if (DeriveUnit(seed, kGate[ch], index) >= density) {
+          continue;
+        }
+        const int32_t v = int32_t{px[ch]} + DeriveDelta(seed, kDelta[ch], index,
+                                                        strength);
+        px[ch] = static_cast<uint8_t>(std::clamp(v, 0, 255));
+      }
     }
-    if (DeriveUnit(eseed, "canvas-gate", i) >= density) {
-      continue;  // channel not selected this session
-    }
-    const int32_t delta = DeriveDelta(eseed, "canvas", i, strength);
-    int32_t v = static_cast<int32_t>(pixels[i]) + delta;
-    pixels[i] = static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
   }
 }
 
+void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
+                 int32_t strength) {
+  if (seed == 0 || data == nullptr || length < 4) {
+    return;
+  }
+  // Fold content into the seed: same drawing reproduces, different drawings
+  // diverge.
+  const uint64_t eseed =
+      seed ^ ContentHash(UNSAFE_BUFFERS(base::span<const uint8_t>(data, length)));
+  PerturbRgbaAt(data, length / 4, 1, length, 0, 0, eseed, density, strength);
+}
+
+uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
+                         size_t row_bytes) {
+  // FNV-1a 64 over at most kSamples pixels spread evenly over the whole
+  // canvas, plus its size.
+  // ponytail: strided sample, so a change confined to unsampled pixels of a
+  // canvas above kSamples pixels keeps its hash; hash every pixel if that
+  // ever matters more than readback cost.
+  constexpr size_t kSamples = 1 << 16;
+  uint64_t h = 0xCBF29CE484222325ULL;
+  auto mix = [&h](uint64_t b) {
+    h ^= b;
+    h *= 0x100000001B3ULL;
+  };
+  mix(width);
+  mix(height);
+  const size_t total = width * height;
+  const size_t step = std::max<size_t>(1, total / kSamples);
+  for (size_t k = 0; k < total; k += step) {
+    // SAFETY: k < width * height, so the pixel lies inside the caller's
+    // `height` rows of `row_bytes`.
+    const uint8_t* px =
+        UNSAFE_BUFFERS(rgba + (k / width) * row_bytes + (k % width) * 4);
+    for (size_t b = 0; b < 4; ++b) {
+      mix(UNSAFE_BUFFERS(px[b]));
+    }
+  }
+  return h;
+}
+
+namespace {
+
+// canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
+// place the canvas noise keys are read.
+void NoiseParams(const ConfigScope& scope, double& density, int32_t& strength) {
+  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.0005);
+  strength = GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
+}
+
+}  // namespace
+
 void PerturbRgbaFromConfig(uint8_t* data, size_t length,
                            const ConfigScope& scope) {
-  const std::optional<uint32_t> seed = GetUint32(scope, keys::kCanvasSeed);
-  if (!seed || *seed == 0) {
+  const uint64_t seed = CanvasSeed(scope);
+  if (seed == 0) {
     return;  // spoof off -> byte-identical to stock (rule 5)
   }
-  const double density =
-      GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.0005);
-  const int32_t strength =
-      GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
-  PerturbRgba(data, length, static_cast<uint64_t>(*seed), density, strength);
+  double density;
+  int32_t strength;
+  NoiseParams(scope, density, strength);
+  PerturbRgba(data, length, seed, density, strength);
+}
+
+void PerturbRgbaAtFromConfig(uint8_t* data, size_t width, size_t height,
+                             size_t row_bytes, int64_t x0, int64_t y0,
+                             uint64_t state_hash, const ConfigScope& scope) {
+  const uint64_t seed = CanvasSeed(scope);
+  if (seed == 0) {
+    return;  // spoof off -> byte-identical to stock (rule 5)
+  }
+  double density;
+  int32_t strength;
+  NoiseParams(scope, density, strength);
+  PerturbRgbaAt(data, width, height, row_bytes, x0, y0, seed ^ state_hash,
+                density, strength);
 }
 
 double PerturbMetric(double stock, uint64_t seed, uint64_t index,
