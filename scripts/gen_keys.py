@@ -135,21 +135,62 @@ def check(keys, rendered):
         problems.append(f"keys_unittest.cc `declared` lacks {n}")
     for n in sorted(declared - names):
         problems.append(f"keys_unittest.cc `declared` has {n}, not in settings/keys.json")
-    # Presubmit (SP6 §4.6): no string literal in the key position of a getter.
-    literal = re.compile(r'\b(?:camoucfg::)?(?:Get(?:String|Uint32|Int32|Double|Bool|StringList)|HasKey)'
-                         r'\(\s*[^,()]*,\s*"')
-    for path in sorted(glob.glob(os.path.join(ROOT, "patches", "*.patch")) +
-                       glob.glob(os.path.join(ROOT, "additions", "camoucfg", "*.cc")) +
+    for name, no in patch_literal_hits(os.path.join(ROOT, "patches")):
+        with open(os.path.join(ROOT, "patches", name)) as f:
+            line = f.readlines()[no - 1]
+        problems.append(f"patches/{name}:{no}: string literal in key position: {line.strip()}")
+    for path in sorted(glob.glob(os.path.join(ROOT, "additions", "camoucfg", "*.cc")) +
                        glob.glob(os.path.join(ROOT, "additions", "camoucfg", "*.h"))):
         if path.endswith("_unittest.cc"):
             continue
         with open(path) as f:
-            for no, line in enumerate(f, 1):
-                if line.startswith("-"):
-                    continue
-                if literal.search(line):
-                    problems.append(f"{os.path.relpath(path, ROOT)}:{no}: string literal in key position: {line.strip()}")
+            lines = f.readlines()
+        for no in literal_key_lines(lines, False):
+            problems.append(f"{os.path.relpath(path, ROOT)}:{no}: string literal in key position: {lines[no - 1].strip()}")
     return problems
+
+
+def patch_literal_hits(patches_dir):
+    """(patch, line) literal-key hits that survive the series: a call a later
+    patch in `series` removes again never reaches the applied tree."""
+    with open(os.path.join(patches_dir, "series")) as f:
+        names = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    hits, removed_later = [], set()
+    for name in reversed(names):
+        with open(os.path.join(patches_dir, name)) as f:
+            lines = f.readlines()
+        cur, files = None, []  # the file each patch line belongs to (its +++ b/ header)
+        for l in lines:
+            cur = l[6:].strip() if l.startswith("+++ b/") else cur
+            files.append(cur)
+        # ponytail: matched by (file, text), not position; an identical line removed
+        # elsewhere in the same file would hide a hit. Apply the series if that bites.
+        for start, end in literal_key_spans(lines, True):
+            if not all((files[i - 1], lines[i - 1][1:]) in removed_later for i in range(start, end + 1)):
+                hits.append((name, start))
+        removed_later |= {(fn, l[1:]) for fn, l in zip(files, lines) if l.startswith("-") and not l.startswith("---")}
+    return sorted(hits)
+
+
+# Presubmit (SP6 §4.6): no string literal in the key position of a getter.
+# The first argument may hold one level of parentheses (ScopeFor(ctx)) and the
+# call may span lines, so this runs over the whole text, not line by line.
+LITERAL_KEY = re.compile(r'\b(?:camoucfg::)?(?:Get(?:String|Uint32|Int32|Double|Bool|StringList)|HasKey)'
+                         r'\(\s*(?:[^,()]|\([^()]*\))*,\s*"')
+
+
+def literal_key_spans(lines, patch):
+    """1-based (first, last) lines of each getter call whose key argument is a string literal."""
+    if patch:  # drop removed lines and the +/space marker column, keep numbering
+        lines = ["\n" if l.startswith("-") else l[1:] for l in lines]
+    text = "".join(lines)
+    return [(text.count("\n", 0, m.start()) + 1, text.count("\n", 0, m.end()) + 1)
+            for m in LITERAL_KEY.finditer(text)]
+
+
+def literal_key_lines(lines, patch):
+    """1-based line numbers where a getter's key argument is a string literal."""
+    return [start for start, _ in literal_key_spans(lines, patch)]
 
 
 def main(argv):

@@ -15,6 +15,12 @@ SSH = ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "PasswordAuthentication=no",
 CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 
+def ps_quote(s):
+    """A PowerShell single-quoted literal: no $ expansion, no escapes, a quote
+    (PowerShell also counts the typographic ones) is doubled."""
+    return "'" + re.sub("(['\u2018\u2019\u201a\u201b])", r"\1\1", s) + "'"
+
+
 def powershell(script, timeout=300):
     p = subprocess.run(SSH + [script], capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0:
@@ -29,7 +35,7 @@ def dump_dom(page_html, args=(), headed=False, timeout_s=60):
     argv = ["--no-first-run", "--no-default-browser-check", *args]
     if not headed:
         argv.insert(0, "--headless=new")
-    arglist = ", ".join(json.dumps(a) for a in argv)
+    arglist = ", ".join(ps_quote(a) for a in argv)
     ps = f"""
 $tmp = Join-Path $env:TEMP ("camou_" + $PID)
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
@@ -40,7 +46,7 @@ $err = Join-Path $tmp "err.txt"
 $url = "file:///" + ($html -replace '\\\\', '/')
 $p = Start-Process -FilePath "{CHROME}" -ArgumentList @({arglist}, "--user-data-dir=$tmp\\profile", "--dump-dom", $url) -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -WindowStyle Hidden
 if (-not $p.WaitForExit({timeout_s * 1000})) {{ Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue; "TIMEOUT" }}
-Get-Process chrome -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq "{CHROME}" -and $_.StartTime -gt (Get-Date).AddMinutes(-{timeout_s // 60 + 2}) -and $_.CommandLine -like "*$tmp*" }} | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*$tmp*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Get-Content -Raw $out
 "----STDERR----"
 Get-Content -Raw $err
@@ -93,7 +99,7 @@ def cdp_eval(page_html, expression="document.getElementById('o').textContent", a
     argv = ["--no-first-run", "--no-default-browser-check", "--remote-debugging-port=9333", "--remote-allow-origins=*", *args]
     if not headed:
         argv.insert(0, "--headless=new")
-    arglist = ", ".join(json.dumps(a) for a in argv)
+    arglist = ", ".join(ps_quote(a) for a in argv)
     ps = PS_CDP + f"""
 $tmp = Join-Path $env:TEMP ("camou_cdp_page_" + $PID)
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
@@ -111,7 +117,7 @@ $pages = $raw | ConvertFrom-Json
 $pg = $pages | Where-Object {{ $_.type -eq "page" -and $_.url -like "file:*" }} | Select-Object -First 1
 if (-not $pg) {{ $pg = $pages | Where-Object {{ $_.type -eq "page" }} | Select-Object -First 1 }}
 $ws = Cdp-Connect $pg.webSocketDebuggerUrl
-Cdp-Send $ws @{{ id = 1; method = "Runtime.evaluate"; params = @{{ expression = {json.dumps(expression)}; returnByValue = $true }} }}
+Cdp-Send $ws @{{ id = 1; method = "Runtime.evaluate"; params = @{{ expression = {ps_quote(expression)}; returnByValue = $true }} }}
 $resp = $null
 for ($i = 0; $i -lt 20 -and -not $resp; $i++) {{ $m = Cdp-Recv $ws 5000; if ($m -and $m.StartsWith('{{"id":1,')) {{ $resp = $m }} }}
 "CDP_RESULT_BEGIN"
@@ -151,7 +157,7 @@ class CdpChrome:
                 "--remote-allow-origins=*", *self.args]
         if not self.headed:
             argv.insert(0, "--headless=new")
-        arglist = ", ".join(json.dumps(a) for a in argv)
+        arglist = ", ".join(ps_quote(a) for a in argv)
         powershell(f"""
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port={self.port}*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Process -FilePath "{CHROME}" -ArgumentList @({arglist}, "--user-data-dir={prof}", "about:blank") -WindowStyle Hidden
@@ -185,7 +191,7 @@ def cdp_headers(url, seconds=20, headed=True, profile=None, args=()):
     argv = ["--no-first-run", "--no-default-browser-check", "--remote-debugging-port=9333", "--remote-allow-origins=*", *args]
     if not headed:
         argv.insert(0, "--headless=new")
-    arglist = ", ".join(json.dumps(a) for a in argv)
+    arglist = ", ".join(ps_quote(a) for a in argv)
     ps = PS_CDP + f"""
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Sleep -Seconds 2
@@ -196,7 +202,7 @@ $pages = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:9333/json/list).Co
 $pg = $pages | Where-Object {{ $_.type -eq "page" }} | Select-Object -First 1
 $ws = Cdp-Connect $pg.webSocketDebuggerUrl
 Cdp-Send $ws @{{ id = 1; method = "Network.enable"; params = @{{}} }}
-Cdp-Send $ws @{{ id = 2; method = "Page.navigate"; params = @{{ url = {json.dumps(url)} }} }}
+Cdp-Send $ws @{{ id = 2; method = "Page.navigate"; params = @{{ url = {ps_quote(url)} }} }}
 $deadline = (Get-Date).AddSeconds({seconds})
 $urls = @{{}}
 "CDP_EVENTS_BEGIN"

@@ -15,6 +15,12 @@ on:
     branches: [main]
     paths: [patches/**, additions/**, settings/**, scripts/**, client/**, upstream.env, .github/workflows/build-verify.yml]
   workflow_dispatch:
+# An explicit `shell: bash` makes GitHub run `bash --noprofile --norc -eo
+# pipefail {0}`; the implicit default is `bash -e {0}`, where `cmd | tail`
+# reports tail's status and hides every failure below.
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: buildpc
   cancel-in-progress: false
@@ -45,11 +51,13 @@ jobs:
           python3 scripts/gen_fontconfig.py --check
       - name: sync the client tree the verifies import
         run: |
-          rsync -a client/ "$CLIENT/client/"
+          # --delete so a module removed from the repo cannot linger and still
+          # import; baselines/ keeps box-local captures, so it is not mirrored.
+          rsync -a --delete --exclude '*.egg-info' --exclude node_modules --exclude __pycache__ client/ "$CLIENT/client/"
           rsync -a settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
           rsync -a scripts/ "$CLIENT/scripts/"
-          cp scripts/verify_*.py scripts/lib_shell.py scripts/capture_host_oracle.py scripts/echo_server.py "$VERIFY/" 2>/dev/null || true
+          cp scripts/verify_*.py scripts/lib_shell.py scripts/capture_host_oracle.py scripts/echo_server.py "$VERIFY/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
@@ -60,19 +68,23 @@ jobs:
       - name: camoucfg unit suites
         run: |
           cd "$SRC"
-          F=$(grep -ho '^TEST(\w*' components/camoucfg/*_unittest.cc | sed 's/TEST(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
-          out/Default/components_unittests --gtest_filter="$F" 2>&1 | grep -E 'SUCCESS|FAIL' | tail -3
-          out/Default/components_unittests --gtest_filter="$F" 2>&1 | grep -q "SUCCESS: all tests passed"
+          F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
+          # One run into a file: `| grep -q` would close the pipe early and, under
+          # pipefail, fail the step on the test binary's SIGPIPE.
+          rc=0; out/Default/components_unittests --gtest_filter="$F" > /tmp/camoucfg_ut.txt 2>&1 || rc=$?
+          grep -E 'SUCCESS|FAIL' /tmp/camoucfg_ut.txt | tail -3 || true
+          test "$rc" -eq 0
+          grep -q "SUCCESS: all tests passed" /tmp/camoucfg_ut.txt
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
       - name: browser verifies
         run: |
           cd "$VERIFY"
           rc=0
-          run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12; rc=1; fi; }
+          run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; rc=1; fi; }
           run verify_sp1a_chrome.py
           run verify_sp4_voices.py
           run verify_fonts_bundle.py
