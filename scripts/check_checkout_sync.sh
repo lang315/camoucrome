@@ -58,7 +58,18 @@ done
 # `git diff` cannot see an untracked file, so a new .cc added in the build tree
 # and never committed to the branch is listed separately (out/ and camoucfg
 # excluded for the reasons above).
-remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
+# A failing git (no such branch, not a repo) must print something here, or the
+# section is empty and reads as "in sync".
+remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg' || echo 'git diff camoucrome/main failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
+# And the repo's patches/ against the branch: each commit's diff, generated
+# exactly as export.sh generates it, hashed on the far side. A hand-edited
+# patches/*.patch or a stale series reads as a mismatch below.
+. "$ROOT/upstream.env"
+remote_script+="PIN=$CHROMIUM_REV"$'\n'
+remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..camoucrome/main"); do
+  d=$(git diff --no-ext-diff --no-color --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" | sha256sum | cut -d" " -f1)
+  [ "$d" = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ] || echo "PATCH $(git log -1 --format=%s "$c").patch $d"
+done'$'\n'
 # On the build box itself (the self-hosted runner, or a shell in WSL) there is
 # no link to cross: SSH_TARGET=local runs the same script against $SRC directly.
 if [ "$SSH_TARGET" = local ] || { [ -z "${1:-}" ] && [ -d "$SRC/.git" ]; }; then
@@ -100,6 +111,16 @@ if [ -n "$buildtree" ]; then
   echo "FAIL  the build tree differs from camoucrome/main (what export.sh exports):"
   printf '%s\n' "$buildtree" | sed 's/^/      /'
   echo "      commit it on camoucrome/main (checked out in the build tree) or check it out of the branch."
+  fails=$((fails + 1))
+fi
+
+want=$(grep -v '^#' "$ROOT/patches/series" | sed '/^$/d' | while read -r p; do
+  echo "PATCH $p $( (shasum -a 256 "$ROOT/patches/$p" 2>/dev/null || sha256sum "$ROOT/patches/$p" 2>/dev/null || echo MISSING) | cut -d' ' -f1)"
+done)
+got=$(printf '%s\n' "$remote_out" | grep '^PATCH ')
+if [ "$want" != "$got" ]; then
+  echo "FAIL  patches/ differs from what export.sh would write from camoucrome/main (< repo, > branch):"
+  diff <(printf '%s\n' "$want") <(printf '%s\n' "$got") | grep '^[<>]' | sed 's/^/      /'
   fails=$((fails + 1))
 fi
 

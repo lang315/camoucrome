@@ -120,3 +120,22 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     assert (staging / "settings" / "fontconfig" / "windows.conf").exists()
     staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist2", False, no_fonts=True)
     assert stamp["fonts"] is False and not (staging / "fonts").exists()
+
+
+def test_refuses_implicit_component_build(tree, tmp_path):
+    # GN's default is is_component_build = is_debug, and is_debug defaults to true.
+    src, out, deps = tree
+    for args in ("", "is_debug = true\n", "import(\"//build/args/x.gn\")\n"):
+        (out / "args.gn").write_text(args)
+        with pytest.raises(SystemExit, match="component build"):
+            package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\n")
+    package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_refuses_deps_without_the_binary(tree, tmp_path):
+    src, out, deps = tree
+    for text in ("", "locales/en-US.pak\n"):
+        deps.write_text(text)
+        with pytest.raises(SystemExit, match="main binary"):
+            package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
