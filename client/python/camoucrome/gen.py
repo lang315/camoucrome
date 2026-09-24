@@ -58,6 +58,7 @@ are copied instead, revisit when a second target appears or they diverge.
 """
 import argparse
 import json
+import os
 import pathlib
 import random
 import sys
@@ -95,7 +96,12 @@ def dpr_of(fp):
 # value <= the pool's. The C++ domain validator has no rule for this key
 # (only the geolocation axes), so the strict oracle cannot catch it.
 DEVICE_MEMORY = (0.25, 0.5, 1, 2, 4, 8)
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+# The repository (or an archive/client copy with the same layout): settings/ is
+# not package data, so a non-editable install must name it in CAMOUCROME_ROOT.
+ROOT = pathlib.Path(os.environ.get("CAMOUCROME_ROOT") or pathlib.Path(__file__).resolve().parents[3])
+if not (ROOT / "settings" / "webgl").is_dir():
+    raise ImportError(f"camoucrome.gen needs the repository's settings/ and {ROOT / 'settings'} has none: "
+                      "set CAMOUCROME_ROOT to the repository (or client copy) root")
 
 
 def load_profiles():
