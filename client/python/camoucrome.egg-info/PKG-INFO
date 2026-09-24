@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: camoucrome
+Version: 0.1.0
+Summary: Launcher for the Camoucrome browser: CAMOU_CONFIG / CAMOU_PRESET transport over a patchright driver
+Requires-Python: >=3.10
+Requires-Dist: patchright==1.62.3
+Requires-Dist: browserforge==1.2.4

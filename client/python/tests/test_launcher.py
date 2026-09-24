@@ -95,6 +95,7 @@ def test_fontconfig_env_follows_the_claimed_os(tmp_path):
     (tmp_path / "fonts").mkdir()
     (tmp_path / "settings" / "fontconfig").mkdir(parents=True)
     (tmp_path / "settings" / "fontconfig" / "windows.conf").write_text("<fontconfig/>")
+    (tmp_path / "settings" / "fontconfig" / "macos.conf").write_text("<fontconfig/>")
     win = launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
     assert win == str(tmp_path / "settings" / "fontconfig" / "windows.conf")
     assert launcher.fontconfig_for({"ua:platform": "Linux"}, None, tmp_path / "fonts") is None
@@ -115,3 +116,119 @@ def test_a_large_config_is_chunked_into_numbered_env_strings():
     parts = [env[f"CAMOU_CONFIG_{n}"] for n in range(1, 4)]
     assert "CAMOU_CONFIG_4" not in env and all(len(p) <= 30000 for p in parts)
     assert json.loads("".join(parts)) == big
+
+
+def test_accept_lang_follows_the_preset_locale_under_the_config():
+    # preset_loader.cc: locale "fr-FR" -> navigator.languages ["fr-FR", "fr"]; "fr" alone -> ["fr"].
+    assert camoucrome.accept_lang_of(None, {"locale": "fr-FR"}) == "fr-FR,fr"
+    assert camoucrome.accept_lang_of(None, '{"locale": "fr"}') == "fr"
+    assert camoucrome.accept_lang_of({"navigator.languages": ["de-DE"]}, {"locale": "fr-FR"}) == "de-DE"
+    # An explicit member of the preset's locale triple re-derives the whole
+    # triple (preset_loader.cc OverridePresetGroups), as the browser does.
+    assert camoucrome.accept_lang_of({"locale:tag": "de-DE"}, {"locale": "fr-FR"}) == "de-DE,de"
+    assert camoucrome.accept_lang_of({"navigator.language": "ja-JP"}, {"locale": "fr-FR"}) == "ja-JP,ja"
+    pw = FakePlaywright()
+    camoucrome.launch(pw, "/x/chrome", preset={"locale": "fr-FR"}, user_data_dir="/p")
+    assert "--accept-lang=fr-FR,fr" in pw.chromium.kw["args"]
+
+
+def test_bad_config_shapes_are_rejected():
+    for bad in ("{not json", "[1]", '"x"', {"navigator.languages": "fr"}, {"navigator.languages": ["fr", 1]}):
+        with pytest.raises(ValueError):
+            camoucrome.build_env(bad, base={})
+        with pytest.raises(ValueError):
+            camoucrome.accept_lang_of(bad)
+
+
+def test_claimed_os_mirrors_derive_cc():
+    claimed = camoucrome.launcher.claimed_os
+    assert claimed({"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "macOS"}) == "Windows"
+    assert claimed({"ua:osInfo": "X11; Linux x86_64", "ua:platform": "Windows"}) == "Linux"
+    assert claimed({"ua:osInfo": "Linux; Android 10; K"}) == "Android"
+    assert claimed({"ua:osInfo": "garbage", "ua:platform": "macOS"}) == "macOS"
+    # An explicit ua:platform re-derives the preset's OS pair
+    # (preset_loader.cc OverridePresetGroups), so the browser claims Windows.
+    assert claimed({"ua:platform": "Windows"}, {"os": "macOS"}) == "Windows"
+    assert claimed({"ua:platform": "Bogus"}, {"os": "macOS"}) == "macOS"
+    assert claimed({"ua:osInfo": "Windows NT 10.0"}, {"os": "macOS"}) == "Windows"
+    assert claimed(None, {"os": "Windows"}) == "Windows" and claimed(None, None) is None
+
+
+def test_fontconfig_env_is_never_inherited_and_the_conf_must_exist(tmp_path):
+    launcher = camoucrome.launcher
+    assert "FONTCONFIG_FILE" not in launcher.build_env(base={"FONTCONFIG_FILE": "/host.conf"})
+    (tmp_path / "fonts").mkdir()
+    with pytest.raises(FileNotFoundError):
+        launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
+
+
+def test_a_large_preset_is_chunked_like_the_config():
+    big = {"fonts": ["x" * 100] * 700}
+    env = camoucrome.build_env(preset=big, base={})
+    assert "CAMOU_PRESET" not in env and json.loads(env["CAMOU_PRESET_1"] + env["CAMOU_PRESET_2"] + env["CAMOU_PRESET_3"]) == big
+
+
+class ClosingContext:
+    def __init__(self):
+        self.handlers = []
+
+    def on(self, event, fn):
+        self.handlers.append((event, fn))
+
+
+class ClosingChromium:
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    def launch_persistent_context(self, user_data_dir, **kw):
+        self.user_data_dir = user_data_dir
+        if self.fail:
+            raise RuntimeError("spawn failed")
+        self.ctx = ClosingContext()
+        return self.ctx
+
+
+def test_temp_profile_is_removed_on_close_and_on_failure(tmp_path):
+    import os
+    pw = type("PW", (), {"chromium": ClosingChromium()})()
+    ctx = camoucrome.launch(pw, "/x/chrome")
+    assert os.path.isdir(pw.chromium.user_data_dir)
+    [(event, fn)] = ctx.handlers
+    assert event == "close"
+    fn(ctx)
+    assert not os.path.exists(pw.chromium.user_data_dir)
+    pw = type("PW", (), {"chromium": ClosingChromium(fail=True)})()
+    with pytest.raises(RuntimeError):
+        camoucrome.launch(pw, "/x/chrome")
+    assert not os.path.exists(pw.chromium.user_data_dir)
+    kept = tmp_path / "profile"
+    kept.mkdir()
+    pw = type("PW", (), {"chromium": ClosingChromium()})()
+    assert camoucrome.launch(pw, "/x/chrome", user_data_dir=str(kept)).handlers == []
+
+
+def test_touch_and_mobile_emulation_are_forbidden():
+    for opt in ("has_touch", "is_mobile"):
+        with pytest.raises(ValueError, match=opt):
+            camoucrome.launch(FakePlaywright(), "/x/chrome", **{opt: True})
+
+
+def test_temp_profile_cleanup_works_with_the_async_api():
+    import asyncio
+    import os
+
+    class AsyncChromium(ClosingChromium):
+        def launch_persistent_context(self, user_data_dir, **kw):
+            async def go():
+                return ClosingChromium.launch_persistent_context(self, user_data_dir, **kw)
+            return go()
+
+    pw = type("PW", (), {"chromium": AsyncChromium()})()
+    ctx = asyncio.run(camoucrome.launch(pw, "/x/chrome"))
+    [(event, fn)] = ctx.handlers
+    fn(ctx)
+    assert event == "close" and not os.path.exists(pw.chromium.user_data_dir)
+    pw = type("PW", (), {"chromium": AsyncChromium(fail=True)})()
+    with pytest.raises(RuntimeError):
+        asyncio.run(camoucrome.launch(pw, "/x/chrome"))
+    assert not os.path.exists(pw.chromium.user_data_dir)
