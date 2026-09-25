@@ -178,6 +178,24 @@ With preset `{os: macOS, locale: fr-FR}` and config `{ua:platform: Windows, navi
 
 The generator emits no `fonts:list` and no `fonts:local` for `--os linux`; it does emit them for Windows (119 / yes) and macOS (960 / yes). So under a Linux claim, `queryLocalFonts()` lists the host's real faces, and only after the permission prompt. The CSS font gate shows the same host fonts under that claim, and `FONTCONFIG_FILE` is not set for Linux, so the bundle is not on the font path. The two surfaces agree: this is the rule-5 real-value fallback, not a new leak.
 
+## Windows: the sandbox dropped the config (windows-sandbox-env)
+
+The first native Windows build (`D:\camou-win`, `out\Release`, pin `507c6ee3e2`, 58285 steps) ran fine, but the config never reached the page. With `CAMOU_CONFIG={"navigator.hardwareConcurrency":3}`, `navigator.hardwareConcurrency` read 16 (the real value) under the default sandbox and 3 under `--no-sandbox`. The cause: on Windows, renderers and utilities are launched with `SetFilterEnvironment(true)`. `CreateFilteredEnvironment()` (`sandbox/win/src/broker_services.cc`) passes only Path, SystemDrive, SystemRoot, TEMP, TMP, LOCALAPPDATA and CHROME_CRASHPAD_PIPE_NAME. Every `CAMOU_*` variable was dropped, so every renderer-side spoof fell back to the real value. Linux has no such filter, so no WSL verify could see it.
+
+The fix is the new patch `windows-sandbox-env`, last in the series. `FilterEnvironment()` (`sandbox/win/src/win_utils.cc`) also keeps every variable whose name starts with `CAMOU_`, matching case-insensitively as Windows does. A prefix is used because the `CAMOU_CONFIG_1..N` chunks are open-ended. The renderer stays sandboxed, and a page cannot read its environment.
+
+Evidence, from `file:///D:/camou-win/hc.html`, which prints the main-thread and dedicated-worker `hardwareConcurrency`:
+
+| Binary | Config | Flags | Output |
+|---|---|---|---|
+| before the patch | set | default (sandboxed) | `16` (RED) |
+| before the patch | set | `--no-sandbox` | `3` |
+| after (`Build Succeeded: 517 steps`) | none | default | `main=16 worker=16` |
+| after | set | default (sandboxed) | `main=3 worker=3` |
+| after | set | `--no-sandbox` | `main=3 worker=3` |
+
+In the "after" build, `sbox_unittests --gtest_filter=WinUtils.FilterEnvironment` reports `[  PASSED  ] 1 test`. The added cases: `CAMOU_CONFIG`, `camou_preset` and `CAMOU_CONFIG_2` are kept; `CAMOUX` and names not in the list are dropped.
+
 ## Also open (review findings not fixed in this pass)
 
 - **Android claim and touch** (d-pointer-touch): an Android claim forces `pointer: coarse` even when `maxTouchPoints` is absent, so it reports 0 touch points with a coarse pointer.
