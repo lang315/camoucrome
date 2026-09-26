@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index b92fdbe057..443c6f06c9 100644
+index b92fdbe057..626b4b0e7e 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -17,12 +17,17 @@
@@ -177,7 +177,7 @@ index b92fdbe057..443c6f06c9 100644
    void InjectKeyboardEvent(const input::NativeWebKeyboardEvent& keyboard_event,
                             std::unique_ptr<Array<std::string>> commands,
                             std::unique_ptr<DispatchKeyEventCallback> callback) {
-@@ -2317,6 +2465,44 @@ bool InputHandler::PointIsWithinContents(gfx::PointF point) const {
+@@ -2317,6 +2465,48 @@ bool InputHandler::PointIsWithinContents(gfx::PointF point) const {
    return bounds.Contains(point.x(), point.y());
  }
  
@@ -215,6 +215,10 @@ index b92fdbe057..443c6f06c9 100644
 +  // InputInjector::InjectMouseEvent). ForwardMouseEventNow is the same
 +  // stock delivery path a non-humanized move takes -- callback resolves on
 +  // this event's ack, exactly like today.
++  // Re-stamped like the synthetic moves before it: the event still carries
++  // its dispatch-time stamp, which is older than every interior point, so the
++  // page would see the final mousemove's timeStamp go backwards.
++  mouse_event->SetTimeStamp(base::TimeTicks::Now());
 +  handler->EnsureInjector(widget.get())
 +      ->ForwardMouseEventNow(*mouse_event, std::move(callback));
 +}

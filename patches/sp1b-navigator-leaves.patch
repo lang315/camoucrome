@@ -34,28 +34,31 @@ index b1cbee4f63..cc46d0d4ec 100644
  
  void SetAndroidOsForTabletSite(content::WebContents* current_tab) {
 diff --git a/third_party/blink/renderer/core/events/navigator_events.cc b/third_party/blink/renderer/core/events/navigator_events.cc
-index a57561775c..0ebcd52cdc 100644
+index a57561775c..d09b7bfe53 100644
 --- a/third_party/blink/renderer/core/events/navigator_events.cc
 +++ b/third_party/blink/renderer/core/events/navigator_events.cc
-@@ -30,6 +30,9 @@
+@@ -30,6 +30,10 @@
  
  #include "third_party/blink/renderer/core/events/navigator_events.h"
  
++#include "base/numerics/safe_conversions.h"
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/keys.h"
 +#include "components/camoucfg/mask_config.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/navigator.h"
-@@ -38,6 +41,12 @@
+@@ -38,6 +42,14 @@
  namespace blink {
  
  int32_t NavigatorEvents::maxTouchPoints(Navigator& navigator) {
 +  // Config override wins over the real Settings value; no-op when absent.
-+  if (std::optional<int32_t> configured = camoucfg::GetInt32(
++  // Unsigned like every other reader of this key: a negative value is a
++  // wrong-typed key and falls back to the real value.
++  if (std::optional<uint32_t> configured = camoucfg::GetUint32(
 +          camoucfg::ScopeFor(navigator.GetExecutionContext()),
 +          camoucfg::keys::kNavigatorMaxTouchPoints)) {
-+    return *configured;
++    return base::saturated_cast<int32_t>(*configured);
 +  }
    LocalDOMWindow* window = navigator.DomWindow();
    return window ? window->GetFrame()->GetSettings()->GetMaxTouchPoints() : 0;

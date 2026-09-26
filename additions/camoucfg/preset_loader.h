@@ -21,6 +21,15 @@ namespace camoucfg {
 // rewritten because no version-bearing field is ever taken from a preset.
 base::DictValue ExpandPreset(const base::DictValue& preset, int fork_milestone);
 
+// A preset derives several keys from one field: os -> ua:osInfo + ua:platform,
+// locale -> locale:tag + navigator.language + navigator.languages. An explicit
+// key for one member of such a group re-derives the whole group in
+// `expanded` from the explicit value, so a key-by-key merge afterwards cannot
+// leave the preset's other members contradicting it. Called with the
+// explicit configuration before it is merged over `expanded`.
+void OverridePresetGroups(base::DictValue& expanded,
+                          const base::DictValue& explicit_cfg);
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_PRESET_LOADER_H_

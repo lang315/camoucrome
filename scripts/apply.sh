@@ -46,10 +46,17 @@ echo "applying patches"
 # would sort "sp2-*" between "sp1a-*" and "sp5a-*", but SP2 is extracted from a
 # tree that already has SP5a applied. patches/series is written by
 # scripts/export.sh from the camoucrome/main branch order; do not hand-sort it.
+# The process substitution's exit status is invisible to set -e, so a missing
+# or empty series would otherwise apply nothing and still print "done".
+[ -s "$ROOT/patches/series" ] || { echo "error: $ROOT/patches/series is missing or empty" >&2; exit 1; }
 mapfile -t PATCHES < <(grep -v '^#' "$ROOT/patches/series" | sed '/^$/d; s#^#'"$ROOT"'/patches/#')
+[ "${#PATCHES[@]}" -gt 0 ] || { echo "error: $ROOT/patches/series lists no patches" >&2; exit 1; }
+applied=0
 for patch in "${PATCHES[@]}"; do
   echo "  $(basename "$patch")"
   git -C "$SRC" apply --3way "$patch"
+  applied=$((applied + 1))
 done
+echo "applied $applied/${#PATCHES[@]} patches"
 
 echo "done. build with: autoninja -C out/Default content_shell"

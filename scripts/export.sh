@@ -60,7 +60,9 @@ for i in "${!COMMITS[@]}"; do
   c="${COMMITS[$i]}"; name="${NAMES[$i]}"
   # components/camoucfg is additions/, exported whole from the tip below; a
   # commit that only touches it produces no patch and no series line.
-  git -C "$SRC" diff --no-color "$c^" "$c" -- . ':(exclude)components/camoucfg' > "$ROOT/patches/$name.patch"
+  # Pinned flags: user config (diff.noprefix, mnemonicPrefix, an external
+  # driver) must not change the bytes of a patch.
+  git -C "$SRC" diff --no-ext-diff --no-color --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ':(exclude)components/camoucfg' > "$ROOT/patches/$name.patch"
   if [ -s "$ROOT/patches/$name.patch" ]; then
     echo "$name.patch" >> "$ROOT/patches/series"
     echo "  $name.patch"

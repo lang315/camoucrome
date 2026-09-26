@@ -13,36 +13,53 @@
 
 namespace camoucfg {
 
-// Applies deterministic readback noise to a tightly-packed 8-bit RGBA buffer,
-// in place. A pure function of its arguments: the same (bytes, seed, density,
-// strength) yields the same output, so a page reading the same canvas twice
-// sees identical pixels and cannot detect the noise by re-rendering. This is
-// the single most important property in SP3 (§4.3).
+// Applies deterministic readback noise, in place, to a `width` x `height`
+// RGBA8 rect whose rows are `row_bytes` apart and whose top-left pixel is
+// canvas pixel (x0, y0). Pure: each channel's noise is a function of (seed,
+// canvas x, canvas y, channel) only, so every readback of one canvas state --
+// a full getImageData, a 1x1 getImageData, toDataURL -- agrees on every pixel.
+// Callers fold a hash of the canvas state into `seed` (CanvasStateHash), so
+// different drawings get different fields.
 //
-//   - seed == 0 is a no-op: the buffer is left byte-identical to stock, which
-//     is how "no canvas:seed -> real value" (rule 5) is honoured.
-//   - A content hash of the buffer is folded into the seed, so two different
-//     drawings get different noise fields (an attacker cannot map the field
-//     once and subtract it from every later readback), while a re-read of the
-//     same drawing reproduces exactly (§7.3 decision A).
-//   - RGB channels only; every 4th byte (alpha) is left untouched.
-//   - `density` in [0, 1] is the fraction of RGB channels gated for
-//     perturbation; density <= 0 or length < 4 is a no-op.
-//   - `strength` bounds the per-channel delta: values land in
-//     [-strength, +strength], clamped into [0, 255].
+//   - seed == 0, density <= 0 (or NaN), or strength <= 0 is a no-op: the
+//     buffer stays byte-identical to stock (rule 5).
+//   - Only opaque pixels (alpha 255) change, and only their RGB. Stock never
+//     shows RGB under alpha 0, and an unpremultiplied value under a partial
+//     alpha lies on a grid a +-1 step would leave.
+//   - `density` is the fraction of RGB channels perturbed, clamped to 1.
+//   - `strength` bounds the per-channel delta, clamped to 255; values stay
+//     in [0, 255].
 //
 // Noise is applied on READBACK only, never at draw time -- callers pass a copy
 // of the pixels leaving the canvas, never the canvas's own store.
+void PerturbRgbaAt(uint8_t* data, size_t width, size_t height,
+                   size_t row_bytes, int64_t x0, int64_t y0, uint64_t seed,
+                   double density, int32_t strength);
+
+// A hash of a whole canvas's current contents (RGBA8, `row_bytes` apart),
+// from an even sample of at most 65536 pixels plus the size.
+uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
+                         size_t row_bytes);
+
+// PerturbRgbaAt over a tightly-packed buffer treated as one row at (0, 0),
+// with a hash of its first 1024 bytes folded into `seed`. The WebGL
+// readPixels path, which has no canvas state to hash (review 2026-09-24 #23).
 void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
                  int32_t strength);
 
 // Reads canvas:seed / canvas:noiseDensity / canvas:noiseStrength from `scope`
-// and calls PerturbRgba. This is the ONE place the canvas keys and their
-// defaults (density 0.0005, strength 1) are read; every Blink readback site
-// calls only this, never a key directly. Absent or zero canvas:seed is a
-// no-op.
+// and calls PerturbRgba (WebGL readPixels). The canvas readback sites use
+// PerturbCanvasPixels (canvas_readback.h) instead. Absent or zero canvas:seed
+// is a no-op.
 void PerturbRgbaFromConfig(uint8_t* data, size_t length,
                            const ConfigScope& scope);
+
+// Reads the canvas keys from `scope` and calls PerturbRgbaAt with
+// `state_hash` folded into canvas:seed. Absent or zero canvas:seed is a
+// no-op. Blink reaches it through PerturbCanvasPixels (canvas_readback.h).
+void PerturbRgbaAtFromConfig(uint8_t* data, size_t width, size_t height,
+                             size_t row_bytes, int64_t x0, int64_t y0,
+                             uint64_t state_hash, const ConfigScope& scope);
 
 // Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter
 // slice). Pure: the same (stock, seed, index, domain) yields the same output, so

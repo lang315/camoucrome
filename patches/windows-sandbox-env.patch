@@ -1,0 +1,55 @@
+diff --git a/sandbox/win/src/win_utils.cc b/sandbox/win/src/win_utils.cc
+index fc425d2365..de212268c7 100644
+--- a/sandbox/win/src/win_utils.cc
++++ b/sandbox/win/src/win_utils.cc
+@@ -173,7 +173,13 @@ std::wstring FilterEnvironment(
+   std::wstring_view curr(env);
+   while (!curr.empty()) {
+     std::wstring_view key = curr.substr(0, curr.find(L'='));
+-    if (std::find(to_keep.begin(), to_keep.end(), key) != to_keep.end()) {
++    // Camoucrome: the CAMOU_* configuration (CAMOU_CONFIG, its _1.._N chunks,
++    // CAMOU_PRESET, CAMOU_CONFIG_STRICT) must reach sandboxed renderers and
++    // utilities, which read it from their own environment. Windows variable
++    // names are case-insensitive, so the prefix match is too.
++    if (std::find(to_keep.begin(), to_keep.end(), key) != to_keep.end() ||
++        base::StartsWith(key, L"CAMOU_",
++                         base::CompareCase::INSENSITIVE_ASCII)) {
+       result.append(curr).push_back('\0');
+     }
+     UNSAFE_BUFFERS(env += curr.size() + 1);
+diff --git a/sandbox/win/src/win_utils.h b/sandbox/win/src/win_utils.h
+index 6c6faeef88..10916bf5a6 100644
+--- a/sandbox/win/src/win_utils.h
++++ b/sandbox/win/src/win_utils.h
+@@ -75,7 +75,8 @@ bool ContainsNulCharacter(std::wstring_view str);
+ // pre-loaded to support the infrastructure underlying crypto::RandBytes.
+ void WarmupRandomnessInfrastructure();
+ 
+-// Filters an environment to only include those that have an entry in `to_keep`.
++// Filters an environment to only include those that have an entry in `to_keep`,
++// plus every variable whose name starts with CAMOU_ (Camoucrome's config).
+ std::wstring FilterEnvironment(
+     const wchar_t* env,
+     const base::span<const std::wstring_view> to_keep);
+diff --git a/sandbox/win/src/win_utils_unittest.cc b/sandbox/win/src/win_utils_unittest.cc
+index 3396bd4644..26c54fd380 100644
+--- a/sandbox/win/src/win_utils_unittest.cc
++++ b/sandbox/win/src/win_utils_unittest.cc
+@@ -179,6 +179,17 @@ TEST(WinUtils, FilterEnvironment) {
+   // Check that the parser works if the '=' character is missing.
+   res = FilterEnvironment(xy1z, {L"X", L"Z"});
+   ExpectEnvironmentBlock({L"X", L"Z"}, res);
++
++  // Camoucrome's CAMOU_* configuration always passes, in any case; a name
++  // that only shares the letters without the underscore does not.
++  const wchar_t camou[] =
++      L"CAMOU_CONFIG=1\0camou_preset=2\0CAMOUX=3\0A=4\0CAMOU_CONFIG_2=5\0";
++  res = FilterEnvironment(camou, {});
++  ExpectEnvironmentBlock({L"CAMOU_CONFIG=1", L"camou_preset=2",
++                          L"CAMOU_CONFIG_2=5"}, res);
++  res = FilterEnvironment(camou, {L"A"});
++  ExpectEnvironmentBlock({L"CAMOU_CONFIG=1", L"camou_preset=2", L"A=4",
++                          L"CAMOU_CONFIG_2=5"}, res);
+ }
+ 
+ }  // namespace sandbox

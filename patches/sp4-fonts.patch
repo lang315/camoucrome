@@ -71,16 +71,3 @@ index a35f4d61b2..01ebc8b777 100644
        result = FontCache::Get().GetFontData(font_description,
                                              curr_family->FamilyName());
      }
-diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 22bb1b8232..f18211f3ab 100644
---- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
-+++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -3196,7 +3196,7 @@
-     },
-     {
-       name: "FontAccess",
--      status: {"Android": "", "default": "stable"},
-+      status: {"Android": "", "default": ""},
-     },
-     {
-       name: "FontDataServiceForCSSLocalFonts",

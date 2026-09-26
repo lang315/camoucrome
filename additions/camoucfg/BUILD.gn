@@ -38,6 +38,21 @@ static_library("camoucfg") {
   ]
 }
 
+# The Skia side of the canvas readback hook, apart from :camoucfg so that
+# only the Blink canvas targets (which already depend on Skia) pull Skia in;
+# a //skia dep on :camoucfg itself reaches every process that links it.
+source_set("canvas_readback") {
+  sources = [
+    "canvas_readback.cc",
+    "canvas_readback.h",
+  ]
+  deps = [
+    ":camoucfg",
+    "//base",
+    "//skia",
+  ]
+}
+
 source_set("unit_tests") {
   testonly = true
   sources = [

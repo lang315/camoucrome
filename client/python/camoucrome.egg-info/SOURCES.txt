@@ -1,0 +1,13 @@
+pyproject.toml
+camoucrome/__init__.py
+camoucrome/gen.py
+camoucrome/identity.py
+camoucrome/launcher.py
+camoucrome/probe.py
+camoucrome.egg-info/PKG-INFO
+camoucrome.egg-info/SOURCES.txt
+camoucrome.egg-info/dependency_links.txt
+camoucrome.egg-info/requires.txt
+camoucrome.egg-info/top_level.txt
+tests/test_gen.py
+tests/test_launcher.py

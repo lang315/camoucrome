@@ -189,6 +189,52 @@ TEST(GettersTest, NegativeIntegerIsNotAnUnsigned) {
   EXPECT_FALSE(GetUint32From(cfg, "neg").has_value());
 }
 
+// The launchers draw seeds from [1, 0xFFFFFFFF]. JSONReader stores any
+// number above INT_MAX as a double, so an is_int()-only uint32 getter
+// silently dropped about half of all seeds (review 2026-09-24 #1).
+TEST(GettersTest, Uint32AcceptsTheFullUnsignedRange) {
+  base::DictValue cfg = ParseConfig(
+      R"({"big": 4000000000, "max": 4294967295, "over": 4294967296,
+          "frac": 3000000000.5, "whole_double": 1920.0})",
+      /*strict=*/false);
+  EXPECT_EQ(GetUint32From(cfg, "big"), 4000000000u);
+  EXPECT_EQ(GetUint32From(cfg, "max"), 4294967295u);
+  EXPECT_FALSE(GetUint32From(cfg, "over").has_value());
+  EXPECT_FALSE(GetUint32From(cfg, "frac").has_value());
+  EXPECT_EQ(GetUint32From(cfg, "whole_double"), 1920u);
+  EXPECT_EQ(GetInt32From(cfg, "whole_double"), 1920);
+  EXPECT_FALSE(GetInt32From(cfg, "big").has_value());
+}
+
+// An explicit null means "not set": it must not erase a preset's value.
+TEST(MergeOverPresetTest, ExplicitNullKeepsThePresetValue) {
+  base::DictValue preset;
+  preset.Set(keys::kTimezoneId, "Europe/Paris");
+  base::DictValue explicit_cfg =
+      ParseConfig(R"({"timezone:id": null})", /*strict=*/false);
+  base::DictValue merged =
+      MergeExplicitOverPreset(std::move(preset), std::move(explicit_cfg));
+  EXPECT_EQ(GetStringFrom(merged, keys::kTimezoneId), "Europe/Paris");
+}
+
+// Explicit wins, and a dict-valued key still merges recursively.
+TEST(MergeOverPresetTest, ExplicitWinsAndParameterTablesMergeByPname) {
+  base::DictValue preset = ParseConfig(
+      R"({"timezone:id": "Europe/Paris",
+          "webGl:parameters": {"3379": 8192, "34921": 16}})",
+      /*strict=*/false);
+  base::DictValue explicit_cfg = ParseConfig(
+      R"({"timezone:id": "Asia/Tokyo", "webGl:parameters": {"3379": 16384}})",
+      /*strict=*/false);
+  base::DictValue merged =
+      MergeExplicitOverPreset(std::move(preset), std::move(explicit_cfg));
+  EXPECT_EQ(GetStringFrom(merged, keys::kTimezoneId), "Asia/Tokyo");
+  const base::DictValue* params = merged.FindDict(keys::kWebGlParameters);
+  ASSERT_TRUE(params);
+  EXPECT_EQ(params->FindInt("3379"), 16384);
+  EXPECT_EQ(params->FindInt("34921"), 16);
+}
+
 TEST(GettersTest, WholeNumberWidensToDouble) {
   base::DictValue cfg = Fixture();
   EXPECT_EQ(GetDoubleFrom(cfg, "u"), 8.0);

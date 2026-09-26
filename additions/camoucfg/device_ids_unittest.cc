@@ -32,6 +32,13 @@ TEST(DeviceIdsTest, DefaultSentinelIsPreserved) {
             "default");
 }
 
+// Chrome on Windows also exposes the "communications" audio sentinel.
+TEST(DeviceIdsTest, CommunicationsSentinelIsPreserved) {
+  EXPECT_EQ(SyntheticDeviceId(1234, "audioinput", "communications",
+                              "https://a.test"),
+            "communications");
+}
+
 TEST(DeviceIdsTest, NonDefaultIsSixtyFourLowercaseHex) {
   const std::string id =
       SyntheticDeviceId(1234, "videoinput", "real-cam-id", "https://a.test");
