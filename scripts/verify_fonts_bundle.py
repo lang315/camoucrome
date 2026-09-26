@@ -141,6 +141,9 @@ def same(w, *names):
     return len(set(vals)) == 1
 
 
+EXPECTED_ROWS = 17  # F1 F8 F14 F12 F2 F8 F9 F9-RED F11 F10 F6 F14-mac F13 F11-mac F3 F4 F7
+
+
 def main():
     results, notes = {}, []
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
@@ -236,7 +239,9 @@ def main():
         print("  " + n[:700])
     n = sum(results.values())
     print(f"{n} PASS {len(results) - n} FAIL")
-    sys.exit(0 if n == len(results) else 1)
+    if len(results) != EXPECTED_ROWS:  # a dropped row (duplicate key, skipped branch) must fail
+        print(f"FAIL  {len(results)} rows, expected {EXPECTED_ROWS}")
+    sys.exit(0 if n == len(results) == EXPECTED_ROWS else 1)
 
 
 if __name__ == "__main__":

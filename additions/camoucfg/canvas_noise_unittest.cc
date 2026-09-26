@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,7 +20,21 @@ std::vector<uint8_t> Scene(size_t pixels) {
   std::vector<uint8_t> v(pixels * 4);
   for (size_t i = 0; i < v.size(); ++i)
     v[i] = static_cast<uint8_t>((i * 37 + 11) & 0xFF);
+  // Opaque: only alpha == 255 pixels are ever perturbed.
+  for (size_t i = 3; i < v.size(); i += 4)
+    v[i] = 255;
   return v;
+}
+
+// Copies the w x h rect at (x, y) out of a `full_w`-wide RGBA buffer.
+std::vector<uint8_t> Crop(const std::vector<uint8_t>& full, size_t full_w,
+                          size_t x, size_t y, size_t w, size_t h) {
+  std::vector<uint8_t> out;
+  for (size_t r = 0; r < h; ++r) {
+    const size_t start = ((y + r) * full_w + x) * 4;
+    out.insert(out.end(), full.begin() + start, full.begin() + start + w * 4);
+  }
+  return out;
 }
 
 TEST(PerturbRgbaTest, SameInputsGiveSameOutput) {
@@ -87,6 +102,60 @@ TEST(PerturbRgbaTest, DifferentDrawingsGetDifferentNoiseFields) {
   }
   EXPECT_TRUE(fields_differ) << "noise field ignores content; map-and-subtract "
                                "would defeat it";
+}
+
+// Review 2026-09-24 #2: the noise of a pixel is a function of its canvas
+// position, so a sub-rectangle read agrees with a full read of the same state.
+TEST(PerturbRgbaAtTest, SubRectAgreesWithFullRead) {
+  auto full = Scene(16 * 16);
+  const auto orig = full;
+  PerturbRgbaAt(full.data(), 16, 16, 16 * 4, 0, 0, /*seed=*/99, 1.0, 2);
+  auto part = Crop(orig, 16, 5, 7, 3, 4);
+  PerturbRgbaAt(part.data(), 3, 4, 3 * 4, 5, 7, /*seed=*/99, 1.0, 2);
+  EXPECT_EQ(part, Crop(full, 16, 5, 7, 3, 4));
+  EXPECT_NE(full, orig);
+}
+
+// Review #3: stock never produces RGB != 0 under alpha 0, nor unpremultiplied
+// values off the grid a partial alpha implies. Only opaque pixels move.
+TEST(PerturbRgbaAtTest, NonOpaquePixelsAreUntouched) {
+  std::vector<uint8_t> px = {0, 0, 0, 0,  10, 20, 30, 128,  40, 50, 60, 255};
+  const auto orig = px;
+  bool opaque_moved = false;
+  for (uint64_t seed = 1; seed < 64 && !opaque_moved; ++seed) {
+    px = orig;
+    PerturbRgbaAt(px.data(), 3, 1, 12, 0, 0, seed, 1.0, 3);
+    EXPECT_EQ(std::vector<uint8_t>(px.begin(), px.begin() + 8),
+              std::vector<uint8_t>(orig.begin(), orig.begin() + 8));
+    opaque_moved = px != orig;
+  }
+  EXPECT_TRUE(opaque_moved);
+}
+
+// Review #9: out-of-range strength/density are clamped, never overflow.
+TEST(PerturbRgbaAtTest, ExtremeParametersAreClamped) {
+  // A negative strength clamps to 0: no noise (unclamped, |INT_MIN| = 2^31
+  // was a live bound and pixel + delta overflowed int32).
+  auto a = Scene(64);
+  const auto orig = a;
+  PerturbRgbaAt(a.data(), 8, 8, 32, 0, 0, 7, 1.0,
+                std::numeric_limits<int32_t>::min());
+  EXPECT_EQ(a, orig);
+  // Density above 1 is density 1.
+  auto b = Scene(64), c = Scene(64);
+  PerturbRgbaAt(b.data(), 8, 8, 32, 0, 0, 7, /*density=*/50.0, 2);
+  PerturbRgbaAt(c.data(), 8, 8, 32, 0, 0, 7, /*density=*/1.0, 2);
+  EXPECT_EQ(b, c);
+}
+
+// Review #4: the state hash covers the whole canvas, not its first 1 KB.
+TEST(CanvasStateHashTest, SeesLateContentAndIsDeterministic) {
+  auto a = Scene(64 * 64), b = a;
+  b[b.size() - 8] ^= 0x55;  // last row
+  EXPECT_EQ(CanvasStateHash(a.data(), 64, 64, 64 * 4),
+            CanvasStateHash(a.data(), 64, 64, 64 * 4));
+  EXPECT_NE(CanvasStateHash(a.data(), 64, 64, 64 * 4),
+            CanvasStateHash(b.data(), 64, 64, 64 * 4));
 }
 
 TEST(PerturbRgbaTest, ShortBufferIsNoOp) {

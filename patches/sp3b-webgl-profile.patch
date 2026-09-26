@@ -53,7 +53,7 @@ index 1e2b512f07..52b07d32a4 100644
      case GL_SHADING_LANGUAGE_VERSION: {
        return WebGLAny(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index cdea775eeb..73f6d97183 100644
+index cdea775eeb..09df7463db 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -27,6 +27,8 @@
@@ -111,34 +111,33 @@ index cdea775eeb..73f6d97183 100644
    return result;
  }
  
-@@ -3831,6 +3872,26 @@ bool WebGLRenderingContextBase::ExtensionTracker::MatchesName(
+@@ -3831,6 +3872,25 @@ bool WebGLRenderingContextBase::ExtensionTracker::MatchesName(
  
  bool WebGLRenderingContextBase::ExtensionSupportedAndAllowed(
      const ExtensionTracker* tracker) {
 +  // Camoucrome (SP3b): a configured webGl:supportedExtensions / webGl2:
-+  // whitelist is authoritative -- an extension is supported iff its name is
-+  // in the list. This one gate governs BOTH getSupportedExtensions() and
-+  // getExtension()/EnableExtensionIfSupported (which route through it), so the
-+  // list and getExtension can never disagree (a list-omitted extension still
-+  // handing back a live object would be a fingerprint tell).
++  // list is a whitelist over what this GPU really supports: an extension is
++  // exposed iff it is listed AND passes the stock checks below. This one gate
++  // governs BOTH getSupportedExtensions() and getExtension()/
++  // EnableExtensionIfSupported (which route through it), so the list and
++  // getExtension can never disagree, and a listed extension the GPU lacks is
++  // never handed out as a live object whose enums then raise GL errors.
 +  if (auto* camou_ec = Host()->GetTopExecutionContext()) {
 +    const std::vector<std::string> camou_list = camoucfg::GetStringList(
 +        camoucfg::ScopeFor(camou_ec),
 +        IsWebGL2() ? camoucfg::keys::kWebGl2Extensions
 +                   : camoucfg::keys::kWebGlExtensions);
-+    if (!camou_list.empty()) {
-+      const String camou_name(tracker->ExtensionName());
-+      for (const std::string& camou_e : camou_list) {
-+        if (camou_name == String::FromUtf8(camou_e))
-+          return true;
-+      }
++    if (!camou_list.empty() &&
++        std::ranges::none_of(camou_list, [&](const std::string& camou_e) {
++          return String(tracker->ExtensionName()) == String::FromUtf8(camou_e);
++        })) {
 +      return false;
 +    }
 +  }
    if (tracker->Draft() &&
        !RuntimeEnabledFeatures::WebGLDraftExtensionsEnabled())
      return false;
-@@ -3990,10 +4051,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+@@ -3990,10 +4050,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
                              webgl_angle_implementation);
  }
  
@@ -266,7 +265,7 @@ index cdea775eeb..73f6d97183 100644
    const int kIntZero = 0;
    switch (pname) {
      case GL_ACTIVE_TEXTURE:
-@@ -4203,6 +4381,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4203,6 +4380,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -291,7 +290,7 @@ index cdea775eeb..73f6d97183 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4212,6 +4408,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4212,6 +4407,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -310,7 +309,7 @@ index cdea775eeb..73f6d97183 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));
        }
-@@ -4509,6 +4717,23 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
+@@ -4509,6 +4716,23 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
        return nullptr;
    }
  
@@ -334,28 +333,13 @@ index cdea775eeb..73f6d97183 100644
    GLint range[2] = {0, 0};
    GLint precision = 0;
    ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
-@@ -4528,6 +4753,24 @@ WebGLRenderingContextBase::getSupportedExtensions() {
+@@ -4528,6 +4752,9 @@ WebGLRenderingContextBase::getSupportedExtensions() {
    if (isContextLost())
      return std::nullopt;
  
-+  // Camoucrome (SP3b): a configured whitelist replaces the enumerated set
-+  // wholesale, so the page sees exactly the configured names.
-+  // ExtensionSupportedAndAllowed enforces the same list for getExtension(),
-+  // keeping the two coherent.
-+  if (auto* camou_ec = Host()->GetTopExecutionContext()) {
-+    const std::vector<std::string> camou_list = camoucfg::GetStringList(
-+        camoucfg::ScopeFor(camou_ec),
-+        IsWebGL2() ? camoucfg::keys::kWebGl2Extensions
-+                   : camoucfg::keys::kWebGlExtensions);
-+    if (!camou_list.empty()) {
-+      Vector<String> camou_result;
-+      for (const std::string& camou_e : camou_list) {
-+        camou_result.push_back(String::FromUtf8(camou_e));
-+      }
-+      return camou_result;
-+    }
-+  }
-+
++  // Camoucrome (SP3b): a configured webGl:supportedExtensions list filters
++  // this enumeration through ExtensionSupportedAndAllowed, the same gate
++  // getExtension() uses, so the two can never disagree.
    Vector<String> result;
  
    for (ExtensionTracker* tracker : extensions_) {

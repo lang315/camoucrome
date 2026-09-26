@@ -1,5 +1,6 @@
 include_rules = [
   # components/DEPS forbids cross-component includes unless declared here.
   "+components/version_info",
+  "+third_party/skia/include/core",
   "+ui/gfx/geometry",
 ]

@@ -62,25 +62,21 @@ simply absent there regardless of whether the runtime feature is enabled.
      result was negative (see the note below): F4 is therefore a standing
      regression assertion, not a before/after gate check, and NO Blink code
      was changed for it -- see the note below for why.
-  F5 Local Font Access disabled (Task 4): `typeof window.queryLocalFonts`,
+  F5 Local Font Access present as stock: `typeof window.queryLocalFonts`,
      measured on a localhost origin (see the echo_server note above), is
-     asserted to be "undefined". The FontAccess runtime feature
-     (third_party/blink/renderer/platform/runtime_enabled_features.json5)
-     ships its `default` status as "stable", which installs
-     window.queryLocalFonts -- a local-font enumeration API real desktop
-     Chrome exposes but that is unreachable from an automated/headless
-     context, itself a fingerprintable tell. Task 4 flips `default` to ""
-     (disabled), which removes the binding entirely at build time -- not a
-     stub that rejects when called, the property is simply absent, same as
-     it is on Android's own "" status. F5 measures exactly that absence.
+     asserted to be "function". The FontAccess runtime feature keeps its
+     stock "stable" status: stock Linux Chrome at the pin exposes the API
+     (baselines/chrome-507c6ee3e2-stock-ua.json window_keys), so removing it
+     would itself be a tell. What it returns is configured instead
+     (fonts:local; absent, the real enumeration filtered by the fonts:list
+     allowlist). Task 4's original removal was reverted by that decision.
   F6 no new observable surface (Task 5): Object.keys(window) and
      Object.keys(navigator), captured on the SAME echo_server localhost
      session as F5 (queryLocalFonts is [SecureContext]-gated, so this is the
      one origin where it would actually be present on a stock build -- see
-     F5's RED-FIRST FINDING), differ from a genuinely STOCK content_shell
-     (this task's four Blink edits reverted, then rebuilt) by EXACTLY the
-     removal of "queryLocalFonts" from window: nothing else added, nothing
-     else removed, and navigator is unchanged entirely. Plus a standing
+     F5's RED-FIRST FINDING), equal a genuinely STOCK content_shell's
+     (this task's Blink edits reverted, then rebuilt): nothing added,
+     nothing removed (queryLocalFonts included), navigator unchanged. Plus a standing
      native-accessor regression check: CanvasRenderingContext2D.prototype.
      measureText.toString() still matches /\\[native code\\]/ -- the gate in
      FontFallbackList::GetFontData is a C++-side branch, not a JS override of
@@ -91,10 +87,10 @@ simply absent there regardless of whether the runtime feature is enabled.
      Object.keys(window) check -- run with --capture-baseline against that
      stock binary first (see the CAPTURE NOTE below); every later run reads
      the frozen file. Comparing against a bare/no-CAMOU_CONFIG session on the
-     SAME (already-patched) binary, by contrast, would be vacuous: Task 4's
-     removal is a build-time change (see F5), so it is equally absent in
-     both a configured and a bare session there -- no diff would ever show.
-     Only a genuinely pre-patch binary has queryLocalFonts to lose.
+     SAME (already-patched) binary, by contrast, would be vacuous: a
+     build-time surface change is equally present in both a configured and
+     a bare session there -- no diff would ever show. Only a genuinely
+     pre-patch binary shows what stock exposes.
      NAVIGATOR NOTE (caught empirically capturing the stock baseline): in
      this content_shell, Object.keys(navigator) measures EMPTY (0 own-
      enumerable keys) on both the stock and the patched binary -- Navigator's
@@ -111,17 +107,15 @@ simply absent there regardless of whether the runtime feature is enabled.
      host font visible) means UNLISTED_FAMILY measures DISTINCT from the
      fallback again, exactly reversing F1's hidden verdict, and the unquoted
      generics still render distinct/non-zero; (2) window.queryLocalFonts
-     stays "undefined" even bare -- this is Task 4's build-level disable
-     (see F5), which is deliberately NOT config-gated, so "undefined
-     whether or not CAMOU_CONFIG is set" is the intended, correct state, not
-     a gap. F7 reuses F5's own session and its `qlf` reading for fact (2),
-     since that session already runs with config=None.
+     is "function" bare, as on stock (see F5): its presence is never
+     config-gated. F7 reuses F5's own session and its `qlf` reading for
+     fact (2), since that session already runs with config=None.
 
 CAPTURE NOTE (F6's stock baseline): this script's F1-F5/F7 all run against
 the CURRENT (already-patched) binary under test, matching every other
 verify_* script in this repo. F6 is the one criterion that additionally
 needs a reading from a binary that does NOT have this task's four-file patch
-applied at all, because Task 4's queryLocalFonts removal is invisible to any
+applied at all, because a build-time surface change is invisible to any
 same-binary configured-vs-bare comparison (see F6's own paragraph above).
 Recapturing after this task lands requires: `git checkout HEAD -- <the four
 sp4-fonts files>` in the checkout, rebuild content_shell, run this script
@@ -200,7 +194,9 @@ navigator.deviceMemory pattern in verify_sp1b.py): run against the CURRENT
 window.queryLocalFonts` measures "function", not "undefined". After the
 json5 edit lands and content_shell rebuilds (runtime_enabled_features.json5
 is codegen input, so this is a full regen, not a stale .o no-op), F5 goes
-GREEN.
+GREEN. (History: that removal was later reverted -- FontAccess is back at
+stock status and F5 now asserts "function"; the secure-origin requirement
+above still holds, since about:blank reads "undefined" either way.)
 """
 
 import json
@@ -300,10 +296,9 @@ LOAD_JS = """() => Promise.all([
   loadUnlisted: u.length, loadListed: l.length, loadAbsent: a.length,
 }))""" % (UNLISTED_FAMILY, LISTED_FAMILY)
 
-# F5 (Task 4): the FontAccess feature's binding itself -- present ("function")
-# pre-edit, absent ("undefined") once `default` is disabled in
-# runtime_enabled_features.json5. No CAMOU_CONFIG dependency -- fonts:list
-# plays no part in whether this API surface exists. Run on its OWN
+# F5: the FontAccess feature's binding itself -- present ("function") as on
+# stock Chrome at the pin. No CAMOU_CONFIG dependency -- fonts:list / fonts:local
+# shape what it returns, never whether this API surface exists. Run on its OWN
 # echo_server localhost session, not the CONFIG session F1-F4 share: the IDL
 # is [SecureContext], so on about:blank (F1-F4's navigate_to=None page) it
 # reads "undefined" regardless of the runtime feature's status -- see the
@@ -424,9 +419,9 @@ F1 = "F1 window probe: listed family distinct from fallback; unlisted family equ
 F2 = "F2 generics render: serif != monospace generics, both non-zero, under an active fonts:list"
 F3 = "F3 worker parity: OffscreenCanvas reproduces F1's verdict AND matches the window's F1 numbers"
 F4 = "F4 availability non-probe: check()/load() can't tell unlisted-present from absent; fonts:list changes nothing they report"
-F5 = "F5 Local Font Access disabled: typeof window.queryLocalFonts === 'undefined'"
-F6 = "F6 no new observable surface: window/navigator keys match stock except queryLocalFonts removed; measureText still native"
-F7 = "F7 stock fallback (bare): gate is config-gated (unlisted visible again, generics render); queryLocalFonts stays undefined (build-level, intended)"
+F5 = "F5 Local Font Access present as stock: typeof window.queryLocalFonts === 'function'"
+F6 = "F6 no new observable surface: window/navigator keys match stock exactly (queryLocalFonts kept); measureText still native"
+F7 = "F7 stock fallback (bare): gate is config-gated (unlisted visible again, generics render); queryLocalFonts is a function, as stock"
 
 # --- F1 ---
 if failed(win, win_e):
@@ -525,7 +520,7 @@ if failed(qlf, qlf_e):
     results[F5] = False
     notes.append(f"F5: queryLocalFonts probe {errtxt(qlf, qlf_e)}")
 else:
-    results[F5] = qlf == "undefined"
+    results[F5] = qlf == "function"
     notes.append(f"F5 measured: typeof window.queryLocalFonts = {qlf!r}")
 
 # --- F6 ---
@@ -553,7 +548,7 @@ else:
     cur_nav = set(keys["navigatorKeys"])
     nav_removed = stock_nav - cur_nav
     nav_added = cur_nav - stock_nav
-    window_ok = win_removed == {"queryLocalFonts"} and not win_added
+    window_ok = not win_removed and not win_added
     navigator_ok = not nav_removed and not nav_added
     native_ok = bool(keys.get("measureTextNative", False))
     results[F6] = window_ok and navigator_ok and native_ok
@@ -578,8 +573,8 @@ else:
     serif_b = bare_win["serif_generic"]
     mono_b = bare_win["monospace_generic"]
     generics_ok = serif_b != mono_b and serif_b > 0 and mono_b > 0
-    qlf_still_undefined = qlf == "undefined"
-    results[F7] = gate_off and listed_visible and generics_ok and qlf_still_undefined
+    qlf_present = qlf == "function"
+    results[F7] = gate_off and listed_visible and generics_ok and qlf_present
     notes.append(
         f"F7 measured (bare, no CAMOU_CONFIG): unlisted({UNLISTED_FAMILY!r})="
         f"{bare_win['unlisted']!r} listed({LISTED_FAMILY!r})={bare_win['listed']!r} "
@@ -588,7 +583,7 @@ else:
     if not results[F7]:
         notes.append(
             f"F7: gate_off(unlisted!=mono)={gate_off} listed_visible(listed!=mono)={listed_visible} "
-            f"generics_ok={generics_ok} qlf_still_undefined={qlf_still_undefined}")
+            f"generics_ok={generics_ok} qlf_present={qlf_present}")
 
 EXPECTED = 7
 

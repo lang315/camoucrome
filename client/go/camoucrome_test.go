@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 type contract struct {
@@ -145,13 +146,13 @@ func TestParseGenerated(t *testing.T) {
 
 func TestAcceptLangExtensionsAndSPKIMatchTheContract(t *testing.T) {
 	c := load(t)
-	if got := AcceptLangOf(map[string]any{"navigator.languages": []string{"fr-FR", "fr"}}); got != "fr-FR,fr" {
+	if got := AcceptLangOf(map[string]any{"navigator.languages": []string{"fr-FR", "fr"}}, nil); got != "fr-FR,fr" {
 		t.Fatalf("accept-lang %q", got)
 	}
-	if got := AcceptLangOf(`{"locale:tag":"de-DE"}`); got != "de-DE" {
+	if got := AcceptLangOf(`{"locale:tag":"de-DE"}`, nil); got != "de-DE" {
 		t.Fatalf("accept-lang %q", got)
 	}
-	if got := AcceptLangOf(map[string]any{"screen.width": 1}); got != "" {
+	if got := AcceptLangOf(map[string]any{"screen.width": 1}, nil); got != "" {
 		t.Fatalf("accept-lang %q", got)
 	}
 	headed := false
@@ -178,6 +179,7 @@ func TestFontconfigFollowsTheClaimedOS(t *testing.T) {
 	os.MkdirAll(fonts, 0o755)
 	os.MkdirAll(root+"/settings/fontconfig", 0o755)
 	os.WriteFile(root+"/settings/fontconfig/windows.conf", []byte("<fontconfig/>"), 0o644)
+	os.WriteFile(root+"/settings/fontconfig/macos.conf", []byte("<fontconfig/>"), 0o644)
 	want := root + "/settings/fontconfig/windows.conf"
 	if got := FontconfigFor(Options{Config: map[string]any{"ua:platform": "Windows"}, FontsDir: fonts}); got != want {
 		t.Fatalf("windows: %q != %q", got, want)
@@ -228,5 +230,118 @@ func TestALargeConfigIsChunkedIntoNumberedEnvStrings(t *testing.T) {
 	var back map[string][]string
 	if err := json.Unmarshal([]byte(joined), &back); err != nil || len(back["fonts:local"]) != 700 {
 		t.Fatalf("chunks do not reassemble: %v", err)
+	}
+}
+
+// A config around the 30000 boundary with multi-byte runes: every chunk must
+// be valid UTF-8 (the env map crosses a JSON boundary to the Node driver), and
+// the chunks must reassemble. Byte slicing reassembles too, so only the
+// validity check discriminates.
+func TestChunksNeverSplitAMultiByteRune(t *testing.T) {
+	raw := `{"k":"` + strings.Repeat("a", configChunkRunes-7) + strings.Repeat("骨", 20000) + `"}`
+	env := configEnv(raw, "CAMOU_CONFIG")
+	joined := ""
+	for n := 1; ; n++ {
+		c, ok := env[fmt.Sprintf("CAMOU_CONFIG_%d", n)]
+		if !ok {
+			break
+		}
+		if !utf8.ValidString(c) {
+			t.Fatalf("chunk %d is not valid UTF-8", n)
+		}
+		joined += c
+	}
+	if joined != raw {
+		t.Fatal("chunks do not reassemble")
+	}
+}
+
+func TestAcceptLangFollowsThePresetLocaleUnderTheConfig(t *testing.T) {
+	cases := []struct {
+		config, preset any
+		want           string
+	}{
+		{nil, map[string]any{"locale": "fr-FR"}, "fr-FR,fr"},
+		{nil, `{"locale":"fr"}`, "fr"},
+		{map[string]any{"navigator.languages": []string{"de-DE"}}, map[string]any{"locale": "fr-FR"}, "de-DE"},
+		// An explicit member of the locale triple re-derives it (OverridePresetGroups).
+		{map[string]any{"locale:tag": "de-DE"}, map[string]any{"locale": "fr-FR"}, "de-DE,de"},
+		{map[string]any{"navigator.language": "ja-JP"}, map[string]any{"locale": "fr-FR"}, "ja-JP,ja"},
+	}
+	for _, c := range cases {
+		if got := AcceptLangOf(c.config, c.preset); got != c.want {
+			t.Fatalf("%v / %v: %q != %q", c.config, c.preset, got, c.want)
+		}
+	}
+	if got := BuildArgs(Options{Preset: map[string]any{"locale": "fr-FR"}}); got[len(got)-1] != "--accept-lang=fr-FR,fr" {
+		t.Fatalf("args %v", got)
+	}
+}
+
+func TestBadConfigShapesAreRejected(t *testing.T) {
+	for _, bad := range []any{"{not json", "[1]", `"x"`, map[string]any{"navigator.languages": "fr"},
+		map[string]any{"navigator.languages": []any{"fr", 1}}} {
+		if _, err := BuildEnv(Options{Config: bad}, nil); err == nil {
+			t.Fatalf("%v accepted", bad)
+		}
+	}
+}
+
+func TestTypedNilConfigSetsNothing(t *testing.T) {
+	var m map[string]any
+	env, err := BuildEnv(Options{Config: m, Preset: m}, nil)
+	if err != nil || len(env) != 0 {
+		t.Fatalf("env %v err %v", env, err)
+	}
+}
+
+func TestClaimedOSMirrorsDeriveCC(t *testing.T) {
+	cases := []struct {
+		config, preset any
+		want           string
+	}{
+		{map[string]any{"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "macOS"}, nil, "Windows"},
+		{map[string]any{"ua:osInfo": "X11; Linux x86_64", "ua:platform": "Windows"}, nil, "Linux"},
+		{map[string]any{"ua:osInfo": "Linux; Android 10; K"}, nil, "Android"},
+		{map[string]any{"ua:osInfo": "garbage", "ua:platform": "macOS"}, nil, "macOS"},
+		// An explicit ua:platform re-derives the preset's OS pair
+		// (preset_loader.cc OverridePresetGroups), as the browser does.
+		{map[string]any{"ua:platform": "Windows"}, map[string]any{"os": "macOS"}, "Windows"},
+		{map[string]any{"ua:platform": "Bogus"}, map[string]any{"os": "macOS"}, "macOS"},
+		{map[string]any{"ua:osInfo": "Windows NT 10.0"}, map[string]any{"os": "macOS"}, "Windows"},
+		{nil, map[string]any{"os": "Windows"}, "Windows"},
+		{map[string]any{"os": "Windows"}, nil, ""}, // "os" is a preset field, not a config key
+		{nil, nil, ""},
+	}
+	for _, c := range cases {
+		if got := claimedOS(Options{Config: c.config, Preset: c.preset}); got != c.want {
+			t.Fatalf("%v / %v: %q != %q", c.config, c.preset, got, c.want)
+		}
+	}
+}
+
+func TestFontconfigIsNeverInheritedAndTheConfMustExist(t *testing.T) {
+	env, _ := BuildEnv(Options{}, []string{"FONTCONFIG_FILE=/host.conf"})
+	if _, ok := env["FONTCONFIG_FILE"]; ok {
+		t.Fatal("FONTCONFIG_FILE inherited from the parent")
+	}
+	fonts := t.TempDir() + "/fonts"
+	os.MkdirAll(fonts, 0o755)
+	if _, err := BuildEnv(Options{Config: map[string]any{"ua:platform": "Windows"}, FontsDir: fonts}, nil); err == nil {
+		t.Fatal("a fonts dir without its conf was accepted")
+	}
+}
+
+func TestALargePresetIsChunkedLikeTheConfig(t *testing.T) {
+	big := map[string][]string{"fonts": make([]string, 700)}
+	for i := range big["fonts"] {
+		big["fonts"][i] = strings.Repeat("x", 100)
+	}
+	env, err := BuildEnv(Options{Preset: big}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := env["CAMOU_PRESET"]; ok || env["CAMOU_PRESET_3"] == "" {
+		t.Fatalf("preset not chunked: %d vars", len(env))
 	}
 }

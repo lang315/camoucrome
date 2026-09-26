@@ -35,10 +35,10 @@ results already collected.
      element exactly 0.0. RED against the pre-fix binary (additive noise
      makes them all nonzero); GREEN once PerturbAudioSamples skips
      exact-zero samples in additive mode. A second assertion, in the SAME
-     session, writes a ramp (nonzero samples) into a second buffer and
-     confirms getChannelData still comes back perturbed (nonzero deltas
-     from the ramp) -- so the fix is confirmed to still noise real signal,
-     not just to have disabled additive noise outright.
+     session, writes a ramp into a second buffer with copyToChannel and
+     confirms getChannelData reads it back EXACTLY: page-written samples are
+     never noised (review 2026-09-24 #5). That additive noise still reaches
+     rendered signal is A1's assertion.
 
   A2 AnalyserNode frequency-domain seed-stability: render a steady sine tone
      (OscillatorNode -> AnalyserNode -> destination) in an OfflineAudioContext,
@@ -292,11 +292,9 @@ AUDIO_ZERO_PRESERVE = """() => {
   const silent = ctx.createBuffer(1, 2048, 44100);
   const silentData = Array.from(silent.getChannelData(0));
 
-  // copyToChannel is a write path (not noised, does not set the
-  // did_camou_noise_ guard), so it lets us seed a buffer with real (nonzero)
-  // signal BEFORE the first noised read -- getChannelData() below is then
-  // genuinely the first read of non-zero content, exercising the same
-  // additive-noise path as silentData above but on real signal.
+  // Samples the PAGE writes must read back exactly: copyToChannel then a
+  // read is an identity in stock (review 2026-09-24 #5 -- noising them was a
+  // two-call probe). Noise on rendered signal is A1's job.
   const ramp = ctx.createBuffer(1, 2048, 44100);
   const rampValues = new Float32Array(ramp.length);
   for (let i = 0; i < rampValues.length; i++) {
@@ -304,7 +302,7 @@ AUDIO_ZERO_PRESERVE = """() => {
   }
   ramp.copyToChannel(rampValues, 0);
   const rampBefore = Array.from(rampValues);
-  const rampAfter = Array.from(ramp.getChannelData(0));  // first noised read
+  const rampAfter = Array.from(ramp.getChannelData(0));  // must equal rampBefore
   return { silentData, rampBefore, rampAfter };
 }
 """
@@ -684,7 +682,7 @@ else:
 # ramp (nonzero-signal) buffer's getChannelData, both with audio:seed=777.
 data_a7, err_a7 = render_audio_zero_preserve(SEED_777)
 
-A7 = "A7 additive-mode zero-preservation: silent buffer stays exact 0.0, non-zero signal still perturbed"
+A7 = "A7 additive-mode zero-preservation: silent buffer stays exact 0.0, page-written samples read back exactly"
 
 if data_a7 is None:
     results[A7] = False
@@ -694,13 +692,15 @@ else:
     ramp_before = data_a7["rampBefore"]
     ramp_after = data_a7["rampAfter"]
     silent_ok = len(silent_data) > 0 and all(v == 0.0 for v in silent_data)
-    ramp_changed = len(ramp_before) == len(ramp_after) and any(
-        b != a for b, a in zip(ramp_before, ramp_after))
-    results[A7] = silent_ok and ramp_changed
+    # float32 round trip: rampBefore is the Float32Array itself, so equal
+    # means bit-identical.
+    ramp_exact = len(ramp_before) == len(ramp_after) > 0 and all(
+        b == a for b, a in zip(ramp_before, ramp_after))
+    results[A7] = silent_ok and ramp_exact
     nonzero_silent = [v for v in silent_data if v != 0.0]
     notes.append(f"A7 silent buffer all-zero: {silent_ok} "
                  f"({len(nonzero_silent)}/{len(silent_data)} nonzero); "
-                 f"ramp signal perturbed: {ramp_changed}")
+                 f"page-written ramp reads back exactly: {ramp_exact}")
     if not silent_ok:
         notes.append(f"A7 first nonzero silent samples: {nonzero_silent[:5]}")
 

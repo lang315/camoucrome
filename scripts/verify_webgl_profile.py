@@ -3,7 +3,8 @@
 W1 RED-by-construction: no config -> the host's SwiftShader renderer and limits.
 W2 Windows profile on a Windows claim: vendor/renderer read back on both
    contexts; every emitted numeric parameter equal; extension list equal as a
-   set AND getExtension(name) non-null for every claimed name; all 12
+   set to (profile list ∩ host's real list) AND getExtension(name) non-null
+   for every name in it; all 12
    shader precision cells equal; strict start, zero camoucfg: lines.
 W3 macOS profile on a macOS claim: same; W3-RED: the macOS profile on a
    Windows claim is refused under strict (webgl-renderer-backend-fits-os).
@@ -74,14 +75,21 @@ def probe(url, config=None, strict=False):
     return rep, p.stderr
 
 
-def matches(rep, profile, ctx, notes, tag):
+def matches(rep, profile, ctx, notes, tag, host):
     r, want = rep[ctx], profile[ctx]
-    if r is None:
+    if r is None or host is None or host[ctx] is None:
         notes.append(f"{tag}/{ctx}: no context")
         return False
     bad = [k for k, v in want["parameters"].items() if r["parameters"].get(k) != v]
-    extdiff = sorted(set(r["supportedExtensions"]) ^ set(want["supportedExtensions"]))
-    extnull = [e for e in want["supportedExtensions"] if not r["extOk"].get(e)]
+    # The profile's list is a whitelist over what the host GPU really supports
+    # (review 2026-09-24 #17): a listed extension the host lacks is absent,
+    # never a live object whose enums then fail.
+    want_ext = set(want["supportedExtensions"]) & set(host[ctx]["supportedExtensions"])
+    dropped = sorted(set(want["supportedExtensions"]) - want_ext)
+    if dropped:
+        notes.append(f"{tag}/{ctx}: {len(dropped)} profile extension(s) the host lacks, absent as intended: {dropped[:6]}")
+    extdiff = sorted(set(r["supportedExtensions"]) ^ want_ext)
+    extnull = [e for e in want_ext if not r["extOk"].get(e)]
     badspf = [k for k, v in want["shaderPrecisionFormats"].items() if r["shaderPrecisionFormats"].get(k) != v]
     ok = (r["vendor"] == profile["vendor"] and r["renderer"] == profile["renderer"]
           and not bad and not extdiff and not extnull and not badspf)
@@ -105,7 +113,7 @@ def main():
         notes.append("W1 launch: " + log[-300:])
     rep, log = probe(url, {**WIN, **keys_of(win)}, strict=True)
     results["W2 Windows profile: identity, every parameter, extension set + getExtension non-null, 12 precision cells, both contexts, strict, zero camoucfg lines"] = (
-        rep is not None and matches(rep, win, "webgl", notes, "W2") and matches(rep, win, "webgl2", notes, "W2")
+        rep is not None and matches(rep, win, "webgl", notes, "W2", host) and matches(rep, win, "webgl2", notes, "W2", host)
         and "camoucfg:" not in log)
     if rep is None:
         notes.append("W2 launch: " + log[-400:])
@@ -113,7 +121,7 @@ def main():
         notes.append("W2 log: " + [l for l in log.splitlines() if "camoucfg:" in l][0][:200])
     rep, log = probe(url, {**MAC, **keys_of(mac)}, strict=True)
     results["W3 macOS profile on a macOS claim: same"] = (
-        rep is not None and matches(rep, mac, "webgl", notes, "W3") and matches(rep, mac, "webgl2", notes, "W3")
+        rep is not None and matches(rep, mac, "webgl", notes, "W3", host) and matches(rep, mac, "webgl2", notes, "W3", host)
         and "camoucfg:" not in log)
     if rep is None:
         notes.append("W3 launch: " + log[-400:])

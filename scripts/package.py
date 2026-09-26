@@ -97,9 +97,14 @@ def changeset_commit(explicit=None):
 
 def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False):
     args = read_args_gn(out)
-    if args.get("is_component_build") == "true" and not allow_component:
-        sys.exit("refusing a component build (is_component_build = true): use a release out dir "
-                 "(settings/release-args.gn) or --allow-component for a smoke test")
+    # GN's default is is_component_build = is_debug, and is_debug defaults to
+    # true: only an explicit false (or an explicit is_debug = false) is a release.
+    component = args.get("is_component_build", "false" if args.get("is_debug") == "false" else "true")
+    if component != "false" and not allow_component:
+        sys.exit("refusing a component build (is_component_build not explicitly false in args.gn): use a "
+                 "release out dir (settings/release-args.gn) or --allow-component for a smoke test")
+    if not {"chrome", "chrome.exe"} & set(deps):
+        sys.exit(f"GN's runtime deps ({len(deps)} paths) do not list the main binary: wrong target or out dir?")
     version = chrome_version(src)
     env = upstream_env()
     if version != env["CHROMIUM_TAG"]:

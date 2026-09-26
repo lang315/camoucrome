@@ -85,6 +85,9 @@ def gen(os_name, locale=None):
     return json.loads(g.stdout)["config"]
 
 
+EXPECTED_ROWS = 14  # S1 S1b S2 S3 S4 V1 V2 A1-A4 U1 U2 V3
+
+
 def main():
     results = {}
     win = gen("windows")
@@ -127,7 +130,9 @@ def main():
     for k, v in results.items():
         print("PASS " if v else "FAIL ", k)
     print(f"{n} PASS {len(results) - n} FAIL")
-    sys.exit(0 if n == len(results) else 1)
+    if len(results) != EXPECTED_ROWS:  # a dropped row (duplicate key, skipped branch) must fail
+        print(f"FAIL  {len(results)} rows, expected {EXPECTED_ROWS}")
+    sys.exit(0 if n == len(results) == EXPECTED_ROWS else 1)
 
 
 PV_PAGE = b"""<!doctype html><title>pv</title><pre id=o></pre><script>

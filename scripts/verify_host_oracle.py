@@ -70,6 +70,9 @@ def flatten(v, prefix=""):
     return {prefix: v}
 
 
+EXPECTED_ROWS = 4  # O1 O2 O3 O4
+
+
 def main():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -122,18 +125,25 @@ def main():
         g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "linux", "--timezone", "UTC", "--seed", "1"], capture_output=True, text=True, timeout=120)
         lin = json.loads(g.stdout)["config"]
         r = subprocess.run([PY, sys.argv[0], "--config", json.dumps(lin)], capture_output=True, text=True, timeout=400, env=env)
-        ok2 = "host-only=['bluetooth', 'canShare', 'share']" in r.stdout and "'queryLocalFonts'" in r.stdout
+        # queryLocalFonts is stock on every OS (FontAccess at stock status), so it must NOT differ.
+        qlf_diff = any("queryLocalFonts" in l for l in r.stdout.splitlines() if l.startswith("DIFF windowNames"))
+        ok2 = "host-only=['bluetooth', 'canShare', 'share']" in r.stdout and not qlf_diff
         if not ok2:
             print("O2 sub-run rc", r.returncode, "navProto line:", [l[:120] for l in r.stdout.splitlines() if l.startswith("DIFF navProto: host-only")],
-                  "windowNames has queryLocalFonts:", any("queryLocalFonts" in l for l in r.stdout.splitlines() if l.startswith("DIFF windowNames")))
-        results["O2 RED Linux claim: navigator.share / bluetooth absent, queryLocalFonts absent (the gate follows the claim)"] = ok2
+                  "windowNames has queryLocalFonts:", qlf_diff)
+        results["O2 RED Linux claim: navigator.share / bluetooth absent (the gate follows the claim); queryLocalFonts present as on every stock OS, no windowNames diff"] = ok2
         results.update(font_access_rows(cfg, env))
         results.update(brand_header_rows(cfg, env))
     n = sum(results.values())
     for k, v in results.items():
         print("PASS " if v else "FAIL ", k)
+    # O1 only in the --config sub-run; O1-O4 otherwise. A row that silently drops out
+    # (a skipped branch, a duplicate key) must fail, not shrink the denominator.
+    expected = 1 if "--config" in sys.argv else EXPECTED_ROWS
     print(f"{n} PASS {len(results) - n} FAIL")
-    sys.exit(0 if n == len(results) else 1)
+    if len(results) != expected:
+        print(f"FAIL  {len(results)} rows, expected {expected}")
+    sys.exit(0 if n == len(results) == expected else 1)
 
 
 FA_PAGE = b"""<!doctype html><title>fa</title><button id=b>go</button><pre id=o></pre><script>

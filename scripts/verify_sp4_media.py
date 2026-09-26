@@ -34,12 +34,15 @@ def main():
     results = {}
     m1 = run(cfg({"mediaDevices:enabled": True, "mediaDevices:micros": 2,
                   "mediaDevices:webcams": 3, "mediaDevices:speakers": 4}))
-    results["M1"] = (m1.get("byKind") == {"audioinput":2,"videoinput":3,"audiooutput":4}
-                     and m1.get("count") == 9)
+    # Pre-grant, stock lists at most ONE blank entry per kind
+    # (content/browser/media/media_devices_util.cc TranslateMediaDeviceInfoArray
+    # stops after the first blank one), so counts above 1 collapse to 1.
+    results["M1"] = (m1.get("byKind") == {"audioinput":1,"videoinput":1,"audiooutput":1}
+                     and m1.get("count") == 3)
     results["M2"] = all(x["label"]=="" and x["deviceId"]=="" and x["groupId"]==""
                         for x in m1.get("fields", [{"label":"x","deviceId":"x","groupId":"x"}]))
     m3 = run(cfg({"mediaDevices:enabled": True}))
-    results["M3"] = m3.get("byKind") == {"audioinput":3,"videoinput":1,"audiooutput":1}
+    results["M3"] = m3.get("byKind") == {"audioinput":1,"videoinput":1,"audiooutput":1}
     m4 = run(cfg({}))
     with open(BASELINE) as f: base = json.load(f)
     results["M4"] = (m4.get("byKind") == base.get("byKind")

@@ -20,7 +20,7 @@
   }
  },
  "forbidden_context_options": {
-  "why": "Each duplicates a CAMOU_CONFIG key. A second emulation of the same surface either fails (timezone: kAlreadyInEffect) or silently overrides the fork's value.",
+  "why": "Each duplicates a CAMOU_CONFIG key. A second emulation of the same surface either fails (timezone: kAlreadyInEffect) or silently overrides the fork's value. has_touch / is_mobile emulate touch points and a mobile viewport over navigator.maxTouchPoints and the claimed OS.",
   "options": [
    "locale",
    "timezone_id",
@@ -30,7 +30,9 @@
    "device_scale_factor",
    "geolocation",
    "color_scheme",
-   "extra_http_headers"
+   "extra_http_headers",
+   "has_touch",
+   "is_mobile"
   ]
  },
  "launch": {
@@ -46,15 +48,16 @@
    "config": "CAMOU_CONFIG",
    "config_chunks": "CAMOU_CONFIG_{n}",
    "config_chunk_chars": 30000,
-   "why_chunks": "Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN); a macOS identity (191 voices, 409 faces, 775 names) is ~140 KB and spawn fails with E2BIG. A config longer than config_chunk_chars goes out as CAMOU_CONFIG_1..N in order, no CAMOU_CONFIG; the reader (AssembleRawConfig) concatenates. 30000 chars is at most 120 KB of UTF-8.",
+   "why_chunks": "Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN); a macOS identity (191 voices, 409 faces, 775 names) is ~140 KB and spawn fails with E2BIG. A config longer than config_chunk_chars goes out as CAMOU_CONFIG_1..N in order, no CAMOU_CONFIG; the reader (AssembleRawConfig) concatenates. 30000 chars is at most 120 KB of UTF-8. The preset goes out the same way (CAMOU_PRESET_1..N, same reader).",
    "preset": "CAMOU_PRESET",
+   "preset_chunks": "CAMOU_PRESET_{n}",
    "strict": "CAMOU_CONFIG_STRICT"
   },
   "ignore_default_args": true,
   "headless_arg": "--headless=new",
   "why_ignore_default_args": "Playwright's default argv carries --disable-features=<18 features>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType=2,..., --hide-scrollbars, --mute-audio, --force-color-profile=srgb, --use-angle=swiftshader-webgl, --disable-blink-features=AutomationControlled and more (measured 2026-09-10 on patchright 1.62). Each moves a page-visible surface off the compiled-defaults position SP7 D3 accepted, so the launcher passes ignore_default_args and exactly the list below.",
   "accept_lang_arg": "--accept-lang={languages}",
-  "why_accept_lang": "Measured 2026-09-10: a config with locale:tag/navigator.languages fr-FR,fr still sends Accept-Language: en-US,en;q=0.9 (the tree derives nothing for the header; --lang does not change it either). --accept-lang=fr-FR,fr gives fr-FR,fr;q=0.9, Chrome adding the q-values itself. The launcher derives the flag from the config's navigator.languages (else locale:tag).",
+  "why_accept_lang": "Measured 2026-09-10: a config with locale:tag/navigator.languages fr-FR,fr still sends Accept-Language: en-US,en;q=0.9 (the tree derives nothing for the header; --lang does not change it either). --accept-lang=fr-FR,fr gives fr-FR,fr;q=0.9, Chrome adding the q-values itself. The launcher derives the flag from navigator.languages (else locale:tag) of the effective keys: the preset's locale expanded as preset_loader.cc does ([locale] plus its primary subtag when different), under the explicit config; an explicit member of the preset's OS pair or locale triple re-derives the whole group first (preset_loader.cc OverridePresetGroups), exactly as the browser does.",
   "extension_args": [
    "--disable-extensions-except={paths}",
    "--load-extension={paths}"
@@ -66,7 +69,7 @@
     "Windows": "settings/fontconfig/windows.conf",
     "macOS": "settings/fontconfig/macos.conf"
    },
-   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the config's ua:platform (else the preset's os) when a fonts dir is found beside the executable or given explicitly. Linux claim: no env, host fonts are the truth.",
+   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A FONTCONFIG_FILE in the parent environment is never inherited.",
    "layout": "<root>/fonts/<family>/*.ttf and <root>/settings/fontconfig/<os>.conf, the same in the repo, the archive and the box's client copy; the conf's <dir> is relative (../../fonts)"
   }
  },
