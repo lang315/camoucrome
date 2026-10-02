@@ -42,7 +42,7 @@ jobs:
       - name: python client tests + packager tests
         run: |
           python3 -m pip install -q pytest browserforge==1.2.4
-          python3 -m pytest -q client/python/tests scripts/test_package.py scripts/test_fonts.py scripts/test_capture_webgl_profile.py scripts/test_rebuild_branch.py
+          python3 -m pytest -q client/python/tests scripts/test_package.py scripts/test_fonts.py scripts/test_capture_webgl_profile.py scripts/test_rebuild_branch.py scripts/test_repin.py
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
       - uses: actions/setup-node@v4
