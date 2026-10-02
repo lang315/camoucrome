@@ -64,11 +64,6 @@ def retarget(root, new_tag, new_rev):
     old_short, new_short = old_rev[:10], new_rev[:10]
     changed = []
 
-    env = (text.replace(old_rev, new_rev).replace(old_tag, new_tag)
-               .replace(f"branch-heads/{old_build}", f"branch-heads/{new_build}"))
-    (root / "upstream.env").write_text(env)
-    changed.append("upstream.env")
-
     # Only the three shapes a pin takes in a name or a literal; a bare build
     # number is not replaced, so an unrelated 8010 survives.
     pairs = [(f"-{old_build}-stock", f"-{new_build}-stock"),
@@ -94,6 +89,13 @@ def retarget(root, new_tag, new_rev):
         if after != before:
             f.write_text(after)
             changed.append(f"scripts/{f.name}")
+
+    # Last: upstream.env is what a rerun reads as "old", so it must not move
+    # until the renames and rewrites above have all succeeded.
+    env = (text.replace(old_rev, new_rev).replace(old_tag, new_tag)
+               .replace(f"branch-heads/{old_build}", f"branch-heads/{new_build}"))
+    (root / "upstream.env").write_text(env)
+    changed.append("upstream.env")
     return changed
 
 

@@ -1,7 +1,10 @@
 """rebuild_branch.sh on a throwaway repo: success, atomic failure, custom branch."""
+import os
 import pathlib
 import shutil
+import signal
 import subprocess
+import time
 
 import pytest
 
@@ -100,4 +103,66 @@ def test_refuses_an_existing_branch_without_touching_it(env):
     assert r.returncode != 0
     assert "already exists" in r.stderr
     assert git(src, "rev-parse", "camoucrome/main") == rev
+    assert not wt.exists()
+
+
+def test_a_relative_worktree_dir_is_refused(env):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch\n")
+    before = branches(src)
+    r = subprocess.run(["bash", str(root / "scripts" / "rebuild_branch.sh"), str(src), "rel-wt"],
+                       capture_output=True, text=True, cwd=root)
+    assert r.returncode != 0
+    assert "absolute" in r.stderr
+    assert branches(src) == before
+
+
+def test_an_existing_worktree_dir_is_refused_and_left_alone(env):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch\n")
+    before = branches(src)
+    wt.mkdir()
+    (wt / "marker").write_text("mine\n")
+    r = run(root, src, wt)
+    assert r.returncode != 0
+    assert "already exists" in r.stderr
+    assert (wt / "marker").read_text() == "mine\n"
+    assert branches(src) == before
+
+
+def test_a_series_without_a_trailing_newline_keeps_its_last_patch(env):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch")
+    r = run(root, src, wt)
+    assert r.returncode == 0, r.stderr
+    assert git(src, "log", "--format=%s", f"{rev}..camoucrome/main") == "good"
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
+def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
+    src, root, wt, rev = env
+    # git apply blocks opening a FIFO, so the run is parked mid-series.
+    os.mkfifo(root / "patches" / "block.patch")
+    (root / "patches" / "series").write_text("good.patch\nblock.patch\n")
+    before = branches(src)
+    p = subprocess.Popen(["bash", str(root / "scripts" / "rebuild_branch.sh"), str(src), str(wt)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    try:
+        # the good commit has landed on the temporary branch: the run is at block.patch
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if wt.exists() and git(wt, "log", "--format=%s", f"{rev}..HEAD") == "good":
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("the run never reached the blocking patch")
+        os.killpg(p.pid, sig)
+        p.wait(timeout=30)
+    finally:
+        if p.poll() is None:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+    assert p.returncode != 0
+    assert branches(src) == before
     assert not wt.exists()
