@@ -138,9 +138,11 @@ def test_a_series_without_a_trailing_newline_keeps_its_last_patch(env):
     assert git(src, "log", "--format=%s", f"{rev}..camoucrome/main") == "good"
 
 
-@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP])
 def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
     src, root, wt, rev = env
+    # SIGINT is not tested: a background job of a non-interactive shell inherits
+    # it as ignored, and bash cannot trap a signal ignored at entry.
     # git apply blocks opening a FIFO, so the run is parked mid-series.
     os.mkfifo(root / "patches" / "block.patch")
     (root / "patches" / "series").write_text("good.patch\nblock.patch\n")
@@ -152,8 +154,11 @@ def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
         # the good commit has landed on the temporary branch: the run is at block.patch
         deadline = time.time() + 30
         while time.time() < deadline:
-            if wt.exists() and git(wt, "log", "--format=%s", f"{rev}..HEAD") == "good":
-                break
+            try:
+                if wt.exists() and git(wt, "log", "--format=%s", f"{rev}..HEAD") == "good":
+                    break
+            except subprocess.CalledProcessError:
+                pass  # git worktree add still running: not ready yet
             time.sleep(0.05)
         else:
             pytest.fail("the run never reached the blocking patch")
@@ -166,3 +171,29 @@ def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
     assert p.returncode != 0
     assert branches(src) == before
     assert not wt.exists()
+
+
+def test_a_signal_right_after_the_rename_keeps_the_finished_branch_and_worktree(env, tmp_path):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch\n")
+    # A git wrapper that, once `git branch -m` has succeeded, signals its parent (the script).
+    # bash runs the trap as soon as that foreground child returns: exactly the window
+    # between the rename and whatever follows it.
+    real_git = shutil.which("git")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    wrapper = bindir / "git"
+    wrapper.write_text(f"""#!/bin/bash
+{real_git} "$@"
+rc=$?
+case " $* " in *" branch "*"-m "*) [ "$rc" -eq 0 ] && kill -TERM $PPID ;; esac
+exit $rc
+""")
+    wrapper.chmod(0o755)
+    r = subprocess.run(["bash", str(root / "scripts" / "rebuild_branch.sh"), str(src), str(wt)],
+                       capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"})
+    assert r.returncode != 0
+    assert git(src, "log", "--format=%s", f"{rev}..camoucrome/main") == "good"
+    assert (wt / "a.txt").read_text() == "two\n"
+    assert not [b for b in branches(src) if b.startswith("camoucrome/rebuild-")]
