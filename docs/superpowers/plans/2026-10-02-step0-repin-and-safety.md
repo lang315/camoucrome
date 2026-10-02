@@ -220,8 +220,20 @@ def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
             time.sleep(0.05)
         else:
             pytest.fail("the run never reached the blocking patch")
-        os.killpg(p.pid, sig)
-        p.wait(timeout=30)
+        # One signal can be swallowed by the git child between fork and exec (it then
+        # blocks on the FIFO while bash defers its trap), so re-send until the run exits.
+        deadline = time.time() + 30
+        while True:
+            try:
+                os.killpg(p.pid, sig)
+            except ProcessLookupError:
+                pass
+            try:
+                p.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                if time.time() > deadline:
+                    raise
     finally:
         if p.poll() is None:
             os.killpg(p.pid, signal.SIGKILL)
