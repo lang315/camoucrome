@@ -130,13 +130,25 @@ git diff scripts/           # the literal rewrites
 ```
 
 `retarget` renames the baselines and rewrites the version literals and the
-10-hex short revision. Three things it does **not** do, all by hand:
+10-hex short revision. Four things it leaves to a human — note that two of them
+are **corruptions to revert**, not omissions to fill in, so diff for changed
+lines, not only for missing ones:
 
-- a bare major ("stock Chrome 153") in a docstring;
-- the `# History:` line in `upstream.env` and the pin-history comment in
-  `verify_sp1a_chrome.py` — those must keep the old value and gain the new one;
-- `settings/presets/chromium-<milestone>.json` and the milestone fixture in
-  `verify_sp5b_preset.py`.
+- *(omission)* a bare major ("stock Chrome 153") in a docstring: `retarget`
+  matches the full tag and the 10-hex revision, never a bare build number, so
+  these survive untouched and must be edited.
+- *(omission)* `settings/presets/chromium-<milestone>.json` and the milestone
+  fixture in `verify_sp5b_preset.py`. `retarget` does not touch `settings/`.
+- *(omission)* a value **derived** from a baseline rather than captured into
+  one: `settings/audio.json`'s Windows block cites the host oracle capture, and
+  `retarget`'s reason for skipping `settings/` ("the captured profiles record
+  the Chrome they were captured from") does not cover it.
+- *(corruption to revert)* an **undated** history sentence in prose. A line that
+  opens with an ISO date (`# 2026-10-02: … -> … (Chrome stable …)`) is exempt —
+  `HISTORY_RE` in `repin.py`, pinned by `test_repin.py` — because its
+  right-hand values are the next re-pin's "old" pair and a blind rewrite would
+  turn it into a record of a re-pin that never happened. An undated sentence
+  saying the same thing gets rewritten, and only a reader can tell.
 
 Then export from the rebased branch and bring the result back:
 

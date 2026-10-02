@@ -136,7 +136,7 @@ clean state.
 | `rebuild_branch.sh` | fixed (atomic, signal-safe, absolute worktree) and drilled on the real tree: `difflines=0` in 100 s; a broken series leaves no branch and no worktree (rc 128) |
 | Re-pin as a script | `scripts/repin.py` (`target`, `check`, `retarget`) with tests, plus the runbook checklist |
 | Runner hardening | `lang` has no sudo, WSL interop and automount off, runner re-registered; three escape routes verified closed |
-| Verify sweep on the new pin | 48/51 green, `verify_host_oracle` 0 DIFF / 239 leaves / O1–O4 PASS, coherence 7/7 |
+| Verify sweep on the new pin | 48/51 green, coherence 7/7, `verify_host_oracle` 0 DIFF with O1–O4 PASS (177 leaves equal by value, 41 by type, 21 not compared and named) |
 | CI | green on `main` **before** the re-pin (run 36974876383); the re-pin's own `build-verify` runs when its PR merges |
 
 Three findings the re-pin surfaced are backlog items 2, 3 and 4, not step 0

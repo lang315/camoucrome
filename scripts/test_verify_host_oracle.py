@@ -39,10 +39,32 @@ HOST = {
 
 def test_no_adapter_excludes_the_subtree_and_nothing_else():
     """Today's box: requestAdapter() -> null, so gpu.* has no fork value at all."""
-    diffs, same, active = vho.compare(HOST, {"ua": "Mozilla/5.0 stock", "gpu": None})
+    diffs, buckets, active = vho.compare(HOST, {"ua": "Mozilla/5.0 stock", "gpu": None})
     assert list(active) == ["gpu"], active
     assert diffs == [], diffs
-    assert same == len(vho.flatten(HOST)) + 1  # + the fork's own bare "gpu" leaf
+    # The point of the buckets: these leaves were NOT compared, and the summary
+    # must not count them as agreement. 6 host gpu.* leaves + the fork's own bare
+    # "gpu" key; `ua` is the only leaf actually compared by value.
+    assert buckets == {"equal": 1, "shape_only": 0, "known": 0, "prefix_excluded": 7}, buckets
+
+
+def test_the_buckets_add_up_and_separate_type_from_value():
+    """A shape-only leaf agrees on TYPE only; counting it as "same" is the overstatement
+    the buckets exist to stop. gpu.features and gpu.info.* are shape-only by policy."""
+    fork = {
+        "ua": "Mozilla/5.0 stock",
+        "gpu": {
+            "info": {"vendor": "nvidia", "architecture": "turing"},   # shape-only: same type
+            "features": ["depth-clip-control", "float32-filterable"],  # shape-only: same type
+            "limits": {"maxTextureDimension2D": 16384, "maxBindGroups": 4,
+                       "maxComputeWorkgroupSizeX": 1024},             # exact: all equal
+        },
+    }
+    diffs, buckets, active = vho.compare(HOST, fork)
+    assert active == {} and diffs == [], (active, diffs)
+    assert buckets["shape_only"] == 3, buckets          # 2 info strings + features
+    assert buckets["equal"] == 4, buckets               # ua + 3 limits
+    assert sum(buckets.values()) + len(diffs) == len(vho.flatten(HOST)), buckets
 
 
 def test_a_real_adapter_is_compared_again():
