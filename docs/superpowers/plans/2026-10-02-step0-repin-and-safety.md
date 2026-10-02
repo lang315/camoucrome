@@ -196,9 +196,11 @@ def test_a_series_without_a_trailing_newline_keeps_its_last_patch(env):
     assert git(src, "log", "--format=%s", f"{rev}..camoucrome/main") == "good"
 
 
-@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP])
 def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
     src, root, wt, rev = env
+    # SIGINT is not tested: a background job of a non-interactive shell inherits
+    # it as ignored, and bash cannot trap a signal ignored at entry.
     # git apply blocks opening a FIFO, so the run is parked mid-series.
     os.mkfifo(root / "patches" / "block.patch")
     (root / "patches" / "series").write_text("good.patch\nblock.patch\n")
@@ -210,8 +212,11 @@ def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
         # the good commit has landed on the temporary branch: the run is at block.patch
         deadline = time.time() + 30
         while time.time() < deadline:
-            if wt.exists() and git(wt, "log", "--format=%s", f"{rev}..HEAD") == "good":
-                break
+            try:
+                if wt.exists() and git(wt, "log", "--format=%s", f"{rev}..HEAD") == "good":
+                    break
+            except subprocess.CalledProcessError:
+                pass  # git worktree add still running: not ready yet
             time.sleep(0.05)
         else:
             pytest.fail("the run never reached the blocking patch")
@@ -224,13 +229,39 @@ def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
     assert p.returncode != 0
     assert branches(src) == before
     assert not wt.exists()
+
+
+def test_a_signal_right_after_the_rename_keeps_the_finished_branch_and_worktree(env, tmp_path):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch\n")
+    # A git wrapper that, once `git branch -m` has succeeded, signals its parent (the script).
+    # bash runs the trap as soon as that foreground child returns: exactly the window
+    # between the rename and whatever follows it.
+    real_git = shutil.which("git")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    wrapper = bindir / "git"
+    wrapper.write_text(f"""#!/bin/bash
+{real_git} "$@"
+rc=$?
+case " $* " in *" branch "*"-m "*) [ "$rc" -eq 0 ] && kill -TERM $PPID ;; esac
+exit $rc
+""")
+    wrapper.chmod(0o755)
+    r = subprocess.run(["bash", str(root / "scripts" / "rebuild_branch.sh"), str(src), str(wt)],
+                       capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"})
+    assert r.returncode != 0
+    assert git(src, "log", "--format=%s", f"{rev}..camoucrome/main") == "good"
+    assert (wt / "a.txt").read_text() == "two\n"
+    assert not [b for b in branches(src) if b.startswith("camoucrome/rebuild-")]
 ```
 
 - [ ] **Step 2: Run the tests and see the real failures**
 
 Run: `python3 -m pytest -q scripts/test_rebuild_branch.py`
 
-Expected: 8 failed, 2 passed (run against the original script, before step 3). `test_failure_leaves_no_branch_and_no_worktree_and_a_rerun_works` fails on `assert branches(src) == before` (the branch is left behind). `test_third_argument_names_the_branch` fails because the script ignores the third argument. `test_a_relative_worktree_dir_is_refused` and `test_an_existing_worktree_dir_is_refused_and_left_alone` fail because the original script has neither guard. `test_a_series_without_a_trailing_newline_keeps_its_last_patch` fails because `read` drops an unterminated last line. The three `test_a_signal_mid_run_leaves_no_branch_and_no_worktree` cases (SIGTERM, SIGHUP, SIGINT) fail because the `$?`-keyed cleanup does not run when a signal ends the shell. Only `test_success_builds_one_commit_per_patch` and `test_refuses_an_existing_branch_without_touching_it` pass. If all ten pass, the tests measure nothing: stop and find out why.
+Expected: 8 failed, 2 passed (run against the original script, before step 3). `test_failure_leaves_no_branch_and_no_worktree_and_a_rerun_works` fails first on `assert "bad.patch" in r.stderr`: the original script never names the failing patch (it also has no cleanup at all, so the branch and worktree stay behind and the rerun would be refused). `test_third_argument_names_the_branch` fails because the script ignores the third argument. `test_a_relative_worktree_dir_is_refused` and `test_an_existing_worktree_dir_is_refused_and_left_alone` fail because the original script has neither guard. `test_a_series_without_a_trailing_newline_keeps_its_last_patch` fails because `read` drops an unterminated last line. The two `test_a_signal_mid_run_leaves_no_branch_and_no_worktree` cases (SIGTERM, SIGHUP) fail because the original script has no cleanup and no trap, so the interrupted run leaves its branch behind. `test_a_signal_right_after_the_rename_keeps_the_finished_branch_and_worktree` fails on `assert r.returncode != 0` against the original (no trap, so the wrapper's SIGTERM is ignored by the script and it exits 0); against a cleanup keyed on a completion flag set after the rename it fails on the missing worktree. SIGINT is not in the signal test: a background job of a non-interactive shell inherits it as ignored and bash cannot trap it. Only `test_success_builds_one_commit_per_patch` and `test_refuses_an_existing_branch_without_touching_it` pass. If all ten pass, the tests measure nothing: stop and find out why.
 
 - [ ] **Step 3: Rewrite the script body**
 
@@ -244,6 +275,8 @@ Replace everything in `scripts/rebuild_branch.sh` from the `# Usage:` comment li
 # worktree). Atomic: the series is applied on a temporary branch that is
 # renamed only when every patch has landed, and a failure removes the
 # temporary branch and the worktree, so a failed run can simply be repeated.
+# A signal after the rename exits non-zero (129/130/143) but keeps the finished
+# branch and worktree.
 set -euo pipefail
 
 SRC="${1:?usage: rebuild_branch.sh <chromium-src-dir> [worktree-dir] [branch]}"
@@ -267,17 +300,21 @@ fi
 
 TMP="camoucrome/rebuild-$$"
 CURRENT="setup"
-# Cleanup keys off CURRENT, not $?: bash runs the EXIT trap with $? == 0 when
-# a signal ends the shell. CURRENT is "done" only after the rename.
+# CURRENT only names the failing step for the message. Whether the run finished
+# is read from the repository: the script refuses to start while $BRANCH exists,
+# so if it exists now, this run's rename succeeded and nothing is removed (a
+# signal can land between the rename and the next line, and bash runs $? == 0
+# in the EXIT trap after a signal, so neither can be trusted).
 cleanup() {
   rc=$?
-  if [ "$CURRENT" != "done" ]; then
-    git -C "$SRC" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
-    git -C "$SRC" worktree prune
-    git -C "$SRC" branch -q -D "$TMP" 2>/dev/null || true
-    echo "error: rebuild failed at $CURRENT; the temporary branch and $WT were removed" >&2
-    [ "$rc" -ne 0 ] || rc=1
+  if git -C "$SRC" show-ref --quiet "refs/heads/$BRANCH"; then
+    exit "$rc"
   fi
+  git -C "$SRC" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
+  git -C "$SRC" worktree prune
+  git -C "$SRC" branch -q -D "$TMP" 2>/dev/null || true
+  echo "error: rebuild failed at $CURRENT; the temporary branch and $WT were removed" >&2
+  [ "$rc" -ne 0 ] || rc=1
   exit "$rc"
 }
 trap cleanup EXIT
@@ -299,7 +336,6 @@ while read -r p || [ -n "$p" ]; do
 done < "$ROOT/patches/series"
 CURRENT="rename"
 git -C "$WT" branch -m "$TMP" "$BRANCH"
-CURRENT="done"
 echo "$BRANCH: $(git -C "$WT" rev-list --count "$CHROMIUM_REV..HEAD") commits above $CHROMIUM_REV at $WT"
 ```
 
