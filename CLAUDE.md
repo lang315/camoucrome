@@ -42,9 +42,13 @@ the project exists.
   rules, the config API shape, the build environment, and (most importantly) the
   catalogue of ways a check can report success while measuring nothing. Read it
   before writing or verifying anything.
+- **[`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md)**
+  — what comes next and in what order: the steps to the first release, the
+  re-pin commitment, and the ranked backlog after it.
 - **[`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md)**
-  — slice ordering and per-slice status (shipped / partial / open); each slice's
-  residual detail lives in its own measurement doc, not in the roadmap.
+  — per-slice status ledger for the follow-on arc (shipped / partial / open);
+  each slice's residual detail lives in its own measurement doc, not in the
+  roadmap.
 
 ## Repository layout
 
