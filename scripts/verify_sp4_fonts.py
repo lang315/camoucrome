@@ -66,7 +66,7 @@ simply absent there regardless of whether the runtime feature is enabled.
      measured on a localhost origin (see the echo_server note above), is
      asserted to be "function". The FontAccess runtime feature keeps its
      stock "stable" status: stock Linux Chrome at the pin exposes the API
-     (baselines/chrome-507c6ee3e2-stock-ua.json window_keys), so removing it
+     (baselines/chrome-f89f3a4363-stock-ua.json window_keys), so removing it
      would itself be a tell. What it returns is configured instead
      (fonts:local; absent, the real enumeration filtered by the fonts:list
      allowlist). Task 4's original removal was reverted by that decision.

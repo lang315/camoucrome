@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/modules/mediastream/user_media_request.cc b/third_party/blink/renderer/modules/mediastream/user_media_request.cc
-index 074b2f3bfc..19a24654e4 100644
+index c55d2c443c..8be71237aa 100644
 --- a/third_party/blink/renderer/modules/mediastream/user_media_request.cc
 +++ b/third_party/blink/renderer/modules/mediastream/user_media_request.cc
 @@ -35,6 +35,9 @@

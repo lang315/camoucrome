@@ -1,5 +1,5 @@
 {
- "chrome": "153.0.8010.36",
+ "chrome": "154.0.8037.93",
  "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile",
  "px": 100,
  "families": {

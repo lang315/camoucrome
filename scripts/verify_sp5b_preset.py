@@ -32,7 +32,7 @@ RENDERER = ("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) "
 # exactly what a shipped preset must never be (settings/presets/ holds
 # captures only).
 FIXTURE = {
-    "milestone": 153,
+    "milestone": 154,
     "os": "Windows",
     "gpu": {"vendor": "Google Inc. (NVIDIA)", "renderer": RENDERER,
             "parameters": {"3379": 16384}},
@@ -112,9 +112,9 @@ if not results[P2]:
     notes.append(f"2: {err or got}")
 
 got, err, log = run(dict(FIXTURE, milestone=120))
-P4 = "4 preset milestone 120 starts and logs the mismatch against 153"
+P4 = "4 preset milestone 120 starts and logs the mismatch against 154"
 hit = [l for l in log.splitlines()
-       if "preset milestone 120 differs from this build's 153" in l]
+       if "preset milestone 120 differs from this build's 154" in l]
 results[P4] = got is not None and got["tz"] == "Europe/Paris" and bool(hit)
 if not results[P4]:
     notes.append(f"4: {err or ('no milestone line; ' + repr(got['tz']))}")

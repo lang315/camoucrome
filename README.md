@@ -56,8 +56,8 @@ and its two high-risk, infrastructure-gated items (fonts-ii, which needs real
 Windows/macOS testing; webrtc-ii, browser-process/libwebrtc surgery). See
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium **`507c6ee3e2`, the Chrome stable
-tag `153.0.8010.36`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+The change set is generated against Chromium **`f89f3a4363`, the Chrome stable
+tag `154.0.8037.93`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
 refuses any other HEAD). The pin is the current stable tag so the fork reports
 a version real users run; it moves to the newest stable tag each milestone.
 

@@ -1,6 +1,6 @@
 """window.chrome shape + navigator.plugins/mimeTypes/pdfViewerEnabled (SP2 §4.7,
-roadmap B1) on the fork's chrome, against baselines/chrome-8010-stock-window-chrome.json
-(stock Chrome 153.0.8010.36 on the box's Windows host, headless + headed).
+roadmap B1) on the fork's chrome, against baselines/chrome-8037-stock-window-chrome.json
+(stock Chrome 154.0.8037.93 on the box's Windows host, headless + headed).
 
 O1 fork headless tree == stock headless tree (recursive: names, kinds,
    descriptor flags, function length/name/toString) -- diff empty.
@@ -24,7 +24,7 @@ HOME = os.path.expanduser("~")
 EXE = os.environ.get("CAMOU_EXE", f"{HOME}/chromium/src/out/Default/chrome")
 PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
-BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", f"{HOME}/camoucrome-client/baselines/chrome-8010-stock-window-chrome.json"))
+BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", f"{HOME}/camoucrome-client/baselines/chrome-8037-stock-window-chrome.json"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from capture_chrome_object import PAGE  # noqa: E402
 
