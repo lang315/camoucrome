@@ -92,3 +92,17 @@ def test_retarget_refuses_a_malformed_tag_or_revision(tree):
         repin.retarget(tree, "154.0.8037", NEW_REV)
     with pytest.raises(SystemExit):
         repin.retarget(tree, "154.0.8037.98", "0123abc")
+
+
+def test_a_failed_rename_leaves_the_pin_so_a_rerun_finishes_the_job(tree):
+    extra = tree / "baselines" / "content_shell-8010-stock-extra.json"
+    extra.write_text("{}\n")  # untracked: git mv refuses it
+    with pytest.raises(subprocess.CalledProcessError):
+        repin.retarget(tree, "154.0.8037.98", NEW_REV)
+    env = (tree / "upstream.env").read_text()
+    assert OLD_REV in env and "CHROMIUM_TAG=153.0.8010.36\n" in env
+    subprocess.run(["git", "add", str(extra)], cwd=tree, check=True)
+    repin.retarget(tree, "154.0.8037.98", NEW_REV)
+    assert "CHROMIUM_TAG=154.0.8037.98\n" in (tree / "upstream.env").read_text()
+    assert not [p for p in (tree / "baselines").iterdir() if "-8010-stock" in p.name]
+    assert "chrome-8037-stock-oracle-windows.json" in (tree / "scripts" / "verify_x.py").read_text()

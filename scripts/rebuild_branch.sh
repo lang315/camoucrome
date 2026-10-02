@@ -25,6 +25,9 @@ if git -C "$SRC" show-ref --quiet "refs/heads/$BRANCH"; then
   echo "error: $BRANCH already exists in $SRC; remove its worktree and branch first" >&2
   exit 1
 fi
+# git resolves a relative path against $SRC, the -e test against the cwd: with
+# a relative path the guard could miss a worktree that cleanup then removes.
+case "$WT" in /*) ;; *) echo "error: worktree dir must be an absolute path: $WT" >&2; exit 1 ;; esac
 if [ -e "$WT" ]; then
   echo "error: $WT already exists; remove it or name another worktree dir" >&2
   exit 1
@@ -32,23 +35,29 @@ fi
 
 TMP="camoucrome/rebuild-$$"
 CURRENT="setup"
+# Cleanup keys off CURRENT, not $?: bash runs the EXIT trap with $? == 0 when
+# a signal ends the shell. CURRENT is "done" only after the rename.
 cleanup() {
   rc=$?
-  if [ "$rc" -ne 0 ]; then
+  if [ "$CURRENT" != "done" ]; then
     git -C "$SRC" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
     git -C "$SRC" worktree prune
     git -C "$SRC" branch -q -D "$TMP" 2>/dev/null || true
     echo "error: rebuild failed at $CURRENT; the temporary branch and $WT were removed" >&2
+    [ "$rc" -ne 0 ] || rc=1
   fi
   exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 git -C "$SRC" worktree add -q -b "$TMP" "$WT" "$CHROMIUM_REV"
 mkdir -p "$WT/components/camoucfg"
 cp "$ROOT"/additions/camoucfg/* "$WT/components/camoucfg/"
 cp "$ROOT/settings/invariants.json" "$WT/components/camoucfg/invariants.json"
-while read -r p; do
+while read -r p || [ -n "$p" ]; do
   case "$p" in ""|\#*) continue ;; esac
   CURRENT="$p"
   git -C "$WT" apply --3way "$ROOT/patches/$p"
@@ -58,4 +67,5 @@ while read -r p; do
 done < "$ROOT/patches/series"
 CURRENT="rename"
 git -C "$WT" branch -m "$TMP" "$BRANCH"
+CURRENT="done"
 echo "$BRANCH: $(git -C "$WT" rev-list --count "$CHROMIUM_REV..HEAD") commits above $CHROMIUM_REV at $WT"
