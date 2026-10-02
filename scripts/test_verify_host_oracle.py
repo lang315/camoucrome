@@ -101,3 +101,28 @@ def test_every_prefix_exclusion_carries_a_reason_and_a_predicate():
         assert isinstance(reason, str) and reason, prefix
         assert callable(when), prefix
         assert "backlog" in reason, f"{prefix}: an exclusion needs a named follow-up"
+
+
+def test_the_hevc_row_is_compared_again_once_the_fork_claims_hevc():
+    """RED without the predicate: a fork answering canPlayType but not isTypeSupported
+    (or the reverse) stays invisible behind an exclusion written for a build that
+    answers neither."""
+    host = {"codecs": {vho.HEVC: ["probably", True]}}
+    # today's Linux build: no decoder at all -> excluded, with its reason
+    diffs, buckets, _ = vho.compare(host, {"codecs": {vho.HEVC: ["", False]}})
+    assert diffs == [] and buckets["known"] == 1, (diffs, buckets)
+    # a build that answers canPlayType but not MSE: the excuse no longer applies
+    diffs, buckets, _ = vho.compare(host, {"codecs": {vho.HEVC: ["probably", False]}})
+    assert [k for k, *_ in diffs] == [f"codecs.{vho.HEVC}"], diffs
+    assert buckets["known"] == 0, buckets
+
+
+def test_a_bare_reason_in_known_still_excludes_unconditionally():
+    """The host-artefact rows (no mouse, no keyboard) keep the plain-string shape; a
+    recapture of the baseline is what retires those, not a predicate."""
+    bare = [k for k, v in vho.KNOWN.items() if not isinstance(v, tuple)]
+    assert bare, "the plain-string shape must stay supported"
+    host = {bare[0].split(".", 1)[0]: {bare[0].split(".", 1)[1]: "host"}} if "." in bare[0] else {bare[0]: "host"}
+    fork = {bare[0].split(".", 1)[0]: {bare[0].split(".", 1)[1]: "fork"}} if "." in bare[0] else {bare[0]: "fork"}
+    diffs, buckets, _ = vho.compare(host, fork)
+    assert diffs == [] and buckets["known"] == 1, (bare[0], diffs, buckets)

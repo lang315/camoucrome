@@ -36,7 +36,10 @@ SHAPE_ONLY = {"nav.hardwareConcurrency", "nav.deviceMemory", "nav.language", "na
               "gpu.limits.maxStorageBufferBindingSize", "gpu.features", "mediaDevices", "voices", "err.stack", "uadHigh.uaFullVersion",
               "uadHigh.fullVersionList", "uad.brands", "navConnection.rtt", "navConnection.downlink", "media.(color-gamut: p3)",
               "media.(dynamic-range: high)", "media.(video-dynamic-range: high)", "media.(prefers-color-scheme: dark)", "keyboard.size"}
-# Leaves excluded from O1 with the reason each carries (printed as "known:" lines, never as DIFF):
+HEVC = 'video/mp4; codecs="hev1.1.6.L93.B0"'
+# Leaves excluded from O1 with the reason each carries (printed as "known:" lines, never as DIFF). A value is either a
+# bare reason -- for a row whose evidence is the committed baseline itself, so a recapture is what retires it -- or
+# (reason, predicate-on-the-fork's-report) for a row excused by something that can change under us.
 KNOWN = {
     # The host is a headless PC with no mouse or keyboard attached: it reports pointer none / hover none and an empty
     # layout map. A desktop with input reports fine / hover, which d-pointer-touch derives for a Windows claim.
@@ -51,7 +54,13 @@ KNOWN = {
     # NOT a capture artefact and NOT excusable forever: a Windows claim that cannot play HEVC is a tell, in a <video>
     # element and in Media Source Extensions alike. The spoof is roadmap work (backlog "HEVC claim"), and this entry is
     # what keeps O1 usable until then -- delete it when the claim lands, so both measurements go back to being made.
-    'codecs.video/mp4; codecs="hev1.1.6.L93.B0"': "host decodes HEVC in hardware, the box has no decoder; suppresses canPlayType AND MediaSource.isTypeSupported (backlog: HEVC claim)",
+    # Predicated for the same reason the gpu prefix is: the excuse is "this build answers no to HEVC", which stops
+    # being true the moment the Windows build (it carries the proprietary-codec pair) answers yes. Then the row is
+    # compared again, so a fork that answers canPlayType but not isTypeSupported -- or the reverse -- shows up instead
+    # of staying invisible behind an exclusion whose own deletion was the only thing keeping it measured.
+    f"codecs.{HEVC}": ("host decodes HEVC in hardware, the box has no decoder; suppresses canPlayType AND "
+                       "MediaSource.isTypeSupported (backlog: HEVC claim)",
+                       lambda fork: (fork.get("codecs") or {}).get(HEVC) == ["", False]),
 }
 # Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
 # an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
@@ -132,9 +141,12 @@ def compare(base, fork):
                 diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
             continue
         if h != f:
-            if k in KNOWN:
+            entry = KNOWN.get(k)
+            # A bare reason excludes unconditionally; a pair excludes only while its predicate holds.
+            reason, when = entry if isinstance(entry, tuple) else (entry, None)
+            if reason is not None and (when is None or when(fork)):
                 buckets["known"] += 1
-                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN[k]})")
+                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({reason})")
                 continue
             diffs.append((k, h, f))
         else:
