@@ -12,6 +12,8 @@
 # worktree). Atomic: the series is applied on a temporary branch that is
 # renamed only when every patch has landed, and a failure removes the
 # temporary branch and the worktree, so a failed run can simply be repeated.
+# A signal after the rename exits non-zero (129/130/143) but keeps the finished
+# branch and worktree.
 set -euo pipefail
 
 SRC="${1:?usage: rebuild_branch.sh <chromium-src-dir> [worktree-dir] [branch]}"
@@ -35,17 +37,21 @@ fi
 
 TMP="camoucrome/rebuild-$$"
 CURRENT="setup"
-# Cleanup keys off CURRENT, not $?: bash runs the EXIT trap with $? == 0 when
-# a signal ends the shell. CURRENT is "done" only after the rename.
+# CURRENT only names the failing step for the message. Whether the run finished
+# is read from the repository: the script refuses to start while $BRANCH exists,
+# so if it exists now, this run's rename succeeded and nothing is removed (a
+# signal can land between the rename and the next line, and bash runs $? == 0
+# in the EXIT trap after a signal, so neither can be trusted).
 cleanup() {
   rc=$?
-  if [ "$CURRENT" != "done" ]; then
-    git -C "$SRC" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
-    git -C "$SRC" worktree prune
-    git -C "$SRC" branch -q -D "$TMP" 2>/dev/null || true
-    echo "error: rebuild failed at $CURRENT; the temporary branch and $WT were removed" >&2
-    [ "$rc" -ne 0 ] || rc=1
+  if git -C "$SRC" show-ref --quiet "refs/heads/$BRANCH"; then
+    exit "$rc"
   fi
+  git -C "$SRC" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
+  git -C "$SRC" worktree prune
+  git -C "$SRC" branch -q -D "$TMP" 2>/dev/null || true
+  echo "error: rebuild failed at $CURRENT; the temporary branch and $WT were removed" >&2
+  [ "$rc" -ne 0 ] || rc=1
   exit "$rc"
 }
 trap cleanup EXIT
@@ -67,5 +73,4 @@ while read -r p || [ -n "$p" ]; do
 done < "$ROOT/patches/series"
 CURRENT="rename"
 git -C "$WT" branch -m "$TMP" "$BRANCH"
-CURRENT="done"
 echo "$BRANCH: $(git -C "$WT" rev-list --count "$CHROMIUM_REV..HEAD") commits above $CHROMIUM_REV at $WT"
