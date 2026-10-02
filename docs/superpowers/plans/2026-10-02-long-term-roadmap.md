@@ -124,6 +124,24 @@ Done when: the pin is the current stable milestone, CI is green on it, the
 re-pin time is recorded, and `rebuild_branch.sh` recreates the branch from a
 clean state.
 
+**Status 2026-10-02: done except CI on the merged pin.**
+`plans/2026-10-02-step0-repin-and-safety.md` ran as six tasks; the evidence is
+`measurements/2026-10-repin.md` and the procedure is
+`specs/repin-runbook.md`.
+
+| | |
+|---|---|
+| Pin | `154.0.8037.93` (`f89f3a4363`), 37/37 commits rebased, zero semantic conflicts |
+| Re-pin cost | about 7 h 40 m of machine time, 6 h 10 m of it one from-scratch build |
+| `rebuild_branch.sh` | fixed (atomic, signal-safe, absolute worktree) and drilled on the real tree: `difflines=0` in 100 s; a broken series leaves no branch and no worktree (rc 128) |
+| Re-pin as a script | `scripts/repin.py` (`target`, `check`, `retarget`) with tests, plus the runbook checklist |
+| Runner hardening | `lang` has no sudo, WSL interop and automount off, runner re-registered; three escape routes verified closed |
+| Verify sweep on the new pin | 48/51 green, `verify_host_oracle` 0 DIFF / 239 leaves / O1–O4 PASS, coherence 7/7 |
+| CI | green on `main` **before** the re-pin (run 36974876383); the re-pin's own `build-verify` runs when its PR merges |
+
+Three findings the re-pin surfaced are backlog items 2, 3 and 4, not step 0
+work: the Safe Browsing request, the HEVC claim and WebGPU adapter identity.
+
 ### Step 1: Windows foundation
 
 **Goal:** the Windows build is developed and verified with the same
