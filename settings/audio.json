@@ -9,7 +9,7 @@
  "Windows": {
   "sampleRate": 48000,
   "baseLatency": 0.01,
-  "chrome": "153.0.8010.36 (host oracle baseline, headed)",
+  "chrome": "154.0.8037.93 (host oracle baseline, headed)",
   "bufferFrames": 480
  }
 }

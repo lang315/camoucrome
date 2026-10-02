@@ -45,11 +45,13 @@ KNOWN = {
     "keyboard.KeyA": "host has no keyboard", "keyboard.KeyQ": "host has no keyboard", "keyboard.Backquote": "host has no keyboard", "keyboard.Digit1": "host has no keyboard",
     # The probe's own init-script marker (patchright's add_init_script lands in the main world; verify_sp6b_driver excludes it too).
     "windowKeys": "probe marker __camou_init", "windowNames": "probe marker __camou_init", "protoCounts.Window": "probe marker __camou_init (+1)",
-    # The host plays HEVC through the OS decoder; the WSL build box has none, so the fork's canPlayType returns "".
-    # NOT a capture artefact and NOT excusable forever: a Windows claim that cannot play HEVC is a tell. The spoof is
-    # roadmap work (backlog "HEVC claim"), and this entry is what keeps O1 usable until then -- delete it when the
-    # claim lands, so the row goes back to being measured.
-    'codecs.video/mp4; codecs="hev1.1.6.L93.B0"': "host decodes HEVC in hardware, the box has no decoder (backlog: HEVC claim)",
+    # The host plays HEVC through the OS decoder; the WSL build box has none. This leaf is the PAIR
+    # capture_host_oracle.py stores -- [canPlayType, MediaSource.isTypeSupported] -- so excluding it suppresses BOTH
+    # measurements, not just canPlayType: host ["probably", true] against fork ["", false].
+    # NOT a capture artefact and NOT excusable forever: a Windows claim that cannot play HEVC is a tell, in a <video>
+    # element and in Media Source Extensions alike. The spoof is roadmap work (backlog "HEVC claim"), and this entry is
+    # what keeps O1 usable until then -- delete it when the claim lands, so both measurements go back to being made.
+    'codecs.video/mp4; codecs="hev1.1.6.L93.B0"': "host decodes HEVC in hardware, the box has no decoder; suppresses canPlayType AND MediaSource.isTypeSupported (backlog: HEVC claim)",
 }
 # Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
 # an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
@@ -112,6 +114,7 @@ def compare(base, fork):
     # while the host has no such leaf at all, so that one row would escape the exclusion and print as a DIFF.
     active = {p: reason for p, (reason, when) in KNOWN_PREFIX.items() if when(fork)}
     diffs = []
+    buckets = {"equal": 0, "shape_only": 0, "prefix_excluded": 0, "known": 0}
     for k in sorted(set(host_f) | set(fork_f)):
         h, f = host_f.get(k, "<absent>"), fork_f.get(k, "<absent>")
         # An active prefix first, and before SHAPE_ONLY: an excluded subtree that is absent on one side has no type to
@@ -119,19 +122,30 @@ def compare(base, fork):
         # three such lines for gpu.* survived the first version of this exclusion, which is how the order was found.
         prefix = next((p for p in active if k == p or k.startswith(p + ".")), None)
         if prefix is not None:
+            buckets["prefix_excluded"] += 1
             if h != f:
                 print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({active[prefix]})")
             continue
         if any(k == s or k.startswith(s + ".") for s in SHAPE_ONLY):
+            buckets["shape_only"] += 1
             if type(h) != type(f):
                 diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
             continue
         if h != f:
             if k in KNOWN:
+                buckets["known"] += 1
                 print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN[k]})")
                 continue
             diffs.append((k, h, f))
-    return diffs, len(set(host_f) | set(fork_f)) - len(diffs), active
+        else:
+            buckets["equal"] += 1
+    # Four buckets, not one "same" number. `same` used to be
+    # len(all leaves) - len(diffs), which counts every leaf the loop SKIPPED as
+    # evidence of agreement: a prefix-excluded or KNOWN leaf was never compared
+    # at all, and a shape-only leaf was compared for type, not value. Reporting
+    # one number let "0 DIFF, 239 same leaves" read as 239 leaves proven
+    # identical when about a quarter of them were not value-compared.
+    return diffs, buckets, active
 
 
 def main():
@@ -161,7 +175,7 @@ def main():
         BASE[key], fork[key] = sorted(h), sorted(f)
     if fork.get("protoCounts", {}).get("Window") == BASE.get("protoCounts", {}).get("Window", 0) + 1:
         fork["protoCounts"]["Window"] -= 1  # the probe marker
-    diffs, same, active_prefixes = compare(BASE, fork)
+    diffs, buckets, active_prefixes = compare(BASE, fork)
     for p, (reason, when) in KNOWN_PREFIX.items():
         if p not in active_prefixes:
             print(f"note: prefix exclusion {p!r} NOT in effect this run ({reason}) -- the subtree is compared")
@@ -169,7 +183,10 @@ def main():
     print("note: audioFp host=", BASE.get("audioFp"), "fork=", fork.get("audioFp"), "| canvas host=", BASE.get("canvas"), "fork=", fork.get("canvas"))
     for k, h, f in diffs:
         print(f"DIFF {k}: host={json.dumps(h)[:160]} fork={json.dumps(f)[:160]}")
-    print(f"{len(diffs)} DIFF, {same} same leaves; fork done={fork.get('done')} pageError={fork.get('pageError')}")
+    print(f"{len(diffs)} DIFF; {buckets['equal']} leaves equal by value, "
+          f"{buckets['shape_only']} compared by type only, {buckets['known']} named in KNOWN, "
+          f"{buckets['prefix_excluded']} prefix-excluded (NOT compared); "
+          f"fork done={fork.get('done')} pageError={fork.get('pageError')}")
     results = {"O1 generated Windows identity: no difference from stock Windows Chrome outside the named set (host artefacts, identity-bound, probe marker, sampleRate)": not diffs}
     if "--config" not in sys.argv:
         # O2 RED: a Linux claim keeps Linux's shape -- the gated interfaces follow the claim, not the build.
