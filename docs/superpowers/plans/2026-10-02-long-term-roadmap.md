@@ -1,0 +1,295 @@
+# Camoucrome long-term roadmap (from 2026-10)
+
+Written 2026-10-02, revised the same day after a four-way review (feasibility,
+anti-detection, product, strategy). It succeeds the two earlier roadmaps as
+the place where ordering is decided:
+
+- `2026-09-02-followon-roadmap.md` stays the per-slice status ledger for the
+  SP4 follow-on arc.
+- `2026-09-09-completion-roadmap.md` stays the gap analysis against the SP map
+  and Camoufox. Its rejections ("do not re-propose") and harness gates still
+  hold; nothing here reopens them.
+
+This document does not restate either. It says what comes next and in what
+order.
+
+## Shape of this roadmap
+
+One person and one build machine cannot honestly plan twelve months in
+phases. So this roadmap has two parts:
+
+- **Steps 0 to 3 are concrete**, with work lists and done-criteria. They end
+  at the first release.
+- **Everything after is a ranked backlog**, re-ranked at every release and at
+  every Chrome milestone.
+
+## Decisions this roadmap rests on
+
+Taken with the project owner on 2026-10-02:
+
+1. **Two goals, in this order of tie-break: a product people can use, then
+   deeper anti-detection.** Community and contributor work is not a goal.
+2. **The user is an automation developer who runs many identities on one
+   machine.** The product is a browser archive plus launcher libraries
+   (Python, Go, Node), not a desktop app. Installer, sync, sign-in and crash
+   reporting stay out.
+3. **Windows is the flagship platform; Linux ships at once as a labelled
+   beta.** macOS is out of scope (it needs its own build machine).
+4. **Measurement comes before new spoofing work**, in three layers: the host
+   oracle, the public detectors, and commercial anti-bot systems. The first
+   two gate the first release. The third starts after it.
+
+The non-negotiable rules in `specs/00-conventions.md` bind every step: no
+JavaScript injection, native accessors, worker parity, coherence over
+coverage, fall back to the real value, bad config never crashes.
+
+### What "many identities on one machine" implies
+
+A Windows build that reports the real GPU, fonts, voices and screen gives
+every profile the same device. Different noise seeds on top of one device
+read as one machine with noised canvas, which links the profiles.
+
+So the product's identity on Windows is **a different Windows device per
+profile**, not the host's real one:
+
+- Each profile carries a device preset (GPU profile, screen, cores, memory,
+  fonts list, voices) that differs from the host and from other profiles.
+- Each profile's noise seeds are stable for the life of that profile.
+- **Cross-profile linkability is a first-class measurement**: two profiles on
+  one host must not share a fingerprint component that identifies the host.
+- Windows as host still matters. A Windows host claiming another Windows
+  device keeps the OS-level surfaces real (font rendering, DirectX backend,
+  system voices), which a Linux host cannot.
+
+## Where the project stands
+
+- SP0 to SP7 and the follow-on arc are shipped or partial, with residuals
+  recorded per slice.
+- The change set is 32 patches on pin `507c6ee3e2` (Chrome 153.0.8010.36).
+- **The pin is one milestone behind.** Chrome 154 went stable on 2026-09-22;
+  155 is due 2026-10-06, 156 on 2026-10-20, 157 on 2026-11-03 (chromiumdash,
+  read 2026-10-02). The stable milestone moves every two weeks.
+- The 2026-09-24 review is merged (PR #1, merge `2e12467`).
+- The first native Windows build exists (`D:\camou-win`, `out\Release`,
+  58,285 steps, about 7.5 hours from clean). One Windows-only bug has been
+  found and fixed: the sandbox dropped `CAMOU_*` from the renderer
+  environment (`windows-sandbox-env`).
+- On Windows, exactly one key has been checked in a browser
+  (`navigator.hardwareConcurrency`, main thread and worker).
+- The Linux build is verified and packaged (`scripts/package.py`), but there
+  is no tag and no release.
+- CI builds and verifies on Linux only, on one self-hosted runner in WSL on
+  the build PC. The repo is public.
+- There is no LICENSE file. `client/node/package.json` declares MPL-2.0.
+- Codec distribution licensing is open (`settings/build-args.gn`, "OPEN,
+  deliberately"); the completion roadmap says it must be settled before
+  anything ships.
+
+## Steps to the first release
+
+| Step | Content | Rough size |
+|---|---|---|
+| 0. Re-pin and safety | Move to current stable, fix the recovery tool, harden the runner | 1–2 weeks |
+| 1. Windows foundation | Edit loop, harness and clients on Windows; a named verify set green | 4–6 weeks |
+| 2. Measurement, layers 1 and 2 | Oracle and public detectors, with a like-for-like stock control | 2–3 weeks |
+| 3. First release | Windows flagship plus Linux beta, with the release gates closed | 2–3 weeks |
+
+Sizes are estimates for one person. A clean Windows build costs about 7.5
+hours of the only build machine, and the WSL and Windows builds must not run
+at once.
+
+### Step 0: re-pin and safety
+
+**Goal:** a current pin, and a project that survives losing its machine.
+
+- **Re-pin to the current stable milestone.** Do it as a drill and time each
+  part. The one recorded re-pin (`measurements/2026-09-09-sp6a-version-honesty.md`)
+  had 26 patches and one conflicting hunk; this one has 32.
+- **Fix `rebuild_branch.sh`** (it aborts mid-series, then its own guard
+  refuses to run again). It is the only recovery tool.
+- **Write the re-pin as a script and a checklist**, including the check that
+  `chrome/VERSION` is a shipped stable version.
+- **Recovery drill.** Write down, and try once, how to rebuild the box branch
+  and both out dirs from the repo alone.
+- **Runner hardening.** Settle the open decision (dedicated runner user, no
+  sudo, WSL interop off). It was deferred on 2026-09-25 to get the
+  Windows build running; the repo is public and the runner sits on the only
+  build machine.
+
+Done when: the pin is the current stable milestone, CI is green on it, the
+re-pin time is recorded, and `rebuild_branch.sh` recreates the branch from a
+clean state.
+
+### Step 1: Windows foundation
+
+**Goal:** the Windows build is developed and verified with the same
+discipline as the Linux one.
+
+- **Verification target is `chrome.exe`.** The repo already settles this:
+  `content_shell` has no `window.chrome` and rebuilds UA metadata
+  (`specs/00-conventions.md`), and `package.py` targets `//chrome:chrome`.
+- **A Windows component build** (`out\Default`) for iteration, next to the
+  release build. Measure the incremental rebuild time first; it sizes
+  everything below.
+- **The Windows change loop.** Today the Windows tree is an `apply.sh`
+  application with no way back. Define edit, export and re-apply for it, and
+  a lock so the WSL and Windows builds never overlap.
+- **Parametrise `lib_shell.py`** (binary path, flags, temp dir). It hardcodes
+  the Linux `content_shell` path, `--ozone-platform=headless` and `/tmp`, and
+  41 of the 50 verify scripts go through it. Run it natively on Windows.
+- **Clients on Windows** (Python, Go, Node): paths, environment transport
+  and its length limits, chunked `CAMOU_CONFIG_1..N`, `CAMOU_PRESET`, temp
+  directory cleanup, tests. Step 2 measures through the client, so this
+  cannot wait for the release step.
+- **A named Windows verify set.** Not all 50 scripts. The oracle (step 2)
+  covers "does the fork differ from stock where it should not". The verify
+  set covers what the oracle cannot see: spoofed values taking effect, noise
+  behaviour, worker parity, fallback on bad config, and the rule 2 window-keys
+  diff on `chrome`. List the set by name; each script is seen RED on Windows
+  once before its GREEN counts.
+- **Other process types.** The sandbox fix covered renderers and utilities.
+  Check the GPU process and the audio service read the config too.
+- **Fonts on Windows.** Fontconfig does not exist there. Decide and measure
+  how a Windows profile presents a font list that differs from the host's.
+
+Done when: the named verify set is green on `chrome.exe` at asserted counts,
+each seen RED once, and a one-file change goes from edit to verified to
+exported on Windows by a written procedure.
+
+### Step 2: measurement, layers 1 and 2
+
+**Goal:** know what detectors see, for the fork and for a stock control,
+before choosing any new spoofing work.
+
+Preconditions: the pin milestone equals the control Chrome's milestone (the
+host's Chrome auto-updates; assert its version), and both arms run through
+the project's client with the same argv. Driving the control over raw CDP
+while the fork goes through patchright would confound the result.
+
+- **Layer 1, host oracle.** The fork under a generated Windows identity
+  against stock Chrome on that host, every differing leaf as a line.
+- **Layer 2, public detectors.** CreepJS, BrowserScan, Pixelscan, sannysoft.
+  Store the raw result and **named-row differences against the control**. No
+  aggregate score: these tools disagree about what is good (some reward
+  commonness, some punish rarity), and stock Chrome does not score perfectly.
+- **Headed and headless as separate columns.** The clients default to
+  headless, and headless has tells of its own.
+- **Stability across relaunch.** The same profile, launched twice, reports
+  the same canvas and audio hashes and the same device IDs.
+- **Cross-profile linkability.** Two profiles on one host: list every
+  fingerprint component they share that a different machine would not.
+- **Noise as a tell.** Known-pixel readback: a solid fill must not read back
+  non-uniform in a way a detector can flag as farbling.
+- **Network fingerprint.** JA4, HTTP/2 SETTINGS and header order against the
+  control. The fork should inherit these unchanged; this row proves it.
+
+Done when: one command produces these tables for the fork and the control,
+two runs agree row for row apart from a stated list of volatile rows, and the
+baseline is committed under `docs/superpowers/measurements/`.
+
+### Step 3: first release
+
+**Goal:** an automation developer installs it and launches a chosen identity
+from the README alone.
+
+Release gates, settled before any archive is published:
+
+- **Codec licensing.** Ship without proprietary codecs and document the tell,
+  ship with them and accept the exposure, or publish source only.
+- **LICENSE** for the repo, consistent with the client packages.
+- **Code signing.** The SP6 spec deferred it "until there are external
+  users". Decide: sign, or document the SmartScreen warning.
+- **Acceptable-use statement.**
+
+Work:
+
+- **Persist per-profile seeds.** `settings/launcher.json` has each client
+  draw `canvas:seed`, `audio:seed` and `mediaDevices:seed` fresh per launch
+  while the profile persists. Store them with the `user_data_dir`.
+- `package.py` for Windows, with its Linux refusals, and with the open stamp
+  finding closed (`branch_tip` and tree cleanliness never validated).
+- Clients published or vendorable, including a fix for the
+  `CAMOUCROME_ROOT` requirement on a non-editable Python install.
+- At least two distinct Windows device presets, generated end to end.
+- README: install, quickstart, one persistent profile per identity, what is
+  and is not spoofed, known limits (no Widevine, no auto-update, archive
+  size).
+- **Windows release as flagship; the existing Linux archive as a labelled
+  beta.** The Linux notes say plainly that a Linux host claiming Windows is
+  the weaker identity (aliased fonts, software GPU).
+- GitHub Release with archives, checksums and the layer 1 and 2 tables for
+  that exact build.
+
+Done when: on a clean machine with no build tools, an outsider following only
+the README launches two distinct identities within 15 minutes, and layers 1
+and 2 reproduce within the stated tolerance.
+
+## Standing commitment: re-pin
+
+From step 0 on, this outranks everything in the backlog.
+
+- **Re-pin is the only security-update channel.** The component updater is
+  stopped and there is no auto-update, so a stale release is a liability for
+  its users as well as a fingerprint signal.
+- **Target: never more than one milestone behind stable.** With a milestone
+  every two weeks and a 7.5-hour clean build per platform, "within a week of
+  each stable" is not a promise one machine can keep. Patch-level re-pins
+  within a milestone are for security fixes only.
+- Each release states its Chrome version; releases more than one milestone
+  behind are marked unsupported.
+- If the step 0 drill shows the target cannot be met, that finding re-ranks
+  the backlog (second machine, compiler cache) before anything else.
+
+## Backlog after the first release
+
+Ranked as of 2026-10-02. Re-rank at every release and every milestone; the
+step 2 tables, not this list, decide.
+
+1. **Layer 3: commercial anti-bot** (Cloudflare, DataDome, Akamai,
+   PerimeterX). Decide the proxy budget first. Design: both arms through the
+   same client, interleaved, at least 20 runs per site per arm, a fresh
+   profile per run plus a warmed-profile variant, one fixed interaction
+   script, and the result as a challenge-rate difference with an interval.
+   Pass, challenge or block is not enough: a page can load while the session
+   is flagged. Published at vendor level only; the site list stays private.
+2. **A different Windows device per profile, in depth.** Whatever step 2's
+   linkability table shows is shared between profiles. WebGPU belongs here:
+   it must agree with the WebGL claim.
+3. **Host tells from section D of the completion roadmap**:
+   `storage.estimate()`, `keyboard.getLayoutMap()`, `navigator.connection`,
+   `getScreenDetails()`, `matchMedia('(display-mode)')`.
+4. **Windows CI.** A build and verify job, once the runner is hardened.
+5. **Build time**, if the re-pin commitment is at risk.
+6. **Linux out of beta.**
+7. **Lower value, kept for the record:** `readPixels` on a framebuffer
+   object (noise parity only), media device ID reverse map, geolocation
+   permission order, the Android claim with a coarse pointer and zero touch
+   points (a coherence defect, cheap, not on the Windows path).
+
+`screenX` and `measureText` are recorded design trade-offs in the 2026-09-24
+triage, not gaps. Slice residuals in the follow-on roadmap keep their
+recorded dispositions and harness gates.
+
+Things layer 3 may surface that no browser fork controls (IP reputation,
+behavioural scoring) are recorded as out of scope with a reason, not left
+unexplained.
+
+## Risks
+
+| Risk | Effect | Response |
+|---|---|---|
+| Re-pin falls behind | The claimed version becomes rare, and users run unpatched Chromium | Standing commitment; outranks the backlog |
+| The build machine is lost | No builds, no CI, no branch | Step 0 recovery drill; `rebuild_branch.sh` fixed |
+| Public repo, self-hosted runner on the build machine | A workflow change could run code on it | Step 0 hardening; existing approval policy and action allow-list |
+| Profiles on one host are linkable | The product's main use case fails quietly | Step 2 linkability table; backlog item 2 |
+| A check measures nothing on Windows | Green results with no information | RED-first for every script in the Windows verify set |
+| Publishing against named sites | Terms-of-service and takedown exposure | Layer 3 at vendor level only; acceptable-use statement |
+| Shipping proprietary codecs unlicensed | Legal exposure | Release gate in step 3 |
+| Detection vendors change | A passing table decays | Tables re-run at every release |
+
+## Out of scope
+
+- A macOS build, an Android build.
+- A desktop-app experience: installer, auto-update, sync, sign-in.
+- Community infrastructure: contributor guides, hosted CI.
+- Proxy, IP rotation or CAPTCHA solving. The fork is the browser only.
