@@ -51,15 +51,26 @@ KNOWN = {
     # claim lands, so the row goes back to being measured.
     'codecs.video/mp4; codecs="hev1.1.6.L93.B0"': "host decodes HEVC in hardware, the box has no decoder (backlog: HEVC claim)",
 }
-# Subtrees excluded from O1 by PREFIX, same shape as KNOWN. Only for whole subtrees whose leaf set itself depends on
-# the machine, where naming every leaf would go stale on the next GPU.
+# Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
+# an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
 KNOWN_PREFIX = {
-    # WebGPU. The host is a desktop with Intel graphics and reports an adapter; the box has no GPU and this verify
-    # drives the fork with --use-angle=swiftshader, so navigator.gpu.requestAdapter() resolves to null and the whole
-    # subtree is absent. Same class as "host has no mouse": the asymmetry is the test environment, not the fork.
-    # It does mean O1 cannot see a WebGPU identity difference at all -- the backlog entry "WebGPU adapter identity"
-    # is where that gets measured, on a machine with a GPU.
-    "gpu": "box has no GPU, fork runs SwiftShader (backlog: WebGPU adapter identity)",
+    # WebGPU. The host is a desktop with Intel graphics and reports an adapter; on a GPU-less box, with this verify
+    # driving the fork with --use-angle=swiftshader, navigator.gpu.requestAdapter() resolves to null and the whole
+    # subtree is absent. Same class as "host has no mouse": that asymmetry is the test environment, not the fork.
+    #
+    # The `when` is the point. The reason above is a property of the MACHINE, so the exclusion has to be too: on a box
+    # with a GPU (the Windows build box of roadmap step 1, or anyone dropping the SwiftShader argv below) the fork
+    # returns a real adapter, and gpu.info.* plus gpu.limits.* would then be the host machine's real GPU reported under
+    # a spoofed Windows identity -- the exact cross-profile tell backlog item 2 exists for. Excluding by key name alone
+    # would print "0 DIFF ... PASS" on the one machine where O1 could finally see it. With the predicate, the subtree
+    # goes back to being compared the moment an adapter appears.
+    #
+    # While it does hold, O1 cannot see a WebGPU identity difference, including the three capability integers
+    # (maxTextureDimension2D, maxComputeWorkgroupSizeX, maxBindGroups) that are compared exactly when an adapter
+    # exists -- they have no fork-side value to compare. The backlog entry "WebGPU adapter identity" is where this
+    # gets measured, on a machine with a GPU.
+    "gpu": ("box has no GPU, fork runs SwiftShader (backlog: WebGPU adapter identity)",
+            lambda fork: fork.get("gpu") is None),
 }
 
 
@@ -86,6 +97,41 @@ def flatten(v, prefix=""):
 
 
 EXPECTED_ROWS = 4  # O1 O2 O3 O4
+
+
+def compare(base, fork):
+    """O1's comparison: returns (diffs, same_count, active_prefixes).
+
+    A module-level function, not inline in main(), so the exclusion rules can be tested without a browser --
+    scripts/test_verify_host_oracle.py pins the one property that is easy to lose: a prefix exclusion stops
+    applying the moment its condition no longer holds.
+    """
+    host_f, fork_f = flatten(base), flatten(fork)
+    # Each prefix exclusion is admitted once, here, by asking its own predicate about THIS run's report -- never per
+    # leaf. A per-leaf "is this side absent?" test cannot do it: for the fork's bare `gpu` key the fork value is None
+    # while the host has no such leaf at all, so that one row would escape the exclusion and print as a DIFF.
+    active = {p: reason for p, (reason, when) in KNOWN_PREFIX.items() if when(fork)}
+    diffs = []
+    for k in sorted(set(host_f) | set(fork_f)):
+        h, f = host_f.get(k, "<absent>"), fork_f.get(k, "<absent>")
+        # An active prefix first, and before SHAPE_ONLY: an excluded subtree that is absent on one side has no type to
+        # compare either, and SHAPE_ONLY would report "type list vs type str" against the "<absent>" sentinel --
+        # three such lines for gpu.* survived the first version of this exclusion, which is how the order was found.
+        prefix = next((p for p in active if k == p or k.startswith(p + ".")), None)
+        if prefix is not None:
+            if h != f:
+                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({active[prefix]})")
+            continue
+        if any(k == s or k.startswith(s + ".") for s in SHAPE_ONLY):
+            if type(h) != type(f):
+                diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
+            continue
+        if h != f:
+            if k in KNOWN:
+                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN[k]})")
+                continue
+            diffs.append((k, h, f))
+    return diffs, len(set(host_f) | set(fork_f)) - len(diffs), active
 
 
 def main():
@@ -115,30 +161,12 @@ def main():
         BASE[key], fork[key] = sorted(h), sorted(f)
     if fork.get("protoCounts", {}).get("Window") == BASE.get("protoCounts", {}).get("Window", 0) + 1:
         fork["protoCounts"]["Window"] -= 1  # the probe marker
-    host_f, fork_f = flatten(BASE), flatten(fork)
-    diffs = []
-    for k in sorted(set(host_f) | set(fork_f)):
-        h, f = host_f.get(k, "<absent>"), fork_f.get(k, "<absent>")
-        # KNOWN_PREFIX first, and before SHAPE_ONLY: an excluded subtree that is absent on one side has no type to
-        # compare either, and SHAPE_ONLY would report "type list vs type str" against the "<absent>" sentinel --
-        # three such lines for gpu.* survived the first version of this exclusion, which is how the order was found.
-        prefix = next((p for p in KNOWN_PREFIX if k == p or k.startswith(p + ".")), None)
-        if prefix is not None:
-            if h != f:
-                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN_PREFIX[prefix]})")
-            continue
-        if any(k == s or k.startswith(s + ".") for s in SHAPE_ONLY):
-            if type(h) != type(f):
-                diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
-            continue
-        if h != f:
-            if k in KNOWN:
-                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN[k]})")
-                continue
-            diffs.append((k, h, f))
+    diffs, same, active_prefixes = compare(BASE, fork)
+    for p, (reason, when) in KNOWN_PREFIX.items():
+        if p not in active_prefixes:
+            print(f"note: prefix exclusion {p!r} NOT in effect this run ({reason}) -- the subtree is compared")
     print("note: voices host=", json.dumps(BASE.get("voices"))[:300], "fork=", json.dumps(fork.get("voices"))[:300])
     print("note: audioFp host=", BASE.get("audioFp"), "fork=", fork.get("audioFp"), "| canvas host=", BASE.get("canvas"), "fork=", fork.get("canvas"))
-    same = len(set(host_f) | set(fork_f)) - len(diffs)
     for k, h, f in diffs:
         print(f"DIFF {k}: host={json.dumps(h)[:160]} fork={json.dumps(f)[:160]}")
     print(f"{len(diffs)} DIFF, {same} same leaves; fork done={fork.get('done')} pageError={fork.get('pageError')}")

@@ -36,7 +36,16 @@ re-read, or pin what it runs and write down when the next re-pin falls due.
 ## 2. The checklist
 
 `NEW_TAG` is the chosen version, `NEW_REV` its commit, `NEW_BUILD` the third
-component (`154.0.8037.93` → `8037`), `OLD_REV` the pin in `upstream.env`.
+component (`154.0.8037.93` → `8037`). `OLD_REV` and `OLD_BUILD` are the same two
+things for the pin being replaced — read both out of `upstream.env` before
+anything moves, because step 9 renames the retired branch after `upstream.env`
+has already been rewritten:
+
+```bash
+. upstream.env                                  # CHROMIUM_REV, CHROMIUM_TAG
+OLD_REV=$CHROMIUM_REV
+OLD_BUILD=$(echo "$CHROMIUM_TAG" | cut -d. -f3) # 153.0.8010.36 -> 8010
+```
 
 **1. Name the target.** §1 above. Record both versions and which one won.
 
@@ -215,7 +224,7 @@ git diff -M --summary origin/main -- baselines | grep '(100%)'   # must print no
 
 ```bash
 cd ~/chromium/src
-git branch -m camoucrome/main "camoucrome/main-$OLD_BUILD"
+git branch -m camoucrome/main "camoucrome/main-$OLD_BUILD"   # e.g. camoucrome/main-8010
 git branch -m "camoucrome/main-$NEW_BUILD" camoucrome/main
 git checkout camoucrome/main
 bash <repo copy>/scripts/export.sh ~/chromium/src        # second export
