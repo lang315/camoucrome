@@ -57,9 +57,12 @@ Create `scripts/test_rebuild_branch.py`:
 
 ```python
 """rebuild_branch.sh on a throwaway repo: success, atomic failure, custom branch."""
+import os
 import pathlib
 import shutil
+import signal
 import subprocess
+import time
 
 import pytest
 
@@ -159,13 +162,75 @@ def test_refuses_an_existing_branch_without_touching_it(env):
     assert "already exists" in r.stderr
     assert git(src, "rev-parse", "camoucrome/main") == rev
     assert not wt.exists()
+
+
+def test_a_relative_worktree_dir_is_refused(env):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch\n")
+    before = branches(src)
+    r = subprocess.run(["bash", str(root / "scripts" / "rebuild_branch.sh"), str(src), "rel-wt"],
+                       capture_output=True, text=True, cwd=root)
+    assert r.returncode != 0
+    assert "absolute" in r.stderr
+    assert branches(src) == before
+
+
+def test_an_existing_worktree_dir_is_refused_and_left_alone(env):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch\n")
+    before = branches(src)
+    wt.mkdir()
+    (wt / "marker").write_text("mine\n")
+    r = run(root, src, wt)
+    assert r.returncode != 0
+    assert "already exists" in r.stderr
+    assert (wt / "marker").read_text() == "mine\n"
+    assert branches(src) == before
+
+
+def test_a_series_without_a_trailing_newline_keeps_its_last_patch(env):
+    src, root, wt, rev = env
+    (root / "patches" / "series").write_text("good.patch")
+    r = run(root, src, wt)
+    assert r.returncode == 0, r.stderr
+    assert git(src, "log", "--format=%s", f"{rev}..camoucrome/main") == "good"
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
+def test_a_signal_mid_run_leaves_no_branch_and_no_worktree(env, sig):
+    src, root, wt, rev = env
+    # git apply blocks opening a FIFO, so the run is parked mid-series.
+    os.mkfifo(root / "patches" / "block.patch")
+    (root / "patches" / "series").write_text("good.patch\nblock.patch\n")
+    before = branches(src)
+    p = subprocess.Popen(["bash", str(root / "scripts" / "rebuild_branch.sh"), str(src), str(wt)],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    try:
+        # the good commit has landed on the temporary branch: the run is at block.patch
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if wt.exists() and git(wt, "log", "--format=%s", f"{rev}..HEAD") == "good":
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("the run never reached the blocking patch")
+        os.killpg(p.pid, sig)
+        p.wait(timeout=30)
+    finally:
+        if p.poll() is None:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
+    assert p.returncode != 0
+    assert branches(src) == before
+    assert not wt.exists()
 ```
 
-- [ ] **Step 2: Run the tests and see the two real failures**
+- [ ] **Step 2: Run the tests and see the real failures**
 
 Run: `python3 -m pytest -q scripts/test_rebuild_branch.py`
 
-Expected: 2 failed, 2 passed. `test_failure_leaves_no_branch_and_no_worktree_and_a_rerun_works` fails on `assert branches(src) == before` (the branch is left behind). `test_third_argument_names_the_branch` fails because the script ignores the third argument. If all four pass, the tests measure nothing: stop and find out why.
+Expected: 8 failed, 2 passed (run against the original script, before step 3). `test_failure_leaves_no_branch_and_no_worktree_and_a_rerun_works` fails on `assert branches(src) == before` (the branch is left behind). `test_third_argument_names_the_branch` fails because the script ignores the third argument. `test_a_relative_worktree_dir_is_refused` and `test_an_existing_worktree_dir_is_refused_and_left_alone` fail because the original script has neither guard. `test_a_series_without_a_trailing_newline_keeps_its_last_patch` fails because `read` drops an unterminated last line. The three `test_a_signal_mid_run_leaves_no_branch_and_no_worktree` cases (SIGTERM, SIGHUP, SIGINT) fail because the `$?`-keyed cleanup does not run when a signal ends the shell. Only `test_success_builds_one_commit_per_patch` and `test_refuses_an_existing_branch_without_touching_it` pass. If all ten pass, the tests measure nothing: stop and find out why.
 
 - [ ] **Step 3: Rewrite the script body**
 
@@ -192,6 +257,9 @@ if git -C "$SRC" show-ref --quiet "refs/heads/$BRANCH"; then
   echo "error: $BRANCH already exists in $SRC; remove its worktree and branch first" >&2
   exit 1
 fi
+# git resolves a relative path against $SRC, the -e test against the cwd: with
+# a relative path the guard could miss a worktree that cleanup then removes.
+case "$WT" in /*) ;; *) echo "error: worktree dir must be an absolute path: $WT" >&2; exit 1 ;; esac
 if [ -e "$WT" ]; then
   echo "error: $WT already exists; remove it or name another worktree dir" >&2
   exit 1
@@ -199,23 +267,29 @@ fi
 
 TMP="camoucrome/rebuild-$$"
 CURRENT="setup"
+# Cleanup keys off CURRENT, not $?: bash runs the EXIT trap with $? == 0 when
+# a signal ends the shell. CURRENT is "done" only after the rename.
 cleanup() {
   rc=$?
-  if [ "$rc" -ne 0 ]; then
+  if [ "$CURRENT" != "done" ]; then
     git -C "$SRC" worktree remove --force "$WT" 2>/dev/null || rm -rf "$WT"
     git -C "$SRC" worktree prune
     git -C "$SRC" branch -q -D "$TMP" 2>/dev/null || true
     echo "error: rebuild failed at $CURRENT; the temporary branch and $WT were removed" >&2
+    [ "$rc" -ne 0 ] || rc=1
   fi
   exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 git -C "$SRC" worktree add -q -b "$TMP" "$WT" "$CHROMIUM_REV"
 mkdir -p "$WT/components/camoucfg"
 cp "$ROOT"/additions/camoucfg/* "$WT/components/camoucfg/"
 cp "$ROOT/settings/invariants.json" "$WT/components/camoucfg/invariants.json"
-while read -r p; do
+while read -r p || [ -n "$p" ]; do
   case "$p" in ""|\#*) continue ;; esac
   CURRENT="$p"
   git -C "$WT" apply --3way "$ROOT/patches/$p"
@@ -225,6 +299,7 @@ while read -r p; do
 done < "$ROOT/patches/series"
 CURRENT="rename"
 git -C "$WT" branch -m "$TMP" "$BRANCH"
+CURRENT="done"
 echo "$BRANCH: $(git -C "$WT" rev-list --count "$CHROMIUM_REV..HEAD") commits above $CHROMIUM_REV at $WT"
 ```
 
@@ -234,7 +309,7 @@ Leave the first seven lines of the file (the shebang and the description comment
 
 Run: `python3 -m pytest -q scripts/test_rebuild_branch.py && bash -n scripts/rebuild_branch.sh; echo "exit=$?"`
 
-Expected: `4 passed` and `exit=0`.
+Expected: `10 passed` and `exit=0`.
 
 - [ ] **Step 5: Add the test file to CI**
 
@@ -367,6 +442,20 @@ def test_retarget_refuses_a_malformed_tag_or_revision(tree):
         repin.retarget(tree, "154.0.8037", NEW_REV)
     with pytest.raises(SystemExit):
         repin.retarget(tree, "154.0.8037.98", "0123abc")
+
+
+def test_a_failed_rename_leaves_the_pin_so_a_rerun_finishes_the_job(tree):
+    extra = tree / "baselines" / "content_shell-8010-stock-extra.json"
+    extra.write_text("{}\n")  # untracked: git mv refuses it
+    with pytest.raises(subprocess.CalledProcessError):
+        repin.retarget(tree, "154.0.8037.98", NEW_REV)
+    env = (tree / "upstream.env").read_text()
+    assert OLD_REV in env and "CHROMIUM_TAG=153.0.8010.36\n" in env
+    subprocess.run(["git", "add", str(extra)], cwd=tree, check=True)
+    repin.retarget(tree, "154.0.8037.98", NEW_REV)
+    assert "CHROMIUM_TAG=154.0.8037.98\n" in (tree / "upstream.env").read_text()
+    assert not [p for p in (tree / "baselines").iterdir() if "-8010-stock" in p.name]
+    assert "chrome-8037-stock-oracle-windows.json" in (tree / "scripts" / "verify_x.py").read_text()
 ```
 
 - [ ] **Step 2: Run the tests and see them fail**
@@ -446,11 +535,6 @@ def retarget(root, new_tag, new_rev):
     old_short, new_short = old_rev[:10], new_rev[:10]
     changed = []
 
-    env = (text.replace(old_rev, new_rev).replace(old_tag, new_tag)
-               .replace(f"branch-heads/{old_build}", f"branch-heads/{new_build}"))
-    (root / "upstream.env").write_text(env)
-    changed.append("upstream.env")
-
     # Only the three shapes a pin takes in a name or a literal; a bare build
     # number is not replaced, so an unrelated 8010 survives.
     pairs = [(f"-{old_build}-stock", f"-{new_build}-stock"),
@@ -476,6 +560,13 @@ def retarget(root, new_tag, new_rev):
         if after != before:
             f.write_text(after)
             changed.append(f"scripts/{f.name}")
+
+    # Last: upstream.env is what a rerun reads as "old", so it must not move
+    # until the renames and rewrites above have all succeeded.
+    env = (text.replace(old_rev, new_rev).replace(old_tag, new_tag)
+               .replace(f"branch-heads/{old_build}", f"branch-heads/{new_build}"))
+    (root / "upstream.env").write_text(env)
+    changed.append("upstream.env")
     return changed
 
 
@@ -510,7 +601,7 @@ if __name__ == "__main__":
 
 Run: `python3 -m pytest -q scripts/test_repin.py; echo "exit=$?"`
 
-Expected: `6 passed` and `exit=0`.
+Expected: `7 passed` and `exit=0`.
 
 - [ ] **Step 5: Run the two network commands for real, both ways**
 
@@ -801,6 +892,8 @@ git rev-list --count OLD_REV..camoucrome/main
 
 Both print the same number (37 on 2026-10-02).
 
+One commit needs a manual edit after the rebase: `windows-oracle` carries a code comment naming `baselines/chrome-507c6ee3e2-stock-ua.json` (see `patches/windows-oracle.patch` line 45). Amend that comment, in that commit on the box branch `camoucrome/main-NEW_BUILD`, to the new baseline name (`chrome-<first 10 characters of NEW_REV>-stock-ua.json`), so the export in step 6 carries it. Change it on the box branch, never by editing `patches/` by hand.
+
 - [ ] **Step 4: Move the main checkout to the new base and build from scratch**
 
 Confirm no build is running on either OS (Global Constraints). Then on the box as `lang`:
@@ -841,10 +934,10 @@ On the Mac, on a new branch:
 ```bash
 git checkout -b repin/NEW_BUILD origin/main
 python3 scripts/repin.py retarget NEW_TAG NEW_REV
-git diff --stat
+git status --short
 ```
 
-Read the whole `git diff` of `scripts/`. Any comment that tells the pin's history (for example "0e8d4a9268 -> 507c6ee3e2, captured that way" in `scripts/verify_sp1a_chrome.py`) must keep its old value: restore that line by hand and add the new move beside it.
+`git mv` stages the renames, so `git diff --stat` would not show them. Read both `git status --short` (the baseline renames) and `git diff` of `scripts/` (the literal changes) in full. Any comment that tells the pin's history (for example "0e8d4a9268 -> 507c6ee3e2, captured that way" in `scripts/verify_sp1a_chrome.py`) must keep its old value: restore that line by hand and add the new move beside it.
 
 Add one line to the `# History:` comment in `upstream.env` recording the old pin and the date.
 
@@ -891,22 +984,48 @@ for c in capture_host_oracle.py capture_font_metrics.py capture_chrome_object.py
 done
 ```
 
-Stock UA baselines from a pristine tree at the tag. On the box:
+Stock UA baselines from a pristine tree at the tag. `capture_ua_baseline.py` prints its JSON to stdout, so every run is redirected into a file, and `--shell` takes the path of the binary (the default is `content_shell`; a bare `chrome` is not a path). `NEW_SHORT` is the first 10 characters of `NEW_REV`. `verify_sp1a_chrome.py` reads the stock `chrome` baseline from `~/camoucrome-verify/baselines/chrome-NEW_SHORT-stock-ua.json` (`retarget` already rewrote that path in the script), and that directory is not covered by `check_checkout_sync.sh`, so the file lands there first and is then copied into the repo. On the box:
 
 ```bash
 cd ~/chromium/src && git checkout -f --detach NEW_TAG
 time autoninja -C out/Default chrome content_shell 2>&1 | tail -2
 cd ~/camoucrome-client/scripts
-~/camoucrome-verify/venv/bin/python3 capture_ua_baseline.py --shell chrome
-~/camoucrome-verify/venv/bin/python3 capture_ua_baseline.py --shell chrome
-cd ~/chromium/src && git checkout camoucrome/main-NEW_BUILD && time autoninja -C out/Default chrome content_shell 2>&1 | tail -2
+PY=~/camoucrome-verify/venv/bin/python3
+CHROME=~/chromium/src/out/Default/chrome
+mkdir -p ~/camoucrome-verify/baselines
+$PY capture_ua_baseline.py --shell "$CHROME" > /tmp/ua1.json
+$PY capture_ua_baseline.py --shell "$CHROME" > /tmp/ua2.json
+sha256sum /tmp/ua1.json /tmp/ua2.json
 ```
 
-Run the UA capture twice and compare the two files' sha256: the capture is deterministic, so they must be identical. If `capture_ua_baseline.py` takes different arguments from the above, read its `--help`; the earlier re-pin invoked it as `capture_ua_baseline.py --shell chrome`.
+Expected: the two sha256 values are identical (the capture is deterministic; two runs hashed identically in the earlier re-pin). If they differ, stop. Then:
+
+```bash
+cp /tmp/ua1.json ~/camoucrome-verify/baselines/chrome-NEW_SHORT-stock-ua.json
+sha256sum ~/camoucrome-verify/baselines/chrome-NEW_SHORT-stock-ua.json
+```
+
+That deployed file is also the one brought back to the Mac (scp) into the repo's `baselines/`, replacing the file `retarget` renamed. The JSON's `provenance` must read `"binary": "chrome"` and `"captured_at_commit": "NEW_SHORT"`; `verify_sp1a_chrome.py` refuses the file otherwise.
+
+The `content_shell` stock UA baseline, `baselines/content_shell-NEW_BUILD-stock-ua.json`: the capture command for this baseline is not recorded in the repo (sp6a section 4 says only "stock baseline captured from it", the pristine `content_shell`); determine it on the box before this step. What the repo does show is that `baselines/content_shell-8010-stock-ua.json` has `provenance.binary` = `content_shell` and `captured_at_commit` = `507c6ee3e2`, which is what `capture_ua_baseline.py` writes when run against the default `content_shell` binary, so the likely form is `capture_ua_baseline.py > /tmp/ua_shell.json` with no `--shell`. Treat that as a hypothesis, and accept the file only if its `provenance` reads `"binary": "content_shell"` and `"captured_at_commit": "NEW_SHORT"`. Copy it into the repo's `baselines/content_shell-NEW_BUILD-stock-ua.json`.
+
+Then rebuild the patched branch:
+
+```bash
+cd ~/chromium/src && git checkout camoucrome/main-NEW_BUILD && time autoninja -C out/Default chrome content_shell 2>&1 | tail -2
+```
 
 Update the sha256 that `scripts/verify_sp1a_chrome.py` pins beside `STOCK_BASE_COMMIT`. Read every difference between the old and new baselines before accepting it: a moved value is "the signal to stop and ask why", and the answer must be the re-pin and nothing else. Record the differences.
 
 Bring the recaptured baselines back to the Mac into `baselines/`, re-run step 7's sweep, and expect every script green at its asserted count.
+
+Gate: a baseline that `retarget` renamed but nobody recaptured still describes the old Chrome. On the Mac:
+
+```bash
+git diff -M --summary origin/main -- baselines | grep '(100%)'; echo "unchanged_renames_rc=$?"
+```
+
+Expected: no line printed and `unchanged_renames_rc=1`. A line here names a baseline whose content still describes the old Chrome.
 
 - [ ] **Step 9: Switch the branch names and close the gates**
 
@@ -970,6 +1089,15 @@ time bash ~/camoucrome-cs/scripts/rebuild_branch.sh ~/chromium/src ~/camoudrill 
 cd ~/chromium/src
 git diff --stat camoucrome/main camoucrome/drill | tail -1; echo "difflines=$(git diff camoucrome/main camoucrome/drill | wc -l)"
 ```
+
+The script requires an absolute worktree dir (it refuses a relative one), and the worktree checkout of a Chromium tree takes minutes, so run it in a session that survives an ssh drop and read the log:
+
+```bash
+setsid nohup bash -c 'time bash ~/camoucrome-cs/scripts/rebuild_branch.sh "$HOME/chromium/src" "$HOME/camoudrill" camoucrome/drill; echo "rc=$?"' > ~/drill.log 2>&1 &
+tail -f ~/drill.log
+```
+
+The `cd ~/chromium/src` lines above then run once the log shows `rc=0`.
 
 Expected: `rc=0`, one line per patch printed, and `difflines=0`. The two branches differ in how many commits they have (the drill has one per patch; the real branch also has commits that touch only `components/camoucfg`), but their trees must be identical. A non-zero `difflines` means the repo cannot reproduce the branch that was built: stop, and find the content that exists only on the box.
 
