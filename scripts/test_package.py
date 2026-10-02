@@ -45,7 +45,7 @@ def test_stage_copies_every_dep_and_writes_the_stamp(tree, tmp_path):
     assert (staging / "chrome").read_bytes() == b"\x7fELF"
     assert (staging / "locales" / "en-US.pak").exists()
     assert (staging / "src" / "chrome" / "data.txt").exists()
-    assert (staging / "launcher.json").exists() and (staging / "presets" / "chromium-153.json").exists()
+    assert (staging / "launcher.json").exists() and (staging / "presets" / "chromium-154.json").exists()
     assert stamp["version"] == TAG and stamp["chromium_tag"] == TAG and stamp["runtime_deps"] == 3
     assert len(stamp["branch_tip"]) == 40 and len(stamp["changeset_commit"]) == 40
     assert json.loads((staging / "camoucrome-release.json").read_text()) == stamp

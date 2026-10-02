@@ -1,12 +1,12 @@
 {
   "brands": [
     {
-      "brand": "Chromium",
-      "version": "153"
+      "brand": "Not A(Brand",
+      "version": "99"
     },
     {
-      "brand": "Not_A Brand",
-      "version": "8"
+      "brand": "Chromium",
+      "version": "154"
     }
   ],
   "high_entropy": {
@@ -14,12 +14,12 @@
     "bitness": "64",
     "brands": [
       {
-        "brand": "Chromium",
-        "version": "153"
+        "brand": "Not A(Brand",
+        "version": "99"
       },
       {
-        "brand": "Not_A Brand",
-        "version": "8"
+        "brand": "Chromium",
+        "version": "154"
       }
     ],
     "formFactors": [
@@ -27,12 +27,12 @@
     ],
     "fullVersionList": [
       {
-        "brand": "Chromium",
-        "version": "153.0.8010.36"
+        "brand": "Not A(Brand",
+        "version": "99.0.0.0"
       },
       {
-        "brand": "Not_A Brand",
-        "version": "8.0.0.0"
+        "brand": "Chromium",
+        "version": "154.0.8037.93"
       }
     ],
     "mobile": false,
@@ -139,24 +139,24 @@
       "sec-ch-ua-wow64"
     ],
     "binary": "chrome",
-    "captured_at_commit": "507c6ee3e2",
+    "captured_at_commit": "f89f3a4363",
     "known_absent": [],
     "metadata_producer": "chrome/browser/chrome_content_browser_client.cc:7700 ChromeContentBrowserClient::GetUserAgentMetadata -> embedder_support::GetUserAgentMetadata",
     "ua_string_producer": "chrome/browser/chrome_content_browser_client.cc:7696 ChromeContentBrowserClient::GetUserAgent -> embedder_support::GetUserAgent"
   },
   "request_headers": {
-    "sec-ch-ua": "\"Chromium\";v=\"153\", \"Not_A Brand\";v=\"8\"",
+    "sec-ch-ua": "\"Not A(Brand\";v=\"99\", \"Chromium\";v=\"154\"",
     "sec-ch-ua-arch": "\"x86\"",
     "sec-ch-ua-bitness": "\"64\"",
-    "sec-ch-ua-full-version-list": "\"Chromium\";v=\"153.0.8010.36\", \"Not_A Brand\";v=\"8.0.0.0\"",
+    "sec-ch-ua-full-version-list": "\"Not A(Brand\";v=\"99.0.0.0\", \"Chromium\";v=\"154.0.8037.93\"",
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-model": "\"\"",
     "sec-ch-ua-platform": "\"Linux\"",
     "sec-ch-ua-platform-version": "\"\"",
     "sec-ch-ua-wow64": "?0",
-    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36"
   },
-  "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
   "window_keys": [
     "alert",
     "atob",
@@ -357,6 +357,7 @@
     "reportError",
     "requestAnimationFrame",
     "requestIdleCallback",
+    "requestResize",
     "resizeBy",
     "resizeTo",
     "scheduler",

@@ -22,7 +22,7 @@ index 85fc43cfc0..65c510a965 100644
    "+components/content_settings/core/browser",
    "+components/content_settings/core/common",
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 3f87ec84fb..7e70997f57 100644
+index 5d96c60405..b98f1dac34 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
 @@ -26,6 +26,8 @@
@@ -110,7 +110,7 @@ index 3f87ec84fb..7e70997f57 100644
  std::string GetUnifiedPlatform() {
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
    // This constant is only used on Android (desktop) and Linux.
-@@ -464,7 +535,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
+@@ -480,7 +551,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
  
  std::string GetUserAgent() {
    std::optional<std::string> custom_ua = GetUserAgentFromCommandLine();
@@ -124,7 +124,7 @@ index 3f87ec84fb..7e70997f57 100644
      return custom_ua.value();
    }
  
-@@ -647,6 +723,7 @@ std::string GetPlatformForUAMetadata() {
+@@ -663,6 +739,7 @@ std::string GetPlatformForUAMetadata() {
  
  blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    blink::UserAgentMetadata metadata;
@@ -132,7 +132,7 @@ index 3f87ec84fb..7e70997f57 100644
  
    // Low entropy client hints.
    metadata.brand_version_list =
-@@ -654,14 +731,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -670,14 +747,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.mobile = GetMobileBitForUAMetadata();
    metadata.platform = GetPlatformForUAMetadata();
  
@@ -165,7 +165,7 @@ index 3f87ec84fb..7e70997f57 100644
      return base::FeatureList::IsEnabled(blink::features::kUACHOverrideBlank)
                 ? blink::UserAgentMetadata()
                 : metadata;
-@@ -681,6 +775,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -697,6 +791,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.bitness = GetCpuBitness();
    metadata.wow64 = IsWoW64();
    metadata.platform_version = GetPlatformVersion();
@@ -199,7 +199,7 @@ index 3f87ec84fb..7e70997f57 100644
    return metadata;
  }
  
-@@ -709,6 +830,10 @@ std::string GetUnifiedPlatformForTesting() {
+@@ -725,6 +846,10 @@ std::string GetUnifiedPlatformForTesting() {
    return GetUnifiedPlatform();
  }
  
@@ -210,7 +210,7 @@ index 3f87ec84fb..7e70997f57 100644
  // Return the CPU architecture in Windows/Mac/POSIX/Fuchsia and the empty string
  // on Android or if unknown.
  std::string GetCpuArchitecture() {
-@@ -838,7 +963,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+@@ -843,7 +968,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
  
  std::string BuildUnifiedPlatformUserAgentFromProduct(
      const std::string& product) {
@@ -220,7 +220,7 @@ index 3f87ec84fb..7e70997f57 100644
  }
  
  std::string BuildUserAgentFromProduct(const std::string& product) {
-@@ -847,7 +973,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
+@@ -852,7 +978,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
                        BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
                                       IncludeAndroidModel::Include)
                            .c_str());
@@ -231,7 +231,7 @@ index 3f87ec84fb..7e70997f57 100644
  
  std::string BuildModelInfo() {
 diff --git a/components/embedder_support/user_agent_utils.h b/components/embedder_support/user_agent_utils.h
-index 39a9d06956..90c5d88a71 100644
+index 7b4e9ca1cf..fe9faf21a9 100644
 --- a/components/embedder_support/user_agent_utils.h
 +++ b/components/embedder_support/user_agent_utils.h
 @@ -112,6 +112,10 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
@@ -246,10 +246,10 @@ index 39a9d06956..90c5d88a71 100644
  // product name.
  std::string BuildUserAgentFromProduct(const std::string& product);
 diff --git a/components/embedder_support/user_agent_utils_unittest.cc b/components/embedder_support/user_agent_utils_unittest.cc
-index a0696b7bff..7b66dd0874 100644
+index bd28b23706..0088b253a9 100644
 --- a/components/embedder_support/user_agent_utils_unittest.cc
 +++ b/components/embedder_support/user_agent_utils_unittest.cc
-@@ -1189,4 +1189,99 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
+@@ -1197,4 +1197,99 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
  #endif
  }
  

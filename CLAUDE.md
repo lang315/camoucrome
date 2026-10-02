@@ -10,14 +10,16 @@ Camoucrome is an anti-detect fork of **Chromium** — the Chromium counterpart t
 plus diffs in `patches/` — that `scripts/apply.sh` lays onto a pristine Chromium
 checkout to produce a fingerprint-spoofing browser.
 
-The change set is generated against Chromium **`507c6ee3e2`, the Chrome stable
-tag `153.0.8010.36`** (`upstream.env` holds the full SHA and the tag;
+The change set is generated against Chromium **`f89f3a4363`, the Chrome stable
+tag `154.0.8037.93`** (`upstream.env` holds the full SHA and the tag;
 `scripts/apply.sh` refuses any other HEAD). The pin is a *stable tag*, not
 `main` and not a branch head, so the fork reports a version real users have;
 re-pin to the newest stable tag whenever chromiumdash's stable milestone moves
-(`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`). The
-build box's checkout is on branch `camoucrome/main` (the exported branch, on
-this pin); `camoucrome/main-0e8d` is the retired branch on the old pin, and
+(`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`, and
+`2026-10-repin.md` for what one costs). **The next re-pin is due by
+2026-10-20**, when 156 goes stable. The build box's checkout is on branch
+`camoucrome/main` (the exported branch, on this pin); `camoucrome/main-8010`
+and `camoucrome/main-0e8d` are the retired branches on the two older pins, and
 `a727b57805` was never an upstream revision.
 
 ## The defining constraint (never violate)
@@ -60,7 +62,7 @@ the project exists.
 | `scripts/` | `apply.sh` (the applier), `verify_*.py` (per-slice browser verifications), `package.py` (release archive from GN's runtime-deps list; refuses a component build, an off-pin version, a missing dep, mismatched stamps), `winhost.py` (stock Chrome on the box's Windows host over ssh: headless `--dump-dom`, headed CDP), `capture_*.py` (baselines, presets, WebGL profiles, font lists, the Windows host oracle), `verify_host_oracle.py` (the fork under a generated Windows identity vs stock Chrome on the host, every differing leaf as a line), `verify_windows_behaviour.py` (the exposed interfaces called, not only enumerated: `share()` under a claim, voices per locale) |
 | `client/` | the launchers: `client/python/camoucrome` (patchright) and `client/go` (`playwright-go` on the `patchright-core` driver). Both implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
-| `baselines/` | stock reference captures; five are committed (`git ls-files baselines`; the two `*-8010-*`/`*-507c6ee3e2-*` files are true pristine captures at the pin), the rest are build-host-local and regenerable |
+| `baselines/` | stock reference captures; nine are committed (`git ls-files baselines`). `*-f89f3a4363-*` and `content_shell-8037-stock-ua.json` are pristine captures of the build at the pin; `chrome-8037-*` are captures of stock Chrome 154.0.8037.93 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
 split (from Camoufox, held across ~64 patches) keeps rebase conflicts confined to
@@ -128,8 +130,8 @@ startup abort instead of a silent fall-back to real values.
   `git diff` pasted into `patches/`. `scripts/check_checkout_sync.sh` fails
   while the build tree has uncommitted or untracked edits, which is the state
   between "edited" and "committed". `scripts/rebuild_branch.sh` recreates the
-  branch from the repo if it is ever lost (`camoucrome/main-0e8d` is the
-  retired branch on the old pin).
+  branch from the repo if it is ever lost (`camoucrome/main-8010` is the
+  retired branch on the previous pin).
 - Browser verifications are `scripts/verify_*.py`, run under
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.

@@ -33,7 +33,7 @@ PROTO_PROBE = "Object.getOwnPropertyNames(Navigator.prototype).sort().join(',')"
 KEYS_PROBE = "Object.keys(window).sort().join(',')"
 
 BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/content_shell-0e8d4a9268-stock.json")
+    "~/camoucrome-verify/baselines/content_shell-f89f3a4363-stock.json")
 
 
 def load_baseline(path):

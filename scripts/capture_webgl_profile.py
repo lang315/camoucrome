@@ -95,7 +95,7 @@ def capture_winhost(angle):
     for args, headed in attempts:
         r = winhost.dump_dom(PAGE, args, headed=headed)
         if r["webgl"] and "SwiftShader" not in r["webgl"]["renderer"]:
-            return r, {"binary": "Google Chrome 153.0.8010.36 (stock, the build box's Windows 10 host)",
+            return r, {"binary": "Google Chrome 154.0.8037.93 (stock, the build box's Windows 10 host)",
                        "how": "scripts/capture_webgl_profile.py --where winhost", "headless": not headed, "args": args}
         print(f"attempt {args} headed={headed}: {r['webgl'] and r['webgl']['renderer']}", file=sys.stderr)
     raise SystemExit("every attempt reported SwiftShader; no profile written")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The fork under a generated Windows identity vs stock Chrome 153 on the
-Windows host (baselines/chrome-8010-stock-oracle-windows.json): the same
+"""The fork under a generated Windows identity vs stock Chrome 154 on the
+Windows host (baselines/chrome-8037-stock-oracle-windows.json): the same
 page (capture_host_oracle.page), every difference printed as one line.
 Hardware- and config-bound values (screen, cores, memory, dpr, timezone,
 languages, storage quota, heap limit, audio latency, device ids, canvas
@@ -26,7 +26,7 @@ FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_host_oracle as cap  # noqa: E402
 
-BASE = json.loads((CLIENT / "baselines" / "chrome-8010-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
+BASE = json.loads((CLIENT / "baselines" / "chrome-8037-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
 # Values that legitimately follow the identity or the machine: compare type only.
 SHAPE_ONLY = {"nav.hardwareConcurrency", "nav.deviceMemory", "nav.language", "nav.languages", "screen.width", "screen.height", "screen.availWidth",
               "screen.availHeight", "screen.availLeft", "screen.availTop", "win.dpr", "win.screenX", "win.screenY", "win.outerMinusInnerW",
@@ -45,6 +45,21 @@ KNOWN = {
     "keyboard.KeyA": "host has no keyboard", "keyboard.KeyQ": "host has no keyboard", "keyboard.Backquote": "host has no keyboard", "keyboard.Digit1": "host has no keyboard",
     # The probe's own init-script marker (patchright's add_init_script lands in the main world; verify_sp6b_driver excludes it too).
     "windowKeys": "probe marker __camou_init", "windowNames": "probe marker __camou_init", "protoCounts.Window": "probe marker __camou_init (+1)",
+    # The host plays HEVC through the OS decoder; the WSL build box has none, so the fork's canPlayType returns "".
+    # NOT a capture artefact and NOT excusable forever: a Windows claim that cannot play HEVC is a tell. The spoof is
+    # roadmap work (backlog "HEVC claim"), and this entry is what keeps O1 usable until then -- delete it when the
+    # claim lands, so the row goes back to being measured.
+    'codecs.video/mp4; codecs="hev1.1.6.L93.B0"': "host decodes HEVC in hardware, the box has no decoder (backlog: HEVC claim)",
+}
+# Subtrees excluded from O1 by PREFIX, same shape as KNOWN. Only for whole subtrees whose leaf set itself depends on
+# the machine, where naming every leaf would go stale on the next GPU.
+KNOWN_PREFIX = {
+    # WebGPU. The host is a desktop with Intel graphics and reports an adapter; the box has no GPU and this verify
+    # drives the fork with --use-angle=swiftshader, so navigator.gpu.requestAdapter() resolves to null and the whole
+    # subtree is absent. Same class as "host has no mouse": the asymmetry is the test environment, not the fork.
+    # It does mean O1 cannot see a WebGPU identity difference at all -- the backlog entry "WebGPU adapter identity"
+    # is where that gets measured, on a machine with a GPU.
+    "gpu": "box has no GPU, fork runs SwiftShader (backlog: WebGPU adapter identity)",
 }
 
 
@@ -104,6 +119,14 @@ def main():
     diffs = []
     for k in sorted(set(host_f) | set(fork_f)):
         h, f = host_f.get(k, "<absent>"), fork_f.get(k, "<absent>")
+        # KNOWN_PREFIX first, and before SHAPE_ONLY: an excluded subtree that is absent on one side has no type to
+        # compare either, and SHAPE_ONLY would report "type list vs type str" against the "<absent>" sentinel --
+        # three such lines for gpu.* survived the first version of this exclusion, which is how the order was found.
+        prefix = next((p for p in KNOWN_PREFIX if k == p or k.startswith(p + ".")), None)
+        if prefix is not None:
+            if h != f:
+                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN_PREFIX[prefix]})")
+            continue
         if any(k == s or k.startswith(s + ".") for s in SHAPE_ONLY):
             if type(h) != type(f):
                 diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))

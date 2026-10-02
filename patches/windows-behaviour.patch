@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index eaa7929a31..95355072cd 100644
+index f261c72029..d0b17e59ca 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1137,6 +1137,7 @@ source_set("core") {
+@@ -1145,6 +1145,7 @@ source_set("core") {
      "//components/device_event_log",
      "//components/dom_distiller/content/browser",
      "//components/dom_distiller/content/common/mojom",
@@ -11,10 +11,10 @@ index eaa7929a31..95355072cd 100644
      "//components/embedder_support:content_settings",
      "//components/embedder_support:user_agent",
 diff --git a/chrome/browser/DEPS b/chrome/browser/DEPS
-index e0c73d6d4e..c9af57cc60 100644
+index b4fea91937..a096d5dd2c 100644
 --- a/chrome/browser/DEPS
 +++ b/chrome/browser/DEPS
-@@ -146,6 +146,7 @@ include_rules = [
+@@ -147,6 +147,7 @@ include_rules = [
    "+components/download/public/common",
    "+components/download/public/task",
    "+components/drive",
@@ -23,10 +23,10 @@ index e0c73d6d4e..c9af57cc60 100644
    "+components/enterprise",
    "+components/error_page/content/browser",
 diff --git a/chrome/browser/chrome_browser_interface_binders.cc b/chrome/browser/chrome_browser_interface_binders.cc
-index 547d96a968..76c3762d8a 100644
+index ae2d77825d..140688dc58 100644
 --- a/chrome/browser/chrome_browser_interface_binders.cc
 +++ b/chrome/browser/chrome_browser_interface_binders.cc
-@@ -118,13 +118,23 @@
+@@ -120,13 +120,23 @@
  #endif  // BUILDFLAG(IS_CHROMEOS)
  
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
@@ -51,7 +51,7 @@ index 547d96a968..76c3762d8a 100644
  
  #if BUILDFLAG(ENABLE_SPEECH_SERVICE)
  #include "chrome/browser/accessibility/live_caption/live_caption_speech_recognition_host.h"
-@@ -168,6 +178,53 @@ namespace chrome::internal {
+@@ -170,6 +180,53 @@ namespace chrome::internal {
  
  namespace {
  
@@ -105,7 +105,7 @@ index 547d96a968..76c3762d8a 100644
  #if BUILDFLAG(ENABLE_UNHANDLED_TAP)
  void BindUnhandledTapWebContentsObserver(
      content::RenderFrameHost* const host,
-@@ -550,6 +607,9 @@ void PopulateChromeFrameBinders(
+@@ -553,6 +610,9 @@ void PopulateChromeFrameBinders(
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC)
    map->Add<blink::mojom::ShareService>(&ShareServiceImpl::Create);
  #endif

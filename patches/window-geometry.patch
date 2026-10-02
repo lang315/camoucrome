@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index 74cc1c0b51..7dfb1788d9 100644
+index cc0f3a60d7..1d8c675e1f 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
 @@ -37,6 +37,9 @@
@@ -12,7 +12,7 @@ index 74cc1c0b51..7dfb1788d9 100644
  #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
  #include "net/storage_access_api/status.h"
  #include "third_party/blink/public/common/features.h"
-@@ -1682,6 +1685,12 @@ int LocalDOMWindow::outerHeight() const {
+@@ -1689,6 +1692,12 @@ int LocalDOMWindow::outerHeight() const {
      return 0;
    }
  
@@ -25,7 +25,7 @@ index 74cc1c0b51..7dfb1788d9 100644
    ChromeClient& chrome_client = page->GetChromeClient();
    if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
      return static_cast<int>(
-@@ -1714,6 +1723,12 @@ int LocalDOMWindow::outerWidth() const {
+@@ -1721,6 +1730,12 @@ int LocalDOMWindow::outerWidth() const {
      return 0;
    }
  
@@ -38,7 +38,7 @@ index 74cc1c0b51..7dfb1788d9 100644
    ChromeClient& chrome_client = page->GetChromeClient();
    if (page->GetSettings().GetReportScreenSizeInPhysicalPixelsQuirk()) {
      return static_cast<int>(
-@@ -1780,6 +1795,12 @@ int LocalDOMWindow::innerWidth() const {
+@@ -1787,6 +1802,12 @@ int LocalDOMWindow::innerWidth() const {
  }
  
  int LocalDOMWindow::screenX() const {
@@ -51,7 +51,7 @@ index 74cc1c0b51..7dfb1788d9 100644
    LocalFrame* frame = GetFrame();
    if (!frame) {
      return 0;
-@@ -1805,6 +1826,12 @@ int LocalDOMWindow::screenX() const {
+@@ -1812,6 +1833,12 @@ int LocalDOMWindow::screenX() const {
  }
  
  int LocalDOMWindow::screenY() const {

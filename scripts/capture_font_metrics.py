@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Per-character advance widths of the claimed Windows families on the real
-host (stock Chrome 153 on the box's Windows 10 host, headless --dump-dom) ->
-baselines/chrome-8010-stock-font-metrics-windows.json. 100 px so 1/100 em is
+host (stock Chrome 154 on the box's Windows 10 host, headless --dump-dom) ->
+baselines/chrome-8037-stock-font-metrics-windows.json. 100 px so 1/100 em is
 one pixel; canvas advances are linear (unhinted) on DirectWrite and FreeType.
 verify_font_metrics.py renders the same page in the fork and compares."""
 import html
@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "baselines" / "chrome-8010-stock-font-metrics-windows.json"
+OUT = ROOT / "baselines" / "chrome-8037-stock-font-metrics-windows.json"
 GRID_FAMILIES = ["Segoe UI", "Arial", "Times New Roman", "Courier New", "Calibri", "Cambria",
                  "Consolas", "Georgia", "Verdana", "Tahoma", "Trebuchet MS", "Segoe UI Variable"]
 MAC_FAMILIES = ["Helvetica Neue", "Helvetica", "Arial", "Times New Roman", "Times", "Courier New", "Courier",
@@ -79,7 +79,7 @@ def main():
         fams = winhost.dump_dom(page(GRID_FAMILIES), args=("--use-gl=angle", "--use-angle=d3d11"))  # dump_dom parses #o
         if isinstance(fams, str):
             fams = parse(fams)
-        meta = {"chrome": "153.0.8010.36", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile"}
+        meta = {"chrome": "154.0.8037.93", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile"}
     else:
         fams, ver = mac_capture(MAC_FAMILIES)
         meta = {"chrome": ver, "where": "stock Google Chrome on the Mac (macOS 15.7.4), headed 300x200 app window, temp profile; the page POSTs its report"}

@@ -1,4 +1,4 @@
-"""Runs stock Chrome 153.0.8010.36 on the build box's Windows host (the
+"""Runs stock Chrome 154.0.8037.93 on the build box's Windows host (the
 same tag as the pin) and returns what a page reports. PowerShell over
 OpenSSH; every launch gets a temp profile and --dump-dom, so nothing on
 the host's own Chrome is touched. Linux side: scripts/lib_shell.py."""
