@@ -766,6 +766,8 @@ EOF
 
 Then on Windows (PowerShell over ssh): `wsl --shutdown`, wait 10 seconds, and start it again with `wsl -d Ubuntu-24.04 -u lang -- true`.
 
+Then start the scheduled task that keeps WSL alive: `Start-ScheduledTask -TaskName CamouWslKeepAlive`. `wsl --shutdown` stops it, and without it WSL stops as soon as the last `wsl` call returns, which takes the runner offline (this happened on 2026-10-02; see `measurements/2026-10-repin.md`).
+
 - [ ] **Step 4: See the three doors closed**
 
 Run on the box as `lang`:
@@ -816,7 +818,7 @@ gh api -X POST repos/lang315/camoucrome/actions/runners/registration-token -q .t
 On the box as `lang`, with the token pasted in place of `TOKEN`:
 
 ```bash
-cd RUNNER_DIR && rm -f .runner .credentials .credentials_rsaparams
+cd RUNNER_DIR && rm -f .runner .runner_migrated .credentials .credentials_rsaparams
 ./config.sh --unattended --url https://github.com/lang315/camoucrome --token TOKEN \
   --name buildpc-wsl --labels buildpc-wsl --replace
 ```
