@@ -232,3 +232,24 @@ def test_temp_profile_cleanup_works_with_the_async_api():
     with pytest.raises(RuntimeError):
         asyncio.run(camoucrome.launch(pw, "/x/chrome"))
     assert not os.path.exists(pw.chromium.user_data_dir)
+
+
+def test_temp_profile_removal_outlasts_a_locked_profile(monkeypatch):
+    """Windows: the "close" event fires while the browser still holds files in
+    its profile, so one rmtree(ignore_errors=True) leaves the directory behind
+    (measured 2026-10-03). Here rmtree is a no-op twice before it works."""
+    import os
+    import shutil
+    real, calls = shutil.rmtree, []
+
+    def locked_twice(path, ignore_errors=False):
+        calls.append(path)
+        if len(calls) > 2:
+            real(path, ignore_errors=ignore_errors)
+
+    pw = type("PW", (), {"chromium": ClosingChromium()})()
+    ctx = camoucrome.launch(pw, "/x/chrome")
+    monkeypatch.setattr(shutil, "rmtree", locked_twice)
+    [(_, fn)] = ctx.handlers
+    fn(ctx)
+    assert len(calls) == 3 and not os.path.exists(pw.chromium.user_data_dir)

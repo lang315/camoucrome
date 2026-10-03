@@ -69,14 +69,14 @@ def read(pw, url, config):
     try:
         ctx = launch(pw, EXE, config=config, strict=config is not None)
     except Exception as e:
-        return [], None, None, f"{type(e).__name__}: {e}"
+        return [], None, None, f"{type(e).__name__}: {str(e).splitlines()[0]}"
     try:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(url, wait_until="load")
         argv = browser_argv(EXE)
         return argv, page.evaluate("navigator.hardwareConcurrency"), page.evaluate(WORKER_HC), None
     except Exception as e:
-        return browser_argv(EXE), None, None, f"{type(e).__name__}: {e}"
+        return browser_argv(EXE), None, None, f"{type(e).__name__}: {str(e).splitlines()[0]}"
     finally:
         ctx.close()
 
