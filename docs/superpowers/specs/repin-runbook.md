@@ -360,3 +360,36 @@ In order. Durations are what this box took.
 Everything else under `~` on this box is scratch from earlier slices
 (`measure_*.py`, `probe_*.py`, old `camoucrome-cs*` copies, `sweeplogs`) and is
 not needed to rebuild anything.
+
+## 7. The Windows tree
+
+`D:\camou-win\chromium\src` (host side; **not reachable from WSL**, whose
+automount is off — run `git` on the host, PowerShell) is a second Chromium
+checkout with the fork's native Windows build in `out\Release`. Measured
+2026-10-03:
+
+- **State**: HEAD `507c6ee3e2` (the 153 pin), **no commits above it**, no
+  stashes. The change set is a bare working tree: 89 patched files staged
+  (`git apply --3way` stages) and 41 untracked files (`components/camoucfg/`).
+  `git diff --cached --stat`: 89 files, 3020 insertions, 114 deletions.
+- **Is anything in it that the change set does not explain?** Compared by path
+  against the change set at `3d78ae2` (the last commit on the 153 pin: the 89
+  unique `+++ b/` targets of the 32 `patches/series` entries, plus the 40
+  `additions/camoucfg/` files mapped to `components/camoucfg/`, plus the
+  `settings/invariants.json` that `apply.sh` copies to
+  `components/camoucfg/invariants.json`): 130 paths expected, 130 dirty, **no
+  path in either direction unexplained**. The comparison is by path only;
+  file contents were not diffed against the patches.
+- **Not in the source tree**: `out\Release\args.gn` line 19 is
+  `disable_fieldtrial_testing_config = true`. A re-point carries the GN args
+  across, not only the patches.
+- **Shell**: `C:\Program Files\Git\bin\bash.exe` and
+  `C:\Program Files\Git\usr\bin\bash.exe` both exist (Git for Windows
+  2.51.2). The `bash` on the host `PATH` is `C:\WINDOWS\system32\bash.exe`,
+  the WSL launcher — call Git Bash by its full path. Whether `apply.sh` /
+  `rebuild_branch.sh` run under it is **not yet measured**.
+- **Ruling**: the tree is re-pointed at the 2026-10-20 re-pin, not at every
+  milestone. Before discarding it, re-run the path comparison above: the
+  tree currently holds nothing the repo lacks, and a later hand edit would
+  show as a path outside the change set. `D:\camou-win\camoucrome` is a stale
+  clone on a retired branch; do not fetch from or push from it.
