@@ -39,6 +39,13 @@ jobs:
           EOF2
       - name: shell scripts parse
         run: for s in scripts/*.sh; do bash -n "$s"; done
+      # Needs no browser, no checkout and no pip install: the module stubs
+      # playwright when it is absent. It has been a hand-run guard since
+      # 2026-08-27 and grep finds it only in docs, which is the same as not
+      # having it -- the argv it freezes is what makes every verification's PASS
+      # count comparable to the run before.
+      - name: argv freeze (lib_shell)
+        run: python3 scripts/test_lib_shell_launch.py
       - name: python client tests + packager tests
         run: |
           python3 -m pip install -q pytest browserforge==1.2.4
