@@ -25,7 +25,9 @@ import subprocess
 import sys
 import threading
 
-from lib_shell import CHROME as EXE, NODE, PY
+from lib_shell import CHROME as EXE, layout
+
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 
 PAGE = b"""<!doctype html><title>d-gaps</title><pre id="o"></pre>

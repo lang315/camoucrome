@@ -205,7 +205,45 @@ check("nt names chrome.exe and content_shell.exe",
       == (True, True),
       f"got {(shell, chrome)}")
 
-# 5. Importable without playwright. Eleven verify scripts drive the browser
+# 5. layout(), and why it is a function. A module constant would latch the
+#    environment at lib_shell's own import, whenever that happens to be, and
+#    decide CLIENT for every script imported later in the same process. That is
+#    not hypothetical: it shipped for one commit and `pytest -q scripts/` went
+#    from 60 passed to a collection error, because test_verify_host_oracle.py
+#    sets CAMOU_CLIENT and then imports the script under test, while this file
+#    had already imported lib_shell.
+ENV = {"CAMOU_VENV": "/v", "PLAYWRIGHT_NODEJS_PATH": "/n",
+       "CAMOU_CLIENT": "/c", "CAMOU_FONTS_DIR": "/f"}
+L = lib_shell.layout(ENV)
+check("layout honours every override it documents",
+      (L.py, L.node, str(L.client), L.fonts_dir) == ("/v/bin/python3", "/n", "/c", "/f"),
+      f"got {(L.py, L.node, str(L.client), L.fonts_dir)}")
+
+L = lib_shell.layout({})
+check("layout's defaults are the paths the eleven scripts used to compute",
+      (L.home, L.py, L.node, str(L.client), L.fonts_dir)
+      == (os.path.expanduser("~"),
+          os.path.expanduser("~/camoucrome-verify/venv/bin/python3"),
+          os.path.expanduser("~/camoucrome-driver/node"),
+          os.path.expanduser("~/camoucrome-client"),
+          os.path.expanduser("~/camoucrome-client/fonts")),
+      f"got {(L.home, L.py, L.node, str(L.client), L.fonts_dir)}")
+
+check("fonts follow CAMOU_CLIENT when CAMOU_FONTS_DIR is unset",
+      lib_shell.layout({"CAMOU_CLIENT": "/c"}).fonts_dir == "/c/fonts",
+      f"got {lib_shell.layout({'CAMOU_CLIENT': '/c'}).fonts_dir}")
+
+# The regression itself: a later reader of os.environ must win over an earlier
+# import of this module.
+os.environ["CAMOU_CLIENT"] = "/set/after/import"
+try:
+    check("layout reads os.environ when called, not when lib_shell was imported",
+          str(lib_shell.layout().client) == "/set/after/import",
+          f"got {lib_shell.layout().client}")
+finally:
+    del os.environ["CAMOU_CLIENT"]
+
+# 7. Importable without playwright. Eleven verify scripts drive the browser
 #    through the client in a subprocess and keep playwright out of their own
 #    process; they can only read lib_shell's paths if importing the module does
 #    not drag playwright in. A subprocess with playwright blocked is the only
@@ -233,7 +271,7 @@ check("lib_shell imports with no playwright installed",
       f"exit {done.returncode}, out {done.stdout.strip()!r}, "
       f"err {done.stderr.strip().splitlines()[-1:]}")
 
-# 6. The stderr log. This check is only sharp on a host whose temp directory is
+# 8. The stderr log. This check is only sharp on a host whose temp directory is
 #    not /tmp -- a Mac, where gettempdir() is under /var/folders -- because a
 #    hardcoded "/tmp" and the stdlib answer coincide on Linux. Run it there
 #    before believing it.

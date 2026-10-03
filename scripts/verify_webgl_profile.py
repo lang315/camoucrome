@@ -20,9 +20,11 @@ import subprocess
 import sys
 import threading
 
-from lib_shell import CHROME as EXE, HOME, NODE, PY
+from lib_shell import CHROME as EXE, layout
 
-WEBGL_DIR = pathlib.Path(os.environ.get("CAMOU_WEBGL_DIR", f"{HOME}/camoucrome-client/settings/webgl"))
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+
+WEBGL_DIR = pathlib.Path(os.environ.get("CAMOU_WEBGL_DIR", str(CLIENT / "settings" / "webgl")))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from capture_webgl_profile import PAGE  # noqa: E402  the same page: what a profile captures is what a page reads
 

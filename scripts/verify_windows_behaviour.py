@@ -9,7 +9,9 @@ import os
 import subprocess
 import sys
 
-from lib_shell import CHROME as EXE, CLIENT, FONTS_DIR, NODE, PY
+from lib_shell import CHROME as EXE, layout
+
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 
 PAGE = b"""<!doctype html><title>share</title><button id=b>go</button><pre id=o>idle</pre><script>
