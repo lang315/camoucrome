@@ -14,6 +14,7 @@ copy of launch(), because the five hardening fixes above are exactly what a
 copy would drift away from.
 """
 
+import collections
 import json
 import os
 import pathlib
@@ -54,6 +55,50 @@ def _binaries(environ=None, osname=None):
 
 
 OUT, SHELL, CHROME = _binaries()
+
+Layout = collections.namedtuple("Layout", "home py node client fonts_dir")
+
+
+def layout(environ=None):
+    """The rest of the box's layout: the venv python, the driver's node, the
+    client tree and the font bundle, each with the override it already had in the
+    scripts that used to compute it -- PY and NODE in ten of them, CLIENT in
+    five, FONTS_DIR in four.
+
+    A FUNCTION, not module constants, and that distinction was earned. As
+    constants these latched the environment at *lib_shell's* import, whenever
+    that happened to be, and so decided CLIENT for every script imported later
+    in the same process. `pytest -q scripts/` went from 60 passed to a
+    collection error on exactly that: test_verify_host_oracle.py sets
+    CAMOU_CLIENT and then imports the script under test, while
+    test_lib_shell_launch.py had already imported lib_shell. CI missed it
+    because its pytest list happens to contain no other module that imports
+    lib_shell at module scope -- a green run that measured nothing.
+
+    Callers therefore call this at their own import, where the old lines were.
+
+    NODE deliberately does NOT read CAMOU_DRIVER. verify_sp6b_driver.py keeps
+    its own NODE, derived from DRIVER_PATCHRIGHT, because CAMOU_DRIVER moving
+    the node every other script uses would be a behaviour change nobody asked
+    for.
+
+    The defaults are the Linux box's layout, slash-joined, with a POSIX
+    `bin/python3`. A Windows tree will need its own answers here; `_binaries`
+    above is the shape to follow when it does.
+    """
+    environ = os.environ if environ is None else environ
+    home = os.path.expanduser("~")
+    client = pathlib.Path(environ.get("CAMOU_CLIENT", f"{home}/camoucrome-client"))
+    return Layout(
+        home,
+        environ.get("CAMOU_VENV", f"{home}/camoucrome-verify/venv") + "/bin/python3",
+        environ.get("PLAYWRIGHT_NODEJS_PATH", f"{home}/camoucrome-driver/node"),
+        client,
+        environ.get("CAMOU_FONTS_DIR", str(client / "fonts")),
+    )
+
+
+
 # Per PROCESS, not a fixed path, and that distinction was earned. This was
 # "/tmp/camoucrome_verify_stderr.log" for every run, opened "wb" -- truncating
 # -- on every launch. Two verifications running at once therefore shared one

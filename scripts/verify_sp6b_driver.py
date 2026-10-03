@@ -48,23 +48,23 @@ import sys
 import tempfile
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, layout
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+
 VENV = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv")
 VENV_STOCK = os.environ.get("CAMOU_VENV_STOCK", f"{HOME}/camoucrome-verify/venv-stock")
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
-NODE_PROBE = os.environ.get("CAMOU_NODE_PROBE", f"{HOME}/camoucrome-client/client/node/probe.js")
+NODE_PROBE = os.environ.get("CAMOU_NODE_PROBE", str(CLIENT / "client" / "node" / "probe.js"))
 # Repo layout first; on the box the sweep copy lives outside the repo, so
 # fall back to the shipped client tree (or CAMOU_CONTRACT).
 _CONTRACT_PATHS = [
     os.environ.get("CAMOU_CONTRACT", ""),
     str(pathlib.Path(__file__).resolve().parent.parent / "settings" / "launcher.json"),
-    f"{HOME}/camoucrome-client/settings/launcher.json",
+    str(CLIENT / "settings" / "launcher.json"),
 ]
 CONTRACT = json.loads(pathlib.Path(next(p for p in _CONTRACT_PATHS if p and os.path.exists(p))).read_text())
 FORBIDDEN_FLAGS = CONTRACT["browser_argv_must_not_contain"]

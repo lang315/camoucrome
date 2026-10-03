@@ -25,16 +25,14 @@ import sys
 import tempfile
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, layout
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+
 CONTRACT = json.loads(open(next(p for p in [
     os.environ.get("CAMOU_CONTRACT", ""),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "settings", "launcher.json"),
-    f"{HOME}/camoucrome-client/settings/launcher.json"] if p and os.path.exists(p))).read())
+    str(CLIENT / "settings" / "launcher.json")] if p and os.path.exists(p))).read())
 
 PAGE = b"""<!doctype html><title>launcher</title><pre id="o"></pre><script>
 document.getElementById('o').textContent = JSON.stringify({
