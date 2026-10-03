@@ -42,6 +42,7 @@ import http.server
 import json
 import os
 import pathlib
+import shutil
 import statistics
 import subprocess
 import sys
@@ -115,10 +116,13 @@ def serve():
 def baseline_once(url):
     """No CDP client at all: the browser dumps the DOM after load."""
     prof = tempfile.mkdtemp(prefix="camoucrome-base-")
-    out = subprocess.run([EXE, "--headless=new", "--no-sandbox", "--no-first-run",
-                          "--no-default-browser-check", "--disable-gpu",
-                          f"--user-data-dir={prof}", "--dump-dom", url],
-                         capture_output=True, text=True, timeout=120).stdout
+    try:
+        out = subprocess.run([EXE, "--headless=new", "--no-sandbox", "--no-first-run",
+                              "--no-default-browser-check", "--disable-gpu",
+                              f"--user-data-dir={prof}", "--dump-dom", url],
+                             capture_output=True, text=True, timeout=120).stdout
+    finally:
+        shutil.rmtree(prof, ignore_errors=True)
     start = out.index('<pre id="o">') + len('<pre id="o">')
     return json.loads(html.unescape(out[start:out.index("</pre>", start)]))
 
