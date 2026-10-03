@@ -174,6 +174,20 @@ discipline as the Linux one.
 - **Fonts on Windows.** Fontconfig does not exist there. Decide and measure
   how a Windows profile presents a font list that differs from the host's.
 
+**Status 2026-10-03.** Shipped: `lib_shell` resolves its binaries and temp dir
+from the environment (`CAMOU_OUT`, `CAMOU_EXE`, `tempfile.gettempdir()`, PR #4),
+and the layout block eleven scripts repeated is one `lib_shell.layout()` call
+(PRs #5, #6). Flags were deliberately not parametrised: `launch()` already takes
+`extra_flags` and `CHROME_FLAGS` is platform-neutral.
+
+Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
+153.0.8010.36) until the re-pin due 2026-10-20. Re-pointing it to 154 would cost
+6-7 h of machine time that Chrome 156 obsoletes in 17 days, and it would put two
+6-hour builds (WSL and Windows) on one machine on the same day, with the
+build-overlap lock this step still owes. The plumbing is verified against the
+153 build that already exists instead
+(`plans/2026-10-03-step1-windows-substrate.md`).
+
 Done when: the named verify set is green on `chrome.exe` at asserted counts,
 each seen RED once, and a one-file change goes from edit to verified to
 exported on Windows by a written procedure.
