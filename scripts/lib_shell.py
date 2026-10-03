@@ -297,11 +297,19 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     # WSL2 needs user namespaces for it -- which is why this is opt-in per call
     # rather than a new default.
     sandbox_flags = [] if sandbox else ["--no-sandbox"]
-    proc = subprocess.Popen(
-        [binary, *sandbox_flags, *flags,
-         f"--user-data-dir={profile}", port_arg,
-         "about:blank"],
-        env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
+    # A binary that is not there (a wrong CAMOU_OUT, which is how a RED run is
+    # made) raises here, before any shutdown() can see the profile: on the
+    # Windows host 14 empty camoucrome-verify-* directories were left this way
+    # (2026-10-03).
+    try:
+        proc = subprocess.Popen(
+            [binary, *sandbox_flags, *flags,
+             f"--user-data-dir={profile}", port_arg,
+             "about:blank"],
+            env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
+    except OSError:
+        shutil.rmtree(profile, ignore_errors=True)
+        raise
     proc.profile_dir = profile
 
     port_file = pathlib.Path(profile) / "DevToolsActivePort"
