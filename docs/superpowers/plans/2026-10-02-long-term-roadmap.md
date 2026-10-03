@@ -182,11 +182,11 @@ and the layout block eleven scripts repeated is one `lib_shell.layout()` call
 
 Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
 153.0.8010.36) until the re-pin due 2026-10-20. Re-pointing it to 154 would cost
-6-7 h of machine time that Chrome 156 obsoletes in 17 days, and it would put two
-6-hour builds (WSL and Windows) on one machine on the same day, with the
+7 h 40 m of machine time that Chrome 156 obsoletes in 17 days, and it would put two
+builds of roughly 7.5 hours each (WSL and Windows) on one machine on the same day, with the
 build-overlap lock this step still owes. The plumbing is verified against the
 153 build that already exists instead
-(`plans/2026-10-03-step1-windows-substrate.md`).
+(`plans/2026-10-03-step1-windows-substrate.md`). Stock baselines come from the Windows host's Chrome 154.0.8037.93, while the binary being verified runs 153.0.8010.36; only behavior-asserting verifications run there, as baseline comparisons would differ on the Chrome version rather than the Windows fork.
 
 Done when: the named verify set is green on `chrome.exe` at asserted counts,
 each seen RED once, and a one-file change goes from edit to verified to

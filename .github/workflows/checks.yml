@@ -52,7 +52,7 @@ jobs:
       # breaks `pytest scripts/` never happened in CI. A directory also picks up
       # a new test file without anyone remembering to add it -- test_gen_keys.py
       # and test_winhost.py had never run here.
-      - name: python client tests + packager tests
+      - name: "python tests: clients, packager, scripts"
         run: |
           python3 -m pip install -q pytest browserforge==1.2.4
           python3 -m pytest -q client/python/tests scripts/
