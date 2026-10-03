@@ -390,7 +390,8 @@ every milestone. Measured 2026-10-03 on the 153 tree:
   `head` (`command not found`): its `PATH` lacks the MSYS coreutils, where
   `bin\bash.exe`'s has them. With `-l`, `usr\bin\bash.exe` does find them
   (`uname -s` = `MSYS_NT-10.0-19045`, GNU coreutils 8.32, git `/cmd/git`).
-  Whether `apply.sh` / `rebuild_branch.sh` run under it is **not measured** (they were deliberately not run).
+  Whether `apply.sh` / `rebuild_branch.sh` run under it is **not measured**
+  (they were deliberately not run).
 - **GN args**: `settings/release-args.gn` is the canonical source and contains
   `disable_fieldtrial_testing_config = true`. `out\Release\args.gn` was read
   whole: the same keys and values as that file (`is_debug` ... `use_remoteexec`,
@@ -539,6 +540,12 @@ all have the same net (added minus removed) in both columns:
 Decide with Step F: a `DIFF` line there is a real edit, and the tree holds work
 that exists nowhere else; list the files and decide about them explicitly; do
 not discard.
+
+What the three layers cannot see. All 89 patch targets live in the main `src`
+repository (`third_party/blink` 50, `components` 12, `chrome` 10, `media` 7,
+`content` 7, `sandbox` 3), so the change set itself is fully inside `git
+status`'s view. An edit under a `.gitignore`d path or inside a DEPS-managed
+sub-repo is outside it and no layer here would find it.
 
 Pitfalls met on the way: `-like '??*'` matches every line (`?` is a wildcard),
 use `-match`; the `additions/X` to `components/X` mapping is needed or every
