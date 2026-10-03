@@ -337,7 +337,8 @@ and `byte-compared 89 differing 0`.
   deliberately never run in the Windows tree. The tree state above is read and
   compared, not changed. Edit, export and re-apply on Windows is unproven, as is
   whether they run under either Git Bash.
-- **The Go and Node clients.** Only `lib_shell` and `verify_sp2b.py` ran. The
+- **The Go and Node clients.** (The Python client ran later the same day — see
+  "The Python client on Windows" below.) Only `lib_shell` and `verify_sp2b.py` ran. The
   clients under `client/` were copied (as part of the 140-file verify tree:
   scripts, settings, baselines and client; `client/` alone is 24 tracked files at
   `ab0644c`) and not executed.
@@ -351,7 +352,9 @@ and `byte-compared 89 differing 0`.
   verifications ran, and of those, one: `verify_sp2b.py` passes; the other
   executed, `verify_sp7_fieldtrial.py`, fails at 4 rows for want of
   `content_shell.exe` and at C2 for the crash above.
-- **`layout()`'s `py` and `node` fields.** They are Linux-shaped on the host:
+- ~~**`layout()`'s `py` and `node` fields.**~~ **`py` fixed the same day — see
+  "The Python client on Windows" below; `node` still needs
+  `PLAYWRIGHT_NODEJS_PATH` set on the host.** As written: they are Linux-shaped on the host:
   `.../camoucrome-verify/venv/bin/python3` and `.../camoucrome-driver/node`
   under the Windows home (no `Scripts\python.exe`, no `.exe`). They do not exist
   there, and nothing exercised in this slice spawns them. Anything that does
@@ -674,3 +677,113 @@ runs, which Linux tolerates and Windows does not; it is not proven. Separately,
 `Popen` that raises — the bogus-`CAMOU_OUT` RED runs did exactly that — leaves
 the directory behind on every platform. Both belong to Step 1's "temp directory
 cleanup"; neither is fixed here. The 14 directories and 12 logs were removed.
+
+## The Python client on Windows
+
+Added later the same day. Every row before this one drove the browser through
+`lib_shell`; this section is the first time `client/python` itself ran on the
+Windows host, against the same 153 `chrome.exe`.
+
+### Host setup
+
+The client declares `requires-python >=3.10` and pins `patchright==1.62.3`;
+the host's only interpreter was 3.9.13 (`verify-venv`), for which pip offers
+patchright up to 1.60.1. Rather than run an off-pin driver, the official CPython
+NuGet package was unpacked — no installer, no registry, no PATH change:
+
+```
+python 3.12.10  D:\camou-win\python312\tools\python.exe
+                (nuget.org/api/v2/package/python/3.12.10,
+                 SHA-256 0EB85C2DFCCCCF1B17352DE4C397F69194035B7D37149EACC16F1147D93DE3B8)
+venv            D:\camou-win\client-venv
+                patchright 1.62.3, browserforge 1.2.4, apify_fingerprint_datapoints 0.15.0,
+                playwright 1.55.0 (the driver verify's stock RED row), pytest 9.1.1, tzdata 2026.4
+tree            D:\camou-win\tree  (git archive of the branch, untarred in place;
+                the client is `pip install -e` from it)
+env             CAMOU_OUT=D:\camou-win\chromium\src\out\Release
+                CAMOU_VENV=D:\camou-win\client-venv  CAMOU_VENV_STOCK=(same)
+                CAMOU_CLIENT=D:\camou-win\tree
+                PLAYWRIGHT_NODEJS_PATH=<client-venv>\Lib\site-packages\patchright\driver\node.exe
+                PATH += C:\Program Files\Git\usr\bin   (openssl, for the launcher verify's L3)
+```
+
+### What broke, each seen failing first
+
+| Where | On Windows | Fix |
+|---|---|---|
+| `camoucrome.probe.browser_argv` | listed `/proc`: every probe raised `FileNotFoundError` after the page had loaded, `verify_sp6b_launcher.py` **0 PASS 5 FAIL** | reads `Win32_Process`, splits with `CommandLineToArgvW`; `[]` where neither exists, as the docstring already claimed |
+| `launch()`'s temp profile | the context's `close` event fires while the browser still writes its profile; `rmtree(ignore_errors=True)` left **3–193 files in every temp profile** the client created (21 client profiles after one afternoon). After `close()` returns, one `rmtree` succeeds in ~0.07 s (5 of 5) | `remove_dir` retries until the directory is gone, bounded at 10 s |
+| `probe` on a failed `goto` | never reached `ctx.close()`, so the close event never fired and the profile stayed (a 152-file profile from the L3 RED row) | `try/finally` |
+| `layout().py` | `<venv>/bin/python3` | `Scripts\python.exe` when `osname == "nt"` |
+| `verify_sp6b_driver.py` Python rows | `{venv}/bin/python3` by hand | `layout()` |
+| `verify_sp6b_driver.py` C4 | `absent=['--noerrdialogs', '--ozone-override-screen-size=800,600', '--ozone-platform=headless', '--use-angle=swiftshader-webgl']` | Linux-only; see below |
+| `test_launcher.py` | compared a Windows path with a `/`-joined suffix | compares the whole path |
+| `test_gen.py` zone table | `zoneinfo.available_timezones()` is empty on Windows without the `tzdata` package | skips and says why; with `tzdata` installed it runs and passes |
+
+C4's four flags are not the driver's on either OS. `headless_mode_init.cc`
+appends `--noerrdialogs` to the **in-process** command line on every platform,
+and the ozone and ANGLE three inside `#if BUILDFLAG(IS_LINUX)`. Linux shows the
+first because Chromium rewrites its process title from that command line; on
+Windows `Win32_Process.CommandLine` is the one the driver passed. The strict-abort
+crash keys below show the in-process addition directly (`"switch-6" =
+"--noerrdialogs"` with `num-switches = 6`). So on Windows C4 compares the
+contract's set alone, and the argv it reads has exactly 7 entries: the binary,
+the contract's four, `--user-data-dir` and the probe's `--no-sandbox`.
+
+### Results
+
+```
+pytest -q client/python/tests            39 passed
+verify_sp6b_launcher.py                  5 PASS 0 FAIL   (L1-L5; RED above: 0 PASS 5 FAIL)
+verify_sp6b_driver.py  python-stock      RED as required: C1 Runtime.enable=1, C5 +17/+21/+26% over three runs
+                       python-patchright GREEN: C1-C6, C5 +0/+2/+2%
+                       go-*, node-*      FAIL: probe did not run (no Go probe, no driver dirs on the host)
+verify_windows_client.py                 5 PASS 0 FAIL
+```
+
+C5 is SP2 D1's stack-timing signal: on Windows, as on Linux, stock Playwright's
+`Runtime.enable` is visible as about +20% on `new Error().stack`, and patchright
+removes it.
+
+### `verify_windows_client.py`: the launch a user actually makes
+
+Every probe-based row passes `--no-sandbox` (the probe adds it), so none of them
+exercises a user's `camoucrome.launch()` on Windows: a sandboxed renderer behind
+`CreateFilteredEnvironment()`, and a generated identity too long for one
+environment string. A Windows identity from `gen.generate` is 37387 characters,
+past `CONFIG_CHUNK_CHARS`, so it travels as `CAMOU_CONFIG_1..2`. The
+`windows-sandbox-env` patch passes `CAMOU_*` by prefix, so the chunks should
+survive; `verify_windows_sandbox_env.py` measured only a one-key config that
+never chunks.
+
+```
+note: K1: 37387 chars -> 2 chunks, CAMOU_CONFIG present=False
+note: K2: argc=6 --no-sandbox=False
+note: K3: main -> 3 (expect 3)
+note: K4: worker -> 3 (expect 3)
+note: K5: no config -> 16 (expect anything but 3)
+5 PASS 0 FAIL
+```
+
+`navigator.hardwareConcurrency` is the identity's last key, so it sits in the
+last chunk, and the launch is strict. RED, with `config_env` patched to drop the
+last chunk: the browser refused to start (`camoucfg: configuration is not a JSON
+object` then `Check failed: !strict`), **1 PASS 4 FAIL**, with only the
+no-config control passing.
+
+### What this does not establish
+
+- **The Go and Node clients.** No Go probe was built and no driver directories
+  exist on the host; their four rows fail for that reason alone.
+- **A crash dump in a client profile.** The strict-abort RED crashed the browser
+  inside a temp profile, which was then removed; whether a dump was written there
+  was not looked at. That is backlog item 5's territory.
+- **Fonts.** `fontconfig_for` is not meaningful on Windows (Chrome there does not
+  read fontconfig); with no `fonts` directory beside `chrome.exe` it sets nothing,
+  and nothing here tested the case where one exists.
+- **The verify scripts' own temp directories.** `verify_sp6b_driver.py`'s
+  `--dump-dom` baselines (`camoucrome-base-*`, 191 files each) and
+  `verify_sp6b_launcher.py`'s work directory are created and never removed, on
+  every OS. Not the client's; not fixed here.
+- **Two other hardcoded `bin/python3`s,** in `measure_sp7_components.py` and
+  `verify_sp1a_chrome.py`. Neither ran here.

@@ -165,6 +165,8 @@ def test_zone_table_is_valid_iana_and_tags_parse():
     table = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
     assert len(table) >= 40
     avail = zoneinfo.available_timezones()
+    if not avail:  # Windows ships no IANA database; zoneinfo reads the tzdata package
+        pytest.skip("no IANA time zone database: pip install tzdata")
     for tag, zones in table.items():
         assert re.fullmatch(r"[a-z]{2,3}-[A-Z]{2}", tag), tag
         assert zones and all(z in avail for z in zones), tag

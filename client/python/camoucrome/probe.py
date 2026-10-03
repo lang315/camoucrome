@@ -11,14 +11,48 @@ import importlib
 import json
 import pathlib
 import os
+import subprocess
 import sys
 
 from . import launch
 
 
+def windows_argv(executable):
+    """browser_argv on Windows: Win32_Process has each process's command line
+    as one string; CommandLineToArgvW splits it the way the process itself
+    did. ConvertTo-Json gives a bare object for one match, a list for more."""
+    import ctypes
+    query = (f"Get-CimInstance Win32_Process -Filter \"Name='{os.path.basename(executable)}'\""
+             " | Select-Object ExecutablePath,CommandLine | ConvertTo-Json -Compress")
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", query],
+                         capture_output=True, text=True).stdout.strip()
+    procs = json.loads(out) if out else []
+    split = ctypes.windll.shell32.CommandLineToArgvW
+    split.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int)]
+    split.restype = ctypes.POINTER(ctypes.c_wchar_p)
+    ctypes.windll.kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    for p in procs if isinstance(procs, list) else [procs]:
+        # A null CommandLine (access denied) must not reach CommandLineToArgvW,
+        # which would return this process's own argv.
+        if not p["CommandLine"] or os.path.normcase(p["ExecutablePath"] or "") != \
+                os.path.normcase(os.path.abspath(executable)):
+            continue
+        n = ctypes.c_int()
+        ptr = split(p["CommandLine"], ctypes.byref(n))
+        argv = [ptr[i] for i in range(n.value)]
+        ctypes.windll.kernel32.LocalFree(ctypes.cast(ptr, ctypes.c_void_p))
+        if not any(a.startswith("--type=") for a in argv):
+            return argv
+    return []
+
+
 def browser_argv(executable):
     """argv of the browser (not renderer/gpu) process running `executable`,
-    read from /proc. Linux only; empty elsewhere."""
+    read from /proc on Linux and Win32_Process on Windows; empty elsewhere."""
+    if os.name == "nt":
+        return windows_argv(executable)
+    if not os.path.isdir("/proc"):
+        return []
     for pid in os.listdir("/proc"):
         if not pid.isdigit():
             continue
@@ -63,16 +97,18 @@ def main():
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
                      fonts_dir=a.fonts_dir)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        # SP2 4.2: a driver's init script must not be observable from the
-        # main world. The probe page reports typeof window.__camou_init.
-        page.add_init_script("window.__camou_init = 1")
-        page.goto(a.url, wait_until="load")
-        # A page that reports from a worker writes #o after load; wait for it.
-        page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
-        report = page.locator("#o").text_content()
-        argv = browser_argv(a.executable)
-        ctx.close()
+        try:  # a failed goto must still close: the temp profile goes on close
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            # SP2 4.2: a driver's init script must not be observable from the
+            # main world. The probe page reports typeof window.__camou_init.
+            page.add_init_script("window.__camou_init = 1")
+            page.goto(a.url, wait_until="load")
+            # A page that reports from a worker writes #o after load; wait for it.
+            page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
+            report = page.locator("#o").text_content()
+            argv = browser_argv(a.executable)
+        finally:
+            ctx.close()
     json.dump({"driver": f"python-{a.driver}", "module": module,
                "report": json.loads(report), "argv": argv}, sys.stdout)
 

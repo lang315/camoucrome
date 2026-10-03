@@ -99,7 +99,7 @@ def test_fontconfig_env_follows_the_claimed_os(tmp_path):
     win = launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
     assert win == str(tmp_path / "settings" / "fontconfig" / "windows.conf")
     assert launcher.fontconfig_for({"ua:platform": "Linux"}, None, tmp_path / "fonts") is None
-    assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts").endswith("settings/fontconfig/macos.conf")
+    assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts") == str(tmp_path / "settings" / "fontconfig" / "macos.conf")
     assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome") is None
     (tmp_path / "chrome").write_bytes(b"")
     assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "chrome") == win
@@ -232,3 +232,24 @@ def test_temp_profile_cleanup_works_with_the_async_api():
     with pytest.raises(RuntimeError):
         asyncio.run(camoucrome.launch(pw, "/x/chrome"))
     assert not os.path.exists(pw.chromium.user_data_dir)
+
+
+def test_temp_profile_removal_outlasts_a_locked_profile(monkeypatch):
+    """Windows: the "close" event fires while the browser still holds files in
+    its profile, so one rmtree(ignore_errors=True) leaves the directory behind
+    (measured 2026-10-03). Here rmtree is a no-op twice before it works."""
+    import os
+    import shutil
+    real, calls = shutil.rmtree, []
+
+    def locked_twice(path, ignore_errors=False):
+        calls.append(path)
+        if len(calls) > 2:
+            real(path, ignore_errors=ignore_errors)
+
+    pw = type("PW", (), {"chromium": ClosingChromium()})()
+    ctx = camoucrome.launch(pw, "/x/chrome")
+    monkeypatch.setattr(shutil, "rmtree", locked_twice)
+    [(_, fn)] = ctx.handlers
+    fn(ctx)
+    assert len(calls) == 3 and not os.path.exists(pw.chromium.user_data_dir)
