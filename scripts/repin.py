@@ -9,9 +9,18 @@ docs/superpowers/specs/repin-runbook.md).
                                            rewrite those literals in scripts/*.py
 
 retarget does not touch settings/: the captured profiles there record the
-Chrome they were captured from, which stays true until they are recaptured.
-Read `git diff` after it; a comment that tells the pin's history must keep the
-old value, and only a reader can tell which one that is.
+Chrome they were captured from, which stays true until they are recaptured. A
+value DERIVED from a baseline (settings/audio.json's Windows block cites the
+host oracle capture) is not covered by that and must be checked by hand when
+the baseline it came from is recaptured.
+
+It also leaves DATED history lines alone -- a comment like
+`# 2026-10-02: 507c6ee3e2 -> f89f3a4363 (Chrome stable 154.0.8037.93)` records
+what one re-pin did, and both of its right-hand values are the NEXT re-pin's
+"old" pair, so a blind rewrite would turn it into a false record of a re-pin
+that never happened. HISTORY_RE is that exemption; test_repin.py pins it.
+Read `git diff` after a retarget anyway: an undated history sentence in prose
+is still rewritten, and only a reader can tell.
 """
 import argparse
 import json
@@ -24,6 +33,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DASH = "https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform={platform}&num=30"
 TAG_RE = re.compile(r"\d+\.\d+\.\d+\.\d+")
 REV_RE = re.compile(r"[0-9a-f]{40}")
+# A comment line that opens with an ISO date is a record of a past re-pin, not a
+# reference to the current pin: left byte-for-byte alone (see the module
+# docstring). Anchored on the date so an ordinary comment that merely mentions a
+# version is still rewritten.
+HISTORY_RE = re.compile(r"\s*#.*\d{4}-\d{2}-\d{2}:")
+
+
+def _sub(line, pairs):
+    for a, b in pairs:
+        line = line.replace(a, b)
+    return line
 
 
 def _get(url):
@@ -83,9 +103,8 @@ def retarget(root, new_tag, new_rev):
         if f.name in ("repin.py", "test_repin.py"):
             continue
         before = f.read_text()
-        after = before
-        for a, b in pairs:
-            after = after.replace(a, b)
+        after = "".join(line if HISTORY_RE.match(line) else _sub(line, pairs)
+                        for line in before.splitlines(keepends=True))
         if after != before:
             f.write_text(after)
             changed.append(f"scripts/{f.name}")

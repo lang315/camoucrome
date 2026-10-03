@@ -142,12 +142,12 @@ navigator.userAgentData.getHighEntropyValues(['platformVersion']).then(h => docu
 
 def platform_version_rows(win, lin):
     """U1: a Linux identity carries no ua:platformVersion (the pool has none); the real value shows -- and on Linux stock Chrome
-    at the pin that value is the empty string (baselines/chrome-507c6ee3e2-stock-ua.json), so the pool's "" was never a tell."""
+    at the pin that value is the empty string (baselines/chrome-f89f3a4363-stock-ua.json), so the pool's "" was never a tell."""
     def read(cfg):
         r = probe_page(cfg, PV_PAGE)
         return r if isinstance(r, dict) else {}
     l, bare, w = read(lin), read({}), read(win)
-    stock = json.loads((CLIENT / "baselines" / "chrome-507c6ee3e2-stock-ua.json").read_text(encoding="utf-8"))["high_entropy"]["platformVersion"]
+    stock = json.loads((CLIENT / "baselines" / "chrome-f89f3a4363-stock-ua.json").read_text(encoding="utf-8"))["high_entropy"]["platformVersion"]
     print(f"note: U1 Linux claim -> {json.dumps(l)}; no config -> {json.dumps(bare)}; Windows claim -> {json.dumps(w)}")
     return {
         f"U1 Linux claim: platformVersion == the no-config value == pristine stock Linux at the pin ({stock!r}); the key is not emitted": (

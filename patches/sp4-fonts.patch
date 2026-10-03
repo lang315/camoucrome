@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
-index 9bfa9565f0..a10a773742 100644
+index 233618cf12..7bd6e6083c 100644
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
-@@ -1828,6 +1828,7 @@ component("platform") {
+@@ -1826,6 +1826,7 @@ component("platform") {
      "//build:chromecast_buildflags",
      "//cc",
      "//cc/mojo_embedder",

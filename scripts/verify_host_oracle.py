@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The fork under a generated Windows identity vs stock Chrome 153 on the
-Windows host (baselines/chrome-8010-stock-oracle-windows.json): the same
+"""The fork under a generated Windows identity vs stock Chrome 154 on the
+Windows host (baselines/chrome-8037-stock-oracle-windows.json): the same
 page (capture_host_oracle.page), every difference printed as one line.
 Hardware- and config-bound values (screen, cores, memory, dpr, timezone,
 languages, storage quota, heap limit, audio latency, device ids, canvas
@@ -26,7 +26,7 @@ FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_host_oracle as cap  # noqa: E402
 
-BASE = json.loads((CLIENT / "baselines" / "chrome-8010-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
+BASE = json.loads((CLIENT / "baselines" / "chrome-8037-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
 # Values that legitimately follow the identity or the machine: compare type only.
 SHAPE_ONLY = {"nav.hardwareConcurrency", "nav.deviceMemory", "nav.language", "nav.languages", "screen.width", "screen.height", "screen.availWidth",
               "screen.availHeight", "screen.availLeft", "screen.availTop", "win.dpr", "win.screenX", "win.screenY", "win.outerMinusInnerW",
@@ -36,7 +36,10 @@ SHAPE_ONLY = {"nav.hardwareConcurrency", "nav.deviceMemory", "nav.language", "na
               "gpu.limits.maxStorageBufferBindingSize", "gpu.features", "mediaDevices", "voices", "err.stack", "uadHigh.uaFullVersion",
               "uadHigh.fullVersionList", "uad.brands", "navConnection.rtt", "navConnection.downlink", "media.(color-gamut: p3)",
               "media.(dynamic-range: high)", "media.(video-dynamic-range: high)", "media.(prefers-color-scheme: dark)", "keyboard.size"}
-# Leaves excluded from O1 with the reason each carries (printed as "known:" lines, never as DIFF):
+HEVC = 'video/mp4; codecs="hev1.1.6.L93.B0"'
+# Leaves excluded from O1 with the reason each carries (printed as "known:" lines, never as DIFF). A value is either a
+# bare reason -- for a row whose evidence is the committed baseline itself, so a recapture is what retires it -- or
+# (reason, predicate-on-the-fork's-report) for a row excused by something that can change under us.
 KNOWN = {
     # The host is a headless PC with no mouse or keyboard attached: it reports pointer none / hover none and an empty
     # layout map. A desktop with input reports fine / hover, which d-pointer-touch derives for a Windows claim.
@@ -45,6 +48,40 @@ KNOWN = {
     "keyboard.KeyA": "host has no keyboard", "keyboard.KeyQ": "host has no keyboard", "keyboard.Backquote": "host has no keyboard", "keyboard.Digit1": "host has no keyboard",
     # The probe's own init-script marker (patchright's add_init_script lands in the main world; verify_sp6b_driver excludes it too).
     "windowKeys": "probe marker __camou_init", "windowNames": "probe marker __camou_init", "protoCounts.Window": "probe marker __camou_init (+1)",
+    # The host plays HEVC through the OS decoder; the WSL build box has none. This leaf is the PAIR
+    # capture_host_oracle.py stores -- [canPlayType, MediaSource.isTypeSupported] -- so excluding it suppresses BOTH
+    # measurements, not just canPlayType: host ["probably", true] against fork ["", false].
+    # NOT a capture artefact and NOT excusable forever: a Windows claim that cannot play HEVC is a tell, in a <video>
+    # element and in Media Source Extensions alike. The spoof is roadmap work (backlog "HEVC claim"), and this entry is
+    # what keeps O1 usable until then -- delete it when the claim lands, so both measurements go back to being made.
+    # Predicated for the same reason the gpu prefix is: the excuse is "this build answers no to HEVC", which stops
+    # being true the moment the Windows build (it carries the proprietary-codec pair) answers yes. Then the row is
+    # compared again, so a fork that answers canPlayType but not isTypeSupported -- or the reverse -- shows up instead
+    # of staying invisible behind an exclusion whose own deletion was the only thing keeping it measured.
+    f"codecs.{HEVC}": ("host decodes HEVC in hardware, the box has no decoder; suppresses canPlayType AND "
+                       "MediaSource.isTypeSupported (backlog: HEVC claim)",
+                       lambda fork: (fork.get("codecs") or {}).get(HEVC) == ["", False]),
+}
+# Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
+# an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
+KNOWN_PREFIX = {
+    # WebGPU. The host is a desktop with Intel graphics and reports an adapter; on a GPU-less box, with this verify
+    # driving the fork with --use-angle=swiftshader, navigator.gpu.requestAdapter() resolves to null and the whole
+    # subtree is absent. Same class as "host has no mouse": that asymmetry is the test environment, not the fork.
+    #
+    # The `when` is the point. The reason above is a property of the MACHINE, so the exclusion has to be too: on a box
+    # with a GPU (the Windows build box of roadmap step 1, or anyone dropping the SwiftShader argv below) the fork
+    # returns a real adapter, and gpu.info.* plus gpu.limits.* would then be the host machine's real GPU reported under
+    # a spoofed Windows identity -- the exact cross-profile tell backlog item 2 exists for. Excluding by key name alone
+    # would print "0 DIFF ... PASS" on the one machine where O1 could finally see it. With the predicate, the subtree
+    # goes back to being compared the moment an adapter appears.
+    #
+    # While it does hold, O1 cannot see a WebGPU identity difference, including the three capability integers
+    # (maxTextureDimension2D, maxComputeWorkgroupSizeX, maxBindGroups) that are compared exactly when an adapter
+    # exists -- they have no fork-side value to compare. The backlog entry "WebGPU adapter identity" is where this
+    # gets measured, on a machine with a GPU.
+    "gpu": ("box has no GPU, fork runs SwiftShader (backlog: WebGPU adapter identity)",
+            lambda fork: fork.get("gpu") is None),
 }
 
 
@@ -71,6 +108,56 @@ def flatten(v, prefix=""):
 
 
 EXPECTED_ROWS = 4  # O1 O2 O3 O4
+
+
+def compare(base, fork):
+    """O1's comparison: returns (diffs, same_count, active_prefixes).
+
+    A module-level function, not inline in main(), so the exclusion rules can be tested without a browser --
+    scripts/test_verify_host_oracle.py pins the one property that is easy to lose: a prefix exclusion stops
+    applying the moment its condition no longer holds.
+    """
+    host_f, fork_f = flatten(base), flatten(fork)
+    # Each prefix exclusion is admitted once, here, by asking its own predicate about THIS run's report -- never per
+    # leaf. A per-leaf "is this side absent?" test cannot do it: for the fork's bare `gpu` key the fork value is None
+    # while the host has no such leaf at all, so that one row would escape the exclusion and print as a DIFF.
+    active = {p: reason for p, (reason, when) in KNOWN_PREFIX.items() if when(fork)}
+    diffs = []
+    buckets = {"equal": 0, "shape_only": 0, "prefix_excluded": 0, "known": 0}
+    for k in sorted(set(host_f) | set(fork_f)):
+        h, f = host_f.get(k, "<absent>"), fork_f.get(k, "<absent>")
+        # An active prefix first, and before SHAPE_ONLY: an excluded subtree that is absent on one side has no type to
+        # compare either, and SHAPE_ONLY would report "type list vs type str" against the "<absent>" sentinel --
+        # three such lines for gpu.* survived the first version of this exclusion, which is how the order was found.
+        prefix = next((p for p in active if k == p or k.startswith(p + ".")), None)
+        if prefix is not None:
+            buckets["prefix_excluded"] += 1
+            if h != f:
+                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({active[prefix]})")
+            continue
+        if any(k == s or k.startswith(s + ".") for s in SHAPE_ONLY):
+            buckets["shape_only"] += 1
+            if type(h) != type(f):
+                diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
+            continue
+        if h != f:
+            entry = KNOWN.get(k)
+            # A bare reason excludes unconditionally; a pair excludes only while its predicate holds.
+            reason, when = entry if isinstance(entry, tuple) else (entry, None)
+            if reason is not None and (when is None or when(fork)):
+                buckets["known"] += 1
+                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({reason})")
+                continue
+            diffs.append((k, h, f))
+        else:
+            buckets["equal"] += 1
+    # Four buckets, not one "same" number. `same` used to be
+    # len(all leaves) - len(diffs), which counts every leaf the loop SKIPPED as
+    # evidence of agreement: a prefix-excluded or KNOWN leaf was never compared
+    # at all, and a shape-only leaf was compared for type, not value. Reporting
+    # one number let "0 DIFF, 239 same leaves" read as 239 leaves proven
+    # identical when about a quarter of them were not value-compared.
+    return diffs, buckets, active
 
 
 def main():
@@ -100,25 +187,18 @@ def main():
         BASE[key], fork[key] = sorted(h), sorted(f)
     if fork.get("protoCounts", {}).get("Window") == BASE.get("protoCounts", {}).get("Window", 0) + 1:
         fork["protoCounts"]["Window"] -= 1  # the probe marker
-    host_f, fork_f = flatten(BASE), flatten(fork)
-    diffs = []
-    for k in sorted(set(host_f) | set(fork_f)):
-        h, f = host_f.get(k, "<absent>"), fork_f.get(k, "<absent>")
-        if any(k == s or k.startswith(s + ".") for s in SHAPE_ONLY):
-            if type(h) != type(f):
-                diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
-            continue
-        if h != f:
-            if k in KNOWN:
-                print(f"known: {k}: host={json.dumps(h)[:80]} fork={json.dumps(f)[:80]} ({KNOWN[k]})")
-                continue
-            diffs.append((k, h, f))
+    diffs, buckets, active_prefixes = compare(BASE, fork)
+    for p, (reason, when) in KNOWN_PREFIX.items():
+        if p not in active_prefixes:
+            print(f"note: prefix exclusion {p!r} NOT in effect this run ({reason}) -- the subtree is compared")
     print("note: voices host=", json.dumps(BASE.get("voices"))[:300], "fork=", json.dumps(fork.get("voices"))[:300])
     print("note: audioFp host=", BASE.get("audioFp"), "fork=", fork.get("audioFp"), "| canvas host=", BASE.get("canvas"), "fork=", fork.get("canvas"))
-    same = len(set(host_f) | set(fork_f)) - len(diffs)
     for k, h, f in diffs:
         print(f"DIFF {k}: host={json.dumps(h)[:160]} fork={json.dumps(f)[:160]}")
-    print(f"{len(diffs)} DIFF, {same} same leaves; fork done={fork.get('done')} pageError={fork.get('pageError')}")
+    print(f"{len(diffs)} DIFF; {buckets['equal']} leaves equal by value, "
+          f"{buckets['shape_only']} compared by type only, {buckets['known']} named in KNOWN, "
+          f"{buckets['prefix_excluded']} prefix-excluded (NOT compared); "
+          f"fork done={fork.get('done')} pageError={fork.get('pageError')}")
     results = {"O1 generated Windows identity: no difference from stock Windows Chrome outside the named set (host artefacts, identity-bound, probe marker, sampleRate)": not diffs}
     if "--config" not in sys.argv:
         # O2 RED: a Linux claim keeps Linux's shape -- the gated interfaces follow the claim, not the build.

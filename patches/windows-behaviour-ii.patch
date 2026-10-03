@@ -100,7 +100,7 @@ index d91b0bc706..bacc7b61e0 100644
    "+third_party/widevine/cdm/widevine_cdm_common.h",
  ]
 diff --git a/media/base/audio_parameters.cc b/media/base/audio_parameters.cc
-index 0c6f8ae628..bdd4aef3db 100644
+index 3695886e1b..883b19cee4 100644
 --- a/media/base/audio_parameters.cc
 +++ b/media/base/audio_parameters.cc
 @@ -4,6 +4,11 @@
@@ -115,7 +115,7 @@ index 0c6f8ae628..bdd4aef3db 100644
  #include <sstream>
  
  #include "base/check_op.h"
-@@ -361,6 +366,23 @@ bool AudioParameters::RequireOffload() const {
+@@ -365,6 +370,23 @@ bool AudioParameters::RequireOffload() const {
  
  // static
  AudioParameters AudioParameters::UnavailableDeviceParams() {

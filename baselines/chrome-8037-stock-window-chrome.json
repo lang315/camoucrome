@@ -1,10 +1,10 @@
 {
  "provenance": {
-  "binary": "Google Chrome 153.0.8010.36 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
-  "captured": "2026-09-11",
+  "binary": "Google Chrome 154.0.8037.93 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
+  "captured": "2026-10-02",
   "how": "scripts/capture_chrome_object.py --where winhost",
-  "ua_headless": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
-  "ua_headed": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+  "ua_headless": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "ua_headed": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
  },
  "headless": {
   "typeofChrome": "object",
