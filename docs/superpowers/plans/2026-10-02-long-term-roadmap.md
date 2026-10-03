@@ -196,10 +196,20 @@ first). The Go and Node clients run there too: the driver verify's six rows
 pass, and the same chunked identity reaches a sandboxed renderer and worker
 through each of them (11 of 11, seen RED first). The Windows bugs fixed on the
 way include a temp profile left behind on every launch. Still open for this
-step: the component build, the change loop end to end, fonts, and every
-baseline-comparing verification while the Windows binary is on the old pin.
+step: the component build, the change loop end to end, fonts, and the
+baseline-comparing verifications, which the 154 Windows binary (below) now
+makes possible.
 Evidence:
 `measurements/2026-10-03-windows-substrate.md`.
+
+**Superseded the same evening:** the owner chose to re-point the Windows tree
+to 154 overnight so that backlog item 5's C++ lever could be measured on
+Windows. `D:\camou-win\chromium\src` is at `f89f3a4363` with the change set
+applied and `chrome.exe` 154.0.8037.93 built (5 h 31 m, 57,101 steps;
+`measurements/2026-10-03-windows-substrate.md`, "The crashpad lever"). So the
+binary and the host's stock Chrome now share a version. The 156 re-pin will
+cost a second Windows build; that was the price, and it was accepted. The
+ruling as first written:
 
 Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
 153.0.8010.36) until the re-pin due 2026-10-20. Re-pointing it to 154 would
@@ -346,20 +356,30 @@ step 2 tables, not this list, decide.
    profile carries a plain-text record of who it pretended to be next to who
    the machine is, which is the cross-profile link "many identities on one
    machine" must not have. Below item 4 because it is not traffic; above the
-   crash-exit item because it applies to every crash, not one flag. **The
-   client lever is done (2026-10-03):** every launch through the Python, Go or
+   crash-exit item because it applies to every crash, not one flag. **Closed
+   2026-10-04 by the C++ lever:** `patches/crashpad-no-dumps.patch` tells the
+   crashpad handler never to write a report
+   (`set_crashpad_handler_behavior(kDisabled)` in `InitializeCrashpadImpl`).
+   The handler still terminates the process with the exception's own code.
+   Measured by `verify_crash_dumps.py`, a launch that bypasses the clients:
+   - Windows 154: RED 2 FAIL, both dumps holding the marker; GREEN 2 of 2,
+     twice; exit code `0x80000003` both times.
+   - Linux 154: RED 2 FAIL; GREEN 2 of 2, twice; exit code -6 both times.
+
+   The lever the entry first named, `GetCrashDumpLocation` returning empty,
+   would not have worked: `crashpad_win.cc` still starts the handler with an
+   empty database, which fails, and crashes then go to Windows Error
+   Reporting. **The client lever came first (2026-10-03):** every launch through the Python, Go or
    Node client points `BREAKPAD_DUMP_LOCATION` at a temp directory it removes on
    close, so a kept profile no longer accumulates dumps (measured on Windows,
-   RED then GREEN; a renderer dump carries the marker too). **What remains** is
-   a launch that bypasses the clients, and a client process killed before its
-   close event: the C++ lever — crashpad not initialising for the fork
-   (`GetCrashDumpLocation` returning empty,
-   `chrome/app/chrome_crash_reporter_client_win.cc:130-132`) — needs a Windows
-   build on the current pin, so it goes with the re-pin. Scrubbing `CAMOU_*`
-   from the environment after parsing is not a lever: child processes need it,
-   which is the whole point of the `windows-sandbox-env` patch. Linux: one
-   renderer dump on the box did not contain the config; whether any Linux dump
-   carries the environment is not settled.
+   RED then GREEN; a renderer dump carries the marker too). The client lever
+   left a launch that bypasses the clients, and a client killed before its
+   close event; the C++ lever above covers both. Scrubbing `CAMOU_*` from the
+   environment after parsing is not a lever: child processes need it, which is
+   the whole point of the `windows-sandbox-env` patch. Linux: no Linux dump
+   measured so far carried the config. The RED dumps landed in
+   `~/.config/chromium/Crash Reports`, which every profile on the host shares.
+   With the lever there are none to carry anything.
 6. **`chrome.exe` crashes on `--enable-field-trial-config` on Windows.** The
    flag is still refused (the exclusion message prints), but the process then
    exits with `0xC0000005`, an access violation, where Linux exits with code 1.
