@@ -20,8 +20,10 @@ import subprocess
 import sys
 import threading
 
+import lib_shell
+
 HOME = os.path.expanduser("~")
-EXE = os.environ.get("CAMOU_EXE", f"{HOME}/chromium/src/out/Default/chrome")
+EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
 PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
 BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", f"{HOME}/camoucrome-client/baselines/chrome-8037-stock-window-chrome.json"))
@@ -53,7 +55,6 @@ def probe(url):
 
 
 def content_shell(url):
-    import lib_shell
     values, err = lib_shell.session(None, ["() => JSON.parse(document.getElementById('o').textContent)"], navigate_to=url)
     return None if err else values[0]
 

@@ -48,8 +48,10 @@ import sys
 import tempfile
 import threading
 
+import lib_shell
+
 HOME = os.path.expanduser("~")
-EXE = os.environ.get("CAMOU_EXE", f"{HOME}/chromium/src/out/Default/chrome")
+EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
 VENV = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv")
 VENV_STOCK = os.environ.get("CAMOU_VENV_STOCK", f"{HOME}/camoucrome-verify/venv-stock")
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")

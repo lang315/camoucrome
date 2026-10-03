@@ -23,7 +23,11 @@ import tempfile
 import time
 import urllib.request
 
-from playwright.sync_api import sync_playwright
+# playwright is imported inside evaluate(), the one function that uses it.
+# Eleven verify scripts drive the browser through the client in a subprocess and
+# deliberately keep playwright out of their own process; a module-scope import
+# here would make reading SHELL/CHROME cost them that dependency, and would turn
+# a missing playwright into an ImportError in scripts that never needed it.
 
 def _binaries(environ=None, osname=None):
     """(out dir, content_shell, chrome) for an environment.
@@ -283,6 +287,8 @@ def shutdown(proc):
 
 
 def evaluate(proc, expressions, navigate_to=None, cdp=None):
+    from playwright.sync_api import sync_playwright
+
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(
             f"http://127.0.0.1:{proc.cdp_port}")
