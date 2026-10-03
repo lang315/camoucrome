@@ -43,46 +43,85 @@ import lib_shell  # noqa: E402
 SPOOFED = 3
 CONFIG = json.dumps({"navigator.hardwareConcurrency": SPOOFED})
 HC = "navigator.hardwareConcurrency"
-EXPECTED = 3  # W1, W2, W3
+# The same blob-worker probe verify_sp0.py:9-16 uses, copied rather than imported
+# because importing that module would execute its browser work. Conventions rule 3
+# is why the worker rows exist at all: a surface exposed to both a window and a
+# worker must report identical values in both, and on Windows the two live in
+# different processes, so the environment filter could plausibly reach one and not
+# the other.
+WORKER_HC = """
+() => new Promise(resolve => {
+  const src = 'self.postMessage(navigator.hardwareConcurrency)';
+  const url = URL.createObjectURL(new Blob([src], {type: 'text/javascript'}));
+  const w = new Worker(url);
+  w.onmessage = e => resolve(e.data);
+})
+"""
+EXPECTED = 5  # W1, W2, W3, W4, W5
 
 results = {}
 notes = []
+main_cfg = worker_cfg = real = worker_real = None
 
 
 def read(config, sandbox):
-    values, err = lib_shell.session(config, [HC], shell=lib_shell.CHROME,
+    """(main-thread value, worker value, error) from ONE launch.
+
+    Both expressions go through a single session so the two values come from the
+    same process tree; two launches could differ for a reason that has nothing to
+    do with worker parity.
+    """
+    values, err = lib_shell.session(config, [HC, WORKER_HC],
+                                    shell=lib_shell.CHROME,
                                     extra_flags=lib_shell.CHROME_FLAGS,
                                     sandbox=sandbox)
     if err is not None:
-        return None, f"{type(err).__name__}: {err}"
-    return values[0], None
+        return None, None, f"{type(err).__name__}: {err}"
+    return values[0], values[1], None
 
 
 # W1. The measurement. A sandboxed renderer must see the configured value, which
 #     it can only do if CAMOU_CONFIG survived CreateFilteredEnvironment().
-value, err = read(CONFIG, True)
-results["W1"] = value == SPOOFED
-notes.append(f"W1: sandboxed + config -> {value!r} (expect {SPOOFED}){'; ' + err if err else ''}")
+main_cfg, worker_cfg, err = read(CONFIG, True)
+results["W1"] = main_cfg == SPOOFED
+notes.append(f"W1: sandboxed + config, main -> {main_cfg!r} (expect {SPOOFED})"
+             f"{'; ' + err if err else ''}")
 
 # W2. The control. Same launch, no config: this must be the machine's real core
 #     count, and it must NOT be SPOOFED, or W1 proves nothing.
-real, err = read(None, True)
+real, worker_real, err = read(None, True)
 results["W2"] = real is not None and real != SPOOFED
-notes.append(f"W2: sandboxed, no config -> {real!r} (expect anything but {SPOOFED})"
-             f"{'; ' + err if err else ''}")
+notes.append(f"W2: sandboxed, no config, main -> {real!r} "
+             f"(expect anything but {SPOOFED}){'; ' + err if err else ''}")
 
 # W3. The path every other verification uses. Separates "the sandbox broke it"
 #     from "the config layer is broken".
-value, err = read(CONFIG, False)
+value, _, err = read(CONFIG, False)
 results["W3"] = value == SPOOFED
-notes.append(f"W3: --no-sandbox + config -> {value!r} (expect {SPOOFED}){'; ' + err if err else ''}")
+notes.append(f"W3: --no-sandbox + config, main -> {value!r} (expect {SPOOFED})"
+             f"{'; ' + err if err else ''}")
+
+# W4. Worker parity under the spoof (conventions rule 3). A renderer and a
+#     dedicated worker are different processes on Windows, so the environment
+#     filter could reach one and not the other; this is the row that would catch
+#     that.
+results["W4"] = worker_cfg == SPOOFED and worker_cfg == main_cfg
+notes.append(f"W4: sandboxed + config, worker -> {worker_cfg!r} "
+             f"(expect {SPOOFED}, and equal to main {main_cfg!r})")
+
+# W5. Worker parity WITHOUT a config, so W4 cannot pass by both values happening
+#     to be the spoof: unconfigured, the worker must agree with the main thread on
+#     the real value too.
+results["W5"] = worker_real is not None and worker_real == real
+notes.append(f"W5: sandboxed, no config, worker -> {worker_real!r} "
+             f"(expect equal to main {real!r})")
 
 for n in notes:
     print("note:", n)
 if len(results) != EXPECTED:
     sys.exit(f"expected {EXPECTED} rows, built {len(results)}: a row was added or "
              "removed without updating EXPECTED")
-for k in ("W1", "W2", "W3"):
+for k in ("W1", "W2", "W3", "W4", "W5"):
     print(f"{k}: {'PASS' if results[k] else 'FAIL'}")
 print(f"{sum(results.values())} PASS {EXPECTED - sum(results.values())} FAIL")
 sys.exit(0 if all(results.values()) else 1)
