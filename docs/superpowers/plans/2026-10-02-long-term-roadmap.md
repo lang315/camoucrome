@@ -187,9 +187,11 @@ which the project's only Windows-specific bug is invisible. With it,
 `verify_windows_sandbox_env.py` measures a renderer-consumed key under the real
 sandbox: **the `windows-sandbox-env` fix holds on Windows**, main thread and
 dedicated worker alike (5 of 5, seen RED first; the no-config controls read the
-machine's real 16 in both). Still open for this step: `CAMOU_EXE` on Windows, the
-component build, the change loop end to end, the Go and Node clients, fonts, and
-every baseline-comparing verification while the Windows binary is on the old pin. Evidence:
+machine's real 16 in both). `CAMOU_EXE` is measured there too, in both
+directions, so all three things PR #4 shipped have run against a real Windows
+browser. Still open for this step: the component build, the change loop end to
+end, the Go and Node clients, fonts, and every baseline-comparing verification
+while the Windows binary is on the old pin. Evidence:
 `measurements/2026-10-03-windows-substrate.md`.
 
 Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
