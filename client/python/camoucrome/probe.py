@@ -32,7 +32,10 @@ def windows_argv(executable):
     split.restype = ctypes.POINTER(ctypes.c_wchar_p)
     ctypes.windll.kernel32.LocalFree.argtypes = [ctypes.c_void_p]
     for p in procs if isinstance(procs, list) else [procs]:
-        if os.path.normcase(p["ExecutablePath"] or "") != os.path.normcase(os.path.abspath(executable)):
+        # A null CommandLine (access denied) must not reach CommandLineToArgvW,
+        # which would return this process's own argv.
+        if not p["CommandLine"] or os.path.normcase(p["ExecutablePath"] or "") != \
+                os.path.normcase(os.path.abspath(executable)):
             continue
         n = ctypes.c_int()
         ptr = split(p["CommandLine"], ctypes.byref(n))
