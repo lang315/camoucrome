@@ -42,6 +42,8 @@ jobs:
           test "$(git rev-parse --abbrev-ref HEAD)" = camoucrome/main || { echo "not on camoucrome/main"; exit 1; }
           n=$(git status --porcelain | wc -l); test "$n" -eq 0 || { echo "checkout dirty ($n paths): a slice is in progress, re-run later"; exit 1; }
           ! pgrep -f "ninja -C out/(Default|Release)" >/dev/null || { echo "a ninja is already running in this checkout"; exit 1; }
+          # A Windows build on the same PC is invisible to pgrep; it holds this lock instead.
+          bash "$GITHUB_WORKSPACE/scripts/build_lock.sh" status
       - name: pushed change set == built checkout
         run: bash scripts/check_checkout_sync.sh
       - name: pre-flight checks
@@ -62,6 +64,9 @@ jobs:
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
           export PATH=/home/lang/depot_tools:$PATH
+          L="$GITHUB_WORKSPACE/scripts/build_lock.sh"; OWNER="ci run $GITHUB_RUN_ID"
+          bash "$L" acquire "$OWNER"
+          trap 'bash "$L" release "$OWNER"' EXIT
           cd "$SRC"
           autoninja -C out/Default chrome content_shell components_unittests 2>&1 | tail -3 | tee /tmp/build.txt
           grep -q "Build Succeeded" /tmp/build.txt
@@ -78,7 +83,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py scripts/test_build_lock.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
       - name: browser verifies
         run: |
