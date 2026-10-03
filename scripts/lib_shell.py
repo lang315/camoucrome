@@ -163,7 +163,7 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
 
 
 def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
-           preset=None):
+           preset=None, sandbox=False):
     """Starts the browser and returns it once its DevTools port answers.
 
     Six details here are deliberate, not defensive. Most were earned by a
@@ -278,8 +278,24 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     # CDP is served on --remote-debugging-port by both binaries; only the
     # headless switch differs, which is what SHELL_FLAGS/CHROME_FLAGS carry.
     port_arg = f"--remote-debugging-port={0 if debug_port is None else debug_port}"
+    # `sandbox=True` omits --no-sandbox. It exists because on Windows the
+    # sandbox is load-bearing for what a verification can see at all:
+    # CreateFilteredEnvironment() passes only seven variables to sandboxed
+    # children, so every CAMOU_* one is stripped and a renderer-consumed key
+    # falls back to the real value. That is the project's only Windows-specific
+    # bug (measurements/2026-09-24-review-triage.md:183, where
+    # navigator.hardwareConcurrency read the real 16 under the default sandbox
+    # and the spoofed 3 under --no-sandbox), and the fix for it cannot be
+    # verified by a harness that always passes --no-sandbox.
+    #
+    # The default is False, so every call written before this parameter existed
+    # produces a byte-identical argv; test_lib_shell_launch.py's frozen argv is
+    # the guard. On the Linux box a sandboxed launch may not start at all --
+    # WSL2 needs user namespaces for it -- which is why this is opt-in per call
+    # rather than a new default.
+    sandbox_flags = [] if sandbox else ["--no-sandbox"]
     proc = subprocess.Popen(
-        [binary, "--no-sandbox", *flags,
+        [binary, *sandbox_flags, *flags,
          f"--user-data-dir={profile}", port_arg,
          "about:blank"],
         env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
@@ -354,7 +370,7 @@ def evaluate(proc, expressions, navigate_to=None, cdp=None):
 
 
 def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
-            strict=False, cdp=None, debug_port=None, preset=None):
+            strict=False, cdp=None, debug_port=None, preset=None, sandbox=False):
     """Runs one browser session; returns (values, error).
 
     An exception is returned rather than raised. Without this the script is
@@ -374,7 +390,7 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
     try:
         proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
                       preset=preset,
-                      debug_port=debug_port)
+                      debug_port=debug_port, sandbox=sandbox)
         return evaluate(proc, expressions, navigate_to, cdp=cdp), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc

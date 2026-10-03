@@ -165,6 +165,31 @@ try:
 finally:
     del os.environ["CAMOU_CONFIG_1"]
 
+# 3b. The sandbox. `--no-sandbox` was unconditional, and on Windows that is the
+#     one argv under which the project's only Windows-specific bug was
+#     invisible: CreateFilteredEnvironment() strips every CAMOU_* variable from
+#     sandboxed children, so a renderer-consumed key read the real value under
+#     the default sandbox and the spoofed one under --no-sandbox
+#     (measurements/2026-09-24-review-triage.md:183). A verification that cannot
+#     launch sandboxed cannot measure that fix at all.
+#
+#     The default stays False so every earlier call's argv is byte-identical --
+#     the frozen argv above is the guard for that.
+argv, _, _ = capture_launch(sandbox=True)
+check("sandbox=True drops --no-sandbox and changes nothing else",
+      strip_profile(argv) == [
+          lib_shell.SHELL,
+          "--ozone-platform=headless",
+          "--remote-debugging-port=0",
+          "about:blank",
+      ],
+      f"got {strip_profile(argv)}")
+
+argv, _, _ = capture_launch(sandbox=False)
+check("sandbox=False is the argv every earlier run used",
+      "--no-sandbox" in argv and argv.index("--no-sandbox") == 1,
+      f"got {strip_profile(argv)}")
+
 # 4. Where the binaries are. _binaries() is the single place that resolves the
 #    two binary paths, so these cases are the whole surface for THOSE two; the
 #    rest of the box's layout is layout()'s, checked in section 5. They pass
