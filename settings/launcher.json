@@ -88,7 +88,7 @@
    "--remote-debugging-pipe"
   ],
   "headless_self_added": {
-   "why": "Chrome's own --headless=new relaunch appends these; they appear identically with no driver at all (the --dump-dom baseline), so they are Chrome's, not the driver's.",
+   "why": "Chrome's own --headless=new relaunch appends these; they appear identically with no driver at all (the --dump-dom baseline), so they are Chrome's, not the driver's. Linux only: Chrome appends --noerrdialogs in-process (headless_mode_init.cc), which only Linux's rewritten process title shows, and the other three are IS_LINUX; Windows' Win32_Process command line is the one the driver passed (measured 2026-10-03).",
    "args": [
     "--noerrdialogs",
     "--ozone-platform=headless",
