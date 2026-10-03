@@ -50,7 +50,7 @@ test('per-instance seeds match the contract and are non-zero uint32', () => {
 
 test('launch refuses forbidden options and uses a persistent context without viewport emulation', async () => {
   const calls = [];
-  const ctx = { on: (e, fn) => { ctx.fn = fn; } };
+  const ctx = { on: (e, fn) => { ctx.fn = fn; }, close: async () => {} };
   const chromium = { launchPersistentContext: async (dir, opts) => { calls.push([dir, opts]); return ctx; } };
   await assert.rejects(c.launch(chromium, '/x/chrome', { timezoneId: 'UTC' }), /timezoneId/);
   assert.equal(await c.launch(chromium, '/x/chrome', { config: { a: 1 }, userDataDir: '/tmp/p', window: [800, 600] }), ctx);
@@ -80,6 +80,7 @@ test('fontconfig follows the claimed OS and the contract', () => {
   assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Windows' }, executablePath: path.join(root, 'chrome') }), want);
   assert.equal(c.buildEnv({ fontconfig: want }, {}).FONTCONFIG_FILE, want);
   assert.equal('FONTCONFIG_FILE' in c.buildEnv({}, {}), false);
+  fs.rmSync(root, { recursive: true });
 });
 
 test('a large config and preset are chunked into numbered env strings, never splitting a code point', () => {
@@ -125,10 +126,11 @@ test('FONTCONFIG_FILE is never inherited and the conf must exist', () => {
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-fc-'));
   fs.mkdirSync(path.join(root, 'fonts'));
   assert.throws(() => c.fontconfigFor({ config: { 'ua:platform': 'Windows' }, fontsDir: path.join(root, 'fonts') }), /fontconfig/);
+  fs.rmSync(root, { recursive: true });
 });
 
 test('touch and mobile emulation are forbidden; a temp profile is removed on close and on failure', async () => {
-  const ok = { launchPersistentContext: async (dir) => { ok.dir = dir; return { on: (e, fn) => { ok.ev = e; ok.fn = fn; } }; } };
+  const ok = { launchPersistentContext: async (dir) => { ok.dir = dir; return { on: (e, fn) => { ok.ev = e; ok.fn = fn; }, close: async () => {} }; } };
   await assert.rejects(c.launch(ok, '/x/chrome', { hasTouch: true }), /hasTouch/);
   await assert.rejects(c.launch(ok, '/x/chrome', { isMobile: true }), /isMobile/);
   await c.launch(ok, '/x/chrome');
@@ -150,7 +152,7 @@ test('crash dumps go to a dir the launcher deletes; the parent\'s is never inher
   assert.equal(c.CRASH_DUMPS_ENV in c.buildEnv({}, { BREAKPAD_DUMP_LOCATION: '/host/dumps' }), false);
   assert.equal(c.buildEnv({ crashDir: '/c' }, {}).BREAKPAD_DUMP_LOCATION, '/c');
   const kept = fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-kept-'));
-  const ok = { launchPersistentContext: async (dir, o) => { ok.o = o; return { on: (e, fn) => { ok.ev = e; ok.fn = fn; } }; } };
+  const ok = { launchPersistentContext: async (dir, o) => { ok.o = o; return { on: (e, fn) => { ok.ev = e; ok.fn = fn; }, close: async () => {} }; } };
   await c.launch(ok, '/x/chrome', { userDataDir: kept });
   const crash = ok.o.env.BREAKPAD_DUMP_LOCATION;
   assert.ok(fs.existsSync(crash) && !crash.startsWith(kept));
@@ -162,4 +164,23 @@ test('crash dumps go to a dir the launcher deletes; the parent\'s is never inher
   await assert.rejects(c.launch(bad, '/x/chrome', { userDataDir: kept }), /spawn failed/);
   assert.equal(fs.existsSync(bad.o.env.BREAKPAD_DUMP_LOCATION), false);
   fs.rmSync(kept, { recursive: true });
+});
+
+// Linux: the close event fires while the browser is still shutting down, and
+// it then writes its profile and crashpad re-creates the dump dir, after the
+// event's removal (measured 2026-10-03: 518 such profiles in the box's /tmp).
+// When close() resolves, no process names the profile.
+test('what the browser writes while closing is removed once close() resolves', async () => {
+  const sd = { launchPersistentContext: async (dir, o) => {
+    sd.dirs = [dir, o.env.BREAKPAD_DUMP_LOCATION];
+    const ctx = { on: (e, fn) => { ctx.fn = fn; },
+      close: async () => {
+        await ctx.fn();
+        for (const d of sd.dirs) fs.mkdirSync(path.join(d, 'Default'), { recursive: true });
+      } };
+    return ctx;
+  } };
+  const ctx = await c.launch(sd, '/x/chrome');
+  await ctx.close();
+  assert.deepEqual(sd.dirs.map((d) => fs.existsSync(d)), [false, false]);
 });

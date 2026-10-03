@@ -281,8 +281,32 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             except BaseException:
                 remove()
                 raise
-            c.on("close", remove)
-            return c
+            return removed_on_close(c, remove)
         return started()
+    return removed_on_close(ctx, remove)
+
+
+def removed_on_close(ctx, remove):
+    """Removes on the "close" event and again once close() returns. The event
+    alone is too early on Linux: it fires while the browser is still shutting
+    down, and the browser then writes its profile and crashpad re-creates the
+    dump dir after they were removed (measured 2026-10-03; when close()
+    returns, no process names the profile). The event still matters for a
+    browser that crashed or was killed: then it fires after the process is
+    gone. A driver stopped without close() removes on the event only."""
     ctx.on("close", remove)
+    close = ctx.close
+    if inspect.iscoroutinefunction(close):
+        async def closed(*args, **kwargs):
+            try:
+                return await close(*args, **kwargs)
+            finally:
+                remove()
+    else:
+        def closed(*args, **kwargs):
+            try:
+                return close(*args, **kwargs)
+            finally:
+                remove()
+    ctx.close = closed
     return ctx
