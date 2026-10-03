@@ -20,12 +20,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mxschmitt/playwright-go"
 )
 
 // BaseArgs mirrors settings/launcher.json "launch.base_args".
 var BaseArgs = []string{"--no-first-run", "--no-default-browser-check"}
+
+// CrashDumpsEnv mirrors settings/launcher.json launch.crash_dumps.env. A
+// crash's minidump holds the process's whole environment block, CAMOU_CONFIG
+// verbatim beside the host's variables (measured 2026-10-03 on Windows), and
+// Chrome writes it to <profile>/Crashpad unless this names another directory.
+// Launch points it at a temp dir it removes, so a kept profile never
+// accumulates them.
+const CrashDumpsEnv = "BREAKPAD_DUMP_LOCATION"
 
 // Options for Launch. Config and Preset are JSON objects (or raw JSON
 // strings) carried as CAMOU_CONFIG / CAMOU_PRESET; an explicit config key
@@ -260,8 +269,9 @@ func configEnv(raw, name string) map[string]string {
 }
 
 // BuildEnv is the child environment: every CAMOU_* of the parent dropped
-// (a stale CAMOU_CONFIG_1 would otherwise win) and its FONTCONFIG_FILE (a
-// host conf under a Windows claim is a tell), then config/preset set.
+// (a stale CAMOU_CONFIG_1 would otherwise win), its FONTCONFIG_FILE (a
+// host conf under a Windows claim is a tell) and its BREAKPAD_DUMP_LOCATION
+// (it would collect every identity's dumps in one place), then config/preset set.
 func BuildEnv(o Options, base []string) (map[string]string, error) {
 	if _, err := effectiveKeys(o.Config, o.Preset); err != nil {
 		return nil, err
@@ -269,7 +279,7 @@ func BuildEnv(o Options, base []string) (map[string]string, error) {
 	env := map[string]string{}
 	for _, kv := range base {
 		k, v, _ := strings.Cut(kv, "=")
-		if !strings.HasPrefix(k, "CAMOU_") && k != "FONTCONFIG_FILE" {
+		if !strings.HasPrefix(k, "CAMOU_") && k != "FONTCONFIG_FILE" && k != CrashDumpsEnv {
 			env[k] = v
 		}
 	}
@@ -342,17 +352,30 @@ func BuildArgs(o Options) []string {
 // AddInitScript anything a page could enumerate: the driver runs a user's
 // init script in the MAIN world (measured 2026-09-10); Evaluate runs in an
 // isolated world, use that. A temp profile (no UserDataDir) is removed when
-// the context closes or the launch fails.
+// the context closes or the launch fails, and so is every launch's
+// crash-dump directory.
 func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, error) {
 	env, err := BuildEnv(o, os.Environ())
 	if err != nil {
 		return nil, err
 	}
-	temp := o.UserDataDir == ""
-	if temp {
+	crash, err := os.MkdirTemp("", "camoucrome-crash-")
+	if err != nil {
+		return nil, err
+	}
+	env[CrashDumpsEnv] = crash
+	owned := []string{crash}
+	remove := func() {
+		for _, d := range owned {
+			removeDir(d)
+		}
+	}
+	if o.UserDataDir == "" {
 		if o.UserDataDir, err = os.MkdirTemp("", "camoucrome-"); err != nil {
+			remove()
 			return nil, err
 		}
+		owned = append(owned, o.UserDataDir)
 	}
 	dir := o.UserDataDir
 	headless := true
@@ -369,12 +392,21 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 		// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
 		NoViewport: playwright.Bool(true),
 	})
-	if temp {
-		if err != nil {
-			os.RemoveAll(dir)
-		} else {
-			ctx.OnClose(func(playwright.BrowserContext) { os.RemoveAll(dir) })
-		}
+	if err != nil {
+		remove()
+	} else {
+		ctx.OnClose(func(playwright.BrowserContext) { remove() })
 	}
 	return ctx, err
+}
+
+// removeDir outlasts Windows' file locks: the context's close event fires
+// while the browser is still writing its profile (measured 2026-10-03 with
+// the Python client: one pass left 3-193 files, a retry ~0.07 s later
+// removed them). Bounded at 10 s; on Linux the first pass is the last.
+func removeDir(dir string) {
+	deadline := time.Now().Add(10 * time.Second)
+	for os.RemoveAll(dir) != nil && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
 }

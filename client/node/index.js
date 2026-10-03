@@ -98,17 +98,28 @@ function chunkEnv(raw, name) {
   return out;
 }
 
+// Mirrors settings/launcher.json launch.crash_dumps.env. A crash's minidump
+// holds the process's whole environment block, CAMOU_CONFIG verbatim beside
+// the host's variables (measured 2026-10-03 on Windows), and Chrome writes it
+// to <profile>/Crashpad unless this names another directory. launch() points
+// it at a temp dir it removes, so a kept profile never accumulates them.
+const CRASH_DUMPS_ENV = 'BREAKPAD_DUMP_LOCATION';
+
 // Every CAMOU_* of the parent dropped first (a stale CAMOU_CONFIG_1 would
-// otherwise win) and its FONTCONFIG_FILE (a host conf under a Windows claim is
-// a tell), then config/preset/strict set.
-function buildEnv({ config, preset, strict, fontconfig } = {}, base = process.env) {
+// otherwise win), its FONTCONFIG_FILE (a host conf under a Windows claim is
+// a tell) and its BREAKPAD_DUMP_LOCATION (it would collect every identity's
+// dumps in one place), then config/preset/strict set.
+function buildEnv({ config, preset, strict, fontconfig, crashDir } = {}, base = process.env) {
   effectiveKeys(config, preset);
   const env = {};
-  for (const [k, v] of Object.entries(base)) if (!k.startsWith('CAMOU_') && k !== 'FONTCONFIG_FILE') env[k] = v;
+  for (const [k, v] of Object.entries(base)) {
+    if (!k.startsWith('CAMOU_') && k !== 'FONTCONFIG_FILE' && k !== CRASH_DUMPS_ENV) env[k] = v;
+  }
   if (config != null) Object.assign(env, chunkEnv(asJson(config), 'CAMOU_CONFIG'));
   if (preset != null) Object.assign(env, chunkEnv(asJson(preset), 'CAMOU_PRESET'));
   if (strict) env.CAMOU_CONFIG_STRICT = '1';
   if (fontconfig) env.FONTCONFIG_FILE = fontconfig;
+  if (crashDir) env[CRASH_DUMPS_ENV] = crashDir;
   return env;
 }
 
@@ -180,9 +191,16 @@ async function launch(chromium, executablePath, {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
   }
-  // A temp profile lives as long as the context; a failed launch removes it too.
+  // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
+  // long as the context; a failed launch removes it too. fs.rm's retries outlast
+  // Windows' file locks: the close event fires while the browser is still
+  // writing its profile (measured 2026-10-03 with the Python client: one pass
+  // left 3-193 files, a retry ~0.07 s later removed them). ~10 s at most.
+  const owned = [fs.mkdtempSync(path.join(os.tmpdir(), 'camoucrome-crash-'))];
   const dir = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'camoucrome-'));
-  const remove = () => { if (!userDataDir) fs.rmSync(dir, { recursive: true, force: true }); };
+  if (!userDataDir) owned.push(dir);
+  const remove = () => Promise.all(owned.map((d) =>
+    fs.promises.rm(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })));
   let ctx;
   try {
     ctx = await chromium.launchPersistentContext(dir, {
@@ -190,7 +208,7 @@ async function launch(chromium, executablePath, {
       headless,
       ignoreDefaultArgs: true,
       env: buildEnv({ config, preset, strict,
-        fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }) }),
+        fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
       args: buildArgs({ window, dpr, extra: args, headless, userDataDir: dir,
         acceptLang: acceptLangOf(config, preset), extensions, spkiList }),
       // Otherwise a 1280x720 viewport is emulated, fighting screen.* and the
@@ -199,12 +217,12 @@ async function launch(chromium, executablePath, {
       ...options,
     });
   } catch (e) {
-    remove();
+    await remove();
     throw e;
   }
-  if (!userDataDir) ctx.on('close', remove);
+  ctx.on('close', remove);
   return ctx;
 }
 
-module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, buildEnv, buildArgs,
+module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, CRASH_DUMPS_ENV, buildEnv, buildArgs,
   acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, launch };

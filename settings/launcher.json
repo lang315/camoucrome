@@ -63,6 +63,10 @@
    "--load-extension={paths}"
   ],
   "spki_arg": "--ignore-certificate-errors-spki-list={hashes}",
+  "crash_dumps": {
+   "env": "BREAKPAD_DUMP_LOCATION",
+   "why": "A crash's minidump holds the process's whole environment block -- CAMOU_CONFIG verbatim beside every host variable (measured 2026-10-03 on Windows: a marker in the config was found in the dump as UTF-16, a no-config control had none). Chrome writes it to <profile>/Crashpad unless BREAKPAD_DUMP_LOCATION names another directory (chrome/app/chrome_crash_reporter_client_win.cc GetCrashDumpLocation; the POSIX client reads the same variable), so a kept profile would accumulate a plain-text record of the identity next to the machine's. Every launch creates a temp directory, points the variable at it, and removes it when the context closes or the launch fails; the parent's value is never inherited. Nothing is uploaded either way: the upload URL is empty unless the build is branded and official."
+  },
   "fontconfig": {
    "env": "FONTCONFIG_FILE",
    "files": {
