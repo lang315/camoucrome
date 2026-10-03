@@ -394,10 +394,27 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 	})
 	if err != nil {
 		remove()
-	} else {
-		ctx.OnClose(func(playwright.BrowserContext) { remove() })
+		return nil, err
 	}
-	return ctx, err
+	ctx.OnClose(func(playwright.BrowserContext) { remove() })
+	return closingContext{ctx, remove}, nil
+}
+
+// closingContext removes what the launch owns on the close event and again
+// once Close returns. The event alone is too early on Linux: it fires while
+// the browser is still shutting down, and the browser then writes its profile
+// and crashpad re-creates the dump dir after they were removed (measured
+// 2026-10-03; when Close returns, no process names the profile). The event
+// still matters for a browser that crashed or was killed: then it fires after
+// the process is gone. A driver stopped without Close removes on the event only.
+type closingContext struct {
+	playwright.BrowserContext
+	remove func()
+}
+
+func (c closingContext) Close(options ...playwright.BrowserContextCloseOptions) error {
+	defer c.remove()
+	return c.BrowserContext.Close(options...)
 }
 
 // removeDir outlasts Windows' file locks: the context's close event fires

@@ -182,6 +182,9 @@ class ClosingContext:
     def on(self, event, fn):
         self.handlers.append((event, fn))
 
+    def close(self):
+        pass
+
 
 class ClosingChromium:
     def __init__(self, fail=False):
@@ -292,3 +295,63 @@ def test_crash_dumps_go_to_a_dir_the_launcher_deletes(tmp_path):
     with pytest.raises(RuntimeError):
         camoucrome.launch(pw, "/x/chrome", user_data_dir=str(kept))
     assert not os.path.exists(pw.chromium.kw["env"][env_name])
+
+
+class ShuttingDownContext(ClosingContext):
+    """Linux: the "close" event fires while the browser is still shutting
+    down, and it then writes its profile (Local State, Default/...) and
+    crashpad re-creates the dump dir -- after the handler removed both
+    (measured 2026-10-03: 518 such profiles in the box's /tmp). By the time
+    close() returns, no process names the profile."""
+
+    def __init__(self, dirs):
+        super().__init__()
+        self.dirs = dirs
+
+    def close(self):
+        import os
+        for _, fn in self.handlers:
+            fn(self)
+        for d in self.dirs:
+            os.makedirs(os.path.join(d, "Default"), exist_ok=True)
+
+
+class ShuttingDownChromium(ClosingChromium):
+    def launch_persistent_context(self, user_data_dir, **kw):
+        ClosingChromium.launch_persistent_context(self, user_data_dir, **kw)
+        crash = kw["env"][camoucrome.launcher.CRASH_DUMPS_ENV]
+        self.ctx = ShuttingDownContext([user_data_dir, crash])
+        return self.ctx
+
+
+def test_what_the_browser_writes_while_closing_is_removed_once_close_returns():
+    import os
+    pw = type("PW", (), {"chromium": ShuttingDownChromium()})()
+    ctx = camoucrome.launch(pw, "/x/chrome")
+    ctx.close()
+    assert [os.path.exists(d) for d in ctx.dirs] == [False, False]
+
+
+def test_what_the_browser_writes_while_closing_is_removed_with_the_async_api():
+    import asyncio
+    import os
+
+    class AsyncShuttingDown(ShuttingDownContext):
+        async def close(self):
+            ShuttingDownContext.close(self)
+
+    class AsyncChromium(ShuttingDownChromium):
+        def launch_persistent_context(self, user_data_dir, **kw):
+            async def go():
+                ShuttingDownChromium.launch_persistent_context(self, user_data_dir, **kw)
+                self.ctx.__class__ = AsyncShuttingDown
+                return self.ctx
+            return go()
+
+    async def run():
+        ctx = await camoucrome.launch(type("PW", (), {"chromium": AsyncChromium()})(), "/x/chrome")
+        await ctx.close()
+        return ctx
+
+    ctx = asyncio.run(run())
+    assert [os.path.exists(d) for d in ctx.dirs] == [False, False]

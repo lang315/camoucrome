@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/mxschmitt/playwright-go"
 )
 
 type contract struct {
@@ -369,5 +371,38 @@ func TestRemoveDirRemovesTheTree(t *testing.T) {
 	removeDir(dir)
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("still there: %v", err)
+	}
+}
+
+// shuttingDown is the browser on Linux: the close event fires while it is
+// still shutting down, and it then writes its profile and crashpad re-creates
+// the dump dir, after the event's removal (measured 2026-10-03). When Close
+// returns, no process names the profile.
+type shuttingDown struct {
+	playwright.BrowserContext
+	dirs []string
+}
+
+func (s shuttingDown) Close(...playwright.BrowserContextCloseOptions) error {
+	for _, d := range s.dirs {
+		os.MkdirAll(d+"/Default", 0o755)
+	}
+	return nil
+}
+
+func TestWhatTheBrowserWritesWhileClosingIsRemovedOnceCloseReturns(t *testing.T) {
+	dirs := []string{t.TempDir() + "/profile", t.TempDir() + "/crash"}
+	ctx := closingContext{shuttingDown{dirs: dirs}, func() {
+		for _, d := range dirs {
+			removeDir(d)
+		}
+	}}
+	if err := ctx.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range dirs {
+		if _, err := os.Stat(d); !os.IsNotExist(err) {
+			t.Errorf("%s still there after Close returned", d)
+		}
 	}
 }
