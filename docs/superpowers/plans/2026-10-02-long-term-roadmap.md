@@ -266,7 +266,13 @@ Work:
 
 - **Persist per-profile seeds.** `settings/launcher.json` has each client
   draw `canvas:seed`, `audio:seed` and `mediaDevices:seed` fresh per launch
-  while the profile persists. Store them with the `user_data_dir`.
+  while the profile persists. Store them with the `user_data_dir`. **Done
+  2026-10-03:** `profile_seeds(user_data_dir)` (Go `ProfileSeeds`, Node
+  `profileSeeds`) draws them once into `<user_data_dir>/camoucrome-seeds.json`
+  (`per_instance_seeds.profile_file`) and reads them back on every later
+  launch. A damaged file is an error, never a redraw. The three clients read
+  each other's file. `launch()` is unchanged, so the caller opts in. Step 2's
+  stability row measures this in a browser.
 - `package.py` for Windows, with its Linux refusals, and with the open stamp
   finding closed (`branch_tip` and tree cleanliness never validated).
 - Clients published or vendorable, including a fix for the
