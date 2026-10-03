@@ -27,6 +27,9 @@ type contract struct {
 			Env   string            `json:"env"`
 			Files map[string]string `json:"files"`
 		} `json:"fontconfig"`
+		CrashDumps struct {
+			Env string `json:"env"`
+		} `json:"crash_dumps"`
 	} `json:"launch"`
 }
 
@@ -343,5 +346,28 @@ func TestALargePresetIsChunkedLikeTheConfig(t *testing.T) {
 	}
 	if _, ok := env["CAMOU_PRESET"]; ok || env["CAMOU_PRESET_3"] == "" {
 		t.Fatalf("preset not chunked: %d vars", len(env))
+	}
+}
+
+// A crash's minidump holds the whole environment block, CAMOU_CONFIG verbatim
+// (measured 2026-10-03 on Windows); Launch points BREAKPAD_DUMP_LOCATION at a
+// temp dir it removes, and the parent's value is never inherited.
+func TestCrashDumpsEnvMatchesTheContractAndIsNeverInherited(t *testing.T) {
+	if c := load(t); c.Launch.CrashDumps.Env != CrashDumpsEnv || CrashDumpsEnv != "BREAKPAD_DUMP_LOCATION" {
+		t.Fatalf("contract %q, client %q", c.Launch.CrashDumps.Env, CrashDumpsEnv)
+	}
+	env, _ := BuildEnv(Options{}, []string{CrashDumpsEnv + "=/host/dumps"})
+	if _, ok := env[CrashDumpsEnv]; ok {
+		t.Fatal("BREAKPAD_DUMP_LOCATION inherited from the parent")
+	}
+}
+
+func TestRemoveDirRemovesTheTree(t *testing.T) {
+	dir := t.TempDir() + "/crash"
+	os.MkdirAll(dir+"/reports", 0o755)
+	os.WriteFile(dir+"/reports/x.dmp", []byte("dump"), 0o644)
+	removeDir(dir)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("still there: %v", err)
 	}
 }

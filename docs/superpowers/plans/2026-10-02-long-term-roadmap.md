@@ -343,16 +343,20 @@ step 2 tables, not this list, decide.
    profile carries a plain-text record of who it pretended to be next to who
    the machine is, which is the cross-profile link "many identities on one
    machine" must not have. Below item 4 because it is not traffic; above the
-   crash-exit item because it applies to every crash, not one flag. Levers,
-   none chosen yet: stop crashpad initialising for the fork
+   crash-exit item because it applies to every crash, not one flag. **The
+   client lever is done (2026-10-03):** every launch through the Python, Go or
+   Node client points `BREAKPAD_DUMP_LOCATION` at a temp directory it removes on
+   close, so a kept profile no longer accumulates dumps (measured on Windows,
+   RED then GREEN; a renderer dump carries the marker too). **What remains** is
+   a launch that bypasses the clients, and a client process killed before its
+   close event: the C++ lever — crashpad not initialising for the fork
    (`GetCrashDumpLocation` returning empty,
-   `chrome/app/chrome_crash_reporter_client_win.cc:130-132`), or have the
-   clients put the crash database somewhere they delete. Scrubbing `CAMOU_*`
+   `chrome/app/chrome_crash_reporter_client_win.cc:130-132`) — needs a Windows
+   build on the current pin, so it goes with the re-pin. Scrubbing `CAMOU_*`
    from the environment after parsing is not a lever: child processes need it,
-   which is the whole point of the `windows-sandbox-env` patch. Linux is
-   unmeasured — crashpad writes dumps there too
-   (`measurements/2026-09-09-sp7-phone-home.md:40`), and whether they carry the
-   environment is not known.
+   which is the whole point of the `windows-sandbox-env` patch. Linux: one
+   renderer dump on the box did not contain the config; whether any Linux dump
+   carries the environment is not settled.
 6. **`chrome.exe` crashes on `--enable-field-trial-config` on Windows.** The
    flag is still refused (the exclusion message prints), but the process then
    exits with `0xC0000005`, an access violation, where Linux exits with code 1.
