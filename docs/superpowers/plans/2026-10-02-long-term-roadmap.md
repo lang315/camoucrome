@@ -192,10 +192,13 @@ directions, so all three things PR #4 shipped have run against a real Windows
 browser. The Python client runs on Windows: its tests, the launcher verify (5 of
 5) and the driver verify's Python rows pass, and a sandboxed `camoucrome.launch()`
 carries a chunked 37 KB identity to the renderer and a worker (5 of 5, seen RED
-first). The Windows bugs fixed on the way include a temp profile left
-behind on every launch. Still open for this step: the component build, the change
-loop end to end, the Go and Node clients, fonts, and every baseline-comparing
-verification while the Windows binary is on the old pin. Evidence:
+first). The Go and Node clients run there too: the driver verify's six rows
+pass, and the same chunked identity reaches a sandboxed renderer and worker
+through each of them (11 of 11, seen RED first). The Windows bugs fixed on the
+way include a temp profile left behind on every launch. Still open for this
+step: the component build, the change loop end to end, fonts, and every
+baseline-comparing verification while the Windows binary is on the old pin.
+Evidence:
 `measurements/2026-10-03-windows-substrate.md`.
 
 Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
