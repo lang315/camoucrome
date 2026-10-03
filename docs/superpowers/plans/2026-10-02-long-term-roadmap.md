@@ -181,12 +181,16 @@ and the layout block eleven scripts repeated is one `lib_shell.layout()` call
 `extra_flags` and `CHROME_FLAGS` is platform-neutral.
 
 Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
-153.0.8010.36) until the re-pin due 2026-10-20. Re-pointing it to 154 would cost
-7 h 40 m of machine time that Chrome 156 obsoletes in 17 days, and it would put two
-builds of roughly 7.5 hours each (WSL and Windows) on one machine on the same day, with the
+153.0.8010.36) until the re-pin due 2026-10-20. Re-pointing it to 154 would
+cost a from-scratch Windows build of about 7.5 hours that Chrome 156 obsoletes
+in 17 days, and it would put that build on the same day as the re-pin's own
+7 h 40 m of machine time (6 h 10 m of it the WSL build) on one machine, with the
 build-overlap lock this step still owes. The plumbing is verified against the
 153 build that already exists instead
-(`plans/2026-10-03-step1-windows-substrate.md`). Stock baselines come from the Windows host's Chrome 154.0.8037.93, while the binary being verified runs 153.0.8010.36; only behavior-asserting verifications run there, as baseline comparisons would differ on the Chrome version rather than the Windows fork.
+(`plans/2026-10-03-step1-windows-substrate.md`). Stock baselines come from the
+Windows host's Chrome 154.0.8037.93, while the binary being verified runs
+153.0.8010.36; only behavior-asserting verifications run there, as baseline
+comparisons would differ on the Chrome version rather than the Windows fork.
 
 Done when: the named verify set is green on `chrome.exe` at asserted counts,
 each seen RED once, and a one-file change goes from edit to verified to
@@ -308,13 +312,18 @@ step 2 tables, not this list, decide.
    priority of the three findings here, because it is traffic and not a
    surface. Same script: a truncated netlog scores P1/P2 FAIL instead of
    "could not measure" — fix that too.
-5. **Host tells from section D of the completion roadmap**:
+5. **`chrome.exe` crashes on `--enable-field-trial-config` on Windows.** The
+   flag is still refused (the exclusion message prints), but the process then
+   exits with `0xC0000005`, an access violation, where Linux exits with code 1.
+   Reproduced on four runs; root cause unknown. It matters because a crash is
+   itself a fingerprint.
+6. **Host tells from section D of the completion roadmap**:
    `storage.estimate()`, `keyboard.getLayoutMap()`, `navigator.connection`,
    `getScreenDetails()`, `matchMedia('(display-mode)')`.
-6. **Windows CI.** A build and verify job, once the runner is hardened.
-7. **Build time**, if the re-pin commitment is at risk.
-8. **Linux out of beta.**
-9. **Lower value, kept for the record:** `readPixels` on a framebuffer
+7. **Windows CI.** A build and verify job, once the runner is hardened.
+8. **Build time**, if the re-pin commitment is at risk.
+9. **Linux out of beta.**
+10. **Lower value, kept for the record:** `readPixels` on a framebuffer
    object (noise parity only), media device ID reverse map, geolocation
    permission order, the Android claim with a coarse pointer and zero touch
    points (a coherence defect, cheap, not on the Windows path).
