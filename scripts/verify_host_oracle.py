@@ -12,19 +12,14 @@ CAMOU_SEED picks the generated identity (default 1); --config <json> replaces it
 import http.server
 import json
 import os
-import pathlib
 import subprocess
 import sys
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, layout
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
-CLIENT = pathlib.Path(os.environ.get("CAMOU_CLIENT", f"{HOME}/camoucrome-client"))
-FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_host_oracle as cap  # noqa: E402
 

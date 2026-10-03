@@ -6,18 +6,13 @@ Runs on the box against out/Default/chrome (content_shell has no chrome/browser 
 client. RED for S1 is the pre-fix run: "Target crashed" (2026-09-12, share_probe.py)."""
 import json
 import os
-import pathlib
 import subprocess
 import sys
 
-import lib_shell
+from lib_shell import CHROME as EXE, layout
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
-CLIENT = pathlib.Path(os.environ.get("CAMOU_CLIENT", f"{HOME}/camoucrome-client"))
-FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+
 
 PAGE = b"""<!doctype html><title>share</title><button id=b>go</button><pre id=o>idle</pre><script>
 const o = document.getElementById('o');
