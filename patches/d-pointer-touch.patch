@@ -100,7 +100,7 @@ index 7150d2ea2a..2410152945 100644
  }
  
 diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
-index 0426141ab1..9e1f0e83b6 100644
+index 66e05f0dd9..e92e27d625 100644
 --- a/third_party/blink/renderer/core/exported/web_view_impl.cc
 +++ b/third_party/blink/renderer/core/exported/web_view_impl.cc
 @@ -29,6 +29,10 @@
@@ -114,7 +114,7 @@ index 0426141ab1..9e1f0e83b6 100644
  #include <algorithm>
  #include <memory>
  #include <utility>
-@@ -1712,8 +1716,18 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
+@@ -1714,8 +1718,18 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
    settings->SetPrefersReducedTransparency(prefs.prefers_reduced_transparency);
    settings->SetInvertedColors(prefs.inverted_colors);
  

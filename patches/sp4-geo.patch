@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/geolocation/geolocation.cc b/third_party/blink/renderer/core/geolocation/geolocation.cc
-index 0e1e07b79f..f1b5ad4f75 100644
+index 73e27320ca..41cb87a444 100644
 --- a/third_party/blink/renderer/core/geolocation/geolocation.cc
 +++ b/third_party/blink/renderer/core/geolocation/geolocation.cc
 @@ -31,7 +31,11 @@
@@ -14,7 +14,7 @@ index 0e1e07b79f..f1b5ad4f75 100644
  #include "services/device/public/mojom/geoposition.mojom-blink.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
  #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
-@@ -235,6 +239,16 @@ void Geolocation::getCurrentPositionForBindings(
+@@ -241,6 +245,16 @@ void Geolocation::getCurrentPositionForBindings(
      V8PositionCallback* success_callback,
      V8PositionErrorCallback* error_callback,
      const PositionOptions* v8_options) {
@@ -31,7 +31,7 @@ index 0e1e07b79f..f1b5ad4f75 100644
    const PositionOptions* options =
  #if BUILDFLAG(IS_ANDROID)
        RuntimeEnabledFeatures::ApproximateGeolocationPermissionEnabled()
-@@ -286,6 +300,16 @@ int Geolocation::watchPositionForBindings(
+@@ -292,6 +306,16 @@ int Geolocation::watchPositionForBindings(
      V8PositionCallback* success_callback,
      V8PositionErrorCallback* error_callback,
      const PositionOptions* v8_options) {
@@ -48,7 +48,7 @@ index 0e1e07b79f..f1b5ad4f75 100644
    const PositionOptions* options =
  #if BUILDFLAG(IS_ANDROID)
        RuntimeEnabledFeatures::ApproximateGeolocationPermissionEnabled()
-@@ -639,6 +663,11 @@ void Geolocation::UpdateGeolocationState() {
+@@ -653,6 +677,11 @@ void Geolocation::UpdateGeolocationState() {
  }
  
  void Geolocation::StopUpdating() {
@@ -60,7 +60,7 @@ index 0e1e07b79f..f1b5ad4f75 100644
    ResetGeolocationConnection();
    accuracy_ = mojom::blink::GeolocationAccuracy::kApproximate;
    enable_high_accuracy_ = false;
-@@ -674,7 +703,105 @@ void Geolocation::ResetGeolocationConnection() {
+@@ -725,7 +754,105 @@ void Geolocation::ResetGeolocationConnection() {
    geolocation_service_.reset();
  }
  
@@ -167,18 +167,18 @@ index 0e1e07b79f..f1b5ad4f75 100644
        blink::BindOnce(&Geolocation::OnPositionUpdated, WrapPersistent(this)));
  }
 diff --git a/third_party/blink/renderer/core/geolocation/geolocation.h b/third_party/blink/renderer/core/geolocation/geolocation.h
-index f671a0dbb5..0e42feb8dc 100644
+index d62adcc172..bcc7293c0e 100644
 --- a/third_party/blink/renderer/core/geolocation/geolocation.h
 +++ b/third_party/blink/renderer/core/geolocation/geolocation.h
-@@ -47,6 +47,7 @@
- #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+@@ -50,6 +50,7 @@
+ #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
  #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
  #include "third_party/blink/renderer/platform/supplementable.h"
 +#include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
  #include "third_party/blink/renderer/platform/timer.h"
  
  namespace blink {
-@@ -249,6 +250,17 @@ class CORE_EXPORT Geolocation final
+@@ -260,6 +261,17 @@ class CORE_EXPORT Geolocation final : public ScriptWrappable,
  
    mojom::blink::GeolocationAccuracy GetAccuracyLevel() const;
  
@@ -196,7 +196,7 @@ index f671a0dbb5..0e42feb8dc 100644
    Member<GeoNotifierSet> one_shots_;
    Member<GeolocationWatchers> watchers_;
    // GeoNotifiers that are in the middle of invocation.
-@@ -284,6 +296,22 @@ class CORE_EXPORT Geolocation final
+@@ -299,6 +311,22 @@ class CORE_EXPORT Geolocation final : public ScriptWrappable,
    // Whether a QueryNextPosition request sent and we are waiting for a position
    // update.
    bool updating_ = false;

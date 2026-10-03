@@ -11,10 +11,10 @@ index 94d46c0511..010ef03667 100644
      "//base/allocator:buildflags",
      "//build:chromeos_buildflags",
 diff --git a/chrome/renderer/DEPS b/chrome/renderer/DEPS
-index 1133bac104..f7dbf56e31 100644
+index 09e115cab7..f22f279a57 100644
 --- a/chrome/renderer/DEPS
 +++ b/chrome/renderer/DEPS
-@@ -7,6 +7,7 @@ include_rules = [
+@@ -8,6 +8,7 @@ include_rules = [
    "+components/autofill/content/renderer",
    "+components/autofill/core/common",
    "+components/cdm/renderer",
@@ -23,10 +23,10 @@ index 1133bac104..f7dbf56e31 100644
    "+components/commerce/content/renderer",
    "+components/commerce/core/commerce_heuristics_data_metrics_helper.h",
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index 1cfb0d2c21..52e0fcd7a4 100644
+index 02f4820634..49ea0251b3 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -78,6 +78,8 @@
+@@ -79,6 +79,8 @@
  #include "components/autofill/content/renderer/password_autofill_agent.h"
  #include "components/autofill/content/renderer/password_generation_agent.h"
  #include "components/autofill/core/common/autofill_features.h"
@@ -35,14 +35,14 @@ index 1cfb0d2c21..52e0fcd7a4 100644
  #include "components/commerce/content/renderer/commerce_web_extractor.h"
  #include "components/content_capture/common/content_capture_features.h"
  #include "components/content_capture/renderer/content_capture_sender.h"
-@@ -1448,6 +1450,20 @@ void ChromeContentRendererClient::
+@@ -1470,6 +1472,20 @@ void ChromeContentRendererClient::
      BUILDFLAG(IS_MAC)
    blink::WebRuntimeFeatures::EnableWebShare(true);
  #endif
 +  // Camoucrome (windows-oracle): interfaces stock Chrome exposes on Windows
 +  // and macOS but not on Linux (navigator.share, Web Bluetooth) follow the
 +  // claimed OS, not the build. A Linux claim keeps Linux's shape. Font Access
-+  // is stock on all three (baselines/chrome-507c6ee3e2-stock-ua.json), so it
++  // is stock on all three (baselines/chrome-f89f3a4363-stock-ua.json), so it
 +  // keeps its stock status; font_access.cc answers with fonts:local.
 +  {
 +    const camoucfg::OsFamily claimed =
@@ -57,7 +57,7 @@ index 1cfb0d2c21..52e0fcd7a4 100644
    if (base::FeatureList::IsEnabled(
            autofill::features::kAutofillPolicyControlledFeatureAutofill)) {
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 1adc7fb452..3e7488431d 100644
+index a7a81e40de..44384e9adb 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
 @@ -168,6 +168,14 @@ const blink::UserAgentBrandList GetUserAgentBrandList(

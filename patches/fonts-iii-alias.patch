@@ -27,7 +27,7 @@ index bd812ded17..6f56355693 100644
    }
  
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index 636e2ca661..290ef733a4 100644
+index 372b10936b..10a898ad1b 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
 @@ -35,9 +35,13 @@

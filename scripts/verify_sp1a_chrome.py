@@ -29,7 +29,7 @@ import lib_shell
 from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 
 BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/chrome-507c6ee3e2-stock-ua.json")
+    "~/camoucrome-verify/baselines/chrome-f89f3a4363-stock-ua.json")
 
 # The pinned upstream revision this baseline must be a capture of (README.md).
 # Not the checkout's current HEAD: a HEAD-tracking guard is refused the
@@ -39,7 +39,7 @@ BASELINE = os.path.expanduser(
 # fork against a recording of itself instead of against stock. Fork-side UA
 # deltas (SP2a's Headless-prefix removal, for one) are reconciled in code at
 # the comparison sites below, not by moving this constant.
-STOCK_BASE_COMMIT = "507c6ee3e2"
+STOCK_BASE_COMMIT = "f89f3a4363"
 
 # The digest of the stock capture itself, because the commit above is a
 # SELF-REPORTED LABEL and this is the file's actual identity. Pinning both
@@ -56,8 +56,9 @@ STOCK_BASE_COMMIT = "507c6ee3e2"
 # recaptured from a PRISTINE build at the new revision -- detached checkout of
 # the tag, rebuild, capture -- never from the fork's own build. 2026-09-10:
 # 0e8d4a9268 -> 507c6ee3e2 (Chrome stable 153.0.8010.36), captured that way.
+# 2026-10-02: 507c6ee3e2 -> f89f3a4363 (Chrome stable 154.0.8037.93), same way.
 STOCK_BASELINE_SHA256 = (
-    "367385ffef1bd78f247d5f826f1fcf911525f9cd9a3970fbfb8b13077671fce0")
+    "fe88c9257d9f528116a11b9e93182215591b9189120c61d7afdb700716dd5acd")
 
 # Identical to verify_sp1a.py's. Kept in step by hand rather than imported:
 # importing it would execute that file, which runs its own browser sessions.

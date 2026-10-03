@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """window.chrome shape + navigator.plugins/mimeTypes/pdfViewerEnabled (SP2
-§4.7, roadmap B1), captured from stock Chrome 153.0.8010.36 on the build
+§4.7, roadmap B1), captured from stock Chrome 154.0.8037.93 on the build
 box's Windows host (headless via --dump-dom, headed via CDP on the host) into
-baselines/chrome-8010-stock-window-chrome.json; scripts/verify_chrome_object.py
+baselines/chrome-8037-stock-window-chrome.json; scripts/verify_chrome_object.py
 diffs the fork against it. The tree records, per own property (depth 4):
 kind, descriptor flags, and for functions length/name/toString -- shapes,
 never the timing values loadTimes()/csi() return.
@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "baselines" / "chrome-8010-stock-window-chrome.json"
+OUT = ROOT / "baselines" / "chrome-8037-stock-window-chrome.json"
 
 PAGE = """<!doctype html><title>chrome-object</title><pre id="o"></pre><script>
 function walk(obj, depth, seen) {
@@ -60,7 +60,7 @@ def main():
     import winhost
     headless = winhost.dump_dom(PAGE)
     headed = winhost.cdp_eval(PAGE, headed=True)  # --dump-dom does not work headed; CDP on the host does
-    doc = {"provenance": {"binary": "Google Chrome 153.0.8010.36 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
+    doc = {"provenance": {"binary": "Google Chrome 154.0.8037.93 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
                           "captured": datetime.date.today().isoformat(), "how": "scripts/capture_chrome_object.py --where winhost",
                           "ua_headless": headless.pop("ua"), "ua_headed": headed.pop("ua")},
            "headless": headless, "headed": headed}

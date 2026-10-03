@@ -50,7 +50,10 @@ def tree(tmp_path):
         'UA = "baselines/chrome-507c6ee3e2-stock-ua.json"\n'
         'STOCK_BASE_COMMIT = "507c6ee3e2"\n'
         'META = {"chrome": "153.0.8010.36"}\n'
-        "PORT = 8010\n")
+        "PORT = 8010\n"
+        # A record of the PREVIOUS re-pin. Its right-hand values are this
+        # re-pin's "old" pair, so a blind rewrite turns it into a false record.
+        "# 2026-09-10: 0e8d4a9268 -> 507c6ee3e2 (Chrome stable 153.0.8010.36), captured that way.\n")
     (root / "settings").mkdir()
     (root / "settings" / "audio.json").write_text('{"chrome": "153.0.8010.36"}\n')
     (root / "baselines").mkdir()
@@ -106,3 +109,25 @@ def test_a_failed_rename_leaves_the_pin_so_a_rerun_finishes_the_job(tree):
     assert "CHROMIUM_TAG=154.0.8037.98\n" in (tree / "upstream.env").read_text()
     assert not [p for p in (tree / "baselines").iterdir() if "-8010-stock" in p.name]
     assert "chrome-8037-stock-oracle-windows.json" in (tree / "scripts" / "verify_x.py").read_text()
+
+
+def test_retarget_leaves_a_dated_history_line_byte_identical(tree):
+    """RED without HISTORY_RE: the line records what the LAST re-pin did, and both
+    of its values are this re-pin's "old" pair, so rewriting it claims the
+    2026-09-10 re-pin went to a tag that did not exist yet -- in the one comment
+    whose purpose is to stop the baseline becoming a recording of itself."""
+    repin.retarget(tree, "154.0.8037.93", NEW_REV)
+    text = (tree / "scripts" / "verify_x.py").read_text()
+    assert "# 2026-09-10: 0e8d4a9268 -> 507c6ee3e2 (Chrome stable 153.0.8010.36), captured that way." in text
+    # and the exemption is narrow: the live literals on other lines did move
+    assert f'STOCK_BASE_COMMIT = "{NEW_REV[:10]}"' in text
+    assert f'META = {{"chrome": "154.0.8037.93"}}' in text
+
+
+def test_retarget_still_rewrites_an_undated_version_mention(tree):
+    """The exemption is anchored on a date, not on the word "history": a comment
+    that merely names the pin is a reference to the current pin and must move."""
+    f = tree / "scripts" / "verify_y.py"
+    f.write_text("# the pin is 153.0.8010.36 today\n")
+    repin.retarget(tree, "154.0.8037.93", NEW_REV)
+    assert f.read_text() == f"# the pin is 154.0.8037.93 today\n"

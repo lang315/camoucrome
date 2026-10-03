@@ -65,10 +65,14 @@ profile**, not the host's real one:
 
 - SP0 to SP7 and the follow-on arc are shipped or partial, with residuals
   recorded per slice.
-- The change set is 32 patches on pin `507c6ee3e2` (Chrome 153.0.8010.36).
-- **The pin is one milestone behind.** Chrome 154 went stable on 2026-09-22;
-  155 is due 2026-10-06, 156 on 2026-10-20, 157 on 2026-11-03 (chromiumdash,
-  read 2026-10-02). The stable milestone moves every two weeks.
+- The change set is 32 patches on pin `f89f3a4363` (Chrome 154.0.8037.93),
+  re-pinned on 2026-10-02 (`measurements/2026-10-repin.md`): 37/37 commits
+  rebased, 2 trivial conflicts, zero semantic conflicts, 6 h 10 m of build.
+- **The pin is current but ages fast.** 155 goes fully stable 2026-10-06, 156
+  on 2026-10-20, 157 on 2026-11-03 (chromiumdash, read 2026-10-02). The stable
+  milestone moves every two weeks, so **the next re-pin is due by 2026-10-20**.
+  154 was chosen over 155 early-stable because the Windows host that captures
+  every stock baseline runs 154.
 - The 2026-09-24 review is merged (PR #1, merge `2e12467`).
 - The first native Windows build exists (`D:\camou-win`, `out\Release`,
   58,285 steps, about 7.5 hours from clean). One Windows-only bug has been
@@ -119,6 +123,24 @@ at once.
 Done when: the pin is the current stable milestone, CI is green on it, the
 re-pin time is recorded, and `rebuild_branch.sh` recreates the branch from a
 clean state.
+
+**Status 2026-10-02: done except CI on the merged pin.**
+`plans/2026-10-02-step0-repin-and-safety.md` ran as six tasks; the evidence is
+`measurements/2026-10-repin.md` and the procedure is
+`specs/repin-runbook.md`.
+
+| | |
+|---|---|
+| Pin | `154.0.8037.93` (`f89f3a4363`), 37/37 commits rebased, zero semantic conflicts |
+| Re-pin cost | about 7 h 40 m of machine time, 6 h 10 m of it one from-scratch build |
+| `rebuild_branch.sh` | fixed (atomic, signal-safe, absolute worktree) and drilled on the real tree: `difflines=0` in 100 s; a broken series leaves no branch and no worktree (rc 128) |
+| Re-pin as a script | `scripts/repin.py` (`target`, `check`, `retarget`) with tests, plus the runbook checklist |
+| Runner hardening | `lang` has no sudo, WSL interop and automount off, runner re-registered; three escape routes verified closed |
+| Verify sweep on the new pin | 48/51 green, coherence 7/7, `verify_host_oracle` 0 DIFF with O1–O4 PASS (177 leaves equal by value, 41 by type, 21 not compared and named) |
+| CI | green on `main` **before** the re-pin (run 36974876383); the re-pin's own `build-verify` runs when its PR merges |
+
+Three findings the re-pin surfaced are backlog items 2, 3 and 4, not step 0
+work: the Safe Browsing request, the HEVC claim and WebGPU adapter identity.
 
 ### Step 1: Windows foundation
 
@@ -254,14 +276,31 @@ step 2 tables, not this list, decide.
    is flagged. Published at vendor level only; the site list stays private.
 2. **A different Windows device per profile, in depth.** Whatever step 2's
    linkability table shows is shared between profiles. WebGPU belongs here:
-   it must agree with the WebGL claim.
-3. **Host tells from section D of the completion roadmap**:
+   it must agree with the WebGL claim. **WebGPU adapter identity** is now
+   measured as absent: on the GPU-less build box `requestAdapter()` resolves
+   to `null` where the Windows host returns an Intel adapter, so
+   `verify_host_oracle` excludes the whole `gpu` subtree by prefix and cannot
+   see a difference there at all. Measuring it needs a machine with a GPU.
+3. **HEVC claim.** Stock Chrome on the Windows host answers `canPlayType`
+   `"probably"` for `hev1.1.6.L93.B0` (it decodes through the OS); the Linux
+   build answers `""`. A Windows-claiming browser that cannot play HEVC is a
+   tell. Excluded in `verify_host_oracle` with that reason until the claim
+   lands; delete the exclusion when it does.
+4. **Safe Browsing phones home on some startups.** Found by the re-pin: on the
+   154 base, `verify_sp7_phonehome` P1 saw `safebrowsing.googleapis.com` once
+   in six runs (it was always `{}` on 153). Safe Browsing is not a
+   component-updater registrant, so none of the sp7 levers touches it and the
+   build has `safe_browsing_mode = 1`. Network-visible to Google. Highest
+   priority of the three findings here, because it is traffic and not a
+   surface. Same script: a truncated netlog scores P1/P2 FAIL instead of
+   "could not measure" — fix that too.
+5. **Host tells from section D of the completion roadmap**:
    `storage.estimate()`, `keyboard.getLayoutMap()`, `navigator.connection`,
    `getScreenDetails()`, `matchMedia('(display-mode)')`.
-4. **Windows CI.** A build and verify job, once the runner is hardened.
-5. **Build time**, if the re-pin commitment is at risk.
-6. **Linux out of beta.**
-7. **Lower value, kept for the record:** `readPixels` on a framebuffer
+6. **Windows CI.** A build and verify job, once the runner is hardened.
+7. **Build time**, if the re-pin commitment is at risk.
+8. **Linux out of beta.**
+9. **Lower value, kept for the record:** `readPixels` on a framebuffer
    object (noise parity only), media device ID reverse map, geolocation
    permission order, the Android claim with a coarse pointer and zero touch
    points (a coherence defect, cheap, not on the Windows path).
