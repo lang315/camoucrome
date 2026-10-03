@@ -18,6 +18,7 @@ Run: python3 scripts/test_lib_shell_launch.py
 """
 
 import os
+import subprocess
 import sys
 import tempfile
 import types
@@ -204,7 +205,35 @@ check("nt names chrome.exe and content_shell.exe",
       == (True, True),
       f"got {(shell, chrome)}")
 
-# 5. The stderr log. This check is only sharp on a host whose temp directory is
+# 5. Importable without playwright. Eleven verify scripts drive the browser
+#    through the client in a subprocess and keep playwright out of their own
+#    process; they can only read lib_shell's paths if importing the module does
+#    not drag playwright in. A subprocess with playwright blocked is the only
+#    honest way to check that here, because playwright IS installed on this
+#    machine -- the stub above never runs, so it proves nothing about it.
+BLOCK = f"""
+import sys
+
+
+class Block:
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] == "playwright":
+            raise ImportError("playwright is not installed here")
+
+
+sys.meta_path.insert(0, Block())
+sys.path.insert(0, {os.path.dirname(os.path.abspath(__file__))!r})
+import lib_shell
+print(lib_shell.CHROME)
+"""
+done = subprocess.run([sys.executable, "-c", BLOCK], capture_output=True, text=True)
+check("lib_shell imports with no playwright installed",
+      (done.returncode, done.stdout.strip())
+      == (0, os.path.expanduser("~/chromium/src/out/Default/chrome")),
+      f"exit {done.returncode}, out {done.stdout.strip()!r}, "
+      f"err {done.stderr.strip().splitlines()[-1:]}")
+
+# 6. The stderr log. This check is only sharp on a host whose temp directory is
 #    not /tmp -- a Mac, where gettempdir() is under /var/folders -- because a
 #    hardcoded "/tmp" and the stdlib answer coincide on Linux. Run it there
 #    before believing it.
