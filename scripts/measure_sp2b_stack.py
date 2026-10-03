@@ -26,6 +26,7 @@ require attaching, which is the variable under test.
 
 import http.server
 import json
+import shutil
 import statistics
 import subprocess
 import sys
@@ -114,6 +115,7 @@ def state_a(binary, flags):
     finally:
         proc.terminate()
         proc.wait(timeout=15)
+        shutil.rmtree(profile, ignore_errors=True)
         srv.shutdown()
 
 
@@ -135,6 +137,7 @@ def state_b(binary, flags):
     finally:
         proc.terminate()
         proc.wait(timeout=15)
+        shutil.rmtree(profile, ignore_errors=True)
         srv.shutdown()
 
 

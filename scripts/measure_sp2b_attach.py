@@ -115,6 +115,7 @@ def launch_with_port(flags):
          "--remote-allow-origins=*",
          "about:blank"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc.profile_dir = profile
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
@@ -123,7 +124,7 @@ def launch_with_port(flags):
             return proc, port
         except Exception:
             time.sleep(0.1)
-    proc.terminate()
+    lib_shell.shutdown(proc)
     raise RuntimeError("chrome opened no endpoint")
 
 
@@ -197,8 +198,7 @@ def state_d(flags, enable_runtime):
         if cdp is not None:
             cdp.close()
         if proc is not None:
-            proc.terminate()
-            proc.wait(timeout=15)
+            lib_shell.shutdown(proc)
         srv.shutdown()
 
 
