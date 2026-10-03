@@ -19,6 +19,7 @@ Run: python3 scripts/test_lib_shell_launch.py
 
 import os
 import sys
+import tempfile
 import types
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -92,9 +93,15 @@ def strip_profile(argv):
 
 
 failures = []
+# Every check that ran, so the final line counts what happened instead of a
+# literal. The count used to be written as `7 - len(failures)`, which stops
+# being the number of checks the moment one is added -- a report that states a
+# number it did not measure.
+results = []
 
 
 def check(name, condition, detail=""):
+    results.append(name)
     if condition:
         print(f"PASS  {name}")
     else:
@@ -157,8 +164,58 @@ try:
 finally:
     del os.environ["CAMOU_CONFIG_1"]
 
+# 4. Where the binaries are. The two path constants are what makes every
+#    lib_shell-driven verification Linux-only, and _binaries() is the single
+#    place that resolves them, so these cases are the whole surface. They pass
+#    an environment and an os.name explicitly rather than mutating the real
+#    ones: the constants are resolved once at import, so a test that set
+#    os.environ here would be measuring nothing.
+DEFAULT_OUT = os.path.expanduser("~/chromium/src/out/Default")
+
+out, shell, chrome = lib_shell._binaries({}, "posix")
+check("no CAMOU_OUT keeps the paths every earlier run used",
+      (out, shell, chrome) == (DEFAULT_OUT,
+                               f"{DEFAULT_OUT}/content_shell",
+                               f"{DEFAULT_OUT}/chrome"),
+      f"got {(out, shell, chrome)}")
+
+_, shell, chrome = lib_shell._binaries({"CAMOU_OUT": "/w/out/Release"}, "posix")
+check("CAMOU_OUT moves both binaries",
+      (shell, chrome) == ("/w/out/Release/content_shell",
+                          "/w/out/Release/chrome"),
+      f"got {(shell, chrome)}")
+
+# CAMOU_EXE is not new here: eleven client-driven verify scripts already read
+# it to aim at an extracted release archive. lib_shell honouring the same
+# variable is what lets one setting point both families at one binary -- and it
+# names a file, so it must not drag content_shell along with it.
+_, shell, chrome = lib_shell._binaries(
+    {"CAMOU_OUT": "/w/out/Release", "CAMOU_EXE": "/extracted/chrome"}, "posix")
+check("CAMOU_EXE wins for chrome and leaves content_shell alone",
+      (shell, chrome) == ("/w/out/Release/content_shell", "/extracted/chrome"),
+      f"got {(shell, chrome)}")
+
+# The suffix only. The separator comes from the HOST's os.path.join, so this
+# check cannot assert a whole Windows path while running on Linux, and
+# pretending otherwise would be a false green.
+_, shell, chrome = lib_shell._binaries({"CAMOU_OUT": r"D:\out\Release"}, "nt")
+check("nt names chrome.exe and content_shell.exe",
+      (shell.endswith("content_shell.exe"), chrome.endswith("chrome.exe"))
+      == (True, True),
+      f"got {(shell, chrome)}")
+
+# 5. The stderr log. This check is only sharp on a host whose temp directory is
+#    not /tmp -- a Mac, where gettempdir() is under /var/folders -- because a
+#    hardcoded "/tmp" and the stdlib answer coincide on Linux. Run it there
+#    before believing it.
+check("the stderr log is in the platform temp dir and carries the pid",
+      (os.path.dirname(lib_shell.STDERR_LOG) == tempfile.gettempdir(),
+       str(os.getpid()) in os.path.basename(lib_shell.STDERR_LOG))
+      == (True, True),
+      f"got {lib_shell.STDERR_LOG} (tempdir {tempfile.gettempdir()})")
+
 print()
 if failures:
-    print(f"{len(failures)} FAILED: {', '.join(failures)}")
+    print(f"{len(failures)} FAILED of {len(results)}: {', '.join(failures)}")
     sys.exit(1)
-print(f"{7 - len(failures)} PASS")
+print(f"{len(results)} PASS")
