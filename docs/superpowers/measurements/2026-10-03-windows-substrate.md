@@ -364,22 +364,102 @@ and `byte-compared 89 differing 0`.
 - **`CAMOU_CONFIG` reaching the browser process beyond one key.** The humanize
   key in `sp2b` is the one exercised here; F3 (`navigator.hardwareConcurrency`)
   did not run.
-- **Any renderer-consumed key on Windows.** None has been exercised. The only
-  renderer-side row in this slice, F3, never ran, because a Windows release build
-  has no `content_shell.exe`. And `launch()` hardcodes `--no-sandbox`
+- ~~**Any renderer-consumed key on Windows.**~~ **Closed the same day — see
+  "The renderer under the real sandbox" below.** What this entry said when it was
+  written stays true of `verify_sp2b.py` itself: the only renderer-side row in
+  that part of the slice, F3, never ran, because a Windows release build has no
+  `content_shell.exe`, and `launch()` hardcoded `--no-sandbox`
   (`scripts/lib_shell.py:282`), which bypasses the environment filter the
   project's only Windows-specific bug lived behind
   (`2026-09-24-review-triage.md:183`): Windows launches renderers and utilities
   with `SetFilterEnvironment(true)`, `CreateFilteredEnvironment()` strips every
   `CAMOU_*` variable, and `navigator.hardwareConcurrency` read the real 16 under
   the default sandbox and the spoofed 3 under `--no-sandbox`. So the argv that
-  produced this slice's green is the one argv under which that bug is invisible,
-  and the process it exercised is the one the filter never touched. A Windows
-  renderer-surface verification requires a run **without** `--no-sandbox`, which
-  `launch()` cannot currently produce.
+  produced the `verify_sp2b.py` green is the one argv under which that bug is
+  invisible, and the process it exercised is the one the filter never touched.
+  That is why `launch()` gained a `sandbox` parameter and why the measurement
+  below exists.
 - **`CAMOU_EXE`.** The third knob PR #4 shipped. `CAMOU_OUT` and
   `tempfile.gettempdir()` were exercised on Windows; `CAMOU_EXE` was not.
 - **"Closes" PR #4's caveat.** This slice is the first native green, not a
   closure of that caveat; everything above remains unverified on Windows.
 - **Whether the access violation is the fork's.** Root cause is unknown; no
   crash dump was taken.
+
+## The renderer under the real sandbox
+
+Added later the same day. The section above says a Windows renderer-surface
+verification needs a run without `--no-sandbox`, which `launch()` could not
+produce. `launch()` and `session()` now take `sandbox=False`, and passing
+`sandbox=True` omits the flag. The default keeps every earlier call's argv
+byte-identical; `scripts/test_lib_shell_launch.py` freezes it and pins that
+`--no-sandbox` is still `argv[1]` by default (19 PASS).
+
+The first measurement with it, on the host, against the same 153 `chrome.exe`:
+
+```
+A no-sandbox + config: ([3], None)
+B sandboxed + config: ([3], None)
+C sandboxed, no config: ([16], None)
+```
+
+B is the row nothing committed could reach before. The `windows-sandbox-env`
+patch holds under the real Windows sandbox: a renderer-consumed key reads the
+configured value with the environment filter in force. C is why B means anything
+— the same sandboxed launch with no config reports this machine's real 16, so B's
+3 did not come from a hardcoded default, a stale profile, or this probe.
+
+That is now a committed verification, `scripts/verify_windows_sandbox_env.py`,
+whose W2 row *is* that control. Seen RED first, with `CAMOU_OUT` pointing at a
+directory holding no binary:
+
+```
+note: W1: sandboxed + config -> None (expect 3); FileNotFoundError: [WinError 2] The system cannot find the file specified
+note: W2: sandboxed, no config -> None (expect anything but 3); FileNotFoundError: [WinError 2] ...
+note: W3: --no-sandbox + config -> None (expect 3); FileNotFoundError: [WinError 2] ...
+W1: FAIL
+W2: FAIL
+W3: FAIL
+0 PASS 3 FAIL
+exit=1
+```
+
+then GREEN against the real build directory, and again on an immediate re-run, so
+it is not an intermittently green check:
+
+```
+note: W1: sandboxed + config -> 3 (expect 3)
+note: W2: sandboxed, no config -> 16 (expect anything but 3)
+note: W3: --no-sandbox + config -> 3 (expect 3)
+W1: PASS
+W2: PASS
+W3: PASS
+3 PASS 0 FAIL
+exit=0
+```
+
+### What this still does not establish
+
+- **Worker parity on Windows.** Conventions rule 3 requires a surface exposed to
+  both a window and a worker to report identical values in both, and the
+  September measurement did check a dedicated worker
+  (`2026-09-24-review-triage.md:195`, `main=3 worker=3`). This script reads the
+  main thread only. The row is worth adding; it was left out rather than written
+  untested.
+- **Any other renderer-consumed key.** One key is one key.
+- **That the binary matches the tree.** `out\Release` was built 2026-09-25 while
+  the tree's content matches the change set at `3d78ae2`. The byte comparison in
+  §7 of the runbook is about the *tree*, not the binary, so a patch landing in
+  the tree after that build would not appear in these results. What W1 shows is
+  that the binary in `out\Release` contains a working fix, not that it contains
+  every patch the tree now holds.
+- **A transport trap, recorded because it bit once.** Copying the new
+  `lib_shell.py` across with `Copy-Item` from a path that had failed to be
+  written left a **zero-line** file in the host's verify tree, overwriting the
+  working copy; it was restored from the `.bak` taken in the same call. Take the
+  backup first and check the installed line count, which is why those numbers are
+  in the transcript.
+
+The host's verify tree is therefore no longer a clean copy of one commit: it is
+`ab0644c` plus `scripts/lib_shell.py` and `scripts/verify_windows_sandbox_env.py`
+from this branch.
