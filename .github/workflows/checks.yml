@@ -46,10 +46,16 @@ jobs:
       # count comparable to the run before.
       - name: argv freeze (lib_shell)
         run: python3 scripts/test_lib_shell_launch.py
+      # scripts/ wholesale, not a hand-written list: the list is what let the
+      # CLIENT latch regression through. It contained no module importing
+      # lib_shell at module scope, so the cross-module import ordering that
+      # breaks `pytest scripts/` never happened in CI. A directory also picks up
+      # a new test file without anyone remembering to add it -- test_gen_keys.py
+      # and test_winhost.py had never run here.
       - name: python client tests + packager tests
         run: |
           python3 -m pip install -q pytest browserforge==1.2.4
-          python3 -m pytest -q client/python/tests scripts/test_package.py scripts/test_fonts.py scripts/test_capture_webgl_profile.py scripts/test_rebuild_branch.py scripts/test_repin.py scripts/test_verify_host_oracle.py
+          python3 -m pytest -q client/python/tests scripts/
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
       - uses: actions/setup-node@v4
