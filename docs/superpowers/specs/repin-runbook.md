@@ -3,7 +3,8 @@
 How to move the change set to a newer Chrome stable tag, how to get the box
 branch back if it is lost, and how to rebuild the build machine from nothing.
 
-Every command here was run on 2026-10-02 for the 153 → 154 re-pin. The
+Every command here, except those in §7, was run on 2026-10-02 for the 153 → 154
+re-pin; §7's were run on 2026-10-03. The
 durations are measured on the build box (WSL2 Ubuntu 24.04 on the build PC,
 `is_component_build=true`, `symbol_level=0`), not estimated. The evidence is
 `docs/superpowers/measurements/2026-10-repin.md`.
@@ -256,7 +257,7 @@ export is idempotent.
 paragraph, the retired-branch sentence, the `baselines/` row), `README.md`, and
 the roadmap's "Where the project stands". The PR body carries the prediction
 against the actual conflict count, the timing table, both sweep summaries, and
-step 9's gate output. After the merge, `build-verify` runs on `main` by itself.
+step 9's gate output. After the merge, `build-verify` runs on `main` by itself. Then re-point the Windows tree: §7.
 
 ## 3. What a re-pin costs
 
@@ -363,33 +364,94 @@ not needed to rebuild anything.
 
 ## 7. The Windows tree
 
-`D:\camou-win\chromium\src` (host side; **not reachable from WSL**, whose
-automount is off — run `git` on the host, PowerShell) is a second Chromium
-checkout with the fork's native Windows build in `out\Release`. Measured
-2026-10-03:
+`D:\camou-win\chromium\src` (host side, PowerShell; **not reachable from WSL**)
+is a second Chromium checkout with the fork's native Windows build in
+`out\Release`. Re-point it after the merge in step 10, at the re-pin, not at
+every milestone. Measured 2026-10-03 on the 153 tree:
 
 - **State**: HEAD `507c6ee3e2` (the 153 pin), **no commits above it**, no
   stashes. The change set is a bare working tree: 89 patched files staged
-  (`git apply --3way` stages) and 41 untracked files (`components/camoucfg/`).
+  (`git apply --3way` stages) and 41 untracked (`components/camoucfg/`).
   `git diff --cached --stat`: 89 files, 3020 insertions, 114 deletions.
-- **Is anything in it that the change set does not explain?** Compared by path
-  against the change set at `3d78ae2` (the last commit on the 153 pin: the 89
-  unique `+++ b/` targets of the 32 `patches/series` entries, plus the 40
-  `additions/camoucfg/` files mapped to `components/camoucfg/`, plus the
-  `settings/invariants.json` that `apply.sh` copies to
-  `components/camoucfg/invariants.json`): 130 paths expected, 130 dirty, **no
-  path in either direction unexplained**. The comparison is by path only;
-  file contents were not diffed against the patches.
-- **Not in the source tree**: `out\Release\args.gn` line 19 is
-  `disable_fieldtrial_testing_config = true`. A re-point carries the GN args
-  across, not only the patches.
-- **Shell**: `C:\Program Files\Git\bin\bash.exe` and
-  `C:\Program Files\Git\usr\bin\bash.exe` both exist (Git for Windows
-  2.51.2). The `bash` on the host `PATH` is `C:\WINDOWS\system32\bash.exe`,
-  the WSL launcher — call Git Bash by its full path. Whether `apply.sh` /
-  `rebuild_branch.sh` run under it is **not yet measured**.
-- **Ruling**: the tree is re-pointed at the 2026-10-20 re-pin, not at every
-  milestone. Before discarding it, re-run the path comparison above: the
-  tree currently holds nothing the repo lacks, and a later hand edit would
-  show as a path outside the change set. `D:\camou-win\camoucrome` is a stale
-  clone on a retired branch; do not fetch from or push from it.
+- **Facts established earlier in the session, not by this probe**: the host has
+  `git version 2.51.2.windows.1`; the `bash` on the host `PATH` is
+  `C:\WINDOWS\system32\bash.exe`, the WSL launcher; WSL automount is off, so
+  `/mnt/d` in WSL is not the D: drive; `D:\camou-win\camoucrome` is a stale
+  clone on the retired branch `review/2026-09-24` (do not fetch from or push
+  from it); `3d78ae2` is the last commit on the 153 pin.
+- **Shell**: measured here. Both `C:\Program Files\Git\bin\bash.exe` and
+  `C:\Program Files\Git\usr\bin\bash.exe` launch. `bin\bash.exe -c 'echo ok;
+  uname -s; git --version; bash --version | head -1; command -v git'` prints
+  `ok`, `MINGW64_NT-10.0-19045`, `git version 2.51.2.windows.1`, `GNU bash,
+  version 5.2.37(1)-release (x86_64-pc-msys)`, `/mingw64/bin/git`: a
+  MINGW64 environment on the same git as the host. `usr\bin\bash.exe` run
+  the same way finds git (`/cmd/git`, same 2.51.2) but **not** `uname` or
+  `head` (`command not found`): its `PATH` lacks the MSYS coreutils, so use
+  `bin\bash.exe` (or `-l`). Whether `apply.sh` / `rebuild_branch.sh` run
+  under it is **not measured** (they were deliberately not run).
+- **GN args**: `settings/release-args.gn` is the canonical source and contains
+  `disable_fieldtrial_testing_config = true`. `out\Release\args.gn` was read
+  whole: the same keys and values as that file (`is_debug` ... `use_remoteexec`,
+  the codec pair, the field-trial line), plus `target_cpu = "x64"`. The
+  comparison was by eye, not a byte diff. A re-point carries the args across,
+  not only the patches.
+
+### Is the dirty tree exactly the old change set?
+
+Measured result for the 153 tree: **yes, to the line.** Nothing is dirty that
+the change set at `3d78ae2` does not produce, and nothing it produces is
+missing. Three layers, each measured:
+
+1. **Paths.** 130 dirty paths = 89 patch targets + 40 `additions/` files + 1
+   `components/camoucfg/invariants.json` (copied from `settings/invariants.json`
+   by `apply.sh`). No path in either direction is unexplained.
+2. **Content of the 41 new files.** `git hash-object --no-filters` of each
+   against the blob in the repo at `3d78ae2`: 41 of 41 identical.
+3. **Content of the 89 patched files.** Per-file added/removed counts of the
+   staged diff against the patches' own counts: 86 of 89 identical. The 3 that
+   differ (`content/browser/browser_main_loop.cc`,
+   `.../core/css/local_font_face_source.cc`,
+   `.../modules/speech/speech_synthesis.cc`) are files that two or three
+   patches touch, where summing per-patch counts overcounts lines a later patch
+   rewrites. Replaying the old patches in series on those 3 files' pristine
+   blobs gave blobs byte-identical to the Windows working files (3 of 3).
+   The other 86 are a count comparison, not a byte comparison.
+
+Re-run it before discarding the tree, because it is only true of the tree as
+it stood on 2026-10-03; an edit inside an already-patched file changes no path,
+only layers 2-3 can see it.
+
+```powershell
+# host: the dirty list. -uall is required; without it untracked directories
+# collapse and the count is 90, not 130.
+$s='D:\camou-win\chromium\src'
+git -C $s status --porcelain -uall | Sort-Object | Set-Content D:\camou-win\win-dirty-all.txt
+git -C $s diff --cached --numstat      # actual per-file added/removed
+```
+
+```bash
+# WSL: the expected lists at the last commit on the old pin (OLD = 3d78ae2).
+# Patch names come from patches/series; comments and blank lines are skipped.
+R=/home/lang/actions-runner/_work/camoucrome/camoucrome; OLD=3d78ae2
+git -C $R show $OLD:patches/series > /tmp/series-old.txt
+for p in $(grep -v '^#' /tmp/series-old.txt | grep -v '^$'); do
+  git -C $R show $OLD:patches/$p | git apply --numstat; done   # per-patch numstat
+# paths:  the 3rd column of that output, plus
+git -C $R ls-tree -r --name-only $OLD additions | sed 's|^additions/|components/|'
+# plus components/camoucfg/invariants.json, copied from settings/invariants.json
+# blobs of the new files, for the hash comparison:
+git -C $R ls-tree -r $OLD additions   # map additions/ -> components/ in the path
+git -C $R ls-tree -r $OLD settings/invariants.json
+```
+
+Carry the lists from WSL to the host with the UNC path WSL exports
+(`Copy-Item \\wsl.localhost\Ubuntu-24.04\tmp\<file> D:\camou-win\`) and compare
+there with `Compare-Object`; WSL cannot read `D:`. Pitfalls met on the way: a
+PowerShell `-like '??*'` matches every line (`?` is a wildcard) so use
+`-match`; the `additions/X` to `components/X` mapping is needed or every new
+file shows as a difference in both directions; `$R` inside a double-quoted
+`wsl -e bash -c "..."` is expanded by PowerShell, so send multi-line bash as
+base64.
+
+If layer 2 or 3 shows a difference, the tree holds work that exists nowhere
+else: list the files and decide about them explicitly; do not discard.
