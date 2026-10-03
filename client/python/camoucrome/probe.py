@@ -94,16 +94,18 @@ def main():
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
                      fonts_dir=a.fonts_dir)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        # SP2 4.2: a driver's init script must not be observable from the
-        # main world. The probe page reports typeof window.__camou_init.
-        page.add_init_script("window.__camou_init = 1")
-        page.goto(a.url, wait_until="load")
-        # A page that reports from a worker writes #o after load; wait for it.
-        page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
-        report = page.locator("#o").text_content()
-        argv = browser_argv(a.executable)
-        ctx.close()
+        try:  # a failed goto must still close: the temp profile goes on close
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            # SP2 4.2: a driver's init script must not be observable from the
+            # main world. The probe page reports typeof window.__camou_init.
+            page.add_init_script("window.__camou_init = 1")
+            page.goto(a.url, wait_until="load")
+            # A page that reports from a worker writes #o after load; wait for it.
+            page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
+            report = page.locator("#o").text_content()
+            argv = browser_argv(a.executable)
+        finally:
+            ctx.close()
     json.dump({"driver": f"python-{a.driver}", "module": module,
                "report": json.loads(report), "argv": argv}, sys.stdout)
 
