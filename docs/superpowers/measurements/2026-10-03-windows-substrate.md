@@ -776,7 +776,7 @@ no-config control passing.
 ### What this does not establish
 
 - **The Go and Node clients.** No Go probe was built and no driver directories
-  exist on the host; their four rows fail for that reason alone.
+  exist on the host; their four rows fail for that reason alone. (They ran later the same day; see "The Go and Node clients on Windows" below.)
 - **A crash dump in a client profile.** The strict-abort RED crashed the browser
   inside a temp profile, which was then removed; whether a dump was written there
   was not looked at. That is backlog item 5's territory.
@@ -859,7 +859,7 @@ carries the environment.
   dumps included. Removing it then is the caller's job.
 - **Go and Node on Windows.** Both are unit-tested and ran on the Linux box (the
   driver verify's six rows); neither ran on Windows, so Go's `removeDir` and
-  Node's `fs.rm` retries are not measured against the race there.
+  Node's `fs.rm` retries are not measured against the race there. (They ran later the same day; see "The Go and Node clients on Windows" below.)
 - **A browser-process crash during launch.** The failed-launch path removes the
   directory (unit-tested in all three clients); whether a dump was written
   first was not looked at.
@@ -908,4 +908,66 @@ that wins is already the final one. The leak was only ever measured on Linux.
 - **A driver stopped without `close()`.** If `pw.stop()` or the end of a `with
   sync_playwright()` block takes the browser down, only the event removal runs,
   and on Linux that is the early one.
-- **Go and Node on Windows.** Neither ran there yet.
+- **Go and Node on Windows.** Neither ran there yet. (They ran later the same day; see "The Go and Node clients on Windows" below.)
+
+## The Go and Node clients on Windows
+
+Three things kept them off the host, and none was in the clients themselves:
+
+- **The probes read argv from `/proc` only.** On Windows the Node probe threw,
+  and the Go probe returned no argv without any error. Both now read
+  `Win32_Process` and split the command line with `CommandLineToArgvW`: Go
+  through `syscall`, Node through PowerShell, which receives the script
+  `-EncodedCommand` so no quoting has to survive. Like the Python probe, they
+  skip a null command line and any `--type=` child.
+- **The Go probe's source was never in the repo.** `client/go/.gitignore`
+  matched its directory. The fix is in the close-race change.
+- **playwright-go only accepts a driver whose `--version` contains `1.62.1`.**
+  The driver bundled with patchright on the host is 1.62.3. The host now holds
+  `D:\camou-win\driver-patchright` and `driver-stock`: the box's
+  `patchright-core` and `playwright-core` 1.62.1 packages (pure JS), copied
+  over UNC, each beside the `node.exe` (v24.18.1) from `client-venv`. Go is
+  1.27.1, unpacked from go.dev's zip after its SHA-256 matched the published
+  value.
+
+Two unit tests built expected paths with `/`, one in Go and one in Node, and
+failed on the separator alone. With those fixed, all three client suites pass
+on the host: Go `ok`, Node `pass 14`, Python `42 passed`.
+
+`verify_windows_client.py` now repeats K2-K4 through the Go and Node clients
+(rows G2-G4 and N2-N4, 11 in all). Their probes run with `--sandbox --strict
+--config @file`, because the 37 KB identity is past Windows' 32767-char command
+line. The probes read a page that writes both values into `#o` once the worker
+has answered.
+
+```
+note: G2: argc=6 --no-sandbox=False      note: N2: argc=6 --no-sandbox=False
+note: G3: main -> 3 (expect 3)           note: N3: main -> 3 (expect 3)
+note: G4: worker -> 3 (expect 3)         note: N4: worker -> 3 (expect 3)
+11 PASS 0 FAIL
+```
+
+RED, using a copy of the tree in which the Go and Node clients drop the last
+config chunk. Under strict the config is then unparseable, the browser exits,
+and both probes fail. The Python K rows are untouched:
+
+```
+note: G2: argc=0 --no-sandbox=False; JSONDecodeError: ... <gracefully close end>
+note: N2: argc=0 --no-sandbox=False; JSONDecodeError: ... <gracefully close end>
+5 PASS 6 FAIL
+```
+
+`verify_sp6b_driver.py`, all six drivers on the host, prints `ALL_PASS`. The
+stock rows fail C1 (`Runtime.enable=1`) and C5 (+21-22%), and the patchright
+rows pass every check (C5 +4-6%). The log carries one `ConnectionAbortedError`
+traceback, raised by the verify's own page server when a client dropped a
+connection; no row depends on it. That run left 3 `camoucrome-base-*`
+directories, the driver verify's own baseline profiles, which the scripts
+cleanup change removes. It left no client profile and no crash dir.
+
+### What this does not establish
+
+- **Fonts.** No `FONTCONFIG_FILE` path was exercised on Windows. Fontconfig is a
+  Linux mechanism.
+- **The driver copies.** They are the box's packages, not a fresh install. A
+  re-pin that moves patchright moves both hosts together.
