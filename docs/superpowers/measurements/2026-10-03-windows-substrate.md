@@ -852,8 +852,7 @@ carries the environment.
 
 - **A launch that does not go through a client.** `chrome.exe` started by hand,
   or by any other tool, still writes to `<profile>\Crashpad`. The C++ lever
-  (crashpad not initialising in the fork) remains, and needs a Windows build
-  on the current pin to verify, so it belongs with the re-pin.
+  remained. (It was done the next day; see "The crashpad lever" below.)
 - **A client process that dies.** If the Python, Go or Node process is killed,
   no close event runs and the crash directory stays in the temp directory,
   dumps included. Removing it then is the caller's job.
@@ -971,3 +970,110 @@ cleanup change removes. It left no client profile and no crash dir.
   Linux mechanism.
 - **The driver copies.** They are the box's packages, not a fresh install. A
   re-pin that moves patchright moves both hosts together.
+
+
+## The crashpad lever
+
+Backlog item 5's last piece: a launch that bypasses the clients, or a client
+killed before its close event, still left a dump holding the identity.
+
+### The lever the roadmap named would not have worked
+
+The roadmap said "crashpad not initialising for the fork (`GetCrashDumpLocation`
+returning empty)". The source says otherwise. In
+`components/crash/core/app/crashpad_win.cc`, a false `GetCrashDumpLocation`
+only leaves `database_path` empty; `StartHandler` still runs with it (line
+151). The handler then fails to start, and a crash with no handler goes to
+Windows Error Reporting. WER writes its own report outside the profile and may
+upload it. That is worse than the problem being fixed.
+
+What crashpad does provide is a per-process switch the handler honours on
+every platform. In `handler/win/crash_report_exception_handler.cc:82`, the
+whole report write sits inside
+`if (client_options.crashpad_handler_behavior != TriState::kDisabled)`, and
+the function returns the exception's termination code either way. Linux
+honours the same switch (`handler/linux/capture_snapshot.cc:63`) and so does
+macOS. Nothing in Chrome sets it explicitly
+(`git grep set_crashpad_handler_behavior` outside `third_party/crashpad`
+finds nothing).
+
+`patches/crashpad-no-dumps.patch` sets it to `kDisabled` in
+`InitializeCrashpadImpl`, right after the platform initialisation succeeds.
+Every process that initialises crashpad runs that function, so browser,
+renderer and GPU crashes are covered, and so is `DumpWithoutCrashing`. The
+handler process still starts, the process still dies with its own exception
+code, and WER is never involved. Only the file is gone.
+
+### The measurement
+
+`scripts/verify_crash_dumps.py` starts the browser through `lib_shell`, not a
+client, with no `BREAKPAD_DUMP_LOCATION` and a marker in the config. It then
+crashes it twice:
+- **C1:** a renderer crash through `chrome://crash`; the browser must survive.
+- **C2:** a browser crash through the DevTools `Browser.crash` command.
+  Navigating to `chrome://inducebrowsercrashforrealz` does nothing under
+  `--headless`. On the first draft that row read `NOT MEASURED`, never PASS.
+
+After each crash it searches for new dump files, and for the marker as ASCII
+and as UTF-16LE, in these places:
+- the profile and `%TEMP%`;
+- the default crash database;
+- on Windows, `%LOCALAPPDATA%\CrashDumps` and both WER stores.
+
+A row passes only if the crash is seen and nothing new is found.
+
+| Binary | Run | C1 renderer | C2 browser (exit) |
+|---|---|---|---|
+| Linux 154, before the lever | RED | FAIL: 1 dump in `~/.config/chromium/Crash Reports/pending/`, marker 0 | FAIL: 1 dump, marker 0 (-6) |
+| Linux 154, with the lever | GREEN, twice | PASS: 0 dumps | PASS: 0 dumps (-6) |
+| Windows 153, the old binary | RED | FAIL: 1 dump in `<profile>\Crashpad\reports`, marker 1 | FAIL: 1 dump, marker 1 (`0x80000003`) |
+| Windows 154, before the lever | RED | FAIL: 1 dump, marker 1 | FAIL: 1 dump, marker 1 (`0x80000003`) |
+| Windows 154, with the lever | GREEN, twice | PASS: 0 dumps, marker 0 | PASS: 0 dumps, marker 0 (`0x80000003`) |
+
+Two things the table shows beyond the fix:
+- **Linux dumps do not land in the profile.** Launched without the variable,
+  Linux `chrome` writes them to `~/.config/chromium/Crash Reports`, one
+  database that **every profile on the host shares**. No Linux dump carried the
+  marker, but the location alone linked profiles.
+- **The exit code is unchanged** on both platforms. Seen from outside, a crash
+  looks the same as before; only the file is missing.
+
+The Linux build after the edit was 6 steps (22 s, component build). The Windows
+rebuild with the lever on top of the full 154 build was **8 steps, 25.68 s**
+(non-component `out\Release`).
+
+### The Windows tree moved to 154 for this
+
+`D:\camou-win\chromium\src` was on 153 with the old change set as a bare
+working tree. An unattended run (`D:\camou-win\overnight.ps1`) did the
+following:
+1. Discarded the 153 working tree. It had been measured byte-identical to the
+   `3d78ae2` change set the same day.
+2. Fetched the 154 tag, checked it out and ran `gclient sync`.
+3. Ran `apply.sh` from `main` under Git Bash: 32 of 32 patches, 130 dirty paths.
+4. Built `chrome`: 57,101 steps, 5 h 31 m.
+5. Ran RED, applied the lever patch, rebuilt, and ran GREEN twice.
+6. Ran the client verifies.
+
+The re-point procedure and its costs are in `specs/repin-runbook.md` §7.
+
+The client verifies on the new binary, from the same run:
+- `verify_windows_client.py`: 11 PASS 0 FAIL.
+- `%TEMP%` held 0 `camoucrome-*` directories afterwards.
+- `verify_sp6b_driver.py`: **FAIL** on one row. `go-patchright` C5 measured
+  stack timing +22% against a 15% bound. In that same run `python-patchright`
+  was -2% and `node-patchright` +9%, and it ran straight after 5.5 h of build.
+
+Re-run three times the next morning with the host idle (CPU 1%), the driver
+verify was ALL_PASS each time:
+
+| Run | python-patchright C5 | go-patchright C5 | node-patchright C5 | stock rows C5 |
+|---|---|---|---|---|
+| 1 | +9% | +10% | +10% | +26%, +27%, +27% |
+| 2 | +7% | +7% | +7% | +27%, +25%, +25% |
+| 3 | +9% | +10% | +10% | +26%, +27%, +27% |
+
+C5 measures a timing ratio, and on this host the patched drivers sit 5 to 8
+points under its bound. A loaded machine can push one of them over, so C5 is
+load-sensitive. The single FAIL is recorded here rather than dropped.
+
