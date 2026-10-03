@@ -256,11 +256,26 @@ from the README alone.
 Release gates, settled before any archive is published:
 
 - **Codec licensing.** Ship without proprietary codecs and document the tell,
-  ship with them and accept the exposure, or publish source only.
-- **LICENSE** for the repo, consistent with the client packages.
+  ship with them and accept the exposure, or publish source only. **Decided
+  2026-10-03: ship with them and accept the exposure.** The other two lose: no
+  codecs is a tell on every page, and source-only defeats this step's 15-minute
+  goal. The exposure is stated in `ACCEPTABLE_USE.md` and must be in the
+  release notes. `settings/build-args.gn` records the decision.
+- **LICENSE** for the repo, consistent with the client packages. **Decided
+  2026-10-03: MPL-2.0**, the same as Camoufox and `client/node/package.json`.
+  `LICENSE` is the canonical text and `client/python/pyproject.toml` declares
+  it. Still owed for a binary release: `package.py` packs no license file, and
+  a Chromium binary must carry Chromium's `LICENSE` and its third-party
+  notices (`about:credits`).
 - **Code signing.** The SP6 spec deferred it "until there are external
-  users". Decide: sign, or document the SmartScreen warning.
-- **Acceptable-use statement.**
+  users". Decide: sign, or document the SmartScreen warning. **Decided
+  2026-10-03: unsigned for the first release.** The README says SmartScreen
+  will warn on first run and how to proceed. Revisit when there are users;
+  the paid options are an OV certificate (about USD 200–400 a year, and it
+  still warns until it gains reputation) or Azure Trusted Signing (about USD 10
+  a month, if an individual in the owner's country can enrol).
+- **Acceptable-use statement.** **Drafted 2026-10-03:** `ACCEPTABLE_USE.md`,
+  for the owner to review.
 
 Work:
 
