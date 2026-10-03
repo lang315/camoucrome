@@ -165,9 +165,9 @@ try:
 finally:
     del os.environ["CAMOU_CONFIG_1"]
 
-# 4. Where the binaries are. The two path constants are what makes every
-#    lib_shell-driven verification Linux-only, and _binaries() is the single
-#    place that resolves them, so these cases are the whole surface. They pass
+# 4. Where the binaries are. _binaries() is the single place that resolves the
+#    two binary paths, so these cases are the whole surface for THOSE two; the
+#    rest of the box's layout is layout()'s, checked in section 5. They pass
 #    an environment and an os.name explicitly rather than mutating the real
 #    ones: the constants are resolved once at import, so a test that set
 #    os.environ here would be measuring nothing.
@@ -220,7 +220,7 @@ check("layout honours every override it documents",
       f"got {(L.py, L.node, str(L.client), L.fonts_dir)}")
 
 L = lib_shell.layout({})
-check("layout's defaults are the paths the eleven scripts used to compute",
+check("layout's defaults are the paths those scripts used to compute",
       (L.home, L.py, L.node, str(L.client), L.fonts_dir)
       == (os.path.expanduser("~"),
           os.path.expanduser("~/camoucrome-verify/venv/bin/python3"),
