@@ -19,6 +19,14 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
+# Imported BEFORE the CAMOU_CLIENT line on purpose, and it is the guard for a
+# regression that reached main's review: when lib_shell held CLIENT as a module
+# constant, whichever module imported lib_shell first decided CLIENT for every
+# script imported later, so this file's CAMOU_CLIENT arrived too late and the
+# import below died on a baseline in ~/camoucrome-client. CI's pytest list
+# happened to contain no earlier importer of lib_shell, so it stayed green.
+# Importing it here makes that ordering the normal case instead of an accident.
+import lib_shell  # noqa: E402,F401 - see above; the import itself is the check
 os.environ["CAMOU_CLIENT"] = str(ROOT)
 
 import verify_host_oracle as vho  # noqa: E402 - must follow the CAMOU_CLIENT line
