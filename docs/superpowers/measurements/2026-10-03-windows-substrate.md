@@ -440,12 +440,12 @@ exit=0
 
 ### What this still does not establish
 
-- **Worker parity on Windows.** Conventions rule 3 requires a surface exposed to
-  both a window and a worker to report identical values in both, and the
-  September measurement did check a dedicated worker
-  (`2026-09-24-review-triage.md:195`, `main=3 worker=3`). This script reads the
-  main thread only. The row is worth adding; it was left out rather than written
-  untested.
+- ~~**Worker parity on Windows.**~~ **Added the same day.** Conventions rule 3
+  requires a surface exposed to both a window and a worker to report identical
+  values in both, and the September measurement did check a dedicated worker
+  (`2026-09-24-review-triage.md:195`, `main=3 worker=3`). The script's first
+  version read the main thread only, and said so rather than carrying an untested
+  row. It now has two worker rows, measured below.
 - **Any other renderer-consumed key.** One key is one key.
 - **That the binary matches the tree.** `out\Release` was built 2026-09-25 while
   the tree's content matches the change set at `3d78ae2`. The byte comparison in
@@ -463,3 +463,55 @@ exit=0
 The host's verify tree is therefore no longer a clean copy of one commit: it is
 `ab0644c` plus `scripts/lib_shell.py` and `scripts/verify_windows_sandbox_env.py`
 from this branch.
+
+
+### Worker parity, measured
+
+On Windows a renderer and a dedicated worker are separate processes, so
+`CreateFilteredEnvironment()` could reach one and not the other; a fix that
+applied to only one of them would look correct from the main thread alone. Two
+rows were added to `verify_windows_sandbox_env.py`, using the same blob-worker
+probe as `verify_sp0.py:9-16`. Both expressions go through ONE session per case,
+so the pair comes from the same process tree and the three launches did not
+become five.
+
+W4 is parity under the spoof. W5 is parity with no config at all, which is what
+stops W4 passing because both values happen to be the spoofed number.
+
+RED first, with `CAMOU_OUT` pointing at a directory holding no binary — note that
+W5's `is not None` guard is what makes it fail rather than pass on two equal
+`None`s:
+
+```
+note: W4: sandboxed + config, worker -> None (expect 3, and equal to main None)
+note: W5: sandboxed, no config, worker -> None (expect equal to main None)
+W1: FAIL
+W2: FAIL
+W3: FAIL
+W4: FAIL
+W5: FAIL
+0 PASS 5 FAIL
+exit=1
+```
+
+then against the real build directory, twice:
+
+```
+note: W1: sandboxed + config, main -> 3 (expect 3)
+note: W2: sandboxed, no config, main -> 16 (expect anything but 3)
+note: W3: --no-sandbox + config, main -> 3 (expect 3)
+note: W4: sandboxed + config, worker -> 3 (expect 3, and equal to main 3)
+note: W5: sandboxed, no config, worker -> 16 (expect equal to main 16)
+W1: PASS
+W2: PASS
+W3: PASS
+W4: PASS
+W5: PASS
+5 PASS 0 FAIL
+exit=0
+```
+
+`main=3 worker=3` under the sandbox reproduces what September measured by hand
+(`2026-09-24-review-triage.md:195`); `main=16 worker=16` unconfigured is the part
+that was not measured then, and it is what makes the parity claim mean something
+rather than being an artefact of both processes reading the same spoof.
