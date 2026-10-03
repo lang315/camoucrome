@@ -75,7 +75,7 @@ test('fontconfig follows the claimed OS and the contract', () => {
   const want = path.join(root, 'settings', 'fontconfig', 'windows.conf');
   assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Windows' }, fontsDir: path.join(root, 'fonts') }), want);
   assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Linux' }, fontsDir: path.join(root, 'fonts') }), null);
-  assert.ok(c.fontconfigFor({ preset: { os: 'macOS' }, fontsDir: path.join(root, 'fonts') }).endsWith('settings/fontconfig/macos.conf'));
+  assert.ok(c.fontconfigFor({ preset: { os: 'macOS' }, fontsDir: path.join(root, 'fonts') }).endsWith(path.join('settings', 'fontconfig', 'macos.conf')));
   fs.writeFileSync(path.join(root, 'chrome'), '');
   assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Windows' }, executablePath: path.join(root, 'chrome') }), want);
   assert.equal(c.buildEnv({ fontconfig: want }, {}).FONTCONFIG_FILE, want);
