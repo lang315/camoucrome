@@ -42,6 +42,26 @@ lever list. `scripts/verify_sp7_phonehome.py` automates exactly this.
   `enable_crash_reporter` / `enable_reporting` as unverified GN args — the
   first does not exist upstream and the second (`net/features.gni:36`) is the
   W3C Reporting API, **page-observable, do not touch**.
+
+  > **Amended 2026-10-03.** The consent reasoning above is the **Linux** client
+  > (`chrome_crash_reporter_client.cc`). On Windows the client is
+  > `chrome/app/chrome_crash_reporter_client_win.cc`, whose
+  > `GetCollectStatsConsent()` delegates to
+  > `install_static::GetCollectStatsConsent()`: a `MetricsReportingEnabled`
+  > policy under `SOFTWARE\Policies\<product>` in HKLM or HKCU, else a
+  > `usagestats` DWORD under the install's ClientState key. That is machine
+  > state, not a build flag, so on a managed Windows machine consent **can** be
+  > true. The conclusion still holds, for a different reason that applies on
+  > every platform: `CrashReporterClient::GetUploadUrl()`
+  > (`components/crash/core/app/crash_reporter_client.cc:144-147`) returns an
+  > empty URL unless the build is both `GOOGLE_CHROME_BRANDING` and
+  > `OFFICIAL_BUILD`, so crashpad has nowhere to send a report. One override
+  > exists: `crashpad_win.cc:100-105` takes the URL from an environment
+  > variable "for testing". Measured on the Windows host the same day: no
+  > policy value present, and a deliberate crash wrote a local dump that
+  > contains the whole `CAMOU_CONFIG` — see
+  > `measurements/2026-10-03-windows-substrate.md`, "Crashpad on Windows", and
+  > roadmap backlog item 5.
 - **Variations seed.** Off unbranded (`2026-09-09-sp7-fieldtrial-config.md` §4).
 - **Safe Browsing, Domain Reliability, policy fetch, DoH probes.** Nothing in
   75 s on `about:blank`. Not disproven for longer windows or real navigation;

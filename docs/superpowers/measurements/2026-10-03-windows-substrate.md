@@ -230,8 +230,9 @@ F1-F4 say nothing about the fork; they are unmeasured on Windows.
   With the script's own run that is four runs, all the same. The cause of the
   access violation is not determined (it would need a crash dump or a
   debugger), and no stock-Chrome comparison exists, because stock builds
-  include the testing config and never take this path. Filed as backlog item 5
-  in the long-term roadmap.
+  include the testing config and never take this path. Filed as backlog item 6
+  in the long-term roadmap (it was item 5 until "Crashpad on Windows" below
+  inserted the dump finding ahead of it).
 
 The brief expected the RED error to name the missing binary. In `verify_sp2b.py`
 it does not: the script catches the exception and prints only
@@ -552,3 +553,124 @@ bogus `CAMOU_OUT` instead of dragging it along.
 
 With this, all three things PR #4 shipped -- `CAMOU_OUT`, `CAMOU_EXE` and
 `tempfile.gettempdir()` -- have run against a real browser on Windows.
+
+
+## Crashpad on Windows
+
+Backlog item 6 ended on a question: does the `0xC0000005` access violation
+produce a crashpad **upload**? If it did, it would be traffic, and traffic is
+the axis that ranks Safe Browsing above everything else. Answered from the source
+first, then on the host.
+
+### No upload — but not for the reason the Linux analysis gave
+
+`measurements/2026-09-09-sp7-phone-home.md:36-41` concluded crash upload is off
+because `GetCollectStatsConsent()` returns false without
+`GOOGLE_CHROME_BRANDING`. That is the **Linux** client. Windows has its own,
+`chrome/app/chrome_crash_reporter_client_win.cc`, and it delegates:
+
+```
+bool ChromeCrashReporterClient::GetCollectStatsConsent() {
+  return install_static::GetCollectStatsConsent();
+}
+```
+
+`install_static::GetCollectStatsConsent()` (`chrome/install_static/install_util.cc`)
+reads machine state: first `ReportingIsEnforcedByPolicy()` — a
+`MetricsReportingEnabled` DWORD under `SOFTWARE\Policies\<product>` in HKLM,
+then HKCU — and failing that a `usagestats` DWORD under the install's ClientState
+key. On a managed Windows machine with that policy set, consent is **true**.
+
+What actually prevents an upload is one level up and shared by every platform,
+`components/crash/core/app/crash_reporter_client.cc:143-147`:
+
+```
+std::string CrashReporterClient::GetUploadUrl() {
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && defined(OFFICIAL_BUILD)
+  return kDefaultUploadURL;
+#else
+  return std::string();
+```
+
+The fork is neither branded nor official (`settings/release-args.gn` keeps
+`is_official_build` off on purpose), so the URL is empty and crashpad has nowhere
+to send a report. One override exists and is worth knowing about:
+`components/crash/core/app/crashpad_win.cc:100-105` replaces the URL with an
+environment variable's value "for testing". It is operator-side, not
+page-reachable.
+
+On this host, all four policy locations are absent:
+
+```
+HKLM:\SOFTWARE\Policies\Chromium MetricsReportingEnabled = (absent)
+HKCU:\SOFTWARE\Policies\Chromium MetricsReportingEnabled = (absent)
+HKLM:\SOFTWARE\Policies\Google\Chrome MetricsReportingEnabled = (absent)
+HKCU:\SOFTWARE\Policies\Google\Chrome MetricsReportingEnabled = (absent)
+```
+
+So item 6's rank stands: the access violation is not traffic.
+
+### What it does do: a dump in the profile, holding the whole environment
+
+The same crash, triggered once with a fresh throwaway profile:
+
+```
+exit code: 0xC0000005
+files under the profile's Crashpad: 3
+  <udd>\Crashpad\metadata  114
+  <udd>\Crashpad\settings.dat  40
+  <udd>\Crashpad\reports\df89f437-24f0-4882-8b54-166f660e06f3.dmp  191104
+files under the default Crashpad before/after: 0 / 0
+```
+
+The dump lands in the profile named by `--user-data-dir`, not in the default
+`%LOCALAPPDATA%\Chromium\User Data\Crashpad`.
+
+Then the question that matters for this project: does that dump carry the
+identity? Crashed again with a unique marker as a config value, then the dump
+searched for it — as ASCII and as UTF-16LE, because the Windows environment
+block is UTF-16:
+
+```
+exit code: 0xC0000005
+dump bytes: 186864
+marker as ASCII:    False
+marker as UTF-16LE: True
+the string CAMOU_CONFIG as UTF-16LE: True
+the string CAMOU_CONFIG as ASCII:    False
+context: 4= CAMOU_CONFIG={"ua:osInfo":"ZQXJ7731MARKER"} ChocolateyInstall=C:\ProgramData\
+=== control: same crash, no CAMOU_CONFIG ===
+control marker as UTF-16LE: False
+```
+
+The minidump holds the process's **whole environment block**: the configuration
+verbatim, beside every host variable (`ChocolateyInstall` is the next entry). The
+control rules out the marker coming from anywhere else.
+
+The config is the identity. Every crashed profile therefore carries a plain-text
+record of who it claimed to be next to the real machine's environment, which is
+the cross-profile link the roadmap's "many identities on one machine" decision
+must not have. Nothing about this is specific to the field-trial flag; that flag
+is only a reliable trigger. Filed as backlog item 5, ranked below Safe Browsing
+because it is not traffic. The levers and the one non-lever (scrubbing `CAMOU_*`
+after parsing, which would break the `windows-sandbox-env` fix) are listed there.
+
+Not measured: whether Linux dumps carry the environment too. Crashpad writes them
+there (`2026-09-09-sp7-phone-home.md:40`).
+
+The three throwaway profiles created for this, each holding a dump with the
+host's whole environment, were deleted from the host afterwards; none remain.
+
+### A cleanup gap found on the way
+
+After the day's Windows verify runs, `%TEMP%` held 14 `camoucrome-verify-*`
+profile directories and 12 `camoucrome_verify_stderr.*.log` files. The
+directories were **empty** — no files, no dumps — so nothing leaked, but
+`lib_shell.shutdown()`'s `shutil.rmtree(..., ignore_errors=True)` had removed
+their contents and not the directories themselves, and `ignore_errors` hid that.
+The likeliest cause is a child process still holding a handle when `rmtree`
+runs, which Linux tolerates and Windows does not; it is not proven. Separately,
+`launch()` creates the profile with `tempfile.mkdtemp()` before `Popen`, so a
+`Popen` that raises — the bogus-`CAMOU_OUT` RED runs did exactly that — leaves
+the directory behind on every platform. Both belong to Step 1's "temp directory
+cleanup"; neither is fixed here. The 14 directories and 12 logs were removed.
