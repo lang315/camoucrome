@@ -52,8 +52,9 @@ from lib_shell import CHROME as EXE, layout
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
-VENV = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv")
-VENV_STOCK = os.environ.get("CAMOU_VENV_STOCK", f"{HOME}/camoucrome-verify/venv-stock")
+# layout() names each venv's interpreter, bin/python3 or Windows' Scripts\python.exe.
+PY_STOCK = layout({"CAMOU_VENV": os.environ.get("CAMOU_VENV_STOCK",
+                                                f"{HOME}/camoucrome-verify/venv-stock")}).py
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
@@ -135,9 +136,9 @@ def baseline(url):
 
 DRIVERS = [
     # (label, expected, command)
-    ("python-stock", "RED", [f"{VENV_STOCK}/bin/python3", "-m", "camoucrome.probe",
+    ("python-stock", "RED", [PY_STOCK, "-m", "camoucrome.probe",
                              "--driver", "stock", "--executable", EXE]),
-    ("python-patchright", "GREEN", [f"{VENV}/bin/python3", "-m", "camoucrome.probe",
+    ("python-patchright", "GREEN", [PY, "-m", "camoucrome.probe",
                                     "--driver", "patchright", "--executable", EXE]),
     ("go-stock", "RED", [GO_PROBE, "--driver-dir", DRIVER_STOCK, "--label", "go-stock",
                          "--executable", EXE]),
