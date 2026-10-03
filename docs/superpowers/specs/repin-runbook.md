@@ -399,88 +399,132 @@ every milestone. Measured 2026-10-03 on the 153 tree:
 
 ### Is the dirty tree exactly the old change set?
 
-Measured result for the 153 tree: **yes, byte for byte.** The 41 new files and
-all 89 patched files hash identical to what the change set at `3d78ae2`
-produces, and no path is dirty that it does not produce. **Layer 3 below is the
-one that proves it.** A clean path list or a clean added/removed count does
-**not** rule out an in-place edit that keeps both the added and the removed
-line counts (a swapped line, a changed constant); only the byte replay does.
-Do not discard the tree on layers 1-2 alone, and do not keep it on a count
-difference alone (see the multi-patch note).
+Measured result for the 153 tree: **yes, byte for byte.** Three layers, each
+proving its own part:
 
-1. **Paths.** 130 dirty paths = 89 patch targets + 40 `additions/` files + 1
-   `components/camoucfg/invariants.json` (copied from `settings/invariants.json`
-   by `apply.sh`). No path in either direction is unexplained. Sees only
-   added or missing files.
-2. **Content of the 41 new files.** `git hash-object --no-filters` of each
-   against the blob in the repo at `3d78ae2`: 41 of 41 identical.
-3. **Content of the 89 patched files, byte replay.** For every patched path:
-   the pristine blob at the pin (`git show HEAD:<path>` from the Windows
-   tree), every old patch that touches it applied in `patches/series` order,
-   the result hashed and compared with the hash of the Windows working file:
-   **89 of 89 identical.** A staged-diff `--numstat` count comparison done
-   first agreed on 86 of 89; the 3 that differed (`browser_main_loop.cc`,
-   `.../core/css/local_font_face_source.cc`,
-   `.../modules/speech/speech_synthesis.cc`) are files that two or three
-   patches touch, and the byte replay found them identical too.
+- **Layer 1 (paths)** proves no path is dirty that the change set does not
+  produce, and none it produces is missing.
+- **Layer 2 (hashes)** proves the 41 new files are byte-identical to the repo's.
+- **Layer 3 (byte replay)** proves the 89 patched files are byte-identical to
+  what the old patches produce.
+
+A clean path list or a clean added/removed count does **not** rule out an
+in-place edit that keeps both the added and the removed line counts (a swapped
+line, a changed constant); only the byte replay (layer 3) can see that. Do not
+discard the tree on layers 1-2 alone, and do not keep it on a count difference
+alone (see "How to read a difference").
 
 The tree was measured as it stood on 2026-10-03. Re-run before discarding it.
+Numbers it gave: layer 1 130 dirty = 89 patch targets + 40 `additions/` files +
+1 `components/camoucfg/invariants.json` (copied from `settings/invariants.json`
+by `apply.sh`), no difference either way; layer 2 41 of 41 identical; layer 3
+89 of 89 identical.
 
-```powershell
-# host: dirty list (-uall is required: without it untracked directories
-# collapse and the count is 90, not 130) and the actual per-file counts.
-$s='D:\camou-win\chromium\src'
-git -C $s status --porcelain -uall | Sort-Object | Set-Content D:\camou-win\win-dirty-all.txt
-git -C $s diff --cached --numstat
-# layer 2, host side: hash a working file exactly as stored (no CRLF filters)
-git -C $s hash-object --no-filters (Join-Path $s 'components\camoucfg\keys.h')
-```
+**Step A, WSL: derive the expected lists at the last commit on the old pin.**
 
 ```bash
-# WSL: the expected lists at the last commit on the old pin (OLD = 3d78ae2).
 R=/home/lang/actions-runner/_work/camoucrome/camoucrome; OLD=3d78ae2
 git -C $R show $OLD:patches/series > /tmp/series-old.txt
 SERIES=$(grep -v '^#' /tmp/series-old.txt | grep -v '^$')
-# layer 1 paths: patch targets, then additions mapped additions/ -> components/
 for p in $SERIES; do git -C $R show $OLD:patches/$p; done | grep '^+++ b/' | sed 's|^+++ b/||' | sort -u > /tmp/win-expected-mod.txt
-git -C $R ls-tree -r --name-only $OLD additions | sed 's|^additions/|components/|'
-#   plus components/camoucfg/invariants.json (from settings/invariants.json)
-# layer 2 blobs (repo hash <TAB> Windows path): same mapping, plus invariants
-git -C $R ls-tree -r $OLD additions | awk '{sub("^additions/","components/",$4); print $3"\t"$4}'
-git -C $R ls-tree -r $OLD settings/invariants.json | awk '{print $3"\tcomponents/camoucfg/invariants.json"}'
-# layer 3 counts, summed per path across patches (a multi-patch file overcounts):
-for p in $SERIES; do git -C $R show $OLD:patches/$p | git apply --numstat; done \
-  | awk '{a[$3]+=$1; d[$3]+=$2; n[$3]++} END{for(f in a) print f"\t"a[f]"\t"d[f]"\t"n[f]}' | sort
-# layer 3 byte replay. /tmp/chk2 holds the pristine blob of every path in
-# win-expected-mod.txt (made on the host, below). Replay on a copy:
+git -C $R ls-tree -r --name-only $OLD additions | sed 's|^additions/|components/|' > /tmp/win-expected-add.txt
+echo components/camoucfg/invariants.json >> /tmp/win-expected-add.txt
+git -C $R ls-tree -r $OLD additions | awk '{sub("^additions/","components/",$4); print $3"\t"$4}' > /tmp/win-expected-blobs.txt
+git -C $R ls-tree -r $OLD settings/invariants.json | awk '{print $3"\tcomponents/camoucfg/invariants.json"}' >> /tmp/win-expected-blobs.txt
+for p in $SERIES; do git -C $R show $OLD:patches/$p | git apply --numstat; done | awk '{a[$3]+=$1; d[$3]+=$2; n[$3]++} END{for(f in a) print f"\t"a[f]"\t"d[f]"\t"n[f]}' | sort > /tmp/win-expected-numstat.txt
+```
+
+**Step B, host: bring the four lists across** (WSL cannot read `D:`, so the copy
+runs from the Windows side, from WSL's UNC export into `D:\camou-win`).
+
+```powershell
+foreach ($n in 'mod','add','blobs','numstat') { Copy-Item "\\wsl.localhost\Ubuntu-24.04\tmp\win-expected-$n.txt" D:\camou-win\ -Force }
+```
+
+**Step C, host, layer 1.** `git status --porcelain` lines start with a
+3-character status prefix (`M ` or `??` plus a space) that must be stripped
+before comparing with the expected paths; `-uall` is required, because without
+it untracked directories collapse and the count is 90, not 130. The expected
+column holds paths with `/`, as git prints them.
+
+```powershell
+$s='D:\camou-win\chromium\src'
+$dirty = git -C $s status --porcelain -uall | ForEach-Object { $_.Substring(3) } | Sort-Object -Unique
+$exp = (Get-Content D:\camou-win\win-expected-mod.txt) + (Get-Content D:\camou-win\win-expected-add.txt) | Sort-Object -Unique
+"dirty $($dirty.Count) expected $($exp.Count)"
+Compare-Object $exp $dirty | ForEach-Object { $_.SideIndicator + ' ' + $_.InputObject }
+```
+
+Empty `Compare-Object` output is the pass. (`<=` is expected but not dirty, `=>`
+is dirty but not expected.) `dirty` counts the `invariants.json` path, so
+`dirty` and `expected` are both 130.
+
+**Step D, host, layer 2.** Hash each of the 41 working files as stored (no
+CRLF filtering) and compare with the repo's blob id.
+
+```powershell
+$bad = 0; $n = 0
+foreach ($l in Get-Content D:\camou-win\win-expected-blobs.txt) { $f = $l -split "`t"; $h = git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\')); $n++; if ($h -ne $f[0]) { $bad++; 'BLOBDIFF ' + $f[1] } }
+"checked $n differing $bad"
+```
+
+**Step E, host, layer 3 counts** (a quick screen, not the proof): the staged
+per-file added/removed against the per-patch sums from Step A.
+
+```powershell
+$act = @{}; git -C $s diff --cached --numstat | ForEach-Object { $f = $_ -split "`t"; $act[$f[2]] = $f[0] + '/' + $f[1] }
+$e = @{}; Get-Content D:\camou-win\win-expected-numstat.txt | ForEach-Object { $f = $_ -split "`t"; $e[$f[0]] = $f[1] + '/' + $f[2] + ' (patches: ' + $f[3] + ')' }
+foreach ($k in ($act.Keys + $e.Keys | Sort-Object -Unique)) { if ($act[$k] -ne ($e[$k] -split ' ')[0]) { "DIFF $k actual=$($act[$k]) expected=$($e[$k])" } }
+```
+
+**Step F, layer 3 byte replay (the proof).** Export the pristine blob of every
+patched path from the Windows tree into a directory on the WSL side, replay the
+old patches in series on a copy, hash the results, and compare with the
+working files. The export used a `cmd /c` redirect; that is what was run (it
+was not compared against a PowerShell redirect).
+
+```powershell
+$u = '\\wsl.localhost\Ubuntu-24.04\tmp\chk2'
+foreach ($f in Get-Content D:\camou-win\win-expected-mod.txt) { $d = Join-Path $u (Split-Path $f -Parent).Replace('/','\'); New-Item -ItemType Directory -Force $d | Out-Null; $dst = Join-Path $u $f.Replace('/','\'); cmd /c "git -C $s show HEAD:$f > $dst" }
+```
+
+```bash
+R=/home/lang/actions-runner/_work/camoucrome/camoucrome; OLD=3d78ae2
+SERIES=$(grep -v '^#' /tmp/series-old.txt | grep -v '^$')
 rm -rf /tmp/work2; cp -r /tmp/chk2 /tmp/work2; cd /tmp/work2
 for p in $SERIES; do git -C $R show $OLD:patches/$p > /tmp/cur2.patch; git apply /tmp/cur2.patch; done
-# (for ONE file touched by several patches: add --include=<path> to git apply)
 for f in $(cat /tmp/win-expected-mod.txt); do printf '%s\t%s\n' "$(git hash-object --no-filters $f)" $f; done > /tmp/replay-hashes.txt
 ```
 
+`/tmp/chk2` is created from the Windows side and is not writable by `lang`,
+which is why the replay runs on the copy `/tmp/work2`. To replay for one file
+touched by several patches, add `--include=<path>` to the `git apply`.
+
 ```powershell
-# host: pristine blobs into WSL. cmd's redirect is bytewise; PowerShell's is
-# not. The files must be copied INTO a /tmp dir from the Windows side, and
-# WSL then copies that dir (it is not writable by lang), as above.
-$u='\\wsl.localhost\Ubuntu-24.04\tmp\chk2'
-foreach ($f in Get-Content D:\camou-win\win-expected-mod.txt) { $d = Join-Path $u (Split-Path $f -Parent).Replace('/','\'); New-Item -ItemType Directory -Force $d | Out-Null; cmd /c "git -C $s show HEAD:$f > $(Join-Path $u $f.Replace('/','\'))" }
-# after the WSL replay: Copy-Item \\wsl.localhost\Ubuntu-24.04\tmp\replay-hashes.txt D:\camou-win\
-foreach ($l in Get-Content D:\camou-win\replay-hashes.txt) { $f=$l -split "`t"; if ((git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\'))) -ne $f[0]) { 'DIFF ' + $f[1] } }
+Copy-Item \\wsl.localhost\Ubuntu-24.04\tmp\replay-hashes.txt D:\camou-win\ -Force
+$bad = 0; $n = 0
+foreach ($l in Get-Content D:\camou-win\replay-hashes.txt) { $f = $l -split "`t"; $h = git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\')); $n++; if ($h -ne $f[0]) { $bad++; 'DIFF ' + $f[1] + ' replay=' + $f[0] + ' win=' + $h } }
+"byte-compared $n differing $bad"
 ```
 
-How to read a difference. A file whose `--numstat` differs from the summed
-per-patch counts is **not** by itself an edit: when `n` (the last column) is
-above 1, later patches rewrite lines earlier ones added, so the sum overcounts
-(the 3 files above: expected 207/20 against actual 187/0, the net add-minus-
-remove is equal). Decide with the byte replay: a `DIFF` line from the last
-command is a real edit and that tree holds work that exists nowhere else —
-list the files and decide about them explicitly; do not discard.
+**How to read a difference.** A file that Step E flags is **not** by itself an
+edit: when the last column of its expected line (the number of patches that
+touch it) is above 1, later patches rewrite lines earlier ones added, so the
+sum overcounts. On 2026-10-03 three files were flagged, all of this kind, and
+all have the same net (added minus removed) in both columns:
 
-Carry lists from WSL to the host with the UNC path WSL exports
-(`Copy-Item \\wsl.localhost\Ubuntu-24.04\tmp\<file> D:\camou-win\`); WSL cannot
-read `D:`. Pitfalls met on the way: `-like '??*'` matches every line (`?` is a
-wildcard), use `-match`; the `additions/X` to `components/X` mapping is needed or
-every new file shows as a difference in both directions; `$R` inside a
-double-quoted `wsl -e bash -c "..."` is expanded by PowerShell, so send
-multi-line bash as base64.
+| file | patches | actual | summed expected |
+|---|---|---|---|
+| `content/browser/browser_main_loop.cc` | 3 | 187/0 | 207/20 |
+| `third_party/blink/renderer/core/css/local_font_face_source.cc` | 2 | 36/0 | 38/2 |
+| `third_party/blink/renderer/modules/speech/speech_synthesis.cc` | 2 | 293/0 | 308/15 |
+
+Decide with Step F: a `DIFF` line there is a real edit, and the tree holds work
+that exists nowhere else; list the files and decide about them explicitly; do
+not discard.
+
+Pitfalls met on the way: `-like '??*'` matches every line (`?` is a wildcard),
+use `-match`; the `additions/X` to `components/X` mapping is needed or every
+new file shows as a difference in both directions; `$R` inside a double-quoted
+`wsl -e bash -c "..."` is expanded by PowerShell, so send multi-line bash as
+base64.
