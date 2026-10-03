@@ -659,7 +659,9 @@ because it is not traffic. The levers and the one non-lever (scrubbing `CAMOU_*`
 after parsing, which would break the `windows-sandbox-env` fix) are listed there.
 
 Not measured: whether Linux dumps carry the environment too. Crashpad writes them
-there (`2026-09-09-sp7-phone-home.md:40`).
+there (`2026-09-09-sp7-phone-home.md:40`). (Partly answered the same day — see
+"Crash dumps go to a directory the client removes": one Linux renderer dump
+did not contain the marker.)
 
 The three throwaway profiles created for this, each holding a dump with the
 host's whole environment, were deleted from the host afterwards; none remain.
@@ -787,3 +789,70 @@ no-config control passing.
   every OS. Not the client's; not fixed here.
 - **Two other hardcoded `bin/python3`s,** in `measure_sp7_components.py` and
   `verify_sp1a_chrome.py`. Neither ran here.
+
+## Crash dumps go to a directory the client removes
+
+Added later the same day: the client-side lever of backlog item 5. Chrome's
+`GetCrashDumpLocation` takes `BREAKPAD_DUMP_LOCATION` from the environment before
+falling back to `<user-data-dir>\Crashpad`
+(`chrome/app/chrome_crash_reporter_client_win.cc:116-128`; the POSIX client reads
+the same variable). All three clients now create a temp directory per launch,
+point the variable at it, and remove it when the context closes or the launch
+fails, for a kept profile as much as a temp one; the parent's value is never
+inherited. The contract entry is `launch.crash_dumps`. Removal goes through the
+same retry as the temp profile (`remove_dir`; Go's `removeDir`; Node's `fs.rm`
+with `maxRetries`), because the close-event race above would otherwise leave the
+directory, dumps included.
+
+Measured through `camoucrome.launch()` with a **kept** profile, a config carrying
+a marker (`{"ua:osInfo": "ZQXJ7731MARKER"}`), and a renderer crash mid-session
+(`page.goto("chrome://crash")`), dumps searched 3 s later.
+
+RED, the client before this change:
+
+```
+client redirects crash dumps: False
+mid-session: kept profile dumps 1 marker True
+mid-session: crash dirs 0 dumps 0 marker False
+after close: kept profile dumps 1 | Crashpad dir in profile: True
+```
+
+So a **renderer** dump carries the identity too, not only the browser-process
+crash measured above, and it outlives the session in the kept profile.
+
+GREEN, three runs alike:
+
+```
+client redirects crash dumps: True
+mid-session: kept profile dumps 0 marker False
+mid-session: crash dirs 1 dumps 1 marker True
+after close: kept profile dumps 0 | Crashpad dir in profile: False
+after close: crash dirs left 0
+```
+
+The dump still exists while the browser runs — the marker is in it — but never
+in the profile (which no longer gets a `Crashpad` directory at all), and the
+directory holding it is gone after `close()`. `%TEMP%` held no `camoucrome*`
+directory afterwards.
+
+The same probe on the Linux box (154 `chrome`, `--no-sandbox`): `mid-session:
+crash dirs 1 dumps 1`, `after close: crash dirs left 0`, no `Crashpad` in the
+profile. The Linux renderer dump did **not** contain the marker, as ASCII or as
+UTF-16 — one crash, one process type; it does not show that no Linux dump ever
+carries the environment.
+
+### What this does not establish
+
+- **A launch that does not go through a client.** `chrome.exe` started by hand,
+  or by any other tool, still writes to `<profile>\Crashpad`. The C++ lever
+  (crashpad not initialising in the fork) remains, and needs a Windows build
+  on the current pin to verify, so it belongs with the re-pin.
+- **A client process that dies.** If the Python, Go or Node process is killed,
+  no close event runs and the crash directory stays in the temp directory,
+  dumps included. Removing it then is the caller's job.
+- **Go and Node on Windows.** Both are unit-tested and ran on the Linux box (the
+  driver verify's six rows); neither ran on Windows, so Go's `removeDir` and
+  Node's `fs.rm` retries are not measured against the race there.
+- **A browser-process crash during launch.** The failed-launch path removes the
+  directory (unit-tested in all three clients); whether a dump was written
+  first was not looked at.

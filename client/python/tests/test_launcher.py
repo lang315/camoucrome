@@ -37,10 +37,17 @@ def test_env_drops_stale_camou_vars_and_sets_the_transport():
                    "CAMOU_PRESET": '{"os": "Windows"}', "CAMOU_CONFIG_STRICT": "1"}
 
 
+@pytest.fixture(autouse=True)
+def temp_dirs_under_tmp_path(tmp_path, monkeypatch):
+    """launch() mkdtemps a crash-dump dir on every call; keep them out of /tmp."""
+    import tempfile
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+
+
 class FakeChromium:
     def launch_persistent_context(self, user_data_dir, **kw):
         self.user_data_dir, self.kw = user_data_dir, kw
-        return "ctx"
+        return ClosingContext()
 
 
 class FakePlaywright:
@@ -54,8 +61,8 @@ def test_launch_refuses_forbidden_options():
 
 def test_launch_uses_persistent_context_without_viewport_emulation():
     pw = FakePlaywright()
-    assert camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p",
-                             window=(800, 600)) == "ctx"
+    assert isinstance(camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p",
+                                        window=(800, 600)), ClosingContext)
     assert pw.chromium.user_data_dir == "/tmp/p"
     kw = pw.chromium.kw
     assert kw["no_viewport"] is True and kw["headless"] is True
@@ -181,7 +188,7 @@ class ClosingChromium:
         self.fail = fail
 
     def launch_persistent_context(self, user_data_dir, **kw):
-        self.user_data_dir = user_data_dir
+        self.user_data_dir, self.kw = user_data_dir, kw
         if self.fail:
             raise RuntimeError("spawn failed")
         self.ctx = ClosingContext()
@@ -204,7 +211,9 @@ def test_temp_profile_is_removed_on_close_and_on_failure(tmp_path):
     kept = tmp_path / "profile"
     kept.mkdir()
     pw = type("PW", (), {"chromium": ClosingChromium()})()
-    assert camoucrome.launch(pw, "/x/chrome", user_data_dir=str(kept)).handlers == []
+    [(_, fn)] = camoucrome.launch(pw, "/x/chrome", user_data_dir=str(kept)).handlers
+    fn(None)
+    assert kept.is_dir()  # a kept profile is the caller's; only the crash-dump dir goes
 
 
 def test_touch_and_mobile_emulation_are_forbidden():
@@ -252,4 +261,34 @@ def test_temp_profile_removal_outlasts_a_locked_profile(monkeypatch):
     monkeypatch.setattr(shutil, "rmtree", locked_twice)
     [(_, fn)] = ctx.handlers
     fn(ctx)
-    assert len(calls) == 3 and not os.path.exists(pw.chromium.user_data_dir)
+    # The crash-dump dir is removed first (two no-ops, then it goes), then the profile.
+    assert len(calls) == 4 and not os.path.exists(pw.chromium.user_data_dir)
+
+
+def test_crash_dumps_go_to_a_dir_the_launcher_deletes(tmp_path):
+    """Chrome writes a crash's minidump -- which holds the whole environment
+    block, CAMOU_CONFIG verbatim (measured 2026-10-03 on Windows) -- to
+    <profile>/Crashpad unless BREAKPAD_DUMP_LOCATION names somewhere else. Every
+    launch, a kept profile included, points it at a temp dir removed on close
+    or on a failed launch; the parent's value is never inherited."""
+    import os
+    launch = CONTRACT["launch"]
+    env_name = launch["crash_dumps"]["env"]
+    assert env_name == camoucrome.launcher.CRASH_DUMPS_ENV == "BREAKPAD_DUMP_LOCATION"
+    assert env_name not in camoucrome.build_env(base={env_name: "/host/dumps"})
+    assert camoucrome.build_env(base={}, crash_dir="/c")[env_name] == "/c"
+
+    kept = tmp_path / "profile"
+    kept.mkdir()
+    pw = type("PW", (), {"chromium": ClosingChromium()})()
+    ctx = camoucrome.launch(pw, "/x/chrome", user_data_dir=str(kept))
+    crash = pw.chromium.kw["env"][env_name]
+    assert os.path.isdir(crash) and not crash.startswith(str(kept))
+    [(event, fn)] = ctx.handlers
+    fn(ctx)
+    assert event == "close" and not os.path.exists(crash) and kept.is_dir()
+
+    pw = type("PW", (), {"chromium": ClosingChromium(fail=True)})()
+    with pytest.raises(RuntimeError):
+        camoucrome.launch(pw, "/x/chrome", user_data_dir=str(kept))
+    assert not os.path.exists(pw.chromium.kw["env"][env_name])

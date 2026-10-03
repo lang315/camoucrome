@@ -50,9 +50,11 @@ test('per-instance seeds match the contract and are non-zero uint32', () => {
 
 test('launch refuses forbidden options and uses a persistent context without viewport emulation', async () => {
   const calls = [];
-  const chromium = { launchPersistentContext: async (dir, opts) => { calls.push([dir, opts]); return 'ctx'; } };
+  const ctx = { on: (e, fn) => { ctx.fn = fn; } };
+  const chromium = { launchPersistentContext: async (dir, opts) => { calls.push([dir, opts]); return ctx; } };
   await assert.rejects(c.launch(chromium, '/x/chrome', { timezoneId: 'UTC' }), /timezoneId/);
-  assert.equal(await c.launch(chromium, '/x/chrome', { config: { a: 1 }, userDataDir: '/tmp/p', window: [800, 600] }), 'ctx');
+  assert.equal(await c.launch(chromium, '/x/chrome', { config: { a: 1 }, userDataDir: '/tmp/p', window: [800, 600] }), ctx);
+  await ctx.fn(); // the crash-dump dir
   const [dir, opts] = calls[0];
   assert.equal(dir, '/tmp/p');
   assert.equal(opts.viewport, null);
@@ -132,9 +134,32 @@ test('touch and mobile emulation are forbidden; a temp profile is removed on clo
   await c.launch(ok, '/x/chrome');
   assert.ok(fs.existsSync(ok.dir));
   assert.equal(ok.ev, 'close');
-  ok.fn();
+  await ok.fn();
   assert.equal(fs.existsSync(ok.dir), false);
   const bad = { launchPersistentContext: async (dir) => { bad.dir = dir; throw new Error('spawn failed'); } };
   await assert.rejects(c.launch(bad, '/x/chrome'), /spawn failed/);
   assert.equal(fs.existsSync(bad.dir), false);
+});
+
+// A crash's minidump holds the whole environment block, CAMOU_CONFIG verbatim
+// (measured 2026-10-03 on Windows). Every launch, a kept profile included,
+// points BREAKPAD_DUMP_LOCATION at a temp dir removed on close or on failure.
+test('crash dumps go to a dir the launcher deletes; the parent\'s is never inherited', async () => {
+  assert.equal(L.crash_dumps.env, c.CRASH_DUMPS_ENV);
+  assert.equal(c.CRASH_DUMPS_ENV, 'BREAKPAD_DUMP_LOCATION');
+  assert.equal(c.CRASH_DUMPS_ENV in c.buildEnv({}, { BREAKPAD_DUMP_LOCATION: '/host/dumps' }), false);
+  assert.equal(c.buildEnv({ crashDir: '/c' }, {}).BREAKPAD_DUMP_LOCATION, '/c');
+  const kept = fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-kept-'));
+  const ok = { launchPersistentContext: async (dir, o) => { ok.o = o; return { on: (e, fn) => { ok.ev = e; ok.fn = fn; } }; } };
+  await c.launch(ok, '/x/chrome', { userDataDir: kept });
+  const crash = ok.o.env.BREAKPAD_DUMP_LOCATION;
+  assert.ok(fs.existsSync(crash) && !crash.startsWith(kept));
+  assert.equal(ok.ev, 'close');
+  await ok.fn();
+  assert.equal(fs.existsSync(crash), false);
+  assert.ok(fs.existsSync(kept));
+  const bad = { launchPersistentContext: async (dir, o) => { bad.o = o; throw new Error('spawn failed'); } };
+  await assert.rejects(c.launch(bad, '/x/chrome', { userDataDir: kept }), /spawn failed/);
+  assert.equal(fs.existsSync(bad.o.env.BREAKPAD_DUMP_LOCATION), false);
+  fs.rmSync(kept, { recursive: true });
 });

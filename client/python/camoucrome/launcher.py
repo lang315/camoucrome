@@ -110,6 +110,13 @@ def fontconfig_for(config=None, preset=None, fonts_dir=None, executable_path=Non
     return conf
 
 
+# A crash's minidump holds the process's whole environment block, CAMOU_CONFIG
+# verbatim beside the host's variables (measured 2026-10-03 on Windows), and
+# Chrome writes it to <profile>/Crashpad unless this names another directory
+# (chrome_crash_reporter_client{,_win}.cc). launch() points it at a temp dir it
+# removes, so a kept profile never accumulates them.
+CRASH_DUMPS_ENV = "BREAKPAD_DUMP_LOCATION"
+
 CONFIG_CHUNK_CHARS = 30000  # Linux caps one environment string at 128 KiB; a macOS identity (191 voices, 409 faces) is ~140 KB
 
 
@@ -121,15 +128,18 @@ def config_env(raw, name="CAMOU_CONFIG"):
     return {f"{name}_{n}": c for n, c in enumerate(chunks, 1)}
 
 
-def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None):
+def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None,
+              crash_dir=None):
     """The child environment: every CAMOU_* of the parent dropped, then the
     given config/preset set. Dropping first is deliberate -- a stale
     CAMOU_CONFIG_1 in the shell would otherwise win over `config`.
     `fontconfig` (from fontconfig_for) sets FONTCONFIG_FILE; the parent's
-    is never inherited (a host conf under a Windows claim is a tell)."""
+    is never inherited (a host conf under a Windows claim is a tell).
+    `crash_dir` sets BREAKPAD_DUMP_LOCATION; the parent's is never inherited
+    either (it would collect every identity's dumps in one place)."""
     effective_keys(config, preset)  # raises on a shape the browser would drop
     env = {k: v for k, v in (os.environ if base is None else base).items()
-           if not k.startswith("CAMOU_") and k != FONTCONFIG_ENV}
+           if not k.startswith("CAMOU_") and k not in (FONTCONFIG_ENV, CRASH_DUMPS_ENV)}
     if config is not None:
         env.update(config_env(_as_json(config)))
     if preset is not None:
@@ -138,6 +148,8 @@ def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None
         env["CAMOU_CONFIG_STRICT"] = "1"
     if fontconfig:
         env[FONTCONFIG_ENV] = fontconfig
+    if crash_dir:
+        env[CRASH_DUMPS_ENV] = crash_dir
     return env
 
 
@@ -224,7 +236,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     SHA-256 SPKI hashes whose certificate errors are ignored (a MITM proxy's
     CA). The Accept-Language header follows the config's (else the preset's)
     languages. A temp profile (no `user_data_dir`) is removed on close or on a
-    failed launch.
+    failed launch, and so is every launch's crash-dump directory.
     `fonts_dir` is the bundled font directory (default: `fonts` beside the
     executable when present); FONTCONFIG_FILE then names the conf of the
     claimed OS so its families resolve.
@@ -234,9 +246,14 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         raise ValueError(
             f"{sorted(bad)} must come through CAMOU_CONFIG, not the driver: "
             "a second emulation of the same surface fights the fork's value")
-    temp = user_data_dir is None
-    if temp:
+    owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
+    if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")
+        owned.append(user_data_dir)
+
+    def remove(*_):
+        for d in owned:
+            remove_dir(d)
     try:
         ctx = playwright.chromium.launch_persistent_context(
             user_data_dir,
@@ -244,7 +261,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             headless=headless,
             ignore_default_args=True,
             env=build_env(config, preset, strict,
-                          fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path)),
+                          fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
+                          crash_dir=owned[0]),
             args=build_args(window, dpr, args, headless, user_data_dir,
                             accept_lang_of(config, preset), extensions, spki_list),
             # Playwright otherwise emulates a 1280x720 viewport through
@@ -253,13 +271,9 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             no_viewport=True,
             **options)
     except BaseException:
-        if temp:
-            remove_dir(user_data_dir)
+        remove()
         raise
-    if not temp:
-        return ctx
-    # A temp profile lives as long as the context, including a failed async launch.
-    remove = lambda *_: remove_dir(user_data_dir)  # noqa: E731
+    # What the launch owns lives as long as the context, including a failed async launch.
     if inspect.isawaitable(ctx):
         async def started():
             try:
