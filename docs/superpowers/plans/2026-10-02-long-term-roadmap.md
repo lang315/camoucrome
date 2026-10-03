@@ -326,22 +326,46 @@ step 2 tables, not this list, decide.
    priority of the three findings here, because it is traffic and not a
    surface. Same script: a truncated netlog scores P1/P2 FAIL instead of
    "could not measure" — fix that too.
-5. **`chrome.exe` crashes on `--enable-field-trial-config` on Windows.** The
+5. **A crash writes the identity's config and the machine's environment into
+   the profile.** Measured on Windows 2026-10-03: any crash of a fork process
+   makes crashpad write a minidump (about 190 KB) to
+   `<profile>\Crashpad\reports\`, and the dump holds the process's whole
+   environment block in UTF-16 — `CAMOU_CONFIG={...}` verbatim, beside every
+   host variable. A marker value put in the config was found in the dump; the
+   same crash with no config had none. Nothing is uploaded: `GetUploadUrl()` is
+   empty unless the build is both branded and official
+   (`components/crash/core/app/crash_reporter_client.cc:144-147`). So this is
+   local, not traffic — but the config *is* the identity, so every crashed
+   profile carries a plain-text record of who it pretended to be next to who
+   the machine is, which is the cross-profile link "many identities on one
+   machine" must not have. Below item 4 because it is not traffic; above the
+   crash-exit item because it applies to every crash, not one flag. Levers,
+   none chosen yet: stop crashpad initialising for the fork
+   (`GetCrashDumpLocation` returning empty,
+   `chrome/app/chrome_crash_reporter_client_win.cc:130-132`), or have the
+   clients put the crash database somewhere they delete. Scrubbing `CAMOU_*`
+   from the environment after parsing is not a lever: child processes need it,
+   which is the whole point of the `windows-sandbox-env` patch. Linux is
+   unmeasured — crashpad writes dumps there too
+   (`measurements/2026-09-09-sp7-phone-home.md:40`), and whether they carry the
+   environment is not known.
+6. **`chrome.exe` crashes on `--enable-field-trial-config` on Windows.** The
    flag is still refused (the exclusion message prints), but the process then
    exits with `0xC0000005`, an access violation, where Linux exits with code 1.
-   Reproduced on four runs; root cause unknown. It matters because a crash is
-   itself a fingerprint. Its rank rests on the trigger being an
-   operator-supplied command-line flag, not anything page-reachable. First
-   check: whether the access violation produces a crashpad **upload**, which
-   would make it network traffic and change its rank (nobody has checked the
-   crashpad configuration).
-6. **Host tells from section D of the completion roadmap**:
+   Reproduced on five runs; root cause unknown. It matters because a crash is
+   itself a fingerprint, and since 2026-10-03 for a second reason: every crash
+   writes item 5's dump. Its rank rests on the trigger being an
+   operator-supplied command-line flag, not anything page-reachable. The
+   question this entry used to end on is answered: the access violation
+   produces **no crashpad upload** — the upload URL is empty in this build —
+   so it is not traffic, and the rank stands.
+7. **Host tells from section D of the completion roadmap**:
    `storage.estimate()`, `keyboard.getLayoutMap()`, `navigator.connection`,
    `getScreenDetails()`, `matchMedia('(display-mode)')`.
-7. **Windows CI.** A build and verify job, once the runner is hardened.
-8. **Build time**, if the re-pin commitment is at risk.
-9. **Linux out of beta.**
-10. **Lower value, kept for the record:** `readPixels` on a framebuffer
+8. **Windows CI.** A build and verify job, once the runner is hardened.
+9. **Build time**, if the re-pin commitment is at risk.
+10. **Linux out of beta.**
+11. **Lower value, kept for the record:** `readPixels` on a framebuffer
    object (noise parity only), media device ID reverse map, geolocation
    permission order, the Android claim with a coarse pointer and zero touch
    points (a coherence defect, cheap, not on the Windows path).
