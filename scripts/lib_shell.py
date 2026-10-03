@@ -61,8 +61,9 @@ Layout = collections.namedtuple("Layout", "home py node client fonts_dir")
 
 def layout(environ=None):
     """The rest of the box's layout: the venv python, the driver's node, the
-    client tree and the font bundle, each with the override the eleven scripts
-    that used to compute them already had.
+    client tree and the font bundle, each with the override it already had in the
+    scripts that used to compute it -- PY and NODE in ten of them, CLIENT in
+    five, FONTS_DIR in four.
 
     A FUNCTION, not module constants, and that distinction was earned. As
     constants these latched the environment at *lib_shell's* import, whenever
