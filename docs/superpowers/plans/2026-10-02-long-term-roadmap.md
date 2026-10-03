@@ -180,6 +180,18 @@ and the layout block eleven scripts repeated is one `lib_shell.layout()` call
 (PRs #5, #6). Flags were deliberately not parametrised: `launch()` already takes
 `extra_flags` and `CHROME_FLAGS` is platform-neutral.
 
+Then, on the Windows host and with no build: `verify_sp2b.py` is green natively on
+`chrome.exe` (3 of 3, with a RED control), and `launch()` gained a `sandbox`
+parameter because `--no-sandbox` was unconditional and that is the one argv under
+which the project's only Windows-specific bug is invisible. With it,
+`verify_windows_sandbox_env.py` measures a renderer-consumed key under the real
+sandbox: **the `windows-sandbox-env` fix holds on Windows** (3 of 3, seen RED
+first; the no-config control reads the machine's real 16). Still open for this
+step: worker parity on Windows, `CAMOU_EXE` there, the component build, the change
+loop end to end, the Go and Node clients, fonts, and every baseline-comparing
+verification while the Windows binary is on the old pin. Evidence:
+`measurements/2026-10-03-windows-substrate.md`.
+
 Ruling 2026-10-03: the Windows tree stays on the **old** pin (`507c6ee3e2`,
 153.0.8010.36) until the re-pin due 2026-10-20. Re-pointing it to 154 would
 cost a from-scratch Windows build of about 7.5 hours that Chrome 156 obsoletes
