@@ -24,7 +24,9 @@ import subprocess
 import sys
 import threading
 
-from lib_shell import CHROME as EXE, CLIENT, NODE, PY
+from lib_shell import CHROME as EXE, layout
+
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 N = int(os.environ.get("CAMOU_GEN_N", "10"))
 OSES = ["windows", "macos", "linux"]

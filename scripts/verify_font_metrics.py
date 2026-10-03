@@ -18,7 +18,9 @@ import subprocess
 import sys
 import threading
 
-from lib_shell import CHROME as EXE, CLIENT, FONTS_DIR, NODE, PY
+from lib_shell import CHROME as EXE, layout
+
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 FONTS = json.loads((CLIENT / "settings" / "fonts.json").read_text(encoding="utf-8"))
 OS = sys.argv[sys.argv.index("--os") + 1] if "--os" in sys.argv else "windows"

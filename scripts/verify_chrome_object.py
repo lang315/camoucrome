@@ -20,10 +20,11 @@ import subprocess
 import sys
 import threading
 
-import lib_shell
-from lib_shell import CHROME as EXE, HOME, NODE, PY
+from lib_shell import CHROME as EXE, layout, session
 
-BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", f"{HOME}/camoucrome-client/baselines/chrome-8037-stock-window-chrome.json"))
+HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+
+BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", str(CLIENT / "baselines" / "chrome-8037-stock-window-chrome.json")))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from capture_chrome_object import PAGE  # noqa: E402
 
@@ -52,7 +53,7 @@ def probe(url):
 
 
 def content_shell(url):
-    values, err = lib_shell.session(None, ["() => JSON.parse(document.getElementById('o').textContent)"], navigate_to=url)
+    values, err = session(None, ["() => JSON.parse(document.getElementById('o').textContent)"], navigate_to=url)
     return None if err else values[0]
 
 
