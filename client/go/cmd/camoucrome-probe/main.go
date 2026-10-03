@@ -6,47 +6,16 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/mxschmitt/playwright-go"
 
 	camoucrome "github.com/lang315/camoucrome/client/go"
 )
-
-func browserArgv(executable string) []string {
-	entries, _ := os.ReadDir("/proc")
-	for _, e := range entries {
-		raw, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
-		if err != nil || len(raw) == 0 {
-			continue
-		}
-		parts := bytes.Split(bytes.TrimSuffix(raw, []byte{0}), []byte{0})
-		if len(parts) == 1 { // Chromium rewrites its cmdline into one space-joined string
-			parts = bytes.Split(parts[0], []byte{' '})
-		}
-		if string(parts[0]) != executable {
-			continue
-		}
-		argv := make([]string, len(parts))
-		child := false
-		for i, p := range parts {
-			argv[i] = string(p)
-			if strings.HasPrefix(argv[i], "--type=") {
-				child = true
-			}
-		}
-		if !child {
-			return argv
-		}
-	}
-	return nil
-}
 
 func fail(what string, err error) {
 	fmt.Fprintln(os.Stderr, what, err)
@@ -61,14 +30,32 @@ func main() {
 	config := flag.String("config", "", "CAMOU_CONFIG JSON")
 	preset := flag.String("preset", "", "CAMOU_PRESET JSON")
 	headed := flag.Bool("headed", false, "not headless")
+	strict := flag.Bool("strict", false, "CAMOU_CONFIG_STRICT=1")
+	// Windows: the sandbox is what strips CAMOU_* from a renderer unless the
+	// windows-sandbox-env patch lets it through, and --no-sandbox hides that.
+	sandbox := flag.Bool("sandbox", false, "omit --no-sandbox")
 	flag.Parse()
+	// A generated identity is ~37 KB (Windows) to ~140 KB (macOS): past
+	// Windows' 32767-char command line and Linux's 128 KiB single argument.
+	for _, v := range []*string{config, preset} {
+		if strings.HasPrefix(*v, "@") {
+			raw, err := os.ReadFile((*v)[1:])
+			if err != nil {
+				fail("read:", err)
+			}
+			*v = string(raw)
+		}
+	}
 
 	pw, err := playwright.Run(&playwright.RunOptions{DriverDirectory: *driverDir, SkipInstallBrowsers: true, Verbose: false})
 	if err != nil {
 		fail("run:", err)
 	}
 	headless := !*headed
-	o := camoucrome.Options{ExecutablePath: *exe, ExtraArgs: []string{"--no-sandbox"}, Headless: &headless}
+	o := camoucrome.Options{ExecutablePath: *exe, Headless: &headless, Strict: *strict}
+	if !*sandbox {
+		o.ExtraArgs = []string{"--no-sandbox"}
+	}
 	if *config != "" {
 		o.Config = *config
 	}
