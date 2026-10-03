@@ -112,13 +112,19 @@ Replace the pytest line with the directory, and say in a comment why:
           python3 -m pytest -q client/python/tests scripts/
 ```
 
-Leave the separate `argv freeze (lib_shell)` step alone: it prints its twelve
+Leave the separate `argv freeze (lib_shell)` step alone: it prints its 17
 named rows, where pytest only runs them as an import side effect.
 
 - [ ] **Step 4: Record Step 1's status in the roadmap**
 
 Add this at the end of the "Step 1: Windows foundation" section, before
 "Done when:":
+
+> **Amended 2026-10-03.** The two figures in the "Ruling" paragraph of the block
+> below ("6-7 h of machine time", "two 6-hour builds (WSL and Windows)") were
+> superseded; the roadmap carries the corrected ones (a from-scratch Windows
+> build of about 7.5 hours; the re-pin's own 7 h 40 m, 6 h 10 m of it the WSL
+> build).
 
 ```markdown
 **Status 2026-10-03.** Shipped: `lib_shell` resolves its binaries and temp dir
@@ -146,6 +152,20 @@ git commit  # subject: "ci: run every test in scripts/, not a hand-written list"
 ---
 
 ### Task 2: the Windows host's verify environment
+
+> **Amended 2026-10-03.** The `/mnt/d` premise in this task (and in the
+> architecture line, Step 2, and the Task 3 and 4 commands below) is **false**:
+> WSL automount is disabled (`/etc/wsl.conf` `[automount] enabled=false`), so
+> `/mnt/d` inside WSL is an ordinary WSL-local directory and a write there lands
+> nowhere Windows can see. The working transport is from the Windows side,
+> `\\wsl.localhost\Ubuntu-24.04\...`; reading the Windows tree from WSL is not
+> possible, so git on the Windows tree runs on the host. Task 4's
+> `grep -c '^ M'` is also wrong: a staged modification's porcelain prefix is
+> `M ` (first column), so it reads 0 even on a reachable tree. The steps below
+> are kept as executed; see
+> `docs/superpowers/measurements/2026-10-03-windows-substrate.md`. The goal
+> line's "close" is likewise superseded: the honest claim, made there, is "the
+> first native green"; `CAMOU_EXE` was never exercised on Windows.
 
 **Why:** nothing on the host can run a verification today — there is no venv and
 no playwright. `lib_shell` imports playwright lazily (PR #5), so the paths and

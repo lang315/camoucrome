@@ -316,7 +316,11 @@ step 2 tables, not this list, decide.
    flag is still refused (the exclusion message prints), but the process then
    exits with `0xC0000005`, an access violation, where Linux exits with code 1.
    Reproduced on four runs; root cause unknown. It matters because a crash is
-   itself a fingerprint.
+   itself a fingerprint. Its rank rests on the trigger being an
+   operator-supplied command-line flag, not anything page-reachable. First
+   check: whether the access violation produces a crashpad **upload**, which
+   would make it network traffic and change its rank (nobody has checked the
+   crashpad configuration).
 6. **Host tells from section D of the completion roadmap**:
    `storage.estimate()`, `keyboard.getLayoutMap()`, `navigator.connection`,
    `getScreenDetails()`, `matchMedia('(display-mode)')`.

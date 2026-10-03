@@ -47,8 +47,8 @@ jobs:
       - name: argv freeze (lib_shell)
         run: python3 scripts/test_lib_shell_launch.py
       # scripts/ wholesale, not a hand-written list: the list is what let the
-      # CLIENT latch regression through. It contained no module importing
-      # lib_shell at module scope, so the cross-module import ordering that
+      # CLIENT latch regression through. It contained no earlier importer
+      # of lib_shell at module scope, so the cross-module import ordering that
       # breaks `pytest scripts/` never happened in CI. A directory also picks up
       # a new test file without anyone remembering to add it -- test_gen_keys.py
       # and test_winhost.py had never run here.
