@@ -59,7 +59,7 @@ OUT, SHELL, CHROME = _binaries()
 Layout = collections.namedtuple("Layout", "home py node client fonts_dir")
 
 
-def layout(environ=None):
+def layout(environ=None, osname=None):
     """The rest of the box's layout: the venv python, the driver's node, the
     client tree and the font bundle, each with the override it already had in the
     scripts that used to compute it -- PY and NODE in ten of them, CLIENT in
@@ -82,16 +82,19 @@ def layout(environ=None):
     the node every other script uses would be a behaviour change nobody asked
     for.
 
-    The defaults are the Linux box's layout, slash-joined, with a POSIX
-    `bin/python3`. A Windows tree will need its own answers here; `_binaries`
-    above is the shape to follow when it does.
+    The defaults are the Linux box's layout, slash-joined. The venv's
+    interpreter follows `osname` the way `_binaries` does: `bin/python3`, or
+    `Scripts\\python.exe` on Windows. The other defaults name nothing on the
+    Windows host; set CAMOU_VENV, CAMOU_CLIENT and PLAYWRIGHT_NODEJS_PATH there.
     """
     environ = os.environ if environ is None else environ
+    osname = os.name if osname is None else osname
     home = os.path.expanduser("~")
     client = pathlib.Path(environ.get("CAMOU_CLIENT", f"{home}/camoucrome-client"))
+    interpreter = "\\Scripts\\python.exe" if osname == "nt" else "/bin/python3"
     return Layout(
         home,
-        environ.get("CAMOU_VENV", f"{home}/camoucrome-verify/venv") + "/bin/python3",
+        environ.get("CAMOU_VENV", f"{home}/camoucrome-verify/venv") + interpreter,
         environ.get("PLAYWRIGHT_NODEJS_PATH", f"{home}/camoucrome-driver/node"),
         client,
         environ.get("CAMOU_FONTS_DIR", str(client / "fonts")),
