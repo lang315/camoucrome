@@ -158,8 +158,11 @@ def run_probe(cmd, url):
     for k in list(env):
         if k.startswith("CAMOU_CONFIG") or k.startswith("CAMOU_PRESET"):
             del env[k]
-    p = subprocess.run(cmd + ["--url", url], capture_output=True, text=True,
-                       timeout=300, env=env)
+    try:
+        p = subprocess.run(cmd + ["--url", url], capture_output=True, text=True,
+                           timeout=300, env=env)
+    except FileNotFoundError as e:  # a probe not built on this host: a FAIL row, not a crash
+        return None, str(e)
     if p.returncode != 0:
         return None, p.stderr[-800:]
     return json.loads(p.stdout), p.stderr
@@ -183,7 +186,11 @@ def check(label, result, log, base):
     argv = result["argv"] or []
     hits = [f for f in FORBIDDEN_FLAGS if any(a.startswith(f) for a in argv)]
     got = {a for a in argv[1:] if not a.startswith("--user-data-dir=") and a != "--no-sandbox"}
-    expected = EXPECTED_ARGS | (HEADLESS_SELF_ADDED if "--headless=new" in got else set())
+    # Windows reports the command line the driver passed: Chrome appends
+    # --noerrdialogs in-process (headless_mode_init.cc), which only Linux's
+    # rewritten process title shows, and the ozone/ANGLE three are IS_LINUX.
+    self_added = HEADLESS_SELF_ADDED if "--headless=new" in got and os.name != "nt" else set()
+    expected = EXPECTED_ARGS | self_added
     unexpected = sorted(got - expected)
     absent = sorted(expected - got)
     rows["C4 argv == launcher.json expected set"] = (
