@@ -223,7 +223,22 @@ async function launch(chromium, executablePath, {
     await remove();
     throw e;
   }
+  // Removed on the close event and again once close() resolves. The event
+  // alone is too early on Linux: it fires while the browser is still shutting
+  // down, and the browser then writes its profile and crashpad re-creates the
+  // dump dir after they were removed (measured 2026-10-03; when close()
+  // resolves, no process names the profile). The event still matters for a
+  // browser that crashed or was killed: then it fires after the process is
+  // gone. A driver stopped without close() removes on the event only.
   ctx.on('close', remove);
+  const close = ctx.close.bind(ctx);
+  ctx.close = async (...a) => {
+    try {
+      return await close(...a);
+    } finally {
+      await remove();
+    }
+  };
   return ctx;
 }
 
