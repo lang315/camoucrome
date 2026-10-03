@@ -28,7 +28,8 @@ HEAD ab0644c origin/main ab0644c
 That `Version: 1.55.0` is the **build box's** playwright
 (`/home/lang/camoucrome-verify/venv/bin/python3 -m pip show playwright`). The
 host venv, made from Python 3.9.13 (`C:\Program Files\Python39\python.exe`; the
-report states the version, no command printed it):
+controller ran `& 'C:\Program Files\Python39\python.exe' -V` before the plan,
+which printed `Python 3.9.13`):
 
 ```
 $py='D:\camou-win\verify-venv\Scripts\python.exe'; & 'C:\Program Files\Python39\python.exe' -m venv D:\camou-win\verify-venv; ...; & $py -m pip install -q playwright==1.55.0; ...; & $py -m pip show playwright | Select-Object -First 2; & $py -c "import playwright; print(playwright.__file__)"
@@ -67,8 +68,9 @@ The plan's premise was that WSL can write `/mnt/d`. **That is wrong on this
 machine.** `/etc/wsl.conf` has `[automount] enabled=false` (set by the runner
 hardening in `2026-10-repin.md`), so `/mnt/d` inside WSL is a plain directory
 on the WSL ext4 disk, not the Windows D: drive. The probe that justified the
-premise only ran `test -d /mnt/d` and wrote a file there; it passed while the
-files landed nowhere Windows could see:
+premise was the controller's pre-plan probe (before the plan was written; it is
+not in the task reports): `test -d /mnt/d && echo yes` plus a touch-and-remove
+of a file there. It passed while the files landed nowhere Windows could see:
 
 ```
 Get-PSDrive: C, D, E exist on Windows.
@@ -131,7 +133,12 @@ sp2b exit=0
 
 3 of 3, exit 0. Criteria 2 and 3 can only pass if the configured behaviour
 differs from criterion 1's unconfigured run, so `CAMOU_CONFIG` reached the
-renderer for the humanize key. That is the one key this proves.
+**browser process** for the humanize key. It is the browser process, not the
+renderer: `patches/sp2b-humanized-cursor.patch` touches exactly two files,
+`content/browser/devtools/protocol/input_handler.cc` and `.h`, and its three
+config reads (`camoucfg::GetBool` / `GetInt32`, both with
+`camoucfg::GlobalScope()`) are in that browser-process file. That is the one
+key this proves, and only for that process.
 
 ## `tempfile.gettempdir()` replaced `/tmp`
 
@@ -313,7 +320,11 @@ Whether `apply.sh` runs under either was not measured.
 
 The runbook section for all of this is section 7, "The Windows tree", of
 `docs/superpowers/specs/repin-runbook.md`. Its eight code blocks were extracted from the document text and
-run mechanically in one call: `dirty 130 expected 130` with an empty
+run mechanically in one call, with the deviations `task-4-report.md` discloses:
+PowerShell lines were joined with `; ` (sshgate refuses newlines), comment lines
+were dropped, and the prose `--include=<path>` variant of `git apply` was not
+re-run (it was used in an earlier round, for the 3 files, not in the all-89
+replay): `dirty 130 expected 130` with an empty
 `Compare-Object`, `checked 41 differing 0`, the same three DIFF rows above,
 and `byte-compared 89 differing 0`.
 
@@ -326,10 +337,15 @@ and `byte-compared 89 differing 0`.
   compared, not changed. Edit, export and re-apply on Windows is unproven, as is
   whether they run under either Git Bash.
 - **The Go and Node clients.** Only `lib_shell` and `verify_sp2b.py` ran. The
-  clients under `client/` were copied (140 files) and not executed.
+  clients under `client/` were copied (as part of the 140-file verify tree:
+  scripts, settings, baselines and client; `client/` alone is 24 tracked files at
+  `ab0644c`) and not executed.
 - **Fonts on Windows.** Nothing here touches a font surface.
 - **Every baseline-comparing verification.** The binary is 153.0.8010.36 and
-  the committed baselines describe 154.0.8037.93, so such a verification would
+  the Windows-relevant committed baselines describe 154.0.8037.93 (others do not:
+  `baselines/chrome-0e8d4a9268-stock-ua.json` is 154.0.8026.0,
+  `baselines/chrome-7922-stock-font-metrics-macos.json` is 151.0.7922.138, and
+  `baselines/content_shell-sp0-stock-ua.json` is neither), so such a verification would
   differ on the Chrome version, not on the fork. Only behavior-asserting
   verifications ran, and of those, one: `verify_sp2b.py` passes; the other
   executed, `verify_sp7_fieldtrial.py`, fails at 4 rows for want of
@@ -345,8 +361,25 @@ and `byte-compared 89 differing 0`.
   path. (`verify_sp7_fieldtrial.py` C2 did print
   `chrome.exe exited during startup, code 3221225477`, but that is a process
   that started and crashed, not a binary that is absent.)
-- **`CAMOU_CONFIG` reaching the renderer beyond one key.** The humanize key in
-  `sp2b` is the one exercised here; F3 (`navigator.hardwareConcurrency`) did not
-  run.
+- **`CAMOU_CONFIG` reaching the browser process beyond one key.** The humanize
+  key in `sp2b` is the one exercised here; F3 (`navigator.hardwareConcurrency`)
+  did not run.
+- **Any renderer-consumed key on Windows.** None has been exercised. The only
+  renderer-side row in this slice, F3, never ran, because a Windows release build
+  has no `content_shell.exe`. And `launch()` hardcodes `--no-sandbox`
+  (`scripts/lib_shell.py:282`), which bypasses the environment filter the
+  project's only Windows-specific bug lived behind
+  (`2026-09-24-review-triage.md:183`): Windows launches renderers and utilities
+  with `SetFilterEnvironment(true)`, `CreateFilteredEnvironment()` strips every
+  `CAMOU_*` variable, and `navigator.hardwareConcurrency` read the real 16 under
+  the default sandbox and the spoofed 3 under `--no-sandbox`. So the argv that
+  produced this slice's green is the one argv under which that bug is invisible,
+  and the process it exercised is the one the filter never touched. A Windows
+  renderer-surface verification requires a run **without** `--no-sandbox`, which
+  `launch()` cannot currently produce.
+- **`CAMOU_EXE`.** The third knob PR #4 shipped. `CAMOU_OUT` and
+  `tempfile.gettempdir()` were exercised on Windows; `CAMOU_EXE` was not.
+- **"Closes" PR #4's caveat.** This slice is the first native green, not a
+  closure of that caveat; everything above remains unverified on Windows.
 - **Whether the access violation is the fork's.** Root cause is unknown; no
   crash dump was taken.

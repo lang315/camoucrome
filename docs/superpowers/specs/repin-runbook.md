@@ -257,7 +257,8 @@ export is idempotent.
 paragraph, the retired-branch sentence, the `baselines/` row), `README.md`, and
 the roadmap's "Where the project stands". The PR body carries the prediction
 against the actual conflict count, the timing table, both sweep summaries, and
-step 9's gate output. After the merge, `build-verify` runs on `main` by itself. Then re-point the Windows tree: §7.
+step 9's gate output. After the merge, `build-verify` runs on `main` by itself.
+Then re-point the Windows tree: §7.
 
 ## 3. What a re-pin costs
 
@@ -388,14 +389,18 @@ every milestone. Measured 2026-10-03 on the 153 tree:
   the same way finds git (`/cmd/git`, same 2.51.2) but **not** `uname` or
   `head` (`command not found`): its `PATH` lacks the MSYS coreutils, where
   `bin\bash.exe`'s has them. With `-l`, `usr\bin\bash.exe` does find them
-  (`uname -s` = `MSYS_NT-10.0-19045`, GNU coreutils 8.32, git `/cmd/git`). Whether `apply.sh` / `rebuild_branch.sh` run
-  under it is **not measured** (they were deliberately not run).
+  (`uname -s` = `MSYS_NT-10.0-19045`, GNU coreutils 8.32, git `/cmd/git`).
+  Whether `apply.sh` / `rebuild_branch.sh` run under it is **not measured** (they were deliberately not run).
 - **GN args**: `settings/release-args.gn` is the canonical source and contains
   `disable_fieldtrial_testing_config = true`. `out\Release\args.gn` was read
   whole: the same keys and values as that file (`is_debug` ... `use_remoteexec`,
   the codec pair, the field-trial line), plus `target_cpu = "x64"`. The
   comparison was by eye, not a byte diff. A re-point carries the args across,
   not only the patches.
+
+This section covers the discard decision only. The procedure to re-point the
+tree (fetch, check out the new tag, `apply.sh`, build, gate) is still owed;
+`apply.sh` and `rebuild_branch.sh` were deliberately never run there.
 
 ### Is the dirty tree exactly the old change set?
 
@@ -459,6 +464,9 @@ Empty `Compare-Object` output is the pass. (`<=` is expected but not dirty, `=>`
 is dirty but not expected.) `dirty` counts the `invariants.json` path, so
 `dirty` and `expected` are both 130.
 
+Steps D, E and F use `$s`, which only Step C's block defines; in a fresh
+PowerShell, run `$s='D:\camou-win\chromium\src'` first.
+
 **Step D, host, layer 2.** Hash each of the 41 working files as stored (no
 CRLF filtering) and compare with the repo's blob id.
 
@@ -467,6 +475,10 @@ $bad = 0; $n = 0
 foreach ($l in Get-Content D:\camou-win\win-expected-blobs.txt) { $f = $l -split "`t"; $h = git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\')); $n++; if ($h -ne $f[0]) { $bad++; 'BLOBDIFF ' + $f[1] } }
 "checked $n differing $bad"
 ```
+
+The `BLOBDIFF` row has been seen to print (2026-10-03): with the first hash of
+a copy of the list altered, the loop printed `BLOBDIFF components/camoucfg/BUILD.gn`
+and `checked 41 differing 1`; the original list gave `differing 0` again.
 
 **Step E, host, layer 3 counts** (a quick screen, not the proof): the staged
 per-file added/removed against the per-patch sums from Step A.
@@ -498,7 +510,8 @@ for f in $(cat /tmp/win-expected-mod.txt); do printf '%s\t%s\n' "$(git hash-obje
 
 `/tmp/chk2` is created from the Windows side and is not writable by `lang`,
 which is why the replay runs on the copy `/tmp/work2`. To replay for one file
-touched by several patches, add `--include=<path>` to the `git apply`.
+touched by several patches, add `--include=<path>` to the `git apply` (used in an earlier round of this
+probe; not re-run with this final text).
 
 ```powershell
 Copy-Item \\wsl.localhost\Ubuntu-24.04\tmp\replay-hashes.txt D:\camou-win\ -Force
@@ -506,6 +519,10 @@ $bad = 0; $n = 0
 foreach ($l in Get-Content D:\camou-win\replay-hashes.txt) { $f = $l -split "`t"; $h = git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\')); $n++; if ($h -ne $f[0]) { $bad++; 'DIFF ' + $f[1] + ' replay=' + $f[0] + ' win=' + $h } }
 "byte-compared $n differing $bad"
 ```
+
+The `DIFF` row has been seen to print (2026-10-03): with one `x` appended to
+the scratch copy of `browser_main_loop.cc`, the loop printed one `DIFF` line and
+`byte-compared 89 differing 1`; regenerating the scratch copy gave `differing 0`.
 
 **How to read a difference.** A file that Step E flags is **not** by itself an
 edit: when the last column of its expected line (the number of patches that
