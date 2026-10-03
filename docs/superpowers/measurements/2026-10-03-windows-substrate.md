@@ -841,6 +841,13 @@ profile. The Linux renderer dump did **not** contain the marker, as ASCII or as
 UTF-16 — one crash, one process type; it does not show that no Linux dump ever
 carries the environment.
 
+> **Amended 2026-10-03.** The Linux `after close: crash dirs left 0` was read
+> too early. On Linux the browser re-creates both the crash dir and the temp
+> profile after the close event removed them; see "The close event is too early
+> on Linux" below. On Windows a temp-profile launch, with no crash, left 0 on
+> main after a 3 s wait (same section). The kept-profile crash case above was
+> not re-run with a wait.
+
 ### What this does not establish
 
 - **A launch that does not go through a client.** `chrome.exe` started by hand,
@@ -856,3 +863,49 @@ carries the environment.
 - **A browser-process crash during launch.** The failed-launch path removes the
   directory (unit-tested in all three clients); whether a dump was written
   first was not looked at.
+
+## The close event is too early on Linux
+
+Found while sweeping the hosts for leftover directories. The build box's `/tmp`
+held 518 client temp profiles (`camoucrome-<random>`) and their crash dirs, the
+newest written after the crash-dir change above merged. Each held the handful of
+files a browser writes as it shuts down: `Local State`, `Default/Network
+Persistent State`, `Default/Trust Tokens` and similar.
+
+Traced in-process on the box, with the Python client and a temp profile:
+`remove_dir` ran on the close event and both directories were gone right after
+it. Three seconds later both existed again. The profile held 8 files, and the
+crash dir was empty, re-created by crashpad. When `ctx.close()` returns, no
+process names the profile in its argv (the crashpad handler names the crash dir
+instead, so this check does not cover it), and both directories are already
+back. A removal at that point stays final: 3 s later neither directory exists
+(the counts below). The event fires while the browser is still shutting down.
+
+All three clients now remove once on the event and again after the context's
+own close returns. The event removal stays, because for a browser that crashed
+or was killed the event arrives after the process is gone. Measured with a
+small in-process repro per client: 3 temp-profile launches, `about:blank`,
+close, wait 3 s, count what is left of the 6 directories created:
+
+```
+== main 3010c69
+python | launches 3, dirs created 6, left 3 s after close: 6
+node   | launches 3, dirs created 6, left 3 s after close: 6
+go     | launches 3, dirs created 6, left 3 s after close: 6
+== branch
+python | launches 3, dirs created 6, left 3 s after close: 0
+node   | launches 3, dirs created 6, left 3 s after close: 0
+go     | launches 3, dirs created 6, left 3 s after close: 0
+```
+
+The same repro (temp profile, no crash) with the Python client on the Windows
+host left 0 on main as well as on the branch. There, `remove_dir`'s retry loop runs for as long as the
+browser holds its files, which lasts until the process exits, so the removal
+that wins is already the final one. The leak was only ever measured on Linux.
+
+### What this does not establish
+
+- **A driver stopped without `close()`.** If `pw.stop()` or the end of a `with
+  sync_playwright()` block takes the browser down, only the event removal runs,
+  and on Linux that is the early one.
+- **Go and Node on Windows.** Neither ran there yet.
