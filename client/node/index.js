@@ -199,8 +199,11 @@ async function launch(chromium, executablePath, {
   const owned = [fs.mkdtempSync(path.join(os.tmpdir(), 'camoucrome-crash-'))];
   const dir = userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), 'camoucrome-'));
   if (!userDataDir) owned.push(dir);
+  // Never rejects, like Python's and Go's: a rejection from the close handler
+  // would be unhandled (fatal to the caller), and in the catch below it would
+  // replace the launch error. A directory still locked after ~10 s stays.
   const remove = () => Promise.all(owned.map((d) =>
-    fs.promises.rm(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 })));
+    fs.promises.rm(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }).catch(() => {})));
   let ctx;
   try {
     ctx = await chromium.launchPersistentContext(dir, {
