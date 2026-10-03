@@ -102,7 +102,8 @@
   }
  },
  "per_instance_seeds": {
-  "why": "A preset is a device identity; these are per instance and never part of it (preset_loader.cc emits none). Each client draws them fresh, non-zero uint32, unless the caller pins them.",
+  "why": "A preset is a device identity; these are per instance and never part of it (preset_loader.cc emits none). Each client draws them fresh, non-zero uint32, unless the caller pins them. A kept profile keeps its seeds: profile_seeds(user_data_dir) draws them once into profile_file and reads them back on every later launch, so the same profile shows the same canvas, audio and device-ID fingerprint each session. A damaged file is an error, never a redraw.",
+  "profile_file": "camoucrome-seeds.json",
   "keys": [
    "canvas:seed",
    "audio:seed",
