@@ -99,7 +99,7 @@ def test_fontconfig_env_follows_the_claimed_os(tmp_path):
     win = launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
     assert win == str(tmp_path / "settings" / "fontconfig" / "windows.conf")
     assert launcher.fontconfig_for({"ua:platform": "Linux"}, None, tmp_path / "fonts") is None
-    assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts").endswith("settings/fontconfig/macos.conf")
+    assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts") == str(tmp_path / "settings" / "fontconfig" / "macos.conf")
     assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome") is None
     (tmp_path / "chrome").write_bytes(b"")
     assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "chrome") == win

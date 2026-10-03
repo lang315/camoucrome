@@ -239,12 +239,12 @@ check("nt names chrome.exe and content_shell.exe",
 #    had already imported lib_shell.
 ENV = {"CAMOU_VENV": "/v", "PLAYWRIGHT_NODEJS_PATH": "/n",
        "CAMOU_CLIENT": "/c", "CAMOU_FONTS_DIR": "/f"}
-L = lib_shell.layout(ENV)
+L = lib_shell.layout(ENV, osname="posix")
 check("layout honours every override it documents",
       (L.py, L.node, str(L.client), L.fonts_dir) == ("/v/bin/python3", "/n", "/c", "/f"),
       f"got {(L.py, L.node, str(L.client), L.fonts_dir)}")
 
-L = lib_shell.layout({})
+L = lib_shell.layout({}, osname="posix")
 check("layout's defaults are the paths those scripts used to compute",
       (L.home, L.py, L.node, str(L.client), L.fonts_dir)
       == (os.path.expanduser("~"),
@@ -253,6 +253,12 @@ check("layout's defaults are the paths those scripts used to compute",
           os.path.expanduser("~/camoucrome-client"),
           os.path.expanduser("~/camoucrome-client/fonts")),
       f"got {(L.home, L.py, L.node, str(L.client), L.fonts_dir)}")
+
+# The venv's interpreter is Scripts\python.exe on Windows; bin/python3 there
+# names nothing, and every client-driven verify runs the client through PY.
+py = lib_shell.layout({"CAMOU_VENV": "D:\\v"}, osname="nt").py
+check("layout's python is the venv's Scripts\\python.exe on Windows",
+      py == "D:\\v\\Scripts\\python.exe", f"got {py}")
 
 check("fonts follow CAMOU_CLIENT when CAMOU_FONTS_DIR is unset",
       lib_shell.layout({"CAMOU_CLIENT": "/c"}).fonts_dir == "/c/fonts",
