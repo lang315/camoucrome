@@ -3,7 +3,8 @@
 How to move the change set to a newer Chrome stable tag, how to get the box
 branch back if it is lost, and how to rebuild the build machine from nothing.
 
-Every command here was run on 2026-10-02 for the 153 → 154 re-pin. The
+Every command here, except those in §7, was run on 2026-10-02 for the 153 → 154
+re-pin; §7's were run on 2026-10-03. The
 durations are measured on the build box (WSL2 Ubuntu 24.04 on the build PC,
 `is_component_build=true`, `symbol_level=0`), not estimated. The evidence is
 `docs/superpowers/measurements/2026-10-repin.md`.
@@ -257,6 +258,7 @@ paragraph, the retired-branch sentence, the `baselines/` row), `README.md`, and
 the roadmap's "Where the project stands". The PR body carries the prediction
 against the actual conflict count, the timing table, both sweep summaries, and
 step 9's gate output. After the merge, `build-verify` runs on `main` by itself.
+Then re-point the Windows tree: §7.
 
 ## 3. What a re-pin costs
 
@@ -360,3 +362,193 @@ In order. Durations are what this box took.
 Everything else under `~` on this box is scratch from earlier slices
 (`measure_*.py`, `probe_*.py`, old `camoucrome-cs*` copies, `sweeplogs`) and is
 not needed to rebuild anything.
+
+## 7. The Windows tree
+
+`D:\camou-win\chromium\src` (host side, PowerShell; **not reachable from WSL**)
+is a second Chromium checkout with the fork's native Windows build in
+`out\Release`. Re-point it after the merge in step 10, at the re-pin, not at
+every milestone. Measured 2026-10-03 on the 153 tree:
+
+- **State**: HEAD `507c6ee3e2` (the 153 pin), **no commits above it**, no
+  stashes. The change set is a bare working tree: 89 patched files staged
+  (`git apply --3way` stages) and 41 untracked (`components/camoucfg/`).
+  `git diff --cached --stat`: 89 files, 3020 insertions, 114 deletions.
+- **Facts established earlier in the session, not by this probe**: the host has
+  `git version 2.51.2.windows.1`; the `bash` on the host `PATH` is
+  `C:\WINDOWS\system32\bash.exe`, the WSL launcher; WSL automount is off, so
+  `/mnt/d` in WSL is not the D: drive; `D:\camou-win\camoucrome` is a stale
+  clone on the retired branch `review/2026-09-24` (do not fetch from or push
+  from it); `3d78ae2` is the last commit on the 153 pin.
+- **Shell**: measured here. Both `C:\Program Files\Git\bin\bash.exe` and
+  `C:\Program Files\Git\usr\bin\bash.exe` launch. `bin\bash.exe -c 'echo ok;
+  uname -s; git --version; bash --version | head -1; command -v git'` prints
+  `ok`, `MINGW64_NT-10.0-19045`, `git version 2.51.2.windows.1`, `GNU bash,
+  version 5.2.37(1)-release (x86_64-pc-msys)`, `/mingw64/bin/git`: a
+  MINGW64 environment on the same git as the host. `usr\bin\bash.exe` run
+  the same way finds git (`/cmd/git`, same 2.51.2) but **not** `uname` or
+  `head` (`command not found`): its `PATH` lacks the MSYS coreutils, where
+  `bin\bash.exe`'s has them. With `-l`, `usr\bin\bash.exe` does find them
+  (`uname -s` = `MSYS_NT-10.0-19045`, GNU coreutils 8.32, git `/cmd/git`).
+  Whether `apply.sh` / `rebuild_branch.sh` run under it is **not measured**
+  (they were deliberately not run).
+- **GN args**: `settings/release-args.gn` is the canonical source and contains
+  `disable_fieldtrial_testing_config = true`. `out\Release\args.gn` was read
+  whole: the same keys and values as that file (`is_debug` ... `use_remoteexec`,
+  the codec pair, the field-trial line), plus `target_cpu = "x64"`. The
+  comparison was by eye, not a byte diff. A re-point carries the args across,
+  not only the patches.
+
+This section covers the discard decision only. The procedure to re-point the
+tree (fetch, check out the new tag, `apply.sh`, build, gate) is still owed;
+`apply.sh` and `rebuild_branch.sh` were deliberately never run there.
+
+### Is the dirty tree exactly the old change set?
+
+Measured result for the 153 tree: **yes, byte for byte.** Three layers, each
+proving its own part:
+
+- **Layer 1 (paths)** proves no path is dirty that the change set does not
+  produce, and none it produces is missing.
+- **Layer 2 (hashes)** proves the 41 new files are byte-identical to the repo's.
+- **Layer 3 (byte replay)** proves the 89 patched files are byte-identical to
+  what the old patches produce.
+
+A clean path list or a clean added/removed count does **not** rule out an
+in-place edit that keeps both the added and the removed line counts (a swapped
+line, a changed constant); only the byte replay (layer 3) can see that. Do not
+discard the tree on layers 1-2 alone, and do not keep it on a count difference
+alone (see "How to read a difference").
+
+The tree was measured as it stood on 2026-10-03. Re-run before discarding it.
+Numbers it gave: layer 1 130 dirty = 89 patch targets + 40 `additions/` files +
+1 `components/camoucfg/invariants.json` (copied from `settings/invariants.json`
+by `apply.sh`), no difference either way; layer 2 41 of 41 identical; layer 3
+89 of 89 identical.
+
+**Step A, WSL: derive the expected lists at the last commit on the old pin.**
+
+```bash
+R=/home/lang/actions-runner/_work/camoucrome/camoucrome; OLD=3d78ae2
+git -C $R show $OLD:patches/series > /tmp/series-old.txt
+SERIES=$(grep -v '^#' /tmp/series-old.txt | grep -v '^$')
+for p in $SERIES; do git -C $R show $OLD:patches/$p; done | grep '^+++ b/' | sed 's|^+++ b/||' | sort -u > /tmp/win-expected-mod.txt
+git -C $R ls-tree -r --name-only $OLD additions | sed 's|^additions/|components/|' > /tmp/win-expected-add.txt
+echo components/camoucfg/invariants.json >> /tmp/win-expected-add.txt
+git -C $R ls-tree -r $OLD additions | awk '{sub("^additions/","components/",$4); print $3"\t"$4}' > /tmp/win-expected-blobs.txt
+git -C $R ls-tree -r $OLD settings/invariants.json | awk '{print $3"\tcomponents/camoucfg/invariants.json"}' >> /tmp/win-expected-blobs.txt
+for p in $SERIES; do git -C $R show $OLD:patches/$p | git apply --numstat; done | awk '{a[$3]+=$1; d[$3]+=$2; n[$3]++} END{for(f in a) print f"\t"a[f]"\t"d[f]"\t"n[f]}' | sort > /tmp/win-expected-numstat.txt
+```
+
+**Step B, host: bring the four lists across** (WSL cannot read `D:`, so the copy
+runs from the Windows side, from WSL's UNC export into `D:\camou-win`).
+
+```powershell
+foreach ($n in 'mod','add','blobs','numstat') { Copy-Item "\\wsl.localhost\Ubuntu-24.04\tmp\win-expected-$n.txt" D:\camou-win\ -Force }
+```
+
+**Step C, host, layer 1.** `git status --porcelain` lines start with a
+3-character status prefix (`M ` or `??` plus a space) that must be stripped
+before comparing with the expected paths; `-uall` is required, because without
+it untracked directories collapse and the count is 90, not 130. The expected
+column holds paths with `/`, as git prints them.
+
+```powershell
+$s='D:\camou-win\chromium\src'
+$dirty = git -C $s status --porcelain -uall | ForEach-Object { $_.Substring(3) } | Sort-Object -Unique
+$exp = (Get-Content D:\camou-win\win-expected-mod.txt) + (Get-Content D:\camou-win\win-expected-add.txt) | Sort-Object -Unique
+"dirty $($dirty.Count) expected $($exp.Count)"
+Compare-Object $exp $dirty | ForEach-Object { $_.SideIndicator + ' ' + $_.InputObject }
+```
+
+Empty `Compare-Object` output is the pass. (`<=` is expected but not dirty, `=>`
+is dirty but not expected.) `dirty` counts the `invariants.json` path, so
+`dirty` and `expected` are both 130.
+
+Steps D, E and F use `$s`, which only Step C's block defines; in a fresh
+PowerShell, run `$s='D:\camou-win\chromium\src'` first.
+
+**Step D, host, layer 2.** Hash each of the 41 working files as stored (no
+CRLF filtering) and compare with the repo's blob id.
+
+```powershell
+$bad = 0; $n = 0
+foreach ($l in Get-Content D:\camou-win\win-expected-blobs.txt) { $f = $l -split "`t"; $h = git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\')); $n++; if ($h -ne $f[0]) { $bad++; 'BLOBDIFF ' + $f[1] } }
+"checked $n differing $bad"
+```
+
+The `BLOBDIFF` row has been seen to print (2026-10-03): with the first hash of
+a copy of the list altered, the loop printed `BLOBDIFF components/camoucfg/BUILD.gn`
+and `checked 41 differing 1`; the original list gave `differing 0` again.
+
+**Step E, host, layer 3 counts** (a quick screen, not the proof): the staged
+per-file added/removed against the per-patch sums from Step A.
+
+```powershell
+$act = @{}; git -C $s diff --cached --numstat | ForEach-Object { $f = $_ -split "`t"; $act[$f[2]] = $f[0] + '/' + $f[1] }
+$e = @{}; Get-Content D:\camou-win\win-expected-numstat.txt | ForEach-Object { $f = $_ -split "`t"; $e[$f[0]] = $f[1] + '/' + $f[2] + ' (patches: ' + $f[3] + ')' }
+foreach ($k in ($act.Keys + $e.Keys | Sort-Object -Unique)) { if ($act[$k] -ne ($e[$k] -split ' ')[0]) { "DIFF $k actual=$($act[$k]) expected=$($e[$k])" } }
+```
+
+**Step F, layer 3 byte replay (the proof).** Export the pristine blob of every
+patched path from the Windows tree into a directory on the WSL side, replay the
+old patches in series on a copy, hash the results, and compare with the
+working files. The export used a `cmd /c` redirect; that is what was run (it
+was not compared against a PowerShell redirect).
+
+```powershell
+$u = '\\wsl.localhost\Ubuntu-24.04\tmp\chk2'
+foreach ($f in Get-Content D:\camou-win\win-expected-mod.txt) { $d = Join-Path $u (Split-Path $f -Parent).Replace('/','\'); New-Item -ItemType Directory -Force $d | Out-Null; $dst = Join-Path $u $f.Replace('/','\'); cmd /c "git -C $s show HEAD:$f > $dst" }
+```
+
+```bash
+R=/home/lang/actions-runner/_work/camoucrome/camoucrome; OLD=3d78ae2
+SERIES=$(grep -v '^#' /tmp/series-old.txt | grep -v '^$')
+rm -rf /tmp/work2; cp -r /tmp/chk2 /tmp/work2; cd /tmp/work2
+for p in $SERIES; do git -C $R show $OLD:patches/$p > /tmp/cur2.patch; git apply /tmp/cur2.patch; done
+for f in $(cat /tmp/win-expected-mod.txt); do printf '%s\t%s\n' "$(git hash-object --no-filters $f)" $f; done > /tmp/replay-hashes.txt
+```
+
+`/tmp/chk2` is created from the Windows side and is not writable by `lang`,
+which is why the replay runs on the copy `/tmp/work2`. To replay for one file
+touched by several patches, add `--include=<path>` to the `git apply` (used in an earlier round of this
+probe; not re-run with this final text).
+
+```powershell
+Copy-Item \\wsl.localhost\Ubuntu-24.04\tmp\replay-hashes.txt D:\camou-win\ -Force
+$bad = 0; $n = 0
+foreach ($l in Get-Content D:\camou-win\replay-hashes.txt) { $f = $l -split "`t"; $h = git -C $s hash-object --no-filters (Join-Path $s $f[1].Replace('/','\')); $n++; if ($h -ne $f[0]) { $bad++; 'DIFF ' + $f[1] + ' replay=' + $f[0] + ' win=' + $h } }
+"byte-compared $n differing $bad"
+```
+
+The `DIFF` row has been seen to print (2026-10-03): with one `x` appended to
+the scratch copy of `browser_main_loop.cc`, the loop printed one `DIFF` line and
+`byte-compared 89 differing 1`; regenerating the scratch copy gave `differing 0`.
+
+**How to read a difference.** A file that Step E flags is **not** by itself an
+edit: when the last column of its expected line (the number of patches that
+touch it) is above 1, later patches rewrite lines earlier ones added, so the
+sum overcounts. On 2026-10-03 three files were flagged, all of this kind, and
+all have the same net (added minus removed) in both columns:
+
+| file | patches | actual | summed expected |
+|---|---|---|---|
+| `content/browser/browser_main_loop.cc` | 3 | 187/0 | 207/20 |
+| `third_party/blink/renderer/core/css/local_font_face_source.cc` | 2 | 36/0 | 38/2 |
+| `third_party/blink/renderer/modules/speech/speech_synthesis.cc` | 2 | 293/0 | 308/15 |
+
+Decide with Step F: a `DIFF` line there is a real edit, and the tree holds work
+that exists nowhere else; list the files and decide about them explicitly; do
+not discard.
+
+What the three layers cannot see. All 89 patch targets live in the main `src`
+repository (`third_party/blink` 50, `components` 12, `chrome` 10, `media` 7,
+`content` 7, `sandbox` 3), so the change set itself is fully inside `git
+status`'s view. An edit under a `.gitignore`d path or inside a DEPS-managed
+sub-repo is outside it and no layer here would find it.
+
+Pitfalls met on the way: `-like '??*'` matches every line (`?` is a wildcard),
+use `-match`; the `additions/X` to `components/X` mapping is needed or every
+new file shows as a difference in both directions; `$R` inside a double-quoted
+`wsl -e bash -c "..."` is expanded by PowerShell, so send multi-line bash as
+base64.
