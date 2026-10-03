@@ -91,6 +91,7 @@ jobs:
           run verify_host_oracle.py
           run verify_windows_behaviour.py
           CAMOU_GEN_N=2 run verify_sp6b_generator.py
+          run verify_crash_dumps.py
           exit $rc
       - name: logs
         if: always()
