@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 
 # Mirrors settings/launcher.json "forbidden_context_options"; tests/test_launcher.py
 # asserts the two agree. Each of these duplicates a CAMOU_CONFIG key: a second
@@ -189,6 +190,22 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
     return args
 
 
+def remove_dir(path, wait=10.0):
+    """rmtree that outlasts Windows' file locks. The context's "close" event
+    fires while the browser is still writing its profile (Preferences, Network
+    Persistent State): measured 2026-10-03 on Windows, one rmtree left 3-193
+    files in every temp profile, and a retry ~0.07 s later removed it all.
+    Linux deletes open files, so there the first pass is the last."""
+    deadline = time.monotonic() + wait
+    while True:
+        shutil.rmtree(path, ignore_errors=True)
+        if not os.path.exists(path) or time.monotonic() > deadline:
+            return
+        # ponytail: blocks the caller (the event loop, under the async API)
+        # for as long as the browser takes to exit; bounded by `wait`.
+        time.sleep(0.05)
+
+
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None,
            headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, **options):
@@ -237,12 +254,12 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             **options)
     except BaseException:
         if temp:
-            shutil.rmtree(user_data_dir, ignore_errors=True)
+            remove_dir(user_data_dir)
         raise
     if not temp:
         return ctx
     # A temp profile lives as long as the context, including a failed async launch.
-    remove = lambda *_: shutil.rmtree(user_data_dir, ignore_errors=True)  # noqa: E731
+    remove = lambda *_: remove_dir(user_data_dir)  # noqa: E731
     if inspect.isawaitable(ctx):
         async def started():
             try:
