@@ -379,8 +379,10 @@ and `byte-compared 89 differing 0`.
   invisible, and the process it exercised is the one the filter never touched.
   That is why `launch()` gained a `sandbox` parameter and why the measurement
   below exists.
-- **`CAMOU_EXE`.** The third knob PR #4 shipped. `CAMOU_OUT` and
-  `tempfile.gettempdir()` were exercised on Windows; `CAMOU_EXE` was not.
+- ~~**`CAMOU_EXE`.**~~ **Measured the same day — see "`CAMOU_EXE` on Windows"
+  below.** The third knob PR #4 shipped; when this entry was written, `CAMOU_OUT`
+  and `tempfile.gettempdir()` had been exercised on Windows and `CAMOU_EXE` had
+  not.
 - **"Closes" PR #4's caveat.** This slice is the first native green, not a
   closure of that caveat; everything above remains unverified on Windows.
 - **Whether the access violation is the fork's.** Root cause is unknown; no
@@ -515,3 +517,38 @@ exit=0
 (`2026-09-24-review-triage.md:195`); `main=16 worker=16` unconfigured is the part
 that was not measured then, and it is what makes the parity claim mean something
 rather than being an artefact of both processes reading the same spoof.
+
+
+## `CAMOU_EXE` on Windows
+
+The third knob PR #4 shipped, and the last of the three unmeasured on Windows.
+`lib_shell._binaries()` makes `CAMOU_EXE` win over `CAMOU_OUT` for chrome, and
+deliberately not move `content_shell` with it, because `CAMOU_EXE` names one file
+-- the chrome inside an extracted release archive, where no out directory exists.
+Until now that was proven only by `scripts/test_lib_shell_launch.py` on a Mac,
+which checks the strings `_binaries()` returns, not a browser that started.
+
+Measured in both directions with `verify_windows_sandbox_env.py` as the
+instrument, because its five rows need a working chrome and fail all together
+without one:
+
+```
+=== GREEN: CAMOU_OUT bogus, CAMOU_EXE real -> EXE must win ===
+CHROME = D:\camou-win\chromium\src\out\Release\chrome.exe
+SHELL  = D:\no-such-out\content_shell.exe
+5 PASS 0 FAIL
+exit=0
+=== RED: CAMOU_OUT real, CAMOU_EXE bogus -> EXE must still win ===
+CHROME = D:\no-such\chrome.exe
+0 PASS 5 FAIL
+exit=1
+```
+
+The second run is the one that proves precedence rather than just use: a valid
+`CAMOU_OUT` was available and was not taken, so `CAMOU_EXE` decides even when the
+fallback would have worked. The first run's `SHELL` line is the third property,
+measured on Windows for the first time: `CAMOU_EXE` left `content_shell` under the
+bogus `CAMOU_OUT` instead of dragging it along.
+
+With this, all three things PR #4 shipped -- `CAMOU_OUT`, `CAMOU_EXE` and
+`tempfile.gettempdir()` -- have run against a real browser on Windows.
