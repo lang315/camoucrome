@@ -54,6 +54,22 @@ def _binaries(environ=None, osname=None):
 
 
 OUT, SHELL, CHROME = _binaries()
+
+# The rest of the box's layout, with the overrides each of these already had in
+# the eleven scripts that used to define them. HOME is here because those eleven
+# derive further paths from it (baselines, probe pages) and each repeated the
+# expanduser.
+#
+# NODE deliberately does NOT read CAMOU_DRIVER. verify_sp6b_driver.py sweeps a
+# pair of drivers and derives its own NODE from the one under test; making
+# CAMOU_DRIVER move the node every other script uses would be a behaviour change
+# nobody asked for, so that script keeps its own line and this one keeps the
+# default the other ten had.
+HOME = os.path.expanduser("~")
+PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
+NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
+CLIENT = pathlib.Path(os.environ.get("CAMOU_CLIENT", f"{HOME}/camoucrome-client"))
+FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
 # Per PROCESS, not a fixed path, and that distinction was earned. This was
 # "/tmp/camoucrome_verify_stderr.log" for every run, opened "wb" -- truncating
 # -- on every launch. Two verifications running at once therefore shared one

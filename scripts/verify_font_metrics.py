@@ -14,19 +14,12 @@ UI fonts as numbers."""
 import http.server
 import json
 import os
-import pathlib
 import subprocess
 import sys
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, CLIENT, FONTS_DIR, NODE, PY
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
-CLIENT = pathlib.Path(os.environ.get("CAMOU_CLIENT", f"{HOME}/camoucrome-client"))
-FONTS_DIR = os.environ.get("CAMOU_FONTS_DIR", str(CLIENT / "fonts"))
 FONTS = json.loads((CLIENT / "settings" / "fonts.json").read_text(encoding="utf-8"))
 OS = sys.argv[sys.argv.index("--os") + 1] if "--os" in sys.argv else "windows"
 BASE = json.loads((CLIENT / "baselines" / {"windows": "chrome-8037-stock-font-metrics-windows.json",
