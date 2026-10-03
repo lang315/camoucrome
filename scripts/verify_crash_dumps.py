@@ -14,12 +14,15 @@ So the browser is started directly through lib_shell, with no
 BREAKPAD_DUMP_LOCATION, a marker inside the config, and crashed two ways:
 
   C1  a renderer crash (chrome://crash); the browser must survive it.
-  C2  a browser crash (chrome://inducebrowsercrashforrealz); the process must
-      exit with a crash code, not 0 and not by hanging.
+  C2  a browser crash (the DevTools `Browser.crash` command; navigating to
+      chrome://inducebrowsercrashforrealz does nothing under --headless); the
+      process must exit with a crash code, not 0 and not by hanging.
 
 After each, every place a dump could land is searched for files created since
-the launch: the profile, the temp directory, and on Windows the default
-Chromium profile's Crashpad, %LOCALAPPDATA%\\CrashDumps and both Windows Error
+the launch: the profile, the temp directory, the default crash database
+(Linux: ~/.config/chromium/Crash Reports, where the RED dump landed, shared by
+every profile), and on Windows the default Chromium profile's Crashpad,
+%LOCALAPPDATA%\\CrashDumps and both Windows Error
 Reporting stores (a crash crashpad does not take goes to WER, which is worse:
 outside the profile and possibly uploaded). A row passes only if the crash is
 seen to happen AND no new dump file exists AND the marker is in no new file. A
@@ -48,19 +51,21 @@ WINDOWS = os.name == "nt"
 
 def roots(profile):
     """Every directory a dump could land in, with whether ANY new file there
-    counts (WER writes .wer reports and dumps under several names)."""
+    counts. WER writes reports and dumps under several names, so there every
+    file counts; a crashpad database rewrites settings.dat on every launch, so
+    there only dump files do."""
     found = [(pathlib.Path(profile), False),
              (pathlib.Path(tempfile.gettempdir()), False)]
     if WINDOWS:
         local = pathlib.Path(os.environ["LOCALAPPDATA"])
         data = pathlib.Path(os.environ.get("ProgramData", r"C:\ProgramData"))
-        found += [(local / "Chromium" / "User Data" / "Crashpad", True),
+        found += [(local / "Chromium" / "User Data" / "Crashpad", False),
                   (local / "CrashDumps", True),
                   (local / "Microsoft" / "Windows" / "WER", True),
                   (data / "Microsoft" / "Windows" / "WER" / "ReportQueue", True),
                   (data / "Microsoft" / "Windows" / "WER" / "ReportArchive", True)]
     else:
-        found.append((pathlib.Path.home() / ".config" / "chromium" / "Crash Reports", True))
+        found.append((pathlib.Path.home() / ".config" / "chromium" / "Crash Reports", False))
     return found
 
 
@@ -96,8 +101,9 @@ def crashed_exit(code):
     return code is not None and (code >= 0x80000000 if WINDOWS else code < 0)
 
 
-def crash(url, browser_crash):
-    """One launch, one crash. Returns (crash seen, detail, profile, since, proc)."""
+def crash(url):
+    """One launch, one crash: a renderer crash at `url`, or a browser crash
+    when `url` is None. Returns (crash seen, detail, profile, since, proc)."""
     from playwright.sync_api import sync_playwright
 
     since = time.time() - 1
@@ -110,26 +116,30 @@ def crash(url, browser_crash):
             context = browser.contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
             page.on("crash", lambda _: crashed.append(True))
-            try:
-                page.goto(url, timeout=10000)
-            except Exception:  # noqa: BLE001 - the crash is the expected outcome
-                pass
-            if browser_crash:
+            if url is None:
+                try:
+                    browser.new_browser_cdp_session().send("Browser.crash")
+                except Exception:  # noqa: BLE001 - the crash is the expected outcome
+                    pass
                 try:
                     proc.wait(timeout=20)
                 except Exception:  # noqa: BLE001
                     pass
             else:
+                try:
+                    page.goto(url, timeout=10000)
+                except Exception:  # noqa: BLE001 - the crash is the expected outcome
+                    pass
                 deadline = time.monotonic() + 5
                 while not crashed and time.monotonic() < deadline:
                     page.wait_for_timeout(100)
     except Exception:  # noqa: BLE001 - a dropped CDP connection is the browser crash
-        if browser_crash:
+        if url is None:
             try:
                 proc.wait(timeout=20)
             except Exception:  # noqa: BLE001
                 pass
-    if browser_crash:
+    if url is None:
         code = proc.poll()
         seen = crashed_exit(code)
         detail = f"exit code {hex(code) if WINDOWS and code is not None else code}"
@@ -144,13 +154,13 @@ def crash(url, browser_crash):
 def main():
     os.environ.pop("BREAKPAD_DUMP_LOCATION", None)  # the scenario is no client
     print(f"binary: {lib_shell.CHROME}")
-    rows = [("C1", "renderer crash", "chrome://crash", False),
-            ("C2", "browser crash", "chrome://inducebrowsercrashforrealz", True)]
+    rows = [("C1", "renderer crash", "chrome://crash"),
+            ("C2", "browser crash", None)]
     passed = failed = 0
-    for rid, name, url, browser_crash in rows:
+    for rid, name, url in rows:
         proc = None
         try:
-            seen, detail, profile, since, proc = crash(url, browser_crash)
+            seen, detail, profile, since, proc = crash(url)
             dumps, marked = new_dumps(profile, since)
             for f in dumps:
                 print(f"    new file: {f} ({f.stat().st_size} bytes)")
