@@ -23,12 +23,8 @@ import subprocess
 import sys
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, NODE, PY
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
 
 PAGE = b"""<!doctype html><title>pointer-touch</title><pre id="o"></pre><script>
 const mq = q => matchMedia(q).matches;

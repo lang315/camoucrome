@@ -20,12 +20,8 @@ import subprocess
 import sys
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, HOME, NODE, PY
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
 WEBGL_DIR = pathlib.Path(os.environ.get("CAMOU_WEBGL_DIR", f"{HOME}/camoucrome-client/settings/webgl"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from capture_webgl_profile import PAGE  # noqa: E402  the same page: what a profile captures is what a page reads

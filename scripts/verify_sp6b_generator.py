@@ -20,21 +20,15 @@ import html as html_mod
 import http.server
 import json
 import os
-import pathlib
 import subprocess
 import sys
 import threading
 
-import lib_shell
+from lib_shell import CHROME as EXE, CLIENT, NODE, PY
 
-HOME = os.path.expanduser("~")
-EXE = lib_shell.CHROME  # CAMOU_EXE, else CAMOU_OUT, else the box's out/Default
-PY = os.environ.get("CAMOU_VENV", f"{HOME}/camoucrome-verify/venv") + "/bin/python3"
-NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{HOME}/camoucrome-driver/node")
 N = int(os.environ.get("CAMOU_GEN_N", "10"))
 OSES = ["windows", "macos", "linux"]
 TZ = {"windows": "Europe/Paris", "macos": "America/New_York", "linux": "Asia/Tokyo"}
-CLIENT = pathlib.Path(os.environ.get("CAMOU_CLIENT", f"{HOME}/camoucrome-client"))
 ZONE_LOCALES = ["fr-FR", "de-DE", "ja-JP", "pt-BR", "en-GB"]
 
 PAGE = b"""<!doctype html><title>gen</title><pre id="o"></pre><script>
