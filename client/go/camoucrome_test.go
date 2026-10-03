@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -185,14 +186,14 @@ func TestFontconfigFollowsTheClaimedOS(t *testing.T) {
 	os.MkdirAll(root+"/settings/fontconfig", 0o755)
 	os.WriteFile(root+"/settings/fontconfig/windows.conf", []byte("<fontconfig/>"), 0o644)
 	os.WriteFile(root+"/settings/fontconfig/macos.conf", []byte("<fontconfig/>"), 0o644)
-	want := root + "/settings/fontconfig/windows.conf"
+	want := filepath.Join(root, "settings", "fontconfig", "windows.conf") // FontconfigFor joins with the OS separator
 	if got := FontconfigFor(Options{Config: map[string]any{"ua:platform": "Windows"}, FontsDir: fonts}); got != want {
 		t.Fatalf("windows: %q != %q", got, want)
 	}
 	if got := FontconfigFor(Options{Config: map[string]any{"ua:platform": "Linux"}, FontsDir: fonts}); got != "" {
 		t.Fatalf("linux claim must set nothing, got %q", got)
 	}
-	if got := FontconfigFor(Options{Preset: map[string]any{"os": "macOS"}, FontsDir: fonts}); !strings.HasSuffix(got, "settings/fontconfig/macos.conf") {
+	if got := FontconfigFor(Options{Preset: map[string]any{"os": "macOS"}, FontsDir: fonts}); !strings.HasSuffix(got, filepath.FromSlash("settings/fontconfig/macos.conf")) {
 		t.Fatalf("preset os: %q", got)
 	}
 	os.WriteFile(root+"/chrome", nil, 0o755)
