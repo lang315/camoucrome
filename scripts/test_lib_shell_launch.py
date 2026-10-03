@@ -312,6 +312,24 @@ check("the stderr log is in the platform temp dir and carries the pid",
       == (True, True),
       f"got {lib_shell.STDERR_LOG} (tempdir {tempfile.gettempdir()})")
 
+# 9. A binary that does not exist leaves no profile behind. A wrong CAMOU_OUT
+#    is how a RED run is made, and Popen raised after mkdtemp: 14 empty
+#    camoucrome-verify-* directories on the Windows host (2026-10-03).
+saved_tempdir, tempfile.tempdir = tempfile.tempdir, tempfile.mkdtemp()
+try:
+    raised = None
+    try:
+        lib_shell.launch(None, shell=os.path.join(tempfile.tempdir, "no-such-browser"))
+    except OSError as e:
+        raised = type(e).__name__
+    left = [n for n in os.listdir(tempfile.tempdir) if n.startswith("camoucrome-verify-")]
+finally:
+    scratch, tempfile.tempdir = tempfile.tempdir, saved_tempdir
+    import shutil
+    shutil.rmtree(scratch, ignore_errors=True)
+check("a launch whose binary is missing leaves no profile behind",
+      (raised, left) == ("FileNotFoundError", []), f"raised {raised}, left {left}")
+
 print()
 if failures:
     print(f"{len(failures)} FAILED of {len(results)}: {', '.join(failures)}")

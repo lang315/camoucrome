@@ -19,6 +19,7 @@ import base64
 import http.server
 import json
 import os
+import shutil
 import ssl
 import subprocess
 import sys
@@ -165,6 +166,7 @@ def main():
         notes.append(f"L5: strict_started={out_s is not None} strict_named={named in log_s} "
                      f"warn_started={out_w is not None} warn_named={named in log_w}")
     srv.shutdown()
+    shutil.rmtree(work, ignore_errors=True)
 
     for name, ok in results.items():
         print(f"{'PASS' if ok else 'FAIL'}  {name}")

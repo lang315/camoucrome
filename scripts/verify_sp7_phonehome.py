@@ -24,7 +24,7 @@ Measurement: docs/superpowers/measurements/2026-09-09-sp7-phone-home.md
 P4 X-Client-Data on google.com over two launches on one profile: absent both
    times (stock sends it on the second launch, from the seed the first stored).
 """
-import json, os, re, sys, time
+import json, os, re, shutil, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import echo_server
 import lib_shell
@@ -133,35 +133,38 @@ def run_p4():
     from playwright.sync_api import sync_playwright
     prof = tempfile.mkdtemp(prefix="camoucrome-p4-")
     seen = []
-    for launch in (1, 2):
-        proc = None
-        try:
-            proc = lib_shell.launch(None, shell=lib_shell.CHROME,
-                                    extra_flags=lib_shell.CHROME_FLAGS + [f"--user-data-dir={prof}"])
-            with sync_playwright() as p:
-                browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
-                context = browser.contexts[0]
-                page = context.pages[0] if context.pages else context.new_page()
-                cdp = context.new_cdp_session(page)
-                reqs, extra = {}, []
-                cdp.on("Network.requestWillBeSent", lambda e: reqs.__setitem__(e["requestId"], e["request"]["url"]))
-                cdp.on("Network.requestWillBeSentExtraInfo", lambda e: extra.append(e))
-                cdp.send("Network.enable")
-                try:
-                    page.goto("https://www.google.com/generate_204", wait_until="load", timeout=30000)
-                except Exception as nav:  # noqa: BLE001  204 No Content aborts the navigation; the request was sent
-                    if "ERR_ABORTED" not in str(nav):
-                        raise
-                page.wait_for_timeout(20000 if launch == 1 else 8000)
-                for e in extra:
-                    seen.append((launch, reqs.get(e["requestId"], "?"), {k.lower() for k in e["headers"]}))
-        except Exception as exc:  # noqa: BLE001
-            notes.append(f"P4 launch {launch}: {type(exc).__name__}: {exc}")
-            results["P4"] = False
-            return
-        finally:
-            if proc is not None:
-                lib_shell.shutdown(proc)
+    try:
+        for launch in (1, 2):
+            proc = None
+            try:
+                proc = lib_shell.launch(None, shell=lib_shell.CHROME,
+                                        extra_flags=lib_shell.CHROME_FLAGS + [f"--user-data-dir={prof}"])
+                with sync_playwright() as p:
+                    browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
+                    context = browser.contexts[0]
+                    page = context.pages[0] if context.pages else context.new_page()
+                    cdp = context.new_cdp_session(page)
+                    reqs, extra = {}, []
+                    cdp.on("Network.requestWillBeSent", lambda e: reqs.__setitem__(e["requestId"], e["request"]["url"]))
+                    cdp.on("Network.requestWillBeSentExtraInfo", lambda e: extra.append(e))
+                    cdp.send("Network.enable")
+                    try:
+                        page.goto("https://www.google.com/generate_204", wait_until="load", timeout=30000)
+                    except Exception as nav:  # noqa: BLE001  204 No Content aborts the navigation; the request was sent
+                        if "ERR_ABORTED" not in str(nav):
+                            raise
+                    page.wait_for_timeout(20000 if launch == 1 else 8000)
+                    for e in extra:
+                        seen.append((launch, reqs.get(e["requestId"], "?"), {k.lower() for k in e["headers"]}))
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"P4 launch {launch}: {type(exc).__name__}: {exc}")
+                results["P4"] = False
+                return
+            finally:
+                if proc is not None:
+                    lib_shell.shutdown(proc)
+    finally:
+        shutil.rmtree(prof, ignore_errors=True)
     hosts = sorted({re.match(r"^[a-z]+://([^/?#]+)", u).group(1) for _, u, _ in seen if re.match(r"^[a-z]+://([^/?#]+)", u)})
     xcd = [(l, u[:60]) for l, u, h in seen if "x-client-data" in h]
     bad_hosts = [h for h in hosts if h in ("clientservices.googleapis.com", "update.googleapis.com")]
