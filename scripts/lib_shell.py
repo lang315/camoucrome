@@ -25,8 +25,31 @@ import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-SHELL = os.path.expanduser("~/chromium/src/out/Default/content_shell")
-CHROME = os.path.expanduser("~/chromium/src/out/Default/chrome")
+def _binaries(environ=None, osname=None):
+    """(out dir, content_shell, chrome) for an environment.
+
+    CAMOU_OUT moves the whole build directory, which is what another machine
+    needs: the Windows tree builds into out\\Release under a different root.
+    CAMOU_EXE is not a second way to say the same thing and is not new here --
+    eleven client-driven verify scripts already read it to aim at the chrome
+    inside an extracted release archive, where no out dir exists. It names one
+    file, so it must not move content_shell with it.
+
+    Takes the environment and os.name as arguments so the cases are checkable
+    on any host: the constants below resolve once at import, so a test that
+    mutated os.environ afterwards would measure nothing.
+    """
+    environ = os.environ if environ is None else environ
+    osname = os.name if osname is None else osname
+    out = environ.get("CAMOU_OUT",
+                      os.path.expanduser("~/chromium/src/out/Default"))
+    suffix = ".exe" if osname == "nt" else ""
+    return (out,
+            os.path.join(out, "content_shell" + suffix),
+            environ.get("CAMOU_EXE", os.path.join(out, "chrome" + suffix)))
+
+
+OUT, SHELL, CHROME = _binaries()
 # Per PROCESS, not a fixed path, and that distinction was earned. This was
 # "/tmp/camoucrome_verify_stderr.log" for every run, opened "wb" -- truncating
 # -- on every launch. Two verifications running at once therefore shared one
@@ -44,7 +67,13 @@ CHROME = os.path.expanduser("~/chromium/src/out/Default/chrome")
 # teaches people to re-run until it passes, and then it measures nothing.
 # Readers go through lib_shell.STDERR_LOG, so each process gets its own file
 # and the read pattern is unchanged.
-STDERR_LOG = f"/tmp/camoucrome_verify_stderr.{os.getpid()}.log"
+#
+# gettempdir() rather than a literal "/tmp": the two agree on the build box, so
+# the literal was never wrong there, and they stop agreeing the moment this runs
+# anywhere else -- Windows has no /tmp at all, and open() would fail at the
+# first launch.
+STDERR_LOG = os.path.join(tempfile.gettempdir(),
+                          f"camoucrome_verify_stderr.{os.getpid()}.log")
 
 # content_shell has no --headless switch; --ozone-platform=headless is the
 # equivalent. This is the default so that every call written before Task 8
