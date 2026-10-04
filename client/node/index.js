@@ -24,6 +24,7 @@ const FORBIDDEN_OPTIONS = new Set([
 ]);
 const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
 const SEED_KEYS = ['canvas:seed', 'audio:seed', 'mediaDevices:seed'];
+const SEEDS_FILE = 'camoucrome-seeds.json'; // launcher.json per_instance_seeds.profile_file
 
 const asJson = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 
@@ -182,6 +183,51 @@ function perInstanceConfig() {
   return cfg;
 }
 
+// The seeds a kept profile launches with: drawn once into
+// <userDataDir>/camoucrome-seeds.json and read back on every later launch, so
+// the profile shows the same canvas, audio and device-ID fingerprint each
+// session. Keys missing from the file are drawn and added. A damaged file
+// throws instead of being redrawn, which would change the fingerprint
+// silently. The Python and Go clients read and write the same file.
+function profileSeeds(userDataDir) {
+  const file = path.join(userDataDir, SEEDS_FILE);
+  let stored = {};
+  let raw = null;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  if (raw !== null) {
+    try {
+      stored = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`${file} is not valid JSON: ${e.message}`);
+    }
+    if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
+      throw new Error(`${file} must hold a JSON object`);
+    }
+  }
+  for (const k of SEED_KEYS) {
+    const v = stored[k];
+    if (k in stored && !(Number.isInteger(v) && v >= 1 && v <= 0xffffffff)) {
+      throw new Error(`${file}: ${k} must be a non-zero uint32, not ${JSON.stringify(v)}`);
+    }
+  }
+  const missing = SEED_KEYS.filter((k) => !(k in stored));
+  if (missing.length) {
+    const drawn = perInstanceConfig();
+    for (const k of missing) stored[k] = drawn[k];
+    fs.mkdirSync(userDataDir, { recursive: true });
+    // Written beside the target and renamed over it, so a crash mid-write never
+    // leaves the damaged file the check above would refuse.
+    const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+    fs.writeFileSync(tmp, JSON.stringify(stored));
+    fs.renameSync(tmp, file);
+  }
+  return Object.fromEntries(SEED_KEYS.map((k) => [k, stored[k]]));
+}
+
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, headless = true,
   args = [], extensions = [], spkiList = [], fontsDir, ...options
@@ -243,4 +289,4 @@ async function launch(chromium, executablePath, {
 }
 
 module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, CRASH_DUMPS_ENV, buildEnv, buildArgs,
-  acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, launch };
+  acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, profileSeeds, launch };
