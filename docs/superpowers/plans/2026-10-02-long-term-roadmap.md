@@ -63,6 +63,8 @@ profile**, not the host's real one:
 
 ## Where the project stands
 
+As of 2026-10-02. Later changes are recorded under the step that made them.
+
 - SP0 to SP7 and the follow-on arc are shipped or partial, with residuals
   recorded per slice.
 - The change set is 32 patches on pin `f89f3a4363` (Chrome 154.0.8037.93),
@@ -77,7 +79,8 @@ profile**, not the host's real one:
 - The first native Windows build exists (`D:\camou-win`, `out\Release`,
   58,285 steps, about 7.5 hours from clean). One Windows-only bug has been
   found and fixed: the sandbox dropped `CAMOU_*` from the renderer
-  environment (`windows-sandbox-env`).
+  environment (`windows-sandbox-env`). That tree was on the old pin; it moved
+  to 154 on 2026-10-03 (step 1).
 - On Windows, exactly one key has been checked in a browser
   (`navigator.hardwareConcurrency`, main thread and worker).
 - The Linux build is verified and packaged (`scripts/package.py`), but there
@@ -85,9 +88,10 @@ profile**, not the host's real one:
 - CI builds and verifies on Linux only, on one self-hosted runner in WSL on
   the build PC. The repo is public.
 - There is no LICENSE file. `client/node/package.json` declares MPL-2.0.
+  Settled 2026-10-03: MPL-2.0 (step 3).
 - Codec distribution licensing is open (`settings/build-args.gn`, "OPEN,
   deliberately"); the completion roadmap says it must be settled before
-  anything ships.
+  anything ships. Settled 2026-10-03: ship with the codecs (step 3).
 
 ## Steps to the first release
 
