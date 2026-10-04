@@ -55,8 +55,13 @@ and the config differ.
   `154.0.8037.93`). A mismatch stops the run before anything is measured.
 - **Argv parity.** The runner records the browser argv of both arms (from
   `launch()`'s built args) and stops unless the difference is inside a named
-  allow-list. Today the list holds `--accept-lang=…`, which the client derives
-  from the identity. Neither arm gets `--use-angle=swiftshader` or
+  allow-list. The list holds the flags the client derives from the identity:
+  `--accept-lang=`, `--window-size=` and `--force-device-scale-factor=`. It
+  also holds `--user-data-dir=`, which names a different profile directory on
+  every launch. The fork arm passes the identity's `launch.window`/`dpr` as a
+  real client does. Without them, `screen.*` contradicts the window sizes,
+  and detectors score that artefact as a fork difference. Amended while
+  planning; the first draft listed `--accept-lang=` only. Neither arm gets `--use-angle=swiftshader` or
   `--no-sandbox`; both run under the real sandbox and the host GPU.
 
 ### Columns
@@ -76,8 +81,12 @@ labels every row that differs between fork and control as one of:
 - `unexpected`: everything else. Only these are findings.
 
 1. **L1 oracle.** The `capture_host_oracle.page()` page, loaded in both arms.
-   The comparison rules (`KNOWN`, `KNOWN_PREFIX`, `SHAPE_ONLY`) move out of
-   `verify_host_oracle.py` into a module both scripts import. With no
+   `SHAPE_ONLY` and `flatten` move out of `verify_host_oracle.py` into a
+   module both scripts import. `KNOWN` and `KNOWN_PREFIX` stay in
+   `verify_host_oracle.py`, because they excuse artefacts of comparing against
+   a committed baseline (the box has no mouse and no GPU, and the probe adds a
+   marker), which two live arms on one host do not have. HEVC then shows as a
+   real difference. With no
    SwiftShader the `gpu` subtree is compared again. A direct `launch()` adds no
    `__camou_init` marker, so the `windowKeys`/`windowNames`/`protoCounts.Window`
    exclusions may become unnecessary. If they do, rule 2 (window keys equal to
@@ -90,8 +99,11 @@ labels every row that differs between fork and control as one of:
    CreepJS's structured sections get small parsers that yield key/value rows.
    For the other two, the line diff is the result. No aggregate score.
 3. **Stability across relaunch.** Each arm launches one profile twice and runs
-   the oracle page both times. Every leaf must match across the two launches:
-   canvas and audio hashes and media device IDs above all.
+   the oracle page both times. Every leaf must match across the two launches,
+   above all the canvas and audio hashes. Media device IDs are read separately,
+   after a camera/microphone grant, because the oracle page keeps only their
+   lengths. If the host exposes no non-empty ID, the doc says device IDs were
+   not measured.
 4. **Cross-profile linkability.** Two fork profiles from seeds 1 and 2 run the
    oracle page. The table lists the leaves the two share. The control is two
    stock profiles, which share everything. This probe records only and scores
