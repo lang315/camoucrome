@@ -30,6 +30,9 @@ type contract struct {
 			Env   string            `json:"env"`
 			Files map[string]string `json:"files"`
 		} `json:"fontconfig"`
+		NativeFonts struct {
+			Drop []string `json:"drop"`
+		} `json:"native_fonts"`
 		CrashDumps struct {
 			Env string `json:"env"`
 		} `json:"crash_dumps"`
@@ -405,5 +408,38 @@ func TestWhatTheBrowserWritesWhileClosingIsRemovedOnceCloseReturns(t *testing.T)
 		if _, err := os.Stat(d); !os.IsNotExist(err) {
 			t.Errorf("%s still there after Close returned", d)
 		}
+	}
+}
+
+func TestNativeHostDropsFontAliases(t *testing.T) {
+	c := load(t)
+	if !reflect.DeepEqual(c.Launch.NativeFonts.Drop, NativeFontsDrop) {
+		t.Fatalf("contract drop %v != %v", c.Launch.NativeFonts.Drop, NativeFontsDrop)
+	}
+	cfg := func() map[string]any {
+		return map[string]any{"ua:platform": "Windows", "fonts:alias": map[string]any{"Arial": "Liberation Sans"},
+			"fonts:aliasLocal": map[string]any{"ArialMT": "Liberation Sans"}, "fonts:list": []any{"Arial"}}
+	}
+	decode := func(config any, host string) map[string]any {
+		env, err := buildEnvFor(Options{Config: config}, nil, host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(env["CAMOU_CONFIG"]), &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	got := decode(cfg(), "Windows")
+	if _, ok := got["fonts:list"]; !ok || got["fonts:alias"] != nil || got["fonts:aliasLocal"] != nil {
+		t.Fatalf("windows host: %v", got)
+	}
+	raw, _ := json.Marshal(cfg())
+	if g := decode(string(raw), "Windows"); !reflect.DeepEqual(g, got) {
+		t.Fatalf("json string: %v != %v", g, got)
+	}
+	if g := decode(cfg(), "Linux"); g["fonts:alias"] == nil || g["fonts:aliasLocal"] == nil {
+		t.Fatalf("linux host must keep both: %v", g)
 	}
 }

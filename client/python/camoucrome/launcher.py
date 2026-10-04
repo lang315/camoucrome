@@ -3,6 +3,7 @@ import inspect
 import json
 import os
 import shutil
+import sys
 import tempfile
 import time
 
@@ -25,6 +26,19 @@ def _as_json(value):
 
 FONTCONFIG_ENV = "FONTCONFIG_FILE"
 FONTCONFIG_FILES = {"Windows": "settings/fontconfig/windows.conf", "macOS": "settings/fontconfig/macos.conf"}
+NATIVE_FONTS_DROP = ("fonts:alias", "fonts:aliasLocal")
+HOST_OS = {"win32": "Windows", "darwin": "macOS", "linux": "Linux"}.get(sys.platform)
+
+
+def native_config(config, preset=None, host_os=None):
+    """config without fonts:alias / fonts:aliasLocal when the claimed OS is the
+    host's (contract launch.native_fonts): those families are real there, and
+    an alias to the uninstalled bundle would hide them."""
+    host_os = HOST_OS if host_os is None else host_os
+    if config is None or claimed_os(config, preset) != host_os:
+        return config
+    c = json.loads(config) if isinstance(config, str) else dict(config)
+    return {k: v for k, v in c.items() if k not in NATIVE_FONTS_DROP}
 
 
 def _as_dict(v):
@@ -129,7 +143,7 @@ def config_env(raw, name="CAMOU_CONFIG"):
 
 
 def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None,
-              crash_dir=None):
+              crash_dir=None, host_os=None):
     """The child environment: every CAMOU_* of the parent dropped, then the
     given config/preset set. Dropping first is deliberate -- a stale
     CAMOU_CONFIG_1 in the shell would otherwise win over `config`.
@@ -138,6 +152,7 @@ def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None
     `crash_dir` sets BREAKPAD_DUMP_LOCATION; the parent's is never inherited
     either (it would collect every identity's dumps in one place)."""
     effective_keys(config, preset)  # raises on a shape the browser would drop
+    config = native_config(config, preset, host_os)
     env = {k: v for k, v in (os.environ if base is None else base).items()
            if not k.startswith("CAMOU_") and k not in (FONTCONFIG_ENV, CRASH_DUMPS_ENV)}
     if config is not None:

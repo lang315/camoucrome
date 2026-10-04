@@ -106,12 +106,27 @@ function chunkEnv(raw, name) {
 // it at a temp dir it removes, so a kept profile never accumulates them.
 const CRASH_DUMPS_ENV = 'BREAKPAD_DUMP_LOCATION';
 
+// Mirrors settings/launcher.json launch.native_fonts.drop.
+const NATIVE_FONTS_DROP = ['fonts:alias', 'fonts:aliasLocal'];
+const HOST_OS = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[process.platform];
+
+// config without the NATIVE_FONTS_DROP keys when the claimed OS is the host's
+// (contract launch.native_fonts): those families are real there, and an alias
+// to the uninstalled bundle would hide them. Untouched otherwise.
+function nativeConfig(config, preset, hostOs) {
+  if (config == null || claimedOs(config, preset) !== hostOs) return config;
+  const c = { ...(typeof config === 'string' ? JSON.parse(config) : config) };
+  for (const k of NATIVE_FONTS_DROP) delete c[k];
+  return c;
+}
+
 // Every CAMOU_* of the parent dropped first (a stale CAMOU_CONFIG_1 would
 // otherwise win), its FONTCONFIG_FILE (a host conf under a Windows claim is
 // a tell) and its BREAKPAD_DUMP_LOCATION (it would collect every identity's
 // dumps in one place), then config/preset/strict set.
-function buildEnv({ config, preset, strict, fontconfig, crashDir } = {}, base = process.env) {
+function buildEnv({ config, preset, strict, fontconfig, crashDir, hostOs = HOST_OS } = {}, base = process.env) {
   effectiveKeys(config, preset);
+  config = nativeConfig(config, preset, hostOs);
   const env = {};
   for (const [k, v] of Object.entries(base)) {
     if (!k.startsWith('CAMOU_') && k !== 'FONTCONFIG_FILE' && k !== CRASH_DUMPS_ENV) env[k] = v;
@@ -288,5 +303,5 @@ async function launch(chromium, executablePath, {
   return ctx;
 }
 
-module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, CRASH_DUMPS_ENV, buildEnv, buildArgs,
+module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
   acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, profileSeeds, launch };
