@@ -179,9 +179,15 @@ def run_p4():
     from playwright.sync_api import sync_playwright
     prof = tempfile.mkdtemp(prefix="camoucrome-p4-")
     seen = []
+    # Presence before absence: launch 1 must have written its profile into
+    # `prof`, or launch 2 is not "the same profile" and an absent header on it
+    # proves nothing.
+    reused = False
     try:
         for launch in (1, 2):
             proc = None
+            if launch == 2:
+                reused = os.path.exists(os.path.join(prof, "Local State"))
             try:
                 proc = lib_shell.launch(None, shell=lib_shell.CHROME,
                                         extra_flags=lib_shell.CHROME_FLAGS + [f"--user-data-dir={prof}"])
@@ -214,8 +220,9 @@ def run_p4():
     hosts = sorted({re.match(r"^[a-z]+://([^/?#]+)", u).group(1) for _, u, _ in seen if re.match(r"^[a-z]+://([^/?#]+)", u)})
     xcd = [(l, u[:60]) for l, u, h in seen if "x-client-data" in h]
     bad_hosts = [h for h in hosts if h in ("clientservices.googleapis.com", "update.googleapis.com")]
-    results["P4"] = bool(seen) and not xcd and not bad_hosts
+    results["P4"] = reused and bool(seen) and not xcd and not bad_hosts
     notes.append(f"P4: {len(seen)} requests over two launches on one profile, hosts={hosts}, x-client-data on {xcd} (stock M153: on launch 2), variations/update hosts {bad_hosts}")
+    notes.append(f"P4: launch 1 wrote its profile where launch 2 reads it = {reused} (expect True)")
 
 
 def main():
