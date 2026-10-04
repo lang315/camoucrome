@@ -22,12 +22,14 @@
 proprietary_codecs = true
 ffmpeg_branding = "Chrome"
 
-# --- DISTRIBUTION LICENSING: OPEN, deliberately (SP7 D2 part 2) ---
-# Enabling proprietary_codecs for a LOCAL build is settled. DISTRIBUTING the
-# resulting binaries carries H.264/AAC patent-pool obligations that Google's
-# Chrome licence does NOT extend to third-party builds. That is a legal/business
-# decision -- not a technical one -- to settle before SP6 ships anything. This
-# file does not resolve it.
+# --- DISTRIBUTION LICENSING: decided 2026-10-03 by the project owner ---
+# Released binaries ship WITH these codecs. DISTRIBUTING them carries H.264/AAC
+# patent-pool obligations that Google's Chrome licence does NOT extend to
+# third-party builds; the owner accepts that exposure, and the release notes say
+# so. The alternatives were refused: no codecs makes canPlayType('avc1...')
+# answer "" where stock Windows Chrome answers "probably", a tell on every
+# page; source-only releases defeat the step 3 goal (a working install in 15
+# minutes, not a 6-hour build). Not legal advice; see the roadmap's step 3.
 
 # --- Widevine: stays absent + honest (do NOT enable) ---
 # enable_widevine is a GN arg, but the CDM is a binary distributed separately;
