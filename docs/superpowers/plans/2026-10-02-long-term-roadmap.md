@@ -63,6 +63,8 @@ profile**, not the host's real one:
 
 ## Where the project stands
 
+As of 2026-10-02. Later changes are recorded under the step that made them.
+
 - SP0 to SP7 and the follow-on arc are shipped or partial, with residuals
   recorded per slice.
 - The change set is 32 patches on pin `f89f3a4363` (Chrome 154.0.8037.93),
@@ -77,7 +79,8 @@ profile**, not the host's real one:
 - The first native Windows build exists (`D:\camou-win`, `out\Release`,
   58,285 steps, about 7.5 hours from clean). One Windows-only bug has been
   found and fixed: the sandbox dropped `CAMOU_*` from the renderer
-  environment (`windows-sandbox-env`).
+  environment (`windows-sandbox-env`). That tree was on the old pin; it moved
+  to 154 on 2026-10-03 (step 1).
 - On Windows, exactly one key has been checked in a browser
   (`navigator.hardwareConcurrency`, main thread and worker).
 - The Linux build is verified and packaged (`scripts/package.py`), but there
@@ -85,9 +88,10 @@ profile**, not the host's real one:
 - CI builds and verifies on Linux only, on one self-hosted runner in WSL on
   the build PC. The repo is public.
 - There is no LICENSE file. `client/node/package.json` declares MPL-2.0.
+  Settled 2026-10-03: MPL-2.0 (step 3).
 - Codec distribution licensing is open (`settings/build-args.gn`, "OPEN,
   deliberately"); the completion roadmap says it must be settled before
-  anything ships.
+  anything ships. Settled 2026-10-03: ship with the codecs (step 3).
 
 ## Steps to the first release
 
@@ -269,8 +273,8 @@ Release gates, settled before any archive is published:
   ship with them and accept the exposure, or publish source only. **Decided
   2026-10-03: ship with them and accept the exposure.** The other two lose: no
   codecs is a tell on every page, and source-only defeats this step's 15-minute
-  goal. The exposure is stated in `ACCEPTABLE_USE.md` and must be in the
-  release notes. `settings/build-args.gn` records the decision.
+  goal. The exposure is stated in the README ("Licence and codecs") and
+  must be in the release notes. `settings/build-args.gn` records the decision.
 - **LICENSE** for the repo, consistent with the client packages. **Decided
   2026-10-03: MPL-2.0**, the same as Camoufox and `client/node/package.json`.
   `LICENSE` is the canonical text and `client/python/pyproject.toml` declares
@@ -284,8 +288,12 @@ Release gates, settled before any archive is published:
   the paid options are an OV certificate (about USD 200–400 a year, and it
   still warns until it gains reputation) or Azure Trusted Signing (about USD 10
   a month, if an individual in the owner's country can enrol).
-- **Acceptable-use statement.** **Drafted 2026-10-03:** `ACCEPTABLE_USE.md`,
-  for the owner to review.
+- **Acceptable-use statement.** **Decided 2026-10-04: none.** A statement was
+  drafted on 2026-10-03 and dropped by the owner. MPL-2.0 binds nothing beyond
+  copying and modification anyway, and its warranty disclaimer (sections 6
+  and 7) stands on its own. The draft's codec paragraph moved to the README.
+  It now names both GN args for the opt-out, not only `proprietary_codecs`,
+  and says it is not legal advice.
 
 Work:
 
@@ -439,7 +447,7 @@ unexplained.
 | Public repo, self-hosted runner on the build machine | A workflow change could run code on it | Step 0 hardening; existing approval policy and action allow-list |
 | Profiles on one host are linkable | The product's main use case fails quietly | Step 2 linkability table; backlog item 2 |
 | A check measures nothing on Windows | Green results with no information | RED-first for every script in the Windows verify set |
-| Publishing against named sites | Terms-of-service and takedown exposure | Layer 3 at vendor level only; acceptable-use statement |
+| Publishing against named sites | Terms-of-service and takedown exposure | Layer 3 at vendor level only (no acceptable-use statement, decided 2026-10-04) |
 | Shipping proprietary codecs unlicensed | Legal exposure | Release gate in step 3 |
 | Detection vendors change | A passing table decays | Tables re-run at every release |
 
