@@ -24,17 +24,9 @@ HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_host_oracle as cap  # noqa: E402
+from oracle_rules import SHAPE_ONLY, flatten  # noqa: E402
 
 BASE = json.loads((CLIENT / "baselines" / "chrome-8037-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
-# Values that legitimately follow the identity or the machine: compare type only.
-SHAPE_ONLY = {"nav.hardwareConcurrency", "nav.deviceMemory", "nav.language", "nav.languages", "screen.width", "screen.height", "screen.availWidth",
-              "screen.availHeight", "screen.availLeft", "screen.availTop", "win.dpr", "win.screenX", "win.screenY", "win.outerMinusInnerW",
-              "win.outerMinusInnerH", "intl.dtf.timeZone", "intl.dtf.locale", "intl.nf.locale", "intl.collator", "intl.date0", "storage.quotaGiB",
-              "storage.usage", "perfMem.jsHeapSizeLimit", "audio.baseLatency", "audio.outputLatency", "audioFp", "canvas.text", "canvas.shape",
-              "gpu.info.description", "gpu.info.device", "gpu.info.vendor", "gpu.info.architecture", "gpu.limits.maxBufferSize",
-              "gpu.limits.maxStorageBufferBindingSize", "gpu.features", "mediaDevices", "voices", "err.stack", "uadHigh.uaFullVersion",
-              "uadHigh.fullVersionList", "uad.brands", "navConnection.rtt", "navConnection.downlink", "media.(color-gamut: p3)",
-              "media.(dynamic-range: high)", "media.(video-dynamic-range: high)", "media.(prefers-color-scheme: dark)", "keyboard.size"}
 HEVC = 'video/mp4; codecs="hev1.1.6.L93.B0"'
 # Leaves excluded from O1 with the reason each carries (printed as "known:" lines, never as DIFF). A value is either a
 # bare reason -- for a row whose evidence is the committed baseline itself, so a recapture is what retires it -- or
@@ -95,15 +87,6 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
-
-
-def flatten(v, prefix=""):
-    if isinstance(v, dict):
-        out = {}
-        for k, x in v.items():
-            out.update(flatten(x, f"{prefix}.{k}" if prefix else k))
-        return out
-    return {prefix: v}
 
 
 EXPECTED_ROWS = 4  # O1 O2 O3 O4
