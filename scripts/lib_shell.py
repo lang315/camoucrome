@@ -189,7 +189,7 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
 
 
 def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
-           preset=None, sandbox=False):
+           preset=None, sandbox=False, user_data_dir=None):
     """Starts the browser and returns it once its DevTools port answers.
 
     Six details here are deliberate, not defensive. Most were earned by a
@@ -223,7 +223,11 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     A fresh --user-data-dir per launch. Without one, consecutive runs share
     the default profile and the next instance can start while the previous
     still holds the profile lock; that produced TargetClosedError on the
-    first evaluate() in two runs out of eight.
+    first evaluate() in two runs out of eight. A caller that needs one
+    profile across launches passes `user_data_dir`, which replaces it and
+    which shutdown() leaves in place; never a second --user-data-dir in
+    extra_flags, since Chrome on Linux takes the last and on Windows the
+    first (measured 2026-10-04).
 
     --remote-debugging-port=0, with the chosen port read back from the
     profile's DevToolsActivePort, when `debug_port` is None. A literal fixed
@@ -279,7 +283,7 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     if strict:
         env["CAMOU_CONFIG_STRICT"] = "1"
 
-    profile = tempfile.mkdtemp(prefix="camoucrome-verify-")
+    profile = user_data_dir or tempfile.mkdtemp(prefix="camoucrome-verify-")
     # stderr goes to a file, not a pipe. Criterion 6 reads it after the
     # process is gone, and a pipe would deadlock the child if Chromium's
     # startup noise filled the buffer. Each launch truncates it, so a read
@@ -331,9 +335,11 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
              "about:blank"],
             env=env, stdout=subprocess.DEVNULL, stderr=stderr_file)
     except OSError:
-        shutil.rmtree(profile, ignore_errors=True)
+        if user_data_dir is None:
+            shutil.rmtree(profile, ignore_errors=True)
         raise
-    proc.profile_dir = profile
+    # "" gives shutdown() nothing to remove: a caller's profile is the caller's.
+    proc.profile_dir = profile if user_data_dir is None else ""
 
     port_file = pathlib.Path(profile) / "DevToolsActivePort"
     deadline = time.monotonic() + 30
