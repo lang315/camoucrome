@@ -180,3 +180,17 @@ def test_ad_suffix_is_stripped_and_the_value_kept():
 def test_a_real_value_line_survives():
     assert r.line_diff("Your browser environment appears to be controlled by a robot.\n", "") == (
         ["Your browser environment appears to be controlled by a robot."], [])
+
+
+@pytest.mark.parametrize("name", ["det.creepjs.....avail", "det.creepjs....screen", "det.creepjs.screen query",
+                                  "det.creepjs.cores", "det.creepjs.lang", "det.creepjs.FP ID", "det.creepjs.Fuzzy",
+                                  "det.creepjs.level", "det.creepjs.sum", "det.sannysoft.screen.width",
+                                  "det.sannysoft.navigator.userAgent", "det.sannysoft.CHR_MEMORY"])
+def test_identity_driven_detector_rows_are_expected(name):
+    [(_, _, _, label, reason)] = r.label_rows({name: "a"}, {name: "b"})
+    assert label == "expected" and reason
+
+
+def test_remote_voices_stay_unexpected():
+    # stock lists 19 remote voices, the fork's claim none: a finding, not the identity's by design
+    assert r.label_rows({"det.creepjs.remote (19)": "x"}, {})[0][3] == "unexpected"
