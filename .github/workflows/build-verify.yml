@@ -83,7 +83,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py scripts/test_build_lock.py scripts/test_windows_verify_set.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_verify_sp7_phonehome.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
       - name: browser verifies
         run: |

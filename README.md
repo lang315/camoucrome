@@ -28,9 +28,10 @@ testing config out of the build (`disable_fieldtrial_testing_config`), so featur
 state is the build's compiled defaults rather than the public per-milestone
 testing set that an unbranded Chromium applies, and `sp7-phone-home.patch`
 stops the component updater, GCM check-in, the startup `ListAccounts`, network
-time, the omnibox AI-mode eligibility fetch and the spellcheck dictionary
-download — a fresh headless `chrome` now issues zero outbound requests in 75 s
-(`scripts/verify_sp7_phonehome.py`). fonts-ii extends the sp4-fonts
+time, the omnibox AI-mode eligibility fetch, the spellcheck dictionary
+download and Safe Browsing's list fetch (off by default, the "No protection"
+state) — a fresh headless `chrome` on Linux now issues zero outbound requests
+in 330 s (`scripts/verify_sp7_phonehome.py`). fonts-ii extends the sp4-fonts
 allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local()
 cross-method inconsistency (a listed font still resolves; an unlisted one no
 longer leaks) — the codepoint-fallback and native-host completeness parts remain

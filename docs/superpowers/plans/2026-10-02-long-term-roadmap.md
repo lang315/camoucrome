@@ -259,8 +259,10 @@ row and filed below. Along the way:
 - **The change loop** criterion was met by the crashpad lever on 2026-10-03
   (runbook §7 "The change loop").
 
-The Windows component build stays deferred until a Blink relink on
-`out\Release` is timed. The stock Chrome on the host is held at the pin
+The Windows component build stayed deferred until a Blink relink on
+`out\Release` was timed. **Timed on 2026-10-04: 38.38 s, 49 steps.** That was
+one Blink `.cc` whose mtime was touched, so a component build is not needed
+(`measurements/2026-10-04-safe-browsing.md`). The stock Chrome on the host is held at the pin
 (Google Update disabled; runbook §7 says how to release it at the re-pin).
 Evidence: `measurements/2026-10-04-windows-verify-set.md`.
 
@@ -412,7 +414,33 @@ step 2 tables, not this list, decide.
    build has `safe_browsing_mode = 1`. Network-visible to Google. Highest
    priority of the three findings here, because it is traffic and not a
    surface. Same script: a truncated netlog scores P1/P2 FAIL instead of
-   "could not measure" — fix that too.
+   "could not measure" — fix that too. **Closed 2026-10-04.**
+   - **Not intermittent.** The first list fetch fires on every start, at a
+     uniform 60–300 s (`kTimerStartIntervalSecMin/Max`). The 75 s window caught
+     it about one start in sixteen.
+   - **The lever.** `sp7-phone-home.patch` now defaults
+     `prefs::kSafeBrowsingEnabled` to false. That is the "No protection" state a
+     user can pick; the owner chose it over two alternatives: stopping only the
+     fetch, or a config key.
+   - **The verify.** `verify_sp7_phonehome` passes
+     `--safebrowsing-fast-initial-lists-update`, so the fetch lands in every
+     window.
+   - **Results.**
+     - Linux: RED on all four runs, GREEN on three at 75 s and one at 330 s.
+     - Windows: RED twice and GREEN twice for Safe Browsing. The verify still
+       fails there, on the Web Store request below.
+   - **The netlog.** It is now read line by line, and an unreadable log scores
+     `UNMEASURED`.
+   - **P4.** The same work found that P4 had measured nothing on Linux, because
+     the profile was passed twice. Fixed through `lib_shell.launch(user_data_dir=)`.
+
+   Evidence: `measurements/2026-10-04-safe-browsing.md`.
+
+   **Opened by the same measurement: `chromewebstore.googleapis.com` on
+   Windows.** The Windows build's RED runs showed one request to it in 75 s,
+   next to the Safe Browsing fetch. It does not appear on Linux, and the
+   Safe Browsing lever does not touch it. The caller is not identified yet.
+   This is traffic, so it ranks here, above every surface item.
 5. **A crash writes the identity's config and the machine's environment into
    the profile.** Measured on Windows 2026-10-03: any crash of a fork process
    makes crashpad write a minidump (about 190 KB) to

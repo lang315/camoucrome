@@ -18,6 +18,7 @@ Run: python3 scripts/test_lib_shell_launch.py
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -189,6 +190,23 @@ argv, _, _ = capture_launch(sandbox=False)
 check("sandbox=False is the argv every earlier run used",
       "--no-sandbox" in argv and argv.index("--no-sandbox") == 1,
       f"got {strip_profile(argv)}")
+
+# 3c. A caller's profile. verify_sp7_phonehome's P4 needs two launches on one
+#     profile and used to pass --user-data-dir in extra_flags, beside the one
+#     launch() appends. Chrome on Linux takes the last of the two and on
+#     Windows the first, so P4 measured fresh profiles on Linux and timed out
+#     on Windows (measured 2026-10-04). The argv must carry exactly one, and
+#     shutdown() must leave a profile it did not create.
+caller_profile = tempfile.mkdtemp(prefix="camoucrome-test-udd-")
+try:
+    argv, _, _ = capture_launch(user_data_dir=caller_profile)
+    udd = [a for a in argv if a.startswith("--user-data-dir=")]
+    check("user_data_dir is the only --user-data-dir on the argv",
+          udd == [f"--user-data-dir={caller_profile}"], f"got {udd}")
+    check("shutdown leaves a caller's profile in place",
+          os.path.isdir(caller_profile))
+finally:
+    shutil.rmtree(caller_profile, ignore_errors=True)
 
 # 4. Where the binaries are. _binaries() is the single place that resolves the
 #    two binary paths, so these cases are the whole surface for THOSE two; the

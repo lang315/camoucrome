@@ -66,10 +66,14 @@ lever list. `scripts/verify_sp7_phonehome.py` automates exactly this.
 - **Safe Browsing, Domain Reliability, policy fetch, DoH probes.** Nothing in
   75 s on `about:blank`. Not disproven for longer windows or real navigation;
   each gets its own measurement before a lever (rule: measure first).
+  **Safe Browsing, measured 2026-10-04:** its first list fetch fires on every
+  start at 60–300 s, past this window. It is now the tenth lever (the pref
+  defaults to off). See `2026-10-04-safe-browsing.md`; a 330 s window on the
+  lever build saw no external host at all.
 
 ## 3. Levers — one per caller, smallest that holds without driver discipline
 
-All nine are source edits (no GN arg exists for any of them); together they
+All nine (ten since Safe Browsing joined on 2026-10-04) are source edits (no GN arg exists for any of them); together they
 form `patches/sp7-phone-home.patch`. Six were found from the RED table; the
 last three only appeared once the first six were built and the verify re-run —
 the measurement's own "measure, then measure again" discipline. Each prefers a *default* the tree already
@@ -86,6 +90,7 @@ path, so the resulting state is one real Chrome installs also occupy.
 | spellcheck dictionary | drop the `DownloadDictionary` branch in `InitializeDictionaryLocationComplete`; `RetryDownloadDictionary` (a user action) untouched | `chrome/browser/spellchecker/spellcheck_hunspell_dictionary.cc` |
 | component updater, the shared choke | `ConfiguratorImpl::UpdateUrl()` returns `{}` unless `--component-updater=url-source` is set; `update_client` then fails every check with `ProtocolError::MISSING_URLS` (`update_checker.cc:171`) before a socket opens; `PingUrl()` returns `UpdateUrl()` (`configurator_impl.cc:100-103`), so pings share the choke. Found by the first GREEN attempt: with registration removed, on-demand registrants (IWA key distribution, optimization guide, on-device translation — `iwa_key_distribution_component_installer.cc:47-51` even documents ignoring the switch in tests) still produced 3 `update2/json` checks and 1 CRX download | `components/component_updater/configurator_impl.cc` |
 | ListAccounts, the second trigger | `IdentityManager::OnNetworkInitialized` fetches `ListAccounts` as soon as the network is up when `kAvoidAutoTriggerListAccountsOnStale` is on (`identity_manager.cc:458-467`). Removed; the cookie-change trigger stays | `components/signin/public/identity_manager/identity_manager.cc` |
+| Safe Browsing (added 2026-10-04) | `prefs::kSafeBrowsingEnabled` default → false, the "No protection" state. In the source, `SafeBrowsingService` starts its database only for a profile with the pref on (`safe_browsing_service.cc:465`, `:783`). Measured: the 60–300 s request to `safebrowsing.googleapis.com` no longer appears in 75 s or in 330 s (`2026-10-04-safe-browsing.md`) | `components/safe_browsing/core/common/safe_browsing_prefs.cc` |
 | ListAccounts, the trigger that actually fired | `kAvoidAutoTriggerListAccountsOnStale` is DISABLED by default (`signin_switches.cc:90`), so `IdentityManager::GetAccountsInCookieJar()` calls `GaiaCookieManagerService::ListAccounts()` on a stale jar and fetches; `BtmBrowserSigninDetector` does that at profile start (`btm_browser_signin_detector.cc:39`). The edit above sat under the same feature and never ran — the third GREEN attempt still showed `{accounts.google.com: 1}`. Flipped the feature to ENABLED: the jar is read from cache and only an explicit trigger fetches | `components/signin/public/base/signin_switches.cc` |
 
 **Consequences recorded, not hidden:**
