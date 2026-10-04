@@ -63,7 +63,7 @@ def exe_version(path):
 
 
 @contextlib.contextmanager
-def serve(body):
+def serve(body, port=0):
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
@@ -73,7 +73,7 @@ def serve(body):
 
         def log_message(self, *a):
             pass
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         yield f"http://127.0.0.1:{srv.server_port}/"
@@ -157,6 +157,9 @@ PROBES["noise"] = probe_noise
 PROBES["network"] = probe_network
 
 
+STAB_PORT = 47913
+
+
 def probe_stability(pw, arm, mode, run):
     """One profile launched twice. Fork seeds come from the profile (profile_seeds),
     or fresh per launch under --fresh-seeds (the RED). The generated identity carries
@@ -169,7 +172,9 @@ def probe_stability(pw, arm, mode, run):
         for _ in (1, 2):
             cfg = None if arm.config is None else {
                 **arm.without_seeds(), **(per_instance_config() if run.fresh_seeds else profile_seeds(udd))}
-            with serve(cap.page().encode()) as url, opened(pw, arm, mode, user_data_dir=udd, config=cfg) as ctx:
+            # One port for both launches: device IDs are keyed by origin, and a new
+            # port is a new origin (stock's ids changed between launches on port 0).
+            with serve(cap.page().encode(), STAB_PORT) as url, opened(pw, arm, mode, user_data_dir=udd, config=cfg) as ctx:
                 report = read_oracle(ctx, url)
                 # The oracle page keeps only deviceId LENGTHS, so mediaDevices:seed would be
                 # invisible here. The ids themselves need the grant: without it Chrome lists
