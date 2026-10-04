@@ -54,10 +54,14 @@ notes = []
 
 def parse_hosts(path):
     """Returns (external_hosts: {host: count}, loopback_count, nav_count). A
-    netlog cut off by process kill lacks its closing bracket; repair before
-    parsing."""
+    netlog cut off at shutdown lacks its closing bracket and can end mid-event;
+    the writer puts one event per line, so drop the partial last line and
+    close the array. Only events written at shutdown, after the window, are
+    lost."""
     raw = open(path, "r", encoding="utf-8", errors="replace").read()
     if not raw.rstrip().endswith("}"):
+        if not raw.endswith("\n"):
+            raw = raw[:raw.rfind("\n") + 1]
         raw = raw.rstrip().rstrip(",") + "]}"
     d = json.loads(raw)
     types = {v: k for k, v in d["constants"]["logEventTypes"].items()}
