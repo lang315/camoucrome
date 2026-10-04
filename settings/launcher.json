@@ -75,6 +75,10 @@
    },
    "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A FONTCONFIG_FILE in the parent environment is never inherited.",
    "layout": "<root>/fonts/<family>/*.ttf and <root>/settings/fontconfig/<os>.conf, the same in the repo, the archive and the box's client copy; the conf's <dir> is relative (../../fonts)"
+  },
+  "native_fonts": {
+   "drop": ["fonts:alias", "fonts:aliasLocal"],
+   "why": "On a host whose OS is the claimed OS, the claimed families are the host's real ones. fonts:alias redirects them to the OFL bundle (Arial -> Liberation Sans), and FontCache::GetFontPlatformData returns the alias target's lookup with no fallback, so on Windows -- where the bundle is not installed -- a generated Windows identity lost its real Arial: Arial, Segoe UI, Times New Roman and Verdana all measured 1807.99 px (the monospace fallback) where stock Chrome measured 1794.53 / 1808.06 / 1694.34 / 2057.67 (2026-10-04, verify_windows_fonts.py F2 RED through all three clients). The launcher drops both keys from the config before it is encoded when the claimed OS (derive.cc ClaimedOs over the effective keys) equals the host OS. A claimed family the host lacks then shows as missing, which F3 counts."
   }
  },
  "browser_argv_must_not_contain": [

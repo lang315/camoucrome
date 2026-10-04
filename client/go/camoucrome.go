@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -273,6 +274,37 @@ func configEnv(raw, name string) map[string]string {
 // host conf under a Windows claim is a tell) and its BREAKPAD_DUMP_LOCATION
 // (it would collect every identity's dumps in one place), then config/preset set.
 func BuildEnv(o Options, base []string) (map[string]string, error) {
+	return buildEnvFor(o, base, hostOS)
+}
+
+// NativeFontsDrop mirrors settings/launcher.json launch.native_fonts.drop.
+var NativeFontsDrop = []string{"fonts:alias", "fonts:aliasLocal"}
+
+var hostOS = map[string]string{"windows": "Windows", "darwin": "macOS", "linux": "Linux"}[runtime.GOOS]
+
+// nativeConfig is config without the NativeFontsDrop keys when the claimed OS
+// is the host's (contract launch.native_fonts): those families are real there,
+// and an alias to the uninstalled bundle would hide them. A string config is
+// unmarshalled first; anything else is returned untouched.
+func nativeConfig(o Options, hostOS string) (any, error) {
+	if o.Config == nil || claimedOS(o) != hostOS {
+		return o.Config, nil
+	}
+	m, err := asObject(o.Config)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	for k, v := range m {
+		out[k] = v
+	}
+	for _, k := range NativeFontsDrop {
+		delete(out, k)
+	}
+	return out, nil
+}
+
+func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, error) {
 	if _, err := effectiveKeys(o.Config, o.Preset); err != nil {
 		return nil, err
 	}
@@ -283,7 +315,11 @@ func BuildEnv(o Options, base []string) (map[string]string, error) {
 			env[k] = v
 		}
 	}
-	for name, v := range map[string]any{"CAMOU_CONFIG": o.Config, "CAMOU_PRESET": o.Preset} {
+	config, err := nativeConfig(o, hostOS)
+	if err != nil {
+		return nil, err
+	}
+	for name, v := range map[string]any{"CAMOU_CONFIG": config, "CAMOU_PRESET": o.Preset} {
 		if v == nil {
 			continue
 		}

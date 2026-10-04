@@ -386,3 +386,19 @@ def test_what_the_browser_writes_while_closing_is_removed_with_the_async_api():
 
     ctx = asyncio.run(run())
     assert [os.path.exists(d) for d in ctx.dirs] == [False, False]
+
+
+def test_native_host_drops_font_aliases():
+    cfg = {"ua:platform": "Windows", "fonts:alias": {"Arial": "Liberation Sans"},
+           "fonts:aliasLocal": {"ArialMT": "Liberation Sans"}, "fonts:list": ["Arial"]}
+
+    def decoded(host_os, config=cfg):
+        env = camoucrome.build_env(config=config, host_os=host_os, base={})
+        return json.loads("".join(v for k, v in sorted(env.items()) if k.startswith("CAMOU_CONFIG")))
+
+    got = decoded("Windows")
+    assert got["fonts:list"] == ["Arial"] and "fonts:alias" not in got and "fonts:aliasLocal" not in got
+    assert decoded("Windows", json.dumps(cfg)) == got  # a JSON string is filtered too
+    assert decoded("Linux") == cfg
+    contract = json.loads((ROOT / "settings" / "launcher.json").read_text())["launch"]["native_fonts"]
+    assert list(camoucrome.launcher.NATIVE_FONTS_DROP) == contract["drop"]

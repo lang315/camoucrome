@@ -224,3 +224,15 @@ test('what the browser writes while closing is removed once close() resolves', a
   await ctx.close();
   assert.deepEqual(sd.dirs.map((d) => fs.existsSync(d)), [false, false]);
 });
+
+test('native host drops font aliases', () => {
+  const cfg = { 'ua:platform': 'Windows', 'fonts:alias': { Arial: 'Liberation Sans' },
+    'fonts:aliasLocal': { ArialMT: 'Liberation Sans' }, 'fonts:list': ['Arial'] };
+  const decoded = (config, hostOs) => JSON.parse(c.buildEnv({ config, hostOs }, {}).CAMOU_CONFIG);
+  const got = decoded(cfg, 'Windows');
+  assert.deepEqual(got['fonts:list'], ['Arial']);
+  assert.ok(!('fonts:alias' in got) && !('fonts:aliasLocal' in got));
+  assert.deepEqual(decoded(JSON.stringify(cfg), 'Windows'), got);
+  assert.deepEqual(decoded(cfg, 'Linux'), cfg);
+  assert.deepEqual(c.NATIVE_FONTS_DROP, L.native_fonts.drop);
+});
