@@ -23,8 +23,8 @@ wave at ~60 s, so 75 s covers both.
 Safe Browsing's first list fetch is NOT inside 75 s by default: its timer is
 uniform in 60..300 s (kTimerStartIntervalSecMin/Max,
 sb_update_protocol_manager.h), so a 75 s window caught it about one start in
-sixteen. --sb-fast-initial-lists-update moves it to 10..20 s, which puts it in
-every window.
+sixteen. --safebrowsing-fast-initial-lists-update moves it to 10..20 s,
+which puts it in every window.
 
 Measurement: docs/superpowers/measurements/2026-09-09-sp7-phone-home.md
 P4 X-Client-Data on google.com over two launches on one profile: absent both
@@ -93,7 +93,7 @@ def run_p1_p2():
             None, shell=lib_shell.CHROME,
             extra_flags=[*lib_shell.CHROME_FLAGS, f"--log-net-log={NETLOG}",
                          "--net-log-capture-mode=Default",
-                         "--sb-fast-initial-lists-update",
+                         "--safebrowsing-fast-initial-lists-update",
                          f"--host-resolver-rules=MAP {NAV_HOST} 127.0.0.1"])
         # One loopback URLRequest, issued by chrome, for P2; then one
         # navigation to a name, for P5.
