@@ -114,8 +114,10 @@ const HOST_OS = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[process.pl
 // (contract launch.native_fonts): those families are real there, and an alias
 // to the uninstalled bundle would hide them. Untouched otherwise.
 function nativeConfig(config, preset, hostOs) {
-  if (config == null || claimedOs(config, preset) !== hostOs) return config;
-  const c = { ...(typeof config === 'string' ? JSON.parse(config) : config) };
+  if (!hostOs || config == null || claimedOs(config, preset) !== hostOs) return config;
+  const parsed = typeof config === 'string' ? JSON.parse(config) : config;
+  if (!NATIVE_FONTS_DROP.some((k) => k in parsed)) return config; // the original value, not a re-encoding
+  const c = { ...parsed };
   for (const k of NATIVE_FONTS_DROP) delete c[k];
   return c;
 }

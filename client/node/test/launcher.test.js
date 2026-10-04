@@ -234,5 +234,9 @@ test('native host drops font aliases', () => {
   assert.ok(!('fonts:alias' in got) && !('fonts:aliasLocal' in got));
   assert.deepEqual(decoded(JSON.stringify(cfg), 'Windows'), got);
   assert.deepEqual(decoded(cfg, 'Linux'), cfg);
+  // nothing to drop, or no host OS: the original string reaches the env byte for byte
+  const plain = '{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}';
+  assert.equal(c.buildEnv({ config: plain, hostOs: 'Windows' }, {}).CAMOU_CONFIG, plain);
+  assert.equal(c.buildEnv({ config: JSON.stringify(cfg), hostOs: '' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
   assert.deepEqual(c.NATIVE_FONTS_DROP, L.native_fonts.drop);
 });

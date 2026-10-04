@@ -400,5 +400,11 @@ def test_native_host_drops_font_aliases():
     assert got["fonts:list"] == ["Arial"] and "fonts:alias" not in got and "fonts:aliasLocal" not in got
     assert decoded("Windows", json.dumps(cfg)) == got  # a JSON string is filtered too
     assert decoded("Linux") == cfg
+    # nothing to drop, or no host OS: the original string reaches the env byte for byte
+    plain = '{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}'
+    assert camoucrome.build_env(config=plain, host_os="Windows", base={})["CAMOU_CONFIG"] == plain
+    assert camoucrome.build_env(config=json.dumps(cfg), host_os="", base={})["CAMOU_CONFIG"] == json.dumps(cfg)
+    nokey = {"fonts:list": ["Arial"]}
+    assert camoucrome.launcher.native_config(nokey, None, "") is nokey
     contract = json.loads((ROOT / "settings" / "launcher.json").read_text())["launch"]["native_fonts"]
     assert list(camoucrome.launcher.NATIVE_FONTS_DROP) == contract["drop"]
