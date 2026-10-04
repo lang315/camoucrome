@@ -190,7 +190,8 @@ def run_p4():
                 reused = os.path.exists(os.path.join(prof, "Local State"))
             try:
                 proc = lib_shell.launch(None, shell=lib_shell.CHROME,
-                                        extra_flags=lib_shell.CHROME_FLAGS + [f"--user-data-dir={prof}"])
+                                        extra_flags=lib_shell.CHROME_FLAGS,
+                                        user_data_dir=prof)
                 with sync_playwright() as p:
                     browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
                     context = browser.contexts[0]
