@@ -31,7 +31,10 @@ config (media/audio/audio_manager_base.cc, windows-behaviour-ii): on Windows it
 runs in a sandboxed utility process, so the same filter could strip
 audio:sampleRate there. A1: under {"audio:sampleRate": 22050} a sandboxed
 launch's AudioContext reports 22050. A2: with no config it reports anything
-else, the device's own rate, so A1 cannot pass on a default.
+else, the device's own rate, so A1 cannot pass on a default. A2 also rejects
+44100: that is the renderer's no-device fallback (UnavailableDeviceParams), so
+it would mean the host has no output device and A1 could have passed through
+the renderer hook, saying nothing about the sandboxed audio service.
 
 Run on the Windows host, in the directory holding lib_shell.py:
   $env:CAMOU_OUT='D:\\camou-win\\chromium\\src\\out\\Release'
@@ -137,9 +140,10 @@ notes.append(f"A1: sandboxed + audio:sampleRate, AudioContext.sampleRate -> {a1!
 values, err = lib_shell.session(None, [AUDIO], shell=lib_shell.CHROME,
                                 extra_flags=lib_shell.CHROME_FLAGS, sandbox=True)
 a2 = None if err else values[0]
-results["A2"] = a2 is not None and a2 != RATE
+results["A2"] = a2 is not None and a2 not in (RATE, 44100)  # 44100 = renderer no-device fallback
 notes.append(f"A2: sandboxed, no config, AudioContext.sampleRate -> {a2!r} "
-             f"(expect the device's own rate, not {RATE})")
+             f"(expect the device's own rate, not {RATE} or the 44100 no-device fallback)"
+             f"{'; ' + type(err).__name__ + ': ' + str(err) if err else ''}")
 
 for n in notes:
     print("note:", n)

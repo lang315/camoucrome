@@ -11,17 +11,21 @@ F1     ROG Fonts is invisible to measureText in a window and a worker under a
        cannot pass on a font the host lacks)
 F2-*   claimed families the host has (Arial, Segoe UI, Times New Roman, Verdana)
        measure as stock within JITTER_TOL (canvas:seed jitters measureText by
-       design) and win over both fallbacks, through the Python, Go and Node clients. Read
-       from fonts-iii-alias.patch: gen --os windows emits fonts:alias (Arial ->
-       Liberation Sans), and GetFontPlatformData returns the alias target's
-       lookup with no fallback, so on a Windows host these families would stop
-       resolving. These rows measure that.
+       design) and win over both fallbacks, through the Python, Go and Node clients. They
+       measure the launcher rule (settings/launcher.json launch.native_fonts: the
+       client drops fonts:alias/aliasLocal when the claimed OS is the host's).
+       Confirmed 2026-10-04: before the fix every claimed family measured the
+       same 1807.99 (the face the failed alias lookups fell through to, ~Segoe
+       UI's own width) vs stock's distinct 1794.53 / 1808.06 / 1694.34 /
+       2057.67; gen --os windows emits fonts:alias Arial -> Liberation Sans and
+       GetFontPlatformData returns the alias target's lookup with no fallback.
 F4     per-character system fallback (CJK, Thai, emoji in a family nobody has)
        measures as stock within JITTER_TOL (same canvas:seed jitter): the fallback is the host's real one, which is what a
        Windows host claiming Windows should show. fonts:list does not filter it
        (no patch touches PlatformFallbackFontForCharacter).
-F3     note: claimed families stock cannot resolve on this host (a real device
-       would have them, so each is a tell)
+F3     note, measured: of the identity's fonts:list, how many families stock
+       cannot resolve on this host (a real device would have them, so each is
+       a tell), and up to 10 names
 F5     note: whether two generated identities claim different font lists
 
 RED: windows_verify_set.py red runs this with CAMOU_EXE = the stock chrome.exe;
@@ -48,7 +52,7 @@ TEXT = "mmmmmmmmmmlli WWW 0123456789"
 FALLBACK_TEXT = "\u6f22\u5b57\u304b\u306a \u0e44\u0e17\u0e22 \U0001F600"
 EXPECTED = 5
 
-PAGE = """<!doctype html><title>fonts</title><script>
+PAGE_TMPL = """<!doctype html><title>fonts</title><script>
 const FAMS = %s, TEXT = %s, FB = %s;
 function measure(ctx) {
   const w = (font, t) => { ctx.font = font; return ctx.measureText(t).width; };
@@ -64,7 +68,13 @@ const wk = new Worker(URL.createObjectURL(new Blob([SRC], {type: 'text/javascrip
 wk.onmessage = e => { const o = document.createElement('pre'); o.id = 'o';
   o.textContent = JSON.stringify({main: measure(document.createElement('canvas').getContext('2d')), worker: e.data});
   document.body.appendChild(o); };
-</script>""" % (json.dumps([HOST_ONLY] + REAL), json.dumps(TEXT), json.dumps(FALLBACK_TEXT))
+</script>"""
+
+
+def page(claimed):
+    """The page measures HOST_ONLY, REAL and every claimed family (cheap, and the stock read needs them for F3)."""
+    fams = list(dict.fromkeys([HOST_ONLY] + REAL + claimed))
+    return PAGE_TMPL % (json.dumps(fams), json.dumps(TEXT), json.dumps(FALLBACK_TEXT))
 
 
 # measureText jitter under canvas:seed measured at <= 0.12 px on a 28-char string at 100 px; distinct fonts here
@@ -79,7 +89,10 @@ def resolved(r, fam):
 
 def real_ok(r, sm):
     """Every REAL family won over BOTH fallbacks (variants agree) and sits within the jitter of stock."""
-    return (r is not None and sm is not None
+    # Arial/Times New Roman/Segoe UI alias to metric-compatible targets by design, so width vs stock alone cannot
+    # detect the alias when the target is installed; the two-variant (resolved) check is what does.
+    # The two-variant check only discriminates if bare monospace and serif differ by more than JITTER_TOL.
+    return (r is not None and sm is not None and abs(r["__mono"] - r["__serif"]) > JITTER_TOL
             and all(abs(r[f][0] - r[f][1]) <= JITTER_TOL and abs(r[f][0] - sm[f][0]) <= JITTER_TOL for f in REAL))
 
 
@@ -119,13 +132,15 @@ with sync_playwright() as pw:
 
 
 def main():
+    cfg = identity(1)
+    claimed = cfg.get("fonts:list") or []
+    body = page(claimed).encode()
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), type("H", (http.server.BaseHTTPRequestHandler,), {
         "do_GET": lambda s: (s.send_response(200), s.send_header("Content-Type", "text/html; charset=utf-8"),
-                             s.end_headers(), s.wfile.write(PAGE.encode())),
+                             s.end_headers(), s.wfile.write(body)),
         "log_message": lambda *a: None}))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_port}/"
-    cfg = identity(1)
     results, notes = {}, []
     fork, err = python_read(url, EXE, cfg)
     stock, serr = python_read(url, STOCK, None)
@@ -156,9 +171,12 @@ def main():
         notes.append("F2 widths fork mono|serif/stock: " + "; ".join(
             f"{x}={fm[x][0]:.2f}|{fm[x][1]:.2f}/{sm[x][0]:.2f}" for x in REAL))
         notes.append(f"F4 fallback width fork/stock: {fm['__fallback']:.2f}/{sm['__fallback']:.2f}")
-    claimed = cfg.get("fonts:list") or []
-    notes.append(f"F3: the identity claims {len(claimed)} families; measuring which stock lacks is "
-                 f"settings/fonts.json vs the host's installed list, read 2026-10-04: 0 missing")
+    if sm is not None:
+        lacking = [f for f in claimed if f in sm and not resolved(sm, f)]
+        notes.append(f"F3: the identity claims {len(claimed)} families; stock cannot resolve {len(lacking)}"
+                     f"{': ' + ', '.join(lacking[:10]) if lacking else ''}")
+    else:
+        notes.append("F3: stock read failed, nothing measured")
     other = identity(2).get("fonts:list") or []
     notes.append(f"F5: seeds 1 and 2 claim {'the SAME' if sorted(other) == sorted(claimed) else 'different'} "
                  f"font lists ({len(claimed)} vs {len(other)}) -- the SAME list on every profile is a "

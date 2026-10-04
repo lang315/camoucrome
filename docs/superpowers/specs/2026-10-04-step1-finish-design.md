@@ -57,10 +57,10 @@ The set is `scripts/windows_verify_set.py`: a list of entries, each
   parity, and fallback on bad config. They rely on the script's built-in
   control rows instead, and the runner records that this is the kind of RED
   they have.
-- **Pre-checks.** The runner refuses to start if:
-  - the host's stock Chrome version (the version directory under
-    `Application\`) is not `upstream.env`'s tag; or
-  - `CAMOU_SHELL` is not `chrome`.
+- **Pre-checks.** The runner refuses to start if the host's stock Chrome
+  version (the version directory under `Application\`) is not `upstream.env`'s
+  tag. It sets `CAMOU_SHELL=chrome` for its children itself rather than
+  refusing to start without it.
 
 Membership, by the roadmap's five criteria:
 

@@ -91,3 +91,41 @@ def test_select_space_separated_names_raises_systemexit():
 def test_select_unknown_name_raises_systemexit():
     with pytest.raises(SystemExit):
         w.select("nope.py")
+
+
+KNOWN = w.Entry("verify_x.py", 4, "stock", known_fail=("O2",))
+ROWS = "PASS  O1 a\n{o2}  O2 b\nPASS  O3 c\nPASS  O4 d\n"
+
+
+def test_known_fail_row_failing_alone_is_green_even_with_nonzero_rc():
+    assert w.judge("green", KNOWN, 1, ROWS.format(o2="FAIL"))[0] is True
+    assert w.judge("green", KNOWN, 0, ROWS.format(o2="FAIL"))[0] is True
+    assert "O2" in w.judge("green", KNOWN, 1, ROWS.format(o2="FAIL"))[1]
+
+
+def test_known_fail_row_passing_is_not_green_so_the_annotation_gets_deleted():
+    assert w.judge("green", KNOWN, 0, ROWS.format(o2="PASS"))[0] is False
+
+
+def test_extra_unknown_fail_row_is_not_green():
+    out = ROWS.format(o2="FAIL").replace("PASS  O3", "FAIL  O3")
+    assert w.judge("green", KNOWN, 1, out)[0] is False
+
+
+def test_known_fail_does_not_change_red():
+    assert w.judge("red", KNOWN, 1, ROWS.format(o2="FAIL"))[0] is True
+
+
+def test_timeout_becomes_a_bad_line_not_an_abort(monkeypatch, tmp_path, capsys):
+    import subprocess
+    monkeypatch.setattr(w, "SET", [w.Entry("verify_x.py", 1, "stock")])
+    monkeypatch.setattr(w, "stock_version", lambda a: "1.2.3.4")
+    monkeypatch.setattr(w, "pin_tag", lambda c: "1.2.3.4")
+    monkeypatch.setattr(w.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(a[0], 1800, output=b"PASS  a\n", stderr=None)
+    monkeypatch.setattr(w.subprocess, "run", boom)
+    assert w.main(["x", "green"]) == 1
+    assert "BAD  verify_x.py: timeout after 1800 s" in capsys.readouterr().out
+    assert "PASS  a" in (tmp_path / "windows-verify-set" / "green" / "verify_x.py.log").read_text()
