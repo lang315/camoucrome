@@ -404,6 +404,31 @@ every milestone. Measured 2026-10-03 on the 153 tree:
 The bullets above are the state that the discard decision was made on. The
 procedure to re-point the tree, measured when it was first done, follows.
 
+### The stock control on the host
+
+The host's own Google Chrome is the stock control for every Windows verify
+(`scripts/windows_verify_set.py red` runs it as `CAMOU_EXE`, and the runner
+refuses to start unless its version is `upstream.env`'s tag). Google Update
+would move it to the next milestone on its own, so since 2026-10-04 it is held:
+
+- the scheduled task `GoogleUpdaterTaskSystem156.0.8067.0{…}` is Disabled;
+- the services `GoogleUpdaterService156.0.8067.0` and
+  `GoogleUpdaterInternalService156.0.8067.0` are StartupType Disabled.
+
+The host browser gets no security updates while held, so it is not for
+browsing. **At every re-pin, release it first**: the pin follows the host's
+version (section 1), so a held host points the re-pin at the old milestone.
+
+```
+Get-ScheduledTask -TaskName 'GoogleUpdaterTaskSystem*' | Enable-ScheduledTask
+Get-Service 'GoogleUpdaterService*','GoogleUpdaterInternalService*' | Set-Service -StartupType Automatic
+```
+
+Let it update, read the new version, re-pin to it, then hold it again with
+`Disable-ScheduledTask` and `-StartupType Disabled` until the next re-pin. The
+updater's own version is part of its task and service names, so match by
+prefix as above, not by the full name.
+
 ### Re-pointing the tree to a new pin
 
 Done once, 153 to 154, on the evening of 2026-10-03. It was an unattended

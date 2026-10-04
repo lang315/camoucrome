@@ -224,3 +224,30 @@ test('what the browser writes while closing is removed once close() resolves', a
   await ctx.close();
   assert.deepEqual(sd.dirs.map((d) => fs.existsSync(d)), [false, false]);
 });
+
+test('native host drops font aliases', () => {
+  const cfg = { 'ua:platform': 'Windows', 'fonts:alias': { Arial: 'Liberation Sans' },
+    'fonts:aliasLocal': { ArialMT: 'Liberation Sans' }, 'fonts:list': ['Arial'] };
+  const decoded = (config, hostOs) => JSON.parse(c.buildEnv({ config, hostOs }, {}).CAMOU_CONFIG);
+  const got = decoded(cfg, 'Windows');
+  assert.deepEqual(got['fonts:list'], ['Arial']);
+  assert.ok(!('fonts:alias' in got) && !('fonts:aliasLocal' in got));
+  assert.deepEqual(decoded(JSON.stringify(cfg), 'Windows'), got);
+  assert.deepEqual(decoded(cfg, 'Linux'), cfg);
+  // nothing to drop, or no host OS: the original string reaches the env byte for byte
+  const plain = '{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}';
+  assert.equal(c.buildEnv({ config: plain, hostOs: 'Windows' }, {}).CAMOU_CONFIG, plain);
+  assert.equal(c.buildEnv({ config: JSON.stringify(cfg), hostOs: '' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
+  assert.deepEqual(c.NATIVE_FONTS_DROP, L.native_fonts.drop);
+});
+
+test('unmapped host keeps aliases for a config that names no OS', () => {
+  const cfg = { 'fonts:alias': { Arial: 'Liberation Sans' }, 'fonts:aliasLocal': { ArialMT: 'Liberation Sans' } };
+  assert.equal(c.claimedOs(cfg), null); // the value that equalled an unmapped hostOs
+  assert.deepEqual(JSON.parse(c.buildEnv({ config: cfg, hostOs: null }, {}).CAMOU_CONFIG), cfg);
+});
+
+test('native host without alias keys encodes the config unchanged', () => {
+  const cfg = { 'ua:platform': 'Windows', 'fonts:list': ['Arial'] };
+  assert.equal(c.buildEnv({ config: cfg, hostOs: 'Windows' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
+});
