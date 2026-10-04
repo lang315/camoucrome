@@ -207,7 +207,9 @@ PROBES["linkability"] = probe_linkability
 
 
 DETECTORS = {"sannysoft": "https://bot.sannysoft.com/", "creepjs": "https://abrahamjuliot.github.io/creepjs/",
-             "browserscan": "https://www.browserscan.net/", "pixelscan": "https://pixelscan.net/"}
+             "browserscan": "https://www.browserscan.net/", "pixelscan": "https://pixelscan.net/fingerprint-check"}
+# pixelscan.net/ is a landing page whose scan waits for a click; /fingerprint-check runs it on load
+# (2026-10-04: stock headless read "Your Browser Fingerprint is inconsistent" there, nothing on /).
 
 
 def settle(page, first_ms=10000, step_ms=3000, timeout_s=120):
