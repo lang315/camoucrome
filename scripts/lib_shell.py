@@ -144,6 +144,29 @@ SHELL_FLAGS = ["--ozone-platform=headless"]
 # that failure arrives as a Playwright timeout, which looks like flake.
 CHROME_FLAGS = ["--headless", "--no-first-run", "--no-default-browser-check"]
 
+
+def _shell_target(environ, shell, chrome):
+    """(default binary, default flags) for an environment.
+
+    CAMOU_SHELL=chrome is the Windows switch: a release out dir there has no
+    content_shell, and most verifies call session()/launch() without shell=, so
+    it moves the DEFAULT to chrome with CHROME_FLAGS. --enable-logging=stderr is
+    added because chrome, unlike content_shell, keeps LOG(ERROR) off stderr
+    without it, and the STDERR_LOG readers assert on the camoucfg: startup
+    lines. Unset: content_shell and SHELL_FLAGS, the argv section 1 of
+    test_lib_shell_launch.py freezes. Any other value is refused, so a typo
+    cannot quietly measure content_shell.
+    """
+    value = environ.get("CAMOU_SHELL")
+    if value is None:
+        return shell, SHELL_FLAGS
+    if value == "chrome":
+        return chrome, CHROME_FLAGS + ["--enable-logging=stderr"]
+    raise ValueError(f"CAMOU_SHELL={value!r}: the only value is 'chrome'")
+
+
+SHELL, SHELL_FLAGS = _shell_target(os.environ, SHELL, CHROME)
+
 # The exact hint list the baseline was captured with. getHighEntropyValues
 # returns these plus the three low-entropy values, so a baseline captured with
 # this list holds ten keys. Any verification comparing against that baseline
