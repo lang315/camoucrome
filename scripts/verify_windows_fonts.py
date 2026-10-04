@@ -81,19 +81,26 @@ def identity(seed):
 
 def python_read(url, exe, config):
     """{main, worker} through camoucrome.launch() in a subprocess, sandboxed."""
+    # Windows' CreateProcess command line is capped at 32767 characters and a Windows identity is ~37 KB, so the
+    # config goes by file path (null for the stock read), never into the -c source.
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+        json.dump(config, f)
     script = f"""
 import json, sys
 sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))})
 from camoucrome import launch
 from patchright.sync_api import sync_playwright
 with sync_playwright() as pw:
-    ctx = launch(pw, {json.dumps(exe)}, config=json.loads({json.dumps(json.dumps(config))}), headless=True)
+    ctx = launch(pw, {json.dumps(exe)}, config=json.load(open({json.dumps(f.name)}, encoding="utf-8")), headless=True)
     page = ctx.new_page(); page.goto({json.dumps(url)})
     page.wait_for_selector("#o", state="attached", timeout=30000)
     print(page.locator("#o").text_content())
     ctx.close()
 """
-    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300)
+    try:
+        p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300)
+    finally:
+        os.unlink(f.name)
     if p.returncode != 0:
         return None, p.stderr[-600:]
     return json.loads(p.stdout.strip().splitlines()[-1]), None
