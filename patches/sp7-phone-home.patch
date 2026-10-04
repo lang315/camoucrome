@@ -136,6 +136,23 @@ index c23cef8903..bff6febd16 100644
  
  BASE_FEATURE(kAimServerEligibilityEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
  
+diff --git a/components/safe_browsing/core/common/safe_browsing_prefs.cc b/components/safe_browsing/core/common/safe_browsing_prefs.cc
+index 3921d014f2..7bef349864 100644
+--- a/components/safe_browsing/core/common/safe_browsing_prefs.cc
++++ b/components/safe_browsing/core/common/safe_browsing_prefs.cc
+@@ -275,8 +275,11 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
+       prefs::kSafeBrowsingEsbProtegoPingWithTokenLastLogTime, base::Time());
+   registry->RegisterTimePref(
+       prefs::kSafeBrowsingEsbProtegoPingWithoutTokenLastLogTime, base::Time());
++  // camoucrome sp7: off by default, the "No protection" state a real user can
++  // pick. On, the first list fetch to safebrowsing.googleapis.com fires 60-300 s
++  // after every start (kTimerStartIntervalSecMin/Max).
+   registry->RegisterBooleanPref(
+-      prefs::kSafeBrowsingEnabled, true,
++      prefs::kSafeBrowsingEnabled, false,
+       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+   if (base::FeatureList::IsEnabled(kEsbAsASyncedSetting)) {
+     registry->RegisterBooleanPref(
 diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
 index 61359f6376..d5d6e49da3 100644
 --- a/components/signin/public/base/signin_switches.cc
