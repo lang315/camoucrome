@@ -194,3 +194,11 @@ def test_identity_driven_detector_rows_are_expected(name):
 def test_remote_voices_stay_unexpected():
     # stock lists 19 remote voices, the fork's claim none: a finding, not the identity's by design
     assert r.label_rows({"det.creepjs.remote (19)": "x"}, {})[0][3] == "unexpected"
+
+
+def test_second_null_pair_residue_is_dropped():
+    # 20261004-223840-null: BrowserScan ad phrases and CreepJS status lines that flipped between two stock loads
+    for line in ("DNS leak test", "Statusb03caef9", "0.10000038146972656", "1"):
+        assert r.line_diff(line + "\n", "") == ([], [])
+    assert r.line_diff("1024x768Gyroscope sensor tester\n", "1024x768\n") == ([], [])
+    assert r.line_diff("springfieldOnline privacy guide\n", "springfield\n") == ([], [])
