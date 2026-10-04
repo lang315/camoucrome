@@ -35,9 +35,11 @@ def native_config(config, preset=None, host_os=None):
     host's (contract launch.native_fonts): those families are real there, and
     an alias to the uninstalled bundle would hide them."""
     host_os = HOST_OS if host_os is None else host_os
-    if config is None or claimed_os(config, preset) != host_os:
+    if not host_os or config is None or claimed_os(config, preset) != host_os:
         return config
-    c = json.loads(config) if isinstance(config, str) else dict(config)
+    c = json.loads(config) if isinstance(config, str) else config
+    if not any(k in c for k in NATIVE_FONTS_DROP):
+        return config  # nothing to drop: the original value, not a re-encoding
     return {k: v for k, v in c.items() if k not in NATIVE_FONTS_DROP}
 
 

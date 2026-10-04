@@ -287,12 +287,17 @@ var hostOS = map[string]string{"windows": "Windows", "darwin": "macOS", "linux":
 // and an alias to the uninstalled bundle would hide them. A string config is
 // unmarshalled first; anything else is returned untouched.
 func nativeConfig(o Options, hostOS string) (any, error) {
-	if o.Config == nil || claimedOS(o) != hostOS {
+	if hostOS == "" || o.Config == nil || claimedOS(o) != hostOS {
 		return o.Config, nil
 	}
 	m, err := asObject(o.Config)
 	if err != nil {
 		return nil, err
+	}
+	if _, a := m[NativeFontsDrop[0]]; !a {
+		if _, b := m[NativeFontsDrop[1]]; !b {
+			return o.Config, nil // nothing to drop: the original value, not a re-encoding
+		}
 	}
 	out := map[string]any{}
 	for k, v := range m {

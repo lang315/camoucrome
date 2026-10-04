@@ -439,6 +439,17 @@ func TestNativeHostDropsFontAliases(t *testing.T) {
 	if g := decode(string(raw), "Windows"); !reflect.DeepEqual(g, got) {
 		t.Fatalf("json string: %v != %v", g, got)
 	}
+	// nothing to drop, or no host OS: the original string reaches the env byte for byte
+	plain := `{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}`
+	for _, host := range []string{"Windows", ""} {
+		env, _ := buildEnvFor(Options{Config: plain}, nil, host)
+		if env["CAMOU_CONFIG"] != plain {
+			t.Fatalf("host %q: %q", host, env["CAMOU_CONFIG"])
+		}
+	}
+	if env, _ := buildEnvFor(Options{Config: string(raw)}, nil, ""); env["CAMOU_CONFIG"] != string(raw) {
+		t.Fatalf("empty host dropped: %q", env["CAMOU_CONFIG"])
+	}
 	if g := decode(cfg(), "Linux"); g["fonts:alias"] == nil || g["fonts:aliasLocal"] == nil {
 		t.Fatalf("linux host must keep both: %v", g)
 	}
