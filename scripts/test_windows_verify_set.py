@@ -69,3 +69,25 @@ def test_every_entry_names_a_script_that_exists():
     here = os.path.dirname(os.path.abspath(__file__))
     missing = [e.script for e in w.SET if not os.path.exists(os.path.join(here, e.script))]
     assert missing == []
+
+
+def test_select_none_returns_all_entries():
+    result = w.select(None)
+    assert result == w.SET
+
+
+def test_select_comma_separated_names_returns_matching_entries():
+    result = w.select("verify_sp2b.py, verify_sp4a.py")
+    assert len(result) == 2
+    assert result[0].script == "verify_sp2b.py"
+    assert result[1].script == "verify_sp4a.py"
+
+
+def test_select_space_separated_names_raises_systemexit():
+    with pytest.raises(SystemExit):
+        w.select("verify_windows_fonts.py verify_host_oracle.py")
+
+
+def test_select_unknown_name_raises_systemexit():
+    with pytest.raises(SystemExit):
+        w.select("nope.py")

@@ -105,11 +105,31 @@ def pin_tag(client):
     sys.exit("upstream.env has no CHROMIUM_TAG")
 
 
+def select(only_arg):
+    """Select entries by --only arg. None → all of SET; string → comma-separated
+    names (whitespace stripped). Raises SystemExit if a name is not in SET or if
+    no entries are selected."""
+    if only_arg is None:
+        return SET
+    # Split by comma and strip whitespace around each name
+    requested = [name.strip() for name in only_arg.split(",")]
+    # Check all requested names exist in SET
+    scripts = {e.script for e in SET}
+    unknown = [name for name in requested if name not in scripts]
+    if unknown:
+        sys.exit(f"unknown entries: {', '.join(unknown)}")
+    # Select matching entries, preserving SET order
+    result = [e for e in SET if e.script in requested]
+    if not result:
+        sys.exit("no entries selected")
+    return result
+
+
 def main(argv):
     if len(argv) < 2 or argv[1] not in ("red", "green"):
         sys.exit(__doc__)
     mode = argv[1]
-    only = argv[argv.index("--only") + 1].split(",") if "--only" in argv else None
+    only_arg = argv[argv.index("--only") + 1] if "--only" in argv else None
     here = pathlib.Path(__file__).resolve().parent
     client = os.environ.get("CAMOU_CLIENT", str(here.parent))
     app = os.environ.get("CAMOU_STOCK_APP", STOCK_APP)
@@ -122,7 +142,7 @@ def main(argv):
     logs = pathlib.Path(tempfile.gettempdir()) / "windows-verify-set" / mode
     logs.mkdir(parents=True, exist_ok=True)
     print(f"mode={mode} stock={have} pin={want} exe={env.get('CAMOU_EXE', '(fork via CAMOU_OUT)')}")
-    entries = [e for e in SET if only is None or e.script in only]
+    entries = select(only_arg)
     good = 0
     for e in entries:
         if mode == "red" and e.red == "own":
