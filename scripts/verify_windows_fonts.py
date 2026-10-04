@@ -10,13 +10,14 @@ F1     ROG Fonts is invisible to measureText in a window and a worker under a
        generated Windows identity, AND visible to stock (in the same row, so F1
        cannot pass on a font the host lacks)
 F2-*   claimed families the host has (Arial, Segoe UI, Times New Roman, Verdana)
-       measure exactly as stock, through the Python, Go and Node clients. Read
+       measure as stock within JITTER_TOL (canvas:seed jitters measureText by
+       design) and win over both fallbacks, through the Python, Go and Node clients. Read
        from fonts-iii-alias.patch: gen --os windows emits fonts:alias (Arial ->
        Liberation Sans), and GetFontPlatformData returns the alias target's
        lookup with no fallback, so on a Windows host these families would stop
        resolving. These rows measure that.
 F4     per-character system fallback (CJK, Thai, emoji in a family nobody has)
-       measures as stock: the fallback is the host's real one, which is what a
+       measures as stock within JITTER_TOL (same canvas:seed jitter): the fallback is the host's real one, which is what a
        Windows host claiming Windows should show. fonts:list does not filter it
        (no patch touches PlatformFallbackFontForCharacter).
 F3     note: claimed families stock cannot resolve on this host (a real device
@@ -66,9 +67,20 @@ wk.onmessage = e => { const o = document.createElement('pre'); o.id = 'o';
 </script>""" % (json.dumps([HOST_ONLY] + REAL), json.dumps(TEXT), json.dumps(FALLBACK_TEXT))
 
 
+# measureText jitter under canvas:seed measured at <= 0.12 px on a 28-char string at 100 px; distinct fonts here
+# differ by >= 13 px except Segoe UI vs the monospace fallback (0.07 px), which the two-variant check decides.
+JITTER_TOL = 1.0
+
+
 def resolved(r, fam):
     mono, serif = r[fam]
-    return mono != r["__mono"] or serif != r["__serif"]
+    return abs(mono - r["__mono"]) > JITTER_TOL or abs(serif - r["__serif"]) > JITTER_TOL
+
+
+def real_ok(r, sm):
+    """Every REAL family won over BOTH fallbacks (variants agree) and sits within the jitter of stock."""
+    return (r is not None and sm is not None
+            and all(abs(r[f][0] - r[f][1]) <= JITTER_TOL and abs(r[f][0] - sm[f][0]) <= JITTER_TOL for f in REAL))
 
 
 def identity(seed):
@@ -124,7 +136,7 @@ def main():
     results["F1 ROG Fonts hidden in window and worker under the identity, visible to stock"] = (
         fm is not None and fw is not None and sm is not None
         and not resolved(fm, HOST_ONLY) and not resolved(fw, HOST_ONLY) and resolved(sm, HOST_ONLY))
-    real_equal = lambda r: r is not None and sm is not None and all(r[f] == sm[f] for f in REAL)
+    real_equal = lambda r: real_ok(r, sm)
     results["F2-py claimed host families measure as stock (Python client)"] = real_equal(fm)
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(cfg, f)
@@ -138,10 +150,12 @@ def main():
     finally:
         os.unlink(cfg_file)
     results["F4 per-character system fallback measures as stock"] = (
-        fm is not None and sm is not None and fm["__fallback"] == sm["__fallback"])
+        fm is not None and sm is not None and abs(fm["__fallback"] - sm["__fallback"]) <= JITTER_TOL)
     srv.shutdown()
     if fm is not None and sm is not None:
-        notes.append("F2 widths fork/stock: " + "; ".join(f"{x}={fm[x][0]:.2f}/{sm[x][0]:.2f}" for x in REAL))
+        notes.append("F2 widths fork mono|serif/stock: " + "; ".join(
+            f"{x}={fm[x][0]:.2f}|{fm[x][1]:.2f}/{sm[x][0]:.2f}" for x in REAL))
+        notes.append(f"F4 fallback width fork/stock: {fm['__fallback']:.2f}/{sm['__fallback']:.2f}")
     claimed = cfg.get("fonts:list") or []
     notes.append(f"F3: the identity claims {len(claimed)} families; measuring which stock lacks is "
                  f"settings/fonts.json vs the host's installed list, read 2026-10-04: 0 missing")
