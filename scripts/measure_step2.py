@@ -116,6 +116,47 @@ def probe_oracle(pw, arm, mode, run):
 PROBES["oracle"] = probe_oracle
 
 
+NOISE_PAGE = b"""<!doctype html><title>noise</title><pre id="o"></pre><script>
+const two=location.search.includes('two');
+const distinct=d=>{const s=new Set();for(let i=0;i<d.length;i+=4)s.add(d[i]+','+d[i+1]+','+d[i+2]+','+d[i+3]);return s.size};
+const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');
+x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);if(two){x.fillStyle='rgb(200,100,50)';x.fillRect(0,0,32,64)}
+const out={canvas2d:distinct(x.getImageData(0,0,64,64).data)};
+const g=document.createElement('canvas');g.width=g.height=64;const gl=g.getContext('webgl');
+if(gl){gl.clearColor(10/255,20/255,30/255,1);gl.clear(gl.COLOR_BUFFER_BIT);if(two){gl.enable(gl.SCISSOR_TEST);gl.scissor(0,0,32,64);gl.clearColor(200/255,100/255,50/255,1);gl.clear(gl.COLOR_BUFFER_BIT)}
+const p=new Uint8Array(64*64*4);gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,p);out.webgl=distinct(p)}else out.webgl='no context';
+document.getElementById('o').textContent=JSON.stringify(out);
+</script>"""
+
+
+def probe_noise(pw, arm, mode, run):
+    """Solid fills read back: the control reads 1 colour; a fork reading more is a farbling tell."""
+    two = "?two" if run.two_colour and arm.name == "fork" else ""
+    with serve(NOISE_PAGE) as url, opened(pw, arm, mode) as ctx:
+        page = first_page(ctx)
+        page.goto(url + two, wait_until="load")
+        page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
+        got = json.loads(page.locator("#o").text_content())
+    return {"noise.canvas2d": got["canvas2d"], "noise.webgl": got["webgl"]}
+
+
+PEET = "https://tls.peet.ws/api/all"
+
+
+def probe_network(pw, arm, mode, run):
+    """JA4, HTTP/2 SETTINGS and header order as a third party sees them (spec: the external echo service)."""
+    with opened(pw, arm, mode) as ctx:
+        page = first_page(ctx)
+        page.goto(PEET, wait_until="load", timeout=60000)
+        data = json.loads(page.evaluate("(document.querySelector('pre') || document.body).textContent"))
+    (run.dir / "raw" / f"network-{arm.name}-{mode}.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+    return rows.network_rows(data)
+
+
+PROBES["noise"] = probe_noise
+PROBES["network"] = probe_network
+
+
 def argv_of(pw, arm):
     from camoucrome.probe import browser_argv
     with opened(pw, arm, "headless") as ctx:
