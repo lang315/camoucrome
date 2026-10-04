@@ -13,8 +13,10 @@ The first Safe Browsing list update is scheduled by
 `kTimerStartIntervalSecMin = 60` and `kTimerStartIntervalSecMax = 300` seconds
 (`components/safe_browsing/core/browser/db/sb_update_protocol_manager.h:36-38`).
 A 75 s window covers 15 of those 240 seconds, so it catches the fetch about
-one start in sixteen. The request is `POST
-https://safebrowsing.googleapis.com/v5/hashLists:batchGet`
+one start in sixteen. Measured: the netlog's `REQUEST_ALIVE` events name the
+host `safebrowsing.googleapis.com`; the verify keeps hosts only. Read in the
+source, not measured: the URL that the update manager builds is
+`https://safebrowsing.googleapis.com/v5/hashLists:batchGet`
 (`v5_update_protocol_manager.cc:167`).
 
 The switch `--safebrowsing-fast-initial-lists-update` (the string in
@@ -31,8 +33,10 @@ green, and that is how the wrong name was caught.
 
 - This is the "No protection" setting that a real Chrome user can choose, the
   same kind of lever as the other nine in sp7 (a default the tree already
-  supports). With it, `SafeBrowsingService` never starts the local database
-  manager, so no list update is scheduled.
+  supports). In the source, `SafeBrowsingService` starts its database only
+  for a profile with the pref on (`safe_browsing_service.cc:465`, `:783`), so
+  no list update should be scheduled. The measured part is the outcome: no
+  `safebrowsing.googleapis.com` request in 75 s or 330 s.
 - Decided with the owner on 2026-10-04. The alternatives were:
   - keep Safe Browsing on and stop only the list fetch (`disable_auto_update`):
     a state no real user is in, and lookups would still go out;
