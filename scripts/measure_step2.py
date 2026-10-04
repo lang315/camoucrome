@@ -180,8 +180,12 @@ def probe_stability(pw, arm, mode, run):
                 # invisible here. The ids themselves need the grant: without it Chrome lists
                 # one entry per kind with an empty id.
                 ctx.grant_permissions(["camera", "microphone"], origin=url)
-                report["mediaDevices.ids"] = first_page(ctx).evaluate(
-                    "navigator.mediaDevices.enumerateDevices().then(ds => ds.map(d => d.kind + ':' + d.deviceId + '/' + d.groupId))")
+                # deviceId and groupId apart: stock keeps a device's id across launches of one
+                # profile but draws groupId per session (measured 2026-10-04, two stock launches).
+                ids = first_page(ctx).evaluate(
+                    "navigator.mediaDevices.enumerateDevices().then(ds => ds.map(d => [d.kind + ':' + d.deviceId, d.groupId]))")
+                report["mediaDevices.ids"] = [i for i, _ in ids]
+                report["mediaDevices.groupIds"] = [g for _, g in ids]
                 reports.append(report)
     finally:
         remove_dir(udd)
