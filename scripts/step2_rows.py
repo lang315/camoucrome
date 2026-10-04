@@ -79,6 +79,7 @@ VOLATILE_LINES = [
     r"^\d{1,3}(\.\d{1,3}){3}\d* more$",          # BrowserScan CDN edge IP
     r"^[0-9A-F]{8}$",                            # BrowserScan per-load hashes
     r"^Ad$", r"^0$",
+    r"^Status[0-9a-f]{8}$", r"^0\.1000003814697265\d$", r"^1$",  # CreepJS status section, flipped between two stock loads
 ]
 # BrowserScan's ad unit appends a rotating link text to the line before it ("springfieldTry Web Filters").
 # ponytail: the phrases seen in 12 captures on 2026-10-04; a new one shows up as a --compare disagreement,
@@ -91,7 +92,7 @@ AD_SUFFIX = re.compile("(" + "|".join(re.escape(p) for p in (
     "Privacy protection service", "Client hints checker", "Internet & Telecom", "Proxying & Filtering",
     "Security checking tool", "Internet speed test", "Privacy Issues", "Browser security solutions",
     "Bot detection tools", "Anti detection browser", "Affiliate marketing program", "Discover more", "Utilities",
-    "Antidetect Browser")) + ")$")
+    "Antidetect Browser", "Gyroscope sensor tester", "DNS leak test", "Online privacy guide")) + ")$")
 
 
 def _reason(name, table):
