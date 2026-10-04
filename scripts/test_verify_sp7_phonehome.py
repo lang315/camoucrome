@@ -33,3 +33,16 @@ def test_cut_after_an_event(tmp_path):
 def test_cut_mid_event_drops_only_the_partial_line(tmp_path):
     path = write(tmp_path, ",\n".join(EVENTS) + ",\n" + ev("https://x.example/")[:20])
     assert v.parse_hosts(path) == ({"safebrowsing.googleapis.com": 1}, 1, 1)
+
+
+def test_cut_inside_polled_data(tmp_path):
+    # Chrome's real shape: the last event closes the array on its own line.
+    path = write(tmp_path, ",\n".join(EVENTS) + "],\n" + '"polledData": [{"a":')
+    assert v.parse_hosts(path) == ({"safebrowsing.googleapis.com": 1}, 1, 1)
+
+
+def test_a_bad_line_before_the_last_raises(tmp_path):
+    import pytest
+    path = write(tmp_path, ",\n".join([EVENTS[0], '{"type": 1, "par', *EVENTS[1:]]) + "\n]}\n")
+    with pytest.raises(ValueError):
+        v.parse_hosts(path)
