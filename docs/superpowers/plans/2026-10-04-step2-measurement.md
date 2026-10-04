@@ -26,8 +26,10 @@ the `camoucrome` client, PowerShell on the host through the sshgate MCP.
 
 ## Global Constraints
 
-- Both arms go through the same `camoucrome.launch()` call; only the executable and the config differ. Never pass `window`/`dpr` (they would put `--window-size`/`--force-device-scale-factor` in one arm only).
-- Argv parity: the browser argv of the two arms may differ only in `--accept-lang=` and `--user-data-dir=`, plus a planted RED arg on the fork arm. Neither arm gets `--use-angle=swiftshader` or `--no-sandbox`.
+- Both arms go through the same `camoucrome.launch()` call. Only the executable, the config and what the config implies differ.
+  - The fork arm passes the generated identity's `launch.window` and `launch.dpr`, because a real client does. Without them, `screen.*` and the window sizes contradict each other, and detectors would score that harness artefact as a fork difference.
+  - The control passes neither, so it runs at stock defaults.
+- Argv parity: the browser argv of the two arms may differ only in `--accept-lang=`, `--user-data-dir=`, `--window-size=` and `--force-device-scale-factor=` (all identity-derived), plus a planted RED arg on the fork arm. This widens the spec's allow-list (which named `--accept-lang=` only) for the reason above. Neither arm gets `--use-angle=swiftshader` or `--no-sandbox`.
 - Both executables must report the pin's version (`upstream.env` `CHROMIUM_TAG`, today `154.0.8037.93`) or the run stops before measuring.
 - Never `add_init_script` and never send `Runtime.enable`: read the page through the DOM (`#o` text, `document.body.innerText`) with patchright.
 - A detector that does not settle scores `UNMEASURED`, never a difference.
@@ -260,6 +262,12 @@ def test_argv_parity_allows_profile_and_accept_lang_only():
     assert r.argv_problems(c, f) == []
 
 
+def test_argv_parity_allows_identity_window_and_dpr():
+    c = ["chrome.exe", "--no-first-run"]
+    f = ["chrome.exe", "--no-first-run", "--window-size=1536,816", "--force-device-scale-factor=1.25"]
+    assert r.argv_problems(c, f) == []
+
+
 def test_argv_parity_flags_extra_arg():
     c = ["chrome.exe", "--no-first-run"]
     f = ["chrome.exe", "--no-first-run", "--use-angle=swiftshader"]
@@ -356,7 +364,8 @@ EXPECTED = {
 }
 # Oracle leaves compared by type only: a value difference is the identity's or the machine's.
 SHAPE = {f"oracle.{k}": "identity- or machine-bound; compared by type" for k in SHAPE_ONLY}
-ARGV_ALLOWED = ("--accept-lang=", "--user-data-dir=")
+# Identity-derived flags the client adds to the fork arm only (launcher.build_args).
+ARGV_ALLOWED = ("--accept-lang=", "--user-data-dir=", "--window-size=", "--force-device-scale-factor=")
 # Regexes over detector text lines that change between runs (clock, IP, session ids). Task 7 calibrates.
 VOLATILE_LINES = []
 
@@ -586,8 +595,13 @@ PROBES = {}  # name -> fn(pw, arm, mode, run) -> {row: value}; filled below
 
 
 class Arm:
-    def __init__(self, name, exe, config, args=()):
-        self.name, self.exe, self.config, self.args = name, exe, config, list(args)
+    """`ident` is a whole camoucrome.gen result ({"config", "launch": {"window", "dpr"}}) or None (stock)."""
+    def __init__(self, name, exe, ident, args=()):
+        self.name, self.exe, self.ident, self.args = name, exe, ident, list(args)
+
+    @property
+    def config(self):
+        return self.ident["config"] if self.ident else None
 
     def without_seeds(self):
         from camoucrome import SEED_KEYS
@@ -595,8 +609,9 @@ class Arm:
 
 
 def identity(seed):
+    """The whole generated identity: the config AND the launch window/dpr a client passes with it."""
     from camoucrome.gen import generate
-    return generate("windows", seed=seed)["config"]
+    return generate("windows", seed=seed)
 
 
 def exe_version(path):
@@ -626,10 +641,15 @@ def serve(body):
 
 
 @contextlib.contextmanager
-def opened(pw, arm, mode, user_data_dir=None, config="arm"):
+def opened(pw, arm, mode, user_data_dir=None, config="arm", ident=None):
+    """`ident` overrides the arm's identity (linkability's second profile); `config`
+    overrides only the config (stability's seeds), keeping the identity's window/dpr."""
     from camoucrome import launch
-    ctx = launch(pw, arm.exe, config=arm.config if config == "arm" else config,
-                 headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args)
+    ident = ident or arm.ident
+    lo = ident["launch"] if ident else {}
+    ctx = launch(pw, arm.exe, config=(ident["config"] if ident else None) if config == "arm" else config,
+                 headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args,
+                 window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"))
     try:
         yield ctx
     finally:
@@ -667,7 +687,7 @@ def run_cmd(a):
     client = os.environ.get("CAMOU_CLIENT", str(HERE.parent))
     stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe")
     fork_exe = stock if a.null else os.environ["CAMOU_FORK_EXE"]
-    control = Arm("control", stock, None)
+    control = Arm("control", stock, None)  # stock: no config, no window/dpr (its defaults)
     fork = Arm("fork", fork_exe, None if a.null else identity(1), [a.plant] if a.plant else [])
     pin = pin_tag(client)
     versions = {"control": exe_version(control.exe), "fork": exe_version(fork.exe)}
@@ -808,7 +828,7 @@ Runs inside the lock, detached (Host procedure step 4), one log each:
 Expected:
 - **Null run:** `tables.md` shows, for both modes, 0 `unexpected` rows. Any row that does show is a same-binary difference between two launches. Record it in the ledger as a VOLATILE candidate for Task 7, with its value pair.
 - **Planted run:** at least `oracle.nav.share` and `oracle.nav.canShare` show as `unexpected` (`"function"` against `"<absent>"` or `undefined`), in both modes.
-- **Fork run:** no errors. The `oracle.gpu.*` leaves are present on both arms (no SwiftShader). Every `unexpected` row is written to the ledger as a finding. Do not fix anything in this plan.
+- **Fork run:** no errors. In the **headed** column, the `oracle.gpu.*` leaves are present on both arms (no SwiftShader). In the headless column `requestAdapter()` may be null on both arms, because Chrome's own headless path self-adds SwiftShader (`settings/launcher.json`, `headless_self_added`). An equal null there is not a failure. Every `unexpected` row is written to the ledger as a finding. Do not fix anything in this plan.
 
 If the window-key leaves (`oracle.windowKeys`, `oracle.windowNames`, `oracle.protoCounts.Window`) are equal across the fork run, rule 2 is measured on `chrome.exe`. Note it for the measurement doc.
 
@@ -941,7 +961,14 @@ def probe_stability(pw, arm, mode, run):
             cfg = None if arm.config is None else {
                 **arm.without_seeds(), **(per_instance_config() if run.fresh_seeds else profile_seeds(udd))}
             with serve(cap.page().encode()) as url, opened(pw, arm, mode, user_data_dir=udd, config=cfg) as ctx:
-                reports.append(read_oracle(ctx, url))
+                report = read_oracle(ctx, url)
+                # The oracle page keeps only deviceId LENGTHS, so mediaDevices:seed would be
+                # invisible here. The ids themselves need the grant: without it Chrome lists
+                # one entry per kind with an empty id.
+                ctx.grant_permissions(["camera", "microphone"], origin=url)
+                report["mediaDevices.ids"] = first_page(ctx).evaluate(
+                    "navigator.mediaDevices.enumerateDevices().then(ds => ds.map(d => d.kind + ':' + d.deviceId + '/' + d.groupId))")
+                reports.append(report)
     finally:
         remove_dir(udd)
     return rows.stability_rows(*reports)
@@ -951,8 +978,8 @@ def probe_linkability(pw, arm, mode, run):
     """Two profiles of one arm: fork identities from seeds 1 and 2, or two stock profiles."""
     reports = []
     for seed in (1, 2):
-        cfg = None if arm.config is None else identity(seed)
-        with serve(cap.page().encode()) as url, opened(pw, arm, mode, config=cfg) as ctx:
+        ident = None if arm.ident is None else identity(seed)
+        with serve(cap.page().encode()) as url, opened(pw, arm, mode, ident=ident) as ctx:
             reports.append(read_oracle(ctx, url))
     return rows.link_rows(*reports)
 
@@ -983,6 +1010,8 @@ Expected:
   - `stab.changed` is the same list on both arms. The leaves in it are a stock launch-to-launch volatility list: copy them into the ledger as VOLATILE candidates for Task 7.
   - The control's `link.shared` holds nearly every leaf. That presence is what makes the fork's shorter list mean something.
 - **`--fresh-seeds` run:** the fork's `stab.changed` contains `canvas.text` or `canvas.shape` and `audioFp` (stability leaves carry no `oracle.` prefix), beyond the control's list. That is the stability RED.
+  - It also contains `mediaDevices.ids`, **if** the control's ids are non-empty after the grant.
+  - If every id is empty on the host, which happens when it has no camera or microphone and output devices stay hidden, the probe cannot see device IDs. Then the measurement doc says so, rather than claiming device-ID stability.
 - **Fork run:**
   - the fork's `stab.changed` equals the control's (no canvas, audio or device-ID leaf);
   - `link.shared` is the linkability table, and it is expected to include `fonts.*` (the known 119-family list).
@@ -1015,7 +1044,9 @@ def settle(page, first_ms=10000, step_ms=3000, timeout_s=120):
     prev, deadline = None, time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         text = page.evaluate("document.body.innerText")
-        if text == prev:
+        # Settled = no line changed outside VOLATILE_LINES: a page with a ticking
+        # clock never reads byte-equal twice, and would otherwise never settle.
+        if prev is not None and rows.line_diff(prev, text) == ([], []):
             return text
         prev = text
         page.wait_for_timeout(step_ms)
@@ -1143,6 +1174,8 @@ Copy-Item <run>\rows.json,<run>\tables.md \\wsl.localhost\Ubuntu-24.04\tmp\
 ```
 
 Then `scp buildpc:/tmp/rows.json` (and `tables.md`) to the Mac, or use the sshgate MCP to print and Write them. Never copy `raw\`.
+
+Scrub the host's public IP before committing. Detector rows and lines can carry it: Pixelscan and CreepJS show location. Read the IP from the run's `raw\network-control-headless.json` (`ip`, minus any `:port`). Replace every occurrence in both files with `0.0.0.0`. Then `grep -c` the IP in both files and confirm 0.
 
 Write `docs/superpowers/measurements/2026-10-step2-baseline.md` in the style of `2026-10-04-safe-browsing.md`:
 - the arms, versions and argv;
