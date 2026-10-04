@@ -454,3 +454,26 @@ func TestNativeHostDropsFontAliases(t *testing.T) {
 		t.Fatalf("linux host must keep both: %v", g)
 	}
 }
+
+func TestUnmappedHostKeepsAliasesForAConfigThatNamesNoOS(t *testing.T) {
+	cfg := map[string]any{"fonts:alias": map[string]any{"Arial": "Liberation Sans"},
+		"fonts:aliasLocal": map[string]any{"ArialMT": "Liberation Sans"}}
+	if got := claimedOS(Options{Config: cfg}); got != "" { // the value that equalled an unmapped hostOS
+		t.Fatalf("claimedOS = %q", got)
+	}
+	got, err := nativeConfig(Options{Config: cfg}, "")
+	if err != nil || !reflect.DeepEqual(got, cfg) {
+		t.Fatalf("%v %v", got, err)
+	}
+}
+
+func TestNativeHostWithoutAliasKeysReturnsTheSameMap(t *testing.T) {
+	cfg := map[string]any{"ua:platform": "Windows", "fonts:list": []any{"Arial"}}
+	got, err := nativeConfig(Options{Config: cfg}, "Windows")
+	if err != nil || !reflect.DeepEqual(got, cfg) {
+		t.Fatalf("%v %v", got, err)
+	}
+	if reflect.ValueOf(got).Pointer() != reflect.ValueOf(cfg).Pointer() {
+		t.Fatal("a copy, not the original map")
+	}
+}

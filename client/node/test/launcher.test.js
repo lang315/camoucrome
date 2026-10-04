@@ -240,3 +240,14 @@ test('native host drops font aliases', () => {
   assert.equal(c.buildEnv({ config: JSON.stringify(cfg), hostOs: '' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
   assert.deepEqual(c.NATIVE_FONTS_DROP, L.native_fonts.drop);
 });
+
+test('unmapped host keeps aliases for a config that names no OS', () => {
+  const cfg = { 'fonts:alias': { Arial: 'Liberation Sans' }, 'fonts:aliasLocal': { ArialMT: 'Liberation Sans' } };
+  assert.equal(c.claimedOs(cfg), null); // the value that equalled an unmapped hostOs
+  assert.deepEqual(JSON.parse(c.buildEnv({ config: cfg, hostOs: null }, {}).CAMOU_CONFIG), cfg);
+});
+
+test('native host without alias keys encodes the config unchanged', () => {
+  const cfg = { 'ua:platform': 'Windows', 'fonts:list': ['Arial'] };
+  assert.equal(c.buildEnv({ config: cfg, hostOs: 'Windows' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
+});
