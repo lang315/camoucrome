@@ -53,20 +53,32 @@ notes = []
 
 
 def parse_hosts(path):
-    """Returns (external_hosts: {host: count}, loopback_count, nav_count). A
-    netlog cut off at shutdown lacks its closing bracket and can end mid-event;
-    the writer puts one event per line, so drop the partial last line and
-    close the array. Only events written at shutdown, after the window, are
-    lost."""
-    raw = open(path, "r", encoding="utf-8", errors="replace").read()
-    if not raw.rstrip().endswith("}"):
-        if not raw.endswith("\n"):
-            raw = raw[:raw.rfind("\n") + 1]
-        raw = raw.rstrip().rstrip(",") + "]}"
-    d = json.loads(raw)
-    types = {v: k for k, v in d["constants"]["logEventTypes"].items()}
+    """Returns (external_hosts: {host: count}, loopback_count, nav_count).
+
+    Parsed line by line, because a netlog read at shutdown can be cut anywhere
+    (re-pin 2026-10-02 sweep 2; twice on 2026-10-04 at 75 s). The writer puts
+    the constants on line 1 and one event per line after `"events": [`; lines
+    not starting with `{` (the array open, `"polledData"`, the closing brace)
+    carry no events. Only the LAST event line may fail to parse -- the one cut
+    off at shutdown, after the window; a bad line anywhere else raises."""
+    lines = open(path, "r", encoding="utf-8", errors="replace").read().split("\n")
+    constants = json.loads(lines[0].rstrip().rstrip(",") + "}")["constants"]
+    types = {v: k for k, v in constants["logEventTypes"].items()}
+    events, bad = [], []
+    rows = [(i, s.strip()) for i, s in enumerate(lines[1:], 2)
+            if s.strip().startswith("{")]
+    for i, s in rows:
+        s = s.rstrip(",")
+        if s.endswith("]"):  # the last event closes the array
+            s = s[:-1]
+        try:
+            events.append(json.loads(s))
+        except ValueError:
+            bad.append(i)
+    if bad and bad != [rows[-1][0]]:
+        raise ValueError(f"netlog lines {bad} do not parse")
     external, loopback, nav = {}, 0, 0
-    for ev in d["events"]:
+    for ev in events:
         if types.get(ev.get("type")) != "REQUEST_ALIVE":
             continue
         url = (ev.get("params") or {}).get("url")
