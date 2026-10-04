@@ -68,4 +68,4 @@ def test_stock_version_is_the_one_version_directory(tmp_path):
 def test_every_entry_names_a_script_that_exists():
     here = os.path.dirname(os.path.abspath(__file__))
     missing = [e.script for e in w.SET if not os.path.exists(os.path.join(here, e.script))]
-    assert missing == [] or missing == ["verify_windows_fonts.py"]  # Task 4 adds it
+    assert missing == []
