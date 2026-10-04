@@ -132,3 +132,51 @@ def test_render_tables_labels_and_unmeasured():
     md = r.render_tables(doc, {})
     assert "| noise.canvas2d | 1 | 7 | unexpected |" in md
     assert "## noise / headed" in md and "UNMEASURED: boom" in md
+
+
+# Calibration from the 2026-10-04 host runs (docs/superpowers/measurements/2026-10-step2-baseline.md).
+@pytest.mark.parametrize("name", ["oracle.err.stack", "oracle.navConnection.downlink", "oracle.navConnection.rtt",
+                                  "oracle.voices", "oracle.mediaDevices.groupIds"])
+def test_measured_volatile_rows(name):
+    assert r.label_rows({name: 1}, {name: 2})[0][3] == "volatile"
+
+
+@pytest.mark.parametrize("name", ["oracle.nav.webdriver", "oracle.media.(pointer: fine)", "oracle.media.(pointer: none)",
+                                  "oracle.media.(hover: hover)", "oracle.media.(any-pointer: fine)",
+                                  "oracle.media.(any-hover: hover)", "oracle.ua", "oracle.nav.appVersion"])
+def test_designed_deviations_are_expected(name):
+    [(_, _, _, label, reason)] = r.label_rows({name: True}, {name: False})
+    assert label == "expected" and reason
+
+
+def test_stability_and_link_skip_volatile_leaves():
+    a, b = {"voices": 1, "audioFp": "x", "navConnection.rtt": 50}, {"voices": 2, "audioFp": "y", "navConnection.rtt": 100}
+    assert r.stability_rows(a, b) == {"stab.compared": 3, "stab.changed": ["audioFp"]}
+    assert r.link_rows({"voices": 1, "k": 1}, {"voices": 1, "k": 1}) == {"link.total": 2, "link.shared": ["k"]}
+
+
+@pytest.mark.parametrize("name", ["det.creepjs.candidate", "det.creepjs.rtt", "det.creepjs.stack", "det.creepjs.trap",
+                                  "det.creepjs.type & base ip"])
+def test_measured_volatile_detector_rows(name):
+    assert r.label_rows({name: "a"}, {name: "b"})[0][3] == "volatile"
+
+
+@pytest.mark.parametrize("line", ["1582.20ms", "2143.90 ms", "WebRTC9ce33afb", "candidate:436789896 1 udp 1677729535 x",
+                                  "rtt: 100, downlink: 1.55", "stack: 17790", "trap: 0.71", "type & base ip: 2513029441",
+                                  '"depth": 13420,', "Sun Oct 04 2026 22:14:51 GMT+0700 (Indochina Time)",
+                                  "10 22:25", "104.22.67.926 more", "D78AD52E", "Bot detection tools", "Ad", "0"])
+def test_measured_volatile_lines_are_dropped(line):
+    assert r.line_diff(line + "\n", "") == ([], [])
+
+
+def test_ad_suffix_is_stripped_and_the_value_kept():
+    # BrowserScan's ad unit appends a rotating link text to the value line before it.
+    assert r.line_diff("springfieldTry Web Filters\n", "springfieldPrivacy Issues\n") == ([], [])
+    assert r.line_diff("Chrome Headless 154.0.8037.93 DetectionKernel detection tool\n",
+                       "Chrome 154.0.8037.93 DetectionCanvas fingerprint detection\n") == (
+        ["Chrome Headless 154.0.8037.93 Detection"], ["Chrome 154.0.8037.93 Detection"])
+
+
+def test_a_real_value_line_survives():
+    assert r.line_diff("Your browser environment appears to be controlled by a robot.\n", "") == (
+        ["Your browser environment appears to be controlled by a robot."], [])
