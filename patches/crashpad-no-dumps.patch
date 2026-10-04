@@ -1,0 +1,21 @@
+diff --git a/components/crash/core/app/crashpad.cc b/components/crash/core/app/crashpad.cc
+index db68eaa220..ca7f65b4d5 100644
+--- a/components/crash/core/app/crashpad.cc
++++ b/components/crash/core/app/crashpad.cc
+@@ -114,6 +114,16 @@ bool InitializeCrashpadImpl(bool initial_client,
+     return false;
+   }
+ 
++  // camoucrome: the handler never writes a report. A dump holds the process's
++  // whole environment -- CAMOU_CONFIG, the identity, beside every host
++  // variable (measured on Windows) -- and lands in the profile on Windows and
++  // in the one crash database every profile shares on Linux. The handler still
++  // terminates the process with the exception's own code, so a crash looks the
++  // same from outside. Each process sets this for itself, so renderer and GPU
++  // crashes and DumpWithoutCrashing are covered too.
++  crashpad::CrashpadInfo::GetCrashpadInfo()->set_crashpad_handler_behavior(
++      crashpad::TriState::kDisabled);
++
+ #if BUILDFLAG(IS_APPLE)
+ #if defined(NDEBUG)
+   const bool is_debug_build = false;
