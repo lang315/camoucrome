@@ -18,9 +18,10 @@ re-pin to the newest stable tag whenever chromiumdash's stable milestone moves
 (`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`, and
 `2026-10-repin.md` for what one costs). **The next re-pin is due by
 2026-10-20**, when 156 goes stable. The build box's checkout is on branch
-`camoucrome/main` (the exported branch, on this pin); `camoucrome/main-8010`
-and `camoucrome/main-0e8d` are the retired branches on the two older pins, and
-`a727b57805` was never an upstream revision.
+`camoucrome/main` (the exported branch, on this pin), its only branch since
+2026-10-04, when the retired branches of the older pins were deleted
+(`rebuild_branch.sh` recreates a branch from the repo); `a727b57805` was never
+an upstream revision.
 
 ## The defining constraint (never violate)
 
@@ -130,8 +131,7 @@ startup abort instead of a silent fall-back to real values.
   `git diff` pasted into `patches/`. `scripts/check_checkout_sync.sh` fails
   while the build tree has uncommitted or untracked edits, which is the state
   between "edited" and "committed". `scripts/rebuild_branch.sh` recreates the
-  branch from the repo if it is ever lost (`camoucrome/main-8010` is the
-  retired branch on the previous pin).
+  branch from the repo if it is ever lost.
 - Browser verifications are `scripts/verify_*.py`, run under
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.
