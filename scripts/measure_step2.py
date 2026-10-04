@@ -197,6 +197,49 @@ PROBES["stability"] = probe_stability
 PROBES["linkability"] = probe_linkability
 
 
+DETECTORS = {"sannysoft": "https://bot.sannysoft.com/", "creepjs": "https://abrahamjuliot.github.io/creepjs/",
+             "browserscan": "https://www.browserscan.net/", "pixelscan": "https://pixelscan.net/"}
+
+
+def settle(page, first_ms=10000, step_ms=3000, timeout_s=120):
+    """The page's text once two reads 3 s apart agree, or None at the timeout."""
+    page.wait_for_timeout(first_ms)
+    prev, deadline = None, time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        text = page.evaluate("document.body.innerText")
+        # Settled = no line changed outside VOLATILE_LINES: a page with a ticking
+        # clock never reads byte-equal twice, and would otherwise never settle.
+        if prev is not None and rows.line_diff(prev, text) == ([], []):
+            return text
+        prev = text
+        page.wait_for_timeout(step_ms)
+    return None
+
+
+def probe_detectors(pw, arm, mode, run):
+    out = {}
+    for site, url in DETECTORS.items():
+        with opened(pw, arm, mode) as ctx:
+            page = first_page(ctx)
+            try:
+                page.goto(url, wait_until="load", timeout=60000)
+                text = settle(page)
+            except Exception:  # noqa: BLE001 - a page that does not load is not measured
+                text = None
+            if text is None:
+                out[f"det.{site}"] = rows.UNMEASURED
+                continue
+            stem = run.dir / "raw" / f"{site}-{arm.name}-{mode}"
+            stem.with_suffix(".txt").write_text(text, encoding="utf-8")
+            page.screenshot(path=str(stem.with_suffix(".png")), full_page=True)
+            out[f"det.{site}"] = "ok"
+            out.update({f"det.{site}.{k}": v for k, v in rows.PARSERS.get(site, lambda t: {})(text).items()})
+    return out
+
+
+PROBES["detectors"] = probe_detectors
+
+
 def argv_of(pw, arm):
     from camoucrome.probe import browser_argv
     with opened(pw, arm, "headless") as ctx:
