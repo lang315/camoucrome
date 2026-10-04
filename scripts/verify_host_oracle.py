@@ -9,11 +9,13 @@ named in EXACT. Exit 0 iff no line is printed outside the ignore set; the
 point is the list, which the measurement doc turns into a backlog.
 
 CAMOU_SEED picks the generated identity (default 1); --config <json> replaces it."""
+import contextlib
 import http.server
 import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 
 from lib_shell import CHROME as EXE, layout
@@ -157,6 +159,18 @@ def compare(base, fork):
     return diffs, buckets, active
 
 
+@contextlib.contextmanager
+def cfg_file(cfg):
+    """The config as a temp JSON file. Windows' CreateProcess command line is capped at 32767 characters and a
+    generated Windows identity is ~37 KB, so it is passed by path, never on a command line."""
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+        json.dump(cfg, f)
+    try:
+        yield f.name
+    finally:
+        os.unlink(f.name)
+
+
 def main():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -164,15 +178,17 @@ def main():
     env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
     env["PLAYWRIGHT_NODEJS_PATH"] = NODE
     if "--config" in sys.argv:
-        cfg = json.loads(sys.argv[sys.argv.index("--config") + 1])
+        a = sys.argv[sys.argv.index("--config") + 1]
+        cfg = json.load(open(a[1:], encoding="utf-8")) if a.startswith("@") else json.loads(a)
     else:
         g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--seed", os.environ.get("CAMOU_SEED", "1")], capture_output=True, text=True, timeout=120)
         if g.returncode != 0:
             sys.exit(g.stderr[-500:])
         cfg = json.loads(g.stdout)["config"]
-    p = subprocess.run([PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE, "--url", f"http://127.0.0.1:{srv.server_port}/",
-                        "--config", json.dumps(cfg), "--fonts-dir", FONTS_DIR, "--arg=--use-gl=angle", "--arg=--use-angle=swiftshader"],
-                       capture_output=True, text=True, timeout=240, env=env)
+    with cfg_file(cfg) as cf:
+        p = subprocess.run([PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE, "--url", f"http://127.0.0.1:{srv.server_port}/",
+                            "--config", "@" + cf, "--fonts-dir", FONTS_DIR, "--arg=--use-gl=angle", "--arg=--use-angle=swiftshader"],
+                           capture_output=True, text=True, timeout=240, env=env)
     srv.shutdown()
     if p.returncode != 0:
         sys.exit(p.stderr[-800:])
@@ -201,7 +217,8 @@ def main():
         # O2 RED: a Linux claim keeps Linux's shape -- the gated interfaces follow the claim, not the build.
         g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "linux", "--timezone", "UTC", "--seed", "1"], capture_output=True, text=True, timeout=120)
         lin = json.loads(g.stdout)["config"]
-        r = subprocess.run([PY, sys.argv[0], "--config", json.dumps(lin)], capture_output=True, text=True, timeout=400, env=env)
+        with cfg_file(lin) as lf:
+            r = subprocess.run([PY, sys.argv[0], "--config", "@" + lf], capture_output=True, text=True, timeout=400, env=env)
         # queryLocalFonts is stock on every OS (FontAccess at stock status), so it must NOT differ.
         qlf_diff = any("queryLocalFonts" in l for l in r.stdout.splitlines() if l.startswith("DIFF windowNames"))
         ok2 = "host-only=['bluetooth', 'canShare', 'share']" in r.stdout and not qlf_diff
@@ -233,7 +250,8 @@ def font_access_rows(cfg, env):
     """O3: queryLocalFonts() under the real permission flow. Without a grant the call needs the prompt (headless:
     denied => NotAllowedError, as stock without a grant); with the local-fonts permission granted and a click for
     activation it lists exactly the manifest's captured Windows faces, sorted by PostScript name, none of the bundle's."""
-    script = f"""
+    with cfg_file(cfg) as cf:  # by path: a Windows identity is ~37 KB, over the 32767-char command line
+        script = f"""
 import json, sys
 sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))})
 from camoucrome.launcher import launch
@@ -247,7 +265,7 @@ srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(tar
 url = f"http://127.0.0.1:{{srv.server_port}}/"
 out = {{}}
 with sync_playwright() as pw:
-    ctx = launch(pw, {json.dumps(EXE)}, config=json.loads({json.dumps(json.dumps(cfg))}), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
+    ctx = launch(pw, {json.dumps(EXE)}, config=json.load(open({json.dumps(cf)}, encoding="utf-8")), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
     page = ctx.new_page(); page.goto(url); page.click("#b"); page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=20000)
     out["nogrant"] = json.loads(page.locator("#o").text_content())
     ctx.grant_permissions(["local-fonts"], origin=url)
@@ -256,7 +274,7 @@ with sync_playwright() as pw:
     ctx.close()
 print(json.dumps(out))
 """
-    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+        p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
     if p.returncode != 0:
         print("O3 probe failed:", p.stderr[-900:].replace("\n", " | "))
         return {"O3 queryLocalFonts()": False}
@@ -274,7 +292,8 @@ def brand_header_rows(cfg, env):
     """O4: the brand list is produced twice, in the browser (Sec-CH-UA / Sec-CH-UA-Full-Version-List request headers)
     and in the renderer (navigator.userAgentData). Both must carry the host's stock list in its order; O1 only saw the
     renderer's copy."""
-    script = f"""
+    with cfg_file(cfg) as cf:  # by path: a Windows identity is ~37 KB, over the 32767-char command line
+        script = f"""
 import json, sys
 sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))}); sys.path.insert(0, {json.dumps(str(CLIENT / "scripts"))})
 import echo_server
@@ -283,7 +302,7 @@ from patchright.sync_api import sync_playwright
 base, headers_for, stop = echo_server.start(["Sec-CH-UA-Full-Version-List"])
 out = {{}}
 with sync_playwright() as pw:
-    ctx = launch(pw, {json.dumps(EXE)}, config=json.loads({json.dumps(json.dumps(cfg))}), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
+    ctx = launch(pw, {json.dumps(EXE)}, config=json.load(open({json.dumps(cf)}, encoding="utf-8")), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
     page = ctx.new_page(); page.goto(base + "/"); page.goto(base + "/")  # second load carries the Accept-CH hints
     out["js"] = page.evaluate("navigator.userAgentData.getHighEntropyValues(['fullVersionList']).then(h => ({{brands: navigator.userAgentData.brands, full: h.fullVersionList}}))")
     h = {{k.lower(): v for k, v in (headers_for("/") or {{}}).items()}}
@@ -292,7 +311,7 @@ with sync_playwright() as pw:
 stop()
 print(json.dumps(out))
 """
-    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+        p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
     if p.returncode != 0:
         print("O4 probe failed:", p.stderr[-900:].replace("\n", " | "))
         return {"O4 brand headers": False}

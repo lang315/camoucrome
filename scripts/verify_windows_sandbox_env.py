@@ -26,6 +26,18 @@ W3 is the `--no-sandbox` path, which is what every other verification exercises;
 it fails only if the config layer itself is broken, which tells you W1's failure
 is about the sandbox rather than about configuration.
 
+A1 and A2 are the audio service, the one other process type that reads the
+config (media/audio/audio_manager_base.cc, windows-behaviour-ii): on Windows it
+runs in a sandboxed utility process, so the same filter could strip
+audio:sampleRate there. A1: under {"audio:sampleRate": 22050} a sandboxed
+launch's AudioContext reports 22050. A2: with no config it reports anything
+else, the device's own rate, so A1 cannot pass on a default. A2 also rejects
+44100: that is the renderer's no-device fallback (UnavailableDeviceParams), so
+it would mean the host has no output device and A1 could have passed through
+the renderer hook, saying nothing about the sandboxed audio service.
+A device whose native rate is 44100 would also fail A2 (a false FAIL, not a false
+PASS); on this host the device reports 48000.
+
 Run on the Windows host, in the directory holding lib_shell.py:
   $env:CAMOU_OUT='D:\\camou-win\\chromium\\src\\out\\Release'
   <venv>\\Scripts\\python.exe verify_windows_sandbox_env.py
@@ -57,7 +69,7 @@ WORKER_HC = """
   w.onmessage = e => resolve(e.data);
 })
 """
-EXPECTED = 5  # W1, W2, W3, W4, W5
+EXPECTED = 7  # W1-W5, A1, A2
 
 results = {}
 notes = []
@@ -116,12 +128,31 @@ results["W5"] = worker_real is not None and worker_real == real
 notes.append(f"W5: sandboxed, no config, worker -> {worker_real!r} "
              f"(expect equal to main {real!r})")
 
+# A1/A2. The audio service. 22050 because no Windows output device reports it,
+#     so A2 cannot equal it by accident.
+RATE = 22050
+AUDIO = "() => { const c = new AudioContext(); const r = c.sampleRate; c.close(); return r; }"
+values, err = lib_shell.session(json.dumps({"audio:sampleRate": RATE}), [AUDIO],
+                                shell=lib_shell.CHROME, extra_flags=lib_shell.CHROME_FLAGS,
+                                sandbox=True)
+a1 = None if err else values[0]
+results["A1"] = a1 == RATE
+notes.append(f"A1: sandboxed + audio:sampleRate, AudioContext.sampleRate -> {a1!r} "
+             f"(expect {RATE}){'; ' + type(err).__name__ + ': ' + str(err) if err else ''}")
+values, err = lib_shell.session(None, [AUDIO], shell=lib_shell.CHROME,
+                                extra_flags=lib_shell.CHROME_FLAGS, sandbox=True)
+a2 = None if err else values[0]
+results["A2"] = a2 is not None and a2 not in (RATE, 44100)  # 44100 = renderer no-device fallback
+notes.append(f"A2: sandboxed, no config, AudioContext.sampleRate -> {a2!r} "
+             f"(expect the device's own rate, not {RATE} or the 44100 no-device fallback)"
+             f"{'; ' + type(err).__name__ + ': ' + str(err) if err else ''}")
+
 for n in notes:
     print("note:", n)
 if len(results) != EXPECTED:
     sys.exit(f"expected {EXPECTED} rows, built {len(results)}: a row was added or "
              "removed without updating EXPECTED")
-for k in ("W1", "W2", "W3", "W4", "W5"):
+for k in ("W1", "W2", "W3", "W4", "W5", "A1", "A2"):
     print(f"{k}: {'PASS' if results[k] else 'FAIL'}")
 print(f"{sum(results.values())} PASS {EXPECTED - sum(results.values())} FAIL")
 sys.exit(0 if all(results.values()) else 1)
