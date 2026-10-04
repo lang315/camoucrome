@@ -81,6 +81,37 @@ def test_per_instance_seeds_match_the_contract_and_are_nonzero_uint32():
     assert cfg != camoucrome.per_instance_config(random.Random(8))
 
 
+def test_profile_seeds_are_drawn_once_and_read_back(tmp_path):
+    profile = tmp_path / "profile"  # not created yet: the first launch makes it
+    first = camoucrome.profile_seeds(profile)
+    assert set(first) == set(camoucrome.SEED_KEYS)
+    assert all(1 <= v <= 0xFFFFFFFF for v in first.values())
+    stored = profile / CONTRACT["per_instance_seeds"]["profile_file"]
+    assert json.loads(stored.read_text()) == first
+    assert camoucrome.profile_seeds(profile) == first
+
+
+def test_profile_seeds_draw_only_the_missing_keys(tmp_path):
+    stored = tmp_path / CONTRACT["per_instance_seeds"]["profile_file"]
+    stored.write_text('{"canvas:seed": 5}')
+    seeds = camoucrome.profile_seeds(tmp_path)
+    assert seeds["canvas:seed"] == 5 and set(seeds) == set(camoucrome.SEED_KEYS)
+    assert json.loads(stored.read_text()) == seeds
+
+
+@pytest.mark.parametrize("damaged", ['{"canvas:seed"', '[1, 2]', '{"audio:seed": 0}',
+                                     '{"audio:seed": 4294967296}', '{"audio:seed": "7"}',
+                                     '{"audio:seed": true}'])
+def test_profile_seeds_refuse_a_damaged_file_rather_than_redraw(tmp_path, damaged):
+    # A redraw would silently give the profile a different canvas, audio and
+    # device-ID fingerprint than every earlier session showed.
+    stored = tmp_path / CONTRACT["per_instance_seeds"]["profile_file"]
+    stored.write_text(damaged)
+    with pytest.raises(ValueError, match="camoucrome-seeds.json"):
+        camoucrome.profile_seeds(tmp_path)
+    assert stored.read_text() == damaged
+
+
 def test_accept_lang_follows_the_config_and_the_contract():
     launch = CONTRACT["launch"]
     assert camoucrome.accept_lang_of({"navigator.languages": ["fr-FR", "fr"]}) == "fr-FR,fr"

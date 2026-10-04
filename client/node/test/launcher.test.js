@@ -48,6 +48,46 @@ test('per-instance seeds match the contract and are non-zero uint32', () => {
   for (const k of c.SEED_KEYS) assert.ok(cfg[k] >= 1 && cfg[k] <= 0xffffffff, k);
 });
 
+const scratch = () => fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-seeds-'));
+
+test('profile seeds are drawn once and read back', (t) => {
+  const root = scratch();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const profile = path.join(root, 'profile'); // the first launch makes it
+  const first = c.profileSeeds(profile);
+  assert.deepEqual(Object.keys(first).sort(), [...c.SEED_KEYS].sort());
+  for (const k of c.SEED_KEYS) assert.ok(first[k] >= 1 && first[k] <= 0xffffffff, k);
+  const stored = JSON.parse(fs.readFileSync(path.join(profile, CONTRACT.per_instance_seeds.profile_file)));
+  assert.deepEqual(stored, first);
+  assert.deepEqual(c.profileSeeds(profile), first);
+});
+
+// The file the Python and Go clients write must read the same here.
+test("profile seeds read another client's file and draw only the missing keys", (t) => {
+  const dir = scratch();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
+  fs.writeFileSync(file, '{"canvas:seed": 5, "audio:seed": 4294967295}');
+  const seeds = c.profileSeeds(dir);
+  assert.equal(seeds['canvas:seed'], 5);
+  assert.equal(seeds['audio:seed'], 0xffffffff);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)), seeds);
+});
+
+// A redraw would silently give the profile a different canvas, audio and
+// device-ID fingerprint than every earlier session showed.
+test('profile seeds refuse a damaged file rather than redraw', (t) => {
+  for (const damaged of ['{"canvas:seed"', '[1, 2]', '{"audio:seed": 0}', '{"audio:seed": 4294967296}',
+    '{"audio:seed": "7"}', '{"audio:seed": true}', '{"audio:seed": 1.5}']) {
+    const dir = scratch();
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
+    fs.writeFileSync(file, damaged);
+    assert.throws(() => c.profileSeeds(dir), /camoucrome-seeds\.json/, damaged);
+    assert.equal(fs.readFileSync(file, 'utf8'), damaged);
+  }
+});
+
 test('launch refuses forbidden options and uses a persistent context without viewport emulation', async () => {
   const calls = [];
   const ctx = { on: (e, fn) => { ctx.fn = fn; }, close: async () => {} };
