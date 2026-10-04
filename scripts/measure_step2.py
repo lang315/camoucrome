@@ -157,6 +157,46 @@ PROBES["noise"] = probe_noise
 PROBES["network"] = probe_network
 
 
+def probe_stability(pw, arm, mode, run):
+    """One profile launched twice. Fork seeds come from the profile (profile_seeds),
+    or fresh per launch under --fresh-seeds (the RED). The generated identity carries
+    its own seeds, so they are dropped first or the RED could not change anything."""
+    from camoucrome import per_instance_config, profile_seeds
+    from camoucrome.launcher import remove_dir
+    udd = tempfile.mkdtemp(prefix="camoucrome-step2-stab-")
+    try:
+        reports = []
+        for _ in (1, 2):
+            cfg = None if arm.config is None else {
+                **arm.without_seeds(), **(per_instance_config() if run.fresh_seeds else profile_seeds(udd))}
+            with serve(cap.page().encode()) as url, opened(pw, arm, mode, user_data_dir=udd, config=cfg) as ctx:
+                report = read_oracle(ctx, url)
+                # The oracle page keeps only deviceId LENGTHS, so mediaDevices:seed would be
+                # invisible here. The ids themselves need the grant: without it Chrome lists
+                # one entry per kind with an empty id.
+                ctx.grant_permissions(["camera", "microphone"], origin=url)
+                report["mediaDevices.ids"] = first_page(ctx).evaluate(
+                    "navigator.mediaDevices.enumerateDevices().then(ds => ds.map(d => d.kind + ':' + d.deviceId + '/' + d.groupId))")
+                reports.append(report)
+    finally:
+        remove_dir(udd)
+    return rows.stability_rows(*reports)
+
+
+def probe_linkability(pw, arm, mode, run):
+    """Two profiles of one arm: fork identities from seeds 1 and 2, or two stock profiles."""
+    reports = []
+    for seed in (1, 2):
+        ident = None if arm.ident is None else identity(seed)
+        with serve(cap.page().encode()) as url, opened(pw, arm, mode, ident=ident) as ctx:
+            reports.append(read_oracle(ctx, url))
+    return rows.link_rows(*reports)
+
+
+PROBES["stability"] = probe_stability
+PROBES["linkability"] = probe_linkability
+
+
 def argv_of(pw, arm):
     from camoucrome.probe import browser_argv
     with opened(pw, arm, "headless") as ctx:
