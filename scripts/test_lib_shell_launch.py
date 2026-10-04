@@ -330,6 +330,27 @@ finally:
 check("a launch whose binary is missing leaves no profile behind",
       (raised, left) == ("FileNotFoundError", []), f"raised {raised}, left {left}")
 
+# 6. CAMOU_SHELL=chrome, the Windows switch. A Windows release out dir has no
+#    content_shell, and most verifies call session()/launch() without shell=,
+#    so the switch moves the DEFAULT binary and flags. Unset, nothing moves:
+#    Linux CI keeps content_shell and section 1's frozen argv.
+CS, CH = "/o/content_shell", "/o/chrome"
+check("no CAMOU_SHELL keeps content_shell and its flags",
+      lib_shell._shell_target({}, CS, CH) == (CS, ["--ozone-platform=headless"]),
+      f"got {lib_shell._shell_target({}, CS, CH)}")
+check("CAMOU_SHELL=chrome makes chrome the default, with logging to stderr",
+      lib_shell._shell_target({"CAMOU_SHELL": "chrome"}, CS, CH)
+      == (CH, ["--headless", "--no-first-run", "--no-default-browser-check",
+               "--enable-logging=stderr"]),
+      f"got {lib_shell._shell_target({'CAMOU_SHELL': 'chrome'}, CS, CH)}")
+try:
+    lib_shell._shell_target({"CAMOU_SHELL": "chrom"}, CS, CH)
+    bad = None
+except ValueError as e:
+    bad = str(e)
+check("an unknown CAMOU_SHELL value is refused, not ignored",
+      bad is not None and "chrom" in bad, f"got {bad!r}")
+
 print()
 if failures:
     print(f"{len(failures)} FAILED of {len(results)}: {', '.join(failures)}")
