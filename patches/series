@@ -30,3 +30,4 @@ windows-oracle.patch
 windows-behaviour.patch
 windows-behaviour-ii.patch
 windows-sandbox-env.patch
+crashpad-no-dumps.patch
