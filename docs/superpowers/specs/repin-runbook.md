@@ -483,9 +483,16 @@ branch; the Windows tree only ever receives exported patches.
    - Do **not** reset and re-run `apply.sh` for one patch. That rewrites all
      130 change-set files, and every object that depends on them rebuilds.
    - A full re-apply is for a re-pin only.
+   - A revised patch whose only new hunk is in a file no other hunk touches
+     can be applied as `git apply --include=<that file>` of the new version.
+     Then prove that `git apply --check -R` of the whole new patch exits 0.
+     Reverse-applying the old patch and applying the new one rewrites every
+     file in it, so their objects rebuild for nothing.
 5. **Build** with `autoninja -C out\Release chrome`. Check that the step count
    is **non-zero**. A one-file change to `components/crash/core/app/crashpad.cc`
-   rebuilt in **8 steps, 25.68 s**.
+   rebuilt in **8 steps, 25.68 s**. A Safe Browsing prefs change took 5 steps
+   in 28.47 s, and a touched Blink `.cc` took 49 steps in 38.38 s
+   (2026-10-04).
 6. **Verify** with the change's own `verify_*.py` against `CAMOU_OUT=...\out\Release`.
    It must be seen RED on the build without the change. Then run
    `verify_windows_client.py` and `verify_sp6b_driver.py`.
