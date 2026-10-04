@@ -297,6 +297,27 @@ Done when: one command produces these tables for the fork and the control,
 two runs agree row for row apart from a stated list of volatile rows, and the
 baseline is committed under `docs/superpowers/measurements/`.
 
+**Status 2026-10-04: done, with the fork's instability recorded.**
+`scripts/measure_step2.py` runs both arms through `camoucrome.launch()` on the
+Windows host, headed and headless, with six probes:
+
+- the oracle;
+- noise readback;
+- the network fingerprint through `tls.peet.ws`;
+- relaunch stability;
+- cross-profile linkability;
+- CreepJS, BrowserScan, Pixelscan and sannysoft.
+
+Each probe was seen RED first, and the version and argv preconditions refuse
+on purpose. Two null runs agree (`0 rows disagree outside VOLATILE`). Fork
+runs agree except on three rows where the fork itself is unstable: the WebGPU
+adapter, the HEVC answer and a CreepJS rendering check. The 154 baseline is
+committed. The findings are ranked into the backlog below ("Re-rank from the
+step 2 tables"). Rule 2's window keys are now measured on `chrome.exe`, and
+are equal to stock. Evidence: `measurements/2026-10-step2-baseline.md`, with
+the tables in `measurements/step2-154/`. The 156 re-pin recaptures the
+baseline.
+
 ### Step 3: first release
 
 **Goal:** an automation developer installs it and launches a chosen identity
@@ -380,6 +401,38 @@ From step 0 on, this outranks everything in the backlog.
 Ranked as of 2026-10-02. Re-rank at every release and every milestone; the
 step 2 tables, not this list, decide.
 
+**Re-rank from the step 2 tables (2026-10-04).** The numbered items below keep
+their numbers, because other documents cite them. The step 2 findings slot in
+like this:
+
+- After item 4's open Web Store request, which is traffic, come the new surface items S1–S5.
+- Then item 2, which S2 and S3 extend.
+- Then the rest of the list.
+
+Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
+
+- **S1. Farbling is visible on a solid fill.** A one-colour canvas reads back
+  3 distinct colours on the fork and a WebGL clear reads 5, where stock reads
+  1. Any page can run this test, so it outranks every other surface item.
+- **S2. Canvas noise has little entropy.** `canvas.text` stays `9c3103de` in 7
+  of 8 seeded launches, and `canvas.shape` repeats one hash for three seeds.
+  Two identities share `canvas.text`.
+- **S3. Device IDs are empty on the fork after the camera/microphone grant**,
+  while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
+  unmeasurable.
+- **S4. The fork is unstable across launches.** WebGPU's adapter was missing in
+  one of two launches (1 of 3 runs). HEVC's answer flipped (2 of 3 runs). One
+  CreepJS run reported "rgba noise". The control never did any of this.
+- **S5. No remote voices.** Stock lists 19 remote speech voices; the fork lists
+  none. BrowserScan also hits a "WebGL exception" on the fork and counts 95
+  fonts against stock's 132. Pixelscan flags "Masking detected" and
+  "Timezone spoofed", because the claimed zone does not match the IP. That
+  belongs to the proxy layer, but it is worth one run behind a proxy in the
+  claimed region.
+
+Item 3 (HEVC) is answered on a host with a GPU: the fork says `probably` like
+stock there, and what remains is S4's flip.
+
 1. **Layer 3: commercial anti-bot** (Cloudflare, DataDome, Akamai,
    PerimeterX). Decide the proxy budget first. Design: both arms through the
    same client, interleaved, at least 20 runs per site per arm, a fresh
@@ -396,7 +449,9 @@ step 2 tables, not this list, decide.
    see a difference there at all. Measuring it needs a machine with a GPU.
    The Windows host is one, but on 2026-10-04 the oracle still ran with
    `--use-angle=swiftshader`, so the fork's adapter was null there too; the
-   measurement is that oracle run without the SwiftShader argv. Also
+   measurement is that oracle run without the SwiftShader argv. **Measured by
+   step 2 (2026-10-04):** without SwiftShader, the fork reports the host's real
+   Intel adapter, equal to stock, and two identities share every `gpu.*` leaf. Also
    measured 2026-10-04: every generated Windows identity claims the **same**
    119-family font list (seeds 1 and 2 identical), so fonts do not yet differ
    per profile.
