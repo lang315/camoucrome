@@ -408,3 +408,15 @@ def test_native_host_drops_font_aliases():
     assert camoucrome.launcher.native_config(nokey, None, "") is nokey
     contract = json.loads((ROOT / "settings" / "launcher.json").read_text())["launch"]["native_fonts"]
     assert list(camoucrome.launcher.NATIVE_FONTS_DROP) == contract["drop"]
+
+
+def test_unmapped_host_keeps_aliases_for_a_config_that_names_no_os(monkeypatch):
+    cfg = {"fonts:alias": {"Arial": "Liberation Sans"}, "fonts:aliasLocal": {"ArialMT": "Liberation Sans"}}
+    assert camoucrome.launcher.claimed_os(cfg) is None  # the value that equalled an unmapped HOST_OS
+    monkeypatch.setattr(camoucrome.launcher, "HOST_OS", None)
+    assert camoucrome.launcher.native_config(cfg) is cfg
+
+
+def test_native_host_without_alias_keys_passes_the_same_object_through():
+    cfg = {"ua:platform": "Windows", "fonts:list": ["Arial"]}
+    assert camoucrome.launcher.native_config(cfg, None, "Windows") is cfg
