@@ -391,7 +391,9 @@ every milestone. Measured 2026-10-03 on the 153 tree:
   `bin\bash.exe`'s has them. With `-l`, `usr\bin\bash.exe` does find them
   (`uname -s` = `MSYS_NT-10.0-19045`, GNU coreutils 8.32, git `/cmd/git`).
   Whether `apply.sh` / `rebuild_branch.sh` run under it is **not measured**
-  (they were deliberately not run).
+  (they were deliberately not run). `apply.sh` under `bin\bash.exe` was
+  measured later (see "Re-pointing the tree" below); `rebuild_branch.sh` still
+  has not run there.
 - **GN args**: `settings/release-args.gn` is the canonical source and contains
   `disable_fieldtrial_testing_config = true`. `out\Release\args.gn` was read
   whole: the same keys and values as that file (`is_debug` ... `use_remoteexec`,
@@ -399,9 +401,74 @@ every milestone. Measured 2026-10-03 on the 153 tree:
   comparison was by eye, not a byte diff. A re-point carries the args across,
   not only the patches.
 
-This section covers the discard decision only. The procedure to re-point the
-tree (fetch, check out the new tag, `apply.sh`, build, gate) is still owed;
-`apply.sh` and `rebuild_branch.sh` were deliberately never run there.
+The bullets above are the state that the discard decision was made on. The
+procedure to re-point the tree, measured when it was first done, follows.
+
+### Re-pointing the tree to a new pin
+
+Done once, 153 to 154, on the evening of 2026-10-03. It was an unattended
+PowerShell script, `D:\camou-win\overnight.ps1`, started with
+`Invoke-CimMethod Win32_Process Create` so that it survived the ssh session.
+Every step runs in `D:\camou-win\chromium\src` unless named. The environment
+is the same as for any Windows build:
+- `DEPOT_TOOLS_WIN_TOOLCHAIN=0`;
+- `vs2022_install=C:\Program Files\Microsoft Visual Studio\2022\Community`;
+- depot_tools first on `PATH`;
+- **`DEPOT_TOOLS_UPDATE=0`**.
+
+| step | command | took | trap met |
+|---|---|---|---|
+| fetch the tag | `git fetch --depth=1 origin +refs/tags/<tag>:refs/tags/<tag>` | 6 min | **`--depth=1` is required.** The checkout is shallow. Without it, the fetch hung for 20 minutes with no data, because the server builds a pack of nearly the whole history. |
+| discard the old change set | `git reset --hard -q`, then `git clean -fdq components/camoucfg` | 6 s | Before any reset, check that `git rev-parse --show-toplevel` is this tree. A variable mix-up once ran this `reset` in the wrong directory. It was harmless that time because the directory was not a repository. |
+| check out | `git checkout -f --detach <pin>` | 1 s | |
+| sync | from `D:\camou-win\chromium`: `gclient sync -j 4 -D --no-history --revision src@<pin>` | 21 min | At the default 16 jobs, googlesource answered **HTTP 429**. depot_tools' self-update aborts on its local CRLF changes unless `DEPOT_TOOLS_UPDATE=0`. |
+| gate | `git rev-parse HEAD` is the pin, and `git status --porcelain -uall` is empty | | |
+| apply | `& 'C:\Program Files\Git\bin\bash.exe' <repo>/scripts/apply.sh D:/camou-win/chromium/src` | 12 s | 32 of 32 patches, 130 dirty paths. The repo copy is a `git archive` of `main` untarred in `D:\camou-win\tree`. |
+| gn | `gn gen out\Release` | 12 s | `out\Release\args.gn` carries over. |
+| build | `autoninja -C out\Release chrome` | 5 h 31 m | 57,101 steps. |
+
+About 6 h of machine time in all, almost all of it the build. Take the build
+lock (`scripts/build_lock.sh`, below) around the build step: the WSL checkout
+must not build at the same time.
+
+### The change loop
+
+How a change reaches the Windows build. The source of truth stays the WSL
+branch; the Windows tree only ever receives exported patches.
+
+1. **Edit, build, verify and commit on the WSL branch** as for any slice: the
+   commit subject is the patch stem. Then **export** (`scripts/export.sh`) and
+   open the PR. The Windows tree is never edited by hand.
+2. **Copy the branch to the host.** In the runner's clone, `git archive` the
+   branch to a tar in WSL's `/tmp`. Copy it from Windows through
+   `\\wsl.localhost\Ubuntu-24.04\tmp\...` and untar it into a fresh directory
+   under `D:\camou-win`.
+3. **Take the lock.** Run `wsl -u lang -e bash
+   /home/lang/camoucrome-client/scripts/build_lock.sh acquire "windows <what>"`.
+   It refuses while CI or another Windows build holds the lock, and names the
+   holder.
+4. **Apply only what changed.** For a new patch:
+   `git apply --3way <copy>\patches/<stem>.patch`. For a revised patch:
+   `git apply -R --3way` the old version, then apply the new one.
+   - Do **not** reset and re-run `apply.sh` for one patch. That rewrites all
+     130 change-set files, and every object that depends on them rebuilds.
+   - A full re-apply is for a re-pin only.
+5. **Build** with `autoninja -C out\Release chrome`. Check that the step count
+   is **non-zero**. A one-file change to `components/crash/core/app/crashpad.cc`
+   rebuilt in **8 steps, 25.68 s**.
+6. **Verify** with the change's own `verify_*.py` against `CAMOU_OUT=...\out\Release`.
+   It must be seen RED on the build without the change. Then run
+   `verify_windows_client.py` and `verify_sp6b_driver.py`.
+   - `verify_sp6b_driver.py`'s C5 is a timing check. Run it on an idle host:
+     straight after a long build it failed once at +22% against a 15% bound,
+     and passed three times idle (`measurements/2026-10-03-windows-substrate.md`,
+     "The crashpad lever").
+7. **Release the lock** with
+   `wsl -u lang -e bash /home/lang/camoucrome-client/scripts/build_lock.sh release "windows <what>"`.
+
+The Windows tree is again a bare working tree on the pin: the change set plus
+whatever patches step 4 applied. `git status` shows which. Re-point it (above)
+at the next re-pin.
 
 ### Is the dirty tree exactly the old change set?
 
