@@ -12,16 +12,23 @@ would go green for free.
 """
 
 import json
+import os
 import sys
 
 import lib_shell
 
-# A font the WSL host actually has (fc-list), so local() can resolve it and the
-# leak is observable on Linux -- the cross-method tell is not "structurally
-# blind" here when the probe font is host-present.
-HOST_FONT = "DejaVu Sans"
-HOST_FONT_PS = "DejaVuSans"      # its PostScript name (resolves too)
-HOST_SERIF = "DejaVu Serif"      # not the box sans-serif default (F-DIRECT confound)
+# A font the host actually has (fc-list on the WSL box; the installed set on the
+# Windows host), so local() can resolve it and the leak is observable -- the
+# cross-method tell is not "structurally blind" when the probe font is
+# host-present. HOST_SERIF must not be the host's default sans-serif (F-DIRECT
+# confound); on Windows neither Verdana nor Georgia is a generic default
+# (Arial, Times New Roman and Consolas are).
+if os.name == "nt":
+    HOST_FONT, HOST_FONT_PS, HOST_SERIF = "Verdana", "Verdana", "Georgia"
+else:
+    HOST_FONT = "DejaVu Sans"
+    HOST_FONT_PS = "DejaVuSans"      # its PostScript name (resolves too)
+    HOST_SERIF = "DejaVu Serif"      # not the box sans-serif default (F-DIRECT confound)
 
 results = {}
 notes = []
