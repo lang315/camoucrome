@@ -129,8 +129,9 @@ re-pin time is recorded, and `rebuild_branch.sh` recreates the branch from a
 clean state.
 
 **Status: done.** (2026-10-02: done except CI on the merged pin; `build-verify`
-has since been green on `main` after the re-pin's merge and on every merge
-through `571ee2a`, 2026-10-04.)
+has since been green on every run that completed on `main` after the re-pin's
+merge (one run was cancelled and superseded; merges touching no filtered path
+have no run), as of 2026-10-04.)
 `plans/2026-10-02-step0-repin-and-safety.md` ran as six tasks; the evidence is
 `measurements/2026-10-repin.md` and the procedure is
 `specs/repin-runbook.md`.
@@ -239,18 +240,22 @@ worker parity, bad config, the host oracle's window keys, the launcher and
 driver contracts, crash dumps and fonts. Against the host's stock Chrome
 154.0.8037.93 it read `21/21 entries OK (red)`; against the fork, twice,
 `21/21 entries OK (green)`. The exception: the host oracle's O2 (a Linux claim
-hides `navigator.share`/`bluetooth`) fails on the Windows build, because that
-gate is `IS_LINUX`-only code. It is marked as the oracle's one known-failing
+hides `navigator.share`/`bluetooth`) fails on the Windows build, because the
+renderer block in `windows-oracle.patch` only enables them for a Windows or
+macOS claim and nothing disables them under a Linux claim (stock Windows Chrome
+ships both on). It is marked as the oracle's one known-failing
 row and filed below. Along the way:
 - **Fonts on Windows were broken under every generated identity.** The
   identity's `fonts:alias` sent the host's real Arial, Times New Roman and
   Verdana to bundle fonts Windows does not have. The launchers now drop the
   aliases when the claimed OS is the host's (`settings/launcher.json`
-  `launch.native_fonts`), and the claimed families measure as stock through
-  all three clients. A host-only font (ASUS's `ROG Fonts`) stays hidden.
+  `launch.native_fonts`), and the four probed claimed families (Arial, Segoe UI, Times New Roman,
+  Verdana) measure as stock through all three clients. A host-only font (ASUS's `ROG Fonts`) stays hidden.
 - **Other process types.** The audio service reads its key under the real
-  sandbox (22050 configured, 48000 real). The GPU process reads no config: no
-  patched path is in GPU-process code.
+  sandbox (22050 configured, 48000 real). Nothing that runs in the GPU
+  process reads the config (the only patched code that runs there is crashpad's
+  handler-behaviour switch, which reads no config); no patched path is under
+  `gpu/`, `ui/gl`, `components/viz` or `content/gpu`.
 - **The change loop** criterion was met by the crashpad lever on 2026-10-03
   (runbook §7 "The change loop").
 
@@ -458,13 +463,17 @@ step 2 tables, not this list, decide.
 7. **Host tells from section D of the completion roadmap**:
    `storage.estimate()`, `keyboard.getLayoutMap()`, `navigator.connection`,
    `getScreenDetails()`, `matchMedia('(display-mode)')`.
-8. **A non-Windows claim on the Windows build keeps `navigator.share`,
-   `canShare` and `bluetooth`.** Measured 2026-10-04: `verify_host_oracle`'s
+8. **A Linux claim on the Windows build keeps `navigator.share`,
+   `canShare` and `bluetooth`** (a macOS claim should too; only the Linux
+   claim was measured). Measured 2026-10-04: `verify_host_oracle`'s
    Linux-claim sub-run on the Windows fork differs from the host only in the
-   UA and platform leaves, so its O2 fails; the gate that removes them is
-   `IS_LINUX`-only code. Low: a Linux claim on a Windows host is off the
+   UA and platform leaves, so its O2 fails. Cause: the renderer block in
+   `windows-oracle.patch` only enables the features for a Windows or macOS
+   claim and nothing disables them under a Linux claim; stock Windows Chrome
+   ships them on, the Linux build has them off by default. The fix is a
+   "Linux claim: disable" branch in that block. Low: a Linux claim on a Windows host is off the
    product path (decision 3). `scripts/windows_verify_set.py` marks O2 as the
-   oracle's known-failing row; delete `known_fail` when the gate lands.
+   oracle's known-failing row; delete `known_fail` when that branch lands.
 9. **Windows CI.** A build and verify job, once the runner is hardened.
 10. **Build time**, if the re-pin commitment is at risk.
 11. **Linux out of beta.**

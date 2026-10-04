@@ -55,9 +55,10 @@ SET = [
     Entry("verify_navplatform_bucket.py", 7, "stock"),
     Entry("verify_fonts_ii.py", 6, "stock"),
     Entry("verify_windows_fonts.py", 5, "stock"),
-    # O2 (the Linux-claim RED) fails on the Windows build because the share/canShare/bluetooth gate is
-    # IS_LINUX-only code (measured 2026-10-04: the Linux-claim sub-run differed from the host only in
-    # UA/platform leaves) -- filed as a backlog item; delete known_fail when the gate lands.
+    # O2 (the Linux-claim RED) fails on the Windows build because windows-oracle.patch's renderer block only
+    # enables share/canShare/bluetooth for a Windows or macOS claim and nothing disables them under a Linux claim,
+    # while stock Windows Chrome ships them on (measured 2026-10-04: the Linux-claim sub-run differed from the host
+    # only in UA/platform leaves) -- filed as a backlog item; delete known_fail when a Linux-claim disable branch lands.
     Entry("verify_host_oracle.py", 4, "stock", known_fail=("O2",)),
 ]
 

@@ -35,6 +35,8 @@ else, the device's own rate, so A1 cannot pass on a default. A2 also rejects
 44100: that is the renderer's no-device fallback (UnavailableDeviceParams), so
 it would mean the host has no output device and A1 could have passed through
 the renderer hook, saying nothing about the sandboxed audio service.
+A device whose native rate is 44100 would also fail A2 (a false FAIL, not a false
+PASS); on this host the device reports 48000.
 
 Run on the Windows host, in the directory holding lib_shell.py:
   $env:CAMOU_OUT='D:\\camou-win\\chromium\\src\\out\\Release'

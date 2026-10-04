@@ -131,18 +131,24 @@ The fix is in the launcher, not C++ (`1568bfb`, `099cdd5`, `f777f59`):
 over config and preset) equals the host OS, in the Python, Go and Node
 clients. A config with nothing to drop passes through untouched, and an
 unmapped host OS never triggers the drop. `fonts.json` has `alias_map`
-entries only for Windows and macOS, so a Linux claim on Linux is unaffected,
-and a Windows or macOS claim on the Linux build box keeps its aliases. Client
+entries only for Windows and macOS, so a Linux claim carries no alias keys.
+Separately, a Windows or macOS claim on the Linux build box keeps its aliases
+because the claimed OS differs from the host. Client
 tests: Python 53 passed, Go ok, Node 20 pass.
 
 **How the rows compare.** The fork carries `canvas:seed` under a generated
 identity, which jitters `measureText` by design: the fork reads
 +0.04..+0.12 px off stock. F2 therefore compares within `JITTER_TOL = 1.0` px
 and additionally requires each family to win over both fallbacks (its
-`", monospace"` and `", serif"` variants agree). That second rule decides
-Segoe UI, whose width sits 0.07 px from the face the failed lookups landed
-on. It was seen RED once, in a one-off run that aliased Segoe UI to a missing
-font through `lib_shell` (no client drop):
+`", monospace"` and `", serif"` variants agree). That second rule is what lets
+F2 tell a resolved Segoe UI from a fallback when widths alone are within the
+tolerance (Segoe UI's width sits 0.07 px from the 1807.99 face the failed alias
+lookups fell through to). The pre-fix run printed only the monospace variant;
+the real pre-fix failure (a real system face) is caught by Arial, Times New
+Roman and Verdana missing stock by 13 px or more. The rule itself was seen RED
+once, in a one-off run that aliased Segoe UI to a missing font through
+`lib_shell` (no client drop), so the lookup fell to the generics: a different
+failure mode from the real one.
 
 ```
 aliased Segoe UI mono|serif: [1539.453125, 1694.3359375] control: [1808.056640625, 1808.056640625] fallbacks (1539.453125, 1694.3359375)
@@ -172,8 +178,9 @@ also fails if those two come within the tolerance of each other.
   Code SemiLight, Cascadia Mono SemiLight, Leelawadee UI Semilight` (first 10
   shown). These are GDI family names (the capture used the GDI enumeration),
   which DirectWrite treats as weights of one family, so stock Chrome on this
-  host cannot resolve them by name either. The fork without aliases behaves
-  the same, so on this host they are not a tell. On a host that lacks a
+  host cannot resolve them by name either. The fork without aliases is expected to behave
+  the same (no alias, same lookup); the set did not measure it, since F3 counts
+  on the stock read only. On this host they are then not a tell. On a host that lacks a
   claimed family stock would resolve, F3 is where it shows.
 - **F5, a note**: `seeds 1 and 2 claim the SAME font lists (119 vs 119)`.
   Every generated Windows profile claims the same font list. That is a
@@ -198,16 +205,20 @@ counts above).
 
 ## The GPU process
 
-Nothing in the GPU process reads the config. The change set's paths, by
-directory: `third_party/blink` (61 patched files), `components/embedder_support`
-(8), `content/browser` (7), `chrome/browser` (7), `media/audio` (4),
-`sandbox/win` (3), `media/base` (3, all `windows-behaviour-ii`'s
-`audio_parameters`), `chrome/renderer` (3), `content/renderer` (2),
-`components/signin` (2), and one each in `components/omnibox`,
-`components/network_time`, `components/gcm_driver`, `components/crash`,
-`components/component_updater`, `components/BUILD.gn`; `additions/` holds only
-`camoucfg`. No path is under `gpu/`, `ui/gl`, `components/viz` or
-`content/gpu`. A patch that reaches the GPU process reopens this.
+Nothing that runs in the GPU process reads the config. The only patched code
+that runs there is crashpad's handler-behaviour switch
+(`components/crash/core/app/crashpad.cc`, `crashpad-no-dumps.patch`), which
+runs in every process and reads no config. The change set's unique patched
+files, by directory (from the `+++ b/` lines of `patches/*.patch`):
+`third_party/blink` (50 files), `chrome/browser` (7), `components/embedder_support`
+(5), `content/browser` (5), `media/audio` (4), `sandbox/win` (3), `media/base`
+(3: `BUILD.gn`, `DEPS` and `audio_parameters.cc`), `chrome/renderer` (3),
+`content/renderer` (2), `components/signin` (2), and one each in
+`components/omnibox`, `components/network_time`, `components/gcm_driver`,
+`components/crash`, `components/component_updater`; `components/BUILD.gn` is
+one more file; `additions/` holds only `camoucfg`. No path is under `gpu/`,
+`ui/gl`, `components/viz` or `content/gpu`. A patch that reaches the GPU
+process reopens this.
 
 ## The host oracle on Windows
 
@@ -230,8 +241,15 @@ Windows.
   the host only in `nav.appVersion`, `nav.platform`, `ua`, `uad.platform`
   and `uadHigh.platform`: no `navProto`/`windowNames` difference, so under a
   Linux claim the Windows build keeps `navigator.share`, `canShare` and
-  `bluetooth`. The gate that removes them lives in `IS_LINUX`-only code. The
-  set marks the row `known_fail=("O2",)`; delete that when the gate lands.
+  `bluetooth`. Cause: the renderer block in `windows-oracle.patch`
+  (chrome_content_renderer_client.cc, compiled on every platform) only enables
+  `EnableWebShare` and `WebBluetooth` for a Windows or macOS claim; nothing
+  disables them under a Linux claim. Stock Windows Chrome ships both on, so the
+  Windows build keeps them, while on the Linux build they are off by default
+  and the same claim passes there. (The `IS_LINUX` code in
+  `windows-behaviour.patch` is the browser-side share binder, not a gate.) The
+  fix is a "Linux claim: disable" branch in that block. The
+  set marks the row `known_fail=("O2",)`; delete that when the branch lands.
   A Linux claim on a Windows host is off the product path (roadmap decision
   3), so it ranks low.
 - **HEVC on the flagship build**: `known: codecs.video/mp4; codecs="hev1.1.6.L93.B0":
