@@ -20,32 +20,48 @@ window is WINDOW_SECONDS after the DevTools port answers; the RED capture
 showed every caller firing within 2.5 s and the component updater's second
 wave at ~60 s, so 75 s covers both.
 
+Safe Browsing's first list fetch is NOT inside 75 s by default: its timer is
+uniform in 60..300 s (kTimerStartIntervalSecMin/Max,
+sb_update_protocol_manager.h), so a 75 s window caught it about one start in
+sixteen. --sb-fast-initial-lists-update moves it to 10..20 s, which puts it in
+every window.
+
 Measurement: docs/superpowers/measurements/2026-09-09-sp7-phone-home.md
 P4 X-Client-Data on google.com over two launches on one profile: absent both
    times (stock sends it on the second launch, from the seed the first stored).
+P5 probe capability for navigation-time lookups: the netlog carries the
+   navigation to sb.test (a non-IP name mapped to loopback, so a URL
+   lookup has a host to check), so P1's empty set covers what a navigation
+   triggers too. Assert presence before absence.
+
+A netlog that does not parse scores P1/P2/P5 UNMEASURED (exit 2), not FAIL.
 """
-import json, os, re, shutil, sys, time
+import json, os, re, shutil, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import echo_server
 import lib_shell
 
 WINDOW_SECONDS = int(os.environ.get("SP7_PHONEHOME_WINDOW", "75"))
-NETLOG = f"/tmp/camoucrome_sp7_netlog.{os.getpid()}.json"
+NETLOG = os.path.join(tempfile.gettempdir(),
+                      f"camoucrome_sp7_netlog.{os.getpid()}.json")
 LOOPBACK = re.compile(r"^(127\.\d+\.\d+\.\d+|localhost|\[::1\])(:\d+)?$")
+NAV_HOST = "sb.test"
+NAV = re.compile(rf"^{re.escape(NAV_HOST)}(:\d+)?$")
 
 results = {}
 notes = []
 
 
 def parse_hosts(path):
-    """Returns (external_hosts: {host: count}, loopback_count). A netlog cut
-    off by process kill lacks its closing bracket; repair before parsing."""
+    """Returns (external_hosts: {host: count}, loopback_count, nav_count). A
+    netlog cut off by process kill lacks its closing bracket; repair before
+    parsing."""
     raw = open(path, "r", encoding="utf-8", errors="replace").read()
     if not raw.rstrip().endswith("}"):
         raw = raw.rstrip().rstrip(",") + "]}"
     d = json.loads(raw)
     types = {v: k for k, v in d["constants"]["logEventTypes"].items()}
-    external, loopback = {}, 0
+    external, loopback, nav = {}, 0, 0
     for ev in d["events"]:
         if types.get(ev.get("type")) != "REQUEST_ALIVE":
             continue
@@ -58,15 +74,17 @@ def parse_hosts(path):
         host = m.group(1)
         if LOOPBACK.match(host):
             loopback += 1
+        elif NAV.match(host):
+            nav += 1
         else:
             external[host] = external.get(host, 0) + 1
-    return external, loopback
+    return external, loopback, nav
 
 
 def run_p1_p2():
     if not os.path.exists(lib_shell.CHROME):
-        results["P1"] = results["P2"] = False
-        notes.append("P1/P2: no out/Default/chrome binary")
+        results["P1"] = results["P2"] = results["P5"] = False
+        notes.append("P1/P2/P5: no out/Default/chrome binary")
         return
     proc = stop = None
     try:
@@ -74,13 +92,18 @@ def run_p1_p2():
         proc = lib_shell.launch(
             None, shell=lib_shell.CHROME,
             extra_flags=[*lib_shell.CHROME_FLAGS, f"--log-net-log={NETLOG}",
-                         "--net-log-capture-mode=Default"])
-        # One loopback URLRequest, issued by chrome, for P2.
+                         "--net-log-capture-mode=Default",
+                         "--sb-fast-initial-lists-update",
+                         f"--host-resolver-rules=MAP {NAV_HOST} 127.0.0.1"])
+        # One loopback URLRequest, issued by chrome, for P2; then one
+        # navigation to a name, for P5.
         lib_shell.evaluate(proc, ["1"], navigate_to=base_url)
+        lib_shell.evaluate(proc, ["1"], navigate_to=base_url.replace(
+            "127.0.0.1", NAV_HOST, 1))
         time.sleep(WINDOW_SECONDS)
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
-        results["P1"] = results["P2"] = False
-        notes.append(f"P1/P2 launch: {type(exc).__name__}: {exc}")
+        results["P1"] = results["P2"] = results["P5"] = False
+        notes.append(f"P1/P2/P5 launch: {type(exc).__name__}: {exc}")
         return
     finally:
         if proc is not None:
@@ -88,10 +111,12 @@ def run_p1_p2():
         if stop is not None:
             stop()
     try:
-        external, loopback = parse_hosts(NETLOG)
+        external, loopback, nav = parse_hosts(NETLOG)
     except Exception as exc:  # noqa: BLE001
-        results["P1"] = results["P2"] = False
-        notes.append(f"P1/P2 netlog parse: {type(exc).__name__}: {exc}")
+        # A netlog Chrome had not finished writing measures nothing either
+        # way: UNMEASURED, not FAIL (re-pin 2026-10-02, sweep 2).
+        results["P1"] = results["P2"] = results["P5"] = None
+        notes.append(f"P1/P2/P5 netlog parse: {type(exc).__name__}: {exc}")
         return
     finally:
         try:
@@ -102,10 +127,15 @@ def run_p1_p2():
     if not results["P2"]:
         notes.append("P2: netlog holds no loopback request; P1's empty set is "
                      "not evidence")
-    results["P1"] = results["P2"] and not external
+    results["P5"] = nav >= 1
+    if not results["P5"]:
+        notes.append(f"P5: netlog holds no request to {NAV_HOST}; P1 says "
+                     "nothing about navigation-time lookups")
+    results["P1"] = results["P2"] and results["P5"] and not external
     notes.append(f"P1: external hosts in {WINDOW_SECONDS}s = "
                  f"{json.dumps(dict(sorted(external.items())))} (expect {{}})")
     notes.append(f"P2: loopback requests = {loopback}")
+    notes.append(f"P5: {NAV_HOST} requests = {nav}")
 
 
 def run_p3():
@@ -178,11 +208,15 @@ def main():
     run_p4()
     for n in notes:
         print("note:", n)
-    ok = True
-    for k in ("P1", "P2", "P3", "P4"):
-        print(f"{k}: {'PASS' if results.get(k) else 'FAIL'}")
-        ok = ok and bool(results.get(k))
-    sys.exit(0 if ok else 1)
+    rc = 0
+    for k in ("P1", "P2", "P3", "P4", "P5"):
+        v = results.get(k, False)
+        print(f"{k}: {'UNMEASURED' if v is None else 'PASS' if v else 'FAIL'}")
+        if v is None and rc == 0:
+            rc = 2
+        elif v is False:
+            rc = 1
+    sys.exit(rc)
 
 
 if __name__ == "__main__":
