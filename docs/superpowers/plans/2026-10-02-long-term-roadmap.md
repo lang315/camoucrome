@@ -284,8 +284,10 @@ Release gates, settled before any archive is published:
   the paid options are an OV certificate (about USD 200–400 a year, and it
   still warns until it gains reputation) or Azure Trusted Signing (about USD 10
   a month, if an individual in the owner's country can enrol).
-- **Acceptable-use statement.** **Drafted 2026-10-03:** `ACCEPTABLE_USE.md`,
-  for the owner to review.
+- **Acceptable-use statement.** **Drafted 2026-10-03, reviewed 2026-10-04:**
+  `ACCEPTABLE_USE.md`. The review made three fixes. The codec opt-out names
+  both GN args, not only `proprietary_codecs`. The codec paragraph says it is
+  not legal advice. The README links the file and `LICENSE`.
 
 Work:
 

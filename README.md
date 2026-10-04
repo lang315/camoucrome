@@ -154,3 +154,8 @@ string naming a Mac GPU is worse than an honest Linux fingerprint. Camoufox lear
 this the expensive way and ended up enforcing coherence in three uncoordinated places
 — C++ patches, an all-or-nothing schema, and Python fixup functions. SP5 exists so
 Camoucrome does not repeat that.
+
+## Licence and acceptable use
+
+MPL-2.0 (`LICENSE`). What the project is for, what it will not help with, and
+the codec patent exposure of released binaries are in `ACCEPTABLE_USE.md`.
