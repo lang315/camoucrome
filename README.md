@@ -155,7 +155,14 @@ this the expensive way and ended up enforcing coherence in three uncoordinated p
 — C++ patches, an all-or-nothing schema, and Python fixup functions. SP5 exists so
 Camoucrome does not repeat that.
 
-## Licence and acceptable use
+## Licence and codecs
 
-MPL-2.0 (`LICENSE`). What the project is for, what it will not help with, and
-the codec patent exposure of released binaries are in `ACCEPTABLE_USE.md`.
+MPL-2.0 (`LICENSE`).
+
+Released binaries include the H.264 and AAC codecs that stock Chrome ships,
+because leaving them out is itself a detectable difference. Google's licence
+for those codecs covers Google's builds, not this one. Patent obligations for
+distributing and using them may apply in your jurisdiction, and you accept that
+risk by using a released binary. The source can be built without them (delete
+`proprietary_codecs` and `ffmpeg_branding` from `settings/build-args.gn`), at
+the cost of that detectable difference. This is not legal advice.

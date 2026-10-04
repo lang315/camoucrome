@@ -273,8 +273,8 @@ Release gates, settled before any archive is published:
   ship with them and accept the exposure, or publish source only. **Decided
   2026-10-03: ship with them and accept the exposure.** The other two lose: no
   codecs is a tell on every page, and source-only defeats this step's 15-minute
-  goal. The exposure is stated in `ACCEPTABLE_USE.md` and must be in the
-  release notes. `settings/build-args.gn` records the decision.
+  goal. The exposure is stated in the README ("Licence and codecs") and
+  must be in the release notes. `settings/build-args.gn` records the decision.
 - **LICENSE** for the repo, consistent with the client packages. **Decided
   2026-10-03: MPL-2.0**, the same as Camoufox and `client/node/package.json`.
   `LICENSE` is the canonical text and `client/python/pyproject.toml` declares
@@ -288,10 +288,12 @@ Release gates, settled before any archive is published:
   the paid options are an OV certificate (about USD 200–400 a year, and it
   still warns until it gains reputation) or Azure Trusted Signing (about USD 10
   a month, if an individual in the owner's country can enrol).
-- **Acceptable-use statement.** **Drafted 2026-10-03, reviewed 2026-10-04:**
-  `ACCEPTABLE_USE.md`. The review made three fixes. The codec opt-out names
-  both GN args, not only `proprietary_codecs`. The codec paragraph says it is
-  not legal advice. The README links the file and `LICENSE`.
+- **Acceptable-use statement.** **Decided 2026-10-04: none.** A statement was
+  drafted on 2026-10-03 and dropped by the owner. MPL-2.0 binds nothing beyond
+  copying and modification anyway, and its warranty disclaimer (sections 6
+  and 7) stands on its own. The draft's codec paragraph moved to the README.
+  It now names both GN args for the opt-out, not only `proprietary_codecs`,
+  and says it is not legal advice.
 
 Work:
 
@@ -445,7 +447,7 @@ unexplained.
 | Public repo, self-hosted runner on the build machine | A workflow change could run code on it | Step 0 hardening; existing approval policy and action allow-list |
 | Profiles on one host are linkable | The product's main use case fails quietly | Step 2 linkability table; backlog item 2 |
 | A check measures nothing on Windows | Green results with no information | RED-first for every script in the Windows verify set |
-| Publishing against named sites | Terms-of-service and takedown exposure | Layer 3 at vendor level only; acceptable-use statement |
+| Publishing against named sites | Terms-of-service and takedown exposure | Layer 3 at vendor level only (no acceptable-use statement, decided 2026-10-04) |
 | Shipping proprietary codecs unlicensed | Legal exposure | Release gate in step 3 |
 | Detection vendors change | A passing table decays | Tables re-run at every release |
 
