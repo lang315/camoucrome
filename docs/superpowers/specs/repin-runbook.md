@@ -415,6 +415,11 @@ would move it to the next milestone on its own, so since 2026-10-04 it is held:
 - the services `GoogleUpdaterService156.0.8067.0` and
   `GoogleUpdaterInternalService156.0.8067.0` are StartupType Disabled.
 
+The commands need an elevated shell; they were run through the sshgate session
+on 2026-10-04. Before the hold the services' startup type was Automatic
+(measured 2026-10-04: `StartType Automatic`), so `-StartupType Automatic`
+restores the original.
+
 The host browser gets no security updates while held, so it is not for
 browsing. **At every re-pin, release it first**: the pin follows the host's
 version (section 1), so a held host points the re-pin at the old milestone.

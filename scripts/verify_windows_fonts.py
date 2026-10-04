@@ -78,7 +78,8 @@ def page(claimed):
 
 
 # measureText jitter under canvas:seed measured at <= 0.12 px on a 28-char string at 100 px; distinct fonts here
-# differ by >= 13 px except Segoe UI vs the monospace fallback (0.07 px), which the two-variant check decides.
+# differ by >= 13 px except Segoe UI vs the 1807.99 face the failed alias lookups fell through to (0.07 px; the bare
+# monospace fallback is 1539.45), which the two-variant check decides.
 JITTER_TOL = 1.0
 
 

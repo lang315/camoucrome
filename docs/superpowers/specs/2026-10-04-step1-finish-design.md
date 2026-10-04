@@ -216,3 +216,23 @@ number decides whether a component build is worth its hours.
 - Any C++ change, and the component build.
 - Backlog items 2 (WebGPU and the device per profile), 4 (Safe Browsing) and
   6 (the field-trial access violation). This step may add evidence to them.
+
+## As built (2026-10-04)
+
+The spec body above is unchanged. What shipped differs as follows; the
+measurements are in `measurements/2026-10-04-windows-verify-set.md`.
+
+- Entries in `scripts/windows_verify_set.py` are `(script, rows, red, known_fail)`,
+  not regexes (the set section).
+- The `own` RED kind exists in the runner, but no entry uses it.
+- RED-before-GREEN is a procedure, not enforced by the runner.
+- The generator is judged by `ALL_PASS` (the set section).
+- F2 compares within `JITTER_TOL` and adds the two-variant rule (the font
+  alias section, "How the rows compare").
+- F3 measured 14 unresolvable families (GDI names), not 0 (the other font rows).
+- F4 cannot fail under stock; its entry's RED is F1 (the other font rows).
+- The oracle's RED is O1's stock DIFF, and O2 is `known_fail` (the host oracle
+  section).
+- `media/base/audio_parameters.cc` is the renderer's no-device fallback reader
+  of `audio:sampleRate`; A2 rejects 44100 for that reason (the audio service
+  section).
