@@ -37,7 +37,10 @@ SET = [
     Entry("verify_sp6b_launcher.py", 5, "stock"),
     Entry("verify_sp6b_driver.py", "ALL_PASS", "stock"),
     Entry("verify_crash_dumps.py", 2, "stock"),
-    Entry("verify_sp6b_generator.py", 36, "stock"),
+    # Prints a row per config only when it fails (verify_sp6b_generator.py:158);
+    # green is its RED row plus "36/36 PASS" and ALL_PASS, which it prints only
+    # when all 36 pass and the generated count is N per OS.
+    Entry("verify_sp6b_generator.py", "ALL_PASS", "stock"),
     Entry("verify_d_pointer_touch.py", 5, "stock"),
     Entry("verify_sp1b.py", 8, "stock"),
     Entry("verify_sp3b.py", 9, "stock"),
