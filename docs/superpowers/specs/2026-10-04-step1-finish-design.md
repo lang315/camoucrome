@@ -70,7 +70,7 @@ Membership, by the roadmap's five criteria:
 | (b) noise behaviour | `verify_metric_jitter`, `verify_audio_ii` |
 | (c) worker parity | rows inside `verify_windows_sandbox_env`, `verify_sp1b` (N6, N8), `verify_sp3b` (V9), `verify_fonts_ii` (F-WORKER) |
 | (d) fallback on bad config, no crash | `verify_ua_halfconfig_reject`, `verify_sp5b_domain`, `verify_webgl_pairing`, `verify_webgl_capability_identity`, `verify_navplatform_bucket` |
-| (e) rule 2 window keys against stock `chrome` | `verify_host_oracle` (O1 compares `windowKeys`, `navProto`, `windowNames` to the host's stock capture), `verify_chrome_object` O1–O3 |
+| (e) rule 2 window keys against stock `chrome` | `verify_host_oracle` (O1 compares `windowKeys`, `navProto`, `windowNames` to the host's stock capture; its O2 Linux-claim sub-run is the RED) |
 | launcher and driver contract | `verify_sp6b_launcher`, `verify_sp6b_driver`, `verify_crash_dumps` |
 | fonts | `verify_fonts_ii` (Windows family names), `verify_windows_fonts` (new, §5) |
 
@@ -86,16 +86,18 @@ reading of the rows.
   `verify_sp1a_chrome`: they compare against `content_shell` or Linux
   baselines that would need recapturing from stock `chrome.exe` first. That is
   step 2's recapture work, not this step's.
+- `verify_chrome_object`: its only RED (O4) is `content_shell`, which a
+  Windows release out dir lacks, and its O1–O3 pass on stock, so on Windows it
+  would have no RED at all. `verify_host_oracle` O1 covers the window keys with
+  a RED.
 - `verify_sp7_fieldtrial`: F1–F4 need `content_shell`, and C2 is backlog
   item 6.
 - `verify_sp7_phonehome`: backlog item 4 owns it.
 
 **Adaptations, each the smallest that works:**
-- `verify_chrome_object`: O4 needs `content_shell`. On Windows the set expects
-  3 rows: the script skips O4 when `CAMOU_SHELL=chrome` and lowers its expected
-  count to match. It does not report O4 as a PASS.
-- `verify_fonts_ii`: its three host family names become parameters with Linux
-  defaults. On Windows they are `Arial`, `ArialMT` and `Times New Roman`.
+- `verify_fonts_ii`: its three host family names get Windows values when
+  `os.name == "nt"`: `Verdana`, `Verdana` (its PostScript name) and `Georgia`.
+  Neither is a generic default on Windows, which keeps F-DIRECT unconfounded.
 
 ## 3. The host oracle on Windows
 
@@ -143,11 +145,11 @@ mostly real host fonts. Read against `settings/fonts.json`:
 
 | Row | Measures | RED |
 |---|---|---|
-| F1 | a host-only family (`ROG Fonts`) is invisible to `measureText` and `document.fonts.check` under a generated Windows identity, in a window and a worker | stock sees it |
-| F2 | a claimed family the host has (`Arial`, `Segoe UI`, `Times New Roman`) renders as the host's real face: widths equal stock's at 100 px | see below |
-| F3 | claimed families the host lacks: listed and counted (0 on this host today); each one is a tell to record, since a real device would have it | — |
+| F1 | a host-only family (`ROG Fonts`) is invisible to `measureText` under a generated Windows identity, in a window and a worker. `document.fonts.check()` is not used: it returns true for any family no `@font-face` names, so it says nothing about a system font | stock sees it |
+| F2 | a claimed family the host has (`Arial`, `Segoe UI`, `Times New Roman`, `Verdana`) renders as the host's real face: widths equal stock's at 100 px, through the Python, Go and Node clients (rows F2-py, F2-go, F2-node) | see below |
+| F3 | a note, not a row: claimed families the host lacks, counted (0 on this host today); each one is a tell to record, since a real device would have it | — |
 | F4 | per-character system fallback (CJK, emoji) through DirectWrite: whether a family outside the list becomes observable through fallback, which `fonts:list` does not filter (no patch touches `PlatformFallbackFontForCharacter`) | stock |
-| F5 | two generated identities: whether their detectable font sets differ. If the generator gives every Windows identity the same list, F5 records that as a cross-profile finding, not a failure of this step | — |
+| F5 | a note, not a row: whether two generated identities claim different font lists. The same list on every profile is a cross-profile finding for backlog item 2, not a failure of this step | — |
 
 **F2's expected RED is the fork itself.**
 - *What the code does.* `gen --os windows` emits `fonts:alias` mapping, for
