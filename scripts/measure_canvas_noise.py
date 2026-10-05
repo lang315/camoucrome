@@ -22,7 +22,8 @@ sys.path.insert(0, str(HERE))
 # textCpu: willReadFrequently, the CPU raster path. solid/edge/line/glClear: flat
 # drawings that must read as stock. roundtrip: putImageData of a random opaque
 # pattern over text, read back. copy/bitmap: drawImage and createImageBitmap at a
-# 1px offset agree with getImageData. shift: text at x and x+1 differ only by the
+# 1px offset agree with getImageData (the source is opaque, so the destination's
+# own arc cannot show through). shift: text at x and x+1 differ only by the
 # shift.
 PAGE = b"""<!doctype html><title>canvas-noise</title><pre id="o"></pre><script>
 const fnv=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}return h.toString(16)};
@@ -43,7 +44,7 @@ let [c,x]=mk(220,40);text(x);out.text=fnv(c.toDataURL());
 [c,x]=mk(64,64);text(x);x.fillStyle='#f60';x.beginPath();x.arc(32,32,10,0,7);x.fill();const img=x.createImageData(64,64);let s=12345;
 for(let i=0;i<img.data.length;i+=4){for(let k=0;k<3;k++){s=(Math.imul(s,1103515245)+12345)>>>0;img.data[i+k]=s>>>24}img.data[i+3]=255}
 x.putImageData(img,0,0);out.roundtrip=same(x.getImageData(0,0,64,64).data,img.data);
-[c,x]=mk(220,40);text(x);shape(x);const a=x.getImageData(0,0,220,40).data;
+[c,x]=mk(220,40);x.fillStyle='#fff';x.fillRect(0,0,220,40);x.fillStyle='#000';text(x);shape(x);const a=x.getImageData(0,0,220,40).data;
 let [b,y]=mk(221,40);y.fillStyle='#f60';y.beginPath();y.arc(110,20,15,0,7);y.fill();y.drawImage(c,1,0);out.copy=same(y.getImageData(1,0,220,40).data,a);
 const bm=await createImageBitmap(c);[b,y]=mk(221,40);y.fillStyle='#f60';y.beginPath();y.arc(110,20,15,0,7);y.fill();y.drawImage(bm,1,0);out.bitmap=same(y.getImageData(1,0,220,40).data,a);
 [c,x]=mk(220,40);text(x);[b,y]=mk(221,40);text(y,1);out.shift=same(y.getImageData(1,0,220,40).data,x.getImageData(0,0,220,40).data);
