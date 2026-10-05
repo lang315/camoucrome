@@ -289,6 +289,9 @@ control changed nothing.
 
 ## 8. Known gaps
 
+- Any image draw makes the canvas stock. `drawImage` and `createPattern` of an
+  image, video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap set the
+  imported-pixels flag, so the VideoFrame gap of the first draft is closed.
 - `transferToImageBitmap` is not covered (the spec lists it).
 - A pattern created on one context and filled on another does not flag the second
   context (`createPattern` across contexts).
@@ -318,3 +321,82 @@ control changed nothing.
   this branch.
 - A seed's text offset may fall in Skia's zero subpixel bin and draw text exactly as
   stock. The 8-seed P1 cannot bound how often.
+
+## 9. PR #27 review fixes
+
+Review items 1, 2, 4, 7, 8, 9, 10 and 11. Verify changes at 1aabe7d; Blink and
+patch change at 38b2d84. Locks `pr27 fix` (WSL) and `windows pr27` (Windows),
+both released.
+
+### RED on the build before the Blink edits (WSL, `verify_sp3a.py`)
+
+New rows C15 (text under `ctx.scale(40,40)`) and C16 (decoded image on an
+eligible canvas); the other 14 pass, so C7 and C8 against live unconfigured
+sessions already pass on the old build (they measure the hook).
+
+```
+FAIL  15 text under ctx.scale(40,40) lands within 1 device px of unconfigured
+FAIL  16 decoded image drawn on an eligible canvas reads as unconfigured
+      C15: (dx, dy) per seed [(36, 5), (33, 9), (34, 24), (30, 19)]; unconfigured bbox (55, 83)
+      C16: seeded 2468318143 != unconfigured 953644402
+FAIL
+```
+
+### GREEN after the edits (WSL)
+
+- Build: `Build Succeeded: 190 steps` (content_shell, components_unittests).
+- gtest `PerturbRgba*:CanvasStateHash*:CanvasNoise*:NoisedImage*`: 10 + 10 + 8 passed.
+- `gn check` of `modules/canvas` and `modules/webgl`: Header dependency check OK.
+  `checkdeps.py` on both directories: SUCCESS.
+- `verify_sp3a.py`: C1-C16 PASS, `ALL_PASS` (16/16).
+- `verify_review_2026_09_24.py`: R1-R12 PASS, `12/12 ALL_PASS` (R1 counts changed
+  pixels outside the arc's box plus 2 px and requires 0; R3 draws a
+  half-transparent arc and requires seeded to differ from unconfigured).
+
+### Mutation proof for item 11 (WSL)
+
+`PerturbRgbaEdges` made to skip the four same-as-neighbour tests (any pixel with
+enough alpha eligible), rebuilt (9 steps):
+
+```
+FAIL  11 flat drawings read as unconfigured (solid, edge, 1px line, WebGL clear, worker)
+      C11: differ from unconfigured ['edge', 'glClear', 'glClearColours', 'line', 'solid', 'solidColours', 'solidEligible', 'worker'], ...
+```
+
+C11 is the only failing row. The file was restored from a copy: sha256 before and
+after both `bd0d5ac73b9ecac2c98eee42bd98e06cce0e6292a2c8da2f23ef04b334e473a2`,
+rebuilt (10 steps). The mutation was never committed.
+
+### Export
+
+Fixup into `sp3a-canvas-noise` (Ruling 6; no `components/camoucfg` path changed),
+autosquash: 38 commits, 0 fixups, clean tree, `check_checkout_sync` PASS. Changed
+patches (sha256): `sp3a-canvas-noise.patch`
+`cbc70e550f647be2d1c09c551b58476afdcf9eb03fc7cdb1e49f2ff4864f2f96`;
+`sp3b-webgl-profile.patch` (index line only)
+`02015d949c3f1da8e42fc3873081771aaffe9cae1491b289b24923f4470300dd`. Both equal the
+box's after transfer.
+
+### Windows (Ruling 11)
+
+Pre and post sha256 matched for all four Blink files:
+
+| file | pre | post |
+|---|---|---|
+| `base_rendering_context_2d.cc` | c4776c11...f633 | a7042345...71a3 |
+| `canvas_2d_recorder_context.cc` | f47abfe6...425d | f03bf454...3c |
+| `canvas_2d_recorder_context.h` | 4733179a...e0fd | 6ddff239...7097 |
+| `webgl_rendering_context_base.cc` | dfcbdbf2...0a65 | e9a0e333...6d66 |
+
+Build: `Build Succeeded: 70 steps`, rc=0. Host runner, shipped density 0.04:
+
+- `final3-headed`: first run 8/9, the rule 5 row failed because the unconfigured
+  cell had no WebGL context (`glClear` = "no context"; log kept as
+  `final3-headed-try1.log`). Rerun once as the brief says: 9/9 PASS.
+- `final3-headless`: 9/9 PASS.
+
+`verify_sp3a.py` on Windows `chrome` (`sp3a-win3.log`): C6, C7, C8, C9, C12, C13,
+C14, C15 and C16 PASS. C2, C3, C4, C5, C10 FAIL only because there is no stock
+baseline file on the host (UNMEASURED; the WSL run covers them). C11 fails only
+its baseline clause: its seeded rows equal unconfigured (`differ []`) and both
+colour counts are 1.

@@ -419,6 +419,14 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   Two identities share `canvas.text`.
   Follow-up: key the readback noise on each pixel's 3×3 source patch instead of
   (seed^stateHash, x, y): removes the reseed, the position and the WebGL sub-rect tells.
+- **S2b. OPEN (follow-up to S2, from the PR #27 review).** The anti-aliasing
+  flag misses diagonal `lineTo` polygons, curved `clip()`, rotated `drawImage`,
+  round caps and `shadowBlur`. Eligibility is one sticky per-canvas boolean, so
+  it can be told apart across canvases. WebGL to WebGL `texImage2D` takes a GPU
+  path that skips the hook. The cache holds two full-canvas copies, and a miss on
+  a float16 canvas reads back from the GPU for nothing. Proposed direction: key
+  the noise on each pixel's 3×3 source neighbourhood and decide eligibility per
+  region. This needs its own spec.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
   while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
   unmeasurable.

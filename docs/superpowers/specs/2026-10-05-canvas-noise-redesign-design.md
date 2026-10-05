@@ -168,8 +168,6 @@ Known gaps recorded with them:
 - `captureStream`'s one-copy path (`CopyRenderingResultsToVideoFrame`, feature
   `kOneCopyCanvasCapture`) copies from the rendering context straight to a
   video frame, past the snapshot. Its two-copy fallback is covered.
-- A `VideoFrame` made from a canvas is not a canvas-derived source to the
-  flag, so `drawImage(new VideoFrame(canvas))` can carry two fields.
 - The placeholder of a canvas given to `transferControlToOffscreen` reads as
   stock through `toDataURL`, while the worker's own readbacks carry noise.
 - WebGL `readPixels` and a WebGL canvas's `toDataURL` use different fields
@@ -180,6 +178,27 @@ Known gaps recorded with them:
   while `getImageData` and `convertToBlob` of the same canvas carry noise; and
   a `bitmaprenderer` canvas showing such a bitmap is not eligible. Hooking it
   needs its own design (the transfer clears the source).
+
+## Amended after review (2026-10-05)
+
+Four changes from the PR #27 review:
+
+- **The imported-pixels flag covers every `drawImage` and `createPattern`
+  source** (an image, video, VideoFrame, SVG, canvas, OffscreenCanvas or
+  ImageBitmap), not only canvas-derived ones. A page may know the exact values
+  of a decoded image, or it may already carry noise, so a canvas that drew any
+  of them reads as stock. This removes the VideoFrame gap listed above.
+- **The text offset is in device space.** It is mapped back through the inverse
+  of the transform's linear part, so a scaled or rotated context still moves
+  glyphs by under one device pixel; `ctx.scale(40, 40)` can no longer magnify
+  the profile's offset.
+- **`readPixels` noise only on a tightly packed rect inside the buffer.** A
+  WebGL2 `PACK_ROW_LENGTH` / `SKIP_PIXELS` / `SKIP_ROWS` layout, or a rect that
+  reaches past the drawing buffer, leaves bytes `readPixels` never wrote, so it
+  reads as stock.
+- **Flat rows run on eligible canvases** (a corner arc, read away from it), and
+  C7 and C8 compare with a live unconfigured session of a text-free scene, so
+  they test the hook and not the text offset.
 
 ## Configuration
 
