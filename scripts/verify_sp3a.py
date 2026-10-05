@@ -435,7 +435,7 @@ REJECT = tri("webgl2", 64, 64, """
   gl.readPixels(0, 0, 64, 64, RGBA, UB, buf);
   const err = gl.getError(); let changed = 0;
   for (let i = 0; i < buf.length; i++) if (buf[i] !== pre[i]) changed++;
-  return { err, invalid: gl.INVALID_OPERATION, changed };""")
+  return { glerr: err, invalid: gl.INVALID_OPERATION, changed };""")
 
 # C15: text under ctx.scale(40,40); the ink bounding box's min x / min y.
 SCALED_TEXT = """() => {
@@ -812,7 +812,7 @@ def gl_row(name, key, ok_fn):
 gl_row(C17, "align", lambda s, u: s["pix"] == 0 and s["pad"] == 0 and s["h"] != u["h"])
 gl_row(C18, "layout", lambda s, u: s["inside"] == 0 and s["outside"] == 0 and s["h"] != u["h"])
 gl_row(C19, "past", lambda s, u: s["eqA"] and s["h"] != u["h"] and s["rest"] == u["rest"])
-gl_row(C20, "reject", lambda s, u: all(v["err"] == v["invalid"] and v["changed"] == 0
+gl_row(C20, "reject", lambda s, u: all(v["glerr"] == v["invalid"] and v["changed"] == 0
                                        for v in (s, u)))
 
 EXPECTED = 20
