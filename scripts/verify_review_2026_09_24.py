@@ -6,9 +6,13 @@ RED on the pre-fix binary (branch tip ada4cdcfa4); the triage doc records the
 values that were observed then.
 
 R1  canvas:seed above 2^31-1 (4000000000) noises pixels of a canvas with an arc
-    (was: 0 of 4096 on a solid fill; the solid corner now stays unconfigured).
+    (was: 0 of 4096 on a solid fill); no pixel outside the arc's bounding box
+    (plus a 2px margin) changes against unconfigured, and an interior solid
+    pixel stays exact.
 R2  getImageData of a sub-rect agrees with a full read on the same pixel.
-R3  a blank canvas stays blank: no RGB under alpha 0 (was: 738 pixels).
+R3  a transparent canvas with one half-transparent arc: every alpha-0 pixel
+    has RGB 0, also next to the arc's anti-aliased edge (the canvas is eligible,
+    so the noise path runs; seeded must differ from unconfigured, else vacuous).
 R4  AudioBuffer copyToChannel then copyFromChannel is an identity under
     audio:seed (was: 128/128 samples differ)...
 R5  ...and a rendered OfflineAudioContext buffer is still noised.
@@ -48,10 +52,12 @@ CANVAS_SHAPE = """() => { const c=document.createElement('canvas'); c.width=16; 
  const full=x.getImageData(0,0,16,16).data; let bad=0;
  for(let y=0;y<16;y++) for(let xx=0;xx<16;xx++){ const one=x.getImageData(xx,y,1,1).data;
    const o=(y*16+xx)*4; for(let k=0;k<4;k++) if(full[o+k]!==one[k]) bad++; }
- const b=document.createElement('canvas'); b.width=b.height=32;
- const bd=b.getContext('2d').getImageData(0,0,32,32).data; let tint=0;
- for(let i=0;i<bd.length;i+=4) if(bd[i+3]===0&&(bd[i]|bd[i+1]|bd[i+2])) tint++;
- return JSON.stringify({subrect_mismatch:bad, alpha0_tinted:tint}); }"""
+ return JSON.stringify({subrect_mismatch:bad}); }"""
+
+CANVAS_TRANSPARENT = """() => { const c=document.createElement('canvas'); c.width=64; c.height=64;
+ const x=c.getContext('2d'); x.fillStyle='rgba(255,0,0,0.5)'; x.beginPath();
+ x.arc(32,32,20,0,7); x.fill();
+ return JSON.stringify(Array.from(x.getImageData(0,0,64,64).data)); }"""
 
 AUDIO_ROUNDTRIP = """() => { const ctx=new OfflineAudioContext(1,128,44100);
  const b=ctx.createBuffer(1,128,44100); b.copyToChannel(new Float32Array(128).fill(0.5),0);
@@ -107,8 +113,11 @@ def main():
             s = json.loads(one({"canvas:seed": 4000000000, "canvas:noiseDensity": 1.0},
                                CANVAS_COUNT))
             u = json.loads(one(None, CANVAS_COUNT))
-            n = sum(1 for i in range(0, len(s), 4) if s[i:i + 4] != u[i:i + 4])
-            return n > 0 and s[:4] == u[:4] == [100, 150, 200, 255], n
+            diff = [i // 4 for i in range(0, len(s), 4) if s[i:i + 4] != u[i:i + 4]]
+            outside = [p for p in diff if not (10 <= p % 64 < 54 and 10 <= p // 64 < 54)]
+            at = (4 * 64 + 4) * 4  # interior solid pixel, >= 2px from arc and border
+            inner = s[at:at + 4] == u[at:at + 4] == [100, 150, 200, 255]
+            return len(diff) > 0 and not outside and inner, (len(diff), len(outside), inner)
         row("R1 seed 4000000000 noises the arc canvas, not the solid fill", seeded_canvas)
         shape = {}
         def canvas_shape():
@@ -117,8 +126,15 @@ def main():
                 CANVAS_SHAPE)))
             return shape["subrect_mismatch"] == 0, shape
         row("R2 sub-rect getImageData agrees with full read", canvas_shape)
-        row("R3 blank canvas has no RGB under alpha 0",
-            lambda: (shape.get("alpha0_tinted") == 0, shape))
+        def transparent():
+            s = json.loads(one({"canvas:seed": 12345, "canvas:noiseDensity": 1.0},
+                               CANVAS_TRANSPARENT))
+            u = json.loads(one(None, CANVAS_TRANSPARENT))
+            a0 = [i for i in range(0, len(s), 4) if s[i + 3] == 0]
+            tinted = sum(1 for i in a0 if s[i] | s[i + 1] | s[i + 2])
+            changed = sum(1 for i in range(0, len(s), 4) if s[i:i + 4] != u[i:i + 4])
+            return tinted == 0 and a0 and changed > 0, (tinted, len(a0), changed)
+        row("R3 half-transparent arc canvas has no RGB under alpha 0", transparent)
         row("R4 copyToChannel/copyFromChannel is an identity",
             lambda: (lambda n: (n == 0, n))(
                 one({"audio:seed": 12345}, AUDIO_ROUNDTRIP)))

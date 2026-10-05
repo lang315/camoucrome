@@ -20,7 +20,8 @@ sys.path.insert(0, str(HERE))
 # text/shape: the oracle's own canvas step (capture_host_oracle.py). textBig: the
 # same text on a 512x128 canvas, large enough to be a GPU canvas candidate.
 # textCpu: willReadFrequently, the CPU raster path. solid/edge/line/glClear: flat
-# drawings that must read as stock. roundtrip: putImageData of a random opaque
+# drawings that must read as stock (the 2D ones carry a corner arc so the canvas
+# is eligible, and are read as 48x48 away from it). roundtrip: putImageData of a random opaque
 # pattern over text, read back. copy/bitmap: drawImage and createImageBitmap at a
 # 1px offset agree with getImageData (the source is opaque, so the destination's
 # own arc cannot show through). shift: text at x and x+1 differ only by the
@@ -31,6 +32,7 @@ const H=d=>{let h=2166136261;for(let i=0;i<d.length;i++){h^=d[i];h=Math.imul(h,1
 const distinct=d=>{const s=new Set();for(let i=0;i<d.length;i+=4)s.add(d[i]+','+d[i+1]+','+d[i+2]+','+d[i+3]);return s.size};
 const mk=(w,h,o)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return [c,c.getContext('2d',o)]};
 const text=(x,dx)=>{dx=dx||0;x.font='16px Arial';x.fillText('Cwm fjordbank glyphs vext quiz 1234',4+dx,26);x.font='16px "Segoe UI"';x.fillText('Cwm fjordbank glyphs vext quiz',4+dx,38)};
+const arc=x=>{x.fillStyle='#f60';x.beginPath();x.arc(58,58,4,0,7);x.fill()};
 const shape=x=>{x.fillStyle='#f60';x.beginPath();x.arc(50,20,15,0,7);x.fill();x.fillStyle='rgba(0,80,255,.5)';x.fillRect(40,10,60,20)};
 const same=(a,b)=>{if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true};
 (async()=>{const out={};
@@ -38,9 +40,9 @@ let [c,x]=mk(220,40);text(x);out.text=fnv(c.toDataURL());
 [c,x]=mk(220,40);shape(x);out.shape=fnv(c.toDataURL());
 [c,x]=mk(512,128);text(x);out.textBig=fnv(c.toDataURL());
 [c,x]=mk(220,40,{willReadFrequently:true});text(x);out.textCpu=fnv(c.toDataURL());
-[c,x]=mk(64,64);x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);let d=x.getImageData(0,0,64,64).data;out.solid=H(d);out.solidColours=distinct(d);
-[c,x]=mk(64,64);x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);x.fillStyle='rgb(200,100,50)';x.fillRect(0,0,32,64);out.edge=H(x.getImageData(0,0,64,64).data);
-[c,x]=mk(64,64);x.strokeStyle='rgb(200,100,50)';x.lineWidth=1;x.beginPath();x.moveTo(0,10.5);x.lineTo(64,10.5);x.stroke();out.line=H(x.getImageData(0,0,64,64).data);
+[c,x]=mk(64,64);x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);arc(x);let d=x.getImageData(0,0,48,48).data;out.solid=H(d);out.solidColours=distinct(d);
+[c,x]=mk(64,64);x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);x.fillStyle='rgb(200,100,50)';x.fillRect(0,0,32,64);arc(x);out.edge=H(x.getImageData(0,0,48,48).data);
+[c,x]=mk(64,64);x.strokeStyle='rgb(200,100,50)';x.lineWidth=1;x.beginPath();x.moveTo(0,10.5);x.lineTo(64,10.5);x.stroke();arc(x);out.line=H(x.getImageData(0,0,48,48).data);
 [c,x]=mk(64,64);text(x);x.fillStyle='#f60';x.beginPath();x.arc(32,32,10,0,7);x.fill();const img=x.createImageData(64,64);let s=12345;
 for(let i=0;i<img.data.length;i+=4){for(let k=0;k<3;k++){s=(Math.imul(s,1103515245)+12345)>>>0;img.data[i+k]=s>>>24}img.data[i+3]=255}
 x.putImageData(img,0,0);out.roundtrip=same(x.getImageData(0,0,64,64).data,img.data);

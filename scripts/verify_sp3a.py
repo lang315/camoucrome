@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Fourteen criteria, all driven with Playwright's sync API over content_shell's CDP,
+Sixteen criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -20,13 +20,15 @@ Direct-read family (Task 5):
      differs from the unconfigured live run (SwiftShader for a stable,
      host-independent GL context -- SP3 spec Section 6); C11 keeps the
      unconfigured-clear == stock baseline check.
-  C7 seeded OffscreenCanvas.convertToBlob is deterministic and differs from
-     stock -- closes the Task-4 gap that convertToBlob had no runtime criterion.
+  C7 seeded OffscreenCanvas.convertToBlob of a gradient + arc scene (no text,
+     so the hook is measured, not the text offset) is deterministic and differs
+     from a live UNCONFIGURED session of the same scene.
 
 Cross-cutting:
-  C8 worker parity: an OffscreenCanvas rendered + read back inside a DEDICATED
-     worker is deterministic and differs from stock, proving the noise reaches
-     worker-thread readback via the process-inherited config (Section 4.4).
+  C8 worker parity: an OffscreenCanvas (gradient + arc, no text) rendered + read
+     back inside a DEDICATED worker is deterministic and differs from a live
+     unconfigured worker run, proving the noise reaches worker-thread readback
+     via the process-inherited config (Section 4.4).
      (SharedWorker, in its own process, needs a real HTTP origin and is a
      documented follow-up; a dedicated worker exercises the worker readback
      path this task wired.)
@@ -40,12 +42,17 @@ Cross-cutting:
 
 Canvas noise redesign rows:
   C11 flat drawings (solid, edge, 1px line, WebGL clear, worker) read as
-     unconfigured; solid and clear stay one colour.
+     unconfigured; solid and clear stay one colour. Each 2D canvas also has a
+     corner arc (so the canvas is eligible) and is read away from the arc.
   C12 putImageData of a random pattern reads back exact (the canvas is eligible:
      an arc was drawn first).
   C13 drawImage and createImageBitmap copies agree with getImageData (the
      destination is eligible until the import: an arc was drawn first).
   C14 the host oracle's text and shape canvases vary over 8 seeds, none stock.
+  C15 text under ctx.scale(40,40) lands within 1 device px of unconfigured (the
+      text offset is in device space, so a page cannot magnify it).
+  C16 a decoded image drawn onto an eligible canvas reads as unconfigured (any
+      drawImage source makes the canvas stock).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -178,8 +185,8 @@ WORKER_READBACK = """() => new Promise((resolve, reject) => {
       g.addColorStop(0, '#ff2d00'); g.addColorStop(0.5, '#00c853');
       g.addColorStop(1, '#1a2fff');
       ctx.fillStyle = g; ctx.fillRect(0, 0, 300, 200);
-      ctx.fillStyle = '#000000'; ctx.font = '22px sans-serif';
-      ctx.fillText('Camoucrome-SP3a', 24, 160);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath();
+      ctx.arc(150, 100, 55, 0, Math.PI * 2); ctx.fill();
       const H = (d) => { let h = 5381 >>> 0;
         for (let i = 0; i < d.length; i++) h = (((h << 5) + h) ^ d[i]) >>> 0;
         return h; };
@@ -227,15 +234,20 @@ FLAT = "() => new Promise((resolve, reject) => {" + HASH_FN + """
     return s.size; };
   const mk = () => { const c = document.createElement('canvas');
     c.width = 64; c.height = 64; return c.getContext('2d'); };
+  // A corner arc makes the canvas eligible; only 0..48 is read, away from it.
+  const arc = (c) => { c.fillStyle = '#f60'; c.beginPath(); c.arc(58, 58, 4, 0, 7); c.fill(); };
   const out = {};
   let x = mk(); x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
-  const d = x.getImageData(0, 0, 64, 64).data; out.solid = H(d); out.solidColours = distinct(d);
+  arc(x);
+  const d = x.getImageData(0, 0, 48, 48).data; out.solid = H(d); out.solidColours = distinct(d);
   x = mk(); x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
   x.fillStyle = 'rgb(200,100,50)'; x.fillRect(0, 0, 32, 64);
-  out.edge = H(x.getImageData(0, 0, 64, 64).data);
+  arc(x);
+  out.edge = H(x.getImageData(0, 0, 48, 48).data);
   x = mk(); x.strokeStyle = 'rgb(200,100,50)'; x.lineWidth = 1;
   x.beginPath(); x.moveTo(0, 10.5); x.lineTo(64, 10.5); x.stroke();
-  out.line = H(x.getImageData(0, 0, 64, 64).data);
+  arc(x);
+  out.line = H(x.getImageData(0, 0, 48, 48).data);
   x = mk(); x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
   x.fillStyle = '#f60'; x.beginPath(); x.arc(58, 58, 4, 0, 7); x.fill();
   out.solidEligible = H(x.getImageData(0, 0, 32, 32).data);
@@ -251,13 +263,16 @@ FLAT = "() => new Promise((resolve, reject) => {" + HASH_FN + """
     const H = (d) => { let h = 5381 >>> 0;
       for (let i = 0; i < d.length; i++) h = (((h << 5) + h) ^ d[i]) >>> 0;
       return h; };
+    const arc = (c) => { c.fillStyle = '#f60'; c.beginPath(); c.arc(58, 58, 4, 0, 7); c.fill(); };
     let x = new OffscreenCanvas(64, 64).getContext('2d');
     x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
-    const solid = H(x.getImageData(0, 0, 64, 64).data);
+    arc(x);
+    const solid = H(x.getImageData(0, 0, 48, 48).data);
     x = new OffscreenCanvas(64, 64).getContext('2d');
     x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
     x.fillStyle = 'rgb(200,100,50)'; x.fillRect(0, 0, 32, 64);
-    self.postMessage({ solid, edge: H(x.getImageData(0, 0, 64, 64).data) }); };`;
+    arc(x);
+    self.postMessage({ solid, edge: H(x.getImageData(0, 0, 48, 48).data) }); };`;
   try {
     const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     w.onmessage = (e) => { out.worker = e.data; resolve(out); };
@@ -319,6 +334,40 @@ ORACLE_CANVAS = """() => {
 }"""
 
 
+# C15: text under ctx.scale(40,40); the ink bounding box's min x / min y.
+SCALED_TEXT = """() => {
+  const c = document.createElement('canvas'); c.width = 300; c.height = 300;
+  const x = c.getContext('2d');
+  x.scale(40, 40); x.font = '4px sans-serif'; x.fillText('H', 1, 5);
+  const d = x.getImageData(0, 0, 300, 300).data;
+  let minx = -1, miny = -1;
+  for (let y = 0; y < 300; y++) for (let i = 0; i < 300; i++)
+    if (d[(y * 300 + i) * 4 + 3] > 0) {
+      if (minx < 0 || i < minx) minx = i;
+      if (miny < 0) miny = y;
+    }
+  return { minx, miny };
+}"""
+
+# C16: a decoded image (of a putImageData random pattern) drawn over an arc.
+DECODED_IMAGE = "async () => {" + HASH_FN + """
+  const src = document.createElement('canvas'); src.width = 64; src.height = 64;
+  const sx = src.getContext('2d');
+  const img = sx.createImageData(64, 64); let s = 12345;
+  for (let i = 0; i < img.data.length; i += 4) {
+    for (let k = 0; k < 3; k++) {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0; img.data[i + k] = s >>> 24; }
+    img.data[i + 3] = 255;
+  }
+  sx.putImageData(img, 0, 0);
+  const im = new Image(); im.src = src.toDataURL('image/png'); await im.decode();
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f60'; x.beginPath(); x.arc(32, 32, 10, 0, 7); x.fill();
+  x.drawImage(im, 0, 0);
+  return H(x.getImageData(0, 0, 64, 64).data);
+}"""
+
 
 def session(config, fn, extra_flags=None, screenshot=False):
     """One content_shell session. Runs page-function `fn` (a JS string) after
@@ -377,8 +426,8 @@ CONVERT_TO_BLOB = f"""() => new Promise((resolve, reject) => {{
     g.addColorStop(0, '#ff2d00'); g.addColorStop(0.5, '#00c853');
     g.addColorStop(1, '#1a2fff');
     ctx.fillStyle = g; ctx.fillRect(0, 0, 300, 200);
-    ctx.fillStyle = '#000'; ctx.font = '22px sans-serif';
-    ctx.fillText('Camoucrome-SP3a', 24, 160);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath();
+    ctx.arc(150, 100, 55, 0, Math.PI * 2); ctx.fill();
     {HASH_FN}
     const rd = (blob) => new Promise((res, rej) => {{
       const fr = new FileReader();
@@ -395,10 +444,17 @@ CONVERT_TO_BLOB = f"""() => new Promise((resolve, reject) => {{
 }})
 """
 seeded_oc, seeded_oc_err = session(CANVAS, CONVERT_TO_BLOB)
+unconf_oc, unconf_oc_err = session(None, CONVERT_TO_BLOB)
+unconf_w, unconf_w_err = session(None, WORKER_READBACK)
 seeded_flat, seeded_flat_err = session(CANVAS, FLAT, extra_flags=GL_FLAGS)
 unconf_flat, unconf_flat_err = session(None, FLAT, extra_flags=GL_FLAGS)
 seeded_rt, seeded_rt_err = session(CANVAS, ROUNDTRIP)
 seeded_copy, seeded_copy_err = session(CANVAS, COPY)
+unconf_scaled, unconf_scaled_err = session(None, SCALED_TEXT)
+seeds_scaled = [session(json.dumps({"canvas:seed": s}), SCALED_TEXT)
+                for s in (987654321, 1, 2, 3)]
+unconf_dec, unconf_dec_err = session(None, DECODED_IMAGE)
+seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
 
@@ -410,17 +466,12 @@ if capture:
         b["toDataURL"] = sha(unconf["d1"])
         b["toBlob"] = sha(unconf["b1"])
         b["getImageData"] = unconf["gi1"]
-    if unconf_gl is not None and "r1" in unconf_gl:
-        b["readPixels"] = unconf_gl["r1"]
-    if seeded_oc is not None:  # OffscreenCanvas has no seed-free host divergence
-        pass
-    # convertToBlob + worker stock refs come from unconfigured runs:
-    oc_stock, _ = session(None, CONVERT_TO_BLOB)
-    if oc_stock is not None:
-        b["convertToBlob"] = oc_stock["o1"]
-    w_stock, _ = session(None, WORKER_READBACK)
-    if w_stock is not None:
-        b["worker"] = w_stock["w1"]
+    # readPixels is the FLAT run's plain clear (the old baseline drawing), not
+    # the gradient triangle C6 draws now.
+    if unconf_flat is not None and isinstance(unconf_flat.get("glClear"), int):
+        b["readPixels"] = unconf_flat["glClear"]
+    else:
+        notes.append("capture: no WebGL clear; baseline readPixels missing")
     if unconf_shot is not None:
         b["screenshot"] = sha(unconf_shot)
     if native is not None:
@@ -448,8 +499,8 @@ C3 = "3  unconfigured toDataURL byte-identical to stock"
 C4 = "4  seeded toBlob deterministic and differs from stock"
 C5 = "5  seeded getImageData deterministic, differs from stock, off==stock"
 C6 = "6  seeded readPixels of a gradient triangle deterministic, differs from unconfigured"
-C7 = "7  seeded OffscreenCanvas.convertToBlob deterministic and differs"
-C8 = "8  worker OffscreenCanvas readback deterministic and differs (parity)"
+C7 = "7  seeded OffscreenCanvas.convertToBlob deterministic, differs from unconfigured"
+C8 = "8  worker OffscreenCanvas readback deterministic, differs from unconfigured (parity)"
 C9 = "9  DevTools screenshot of a text-free scene identical seeded vs unconfigured"
 C10 = "10 accessors native + window keys unchanged"
 
@@ -517,26 +568,24 @@ else:
         notes.append(f"C6: determ={determ} differs={differs}")
 
 # C7 convertToBlob
-if seeded_oc is None or baseline is None:
+if seeded_oc is None or unconf_oc is None:
     results[C7] = False
-    if seeded_oc_err:
-        notes.append(f"C7: {type(seeded_oc_err).__name__}: {seeded_oc_err}")
+    notes.append(f"C7: {seeded_oc_err or unconf_oc_err}")
 else:
     results[C7] = (seeded_oc["o1"] == seeded_oc["o2"]
-                   and seeded_oc["o1"] != bl("convertToBlob"))
+                   and seeded_oc["o1"] != unconf_oc["o1"])
     if not results[C7]:
-        notes.append("C7: convertToBlob not deterministic or equals stock")
+        notes.append("C7: convertToBlob not deterministic or equals unconfigured")
 
 # C8 worker parity
-if seeded_w is None or baseline is None:
+if seeded_w is None or unconf_w is None:
     results[C8] = False
-    if seeded_w_err:
-        notes.append(f"C8: {type(seeded_w_err).__name__}: {seeded_w_err}")
+    notes.append(f"C8: {seeded_w_err or unconf_w_err}")
 else:
     results[C8] = (seeded_w["w1"] == seeded_w["w2"]
-                   and seeded_w["w1"] != bl("worker"))
+                   and seeded_w["w1"] != unconf_w["w1"])
     if not results[C8]:
-        notes.append("C8: worker readback not deterministic or equals stock -- "
+        notes.append("C8: worker readback not deterministic or equals unconfigured -- "
                      "noise did not reach the worker thread")
 
 # C9 screen unchanged
@@ -566,6 +615,8 @@ else:
 C11 = "11 flat drawings read as unconfigured (solid, edge, 1px line, WebGL clear, worker)"
 C12 = "12 putImageData round trip exact"
 C13 = "13 drawImage and createImageBitmap copies agree with getImageData"
+C15 = "15 text under ctx.scale(40,40) lands within 1 device px of unconfigured"
+C16 = "16 decoded image drawn on an eligible canvas reads as unconfigured"
 C14 = "14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock"
 
 # C11 flat drawings (S1)
@@ -607,7 +658,32 @@ else:
                      f"{oracle_stock['text'] in texts}; shape {len(shapes)} distinct, "
                      f"stock among them {oracle_stock['shape'] in shapes}")
 
-EXPECTED = 14
+# C15 text offset in device space
+sc = [v for v, _ in seeds_scaled]
+if unconf_scaled is None or None in sc:
+    results[C15] = False
+    notes.append(f"C15: {unconf_scaled_err or [e for _, e in seeds_scaled if e]}")
+elif unconf_scaled["minx"] < 0:
+    results[C15] = False
+    notes.append("C15: vacuous -- the unconfigured run drew no ink")
+else:
+    deltas = [(v["minx"] - unconf_scaled["minx"], v["miny"] - unconf_scaled["miny"])
+              for v in sc]
+    results[C15] = all(abs(dx) <= 1 and abs(dy) <= 1 for dx, dy in deltas)
+    if not results[C15]:
+        notes.append(f"C15: (dx, dy) per seed {deltas}; unconfigured bbox "
+                     f"({unconf_scaled['minx']}, {unconf_scaled['miny']})")
+
+# C16 decoded image
+if seeded_dec is None or unconf_dec is None:
+    results[C16] = False
+    notes.append(f"C16: {seeded_dec_err or unconf_dec_err}")
+else:
+    results[C16] = seeded_dec == unconf_dec
+    if not results[C16]:
+        notes.append(f"C16: seeded {seeded_dec} != unconfigured {unconf_dec}")
+
+EXPECTED = 16
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
