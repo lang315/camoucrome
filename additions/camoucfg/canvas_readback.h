@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "components/camoucfg/mask_config.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 
 class SkImage;
 
@@ -26,6 +27,18 @@ namespace camoucfg {
 void PerturbCanvasPixels(const SkImage& canvas, uint8_t* pixels, size_t width,
                          size_t height, size_t row_bytes, int x0, int y0,
                          const ConfigScope& scope);
+
+// A raster copy of `canvas` with PerturbRgbaEdges applied to its
+// premultiplied RGBA8 pixels, keyed by `seed` folded with CanvasStateHash of
+// the canvas. nullptr when nothing would change: seed 0, a colour type other
+// than 8-bit RGBA/BGRA (a float canvas stays stock), or a failed read.
+sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
+                           double density, int32_t strength);
+
+// NoisedImage with canvas:seed / canvas:noiseDensity / canvas:noiseStrength
+// from `scope`. The Blink snapshot hook (CanvasRenderingContext::CamouNoised).
+sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
+                                 const ConfigScope& scope);
 
 }  // namespace camoucfg
 
