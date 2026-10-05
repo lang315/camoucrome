@@ -9,6 +9,7 @@
 #include <cmath>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/containers/span.h"
 #include "components/camoucfg/derive.h"
@@ -33,59 +34,80 @@ uint64_t ContentHash(base::span<const uint8_t> data) {
 
 }  // namespace
 
-void PerturbRgbaAt(uint8_t* data, size_t width, size_t height,
-                   size_t row_bytes, int64_t x0, int64_t y0, uint64_t seed,
-                   double density, int32_t strength) {
+void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
+                 uint64_t seed, double density, int32_t strength) {
+  if (seed == 0 || data == nullptr || width == 0 || height == 0 ||
+      row_bytes < width * 4) {
+    return;
+  }
+  // SAFETY: the caller's buffer holds `height` rows of `row_bytes`, the last
+  // one at least width * 4 bytes long.
+  const base::span<const uint8_t> in = UNSAFE_BUFFERS(base::span<const uint8_t>(
+      data, (height - 1) * row_bytes + width * 4));
+  const std::vector<uint8_t> source(in.begin(), in.end());
+  // The pixels alone, row by row: the field must not depend on the padding.
+  std::vector<uint8_t> tight;
+  tight.reserve(width * height * 4);
+  for (size_t y = 0; y < height; ++y) {
+    const auto row = in.subspan(y * row_bytes, width * 4);
+    tight.insert(tight.end(), row.begin(), row.end());
+  }
+  // Fold content into the seed: same drawing reproduces, different drawings
+  // diverge.
+  PerturbRgbaEdges(data, source.data(), width, height, row_bytes,
+                   seed ^ ContentHash(tight), density, strength,
+                   /*min_alpha=*/255);
+}
+
+void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
+                      size_t height, size_t row_bytes, uint64_t seed,
+                      double density, int32_t strength, uint8_t min_alpha) {
   // NaN-safe: !(density > 0) catches it.
-  if (seed == 0 || data == nullptr || !(density > 0.0) || strength <= 0) {
+  if (seed == 0 || data == nullptr || source == nullptr || !(density > 0.0) ||
+      strength <= 0 || width < 3 || height < 3) {
     return;
   }
   density = std::min(density, 1.0);
   strength = std::min(strength, 255);
+  min_alpha = std::max<uint8_t>(min_alpha, 1);
   static constexpr std::array<std::string_view, 3> kGate = {
       "canvas-gate-r", "canvas-gate-g", "canvas-gate-b"};
   static constexpr std::array<std::string_view, 3> kDelta = {
       "canvas-r", "canvas-g", "canvas-b"};
-  for (size_t r = 0; r < height; ++r) {
-    // SAFETY: the caller's buffer holds `height` rows of `row_bytes`, each at
-    // least `width` * 4 bytes.
-    base::span<uint8_t> row =
-        UNSAFE_BUFFERS(base::span(data + r * row_bytes, width * 4));
-    const uint32_t y = static_cast<uint32_t>(y0 + static_cast<int64_t>(r));
-    for (size_t c = 0; c < width; ++c) {
-      base::span<uint8_t> px = row.subspan(c * 4, 4u);
-      // Only opaque pixels: stock never shows RGB under alpha 0, and an
-      // unpremultiplied value under a partial alpha sits on a grid that a
-      // +-1 step would leave.
-      if (px[3] != 255) {
+  const size_t size = (height - 1) * row_bytes + width * 4;
+  // SAFETY: both buffers hold `height` rows of `row_bytes`, each at least
+  // `width` * 4 bytes.
+  const base::span<const uint8_t> src =
+      UNSAFE_BUFFERS(base::span<const uint8_t>(source, size));
+  const base::span<uint8_t> dst = UNSAFE_BUFFERS(base::span(data, size));
+  auto at = [&](size_t x, size_t y) {
+    return src.subspan(y * row_bytes + x * 4, 4u);
+  };
+  for (size_t y = 1; y + 1 < height; ++y) {
+    for (size_t x = 1; x + 1 < width; ++x) {
+      const base::span<const uint8_t> px = at(x, y);
+      const uint8_t alpha = px[3];
+      if (alpha < min_alpha || std::ranges::equal(px, at(x - 1, y)) ||
+          std::ranges::equal(px, at(x + 1, y)) ||
+          std::ranges::equal(px, at(x, y - 1)) ||
+          std::ranges::equal(px, at(x, y + 1))) {
         continue;
       }
-      const uint32_t x = static_cast<uint32_t>(x0 + static_cast<int64_t>(c));
-      // The canvas position, not the index in this buffer: any rect of the
-      // same canvas state reads the same noise for the same pixel.
-      const uint64_t index = (uint64_t{x} << 32) | y;
+      // The position, not the index in the buffer: every reader of one
+      // canvas state gets the same noise on the same pixel.
+      const uint64_t index =
+          (uint64_t{static_cast<uint32_t>(x)} << 32) | static_cast<uint32_t>(y);
+      base::span<uint8_t> out = dst.subspan(y * row_bytes + x * 4, 4u);
       for (size_t ch = 0; ch < 3; ++ch) {
         if (DeriveUnit(seed, kGate[ch], index) >= density) {
           continue;
         }
-        const int32_t v = int32_t{px[ch]} + DeriveDelta(seed, kDelta[ch], index,
-                                                        strength);
-        px[ch] = static_cast<uint8_t>(std::clamp(v, 0, 255));
+        const int32_t v =
+            int32_t{px[ch]} + DeriveDelta(seed, kDelta[ch], index, strength);
+        out[ch] = static_cast<uint8_t>(std::clamp(v, 0, int32_t{alpha}));
       }
     }
   }
-}
-
-void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
-                 int32_t strength) {
-  if (seed == 0 || data == nullptr || length < 4) {
-    return;
-  }
-  // Fold content into the seed: same drawing reproduces, different drawings
-  // diverge.
-  const uint64_t eseed =
-      seed ^ ContentHash(UNSAFE_BUFFERS(base::span<const uint8_t>(data, length)));
-  PerturbRgbaAt(data, length / 4, 1, length, 0, 0, eseed, density, strength);
 }
 
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
@@ -117,41 +139,24 @@ uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
   return h;
 }
 
-namespace {
-
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
-void NoiseParams(const ConfigScope& scope, double& density, int32_t& strength) {
-  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.0005);
+void CanvasNoiseParams(const ConfigScope& scope, double& density,
+                       int32_t& strength) {
+  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.04);
   strength = GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
 }
 
-}  // namespace
-
-void PerturbRgbaFromConfig(uint8_t* data, size_t length,
-                           const ConfigScope& scope) {
+void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
+                           size_t row_bytes, const ConfigScope& scope) {
   const uint64_t seed = CanvasSeed(scope);
   if (seed == 0) {
     return;  // spoof off -> byte-identical to stock (rule 5)
   }
   double density;
   int32_t strength;
-  NoiseParams(scope, density, strength);
-  PerturbRgba(data, length, seed, density, strength);
-}
-
-void PerturbRgbaAtFromConfig(uint8_t* data, size_t width, size_t height,
-                             size_t row_bytes, int64_t x0, int64_t y0,
-                             uint64_t state_hash, const ConfigScope& scope) {
-  const uint64_t seed = CanvasSeed(scope);
-  if (seed == 0) {
-    return;  // spoof off -> byte-identical to stock (rule 5)
-  }
-  double density;
-  int32_t strength;
-  NoiseParams(scope, density, strength);
-  PerturbRgbaAt(data, width, height, row_bytes, x0, y0, seed ^ state_hash,
-                density, strength);
+  CanvasNoiseParams(scope, density, strength);
+  PerturbRgba(data, width, height, row_bytes, seed, density, strength);
 }
 
 double PerturbMetric(double stock, uint64_t seed, uint64_t index,
@@ -169,6 +174,18 @@ double PerturbMetric(double stock, uint64_t seed, uint64_t index,
 
 uint64_t CanvasSeed(const ConfigScope& scope) {
   return GetUint32(scope, keys::kCanvasSeed).value_or(0);
+}
+
+std::array<float, 2> TextOffset(uint64_t seed) {
+  if (seed == 0) {
+    return {0.0f, 0.0f};
+  }
+  // A double just below 1 rounds to 1.0f; keep the result in [0, 1).
+  auto unit = [seed](std::string_view domain) {
+    return std::min(static_cast<float>(DeriveUnit(seed, domain, 0)),
+                    std::nextafter(1.0f, 0.0f));
+  };
+  return {unit("canvas-text-offset-x"), unit("canvas-text-offset-y")};
 }
 
 }  // namespace camoucfg

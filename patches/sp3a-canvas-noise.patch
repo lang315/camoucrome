@@ -22,226 +22,354 @@ index fe99fbb833..571377b3c4 100644
      "//components/paint_preview/common",
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
-diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 6a5f09ae85..e0dad920c6 100644
---- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-+++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-@@ -121,6 +121,12 @@
- #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
- #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
- #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
-+#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
-+#include "third_party/skia/include/core/SkBitmap.h"
-+#include "third_party/skia/include/core/SkImage.h"
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+index 150d03eafd..aa3b70026c 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+@@ -27,6 +27,9 @@
+ 
+ #include "base/byte_size.h"
+ #include "base/strings/stringprintf.h"
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
 +#include "components/camoucfg/canvas_readback.h"
- #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_to_video_frame_copier.h"
- #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
- #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
-@@ -1404,6 +1410,52 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
-   return image_bitmap;
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/platform/platform.h"
+@@ -38,6 +41,8 @@
+ #include "third_party/blink/renderer/core/html/canvas/element_image.h"
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_accessibility_manager.h"
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
++#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/blink/renderer/core/layout/layout_box.h"
+ #include "third_party/blink/renderer/core/layout/layout_object.h"
+ #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
+@@ -551,4 +556,44 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
+   return *monitor;
  }
  
-+namespace {
-+
-+// Camoucrome canvas readback noise (SP3a). Perturbs a COPY of the snapshot
-+// pixels leaving the canvas -- never the canvas's own store -- so on-screen
-+// output is unchanged. With canvas:seed unset/zero the image is returned
-+// untouched, so an unconfigured build is byte-identical to stock (SP3 rule 5).
-+// The noise is keyed by canvas position and canvas state
-+// (camoucfg::PerturbCanvasPixels), so this whole-canvas read agrees pixel for
-+// pixel with any getImageData of the same state.
-+scoped_refptr<StaticBitmapImage> PerturbCanvasReadback(
-+    scoped_refptr<StaticBitmapImage> image,
-+    ExecutionContext* execution_context) {
-+  const camoucfg::ConfigScope& camou_scope =
-+      camoucfg::ScopeFor(execution_context);
-+  if (!image || !camoucfg::CanvasSeed(camou_scope)) {
++scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
++    scoped_refptr<StaticBitmapImage> image) {
++  if (!image || !Host() || !CamouNoiseEligible()) {
 +    return image;
++  }
++  const camoucfg::ConfigScope& scope =
++      camoucfg::ScopeFor(Host()->GetTopExecutionContext());
++  if (!camoucfg::CanvasSeed(scope)) {
++    return image;  // spoof off -> byte-identical to stock (rule 5)
++  }
++  // One entry, checked before any readback: a page that reads or copies one
++  // unchanged canvas again (getImageData(x, y, 1, 1) in a loop, drawImage of
++  // a sprite canvas every frame) gets the cached field without another GPU
++  // readback or noise pass. The source is held, so a new image cannot reuse
++  // its identity.
++  if (camou_noised_ && camou_noised_source_ == image) {
++    return UnacceleratedStaticBitmapImage::Create(camou_noised_,
++                                                  image->Orientation());
 +  }
 +  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
 +  if (!sk_image) {
 +    return image;
 +  }
-+  // 8-bit canvases only; a float (kRGBA_F16) canvas is left byte-identical to
-+  // stock. The copy is RGBA whatever the backing order (BGRA on macOS and
-+  // Windows), because the noise is per channel and getImageData reads RGBA.
-+  const SkColorType camou_ct = sk_image->colorType();
-+  if (camou_ct != kRGBA_8888_SkColorType &&
-+      camou_ct != kBGRA_8888_SkColorType) {
-+    return image;
++  // A new wrapper around the same raster snapshot (a CPU canvas) keeps the
++  // same field.
++  if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID()) {
++    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(*sk_image, scope);
++    if (!noised) {
++      return image;
++    }
++    camou_noised_from_ = sk_image->uniqueID();
++    camou_noised_ = std::move(noised);
 +  }
-+  SkBitmap bitmap;
-+  if (!bitmap.tryAllocPixels(
-+          sk_image->imageInfo().makeColorType(kRGBA_8888_SkColorType)) ||
-+      !sk_image->readPixels(bitmap.pixmap(), 0, 0)) {
-+    return image;
-+  }
-+  camoucfg::PerturbCanvasPixels(*sk_image,
-+                                static_cast<uint8_t*>(bitmap.getPixels()),
-+                                bitmap.width(), bitmap.height(),
-+                                bitmap.rowBytes(), 0, 0, camou_scope);
-+  bitmap.setImmutable();
-+  return UnacceleratedStaticBitmapImage::Create(
-+      SkImages::RasterFromBitmap(bitmap), image->Orientation());
++  camou_noised_source_ = image;
++  // A fresh wrapper per call, as stock hands out per snapshot:
++  // ImageBitmap::Transfer() may detach the one it receives.
++  return UnacceleratedStaticBitmapImage::Create(camou_noised_,
++                                                image->Orientation());
 +}
 +
-+}  // namespace
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+index 6495e3c54b..28a42cee52 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+@@ -39,11 +39,13 @@
+ #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
+ #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
+ #include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
++#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+ #include "third_party/blink/renderer/platform/heap/member.h"
+ #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
+ #include "third_party/blink/renderer/platform/heap/visitor.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
+ #include "third_party/skia/include/core/SkData.h"
++#include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkRect.h"
+ #include "third_party/skia/include/core/SkRefCnt.h"
+@@ -169,6 +171,18 @@ class CORE_EXPORT CanvasRenderingContext
+   virtual bool IsOpaque() const = 0;
+ 
+   virtual scoped_refptr<StaticBitmapImage> GetImage() = 0;
 +
- String HTMLCanvasElement::ToDataURLInternal(
-     const String& mime_type,
-     const double& quality,
-@@ -1416,6 +1468,8 @@ String HTMLCanvasElement::ToDataURLInternal(
++  // Camoucrome canvas readback noise (SP3a): `image` with one noise field
++  // per canvas state when CamouNoiseEligible() and canvas:seed is set,
++  // otherwise `image` itself. Every consumer of this context's pixels
++  // (getImageData, toDataURL, toBlob, convertToBlob, GetSourceImageForCanvas)
++  // calls it on the snapshot it takes, so they all read the same field. The
++  // canvas's own store, and so the screen, is never touched.
++  scoped_refptr<StaticBitmapImage> CamouNoised(
++      scoped_refptr<StaticBitmapImage> image);
++  // Whether readback noise may touch this context's pixels. A context type
++  // opts in.
++  virtual bool CamouNoiseEligible() const { return false; }
+   virtual bool IsComposited() const = 0;
+ 
+   // Called when the entire tab is backgrounded or unbackgrounded.
+@@ -374,6 +388,12 @@ class CORE_EXPORT CanvasRenderingContext
+   bool is_context_being_restored_ = false;
+ 
+   void RecordUKMCanvasAccessibility();
++
++  // CamouNoised()'s one-entry cache: the last source snapshot, the uniqueID
++  // of its raster form, and the noised raster image.
++  scoped_refptr<StaticBitmapImage> camou_noised_source_;
++  uint32_t camou_noised_from_ = 0;
++  sk_sp<SkImage> camou_noised_;
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 6a5f09ae85..4e556ad922 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -1416,6 +1416,9 @@ String HTMLCanvasElement::ToDataURLInternal(
        ImageEncoderUtils::ToEncodingMimeType(mime_type);
  
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
-+  image_bitmap = PerturbCanvasReadback(std::move(image_bitmap),
-+                                       GetExecutionContext());
++  if (context_ && !HasOffscreenCanvasFrame()) {
++    image_bitmap = context_->CamouNoised(std::move(image_bitmap));
++  }
    if (image_bitmap) {
      std::unique_ptr<ImageDataBuffer> data_buffer =
          ImageDataBuffer::Create(image_bitmap);
-@@ -1520,6 +1574,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+@@ -1520,6 +1523,9 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
  
    CanvasAsyncBlobCreator* async_creator = nullptr;
    scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
-+  image_bitmap = PerturbCanvasReadback(std::move(image_bitmap),
-+                                       GetExecutionContext());
++  if (context_ && !HasOffscreenCanvasFrame()) {
++    image_bitmap = context_->CamouNoised(std::move(image_bitmap));
++  }
    if (image_bitmap) {
      auto* options = ImageEncodeOptions::Create();
      options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+@@ -2002,6 +2008,9 @@ HTMLCanvasElement::GetSourceImageForCanvasInternal(SourceImageStatus* status) {
+       // This is either CanvasRenderingContext2D or ImageBitmapRenderingContext.
+       image = RenderingContext()->GetImage();
+     }
++    if (RenderingContext()) {
++      image = RenderingContext()->CamouNoised(std::move(image));
++    }
+     if (!image) {
+       image = GetTransparentImage();
+     }
 diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-index f81d66014f..65f2b2470b 100644
+index f81d66014f..6cd729f261 100644
 --- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 +++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-@@ -49,6 +49,11 @@
- #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
- #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
- #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
-+#include "third_party/skia/include/core/SkBitmap.h"
-+#include "third_party/skia/include/core/SkImage.h"
-+#include "components/camoucfg/blink_scope.h"
-+#include "components/camoucfg/canvas_noise.h"
-+#include "components/camoucfg/canvas_readback.h"
- #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
- #include "third_party/blink/renderer/platform/heap/thread_state.h"
- #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
-@@ -507,6 +512,52 @@ void OffscreenCanvas::clearElementGeometry(
+@@ -406,6 +406,7 @@ scoped_refptr<Image> OffscreenCanvas::GetSourceImageForCanvas(
+   } else {
+     image = RenderingContext()->GetImage();
    }
- }
- 
-+namespace {
-+
-+// Camoucrome canvas readback noise (SP3a). Perturbs a COPY of the snapshot
-+// pixels leaving the canvas -- never the canvas's own store -- so on-screen
-+// output is unchanged. With canvas:seed unset/zero the image is returned
-+// untouched, so an unconfigured build is byte-identical to stock (SP3 rule 5).
-+// The noise is keyed by canvas position and canvas state
-+// (camoucfg::PerturbCanvasPixels), so this whole-canvas read agrees pixel for
-+// pixel with any getImageData of the same state.
-+scoped_refptr<StaticBitmapImage> PerturbCanvasReadback(
-+    scoped_refptr<StaticBitmapImage> image,
-+    ExecutionContext* execution_context) {
-+  const camoucfg::ConfigScope& camou_scope =
-+      camoucfg::ScopeFor(execution_context);
-+  if (!image || !camoucfg::CanvasSeed(camou_scope)) {
-+    return image;
-+  }
-+  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
-+  if (!sk_image) {
-+    return image;
-+  }
-+  // 8-bit canvases only; a float (kRGBA_F16) canvas is left byte-identical to
-+  // stock. The copy is RGBA whatever the backing order (BGRA on macOS and
-+  // Windows), because the noise is per channel and getImageData reads RGBA.
-+  const SkColorType camou_ct = sk_image->colorType();
-+  if (camou_ct != kRGBA_8888_SkColorType &&
-+      camou_ct != kBGRA_8888_SkColorType) {
-+    return image;
-+  }
-+  SkBitmap bitmap;
-+  if (!bitmap.tryAllocPixels(
-+          sk_image->imageInfo().makeColorType(kRGBA_8888_SkColorType)) ||
-+      !sk_image->readPixels(bitmap.pixmap(), 0, 0)) {
-+    return image;
-+  }
-+  camoucfg::PerturbCanvasPixels(*sk_image,
-+                                static_cast<uint8_t*>(bitmap.getPixels()),
-+                                bitmap.width(), bitmap.height(),
-+                                bitmap.rowBytes(), 0, 0, camou_scope);
-+  bitmap.setImmutable();
-+  return UnacceleratedStaticBitmapImage::Create(
-+      SkImages::RasterFromBitmap(bitmap), image->Orientation());
-+}
-+
-+}  // namespace
-+
- ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
-     ScriptState* script_state,
-     const ImageEncodeOptions* options,
-@@ -554,6 +605,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
++  image = RenderingContext()->CamouNoised(std::move(image));
+   if (!image) {
+     image = CreateTransparentImage();
+   }
+@@ -554,6 +555,7 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
  
    base::TimeTicks start_time = base::TimeTicks::Now();
    scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
-+  image_bitmap = PerturbCanvasReadback(std::move(image_bitmap),
-+                                       GetTopExecutionContext());
++  image_bitmap = context_->CamouNoised(std::move(image_bitmap));
    if (image_bitmap) {
      auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
          script_state, exception_state.GetContext());
 diff --git a/third_party/blink/renderer/modules/canvas/BUILD.gn b/third_party/blink/renderer/modules/canvas/BUILD.gn
-index 1d29be2717..aa8f86ef07 100644
+index 1d29be2717..327256df25 100644
 --- a/third_party/blink/renderer/modules/canvas/BUILD.gn
 +++ b/third_party/blink/renderer/modules/canvas/BUILD.gn
-@@ -58,6 +58,8 @@ blink_modules_sources("canvas") {
+@@ -58,6 +58,7 @@ blink_modules_sources("canvas") {
    ]
  
    deps = [
 +    "//components/camoucfg",
-+    "//components/camoucfg:canvas_readback",
      "//third_party/blink/renderer/modules/webcodecs",
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 3d7a843995..8a8b76494b 100644
+index 3d7a843995..3b6995e00c 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -4,6 +4,10 @@
+@@ -4,6 +4,9 @@
  
  #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
  
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
-+#include "components/camoucfg/canvas_readback.h"
 +
  #include <cmath>
  #include <cstdint>
  #include <cstdlib>
-@@ -518,6 +522,25 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -469,7 +472,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
      }
    }
  
-+  // Camoucrome: perturb the JS-visible getImageData buffer at readback.
-+  // No-op when canvas:seed is unset (rule 5); RGBA8 storage only (a float
-+  // ImageData is left untouched). Operates on the returned copy, never the
-+  // canvas's own store, so screen output is unchanged. The noise is keyed by
-+  // canvas position (sx, sy) and the whole snapshot's state, so any rect,
-+  // and toDataURL, agree on every pixel of one canvas state.
-+  if (auto* ec = GetTopExecutionContext();
-+      ec && snapshot && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec))) {
-+    SkPixmap pm = image_data->GetSkPixmap();
-+    sk_sp<SkImage> camou_canvas =
-+        snapshot->PaintImageForCurrentFrame().GetSwSkImage();
-+    if (pm.colorType() == kRGBA_8888_SkColorType && camou_canvas) {
-+      camoucfg::PerturbCanvasPixels(
-+          *camou_canvas, static_cast<uint8_t*>(pm.writable_addr()),
-+          pm.width(), pm.height(), pm.rowBytes(), sx, sy,
-+          camoucfg::ScopeFor(ec));
+-  scoped_refptr<StaticBitmapImage> snapshot = GetImage();
++  scoped_refptr<StaticBitmapImage> snapshot = CamouNoised(GetImage());
+ 
+   // Determine if the array should be zero initialized, or if it will be
+   // completely overwritten.
+@@ -624,6 +627,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
+ void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
+                                           const gfx::Rect& source_rect,
+                                           const gfx::Vector2d& dest_offset) {
++  camou_imported_pixels_ = true;
+   DCHECK(gfx::Rect(source.width(), source.height()).Contains(source_rect));
+   int dest_x = dest_offset.x() + source_rect.x();
+   DCHECK_GE(dest_x, 0);
+@@ -1089,6 +1093,31 @@ void BaseRenderingContext2D::DrawTextInternal(
+   }
+ 
+   location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
++  // Camoucrome canvas noise redesign: the text origin moves by a
++  // per-profile sub-pixel offset, so text rasterises differently per
++  // canvas:seed at draw time and every readback and copy agrees. No-op
++  // without canvas:seed (rule 5).
++  // The offset is in device pixels: it is mapped back through the inverse of
++  // the transform's linear part, so a scaled or rotated context still moves
++  // the glyphs by less than one device pixel (a page cannot magnify it with
++  // ctx.scale() and read the profile's offset back).
++  {
++    const std::array<float, 2> camou_offset = camoucfg::TextOffset(
++        camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())));
++    const AffineTransform& camou_t = state.GetTransform();
++    const double camou_det =
++        camou_t.A() * camou_t.D() - camou_t.B() * camou_t.C();
++    if ((camou_offset[0] != 0 || camou_offset[1] != 0) &&
++        std::isfinite(camou_det) && camou_det != 0) {
++      location.Offset(
++          ClampTo<float>((camou_t.D() * camou_offset[0] -
++                          camou_t.C() * camou_offset[1]) /
++                         camou_det),
++          ClampTo<float>((camou_t.A() * camou_offset[1] -
++                          camou_t.B() * camou_offset[0]) /
++                         camou_det));
 +    }
 +  }
-+
-   return image_data;
- }
  
+   if (host && host->ShouldCaptureRenderedText()) {
+     gfx::RectF exact_bounds = bounds;
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
+index e3a1ba84d9..1fda96aa26 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
+@@ -256,6 +256,10 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
+   bool IsOpaque() const final {
+     return color_params_.GetAlphaType() == kOpaque_SkAlphaType;
+   }
++  // Camoucrome canvas readback noise: imported pixels read as stock.
++  bool CamouNoiseEligible() const override {
++    return camou_aa_geometry_ && !camou_imported_pixels_;
++  }
+   void DisableAccelerationForCanvas2D() final { DisableAcceleration(); }
+   void PageVisibilityChanged() override {}
+   void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+index 332d1f5c54..954cf935b7 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -828,6 +828,8 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
+ 
+ void Canvas2DRecorderContext::ResetInternal() {
+   ValidateStateStack();
++  camou_imported_pixels_ = false;
++  camou_aa_geometry_ = false;
+   state_stack_.resize(1);
+   state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
+   layer_count_ = 0;
+@@ -1590,6 +1592,12 @@ void Canvas2DRecorderContext::DrawPathInternal(
+       std::isnan(bounds.width()) || std::isnan(bounds.height())) {
+     return;
+   }
++  if (path.IsArc() || GetState().GetTransform().B() != 0 ||
++      GetState().GetTransform().C() != 0 ||
++      (!path.IsLine() && (path.GetPath().GetSkPath().getSegmentMasks() &
++                          ~SkPath::kLine_SegmentMask))) {
++    camou_aa_geometry_ = true;
++  }
+ 
+   if (paint_type == CanvasRenderingContext2DState::kStrokePaintType) {
+     // Zero-size bounds mean all path points are coincident — a degenerate
+@@ -1722,6 +1730,9 @@ void Canvas2DRecorderContext::fillRect(double x,
+   if (!ValidateRectForCanvas(x, y, width, height)) {
+     return;
+   }
++  if (GetState().GetTransform().B() != 0 || GetState().GetTransform().C() != 0) {
++    camou_aa_geometry_ = true;  // a rect under rotation or skew
++  }
+ 
+   if (!GetOrCreatePaintCanvas()) {
+     return;
+@@ -1785,6 +1796,9 @@ void Canvas2DRecorderContext::strokeRect(double x,
+   if (!ValidateRectForCanvas(x, y, width, height)) {
+     return;
+   }
++  if (GetState().GetTransform().B() != 0 || GetState().GetTransform().C() != 0) {
++    camou_aa_geometry_ = true;  // a rect under rotation or skew
++  }
+ 
+   if (!GetOrCreatePaintCanvas()) {
+     return;
+@@ -2315,6 +2329,8 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
+     return;
+   }
+ 
++  camou_imported_pixels_ = true;
++
+   ValidateStateStack();
+ 
+   WillDrawImage(image_source, image && image->IsTextureBacked());
+@@ -2504,6 +2520,8 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
+     return nullptr;
+   }
+ 
++  camou_imported_pixels_ = true;
++
+   bool origin_clean = !WouldTaintCanvasOrigin(image_source);
+   return MakeGarbageCollected<CanvasPattern>(std::move(image_for_rendering),
+                                              repeat_mode, origin_clean);
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+index 6ee4b2b0d1..77954897da 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+@@ -400,6 +400,17 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
+   const Font* AccessFont(HTMLCanvasElement* canvas);
+ 
++  // Camoucrome canvas readback noise: the canvas holds pixels from a
++  // putImageData, or from any drawImage or createPattern source (an image,
++  // video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap): a page
++  // may know their exact values, or they may already carry noise, so such a
++  // canvas carries no readback noise.
++  bool camou_imported_pixels_ = false;
++  // Camoucrome: the canvas holds anti-aliased geometry (curves, or fills
++  // and strokes under a non-axis-aligned transform). The text offset does
++  // not reach it, so readback noise may touch it.
++  bool camou_aa_geometry_ = false;
++
+   ALWAYS_INLINE CanvasRenderingContext2DState& GetState() const {
+     return *state_stack_.back();
+   }
 diff --git a/third_party/blink/renderer/modules/webgl/BUILD.gn b/third_party/blink/renderer/modules/webgl/BUILD.gn
 index d611207944..f7a94aebbe 100644
 --- a/third_party/blink/renderer/modules/webgl/BUILD.gn
@@ -255,7 +383,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..91f4b179a6 100644
+index 26c0a088cc..1b2b54ce98 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,9 @@
@@ -268,7 +396,7 @@ index 26c0a088cc..91f4b179a6 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,30 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5359,60 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -277,8 +405,7 @@ index 26c0a088cc..91f4b179a6 100644
 +  // the fingerprint-relevant RGBA / UNSIGNED_BYTE case only (other formats,
 +  // the zero-pixel throwaway path in `buffer`, and reads from a user-bound
 +  // framebuffer -- app-owned data, not a fingerprint surface -- are untouched).
-+  // Assumes default PACK alignment (RGBA8 rows are 4-aligned). No-op when
-+  // canvas:seed is unset.
++  // No-op when canvas:seed is unset.
 +  //
 +  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
 +  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
@@ -289,13 +416,58 @@ index 26c0a088cc..91f4b179a6 100644
 +  // scope note and spec 7.4.
 +  if (!buffer && !framebuffer && format == GL_RGBA &&
 +      type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
-+    if (auto* ec = Host()->GetTopExecutionContext()) {
-+      const size_t byte_len =
-+          static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-+      camoucfg::PerturbRgbaFromConfig(data, byte_len,
-+                                      camoucfg::ScopeFor(ec));
++    // The noise goes on the in-buffer part of the rect, at the real pack
++    // layout (PACK_ALIGNMENT, WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS /
++    // SKIP_ROWS): a read in any layout gets the same field on the same
++    // pixels, and no layout returns the clean render. readPixels has already
++    // validated the destination size against this layout.
++    const WebGLImageConversion::PixelStoreParams camou_pack =
++        GetPackPixelStoreParams();
++    const int64_t camou_stride_px =
++        camou_pack.row_length > 0 ? camou_pack.row_length : width;
++    const int64_t camou_align = std::max<int64_t>(camou_pack.alignment, 1);
++    const int64_t camou_row_bytes =
++        (camou_stride_px * 4 + camou_align - 1) / camou_align * camou_align;
++    const int64_t camou_x0 = std::max<int64_t>(x, 0);
++    const int64_t camou_y0 = std::max<int64_t>(y, 0);
++    const int64_t camou_x1 =
++        std::min<int64_t>(int64_t{x} + width, drawingBufferWidth());
++    const int64_t camou_y1 =
++        std::min<int64_t>(int64_t{y} + height, drawingBufferHeight());
++    // GL rejects (INVALID_OPERATION, nothing written) a layout where the
++    // skipped pixels plus the rect do not fit one row; noise must not touch
++    // such a buffer.
++    if (int64_t{camou_pack.skip_pixels} + width <= camou_stride_px &&
++        camou_x1 > camou_x0 && camou_y1 > camou_y0) {
++      if (auto* ec = Host()->GetTopExecutionContext()) {
++        const int64_t camou_offset =
++            (int64_t{camou_pack.skip_rows} + (camou_y0 - y)) *
++                camou_row_bytes +
++            (int64_t{camou_pack.skip_pixels} + (camou_x0 - x)) * 4;
++        // SAFETY: readPixels validated the destination against this pack
++        // layout, and the offset lies inside the validated region.
++        uint8_t* camou_dst = UNSAFE_BUFFERS(data + camou_offset);
++        camoucfg::PerturbRgbaFromConfig(
++            camou_dst, static_cast<size_t>(camou_x1 - camou_x0),
++            static_cast<size_t>(camou_y1 - camou_y0),
++            static_cast<size_t>(camou_row_bytes), camoucfg::ScopeFor(ec));
++      }
 +    }
 +  }
  }
  
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+index faecaeadae..e769f5ea6b 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+@@ -640,6 +640,9 @@ class MODULES_EXPORT WebGLRenderingContextBase
+ 
+   bool IsOpaque() const override;
+   scoped_refptr<StaticBitmapImage> GetImage() override;
++  // Camoucrome canvas readback noise: a WebGL canvas's snapshot gets the
++  // same edge-only noise as a 2D canvas's.
++  bool CamouNoiseEligible() const override { return true; }
+   void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) override;
+ 
+   V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret getHTMLOrOffscreenCanvas(
