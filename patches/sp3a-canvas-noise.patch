@@ -23,7 +23,7 @@ index fe99fbb833..571377b3c4 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index 150d03eafd..21ee1f3ff2 100644
+index 150d03eafd..aa3b70026c 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 @@ -27,6 +27,9 @@
@@ -45,7 +45,7 @@ index 150d03eafd..21ee1f3ff2 100644
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
-@@ -551,4 +556,34 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
+@@ -551,4 +556,44 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
    return *monitor;
  }
  
@@ -59,32 +59,42 @@ index 150d03eafd..21ee1f3ff2 100644
 +  if (!camoucfg::CanvasSeed(scope)) {
 +    return image;  // spoof off -> byte-identical to stock (rule 5)
 +  }
++  // One entry, checked before any readback: a page that reads or copies one
++  // unchanged canvas again (getImageData(x, y, 1, 1) in a loop, drawImage of
++  // a sprite canvas every frame) gets the cached field without another GPU
++  // readback or noise pass. The source is held, so a new image cannot reuse
++  // its identity.
++  if (camou_noised_ && camou_noised_source_ == image) {
++    return UnacceleratedStaticBitmapImage::Create(camou_noised_,
++                                                  image->Orientation());
++  }
 +  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
 +  if (!sk_image) {
 +    return image;
 +  }
-+  // One entry: a page reading one canvas pixel by pixel would otherwise pay a
-+  // full-canvas noise pass per call, and that cost is itself observable. A
-+  // snapshot of an unchanged canvas is the same SkImage.
-+  if (camou_noised_ && camou_noised_from_ == sk_image->uniqueID()) {
-+    return camou_noised_;
++  // A new wrapper around the same raster snapshot (a CPU canvas) keeps the
++  // same field.
++  if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID()) {
++    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(*sk_image, scope);
++    if (!noised) {
++      return image;
++    }
++    camou_noised_from_ = sk_image->uniqueID();
++    camou_noised_ = std::move(noised);
 +  }
-+  sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(*sk_image, scope);
-+  if (!noised) {
-+    return image;
-+  }
-+  camou_noised_from_ = sk_image->uniqueID();
-+  camou_noised_ = UnacceleratedStaticBitmapImage::Create(
-+      std::move(noised), image->Orientation());
-+  return camou_noised_;
++  camou_noised_source_ = image;
++  // A fresh wrapper per call, as stock hands out per snapshot:
++  // ImageBitmap::Transfer() may detach the one it receives.
++  return UnacceleratedStaticBitmapImage::Create(camou_noised_,
++                                                image->Orientation());
 +}
 +
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index 6495e3c54b..a1d8c3da6e 100644
+index 6495e3c54b..28a42cee52 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-@@ -39,6 +39,7 @@
+@@ -39,11 +39,13 @@
  #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
  #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
  #include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
@@ -92,7 +102,13 @@ index 6495e3c54b..a1d8c3da6e 100644
  #include "third_party/blink/renderer/platform/heap/member.h"
  #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
  #include "third_party/blink/renderer/platform/heap/visitor.h"
-@@ -169,6 +170,18 @@ class CORE_EXPORT CanvasRenderingContext
+ #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
+ #include "third_party/skia/include/core/SkData.h"
++#include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkRect.h"
+ #include "third_party/skia/include/core/SkRefCnt.h"
+@@ -169,6 +171,18 @@ class CORE_EXPORT CanvasRenderingContext
    virtual bool IsOpaque() const = 0;
  
    virtual scoped_refptr<StaticBitmapImage> GetImage() = 0;
@@ -111,14 +127,16 @@ index 6495e3c54b..a1d8c3da6e 100644
    virtual bool IsComposited() const = 0;
  
    // Called when the entire tab is backgrounded or unbackgrounded.
-@@ -374,6 +387,10 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -374,6 +388,12 @@ class CORE_EXPORT CanvasRenderingContext
    bool is_context_being_restored_ = false;
  
    void RecordUKMCanvasAccessibility();
 +
-+  // The last snapshot CamouNoised() noised, and its result.
++  // CamouNoised()'s one-entry cache: the last source snapshot, the uniqueID
++  // of its raster form, and the noised raster image.
++  scoped_refptr<StaticBitmapImage> camou_noised_source_;
 +  uint32_t camou_noised_from_ = 0;
-+  scoped_refptr<StaticBitmapImage> camou_noised_;
++  sk_sp<SkImage> camou_noised_;
  };
  
  }  // namespace blink
@@ -177,15 +195,14 @@ index f81d66014f..6cd729f261 100644
      auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
          script_state, exception_state.GetContext());
 diff --git a/third_party/blink/renderer/modules/canvas/BUILD.gn b/third_party/blink/renderer/modules/canvas/BUILD.gn
-index 1d29be2717..aa8f86ef07 100644
+index 1d29be2717..327256df25 100644
 --- a/third_party/blink/renderer/modules/canvas/BUILD.gn
 +++ b/third_party/blink/renderer/modules/canvas/BUILD.gn
-@@ -58,6 +58,8 @@ blink_modules_sources("canvas") {
+@@ -58,6 +58,7 @@ blink_modules_sources("canvas") {
    ]
  
    deps = [
 +    "//components/camoucfg",
-+    "//components/camoucfg:canvas_readback",
      "//third_party/blink/renderer/modules/webcodecs",
      "//third_party/blink/renderer/modules/webgpu",
    ]
