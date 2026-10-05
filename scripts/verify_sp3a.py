@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Ten criteria, all driven with Playwright's sync API over content_shell's CDP,
+Fourteen criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -16,9 +16,10 @@ Snapshot family (Task 4):
 Direct-read family (Task 5):
   C5 seeded getImageData is deterministic across two reads, differs from stock,
      and is byte-identical to stock when unconfigured.
-  C6 seeded WebGL readPixels is deterministic, differs from stock, and is
-     byte-identical to stock unconfigured (run under SwiftShader for a stable,
-     host-independent GL context -- SP3 spec Section 6).
+  C6 seeded WebGL readPixels of a gradient triangle is deterministic and
+     differs from the unconfigured live run (SwiftShader for a stable,
+     host-independent GL context -- SP3 spec Section 6); C11 keeps the
+     unconfigured-clear == stock baseline check.
   C7 seeded OffscreenCanvas.convertToBlob is deterministic and differs from
      stock -- closes the Task-4 gap that convertToBlob had no runtime criterion.
 
@@ -35,6 +36,13 @@ Cross-cutting:
   C10 accessors native: toDataURL / getImageData / readPixels prototype methods
      still stringify to "[native code]" and Object.keys(window) is unchanged vs
      stock (rule 2).
+
+Canvas noise redesign rows:
+  C11 flat drawings (solid, edge, 1px line, WebGL clear, worker) read as
+     unconfigured; solid and clear stay one colour.
+  C12 putImageData of a random pattern reads back exact.
+  C13 drawImage and createImageBitmap copies agree with getImageData.
+  C14 the host oracle's text and shape canvases vary over 8 seeds, none stock.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -118,22 +126,36 @@ DRAW_AND_READ = f"""() => new Promise((resolve, reject) => {{
 }})
 """
 
-# WebGL readPixels x2 of a fixed clear color. Flat colour is deliberate: the
-# content-hash fold makes the noise depend on content, so a flat frame is the
-# hardest case for "differs from stock" and the easiest to reason about.
-DRAW_AND_READ_GL = f"""() => {{
+# WebGL readPixels x2 of a gradient triangle over a clear. A plain clear has no
+# pixel unlike its neighbours, so the edge-only noise (canvas noise redesign)
+# correctly leaves it alone; the triangle's interpolated colours and its
+# anti-aliased edges give the noise something to touch.
+DRAW_AND_READ_GL = "() => {" + HASH_FN + """
   const c = document.createElement('canvas'); c.width = 64; c.height = 64;
   const gl = c.getContext('webgl');
-  if (!gl) return {{ err: 'no-webgl' }};
+  if (!gl) return { err: 'no-webgl' };
+  const sh = (type, src) => { const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+    'attribute vec2 p;attribute vec3 k;varying vec3 v;void main(){v=k;gl_Position=vec4(p,0,1);}'));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+    'precision mediump float;varying vec3 v;void main(){gl_FragColor=vec4(v,1);}'));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+    [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+  const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+  gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+  gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
   gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
-  {HASH_FN}
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
   const p1 = new Uint8Array(64 * 64 * 4);
   gl.readPixels(0, 0, 64, 64, gl.RGBA, gl.UNSIGNED_BYTE, p1);
   const p2 = new Uint8Array(64 * 64 * 4);
   gl.readPixels(0, 0, 64, 64, gl.RGBA, gl.UNSIGNED_BYTE, p2);
-  return {{ r1: H(p1), r2: H(p2) }};
-}}
-"""
+  return { r1: H(p1), r2: H(p2) };
+}"""
 
 # OffscreenCanvas.convertToBlob in a DEDICATED worker: draws the same-shaped 2D
 # scene on an OffscreenCanvas the worker owns, reads it back via getImageData,
@@ -188,6 +210,102 @@ NATIVE_PROBE = """() => {
   };
 }
 """
+
+# S1: flat drawings -- one colour, a hard edge, a 1px line, a WebGL clear (the
+# old C6 drawing, so its unconfigured hash is the baseline's readPixels), and a
+# worker OffscreenCanvas fill. Noise must leave each as unconfigured reads it.
+FLAT = "() => new Promise((resolve, reject) => {" + HASH_FN + """
+  const distinct = (d) => { const s = new Set();
+    for (let i = 0; i < d.length; i += 4) s.add(d[i] + ',' + d[i+1] + ',' + d[i+2] + ',' + d[i+3]);
+    return s.size; };
+  const mk = () => { const c = document.createElement('canvas');
+    c.width = 64; c.height = 64; return c.getContext('2d'); };
+  const out = {};
+  let x = mk(); x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
+  const d = x.getImageData(0, 0, 64, 64).data; out.solid = H(d); out.solidColours = distinct(d);
+  x = mk(); x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = 'rgb(200,100,50)'; x.fillRect(0, 0, 32, 64);
+  out.edge = H(x.getImageData(0, 0, 64, 64).data);
+  x = mk(); x.strokeStyle = 'rgb(200,100,50)'; x.lineWidth = 1;
+  x.beginPath(); x.moveTo(0, 10.5); x.lineTo(64, 10.5); x.stroke();
+  out.line = H(x.getImageData(0, 0, 64, 64).data);
+  const g = document.createElement('canvas'); g.width = 64; g.height = 64;
+  const gl = g.getContext('webgl');
+  if (gl) {
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    const p = new Uint8Array(64 * 64 * 4);
+    gl.readPixels(0, 0, 64, 64, gl.RGBA, gl.UNSIGNED_BYTE, p);
+    out.glClear = H(p); out.glClearColours = distinct(p);
+  } else { out.glClear = 'no-webgl'; }
+  const src = `self.onmessage = () => {
+    const H = (d) => { let h = 5381 >>> 0;
+      for (let i = 0; i < d.length; i++) h = (((h << 5) + h) ^ d[i]) >>> 0;
+      return h; };
+    let x = new OffscreenCanvas(64, 64).getContext('2d');
+    x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
+    const solid = H(x.getImageData(0, 0, 64, 64).data);
+    x = new OffscreenCanvas(64, 64).getContext('2d');
+    x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
+    x.fillStyle = 'rgb(200,100,50)'; x.fillRect(0, 0, 32, 64);
+    self.postMessage({ solid, edge: H(x.getImageData(0, 0, 64, 64).data) }); };`;
+  try {
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    w.onmessage = (e) => { out.worker = e.data; resolve(out); };
+    w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    w.postMessage('go');
+  } catch (e) { reject(e); }
+})"""
+
+# putImageData of a random opaque pattern over text, read straight back. Stock
+# returns the bytes unchanged; readback noise would not.
+ROUNDTRIP = """() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  x.font = '22px sans-serif'; x.fillText('Camoucrome', 2, 40);
+  const img = x.createImageData(64, 64); let s = 12345;
+  for (let i = 0; i < img.data.length; i += 4) {
+    for (let k = 0; k < 3; k++) {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0; img.data[i + k] = s >>> 24; }
+    img.data[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  const back = x.getImageData(0, 0, 64, 64).data;
+  for (let i = 0; i < back.length; i++)
+    if (back[i] !== img.data[i]) return { exact: false, first: i };
+  return { exact: true };
+}"""
+
+# SCENE_2D copied at a 1px offset through drawImage and through
+# createImageBitmap; both copies must read what getImageData of the original
+# reads. The offset matters: an unshifted copy has the original's state hash
+# and would get the same field by accident.
+COPY = "() => new Promise((resolve, reject) => { try {" + SCENE_2D + HASH_FN + """
+  const a = H(ctx.getImageData(0, 0, 300, 200).data);
+  const shifted = (src) => { const b = document.createElement('canvas');
+    b.width = 301; b.height = 200; const bx = b.getContext('2d');
+    bx.drawImage(src, 1, 0); return H(bx.getImageData(1, 0, 300, 200).data); };
+  const viaDraw = shifted(c);
+  createImageBitmap(c).then((bm) => resolve({ a, viaDraw, viaBitmap: shifted(bm) }), reject);
+} catch (e) { reject(e); } })"""
+
+# The host oracle's canvas step (capture_host_oracle.py), verbatim: the text
+# canvas and the shape canvas, hashed from toDataURL. S2: per seed they must
+# differ from stock and from each other.
+ORACLE_CANVAS = """() => {
+  const fnv = (s) => { let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const c = document.createElement('canvas'); c.width = 220; c.height = 40;
+  const x = c.getContext('2d');
+  x.font = '16px Arial'; x.fillText('Cwm fjordbank glyphs vext quiz 1234', 4, 26);
+  x.font = '16px "Segoe UI"'; x.fillText('Cwm fjordbank glyphs vext quiz', 4, 38);
+  const text = fnv(c.toDataURL());
+  x.clearRect(0, 0, 220, 40);
+  x.fillStyle = '#f60'; x.beginPath(); x.arc(50, 20, 15, 0, 7); x.fill();
+  x.fillStyle = 'rgba(0,80,255,.5)'; x.fillRect(40, 10, 60, 20);
+  return { text, shape: fnv(c.toDataURL()) };
+}"""
+
 
 
 def session(config, fn, extra_flags=None, screenshot=False):
@@ -265,6 +383,12 @@ CONVERT_TO_BLOB = f"""() => new Promise((resolve, reject) => {{
 }})
 """
 seeded_oc, seeded_oc_err = session(CANVAS, CONVERT_TO_BLOB)
+seeded_flat, seeded_flat_err = session(CANVAS, FLAT, extra_flags=GL_FLAGS)
+unconf_flat, unconf_flat_err = session(None, FLAT, extra_flags=GL_FLAGS)
+seeded_rt, seeded_rt_err = session(CANVAS, ROUNDTRIP)
+seeded_copy, seeded_copy_err = session(CANVAS, COPY)
+oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
+oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
 
 if capture:
     if unconf is None or unconf_gl is None or unconf_shot is None:
@@ -311,7 +435,7 @@ C2 = "2  seeded toDataURL differs from stock"
 C3 = "3  unconfigured toDataURL byte-identical to stock"
 C4 = "4  seeded toBlob deterministic and differs from stock"
 C5 = "5  seeded getImageData deterministic, differs from stock, off==stock"
-C6 = "6  seeded readPixels deterministic, differs from stock, off==stock"
+C6 = "6  seeded readPixels of a gradient triangle deterministic, differs from unconfigured"
 C7 = "7  seeded OffscreenCanvas.convertToBlob deterministic and differs"
 C8 = "8  worker OffscreenCanvas readback deterministic and differs (parity)"
 C9 = "9  DevTools screenshot identical seeded vs stock (screen unchanged)"
@@ -372,12 +496,13 @@ elif "err" in seeded_gl or "err" in unconf_gl:
     notes.append("C6: WebGL unavailable in content_shell even under SwiftShader "
                  "-- not a pass; investigate the GL context (do not fake-pass)")
 else:
+    # The drawing is no longer the baseline's clear, so "differs" compares with
+    # the unconfigured live run; C11 keeps the WebGL rule-5 baseline check.
     determ = seeded_gl["r1"] == seeded_gl["r2"]
-    differs = seeded_gl["r1"] != bl("readPixels")
-    off_eq = unconf_gl["r1"] == bl("readPixels")
-    results[C6] = determ and differs and off_eq
+    differs = seeded_gl["r1"] != unconf_gl["r1"]
+    results[C6] = determ and differs
     if not results[C6]:
-        notes.append(f"C6: determ={determ} differs={differs} off==stock={off_eq}")
+        notes.append(f"C6: determ={determ} differs={differs}")
 
 # C7 convertToBlob
 if seeded_oc is None or baseline is None:
@@ -426,7 +551,51 @@ else:
     if not results[C10]:
         notes.append(f"C10: native={all_native} winkeys_same={keys_same}")
 
-EXPECTED = 10
+C11 = "11 flat drawings read as unconfigured (solid, edge, 1px line, WebGL clear, worker)"
+C12 = "12 putImageData round trip exact"
+C13 = "13 drawImage and createImageBitmap copies agree with getImageData"
+C14 = "14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock"
+
+# C11 flat drawings (S1)
+if seeded_flat is None or unconf_flat is None:
+    results[C11] = False
+    notes.append(f"C11: {seeded_flat_err or unconf_flat_err}")
+else:
+    differ = sorted(k for k in unconf_flat if seeded_flat.get(k) != unconf_flat[k])
+    colours = (seeded_flat.get("solidColours"), seeded_flat.get("glClearColours"))
+    gl_stock = bool(baseline) and unconf_flat.get("glClear") == bl("readPixels")
+    results[C11] = not differ and colours == (1, 1) and gl_stock
+    if not results[C11]:
+        notes.append(f"C11: differ from unconfigured {differ}, colours (2D, WebGL) "
+                     f"{colours}, unconfigured clear == stock baseline {gl_stock}")
+
+# C12 putImageData round trip
+results[C12] = bool(seeded_rt and seeded_rt.get("exact"))
+if not results[C12]:
+    notes.append(f"C12: {seeded_rt or seeded_rt_err}")
+
+# C13 copy paths
+results[C13] = bool(seeded_copy
+                    and seeded_copy["a"] == seeded_copy["viaDraw"] == seeded_copy["viaBitmap"])
+if not results[C13]:
+    notes.append(f"C13: {seeded_copy or seeded_copy_err}")
+
+# C14 S2: per-seed variation of the oracle's canvases
+errs = [str(e) for _, e in oracle_seeded if e] + ([str(oracle_stock_err)] if oracle_stock_err else [])
+if errs:
+    results[C14] = False
+    notes.append(f"C14: {errs[0]}")
+else:
+    texts = {v["text"] for v, _ in oracle_seeded}
+    shapes = {v["shape"] for v, _ in oracle_seeded}
+    results[C14] = (len(texts) >= 6 and len(shapes) == 8
+                    and oracle_stock["text"] not in texts and oracle_stock["shape"] not in shapes)
+    if not results[C14]:
+        notes.append(f"C14: text {len(texts)} distinct, stock among them "
+                     f"{oracle_stock['text'] in texts}; shape {len(shapes)} distinct, "
+                     f"stock among them {oracle_stock['shape'] in shapes}")
+
+EXPECTED = 14
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
