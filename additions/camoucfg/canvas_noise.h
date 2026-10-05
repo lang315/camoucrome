@@ -25,6 +25,8 @@ namespace camoucfg {
 // neighbour, so they read as stock (S1). Each RGB channel is gated by
 // `density` and moved by up to +-`strength`, clamped to [0, alpha]: for
 // premultiplied data every result is a value stock can store at that alpha.
+// `density` is the fraction of eligible pixels' RGB channels perturbed; the
+// default is calibrated in measurements/2026-10-canvas-noise.md.
 // Data that is not premultiplied passes min_alpha 255. Pure: a function of
 // (seed, x, y, channel) and `source`. seed == 0, density <= 0 (or NaN), or
 // strength <= 0 is a no-op.
