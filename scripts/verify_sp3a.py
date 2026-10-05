@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Sixteen criteria, all driven with Playwright's sync API over content_shell's CDP,
+Nineteen criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -52,7 +52,13 @@ Canvas noise redesign rows:
   C15 text under ctx.scale(40,40) lands within 1 device px of unconfigured (the
       text offset is in device space, so a page cannot magnify it).
   C16 a decoded image drawn onto an eligible canvas reads as unconfigured (any
-      drawImage source makes the canvas stock).
+      drawImage source makes the canvas carry no readback noise).
+  C17 readPixels at PACK_ALIGNMENT 8 with an odd width agrees, pixel for
+      pixel, with the default layout; the padding bytes are untouched.
+  C18 a WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS readPixels agrees with
+      the default read; every byte outside the layout is untouched.
+  C19 a readPixels rect reaching past the buffer is not a clean read: its
+      in-buffer part differs from the unconfigured one.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -171,11 +177,12 @@ DRAW_AND_READ_GL = "() => {" + HASH_FN + """
   return { r1: H(p1), r2: H(p2) };
 }"""
 
-# OffscreenCanvas.convertToBlob in a DEDICATED worker: draws the same-shaped 2D
-# scene on an OffscreenCanvas the worker owns, reads it back via getImageData,
-# and returns two hashes. The worker runs on its own thread and derives the seed
-# from the process-inherited CAMOU_CONFIG (Section 4.4), so a difference from
-# stock proves the noise reaches worker readback.
+# A DEDICATED worker: draws a gradient plus an arc on an OffscreenCanvas the
+# worker owns (no text, so the text offset is not what is measured), reads it
+# back via getImageData, and returns two hashes. The worker runs on its own
+# thread and derives the seed from the process-inherited CAMOU_CONFIG
+# (Section 4.4), so a difference from a live unconfigured worker run proves
+# the noise reaches worker readback.
 WORKER_READBACK = """() => new Promise((resolve, reject) => {
   const src = `
     self.onmessage = () => {
@@ -334,6 +341,79 @@ ORACLE_CANVAS = """() => {
 }"""
 
 
+# C17-C19: the C6 gradient triangle read back at other pack layouts. __GL__ is
+# the context type, __W__ x __H__ the canvas, __BODY__ the reads.
+TRI = """() => {
+  const c = document.createElement('canvas'); c.width = __W__; c.height = __H__;
+  const gl = c.getContext('__GL__');
+  if (!gl) return { err: 'no-__GL__' };
+  const sh = (type, src) => { const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+    'attribute vec2 p;attribute vec3 k;varying vec3 v;void main(){v=k;gl_Position=vec4(p,0,1);}'));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+    'precision mediump float;varying vec3 v;void main(){gl_FragColor=vec4(v,1);}'));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+    [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+  const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+  gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+  gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+  gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  __HASH__
+  const RGBA = gl.RGBA, UB = gl.UNSIGNED_BYTE;
+  __BODY__
+}"""
+
+
+def tri(gl, w, h, body):
+    return (TRI.replace("__GL__", gl).replace("__W__", str(w))
+            .replace("__H__", str(h)).replace("__HASH__", HASH_FN)
+            .replace("__BODY__", body))
+
+
+# 63x64: a row is 252 bytes, so the default read (alignment 4) is tight and
+# the alignment-8 read pads each row to 256.
+ALIGN8 = tri("webgl", 63, 64, """
+  const A = new Uint8Array(63 * 64 * 4); gl.readPixels(0, 0, 63, 64, RGBA, UB, A);
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 8);
+  const B = new Uint8Array(63 * 256 + 252).fill(0xAB);
+  gl.readPixels(0, 0, 63, 64, RGBA, UB, B);
+  let pix = 0, pad = 0;
+  for (let y = 0; y < 64; y++) {
+    for (let i = 0; i < 252; i++) if (B[y * 256 + i] !== A[y * 252 + i]) pix++;
+    if (y < 63) for (let i = 252; i < 256; i++) if (B[y * 256 + i] !== 0xAB) pad++;
+  }
+  return { pix, pad, h: H(A) };""")
+
+# WebGL2: ROW_LENGTH 80, SKIP_PIXELS 3, SKIP_ROWS 2 into a 64x64 read.
+LAYOUT = tri("webgl2", 64, 64, """
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  gl.pixelStorei(gl.PACK_ROW_LENGTH, 80);
+  gl.pixelStorei(gl.PACK_SKIP_PIXELS, 3);
+  gl.pixelStorei(gl.PACK_SKIP_ROWS, 2);
+  const off = 2 * 320 + 3 * 4;
+  const B = new Uint8Array(off + 63 * 320 + 64 * 4).fill(0xAB);
+  gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  let inside = 0, outside = 0;
+  const used = new Uint8Array(B.length);
+  for (let y = 0; y < 64; y++) for (let i = 0; i < 256; i++) {
+    const o = off + y * 320 + i; used[o] = 1;
+    if (B[o] !== A[y * 256 + i]) inside++; }
+  for (let o = 0; o < B.length; o++) if (!used[o] && B[o] !== 0xAB) outside++;
+  return { inside, outside, h: H(A) };""")
+
+# A rect reaching 8 px past the buffer on two sides: hash of its in-buffer part.
+PAST = tri("webgl", 64, 64, """
+  const B = new Uint8Array(72 * 72 * 4); gl.readPixels(-8, -8, 72, 72, RGBA, UB, B);
+  const part = new Uint8Array(64 * 64 * 4);
+  for (let y = 0; y < 64; y++)
+    part.set(B.subarray(((y + 8) * 72 + 8) * 4, ((y + 8) * 72 + 72) * 4), y * 256);
+  return { h: H(part) };""")
+
 # C15: text under ctx.scale(40,40); the ink bounding box's min x / min y.
 SCALED_TEXT = """() => {
   const c = document.createElement('canvas'); c.width = 300; c.height = 300;
@@ -454,6 +534,8 @@ unconf_scaled, unconf_scaled_err = session(None, SCALED_TEXT)
 seeds_scaled = [session(json.dumps({"canvas:seed": s}), SCALED_TEXT)
                 for s in (987654321, 1, 2, 3)]
 unconf_dec, unconf_dec_err = session(None, DECODED_IMAGE)
+gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_flags=GL_FLAGS))
+        for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -617,6 +699,9 @@ C12 = "12 putImageData round trip exact"
 C13 = "13 drawImage and createImageBitmap copies agree with getImageData"
 C15 = "15 text under ctx.scale(40,40) lands within 1 device px of unconfigured"
 C16 = "16 decoded image drawn on an eligible canvas reads as unconfigured"
+C17 = "17 readPixels at PACK_ALIGNMENT 8, odd width, agrees with the default layout"
+C18 = "18 WebGL2 PACK_ROW_LENGTH/SKIP_PIXELS/SKIP_ROWS read agrees with the default read"
+C19 = "19 readPixels rect past the buffer: in-buffer part differs from unconfigured"
 C14 = "14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock"
 
 # C11 flat drawings (S1)
@@ -683,7 +768,27 @@ else:
     if not results[C16]:
         notes.append(f"C16: seeded {seeded_dec} != unconfigured {unconf_dec}")
 
-EXPECTED = 16
+# C17-C19: other pack layouts must carry the same field and leave padding alone.
+def gl_row(name, key, ok_fn):
+    (seeded_v, seeded_e), (unconf_v, unconf_e) = gl17[key]
+    if seeded_v is None or unconf_v is None:
+        results[name] = False
+        notes.append(f"{name[:3]}: {seeded_e or unconf_e}")
+    elif "err" in seeded_v or "err" in unconf_v:
+        results[name] = False
+        notes.append(f"{name[:3]}: {seeded_v.get('err') or unconf_v.get('err')} -- "
+                     "context unavailable under SwiftShader, not a pass")
+    else:
+        results[name] = ok_fn(seeded_v, unconf_v)
+        if not results[name]:
+            notes.append(f"{name[:3]}: seeded {seeded_v}, unconfigured {unconf_v}")
+
+
+gl_row(C17, "align", lambda s, u: s["pix"] == 0 and s["pad"] == 0 and s["h"] != u["h"])
+gl_row(C18, "layout", lambda s, u: s["inside"] == 0 and s["outside"] == 0 and s["h"] != u["h"])
+gl_row(C19, "past", lambda s, u: s["h"] != u["h"])
+
+EXPECTED = 19
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
