@@ -133,7 +133,7 @@ def main():
             a0 = [i for i in range(0, len(s), 4) if s[i + 3] == 0]
             tinted = sum(1 for i in a0 if s[i] | s[i + 1] | s[i + 2])
             changed = sum(1 for i in range(0, len(s), 4) if s[i:i + 4] != u[i:i + 4])
-            return tinted == 0 and a0 and changed > 0, (tinted, len(a0), changed)
+            return tinted == 0 and len(a0) > 0 and changed > 0, (tinted, len(a0), changed)
         row("R3 half-transparent arc canvas has no RGB under alpha 0", transparent)
         row("R4 copyToChannel/copyFromChannel is an identity",
             lambda: (lambda n: (n == 0, n))(
