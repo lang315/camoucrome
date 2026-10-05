@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Nineteen criteria, all driven with Playwright's sync API over content_shell's CDP,
+Twenty criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -57,8 +57,11 @@ Canvas noise redesign rows:
       pixel, with the default layout; the padding bytes are untouched.
   C18 a WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS readPixels agrees with
       the default read; every byte outside the layout is untouched.
-  C19 a readPixels rect reaching past the buffer is not a clean read: its
-      in-buffer part differs from the unconfigured one.
+  C19 a readPixels rect reaching past the buffer: its in-buffer part equals
+      the default read, differs from the unconfigured one, and every byte
+      outside the buffer is what the unconfigured read leaves there.
+  C20 a readPixels GL rejects (INVALID_OPERATION: SKIP_PIXELS + width does not
+      fit one row) leaves the page's buffer untouched.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -408,11 +411,31 @@ LAYOUT = tri("webgl2", 64, 64, """
 
 # A rect reaching 8 px past the buffer on two sides: hash of its in-buffer part.
 PAST = tri("webgl", 64, 64, """
-  const B = new Uint8Array(72 * 72 * 4); gl.readPixels(-8, -8, 72, 72, RGBA, UB, B);
-  const part = new Uint8Array(64 * 64 * 4);
-  for (let y = 0; y < 64; y++)
-    part.set(B.subarray(((y + 8) * 72 + 8) * 4, ((y + 8) * 72 + 72) * 4), y * 256);
-  return { h: H(part) };""")
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(72 * 72 * 4).fill(0xAB);
+  gl.readPixels(-8, -8, 72, 72, RGBA, UB, B);
+  const part = new Uint8Array(64 * 64 * 4), rest = [];
+  for (let y = 0; y < 72; y++) for (let x = 0; x < 72; x++) {
+    const o = (y * 72 + x) * 4;
+    if (x >= 8 && y >= 8) for (let k = 0; k < 4; k++) part[((y - 8) * 64 + x - 8) * 4 + k] = B[o + k];
+    else for (let k = 0; k < 4; k++) rest.push(B[o + k]);
+  }
+  let eqA = true; for (let i = 0; i < A.length; i++) if (A[i] !== part[i]) { eqA = false; break; }
+  return { h: H(part), eqA, rest: H(rest) };""")
+
+# A layout GL rejects (SKIP_PIXELS 1 + width 64 > row 64): nothing may be written.
+REJECT = tri("webgl2", 64, 64, """
+  const buf = new Uint8Array(64 * 64 * 4);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const v = ((x + y) & 1) ? 200 : 60, i = (y * 64 + x) * 4;
+    buf[i] = v; buf[i + 1] = 255 - v; buf[i + 2] = v >> 1; buf[i + 3] = 255; }
+  const pre = buf.slice();
+  gl.getError();
+  gl.pixelStorei(gl.PACK_SKIP_PIXELS, 1);
+  gl.readPixels(0, 0, 64, 64, RGBA, UB, buf);
+  const err = gl.getError(); let changed = 0;
+  for (let i = 0; i < buf.length; i++) if (buf[i] !== pre[i]) changed++;
+  return { err, invalid: gl.INVALID_OPERATION, changed };""")
 
 # C15: text under ctx.scale(40,40); the ink bounding box's min x / min y.
 SCALED_TEXT = """() => {
@@ -535,7 +558,8 @@ seeds_scaled = [session(json.dumps({"canvas:seed": s}), SCALED_TEXT)
                 for s in (987654321, 1, 2, 3)]
 unconf_dec, unconf_dec_err = session(None, DECODED_IMAGE)
 gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_flags=GL_FLAGS))
-        for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST))}
+        for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST),
+                           ("reject", REJECT))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -701,7 +725,8 @@ C15 = "15 text under ctx.scale(40,40) lands within 1 device px of unconfigured"
 C16 = "16 decoded image drawn on an eligible canvas reads as unconfigured"
 C17 = "17 readPixels at PACK_ALIGNMENT 8, odd width, agrees with the default layout"
 C18 = "18 WebGL2 PACK_ROW_LENGTH/SKIP_PIXELS/SKIP_ROWS read agrees with the default read"
-C19 = "19 readPixels rect past the buffer: in-buffer part differs from unconfigured"
+C19 = "19 readPixels rect past the buffer: in-buffer part equals the default read, not unconfigured"
+C20 = "20 readPixels rejected by GL leaves the buffer untouched"
 C14 = "14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock"
 
 # C11 flat drawings (S1)
@@ -786,9 +811,11 @@ def gl_row(name, key, ok_fn):
 
 gl_row(C17, "align", lambda s, u: s["pix"] == 0 and s["pad"] == 0 and s["h"] != u["h"])
 gl_row(C18, "layout", lambda s, u: s["inside"] == 0 and s["outside"] == 0 and s["h"] != u["h"])
-gl_row(C19, "past", lambda s, u: s["h"] != u["h"])
+gl_row(C19, "past", lambda s, u: s["eqA"] and s["h"] != u["h"] and s["rest"] == u["rest"])
+gl_row(C20, "reject", lambda s, u: all(v["err"] == v["invalid"] and v["changed"] == 0
+                                       for v in (s, u)))
 
-EXPECTED = 19
+EXPECTED = 20
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
