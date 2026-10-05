@@ -13,29 +13,6 @@
 
 namespace camoucfg {
 
-// Applies deterministic readback noise, in place, to a `width` x `height`
-// RGBA8 rect whose rows are `row_bytes` apart and whose top-left pixel is
-// canvas pixel (x0, y0). Pure: each channel's noise is a function of (seed,
-// canvas x, canvas y, channel) only, so every readback of one canvas state --
-// a full getImageData, a 1x1 getImageData, toDataURL -- agrees on every pixel.
-// Callers fold a hash of the canvas state into `seed` (CanvasStateHash), so
-// different drawings get different fields.
-//
-//   - seed == 0, density <= 0 (or NaN), or strength <= 0 is a no-op: the
-//     buffer stays byte-identical to stock (rule 5).
-//   - Only opaque pixels (alpha 255) change, and only their RGB. Stock never
-//     shows RGB under alpha 0, and an unpremultiplied value under a partial
-//     alpha lies on a grid a +-1 step would leave.
-//   - `density` is the fraction of RGB channels perturbed, clamped to 1.
-//   - `strength` bounds the per-channel delta, clamped to 255; values stay
-//     in [0, 255].
-//
-// Noise is applied on READBACK only, never at draw time -- callers pass a copy
-// of the pixels leaving the canvas, never the canvas's own store.
-void PerturbRgbaAt(uint8_t* data, size_t width, size_t height,
-                   size_t row_bytes, int64_t x0, int64_t y0, uint64_t seed,
-                   double density, int32_t strength);
-
 // Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
 // `row_bytes` apart. `source` is an unperturbed copy with the same geometry,
 // and every eligibility test reads it, so the result does not depend on the
@@ -59,11 +36,13 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
                          size_t row_bytes);
 
-// PerturbRgbaAt over a tightly-packed buffer treated as one row at (0, 0),
-// with a hash of its first 1024 bytes folded into `seed`. The WebGL
-// readPixels path, which has no canvas state to hash (review 2026-09-24 #23).
-void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
-                 int32_t strength);
+// PerturbRgbaEdges over a tightly packed `width` x `height` RGBA8 rect (the
+// WebGL readPixels buffer), neighbours read within the rect, with a hash of
+// its first 1024 bytes folded into `seed` (review 2026-09-24 #23). Only
+// opaque pixels change: a premultipliedAlpha:false context stores
+// unpremultiplied values.
+void PerturbRgba(uint8_t* data, size_t width, size_t height, uint64_t seed,
+                 double density, int32_t strength);
 
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
@@ -71,18 +50,10 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
                        int32_t& strength);
 
 // Reads canvas:seed / canvas:noiseDensity / canvas:noiseStrength from `scope`
-// and calls PerturbRgba (WebGL readPixels). The canvas readback sites use
-// PerturbCanvasPixels (canvas_readback.h) instead. Absent or zero canvas:seed
-// is a no-op.
-void PerturbRgbaFromConfig(uint8_t* data, size_t length,
+// and calls PerturbRgba. The WebGL readPixels path; the canvas sites use
+// NoisedCanvasImage (canvas_readback.h). Absent or zero canvas:seed is a no-op.
+void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
                            const ConfigScope& scope);
-
-// Reads the canvas keys from `scope` and calls PerturbRgbaAt with
-// `state_hash` folded into canvas:seed. Absent or zero canvas:seed is a
-// no-op. Blink reaches it through PerturbCanvasPixels (canvas_readback.h).
-void PerturbRgbaAtFromConfig(uint8_t* data, size_t width, size_t height,
-                             size_t row_bytes, int64_t x0, int64_t y0,
-                             uint64_t state_hash, const ConfigScope& scope);
 
 // Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter
 // slice). Pure: the same (stock, seed, index, domain) yields the same output, so

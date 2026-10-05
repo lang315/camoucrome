@@ -15,18 +15,9 @@ class SkImage;
 
 namespace camoucfg {
 
-// The Blink canvas readback hook (getImageData, toDataURL, toBlob,
-// convertToBlob). `pixels` is a `width` x `height` RGBA8 rect, rows
-// `row_bytes` apart, read out of `canvas` -- a raster image of the canvas's
-// whole current contents -- at (x0, y0). Applies PerturbRgbaAt keyed by
-// canvas:seed and a hash of `canvas`, so every rect and every API reading
-// one canvas state sees the same noise on the same pixel.
-//
-// Callers check CanvasSeed(scope) first: with no seed this is a no-op, and
-// the snapshot a caller would make just to pass it here is skipped too.
-void PerturbCanvasPixels(const SkImage& canvas, uint8_t* pixels, size_t width,
-                         size_t height, size_t row_bytes, int x0, int y0,
-                         const ConfigScope& scope);
+// The Blink canvas snapshot hook is NoisedCanvasImage (CanvasRenderingContext::
+// CamouNoised): every readback API noises the snapshot it takes, so they all
+// read one field per canvas state.
 
 // A raster copy of `canvas` with PerturbRgbaEdges applied to its
 // premultiplied RGBA8 pixels, keyed by `seed` folded with CanvasStateHash of
