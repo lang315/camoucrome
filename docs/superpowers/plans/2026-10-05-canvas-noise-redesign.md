@@ -94,7 +94,7 @@ out/Default/components_unittests --gtest_filter='PerturbRgba*:CanvasStateHash*:C
 **W6. Box commit and export** (WSL), after a task's Blink and additions edits build and test green:
 ```bash
 cd ~/chromium/src
-git branch -f camoucrome/main-pre-cn camoucrome/main 2>/dev/null || true   # backup, first time only
+git branch camoucrome/main-pre-cn camoucrome/main 2>/dev/null || true   # backup: created once, never moved
 SP3A=$(git log --format=%H --grep='^sp3a-canvas-noise$' f89f3a4363..camoucrome/main)
 test -n "$SP3A"
 git add -A components/camoucfg third_party/blink
@@ -104,7 +104,7 @@ git log --format=%s f89f3a4363..HEAD | wc -l          # 38, unchanged
 git log --format=%s f89f3a4363..HEAD | grep -c fixup  # 0
 git status --porcelain | wc -l                        # 0
 cd /tmp/cn-tree && bash scripts/export.sh ~/chromium/src
-bash scripts/check_checkout_sync.sh ~/chromium/src | tail -1
+bash scripts/check_checkout_sync.sh local ~/chromium/src | tail -1   # usage: [ssh-target|local] [checkout-path]
 tar czf /tmp/cn/export.tgz additions patches settings/invariants.json
 sha256sum /tmp/cn/export.tgz
 echo CNEXPORT-BEGIN$(base64 -w0 /tmp/cn/export.tgz)CNEXPORT-END
@@ -504,7 +504,7 @@ git commit -m "feat(canvas): host runner for the canvas noise spike and redesign
   - P3 FAIL: `solid` and `glClear` differ, and solid reads 3 colours and the WebGL clear 5, as in Step 2;
   - S1 FAIL;
   - S2 text FAIL (Step 2 saw `9c3103de` in 7 of 8);
-  - rule 5 PASS.
+  - rule 5 PASS. `launch(config=None)` sets no `CAMOU_CONFIG`; `build_env` only sets it for a non-None config (`client/python/camoucrome/launcher.py:160`). A rule-5 FAIL therefore points at the browser, not the client. Re-read that line first if it fails.
   - P4 is expected FAIL. If P4 PASSES, write that down, because the spec assumed it fails. At density 0.0005 the copy may miss every noised pixel. The `red-dense` run is then the RED for P4: at density 0.05 it must FAIL.
 - [ ] **Step 6: Write the measurement doc skeleton.** Record the RED numbers in `docs/superpowers/measurements/2026-10-canvas-noise.md`:
   ```markdown
@@ -702,11 +702,16 @@ FLAT = "() => new Promise((resolve, reject) => {" + HASH_FN + """
     out.glClear = H(p); out.glClearColours = distinct(p);
   } else { out.glClear = 'no-webgl'; }
   const src = `self.onmessage = () => {
-    const c = new OffscreenCanvas(64, 64), x = c.getContext('2d');
+    const H = (d) => { let h = 5381 >>> 0;
+      for (let i = 0; i < d.length; i++) h = (((h << 5) + h) ^ d[i]) >>> 0;
+      return h; };
+    let x = new OffscreenCanvas(64, 64).getContext('2d');
     x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
-    const d = x.getImageData(0, 0, 64, 64).data; let h = 5381 >>> 0;
-    for (let i = 0; i < d.length; i++) h = (((h << 5) + h) ^ d[i]) >>> 0;
-    self.postMessage(h); };`;
+    const solid = H(x.getImageData(0, 0, 64, 64).data);
+    x = new OffscreenCanvas(64, 64).getContext('2d');
+    x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
+    x.fillStyle = 'rgb(200,100,50)'; x.fillRect(0, 0, 32, 64);
+    self.postMessage({ solid, edge: H(x.getImageData(0, 0, 64, 64).data) }); };`;
   try {
     const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     w.onmessage = (e) => { out.worker = e.data; resolve(out); };
@@ -1254,7 +1259,13 @@ TEST(NoisedImageTest, PartialAlphaStaysPremultiplied) {
 ```
 Add `"canvas_readback_unittest.cc",` to `unit_tests` `sources` in `additions/camoucfg/BUILD.gn` (alphabetical, after `"canvas_noise_unittest.cc",`), and add `":canvas_readback",` and `"//skia",` to its `deps`.
 
-- [ ] **Step 2: Run it to verify it fails.** Run W2, W3, W5 (W1 `"cn ut"`), and add `NoisedImage*` to the filter.
+- [ ] **Step 2: Run it to verify it fails.** The test file is new, so stage it by name (`commit -am` skips untracked files, and gn would then fail on the missing file `BUILD.gn` lists):
+  ```bash
+  git add additions/camoucfg/canvas_readback_unittest.cc additions/camoucfg/BUILD.gn
+  git commit -m "test(camoucfg): NoisedImage tests, RED"
+  git push
+  ```
+  Then run W2, W3 and W5 under W1 `"cn ut"`, with `NoisedImage*` added to the filter.
   Expected: a compile FAIL, `no member named 'NoisedImage' in namespace 'camoucfg'`.
 
 - [ ] **Step 3: Implement.** Add to `canvas_readback.h`: the include `#include "third_party/skia/include/core/SkRefCnt.h"` after `mask_config.h`, and these declarations after `PerturbCanvasPixels`:
@@ -1314,7 +1325,12 @@ sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass.**
-  - On the Mac: `python3 scripts/check_additions_build.py` (expected PASS), then commit (`git commit -am "feat(camoucfg): NoisedImage, edge noise over a whole snapshot"`) and push.
+  - On the Mac: run `python3 scripts/check_additions_build.py` (expected PASS). Then commit and push:
+    ```bash
+    git add additions/camoucfg/canvas_readback.h additions/camoucfg/canvas_readback.cc
+    git commit -m "feat(camoucfg): NoisedImage, edge noise over a whole snapshot"
+    git push
+    ```
   - On the box: W2, W3, W5 with `NoisedImage*` in the filter. Expected: the build reports non-zero steps, and all four `NoisedImageTest.*` tests pass along with Task 5's.
 
   Release the lock.
@@ -1895,7 +1911,9 @@ EDITS = [
 - [ ] **Step 5: Write the measurement doc.**
   - Section 6, Final: the verdict lines of Steps 1–3.
   - Section 7, Step 2 re-measure: the Step 4 numbers.
-  - Section 8, Known gaps: the spec's list, plus the cross-context `createPattern` gap from this plan's rulings.
+  - Section 8, Known gaps: the spec's list, plus:
+    - the cross-context `createPattern` gap from this plan's rulings;
+    - **cost**. Every consumer behind `GetSourceImageForCanvas` now pays a `GetSwSkImage()` readback plus a full-canvas noise pass whenever its source changed: `drawImage(canvas)`, `createPattern`, `texImage2D(canvas)`, and captureStream's two-copy frames. For an accelerated source that is a GPU-to-CPU sync where stock has none. Say whether frame timing was measured; this plan does not measure it.
 - [ ] **Step 6: Roadmap and memory.**
   - In `plans/2026-10-02-long-term-roadmap.md`, mark S1 and S2 done with a pointer to the measurement doc and the decision (target or fallback).
   - Update the memory `step2-measurement-2026-10-04.md`: PR #26 merged as `60b94ce` with CI green.
