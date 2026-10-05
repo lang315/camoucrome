@@ -132,3 +132,95 @@ Windows host, fork built from tree 1dced0a (target design), 8 seeds, `canvas:noi
 | 0.02 | headless | PASS, 8 of 8 | PASS, 8 of 8, stock not among them |
 
 Chosen: the smallest passing D is 0.02 (0.01 fails headless). The default is 2 x D = **0.04**, because 8 seeds is a small sample. At 0.04 (the rebuilt binary, headless) every row PASSES, including P3, P4, P5, S1 and rule 5. The 0.04 headed run was not repeated.
+
+## 6. Final
+
+Tree `f8c327f` (target design, default density 0.04), fork `out\Release\chrome.exe`
+against stock Chrome 154.0.8037.93, 8 seeds, lock `cn final`. Both modes, one
+run each; every verdict row PASS, including the S2 shape row at 8 of 8:
+
+```
+final-headed and final-headless (identical):
+PASS  P1 text, 512x128 canvas, varies across seeds  (8 distinct of 8, stock among them: False)
+PASS  P2 text, willReadFrequently canvas, varies across seeds  (8 distinct of 8, stock among them: False)
+PASS  P3 flat drawings equal stock, putImageData round trip exact  (differ: [], round trip exact: True)
+PASS  P4 drawImage and createImageBitmap agree with getImageData  (all agree: True)
+PASS  P5 text at x and x+1 differ only by the shift  (all equal: True)
+PASS  S2 oracle text canvas varies (>=6 distinct)  (8 distinct of 8, stock among them: False)
+PASS  S2 oracle shape canvas varies (all distinct)  (8 distinct of 8, stock among them: False)
+PASS  S1 solid fill and WebGL clear read one colour  (colours: [(1, 1)])
+PASS  rule 5: the fork without config reads as stock  (differ: [])
+```
+
+The headed run is the headed evidence at 0.04 that section 5 lacked.
+
+`verify_sp3a` on Windows `chrome` (`sp3a-win.log`, rc=1): the stock baseline
+`content_shell-sp3a-stock-canvas.json` is not on the host (`baseline load ...
+FileNotFoundError`), so every clause that compares with it is UNMEASURED, not
+passed. Their FAIL lines are that missing file, not a measured difference.
+
+| clause | result |
+|---|---|
+| C1 deterministic, C9 text-free screenshot, C12 round trip exact, C13 copies agree, C14 oracle text (>=6) and shape (8) vary, none stock | PASS |
+| C11 live part: differ from unconfigured `[]`, colours (2D, WebGL) (1, 1) | measured, no difference |
+| C11 "unconfigured clear == stock baseline" (False), C2 to C8, C10 | UNMEASURED (baseline absent) |
+
+Regression verifies on the host (idle, same env): `verify_windows_client.py`
+`11 PASS 0 FAIL`, rc=0; `verify_sp6b_driver.py` `ALL_PASS`, rc=0 (its stock-driver
+RED rows C1 and C5 print FAIL by design).
+
+WebGL context missing (`glClear='no context'`), observed: 0 of 2 stock, 0 of 2
+unconfigured and 0 of 16 seeded cells in the two final runs. In section 5's runs
+it crashed the runner three times (`cn-default` once, `cal-0.01-headed` twice;
+the cell is not recorded), all in seeded arms. A probe of the same configs read
+WebGL on every seed. That is intermittent, ties to the roadmap's S4
+(fork instability), and the runner now reports S1 and P3 as UNMEASURED naming
+the cells, instead of crashing (`measure_canvas_noise.py`, two pytest cases).
+
+Carry-overs from earlier sections:
+
+- Section 1 (Task 2): the build lock was held and the stock version was checked.
+  The WebGL clear read 4 colours in one RED run and 5 in another, and the S2 text
+  count in RED differed from Step 2's baseline; WebGL colour count is noisy
+  between launches.
+- Section 2 (Task 3): H0 = `35C9CB5C78E3FD2E14F72CF9D307DB6A82C95E72E36AA105A629CBFFF9686FE9`
+  (hash of `base_rendering_context_2d.cc`); the post-reversal hash is equal.
+- Section 5 (Task 9): the first `cn` build failed on a clang out-of-memory error
+  (5 failed steps) and the retry took 218 steps; the density rebuild took 59
+  steps; one `cal-0.01-headed` crash log exists; the 0.04 headless row was logged as `final-headless.log`
+  (this section's run reused that label and overwrote it).
+
+## 7. Step 2 re-measure
+
+`measure_step2.py run` on the host, fork against stock, both modes, 0 errors.
+Only scrubbed numbers are copied; no detector text, screenshots or run files.
+
+| check | result |
+|---|---|
+| `noise.canvas2d`, `noise.webgl` | 1 and 1, both modes, both arms |
+| `oracle.canvas.text`, `oracle.canvas.shape` | fork differs from control, headed and headless |
+| linkability: `canvas.text`, `canvas.shape` among shared leaves | control: both shared; fork: neither, in both modes (fork shares 215 of 234 headed, 217 headless; control 230) |
+| stability: canvas leaves changed across relaunch | none, either arm, either mode |
+| CreepJS "rgba noise" | absent in all four captures (non-empty: canvas and webgl sections present) |
+
+Not clean, and not canvas: in this run the fork's headless relaunch changed the
+WebGPU leaves and the HEVC codec answer (12 leaves), the S4 instability. The
+control changed nothing.
+
+## 8. Known gaps
+
+- `transferToImageBitmap` is not covered (the spec lists it).
+- A pattern created on one context and filled on another does not flag the second
+  context (`createPattern` across contexts).
+- Cost, UNMEASURED. Every consumer behind `GetSourceImageForCanvas` now pays a
+  `GetSwSkImage()` readback plus a full-canvas noise pass whenever its source
+  changed: `drawImage(canvas)`, `createPattern`, `texImage2D(canvas)` and
+  captureStream's two-copy frames. For an accelerated source that is a GPU-to-CPU
+  sync where stock has none. Frame timing was not measured. Whether `GetImage()`
+  returns the same object for an unchanged GPU canvas, so the CamouNoised cache
+  hits, is also UNMEASURED.
+- There is no `texImage2D(canvas)` verify row.
+- The text offset's dirty rect: `DidDraw` bounds come from the unshifted origin, so
+  a shifted glyph may land up to 1 px outside it. Not checked on screen.
+- `verify_sp3a` has no stock baseline on the Windows host (section 6), so its
+  baseline clauses are unmeasured there.

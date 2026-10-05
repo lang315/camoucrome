@@ -411,10 +411,10 @@ like this:
 
 Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
 
-- **S1. Farbling is visible on a solid fill.** A one-colour canvas reads back
+- **S1. DONE 2026-10-05 (target design, density 0.04; `measurements/2026-10-canvas-noise.md`).** Farbling is visible on a solid fill. A one-colour canvas reads back
   3 distinct colours on the fork and a WebGL clear reads 5, where stock reads
   1. Any page can run this test, so it outranks every other surface item.
-- **S2. Canvas noise has little entropy.** `canvas.text` stays `9c3103de` in 7
+- **S2. DONE 2026-10-05 (target design, density 0.04; `measurements/2026-10-canvas-noise.md`).** Canvas noise has little entropy. `canvas.text` stays `9c3103de` in 7
   of 8 seeded launches, and `canvas.shape` repeats one hash for three seeds.
   Two identities share `canvas.text`.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
