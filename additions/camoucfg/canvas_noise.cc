@@ -134,7 +134,7 @@ uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
 // place the canvas noise keys are read.
 void CanvasNoiseParams(const ConfigScope& scope, double& density,
                        int32_t& strength) {
-  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.0005);
+  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.04);
   strength = GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
 }
 
