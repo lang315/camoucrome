@@ -118,3 +118,17 @@ PASS  9  DevTools screenshot identical seeded vs stock (screen unchanged)
 FAIL
 rc=1
 ```
+
+## 5. Calibration
+
+Windows host, fork built from tree 1dced0a (target design), 8 seeds, `canvas:noiseDensity` set through config, no rebuild per value. Only the S2 shape row depends on density; P1-P5, S2 text, S1 and rule 5 PASS in every completed run.
+
+| D | mode | S2 text | S2 shape |
+|---|---|---|---|
+| 0.0005 (old default, `cn-default`) | headed | PASS, 8 of 8 | FAIL, 3 of 8, stock among them |
+| 0.01 | headed | runner crashed twice (a seed's cell had no WebGL clear count; per-seed probe at 0.01 then read all 8 fine), not measured | not measured |
+| 0.01 | headless | PASS, 8 of 8 | FAIL, 7 of 8, stock among them |
+| 0.02 | headed | PASS, 8 of 8 | PASS, 8 of 8, stock not among them |
+| 0.02 | headless | PASS, 8 of 8 | PASS, 8 of 8, stock not among them |
+
+Chosen: the smallest passing D is 0.02 (0.01 fails headless). The default is 2 x D = **0.04**, because 8 seeds is a small sample. At 0.04 (the rebuilt binary, headless) every row PASSES, including P3, P4, P5, S1 and rule 5. The 0.04 headed run was not repeated.
