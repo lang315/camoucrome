@@ -41,8 +41,10 @@ Cross-cutting:
 Canvas noise redesign rows:
   C11 flat drawings (solid, edge, 1px line, WebGL clear, worker) read as
      unconfigured; solid and clear stay one colour.
-  C12 putImageData of a random pattern reads back exact.
-  C13 drawImage and createImageBitmap copies agree with getImageData.
+  C12 putImageData of a random pattern reads back exact (the canvas is eligible:
+     an arc was drawn first).
+  C13 drawImage and createImageBitmap copies agree with getImageData (the
+     destination is eligible until the import: an arc was drawn first).
   C14 the host oracle's text and shape canvases vary over 8 seeds, none stock.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
@@ -234,6 +236,9 @@ FLAT = "() => new Promise((resolve, reject) => {" + HASH_FN + """
   x = mk(); x.strokeStyle = 'rgb(200,100,50)'; x.lineWidth = 1;
   x.beginPath(); x.moveTo(0, 10.5); x.lineTo(64, 10.5); x.stroke();
   out.line = H(x.getImageData(0, 0, 64, 64).data);
+  x = mk(); x.fillStyle = 'rgb(10,20,30)'; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = '#f60'; x.beginPath(); x.arc(58, 58, 4, 0, 7); x.fill();
+  out.solidEligible = H(x.getImageData(0, 0, 32, 32).data);
   const g = document.createElement('canvas'); g.width = 64; g.height = 64;
   const gl = g.getContext('webgl');
   if (gl) {
@@ -266,6 +271,7 @@ FLAT = "() => new Promise((resolve, reject) => {" + HASH_FN + """
 ROUNDTRIP = """() => {
   const c = document.createElement('canvas'); c.width = 64; c.height = 64;
   const x = c.getContext('2d');
+  x.fillStyle = '#f60'; x.beginPath(); x.arc(32, 32, 10, 0, 7); x.fill();
   x.font = '22px sans-serif'; x.fillText('Camoucrome', 2, 40);
   const img = x.createImageData(64, 64); let s = 12345;
   for (let i = 0; i < img.data.length; i += 4) {
@@ -288,6 +294,7 @@ COPY = "() => new Promise((resolve, reject) => { try {" + SCENE_2D + HASH_FN + "
   const a = H(ctx.getImageData(0, 0, 300, 200).data);
   const shifted = (src) => { const b = document.createElement('canvas');
     b.width = 301; b.height = 200; const bx = b.getContext('2d');
+    bx.fillStyle = '#f60'; bx.beginPath(); bx.arc(150, 100, 30, 0, 7); bx.fill();
     bx.drawImage(src, 1, 0); return H(bx.getImageData(1, 0, 300, 200).data); };
   const viaDraw = shifted(c);
   createImageBitmap(c).then((bm) => resolve({ a, viaDraw, viaBitmap: shifted(bm) }), reject);
@@ -492,7 +499,7 @@ else:
         notes.append(f"C5: determ={determ} differs={differs} off==stock={off_eq}")
 
 # C6 readPixels
-if seeded_gl is None or unconf_gl is None or baseline is None:
+if seeded_gl is None or unconf_gl is None:
     results[C6] = False
     if seeded_gl_err:
         notes.append(f"C6: {type(seeded_gl_err).__name__}: {seeded_gl_err}")

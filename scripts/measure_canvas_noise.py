@@ -40,12 +40,12 @@ let [c,x]=mk(220,40);text(x);out.text=fnv(c.toDataURL());
 [c,x]=mk(64,64);x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);let d=x.getImageData(0,0,64,64).data;out.solid=H(d);out.solidColours=distinct(d);
 [c,x]=mk(64,64);x.fillStyle='rgb(10,20,30)';x.fillRect(0,0,64,64);x.fillStyle='rgb(200,100,50)';x.fillRect(0,0,32,64);out.edge=H(x.getImageData(0,0,64,64).data);
 [c,x]=mk(64,64);x.strokeStyle='rgb(200,100,50)';x.lineWidth=1;x.beginPath();x.moveTo(0,10.5);x.lineTo(64,10.5);x.stroke();out.line=H(x.getImageData(0,0,64,64).data);
-[c,x]=mk(64,64);text(x);const img=x.createImageData(64,64);let s=12345;
+[c,x]=mk(64,64);text(x);x.fillStyle='#f60';x.beginPath();x.arc(32,32,10,0,7);x.fill();const img=x.createImageData(64,64);let s=12345;
 for(let i=0;i<img.data.length;i+=4){for(let k=0;k<3;k++){s=(Math.imul(s,1103515245)+12345)>>>0;img.data[i+k]=s>>>24}img.data[i+3]=255}
 x.putImageData(img,0,0);out.roundtrip=same(x.getImageData(0,0,64,64).data,img.data);
 [c,x]=mk(220,40);text(x);shape(x);const a=x.getImageData(0,0,220,40).data;
-let [b,y]=mk(221,40);y.drawImage(c,1,0);out.copy=same(y.getImageData(1,0,220,40).data,a);
-const bm=await createImageBitmap(c);[b,y]=mk(221,40);y.drawImage(bm,1,0);out.bitmap=same(y.getImageData(1,0,220,40).data,a);
+let [b,y]=mk(221,40);y.fillStyle='#f60';y.beginPath();y.arc(110,20,15,0,7);y.fill();y.drawImage(c,1,0);out.copy=same(y.getImageData(1,0,220,40).data,a);
+const bm=await createImageBitmap(c);[b,y]=mk(221,40);y.fillStyle='#f60';y.beginPath();y.arc(110,20,15,0,7);y.fill();y.drawImage(bm,1,0);out.bitmap=same(y.getImageData(1,0,220,40).data,a);
 [c,x]=mk(220,40);text(x);[b,y]=mk(221,40);text(y,1);out.shift=same(y.getImageData(1,0,220,40).data,x.getImageData(0,0,220,40).data);
 const g=document.createElement('canvas');g.width=g.height=64;const gl=g.getContext('webgl');
 if(gl){gl.clearColor(10/255,20/255,30/255,1);gl.clear(gl.COLOR_BUFFER_BIT);const p=new Uint8Array(64*64*4);gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,p);out.glClear=H(p);out.glClearColours=distinct(p)}else out.glClear='no context';
@@ -139,11 +139,18 @@ def run_cmd(a):
     return 0
 
 
+def _seeds(v):
+    n = int(v)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--seeds must be at least 1, got {n}")
+    return n
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
-    r.add_argument("--seeds", type=int, default=8)
+    r.add_argument("--seeds", type=_seeds, default=8)
     r.add_argument("--density", type=float)
     r.add_argument("--mode", choices=("headed", "headless"), default="headed")
     r.add_argument("--out")

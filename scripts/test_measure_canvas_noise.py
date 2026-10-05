@@ -86,3 +86,12 @@ def test_missing_webgl_in_stock_makes_s1_and_p3_unmeasured():
     rows = {n[:2]: (v, d) for n, v, d in m.verdicts(stock, cell(), seeded())}
     for p in ("S1", "P3"):
         assert rows[p][0] is None and "stock" in rows[p][1], (p, rows[p])
+
+
+def test_seeds_below_one_is_rejected(capsys):
+    import pytest
+    for bad in ("0", "-3"):
+        with pytest.raises(SystemExit) as e:
+            m.main(["run", "--seeds", bad])
+        assert e.value.code == 2
+        assert "at least 1" in capsys.readouterr().err
