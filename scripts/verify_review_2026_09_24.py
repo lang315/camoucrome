@@ -5,7 +5,8 @@ docs/superpowers/measurements/2026-09-24-review-triage.md. All of them were
 RED on the pre-fix binary (branch tip ada4cdcfa4); the triage doc records the
 values that were observed then.
 
-R1  canvas:seed above 2^31-1 (4000000000) noises pixels (was: 0 of 4096).
+R1  canvas:seed above 2^31-1 (4000000000) noises pixels of a canvas with an arc
+    (was: 0 of 4096 on a solid fill; the solid corner now stays unconfigured).
 R2  getImageData of a sub-rect agrees with a full read on the same pixel.
 R3  a blank canvas stays blank: no RGB under alpha 0 (was: 738 pixels).
 R4  AudioBuffer copyToChannel then copyFromChannel is an identity under
@@ -32,15 +33,18 @@ import lib_shell
 GL = lib_shell.SHELL_FLAGS + ["--use-angle=swiftshader",
                               "--enable-unsafe-swiftshader"]
 
+# A solid fill is flat and stays stock under the target design, so the canvas
+# carries an arc (eligible) and the pixels come back for a seeded-vs-unconfigured
+# diff; R1 also checks the solid corner is untouched.
 CANVAS_COUNT = """() => { const c=document.createElement('canvas'); c.width=64; c.height=64;
  const x=c.getContext('2d'); x.fillStyle='rgb(100,150,200)'; x.fillRect(0,0,64,64);
- const d=x.getImageData(0,0,64,64).data; let n=0;
- for(let i=0;i<d.length;i+=4) if(d[i]!==100||d[i+1]!==150||d[i+2]!==200) n++;
- return n; }"""
+ x.fillStyle='#f60'; x.beginPath(); x.arc(32,32,20,0,7); x.fill();
+ return JSON.stringify(Array.from(x.getImageData(0,0,64,64).data)); }"""
 
 CANVAS_SHAPE = """() => { const c=document.createElement('canvas'); c.width=16; c.height=16;
  const x=c.getContext('2d');
  for(let i=0;i<16;i++){x.fillStyle=`rgb(${i*13},${200-i*9},${i*7})`;x.fillRect(i,0,1,16);}
+ x.fillStyle='#f60'; x.beginPath(); x.arc(8,8,6,0,7); x.fill();
  const full=x.getImageData(0,0,16,16).data; let bad=0;
  for(let y=0;y<16;y++) for(let xx=0;xx<16;xx++){ const one=x.getImageData(xx,y,1,1).data;
    const o=(y*16+xx)*4; for(let k=0;k<4;k++) if(full[o+k]!==one[k]) bad++; }
@@ -99,9 +103,13 @@ def main():
             notes.append(f"{name}: {got}")
 
     try:
-        row("R1 seed 4000000000 noises canvas", lambda: (lambda n: (n > 0, n))(
-            one({"canvas:seed": 4000000000, "canvas:noiseDensity": 1.0},
-                CANVAS_COUNT)))
+        def seeded_canvas():
+            s = json.loads(one({"canvas:seed": 4000000000, "canvas:noiseDensity": 1.0},
+                               CANVAS_COUNT))
+            u = json.loads(one(None, CANVAS_COUNT))
+            n = sum(1 for i in range(0, len(s), 4) if s[i:i + 4] != u[i:i + 4])
+            return n > 0 and s[:4] == u[:4] == [100, 150, 200, 255], n
+        row("R1 seed 4000000000 noises the arc canvas, not the solid fill", seeded_canvas)
         shape = {}
         def canvas_shape():
             shape.update(json.loads(one(
