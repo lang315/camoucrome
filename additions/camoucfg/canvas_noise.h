@@ -39,13 +39,15 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
                          size_t row_bytes);
 
-// PerturbRgbaEdges over a tightly packed `width` x `height` RGBA8 rect (the
-// WebGL readPixels buffer), neighbours read within the rect, with a hash of
-// its first 1024 bytes folded into `seed` (review 2026-09-24 #23). Only
-// opaque pixels change: a premultipliedAlpha:false context stores
-// unpremultiplied values.
-void PerturbRgba(uint8_t* data, size_t width, size_t height, uint64_t seed,
-                 double density, int32_t strength);
+// PerturbRgbaEdges over a `width` x `height` RGBA8 rect whose rows are
+// `row_bytes` apart (the WebGL readPixels destination at its pack layout),
+// neighbours read within the rect, with a hash of the first 1024 bytes of a
+// TIGHT copy of its pixels folded into `seed` -- so one pixel content gets
+// one field whatever the row padding or stride (review 2026-09-24 #23).
+// Only opaque pixels change: a premultipliedAlpha:false context stores
+// unpremultiplied values. row_bytes < width * 4 is a no-op.
+void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
+                 uint64_t seed, double density, int32_t strength);
 
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
@@ -56,7 +58,7 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
 // and calls PerturbRgba. The WebGL readPixels path; the canvas sites use
 // NoisedCanvasImage (canvas_readback.h). Absent or zero canvas:seed is a no-op.
 void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
-                           const ConfigScope& scope);
+                           size_t row_bytes, const ConfigScope& scope);
 
 // Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter
 // slice). Pure: the same (stock, seed, index, domain) yields the same output, so
