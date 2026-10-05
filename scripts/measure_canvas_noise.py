@@ -65,14 +65,18 @@ def verdicts(stock, unconfigured, seeded):
     """(name, ok, detail) rows; ok is None when the row measured nothing."""
     n = len(seeded)
     out = []
+    # A missing WebGL context ('no context', no glClearColours) leaves P3 and S1 unmeasured.
+    nogl = [name for name, c in [("stock", stock)] + [(f"seed {i}", c) for i, c in enumerate(seeded, 1)]
+            if c.get("glClear") == "no context"]
+    nogl_d = "no WebGL context in: " + ", ".join(nogl) if nogl else ""
     ok, d = _distinct_unlike([c["textBig"] for c in seeded], stock["textBig"], min(6, n))
     out.append(("P1 text, 512x128 canvas, varies across seeds", ok, d))
     ok, d = _distinct_unlike([c["textCpu"] for c in seeded], stock["textCpu"], min(6, n))
     out.append(("P2 text, willReadFrequently canvas, varies across seeds", ok, d))
     bad = sorted({k for c in seeded for k in FLAT if c.get(k) != stock.get(k)})
     rt = all(c["roundtrip"] for c in seeded)
-    out.append(("P3 flat drawings equal stock, putImageData round trip exact", not bad and rt,
-                f"differ: {bad}, round trip exact: {rt}"))
+    out.append(("P3 flat drawings equal stock, putImageData round trip exact",
+                None if nogl else not bad and rt, nogl_d or f"differ: {bad}, round trip exact: {rt}"))
     cp = all(c["copy"] and c["bitmap"] for c in seeded)
     out.append(("P4 drawImage and createImageBitmap agree with getImageData", cp, f"all agree: {cp}"))
     if not stock["shift"]:
@@ -84,8 +88,9 @@ def verdicts(stock, unconfigured, seeded):
     out.append(("S2 oracle text canvas varies (>=6 distinct)", ok, d))
     ok, d = _distinct_unlike([c["shape"] for c in seeded], stock["shape"], n)
     out.append(("S2 oracle shape canvas varies (all distinct)", ok, d))
-    colours = sorted({(c["solidColours"], c.get("glClearColours")) for c in seeded})
-    out.append(("S1 solid fill and WebGL clear read one colour", colours == [(1, 1)], f"colours: {colours}"))
+    colours = [] if nogl else sorted({(c["solidColours"], c["glClearColours"]) for c in seeded})
+    out.append(("S1 solid fill and WebGL clear read one colour",
+                None if nogl else colours == [(1, 1)], nogl_d or f"colours: {colours}"))
     off = sorted(k for k in stock if unconfigured.get(k) != stock[k])
     out.append(("rule 5: the fork without config reads as stock", not off, f"differ: {off}"))
     return out

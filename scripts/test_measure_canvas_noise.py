@@ -68,3 +68,21 @@ def test_s1_fails_on_more_than_one_colour():
 
 def test_rule5_fails_when_unconfigured_differs_from_stock():
     assert ok(cell(), cell(text="x"), seeded(), "rule 5") is False
+
+
+def test_missing_webgl_in_a_seed_makes_s1_and_p3_unmeasured_and_names_it():
+    s = seeded()
+    s[2] = {**s[2], "glClear": "no context"}
+    del s[2]["glClearColours"]
+    rows = {n[:2]: (v, d) for n, v, d in m.verdicts(cell(), cell(), s)}
+    for p in ("S1", "P3"):
+        v, d = rows[p]
+        assert v is None and "seed 3" in d, (p, v, d)
+
+
+def test_missing_webgl_in_stock_makes_s1_and_p3_unmeasured():
+    stock = cell(glClear="no context")
+    del stock["glClearColours"]
+    rows = {n[:2]: (v, d) for n, v, d in m.verdicts(stock, cell(), seeded())}
+    for p in ("S1", "P3"):
+        assert rows[p][0] is None and "stock" in rows[p][1], (p, rows[p])
