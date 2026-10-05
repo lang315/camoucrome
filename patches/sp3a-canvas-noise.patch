@@ -349,7 +349,7 @@ index 332d1f5c54..954cf935b7 100644
    return MakeGarbageCollected<CanvasPattern>(std::move(image_for_rendering),
                                               repeat_mode, origin_clean);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..a24c938545 100644
+index 6ee4b2b0d1..77954897da 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -400,6 +400,17 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
@@ -360,7 +360,7 @@ index 6ee4b2b0d1..a24c938545 100644
 +  // putImageData, or from any drawImage or createPattern source (an image,
 +  // video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap): a page
 +  // may know their exact values, or they may already carry noise, so such a
-+  // canvas reads as stock.
++  // canvas carries no readback noise.
 +  bool camou_imported_pixels_ = false;
 +  // Camoucrome: the canvas holds anti-aliased geometry (curves, or fills
 +  // and strokes under a non-axis-aligned transform). The text offset does
@@ -383,7 +383,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..5fd2907a60 100644
+index 26c0a088cc..66907434ac 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,9 @@
@@ -396,7 +396,7 @@ index 26c0a088cc..5fd2907a60 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,37 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5359,57 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -405,9 +405,6 @@ index 26c0a088cc..5fd2907a60 100644
 +  // the fingerprint-relevant RGBA / UNSIGNED_BYTE case only (other formats,
 +  // the zero-pixel throwaway path in `buffer`, and reads from a user-bound
 +  // framebuffer -- app-owned data, not a fingerprint surface -- are untouched).
-+  // Only a tightly packed rect inside the drawing buffer: a WebGL2
-+  // PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS layout, or a rect reaching past
-+  // the buffer, leaves bytes readPixels never wrote, so it reads as stock.
 +  // No-op when canvas:seed is unset.
 +  //
 +  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
@@ -417,18 +414,41 @@ index 26c0a088cc..5fd2907a60 100644
 +  // needs buffer-provenance tracking (was this PACK buffer filled from the
 +  // default FB?), which is out of SP3a's scope -- see the plan's Out-of-
 +  // scope note and spec 7.4.
-+  const WebGLImageConversion::PixelStoreParams camou_pack =
-+      GetPackPixelStoreParams();
 +  if (!buffer && !framebuffer && format == GL_RGBA &&
-+      type == GL_UNSIGNED_BYTE && width > 0 && height > 0 &&
-+      camou_pack.row_length == 0 && camou_pack.skip_pixels == 0 &&
-+      camou_pack.skip_rows == 0 && x >= 0 && y >= 0 &&
-+      int64_t{x} + width <= drawingBufferWidth() &&
-+      int64_t{y} + height <= drawingBufferHeight()) {
-+    if (auto* ec = Host()->GetTopExecutionContext()) {
-+      camoucfg::PerturbRgbaFromConfig(data, static_cast<size_t>(width),
-+                                      static_cast<size_t>(height),
-+                                      camoucfg::ScopeFor(ec));
++      type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
++    // The noise goes on the in-buffer part of the rect, at the real pack
++    // layout (PACK_ALIGNMENT, WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS /
++    // SKIP_ROWS): a read in any layout gets the same field on the same
++    // pixels, and no layout returns the clean render. readPixels has already
++    // validated the destination size against this layout.
++    const WebGLImageConversion::PixelStoreParams camou_pack =
++        GetPackPixelStoreParams();
++    const int64_t camou_stride_px =
++        camou_pack.row_length > 0 ? camou_pack.row_length : width;
++    const int64_t camou_align = std::max<int64_t>(camou_pack.alignment, 1);
++    const int64_t camou_row_bytes =
++        (camou_stride_px * 4 + camou_align - 1) / camou_align * camou_align;
++    const int64_t camou_x0 = std::max<int64_t>(x, 0);
++    const int64_t camou_y0 = std::max<int64_t>(y, 0);
++    const int64_t camou_x1 =
++        std::min<int64_t>(int64_t{x} + width, drawingBufferWidth());
++    const int64_t camou_y1 =
++        std::min<int64_t>(int64_t{y} + height, drawingBufferHeight());
++    if (camou_stride_px >= width && camou_x1 > camou_x0 &&
++        camou_y1 > camou_y0) {
++      if (auto* ec = Host()->GetTopExecutionContext()) {
++        const int64_t camou_offset =
++            (int64_t{camou_pack.skip_rows} + (camou_y0 - y)) *
++                camou_row_bytes +
++            (int64_t{camou_pack.skip_pixels} + (camou_x0 - x)) * 4;
++        // SAFETY: readPixels validated the destination against this pack
++        // layout, and the offset lies inside the validated region.
++        uint8_t* camou_dst = UNSAFE_BUFFERS(data + camou_offset);
++        camoucfg::PerturbRgbaFromConfig(
++            camou_dst, static_cast<size_t>(camou_x1 - camou_x0),
++            static_cast<size_t>(camou_y1 - camou_y0),
++            static_cast<size_t>(camou_row_bytes), camoucfg::ScopeFor(ec));
++      }
 +    }
 +  }
  }
