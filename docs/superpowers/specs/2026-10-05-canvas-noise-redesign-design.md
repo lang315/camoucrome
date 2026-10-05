@@ -187,15 +187,16 @@ Four changes from the PR #27 review:
   source** (an image, video, VideoFrame, SVG, canvas, OffscreenCanvas or
   ImageBitmap), not only canvas-derived ones. A page may know the exact values
   of a decoded image, or it may already carry noise, so a canvas that drew any
-  of them reads as stock. This removes the VideoFrame gap listed above.
+  of them carries no readback noise (the draw-time text offset still applies).
+  The VideoFrame gap is gone: the flag now covers it.
 - **The text offset is in device space.** It is mapped back through the inverse
   of the transform's linear part, so a scaled or rotated context still moves
   glyphs by under one device pixel; `ctx.scale(40, 40)` can no longer magnify
   the profile's offset.
-- **`readPixels` noise only on a tightly packed rect inside the buffer.** A
-  WebGL2 `PACK_ROW_LENGTH` / `SKIP_PIXELS` / `SKIP_ROWS` layout, or a rect that
-  reaches past the drawing buffer, leaves bytes `readPixels` never wrote, so it
-  reads as stock.
+- **`readPixels` noise goes on the in-buffer part of the rect at the real pack
+  layout; the field is keyed by a tight copy of the pixels, so the layout does
+  not change it.** A rect reaching past the buffer still gets a rect-relative
+  field, which is the recorded WebGL sub-rect gap.
 - **Flat rows run on eligible canvases** (a corner arc, read away from it), and
   C7 and C8 compare with a live unconfigured session of a text-free scene, so
   they test the hook and not the text offset.

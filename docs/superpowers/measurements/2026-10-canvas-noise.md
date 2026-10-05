@@ -289,7 +289,8 @@ control changed nothing.
 
 ## 8. Known gaps
 
-- Any image draw makes the canvas stock. `drawImage` and `createPattern` of an
+- Any image draw leaves the canvas without readback noise (the draw-time text
+  offset still applies). `drawImage` and `createPattern` of an
   image, video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap set the
   imported-pixels flag, so the VideoFrame gap of the first draft is closed.
 - `transferToImageBitmap` is not covered (the spec lists it).
@@ -408,3 +409,62 @@ C14, C15 and C16 PASS. C2, C3, C4, C5, C10 FAIL only because there is no stock
 baseline file on the host (UNMEASURED; the WSL run covers them). C11 fails only
 its baseline clause: its seeded rows equal unconfigured (`differ []`) and both
 colour counts are 1.
+
+### Round 2: readPixels at the real pack layout
+
+Re-review found two problems in round 1's `readPixels` rule: it ignored
+`PACK_ALIGNMENT`, and every skipped read (WebGL2 `PACK_ROW_LENGTH` /
+`SKIP_PIXELS` / `SKIP_ROWS`, aligned reads, rects reaching past the buffer)
+returned the clean render, a bypass a page could diff against a default read.
+Ruling: readPixels noise goes on the in-buffer part of the rect at the real
+pack layout; the field is keyed by a tight copy of the pixels, so the layout
+does not change it. A rect reaching past the buffer still gets a rect-relative
+field, which is the recorded WebGL sub-rect gap. `PerturbRgba` and
+`PerturbRgbaFromConfig` gained a `row_bytes` parameter. New rows C17 (alignment
+8, odd width), C18 (WebGL2 row length / skip pixels / skip rows) and C19 (rect
+past the buffer); `EXPECTED = 19`. Locks `pr27 fix2` and `windows pr27 fix2`,
+both released.
+
+RED on the round-1 build (WSL):
+
+```
+FAIL  17 readPixels at PACK_ALIGNMENT 8, odd width, agrees with the default layout
+FAIL  18 WebGL2 PACK_ROW_LENGTH/SKIP_PIXELS/SKIP_ROWS read agrees with the default read
+FAIL  19 readPixels rect past the buffer: in-buffer part differs from unconfigured
+      17 : seeded {'pix': 228, 'pad': 0, ...}, unconfigured {'pix': 0, 'pad': 0, ...}
+      18 : seeded {'inside': 118, 'outside': 0, ...}, unconfigured {'inside': 0, ...}
+      19 : seeded {'h': 2741506969}, unconfigured {'h': 2741506969}
+```
+
+Unit RED: with the new tests and the round-1 `canvas_noise.h`,
+`components_unittests` fails to compile: `canvas_noise_unittest.cc:34:3: error: no
+matching function for call to 'PerturbRgba'` (and lines 35, 41, ...).
+
+GREEN (WSL): first build failed on `-Wunsafe-buffer-usage` for the pointer
+arithmetic in `ReadPixelsHelper` (fixed with `UNSAFE_BUFFERS` and a SAFETY
+comment); second build `Build Succeeded: 34 steps`. gtest `PerturbRgba*`
+including `PaddedRowsGetTheTightField` and `RowBytesBelowWidthIsNoOp` pass;
+`gn check` (webgl, canvas, camoucfg) OK; `checkdeps` SUCCESS on all three.
+`verify_sp3a.py`: 19 PASS, `ALL_PASS`. `verify_review_2026_09_24.py`: 12/12.
+Export: fixups into `sp3a-canvas-noise` (Blink) and `windows-behaviour-ii`
+(`canvas_noise.{h,cc}` and its test); 38 commits, 0 fixups, sync PASS, additions
+identical. Patches: `sp3a-canvas-noise.patch`
+`8264e1ba0b657df2074a0611717614636016609fc12137e4ec18358e823fcaf1`,
+`sp3b-webgl-profile.patch` (index line)
+`d95ce8f6efa01234b554002a8a6de342d3a67f6b71d96c572b8b97fdee7247db`.
+
+Windows (Ruling 11), pre then post sha256:
+
+- `canvas_noise.cc`: `bd0d5ac73b9ecac2c98eee42bd98e06cce0e6292a2c8da2f23ef04b334e473a2`, `97c61511305f642bd16cd73c3f8e0bdb297a6c36123547abda8f529327ccab2d`
+- `canvas_noise.h`: `7fcc8b1ff04fb7c3d964dca17b3855715c6dac94f54061635f256785eebe4514`, `0e33c24046a100210c3b6e35425e3e1f2c84e6372b253dd027b21890ece4c90e`
+- `canvas_noise_unittest.cc`: `27aa934100b31f02e4bd9284d9156d0bab2e5fcf9189ceb68ac50a8678168668`, `639d2fbf00645fa5745782d7c82137add09e74bf40d56ce7ff658c608830e3d1`
+- `canvas_2d_recorder_context.h`: `6ddff2392266c652191c13b7870989780f943de56f095f954f2689b13c2f7097`, `9cc0bc855115b09dc44a3c24894e43bb7bce9aeb4f8ea8e73f758488687aa05e`
+- `webgl_rendering_context_base.cc`: `e9a0e333611dd7cbf3007c77ec43e0fed11219e0822ee0159547911a21671d66`, `b4d6a64917aafe5d24544cee1ceca5f7354b2cea560654d3cae149e62c1c7fc0`
+
+Build `Build Succeeded: 78 steps`, rc=0. Host runner at 0.04: `final4-headed` first run
+hit a stock cell without WebGL (P3 and S1 UNMEASURED, rule 5 FAIL; log
+`final4-headed-try1.log`), rerun 9/9 PASS. `final4-headless` first run lost
+WebGL in seed 2 (two UNMEASURED; `final4-headless-try1.log`), rerun 9/9 PASS.
+`verify_sp3a.py` on Windows `chrome` (`sp3a-win4.log`): C6 to C9 and C12 to C19
+PASS; C2 to C5, C10 and C11's baseline clause fail only for lack of a stock
+baseline file (UNMEASURED); C11's seeded rows equal unconfigured.
