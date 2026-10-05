@@ -34,19 +34,28 @@ uint64_t ContentHash(base::span<const uint8_t> data) {
 
 }  // namespace
 
-void PerturbRgba(uint8_t* data, size_t width, size_t height, uint64_t seed,
-                 double density, int32_t strength) {
-  if (seed == 0 || data == nullptr || width == 0 || height == 0) {
+void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
+                 uint64_t seed, double density, int32_t strength) {
+  if (seed == 0 || data == nullptr || width == 0 || height == 0 ||
+      row_bytes < width * 4) {
     return;
   }
-  // SAFETY: the caller's buffer holds width * height RGBA8 pixels.
-  const base::span<const uint8_t> in = UNSAFE_BUFFERS(
-      base::span<const uint8_t>(data, width * height * 4));
+  // SAFETY: the caller's buffer holds `height` rows of `row_bytes`, the last
+  // one at least width * 4 bytes long.
+  const base::span<const uint8_t> in = UNSAFE_BUFFERS(base::span<const uint8_t>(
+      data, (height - 1) * row_bytes + width * 4));
   const std::vector<uint8_t> source(in.begin(), in.end());
+  // The pixels alone, row by row: the field must not depend on the padding.
+  std::vector<uint8_t> tight;
+  tight.reserve(width * height * 4);
+  for (size_t y = 0; y < height; ++y) {
+    const auto row = in.subspan(y * row_bytes, width * 4);
+    tight.insert(tight.end(), row.begin(), row.end());
+  }
   // Fold content into the seed: same drawing reproduces, different drawings
   // diverge.
-  PerturbRgbaEdges(data, source.data(), width, height, width * 4,
-                   seed ^ ContentHash(source), density, strength,
+  PerturbRgbaEdges(data, source.data(), width, height, row_bytes,
+                   seed ^ ContentHash(tight), density, strength,
                    /*min_alpha=*/255);
 }
 
@@ -139,7 +148,7 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
 }
 
 void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
-                           const ConfigScope& scope) {
+                           size_t row_bytes, const ConfigScope& scope) {
   const uint64_t seed = CanvasSeed(scope);
   if (seed == 0) {
     return;  // spoof off -> byte-identical to stock (rule 5)
@@ -147,7 +156,7 @@ void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
-  PerturbRgba(data, width, height, seed, density, strength);
+  PerturbRgba(data, width, height, row_bytes, seed, density, strength);
 }
 
 double PerturbMetric(double stock, uint64_t seed, uint64_t index,
