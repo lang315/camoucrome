@@ -238,6 +238,38 @@ PASS  R3 .. PASS  R12 (ten more rows)
 12/12 ALL_PASS
 ```
 
+### final2 (Windows host, flag placement and eligible-canvas rows)
+
+Tree `9cf82ac` then `d169041`, default density 0.04, lock `windows cn finalfix`. The
+one changed Blink file (`canvas_2d_recorder_context.cc`) went to the Windows tree by
+per-file replacement: pre-hash `2B0BAD65...F8C1A` equal to the previous box-tip blob,
+post-hash `F47ABFE6...9425D` equal to the new tip blob; the tree's sp3a patch sha256
+`D122B6C4...830AE` equals the Mac's. Build `final2`: `Build Succeeded: 49 steps`,
+rc=0, 52 s.
+
+Logs (earlier logs untouched): `final2-headed.log` (first run, two FAIL rows, below),
+`final2-headed-b.log`, `final2-headless.log`.
+
+First headed run `final2-headed.log`, tree `9cf82ac`: P4 FAIL (all agree: False, 8 of
+8 seeds) and rule 5 FAIL (`glClear`, `glClearColours`: the unconfigured cell had no
+WebGL context, the known flake). P4 was a runner defect, not the engine: the copy
+destination's new arc showed through the transparent parts of the source canvas, so
+the copy could not equal the source read. The source is now filled opaque first
+(`d169041`); the WSL `COPY` row already had an opaque scene.
+
+```
+final2-headed-b and final2-headless (identical verdicts):
+PASS  P1 text, 512x128 canvas, varies across seeds  (8 distinct of 8, stock among them: False)
+PASS  P2 text, willReadFrequently canvas, varies across seeds  (8 distinct of 8, stock among them: False)
+PASS  P3 flat drawings equal stock, putImageData round trip exact  (differ: [], round trip exact: True)
+PASS  P4 drawImage and createImageBitmap agree with getImageData  (all agree: True)
+PASS  P5 text at x and x+1 differ only by the shift  (all equal: True)
+PASS  S2 oracle text canvas varies (>=6 distinct)  (8 distinct of 8, stock among them: False)
+PASS  S2 oracle shape canvas varies (all distinct)  (8 distinct of 8, stock among them: False)
+PASS  S1 solid fill and WebGL clear read one colour  (colours: [(1, 1)])
+PASS  rule 5: the fork without config reads as stock  (differ: [])
+```
+
 ## 7. Step 2 re-measure
 
 `measure_step2.py run` on the host, fork against stock, both modes, 0 errors.
