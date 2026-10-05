@@ -381,12 +381,20 @@ box's after transfer.
 
 Pre and post sha256 matched for all four Blink files:
 
-| file | pre | post |
-|---|---|---|
-| `base_rendering_context_2d.cc` | c4776c11...f633 | a7042345...71a3 |
-| `canvas_2d_recorder_context.cc` | f47abfe6...425d | f03bf454...3c |
-| `canvas_2d_recorder_context.h` | 4733179a...e0fd | 6ddff239...7097 |
-| `webgl_rendering_context_base.cc` | dfcbdbf2...0a65 | e9a0e333...6d66 |
+Per file, `pre` then `post` sha256:
+
+- `base_rendering_context_2d.cc`
+  - pre `c4776c111417df3d3e255a481db6cac6a550264f68ace7a87ce4df919c13f633`
+  - post `a7042345f0b2406525103623152e6830e48d9b81f0c2bf06d4c9be6ea11d71a3`
+- `canvas_2d_recorder_context.cc`
+  - pre `f47abfe6491d25abdc36e95b4755960e733152d961f7b23af8e18b536b99425d`
+  - post `f03bf454f7dec24040b28fc4c675e12a35aaf3a66395f54cc5058fb2ea7fad3c`
+- `canvas_2d_recorder_context.h`
+  - pre `4733179ad8bf78be61824668dfc5ef3cf2e82a55c03a3ee2401feb467746e0fd`
+  - post `6ddff2392266c652191c13b7870989780f943de56f095f954f2689b13c2f7097`
+- `webgl_rendering_context_base.cc`
+  - pre `dfcbdbf25266e27bfc11a44bb5c763f87f1ecf2e2e5068e491b24dc642fc0a65`
+  - post `e9a0e333611dd7cbf3007c77ec43e0fed11219e0822ee0159547911a21671d66`
 
 Build: `Build Succeeded: 70 steps`, rc=0. Host runner, shipped density 0.04:
 
