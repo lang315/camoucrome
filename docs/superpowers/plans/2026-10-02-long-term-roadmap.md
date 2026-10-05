@@ -411,12 +411,22 @@ like this:
 
 Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
 
-- **S1. Farbling is visible on a solid fill.** A one-colour canvas reads back
+- **S1. DONE 2026-10-05 (target design, density 0.04; `measurements/2026-10-canvas-noise.md`).** Farbling is visible on a solid fill. A one-colour canvas reads back
   3 distinct colours on the fork and a WebGL clear reads 5, where stock reads
   1. Any page can run this test, so it outranks every other surface item.
-- **S2. Canvas noise has little entropy.** `canvas.text` stays `9c3103de` in 7
+- **S2. DONE 2026-10-05 (target design, density 0.04; `measurements/2026-10-canvas-noise.md`).** Canvas noise has little entropy. `canvas.text` stays `9c3103de` in 7
   of 8 seeded launches, and `canvas.shape` repeats one hash for three seeds.
   Two identities share `canvas.text`.
+  Follow-up: key the readback noise on each pixel's 3×3 source patch instead of
+  (seed^stateHash, x, y): removes the reseed, the position and the WebGL sub-rect tells.
+- **S2b. OPEN (follow-up to S2, from the PR #27 review).** The anti-aliasing
+  flag misses diagonal `lineTo` polygons, curved `clip()`, rotated `drawImage`,
+  round caps and `shadowBlur`. Eligibility is one sticky per-canvas boolean, so
+  it can be told apart across canvases. WebGL to WebGL `texImage2D` takes a GPU
+  path that skips the hook. The cache holds two full-canvas copies, and a miss on
+  a float16 canvas reads back from the GPU for nothing. Proposed direction: key
+  the noise on each pixel's 3×3 source neighbourhood and decide eligibility per
+  region. This needs its own spec.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
   while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
   unmeasurable.

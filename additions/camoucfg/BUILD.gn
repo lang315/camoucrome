@@ -58,6 +58,7 @@ source_set("unit_tests") {
   sources = [
     "audio_noise_unittest.cc",
     "canvas_noise_unittest.cc",
+    "canvas_readback_unittest.cc",
     "coherence_validator_unittest.cc",
     "derive_unittest.cc",
     "device_ids_unittest.cc",
@@ -71,8 +72,10 @@ source_set("unit_tests") {
 
   deps = [
     ":camoucfg",
+    ":canvas_readback",
     "//base",
     "//base/test:test_support",
+    "//skia",
     "//testing/gtest",
     "//ui/gfx/geometry",
   ]

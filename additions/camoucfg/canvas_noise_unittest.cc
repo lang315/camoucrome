@@ -4,6 +4,8 @@
 
 #include "components/camoucfg/canvas_noise.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -26,53 +28,42 @@ std::vector<uint8_t> Scene(size_t pixels) {
   return v;
 }
 
-// Copies the w x h rect at (x, y) out of a `full_w`-wide RGBA buffer.
-std::vector<uint8_t> Crop(const std::vector<uint8_t>& full, size_t full_w,
-                          size_t x, size_t y, size_t w, size_t h) {
-  std::vector<uint8_t> out;
-  for (size_t r = 0; r < h; ++r) {
-    const size_t start = ((y + r) * full_w + x) * 4;
-    out.insert(out.end(), full.begin() + start, full.begin() + start + w * 4);
-  }
-  return out;
-}
-
 TEST(PerturbRgbaTest, SameInputsGiveSameOutput) {
   // The determinism guarantee: two readbacks of one canvas are byte-identical.
   auto a = Scene(64), b = Scene(64);
-  PerturbRgba(a.data(), a.size(), /*seed=*/12345, /*density=*/0.5, /*strength=*/2);
-  PerturbRgba(b.data(), b.size(), 12345, 0.5, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/12345, /*density=*/0.5, /*strength=*/2);
+  PerturbRgba(b.data(), 8, 8, 8 * 4, 12345, 0.5, 2);
   EXPECT_EQ(a, b);
 }
 
 TEST(PerturbRgbaTest, SeedZeroIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), a.size(), /*seed=*/0, 0.5, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/0, 0.5, 2);
   EXPECT_EQ(a, orig);  // byte-identical to stock when spoof is off
 }
 
 TEST(PerturbRgbaTest, DensityZeroIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), a.size(), 12345, /*density=*/0.0, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, 12345, /*density=*/0.0, 2);
   EXPECT_EQ(a, orig);
 }
 
 TEST(PerturbRgbaTest, ActuallyChangesSomePixels) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), a.size(), 12345, /*density=*/0.5, 2);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/0.5, 2);
   EXPECT_NE(a, orig) << "high density left every pixel untouched";
 }
 
 TEST(PerturbRgbaTest, AlphaChannelNeverChanges) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), a.size(), 12345, /*density=*/1.0, 4);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, 4);
   for (size_t i = 3; i < a.size(); i += 4)
     EXPECT_EQ(a[i], orig[i]) << "alpha byte " << i << " was perturbed";
 }
 
 TEST(PerturbRgbaTest, DeltaStaysWithinStrength) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), a.size(), 12345, /*density=*/1.0, /*strength=*/3);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, /*strength=*/3);
   for (size_t i = 0; i < a.size(); ++i) {
     if ((i & 3u) == 3u) continue;  // alpha untouched
     int d = static_cast<int>(a[i]) - static_cast<int>(orig[i]);
@@ -91,8 +82,8 @@ TEST(PerturbRgbaTest, DifferentDrawingsGetDifferentNoiseFields) {
   auto b = Scene(256);
   b[0] ^= 0xFF;  // change content within the hashed prefix
   auto a_orig = a, b_orig = b;
-  PerturbRgba(a.data(), a.size(), 777, 0.5, 2);
-  PerturbRgba(b.data(), b.size(), 777, 0.5, 2);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 777, 0.5, 2);
+  PerturbRgba(b.data(), 16, 16, 16 * 4, 777, 0.5, 2);
   // Compare the deltas, not the pixels (b started one byte different).
   bool fields_differ = false;
   for (size_t i = 1; i < a.size(); ++i) {  // skip the byte we changed
@@ -102,50 +93,6 @@ TEST(PerturbRgbaTest, DifferentDrawingsGetDifferentNoiseFields) {
   }
   EXPECT_TRUE(fields_differ) << "noise field ignores content; map-and-subtract "
                                "would defeat it";
-}
-
-// Review 2026-09-24 #2: the noise of a pixel is a function of its canvas
-// position, so a sub-rectangle read agrees with a full read of the same state.
-TEST(PerturbRgbaAtTest, SubRectAgreesWithFullRead) {
-  auto full = Scene(16 * 16);
-  const auto orig = full;
-  PerturbRgbaAt(full.data(), 16, 16, 16 * 4, 0, 0, /*seed=*/99, 1.0, 2);
-  auto part = Crop(orig, 16, 5, 7, 3, 4);
-  PerturbRgbaAt(part.data(), 3, 4, 3 * 4, 5, 7, /*seed=*/99, 1.0, 2);
-  EXPECT_EQ(part, Crop(full, 16, 5, 7, 3, 4));
-  EXPECT_NE(full, orig);
-}
-
-// Review #3: stock never produces RGB != 0 under alpha 0, nor unpremultiplied
-// values off the grid a partial alpha implies. Only opaque pixels move.
-TEST(PerturbRgbaAtTest, NonOpaquePixelsAreUntouched) {
-  std::vector<uint8_t> px = {0, 0, 0, 0,  10, 20, 30, 128,  40, 50, 60, 255};
-  const auto orig = px;
-  bool opaque_moved = false;
-  for (uint64_t seed = 1; seed < 64 && !opaque_moved; ++seed) {
-    px = orig;
-    PerturbRgbaAt(px.data(), 3, 1, 12, 0, 0, seed, 1.0, 3);
-    EXPECT_EQ(std::vector<uint8_t>(px.begin(), px.begin() + 8),
-              std::vector<uint8_t>(orig.begin(), orig.begin() + 8));
-    opaque_moved = px != orig;
-  }
-  EXPECT_TRUE(opaque_moved);
-}
-
-// Review #9: out-of-range strength/density are clamped, never overflow.
-TEST(PerturbRgbaAtTest, ExtremeParametersAreClamped) {
-  // A negative strength clamps to 0: no noise (unclamped, |INT_MIN| = 2^31
-  // was a live bound and pixel + delta overflowed int32).
-  auto a = Scene(64);
-  const auto orig = a;
-  PerturbRgbaAt(a.data(), 8, 8, 32, 0, 0, 7, 1.0,
-                std::numeric_limits<int32_t>::min());
-  EXPECT_EQ(a, orig);
-  // Density above 1 is density 1.
-  auto b = Scene(64), c = Scene(64);
-  PerturbRgbaAt(b.data(), 8, 8, 32, 0, 0, 7, /*density=*/50.0, 2);
-  PerturbRgbaAt(c.data(), 8, 8, 32, 0, 0, 7, /*density=*/1.0, 2);
-  EXPECT_EQ(b, c);
 }
 
 // Review #4: the state hash covers the whole canvas, not its first 1 KB.
@@ -158,10 +105,37 @@ TEST(CanvasStateHashTest, SeesLateContentAndIsDeterministic) {
             CanvasStateHash(b.data(), 64, 64, 64 * 4));
 }
 
-TEST(PerturbRgbaTest, ShortBufferIsNoOp) {
-  std::vector<uint8_t> tiny = {1, 2, 3};  // length < 4
+TEST(PerturbRgbaTest, PaddedRowsGetTheTightField) {
+  // One pixel content gets one field whatever the row padding: a padded
+  // readPixels (PACK_ALIGNMENT 8, odd width) matches the tight read, and the
+  // padding bytes are never touched.
+  constexpr size_t kW = 7, kH = 5;
+  auto tight = Scene(kW * kH);
+  std::vector<uint8_t> padded(kH * 32, 0xAB);
+  for (size_t y = 0; y < kH; ++y)
+    std::copy_n(tight.begin() + y * kW * 4, kW * 4, padded.begin() + y * 32);
+  PerturbRgba(tight.data(), kW, kH, kW * 4, 12345, 1.0, 3);
+  PerturbRgba(padded.data(), kW, kH, 32, 12345, 1.0, 3);
+  EXPECT_NE(tight, Scene(kW * kH));  // not vacuous
+  for (size_t y = 0; y < kH; ++y) {
+    EXPECT_TRUE(std::equal(tight.begin() + y * kW * 4,
+                           tight.begin() + (y + 1) * kW * 4,
+                           padded.begin() + y * 32));
+    for (size_t i = kW * 4; i < 32; ++i)
+      EXPECT_EQ(padded[y * 32 + i], 0xAB);
+  }
+}
+
+TEST(PerturbRgbaTest, RowBytesBelowWidthIsNoOp) {
+  auto a = Scene(64), orig = Scene(64);
+  PerturbRgba(a.data(), 8, 8, 8 * 4 - 1, 12345, 1.0, 3);
+  EXPECT_EQ(a, orig);
+}
+
+TEST(PerturbRgbaTest, ZeroSizeIsNoOp) {
+  std::vector<uint8_t> tiny = {1, 2, 3};
   auto orig = tiny;
-  PerturbRgba(tiny.data(), tiny.size(), 12345, 1.0, 2);
+  PerturbRgba(tiny.data(), 0, 0, 0 * 4, 12345, 1.0, 2);
   EXPECT_EQ(tiny, orig);
 }
 
@@ -258,6 +232,174 @@ TEST(CanvasNoiseTest, DomainSeparationAndSpread) {
     }
   }
   EXPECT_TRUE(seeds_differ) << "seed has no effect on the derived delta";
+}
+
+using Px = std::array<uint8_t, 4>;
+
+std::vector<uint8_t> Fill(size_t w, size_t h, Px px) {
+  std::vector<uint8_t> v;
+  for (size_t i = 0; i < w * h; ++i)
+    v.insert(v.end(), px.begin(), px.end());
+  return v;
+}
+
+void Set(std::vector<uint8_t>& v, size_t w, size_t x, size_t y, Px px) {
+  std::copy(px.begin(), px.end(), v.begin() + (y * w + x) * 4);
+}
+
+Px Get(const std::vector<uint8_t>& v, size_t w, size_t x, size_t y) {
+  Px px;
+  std::copy_n(v.begin() + (y * w + x) * 4, 4, px.begin());
+  return px;
+}
+
+// PerturbRgbaEdges on `v`, with an unperturbed copy of it as the source.
+void Edges(std::vector<uint8_t>& v, size_t w, size_t h, uint64_t seed,
+           double density, int32_t strength, uint8_t min_alpha = 1) {
+  const std::vector<uint8_t> source = v;
+  PerturbRgbaEdges(v.data(), source.data(), w, h, w * 4, seed, density,
+                   strength, min_alpha);
+}
+
+// A buffer whose every pixel differs from its neighbours, with partial alpha
+// (premultiplied: each channel at most alpha) and alpha 0 on (x + y) % 3 == 0.
+std::vector<uint8_t> PartialAlphaScene(size_t w, size_t h) {
+  std::vector<uint8_t> v(w * h * 4);
+  for (size_t y = 0; y < h; ++y) {
+    for (size_t x = 0; x < w; ++x) {
+      const uint8_t a =
+          (x + y) % 3 == 0 ? 0 : static_cast<uint8_t>(1 + (x * 37 + y * 11) % 254);
+      Set(v, w, x, y,
+          {static_cast<uint8_t>((x * 13 + y * 7) % (a + 1)),
+           static_cast<uint8_t>((x * 5 + y * 17 + 3) % (a + 1)),
+           static_cast<uint8_t>((x * 11 + y * 3 + 9) % (a + 1)), a});
+    }
+  }
+  return v;
+}
+
+// S1: a one-colour fill has no pixel unlike its neighbours.
+TEST(PerturbRgbaEdgesTest, OneColourBufferIsUnchanged) {
+  auto v = Fill(16, 16, {10, 20, 30, 255});
+  const auto orig = v;
+  for (uint64_t seed = 1; seed < 32; ++seed)
+    Edges(v, 16, 16, seed, 1.0, 3);
+  EXPECT_EQ(v, orig);
+}
+
+// A 2-pixel pair: each of its pixels has one same-coloured neighbour, as on a
+// hard edge or a 1px line.
+TEST(PerturbRgbaEdgesTest, PixelWithOneSameNeighbourIsUnchanged) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 3, 4, {200, 100, 50, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const auto orig = v;
+  for (uint64_t seed = 1; seed < 32; ++seed)
+    Edges(v, 8, 8, seed, 1.0, 3);
+  EXPECT_EQ(v, orig);
+}
+
+TEST(PerturbRgbaEdgesTest, PixelUnlikeAllFourNeighboursChanges) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const auto orig = v;
+  bool changed = false;
+  for (uint64_t seed = 1; seed < 32 && !changed; ++seed) {
+    v = orig;
+    Edges(v, 8, 8, seed, 1.0, 3);
+    auto rest = v;
+    Set(rest, 8, 4, 4, {200, 100, 50, 255});
+    EXPECT_EQ(rest, orig) << "a pixel other than the lone one moved";
+    changed = v != orig;
+  }
+  EXPECT_TRUE(changed);
+}
+
+// A pixel on the buffer's border has fewer than four neighbours: never touched.
+TEST(PerturbRgbaEdgesTest, BorderPixelsAreUntouched) {
+  std::vector<uint8_t> v(6 * 6 * 4);
+  for (size_t y = 0; y < 6; ++y)
+    for (size_t x = 0; x < 6; ++x)
+      Set(v, 6, x, y, (x + y) % 2 ? Px{200, 100, 50, 255} : Px{10, 20, 30, 255});
+  const auto orig = v;
+  Edges(v, 6, 6, 7, 1.0, 3);
+  for (size_t y = 0; y < 6; ++y)
+    for (size_t x = 0; x < 6; ++x)
+      if (x == 0 || y == 0 || x == 5 || y == 5)
+        EXPECT_EQ(Get(v, 6, x, y), Get(orig, 6, x, y)) << x << "," << y;
+  EXPECT_NE(v, orig) << "the checkerboard's interior did not move";
+}
+
+// Alpha 0 never changes; a partial-alpha pixel moves but stays a valid
+// premultiplied value, which Skia unpremultiplies onto stock's grid.
+TEST(PerturbRgbaEdgesTest, PartialAlphaStaysPremultiplied) {
+  auto v = PartialAlphaScene(16, 16);
+  const auto orig = v;
+  Edges(v, 16, 16, 99, 1.0, 3);
+  bool partial_moved = false;
+  for (size_t y = 0; y < 16; ++y) {
+    for (size_t x = 0; x < 16; ++x) {
+      const Px got = Get(v, 16, x, y), was = Get(orig, 16, x, y);
+      EXPECT_EQ(got[3], was[3]);
+      if (was[3] == 0) {
+        EXPECT_EQ(got, was);
+        continue;
+      }
+      for (size_t ch = 0; ch < 3; ++ch)
+        EXPECT_LE(got[ch], got[3]) << x << "," << y << " ch " << ch;
+      partial_moved |= was[3] < 255 && got != was;
+    }
+  }
+  EXPECT_TRUE(partial_moved);
+}
+
+// min_alpha 255 (the WebGL path, whose data may be unpremultiplied): only
+// opaque pixels move.
+TEST(PerturbRgbaEdgesTest, MinAlpha255LeavesPartialAlphaAlone) {
+  auto v = PartialAlphaScene(16, 16);
+  const auto orig = v;
+  Edges(v, 16, 16, 99, 1.0, 3, /*min_alpha=*/255);
+  EXPECT_EQ(v, orig);
+}
+
+TEST(PerturbRgbaEdgesTest, NoOpWithoutSeedDensityOrStrength) {
+  auto v = PartialAlphaScene(16, 16);
+  const auto orig = v;
+  Edges(v, 16, 16, /*seed=*/0, 1.0, 3);
+  Edges(v, 16, 16, 99, /*density=*/0.0, 3);
+  Edges(v, 16, 16, 99, std::numeric_limits<double>::quiet_NaN(), 3);
+  Edges(v, 16, 16, 99, 1.0, /*strength=*/0);
+  EXPECT_EQ(v, orig);
+}
+
+// Review #9: out-of-range strength/density are clamped, never overflow.
+TEST(PerturbRgbaEdgesTest, ExtremeParametersAreClamped) {
+  // A negative strength clamps to 0: no noise (unclamped, |INT_MIN| = 2^31
+  // was a live bound and pixel + delta overflowed int32).
+  auto a = Scene(64);
+  const auto orig = a;
+  Edges(a, 8, 8, 7, 1.0, std::numeric_limits<int32_t>::min());
+  EXPECT_EQ(a, orig);
+  // Density above 1 is density 1.
+  auto b = Scene(64), c = Scene(64);
+  Edges(b, 8, 8, 7, 50.0, 2);
+  Edges(c, 8, 8, 7, 1.0, 2);
+  EXPECT_EQ(b, c);
+}
+
+TEST(CanvasNoiseTest, TextOffsetIsPerSeedAndSubPixel) {
+  EXPECT_EQ(TextOffset(0), (std::array<float, 2>{0.0f, 0.0f}));
+  bool varies = false;
+  for (uint64_t seed = 1; seed < 64; ++seed) {
+    const std::array<float, 2> o = TextOffset(seed);
+    EXPECT_EQ(o, TextOffset(seed));
+    for (float v : o) {
+      EXPECT_GE(v, 0.0f);
+      EXPECT_LT(v, 1.0f);
+    }
+    varies |= o != TextOffset(1);
+  }
+  EXPECT_TRUE(varies);
 }
 
 }  // namespace

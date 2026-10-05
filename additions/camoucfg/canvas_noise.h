@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_CAMOUCFG_CANVAS_NOISE_H_
 #define COMPONENTS_CAMOUCFG_CANVAS_NOISE_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -13,53 +14,51 @@
 
 namespace camoucfg {
 
-// Applies deterministic readback noise, in place, to a `width` x `height`
-// RGBA8 rect whose rows are `row_bytes` apart and whose top-left pixel is
-// canvas pixel (x0, y0). Pure: each channel's noise is a function of (seed,
-// canvas x, canvas y, channel) only, so every readback of one canvas state --
-// a full getImageData, a 1x1 getImageData, toDataURL -- agrees on every pixel.
-// Callers fold a hash of the canvas state into `seed` (CanvasStateHash), so
-// different drawings get different fields.
-//
-//   - seed == 0, density <= 0 (or NaN), or strength <= 0 is a no-op: the
-//     buffer stays byte-identical to stock (rule 5).
-//   - Only opaque pixels (alpha 255) change, and only their RGB. Stock never
-//     shows RGB under alpha 0, and an unpremultiplied value under a partial
-//     alpha lies on a grid a +-1 step would leave.
-//   - `density` is the fraction of RGB channels perturbed, clamped to 1.
-//   - `strength` bounds the per-channel delta, clamped to 255; values stay
-//     in [0, 255].
-//
-// Noise is applied on READBACK only, never at draw time -- callers pass a copy
-// of the pixels leaving the canvas, never the canvas's own store.
-void PerturbRgbaAt(uint8_t* data, size_t width, size_t height,
-                   size_t row_bytes, int64_t x0, int64_t y0, uint64_t seed,
-                   double density, int32_t strength);
+// Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
+// `row_bytes` apart. `source` is an unperturbed copy with the same geometry,
+// and every eligibility test reads it, so the result does not depend on the
+// order pixels are visited in. A pixel changes only if
+//   - it is interior (it has four neighbours),
+//   - its alpha is at least max(min_alpha, 1),
+//   - it differs, in any of its four bytes, from each of its four neighbours.
+// A solid region, a hard edge and a 1px line give every pixel a same-coloured
+// neighbour, so they read as stock (S1). Each RGB channel is gated by
+// `density` and moved by up to +-`strength`, clamped to [0, alpha]: for
+// premultiplied data every result is a value stock can store at that alpha.
+// `density` is the fraction of eligible pixels' RGB channels perturbed; the
+// default is calibrated in measurements/2026-10-canvas-noise.md.
+// Data that is not premultiplied passes min_alpha 255. Pure: a function of
+// (seed, x, y, channel) and `source`. seed == 0, density <= 0 (or NaN), or
+// strength <= 0 is a no-op.
+void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
+                      size_t height, size_t row_bytes, uint64_t seed,
+                      double density, int32_t strength, uint8_t min_alpha);
 
 // A hash of a whole canvas's current contents (RGBA8, `row_bytes` apart),
 // from an even sample of at most 65536 pixels plus the size.
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
                          size_t row_bytes);
 
-// PerturbRgbaAt over a tightly-packed buffer treated as one row at (0, 0),
-// with a hash of its first 1024 bytes folded into `seed`. The WebGL
-// readPixels path, which has no canvas state to hash (review 2026-09-24 #23).
-void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
-                 int32_t strength);
+// PerturbRgbaEdges over a `width` x `height` RGBA8 rect whose rows are
+// `row_bytes` apart (the WebGL readPixels destination at its pack layout),
+// neighbours read within the rect, with a hash of the first 1024 bytes of a
+// TIGHT copy of its pixels folded into `seed` -- so one pixel content gets
+// one field whatever the row padding or stride (review 2026-09-24 #23).
+// Only opaque pixels change: a premultipliedAlpha:false context stores
+// unpremultiplied values. row_bytes < width * 4 is a no-op.
+void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
+                 uint64_t seed, double density, int32_t strength);
+
+// canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
+// place the canvas noise keys are read.
+void CanvasNoiseParams(const ConfigScope& scope, double& density,
+                       int32_t& strength);
 
 // Reads canvas:seed / canvas:noiseDensity / canvas:noiseStrength from `scope`
-// and calls PerturbRgba (WebGL readPixels). The canvas readback sites use
-// PerturbCanvasPixels (canvas_readback.h) instead. Absent or zero canvas:seed
-// is a no-op.
-void PerturbRgbaFromConfig(uint8_t* data, size_t length,
-                           const ConfigScope& scope);
-
-// Reads the canvas keys from `scope` and calls PerturbRgbaAt with
-// `state_hash` folded into canvas:seed. Absent or zero canvas:seed is a
-// no-op. Blink reaches it through PerturbCanvasPixels (canvas_readback.h).
-void PerturbRgbaAtFromConfig(uint8_t* data, size_t width, size_t height,
-                             size_t row_bytes, int64_t x0, int64_t y0,
-                             uint64_t state_hash, const ConfigScope& scope);
+// and calls PerturbRgba. The WebGL readPixels path; the canvas sites use
+// NoisedCanvasImage (canvas_readback.h). Absent or zero canvas:seed is a no-op.
+void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
+                           size_t row_bytes, const ConfigScope& scope);
 
 // Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter
 // slice). Pure: the same (stock, seed, index, domain) yields the same output, so
@@ -80,6 +79,11 @@ double PerturbMetric(double stock, uint64_t seed, uint64_t index,
 // canvas:seed as a uint64 (0 if absent). The one place the metric path reads the
 // seed key; Blink reads it once per measureText and calls PerturbMetric per field.
 uint64_t CanvasSeed(const ConfigScope& scope);
+
+// The per-profile sub-pixel origin of canvas text (canvas noise redesign,
+// target design): {dx, dy}, each in [0, 1), derived from canvas:seed alone
+// (domain canvas-text-offset). {0, 0} for seed 0, so no seed draws as stock.
+std::array<float, 2> TextOffset(uint64_t seed);
 
 }  // namespace camoucfg
 
