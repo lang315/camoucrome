@@ -85,15 +85,24 @@ code is discarded and its numbers are recorded.
 **2D canvas with anti-aliased geometry.** The text offset does not reach arcs,
 bezier curves or rotated paths. On a canvas whose state includes them, readback
 noise stays, but narrower than today:
-- A pixel is perturbed only if it is opaque **and differs from all four of its
-  neighbours** in the canvas snapshot. Pixels in a solid region, on a hard
-  edge, or on a 1px line always have a same-coloured neighbour, so they never
-  change.
+- A pixel is perturbed only if it is interior (it has four neighbours), its
+  alpha is not 0, **and it differs from all four of its neighbours** in the
+  canvas snapshot. Pixels in a solid region, on a hard edge, or on a 1px line
+  always have a same-coloured neighbour, so they never change.
+- The noise works on the snapshot's **premultiplied** values: each RGB channel
+  moves by up to ±strength, clamped to `[0, alpha]`. Every result is a value
+  stock can store at that alpha, so the unpremultiplied readback that Skia
+  makes from it stays on stock's grid. Opaque pixels behave as before; pixels
+  with partial alpha (anti-aliased edges on a transparent background) become
+  eligible too.
 - A per-canvas flag records anti-aliased geometry draws (`arc`, `ellipse`,
   `bezierCurveTo`, `quadraticCurveTo`, and fills or strokes under a
-  non-axis-aligned transform). A second flag records `putImageData`. Readback
-  noise applies only when the first flag is set and the second is not. Either
-  way, a canvas that is unsure reads as stock.
+  non-axis-aligned transform). A second flag records **imported pixels**:
+  `putImageData`, and `drawImage` or `createPattern` whose source is a canvas,
+  an `OffscreenCanvas` or an `ImageBitmap`. Imported pixels may already carry
+  noise, and a second field on top of them would make a copy disagree with its
+  original. Readback noise applies only when the first flag is set and the
+  second is not. Either way, a canvas that is unsure reads as stock.
 - The noise moves from the four readback APIs to the canvas **snapshot** taken
   for any consumer: `getImageData`, `toDataURL`, `toBlob`, `convertToBlob`,
   `drawImage(canvas)`, `createImageBitmap(canvas)` and WebGL
@@ -104,7 +113,9 @@ noise stays, but narrower than today:
 **WebGL `readPixels`.**
 - Keeps readback noise under the "differs from all four neighbours" rule.
   Neighbours are read within the requested rect, so `PerturbRgba` gains `width`
-  and `height`.
+  and `height`. Only opaque pixels change here: a context with
+  `premultipliedAlpha: false` stores unpremultiplied values, which the
+  `[0, alpha]` clamp would move off their grid.
 - A clear and solid fills read as stock.
 - Known gap: a `texImage2D` upload of a random pattern, read back with
   `readPixels`, is perturbed. WebGL has no draw-time lever as cheap as the text
@@ -118,9 +129,11 @@ stays ±1.
 ## Fallback design (if the spike fails)
 
 Readback noise only, with these changes:
-- The "differs from all four neighbours" rule, for 2D and WebGL alike.
-- The `putImageData` flag: a canvas that has received `putImageData` gets no
-  noise.
+- The "differs from all four neighbours" rule, for 2D and WebGL alike, on
+  premultiplied values for 2D as in the target design.
+- The imported-pixels flag: a canvas that has received `putImageData`, or a
+  `drawImage` or `createPattern` from a canvas, `OffscreenCanvas` or
+  `ImageBitmap`, gets no noise.
 - Noise at the snapshot, covering the copy paths as in the target design.
 - The density calibrated so that the oracle's text and shape canvases both vary
   across 8 of 8 seeds.
@@ -129,6 +142,39 @@ Two gaps remain and are recorded:
 - A `putImageData` round trip on a canvas that also holds anti-aliased content
   would be perturbed if the flag were not set, so the flag is the defence.
 - Noise is still something added at readback, not a different rasteriser.
+
+## Amended while planning (2026-10-05)
+
+Three changes from the approved draft, found while writing the plan:
+
+- **Partial alpha.** The draft kept today's opaque-only rule. Measured in
+  Chrome on the oracle's drawings, the shape canvas has **0** pixels that are
+  opaque and unlike all four neighbours (638–656 opaque pixels, all in solid
+  regions); the text canvas has 103. So the draft's "the shape canvas differs
+  across 8 of 8 seeds" could not pass. Pixels with partial alpha that are
+  unlike all four neighbours number 84–105 on the shape canvas and 1664 on the
+  text canvas. The owner chose to make them eligible, through the
+  premultiplied clamp above.
+- **Imported pixels, not only `putImageData`.** `drawImage(A)` into B hands B
+  pixels that already carry A's noise. B's own field would then make
+  `getImageData(B)` differ from `getImageData(A)`, which is the copy-path tell
+  this design removes. The flag covers every canvas-derived source.
+- **C9.** `verify_sp3a.py` C9 asserts a DevTools screenshot of a scene with
+  text equals stock. A draw-time text offset moves on-screen text by design,
+  so under the target design C9's scene loses its text. Under the fallback C9
+  stays as it is.
+
+Known gaps recorded with them:
+- `captureStream`'s one-copy path (`CopyRenderingResultsToVideoFrame`, feature
+  `kOneCopyCanvasCapture`) copies from the rendering context straight to a
+  video frame, past the snapshot. Its two-copy fallback is covered.
+- A `VideoFrame` made from a canvas is not a canvas-derived source to the
+  flag, so `drawImage(new VideoFrame(canvas))` can carry two fields.
+- The placeholder of a canvas given to `transferControlToOffscreen` reads as
+  stock through `toDataURL`, while the worker's own readbacks carry noise.
+- WebGL `readPixels` and a WebGL canvas's `toDataURL` use different fields
+  (different seeds, and `readPixels` is bottom-up). That was already so before
+  this design.
 
 ## Configuration
 
@@ -143,7 +189,8 @@ still means no change at all (rule 5).
   - a one-colour buffer is unchanged at density 1;
   - a pixel with one same-coloured neighbour is unchanged at density 1;
   - a pixel unlike all four neighbours changes at density 1;
-  - non-opaque pixels are unchanged;
+  - alpha-0 pixels are unchanged, and a partial-alpha pixel stays a valid
+    premultiplied value (every channel at most its alpha);
   - the text offset is deterministic per seed and lies in `[0, 1)`.
 
   Each test is seen failing against today's functions first.
@@ -161,7 +208,8 @@ still means no change at all (rule 5).
 - **Existing rows stay green.** C6's drawing is a WebGL clear, which the new
   rule correctly leaves alone, so C6 gets a drawing with anti-aliased content
   (a gradient triangle). Any other row whose drawing has no eligible pixels is
-  changed the same way.
+  changed the same way. Under the target design C9's scene loses its text
+  (see "Amended while planning").
 - **Step 2 after the Windows build.**
   - noise reads 1 and 1;
   - the oracle's `canvas.text` and `canvas.shape` differ from stock and between
