@@ -91,3 +91,30 @@ a draw-time sub-pixel text offset from `canvas:seed`. Skia does not snap the
 glyphs away (P1, P2: 8 distinct of 8 on both canvas kinds), and the lever is no
 tell (P3, P4, P5 pass with noise off). S1, S2 and rule-5 rows are recorded
 above and were not used for the decision.
+
+## 4. verify_sp3a RED
+
+`scripts/verify_sp3a.py` at branch commit 7e9fdbf (box tree SHA 7e9fdbf) on today's unchanged WSL build. C11-C14 fail as the plan expects; C6 passes.
+
+```
+PASS  1  seeded toDataURL deterministic across two reads
+PASS  10 accessors native + window keys unchanged
+FAIL  11 flat drawings read as unconfigured (solid, edge, 1px line, WebGL clear, worker)
+FAIL  12 putImageData round trip exact
+FAIL  13 drawImage and createImageBitmap copies agree with getImageData
+FAIL  14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock
+PASS  2  seeded toDataURL differs from stock
+PASS  3  unconfigured toDataURL byte-identical to stock
+PASS  4  seeded toBlob deterministic and differs from stock
+PASS  5  seeded getImageData deterministic, differs from stock, off==stock
+PASS  6  seeded readPixels of a gradient triangle deterministic, differs from unconfigured
+PASS  7  seeded OffscreenCanvas.convertToBlob deterministic and differs
+PASS  8  worker OffscreenCanvas readback deterministic and differs (parity)
+PASS  9  DevTools screenshot identical seeded vs stock (screen unchanged)
+      C11: differ from unconfigured ['edge', 'glClear', 'glClearColours', 'solid', 'solidColours', 'worker'], colours (2D, WebGL) (3, 4), unconfigured clear == stock baseline True
+      C12: {'exact': False, 'first': 6082}
+      C13: {'a': 3226468587, 'viaDraw': 2415289306, 'viaBitmap': 2415289306}
+      C14: text 1 distinct, stock among them True; shape 7 distinct, stock among them True
+FAIL
+rc=1
+```
