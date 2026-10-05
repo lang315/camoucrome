@@ -207,7 +207,7 @@ index 1d29be2717..327256df25 100644
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 3d7a843995..da19aae6cb 100644
+index 3d7a843995..3b6995e00c 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -4,6 +4,9 @@
@@ -237,7 +237,7 @@ index 3d7a843995..da19aae6cb 100644
    DCHECK(gfx::Rect(source.width(), source.height()).Contains(source_rect));
    int dest_x = dest_offset.x() + source_rect.x();
    DCHECK_GE(dest_x, 0);
-@@ -1089,6 +1093,15 @@ void BaseRenderingContext2D::DrawTextInternal(
+@@ -1089,6 +1093,31 @@ void BaseRenderingContext2D::DrawTextInternal(
    }
  
    location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
@@ -245,10 +245,26 @@ index 3d7a843995..da19aae6cb 100644
 +  // per-profile sub-pixel offset, so text rasterises differently per
 +  // canvas:seed at draw time and every readback and copy agrees. No-op
 +  // without canvas:seed (rule 5).
++  // The offset is in device pixels: it is mapped back through the inverse of
++  // the transform's linear part, so a scaled or rotated context still moves
++  // the glyphs by less than one device pixel (a page cannot magnify it with
++  // ctx.scale() and read the profile's offset back).
 +  {
 +    const std::array<float, 2> camou_offset = camoucfg::TextOffset(
 +        camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())));
-+    location.Offset(camou_offset[0], camou_offset[1]);
++    const AffineTransform& camou_t = state.GetTransform();
++    const double camou_det =
++        camou_t.A() * camou_t.D() - camou_t.B() * camou_t.C();
++    if ((camou_offset[0] != 0 || camou_offset[1] != 0) &&
++        std::isfinite(camou_det) && camou_det != 0) {
++      location.Offset(
++          ClampTo<float>((camou_t.D() * camou_offset[0] -
++                          camou_t.C() * camou_offset[1]) /
++                         camou_det),
++          ClampTo<float>((camou_t.A() * camou_offset[1] -
++                          camou_t.B() * camou_offset[0]) /
++                         camou_det));
++    }
 +  }
  
    if (host && host->ShouldCaptureRenderedText()) {
@@ -269,7 +285,7 @@ index e3a1ba84d9..1fda96aa26 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..4a6a5bd3fe 100644
+index 332d1f5c54..954cf935b7 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -828,6 +828,8 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
@@ -314,34 +330,26 @@ index 332d1f5c54..4a6a5bd3fe 100644
  
    if (!GetOrCreatePaintCanvas()) {
      return;
-@@ -2315,6 +2329,12 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
+@@ -2315,6 +2329,8 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
      return;
    }
  
-+  if (image_source && (image_source->IsCanvasElement() ||
-+                       image_source->IsOffscreenCanvas() ||
-+                       image_source->IsImageBitmap())) {
-+    camou_imported_pixels_ = true;
-+  }
++  camou_imported_pixels_ = true;
 +
    ValidateStateStack();
  
    WillDrawImage(image_source, image && image->IsTextureBacked());
-@@ -2504,6 +2524,12 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
+@@ -2504,6 +2520,8 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
      return nullptr;
    }
  
-+  if (image_source && (image_source->IsCanvasElement() ||
-+                       image_source->IsOffscreenCanvas() ||
-+                       image_source->IsImageBitmap())) {
-+    camou_imported_pixels_ = true;
-+  }
++  camou_imported_pixels_ = true;
 +
    bool origin_clean = !WouldTaintCanvasOrigin(image_source);
    return MakeGarbageCollected<CanvasPattern>(std::move(image_for_rendering),
                                               repeat_mode, origin_clean);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..84a201c4a7 100644
+index 6ee4b2b0d1..a24c938545 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -400,6 +400,17 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
@@ -349,10 +357,10 @@ index 6ee4b2b0d1..84a201c4a7 100644
    const Font* AccessFont(HTMLCanvasElement* canvas);
  
 +  // Camoucrome canvas readback noise: the canvas holds pixels from a
-+  // putImageData, or from a drawImage or createPattern of a canvas,
-+  // OffscreenCanvas or ImageBitmap. Those may already carry noise, and a
-+  // second field on top would make a copy disagree with its original, so
-+  // such a canvas reads as stock.
++  // putImageData, or from any drawImage or createPattern source (an image,
++  // video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap): a page
++  // may know their exact values, or they may already carry noise, so such a
++  // canvas reads as stock.
 +  bool camou_imported_pixels_ = false;
 +  // Camoucrome: the canvas holds anti-aliased geometry (curves, or fills
 +  // and strokes under a non-axis-aligned transform). The text offset does
@@ -375,7 +383,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..f8b65beaba 100644
+index 26c0a088cc..5fd2907a60 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,9 @@
@@ -388,7 +396,7 @@ index 26c0a088cc..f8b65beaba 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,29 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5359,37 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -397,8 +405,10 @@ index 26c0a088cc..f8b65beaba 100644
 +  // the fingerprint-relevant RGBA / UNSIGNED_BYTE case only (other formats,
 +  // the zero-pixel throwaway path in `buffer`, and reads from a user-bound
 +  // framebuffer -- app-owned data, not a fingerprint surface -- are untouched).
-+  // Assumes default PACK alignment (RGBA8 rows are 4-aligned). No-op when
-+  // canvas:seed is unset.
++  // Only a tightly packed rect inside the drawing buffer: a WebGL2
++  // PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS layout, or a rect reaching past
++  // the buffer, leaves bytes readPixels never wrote, so it reads as stock.
++  // No-op when canvas:seed is unset.
 +  //
 +  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
 +  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
@@ -407,8 +417,14 @@ index 26c0a088cc..f8b65beaba 100644
 +  // needs buffer-provenance tracking (was this PACK buffer filled from the
 +  // default FB?), which is out of SP3a's scope -- see the plan's Out-of-
 +  // scope note and spec 7.4.
++  const WebGLImageConversion::PixelStoreParams camou_pack =
++      GetPackPixelStoreParams();
 +  if (!buffer && !framebuffer && format == GL_RGBA &&
-+      type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
++      type == GL_UNSIGNED_BYTE && width > 0 && height > 0 &&
++      camou_pack.row_length == 0 && camou_pack.skip_pixels == 0 &&
++      camou_pack.skip_rows == 0 && x >= 0 && y >= 0 &&
++      int64_t{x} + width <= drawingBufferWidth() &&
++      int64_t{y} + height <= drawingBufferHeight()) {
 +    if (auto* ec = Host()->GetTopExecutionContext()) {
 +      camoucfg::PerturbRgbaFromConfig(data, static_cast<size_t>(width),
 +                                      static_cast<size_t>(height),
