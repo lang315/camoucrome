@@ -91,8 +91,52 @@ void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
 void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
                       size_t height, size_t row_bytes, uint64_t seed,
                       double density, int32_t strength, uint8_t min_alpha) {
-  // RED stub: today's opaque-only rule, blind to `source` and neighbours.
-  PerturbRgbaAt(data, width, height, row_bytes, 0, 0, seed, density, strength);
+  // NaN-safe: !(density > 0) catches it.
+  if (seed == 0 || data == nullptr || source == nullptr || !(density > 0.0) ||
+      strength <= 0 || width < 3 || height < 3) {
+    return;
+  }
+  density = std::min(density, 1.0);
+  strength = std::min(strength, 255);
+  min_alpha = std::max<uint8_t>(min_alpha, 1);
+  static constexpr std::array<std::string_view, 3> kGate = {
+      "canvas-gate-r", "canvas-gate-g", "canvas-gate-b"};
+  static constexpr std::array<std::string_view, 3> kDelta = {
+      "canvas-r", "canvas-g", "canvas-b"};
+  const size_t size = (height - 1) * row_bytes + width * 4;
+  // SAFETY: both buffers hold `height` rows of `row_bytes`, each at least
+  // `width` * 4 bytes.
+  const base::span<const uint8_t> src =
+      UNSAFE_BUFFERS(base::span<const uint8_t>(source, size));
+  const base::span<uint8_t> dst = UNSAFE_BUFFERS(base::span(data, size));
+  auto at = [&](size_t x, size_t y) {
+    return src.subspan(y * row_bytes + x * 4, 4u);
+  };
+  for (size_t y = 1; y + 1 < height; ++y) {
+    for (size_t x = 1; x + 1 < width; ++x) {
+      const base::span<const uint8_t> px = at(x, y);
+      const uint8_t alpha = px[3];
+      if (alpha < min_alpha || std::ranges::equal(px, at(x - 1, y)) ||
+          std::ranges::equal(px, at(x + 1, y)) ||
+          std::ranges::equal(px, at(x, y - 1)) ||
+          std::ranges::equal(px, at(x, y + 1))) {
+        continue;
+      }
+      // The position, not the index in the buffer: every reader of one
+      // canvas state gets the same noise on the same pixel.
+      const uint64_t index =
+          (uint64_t{static_cast<uint32_t>(x)} << 32) | static_cast<uint32_t>(y);
+      base::span<uint8_t> out = dst.subspan(y * row_bytes + x * 4, 4u);
+      for (size_t ch = 0; ch < 3; ++ch) {
+        if (DeriveUnit(seed, kGate[ch], index) >= density) {
+          continue;
+        }
+        const int32_t v =
+            int32_t{px[ch]} + DeriveDelta(seed, kDelta[ch], index, strength);
+        out[ch] = static_cast<uint8_t>(std::clamp(v, 0, int32_t{alpha}));
+      }
+    }
+  }
 }
 
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
@@ -124,16 +168,13 @@ uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
   return h;
 }
 
-namespace {
-
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
-void NoiseParams(const ConfigScope& scope, double& density, int32_t& strength) {
+void CanvasNoiseParams(const ConfigScope& scope, double& density,
+                       int32_t& strength) {
   density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.0005);
   strength = GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
 }
-
-}  // namespace
 
 void PerturbRgbaFromConfig(uint8_t* data, size_t length,
                            const ConfigScope& scope) {
@@ -143,7 +184,7 @@ void PerturbRgbaFromConfig(uint8_t* data, size_t length,
   }
   double density;
   int32_t strength;
-  NoiseParams(scope, density, strength);
+  CanvasNoiseParams(scope, density, strength);
   PerturbRgba(data, length, seed, density, strength);
 }
 
@@ -156,7 +197,7 @@ void PerturbRgbaAtFromConfig(uint8_t* data, size_t width, size_t height,
   }
   double density;
   int32_t strength;
-  NoiseParams(scope, density, strength);
+  CanvasNoiseParams(scope, density, strength);
   PerturbRgbaAt(data, width, height, row_bytes, x0, y0, seed ^ state_hash,
                 density, strength);
 }

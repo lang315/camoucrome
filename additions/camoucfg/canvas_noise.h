@@ -65,6 +65,11 @@ uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
 void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
                  int32_t strength);
 
+// canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
+// place the canvas noise keys are read.
+void CanvasNoiseParams(const ConfigScope& scope, double& density,
+                       int32_t& strength);
+
 // Reads canvas:seed / canvas:noiseDensity / canvas:noiseStrength from `scope`
 // and calls PerturbRgba (WebGL readPixels). The canvas readback sites use
 // PerturbCanvasPixels (canvas_readback.h) instead. Absent or zero canvas:seed
