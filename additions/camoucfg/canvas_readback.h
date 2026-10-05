@@ -5,7 +5,6 @@
 #ifndef COMPONENTS_CAMOUCFG_CANVAS_READBACK_H_
 #define COMPONENTS_CAMOUCFG_CANVAS_READBACK_H_
 
-#include <cstddef>
 #include <cstdint>
 
 #include "components/camoucfg/mask_config.h"

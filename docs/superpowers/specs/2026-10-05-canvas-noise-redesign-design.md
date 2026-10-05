@@ -175,6 +175,11 @@ Known gaps recorded with them:
 - WebGL `readPixels` and a WebGL canvas's `toDataURL` use different fields
   (different seeds, and `readPixels` is bottom-up). That was already so before
   this design.
+- `OffscreenCanvas.transferToImageBitmap()` hands the canvas content over
+  through the context's own transfer, past the snapshot hook, so it reads stock
+  while `getImageData` and `convertToBlob` of the same canvas carry noise; and
+  a `bitmaprenderer` canvas showing such a bitmap is not eligible. Hooking it
+  needs its own design (the transfer clears the source).
 
 ## Configuration
 
