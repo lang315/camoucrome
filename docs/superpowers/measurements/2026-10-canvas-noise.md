@@ -190,6 +190,54 @@ Carry-overs from earlier sections:
   steps; one `cal-0.01-headed` crash log exists; the 0.04 headless row was logged as `final-headless.log`
   (this section's run reused that label and overwrote it).
 
+### WSL verify at HEAD
+
+Final fix wave, branch `s1/canvas-noise`, box `content_shell` built from the tree
+at `aec6675` plus the flag-placement change (lock `cn finalfix`). The imported-pixels
+flag now sets only after the early returns (`drawImage` after the empty-source-rect
+return, `createPattern` just before the successful return), and the anti-aliased
+rect flag sets after `ValidateRectForCanvas` in `fillRect` and `strokeRect`. Build:
+`Build Succeeded: 19 steps`; gtest PASSED 10, 10, 8; `gn check` core, modules/canvas
+and modules/webgl each `Header dependency check OK`; checkdeps on canvas2d and
+core/html/canvas `SUCCESS`.
+
+`verify_sp3a.py`, default density 0.04 (the verify rows C12 and C13 now draw an arc
+first, so their canvases are eligible; FLAT gained `solidEligible`):
+
+```
+PASS  1 .. PASS  14 (all fourteen), ALL_PASS
+PASS  11 flat drawings read as unconfigured (solid, edge, 1px line, WebGL clear, worker)
+PASS  12 putImageData round trip exact
+PASS  13 drawImage and createImageBitmap copies agree with getImageData
+PASS  14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock
+```
+
+Mutation proof (not committed): removing `camou_imported_pixels_ = true;` from
+`PutByteArray` and from the `drawImage` block, rebuild `4 steps`:
+
+```
+FAIL  12 putImageData round trip exact
+FAIL  13 drawImage and createImageBitmap copies agree with getImageData
+      C12: {'exact': False, 'first': 310}
+      C13: {'a': 2404197551, 'viaDraw': 3214157266, 'viaBitmap': 3214157266}
+FAIL                 (every other row PASS)
+```
+
+Restored from a byte copy (sha256 equal before and after), rebuilt `4 steps`, and
+`verify_sp3a` returned to ALL_PASS.
+
+`verify_review_2026_09_24.py`: R1 and R2 now draw an arc so the canvas is eligible
+under the target design (R1 diffs the seeded arc canvas against the unconfigured
+one and also requires the solid corner pixel to stay `100,150,200,255`; R2 keeps its
+sub-rect check on a canvas with an arc):
+
+```
+PASS  R1 seed 4000000000 noises the arc canvas, not the solid fill
+PASS  R2 sub-rect getImageData agrees with full read
+PASS  R3 .. PASS  R12 (ten more rows)
+12/12 ALL_PASS
+```
+
 ## 7. Step 2 re-measure
 
 `measure_step2.py run` on the host, fork against stock, both modes, 0 errors.
@@ -224,3 +272,17 @@ control changed nothing.
   a shifted glyph may land up to 1 px outside it. Not checked on screen.
 - `verify_sp3a` has no stock baseline on the Windows host (section 6), so its
   baseline clauses are unmeasured there.
+- `createPattern` flips eligibility without a draw. A `createPattern` from a canvas
+  source flips the creating context to stock even if the pattern is never used. An
+  off-canvas or transparent arc flips eligibility on. A pattern created on one
+  context and used on another does not flag the second.
+- Any edit reseeds the readback field. The seed folds in `CanvasStateHash`, so
+  reading one region before and after an unrelated draw elsewhere differs, where
+  stock does not.
+- The field is keyed by position. The same shape drawn twice at whole-pixel offsets
+  gets two different fields.
+- WebGL `readPixels` keys by position within the requested rect and by a hash of its
+  first 1024 bytes, so a sub-rect read disagrees with a full read. This predates
+  this branch.
+- A seed's text offset may fall in Skia's zero subpixel bin and draw text exactly as
+  stock. The 8-seed P1 cannot bound how often.

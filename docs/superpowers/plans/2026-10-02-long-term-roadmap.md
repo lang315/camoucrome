@@ -417,6 +417,8 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
 - **S2. DONE 2026-10-05 (target design, density 0.04; `measurements/2026-10-canvas-noise.md`).** Canvas noise has little entropy. `canvas.text` stays `9c3103de` in 7
   of 8 seeded launches, and `canvas.shape` repeats one hash for three seeds.
   Two identities share `canvas.text`.
+  Follow-up: key the readback noise on each pixel's 3×3 source patch instead of
+  (seed^stateHash, x, y): removes the reseed, the position and the WebGL sub-rect tells.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
   while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
   unmeasurable.
