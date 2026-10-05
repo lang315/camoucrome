@@ -207,10 +207,20 @@ index 1d29be2717..327256df25 100644
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 3d7a843995..2902ab83cb 100644
+index 3d7a843995..da19aae6cb 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -469,7 +469,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -4,6 +4,9 @@
+ 
+ #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
+ 
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/canvas_noise.h"
++
+ #include <cmath>
+ #include <cstdint>
+ #include <cstdlib>
+@@ -469,7 +472,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
      }
    }
  
@@ -219,7 +229,7 @@ index 3d7a843995..2902ab83cb 100644
  
    // Determine if the array should be zero initialized, or if it will be
    // completely overwritten.
-@@ -624,6 +624,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
+@@ -624,6 +627,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
  void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
                                            const gfx::Rect& source_rect,
                                            const gfx::Vector2d& dest_offset) {
@@ -227,8 +237,24 @@ index 3d7a843995..2902ab83cb 100644
    DCHECK(gfx::Rect(source.width(), source.height()).Contains(source_rect));
    int dest_x = dest_offset.x() + source_rect.x();
    DCHECK_GE(dest_x, 0);
+@@ -1089,6 +1093,15 @@ void BaseRenderingContext2D::DrawTextInternal(
+   }
+ 
+   location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
++  // Camoucrome canvas noise redesign: the text origin moves by a
++  // per-profile sub-pixel offset, so text rasterises differently per
++  // canvas:seed at draw time and every readback and copy agrees. No-op
++  // without canvas:seed (rule 5).
++  {
++    const std::array<float, 2> camou_offset = camoucfg::TextOffset(
++        camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())));
++    location.Offset(camou_offset[0], camou_offset[1]);
++  }
+ 
+   if (host && host->ShouldCaptureRenderedText()) {
+     gfx::RectF exact_bounds = bounds;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
-index e3a1ba84d9..838d5abb0a 100644
+index e3a1ba84d9..1fda96aa26 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
 @@ -256,6 +256,10 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
@@ -237,24 +263,58 @@ index e3a1ba84d9..838d5abb0a 100644
    }
 +  // Camoucrome canvas readback noise: imported pixels read as stock.
 +  bool CamouNoiseEligible() const override {
-+    return !camou_imported_pixels_;
++    return camou_aa_geometry_ && !camou_imported_pixels_;
 +  }
    void DisableAccelerationForCanvas2D() final { DisableAcceleration(); }
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..2129a20f5a 100644
+index 332d1f5c54..87369e8f8b 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -828,6 +828,7 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
+@@ -828,6 +828,8 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
  
  void Canvas2DRecorderContext::ResetInternal() {
    ValidateStateStack();
 +  camou_imported_pixels_ = false;
++  camou_aa_geometry_ = false;
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -2234,6 +2235,11 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
+@@ -1590,6 +1592,12 @@ void Canvas2DRecorderContext::DrawPathInternal(
+       std::isnan(bounds.width()) || std::isnan(bounds.height())) {
+     return;
+   }
++  if (path.IsArc() || GetState().GetTransform().B() != 0 ||
++      GetState().GetTransform().C() != 0 ||
++      (!path.IsLine() && (path.GetPath().GetSkPath().getSegmentMasks() &
++                          ~SkPath::kLine_SegmentMask))) {
++    camou_aa_geometry_ = true;
++  }
+ 
+   if (paint_type == CanvasRenderingContext2DState::kStrokePaintType) {
+     // Zero-size bounds mean all path points are coincident — a degenerate
+@@ -1719,6 +1727,9 @@ void Canvas2DRecorderContext::fillRect(double x,
+                                        double y,
+                                        double width,
+                                        double height) {
++  if (GetState().GetTransform().B() != 0 || GetState().GetTransform().C() != 0) {
++    camou_aa_geometry_ = true;  // a rect under rotation or skew
++  }
+   if (!ValidateRectForCanvas(x, y, width, height)) {
+     return;
+   }
+@@ -1782,6 +1793,9 @@ void Canvas2DRecorderContext::strokeRect(double x,
+                                          double y,
+                                          double width,
+                                          double height) {
++  if (GetState().GetTransform().B() != 0 || GetState().GetTransform().C() != 0) {
++    camou_aa_geometry_ = true;  // a rect under rotation or skew
++  }
+   if (!ValidateRectForCanvas(x, y, width, height)) {
+     return;
+   }
+@@ -2234,6 +2248,11 @@ void Canvas2DRecorderContext::drawImage(CanvasImageSource* image_source,
      return;
    }
  
@@ -266,7 +326,7 @@ index 332d1f5c54..2129a20f5a 100644
    if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dw) ||
        !std::isfinite(dh) || !std::isfinite(sx) || !std::isfinite(sy) ||
        !std::isfinite(sw) || !std::isfinite(sh)) {
-@@ -2449,6 +2455,11 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
+@@ -2449,6 +2468,11 @@ CanvasPattern* Canvas2DRecorderContext::createPattern(
    if (!image_source) {
      return nullptr;
    }
@@ -279,10 +339,10 @@ index 332d1f5c54..2129a20f5a 100644
    Pattern::RepeatMode repeat_mode =
        CanvasPattern::ParseRepetitionType(repetition_type, exception_state);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..401e4e71dc 100644
+index 6ee4b2b0d1..84a201c4a7 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-@@ -400,6 +400,13 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -400,6 +400,17 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
    const Font* AccessFont(HTMLCanvasElement* canvas);
  
@@ -292,6 +352,10 @@ index 6ee4b2b0d1..401e4e71dc 100644
 +  // second field on top would make a copy disagree with its original, so
 +  // such a canvas reads as stock.
 +  bool camou_imported_pixels_ = false;
++  // Camoucrome: the canvas holds anti-aliased geometry (curves, or fills
++  // and strokes under a non-axis-aligned transform). The text offset does
++  // not reach it, so readback noise may touch it.
++  bool camou_aa_geometry_ = false;
 +
    ALWAYS_INLINE CanvasRenderingContext2DState& GetState() const {
      return *state_stack_.back();
