@@ -88,6 +88,13 @@ void PerturbRgba(uint8_t* data, size_t length, uint64_t seed, double density,
   PerturbRgbaAt(data, length / 4, 1, length, 0, 0, eseed, density, strength);
 }
 
+void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
+                      size_t height, size_t row_bytes, uint64_t seed,
+                      double density, int32_t strength, uint8_t min_alpha) {
+  // RED stub: today's opaque-only rule, blind to `source` and neighbours.
+  PerturbRgbaAt(data, width, height, row_bytes, 0, 0, seed, density, strength);
+}
+
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
                          size_t row_bytes) {
   // FNV-1a 64 over at most kSamples pixels spread evenly over the whole

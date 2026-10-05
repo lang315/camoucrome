@@ -36,6 +36,24 @@ void PerturbRgbaAt(uint8_t* data, size_t width, size_t height,
                    size_t row_bytes, int64_t x0, int64_t y0, uint64_t seed,
                    double density, int32_t strength);
 
+// Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
+// `row_bytes` apart. `source` is an unperturbed copy with the same geometry,
+// and every eligibility test reads it, so the result does not depend on the
+// order pixels are visited in. A pixel changes only if
+//   - it is interior (it has four neighbours),
+//   - its alpha is at least max(min_alpha, 1),
+//   - it differs, in any of its four bytes, from each of its four neighbours.
+// A solid region, a hard edge and a 1px line give every pixel a same-coloured
+// neighbour, so they read as stock (S1). Each RGB channel is gated by
+// `density` and moved by up to +-`strength`, clamped to [0, alpha]: for
+// premultiplied data every result is a value stock can store at that alpha.
+// Data that is not premultiplied passes min_alpha 255. Pure: a function of
+// (seed, x, y, channel) and `source`. seed == 0, density <= 0 (or NaN), or
+// strength <= 0 is a no-op.
+void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
+                      size_t height, size_t row_bytes, uint64_t seed,
+                      double density, int32_t strength, uint8_t min_alpha);
+
 // A hash of a whole canvas's current contents (RGBA8, `row_bytes` apart),
 // from an even sample of at most 65536 pixels plus the size.
 uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,

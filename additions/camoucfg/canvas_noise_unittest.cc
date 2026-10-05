@@ -4,6 +4,8 @@
 
 #include "components/camoucfg/canvas_noise.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -258,6 +260,144 @@ TEST(CanvasNoiseTest, DomainSeparationAndSpread) {
     }
   }
   EXPECT_TRUE(seeds_differ) << "seed has no effect on the derived delta";
+}
+
+using Px = std::array<uint8_t, 4>;
+
+std::vector<uint8_t> Fill(size_t w, size_t h, Px px) {
+  std::vector<uint8_t> v;
+  for (size_t i = 0; i < w * h; ++i)
+    v.insert(v.end(), px.begin(), px.end());
+  return v;
+}
+
+void Set(std::vector<uint8_t>& v, size_t w, size_t x, size_t y, Px px) {
+  std::copy(px.begin(), px.end(), v.begin() + (y * w + x) * 4);
+}
+
+Px Get(const std::vector<uint8_t>& v, size_t w, size_t x, size_t y) {
+  Px px;
+  std::copy_n(v.begin() + (y * w + x) * 4, 4, px.begin());
+  return px;
+}
+
+// PerturbRgbaEdges on `v`, with an unperturbed copy of it as the source.
+void Edges(std::vector<uint8_t>& v, size_t w, size_t h, uint64_t seed,
+           double density, int32_t strength, uint8_t min_alpha = 1) {
+  const std::vector<uint8_t> source = v;
+  PerturbRgbaEdges(v.data(), source.data(), w, h, w * 4, seed, density,
+                   strength, min_alpha);
+}
+
+// A buffer whose every pixel differs from its neighbours, with partial alpha
+// (premultiplied: each channel at most alpha) and alpha 0 on (x + y) % 3 == 0.
+std::vector<uint8_t> PartialAlphaScene(size_t w, size_t h) {
+  std::vector<uint8_t> v(w * h * 4);
+  for (size_t y = 0; y < h; ++y) {
+    for (size_t x = 0; x < w; ++x) {
+      const uint8_t a =
+          (x + y) % 3 == 0 ? 0 : static_cast<uint8_t>(1 + (x * 37 + y * 11) % 254);
+      Set(v, w, x, y,
+          {static_cast<uint8_t>((x * 13 + y * 7) % (a + 1)),
+           static_cast<uint8_t>((x * 5 + y * 17 + 3) % (a + 1)),
+           static_cast<uint8_t>((x * 11 + y * 3 + 9) % (a + 1)), a});
+    }
+  }
+  return v;
+}
+
+// S1: a one-colour fill has no pixel unlike its neighbours.
+TEST(PerturbRgbaEdgesTest, OneColourBufferIsUnchanged) {
+  auto v = Fill(16, 16, {10, 20, 30, 255});
+  const auto orig = v;
+  for (uint64_t seed = 1; seed < 32; ++seed)
+    Edges(v, 16, 16, seed, 1.0, 3);
+  EXPECT_EQ(v, orig);
+}
+
+// A 2-pixel pair: each of its pixels has one same-coloured neighbour, as on a
+// hard edge or a 1px line.
+TEST(PerturbRgbaEdgesTest, PixelWithOneSameNeighbourIsUnchanged) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 3, 4, {200, 100, 50, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const auto orig = v;
+  for (uint64_t seed = 1; seed < 32; ++seed)
+    Edges(v, 8, 8, seed, 1.0, 3);
+  EXPECT_EQ(v, orig);
+}
+
+TEST(PerturbRgbaEdgesTest, PixelUnlikeAllFourNeighboursChanges) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const auto orig = v;
+  bool changed = false;
+  for (uint64_t seed = 1; seed < 32 && !changed; ++seed) {
+    v = orig;
+    Edges(v, 8, 8, seed, 1.0, 3);
+    auto rest = v;
+    Set(rest, 8, 4, 4, {200, 100, 50, 255});
+    EXPECT_EQ(rest, orig) << "a pixel other than the lone one moved";
+    changed = v != orig;
+  }
+  EXPECT_TRUE(changed);
+}
+
+// A pixel on the buffer's border has fewer than four neighbours: never touched.
+TEST(PerturbRgbaEdgesTest, BorderPixelsAreUntouched) {
+  std::vector<uint8_t> v(6 * 6 * 4);
+  for (size_t y = 0; y < 6; ++y)
+    for (size_t x = 0; x < 6; ++x)
+      Set(v, 6, x, y, (x + y) % 2 ? Px{200, 100, 50, 255} : Px{10, 20, 30, 255});
+  const auto orig = v;
+  Edges(v, 6, 6, 7, 1.0, 3);
+  for (size_t y = 0; y < 6; ++y)
+    for (size_t x = 0; x < 6; ++x)
+      if (x == 0 || y == 0 || x == 5 || y == 5)
+        EXPECT_EQ(Get(v, 6, x, y), Get(orig, 6, x, y)) << x << "," << y;
+  EXPECT_NE(v, orig) << "the checkerboard's interior did not move";
+}
+
+// Alpha 0 never changes; a partial-alpha pixel moves but stays a valid
+// premultiplied value, which Skia unpremultiplies onto stock's grid.
+TEST(PerturbRgbaEdgesTest, PartialAlphaStaysPremultiplied) {
+  auto v = PartialAlphaScene(16, 16);
+  const auto orig = v;
+  Edges(v, 16, 16, 99, 1.0, 3);
+  bool partial_moved = false;
+  for (size_t y = 0; y < 16; ++y) {
+    for (size_t x = 0; x < 16; ++x) {
+      const Px got = Get(v, 16, x, y), was = Get(orig, 16, x, y);
+      EXPECT_EQ(got[3], was[3]);
+      if (was[3] == 0) {
+        EXPECT_EQ(got, was);
+        continue;
+      }
+      for (size_t ch = 0; ch < 3; ++ch)
+        EXPECT_LE(got[ch], got[3]) << x << "," << y << " ch " << ch;
+      partial_moved |= was[3] < 255 && got != was;
+    }
+  }
+  EXPECT_TRUE(partial_moved);
+}
+
+// min_alpha 255 (the WebGL path, whose data may be unpremultiplied): only
+// opaque pixels move.
+TEST(PerturbRgbaEdgesTest, MinAlpha255LeavesPartialAlphaAlone) {
+  auto v = PartialAlphaScene(16, 16);
+  const auto orig = v;
+  Edges(v, 16, 16, 99, 1.0, 3, /*min_alpha=*/255);
+  EXPECT_EQ(v, orig);
+}
+
+TEST(PerturbRgbaEdgesTest, NoOpWithoutSeedDensityOrStrength) {
+  auto v = PartialAlphaScene(16, 16);
+  const auto orig = v;
+  Edges(v, 16, 16, /*seed=*/0, 1.0, 3);
+  Edges(v, 16, 16, 99, /*density=*/0.0, 3);
+  Edges(v, 16, 16, 99, std::numeric_limits<double>::quiet_NaN(), 3);
+  Edges(v, 16, 16, 99, 1.0, /*strength=*/0);
+  EXPECT_EQ(v, orig);
 }
 
 }  // namespace
