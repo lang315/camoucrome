@@ -102,7 +102,7 @@ noise stays, but narrower than today:
   an `OffscreenCanvas` or an `ImageBitmap`. Imported pixels may already carry
   noise, and a second field on top of them would make a copy disagree with its
   original. Readback noise applies only when the first flag is set and the
-  second is not. Either way, a canvas that is unsure reads as stock.
+  second is not. Either way, a canvas that is unsure carries no readback noise.
 - The noise moves from the four readback APIs to the canvas **snapshot** taken
   for any consumer: `getImageData`, `toDataURL`, `toBlob`, `convertToBlob`,
   `drawImage(canvas)`, `createImageBitmap(canvas)` and WebGL
@@ -195,8 +195,7 @@ Four changes from the PR #27 review:
   the profile's offset.
 - **`readPixels` noise goes on the in-buffer part of the rect at the real pack
   layout; the field is keyed by a tight copy of the pixels, so the layout does
-  not change it.** A rect reaching past the buffer still gets a rect-relative
-  field, which is the recorded WebGL sub-rect gap.
+  not change it.** The field is relative to the in-buffer part of the rect; a read whose in-buffer part is a strict sub-rect of the buffer gets a different field from a full read (the recorded sub-rect gap).
 - **Flat rows run on eligible canvases** (a corner arc, read away from it), and
   C7 and C8 compare with a live unconfigured session of a text-free scene, so
   they test the hook and not the text offset.

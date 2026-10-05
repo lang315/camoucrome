@@ -317,9 +317,9 @@ control changed nothing.
   stock does not.
 - The field is keyed by position. The same shape drawn twice at whole-pixel offsets
   gets two different fields.
-- WebGL `readPixels` keys by position within the requested rect and by a hash of its
-  first 1024 bytes, so a sub-rect read disagrees with a full read. This predates
-  this branch.
+- WebGL `readPixels` keys by position within the in-buffer part of the rect and by a
+  hash of the first 1024 bytes of a tight copy of its pixels, so a sub-rect read
+  disagrees with a full read. The sub-rect gap predates this branch.
 - A seed's text offset may fall in Skia's zero subpixel bin and draw text exactly as
   stock. The 8-seed P1 cannot bound how often.
 
@@ -413,13 +413,13 @@ colour counts are 1.
 ### Round 2: readPixels at the real pack layout
 
 Re-review found two problems in round 1's `readPixels` rule: it ignored
-`PACK_ALIGNMENT`, and every skipped read (WebGL2 `PACK_ROW_LENGTH` /
-`SKIP_PIXELS` / `SKIP_ROWS`, aligned reads, rects reaching past the buffer)
-returned the clean render, a bypass a page could diff against a default read.
+`PACK_ALIGNMENT`, so aligned reads were noised at the wrong stride (I-1), and
+every other skipped read (WebGL2 `PACK_ROW_LENGTH` / `SKIP_PIXELS` /
+`SKIP_ROWS`, rects reaching past the buffer) returned the clean render, a bypass
+a page could diff against a default read (I-2).
 Ruling: readPixels noise goes on the in-buffer part of the rect at the real
 pack layout; the field is keyed by a tight copy of the pixels, so the layout
-does not change it. A rect reaching past the buffer still gets a rect-relative
-field, which is the recorded WebGL sub-rect gap. `PerturbRgba` and
+does not change it. The field is relative to the in-buffer part of the rect; a read whose in-buffer part is a strict sub-rect of the buffer gets a different field from a full read (the recorded sub-rect gap). `PerturbRgba` and
 `PerturbRgbaFromConfig` gained a `row_bytes` parameter. New rows C17 (alignment
 8, odd width), C18 (WebGL2 row length / skip pixels / skip rows) and C19 (rect
 past the buffer); `EXPECTED = 19`. Locks `pr27 fix2` and `windows pr27 fix2`,
@@ -468,3 +468,47 @@ WebGL in seed 2 (two UNMEASURED; `final4-headless-try1.log`), rerun 9/9 PASS.
 `verify_sp3a.py` on Windows `chrome` (`sp3a-win4.log`): C6 to C9 and C12 to C19
 PASS; C2 to C5, C10 and C11's baseline clause fail only for lack of a stock
 baseline file (UNMEASURED); C11's seeded rows equal unconfigured.
+
+### Round 3: layouts GL rejects, C19 tightened
+
+Locks `pr27 fix3` and `windows pr27 fix3`, both released.
+
+- **N-1.** GL rejects `readPixels` (INVALID_OPERATION, nothing written) when
+  `skip_pixels + width > (row_length ? row_length : width)`. New row C20 draws the
+  triangle on a 64x64 webgl2 canvas, prefills an opaque checkerboard, sets
+  `PACK_SKIP_PIXELS` 1, reads, and requires `getError()` INVALID_OPERATION and 0
+  changed bytes, seeded and unconfigured. **It already PASSED on the round-2 build**
+  (20/20), so an earlier check rejects the call before our block runs and the
+  guard is defensive; no RED exists for it. (A first run showed C20 FAIL only
+  because my row's result key `err` collided with the page's "no context" marker;
+  renamed to `glerr`, not a product failure.) The guard now reads
+  `skip_pixels + width <= stride_px`, GL's rule verbatim, with a comment.
+- **N-2.** C19 now requires the in-buffer part of `readPixels(-8, -8, 72, 72)` (prefilled
+  `0xAB`) to equal the default read A byte for byte, to differ from the unconfigured
+  in-buffer part, and every out-of-buffer byte to equal the unconfigured read's.
+  The field is relative to the in-buffer part of the rect; a read whose in-buffer
+  part is a strict sub-rect of the buffer gets a different field from a full read
+  (the recorded sub-rect gap).
+- **N-3.** Wording fixed (round 2 text above, spec line 105, section 8).
+
+GREEN (WSL): build `Build Succeeded: 192 steps`; gtest `PerturbRgba*` pass; `gn check` and
+`checkdeps` OK; `verify_sp3a.py` 20 PASS `ALL_PASS`; `verify_review_2026_09_24.py` 12/12.
+Export: 38 commits, 0 fixups, sync PASS. Patches: `sp3a-canvas-noise.patch`
+`e765dfe638b4158aae573129a3e852bdf990571ede04a920e2f3a33d5a385c42`,
+`sp3b-webgl-profile.patch` (index line)
+`4c97fe5d3fcb3bf6199c0c695ee3bd371262b2cc5e918f63d1efa7afaca6e3ed`.
+
+Windows: `webgl_rendering_context_base.cc` pre
+`b4d6a64917aafe5d24544cee1ceca5f7354b2cea560654d3cae149e62c1c7fc0`, post
+`25759bebb910b9b2a062ce33c410ad5f0c30ffb02146a4408769f114b87072a5`, both matched.
+Build `Build Succeeded: 49 steps`, rc=0.
+
+- `final5-headless`: 9/9 PASS.
+- `final5-headed`: first run 8 PASS and rule 5 FAIL (the unconfigured cell had no WebGL
+  context; `final5-headed-try1.log`). The one allowed rerun: 7 PASS, P3 and S1
+  UNMEASURED (no WebGL context in seeds 1 and 6), rule 5 PASS. No run was 9/9; every
+  row that could be measured passed, and no row failed on a measured value. Not
+  rerun a third time (rerun cap).
+- `verify_sp3a.py` on Windows `chrome` (`sp3a-win5.log`): C6 to C9 and C12 to C20 PASS;
+  C2 to C5, C10 and C11's baseline clause fail only for lack of a stock baseline
+  file (UNMEASURED).
