@@ -31,39 +31,39 @@ std::vector<uint8_t> Scene(size_t pixels) {
 TEST(PerturbRgbaTest, SameInputsGiveSameOutput) {
   // The determinism guarantee: two readbacks of one canvas are byte-identical.
   auto a = Scene(64), b = Scene(64);
-  PerturbRgba(a.data(), 8, 8, /*seed=*/12345, /*density=*/0.5, /*strength=*/2);
-  PerturbRgba(b.data(), 8, 8, 12345, 0.5, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/12345, /*density=*/0.5, /*strength=*/2);
+  PerturbRgba(b.data(), 8, 8, 8 * 4, 12345, 0.5, 2);
   EXPECT_EQ(a, b);
 }
 
 TEST(PerturbRgbaTest, SeedZeroIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), 8, 8, /*seed=*/0, 0.5, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/0, 0.5, 2);
   EXPECT_EQ(a, orig);  // byte-identical to stock when spoof is off
 }
 
 TEST(PerturbRgbaTest, DensityZeroIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), 8, 8, 12345, /*density=*/0.0, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, 12345, /*density=*/0.0, 2);
   EXPECT_EQ(a, orig);
 }
 
 TEST(PerturbRgbaTest, ActuallyChangesSomePixels) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 12345, /*density=*/0.5, 2);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/0.5, 2);
   EXPECT_NE(a, orig) << "high density left every pixel untouched";
 }
 
 TEST(PerturbRgbaTest, AlphaChannelNeverChanges) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 12345, /*density=*/1.0, 4);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, 4);
   for (size_t i = 3; i < a.size(); i += 4)
     EXPECT_EQ(a[i], orig[i]) << "alpha byte " << i << " was perturbed";
 }
 
 TEST(PerturbRgbaTest, DeltaStaysWithinStrength) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 12345, /*density=*/1.0, /*strength=*/3);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, /*strength=*/3);
   for (size_t i = 0; i < a.size(); ++i) {
     if ((i & 3u) == 3u) continue;  // alpha untouched
     int d = static_cast<int>(a[i]) - static_cast<int>(orig[i]);
@@ -82,8 +82,8 @@ TEST(PerturbRgbaTest, DifferentDrawingsGetDifferentNoiseFields) {
   auto b = Scene(256);
   b[0] ^= 0xFF;  // change content within the hashed prefix
   auto a_orig = a, b_orig = b;
-  PerturbRgba(a.data(), 16, 16, 777, 0.5, 2);
-  PerturbRgba(b.data(), 16, 16, 777, 0.5, 2);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 777, 0.5, 2);
+  PerturbRgba(b.data(), 16, 16, 16 * 4, 777, 0.5, 2);
   // Compare the deltas, not the pixels (b started one byte different).
   bool fields_differ = false;
   for (size_t i = 1; i < a.size(); ++i) {  // skip the byte we changed
@@ -105,10 +105,37 @@ TEST(CanvasStateHashTest, SeesLateContentAndIsDeterministic) {
             CanvasStateHash(b.data(), 64, 64, 64 * 4));
 }
 
+TEST(PerturbRgbaTest, PaddedRowsGetTheTightField) {
+  // One pixel content gets one field whatever the row padding: a padded
+  // readPixels (PACK_ALIGNMENT 8, odd width) matches the tight read, and the
+  // padding bytes are never touched.
+  constexpr size_t kW = 7, kH = 5;
+  auto tight = Scene(kW * kH);
+  std::vector<uint8_t> padded(kH * 32, 0xAB);
+  for (size_t y = 0; y < kH; ++y)
+    std::copy_n(tight.begin() + y * kW * 4, kW * 4, padded.begin() + y * 32);
+  PerturbRgba(tight.data(), kW, kH, kW * 4, 12345, 1.0, 3);
+  PerturbRgba(padded.data(), kW, kH, 32, 12345, 1.0, 3);
+  EXPECT_NE(tight, Scene(kW * kH));  // not vacuous
+  for (size_t y = 0; y < kH; ++y) {
+    EXPECT_TRUE(std::equal(tight.begin() + y * kW * 4,
+                           tight.begin() + (y + 1) * kW * 4,
+                           padded.begin() + y * 32));
+    for (size_t i = kW * 4; i < 32; ++i)
+      EXPECT_EQ(padded[y * 32 + i], 0xAB);
+  }
+}
+
+TEST(PerturbRgbaTest, RowBytesBelowWidthIsNoOp) {
+  auto a = Scene(64), orig = Scene(64);
+  PerturbRgba(a.data(), 8, 8, 8 * 4 - 1, 12345, 1.0, 3);
+  EXPECT_EQ(a, orig);
+}
+
 TEST(PerturbRgbaTest, ZeroSizeIsNoOp) {
   std::vector<uint8_t> tiny = {1, 2, 3};
   auto orig = tiny;
-  PerturbRgba(tiny.data(), 0, 0, 12345, 1.0, 2);
+  PerturbRgba(tiny.data(), 0, 0, 0 * 4, 12345, 1.0, 2);
   EXPECT_EQ(tiny, orig);
 }
 
