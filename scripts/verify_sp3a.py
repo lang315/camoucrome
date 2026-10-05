@@ -31,8 +31,9 @@ Cross-cutting:
      documented follow-up; a dedicated worker exercises the worker readback
      path this task wired.)
   C9 screen unchanged: a DevTools Page.captureScreenshot (NOT a canvas readback)
-     of the rendered canvas is byte-identical between the seeded and stock
-     builds -- proves noise is applied at readback, never at draw time (item 10).
+     of a text-free scene is byte-identical between the seeded and the
+     unconfigured run -- readback noise never reaches the screen. (Text moves
+     by the per-seed sub-pixel offset on screen too, so it is left out.)
   C10 accessors native: toDataURL / getImageData / readPixels prototype methods
      still stringify to "[native code]" and Object.keys(window) is unchanged vs
      stock (rule 2).
@@ -90,6 +91,10 @@ SCENE_2D = """
   ctx.fillStyle = '#000000'; ctx.font = '22px sans-serif';
   ctx.fillText('Camoucrome-SP3a', 24, 160);
 """
+
+# SCENE_2D without its text: under the target design text draws at a
+# per-seed sub-pixel origin on screen too, so C9 checks the rest is untouched.
+SCENE_NO_TEXT = SCENE_2D.split("  ctx.fillStyle = '#000000'; ctx.font")[0]
 
 # A stable content-hash (FNV-1a-ish djb2) over every byte of a typed array,
 # computed in-page so we never ship 240KB of pixels back over CDP.
@@ -324,7 +329,7 @@ def session(config, fn, extra_flags=None, screenshot=False):
             if screenshot:
                 # Draw the scene into the visible document, then screenshot via
                 # the DevTools protocol -- NOT a canvas readback API.
-                page.evaluate(f"() => {{ {SCENE_2D} document.body.appendChild(c); }}")
+                page.evaluate(f"() => {{ {SCENE_NO_TEXT} document.body.appendChild(c); }}")
                 cdp = context.new_cdp_session(page)
                 shot = cdp.send("Page.captureScreenshot", {"format": "png"})
                 return shot["data"], None
@@ -438,7 +443,7 @@ C5 = "5  seeded getImageData deterministic, differs from stock, off==stock"
 C6 = "6  seeded readPixels of a gradient triangle deterministic, differs from unconfigured"
 C7 = "7  seeded OffscreenCanvas.convertToBlob deterministic and differs"
 C8 = "8  worker OffscreenCanvas readback deterministic and differs (parity)"
-C9 = "9  DevTools screenshot identical seeded vs stock (screen unchanged)"
+C9 = "9  DevTools screenshot of a text-free scene identical seeded vs unconfigured"
 C10 = "10 accessors native + window keys unchanged"
 
 # C1
@@ -528,12 +533,12 @@ else:
                      "noise did not reach the worker thread")
 
 # C9 screen unchanged
-if seeded_shot is None or baseline is None:
+if seeded_shot is None or unconf_shot is None:
     results[C9] = False
     if seeded_shot_err:
         notes.append(f"C9: {type(seeded_shot_err).__name__}: {seeded_shot_err}")
 else:
-    results[C9] = sha(seeded_shot) == bl("screenshot")
+    results[C9] = sha(seeded_shot) == sha(unconf_shot)
     if not results[C9]:
         notes.append("C9: seeded screenshot differs from stock -- noise leaked "
                      "to draw time / composited output")

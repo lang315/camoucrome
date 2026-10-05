@@ -167,4 +167,16 @@ uint64_t CanvasSeed(const ConfigScope& scope) {
   return GetUint32(scope, keys::kCanvasSeed).value_or(0);
 }
 
+std::array<float, 2> TextOffset(uint64_t seed) {
+  if (seed == 0) {
+    return {0.0f, 0.0f};
+  }
+  // A double just below 1 rounds to 1.0f; keep the result in [0, 1).
+  auto unit = [seed](std::string_view domain) {
+    return std::min(static_cast<float>(DeriveUnit(seed, domain, 0)),
+                    std::nextafter(1.0f, 0.0f));
+  };
+  return {unit("canvas-text-offset-x"), unit("canvas-text-offset-y")};
+}
+
 }  // namespace camoucfg
