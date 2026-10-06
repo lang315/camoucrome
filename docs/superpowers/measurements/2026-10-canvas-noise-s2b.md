@@ -194,3 +194,43 @@ PASS, C28 FAIL (Task 5; `diff` 7), C29-C32 PASS, rc=1.
 `verify_review_2026_09_24.py`: 12/12.
 
 Pattern-styled text: no verify row, because the per-seed text offset makes it differ from unconfigured; covered by code review only.
+
+## 6. Task 5: WebGL
+
+RED (Task 4 fix round, `406a527`): `verify_sp3a.py` 35 rows, C28 FAIL
+(`diff` 7), the WebGL sub-rect against the full read. All other rows PASS.
+
+Change: `readPixels` reads up to four 1px margin strips from the drawing
+buffer into a tight bottom-up scratch, noises the scratch, and copies the
+in-buffer part back; `CamouNoiseMinAlpha()` is 255 in WebGL, so the snapshot
+and `readPixels` share one field. A binder failure leaves the read unnoised.
+
+First build failed with 8 `-Wshorten-64-to-32` errors (brief's EDITS used
+`int64_t` for `GLint` args and `size_t` for `Vector` sizes). Only casts were
+added (`static_cast<GLint>`, `static_cast<wtf_size_t>`), no behaviour change.
+
+GREEN: `Build Succeeded: 141 steps`; gtest PASSED (10, 10, 10, 10, 5), 0
+FAILED; `gn check` core, canvas, webgl: `Header dependency check OK`;
+checkdeps webgl and canvas: SUCCESS. Export: 38 commits, 0 fixup, box clean,
+sync gate PASS (45 files). Changed: `sp3a-canvas-noise.patch`,
+`sp3b-webgl-profile.patch` (index line only).
+
+```
+verify_sp3a.py: 35 PASS (C1-C32 incl. 24a-d), ALL_PASS, rc=0
+  17 PASS, 18 PASS, 19 PASS, 20 PASS (pack layouts unchanged)
+  28 PASS  WebGL readPixels sub-rect equals the full read's part, byte for byte
+  29 PASS  WebGL toDataURL agrees with readPixels on every opaque pixel
+verify_review_2026_09_24.py: 12/12 ALL_PASS
+```
+
+Cost (WSL `content_shell`, CPU raster, SwiftShader GL):
+
+| | before (Task 1) | after (Task 5) |
+|---|---|---|
+| draw | 1.43 (35.70 / 24.90 ms) | 4.35 (109.95 / 25.25 ms) |
+| readPixels 64x64 | 1.33 | 1.11 (1.00 / 0.90 ms) |
+| readPixels 1024x1024 | 15.89 | 7.06 (29.65 / 4.20 ms) |
+
+The draw ratio is above 2.0. It comes from the 2D mask replay (Tasks 3-4),
+not from this task, which touches `readPixels` only. Recorded as a known gap
+for S2c. It does not block.
