@@ -132,3 +132,43 @@ additions came back byte-identical to the pushed tree.
   last-touch commit; 38 commits, 0 fixups, tree clean. Export reproduced the pushed
   tree byte for byte (no patch, no additions change), `check_checkout_sync` PASS,
   `check_additions_build` PASS (42 files).
+
+## 5. Task 4: 2D masks
+
+RED (the Task 2 build; section 3 and the C27 addendum): C21, C22 and C29 PASS
+there; C23, C24a-d, C25, C26, C27 and C28 FAIL:
+
+```
+FAIL  23 arc plus putImageData elsewhere: arc noised, pattern exact
+FAIL  24a diagonal lineTo triangle carries noise
+FAIL  24b round-cap stroke carries noise
+FAIL  24c curved clip() + fillRect carries noise
+FAIL  24d fillRect with shadowBlur carries noise
+FAIL  25 a reused canvas reads like a fresh one
+FAIL  26 createPattern alone marks nothing; a pattern fill reads exact
+FAIL  27 1px random colours under a diagonal line stay exact (coverage, not bbox)
+FAIL  28 WebGL readPixels sub-rect equals the full read's part, byte for byte
+```
+
+GREEN (`ae2296e`): `Build Succeeded: 276 steps`; `components_unittests` filter
+PASSED 10/10/10/10/5, 0 FAILED. `gn check` core, canvas and webgl: `Header
+dependency check OK` each. `checkdeps` on `modules/canvas` and
+`core/html/canvas`: `SUCCESS`, rc 0. (`gn check` takes one label per call; the
+W5g one-liner with three labels prints a usage error.)
+
+`verify_sp3a.py`: C1-C27 and C29 PASS (31 rows), C28 FAIL as planned
+(`28 : seeded {'diff': 7, ...}`, Task 5), rc=1. `verify_review_2026_09_24.py`:
+12/12 ALL_PASS. C11, C12, C13, C16 PASS.
+
+Mutation proof (C27 needs coverage): the `DrawInternal` replay line replaced by
+"every replayed draw marks its dirty rect aa" (`CamouMarkRect(area, kAa)`).
+`Build Succeeded: 22 steps`. Result: `FAIL  27 1px random colours under a
+diagonal line stay exact` (seeded `h` 2074514327 vs unconfigured 2277842109),
+and `FAIL 26` and `FAIL 28`; C11, C12, C13, C16, C21, C23 still PASS. Reverted
+(`grep -c MUTATION` 0, header sha256 equal to the pre-mutation backup),
+`Build Succeeded: 23 steps`, rerun: the GREEN result above.
+
+Export: only `patches/sp3a-canvas-noise.patch` changed (DEPS, core, canvas2d);
+additions byte-identical. Box branch: 38 commits, 0 fixups, tree clean;
+`check_checkout_sync` PASS (45 files), `check_additions_build` PASS (42 files),
+`gen_keys.py --check` PASS.
