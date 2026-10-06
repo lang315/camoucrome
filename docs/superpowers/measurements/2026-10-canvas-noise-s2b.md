@@ -255,7 +255,7 @@ PR #27 state; `ABSENT` is a new file. Hashes truncated to 12 hex digits.
 | components/camoucfg/canvas_mask_unittest.cc | ABSENT | cf9f45dce8ef |
 | components/camoucfg/canvas_noise.cc | 97c61511305f | b1fd0f9d0483 |
 | components/camoucfg/canvas_noise.h | 0e33c24046a1 | eba8b58df32f |
-| components/camoucfg/canvas_noise_unittest.cc | 639d2fbf00645 | a9a2438b2fb6 |
+| components/camoucfg/canvas_noise_unittest.cc | 639d2fbf0064 | a9a2438b2fb6 |
 | components/camoucfg/canvas_readback.cc | 6bb1c20a0ce7 | b6c18de0a13c |
 | components/camoucfg/canvas_readback.h | b0ee14d1fc5a | 0fb5e9d6233e |
 | components/camoucfg/canvas_readback_unittest.cc | 1e4b5b45d51c | 93e72828eb1c |
