@@ -11,7 +11,7 @@ index 9377661e94..18dbbc179c 100644
      perfetto::Category(TRACE_DISABLED_BY_DEFAULT("cc"))
          .SetTags("slow"),
 diff --git a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-index 995d8584f3..1f29a8cb4d 100644
+index 995d8584f3..b97b0ef3c0 100644
 --- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
 +++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
 @@ -836,6 +836,81 @@ def _make_bindings_logging_id(cg_context):
@@ -85,7 +85,7 @@ index 995d8584f3..1f29a8cb4d 100644
 +
 +    node = TextNode("camou_observe::Record(\"{}\", ".format(
 +        _make_bindings_logging_id(cg_context)) +
-+                    "${current_execution_context});")
++                    "${isolate});")
 +    node.accumulate(
 +        CodeGenAccumulator.require_include_headers([
 +            "third_party/blink/renderer/core/execution_context/camou_observe.h"
@@ -159,31 +159,38 @@ index a158629b41..3ac9b3d648 100644
    "execution_context_lifecycle_observer.cc",
 diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.cc b/third_party/blink/renderer/core/execution_context/camou_observe.cc
 new file mode 100644
-index 0000000000..7afe4225fb
+index 0000000000..64c3ddbb12
 --- /dev/null
 +++ b/third_party/blink/renderer/core/execution_context/camou_observe.cc
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,45 @@
 +// Copyright 2026 The Camoucrome Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "third_party/blink/renderer/core/execution_context/camou_observe.h"
 +
-+#if BUILDFLAG(CAMOU_OBSERVE)
-+
 +#include <string>
 +
 +#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 +#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 +#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
++#include "v8/include/v8-context.h"
++#include "v8/include/v8-isolate.h"
++#include "v8/include/v8-local-handle.h"
++
++#if BUILDFLAG(CAMOU_OBSERVE)
 +
 +namespace blink::camou_observe {
 +
-+// Only reached with the category enabled, so the string work below never runs
-+// in an ordinary session. `site` is the top-level site for a window; worker
-+// scopes have no StorageKey accessor at this pin, so it stays empty and the
-+// report groups worker reads by origin (a dedicated worker's is its creator's).
-+void Emit(const char* name, ExecutionContext* context) {
++// Only reached with the category enabled, so the context lookup and the string
++// work below never run in an ordinary session. `site` is the top-level site for
++// a window; worker scopes have no StorageKey accessor at this pin, so it stays
++// empty and the report groups worker reads by origin (a dedicated worker's is
++// its creator's).
++void Emit(const char* name, v8::Isolate* isolate) {
++  v8::Local<v8::Context> v8_context = isolate->GetCurrentContext();
++  ExecutionContext* context =
++      v8_context.IsEmpty() ? nullptr : ExecutionContext::From(v8_context);
 +  std::string origin;
 +  std::string site;
 +  if (context) {
@@ -203,10 +210,10 @@ index 0000000000..7afe4225fb
 +#endif  // BUILDFLAG(CAMOU_OBSERVE)
 diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.h b/third_party/blink/renderer/core/execution_context/camou_observe.h
 new file mode 100644
-index 0000000000..902b3931cf
+index 0000000000..7e55ad8668
 --- /dev/null
 +++ b/third_party/blink/renderer/core/execution_context/camou_observe.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,45 @@
 +// Copyright 2026 The Camoucrome Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -218,31 +225,34 @@ index 0000000000..902b3931cf
 +#include "third_party/blink/renderer/platform/bindings/buildflags.h"
 +#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 +
++namespace v8 {
++class Isolate;
++}  // namespace v8
++
 +// Tracking observer (docs/observer/README.md). Generated bindings call
-+// Record() at the entry of every allow-listed Web IDL member. It emits one
-+// trace event only when the build sets camou_observe = true AND a trace has
-+// enabled this disabled-by-default category; otherwise it is one category
-+// check (flag on) or nothing at all (flag off). Nothing page-visible changes.
++// Record() with the current isolate at the entry of every allow-listed Web IDL
++// member. It emits one trace event only when the build sets camou_observe =
++// true AND a trace has enabled this disabled-by-default category; otherwise it
++// is one category check (flag on) or nothing at all (flag off). The execution
++// context is resolved inside Emit() only, so a callback gains no context lookup
++// it would not make in a stock build. Nothing page-visible changes.
 +#define CAMOU_OBSERVE_CATEGORY TRACE_DISABLED_BY_DEFAULT("camou.observe")
 +
 +namespace blink {
-+
-+class ExecutionContext;
-+
 +namespace camou_observe {
 +
 +#if BUILDFLAG(CAMOU_OBSERVE)
-+CORE_EXPORT void Emit(const char* name, ExecutionContext* context);
++CORE_EXPORT void Emit(const char* name, v8::Isolate* isolate);
 +
-+inline void Record(const char* name, ExecutionContext* context) {
++inline void Record(const char* name, v8::Isolate* isolate) {
 +  bool enabled = false;
 +  TRACE_EVENT_CATEGORY_GROUP_ENABLED(CAMOU_OBSERVE_CATEGORY, &enabled);
 +  if (enabled) [[unlikely]] {
-+    Emit(name, context);
++    Emit(name, isolate);
 +  }
 +}
 +#else
-+inline void Record(const char*, ExecutionContext*) {}
++inline void Record(const char*, v8::Isolate*) {}
 +#endif
 +
 +}  // namespace camou_observe
