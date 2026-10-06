@@ -100,7 +100,7 @@ index 150d03eafd..5143ea4ae3 100644
 +
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index 6495e3c54b..8dcf810fea 100644
+index 6495e3c54b..142765dabc 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 @@ -39,11 +39,14 @@
@@ -118,13 +118,14 @@ index 6495e3c54b..8dcf810fea 100644
  #include "third_party/skia/include/core/SkImageInfo.h"
  #include "third_party/skia/include/core/SkRect.h"
  #include "third_party/skia/include/core/SkRefCnt.h"
-@@ -169,6 +172,26 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -169,6 +172,27 @@ class CORE_EXPORT CanvasRenderingContext
    virtual bool IsOpaque() const = 0;
  
    virtual scoped_refptr<StaticBitmapImage> GetImage() = 0;
 +
-+  // Camoucrome canvas readback noise (SP3a): `image` with one noise field
-+  // per canvas state when CamouNoiseEligible() and canvas:seed is set,
++  // Camoucrome canvas readback noise (SP3a, S2b): `image` with noise keyed
++  // by each pixel's 3x3 neighbourhood, on the pixels CamouNoiseMask()
++  // allows, when CamouNoiseEligible() and canvas:seed is set,
 +  // otherwise `image` itself. Every consumer of this context's pixels
 +  // (getImageData, toDataURL, toBlob, convertToBlob, GetSourceImageForCanvas)
 +  // calls it on the snapshot it takes, so they all read the same field. The
@@ -145,7 +146,7 @@ index 6495e3c54b..8dcf810fea 100644
    virtual bool IsComposited() const = 0;
  
    // Called when the entire tab is backgrounded or unbackgrounded.
-@@ -374,6 +397,13 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -374,6 +398,13 @@ class CORE_EXPORT CanvasRenderingContext
    bool is_context_being_restored_ = false;
  
    void RecordUKMCanvasAccessibility();
@@ -317,7 +318,7 @@ index e3a1ba84d9..dc33f6360d 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..15a29ba00c 100644
+index 332d1f5c54..f09cf0f38e 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -23,6 +23,10 @@
@@ -339,7 +340,7 @@ index 332d1f5c54..15a29ba00c 100644
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -851,6 +856,94 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -851,6 +856,96 @@ void Canvas2DRecorderContext::ResetInternal() {
    origin_tainted_by_content_ = false;
  }
  
@@ -397,7 +398,9 @@ index 332d1f5c54..15a29ba00c 100644
 +  if (draw_type == CanvasPerformanceMonitor::DrawType::kText && !imported) {
 +    return;  // text marks nothing unless its style is a pattern
 +  }
-+  CamouMarkRect(clip_bounds, imported ? Kind::kImported : Kind::kAa);
++  // A composited draw may set any pixel of the clip unpredictably, and may
++  // leave exact pixels as they were: no noise anywhere in the clip.
++  CamouMarkRect(clip_bounds, Kind::kImported);
 +}
 +
 +void Canvas2DRecorderContext::CamouMergeRecord(
@@ -434,22 +437,24 @@ index 332d1f5c54..15a29ba00c 100644
  void Canvas2DRecorderContext::reset() {
    UseCounter::Count(GetTopExecutionContext(),
                      WebFeature::kCanvasRenderingContext2DReset);
-@@ -1981,6 +2074,13 @@ void Canvas2DRecorderContext::clearRect(double x,
+@@ -1981,6 +2076,15 @@ void Canvas2DRecorderContext::clearRect(double x,
        host->ClearRenderedText(canvas_clear_rect);
      }
    }
-+  if (CamouMaskActive()) {
++  SkIRect camou_area;
++  if (CamouMaskActive() &&
++      ComputeDirtyRect(rect, clip_bounds, &camou_area)) {
 +    CamouReplay(
 +        [&rect](MemoryManagedPaintCanvas* mc, const cc::PaintFlags* f) {
 +          mc->drawRect(gfx::RectFToSkRect(rect), *f);
 +        },
-+        clear_flags, camoucfg::CanvasNoiseMask::Kind::kClear, clip_bounds);
++        clear_flags, camoucfg::CanvasNoiseMask::Kind::kClear, camou_area);
 +  }
    if (RectContainsTransformedRect(rect, clip_bounds)) {
      CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
                    OverdrawOp::kClearRect);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..17101a4024 100644
+index 6ee4b2b0d1..64d38ae815 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -8,6 +8,7 @@
@@ -468,7 +473,7 @@ index 6ee4b2b0d1..17101a4024 100644
  #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_image_smoothing_quality.h"
-@@ -400,6 +402,42 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -400,6 +402,43 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
    const Font* AccessFont(HTMLCanvasElement* canvas);
  
@@ -487,8 +492,9 @@ index 6ee4b2b0d1..17101a4024 100644
 +  // Marks `area` (device pixels) with `kind`, allocating the mask.
 +  void CamouMarkRect(const SkIRect& area,
 +                     camoucfg::CanvasNoiseMask::Kind kind);
-+  // A draw that may touch any pixel of the clip (composited, or "copy"):
-+  // images and patterns mark imported, everything else aa; text nothing.
++  // A composited draw (filter, composited shadow, full-canvas composite
++  // mode) marks its clip imported (no noise). Text marks nothing unless
++  // its style is a pattern.
 +  void CamouMarkClip(CanvasRenderingContext2DState::PaintType paint_type,
 +                     const SkIRect& clip_bounds,
 +                     CanvasPerformanceMonitor::DrawType draw_type);
@@ -511,7 +517,7 @@ index 6ee4b2b0d1..17101a4024 100644
    ALWAYS_INLINE CanvasRenderingContext2DState& GetState() const {
      return *state_stack_.back();
    }
-@@ -787,6 +825,58 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
+@@ -787,6 +826,73 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
    Recorder()->RestartCurrentLayer();
  }
  
@@ -533,7 +539,12 @@ index 6ee4b2b0d1..17101a4024 100644
 +  RestoreMatrixClipStack(&recorder);
 +  cc::PaintFlags coverage = flags;
 +  coverage.setColor(SK_ColorWHITE);
-+  coverage.setShader(nullptr);
++  // A gradient's alpha is part of its coverage (all-transparent stops cover
++  // nothing); a pattern's shader is dropped (a GPU-backed image may raster
++  // to nothing on a CPU bitmap).
++  if (kind != camoucfg::CanvasNoiseMask::Kind::kAa) {
++    coverage.setShader(nullptr);
++  }
 +  coverage.setBlendMode(SkBlendMode::kSrcOver);
 +  draw_func(&recorder, &coverage);
 +  CamouMergeRecord(recorder.ReleaseAsRecord(), area, kind);
@@ -546,7 +557,8 @@ index 6ee4b2b0d1..17101a4024 100644
 +    CanvasRenderingContext2DState::PaintType paint_type,
 +    const SkIRect& area,
 +    CanvasPerformanceMonitor::DrawType draw_type) {
-+  if (!CamouMaskActive()) {
++  // A draw that changes no pixel (transparent, globalAlpha 0) marks none.
++  if (!CamouMaskActive() || flags->nothingToDraw()) {
 +    return;
 +  }
 +  if (draw_type == CanvasPerformanceMonitor::DrawType::kText) {
@@ -564,13 +576,22 @@ index 6ee4b2b0d1..17101a4024 100644
 +    CamouMarkRect(area, camoucfg::CanvasNoiseMask::Kind::kImported);
 +    return;
 +  }
++  if (flags->getLooper()) {
++    // The shadow is rasteriser-dependent (aa); the shape is then marked by
++    // its own kind, so an opaque shape's covered pixels stay exact.
++    CamouReplay(draw_func, *flags, camoucfg::CanvasNoiseMask::Kind::kAa, area);
++    cc::PaintFlags shape = *flags;
++    shape.setLooper(nullptr);
++    CamouReplay(draw_func, shape, CamouKindFor(paint_type, shape), area);
++    return;
++  }
 +  CamouReplay(draw_func, *flags, CamouKindFor(paint_type, *flags), area);
 +}
 +
  template <Canvas2DRecorderContext::OverdrawOp CurrentOverdrawOp,
            typename DrawFunc,
            typename DrawCoversClipBoundsFunc>
-@@ -809,6 +899,9 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -809,6 +915,9 @@ void Canvas2DRecorderContext::DrawInternal(
    const CanvasRenderingContext2DState& state = GetState();
    SkBlendMode global_composite = state.GlobalComposite();
    if (ShouldUseCompositedDraw(paint_type, image_type)) {
@@ -580,7 +601,7 @@ index 6ee4b2b0d1..17101a4024 100644
      WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
      CompositedDraw(draw_func, paint_canvas, paint_type, image_type);
      ResetAlphaIfNeeded(paint_canvas, global_composite);
-@@ -817,6 +910,18 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -817,6 +926,18 @@ void Canvas2DRecorderContext::DrawInternal(
      paint_canvas->clear(HasAlpha() ? SkColors::kTransparent : SkColors::kBlack);
      const cc::PaintFlags* flags =
          state.GetFlags(paint_type, kDrawForegroundOnly, image_type);
@@ -599,7 +620,7 @@ index 6ee4b2b0d1..17101a4024 100644
      WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
      draw_func(paint_canvas, flags);
      ResetAlphaIfNeeded(paint_canvas, global_composite, &bounds);
-@@ -833,6 +938,7 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -833,6 +954,7 @@ void Canvas2DRecorderContext::DrawInternal(
            CheckOverdraw(flags, image_type, CurrentOverdrawOp);
          }
        }
