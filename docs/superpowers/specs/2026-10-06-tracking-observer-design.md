@@ -70,7 +70,7 @@ gone from this tree.
 ```
 page or worker calls an allow-listed Web IDL member
   -> generated binding callback
-     -> CAMOU_OBSERVE_TRACE("Navigator.deviceMemory.get", ctx)
+     -> camou_observe::Record("Navigator.deviceMemory.get", ctx)
         category disabled: one static check, return
         category enabled : instant event {origin, site}  -> Perfetto buffer
 browser: --trace-startup ... -> trace.json at exit
@@ -91,14 +91,19 @@ scripts/observe_report.py trace.json net.json [--cookies DB] -> per-site markdow
 2. **Trace category.** `disabled-by-default-camou.observe`, registered in
    `base/trace_event/builtin_categories.h`. Disabled-by-default means no
    ordinary trace (DevTools Performance included) ever enables it.
-3. **Macro.** `CAMOU_OBSERVE_TRACE(name, execution_context)` in
-   `runtime_call_stats.h`, beside `BLINK_BINDINGS_TRACE_EVENT`, which generated
-   code already includes. With the flag on it emits a `TRACE_EVENT_INSTANT` with
-   two arguments: `origin` (the calling context's security origin) and `site`
-   (the top-level site from the context's `StorageKey`). Arguments are computed
-   only when the category is enabled; the plan verifies this in the macro
-   expansion, not by assumption. With the flag off it compiles to nothing.
-4. **Allow-list in the generator.** `interface.py` emits `CAMOU_OBSERVE_TRACE`
+3. **Emit helper.** `blink::camou_observe::Record(const char* name,
+   ExecutionContext*)` in a new core file,
+   `third_party/blink/renderer/core/execution_context/camou_observe.{h,cc}`
+   (the `platform/` header beside `BLINK_BINDINGS_TRACE_EVENT` cannot see
+   `ExecutionContext`). The inline part checks the category and returns; only
+   when it is enabled does the out-of-line part compute the arguments and emit
+   a `TRACE_EVENT_INSTANT` with `origin` (the calling context's security
+   origin) and `site` (for a window, the top-level site from
+   `LocalDOMWindow::GetStorageKey()`; for a worker, empty, because no
+   `GetStorageKey()` exists on worker scopes at this pin, so the report
+   groups worker events by `origin`, which for a dedicated worker is its
+   creator's). With the flag off the inline body is empty.
+4. **Allow-list in the generator.** `interface.py` emits a `Record` call
    in the same six places as `make_bindings_trace_event`, but only for members
    on the list, each tagged with a group the report uses:
 
@@ -146,12 +151,16 @@ scripts/observe_report.py trace.json net.json [--cookies DB] -> per-site markdow
 chrome --user-data-dir=<fresh profile> \
   --trace-startup=disabled-by-default-camou.observe \
   --trace-startup-format=json --trace-startup-file=<trace.json> \
-  --trace-startup-duration=<seconds or the value that means until exit> \
+  --trace-startup-duration=0 \
+  --trace-startup-record-mode=record-as-much-as-possible \
   --log-net-log=<net.json>
 ```
 
-No new environment variable. The plan confirms the duration semantics and the
-buffer size flag against `tracing_switches.cc`.
+`--trace-startup-duration=0` traces until browser shutdown
+(`services/tracing/public/cpp/trace_startup_config.cc`: a duration is only set
+when the value is above 0). The trace file is written at a graceful shutdown,
+so the browser is closed normally (window close or SIGTERM), never killed. No
+new environment variable.
 
 ## Not observable (printed in every report)
 
@@ -177,7 +186,8 @@ call it):
   `navigator.hardwareConcurrency` K times; `document.title`, which is **not**
   on the list, is read K times.
 - Assert, per name, **exactly** K events with `origin` and `site` equal to the
-  probe's; the worker events present; `Document.title` absent.
+  probe's; the worker events present with the probe's `origin` and an empty
+  `site`; `Document.title` absent.
 - A cross-site iframe reading `navigator.userAgent`: its events carry the
   iframe's `origin` and the parent's `site`.
 - RED first: the same run with a deliberately wrong expectation (K+1) must
