@@ -644,7 +644,7 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   // arc filled with an all-transparent gradient, (c) an opaque fill whose
   // shadow lands off the canvas, then a translucent speckle, (d) a blurred
   // fillRect in a corner. The whole canvas must equal unconfigured.
-  const exact = (draw) => { const y = mk(64, 64); let es = 4242;
+  const exactDraw = (draw) => { const y = mk(64, 64); let es = 4242;
     for (let yy = 0; yy < 64; yy++) for (let xx = 0; xx < 64; xx++) {
       const col = [];
       for (let k = 0; k < 3; k++) {
@@ -653,15 +653,15 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
     draw(y); const d = get(y, 0, 0, 64, 64);
     return { h: H(d), e: elig(d, 64) }; };
   out.exact = {
-    a: exact((y) => { y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
+    a: exactDraw((y) => { y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
       y.arc(32, 32, 20, 0, 7); y.fill(); }),
-    b: exact((y) => { const g = y.createLinearGradient(0, 0, 64, 64);
+    b: exactDraw((y) => { const g = y.createLinearGradient(0, 0, 64, 64);
       g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, 'rgba(0,0,255,0)');
       y.fillStyle = g; y.beginPath(); y.arc(32, 32, 20, 0, 7); y.fill(); }),
-    c: exact((y) => { y.shadowColor = '#000'; y.shadowOffsetX = 1000;
+    c: exactDraw((y) => { y.shadowColor = '#000'; y.shadowOffsetX = 1000;
       y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64);
       y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; speckle(y); }),
-    d: exact((y) => { y.filter = 'blur(1px)'; y.fillStyle = '#123456';
+    d: exactDraw((y) => { y.filter = 'blur(1px)'; y.fillStyle = '#123456';
       y.fillRect(56, 56, 8, 8); y.filter = 'none'; }),
   };
   return out;
