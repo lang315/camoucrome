@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Thirty-five criteria, all driven with Playwright's sync API over content_shell's CDP,
+Thirty-nine criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -79,6 +79,9 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C30-C32 a canvas wiped exact by destination-out, transferToImageBitmap or
       a 'copy' fill, then drawn with translucent 1px random colours, reads
       like a fresh canvas with the same drawing (no stale aa marks).
+  C33a-d 1px random opaque colours stay byte-equal to unconfigured after a
+      fully transparent arc, an all-transparent gradient arc, an opaque fill
+      with an off-canvas shadow (then a speckle), and a blurred corner fillRect.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -636,6 +639,31 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   const solid = (y) => { y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64); };
   out.copy = { h: H(get(x, 0, 0, 64, 64)), fresh: H(fresh(solid)),
     e: elig(fresh(solid), 64, 1, 1, 39, 39) };
+  // C33: exact pixels stay exact through draws that change none of them:
+  // 64x64 opaque random 1px colours, then (a) a fully transparent arc, (b) an
+  // arc filled with an all-transparent gradient, (c) an opaque fill whose
+  // shadow lands off the canvas, then a translucent speckle, (d) a blurred
+  // fillRect in a corner. The whole canvas must equal unconfigured.
+  const exact = (draw) => { const y = mk(64, 64); let es = 4242;
+    for (let yy = 0; yy < 64; yy++) for (let xx = 0; xx < 64; xx++) {
+      const col = [];
+      for (let k = 0; k < 3; k++) {
+        es = (Math.imul(es, 1103515245) + 12345) >>> 0; col.push(es >>> 24); }
+      y.fillStyle = 'rgb(' + col.join(',') + ')'; y.fillRect(xx, yy, 1, 1); }
+    draw(y); const d = get(y, 0, 0, 64, 64);
+    return { h: H(d), e: elig(d, 64) }; };
+  out.exact = {
+    a: exact((y) => { y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
+      y.arc(32, 32, 20, 0, 7); y.fill(); }),
+    b: exact((y) => { const g = y.createLinearGradient(0, 0, 64, 64);
+      g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, 'rgba(0,0,255,0)');
+      y.fillStyle = g; y.beginPath(); y.arc(32, 32, 20, 0, 7); y.fill(); }),
+    c: exact((y) => { y.shadowColor = '#000'; y.shadowOffsetX = 1000;
+      y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64);
+      y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; speckle(y); }),
+    d: exact((y) => { y.filter = 'blur(1px)'; y.fillStyle = '#123456';
+      y.fillRect(56, 56, 8, 8); y.filter = 'none'; }),
+  };
   return out;
 }"""
 
@@ -1040,7 +1068,16 @@ for name, key in ((C30, "dstout"), (C31, "transfer"), (C32, "copy")):
             lambda u: u["e"] > 0 and u["h"] == u["fresh"],
             lambda s, u: s["h"] == s["fresh"])
 
-EXPECTED = 35
+C33 = {k: f"33{k} exact pixels stay exact after {what}" for k, what in (
+    ("a", "a fully transparent arc"),
+    ("b", "an all-transparent gradient arc"),
+    ("c", "an opaque fill with an off-canvas shadow, then a speckle"),
+    ("d", "a blurred corner fillRect"))}
+for k in "abcd":
+    s2b_row(C33[k], lambda r, k=k: r["exact"][k], lambda u: u["e"] > 0,
+            lambda s, u: s["h"] == u["h"])
+
+EXPECTED = 39
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
