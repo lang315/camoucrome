@@ -76,3 +76,30 @@ draw: seeded median 35.70 ms, unconfigured median 24.90 ms, seeded/unconfigured 
 readPixels 64x64: seeded median 0.40 ms, unconfigured median 0.30 ms, seeded/unconfigured ratio 1.33
 readPixels 1024x1024: seeded median 28.60 ms, unconfigured median 1.80 ms, seeded/unconfigured ratio 15.89
 ```
+
+## 3. Task 2: patch key
+
+Noise is keyed by each pixel's 3x3 source patch (bottom-up aware) and gated
+by a `NoiseMask`; `CanvasStateHash` and the content fold are gone. The Blink
+call site passes `min_alpha` 1, no mask, and the snapshot's orientation.
+
+RED (unit tests committed first, `components_unittests` on the box):
+
+```
+../../components/camoucfg/canvas_noise_unittest.cc:34:3: error: no matching function for call to 'PerturbRgba'
+```
+
+GREEN, `Build Succeeded: 72 steps`. Every gtest PASSED, 0 FAILED, including
+the 7 new tests: `PerturbRgbaEdgesTest.{SamePatchGetsSameNoiseAnywhere,
+BottomUpMatchesTopDown, MaskGatesEachPixel, CoarseMaskCellCoversItsPixels,
+MaskOfAnotherSizeIsNoOp}`, `PerturbRgbaTest.SubRectInteriorMatchesFullRead`,
+`NoisedImageTest.{EditElsewhereKeepsAPixelsNoise, MinAlpha255LeavesPartialAlpha}`
+(8 names; 2 old tests deleted).
+
+`verify_sp3a.py`: C1-C20 PASS, C21 PASS, C22 PASS, C27 PASS, C29 PASS;
+C23, C24a-d, C25, C26, C28 FAIL (C28: sub-rect diff 7 bytes, was 136).
+`verify_review_2026_09_24.py`: 12/12 ALL_PASS. `gn check` core: OK;
+checkdeps: clean.
+
+Export: only `patches/sp3a-canvas-noise.patch` changed (the call site); the
+additions came back byte-identical to the pushed tree.
