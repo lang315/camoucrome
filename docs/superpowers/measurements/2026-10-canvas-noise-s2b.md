@@ -328,7 +328,7 @@ only `unconfigured clear == stock baseline` is False, from the absent baseline.
 | PR #27 gap | Closed by |
 |---|---|
 | The field was keyed by position | C21 |
-| Any edit reseeded the field | C22 |
+| Any edit reseeded the field (narrowed, see Remaining: a draw that touches a region's 3x3 patches without covering its pixels still re-rolls that region's noise) | C22 |
 | The WebGL sub-rect read differed from a full read | C28 |
 | `toDataURL` disagreed with `readPixels` | C29 |
 | The imported flag was sticky for the whole canvas | C23, C25 |
@@ -345,7 +345,16 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 35 rows.
 ### Remaining
 
 - Canvases above 4096 x 4096 are over-marked.
-- Layers mark their whole area.
+- Layers mark their whole area, as imported (no noise).
+- Neighbour re-roll (narrowed C22): noise is keyed by each pixel's 3x3 patch, so a
+  draw that touches a region's patches without covering its pixels re-rolls that
+  region's noise. Stock pixels depend only on draws that cover them. This is inherent
+  to patch keying and is documented, not fixed.
+- `drawMesh` (experimental Canvas2dMesh): an image texture cannot be replayed, so it
+  under-marks.
+- No row covers GPU-accelerated 2D raster: every S2b 2D row uses a canvas of 128 px or
+  less.
+- A `readPixels` strip-read binder failure returns the stock render.
 - Image draws mark `imported` over their whole dirty rect, with no replay. This errs
   toward no noise.
 - The captureStream one-copy path and the `transferControlToOffscreen` placeholder are

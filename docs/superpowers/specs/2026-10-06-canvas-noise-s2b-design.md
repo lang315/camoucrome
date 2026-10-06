@@ -120,7 +120,8 @@ Further rules:
 - **Composite ops that touch pixels outside the shape** (the ones
   `DrawInternal` already composites over the clip bounds, as Blink's
   full-canvas composite check decides, plus `copy`) mark the clip's coverage
-  with `aa` instead of the shape's. They never clear a mark.
+  `imported` (no noise) instead of the shape's (amended: see F1c). They never
+  clear a mark.
 - **`putImageData`** (`PutByteArray`) does not pass through `Draw`. It sets
   `imported` over its dirty rect directly.
 - **Text marks nothing.** `fillText` and `strokeText` are skipped by the
@@ -130,7 +131,7 @@ Further rules:
 - **`createPattern` marks nothing.** Only a fill or stroke with the pattern
   paint marks, and only over its coverage.
 - **Layers** (`beginLayer` / `endLayer`): a draw inside a layer marks its
-  coverage `aa` and never clears, because the layer's alpha and filter are
+  dirty area `imported` (amended) and never clears, because the layer's alpha and filter are
   only applied at `endLayer`.
 - **Precedence.** A pixel is eligible for readback noise iff `aa` is set and
   `imported` is not. `imported` wins.
@@ -220,6 +221,27 @@ canvas's `toDataURL` use different fields" is closed.
   `transferToImageBitmap` or a `copy` fill, then drawn with translucent 1px
   random colours, reads like a fresh canvas). `EXPECTED` is 35.
 
+Final-review fix wave (2026-10-06), rows C33a-d, `EXPECTED` 39:
+
+- **F1a, no-op draws.** `CamouMark` returns when `flags->nothingToDraw()`: a
+  fully transparent fill or `globalAlpha = 0` changes no pixel in stock.
+- **F1a', transparent gradients.** `CamouReplay` keeps the paint's shader for
+  kind `aa`, so a gradient's alpha is part of its coverage (all-transparent
+  stops give none). Every other kind drops the shader as before, because a
+  GPU-backed pattern could raster to nothing.
+- **F1b, shadows.** A draw with a looper is replayed twice: with the looper as
+  `aa` (the shadow is rasteriser-dependent), then without it as the shape's own
+  kind, so an opaque shape's fully covered pixels are cleared again.
+- **F1c, composited draws.** Filters, full-canvas composite modes and
+  composited shadows may set any clip pixel unpredictably and may leave exact
+  pixels as they were, so `CamouMarkClip` marks the clip `imported` for
+  everything. Text still marks nothing unless its style is a pattern.
+- **F3, clearRect.** The replay area is `ComputeDirtyRect(rect, clip_bounds)`
+  rather than the whole clip; if that returns false nothing is marked.
+- **F4, bottom-up masks.** `PerturbRgbaEdges` is a no-op when a mask is passed
+  with `bottom_up` true. A mask is for top-down 2D snapshots only; no 2D
+  snapshot is bottom-left on 154, so this is defensive.
+
 ## Configuration
 
 No new keys. `canvas:seed`, `canvas:noiseDensity` and `canvas:noiseStrength`
@@ -249,7 +271,7 @@ that is interior, non-transparent and unlike all four neighbours.
 | C24a–d AA holes | (a) diagonal `lineTo` triangle, (b) a line stroked with round caps, (c) curved `clip()` then `fillRect`, (d) `fillRect` with `shadowBlur` 4 | each differs from unconfigured | the operation list misses them |
 | C25 reuse | `putImageData` over the whole canvas, `clearRect` over the whole canvas, then an arc | equal to a fresh canvas with the same arc | sticky flag |
 | C26 pattern | `createPattern` never used, plus an arc; on a second canvas, an arc plus a pattern fill in region B | the first arc differs from unconfigured; region B equals unconfigured | `createPattern` sets the flag |
-| C27 coverage | a 1px `fillRect` checkerboard, then a diagonal line across it, plus an arc in a corner | checkerboard pixels 2 or more px from the line equal unconfigured | the arc makes the whole canvas eligible |
+| C27 coverage | a 1px `fillRect` checkerboard, then a diagonal line across it, plus an arc in a corner | checkerboard pixels 4 or more px from the line equal unconfigured | the arc makes the whole canvas eligible |
 | C28 WebGL sub-rect | `readPixels(16,16,32,32)` and `readPixels(0,0,64,64)` of the C6 triangle | the sub-rect equals the crop of the full read | rect-relative field |
 | C29 WebGL agreement | `toDataURL` of the C6 triangle, decoded, against `readPixels` flipped | equal on every opaque pixel | different seeds |
 
@@ -301,7 +323,16 @@ From measurements §8 and the S1/S2 spec:
 
 - **Canvases above 4096 × 4096 px** use coarse 4 × 4 cell masks, which
   over-mark near AA content.
-- **Layers** mark `aa` and never clear inside a layer.
+- **Layers** mark `imported` (no noise) and never clear inside a layer.
+- **Neighbour re-roll (C22 narrowed).** Noise is keyed by each pixel's 3x3 patch,
+  so a draw that touches a region's 3x3 patches without covering its pixels
+  re-rolls that region's noise. Stock pixels depend only on draws that cover
+  them. Inherent to patch keying; documented only.
+- **`drawMesh`** (experimental Canvas2dMesh): an image texture cannot be
+  replayed, so it under-marks.
+- **No row covers GPU-accelerated 2D raster**: every S2b 2D row uses a canvas
+  of 128 px or less.
+- **A `readPixels` strip-read binder failure** returns the stock render.
 - `transferToImageBitmap`, captureStream's one-copy path and the
   `transferControlToOffscreen` placeholder stay as recorded in the S1/S2
   spec.

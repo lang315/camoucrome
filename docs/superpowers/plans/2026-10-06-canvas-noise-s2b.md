@@ -48,6 +48,7 @@ Each ruling is recorded here so the executor does not re-litigate it.
 - **Draws inside a layer mark over their dirty rect.** The mark is `aa`, or `imported` for a pattern or image. `RestoreMatrixClipStack` stops at a layer, so a replay would place coverage wrongly.
 - **`clearRect` goes through the replay with `Kind::kClear`.** It does not pass through `Draw`.
 - **Text is skipped by `DrawType::kText`.**
+- Superseded during implementation: layers and composited draws mark imported (spec amendments).
 - **`CamouNoiseEligible()` means the mask holds a mark.** It is `camou_mask_ && !camou_mask_->empty()`. The spec's "some pixel is eligible" check would save only a noise pass that changes nothing, because every pixel is gated anyway.
 - **`PerturbRgbaFromConfig` is the readPixels path only, so it is always bottom-up.**
 - **Fixup targets (W6).**
