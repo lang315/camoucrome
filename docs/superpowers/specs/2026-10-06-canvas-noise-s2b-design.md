@@ -190,6 +190,36 @@ With section 1 this makes `toDataURL` and `readPixels` of one WebGL canvas
 agree on every pixel. The recorded gap "WebGL `readPixels` and a WebGL
 canvas's `toDataURL` use different fields" is closed.
 
+## Amended during implementation (2026-10-06)
+
+- **Pattern-styled text marks imported.** Text still marks nothing (its
+  per-seed draw offset varies it), except text whose fill or stroke style is a
+  pattern: its pixels are page-supplied, so it marks `imported` over its dirty
+  rect. Otherwise the gradient's `aa` under it would noise pixels that must read
+  as stock. There is no verify row (the text offset makes a byte comparison with
+  unconfigured impossible); it is covered by code review only.
+- **The fallbacks mark `imported`, not `aa`.** A draw inside a layer, and a draw
+  whose A8 coverage bitmap cannot be allocated, mark the whole box `imported`
+  (no noise) instead of `aa`, so exact pixels never gain noise. Canvas2dLayers
+  has no `status` in runtime_enabled_features.json5 on 154, so the layer path is
+  off by default.
+- **`destination-out` and `copy` clear.** `destination-out` with an opaque solid
+  source leaves every fully covered pixel transparent whatever it held, so it is
+  `Kind::kClear`, like `clearRect`. `copy` replaces every pixel of the clip: it
+  replays a full-clip clear, then marks the shape normally (a colour falls to
+  `kSolid`, since the blend is not src-over, which is right after the clear).
+  Otherwise stale `aa` marks survived draws that made pixels exact.
+- **`transferToImageBitmap` resets the mask.** The offscreen context discards the
+  bitmap and restarts clear, so it also drops `camou_mask_`; otherwise the new
+  clear canvas kept stale `aa` marks.
+- **C27 redrawn.** It draws 1px pseudo-random opaque colours under a diagonal
+  line, not a 2-colour checkerboard: under patch keying a checkerboard has only
+  2 patch types, so the row passed vacuously on a build with the whole canvas
+  eligible.
+- **New rows C30-C32** (canvas wiped exact by `destination-out`,
+  `transferToImageBitmap` or a `copy` fill, then drawn with translucent 1px
+  random colours, reads like a fresh canvas). `EXPECTED` is 35.
+
 ## Configuration
 
 No new keys. `canvas:seed`, `canvas:noiseDensity` and `canvas:noiseStrength`
