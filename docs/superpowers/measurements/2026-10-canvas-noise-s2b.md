@@ -375,3 +375,78 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 35 rows.
 
 The fork's headless relaunch changed one HEVC codec leaf. That is S4 instability, not
 canvas; canvas leaves were unchanged.
+
+## 9. Final-review fix wave
+
+Branch head `e867573`. Fixes: F1a (no-op draws), F1a' (gradient alpha), F1b (shadow
+two-pass), F1c (composited draws mark imported), F3 (clearRect area), F4 (mask is
+top-down only), F5 (comments), plus rows C33a-d.
+
+### RED (WSL, additions-only build, before the Blink edit)
+
+- Build: 356 steps; `components_unittests` canvas filters PASS, including the new
+  `PerturbRgbaEdgesTest.MaskWithBottomUpIsNoOp`.
+- A first RED run measured nothing: the C33 page script reused the name `exact`, a
+  `SyntaxError` failed every row from C21 on (18 FAIL). The helper was renamed
+  (`6026393`) and the RED run repeated.
+- Repeated RED: `verify_sp3a` 35 PASS, 4 FAIL. The four are exactly C33a, C33b, C33c and
+  C33d, so each new row fails on the build without the fix.
+
+### Build and GREEN (WSL)
+
+- Edits: `final_fix_edits.py` (7 entries, sha256 `204a9e83`) applied with no anchor
+  correction and no API-shape correction (`nothingToDraw`, `setLooper`,
+  `ComputeDirtyRect` all compiled as written).
+- Build: `content_shell` + `components_unittests`, 201 steps, rc 0. `gn check` (core,
+  canvas, webgl): Header dependency check OK. `checkdeps` on both canvas dirs: SUCCESS.
+- `verify_sp3a`: 39 of 39, `ALL_PASS`, rc 0. `verify_review_2026_09_24`: 12/12
+  `ALL_PASS`. C24d, C27, C11-C13 and C16 did not regress.
+- Export: 38 commits, 0 fixup. Only `patches/sp3a-canvas-noise.patch` changed
+  (sha256 `8da4db67`, 41009 bytes); the additions are identical to the pushed tree.
+
+### Windows (W12, base `55d16f07`)
+
+| file | Windows pre (8) | post = box sha256 (8) |
+|---|---|---|
+| `components/camoucfg/BUILD.gn` | same as post | 85b54c68 |
+| `components/camoucfg/canvas_mask.cc` | same as post | 47f2819e |
+| `components/camoucfg/canvas_mask.h` | same as post | b8decbd4 |
+| `components/camoucfg/canvas_mask_unittest.cc` | same as post | cf9f45dc |
+| `components/camoucfg/canvas_noise.cc` | B1FD0F9D | 0943682e |
+| `components/camoucfg/canvas_noise.h` | EBA8B58D | 09df99ee |
+| `components/camoucfg/canvas_noise_unittest.cc` | A9A2438B | d9ad2483 |
+| `components/camoucfg/canvas_readback.cc` | same as post | b6c18de0 |
+| `components/camoucfg/canvas_readback.h` | same as post | 0fb5e9d6 |
+| `components/camoucfg/canvas_readback_unittest.cc` | same as post | 93e72828 |
+| `third_party/blink/renderer/DEPS` | same as post | 545f6f65 |
+| `third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc` | same as post | 15feef8c |
+| `third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h` | F8DB6E7B | c19792f7 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc` | same as post | 4c7ee7e2 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h` | same as post | ab3704c8 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc` | 5CBCA18D | 3145696d |
+| `third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h` | 2A96F42A | 9052864b |
+| `third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc` | same as post | 81fd661e |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc` | same as post | 72d084be |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h` | same as post | 43956d64 |
+
+All 20 post hashes equal the box's sha256. The other 14 files were already identical.
+
+Windows build (`out\Release`, label `s2b-2`): two attempts stopped on clang out of memory
+(one with 42 steps done, one with 16; the second also hit the paging-file limit). The
+third attempt, resumed from the cache, ended `Build Succeeded: 201 steps`, rc 0.
+
+### Final host runs
+
+| label | attempts | result |
+|---|---|---|
+| s2b-final2-headless | 2 | attempt 1: P3 and S1 UNMEASURED (no WebGL context in stock) and rule 5 FAIL on `glClear`, `shape`, `text`, `textBig`; attempt 2: 9/9 PASS |
+| s2b-final2-headed | 2 | attempt 1: P3 and S1 UNMEASURED (no WebGL context in seed 1), others PASS; attempt 2: 9/9 PASS |
+
+The rule 5 FAIL in headless attempt 1 came with a host WebGL failure on the stock side
+and did not reproduce in the next attempt or in either headed attempt; it is recorded as
+a host flake, not as a pass.
+
+### `verify_sp3a` on Windows `chrome`
+
+39 rows: 33 PASS (C6-C9, C12-C33a-d), 6 fail on the missing stock baseline as before
+(C2-C5, C10, C11), recorded as UNMEASURED. Log `D:\camou-win\s2b\sp3a-win2.log`.
