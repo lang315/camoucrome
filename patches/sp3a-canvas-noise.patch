@@ -634,7 +634,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..a31767da91 100644
+index 26c0a088cc..60f0504bd7 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,9 @@
@@ -647,7 +647,7 @@ index 26c0a088cc..a31767da91 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,147 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5359,149 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -690,7 +690,9 @@ index 26c0a088cc..a31767da91 100644
 +    // such a buffer.
 +    if (int64_t{camou_pack.skip_pixels} + width <= camou_stride_px &&
 +        camou_x1 > camou_x0 && camou_y1 > camou_y0) {
-+      if (auto* ec = Host()->GetTopExecutionContext()) {
++      // No seed: no strips, no scratch, no copies -- stock work (rule 5).
++      auto* ec = Host()->GetTopExecutionContext();
++      if (ec && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec)) != 0) {
 +        const int64_t camou_offset =
 +            (int64_t{camou_pack.skip_rows} + (camou_y0 - y)) *
 +                camou_row_bytes +
