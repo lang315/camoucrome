@@ -23,7 +23,7 @@ index fe99fbb833..571377b3c4 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index 150d03eafd..aa3b70026c 100644
+index 150d03eafd..0b9b275a89 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 @@ -27,6 +27,9 @@
@@ -45,7 +45,7 @@ index 150d03eafd..aa3b70026c 100644
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
-@@ -551,4 +556,44 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
+@@ -551,4 +556,46 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
    return *monitor;
  }
  
@@ -75,7 +75,9 @@ index 150d03eafd..aa3b70026c 100644
 +  // A new wrapper around the same raster snapshot (a CPU canvas) keeps the
 +  // same field.
 +  if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID()) {
-+    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(*sk_image, scope);
++    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
++        *sk_image, scope, /*min_alpha=*/1, camoucfg::NoiseMask(),
++        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
 +    if (!noised) {
 +      return image;
 +    }
