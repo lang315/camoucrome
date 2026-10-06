@@ -419,7 +419,8 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   Two identities share `canvas.text`.
   Follow-up: key the readback noise on each pixel's 3×3 source patch instead of
   (seed^stateHash, x, y): removes the reseed, the position and the WebGL sub-rect tells.
-- **S2b. SPEC 2026-10-06 (`specs/2026-10-06-canvas-noise-s2b-design.md`;
+- **S2b. DONE 2026-10-06 (`specs/2026-10-06-canvas-noise-s2b-design.md`;
+  results in `measurements/2026-10-canvas-noise-s2b.md`, density 0.04;
   follow-up to S2, from the PR #27 review).** The anti-aliasing flag misses
   diagonal `lineTo` polygons, curved `clip()`, rotated `drawImage`, round caps
   and `shadowBlur`. Eligibility is one sticky per-canvas boolean, so it can be
@@ -431,7 +432,9 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
 - **S2c. OPEN (split from S2b on 2026-10-06).** WebGL to WebGL `texImage2D`
   takes a GPU path that skips the snapshot hook. Copy-path cost is
   unmeasured: the cache holds two full-canvas copies, and a miss on a float16
-  canvas reads back from the GPU for nothing.
+  canvas reads back from the GPU for nothing. Also from S2b: the 2D draw cost
+  ratio is 4.35x (above the 2x line; WSL CPU raster), and the `readPixels`
+  margin strips add round trips.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
   while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
   unmeasurable.
