@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Thirty-two criteria, all driven with Playwright's sync API over content_shell's CDP,
+Thirty-five criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -76,6 +76,9 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       follows coverage, not bounding boxes.
   C28 a WebGL readPixels sub-rect equals the full read's part.
   C29 WebGL toDataURL agrees with readPixels on every opaque pixel.
+  C30-C32 a canvas wiped exact by destination-out, transferToImageBitmap or
+      a 'copy' fill, then drawn with translucent 1px random colours, reads
+      like a fresh canvas with the same drawing (no stale aa marks).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -601,6 +604,38 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   for (let yy = 1; yy < 39; yy++) for (let xx = 1; xx < 39; xx++)
     if (Math.abs(xx - yy) >= 4) for (let k = 0; k < 4; k++) sel.push(d[(yy * 64 + xx) * 4 + k]);
   out.cover = { h: H(sel), e: elig(d, 64, 1, 1, 39, 39) };
+  // C30-C32: draws that leave pixels exact must not leave stale aa marks:
+  // translucent 1px random colours over a wiped canvas read like a fresh one.
+  const speckle = (y) => { let ss = 777;
+    y.globalCompositeOperation = 'source-over'; y.globalAlpha = 0.5;
+    for (let yy = 0; yy < 40; yy++) for (let xx = 0; xx < 40; xx++) {
+      const col = [];
+      for (let k = 0; k < 3; k++) {
+        ss = (Math.imul(ss, 1103515245) + 12345) >>> 0; col.push(ss >>> 24); }
+      y.fillStyle = 'rgb(' + col.join(',') + ')'; y.fillRect(xx, yy, 1, 1); }
+    y.globalAlpha = 1; };
+  const grad = (y) => { const g = y.createLinearGradient(0, 0, 64, 64);
+    g.addColorStop(0, '#ff2d00'); g.addColorStop(1, '#1a2fff');
+    y.fillStyle = g; y.fillRect(0, 0, 64, 64); };
+  const fresh = (pre) => { const y = mk(64, 64); if (pre) pre(y); speckle(y);
+    return get(y, 0, 0, 64, 64); };
+  const freshH = H(fresh(null)), freshE = elig(fresh(null), 64, 1, 1, 39, 39);
+  // C30: destination-out with an opaque fill wipes the gradient.
+  x = mk(64, 64); grad(x);
+  x.globalCompositeOperation = 'destination-out'; x.fillStyle = '#000';
+  x.fillRect(0, 0, 64, 64); speckle(x);
+  out.dstout = { h: H(get(x, 0, 0, 64, 64)), fresh: freshH, e: freshE };
+  // C31: transferToImageBitmap hands the bitmap over; the canvas restarts clear.
+  const oc = new OffscreenCanvas(64, 64), ox = oc.getContext('2d');
+  grad(ox); oc.transferToImageBitmap(); speckle(ox);
+  out.transfer = { h: H(ox.getImageData(0, 0, 64, 64).data), fresh: freshH, e: freshE };
+  // C32: 'copy' replaces the whole clip with an opaque fill.
+  x = mk(64, 64); grad(x);
+  x.globalCompositeOperation = 'copy'; x.fillStyle = '#123456'; x.fillRect(0, 0, 64, 64);
+  speckle(x);
+  const solid = (y) => { y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64); };
+  out.copy = { h: H(get(x, 0, 0, 64, 64)), fresh: H(fresh(solid)),
+    e: elig(fresh(solid), 64, 1, 1, 39, 39) };
   return out;
 }"""
 
@@ -997,8 +1032,15 @@ s2b_row(C27, lambda r: r["cover"], lambda u: u["e"] > 0,
 gl_row(C28, "subrect", lambda s, u: s["diff"] == 0 and u["diff"] == 0 and s["h"] != u["h"])
 gl_row(C29, "agree", lambda s, u: s["opaque"] > 0 and s["diff"] == 0 and u["diff"] == 0
        and s["h"] != u["h"])
+C30 = "30 destination-out wipe then translucent speckle reads like a fresh canvas"
+C31 = "31 transferToImageBitmap then translucent speckle reads like a fresh canvas"
+C32 = "32 copy fill then translucent speckle reads like a fresh canvas"
+for name, key in ((C30, "dstout"), (C31, "transfer"), (C32, "copy")):
+    s2b_row(name, lambda r, key=key: r[key],
+            lambda u: u["e"] > 0 and u["h"] == u["fresh"],
+            lambda s, u: s["h"] == s["fresh"])
 
-EXPECTED = 32
+EXPECTED = 35
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
