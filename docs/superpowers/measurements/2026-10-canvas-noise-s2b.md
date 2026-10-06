@@ -458,3 +458,25 @@ a host flake, not as a pass.
 
 39 rows: 33 PASS (C1, C6-C9, C12-C33a-d), 6 fail on the missing stock baseline as before
 (C2-C5, C10, C11), recorded as UNMEASURED. Log `D:\camou-win\s2b\sp3a-win2.log`.
+
+## 10. Residual fix (WSL)
+
+Branch head after the code fix: see `git log`. A transparent fill, or `globalAlpha` 0,
+with a visible shadow took CamouMark's looper branch, because `nothingToDraw()` is false
+while a looper is set. The branch now builds the no-looper shape flags first and returns
+if the shape draws nothing. Row C33e covers it; the CamouReplay declaration comment was
+corrected.
+
+- RED (current build, no rebuild): `verify_sp3a` 39 PASS, 1 FAIL, the FAIL being C33e
+  (seeded hash differs; unconfigured hash equals its own pre-draw hash, so stock draws
+  nothing).
+- Build: `content_shell` + `components_unittests`, 354 steps, rc 0.
+- GREEN: `verify_sp3a` 40/40 `ALL_PASS`, rc 0; `verify_review` 12/12 `ALL_PASS`;
+  canvas unit tests pass; the 6 and 10 test groups all PASSED.
+- `gn check` core, canvas, webgl: Header dependency check OK. `checkdeps` on
+  `modules/canvas` and `core/html/canvas`: SUCCESS.
+- Export: 38 commits, 0 fixup; only `patches/sp3a-canvas-noise.patch` changed (sha256
+  `64be287c`).
+
+Windows re-run pending: another session's Windows build occupies D:\camou-win; the S2b
+Windows re-run follows it.
