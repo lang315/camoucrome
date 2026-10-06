@@ -7,6 +7,8 @@ static_library("camoucfg") {
     "audio_noise.cc",
     "audio_noise.h",
     "blink_scope.h",
+    "canvas_mask.cc",
+    "canvas_mask.h",
     "canvas_noise.cc",
     "canvas_noise.h",
     "coherence_validator.cc",
