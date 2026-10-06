@@ -117,3 +117,18 @@ checkdeps: clean.
 
 Export: only `patches/sp3a-canvas-noise.patch` changed (the call site); the
 additions came back byte-identical to the pushed tree.
+
+## 4. Task 3: mask
+
+- RED (tests only, `9593a8f`): `autoninja components_unittests` fails with
+  `canvas_mask_unittest.cc:5:10: fatal error: 'components/camoucfg/canvas_mask.h' file not found`.
+- GREEN (`eac3d99`): `Build Succeeded: 87 steps` (non-zero). `CanvasNoiseMaskTest.*`: 9/9 pass
+  (StartsEmptyAndFullOpaqueCoverMarksNothing, PartialCoverageMarksAaFullDoesNot,
+  FullSolidOpaqueCoverClearsBothMarks, SolidNotOpaqueLeavesMarksOnFullCoverage,
+  ImportedWinsAndClearRectResets, GradientAndPatternKindsMarkEveryCoveredPixel,
+  CoverageOutsideTheCanvasIsIgnored, GenerationBumpsOnlyOnChange, CoarseCellsAboveTheCap).
+  The other filtered suites still pass.
+- Box: three new files and `BUILD.gn` fixed up into the `components/camoucfg/BUILD.gn`
+  last-touch commit; 38 commits, 0 fixups, tree clean. Export reproduced the pushed
+  tree byte for byte (no patch, no additions change), `check_checkout_sync` PASS,
+  `check_additions_build` PASS (42 files).
