@@ -139,3 +139,10 @@ def test_refuses_deps_without_the_binary(tree, tmp_path):
         deps.write_text(text)
         with pytest.raises(SystemExit, match="main binary"):
             package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_refuses_observer_build(tree, tmp_path):
+    src, out, deps = tree
+    (out / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n")
+    with pytest.raises(SystemExit, match="camou_observe"):
+        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
