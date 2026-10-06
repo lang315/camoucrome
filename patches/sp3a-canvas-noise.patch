@@ -454,7 +454,7 @@ index 332d1f5c54..f09cf0f38e 100644
      CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
                    OverdrawOp::kClearRect);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..64d38ae815 100644
+index 6ee4b2b0d1..60d4e3b680 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -8,6 +8,7 @@
@@ -473,7 +473,7 @@ index 6ee4b2b0d1..64d38ae815 100644
  #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_image_smoothing_quality.h"
-@@ -400,6 +402,43 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -400,6 +402,44 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
    const Font* AccessFont(HTMLCanvasElement* canvas);
  
@@ -501,7 +501,8 @@ index 6ee4b2b0d1..64d38ae815 100644
 +  // Plays `record` onto an A8 bitmap over `area` and merges it.
 +  void CamouMergeRecord(cc::PaintRecord record, const SkIRect& area,
 +                        camoucfg::CanvasNoiseMask::Kind kind);
-+  // Replays `draw_func` with `flags` made opaque white and shader-free,
++  // Replays `draw_func` with `flags` made opaque white, src-over, and
++  // shader-free except for kind kAa (a gradient's alpha is its coverage),
 +  // under the current matrix and clip, and merges its coverage.
 +  template <typename DrawFunc>
 +  void CamouReplay(const DrawFunc& draw_func, const cc::PaintFlags& flags,
@@ -517,7 +518,7 @@ index 6ee4b2b0d1..64d38ae815 100644
    ALWAYS_INLINE CanvasRenderingContext2DState& GetState() const {
      return *state_stack_.back();
    }
-@@ -787,6 +826,73 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
+@@ -787,6 +827,79 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
    Recorder()->RestartCurrentLayer();
  }
  
@@ -577,11 +578,17 @@ index 6ee4b2b0d1..64d38ae815 100644
 +    return;
 +  }
 +  if (flags->getLooper()) {
-+    // The shadow is rasteriser-dependent (aa); the shape is then marked by
-+    // its own kind, so an opaque shape's covered pixels stay exact.
-+    CamouReplay(draw_func, *flags, camoucfg::CanvasNoiseMask::Kind::kAa, area);
++    // A shadow follows its shape's alpha: a shape that draws nothing casts
++    // nothing (nothingToDraw() is false while a looper is set).
 +    cc::PaintFlags shape = *flags;
 +    shape.setLooper(nullptr);
++    if (shape.nothingToDraw()) {
++      return;
++    }
++    // The shadow is rasteriser-dependent (aa); the shape is then marked by
++    // its own kind, so an opaque shape's covered pixels stay exact.
++    CamouReplay(draw_func, *flags, camoucfg::CanvasNoiseMask::Kind::kAa,
++                area);
 +    CamouReplay(draw_func, shape, CamouKindFor(paint_type, shape), area);
 +    return;
 +  }
@@ -591,7 +598,7 @@ index 6ee4b2b0d1..64d38ae815 100644
  template <Canvas2DRecorderContext::OverdrawOp CurrentOverdrawOp,
            typename DrawFunc,
            typename DrawCoversClipBoundsFunc>
-@@ -809,6 +915,9 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -809,6 +922,9 @@ void Canvas2DRecorderContext::DrawInternal(
    const CanvasRenderingContext2DState& state = GetState();
    SkBlendMode global_composite = state.GlobalComposite();
    if (ShouldUseCompositedDraw(paint_type, image_type)) {
@@ -601,7 +608,7 @@ index 6ee4b2b0d1..64d38ae815 100644
      WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
      CompositedDraw(draw_func, paint_canvas, paint_type, image_type);
      ResetAlphaIfNeeded(paint_canvas, global_composite);
-@@ -817,6 +926,18 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -817,6 +933,18 @@ void Canvas2DRecorderContext::DrawInternal(
      paint_canvas->clear(HasAlpha() ? SkColors::kTransparent : SkColors::kBlack);
      const cc::PaintFlags* flags =
          state.GetFlags(paint_type, kDrawForegroundOnly, image_type);
@@ -620,7 +627,7 @@ index 6ee4b2b0d1..64d38ae815 100644
      WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
      draw_func(paint_canvas, flags);
      ResetAlphaIfNeeded(paint_canvas, global_composite, &bounds);
-@@ -833,6 +954,7 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -833,6 +961,7 @@ void Canvas2DRecorderContext::DrawInternal(
            CheckOverdraw(flags, image_type, CurrentOverdrawOp);
          }
        }
