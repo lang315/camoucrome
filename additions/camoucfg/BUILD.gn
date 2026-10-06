@@ -58,6 +58,7 @@ source_set("unit_tests") {
   sources = [
     "audio_noise_unittest.cc",
     "canvas_noise_unittest.cc",
+    "canvas_mask_unittest.cc",
     "canvas_readback_unittest.cc",
     "coherence_validator_unittest.cc",
     "derive_unittest.cc",
