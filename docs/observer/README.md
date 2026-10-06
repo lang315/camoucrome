@@ -1,0 +1,75 @@
+# Tracking observer — operator guide
+
+An audit build that records, per site, which fingerprint surfaces a page reads
+(Web IDL member, real call count, reading origin, top-level site) and what it
+sends back (requests, cookie names). Observe-only. Design:
+`docs/superpowers/specs/2026-10-06-tracking-observer-design.md`.
+
+## Build
+
+Add to the out dir's `args.gn` (never to `settings/build-args.gn`):
+
+    camou_observe = true
+
+`scripts/package.py` refuses such an out dir: an observer build is never a
+release. With the arg off, the generated calls compile to nothing.
+
+## Run
+
+    chrome --user-data-dir=<fresh profile> \
+      --trace-startup=disabled-by-default-camou.observe \
+      --trace-startup-format=json --trace-startup-file=<trace.json> \
+      --trace-startup-duration=0 \
+      --trace-startup-record-mode=record-as-much-as-possible \
+      --log-net-log=<net.json>
+
+Browse, then close the browser normally. The trace is written at shutdown; a
+killed browser leaves no trace file. Use one fresh profile per site.
+
+`--trace-startup-duration=0` (record until exit) is the documented setting for
+`chrome` sessions closed normally. `scripts/verify_observe.py` instead uses
+`--trace-startup-duration=20` on `content_shell`, because content_shell's
+SIGTERM path wrote no trace; the duration timer flushes it.
+
+## Read
+
+    cp <profile>/Default/Cookies /tmp/cookies.db
+    python3 scripts/observe_report.py <trace.json> <net.json> --cookies /tmp/cookies.db
+
+Per top-level site: surface group, API, reading origin, call count; requests
+per host (query strings dropped); cookie names (values are never read). The
+raw trace opens in https://ui.perfetto.dev.
+
+An event fires at the entry of the binding, before argument and receiver
+checks, so a call that throws (for example a brand-check probe) still counts
+as a read.
+
+## What it cannot see (silence is not safety)
+
+- V8 built-ins: `Intl.*`, `Date.prototype.getTimezoneOffset`, `Math`.
+- CSS `@media` rules in stylesheets (only `matchMedia` is seen).
+- Font enumeration through layout beyond the listed layout members.
+- TLS/JA3, HTTP/2 framing, server-side computation.
+- Values: a row says a page read `deviceMemory`, not what it got.
+- Named and indexed access (`localStorage.foo`, `navigator.plugins[0]`) goes
+  through interceptors and is not observed.
+
+## Detectability
+
+The observer is an audit tool, not a stealth mode. With the category off, each
+allow-listed call costs one category check. With it on, each call writes a
+trace event; measured overhead (200 000 `navigator.userAgent` reads, 300
+`toDataURL` calls; content_shell on the build box, swiftshader GL):
+
+| category | `ua_200k_ms` | `todataurl_300_ms` |
+|---|---|---|
+| off | 86.9 | 27.8 |
+| on | 523.8 | 29.7 |
+
+Browse a site normally, on a release build, when staying hidden matters.
+
+## Data handling
+
+Traces, netlogs and profiles hold the operator's real browsing. Keep them on
+the machine that made them. Commit only names, counts, hosts and
+query-stripped paths.
