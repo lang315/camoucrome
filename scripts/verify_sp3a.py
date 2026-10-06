@@ -72,7 +72,7 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       with fillRect, and fillRect with shadowBlur each carry noise.
   C25 a reused canvas (putImageData, clearRect, arc) reads like a fresh one.
   C26 createPattern alone marks nothing; a pattern fill reads exact.
-  C27 a 1px checkerboard under a diagonal line stays exact: eligibility
+  C27 1px random colours under a diagonal line stay exact: eligibility
       follows coverage, not bounding boxes.
   C28 a WebGL readPixels sub-rect equals the full read's part.
   C29 WebGL toDataURL agrees with readPixels on every opaque pixel.
@@ -587,11 +587,13 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   x = mk(64, 64); arc(x, 16, 16, 10); x.fillStyle = x.createPattern(tile.canvas, 'repeat');
   x.fillRect(32, 32, 32, 32);
   out.pattern = { p1, e: elig(a, 64), hB: H(get(x, 32, 32, 32, 32)) };
-  // C27: a 1px checkerboard, a diagonal line across it, an arc in a corner.
-  // Checkerboard pixels 4+ px from the line must stay exact.
-  x = mk(64, 64);
+  // C27: 1px random opaque colours (every 3x3 patch distinct, so noise cannot
+  // miss by a coin flip), a diagonal line across them, an arc in a corner.
+  // Pixels 4+ px from the line must stay exact.
+  x = mk(64, 64); let cs = 54321;
   for (let yy = 0; yy < 40; yy++) for (let xx = 0; xx < 40; xx++) {
-    x.fillStyle = (xx + yy) & 1 ? 'rgb(200,60,30)' : 'rgb(30,60,200)'; x.fillRect(xx, yy, 1, 1); }
+    const c3 = [0, 0, 0].map(() => { cs = (Math.imul(cs, 1103515245) + 12345) >>> 0; return cs >>> 24; });
+    x.fillStyle = `rgb(${c3[0]},${c3[1]},${c3[2]})`; x.fillRect(xx, yy, 1, 1); }
   x.strokeStyle = '#000'; x.lineWidth = 1;
   x.beginPath(); x.moveTo(0, 0); x.lineTo(40, 40); x.stroke();
   arc(x, 56, 56, 5);
@@ -956,7 +958,7 @@ C24 = {k: f"24{k} {what} carries noise" for k, what in (
     ("c", "curved clip() + fillRect"), ("d", "fillRect with shadowBlur"))}
 C25 = "25 a reused canvas reads like a fresh one"
 C26 = "26 createPattern alone marks nothing; a pattern fill reads exact"
-C27 = "27 checkerboard under a diagonal line stays exact (coverage, not bbox)"
+C27 = "27 1px random colours under a diagonal line stay exact (coverage, not bbox)"
 C28 = "28 WebGL readPixels sub-rect equals the full read's part, byte for byte"
 C29 = "29 WebGL toDataURL agrees with readPixels on every opaque pixel"
 
