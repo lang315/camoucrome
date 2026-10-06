@@ -239,3 +239,84 @@ Fix round 1: the strip block is gated on `canvas:seed != 0`, so an
 unconfigured build does no strip reads, scratch or copies (rule 5).
 `Build Succeeded: 354 steps`; `verify_sp3a.py` 35/35 ALL_PASS rc=0;
 `verify_review_2026_09_24.py` 12/12.
+
+## 7. Windows (`out\Release`, branch head `fdf56c1`)
+
+### W12 per-file replacement
+
+Every post hash equals the box's sha256 for `camoucrome/main`. Pre hashes are the
+PR #27 state; `ABSENT` is a new file. Hashes truncated to 12 hex digits.
+
+| file | pre | post (= box) |
+|---|---|---|
+| components/camoucfg/BUILD.gn | e141b743dc5d | 85b54c68b660 |
+| components/camoucfg/canvas_mask.cc | ABSENT | 47f2819e0d9d |
+| components/camoucfg/canvas_mask.h | ABSENT | b8decbd4bbba |
+| components/camoucfg/canvas_mask_unittest.cc | ABSENT | cf9f45dce8ef |
+| components/camoucfg/canvas_noise.cc | 97c61511305f | b1fd0f9d0483 |
+| components/camoucfg/canvas_noise.h | 0e33c24046a1 | eba8b58df32f |
+| components/camoucfg/canvas_noise_unittest.cc | 639d2fbf00645 | a9a2438b2fb6 |
+| components/camoucfg/canvas_readback.cc | 6bb1c20a0ce7 | b6c18de0a13c |
+| components/camoucfg/canvas_readback.h | b0ee14d1fc5a | 0fb5e9d6233e |
+| components/camoucfg/canvas_readback_unittest.cc | 1e4b5b45d51c | 93e72828eb1c |
+| blink/renderer/DEPS | 0c8cb5db049b | 545f6f65e01a |
+| blink/renderer/core/html/canvas/canvas_rendering_context.cc | 38b3f3b32d22 | 15feef8cd3d2 |
+| blink/renderer/core/html/canvas/canvas_rendering_context.h | 922ec7c5793f | f8db6e7b3d57 |
+| blink/.../canvas2d/base_rendering_context_2d.cc | a7042345f052 | 4c7ee7e2cdf8 |
+| blink/.../canvas2d/base_rendering_context_2d.h | cb63d4800cdf | ab3704c81bce |
+| blink/.../canvas2d/canvas_2d_recorder_context.cc | f03bf454f7dd | 5cbca18df60f |
+| blink/.../canvas2d/canvas_2d_recorder_context.h | 9cc0bc855115 | 2a96f42a1389 |
+| blink/.../offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc | fc1037ed3f1e | 81fd661e42cc |
+| blink/.../modules/webgl/webgl_rendering_context_base.cc | 25759bebb910 | 72d084be746f |
+| blink/.../modules/webgl/webgl_rendering_context_base.h | 4760dde2a955 | 43956d64916b |
+
+### Build
+
+First start died after 88 s: siso `fatal error: out of memory` (`VirtualAlloc ... errno=1455`),
+not clang. W9 restart of the same label: `Build Succeeded: 231 steps`, `rc=0 secs=339`.
+
+### Calibration at the default density 0.04 (8 seeds)
+
+No density change; the default stays 0.04.
+
+| mode | S2 text | S2 shape | stock among |
+|---|---|---|---|
+| headless | 8 of 8 distinct | 8 of 8 | none |
+| headed | 8 of 8 distinct | 8 of 8 | none |
+
+The headless calibration run had P3 and S1 UNMEASURED (`no WebGL context in: stock`);
+the other 7 rows PASS. Not rerun, since calibration reads only S2.
+
+### Final host runs
+
+| label | attempts | P1 | P2 | P3 | P4 | P5 | S1 | S2 text | S2 shape | rule 5 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| s2b-final-headless | 1 | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+| s2b-final-headed | 1 | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
+
+9/9 in both modes on the first attempt. S2 text and shape: 8 distinct of 8, stock among
+them False. S1 colours `[(1, 1)]`. Rule 5 differ `[]`.
+
+### `verify_sp3a` on Windows `chrome`
+
+35 rows. PASS: C1, C6-C9, C12-C32 (C24 a-d included). Not passing, all on the
+missing stock baseline (`baseline load ... FileNotFoundError`; no stock baseline
+on the host): C2, C3, C4, C5, C10, C11. Recorded as UNMEASURED, not as a pass.
+C11's own measurable parts read fine: differ from unconfigured `[]`, colours (2D, WebGL) `(1, 1)`;
+only `unconfigured clear == stock baseline` is False, from the absent baseline.
+
+### Regression verifies
+
+`verify_windows_client.py`: `11 PASS 0 FAIL`. `verify_sp6b_driver.py`: `ALL_PASS`.
+
+### Step 2 re-measure (scrubbed numbers only)
+
+- `noise.canvas2d` and `noise.webgl`: 1 and 1, in fork and control, headed and headless.
+- oracle `canvas.text` and `canvas.shape`: fork differs from control in both modes.
+- linkability: control shares `canvas.text` and `canvas.shape` with the host baseline
+  (230 of 234 leaves shared); fork shares neither (215 headed, 217 headless of 234).
+  No `canvas` leaf in the fork's shared list.
+- stability across relaunch: 236 leaves compared, none changed in control (both modes)
+  and fork headed. Fork headless: 1 changed leaf, `codecs.video/mp4; codecs="hev1.1.6.L93.B0"`,
+  which is a codec-support probe, not a canvas leaf. Canvas leaves unchanged.
+- CreepJS: 82 rows per run, no `rgba noise` row in any of the four runs.
