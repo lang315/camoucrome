@@ -340,7 +340,7 @@ Also closed in the Task 4 fix round: pattern-styled text marks imported (code re
 only, no verify row); the layer and allocation-failure fallbacks mark imported;
 `destination-out` and `copy` clear marks (C30, C32); `transferToImageBitmap` resets the
 mask (C31). C27 was redrawn as random 1px colours. `readPixels` margin strips run only
-with `canvas:seed` (rule 5). `verify_sp3a` has 35 rows.
+with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
 
 ### Remaining
 
@@ -359,8 +359,8 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 35 rows.
   marks its whole clip imported. Noise then stays off for that clip until an opaque
   solid draw covers it fully. A page can switch noise off for a region that way. That
   costs linkability, not detectability.
-- A translucent shape with a shadow keeps aa on its own pixels where its shadow does not
-  reach, because the second pass is kSolid and does not clear.
+- A translucent shape with a shadow keeps aa on its own pixels where its shadow reaches them
+  (the shadow pass marks aa; the translucent shape's pass is kSolid and does not clear).
 - The shadow pass keeps a pattern's shader. A texture-backed pattern played onto a CPU
   canvas is expected to draw nothing; that is unverified.
 - Image draws mark `imported` over their whole dirty rect, with no replay. This errs
@@ -480,3 +480,52 @@ corrected.
 
 Windows re-run pending: another session's Windows build occupies D:\camou-win; the S2b
 Windows re-run follows it.
+
+## 11. Windows at head
+
+Branch head `f0e4879` (code fix `de92306`). Tree refreshed from the pushed branch; the
+file set is the same 20 files as before, none of the other session's files.
+
+### W12 (base `55d16f07`)
+
+| file | Windows pre (8) | post = box sha256 (8) |
+|---|---|---|
+| `components/camoucfg/BUILD.gn` | 85b54c68 | 85b54c68 |
+| `components/camoucfg/canvas_mask.cc` | 47f2819e | 47f2819e |
+| `components/camoucfg/canvas_mask.h` | b8decbd4 | b8decbd4 |
+| `components/camoucfg/canvas_mask_unittest.cc` | cf9f45dc | cf9f45dc |
+| `components/camoucfg/canvas_noise.cc` | 0943682e | 0943682e |
+| `components/camoucfg/canvas_noise.h` | 09df99ee | 09df99ee |
+| `components/camoucfg/canvas_noise_unittest.cc` | d9ad2483 | d9ad2483 |
+| `components/camoucfg/canvas_readback.cc` | b6c18de0 | b6c18de0 |
+| `components/camoucfg/canvas_readback.h` | 0fb5e9d6 | 0fb5e9d6 |
+| `components/camoucfg/canvas_readback_unittest.cc` | 93e72828 | 93e72828 |
+| `third_party/blink/renderer/DEPS` | 545f6f65 | 545f6f65 |
+| `third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc` | 15feef8c | 15feef8c |
+| `third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h` | c19792f7 | c19792f7 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc` | 4c7ee7e2 | 4c7ee7e2 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h` | ab3704c8 | ab3704c8 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc` | 3145696d | 3145696d |
+| `third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h` | 9052864b | 72235f65 |
+| `third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc` | 81fd661e | 81fd661e |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc` | 72d084be | 72d084be |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h` | 43956d64 | 43956d64 |
+
+All 20 post hashes equal the box's sha256. Only `canvas_2d_recorder_context.h` differed
+(the residual fix); the other 19 were already identical.
+
+### Build
+
+`out\Release`, label `s2b-3`: `Build Succeeded: 257 steps`, rc 0, first attempt (369 s).
+
+### Host runs
+
+| label | attempts | result |
+|---|---|---|
+| s2b-final3-headless | 1 | 9/9 PASS |
+| s2b-final3-headed | 1 | 9/9 PASS |
+
+### `verify_sp3a` on Windows `chrome`
+
+40 rows: 34 PASS (C1, C6-C9, C12-C33e), 6 fail on the missing stock baseline as before
+(C2-C5, C10, C11), recorded as UNMEASURED. Log `D:\camou-win\s2b\sp3a-win3.log`.
