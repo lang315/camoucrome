@@ -61,7 +61,7 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
   if (seed == 0 || data == nullptr || source == nullptr || !(density > 0.0) ||
       strength <= 0 || width < 3 || height < 3 ||
       (mask.cells != nullptr &&
-       (mask.width != width || mask.height != height))) {
+       (bottom_up || mask.width != width || mask.height != height))) {
     return;
   }
   density = std::min(density, 1.0);
