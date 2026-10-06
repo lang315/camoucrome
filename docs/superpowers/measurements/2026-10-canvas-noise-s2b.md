@@ -66,6 +66,20 @@ Notes for C21-C29, verbatim:
 Result: `FAIL`, rc=1. C1-C20 PASS; C21-C29 FAIL (12 lines); no row is vacuous
 (every unconfigured guard held, `e` > 0).
 
+### Addendum: C27 redrawn (2026-10-06)
+
+C27 redrawn (2026-10-06): the 2-colour checkerboard has only 2 distinct 3x3
+patch types, so under the per-patch key whether noise lands on it is one coin
+flip per seed, and the row passed on a build where the whole canvas is still
+eligible. It now draws 1px pseudo-random opaque colours (`b21a376`). On the
+Task 2 build (the old AA flag still marks the whole canvas) it FAILs as it
+should:
+
+```
+FAIL  27 1px random colours under a diagonal line stay exact (coverage, not bbox)
+      27 : seeded {'h': 2074514327, 'e': 1444}, unconfigured {'h': 2277842109, 'e': 1444}
+```
+
 ## 2. Cost before S2b
 
 `scripts/measure_canvas_cost.py` on WSL `content_shell` (CPU raster,
