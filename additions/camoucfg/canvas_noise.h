@@ -43,14 +43,16 @@ struct NoiseMask {
 // premultiplied data every result is a value stock can store at that alpha.
 // `density` is the fraction of eligible pixels' RGB channels perturbed; the
 // default is calibrated in measurements/2026-10-canvas-noise.md.
-// Data that is not premultiplied passes min_alpha 255. Pure: the noise of a pixel is a function of
-// (seed, its 3x3 neighbourhood in `source`, channel) -- no position and no
-// whole-image state (canvas noise S2b), so one patch gets one noise wherever
-// it is and whatever else the image holds. The patch is hashed in top-down row
-// order; `bottom_up` says the buffer's rows run bottom-up (WebGL readPixels),
-// so one image gets one field in either orientation. `mask` gates each pixel
-// (see NoiseMask); a mask for another size makes the call a no-op. seed == 0,
-// density <= 0 (or NaN), or strength <= 0 is a no-op.
+// Data that is not premultiplied passes min_alpha 255.
+// Pure: the noise of a pixel is a function of (seed, its 3x3 neighbourhood in
+// `source`, channel) -- no position and no whole-image state (canvas noise
+// S2b), so one patch gets one noise wherever it is and whatever else the
+// image holds. The patch is hashed in top-down row order; `bottom_up` says the
+// buffer's rows run bottom-up (WebGL readPixels), so one image gets one field
+// in either orientation. `mask` gates each pixel (see NoiseMask); a mask for
+// another size makes the call a no-op. A mask is for top-down images only: a
+// mask with `bottom_up` makes the call a no-op. seed == 0, density <= 0 (or
+// NaN), or strength <= 0 is a no-op.
 void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
                       size_t height, size_t row_bytes, uint64_t seed,
                       double density, int32_t strength, uint8_t min_alpha,

@@ -466,5 +466,17 @@ TEST(PerturbRgbaTest, SubRectInteriorMatchesFullRead) {
       EXPECT_EQ(Get(sub, 8, x, y), Get(full, 16, x + 4, y + 4)) << x << "," << y;
 }
 
+// A mask is for top-down 2D snapshots; with bottom_up it never applies.
+TEST(PerturbRgbaEdgesTest, MaskWithBottomUpIsNoOp) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const std::vector<uint8_t> cells(64, kNoiseMaskAa);
+  const NoiseMask mask{cells.data(), 8, 0, 8, 8};
+  auto w = v;
+  PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, 7, 1.0, 3, 1, mask,
+                   /*bottom_up=*/true);
+  EXPECT_EQ(w, v);
+}
+
 }  // namespace
 }  // namespace camoucfg
