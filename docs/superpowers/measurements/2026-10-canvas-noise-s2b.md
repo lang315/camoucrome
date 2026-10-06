@@ -172,3 +172,25 @@ Export: only `patches/sp3a-canvas-noise.patch` changed (DEPS, core, canvas2d);
 additions byte-identical. Box branch: 38 commits, 0 fixups, tree clean;
 `check_checkout_sync` PASS (45 files), `check_additions_build` PASS (42 files),
 `gen_keys.py --check` PASS.
+
+## 5b. Task 4 fix round 1
+
+RED (C30-C32 added, `284d995`, no build; the Task 4 build): 31 PASS, 4 FAIL,
+rc=1, none vacuous (`e` 1444):
+
+```
+FAIL  28 WebGL readPixels sub-rect equals the full read's part, byte for byte
+FAIL  30 destination-out wipe then translucent speckle reads like a fresh canvas
+FAIL  31 transferToImageBitmap then translucent speckle reads like a fresh canvas
+FAIL  32 copy fill then translucent speckle reads like a fresh canvas
+      30 : seeded {'h': 2808637224, 'fresh': 313168094, 'e': 1444}, unconfigured {'h': 313168094, 'fresh': 313168094, 'e': 1444}
+      31 : seeded {'h': 2808637224, 'fresh': 313168094, 'e': 1444}, unconfigured {'h': 313168094, 'fresh': 313168094, 'e': 1444}
+      32 : seeded {'h': 1759471716, 'fresh': 1148931243, 'e': 1444}, unconfigured {'h': 1148931243, 'fresh': 1148931243, 'e': 1444}
+```
+
+GREEN (`406a527`): `Build Succeeded: 354 steps`; gtest PASSED, 0 FAILED; `gn check`
+core, canvas, webgl OK; checkdeps SUCCESS. `verify_sp3a.py`: 35 rows, C1-C27
+PASS, C28 FAIL (Task 5; `diff` 7), C29-C32 PASS, rc=1.
+`verify_review_2026_09_24.py`: 12/12.
+
+Pattern-styled text: no verify row, because the per-seed text offset makes it differ from unconfigured; covered by code review only.
