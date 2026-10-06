@@ -320,3 +320,49 @@ only `unconfigured clear == stock baseline` is False, from the absent baseline.
   and fork headed. Fork headless: 1 changed leaf, `codecs.video/mp4; codecs="hev1.1.6.L93.B0"`,
   which is a codec-support probe, not a canvas leaf. Canvas leaves unchanged.
 - CreepJS: 82 rows per run, no `rgba noise` row in any of the four runs.
+
+## 8. Gaps
+
+### Closed by S2b
+
+| PR #27 gap | Closed by |
+|---|---|
+| The field was keyed by position | C21 |
+| Any edit reseeded the field | C22 |
+| The WebGL sub-rect read differed from a full read | C28 |
+| `toDataURL` disagreed with `readPixels` | C29 |
+| The imported flag was sticky for the whole canvas | C23, C25 |
+| `createPattern` flipped eligibility without a draw | C26 |
+| The anti-aliasing list had holes (diagonal polygons, curved clips, round caps, shadow blur) | C24a-d |
+| A pattern created on one context and filled on another | The imported mark is made at fill time on the filling context's mask; no verify row |
+
+Also closed in the Task 4 fix round: pattern-styled text marks imported (code review
+only, no verify row); the layer and allocation-failure fallbacks mark imported;
+`destination-out` and `copy` clear marks (C30, C32); `transferToImageBitmap` resets the
+mask (C31). C27 was redrawn as random 1px colours. `readPixels` margin strips run only
+with `canvas:seed` (rule 5). `verify_sp3a` has 35 rows.
+
+### Remaining
+
+- Canvases above 4096 x 4096 are over-marked.
+- Layers mark their whole area.
+- Image draws mark `imported` over their whole dirty rect, with no replay. This errs
+  toward no noise.
+- The captureStream one-copy path and the `transferControlToOffscreen` placeholder are
+  not covered. `transferToImageBitmap` only resets the mask.
+- WebGL is eligible everywhere.
+- `DrawFocusRing` paints outside `Draw`, so the focus ring is unmarked and gets no noise.
+- The shadow extent of the dirty rect was not verified; unmarked shadow pixels get no
+  noise.
+- No verify row covers a transformed (rotated or scaled) replay.
+- The scratch copy in `readPixels` doubles memory on huge seeded reads.
+- The Windows `verify_sp3a` baseline clauses are UNMEASURED: the host has no stock
+  baseline (C2-C5, C10, C11).
+- Cost, WSL `content_shell` (CPU raster, SwiftShader GL), so GPU raster is not
+  represented. Draw ratio 1.43 before, 4.35 after; above the spec's 2x line, so a known
+  gap for S2c. `readPixels` 64x64 1.33 to 1.11; 1024x1024 15.89 to 7.06.
+
+### Step 2
+
+The fork's headless relaunch changed one HEVC codec leaf. That is S4 instability, not
+canvas; canvas leaves were unchanged.
