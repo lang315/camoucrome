@@ -59,7 +59,7 @@ jobs:
           rsync -a settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
           rsync -a scripts/ "$CLIENT/scripts/"
-          cp scripts/verify_*.py scripts/lib_shell.py scripts/capture_host_oracle.py scripts/echo_server.py "$VERIFY/"
+          cp scripts/verify_*.py scripts/lib_shell.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py "$VERIFY/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
@@ -83,7 +83,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_verify_sp7_phonehome.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
       - name: browser verifies
         run: |
@@ -97,6 +97,8 @@ jobs:
           run verify_windows_behaviour.py
           CAMOU_GEN_N=2 run verify_sp6b_generator.py
           run verify_crash_dumps.py
+          # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)
+          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi
           exit $rc
       - name: logs
         if: always()
