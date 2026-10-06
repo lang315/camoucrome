@@ -276,6 +276,10 @@ that is interior, non-transparent and unlike all four neighbours.
 | C27 coverage | a 1px `fillRect` checkerboard, then a diagonal line across it, plus an arc in a corner | checkerboard pixels 4 or more px from the line equal unconfigured | the arc makes the whole canvas eligible |
 | C28 WebGL sub-rect | `readPixels(16,16,32,32)` and `readPixels(0,0,64,64)` of the C6 triangle | the sub-rect equals the crop of the full read | rect-relative field |
 | C29 WebGL agreement | `toDataURL` of the C6 triangle, decoded, against `readPixels` flipped | equal on every opaque pixel | different seeds |
+| C33a-d exact pixels | 64x64 random opaque 1px colours, then a transparent arc, an all-transparent gradient arc, an opaque fill with an off-canvas shadow plus a speckle, or a blurred corner `fillRect` | the whole canvas equals unconfigured | the draw marks aa |
+| C33e shadowed transparent fill | the same canvas, then a fully transparent arc with a visible shadow | stock draws nothing, so the canvas equals unconfigured and its own pre-draw state | the shadow pass marks aa |
+
+`EXPECTED` is 40 after C33a-e.
 
 - **Mutation proof.** With the coverage replay replaced by "mark the draw's
   bounding box", C27 fails. Restoring it brings back all-pass.
@@ -330,8 +334,8 @@ From measurements §8 and the S1/S2 spec:
   marks its whole clip imported. Noise then stays off for that clip until an opaque
   solid draw covers it fully. A page can switch noise off for a region that way. That
   costs linkability, not detectability.
-- A translucent shape with a shadow keeps aa on its own pixels where its shadow does not
-  reach, because the second pass is kSolid and does not clear.
+- A translucent shape with a shadow keeps aa on its own pixels where its shadow reaches them
+  (the shadow pass marks aa; the translucent shape's pass is kSolid and does not clear).
 - The shadow pass keeps a pattern's shader. A texture-backed pattern played onto a CPU
   canvas is expected to draw nothing; that is unverified.
 - **Neighbour re-roll (C22 narrowed).** Noise is keyed by each pixel's 3x3 patch,
