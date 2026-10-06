@@ -634,7 +634,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..1b2b54ce98 100644
+index 26c0a088cc..a31767da91 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,6 +25,9 @@
@@ -647,7 +647,7 @@ index 26c0a088cc..1b2b54ce98 100644
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,60 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5359,147 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -698,10 +698,97 @@ index 26c0a088cc..1b2b54ce98 100644
 +        // SAFETY: readPixels validated the destination against this pack
 +        // layout, and the offset lies inside the validated region.
 +        uint8_t* camou_dst = UNSAFE_BUFFERS(data + camou_offset);
-+        camoucfg::PerturbRgbaFromConfig(
-+            camou_dst, static_cast<size_t>(camou_x1 - camou_x0),
-+            static_cast<size_t>(camou_y1 - camou_y0),
-+            static_cast<size_t>(camou_row_bytes), camoucfg::ScopeFor(ec));
++        // Each edge pixel's neighbours come from the drawing buffer, not
++        // from the rect (canvas noise S2b): up to four 1px strips around
++        // the in-buffer part are read into a tight, bottom-up scratch copy,
++        // so a sub-rect read gets exactly the matching part of a full read.
++        // A pixel on the drawing buffer's own edge has no neighbour there
++        // and never changes, in either read.
++        const int64_t camou_ex0 = std::max<int64_t>(camou_x0 - 1, 0);
++        const int64_t camou_ey0 = std::max<int64_t>(camou_y0 - 1, 0);
++        const int64_t camou_ex1 =
++            std::min<int64_t>(camou_x1 + 1, drawingBufferWidth());
++        const int64_t camou_ey1 =
++            std::min<int64_t>(camou_y1 + 1, drawingBufferHeight());
++        const size_t camou_ew = static_cast<size_t>(camou_ex1 - camou_ex0);
++        const size_t camou_eh = static_cast<size_t>(camou_ey1 - camou_ey0);
++        const size_t camou_in_w = static_cast<size_t>(camou_x1 - camou_x0);
++        const size_t camou_in_h = static_cast<size_t>(camou_y1 - camou_y0);
++        const size_t camou_rb = static_cast<size_t>(camou_row_bytes);
++        // SAFETY: readPixels validated the destination against this pack
++        // layout; the in-buffer part spans these bytes from camou_dst.
++        const base::span<uint8_t> camou_page =
++            UNSAFE_BUFFERS(base::span<uint8_t>(
++                camou_dst, (camou_in_h - 1) * camou_rb + camou_in_w * 4));
++        Vector<uint8_t> camou_e(static_cast<wtf_size_t>(camou_ew * camou_eh * 4));
++        const base::span<uint8_t> camou_scratch(camou_e);
++        // `n` pixels of drawing-buffer row `gy` from column `gx`.
++        auto camou_row = [&](int64_t gx, int64_t gy, size_t n) {
++          return camou_scratch.subspan(
++              (static_cast<size_t>(gy - camou_ey0) * camou_ew +
++               static_cast<size_t>(gx - camou_ex0)) * 4,
++              n * 4);
++        };
++        for (size_t r = 0; r < camou_in_h; ++r) {
++          camou_row(camou_x0, camou_y0 + static_cast<int64_t>(r), camou_in_w)
++              .copy_from(camou_page.subspan(r * camou_rb, camou_in_w * 4));
++        }
++        bool camou_strips = false;
++        {
++          ScopedDrawingBufferBinder camou_binder(GetDrawingBuffer(), nullptr);
++          if (camou_binder.Succeeded()) {
++            gpu::gles2::GLES2Interface* camou_gl = ContextGL();
++            camou_gl->PixelStorei(GL_PACK_ALIGNMENT, 1);
++            if (IsWebGL2()) {
++              camou_gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);
++              camou_gl->PixelStorei(GL_PACK_SKIP_ROWS, 0);
++              camou_gl->PixelStorei(GL_PACK_SKIP_PIXELS, 0);
++            }
++            if (camou_ey0 < camou_y0) {
++              camou_gl->ReadPixels(
++                  static_cast<GLint>(camou_ex0), static_cast<GLint>(camou_ey0),
++                  static_cast<GLsizei>(camou_ew), 1,
++                  GL_RGBA, GL_UNSIGNED_BYTE,
++                  camou_row(camou_ex0, camou_ey0, camou_ew).data());
++            }
++            if (camou_ey1 > camou_y1) {
++              camou_gl->ReadPixels(
++                  static_cast<GLint>(camou_ex0), static_cast<GLint>(camou_y1),
++                  static_cast<GLsizei>(camou_ew), 1,
++                  GL_RGBA, GL_UNSIGNED_BYTE,
++                  camou_row(camou_ex0, camou_y1, camou_ew).data());
++            }
++            Vector<uint8_t> camou_col(static_cast<wtf_size_t>(camou_in_h * 4));
++            for (const int64_t camou_cx :
++                 {camou_ex0 < camou_x0 ? camou_ex0 : int64_t{-1},
++                  camou_ex1 > camou_x1 ? camou_x1 : int64_t{-1}}) {
++              if (camou_cx < 0) {
++                continue;
++              }
++              camou_gl->ReadPixels(static_cast<GLint>(camou_cx),
++                                   static_cast<GLint>(camou_y0), 1,
++                                   static_cast<GLsizei>(camou_in_h), GL_RGBA,
++                                   GL_UNSIGNED_BYTE, camou_col.data());
++              for (size_t r = 0; r < camou_in_h; ++r) {
++                camou_row(camou_cx, camou_y0 + static_cast<int64_t>(r), 1)
++                    .copy_from(base::span(camou_col).subspan(r * 4, 4u));
++              }
++            }
++            DrawingBufferClientRestorePixelPackParameters();
++            camou_strips = true;
++          }
++        }
++        if (camou_strips) {
++          camoucfg::PerturbRgbaFromConfig(camou_e.data(), camou_ew, camou_eh,
++                                          camou_ew * 4,
++                                          camoucfg::ScopeFor(ec));
++          for (size_t r = 0; r < camou_in_h; ++r) {
++            camou_page.subspan(r * camou_rb, camou_in_w * 4)
++                .copy_from(camou_row(camou_x0,
++                                     camou_y0 + static_cast<int64_t>(r),
++                                     camou_in_w));
++          }
++        }
 +      }
 +    }
 +  }
@@ -709,16 +796,19 @@ index 26c0a088cc..1b2b54ce98 100644
  
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index faecaeadae..e769f5ea6b 100644
+index faecaeadae..d81c61240b 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-@@ -640,6 +640,9 @@ class MODULES_EXPORT WebGLRenderingContextBase
+@@ -640,6 +640,12 @@ class MODULES_EXPORT WebGLRenderingContextBase
  
    bool IsOpaque() const override;
    scoped_refptr<StaticBitmapImage> GetImage() override;
 +  // Camoucrome canvas readback noise: a WebGL canvas's snapshot gets the
 +  // same edge-only noise as a 2D canvas's.
 +  bool CamouNoiseEligible() const override { return true; }
++  // Opaque only, as readPixels: the snapshot and readPixels share one
++  // field (canvas noise S2b).
++  uint8_t CamouNoiseMinAlpha() const override { return 255; }
    void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) override;
  
    V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret getHTMLOrOffscreenCanvas(
