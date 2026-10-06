@@ -90,11 +90,11 @@ RED (unit tests committed first, `components_unittests` on the box):
 ```
 
 GREEN, `Build Succeeded: 72 steps`. Every gtest PASSED, 0 FAILED, including
-the 7 new tests: `PerturbRgbaEdgesTest.{SamePatchGetsSameNoiseAnywhere,
+the 8 new tests (the brief counted 7): `PerturbRgbaEdgesTest.{SamePatchGetsSameNoiseAnywhere,
 BottomUpMatchesTopDown, MaskGatesEachPixel, CoarseMaskCellCoversItsPixels,
 MaskOfAnotherSizeIsNoOp}`, `PerturbRgbaTest.SubRectInteriorMatchesFullRead`,
 `NoisedImageTest.{EditElsewhereKeepsAPixelsNoise, MinAlpha255LeavesPartialAlpha}`
-(8 names; 2 old tests deleted).
+(2 old tests deleted).
 
 `verify_sp3a.py`: C1-C20 PASS, C21 PASS, C22 PASS, C27 PASS, C29 PASS;
 C23, C24a-d, C25, C26, C28 FAIL (C28: sub-rect diff 7 bytes, was 136).
