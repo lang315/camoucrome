@@ -18,16 +18,18 @@
 namespace camoucfg {
 namespace {
 
-// FNV-1a 64 over the first min(length, 1024) bytes. The 1024-byte window is
-// Camoufox's (HashContent), chosen so the hash is cheap yet content-sensitive:
-// enough to distinguish drawings without walking a multi-megabyte buffer.
-uint64_t ContentHash(base::span<const uint8_t> data) {
-  constexpr size_t kMaxBytes = 1024;
-  const size_t n = std::min(data.size(), kMaxBytes);
+// FNV-1a 64 over the 3x3 neighbourhood of interior pixel (x, y): 9 RGBA
+// pixels, 36 bytes, in top-down row order. For a bottom-up buffer the row
+// above is y + 1.
+uint64_t PatchHash(base::span<const uint8_t> src, size_t row_bytes, size_t x,
+                   size_t y, bool bottom_up) {
   uint64_t h = 0xCBF29CE484222325ULL;
-  for (size_t i = 0; i < n; ++i) {
-    h ^= data[i];
-    h *= 0x100000001B3ULL;
+  for (int dy = -1; dy <= 1; ++dy) {
+    const size_t row = bottom_up ? y - dy : y + dy;
+    for (uint8_t b : src.subspan(row * row_bytes + (x - 1) * 4, 12u)) {
+      h ^= b;
+      h *= 0x100000001B3ULL;
+    }
   }
   return h;
 }
@@ -35,7 +37,8 @@ uint64_t ContentHash(base::span<const uint8_t> data) {
 }  // namespace
 
 void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
-                 uint64_t seed, double density, int32_t strength) {
+                 uint64_t seed, double density, int32_t strength,
+                 bool bottom_up) {
   if (seed == 0 || data == nullptr || width == 0 || height == 0 ||
       row_bytes < width * 4) {
     return;
@@ -45,26 +48,20 @@ void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
   const base::span<const uint8_t> in = UNSAFE_BUFFERS(base::span<const uint8_t>(
       data, (height - 1) * row_bytes + width * 4));
   const std::vector<uint8_t> source(in.begin(), in.end());
-  // The pixels alone, row by row: the field must not depend on the padding.
-  std::vector<uint8_t> tight;
-  tight.reserve(width * height * 4);
-  for (size_t y = 0; y < height; ++y) {
-    const auto row = in.subspan(y * row_bytes, width * 4);
-    tight.insert(tight.end(), row.begin(), row.end());
-  }
-  // Fold content into the seed: same drawing reproduces, different drawings
-  // diverge.
-  PerturbRgbaEdges(data, source.data(), width, height, row_bytes,
-                   seed ^ ContentHash(tight), density, strength,
-                   /*min_alpha=*/255);
+  PerturbRgbaEdges(data, source.data(), width, height, row_bytes, seed,
+                   density, strength, /*min_alpha=*/255, NoiseMask(),
+                   bottom_up);
 }
 
 void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
                       size_t height, size_t row_bytes, uint64_t seed,
-                      double density, int32_t strength, uint8_t min_alpha) {
+                      double density, int32_t strength, uint8_t min_alpha,
+                      const NoiseMask& mask, bool bottom_up) {
   // NaN-safe: !(density > 0) catches it.
   if (seed == 0 || data == nullptr || source == nullptr || !(density > 0.0) ||
-      strength <= 0 || width < 3 || height < 3) {
+      strength <= 0 || width < 3 || height < 3 ||
+      (mask.cells != nullptr &&
+       (mask.width != width || mask.height != height))) {
     return;
   }
   density = std::min(density, 1.0);
@@ -80,11 +77,23 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
   const base::span<const uint8_t> src =
       UNSAFE_BUFFERS(base::span<const uint8_t>(source, size));
   const base::span<uint8_t> dst = UNSAFE_BUFFERS(base::span(data, size));
+  const size_t cell = size_t{1} << mask.shift;
+  // SAFETY: a mask for this size holds stride * ceil(height / cell) cells.
+  const base::span<const uint8_t> cells =
+      mask.cells == nullptr
+          ? base::span<const uint8_t>()
+          : UNSAFE_BUFFERS(base::span<const uint8_t>(
+                mask.cells, mask.stride * ((height + cell - 1) / cell)));
   auto at = [&](size_t x, size_t y) {
     return src.subspan(y * row_bytes + x * 4, 4u);
   };
   for (size_t y = 1; y + 1 < height; ++y) {
     for (size_t x = 1; x + 1 < width; ++x) {
+      if (!cells.empty() &&
+          cells[(y >> mask.shift) * mask.stride + (x >> mask.shift)] !=
+              kNoiseMaskAa) {
+        continue;
+      }
       const base::span<const uint8_t> px = at(x, y);
       const uint8_t alpha = px[3];
       if (alpha < min_alpha || std::ranges::equal(px, at(x - 1, y)) ||
@@ -93,10 +102,9 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
           std::ranges::equal(px, at(x, y + 1))) {
         continue;
       }
-      // The position, not the index in the buffer: every reader of one
-      // canvas state gets the same noise on the same pixel.
-      const uint64_t index =
-          (uint64_t{static_cast<uint32_t>(x)} << 32) | static_cast<uint32_t>(y);
+      // The 3x3 source patch, not the position (canvas noise S2b): one patch
+      // gets one noise wherever it is.
+      const uint64_t index = PatchHash(src, row_bytes, x, y, bottom_up);
       base::span<uint8_t> out = dst.subspan(y * row_bytes + x * 4, 4u);
       for (size_t ch = 0; ch < 3; ++ch) {
         if (DeriveUnit(seed, kGate[ch], index) >= density) {
@@ -108,35 +116,6 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
       }
     }
   }
-}
-
-uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
-                         size_t row_bytes) {
-  // FNV-1a 64 over at most kSamples pixels spread evenly over the whole
-  // canvas, plus its size.
-  // ponytail: strided sample, so a change confined to unsampled pixels of a
-  // canvas above kSamples pixels keeps its hash; hash every pixel if that
-  // ever matters more than readback cost.
-  constexpr size_t kSamples = 1 << 16;
-  uint64_t h = 0xCBF29CE484222325ULL;
-  auto mix = [&h](uint64_t b) {
-    h ^= b;
-    h *= 0x100000001B3ULL;
-  };
-  mix(width);
-  mix(height);
-  const size_t total = width * height;
-  const size_t step = std::max<size_t>(1, total / kSamples);
-  for (size_t k = 0; k < total; k += step) {
-    // SAFETY: k < width * height, so the pixel lies inside the caller's
-    // `height` rows of `row_bytes`.
-    const uint8_t* px =
-        UNSAFE_BUFFERS(rgba + (k / width) * row_bytes + (k % width) * 4);
-    for (size_t b = 0; b < 4; ++b) {
-      mix(UNSAFE_BUFFERS(px[b]));
-    }
-  }
-  return h;
 }
 
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
@@ -156,7 +135,8 @@ void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
-  PerturbRgba(data, width, height, row_bytes, seed, density, strength);
+  PerturbRgba(data, width, height, row_bytes, seed, density, strength,
+              /*bottom_up=*/true);
 }
 
 double PerturbMetric(double stock, uint64_t seed, uint64_t index,
