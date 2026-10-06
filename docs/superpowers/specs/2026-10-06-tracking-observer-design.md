@@ -4,7 +4,8 @@ Approved in brainstorming on 2026-10-06. Port of camoufox's Tracking Observer
 (`camoufox/docs/observer/README.md`,
 `camoufox/docs/superpowers/specs/2026-07-10-tracking-observer-design.md`) to
 this fork, followed by a facebook.com / instagram.com / threads recon with it.
-Out-of-scope items are tracked in `docs/observer/followups.md`.
+Out-of-scope items are tracked in `docs/observer/followups.md`. A live dashboard, `chrome://camou-observe`, is
+phase 1b of this spec.
 
 ## Goal
 
@@ -134,7 +135,7 @@ scripts/observe_report.py trace.json net.json [--cookies DB] -> per-site markdow
    - cookie names per host;
    - the fixed "Not observable" section (below).
 
-   Raw traces open in ui.perfetto.dev. No live panel.
+   Raw traces open in ui.perfetto.dev. The live view is phase 1b (below).
 8. **Slice.** One new patch, `observe.patch`, last in `patches/series`,
    produced by the usual loop: commit on `camoucrome/main` in the build tree,
    then `scripts/export.sh`.
@@ -222,12 +223,65 @@ call it):
 - What is committed: API names and counts, request hosts and query-stripped
   paths, cookie names. Never cookie values, account ids, or beacon payloads.
 
+## Phase 1b: live dashboard `chrome://camou-observe`
+
+Approved 2026-10-06 as a separate slice of this spec, built after the phase 1
+logger and report verify GREEN. The recon uses the dashboard if it is ready in
+time and the report otherwise; it does not wait for it.
+
+### What the spike established (read-only, 2026-10-06)
+
+- Perfetto's `TracingSession::CloneTrace`
+  (`third_party/perfetto/include/perfetto/tracing/tracing.h:388`) snapshots a
+  **running** session read-only: no stop, no lost events, the source buffer is
+  not drained.
+- Chromium already uses it: `chrome://traces-internals` has "Clone trace
+  session" (`content/browser/tracing/traces_internals/traces_internals_handler.cc:224`,
+  `traces_internals.mojom:117`). That WebUI is registered at the **content**
+  layer (`content/browser/webui/content_web_ui_configs.cc:51`), so the same
+  shape exists in `chrome` and `content_shell`.
+- The tracing service links a proto→JSON exporter
+  (`services/tracing/perfetto/consumer_host.cc`,
+  `//third_party/perfetto/include/perfetto/ext/trace_processor:export_json`).
+- **Not established:** whether a cloned session can be read back as JSON
+  through that exporter. The first plan task is a throwaway probe that
+  settles it. If it cannot, the page decodes the small protobuf subset it
+  needs (TrackEvent, interned names, debug annotations) itself.
+
+### Design
+
+- A content-layer WebUI at `chrome://camou-observe`, compiled only with
+  `camou_observe = true`. Web content cannot navigate to `chrome://` URLs, so
+  pages cannot see it.
+- Switch `--camou-observe` makes the browser open its own tracing session for
+  `disabled-by-default-camou.observe` at startup, so no page load is missed.
+  This replaces the `--trace-startup*` flags of phase 1; the report keeps
+  working on the files the dashboard saves.
+- Every few seconds the handler clones the session, aggregates, and the page
+  renders: top-level site → surface group → API → call count, split by
+  reading origin.
+- Network is live through a read-only `NetLog` observer (as
+  `chrome://net-export` attaches one). Cookie names come from the
+  `CookieManager`, never values.
+- A "Save" button writes the trace and netlog to files that
+  `observe_report.py` reads.
+- The page renders only through `textContent` under a strict CSP: an XSS in a
+  `chrome://` page is full compromise (camoufox's panel rule). A test feeds
+  markup-laden hostnames and asserts they render inert.
+- Verification: the phase 1 probe page, read through the dashboard, shows the
+  same exact counts the report shows.
+
+### Cost
+
+A new WebUI (C++ handler, mojom, TS/HTML, grd, registration) patched into
+`content/`, roughly 600–1000 lines, and one more full build on each box.
+
 ## Non-goals (phase 1)
 
 Tracked in `docs/observer/followups.md`: V8/Intl hooks, new spoofs for any leak
 the recon finds, decoding Falco `e` payloads, automated loops against
-facebook.com. Also not built: a live panel, value capture (real vs spoofed),
-response bodies.
+facebook.com. Also not built: value capture (real vs spoofed), response
+bodies.
 
 ## Risks
 
