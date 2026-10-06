@@ -4,6 +4,7 @@
 
 #include "components/camoucfg/canvas_readback.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -15,7 +16,8 @@
 namespace camoucfg {
 
 sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
-                           double density, int32_t strength) {
+                           double density, int32_t strength, uint8_t min_alpha,
+                           const NoiseMask& mask, bool bottom_up) {
   const SkColorType ct = canvas.colorType();
   if (seed == 0 ||
       (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType)) {
@@ -37,20 +39,22 @@ sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
       base::span<const uint8_t>(pixels, bitmap.computeByteSize()));
   const std::vector<uint8_t> source(all.begin(), all.end());
   const size_t w = info.width(), h = info.height(), row = bitmap.rowBytes();
-  PerturbRgbaEdges(pixels, source.data(), w, h, row,
-                   seed ^ CanvasStateHash(source.data(), w, h, row), density,
-                   strength,
-                   info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1);
+  const uint8_t floor =
+      info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
+  PerturbRgbaEdges(pixels, source.data(), w, h, row, seed, density, strength,
+                   std::max(min_alpha, floor), mask, bottom_up);
   bitmap.setImmutable();
   return SkImages::RasterFromBitmap(bitmap);
 }
 
 sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
-                                 const ConfigScope& scope) {
+                                 const ConfigScope& scope, uint8_t min_alpha,
+                                 const NoiseMask& mask, bool bottom_up) {
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
-  return NoisedImage(canvas, CanvasSeed(scope), density, strength);
+  return NoisedImage(canvas, CanvasSeed(scope), density, strength, min_alpha,
+                     mask, bottom_up);
 }
 
 }  // namespace camoucfg
