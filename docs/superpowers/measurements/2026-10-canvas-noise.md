@@ -293,7 +293,9 @@ control changed nothing.
   offset still applies). `drawImage` and `createPattern` of an
   image, video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap set the
   imported-pixels flag, so the VideoFrame gap of the first draft is closed.
-- `transferToImageBitmap` is not covered (the spec lists it). Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
+- `transferToImageBitmap` is not covered (the spec lists it). Partly addressed
+  by S2b: the noise mask now resets on transfer, but the transfer itself is
+  still not covered (measurements/2026-10-canvas-noise-s2b.md).
 - A pattern created on one context and filled on another does not flag the second
   context (`createPattern` across contexts). Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
 - Cost, UNMEASURED. Every consumer behind `GetSourceImageForCanvas` now pays a
