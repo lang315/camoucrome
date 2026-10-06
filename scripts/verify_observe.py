@@ -101,9 +101,11 @@ def run(page, categories, k=K):
     port = server.server_port
     tmp = tempfile.mkdtemp(prefix="camoucrome-observe-")
     trace = os.path.join(tmp, "trace.json")
-    argv = [lib_shell.SHELL, *lib_shell.SHELL_FLAGS, f"--user-data-dir={tmp}/profile",
+    argv = [lib_shell.SHELL, *lib_shell.SHELL_FLAGS,
+            "--use-angle=swiftshader", "--enable-unsafe-swiftshader",  # no GPU on the box
+            f"--user-data-dir={tmp}/profile",
             f"--trace-startup={categories}", "--trace-startup-format=json",
-            f"--trace-startup-file={trace}", "--trace-startup-duration=0",
+            f"--trace-startup-file={trace}", "--trace-startup-duration=20",
             "--trace-startup-record-mode=record-as-much-as-possible",
             f"http://127.0.0.1:{port}/{page}"]
     env = {k_: v for k_, v in os.environ.items() if not k_.startswith("CAMOU_")}
@@ -111,8 +113,14 @@ def run(page, categories, k=K):
     try:
         if not done.wait(60):
             return None, {"error": "probe never reported"}, trace
+        # SIGTERM does not flush content_shell's trace: the duration timer does
+        for _ in range(80):
+            if os.path.exists(trace):
+                time.sleep(1)  # let the writer finish
+                break
+            time.sleep(0.5)
     finally:
-        proc.terminate()  # graceful: the trace file is written on shutdown
+        proc.terminate()
         try:
             proc.wait(30)
         except subprocess.TimeoutExpired:
