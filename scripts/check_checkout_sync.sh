@@ -51,7 +51,7 @@ for t in "${TREE_FILES[@]}"; do
   remote_script+="sha256sum '$t' 2>/dev/null || echo \"MISSING $t\""$'\n'
 done
 # The patched files are covered the other way round: the build tree must equal
-# the camoucrome/main branch that scripts/export.sh exports from. The 09-09
+# the branch (default camoucrome/main) that scripts/export.sh exports from. The 09-09
 # input_handler.cc drift (an un-reviewed rework sitting in the build tree while
 # the branch and the repo carried the reviewed one) is what this line is for.
 # camoucfg is excluded because it is untracked in the build tree and would read
@@ -61,7 +61,7 @@ done
 # excluded for the reasons above).
 # A failing git (no such branch, not a repo) must print something here, or the
 # section is empty and reads as "in sync".
-remote_script+="echo BUILDTREE_BEGIN; git diff $BRANCH --stat -- . ':(exclude)components/camoucfg' || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
+remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . ':(exclude)components/camoucfg' || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
 # And the repo's patches/ against the branch: each commit's diff, generated
 # exactly as export.sh generates it, hashed on the far side. A hand-edited
 # patches/*.patch or a stale series reads as a mismatch below.

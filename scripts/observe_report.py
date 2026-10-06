@@ -49,6 +49,8 @@ NOT_OBSERVABLE = [
     "CSS @media rules in stylesheets (only matchMedia is seen)",
     "Font enumeration by layout measurement beyond the listed layout members",
     "TLS/JA3, HTTP/2 framing, anything computed server-side",
+    "Named and indexed access (localStorage.foo, navigator.plugins[0], "
+    "mimeTypes['application/pdf']): it goes through interceptor callbacks, not the hooked ones",
     "Values: the report says that a page read a member, not what it got",
 ]
 
