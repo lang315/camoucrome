@@ -20,7 +20,10 @@
 - Startup flags exactly: `--trace-startup=disabled-by-default-camou.observe --trace-startup-format=json --trace-startup-file=<f> --trace-startup-duration=0 --trace-startup-record-mode=record-as-much-as-possible --log-net-log=<f>`.
 - Cookie reads select only `host_key, name, expires_utc, is_httponly`; never `value` or `encrypted_value`.
 - Committed recon data: API names + counts, hosts + query-stripped paths, cookie names. Never cookie values, account ids, payloads, raw traces or netlogs.
-- Change-set loop: edit and build in `~/chromium/src` on branch `camoucrome/main`, commit with subject == patch stem (`observe`), then `scripts/export.sh`; never hand-edit `patches/`.
+- **Parallel workdir (decided 2026-10-06).** This slice is built in a second gclient workdir, `W=~/chromium-observe/src`, on branch `camoucrome/observe`, so it runs alongside the canvas session that owns `~/chromium/src` / `camoucrome/main`. The two workdirs **share refs** (gclient-new-workdir symlinks `.git/refs`): never check out `camoucrome/main` in `W`, never commit to it from here. Verifies aim at this build with `CAMOU_OUT=$HOME/chromium-observe/src/out/Default`.
+- Change-set loop: edit and build in `W` on `camoucrome/observe`, commit with subject == patch stem (`observe`), then `scripts/export.sh $W camoucrome/observe`; never hand-edit `patches/`.
+- **Builds take turns.** 25 GB RAM does not hold two Chromium builds. Every build in `W` takes `scripts/build_lock.sh acquire observe` first and releases it after; a full build runs only when the canvas session is idle (overnight), agreed with that session by message.
+- **Windows is sequential.** `D:\camou-win` is one uncommitted tree shared with the canvas session; Tasks 6-7 start only after that session has released it.
 - Build box access: `mcp__sshgate__exec` server `buildpc`, PowerShell outer shell, bash scripts base64-encoded (`wsl -d Ubuntu-24.04 -u lang -- bash -c "echo <b64> | base64 -d | bash"`), no newline and no `<` in the command. Ref-moving git runs in the foreground.
 - A GREEN verification counts only after the same check was seen RED.
 - The plan branch is pushed to `origin` so the box can fetch it (memory `box-evidence-for-a-branch`); every push is approved by the owner first.
@@ -47,48 +50,53 @@
 
 ---
 
-### Task 0: Preconditions on the build box
+### Task 0: A second workdir on the build box
 
-The box tree was found mid-rebase on 2026-10-06 (`.git/rebase-merge` present, `fixup! sp3a-canvas-noise`, another session's S2b work). Nothing in this plan may touch the tree until that is finished.
+The canvas session owns `~/chromium/src` and `camoucrome/main`, and on 2026-10-06 that branch carried its unmerged S2b commits on top of the merged change set. This slice therefore branches from the **merged** change set, not from the branch tip: `camoucrome/main-pre-s2b` (`55d16f0740`, subject `crashpad-no-dumps`), which Step 2 proves equal to `origin/main`'s `patches/`.
 
 **Files:** none.
 
-- [ ] **Step 1: Check the tree is idle and clean**
-
-Run on the box (base64 as in Global Constraints):
+- [ ] **Step 1: Create the workdir** (reads the existing checkout's objects; writes only under `~/chromium-observe`)
 
 ```bash
-cd ~/chromium/src
-ls -d .git/rebase-merge .git/rebase-apply 2>/dev/null && echo REBASE-IN-PROGRESS
-git branch --show-current
-git status --porcelain | head
-pgrep -af ninja | grep -v pgrep | head -3
-git log --oneline -1
+python3 ~/depot_tools/gclient-new-workdir.py ~/chromium ~/chromium-observe 2>&1 | tail -3
+cd ~/chromium-observe/src
+git checkout -q -b camoucrome/observe camoucrome/main-pre-s2b
+git branch --show-current; git log --oneline -1; git status --porcelain | head -3
 ```
 
-Expected: no `REBASE-IN-PROGRESS`, branch `camoucrome/main`, empty porcelain, no ninja. If any fails: STOP and ask the owner; do not abort or continue another session's rebase.
+Expected: branch `camoucrome/observe` at `55d16f0740 crashpad-no-dumps`, empty porcelain. Run the `checkout -b` **immediately**: until then `W`'s HEAD names the shared `camoucrome/main`. If `camoucrome/main-pre-s2b` no longer exists, ask the canvas session (or the owner) for the commit that matches `origin/main` and use that.
 
-Also confirm with the owner that the S2b canvas slice has merged or is parked. The two slices share `camoucrome/main` and must be sequenced, never interleaved: if S2b committed after `observe`, its `export.sh` would emit `patches/observe.patch` into the S2b branch and trip its porcelain gate.
-
-Also confirm, before Task 6 starts its multi-hour build, how the owner will drive a headed browser on the Windows host for Task 7 (memory `buildpc-client-layout`: the host has no mouse or keyboard attached). Physically at the PC, RDP, or plugged-in input all work; if none is possible, Tasks 6-7 need a different vehicle and come back to the owner.
-
-- [ ] **Step 2: Check the box branch matches `origin/main`'s change set**
-
-On the Mac, if `origin/main` moved since this branch was cut: `git fetch -q origin && git rebase -q origin/main` (the branch holds only docs at this point). Then on the box, using the runner's clone of the repo:
+- [ ] **Step 2: Prove the base equals `origin/main`'s change set**
 
 ```bash
 R=/home/lang/actions-runner/_work/camoucrome/camoucrome
-git -C $R fetch -q origin main && git -C $R checkout -q FETCH_HEAD
-bash $R/scripts/check_checkout_sync.sh ~/chromium/src; echo rc=$?
+git -C $R fetch -q origin main
+rm -rf /tmp/observe-base0 /tmp/observe-exp0 && mkdir /tmp/observe-base0 /tmp/observe-exp0
+git -C $R archive FETCH_HEAD | tar -x -C /tmp/observe-base0
+git -C $R archive FETCH_HEAD | tar -x -C /tmp/observe-exp0
+bash /tmp/observe-exp0/scripts/export.sh ~/chromium-observe/src camoucrome/observe | tail -1
+diff -rq /tmp/observe-base0 /tmp/observe-exp0; echo diff-rc=$?
 ```
 
-Expected: `rc=0`. If not, STOP: the box branch and the repo disagree and the owner decides which wins.
+Expected: `diff-rc=0` (the export of the base reproduces `origin/main` byte for byte). If not, STOP and ask the owner.
 
-- [ ] **Step 3: Backup ref**
+- [ ] **Step 3: Toolchain hooks and the out dir**
 
 ```bash
-cd ~/chromium/src && git branch -f camoucrome/main-pre-observe camoucrome/main && git log --oneline -1 camoucrome/main-pre-observe
+cd ~/chromium-observe && gclient runhooks 2>&1 | tail -3
+mkdir -p src/out/Default
+cp ~/chromium/src/out/Default/args.gn src/out/Default/args.gn
+printf '\n# Tracking observer audit build (docs/observer/README.md)\ncamou_observe = true\n' >> src/out/Default/args.gn
+cat src/out/Default/args.gn
 ```
+
+Expected: hooks finish without error (they fetch the clang/rust toolchains into the new workdir); `args.gn` = the dev args plus `camou_observe = true`. `gn gen` waits for Task 3 (the arg does not exist until the slice adds it).
+
+- [ ] **Step 4: Owner questions before the long builds**
+
+- How will the owner drive a headed browser on the Windows host for Task 7 (memory `buildpc-client-layout`: no mouse or keyboard attached)? Physically at the PC, RDP, or plugged-in input. If none, Tasks 6-7 need a different vehicle.
+- The overnight build window agreed with the canvas session (message it; the reply sets when Task 3 Step 9 runs).
 
 ---
 
@@ -441,7 +449,7 @@ git commit -m "feat(package): refuse an out dir built with camou_observe"
 
 ### Task 3: The `observe` slice in the build tree
 
-**Files (all in `~/chromium/src` on the box):**
+**Files (all in `~/chromium-observe/src` on the box):**
 - Modify: `third_party/blink/renderer/platform/BUILD.gn`
 - Modify: `base/trace_event/builtin_categories.h`
 - Create: `third_party/blink/renderer/core/execution_context/camou_observe.h`
@@ -673,12 +681,12 @@ git switch -   # back to the plan branch; transfer/ is not on it
 ```bash
 R=/home/lang/actions-runner/_work/camoucrome/camoucrome
 git -C $R fetch -q origin tmp/observe-src
-cd ~/chromium/src
+cd ~/chromium-observe/src
 D=third_party/blink/renderer/core/execution_context
 git -C $R show FETCH_HEAD:transfer/observe/camou_observe.h > $D/camou_observe.h
 git -C $R show FETCH_HEAD:transfer/observe/camou_observe.cc > $D/camou_observe.cc
 git -C $R show FETCH_HEAD:transfer/observe/edit_tree.py > /tmp/edit_tree.py
-python3 /tmp/edit_tree.py ~/chromium/src
+python3 /tmp/edit_tree.py ~/chromium-observe/src
 git status --porcelain
 ```
 
@@ -687,7 +695,7 @@ Expected: `edited 4 files; 6 generator call sites`, and porcelain lists exactly 
 - [ ] **Step 6: Turn the arg on in the dev out dir and generate**
 
 ```bash
-cd ~/chromium/src
+cd ~/chromium-observe/src
 grep -q '^camou_observe' out/Default/args.gn || printf '\n# Tracking observer audit build (docs/observer/README.md)\ncamou_observe = true\n' >> out/Default/args.gn
 gn gen out/Default 2>&1 | tail -2
 grep -n CAMOU_OBSERVE out/Default/gen/third_party/blink/renderer/platform/bindings/buildflags.h
@@ -698,7 +706,7 @@ Expected: `#define BUILDFLAG_INTERNAL_CAMOU_OBSERVE() (1)`.
 - [ ] **Step 7: Check the generated code before the long build**
 
 ```bash
-cd ~/chromium/src
+cd ~/chromium-observe/src
 autoninja -C out/Default third_party/blink/renderer/bindings:generate_bindings_all 2>&1 | tail -2
 G=out/Default/gen/third_party/blink/renderer/bindings
 grep -rho 'camou_observe::Record(' $G | wc -l
@@ -713,7 +721,7 @@ Expected: a call total above 0 (expect several hundred); all six names listed (t
 - [ ] **Step 8: RED for the generator: flag off generates no calls**
 
 ```bash
-cd ~/chromium/src
+cd ~/chromium-observe/src
 sed -i 's/^camou_observe = true/camou_observe = false/' out/Default/args.gn && gn gen out/Default >/dev/null
 grep -n CAMOU_OBSERVE out/Default/gen/third_party/blink/renderer/platform/bindings/buildflags.h
 sed -i 's/^camou_observe = false/camou_observe = true/' out/Default/args.gn && gn gen out/Default >/dev/null
@@ -724,16 +732,19 @@ Expected: `(0)` while off. (The calls stay in generated code either way; with th
 - [ ] **Step 9: Build content_shell and chrome**
 
 ```bash
-cd ~/chromium/src
+cd ~/chromium-observe/src
+R=/home/lang/actions-runner/_work/camoucrome/camoucrome
+bash $R/scripts/build_lock.sh acquire observe || exit 1
 autoninja -C out/Default content_shell chrome 2>&1 | tail -3
+bash $R/scripts/build_lock.sh release observe
 ```
 
-Run detached if it exceeds the sshgate window (memory: detach builds, not git). Expected: a non-zero step count (a regenerated-bindings build is thousands of steps) and `ninja: build stopped` absent.
+Only in the build window agreed with the canvas session (Task 0 Step 4). Run detached if it exceeds the sshgate window (memory: detach builds, not git), and release the lock when the detached build ends (put the release in the same detached script). Every later build in this plan (Task 4 fallbacks) takes and releases the lock the same way. Expected: a non-zero step count (a regenerated-bindings build is thousands of steps) and `ninja: build stopped` absent.
 
 - [ ] **Step 10: Dependency gates**
 
 ```bash
-cd ~/chromium/src
+cd ~/chromium-observe/src
 gn check out/Default //third_party/blink/renderer/core/* 2>&1 | tail -1
 python3 buildtools/checkdeps/checkdeps.py third_party/blink/renderer/core/execution_context 2>&1 | tail -1
 ```
@@ -743,7 +754,7 @@ Expected: `Header dependency check OK` and `SUCCESS`.
 - [ ] **Step 11: Commit in the build tree and export**
 
 ```bash
-cd ~/chromium/src
+cd ~/chromium-observe/src
 git add base/trace_event/builtin_categories.h third_party/blink/renderer/platform/BUILD.gn \
   third_party/blink/renderer/core/execution_context/camou_observe.h \
   third_party/blink/renderer/core/execution_context/camou_observe.cc \
@@ -760,7 +771,7 @@ git -C $R fetch -q origin <plan-branch>
 rm -rf /tmp/observe-repo /tmp/observe-base && mkdir /tmp/observe-repo /tmp/observe-base
 git -C $R archive FETCH_HEAD | tar -x -C /tmp/observe-repo
 git -C $R archive FETCH_HEAD | tar -x -C /tmp/observe-base
-bash /tmp/observe-repo/scripts/export.sh ~/chromium/src | tail -1
+bash /tmp/observe-repo/scripts/export.sh ~/chromium-observe/src camoucrome/observe | tail -1
 diff -rq /tmp/observe-base /tmp/observe-repo
 ```
 
@@ -774,7 +785,18 @@ Expected: exactly `?? patches/observe.patch` and ` M patches/series`.
 
 - [ ] **Step 12: Round-trip the patch**
 
-On the box, in a scratch worktree of the pin (`cd ~/chromium/src && git worktree add --detach /tmp/pin $(. /tmp/observe-repo/upstream.env; echo $CHROMIUM_REV)`), run `bash /tmp/observe-repo/scripts/apply.sh /tmp/pin` (that tree holds the freshly exported change set), then `gn gen` an out dir there with `camou_observe = true` and `gn check` the core target. Expected: `apply.sh` applies every patch including `observe.patch`; `Header dependency check OK`. Remove `/tmp/pin` afterwards (`git worktree remove --force /tmp/pin`).
+A plain `git worktree` of `src` has none of the DEPS repos, so `gn` cannot run in it; the round trip proves instead that the exported change set reconstructs the branch byte for byte (`gn check` already ran on the real tree in Step 10):
+
+```bash
+cd ~/chromium-observe/src
+git worktree add -q --detach /tmp/pin $(. /tmp/observe-repo/upstream.env; echo $CHROMIUM_REV)
+bash /tmp/observe-repo/scripts/apply.sh /tmp/pin 2>&1 | tail -2
+git -C /tmp/pin add -A
+git -C /tmp/pin diff --cached --stat camoucrome/observe -- . ':(exclude)components/camoucfg' | tail -3
+git worktree remove --force /tmp/pin
+```
+
+Expected: `apply.sh` applies every patch including `observe.patch`, and the `diff --stat` against `camoucrome/observe` is empty (`components/camoucfg` is excluded because the branch keeps it untracked and `apply.sh` copies it in).
 
 - [ ] **Step 13: Commit on the Mac, delete the throwaway branch**
 
@@ -790,10 +812,28 @@ Then push the plan branch and, on the box, prove the box commit and `patches/obs
 ```bash
 R=/home/lang/actions-runner/_work/camoucrome/camoucrome
 git -C $R fetch -q origin <plan-branch> && git -C $R checkout -q FETCH_HEAD
-bash $R/scripts/check_checkout_sync.sh ~/chromium/src; echo rc=$?
+bash $R/scripts/check_checkout_sync.sh local ~/chromium-observe/src camoucrome/observe; echo rc=$?
 ```
 
-Expected: both `rc=0`.
+Expected: both `rc=0`. (The third argument is added in Step 14; until this branch merges, the runner clone's copy is this branch's, fetched above.)
+
+- [ ] **Step 14: `check_checkout_sync.sh` takes a branch**
+
+The script hardcodes `camoucrome/main`, which a second workdir cannot use. In `scripts/check_checkout_sync.sh`:
+- usage comment: `# Usage: scripts/check_checkout_sync.sh [ssh-target|local] [checkout-path] [branch]`
+- after `SRC="${2:-/home/lang/chromium/src}"` add `BRANCH="${3:-camoucrome/main}"`
+- in the `BUILDTREE_BEGIN` line replace both `camoucrome/main` with `$BRANCH` (the string is double-quoted, so it expands locally)
+- replace the `for c in` line with `remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..'"$BRANCH"'"); do`
+- in the FAIL messages further down, replace `camoucrome/main` with `$BRANCH`.
+
+Check: on the box, `bash scripts/check_checkout_sync.sh local ~/chromium/src` (default branch) gives the same verdict as before the edit, and `... local ~/chromium-observe/src camoucrome/observe` gives `rc=0`. Then RED: append a comment line to `$W/third_party/blink/renderer/core/execution_context/camou_observe.cc`, run again, expect the FAIL naming that file; `git -C $W checkout -- third_party/blink/renderer/core/execution_context/camou_observe.cc`. Commit:
+
+```bash
+git add scripts/check_checkout_sync.sh
+git commit -m "fix(sync): check_checkout_sync takes the branch, for a second gclient workdir"
+```
+
+Do Step 14 before Step 13's sync check (the numbering keeps the sync check beside the export it guards).
 
 ---
 
@@ -1008,7 +1048,7 @@ Fallbacks decided in advance:
 Get the branch onto the box (`git -C $R fetch -q origin <branch>` + `git archive FETCH_HEAD scripts | tar -x -C /tmp/observe-tree`), then:
 
 ```bash
-cd /tmp/observe-tree/scripts && ~/camoucrome-verify/venv/bin/python3 verify_observe.py --red; echo rc=$?
+cd /tmp/observe-tree/scripts && CAMOU_OUT=$HOME/chromium-observe/src/out/Default ~/camoucrome-verify/venv/bin/python3 verify_observe.py --red; echo rc=$?
 ```
 
 Expected: **11 `FAIL` rows**, each count row reading `<K> (want <K+1>)`, the `Document.title` row `0 (want 1)`, the off-arm row `0 camou events (want 0)` marked FAIL, then `0/11 PASS (RED mode: expected failures)` and `rc=1`. An early `FAIL on-arm: ...` line is **not** a passed RED: it is broken infrastructure that also exits 1. If any row PASSes in RED mode, that row measures nothing: fix it before going on.
@@ -1016,7 +1056,7 @@ Expected: **11 `FAIL` rows**, each count row reading `<K> (want <K+1>)`, the `Do
 - [ ] **Step 3: GREEN run**
 
 ```bash
-cd /tmp/observe-tree/scripts && ~/camoucrome-verify/venv/bin/python3 verify_observe.py; echo rc=$?
+cd /tmp/observe-tree/scripts && CAMOU_OUT=$HOME/chromium-observe/src/out/Default ~/camoucrome-verify/venv/bin/python3 verify_observe.py; echo rc=$?
 ```
 
 Expected: `11/11 PASS`, `rc=0`. Run it 3 times; all three must be 11/11 (an intermittent pass is a FAIL).
@@ -1034,7 +1074,7 @@ Expected: a `## http://127.0.0.1` section with the K-counts above and a request 
 - [ ] **Step 5: Timing numbers**
 
 ```bash
-cd /tmp/observe-tree/scripts && ~/camoucrome-verify/venv/bin/python3 verify_observe.py --timing
+cd /tmp/observe-tree/scripts && CAMOU_OUT=$HOME/chromium-observe/src/out/Default ~/camoucrome-verify/venv/bin/python3 verify_observe.py --timing
 ```
 
 Record both lines for the README and the measurement doc. No pass/fail.
@@ -1044,9 +1084,14 @@ Record both lines for the README and the measurement doc. No pass/fail.
 In `.github/workflows/build-verify.yml`:
 - line 62: append `scripts/observe_report.py` to the `cp` list;
 - line 86: append `scripts/test_observe_report.py` to the pytest list;
-- after `run verify_crash_dumps.py`: add `run verify_observe.py`.
+- after `run verify_crash_dumps.py`: add the guarded line below.
 
-The box's `out/Default/args.gn` now has `camou_observe = true` (Task 3 Step 6); note in the workflow comment above the new line: `# needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)`.
+CI builds `~/chromium/src/out/Default`, which does not set `camou_observe` until Task 8 Step 3 decides it. So the new line is guarded and says so out loud, never silently:
+
+```bash
+          # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)
+          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi
+```
 
 - [ ] **Step 7: Commit**
 
@@ -1064,7 +1109,7 @@ git commit -m "test(observer): verify_observe exact counts, worker, iframe, off 
 
 - [ ] **Step 1: Run CI's checks by hand on the branch tree**
 
-Per memory `box-evidence-for-a-branch`, from `/tmp/observe-tree` with `$VERIFY` copies: the pytest line from `build-verify.yml:86` (now including `test_observe_report.py`) and every `run verify_*.py` line (93-100). Expected: pytest all passed; every verify prints its usual asserted count (compare with the last green `build-verify` run on main: `gh run list --workflow build-verify -L 1` then `gh run view <id> --log | grep -E 'PASS|passed'`). A verify that was green on main and is not green here is a regression from the always-compiled `Record` calls: STOP and investigate.
+Per memory `box-evidence-for-a-branch`, from `/tmp/observe-tree` with `$VERIFY` copies, and with `CAMOU_OUT=$HOME/chromium-observe/src/out/Default` so every verify measures the observer build (flag on, tracing off): the pytest line from `build-verify.yml:86` (now including `test_observe_report.py`) and every `run verify_*.py` line (93-100). Expected: pytest all passed; every verify prints its usual asserted count (compare with the last green `build-verify` run on main: `gh run list --workflow build-verify -L 1` then `gh run view <id> --log | grep -E 'PASS|passed'`). A verify that was green on main and is not green here is a regression from the always-compiled `Record` calls: STOP and investigate.
 
 - [ ] **Step 2: Write `docs/observer/README.md`**
 
@@ -1194,4 +1239,4 @@ git commit -m "docs(observer): facebook / instagram / threads recon"
 
 - [ ] **Step 1:** Update `docs/superpowers/plans/2026-10-02-long-term-roadmap.md` with one line under the backlog or follow-on list: tracking observer phase 1 shipped, phase 1b and V8/Intl pending (`docs/observer/followups.md`).
 - [ ] **Step 2:** Use superpowers:finishing-a-development-branch. The PR body carries the evidence: Task 1/2 pytest output, Task 3 Step 7/10 output, Task 4 RED (`0/11`) and GREEN (`11/11` ×3) output, Task 5 regression counts vs main, Task 6 build step count, and a link to the measurement doc.
-- [ ] **Step 3:** After merge and a green `build-verify` on main, delete the box backup ref `camoucrome/main-pre-observe`.
+- [ ] **Step 3: Land the slice on `camoucrome/main`.** After the PR merges, and when the canvas session is not mid-rebase: in `~/chromium/src`, `git cherry-pick camoucrome/observe` onto `camoucrome/main` (append, subject `observe`), then `check_checkout_sync.sh local ~/chromium/src` must give `rc=0` against `origin/main`. Decide with the owner whether `~/chromium/src/out/Default` gets `camou_observe = true` (CI then runs `verify_observe.py`, at the cost of one full bindings rebuild there) or CI skips that verify until then. Then delete `camoucrome/observe` and, if no longer needed, the workdir (`rm -rf ~/chromium-observe`, after checking nothing in it is uncommitted).
