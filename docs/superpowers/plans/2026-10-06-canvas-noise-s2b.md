@@ -170,7 +170,7 @@ for f in $(git status --porcelain -uall components/camoucfg third_party/blink | 
     *) t=$(git log -1 --format=%H f89f3a4363..HEAD -- "$f"); t=${t:-$BUILDGN} ;;
   esac
   git add -- "$f"
-  git commit -q --fixup="$t" -- "$f"
+  git commit -q --fixup="$t" -- "$f" || true   # nothing to commit for a mode-only change
 done
 GIT_SEQUENCE_EDITOR=: git rebase -q -i --autosquash f89f3a4363
 git log --format=%s f89f3a4363..HEAD | wc -l          # 38, unchanged
@@ -183,6 +183,7 @@ sha256sum /tmp/s2b/export.tgz
 echo S2BEXPORT-BEGIN$(base64 -w0 /tmp/s2b/export.tgz)S2BEXPORT-END
 ```
 - If the rebase stops on a conflict, run `git rebase --abort` and stop. Never resolve a conflict by hand without the owner.
+- Intermediate box commits need not build on their own: for example, the `sp3a` commit calls `NoiseMask` before the commit that owns `canvas_noise.h` defines it. Only HEAD and the exported set must build. Do not change the fixup targets to make an intermediate commit build.
 - Then pull the tarball to the Mac (W7), unpack it at the repo root (`tar xzf export.tgz`), and check that only the expected files changed: `git status --porcelain additions patches settings`.
 
 **W7. Pull a file from the box to the Mac.** The box prints `<MARK>-BEGIN<base64><MARK>-END` together with the file's sha256. On the Mac, extract the payload from the session transcript:
@@ -643,10 +644,13 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
 - Produces (in `canvas_readback.h`):
   ```cpp
   sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed, double density,
-                             int32_t strength, uint8_t min_alpha, const NoiseMask& mask);
+                             int32_t strength, uint8_t min_alpha, const NoiseMask& mask,
+                             bool bottom_up);
   sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas, const ConfigScope& scope,
-                                   uint8_t min_alpha, const NoiseMask& mask);
+                                   uint8_t min_alpha, const NoiseMask& mask,
+                                   bool bottom_up);
   ```
+  `bottom_up` is true when the snapshot's raster rows run bottom-up, i.e. its orientation is `ImageOrientationEnum::kOriginBottomLeft`. `DrawingBuffer::GetUnacceleratedStaticBitmapImage` can produce such a WebGL snapshot. With the flag set, the snapshot's patches hash like `readPixels`' patches, and C29 holds on every GL path.
 - Removes: `CanvasStateHash` and the file-local `ContentHash`.
 
 - [ ] **Step 1: Write the failing unit tests.**
@@ -758,7 +762,7 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
        }
        ```
   2. In `canvas_readback_unittest.cc`:
-     - Give every existing `NoisedImage(` call two final arguments: `/*min_alpha=*/1, NoiseMask()`.
+     - Give every existing `NoisedImage(` call three final arguments: `/*min_alpha=*/1, NoiseMask(), /*bottom_up=*/false`.
      - Add before the closing `}  // namespace`:
        ```cpp
        // S2b: drawing elsewhere does not change a pixel's noise; there is no
@@ -774,9 +778,10 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
          bool moved = false;
          for (uint64_t seed = 1; seed <= 8; ++seed) {
            const SkBitmap a =
-               Read(*NoisedImage(*Image(16, 16, lone), seed, 1.0, 3, 1, NoiseMask()));
+               Read(*NoisedImage(*Image(16, 16, lone), seed, 1.0, 3, 1, NoiseMask(), false));
            const SkBitmap b =
-               Read(*NoisedImage(*Image(16, 16, lone_plus), seed, 1.0, 3, 1, NoiseMask()));
+               Read(*NoisedImage(*Image(16, 16, lone_plus), seed, 1.0, 3, 1, NoiseMask(),
+                                 false));
            EXPECT_EQ(*a.getAddr32(3, 3), *b.getAddr32(3, 3)) << "seed " << seed;
            moved |= *a.getAddr32(3, 3) != Pack(200, 100, 50, 255);
          }
@@ -786,7 +791,7 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
        // The WebGL snapshot passes min_alpha 255: partial alpha stays as is.
        TEST(NoisedImageTest, MinAlpha255LeavesPartialAlpha) {
          const sk_sp<SkImage> noised =
-             NoisedImage(*Image(16, 16, Partial), 7, 1.0, 3, 255, NoiseMask());
+             NoisedImage(*Image(16, 16, Partial), 7, 1.0, 3, 255, NoiseMask(), false);
          ASSERT_NE(noised, nullptr);
          const SkBitmap got = Read(*noised);
          for (int y = 0; y < 16; ++y)
@@ -936,7 +941,7 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
 
 - [ ] **Step 5: Implement `canvas_readback.{h,cc}`.**
   1. In `canvas_readback.h`:
-     - Replace the `NoisedImage` comment lines that mention `CanvasStateHash` with: `keyed by \`seed\` and each pixel's 3x3 patch (canvas noise S2b), with \`min_alpha\` as the eligibility floor (255 for WebGL) and \`mask\` gating each pixel.`
+     - Replace the `NoisedImage` comment lines that mention `CanvasStateHash` with: `keyed by \`seed\` and each pixel's 3x3 patch (canvas noise S2b), with \`min_alpha\` as the eligibility floor (255 for WebGL), \`mask\` gating each pixel, and \`bottom_up\` for a raster stored bottom-up (a kOriginBottomLeft snapshot).`
      - Change the two declarations to the signatures in Interfaces.
   2. In `canvas_readback.cc`:
      - Give `NoisedImage` its new signature, and replace its `PerturbRgbaEdges` call with:
@@ -944,10 +949,10 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
          const uint8_t floor =
              info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
          PerturbRgbaEdges(pixels, source.data(), w, h, row, seed, density, strength,
-                          std::max(min_alpha, floor), mask, /*bottom_up=*/false);
+                          std::max(min_alpha, floor), mask, bottom_up);
        ```
      - Add `#include <algorithm>`.
-     - Give `NoisedCanvasImage` its new signature. Its return becomes `return NoisedImage(canvas, CanvasSeed(scope), density, strength, min_alpha, mask);`.
+     - Give `NoisedCanvasImage` its new signature. Its return becomes `return NoisedImage(canvas, CanvasSeed(scope), density, strength, min_alpha, mask, bottom_up);`.
 
 - [ ] **Step 6: Install the edit runner, and fix the Blink call site.**
   1. Ship the W4 runner source to `/tmp/s2b/apply_edits.py` with W0, and check its sha256.
@@ -958,7 +963,8 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
          ("replace", F,
           "    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(*sk_image, scope);\n",
           "    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(\n"
-          "        *sk_image, scope, /*min_alpha=*/1, camoucfg::NoiseMask());\n", 1),
+          "        *sk_image, scope, /*min_alpha=*/1, camoucfg::NoiseMask(),\n"
+          "        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);\n", 1),
      ]
      ```
   3. Run `python3 /tmp/s2b/apply_edits.py /tmp/s2b/t2_edits.py`.
@@ -1460,13 +1466,15 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
       ("replace", CRC,
        "  if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID()) {\n"
        "    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(\n"
-       "        *sk_image, scope, /*min_alpha=*/1, camoucfg::NoiseMask());\n",
+       "        *sk_image, scope, /*min_alpha=*/1, camoucfg::NoiseMask(),\n"
+       "        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);\n",
        "  // A mask change without a raster change (a transparent arc, clearRect\n"
        "  // over clear pixels) still misses: the generation is part of the key.\n"
        "  if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID() ||\n"
        "      camou_noised_generation_ != generation) {\n"
        "    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(\n"
-       "        *sk_image, scope, CamouNoiseMinAlpha(), CamouNoiseMask());\n", 1),
+       "        *sk_image, scope, CamouNoiseMinAlpha(), CamouNoiseMask(),\n"
+       "        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);\n", 1),
       ("replace", CRC,
        "    camou_noised_from_ = sk_image->uniqueID();\n",
        "    camou_noised_from_ = sk_image->uniqueID();\n"
@@ -1756,7 +1764,7 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
   - `Header dependency check OK`;
   - checkdeps silent.
 
-  If the compiler rejects an API name, fix the call to match the tree, keep the behaviour, and note the change in the report. The candidates are `GetCanvasPattern`, `GetCanvasGradient`, `isOpaque`, `getLooper`, `getImageFilter`, `RestoreMatrixClipStack`, `ReleaseAsRecord` and `Playback`.
+  If the compiler rejects an API name, fix the call to match the tree, keep the behaviour, and note the change in the report. The candidates are `GetCanvasPattern`, `GetCanvasGradient`, `isOpaque`, `getLooper`, `getImageFilter`, `RestoreMatrixClipStack`, `MemoryManagedPaintCanvas(gfx::Size)`, `ReleaseAsRecord` and `Playback`. A standalone `MemoryManagedPaintCanvas` was checked on the tree while planning: it is a self-contained `InspectableRecordPaintCanvas` with its own `ReleaseAsRecord()`. Redesigning is out of scope; only a call shape may change.
 
 - [ ] **Step 4: Verify GREEN.** Run W5v. Expected:
   - C1–C27 PASS;
@@ -1766,7 +1774,7 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
 
   If C11, C12, C13 or C16 regress, stop. The imported or clear marks are wrong; debug with superpowers:systematic-debugging before going on.
 
-- [ ] **Step 5: Mutation proof (C27 needs coverage, not bounding boxes).**
+- [ ] **Step 5: Mutation proof (C27 needs coverage: the dirty rect marked aa must fail it).**
   1. Back up the edited header: `cp ~/chromium/src/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h /tmp/s2b/rec_h.bak`. Then ship this EDITS file as `/tmp/s2b/t4_mut.py` and apply it:
      ```python
      F = "third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h"
@@ -1792,7 +1800,7 @@ Headed runs often fail to create a WebGL context on the host. That is the host f
   - build step counts;
   - gn check and checkdeps lines;
   - the GREEN verify lines;
-  - both mutation-proof runs.
+  - both mutation-proof runs, described as what ran: "every replayed draw marks its dirty rect aa" (not a strict bounding-box mark, which would also clear under solid opaque draws).
 
   Commit it.
 
