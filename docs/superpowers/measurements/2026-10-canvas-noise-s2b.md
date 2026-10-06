@@ -231,6 +231,11 @@ Cost (WSL `content_shell`, CPU raster, SwiftShader GL):
 | readPixels 64x64 | 1.33 | 1.11 (1.00 / 0.90 ms) |
 | readPixels 1024x1024 | 15.89 | 7.06 (29.65 / 4.20 ms) |
 
-The draw ratio is above 2.0. It comes from the 2D mask replay (Tasks 3-4),
-not from this task, which touches `readPixels` only. Recorded as a known gap
-for S2c. It does not block.
+The draw ratio is above 2.0. It is attributed to the 2D mask replay (Tasks 3-4);
+no draw ratio was measured between Task 1 and Task 5. This task touches
+`readPixels` only. Recorded as a known gap for S2c. It does not block.
+
+Fix round 1: the strip block is gated on `canvas:seed != 0`, so an
+unconfigured build does no strip reads, scratch or copies (rule 5).
+`Build Succeeded: 354 steps`; `verify_sp3a.py` 35/35 ALL_PASS rc=0;
+`verify_review_2026_09_24.py` 12/12.
