@@ -68,6 +68,10 @@ git log --oneline -1
 
 Expected: no `REBASE-IN-PROGRESS`, branch `camoucrome/main`, empty porcelain, no ninja. If any fails: STOP and ask the owner; do not abort or continue another session's rebase.
 
+Also confirm with the owner that the S2b canvas slice has merged or is parked. The two slices share `camoucrome/main` and must be sequenced, never interleaved: if S2b committed after `observe`, its `export.sh` would emit `patches/observe.patch` into the S2b branch and trip its porcelain gate.
+
+Also confirm, before Task 6 starts its multi-hour build, how the owner will drive a headed browser on the Windows host for Task 7 (memory `buildpc-client-layout`: the host has no mouse or keyboard attached). Physically at the PC, RDP, or plugged-in input all work; if none is possible, Tasks 6-7 need a different vehicle and come back to the owner.
+
 - [ ] **Step 2: Check the box branch matches `origin/main`'s change set**
 
 On the Mac, if `origin/main` moved since this branch was cut: `git fetch -q origin && git rebase -q origin/main` (the branch holds only docs at this point). Then on the box, using the runner's clone of the repo:
@@ -461,9 +465,9 @@ git commit -m "feat(package): refuse an out dir built with camou_observe"
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EXECUTION_CONTEXT_CAMOU_OBSERVE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_EXECUTION_CONTEXT_CAMOU_OBSERVE_H_
 
-#include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/bindings/buildflags.h"
+#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 
 // Tracking observer (docs/observer/README.md). Generated bindings call
 // Record() at the entry of every allow-listed Web IDL member. It emits one
@@ -778,7 +782,18 @@ On the box, in a scratch worktree of the pin (`cd ~/chromium/src && git worktree
 git add patches/observe.patch patches/series
 git commit -m "feat(observer): observe slice: allow-listed binding trace events with origin and site"
 git push origin --delete tmp/observe-src && git branch -D tmp/observe-src
+python3 scripts/check_additions_build.py; echo rc=$?
 ```
+
+Then push the plan branch and, on the box, prove the box commit and `patches/observe.patch` are byte-identical:
+
+```bash
+R=/home/lang/actions-runner/_work/camoucrome/camoucrome
+git -C $R fetch -q origin <plan-branch> && git -C $R checkout -q FETCH_HEAD
+bash $R/scripts/check_checkout_sync.sh ~/chromium/src; echo rc=$?
+```
+
+Expected: both `rc=0`.
 
 ---
 
@@ -984,6 +999,10 @@ if __name__ == "__main__":
 
 Row count: 7 main-frame rows + 1 worker + 1 iframe + 1 `Document.title` + 1 off arm = **11**.
 
+Fallbacks decided in advance:
+- **No trace file after SIGTERM** (`FAIL on-arm: ... no trace file written`): content_shell's SIGTERM path did not run a graceful shutdown. Change `run()` to pass `--trace-startup-duration=20` instead of `0`, and after `/done` poll for the trace file (up to 40 s) before terminating. Same events, no dependence on shutdown. Recon on `chrome` keeps duration 0 and closes the window normally.
+- **The iframe row reads `site='http://localhost'`**: `GetStorageKey().GetTopLevelSite()` did not carry the top frame's site. The spec promises the parent's site, so the fix goes in `Emit()`, not in the expectation: derive `site` from the frame tree top, `window->GetFrame()->Tree().Top().GetSecurityContext()->GetSecurityOrigin()` (valid for a RemoteFrame), serialized as a scheme + registrable domain the same way `BlinkSchemefulSite` does (`BlinkSchemefulSite(origin).Serialize()`). Rebuild, re-run RED then GREEN.
+
 - [ ] **Step 2: RED run first**
 
 Get the branch onto the box (`git -C $R fetch -q origin <branch>` + `git archive FETCH_HEAD scripts | tar -x -C /tmp/observe-tree`), then:
@@ -992,7 +1011,7 @@ Get the branch onto the box (`git -C $R fetch -q origin <branch>` + `git archive
 cd /tmp/observe-tree/scripts && ~/camoucrome-verify/venv/bin/python3 verify_observe.py --red; echo rc=$?
 ```
 
-Expected: every row FAIL, `0/11 PASS (RED mode: expected failures)`, `rc=1`. If any row PASSes in RED mode, that row measures nothing: fix it before going on.
+Expected: **11 `FAIL` rows**, each count row reading `<K> (want <K+1>)`, the `Document.title` row `0 (want 1)`, the off-arm row `0 camou events (want 0)` marked FAIL, then `0/11 PASS (RED mode: expected failures)` and `rc=1`. An early `FAIL on-arm: ...` line is **not** a passed RED: it is broken infrastructure that also exits 1. If any row PASSes in RED mode, that row measures nothing: fix it before going on.
 
 - [ ] **Step 3: GREEN run**
 
