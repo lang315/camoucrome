@@ -47,7 +47,7 @@ uint32_t Partial(int x, int y) {
 }
 
 TEST(NoisedImageTest, SeedZeroIsNull) {
-  EXPECT_EQ(NoisedImage(*Image(8, 8, Partial), 0, 1.0, 2), nullptr);
+  EXPECT_EQ(NoisedImage(*Image(8, 8, Partial), 0, 1.0, 2, 1, NoiseMask(), false), nullptr);
 }
 
 TEST(NoisedImageTest, FloatImageIsNull) {
@@ -56,14 +56,15 @@ TEST(NoisedImageTest, FloatImageIsNull) {
                                    kPremul_SkAlphaType));
   bm.eraseColor(SK_ColorRED);
   bm.setImmutable();
-  EXPECT_EQ(NoisedImage(*SkImages::RasterFromBitmap(bm), 7, 1.0, 2), nullptr);
+  EXPECT_EQ(NoisedImage(*SkImages::RasterFromBitmap(bm), 7, 1.0, 2, 1, NoiseMask(),
+                         false), nullptr);
 }
 
 // S1 through the whole Skia path: a one-colour canvas reads back unchanged.
 TEST(NoisedImageTest, OneColourImageReadsAsStock) {
   const sk_sp<SkImage> noised =
       NoisedImage(*Image(16, 16, [](int, int) { return Pack(10, 20, 30, 255); }),
-                  7, 1.0, 3);
+                  7, 1.0, 3, /*min_alpha=*/1, NoiseMask(), /*bottom_up=*/false);
   ASSERT_NE(noised, nullptr);
   const SkBitmap got = Read(*noised);
   for (int y = 0; y < 16; ++y)
@@ -73,7 +74,8 @@ TEST(NoisedImageTest, OneColourImageReadsAsStock) {
 
 // Partial alpha moves and stays premultiplied: alpha kept, channels <= alpha.
 TEST(NoisedImageTest, PartialAlphaStaysPremultiplied) {
-  const sk_sp<SkImage> noised = NoisedImage(*Image(16, 16, Partial), 7, 1.0, 3);
+  const sk_sp<SkImage> noised = NoisedImage(*Image(16, 16, Partial), 7, 1.0, 3, /*min_alpha=*/1,
+                  NoiseMask(), /*bottom_up=*/false);
   ASSERT_NE(noised, nullptr);
   const SkBitmap got = Read(*noised);
   bool moved = false;
@@ -88,6 +90,40 @@ TEST(NoisedImageTest, PartialAlphaStaysPremultiplied) {
     }
   }
   EXPECT_TRUE(moved);
+}
+
+// S2b: drawing elsewhere does not change a pixel's noise; there is no
+// whole-canvas state in the key.
+TEST(NoisedImageTest, EditElsewhereKeepsAPixelsNoise) {
+  auto lone = [](int x, int y) {
+    return x == 3 && y == 3 ? Pack(200, 100, 50, 255) : Pack(0, 0, 0, 255);
+  };
+  auto lone_plus = [](int x, int y) {
+    return (x == 3 && y == 3) || (x == 12 && y == 12) ? Pack(200, 100, 50, 255)
+                                                      : Pack(0, 0, 0, 255);
+  };
+  bool moved = false;
+  for (uint64_t seed = 1; seed <= 8; ++seed) {
+    const SkBitmap a =
+        Read(*NoisedImage(*Image(16, 16, lone), seed, 1.0, 3, 1, NoiseMask(), false));
+    const SkBitmap b =
+        Read(*NoisedImage(*Image(16, 16, lone_plus), seed, 1.0, 3, 1, NoiseMask(),
+                          false));
+    EXPECT_EQ(*a.getAddr32(3, 3), *b.getAddr32(3, 3)) << "seed " << seed;
+    moved |= *a.getAddr32(3, 3) != Pack(200, 100, 50, 255);
+  }
+  EXPECT_TRUE(moved);
+}
+
+// The WebGL snapshot passes min_alpha 255: partial alpha stays as is.
+TEST(NoisedImageTest, MinAlpha255LeavesPartialAlpha) {
+  const sk_sp<SkImage> noised =
+      NoisedImage(*Image(16, 16, Partial), 7, 1.0, 3, 255, NoiseMask(), false);
+  ASSERT_NE(noised, nullptr);
+  const SkBitmap got = Read(*noised);
+  for (int y = 0; y < 16; ++y)
+    for (int x = 0; x < 16; ++x)
+      EXPECT_EQ(*got.getAddr32(x, y), Partial(x, y)) << x << "," << y;
 }
 
 }  // namespace
