@@ -110,7 +110,9 @@ The scratch coverage `c` of each pixel is then merged into the masks:
 |---|---|---|
 | solid opaque colour, source-over, global alpha 1, no shadow, no filter | **clear** `aa` and `imported` (the value is now known exactly) | set `aa` |
 | solid colour, otherwise (alpha below 1, other blend modes covered below) | leave both | set `aa` |
-| gradient paint, or any draw with a shadow or a filter | set `aa` | set `aa` |
+| gradient paint | set `aa` over its alpha-weighted coverage | set `aa` over its alpha-weighted coverage |
+| a draw with a shadow | shadow pass `aa`, then the shape marked by its own kind (an opaque shape's full cover clears); a shape that draws nothing marks nothing | same |
+| a filter, or another composited draw | mark the clip `imported` | mark the clip `imported` |
 | pattern paint | set `imported` | set `imported` |
 | `drawImage` (any source) | set `imported` | set `imported` |
 | `clearRect` | **clear** both | set `aa` |
@@ -236,7 +238,7 @@ Final-review fix wave (2026-10-06), rows C33a-d, `EXPECTED` 39:
   composited shadows may set any clip pixel unpredictably and may leave exact
   pixels as they were, so `CamouMarkClip` marks the clip `imported` for
   everything. Text still marks nothing unless its style is a pattern.
-- **F3, clearRect.** The replay area is `ComputeDirtyRect(rect, clip_bounds)`
+- **F3, clearRect.** The replay area is `ComputeDirtyRect(rect, clip_bounds, &area)`
   rather than the whole clip; if that returns false nothing is marked.
 - **F4, bottom-up masks.** `PerturbRgbaEdges` is a no-op when a mask is passed
   with `bottom_up` true. A mask is for top-down 2D snapshots only; no 2D
@@ -309,7 +311,7 @@ that is interior, non-transparent and unlike all four neighbours.
 
 From measurements §8 and the S1/S2 spec:
 - the field keyed by position;
-- any edit reseeding the field;
+- any edit reseeding the field (narrowed, not closed: see Known gaps, neighbour re-roll);
 - WebGL `readPixels` sub-rect against full read;
 - WebGL `readPixels` against `toDataURL`;
 - the sticky per-canvas imported flag;
@@ -324,6 +326,14 @@ From measurements §8 and the S1/S2 spec:
 - **Canvases above 4096 × 4096 px** use coarse 4 × 4 cell masks, which
   over-mark near AA content.
 - **Layers** mark `imported` (no noise) and never clear inside a layer.
+- **Composited draws switch noise off for their clip.** A composited draw (a filter, a full-canvas composite mode, or a composited shadow)
+  marks its whole clip imported. Noise then stays off for that clip until an opaque
+  solid draw covers it fully. A page can switch noise off for a region that way. That
+  costs linkability, not detectability.
+- A translucent shape with a shadow keeps aa on its own pixels where its shadow does not
+  reach, because the second pass is kSolid and does not clear.
+- The shadow pass keeps a pattern's shader. A texture-backed pattern played onto a CPU
+  canvas is expected to draw nothing; that is unverified.
 - **Neighbour re-roll (C22 narrowed).** Noise is keyed by each pixel's 3x3 patch,
   so a draw that touches a region's 3x3 patches without covering its pixels
   re-rolls that region's noise. Stock pixels depend only on draws that cover

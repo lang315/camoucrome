@@ -355,6 +355,14 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 35 rows.
 - No row covers GPU-accelerated 2D raster: every S2b 2D row uses a canvas of 128 px or
   less.
 - A `readPixels` strip-read binder failure returns the stock render.
+- A composited draw (a filter, a full-canvas composite mode, or a composited shadow)
+  marks its whole clip imported. Noise then stays off for that clip until an opaque
+  solid draw covers it fully. A page can switch noise off for a region that way. That
+  costs linkability, not detectability.
+- A translucent shape with a shadow keeps aa on its own pixels where its shadow does not
+  reach, because the second pass is kSolid and does not clear.
+- The shadow pass keeps a pattern's shader. A texture-backed pattern played onto a CPU
+  canvas is expected to draw nothing; that is unverified.
 - Image draws mark `imported` over their whole dirty rect, with no replay. This errs
   toward no noise.
 - The captureStream one-copy path and the `transferControlToOffscreen` placeholder are
@@ -448,5 +456,5 @@ a host flake, not as a pass.
 
 ### `verify_sp3a` on Windows `chrome`
 
-39 rows: 33 PASS (C6-C9, C12-C33a-d), 6 fail on the missing stock baseline as before
+39 rows: 33 PASS (C1, C6-C9, C12-C33a-d), 6 fail on the missing stock baseline as before
 (C2-C5, C10, C11), recorded as UNMEASURED. Log `D:\camou-win\s2b\sp3a-win2.log`.

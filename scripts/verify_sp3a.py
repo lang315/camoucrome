@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Thirty-nine criteria, all driven with Playwright's sync API over content_shell's CDP,
+Forty criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -82,6 +82,8 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C33a-d 1px random opaque colours stay byte-equal to unconfigured after a
       fully transparent arc, an all-transparent gradient arc, an opaque fill
       with an off-canvas shadow (then a speckle), and a blurred corner fillRect.
+  C33e the same canvas after a fully transparent arc with a visible shadow:
+      stock draws nothing, so it must equal unconfigured (and its own pre-draw state).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -650,8 +652,9 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
       for (let k = 0; k < 3; k++) {
         es = (Math.imul(es, 1103515245) + 12345) >>> 0; col.push(es >>> 24); }
       y.fillStyle = 'rgb(' + col.join(',') + ')'; y.fillRect(xx, yy, 1, 1); }
+    const pre = H(get(y, 0, 0, 64, 64));
     draw(y); const d = get(y, 0, 0, 64, 64);
-    return { h: H(d), e: elig(d, 64) }; };
+    return { h: H(d), e: elig(d, 64), pre }; };
   out.exact = {
     a: exactDraw((y) => { y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
       y.arc(32, 32, 20, 0, 7); y.fill(); }),
@@ -663,6 +666,10 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
       y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; speckle(y); }),
     d: exactDraw((y) => { y.filter = 'blur(1px)'; y.fillStyle = '#123456';
       y.fillRect(56, 56, 8, 8); y.filter = 'none'; }),
+    e: exactDraw((y) => { y.shadowColor = '#000'; y.shadowOffsetX = 3;
+      y.shadowOffsetY = 3; y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
+      y.arc(32, 32, 20, 0, 7); y.fill();
+      y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; y.shadowOffsetY = 0; }),
   };
   return out;
 }"""
@@ -1072,12 +1079,17 @@ C33 = {k: f"33{k} exact pixels stay exact after {what}" for k, what in (
     ("a", "a fully transparent arc"),
     ("b", "an all-transparent gradient arc"),
     ("c", "an opaque fill with an off-canvas shadow, then a speckle"),
-    ("d", "a blurred corner fillRect"))}
+    ("d", "a blurred corner fillRect"),
+    ("e", "a transparent arc with a visible shadow"))}
 for k in "abcd":
     s2b_row(C33[k], lambda r, k=k: r["exact"][k], lambda u: u["e"] > 0,
             lambda s, u: s["h"] == u["h"])
+# (e): stock draws nothing, so the canvas must still equal its pre-draw state.
+s2b_row(C33["e"], lambda r: r["exact"]["e"],
+        lambda u: u["e"] > 0 and u["pre"] == u["h"],
+        lambda s, u: s["h"] == u["h"])
 
-EXPECTED = 39
+EXPECTED = 40
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
