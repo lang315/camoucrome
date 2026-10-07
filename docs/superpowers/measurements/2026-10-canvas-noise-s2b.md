@@ -539,3 +539,86 @@ All 20 post hashes equal the box's sha256. Only `canvas_2d_recorder_context.h` d
 
 40 rows: 34 PASS (C1, C6-C9, C12-C33e), 6 fail on the missing stock baseline as before
 (C2-C5, C10, C11), recorded as UNMEASURED. Log `D:\camou-win\s2b\sp3a-win3.log`.
+
+## 12. Code-review round
+
+Branch head `73ae177`. Findings fixed: F1 (a `copy` clear with a stroke now clears the whole
+clip, row C34), F2 (eligibility counts aa-only cells, `CanvasNoiseMask::has_aa()`), F3
+(fallible `readPixels` scratch and fallible source copies), F4 (no replay for a context
+with no canvas host), F5 (one `CamouEnsureMask` helper, comments, spec), F6 (the cost
+script uses `lib_shell.session`).
+
+### Checks on the box
+
+- `base::UncheckedMalloc`, `UncheckedFree` and `CheckedNumeric` exist at the pin
+  (`base/process/memory.h`).
+- F4 host question: `Canvas2DRecorderContext::GetCanvasRenderingContextHost()` defaults to
+  nullptr and only the canvas and offscreen 2D contexts override it. The paint worklet's
+  `PaintRenderingContext2D` does not, so the nullptr gate used, with no virtual override.
+- The `readPixels` noise block is the tail of `ReadPixelsHelper` (only closing braces
+  follow), so the failure path may `return`.
+
+### RED and GREEN (WSL)
+
+- Additions-only build: 363 steps; `HasAaCountsAaOnlyCells` and `HasAaOnCoarseCells` pass,
+  as do all other canvas noise tests.
+- RED (before the Blink edit): `verify_sp3a` 40 PASS, 1 FAIL = C34 (seeded hash differs;
+  unconfigured equals the fresh canvas, so the guard holds).
+- Blink edits: `cr_edits.py` (11 entries, sha256 `32de890c`) applied with no anchor or API
+  correction. Build: 29 steps, rc 0.
+- GREEN: `verify_sp3a` 41/41 `ALL_PASS`, rc 0; `verify_review` 12/12; `gn check` (core,
+  canvas, webgl) OK; `checkdeps` on both canvas dirs SUCCESS.
+- Export: 38 commits, 0 fixup. Changed: `sp3a-canvas-noise.patch` (sha256 `fe0162ae`) and
+  `sp3b-webgl-profile.patch` (sha256 `d8cbe13e`; context lines and offsets only, since it
+  shares `webgl_rendering_context_base.cc` with the new includes).
+
+### Cost (WSL `content_shell`, seeded / unconfigured)
+
+| arm | seeded median | unconfigured median | ratio |
+|---|---|---|---|
+| draw | 118.00 ms | 26.35 ms | 4.48 |
+| readPixels 64x64 | 1.05 ms | 0.30 ms | 3.50 |
+| readPixels 1024x1024 | 40.00 ms | 1.90 ms | 21.05 |
+
+The `readPixels` ratios are not comparable with section 6: the script's GL arm now runs
+with `SHELL_FLAGS` plus the SwiftShader flags (the old script dropped
+`--ozone-platform=headless`), which changes the unconfigured baseline. The draw ratio is
+close to the earlier 4.35.
+
+### Windows (W12, base `55d16f07`)
+
+| file | Windows pre (8) | post = box sha256 (8) |
+|---|---|---|
+| `components/camoucfg/BUILD.gn` | same as post | 85b54c68 |
+| `components/camoucfg/canvas_mask.cc` | 47f2819e | 960bb10c |
+| `components/camoucfg/canvas_mask.h` | b8decbd4 | d35a897a |
+| `components/camoucfg/canvas_mask_unittest.cc` | cf9f45dc | 76e0df18 |
+| `components/camoucfg/canvas_noise.cc` | 0943682e | 3fde6623 |
+| `components/camoucfg/canvas_noise.h` | same as post | 09df99ee |
+| `components/camoucfg/canvas_noise_unittest.cc` | same as post | d9ad2483 |
+| `components/camoucfg/canvas_readback.cc` | b6c18de0 | dcd7e0be |
+| `components/camoucfg/canvas_readback.h` | same as post | 0fb5e9d6 |
+| `components/camoucfg/canvas_readback_unittest.cc` | same as post | 93e72828 |
+| `third_party/blink/renderer/DEPS` | same as post | 545f6f65 |
+| `third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc` | same as post | 15feef8c |
+| `third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h` | same as post | c19792f7 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc` | same as post | 4c7ee7e2 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h` | ab3704c8 | 78aeadeb |
+| `third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc` | 3145696d | 9dd8c718 |
+| `third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h` | 72235f65 | 222b6950 |
+| `third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc` | same as post | 81fd661e |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc` | 72d084be | 413d51d2 |
+| `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h` | same as post | 43956d64 |
+
+All 20 post hashes equal the box's sha256. The build (`out\Release`, label `s2b-4`) hit
+clang out of memory twice (30 and 32 steps done); the third attempt ended `Build Succeeded:
+197 steps`, rc 0.
+
+| label | attempts | result |
+|---|---|---|
+| s2b-final4-headless | 2 | attempt 1: rule 5 FAIL (differ: `glClear`, `glClearColours`, `shape`, `text`, `textBig`), the host flake seen before; attempt 2: 9/9 PASS |
+| s2b-final4-headed | 2 | attempt 1: P3 and S1 UNMEASURED (no WebGL context); attempt 2: 9/9 PASS |
+
+`verify_sp3a` on Windows `chrome`: 41 rows, 35 PASS (C1, C6-C9, C12-C34), 6 fail on the
+missing stock baseline as before (C2-C5, C10, C11), recorded as UNMEASURED. Log
+`D:\camou-win\s2b\sp3a-win4.log`.
