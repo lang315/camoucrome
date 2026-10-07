@@ -2,7 +2,7 @@
 
 Usage: observe_report.py TRACE.json NETLOG.json [--cookies COOKIES_DB]
 
-TRACE comes from --trace-startup=disabled-by-default-camou.observe
+TRACE comes from --trace-startup=-*,disabled-by-default-camou.observe
 --trace-startup-format=json; NETLOG from --log-net-log; COOKIES_DB is a copy of
 the profile's Cookies sqlite taken after the browser exited. Prints markdown.
 Only names, counts, hosts and query-stripped paths are printed: query strings

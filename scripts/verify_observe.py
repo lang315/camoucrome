@@ -22,6 +22,9 @@ import observe_report
 
 K = 3
 CATEGORY = observe_report.CATEGORY
+# "-*," excludes every default category: a filter listing only disabled-by-default
+# categories still enables all the default ones (51 MB trace for a tiny probe).
+ON_FILTER = "-*," + CATEGORY
 
 PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 height=8></canvas>
 <script>
@@ -144,13 +147,13 @@ def tally(events):
 def main():
     red = "--red" in sys.argv
     if "--timing" in sys.argv:
-        for label, cats in (("off", "blink,loading"), ("on", CATEGORY)):
+        for label, cats in (("off", "blink,loading"), ("on", ON_FILTER)):
             _, res, _ = run("timing.html", cats)
             print(f"timing {label}: {res}")
         return 0
 
     rows = []
-    events, res, trace = run("probe.html", CATEGORY)
+    events, res, trace = run("probe.html", ON_FILTER)
     if events is None:
         print(f"FAIL on-arm: {res}")
         return 1
@@ -178,6 +181,7 @@ def main():
     title = sum(n for (name, _, _), n in c.items() if name.startswith("Document.title"))
     rows.append((title == 0 + bump, f"Document.title (not allow-listed): {title} (want {0 + bump})"))
 
+    # off arm: a normal default set ("blink,loading") must not pull the category in
     off_events, off_res, _ = run("probe.html", "blink,loading")
     off_ok = off_events is not None and len(off_events) == 0
     rows.append((off_ok == (not red), f"off arm (tracing on, category not requested): "
