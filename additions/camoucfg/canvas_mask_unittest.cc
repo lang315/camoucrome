@@ -120,5 +120,37 @@ TEST(CanvasNoiseMaskTest, CoarseCellsAboveTheCap) {
   EXPECT_EQ(Cell(m, 0, 0), 0);
 }
 
+// has_aa() is true iff some cell is exactly kNoiseMaskAa; aa plus imported
+// does not count.
+void ExpectHasAaBehaviour(CanvasNoiseMask& m) {
+  EXPECT_FALSE(m.has_aa());
+  m.MarkRect(8, 8, 8, 8, Kind::kImported);
+  EXPECT_FALSE(m.has_aa());  // imported-only
+  m.MarkRect(0, 0, 8, 8, Kind::kAa);
+  EXPECT_TRUE(m.has_aa());
+  m.MarkRect(0, 0, 8, 8, Kind::kImported);
+  EXPECT_FALSE(m.has_aa());  // aa + imported is not counted
+}
+
+TEST(CanvasNoiseMaskTest, HasAaCountsAaOnlyCells) {
+  CanvasNoiseMask m(16, 16);
+  ExpectHasAaBehaviour(m);
+  CanvasNoiseMask c(16, 16);
+  c.MarkRect(0, 0, 4, 4, Kind::kAa);
+  EXPECT_TRUE(c.has_aa());
+  c.MarkRect(0, 0, 16, 16, Kind::kClear);
+  EXPECT_FALSE(c.has_aa());
+}
+
+TEST(CanvasNoiseMaskTest, HasAaOnCoarseCells) {
+  CanvasNoiseMask m(4097, 4096);
+  ExpectHasAaBehaviour(m);
+  CanvasNoiseMask c(4097, 4096);
+  c.MarkRect(0, 0, 4, 4, Kind::kAa);
+  EXPECT_TRUE(c.has_aa());
+  c.MarkRect(0, 0, 4, 4, Kind::kClear);
+  EXPECT_FALSE(c.has_aa());
+}
+
 }  // namespace
 }  // namespace camoucfg

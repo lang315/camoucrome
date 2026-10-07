@@ -7,11 +7,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include "base/containers/span.h"
+#include "base/process/memory.h"
 #include "components/camoucfg/derive.h"
 #include "components/camoucfg/keys.h"
 
@@ -47,8 +48,15 @@ void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
   // one at least width * 4 bytes long.
   const base::span<const uint8_t> in = UNSAFE_BUFFERS(base::span<const uint8_t>(
       data, (height - 1) * row_bytes + width * 4));
-  const std::vector<uint8_t> source(in.begin(), in.end());
-  PerturbRgbaEdges(data, source.data(), width, height, row_bytes, seed,
+  // A fallible copy: on failure the read stays stock rather than crash.
+  void* raw = nullptr;
+  if (!base::UncheckedMalloc(in.size(), &raw) || raw == nullptr) {
+    return;
+  }
+  std::unique_ptr<uint8_t, void (*)(void*)> source(static_cast<uint8_t*>(raw),
+                                                   &base::UncheckedFree);
+  std::copy(in.begin(), in.end(), source.get());
+  PerturbRgbaEdges(data, source.get(), width, height, row_bytes, seed,
                    density, strength, /*min_alpha=*/255, NoiseMask(),
                    bottom_up);
 }

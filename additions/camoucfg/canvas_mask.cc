@@ -92,6 +92,9 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
           }
         }
         if (full) {
+          if (cell == kNoiseMaskAa) {
+            --aa_cells_;
+          }
           cell = 0;
           changed = true;
         }
@@ -127,7 +130,13 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
       uint8_t& cell = cells_[static_cast<size_t>(y >> shift_) * stride_ +
                              static_cast<size_t>(x >> shift_)];
       if ((cell & bit) != bit) {
+        if (cell == kNoiseMaskAa) {
+          --aa_cells_;
+        }
         cell |= bit;
+        if (cell == kNoiseMaskAa) {
+          ++aa_cells_;
+        }
         changed = true;
       }
     }
