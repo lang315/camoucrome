@@ -75,9 +75,10 @@ traces recorded all of Chrome's normal tracing as well. They were 85 MB (arm 1),
 898 MB (arm 2), about 900 MB (arm 3) and 560 MB (first arm 4). They also held
 more of the browsing session than the observer needs.
 
-The counts are unaffected. `observe_report.py` reads only events in the
-`disabled-by-default-camou.observe` category, so the extra categories add bulk,
-not rows. The fix (`a9e23d1`, docs `4c7d6da`) changed the filter to
+`observe_report.py` reads only events in the
+`disabled-by-default-camou.observe` category, so the extra categories add no
+rows. They did cost rows in two arms, because they filled the trace buffer
+(next subsection). The fix (`a9e23d1`, docs `4c7d6da`) changed the filter to
 `-*,disabled-by-default-camou.observe` in the README, the spec,
 `verify_observe.py`, `recon.ps1` and `arm1.ps1`. On the same probe page the new
 filter wrote 68.9 KB with 2 categories, against 7.17 MB with 77 categories
@@ -87,6 +88,41 @@ because the earlier "on" timing had included every default category.
 
 The arm-4 re-run used the new filter. Its trace was 8.1 MB, against 560 MB for
 the same page with the old one.
+
+### The buffer filled in arms 2 and 3
+
+With `--trace-startup-record-mode=record-as-much-as-possible` the trace buffer
+is 200 MB (`buffer_size` 209 715 200 in each trace's `traced_buf` stats). A
+full buffer discards every new chunk, so the whole trace stops, observer events
+included, while the browser and the netlog carry on. The last observer event
+and the last trace event are 0.03 to 0.38 s apart in every arm, so comparing
+those two clears every arm and shows nothing. The trace's end against the
+netlog's requests does show it (read on the Windows host on 2026-10-07 by
+streaming each trace line by line):
+
+| | arm 1 | arm 2 | arm 3 | first arm 4 | arm 4 re-run |
+|---|---|---|---|---|---|
+| buffer written | 18.7 MB | 200 MB (full) | 200 MB (full) | 124 MB | 5.3 MB |
+| chunks discarded | 0 | 21 109 | 21 683 | 0 | 0 |
+| trace span | 30.2 s | 152.0 s | 58.1 s | 50.1 s | 2 451 s |
+| requests, first to last | 29.9 s | 187.7 s | 116.2 s | 49.6 s | 2 451 s |
+| requests after the trace ended | 0 of 37 | 311 of 1 083 | 189 of 925 | 0 of 719 | 1 of 836 |
+
+- **Arm 1 and the first arm 4: unaffected.** No chunk was discarded and no
+  request came after the trace's end.
+- **Arm 2: close to complete for facebook.com.** The trace stopped 35.9 s
+  before the last request. 309 of the 311 later requests were under the four
+  non-Meta sites the owner visited afterwards; 2 of the 386 `facebook.com`
+  requests came later, and no `/ajax/bz`. Its facebook.com counts are lower
+  bounds, but the untraced tail was almost all other sites.
+- **Arm 3: the trace covers the first 58 s of 116 s.** 189 of its 925
+  requests (20 %), all under `facebook.com`, came after the trace stopped.
+  Every arm-3 observer count in this document covers only that first minute
+  and is a lower bound. Request counts and `/ajax/bz` come from the netlog,
+  which covers the whole session; the untraced tail had no `/ajax/bz`.
+- **The arm-4 re-run** used 5.3 MB of the buffer in a 41-minute session, so the
+  `-*,` filter makes a fill unlikely. `observe_report.py` now prints whether the
+  buffer discarded chunks.
 
 ## 3. Per-arm results
 
@@ -108,8 +144,13 @@ Every `/ajax/bz` count has its denominator next to it: the requests under the
 | requests, `facebook.com` site | 35 | 386 | 925 |
 | requests, whole session | 37 | 1 083 (685 of them under four non-Meta sites, excluded) | 925 |
 | `/ajax/bz` | **5 of 35** | **17 of 386** | **0 of 925** |
-| observed calls, `facebook.com` site | 930 | 4 602 | 11 403 |
-| worker calls (separate section) | 0 | 46 | 61 |
+| observed calls, `facebook.com` site | 930 | 4 602 | 11 403 (first 58 s) |
+| worker calls (separate section) | 0 | 46 | 61 (first 58 s) |
+| trace covered, of the request span | 30 of 30 s | 152 of 188 s | **58 of 116 s** |
+
+Arm 3's trace stopped when its buffer filled (section 2): every arm-3 observer
+count in the tables below covers the first 58 s and is a lower bound. Arm 2's
+untraced tail was almost all non-Meta sites.
 
 Arm 2's profile also visited several non-Meta sites during the owner's session.
 Those sections (four sites, 685 requests) and their cookies are left out of
@@ -299,16 +340,25 @@ WebGL calls on the page came from other scripts.
 
 ## 5. Findings
 
+Arm-3 ("while browsing") observer counts here cover the first 58 s of that
+session and are lower bounds (section 2); request counts cover all of it.
+
 1. **`/ajax/bz` fires logged out and at login, and not at all while browsing an
    established session.** 5 of 35 requests on the logged-out landing page, 17
    of 386 at login, 0 of 925 during about two minutes of feed browsing on the
    same profile. The 925 requests in arm 3 show the netlog was recording; the
-   zero is about Facebook, not about the instrument.
-2. **WebGL is read only at login.** 76 WebGL calls in arm 2 (a full render and
-   `readPixels`, plus parameter and extension queries), 0 in arm 1 and 0 in
-   arm 3. Canvas and audio, by contrast, are read on the landing page: 378
+   zero is about Facebook, not about the instrument. Both counts come from the
+   netlog, which covers the whole session, not from the trace that stopped
+   at 58 s.
+2. **WebGL, canvas and audio are read at login and not again in the same
+   profile.** 76 WebGL calls in arm 2 (a full render and `readPixels`, plus
+   parameter and extension queries), 0 in arm 1 and 0 in the traced first
+   58 s of arm 3. Canvas and audio are also read on the landing page: 378
    canvas and 9 audio calls logged out, 382 and 9 in arm 2 (whose login starts
-   from the same landing page), 0 and 0 while browsing. The landing-page canvas work
+   from the same landing page), 0 and 0 in arm 3's first 58 s. Arm 3 reused
+   arm 2's profile, so the likely reading is a fingerprint computed at login
+   and kept in the profile, not an established session that is never
+   fingerprinted (section 8). The landing-page canvas work
    is text-heavy (`measureText` 87, `font` set 74, `fillText` 13) and ends in
    `getImageData` 9 and `toDataURL` 2. The landing page also reads
    `navigator.userAgentData` once.
@@ -417,6 +467,14 @@ The report prints the spec's fixed list. A silence on any of these says nothing:
   matters here: Facebook's localStorage reads through property syntax are not
   in the `Storage.getItem` counts.
 - Values: every count above is a read, not a value.
+- V8 fast API calls. About 100 canvas-2D and WebGL methods and setters have a
+  `[NoAllocDirectCall]` fast path. Once V8 optimizes a call site, those calls
+  skip the hooked binding callback and are not counted, so the canvas and WebGL
+  draw and state counts here (the arm-2 render sequence, `drawArrays`, shader
+  calls, style setters) are lower bounds. Read-outs and the text calls
+  (`toDataURL`, `getImageData`, `readPixels`, `getParameter`, `measureText`,
+  `fillText`, `font`) are not affected. A zero row stays a real zero: the
+  first calls at any site run before V8 optimizes it, and those are counted.
 
 The reports also contain rows from Chrome's own internal pages, which every
 table above excludes: `chrome://omnibox-popup.top-chrome` (16 calls in every
@@ -429,6 +487,15 @@ directly and has no new-tab page section.
 
 - One session per arm, one account, one host, one day. Nothing is replicated,
   and arm 3's two minutes of browsing are one sample.
+- Arm 3's trace stopped after 58 s of a 116 s session, when the old filter's
+  bulk filled the 200 MB buffer (section 2). Its observer counts describe the
+  first minute of browsing only.
+- Arm 3's zeros for WebGL, canvas and audio do not show that an established
+  session is never fingerprinted. Arm 3 reused arm 2's profile, which had just
+  run the full login-time fingerprint; Facebook can keep that result in
+  localStorage or a cookie and skip recomputing it. An established session in
+  a profile that never saw a login fingerprint (or one with storage cleared)
+  would separate the two readings.
 - One third-party page. tiki.vn's Pixel configuration (its `signals/config`
   and the events it fires) is the site's own; another site may load
   more Pixel plugins.
