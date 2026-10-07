@@ -127,7 +127,7 @@ def test_render_lists_counts_hosts_cookies_and_blind_spots(tmp_path):
             in out)
     assert "| www.facebook.com | POST /ajax/bz | 1 |" in out
     assert "datr" in out and "SECRET" not in out
-    assert "## Not observable" in out and "Intl" in out
+    assert "## Not observable" in out and "Intl" in out and "NoAllocDirectCall" in out
 
 
 def test_render_top_scripts_per_site():
@@ -146,6 +146,33 @@ def test_render_top_scripts_per_site():
     assert fb + "Navigator.userAgent.get (4), Screen.width.get (3), Navigator.deviceMemory.get (2) |" in top
     assert "Window.matchMedia" not in top.split(fb, 1)[1].split("\n", 1)[0]
     assert top.index(fb) < top.index("| news.com/app.js | 5 | Document.cookie.get (5) |")
+
+
+def test_script_label_survives_a_bad_port_and_hides_blob_and_data_ids():
+    assert r.script_label("https://cdn.example.com:99999/x.js") == "cdn.example.com/x.js"
+    assert r.script_label("https://cdn.example.com:abc/x.js") == "cdn.example.com/x.js"
+    assert r.script_label("blob:https://www.facebook.com/0f8c6a2e-1111-2222-3333-444455556666") == "blob:"
+    assert r.script_label("data:text/javascript;base64,QUJD") == "data:"
+    out = r.render([ev("Screen.width.get", "https://a.com", "https://a.com",
+                       script="https://a.com:bad/x.js")], [], [])
+    assert "| a.com/x.js |" in out
+
+
+def test_buffer_note_reports_discarded_chunks(tmp_path):
+    p = write_trace(tmp_path, [ev("Screen.width.get", "https://a.com", "https://a.com")])
+    data = json.loads(p.read_text())
+    buf = [{"buffer_size": 209715200, "chunks_discarded": 21683},
+           {"buffer_size": 262144, "chunks_discarded": 0}]
+    data["metadata"] = {"trace_processor_stats": {"traced_buf": buf}}
+    p.write_text(json.dumps(data))
+    note = r.buffer_note(r.load_trace(p))
+    assert "21683" in note and "lower bounds" in note
+    assert len(r.events_of(r.load_trace(p))) == 1
+    buf[0]["chunks_discarded"] = 0
+    p.write_text(json.dumps(data))
+    assert "no chunks discarded" in r.buffer_note(r.load_trace(p))
+    assert "not in the trace" in r.buffer_note(r.load_trace(write_trace(tmp_path, [], wrap=False)))
+    assert "lower bounds" in r.render([], [], [], buffer="x lower bounds")
 
 
 def test_report_parses_as_python_3_9():

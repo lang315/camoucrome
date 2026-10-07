@@ -52,14 +52,52 @@ NOT_OBSERVABLE = [
     "Named and indexed access (localStorage.foo, navigator.plugins[0], "
     "mimeTypes['application/pdf']): it goes through interceptor callbacks, not the hooked ones",
     "Values: the report says that a page read a member, not what it got",
+    "V8 fast API calls: about 100 canvas-2D/WebGL methods and setters have a "
+    "[NoAllocDirectCall] fast path that skips the hooked callback once V8 optimizes the "
+    "call site, so canvas/webgl draw and state counts are lower bounds; read-outs "
+    "(toDataURL, getImageData, readPixels, getParameter, measureText, fillText, font) "
+    "are not affected, and a zero row is a real zero",
 ]
 
 
-def load_events(trace_path):
+def load_trace(trace_path):
     with open(trace_path) as f:
-        data = json.load(f)
+        return json.load(f)
+
+
+def events_of(data):
     events = data["traceEvents"] if isinstance(data, dict) else data
     return [e for e in events if e.get("cat") == CATEGORY]
+
+
+def load_events(trace_path):
+    return events_of(load_trace(trace_path))
+
+
+def _find(obj, key):
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        obj = list(obj.values())
+    if isinstance(obj, list):
+        for v in obj:
+            found = _find(v, key)
+            if found is not None:
+                return found
+    return None
+
+
+def buffer_note(data):
+    """A full trace buffer stops the whole trace (record-as-much-as-possible
+    discards new chunks): the session's tail is missing, observer events included."""
+    bufs = _find(data.get("metadata", {}) if isinstance(data, dict) else {}, "traced_buf")
+    if not bufs:
+        return "Trace buffer: stats not in the trace; whether it filled is unknown."
+    lost = sum(b.get("chunks_discarded", 0) for b in bufs)
+    if lost:
+        return (f"Trace buffer: FULL, {lost} chunks discarded. The trace stopped before the "
+                "session ended; the counts below are lower bounds.")
+    return "Trace buffer: no chunks discarded."
 
 
 def group_of(name):
@@ -73,9 +111,15 @@ def script_label(url):
     if not url:
         return "(no script)"
     u = urllib.parse.urlsplit(url)
+    if u.scheme in ("blob", "data"):
+        return u.scheme + ":"  # the rest is a per-object id or the script itself
     if not u.hostname:
         return url.split("?")[0].split("#")[0]
-    return u.hostname + (f":{u.port}" if u.port else "") + u.path
+    try:
+        port = f":{u.port}" if u.port else ""
+    except ValueError:  # malformed port: one bad event must not abort the report
+        port = ""
+    return u.hostname + port + u.path
 
 
 def surface_counts(events):
@@ -124,8 +168,10 @@ def load_cookie_names(db_path):
         con.close()
 
 
-def render(events, requests, cookies):
+def render(events, requests, cookies, buffer=None):
     lines = ["# Tracking observer report", ""]
+    if buffer:
+        lines += [buffer, ""]
     counts = surface_counts(events)
     by_site = collections.defaultdict(collections.Counter)
     for site, host, path, method in requests:
@@ -165,7 +211,8 @@ def main():
     ap.add_argument("--cookies")
     a = ap.parse_args()
     cookies = load_cookie_names(a.cookies) if a.cookies else []
-    print(render(load_events(a.trace), load_requests(a.netlog), cookies), end="")
+    data = load_trace(a.trace)
+    print(render(events_of(data), load_requests(a.netlog), cookies, buffer_note(data)), end="")
 
 
 if __name__ == "__main__":

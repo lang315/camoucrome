@@ -3,7 +3,8 @@
 Launches content_shell on a local probe with startup tracing, no CDP attached,
 and asserts EXACT per-name event counts with the right origin, site and script. Arms:
   on     category enabled: every row below must match exactly
-  off    tracing on for other categories: zero camou.observe events
+  off    tracing on for blink,loading: zero camou.observe events, and at least one
+         other event (an empty trace measured nothing)
   --red  same as `on` with every expectation off by one: must FAIL
   --timing  prints call timings with the category off and on (numbers, no verdict)
 Run under ~/camoucrome-verify/venv/bin/python3 on the build box.
@@ -23,7 +24,8 @@ import observe_report
 K = 3
 CATEGORY = observe_report.CATEGORY
 # "-*," excludes every default category: a filter listing only disabled-by-default
-# categories still enables all the default ones (51 MB trace for a tiny probe).
+# categories still enables all the default ones (box, this probe: 7.17 MB and 77
+# categories without "-*,", 68.9 KB and 2 with it).
 ON_FILTER = "-*," + CATEGORY
 
 PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 height=8></canvas>
@@ -104,7 +106,7 @@ def serve(k):
 
 
 def run(page, categories, k=K):
-    """One browser session; returns (events or None, page result, trace_path)."""
+    """One browser session; returns (every trace event or None, page result, trace_path)."""
     server, done, result = serve(k)
     port = server.server_port
     tmp = tempfile.mkdtemp(prefix="camoucrome-observe-")
@@ -137,7 +139,18 @@ def run(page, categories, k=K):
         server.shutdown()
     if not os.path.exists(trace):
         return None, dict(result, error="no trace file written"), trace
-    return observe_report.load_events(trace), result, trace
+    data = observe_report.load_trace(trace)
+    return (data["traceEvents"] if isinstance(data, dict) else data), result, trace
+
+
+def off_arm(events):
+    """(ok, camou events, other events): the category must stay off while tracing
+    demonstrably ran; metadata (thread names) is written even when nothing else is."""
+    if events is None:
+        return False, None, None
+    camou = sum(e.get("cat") == CATEGORY for e in events)
+    other = sum(e.get("cat") not in (CATEGORY, "__metadata") for e in events)
+    return camou == 0 and other > 0, camou, other
 
 
 def tally(events):
@@ -165,7 +178,7 @@ def main():
     if "webgl" in res:
         print(f"FAIL on-arm: probe reported {res}")
         return 1
-    c = tally(events)
+    c = tally(observe_report.events_of(events))
     port = None
     for (name, origin, site, script) in c:
         if origin and origin.startswith("http://127.0.0.1:"):
@@ -203,9 +216,10 @@ def main():
 
     # off arm: a normal default set ("blink,loading") must not pull the category in
     off_events, off_res, _ = run("probe.html", "blink,loading")
-    off_ok = off_events is not None and len(off_events) == 0
-    rows.append((off_ok == (not red), f"off arm (tracing on, category not requested): "
-                 f"{'no file' if off_events is None else len(off_events)} camou events (want 0)"))
+    off_ok, off_camou, off_other = off_arm(off_events)
+    rows.append((off_ok == (not red), "off arm (blink,loading traced, category not requested): "
+                 + ("no file" if off_events is None else f"{off_camou} camou, {off_other} other events")
+                 + " (want 0 camou, >0 other)"))
 
     passed = sum(ok for ok, _ in rows)
     for ok, text in rows:

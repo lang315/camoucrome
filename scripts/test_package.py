@@ -146,3 +146,17 @@ def test_refuses_observer_build(tree, tmp_path):
     (out / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n")
     with pytest.raises(SystemExit, match="camou_observe"):
         package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_refuses_observer_build_with_a_comment_or_no_spaces(tree, tmp_path):
+    src, out, deps = tree
+    for line in ("camou_observe = true # audit build", "camou_observe=true", "camou_observe=true#x"):
+        (out / "args.gn").write_text(f"is_debug = false\nis_component_build = false\n{line}\n")
+        with pytest.raises(SystemExit, match="camou_observe"):
+            package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_a_trailing_comment_does_not_hide_a_release_arg(tree, tmp_path):
+    src, out, deps = tree
+    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\n")
+    package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
