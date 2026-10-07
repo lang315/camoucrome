@@ -380,3 +380,57 @@ New rows, each RED first on the S2b build:
   edge rule.
 - `captureStream`'s one-copy path, and the `transferControlToOffscreen`
   placeholder.
+
+## Amended during planning (2026-10-07)
+
+The box recon of `~/chromium-s2c` (Chromium 154) changed these points. Each
+replaces the text above it, and the plan
+(`plans/2026-10-07-canvas-noise-s2c.md`) implements the amended form.
+
+- **No `clear_frame` reset.** `clear_frame` does not clear the surface: it
+  only decides whether the last recording is kept for printing. A
+  full-canvas `putImageData` also sets it, through `RestartRecording`, so a
+  reset on it would wipe that write's `imported` marks. The mask resets only
+  in `ResetInternal` (as in S2b) and through the kinds of the ops it walks:
+  an overdraw's covering op is recorded and walked.
+- **`putImageData` marks after `WritePixels`.**
+  - A partial write flushes the pending recording inside `WritePixels`, so
+    those ops are marked first, in order.
+  - A full-canvas write drops the pending recording without rastering it,
+    and its own `imported` mark covers the canvas.
+  - The offscreen `WritePixels` always flushes first.
+- **The flush walk's details.**
+  - A failed allocation of the coverage bitmap marks the **whole canvas**
+    `imported`, because no device clip exists without a canvas.
+  - An op's area is its local bounds grown by the paint's fast bounds
+    **before** the matrix. `cc::PaintOp::ComputePaintRect` grows them after
+    the matrix, which under-covers a scaled stroke.
+  - Layers arrive as a `DrawRecordOp` (`local_ctm` false). They are marked
+    `imported` over the clip and played for their matrix.
+  - Lite ops (`DrawLineLiteOp`, `DrawArcLiteOp`) are rastered through their
+    `CorePaintFlags`.
+- **Composited draws keep S2b's text carve-out.** The clip of a `SaveLayer*`
+  is marked `imported` by the first op inside it that is not text, or by
+  text whose style is a pattern. Shadowed or filtered text alone marks
+  nothing, as in S2b's `CamouMarkClip`.
+- **A page framebuffer's extent comes from a double read.** Blink does not
+  track a framebuffer's size, and the read attachment's size is not
+  available.
+  - The expanded rect is read twice, into buffers filled `0x00` and `0xFF`.
+    GL leaves a pixel outside the framebuffer unwritten, so the pixels where
+    the two reads agree are the framebuffer's.
+  - C37 checks it: the framebuffer's edge pixels must stay exact.
+  - A framebuffer read with margins therefore costs two extra reads. The
+    default framebuffer still uses `drawingBufferWidth()`/`Height()` and one
+    read.
+- **C39 and C40 are proven by mutation, not RED on S2b.** S2b already
+  satisfies both: it noises the whole snapshot, and it marks at draw time.
+  - C39 fails when the regional path noises unpremultiplied values.
+  - C40 fails when the mask is reset at every flush.
+- **C35 and C37.** C35 also requires interior edge pixels in the unconfigured
+  read (a vacuity guard). C37 also requires the framebuffer's edge pixels to
+  stay exact (`edgeDiff`).
+- **Found by the recon, recorded as known gaps** (not in this slice's scope):
+  - `transferToImageBitmap` on an `OffscreenCanvas` returns an un-noised
+    image;
+  - so do the offscreen `convertToBlob` paths that bypass `CamouNoised`.
