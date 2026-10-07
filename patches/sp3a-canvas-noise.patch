@@ -296,17 +296,17 @@ index 3d7a843995..18f2357bbc 100644
    if (host && host->ShouldCaptureRenderedText()) {
      gfx::RectF exact_bounds = bounds;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
-index e3a1ba84d9..dc33f6360d 100644
+index e3a1ba84d9..347e7b0342 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
 @@ -256,6 +256,17 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasRenderingContext,
    bool IsOpaque() const final {
      return color_params_.GetAlphaType() == kOpaque_SkAlphaType;
    }
-+  // Camoucrome canvas noise S2b: eligible once the coverage mask holds a
-+  // mark; each pixel is then gated by the mask.
++  // Camoucrome canvas noise S2b: eligible once some pixel carries an
++  // aa-only mark; each pixel is then gated by the mask.
 +  bool CamouNoiseEligible() const override {
-+    return camou_mask_ && !camou_mask_->empty();
++    return camou_mask_ && camou_mask_->has_aa();
 +  }
 +  camoucfg::NoiseMask CamouNoiseMask() const override {
 +    return camou_mask_ ? camou_mask_->view() : camoucfg::NoiseMask();
@@ -318,7 +318,7 @@ index e3a1ba84d9..dc33f6360d 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..f09cf0f38e 100644
+index 332d1f5c54..3b0295ac22 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -23,6 +23,10 @@
@@ -340,13 +340,16 @@ index 332d1f5c54..f09cf0f38e 100644
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -851,6 +856,96 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -851,6 +856,98 @@ void Canvas2DRecorderContext::ResetInternal() {
    origin_tainted_by_content_ = false;
  }
  
 +bool Canvas2DRecorderContext::CamouMaskActive() const {
-+  return camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())) !=
-+         0;
++  // A context with no canvas host (a CSS paint worklet's) is never read
++  // back, so its draws are not replayed.
++  return GetCanvasRenderingContextHost() != nullptr &&
++         camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())) !=
++             0;
 +}
 +
 +camoucfg::CanvasNoiseMask::Kind Canvas2DRecorderContext::CamouKindFor(
@@ -371,15 +374,19 @@ index 332d1f5c54..f09cf0f38e 100644
 +             : Kind::kSolid;
 +}
 +
-+void Canvas2DRecorderContext::CamouMarkRect(
-+    const SkIRect& area,
-+    camoucfg::CanvasNoiseMask::Kind kind) {
++void Canvas2DRecorderContext::CamouEnsureMask() {
 +  if (!camou_mask_ ||
 +      camou_mask_->width() != static_cast<size_t>(Width()) ||
 +      camou_mask_->height() != static_cast<size_t>(Height())) {
 +    camou_mask_ = std::make_unique<camoucfg::CanvasNoiseMask>(
 +        static_cast<size_t>(Width()), static_cast<size_t>(Height()));
 +  }
++}
++
++void Canvas2DRecorderContext::CamouMarkRect(
++    const SkIRect& area,
++    camoucfg::CanvasNoiseMask::Kind kind) {
++  CamouEnsureMask();
 +  camou_mask_->MarkRect(area.x(), area.y(), area.width(), area.height(),
 +                        kind);
 +}
@@ -422,12 +429,7 @@ index 332d1f5c54..f09cf0f38e 100644
 +  SkCanvas canvas(coverage);
 +  canvas.translate(-area.x(), -area.y());
 +  record.Playback(&canvas);
-+  if (!camou_mask_ ||
-+      camou_mask_->width() != static_cast<size_t>(Width()) ||
-+      camou_mask_->height() != static_cast<size_t>(Height())) {
-+    camou_mask_ = std::make_unique<camoucfg::CanvasNoiseMask>(
-+        static_cast<size_t>(Width()), static_cast<size_t>(Height()));
-+  }
++  CamouEnsureMask();
 +  camou_mask_->Merge(static_cast<const uint8_t*>(coverage.getPixels()),
 +                     coverage.rowBytes(), area.x(), area.y(),
 +                     static_cast<size_t>(area.width()),
@@ -437,7 +439,7 @@ index 332d1f5c54..f09cf0f38e 100644
  void Canvas2DRecorderContext::reset() {
    UseCounter::Count(GetTopExecutionContext(),
                      WebFeature::kCanvasRenderingContext2DReset);
-@@ -1981,6 +2076,15 @@ void Canvas2DRecorderContext::clearRect(double x,
+@@ -1981,6 +2078,15 @@ void Canvas2DRecorderContext::clearRect(double x,
        host->ClearRenderedText(canvas_clear_rect);
      }
    }
@@ -454,7 +456,7 @@ index 332d1f5c54..f09cf0f38e 100644
      CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
                    OverdrawOp::kClearRect);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..60d4e3b680 100644
+index 6ee4b2b0d1..409dcf6128 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -8,6 +8,7 @@
@@ -473,18 +475,21 @@ index 6ee4b2b0d1..60d4e3b680 100644
  #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_image_smoothing_quality.h"
-@@ -400,6 +402,44 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -400,6 +402,47 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
    const Font* AccessFont(HTMLCanvasElement* canvas);
  
 +  // Camoucrome canvas noise S2b: which pixels may carry readback noise.
-+  // Every draw's coverage is merged in at DrawInternal (one choke point,
-+  // so no API list): anti-aliased and rasteriser-dependent pixels are
++  // Merged in at DrawInternal; clearRect and putImageData are hooked
++  // separately; drawFocusIfNeeded's ring bypasses it (known gap).
++  // Anti-aliased and rasteriser-dependent pixels are
 +  // marked aa, page-supplied ones imported, and a full opaque solid cover
 +  // clears both. Null until the first draw with canvas:seed set.
 +  std::unique_ptr<camoucfg::CanvasNoiseMask> camou_mask_;
 +  // canvas:seed is set, so draws are replayed into camou_mask_.
 +  bool CamouMaskActive() const;
++  // Creates camou_mask_ (or re-creates it after a resize).
++  void CamouEnsureMask();
 +  // The mask kind for a fill or stroke with `flags`.
 +  camoucfg::CanvasNoiseMask::Kind CamouKindFor(
 +      CanvasRenderingContext2DState::PaintType paint_type,
@@ -518,7 +523,7 @@ index 6ee4b2b0d1..60d4e3b680 100644
    ALWAYS_INLINE CanvasRenderingContext2DState& GetState() const {
      return *state_stack_.back();
    }
-@@ -787,6 +827,79 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
+@@ -787,6 +830,79 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
    Recorder()->RestartCurrentLayer();
  }
  
@@ -598,7 +603,7 @@ index 6ee4b2b0d1..60d4e3b680 100644
  template <Canvas2DRecorderContext::OverdrawOp CurrentOverdrawOp,
            typename DrawFunc,
            typename DrawCoversClipBoundsFunc>
-@@ -809,6 +922,9 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -809,6 +925,9 @@ void Canvas2DRecorderContext::DrawInternal(
    const CanvasRenderingContext2DState& state = GetState();
    SkBlendMode global_composite = state.GlobalComposite();
    if (ShouldUseCompositedDraw(paint_type, image_type)) {
@@ -608,26 +613,29 @@ index 6ee4b2b0d1..60d4e3b680 100644
      WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
      CompositedDraw(draw_func, paint_canvas, paint_type, image_type);
      ResetAlphaIfNeeded(paint_canvas, global_composite);
-@@ -817,6 +933,18 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -817,6 +936,21 @@ void Canvas2DRecorderContext::DrawInternal(
      paint_canvas->clear(HasAlpha() ? SkColors::kTransparent : SkColors::kBlack);
      const cc::PaintFlags* flags =
          state.GetFlags(paint_type, kDrawForegroundOnly, image_type);
 +    // "copy" replaces every pixel of the clip: outside the shape they
 +    // become transparent (exact), inside they take the shape's marks.
 +    if (CamouMaskActive()) {
++      // A fill, whatever the draw's own style: a stroke would clear only
++      // the clip's outline.
 +      CamouReplay(
 +          [&clip_bounds](MemoryManagedPaintCanvas* mc,
 +                         const cc::PaintFlags* f) {
 +            mc->setMatrix(SkM44());
 +            mc->drawRect(SkRect::Make(clip_bounds), *f);
 +          },
-+          *flags, camoucfg::CanvasNoiseMask::Kind::kClear, clip_bounds);
++          cc::PaintFlags(), camoucfg::CanvasNoiseMask::Kind::kClear,
++          clip_bounds);
 +      CamouMark(draw_func, flags, paint_type, clip_bounds, draw_type);
 +    }
      WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
      draw_func(paint_canvas, flags);
      ResetAlphaIfNeeded(paint_canvas, global_composite, &bounds);
-@@ -833,6 +961,7 @@ void Canvas2DRecorderContext::DrawInternal(
+@@ -833,6 +967,7 @@ void Canvas2DRecorderContext::DrawInternal(
            CheckOverdraw(flags, image_type, CurrentOverdrawOp);
          }
        }
@@ -662,20 +670,22 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..60f0504bd7 100644
+index 26c0a088cc..87405f2c5d 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -25,6 +25,9 @@
+@@ -25,6 +25,11 @@
  
  #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
  
++#include "base/numerics/checked_math.h"
++#include "base/process/memory.h"
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
 +
  #include <inttypes.h>
  
  #include <memory>
-@@ -5356,6 +5359,149 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5361,165 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -750,8 +760,24 @@ index 26c0a088cc..60f0504bd7 100644
 +        const base::span<uint8_t> camou_page =
 +            UNSAFE_BUFFERS(base::span<uint8_t>(
 +                camou_dst, (camou_in_h - 1) * camou_rb + camou_in_w * 4));
-+        Vector<uint8_t> camou_e(static_cast<wtf_size_t>(camou_ew * camou_eh * 4));
-+        const base::span<uint8_t> camou_scratch(camou_e);
++        // Fallible: a size overflow or a failed allocation skips the noise,
++        // and the read stays stock, never a crash.
++        base::CheckedNumeric<size_t> camou_bytes = camou_ew;
++        camou_bytes *= camou_eh;
++        camou_bytes *= 4;
++        void* camou_raw = nullptr;
++        if (!camou_bytes.IsValid() ||
++            !base::UncheckedMalloc(camou_bytes.ValueOrDie(), &camou_raw) ||
++            camou_raw == nullptr) {
++          return;
++        }
++        std::unique_ptr<uint8_t, void (*)(void*)> camou_e(
++            static_cast<uint8_t*>(camou_raw), &base::UncheckedFree);
++        // SAFETY: camou_raw holds camou_bytes bytes.
++        const base::span<uint8_t> camou_scratch =
++            UNSAFE_BUFFERS(base::span<uint8_t>(
++                camou_e.get(), camou_bytes.ValueOrDie()));
++        std::ranges::fill(camou_scratch, uint8_t{0});
 +        // `n` pixels of drawing-buffer row `gy` from column `gx`.
 +        auto camou_row = [&](int64_t gx, int64_t gy, size_t n) {
 +          return camou_scratch.subspan(
@@ -809,7 +835,7 @@ index 26c0a088cc..60f0504bd7 100644
 +          }
 +        }
 +        if (camou_strips) {
-+          camoucfg::PerturbRgbaFromConfig(camou_e.data(), camou_ew, camou_eh,
++          camoucfg::PerturbRgbaFromConfig(camou_e.get(), camou_ew, camou_eh,
 +                                          camou_ew * 4,
 +                                          camoucfg::ScopeFor(ec));
 +          for (size_t r = 0; r < camou_in_h; ++r) {
