@@ -237,6 +237,32 @@ call it):
 - What is committed: API names and counts, request hosts and query-stripped
   paths, cookie names. Never cookie values, account ids, or beacon payloads.
 
+## Phase 1c: script attribution (approved 2026-10-07)
+
+The facebook arm-4 recon (tiki.vn) showed the limit of origin attribution:
+Meta Pixel (`fbevents.js`) and the Facebook SDK run as first-party scripts, so
+all 21 154 reads were attributed to `https://tiki.vn` and none to Meta. A
+reading *origin* cannot separate a page's own code from the third-party
+scripts it includes.
+
+- `Emit` adds a third argument, `script`: the URL of the script at the top of
+  the JavaScript stack, from `v8::StackTrace::CurrentScriptNameOrSourceURL(isolate)`
+  (`v8/include/v8-debug.h:187`; Blink's `capture_source_location.cc` uses the
+  same call). It is computed only inside `Emit`, so only when the category is
+  enabled; the flag-off and category-off paths are unchanged. An inline
+  script reports its document's URL; code with no script (or `eval` without a
+  `sourceURL`) reports an empty string.
+- The report adds a `script` column (host and path, query and fragment
+  stripped), so a row reads "on site X, script Y from origin Z called API A,
+  N times".
+- The verify gains three rows: main-frame reads carry the probe page's URL,
+  worker reads carry `/worker.js`, iframe reads carry `/frame.html`. RED
+  inverts them like the others.
+- The surrogate-page approach (load `fbevents.js` on a local page with a real
+  pixel id) is not used: it would send fabricated events into a third party's
+  pixel. Re-running arm 4 on the real page with script attribution answers the
+  same question.
+
 ## Phase 1b: live dashboard `chrome://camou-observe`
 
 Approved 2026-10-06 as a separate slice of this spec, built after the phase 1
