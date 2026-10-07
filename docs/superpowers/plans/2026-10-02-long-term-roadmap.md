@@ -583,6 +583,8 @@ stock there, and what remains is S4's flip.
    permission order, the Android claim with a coarse pointer and zero touch
    points (a coherence defect, cheap, not on the Windows path).
 
+**Tracking observer (2026-10-07):** phase 1 (an audit build that counts fingerprint reads per site and script) and the facebook recon shipped (`measurements/2026-10-07-fb-observe.md`); phase 1b dashboard, V8/Intl hooks, fast-call counting and the instagram/threads recon are pending (`docs/observer/followups.md`).
+
 `screenX` and `measureText` are recorded design trade-offs in the 2026-09-24
 triage, not gaps. Slice residuals in the follow-on roadmap keep their
 recorded dispositions and harness gates.
