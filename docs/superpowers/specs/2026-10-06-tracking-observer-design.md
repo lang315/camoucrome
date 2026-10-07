@@ -149,7 +149,7 @@ scripts/observe_report.py trace.json net.json [--cookies DB] -> per-site markdow
 
 ```
 chrome --user-data-dir=<fresh profile> \
-  --trace-startup=disabled-by-default-camou.observe \
+  --trace-startup=-*,disabled-by-default-camou.observe \
   --trace-startup-format=json --trace-startup-file=<trace.json> \
   --trace-startup-duration=0 \
   --trace-startup-record-mode=record-as-much-as-possible \

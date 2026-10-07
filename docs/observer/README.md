@@ -17,7 +17,7 @@ release. With the arg off, the generated calls compile to nothing.
 ## Run
 
     chrome --user-data-dir=<fresh profile> \
-      --trace-startup=disabled-by-default-camou.observe \
+      --trace-startup=-*,disabled-by-default-camou.observe \
       --trace-startup-format=json --trace-startup-file=<trace.json> \
       --trace-startup-duration=0 \
       --trace-startup-record-mode=record-as-much-as-possible \
@@ -25,6 +25,10 @@ release. With the arg off, the generated calls compile to nothing.
 
 Browse, then close the browser normally. The trace is written at shutdown; a
 killed browser leaves no trace file. Use one fresh profile per site.
+
+The `-*,` prefix matters: a filter listing only disabled-by-default categories
+still enables every default category, which made traces tens to hundreds of MB
+and carried unrelated browsing data.
 
 `--trace-startup-duration=0` (record until exit) is the documented setting for
 `chrome` sessions closed normally. `scripts/verify_observe.py` instead uses
