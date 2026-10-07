@@ -228,8 +228,12 @@ Cost (WSL `content_shell`, CPU raster, SwiftShader GL):
 | | before (Task 1) | after (Task 5) |
 |---|---|---|
 | draw | 1.43 (35.70 / 24.90 ms) | 4.35 (109.95 / 25.25 ms) |
-| readPixels 64x64 | 1.33 | 1.11 (1.00 / 0.90 ms) |
-| readPixels 1024x1024 | 15.89 | 7.06 (29.65 / 4.20 ms) |
+| readPixels 64x64 | 1.33 | ~~1.11 (1.00 / 0.90 ms)~~ INVALID, see section 12 |
+| readPixels 1024x1024 | 15.89 | ~~7.06 (29.65 / 4.20 ms)~~ INVALID, see section 12 |
+
+The two struck `readPixels` values are invalid: they were measured before the Task 5 seed
+gate, when the unconfigured arm also did the strips and the scratch copy, so its
+denominator (0.90 / 4.20 ms) was inflated. Section 12 has the corrected figures.
 
 The draw ratio is above 2.0. It is attributed to the 2D mask replay (Tasks 3-4);
 no draw ratio was measured between Task 1 and Task 5. This task touches
@@ -387,7 +391,9 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
   baseline (C2-C5, C10, C11).
 - Cost, WSL `content_shell` (CPU raster, SwiftShader GL), so GPU raster is not
   represented. Draw ratio 1.43 before, 4.35 after; above the spec's 2x line, so a known
-  gap for S2c. `readPixels` 64x64 1.33 to 1.11; 1024x1024 15.89 to 7.06.
+  gap for S2c. `readPixels` 64x64 1.33x to ~3.3x; 1024x1024 15.89x to ~21.5x (seeded
+  40.9 ms vs unconfigured 1.9 ms). This is a regression against PR #27, and an S2c gap next
+  to the draw cost (the earlier 1.11x and 7.06x are invalid, see section 6 and section 12).
 
 ### Step 2
 
@@ -580,10 +586,15 @@ script uses `lib_shell.session`).
 | readPixels 64x64 | 1.05 ms | 0.30 ms | 3.50 |
 | readPixels 1024x1024 | 40.00 ms | 1.90 ms | 21.05 |
 
-The `readPixels` ratios are not comparable with section 6: the script's GL arm now runs
-with `SHELL_FLAGS` plus the SwiftShader flags (the old script dropped
-`--ozone-platform=headless`), which changes the unconfigured baseline. The draw ratio is
-close to the earlier 4.35.
+The section 6 `readPixels` values (1.11x and 7.06x) were measured before the Task 5 seed
+gate, so the unconfigured arm also did the strips and scratch: 0.90 / 4.20 ms, against
+0.30 / 1.80 ms for PR #27 and 0.30 / 1.90 ms now. That inflated denominator, not the script
+flags, is the cause of the apparent improvement; the true `readPixels` cost is a regression
+against PR #27 (1.33x and 15.89x). The controller re-measured on WSL with the new script:
+4.68 / 3.33 / 21.53 (draw / 64x64 / 1024x1024), and 4.47 / 3.67 / 22.05 from a copy whose
+A/B `sed` did not match, so that run is not a flags test. The flags' own effect was not
+isolated. The seeded 1024x1024 arm also rose from 29.65 ms (section 6) to about 40-41 ms,
+which is unexplained. The draw ratio is close to the earlier 4.35.
 
 ### Windows (W12, base `55d16f07`)
 
