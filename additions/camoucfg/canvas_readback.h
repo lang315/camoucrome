@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "components/camoucfg/canvas_noise.h"
 #include "components/camoucfg/mask_config.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
@@ -19,16 +20,20 @@ namespace camoucfg {
 // read one field per canvas state.
 
 // A raster copy of `canvas` with PerturbRgbaEdges applied to its
-// premultiplied RGBA8 pixels, keyed by `seed` folded with CanvasStateHash of
-// the canvas. nullptr when nothing would change: seed 0, a colour type other
+// premultiplied RGBA8 pixels, keyed by `seed` and each pixel's 3x3 patch (canvas
+// noise S2b), with `min_alpha` as the eligibility floor (255 for WebGL), `mask`
+// gating each pixel, and `bottom_up` for a raster stored bottom-up (a
+// kOriginBottomLeft snapshot). nullptr when nothing would change: seed 0, a colour type other
 // than 8-bit RGBA/BGRA (a float canvas stays stock), or a failed read.
 sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
-                           double density, int32_t strength);
+                           double density, int32_t strength, uint8_t min_alpha,
+                           const NoiseMask& mask, bool bottom_up);
 
 // NoisedImage with canvas:seed / canvas:noiseDensity / canvas:noiseStrength
 // from `scope`. The Blink snapshot hook (CanvasRenderingContext::CamouNoised).
 sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
-                                 const ConfigScope& scope);
+                                 const ConfigScope& scope, uint8_t min_alpha,
+                                 const NoiseMask& mask, bool bottom_up);
 
 }  // namespace camoucfg
 

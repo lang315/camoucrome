@@ -14,6 +14,22 @@
 
 namespace camoucfg {
 
+// Per-pixel readback-noise eligibility (canvas noise S2b). `cells` holds one
+// byte per cell of (1 << shift) x (1 << shift) pixels, `stride` cells per
+// row, in the same row order as the image; a pixel may change only if its
+// cell is exactly kNoiseMaskAa. The mask covers `width` x `height` pixels and
+// applies only to an image of that size. A default NoiseMask (cells ==
+// nullptr) lets every pixel change.
+inline constexpr uint8_t kNoiseMaskAa = 1;
+inline constexpr uint8_t kNoiseMaskImported = 2;
+struct NoiseMask {
+  const uint8_t* cells = nullptr;
+  size_t stride = 0;
+  int shift = 0;
+  size_t width = 0;
+  size_t height = 0;
+};
+
 // Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
 // `row_bytes` apart. `source` is an unperturbed copy with the same geometry,
 // and every eligibility test reads it, so the result does not depend on the
@@ -27,27 +43,30 @@ namespace camoucfg {
 // premultiplied data every result is a value stock can store at that alpha.
 // `density` is the fraction of eligible pixels' RGB channels perturbed; the
 // default is calibrated in measurements/2026-10-canvas-noise.md.
-// Data that is not premultiplied passes min_alpha 255. Pure: a function of
-// (seed, x, y, channel) and `source`. seed == 0, density <= 0 (or NaN), or
-// strength <= 0 is a no-op.
+// Data that is not premultiplied passes min_alpha 255.
+// Pure: the noise of a pixel is a function of (seed, its 3x3 neighbourhood in
+// `source`, channel) -- no position and no whole-image state (canvas noise
+// S2b), so one patch gets one noise wherever it is and whatever else the
+// image holds. The patch is hashed in top-down row order; `bottom_up` says the
+// buffer's rows run bottom-up (WebGL readPixels), so one image gets one field
+// in either orientation. `mask` gates each pixel (see NoiseMask); a mask for
+// another size makes the call a no-op. A mask is for top-down images only: a
+// mask with `bottom_up` makes the call a no-op. seed == 0, density <= 0 (or
+// NaN), or strength <= 0 is a no-op.
 void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
                       size_t height, size_t row_bytes, uint64_t seed,
-                      double density, int32_t strength, uint8_t min_alpha);
-
-// A hash of a whole canvas's current contents (RGBA8, `row_bytes` apart),
-// from an even sample of at most 65536 pixels plus the size.
-uint64_t CanvasStateHash(const uint8_t* rgba, size_t width, size_t height,
-                         size_t row_bytes);
+                      double density, int32_t strength, uint8_t min_alpha,
+                      const NoiseMask& mask, bool bottom_up);
 
 // PerturbRgbaEdges over a `width` x `height` RGBA8 rect whose rows are
 // `row_bytes` apart (the WebGL readPixels destination at its pack layout),
-// neighbours read within the rect, with a hash of the first 1024 bytes of a
-// TIGHT copy of its pixels folded into `seed` -- so one pixel content gets
-// one field whatever the row padding or stride (review 2026-09-24 #23).
-// Only opaque pixels change: a premultipliedAlpha:false context stores
-// unpremultiplied values. row_bytes < width * 4 is a no-op.
+// neighbours read within the rect, no mask. The field depends only on each
+// pixel's 3x3 patch, so row padding and stride do not change it. Only opaque
+// pixels change: a premultipliedAlpha:false context stores unpremultiplied
+// values. row_bytes < width * 4 is a no-op.
 void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
-                 uint64_t seed, double density, int32_t strength);
+                 uint64_t seed, double density, int32_t strength,
+                 bool bottom_up);
 
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
@@ -55,7 +74,7 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
                        int32_t& strength);
 
 // Reads canvas:seed / canvas:noiseDensity / canvas:noiseStrength from `scope`
-// and calls PerturbRgba. The WebGL readPixels path; the canvas sites use
+// and calls PerturbRgba on bottom-up rows. The WebGL readPixels path; the canvas sites use
 // NoisedCanvasImage (canvas_readback.h). Absent or zero canvas:seed is a no-op.
 void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
                            size_t row_bytes, const ConfigScope& scope);
