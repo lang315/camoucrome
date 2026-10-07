@@ -5,9 +5,10 @@
 #include "components/camoucfg/canvas_readback.h"
 
 #include <algorithm>
-#include <vector>
+#include <memory>
 
 #include "base/containers/span.h"
+#include "base/process/memory.h"
 #include "components/camoucfg/canvas_noise.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -37,11 +38,18 @@ sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
   // SAFETY: the bitmap owns computeByteSize() bytes at getPixels().
   const base::span<const uint8_t> all = UNSAFE_BUFFERS(
       base::span<const uint8_t>(pixels, bitmap.computeByteSize()));
-  const std::vector<uint8_t> source(all.begin(), all.end());
+  // A fallible copy: on failure the snapshot stays stock rather than crash.
+  void* raw = nullptr;
+  if (!base::UncheckedMalloc(all.size(), &raw) || raw == nullptr) {
+    return nullptr;
+  }
+  std::unique_ptr<uint8_t, void (*)(void*)> source(static_cast<uint8_t*>(raw),
+                                                   &base::UncheckedFree);
+  std::copy(all.begin(), all.end(), source.get());
   const size_t w = info.width(), h = info.height(), row = bitmap.rowBytes();
   const uint8_t floor =
       info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
-  PerturbRgbaEdges(pixels, source.data(), w, h, row, seed, density, strength,
+  PerturbRgbaEdges(pixels, source.get(), w, h, row, seed, density, strength,
                    std::max(min_alpha, floor), mask, bottom_up);
   bitmap.setImmutable();
   return SkImages::RasterFromBitmap(bitmap);

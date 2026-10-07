@@ -51,6 +51,9 @@ class CanvasNoiseMask {
                 Kind kind);
 
   bool empty() const { return cells_.empty(); }
+  // True iff some cell is exactly kNoiseMaskAa (aa without imported): the
+  // only cells readback noise may change.
+  bool has_aa() const { return aa_cells_ > 0; }
   // The cells for PerturbRgbaEdges. Only meaningful when !empty(): an empty
   // view has cells == nullptr, which means "every pixel may change".
   NoiseMask view() const;
@@ -71,6 +74,7 @@ class CanvasNoiseMask {
   const size_t rows_;
   std::vector<uint8_t> cells_;
   uint64_t generation_ = 0;
+  size_t aa_cells_ = 0;  // cells whose byte equals kNoiseMaskAa
 };
 
 }  // namespace camoucfg
