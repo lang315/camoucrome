@@ -159,10 +159,10 @@ index a158629b41..3ac9b3d648 100644
    "execution_context_lifecycle_observer.cc",
 diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.cc b/third_party/blink/renderer/core/execution_context/camou_observe.cc
 new file mode 100644
-index 0000000000..64c3ddbb12
+index 0000000000..c017146e12
 --- /dev/null
 +++ b/third_party/blink/renderer/core/execution_context/camou_observe.cc
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,53 @@
 +// Copyright 2026 The Camoucrome Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -173,8 +173,10 @@ index 0000000000..64c3ddbb12
 +
 +#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 +#include "third_party/blink/renderer/core/frame/local_dom_window.h"
++#include "third_party/blink/renderer/platform/bindings/v8_binding.h"
 +#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 +#include "v8/include/v8-context.h"
++#include "v8/include/v8-debug.h"
 +#include "v8/include/v8-isolate.h"
 +#include "v8/include/v8-local-handle.h"
 +
@@ -186,7 +188,9 @@ index 0000000000..64c3ddbb12
 +// work below never run in an ordinary session. `site` is the top-level site for
 +// a window; worker scopes have no StorageKey accessor at this pin, so it stays
 +// empty and the report groups worker reads by origin (a dedicated worker's is
-+// its creator's).
++// its creator's). `script` is the URL of the script at the top of the stack
++// (an inline script reports its document's URL; no script, or eval without a
++// sourceURL, reports an empty string).
 +void Emit(const char* name, v8::Isolate* isolate) {
 +  v8::Local<v8::Context> v8_context = isolate->GetCurrentContext();
 +  ExecutionContext* context =
@@ -201,8 +205,12 @@ index 0000000000..64c3ddbb12
 +      site = window->GetStorageKey().GetTopLevelSite().Serialize().Utf8();
 +    }
 +  }
++  std::string script =
++      ToCoreStringWithNullCheck(
++          isolate, v8::StackTrace::CurrentScriptNameOrSourceURL(isolate))
++          .Utf8();
 +  TRACE_EVENT_INSTANT(CAMOU_OBSERVE_CATEGORY, perfetto::StaticString(name),
-+                      "origin", origin, "site", site);
++                      "origin", origin, "site", site, "script", script);
 +}
 +
 +}  // namespace blink::camou_observe
