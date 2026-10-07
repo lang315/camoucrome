@@ -63,7 +63,9 @@ Each ruling is recorded here so the executor does not re-litigate it.
 - **C39 and C40 are mutation-proven, not RED on S2b.** S2b already noises the whole snapshot (so a sub-rect equals the full read) and marks at draw time (so flush count does not matter). Both rows therefore pass on the S2b build. They guard Task 5 and Task 4. Each is seen failing under a named mutation before the real code goes in:
   - C39: the regional path noises the unpremultiplied `ImageData` buffer.
   - C40: the mask is reset at every flush, not only on `clear_frame`.
-- **The sync check runs on a branch-substituted copy.** Main's `scripts/check_checkout_sync.sh` hard-codes `camoucrome/main`, so W6 runs `sed 's#camoucrome/main#camoucrome/s2c#g'` of it from `/tmp`, with `local ~/chromium-s2c/src`. If the observe slice lands its three-argument version first, use that instead.
+- **The sync check runs on a branch-substituted copy.** Main's `scripts/check_checkout_sync.sh` hard-codes `camoucrome/main`, so W6 writes `sed 's#camoucrome/main#camoucrome/s2c#g'` of it to `/tmp/s2c-tree/scripts/check_sync_s2c.sh` and runs it there with `local ~/chromium-s2c/src`.
+  - The copy must sit next to the original. The script finds the repo as its own directory's parent and globs `additions/camoucfg/*` there; a copy in `/tmp/s2c/` would compare an empty file list and pass vacuously.
+  - If the observe slice lands its three-argument version first, use that instead.
 - **Verifies point at the workdir build** through `CAMOU_OUT=/home/lang/chromium-s2c/src/out/Default` (`lib_shell` reads it). A run without it measures the observe tree's binary.
 - **`PerturbRgbaEdges(data, source, …)` stays as the two-buffer contract.** It shares the row kernel with the in-place form, and the unit tests pin the two forms equal on random and structured inputs.
 - **A golden characterization test pins the field before the loop rewrite.** Task 2 writes the test first with a zero placeholder hash, runs it on the S2b build, pastes the reported value, and only then rewrites the loop.
@@ -203,8 +205,8 @@ git log --format=%s f89f3a4363..HEAD | wc -l          # 38
 git log --format=%s f89f3a4363..HEAD | grep -c fixup  # 0
 git status --porcelain -- . ':(exclude)out' | wc -l   # 0
 cd /tmp/s2c-tree && bash scripts/export.sh ~/chromium-s2c/src camoucrome/s2c
-sed 's#camoucrome/main#camoucrome/s2c#g' scripts/check_checkout_sync.sh > /tmp/s2c/check_sync_s2c.sh
-bash /tmp/s2c/check_sync_s2c.sh local ~/chromium-s2c/src | tail -1
+sed 's#camoucrome/main#camoucrome/s2c#g' scripts/check_checkout_sync.sh > scripts/check_sync_s2c.sh
+bash scripts/check_sync_s2c.sh local ~/chromium-s2c/src | tail -1   # run from /tmp/s2c-tree: ROOT is the script's dir/..
 tar czf /tmp/s2c/export.tgz additions patches settings/invariants.json
 sha256sum /tmp/s2c/export.tgz
 echo S2CEXPORT-BEGIN$(base64 -w0 /tmp/s2c/export.tgz)S2CEXPORT-END
@@ -1650,12 +1652,18 @@ NEW_DECLS = '''  void CamouMarkRect(const SkIRect& area,
   // recording) into camou_mask_, in order: canvas noise S2c computes the
   // mask at flush, from the page's own recording, not per draw.
   void CamouMarkRecord(const cc::PaintRecord& record);
-  // CamouMarkRecord's walk. `layer_depth` is the save count at which a
-  // composited draw began (its ops are skipped), or 0.
+  // A composited draw in progress: the save count it began at (0: none),
+  // its clip, and whether that clip is marked yet.
+  struct CamouLayer {
+    int depth = 0;
+    SkIRect clip = SkIRect::MakeEmpty();
+    bool marked = false;
+  };
+  // CamouMarkRecord's walk.
   void CamouWalk(const cc::PaintRecord& record,
                  SkCanvas& canvas,
                  const cc::PlaybackParams& params,
-                 int& layer_depth);
+                 CamouLayer& layer);
   // Merges one draw op under `canvas`'s matrix and clip.
   void CamouMarkOp(const cc::PaintOp& op,
                    SkCanvas& canvas,
@@ -1773,33 +1781,51 @@ void Canvas2DRecorderContext::CamouMarkRecord(const cc::PaintRecord& record) {
   }
   SkCanvas canvas(camou_coverage_);
   const cc::PlaybackParams params;
-  int layer_depth = 0;
-  CamouWalk(record, canvas, params, layer_depth);
+  CamouLayer layer;
+  CamouWalk(record, canvas, params, layer);
 }
 
 void Canvas2DRecorderContext::CamouWalk(const cc::PaintRecord& record,
                                         SkCanvas& canvas,
                                         const cc::PlaybackParams& params,
-                                        int& layer_depth) {
+                                        CamouLayer& layer) {
+  // Inside a composited draw, the first op that may set pixels marks the
+  // layer's clip imported. Text marks nothing unless its style is a pattern,
+  // as in S2b, so shadowed or filtered text leaves the clip's noise alone.
+  auto mark_layer = [&](const cc::PaintOp& op) {
+    if (layer.marked) {
+      return;
+    }
+    if (op.GetType() == cc::PaintOpType::kDrawTextBlob ||
+        op.GetType() == cc::PaintOpType::kDrawSlug) {
+      if (!CamouIsPattern(static_cast<const cc::PaintOpWithFlags&>(op).flags)) {
+        return;
+      }
+    }
+    CamouMarkRect(layer.clip, CamouKind::kImported);
+    layer.marked = true;
+  };
   for (const cc::PaintOp& op : record.buffer()) {
     switch (op.GetType()) {
       case cc::PaintOpType::kSaveLayer:
       case cc::PaintOpType::kSaveLayerAlpha:
       case cc::PaintOpType::kSaveLayerFilters:
         // A composited draw (a filter, a composited shadow, a full-canvas
-        // composite mode) may set any pixel of the clip unpredictably and may
-        // leave exact pixels as they were: the clip is marked imported and
-        // the ops inside are skipped. A plain save keeps restores balanced.
-        if (layer_depth == 0) {
-          CamouMarkRect(canvas.getDeviceClipBounds(), CamouKind::kImported);
-          layer_depth = canvas.getSaveCount() + 1;
+        // composite mode) may set any pixel of its clip unpredictably and may
+        // leave exact pixels as they were: its clip is marked imported (by its
+        // first non-text op) and the ops inside are skipped. A plain save
+        // keeps the restores balanced.
+        if (layer.depth == 0) {
+          layer.depth = canvas.getSaveCount() + 1;
+          layer.clip = canvas.getDeviceClipBounds();
+          layer.marked = false;
         }
         canvas.save();
         continue;
       case cc::PaintOpType::kRestore:
         canvas.restore();
-        if (layer_depth != 0 && canvas.getSaveCount() < layer_depth) {
-          layer_depth = 0;
+        if (layer.depth != 0 && canvas.getSaveCount() < layer.depth) {
+          layer.depth = 0;
         }
         continue;
       case cc::PaintOpType::kDrawRecord:
@@ -1807,8 +1833,10 @@ void Canvas2DRecorderContext::CamouWalk(const cc::PaintRecord& record,
         // played for the matrix it may leave behind (local_ctm false); what it
         // draws into the coverage bitmap is never merged, because every op
         // clears its own area first.
-        if (layer_depth == 0) {
+        if (layer.depth == 0) {
           CamouMarkRect(canvas.getDeviceClipBounds(), CamouKind::kImported);
+        } else {
+          mark_layer(op);
         }
         op.Raster(&canvas, params);
         continue;
@@ -1817,8 +1845,10 @@ void Canvas2DRecorderContext::CamouWalk(const cc::PaintRecord& record,
     }
     if (!op.IsDrawOp()) {
       op.Raster(&canvas, params);  // save, clip and matrix ops
-    } else if (layer_depth == 0) {
+    } else if (layer.depth == 0) {
       CamouMarkOp(op, canvas, params);
+    } else {
+      mark_layer(op);
     }
   }
 }
@@ -2030,6 +2060,10 @@ The cut from `// A composited draw (filter, …` to `ALWAYS_INLINE …` removes 
 
 - [ ] **Step 2: The C40 mutation (RED).**
   1. Make a copy of the EDITS file as `s2c_flush_mutant.py`. In its `WALK`, insert `camou_mask_.reset();` as the first line of `CamouMarkRecord`'s body, so the mask holds only the last flush's marks.
+     - Also record the shadowed-text carve-out with a probe in the GREEN run (Step 3):
+       - draw an arc, then `shadowBlur = 4` `fillText` over it, and read `getImageData`;
+       - the arc's pixels away from the text must still differ from unconfigured.
+     - Note it in §7. It is a probe, not a C-row.
   2. Take the lock `"s2c flush"` (announce it), apply the mutant, run W5 and W5v.
   3. Expected: C40 FAILs with `h1 != h2` under the seed. Record the note.
      - Other rows may fail under the mutant too; record them, they do not count.
