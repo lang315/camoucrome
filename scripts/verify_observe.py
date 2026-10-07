@@ -1,7 +1,7 @@
 """Tracking observer verification (docs/superpowers/specs/2026-10-06-tracking-observer-design.md).
 
 Launches content_shell on a local probe with startup tracing, no CDP attached,
-and asserts EXACT per-name event counts with the right origin and site. Arms:
+and asserts EXACT per-name event counts with the right origin, site and script. Arms:
   on     category enabled: every row below must match exactly
   off    tracing on for other categories: zero camou.observe events
   --red  same as `on` with every expectation off by one: must FAIL
@@ -178,6 +178,13 @@ def main():
     for key, want in expect.items():
         got = c.get(key, 0)
         rows.append((got == want, f"{key[0]} origin={key[1]} site={key[2]!r}: {got} (want {want})"))
+    # script attribution: the URL at the top of the stack (inline scripts report their document)
+    for name, origin, suffix in (("Navigator.userAgent.get", main_origin, "/probe.html"),
+                                 ("WorkerNavigator.hardwareConcurrency.get", main_origin, "/worker.js"),
+                                 ("Navigator.userAgent.get", frame_origin, "/frame.html")):
+        got = sum(1 for e in events if e["name"] == name and e["args"].get("origin") == origin
+                  and e["args"].get("script", "").endswith(suffix))
+        rows.append((got == K + bump, f"{name} origin={origin} script=*{suffix}: {got} (want {K + bump})"))
     title = sum(n for (name, _, _), n in c.items() if name.startswith("Document.title"))
     rows.append((title == 0 + bump, f"Document.title (not allow-listed): {title} (want {0 + bump})"))
 
