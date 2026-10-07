@@ -300,7 +300,7 @@ that is interior, non-transparent and unlike all four neighbours.
   rows each pass in at least one attempt (host WebGL flake).
 - Unit suites, `gn check`, checkdeps.
 
-**Cost, measured** (UNMEASURED today):
+**Cost, measured** (see measurements §2, §6 and §12):
 - A draw-heavy page, 10 000 arcs per frame on a 1024 × 1024 canvas, timed
   under the fork with a seed against the fork without one. The ratio is
   recorded. Above 2×, it is recorded as a known gap and goes to S2c.
@@ -349,6 +349,9 @@ From measurements §8 and the S1/S2 spec:
 - Replay cost on huge canvases: every non-text draw rasterises a full-resolution A8
   bitmap of its dirty rect, also on coarse masks. A failed allocation marks the area
   imported. This is part of the 4.35x draw cost (S2c).
+- **`readPixels` seeded cost regressed against PR #27** (S2c): about 21.5x at 1024 x 1024
+  and about 3.3x at 64 x 64, against PR #27's 15.89x and 1.33x (measurements §12; the
+  earlier 1.11x and 7.06x were measured before the seed gate and are invalid).
 - `scripts/measure_canvas_cost.py` drives the page with Playwright `evaluate`, which sends
   `Runtime.enable`, in both arms: absolute times include that overhead, and the ratio
   compares like with like.
