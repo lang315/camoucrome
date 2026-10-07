@@ -9,12 +9,13 @@ GL), so the numbers are this box's, not a GPU host's.
 Prints per-run medians and the seeded / unconfigured ratio. Exit 0 always:
 this is a measurement, not a gate; the plan records the ratio against the
 spec's 2x line.
+
+The driver sends Runtime.enable (Playwright evaluate) in both arms, so absolute
+times include that overhead; the ratio compares like with like.
 """
 
 import json
 import statistics
-
-from playwright.sync_api import sync_playwright
 
 import lib_shell
 
@@ -48,25 +49,25 @@ READ = """() => {
 
 
 def run(config, fn, flags=None):
-    proc = lib_shell.launch(config, extra_flags=flags)
-    try:
-        with sync_playwright() as p:
-            ctx = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}").contexts[0]
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto("about:blank", wait_until="load")
-            return page.evaluate(fn)
-    finally:
-        lib_shell.shutdown(proc)
+    values, error = lib_shell.session(config, [fn], navigate_to="about:blank",
+                                      extra_flags=flags)
+    if error is not None:
+        raise error
+    return values[0]
 
 
 def ratio(name, seeded, unconf):
     s, u = statistics.median(seeded), statistics.median(unconf)
+    if u == 0:
+        print(f"{name}: UNMEASURED (unconfigured median 0 ms)")
+        return
     print(f"{name}: seeded median {s:.2f} ms, unconfigured median {u:.2f} ms, "
           f"seeded/unconfigured ratio {s / u:.2f}")
 
 
+GL = lib_shell.SHELL_FLAGS + GL_FLAGS
 ratio("draw", run(SEEDED, DRAW), run(None, DRAW))
-rs, ru = run(SEEDED, READ, GL_FLAGS), run(None, READ, GL_FLAGS)
+rs, ru = run(SEEDED, READ, GL), run(None, READ, GL)
 if "err" in rs or "err" in ru:
     print(f"readPixels: UNMEASURED ({rs.get('err') or ru.get('err')})")
 else:
