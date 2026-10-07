@@ -31,78 +31,45 @@ std::vector<uint8_t> Scene(size_t pixels) {
 TEST(PerturbRgbaTest, SameInputsGiveSameOutput) {
   // The determinism guarantee: two readbacks of one canvas are byte-identical.
   auto a = Scene(64), b = Scene(64);
-  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/12345, /*density=*/0.5, /*strength=*/2);
-  PerturbRgba(b.data(), 8, 8, 8 * 4, 12345, 0.5, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/12345, /*density=*/0.5, /*strength=*/2, /*bottom_up=*/false);
+  PerturbRgba(b.data(), 8, 8, 8 * 4, 12345, 0.5, 2, /*bottom_up=*/false);
   EXPECT_EQ(a, b);
 }
 
 TEST(PerturbRgbaTest, SeedZeroIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/0, 0.5, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, /*seed=*/0, 0.5, 2, /*bottom_up=*/false);
   EXPECT_EQ(a, orig);  // byte-identical to stock when spoof is off
 }
 
 TEST(PerturbRgbaTest, DensityZeroIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), 8, 8, 8 * 4, 12345, /*density=*/0.0, 2);
+  PerturbRgba(a.data(), 8, 8, 8 * 4, 12345, /*density=*/0.0, 2, /*bottom_up=*/false);
   EXPECT_EQ(a, orig);
 }
 
 TEST(PerturbRgbaTest, ActuallyChangesSomePixels) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/0.5, 2);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/0.5, 2, /*bottom_up=*/false);
   EXPECT_NE(a, orig) << "high density left every pixel untouched";
 }
 
 TEST(PerturbRgbaTest, AlphaChannelNeverChanges) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, 4);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, 4, /*bottom_up=*/false);
   for (size_t i = 3; i < a.size(); i += 4)
     EXPECT_EQ(a[i], orig[i]) << "alpha byte " << i << " was perturbed";
 }
 
 TEST(PerturbRgbaTest, DeltaStaysWithinStrength) {
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, /*strength=*/3);
+  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, /*strength=*/3, /*bottom_up=*/false);
   for (size_t i = 0; i < a.size(); ++i) {
     if ((i & 3u) == 3u) continue;  // alpha untouched
     int d = static_cast<int>(a[i]) - static_cast<int>(orig[i]);
     EXPECT_GE(d, -3);
     EXPECT_LE(d, 3);
   }
-}
-
-TEST(PerturbRgbaTest, DifferentDrawingsGetDifferentNoiseFields) {
-  // Content-hash fold (§7.3 decision A): the SAME seed on two DIFFERENT
-  // drawings must diverge, so an attacker cannot map the field once and
-  // subtract it from every later readback. Build two scenes differing in one
-  // early byte (inside the 1024-byte content-hash window) and perturb both
-  // with one seed; the noise fields must differ somewhere.
-  auto a = Scene(256);
-  auto b = Scene(256);
-  b[0] ^= 0xFF;  // change content within the hashed prefix
-  auto a_orig = a, b_orig = b;
-  PerturbRgba(a.data(), 16, 16, 16 * 4, 777, 0.5, 2);
-  PerturbRgba(b.data(), 16, 16, 16 * 4, 777, 0.5, 2);
-  // Compare the deltas, not the pixels (b started one byte different).
-  bool fields_differ = false;
-  for (size_t i = 1; i < a.size(); ++i) {  // skip the byte we changed
-    int da = static_cast<int>(a[i]) - static_cast<int>(a_orig[i]);
-    int db = static_cast<int>(b[i]) - static_cast<int>(b_orig[i]);
-    if (da != db) { fields_differ = true; break; }
-  }
-  EXPECT_TRUE(fields_differ) << "noise field ignores content; map-and-subtract "
-                               "would defeat it";
-}
-
-// Review #4: the state hash covers the whole canvas, not its first 1 KB.
-TEST(CanvasStateHashTest, SeesLateContentAndIsDeterministic) {
-  auto a = Scene(64 * 64), b = a;
-  b[b.size() - 8] ^= 0x55;  // last row
-  EXPECT_EQ(CanvasStateHash(a.data(), 64, 64, 64 * 4),
-            CanvasStateHash(a.data(), 64, 64, 64 * 4));
-  EXPECT_NE(CanvasStateHash(a.data(), 64, 64, 64 * 4),
-            CanvasStateHash(b.data(), 64, 64, 64 * 4));
 }
 
 TEST(PerturbRgbaTest, PaddedRowsGetTheTightField) {
@@ -114,8 +81,8 @@ TEST(PerturbRgbaTest, PaddedRowsGetTheTightField) {
   std::vector<uint8_t> padded(kH * 32, 0xAB);
   for (size_t y = 0; y < kH; ++y)
     std::copy_n(tight.begin() + y * kW * 4, kW * 4, padded.begin() + y * 32);
-  PerturbRgba(tight.data(), kW, kH, kW * 4, 12345, 1.0, 3);
-  PerturbRgba(padded.data(), kW, kH, 32, 12345, 1.0, 3);
+  PerturbRgba(tight.data(), kW, kH, kW * 4, 12345, 1.0, 3, /*bottom_up=*/false);
+  PerturbRgba(padded.data(), kW, kH, 32, 12345, 1.0, 3, /*bottom_up=*/false);
   EXPECT_NE(tight, Scene(kW * kH));  // not vacuous
   for (size_t y = 0; y < kH; ++y) {
     EXPECT_TRUE(std::equal(tight.begin() + y * kW * 4,
@@ -128,14 +95,14 @@ TEST(PerturbRgbaTest, PaddedRowsGetTheTightField) {
 
 TEST(PerturbRgbaTest, RowBytesBelowWidthIsNoOp) {
   auto a = Scene(64), orig = Scene(64);
-  PerturbRgba(a.data(), 8, 8, 8 * 4 - 1, 12345, 1.0, 3);
+  PerturbRgba(a.data(), 8, 8, 8 * 4 - 1, 12345, 1.0, 3, /*bottom_up=*/false);
   EXPECT_EQ(a, orig);
 }
 
 TEST(PerturbRgbaTest, ZeroSizeIsNoOp) {
   std::vector<uint8_t> tiny = {1, 2, 3};
   auto orig = tiny;
-  PerturbRgba(tiny.data(), 0, 0, 0 * 4, 12345, 1.0, 2);
+  PerturbRgba(tiny.data(), 0, 0, 0 * 4, 12345, 1.0, 2, /*bottom_up=*/false);
   EXPECT_EQ(tiny, orig);
 }
 
@@ -258,7 +225,7 @@ void Edges(std::vector<uint8_t>& v, size_t w, size_t h, uint64_t seed,
            double density, int32_t strength, uint8_t min_alpha = 1) {
   const std::vector<uint8_t> source = v;
   PerturbRgbaEdges(v.data(), source.data(), w, h, w * 4, seed, density,
-                   strength, min_alpha);
+                   strength, min_alpha, NoiseMask(), /*bottom_up=*/false);
 }
 
 // A buffer whose every pixel differs from its neighbours, with partial alpha
@@ -400,6 +367,115 @@ TEST(CanvasNoiseTest, TextOffsetIsPerSeedAndSubPixel) {
     varies |= o != TextOffset(1);
   }
   EXPECT_TRUE(varies);
+}
+
+// S2b: the noise is keyed by the 3x3 source patch, not by position. One
+// lone pixel at two places gets the same delta.
+TEST(PerturbRgbaEdgesTest, SamePatchGetsSameNoiseAnywhere) {
+  for (uint64_t seed = 1; seed <= 8; ++seed) {
+    auto v = Fill(16, 8, {0, 0, 0, 255});
+    Set(v, 16, 3, 3, {200, 100, 50, 255});
+    Set(v, 16, 11, 4, {200, 100, 50, 255});
+    Edges(v, 16, 8, seed, 1.0, 3);
+    EXPECT_EQ(Get(v, 16, 3, 3), Get(v, 16, 11, 4)) << "seed " << seed;
+  }
+}
+
+// A bottom-up buffer (WebGL readPixels) gets the field of the same image
+// stored top-down.
+TEST(PerturbRgbaEdgesTest, BottomUpMatchesTopDown) {
+  auto flip = [](const std::vector<uint8_t>& v, size_t w, size_t h) {
+    std::vector<uint8_t> o(v.size());
+    for (size_t y = 0; y < h; ++y)
+      std::copy_n(v.begin() + y * w * 4, w * 4, o.begin() + (h - 1 - y) * w * 4);
+    return o;
+  };
+  const auto top = PartialAlphaScene(9, 7);
+  auto a = top;
+  auto b = flip(top, 9, 7);
+  const auto sa = a, sb = b;
+  PerturbRgbaEdges(a.data(), sa.data(), 9, 7, 36, 77, 1.0, 3, 1, NoiseMask(),
+                   /*bottom_up=*/false);
+  PerturbRgbaEdges(b.data(), sb.data(), 9, 7, 36, 77, 1.0, 3, 1, NoiseMask(),
+                   /*bottom_up=*/true);
+  EXPECT_NE(a, top);
+  EXPECT_EQ(flip(b, 9, 7), a);
+}
+
+// Only cells holding exactly kNoiseMaskAa may change; imported wins.
+TEST(PerturbRgbaEdgesTest, MaskGatesEachPixel) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 2, 2, {200, 100, 50, 255});
+  Set(v, 8, 5, 5, {200, 100, 50, 255});
+  std::vector<uint8_t> cells(64, 0);
+  cells[2 * 8 + 2] = kNoiseMaskAa;
+  cells[5 * 8 + 5] = kNoiseMaskAa | kNoiseMaskImported;
+  const NoiseMask mask{cells.data(), 8, 0, 8, 8};
+  bool moved = false;
+  for (uint64_t seed = 1; seed < 32; ++seed) {
+    auto w = v;
+    PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, seed, 1.0, 3, 1, mask, false);
+    auto rest = w;
+    Set(rest, 8, 2, 2, {200, 100, 50, 255});
+    EXPECT_EQ(rest, v) << "a pixel outside the aa cell moved, seed " << seed;
+    moved |= w != v;
+  }
+  EXPECT_TRUE(moved);
+}
+
+// Above the full-resolution cap one cell covers 4 x 4 pixels.
+TEST(PerturbRgbaEdgesTest, CoarseMaskCellCoversItsPixels) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 2, 2, {200, 100, 50, 255});
+  Set(v, 8, 6, 6, {200, 100, 50, 255});
+  const std::vector<uint8_t> cells = {kNoiseMaskAa, 0, 0, 0};
+  const NoiseMask mask{cells.data(), 2, 2, 8, 8};
+  bool moved = false;
+  for (uint64_t seed = 1; seed < 32; ++seed) {
+    auto w = v;
+    PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, seed, 1.0, 3, 1, mask, false);
+    EXPECT_EQ(Get(w, 8, 6, 6), Get(v, 8, 6, 6)) << "seed " << seed;
+    moved |= w != v;
+  }
+  EXPECT_TRUE(moved);
+}
+
+// A mask for another size never applies: no pixel changes.
+TEST(PerturbRgbaEdgesTest, MaskOfAnotherSizeIsNoOp) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const std::vector<uint8_t> cells(7 * 8, kNoiseMaskAa);
+  const NoiseMask mask{cells.data(), 7, 0, 7, 8};
+  auto w = v;
+  PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, 7, 1.0, 3, 1, mask, false);
+  EXPECT_EQ(w, v);
+}
+
+// S2b: a sub-rect read gets the matching part of a full read, away from
+// the sub-rect's own border (Blink supplies that border from the buffer).
+TEST(PerturbRgbaTest, SubRectInteriorMatchesFullRead) {
+  auto full = Scene(16 * 16);
+  std::vector<uint8_t> sub(8 * 8 * 4);
+  for (size_t y = 0; y < 8; ++y)
+    std::copy_n(full.begin() + ((y + 4) * 16 + 4) * 4, 32, sub.begin() + y * 32);
+  PerturbRgba(full.data(), 16, 16, 64, 12345, 1.0, 3, /*bottom_up=*/true);
+  PerturbRgba(sub.data(), 8, 8, 32, 12345, 1.0, 3, /*bottom_up=*/true);
+  EXPECT_NE(full, Scene(16 * 16));
+  for (size_t y = 1; y < 7; ++y)
+    for (size_t x = 1; x < 7; ++x)
+      EXPECT_EQ(Get(sub, 8, x, y), Get(full, 16, x + 4, y + 4)) << x << "," << y;
+}
+
+// A mask is for top-down 2D snapshots; with bottom_up it never applies.
+TEST(PerturbRgbaEdgesTest, MaskWithBottomUpIsNoOp) {
+  auto v = Fill(8, 8, {0, 0, 0, 255});
+  Set(v, 8, 4, 4, {200, 100, 50, 255});
+  const std::vector<uint8_t> cells(64, kNoiseMaskAa);
+  const NoiseMask mask{cells.data(), 8, 0, 8, 8};
+  auto w = v;
+  PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, 7, 1.0, 3, 1, mask,
+                   /*bottom_up=*/true);
+  EXPECT_EQ(w, v);
 }
 
 }  // namespace

@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Twenty criteria, all driven with Playwright's sync API over content_shell's CDP,
+Forty-one criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -62,6 +62,30 @@ Canvas noise redesign rows:
       outside the buffer is what the unconfigured read leaves there.
   C20 a readPixels GL rejects (INVALID_OPERATION: SKIP_PIXELS + width does not
       fit one row) leaves the page's buffer untouched.
+
+Canvas noise S2b rows (patch-keyed field, per-region eligibility):
+  C21 one arc at two whole-pixel offsets gets the same noise.
+  C22 a draw elsewhere does not change a region's noise.
+  C23 an arc plus a putImageData pattern elsewhere: the arc carries noise,
+      the pattern reads back exactly.
+  C24a-d a diagonal lineTo triangle, a round-cap stroke, a curved clip()
+      with fillRect, and fillRect with shadowBlur each carry noise.
+  C25 a reused canvas (putImageData, clearRect, arc) reads like a fresh one.
+  C26 createPattern alone marks nothing; a pattern fill reads exact.
+  C27 1px random colours under a diagonal line stay exact: eligibility
+      follows coverage, not bounding boxes.
+  C28 a WebGL readPixels sub-rect equals the full read's part.
+  C29 WebGL toDataURL agrees with readPixels on every opaque pixel.
+  C30-C32 a canvas wiped exact by destination-out, transferToImageBitmap or
+      a 'copy' fill, then drawn with translucent 1px random colours, reads
+      like a fresh canvas with the same drawing (no stale aa marks).
+  C33a-d 1px random opaque colours stay byte-equal to unconfigured after a
+      fully transparent arc, an all-transparent gradient arc, an opaque fill
+      with an off-canvas shadow (then a speckle), and a blurred corner fillRect.
+  C33e the same canvas after a fully transparent arc with a visible shadow:
+      stock draws nothing, so it must equal unconfigured (and its own pre-draw state).
+  C34 a 'copy' STROKE wipes the whole clip like a copy fill: after a translucent
+      speckle the canvas reads like a fresh one with the same stroke.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -437,6 +461,36 @@ REJECT = tri("webgl2", 64, 64, """
   for (let i = 0; i < buf.length; i++) if (buf[i] !== pre[i]) changed++;
   return { glerr: err, invalid: gl.INVALID_OPERATION, changed };""")
 
+# C28: a sub-rect read equals the matching part of a full read, byte for byte.
+SUBRECT = tri("webgl", 64, 64, """
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(32 * 32 * 4); gl.readPixels(16, 16, 32, 32, RGBA, UB, B);
+  let diff = 0;
+  for (let y = 0; y < 32; y++) for (let i = 0; i < 128; i++)
+    if (B[y * 128 + i] !== A[(y + 16) * 256 + 64 + i]) diff++;
+  return { diff, h: H(B) };""")
+
+# C29: toDataURL of the WebGL canvas, decoded through a 2D canvas (whose
+# drawImage marks it imported, so it adds no noise), equals readPixels
+# flipped to top-down, on every opaque pixel.
+AGREE = tri("webgl", 64, 64, """
+  const R = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, R);
+  const url = c.toDataURL('image/png');
+  return (async () => {
+    const im = new Image(); im.src = url; await im.decode();
+    const d2 = document.createElement('canvas'); d2.width = 64; d2.height = 64;
+    const x2 = d2.getContext('2d'); x2.drawImage(im, 0, 0);
+    const D = x2.getImageData(0, 0, 64, 64).data;
+    let diff = 0, opaque = 0;
+    for (let y = 0; y < 64; y++) for (let i = 0; i < 64; i++) {
+      const r = ((63 - y) * 64 + i) * 4, o = (y * 64 + i) * 4;
+      if (R[r + 3] !== 255) continue;
+      opaque++;
+      for (let k = 0; k < 4; k++) if (D[o + k] !== R[r + k]) { diff++; break; }
+    }
+    return { diff, opaque, h: H(R) };
+  })();""")
+
 # C15: text under ctx.scale(40,40); the ink bounding box's min x / min y.
 SCALED_TEXT = """() => {
   const c = document.createElement('canvas'); c.width = 300; c.height = 300;
@@ -469,6 +523,165 @@ DECODED_IMAGE = "async () => {" + HASH_FN + """
   x.fillStyle = '#f60'; x.beginPath(); x.arc(32, 32, 10, 0, 7); x.fill();
   x.drawImage(im, 0, 0);
   return H(x.getImageData(0, 0, 64, 64).data);
+}"""
+
+# S2b rows C21-C27: one page, every 2D drawing on its own canvas. `elig`
+# counts interior, non-transparent pixels unlike all four neighbours -- the
+# vacuity guard: a drawing with none of them cannot show noise.
+ELIG_FN = """
+  const elig = (d, w, x0 = 1, y0 = 1, x1 = w - 1, y1 = d.length / 4 / w - 1) => {
+    const hgt = d.length / 4 / w;
+    const same = (a, b) => d[a] === d[b] && d[a + 1] === d[b + 1]
+      && d[a + 2] === d[b + 2] && d[a + 3] === d[b + 3];
+    let n = 0;
+    for (let y = Math.max(y0, 1); y < Math.min(y1, hgt - 1); y++)
+      for (let x = Math.max(x0, 1); x < Math.min(x1, w - 1); x++) {
+        const i = (y * w + x) * 4;
+        if (d[i + 3] && !same(i, i - 4) && !same(i, i + 4)
+            && !same(i, i - w * 4) && !same(i, i + w * 4)) n++;
+      }
+    return n; };
+"""
+
+S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
+  const mk = (w, h) => { const c = document.createElement('canvas');
+    c.width = w; c.height = h; return c.getContext('2d'); };
+  const arc = (x, cx, cy, r, col) => { x.fillStyle = col || '#f60'; x.beginPath();
+    x.arc(cx, cy, r, 0, 7); x.fill(); };
+  const rnd = (x, w, h) => { const img = x.createImageData(w, h); let s = 12345;
+    for (let i = 0; i < img.data.length; i += 4) {
+      for (let k = 0; k < 3; k++) {
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0; img.data[i + k] = s >>> 24; }
+      img.data[i + 3] = 255; }
+    return img; };
+  const get = (x, l, t, w, h) => x.getImageData(l, t, w, h).data;
+  const out = {};
+  // C21: one arc at two whole-pixel offsets, (20,20) and (84,36).
+  let x = mk(128, 64); arc(x, 20, 20, 10); arc(x, 84, 36, 10);
+  let a = get(x, 8, 8, 25, 25);
+  out.pos = { ha: H(a), hb: H(get(x, 72, 24, 25, 25)), e: elig(a, 25) };
+  // C22: read region A, draw far from it, read A again.
+  x = mk(128, 64); arc(x, 20, 20, 10);
+  a = get(x, 8, 8, 25, 25); const r1 = H(a);
+  arc(x, 100, 40, 10, '#06f');
+  out.edit = { r1, r2: H(get(x, 8, 8, 25, 25)), e: elig(a, 25) };
+  // C23: an arc, plus a putImageData pattern elsewhere.
+  x = mk(128, 64); arc(x, 20, 20, 10);
+  const img = rnd(x, 32, 32); x.putImageData(img, 80, 16);
+  a = get(x, 8, 8, 25, 25); const back = get(x, 80, 16, 32, 32);
+  let exact = true;
+  for (let i = 0; i < back.length; i++) if (back[i] !== img.data[i]) { exact = false; break; }
+  out.mixed = { arc: H(a), exact, e: elig(a, 25) };
+  // C24: operations the old anti-aliasing list missed.
+  const hole = (draw) => { const y = mk(64, 64); draw(y); const d = get(y, 0, 0, 64, 64);
+    return { h: H(d), e: elig(d, 64) }; };
+  out.holes = {
+    a: hole((y) => { y.fillStyle = '#f60'; y.beginPath(); y.moveTo(5, 5); y.lineTo(58, 12);
+      y.lineTo(20, 58); y.closePath(); y.fill(); }),
+    b: hole((y) => { y.strokeStyle = '#06f'; y.lineWidth = 6; y.lineCap = 'round';
+      y.beginPath(); y.moveTo(10, 32); y.lineTo(54, 32); y.stroke(); }),
+    c: hole((y) => { y.beginPath(); y.arc(32, 32, 20, 0, 7); y.clip();
+      y.fillStyle = '#0a6'; y.fillRect(0, 0, 64, 64); }),
+    d: hole((y) => { y.shadowBlur = 4; y.shadowColor = 'rgba(0,0,0,0.8)';
+      y.fillStyle = '#c33'; y.fillRect(16, 16, 32, 32); }),
+  };
+  // C25: a reused canvas reads like a fresh one.
+  x = mk(64, 64); x.putImageData(rnd(x, 64, 64), 0, 0); x.clearRect(0, 0, 64, 64);
+  arc(x, 32, 32, 12); const h1 = H(get(x, 0, 0, 64, 64));
+  x = mk(64, 64); arc(x, 32, 32, 12); a = get(x, 0, 0, 64, 64);
+  out.reuse = { h1, h2: H(a), e: elig(a, 64) };
+  // C26: createPattern alone marks nothing; a pattern fill marks its area only.
+  const tile = mk(8, 8); tile.putImageData(rnd(tile, 8, 8), 0, 0);
+  x = mk(64, 64); x.createPattern(tile.canvas, 'repeat'); arc(x, 32, 32, 12);
+  a = get(x, 0, 0, 64, 64); const p1 = H(a);
+  x = mk(64, 64); arc(x, 16, 16, 10); x.fillStyle = x.createPattern(tile.canvas, 'repeat');
+  x.fillRect(32, 32, 32, 32);
+  out.pattern = { p1, e: elig(a, 64), hB: H(get(x, 32, 32, 32, 32)) };
+  // C27: 1px random opaque colours (every 3x3 patch distinct, so noise cannot
+  // miss by a coin flip), a diagonal line across them, an arc in a corner.
+  // Pixels 4+ px from the line must stay exact.
+  x = mk(64, 64); let cs = 54321;
+  for (let yy = 0; yy < 40; yy++) for (let xx = 0; xx < 40; xx++) {
+    const c3 = [0, 0, 0].map(() => { cs = (Math.imul(cs, 1103515245) + 12345) >>> 0; return cs >>> 24; });
+    x.fillStyle = `rgb(${c3[0]},${c3[1]},${c3[2]})`; x.fillRect(xx, yy, 1, 1); }
+  x.strokeStyle = '#000'; x.lineWidth = 1;
+  x.beginPath(); x.moveTo(0, 0); x.lineTo(40, 40); x.stroke();
+  arc(x, 56, 56, 5);
+  const d = get(x, 0, 0, 64, 64), sel = [];
+  for (let yy = 1; yy < 39; yy++) for (let xx = 1; xx < 39; xx++)
+    if (Math.abs(xx - yy) >= 4) for (let k = 0; k < 4; k++) sel.push(d[(yy * 64 + xx) * 4 + k]);
+  out.cover = { h: H(sel), e: elig(d, 64, 1, 1, 39, 39) };
+  // C30-C32: draws that leave pixels exact must not leave stale aa marks:
+  // translucent 1px random colours over a wiped canvas read like a fresh one.
+  const speckle = (y) => { let ss = 777;
+    y.globalCompositeOperation = 'source-over'; y.globalAlpha = 0.5;
+    for (let yy = 0; yy < 40; yy++) for (let xx = 0; xx < 40; xx++) {
+      const col = [];
+      for (let k = 0; k < 3; k++) {
+        ss = (Math.imul(ss, 1103515245) + 12345) >>> 0; col.push(ss >>> 24); }
+      y.fillStyle = 'rgb(' + col.join(',') + ')'; y.fillRect(xx, yy, 1, 1); }
+    y.globalAlpha = 1; };
+  const grad = (y) => { const g = y.createLinearGradient(0, 0, 64, 64);
+    g.addColorStop(0, '#ff2d00'); g.addColorStop(1, '#1a2fff');
+    y.fillStyle = g; y.fillRect(0, 0, 64, 64); };
+  const fresh = (pre) => { const y = mk(64, 64); if (pre) pre(y); speckle(y);
+    return get(y, 0, 0, 64, 64); };
+  const freshH = H(fresh(null)), freshE = elig(fresh(null), 64, 1, 1, 39, 39);
+  // C30: destination-out with an opaque fill wipes the gradient.
+  x = mk(64, 64); grad(x);
+  x.globalCompositeOperation = 'destination-out'; x.fillStyle = '#000';
+  x.fillRect(0, 0, 64, 64); speckle(x);
+  out.dstout = { h: H(get(x, 0, 0, 64, 64)), fresh: freshH, e: freshE };
+  // C31: transferToImageBitmap hands the bitmap over; the canvas restarts clear.
+  const oc = new OffscreenCanvas(64, 64), ox = oc.getContext('2d');
+  grad(ox); oc.transferToImageBitmap(); speckle(ox);
+  out.transfer = { h: H(ox.getImageData(0, 0, 64, 64).data), fresh: freshH, e: freshE };
+  // C32: 'copy' replaces the whole clip with an opaque fill.
+  x = mk(64, 64); grad(x);
+  x.globalCompositeOperation = 'copy'; x.fillStyle = '#123456'; x.fillRect(0, 0, 64, 64);
+  speckle(x);
+  const solid = (y) => { y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64); };
+  out.copy = { h: H(get(x, 0, 0, 64, 64)), fresh: H(fresh(solid)),
+    e: elig(fresh(solid), 64, 1, 1, 39, 39) };
+  // C34: 'copy' with a STROKE wipes the whole clip too; stale marks inside it
+  // must go (a stroke-styled clear would clear only the clip's outline).
+  x = mk(64, 64); grad(x);
+  x.globalCompositeOperation = 'copy'; x.strokeStyle = '#123456'; x.lineWidth = 2;
+  x.strokeRect(20, 20, 10, 10); speckle(x);
+  const ring = (y) => { y.strokeStyle = '#123456'; y.lineWidth = 2; y.strokeRect(20, 20, 10, 10); };
+  out.copystroke = { h: H(get(x, 0, 0, 64, 64)), fresh: H(fresh(ring)),
+    e: elig(fresh(ring), 64, 1, 1, 39, 39) };
+  // C33: exact pixels stay exact through draws that change none of them:
+  // 64x64 opaque random 1px colours, then (a) a fully transparent arc, (b) an
+  // arc filled with an all-transparent gradient, (c) an opaque fill whose
+  // shadow lands off the canvas, then a translucent speckle, (d) a blurred
+  // fillRect in a corner. The whole canvas must equal unconfigured.
+  const exactDraw = (draw) => { const y = mk(64, 64); let es = 4242;
+    for (let yy = 0; yy < 64; yy++) for (let xx = 0; xx < 64; xx++) {
+      const col = [];
+      for (let k = 0; k < 3; k++) {
+        es = (Math.imul(es, 1103515245) + 12345) >>> 0; col.push(es >>> 24); }
+      y.fillStyle = 'rgb(' + col.join(',') + ')'; y.fillRect(xx, yy, 1, 1); }
+    const pre = H(get(y, 0, 0, 64, 64));
+    draw(y); const d = get(y, 0, 0, 64, 64);
+    return { h: H(d), e: elig(d, 64), pre }; };
+  out.exact = {
+    a: exactDraw((y) => { y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
+      y.arc(32, 32, 20, 0, 7); y.fill(); }),
+    b: exactDraw((y) => { const g = y.createLinearGradient(0, 0, 64, 64);
+      g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, 'rgba(0,0,255,0)');
+      y.fillStyle = g; y.beginPath(); y.arc(32, 32, 20, 0, 7); y.fill(); }),
+    c: exactDraw((y) => { y.shadowColor = '#000'; y.shadowOffsetX = 1000;
+      y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64);
+      y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; speckle(y); }),
+    d: exactDraw((y) => { y.filter = 'blur(1px)'; y.fillStyle = '#123456';
+      y.fillRect(56, 56, 8, 8); y.filter = 'none'; }),
+    e: exactDraw((y) => { y.shadowColor = '#000'; y.shadowOffsetX = 3;
+      y.shadowOffsetY = 3; y.fillStyle = 'rgba(0,0,0,0)'; y.beginPath();
+      y.arc(32, 32, 20, 0, 7); y.fill();
+      y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; y.shadowOffsetY = 0; }),
+  };
+  return out;
 }"""
 
 
@@ -559,10 +772,12 @@ seeds_scaled = [session(json.dumps({"canvas:seed": s}), SCALED_TEXT)
 unconf_dec, unconf_dec_err = session(None, DECODED_IMAGE)
 gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_flags=GL_FLAGS))
         for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST),
-                           ("reject", REJECT))}
+                           ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
+s2b_seeded, s2b_seeded_err = session(CANVAS, S2B_2D)
+s2b_unconf, s2b_unconf_err = session(None, S2B_2D)
 
 if capture:
     if unconf is None or unconf_gl is None or unconf_shot is None:
@@ -815,7 +1030,81 @@ gl_row(C19, "past", lambda s, u: s["eqA"] and s["h"] != u["h"] and s["rest"] == 
 gl_row(C20, "reject", lambda s, u: all(v["glerr"] == v["invalid"] and v["changed"] == 0
                                        for v in (s, u)))
 
-EXPECTED = 20
+C21 = "21 one arc at two whole-pixel offsets gets the same noise"
+C22 = "22 a draw elsewhere does not change a region's noise"
+C23 = "23 arc plus putImageData elsewhere: arc noised, pattern exact"
+C24 = {k: f"24{k} {what} carries noise" for k, what in (
+    ("a", "diagonal lineTo triangle"), ("b", "round-cap stroke"),
+    ("c", "curved clip() + fillRect"), ("d", "fillRect with shadowBlur"))}
+C25 = "25 a reused canvas reads like a fresh one"
+C26 = "26 createPattern alone marks nothing; a pattern fill reads exact"
+C27 = "27 1px random colours under a diagonal line stay exact (coverage, not bbox)"
+C28 = "28 WebGL readPixels sub-rect equals the full read's part, byte for byte"
+C29 = "29 WebGL toDataURL agrees with readPixels on every opaque pixel"
+
+
+def s2b_row(name, get, guard, ok):
+    """One S2b 2D row: FAIL with a note on a session fault or a vacuous drawing."""
+    if s2b_seeded is None or s2b_unconf is None:
+        results[name] = False
+        notes.append(f"{name[:3]}: {s2b_seeded_err or s2b_unconf_err}")
+        return
+    s, u = get(s2b_seeded), get(s2b_unconf)
+    if not guard(u):
+        results[name] = False
+        notes.append(f"{name[:3]}: vacuous -- unconfigured drawing {u}")
+        return
+    results[name] = ok(s, u)
+    if not results[name]:
+        notes.append(f"{name[:3]}: seeded {s}, unconfigured {u}")
+
+
+s2b_row(C21, lambda r: r["pos"], lambda u: u["e"] > 0 and u["ha"] == u["hb"],
+        lambda s, u: s["ha"] == s["hb"] and s["ha"] != u["ha"])
+s2b_row(C22, lambda r: r["edit"], lambda u: u["e"] > 0,
+        lambda s, u: s["r1"] == s["r2"] and s["r1"] != u["r1"])
+s2b_row(C23, lambda r: r["mixed"], lambda u: u["e"] > 0 and u["exact"],
+        lambda s, u: s["arc"] != u["arc"] and s["exact"])
+for k in "abcd":
+    s2b_row(C24[k], lambda r, k=k: r["holes"][k], lambda u: u["e"] > 0,
+            lambda s, u: s["h"] != u["h"])
+s2b_row(C25, lambda r: r["reuse"], lambda u: u["e"] > 0 and u["h1"] == u["h2"],
+        lambda s, u: s["h1"] == s["h2"] and s["h2"] != u["h2"])
+s2b_row(C26, lambda r: r["pattern"], lambda u: u["e"] > 0,
+        lambda s, u: s["p1"] != u["p1"] and s["hB"] == u["hB"])
+s2b_row(C27, lambda r: r["cover"], lambda u: u["e"] > 0,
+        lambda s, u: s["h"] == u["h"])
+gl_row(C28, "subrect", lambda s, u: s["diff"] == 0 and u["diff"] == 0 and s["h"] != u["h"])
+gl_row(C29, "agree", lambda s, u: s["opaque"] > 0 and s["diff"] == 0 and u["diff"] == 0
+       and s["h"] != u["h"])
+C30 = "30 destination-out wipe then translucent speckle reads like a fresh canvas"
+C31 = "31 transferToImageBitmap then translucent speckle reads like a fresh canvas"
+C32 = "32 copy fill then translucent speckle reads like a fresh canvas"
+for name, key in ((C30, "dstout"), (C31, "transfer"), (C32, "copy")):
+    s2b_row(name, lambda r, key=key: r[key],
+            lambda u: u["e"] > 0 and u["h"] == u["fresh"],
+            lambda s, u: s["h"] == s["fresh"])
+
+C33 = {k: f"33{k} exact pixels stay exact after {what}" for k, what in (
+    ("a", "a fully transparent arc"),
+    ("b", "an all-transparent gradient arc"),
+    ("c", "an opaque fill with an off-canvas shadow, then a speckle"),
+    ("d", "a blurred corner fillRect"),
+    ("e", "a transparent arc with a visible shadow"))}
+for k in "abcd":
+    s2b_row(C33[k], lambda r, k=k: r["exact"][k], lambda u: u["e"] > 0,
+            lambda s, u: s["h"] == u["h"])
+# (e): stock draws nothing, so the canvas must still equal its pre-draw state.
+s2b_row(C33["e"], lambda r: r["exact"]["e"],
+        lambda u: u["e"] > 0 and u["pre"] == u["h"],
+        lambda s, u: s["h"] == u["h"])
+
+C34 = "34 copy stroke then translucent speckle reads like a fresh canvas"
+s2b_row(C34, lambda r: r["copystroke"],
+        lambda u: u["e"] > 0 and u["h"] == u["fresh"],
+        lambda s, u: s["h"] == s["fresh"])
+
+EXPECTED = 41
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")

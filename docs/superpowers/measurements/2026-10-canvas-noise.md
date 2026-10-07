@@ -293,9 +293,11 @@ control changed nothing.
   offset still applies). `drawImage` and `createPattern` of an
   image, video, VideoFrame, SVG, canvas, OffscreenCanvas or ImageBitmap set the
   imported-pixels flag, so the VideoFrame gap of the first draft is closed.
-- `transferToImageBitmap` is not covered (the spec lists it).
+- `transferToImageBitmap` is not covered (the spec lists it). Partly addressed
+  by S2b: the noise mask now resets on transfer, but the transfer itself is
+  still not covered (measurements/2026-10-canvas-noise-s2b.md).
 - A pattern created on one context and filled on another does not flag the second
-  context (`createPattern` across contexts).
+  context (`createPattern` across contexts). Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
 - Cost, UNMEASURED. Every consumer behind `GetSourceImageForCanvas` now pays a
   `GetSwSkImage()` readback plus a full-canvas noise pass whenever its source
   changed: `drawImage(canvas)`, `createPattern`, `texImage2D(canvas)` and
@@ -311,15 +313,15 @@ control changed nothing.
 - `createPattern` flips eligibility without a draw. A `createPattern` from a canvas
   source flips the creating context to stock even if the pattern is never used. An
   off-canvas or transparent arc flips eligibility on. A pattern created on one
-  context and used on another does not flag the second.
+  context and used on another does not flag the second. Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
 - Any edit reseeds the readback field. The seed folds in `CanvasStateHash`, so
   reading one region before and after an unrelated draw elsewhere differs, where
-  stock does not.
+  stock does not. Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
 - The field is keyed by position. The same shape drawn twice at whole-pixel offsets
-  gets two different fields.
+  gets two different fields. Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
 - WebGL `readPixels` keys by position within the in-buffer part of the rect and by a
   hash of the first 1024 bytes of a tight copy of its pixels, so a sub-rect read
-  disagrees with a full read. The sub-rect gap predates this branch.
+  disagrees with a full read. The sub-rect gap predates this branch. Closed by S2b (measurements/2026-10-canvas-noise-s2b.md).
 - A seed's text offset may fall in Skia's zero subpixel bin and draw text exactly as
   stock. The 8-seed P1 cannot bound how often.
 
