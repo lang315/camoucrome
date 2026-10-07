@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Forty criteria, all driven with Playwright's sync API over content_shell's CDP,
+Forty-one criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -84,6 +84,8 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       with an off-canvas shadow (then a speckle), and a blurred corner fillRect.
   C33e the same canvas after a fully transparent arc with a visible shadow:
       stock draws nothing, so it must equal unconfigured (and its own pre-draw state).
+  C34 a 'copy' STROKE wipes the whole clip like a copy fill: after a translucent
+      speckle the canvas reads like a fresh one with the same stroke.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -641,6 +643,14 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   const solid = (y) => { y.fillStyle = '#123456'; y.fillRect(0, 0, 64, 64); };
   out.copy = { h: H(get(x, 0, 0, 64, 64)), fresh: H(fresh(solid)),
     e: elig(fresh(solid), 64, 1, 1, 39, 39) };
+  // C34: 'copy' with a STROKE wipes the whole clip too; stale marks inside it
+  // must go (a stroke-styled clear would clear only the clip's outline).
+  x = mk(64, 64); grad(x);
+  x.globalCompositeOperation = 'copy'; x.strokeStyle = '#123456'; x.lineWidth = 2;
+  x.strokeRect(20, 20, 10, 10); speckle(x);
+  const ring = (y) => { y.strokeStyle = '#123456'; y.lineWidth = 2; y.strokeRect(20, 20, 10, 10); };
+  out.copystroke = { h: H(get(x, 0, 0, 64, 64)), fresh: H(fresh(ring)),
+    e: elig(fresh(ring), 64, 1, 1, 39, 39) };
   // C33: exact pixels stay exact through draws that change none of them:
   // 64x64 opaque random 1px colours, then (a) a fully transparent arc, (b) an
   // arc filled with an all-transparent gradient, (c) an opaque fill whose
@@ -1089,7 +1099,12 @@ s2b_row(C33["e"], lambda r: r["exact"]["e"],
         lambda u: u["e"] > 0 and u["pre"] == u["h"],
         lambda s, u: s["h"] == u["h"])
 
-EXPECTED = 40
+C34 = "34 copy stroke then translucent speckle reads like a fresh canvas"
+s2b_row(C34, lambda r: r["copystroke"],
+        lambda u: u["e"] > 0 and u["h"] == u["fresh"],
+        lambda s, u: s["h"] == s["fresh"])
+
+EXPECTED = 41
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
