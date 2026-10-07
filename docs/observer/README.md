@@ -62,13 +62,14 @@ as a read.
 
 The observer is an audit tool, not a stealth mode. With the category off, each
 allow-listed call costs one category check. With it on, each call writes a
-trace event; measured overhead (200 000 `navigator.userAgent` reads, 300
-`toDataURL` calls; content_shell on the build box, swiftshader GL):
+trace event. Measured with only the observer category enabled (`-*,` filter),
+content_shell on the build box, 200 000 `navigator.userAgent` reads and 300
+`toDataURL` calls. This is a worst-case microbenchmark, not a page-load cost:
 
 | category | `ua_200k_ms` | `todataurl_300_ms` |
 |---|---|---|
-| off | 86.9 | 27.8 |
-| on | 523.8 | 29.7 |
+| off | 88.5 | 29.6 |
+| on | 512.1 | 30.6 |
 
 Browse a site normally, on a release build, when staying hidden matters.
 
