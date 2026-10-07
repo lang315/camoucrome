@@ -19,3 +19,7 @@ own spec when picked up.
 - **No decoding of the Falco `/ajax/bz` `e` payload.**
 - **No automated loops against facebook.com.** Recon on live Meta sites is
   manual, by the owner, in their own account.
+
+## After the facebook recon (2026-10-07)
+
+- Instagram/Threads recon pending (arm 1 ran for both; arms 2-4 not yet); the phone-home finding (`passwordsleakcheck-pa.googleapis.com` at login, `content-autofill.googleapis.com` in every arm) goes to SP7; per-script attribution is done (phase 1c). Details: `docs/superpowers/measurements/2026-10-07-fb-observe.md`.
