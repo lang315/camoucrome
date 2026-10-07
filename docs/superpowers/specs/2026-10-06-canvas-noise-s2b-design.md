@@ -121,9 +121,11 @@ Further rules:
 
 - **Composite ops that touch pixels outside the shape** (the ones
   `DrawInternal` already composites over the clip bounds, as Blink's
-  full-canvas composite check decides, plus `copy`) mark the clip's coverage
-  `imported` (no noise) instead of the shape's (amended: see F1c). They never
-  clear a mark.
+  full-canvas composite check decides) mark the clip's coverage `imported`
+  (no noise) instead of the shape's (amended: see F1c), and never clear a
+  mark. `copy` is the exception: it clears the clip (a fill, whatever the
+  draw's own style, so a stroke wipes the whole clip too), then marks the
+  shape normally.
 - **`putImageData`** (`PutByteArray`) does not pass through `Draw`. It sets
   `imported` over its dirty rect directly.
 - **Text marks nothing.** `fillText` and `strokeText` are skipped by the
@@ -278,8 +280,9 @@ that is interior, non-transparent and unlike all four neighbours.
 | C29 WebGL agreement | `toDataURL` of the C6 triangle, decoded, against `readPixels` flipped | equal on every opaque pixel | different seeds |
 | C33a-d exact pixels | 64x64 random opaque 1px colours, then a transparent arc, an all-transparent gradient arc, an opaque fill with an off-canvas shadow plus a speckle, or a blurred corner `fillRect` | the whole canvas equals unconfigured | the draw marks aa |
 | C33e shadowed transparent fill | the same canvas, then a fully transparent arc with a visible shadow | stock draws nothing, so the canvas equals unconfigured and its own pre-draw state | the shadow pass marks aa |
+| C34 copy stroke | a gradient, then `copy` with a `strokeRect`, then a translucent speckle | reads like a fresh canvas with the same stroke | the clear replay strokes the clip's outline |
 
-`EXPECTED` is 40 after C33a-e.
+`EXPECTED` is 41 after C34.
 
 - **Mutation proof.** With the coverage replay replaced by "mark the draw's
   bounding box", C27 fails. Restoring it brings back all-pass.
@@ -287,7 +290,8 @@ that is interior, non-transparent and unlike all four neighbours.
   keying keeps equal. C19 asserts that the in-buffer part equals the default
   read, which now holds byte for byte.
 - `EXPECTED` becomes 32: 20 rows today, plus C21, C22, C23, C24a–d, C25, C26,
-  C27, C28 and C29.
+  C27, C28 and C29. Later rounds added C30-C32, C33a-e and C34: it is 41 after
+  the code-review round.
 
 **Existing evidence stays green.**
 - `verify_sp3a.py` C1–C20.
@@ -338,6 +342,16 @@ From measurements §8 and the S1/S2 spec:
   (the shadow pass marks aa; the translucent shape's pass is kSolid and does not clear).
 - The shadow pass keeps a pattern's shader. A texture-backed pattern played onto a CPU
   canvas is expected to draw nothing; that is unverified.
+- A draw that changes no pixel can still switch noise off: `drawImage` of an empty or
+  transparent source marks its whole dirty rect imported, and so does a composited draw
+  of a transparent shape (its whole clip). This is linkability, not detectability, and
+  it is narrower than PR #27, where any `drawImage` disabled the whole canvas.
+- Replay cost on huge canvases: every non-text draw rasterises a full-resolution A8
+  bitmap of its dirty rect, also on coarse masks. A failed allocation marks the area
+  imported. This is part of the 4.35x draw cost (S2c).
+- `scripts/measure_canvas_cost.py` drives the page with Playwright `evaluate`, which sends
+  `Runtime.enable`, in both arms: absolute times include that overhead, and the ratio
+  compares like with like.
 - **Neighbour re-roll (C22 narrowed).** Noise is keyed by each pixel's 3x3 patch,
   so a draw that touches a region's 3x3 patches without covering its pixels
   re-rolls that region's noise. Stock pixels depend only on draws that cover

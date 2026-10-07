@@ -363,6 +363,16 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
   (the shadow pass marks aa; the translucent shape's pass is kSolid and does not clear).
 - The shadow pass keeps a pattern's shader. A texture-backed pattern played onto a CPU
   canvas is expected to draw nothing; that is unverified.
+- A draw that changes no pixel can still switch noise off: `drawImage` of an empty or
+  transparent source marks its whole dirty rect imported, and so does a composited draw
+  of a transparent shape (its whole clip). This is linkability, not detectability, and
+  it is narrower than PR #27, where any `drawImage` disabled the whole canvas.
+- Replay cost on huge canvases: every non-text draw rasterises a full-resolution A8
+  bitmap of its dirty rect, also on coarse masks. A failed allocation marks the area
+  imported. This is part of the 4.35x draw cost (S2c).
+- `scripts/measure_canvas_cost.py` drives the page with Playwright `evaluate`, which sends
+  `Runtime.enable`, in both arms: absolute times include that overhead, and the ratio
+  compares like with like.
 - Image draws mark `imported` over their whole dirty rect, with no replay. This errs
   toward no noise.
 - The captureStream one-copy path and the `transferControlToOffscreen` placeholder are
