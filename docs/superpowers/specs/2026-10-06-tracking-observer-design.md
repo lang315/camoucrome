@@ -212,8 +212,10 @@ call it):
 - Build gates: the rebuild reports a non-zero step count; `gn check` and
   `checkdeps.py` pass; `check_additions_build.py` and
   `check_checkout_sync.sh` pass.
-- No regression: `build-verify` CI green on a build with `camou_observe = true`
-  and tracing off.
+- No regression: CI's verifies, run by hand on the observe build
+  (`camou_observe = true`, tracing off, `~/chromium-observe`), match main's
+  results. CI itself builds without the flag (`docs/observer/followups.md`,
+  "Merge preconditions").
 - Overhead: `toDataURL` and one navigator getter timed with the category off and
   on, reported in the measurement doc as numbers, not a gate. The observer is
   an audit tool, not a stealth mode, and the README says so.

@@ -106,7 +106,7 @@ streaming each trace line by line):
 | chunks discarded | 0 | 21 109 | 21 683 | 0 | 0 |
 | trace span | 30.2 s | 152.0 s | 58.1 s | 50.1 s | 2 451 s |
 | requests, first to last | 29.9 s | 187.7 s | 116.2 s | 49.6 s | 2 451 s |
-| requests after the trace ended | 0 of 37 | 311 of 1 083 | 189 of 925 | 0 of 719 | 1 of 836 |
+| requests after the trace ended | 0 of 37 | 311 of 1 083 | 189 of 925 | 0 of 719 | 1 of 836 (same ms) |
 
 - **Arm 1 and the first arm 4: unaffected.** No chunk was discarded and no
   request came after the trace's end.
