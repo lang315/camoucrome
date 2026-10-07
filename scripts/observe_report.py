@@ -68,11 +68,14 @@ def group_of(name):
 
 
 def script_label(url):
-    """Host and path of a script URL; query and fragment can carry ids, so they are dropped."""
+    """Host[:port] and path of a script URL; userinfo, query and fragment can carry
+    credentials or ids, so they are dropped."""
     if not url:
         return "(no script)"
     u = urllib.parse.urlsplit(url)
-    return u.netloc + u.path if u.netloc else url.split("?")[0].split("#")[0]
+    if not u.hostname:
+        return url.split("?")[0].split("#")[0]
+    return u.hostname + (f":{u.port}" if u.port else "") + u.path
 
 
 def surface_counts(events):
@@ -137,9 +140,9 @@ def render(events, requests, cookies):
                 lines.append(f"| {group_of(name)} | {name} | {origin} | {script} | {n} |")
         if by_script:
             lines += ["", "Top scripts", "", "| script | calls | top APIs |", "|---|---|---|"]
-            for script, names in sorted(by_script.items(), key=lambda kv: (-kv[1].total(), kv[0])):
+            for script, names in sorted(by_script.items(), key=lambda kv: (-sum(kv[1].values()), kv[0])):
                 top = ", ".join(f"{name} ({n})" for name, n in names.most_common(3))
-                lines.append(f"| {script} | {names.total()} | {top} |")
+                lines.append(f"| {script} | {sum(names.values())} | {top} |")
         reqs = by_site.get(site)
         total = sum(reqs.values()) if reqs else 0
         lines += ["", f"Requests: {total}", "", "| host | request | count |", "|---|---|---|"]

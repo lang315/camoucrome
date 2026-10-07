@@ -51,6 +51,8 @@ def test_counts_are_real_call_counts_split_by_reading_origin_and_script():
 def test_script_label_is_host_and_path():
     assert r.script_label(FBQ + "?id=123&ev=PageView#frag") == "connect.facebook.net/en_US/fbevents.js"
     assert r.script_label("http://127.0.0.1:8080/probe.html") == "127.0.0.1:8080/probe.html"
+    assert r.script_label("https://user:pass@cdn.example.com:8443/x.js?t=1") == "cdn.example.com:8443/x.js"
+    assert r.script_label("https://user:pass@cdn.example.com/x.js") == "cdn.example.com/x.js"
     assert r.script_label("") == "(no script)"
     assert r.script_label(None) == "(no script)"
 
@@ -144,3 +146,11 @@ def test_render_top_scripts_per_site():
     assert fb + "Navigator.userAgent.get (4), Screen.width.get (3), Navigator.deviceMemory.get (2) |" in top
     assert "Window.matchMedia" not in top.split(fb, 1)[1].split("\n", 1)[0]
     assert top.index(fb) < top.index("| news.com/app.js | 5 | Document.cookie.get (5) |")
+
+
+def test_report_parses_as_python_3_9():
+    """The Windows host runs the report under Python 3.9.13."""
+    import ast
+    src = pathlib.Path(r.__file__).read_text()
+    ast.parse(src, feature_version=(3, 9))
+    assert ".total()" not in src

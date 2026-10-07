@@ -27,6 +27,7 @@ CATEGORY = observe_report.CATEGORY
 ON_FILTER = "-*," + CATEGORY
 
 PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 height=8></canvas>
+<script src="http://localhost:%(port)d/ext.js"></script>
 <script>
 (async () => {
   const K = %(k)d, out = {};
@@ -48,6 +49,9 @@ PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 heigh
   await fetch('/done', {method: 'POST', body: JSON.stringify(out)});
 })();
 </script>"""
+# a parser-blocking cross-origin script: runs in the main frame (origin 127.0.0.1)
+# before the inline probe script, like a third-party tag such as fbevents.js
+EXT = "for (let i = 0; i < %(k)d; i++) navigator.userAgent;"
 WORKER = "for (let i = 0; i < %(k)d; i++) navigator.hardwareConcurrency; postMessage('w');"
 FRAME = ("<!doctype html><script>for (let i = 0; i < %(k)d; i++) navigator.userAgent;"
          "parent.postMessage('frame-done', '*');</script>")
@@ -80,6 +84,7 @@ def serve(k):
             pages = {"/probe.html": (PROBE % {"k": k, "port": port}, "text/html"),
                      "/timing.html": (TIMING, "text/html"),
                      "/worker.js": (WORKER % {"k": k}, "application/javascript"),
+                     "/ext.js": (EXT % {"k": k}, "application/javascript"),
                      "/frame.html": (FRAME % {"k": k}, "text/html")}
             body, ctype = pages.get(self.path, ("", "text/plain"))
             self._send(body, ctype)
@@ -139,7 +144,7 @@ def tally(events):
     counts = {}
     for e in events:
         a = e.get("args", {})
-        key = (e["name"], a.get("origin"), a.get("site"))
+        key = (e["name"], a.get("origin"), a.get("site"), a.get("script"))
         counts[key] = counts.get(key, 0) + 1
     return counts
 
@@ -162,30 +167,38 @@ def main():
         return 1
     c = tally(events)
     port = None
-    for (name, origin, site) in c:
+    for (name, origin, site, script) in c:
         if origin and origin.startswith("http://127.0.0.1:"):
             port = origin.rsplit(":", 1)[1]
             break
     main_origin, frame_origin, top = (f"http://127.0.0.1:{port}", f"http://localhost:{port}",
                                       "http://127.0.0.1")
+    probe, ext = f"{main_origin}/probe.html", f"{frame_origin}/ext.js"
     bump = 1 if red else 0
-    expect = {(n, main_origin, top): K + bump for n in (
-        "Navigator.userAgent.get", "Navigator.deviceMemory.get", "Screen.width.get",
-        "HTMLCanvasElement.toDataURL", "Window.matchMedia", "Document.cookie.get",
-        "WebGLRenderingContext.getParameter")}
-    expect[("WorkerNavigator.hardwareConcurrency.get", main_origin, "")] = K + bump
-    expect[("Navigator.userAgent.get", frame_origin, top)] = K + bump
-    for key, want in expect.items():
-        got = c.get(key, 0)
-        rows.append((got == want, f"{key[0]} origin={key[1]} site={key[2]!r}: {got} (want {want})"))
-    # script attribution: the URL at the top of the stack (inline scripts report their document)
-    for name, origin, suffix in (("Navigator.userAgent.get", main_origin, "/probe.html"),
-                                 ("WorkerNavigator.hardwareConcurrency.get", main_origin, "/worker.js"),
-                                 ("Navigator.userAgent.get", frame_origin, "/frame.html")):
-        got = sum(1 for e in events if e["name"] == name and e["args"].get("origin") == origin
-                  and e["args"].get("script", "").endswith(suffix))
-        rows.append((got == K + bump, f"{name} origin={origin} script=*{suffix}: {got} (want {K + bump})"))
-    title = sum(n for (name, _, _), n in c.items() if name.startswith("Document.title"))
+
+    def count(name, origin, site=None, script=None):
+        return sum(n for (n_, o, s, sc), n in c.items() if n_ == name and o == origin
+                   and (site is None or s == site) and (script is None or sc == script))
+
+    expect = [(n, main_origin, top, None) for n in (
+        "Navigator.deviceMemory.get", "Screen.width.get", "HTMLCanvasElement.toDataURL",
+        "Window.matchMedia", "Document.cookie.get", "WebGLRenderingContext.getParameter")]
+    # ext.js reads share name/origin/site with the probe's own: split them by script
+    expect.insert(0, ("Navigator.userAgent.get", main_origin, top, probe))
+    expect += [("WorkerNavigator.hardwareConcurrency.get", main_origin, "", None),
+               ("Navigator.userAgent.get", frame_origin, top, None),
+               # script attribution: the URL at the top of the stack (inline scripts report
+               # their document; an external script its own URL, whatever origin it reads from)
+               ("Navigator.userAgent.get", main_origin, None, probe),
+               ("WorkerNavigator.hardwareConcurrency.get", main_origin, None, f"{main_origin}/worker.js"),
+               ("Navigator.userAgent.get", frame_origin, None, f"{frame_origin}/frame.html"),
+               ("Navigator.userAgent.get", main_origin, top, ext)]
+    for name, origin, site, script in expect:
+        got = count(name, origin, site, script)
+        label = (f"{name} origin={origin}" + ("" if site is None else f" site={site!r}")
+                 + ("" if script is None else f" script={script}"))
+        rows.append((got == K + bump, f"{label}: {got} (want {K + bump})"))
+    title = sum(n for (name, _, _, _), n in c.items() if name.startswith("Document.title"))
     rows.append((title == 0 + bump, f"Document.title (not allow-listed): {title} (want {0 + bump})"))
 
     # off arm: a normal default set ("blink,loading") must not pull the category in
