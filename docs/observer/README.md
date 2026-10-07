@@ -40,9 +40,17 @@ SIGTERM path wrote no trace; the duration timer flushes it.
     cp <profile>/Default/Cookies /tmp/cookies.db
     python3 scripts/observe_report.py <trace.json> <net.json> --cookies /tmp/cookies.db
 
-Per top-level site: surface group, API, reading origin, call count; requests
-per host (query strings dropped); cookie names (values are never read). The
-raw trace opens in https://ui.perfetto.dev.
+Per top-level site: surface group, API, reading origin, script, call count,
+then a "Top scripts" table (each script's total calls and its three most-read
+APIs); requests per host (query strings dropped); cookie names (values are
+never read). The raw trace opens in https://ui.perfetto.dev.
+
+`script` is the script at the top of the JavaScript stack when the API was
+called, shown as host and path (query and fragment dropped). It separates a
+page's own code from third-party scripts it includes as first-party code (for
+example `connect.facebook.net/en_US/fbevents.js` under the page's origin). An
+inline `<script>` reports its document's URL; code with no script (or `eval`
+without a `sourceURL`) shows `(no script)`.
 
 An event fires at the entry of the binding, before argument and receiver
 checks, so a call that throws (for example a brand-check probe) still counts

@@ -67,12 +67,21 @@ def group_of(name):
     return GROUPS.get(".".join(parts[:2])) or GROUPS.get(parts[0], "other")
 
 
+def script_label(url):
+    """Host and path of a script URL; query and fragment can carry ids, so they are dropped."""
+    if not url:
+        return "(no script)"
+    u = urllib.parse.urlsplit(url)
+    return u.netloc + u.path if u.netloc else url.split("?")[0].split("#")[0]
+
+
 def surface_counts(events):
+    """site -> (reading origin, script label) -> API name -> calls."""
     counts = collections.defaultdict(lambda: collections.defaultdict(collections.Counter))
     for e in events:
         args = e.get("args", {})
         origin = args.get("origin", "")
-        counts[args.get("site") or origin][origin][e["name"]] += 1
+        counts[args.get("site") or origin][(origin, script_label(args.get("script")))][e["name"]] += 1
     return counts
 
 
@@ -119,11 +128,18 @@ def render(events, requests, cookies):
     for site, host, path, method in requests:
         by_site[site][(host, f"{method} {path}")] += 1
     for site in sorted(set(counts) | set(by_site)):
-        lines += [f"## {site or '(no site)'}", "", "| group | API | reading origin | calls |",
-                  "|---|---|---|---|"]
-        for origin, names in sorted(counts.get(site, {}).items()):
+        lines += [f"## {site or '(no site)'}", "",
+                  "| group | API | reading origin | script | calls |", "|---|---|---|---|---|"]
+        by_script = collections.defaultdict(collections.Counter)
+        for (origin, script), names in sorted(counts.get(site, {}).items()):
+            by_script[script].update(names)
             for name, n in sorted(names.items(), key=lambda kv: (group_of(kv[0]), kv[0])):
-                lines.append(f"| {group_of(name)} | {name} | {origin} | {n} |")
+                lines.append(f"| {group_of(name)} | {name} | {origin} | {script} | {n} |")
+        if by_script:
+            lines += ["", "Top scripts", "", "| script | calls | top APIs |", "|---|---|---|"]
+            for script, names in sorted(by_script.items(), key=lambda kv: (-kv[1].total(), kv[0])):
+                top = ", ".join(f"{name} ({n})" for name, n in names.most_common(3))
+                lines.append(f"| {script} | {names.total()} | {top} |")
         reqs = by_site.get(site)
         total = sum(reqs.values()) if reqs else 0
         lines += ["", f"Requests: {total}", "", "| host | request | count |", "|---|---|---|"]

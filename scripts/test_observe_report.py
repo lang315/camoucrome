@@ -10,9 +10,9 @@ import observe_report as r  # noqa: E402
 CAT = "disabled-by-default-camou.observe"
 
 
-def ev(name, origin, site, cat=CAT, ph="I"):
+def ev(name, origin, site, cat=CAT, ph="I", script=""):
     return {"name": name, "cat": cat, "ph": ph, "pid": 1, "tid": 1, "ts": 1,
-            "args": {"origin": origin, "site": site}}
+            "args": {"origin": origin, "site": site, "script": script}}
 
 
 def write_trace(tmp_path, events, wrap=True):
@@ -32,17 +32,33 @@ def test_load_events_accepts_a_bare_array(tmp_path):
     assert len(r.load_events(p)) == 1
 
 
-def test_counts_are_real_call_counts_split_by_reading_origin():
+FBQ = "https://connect.facebook.net/en_US/fbevents.js"
+
+
+def test_counts_are_real_call_counts_split_by_reading_origin_and_script():
     events = [ev("Navigator.userAgent.get", "https://www.facebook.com", "https://news.com")] * 3 + [
-        ev("Navigator.userAgent.get", "https://news.com", "https://news.com")]
+        ev("Navigator.userAgent.get", "https://news.com", "https://news.com", script=FBQ + "?v=2"),
+        ev("Navigator.userAgent.get", "https://news.com", "https://news.com", script=FBQ + "#x"),
+        ev("Navigator.userAgent.get", "https://news.com", "https://news.com",
+           script="https://news.com/app.js")]
     c = r.surface_counts(events)
-    assert c["https://news.com"]["https://www.facebook.com"]["Navigator.userAgent.get"] == 3
-    assert c["https://news.com"]["https://news.com"]["Navigator.userAgent.get"] == 1
+    ua = "Navigator.userAgent.get"
+    assert c["https://news.com"][("https://www.facebook.com", "(no script)")][ua] == 3
+    assert c["https://news.com"][("https://news.com", "connect.facebook.net/en_US/fbevents.js")][ua] == 2
+    assert c["https://news.com"][("https://news.com", "news.com/app.js")][ua] == 1
+
+
+def test_script_label_is_host_and_path():
+    assert r.script_label(FBQ + "?id=123&ev=PageView#frag") == "connect.facebook.net/en_US/fbevents.js"
+    assert r.script_label("http://127.0.0.1:8080/probe.html") == "127.0.0.1:8080/probe.html"
+    assert r.script_label("") == "(no script)"
+    assert r.script_label(None) == "(no script)"
 
 
 def test_worker_events_group_by_origin_when_site_is_empty():
-    c = r.surface_counts([ev("WorkerNavigator.hardwareConcurrency.get", "https://a.com", "")])
-    assert c["https://a.com"]["https://a.com"]["WorkerNavigator.hardwareConcurrency.get"] == 1
+    c = r.surface_counts([ev("WorkerNavigator.hardwareConcurrency.get", "https://a.com", "",
+                             script="https://a.com/w.js")])
+    assert c["https://a.com"][("https://a.com", "a.com/w.js")]["WorkerNavigator.hardwareConcurrency.get"] == 1
 
 
 def test_group_of_member_entries_win_over_interface_entries():
@@ -105,7 +121,26 @@ def test_render_lists_counts_hosts_cookies_and_blind_spots(tmp_path):
     cookies = [(".facebook.com", "datr", 1, 1)]
     out = r.render(events, requests, cookies)
     assert "## https://www.facebook.com" in out
-    assert "| navigator | Navigator.deviceMemory.get | https://www.facebook.com | 2 |" in out
+    assert ("| navigator | Navigator.deviceMemory.get | https://www.facebook.com | (no script) | 2 |"
+            in out)
     assert "| www.facebook.com | POST /ajax/bz | 1 |" in out
     assert "datr" in out and "SECRET" not in out
     assert "## Not observable" in out and "Intl" in out
+
+
+def test_render_top_scripts_per_site():
+    site = "https://news.com"
+    events = ([ev("Navigator.userAgent.get", site, site, script=FBQ + "?v=1")] * 4
+              + [ev("Screen.width.get", site, site, script=FBQ)] * 3
+              + [ev("Navigator.deviceMemory.get", site, site, script=FBQ)] * 2
+              + [ev("Window.matchMedia", site, site, script=FBQ)]
+              + [ev("Document.cookie.get", site, site, script="https://news.com/app.js")] * 5)
+    out = r.render(events, [], [])
+    assert "| group | API | reading origin | script | calls |" in out
+    assert "| screen | Screen.width.get | https://news.com | connect.facebook.net/en_US/fbevents.js | 3 |" in out
+    top = out.split("Top scripts", 1)[1]
+    assert "| script | calls | top APIs |" in top
+    fb = "| connect.facebook.net/en_US/fbevents.js | 10 | "
+    assert fb + "Navigator.userAgent.get (4), Screen.width.get (3), Navigator.deviceMemory.get (2) |" in top
+    assert "Window.matchMedia" not in top.split(fb, 1)[1].split("\n", 1)[0]
+    assert top.index(fb) < top.index("| news.com/app.js | 5 | Document.cookie.get (5) |")
