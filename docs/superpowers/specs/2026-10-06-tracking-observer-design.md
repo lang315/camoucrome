@@ -220,6 +220,7 @@ call it):
   about two minutes of feed browsing; a third-party page embedding the Meta
   Pixel or a social plugin, if a public one is found.
 - The owner logs in by hand. Tooling never handles credentials.
+- Owner-approved exception (2026-10-07): arm 1 (logged-out landing) was launched by tooling, one load per site, 30 s, no interaction, from a non-interactive desktop session, with --remote-debugging-port=0 open and a single CDP Browser.close sent at 30 s (no other CDP); arms 2-4 were driven by the owner.
 - Every `/ajax/bz` count is reported with the session's total request count as
   its denominator (camoufox's lesson: a bare zero proves nothing).
 - Compared with camoufox's results (`recon_fb_live.json`, `REPORT.md`): what
