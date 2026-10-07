@@ -52,8 +52,9 @@ PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf 
 
 def read_args_gn(out):
     text = (out / "args.gn").read_text()
-    return {k.strip(): v.strip() for k, _, v in
-            (l.partition("=") for l in text.splitlines() if "=" in l and not l.lstrip().startswith("#"))}
+    # ponytail: drops "#..." even inside a quoted string; only the bool args are read here
+    lines = (l.partition("#")[0] for l in text.splitlines())
+    return {k.strip(): v.strip() for k, _, v in (l.partition("=") for l in lines if "=" in l)}
 
 
 def chrome_version(src):
