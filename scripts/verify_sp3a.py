@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Forty-one criteria, all driven with Playwright's sync API over content_shell's CDP,
+Forty-seven criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -86,6 +86,12 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       stock draws nothing, so it must equal unconfigured (and its own pre-draw state).
   C34 a 'copy' STROKE wipes the whole clip like a copy fill: after a translucent
       speckle the canvas reads like a fresh one with the same stroke.
+  C35 a framebuffer readPixels of a gradient triangle is noised and deterministic.
+  C36 a framebuffer readPixels sub-rect equals the matching part of the full read.
+  C37 a framebuffer read leaves translucent pixels exact and changes an opaque one.
+  C38 texImage2D(webgl canvas) read in a second context equals the source's read.
+  C39 getImageData of a sub-rect equals the whole-snapshot field (full read and copy).
+  C40 one flush or many give one mask.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -543,6 +549,77 @@ ELIG_FN = """
     return n; };
 """
 
+# C35-C37: reads from a page framebuffer. FBO_FN renders the C6 gradient
+# triangle into a 64x64 RGBA8 texture framebuffer (no multisampling) and leaves
+# it bound.
+FBO_FN = """
+  const fbo = (w, h) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, RGBA, w, h, 0, RGBA, UB, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    gl.viewport(0, 0, w, h); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); return f; };
+"""
+
+# C35: a framebuffer read is noised and deterministic.
+FBOREAD = tri("webgl", 64, 64, FBO_FN + ELIG_FN + """
+  fbo(64, 64);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  let same = true; for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) { same = false; break; }
+  return { h: H(A), same, e: elig(A, 64) };""")
+
+# C36: a framebuffer sub-rect read equals the matching part of a full read.
+FBOSUB = tri("webgl", 64, 64, FBO_FN + """
+  fbo(64, 64);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(32 * 32 * 4); gl.readPixels(16, 16, 32, 32, RGBA, UB, B);
+  let diff = 0;
+  for (let y = 0; y < 32; y++) for (let i = 0; i < 128; i++)
+    if (B[y * 128 + i] !== A[(y + 16) * 256 + 64 + i]) diff++;
+  return { diff, h: H(B) };""")
+
+# C37: random 1px texels uploaded into a framebuffer's texture: the left half
+# translucent (alpha 1..254), the right half opaque. Translucent texels read
+# back exact; at least one opaque texel changes under a seed.
+FBOTRANS = tri("webgl", 64, 64, """
+  const src = new Uint8Array(64 * 64 * 4); let s = 99;
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const i = (y * 64 + x) * 4;
+    for (let k = 0; k < 3; k++) { s = (Math.imul(s, 1103515245) + 12345) >>> 0; src[i + k] = s >>> 24; }
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    src[i + 3] = x < 32 ? 1 + ((s >>> 24) % 254) : 255;
+    if (src[i + 3] < 255) for (let k = 0; k < 3; k++) src[i + k] = Math.min(src[i + k], src[i + 3]); }
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, RGBA, 64, 64, 0, RGBA, UB, src);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  let trans = 0, transDiff = 0, opaqueDiff = 0;
+  for (let i = 0; i < A.length; i += 4) {
+    let d = false; for (let k = 0; k < 4; k++) if (A[i + k] !== src[i + k]) d = true;
+    if (src[i + 3] < 255) { trans++; if (d) transDiff++; } else if (d) opaqueDiff++; }
+  return { trans, transDiff, opaqueDiff, h: H(A) };""")
+
+# C38: texImage2D of the WebGL canvas into a second context (flipped to GL
+# orientation), read through that context's framebuffer: equals the source's
+# own readPixels (noised once, not twice), and is noised.
+TEXIMAGE = tri("webgl", 64, 64, """
+  const R = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, R);
+  const c2 = document.createElement('canvas'); c2.width = 64; c2.height = 64;
+  const g2 = c2.getContext('webgl'); if (!g2) return { err: 'no-webgl-second' };
+  const t = g2.createTexture(); g2.bindTexture(g2.TEXTURE_2D, t);
+  g2.pixelStorei(g2.UNPACK_FLIP_Y_WEBGL, true);
+  g2.texImage2D(g2.TEXTURE_2D, 0, g2.RGBA, g2.RGBA, g2.UNSIGNED_BYTE, c);
+  const f = g2.createFramebuffer(); g2.bindFramebuffer(g2.FRAMEBUFFER, f);
+  g2.framebufferTexture2D(g2.FRAMEBUFFER, g2.COLOR_ATTACHMENT0, g2.TEXTURE_2D, t, 0);
+  const B = new Uint8Array(64 * 64 * 4); g2.readPixels(0, 0, 64, 64, g2.RGBA, g2.UNSIGNED_BYTE, B);
+  let eq = true; for (let i = 0; i < R.length; i++) if (R[i] !== B[i]) { eq = false; break; }
+  return { eq, h: H(B) };""")
+
+
 S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   const mk = (w, h) => { const c = document.createElement('canvas');
     c.width = w; c.height = h; return c.getContext('2d'); };
@@ -681,6 +758,26 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
       y.arc(32, 32, 20, 0, 7); y.fill();
       y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; y.shadowOffsetY = 0; }),
   };
+  // C39: getImageData of a sub-rect equals the whole-snapshot field, on opaque
+  // and translucent anti-aliased content: against a full read, and against a
+  // drawImage copy (marked imported, so it carries the snapshot's noise once).
+  x = mk(64, 64); arc(x, 24, 24, 16, 'rgba(255,96,0,0.6)'); arc(x, 40, 40, 16, '#06f');
+  const full = get(x, 0, 0, 64, 64), sub = get(x, 10, 12, 40, 36);
+  const cpy = mk(64, 64); cpy.drawImage(x.canvas, 0, 0); const cp = get(cpy, 10, 12, 40, 36);
+  let dF = 0, dC = 0, trans = 0; const tv = [];
+  for (let yy = 0; yy < 36; yy++) for (let xx = 0; xx < 40; xx++) {
+    const o = (yy * 40 + xx) * 4, f = ((yy + 12) * 64 + xx + 10) * 4;
+    for (let k = 0; k < 4; k++) { if (sub[o + k] !== full[f + k]) dF++; if (sub[o + k] !== cp[o + k]) dC++; }
+    if (sub[o + 3] > 0 && sub[o + 3] < 255) { trans++; for (let k = 0; k < 4; k++) tv.push(sub[o + k]); } }
+  out.region = { dF, dC, trans, tH: H(tv), e: elig(full, 64) };
+  // C40: the same twelve arcs, flushed after every draw (1x1 getImageData)
+  // or only at the end, give one final read.
+  const seq = (flushEach) => { const y = mk(64, 64);
+    for (let i = 0; i < 12; i++) { arc(y, 8 + i * 4, 10 + (i * 7) % 40, 6, i & 1 ? '#f60' : '#06f');
+      if (flushEach) get(y, 0, 0, 1, 1); }
+    return get(y, 0, 0, 64, 64); };
+  const m2 = seq(false);
+  out.flushes = { h1: H(seq(true)), h2: H(m2), e: elig(m2, 64) };
   return out;
 }"""
 
@@ -772,7 +869,9 @@ seeds_scaled = [session(json.dumps({"canvas:seed": s}), SCALED_TEXT)
 unconf_dec, unconf_dec_err = session(None, DECODED_IMAGE)
 gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_flags=GL_FLAGS))
         for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST),
-                           ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE))}
+                           ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE),
+                           ("fbo", FBOREAD), ("fbosub", FBOSUB), ("fbotrans", FBOTRANS),
+                           ("teximage", TEXIMAGE))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -1104,7 +1203,24 @@ s2b_row(C34, lambda r: r["copystroke"],
         lambda u: u["e"] > 0 and u["h"] == u["fresh"],
         lambda s, u: s["h"] == s["fresh"])
 
-EXPECTED = 41
+C35 = "35 framebuffer readPixels of a gradient triangle noised and deterministic"
+C36 = "36 framebuffer readPixels sub-rect equals the full framebuffer read's part"
+C37 = "37 framebuffer read leaves translucent pixels exact, changes an opaque one"
+C38 = "38 texImage2D(webgl canvas) read in a second context equals the source's read"
+C39 = "39 getImageData sub-rect equals the whole-snapshot field (full read and copy)"
+C40 = "40 one flush or many give one mask"
+gl_row(C35, "fbo", lambda s, u: u["e"] > 0 and s["same"] and s["h"] != u["h"])
+gl_row(C36, "fbosub", lambda s, u: s["diff"] == 0 and u["diff"] == 0 and s["h"] != u["h"])
+gl_row(C37, "fbotrans", lambda s, u: u["trans"] > 0 and u["transDiff"] == 0
+       and u["opaqueDiff"] == 0 and s["transDiff"] == 0 and s["opaqueDiff"] > 0)
+gl_row(C38, "teximage", lambda s, u: u["eq"] and s["eq"] and s["h"] != u["h"])
+s2b_row(C39, lambda r: r["region"],
+        lambda u: u["e"] > 0 and u["trans"] > 0 and u["dF"] == 0 and u["dC"] == 0,
+        lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["tH"] != u["tH"])
+s2b_row(C40, lambda r: r["flushes"], lambda u: u["e"] > 0 and u["h1"] == u["h2"],
+        lambda s, u: s["h1"] == s["h2"] and s["h1"] != u["h1"])
+
+EXPECTED = 47
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
