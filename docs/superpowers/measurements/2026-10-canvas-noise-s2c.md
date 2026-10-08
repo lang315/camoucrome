@@ -339,13 +339,99 @@ target read_2d abs<=0.5: 4.90 MISS
 ```
 
 Per-draw cost went from 23.7x to 1.08x. The `draw_read` MISS is the same at
-density 0 (2.84x), so it comes from the flush walk and the whole-snapshot read,
-not from the noise. `read_2d` is Task 5's target.
+density 0 (2.84x), so the noise does not cause it. It comes from the flush walk,
+at about 4 µs per op. The seeded excess is about 47 ms per 10 000 arcs. The read
+accounts for at most about 5 ms of that (`read_2d` 4.9 ms), which leaves about
+42 ms for the walk, roughly 1.9x stock's own RGBA raster. A cheaper read cannot
+bring `draw_read` under 2x; only a cheaper walk can.
 
 Export (W6): 3 fixups folded into sp3a, 38 commits, 0 fixup subjects, 0 dirty
 (box HEAD 8ae478f98a). Only `patches/sp3a-canvas-noise.patch` changed. None of
 its changed lines mention webgl, so Task 3's hunks are kept. Sync check: all 45
 copied files identical.
+
+### §7.1 Fix round 1 (review of 1282962..f74af3f)
+
+Changes:
+- `CamouMarkOp` returns first when the op's flags draw nothing. This covers
+  images, pattern text and flagless ops; S2b had this guard.
+- An image or pattern text drawn under a looper (an opaque image's shadow)
+  rasters a rect of its bounds with the shader-free looper flags and merges it
+  `imported`. The area is bounded by the looper's layers, with each layer's blur
+  outset applied in local and in device space, since a canvas shadow ignores the
+  transform.
+- A shadowed shape's shadow pass merges `aa` over the same tight area, no longer
+  over the full clip.
+- `CamouLayerArea`. A layer that carries bounds is marked over those bounds,
+  grown by its filter, instead of over the clip. A translucent image's shadow is
+  such a layer: `drawImage` puts it in a `SaveLayer` with bounds and a
+  drop-shadow filter, so it never reaches the looper path. With only the looper
+  fix, C44 still failed with the same values.
+- Op bounds:
+  - A plain fill uses its geometry bounds and converts no paint.
+  - Other paints are converted without their shader, so a pattern is no longer
+    converted to a picture just for bounds.
+  - Bounds are taken from the coverage flags, which drops one full flags copy.
+- The heavy header includes are replaced by forward declarations of `SkCanvas`,
+  `cc::PaintOp` and `cc::PlaybackParams`. The `.cc` includes `SkMaskFilter.h`
+  and `SkPathEffect.h`.
+- The coverage bitmap is released in `ResetInternal` (and so on context loss)
+  and at offscreen `transferToImageBitmap`.
+- Stale comments are fixed.
+
+New rows: C43 (a globalAlpha 0 `drawImage` over an arc's region) and C44 (a
+shadowed 10x10 `drawImage` far from an arc). Both pass iff the seeded region is
+unchanged and the unconfigured one is too, with the vacuity guard that seeded A
+differs from unconfigured A.
+
+The first C43 draft drew the image over only part of the arc's edge. It passed on
+the faulty build: at density 0.04, no noised pixel fell under the image. It was
+rewritten to cover the whole region before any code went in.
+
+RED, on the build before the fix (box 43bee01f87): `verify_sp3a` gives 49 PASS
+and 2 FAIL.
+
+```
+FAIL  43 a globalAlpha 0 drawImage leaves a region's noise unchanged
+FAIL  44 a shadowed drawImage elsewhere leaves a region's noise unchanged
+      43 : seeded {'a': 1792132258, 'b': 1703964406, 'e': 78}, unconfigured {'a': 1703964406, 'b': 1703964406, 'e': 78}
+      44 : seeded {'a': 2023189415, 'b': 2836762292, 'e': 78}, unconfigured {'a': 2836762292, 'b': 2836762292, 'e': 78}
+```
+
+GREEN:
+- The final build reports 27 steps (non-zero), and the unit filters pass (70
+  tests). Earlier builds in this round reported 332 and 37 steps.
+- `verify_sp3a`: 51 PASS, ALL_PASS, rc=0.
+- `verify_review`: 12/12.
+- The shadowed-text probe passes.
+- The leftover-symbol grep prints nothing.
+- `gn check` reports OK for core, canvas and webgl, and `checkdeps` exits 0 on
+  the three directories.
+
+Cost (`measure_canvas_cost.py`, with the new `shadow_read` arm, which is
+reported only):
+
+```
+draw_only          none=2.600 (1.00x)  seed=2.250 (0.87x)  seed_d0=2.650 (1.02x)
+draw_read          none=25.500 (1.00x)  seed=68.950 (2.70x)  seed_d0=69.600 (2.73x)
+per_draw_us        none=0.325 (1.00x)  seed=0.300 (0.92x)  seed_d0=0.350 (1.08x)
+read_2d            none=0.000  seed=0.000  seed_d0=0.000
+shadow_read        none=6.050 (1.00x)  seed=18.350 (3.03x)  seed_d0=18.050 (2.98x)
+target per_draw_us ratio<=1.2: 0.92 PASS
+target draw_read ratio<=2.0: 2.70 MISS
+target read_2d abs<=0.5: 0.00 PASS
+```
+
+The `draw_read` MISS remains: 2.70x seeded, 2.73x at density 0. The walk still
+costs about 4.3 µs per arc, so the per-op cuts did not move it. The remaining time
+is in the per-op erase, the A8 raster and the `Merge` scan, not in the paint
+conversion. `shadow_read` (1000 shadowed 12x12 rects plus one read) is 3.0x, with
+density 0 the same.
+
+Export (W6): 3 fixups folded into sp3a. The branch keeps 38 commits, with 0
+fixup subjects and 0 dirty files (box HEAD bf93a2cfcd). Only
+`patches/sp3a-canvas-noise.patch` changed, and none of its changed lines mention
+webgl. Sync check: all 45 copied files identical.
 
 ### §6.2 Fix round 2 (re-review of 8d3baba..1282962)
 
