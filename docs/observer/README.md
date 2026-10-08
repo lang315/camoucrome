@@ -43,6 +43,9 @@ hardcode that host's layout (`D:\camou-win\chromium\src\out\Observe\chrome.exe`,
 `--trace-startup-duration=20` on `content_shell`, because content_shell's
 SIGTERM path wrote no trace; the duration timer flushes it.
 
+`verify_observe.py` has 17 rows, including a hot loop of 100 000 `fillRect`
+calls and `lineWidth` sets that V8 runs on its fast API path.
+
 ## Read
 
     cp <profile>/Default/Cookies /tmp/cookies.db
@@ -84,12 +87,6 @@ as a read.
 - Values: a row says a page read `deviceMemory`, not what it got.
 - Named and indexed access (`localStorage.foo`, `navigator.plugins[0]`) goes
   through interceptors and is not observed.
-- V8 fast API calls: about 100 canvas-2D/WebGL methods and setters have a
-  `[NoAllocDirectCall]` fast path that skips the hooked callback once V8
-  optimizes the call site. Canvas and WebGL draw and state counts are lower
-  bounds; read-outs (`toDataURL`, `getImageData`, `readPixels`,
-  `getParameter`, `measureText`, `fillText`, `font`) are exact, and a zero
-  row is a real zero.
 
 ## Detectability
 
@@ -106,6 +103,8 @@ no-tracing baseline:
 |---|---|---|
 | off | 88.5 | 29.6 |
 | on | 512.1 | 30.6 |
+
+A single run on 2026-10-08 (after the fast-call hook) measured off 75.6 / 29.5 ms and on 788.9 / 30.9 ms; the on-arm `navigator.userAgent` figure is not attributed to the hook (that getter has no fast path) and needs repeated runs before replacing the numbers above.
 
 Browse a site normally, on a release build, when staying hidden matters.
 
