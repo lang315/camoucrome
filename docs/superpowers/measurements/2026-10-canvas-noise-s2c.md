@@ -903,6 +903,11 @@ FAIL  47 SRGB8_ALPHA8 drawing buffer readPixels noised and deterministic
 
 ### §12.3 Builds and GREEN
 
+Windows (§9) was not rebuilt or re-run for these fixes; §9 describes the build
+before them. The WebGL1 query's support was established by the rows' behaviour
+(C35 to C37 and C46b's RGBA8 guard noised, RGBA4 stock, `glerr` 0 in both
+arms), not by reading the command-buffer client.
+
 - Build `Build Succeeded: 354 steps` (8 m 11 s, rc 0); after the comment reflow,
   `Build Succeeded: 207 steps` (5 m 57 s, rc 0).
 - `verify_sp3a` 57/57 `ALL_PASS` (rc 0), including
