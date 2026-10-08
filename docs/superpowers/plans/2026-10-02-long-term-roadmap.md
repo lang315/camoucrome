@@ -437,11 +437,11 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   WebGL canvas is noised (C38). A page framebuffer is noised only when its read
   attachment is 8-bit RGB(A) (C46, C46b), and an `SRGB8_ALPHA8` drawing buffer
   is noised (C47). `verify_sp3a` has 57 rows. Final cost ratios (WSL CPU raster,
-  measurements section 12): `per_draw_us` 1.08x (target 1.2, PASS), `read_2d`
-  below the timer (PASS), `gl_flat.large` 1.53x, `gl_edges.large` 1.56x
-  (targets 3x, PASS); `gl_fbo.large` 4.21x (adopted 3x, MISS: the format gate's
-  four attachment queries), `draw_read` 2.70x (target 2x, MISS), `gl_edges.small`
-  2.07x (target 1.5x, MISS). The gaps are in section 10 of the measurements.
+  measurements section 12.6): `per_draw_us` 0.93x (target 1.2, PASS), `read_2d`
+  below the timer (PASS), `gl_flat.large` 1.37x, `gl_edges.large` 1.44x
+  (targets 3x, PASS); `gl_fbo.large` 4.16x (adopted 3x, an accepted MISS after
+  the format gate), `draw_read` 2.64x (target 2x, MISS), `gl_edges.small`
+  2.00x (target 1.5x, MISS). The gaps are in section 10 of the measurements.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
   while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
   unmeasurable.

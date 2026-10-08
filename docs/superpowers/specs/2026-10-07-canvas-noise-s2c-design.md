@@ -485,7 +485,7 @@ disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
   - C35 and C37 carry the wording in the planning section.
   - `draw_read` stays above 2x (2.70x), `gl_edges.small` above 1.5x (2.07x),
     and, after the final review's format gate, `gl_fbo.large` above its
-    adopted 3x (4.21x); final run in the measurements' section 12.
+    adopted 3x (4.16x, accepted; measurements section 12.6).
     Both are accepted as known limits for this slice and listed in the
     measurements' section 10.
 - **The noise loop (section 3).** The ring holds two source rows, not three: the
@@ -505,12 +505,13 @@ disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
   leave both. Blink does not track a texture's format, so the sizes come from
   GL before any probe read: in WebGL2,
   `GetFramebufferAttachmentParameteriv(READ_FRAMEBUFFER, <read buffer>,
-  FRAMEBUFFER_ATTACHMENT_{RED,GREEN,BLUE,ALPHA}_SIZE)`; in WebGL1, whose read
-  and draw framebuffers are one, `GetIntegerv(RED_BITS ... ALPHA_BITS)`. R, G
-  and B must be 8 bits and A 8 or 0. Anything else, a `NONE` read buffer or a
-  missing attachment stays stock. The queries stop at the first size that
-  fails. An 8-bit attachment pays four extra round trips (measured in the
-  measurements' section 12).
+  FRAMEBUFFER_ATTACHMENT_{GREEN,BLUE}_SIZE)`; in WebGL1, whose read and draw
+  framebuffers are one, `GetIntegerv(GREEN_BITS, BLUE_BITS)`. G and B must both
+  be 8 bits: among the formats GL reads as `RGBA`/`UNSIGNED_BYTE` that holds
+  exactly for `RGBA8`, `RGB8` and `SRGB8_ALPHA8` (round 2 of the final fix cut
+  the first cut's four queries, R, G, B and A, to these two). Anything else, a
+  `NONE` read buffer or a missing attachment stays stock. An 8-bit attachment
+  pays two extra round trips (measurements, section 12.6).
 - **New rows from the final review.**
   - **C36b**: framebuffer reads whose margin or body crosses the far edge, and
     one with a negative origin, equal the full read's pixels. These reach the
