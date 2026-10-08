@@ -346,3 +346,53 @@ Export (W6): 3 fixups folded into sp3a, 38 commits, 0 fixup subjects, 0 dirty
 (box HEAD 8ae478f98a). Only `patches/sp3a-canvas-noise.patch` changed. None of
 its changed lines mention webgl, so Task 3's hunks are kept. Sync check: all 45
 copied files identical.
+
+### §6.2 Fix round 2 (re-review of 8d3baba..1282962)
+
+C42 (new row, EXPECTED 48 to 49): WebGL2, `drawingBufferStorage(RGBA16F, 64, 64)`
+with `EXT_color_buffer_float`, random opaque sentinels, a full and a sub-rect
+`readPixels`; PASS iff seeded buffers are unchanged and `getError` equals the
+unseeded arm's, which must itself leave the buffers unchanged. A missing API or
+extension is an error row.
+
+RED on the build with the round-1 code: `FAIL 42`; seeded `full` e=1282 n=308
+(308 bytes of the page's buffer noised although GL rejected the read), `sub`
+n=0, unconfigured n=0 for both. `verify_sp3a` otherwise 48 PASS.
+
+C37 mutation on the shipped probe (`n = len` before the agree loop, so every
+probe pixel "agrees"): `FAIL 37`, seeded `edgeDiff` 7, `opaqueDiff` 150;
+unconfigured 0. Reverted by the fix build.
+
+Fixes: the default framebuffer is noised only when `DrawingBuffer::StorageFormat()`
+is `GL_RGBA8` or `GL_RGB8` (an allowlist: RGBA16F and SRGB8_ALPHA8 stay stock) and
+READ_BUFFER is not NONE; the FBO extent first double-reads the pixel at
+(ex1-1, ey1-1) and skips the row and column probes when it is inside; the lines
+changed this round are clang-formatted (line ranges only).
+
+GREEN: `verify_sp3a` 49 PASS, ALL_PASS, rc=0 (C37, C41, C42 and C17 to C20, C28,
+C29, C35, C36, C38 PASS); `verify_review` 12/12; unit filters PASSED;
+`checkdeps` on modules/webgl SUCCESS; `gn check` OK.
+
+Cost (tree includes Task 4):
+
+```
+gl_edges.large     none=1.800 (1.00x)  seed=2.900 (1.61x)
+gl_edges.small     none=0.280 (1.00x)  seed=0.570 (2.04x)
+gl_fbo.large       none=1.800 (1.00x)  seed=4.600 (2.56x)
+gl_fbo.small       none=0.280 (1.00x)  seed=1.120 (4.00x)
+gl_flat.large      none=1.800 (1.00x)  seed=2.900 (1.61x)
+gl_flat.small      none=0.290 (1.00x)  seed=0.590 (2.03x)
+target gl_flat.large ratio<=3.0: 1.61 PASS
+target gl_edges.large ratio<=3.0: 1.61 PASS
+target gl_edges.small ratio<=1.5: 2.04 MISS
+target gl_fbo.large ratio<=3.0: 2.56 PASS
+```
+
+`gl_fbo.small` went from 5.86x to 4.00x with the corner shortcut. `gl_fbo.large`
+went from 1.94x to 2.56x: a read at the origin always has its far corner
+outside, so the shortcut costs one extra probe pair there (a read whose rect
+ends at the framebuffer edge cannot benefit); still under the 3x target.
+`gl_edges.small` stays a MISS for the reason in §6.1 (one round trip).
+
+Export: sp3a and sp3b regenerated; the other 77 files match the Mac tree by
+short hash. Sync check: all 45 copied files identical. 38 commits.
