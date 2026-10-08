@@ -434,3 +434,55 @@ replaces the text above it, and the plan
   - `transferToImageBitmap` on an `OffscreenCanvas` returns an un-noised
     image;
   - so do the offscreen `convertToBlob` paths that bypass `CamouNoised`.
+
+## Amended during implementation (2026-10-08)
+
+Execution changed these points. Each replaces any earlier text on the same
+point, including the "Amended during planning" section above where it
+disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
+(sections 6 to 8 and their fix rounds). `verify_sp3a` has **53** rows
+(`EXPECTED` 53).
+
+- **A page framebuffer's extent no longer comes from the whole-rect double
+  read.** The probe is now a far-corner short-cut, then one row and one column,
+  each read twice (`0x00` and `0xFF` fills). A read whose rect lies inside the
+  framebuffer stops at the corner pixel. C37's `edgeDiff` still checks it.
+  Mutation proof: with every probe pixel treated as agreeing, C37 fails with
+  `edgeDiff` > 0.
+- **Scratch memory** for the readback comes from
+  `blink::Partitions::BufferTryAlignedZeroedMalloc` (and `BufferAlignedFree`),
+  which Blink's `checkdeps` allows. It is zeroed and fallible. A default
+  framebuffer region read is compared with the page's read, and the noise bails
+  out on a mismatch.
+- **New rows.**
+  - **C41**: `readBuffer(NONE)` on the default framebuffer leaves the sentinel
+    as stock, with the error equal to the unseeded arm's. The hook skips when
+    there is no framebuffer and the read buffer is `NONE`.
+  - **C42**: `drawingBufferStorage(RGBA16F, ...)` leaves a full and a sub-rect
+    read stock. The default framebuffer is noised only when its storage format
+    is `GL_RGBA8` or `GL_RGB8` (a positive allowlist; `RGBA16F` and
+    `SRGB8_ALPHA8` stay stock).
+  - **C43**: a `drawImage` at `globalAlpha` 0 leaves the region's noise
+    unchanged. `nothingToDraw()` runs before the op switch in `CamouMarkOp`.
+  - **C44 and C44b**: a small shadowed `drawImage` far from an arc leaves the
+    arc's region unchanged. C44 reaches the layer path, C44b (an
+    `{alpha:false}` source) the looper path.
+  - **C45**: `getImageData` rects that cross the canvas edge, with negative
+    `sw`/`sh` and a corner 1x1, equal the full read and a `drawImage` copy.
+    The corner 1x1 is an edge pixel, so it checks geometry only.
+- **Shadows.** Looper and layer areas are tight (`CamouLayerArea`, using the
+  filter's fast bounds), with no full-clip mark. `nothingToDraw()` is checked
+  with the looper stripped. A layer that paints nothing still marks its area
+  (a canvas filter can paint from an empty layer).
+- **GPU snapshots.** `CamouNoisedRegion` returns empty for a texture-backed
+  snapshot, which keeps the cached whole-snapshot `getImageData` path. A rect
+  that contains the whole canvas routes to the cache, and a rect that misses the
+  canvas skips the noise (the zero buffer is stock).
+- **Cost target.** `gl_fbo.large` <= 3x was adopted, the same as the default
+  framebuffer's large read: a 19x gap between the two would be a detector.
+- **Other rulings.**
+  - C39 and C40 are mutation-proven, not RED on S2b.
+  - C35 and C37 carry the wording in the planning section.
+  - `draw_read` stays above 2x (2.63x), `gl_edges.small` above 1.5x (2.03x).
+    Both are accepted as known limits for this slice and listed in the
+    measurements' section 10.

@@ -90,7 +90,7 @@ Every box command goes through `mcp__sshgate__exec` with `server: "buildpc"`. Th
 3. Run `wsl -u lang -e bash -c "echo <B64> | base64 -d > /tmp/x.sh && bash /tmp/x.sh"`.
 4. For a payload over about 3 KB, send `gzip -9c <file> | base64 | tr -d '\n'` and decode with `base64 -d | gunzip`.
 5. Compare the box's `sha256sum` with `shasum -a 256` on the Mac before using a shipped file.
-6. A background job must be started with `setsid nohup … < /dev/null > log 2>&1 &`. A plain `nohup` dies with the sshgate call.
+6. A background job must be started with `setsid nohup … < /dev/null > log 2>&1 &`. A plain `nohup` dies with the sshgate call. A detached launch inside a W0 wrapper needs a short `sleep` after it, or the wrapper exits before the job has detached.
 
 **W1. Build lock.**
 - Acquire: `bash /home/lang/camoucrome-client/scripts/build_lock.sh acquire "s2c <what>"`. It must print that it acquired the lock. If another holder is named, stop and wait. Never break another holder's lock.
@@ -180,10 +180,10 @@ cd ~/camoucrome-verify && venv/bin/python3 /tmp/s2c-tree/scripts/measure_canvas_
 **W5g. Header and DEPS checks** (after any cross-component include):
 ```bash
 cd ~/chromium-s2c/src && export PATH=/home/lang/depot_tools:$PATH
-gn check out/Default //third_party/blink/renderer/core:core //third_party/blink/renderer/modules/canvas:canvas //third_party/blink/renderer/modules/webgl:webgl 2>&1 | tail -2
-python3 buildtools/checkdeps/checkdeps.py third_party/blink/renderer/modules/canvas third_party/blink/renderer/core/html/canvas third_party/blink/renderer/modules/webgl 2>&1 | tail -2
+for t in core:core modules/canvas:canvas modules/webgl:webgl; do gn check out/Default //third_party/blink/renderer/$t 2>&1 | tail -2; done
+for d in modules/canvas core/html/canvas modules/webgl; do python3 buildtools/checkdeps/checkdeps.py third_party/blink/renderer/$d 2>&1 | tail -2; done
 ```
-Expected: `Header dependency check OK`, and checkdeps reports nothing.
+Expected: `Header dependency check OK` per target, and checkdeps reports nothing. `gn check` takes one target per call and `checkdeps.py` one directory per call.
 
 **W6. Box commit and export** (WSL), after a task's edits build and test green:
 ```bash
