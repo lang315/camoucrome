@@ -829,6 +829,21 @@ unchanged, and the gates only narrow which reads are noised.
   on the box (CPU raster).
 - The noise cache holds two full-canvas copies: the held source snapshot and
   the noised raster image (`camou_noised_source_`, `camou_noised_`).
+- Page framebuffers that are not 8-bit RGB(A) read clean on purpose (R8, RG8,
+  RGBA4, RGB5_A1, RGB565, RGB10_A2, 16-bit normalized): noising them would
+  return values stock cannot. WebGL1 renderbuffers come only in the low-bit
+  formats without extensions, so a page can choose an un-noised read that way.
+- Whether stock `readPixels` equals `toDataURL` for an `SRGB8_ALPHA8` drawing
+  buffer is UNMEASURED: `readPixels` returns the sRGB staging bytes, while the
+  snapshot is a copy that may decode them. The fork noises both, but they may
+  not share one field.
+- Not verified: a WebGL `{alpha:false}` drawing buffer is RGBX
+  (`drawing_buffer.cc`); its snapshot may never be noised while its
+  `readPixels` is.
+- The page-framebuffer timing gap (seeded 3.0x large, 2.6x small against the
+  default framebuffer; stock about 1.0x) already stood at about 2x before the
+  8-bit gate; the gate's two queries add about 0.2 ms each, and the rest of the
+  large read's excess is not isolated.
 
 ### Remaining behaviour (from the spec's known gaps)
 
@@ -922,7 +937,8 @@ FAIL  47 SRGB8_ALPHA8 drawing buffer readPixels noised and deterministic
 
 ### §12.2 The fix
 
-- **C1.** `CamouNoiseReadPixels` stops a page-framebuffer read unless the read
+- **C1.** (Superseded by §12.6: the final gate queries only the G and B sizes.)
+  `CamouNoiseReadPixels` stops a page-framebuffer read unless the read
   attachment has R, G and B of 8 bits and A of 8 or 0. In WebGL2 it asks
   `GetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, <read buffer>,
   GL_FRAMEBUFFER_ATTACHMENT_*_SIZE)`. In WebGL1 it asks `GetIntegerv(GL_*_BITS)`:
@@ -949,8 +965,8 @@ FAIL  47 SRGB8_ALPHA8 drawing buffer readPixels noised and deterministic
 
 ### §12.3 Builds and GREEN
 
-Windows (§9) was not rebuilt or re-run for these fixes; §9 describes the build
-before them. The WebGL1 query's support was established by the rows' behaviour
+Windows was not rebuilt for this first round; §9.8 rebuilt and re-ran it on
+the final code (round 2). The WebGL1 query's support was established by the rows' behaviour
 (C35 to C37 and C46b's RGBA8 guard noised, RGBA4 stock, `glerr` 0 in both
 arms), not by reading the command-buffer client.
 
