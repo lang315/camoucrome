@@ -52,11 +52,6 @@ NOT_OBSERVABLE = [
     "Named and indexed access (localStorage.foo, navigator.plugins[0], "
     "mimeTypes['application/pdf']): it goes through interceptor callbacks, not the hooked ones",
     "Values: the report says that a page read a member, not what it got",
-    "V8 fast API calls: about 100 canvas-2D/WebGL methods and setters have a "
-    "[NoAllocDirectCall] fast path that skips the hooked callback once V8 optimizes the "
-    "call site, so canvas/webgl draw and state counts are lower bounds; read-outs "
-    "(toDataURL, getImageData, readPixels, getParameter, measureText, fillText, font) "
-    "are not affected, and a zero row is a real zero",
 ]
 
 
