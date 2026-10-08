@@ -4,8 +4,11 @@
 
 #include "components/camoucfg/canvas_readback.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <vector>
 
+#include "base/containers/span.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -124,6 +127,80 @@ TEST(NoisedImageTest, MinAlpha255LeavesPartialAlpha) {
   for (int y = 0; y < 16; ++y)
     for (int x = 0; x < 16; ++x)
       EXPECT_EQ(*got.getAddr32(x, y), Partial(x, y)) << x << "," << y;
+}
+
+// NoisedRegion returns exactly NoisedImage's bytes over any rect: interior,
+// touching each edge, 1x1, and the whole canvas, premultiplied and
+// unpremultiplied, with no mask, a fine mask and a coarse mask.
+TEST(NoisedRegionTest, EqualsTheWholeImageField) {
+  constexpr int kW = 37, kH = 29;
+  for (SkAlphaType at : {kPremul_SkAlphaType, kUnpremul_SkAlphaType}) {
+    for (int shift : {-1, 0, 2}) {
+      SkBitmap bm;
+      ASSERT_TRUE(bm.tryAllocPixels(
+          SkImageInfo::Make(kW, kH, kRGBA_8888_SkColorType, at)));
+      uint32_t s = 4242;
+      // SAFETY: the bitmap owns computeByteSize() bytes at getPixels().
+      const base::span<uint8_t> px = UNSAFE_BUFFERS(base::span<uint8_t>(
+          static_cast<uint8_t*>(bm.getPixels()), bm.computeByteSize()));
+      for (int y = 0; y < kH; ++y) {
+        for (int x = 0; x < kW; ++x) {
+          const base::span<uint8_t> p = px.subspan(
+              static_cast<size_t>(y) * bm.rowBytes() + static_cast<size_t>(x) * 4,
+              4u);
+          for (int k = 0; k < 4; ++k) {
+            s = s * 1103515245u + 12345u;
+            p[k] = static_cast<uint8_t>(s >> 24);
+          }
+          p[3] = (x + y) % 5 == 0 ? static_cast<uint8_t>(p[3] | 1) : 255;
+          if (at == kPremul_SkAlphaType) {
+            for (int k = 0; k < 3; ++k) {
+              p[k] = std::min(p[k], p[3]);
+            }
+          }
+        }
+      }
+      bm.setImmutable();
+      const sk_sp<SkImage> image = SkImages::RasterFromBitmap(bm);
+      const int sh = std::max(shift, 0);
+      const size_t cell = size_t{1} << sh;
+      const size_t stride = (kW + cell - 1) / cell;
+      std::vector<uint8_t> cells(stride * ((kH + cell - 1) / cell));
+      for (size_t i = 0; i < cells.size(); ++i) {
+        cells[i] = i % 3 == 2 ? kNoiseMaskImported : kNoiseMaskAa;
+      }
+      NoiseMask mask;
+      if (shift >= 0) {
+        mask = NoiseMask{cells.data(), stride, sh, kW, kH};
+      }
+      const sk_sp<SkImage> whole =
+          NoisedImage(*image, 77, 0.5, 2, 1, mask, /*bottom_up=*/false);
+      ASSERT_TRUE(whole);
+      SkBitmap wb;
+      ASSERT_TRUE(wb.tryAllocPixels(whole->imageInfo()));
+      ASSERT_TRUE(whole->readPixels(nullptr, wb.pixmap(), 0, 0));
+      for (const SkIRect& r :
+           {SkIRect::MakeXYWH(5, 4, 20, 15), SkIRect::MakeXYWH(0, 0, 9, 9),
+            SkIRect::MakeXYWH(kW - 6, kH - 5, 6, 5), SkIRect::MakeXYWH(11, 0, 1, 1),
+            SkIRect::MakeXYWH(17, 13, 1, 1), SkIRect::MakeWH(kW, kH)}) {
+        const SkBitmap region = NoisedRegion(*image, r, 77, 0.5, 2, 1, mask);
+        ASSERT_FALSE(region.drawsNothing());
+        ASSERT_EQ(region.width(), r.width());
+        ASSERT_EQ(region.height(), r.height());
+        for (int y = 0; y < r.height(); ++y) {
+          for (int x = 0; x < r.width(); ++x) {
+            EXPECT_EQ(*region.getAddr32(x, y),
+                      *wb.getAddr32(x + r.x(), y + r.y()))
+                << "rect " << r.x() << "," << r.y() << " " << r.width() << "x"
+                << r.height() << " at " << x << "," << y << " shift " << shift;
+          }
+        }
+      }
+      EXPECT_TRUE(NoisedRegion(*image, SkIRect::MakeXYWH(5, 4, 3, 3), 0, 0.5,
+                               2, 1, mask)
+                      .drawsNothing());  // seed 0: nothing, caller stays stock
+    }
+  }
 }
 
 }  // namespace
