@@ -83,11 +83,14 @@ def read_gl(scene, target):
       gl.scissor(xx, y, 4, 4); gl.clearColor(r(), r(), r(), 1); gl.clear(gl.COLOR_BUFFER_BIT); }
   }
   gl.disable(gl.SCISSOR_TEST);
-  const time = (n, w, o) => { const p = new Uint8Array(w * w * 4), t = [];
+  // k reads per timed sample, reported per read: a 64x64 read is below the
+  // timer's resolution.
+  const time = (n, w, o, k) => { const p = new Uint8Array(w * w * 4), t = [];
     for (let i = 0; i < n; i++) { const t0 = performance.now();
-      gl.readPixels(o, o, w, w, gl.RGBA, gl.UNSIGNED_BYTE, p); t.push(performance.now() - t0); }
+      for (let j = 0; j < k; j++) gl.readPixels(o, o, w, w, gl.RGBA, gl.UNSIGNED_BYTE, p);
+      t.push((performance.now() - t0) / k); }
     return t; };
-  const out = { small: time(50, 64, 100), large: time(20, 1024, 0) };
+  const out = { small: time(50, 64, 100, 10), large: time(20, 1024, 0, 1) };
   if (gl.getError() !== gl.NO_ERROR) return { err: 'gl-error' };
   return out; }"""
 
@@ -102,7 +105,8 @@ CASES = [("per_draw_us", PER_DRAW, None), ("draw_only", DRAW_ONLY, None),
 # seeded median in ms.
 TARGETS = [("per_draw_us", "ratio", 1.2), ("draw_read", "ratio", 2.0),
            ("read_2d", "abs", 0.5), ("gl_flat.large", "ratio", 3.0),
-           ("gl_edges.large", "ratio", 3.0), ("gl_edges.small", "ratio", 1.5)]
+           ("gl_edges.large", "ratio", 3.0), ("gl_edges.small", "ratio", 1.5),
+           ("gl_fbo.large", "ratio", 3.0)]
 
 results = {}
 for _ in range(2):
