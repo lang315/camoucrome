@@ -24,7 +24,7 @@ index fe99fbb833..571377b3c4 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index 150d03eafd..9cfc5503aa 100644
+index 150d03eafd..4fb82f48d9 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 @@ -27,6 +27,9 @@
@@ -46,7 +46,7 @@ index 150d03eafd..9cfc5503aa 100644
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
-@@ -551,4 +556,85 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
+@@ -551,4 +556,97 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
    return *monitor;
  }
  
@@ -71,7 +71,15 @@ index 150d03eafd..9cfc5503aa 100644
 +    return UnacceleratedStaticBitmapImage::Create(camou_noised_,
 +                                                  image->Orientation());
 +  }
-+  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
++  // A snapshot the noise cannot carry (float16, a WebGL RGBA16F buffer) is
++  // returned before GetSwSkImage(), which would read a GPU one back for
++  // nothing. The readback keeps this colour type.
++  const cc::PaintImage paint_image = image->PaintImageForCurrentFrame();
++  if (paint_image.GetColorType() != kRGBA_8888_SkColorType &&
++      paint_image.GetColorType() != kBGRA_8888_SkColorType) {
++    return image;
++  }
++  sk_sp<SkImage> sk_image = paint_image.GetSwSkImage();
 +  if (!sk_image) {
 +    return image;
 +  }
@@ -104,11 +112,10 @@ index 150d03eafd..9cfc5503aa 100644
 +  // A texture-backed snapshot is read back whole by GetSwSkImage() below, so
 +  // it keeps the cached whole-snapshot route; so does a read of the whole
 +  // canvas, which would noise everything anyway.
-+  if (!image || !Host() || !CamouNoiseEligible() ||
-+      image->IsTextureBacked() ||
++  if (!image || !Host() || !CamouNoiseEligible() || image->IsTextureBacked() ||
 +      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft ||
-+      rect.contains(SkIRect::MakeWH(image->Size().width(),
-+                                    image->Size().height()))) {
++      rect.contains(
++          SkIRect::MakeWH(image->Size().width(), image->Size().height()))) {
 +    return SkBitmap();
 +  }
 +  const camoucfg::ConfigScope& scope =
@@ -121,7 +128,12 @@ index 150d03eafd..9cfc5503aa 100644
 +      camou_noised_generation_ == generation) {
 +    return SkBitmap();  // the whole field is cached: CamouNoised serves it
 +  }
-+  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
++  const cc::PaintImage paint_image = image->PaintImageForCurrentFrame();
++  if (paint_image.GetColorType() != kRGBA_8888_SkColorType &&
++      paint_image.GetColorType() != kBGRA_8888_SkColorType) {
++    return SkBitmap();
++  }
++  sk_sp<SkImage> sk_image = paint_image.GetSwSkImage();
 +  if (!sk_image ||
 +      (camou_noised_ && camou_noised_from_ == sk_image->uniqueID() &&
 +       camou_noised_generation_ == generation)) {
@@ -133,21 +145,28 @@ index 150d03eafd..9cfc5503aa 100644
 +
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index 6495e3c54b..da21753f96 100644
+index 6495e3c54b..09142a323e 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-@@ -39,11 +39,15 @@
+@@ -32,6 +32,7 @@
+ #include "base/memory/scoped_refptr.h"
+ #include "base/notreached.h"
+ #include "cc/paint/paint_flags.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
+ #include "third_party/blink/renderer/core/core_export.h"
+@@ -39,11 +40,14 @@
  #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
  #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
  #include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
-+#include "components/camoucfg/canvas_noise.h"
 +#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
  #include "third_party/blink/renderer/platform/heap/member.h"
  #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
  #include "third_party/blink/renderer/platform/heap/visitor.h"
  #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
- #include "third_party/skia/include/core/SkData.h"
 +#include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkData.h"
 +#include "third_party/skia/include/core/SkImage.h"
  #include "third_party/skia/include/core/SkImageInfo.h"
  #include "third_party/skia/include/core/SkRect.h"
@@ -268,21 +287,27 @@ index 1d29be2717..327256df25 100644
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 3d7a843995..e3e6e4cb60 100644
+index 3d7a843995..cad57b9d0d 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -4,6 +4,10 @@
+@@ -4,6 +4,7 @@
  
  #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
  
-+#include "components/camoucfg/blink_scope.h"
-+#include "components/camoucfg/canvas_noise.h"
-+
 +#include <algorithm>
  #include <cmath>
  #include <cstdint>
  #include <cstdlib>
-@@ -470,6 +474,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -27,6 +28,8 @@
+ #include "cc/paint/paint_flags.h"
+ #include "cc/paint/paint_image.h"
+ #include "cc/paint/record_paint_canvas.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+ #include "third_party/blink/public/common/metrics/document_update_reason.h"
+@@ -470,6 +473,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
    }
  
    scoped_refptr<StaticBitmapImage> snapshot = GetImage();
@@ -299,7 +324,7 @@ index 3d7a843995..e3e6e4cb60 100644
  
    // Determine if the array should be zero initialized, or if it will be
    // completely overwritten.
-@@ -507,10 +521,19 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -507,10 +520,17 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
      }
  
      SkPixmap image_data_pixmap = image_data->GetSkPixmap();
@@ -311,18 +336,16 @@ index 3d7a843995..e3e6e4cb60 100644
 -            image_data_pixmap.rowBytes(), sx, sy);
 +        camou_region.drawsNothing()
 +            ? snapshot->PaintImageForCurrentFrame().readPixels(
-+                  image_data_pixmap.info(),
-+                  image_data_pixmap.writable_addr(),
++                  image_data_pixmap.info(), image_data_pixmap.writable_addr(),
 +                  image_data_pixmap.rowBytes(), sx, sy)
-+            : camou_region.readPixels(
-+                  image_data_pixmap.info(),
-+                  image_data_pixmap.writable_addr(),
-+                  image_data_pixmap.rowBytes(), std::min(sx, 0),
-+                  std::min(sy, 0));
++            : camou_region.readPixels(image_data_pixmap.info(),
++                                      image_data_pixmap.writable_addr(),
++                                      image_data_pixmap.rowBytes(),
++                                      std::min(sx, 0), std::min(sy, 0));
      if (!read_pixels_successful) {
        SkIRect bounds =
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
-@@ -647,6 +670,13 @@ void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
+@@ -647,6 +667,13 @@ void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
  
    WritePixels(info, source.addr(source_rect.x(), source_rect.y()),
                source.rowBytes(), dest_x, dest_y);
@@ -336,7 +359,7 @@ index 3d7a843995..e3e6e4cb60 100644
  }
  
  String BaseRenderingContext2D::letterSpacing() const {
-@@ -748,6 +778,11 @@ std::optional<cc::PaintRecord> BaseRenderingContext2D::FlushCanvasInternal(
+@@ -748,6 +775,11 @@ std::optional<cc::PaintRecord> BaseRenderingContext2D::FlushCanvasInternal(
    }
  
    cc::PaintRecord recording = recorder->ReleaseMainRecording();
@@ -348,7 +371,7 @@ index 3d7a843995..e3e6e4cb60 100644
    if (shared_image_provider) {
      ScopedRasterTimer timer(shared_image_provider->IsAccelerated()
                                  ? shared_image_provider->RasterInterface()
-@@ -1089,6 +1124,31 @@ void BaseRenderingContext2D::DrawTextInternal(
+@@ -1089,6 +1121,31 @@ void BaseRenderingContext2D::DrawTextInternal(
    }
  
    location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
@@ -403,27 +426,39 @@ index e3a1ba84d9..347e7b0342 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..7273cc7b29 100644
+index 332d1f5c54..842cc05d73 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -23,6 +23,16 @@
- #include "base/check_op.h"
- #include "base/compiler_specific.h"
- #include "base/containers/span.h"
-+#include "components/camoucfg/blink_scope.h"
+@@ -33,7 +33,13 @@
+ #include "cc/paint/paint_canvas.h"
+ #include "cc/paint/paint_flags.h"
+ #include "cc/paint/paint_image.h"
 +#include "cc/paint/paint_op.h"
 +#include "cc/paint/paint_op_buffer.h"
 +#include "cc/paint/paint_op_buffer_iterator.h"
-+#include "third_party/skia/include/core/SkMaskFilter.h"
-+#include "third_party/skia/include/core/SkPathEffect.h"
 +#include "cc/paint/paint_shader.h"
+ #include "cc/paint/record_paint_canvas.h"
++#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
-+#include "third_party/skia/include/core/SkBitmap.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "media/base/video_frame.h"
+ #include "media/base/video_frame_metadata.h"
+@@ -131,11 +137,14 @@
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkBlendMode.h"
 +#include "third_party/skia/include/core/SkCanvas.h"
- #include "base/feature_list.h"
- #include "base/memory/raw_ref.h"
- #include "base/memory/scoped_refptr.h"
-@@ -828,6 +838,8 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
+ #include "third_party/skia/include/core/SkClipOp.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "third_party/skia/include/core/SkM44.h"
++#include "third_party/skia/include/core/SkMaskFilter.h"
+ #include "third_party/skia/include/core/SkMatrix.h"
+ #include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkPathEffect.h"
+ #include "third_party/skia/include/core/SkPathTypes.h"
+ #include "third_party/skia/include/core/SkPoint.h"
+ #include "third_party/skia/include/core/SkRect.h"
+@@ -828,6 +837,8 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
  
  void Canvas2DRecorderContext::ResetInternal() {
    ValidateStateStack();
@@ -432,7 +467,7 @@ index 332d1f5c54..7273cc7b29 100644
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -851,6 +863,436 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -851,6 +862,437 @@ void Canvas2DRecorderContext::ResetInternal() {
    origin_tainted_by_content_ = false;
  }
  
@@ -795,7 +830,8 @@ index 332d1f5c54..7273cc7b29 100644
 +      // clear(), the 'copy' pre-clear and drawColor cover the whole clip.
 +      const auto& color = static_cast<const cc::DrawColorOp&>(op);
 +      const bool exact =
-+          color.mode == SkBlendMode::kSrc || color.mode == SkBlendMode::kClear ||
++          color.mode == SkBlendMode::kSrc ||
++          color.mode == SkBlendMode::kClear ||
 +          (color.mode == SkBlendMode::kSrcOver && color.color.fA >= 1.0f);
 +      if (!exact && color.color.fA <= 0.0f) {
 +        return;
@@ -870,7 +906,7 @@ index 332d1f5c54..7273cc7b29 100644
    UseCounter::Count(GetTopExecutionContext(),
                      WebFeature::kCanvasRenderingContext2DReset);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..169d1a4ace 100644
+index 6ee4b2b0d1..aa58407a5c 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -8,6 +8,7 @@
@@ -881,15 +917,22 @@ index 6ee4b2b0d1..169d1a4ace 100644
  #include <optional>
  #include <utility>
  
-@@ -20,6 +21,8 @@
+@@ -20,6 +21,7 @@
  #include "cc/paint/paint_flags.h"
  #include "cc/paint/paint_record.h"
  #include "cc/paint/record_paint_canvas.h"
 +#include "components/camoucfg/canvas_mask.h"
-+#include "third_party/skia/include/core/SkBitmap.h"
  #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_image_smoothing_quality.h"
+@@ -47,6 +49,7 @@
+ #include "third_party/blink/renderer/platform/wtf/math_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
++#include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkBlendMode.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
 @@ -59,8 +62,14 @@
  
  // IWYU pragma: no_include "third_party/blink/renderer/platform/heap/visitor.h"
@@ -980,10 +1023,10 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..acb1cc248a 100644
+index 26c0a088cc..a29c82bc40 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -25,8 +25,13 @@
+@@ -25,8 +25,14 @@
  
  #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
  
@@ -993,11 +1036,12 @@ index 26c0a088cc..acb1cc248a 100644
 +
  #include <inttypes.h>
  
++#include <array>
 +#include <limits>
  #include <memory>
  #include <utility>
  
-@@ -159,6 +164,7 @@
+@@ -159,6 +165,7 @@
  #include "third_party/blink/renderer/platform/heap/member.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
@@ -1005,7 +1049,7 @@ index 26c0a088cc..acb1cc248a 100644
  #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  #include "third_party/blink/renderer/platform/wtf/text/format.h"
-@@ -5356,6 +5362,221 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5356,6 +5363,255 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
      }
      ContextGL()->ReadPixels(x, y, width, height, format, type, data);
    }
@@ -1015,19 +1059,24 @@ index 26c0a088cc..acb1cc248a 100644
 +  // and the zero-pixel throwaway path in `buffer` are untouched). A read from
 +  // a page framebuffer is noised by the same rule as the default one (canvas
 +  // noise S2c): rendering into a framebuffer and reading it back does not
-+  // return the clean render. No-op when canvas:seed is unset. A default
-+  // framebuffer is noised only when its storage is 8-bit and READ_BUFFER is
-+  // not NONE: otherwise (NONE, drawingBufferStorage(RGBA16F)) GL rejects the
-+  // call and leaves `data` as the page left it, so nothing is noised.
++  // return the clean render. No-op when canvas:seed is unset. Either kind
++  // is noised only when it reads 8-bit RGB(A): a default framebuffer by its
++  // storage (RGBA8, RGB8, SRGB8_ALPHA8) with READ_BUFFER not NONE, a page one
++  // by its read attachment's sizes (CamouNoiseReadPixels). Anything else
++  // stays stock: GL rejects the read (NONE, RGBA16F), or stock returns values
++  // a +-1 would leave (R8 and RG8 read G or B as 0; RGBA4 and RGB565 sit on a
++  // coarser lattice).
 +  //
 +  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
 +  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
 +  // so a later getBufferSubData() returns those pixels un-noised (SP3 7.4).
 +  if (!buffer && format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 &&
 +      height > 0 &&
-+      (framebuffer || (read_buffer_of_default_framebuffer_ != GL_NONE &&
-+                       (GetDrawingBuffer()->StorageFormat() == GL_RGBA8 ||
-+                        GetDrawingBuffer()->StorageFormat() == GL_RGB8)))) {
++      (framebuffer ||
++       (read_buffer_of_default_framebuffer_ != GL_NONE &&
++        (GetDrawingBuffer()->StorageFormat() == GL_RGBA8 ||
++         GetDrawingBuffer()->StorageFormat() == GL_RGB8 ||
++         GetDrawingBuffer()->StorageFormat() == GL_SRGB8_ALPHA8)))) {
 +    if (auto* ec = Host()->GetTopExecutionContext();
 +        ec && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec)) != 0) {
 +      CamouNoiseReadPixels(framebuffer, x, y, width, height, data);
@@ -1116,6 +1165,34 @@ index 26c0a088cc..acb1cc248a 100644
 +    fx1 = std::min<int64_t>(ex1, drawingBufferWidth());
 +    fy1 = std::min<int64_t>(ey1, drawingBufferHeight());
 +  } else {
++    // Only R, G and B of 8 bits and A of 8 or none: Blink does not track a
++    // texture's format, so the sizes come from GL, one query each, before any
++    // probe read. WebGL1 has no per-attachment query, but its read and draw
++    // framebuffers are one. A missing read attachment stays stock.
++    const GLenum attachment = framebuffer->GetReadBuffer();
++    if (attachment == GL_NONE ||
++        !framebuffer->GetAttachmentObject(attachment)) {
++      return;
++    }
++    static constexpr std::array<GLenum, 4> kSizes = {
++        GL_FRAMEBUFFER_ATTACHMENT_RED_SIZE,
++        GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE,
++        GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE,
++        GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE};
++    static constexpr std::array<GLenum, 4> kBits = {
++        GL_RED_BITS, GL_GREEN_BITS, GL_BLUE_BITS, GL_ALPHA_BITS};
++    for (size_t i = 0; i < kBits.size(); ++i) {
++      GLint bits = 0;
++      if (IsWebGL2()) {
++        ContextGL()->GetFramebufferAttachmentParameteriv(
++            GL_READ_FRAMEBUFFER, attachment, kSizes[i], &bits);
++      } else {
++        ContextGL()->GetIntegerv(kBits[i], &bits);
++      }
++      if (bits != 8 && !(i == 3 && bits == 0)) {
++        return;
++      }
++    }
 +    // Blink does not track a page framebuffer's size, but one is always the
 +    // rectangle [0, W) x [0, H). Its part inside the expanded rect starts at
 +    // the rect's corner nearest the origin, and runs along a row and a column
@@ -1209,10 +1286,11 @@ index 26c0a088cc..acb1cc248a 100644
 +  for (size_t r = 0; r < in_h; ++r) {
 +    if (!std::ranges::equal(
 +            page.subspan(r * row_bytes, in_w * 4),
-+            src.subspan(static_cast<size_t>(iy0 - fy0 + static_cast<int64_t>(r)) *
-+                                src_rb +
-+                            static_cast<size_t>(ix0 - fx0) * 4,
-+                        in_w * 4))) {
++            src.subspan(
++                static_cast<size_t>(iy0 - fy0 + static_cast<int64_t>(r)) *
++                        src_rb +
++                    static_cast<size_t>(ix0 - fx0) * 4,
++                in_w * 4))) {
 +      return;
 +    }
 +  }

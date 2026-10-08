@@ -189,7 +189,9 @@ uint64_t DomainKey(std::string_view domain) {
   return DomainHash(domain);
 }
 
-int32_t DeriveDeltaKeyed(uint64_t seed, uint64_t domain_key, uint64_t index,
+int32_t DeriveDeltaKeyed(uint64_t seed,
+                         uint64_t domain_key,
+                         uint64_t index,
                          int32_t bound) {
   if (bound == 0) {
     return 0;

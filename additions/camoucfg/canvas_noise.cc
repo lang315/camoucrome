@@ -44,8 +44,10 @@ const NoiseKeys& Keys() {
 
 // FNV-1a 64 over the 3x3 neighbourhood of interior pixel x: 12 bytes of each
 // row, in top-down order (canvas noise S2b).
-uint64_t PatchHash(const uint8_t* top, const uint8_t* mid,
-                   const uint8_t* bottom, size_t x) {
+uint64_t PatchHash(const uint8_t* top,
+                   const uint8_t* mid,
+                   const uint8_t* bottom,
+                   size_t x) {
   uint64_t h = 0xCBF29CE484222325ULL;
   for (const uint8_t* row : {top, mid, bottom}) {
     for (const uint8_t* b = row + (x - 1) * 4; b != row + (x + 2) * 4; ++b) {
@@ -57,9 +59,15 @@ uint64_t PatchHash(const uint8_t* top, const uint8_t* mid,
 }
 
 // Whether a call with these arguments does anything.
-bool Active(const uint8_t* data, size_t width, size_t height, size_t row_bytes,
-            uint64_t seed, double density, int32_t strength,
-            const NoiseMask& mask, bool bottom_up) {
+bool Active(const uint8_t* data,
+            size_t width,
+            size_t height,
+            size_t row_bytes,
+            uint64_t seed,
+            double density,
+            int32_t strength,
+            const NoiseMask& mask,
+            bool bottom_up) {
   // NaN-safe: !(density > 0) catches it.
   return seed != 0 && data != nullptr && density > 0.0 && strength > 0 &&
          width >= 3 && height >= 3 && row_bytes >= width * 4 &&
@@ -71,10 +79,18 @@ bool Active(const uint8_t* data, size_t width, size_t height, size_t row_bytes,
 // Noises the interior pixels of one row into `out` from unperturbed source
 // rows: `src` is the row, `mem_above` / `mem_below` the rows before / after
 // it in memory. `cells` is this row's mask cells, or null.
-void NoiseRow(uint8_t* out, const uint8_t* mem_above, const uint8_t* src,
-              const uint8_t* mem_below, size_t width, uint64_t seed,
-              double density, int32_t strength, uint8_t min_alpha,
-              const uint8_t* cells, const NoiseMask& mask, bool bottom_up) {
+void NoiseRow(uint8_t* out,
+              const uint8_t* mem_above,
+              const uint8_t* src,
+              const uint8_t* mem_below,
+              size_t width,
+              uint64_t seed,
+              double density,
+              int32_t strength,
+              uint8_t min_alpha,
+              const uint8_t* cells,
+              const NoiseMask& mask,
+              bool bottom_up) {
   const NoiseKeys& keys = Keys();
   const uint8_t* top = bottom_up ? mem_below : mem_above;
   const uint8_t* bottom = bottom_up ? mem_above : mem_below;
@@ -98,9 +114,8 @@ void NoiseRow(uint8_t* out, const uint8_t* mem_above, const uint8_t* src,
       if (DeriveUnitKeyed(seed, keys.gate[ch], index) >= density) {
         continue;
       }
-      const int32_t d =
-          int32_t{px[ch]} +
-          DeriveDeltaKeyed(seed, keys.delta[ch], index, strength);
+      const int32_t d = int32_t{px[ch]} +
+                        DeriveDeltaKeyed(seed, keys.delta[ch], index, strength);
       o[ch] = static_cast<uint8_t>(std::clamp(d, 0, int32_t{alpha}));
     }
   }
@@ -145,10 +160,16 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
   }
 }
 
-bool PerturbRgbaEdgesInPlace(uint8_t* data, size_t width, size_t height,
-                             size_t row_bytes, uint64_t seed, double density,
-                             int32_t strength, uint8_t min_alpha,
-                             const NoiseMask& mask, bool bottom_up) {
+bool PerturbRgbaEdgesInPlace(uint8_t* data,
+                             size_t width,
+                             size_t height,
+                             size_t row_bytes,
+                             uint64_t seed,
+                             double density,
+                             int32_t strength,
+                             uint8_t min_alpha,
+                             const NoiseMask& mask,
+                             bool bottom_up) {
   if (!Active(data, width, height, row_bytes, seed, density, strength, mask,
               bottom_up)) {
     return true;
@@ -163,9 +184,9 @@ bool PerturbRgbaEdgesInPlace(uint8_t* data, size_t width, size_t height,
   }
   std::unique_ptr<uint8_t, void (*)(void*)> ring(static_cast<uint8_t*>(raw),
                                                  &base::UncheckedFree);
-  uint8_t* above = ring.get();         // row y - 1, unperturbed
-  uint8_t* row = ring.get() + tight;   // row y, unperturbed
-  std::memcpy(above, data, tight);     // row 0 is never written
+  uint8_t* above = ring.get();        // row y - 1, unperturbed
+  uint8_t* row = ring.get() + tight;  // row y, unperturbed
+  std::memcpy(above, data, tight);    // row 0 is never written
   for (size_t y = 1; y + 1 < height; ++y) {
     uint8_t* out = data + y * row_bytes;
     std::memcpy(row, out, tight);

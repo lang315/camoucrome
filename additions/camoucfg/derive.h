@@ -98,7 +98,9 @@ double DeriveUnit(uint64_t seed, std::string_view domain, uint64_t index);
 // for DeriveDelta.
 uint64_t DomainKey(std::string_view domain);
 double DeriveUnitKeyed(uint64_t seed, uint64_t domain_key, uint64_t index);
-int32_t DeriveDeltaKeyed(uint64_t seed, uint64_t domain_key, uint64_t index,
+int32_t DeriveDeltaKeyed(uint64_t seed,
+                         uint64_t domain_key,
+                         uint64_t index,
                          int32_t bound);
 
 }  // namespace camoucfg

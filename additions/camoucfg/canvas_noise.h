@@ -19,8 +19,7 @@ namespace camoucfg {
 // row, in the same row order as the image; a pixel may change only if its
 // cell is exactly kNoiseMaskAa. The mask covers `width` x `height` pixels and
 // applies to a buffer whose window (x0, y0, buffer width, buffer height) fits
-// inside it. A default NoiseMask (cells ==
-// nullptr) lets every pixel change.
+// inside it. A default NoiseMask (cells == nullptr) lets every pixel change.
 inline constexpr uint8_t kNoiseMaskAa = 1;
 inline constexpr uint8_t kNoiseMaskImported = 2;
 struct NoiseMask {
@@ -67,10 +66,16 @@ void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
 // kept in a two-row ring, so no copy of the buffer is made. Same field, byte
 // for byte. Returns false, leaving `data` untouched, only when the ring (two
 // rows) cannot be allocated.
-bool PerturbRgbaEdgesInPlace(uint8_t* data, size_t width, size_t height,
-                             size_t row_bytes, uint64_t seed, double density,
-                             int32_t strength, uint8_t min_alpha,
-                             const NoiseMask& mask, bool bottom_up);
+bool PerturbRgbaEdgesInPlace(uint8_t* data,
+                             size_t width,
+                             size_t height,
+                             size_t row_bytes,
+                             uint64_t seed,
+                             double density,
+                             int32_t strength,
+                             uint8_t min_alpha,
+                             const NoiseMask& mask,
+                             bool bottom_up);
 
 // PerturbRgbaEdges over a `width` x `height` RGBA8 rect whose rows are
 // `row_bytes` apart (the WebGL readPixels destination at its pack layout),
