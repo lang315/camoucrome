@@ -92,6 +92,7 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C38 texImage2D(webgl canvas) read in a second context equals the source's read.
   C39 getImageData of a sub-rect equals the whole-snapshot field (full read and copy).
   C40 one flush or many give one mask.
+  C41 a read with READ_BUFFER NONE leaves the page's buffer and the GL error as stock.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -611,6 +612,25 @@ FBOTRANS = tri("webgl", 64, 64, """
     for (let k = 0; k < 4; k++) if (A[i + k] !== src[i + k]) { edgeDiff++; break; } }
   return { trans, transDiff, opaqueDiff, edgeDiff, h: H(A) };""")
 
+# C41: WebGL2 without antialiasing, the default framebuffer bound, READ_BUFFER
+# NONE: stock rejects readPixels and leaves the destination untouched. The
+# noise must not write (or read back) anything either, for a sub-rect and a
+# full read.
+READNONE = """() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const gl = c.getContext('webgl2', { antialias: false });
+  if (!gl) return { err: 'no-webgl2' };
+  gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.readBuffer(gl.NONE); gl.getError();
+  const run = (x, y, w, h) => {
+    const b = new Uint8Array(w * h * 4).fill(0xA5);
+    gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b);
+    const e = gl.getError(); let n = 0;
+    for (let i = 0; i < b.length; i++) if (b[i] !== 0xA5) n++;
+    return { e, n }; };
+  return { sub: run(1, 1, 8, 8), full: run(0, 0, 64, 64) }; }"""
+
+
 # C38: texImage2D of the WebGL canvas into a second context (flipped to GL
 # orientation), read through that context's framebuffer: equals the source's
 # own readPixels (noised once, not twice), and is noised.
@@ -879,7 +899,7 @@ gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_f
         for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST),
                            ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE),
                            ("fbo", FBOREAD), ("fbosub", FBOSUB), ("fbotrans", FBOTRANS),
-                           ("teximage", TEXIMAGE))}
+                           ("teximage", TEXIMAGE), ("readnone", READNONE))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -1217,6 +1237,7 @@ C37 = "37 framebuffer read leaves translucent pixels exact, changes an opaque on
 C38 = "38 texImage2D(webgl canvas) read in a second context equals the source's read"
 C39 = "39 getImageData sub-rect equals the whole-snapshot field (full read and copy)"
 C40 = "40 one flush or many give one mask"
+C41 = "41 READ_BUFFER NONE: the page buffer and the GL error stay as stock"
 gl_row(C35, "fbo", lambda s, u: u["e"] > 0 and s["same"] and s["h"] != u["h"])
 gl_row(C36, "fbosub", lambda s, u: s["diff"] == 0 and u["diff"] == 0 and s["h"] != u["h"])
 gl_row(C37, "fbotrans", lambda s, u: u["trans"] > 0 and u["transDiff"] == 0
@@ -1229,7 +1250,11 @@ s2b_row(C39, lambda r: r["region"],
 s2b_row(C40, lambda r: r["flushes"], lambda u: u["e"] > 0 and u["h1"] == u["h2"],
         lambda s, u: s["h1"] == s["h2"] and s["h1"] != u["h1"])
 
-EXPECTED = 47
+gl_row(C41, "readnone", lambda s, u: all(
+    v[k]["n"] == 0 for v in (s, u) for k in ("sub", "full"))
+    and all(s[k]["e"] == u[k]["e"] for k in ("sub", "full")))
+
+EXPECTED = 48
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
