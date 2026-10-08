@@ -1,6 +1,6 @@
 WGL = "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc"
 EDITS = [
-    ("replace", WGL, '  using Scratch = std::unique_ptr<uint8_t, void (*)(void*)>;\n', '  int64_t t_us[4] = {0, 0, 0, 0};\n  base::TimeTicks mark = base::TimeTicks::Now();\n  auto lap = [&](int i) {\n    const base::TimeTicks n = base::TimeTicks::Now();\n    t_us[i] = (n - mark).InMicroseconds();\n    mark = n;\n  };\n  using Scratch = std::unique_ptr<uint8_t, void (*)(void*)>;\n', 1),
+    ("replace", WGL, '  using Scratch = std::unique_ptr<uint8_t, void (*)(void*)>;\n', '  std::array<int64_t, 4> t_us = {};\n  base::TimeTicks mark = base::TimeTicks::Now();\n  auto lap = [&](int i) {\n    const base::TimeTicks n = base::TimeTicks::Now();\n    t_us[i] = (n - mark).InMicroseconds();\n    mark = n;\n  };\n  using Scratch = std::unique_ptr<uint8_t, void (*)(void*)>;\n', 1),
     ("replace", WGL, '    std::ranges::fill(a, uint8_t{0x00});\n', '    lap(0);\n    std::ranges::fill(a, uint8_t{0x00});\n', 1),
     ("replace", WGL, '    auto agree = [&](size_t r, size_t c) {\n', '    lap(1);\n    auto agree = [&](size_t r, size_t c) {\n', 1),
     ("replace", WGL, "  // The page rect's part inside the framebuffer.\n", "  lap(2);\n  // The page rect's part inside the framebuffer.\n", 1),
