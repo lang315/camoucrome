@@ -548,3 +548,47 @@ accelerated path is not timed here.
 
 Export: only `sp3a-canvas-noise.patch` changed (+78/-14); 38 commits, 0 fixups;
 sync check: all 45 copied files identical.
+
+### §8.1 Review fixes (Task 5 fix round 1)
+
+- `CamouNoisedRegion` returns empty for a texture-backed snapshot and for a rect
+  that contains the whole canvas (both keep the cached whole-snapshot route);
+  `getImageData` skips the whole-snapshot fallback when the rect misses the
+  canvas (the zero buffer is as stock); `<algorithm>` added; one over-long line
+  wrapped.
+- C45 added (`EXPECTED` 52): rects that cross the canvas edge (`(-5,-7,30,30)`,
+  `(50,50,30,30)` on 64x64, `(40,40,-30,-30)`, a 1x1 at `(63,63)`), each compared
+  with the full read (zero outside) and with the same rect of a `drawImage`
+  copy. The rects are read before the full read and the copy: a whole-canvas
+  read now fills the cache, and a read after it never reaches the regional path
+  (a first C45 draft passed under the mutant for that reason; C39 had the same
+  order and was re-ordered too).
+- RED, mutant passing `sx, sy` instead of `std::min(sx, 0), std::min(sy, 0)`
+  (build 356 steps): 47 PASS, FAIL on 21, 23, 26, 39 and 45.
+
+```
+45 : seeded {'dF': 2667, 'dC': 2667, 'cnt': 10804, 'tH': 2408886152, 'e': 234}, unconfigured {'dF': 0, 'dC': 0, 'cnt': 10804, 'tH': 3628699251, 'e': 234}
+```
+
+- GREEN, real code (build 3 steps): `verify_sp3a` 52/52 ALL_PASS, `verify_review`
+  12/12 ALL_PASS, unit filter PASSED, `gn check` OK for core, canvas and webgl,
+  `checkdeps` SUCCESS for canvas2d, core/html/canvas and modules/webgl.
+- Cost (tree includes Task 4's fix):
+
+```
+draw_only          none=2.400 (1.00x)  seed=2.500 (1.04x)  seed_d0=2.550 (1.06x)
+draw_read          none=25.550 (1.00x)  seed=67.100 (2.63x)  seed_d0=69.050 (2.70x)
+per_draw_us        none=0.300 (1.00x)  seed=0.350 (1.17x)  seed_d0=0.325 (1.08x)
+read_2d            none=0.000  seed=0.000  seed_d0=0.000
+shadow_read        none=6.000 (1.00x)  seed=18.400 (3.07x)  seed_d0=18.250 (3.04x)
+target per_draw_us ratio<=1.2: 1.17 PASS
+target draw_read ratio<=2.0: 2.63 MISS
+target read_2d abs<=0.5: 0.00 PASS
+target gl_flat.large ratio<=3.0: 1.56 PASS
+target gl_edges.large ratio<=3.0: 1.68 PASS
+target gl_edges.small ratio<=1.5: 2.03 MISS
+target gl_fbo.large ratio<=3.0: 2.47 PASS
+```
+
+- Export: 38 commits, 0 fixups, only `sp3a-canvas-noise.patch` changed; sync
+  check: all 45 copied files identical.
