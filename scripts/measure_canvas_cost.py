@@ -6,6 +6,8 @@ does every copy and replay but no noise (attribution), on WSL content_shell
   per_draw_us  10 x 2000 arcs on a 1024 x 1024 2D canvas, no read: us per draw
   draw_only    10 x 10 000 arcs, no read: ms per frame
   draw_read    10 x (10 000 arcs + getImageData(0,0,1,1)): ms per frame
+  shadow_read  10 x (1000 shadowed 12 x 12 fillRects + getImageData(0,0,1,1)):
+               ms per frame; reported only, no target
   read_2d      getImageData(0,0,1,1) after one new arc on 1024 x 1024: ms
   gl_*.large   readPixels 1024 x 1024 (flat scene, 4 px random blocks): ms
   gl_*.small   readPixels 64 x 64 sub-rect: ms
@@ -54,6 +56,15 @@ DRAW_READ = "() => {" + ARCS + """
     x.getImageData(0, 0, 1, 1); t.push(performance.now() - t0); }
   return t; }"""
 
+SHADOW_READ = "() => {" + ARCS + """
+  x.shadowBlur = 4; x.shadowOffsetX = 2; x.shadowOffsetY = 2;
+  x.shadowColor = 'rgba(0,0,0,0.5)';
+  for (let f = 0; f < 10; f++) { const t0 = performance.now();
+    for (let i = 0; i < 1000; i++) { x.fillStyle = i & 1 ? '#f60' : '#06f';
+      x.fillRect(((i + f) * 37) % 1000, ((i + f) * 91) % 1000, 12, 12); }
+    x.getImageData(0, 0, 1, 1); t.push(performance.now() - t0); }
+  return t; }"""
+
 READ_2D = "() => {" + ARCS + """
   arcs(x, 10000, 0); x.getImageData(0, 0, 1, 1);
   for (let f = 0; f < 10; f++) { arcs(x, 1, f * 7 + 1); const t0 = performance.now();
@@ -96,7 +107,8 @@ def read_gl(scene, target):
 
 
 CASES = [("per_draw_us", PER_DRAW, None), ("draw_only", DRAW_ONLY, None),
-         ("draw_read", DRAW_READ, None), ("read_2d", READ_2D, None),
+         ("draw_read", DRAW_READ, None), ("shadow_read", SHADOW_READ, None),
+         ("read_2d", READ_2D, None),
          ("gl_flat", read_gl("flat", "default"), GL),
          ("gl_edges", read_gl("edges", "default"), GL),
          ("gl_fbo", read_gl("edges", "fbo"), GL)]
