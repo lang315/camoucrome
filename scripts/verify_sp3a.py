@@ -98,6 +98,8 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       unchanged (a draw that changes no pixel marks none).
   C44 a shadowed drawImage far from an arc leaves the arc's noise unchanged
       (the shadow marks its own pixels, not the whole clip).
+  C44b the same with an opaque ({alpha:false}) source, whose shadow is drawn
+      through a looper rather than a filtered layer.
   C45 getImageData of rects that cross the canvas edge (negative origin, past
       the far edge, negative size, a 1x1 corner) equals the full read's pixels
       (zero outside) and the same rect of a drawImage copy.
@@ -858,6 +860,16 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   x.shadowBlur = 2; x.shadowOffsetX = 3; x.shadowOffsetY = 3;
   x.shadowColor = 'rgba(0,0,0,0.5)'; x.drawImage(tile10.canvas, 150, 150);
   out.shadowimg = { a: H(a), b: H(get(x, 34, 34, 33, 33)), e: elig(a, 33) };
+  // C44b: the same with an opaque source canvas: an opaque image's shadow is
+  // a looper on the image's own flags, not a filtered layer.
+  x = mk(200, 200); arc(x, 50, 50, 12);
+  const opq = document.createElement('canvas'); opq.width = 10; opq.height = 10;
+  const opqx = opq.getContext('2d', { alpha: false });
+  opqx.fillStyle = '#0a0'; opqx.fillRect(0, 0, 10, 10);
+  a = get(x, 34, 34, 33, 33);
+  x.shadowBlur = 2; x.shadowOffsetX = 3; x.shadowOffsetY = 3;
+  x.shadowColor = 'rgba(0,0,0,0.5)'; x.drawImage(opq, 150, 150);
+  out.shadowopq = { a: H(a), b: H(get(x, 34, 34, 33, 33)), e: elig(a, 33) };
   // C45: rects that leave the canvas: the regional read must place the region
   // at the clipped origin. Each rect is checked against the full read (zero
   // outside the canvas) and against the same rect of a drawImage copy.
@@ -1337,7 +1349,8 @@ gl_row(C42, "read16f", rejected_read_unchanged)
 
 C43 = "43 a globalAlpha 0 drawImage leaves a region's noise unchanged"
 C44 = "44 a shadowed drawImage elsewhere leaves a region's noise unchanged"
-for name, key in ((C43, "alpha0"), (C44, "shadowimg")):
+C44B = "44b a shadowed opaque drawImage elsewhere leaves a region's noise unchanged"
+for name, key in ((C43, "alpha0"), (C44, "shadowimg"), (C44B, "shadowopq")):
     s2b_row(name, lambda r, key=key: r[key],
             lambda u: u["e"] > 0 and u["a"] == u["b"],
             lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
@@ -1348,7 +1361,7 @@ s2b_row(C45, lambda r: r["edgeRects"],
         lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["cnt"] == u["cnt"]
         and s["tH"] != u["tH"])
 
-EXPECTED = 52
+EXPECTED = 53
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
