@@ -269,3 +269,80 @@ context shifted). The earlier Task 3 export left `sp3b-webgl-profile.patch`
 stale in the repo; it is regenerated here. All 79 exported files were compared
 against the Mac tree by short hash; only those two differ. Sync check: all 45
 copied files identical.
+
+## §7 2D at flush (Task 4)
+
+The draw-time hooks (`CamouReplay`, `CamouMark`, `CamouMarkClip`,
+`CamouMergeRecord`, `CamouKindFor`) are gone. `CamouMarkRecord` walks the
+released recording in `BaseRenderingContext2D::FlushCanvasInternal`, which is the
+only flush point for both the onscreen and offscreen contexts. Each draw op is
+rastered as coverage into a reused A8 bitmap and merged into the mask under the
+recorded matrix and clip. `putImageData` now marks after `WritePixels`.
+
+Recon held against the tree. The other `ReleaseMainRecording` callers are the
+providers' `ClearAtCreation`, which marks nothing, and the recorder's own
+`RestartRecording`/`RestartCurrentLayer`, which drop ops without rastering them.
+`GetBounds` returns false for `DrawColor` and `DrawRecord`. The Lite ops carry
+`CorePaintFlags`.
+
+Two compile fixes to the brief's code:
+- `cc::PaintRecord` iteration needs `cc/paint/paint_op_buffer_iterator.h`.
+- `DrawLineLiteOp::Raster` and `DrawArcLiteOp::Raster` are static
+  (`Raster(const Op*, SkCanvas*, const PlaybackParams&)`), so the coverage ops are
+  built as locals and passed to them.
+
+RED, C40 mutation (`camou_mask_.reset()` first in `CamouMarkRecord`; build 179
+steps): `verify_sp3a` 46 PASS, 2 FAIL.
+
+```
+FAIL  22 a draw elsewhere does not change a region's noise
+FAIL  40 one flush or many give one mask
+      22 : seeded {'r1': 3989186272, 'r2': 612045226, 'e': 70}, unconfigured {'r1': 612045226, 'r2': 612045226, 'e': 70}
+      40 : seeded {'h1': 1023908166, 'h2': 1371003653, 'e': 256}, unconfigured {'h1': 1860604165, 'h2': 1860604165, 'e': 256}
+```
+
+`verify_review` was not run on the mutant.
+
+GREEN (build 23 steps; unit filters 70 tests PASSED):
+- `verify_sp3a` 48 PASS, ALL_PASS, rc=0 against the 48-row script. This covers
+  C21 to C27, C30 to C34, C33a to C33e and C35 to C41.
+- `verify_review` 12/12 ALL_PASS.
+- The leftover-symbol grep over `canvas2d/*.{h,cc}` prints nothing (rc=1).
+- W5g: `gn check` on core, canvas and webgl each reports "Header dependency check
+  OK", and `checkdeps.py` reports SUCCESS on each of the three directories. This
+  gn takes one target per call and checkdeps one directory per call, so W5g's
+  single-line form fails on usage.
+
+Against the 49-row script (C42 was added by the Task 3 re-review), the same build
+gives 48 PASS and 1 FAIL. The failure is C42, a WebGL row (RGBA16F drawing
+buffer), which this task does not touch:
+
+```
+      42 : seeded {'sub': {'e': 1282, 'n': 0}, 'full': {'e': 1282, 'n': 308}}, unconfigured {'sub': {'e': 1282, 'n': 0}, 'full': {'e': 1282, 'n': 0}}
+```
+
+Shadowed-text probe (not a C-row). An arc, then `shadowBlur = 4` `fillText` away
+from it, read with `getImageData`. In the arc region, 3 bytes differ seeded vs
+unconfigured, and 0 bytes differ between seeded with text and seeded without.
+Shadowed text marks nothing, so the arc keeps its noise exactly.
+
+Cost (`measure_canvas_cost.py`, one run):
+
+```
+draw_only          none=2.550 (1.00x)  seed=2.650 (1.04x)  seed_d0=2.550 (1.00x)
+draw_read          none=25.100 (1.00x)  seed=72.500 (2.89x)  seed_d0=71.300 (2.84x)
+per_draw_us        none=0.300 (1.00x)  seed=0.325 (1.08x)  seed_d0=0.350 (1.17x)
+read_2d            none=0.000  seed=4.900  seed_d0=3.200
+target per_draw_us ratio<=1.2: 1.08 PASS
+target draw_read ratio<=2.0: 2.89 MISS
+target read_2d abs<=0.5: 4.90 MISS
+```
+
+Per-draw cost went from 23.7x to 1.08x. The `draw_read` MISS is the same at
+density 0 (2.84x), so it comes from the flush walk and the whole-snapshot read,
+not from the noise. `read_2d` is Task 5's target.
+
+Export (W6): 3 fixups folded into sp3a, 38 commits, 0 fixup subjects, 0 dirty
+(box HEAD 8ae478f98a). Only `patches/sp3a-canvas-noise.patch` changed. None of
+its changed lines mention webgl, so Task 3's hunks are kept. Sync check: all 45
+copied files identical.
