@@ -11,6 +11,7 @@
 #include <limits>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace camoucfg {
@@ -485,7 +486,8 @@ std::vector<uint8_t> MixedScene(size_t w, size_t h, uint32_t seed) {
   uint32_t s = seed;
   for (size_t y = 0; y < h; ++y) {
     for (size_t x = 0; x < w; ++x) {
-      uint8_t* p = &v[(y * w + x) * 4];
+      const base::span<uint8_t> p =
+          base::span(v).subspan((y * w + x) * 4, 4u);
       const bool flat = ((x / 3) + (y / 3)) % 3 == 0;
       for (int k = 0; k < 4; ++k) {
         s = s * 1103515245u + 12345u;
