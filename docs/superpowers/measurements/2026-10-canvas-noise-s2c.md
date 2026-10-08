@@ -396,3 +396,58 @@ ends at the framebuffer edge cannot benefit); still under the 3x target.
 
 Export: sp3a and sp3b regenerated; the other 77 files match the Mac tree by
 short hash. Sync check: all 45 copied files identical. 38 commits.
+
+## §8 Regional getImageData (Task 5)
+
+`getImageData` noises only the returned rect plus a 1 px margin, on the
+premultiplied snapshot, via `CanvasRenderingContext::CamouNoisedRegion`
+(`NoisedCanvasRegion`). An empty region (no noise, whole field cached, failure)
+falls back to `CamouNoised(snapshot)`.
+
+RED, C39 mutant (`NoisedRegion` reading as `kUnpremul_SkAlphaType`, the floor
+of 255 leaves translucent pixels clean). Build 357 steps.
+
+```
+FAIL  39 getImageData sub-rect equals the whole-snapshot field (full read and copy)
+      39 : seeded {'dF': 0, 'dC': 7, 'trans': 640, 'tH': 59552103, 'e': 211}, unconfigured {'dF': 0, 'dC': 0, 'trans': 640, 'tH': 59552103, 'e': 211}
+```
+
+`dC > 0` and `tH` equals the unconfigured hash: the translucent pixels carry no
+noise. The mutant also fails rows 21-26, 24a-d and 40 (38 PASS lines, 11 FAIL),
+because every `getImageData` goes through the regional path and those rows read
+noise at translucent anti-aliased pixels. So "every row but C39 passes under the
+mutant" does not hold; C39 is the row that names the cause (`dC`).
+
+GREEN, real code. Build 260 steps, 0 failed.
+
+```
+verify_sp3a            49/49 ALL_PASS (rc=0)
+verify_review          12/12 ALL_PASS
+components_unittests   PerturbRgba/CanvasNoise/NoisedImage/NoisedRegion/CanvasNoiseMask/Derive: PASSED
+gn check               core, canvas, webgl: Header dependency check OK
+checkdeps              canvas2d, core/html/canvas, modules/webgl: SUCCESS
+```
+
+Cost, lock held, no build running:
+
+```
+draw_only          none=2.500 (1.00x)  seed=2.550 (1.02x)  seed_d0=2.600 (1.04x)
+draw_read          none=25.600 (1.00x)  seed=67.700 (2.64x)  seed_d0=68.600 (2.68x)
+per_draw_us        none=0.325 (1.00x)  seed=0.300 (0.92x)  seed_d0=0.300 (0.92x)
+read_2d            none=0.000  seed=0.000  seed_d0=0.000
+target per_draw_us ratio<=1.2: 0.92 PASS
+target draw_read ratio<=2.0: 2.64 MISS
+target read_2d abs<=0.5: 0.00 PASS
+target gl_flat.large ratio<=3.0: 1.56 PASS
+target gl_edges.large ratio<=3.0: 1.51 PASS
+target gl_edges.small ratio<=1.5: 2.00 MISS
+target gl_fbo.large ratio<=3.0: 2.36 PASS
+```
+
+`draw_read` stays a MISS at 2.64x, and the density-0 arm (2.68x) shows the
+excess is not noise arithmetic: it is the path around it (snapshot, mask,
+region allocation and read), so regional noising does not move it.
+`read_2d` reads 0.000 in all three arms, so it does not discriminate here.
+
+Export: only `sp3a-canvas-noise.patch` changed (+78/-14); 38 commits, 0 fixups;
+sync check: all 45 copied files identical.
