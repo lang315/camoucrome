@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Forty-seven criteria, all driven with Playwright's sync API over content_shell's CDP,
+Fifty-seven criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -88,6 +88,8 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       speckle the canvas reads like a fresh one with the same stroke.
   C35 a framebuffer readPixels of a gradient triangle is noised and deterministic.
   C36 a framebuffer readPixels sub-rect equals the matching part of the full read.
+  C36b the same for rects whose margin or body crosses the far edge, and one
+      with a negative origin (the row/column probe and the margin read).
   C37 a framebuffer read leaves translucent pixels exact and changes an opaque one.
   C38 texImage2D(webgl canvas) read in a second context equals the source's read.
   C39 getImageData of a sub-rect equals the whole-snapshot field (full read and copy).
@@ -103,6 +105,10 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C45 getImageData of rects that cross the canvas edge (negative origin, past
       the far edge, negative size, a 1x1 corner) equals the full read's pixels
       (zero outside) and the same rect of a drawImage copy.
+  C46 R8 and RG8 texture framebuffers read RGBA / UNSIGNED_BYTE as stock (G and
+      B stay 0); an RGBA8 one with the same scene is noised.
+  C46b an RGBA4 renderbuffer framebuffer reads as stock; an RGBA8 one is noised.
+  C47 a drawingBufferStorage(SRGB8_ALPHA8) readPixels is noised and deterministic.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -592,6 +598,80 @@ FBOSUB = tri("webgl", 64, 64, FBO_FN + """
     if (B[y * 128 + i] !== A[(y + 16) * 256 + 64 + i]) diff++;
   return { diff, h: H(B) };""")
 
+# C36b: framebuffer reads whose margin or rect crosses the far edge, and one
+# with a negative origin: each in-framebuffer part equals the full read's.
+FBOEDGE = tri("webgl", 64, 64, FBO_FN + """
+  fbo(64, 64);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const part = (x, y, w, h) => { const B = new Uint8Array(w * h * 4);
+    gl.readPixels(x, y, w, h, RGBA, UB, B); let diff = 0; const inb = [];
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const fx = x + i, fy = y + j;
+      if (fx < 0 || fy < 0 || fx >= 64 || fy >= 64) continue;
+      for (let k = 0; k < 4; k++) { const b = B[(j * w + i) * 4 + k]; inb.push(b);
+        if (b !== A[(fy * 64 + fx) * 4 + k]) diff++; } }
+    return { diff, h: H(inb) }; };
+  const r = [part(16, 16, 48, 48), part(40, 40, 40, 40), part(-4, -4, 20, 20)];
+  return { diff: r.map(v => v.diff), h: r.map(v => v.h), glerr: gl.getError() };""")
+
+# C46: WebGL2 R8 and RG8 texture framebuffers with the C6 scene, read
+# RGBA / UNSIGNED_BYTE: stock returns G = B = 0 (R8) and B = 0 (RG8), which a
+# noised read would break. The RGBA8 read of the same scene is the guard: it
+# must be noised.
+FBOFMT = tri("webgl2", 64, 64, ELIG_FN + """
+  const read = (ifmt, fmt) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, 64, 64, 0, fmt, UB, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return null;
+    gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+    return A; };
+  gl.getError();
+  const r8 = read(gl.R8, gl.RED), rg8 = read(gl.RG8, gl.RG), rgba8 = read(gl.RGBA8, RGBA);
+  if (!r8 || !rg8 || !rgba8) return { err: 'fbo-incomplete' };
+  let stray = 0;
+  for (let i = 0; i < r8.length; i += 4) {
+    if (r8[i + 1] || r8[i + 2]) stray++;
+    if (rg8[i + 2]) stray++; }
+  return { r8: H(r8), rg8: H(rg8), rgba8: H(rgba8), stray, glerr: gl.getError(),
+           e8: elig(r8, 64), eg: elig(rg8, 64) };""")
+
+# C46b: a WebGL1 RGBA4 renderbuffer framebuffer with the C6 scene reads as
+# stock (a +-1 would leave the 4-bit lattice); the RGBA8 texture framebuffer
+# of the same scene is the guard.
+FBORGBA4 = tri("webgl", 64, 64, FBO_FN + ELIG_FN + """
+  gl.getError();
+  const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA4, 64, 64);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+    return { err: 'fbo-incomplete' };
+  gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  fbo(64, 64);
+  const B = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  return { h: H(A), g: H(B), e: elig(A, 64), glerr: gl.getError() };""")
+
+# C47: a drawingBufferStorage(SRGB8_ALPHA8) default framebuffer (8-bit, read
+# as RGBA / UNSIGNED_BYTE) with the C6 scene is noised and deterministic.
+SRGBREAD = tri("webgl2", 64, 64, ELIG_FN + """
+  if (!gl.drawingBufferStorage) return { err: 'no-drawingBufferStorage' };
+  gl.getError();
+  gl.drawingBufferStorage(gl.SRGB8_ALPHA8, 64, 64);
+  if (gl.getError() !== 0) return { err: 'drawingBufferStorage-rejected' };
+  gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  let same = true; for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) { same = false; break; }
+  return { h: H(A), same, e: elig(A, 64), glerr: gl.getError() };""")
+
 # C37: random 1px texels uploaded into a framebuffer's texture: the left half
 # translucent (alpha 1..254), the right half opaque. Translucent texels read
 # back exact; at least one opaque texel changes under a seed.
@@ -987,7 +1067,9 @@ gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_f
         for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST),
                            ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE),
                            ("fbo", FBOREAD), ("fbosub", FBOSUB), ("fbotrans", FBOTRANS),
-                           ("teximage", TEXIMAGE), ("readnone", READNONE), ("read16f", READ16F))}
+                           ("teximage", TEXIMAGE), ("readnone", READNONE), ("read16f", READ16F),
+                           ("fboedge", FBOEDGE), ("fbofmt", FBOFMT), ("fborgba4", FBORGBA4),
+                           ("srgb", SRGBREAD))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -1361,7 +1443,22 @@ s2b_row(C45, lambda r: r["edgeRects"],
         lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["cnt"] == u["cnt"]
         and s["tH"] != u["tH"])
 
-EXPECTED = 53
+C36B = "36b framebuffer reads crossing the far edge or the origin equal the full read's part"
+C46 = "46 R8 / RG8 framebuffer reads stay stock (G and B stay 0)"
+C46B = "46b RGBA4 renderbuffer framebuffer read stays stock"
+C47 = "47 SRGB8_ALPHA8 drawing buffer readPixels noised and deterministic"
+gl_row(C36B, "fboedge", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and all(d == 0 for v in (s, u) for d in v["diff"])
+       and all(a != b for a, b in zip(s["h"], u["h"])))
+gl_row(C46, "fbofmt", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and u["e8"] > 0 and u["eg"] > 0 and u["stray"] == 0 and s["stray"] == 0
+       and s["r8"] == u["r8"] and s["rg8"] == u["rg8"] and s["rgba8"] != u["rgba8"])
+gl_row(C46B, "fborgba4", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and u["e"] > 0 and s["h"] == u["h"] and s["g"] != u["g"])
+gl_row(C47, "srgb", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and u["e"] > 0 and s["same"] and u["same"] and s["h"] != u["h"])
+
+EXPECTED = 57
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
