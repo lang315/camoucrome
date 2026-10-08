@@ -18,7 +18,8 @@ namespace camoucfg {
 // byte per cell of (1 << shift) x (1 << shift) pixels, `stride` cells per
 // row, in the same row order as the image; a pixel may change only if its
 // cell is exactly kNoiseMaskAa. The mask covers `width` x `height` pixels and
-// applies only to an image of that size. A default NoiseMask (cells ==
+// applies to a buffer whose window (x0, y0, buffer width, buffer height) fits
+// inside it. A default NoiseMask (cells ==
 // nullptr) lets every pixel change.
 inline constexpr uint8_t kNoiseMaskAa = 1;
 inline constexpr uint8_t kNoiseMaskImported = 2;
