@@ -70,9 +70,7 @@ SkBitmap NoisedRegion(const SkImage& canvas, const SkIRect& rect,
   // The margin gives every pixel of `r` its four neighbours; a pixel on the
   // canvas edge has none there and never changes, here or in NoisedImage.
   SkIRect m = r.makeOutset(1, 1);
-  if (!m.intersect(bounds)) {
-    return SkBitmap();
-  }
+  (void)m.intersect(bounds);  // r is inside bounds, so m is never empty
   const SkImageInfo info = canvas.imageInfo()
                                .makeColorType(kRGBA_8888_SkColorType)
                                .makeWH(m.width(), m.height());

@@ -441,7 +441,7 @@ TEST(PerturbRgbaEdgesTest, CoarseMaskCellCoversItsPixels) {
   EXPECT_TRUE(moved);
 }
 
-// A mask for another size never applies: no pixel changes.
+// A mask whose window does not fit the buffer never applies: no pixel changes.
 TEST(PerturbRgbaEdgesTest, MaskOfAnotherSizeIsNoOp) {
   auto v = Fill(8, 8, {0, 0, 0, 255});
   Set(v, 8, 4, 4, {200, 100, 50, 255});
@@ -549,7 +549,7 @@ TEST(PerturbRgbaEdgesTest, InPlaceEqualsTwoBuffer) {
       {21, 11, 4, false, 2, 6, 3}};
   for (const Case& c : cases) {
     const size_t rb = c.w * 4 + c.pad;
-    std::vector<uint8_t> tight = MixedScene(c.w, c.h, 7 + c.w * c.h);
+    std::vector<uint8_t> tight = MixedScene(c.w, c.h, static_cast<uint32_t>(7 + c.w * c.h));
     std::vector<uint8_t> src(rb * c.h, 0xCD);
     for (size_t y = 0; y < c.h; ++y) {
       std::copy_n(&tight[y * c.w * 4], c.w * 4, &src[y * rb]);
@@ -585,7 +585,7 @@ TEST(PerturbRgbaEdgesTest, InPlaceEqualsTwoBuffer) {
 // buffer with x0/y0 equals the same window of the whole-buffer pass, on the
 // window's interior.
 TEST(PerturbRgbaEdgesTest, MaskOriginSelectsTheWindow) {
-  constexpr size_t kW = 40, kH = 30, kX = 9, kY = 7, kWw = 17, kWh = 12;
+  constexpr size_t kW = 40, kH = 30, kX = 10, kY = 7, kWw = 17, kWh = 12;
   const std::vector<uint8_t> src = MixedScene(kW, kH, 99);
   std::vector<uint8_t> cells(kW * kH, kNoiseMaskAa);
   for (size_t i = 0; i < cells.size(); i += 3) {
