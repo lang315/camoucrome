@@ -401,7 +401,8 @@ FAIL  44 a shadowed drawImage elsewhere leaves a region's noise unchanged
 GREEN:
 - The final build reports 27 steps (non-zero), and the unit filters pass (70
   tests). Earlier builds in this round reported 332 and 37 steps.
-- `verify_sp3a`: 51 PASS, ALL_PASS, rc=0.
+- `verify_sp3a`: 51 PASS, ALL_PASS, rc=0. Rerun on the same build against the
+  52-row script (Task 5's C45 landed meanwhile): 52 PASS, ALL_PASS, rc=0.
 - `verify_review`: 12/12.
 - The shadowed-text probe passes.
 - The leftover-symbol grep prints nothing.
