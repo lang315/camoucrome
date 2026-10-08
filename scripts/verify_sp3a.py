@@ -625,8 +625,11 @@ READNONE = """() => {
   const run = (x, y, w, h) => {
     // Sentinel: opaque pixels (a translucent one is never noised, so it
     // could not show an in-place noise pass).
-    const b = new Uint8Array(w * h * 4).fill(0xA5), s = b.slice();
-    for (let i = 3; i < b.length; i += 4) b[i] = s[i] = 0xFF;
+    // Random texels: noise only touches pixels that differ from a neighbour.
+    const b = new Uint8Array(w * h * 4); let r = 7;
+    for (let i = 0; i < b.length; i++) {
+      r = (Math.imul(r, 1103515245) + 12345) >>> 0; b[i] = i % 4 === 3 ? 0xFF : r >>> 24; }
+    const s = b.slice();
     gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b);
     const e = gl.getError(); let n = 0;
     for (let i = 0; i < b.length; i++) if (b[i] !== s[i]) n++;
