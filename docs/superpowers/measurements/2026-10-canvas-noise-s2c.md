@@ -150,3 +150,52 @@ Export (W6): 9 fixups folded, 38 commits, 0 fixup subjects, 0 dirty. The export
 reproduced the pushed tree byte for byte (`diff -rq` of additions, patches and
 invariants.json empty), so `patches/` is unchanged and nothing was pulled.
 Sync check: "all 45 copied files are identical in repo and checkout".
+
+## §6 WebGL (Task 3)
+
+RED (current build, S2b + Task 2, before the code): `verify_sp3a` C35, C36, C37
+and C38 FAIL (the framebuffer reads were not noised at all). C37's `edgeDiff`
+clause is vacuous on that build (nothing is noised, so it is 0 by construction);
+it can only fail once framebuffer reads are noised with a wrong extent, which is
+what the clause guards.
+
+Code: `readPixels` noises the page buffer in place when the read has no room for
+a margin, otherwise one expanded read (rect + 1 px) is noised and the rect is
+copied back. A page framebuffer's extent comes from reading the expanded rect
+twice, into buffers filled 0x00 and 0xFF (a pixel is inside the framebuffer iff
+the two reads agree). The service leaves out-of-framebuffer pixels unwritten, so
+C37's `edgeDiff` clause passed (framebuffer edge texels stay exact).
+
+Build: `Build Succeeded: 277 steps` (content_shell, components_unittests).
+
+GREEN: `verify_sp3a` 47 PASS, `ALL_PASS`, rc=0; C35 to C38 PASS; C17 to C20, C28,
+C29 still PASS. `verify_review_2026_09_24` 12/12 ALL_PASS. Unit filters
+(PerturbRgba, CanvasNoise, NoisedImage, NoisedRegion, CanvasNoiseMask, Derive)
+all PASSED. `gn check` of modules/webgl: Header dependency check OK. `checkdeps`
+on modules/webgl reports `base/process/memory.h` (line 29, added by S2b, not by
+this task) as an illegal include; recorded, not changed here.
+
+Cost (`measure_canvas_cost.py`, the edges scene now uses `Math.imul`, so
+`gl_edges` "before" ratios are not comparable with §4):
+
+```
+gl_edges.large     none=1.800 (1.00x)  seed=2.750 (1.53x)
+gl_edges.small     none=0.300 (1.00x)  seed=0.600 (2.00x)
+gl_fbo.large       none=1.800 (1.00x)  seed=52.000 (28.89x)
+gl_fbo.small       none=0.300 (1.00x)  seed=1.100 (3.67x)
+gl_flat.large      none=1.800 (1.00x)  seed=2.800 (1.56x)
+gl_flat.small      none=0.300 (1.00x)  seed=0.600 (2.00x)
+target gl_flat.large ratio<=3.0: 1.56 PASS
+target gl_edges.large ratio<=3.0: 1.53 PASS
+target gl_edges.small ratio<=1.5: 2.00 MISS
+```
+
+`gl_edges.small` MISS: 0.3 ms to 0.6 ms, a 0.3 ms absolute cost at 0.1 ms timer
+resolution. `gl_fbo.*` is recorded without a target; the double read costs about
+29x on a 1024x1024 read. The 2D targets (`per_draw_us`, `draw_read`, `read_2d`)
+are Task 4 and 5 work.
+
+Export (W6): fixups folded into `sp3a-canvas-noise`, 38 commits, 0 fixup
+subjects, 0 dirty. Only `patches/sp3a-canvas-noise.patch` changed (sha256
+e38297162cf8...); sync check "all 45 copied files are identical in repo and
+checkout". `pytest scripts/`: 176 passed.
