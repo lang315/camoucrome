@@ -436,6 +436,71 @@ fixup subjects and 0 dirty files (box HEAD bf93a2cfcd). Only
 `patches/sp3a-canvas-noise.patch` changed, and none of its changed lines mention
 webgl. Sync check: all 45 copied files identical.
 
+### §7.2 Fix round 2 (re-review of f74af3f..bded7a6)
+
+Changes:
+- A shadowed draw that paints nothing marks nothing. The looper-stripped
+  `nothingToDraw()` test now runs before every branch of `CamouMarkOp`, so a
+  shadowed `globalAlpha` 0 image or pattern text on the looper path is covered
+  too. Before, only shapes were. The layer path is unchanged (parked: a canvas
+  filter can paint from an empty layer).
+- The looper path's foreground rect is anti-aliased. Its coverage is a superset
+  of the image's own footprint on any raster.
+
+New row C44b: C44's scene with an `{alpha:false}` source canvas. An opaque
+image's shadow is a looper on the image's flags rather than a filtered layer, so
+this row reaches `mark_imported`'s looper branch, which C44 does not.
+
+RED, under a mutant that restores the clip mark in that branch (box 08cedc9fe1;
+build 355 steps): `verify_sp3a` gives 52 PASS and 1 FAIL. The mutant was then
+reverted.
+
+```
+FAIL  44b a shadowed opaque drawImage elsewhere leaves a region's noise unchanged
+      44b: seeded {'a': 2023189415, 'b': 2836762292, 'e': 78}, unconfigured {'a': 2836762292, 'b': 2836762292, 'e': 78}
+```
+
+Profile (temporary timers around erase, A8 raster and `Merge`; build 10 steps;
+reverted before the real build, never committed). The arc bench is 10 flushes
+of 10 000 arcs, seeded. Each flush reports the same split:
+
+```
+merges=10000 walk_us/op=4.38 erase=6% raster=70% merge=19% other=5%
+```
+
+The walk costs about 4.4 µs per arc. About 3.1 µs of that is the A8 coverage
+raster (Skia's anti-aliased path fill, through `RasterWithFlags`). `Merge` is
+19%, under the ruled 40% threshold, so it was not rewritten. Erase and the
+remaining per-op work (flags copy, area) together are about 11%. Reaching ≤2x
+would need a cheaper coverage raster; no further optimisation was done this
+round.
+
+GREEN (build 3 steps; unit filters 70 tests PASSED):
+- `verify_sp3a`: 53 PASS, ALL_PASS, rc=0.
+- `verify_review`: 12/12.
+- The shadowed-text probe passes, and the leftover-symbol grep prints nothing.
+- `gn check` is OK for core, canvas and webgl, and `checkdeps` exits 0 on the
+  three directories.
+
+Cost:
+
+```
+draw_only          none=2.650 (1.00x)  seed=2.450 (0.92x)  seed_d0=2.550 (0.96x)
+draw_read          none=25.000 (1.00x)  seed=66.450 (2.66x)  seed_d0=68.050 (2.72x)
+per_draw_us        none=0.325 (1.00x)  seed=0.325 (1.00x)  seed_d0=0.325 (1.00x)
+read_2d            none=0.000  seed=0.050  seed_d0=0.000
+shadow_read        none=6.000 (1.00x)  seed=18.500 (3.08x)  seed_d0=18.050 (3.01x)
+target per_draw_us ratio<=1.2: 1.00 PASS
+target draw_read ratio<=2.0: 2.66 MISS
+target read_2d abs<=0.5: 0.05 PASS
+```
+
+Export (W6): 1 fixup folded into sp3a. The branch keeps 38 commits, with 0
+fixup subjects and 0 dirty files (box HEAD b19bca9763). Only
+`patches/sp3a-canvas-noise.patch` changed: its sha256 on the Mac after applying
+the exported diff equals the box's (99eae632…). Sync check: all 45 copied files
+identical.
+
 ### §6.2 Fix round 2 (re-review of 8d3baba..1282962)
 
 C42 (new row, EXPECTED 48 to 49): WebGL2, `drawingBufferStorage(RGBA16F, 64, 64)`
