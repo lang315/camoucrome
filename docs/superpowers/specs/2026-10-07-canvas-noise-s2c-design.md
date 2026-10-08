@@ -440,8 +440,8 @@ replaces the text above it, and the plan
 Execution changed these points. Each replaces any earlier text on the same
 point, including the "Amended during planning" section above where it
 disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
-(sections 6 to 8 and their fix rounds). `verify_sp3a` has **53** rows
-(`EXPECTED` 53).
+(sections 6 to 8 and their fix rounds, and section 12 for the final review).
+`verify_sp3a` has **57** rows (`EXPECTED` 57).
 
 - **A page framebuffer's extent no longer comes from the whole-rect double
   read.** The probe is now a far-corner short-cut, then one row and one column,
@@ -460,8 +460,8 @@ disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
     there is no framebuffer and the read buffer is `NONE`.
   - **C42**: `drawingBufferStorage(RGBA16F, ...)` leaves a full and a sub-rect
     read stock. The default framebuffer is noised only when its storage format
-    is `GL_RGBA8` or `GL_RGB8` (a positive allowlist; `RGBA16F` and
-    `SRGB8_ALPHA8` stay stock).
+    is `GL_RGBA8`, `GL_RGB8` or `GL_SRGB8_ALPHA8` (a positive allowlist;
+    `RGBA16F` stays stock). `SRGB8_ALPHA8` joined after the final review (C47).
   - **C43**: a `drawImage` at `globalAlpha` 0 leaves the region's noise
     unchanged. `nothingToDraw()` runs before the op switch in `CamouMarkOp`.
   - **C44 and C44b**: a small shadowed `drawImage` far from an arc leaves the
@@ -483,6 +483,47 @@ disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
 - **Other rulings.**
   - C39 and C40 are mutation-proven, not RED on S2b.
   - C35 and C37 carry the wording in the planning section.
-  - `draw_read` stays above 2x (2.63x), `gl_edges.small` above 1.5x (2.03x).
+  - `draw_read` stays above 2x (2.70x), `gl_edges.small` above 1.5x (2.07x),
+    and, after the final review's format gate, `gl_fbo.large` above its
+    adopted 3x (4.21x); final run in the measurements' section 12.
     Both are accepted as known limits for this slice and listed in the
     measurements' section 10.
+- **The noise loop (section 3).** The ring holds two source rows, not three: the
+  row above and the current row, as they were before any write. The row below
+  is not yet written, so it is read from the buffer. The ring at its edges is
+  covered by `InPlaceEqualsTwoBuffer`'s cases of height 1 to 4 (with
+  `GoldenFieldUnchanged` and `MaskOriginSelectsTheWindow`), not by separate
+  1-, 2- and 3-row tests. `Active()` needs a height of at least 3, so heights 1
+  and 2 check that nothing changes.
+- **The probes use `ScopedDrawingBufferBinder` (section 4).** Every probe and
+  margin read runs under it. For a page framebuffer it binds nothing; for the
+  default framebuffer it binds the drawing buffer, as stock `readPixels` does.
+- **A page framebuffer is noised only when its read attachment is 8-bit RGB(A)**
+  (final review C1). `RGBA`/`UNSIGNED_BYTE` also reads `R8`, `RG8`, `RGBA4`,
+  `RGB565` and `RGB5_A1` attachments. Stock returns `G` or `B` as 0 for the
+  first two and values on a 4- or 5-bit lattice for the rest, and a +-1 would
+  leave both. Blink does not track a texture's format, so the sizes come from
+  GL before any probe read: in WebGL2,
+  `GetFramebufferAttachmentParameteriv(READ_FRAMEBUFFER, <read buffer>,
+  FRAMEBUFFER_ATTACHMENT_{RED,GREEN,BLUE,ALPHA}_SIZE)`; in WebGL1, whose read
+  and draw framebuffers are one, `GetIntegerv(RED_BITS ... ALPHA_BITS)`. R, G
+  and B must be 8 bits and A 8 or 0. Anything else, a `NONE` read buffer or a
+  missing attachment stays stock. The queries stop at the first size that
+  fails. An 8-bit attachment pays four extra round trips (measured in the
+  measurements' section 12).
+- **New rows from the final review.**
+  - **C36b**: framebuffer reads whose margin or body crosses the far edge, and
+    one with a negative origin, equal the full read's pixels. These reach the
+    row-and-column probe and the margin read. It passed on the build before the
+    fix, as a guard.
+  - **C46**: `R8` and `RG8` texture framebuffers read as stock (`G` and `B`
+    stay 0). An `RGBA8` framebuffer with the same scene must be noised.
+  - **C46b**: an `RGBA4` renderbuffer framebuffer (WebGL1) reads as stock, with
+    the same `RGBA8` guard.
+  - **C47**: `drawingBufferStorage(SRGB8_ALPHA8)` reads are noised and
+    deterministic.
+- **No readback for a snapshot the noise cannot carry.** `CamouNoised` and
+  `CamouNoisedRegion` check the snapshot's colour type (`RGBA_8888` or
+  `BGRA_8888`, the readback's own) before `GetSwSkImage()`. A float16 2D canvas
+  or a WebGL `RGBA16F` buffer no longer pays a GPU readback that `NoisedImage`
+  then rejects. The output is unchanged.
