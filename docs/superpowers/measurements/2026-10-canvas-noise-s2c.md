@@ -199,3 +199,73 @@ Export (W6): fixups folded into `sp3a-canvas-noise`, 38 commits, 0 fixup
 subjects, 0 dirty. Only `patches/sp3a-canvas-noise.patch` changed (sha256
 e38297162cf8...); sync check "all 45 copied files are identical in repo and
 checkout". `pytest scripts/`: 176 passed.
+
+### §6.1 Fix round 1 (review of 1e6c61b..8d3baba)
+
+C41 (new row, EXPECTED 47 to 48): WebGL2, `antialias:false`, default
+framebuffer, `readBuffer(NONE)`, a sentinel buffer, a sub-rect and a full
+`readPixels`; PASS iff the seeded buffers stay unchanged and the GL errors equal
+the unseeded arm's (INVALID_OPERATION).
+
+RED on 8d3baba (uniform sentinel): `FAIL 41`; seeded `sub` e=1282 n=256 (256
+bytes of the page's array overwritten from heap), unconfigured `sub` e=1282 n=0.
+The full read showed n=0 only because a uniform sentinel has no edges to noise;
+the row now uses random opaque texels, so an in-place pass would show.
+
+C37 `edgeDiff` mutation (both probes filled 0x00, so every pixel "agrees"):
+`FAIL 37`, seeded `edgeDiff` 9, `opaqueDiff` 152; unconfigured 0. The clause
+guards the extent. Reverted (the fix replaced the block).
+
+Fixes: noise skipped for READ_BUFFER NONE on the default framebuffer; scratch is
+zeroed and fallible (`Partitions::BufferTryAlignedZeroedMalloc`, no
+`base/process/memory.h`); the default-framebuffer region read is compared with
+the page's own read before it is copied back; `CamouNoiseReadPixels` is private.
+`checkdeps.py` on modules/webgl: SUCCESS; `gn check`: OK.
+
+FBO cost finding (unconfigured, 1024^2 RGBA8 FBO): `readPixels(-1,-1,1026,1026)`
+1.75 to 1.90 ms against `(0,0,1024,1024)` 1.75 to 1.80 ms, so the out-of-bounds
+part is not slow. With the previous code a seeded 1024^2 read took 52 ms. A timing
+build (laps in the function) showed 28 ms of it in the two reads plus fills and
+0.5 ms in the scan: `std::ranges::fill` over a span iterator is a byte loop, tens
+of ms on 4 MB. Replacing the fill with `memset` (and dropping the 0x00 fill, the
+allocator zeroes) gave 10.4 ms: two 1026^2 reads ~6.4 ms, scan 0.45 ms, noise
+1.2 ms. The remaining cost is the two whole-rect reads. Review option (b) (read
+0xFF only if the 0x00 read holds a zero pixel) cannot help a read at the origin:
+the out-of-bounds ring reads zero, so the read is always ambiguous. Option (c)
+(ring only) does not apply for the same reason. What was done instead: a page
+framebuffer is always [0,W) x [0,H), so its part inside the expanded rect is found
+from one row and one column starting at the rect's corner nearest the origin,
+each read twice (fills 0x00 / 0xFF). Four thin reads replace two whole-rect
+reads, and a margin read now reads the region once, as the default framebuffer
+does. Option (a) (per-row memcmp) became unnecessary.
+
+GREEN: `verify_sp3a` 48 PASS, ALL_PASS, rc=0 (C37 and C41 PASS; C17 to C20, C28,
+C29, C35, C36, C38 PASS); `verify_review` 12/12; unit filters PASSED.
+
+Cost (`measure_canvas_cost.py`; small GL cases now time 10 reads per sample and
+report per read):
+
+```
+gl_edges.large     none=1.700 (1.00x)  seed=2.600 (1.53x)
+gl_edges.small     none=0.290 (1.00x)  seed=0.580 (2.00x)
+gl_fbo.large       none=1.800 (1.00x)  seed=3.500 (1.94x)
+gl_fbo.small       none=0.290 (1.00x)  seed=1.700 (5.86x)
+gl_flat.large      none=1.800 (1.00x)  seed=2.600 (1.44x)
+gl_flat.small      none=0.290 (1.00x)  seed=0.590 (2.03x)
+target gl_flat.large ratio<=3.0: 1.44 PASS
+target gl_edges.large ratio<=3.0: 1.53 PASS
+target gl_edges.small ratio<=1.5: 2.00 MISS
+target gl_fbo.large ratio<=3.0: 1.94 PASS
+```
+
+`gl_edges.small` MISS is real, not quantization: batched, it is 0.29 ms of extra
+cost per read, one GPU round trip for the margin region read (the cost of one
+stock 64x64 read). It cannot be below 2x without dropping the margin read.
+`gl_fbo.small` (no target) is 5.86x: four extent reads plus the region read, five
+round trips.
+
+Export: sp3a and sp3b patches both change (they patch the same file; sp3b's
+context shifted). The earlier Task 3 export left `sp3b-webgl-profile.patch`
+stale in the repo; it is regenerated here. All 79 exported files were compared
+against the Mac tree by short hash; only those two differ. Sync check: all 45
+copied files identical.
