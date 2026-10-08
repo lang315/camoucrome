@@ -45,3 +45,57 @@ S2c builds in its own workdir, `~/chromium-s2c/src`, a `git worktree` of
   compile time on 16 cores.
 - Unit tests (`PerturbRgba*:CanvasNoise*:NoisedImage*:NoisedRegion*:CanvasNoiseMask*:Derive*`):
   65 of 65 pass.
+
+## §3 RED on the S2b build
+
+`verify_sp3a.py` at a59ec7a against the S2b build in `~/chromium-s2c`:
+47 rows, `rc=1`. C1–C34 PASS, C39 and C40 PASS (their RED comes from the
+mutations in Tasks 5 and 4), C35–C38 FAIL:
+
+```
+FAIL  35 framebuffer readPixels of a gradient triangle noised and deterministic
+FAIL  36 framebuffer readPixels sub-rect equals the full framebuffer read's part
+FAIL  37 framebuffer read leaves translucent pixels exact, changes an opaque one
+FAIL  38 texImage2D(webgl canvas) read in a second context equals the source's read
+PASS  39 getImageData sub-rect equals the whole-snapshot field (full read and copy)
+PASS  40 one flush or many give one mask
+```
+
+Causes, from each row's note:
+
+- C35: seeded hash equals the unconfigured one (1133855933 both); `same` is true and `e` is 1442, so the row measured a real scene and found no noise.
+- C36: seeded hash equals the unconfigured one (83219890 both), `diff` 0 in both.
+- C37: `opaqueDiff` is 0 under the seed (`trans` 2048, `transDiff` 0).
+- C38: `eq` is false under the seed (R noised, B clean) and true unconfigured, so the flip orientation is right.
+
+## §4 Cost before S2c
+
+`measure_canvas_cost.py` at a59ec7a, S2b build, two interleaved rounds, medians
+(ms except `per_draw_us`). Ratios are to the unconfigured arm.
+
+| case | none | seed | seed_d0 |
+|---|---|---|---|
+| per_draw_us | 0.350 | 8.300 (23.71x) | 8.250 (23.57x) |
+| draw_only | 2.600 | 82.200 (31.62x) | 81.950 (31.52x) |
+| draw_read | 24.900 | 113.500 (4.56x) | 109.000 (4.38x) |
+| read_2d | 0.000 | 9.400 | 4.500 |
+| gl_flat.large | 1.800 | 38.250 (21.25x) | 14.450 (8.03x) |
+| gl_flat.small | 0.400 | 1.600 (4.00x) | 1.400 (3.50x) |
+| gl_edges.large | 1.800 | 44.200 (24.56x) | 14.600 (8.11x) |
+| gl_edges.small | 0.300 | 1.500 (5.00x) | 1.500 (5.00x) |
+| gl_fbo.large | 1.750 | 1.800 (1.03x) | 1.800 (1.03x) |
+| gl_fbo.small | 0.300 | 0.300 (1.00x) | 0.300 (1.00x) |
+
+```
+target per_draw_us ratio<=1.2: 23.71 MISS
+target draw_read ratio<=2.0: 4.56 MISS
+target read_2d abs<=0.5: 9.40 MISS
+target gl_flat.large ratio<=3.0: 21.25 MISS
+target gl_edges.large ratio<=3.0: 24.56 MISS
+target gl_edges.small ratio<=1.5: 5.00 MISS
+```
+
+Reading: draw cost is the same with density 0 (23.6x), so the per-draw cost is
+the copies and replays, not the noise. GL reads cost 21–25x seeded and about 8x
+at density 0. The framebuffer reads show 1.0x because they are not noised yet
+(C35–C38 FAIL).
