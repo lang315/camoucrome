@@ -70,13 +70,15 @@ def read_gl(scene, target):
     const tx = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tx);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 1024, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tx, 0); }
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tx, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+      return { err: 'fbo-incomplete' }; }
   gl.clearColor(0.2, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.enable(gl.SCISSOR_TEST);
   if ('""" + scene + """' === 'flat') {
     for (let i = 0; i < 64; i++) { gl.scissor(i * 16, (i * 37) % 1000, 9, 9);
       gl.clearColor((i * 7 % 10) / 10, (i * 3 % 10) / 10, 0.5, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
   } else {
-    let s = 1; const r = () => (s = (s * 1103515245 + 12345) >>> 0) / 4294967296;
+    let s = 1; const r = () => (s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296;
     for (let y = 0; y < 1024; y += 4) for (let xx = 0; xx < 1024; xx += 4) {
       gl.scissor(xx, y, 4, 4); gl.clearColor(r(), r(), r(), 1); gl.clear(gl.COLOR_BUFFER_BIT); }
   }
@@ -85,7 +87,9 @@ def read_gl(scene, target):
     for (let i = 0; i < n; i++) { const t0 = performance.now();
       gl.readPixels(o, o, w, w, gl.RGBA, gl.UNSIGNED_BYTE, p); t.push(performance.now() - t0); }
     return t; };
-  return { small: time(50, 64, 100), large: time(20, 1024, 0) }; }"""
+  const out = { small: time(50, 64, 100), large: time(20, 1024, 0) };
+  if (gl.getError() !== gl.NO_ERROR) return { err: 'gl-error' };
+  return out; }"""
 
 
 CASES = [("per_draw_us", PER_DRAW, None), ("draw_only", DRAW_ONLY, None),
