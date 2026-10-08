@@ -483,7 +483,7 @@ disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
 - **Other rulings.**
   - C39 and C40 are mutation-proven, not RED on S2b.
   - C35 and C37 carry the wording in the planning section.
-  - `draw_read` stays above 2x (2.70x), `gl_edges.small` above 1.5x (2.07x),
+  - `draw_read` stays above 2x (2.64x), `gl_edges.small` above 1.5x (2.00x),
     and, after the final review's format gate, `gl_fbo.large` above its
     adopted 3x (4.16x, accepted; measurements section 12.6).
     Both are accepted as known limits for this slice and listed in the

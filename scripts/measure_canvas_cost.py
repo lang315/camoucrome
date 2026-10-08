@@ -78,6 +78,7 @@ READ_2D = "() => {" + ARCS + """
 
 READ_2D_MID = READ_2D.replace("getImageData(0, 0, 1, 1); t.push",
                               "getImageData(512, 512, 1, 1); t.push")
+assert READ_2D_MID != READ_2D, "READ_2D_MID: the timed read was not found"
 
 
 def read_gl(scene, target):
