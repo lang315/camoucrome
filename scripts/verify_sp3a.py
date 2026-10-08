@@ -623,10 +623,13 @@ READNONE = """() => {
   gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.readBuffer(gl.NONE); gl.getError();
   const run = (x, y, w, h) => {
-    const b = new Uint8Array(w * h * 4).fill(0xA5);
+    // Sentinel: opaque pixels (a translucent one is never noised, so it
+    // could not show an in-place noise pass).
+    const b = new Uint8Array(w * h * 4).fill(0xA5), s = b.slice();
+    for (let i = 3; i < b.length; i += 4) b[i] = s[i] = 0xFF;
     gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b);
     const e = gl.getError(); let n = 0;
-    for (let i = 0; i < b.length; i++) if (b[i] !== 0xA5) n++;
+    for (let i = 0; i < b.length; i++) if (b[i] !== s[i]) n++;
     return { e, n }; };
   return { sub: run(1, 1, 8, 8), full: run(0, 0, 64, 64) }; }"""
 
