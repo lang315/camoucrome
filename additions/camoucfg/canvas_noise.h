@@ -28,6 +28,10 @@ struct NoiseMask {
   int shift = 0;
   size_t width = 0;
   size_t height = 0;
+  // The buffer's origin inside the mask, for a region of the canvas: pixel
+  // (x, y) of the buffer uses the mask cell of (x0 + x, y0 + y).
+  size_t x0 = 0;
+  size_t y0 = 0;
 };
 
 // Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
@@ -49,14 +53,23 @@ struct NoiseMask {
 // S2b), so one patch gets one noise wherever it is and whatever else the
 // image holds. The patch is hashed in top-down row order; `bottom_up` says the
 // buffer's rows run bottom-up (WebGL readPixels), so one image gets one field
-// in either orientation. `mask` gates each pixel (see NoiseMask); a mask for
-// another size makes the call a no-op. A mask is for top-down images only: a
-// mask with `bottom_up` makes the call a no-op. seed == 0, density <= 0 (or
+// in either orientation. `mask` gates each pixel (see NoiseMask); a mask whose
+// window (x0, y0, width, height) does not fit inside it, or a mask with
+// `bottom_up`, makes the call a no-op. seed == 0, density <= 0 (or
 // NaN), or strength <= 0 is a no-op.
 void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
                       size_t height, size_t row_bytes, uint64_t seed,
                       double density, int32_t strength, uint8_t min_alpha,
                       const NoiseMask& mask, bool bottom_up);
+
+// PerturbRgbaEdges on `data` in place: the unperturbed rows it needs are
+// kept in a two-row ring, so no copy of the buffer is made. Same field, byte
+// for byte. Returns false, leaving `data` untouched, only when the ring (two
+// rows) cannot be allocated.
+bool PerturbRgbaEdgesInPlace(uint8_t* data, size_t width, size_t height,
+                             size_t row_bytes, uint64_t seed, double density,
+                             int32_t strength, uint8_t min_alpha,
+                             const NoiseMask& mask, bool bottom_up);
 
 // PerturbRgbaEdges over a `width` x `height` RGBA8 rect whose rows are
 // `row_bytes` apart (the WebGL readPixels destination at its pack layout),

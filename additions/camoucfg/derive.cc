@@ -78,8 +78,8 @@ uint64_t DomainHash(std::string_view domain) {
 // One pseudo-random 64-bit word for (seed, domain, index). Mix64(index) first
 // so adjacent indices don't produce trivially related inputs before the outer
 // mix.
-uint64_t Draw(uint64_t seed, std::string_view domain, uint64_t index) {
-  return Mix64(seed ^ DomainHash(domain) ^ Mix64(index));
+uint64_t DrawKeyed(uint64_t seed, uint64_t domain_key, uint64_t index) {
+  return Mix64(seed ^ domain_key ^ Mix64(index));
 }
 
 }  // namespace
@@ -178,19 +178,32 @@ OsFamily ClaimedOs(const ConfigScope& scope) {
 
 int32_t DeriveDelta(uint64_t seed, std::string_view domain, uint64_t index,
                     int32_t bound) {
+  return DeriveDeltaKeyed(seed, DomainHash(domain), index, bound);
+}
+
+double DeriveUnit(uint64_t seed, std::string_view domain, uint64_t index) {
+  return DeriveUnitKeyed(seed, DomainHash(domain), index);
+}
+
+uint64_t DomainKey(std::string_view domain) {
+  return DomainHash(domain);
+}
+
+int32_t DeriveDeltaKeyed(uint64_t seed, uint64_t domain_key, uint64_t index,
+                         int32_t bound) {
   if (bound == 0) {
     return 0;
   }
   const uint64_t b = static_cast<uint64_t>(
       std::abs(static_cast<int64_t>(bound)));
   const uint64_t span = 2 * b + 1;  // -b .. +b inclusive
-  const uint64_t r = Draw(seed, domain, index) % span;
+  const uint64_t r = DrawKeyed(seed, domain_key, index) % span;
   return static_cast<int32_t>(static_cast<int64_t>(r) - static_cast<int64_t>(b));
 }
 
-double DeriveUnit(uint64_t seed, std::string_view domain, uint64_t index) {
+double DeriveUnitKeyed(uint64_t seed, uint64_t domain_key, uint64_t index) {
   // Top 53 bits map exactly onto a double's mantissa, as in mouse_trajectories.
-  return (Draw(seed, domain, index) >> 11) * 0x1.0p-53;
+  return (DrawKeyed(seed, domain_key, index) >> 11) * 0x1.0p-53;
 }
 
 }  // namespace camoucfg
