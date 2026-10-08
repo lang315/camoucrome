@@ -403,7 +403,7 @@ index e3a1ba84d9..347e7b0342 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..08f41bfc89 100644
+index 332d1f5c54..7273cc7b29 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -23,6 +23,16 @@
@@ -432,7 +432,7 @@ index 332d1f5c54..08f41bfc89 100644
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -851,6 +863,430 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -851,6 +863,436 @@ void Canvas2DRecorderContext::ResetInternal() {
    origin_tainted_by_content_ = false;
  }
  
@@ -734,6 +734,16 @@ index 332d1f5c54..08f41bfc89 100644
 +  if (flags && flags->nothingToDraw()) {
 +    return;
 +  }
++  // nothingToDraw() is false while a looper is set. A canvas shadow follows
++  // its draw's alpha, so a draw that paints nothing casts nothing: tested
++  // without the looper, for shapes, images and pattern text alike.
++  if (flags && flags->getLooper()) {
++    cc::PaintFlags unshadowed = *flags;
++    unshadowed.setLooper(nullptr);
++    if (unshadowed.nothingToDraw()) {
++      return;
++    }
++  }
 +  // Page-supplied pixels over the op's area. Under a looper (a shadow) a
 +  // rect of the op's bounds is rastered with the looper and merged, so the
 +  // shadow marks its own pixels, not the clip.
@@ -754,6 +764,7 @@ index 332d1f5c54..08f41bfc89 100644
 +          SkPaint fill(paint);
 +          fill.setStyle(SkPaint::kFill_Style);
 +          fill.setPathEffect(nullptr);
++          fill.setAntiAlias(true);
 +          SkRect storage;
 +          c->drawRect(stroke.computeFastBounds(local, &storage), fill);
 +        });
@@ -835,13 +846,8 @@ index 332d1f5c54..08f41bfc89 100644
 +    with_flags.RasterWithFlags(&canvas, &coverage, params);
 +  };
 +  if (flags->getLooper()) {
-+    // A shadow follows its shape's alpha: a shape that draws nothing casts
-+    // nothing (nothingToDraw() is false while a looper is set).
 +    cc::PaintFlags shape = *flags;
 +    shape.setLooper(nullptr);
-+    if (shape.nothingToDraw()) {
-+      return;
-+    }
 +    // The shadow is rasteriser-dependent (aa), over the looper's layers'
 +    // bounds; the shape is then marked by its own kind, so an opaque shape's
 +    // covered pixels stay exact.
