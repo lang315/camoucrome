@@ -92,6 +92,15 @@ int32_t DeriveDelta(uint64_t seed, std::string_view domain, uint64_t index,
 // any reproduce-across-processes probability decision.
 double DeriveUnit(uint64_t seed, std::string_view domain, uint64_t index);
 
+// The domain's hash, for a caller that draws many indices from one domain:
+// pass it to the *Keyed forms instead of re-hashing the string per draw.
+// DeriveUnit(s, d, i) == DeriveUnitKeyed(s, DomainKey(d), i), and likewise
+// for DeriveDelta.
+uint64_t DomainKey(std::string_view domain);
+double DeriveUnitKeyed(uint64_t seed, uint64_t domain_key, uint64_t index);
+int32_t DeriveDeltaKeyed(uint64_t seed, uint64_t domain_key, uint64_t index,
+                         int32_t bound);
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_DERIVE_H_

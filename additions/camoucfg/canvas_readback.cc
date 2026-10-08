@@ -5,10 +5,7 @@
 #include "components/camoucfg/canvas_readback.h"
 
 #include <algorithm>
-#include <memory>
 
-#include "base/containers/span.h"
-#include "base/process/memory.h"
 #include "components/camoucfg/canvas_noise.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -34,23 +31,15 @@ sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
       !canvas.readPixels(nullptr, bitmap.pixmap(), 0, 0)) {
     return nullptr;
   }
-  uint8_t* pixels = static_cast<uint8_t*>(bitmap.getPixels());
-  // SAFETY: the bitmap owns computeByteSize() bytes at getPixels().
-  const base::span<const uint8_t> all = UNSAFE_BUFFERS(
-      base::span<const uint8_t>(pixels, bitmap.computeByteSize()));
-  // A fallible copy: on failure the snapshot stays stock rather than crash.
-  void* raw = nullptr;
-  if (!base::UncheckedMalloc(all.size(), &raw) || raw == nullptr) {
-    return nullptr;
-  }
-  std::unique_ptr<uint8_t, void (*)(void*)> source(static_cast<uint8_t*>(raw),
-                                                   &base::UncheckedFree);
-  std::copy(all.begin(), all.end(), source.get());
   const size_t w = info.width(), h = info.height(), row = bitmap.rowBytes();
   const uint8_t floor =
       info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
-  PerturbRgbaEdges(pixels, source.get(), w, h, row, seed, density, strength,
-                   std::max(min_alpha, floor), mask, bottom_up);
+  // In place: a failed ring allocation leaves the snapshot stock, never a crash.
+  if (!PerturbRgbaEdgesInPlace(static_cast<uint8_t*>(bitmap.getPixels()), w, h,
+                               row, seed, density, strength,
+                               std::max(min_alpha, floor), mask, bottom_up)) {
+    return nullptr;
+  }
   bitmap.setImmutable();
   return SkImages::RasterFromBitmap(bitmap);
 }
@@ -63,6 +52,63 @@ sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
   CanvasNoiseParams(scope, density, strength);
   return NoisedImage(canvas, CanvasSeed(scope), density, strength, min_alpha,
                      mask, bottom_up);
+}
+
+SkBitmap NoisedRegion(const SkImage& canvas, const SkIRect& rect,
+                      uint64_t seed, double density, int32_t strength,
+                      uint8_t min_alpha, const NoiseMask& mask) {
+  const SkColorType ct = canvas.colorType();
+  if (seed == 0 ||
+      (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType)) {
+    return SkBitmap();
+  }
+  const SkIRect bounds = SkIRect::MakeWH(canvas.width(), canvas.height());
+  SkIRect r = rect;
+  if (!r.intersect(bounds)) {
+    return SkBitmap();
+  }
+  // The margin gives every pixel of `r` its four neighbours; a pixel on the
+  // canvas edge has none there and never changes, here or in NoisedImage.
+  SkIRect m = r.makeOutset(1, 1);
+  if (!m.intersect(bounds)) {
+    return SkBitmap();
+  }
+  const SkImageInfo info = canvas.imageInfo()
+                               .makeColorType(kRGBA_8888_SkColorType)
+                               .makeWH(m.width(), m.height());
+  SkBitmap bitmap;
+  if (!bitmap.tryAllocPixels(info) ||
+      !canvas.readPixels(nullptr, bitmap.pixmap(), m.x(), m.y())) {
+    return SkBitmap();
+  }
+  NoiseMask at = mask;
+  at.x0 = static_cast<size_t>(m.x());
+  at.y0 = static_cast<size_t>(m.y());
+  const uint8_t floor =
+      info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
+  if (!PerturbRgbaEdgesInPlace(static_cast<uint8_t*>(bitmap.getPixels()),
+                               info.width(), info.height(), bitmap.rowBytes(),
+                               seed, density, strength,
+                               std::max(min_alpha, floor), at,
+                               /*bottom_up=*/false)) {
+    return SkBitmap();
+  }
+  SkBitmap out;
+  if (!bitmap.extractSubset(&out, r.makeOffset(-m.x(), -m.y()))) {
+    return SkBitmap();
+  }
+  out.setImmutable();
+  return out;
+}
+
+SkBitmap NoisedCanvasRegion(const SkImage& canvas, const SkIRect& rect,
+                            const ConfigScope& scope, uint8_t min_alpha,
+                            const NoiseMask& mask) {
+  double density;
+  int32_t strength;
+  CanvasNoiseParams(scope, density, strength);
+  return NoisedRegion(canvas, rect, CanvasSeed(scope), density, strength,
+                      min_alpha, mask);
 }
 
 }  // namespace camoucfg
