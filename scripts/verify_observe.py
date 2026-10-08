@@ -239,7 +239,7 @@ def main():
     # fast paths: a separate session, so 2 x HOT_N events do not crowd the probe's trace
     hot_events, hot_res, _ = run("hot.html", ON_FILTER)
     if hot_events is None:
-        rows.append((False, f"hot arm: {hot_res}"))
+        rows.append((red, f"hot arm: {hot_res}"))  # never an expected --red failure
     else:
         hc = tally(observe_report.events_of(hot_events))
         hot_port = next((o.rsplit(":", 1)[1] for (_, o, _, _) in hc

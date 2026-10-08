@@ -104,7 +104,12 @@ no-tracing baseline:
 | off | 88.5 | 29.6 |
 | on | 512.1 | 30.6 |
 
-A single run on 2026-10-08 (after the fast-call hook) measured off 75.6 / 29.5 ms and on 788.9 / 30.9 ms; the on-arm `navigator.userAgent` figure is not attributed to the hook (that getter has no fast path) and needs repeated runs before replacing the numbers above.
+A single run on 2026-10-08 (after the fast-call hook) measured off 75.6 /
+29.5 ms and on 788.9 / 30.9 ms. The on-arm `navigator.userAgent` rise is
+more than 10x what the hook's extra `HandleScope` and script-name copy cost,
+and the off arm moved 15% the other way in the same session, so it is not
+attributed to the hook; it needs repeated runs before replacing the numbers
+above.
 
 Browse a site normally, on a release build, when staying hidden matters.
 

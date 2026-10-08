@@ -155,7 +155,8 @@ startup abort instead of a silent fall-back to real values.
 - **A slice that changes the bindings generator lands on the box first:**
   commit it in `~/chromium/src`, rebuild `out/Default` by hand under the
   lock, get `check_checkout_sync.sh` `rc=0`, then merge — merging first turns
-  CI red (sync gate) or into its 180-min timeout (every binding regenerates).
+  CI red (sync gate), or into a bindings rebuild in CI's 180-min window
+  (2026-10-06's observe slice: 9477 steps).
 - CI's `out/Default` sets `camou_observe = true` (since 2026-10-08), so it is
   a tracking-observer build (category off by default; `package.py` refuses
   it). Measure costs in a tree without the flag.

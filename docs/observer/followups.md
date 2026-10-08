@@ -32,6 +32,10 @@ Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
 
 ## Open
 
+- **Rebuild the Windows `out\Observe` before the next recon.** The recon
+  binary (`D:\camou-win\chromium\src\out\Observe\chrome.exe`) was built on
+  2026-10-07, before fast API calls were counted, so its canvas-2D/WebGL draw
+  and state counts are still lower bounds.
 - **The `Emit` comment in the observe patch is inaccurate.** It says the V8
   heap "must not change" inside fast API calls; V8 allows allocation there
   (`Utf8LengthV2`/`WriteUtf8V2` may flatten). Reword it at the next amend of
@@ -51,4 +55,4 @@ Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
 ## After the facebook recon (2026-10-07)
 
 - Instagram/Threads recon pending (arm 1 ran for both; arms 2-4 not yet); the phone-home finding (`passwordsleakcheck-pa.googleapis.com` at login, `content-autofill.googleapis.com` in every arm) goes to SP7; per-script attribution is done (phase 1c). Details: `docs/superpowers/measurements/2026-10-07-fb-observe.md`.
-- Counts of canvas-2D/WebGL draw and state calls in that recon are lower bounds (V8 fast API calls were not counted before 2026-10-08); re-run arms to get exact counts.
+- Counts of canvas-2D/WebGL draw and state calls in that recon are lower bounds (V8 fast API calls were not counted before 2026-10-08); re-run arms on a rebuilt `out\Observe` to get exact counts.
