@@ -532,8 +532,8 @@ TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
                    1, NoiseMask(), /*bottom_up=*/true);
   EXPECT_NE(top, src);
   EXPECT_NE(bottom, src);
-  EXPECT_EQ(Fnv(top), 0x0ULL);     // GOLDEN_TOP: replaced in Step 3
-  EXPECT_EQ(Fnv(bottom), 0x0ULL);  // GOLDEN_BOTTOM: replaced in Step 3
+  EXPECT_EQ(Fnv(top), 0x9AC9002D1AA8339BULL);
+  EXPECT_EQ(Fnv(bottom), 0x5CAC490D0AEE43C6ULL);
 }
 
 }  // namespace
