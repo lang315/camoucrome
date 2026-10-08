@@ -2,7 +2,7 @@
 
 Launches content_shell on a local probe with startup tracing, no CDP attached,
 and asserts EXACT per-name event counts with the right origin, site and script. Arms:
-  on     category enabled: every row below must match exactly
+  on     category enabled: every row below must match exactly (probe page, then the hot page for V8 fast API calls)
   off    tracing on for blink,loading: zero camou.observe events, and at least one
          other event (an empty trace measured nothing)
   --red  same as `on` with every expectation off by one: must FAIL
@@ -67,6 +67,17 @@ TIMING = """<!doctype html><canvas id=c width=64 height=64></canvas><script>
 })();
 </script>"""
 
+# [NoAllocDirectCall] fast paths (V8 fast API calls) take over once V8 optimizes
+# the loop; with the hook only on the slow callbacks these counts come out short.
+HOT_N = 100000
+HOT = """<!doctype html><canvas id=c width=8 height=8></canvas><script>
+(async () => {
+  const ctx = document.getElementById('c').getContext('2d');
+  for (let i = 0; i < %(n)d; i++) { ctx.lineWidth = 1 + (i & 1); ctx.fillRect(0, 0, 1, 1); }
+  await fetch('/done', {method: 'POST', body: '{}'});
+})();
+</script>"""
+
 
 def serve(k):
     done = threading.Event()
@@ -85,6 +96,7 @@ def serve(k):
             port = self.server.server_port
             pages = {"/probe.html": (PROBE % {"k": k, "port": port}, "text/html"),
                      "/timing.html": (TIMING, "text/html"),
+                     "/hot.html": (HOT % {"n": HOT_N}, "text/html"),
                      "/worker.js": (WORKER % {"k": k}, "application/javascript"),
                      "/ext.js": (EXT % {"k": k}, "application/javascript"),
                      "/frame.html": (FRAME % {"k": k}, "text/html")}
@@ -162,6 +174,16 @@ def tally(events):
     return counts
 
 
+def hot_rows(c, main_origin, top, n, bump):
+    """Exact counts for one fast-path method and one fast-path setter on /hot.html."""
+    hot = f"{main_origin}/hot.html"
+    rows = []
+    for name in ("CanvasRenderingContext2D.fillRect", "CanvasRenderingContext2D.lineWidth.set"):
+        got = c.get((name, main_origin, top, hot), 0)
+        rows.append((got == n + bump, f"{name} x{n} (fast path) script={hot}: {got} (want {n + bump})"))
+    return rows
+
+
 def main():
     red = "--red" in sys.argv
     if "--timing" in sys.argv:
@@ -213,6 +235,16 @@ def main():
         rows.append((got == K + bump, f"{label}: {got} (want {K + bump})"))
     title = sum(n for (name, _, _, _), n in c.items() if name.startswith("Document.title"))
     rows.append((title == 0 + bump, f"Document.title (not allow-listed): {title} (want {0 + bump})"))
+
+    # fast paths: a separate session, so 2 x HOT_N events do not crowd the probe's trace
+    hot_events, hot_res, _ = run("hot.html", ON_FILTER)
+    if hot_events is None:
+        rows.append((red, f"hot arm: {hot_res}"))  # never an expected --red failure
+    else:
+        hc = tally(observe_report.events_of(hot_events))
+        hot_port = next((o.rsplit(":", 1)[1] for (_, o, _, _) in hc
+                         if o and o.startswith("http://127.0.0.1:")), None)
+        rows += hot_rows(hc, f"http://127.0.0.1:{hot_port}", top, HOT_N, bump)
 
     # off arm: a normal default set ("blink,loading") must not pull the category in
     off_events, off_res, _ = run("probe.html", "blink,loading")

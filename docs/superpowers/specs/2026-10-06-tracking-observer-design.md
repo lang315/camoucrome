@@ -187,6 +187,7 @@ new environment variable.
   (`toDataURL`, `getImageData`, `readPixels`, `getParameter`, `measureText`,
   `fillText`, `font`) are unaffected, and a zero row stays a real zero.
   Counting them is a follow-up (`docs/observer/followups.md`).
+  Resolved 2026-10-08: the fast callbacks are hooked too (plan docs/superpowers/plans/2026-10-08-observer-fastcall.md); counts are exact.
 
 ## Verification (RED-first)
 

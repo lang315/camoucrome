@@ -11,7 +11,7 @@ index 9377661e94..18dbbc179c 100644
      perfetto::Category(TRACE_DISABLED_BY_DEFAULT("cc"))
          .SetTags("slow"),
 diff --git a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-index 995d8584f3..b97b0ef3c0 100644
+index 995d8584f3..1ce5f44a59 100644
 --- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
 +++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
 @@ -836,6 +836,81 @@ def _make_bindings_logging_id(cg_context):
@@ -104,7 +104,17 @@ index 995d8584f3..b97b0ef3c0 100644
          make_report_coop_access(cg_context),
          make_report_deprecate_as(cg_context),
          make_report_measure_as(cg_context),
-@@ -2024,6 +2100,7 @@ def make_attribute_set_callback_def(cg_context, function_name):
+@@ -1973,6 +2049,9 @@ def make_attribute_set_nadc_callback_def(cg_context):
+     ])
+ 
+     bind_callback_local_vars(body, cg_context)
++    camou_record = make_camou_observe_record(cg_context)
++    if camou_record:
++        body.append(camou_record)
+ 
+     # If [CallWith=Isolate] is specified, make sure ${isolate} is passed first.
+     blink_arguments = list()
+@@ -2024,6 +2103,7 @@ def make_attribute_set_callback_def(cg_context, function_name):
          EmptyNode(),
          make_runtime_call_timer_scope(cg_context),
          make_bindings_trace_event(cg_context),
@@ -112,7 +122,7 @@ index 995d8584f3..b97b0ef3c0 100644
          make_report_deprecate_as(cg_context),
          make_report_measure_as(cg_context),
          make_log_activity(cg_context),
-@@ -2185,6 +2262,7 @@ def make_constructor_entry(cg_context):
+@@ -2185,6 +2265,7 @@ def make_constructor_entry(cg_context):
      return SequenceNode([
          make_runtime_call_timer_scope(cg_context),
          make_bindings_trace_event(cg_context),
@@ -120,7 +130,7 @@ index 995d8584f3..b97b0ef3c0 100644
          EmptyNode(),
          make_check_constructor_call(cg_context),
      ])
-@@ -2300,6 +2378,7 @@ def make_exposed_construct_callback_def(cg_context, function_name):
+@@ -2300,6 +2381,7 @@ def make_exposed_construct_callback_def(cg_context, function_name):
      body.extend([
          make_runtime_call_timer_scope(cg_context),
          make_bindings_trace_event(cg_context),
@@ -128,7 +138,7 @@ index 995d8584f3..b97b0ef3c0 100644
          make_report_deprecate_as(cg_context),
          make_report_measure_as(cg_context),
          make_log_activity(cg_context),
-@@ -2321,6 +2400,7 @@ def make_legacy_factory_function_property_callback_def(cg_context,
+@@ -2321,6 +2403,7 @@ def make_legacy_factory_function_property_callback_def(cg_context,
      body.extend([
          make_runtime_call_timer_scope(cg_context),
          make_bindings_trace_event(cg_context),
@@ -136,7 +146,17 @@ index 995d8584f3..b97b0ef3c0 100644
          make_report_deprecate_as(cg_context),
          make_report_measure_as(cg_context),
          make_log_activity(cg_context),
-@@ -2587,6 +2667,7 @@ def make_operation_entry(cg_context):
+@@ -2519,6 +2602,9 @@ def make_no_alloc_direct_call_callback_def(cg_context, function_name,
+         ))
+ 
+     bind_callback_local_vars(body, cg_context)
++    camou_record = make_camou_observe_record(cg_context)
++    if camou_record:
++        body.append(camou_record)
+ 
+     if cg_context.may_throw_exception:
+         body.append(T("<% handle_scope.request_symbol_definition() %>"))
+@@ -2587,6 +2673,7 @@ def make_operation_entry(cg_context):
      return SequenceNode([
          make_runtime_call_timer_scope(cg_context),
          make_bindings_trace_event(cg_context),
@@ -159,10 +179,10 @@ index a158629b41..3ac9b3d648 100644
    "execution_context_lifecycle_observer.cc",
 diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.cc b/third_party/blink/renderer/core/execution_context/camou_observe.cc
 new file mode 100644
-index 0000000000..c017146e12
+index 0000000000..58e30e2648
 --- /dev/null
 +++ b/third_party/blink/renderer/core/execution_context/camou_observe.cc
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,61 @@
 +// Copyright 2026 The Camoucrome Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -173,18 +193,19 @@ index 0000000000..c017146e12
 +
 +#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 +#include "third_party/blink/renderer/core/frame/local_dom_window.h"
-+#include "third_party/blink/renderer/platform/bindings/v8_binding.h"
 +#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 +#include "v8/include/v8-context.h"
 +#include "v8/include/v8-debug.h"
 +#include "v8/include/v8-isolate.h"
 +#include "v8/include/v8-local-handle.h"
++#include "v8/include/v8-primitive.h"
 +
 +#if BUILDFLAG(CAMOU_OBSERVE)
 +
 +namespace blink::camou_observe {
 +
-+// Only reached with the category enabled, so the context lookup and the string
++// Runs from both slow and fast ([NoAllocDirectCall]) callbacks. Only reached
++// with the category enabled, so the context lookup and the string
 +// work below never run in an ordinary session. `site` is the top-level site for
 +// a window; worker scopes have no StorageKey accessor at this pin, so it stays
 +// empty and the report groups worker reads by origin (a dedicated worker's is
@@ -192,6 +213,8 @@ index 0000000000..c017146e12
 +// (an inline script reports its document's URL; no script, or eval without a
 +// sourceURL, reports an empty string).
 +void Emit(const char* name, v8::Isolate* isolate) {
++  // A [NoAllocDirectCall] fast callback may have no HandleScope open.
++  v8::HandleScope handle_scope(isolate);
 +  v8::Local<v8::Context> v8_context = isolate->GetCurrentContext();
 +  ExecutionContext* context =
 +      v8_context.IsEmpty() ? nullptr : ExecutionContext::From(v8_context);
@@ -205,10 +228,15 @@ index 0000000000..c017146e12
 +      site = window->GetStorageKey().GetTopLevelSite().Serialize().Utf8();
 +    }
 +  }
-+  std::string script =
-+      ToCoreStringWithNullCheck(
-+          isolate, v8::StackTrace::CurrentScriptNameOrSourceURL(isolate))
-+          .Utf8();
++  // Copied without ToCoreString, which may externalize the V8 string: Emit
++  // also runs inside fast API calls, where the V8 heap must not change.
++  std::string script;
++  v8::Local<v8::String> v8_script =
++      v8::StackTrace::CurrentScriptNameOrSourceURL(isolate);
++  if (!v8_script.IsEmpty()) {
++    script.resize(v8_script->Utf8LengthV2(isolate));
++    v8_script->WriteUtf8V2(isolate, script.data(), script.size());
++  }
 +  TRACE_EVENT_INSTANT(CAMOU_OBSERVE_CATEGORY, perfetto::StaticString(name),
 +                      "origin", origin, "site", site, "script", script);
 +}
