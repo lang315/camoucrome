@@ -444,10 +444,20 @@ target gl_edges.small ratio<=1.5: 2.00 MISS
 target gl_fbo.large ratio<=3.0: 2.36 PASS
 ```
 
-`draw_read` stays a MISS at 2.64x, and the density-0 arm (2.68x) shows the
-excess is not noise arithmetic: it is the path around it (snapshot, mask,
-region allocation and read), so regional noising does not move it.
-`read_2d` reads 0.000 in all three arms, so it does not discriminate here.
+`read_2d` fell from 4.900 ms (section 7) to 0.000, which meets the 0.5 ms
+target: the whole-snapshot noise pass is gone from the seeded read. `draw_read`
+fell from 2.89x (72.5 ms) to 2.64x and stays a MISS. `draw_only` is 1.02x and
+`read_2d` is 0.000, so drawing, snapshot, region allocation and read cost
+nothing; the remainder is the flush-time `CamouMarkRecord` walk over the
+10 000 recorded ops, as section 7 found. The cost reads at (0,0), where the
+margin makes the region 2x2 and the noise kernel never runs, so these rows show
+that no whole-canvas pass remains; they do not time the region arithmetic.
+
+GPU caveat: on a texture-backed snapshot `GetSwSkImage()` reads back the whole
+texture, so spec section 2 step 1 (read only the rect plus margin) cannot hold
+there. `CamouNoisedRegion` returns empty for such a snapshot and the read keeps
+the cached whole-snapshot route. The harness is CPU raster (SwiftShader), so the
+accelerated path is not timed here.
 
 Export: only `sp3a-canvas-noise.patch` changed (+78/-14); 38 commits, 0 fixups;
 sync check: all 45 copied files identical.

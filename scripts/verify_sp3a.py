@@ -98,6 +98,9 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       unchanged (a draw that changes no pixel marks none).
   C44 a shadowed drawImage far from an arc leaves the arc's noise unchanged
       (the shadow marks its own pixels, not the whole clip).
+  C45 getImageData of rects that cross the canvas edge (negative origin, past
+      the far edge, negative size, a 1x1 corner) equals the full read's pixels
+      (zero outside) and the same rect of a drawImage copy.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -853,6 +856,28 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   x.shadowBlur = 2; x.shadowOffsetX = 3; x.shadowOffsetY = 3;
   x.shadowColor = 'rgba(0,0,0,0.5)'; x.drawImage(tile10.canvas, 150, 150);
   out.shadowimg = { a: H(a), b: H(get(x, 34, 34, 33, 33)), e: elig(a, 33) };
+  // C45: rects that leave the canvas: the regional read must place the region
+  // at the clipped origin. Each rect is checked against the full read (zero
+  // outside the canvas) and against the same rect of a drawImage copy.
+  x = mk(64, 64); arc(x, 24, 24, 16, 'rgba(255,96,0,0.6)'); arc(x, 40, 40, 16, '#06f');
+  arc(x, 62, 62, 12, '#0a0');
+  const full2 = get(x, 0, 0, 64, 64);
+  const cpy2 = mk(64, 64); cpy2.drawImage(x.canvas, 0, 0);
+  let dF2 = 0, dC2 = 0, cnt = 0;
+  for (const [sx, sy, sw, sh] of [[-5, -7, 30, 30], [50, 50, 30, 30],
+                                  [40, 40, -30, -30], [63, 63, 1, 1]]) {
+    const r = get(x, sx, sy, sw, sh), c = get(cpy2, sx, sy, sw, sh);
+    const nx = sw < 0 ? sx + sw : sx, ny = sh < 0 ? sy + sh : sy;
+    const w = Math.abs(sw), h = Math.abs(sh);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const X = nx + i, Y = ny + j, o = (j * w + i) * 4;
+      const inside = X >= 0 && X < 64 && Y >= 0 && Y < 64;
+      for (let k = 0; k < 4; k++) {
+        const f = inside ? full2[(Y * 64 + X) * 4 + k] : 0;
+        if (r[o + k] !== f) dF2++;
+        if (r[o + k] !== c[o + k]) dC2++;
+        cnt++; } } }
+  out.edgeRects = { dF: dF2, dC: dC2, cnt, tH: H(full2), e: elig(full2, 64) };
   return out;
 }"""
 
@@ -1313,7 +1338,13 @@ for name, key in ((C43, "alpha0"), (C44, "shadowimg")):
             lambda u: u["e"] > 0 and u["a"] == u["b"],
             lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
 
-EXPECTED = 51
+C45 = "45 getImageData of rects crossing the canvas edge equals the full read and a copy"
+s2b_row(C45, lambda r: r["edgeRects"],
+        lambda u: u["e"] > 0 and u["cnt"] > 0 and u["dF"] == 0 and u["dC"] == 0,
+        lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["cnt"] == u["cnt"]
+        and s["tH"] != u["tH"])
+
+EXPECTED = 52
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
