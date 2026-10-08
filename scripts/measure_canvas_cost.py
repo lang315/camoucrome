@@ -9,6 +9,11 @@ does every copy and replay but no noise (attribution), on WSL content_shell
   shadow_read  10 x (1000 shadowed 12 x 12 fillRects + getImageData(0,0,1,1)):
                ms per frame; reported only, no target
   read_2d      getImageData(0,0,1,1) after one new arc on 1024 x 1024: ms
+               (a 1x1 read at the corner never runs the kernel: its region is
+               2x2, below the 3x3 a pixel needs; a median of 0.00 is below the
+               timer's resolution, not free)
+  read_2d_mid  the same at (512,512), an interior point, so the regional
+               kernel runs on a 3x3: ms; reported only, no target
   gl_*.large   readPixels 1024 x 1024 (flat scene, 4 px random blocks): ms
   gl_*.small   readPixels 64 x 64 sub-rect: ms
   gl_fbo.*     the same reads from a page framebuffer
@@ -71,6 +76,9 @@ READ_2D = "() => {" + ARCS + """
     x.getImageData(0, 0, 1, 1); t.push(performance.now() - t0); }
   return t; }"""
 
+READ_2D_MID = READ_2D.replace("getImageData(0, 0, 1, 1); t.push",
+                              "getImageData(512, 512, 1, 1); t.push")
+
 
 def read_gl(scene, target):
     return """() => {
@@ -108,7 +116,7 @@ def read_gl(scene, target):
 
 CASES = [("per_draw_us", PER_DRAW, None), ("draw_only", DRAW_ONLY, None),
          ("draw_read", DRAW_READ, None), ("shadow_read", SHADOW_READ, None),
-         ("read_2d", READ_2D, None),
+         ("read_2d", READ_2D, None), ("read_2d_mid", READ_2D_MID, None),
          ("gl_flat", read_gl("flat", "default"), GL),
          ("gl_edges", read_gl("edges", "default"), GL),
          ("gl_fbo", read_gl("edges", "fbo"), GL)]

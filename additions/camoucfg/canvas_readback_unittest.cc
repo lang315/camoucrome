@@ -179,6 +179,14 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
       SkBitmap wb;
       ASSERT_TRUE(wb.tryAllocPixels(whole->imageInfo()));
       ASSERT_TRUE(whole->readPixels(nullptr, wb.pixmap(), 0, 0));
+      // The vacuity guard: a no-op field would make every region "equal".
+      int changed = 0;
+      for (int y = 0; y < kH; ++y) {
+        for (int x = 0; x < kW; ++x) {
+          changed += *wb.getAddr32(x, y) != *bm.getAddr32(x, y);
+        }
+      }
+      EXPECT_GT(changed, 0) << "shift " << shift;
       for (const SkIRect& r :
            {SkIRect::MakeXYWH(5, 4, 20, 15), SkIRect::MakeXYWH(0, 0, 9, 9),
             SkIRect::MakeXYWH(kW - 6, kH - 5, 6, 5), SkIRect::MakeXYWH(11, 0, 1, 1),
@@ -200,6 +208,17 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
                                2, 1, mask)
                       .drawsNothing());  // seed 0: nothing, caller stays stock
     }
+  }
+}
+
+// A rect wholly off the canvas has no pixels to noise: nothing comes back.
+TEST(NoisedRegionTest, OffCanvasRectIsEmpty) {
+  const sk_sp<SkImage> image = Image(8, 8, Partial);
+  for (const SkIRect& r :
+       {SkIRect::MakeXYWH(8, 0, 4, 4), SkIRect::MakeXYWH(-5, -5, 5, 5),
+        SkIRect::MakeXYWH(2, 8, 3, 3), SkIRect::MakeXYWH(-3, 2, 3, 3)}) {
+    EXPECT_TRUE(NoisedRegion(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
+        << r.x() << "," << r.y();
   }
 }
 
