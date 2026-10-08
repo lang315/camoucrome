@@ -354,7 +354,8 @@ copied files identical.
 
 Changes:
 - `CamouMarkOp` returns first when the op's flags draw nothing. This covers
-  images, pattern text and flagless ops; S2b had this guard.
+  shapes, images and pattern text; S2b had this guard. (Flagless ops have no
+  flags to test.)
 - An image or pattern text drawn under a looper (an opaque image's shadow)
   rasters a rect of its bounds with the shader-free looper flags and merges it
   `imported`. The area is bounded by the looper's layers, with each layer's blur
@@ -424,9 +425,10 @@ target read_2d abs<=0.5: 0.00 PASS
 ```
 
 The `draw_read` MISS remains: 2.70x seeded, 2.73x at density 0. The walk still
-costs about 4.3 µs per arc, so the per-op cuts did not move it. The remaining time
-is in the per-op erase, the A8 raster and the `Merge` scan, not in the paint
-conversion. `shadow_read` (1000 shadowed 12x12 rects plus one read) is 3.0x, with
+costs about 4.3 µs per arc, so the per-op cuts did not move it. The drop from
+2.89x (§7) came from Task 5's regional read (`read_2d` 4.9 ms → 0), not from these
+cuts. How the walk's time splits between erase, A8 raster and `Merge` was not
+profiled in this round; §7.2 measures it. `shadow_read` (1000 shadowed 12x12 rects plus one read) is 3.0x, with
 density 0 the same.
 
 Export (W6): 3 fixups folded into sp3a. The branch keeps 38 commits, with 0
