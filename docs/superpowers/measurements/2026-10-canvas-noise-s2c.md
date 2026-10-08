@@ -743,15 +743,56 @@ C1, C6-C9, C12-C45 including C24a-d, C33a-e and C44b, PASS.
 - Stability: 0 differing rows, headed and headless.
 - CreepJS: the word "noise" does not appear in any of the four CreepJS captures (no `rgba noise`).
 
+### §9.8 Final code (2026-10-08, after the final review fixes)
+
+Lock `s2c windows 2`. Tree `c50865a` (box `FETCH_HEAD` equals the Mac HEAD).
+W12 base `8cf90b48`. Box branch `camoucrome/s2c` at `0ef3ff9aa1`.
+
+- **W12: 17 files.**
+  - Every pre hash equals §9.1's post hash for the same path, so the native tree
+    held exactly Task 6's state.
+  - Every post hash equals the box's sha256 of the file at `camoucrome/s2c`.
+  - 14 files changed: the eight `canvas_noise*`, `canvas_readback*` and
+    `derive.{h,cc}` additions, `canvas_rendering_context.{h,cc}`,
+    `base_rendering_context_2d.cc`, `canvas_2d_recorder_context.{h,cc}` and
+    `webgl_rendering_context_base.cc`.
+  - 3 were already equal: `derive_unittest.cc`,
+    `offscreen_canvas_rendering_context_2d.cc` and
+    `webgl_rendering_context_base.h`.
+  - Post hashes, first 12 hex digits: `canvas_noise.cc` 9628415fd50f,
+    `canvas_noise.h` 8e2506f8ac99, `canvas_noise_unittest.cc` 852318d58e72,
+    `canvas_readback.cc` 4bb1925f26c6, `canvas_readback.h` a73056b25a29,
+    `canvas_readback_unittest.cc` 6a3757bf7dc4, `derive.cc` 1270acb660d0,
+    `derive.h` 9403b820726c, `canvas_rendering_context.cc` a485e0903acc,
+    `canvas_rendering_context.h` 9144c9092cd2, `base_rendering_context_2d.cc`
+    c1a9d70ba836, `canvas_2d_recorder_context.cc` f7d2a56977af,
+    `canvas_2d_recorder_context.h` 857d72226cc9 and
+    `webgl_rendering_context_base.cc` 26ee3c41cc98.
+- **W9 `s2c-2`.** `Build Succeeded: 265 steps`, `rc=0`, 356 s.
+- **`verify_sp3a` on `chrome`.** 57 rows: 51 PASS, 6 FAIL.
+  - The six are C2, C3, C4, C5, C10 and C11, the rows that need the stock
+    baseline missing on the host (note: `baseline load ... FileNotFoundError`).
+    Count them as UNMEASURED.
+  - Every other row passes, including C36b, C46, C46b and C47.
+- **Host runs (W10).**
+
+  | run | attempts | verdict |
+  |---|---|---|
+  | `s2c-final2-headless` | 2 | attempt 1: P3 and S1 UNMEASURED ("no WebGL context in: stock", the host GPU flake), and rule 5 FAIL (differ: `glClear`) in the same attempt, so it does not count; attempt 2: 9/9 PASS (S2 text 8 of 8, S2 shape 8 of 8, rule 5 differ: []) |
+  | `s2c-final2-headed` | 1 | 9/9 PASS (S2 text 8 of 8, S2 shape 8 of 8, rule 5 differ: []) |
+
+Calibration and Step 2 were not re-run (controller ruling): the field is
+unchanged, and the gates only narrow which reads are noised.
+
 ## §10 Gaps
 
 ### Closed by S2c
 
-- The draw-time timing tell: `per_draw_us` 23.7x to 1.08x (final run, §12; 1.00x
-  and 1.17x in other runs, within the timer's quantum).
+- The draw-time timing tell: `per_draw_us` 23.7x to 0.93x (final run, §12.6; 1.00x,
+  1.08x and 1.17x in other runs, within the timer's quantum).
 - The full-canvas noise pass behind a 1x1 `getImageData`: `read_2d` 9.4 ms to below
   the timer's resolution (§8, §12).
-- The `readPixels` copies and strips: `gl_flat.large` 21.3x to 1.53x, `gl_edges.large` 24.6x to 1.56x (§6, §12).
+- The `readPixels` copies and strips: `gl_flat.large` 21.3x to 1.37x, `gl_edges.large` 24.6x to 1.44x (§6, §12.6).
 - Framebuffer reads, user framebuffers included: C35 to C37 (§6).
 - `texImage2D` from a WebGL canvas: C38.
 - Review triage item 23 (`readPixels` skipped user framebuffers).
@@ -765,20 +806,25 @@ C1, C6-C9, C12-C45 including C24a-d, C33a-e and C44b, PASS.
 
 ### Remaining cost targets
 
-- `draw_read` is 2.70x in the final run (§12) against <= 2x: a MISS. The
+- `draw_read` is 2.64x in the final run (§12.6) against <= 2x: a MISS. The
   flush walk costs about 4.4 us per op: coverage raster 70%, `Merge` 19%, erase
   6% (§7.2). The next lever is a cheaper A8 coverage raster.
-- `gl_edges.small` is 2.07x against <= 1.5x: a MISS. Each read needs one extra
+- `gl_edges.small` is 2.00x against <= 1.5x: a MISS. Each read needs one extra
   round trip for the margin, and dropping it would break the C36 sub-rect
   equality.
 - `shadow_read` is about 3x, with no target.
-- `gl_fbo.large` is 4.21x against the adopted <= 3x: a MISS since the final
-  review's format gate (§12). It was 2.47x before. The gate's four synchronous
-  attachment-size queries cost about 3 ms on this read; `gl_fbo.small` went from
-  4x to 6.6x (no target). Two levers are open, both outside the ruling as
-  written: query only G and B sizes (decision-equivalent for every format GL
-  reads as `RGBA`/`UNSIGNED_BYTE`), and read a renderbuffer's format from Blink
-  (`WebGLRenderbuffer::InternalFormat()`) with no query.
+- `gl_fbo.large` is 4.16x against the adopted <= 3x: an **accepted MISS**
+  (controller ruling, final fix round 2, §12.6). It was 2.47x before the final
+  review's format gate. Cutting the gate from four queries to two (G and B)
+  moved `gl_fbo.small` from 6.6x to 5.3x (no target) but left `gl_fbo.large`
+  at 4.16x, so the large read's extra time does not scale with the query count;
+  its cause was not isolated. No further optimisation in this slice.
+- **Possible timing tell: a page-framebuffer read against a default-framebuffer
+  read of the same size.** Stock reads both in about the same time
+  (1.9 / 1.8 ms large, 0.29 / 0.295 ms small: about 1.0x). Seeded, the
+  framebuffer read takes 7.9 ms against 2.6 ms (3.0x) large and 1.545 ms
+  against 0.59 ms (2.6x) small (§12.6 run). A page that times both reads can see
+  the gap.
 - The GPU (texture-backed) `getImageData` is not regional and is not measurable
   on the box (CPU raster).
 - The noise cache holds two full-canvas copies: the held source snapshot and
@@ -936,15 +982,15 @@ arms), not by reading the command-buffer client.
 | gl_fbo.small | 6.83x | 6.63x | none |
 | shadow_read | 2.98x | 2.99x | none |
 
-Run 2, the final run that §10 and the S2b document cite:
+Run 2 (the four-query gate; §12.6 is the run §10 and the S2b document now cite):
 ```
 gl_fbo.large       none=1.900 (1.00x)  seed=8.000 (4.21x)  seed_d0=6.800 (3.58x)
 gl_fbo.small       none=0.300 (1.00x)  seed=1.990 (6.63x)  seed_d0=1.980 (6.60x)
 per_draw_us        none=0.325 (1.00x)  seed=0.350 (1.08x)  seed_d0=0.325 (1.00x)
 draw_read          none=25.050 (1.00x)  seed=67.650 (2.70x)  seed_d0=67.950 (2.71x)
 ```
-- `gl_fbo.*` regressed from 2.47x and 4x: the format gate adds four synchronous
-  round trips per seeded page-framebuffer read (§10 has the levers).
+- `gl_fbo.*` regressed from 2.47x and 4x with the four-query format gate. Round 2
+  (§12.6) cut it to two queries: `gl_fbo.small` improved, `gl_fbo.large` did not.
 - **Resolution (M5).** A 1x1 `getImageData` at `(0,0)` never runs the kernel: its
   region is 2x2, below the 3x3 a pixel needs. `read_2d_mid` reads `(512,512)`,
   where the kernel runs on a 3x3. Its median is also 0.000, which is below the
@@ -966,3 +1012,47 @@ and `sp3b-webgl-profile.patch`. The sp3b change is its `index` line and 14 hunk
 headers only, shifted by sp3a's new lines. The sync check passed: all 45 copied
 files are identical in the repo and the checkout. The tarball's sha256
 (`dabb2973...ee9e8`) matched on the box and the Mac.
+
+### §12.6 Round 2: the G and B gate (controller ruling)
+
+The ruling: the gate queries only the G and B sizes. Among the formats GL reads
+as `RGBA`/`UNSIGNED_BYTE`, G and B both being 8 bits holds exactly for `RGBA8`,
+`RGB8` and `SRGB8_ALPHA8`. `R8`, `RG8`, `RGBA4`, `RGB5_A1`, `RGB565` and
+`RGB10_A2` all fail it. The code comment says so. Two synchronous queries remain
+per seeded page-framebuffer read. The edit went through the W4 runner;
+clang-format changed nothing.
+
+- Build: `Build Succeeded: 354 steps` (7 m 39 s, rc 0). The rebase in §12.5's
+  export had touched file mtimes, so this was more than the one file.
+- `verify_sp3a` 57/57 `ALL_PASS`, with `PASS 36b`, `PASS 46`, `PASS 46b` and
+  `PASS 47`. `verify_review_2026_09_24` 12/12 `ALL_PASS`.
+- Unit filter: 71/71, `SUCCESS: all tests passed`.
+- `gn check //third_party/blink/renderer/modules/webgl:webgl`: `Header dependency
+  check OK`. `checkdeps` on `modules/webgl` reported nothing.
+- W6: the edit was folded into `sp3a-canvas-noise`; 38 commits, 0 fixups, 0
+  dirty, HEAD `0ef3ff9aa1`; sync check 45/45. The export changed
+  `sp3a-canvas-noise.patch` (the gate) and `sp3b-webgl-profile.patch` (its
+  `index` line only). The tarball sha256 `7a08ae78...50cef` matched on both
+  sides; committed as `c50865a`.
+
+Cost (W5c, after the verifies, no build running):
+```
+gl_fbo.large       none=1.900 (1.00x)  seed=7.900 (4.16x)  seed_d0=6.600 (3.47x)
+gl_fbo.small       none=0.290 (1.00x)  seed=1.545 (5.33x)  seed_d0=1.545 (5.33x)
+gl_edges.large     none=1.800 (1.00x)  seed=2.600 (1.44x)  seed_d0=1.900 (1.06x)
+gl_edges.small     none=0.295 (1.00x)  seed=0.590 (2.00x)  seed_d0=0.580 (1.97x)
+gl_flat.large      none=1.900 (1.00x)  seed=2.600 (1.37x)  seed_d0=1.800 (0.95x)
+draw_read          none=25.350 (1.00x)  seed=67.000 (2.64x)  seed_d0=67.950 (2.68x)
+per_draw_us        none=0.350 (1.00x)  seed=0.325 (0.93x)  seed_d0=0.325 (0.93x)
+read_2d_mid        none=0.000  seed=0.050  seed_d0=0.000
+shadow_read        none=6.100 (1.00x)  seed=18.150 (2.98x)  seed_d0=18.450 (3.02x)
+target per_draw_us ratio<=1.2: 0.93 PASS
+target draw_read ratio<=2.0: 2.64 MISS
+target read_2d abs<=0.5: 0.00 PASS
+target gl_flat.large ratio<=3.0: 1.37 PASS
+target gl_edges.large ratio<=3.0: 1.44 PASS
+target gl_edges.small ratio<=1.5: 2.00 MISS
+target gl_fbo.large ratio<=3.0: 4.16 MISS
+```
+`gl_fbo.large` stays above 3x and is recorded as an accepted MISS in §10, with
+the framebuffer-against-default-framebuffer ratio as a possible timing tell.

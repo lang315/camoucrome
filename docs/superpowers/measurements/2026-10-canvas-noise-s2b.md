@@ -373,7 +373,7 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
   it is narrower than PR #27, where any `drawImage` disabled the whole canvas.
 - Replay cost on huge canvases: every non-text draw rasterises a full-resolution A8
   bitmap of its dirty rect, also on coarse masks. A failed allocation marks the area
-  imported. This is part of the 4.35x draw cost (S2c). Closed by S2c (measurements/2026-10-canvas-noise-s2c.md §10, §12): the draw-time cost is gone (`per_draw_us` 1.08x in the S2c final run, §12.4); the replay moved to flush time (`draw_read` 2.70x, a remaining MISS).
+  imported. This is part of the 4.35x draw cost (S2c). Closed by S2c (measurements/2026-10-canvas-noise-s2c.md §10, §12): the draw-time cost is gone (`per_draw_us` 0.93x in the S2c final run, §12.6); the replay moved to flush time (`draw_read` 2.64x, a remaining MISS).
 - `scripts/measure_canvas_cost.py` drives the page with Playwright `evaluate`, which sends
   `Runtime.enable`, in both arms: absolute times include that overhead, and the ratio
   compares like with like.
@@ -393,7 +393,7 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
   represented. Draw ratio 1.43 before, 4.35 after; above the spec's 2x line, so a known
   gap for S2c. `readPixels` 64x64 1.33x to ~3.3x; 1024x1024 15.89x to ~21.5x (seeded
   40.9 ms vs unconfigured 1.9 ms). This is a regression against PR #27, and an S2c gap next
-  to the draw cost (the earlier 1.11x and 7.06x are invalid, see section 6 and section 12). Closed by S2c (measurements/2026-10-canvas-noise-s2c.md §10, §12.4): default-framebuffer `readPixels` large reads 1.53x and 1.56x in the final run; the small reads, `draw_read` and the page-framebuffer large read (4.21x) remain MISSes there.
+  to the draw cost (the earlier 1.11x and 7.06x are invalid, see section 6 and section 12). Closed by S2c (measurements/2026-10-canvas-noise-s2c.md §10, §12.6): default-framebuffer `readPixels` large reads 1.37x and 1.44x in the final run; the small reads, `draw_read` and the page-framebuffer large read (4.16x, accepted) remain MISSes there.
 
 ### Step 2
 
