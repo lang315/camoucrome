@@ -823,7 +823,9 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   // and translucent anti-aliased content: against a full read, and against a
   // drawImage copy (marked imported, so it carries the snapshot's noise once).
   x = mk(64, 64); arc(x, 24, 24, 16, 'rgba(255,96,0,0.6)'); arc(x, 40, 40, 16, '#06f');
-  const full = get(x, 0, 0, 64, 64), sub = get(x, 10, 12, 40, 36);
+  // The sub-rect is read first: a whole-canvas read fills the noise cache, and a
+  // read after it would be served from the cache, not the regional path.
+  const sub = get(x, 10, 12, 40, 36), full = get(x, 0, 0, 64, 64);
   const cpy = mk(64, 64); cpy.drawImage(x.canvas, 0, 0); const cp = get(cpy, 10, 12, 40, 36);
   let dF = 0, dC = 0, trans = 0; const tv = [];
   for (let yy = 0; yy < 36; yy++) for (let xx = 0; xx < 40; xx++) {
@@ -861,12 +863,14 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   // outside the canvas) and against the same rect of a drawImage copy.
   x = mk(64, 64); arc(x, 24, 24, 16, 'rgba(255,96,0,0.6)'); arc(x, 40, 40, 16, '#06f');
   arc(x, 62, 62, 12, '#0a0');
+  // The rects are read before the full read and the copy, which fill the cache.
+  const rects = [[-5, -7, 30, 30], [50, 50, 30, 30], [40, 40, -30, -30], [63, 63, 1, 1]];
+  const rs = rects.map(([sx, sy, sw, sh]) => get(x, sx, sy, sw, sh));
   const full2 = get(x, 0, 0, 64, 64);
   const cpy2 = mk(64, 64); cpy2.drawImage(x.canvas, 0, 0);
   let dF2 = 0, dC2 = 0, cnt = 0;
-  for (const [sx, sy, sw, sh] of [[-5, -7, 30, 30], [50, 50, 30, 30],
-                                  [40, 40, -30, -30], [63, 63, 1, 1]]) {
-    const r = get(x, sx, sy, sw, sh), c = get(cpy2, sx, sy, sw, sh);
+  for (const [n, [sx, sy, sw, sh]] of rects.entries()) {
+    const r = rs[n], c = get(cpy2, sx, sy, sw, sh);
     const nx = sw < 0 ? sx + sw : sx, ny = sh < 0 ? sy + sh : sy;
     const w = Math.abs(sw), h = Math.abs(sh);
     for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
