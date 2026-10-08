@@ -659,3 +659,82 @@ target gl_fbo.large ratio<=3.0: 2.47 PASS
 
 - Export: 38 commits, 0 fixups, only `sp3a-canvas-noise.patch` changed; sync
   check: all 45 copied files identical.
+
+## §9 Windows (Task 6, 2026-10-08)
+
+Tree `f8395ae` (box `FETCH_HEAD` equals the Mac HEAD). Native tree `D:\camou-win\chromium\src`,
+`out\Release`. Base for the per-file copy: `8cf90b48f882`.
+
+### §9.1 Per-file replacement (W12)
+
+17 files. Every pre hash equals the box's hash of the same path at `8cf90b48` (no
+mismatch). Every post hash equals the box's sha256 of the file at `camoucrome/s2c`.
+Hashes are the first 12 hex digits.
+
+| path | pre (= 8cf90b48) | post (= box) |
+|---|---|---|
+| components/camoucfg/canvas_noise.cc | 3fde66230f29 | 53a1f063920e |
+| components/camoucfg/canvas_noise.h | 09df99eed862 | d9e533c41fc5 |
+| components/camoucfg/canvas_noise_unittest.cc | d9ad24830ade | d7f3ff4bd105 |
+| components/camoucfg/canvas_readback.cc | dcd7e0beb36d | 9e980f949c6c |
+| components/camoucfg/canvas_readback.h | 0fb5e9d6233e | a52f59b91dde |
+| components/camoucfg/canvas_readback_unittest.cc | 93e72828eb1c | 1ec3d5e9dc8c |
+| components/camoucfg/derive.cc | 522293879052 | 8e882301a3f8 |
+| components/camoucfg/derive.h | 3d274c761c2a | e71b7d30a50f |
+| components/camoucfg/derive_unittest.cc | b9e7027c0a09 | fe3aaf9c2107 |
+| core/html/canvas/canvas_rendering_context.cc | 15feef8cd3d2 | d00db65b46eb |
+| core/html/canvas/canvas_rendering_context.h | c19792f73c7b | f3f3be187ef9 |
+| modules/canvas/canvas2d/base_rendering_context_2d.cc | 4c7ee7e2cdf8 | 086fabd5fb03 |
+| modules/canvas/canvas2d/canvas_2d_recorder_context.cc | 9dd8c7183fb2 | 43d382ea21a4 |
+| modules/canvas/canvas2d/canvas_2d_recorder_context.h | 222b6950915d | 9c3effda82ff |
+| modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc | 81fd661e42cc | f38a34087d1f |
+| modules/webgl/webgl_rendering_context_base.cc | 413d51d2b1c4 | cff7fe9b7c24 |
+| modules/webgl/webgl_rendering_context_base.h | 43956d64916b | d04a7a3a9191 |
+
+(`third_party/blink/renderer/` is omitted from the Blink paths.)
+
+### §9.2 Build
+
+`s2c-1`: `Build Succeeded: 265 steps` (siso pruned the plan from 2312 to 265), `rc=0`, 361 s.
+
+### §9.3 Calibration at density 0.04 (seeds 8)
+
+Headless, attempt 1: S2 text 8 of 8 distinct, S2 shape 8 of 8, stock among neither. P3 and S1
+were UNMEASURED ("no WebGL context in: stock", the host GPU flake) and rule 5 FAILED
+(differ: shape, text, textBig) in the same attempt. Neither counts. Attempt 2 (all rows PASS):
+
+```
+S2 oracle text canvas varies (>=6 distinct)   8 distinct of 8, stock among them: False
+S2 oracle shape canvas varies (all distinct)  8 distinct of 8, stock among them: False
+```
+
+Headed, attempt 1: the same lines, 9/9 PASS. The density was not moved.
+
+### §9.4 Host runs (final)
+
+| run | attempts | verdict |
+|---|---|---|
+| headless | 1 | 9/9 PASS (S2 text 8 of 8, S2 shape 8 of 8, rule 5 differ: []) |
+| headed | 1 | 9/9 PASS (S2 text 8 of 8, S2 shape 8 of 8, rule 5 differ: []) |
+
+### §9.5 Windows `verify_sp3a` on `chrome`
+
+53 rows (C44b included): 47 PASS, 6 FAIL. The six are C2, C3, C4, C5, C10, C11, exactly the rows
+that need the stock baseline. The script prints them as FAIL, not UNMEASURED, because
+`baselines/content_shell-sp3a-stock-canvas.json` does not exist on the host (note:
+`baseline load ... FileNotFoundError`; C11: `differ from unconfigured []`, colours `(1, 1)`,
+`unconfigured clear == stock baseline False`). Read them as UNMEASURED. All other rows,
+C1, C6-C9, C12-C45 including C24a-d, C33a-e and C44b, PASS.
+
+### §9.6 Regression verifies
+
+- `verify_windows_client.py`: `11 PASS 0 FAIL`.
+- `verify_sp6b_driver.py`: `ALL_PASS`.
+
+### §9.7 Step 2 re-measure (run `20261008-200955`, 0 errors)
+
+- `noise.canvas2d` 1 and `noise.webgl` 1, fork and control, headed and headless.
+- Oracle `canvas.text` and `canvas.shape`: fork differs from control in both modes (expected).
+- Linkability: no canvas leaf among the leaves the two fork identities share, headed and headless.
+- Stability: 0 differing rows, headed and headless.
+- CreepJS: the word "noise" does not appear in any of the four CreepJS captures (no `rgba noise`).
