@@ -478,5 +478,61 @@ TEST(PerturbRgbaEdgesTest, MaskWithBottomUpIsNoOp) {
   EXPECT_EQ(w, v);
 }
 
+// A scene with both random pixels (eligible) and 3x3 flat blocks (not), so
+// every branch of the noise pass runs.
+std::vector<uint8_t> MixedScene(size_t w, size_t h, uint32_t seed) {
+  std::vector<uint8_t> v(w * h * 4);
+  uint32_t s = seed;
+  for (size_t y = 0; y < h; ++y) {
+    for (size_t x = 0; x < w; ++x) {
+      uint8_t* p = &v[(y * w + x) * 4];
+      const bool flat = ((x / 3) + (y / 3)) % 3 == 0;
+      for (int k = 0; k < 4; ++k) {
+        s = s * 1103515245u + 12345u;
+        p[k] = flat ? static_cast<uint8_t>(40 + 50 * k) : static_cast<uint8_t>(s >> 24);
+      }
+      // Alpha: mostly opaque, some translucent, some zero.
+      const uint8_t a = (x + 2 * y) % 7 == 0 ? static_cast<uint8_t>(p[3] | 1)
+                        : (x + y) % 11 == 0 ? 0 : 255;
+      p[3] = a;
+      for (int k = 0; k < 3; ++k) {
+        p[k] = std::min(p[k], a);  // premultiplied
+      }
+    }
+  }
+  return v;
+}
+
+uint64_t Fnv(const std::vector<uint8_t>& v) {
+  uint64_t h = 0xCBF29CE484222325ULL;
+  for (uint8_t b : v) {
+    h ^= b;
+    h *= 0x100000001B3ULL;
+  }
+  return h;
+}
+
+// Pins the S2b field byte for byte: the S2c loop rewrite must not move it.
+// The value was captured from the S2b implementation (8cf90b48).
+TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
+  constexpr size_t kW = 48, kH = 40;
+  const std::vector<uint8_t> src = MixedScene(kW, kH, 2026);
+  std::vector<uint8_t> cells(kW * kH, kNoiseMaskAa);
+  for (size_t i = 0; i < cells.size(); i += 5) {
+    cells[i] = kNoiseMaskImported;
+  }
+  NoiseMask mask{cells.data(), kW, 0, kW, kH};
+  std::vector<uint8_t> top = src;
+  PerturbRgbaEdges(top.data(), src.data(), kW, kH, kW * 4, 987654321, 0.5, 3, 1,
+                   mask, /*bottom_up=*/false);
+  std::vector<uint8_t> bottom = src;
+  PerturbRgbaEdges(bottom.data(), src.data(), kW, kH, kW * 4, 987654321, 0.5, 3,
+                   1, NoiseMask(), /*bottom_up=*/true);
+  EXPECT_NE(top, src);
+  EXPECT_NE(bottom, src);
+  EXPECT_EQ(Fnv(top), 0x0ULL);     // GOLDEN_TOP: replaced in Step 3
+  EXPECT_EQ(Fnv(bottom), 0x0ULL);  // GOLDEN_BOTTOM: replaced in Step 3
+}
+
 }  // namespace
 }  // namespace camoucfg
