@@ -747,28 +747,42 @@ C1, C6-C9, C12-C45 including C24a-d, C33a-e and C44b, PASS.
 
 ### Closed by S2c
 
-- The draw-time timing tell: `per_draw_us` 23.7x to 1.17x (§4, §8.1).
-- The full-canvas noise pass behind a 1x1 `getImageData`: `read_2d` 9.4 ms to 0.00 ms (§8).
-- The `readPixels` copies and strips: `gl_flat.large` 21.3x to 1.56x, `gl_edges.large` 24.6x to 1.68x (§6, §8.1).
+- The draw-time timing tell: `per_draw_us` 23.7x to 1.08x (final run, §12; 1.00x
+  and 1.17x in other runs, within the timer's quantum).
+- The full-canvas noise pass behind a 1x1 `getImageData`: `read_2d` 9.4 ms to below
+  the timer's resolution (§8, §12).
+- The `readPixels` copies and strips: `gl_flat.large` 21.3x to 1.53x, `gl_edges.large` 24.6x to 1.56x (§6, §12).
 - Framebuffer reads, user framebuffers included: C35 to C37 (§6).
 - `texImage2D` from a WebGL canvas: C38.
 - Review triage item 23 (`readPixels` skipped user framebuffers).
 - Found and closed during execution: C41 (`READ_BUFFER` NONE), C42 (a non-8-bit
   drawing buffer), C43 (transparent `drawImage`), C44 and C44b (shadowed
   `drawImage`), C45 (edge-crossing `getImageData`).
+- Closed by the final review fixes (§12): C46 and C46b (a non-8-bit page
+  framebuffer reads as stock), C47 (an `SRGB8_ALPHA8` drawing buffer is noised),
+  C36b (framebuffer reads crossing the far edge or the origin), and the GPU
+  readback a float16 or `RGBA16F` snapshot paid for nothing.
 
 ### Remaining cost targets
 
-- `draw_read` is 2.66x (2.63x in the last full run) against <= 2x: a MISS. The
+- `draw_read` is 2.70x in the final run (§12) against <= 2x: a MISS. The
   flush walk costs about 4.4 us per op: coverage raster 70%, `Merge` 19%, erase
   6% (§7.2). The next lever is a cheaper A8 coverage raster.
-- `gl_edges.small` is 2.0x against <= 1.5x: a MISS. Each read needs one extra
+- `gl_edges.small` is 2.07x against <= 1.5x: a MISS. Each read needs one extra
   round trip for the margin, and dropping it would break the C36 sub-rect
   equality.
 - `shadow_read` is about 3x, with no target.
-- `gl_fbo.small` is 4x, with no target.
+- `gl_fbo.large` is 4.21x against the adopted <= 3x: a MISS since the final
+  review's format gate (§12). It was 2.47x before. The gate's four synchronous
+  attachment-size queries cost about 3 ms on this read; `gl_fbo.small` went from
+  4x to 6.6x (no target). Two levers are open, both outside the ruling as
+  written: query only G and B sizes (decision-equivalent for every format GL
+  reads as `RGBA`/`UNSIGNED_BYTE`), and read a renderbuffer's format from Blink
+  (`WebGLRenderbuffer::InternalFormat()`) with no query.
 - The GPU (texture-backed) `getImageData` is not regional and is not measurable
   on the box (CPU raster).
+- The noise cache holds two full-canvas copies: the held source snapshot and
+  the noised raster image (`camou_noised_source_`, `camou_noised_`).
 
 ### Remaining behaviour (from the spec's known gaps)
 
@@ -805,6 +819,14 @@ carry the S2c commits before the PR merges. Facts as of 2026-10-08:
   fast-calls, on top of `8cf90b48`. camoucrome-80 has not yet opened a PR for
   that amendment.
 
+**Gate (final review I2).** Landing waits until box `camoucrome/main`'s observe
+commit equals `origin/main`'s `patches/observe.patch`, that is, until
+camoucrome-80's observe-fastcall PR has merged. Until then the export in step
+2 would regenerate `patches/observe.patch` from the amended commit and ship
+the fast-call amendment inside the S2c PR, unreviewed. Check after step 2's
+export and before step 3's commit: `git diff origin/main -- patches/observe.patch`
+is empty.
+
 Landing path (the observe-landed branch of the plan):
 
 1. In `~/chromium/src`, under the build lock and with camoucrome-80's agreement:
@@ -819,3 +841,123 @@ If S2c were to land first instead, `camoucrome/main` would be fast-forwarded to
 
 Both moves rewrite a shared ref. Neither runs without the owner's explicit
 go-ahead at PR time.
+
+## §12 Final review fixes (2026-10-08)
+
+The final whole-branch review (`cd21e14..229047f`) found C1, I1 to I3 and M1 to
+M8. The rulings: C1 gates page-framebuffer noise on 8-bit RGB(A); I1 adds
+`SRGB8_ALPHA8` to the default allowlist; I2 gates landing (§11); I3 checks the
+colour type before readback and lists the cache's two copies (§10); M1 to M7 are
+fixed below; M8 (squashing the temporary chore commits) waits for the owner's
+consent at finish. Lock `s2c final fix`, box workdir `~/chromium-s2c/src`.
+
+### §12.1 RED on the build before the fix (229047f's box state)
+
+Run 1 (rows at `d822a6e`):
+```
+FAIL  36b framebuffer reads crossing the far edge or the origin equal the full read's part
+FAIL  46 R8 / RG8 framebuffer reads stay stock (G and B stay 0)
+FAIL  46b RGBA4 renderbuffer framebuffer read stays stock
+FAIL  47 SRGB8_ALPHA8 drawing buffer readPixels noised and deterministic
+      36b: seeded {'diff': [0, 0, 0], 'h': [935700742, 1762808747, 637147551], 'glerr': 0}, unconfigured {'diff': [0, 0, 0], 'h': [2282948631, 1762808747, 916232254], 'glerr': 0}
+      46 : seeded {'r8': 18420777, 'rg8': 1062882497, 'rgba8': 253762718, 'stray': 59, 'glerr': 0, 'e8': 1440, 'eg': 1442}, unconfigured {'r8': 574357477, 'rg8': 3090373005, 'rgba8': 1133855933, 'stray': 0, 'glerr': 0, 'e8': 1442, 'eg': 1442}
+      46b: seeded {'h': 2669758751, 'g': 253762718, 'e': 122, 'glerr': 0}, unconfigured {'h': 2215030102, 'g': 1133855933, 'e': 122, 'glerr': 0}
+      47 : seeded {'h': 3750901543, 'same': True, 'e': 1503, 'glerr': 0}, unconfigured {'h': 3750901543, 'same': True, 'e': 1503, 'glerr': 0}
+```
+- C46: 59 pixels of the R8 and RG8 reads came back with a non-zero `G` or `B`,
+  a value stock cannot return.
+- C46b: the RGBA4 read differs from unconfigured.
+- C47: the `SRGB8_ALPHA8` read equals unconfigured, so it is clean.
+- C36b's equality held (`diff` 0 on every rect, both arms). Its guard failed
+  vacuously: the far-edge rect `(40,40,40,40)` held no noised pixel (the second
+  hash is equal across arms). The rect moved to `(24,24,48,48)` (`007eb32`).
+  Run 2 on the same build: C36b PASS, the other three FAIL as above. C36b is a
+  guard, as the ruling allowed.
+
+### §12.2 The fix
+
+- **C1.** `CamouNoiseReadPixels` stops a page-framebuffer read unless the read
+  attachment has R, G and B of 8 bits and A of 8 or 0. In WebGL2 it asks
+  `GetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, <read buffer>,
+  GL_FRAMEBUFFER_ATTACHMENT_*_SIZE)`. In WebGL1 it asks `GetIntegerv(GL_*_BITS)`:
+  the command buffer accepts it, and it reads the bound framebuffer. The proof is
+  C35 to C37 still noising an RGBA8 texture framebuffer while C46b's RGBA4 one
+  stays stock. A `NONE` read buffer or a missing attachment returns before any
+  query. The queries stop at the first size that fails.
+- **I1.** `GL_SRGB8_ALPHA8` joins `GL_RGBA8` and `GL_RGB8` in the default
+  framebuffer's allowlist.
+- **I3.** `CamouNoised` and `CamouNoisedRegion` read
+  `PaintImageForCurrentFrame().GetColorType()` and return before
+  `GetSwSkImage()` unless it is `RGBA_8888` or `BGRA_8888`. The readback
+  allocates with the same `SkImageInfo`, so the output is byte-identical. The
+  saved GPU readback is not measurable on the box (CPU raster).
+- **M6.** `NoisedRegionTest.EqualsTheWholeImageField` asserts that the whole
+  field changed at least one pixel. The new `NoisedRegionTest.OffCanvasRectIsEmpty`
+  checks four wholly off-canvas rects.
+- **M7.** clang-format ran in line-range mode over the lines S2c changed against
+  `8cf90b48` in 17 files. In `webgl_rendering_context_base.cc` only the hook's
+  ranges were formatted: the include block there holds `sp3b-webgl-profile`'s
+  lines, which clang-format would have moved. The `cells ==` line break in
+  `canvas_noise.h` was reflowed by hand (W4 runner). No added line over 80
+  columns remains, apart from `#include` lines and diff headers.
+
+### §12.3 Builds and GREEN
+
+- Build `Build Succeeded: 354 steps` (8 m 11 s, rc 0); after the comment reflow,
+  `Build Succeeded: 207 steps` (5 m 57 s, rc 0).
+- `verify_sp3a` 57/57 `ALL_PASS` (rc 0), including
+  `PASS 36b`, `PASS 46`, `PASS 46b`, `PASS 47`, with every `glerr` 0 in both arms.
+- `verify_review_2026_09_24` 12/12 `ALL_PASS`.
+- Unit filter `PerturbRgba*:CanvasNoise*:NoisedImage*:NoisedRegion*:CanvasNoiseMask*:Derive*`:
+  71 tests, `SUCCESS: all tests passed`.
+- `gn check out/Default <target>`: `Header dependency check OK` for
+  `//third_party/blink/renderer/core:core`, `modules/canvas:canvas`,
+  `modules/webgl:webgl` and `//components/camoucfg:camoucfg`.
+- `checkdeps.py <dir>`: no violation reported for `modules/canvas`,
+  `core/html/canvas`, `modules/webgl` and `components/camoucfg`.
+
+### §12.4 Cost (W5c, two runs, no build running)
+
+| case | run 1 seeded | run 2 seeded | target |
+|---|---|---|---|
+| per_draw_us | 1.00x | 1.08x | <=1.2 PASS |
+| draw_read | 2.69x | 2.70x | <=2 MISS |
+| read_2d | 0.000 ms | 0.000 ms | <=0.5 PASS (below the timer) |
+| read_2d_mid | 0.000 ms | 0.000 ms | reported only |
+| gl_flat.large | 1.61x | 1.53x | <=3 PASS |
+| gl_edges.large | 1.67x | 1.56x | <=3 PASS |
+| gl_edges.small | 2.04x | 2.07x | <=1.5 MISS |
+| gl_fbo.large | 4.16x | 4.21x | <=3 MISS (adopted) |
+| gl_fbo.small | 6.83x | 6.63x | none |
+| shadow_read | 2.98x | 2.99x | none |
+
+Run 2, the final run that §10 and the S2b document cite:
+```
+gl_fbo.large       none=1.900 (1.00x)  seed=8.000 (4.21x)  seed_d0=6.800 (3.58x)
+gl_fbo.small       none=0.300 (1.00x)  seed=1.990 (6.63x)  seed_d0=1.980 (6.60x)
+per_draw_us        none=0.325 (1.00x)  seed=0.350 (1.08x)  seed_d0=0.325 (1.00x)
+draw_read          none=25.050 (1.00x)  seed=67.650 (2.70x)  seed_d0=67.950 (2.71x)
+```
+- `gl_fbo.*` regressed from 2.47x and 4x: the format gate adds four synchronous
+  round trips per seeded page-framebuffer read (§10 has the levers).
+- **Resolution (M5).** A 1x1 `getImageData` at `(0,0)` never runs the kernel: its
+  region is 2x2, below the 3x3 a pixel needs. `read_2d_mid` reads `(512,512)`,
+  where the kernel runs on a 3x3. Its median is also 0.000, which is below the
+  timer's resolution, not free.
+- `per_draw_us` medians move in steps of about 0.025 to 0.05 us (a 0.1 ms timer over
+  2000 draws; the median of an even sample can fall halfway).
+  Runs gave 0.92x, 1.00x, 1.08x and 1.17x, so the 1.2 target is decided within one
+  quantum.
+
+### §12.5 Export
+
+W6 folded the edits: Blink files into `sp3a-canvas-noise`, the `canvas_noise*` and
+`canvas_readback*` files into `windows-behaviour-ii`, and `derive.*` into
+`d-android-touch-invariant`. The rebase ran with no conflict. The result: 38
+commits, 0 fixups, 0 dirty files, HEAD `248ce530ae`.
+
+The export changed 10 files: the eight additions above, `sp3a-canvas-noise.patch`
+and `sp3b-webgl-profile.patch`. The sp3b change is its `index` line and 14 hunk
+headers only, shifted by sp3a's new lines. The sync check passed: all 45 copied
+files are identical in the repo and the checkout. The tarball's sha256
+(`dabb2973...ee9e8`) matched on the box and the Mac.
