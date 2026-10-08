@@ -601,7 +601,15 @@ FBOTRANS = tri("webgl", 64, 64, """
   for (let i = 0; i < A.length; i += 4) {
     let d = false; for (let k = 0; k < 4; k++) if (A[i + k] !== src[i + k]) d = true;
     if (src[i + 3] < 255) { trans++; if (d) transDiff++; } else if (d) opaqueDiff++; }
-  return { trans, transDiff, opaqueDiff, h: H(A) };""")
+  // The right half's framebuffer edge (x = 63, and rows 0 and 63 for x >= 32)
+  // is opaque random texels: never noised, since the framebuffer edge has no
+  // neighbour there (a misread extent would noise it).
+  let edgeDiff = 0;
+  for (let y = 0; y < 64; y++) for (let x = 32; x < 64; x++) {
+    if (x !== 63 && y !== 0 && y !== 63) continue;
+    const i = (y * 64 + x) * 4;
+    for (let k = 0; k < 4; k++) if (A[i + k] !== src[i + k]) { edgeDiff++; break; } }
+  return { trans, transDiff, opaqueDiff, edgeDiff, h: H(A) };""")
 
 # C38: texImage2D of the WebGL canvas into a second context (flipped to GL
 # orientation), read through that context's framebuffer: equals the source's
@@ -1212,7 +1220,8 @@ C40 = "40 one flush or many give one mask"
 gl_row(C35, "fbo", lambda s, u: u["e"] > 0 and s["same"] and s["h"] != u["h"])
 gl_row(C36, "fbosub", lambda s, u: s["diff"] == 0 and u["diff"] == 0 and s["h"] != u["h"])
 gl_row(C37, "fbotrans", lambda s, u: u["trans"] > 0 and u["transDiff"] == 0
-       and u["opaqueDiff"] == 0 and s["transDiff"] == 0 and s["opaqueDiff"] > 0)
+       and u["opaqueDiff"] == 0 and s["transDiff"] == 0 and s["opaqueDiff"] > 0
+       and s["edgeDiff"] == 0)
 gl_row(C38, "teximage", lambda s, u: u["eq"] and s["eq"] and s["h"] != u["h"])
 s2b_row(C39, lambda r: r["region"],
         lambda u: u["e"] > 0 and u["trans"] > 0 and u["dF"] == 0 and u["dC"] == 0,
