@@ -555,8 +555,10 @@ short hash. Sync check: all 45 copied files identical. 38 commits.
 
 `getImageData` noises only the returned rect plus a 1 px margin, on the
 premultiplied snapshot, via `CanvasRenderingContext::CamouNoisedRegion`
-(`NoisedCanvasRegion`). An empty region (no noise, whole field cached, failure)
-falls back to `CamouNoised(snapshot)`.
+(`NoisedCanvasRegion`), for a CPU-backed snapshot. A texture-backed snapshot, a
+rect that contains the whole canvas, and an empty region (no noise, whole field
+cached, allocation failure) take the cached `CamouNoised(snapshot)` route; a rect
+that misses the canvas skips the noise. See §8.1 for the final rules.
 
 RED, C39 mutant (`NoisedRegion` reading as `kUnpremul_SkAlphaType`, the floor
 of 255 leaves translucent pixels clean). Build 357 steps.
@@ -568,9 +570,11 @@ FAIL  39 getImageData sub-rect equals the whole-snapshot field (full read and co
 
 `dC > 0` and `tH` equals the unconfigured hash: the translucent pixels carry no
 noise. The mutant also fails rows 21-26, 24a-d and 40 (38 PASS lines, 11 FAIL),
-because every `getImageData` goes through the regional path and those rows read
-noise at translucent anti-aliased pixels. So "every row but C39 passes under the
-mutant" does not hold; C39 is the row that names the cause (`dC`).
+because at that build every `getImageData` went through the regional path and
+those rows read noise at translucent anti-aliased pixels. So "every row but C39
+passes under the mutant" does not hold; C39 is the row that names the cause
+(`dC`). An empty region falls back to the whole-snapshot route and is not a
+failure; the later routing is in §8.1.
 
 GREEN, real code. Build 260 steps, 0 failed.
 
@@ -738,3 +742,80 @@ C1, C6-C9, C12-C45 including C24a-d, C33a-e and C44b, PASS.
 - Linkability: no canvas leaf among the leaves the two fork identities share, headed and headless.
 - Stability: 0 differing rows, headed and headless.
 - CreepJS: the word "noise" does not appear in any of the four CreepJS captures (no `rgba noise`).
+
+## §10 Gaps
+
+### Closed by S2c
+
+- The draw-time timing tell: `per_draw_us` 23.7x to 1.17x (§4, §8.1).
+- The full-canvas noise pass behind a 1x1 `getImageData`: `read_2d` 9.4 ms to 0.00 ms (§8).
+- The `readPixels` copies and strips: `gl_flat.large` 21.3x to 1.56x, `gl_edges.large` 24.6x to 1.68x (§6, §8.1).
+- Framebuffer reads, user framebuffers included: C35 to C37 (§6).
+- `texImage2D` from a WebGL canvas: C38.
+- Review triage item 23 (`readPixels` skipped user framebuffers).
+- Found and closed during execution: C41 (`READ_BUFFER` NONE), C42 (a non-8-bit
+  drawing buffer), C43 (transparent `drawImage`), C44 and C44b (shadowed
+  `drawImage`), C45 (edge-crossing `getImageData`).
+
+### Remaining cost targets
+
+- `draw_read` is 2.66x (2.63x in the last full run) against <= 2x: a MISS. The
+  flush walk costs about 4.4 us per op: coverage raster 70%, `Merge` 19%, erase
+  6% (§7.2). The next lever is a cheaper A8 coverage raster.
+- `gl_edges.small` is 2.0x against <= 1.5x: a MISS. Each read needs one extra
+  round trip for the margin, and dropping it would break the C36 sub-rect
+  equality.
+- `shadow_read` is about 3x, with no target.
+- `gl_fbo.small` is 4x, with no target.
+- The GPU (texture-backed) `getImageData` is not regional and is not measurable
+  on the box (CPU raster).
+
+### Remaining behaviour (from the spec's known gaps)
+
+- GPU picking, GPGPU through RGBA8, the float framebuffer bypass and
+  `PIXEL_PACK_BUFFER` reads stay as the spec records them.
+- A flipped copy of a WebGL canvas hashes its patches in mirrored order.
+- A 2D canvas uploaded to WebGL is noised twice on readback.
+- The flush gets one coverage pass more, and a framebuffer read costs extra
+  probe reads (the cost rows above).
+- `transferToImageBitmap` and the offscreen `convertToBlob` return un-noised
+  images (found by the recon).
+- Every S2b gap this section does not name stays as S2b section 8 records it.
+
+### Parked from the reviews
+
+- A shadowed translucent `drawImage` at `globalAlpha` 0 still marks its layer
+  area. Parked because a canvas filter can paint from an empty layer.
+- Task 4 review: m1 (a layer `DrawRecordOp` has no text carve-out; it is
+  flag-gated), m2 (a layer raster decodes images), m3 (`ResetAlphaIfNeeded`
+  `kDstOver` marks aa).
+- C41's full-read case was never RED with the random sentinel; the sub-read
+  case was.
+- C45's corner 1x1 is an edge pixel, so it checks geometry only.
+
+## §11 Landing (recorded, not executed)
+
+`build-verify` builds `~/chromium/src` on `camoucrome/main`, so that branch must
+carry the S2c commits before the PR merges. Facts as of 2026-10-08:
+
+- Observe has landed on `origin/main` (PR #29, `5e04a67`): it added
+  `patches/observe.patch` and a line in `patches/series`. `s2c/canvas-cost`
+  branched from `cd21e14`, before that.
+- Box `camoucrome/main` is `5c80c86e19`: the "observe" commit, amended for
+  fast-calls, on top of `8cf90b48`. camoucrome-80 has not yet opened a PR for
+  that amendment.
+
+Landing path (the observe-landed branch of the plan):
+
+1. In `~/chromium/src`, under the build lock and with camoucrome-80's agreement:
+   `git rebase --onto camoucrome/s2c 8cf90b48f882cdcb28415309e8cca4dedc55de40 camoucrome/main`.
+2. Build `out/Default` (its `args.gn` now has `camou_observe = true`
+   permanently), run the sync check, and export from `camoucrome/main`.
+3. Merge `origin/main` into `s2c/canvas-cost` and commit that export, so the
+   PR's `patches/` carries both S2c and observe and equals the export.
+
+If S2c were to land first instead, `camoucrome/main` would be fast-forwarded to
+`camoucrome/s2c` and camoucrome-80's cherry-pick rebased onto it.
+
+Both moves rewrite a shared ref. Neither runs without the owner's explicit
+go-ahead at PR time.

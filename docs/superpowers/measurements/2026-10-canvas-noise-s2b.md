@@ -237,7 +237,7 @@ denominator (0.90 / 4.20 ms) was inflated. Section 12 has the corrected figures.
 
 The draw ratio is above 2.0. It is attributed to the 2D mask replay (Tasks 3-4);
 no draw ratio was measured between Task 1 and Task 5. This task touches
-`readPixels` only. Recorded as a known gap for S2c. It does not block.
+`readPixels` only. Recorded as a known gap for S2c. It does not block. Closed by S2c (measurements/2026-10-canvas-noise-s2c.md). (C38)
 
 Fix round 1: the strip block is gated on `canvas:seed != 0`, so an
 unconfigured build does no strip reads, scratch or copies (rule 5).
@@ -349,7 +349,7 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
 ### Remaining
 
 - Canvases above 4096 x 4096 are over-marked.
-- Layers mark their whole area, as imported (no noise).
+- Layers mark their whole area, as imported (no noise). Narrowed by S2c: layer and looper areas are now tight (C44, C44b); see measurements/2026-10-canvas-noise-s2c.md §7.
 - Neighbour re-roll (narrowed C22): noise is keyed by each pixel's 3x3 patch, so a
   draw that touches a region's patches without covering its pixels re-rolls that
   region's noise. Stock pixels depend only on draws that cover them. This is inherent
@@ -369,11 +369,11 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
   canvas is expected to draw nothing; that is unverified.
 - A draw that changes no pixel can still switch noise off: `drawImage` of an empty or
   transparent source marks its whole dirty rect imported, and so does a composited draw
-  of a transparent shape (its whole clip). This is linkability, not detectability, and
+  of a transparent shape (its whole clip). Closed by S2c for the transparent `drawImage` (C43; measurements/2026-10-canvas-noise-s2c.md §7); the composited-shape case stays. This is linkability, not detectability, and
   it is narrower than PR #27, where any `drawImage` disabled the whole canvas.
 - Replay cost on huge canvases: every non-text draw rasterises a full-resolution A8
   bitmap of its dirty rect, also on coarse masks. A failed allocation marks the area
-  imported. This is part of the 4.35x draw cost (S2c).
+  imported. This is part of the 4.35x draw cost (S2c). Closed by S2c (measurements/2026-10-canvas-noise-s2c.md): the draw-time cost is gone (`per_draw_us` 1.0x); the replay moved to flush time (`draw_read` 2.63x, a remaining MISS).
 - `scripts/measure_canvas_cost.py` drives the page with Playwright `evaluate`, which sends
   `Runtime.enable`, in both arms: absolute times include that overhead, and the ratio
   compares like with like.
@@ -393,7 +393,7 @@ with `canvas:seed` (rule 5). `verify_sp3a` has 40 rows (35 here, plus C33a-e).
   represented. Draw ratio 1.43 before, 4.35 after; above the spec's 2x line, so a known
   gap for S2c. `readPixels` 64x64 1.33x to ~3.3x; 1024x1024 15.89x to ~21.5x (seeded
   40.9 ms vs unconfigured 1.9 ms). This is a regression against PR #27, and an S2c gap next
-  to the draw cost (the earlier 1.11x and 7.06x are invalid, see section 6 and section 12).
+  to the draw cost (the earlier 1.11x and 7.06x are invalid, see section 6 and section 12). Closed by S2c (measurements/2026-10-canvas-noise-s2c.md): `readPixels` large reads 1.5x to 1.7x; the small reads and `draw_read` remain MISSes there.
 
 ### Step 2
 
