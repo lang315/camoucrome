@@ -145,9 +145,10 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
           static_cast<uint8_t*>(bm.getPixels()), bm.computeByteSize()));
       for (int y = 0; y < kH; ++y) {
         for (int x = 0; x < kW; ++x) {
-          const base::span<uint8_t> p = px.subspan(
-              static_cast<size_t>(y) * bm.rowBytes() + static_cast<size_t>(x) * 4,
-              4u);
+          const base::span<uint8_t> p =
+              px.subspan(static_cast<size_t>(y) * bm.rowBytes() +
+                             static_cast<size_t>(x) * 4,
+                         4u);
           for (int k = 0; k < 4; ++k) {
             s = s * 1103515245u + 12345u;
             p[k] = static_cast<uint8_t>(s >> 24);
@@ -189,8 +190,9 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
       EXPECT_GT(changed, 0) << "shift " << shift;
       for (const SkIRect& r :
            {SkIRect::MakeXYWH(5, 4, 20, 15), SkIRect::MakeXYWH(0, 0, 9, 9),
-            SkIRect::MakeXYWH(kW - 6, kH - 5, 6, 5), SkIRect::MakeXYWH(11, 0, 1, 1),
-            SkIRect::MakeXYWH(17, 13, 1, 1), SkIRect::MakeWH(kW, kH)}) {
+            SkIRect::MakeXYWH(kW - 6, kH - 5, 6, 5),
+            SkIRect::MakeXYWH(11, 0, 1, 1), SkIRect::MakeXYWH(17, 13, 1, 1),
+            SkIRect::MakeWH(kW, kH)}) {
         const SkBitmap region = NoisedRegion(*image, r, 77, 0.5, 2, 1, mask);
         ASSERT_FALSE(region.drawsNothing());
         ASSERT_EQ(region.width(), r.width());
@@ -204,8 +206,8 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
           }
         }
       }
-      EXPECT_TRUE(NoisedRegion(*image, SkIRect::MakeXYWH(5, 4, 3, 3), 0, 0.5,
-                               2, 1, mask)
+      EXPECT_TRUE(NoisedRegion(*image, SkIRect::MakeXYWH(5, 4, 3, 3), 0, 0.5, 2,
+                               1, mask)
                       .drawsNothing());  // seed 0: nothing, caller stays stock
     }
   }
@@ -217,7 +219,8 @@ TEST(NoisedRegionTest, OffCanvasRectIsEmpty) {
   for (const SkIRect& r :
        {SkIRect::MakeXYWH(8, 0, 4, 4), SkIRect::MakeXYWH(-5, -5, 5, 5),
         SkIRect::MakeXYWH(2, 8, 3, 3), SkIRect::MakeXYWH(-3, 2, 3, 3)}) {
-    EXPECT_TRUE(NoisedRegion(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
+    EXPECT_TRUE(
+        NoisedRegion(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
         << r.x() << "," << r.y();
   }
 }

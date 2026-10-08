@@ -43,12 +43,18 @@ sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
 // the noise runs on the snapshot's (premultiplied) pixels, before any
 // unpremultiply. Empty (drawsNothing()) on failure or seed 0; the caller then
 // takes the whole-snapshot path.
-SkBitmap NoisedRegion(const SkImage& canvas, const SkIRect& rect,
-                      uint64_t seed, double density, int32_t strength,
-                      uint8_t min_alpha, const NoiseMask& mask);
+SkBitmap NoisedRegion(const SkImage& canvas,
+                      const SkIRect& rect,
+                      uint64_t seed,
+                      double density,
+                      int32_t strength,
+                      uint8_t min_alpha,
+                      const NoiseMask& mask);
 // NoisedRegion with canvas:seed / noiseDensity / noiseStrength from `scope`.
-SkBitmap NoisedCanvasRegion(const SkImage& canvas, const SkIRect& rect,
-                            const ConfigScope& scope, uint8_t min_alpha,
+SkBitmap NoisedCanvasRegion(const SkImage& canvas,
+                            const SkIRect& rect,
+                            const ConfigScope& scope,
+                            uint8_t min_alpha,
                             const NoiseMask& mask);
 
 }  // namespace camoucfg

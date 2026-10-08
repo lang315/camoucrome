@@ -34,7 +34,8 @@ sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
   const size_t w = info.width(), h = info.height(), row = bitmap.rowBytes();
   const uint8_t floor =
       info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
-  // In place: a failed ring allocation leaves the snapshot stock, never a crash.
+  // In place: a failed ring allocation leaves the snapshot stock, never a
+  // crash.
   if (!PerturbRgbaEdgesInPlace(static_cast<uint8_t*>(bitmap.getPixels()), w, h,
                                row, seed, density, strength,
                                std::max(min_alpha, floor), mask, bottom_up)) {
@@ -54,9 +55,13 @@ sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
                      mask, bottom_up);
 }
 
-SkBitmap NoisedRegion(const SkImage& canvas, const SkIRect& rect,
-                      uint64_t seed, double density, int32_t strength,
-                      uint8_t min_alpha, const NoiseMask& mask) {
+SkBitmap NoisedRegion(const SkImage& canvas,
+                      const SkIRect& rect,
+                      uint64_t seed,
+                      double density,
+                      int32_t strength,
+                      uint8_t min_alpha,
+                      const NoiseMask& mask) {
   const SkColorType ct = canvas.colorType();
   if (seed == 0 ||
       (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType)) {
@@ -82,8 +87,7 @@ SkBitmap NoisedRegion(const SkImage& canvas, const SkIRect& rect,
   NoiseMask at = mask;
   at.x0 = static_cast<size_t>(m.x());
   at.y0 = static_cast<size_t>(m.y());
-  const uint8_t floor =
-      info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
+  const uint8_t floor = info.alphaType() == kUnpremul_SkAlphaType ? 255 : 1;
   if (!PerturbRgbaEdgesInPlace(static_cast<uint8_t*>(bitmap.getPixels()),
                                info.width(), info.height(), bitmap.rowBytes(),
                                seed, density, strength,
@@ -99,8 +103,10 @@ SkBitmap NoisedRegion(const SkImage& canvas, const SkIRect& rect,
   return out;
 }
 
-SkBitmap NoisedCanvasRegion(const SkImage& canvas, const SkIRect& rect,
-                            const ConfigScope& scope, uint8_t min_alpha,
+SkBitmap NoisedCanvasRegion(const SkImage& canvas,
+                            const SkIRect& rect,
+                            const ConfigScope& scope,
+                            uint8_t min_alpha,
                             const NoiseMask& mask) {
   double density;
   int32_t strength;

@@ -486,16 +486,17 @@ std::vector<uint8_t> MixedScene(size_t w, size_t h, uint32_t seed) {
   uint32_t s = seed;
   for (size_t y = 0; y < h; ++y) {
     for (size_t x = 0; x < w; ++x) {
-      const base::span<uint8_t> p =
-          base::span(v).subspan((y * w + x) * 4, 4u);
+      const base::span<uint8_t> p = base::span(v).subspan((y * w + x) * 4, 4u);
       const bool flat = ((x / 3) + (y / 3)) % 3 == 0;
       for (int k = 0; k < 4; ++k) {
         s = s * 1103515245u + 12345u;
-        p[k] = flat ? static_cast<uint8_t>(40 + 50 * k) : static_cast<uint8_t>(s >> 24);
+        p[k] = flat ? static_cast<uint8_t>(40 + 50 * k)
+                    : static_cast<uint8_t>(s >> 24);
       }
       // Alpha: mostly opaque, some translucent, some zero.
       const uint8_t a = (x + 2 * y) % 7 == 0 ? static_cast<uint8_t>(p[3] | 1)
-                        : (x + y) % 11 == 0 ? 0 : 255;
+                        : (x + y) % 11 == 0  ? 0
+                                             : 255;
       p[3] = a;
       for (int k = 0; k < 3; ++k) {
         p[k] = std::min(p[k], a);  // premultiplied
@@ -540,16 +541,22 @@ TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
 // heights 1..4 (the ring at its edges), odd widths, padded rows, both
 // orientations, no mask / a fine mask / a coarse mask, and a mask origin.
 TEST(PerturbRgbaEdgesTest, InPlaceEqualsTwoBuffer) {
-  struct Case { size_t w, h, pad; bool bottom_up; int mask_shift; size_t x0, y0; };
+  struct Case {
+    size_t w, h, pad;
+    bool bottom_up;
+    int mask_shift;
+    size_t x0, y0;
+  };
   const Case cases[] = {
-      {3, 1, 0, false, -1, 0, 0},  {3, 2, 0, false, -1, 0, 0},
-      {3, 3, 0, false, -1, 0, 0},  {5, 4, 8, true, -1, 0, 0},
-      {17, 13, 4, false, 0, 0, 0}, {17, 13, 0, true, -1, 0, 0},
+      {3, 1, 0, false, -1, 0, 0},   {3, 2, 0, false, -1, 0, 0},
+      {3, 3, 0, false, -1, 0, 0},   {5, 4, 8, true, -1, 0, 0},
+      {17, 13, 4, false, 0, 0, 0},  {17, 13, 0, true, -1, 0, 0},
       {33, 29, 12, false, 2, 0, 0}, {20, 9, 0, false, 0, 7, 5},
       {21, 11, 4, false, 2, 6, 3}};
   for (const Case& c : cases) {
     const size_t rb = c.w * 4 + c.pad;
-    std::vector<uint8_t> tight = MixedScene(c.w, c.h, static_cast<uint32_t>(7 + c.w * c.h));
+    std::vector<uint8_t> tight =
+        MixedScene(c.w, c.h, static_cast<uint32_t>(7 + c.w * c.h));
     std::vector<uint8_t> src(rb * c.h, 0xCD);
     for (size_t y = 0; y < c.h; ++y) {
       std::copy_n(&tight[y * c.w * 4], c.w * 4, &src[y * rb]);
@@ -570,8 +577,8 @@ TEST(PerturbRgbaEdgesTest, InPlaceEqualsTwoBuffer) {
     std::vector<uint8_t> two = src, one = src;
     PerturbRgbaEdges(two.data(), src.data(), c.w, c.h, rb, 31337, 0.5, 2, 1,
                      mask, c.bottom_up);
-    ASSERT_TRUE(PerturbRgbaEdgesInPlace(one.data(), c.w, c.h, rb, 31337, 0.5,
-                                        2, 1, mask, c.bottom_up));
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(one.data(), c.w, c.h, rb, 31337, 0.5, 2,
+                                        1, mask, c.bottom_up));
     EXPECT_EQ(one, two) << c.w << "x" << c.h << " pad " << c.pad;
     for (size_t y = 0; y < c.h; ++y) {  // padding untouched
       for (size_t i = c.w * 4; i < rb; ++i) {
