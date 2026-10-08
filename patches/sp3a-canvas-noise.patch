@@ -24,7 +24,7 @@ index fe99fbb833..571377b3c4 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index 150d03eafd..66e0a15dcb 100644
+index 150d03eafd..9cfc5503aa 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 @@ -27,6 +27,9 @@
@@ -46,7 +46,7 @@ index 150d03eafd..66e0a15dcb 100644
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
-@@ -551,4 +556,78 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
+@@ -551,4 +556,85 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
    return *monitor;
  }
  
@@ -101,8 +101,14 @@ index 150d03eafd..66e0a15dcb 100644
 +SkBitmap CanvasRenderingContext::CamouNoisedRegion(
 +    const scoped_refptr<StaticBitmapImage>& image,
 +    const SkIRect& rect) {
++  // A texture-backed snapshot is read back whole by GetSwSkImage() below, so
++  // it keeps the cached whole-snapshot route; so does a read of the whole
++  // canvas, which would noise everything anyway.
 +  if (!image || !Host() || !CamouNoiseEligible() ||
-+      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft) {
++      image->IsTextureBacked() ||
++      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft ||
++      rect.contains(SkIRect::MakeWH(image->Size().width(),
++                                    image->Size().height()))) {
 +    return SkBitmap();
 +  }
 +  const camoucfg::ConfigScope& scope =
@@ -116,8 +122,9 @@ index 150d03eafd..66e0a15dcb 100644
 +    return SkBitmap();  // the whole field is cached: CamouNoised serves it
 +  }
 +  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
-+  if (!sk_image || (camou_noised_ && camou_noised_from_ == sk_image->uniqueID() &&
-+                    camou_noised_generation_ == generation)) {
++  if (!sk_image ||
++      (camou_noised_ && camou_noised_from_ == sk_image->uniqueID() &&
++       camou_noised_generation_ == generation)) {
 +    return SkBitmap();
 +  }
 +  return camoucfg::NoisedCanvasRegion(*sk_image, rect, scope,
@@ -261,20 +268,21 @@ index 1d29be2717..327256df25 100644
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 3d7a843995..af7749b356 100644
+index 3d7a843995..e3e6e4cb60 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -4,6 +4,9 @@
+@@ -4,6 +4,10 @@
  
  #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
  
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
 +
++#include <algorithm>
  #include <cmath>
  #include <cstdint>
  #include <cstdlib>
-@@ -470,6 +473,15 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -470,6 +474,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
    }
  
    scoped_refptr<StaticBitmapImage> snapshot = GetImage();
@@ -284,13 +292,14 @@ index 3d7a843995..af7749b356 100644
 +  // whole field, or a failure: the whole-snapshot path serves the read.
 +  const SkBitmap camou_region =
 +      CamouNoisedRegion(snapshot, SkIRect::MakeXYWH(sx, sy, sw, sh));
-+  if (camou_region.drawsNothing()) {
++  if (camou_region.drawsNothing() && snapshot &&
++      image_data_rect.Intersects(gfx::Rect(snapshot->Size()))) {
 +    snapshot = CamouNoised(std::move(snapshot));
 +  }
  
    // Determine if the array should be zero initialized, or if it will be
    // completely overwritten.
-@@ -507,10 +519,19 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+@@ -507,10 +521,19 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
      }
  
      SkPixmap image_data_pixmap = image_data->GetSkPixmap();
@@ -313,7 +322,7 @@ index 3d7a843995..af7749b356 100644
      if (!read_pixels_successful) {
        SkIRect bounds =
            snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
-@@ -647,6 +668,13 @@ void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
+@@ -647,6 +670,13 @@ void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
  
    WritePixels(info, source.addr(source_rect.x(), source_rect.y()),
                source.rowBytes(), dest_x, dest_y);
@@ -327,7 +336,7 @@ index 3d7a843995..af7749b356 100644
  }
  
  String BaseRenderingContext2D::letterSpacing() const {
-@@ -748,6 +776,11 @@ std::optional<cc::PaintRecord> BaseRenderingContext2D::FlushCanvasInternal(
+@@ -748,6 +778,11 @@ std::optional<cc::PaintRecord> BaseRenderingContext2D::FlushCanvasInternal(
    }
  
    cc::PaintRecord recording = recorder->ReleaseMainRecording();
@@ -339,7 +348,7 @@ index 3d7a843995..af7749b356 100644
    if (shared_image_provider) {
      ScopedRasterTimer timer(shared_image_provider->IsAccelerated()
                                  ? shared_image_provider->RasterInterface()
-@@ -1089,6 +1122,31 @@ void BaseRenderingContext2D::DrawTextInternal(
+@@ -1089,6 +1124,31 @@ void BaseRenderingContext2D::DrawTextInternal(
    }
  
    location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
