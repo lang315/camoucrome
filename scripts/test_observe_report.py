@@ -127,7 +127,7 @@ def test_render_lists_counts_hosts_cookies_and_blind_spots(tmp_path):
             in out)
     assert "| www.facebook.com | POST /ajax/bz | 1 |" in out
     assert "datr" in out and "SECRET" not in out
-    assert "## Not observable" in out and "Intl" in out and "NoAllocDirectCall" in out
+    assert "## Not observable" in out and "Intl" in out and "NoAllocDirectCall" not in out
 
 
 def test_render_top_scripts_per_site():

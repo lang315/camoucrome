@@ -20,35 +20,30 @@ own spec when picked up.
 - **No automated loops against facebook.com.** Recon on live Meta sites is
   manual, by the owner, in their own account.
 
-## Merge preconditions (before the PR merges)
+## Landing order for a slice that changes the bindings
 
 CI (`build-verify`) builds `~/chromium/src/out/Default` from box branch
-`camoucrome/main` and starts with the sync gate, so merging first turns CI red
-(sync gate) or runs into its 180-min timeout (every binding regenerates). In
-this order:
-
-1. In `~/chromium/src` on the build box, cherry-pick the `observe` commit onto
-   `camoucrome/main` (append, subject `observe`), in a window agreed with any
-   other session using the box.
-2. Rebuild `out/Default` by hand under the build lock (the bindings
-   regenerate; a multi-hour build). Confirm a non-zero step count.
-3. `scripts/check_checkout_sync.sh` gives `rc=0`.
-4. Merge the PR.
-
-`verify_observe.py` stays a visible SKIP in CI until the owner decides to set
-`camou_observe = true` in the CI out dir (one more full bindings rebuild there).
+`camoucrome/main` and starts with the sync gate, so a bindings change lands on
+the box first: amend or append the commit in `~/chromium/src` (in a window
+agreed with any other session using the box), rebuild `out/Default` by hand
+under the build lock, get `scripts/check_checkout_sync.sh` `rc=0`, then merge.
+Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
+`verify_observe.py`.
 
 ## Open
 
-- **V8 fast API calls are not counted.** About 100 canvas-2D/WebGL methods and
-  setters on allow-listed interfaces have `[NoAllocDirectCall]` fast paths
-  (`make_no_alloc_direct_call_callback_def` and
-  `make_attribute_set_nadc_callback_def` in `interface.py`) that skip the
-  hooked callback once V8 optimizes a call site; draw and state counts are
-  lower bounds. Fix: do not register the fast paths under
-  `BUILDFLAG(CAMOU_OBSERVE)`, or hook the fast callbacks too. Prove it with a
-  hot-loop verify row (for example `fillRect` 100 000 times, exact count) that
-  is RED on the current code.
+- **Rebuild the Windows `out\Observe` before the next recon.** The recon
+  binary (`D:\camou-win\chromium\src\out\Observe\chrome.exe`) was built on
+  2026-10-07, before fast API calls were counted, so its canvas-2D/WebGL draw
+  and state counts are still lower bounds.
+- **The `Emit` comment in the observe patch is inaccurate.** It says the V8
+  heap "must not change" inside fast API calls; V8 allows allocation there
+  (`Utf8LengthV2`/`WriteUtf8V2` may flatten). Reword it at the next amend of
+  the `observe` commit.
+- **Add a hot row from a cross-origin iframe running an external script**, to
+  prove fast-call script/origin attribution across realms.
+- **Re-run `verify_observe.py --timing` 3-5 times** on the observer build and
+  publish a range in the README.
 - **Phase 1b: the live dashboard `chrome://camou-observe`.** Designed in the
   spec, not built; the recon used the report.
 - **`d-pointer-touch.patch` lacks a `//components/camoucfg` dep in
@@ -60,3 +55,4 @@ this order:
 ## After the facebook recon (2026-10-07)
 
 - Instagram/Threads recon pending (arm 1 ran for both; arms 2-4 not yet); the phone-home finding (`passwordsleakcheck-pa.googleapis.com` at login, `content-autofill.googleapis.com` in every arm) goes to SP7; per-script attribution is done (phase 1c). Details: `docs/superpowers/measurements/2026-10-07-fb-observe.md`.
+- Counts of canvas-2D/WebGL draw and state calls in that recon are lower bounds (V8 fast API calls were not counted before 2026-10-08); re-run arms on a rebuilt `out\Observe` to get exact counts.
