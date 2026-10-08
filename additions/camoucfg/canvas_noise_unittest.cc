@@ -536,5 +536,90 @@ TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
   EXPECT_EQ(Fnv(bottom), 0x5CAC490D0AEE43C6ULL);
 }
 
+// The in-place pass (two-row ring) equals the two-buffer pass on every shape:
+// heights 1..4 (the ring at its edges), odd widths, padded rows, both
+// orientations, no mask / a fine mask / a coarse mask, and a mask origin.
+TEST(PerturbRgbaEdgesTest, InPlaceEqualsTwoBuffer) {
+  struct Case { size_t w, h, pad; bool bottom_up; int mask_shift; size_t x0, y0; };
+  const Case cases[] = {
+      {3, 1, 0, false, -1, 0, 0},  {3, 2, 0, false, -1, 0, 0},
+      {3, 3, 0, false, -1, 0, 0},  {5, 4, 8, true, -1, 0, 0},
+      {17, 13, 4, false, 0, 0, 0}, {17, 13, 0, true, -1, 0, 0},
+      {33, 29, 12, false, 2, 0, 0}, {20, 9, 0, false, 0, 7, 5},
+      {21, 11, 4, false, 2, 6, 3}};
+  for (const Case& c : cases) {
+    const size_t rb = c.w * 4 + c.pad;
+    std::vector<uint8_t> tight = MixedScene(c.w, c.h, 7 + c.w * c.h);
+    std::vector<uint8_t> src(rb * c.h, 0xCD);
+    for (size_t y = 0; y < c.h; ++y) {
+      std::copy_n(&tight[y * c.w * 4], c.w * 4, &src[y * rb]);
+    }
+    // A mask covering (x0 + w) x (y0 + h) with a mixed pattern.
+    const size_t mw = c.x0 + c.w, mh = c.y0 + c.h;
+    const int shift = std::max(c.mask_shift, 0);
+    const size_t cell = size_t{1} << shift;
+    const size_t stride = (mw + cell - 1) / cell;
+    std::vector<uint8_t> cells(stride * ((mh + cell - 1) / cell));
+    for (size_t i = 0; i < cells.size(); ++i) {
+      cells[i] = i % 4 == 1 ? kNoiseMaskImported : kNoiseMaskAa;
+    }
+    NoiseMask mask;
+    if (c.mask_shift >= 0) {
+      mask = NoiseMask{cells.data(), stride, shift, mw, mh, c.x0, c.y0};
+    }
+    std::vector<uint8_t> two = src, one = src;
+    PerturbRgbaEdges(two.data(), src.data(), c.w, c.h, rb, 31337, 0.5, 2, 1,
+                     mask, c.bottom_up);
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(one.data(), c.w, c.h, rb, 31337, 0.5,
+                                        2, 1, mask, c.bottom_up));
+    EXPECT_EQ(one, two) << c.w << "x" << c.h << " pad " << c.pad;
+    for (size_t y = 0; y < c.h; ++y) {  // padding untouched
+      for (size_t i = c.w * 4; i < rb; ++i) {
+        EXPECT_EQ(one[y * rb + i], 0xCD);
+      }
+    }
+  }
+}
+
+// A mask origin addresses the right cells: noising a window of a larger
+// buffer with x0/y0 equals the same window of the whole-buffer pass, on the
+// window's interior.
+TEST(PerturbRgbaEdgesTest, MaskOriginSelectsTheWindow) {
+  constexpr size_t kW = 40, kH = 30, kX = 9, kY = 7, kWw = 17, kWh = 12;
+  const std::vector<uint8_t> src = MixedScene(kW, kH, 99);
+  std::vector<uint8_t> cells(kW * kH, kNoiseMaskAa);
+  for (size_t i = 0; i < cells.size(); i += 3) {
+    cells[i] = kNoiseMaskImported;
+  }
+  const NoiseMask whole{cells.data(), kW, 0, kW, kH};
+  std::vector<uint8_t> full = src;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(full.data(), kW, kH, kW * 4, 5, 0.6, 2, 1,
+                                      whole, false));
+  std::vector<uint8_t> win(kWw * kWh * 4);
+  for (size_t y = 0; y < kWh; ++y) {
+    std::copy_n(&src[((y + kY) * kW + kX) * 4], kWw * 4, &win[y * kWw * 4]);
+  }
+  NoiseMask at = whole;
+  at.x0 = kX;
+  at.y0 = kY;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(win.data(), kWw, kWh, kWw * 4, 5, 0.6, 2,
+                                      1, at, false));
+  for (size_t y = 1; y + 1 < kWh; ++y) {
+    for (size_t x = 1; x + 1 < kWw; ++x) {
+      for (size_t k = 0; k < 4; ++k) {
+        EXPECT_EQ(win[(y * kWw + x) * 4 + k],
+                  full[((y + kY) * kW + x + kX) * 4 + k]);
+      }
+    }
+  }
+  // A window past the mask is a no-op.
+  NoiseMask past = whole;
+  past.x0 = kW - kWw + 1;
+  std::vector<uint8_t> w2 = win;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(w2.data(), kWw, kWh, kWw * 4, 5, 0.6, 2,
+                                      1, past, false));
+  EXPECT_EQ(w2, win);
+}
+
 }  // namespace
 }  // namespace camoucfg
