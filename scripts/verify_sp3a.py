@@ -611,7 +611,7 @@ FBOEDGE = tri("webgl", 64, 64, FBO_FN + """
       for (let k = 0; k < 4; k++) { const b = B[(j * w + i) * 4 + k]; inb.push(b);
         if (b !== A[(fy * 64 + fx) * 4 + k]) diff++; } }
     return { diff, h: H(inb) }; };
-  const r = [part(16, 16, 48, 48), part(40, 40, 40, 40), part(-4, -4, 20, 20)];
+  const r = [part(16, 16, 48, 48), part(24, 24, 48, 48), part(-4, -4, 20, 20)];
   return { diff: r.map(v => v.diff), h: r.map(v => v.h), glerr: gl.getError() };""")
 
 # C46: WebGL2 R8 and RG8 texture framebuffers with the C6 scene, read
