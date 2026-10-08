@@ -94,6 +94,10 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C40 one flush or many give one mask.
   C41 a read with READ_BUFFER NONE leaves the page's buffer and the GL error as stock.
   C42 the same for a drawingBufferStorage(RGBA16F) default framebuffer.
+  C43 a globalAlpha 0 drawImage over an arc's edge leaves the region's noise
+      unchanged (a draw that changes no pixel marks none).
+  C44 a shadowed drawImage far from an arc leaves the arc's noise unchanged
+      (the shadow marks its own pixels, not the whole clip).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -832,6 +836,21 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
     return get(y, 0, 0, 64, 64); };
   const m2 = seq(false);
   out.flushes = { h1: H(seq(true)), h2: H(m2), e: elig(m2, 64) };
+  // C43: an arc's region read (A), then a globalAlpha 0 drawImage over its
+  // edge, read again (B): a draw that changes no pixel changes no noise.
+  x = mk(64, 64); arc(x, 32, 32, 12);
+  const src = mk(16, 16); src.fillStyle = '#0a0'; src.fillRect(0, 0, 16, 16);
+  a = get(x, 16, 16, 33, 33);
+  x.globalAlpha = 0; x.drawImage(src.canvas, 30, 30); x.globalAlpha = 1;
+  out.alpha0 = { a: H(a), b: H(get(x, 16, 16, 33, 33)), e: elig(a, 33) };
+  // C44: an arc at (50,50) read (A), then a shadowed 10x10 drawImage at
+  // (150,150), read again (B): the shadow marks its own pixels, not the clip.
+  x = mk(200, 200); arc(x, 50, 50, 12);
+  const tile10 = mk(10, 10); tile10.fillStyle = '#0a0'; tile10.fillRect(0, 0, 10, 10);
+  a = get(x, 34, 34, 33, 33);
+  x.shadowBlur = 2; x.shadowOffsetX = 3; x.shadowOffsetY = 3;
+  x.shadowColor = 'rgba(0,0,0,0.5)'; x.drawImage(tile10.canvas, 150, 150);
+  out.shadowimg = { a: H(a), b: H(get(x, 34, 34, 33, 33)), e: elig(a, 33) };
   return out;
 }"""
 
@@ -1285,7 +1304,14 @@ def rejected_read_unchanged(s, u):
 gl_row(C41, "readnone", rejected_read_unchanged)
 gl_row(C42, "read16f", rejected_read_unchanged)
 
-EXPECTED = 49
+C43 = "43 a globalAlpha 0 drawImage leaves a region's noise unchanged"
+C44 = "44 a shadowed drawImage elsewhere leaves a region's noise unchanged"
+for name, key in ((C43, "alpha0"), (C44, "shadowimg")):
+    s2b_row(name, lambda r, key=key: r[key],
+            lambda u: u["e"] > 0 and u["a"] == u["b"],
+            lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
+
+EXPECTED = 51
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
