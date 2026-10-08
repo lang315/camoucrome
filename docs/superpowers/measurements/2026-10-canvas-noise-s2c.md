@@ -99,3 +99,54 @@ Reading: draw cost is the same with density 0 (23.6x), so the per-draw cost is
 the copies and replays, not the noise. GL reads cost 21–25x seeded and about 8x
 at density 0. The framebuffer reads show 1.0x because they are not noised yet
 (C35–C38 FAIL).
+
+## §5 Additions (Task 2)
+
+Box workdir at 5534316, `components_unittests` + `content_shell` built, 219 steps
+(non-zero).
+
+Golden. `GoldenFieldUnchanged` was RED on the S2b build with exactly two
+"Expected equality" lines: `Fnv(top)` 11153446145880503195 (0x9AC9002D1AA8339B) and
+`Fnv(bottom)` 6677792667850392518 (0x5CAC490D0AEE43C6); the other 9 tests passed.
+After the loop rewrite the same hashes hold (GREEN), so the field did not move.
+
+Tests. The W5 filter ran 70 tests, all passed (rc 0), including
+`PerturbRgbaEdgesTest.{GoldenFieldUnchanged,InPlaceEqualsTwoBuffer,MaskOriginSelectsTheWindow}`,
+`NoisedRegionTest.EqualsTheWholeImageField`, `DeriveTest.KeyedFormsAgreeWithStringForms`.
+The test build first failed on `-Wunsafe-buffer-usage` in `MixedScene`
+(raw pointer indexing); fixed with spans.
+
+verify_sp3a: 43 PASS / 4 FAIL, the FAILs are C35-C38 with the same causes as §3
+(seeded hash equals unconfigured for C35 to C37; C38 `eq` false seeded).
+
+Cost, two arms not interleaved here (one run), ratios to unconfigured:
+
+| case | none | seed | seed_d0 |
+|---|---|---|---|
+| per_draw_us | 0.350 | 8.225 (23.50x) | 8.550 (24.43x) |
+| draw_only | 2.700 | 83.800 (31.04x) | 84.850 (31.43x) |
+| draw_read | 25.950 | 109.900 (4.24x) | 110.500 (4.26x) |
+| read_2d | 0.000 | 4.700 | 3.000 |
+| gl_flat.large | 1.800 | 13.500 (7.50x) | 13.000 (7.22x) |
+| gl_flat.small | 0.300 | 1.500 (5.00x) | 1.400 (4.67x) |
+| gl_edges.large | 1.800 | 13.800 (7.67x) | 12.900 (7.17x) |
+| gl_edges.small | 0.300 | 1.500 (5.00x) | 1.400 (4.67x) |
+| gl_fbo.large | 1.800 | 1.800 (1.00x) | 1.800 (1.00x) |
+| gl_fbo.small | 0.300 | 0.300 (1.00x) | 0.400 (1.33x) |
+
+```
+target per_draw_us ratio<=1.2: 23.50 MISS
+target draw_read ratio<=2.0: 4.24 MISS
+target read_2d abs<=0.5: 4.70 MISS
+target gl_flat.large ratio<=3.0: 7.50 MISS
+target gl_edges.large ratio<=3.0: 7.67 MISS
+target gl_edges.small ratio<=1.5: 5.00 MISS
+```
+
+Reading: the in-place pass cut `gl_*.large` from about 21-25x to about 7.5x and
+`read_2d` from 9.4 to 4.7 ms; draw cost is untouched (Tasks 3 to 5).
+
+Export (W6): 9 fixups folded, 38 commits, 0 fixup subjects, 0 dirty. The export
+reproduced the pushed tree byte for byte (`diff -rq` of additions, patches and
+invariants.json empty), so `patches/` is unchanged and nothing was pulled.
+Sync check: "all 45 copied files are identical in repo and checkout".
