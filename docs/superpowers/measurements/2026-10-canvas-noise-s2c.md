@@ -1208,7 +1208,10 @@ line left).
 
 One run on the build before the fix (`0ef3ff9aa1`), two after. Seeded median
 in ms, ratio to the same run's unconfigured arm in brackets (the unconfigured
-arm moves too, so compare the milliseconds).
+arm moves too, so compare the milliseconds). Host load was not checked during
+these runs: recon chrome.exe sessions on the Windows host (no lock) may have
+shared the CPU. No chrome.exe was running when checked after the runs. The
+two after-runs agree within the spread noted below.
 
 | case | before | after, run 1 | after, run 2 | target |
 |---|---|---|---|---|
