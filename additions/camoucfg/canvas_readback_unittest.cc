@@ -259,11 +259,10 @@ TEST(NoisedImageTest, MaskOfAnotherSizeChangesNothing) {
       if (noised) {
         EXPECT_EQ(*Read(*noised).getAddr32(4, 4), lone) << "seed " << seed;
       }
-      const SkBitmap region =
-          Region(*image, SkIRect::MakeXYWH(2, 2, 5, 5), seed, 1.0, 3, 1, mask);
-      if (!region.drawsNothing()) {
-        EXPECT_EQ(*region.getAddr32(2, 2), lone) << "seed " << seed;
-      }
+      EXPECT_TRUE(
+          Region(*image, SkIRect::MakeXYWH(2, 2, 5, 5), seed, 1.0, 3, 1, mask)
+              .drawsNothing())
+          << "seed " << seed;
     }
     const NoiseMask own{cells.data(), 8, 0, 8, 8};
     moved |= *Read(*NoisedImage(*image, seed, 1.0, 3, 1, own, false))
