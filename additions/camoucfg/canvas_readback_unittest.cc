@@ -41,6 +41,13 @@ SkBitmap Read(const SkImage& image) {
   return bm;
 }
 
+// NoisedRegion over a raster image.
+SkBitmap Region(const SkImage& image, const SkIRect& r, uint64_t seed,
+                double density, int32_t strength, uint8_t min_alpha,
+                const NoiseMask& mask) {
+  return NoisedRegion(image, r, seed, density, strength, min_alpha, mask);
+}
+
 uint32_t Partial(int x, int y) {
   const int a = 1 + (x * 37 + y * 11) % 254;
   return Pack(static_cast<uint8_t>((x * 13 + y * 7) % (a + 1)),
@@ -193,7 +200,7 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
             SkIRect::MakeXYWH(kW - 6, kH - 5, 6, 5),
             SkIRect::MakeXYWH(11, 0, 1, 1), SkIRect::MakeXYWH(17, 13, 1, 1),
             SkIRect::MakeWH(kW, kH)}) {
-        const SkBitmap region = NoisedRegion(*image, r, 77, 0.5, 2, 1, mask);
+        const SkBitmap region = Region(*image, r, 77, 0.5, 2, 1, mask);
         ASSERT_FALSE(region.drawsNothing());
         ASSERT_EQ(region.width(), r.width());
         ASSERT_EQ(region.height(), r.height());
@@ -206,8 +213,8 @@ TEST(NoisedRegionTest, EqualsTheWholeImageField) {
           }
         }
       }
-      EXPECT_TRUE(NoisedRegion(*image, SkIRect::MakeXYWH(5, 4, 3, 3), 0, 0.5, 2,
-                               1, mask)
+      EXPECT_TRUE(Region(*image, SkIRect::MakeXYWH(5, 4, 3, 3), 0, 0.5, 2, 1,
+                         mask)
                       .drawsNothing());  // seed 0: nothing, caller stays stock
     }
   }
@@ -220,9 +227,44 @@ TEST(NoisedRegionTest, OffCanvasRectIsEmpty) {
        {SkIRect::MakeXYWH(8, 0, 4, 4), SkIRect::MakeXYWH(-5, -5, 5, 5),
         SkIRect::MakeXYWH(2, 8, 3, 3), SkIRect::MakeXYWH(-3, 2, 3, 3)}) {
     EXPECT_TRUE(
-        NoisedRegion(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
+        Region(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
         << r.x() << "," << r.y();
   }
+}
+
+// Review #5: a mask of another size than the canvas (a stale one, larger
+// than the snapshot, or one with an origin) never gates the canvas by the
+// wrong cells: neither the whole image nor a region changes, whatever the
+// seed. With the canvas's own mask the same pixel does move.
+TEST(NoisedImageTest, MaskOfAnotherSizeChangesNothing) {
+  const sk_sp<SkImage> image = Image(8, 8, [](int x, int y) {
+    return x == 4 && y == 4 ? Pack(200, 100, 50, 255) : Pack(0, 0, 0, 255);
+  });
+  const uint32_t lone = Pack(200, 100, 50, 255);
+  const std::vector<uint8_t> cells(10 * 10, kNoiseMaskAa);
+  const NoiseMask larger{cells.data(), 10, 0, 10, 10};
+  NoiseMask offset = larger;
+  offset.x0 = 1;
+  offset.y0 = 1;
+  bool moved = false;
+  for (uint64_t seed = 1; seed < 32; ++seed) {
+    for (const NoiseMask& mask : {larger, offset}) {
+      const sk_sp<SkImage> noised =
+          NoisedImage(*image, seed, 1.0, 3, 1, mask, /*bottom_up=*/false);
+      if (noised) {
+        EXPECT_EQ(*Read(*noised).getAddr32(4, 4), lone) << "seed " << seed;
+      }
+      const SkBitmap region =
+          Region(*image, SkIRect::MakeXYWH(2, 2, 5, 5), seed, 1.0, 3, 1, mask);
+      if (!region.drawsNothing()) {
+        EXPECT_EQ(*region.getAddr32(2, 2), lone) << "seed " << seed;
+      }
+    }
+    const NoiseMask own{cells.data(), 8, 0, 8, 8};
+    moved |= *Read(*NoisedImage(*image, seed, 1.0, 3, 1, own, false))
+                  .getAddr32(4, 4) != lone;
+  }
+  EXPECT_TRUE(moved) << "the canvas's own mask moved nothing: vacuous";
 }
 
 }  // namespace
