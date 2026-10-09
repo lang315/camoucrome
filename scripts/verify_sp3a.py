@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Fifty-seven criteria, all driven with Playwright's sync API over content_shell's CDP,
+Fifty-eight criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -109,6 +109,9 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       B stay 0); an RGBA8 one with the same scene is noised.
   C46b an RGBA4 renderbuffer framebuffer reads as stock; an RGBA8 one is noised.
   C47 a drawingBufferStorage(SRGB8_ALPHA8) readPixels is noised and deterministic.
+  C48 a globalAlpha 0 drawImage of an SVG image over an arc's region leaves
+      the region's noise unchanged (an SVG draws through a layer and a nested
+      record; a layer that composites nothing marks nothing).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -763,6 +766,22 @@ TEXIMAGE = tri("webgl", 64, 64, """
   return { eq, h: H(B) };""")
 
 
+# C48: an arc's region read (A), then a globalAlpha 0 drawImage of an SVG
+# image over the whole region, read again (B). An SVG draws as a saveLayer at
+# the draw's alpha around a nested record, unlike C43's canvas source.
+SVG_ALPHA0 = "async () => {" + HASH_FN + ELIG_FN + """
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f60'; x.beginPath(); x.arc(32, 32, 12, 0, 7); x.fill();
+  const im = new Image();
+  im.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"'
+    + ' width="33" height="33"><rect width="33" height="33" fill="#0a0"/></svg>');
+  await im.decode();
+  const a = x.getImageData(16, 16, 33, 33).data;
+  x.globalAlpha = 0; x.drawImage(im, 16, 16); x.globalAlpha = 1;
+  return { a: H(a), b: H(x.getImageData(16, 16, 33, 33).data), e: elig(a, 33) };
+}"""
+
 S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   const mk = (w, h) => { const c = document.createElement('canvas');
     c.width = w; c.height = h; return c.getContext('2d'); };
@@ -1075,6 +1094,7 @@ oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
 s2b_seeded, s2b_seeded_err = session(CANVAS, S2B_2D)
 s2b_unconf, s2b_unconf_err = session(None, S2B_2D)
+svg_runs = (session(CANVAS, SVG_ALPHA0), session(None, SVG_ALPHA0))
 
 if capture:
     if unconf is None or unconf_gl is None or unconf_shot is None:
@@ -1340,13 +1360,16 @@ C28 = "28 WebGL readPixels sub-rect equals the full read's part, byte for byte"
 C29 = "29 WebGL toDataURL agrees with readPixels on every opaque pixel"
 
 
-def s2b_row(name, get, guard, ok):
-    """One S2b 2D row: FAIL with a note on a session fault or a vacuous drawing."""
-    if s2b_seeded is None or s2b_unconf is None:
+def s2b_row(name, get, guard, ok, runs=None):
+    """One S2b 2D row: FAIL with a note on a session fault or a vacuous drawing.
+    `runs` is ((seeded, err), (unconfigured, err)), S2B_2D's by default."""
+    (sv, se), (uv, ue) = runs or ((s2b_seeded, s2b_seeded_err),
+                                  (s2b_unconf, s2b_unconf_err))
+    if sv is None or uv is None:
         results[name] = False
-        notes.append(f"{name[:3]}: {s2b_seeded_err or s2b_unconf_err}")
+        notes.append(f"{name[:3]}: {se or ue}")
         return
-    s, u = get(s2b_seeded), get(s2b_unconf)
+    s, u = get(sv), get(uv)
     if not guard(u):
         results[name] = False
         notes.append(f"{name[:3]}: vacuous -- unconfigured drawing {u}")
@@ -1458,7 +1481,11 @@ gl_row(C46B, "fborgba4", lambda s, u: s["glerr"] == u["glerr"] == 0
 gl_row(C47, "srgb", lambda s, u: s["glerr"] == u["glerr"] == 0
        and u["e"] > 0 and s["same"] and u["same"] and s["h"] != u["h"])
 
-EXPECTED = 57
+C48 = "48 a globalAlpha 0 drawImage of an SVG image leaves a region's noise unchanged"
+s2b_row(C48, lambda r: r, lambda u: u["e"] > 0 and u["a"] == u["b"],
+        lambda s, u: s["a"] == s["b"] and s["a"] != u["a"], runs=svg_runs)
+
+EXPECTED = 58
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
