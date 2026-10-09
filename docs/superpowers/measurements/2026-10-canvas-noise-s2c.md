@@ -861,13 +861,12 @@ unchanged, and the gates only narrow which reads are noised.
 
 ### Left by the /code-review round (§13)
 
-- A noised `readPixels` into a `SharedArrayBuffer` view copies back the bytes
-  GL leaves unwritten (pixels outside the framebuffer) with their values from
-  the start of the call; a write another thread makes to exactly those bytes
-  during the call can be lost. Padding is never copied.
-- A page read GL drops (a transfer buffer it could not get) while the one-row
-  probe succeeds is caught unless the page's sentinel row equals the real
-  pixels.
+- (Round 2, §13.9: closed.) A shared view's copy-back now writes only the
+  rect's in-framebuffer part, and a read left stock never goes through
+  scratch.
+- A page read GL abandons after its first chunk of rows passes the one-row
+  probe (and the strips, for rows their lines do not cover); its unwritten
+  rows are noised. Not page-triggerable; accepted (§13.9).
 - The large full reads pay one more round trip (the probe row), and every
   flush allocates its coverage bitmap anew (§13.6).
 - Sub-rect `getImageData` reads up to half the canvas recompute the noise per
@@ -1166,9 +1165,8 @@ orientations with padded rows equal the whole-image pass.
   only a page row that is all zero (alpha 0, never noised); a dropped page
   read leaves the page's sentinel, which fails the compare unless the page
   filled its buffer's first row with the exact pixels the read returns. That
-  last case (a transfer buffer GL could not get for the large read while the
-  one-row probe succeeds, with a sentinel row equal to the real content) is
-  the residual. The margin strips are checked the same way, line by line.
+  last case was stated too narrowly here; §13.9 gives the exact residual: a
+  read GL splits into chunks of rows and abandons after its first chunk.
 
 ### §13.4 Mutation proofs
 
@@ -1277,3 +1275,104 @@ fixes), `sp3a-canvas-noise.patch`, and `sp3b-webgl-profile.patch` (its
 | 11 | Fixed | No behaviour change; verifies green |
 | 12 | Fixed | No behaviour change; verifies green |
 | 13 | Fixed | Every caller was a test; the oracle pins the golden hashes |
+
+### §13.9 Round 2 (re-review `crfix-rereview.md`, 2026-10-09)
+
+The re-review of this round found one Important item (#1's copy-back
+extent), a narrower-than-real #4 residual, three Minors, and one leftover
+from S2b. Controller rulings: fix #1's extent and decide every "will noise"
+question before the read; accept #4's residual and state it exactly; fix the
+Minors; fix the S2b leftover (owner policy) with a new row; allocate the
+coverage bitmap lazily. Lock `s2c cr fix2`.
+
+**RED.** C51 (new): an arc's region read, then `shadowBlur = 4`,
+`shadowColor = 'black'`, `globalAlpha = 0` and a `drawImage` of a translucent
+canvas over it, read again. On the build before round 2 (`a3c026bc7e`): 60
+rows PASS, C51 FAIL:
+```
+FAIL  51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged
+      51 : seeded {'a': 1792132258, 'b': 1703964406, 'e': 78}, unconfigured {'a': 1703964406, 'b': 1703964406, 'e': 78}
+```
+
+**Fixes.**
+- **#1 extent.** `CamouReadPixels` replaces `CamouNoiseReadPixels` and now
+  makes every decision before the read: the pack layout, the 8-bit read
+  attachment (two queries), the page framebuffer's extent (the 0x00/0xFF
+  probes) and the rect's part inside the framebuffer. A read it leaves stock
+  returns false having read nothing, and `ReadPixelsHelper` reads it straight
+  into the page's view, as stock does: a float or non-8-bit page framebuffer,
+  a rect outside the framebuffer, or a layout GL rejects never goes through
+  scratch. It then does the page's read itself (into a copy of a shared view,
+  or into the view), the noise, and for a shared view copies back only the
+  rect's in-framebuffer part, row by row. Bytes stock never writes (pixels
+  outside the framebuffer, padding) are never written. Rule 5: no seed, no
+  call. C50 still PASS.
+- **#4 residual (accepted).** Not page-triggerable. `GLES2Implementation::ReadPixels`
+  reads in chunks of rows and stops at the first chunk that fails (a transfer
+  buffer it cannot get, a failed result). Rows from earlier chunks are
+  written; later rows keep the page's bytes. The full read's probe row is in
+  the first chunk, so such a read passes the probe and its unwritten rows are
+  noised (a uniform prefill stays as it was, a non-uniform opaque one moves;
+  stock leaves both). The strip path has the same gap for rows its strip
+  lines do not cover; the one-piece path compares every row. A lost context
+  is caught by the reset gate. The read lambda's, the probe's and the strips'
+  comments now say this.
+- **Minors.** `CamouNoisedRegion` again returns empty (cache route) when the
+  cached field is of the same raster (`uniqueID`), for a snapshot that is not
+  texture-backed only. The pixel reader's comment notes that
+  `MailboxTextureBacking::readPixels` ignores `dst_row_bytes` (the bitmap is
+  tight). `canvas_mask.h:57` and `canvas_readback.cc:96` fit 80 columns. The
+  mask-size test now asserts the region is empty instead of guarding on it.
+- **S2b leftover (C51).** A layer whose paint's image filter is the canvas
+  drop shadow (`cc::PaintFilter::Type::kDropShadow`), with no colour filter
+  or looper and a src-over composite, marks its area only for an op inside
+  that draws something (`nothingToDraw()` false); text keeps its carve-out.
+  Any other filter (`url()`, a flood, a shadow combined with a canvas filter)
+  marks as before.
+- **Lazy coverage (#8).** The walk keeps no matrix or clip until an op needs
+  the clip (a layer's area, a nested record's mark, a draw that may change
+  pixels). The coverage bitmap and canvas are made then, and the canvas
+  replays the state ops passed so far. A flush of text only, or of draws
+  that change nothing, allocates nothing. Nothing is measured on a pixel-less
+  canvas: its clip bounds for a path clip need not match a raster canvas's,
+  so a merge-only lazy start could have moved mask areas. An allocation
+  failure still marks the whole canvas imported with nothing else marked.
+
+**Builds and GREEN.**
+- First round-2 build: the Chromium style plugin rejected reference fields in
+  the new `CamouCoverage` struct (`chromium-rawref`, and a stack-allocated
+  `PlaybackParams` field). The struct now holds no references; `Get()` takes
+  the record and params. `Build Succeeded: 144 steps`.
+- `verify_sp3a` 61/61 `ALL_PASS` (EXPECTED 61, C51 PASS); `verify_review`
+  12/12 `ALL_PASS`; unit filter `SUCCESS: all tests passed`; `gn check` OK on
+  core, modules/canvas, modules/webgl, camoucfg:canvas_readback,
+  camoucfg:camoucfg; `checkdeps` SUCCESS on modules/canvas, core/html/canvas,
+  modules/webgl, components/camoucfg.
+
+**Cost (W5c, round 2).** Host load checked before each run: 0 chrome.exe
+both times. "Before" is the round-1 build's two runs (§13.6, host load not
+checked then); seeded ms, ratio in brackets.
+
+| case | round 1 (runs 1 / 2) | round 2, run 1 | round 2, run 2 |
+|---|---|---|---|
+| per_draw_us | 0.350 / 0.350 us | 0.300 us (0.92x) | 0.300 us (1.00x) |
+| draw_read | 66.00 / 66.00 | 66.45 (2.79x) | 66.55 (2.74x) |
+| shadow_read | 18.20 / 17.75 | 18.40 (3.15x) | 17.70 (3.00x) |
+| read_2d | 0.100 / 0.100 | 0.100 | 0.100 |
+| read_2d_mid | 0.100 / 0.100 | 0.100 | 0.100 |
+| gl_flat.large | 3.00 / 2.90 | 2.90 (1.61x) | 3.00 (1.67x) |
+| gl_edges.large | 3.10 / 2.80 | 2.80 (1.47x) | 3.10 (1.63x) |
+| gl_edges.small | 0.550 / 0.585 | 0.560 (2.00x) | 0.540 (1.93x) |
+| gl_fbo.large | 7.90 / 7.40 | 4.85 (2.55x) | 4.80 (2.53x) |
+| gl_fbo.small | 1.480 / 1.480 | 1.520 (5.43x) | 1.460 (5.41x) |
+
+- `gl_fbo.large` fell from about 7.6 ms to 4.8 ms in both runs, and now
+  passes its 3x target (2.55x, 2.53x). The read count is unchanged (the
+  framebuffer probes now run before the page's read instead of after it); the
+  cause is not isolated, and round 1's runs had an unchecked host load.
+- `read_2d` and `read_2d_mid` stay at 0.1 ms: a flush with one arc merges, so
+  the lazy coverage still allocates there. Lazy allocation helps only
+  flushes of text or of draws that change nothing; no row measures one.
+- Every other row moved within run-to-run noise. Targets: `per_draw_us`,
+  `read_2d_mid`, `gl_flat.large`, `gl_edges.large` and now `gl_fbo.large`
+  PASS; `draw_read` (2.79x, 2.74x) and `gl_edges.small` (2.00x, 1.93x) MISS.
