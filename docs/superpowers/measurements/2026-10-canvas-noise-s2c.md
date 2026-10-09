@@ -1296,10 +1296,11 @@ FAIL  51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged
 
 **Fixes.**
 - **#1 extent.** `CamouReadPixels` replaces `CamouNoiseReadPixels` and now
-  makes every decision before the read: the pack layout, the 8-bit read
+  makes every decision before the page's read: the pack layout, the 8-bit read
   attachment (two queries), the page framebuffer's extent (the 0x00/0xFF
-  probes) and the rect's part inside the framebuffer. A read it leaves stock
-  returns false having read nothing, and `ReadPixelsHelper` reads it straight
+  probes, read into scratch) and the rect's part inside the framebuffer. A
+  read it leaves stock returns false without writing the view, and
+  `ReadPixelsHelper` reads it straight
   into the page's view, as stock does: a float or non-8-bit page framebuffer,
   a rect outside the framebuffer, or a layout GL rejects never goes through
   scratch. It then does the page's read itself (into a copy of a shared view,
@@ -1316,7 +1317,10 @@ FAIL  51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged
   stock leaves both). The strip path has the same gap for rows its strip
   lines do not cover; the one-piece path compares every row. A lost context
   is caught by the reset gate. The read lambda's, the probe's and the strips'
-  comments now say this.
+  comments now say this. The same class covers a shared view: when GL drops
+  the read and a check then stops the noise, the copy-back writes the view's
+  own start-of-call bytes over the in-framebuffer rect (a concurrent write
+  there is lost), which also needs a GPU failure no page can cause.
 - **Minors.** `CamouNoisedRegion` again returns empty (cache route) when the
   cached field is of the same raster (`uniqueID`), for a snapshot that is not
   texture-backed only. The pixel reader's comment notes that
@@ -1327,8 +1331,10 @@ FAIL  51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged
   drop shadow (`cc::PaintFilter::Type::kDropShadow`), with no colour filter
   or looper and a src-over composite, marks its area only for an op inside
   that draws something (`nothingToDraw()` false); text keeps its carve-out.
-  Any other filter (`url()`, a flood, a shadow combined with a canvas filter)
-  marks as before.
+  (Round 3, §13.10: the drop shadow must also have no input.) Any other
+  layer filter marks as before: a drop shadow with an input (a `url()`
+  filter's `feDropShadow` over an `feFlood`), any other filter type, or a
+  shadow combined with a canvas filter.
 - **Lazy coverage (#8).** The walk keeps no matrix or clip until an op needs
   the clip (a layer's area, a nested record's mark, a draw that may change
   pixels). The coverage bitmap and canvas are made then, and the canvas
@@ -1376,3 +1382,51 @@ checked then); seeded ms, ratio in brackets.
 - Every other row moved within run-to-run noise. Targets: `per_draw_us`,
   `read_2d_mid`, `gl_flat.large`, `gl_edges.large` and now `gl_fbo.large`
   PASS; `draw_read` (2.79x, 2.74x) and `gl_edges.small` (2.00x, 1.93x) MISS.
+
+### §13.10 Round 3 (re-review `crfix-rereview2.md`, 2026-10-09)
+
+Lock `s2c cr fix3`. Rulings: require a null drop-shadow input (Important);
+fix four comments and §13.9; add C52 and C53; record the `gl_fbo.large` drop.
+
+**RED.** C52: AA strokes over a 64x64 canvas, read (A); then
+`ctx.filter = url(#f)` with `#f` an `feFlood` (a 19x17 rect) followed by an
+`feDropShadow` (`color-interpolation-filters="sRGB"`, its own subregion the
+whole canvas), over a fully transparent `fillRect`, read (B). The row takes
+the pixels where the unconfigured B differs from the unconfigured A (what the
+filter painted) and requires the seeded B to equal the unconfigured B on all
+of them. Its guard requires filtered pixels, flood-coloured ones, eligible
+ones, and a noised seeded A.
+- First run on the round-2 build (`3b05631c30`): FAIL on the guard only
+  (`changed 323, flood 323, eligible 0, differs on 0`). The shadow's
+  subregion defaulted to the flood's, so the flood hid it; that run is not
+  RED. The scene gave the shadow its own subregion (`cedd572`).
+- Second run, same build: 62 PASS, C52 FAIL:
+  ```
+  FAIL  52 a flooding url() drop-shadow filter's pixels read as unconfigured
+        C52: changed 867, flood 323, eligible 508, seeded A noised True, seeded B differs on 37
+  ```
+  37 pixels the filter painted carry noise: the layer was treated as a
+  canvas shadow and marked nothing.
+- C53 (C18's WebGL2 PACK_ROW_LENGTH / SKIP layout read from an RGBA8 page
+  framebuffer): PASS on the round-2 build, as a guard.
+
+**Fix.** `CamouIsShadowLayer` also requires
+`static_cast<const cc::DropShadowPaintFilter*>(filter)->input()` to be null
+(`OneInputPaintFilter::input()`). The canvas shadow passes a null input;
+`FEDropShadow` passes its input effect. Comments fixed: the shadow layer's
+(which filters keep marking), the stale `CamouNoiseReadPixels` name, and
+"before the page's read" / "without writing the view" in three places.
+
+**`gl_fbo.large` (7.6 ms to 4.8 ms, §13.9).** No code cause: the same GL
+calls run in a different order. Recorded as most likely load-inflated
+earlier runs (round 1's timings had no host-load check); unexplained. W5c was
+not re-run this round: the shadow-layer check is not on a timed path.
+
+**GREEN.** `Build Succeeded: 354 steps`. `verify_sp3a` 63/63 `ALL_PASS`
+(C52 and C53 PASS); `verify_review` 12/12 `ALL_PASS`; unit filter `SUCCESS:
+all tests passed`; `gn check` OK on core, modules/canvas, modules/webgl,
+camoucfg:canvas_readback, camoucfg:camoucfg; `checkdeps` SUCCESS on
+modules/canvas, core/html/canvas, modules/webgl, components/camoucfg.
+Export: 38 commits, 0 fixups, 0 dirty, HEAD `b6fe23620e`; sync 45/45; only
+`sp3a-canvas-noise.patch` and `sp3b-webgl-profile.patch` (index line)
+changed; `observe.patch` and its series line kept.
