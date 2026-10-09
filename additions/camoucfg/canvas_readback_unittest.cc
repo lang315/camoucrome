@@ -12,6 +12,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
+#include "third_party/skia/include/core/SkPixmap.h"
 
 namespace camoucfg {
 namespace {
@@ -45,7 +46,12 @@ SkBitmap Read(const SkImage& image) {
 SkBitmap Region(const SkImage& image, const SkIRect& r, uint64_t seed,
                 double density, int32_t strength, uint8_t min_alpha,
                 const NoiseMask& mask) {
-  return NoisedRegion(image, r, seed, density, strength, min_alpha, mask);
+  return NoisedRegion(
+      image.imageInfo(),
+      [&image](const SkPixmap& dst, int x, int y) {
+        return image.readPixels(nullptr, dst, x, y);
+      },
+      r, seed, density, strength, min_alpha, mask);
 }
 
 uint32_t Partial(int x, int y) {

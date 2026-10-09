@@ -8,12 +8,12 @@ does every copy and replay but no noise (attribution), on WSL content_shell
   draw_read    10 x (10 000 arcs + getImageData(0,0,1,1)): ms per frame
   shadow_read  10 x (1000 shadowed 12 x 12 fillRects + getImageData(0,0,1,1)):
                ms per frame; reported only, no target
-  read_2d      getImageData(0,0,1,1) after one new arc on 1024 x 1024: ms
-               (a 1x1 read at the corner never runs the kernel: its region is
-               2x2, below the 3x3 a pixel needs; a median of 0.00 is below the
-               timer's resolution, not free)
+  read_2d      getImageData(0,0,1,1) after one new arc on 1024 x 1024: ms;
+               reported only, no target (a 1x1 read at the corner never runs
+               the kernel: its region is 2x2, below the 3x3 a pixel needs)
   read_2d_mid  the same at (512,512), an interior point, so the regional
-               kernel runs on a 3x3: ms; reported only, no target
+               kernel runs on a 3x3: ms (a median of 0.00 is below the
+               timer's resolution, not free)
   gl_*.large   readPixels 1024 x 1024 (flat scene, 4 px random blocks): ms
   gl_*.small   readPixels 64 x 64 sub-rect: ms
   gl_fbo.*     the same reads from a page framebuffer
@@ -125,7 +125,7 @@ CASES = [("per_draw_us", PER_DRAW, None), ("draw_only", DRAW_ONLY, None),
 # (case, kind, limit): kind "ratio" is seeded / unconfigured, "abs" is the
 # seeded median in ms.
 TARGETS = [("per_draw_us", "ratio", 1.2), ("draw_read", "ratio", 2.0),
-           ("read_2d", "abs", 0.5), ("gl_flat.large", "ratio", 3.0),
+           ("read_2d_mid", "abs", 0.5), ("gl_flat.large", "ratio", 3.0),
            ("gl_edges.large", "ratio", 3.0), ("gl_edges.small", "ratio", 1.5),
            ("gl_fbo.large", "ratio", 3.0)]
 

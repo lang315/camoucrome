@@ -35,9 +35,10 @@ struct NoiseMask {
 };
 
 // Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
-// `row_bytes` apart. `source` is an unperturbed copy with the same geometry,
-// and every eligibility test reads it, so the result does not depend on the
-// order pixels are visited in. A pixel changes only if
+// `row_bytes` apart. Every eligibility test reads the unperturbed pixels
+// (the rows it needs are kept in a two-row ring, so no copy of the buffer is
+// made), so the result does not depend on the order pixels are visited in.
+// A pixel changes only if
 //   - it is interior (it has four neighbours),
 //   - its alpha is at least max(min_alpha, 1),
 //   - it differs, in any of its four bytes, from each of its four neighbours.
@@ -56,16 +57,9 @@ struct NoiseMask {
 // in either orientation. `mask` gates each pixel (see NoiseMask); a mask whose
 // window (x0, y0, width, height) does not fit inside it, or a mask with
 // `bottom_up`, makes the call a no-op. seed == 0, density <= 0 (or
-// NaN), or strength <= 0 is a no-op.
-void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
-                      size_t height, size_t row_bytes, uint64_t seed,
-                      double density, int32_t strength, uint8_t min_alpha,
-                      const NoiseMask& mask, bool bottom_up);
-
-// PerturbRgbaEdges on `data` in place: the unperturbed rows it needs are
-// kept in a two-row ring, so no copy of the buffer is made. Same field, byte
-// for byte. Returns false, leaving `data` untouched, only when the ring (two
-// rows) cannot be allocated.
+// NaN), or strength <= 0 is a no-op. Returns false, leaving `data`
+// untouched, only when the ring (two rows) cannot be allocated. The unit
+// test holds an independent reference implementation of this field.
 bool PerturbRgbaEdgesInPlace(uint8_t* data,
                              size_t width,
                              size_t height,
@@ -77,7 +71,7 @@ bool PerturbRgbaEdgesInPlace(uint8_t* data,
                              const NoiseMask& mask,
                              bool bottom_up);
 
-// PerturbRgbaEdges over a `width` x `height` RGBA8 rect whose rows are
+// PerturbRgbaEdgesInPlace over a `width` x `height` RGBA8 rect whose rows are
 // `row_bytes` apart (the WebGL readPixels destination at its pack layout),
 // neighbours read within the rect, no mask. The field depends only on each
 // pixel's 3x3 patch, so row padding and stride do not change it. Only opaque
@@ -87,16 +81,49 @@ void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
                  uint64_t seed, double density, int32_t strength,
                  bool bottom_up);
 
+// The pixels just outside a rect of a larger image, which a pass over the
+// rect alone reads as neighbours (canvas noise S2c: the WebGL margin
+// strips). `before` and `after` are the rows before the rect's first row and
+// after its last, in memory order; `left` and `right` the columns left of its
+// first pixel and right of its last, one pixel per rect row, `side_stride`
+// bytes apart. A row spans the rect's width plus one pixel on each side that
+// has a column, starting at the left column's. A null side is the image's
+// edge there: the rect's pixels on that side have no neighbour and never
+// change.
+struct RgbaFrame {
+  const uint8_t* before = nullptr;
+  const uint8_t* after = nullptr;
+  const uint8_t* left = nullptr;
+  const uint8_t* right = nullptr;
+  size_t side_stride = 0;
+};
+
+// PerturbRgba on a rect whose neighbours outside it come from `frame`: the
+// rect gets exactly the noise a pass over the whole image would give it. In
+// place, through a ring of four frame-wide rows. Returns false, leaving
+// `data` untouched, only when the ring cannot be allocated.
+bool PerturbRgbaFramed(uint8_t* data,
+                       size_t width,
+                       size_t height,
+                       size_t row_bytes,
+                       const RgbaFrame& frame,
+                       uint64_t seed,
+                       double density,
+                       int32_t strength,
+                       bool bottom_up);
+
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
 void CanvasNoiseParams(const ConfigScope& scope, double& density,
                        int32_t& strength);
 
 // Reads canvas:seed / canvas:noiseDensity / canvas:noiseStrength from `scope`
-// and calls PerturbRgba on bottom-up rows. The WebGL readPixels path; the canvas sites use
+// and calls PerturbRgba on bottom-up rows, or PerturbRgbaFramed when `frame`
+// has a side. The WebGL readPixels path; the canvas sites use
 // NoisedCanvasImage (canvas_readback.h). Absent or zero canvas:seed is a no-op.
 void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
-                           size_t row_bytes, const ConfigScope& scope);
+                           size_t row_bytes, const ConfigScope& scope,
+                           const RgbaFrame& frame);
 
 // Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter
 // slice). Pure: the same (stock, seed, index, domain) yields the same output, so
