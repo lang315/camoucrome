@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Sixty criteria, all driven with Playwright's sync API over content_shell's CDP,
+Sixty-one criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -120,6 +120,9 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       padded layout and a sub-rect, and leaves the padding untouched (a
       session with SharedArrayBuffer enabled; the race it closes is not
       testable deterministically).
+  C51 a shadowed globalAlpha 0 drawImage of a translucent canvas over an arc's
+      region leaves the region's noise unchanged (the shadow's drop-shadow
+      layer holds only a draw that paints nothing).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -1033,6 +1036,16 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
         if (r[o + k] !== c[o + k]) dC2++;
         cnt++; } } }
   out.edgeRects = { dF: dF2, dC: dC2, cnt, tH: H(full2), e: elig(full2, 64) };
+  // C51: an arc's region read (A), then a globalAlpha 0 drawImage of a
+  // translucent canvas with a shadow set over the whole region, read again
+  // (B): the draw opens a drop-shadow layer around an op that paints nothing.
+  x = mk(64, 64); arc(x, 32, 32, 12);
+  const tr = mk(33, 33); tr.fillStyle = 'rgba(0,160,0,0.5)'; tr.fillRect(0, 0, 33, 33);
+  a = get(x, 16, 16, 33, 33);
+  x.shadowBlur = 4; x.shadowColor = 'black'; x.globalAlpha = 0;
+  x.drawImage(tr.canvas, 16, 16);
+  x.globalAlpha = 1; x.shadowBlur = 0; x.shadowColor = 'rgba(0,0,0,0)';
+  out.shadowalpha0 = { a: H(a), b: H(get(x, 16, 16, 33, 33)), e: elig(a, 33) };
   return out;
 }"""
 
@@ -1537,7 +1550,11 @@ C50 = "50 readPixels into a SharedArrayBuffer view equals a plain view's read"
 gl_row(C50, "shared", lambda s, u: s["glerr"] == u["glerr"] == 0
        and all(v["diff"] == 0 and v["pad"] == 0 for v in (s, u)) and s["h"] != u["h"])
 
-EXPECTED = 60
+C51 = "51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged"
+s2b_row(C51, lambda r: r["shadowalpha0"], lambda u: u["e"] > 0 and u["a"] == u["b"],
+        lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
+
+EXPECTED = 61
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
