@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Sixty-one criteria, all driven with Playwright's sync API over content_shell's CDP,
+Sixty-three criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -123,6 +123,13 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C51 a shadowed globalAlpha 0 drawImage of a translucent canvas over an arc's
       region leaves the region's noise unchanged (the shadow's drop-shadow
       layer holds only a draw that paints nothing).
+  C52 a url() filter that floods and then drop-shadows (feFlood, then
+      feDropShadow in sRGB), over an alpha-0 fill on AA strokes: every pixel
+      the filter paints reads as unconfigured (the filter paints from
+      nothing, so its layer is marked).
+  C53 the C18 layout (WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS) read
+      from a page framebuffer agrees with the default layout; every byte
+      outside the layout is untouched.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -594,6 +601,11 @@ FBO_FN = """
     gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); return f; };
 """
 
+# C53: LAYOUT's reads, from a page framebuffer (an RGBA8 texture).
+LAYOUT_FBO = tri("webgl2", 64, 64, FBO_FN + """
+  fbo(64, 64);""" + LAYOUT[LAYOUT.index("const A = new Uint8Array(64 * 64 * 4)"):LAYOUT.rindex('return { inside, outside, h: H(A) };')]
+  + "return { inside, outside, h: H(A) };")
+
 # C35: a framebuffer read is noised and deterministic.
 FBOREAD = tri("webgl", 64, 64, FBO_FN + ELIG_FN + """
   fbo(64, 64);
@@ -823,6 +835,31 @@ SVG_ALPHA0 = "async () => {" + HASH_FN + ELIG_FN + """
   const a = x.getImageData(16, 16, 33, 33).data;
   x.globalAlpha = 0; x.drawImage(im, 16, 16); x.globalAlpha = 1;
   return { a: H(a), b: H(x.getImageData(16, 16, 33, 33).data), e: elig(a, 33) };
+}"""
+
+# C52: AA strokes over the whole canvas, read (A); then a url() filter whose
+# last primitive is an feDropShadow (sRGB, so no colour-space wrapper) over
+# an feFlood, applied to a fully transparent fillRect, read again (B). The
+# filter paints the flood and its blurred shadow from nothing. Both reads are
+# returned whole; the row compares seeded and unconfigured B on the pixels
+# the filter changed in the unconfigured run.
+FLOOD_SHADOW = "() => {" + """
+  document.body.insertAdjacentHTML('beforeend',
+    '<svg width="0" height="0" style="position:absolute"><filter id="camouflood"'
+    + ' filterUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">'
+    + '<feFlood flood-color="#3a7" x="20" y="18" width="19" height="17"/>'
+    + '<feDropShadow dx="3" dy="2" stdDeviation="2.5" flood-color="#000"'
+    + ' color-interpolation-filters="sRGB"/></filter></svg>');
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  document.body.appendChild(c);
+  const x = c.getContext('2d');
+  x.strokeStyle = '#f60'; x.lineWidth = 1.3;
+  for (let r = 2.3; r < 44; r += 2.7) { x.beginPath(); x.arc(31.6, 30.4, r, 0, 7); x.stroke(); }
+  const a = x.getImageData(0, 0, 64, 64).data;
+  x.filter = 'url(#camouflood)'; x.fillStyle = 'rgba(0,0,0,0)'; x.fillRect(0, 0, 64, 64);
+  x.filter = 'none';
+  const b = x.getImageData(0, 0, 64, 64).data;
+  return { a: Array.from(a), b: Array.from(b) };
 }"""
 
 S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
@@ -1141,7 +1178,8 @@ gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_f
                            ("fbo", FBOREAD), ("fbosub", FBOSUB), ("fbotrans", FBOTRANS),
                            ("teximage", TEXIMAGE), ("readnone", READNONE), ("read16f", READ16F),
                            ("fboedge", FBOEDGE), ("fbofmt", FBOFMT), ("fborgba4", FBORGBA4),
-                           ("srgb", SRGBREAD), ("strips", STRIPS))}
+                           ("srgb", SRGBREAD), ("strips", STRIPS),
+                           ("layoutfbo", LAYOUT_FBO))}
 SAB_FLAGS = GL_FLAGS + ["--enable-features=SharedArrayBuffer"]
 gl17["shared"] = (session(CANVAS, SHARED, extra_flags=SAB_FLAGS),
                   session(None, SHARED, extra_flags=SAB_FLAGS))
@@ -1151,6 +1189,7 @@ oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in
 s2b_seeded, s2b_seeded_err = session(CANVAS, S2B_2D)
 s2b_unconf, s2b_unconf_err = session(None, S2B_2D)
 svg_runs = (session(CANVAS, SVG_ALPHA0), session(None, SVG_ALPHA0))
+flood_runs = (session(CANVAS, FLOOD_SHADOW), session(None, FLOOD_SHADOW))
 
 if capture:
     if unconf is None or unconf_gl is None or unconf_shot is None:
@@ -1554,7 +1593,39 @@ C51 = "51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged"
 s2b_row(C51, lambda r: r["shadowalpha0"], lambda u: u["e"] > 0 and u["a"] == u["b"],
         lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
 
-EXPECTED = 61
+C52 = "52 a flooding url() drop-shadow filter's pixels read as unconfigured"
+
+
+def flood_row():
+    (sv, se), (uv, ue) = flood_runs
+    if sv is None or uv is None:
+        results[C52] = False
+        notes.append(f"C52: {se or ue}")
+        return
+    sa, sb, ua, ub = sv["a"], sv["b"], uv["a"], uv["b"]
+    px = lambda d, i: tuple(d[i * 4:i * 4 + 4])
+    changed = [i for i in range(64 * 64) if px(ub, i) != px(ua, i)]
+    flood = sum(px(ub, i) == (51, 170, 119, 255) for i in changed)
+
+    def elig(i):
+        y, x = divmod(i, 64)
+        if not (0 < x < 63 and 0 < y < 63) or ub[i * 4 + 3] == 0:
+            return False
+        return all(px(ub, i) != px(ub, j) for j in (i - 1, i + 1, i - 64, i + 64))
+    e = sum(map(elig, changed))
+    diff = sum(px(sb, i) != px(ub, i) for i in changed)
+    guard = len(changed) > 0 and flood > 0 and e > 0 and sa != ua
+    results[C52] = guard and diff == 0
+    if not results[C52]:
+        notes.append(f"C52: changed {len(changed)}, flood {flood}, eligible {e}, "
+                     f"seeded A noised {sa != ua}, seeded B differs on {diff}")
+
+
+flood_row()
+C53 = "53 a WebGL2 PACK_ROW_LENGTH / SKIP readPixels from a page framebuffer agrees with the default"
+gl_row(C53, "layoutfbo", lambda s, u: s["inside"] == 0 and s["outside"] == 0 and s["h"] != u["h"])
+
+EXPECTED = 63
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
