@@ -92,8 +92,8 @@ SkBitmap NoisedRegion(const SkImageInfo& canvas,
   // canvas edge has none there and never changes, here or in NoisedImage.
   SkIRect m = r.makeOutset(1, 1);
   (void)m.intersect(bounds);  // r is inside bounds, so m is never empty
-  const SkImageInfo info =
-      canvas.makeColorType(kRGBA_8888_SkColorType).makeWH(m.width(), m.height());
+  const SkImageInfo info = canvas.makeColorType(kRGBA_8888_SkColorType)
+                               .makeWH(m.width(), m.height());
   SkBitmap bitmap;
   if (!bitmap.tryAllocPixels(info) || !read(bitmap.pixmap(), m.x(), m.y())) {
     return SkBitmap();
