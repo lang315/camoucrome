@@ -126,8 +126,8 @@ SkBitmap NoisedCanvasRegion(const SkImageInfo& canvas,
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
-  return NoisedRegion(canvas, read, rect, CanvasSeed(scope), density,
-                      strength, min_alpha, mask);
+  return NoisedRegion(canvas, read, rect, CanvasSeed(scope), density, strength,
+                      min_alpha, mask);
 }
 
 }  // namespace camoucfg

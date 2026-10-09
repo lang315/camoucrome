@@ -528,3 +528,62 @@ disagrees. Measurements are in `measurements/2026-10-canvas-noise-s2c.md`
   `BGRA_8888`, the readback's own) before `GetSwSkImage()`. A float16 2D canvas
   or a WebGL `RGBA16F` buffer no longer pays a GPU readback that `NoisedImage`
   then rejects. The output is unchanged.
+
+## Amended in the /code-review round (2026-10-09)
+
+The owner's `/code-review` of PR #31 found 13 items; every one was fixed.
+Each point below replaces any earlier text on the same point. Measurements
+are in `measurements/2026-10-canvas-noise-s2c.md` section 13. `verify_sp3a`
+has **60** rows (`EXPECTED` 60). The noise field is unchanged
+(`GoldenFieldUnchanged` holds both hashes).
+
+- **A layer that composites nothing marks nothing.** At the walk's outermost
+  layer, a `saveLayerAlpha` at alpha 0, or a `saveLayer` whose paint
+  `nothingToDraw()`, makes the layer inert: its ops mark no area. A layer with
+  an image or colour filter, and any `saveLayerFilters`, still marks its area
+  (a filter can paint from an empty layer). New row **C48**: an SVG image
+  drawn at `globalAlpha` 0 over an arc's region leaves its noise unchanged
+  (RED on the build before the fix).
+- **A nested record is not rastered.** A `DrawRecordOp` (with Canvas2D layers
+  off, an SVG image's picture) marks its clip imported as before, but its ops
+  are rastered into the coverage bitmap only when `local_ctm` is false; with
+  `local_ctm` (drawPicture's default) playback restores the matrix and clip
+  it changes, and nothing it draws was ever merged. An SVG's images are no
+  longer decoded by the walk.
+- **The coverage bitmap lives for one walk.** It is allocated at each flush
+  that has ops and freed after the walk, so a canvas holds no coverage memory
+  between flushes. The walk is inlined in `CamouMarkRecord`; `CamouWalk` and
+  `CamouLayer` left the header.
+- **A mask of another size never gates a snapshot.** `NoisedImage` takes only
+  a mask exactly the image's size at origin 0, and `NoisedRegion` only one
+  exactly the canvas's size; anything else returns null or empty, so the read
+  stays stock. `Active()` keeps the window rule the regional path needs.
+- **`getImageData` is regional for GPU snapshots too.** `NoisedRegion` reads
+  the rect plus margin through a pixel reader; Blink passes
+  `cc::PaintImage::readPixels`, which reads a texture-backed snapshot, with the
+  snapshot's own image info (same 8-bit RGBA, alpha type and colour space as
+  the whole-snapshot read). A rect over half the canvas takes the cached
+  whole-snapshot route. The gate both routes share is one helper
+  (`CamouNoiseScope`, `CamouNoisedCached`).
+- **WebGL reads are checked and private.**
+  - A read into a shared view (a `SharedArrayBuffer`) goes through private
+    scratch: GL reads into it, the noise runs on it, and the view gets one
+    copy of each row's pixels. A failed allocation reads stock. New row
+    **C50** (a session with `SharedArrayBuffer` enabled) holds the shared and
+    plain reads equal; the race itself is argued, not tested.
+  - Every noised read first requires `GetGraphicsResetStatusKHR()` to be
+    `NO_ERROR`. A full read re-reads one row of the rect and requires it to
+    equal the page's.
+  - A sub-rect whose rect plus margin exceeds 512 x 512 pixels no longer reads
+    the whole expanded rect again: it reads only the margin strips, each with
+    the rect's adjacent line, which must equal the page's, and noises the page
+    buffer through `PerturbRgbaFramed` (unit test: equal to the whole-image
+    pass). Smaller rects keep the one-piece re-read (fewer round trips). New
+    row **C49** (a 520 x 520 sub-rect, default and page framebuffer).
+- **Cost target.** The 0.5 ms 2D read target moves from `read_2d` (a corner
+  1x1 read that never runs the kernel) to `read_2d_mid`; `read_2d` stays
+  reported.
+- **API.** The two-buffer `PerturbRgbaEdges` left the public API; every
+  caller was a test. The unit test holds an independent reference
+  implementation as the oracle, and `GoldenFieldUnchanged` pins both it and
+  `PerturbRgbaEdgesInPlace`.

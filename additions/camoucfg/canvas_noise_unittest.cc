@@ -231,9 +231,16 @@ Px Get(const std::vector<uint8_t>& v, size_t w, size_t x, size_t y) {
 // each of its four neighbours. A mask window that does not fit, or a mask
 // with `bottom_up`, does nothing.
 void ReferenceEdges(std::vector<uint8_t>& data,
-                    const std::vector<uint8_t>& source, size_t w, size_t h,
-                    size_t rb, uint64_t seed, double density, int32_t strength,
-                    uint8_t min_alpha, const NoiseMask& mask, bool bottom_up) {
+                    const std::vector<uint8_t>& source,
+                    size_t w,
+                    size_t h,
+                    size_t rb,
+                    uint64_t seed,
+                    double density,
+                    int32_t strength,
+                    uint8_t min_alpha,
+                    const NoiseMask& mask,
+                    bool bottom_up) {
   if (seed == 0 || !(density > 0.0) || strength <= 0 || w < 3 || h < 3 ||
       (mask.cells != nullptr &&
        (bottom_up || mask.x0 + w > mask.width || mask.y0 + h > mask.height))) {
@@ -263,9 +270,9 @@ void ReferenceEdges(std::vector<uint8_t>& data,
       // SAFETY: the window fits the mask (checked above), so the cell lies
       // inside its `stride` x rows cells.
       if (mask.cells != nullptr &&
-          UNSAFE_BUFFERS(mask.cells[((y + mask.y0) >> mask.shift) * mask.stride +
-                                    ((x + mask.x0) >> mask.shift)]) !=
-              kNoiseMaskAa) {
+          UNSAFE_BUFFERS(
+              mask.cells[((y + mask.y0) >> mask.shift) * mask.stride +
+                         ((x + mask.x0) >> mask.shift)]) != kNoiseMaskAa) {
         continue;
       }
       const uint8_t a = px(x, y, 3);
@@ -275,8 +282,8 @@ void ReferenceEdges(std::vector<uint8_t>& data,
       }
       uint64_t hash = 0xCBF29CE484222325ULL;
       // The image's top row first: in a bottom-up buffer, the next one.
-      for (size_t yy : {bottom_up ? y + 1 : y - 1, y,
-                        bottom_up ? y - 1 : y + 1}) {
+      for (size_t yy :
+           {bottom_up ? y + 1 : y - 1, y, bottom_up ? y - 1 : y + 1}) {
         for (size_t xx = x - 1; xx <= x + 1; ++xx) {
           for (size_t k = 0; k < 4; ++k) {
             hash ^= px(xx, yy, k);
@@ -490,8 +497,8 @@ TEST(PerturbRgbaEdgesTest, MaskGatesEachPixel) {
   bool moved = false;
   for (uint64_t seed = 1; seed < 32; ++seed) {
     auto w = v;
-    ASSERT_TRUE(
-        PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, seed, 1.0, 3, 1, mask, false));
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, seed, 1.0, 3, 1,
+                                        mask, false));
     auto rest = w;
     Set(rest, 8, 2, 2, {200, 100, 50, 255});
     EXPECT_EQ(rest, v) << "a pixel outside the aa cell moved, seed " << seed;
@@ -510,8 +517,8 @@ TEST(PerturbRgbaEdgesTest, CoarseMaskCellCoversItsPixels) {
   bool moved = false;
   for (uint64_t seed = 1; seed < 32; ++seed) {
     auto w = v;
-    ASSERT_TRUE(
-        PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, seed, 1.0, 3, 1, mask, false));
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, seed, 1.0, 3, 1,
+                                        mask, false));
     EXPECT_EQ(Get(w, 8, 6, 6), Get(v, 8, 6, 6)) << "seed " << seed;
     moved |= w != v;
   }
@@ -728,9 +735,9 @@ TEST(PerturbRgbaFramedTest, EqualsTheWholeImagePass) {
   struct Rect {
     size_t x, y, w, h;
   };
-  const Rect rects[] = {{3, 2, 11, 9},  {0, 0, 9, 7},   {14, 12, 9, 7},
-                        {0, 5, 23, 4},  {6, 0, 5, 19},  {7, 4, 1, 10},
-                        {2, 9, 15, 1},  {0, 0, kW, kH}, {21, 3, 2, 12}};
+  const Rect rects[] = {{3, 2, 11, 9}, {0, 0, 9, 7},   {14, 12, 9, 7},
+                        {0, 5, 23, 4}, {6, 0, 5, 19},  {7, 4, 1, 10},
+                        {2, 9, 15, 1}, {0, 0, kW, kH}, {21, 3, 2, 12}};
   for (bool bottom_up : {false, true}) {
     std::vector<uint8_t> whole = image;
     PerturbRgba(whole.data(), kW, kH, kW * 4, 2468, 0.5, 2, bottom_up);

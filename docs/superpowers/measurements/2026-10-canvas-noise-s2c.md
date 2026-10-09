@@ -825,8 +825,10 @@ unchanged, and the gates only narrow which reads are noised.
   framebuffer read takes 7.9 ms against 2.6 ms (3.0x) large and 1.545 ms
   against 0.59 ms (2.6x) small (§12.6 run). A page that times both reads can see
   the gap.
-- The GPU (texture-backed) `getImageData` is not regional and is not measurable
-  on the box (CPU raster).
+- The GPU (texture-backed) `getImageData` is regional since the /code-review
+  round (§13), read through `cc::PaintImage::readPixels`; it is not measurable
+  or testable on the box (CPU raster), so its field identity with the
+  whole-snapshot read is argued, not shown.
 - The noise cache holds two full-canvas copies: the held source snapshot and
   the noised raster image (`camou_noised_source_`, `camou_noised_`).
 - Page framebuffers that are not 8-bit RGB(A) read clean on purpose (R8, RG8,
@@ -857,13 +859,30 @@ unchanged, and the gates only narrow which reads are noised.
   images (found by the recon).
 - Every S2b gap this section does not name stays as S2b section 8 records it.
 
+### Left by the /code-review round (§13)
+
+- A noised `readPixels` into a `SharedArrayBuffer` view copies back the bytes
+  GL leaves unwritten (pixels outside the framebuffer) with their values from
+  the start of the call; a write another thread makes to exactly those bytes
+  during the call can be lost. Padding is never copied.
+- A page read GL drops (a transfer buffer it could not get) while the one-row
+  probe succeeds is caught unless the page's sentinel row equals the real
+  pixels.
+- The large full reads pay one more round trip (the probe row), and every
+  flush allocates its coverage bitmap anew (§13.6).
+- Sub-rect `getImageData` reads up to half the canvas recompute the noise per
+  read (bounded by half the canvas); larger ones use the cached field.
+- WebGL sub-rects up to 512 x 512 px (rect plus margin) still read the
+  expanded rect again in one piece.
+
 ### Parked from the reviews
 
 - A shadowed translucent `drawImage` at `globalAlpha` 0 still marks its layer
   area. Parked because a canvas filter can paint from an empty layer.
 - Task 4 review: m1 (a layer `DrawRecordOp` has no text carve-out; it is
-  flag-gated), m2 (a layer raster decodes images), m3 (`ResetAlphaIfNeeded`
-  `kDstOver` marks aa).
+  flag-gated), m2 (a layer raster decodes images; for a nested record played
+  with `local_ctm`, an SVG image's picture, closed in §13: it is no longer
+  rastered), m3 (`ResetAlphaIfNeeded` `kDstOver` marks aa).
 - C41's full-read case was never RED with the random sentinel; the sub-read
   case was.
 - C45's corner 1x1 is an edge pixel, so it checks geometry only.
@@ -1072,3 +1091,186 @@ target gl_fbo.large ratio<=3.0: 4.16 MISS
 ```
 `gl_fbo.large` stays above 3x and is recorded as an accepted MISS in §10, with
 the framebuffer-against-default-framebuffer ratio as a possible timing tell.
+
+## §13 /code-review round (2026-10-09)
+
+The owner's `/code-review` of PR #31 found 13 items in four groups (page-
+observable tells #1, #2, #4, #5; measurement #9; cost and memory #3, #6, #7,
+#8, #10; cleanup #11 to #13). The owner ruled that every one is fixed. Lock
+`s2c cr fix`, box workdir `~/chromium-s2c/src` (branch `camoucrome/s2c`, 38
+commits, from `0ef3ff9aa1`). Edits went through the W4 runner (23 edits, all
+anchors dry-run first), plus a parameter rename and a clang-format pass over
+the changed lines (line 100 onwards: the include blocks belong to earlier
+hunks and were left as they were).
+
+### §13.1 RED on the build before the fix
+
+- **#2, C48** (new row, branch `2406333`, binary at `0ef3ff9aa1`): an SVG
+  image (`data:image/svg+xml`, a 33 x 33 green rect) drawn at `globalAlpha` 0
+  over an arc's region. 57 rows PASS, C48 FAIL:
+  ```
+  FAIL  48 a globalAlpha 0 drawImage of an SVG image leaves a region's noise unchanged
+        48 : seeded {'a': 1792132258, 'b': 1703964406, 'e': 78}, unconfigured {'a': 1703964406, 'b': 1703964406, 'e': 78}
+  ```
+  The seeded second read equals the unconfigured read: the layer marked the
+  region imported and its noise was lost.
+- **#5, `NoisedImageTest.MaskOfAnotherSizeChangesNothing`** (new unit test,
+  built into `components_unittests`, `Build Succeeded: 355 steps`): a 10 x 10
+  all-aa mask, and the same mask with origin (1, 1), over an 8 x 8 snapshot.
+  ```
+  [  FAILED  ] NoisedImageTest.MaskOfAnotherSizeChangesNothing (92 ms)
+  [  FAILED  ] 1 test, listed below:
+  ```
+  The lone pixel moved under seed 1 and seed 2 for both the whole image and the
+  region (`canvas_readback_unittest.cc:255`, `:260`).
+- **#1 and #4** have no deterministic browser row (a `SharedArrayBuffer` race;
+  a GPU read that is lost or dropped after Blink's checks). They are argued in
+  §13.3. C50 guards #1's new code path and is mutation-proven (§13.4).
+
+### §13.2 Fixes
+
+| # | Fix |
+|---|---|
+| 1 | A noised `readPixels` into a shared view reads into private scratch (a copy of the view's bytes, so the bytes GL leaves unwritten keep their values), noises there, then copies each row's pixels into the view once. A failed allocation reads stock. The decision is taken before the read. |
+| 2 | At the walk's outermost layer, `saveLayerAlpha` at 0 or a `saveLayer` whose paint `nothingToDraw()` makes the layer inert: its ops mark nothing. Filtered layers and `saveLayerFilters` still mark (a filter can paint from nothing). |
+| 3 | A `DrawRecordOp` is rastered into the coverage bitmap only when `local_ctm` is false. With `local_ctm` (the default of `drawPicture`, which `SVGImage` uses; `cc::DrawRecordOp`'s constructor defaults it to true) playback restores the matrix and clip. Comment fixed. |
+| 4 | Every noised WebGL read requires `GetGraphicsResetStatusKHR() == NO_ERROR` (client side, no round trip). The full read re-reads one row of the rect into zeroed scratch and requires it to equal the page's row before noising in place. The `read` lambda's comment now says what each path checks. |
+| 5 | `NoisedImage` requires a mask exactly the image's size at origin 0, `NoisedRegion` one exactly the canvas's size; otherwise null / empty (stock). `Active()` keeps the window rule for the regional pass. |
+| 6 | `NoisedRegion` takes the canvas's `SkImageInfo` and a pixel reader. Blink passes `cc::PaintImage::readPixels` with `GetSkImageInfo()`, so a texture-backed snapshot is read over the rect plus margin only; the `IsTextureBacked()` bail is gone (the bottom-up bail stays). |
+| 7 | A sub-rect whose rect plus margin exceeds 512 x 512 px reads only the margin strips (up to four reads, each with the rect's adjacent line, which must equal the page's) and noises the page buffer through `PerturbRgbaFramed`. Smaller rects keep the one-piece re-read: four round trips cost more than reading a small rect twice (`gl_edges.small` would have gone from about 2x to about 5x). |
+| 8 | The A8 coverage bitmap is a local of `CamouMarkRecord`, allocated per flush and freed after the walk; the member and its two `reset()` sites are gone. |
+| 9 | `measure_canvas_cost.py`: the 0.5 ms target moves to `read_2d_mid`; `read_2d` stays reported. |
+| 10 | A rect over half the canvas returns empty from `CamouNoisedRegion`, so `CamouNoised` computes the whole field once and caches it (the reviewer's alternative). |
+| 11 | One gate for both routes: `CamouNoiseScope` (host, eligibility, `canvas:seed`, colour type) and `CamouNoisedCached`. |
+| 12 | `CamouWalk` is inlined into `CamouMarkRecord`; the layer state is a local struct, the `PlaybackParams` a local of the walk. `CamouLayer`, `CamouWalk` and `camou_coverage_` left the header (`SkBitmap.h` became a forward declaration). |
+| 13 | The two-buffer `PerturbRgbaEdges` left the public API (every caller was a test). The unit test holds an independent reference (`ReferenceEdges`, from the definition and `derive.h`'s public keys); `GoldenFieldUnchanged` pins both it and `PerturbRgbaEdgesInPlace` to the S2b hashes, and `InPlaceEqualsTwoBuffer` became `InPlaceEqualsReference`. |
+
+New unit test `PerturbRgbaFramedTest.EqualsTheWholeImagePass`: nine rects
+(every side, corners, 1 px wide and high, the whole image) in both
+orientations with padded rows equal the whole-image pass.
+
+### §13.3 Arguments for #1 and #4
+
+- **#1.** The page's view is never the destination of the clean read: GL
+  writes into private scratch, the noise runs there, and only then are the
+  rows copied into the view, once. Another thread can therefore read the
+  view's old bytes or the noised ones, never the clean render. A racing write
+  into the view during the call no longer reaches the region compare (that
+  compares scratch). The one residual: bytes GL leaves unwritten (pixels
+  outside the framebuffer) are copied back with the values they had when the
+  call began, so a write another thread makes to exactly those bytes during
+  the call can be overwritten. Padding bytes are never copied.
+- **#4.** A read GL rejects or drops leaves its destination as it was. The
+  checks: a lost context is caught by the reset status; the full read's probe
+  row is read into zeroed scratch, so a dropped probe holds zeros, which equal
+  only a page row that is all zero (alpha 0, never noised); a dropped page
+  read leaves the page's sentinel, which fails the compare unless the page
+  filled its buffer's first row with the exact pixels the read returns. That
+  last case (a transfer buffer GL could not get for the large read while the
+  one-row probe succeeds, with a sentinel row equal to the real content) is
+  the residual. The margin strips are checked the same way, line by line.
+
+### §13.4 Mutation proofs
+
+C49 and C50 pass on the build before the fix (the whole-region re-read and
+the in-place shared read give the same bytes), so they are guards, proven
+with named mutants built together (`Build Succeeded: 3 steps`):
+- C49: `frame.left` dropped in the strips path.
+- C50: the shared copy-out loop never runs.
+```
+FAIL  49 a large readPixels sub-rect (margin strips) equals the full read's part
+FAIL  50 readPixels into a SharedArrayBuffer view equals a plain view's read
+      49 : seeded {'diff': [14, 12], ...}, unconfigured {'diff': [0, 0], ...}
+      50 : seeded {'diff': 20212, 'pad': 0, ...}, unconfigured {'diff': 0, 'pad': 0, ...}
+```
+58 rows PASS. Both mutants were reverted through the W4 runner (no `MUTANT`
+line left).
+
+### §13.5 Builds and GREEN
+
+- First fix build: one compile error (`-Wshadow`: `CamouMarkOp` already has a
+  local `coverage`; the parameter became `bitmap`), then an unsafe-buffer error
+  in the test oracle's mask lookup (wrapped in `UNSAFE_BUFFERS`), then
+  `Build Succeeded: 25 steps`. Final build after clang-format:
+  `Build Succeeded: 207 steps`.
+- `verify_sp3a` 60/60 `ALL_PASS` (C48, C49, C50 PASS); `verify_review` 12/12
+  `ALL_PASS`.
+- Unit filter (`PerturbRgba*:CanvasNoise*:NoisedImage*:NoisedRegion*:CanvasNoiseMask*:Derive*`):
+  73 tests, `SUCCESS: all tests passed`, including `GoldenFieldUnchanged`.
+- `gn check out/Default` per target: `core`, `modules/canvas`,
+  `modules/webgl`, `components/camoucfg:canvas_readback`,
+  `components/camoucfg:camoucfg`, each `Header dependency check OK`.
+  `checkdeps.py` per directory (`modules/canvas`, `core/html/canvas`,
+  `modules/webgl`, `components/camoucfg`): each `SUCCESS`.
+- The field rows stay green: C12, C13, C28, C36, C36b, C39, C45.
+
+### §13.6 Cost (W5c, lock held, no build running)
+
+One run on the build before the fix (`0ef3ff9aa1`), two after. Seeded median
+in ms, ratio to the same run's unconfigured arm in brackets (the unconfigured
+arm moves too, so compare the milliseconds).
+
+| case | before | after, run 1 | after, run 2 | target |
+|---|---|---|---|---|
+| per_draw_us | 0.500 us (0.77x) | 0.350 us (1.08x) | 0.350 us (1.00x) | <=1.2 PASS |
+| draw_only | 2.25 (0.94x) | 2.50 (1.00x) | 2.50 (1.04x) | none |
+| draw_read | 64.35 (2.65x) | 66.00 (2.72x) | 66.00 (2.59x) | <=2 MISS |
+| shadow_read | 17.90 (3.09x) | 18.20 (3.11x) | 17.75 (3.06x) | none |
+| read_2d | 0.000 | 0.100 | 0.100 | reported only (was <=0.5) |
+| read_2d_mid | 0.000 | 0.100 | 0.100 | <=0.5 PASS |
+| gl_flat.large | 2.50 (1.47x) | 3.00 (1.50x) | 2.90 (1.71x) | <=3 PASS |
+| gl_edges.large | 2.60 (1.44x) | 3.10 (1.63x) | 2.80 (1.47x) | <=3 PASS |
+| gl_flat.small | 0.560 (2.00x) | 0.550 (1.96x) | 0.570 (2.11x) | none |
+| gl_edges.small | 0.550 (2.04x) | 0.550 (2.04x) | 0.585 (2.17x) | <=1.5 MISS |
+| gl_fbo.large | 7.05 (4.15x) | 7.90 (3.95x) | 7.40 (4.35x) | <=3 MISS (accepted) |
+| gl_fbo.small | 1.520 (5.43x) | 1.480 (5.48x) | 1.480 (5.29x) | none |
+
+Rows that got worse, recorded as the ruling asks:
+- **The large full reads** (`gl_flat.large`, `gl_edges.large`, `gl_fbo.large`):
+  +0.2 to +0.85 ms seeded. The cause is #4's probe row: one more synchronous
+  1024-pixel read before the in-place noise (about one round trip, 0.3 ms on
+  this box). The 3x targets still pass for the default framebuffer.
+- **`read_2d` and `read_2d_mid`**: 0.000 to 0.100 ms, in the `seed_d0` arm too,
+  so it is not the kernel. The likely cause is #8: the 1 MB coverage bitmap is
+  now allocated (and its pages first touched) at every flush instead of being
+  reused. Not isolated. The 0.5 ms target passes.
+- **`draw_read`**: +1.65 ms per frame in both runs (2.5%), the same arm
+  structure as `read_2d`, so #8's per-flush allocation is the likely cause
+  here too; the ratio (2.72x, 2.59x) is inside the earlier runs' spread.
+- `gl_edges.small` (one-piece path, unchanged code) and the remaining rows
+  moved within run-to-run noise.
+
+### §13.7 Export
+
+W6 folded the edits: the Blink files into `sp3a-canvas-noise`, the
+`canvas_noise*`, `canvas_readback*` and `canvas_mask.h` files into
+`windows-behaviour-ii`. 38 commits, 0 fixups, 0 dirty, HEAD `a3c026bc7e`.
+`check_checkout_sync.sh local ~/chromium-s2c/src camoucrome/s2c` (the
+three-argument version now on main): PASS, all 45 copied files identical.
+
+This branch carries origin/main's `patches/observe.patch` and its `series`
+line, which `camoucrome/s2c` does not. The export therefore ran into the
+scratch tree `/tmp/s2c-tree` (the branch's archive), and only the files that
+changed against that archive were pulled, excluding `patches/series` (whose
+only difference was the missing observe line) and the deleted
+`observe.patch`. Pulled: five additions files (clang-format and the test
+fixes), `sp3a-canvas-noise.patch`, and `sp3b-webgl-profile.patch` (its
+`index` line only). Tarball sha256 `593510db...db37b5c` on both sides.
+
+### §13.8 Status per finding
+
+| # | Status | Evidence |
+|---|---|---|
+| 1 | Fixed | Structural (§13.3); C50 guard, mutation-proven |
+| 2 | Fixed | C48 RED, then PASS |
+| 3 | Fixed | Code path (C48 runs through it); no field change, C28 to C45 green |
+| 4 | Fixed, with a stated residual | Structural (§13.3) |
+| 5 | Fixed | Unit test RED, then PASS |
+| 6 | Fixed on the CPU path; GPU path not verifiable on the box | CPU identity: C12, C13, C39, C45 green; the GPU read uses the snapshot's own image info but no texture-backed snapshot exists here |
+| 7 | Fixed for large rects; small rects keep the one-piece re-read by design | C49 guard (mutation-proven), C36, C36b green; `PerturbRgbaFramed` unit test |
+| 8 | Fixed | Coverage freed after each walk; cost recorded in §13.6 |
+| 9 | Fixed | `target read_2d_mid abs<=0.5: 0.10 PASS` |
+| 10 | Fixed (the reviewer's alternative) | Rects up to half the canvas still recompute per read, bounded by half the canvas |
+| 11 | Fixed | No behaviour change; verifies green |
+| 12 | Fixed | No behaviour change; verifies green |
+| 13 | Fixed | Every caller was a test; the oracle pins the golden hashes |
