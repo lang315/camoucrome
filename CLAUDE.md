@@ -63,6 +63,7 @@ the project exists.
 | `scripts/` | `apply.sh` (the applier), `verify_*.py` (per-slice browser verifications), `package.py` (release archive from GN's runtime-deps list; refuses a component build, an off-pin version, a missing dep, mismatched stamps), `winhost.py` (stock Chrome on the box's Windows host over ssh: headless `--dump-dom`, headed CDP), `capture_*.py` (baselines, presets, WebGL profiles, font lists, the Windows host oracle), `verify_host_oracle.py` (the fork under a generated Windows identity vs stock Chrome on the host, every differing leaf as a line), `verify_windows_behaviour.py` (the exposed interfaces called, not only enumerated: `share()` under a claim, voices per locale) |
 | `client/` | the launchers: `client/python/camoucrome` (patchright), `client/go` (`playwright-go` on the `patchright-core` driver) and `client/node` (patchright). All three implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
+| `docs/observer/` | the tracking observer (an audit build, `camou_observe = true`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verify `scripts/verify_observe.py` |
 | `baselines/` | stock reference captures; nine are committed (`git ls-files baselines`). `*-f89f3a4363-*` and `content_shell-8037-stock-ua.json` are pristine captures of the build at the pin; `chrome-8037-*` are captures of stock Chrome 154.0.8037.93 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
@@ -146,6 +147,19 @@ startup abort instead of a silent fall-back to real values.
   suite, client tests, the main browser verifies. It refuses a dirty checkout
   or a running ninja rather than racing them; `gh workflow run build-verify`
   re-runs by hand (`measurements/2026-09-13-ci-build-verify.md`).
+- **One build at a time:** the box has 25 GB RAM, so every Chromium build
+  (WSL or the native Windows tree) takes `scripts/build_lock.sh acquire
+  <owner>` and releases it after; CI refuses to start while it is held.
+  Parallel sessions use their own gclient workdir (e.g. `~/chromium-s2c`)
+  and still share this lock.
+- **A slice that changes the bindings generator lands on the box first:**
+  commit it in `~/chromium/src`, rebuild `out/Default` by hand under the
+  lock, get `check_checkout_sync.sh` `rc=0`, then merge — merging first turns
+  CI red (sync gate), or into a bindings rebuild in CI's 180-min window
+  (2026-10-06's observe slice: 9477 steps).
+- CI's `out/Default` sets `camou_observe = true` (since 2026-10-08), so it is
+  a tracking-observer build (category off by default; `package.py` refuses
+  it). Measure costs in a tree without the flag.
 - Pre-flight, both cheap and both exist because the omission already happened:
   `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
   must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there

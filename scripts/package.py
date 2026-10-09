@@ -52,8 +52,9 @@ PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf 
 
 def read_args_gn(out):
     text = (out / "args.gn").read_text()
-    return {k.strip(): v.strip() for k, _, v in
-            (l.partition("=") for l in text.splitlines() if "=" in l and not l.lstrip().startswith("#"))}
+    # ponytail: drops "#..." even inside a quoted string; only the bool args are read here
+    lines = (l.partition("#")[0] for l in text.splitlines())
+    return {k.strip(): v.strip() for k, _, v in (l.partition("=") for l in lines if "=" in l)}
 
 
 def chrome_version(src):
@@ -103,6 +104,9 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if component != "false" and not allow_component:
         sys.exit("refusing a component build (is_component_build not explicitly false in args.gn): use a "
                  "release out dir (settings/release-args.gn) or --allow-component for a smoke test")
+    if args.get("camou_observe") == "true":
+        sys.exit("refusing a build with camou_observe = true: the tracking observer is an audit build, "
+                 "never a release (docs/observer/README.md)")
     if not {"chrome", "chrome.exe"} & set(deps):
         sys.exit(f"GN's runtime deps ({len(deps)} paths) do not list the main binary: wrong target or out dir?")
     version = chrome_version(src)
