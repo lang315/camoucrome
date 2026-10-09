@@ -840,7 +840,9 @@ SVG_ALPHA0 = "async () => {" + HASH_FN + ELIG_FN + """
 # C52: AA strokes over the whole canvas, read (A); then a url() filter whose
 # last primitive is an feDropShadow (sRGB, so no colour-space wrapper) over
 # an feFlood, applied to a fully transparent fillRect, read again (B). The
-# filter paints the flood and its blurred shadow from nothing. Both reads are
+# filter paints the flood and its blurred shadow from nothing (the shadow's
+# own subregion is the whole canvas: by default it would be the flood's, and
+# the flood would hide it). Both reads are
 # returned whole; the row compares seeded and unconfigured B on the pixels
 # the filter changed in the unconfigured run.
 FLOOD_SHADOW = "() => {" + """
@@ -848,8 +850,9 @@ FLOOD_SHADOW = "() => {" + """
     '<svg width="0" height="0" style="position:absolute"><filter id="camouflood"'
     + ' filterUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">'
     + '<feFlood flood-color="#3a7" x="20" y="18" width="19" height="17"/>'
-    + '<feDropShadow dx="3" dy="2" stdDeviation="2.5" flood-color="#000"'
-    + ' color-interpolation-filters="sRGB"/></filter></svg>');
+    + '<feDropShadow x="0" y="0" width="64" height="64" dx="3" dy="2"'
+    + ' stdDeviation="2.5" flood-color="#000" color-interpolation-filters="sRGB"/>'
+    + '</filter></svg>');
   const c = document.createElement('canvas'); c.width = 64; c.height = 64;
   document.body.appendChild(c);
   const x = c.getContext('2d');
