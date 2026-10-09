@@ -260,9 +260,12 @@ void ReferenceEdges(std::vector<uint8_t>& data,
   };
   for (size_t y = 1; y + 1 < h; ++y) {
     for (size_t x = 1; x + 1 < w; ++x) {
+      // SAFETY: the window fits the mask (checked above), so the cell lies
+      // inside its `stride` x rows cells.
       if (mask.cells != nullptr &&
-          mask.cells[((y + mask.y0) >> mask.shift) * mask.stride +
-                     ((x + mask.x0) >> mask.shift)] != kNoiseMaskAa) {
+          UNSAFE_BUFFERS(mask.cells[((y + mask.y0) >> mask.shift) * mask.stride +
+                                    ((x + mask.x0) >> mask.shift)]) !=
+              kNoiseMaskAa) {
         continue;
       }
       const uint8_t a = px(x, y, 3);

@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Fifty-nine criteria, all driven with Playwright's sync API over content_shell's CDP,
+Sixty criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -115,6 +115,11 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C49 a large readPixels sub-rect (above the one-piece size, so only its
       margin strips are read again), from the default framebuffer and from a
       page framebuffer, equals the matching part of the full read.
+  C50 readPixels into a SharedArrayBuffer view (read and noised in private
+      scratch, then copied once) equals the same read into a plain view, a
+      padded layout and a sub-rect, and leaves the padding untouched (a
+      session with SharedArrayBuffer enabled; the race it closes is not
+      testable deterministically).
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -618,6 +623,24 @@ STRIPS = tri("webgl", 1024, 1024, FBO_FN + """
   const d = run(); fbo(1024, 1024); const f = run();
   return { diff: [d[0], f[0]], h: [d[1], f[1]], glerr: gl.getError() };""")
 
+# C50: the same reads into a SharedArrayBuffer view and a plain one: a
+# padded full read (PACK_ALIGNMENT 8, odd width) and a sub-rect with margins.
+SHARED = tri("webgl", 63, 64, """
+  if (typeof SharedArrayBuffer !== 'function') return { err: 'no-sharedarraybuffer' };
+  const sab = (n) => new Uint8Array(new SharedArrayBuffer(n));
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 8);
+  const n = 63 * 256 + 252;
+  const P = new Uint8Array(n).fill(0xAB), S = sab(n).fill(0xAB);
+  gl.readPixels(0, 0, 63, 64, RGBA, UB, P); gl.readPixels(0, 0, 63, 64, RGBA, UB, S);
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+  const P2 = new Uint8Array(32 * 32 * 4), S2 = sab(32 * 32 * 4);
+  gl.readPixels(16, 16, 32, 32, RGBA, UB, P2); gl.readPixels(16, 16, 32, 32, RGBA, UB, S2);
+  let diff = 0, pad = 0;
+  for (let i = 0; i < n; i++) if (P[i] !== S[i]) diff++;
+  for (let i = 0; i < P2.length; i++) if (P2[i] !== S2[i]) diff++;
+  for (let y = 0; y < 63; y++) for (let i = 252; i < 256; i++) if (S[y * 256 + i] !== 0xAB) pad++;
+  return { diff, pad, h: H(new Uint8Array(S2)), glerr: gl.getError() };""")
+
 # C36b: framebuffer reads whose margin or rect crosses the far edge, and one
 # with a negative origin: each in-framebuffer part equals the full read's.
 FBOEDGE = tri("webgl", 64, 64, FBO_FN + """
@@ -1106,6 +1129,9 @@ gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_f
                            ("teximage", TEXIMAGE), ("readnone", READNONE), ("read16f", READ16F),
                            ("fboedge", FBOEDGE), ("fbofmt", FBOFMT), ("fborgba4", FBORGBA4),
                            ("srgb", SRGBREAD), ("strips", STRIPS))}
+SAB_FLAGS = GL_FLAGS + ["--enable-features=SharedArrayBuffer"]
+gl17["shared"] = (session(CANVAS, SHARED, extra_flags=SAB_FLAGS),
+                  session(None, SHARED, extra_flags=SAB_FLAGS))
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -1507,7 +1533,11 @@ gl_row(C49, "strips", lambda s, u: s["glerr"] == u["glerr"] == 0
        and all(d == 0 for v in (s, u) for d in v["diff"])
        and all(a != b for a, b in zip(s["h"], u["h"])))
 
-EXPECTED = 59
+C50 = "50 readPixels into a SharedArrayBuffer view equals a plain view's read"
+gl_row(C50, "shared", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and all(v["diff"] == 0 and v["pad"] == 0 for v in (s, u)) and s["h"] != u["h"])
+
+EXPECTED = 60
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
