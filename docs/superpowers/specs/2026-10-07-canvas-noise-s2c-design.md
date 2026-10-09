@@ -590,17 +590,20 @@ has **60** rows (`EXPECTED` 60). The noise field is unchanged
 
 ### Round 2 of the /code-review fixes (2026-10-09)
 
-`verify_sp3a` has **61** rows (`EXPECTED` 61). Measurements section 13.9.
+`verify_sp3a` has **63** rows (`EXPECTED` 63) after round 3 (C52, C53). Measurements sections 13.9 and 13.10.
 
-- **A noised WebGL read is decided before it is read.** The pack layout, the
+- **A noised WebGL read is decided before the page's read** (a page
+  framebuffer's probes read into scratch first). The pack layout, the
   8-bit read attachment, the page framebuffer's extent and the rect's part
   inside it are settled first; a read left stock is read straight into the
   page's view. A shared view gets back only the rect's in-framebuffer part.
 - **Residual (owner ruling: accepted).** A page read GL abandons after its
   first chunk of rows passes the one-row probe; its unwritten rows are
   noised. Not page-triggerable.
-- **A canvas shadow's layer** (a drop-shadow image filter, src-over, no
-  colour filter) marks its area only for an op inside that draws something.
-  New row **C51**.
+- **A canvas shadow's layer** (a drop-shadow image filter with no input,
+  src-over, no colour filter) marks its area only for an op inside that
+  draws something. New row **C51**. A drop shadow with an input (a `url()`
+  filter's `feDropShadow` over an `feFlood`) marks as any filter does (round
+  3, row **C52**).
 - **The coverage bitmap** is made when the walk first needs the clip, not at
   its start.

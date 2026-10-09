@@ -462,7 +462,7 @@ index e3a1ba84d9..347e7b0342 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..40cb34b828 100644
+index 332d1f5c54..8d084815c6 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -31,9 +31,16 @@
@@ -505,7 +505,7 @@ index 332d1f5c54..40cb34b828 100644
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -851,6 +862,562 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -851,6 +862,564 @@ void Canvas2DRecorderContext::ResetInternal() {
    origin_tainted_by_content_ = false;
  }
  
@@ -706,10 +706,11 @@ index 332d1f5c54..40cb34b828 100644
 +}
 +
 +// A canvas shadow's layer (a drawImage of a non-opaque image with a
-+// shadow): a saveLayer whose only effect is a drop-shadow image filter,
-+// composited src-over. It casts the shadow of what is drawn inside it, so an
-+// op inside that draws nothing adds nothing. A layer with any other filter
-+// (url(), a flood) can paint from nothing, and keeps marking.
++// shadow): a saveLayer whose only effect is a drop-shadow image filter with
++// no input, composited src-over. It casts the shadow of what is drawn inside
++// it, so an op inside that draws nothing adds nothing. Any other layer filter
++// keeps marking: a drop shadow with an input (a url() filter's feDropShadow
++// over an feFlood) or a filter of another type can paint from nothing.
 +bool CamouIsShadowLayer(const cc::PaintOp& op) {
 +  if (op.GetType() != cc::PaintOpType::kSaveLayer) {
 +    return false;
@@ -717,6 +718,7 @@ index 332d1f5c54..40cb34b828 100644
 +  const cc::PaintFlags& flags = static_cast<const cc::SaveLayerOp&>(op).flags;
 +  const cc::PaintFilter* filter = flags.getImageFilter().get();
 +  return filter && filter->type() == cc::PaintFilter::Type::kDropShadow &&
++         !static_cast<const cc::DropShadowPaintFilter*>(filter)->input() &&
 +         !flags.getColorFilter() && !flags.getLooper() &&
 +         flags.getBlendMode() == SkBlendMode::kSrcOver;
 +}
@@ -1164,7 +1166,7 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..1d232dd721 100644
+index 26c0a088cc..3239c81f19 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,8 +25,14 @@
@@ -1232,7 +1234,7 @@ index 26c0a088cc..1d232dd721 100644
  void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
                                                   GLint y,
                                                   GLsizei width,
-@@ -5349,6 +5391,41 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5349,6 +5391,43 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
    if (isContextLost() || !GetDrawingBuffer())
      return;
  
@@ -1244,7 +1246,7 @@ index 26c0a088cc..1d232dd721 100644
 +  // return the clean render. No-op when canvas:seed is unset. Either kind
 +  // is noised only when it reads 8-bit RGB(A): a default framebuffer by its
 +  // storage (RGBA8, RGB8, SRGB8_ALPHA8) with READ_BUFFER not NONE, a page one
-+  // by its read attachment's sizes (CamouNoiseReadPixels). Anything else
++  // by its read attachment's sizes (CamouReadPixels). Anything else
 +  // stays stock: GL rejects the read (NONE, RGBA16F), or stock returns values
 +  // a +-1 would leave (R8 and RG8 read G or B as 0; RGBA4 and RGB565 sit on a
 +  // coarser lattice).
@@ -1253,10 +1255,12 @@ index 26c0a088cc..1d232dd721 100644
 +  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
 +  // so a later getBufferSubData() returns those pixels un-noised (SP3 7.4).
 +  //
-+  // CamouReadPixels decides, before anything is read, whether this read is
-+  // noised. One it leaves stock (a page framebuffer that is not 8-bit, a rect
-+  // outside the framebuffer, a layout GL rejects) returns false and is read
-+  // below, straight into the page's view, as stock reads it.
++  // CamouReadPixels decides, before the page's read, whether this read is
++  // noised (for a page framebuffer it queries GL and reads probes into
++  // scratch to do so). One it leaves stock (a page framebuffer that is not
++  // 8-bit, a rect outside the framebuffer, a layout GL rejects) returns false
++  // without writing the view, and is read below, straight into the page's
++  // view, as stock reads it.
 +  if (!buffer && format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 &&
 +      height > 0 &&
 +      (framebuffer ||
@@ -1274,7 +1278,7 @@ index 26c0a088cc..1d232dd721 100644
    {
      ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
      if (!binder.Succeeded()) {
-@@ -5358,6 +5435,374 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5358,6 +5437,375 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
    }
  }
  
@@ -1458,7 +1462,8 @@ index 26c0a088cc..1d232dd721 100644
 +  // copy, the noise runs there, and the view gets only the rect's part
 +  // inside the framebuffer, the bytes stock writes, once. So no thread sees
 +  // the clean pixels, and no byte stock leaves alone is written. A failed
-+  // allocation returns before any read, and the caller reads stock.
++  // allocation returns before the page's read, without writing the view, and
++  // the caller reads stock.
 +  Scratch shared_copy(nullptr, &Partitions::BufferAlignedFree);
 +  uint8_t* target = data;
 +  if (shared) {
@@ -1650,7 +1655,7 @@ index 26c0a088cc..1d232dd721 100644
      GLenum target,
      GLsizei samples,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index faecaeadae..e5a7a511bc 100644
+index faecaeadae..da15b1a399 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -640,6 +640,12 @@ class MODULES_EXPORT WebGLRenderingContextBase
@@ -1673,10 +1678,10 @@ index faecaeadae..e5a7a511bc 100644
 +  // Camoucrome canvas noise S2c: an RGBA / UNSIGNED_BYTE readPixels of
 +  // [x, x + width) x [y, y + height) into `data` at the page's pack layout,
 +  // from the default framebuffer or a page `framebuffer`, noised. Decides
-+  // first, before any read, whether the read is noised (the pack layout, an
-+  // 8-bit read attachment, the rect's part inside the framebuffer) and
-+  // returns false, having read nothing, when it is not: the caller then
-+  // reads stock. Otherwise it does the page's read (through private scratch
++  // first, before the page's read, whether the read is noised (the pack
++  // layout, an 8-bit read attachment, the rect's part inside the framebuffer,
++  // found by probe reads into scratch) and returns false, without writing
++  // `data`, when it is not: the caller then reads stock. Otherwise it does the page's read (through private scratch
 +  // for a `shared` view) and the noise, and returns true. Each pixel's
 +  // neighbours outside the rect come from the framebuffer (a second read of
 +  // the rect plus margin, or only the margin strips for a large rect), each
