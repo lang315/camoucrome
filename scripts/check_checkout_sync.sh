@@ -16,13 +16,14 @@
 # what every verification here does. A comment-only drift still invalidates
 # "reconstruction is byte-identical", which is SP5a Task 7's whole claim.
 #
-# Usage: scripts/check_checkout_sync.sh [ssh-target|local] [checkout-path]
+# Usage: scripts/check_checkout_sync.sh [ssh-target|local] [checkout-path] [branch]
 # Defaults match this project's build machine.
 
 set -u
 
 SSH_TARGET="${1:-buildpc}"
 SRC="${2:-/home/lang/chromium/src}"
+BRANCH="${3:-camoucrome/main}"
 CONTROL="${CONTROL_PATH:-$HOME/.ssh/cm-buildpc}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -50,7 +51,7 @@ for t in "${TREE_FILES[@]}"; do
   remote_script+="sha256sum '$t' 2>/dev/null || echo \"MISSING $t\""$'\n'
 done
 # The patched files are covered the other way round: the build tree must equal
-# the camoucrome/main branch that scripts/export.sh exports from. The 09-09
+# the branch (default camoucrome/main) that scripts/export.sh exports from. The 09-09
 # input_handler.cc drift (an un-reviewed rework sitting in the build tree while
 # the branch and the repo carried the reviewed one) is what this line is for.
 # camoucfg is excluded because it is untracked in the build tree and would read
@@ -60,13 +61,13 @@ done
 # excluded for the reasons above).
 # A failing git (no such branch, not a repo) must print something here, or the
 # section is empty and reads as "in sync".
-remote_script+="echo BUILDTREE_BEGIN; git diff camoucrome/main --stat -- . ':(exclude)components/camoucfg' || echo 'git diff camoucrome/main failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
+remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . ':(exclude)components/camoucfg' || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
 # And the repo's patches/ against the branch: each commit's diff, generated
 # exactly as export.sh generates it, hashed on the far side. A hand-edited
 # patches/*.patch or a stale series reads as a mismatch below.
 . "$ROOT/upstream.env"
 remote_script+="PIN=$CHROMIUM_REV"$'\n'
-remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..camoucrome/main"); do
+remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..'"$BRANCH"'"); do
   d=$(git diff --no-ext-diff --no-color --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" | sha256sum | cut -d" " -f1)
   [ "$d" = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ] || echo "PATCH $(git log -1 --format=%s "$c").patch $d"
 done'$'\n'
@@ -108,9 +109,9 @@ done
 
 buildtree=$(printf '%s\n' "$remote_out" | sed -n '/^BUILDTREE_BEGIN/,/^BUILDTREE_END/p' | sed '1d;$d')
 if [ -n "$buildtree" ]; then
-  echo "FAIL  the build tree differs from camoucrome/main (what export.sh exports):"
+  echo "FAIL  the build tree differs from $BRANCH (what export.sh exports):"
   printf '%s\n' "$buildtree" | sed 's/^/      /'
-  echo "      commit it on camoucrome/main (checked out in the build tree) or check it out of the branch."
+  echo "      commit it on $BRANCH (checked out in the build tree) or check it out of the branch."
   fails=$((fails + 1))
 fi
 
@@ -119,7 +120,7 @@ want=$(grep -v '^#' "$ROOT/patches/series" | sed '/^$/d' | while read -r p; do
 done)
 got=$(printf '%s\n' "$remote_out" | grep '^PATCH ')
 if [ "$want" != "$got" ]; then
-  echo "FAIL  patches/ differs from what export.sh would write from camoucrome/main (< repo, > branch):"
+  echo "FAIL  patches/ differs from what export.sh would write from $BRANCH (< repo, > branch):"
   diff <(printf '%s\n' "$want") <(printf '%s\n' "$got") | grep '^[<>]' | sed 's/^/      /'
   fails=$((fails + 1))
 fi
