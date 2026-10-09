@@ -784,6 +784,45 @@ W12 base `8cf90b48`. Box branch `camoucrome/s2c` at `0ef3ff9aa1`.
 Calibration and Step 2 were not re-run (controller ruling): the field is
 unchanged, and the gates only narrow which reads are noised.
 
+### §9.9 Final code after /code-review (2026-10-09, lock `s2c windows 3`)
+
+Branch head `5a61ea0` (fetched SHA `5a61ea044e24`); box `camoucrome/s2c` at
+`b6fe23620e`, 38 commits.
+
+- **W12.** 17 files against base `8cf90b48`. Every post hash equals the box's.
+  14 files changed from the previous S2c state (`s2c-2`); `derive.{h,cc}`,
+  `derive_unittest.cc` and `base_rendering_context_2d.cc` were already equal.
+  The pre hashes are s2c-2's, not `8cf90b48`'s.
+- **Stale file outside the W12 list.** The first build (`s2c-3`) failed:
+  `offscreen_canvas_rendering_context_2d.cc` on the host still had
+  `camou_coverage_.reset()` (an S2b-era edit), but the header no longer
+  declares the member. The file is identical on the box branch and at
+  `8cf90b48`, so the base diff never lists it. Cause: the host copy had drifted
+  from the base. I compared every `components/camoucfg`, `modules/canvas`,
+  `modules/webgl` and `core/html/canvas` file on the host with the box branch
+  (478 files): this was the only difference. I replaced it from the box branch
+  (sha256 `81fd661e...01a899a01`, equal on both sides) and rebuilt.
+- **Build.** `s2c-3`: failed at step 72 of 2312 on that file, rc=1, 170 s.
+  `s2c-3b` (same tree plus the one file; label differs because `s2c-3` was
+  taken): `Build Succeeded: 194 steps`, rc=0, 233 s.
+- **`verify_sp3a` on `chrome`** (`sp3a-win3.log`): 63 rows, 57 PASS, 6 FAIL.
+  The 6 are C2, C3, C4, C5, C10 and C11, which need the stock baseline the host
+  lacks; count them UNMEASURED. No other row failed.
+  - C39 PASS (getImageData sub-rect equals the whole-snapshot field).
+  - C45 PASS (rects crossing the canvas edge equal the full read and a copy).
+  - C48, C49, C50, C51, C52, C53 all PASS.
+- **GPU-path evidence for finding #6.** On Windows `chrome` uses GPU raster,
+  so the first `getImageData` of each accelerated canvas takes the
+  texture-backed regional path. C39 and C45 PASS there; this is the only
+  GPU-raster evidence for that path (the WSL runs raster in software).
+- **Host runs** (no `out\Observe` chrome process was running during them):
+  - `s2c-final3-headless`: 9/9 PASS on attempt 1.
+  - `s2c-final3-headed`: 9/9 PASS on attempt 1.
+  - No WebGL flake in either.
+- **Regression.** `verify_windows_client`: `11 PASS 0 FAIL`.
+  `verify_sp6b_driver`: `ALL_PASS`.
+- Calibration and Step 2 not re-run.
+
 ## §10 Gaps
 
 ### Closed by S2c
