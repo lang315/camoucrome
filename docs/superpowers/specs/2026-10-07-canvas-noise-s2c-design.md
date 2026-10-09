@@ -587,3 +587,20 @@ has **60** rows (`EXPECTED` 60). The noise field is unchanged
   caller was a test. The unit test holds an independent reference
   implementation as the oracle, and `GoldenFieldUnchanged` pins both it and
   `PerturbRgbaEdgesInPlace`.
+
+### Round 2 of the /code-review fixes (2026-10-09)
+
+`verify_sp3a` has **61** rows (`EXPECTED` 61). Measurements section 13.9.
+
+- **A noised WebGL read is decided before it is read.** The pack layout, the
+  8-bit read attachment, the page framebuffer's extent and the rect's part
+  inside it are settled first; a read left stock is read straight into the
+  page's view. A shared view gets back only the rect's in-framebuffer part.
+- **Residual (owner ruling: accepted).** A page read GL abandons after its
+  first chunk of rows passes the one-row probe; its unwritten rows are
+  noised. Not page-triggerable.
+- **A canvas shadow's layer** (a drop-shadow image filter, src-over, no
+  colour filter) marks its area only for an op inside that draws something.
+  New row **C51**.
+- **The coverage bitmap** is made when the walk first needs the clip, not at
+  its start.
