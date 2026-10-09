@@ -121,8 +121,11 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
 // and calls PerturbRgba on bottom-up rows, or PerturbRgbaFramed when `frame`
 // has a side. The WebGL readPixels path; the canvas sites use
 // NoisedCanvasImage (canvas_readback.h). Absent or zero canvas:seed is a no-op.
-void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
-                           size_t row_bytes, const ConfigScope& scope,
+void PerturbRgbaFromConfig(uint8_t* data,
+                           size_t width,
+                           size_t height,
+                           size_t row_bytes,
+                           const ConfigScope& scope,
                            const RgbaFrame& frame);
 
 // Grid-preserving, seed-keyed jitter of ONE TextMetrics readback (metric-jitter

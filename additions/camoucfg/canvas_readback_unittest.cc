@@ -232,8 +232,7 @@ TEST(NoisedRegionTest, OffCanvasRectIsEmpty) {
   for (const SkIRect& r :
        {SkIRect::MakeXYWH(8, 0, 4, 4), SkIRect::MakeXYWH(-5, -5, 5, 5),
         SkIRect::MakeXYWH(2, 8, 3, 3), SkIRect::MakeXYWH(-3, 2, 3, 3)}) {
-    EXPECT_TRUE(
-        Region(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
+    EXPECT_TRUE(Region(*image, r, 77, 0.5, 2, 1, NoiseMask()).drawsNothing())
         << r.x() << "," << r.y();
   }
 }

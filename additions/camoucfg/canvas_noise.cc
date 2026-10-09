@@ -209,10 +209,10 @@ bool PerturbRgbaFramed(uint8_t* data,
   }
   std::unique_ptr<uint8_t, void (*)(void*)> ring(static_cast<uint8_t*>(raw),
                                                  &base::UncheckedFree);
-  uint8_t* above = ring.get();      // row y - 1, unperturbed
-  uint8_t* row = above + tight;     // row y, unperturbed
-  uint8_t* below = row + tight;     // row y + 1, unperturbed
-  uint8_t* out = below + tight;     // row y, noised
+  uint8_t* above = ring.get();   // row y - 1, unperturbed
+  uint8_t* row = above + tight;  // row y, unperturbed
+  uint8_t* below = row + tight;  // row y + 1, unperturbed
+  uint8_t* out = below + tight;  // row y, noised
   // Row y of the rect with its frame pixels, unperturbed: rows after y are
   // still as read.
   auto load = [&](size_t y, uint8_t* dst) {
@@ -255,8 +255,11 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
   strength = GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
 }
 
-void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
-                           size_t row_bytes, const ConfigScope& scope,
+void PerturbRgbaFromConfig(uint8_t* data,
+                           size_t width,
+                           size_t height,
+                           size_t row_bytes,
+                           const ConfigScope& scope,
                            const RgbaFrame& frame) {
   const uint64_t seed = CanvasSeed(scope);
   if (seed == 0) {
