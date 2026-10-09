@@ -10,20 +10,34 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
+#include "third_party/skia/include/core/SkPixmap.h"
 
 namespace camoucfg {
+namespace {
+
+// A whole-canvas mask is exactly the canvas's size, at origin 0: anything
+// else is stale, and would gate pixels by the wrong cells. No mask is fine.
+bool MaskFits(const NoiseMask& mask, int width, int height) {
+  return mask.cells == nullptr ||
+         (mask.width == static_cast<size_t>(width) &&
+          mask.height == static_cast<size_t>(height) && mask.x0 == 0 &&
+          mask.y0 == 0);
+}
+
+}  // namespace
 
 sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
                            double density, int32_t strength, uint8_t min_alpha,
                            const NoiseMask& mask, bool bottom_up) {
   const SkColorType ct = canvas.colorType();
   if (seed == 0 ||
-      (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType)) {
+      (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType) ||
+      !MaskFits(mask, canvas.width(), canvas.height())) {
     return nullptr;
   }
   // RGBA whatever the backing order (BGRA on macOS and Windows), alpha type
   // kept: premultiplied data stays premultiplied, which the [0, alpha] clamp
-  // of PerturbRgbaEdges relies on.
+  // of PerturbRgbaEdgesInPlace relies on.
   const SkImageInfo info =
       canvas.imageInfo().makeColorType(kRGBA_8888_SkColorType);
   SkBitmap bitmap;
@@ -55,7 +69,8 @@ sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
                      mask, bottom_up);
 }
 
-SkBitmap NoisedRegion(const SkImage& canvas,
+SkBitmap NoisedRegion(const SkImageInfo& canvas,
+                      PixelReader read,
                       const SkIRect& rect,
                       uint64_t seed,
                       double density,
@@ -64,7 +79,8 @@ SkBitmap NoisedRegion(const SkImage& canvas,
                       const NoiseMask& mask) {
   const SkColorType ct = canvas.colorType();
   if (seed == 0 ||
-      (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType)) {
+      (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType) ||
+      !MaskFits(mask, canvas.width(), canvas.height())) {
     return SkBitmap();
   }
   const SkIRect bounds = SkIRect::MakeWH(canvas.width(), canvas.height());
@@ -76,12 +92,10 @@ SkBitmap NoisedRegion(const SkImage& canvas,
   // canvas edge has none there and never changes, here or in NoisedImage.
   SkIRect m = r.makeOutset(1, 1);
   (void)m.intersect(bounds);  // r is inside bounds, so m is never empty
-  const SkImageInfo info = canvas.imageInfo()
-                               .makeColorType(kRGBA_8888_SkColorType)
-                               .makeWH(m.width(), m.height());
+  const SkImageInfo info =
+      canvas.makeColorType(kRGBA_8888_SkColorType).makeWH(m.width(), m.height());
   SkBitmap bitmap;
-  if (!bitmap.tryAllocPixels(info) ||
-      !canvas.readPixels(nullptr, bitmap.pixmap(), m.x(), m.y())) {
+  if (!bitmap.tryAllocPixels(info) || !read(bitmap.pixmap(), m.x(), m.y())) {
     return SkBitmap();
   }
   NoiseMask at = mask;
@@ -103,7 +117,8 @@ SkBitmap NoisedRegion(const SkImage& canvas,
   return out;
 }
 
-SkBitmap NoisedCanvasRegion(const SkImage& canvas,
+SkBitmap NoisedCanvasRegion(const SkImageInfo& canvas,
+                            PixelReader read,
                             const SkIRect& rect,
                             const ConfigScope& scope,
                             uint8_t min_alpha,
@@ -111,8 +126,8 @@ SkBitmap NoisedCanvasRegion(const SkImage& canvas,
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
-  return NoisedRegion(canvas, rect, CanvasSeed(scope), density, strength,
-                      min_alpha, mask);
+  return NoisedRegion(canvas, read, rect, CanvasSeed(scope), density,
+                      strength, min_alpha, mask);
 }
 
 }  // namespace camoucfg

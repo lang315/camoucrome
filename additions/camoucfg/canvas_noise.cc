@@ -142,24 +142,6 @@ void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
                           strength, /*min_alpha=*/255, NoiseMask(), bottom_up);
 }
 
-void PerturbRgbaEdges(uint8_t* data, const uint8_t* source, size_t width,
-                      size_t height, size_t row_bytes, uint64_t seed,
-                      double density, int32_t strength, uint8_t min_alpha,
-                      const NoiseMask& mask, bool bottom_up) {
-  if (source == nullptr || !Active(data, width, height, row_bytes, seed,
-                                   density, strength, mask, bottom_up)) {
-    return;
-  }
-  density = std::min(density, 1.0);
-  strength = std::min(strength, 255);
-  min_alpha = std::max<uint8_t>(min_alpha, 1);
-  for (size_t y = 1; y + 1 < height; ++y) {
-    NoiseRow(data + y * row_bytes, source + (y - 1) * row_bytes,
-             source + y * row_bytes, source + (y + 1) * row_bytes, width, seed,
-             density, strength, min_alpha, CellRow(mask, y), mask, bottom_up);
-  }
-}
-
 bool PerturbRgbaEdgesInPlace(uint8_t* data,
                              size_t width,
                              size_t height,
@@ -197,6 +179,74 @@ bool PerturbRgbaEdgesInPlace(uint8_t* data,
   return true;
 }
 
+bool PerturbRgbaFramed(uint8_t* data,
+                       size_t width,
+                       size_t height,
+                       size_t row_bytes,
+                       const RgbaFrame& frame,
+                       uint64_t seed,
+                       double density,
+                       int32_t strength,
+                       bool bottom_up) {
+  // A ring row holds the rect's row plus its frame pixels: `lo` of them
+  // before the row's first pixel, `ext` in all.
+  const size_t lo = frame.left ? 1 : 0;
+  const size_t ext = width + lo + (frame.right ? 1 : 0);
+  // The rows that have both vertical neighbours.
+  const size_t first = frame.before ? 0 : 1;
+  const size_t end = frame.after ? height : height - 1;
+  if (seed == 0 || data == nullptr || !(density > 0.0) || strength <= 0 ||
+      width == 0 || height == 0 || row_bytes < width * 4 || ext < 3 ||
+      first >= end) {
+    return true;
+  }
+  density = std::min(density, 1.0);
+  strength = std::min(strength, 255);
+  const size_t tight = ext * 4;
+  void* raw = nullptr;
+  if (!base::UncheckedMalloc(4 * tight, &raw) || raw == nullptr) {
+    return false;
+  }
+  std::unique_ptr<uint8_t, void (*)(void*)> ring(static_cast<uint8_t*>(raw),
+                                                 &base::UncheckedFree);
+  uint8_t* above = ring.get();      // row y - 1, unperturbed
+  uint8_t* row = above + tight;     // row y, unperturbed
+  uint8_t* below = row + tight;     // row y + 1, unperturbed
+  uint8_t* out = below + tight;     // row y, noised
+  // Row y of the rect with its frame pixels, unperturbed: rows after y are
+  // still as read.
+  auto load = [&](size_t y, uint8_t* dst) {
+    if (frame.left) {
+      std::memcpy(dst, frame.left + y * frame.side_stride, 4);
+    }
+    std::memcpy(dst + lo * 4, data + y * row_bytes, width * 4);
+    if (frame.right) {
+      std::memcpy(dst + (lo + width) * 4, frame.right + y * frame.side_stride,
+                  4);
+    }
+  };
+  if (first == 0) {
+    std::memcpy(above, frame.before, tight);
+  } else {
+    load(first - 1, above);
+  }
+  load(first, row);
+  for (size_t y = first; y < end; ++y) {
+    const uint8_t* next = frame.after;
+    if (y + 1 < height) {
+      load(y + 1, below);
+      next = below;
+    }
+    std::memcpy(out, row, tight);
+    NoiseRow(out, above, row, next, ext, seed, density, strength,
+             /*min_alpha=*/255, nullptr, NoiseMask(), bottom_up);
+    std::memcpy(data + y * row_bytes, out + lo * 4, width * 4);
+    std::swap(above, row);
+    std::swap(row, below);
+  }
+  return true;
+}
+
 // canvas:noiseDensity / canvas:noiseStrength with their defaults. The ONE
 // place the canvas noise keys are read.
 void CanvasNoiseParams(const ConfigScope& scope, double& density,
@@ -206,7 +256,8 @@ void CanvasNoiseParams(const ConfigScope& scope, double& density,
 }
 
 void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
-                           size_t row_bytes, const ConfigScope& scope) {
+                           size_t row_bytes, const ConfigScope& scope,
+                           const RgbaFrame& frame) {
   const uint64_t seed = CanvasSeed(scope);
   if (seed == 0) {
     return;  // spoof off -> byte-identical to stock (rule 5)
@@ -214,6 +265,12 @@ void PerturbRgbaFromConfig(uint8_t* data, size_t width, size_t height,
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
+  if (frame.before || frame.after || frame.left || frame.right) {
+    // A failed ring allocation leaves the read stock.
+    PerturbRgbaFramed(data, width, height, row_bytes, frame, seed, density,
+                      strength, /*bottom_up=*/true);
+    return;
+  }
   PerturbRgba(data, width, height, row_bytes, seed, density, strength,
               /*bottom_up=*/true);
 }

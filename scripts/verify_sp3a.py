@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Fifty-eight criteria, all driven with Playwright's sync API over content_shell's CDP,
+Fifty-nine criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -112,6 +112,9 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C48 a globalAlpha 0 drawImage of an SVG image over an arc's region leaves
       the region's noise unchanged (an SVG draws through a layer and a nested
       record; a layer that composites nothing marks nothing).
+  C49 a large readPixels sub-rect (above the one-piece size, so only its
+      margin strips are read again), from the default framebuffer and from a
+      page framebuffer, equals the matching part of the full read.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -601,6 +604,20 @@ FBOSUB = tri("webgl", 64, 64, FBO_FN + """
     if (B[y * 128 + i] !== A[(y + 16) * 256 + 64 + i]) diff++;
   return { diff, h: H(B) };""")
 
+# C49: a 520x520 sub-rect of a 1024x1024 read: its rect plus margin (522^2)
+# is above the one-piece size, so its neighbours come from the margin strips.
+# Every edge of the rect crosses the triangle's gradient.
+STRIPS = tri("webgl", 1024, 1024, FBO_FN + """
+  const run = () => {
+    const A = new Uint8Array(1024 * 1024 * 4); gl.readPixels(0, 0, 1024, 1024, RGBA, UB, A);
+    const B = new Uint8Array(520 * 520 * 4); gl.readPixels(200, 200, 520, 520, RGBA, UB, B);
+    let diff = 0;
+    for (let y = 0; y < 520; y++) for (let i = 0; i < 2080; i++)
+      if (B[y * 2080 + i] !== A[(y + 200) * 4096 + 800 + i]) diff++;
+    return [diff, H(B)]; };
+  const d = run(); fbo(1024, 1024); const f = run();
+  return { diff: [d[0], f[0]], h: [d[1], f[1]], glerr: gl.getError() };""")
+
 # C36b: framebuffer reads whose margin or rect crosses the far edge, and one
 # with a negative origin: each in-framebuffer part equals the full read's.
 FBOEDGE = tri("webgl", 64, 64, FBO_FN + """
@@ -1088,7 +1105,7 @@ gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_f
                            ("fbo", FBOREAD), ("fbosub", FBOSUB), ("fbotrans", FBOTRANS),
                            ("teximage", TEXIMAGE), ("readnone", READNONE), ("read16f", READ16F),
                            ("fboedge", FBOEDGE), ("fbofmt", FBOFMT), ("fborgba4", FBORGBA4),
-                           ("srgb", SRGBREAD))}
+                           ("srgb", SRGBREAD), ("strips", STRIPS))}
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
@@ -1485,7 +1502,12 @@ C48 = "48 a globalAlpha 0 drawImage of an SVG image leaves a region's noise unch
 s2b_row(C48, lambda r: r, lambda u: u["e"] > 0 and u["a"] == u["b"],
         lambda s, u: s["a"] == s["b"] and s["a"] != u["a"], runs=svg_runs)
 
-EXPECTED = 58
+C49 = "49 a large readPixels sub-rect (margin strips) equals the full read's part"
+gl_row(C49, "strips", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and all(d == 0 for v in (s, u) for d in v["diff"])
+       and all(a != b for a, b in zip(s["h"], u["h"])))
+
+EXPECTED = 59
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")
