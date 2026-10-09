@@ -819,6 +819,8 @@ Branch head `5a61ea0` (fetched SHA `5a61ea044e24`); box `camoucrome/s2c` at
   - `s2c-final3-headless`: 9/9 PASS on attempt 1.
   - `s2c-final3-headed`: 9/9 PASS on attempt 1.
   - No WebGL flake in either.
+  - The headed run executed while console session 1 was Active, so a headed
+    window may have appeared there.
 - **Regression.** `verify_windows_client`: `11 PASS 0 FAIL`.
   `verify_sp6b_driver`: `ALL_PASS`.
 - Calibration and Step 2 not re-run.
