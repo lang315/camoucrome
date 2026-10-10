@@ -43,7 +43,8 @@ PROBE = r"""(async () => {
     const frame = pick(await f.contentWindow.navigator.mediaDevices.enumerateDevices());
     const caps = devs.filter(d => typeof d.getCapabilities === 'function').map(d => {
       const c = d.getCapabilities();
-      return {kind: d.kind, deviceId: d.deviceId,
+      return {kind: d.kind, deviceId: d.deviceId, groupId: d.groupId,
+              capDeviceId: c.deviceId, capGroupId: c.groupId,
               sampleRate: c.sampleRate || null, channelCount: c.channelCount || null,
               width: c.width || null, height: c.height || null};
     });
@@ -129,34 +130,45 @@ def main():
                     for k in KINDS if any(d["kind"] == k for d in devices(lst_a))}
         fork_eq = eq_by_kind(m, fr)
         stock_eq = eq_by_kind(stock["main"], stock["frame"])
-        common = set(fork_eq) & set(stock_eq)
         mg = {d["groupId"] for d in devices(m)}
         fg = {d["groupId"] for d in devices(fr)}
-        res["S3-5"] = (len(common) > 0 and all(fork_eq[k] == stock_eq[k] for k in common) and
-                       mg.isdisjoint(fg) and "" not in mg | fg,
-                       f"deviceId equal across documents (fork/stock): "
-                       f"{ {k: (fork_eq[k], stock_eq[k]) for k in sorted(common)} }, "
-                       f"groups disjoint={mg.isdisjoint(fg)}")
-        caps = {d["kind"]: d for d in post["caps"]
-                if d["deviceId"] not in SENTINELS and d["kind"] in phantom_kinds}
-        real_caps = {d["kind"]: d for d in post["caps"]
-                     if d["deviceId"] not in SENTINELS and d["kind"] in real_kinds}
-        checks = []
-        # The seeded transform must keep the REAL input's capabilities too.
-        if "audioinput" in real_kinds:
-            mic = real_caps.get("audioinput", {})
-            checks.append(bool(mic.get("sampleRate")) and bool(mic.get("channelCount")))
-        if "videoinput" in real_kinds:
-            cam = real_caps.get("videoinput", {})
-            checks.append(bool(cam.get("width")) and bool(cam.get("height")))
-        if "audioinput" in phantom_kinds:
-            mic = caps.get("audioinput", {})
-            checks.append(bool(mic.get("sampleRate")) and bool(mic.get("channelCount")))
-        if "videoinput" in phantom_kinds:
-            cam = caps.get("videoinput", {})
-            checks.append(bool(cam.get("width")) and bool(cam.get("height")))
-        res["S3-7"] = (len(checks) > 0 and all(checks),
-                       f"input caps phantom={caps} real={real_caps}" if checks else "no phantom input kind on this host: not measurable")
+        # Guard row (its RED was never seen): every kind stock lists must be in
+        # the fork, every phantom kind must be in BOTH fork documents with a
+        # non-empty deviceId, and every fork groupId differs between documents.
+        present = lambda lst, k: [d for d in devices(lst) if d["kind"] == k]
+        phantoms_ok = all(present(lst, k) and all(d["deviceId"] for d in present(lst, k))
+                          for k in phantom_kinds for lst in (m, fr))
+        kinds_ok = set(stock_eq) <= set(fork_eq)
+        eq_ok = kinds_ok and all(fork_eq[k] == stock_eq[k] for k in stock_eq)
+        groups_ok = len(mg) > 0 and mg.isdisjoint(fg) and "" not in mg | fg
+        res["S3-5"] = (kinds_ok and eq_ok and phantoms_ok and groups_ok,
+                       f"guard: deviceId equal across documents (fork/stock): "
+                       f"{ {k: (fork_eq.get(k), stock_eq[k]) for k in sorted(stock_eq)} }, "
+                       f"stock kinds in fork={kinds_ok}, phantom kinds in both docs={phantoms_ok}, "
+                       f"groups disjoint={groups_ok}")
+        inputs = [d for d in post["caps"] if d["deviceId"] not in SENTINELS]
+        ids_ok = all(d["capDeviceId"] == d["deviceId"] and d["capGroupId"] == d["groupId"]
+                     for d in inputs)
+        # Ranges, not truthiness: a camera's width/height start at >= 1 and reach
+        # the format maximum; a mic's sampleRate is a positive min <= max range.
+        def cam_ok(d):
+            w, h = d["width"] or {}, d["height"] or {}
+            return (w.get("min", 0) >= 1 and w.get("max", 0) >= 1920 and
+                    h.get("min", 0) >= 1 and h.get("max", 0) >= 1080)
+        def mic_ok(d):
+            s, c = d["sampleRate"] or {}, d["channelCount"] or {}
+            return 0 < s.get("min", 0) <= s.get("max", -1) and c.get("max", 0) >= 1
+        checks = [ids_ok] if inputs else []
+        for d in inputs:
+            if d["kind"] == "audioinput":
+                checks.append(mic_ok(d))
+            if d["kind"] == "videoinput" and d["kind"] in phantom_kinds:
+                checks.append(cam_ok(d))
+            if d["kind"] == "videoinput" and d["kind"] in real_kinds:
+                checks.append(bool(d["width"]) and bool(d["height"]))
+        res["S3-7"] = (len(checks) > 1 and all(checks),
+                       f"{len(inputs)} input entries, capability ids equal own ids={ids_ok}, "
+                       f"range checks={checks[1:]}" if checks else "no input kind on this host: not measurable")
 
     if bad(pre):
         res["S3-3"] = (False, f"error {pre}")
