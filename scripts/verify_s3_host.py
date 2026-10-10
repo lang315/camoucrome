@@ -18,14 +18,15 @@ non-sentinel audiooutput deviceId is 64 hex and there is at least one (the
 grant test must not need an input device).
 S3-W6: setSinkId(<that non-sentinel audiooutput id>) resolves and sinkId reads
 back equal, on the control and the fork (the phantom speaker is authorized).
-S3-W7: one profile dir, three launches: same seed twice gives equal non-sentinel
-ids; a different seed gives a disjoint set.
+S3-W7 (a guard, not a RED row; n=1 on this host): one profile dir, three
+launches: same seed twice gives equal non-sentinel ids; a different seed gives
+a disjoint set.
 Headless only: no window in the console session. Run in the client venv on
 the host while holding the build lock, as measure_step2.py is run.
 Prints kinds, id lengths, booleans, label prefixes and numeric ranges only.
 """
 
-import os, re, sys
+import os, re, shutil, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import measure_step2 as m2
 
@@ -96,11 +97,13 @@ def main():
         with m2.serve(PAGE) as url:
             w5 = one(pw, fork, OUTS, config=w5cfg, url=url)
             sink = {a.name: one(pw, a, SINK, url=url) for a in (control, fork)}
-            import tempfile
             udd = tempfile.mkdtemp(prefix="s3b-w7-")
             seed_b = dict(cfg, **{"mediaDevices:seed": (cfg["mediaDevices:seed"] % 4000000000) + 1})
-            w7 = [one(pw, fork, OUTS, config=c, user_data_dir=udd, url=url)
-                  for c in (cfg, cfg, seed_b)]
+            try:
+                w7 = [one(pw, fork, OUTS, config=c, user_data_dir=udd, url=url)
+                      for c in (cfg, cfg, seed_b)]
+            finally:
+                shutil.rmtree(udd, ignore_errors=True)
     shape = {n: [(d["kind"], len(d["deviceId"]), prefix(d)) for d in s[0]] for n, s in got.items()}
     print(f"shape control={shape['control']}")
     print(f"shape fork={shape['fork']}")
@@ -113,7 +116,9 @@ def main():
     f = got["fork"][0]
     ins = [d for d in f if d["kind"] == "audioinput"]
     outs = {d["deviceId"]: prefix(d) for d in f if d["kind"] == "audiooutput"}
-    w2 = (len(ins) == 3 and bool(HEX64.match(ins[2]["deviceId"])) and ins[0]["deviceId"] == "default" and ins[1]["deviceId"] == "communications"
+    w2 = (len(ins) == 3 and bool(HEX64.match(ins[2]["deviceId"]))
+          and ins[0]["deviceId"] == "default"
+          and ins[1]["deviceId"] == "communications"
           and prefix(ins[0]) is not None and prefix(ins[0]) == outs.get("default")
           and prefix(ins[1]) is not None and prefix(ins[1]) == outs.get("communications"))
 
