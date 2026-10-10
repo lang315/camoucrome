@@ -146,7 +146,7 @@ def main():
         res["S3-4"] = (False, "error")
     else:
         res["S3-4"] = (kinds(pre["main"]) == kinds(post["main"]),
-                       f"guard on a device-less host: pre={kinds(pre['main'])} post={kinds(post['main'])}")
+                       f"kinds equal across the grant: pre={kinds(pre['main'])} post={kinds(post['main'])}")
 
     if bad(post) or bad(other):
         res["S3-6"] = (False, "error")
