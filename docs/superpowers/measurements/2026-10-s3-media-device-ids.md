@@ -59,6 +59,24 @@ Edits to `media_devices_manager.cc` only. Anchors each occurred once. The phanto
 - Mutation 2 (phantoms computed but not added, 2 steps): S3-1 FAIL (`phantom ids=[]`), S3-2, 4, 5, 6, 7 FAIL; S3-3, 8 PASS (2/8).
 - Restored: file identical to the edits, rebuilt (2 steps), 6/8 again.
 
+### Task 4: renderer (sp4-media, media-ii-track)
+
+- Grant test: any non-empty id in any kind marks the reply post-grant (`camou_any_device_id`), so a speakers-only host
+  keeps its real speaker id. Not measurable on WSL (needs a host with a speaker and no inputs); its row is S3-W1 (Task 5).
+- Sentinel prefix: enumerate and track labels both go through `MaskedDeviceLabel`, so a `default` or `communications`
+  entry keeps Chrome's `<prefix> - ` on both surfaces (media-ii M4). `verify_media_ii` M11 still PASS (the fake device's
+  `default` label has no ` - `).
+- Capabilities under a seed: the first loop now hands the transform a `Clone()`, and the transform moves the capabilities
+  onto the synthetic `InputDeviceInfo` (capability `device_id` set to the synthetic id, which the setters check). Before,
+  every seeded input lost its capabilities: the phantom camera's width/height and the real mic's sampleRate/channelCount.
+  S3-7 now also checks the real input's capabilities.
+- S3-5 rewritten: stock content_shell has no persistent deviceId salt, so a same-origin iframe gets other deviceIds than
+  its main frame. The row compares, per kind, "deviceId equal across documents" fork versus stock, and requires every
+  fork groupId to differ between documents. Persistent per-profile stability is measured on the Windows host (Task 5).
+- Build 12 steps; verify `verify_s3_media` 8/8, `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4;
+  unit tests MediaPhantoms 10, DeviceIds 8 PASSED; `gn check` and `checkdeps` clean.
+- Mutation (transform's capability setters dropped, 3 steps): S3-7 FAIL (7/8). Restored, rebuilt, 8/8.
+
 ## 5. Windows hashes and build
 
 ## 6. Host rows
