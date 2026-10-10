@@ -11,6 +11,10 @@ types to enumerateDevices without a getUserMedia call
 REAL_KINDS is measured, not assumed: the kinds stock content_shell lists
 under the grant (WSLg may expose a PulseAudio source and sink). Phantom
 expectations apply to the claimed kinds outside REAL_KINDS.
+
+Only the SINK sessions (S3-9..S3-11) pass --use-fake-device-for-media-stream:
+they test the round trip of a listed real-device id, which must not depend on
+WSLg/RDP audio being present. Every other session stays without it.
 """
 
 import json, os, re, sys
@@ -30,7 +34,7 @@ CONFIG = json.dumps({"mediaDevices:enabled": True, "mediaDevices:seed": 424242,
                      "mediaDevices:microphoneLabel": "Camo Mic",
                      "mediaDevices:speakerLabel": "Camo Speaker"})
 NOSEED = json.dumps({k: v for k, v in json.loads(CONFIG).items() if k != "mediaDevices:seed"})
-SINKFLAGS = GRANT + ["--autoplay-policy=no-user-gesture-required"]
+SINKFLAGS = GRANT + ["--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required"]
 
 # Main document, then a same-origin iframe (a second document: its own frame
 # salt, so its own groupIds), then getCapabilities() per entry.
