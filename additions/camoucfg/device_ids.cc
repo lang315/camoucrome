@@ -11,6 +11,7 @@
 #include "components/camoucfg/keys.h"
 
 namespace camoucfg {
+
 std::string MaskedDeviceLabel(std::string_view device_id,
                               std::string_view chrome_label,
                               std::string_view configured) {

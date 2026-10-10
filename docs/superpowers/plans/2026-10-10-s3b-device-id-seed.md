@@ -234,15 +234,15 @@ Poll `Get-Content D:\camou-win\cn\build-<label>.log -Tail 3` until an `rc=` line
 F = "content/browser/renderer_host/media/media_devices_manager.cc"
 EDITS = [
   ("replace", F,
-   "    current_snapshot_[static_cast<size_t>(type)] = new_snapshot;\n",
-   "    // S3B-MUTANT (test-only, never exported): a host with no output device.\n"
-   "    current_snapshot_[static_cast<size_t>(type)] =\n"
-   "        type == MediaDeviceType::kMediaAudioOutput\n"
-   "            ? blink::WebMediaDeviceInfoArray()\n"
-   "            : new_snapshot;\n", 1),
+   "  DevicesEnumerated(request_id, type, snapshot);\n",
+   "  // S3B-MUTANT (test-only, never exported): a host with no output device.\n"
+   "  if (type == MediaDeviceType::kMediaAudioOutput) {\n"
+   "    snapshot.clear();\n"
+   "  }\n"
+   "  DevicesEnumerated(request_id, type, snapshot);\n", 1),
 ]
 ```
-`/tmp/s3b/mutant_off.py` is the same edit reversed: `old` and `new` swapped.
+`/tmp/s3b/mutant_off.py` is the same edit reversed: `old` and `new` swapped. The mutant clears the list in `AudioDevicesEnumerated`, at its source, so the reply, `current_snapshot_`, change detection and devicechange all see the empty list. An earlier mutant emptied only `current_snapshot_`; devicechange still received the real list, which made S3-M2 fail for a reason unrelated to S3b.
 
 To use the mutant, hold the lock (W1) and run:
 1. `python3 /tmp/s3b/apply_edits.py /tmp/s3b/mutant_on.py`

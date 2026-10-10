@@ -537,7 +537,10 @@
    "key": "mediaDevices:seed",
    "type": "uint32",
    "doc": [
-    "With mediaDevices:enabled, a non-zero seed activates every media-device hook (camoucfg::ActiveMediaDevicesSeed) and is folded into every media device and group id by the browser (media_devices_util.cc, S3b). Absent or 0: no media-device spoofing (rule 5)."
+    "With mediaDevices:enabled, a non-zero seed activates every media-device",
+    "hook (camoucfg::ActiveMediaDevicesSeed) and is folded into every media",
+    "device and group id by the browser (media_devices_util.cc, S3b). Absent",
+    "or 0: no media-device spoofing (rule 5)."
    ]
   },
   {
