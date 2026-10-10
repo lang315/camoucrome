@@ -234,15 +234,17 @@ Poll `Get-Content D:\camou-win\cn\build-<label>.log -Tail 3` until an `rc=` line
 F = "content/browser/renderer_host/media/media_devices_manager.cc"
 EDITS = [
   ("replace", F,
-   "  DevicesEnumerated(request_id, type, snapshot);\n",
+   "  CHECK(blink::IsValidMediaDeviceType(type), base::NotFatalUntil::M155);\n"
+   "  UpdateSnapshot(type, snapshot);\n",
+   "  CHECK(blink::IsValidMediaDeviceType(type), base::NotFatalUntil::M155);\n"
    "  // S3B-MUTANT (test-only, never exported): a host with no output device.\n"
-   "  if (type == MediaDeviceType::kMediaAudioOutput) {\n"
-   "    snapshot.clear();\n"
-   "  }\n"
-   "  DevicesEnumerated(request_id, type, snapshot);\n", 1),
+   "  UpdateSnapshot(type,\n"
+   "                 type == MediaDeviceType::kMediaAudioOutput\n"
+   "                     ? blink::WebMediaDeviceInfoArray()\n"
+   "                     : snapshot);\n", 1),
 ]
 ```
-`/tmp/s3b/mutant_off.py` is the same edit reversed: `old` and `new` swapped. The mutant clears the list in `AudioDevicesEnumerated`, at its source, so the reply, `current_snapshot_`, change detection and devicechange all see the empty list. An earlier mutant emptied only `current_snapshot_`; devicechange still received the real list, which made S3-M2 fail for a reason unrelated to S3b.
+`/tmp/s3b/mutant_off.py` is the same edit reversed: `old` and `new` swapped. The mutant empties the audio-output list in `DevicesEnumerated`, before `UpdateSnapshot`, so `current_snapshot_`, change detection and devicechange all see the empty list. Two earlier mutants were defective: one emptied only `current_snapshot_` (devicechange still received the real list, so S3-M2 failed for a reason unrelated to S3b), and one cleared the list in `AudioDevicesEnumerated`, which the fake-device path (`use_fake_devices_`, set by `--use-fake-device-for-media-stream`) bypasses, so it was never live.
 
 To use the mutant, hold the lock (W1) and run:
 1. `python3 /tmp/s3b/apply_edits.py /tmp/s3b/mutant_on.py`
