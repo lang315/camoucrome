@@ -84,4 +84,17 @@ std::string SyntheticDeviceId(uint64_t seed, std::string_view kind,
   return out;
 }
 
+std::string MaskedDeviceLabel(std::string_view device_id,
+                              std::string_view chrome_label,
+                              std::string_view configured) {
+  if (device_id == "default" || device_id == "communications") {
+    const size_t sep = chrome_label.find(" - ");
+    if (sep != std::string_view::npos) {
+      return std::string(chrome_label.substr(0, sep + 3)) +
+             std::string(configured);
+    }
+  }
+  return std::string(configured);
+}
+
 }  // namespace camoucfg

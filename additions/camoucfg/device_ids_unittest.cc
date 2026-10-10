@@ -98,5 +98,19 @@ TEST(DeviceIdsTest, InterWordDeltaIsNotAFixedConstant) {
       << "word1-word0 collapses to too few distinct values";
 }
 
+
+TEST(DeviceIdsTest, MaskedLabelKeepsSentinelPrefix) {
+  EXPECT_EQ(MaskedDeviceLabel("default", "Default - Realtek Mic", "Mic"),
+            "Default - Mic");
+  EXPECT_EQ(MaskedDeviceLabel("communications",
+                              "Communications - Realtek Mic", "Mic"),
+            "Communications - Mic");
+}
+
+TEST(DeviceIdsTest, MaskedLabelPlainDeviceGetsConfigured) {
+  EXPECT_EQ(MaskedDeviceLabel("0123abcd", "Realtek - Mic Array", "Mic"), "Mic");
+  EXPECT_EQ(MaskedDeviceLabel("default", "Default", "Mic"), "Mic");
+}
+
 }  // namespace
 }  // namespace camoucfg
