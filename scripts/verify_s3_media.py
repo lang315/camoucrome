@@ -100,8 +100,10 @@ def main():
         print("every kind is real on this host: it cannot show S3")
         sys.exit(2)
 
-    # Rows S3-1, 2, 5, 6, 7 look only at PHANTOM kinds: a real kind already has
-    # ids on main, so including it would let a row pass without the fix.
+    # Rows S3-1, 2, 6 and the phantom half of S3-7 look only at PHANTOM kinds: a
+    # real kind already has ids on main, so including it would let a row pass
+    # without the fix. S3-5 compares the fork with stock on every kind, and the
+    # real-input half of S3-7 checks the REAL kinds.
     def ph(lst):
         return [d for d in lst if d["kind"] in phantom_kinds]
 
@@ -116,14 +118,37 @@ def main():
         res["S3-2"] = (len(ph(m)) > 0 and all(HEX64.match(d["groupId"]) for d in ph(m)),
                        f"phantom groups={[d['groupId'][:8] for d in ph(m)]}")
         fr = post["frame"]
-        same_ids = sorted(d["deviceId"] for d in ph(m)) == sorted(d["deviceId"] for d in ph(fr))
-        mg = {d["groupId"] for d in devices(ph(m))}
-        fg = {d["groupId"] for d in devices(ph(fr))}
-        res["S3-5"] = (len(devices(ph(m))) > 0 and same_ids and mg.isdisjoint(fg) and "" not in mg,
-                       f"ids equal={same_ids}, groups disjoint={mg.isdisjoint(fg)}")
+        # Stock content_shell has no persistent deviceId salt, so a same-origin
+        # iframe gets other deviceIds than its main frame. The fork must do what
+        # stock does per kind: persistent per-profile stability is measured on
+        # the Windows host (Task 5), not here. groupIds differ per document in
+        # the fork, as they do in Chrome.
+        def eq_by_kind(lst_a, lst_b):
+            return {k: sorted(d["deviceId"] for d in devices(lst_a) if d["kind"] == k) ==
+                       sorted(d["deviceId"] for d in devices(lst_b) if d["kind"] == k)
+                    for k in KINDS if any(d["kind"] == k for d in devices(lst_a))}
+        fork_eq = eq_by_kind(m, fr)
+        stock_eq = eq_by_kind(stock["main"], stock["frame"])
+        common = set(fork_eq) & set(stock_eq)
+        mg = {d["groupId"] for d in devices(m)}
+        fg = {d["groupId"] for d in devices(fr)}
+        res["S3-5"] = (len(common) > 0 and all(fork_eq[k] == stock_eq[k] for k in common) and
+                       mg.isdisjoint(fg) and "" not in mg | fg,
+                       f"deviceId equal across documents (fork/stock): "
+                       f"{ {k: (fork_eq[k], stock_eq[k]) for k in sorted(common)} }, "
+                       f"groups disjoint={mg.isdisjoint(fg)}")
         caps = {d["kind"]: d for d in post["caps"]
                 if d["deviceId"] not in SENTINELS and d["kind"] in phantom_kinds}
+        real_caps = {d["kind"]: d for d in post["caps"]
+                     if d["deviceId"] not in SENTINELS and d["kind"] in real_kinds}
         checks = []
+        # The seeded transform must keep the REAL input's capabilities too.
+        if "audioinput" in real_kinds:
+            mic = real_caps.get("audioinput", {})
+            checks.append(bool(mic.get("sampleRate")) and bool(mic.get("channelCount")))
+        if "videoinput" in real_kinds:
+            cam = real_caps.get("videoinput", {})
+            checks.append(bool(cam.get("width")) and bool(cam.get("height")))
         if "audioinput" in phantom_kinds:
             mic = caps.get("audioinput", {})
             checks.append(bool(mic.get("sampleRate")) and bool(mic.get("channelCount")))
@@ -131,7 +156,7 @@ def main():
             cam = caps.get("videoinput", {})
             checks.append(bool(cam.get("width")) and bool(cam.get("height")))
         res["S3-7"] = (len(checks) > 0 and all(checks),
-                       f"phantom input caps={caps}" if checks else "no phantom input kind on this host: not measurable")
+                       f"input caps phantom={caps} real={real_caps}" if checks else "no phantom input kind on this host: not measurable")
 
     if bad(pre):
         res["S3-3"] = (False, f"error {pre}")
