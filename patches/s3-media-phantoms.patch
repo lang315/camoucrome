@@ -1,0 +1,152 @@
+diff --git a/content/browser/renderer_host/media/media_devices_manager.cc b/content/browser/renderer_host/media/media_devices_manager.cc
+index d306cf1312..cb036e8b7b 100644
+--- a/content/browser/renderer_host/media/media_devices_manager.cc
++++ b/content/browser/renderer_host/media/media_devices_manager.cc
+@@ -37,6 +37,9 @@
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/common/content_features.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
++#include "components/camoucfg/media_phantoms.h"
+ #include "media/audio/audio_device_description.h"
+ #include "media/audio/audio_system.h"
+ #include "media/base/media_switches.h"
+@@ -70,6 +73,73 @@ const base::FeatureParam<base::TimeDelta> kReleaseVideoSourceProviderTimeout{
+     "release_video_source_provider_timeout", base::Seconds(60)};
+ #endif
+ 
++namespace {
++
++// camoucrome S3: the identity's claimed media devices that the host lacks,
++// added to the enumerate reply only (never to current_snapshot_, so
++// getUserMedia, setSinkId, devicechange and the picker keep the real list).
++// They go in before translation, so Chrome's own permission gating, deviceId
++// HMAC and per-document groupId salt apply to them. A kind gets one phantom
++// device when its raw list is empty and its count is above 0. Absent or false
++// mediaDevices:enabled leaves the enumeration untouched (rule 5).
++MediaDeviceEnumeration CamouWithPhantoms(const MediaDeviceEnumeration& real) {
++  MediaDeviceEnumeration out = real;
++  const camoucfg::ConfigScope& scope = camoucfg::GlobalScope();
++  if (!camoucfg::GetBool(scope, camoucfg::keys::kMediaDevicesEnabled)
++           .value_or(false)) {
++    return out;
++  }
++  struct Kind {
++    MediaDeviceType type;
++    const char* name;
++    const char* count_key;
++    uint32_t count_default;
++    const char* label_key;
++    const char* label_default;
++  };
++  // Defaults match sp4-media.patch's pre-grant branch.
++  static constexpr Kind kKinds[] = {
++      {MediaDeviceType::kMediaAudioInput, "audioinput",
++       camoucfg::keys::kMediaDevicesMicros, 3,
++       camoucfg::keys::kMediaDevicesMicrophoneLabel,
++       "Microphone (Realtek Audio)"},
++      {MediaDeviceType::kMediaVideoInput, "videoinput",
++       camoucfg::keys::kMediaDevicesWebcams, 1,
++       camoucfg::keys::kMediaDevicesCameraLabel, "Integrated Camera"},
++      {MediaDeviceType::kMediaAudioOutput, "audiooutput",
++       camoucfg::keys::kMediaDevicesSpeakers, 1,
++       camoucfg::keys::kMediaDevicesSpeakerLabel, "Speakers (Realtek Audio)"},
++  };
++#if BUILDFLAG(IS_WIN)
++  constexpr bool kWindows = true;
++  const std::string communications =
++      media::AudioDeviceDescription::GetCommunicationsDeviceName();
++#else
++  constexpr bool kWindows = false;
++  const std::string communications;
++#endif
++  for (const Kind& kind : kKinds) {
++    blink::WebMediaDeviceInfoArray& list =
++        out[static_cast<size_t>(kind.type)];
++    if (!list.empty() ||
++        camoucfg::GetUint32(scope, kind.count_key)
++                .value_or(kind.count_default) == 0) {
++      continue;
++    }
++    const std::string label =
++        camoucfg::GetString(scope, kind.label_key).value_or(kind.label_default);
++    for (const camoucfg::PhantomDevice& p : camoucfg::PhantomDevicesFor(
++             kind.name, label, kWindows,
++             media::AudioDeviceDescription::GetDefaultDeviceName(),
++             communications)) {
++      list.emplace_back(p.device_id, p.label, p.group_id);
++    }
++  }
++  return out;
++}
++
++}  // namespace
++
+ BASE_FEATURE(kEnumerateDevicesRelaxedCache,
+ #if BUILDFLAG(IS_WIN)
+              base::FEATURE_ENABLED_BY_DEFAULT
+@@ -1195,6 +1265,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+       has_permissions[static_cast<size_t>(MediaDeviceType::kMediaAudioInput)] &&
+       request_audio_input_capabilities;
+ 
++  const MediaDeviceEnumeration camou_enumeration =
++      CamouWithPhantoms(enumeration);
+   std::vector<blink::WebMediaDeviceInfoArray> translation(
+       static_cast<size_t>(MediaDeviceType::kNumMediaDeviceTypes));
+   for (size_t i = 0;
+@@ -1202,7 +1274,7 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+     if (!requested_types[i])
+       continue;
+ 
+-    for (const auto& device_info : enumeration[i]) {
++    for (const auto& device_info : camou_enumeration[i]) {
+       if (!has_permissions[i] && !translation[i].empty()) {
+         break;
+       }
+@@ -1238,7 +1310,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+ 
+   GetAudioInputCapabilities(request_id, video_input_capabilities_requested,
+                             audio_input_capabilities_requested,
+-                            std::move(callback), enumeration, translation);
++                            std::move(callback), camou_enumeration,
++                            translation);
+ }
+ 
+ void MediaDevicesManager::GetAudioInputCapabilities(
+@@ -1288,6 +1361,16 @@ void MediaDevicesManager::GetAudioInputCapabilities(
+       raw_enumeration_results[static_cast<size_t>(
+                                   MediaDeviceType::kMediaAudioInput)]
+           .size();
++  // camoucrome S3: a phantom audioinput list (CamouWithPhantoms) has no
++  // device behind it. The audio system would answer nullopt, and Blink would
++  // then drop the mic's capabilities, a shape no granted real mic has. Answer
++  // with the parameters Windows itself falls back to (audio_manager_win.cc).
++  const bool camou_phantom_inputs = std::ranges::any_of(
++      raw_enumeration_results[static_cast<size_t>(
++          MediaDeviceType::kMediaAudioInput)],
++      [](const blink::WebMediaDeviceInfo& d) {
++        return camoucfg::IsPhantomDeviceId(d.device_id);
++      });
+   for (std::size_t i = 0; i < num_audio_input_devices; i++) {
+     auto raw_device_info = raw_enumeration_results[static_cast<size_t>(
+         MediaDeviceType::kMediaAudioInput)][i];
+@@ -1303,7 +1386,17 @@ void MediaDevicesManager::GetAudioInputCapabilities(
+         std::move(capabilities));
+     size_t capabilities_index =
+         enumeration_states_[state_id].audio_capabilities.size() - 1;
+-    if (use_fake_devices_) {
++    if (camou_phantom_inputs) {
++      GetIOThreadTaskRunner({})->PostTask(
++          FROM_HERE,
++          base::BindOnce(&MediaDevicesManager::GotAudioInputCapabilities,
++                         weak_factory_.GetWeakPtr(), state_id,
++                         capabilities_index,
++                         media::AudioParameters(
++                             media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
++                             media::ChannelLayoutConfig::Stereo(), 48000,
++                             2048)));
++    } else if (use_fake_devices_) {
+       GetIOThreadTaskRunner({})->PostTask(
+           FROM_HERE,
+           base::BindOnce(&MediaDevicesManager::GotAudioInputCapabilities,

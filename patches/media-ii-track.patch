@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc b/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
-index 52b7847480..be7f5a91fc 100644
+index 52b7847480..b857e8c57b 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc
 @@ -31,6 +31,11 @@
@@ -22,7 +22,7 @@ index 52b7847480..be7f5a91fc 100644
  #include "third_party/blink/renderer/platform/wtf/text/format.h"
  #include "third_party/blink/renderer/platform/wtf/vector.h"
  
-@@ -227,6 +233,70 @@ String GetDisplaySurfaceString(media::mojom::DisplayCaptureSurfaceType value) {
+@@ -227,6 +233,74 @@ String GetDisplaySurfaceString(media::mojom::DisplayCaptureSurfaceType value) {
    NOTREACHED();
  }
  
@@ -80,20 +80,24 @@ index 52b7847480..be7f5a91fc 100644
 +    return real_label;
 +  }
 +  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(ec);
-+  if (source_type == MediaStreamSource::kTypeVideo) {
-+    return String::FromUtf8(
-+        camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesCameraLabel)
-+            .value_or("Integrated Camera"));
-+  }
-+  return String::FromUtf8(
-+      camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesMicrophoneLabel)
-+          .value_or("Microphone (Realtek Audio)"));
++  // S3: the same MaskedDeviceLabel as the enumerate list, so a "default" or
++  // "communications" track keeps Chrome's "<prefix> - " exactly as its
++  // enumerate entry does (track label == enumerate label, media-ii M4).
++  const std::string configured =
++      source_type == MediaStreamSource::kTypeVideo
++          ? camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesCameraLabel)
++                .value_or("Integrated Camera")
++          : camoucfg::GetString(scope,
++                                camoucfg::keys::kMediaDevicesMicrophoneLabel)
++                .value_or("Microphone (Realtek Audio)");
++  return String::FromUtf8(camoucfg::MaskedDeviceLabel(
++      real_device_id.Utf8(), real_label.Utf8(), configured));
 +}
 +
  }  // namespace
  
  MediaStreamTrack* MediaStreamTrackImpl::Create(ExecutionContext* context,
-@@ -337,7 +407,13 @@ String MediaStreamTrackImpl::id() const {
+@@ -337,7 +411,13 @@ String MediaStreamTrackImpl::id() const {
  }
  
  String MediaStreamTrackImpl::label() const {
@@ -108,7 +112,7 @@ index 52b7847480..be7f5a91fc 100644
  }
  
  bool MediaStreamTrackImpl::enabled() const {
-@@ -481,9 +557,15 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
+@@ -481,9 +561,15 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
    }
    auto platform_capabilities = component_->Source()->GetCapabilities();
  
@@ -126,7 +130,7 @@ index 52b7847480..be7f5a91fc 100644
    }
  
    if (component_->GetSourceType() == MediaStreamSource::kTypeAudio) {
-@@ -630,9 +712,16 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
+@@ -630,9 +716,16 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
    if (platform_settings.HasAspectRatio()) {
      settings->setAspectRatio(platform_settings.aspect_ratio);
    }
