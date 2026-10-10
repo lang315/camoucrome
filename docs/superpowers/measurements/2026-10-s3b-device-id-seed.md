@@ -27,6 +27,15 @@ Mutant (W13: raw audiooutput snapshot emptied, `verify_s3b_phantom_out.py`): the
 `S3-M1 sink=NotFoundError`; `S3-M2 ac=state=suspended sinkMatch=false error=true`.
 Mutant off: rebuilt, `grep -c S3B-MUTANT` = 0, tree clean.
 
+Caveat on the lines above: the first mutant run had no stock control, and its liveness check (stock lists no audiooutput) was a host property: once WSLg lost its audio, `outs == 0` also held on the non-mutant build, so "the mutant is live" was vacuous while REAL_KINDS had no audiooutput. Fix round 2 replaces it:
+- every session in `verify_s3b_phantom_out.py` passes `--use-fake-device-for-media-stream`, so a normal build lists a fake audiooutput and only the mutant lists none;
+- each M row needs its stock control (`setSinkId("")`, a plain `AudioContext` reaching `running`) ok on the same build.
+
+Fix round 2 runs (script `328fbad`):
+- non-mutant main build: exit 2, `stock lists audiooutput: 3`, so liveness detects a normal build;
+- W13 mutant on (2 steps): stock `outs=0`, controls `sink=ok ac=ok`, `S3-M1 FAIL sink=NotFoundError`, `S3-M2 FAIL ac=state=suspended sinkMatch=false error=true`, `0/2 FAIL`;
+- mutant off (2 steps): `grep -c S3B-MUTANT` = 0, tree clean (0 status lines).
+
 Build steps: baseline 263; mutant on 10; mutant off 2.
 
 Host note: two later runs of `verify_s3_media.py`, after the mutant job, found REAL_KINDS = [] (WSLg listed no real audio device), so S3-9..S3-11 read "stock control failed: not measurable". Ruling: the SINK sessions (S3-9..S3-11) now pass `--use-fake-device-for-media-stream`; every other session stays without it.
