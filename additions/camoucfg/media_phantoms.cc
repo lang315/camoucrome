@@ -12,19 +12,22 @@ constexpr char kPhantomPrefix[] = "camou-phantom-";
 constexpr char kPhantomGroupPrefix[] = "camou-phantom-group-";
 }  // namespace
 
-std::vector<PhantomDevice> PhantomDevicesFor(std::string_view kind,
-                                             std::string_view label,
-                                             bool windows,
-                                             std::string_view default_name,
-                                             std::string_view communications_name) {
+std::vector<PhantomDevice> PhantomDevicesFor(
+    std::string_view kind,
+    std::string_view label,
+    bool windows,
+    std::string_view default_name,
+    std::string_view communications_name) {
   const std::string group = base::StrCat({kPhantomGroupPrefix, kind});
   std::vector<PhantomDevice> out;
   if (windows && kind != "videoinput") {
-    out.push_back({"default", base::StrCat({default_name, " - ", label}), group});
+    out.push_back(
+        {"default", base::StrCat({default_name, " - ", label}), group});
     out.push_back({"communications",
                    base::StrCat({communications_name, " - ", label}), group});
   }
-  out.push_back({base::StrCat({kPhantomPrefix, kind}), std::string(label), group});
+  out.push_back(
+      {base::StrCat({kPhantomPrefix, kind}), std::string(label), group});
   return out;
 }
 
