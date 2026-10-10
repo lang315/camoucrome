@@ -113,7 +113,7 @@ The renderer keeps Chrome's ids (the browser folds the seed); `SyntheticDeviceId
 - GREEN: `verify_s3_media` 12/12 (S3-12 PASS), `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4.
 - Mutation, ids: `device_info.device_id + "x"` gives 8/12 (S3-1, S3-9, S3-10, S3-11 FAIL); restored 12/12.
 - Mutation, browser gate back to enabled-only: 11/12 (only S3-12 FAIL); restored 12/12.
-- S3-M2 (W13 mutant): **open, under diagnosis.** `verify_s3b_phantom_out` is 1/2. Failing line: `S3-M2: FAIL  -- ac=state=running sinkMatch=false error=true`. S3-M1 PASS. `ac.setSinkId(<phantom>)` after an enumerate resolves; `new AudioContext({sinkId: <phantom>})` falls back to the default sink.
+- S3-M2 (W13 mutant): **first run defective, later resolved (see section 8).** `verify_s3b_phantom_out` is 1/2. Failing line: `S3-M2: FAIL  -- ac=state=running sinkMatch=false error=true`. S3-M1 PASS. `ac.setSinkId(<phantom>)` after an enumerate resolves; `new AudioContext({sinkId: <phantom>})` falls back to the default sink.
 - Export: 41 commits; the 3 patches `sp4-media`, `media-ii-track`, `phantom-webcam` changed; the no-op rebuild built 59 steps after a 148-file mtime reset.
 
 ## 5. Windows build and hashes (Task 4)
@@ -173,3 +173,22 @@ Host canvas (`measure_canvas_noise.py run --mode headless --seeds 8`): 9/9 PASS,
 `measure_step2.py run --only stability --modes headless` on the `s3b-1b` build: `0 errors`; `stability / headless: 0 differing rows`.
 
 ## 8. Gaps
+
+- Phantom mic latency is still parked: the range is not measured against a real mic.
+- `getUserMedia` with an exact phantom id still ends `NotReadableError`.
+- The `NotifyDeviceChange` half of I2 is unmeasured: WSL raises no `devicechange`.
+- M2 (a bare `Default` label turned into the configured name) moved to the Linux sentinel work.
+- S3-W7 is a guard, not a RED row, and its n is 1 on this host (one non-sentinel output id). It measures seed sensitivity only on Chrome; on content_shell M7/M8 stay confounded.
+- WSLg lost its audio devices during the slice. Since about 14:19 ICT on 2026-10-10 WSL lists no mic or speaker. So S3-9..11 run on fake devices, `REAL_KINDS=[]`, the real-input half of S3-7 has nothing to check, and `verify_phantom` P6 and `verify_sp4_media` M4 now compare against a live stock run.
+- The first W13 mutant was defective: it emptied only the snapshot's audiooutput list, so change detection still saw the real list. Task 1's mutant RED is void. The valid RED is the AOAH raw-list mutation (0/2); the corrected mutant gives 2/2.
+- W12 copy-back keeps the old mtime (`Copy-Item` preserved it), so the first GREEN build did 0 steps. Touch the file after any copy-back.
+
+## 9. Final counts
+
+- WSL `verify_s3_media`: 12/12; RED 8/12 on main.
+- `verify_s3b_phantom_out` (corrected mutant): 2/2; RED 0/2 via the AOAH raw-list mutation.
+- Mutation checks: 8/12 for the ids mutation, 11/12 for the browser gate mutation.
+- Host `verify_s3_host`: 7/7; RED 6/7 on S3, plus the S3-W5 mutant.
+- Regressions: `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4.
+- Windows: verify set 21/21, `verify_sp3a` 57 PASS plus 6 without a baseline, canvas 9/9, step 2 stability 0 differing rows.
+- Box: 41 commits.
