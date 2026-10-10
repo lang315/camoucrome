@@ -7,10 +7,11 @@ S3-W2: the fork's phantom audioinput starts with "default" and
 "communications", and their label prefixes ("<prefix> - ") equal the
 prefixes of the real audiooutput sentinels on the same page.
 S3-W3: the fork's phantom audioinput (the entry that is not default or
-communications) has getCapabilities() with sampleRate and channelCount. The
+communications) has getCapabilities() with sampleRate, channelCount and latency
+ranges that are well formed (sampleRate min > 0, channelCount max >= 1, 0 <= latency min <= max). The
 stock host has no mic, so there is no stock comparison.
 S3-W4: one profile, two documents of one origin: every fork deviceId (phantom
-and real) is equal across them and every non-empty groupId differs; the stock
+and real; sentinels, else 64 hex) is equal across them and every non-empty groupId differs; the stock
 audiooutput shows the same relation, or the row fails.
 Headless only: no window in the console session. Run in the client venv on
 the host while holding the build lock, as measure_step2.py is run.
@@ -43,9 +44,19 @@ def session(pw, arm):
         return first, page.evaluate(ENUM), caps
 
 
-def prefix(label):
-    i = label.find(" - ")
-    return label[:i] if i >= 0 else None
+SENTINELS = ("default", "communications")
+
+
+def prefix(d):
+    """The label prefix of a sentinel entry; for any other entry only whether it has one, never its text."""
+    i = d["label"].find(" - ")
+    if d["deviceId"] in SENTINELS:
+        return d["label"][:i] if i >= 0 else None
+    return i >= 0
+
+
+def id_ok(d):
+    return d["deviceId"] in SENTINELS or bool(HEX64.match(d["deviceId"]))
 
 
 def main():
@@ -55,33 +66,37 @@ def main():
     fork = m2.Arm("fork", os.environ["CAMOU_FORK_EXE"], m2.identity(1))
     with sync_playwright() as pw:
         got = {a.name: session(pw, a) for a in (control, fork)}
-    shape = {n: [(d["kind"], len(d["deviceId"]), prefix(d["label"])) for d in s[0]] for n, s in got.items()}
+    shape = {n: [(d["kind"], len(d["deviceId"]), prefix(d)) for d in s[0]] for n, s in got.items()}
     print(f"shape control={shape['control']}")
     print(f"shape fork={shape['fork']}")
 
     def out_ok(lst):
-        outs = [d for d in lst if d["kind"] == "audiooutput" and d["deviceId"] not in ("default", "communications")]
+        outs = [d for d in lst if d["kind"] == "audiooutput" and d["deviceId"] not in SENTINELS]
         return len(outs) > 0 and all(HEX64.match(d["deviceId"]) for d in outs)
     w1 = out_ok(got["control"][0]) and out_ok(got["fork"][0])
 
     f = got["fork"][0]
     ins = [d for d in f if d["kind"] == "audioinput"]
-    outs = {d["deviceId"]: prefix(d["label"]) for d in f if d["kind"] == "audiooutput"}
+    outs = {d["deviceId"]: prefix(d) for d in f if d["kind"] == "audiooutput"}
     w2 = (len(ins) >= 3 and ins[0]["deviceId"] == "default" and ins[1]["deviceId"] == "communications"
-          and prefix(ins[0]["label"]) is not None and prefix(ins[0]["label"]) == outs.get("default")
-          and prefix(ins[1]["label"]) == outs.get("communications"))
+          and prefix(ins[0]) is not None and prefix(ins[0]) == outs.get("default")
+          and prefix(ins[1]) is not None and prefix(ins[1]) == outs.get("communications"))
 
     caps = got["fork"][2]
     c = caps[0] if len(caps) == 1 else {}
     print(f"caps devices={len(caps)} keys={sorted(c)} sampleRate={c.get('sampleRate')} "
           f"channelCount={c.get('channelCount')} latency_present={'latency' in c} latency={c.get('latency')}")
-    w3 = len(caps) == 1 and "sampleRate" in c and "channelCount" in c
+    sr, cc, lat = c.get("sampleRate"), c.get("channelCount"), c.get("latency")
+    w3 = (len(caps) == 1 and isinstance(sr, dict) and isinstance(cc, dict) and isinstance(lat, dict)
+          and 0 < sr.get("min", 0) <= sr.get("max", -1) and cc.get("max", 0) >= 1
+          and 0 <= lat.get("min", -1) <= lat.get("max", -2))
 
     def stable(arm, kinds=None):
         a, b = got[arm][0], got[arm][1]
         a = [d for d in a if kinds is None or d["kind"] in kinds]
         b = [d for d in b if kinds is None or d["kind"] in kinds]
-        ids = [d["deviceId"] for d in a] == [d["deviceId"] for d in b] and len(a) > 0
+        ids = (len(a) > 0 and all(id_ok(d) for d in a + b)
+               and [d["deviceId"] for d in a] == [d["deviceId"] for d in b])
         grp = [(x["groupId"], y["groupId"]) for x, y in zip(a, b) if x["groupId"] or y["groupId"]]
         return ids, bool(grp) and all(x and y and x != y for x, y in grp), len(a), len(grp)
     s_ids, s_grp, s_n, s_g = stable("control", ("audiooutput",))
@@ -91,6 +106,7 @@ def main():
     w4 = f_ids and f_grp and s_ids and s_grp
 
     rows = {"S3-W1": w1, "S3-W2": w2, "S3-W3": w3, "S3-W4": w4}
+    assert len(rows) == EXPECTED
     for k, ok in rows.items():
         print(f"{k}: {'PASS' if ok else 'FAIL'}")
     n = sum(rows.values())

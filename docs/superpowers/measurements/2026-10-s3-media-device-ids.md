@@ -84,12 +84,18 @@ W12 replaced 10 files. Every pre hash equalled the box's `main` hash (3 new file
 
 | File | pre | post |
 |---|---|---|
-| `components/camoucfg/BUILD.gn` | main (85b54c68) | s3 (47beb115) |
-| `components/camoucfg/device_ids.{cc,h}`, `device_ids_unittest.cc` | main | s3 |
-| `components/camoucfg/media_phantoms.{cc,h}`, `media_phantoms_unittest.cc` | ABSENT | s3 |
-| `content/browser/renderer_host/media/media_devices_manager.cc` | main (3d35eda0) | s3 (7eff2690) |
-| `third_party/blink/renderer/modules/mediastream/media_devices.cc` | main (99ce8c63) | s3 (4993479a) |
-| `third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc` | main (8c50236f) | s3 (a3195c20) |
+| `components/camoucfg/BUILD.gn` | 85b54c68 | 47beb115 |
+| `components/camoucfg/device_ids.cc` | a7de6fbe | 3137f4e4 |
+| `components/camoucfg/device_ids.h` | d9092ba3 | f379044b |
+| `components/camoucfg/device_ids_unittest.cc` | 94f05c65 | e8447994 |
+| `components/camoucfg/media_phantoms.cc` | ABSENT | b2a2169e |
+| `components/camoucfg/media_phantoms.h` | ABSENT | 32b9bc37 |
+| `components/camoucfg/media_phantoms_unittest.cc` | ABSENT | 8c9a822c |
+| `content/browser/renderer_host/media/media_devices_manager.cc` | 3d35eda0 | 7eff2690 |
+| `third_party/blink/renderer/modules/mediastream/media_devices.cc` | 99ce8c63 | 4993479a |
+| `third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc` | 8c50236f | a3195c20 |
+
+Host tree disclosure: `D:\camou-win\tree` (the script and client tree) was not refreshed to this branch. Only `scripts/verify_s3_host.py` was copied in, so `tree.commit` still carries the S2c stamp `5a61ea044e24`. The verify set, `verify_sp3a` and the host canvas run below therefore ran S3 binaries under an S2c-stamped tree; the client and those scripts are unchanged between the two.
 
 Build `s3-1` (`autoninja -C out\Release chrome`, lock `s3 win build`): `Build Succeeded: 56 steps`, rc=0, 63 s.
 
@@ -106,6 +112,18 @@ GREEN (S3 build): `4/4 ALL_PASS`, rc=0.
 - fork shape: `audioinput` 7 (`Default`), 14 (`Communications`), 64; `videoinput` 64; `audiooutput` 7 (`Default`), 14 (`Communications`), 64. The `Default` and `Communications` prefixes are Chrome's localized sentinel words, not device names.
 - S3-W3 (phantom mic, no stock comparison: the host has no mic): keys `autoGainControl, channelCount, deviceId, echoCancellation, groupId, latency, noiseSuppression, sampleRate, sampleSize, voiceIsolation`; `sampleRate` 48000..48000, `channelCount` 1..2, `latency` present, 0..0.042666.
 - S3-W4 (one profile, main document then a second same-origin document): stock `audiooutput` ids equal, 3 of 3 groupIds differ. Fork: all 7 ids equal, 7 of 7 groupIds differ. Stock showed the expected relation, so the row stands as written.
+
+Fix round 1 (script `verify_s3_host.py` asserts ranges and non-empty ids; no rebuild, same `out\Release`):
+- Shape lines now print a label prefix only for the `default` and `communications` entries; any other entry shows only whether its label contains ` - ` (`False` on this host).
+- S3-W3 requires sampleRate min > 0 and min <= max, channelCount max >= 1, and a latency range with 0 <= min <= max (no hardcoded values).
+- S3-W4 requires every fork deviceId and every stock audiooutput deviceId to be a sentinel or 64 hex before the equality clause.
+- GREEN: `4/4 ALL_PASS`, rc=0.
+- The S2c binary no longer exists (`out\Release` was rebuilt), so the new clauses were proved by running the script with stock Chrome as the fork arm and by three one-clause mutants:
+  - stock as fork: `S3-W1: PASS`, `S3-W2: FAIL`, `S3-W3: FAIL`, `S3-W4: PASS`, `2/4 FAIL` (stock has the speaker but no phantom mic, no capabilities).
+  - mutant 1 (sampleRate min must exceed 99999): `S3-W3: FAIL`, `3/4 FAIL`.
+  - mutant 2 (sentinels no longer count as valid ids): `S3-W4: FAIL`, `ids_equal=False`, `3/4 FAIL`.
+  - mutant 3 (latency min must exceed 5): `S3-W3: FAIL`, `3/4 FAIL`.
+  - The original RED on the S2c build (`0/4 FAIL`) was with the first script version.
 
 Latency finding: the phantom mic's `latency` max, 0.042666 s, is 2048 frames at 48 kHz, the `kFallbackBufferSize` of Task 3. It is a fixed value, not a measured one. Stock has no mic on this host, so whether a real Windows mic reports the same range is unmeasured.
 
