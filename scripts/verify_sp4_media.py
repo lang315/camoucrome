@@ -32,7 +32,8 @@ def main():
         with open(BASELINE, "w") as f: json.dump(base, f)
         print("baseline captured:", json.dumps(base)); return
     results = {}
-    m1 = run(cfg({"mediaDevices:enabled": True, "mediaDevices:seed": 1, "mediaDevices:micros": 2,
+    m1 = run(cfg({"mediaDevices:enabled": True, "mediaDevices:seed": 1,
+                  "mediaDevices:micros": 2,
                   "mediaDevices:webcams": 3, "mediaDevices:speakers": 4}))
     # Pre-grant, stock lists at most ONE blank entry per kind
     # (content/browser/media/media_devices_util.cc TranslateMediaDeviceInfoArray

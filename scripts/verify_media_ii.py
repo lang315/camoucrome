@@ -7,7 +7,7 @@ and, on real hardware, is the camera/mic model. This makes the granted track
 coherent with the spoofed enumerate:
 
   - Pre-grant (no getUserMedia): enumerate = the sp4 empty-count spoof.
-  - Post-grant: enumerate transforms each REAL device to an origin-salted
+  - Post-grant: enumerate transforms each REAL device to its
     deviceId/groupId (Chrome's own ids, which the browser folds the seed into)
     + a configured generic per-kind label, keeping the real count; and the
     track getters (getSettings/getCapabilities) report the same ids.
@@ -219,8 +219,9 @@ def main():
                          "two reads in one session identical")
 
     # ---------------- M6: rotation preserved (NOT stable supercookie) -------
-    # §2 requires the synthetic id to rotate per launch exactly as stock does;
-    # a stable id would be the cross-origin supercookie the design forbids.
+    # §2 requires the listed id to rotate per launch exactly as stock does
+    # (it follows Chrome's salt); a stable id would be a cross-launch
+    # supercookie.
     if any(is_err(x) for x in (spoofA1, spoofA2, stock1, stock2)):
         results["M6"] = (False, "error in a launch")
     else:
