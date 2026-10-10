@@ -44,7 +44,8 @@ def main():
     m3 = run(cfg({"mediaDevices:enabled": True}))
     results["M3"] = m3.get("byKind") == {"audioinput":1,"videoinput":1,"audiooutput":1}
     m4 = run(cfg({}))
-    with open(BASELINE) as f: base = json.load(f)
+    # Live stock run, not the captured file: the host's real devices change.
+    base = run(None)
     results["M4"] = (m4.get("byKind") == base.get("byKind")
                      and m4.get("secure") is True)
     EXPECTED = 4
