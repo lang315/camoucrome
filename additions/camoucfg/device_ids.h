@@ -13,21 +13,6 @@
 
 namespace camoucfg {
 
-// Deterministic, origin-salted synthetic device id. 64 lowercase hex,
-// matching a real salted device id's shape (a page cannot distinguish it from
-// HMAC-SHA256 hex). Pure: the same (seed, kind, real_id, origin) yields the
-// same output.
-//   - seed == 0 -> real_id unchanged (rule 5 no-op).
-//   - real_id empty -> "" (pre-grant path never calls this).
-//   - real_id == "default" -> "default" (real Chrome sentinel, preserved).
-// Folds ORIGIN so two origins with the same seed differ (per-origin salt) --
-// a stable-across-origin id would itself be a cross-origin tracking id, the
-// opposite of the goal. Folds `kind` and `real_id` too, so different device
-// kinds or different underlying devices never collide.
-std::string SyntheticDeviceId(uint64_t seed, std::string_view kind,
-                              std::string_view real_id,
-                              std::string_view origin);
-
 // The label an enumerated entry shows when the identity's label for its kind
 // is `configured`. A Windows sentinel ("default"/"communications", labelled
 // "<localized prefix> - <device>") keeps Chrome's prefix and swaps only the

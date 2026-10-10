@@ -32,7 +32,7 @@ def main():
         with open(BASELINE, "w") as f: json.dump(base, f)
         print("baseline captured:", json.dumps(base)); return
     results = {}
-    m1 = run(cfg({"mediaDevices:enabled": True, "mediaDevices:micros": 2,
+    m1 = run(cfg({"mediaDevices:enabled": True, "mediaDevices:seed": 1, "mediaDevices:micros": 2,
                   "mediaDevices:webcams": 3, "mediaDevices:speakers": 4}))
     # Pre-grant, stock lists at most ONE blank entry per kind
     # (content/browser/media/media_devices_util.cc TranslateMediaDeviceInfoArray
@@ -41,7 +41,7 @@ def main():
                      and m1.get("count") == 3)
     results["M2"] = all(x["label"]=="" and x["deviceId"]=="" and x["groupId"]==""
                         for x in m1.get("fields", [{"label":"x","deviceId":"x","groupId":"x"}]))
-    m3 = run(cfg({"mediaDevices:enabled": True}))
+    m3 = run(cfg({"mediaDevices:enabled": True, "mediaDevices:seed": 1}))
     results["M3"] = m3.get("byKind") == {"audioinput":1,"videoinput":1,"audiooutput":1}
     m4 = run(cfg({}))
     # Live stock run, not the captured file: the host's real devices change.
