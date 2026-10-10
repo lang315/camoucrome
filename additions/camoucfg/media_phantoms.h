@@ -26,11 +26,12 @@ struct PhantomDevice {
 // "<default_name> - <label>" and "<communications_name> - <label>" and sharing
 // the device's group (audio_manager_base.cc). The names are Chrome's
 // localized AudioDeviceDescription names, passed in by the caller.
-std::vector<PhantomDevice> PhantomDevicesFor(std::string_view kind,
-                                             std::string_view label,
-                                             bool windows,
-                                             std::string_view default_name,
-                                             std::string_view communications_name);
+std::vector<PhantomDevice> PhantomDevicesFor(
+    std::string_view kind,
+    std::string_view label,
+    bool windows,
+    std::string_view default_name,
+    std::string_view communications_name);
 
 // True for the raw id of a phantom device (not its sentinels or its group).
 bool IsPhantomDeviceId(std::string_view raw_id);
