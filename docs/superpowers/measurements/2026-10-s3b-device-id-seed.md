@@ -78,6 +78,16 @@ Box `camoucrome/s3b` is 41 commits, `s3b-device-id-seed` last (106962c649).
   (P6: stock NotFoundError -> fork NotReadableError, since a claimed mic with no
   mic is a phantom, so gUM ends NO_HARDWARE and phantom-webcam remaps it).
 ## 4. Renderer: no id rewrite (Task 3)
+
+The renderer keeps Chrome's ids (the browser folds the seed); `SyntheticDeviceId` is gone; sp4-media, media-ii-track and phantom-webcam take the one activation rule (`ActiveMediaDevicesSeed`).
+
+- Build `s3b t3`: 264 steps. `gn check` (browser, mediastream): OK. `checkdeps`: SUCCESS. `MediaPhantoms*:DeviceIds*`: 7 tests PASSED.
+- GREEN: `verify_s3_media` 12/12 (S3-12 PASS), `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4.
+- Mutation, ids: `device_info.device_id + "x"` gives 8/12 (S3-1, S3-9, S3-10, S3-11 FAIL); restored 12/12.
+- Mutation, browser gate back to enabled-only: 11/12 (only S3-12 FAIL); restored 12/12.
+- S3-M2 (W13 mutant): **open, under diagnosis.** `verify_s3b_phantom_out` is 1/2. Failing line: `S3-M2: FAIL  -- ac=state=running sinkMatch=false error=true`. S3-M1 PASS. `ac.setSinkId(<phantom>)` after an enumerate resolves; `new AudioContext({sinkId: <phantom>})` falls back to the default sink.
+- Export: 41 commits; the 3 patches `sp4-media`, `media-ii-track`, `phantom-webcam` changed; the no-op rebuild built 59 steps after a 148-file mtime reset.
+
 ## 5. Windows build and hashes (Task 4)
 ## 6. Host rows (Task 4)
 ## 7. Step 2 stability (Task 4)
