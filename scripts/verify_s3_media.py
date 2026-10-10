@@ -161,9 +161,9 @@ def main():
         m = post["main"]
         res["S3-1"] = (set(kinds(m)) == set(KINDS) and len(devices(ph(m))) > 0 and
                        all(HEX64.match(d["deviceId"]) for d in devices(ph(m))),
-                       f"kinds={kinds(m)} phantom ids={[d['deviceId'][:8] for d in ph(m)]}")
+                       f"kinds={kinds(m)} phantom ids n={len(ph(m))} hex64={all(HEX64.match(d['deviceId']) for d in ph(m))}")
         res["S3-2"] = (len(ph(m)) > 0 and all(HEX64.match(d["groupId"]) for d in ph(m)),
-                       f"phantom groups={[d['groupId'][:8] for d in ph(m)]}")
+                       f"phantom groups n={len(ph(m))} hex64={all(HEX64.match(d['groupId']) for d in ph(m))}")
         fr = post["frame"]
         # Stock content_shell has no persistent deviceId salt, so a same-origin
         # iframe gets other deviceIds than its main frame. The fork must do what
