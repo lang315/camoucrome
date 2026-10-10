@@ -36,6 +36,29 @@ Only S3-3 and S3-8 are guards.
 
 ## 4. GREEN per task
 
+### Task 3: `s3-media-phantoms` (box commit 037493b318, commit 40 of 40)
+
+Edits to `media_devices_manager.cc` only. Anchors each occurred once. The phantom mic's capability parameters use
+`audio_manager_win.cc`'s fallback frames-per-buffer, `kFallbackBufferSize = 2048` (not 480); the format stays
+`AUDIO_PCM_LOW_LATENCY` (Windows' own fallback says `AUDIO_PCM_LINEAR`; the page cannot see the format).
+
+- Build 1: 4258 steps (a large blink and `components_unittests` recompile on this tree). `gn check` browser and mediastream:
+  `Header dependency check OK` each; both checkdeps runs print `SUCCESS`. `MediaPhantoms*`/`DeviceIds*` unit tests: 10 + 8 passed.
+- `verify_s3_media`: 6/8. S3-1, 2, 3, 4, 6, 8 PASS (S3-4 turned green). Two rows fail for reasons outside this commit:
+  - S3-5 `same_ids`: stock content_shell also gives different deviceIds to the main frame and a same-origin iframe
+    (audioinput `8f4051..` vs `ecc74c..`), so it has no persistent ids; the phantom camera behaves the same. Groups are disjoint.
+  - S3-7: the phantom camera's `getCapabilities()` has no width/height with the seed configured, but has
+    `width {1..1920}, height {1..1080}` with the seed removed from the config. The post-grant branch of
+    `third_party/blink/renderer/modules/mediastream/media_devices.cc` (`transformed`) builds new `InputDeviceInfo`
+    objects without calling `SetVideoInputCapabilities`, which also drops the real mic's capabilities (stock has
+    sampleRate 44100..48000 and channelCount 1..2; with the seed it has none). That is renderer code outside this commit.
+- Regressions on the same build: `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4 (all ALL_PASS;
+  `sp4_media_baseline.json` copied from `~/camoucrome-verify`, it is build-host-local).
+- Mutation 1 (translation loop reads `enumeration`, 5 steps): the browser crashes, since the reply holds phantoms
+  that translation skipped (raw and hashed sizes differ). S3-1, 2, 4, 5, 6, 7 FAIL on a closed page; S3-3, 8 PASS (2/8).
+- Mutation 2 (phantoms computed but not added, 2 steps): S3-1 FAIL (`phantom ids=[]`), S3-2, 4, 5, 6, 7 FAIL; S3-3, 8 PASS (2/8).
+- Restored: file identical to the edits, rebuilt (2 steps), 6/8 again.
+
 ## 5. Windows hashes and build
 
 ## 6. Host rows
