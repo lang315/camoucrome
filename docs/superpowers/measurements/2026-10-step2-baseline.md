@@ -143,6 +143,8 @@ The full lists are in `step2-154/tables.md`.
    - The fork lists its claimed `audioinput`/`videoinput`/`audiooutput` with every ID `""`.
 
    That is a tell. It also means device-ID stability cannot be measured on the fork.
+
+   Closed by S3 (`2026-10-s3-media-device-ids.md`, §7).
 4. **No remote voices.** CreepJS counts 19 remote speech voices on stock and
    `unsupported` (0) on the fork.
 5. **The fork is unstable across launches** on WebGPU, HEVC and a CreepJS

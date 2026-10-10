@@ -11,7 +11,7 @@ index d6a91ebb3b..a13d9e73e0 100644
      "//media/webrtc",
      "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index f0e1886c47..8473390383 100644
+index f0e1886c47..842d18bc78 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 @@ -14,6 +14,10 @@
@@ -25,7 +25,22 @@ index f0e1886c47..8473390383 100644
  #include "media/base/media_permission.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-@@ -1493,6 +1497,126 @@ void MediaDevices::DevicesEnumerated(
+@@ -1477,12 +1481,12 @@ void MediaDevices::DevicesEnumerated(
+         if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
+             !video_input_capabilities.empty()) {
+           input_device_info->SetVideoInputCapabilities(
+-              std::move(video_input_capabilities[j]));
++              video_input_capabilities[j]->Clone());
+         }
+         if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
+             !audio_input_capabilities.empty()) {
+           input_device_info->SetAudioInputCapabilities(
+-              std::move(audio_input_capabilities[j]));
++              audio_input_capabilities[j]->Clone());
+         }
+         media_devices.push_back(input_device_info);
+       } else {
+@@ -1493,6 +1497,159 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  
@@ -44,7 +59,17 @@ index f0e1886c47..8473390383 100644
 +      camoucfg::ScopeFor(GetExecutionContext());
 +  if (camoucfg::GetBool(camou_scope, camoucfg::keys::kMediaDevicesEnabled)
 +          .value_or(false)) {
-+    if (!result_contains_nonempty_input_device_ids) {
++    // S3: a grant shows as ANY non-empty id. A real audiooutput id proves a
++    // mic or speaker-selection grant (media_devices_permission_checker.cc),
++    // so a host with speakers and no inputs is post-grant too; before S3 it
++    // fell in here and lost its real speaker id.
++    bool camou_any_device_id = false;
++    for (const auto& kind_list : enumeration) {
++      for (const auto& d : kind_list) {
++        camou_any_device_id |= !d.device_id.empty();
++      }
++    }
++    if (!camou_any_device_id) {
 +      const uint32_t micros =
 +          camoucfg::GetUint32(camou_scope, camoucfg::keys::kMediaDevicesMicros)
 +              .value_or(3);
@@ -134,11 +159,34 @@ index f0e1886c47..8473390383 100644
 +          // and would be a self-evident tell. Mirrors the track getters, whose
 +          // CamouMaskLabel passes an empty-device_id track through unchanged.
 +          const String device_label =
-+              device_info.device_id.empty() ? g_empty_string : label;
++              device_info.device_id.empty()
++                  ? g_empty_string
++                  : String::FromUtf8(camoucfg::MaskedDeviceLabel(
++                        device_info.device_id, device_info.label,
++                        label.Utf8()));
 +          if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput ||
 +              device_type == mojom::blink::MediaDeviceType::kMediaVideoInput) {
-+            transformed.push_back(MakeGarbageCollected<InputDeviceInfo>(
-+                synth_device_id, device_label, synth_group_id, device_type));
++            InputDeviceInfo* input_device_info =
++                MakeGarbageCollected<InputDeviceInfo>(
++                    synth_device_id, device_label, synth_group_id,
++                    device_type);
++            // S3: keep the real entry's capabilities under the synthetic ids
++            // (a phantom camera's width/height, the real mic's sampleRate and
++            // channelCount); the setters check the capability's id equals the
++            // info's own.
++            if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
++                !video_input_capabilities.empty()) {
++              video_input_capabilities[j]->device_id = synth_device_id;
++              input_device_info->SetVideoInputCapabilities(
++                  std::move(video_input_capabilities[j]));
++            }
++            if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
++                !audio_input_capabilities.empty()) {
++              audio_input_capabilities[j]->device_id = synth_device_id;
++              input_device_info->SetAudioInputCapabilities(
++                  std::move(audio_input_capabilities[j]));
++            }
++            transformed.push_back(input_device_info);
 +          } else {
 +            transformed.push_back(MakeGarbageCollected<MediaDeviceInfo>(
 +                synth_device_id, device_label, synth_group_id, device_type));
