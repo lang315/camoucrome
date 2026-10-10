@@ -1,0 +1,35 @@
+diff --git a/content/browser/media/media_devices_util.cc b/content/browser/media/media_devices_util.cc
+index d7f5066606..e739d2ceb7 100644
+--- a/content/browser/media/media_devices_util.cc
++++ b/content/browser/media/media_devices_util.cc
+@@ -9,11 +9,14 @@
+ 
+ #include "base/command_line.h"
+ #include "base/functional/bind.h"
++#include "base/numerics/byte_conversions.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_tokenizer.h"
+ #include "base/strings/string_util.h"
++#include "components/camoucfg/device_ids.h"
++#include "components/camoucfg/mask_config.h"
+ #include "content/browser/browser_main_loop.h"
+ #include "content/browser/renderer_host/frame_tree.h"
+ #include "content/browser/renderer_host/frame_tree_node.h"
+@@ -252,6 +255,15 @@ std::string GetHMACForRawMediaDeviceID(
+   hmac.Update(base::as_byte_span(use_group_salt
+                                      ? salt_and_origin.group_id_salt()
+                                      : salt_and_origin.device_id_salt()));
++  // camoucrome S3b: fold the identity's mediaDevices seed into every device
++  // and group id. Every hash and every match is computed here, so the ids a
++  // page is given round-trip through setSinkId, getUserMedia and the track
++  // getters. No fold unless mediaDevices is active (enabled with a seed).
++  if (const uint32_t seed =
++          camoucfg::ActiveMediaDevicesSeed(camoucfg::GlobalScope());
++      seed != 0) {
++    hmac.Update(base::U32ToLittleEndian(seed));
++  }
+   std::array<uint8_t, crypto::hash::kSha256Size> result;
+   hmac.Finish(result);
+   return base::HexEncodeLower(result);
