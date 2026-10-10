@@ -17,8 +17,9 @@ S3-W5: with mediaDevices:micros=0, webcams=0, speakers=1 under a grant, every
 non-sentinel audiooutput deviceId is 64 hex and there is at least one (the
 grant test must not need an input device).
 S3-W6: setSinkId(<that non-sentinel audiooutput id>) resolves and sinkId reads
-back equal, on the control and the fork (the phantom speaker is authorized).
-S3-W7 (a guard, not a RED row; n=1 on this host): one profile dir, three
+back equal, on the control and the fork (a listed real speaker id round-trips
+through the fold).
+S3-W7 (RED when the fold is removed; n=1 on this host): one profile dir, three
 launches: same seed twice gives equal non-sentinel ids; a different seed gives
 a disjoint set.
 Headless only: no window in the console session. Run in the client venv on
