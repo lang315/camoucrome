@@ -91,8 +91,8 @@ SINK = r"""(async () => {
 })()"""
 
 
-def run(url, config, flags):
-    vals, err = lib_shell.session(config, [PROBE], navigate_to=url, extra_flags=flags)
+def run(url, config, flags, probe=PROBE):
+    vals, err = lib_shell.session(config, [probe], navigate_to=url, extra_flags=flags)
     if err:
         return {"error": str(err)}
     return vals[0]
@@ -130,16 +130,11 @@ def main():
         post = run(a_url, CONFIG, GRANT)
         other = run(b_url, CONFIG, GRANT)
         noseed = run(a_url, NOSEED, GRANT)
-        sink_stock = lib_shell.session(None, [SINK], navigate_to=a_url, extra_flags=SINKFLAGS)
-        sink_fork = lib_shell.session(CONFIG, [SINK], navigate_to=a_url, extra_flags=SINKFLAGS)
+        sink_stock = run(a_url, None, SINKFLAGS, SINK)
+        sink_fork = run(a_url, CONFIG, SINKFLAGS, SINK)
     finally:
         a_stop()
         b_stop()
-
-    def sink(v):
-        vals, err = v
-        return {"error": str(err)} if err else vals[0]
-    sink_stock, sink_fork = sink(sink_stock), sink(sink_fork)
 
     if bad(stock):
         print(f"stock run failed: {stock}")
