@@ -55,6 +55,28 @@ Re-run on the main build with that change (`66427f0`), `8/12 FAIL`, REAL_KINDS =
 WSLg audio back without fake devices: no (stock lists neither audioinput nor audiooutput).
 
 ## 3. Browser: the seed fold and phantom output (Task 2)
+
+Box `camoucrome/s3b` is 41 commits, `s3b-device-id-seed` last (106962c649).
+
+- Fold in `GetHMACForRawMediaDeviceID` (new commit); `CamouWithPhantoms` exported
+  and gated by `ActiveMediaDevicesSeed`; phantom-aware output authorization;
+  `NotifyDeviceChange` uses the phantoms too (fixup in `s3-media-phantoms`).
+- Build: 302 steps, 7m50s. `gn check` OK, checkdeps clean, 18 unit tests pass
+  (`MediaPhantoms*:DeviceIds*`).
+- Export: mtime reset 146 files; no-op rebuild 45 steps (1m41s).
+  sha256: s3-media-phantoms.patch b1a93de6, s3b-device-id-seed.patch 56742fc3,
+  series d2f71dd7.
+- Verify: `verify_s3_media` 8/12 (S3-9..12 FAIL, as planned: S3-9..11 need the
+  renderer change and S3-12 needs the renderer to use the same activation rule;
+  the renderer in `sp4-media.patch` still makes blank entries on `enabled` alone).
+  `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4.
+- The Task 2 mutation check moves to Task 3, where it targets the browser gate
+  after the renderer change.
+- Environment finding: WSLg lost its audio devices since the 2026-09-01
+  baseline. `verify_phantom` P6 and `verify_sp4_media` M4 had assumed a real mic
+  and the stale `sp4_media_baseline.json`. Both now compare with a live stock run
+  (P6: stock NotFoundError -> fork NotReadableError, since a claimed mic with no
+  mic is a phantom, so gUM ends NO_HARDWARE and phantom-webcam remaps it).
 ## 4. Renderer: no id rewrite (Task 3)
 ## 5. Windows build and hashes (Task 4)
 ## 6. Host rows (Task 4)

@@ -1,35 +1,67 @@
+diff --git a/content/browser/renderer_host/media/audio_output_authorization_handler.cc b/content/browser/renderer_host/media/audio_output_authorization_handler.cc
+index 319b8c7b41..377897315c 100644
+--- a/content/browser/renderer_host/media/audio_output_authorization_handler.cc
++++ b/content/browser/renderer_host/media/audio_output_authorization_handler.cc
+@@ -302,12 +302,25 @@ void AudioOutputAuthorizationHandler::TranslateDeviceID(
+   CHECK(!media::AudioDeviceDescription::IsDefaultDevice(device_id),
+         base::NotFatalUntil::M152);
+ 
++  // camoucrome S3b: match against the same phantom-augmented list the page
++  // was given. A phantom speaker exists only when the host has no output
++  // device, so any match then (the phantom or its "communications" sentinel)
++  // authorizes the default output, as stock setSinkId("") does on such a host.
++  const MediaDeviceEnumeration camou_enumeration =
++      CamouWithPhantoms(enumeration);
++  const bool camou_phantom_outputs =
++      enumeration[static_cast<size_t>(MediaDeviceType::kMediaAudioOutput)]
++          .empty();
+   for (const blink::WebMediaDeviceInfo& device_info :
+-       enumeration[static_cast<size_t>(MediaDeviceType::kMediaAudioOutput)]) {
++       camou_enumeration[static_cast<size_t>(
++           MediaDeviceType::kMediaAudioOutput)]) {
+     if (DoesRawMediaDeviceIDMatchHMAC(salt_and_origin, device_id,
+                                       device_info.device_id)) {
+-      GetDeviceParameters(std::move(trace_scope), std::move(cb),
+-                          device_info.device_id);
++      GetDeviceParameters(
++          std::move(trace_scope), std::move(cb),
++          camou_phantom_outputs
++              ? std::string(media::AudioDeviceDescription::kDefaultDeviceId)
++              : device_info.device_id);
+       return;
+     }
+   }
 diff --git a/content/browser/renderer_host/media/media_devices_manager.cc b/content/browser/renderer_host/media/media_devices_manager.cc
-index d306cf1312..cb036e8b7b 100644
+index d306cf1312..a06c1e53b3 100644
 --- a/content/browser/renderer_host/media/media_devices_manager.cc
 +++ b/content/browser/renderer_host/media/media_devices_manager.cc
-@@ -37,6 +37,9 @@
- #include "content/public/browser/browser_task_traits.h"
- #include "content/public/browser/browser_thread.h"
- #include "content/public/common/content_features.h"
+@@ -28,6 +28,10 @@
+ #include "base/threading/thread_checker.h"
+ #include "base/time/time.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/device_ids.h"
 +#include "components/camoucfg/keys.h"
 +#include "components/camoucfg/mask_config.h"
 +#include "components/camoucfg/media_phantoms.h"
- #include "media/audio/audio_device_description.h"
- #include "media/audio/audio_system.h"
- #include "media/base/media_switches.h"
-@@ -70,6 +73,73 @@ const base::FeatureParam<base::TimeDelta> kReleaseVideoSourceProviderTimeout{
+ #include "content/browser/media/media_devices_permission_checker.h"
+ #include "content/browser/renderer_host/media/media_stream_manager.h"
+ #include "content/browser/renderer_host/media/video_capture_manager.h"
+@@ -70,6 +74,71 @@ const base::FeatureParam<base::TimeDelta> kReleaseVideoSourceProviderTimeout{
      "release_video_source_provider_timeout", base::Seconds(60)};
  #endif
  
-+namespace {
-+
-+// camoucrome S3: the identity's claimed media devices that the host lacks,
-+// added to the enumerate reply only (never to current_snapshot_, so
-+// getUserMedia, setSinkId, devicechange and the picker keep the real list).
-+// They go in before translation, so Chrome's own permission gating, deviceId
-+// HMAC and per-document groupId salt apply to them. A kind gets one phantom
-+// device when its raw list is empty and its count is above 0. Absent or false
-+// mediaDevices:enabled leaves the enumeration untouched (rule 5).
++// camoucrome S3: the identity's claimed media devices that the host lacks.
++// Never written to current_snapshot_, so getUserMedia and the picker keep the
++// real list; the enumerate reply, devicechange and output authorization
++// (S3b) apply this same function. Phantoms go in before translation, so
++// Chrome's own permission gating, deviceId HMAC and per-document groupId salt
++// apply to them. A kind gets one phantom device when its raw list is empty
++// and its count is above 0. Inactive mediaDevices (not enabled, or no seed)
++// leaves the enumeration untouched (rule 5).
 +MediaDeviceEnumeration CamouWithPhantoms(const MediaDeviceEnumeration& real) {
 +  MediaDeviceEnumeration out = real;
 +  const camoucfg::ConfigScope& scope = camoucfg::GlobalScope();
-+  if (!camoucfg::GetBool(scope, camoucfg::keys::kMediaDevicesEnabled)
-+           .value_or(false)) {
++  if (camoucfg::ActiveMediaDevicesSeed(scope) == 0) {
 +    return out;
 +  }
 +  struct Kind {
@@ -40,18 +72,20 @@ index d306cf1312..cb036e8b7b 100644
 +    const char* label_key;
 +    const char* label_default;
 +  };
-+  // Defaults match sp4-media.patch's pre-grant branch.
++  // Label defaults are shared with sp4-media and media-ii-track.
 +  static constexpr Kind kKinds[] = {
 +      {MediaDeviceType::kMediaAudioInput, "audioinput",
 +       camoucfg::keys::kMediaDevicesMicros, 3,
 +       camoucfg::keys::kMediaDevicesMicrophoneLabel,
-+       "Microphone (Realtek Audio)"},
++       camoucfg::kDefaultMicrophoneLabel},
 +      {MediaDeviceType::kMediaVideoInput, "videoinput",
 +       camoucfg::keys::kMediaDevicesWebcams, 1,
-+       camoucfg::keys::kMediaDevicesCameraLabel, "Integrated Camera"},
++       camoucfg::keys::kMediaDevicesCameraLabel,
++       camoucfg::kDefaultCameraLabel},
 +      {MediaDeviceType::kMediaAudioOutput, "audiooutput",
 +       camoucfg::keys::kMediaDevicesSpeakers, 1,
-+       camoucfg::keys::kMediaDevicesSpeakerLabel, "Speakers (Realtek Audio)"},
++       camoucfg::keys::kMediaDevicesSpeakerLabel,
++       camoucfg::kDefaultSpeakerLabel},
 +  };
 +#if BUILDFLAG(IS_WIN)
 +  constexpr bool kWindows = true;
@@ -81,12 +115,10 @@ index d306cf1312..cb036e8b7b 100644
 +  return out;
 +}
 +
-+}  // namespace
-+
  BASE_FEATURE(kEnumerateDevicesRelaxedCache,
  #if BUILDFLAG(IS_WIN)
               base::FEATURE_ENABLED_BY_DEFAULT
-@@ -1195,6 +1265,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+@@ -1195,6 +1264,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
        has_permissions[static_cast<size_t>(MediaDeviceType::kMediaAudioInput)] &&
        request_audio_input_capabilities;
  
@@ -95,7 +127,7 @@ index d306cf1312..cb036e8b7b 100644
    std::vector<blink::WebMediaDeviceInfoArray> translation(
        static_cast<size_t>(MediaDeviceType::kNumMediaDeviceTypes));
    for (size_t i = 0;
-@@ -1202,7 +1274,7 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+@@ -1202,7 +1273,7 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
      if (!requested_types[i])
        continue;
  
@@ -104,7 +136,7 @@ index d306cf1312..cb036e8b7b 100644
        if (!has_permissions[i] && !translation[i].empty()) {
          break;
        }
-@@ -1238,7 +1310,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+@@ -1238,7 +1309,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
  
    GetAudioInputCapabilities(request_id, video_input_capabilities_requested,
                              audio_input_capabilities_requested,
@@ -114,7 +146,7 @@ index d306cf1312..cb036e8b7b 100644
  }
  
  void MediaDevicesManager::GetAudioInputCapabilities(
-@@ -1288,6 +1361,16 @@ void MediaDevicesManager::GetAudioInputCapabilities(
+@@ -1288,6 +1360,16 @@ void MediaDevicesManager::GetAudioInputCapabilities(
        raw_enumeration_results[static_cast<size_t>(
                                    MediaDeviceType::kMediaAudioInput)]
            .size();
@@ -131,7 +163,7 @@ index d306cf1312..cb036e8b7b 100644
    for (std::size_t i = 0; i < num_audio_input_devices; i++) {
      auto raw_device_info = raw_enumeration_results[static_cast<size_t>(
          MediaDeviceType::kMediaAudioInput)][i];
-@@ -1303,7 +1386,17 @@ void MediaDevicesManager::GetAudioInputCapabilities(
+@@ -1303,7 +1385,17 @@ void MediaDevicesManager::GetAudioInputCapabilities(
          std::move(capabilities));
      size_t capabilities_index =
          enumeration_states_[state_id].audio_capabilities.size() - 1;
@@ -150,3 +182,33 @@ index d306cf1312..cb036e8b7b 100644
        GetIOThreadTaskRunner({})->PostTask(
            FROM_HERE,
            base::BindOnce(&MediaDevicesManager::GotAudioInputCapabilities,
+@@ -1837,8 +1929,11 @@ void MediaDevicesManager::NotifyDeviceChange(
+   const SubscriptionRequest& request = it->second;
+   request.listener_->OnDevicesChanged(
+       type,
+-      TranslateMediaDeviceInfoArray(has_permission, salt_and_origin,
+-                                    enumeration[static_cast<size_t>(type)]));
++      // camoucrome S3b: the same phantoms as the enumerate reply, so a
++      // devicechange listener (an AudioContext on a phantom sink) keeps them.
++      TranslateMediaDeviceInfoArray(
++          has_permission, salt_and_origin,
++          CamouWithPhantoms(enumeration)[static_cast<size_t>(type)]));
+ }
+ 
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+diff --git a/content/browser/renderer_host/media/media_devices_manager.h b/content/browser/renderer_host/media/media_devices_manager.h
+index 72bcfabb7f..e0d698be3c 100644
+--- a/content/browser/renderer_host/media/media_devices_manager.h
++++ b/content/browser/renderer_host/media/media_devices_manager.h
+@@ -55,6 +55,11 @@ using MediaDeviceEnumeration =
+     std::array<blink::WebMediaDeviceInfoArray,
+                static_cast<size_t>(MediaDeviceType::kNumMediaDeviceTypes)>;
+ 
++// camoucrome S3: `real` plus the identity's claimed devices the host lacks,
++// or `real` unchanged when mediaDevices is inactive. See the definition.
++CONTENT_EXPORT MediaDeviceEnumeration
++CamouWithPhantoms(const MediaDeviceEnumeration& real);
++
+ #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ BASE_DECLARE_FEATURE(kReleaseVideoSourceProviderIfNotInUse);
+ #endif
