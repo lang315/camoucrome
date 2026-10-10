@@ -452,6 +452,7 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4; the
   Windows verify set 21/21; step 2 stability 0 changed rows. Open gaps are in
   section 8 of the measurements.
+  Follow-ups S3b are listed in the measurement doc section 8.
 - **S4. The fork is unstable across launches.** WebGPU's adapter was missing in
   one of two launches (1 of 3 runs). HEVC's answer flipped (2 of 3 runs). One
   CreepJS run reported "rgba noise". The control never did any of this.

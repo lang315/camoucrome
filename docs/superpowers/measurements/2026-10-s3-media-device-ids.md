@@ -43,7 +43,7 @@ Edits to `media_devices_manager.cc` only. Anchors each occurred once. The phanto
 `AUDIO_PCM_LOW_LATENCY` (Windows' own fallback says `AUDIO_PCM_LINEAR`; the page cannot see the format).
 
 - Build 1: 4258 steps (a large blink and `components_unittests` recompile on this tree). `gn check` browser and mediastream:
-  `Header dependency check OK` each; both checkdeps runs print `SUCCESS`. `MediaPhantoms*`/`DeviceIds*` unit tests: 10 + 8 passed.
+  `Header dependency check OK` each; both checkdeps runs print `SUCCESS`. `MediaPhantomsTest`/`DeviceIdsTest` unit tests: 18 passed (5 MediaPhantomsTest, 13 DeviceIdsTest).
 - `verify_s3_media`: 6/8. S3-1, 2, 3, 4, 6, 8 PASS (S3-4 turned green). Two rows fail for reasons outside this commit:
   - S3-5 `same_ids`: stock content_shell also gives different deviceIds to the main frame and a same-origin iframe
     (audioinput `8f4051..` vs `ecc74c..`), so it has no persistent ids; the phantom camera behaves the same. Groups are disjoint.
@@ -62,7 +62,8 @@ Edits to `media_devices_manager.cc` only. Anchors each occurred once. The phanto
 ### Task 4: renderer (sp4-media, media-ii-track)
 
 - Grant test: any non-empty id in any kind marks the reply post-grant (`camou_any_device_id`), so a speakers-only host
-  keeps its real speaker id. Not measurable on WSL (needs a host with a speaker and no inputs); its row is S3-W1 (Task 5).
+  keeps its real speaker id. This change is unmeasured. WSL has inputs, and on the host the phantom inputs carry ids after
+  the grant, so the old input-only test also takes the post-grant path and S3-W1 passes either way (see section 8).
 - Sentinel prefix: enumerate and track labels both go through `MaskedDeviceLabel`, so a `default` or `communications`
   entry keeps Chrome's `<prefix> - ` on both surfaces (media-ii M4). `verify_media_ii` M11 still PASS (the fake device's
   `default` label has no ` - `).
@@ -74,7 +75,7 @@ Edits to `media_devices_manager.cc` only. Anchors each occurred once. The phanto
   its main frame. The row compares, per kind, "deviceId equal across documents" fork versus stock, and requires every
   fork groupId to differ between documents. Persistent per-profile stability is measured on the Windows host (Task 5).
 - Build 12 steps; verify `verify_s3_media` 8/8, `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4;
-  unit tests MediaPhantoms 10, DeviceIds 8 PASSED; `gn check` and `checkdeps` clean.
+  unit tests 18 PASSED (5 MediaPhantomsTest, 13 DeviceIdsTest); `gn check` and `checkdeps` clean.
 - Mutation (transform's capability setters dropped, 3 steps): S3-7 FAIL (7/8). Restored, rebuilt, 8/8.
 
 ## 5. Windows hashes and build
@@ -143,20 +144,33 @@ Windows verify set (`windows_verify_set.py green`): 21/21 entries OK (`verify_ho
 ## 8. Gaps
 
 - Linux and macOS sentinel shapes are not built.
-- `getUserMedia` on a phantom device gives `NotFoundError`, which `phantom-webcam` remaps to `NotReadableError`.
-- A host with more real devices than the identity claims keeps the extra ones.
+- `getUserMedia` on a phantom device: the exact-id path (`deviceId: {exact: <listed phantom id>}`) is unmeasured. It most likely ends in NO_HARDWARE, which `phantom-webcam` remaps to `NotReadableError`. `OverconstrainedError` is the possible worse alternative.
+- A host with more real devices than the identity claims keeps the extra ones. Sharper case: a real kind with a configured count of 0 is hidden before the grant and shown after it, so the set of kinds changes across the grant on real hardware. This predates S3 and is the case S3-4 targets.
+- The sentinel prefix (`Default - `, `Communications - `) follows the host UI locale, not the identity's language, so a German identity on an English host still reads `Default - `. This predates S3.
+- On a host with no audio output, `setSinkId()` and `AudioContext` `sinkId` reject the phantom speaker's listed id with `NotFoundError`. Phantoms never enter the device snapshot that output authorization reads, and stock never rejects an id it just listed under a grant. This is a new tell that S3 introduces (before S3 such a host listed only blank ids). It is unmeasured; the claim rests on the spec's statement that `setSinkId` reads the real snapshot. Follow-up: accept phantom ids in output authorization, or keep the phantom speaker out of the reply until that exists; measure it with a host row on a host with no output device.
 - The phantom mic's 48 kHz stereo is Windows' fallback, not a captured mic.
 - The S3-4 RED needs a host with exactly one real input kind. It was run on WSL (real mic, no camera) but not on a second host shape.
 - Phantom mic latency is unmeasured against a real mic. The range is 0..0.0427 s, which is 2048 frames at 48 kHz (Windows' fallback). A typical WASAPI mic reports about 0.01 s. The host has no mic, so there is no stock value to compare. Parked for the owner; the fix is a one-constant change.
 - S3-5 on WSL is a guard, not a RED row: content_shell has no persistent deviceId salt. Persistent per-profile id stability is measured only by S3-W4 on the host.
-- The grant test (any non-empty id marks the reply post-grant) is measured only on the host (S3-W1). WSL has inputs, so a speakers-only host cannot be built there.
+- The grant test (any non-empty id marks the reply post-grant) is unmeasured. WSL has inputs. On the host the phantom inputs carry ids after the grant, so the old input-only test also takes the post-grant path, and S3-W1 passes with or without the change. Follow-up: host row S3-W5 under config `micros: 0, webcams: 0, speakers: 1` with the mic granted, requiring the fork's non-sentinel `audiooutput` id to be 64 hex, with its RED from a mutant that restores the old input-only test.
 - `verify_sp4_media` needs `sp4_media_baseline.json`, which is not in the repo (build-host-local). This predates S3.
+
+### Follow-ups (from the final review)
+
+- M1: phantoms are gated on `mediaDevices:enabled` alone while the renderer transform also needs a non-zero seed, so a hand-written config with no seed shows a half-masked mix; gate the phantoms on the seed too, or document that the seed is required.
+- M2: `MaskedDeviceLabel` turns a bare `Default` label into the configured name, giving two entries with the same label where stock shows `Default`; return the Chrome label unchanged for a bare sentinel and update the test.
+- M3: the phantom mic gets its own groupId, while a real laptop mic and speaker on one codec may share one (unverified); capture stock on a laptop and, if shared, give the phantom mic the speaker's group.
+- M4: the phantom camera label and missing facing mode may differ from a real integrated camera on Windows (unverified); capture the stock shape and carry a captured label from `gen.py`.
+- M5: the default device labels are written out in three patches; move them into one camoucfg header so they cannot drift apart.
+- M9: leftover style nits (include order, a missing `<algorithm>` include, lines over 80 columns, a double blank line); fix them in one box commit plus export.
+- M10: S3-W2 accepts any three or more inputs instead of exactly three with a 64-hex third, and S3-7 hard-codes 1920x1080 from Chrome's fallback list; tighten both.
+- M11: S3-8 compares only which fields are empty; compare label values and the `getCapabilities()` keys against stock.
 
 ## 9. Final counts
 
 | Check | Result |
 |---|---|
-| WSL `verify_s3_media` | 8/8; RED on `main` (`e585e8b5ce`) 2/8 pass (S3-3, S3-8 guards) |
+| WSL `verify_s3_media` | 8/8; RED on `main` (`e585e8b5ce`) 2/8 pass (S3-3, S3-8 guards); S3-5 was rewritten later into a guard and its RED was not seen |
 | Host `verify_s3_host` | 4/4; RED on S2c 0/4, stock-as-fork 2/4, three per-clause mutants 3/4 each |
 | WSL regressions | `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4 |
 | Windows verify set | 21/21 (`verify_host_oracle` keeps its known O2 FAIL) |
