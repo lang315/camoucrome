@@ -65,7 +65,8 @@ A new camoucfg helper `MediaDevicesActive(scope)` is true when `mediaDevices:ena
 - the browser phantoms;
 - the HMAC fold;
 - the renderer's pre-grant shape and label masking;
-- the track label mask.
+- the track label mask;
+- `phantom-webcam`'s NotReadableError remap (otherwise an enabled-but-seedless config would list no camera yet remap getUserMedia's error).
 
 With the helper false, nothing changes (rule 5). `gen.py` always sets a seed. The label defaults (`Integrated Camera`, `Microphone (Realtek Audio)`, `Speakers (Realtek Audio)`) become constants in one camoucfg header, which all three patches read (M5).
 
