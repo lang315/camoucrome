@@ -429,12 +429,19 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   eligibility per pixel through coverage masks replayed at the 2D draw choke
   point. WebGL `readPixels` reads 1px margin strips so a sub-rect equals a
   full read.
-- **S2c. OPEN (split from S2b on 2026-10-06).** WebGL to WebGL `texImage2D`
-  takes a GPU path that skips the snapshot hook. Copy-path cost is
-  unmeasured: the cache holds two full-canvas copies, and a miss on a float16
-  canvas reads back from the GPU for nothing. Also from S2b: the 2D draw cost
-  ratio is 4.35x (above the 2x line; WSL CPU raster), and the `readPixels`
-  margin strips add round trips.
+- **S2c. DONE 2026-10-08 (`specs/2026-10-07-canvas-noise-s2c-design.md`;
+  results in `measurements/2026-10-canvas-noise-s2c.md`; branch
+  `s2c/canvas-cost`, not yet merged).** Canvas noise is marked at flush time,
+  `getImageData` noises only the returned rect, and `readPixels` and
+  framebuffer reads are noised without the extra copies; `texImage2D` from a
+  WebGL canvas is noised (C38). A page framebuffer is noised only when its read
+  attachment is 8-bit RGB(A) (C46, C46b), and an `SRGB8_ALPHA8` drawing buffer
+  is noised (C47). `verify_sp3a` has 57 rows. Final cost ratios (WSL CPU raster,
+  measurements section 12.6): `per_draw_us` 0.93x (target 1.2, PASS), `read_2d`
+  below the timer (PASS), `gl_flat.large` 1.37x, `gl_edges.large` 1.44x
+  (targets 3x, PASS); `gl_fbo.large` 4.16x (adopted 3x, an accepted MISS after
+  the format gate), `draw_read` 2.64x (target 2x, MISS), `gl_edges.small`
+  2.00x (target 1.5x, MISS). The gaps are in section 10 of the measurements.
 - **S3. Device IDs are empty on the fork after the camera/microphone grant**,
   while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
   unmeasurable.

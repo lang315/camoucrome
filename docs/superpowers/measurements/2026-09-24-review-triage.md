@@ -40,7 +40,7 @@ The scripts, CI and client rows are tracked separately in the tooling section be
 | 20 | With media enabled, before permission there are 3 blank `audioinput` entries. | CONFIRMED | Probe: `["audioinput::","audioinput::","audioinput::","videoinput::","audiooutput::"]`. Stock shows at most one entry per kind before permission. |
 | 21 | `lib_shell.evaluate` uses stock Playwright, which sends `Runtime.enable`. | REFUTED as a defect | The verify harness measures values, not detection. `measure_sp2b_stack.py` does not use `lib_shell`; its state C *deliberately* includes a connected Playwright (see its docstring). The CLAUDE.md rule governs the shipped clients, which use patchright. |
 | 22 | Synthetic media IDs are not mapped back, so `getUserMedia({deviceId:{exact}})` fails. | OPEN | Needs a reverse map in the browser process. |
-| 23 | `readPixels` noise skips user framebuffers and ignores `PACK_ROW_LENGTH`/skip settings. | OPEN | Part of the canvas redesign (#2). |
+| 23 | `readPixels` noise skips user framebuffers and ignores `PACK_ROW_LENGTH`/skip settings. | CLOSED by S2c | Framebuffer reads C35-C37; see `measurements/2026-10-canvas-noise-s2c.md`. |
 | 24 | Geolocation position posted before the permission check. | OPEN | Not reproduced yet. |
 | 25 | WebGPU adapter info is not spoofed. | OPEN | Already on the roadmap (2026-09-14 notes). |
 | 26 | `screenX` versus the MouseEvent screen offset; `measureText` jitter versus layout. | OPEN | These are design trade-offs of window-geometry and metric-jitter. |

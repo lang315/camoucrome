@@ -54,8 +54,8 @@ class CanvasNoiseMask {
   // True iff some cell is exactly kNoiseMaskAa (aa without imported): the
   // only cells readback noise may change.
   bool has_aa() const { return aa_cells_ > 0; }
-  // The cells for PerturbRgbaEdges. Only meaningful when !empty(): an empty
-  // view has cells == nullptr, which means "every pixel may change".
+  // The cells for PerturbRgbaEdgesInPlace. Only meaningful when !empty():
+  // an empty view has cells == nullptr, which means "every pixel may change".
   NoiseMask view() const;
   // Bumps on every change, so a reader can key a cache on it.
   uint64_t generation() const { return generation_; }
