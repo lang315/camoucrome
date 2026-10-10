@@ -29,7 +29,22 @@ Mutant off: rebuilt, `grep -c S3B-MUTANT` = 0, tree clean.
 
 Build steps: baseline 263; mutant on 10; mutant off 2.
 
-Host note: two later runs of `verify_s3_media.py`, after the mutant job, found REAL_KINDS = [] (WSLg listed no real audio device). S3-1..S3-8 still passed, but S3-9..S3-11 failed as "stock control failed: not measurable". The RED above is from the first run, when the controls held. Tasks 2-3 need the real devices back.
+Host note: two later runs of `verify_s3_media.py`, after the mutant job, found REAL_KINDS = [] (WSLg listed no real audio device), so S3-9..S3-11 read "stock control failed: not measurable". Ruling: the SINK sessions (S3-9..S3-11) now pass `--use-fake-device-for-media-stream`; every other session stays without it.
+
+Re-run on the main build with that change (`66427f0`), `8/12 FAIL`, REAL_KINDS = [] (phantom kinds: all three):
+
+| Row | Verdict | Note |
+|---|---|---|
+| S3-1..S3-6 | PASS | |
+| S3-7 | PASS | 2 input entries, capability ids equal own ids, range checks [True, True] (the real-input half has no real kind to check) |
+| S3-8 | PASS | by label and capability keys: True |
+| S3-9 | FAIL | `sink: fork=NotFoundError stock=ok` |
+| S3-10 | FAIL | `gum: fork=OverconstrainedError stock=ok` (with a fake mic the listed id matches no device) |
+| S3-11 | FAIL | `acSink: fork=NotFoundError stock=ok` |
+| S3-12 | FAIL | enabled without a seed differs from stock |
+
+WSLg audio back without fake devices: no (stock lists neither audioinput nor audiooutput).
+
 ## 3. Browser: the seed fold and phantom output (Task 2)
 ## 4. Renderer: no id rewrite (Task 3)
 ## 5. Windows build and hashes (Task 4)
