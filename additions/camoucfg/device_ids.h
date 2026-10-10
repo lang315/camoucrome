@@ -9,6 +9,8 @@
 #include <string>
 #include <string_view>
 
+#include "components/camoucfg/mask_config.h"
+
 namespace camoucfg {
 
 // Deterministic, origin-salted synthetic device id. 64 lowercase hex,
@@ -33,6 +35,20 @@ std::string SyntheticDeviceId(uint64_t seed, std::string_view kind,
 std::string MaskedDeviceLabel(std::string_view device_id,
                               std::string_view chrome_label,
                               std::string_view configured);
+
+// The label an identity's device shows when its kind's label key is absent.
+// One copy, shared by the browser phantoms (media_devices_manager.cc), the
+// enumerate transform (media_devices.cc) and the track label
+// (media_stream_track_impl.cc).
+inline constexpr char kDefaultCameraLabel[] = "Integrated Camera";
+inline constexpr char kDefaultMicrophoneLabel[] = "Microphone (Realtek Audio)";
+inline constexpr char kDefaultSpeakerLabel[] = "Speakers (Realtek Audio)";
+
+// The mediaDevices seed when media-device spoofing is active, else 0. Active
+// means mediaDevices:enabled is true AND mediaDevices:seed is non-zero; every
+// media-device hook (browser phantoms, the device-id fold, the renderer's
+// list and track label) uses this one rule (S3b).
+uint32_t ActiveMediaDevicesSeed(const ConfigScope& scope);
 
 }  // namespace camoucfg
 
