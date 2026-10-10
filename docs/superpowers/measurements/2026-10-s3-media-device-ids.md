@@ -19,7 +19,7 @@ So `REAL_KINDS = [audioinput, audiooutput]` and `PHANTOM_KINDS = [videoinput]`: 
 
 ## 3. RED
 
-Run on the unchanged `e585e8b5ce` build, `out/Default` (0 steps), script commit `6b40b16`. Result `2/8 FAIL`, rc=1.
+Run on the unchanged `e585e8b5ce` build, `out/Default` (0 steps), script commit `6b40b16`. Result: 2 of 8 rows PASS (the two guards), 6 FAIL, rc=1.
 
 | Row | Verdict | Note |
 |---|---|---|
@@ -141,3 +141,25 @@ Windows verify set (`windows_verify_set.py green`): 21/21 entries OK (`verify_ho
 `mediaDevices.ids` is non-empty on both arms; step 2's finding S3 (empty ids after the grant) is closed on the fork.
 
 ## 8. Gaps
+
+- Linux and macOS sentinel shapes are not built.
+- `getUserMedia` on a phantom device gives `NotFoundError`, which `phantom-webcam` remaps to `NotReadableError`.
+- A host with more real devices than the identity claims keeps the extra ones.
+- The phantom mic's 48 kHz stereo is Windows' fallback, not a captured mic.
+- The S3-4 RED needs a host with exactly one real input kind. It was run on WSL (real mic, no camera) but not on a second host shape.
+- Phantom mic latency is unmeasured against a real mic. The range is 0..0.0427 s, which is 2048 frames at 48 kHz (Windows' fallback). A typical WASAPI mic reports about 0.01 s. The host has no mic, so there is no stock value to compare. Parked for the owner; the fix is a one-constant change.
+- S3-5 on WSL is a guard, not a RED row: content_shell has no persistent deviceId salt. Persistent per-profile id stability is measured only by S3-W4 on the host.
+- The grant test (any non-empty id marks the reply post-grant) is measured only on the host (S3-W1). WSL has inputs, so a speakers-only host cannot be built there.
+- `verify_sp4_media` needs `sp4_media_baseline.json`, which is not in the repo (build-host-local). This predates S3.
+
+## 9. Final counts
+
+| Check | Result |
+|---|---|
+| WSL `verify_s3_media` | 8/8; RED on `main` (`e585e8b5ce`) 2/8 pass (S3-3, S3-8 guards) |
+| Host `verify_s3_host` | 4/4; RED on S2c 0/4, stock-as-fork 2/4, three per-clause mutants 3/4 each |
+| WSL regressions | `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4 |
+| Windows verify set | 21/21 (`verify_host_oracle` keeps its known O2 FAIL) |
+| `verify_sp3a` on `chrome` | 57 PASS, 6 baseline-less (C2, C3, C4, C5, C10, C11) |
+| Host canvas | 9/9 |
+| Step 2 stability | 236 compared rows, 0 changed |

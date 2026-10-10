@@ -442,9 +442,16 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   (targets 3x, PASS); `gl_fbo.large` 4.16x (adopted 3x, an accepted MISS after
   the format gate), `draw_read` 2.64x (target 2x, MISS), `gl_edges.small`
   2.00x (target 1.5x, MISS). The gaps are in section 10 of the measurements.
-- **S3. Device IDs are empty on the fork after the camera/microphone grant**,
-  while stock exposes real IDs. This is a tell, and it leaves `mediaDevices:seed`
-  unmeasurable.
+- **S3. DONE 2026-10-10 (`specs/2026-10-10-s3-media-device-ids-design.md`;
+  results in `measurements/2026-10-s3-media-device-ids.md`; branch
+  `s3/media-device-ids`, PR pending).** Device IDs were empty on the fork after
+  the camera/microphone grant, while stock exposes real IDs. Now a claimed
+  device with no real counterpart gets a phantom entry with a seeded id, and the
+  ids are stable per profile. `verify_s3_media` 8/8 on WSL (RED 2/8 on main);
+  `verify_s3_host` 4/4 on the Windows host (RED 0/4 on S2c); regressions
+  `verify_media_ii` 13/13, `verify_phantom` 6/6, `verify_sp4_media` 4/4; the
+  Windows verify set 21/21; step 2 stability 0 changed rows. Open gaps are in
+  section 8 of the measurements.
 - **S4. The fork is unstable across launches.** WebGPU's adapter was missing in
   one of two launches (1 of 3 runs). HEVC's answer flipped (2 of 3 runs). One
   CreepJS run reported "rgba noise". The control never did any of this.
