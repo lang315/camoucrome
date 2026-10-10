@@ -259,7 +259,7 @@ def main():
                              ("S3-11", "acSink", "hasOut")):
             ctl = sink_stock.get(key) == "ok"
             got = sink_fork.get(key)
-            res[k] = (sink_fork.get(need) and ctl and got == "ok",
+            res[k] = (bool(sink_fork.get(need) and ctl and got == "ok"),
                       f"{key}: fork={got} stock={sink_stock.get(key)}"
                       + ("" if ctl else " (stock control failed: not measurable)"))
     # S3-12 (M1): enabled without a seed is inactive, so the list equals stock.
