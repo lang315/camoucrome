@@ -17,7 +17,7 @@ Pin 154.0.8037.93. Box branch `camoucrome/s3b` cut at `camoucrome/main` = `4b5fd
 | Row | Verdict | Note |
 |---|---|---|
 | S3-1..S3-7 | PASS | |
-| S3-8 | PASS | by label and capability keys: True |
+| S3-8 | PASS (guard) | by label and capability keys: True |
 | S3-9 | FAIL | `sink: fork=NotFoundError stock=ok` |
 | S3-10 | FAIL | `gum: fork=NotReadableError stock=ok` (no capability matches the listed id; phantom-webcam remaps NO_HARDWARE) |
 | S3-11 | FAIL | `acSink: fork=NotFoundError stock=ok` |
@@ -37,7 +37,7 @@ Re-run on the main build with that change (`66427f0`), `8/12 FAIL`, REAL_KINDS =
 |---|---|---|
 | S3-1..S3-6 | PASS | |
 | S3-7 | PASS | 2 input entries, capability ids equal own ids, range checks [True, True] (the real-input half has no real kind to check) |
-| S3-8 | PASS | by label and capability keys: True |
+| S3-8 | PASS (guard) | by label and capability keys: True |
 | S3-9 | FAIL | `sink: fork=NotFoundError stock=ok` |
 | S3-10 | FAIL | `gum: fork=OverconstrainedError stock=ok` (with a fake mic the listed id matches no device) |
 | S3-11 | FAIL | `acSink: fork=NotFoundError stock=ok` |
