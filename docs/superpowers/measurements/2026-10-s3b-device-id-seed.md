@@ -117,6 +117,59 @@ The renderer keeps Chrome's ids (the browser folds the seed); `SyntheticDeviceId
 - Export: 41 commits; the 3 patches `sp4-media`, `media-ii-track`, `phantom-webcam` changed; the no-op rebuild built 59 steps after a 148-file mtime reset.
 
 ## 5. Windows build and hashes (Task 4)
+
+Windows tree `D:\camou-win\chromium\src` at box `camoucrome/main` (`4b5fdddcd8`, S3); source box `camoucrome/s3b` (`ff5ecaa880`, 41 commits); branch `s3b/device-id-seed` at `d4e1dea`.
+W12 replaced 15 files. Every pre hash equalled the box's `main` hash (0 ABSENT, 0 mismatches), and every post hash equalled the box's `s3b` hash (0 mismatches):
+
+| File | pre | post |
+|---|---|---|
+| `components/camoucfg/device_ids.cc` | 3137f4e4 | 242afec9 |
+| `components/camoucfg/device_ids.h` | f379044b | 65494b59 |
+| `components/camoucfg/device_ids_unittest.cc` | e8447994 | 4aa87552 |
+| `components/camoucfg/invariants.json` | e72100d7 | ae59afa0 |
+| `components/camoucfg/keys.h` | 1af0f371 | 06419521 |
+| `components/camoucfg/media_phantoms.cc` | b2a2169e | f812a667 |
+| `components/camoucfg/media_phantoms.h` | 32b9bc37 | 747528d2 |
+| `components/camoucfg/media_phantoms_unittest.cc` | 8c9a822c | cd99718d |
+| `content/browser/media/media_devices_util.cc` | e42d3abd | 997dde6f |
+| `content/browser/renderer_host/media/audio_output_authorization_handler.cc` | 3173a242 | 39f9735f |
+| `content/browser/renderer_host/media/media_devices_manager.cc` | 7eff2690 | 2afa4399 |
+| `content/browser/renderer_host/media/media_devices_manager.h` | 3e98c15b | b6d4c8c4 |
+| `third_party/blink/renderer/modules/mediastream/media_devices.cc` | 4993479a | f3634b11 |
+| `third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc` | a3195c20 | 6cc556a9 |
+| `third_party/blink/renderer/modules/mediastream/user_media_request.cc` | 83b33f73 | 55b22460 |
+
+Host tree disclosure: `D:\camou-win\tree` was not refreshed to this branch. Only `scripts/verify_s3_host.py` was copied in, so `tree.commit` still carries the S2c stamp `5a61ea044e24`.
+
+Builds (`autoninja -C out\Release chrome`, lock `s3b host red`):
+- `s3b-mut` (Windows-only mutant of `media_devices.cc`, below): `Build Succeeded: 131 steps`, rc=0, 142 s.
+- `s3b-1` (real file restored): `Build Succeeded: 0 steps`. The copied file kept its older source mtime, so the build treated the mutant objects as current; not a result.
+- `s3b-1b` (file touched): `Build Succeeded: 49 steps`, rc=0, 45 s. This is the GREEN binary.
+
 ## 6. Host rows (Task 4)
+
+`verify_s3_host.py` (7 rows), headless, fork (generated Windows identity, seed 1) against stock Chrome 154.0.8037.93. Shape lines carry kinds, id lengths and label prefixes only.
+
+RED (S3 build, before the copy): `6/7 FAIL`.
+- `W5 outs=1 hex=True`, `W6 sink control=ok fork=NotFoundError`, `W7 same-seed equal=True other-seed disjoint=True n=1`.
+- S3-W6 FAIL; S3-W1..W5 and S3-W7 PASS. S3-W5 and S3-W7 are guards on S3 (any-id grant test, seed-sensitive renderer hash).
+- The control arm's sink is `ok`, so the grant landed.
+
+S3-W5 mutant (Windows-only, never committed): the real `media_devices.cc` with the any-id test made input-only (`// S3B-WINMUT`, sha256 `126883b0`), on top of the 15 copied files. Build `s3b-mut`, 131 steps.
+- `W5 outs=0 hex=False`, `W6 sink control=ok fork=ok`, `W7 ... n=1`; `S3-W5: FAIL`, `6/7 FAIL`.
+- The input-only test takes the pre-grant branch, whose blank speaker entry `OUTS` filters out.
+- The real file was copied back, its post hash `f3634b11` equals `s3b`, and `grep S3B-WINMUT` finds 0.
+
+GREEN (`s3b-1b`): `7/7 ALL_PASS`, EXIT 0.
+- `W5 outs=1 hex=True`; `W6 sink control=ok fork=ok`; `W7 same-seed equal=True other-seed disjoint=True n=1`.
+- fork shape unchanged: `audioinput` 7, 14, 64; `videoinput` 64; `audiooutput` 7, 14, 64.
+
+Windows verify set (`windows_verify_set.py green`): `21/21 entries OK (green)`, EXIT 0 (`verify_host_oracle` keeps its known O2 FAIL).
+`verify_sp3a` with `CAMOU_SHELL=chrome`: 57 PASS and 6 FAIL (C2, C3, C4, C5, C10, C11, no stock baseline on the host, UNMEASURED), counts unchanged from S3.
+Host canvas (`measure_canvas_noise.py run --mode headless --seeds 8`): 9/9 PASS, EXIT 0.
+
 ## 7. Step 2 stability (Task 4)
+
+`measure_step2.py run --only stability --modes headless` on the `s3b-1b` build: `0 errors`; `stability / headless: 0 differing rows`.
+
 ## 8. Gaps
