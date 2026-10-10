@@ -27,7 +27,7 @@
 
 ## Rulings made while planning
 
-- **Workdir.** `~/chromium/src` on a new branch `camoucrome/s3`, not the S2c workdir. `~/chromium/src/out/Default` was just built by CI at `e585e8b5ce`, so the RED build is a no-op instead of an observe rebuild of hours. While the checkout sits on `camoucrome/s3`, `build-verify` on `main` would refuse, so camoucrome-80 is told first (Task 0) and nothing that touches the change set merges to `main` until Task 6 lands the branch.
+- **Workdir (needs the owner's OK; standing rule: `~/chromium/src` is touched only with owner approval).** `~/chromium/src` on a new branch `camoucrome/s3`, not the S2c workdir. If the owner declines, use `~/chromium-s2c/src` with `camoucrome/s3` cut from `camoucrome/main`; that costs one real observe rebuild (more than S2c landing's 3456 steps, since the observe content differs there). `~/chromium/src/out/Default` was just built by CI at `e585e8b5ce`, so the RED build is a no-op instead of an observe rebuild of hours. While the checkout sits on `camoucrome/s3`, `build-verify` on `main` would refuse, so camoucrome-80 is told first (Task 0) and nothing that touches the change set merges to `main` until Task 6 lands the branch.
 - **What WSL really has.** The rows do not assume WSL has no media devices; WSLg may expose a PulseAudio source and sink. Task 1 measures stock content_shell's granted list, and the script derives `REAL_KINDS` from that stock run. Phantom expectations apply only to claimed kinds outside `REAL_KINDS`. If every kind is real on WSL, stop and ask: then WSL cannot show the bug.
 - **Fixup targets (W6).**
   - `third_party/blink/renderer/modules/mediastream/media_devices.cc` goes to its last-touch commit (expected `sp4-media`; W6 computes it).
@@ -219,7 +219,7 @@ Poll `Get-Content D:\camou-win\cn\build-<label>.log -Tail 3` until an `rc=` line
 **Files:**
 - Create: `docs/superpowers/measurements/2026-10-s3-media-device-ids.md`
 
-- [ ] **Step 1: Tell camoucrome-80.** Send: "S3 takes ~/chromium/src off camoucrome/main onto a new branch camoucrome/s3 (same commit e585e8b5ce, no rebuild), until S3 lands. build-verify on main would refuse meanwhile, so please hold any merge that touches the change set and ping me first." Wait for an answer or for 10 minutes of silence, then proceed.
+- [ ] **Step 1: Owner OK, then tell camoucrome-80.** Proceed only with the owner's explicit OK for the workdir ruling. Then tell camoucrome-80. Send: "S3 takes ~/chromium/src off camoucrome/main onto a new branch camoucrome/s3 (same commit e585e8b5ce, no rebuild), until S3 lands. build-verify on main would refuse meanwhile, so please hold any merge that touches the change set and ping me first." Wait for an answer or for 10 minutes of silence, then proceed.
 
 - [ ] **Step 2: Cut the box branch** (W0, holding W1 "s3 branch"):
 ```bash
@@ -370,27 +370,38 @@ def main():
         print("every kind is real on this host: it cannot show S3")
         sys.exit(2)
 
+    # Rows S3-1, 2, 5, 6, 7 look only at PHANTOM kinds: a real kind already has
+    # ids on main, so including it would let a row pass without the fix.
+    def ph(lst):
+        return [d for d in lst if d["kind"] in phantom_kinds]
+
     if bad(post):
         for k in ("S3-1", "S3-2", "S3-5", "S3-7"):
             res[k] = (False, f"error {post}")
     else:
         m = post["main"]
-        res["S3-1"] = (set(kinds(m)) == set(KINDS) and
-                       all(HEX64.match(d["deviceId"]) for d in devices(m)),
-                       f"kinds={kinds(m)} ids={[d['deviceId'][:8] for d in m]}")
-        res["S3-2"] = (len(m) > 0 and all(HEX64.match(d["groupId"]) for d in m),
-                       f"groups={[d['groupId'][:8] for d in m]}")
+        res["S3-1"] = (set(kinds(m)) == set(KINDS) and len(devices(ph(m))) > 0 and
+                       all(HEX64.match(d["deviceId"]) for d in devices(ph(m))),
+                       f"kinds={kinds(m)} phantom ids={[d['deviceId'][:8] for d in ph(m)]}")
+        res["S3-2"] = (len(ph(m)) > 0 and all(HEX64.match(d["groupId"]) for d in ph(m)),
+                       f"phantom groups={[d['groupId'][:8] for d in ph(m)]}")
         fr = post["frame"]
-        same_ids = sorted(d["deviceId"] for d in m) == sorted(d["deviceId"] for d in fr)
-        mg = {d["groupId"] for d in devices(m)}
-        fg = {d["groupId"] for d in devices(fr)}
-        res["S3-5"] = (len(devices(m)) > 0 and same_ids and mg.isdisjoint(fg) and "" not in mg,
+        same_ids = sorted(d["deviceId"] for d in ph(m)) == sorted(d["deviceId"] for d in ph(fr))
+        mg = {d["groupId"] for d in devices(ph(m))}
+        fg = {d["groupId"] for d in devices(ph(fr))}
+        res["S3-5"] = (len(devices(ph(m))) > 0 and same_ids and mg.isdisjoint(fg) and "" not in mg,
                        f"ids equal={same_ids}, groups disjoint={mg.isdisjoint(fg)}")
-        caps = {d["kind"]: d for d in post["caps"] if d["deviceId"] not in SENTINELS}
-        mic, cam = caps.get("audioinput", {}), caps.get("videoinput", {})
-        res["S3-7"] = (bool(mic.get("sampleRate")) and bool(mic.get("channelCount")) and
-                       bool(cam.get("width")) and bool(cam.get("height")),
-                       f"mic={mic} cam={cam}")
+        caps = {d["kind"]: d for d in post["caps"]
+                if d["deviceId"] not in SENTINELS and d["kind"] in phantom_kinds}
+        checks = []
+        if "audioinput" in phantom_kinds:
+            mic = caps.get("audioinput", {})
+            checks.append(bool(mic.get("sampleRate")) and bool(mic.get("channelCount")))
+        if "videoinput" in phantom_kinds:
+            cam = caps.get("videoinput", {})
+            checks.append(bool(cam.get("width")) and bool(cam.get("height")))
+        res["S3-7"] = (len(checks) > 0 and all(checks),
+                       f"phantom input caps={caps}" if checks else "no phantom input kind on this host: not measurable")
 
     if bad(pre):
         res["S3-3"] = (False, f"error {pre}")
@@ -410,8 +421,8 @@ def main():
     if bad(post) or bad(other):
         res["S3-6"] = (False, "error")
     else:
-        ia = {d["deviceId"] for d in devices(post["main"])}
-        ib = {d["deviceId"] for d in devices(other["main"])}
+        ia = {d["deviceId"] for d in devices(post["main"]) if d["kind"] in phantom_kinds}
+        ib = {d["deviceId"] for d in devices(other["main"]) if d["kind"] in phantom_kinds}
         res["S3-6"] = (len(ia) > 0 and "" not in ia and ia.isdisjoint(ib),
                        f"origin A {len(ia)} ids, origin B {len(ib)} ids, disjoint={ia.isdisjoint(ib)}")
 
@@ -450,6 +461,8 @@ git push -u origin s3/media-device-ids
   - S3-1, S3-2, S3-5, S3-6 and S3-7 FAIL with empty ids;
   - S3-3, S3-4 and S3-8 PASS, as guards;
   - the last line is `3/8 FAIL` and rc=1.
+
+  S3-7 covers only the input kinds in `PHANTOM_KINDS`. If neither input kind is phantom on WSL, it prints "not measurable" and fails on both builds. In that case stop and ask whether to drop the row or move it to the host.
 
   If S3-3, S3-4 or S3-8 fails, the probe or the setup is wrong: fix the script before anything else. If the script exits 2 with "every kind is real", stop and ask the owner.
 
@@ -870,7 +883,8 @@ git push
 
 **Files:**
 - Modify (box): `third_party/blink/renderer/modules/mediastream/media_devices.cc` (fixup to its last-touch commit, expected `sp4-media`)
-- Regenerated: `patches/sp4-media.patch`
+- Modify (box): `third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc` (fixup to its last-touch commit, expected `media-ii-track`): the granted track's label must equal the enumerate label for the same id, which is verify_media_ii's M4 invariant. Without this, a real Windows `default` mic would read `Default - <configured>` in the enumerate list and bare `<configured>` on its track.
+- Regenerated: `patches/sp4-media.patch`, `patches/media-ii-track.patch`
 
 **Interfaces:**
 - Consumes: `camoucfg::MaskedDeviceLabel` (Task 2). `device_ids.h` is already granted to Blink in `third_party/blink/renderer/DEPS`, because `sp4-media` includes it.
@@ -908,13 +922,38 @@ EDITS = [
                         device_info.device_id, device_info.label,
                         label.Utf8()));''', 1),
 ]
+T = "third_party/blink/renderer/modules/mediastream/media_stream_track_impl.cc"
+EDITS += [
+  ("replace", T,
+   '''  if (source_type == MediaStreamSource::kTypeVideo) {
+    return String::FromUtf8(
+        camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesCameraLabel)
+            .value_or("Integrated Camera"));
+  }
+  return String::FromUtf8(
+      camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesMicrophoneLabel)
+          .value_or("Microphone (Realtek Audio)"));''',
+   '''  // S3: the same MaskedDeviceLabel as the enumerate list, so a "default" or
+  // "communications" track keeps Chrome's "<prefix> - " exactly as its
+  // enumerate entry does (track label == enumerate label, media-ii M4).
+  const std::string configured =
+      source_type == MediaStreamSource::kTypeVideo
+          ? camoucfg::GetString(scope, camoucfg::keys::kMediaDevicesCameraLabel)
+                .value_or("Integrated Camera")
+          : camoucfg::GetString(scope,
+                                camoucfg::keys::kMediaDevicesMicrophoneLabel)
+                .value_or("Microphone (Realtek Audio)");
+  return String::FromUtf8(camoucfg::MaskedDeviceLabel(
+      real_device_id.Utf8(), real_label.Utf8(), configured));''', 1),
+]
 ```
+Before shipping, confirm that `media_stream_track_impl.cc` already includes `components/camoucfg/device_ids.h` (`grep -c 'camoucfg/device_ids.h'`), because `CamouMaskDeviceId` uses `SyntheticDeviceId`. If it does not, add the include in the same EDITS file.
 
 - [ ] **Step 3: Apply, build, check.** Run `python3 /tmp/s3/apply_edits.py /tmp/s3/edits_t4.py`, then W5 with label `s3-t4` and W5g. Expected: N > 0 and checks OK.
 
 - [ ] **Step 4: Verify.** W5v: all four scripts at their full counts. `verify_media_ii`'s M11 must still PASS, because the fake device's `default` label has no ` - ` and so keeps the configured label.
 
-- [ ] **Step 5: Box commit and export** (W6: the Blink file fixes up into its last-touch commit). The count stays 40. Pull with W7. Only `patches/sp4-media.patch` may change (plus any patch W6 names for the same file). Commit:
+- [ ] **Step 5: Box commit and export** (W6: the Blink file fixes up into its last-touch commit). The count stays 40. Pull with W7. Only `patches/sp4-media.patch` and `patches/media-ii-track.patch` may change. Commit:
 ```bash
 git add additions patches settings docs/superpowers/measurements/2026-10-s3-media-device-ids.md
 git commit -m "feat(media): grant from any device id; keep sentinel label prefix (sp4-media)
