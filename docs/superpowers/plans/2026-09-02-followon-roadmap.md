@@ -240,7 +240,7 @@ what that leaves.*
   `5a48835`, `7a45194`; `patches/media-ii-track.patch`; M1–M11): grant-aware
   synthesis of `deviceId`/`groupId`/`label` made consistent across
   `enumerateDevices` and `MediaStreamTrack.getSettings()`/`getCapabilities()`,
-  via a `SyntheticDeviceId` helper folding seed + origin. Slice 2, 2026-09-06
+  via a `SyntheticDeviceId` helper folding seed + origin (replaced in S3b by the browser HMAC fold; `measurements/2026-10-s3b-device-id-seed.md`). Slice 2, 2026-09-06
   (`292a2bb`; `patches/phantom-webcam.patch`; P1–P6): a configured phantom webcam
   on a camera-less host now remaps `getUserMedia`'s `NO_HARDWARE` to
   `NotReadableError`, so the rejection no longer contradicts the enumerated count.

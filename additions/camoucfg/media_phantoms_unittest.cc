@@ -11,7 +11,8 @@ namespace {
 
 TEST(MediaPhantomsTest, VideoIsOneDeviceOnEveryPlatform) {
   for (bool windows : {false, true}) {
-    auto v = PhantomDevicesFor("videoinput", "Cam", windows, "Default", "Communications");
+    auto v = PhantomDevicesFor("videoinput", "Cam", windows, "Default",
+                               "Communications");
     ASSERT_EQ(v.size(), 1u);
     EXPECT_EQ(v[0].device_id, "camou-phantom-videoinput");
     EXPECT_EQ(v[0].group_id, "camou-phantom-group-videoinput");
@@ -42,7 +43,8 @@ TEST(MediaPhantomsTest, AudioOffWindowsHasNoSentinels) {
 }
 
 TEST(MediaPhantomsTest, LocalizedSentinelPrefix) {
-  auto v = PhantomDevicesFor("audioinput", "Mic", true, "Standard", "Kommunikation");
+  auto v =
+      PhantomDevicesFor("audioinput", "Mic", true, "Standard", "Kommunikation");
   EXPECT_EQ(v[0].label, "Standard - Mic");
   EXPECT_EQ(v[1].label, "Kommunikation - Mic");
 }

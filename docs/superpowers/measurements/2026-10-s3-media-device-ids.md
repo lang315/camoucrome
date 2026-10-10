@@ -166,6 +166,8 @@ Windows verify set (`windows_verify_set.py green`): 21/21 entries OK (`verify_ho
 - M10: S3-W2 accepts any three or more inputs instead of exactly three with a 64-hex third, and S3-7 hard-codes 1920x1080 from Chrome's fallback list; tighten both.
 - M11: S3-8 compares only which fields are empty; compare label values and the `getCapabilities()` keys against stock.
 
+S3b (`2026-10-s3b-device-id-seed.md`) closes I2, S3-W5, M1, M5, M9, M10 (the S3-W2 half; S3-7's 1920x1080 stays open) and M11. M2 moved to the Linux sentinel work.
+
 ## 9. Final counts
 
 | Check | Result |

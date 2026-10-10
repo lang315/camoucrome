@@ -7,11 +7,10 @@ and, on real hardware, is the camera/mic model. This makes the granted track
 coherent with the spoofed enumerate:
 
   - Pre-grant (no getUserMedia): enumerate = the sp4 empty-count spoof.
-  - Post-grant: enumerate transforms each REAL device to an origin-salted
-    synthetic deviceId/groupId (camoucfg::SyntheticDeviceId) + a configured
-    generic per-kind label, keeping the real count; and the track getters
-    (getSettings/getCapabilities/label) apply the SAME helper to the SAME real
-    id -> coherent by construction.
+  - Post-grant: enumerate transforms each REAL device to its
+    deviceId/groupId (Chrome's own ids, which the browser folds the seed into)
+    + a configured generic per-kind label, keeping the real count; and the
+    track getters (getSettings/getCapabilities) report the same ids.
 
 Grant is the axis. echo_server binds 127.0.0.1 which is a secure context (so
 getUserMedia is allowed) but a RANDOM port -- so M6 reuses ONE server url
@@ -20,18 +19,17 @@ two origins).
 
 MEASURED FACT (rotation_probe.py / shared_profile_probe.py): the fake-device
 video deviceId ROTATES per launch even with a shared --user-data-dir
-(content_shell has no persistent media-device salt). Since SyntheticDeviceId
-folds real_id, the synthetic video id necessarily rotates per launch too. So:
-  - M6 asserts §2's real requirement -- the synthetic id ROTATES like stock
-    (a stable id would be the cross-origin supercookie §2 forbids), NOT that
-    it is byte-identical across launches (that is impossible here).
+(content_shell has no persistent media-device salt). Since S3b the browser
+folds the seed into Chrome's own HMAC (media_devices_util.cc), so the listed
+id rotates with that salt. So:
+  - M6 asserts the id ROTATES like stock (a stable id would be a cross-launch
+    supercookie), NOT that it is byte-identical across launches.
   - M7/M8 still pass but are CONFOUNDED: rotation alone makes two launches
-    differ. The non-vacuous seed/origin-sensitivity coverage lives in
-    additions/camoucfg/device_ids_unittest.cc (Deterministic,
-    DifferentSeedsDiffer, DifferentOriginsDiffer).
-The evidence the transform actually fired: M11 GREEN => the enabled&&seed!=0
-guard was true => both sites call SyntheticDeviceId(seed!=0, non-empty id) =>
-the unit tests prove that path hashes => M3 proves both sites agree.
+    differ. Seed sensitivity is measured on Chrome, whose salt persists per
+    profile: verify_s3_host.py row S3-W7.
+The evidence the hooks fired: M11 GREEN => mediaDevices is active (enabled
+and a non-zero seed) => the browser folds the seed; M3/M4/M12 prove the
+track and the list agree.
 """
 
 import json, os, re, sys
@@ -221,8 +219,9 @@ def main():
                          "two reads in one session identical")
 
     # ---------------- M6: rotation preserved (NOT stable supercookie) -------
-    # §2 requires the synthetic id to rotate per launch exactly as stock does;
-    # a stable id would be the cross-origin supercookie the design forbids.
+    # §2 requires the listed id to rotate per launch exactly as stock does
+    # (it follows Chrome's salt); a stable id would be a cross-launch
+    # supercookie.
     if any(is_err(x) for x in (spoofA1, spoofA2, stock1, stock2)):
         results["M6"] = (False, "error in a launch")
     else:
@@ -243,8 +242,7 @@ def main():
         a, b = video_track_id(spoofA1), video_track_id(spoofA_seed2)
         ok = bool(HEX64.match(a or "")) and bool(HEX64.match(b or "")) and a != b
         results["M7"] = (ok, "seed differs -> id differs (CONFOUNDED: rotation "
-                             "alone suffices -- see device_ids_unittest "
-                             "DifferentSeedsDiffer)")
+                             "alone suffices -- see verify_s3_host.py S3-W7)")
 
     # ---------------- M8: different origin -> different (CONFOUNDED) ---------
     if is_err(spoofA1) or is_err(spoofB1):
@@ -253,8 +251,7 @@ def main():
         a, b = video_track_id(spoofA1), video_track_id(spoofB1)
         ok = bool(HEX64.match(a or "")) and bool(HEX64.match(b or "")) and a != b
         results["M8"] = (ok, "origin differs -> id differs (CONFOUNDED: rotation "
-                             "alone suffices -- see device_ids_unittest "
-                             "DifferentOriginsDiffer)")
+                             "alone suffices -- origins are separate by Chrome's HMAC key)")
 
     # ---------------- M9: {} == stock, pre AND post; stock is coherent ------
     if any(is_err(x) for x in (stock_pre, empty_pre, stock1, empty_post)):
