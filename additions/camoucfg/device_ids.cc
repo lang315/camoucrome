@@ -8,6 +8,8 @@
 #include <string>
 #include <string_view>
 
+#include "components/camoucfg/keys.h"
+
 namespace camoucfg {
 namespace {
 
@@ -95,6 +97,13 @@ std::string MaskedDeviceLabel(std::string_view device_id,
     }
   }
   return std::string(configured);
+}
+
+uint32_t ActiveMediaDevicesSeed(const ConfigScope& scope) {
+  if (!GetBool(scope, keys::kMediaDevicesEnabled).value_or(false)) {
+    return 0;
+  }
+  return GetUint32(scope, keys::kMediaDevicesSeed).value_or(0);
 }
 
 }  // namespace camoucfg
