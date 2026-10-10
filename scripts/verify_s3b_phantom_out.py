@@ -68,17 +68,16 @@ PROBE = r"""(async () => {
 })()"""
 
 
-def run(url, config, probe=PROBE):
-    vals, err = lib_shell.session(config, [probe], navigate_to=url, extra_flags=FLAGS)
-    return {"error": str(err)} if err else vals[0]
+def run(url, config, probes):
+    vals, err = lib_shell.session(config, probes, navigate_to=url, extra_flags=FLAGS)
+    return [{"error": str(err)}] * len(probes) if err else vals
 
 
 def main():
     url, _, stop = echo_server.start([])
     try:
-        stock = run(url, None)
-        ctl = run(url, None, CTL)
-        fork = run(url, CONFIG)
+        stock, ctl = run(url, None, [PROBE, CTL])  # one stock launch for both
+        fork, = run(url, CONFIG, [PROBE])
     finally:
         stop()
     if not isinstance(stock, dict) or "error" in stock or stock.get("outs") != 0:
