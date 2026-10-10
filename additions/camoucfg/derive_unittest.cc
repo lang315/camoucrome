@@ -190,5 +190,16 @@ TEST(DeriveUnitTest, IsRoughlyUniform) {
   EXPECT_LT(mean, 0.55);
 }
 
+TEST(DeriveTest, KeyedFormsAgreeWithStringForms) {
+  for (std::string_view d : {"canvas-gate-r", "canvas-b", "audio", ""}) {
+    const uint64_t key = DomainKey(d);
+    for (uint64_t i : {0ULL, 1ULL, 77ULL, 0xFFFFFFFFFFFFULL}) {
+      EXPECT_EQ(DeriveUnit(42, d, i), DeriveUnitKeyed(42, key, i));
+      EXPECT_EQ(DeriveDelta(42, d, i, 3), DeriveDeltaKeyed(42, key, i, 3));
+      EXPECT_EQ(DeriveDelta(42, d, i, 0), DeriveDeltaKeyed(42, key, i, 0));
+    }
+  }
+}
+
 }  // namespace
 }  // namespace camoucfg

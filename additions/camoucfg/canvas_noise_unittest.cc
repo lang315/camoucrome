@@ -11,6 +11,8 @@
 #include <limits>
 #include <vector>
 
+#include "base/containers/span.h"
+#include "components/camoucfg/derive.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace camoucfg {
@@ -220,12 +222,94 @@ Px Get(const std::vector<uint8_t>& v, size_t w, size_t x, size_t y) {
   return px;
 }
 
-// PerturbRgbaEdges on `v`, with an unperturbed copy of it as the source.
+// The test oracle (review #13): an independent reference for the field
+// PerturbRgbaEdgesInPlace computes, straight from its definition. Every
+// eligibility test reads `source`, an unperturbed copy of `data`, and each
+// pixel is computed on its own: a 3x3 patch hashed top-down (FNV-1a 64), a
+// gate and a delta per RGB channel keyed by the patch, a mask cell of
+// exactly kNoiseMaskAa, alpha at least max(min_alpha, 1), and a pixel unlike
+// each of its four neighbours. A mask window that does not fit, or a mask
+// with `bottom_up`, does nothing.
+void ReferenceEdges(std::vector<uint8_t>& data,
+                    const std::vector<uint8_t>& source,
+                    size_t w,
+                    size_t h,
+                    size_t rb,
+                    uint64_t seed,
+                    double density,
+                    int32_t strength,
+                    uint8_t min_alpha,
+                    const NoiseMask& mask,
+                    bool bottom_up) {
+  if (seed == 0 || !(density > 0.0) || strength <= 0 || w < 3 || h < 3 ||
+      (mask.cells != nullptr &&
+       (bottom_up || mask.x0 + w > mask.width || mask.y0 + h > mask.height))) {
+    return;
+  }
+  density = std::min(density, 1.0);
+  strength = std::min(strength, 255);
+  min_alpha = std::max<uint8_t>(min_alpha, 1);
+  const std::array<uint64_t, 3> gate = {DomainKey("canvas-gate-r"),
+                                        DomainKey("canvas-gate-g"),
+                                        DomainKey("canvas-gate-b")};
+  const std::array<uint64_t, 3> delta = {
+      DomainKey("canvas-r"), DomainKey("canvas-g"), DomainKey("canvas-b")};
+  auto px = [&](size_t x, size_t y, size_t k) {
+    return source[y * rb + x * 4 + k];
+  };
+  auto same = [&](size_t x, size_t y, size_t nx, size_t ny) {
+    for (size_t k = 0; k < 4; ++k) {
+      if (px(x, y, k) != px(nx, ny, k)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  for (size_t y = 1; y + 1 < h; ++y) {
+    for (size_t x = 1; x + 1 < w; ++x) {
+      // SAFETY: the window fits the mask (checked above), so the cell lies
+      // inside its `stride` x rows cells.
+      if (mask.cells != nullptr &&
+          UNSAFE_BUFFERS(
+              mask.cells[((y + mask.y0) >> mask.shift) * mask.stride +
+                         ((x + mask.x0) >> mask.shift)]) != kNoiseMaskAa) {
+        continue;
+      }
+      const uint8_t a = px(x, y, 3);
+      if (a < min_alpha || same(x, y, x - 1, y) || same(x, y, x + 1, y) ||
+          same(x, y, x, y - 1) || same(x, y, x, y + 1)) {
+        continue;
+      }
+      uint64_t hash = 0xCBF29CE484222325ULL;
+      // The image's top row first: in a bottom-up buffer, the next one.
+      for (size_t yy :
+           {bottom_up ? y + 1 : y - 1, y, bottom_up ? y - 1 : y + 1}) {
+        for (size_t xx = x - 1; xx <= x + 1; ++xx) {
+          for (size_t k = 0; k < 4; ++k) {
+            hash ^= px(xx, yy, k);
+            hash *= 0x100000001B3ULL;
+          }
+        }
+      }
+      for (size_t ch = 0; ch < 3; ++ch) {
+        if (DeriveUnitKeyed(seed, gate[ch], hash) >= density) {
+          continue;
+        }
+        const int32_t d = int32_t{px(x, y, ch)} +
+                          DeriveDeltaKeyed(seed, delta[ch], hash, strength);
+        data[y * rb + x * 4 + ch] =
+            static_cast<uint8_t>(std::clamp(d, 0, int32_t{a}));
+      }
+    }
+  }
+}
+
+// PerturbRgbaEdgesInPlace on `v` (tight rows, no mask, top-down).
 void Edges(std::vector<uint8_t>& v, size_t w, size_t h, uint64_t seed,
            double density, int32_t strength, uint8_t min_alpha = 1) {
-  const std::vector<uint8_t> source = v;
-  PerturbRgbaEdges(v.data(), source.data(), w, h, w * 4, seed, density,
-                   strength, min_alpha, NoiseMask(), /*bottom_up=*/false);
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(v.data(), w, h, w * 4, seed, density,
+                                      strength, min_alpha, NoiseMask(),
+                                      /*bottom_up=*/false));
 }
 
 // A buffer whose every pixel differs from its neighbours, with partial alpha
@@ -393,11 +477,10 @@ TEST(PerturbRgbaEdgesTest, BottomUpMatchesTopDown) {
   const auto top = PartialAlphaScene(9, 7);
   auto a = top;
   auto b = flip(top, 9, 7);
-  const auto sa = a, sb = b;
-  PerturbRgbaEdges(a.data(), sa.data(), 9, 7, 36, 77, 1.0, 3, 1, NoiseMask(),
-                   /*bottom_up=*/false);
-  PerturbRgbaEdges(b.data(), sb.data(), 9, 7, 36, 77, 1.0, 3, 1, NoiseMask(),
-                   /*bottom_up=*/true);
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(a.data(), 9, 7, 36, 77, 1.0, 3, 1,
+                                      NoiseMask(), /*bottom_up=*/false));
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(b.data(), 9, 7, 36, 77, 1.0, 3, 1,
+                                      NoiseMask(), /*bottom_up=*/true));
   EXPECT_NE(a, top);
   EXPECT_EQ(flip(b, 9, 7), a);
 }
@@ -414,7 +497,8 @@ TEST(PerturbRgbaEdgesTest, MaskGatesEachPixel) {
   bool moved = false;
   for (uint64_t seed = 1; seed < 32; ++seed) {
     auto w = v;
-    PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, seed, 1.0, 3, 1, mask, false);
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, seed, 1.0, 3, 1,
+                                        mask, false));
     auto rest = w;
     Set(rest, 8, 2, 2, {200, 100, 50, 255});
     EXPECT_EQ(rest, v) << "a pixel outside the aa cell moved, seed " << seed;
@@ -433,21 +517,23 @@ TEST(PerturbRgbaEdgesTest, CoarseMaskCellCoversItsPixels) {
   bool moved = false;
   for (uint64_t seed = 1; seed < 32; ++seed) {
     auto w = v;
-    PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, seed, 1.0, 3, 1, mask, false);
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, seed, 1.0, 3, 1,
+                                        mask, false));
     EXPECT_EQ(Get(w, 8, 6, 6), Get(v, 8, 6, 6)) << "seed " << seed;
     moved |= w != v;
   }
   EXPECT_TRUE(moved);
 }
 
-// A mask for another size never applies: no pixel changes.
+// A mask whose window does not fit the buffer never applies: no pixel changes.
 TEST(PerturbRgbaEdgesTest, MaskOfAnotherSizeIsNoOp) {
   auto v = Fill(8, 8, {0, 0, 0, 255});
   Set(v, 8, 4, 4, {200, 100, 50, 255});
   const std::vector<uint8_t> cells(7 * 8, kNoiseMaskAa);
   const NoiseMask mask{cells.data(), 7, 0, 7, 8};
   auto w = v;
-  PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, 7, 1.0, 3, 1, mask, false);
+  ASSERT_TRUE(
+      PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, 7, 1.0, 3, 1, mask, false));
   EXPECT_EQ(w, v);
 }
 
@@ -473,9 +559,233 @@ TEST(PerturbRgbaEdgesTest, MaskWithBottomUpIsNoOp) {
   const std::vector<uint8_t> cells(64, kNoiseMaskAa);
   const NoiseMask mask{cells.data(), 8, 0, 8, 8};
   auto w = v;
-  PerturbRgbaEdges(w.data(), v.data(), 8, 8, 32, 7, 1.0, 3, 1, mask,
-                   /*bottom_up=*/true);
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(w.data(), 8, 8, 32, 7, 1.0, 3, 1, mask,
+                                      /*bottom_up=*/true));
   EXPECT_EQ(w, v);
+}
+
+// A scene with both random pixels (eligible) and 3x3 flat blocks (not), so
+// every branch of the noise pass runs.
+std::vector<uint8_t> MixedScene(size_t w, size_t h, uint32_t seed) {
+  std::vector<uint8_t> v(w * h * 4);
+  uint32_t s = seed;
+  for (size_t y = 0; y < h; ++y) {
+    for (size_t x = 0; x < w; ++x) {
+      const base::span<uint8_t> p = base::span(v).subspan((y * w + x) * 4, 4u);
+      const bool flat = ((x / 3) + (y / 3)) % 3 == 0;
+      for (int k = 0; k < 4; ++k) {
+        s = s * 1103515245u + 12345u;
+        p[k] = flat ? static_cast<uint8_t>(40 + 50 * k)
+                    : static_cast<uint8_t>(s >> 24);
+      }
+      // Alpha: mostly opaque, some translucent, some zero.
+      const uint8_t a = (x + 2 * y) % 7 == 0 ? static_cast<uint8_t>(p[3] | 1)
+                        : (x + y) % 11 == 0  ? 0
+                                             : 255;
+      p[3] = a;
+      for (int k = 0; k < 3; ++k) {
+        p[k] = std::min(p[k], a);  // premultiplied
+      }
+    }
+  }
+  return v;
+}
+
+uint64_t Fnv(const std::vector<uint8_t>& v) {
+  uint64_t h = 0xCBF29CE484222325ULL;
+  for (uint8_t b : v) {
+    h ^= b;
+    h *= 0x100000001B3ULL;
+  }
+  return h;
+}
+
+// Pins the S2b field byte for byte: the S2c loop rewrite must not move it.
+// The value was captured from the S2b implementation (8cf90b48). Both the
+// production pass and the reference must give it.
+TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
+  constexpr size_t kW = 48, kH = 40;
+  const std::vector<uint8_t> src = MixedScene(kW, kH, 2026);
+  std::vector<uint8_t> cells(kW * kH, kNoiseMaskAa);
+  for (size_t i = 0; i < cells.size(); i += 5) {
+    cells[i] = kNoiseMaskImported;
+  }
+  NoiseMask mask{cells.data(), kW, 0, kW, kH};
+  std::vector<uint8_t> top = src;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(top.data(), kW, kH, kW * 4, 987654321,
+                                      0.5, 3, 1, mask, /*bottom_up=*/false));
+  std::vector<uint8_t> bottom = src;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(bottom.data(), kW, kH, kW * 4, 987654321,
+                                      0.5, 3, 1, NoiseMask(),
+                                      /*bottom_up=*/true));
+  EXPECT_NE(top, src);
+  EXPECT_NE(bottom, src);
+  EXPECT_EQ(Fnv(top), 0x9AC9002D1AA8339BULL);
+  EXPECT_EQ(Fnv(bottom), 0x5CAC490D0AEE43C6ULL);
+  std::vector<uint8_t> ref_top = src, ref_bottom = src;
+  ReferenceEdges(ref_top, src, kW, kH, kW * 4, 987654321, 0.5, 3, 1, mask,
+                 /*bottom_up=*/false);
+  ReferenceEdges(ref_bottom, src, kW, kH, kW * 4, 987654321, 0.5, 3, 1,
+                 NoiseMask(), /*bottom_up=*/true);
+  EXPECT_EQ(Fnv(ref_top), 0x9AC9002D1AA8339BULL);
+  EXPECT_EQ(Fnv(ref_bottom), 0x5CAC490D0AEE43C6ULL);
+}
+
+// The in-place pass (two-row ring) equals the reference on every shape:
+// heights 1..4 (the ring at its edges), odd widths, padded rows, both
+// orientations, no mask / a fine mask / a coarse mask, and a mask origin.
+TEST(PerturbRgbaEdgesTest, InPlaceEqualsReference) {
+  struct Case {
+    size_t w, h, pad;
+    bool bottom_up;
+    int mask_shift;
+    size_t x0, y0;
+  };
+  const Case cases[] = {
+      {3, 1, 0, false, -1, 0, 0},   {3, 2, 0, false, -1, 0, 0},
+      {3, 3, 0, false, -1, 0, 0},   {5, 4, 8, true, -1, 0, 0},
+      {17, 13, 4, false, 0, 0, 0},  {17, 13, 0, true, -1, 0, 0},
+      {33, 29, 12, false, 2, 0, 0}, {20, 9, 0, false, 0, 7, 5},
+      {21, 11, 4, false, 2, 6, 3}};
+  for (const Case& c : cases) {
+    const size_t rb = c.w * 4 + c.pad;
+    std::vector<uint8_t> tight =
+        MixedScene(c.w, c.h, static_cast<uint32_t>(7 + c.w * c.h));
+    std::vector<uint8_t> src(rb * c.h, 0xCD);
+    for (size_t y = 0; y < c.h; ++y) {
+      std::copy_n(&tight[y * c.w * 4], c.w * 4, &src[y * rb]);
+    }
+    // A mask covering (x0 + w) x (y0 + h) with a mixed pattern.
+    const size_t mw = c.x0 + c.w, mh = c.y0 + c.h;
+    const int shift = std::max(c.mask_shift, 0);
+    const size_t cell = size_t{1} << shift;
+    const size_t stride = (mw + cell - 1) / cell;
+    std::vector<uint8_t> cells(stride * ((mh + cell - 1) / cell));
+    for (size_t i = 0; i < cells.size(); ++i) {
+      cells[i] = i % 4 == 1 ? kNoiseMaskImported : kNoiseMaskAa;
+    }
+    NoiseMask mask;
+    if (c.mask_shift >= 0) {
+      mask = NoiseMask{cells.data(), stride, shift, mw, mh, c.x0, c.y0};
+    }
+    std::vector<uint8_t> two = src, one = src;
+    ReferenceEdges(two, src, c.w, c.h, rb, 31337, 0.5, 2, 1, mask, c.bottom_up);
+    ASSERT_TRUE(PerturbRgbaEdgesInPlace(one.data(), c.w, c.h, rb, 31337, 0.5, 2,
+                                        1, mask, c.bottom_up));
+    EXPECT_EQ(one, two) << c.w << "x" << c.h << " pad " << c.pad;
+    for (size_t y = 0; y < c.h; ++y) {  // padding untouched
+      for (size_t i = c.w * 4; i < rb; ++i) {
+        EXPECT_EQ(one[y * rb + i], 0xCD);
+      }
+    }
+  }
+}
+
+// A mask origin addresses the right cells: noising a window of a larger
+// buffer with x0/y0 equals the same window of the whole-buffer pass, on the
+// window's interior.
+TEST(PerturbRgbaEdgesTest, MaskOriginSelectsTheWindow) {
+  constexpr size_t kW = 40, kH = 30, kX = 10, kY = 7, kWw = 17, kWh = 12;
+  const std::vector<uint8_t> src = MixedScene(kW, kH, 99);
+  std::vector<uint8_t> cells(kW * kH, kNoiseMaskAa);
+  for (size_t i = 0; i < cells.size(); i += 3) {
+    cells[i] = kNoiseMaskImported;
+  }
+  const NoiseMask whole{cells.data(), kW, 0, kW, kH};
+  std::vector<uint8_t> full = src;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(full.data(), kW, kH, kW * 4, 5, 0.6, 2, 1,
+                                      whole, false));
+  std::vector<uint8_t> win(kWw * kWh * 4);
+  for (size_t y = 0; y < kWh; ++y) {
+    std::copy_n(&src[((y + kY) * kW + kX) * 4], kWw * 4, &win[y * kWw * 4]);
+  }
+  NoiseMask at = whole;
+  at.x0 = kX;
+  at.y0 = kY;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(win.data(), kWw, kWh, kWw * 4, 5, 0.6, 2,
+                                      1, at, false));
+  for (size_t y = 1; y + 1 < kWh; ++y) {
+    for (size_t x = 1; x + 1 < kWw; ++x) {
+      for (size_t k = 0; k < 4; ++k) {
+        EXPECT_EQ(win[(y * kWw + x) * 4 + k],
+                  full[((y + kY) * kW + x + kX) * 4 + k]);
+      }
+    }
+  }
+  // A window past the mask is a no-op.
+  NoiseMask past = whole;
+  past.x0 = kW - kWw + 1;
+  std::vector<uint8_t> w2 = win;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(w2.data(), kWw, kWh, kWw * 4, 5, 0.6, 2,
+                                      1, past, false));
+  EXPECT_EQ(w2, win);
+}
+
+// The WebGL margin strips (review #7): a rect noised with its neighbours
+// from a frame equals the same rect of a pass over the whole image, for a
+// rect with a margin on every side, on some sides (the image's edge on the
+// others), 1 px wide or high, and the whole image (no frame), in both
+// orientations and with padded rows.
+TEST(PerturbRgbaFramedTest, EqualsTheWholeImagePass) {
+  constexpr size_t kW = 23, kH = 19;
+  std::vector<uint8_t> image = MixedScene(kW, kH, 4711);
+  for (size_t i = 3; i < image.size(); i += 4) {
+    image[i] = i % 7 == 0 ? 128 : 255;  // mostly opaque: WebGL is opaque-only
+  }
+  struct Rect {
+    size_t x, y, w, h;
+  };
+  const Rect rects[] = {{3, 2, 11, 9}, {0, 0, 9, 7},   {14, 12, 9, 7},
+                        {0, 5, 23, 4}, {6, 0, 5, 19},  {7, 4, 1, 10},
+                        {2, 9, 15, 1}, {0, 0, kW, kH}, {21, 3, 2, 12}};
+  for (bool bottom_up : {false, true}) {
+    std::vector<uint8_t> whole = image;
+    PerturbRgba(whole.data(), kW, kH, kW * 4, 2468, 0.5, 2, bottom_up);
+    ASSERT_NE(whole, image);
+    for (const Rect& r : rects) {
+      const size_t rb = r.w * 4 + 12;
+      std::vector<uint8_t> rect(rb * r.h, 0xCD);
+      for (size_t y = 0; y < r.h; ++y) {
+        std::copy_n(&image[((r.y + y) * kW + r.x) * 4], r.w * 4, &rect[y * rb]);
+      }
+      // The frame, from the unperturbed image: rows span the rect plus one
+      // pixel on each side that has a column.
+      const bool has_left = r.x > 0, has_right = r.x + r.w < kW;
+      const size_t fx = r.x - (has_left ? 1 : 0);
+      const size_t fw = r.w + has_left + has_right;
+      std::vector<uint8_t> before, after, left, right;
+      RgbaFrame frame;
+      frame.side_stride = kW * 4;
+      if (r.y > 0) {
+        const auto row = image.begin() + ((r.y - 1) * kW + fx) * 4;
+        before.assign(row, row + fw * 4);
+        frame.before = before.data();
+      }
+      if (r.y + r.h < kH) {
+        const auto row = image.begin() + ((r.y + r.h) * kW + fx) * 4;
+        after.assign(row, row + fw * 4);
+        frame.after = after.data();
+      }
+      if (has_left) {
+        frame.left = &image[(r.y * kW + r.x - 1) * 4];
+      }
+      if (has_right) {
+        frame.right = &image[(r.y * kW + r.x + r.w) * 4];
+      }
+      ASSERT_TRUE(PerturbRgbaFramed(rect.data(), r.w, r.h, rb, frame, 2468, 0.5,
+                                    2, bottom_up));
+      for (size_t y = 0; y < r.h; ++y) {
+        for (size_t i = 0; i < r.w * 4; ++i) {
+          EXPECT_EQ(rect[y * rb + i], whole[((r.y + y) * kW + r.x) * 4 + i])
+              << r.x << "," << r.y << " " << r.w << "x" << r.h << " row " << y
+              << " byte " << i << " bottom_up " << bottom_up;
+        }
+        for (size_t i = r.w * 4; i < rb; ++i) {
+          EXPECT_EQ(rect[y * rb + i], 0xCD);  // padding untouched
+        }
+      }
+    }
+  }
 }
 
 }  // namespace

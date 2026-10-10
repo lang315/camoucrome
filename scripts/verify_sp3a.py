@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Forty-one criteria, all driven with Playwright's sync API over content_shell's CDP,
+Sixty-three criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -86,6 +86,50 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       stock draws nothing, so it must equal unconfigured (and its own pre-draw state).
   C34 a 'copy' STROKE wipes the whole clip like a copy fill: after a translucent
       speckle the canvas reads like a fresh one with the same stroke.
+  C35 a framebuffer readPixels of a gradient triangle is noised and deterministic.
+  C36 a framebuffer readPixels sub-rect equals the matching part of the full read.
+  C36b the same for rects whose margin or body crosses the far edge, and one
+      with a negative origin (the row/column probe and the margin read).
+  C37 a framebuffer read leaves translucent pixels exact and changes an opaque one.
+  C38 texImage2D(webgl canvas) read in a second context equals the source's read.
+  C39 getImageData of a sub-rect equals the whole-snapshot field (full read and copy).
+  C40 one flush or many give one mask.
+  C41 a read with READ_BUFFER NONE leaves the page's buffer and the GL error as stock.
+  C42 the same for a drawingBufferStorage(RGBA16F) default framebuffer.
+  C43 a globalAlpha 0 drawImage over an arc's region leaves the region's noise
+      unchanged (a draw that changes no pixel marks none).
+  C44 a shadowed drawImage far from an arc leaves the arc's noise unchanged
+      (the shadow marks its own pixels, not the whole clip).
+  C44b the same with an opaque ({alpha:false}) source, whose shadow is drawn
+      through a looper rather than a filtered layer.
+  C45 getImageData of rects that cross the canvas edge (negative origin, past
+      the far edge, negative size, a 1x1 corner) equals the full read's pixels
+      (zero outside) and the same rect of a drawImage copy.
+  C46 R8 and RG8 texture framebuffers read RGBA / UNSIGNED_BYTE as stock (G and
+      B stay 0); an RGBA8 one with the same scene is noised.
+  C46b an RGBA4 renderbuffer framebuffer reads as stock; an RGBA8 one is noised.
+  C47 a drawingBufferStorage(SRGB8_ALPHA8) readPixels is noised and deterministic.
+  C48 a globalAlpha 0 drawImage of an SVG image over an arc's region leaves
+      the region's noise unchanged (an SVG draws through a layer and a nested
+      record; a layer that composites nothing marks nothing).
+  C49 a large readPixels sub-rect (above the one-piece size, so only its
+      margin strips are read again), from the default framebuffer and from a
+      page framebuffer, equals the matching part of the full read.
+  C50 readPixels into a SharedArrayBuffer view (read and noised in private
+      scratch, then copied once) equals the same read into a plain view, a
+      padded layout and a sub-rect, and leaves the padding untouched (a
+      session with SharedArrayBuffer enabled; the race it closes is not
+      testable deterministically).
+  C51 a shadowed globalAlpha 0 drawImage of a translucent canvas over an arc's
+      region leaves the region's noise unchanged (the shadow's drop-shadow
+      layer holds only a draw that paints nothing).
+  C52 a url() filter that floods and then drop-shadows (feFlood, then
+      feDropShadow in sRGB), over an alpha-0 fill on AA strokes: every pixel
+      the filter paints reads as unconfigured (the filter paints from
+      nothing, so its layer is marked).
+  C53 the C18 layout (WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS) read
+      from a page framebuffer agrees with the default layout; every byte
+      outside the layout is untouched.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -543,6 +587,284 @@ ELIG_FN = """
     return n; };
 """
 
+# C35-C37: reads from a page framebuffer. FBO_FN renders the C6 gradient
+# triangle into a 64x64 RGBA8 texture framebuffer (no multisampling) and leaves
+# it bound.
+FBO_FN = """
+  const fbo = (w, h) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, RGBA, w, h, 0, RGBA, UB, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    gl.viewport(0, 0, w, h); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); return f; };
+"""
+
+# C53: LAYOUT's reads, from a page framebuffer (an RGBA8 texture).
+LAYOUT_FBO = tri("webgl2", 64, 64, FBO_FN + """
+  fbo(64, 64);""" + LAYOUT[LAYOUT.index("const A = new Uint8Array(64 * 64 * 4)"):LAYOUT.rindex('return { inside, outside, h: H(A) };')]
+  + "return { inside, outside, h: H(A) };")
+
+# C35: a framebuffer read is noised and deterministic.
+FBOREAD = tri("webgl", 64, 64, FBO_FN + ELIG_FN + """
+  fbo(64, 64);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  let same = true; for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) { same = false; break; }
+  return { h: H(A), same, e: elig(A, 64) };""")
+
+# C36: a framebuffer sub-rect read equals the matching part of a full read.
+FBOSUB = tri("webgl", 64, 64, FBO_FN + """
+  fbo(64, 64);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(32 * 32 * 4); gl.readPixels(16, 16, 32, 32, RGBA, UB, B);
+  let diff = 0;
+  for (let y = 0; y < 32; y++) for (let i = 0; i < 128; i++)
+    if (B[y * 128 + i] !== A[(y + 16) * 256 + 64 + i]) diff++;
+  return { diff, h: H(B) };""")
+
+# C49: a 520x520 sub-rect of a 1024x1024 read: its rect plus margin (522^2)
+# is above the one-piece size, so its neighbours come from the margin strips.
+# Every edge of the rect crosses the triangle's gradient.
+STRIPS = tri("webgl", 1024, 1024, FBO_FN + """
+  const run = () => {
+    const A = new Uint8Array(1024 * 1024 * 4); gl.readPixels(0, 0, 1024, 1024, RGBA, UB, A);
+    const B = new Uint8Array(520 * 520 * 4); gl.readPixels(200, 200, 520, 520, RGBA, UB, B);
+    let diff = 0;
+    for (let y = 0; y < 520; y++) for (let i = 0; i < 2080; i++)
+      if (B[y * 2080 + i] !== A[(y + 200) * 4096 + 800 + i]) diff++;
+    return [diff, H(B)]; };
+  const d = run(); fbo(1024, 1024); const f = run();
+  return { diff: [d[0], f[0]], h: [d[1], f[1]], glerr: gl.getError() };""")
+
+# C50: the same reads into a SharedArrayBuffer view and a plain one: a
+# padded full read (PACK_ALIGNMENT 8, odd width) and a sub-rect with margins.
+SHARED = tri("webgl", 63, 64, """
+  if (typeof SharedArrayBuffer !== 'function') return { err: 'no-sharedarraybuffer' };
+  const sab = (n) => new Uint8Array(new SharedArrayBuffer(n));
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 8);
+  const n = 63 * 256 + 252;
+  const P = new Uint8Array(n).fill(0xAB), S = sab(n).fill(0xAB);
+  gl.readPixels(0, 0, 63, 64, RGBA, UB, P); gl.readPixels(0, 0, 63, 64, RGBA, UB, S);
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+  const P2 = new Uint8Array(32 * 32 * 4), S2 = sab(32 * 32 * 4);
+  gl.readPixels(16, 16, 32, 32, RGBA, UB, P2); gl.readPixels(16, 16, 32, 32, RGBA, UB, S2);
+  let diff = 0, pad = 0;
+  for (let i = 0; i < n; i++) if (P[i] !== S[i]) diff++;
+  for (let i = 0; i < P2.length; i++) if (P2[i] !== S2[i]) diff++;
+  for (let y = 0; y < 63; y++) for (let i = 252; i < 256; i++) if (S[y * 256 + i] !== 0xAB) pad++;
+  return { diff, pad, h: H(new Uint8Array(S2)), glerr: gl.getError() };""")
+
+# C36b: framebuffer reads whose margin or rect crosses the far edge, and one
+# with a negative origin: each in-framebuffer part equals the full read's.
+FBOEDGE = tri("webgl", 64, 64, FBO_FN + """
+  fbo(64, 64);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const part = (x, y, w, h) => { const B = new Uint8Array(w * h * 4);
+    gl.readPixels(x, y, w, h, RGBA, UB, B); let diff = 0; const inb = [];
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const fx = x + i, fy = y + j;
+      if (fx < 0 || fy < 0 || fx >= 64 || fy >= 64) continue;
+      for (let k = 0; k < 4; k++) { const b = B[(j * w + i) * 4 + k]; inb.push(b);
+        if (b !== A[(fy * 64 + fx) * 4 + k]) diff++; } }
+    return { diff, h: H(inb) }; };
+  const r = [part(16, 16, 48, 48), part(24, 24, 48, 48), part(-4, -4, 20, 20)];
+  return { diff: r.map(v => v.diff), h: r.map(v => v.h), glerr: gl.getError() };""")
+
+# C46: WebGL2 R8 and RG8 texture framebuffers with the C6 scene, read
+# RGBA / UNSIGNED_BYTE: stock returns G = B = 0 (R8) and B = 0 (RG8), which a
+# noised read would break. The RGBA8 read of the same scene is the guard: it
+# must be noised.
+FBOFMT = tri("webgl2", 64, 64, ELIG_FN + """
+  const read = (ifmt, fmt) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, 64, 64, 0, fmt, UB, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return null;
+    gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+    return A; };
+  gl.getError();
+  const r8 = read(gl.R8, gl.RED), rg8 = read(gl.RG8, gl.RG), rgba8 = read(gl.RGBA8, RGBA);
+  if (!r8 || !rg8 || !rgba8) return { err: 'fbo-incomplete' };
+  let stray = 0;
+  for (let i = 0; i < r8.length; i += 4) {
+    if (r8[i + 1] || r8[i + 2]) stray++;
+    if (rg8[i + 2]) stray++; }
+  return { r8: H(r8), rg8: H(rg8), rgba8: H(rgba8), stray, glerr: gl.getError(),
+           e8: elig(r8, 64), eg: elig(rg8, 64) };""")
+
+# C46b: a WebGL1 RGBA4 renderbuffer framebuffer with the C6 scene reads as
+# stock (a +-1 would leave the 4-bit lattice); the RGBA8 texture framebuffer
+# of the same scene is the guard.
+FBORGBA4 = tri("webgl", 64, 64, FBO_FN + ELIG_FN + """
+  gl.getError();
+  const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA4, 64, 64);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+    return { err: 'fbo-incomplete' };
+  gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  fbo(64, 64);
+  const B = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  return { h: H(A), g: H(B), e: elig(A, 64), glerr: gl.getError() };""")
+
+# C47: a drawingBufferStorage(SRGB8_ALPHA8) default framebuffer (8-bit, read
+# as RGBA / UNSIGNED_BYTE) with the C6 scene is noised and deterministic.
+SRGBREAD = tri("webgl2", 64, 64, ELIG_FN + """
+  if (!gl.drawingBufferStorage) return { err: 'no-drawingBufferStorage' };
+  gl.getError();
+  gl.drawingBufferStorage(gl.SRGB8_ALPHA8, 64, 64);
+  if (gl.getError() !== 0) return { err: 'drawingBufferStorage-rejected' };
+  gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  const B = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, B);
+  let same = true; for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) { same = false; break; }
+  return { h: H(A), same, e: elig(A, 64), glerr: gl.getError() };""")
+
+# C37: random 1px texels uploaded into a framebuffer's texture: the left half
+# translucent (alpha 1..254), the right half opaque. Translucent texels read
+# back exact; at least one opaque texel changes under a seed.
+FBOTRANS = tri("webgl", 64, 64, """
+  const src = new Uint8Array(64 * 64 * 4); let s = 99;
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const i = (y * 64 + x) * 4;
+    for (let k = 0; k < 3; k++) { s = (Math.imul(s, 1103515245) + 12345) >>> 0; src[i + k] = s >>> 24; }
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    src[i + 3] = x < 32 ? 1 + ((s >>> 24) % 254) : 255;
+    if (src[i + 3] < 255) for (let k = 0; k < 3; k++) src[i + k] = Math.min(src[i + k], src[i + 3]); }
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, RGBA, 64, 64, 0, RGBA, UB, src);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const A = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, A);
+  let trans = 0, transDiff = 0, opaqueDiff = 0;
+  for (let i = 0; i < A.length; i += 4) {
+    let d = false; for (let k = 0; k < 4; k++) if (A[i + k] !== src[i + k]) d = true;
+    if (src[i + 3] < 255) { trans++; if (d) transDiff++; } else if (d) opaqueDiff++; }
+  // The right half's framebuffer edge (x = 63, and rows 0 and 63 for x >= 32)
+  // is opaque random texels: never noised, since the framebuffer edge has no
+  // neighbour there (a misread extent would noise it).
+  let edgeDiff = 0;
+  for (let y = 0; y < 64; y++) for (let x = 32; x < 64; x++) {
+    if (x !== 63 && y !== 0 && y !== 63) continue;
+    const i = (y * 64 + x) * 4;
+    for (let k = 0; k < 4; k++) if (A[i + k] !== src[i + k]) { edgeDiff++; break; } }
+  return { trans, transDiff, opaqueDiff, edgeDiff, h: H(A) };""")
+
+# C41: WebGL2 without antialiasing, the default framebuffer bound, READ_BUFFER
+# NONE: stock rejects readPixels and leaves the destination untouched. The
+# noise must not write (or read back) anything either, for a sub-rect and a
+# full read.
+_RUN = """  const run = (x, y, w, h) => {
+    // Sentinel: opaque pixels (a translucent one is never noised, so it
+    // could not show an in-place noise pass).
+    // Random texels: noise only touches pixels that differ from a neighbour.
+    const b = new Uint8Array(w * h * 4); let r = 7;
+    for (let i = 0; i < b.length; i++) {
+      r = (Math.imul(r, 1103515245) + 12345) >>> 0; b[i] = i % 4 === 3 ? 0xFF : r >>> 24; }
+    const s = b.slice();
+    gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b);
+    const e = gl.getError(); let n = 0;
+    for (let i = 0; i < b.length; i++) if (b[i] !== s[i]) n++;
+    return { e, n }; };
+"""
+READNONE = ("""() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const gl = c.getContext('webgl2', { antialias: false });
+  if (!gl) return { err: 'no-webgl2' };
+  gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.readBuffer(gl.NONE); gl.getError();
+""" + _RUN + """
+  return { sub: run(1, 1, 8, 8), full: run(0, 0, 64, 64) }; }""")
+
+# C42: the same reads from a default framebuffer whose storage is RGBA16F
+# (drawingBufferStorage, WebGL2): GL rejects RGBA / UNSIGNED_BYTE, so stock
+# leaves the destination alone and the noise must too. A missing API or
+# extension is an error row, not a pass.
+READ16F = ("""() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const gl = c.getContext('webgl2', { antialias: false });
+  if (!gl) return { err: 'no-webgl2' };
+  if (!gl.drawingBufferStorage) return { err: 'no-drawingBufferStorage' };
+  if (!gl.getExtension('EXT_color_buffer_float') &&
+      !gl.getExtension('EXT_color_buffer_half_float')) return { err: 'no-float-buffer' };
+  gl.drawingBufferStorage(gl.RGBA16F, 64, 64);
+  if (gl.getError() !== 0) return { err: 'drawingBufferStorage-rejected' };
+  gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT); gl.getError();
+""" + _RUN + """
+  return { sub: run(1, 1, 8, 8), full: run(0, 0, 64, 64) }; }""")
+
+
+# C38: texImage2D of the WebGL canvas into a second context (flipped to GL
+# orientation), read through that context's framebuffer: equals the source's
+# own readPixels (noised once, not twice), and is noised.
+TEXIMAGE = tri("webgl", 64, 64, """
+  const R = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, R);
+  const c2 = document.createElement('canvas'); c2.width = 64; c2.height = 64;
+  const g2 = c2.getContext('webgl'); if (!g2) return { err: 'no-webgl-second' };
+  const t = g2.createTexture(); g2.bindTexture(g2.TEXTURE_2D, t);
+  g2.pixelStorei(g2.UNPACK_FLIP_Y_WEBGL, true);
+  g2.texImage2D(g2.TEXTURE_2D, 0, g2.RGBA, g2.RGBA, g2.UNSIGNED_BYTE, c);
+  const f = g2.createFramebuffer(); g2.bindFramebuffer(g2.FRAMEBUFFER, f);
+  g2.framebufferTexture2D(g2.FRAMEBUFFER, g2.COLOR_ATTACHMENT0, g2.TEXTURE_2D, t, 0);
+  const B = new Uint8Array(64 * 64 * 4); g2.readPixels(0, 0, 64, 64, g2.RGBA, g2.UNSIGNED_BYTE, B);
+  let eq = true; for (let i = 0; i < R.length; i++) if (R[i] !== B[i]) { eq = false; break; }
+  return { eq, h: H(B) };""")
+
+
+# C48: an arc's region read (A), then a globalAlpha 0 drawImage of an SVG
+# image over the whole region, read again (B). An SVG draws as a saveLayer at
+# the draw's alpha around a nested record, unlike C43's canvas source.
+SVG_ALPHA0 = "async () => {" + HASH_FN + ELIG_FN + """
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f60'; x.beginPath(); x.arc(32, 32, 12, 0, 7); x.fill();
+  const im = new Image();
+  im.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"'
+    + ' width="33" height="33"><rect width="33" height="33" fill="#0a0"/></svg>');
+  await im.decode();
+  const a = x.getImageData(16, 16, 33, 33).data;
+  x.globalAlpha = 0; x.drawImage(im, 16, 16); x.globalAlpha = 1;
+  return { a: H(a), b: H(x.getImageData(16, 16, 33, 33).data), e: elig(a, 33) };
+}"""
+
+# C52: AA strokes over the whole canvas, read (A); then a url() filter whose
+# last primitive is an feDropShadow (sRGB, so no colour-space wrapper) over
+# an feFlood, applied to a fully transparent fillRect, read again (B). The
+# filter paints the flood and its blurred shadow from nothing (the shadow's
+# own subregion is the whole canvas: by default it would be the flood's, and
+# the flood would hide it). Both reads are
+# returned whole; the row compares seeded and unconfigured B on the pixels
+# the filter changed in the unconfigured run.
+FLOOD_SHADOW = "() => {" + """
+  document.body.insertAdjacentHTML('beforeend',
+    '<svg width="0" height="0" style="position:absolute"><filter id="camouflood"'
+    + ' filterUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">'
+    + '<feFlood flood-color="#3a7" x="20" y="18" width="19" height="17"/>'
+    + '<feDropShadow x="0" y="0" width="64" height="64" dx="3" dy="2"'
+    + ' stdDeviation="2.5" flood-color="#000" color-interpolation-filters="sRGB"/>'
+    + '</filter></svg>');
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  document.body.appendChild(c);
+  const x = c.getContext('2d');
+  x.strokeStyle = '#f60'; x.lineWidth = 1.3;
+  for (let r = 2.3; r < 44; r += 2.7) { x.beginPath(); x.arc(31.6, 30.4, r, 0, 7); x.stroke(); }
+  const a = x.getImageData(0, 0, 64, 64).data;
+  x.filter = 'url(#camouflood)'; x.fillStyle = 'rgba(0,0,0,0)'; x.fillRect(0, 0, 64, 64);
+  x.filter = 'none';
+  const b = x.getImageData(0, 0, 64, 64).data;
+  return { a: Array.from(a), b: Array.from(b) };
+}"""
+
 S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
   const mk = (w, h) => { const c = document.createElement('canvas');
     c.width = w; c.height = h; return c.getContext('2d'); };
@@ -681,6 +1003,89 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
       y.arc(32, 32, 20, 0, 7); y.fill();
       y.shadowColor = 'rgba(0,0,0,0)'; y.shadowOffsetX = 0; y.shadowOffsetY = 0; }),
   };
+  // C39: getImageData of a sub-rect equals the whole-snapshot field, on opaque
+  // and translucent anti-aliased content: against a full read, and against a
+  // drawImage copy (marked imported, so it carries the snapshot's noise once).
+  x = mk(64, 64); arc(x, 24, 24, 16, 'rgba(255,96,0,0.6)'); arc(x, 40, 40, 16, '#06f');
+  // The sub-rect is read first: a whole-canvas read fills the noise cache, and a
+  // read after it would be served from the cache, not the regional path.
+  const sub = get(x, 10, 12, 40, 36), full = get(x, 0, 0, 64, 64);
+  const cpy = mk(64, 64); cpy.drawImage(x.canvas, 0, 0); const cp = get(cpy, 10, 12, 40, 36);
+  let dF = 0, dC = 0, trans = 0; const tv = [];
+  for (let yy = 0; yy < 36; yy++) for (let xx = 0; xx < 40; xx++) {
+    const o = (yy * 40 + xx) * 4, f = ((yy + 12) * 64 + xx + 10) * 4;
+    for (let k = 0; k < 4; k++) { if (sub[o + k] !== full[f + k]) dF++; if (sub[o + k] !== cp[o + k]) dC++; }
+    if (sub[o + 3] > 0 && sub[o + 3] < 255) { trans++; for (let k = 0; k < 4; k++) tv.push(sub[o + k]); } }
+  out.region = { dF, dC, trans, tH: H(tv), e: elig(full, 64) };
+  // C40: the same twelve arcs, flushed after every draw (1x1 getImageData)
+  // or only at the end, give one final read.
+  const seq = (flushEach) => { const y = mk(64, 64);
+    for (let i = 0; i < 12; i++) { arc(y, 8 + i * 4, 10 + (i * 7) % 40, 6, i & 1 ? '#f60' : '#06f');
+      if (flushEach) get(y, 0, 0, 1, 1); }
+    return get(y, 0, 0, 64, 64); };
+  const m2 = seq(false);
+  out.flushes = { h1: H(seq(true)), h2: H(m2), e: elig(m2, 64) };
+  // C43: an arc's region read (A), then a globalAlpha 0 drawImage over the
+  // whole region, read again (B): a draw that changes no pixel changes no
+  // noise. (Over only part of the edge, at density 0.04, no noised pixel
+  // may fall under the image, and the row passes on the faulty build.)
+  x = mk(64, 64); arc(x, 32, 32, 12);
+  const src = mk(33, 33); src.fillStyle = '#0a0'; src.fillRect(0, 0, 33, 33);
+  a = get(x, 16, 16, 33, 33);
+  x.globalAlpha = 0; x.drawImage(src.canvas, 16, 16); x.globalAlpha = 1;
+  out.alpha0 = { a: H(a), b: H(get(x, 16, 16, 33, 33)), e: elig(a, 33) };
+  // C44: an arc at (50,50) read (A), then a shadowed 10x10 drawImage at
+  // (150,150), read again (B): the shadow marks its own pixels, not the clip.
+  x = mk(200, 200); arc(x, 50, 50, 12);
+  const tile10 = mk(10, 10); tile10.fillStyle = '#0a0'; tile10.fillRect(0, 0, 10, 10);
+  a = get(x, 34, 34, 33, 33);
+  x.shadowBlur = 2; x.shadowOffsetX = 3; x.shadowOffsetY = 3;
+  x.shadowColor = 'rgba(0,0,0,0.5)'; x.drawImage(tile10.canvas, 150, 150);
+  out.shadowimg = { a: H(a), b: H(get(x, 34, 34, 33, 33)), e: elig(a, 33) };
+  // C44b: the same with an opaque source canvas: an opaque image's shadow is
+  // a looper on the image's own flags, not a filtered layer.
+  x = mk(200, 200); arc(x, 50, 50, 12);
+  const opq = document.createElement('canvas'); opq.width = 10; opq.height = 10;
+  const opqx = opq.getContext('2d', { alpha: false });
+  opqx.fillStyle = '#0a0'; opqx.fillRect(0, 0, 10, 10);
+  a = get(x, 34, 34, 33, 33);
+  x.shadowBlur = 2; x.shadowOffsetX = 3; x.shadowOffsetY = 3;
+  x.shadowColor = 'rgba(0,0,0,0.5)'; x.drawImage(opq, 150, 150);
+  out.shadowopq = { a: H(a), b: H(get(x, 34, 34, 33, 33)), e: elig(a, 33) };
+  // C45: rects that leave the canvas: the regional read must place the region
+  // at the clipped origin. Each rect is checked against the full read (zero
+  // outside the canvas) and against the same rect of a drawImage copy.
+  x = mk(64, 64); arc(x, 24, 24, 16, 'rgba(255,96,0,0.6)'); arc(x, 40, 40, 16, '#06f');
+  arc(x, 62, 62, 12, '#0a0');
+  // The rects are read before the full read and the copy, which fill the cache.
+  const rects = [[-5, -7, 30, 30], [50, 50, 30, 30], [40, 40, -30, -30], [63, 63, 1, 1]];
+  const rs = rects.map(([sx, sy, sw, sh]) => get(x, sx, sy, sw, sh));
+  const full2 = get(x, 0, 0, 64, 64);
+  const cpy2 = mk(64, 64); cpy2.drawImage(x.canvas, 0, 0);
+  let dF2 = 0, dC2 = 0, cnt = 0;
+  for (const [n, [sx, sy, sw, sh]] of rects.entries()) {
+    const r = rs[n], c = get(cpy2, sx, sy, sw, sh);
+    const nx = sw < 0 ? sx + sw : sx, ny = sh < 0 ? sy + sh : sy;
+    const w = Math.abs(sw), h = Math.abs(sh);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const X = nx + i, Y = ny + j, o = (j * w + i) * 4;
+      const inside = X >= 0 && X < 64 && Y >= 0 && Y < 64;
+      for (let k = 0; k < 4; k++) {
+        const f = inside ? full2[(Y * 64 + X) * 4 + k] : 0;
+        if (r[o + k] !== f) dF2++;
+        if (r[o + k] !== c[o + k]) dC2++;
+        cnt++; } } }
+  out.edgeRects = { dF: dF2, dC: dC2, cnt, tH: H(full2), e: elig(full2, 64) };
+  // C51: an arc's region read (A), then a globalAlpha 0 drawImage of a
+  // translucent canvas with a shadow set over the whole region, read again
+  // (B): the draw opens a drop-shadow layer around an op that paints nothing.
+  x = mk(64, 64); arc(x, 32, 32, 12);
+  const tr = mk(33, 33); tr.fillStyle = 'rgba(0,160,0,0.5)'; tr.fillRect(0, 0, 33, 33);
+  a = get(x, 16, 16, 33, 33);
+  x.shadowBlur = 4; x.shadowColor = 'black'; x.globalAlpha = 0;
+  x.drawImage(tr.canvas, 16, 16);
+  x.globalAlpha = 1; x.shadowBlur = 0; x.shadowColor = 'rgba(0,0,0,0)';
+  out.shadowalpha0 = { a: H(a), b: H(get(x, 16, 16, 33, 33)), e: elig(a, 33) };
   return out;
 }"""
 
@@ -772,12 +1177,22 @@ seeds_scaled = [session(json.dumps({"canvas:seed": s}), SCALED_TEXT)
 unconf_dec, unconf_dec_err = session(None, DECODED_IMAGE)
 gl17 = {k: (session(CANVAS, js, extra_flags=GL_FLAGS), session(None, js, extra_flags=GL_FLAGS))
         for k, js in (("align", ALIGN8), ("layout", LAYOUT), ("past", PAST),
-                           ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE))}
+                           ("reject", REJECT), ("subrect", SUBRECT), ("agree", AGREE),
+                           ("fbo", FBOREAD), ("fbosub", FBOSUB), ("fbotrans", FBOTRANS),
+                           ("teximage", TEXIMAGE), ("readnone", READNONE), ("read16f", READ16F),
+                           ("fboedge", FBOEDGE), ("fbofmt", FBOFMT), ("fborgba4", FBORGBA4),
+                           ("srgb", SRGBREAD), ("strips", STRIPS),
+                           ("layoutfbo", LAYOUT_FBO))}
+SAB_FLAGS = GL_FLAGS + ["--enable-features=SharedArrayBuffer"]
+gl17["shared"] = (session(CANVAS, SHARED, extra_flags=SAB_FLAGS),
+                  session(None, SHARED, extra_flags=SAB_FLAGS))
 seeded_dec, seeded_dec_err = session(CANVAS, DECODED_IMAGE)
 oracle_stock, oracle_stock_err = session(None, ORACLE_CANVAS)
 oracle_seeded = [session(json.dumps({"canvas:seed": s}), ORACLE_CANVAS) for s in range(1, 9)]
 s2b_seeded, s2b_seeded_err = session(CANVAS, S2B_2D)
 s2b_unconf, s2b_unconf_err = session(None, S2B_2D)
+svg_runs = (session(CANVAS, SVG_ALPHA0), session(None, SVG_ALPHA0))
+flood_runs = (session(CANVAS, FLOOD_SHADOW), session(None, FLOOD_SHADOW))
 
 if capture:
     if unconf is None or unconf_gl is None or unconf_shot is None:
@@ -1043,13 +1458,16 @@ C28 = "28 WebGL readPixels sub-rect equals the full read's part, byte for byte"
 C29 = "29 WebGL toDataURL agrees with readPixels on every opaque pixel"
 
 
-def s2b_row(name, get, guard, ok):
-    """One S2b 2D row: FAIL with a note on a session fault or a vacuous drawing."""
-    if s2b_seeded is None or s2b_unconf is None:
+def s2b_row(name, get, guard, ok, runs=None):
+    """One S2b 2D row: FAIL with a note on a session fault or a vacuous drawing.
+    `runs` is ((seeded, err), (unconfigured, err)), S2B_2D's by default."""
+    (sv, se), (uv, ue) = runs or ((s2b_seeded, s2b_seeded_err),
+                                  (s2b_unconf, s2b_unconf_err))
+    if sv is None or uv is None:
         results[name] = False
-        notes.append(f"{name[:3]}: {s2b_seeded_err or s2b_unconf_err}")
+        notes.append(f"{name[:3]}: {se or ue}")
         return
-    s, u = get(s2b_seeded), get(s2b_unconf)
+    s, u = get(sv), get(uv)
     if not guard(u):
         results[name] = False
         notes.append(f"{name[:3]}: vacuous -- unconfigured drawing {u}")
@@ -1104,7 +1522,113 @@ s2b_row(C34, lambda r: r["copystroke"],
         lambda u: u["e"] > 0 and u["h"] == u["fresh"],
         lambda s, u: s["h"] == s["fresh"])
 
-EXPECTED = 41
+C35 = "35 framebuffer readPixels of a gradient triangle noised and deterministic"
+C36 = "36 framebuffer readPixels sub-rect equals the full framebuffer read's part"
+C37 = "37 framebuffer read leaves translucent pixels exact, changes an opaque one"
+C38 = "38 texImage2D(webgl canvas) read in a second context equals the source's read"
+C39 = "39 getImageData sub-rect equals the whole-snapshot field (full read and copy)"
+C40 = "40 one flush or many give one mask"
+C41 = "41 READ_BUFFER NONE: the page buffer and the GL error stay as stock"
+C42 = "42 RGBA16F drawing buffer: the page buffer and the GL error stay as stock"
+gl_row(C35, "fbo", lambda s, u: u["e"] > 0 and s["same"] and s["h"] != u["h"])
+gl_row(C36, "fbosub", lambda s, u: s["diff"] == 0 and u["diff"] == 0 and s["h"] != u["h"])
+gl_row(C37, "fbotrans", lambda s, u: u["trans"] > 0 and u["transDiff"] == 0
+       and u["opaqueDiff"] == 0 and s["transDiff"] == 0 and s["opaqueDiff"] > 0
+       and s["edgeDiff"] == 0)
+gl_row(C38, "teximage", lambda s, u: u["eq"] and s["eq"] and s["h"] != u["h"])
+s2b_row(C39, lambda r: r["region"],
+        lambda u: u["e"] > 0 and u["trans"] > 0 and u["dF"] == 0 and u["dC"] == 0,
+        lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["tH"] != u["tH"])
+s2b_row(C40, lambda r: r["flushes"], lambda u: u["e"] > 0 and u["h1"] == u["h2"],
+        lambda s, u: s["h1"] == s["h2"] and s["h1"] != u["h1"])
+
+def rejected_read_unchanged(s, u):
+    return (all(v[k]["n"] == 0 for v in (s, u) for k in ("sub", "full"))
+            and all(s[k]["e"] == u[k]["e"] for k in ("sub", "full")))
+
+
+gl_row(C41, "readnone", rejected_read_unchanged)
+gl_row(C42, "read16f", rejected_read_unchanged)
+
+C43 = "43 a globalAlpha 0 drawImage leaves a region's noise unchanged"
+C44 = "44 a shadowed drawImage elsewhere leaves a region's noise unchanged"
+C44B = "44b a shadowed opaque drawImage elsewhere leaves a region's noise unchanged"
+for name, key in ((C43, "alpha0"), (C44, "shadowimg"), (C44B, "shadowopq")):
+    s2b_row(name, lambda r, key=key: r[key],
+            lambda u: u["e"] > 0 and u["a"] == u["b"],
+            lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
+
+C45 = "45 getImageData of rects crossing the canvas edge equals the full read and a copy"
+s2b_row(C45, lambda r: r["edgeRects"],
+        lambda u: u["e"] > 0 and u["cnt"] > 0 and u["dF"] == 0 and u["dC"] == 0,
+        lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["cnt"] == u["cnt"]
+        and s["tH"] != u["tH"])
+
+C36B = "36b framebuffer reads crossing the far edge or the origin equal the full read's part"
+C46 = "46 R8 / RG8 framebuffer reads stay stock (G and B stay 0)"
+C46B = "46b RGBA4 renderbuffer framebuffer read stays stock"
+C47 = "47 SRGB8_ALPHA8 drawing buffer readPixels noised and deterministic"
+gl_row(C36B, "fboedge", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and all(d == 0 for v in (s, u) for d in v["diff"])
+       and all(a != b for a, b in zip(s["h"], u["h"])))
+gl_row(C46, "fbofmt", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and u["e8"] > 0 and u["eg"] > 0 and u["stray"] == 0 and s["stray"] == 0
+       and s["r8"] == u["r8"] and s["rg8"] == u["rg8"] and s["rgba8"] != u["rgba8"])
+gl_row(C46B, "fborgba4", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and u["e"] > 0 and s["h"] == u["h"] and s["g"] != u["g"])
+gl_row(C47, "srgb", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and u["e"] > 0 and s["same"] and u["same"] and s["h"] != u["h"])
+
+C48 = "48 a globalAlpha 0 drawImage of an SVG image leaves a region's noise unchanged"
+s2b_row(C48, lambda r: r, lambda u: u["e"] > 0 and u["a"] == u["b"],
+        lambda s, u: s["a"] == s["b"] and s["a"] != u["a"], runs=svg_runs)
+
+C49 = "49 a large readPixels sub-rect (margin strips) equals the full read's part"
+gl_row(C49, "strips", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and all(d == 0 for v in (s, u) for d in v["diff"])
+       and all(a != b for a, b in zip(s["h"], u["h"])))
+
+C50 = "50 readPixels into a SharedArrayBuffer view equals a plain view's read"
+gl_row(C50, "shared", lambda s, u: s["glerr"] == u["glerr"] == 0
+       and all(v["diff"] == 0 and v["pad"] == 0 for v in (s, u)) and s["h"] != u["h"])
+
+C51 = "51 a shadowed globalAlpha 0 drawImage leaves a region's noise unchanged"
+s2b_row(C51, lambda r: r["shadowalpha0"], lambda u: u["e"] > 0 and u["a"] == u["b"],
+        lambda s, u: s["a"] == s["b"] and s["a"] != u["a"])
+
+C52 = "52 a flooding url() drop-shadow filter's pixels read as unconfigured"
+
+
+def flood_row():
+    (sv, se), (uv, ue) = flood_runs
+    if sv is None or uv is None:
+        results[C52] = False
+        notes.append(f"C52: {se or ue}")
+        return
+    sa, sb, ua, ub = sv["a"], sv["b"], uv["a"], uv["b"]
+    px = lambda d, i: tuple(d[i * 4:i * 4 + 4])
+    changed = [i for i in range(64 * 64) if px(ub, i) != px(ua, i)]
+    flood = sum(px(ub, i) == (51, 170, 119, 255) for i in changed)
+
+    def elig(i):
+        y, x = divmod(i, 64)
+        if not (0 < x < 63 and 0 < y < 63) or ub[i * 4 + 3] == 0:
+            return False
+        return all(px(ub, i) != px(ub, j) for j in (i - 1, i + 1, i - 64, i + 64))
+    e = sum(map(elig, changed))
+    diff = sum(px(sb, i) != px(ub, i) for i in changed)
+    guard = len(changed) > 0 and flood > 0 and e > 0 and sa != ua
+    results[C52] = guard and diff == 0
+    if not results[C52]:
+        notes.append(f"C52: changed {len(changed)}, flood {flood}, eligible {e}, "
+                     f"seeded A noised {sa != ua}, seeded B differs on {diff}")
+
+
+flood_row()
+C53 = "53 a WebGL2 PACK_ROW_LENGTH / SKIP readPixels from a page framebuffer agrees with the default"
+gl_row(C53, "layoutfbo", lambda s, u: s["inside"] == 0 and s["outside"] == 0 and s["h"] != u["h"])
+
+EXPECTED = 63
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")

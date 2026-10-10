@@ -24,7 +24,7 @@ index fe99fbb833..571377b3c4 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index 150d03eafd..5143ea4ae3 100644
+index 150d03eafd..a121425889 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 @@ -27,6 +27,9 @@
@@ -37,37 +37,61 @@ index 150d03eafd..5143ea4ae3 100644
  #include "services/metrics/public/cpp/ukm_builders.h"
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/platform/platform.h"
-@@ -38,6 +41,8 @@
+@@ -38,6 +41,9 @@
  #include "third_party/blink/renderer/core/html/canvas/element_image.h"
  #include "third_party/blink/renderer/core/html/canvas/html_canvas_accessibility_manager.h"
  #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 +#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
 +#include "third_party/skia/include/core/SkImage.h"
++#include "third_party/skia/include/core/SkPixmap.h"
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
  #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
-@@ -551,4 +556,52 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
+@@ -551,4 +557,124 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
    return *monitor;
  }
  
-+scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
-+    scoped_refptr<StaticBitmapImage> image) {
-+  if (!image || !Host() || !CamouNoiseEligible()) {
-+    return image;
++const camoucfg::ConfigScope* CanvasRenderingContext::CamouNoiseScope(
++    StaticBitmapImage& image) {
++  if (!Host() || !CamouNoiseEligible()) {
++    return nullptr;
 +  }
 +  const camoucfg::ConfigScope& scope =
 +      camoucfg::ScopeFor(Host()->GetTopExecutionContext());
 +  if (!camoucfg::CanvasSeed(scope)) {
-+    return image;  // spoof off -> byte-identical to stock (rule 5)
++    return nullptr;  // spoof off -> byte-identical to stock (rule 5)
++  }
++  // A snapshot the noise cannot carry (float16, a WebGL RGBA16F buffer) is
++  // turned away before any readback, which would read a GPU one back for
++  // nothing. The readback keeps this colour type.
++  const SkColorType color_type =
++      image.PaintImageForCurrentFrame().GetColorType();
++  if (color_type != kRGBA_8888_SkColorType &&
++      color_type != kBGRA_8888_SkColorType) {
++    return nullptr;
++  }
++  return &scope;
++}
++
++bool CanvasRenderingContext::CamouNoisedCached(
++    const scoped_refptr<StaticBitmapImage>& image) const {
++  return camou_noised_ && camou_noised_source_ == image &&
++         camou_noised_generation_ == CamouNoiseMaskGeneration();
++}
++
++scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
++    scoped_refptr<StaticBitmapImage> image) {
++  const camoucfg::ConfigScope* scope =
++      image ? CamouNoiseScope(*image) : nullptr;
++  if (!scope) {
++    return image;
 +  }
 +  // One entry, checked before any readback: a page that reads or copies one
 +  // unchanged canvas again (getImageData(x, y, 1, 1) in a loop, drawImage of
 +  // a sprite canvas every frame) gets the cached field without another GPU
 +  // readback or noise pass. The source is held, so a new image cannot reuse
 +  // its identity.
-+  const uint64_t generation = CamouNoiseMaskGeneration();
-+  if (camou_noised_ && camou_noised_source_ == image &&
-+      camou_noised_generation_ == generation) {
++  if (CamouNoisedCached(image)) {
 +    return UnacceleratedStaticBitmapImage::Create(camou_noised_,
 +                                                  image->Orientation());
 +  }
@@ -79,10 +103,11 @@ index 150d03eafd..5143ea4ae3 100644
 +  // same field.
 +  // A mask change without a raster change (a transparent arc, clearRect
 +  // over clear pixels) still misses: the generation is part of the key.
++  const uint64_t generation = CamouNoiseMaskGeneration();
 +  if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID() ||
 +      camou_noised_generation_ != generation) {
 +    sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
-+        *sk_image, scope, CamouNoiseMinAlpha(), CamouNoiseMask(),
++        *sk_image, *scope, CamouNoiseMinAlpha(), CamouNoiseMask(),
 +        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
 +    if (!noised) {
 +      return image;
@@ -98,27 +123,83 @@ index 150d03eafd..5143ea4ae3 100644
 +                                                image->Orientation());
 +}
 +
++SkBitmap CanvasRenderingContext::CamouNoisedRegion(
++    const scoped_refptr<StaticBitmapImage>& image,
++    const SkIRect& rect) {
++  // A bottom-up snapshot keeps the whole-snapshot route.
++  if (!image ||
++      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft) {
++    return SkBitmap();
++  }
++  const camoucfg::ConfigScope* scope = CamouNoiseScope(*image);
++  if (!scope || CamouNoisedCached(image)) {
++    return SkBitmap();  // no noise, or the whole field is cached
++  }
++  // A CPU canvas hands out a new wrapper per GetImage(): one around the
++  // raster the cache already noised is served from the cache too. Never
++  // asked of a texture-backed snapshot, whose GetSwSkImage() is a readback.
++  if (camou_noised_ && !image->IsTextureBacked() &&
++      camou_noised_generation_ == CamouNoiseMaskGeneration()) {
++    const sk_sp<SkImage> sk_image =
++        image->PaintImageForCurrentFrame().GetSwSkImage();
++    if (sk_image && sk_image->uniqueID() == camou_noised_from_) {
++      return SkBitmap();
++    }
++  }
++  // A rect over half the canvas takes the whole-snapshot route too: its
++  // field is cached, so a page that reads most of an unchanged canvas again
++  // does not pay for the noise again.
++  SkIRect r = rect;
++  if (!r.intersect(
++          SkIRect::MakeWH(image->Size().width(), image->Size().height())) ||
++      2 * int64_t{r.width()} * r.height() >
++          int64_t{image->Size().width()} * image->Size().height()) {
++    return SkBitmap();
++  }
++  // The rect plus its margin are read through the PaintImage, which reads a
++  // texture-backed (GPU) snapshot too: only that part leaves the GPU.
++  const cc::PaintImage paint_image = image->PaintImageForCurrentFrame();
++  return camoucfg::NoisedCanvasRegion(
++      paint_image.GetSkImageInfo(),
++      [&paint_image](const SkPixmap& dst, int src_x, int src_y) {
++        // `dst` is a tight bitmap: a texture-backed snapshot's readPixels
++        // (MailboxTextureBacking) ignores dst_row_bytes and writes rows
++        // minRowBytes() apart.
++        return paint_image.readPixels(dst.info(), dst.writable_addr(),
++                                      dst.rowBytes(), src_x, src_y);
++      },
++      rect, *scope, CamouNoiseMinAlpha(), CamouNoiseMask());
++}
++
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index 6495e3c54b..142765dabc 100644
+index 6495e3c54b..09a2eb3f34 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-@@ -39,11 +39,14 @@
+@@ -32,6 +32,7 @@
+ #include "base/memory/scoped_refptr.h"
+ #include "base/notreached.h"
+ #include "cc/paint/paint_flags.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
+ #include "third_party/blink/renderer/core/core_export.h"
+@@ -39,11 +40,14 @@
  #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
  #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
  #include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
-+#include "components/camoucfg/canvas_noise.h"
 +#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
  #include "third_party/blink/renderer/platform/heap/member.h"
  #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
  #include "third_party/blink/renderer/platform/heap/visitor.h"
  #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
++#include "third_party/skia/include/core/SkBitmap.h"
  #include "third_party/skia/include/core/SkData.h"
 +#include "third_party/skia/include/core/SkImage.h"
  #include "third_party/skia/include/core/SkImageInfo.h"
  #include "third_party/skia/include/core/SkRect.h"
  #include "third_party/skia/include/core/SkRefCnt.h"
-@@ -169,6 +172,27 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -169,6 +173,36 @@ class CORE_EXPORT CanvasRenderingContext
    virtual bool IsOpaque() const = 0;
  
    virtual scoped_refptr<StaticBitmapImage> GetImage() = 0;
@@ -132,6 +213,15 @@ index 6495e3c54b..142765dabc 100644
 +  // canvas's own store, and so the screen, is never touched.
 +  scoped_refptr<StaticBitmapImage> CamouNoised(
 +      scoped_refptr<StaticBitmapImage> image);
++  // getImageData's path (canvas noise S2c): the pixels of `rect` of `image`
++  // as CamouNoised(image) holds them, reading (from a GPU snapshot too) and
++  // noising only the rect plus a 1 px margin, on the premultiplied
++  // snapshot. Empty when this context carries no noise, when the whole
++  // field is already cached for `image`, when the rect covers more than half
++  // the canvas (the whole field is then computed once and cached), or on
++  // failure; the caller then reads CamouNoised(image).
++  SkBitmap CamouNoisedRegion(const scoped_refptr<StaticBitmapImage>& image,
++                             const SkIRect& rect);
 +  // Whether readback noise may touch this context's pixels. A context type
 +  // opts in.
 +  virtual bool CamouNoiseEligible() const { return false; }
@@ -146,11 +236,17 @@ index 6495e3c54b..142765dabc 100644
    virtual bool IsComposited() const = 0;
  
    // Called when the entire tab is backgrounded or unbackgrounded.
-@@ -374,6 +398,13 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -374,6 +408,19 @@ class CORE_EXPORT CanvasRenderingContext
    bool is_context_being_restored_ = false;
  
    void RecordUKMCanvasAccessibility();
 +
++  // CamouNoised's and CamouNoisedRegion's gate: the scope `image` is noised
++  // under, or null when it carries no noise (no host, an ineligible
++  // context, no canvas:seed, or a colour type the noise cannot carry).
++  const camoucfg::ConfigScope* CamouNoiseScope(StaticBitmapImage& image);
++  // Whether CamouNoised()'s cache holds `image`'s field.
++  bool CamouNoisedCached(const scoped_refptr<StaticBitmapImage>& image) const;
 +  // CamouNoised()'s one-entry cache: the last source snapshot, the uniqueID
 +  // of its raster form, and the noised raster image.
 +  scoped_refptr<StaticBitmapImage> camou_noised_source_;
@@ -227,43 +323,91 @@ index 1d29be2717..327256df25 100644
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 3d7a843995..18f2357bbc 100644
+index 3d7a843995..cad57b9d0d 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-@@ -4,6 +4,9 @@
+@@ -4,6 +4,7 @@
  
  #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
  
-+#include "components/camoucfg/blink_scope.h"
-+#include "components/camoucfg/canvas_noise.h"
-+
++#include <algorithm>
  #include <cmath>
  #include <cstdint>
  #include <cstdlib>
-@@ -469,7 +472,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
-     }
+@@ -27,6 +28,8 @@
+ #include "cc/paint/paint_flags.h"
+ #include "cc/paint/paint_image.h"
+ #include "cc/paint/record_paint_canvas.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+ #include "third_party/blink/public/common/metrics/document_update_reason.h"
+@@ -470,6 +473,16 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
    }
  
--  scoped_refptr<StaticBitmapImage> snapshot = GetImage();
-+  scoped_refptr<StaticBitmapImage> snapshot = CamouNoised(GetImage());
+   scoped_refptr<StaticBitmapImage> snapshot = GetImage();
++  // Camoucrome canvas noise S2c: only the returned rect (plus a 1 px
++  // margin) is noised, on the premultiplied snapshot, before the
++  // unpremultiply below. An empty region means no noise here, a cached
++  // whole field, or a failure: the whole-snapshot path serves the read.
++  const SkBitmap camou_region =
++      CamouNoisedRegion(snapshot, SkIRect::MakeXYWH(sx, sy, sw, sh));
++  if (camou_region.drawsNothing() && snapshot &&
++      image_data_rect.Intersects(gfx::Rect(snapshot->Size()))) {
++    snapshot = CamouNoised(std::move(snapshot));
++  }
  
    // Determine if the array should be zero initialized, or if it will be
    // completely overwritten.
-@@ -624,6 +627,13 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
- void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
-                                           const gfx::Rect& source_rect,
-                                           const gfx::Vector2d& dest_offset) {
+@@ -507,10 +520,17 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+     }
+ 
+     SkPixmap image_data_pixmap = image_data->GetSkPixmap();
++    // The region's origin is the rect clipped to the canvas, so a negative
++    // sx / sy reads from a negative offset, as from the snapshot.
+     const bool read_pixels_successful =
+-        snapshot->PaintImageForCurrentFrame().readPixels(
+-            image_data_pixmap.info(), image_data_pixmap.writable_addr(),
+-            image_data_pixmap.rowBytes(), sx, sy);
++        camou_region.drawsNothing()
++            ? snapshot->PaintImageForCurrentFrame().readPixels(
++                  image_data_pixmap.info(), image_data_pixmap.writable_addr(),
++                  image_data_pixmap.rowBytes(), sx, sy)
++            : camou_region.readPixels(image_data_pixmap.info(),
++                                      image_data_pixmap.writable_addr(),
++                                      image_data_pixmap.rowBytes(),
++                                      std::min(sx, 0), std::min(sy, 0));
+     if (!read_pixels_successful) {
+       SkIRect bounds =
+           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
+@@ -647,6 +667,13 @@ void BaseRenderingContext2D::PutByteArray(const SkPixmap& source,
+ 
+   WritePixels(info, source.addr(source_rect.x(), source_rect.y()),
+               source.rowBytes(), dest_x, dest_y);
++  // Camoucrome canvas noise S2b/S2c: after WritePixels, which flushes (and
++  // so marks) the ops recorded before this write.
 +  if (CamouMaskActive()) {
-+    CamouMarkRect(SkIRect::MakeXYWH(dest_offset.x() + source_rect.x(),
-+                                    dest_offset.y() + source_rect.y(),
-+                                    source_rect.width(),
++    CamouMarkRect(SkIRect::MakeXYWH(dest_x, dest_y, source_rect.width(),
 +                                    source_rect.height()),
 +                  camoucfg::CanvasNoiseMask::Kind::kImported);
 +  }
-   DCHECK(gfx::Rect(source.width(), source.height()).Contains(source_rect));
-   int dest_x = dest_offset.x() + source_rect.x();
-   DCHECK_GE(dest_x, 0);
-@@ -1089,6 +1099,31 @@ void BaseRenderingContext2D::DrawTextInternal(
+ }
+ 
+ String BaseRenderingContext2D::letterSpacing() const {
+@@ -748,6 +775,11 @@ std::optional<cc::PaintRecord> BaseRenderingContext2D::FlushCanvasInternal(
+   }
+ 
+   cc::PaintRecord recording = recorder->ReleaseMainRecording();
++  // Camoucrome canvas noise S2c: the mask is computed here, from the
++  // page's own recording, not per draw.
++  if (CamouMaskActive()) {
++    CamouMarkRecord(recording);
++  }
+   if (shared_image_provider) {
+     ScopedRasterTimer timer(shared_image_provider->IsAccelerated()
+                                 ? shared_image_provider->RasterInterface()
+@@ -1089,6 +1121,31 @@ void BaseRenderingContext2D::DrawTextInternal(
    }
  
    location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
@@ -318,21 +462,42 @@ index e3a1ba84d9..347e7b0342 100644
    void PageVisibilityChanged() override {}
    void RestoreCanvasMatrixClipStack(cc::PaintCanvas* c) const final;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 332d1f5c54..3b0295ac22 100644
+index 332d1f5c54..8d084815c6 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -23,6 +23,10 @@
- #include "base/check_op.h"
- #include "base/compiler_specific.h"
- #include "base/containers/span.h"
+@@ -31,9 +31,16 @@
+ #include "base/notreached.h"
+ #include "base/numerics/safe_conversions.h"
+ #include "cc/paint/paint_canvas.h"
++#include "cc/paint/paint_filter.h"
+ #include "cc/paint/paint_flags.h"
+ #include "cc/paint/paint_image.h"
++#include "cc/paint/paint_op.h"
++#include "cc/paint/paint_op_buffer.h"
++#include "cc/paint/paint_op_buffer_iterator.h"
++#include "cc/paint/paint_shader.h"
+ #include "cc/paint/record_paint_canvas.h"
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
-+#include "third_party/skia/include/core/SkBitmap.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "media/base/video_frame.h"
+ #include "media/base/video_frame_metadata.h"
+@@ -131,11 +138,14 @@
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkBlendMode.h"
 +#include "third_party/skia/include/core/SkCanvas.h"
- #include "base/feature_list.h"
- #include "base/memory/raw_ref.h"
- #include "base/memory/scoped_refptr.h"
-@@ -828,6 +832,7 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
+ #include "third_party/skia/include/core/SkClipOp.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "third_party/skia/include/core/SkM44.h"
++#include "third_party/skia/include/core/SkMaskFilter.h"
+ #include "third_party/skia/include/core/SkMatrix.h"
+ #include "third_party/skia/include/core/SkPath.h"
++#include "third_party/skia/include/core/SkPathEffect.h"
+ #include "third_party/skia/include/core/SkPathTypes.h"
+ #include "third_party/skia/include/core/SkPoint.h"
+ #include "third_party/skia/include/core/SkRect.h"
+@@ -828,6 +838,7 @@ void Canvas2DRecorderContext::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
  
  void Canvas2DRecorderContext::ResetInternal() {
    ValidateStateStack();
@@ -340,38 +505,16 @@ index 332d1f5c54..3b0295ac22 100644
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
-@@ -851,6 +856,98 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -851,6 +862,564 @@ void Canvas2DRecorderContext::ResetInternal() {
    origin_tainted_by_content_ = false;
  }
  
 +bool Canvas2DRecorderContext::CamouMaskActive() const {
 +  // A context with no canvas host (a CSS paint worklet's) is never read
-+  // back, so its draws are not replayed.
++  // back, so its recordings are never walked.
 +  return GetCanvasRenderingContextHost() != nullptr &&
 +         camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())) !=
 +             0;
-+}
-+
-+camoucfg::CanvasNoiseMask::Kind Canvas2DRecorderContext::CamouKindFor(
-+    CanvasRenderingContext2DState::PaintType paint_type,
-+    const cc::PaintFlags& flags) const {
-+  using Kind = camoucfg::CanvasNoiseMask::Kind;
-+  const CanvasStyle& style = GetState().Style(paint_type);
-+  if (style.GetCanvasPattern()) {
-+    return Kind::kImported;
-+  }
-+  if (style.GetCanvasGradient() || flags.getLooper() ||
-+      flags.getImageFilter()) {
-+    return Kind::kAa;
-+  }
-+  // destination-out with an opaque source leaves every fully covered pixel
-+  // transparent whatever it held: exact, like clearRect.
-+  if (flags.isOpaque() && flags.getBlendMode() == SkBlendMode::kDstOut) {
-+    return Kind::kClear;
-+  }
-+  return flags.isOpaque() && flags.getBlendMode() == SkBlendMode::kSrcOver
-+             ? Kind::kSolidOpaque
-+             : Kind::kSolid;
 +}
 +
 +void Canvas2DRecorderContext::CamouEnsureMask() {
@@ -391,72 +534,544 @@ index 332d1f5c54..3b0295ac22 100644
 +                        kind);
 +}
 +
-+void Canvas2DRecorderContext::CamouMarkClip(
-+    CanvasRenderingContext2DState::PaintType paint_type,
-+    const SkIRect& clip_bounds,
-+    CanvasPerformanceMonitor::DrawType draw_type) {
-+  using Kind = camoucfg::CanvasNoiseMask::Kind;
-+  if (!CamouMaskActive()) {
-+    return;
-+  }
-+  const bool imported =
-+      paint_type == CanvasRenderingContext2DState::kImagePaintType ||
-+      GetState().Style(paint_type).GetCanvasPattern();
-+  if (draw_type == CanvasPerformanceMonitor::DrawType::kText && !imported) {
-+    return;  // text marks nothing unless its style is a pattern
-+  }
-+  // A composited draw may set any pixel of the clip unpredictably, and may
-+  // leave exact pixels as they were: no noise anywhere in the clip.
-+  CamouMarkRect(clip_bounds, Kind::kImported);
++namespace {
++
++using CamouKind = camoucfg::CanvasNoiseMask::Kind;
++
++// A pattern: the paint's pixels are page-supplied.
++bool CamouIsPattern(const cc::PaintFlags& flags) {
++  const cc::PaintShader* shader = flags.getShader();
++  return shader &&
++         (shader->shader_type() == cc::PaintShader::Type::kImage ||
++          shader->shader_type() == cc::PaintShader::Type::kPaintRecord);
 +}
 +
-+void Canvas2DRecorderContext::CamouMergeRecord(
-+    cc::PaintRecord record,
-+    const SkIRect& area,
-+    camoucfg::CanvasNoiseMask::Kind kind) {
-+  using Kind = camoucfg::CanvasNoiseMask::Kind;
-+  if (area.isEmpty()) {
++bool CamouIsGradient(const cc::PaintFlags& flags) {
++  const cc::PaintShader* shader = flags.getShader();
++  if (!shader) {
++    return false;
++  }
++  switch (shader->shader_type()) {
++    case cc::PaintShader::Type::kLinearGradient:
++    case cc::PaintShader::Type::kRadialGradient:
++    case cc::PaintShader::Type::kTwoPointConicalGradient:
++    case cc::PaintShader::Type::kSweepGradient:
++      return true;
++    default:
++      return false;
++  }
++}
++
++// S2b's mask kind for a fill or stroke, restated on the recorded flags.
++CamouKind CamouKindOf(const cc::PaintFlags& flags) {
++  if (CamouIsPattern(flags)) {
++    return CamouKind::kImported;
++  }
++  if (CamouIsGradient(flags) || flags.getLooper() || flags.getImageFilter()) {
++    return CamouKind::kAa;
++  }
++  // clearRect, and destination-out with an opaque source: every fully
++  // covered pixel ends transparent, whatever it held (exact).
++  if (flags.getBlendMode() == SkBlendMode::kClear ||
++      (flags.isOpaque() && flags.getBlendMode() == SkBlendMode::kDstOut)) {
++    return CamouKind::kClear;
++  }
++  return flags.isOpaque() && flags.getBlendMode() == SkBlendMode::kSrcOver
++             ? CamouKind::kSolidOpaque
++             : CamouKind::kSolid;
++}
++
++// Coverage flags: opaque white, src-over, shader-free except for kind kAa
++// (a gradient's alpha is its coverage), the looper as recorded.
++cc::PaintFlags CamouCoverageFlags(const cc::PaintFlags& flags, CamouKind kind) {
++  cc::PaintFlags coverage = flags;
++  coverage.setColor(SK_ColorWHITE);
++  if (kind != CamouKind::kAa) {
++    coverage.setShader(nullptr);
++  }
++  coverage.setBlendMode(SkBlendMode::kSrcOver);
++  return coverage;
++}
++
++// The device pixels an op drawn with `flags` may touch: its local bounds
++// grown by the paint's fast bounds (stroke, miter, path effect, filter)
++// before the matrix, then mapped, outset 1 px and clipped. Under a looper
++// (a shadow) each layer is bounded under its own matrix, its blur outset in
++// local and in device space (a canvas shadow ignores the transform). A
++// plain fill needs no paint; otherwise the paint is converted without its
++// shader, which fast bounds never read. The clip bounds when the bounds
++// cannot be computed.
++SkIRect CamouOpArea(const cc::PaintOp& op,
++                    const cc::PaintFlags* flags,
++                    SkCanvas& canvas) {
++  const SkIRect clip = canvas.getDeviceClipBounds();
++  SkRect local;
++  if (!cc::PaintOp::GetBounds(op, &local)) {
++    return clip;
++  }
++  SkRect device = SkRect::MakeEmpty();
++  if (!flags || (!flags->getLooper() && !flags->getPathEffect() &&
++                 !flags->getImageFilter() &&
++                 flags->getStyle() == cc::PaintFlags::kFill_Style)) {
++    device = canvas.getTotalMatrix().mapRect(local);
++  } else {
++    bool bounded = true;
++    bool first = true;
++    auto bound = [&](SkCanvas* c, const SkPaint& paint) {
++      if (!paint.canComputeFastBounds()) {
++        bounded = false;
++        return;
++      }
++      const SkMatrix matrix = c->getTotalMatrix();
++      SkRect storage;
++      SkRect r = matrix.mapRect(paint.computeFastBounds(local, &storage));
++      if (paint.getMaskFilter()) {
++        SkPaint unmasked(paint);
++        unmasked.setMaskFilter(nullptr);
++        SkPaint mask;
++        mask.setMaskFilter(paint.refMaskFilter());
++        r.joinPossiblyEmptyRect(mask.computeFastBounds(
++            matrix.mapRect(unmasked.computeFastBounds(local, &storage)),
++            &storage));
++      }
++      if (first) {
++        device = r;
++        first = false;
++      } else {
++        device.joinPossiblyEmptyRect(r);
++      }
++    };
++    if (flags->getShader()) {
++      cc::PaintFlags shaderless = *flags;
++      shaderless.setShader(nullptr);
++      shaderless.DrawToSk(&canvas, bound);
++    } else {
++      flags->DrawToSk(&canvas, bound);
++    }
++    if (!bounded || first) {
++      return clip;
++    }
++  }
++  if (!device.isFinite()) {
++    return clip;
++  }
++  SkIRect area = device.roundOut().makeOutset(1, 1);
++  return area.intersect(clip) ? area : SkIRect::MakeEmpty();
++}
++
++// The device pixels a composited draw may set: its clip, or for a layer
++// with bounds (drawImage with a filter, or a translucent image's shadow)
++// those bounds grown by the layer's filter, mapped, outset 1 px and
++// clipped.
++SkIRect CamouLayerArea(const cc::PaintOp& op, const SkCanvas& canvas) {
++  const SkIRect clip = canvas.getDeviceClipBounds();
++  SkRect bounds;
++  SkPaint paint;
++  if (op.GetType() == cc::PaintOpType::kSaveLayer) {
++    const auto& save_layer = static_cast<const cc::SaveLayerOp&>(op);
++    bounds = save_layer.bounds;
++    paint = save_layer.flags.ToSkPaint();
++  } else if (op.GetType() == cc::PaintOpType::kSaveLayerAlpha) {
++    bounds = static_cast<const cc::SaveLayerAlphaOp&>(op).bounds;
++  } else {
++    return clip;
++  }
++  // An unset rect (no bounds) is infinite.
++  if (!bounds.isFinite() || !paint.canComputeFastBounds()) {
++    return clip;
++  }
++  SkRect storage;
++  const SkRect device = canvas.getTotalMatrix().mapRect(
++      paint.computeFastBounds(bounds, &storage));
++  if (!device.isFinite()) {
++    return clip;
++  }
++  SkIRect area = device.roundOut().makeOutset(1, 1);
++  return area.intersect(clip) ? area : SkIRect::MakeEmpty();
++}
++
++// Whether a layer's composite changes no pixel: a saveLayerAlpha at alpha 0
++// (an SVG image drawn at globalAlpha 0), or a saveLayer whose paint draws
++// nothing. A layer with an image or colour filter may paint from nothing (a
++// flood), so nothingToDraw() never counts it; nor does a saveLayerFilters.
++bool CamouLayerDrawsNothing(const cc::PaintOp& op) {
++  switch (op.GetType()) {
++    case cc::PaintOpType::kSaveLayerAlpha:
++      return static_cast<const cc::SaveLayerAlphaOp&>(op).alpha == 0;
++    case cc::PaintOpType::kSaveLayer:
++      return static_cast<const cc::SaveLayerOp&>(op).flags.nothingToDraw();
++    default:
++      return false;
++  }
++}
++
++// A canvas shadow's layer (a drawImage of a non-opaque image with a
++// shadow): a saveLayer whose only effect is a drop-shadow image filter with
++// no input, composited src-over. It casts the shadow of what is drawn inside
++// it, so an op inside that draws nothing adds nothing. Any other layer filter
++// keeps marking: a drop shadow with an input (a url() filter's feDropShadow
++// over an feFlood) or a filter of another type can paint from nothing.
++bool CamouIsShadowLayer(const cc::PaintOp& op) {
++  if (op.GetType() != cc::PaintOpType::kSaveLayer) {
++    return false;
++  }
++  const cc::PaintFlags& flags = static_cast<const cc::SaveLayerOp&>(op).flags;
++  const cc::PaintFilter* filter = flags.getImageFilter().get();
++  return filter && filter->type() == cc::PaintFilter::Type::kDropShadow &&
++         !static_cast<const cc::DropShadowPaintFilter*>(filter)->input() &&
++         !flags.getColorFilter() && !flags.getLooper() &&
++         flags.getBlendMode() == SkBlendMode::kSrcOver;
++}
++
++// What an op of the walk does to the matrix and clip of `canvas`: a layer is
++// a plain save (the ops inside are marked, never composited), a nested
++// record played with local_ctm restores what it changes, a draw changes
++// nothing, and any other op is played.
++void CamouApplyState(const cc::PaintOp& op,
++                     SkCanvas& canvas,
++                     const cc::PlaybackParams& params) {
++  switch (op.GetType()) {
++    case cc::PaintOpType::kSaveLayer:
++    case cc::PaintOpType::kSaveLayerAlpha:
++    case cc::PaintOpType::kSaveLayerFilters:
++      canvas.save();
++      return;
++    case cc::PaintOpType::kDrawRecord:
++      if (!static_cast<const cc::DrawRecordOp&>(op).local_ctm) {
++        op.Raster(&canvas, params);
++      }
++      return;
++    default:
++      if (!op.IsDrawOp()) {
++        op.Raster(&canvas, params);
++      }
++      return;
++  }
++}
++
++}  // namespace
++
++// The walk's A8 coverage bitmap, the canvas's size, and the canvas that
++// rasters into it, made at the walk's first op that needs the clip: a flush
++// of text, or of draws that change nothing, allocates nothing, and none
++// outlives its walk. The canvas replays the matrix and clip of the ops the
++// walk has passed (`done`), so it stands where the walk is.
++struct Canvas2DRecorderContext::CamouCoverage {
++  int width;
++  int height;
++  size_t done = 0;
++  bool failed = false;
++  SkBitmap bitmap;
++  std::optional<SkCanvas> canvas;
++
++  // The raster canvas for the walk of `record`, or null when the bitmap
++  // cannot be allocated.
++  SkCanvas* Get(const cc::PaintRecord& record,
++                const cc::PlaybackParams& params) {
++    if (canvas) {
++      return &*canvas;
++    }
++    if (failed || !bitmap.tryAllocPixels(SkImageInfo::MakeA8(width, height))) {
++      failed = true;
++      return nullptr;
++    }
++    canvas.emplace(bitmap);
++    size_t i = 0;
++    for (const cc::PaintOp& op : record.buffer()) {
++      if (i++ == done) {
++        break;
++      }
++      CamouApplyState(op, *canvas, params);
++    }
++    return &*canvas;
++  }
++};
++
++void Canvas2DRecorderContext::CamouMarkRecord(const cc::PaintRecord& record) {
++  const int w = Width();
++  const int h = Height();
++  if (record.empty() || w <= 0 || h <= 0) {
 +    return;
 +  }
-+  SkBitmap coverage;
-+  if (!coverage.tryAllocPixels(
-+          SkImageInfo::MakeA8(area.width(), area.height()))) {
-+    // No memory for the replay: mark the whole area imported (no noise).
-+    CamouMarkRect(area, Kind::kImported);
-+    return;
-+  }
-+  coverage.eraseColor(SK_ColorTRANSPARENT);
-+  SkCanvas canvas(coverage);
-+  canvas.translate(-area.x(), -area.y());
-+  record.Playback(&canvas);
 +  CamouEnsureMask();
-+  camou_mask_->Merge(static_cast<const uint8_t*>(coverage.getPixels()),
-+                     coverage.rowBytes(), area.x(), area.y(),
-+                     static_cast<size_t>(area.width()),
-+                     static_cast<size_t>(area.height()), kind);
++  const cc::PlaybackParams params;
++  // The walk keeps no matrix or clip of its own until an op needs the clip
++  // (a layer's area, a nested record's mark, a draw that may change pixels):
++  // the coverage canvas, made then, replays the ops passed so far. Nothing
++  // is measured on a pixel-less canvas, whose clip bounds for a path clip
++  // need not match a raster canvas's.
++  CamouCoverage cover{w, h};
++  // A composited draw in progress: the save count it began at (0: none),
++  // its clip, whether that clip is marked yet, whether the layer composites
++  // nothing at all, and whether it is a canvas shadow's layer.
++  struct {
++    int depth = 0;
++    SkIRect clip = SkIRect::MakeEmpty();
++    bool marked = false;
++    bool inert = false;
++    bool shadow = false;
++  } layer;
++  // Inside a composited draw, the first op that may set pixels marks the
++  // layer's clip imported, unless the layer composites nothing. Text marks
++  // nothing unless its style is a pattern, as in S2b, so shadowed or
++  // filtered text leaves the clip's noise alone. In a shadow's layer, an op
++  // that draws nothing casts nothing.
++  auto mark_layer = [&](const cc::PaintOp& op) {
++    if (layer.marked || layer.inert) {
++      return;
++    }
++    if (op.GetType() == cc::PaintOpType::kDrawTextBlob ||
++        op.GetType() == cc::PaintOpType::kDrawSlug) {
++      if (!CamouIsPattern(static_cast<const cc::PaintOpWithFlags&>(op).flags)) {
++        return;
++      }
++    }
++    if (layer.shadow && op.IsPaintOpWithFlags() &&
++        static_cast<const cc::PaintOpWithFlags&>(op).flags.nothingToDraw()) {
++      return;
++    }
++    CamouMarkRect(layer.clip, CamouKind::kImported);
++    layer.marked = true;
++  };
++  for (const cc::PaintOp& op : record.buffer()) {
++    switch (op.GetType()) {
++      case cc::PaintOpType::kSaveLayer:
++      case cc::PaintOpType::kSaveLayerAlpha:
++      case cc::PaintOpType::kSaveLayerFilters:
++        // A composited draw (a filter, a composited shadow, a full-canvas
++        // composite mode) may set any pixel of its area (CamouLayerArea)
++        // unpredictably and may leave exact pixels as they were: that area is
++        // marked imported (by its first non-text op) and the ops inside are
++        // skipped. A layer whose own paint draws nothing marks nothing; a
++        // shadow's layer marks only for an op that draws something.
++        if (layer.depth == 0) {
++          if (SkCanvas* canvas = cover.Get(record, params)) {
++            layer.depth = canvas->getSaveCount() + 1;
++            layer.clip = CamouLayerArea(op, *canvas);
++            layer.marked = false;
++            layer.inert = CamouLayerDrawsNothing(op);
++            layer.shadow = CamouIsShadowLayer(op);
++          }
++        }
++        break;
++      case cc::PaintOpType::kDrawRecord:
++        // A nested record (with Canvas2D layers off, an SVG image's
++        // picture): imported over the clip. Its ops are not rastered: what
++        // they draw is never merged (every op clears its own area first),
++        // and an SVG's images would be decoded for nothing. Played with
++        // local_ctm (drawPicture's default), it restores the matrix and clip
++        // it changes; otherwise it is played whole for the matrix it leaves
++        // (CamouApplyState).
++        if (layer.depth != 0) {
++          mark_layer(op);
++        } else if (SkCanvas* canvas = cover.Get(record, params)) {
++          CamouMarkRect(canvas->getDeviceClipBounds(), CamouKind::kImported);
++        }
++        break;
++      default:
++        if (op.IsDrawOp()) {
++          if (layer.depth == 0) {
++            CamouMarkOp(op, record, cover, params);
++          } else {
++            mark_layer(op);
++          }
++        }
++        break;
++    }
++    if (cover.failed) {
++      // No memory for the coverage pass: no noise anywhere (imported, never
++      // a clear). Nothing of this record was marked yet: every mark needs
++      // the coverage canvas. The allocation is retried at the next flush.
++      CamouMarkRect(SkIRect::MakeWH(w, h), CamouKind::kImported);
++      return;
++    }
++    if (cover.canvas) {
++      CamouApplyState(op, *cover.canvas, params);
++      if (layer.depth != 0 && cover.canvas->getSaveCount() < layer.depth) {
++        layer.depth = 0;
++      }
++    }
++    ++cover.done;
++  }
++}
++
++void Canvas2DRecorderContext::CamouMarkOp(const cc::PaintOp& op,
++                                          const cc::PaintRecord& record,
++                                          CamouCoverage& cover,
++                                          const cc::PlaybackParams& params) {
++  const cc::PaintFlags* flags =
++      op.IsPaintOpWithFlags()
++          ? &static_cast<const cc::PaintOpWithFlags&>(op).flags
++          : nullptr;
++  // A draw that changes no pixel (transparent, globalAlpha 0) marks none,
++  // whatever it draws: a shape, an image or pattern text.
++  if (flags && flags->nothingToDraw()) {
++    return;
++  }
++  // nothingToDraw() is false while a looper is set. A canvas shadow follows
++  // its draw's alpha, so a draw that paints nothing casts nothing: tested
++  // without the looper, for shapes, images and pattern text alike.
++  if (flags && flags->getLooper()) {
++    cc::PaintFlags unshadowed = *flags;
++    unshadowed.setLooper(nullptr);
++    if (unshadowed.nothingToDraw()) {
++      return;
++    }
++  }
++  // Text whose style is not a pattern marks nothing (below) and needs no
++  // coverage canvas.
++  if ((op.GetType() == cc::PaintOpType::kDrawTextBlob ||
++       op.GetType() == cc::PaintOpType::kDrawSlug) &&
++      !CamouIsPattern(*flags)) {
++    return;
++  }
++  // The coverage canvas, made now if no op before needed it. On failure the
++  // walk marks the whole canvas imported.
++  SkCanvas* const coverage_canvas = cover.Get(record, params);
++  if (!coverage_canvas) {
++    return;
++  }
++  SkCanvas& canvas = *coverage_canvas;
++  SkBitmap& bitmap = cover.bitmap;
++  // Clears `area` of the coverage bitmap, rasters into it, and merges it.
++  auto merge = [&](const SkIRect& area, CamouKind kind, auto&& raster) {
++    if (area.isEmpty()) {
++      return;
++    }
++    bitmap.erase(SkColors::kTransparent, area);
++    raster();
++    camou_mask_->Merge(bitmap.getAddr8(area.x(), area.y()), bitmap.rowBytes(),
++                       area.x(), area.y(), static_cast<size_t>(area.width()),
++                       static_cast<size_t>(area.height()), kind);
++  };
++  // Page-supplied pixels over the op's area. Under a looper (a shadow) a
++  // rect of the op's bounds is rastered with the looper and merged, so the
++  // shadow marks its own pixels, not the clip.
++  auto mark_imported = [&] {
++    SkRect local;
++    if (flags && flags->getLooper() && cc::PaintOp::GetBounds(op, &local)) {
++      const cc::PaintFlags coverage =
++          CamouCoverageFlags(*flags, CamouKind::kImported);
++      merge(CamouOpArea(op, &coverage, canvas), CamouKind::kImported, [&] {
++        coverage.DrawToSk(&canvas, [&](SkCanvas* c, const SkPaint& paint) {
++          // The rect is filled, grown by what a stroke adds to the bounds.
++          SkPaint stroke;
++          stroke.setStyle(paint.getStyle());
++          stroke.setStrokeWidth(paint.getStrokeWidth());
++          stroke.setStrokeMiter(paint.getStrokeMiter());
++          stroke.setStrokeJoin(paint.getStrokeJoin());
++          stroke.setStrokeCap(paint.getStrokeCap());
++          SkPaint fill(paint);
++          fill.setStyle(SkPaint::kFill_Style);
++          fill.setPathEffect(nullptr);
++          fill.setAntiAlias(true);
++          SkRect storage;
++          c->drawRect(stroke.computeFastBounds(local, &storage), fill);
++        });
++      });
++      return;
++    }
++    CamouMarkRect(CamouOpArea(op, flags, canvas), CamouKind::kImported);
++  };
++  switch (op.GetType()) {
++    case cc::PaintOpType::kDrawTextBlob:
++    case cc::PaintOpType::kDrawSlug:
++      // Text marks nothing (its draw-time offset varies it), unless its style
++      // is a pattern: then its pixels are page-supplied.
++      if (CamouIsPattern(*flags)) {
++        mark_imported();
++      }
++      return;
++    case cc::PaintOpType::kDrawImage:
++    case cc::PaintOpType::kDrawImageRect:
++    case cc::PaintOpType::kDrawVertices:
++    case cc::PaintOpType::kDrawSkottie:
++    case cc::PaintOpType::kDrawScrollingContents:
++      // Page-supplied pixels. A texture-backed image cannot be rastered on a
++      // CPU bitmap, and its area contains its coverage.
++      mark_imported();
++      return;
++    case cc::PaintOpType::kDrawColor: {
++      // clear(), the 'copy' pre-clear and drawColor cover the whole clip.
++      const auto& color = static_cast<const cc::DrawColorOp&>(op);
++      const bool exact =
++          color.mode == SkBlendMode::kSrc ||
++          color.mode == SkBlendMode::kClear ||
++          (color.mode == SkBlendMode::kSrcOver && color.color.fA >= 1.0f);
++      if (!exact && color.color.fA <= 0.0f) {
++        return;
++      }
++      SkPaint white;
++      white.setColor(SK_ColorWHITE);
++      merge(canvas.getDeviceClipBounds(),
++            exact ? CamouKind::kClear : CamouKind::kSolid,
++            [&] { canvas.drawPaint(white); });
++      return;
++    }
++    case cc::PaintOpType::kDrawLineLite:
++    case cc::PaintOpType::kDrawArcLite: {
++      const bool line = op.GetType() == cc::PaintOpType::kDrawLineLite;
++      const cc::PaintFlags lite_flags(
++          line ? static_cast<const cc::DrawLineLiteOp&>(op).core_paint_flags
++               : static_cast<const cc::DrawArcLiteOp&>(op).core_paint_flags);
++      if (lite_flags.nothingToDraw()) {
++        return;
++      }
++      const CamouKind kind = CamouKindOf(lite_flags);
++      const cc::CorePaintFlags core =
++          CamouCoverageFlags(lite_flags, kind).ToCorePaintFlags();
++      merge(CamouOpArea(op, &lite_flags, canvas), kind, [&] {
++        if (line) {
++          const auto& l = static_cast<const cc::DrawLineLiteOp&>(op);
++          const cc::DrawLineLiteOp lite(l.x0, l.y0, l.x1, l.y1, core);
++          cc::DrawLineLiteOp::Raster(&lite, &canvas, params);
++        } else {
++          const auto& a = static_cast<const cc::DrawArcLiteOp&>(op);
++          const cc::DrawArcLiteOp lite(a.oval, a.start_angle_degrees,
++                                       a.sweep_angle_degrees, core);
++          cc::DrawArcLiteOp::Raster(&lite, &canvas, params);
++        }
++      });
++      return;
++    }
++    default:
++      break;
++  }
++  if (!flags) {
++    // Any other draw op without flags: its area may hold anything.
++    CamouMarkRect(CamouOpArea(op, nullptr, canvas), CamouKind::kImported);
++    return;
++  }
++  const auto& with_flags = static_cast<const cc::PaintOpWithFlags&>(op);
++  auto raster_with = [&](const cc::PaintFlags& coverage) {
++    with_flags.RasterWithFlags(&canvas, &coverage, params);
++  };
++  if (flags->getLooper()) {
++    cc::PaintFlags shape = *flags;
++    shape.setLooper(nullptr);
++    // The shadow is rasteriser-dependent (aa), over the looper's layers'
++    // bounds; the shape is then marked by its own kind, so an opaque shape's
++    // covered pixels stay exact.
++    const cc::PaintFlags shadow = CamouCoverageFlags(*flags, CamouKind::kAa);
++    merge(CamouOpArea(op, &shadow, canvas), CamouKind::kAa,
++          [&] { raster_with(shadow); });
++    const CamouKind kind = CamouKindOf(shape);
++    const cc::PaintFlags coverage = CamouCoverageFlags(shape, kind);
++    merge(CamouOpArea(op, &coverage, canvas), kind,
++          [&] { raster_with(coverage); });
++    return;
++  }
++  const CamouKind kind = CamouKindOf(*flags);
++  const cc::PaintFlags coverage = CamouCoverageFlags(*flags, kind);
++  merge(CamouOpArea(op, &coverage, canvas), kind,
++        [&] { raster_with(coverage); });
 +}
 +
  void Canvas2DRecorderContext::reset() {
    UseCounter::Count(GetTopExecutionContext(),
                      WebFeature::kCanvasRenderingContext2DReset);
-@@ -1981,6 +2078,15 @@ void Canvas2DRecorderContext::clearRect(double x,
-       host->ClearRenderedText(canvas_clear_rect);
-     }
-   }
-+  SkIRect camou_area;
-+  if (CamouMaskActive() &&
-+      ComputeDirtyRect(rect, clip_bounds, &camou_area)) {
-+    CamouReplay(
-+        [&rect](MemoryManagedPaintCanvas* mc, const cc::PaintFlags* f) {
-+          mc->drawRect(gfx::RectFToSkRect(rect), *f);
-+        },
-+        clear_flags, camoucfg::CanvasNoiseMask::Kind::kClear, camou_area);
-+  }
-   if (RectContainsTransformedRect(rect, clip_bounds)) {
-     CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
-                   OverdrawOp::kClearRect);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 6ee4b2b0d1..409dcf6128 100644
+index 6ee4b2b0d1..9b726ca6ca 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -8,6 +8,7 @@
@@ -475,174 +1090,55 @@ index 6ee4b2b0d1..409dcf6128 100644
  #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_fill_rule.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_image_smoothing_quality.h"
-@@ -400,6 +402,47 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -61,6 +63,11 @@
+ 
+ struct SkSamplingOptions;
+ 
++namespace cc {
++class PaintOp;
++struct PlaybackParams;
++}  // namespace cc
++
+ namespace ui {
+ class ColorProvider;
+ }  // namespace ui
+@@ -400,6 +407,36 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
    const Font* AccessFont(HTMLCanvasElement* canvas);
  
 +  // Camoucrome canvas noise S2b: which pixels may carry readback noise.
-+  // Merged in at DrawInternal; clearRect and putImageData are hooked
-+  // separately; drawFocusIfNeeded's ring bypasses it (known gap).
++  // Computed at flush from the page's own recording (CamouMarkRecord,
++  // canvas noise S2c); putImageData and transferToImageBitmap are hooked
++  // separately; drawFocusIfNeeded's ring is a draw op like any other.
 +  // Anti-aliased and rasteriser-dependent pixels are
 +  // marked aa, page-supplied ones imported, and a full opaque solid cover
-+  // clears both. Null until the first draw with canvas:seed set.
++  // clears both. Null until the first flush or putImageData with
++  // canvas:seed set.
 +  std::unique_ptr<camoucfg::CanvasNoiseMask> camou_mask_;
-+  // canvas:seed is set, so draws are replayed into camou_mask_.
++  // canvas:seed is set, so flushed recordings are merged into camou_mask_.
 +  bool CamouMaskActive() const;
 +  // Creates camou_mask_ (or re-creates it after a resize).
 +  void CamouEnsureMask();
-+  // The mask kind for a fill or stroke with `flags`.
-+  camoucfg::CanvasNoiseMask::Kind CamouKindFor(
-+      CanvasRenderingContext2DState::PaintType paint_type,
-+      const cc::PaintFlags& flags) const;
 +  // Marks `area` (device pixels) with `kind`, allocating the mask.
 +  void CamouMarkRect(const SkIRect& area,
 +                     camoucfg::CanvasNoiseMask::Kind kind);
-+  // A composited draw (filter, composited shadow, full-canvas composite
-+  // mode) marks its clip imported (no noise). Text marks nothing unless
-+  // its style is a pattern.
-+  void CamouMarkClip(CanvasRenderingContext2DState::PaintType paint_type,
-+                     const SkIRect& clip_bounds,
-+                     CanvasPerformanceMonitor::DrawType draw_type);
-+  // Plays `record` onto an A8 bitmap over `area` and merges it.
-+  void CamouMergeRecord(cc::PaintRecord record, const SkIRect& area,
-+                        camoucfg::CanvasNoiseMask::Kind kind);
-+  // Replays `draw_func` with `flags` made opaque white, src-over, and
-+  // shader-free except for kind kAa (a gradient's alpha is its coverage),
-+  // under the current matrix and clip, and merges its coverage.
-+  template <typename DrawFunc>
-+  void CamouReplay(const DrawFunc& draw_func, const cc::PaintFlags& flags,
-+                   camoucfg::CanvasNoiseMask::Kind kind, const SkIRect& area);
-+  // The DrawInternal hook: text marks nothing, images mark imported over
-+  // their dirty rect, everything else is replayed.
-+  template <typename DrawFunc>
-+  void CamouMark(const DrawFunc& draw_func, const cc::PaintFlags* flags,
-+                 CanvasRenderingContext2DState::PaintType paint_type,
-+                 const SkIRect& area,
-+                 CanvasPerformanceMonitor::DrawType draw_type);
++  // Merges the coverage of every draw op of `record` (one released main
++  // recording) into camou_mask_, in order: canvas noise S2c computes the
++  // mask at flush, from the page's own recording, not per draw.
++  void CamouMarkRecord(const cc::PaintRecord& record);
++  // The walk's coverage bitmap and canvas, made when an op first needs the
++  // clip (CamouMarkRecord).
++  struct CamouCoverage;
++  // Merges one draw op of `record` under the coverage canvas's matrix and
++  // clip.
++  void CamouMarkOp(const cc::PaintOp& op,
++                   const cc::PaintRecord& record,
++                   CamouCoverage& cover,
++                   const cc::PlaybackParams& params);
 +
    ALWAYS_INLINE CanvasRenderingContext2DState& GetState() const {
      return *state_stack_.back();
    }
-@@ -787,6 +830,79 @@ ALWAYS_INLINE void Canvas2DRecorderContext::CheckOverdraw(
-   Recorder()->RestartCurrentLayer();
- }
- 
-+template <typename DrawFunc>
-+void Canvas2DRecorderContext::CamouReplay(
-+    const DrawFunc& draw_func,
-+    const cc::PaintFlags& flags,
-+    camoucfg::CanvasNoiseMask::Kind kind,
-+    const SkIRect& area) {
-+  using Kind = camoucfg::CanvasNoiseMask::Kind;
-+  if (layer_count_ != 0) {
-+    // RestoreMatrixClipStack stops at a layer, so a replay would misplace
-+    // the coverage: mark the whole area imported (no noise, never a
-+    // clear). Canvas2dLayers is off by default on 154.
-+    CamouMarkRect(area, Kind::kImported);
-+    return;
-+  }
-+  MemoryManagedPaintCanvas recorder(gfx::Size(Width(), Height()));
-+  RestoreMatrixClipStack(&recorder);
-+  cc::PaintFlags coverage = flags;
-+  coverage.setColor(SK_ColorWHITE);
-+  // A gradient's alpha is part of its coverage (all-transparent stops cover
-+  // nothing); a pattern's shader is dropped (a GPU-backed image may raster
-+  // to nothing on a CPU bitmap).
-+  if (kind != camoucfg::CanvasNoiseMask::Kind::kAa) {
-+    coverage.setShader(nullptr);
-+  }
-+  coverage.setBlendMode(SkBlendMode::kSrcOver);
-+  draw_func(&recorder, &coverage);
-+  CamouMergeRecord(recorder.ReleaseAsRecord(), area, kind);
-+}
-+
-+template <typename DrawFunc>
-+void Canvas2DRecorderContext::CamouMark(
-+    const DrawFunc& draw_func,
-+    const cc::PaintFlags* flags,
-+    CanvasRenderingContext2DState::PaintType paint_type,
-+    const SkIRect& area,
-+    CanvasPerformanceMonitor::DrawType draw_type) {
-+  // A draw that changes no pixel (transparent, globalAlpha 0) marks none.
-+  if (!CamouMaskActive() || flags->nothingToDraw()) {
-+    return;
-+  }
-+  if (draw_type == CanvasPerformanceMonitor::DrawType::kText) {
-+    // Text marks nothing (its draw-time offset varies it), unless its
-+    // style is a pattern: then its pixels are page-supplied.
-+    if (paint_type != CanvasRenderingContext2DState::kImagePaintType &&
-+        GetState().Style(paint_type).GetCanvasPattern()) {
-+      CamouMarkRect(area, camoucfg::CanvasNoiseMask::Kind::kImported);
-+    }
-+    return;
-+  }
-+  if (paint_type == CanvasRenderingContext2DState::kImagePaintType) {
-+    // A texture-backed image cannot be played onto a CPU bitmap; its
-+    // dirty rect contains its coverage.
-+    CamouMarkRect(area, camoucfg::CanvasNoiseMask::Kind::kImported);
-+    return;
-+  }
-+  if (flags->getLooper()) {
-+    // A shadow follows its shape's alpha: a shape that draws nothing casts
-+    // nothing (nothingToDraw() is false while a looper is set).
-+    cc::PaintFlags shape = *flags;
-+    shape.setLooper(nullptr);
-+    if (shape.nothingToDraw()) {
-+      return;
-+    }
-+    // The shadow is rasteriser-dependent (aa); the shape is then marked by
-+    // its own kind, so an opaque shape's covered pixels stay exact.
-+    CamouReplay(draw_func, *flags, camoucfg::CanvasNoiseMask::Kind::kAa,
-+                area);
-+    CamouReplay(draw_func, shape, CamouKindFor(paint_type, shape), area);
-+    return;
-+  }
-+  CamouReplay(draw_func, *flags, CamouKindFor(paint_type, *flags), area);
-+}
-+
- template <Canvas2DRecorderContext::OverdrawOp CurrentOverdrawOp,
-           typename DrawFunc,
-           typename DrawCoversClipBoundsFunc>
-@@ -809,6 +925,9 @@ void Canvas2DRecorderContext::DrawInternal(
-   const CanvasRenderingContext2DState& state = GetState();
-   SkBlendMode global_composite = state.GlobalComposite();
-   if (ShouldUseCompositedDraw(paint_type, image_type)) {
-+    // Filters, composited shadows and full-canvas composite modes may
-+    // touch any pixel in the clip.
-+    CamouMarkClip(paint_type, clip_bounds, draw_type);
-     WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
-     CompositedDraw(draw_func, paint_canvas, paint_type, image_type);
-     ResetAlphaIfNeeded(paint_canvas, global_composite);
-@@ -817,6 +936,21 @@ void Canvas2DRecorderContext::DrawInternal(
-     paint_canvas->clear(HasAlpha() ? SkColors::kTransparent : SkColors::kBlack);
-     const cc::PaintFlags* flags =
-         state.GetFlags(paint_type, kDrawForegroundOnly, image_type);
-+    // "copy" replaces every pixel of the clip: outside the shape they
-+    // become transparent (exact), inside they take the shape's marks.
-+    if (CamouMaskActive()) {
-+      // A fill, whatever the draw's own style: a stroke would clear only
-+      // the clip's outline.
-+      CamouReplay(
-+          [&clip_bounds](MemoryManagedPaintCanvas* mc,
-+                         const cc::PaintFlags* f) {
-+            mc->setMatrix(SkM44());
-+            mc->drawRect(SkRect::Make(clip_bounds), *f);
-+          },
-+          cc::PaintFlags(), camoucfg::CanvasNoiseMask::Kind::kClear,
-+          clip_bounds);
-+      CamouMark(draw_func, flags, paint_type, clip_bounds, draw_type);
-+    }
-     WillDraw(gfx::SkIRectToRect(clip_bounds), draw_type);
-     draw_func(paint_canvas, flags);
-     ResetAlphaIfNeeded(paint_canvas, global_composite, &bounds);
-@@ -833,6 +967,7 @@ void Canvas2DRecorderContext::DrawInternal(
-           CheckOverdraw(flags, image_type, CurrentOverdrawOp);
-         }
-       }
-+      CamouMark(draw_func, flags, paint_type, dirty_rect, draw_type);
-       WillDraw(gfx::SkIRectToRect(dirty_rect), draw_type);
-       draw_func(paint_canvas, flags);
-       ResetAlphaIfNeeded(paint_canvas, global_composite, &bounds);
 diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc
 index c2d9c03854..cba8d7df64 100644
 --- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc
@@ -670,189 +1166,496 @@ index d611207944..f7a94aebbe 100644
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 26c0a088cc..87405f2c5d 100644
+index 26c0a088cc..3239c81f19 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -25,6 +25,11 @@
+@@ -25,8 +25,14 @@
  
  #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
  
 +#include "base/numerics/checked_math.h"
-+#include "base/process/memory.h"
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/canvas_noise.h"
 +
  #include <inttypes.h>
  
++#include <array>
++#include <limits>
  #include <memory>
-@@ -5356,6 +5361,165 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
-     }
-     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
-   }
+ #include <utility>
+ 
+@@ -159,6 +165,7 @@
+ #include "third_party/blink/renderer/platform/heap/member.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
++#include "third_party/blink/renderer/platform/wtf/allocator/partitions.h"
+ #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+ #include "third_party/blink/renderer/platform/wtf/text/format.h"
+@@ -5281,6 +5288,41 @@ void WebGLRenderingContextBase::readPixels(
+   ReadPixelsHelper(x, y, width, height, format, type, pixels.Get(), 0);
+ }
+ 
++namespace {
 +
++// The page buffer's layout for an RGBA / UNSIGNED_BYTE readPixels of `width`
++// x `height` (PACK_ALIGNMENT; in WebGL2 also PACK_ROW_LENGTH, SKIP_PIXELS and
++// SKIP_ROWS), which readPixels validated the destination against: the row
++// pitch, the offset of the first pixel, and the bytes the read spans from
++// the buffer's start. Nullopt for a layout GL rejects (INVALID_OPERATION,
++// nothing written): the skipped pixels plus the rect do not fit one row.
++struct CamouPackLayout {
++  size_t row_bytes;
++  size_t first;
++  size_t extent;
++};
++
++std::optional<CamouPackLayout> CamouLayoutOf(
++    const WebGLImageConversion::PixelStoreParams& pack,
++    GLsizei width,
++    GLsizei height) {
++  const int64_t stride_px = pack.row_length > 0 ? pack.row_length : width;
++  if (width <= 0 || height <= 0 ||
++      int64_t{pack.skip_pixels} + width > stride_px) {
++    return std::nullopt;
++  }
++  const int64_t align = std::max<int64_t>(pack.alignment, 1);
++  const size_t row_bytes =
++      static_cast<size_t>((stride_px * 4 + align - 1) / align * align);
++  const size_t first = static_cast<size_t>(pack.skip_rows) * row_bytes +
++                       static_cast<size_t>(pack.skip_pixels) * 4;
++  return CamouPackLayout{row_bytes, first,
++                         first + static_cast<size_t>(height - 1) * row_bytes +
++                             static_cast<size_t>(width) * 4};
++}
++
++}  // namespace
++
+ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+                                                  GLint y,
+                                                  GLsizei width,
+@@ -5349,6 +5391,43 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+   if (isContextLost() || !GetDrawingBuffer())
+     return;
+ 
 +  // Camoucrome: perturb the JS-visible readPixels buffer at readback, for
-+  // the fingerprint-relevant RGBA / UNSIGNED_BYTE case only (other formats,
-+  // the zero-pixel throwaway path in `buffer`, and reads from a user-bound
-+  // framebuffer -- app-owned data, not a fingerprint surface -- are untouched).
-+  // No-op when canvas:seed is unset.
++  // the fingerprint-relevant RGBA / UNSIGNED_BYTE case only (other formats
++  // and the zero-pixel throwaway path in `buffer` are untouched). A read from
++  // a page framebuffer is noised by the same rule as the default one (canvas
++  // noise S2c): rendering into a framebuffer and reading it back does not
++  // return the clean render. No-op when canvas:seed is unset. Either kind
++  // is noised only when it reads 8-bit RGB(A): a default framebuffer by its
++  // storage (RGBA8, RGB8, SRGB8_ALPHA8) with READ_BUFFER not NONE, a page one
++  // by its read attachment's sizes (CamouReadPixels). Anything else
++  // stays stock: GL rejects the read (NONE, RGBA16F), or stock returns values
++  // a +-1 would leave (R8 and RG8 read G or B as 0; RGBA4 and RGB565 sit on a
++  // coarser lattice).
 +  //
 +  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
 +  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
-+  // so `buffer` handling above skips it; a later getBufferSubData() copies
-+  // those default-framebuffer pixels to a CPU array UN-noised. Covering it
-+  // needs buffer-provenance tracking (was this PACK buffer filled from the
-+  // default FB?), which is out of SP3a's scope -- see the plan's Out-of-
-+  // scope note and spec 7.4.
-+  if (!buffer && !framebuffer && format == GL_RGBA &&
-+      type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
-+    // The noise goes on the in-buffer part of the rect, at the real pack
-+    // layout (PACK_ALIGNMENT, WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS /
-+    // SKIP_ROWS): a read in any layout gets the same field on the same
-+    // pixels, and no layout returns the clean render. readPixels has already
-+    // validated the destination size against this layout.
-+    const WebGLImageConversion::PixelStoreParams camou_pack =
-+        GetPackPixelStoreParams();
-+    const int64_t camou_stride_px =
-+        camou_pack.row_length > 0 ? camou_pack.row_length : width;
-+    const int64_t camou_align = std::max<int64_t>(camou_pack.alignment, 1);
-+    const int64_t camou_row_bytes =
-+        (camou_stride_px * 4 + camou_align - 1) / camou_align * camou_align;
-+    const int64_t camou_x0 = std::max<int64_t>(x, 0);
-+    const int64_t camou_y0 = std::max<int64_t>(y, 0);
-+    const int64_t camou_x1 =
-+        std::min<int64_t>(int64_t{x} + width, drawingBufferWidth());
-+    const int64_t camou_y1 =
-+        std::min<int64_t>(int64_t{y} + height, drawingBufferHeight());
-+    // GL rejects (INVALID_OPERATION, nothing written) a layout where the
-+    // skipped pixels plus the rect do not fit one row; noise must not touch
-+    // such a buffer.
-+    if (int64_t{camou_pack.skip_pixels} + width <= camou_stride_px &&
-+        camou_x1 > camou_x0 && camou_y1 > camou_y0) {
-+      // No seed: no strips, no scratch, no copies -- stock work (rule 5).
-+      auto* ec = Host()->GetTopExecutionContext();
-+      if (ec && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec)) != 0) {
-+        const int64_t camou_offset =
-+            (int64_t{camou_pack.skip_rows} + (camou_y0 - y)) *
-+                camou_row_bytes +
-+            (int64_t{camou_pack.skip_pixels} + (camou_x0 - x)) * 4;
-+        // SAFETY: readPixels validated the destination against this pack
-+        // layout, and the offset lies inside the validated region.
-+        uint8_t* camou_dst = UNSAFE_BUFFERS(data + camou_offset);
-+        // Each edge pixel's neighbours come from the drawing buffer, not
-+        // from the rect (canvas noise S2b): up to four 1px strips around
-+        // the in-buffer part are read into a tight, bottom-up scratch copy,
-+        // so a sub-rect read gets exactly the matching part of a full read.
-+        // A pixel on the drawing buffer's own edge has no neighbour there
-+        // and never changes, in either read.
-+        const int64_t camou_ex0 = std::max<int64_t>(camou_x0 - 1, 0);
-+        const int64_t camou_ey0 = std::max<int64_t>(camou_y0 - 1, 0);
-+        const int64_t camou_ex1 =
-+            std::min<int64_t>(camou_x1 + 1, drawingBufferWidth());
-+        const int64_t camou_ey1 =
-+            std::min<int64_t>(camou_y1 + 1, drawingBufferHeight());
-+        const size_t camou_ew = static_cast<size_t>(camou_ex1 - camou_ex0);
-+        const size_t camou_eh = static_cast<size_t>(camou_ey1 - camou_ey0);
-+        const size_t camou_in_w = static_cast<size_t>(camou_x1 - camou_x0);
-+        const size_t camou_in_h = static_cast<size_t>(camou_y1 - camou_y0);
-+        const size_t camou_rb = static_cast<size_t>(camou_row_bytes);
-+        // SAFETY: readPixels validated the destination against this pack
-+        // layout; the in-buffer part spans these bytes from camou_dst.
-+        const base::span<uint8_t> camou_page =
-+            UNSAFE_BUFFERS(base::span<uint8_t>(
-+                camou_dst, (camou_in_h - 1) * camou_rb + camou_in_w * 4));
-+        // Fallible: a size overflow or a failed allocation skips the noise,
-+        // and the read stays stock, never a crash.
-+        base::CheckedNumeric<size_t> camou_bytes = camou_ew;
-+        camou_bytes *= camou_eh;
-+        camou_bytes *= 4;
-+        void* camou_raw = nullptr;
-+        if (!camou_bytes.IsValid() ||
-+            !base::UncheckedMalloc(camou_bytes.ValueOrDie(), &camou_raw) ||
-+            camou_raw == nullptr) {
-+          return;
-+        }
-+        std::unique_ptr<uint8_t, void (*)(void*)> camou_e(
-+            static_cast<uint8_t*>(camou_raw), &base::UncheckedFree);
-+        // SAFETY: camou_raw holds camou_bytes bytes.
-+        const base::span<uint8_t> camou_scratch =
-+            UNSAFE_BUFFERS(base::span<uint8_t>(
-+                camou_e.get(), camou_bytes.ValueOrDie()));
-+        std::ranges::fill(camou_scratch, uint8_t{0});
-+        // `n` pixels of drawing-buffer row `gy` from column `gx`.
-+        auto camou_row = [&](int64_t gx, int64_t gy, size_t n) {
-+          return camou_scratch.subspan(
-+              (static_cast<size_t>(gy - camou_ey0) * camou_ew +
-+               static_cast<size_t>(gx - camou_ex0)) * 4,
-+              n * 4);
-+        };
-+        for (size_t r = 0; r < camou_in_h; ++r) {
-+          camou_row(camou_x0, camou_y0 + static_cast<int64_t>(r), camou_in_w)
-+              .copy_from(camou_page.subspan(r * camou_rb, camou_in_w * 4));
-+        }
-+        bool camou_strips = false;
-+        {
-+          ScopedDrawingBufferBinder camou_binder(GetDrawingBuffer(), nullptr);
-+          if (camou_binder.Succeeded()) {
-+            gpu::gles2::GLES2Interface* camou_gl = ContextGL();
-+            camou_gl->PixelStorei(GL_PACK_ALIGNMENT, 1);
-+            if (IsWebGL2()) {
-+              camou_gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);
-+              camou_gl->PixelStorei(GL_PACK_SKIP_ROWS, 0);
-+              camou_gl->PixelStorei(GL_PACK_SKIP_PIXELS, 0);
-+            }
-+            if (camou_ey0 < camou_y0) {
-+              camou_gl->ReadPixels(
-+                  static_cast<GLint>(camou_ex0), static_cast<GLint>(camou_ey0),
-+                  static_cast<GLsizei>(camou_ew), 1,
-+                  GL_RGBA, GL_UNSIGNED_BYTE,
-+                  camou_row(camou_ex0, camou_ey0, camou_ew).data());
-+            }
-+            if (camou_ey1 > camou_y1) {
-+              camou_gl->ReadPixels(
-+                  static_cast<GLint>(camou_ex0), static_cast<GLint>(camou_y1),
-+                  static_cast<GLsizei>(camou_ew), 1,
-+                  GL_RGBA, GL_UNSIGNED_BYTE,
-+                  camou_row(camou_ex0, camou_y1, camou_ew).data());
-+            }
-+            Vector<uint8_t> camou_col(static_cast<wtf_size_t>(camou_in_h * 4));
-+            for (const int64_t camou_cx :
-+                 {camou_ex0 < camou_x0 ? camou_ex0 : int64_t{-1},
-+                  camou_ex1 > camou_x1 ? camou_x1 : int64_t{-1}}) {
-+              if (camou_cx < 0) {
-+                continue;
-+              }
-+              camou_gl->ReadPixels(static_cast<GLint>(camou_cx),
-+                                   static_cast<GLint>(camou_y0), 1,
-+                                   static_cast<GLsizei>(camou_in_h), GL_RGBA,
-+                                   GL_UNSIGNED_BYTE, camou_col.data());
-+              for (size_t r = 0; r < camou_in_h; ++r) {
-+                camou_row(camou_cx, camou_y0 + static_cast<int64_t>(r), 1)
-+                    .copy_from(base::span(camou_col).subspan(r * 4, 4u));
-+              }
-+            }
-+            DrawingBufferClientRestorePixelPackParameters();
-+            camou_strips = true;
-+          }
-+        }
-+        if (camou_strips) {
-+          camoucfg::PerturbRgbaFromConfig(camou_e.get(), camou_ew, camou_eh,
-+                                          camou_ew * 4,
-+                                          camoucfg::ScopeFor(ec));
-+          for (size_t r = 0; r < camou_in_h; ++r) {
-+            camou_page.subspan(r * camou_rb, camou_in_w * 4)
-+                .copy_from(camou_row(camou_x0,
-+                                     camou_y0 + static_cast<int64_t>(r),
-+                                     camou_in_w));
-+          }
-+        }
-+      }
++  // so a later getBufferSubData() returns those pixels un-noised (SP3 7.4).
++  //
++  // CamouReadPixels decides, before the page's read, whether this read is
++  // noised (for a page framebuffer it queries GL and reads probes into
++  // scratch to do so). One it leaves stock (a page framebuffer that is not
++  // 8-bit, a rect outside the framebuffer, a layout GL rejects) returns false
++  // without writing the view, and is read below, straight into the page's
++  // view, as stock reads it.
++  if (!buffer && format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 &&
++      height > 0 &&
++      (framebuffer ||
++       (read_buffer_of_default_framebuffer_ != GL_NONE &&
++        (GetDrawingBuffer()->StorageFormat() == GL_RGBA8 ||
++         GetDrawingBuffer()->StorageFormat() == GL_RGB8 ||
++         GetDrawingBuffer()->StorageFormat() == GL_SRGB8_ALPHA8)))) {
++    if (auto* ec = Host()->GetTopExecutionContext();
++        ec && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec)) != 0 &&
++        CamouReadPixels(framebuffer, x, y, width, height, data,
++                        pixels->IsShared())) {
++      return;
 +    }
 +  }
+   {
+     ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
+     if (!binder.Succeeded()) {
+@@ -5358,6 +5437,375 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+   }
  }
  
++bool WebGLRenderingContextBase::CamouReadPixels(WebGLFramebuffer* framebuffer,
++                                                GLint x,
++                                                GLint y,
++                                                GLsizei width,
++                                                GLsizei height,
++                                                uint8_t* data,
++                                                bool shared) {
++  // The page buffer's layout; readPixels validated the destination against
++  // it.
++  const std::optional<CamouPackLayout> layout =
++      CamouLayoutOf(GetPackPixelStoreParams(), width, height);
++  if (!layout) {
++    return false;
++  }
++  const size_t row_bytes = layout->row_bytes;
++  // The rect plus a 1 px margin, in framebuffer coordinates: an edge pixel's
++  // neighbours come from the framebuffer, not from the rect (S2b).
++  const int64_t ex0 = int64_t{x} - 1;
++  const int64_t ey0 = int64_t{y} - 1;
++  const int64_t ex1 = int64_t{x} + width + 1;
++  const int64_t ey1 = int64_t{y} + height + 1;
++  if (ex0 < std::numeric_limits<GLint>::min() ||
++      ey0 < std::numeric_limits<GLint>::min() ||
++      ex1 > std::numeric_limits<GLint>::max() ||
++      ey1 > std::numeric_limits<GLint>::max()) {
++    return false;
++  }
++  const camoucfg::ConfigScope& scope =
++      camoucfg::ScopeFor(Host()->GetTopExecutionContext());
++  using Scratch = std::unique_ptr<uint8_t, void (*)(void*)>;
++  // A fallible, zeroed tight RGBA buffer: a failed allocation leaves the read
++  // stock.
++  auto alloc = [](int64_t w, int64_t h) {
++    base::CheckedNumeric<size_t> n = static_cast<size_t>(w);
++    n *= static_cast<size_t>(h);
++    n *= 4;
++    void* raw = nullptr;
++    if (n.IsValid()) {
++      raw = Partitions::BufferTryAlignedZeroedMalloc(n.ValueOrDie(), 16,
++                                                     "CamouNoiseScratch");
++    }
++    return Scratch(static_cast<uint8_t*>(raw), &Partitions::BufferAlignedFree);
++  };
++  // [rx0, rx1) x [ry0, ry1) of the read framebuffer, tight and bottom-up. A
++  // true return means the binding worked, not that GL wrote `out`: a read GL
++  // rejects or drops (an unsupported format, a lost context) leaves `out` as
++  // it was, and one GL splits into chunks of rows and abandons part way (a
++  // transfer buffer it could not get) leaves the later rows as they were. So
++  // every read lands in a buffer filled beforehand: the probe's two fills
++  // tell a written pixel from an unwritten one, and any other read counts
++  // only for the lines it is compared on.
++  auto read = [&](int64_t rx0, int64_t ry0, int64_t rx1, int64_t ry1,
++                  uint8_t* out) {
++    ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
++    if (!binder.Succeeded()) {
++      return false;
++    }
++    gpu::gles2::GLES2Interface* gl = ContextGL();
++    gl->PixelStorei(GL_PACK_ALIGNMENT, 1);
++    if (IsWebGL2()) {
++      gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);
++      gl->PixelStorei(GL_PACK_SKIP_ROWS, 0);
++      gl->PixelStorei(GL_PACK_SKIP_PIXELS, 0);
++    }
++    gl->ReadPixels(static_cast<GLint>(rx0), static_cast<GLint>(ry0),
++                   static_cast<GLsizei>(rx1 - rx0),
++                   static_cast<GLsizei>(ry1 - ry0), GL_RGBA, GL_UNSIGNED_BYTE,
++                   out);
++    DrawingBufferClientRestorePixelPackParameters();
++    return true;
++  };
++  // The framebuffer's pixels inside the expanded rect: [fx0, fx1) x [fy0, fy1).
++  int64_t fx0, fy0, fx1, fy1;
++  if (!framebuffer) {
++    fx0 = std::max<int64_t>(ex0, 0);
++    fy0 = std::max<int64_t>(ey0, 0);
++    fx1 = std::min<int64_t>(ex1, drawingBufferWidth());
++    fy1 = std::min<int64_t>(ey1, drawingBufferHeight());
++  } else {
++    // Only an 8-bit RGB(A) attachment: among the formats GL reads as RGBA /
++    // UNSIGNED_BYTE, G and B both of 8 bits holds exactly for RGBA8, RGB8 and
++    // SRGB8_ALPHA8, and R8, RG8, RGBA4, RGB5_A1, RGB565 and RGB10_A2 all fail
++    // it, so two queries decide (each is a synchronous round trip). Blink does
++    // not track a texture's format, so the sizes come from GL, before any
++    // probe read. WebGL1 has no per-attachment query, but its read and draw
++    // framebuffers are one. A missing read attachment stays stock.
++    const GLenum attachment = framebuffer->GetReadBuffer();
++    if (attachment == GL_NONE ||
++        !framebuffer->GetAttachmentObject(attachment)) {
++      return false;
++    }
++    static constexpr std::array<GLenum, 2> kSizes = {
++        GL_FRAMEBUFFER_ATTACHMENT_GREEN_SIZE,
++        GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE};
++    static constexpr std::array<GLenum, 2> kBits = {GL_GREEN_BITS,
++                                                    GL_BLUE_BITS};
++    for (size_t i = 0; i < kBits.size(); ++i) {
++      GLint bits = 0;
++      if (IsWebGL2()) {
++        ContextGL()->GetFramebufferAttachmentParameteriv(
++            GL_READ_FRAMEBUFFER, attachment, kSizes[i], &bits);
++      } else {
++        ContextGL()->GetIntegerv(kBits[i], &bits);
++      }
++      if (bits != 8) {
++        return false;
++      }
++    }
++    // Blink does not track a page framebuffer's size, but one is always the
++    // rectangle [0, W) x [0, H). Its part inside the expanded rect starts at
++    // the rect's corner nearest the origin, and runs along a row and a column
++    // from there. Each line is read twice, into buffers filled 0x00 and 0xFF:
++    // GL leaves a pixel outside the framebuffer unwritten, so a pixel lies
++    // inside iff the two reads agree. A rejected read writes neither buffer,
++    // so no pixel agrees.
++    fx0 = std::max<int64_t>(ex0, 0);
++    fy0 = std::max<int64_t>(ey0, 0);
++    // The leading pixels of the w x h block at (sx, sy) that lie inside.
++    auto run = [&](int64_t sx, int64_t sy, int64_t w, int64_t h) -> int64_t {
++      Scratch a = alloc(w, h);  // zeroed
++      Scratch b = alloc(w, h);
++      if (!a || !b) {
++        return 0;
++      }
++      const size_t len = static_cast<size_t>(w * h);
++      // SAFETY: both buffers hold len * 4 bytes.
++      const base::span<uint8_t> sa =
++          UNSAFE_BUFFERS(base::span<uint8_t>(a.get(), len * 4));
++      const base::span<uint8_t> sb =
++          UNSAFE_BUFFERS(base::span<uint8_t>(b.get(), len * 4));
++      UNSAFE_BUFFERS(std::memset(sb.data(), 0xFF, sb.size()));
++      if (!read(sx, sy, sx + w, sy + h, sa.data()) ||
++          !read(sx, sy, sx + w, sy + h, sb.data())) {
++        return 0;
++      }
++      size_t n = 0;
++      while (n < len &&
++             std::ranges::equal(sa.subspan(n * 4, 4u), sb.subspan(n * 4, 4u))) {
++        ++n;
++      }
++      return static_cast<int64_t>(n);
++    };
++    if (fx0 >= ex1 || fy0 >= ey1) {
++      return false;
++    }
++    // The expanded rect's corner farthest from the origin: if it is inside,
++    // so is everything between it and the origin, and the lines need no
++    // reading.
++    if (run(ex1 - 1, ey1 - 1, 1, 1) == 1) {
++      fx1 = ex1;
++      fy1 = ey1;
++    } else {
++      const int64_t nx = run(fx0, fy0, ex1 - fx0, 1);
++      const int64_t ny = nx > 0 ? run(fx0, fy0, 1, ey1 - fy0) : 0;
++      if (nx <= 0 || ny <= 0) {
++        return false;
++      }
++      fx1 = fx0 + nx;
++      fy1 = fy0 + ny;
++    }
++  }
++  // The page rect's part inside the framebuffer.
++  const int64_t ix0 = std::max<int64_t>(x, fx0);
++  const int64_t iy0 = std::max<int64_t>(y, fy0);
++  const int64_t ix1 = std::min<int64_t>(int64_t{x} + width, fx1);
++  const int64_t iy1 = std::min<int64_t>(int64_t{y} + height, fy1);
++  if (ix1 <= ix0 || iy1 <= iy0) {
++    return false;
++  }
++  const size_t in_w = static_cast<size_t>(ix1 - ix0);
++  const size_t in_h = static_cast<size_t>(iy1 - iy0);
++  const size_t offset = layout->first +
++                        static_cast<size_t>(iy0 - y) * row_bytes +
++                        static_cast<size_t>(ix0 - x) * 4;
++  // The page's own read, now that it is known to be noised. A shared view (a
++  // SharedArrayBuffer, which another thread can read while this one writes)
++  // gets it through private scratch, a copy of the view: GL reads into the
++  // copy, the noise runs there, and the view gets only the rect's part
++  // inside the framebuffer, the bytes stock writes, once. So no thread sees
++  // the clean pixels, and no byte stock leaves alone is written. A failed
++  // allocation returns before the page's read, without writing the view, and
++  // the caller reads stock.
++  Scratch shared_copy(nullptr, &Partitions::BufferAlignedFree);
++  uint8_t* target = data;
++  if (shared) {
++    shared_copy =
++        Scratch(static_cast<uint8_t*>(Partitions::BufferTryAlignedZeroedMalloc(
++                    layout->extent, 16, "CamouNoiseShared")),
++                &Partitions::BufferAlignedFree);
++    if (!shared_copy) {
++      return false;
++    }
++    // SAFETY: readPixels validated that the view holds `extent` bytes from
++    // `data`; the copy holds as many.
++    UNSAFE_BUFFERS(std::memcpy(shared_copy.get(), data, layout->extent));
++    target = shared_copy.get();
++  }
++  {
++    ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
++    if (!binder.Succeeded()) {
++      return true;  // stock reads nothing either
++    }
++    ContextGL()->ReadPixels(x, y, width, height, GL_RGBA, GL_UNSIGNED_BYTE,
++                            target);
++  }
++  // The noise, on the read's in-framebuffer part. A check that fails returns
++  // from it early and leaves the read as GL wrote it.
++  [&] {
++    // SAFETY: readPixels validated the destination against this pack layout;
++    // the in-framebuffer part spans these bytes from `offset`.
++    const base::span<uint8_t> page = UNSAFE_BUFFERS(base::span<uint8_t>(
++        target + offset, (in_h - 1) * row_bytes + in_w * 4));
++    // A context lost during the page's read may have left the page's buffer as
++    // it was, which stock returns untouched; so does the noise. Client-side,
++    // no round trip.
++    if (ContextGL()->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
++      return;
++    }
++    // A read of `w` x `h` at (sx, sy) into zeroed scratch; null on failure.
++    auto read_new = [&](int64_t sx, int64_t sy, int64_t w, int64_t h) {
++      Scratch s = alloc(w, h);
++      if (s && !read(sx, sy, sx + w, sy + h, s.get())) {
++        s.reset();
++      }
++      return s;
++    };
++    // Whether `n` pixels of `got` (`len` bytes), `got_step` bytes apart from
++    // `got_at`, equal the page's, `page_step` bytes apart from `page_at`. A
++    // read GL rejected or dropped leaves zeros, which equal only an all-zero
++    // line of the page: alpha 0, which never changes.
++    auto agrees = [&](const Scratch& got, size_t len, size_t got_at,
++                      size_t got_step, size_t page_at, size_t page_step,
++                      size_t n) {
++      // SAFETY: `got` holds `len` bytes.
++      const base::span<const uint8_t> g =
++          UNSAFE_BUFFERS(base::span<const uint8_t>(got.get(), len));
++      for (size_t i = 0; i < n; ++i) {
++        if (!std::ranges::equal(g.subspan(got_at + i * got_step, 4u),
++                                page.subspan(page_at + i * page_step, 4u))) {
++          return false;
++        }
++      }
++      return true;
++    };
++    if (fx0 == ix0 && fy0 == iy0 && fx1 == ix1 && fy1 == iy1) {
++      // No room for a margin on any side (a full read): the page buffer is
++      // noised in place. One row of the rect is read again first and must
++      // equal the page's first row; it stands for the whole read. It catches a
++      // page read GL rejected or dropped after Blink's checks, which leaves the
++      // page's own bytes (stock returns them untouched). It does not catch a
++      // read GL abandoned after its first chunk of rows: the later rows keep
++      // the page's bytes and are noised. That needs a transfer buffer GL
++      // cannot get mid-read, which no page can cause (accepted; measurements
++      // section 13.9).
++      const Scratch probe = read_new(ix0, iy0, static_cast<int64_t>(in_w), 1);
++      if (!probe || !agrees(probe, in_w * 4, 0, 4, 0, 4, in_w)) {
++        return;
++      }
++      camoucfg::PerturbRgbaFromConfig(page.data(), in_w, in_h, row_bytes, scope,
++                                      camoucfg::RgbaFrame());
++      return;
++    }
++    const size_t fw = static_cast<size_t>(fx1 - fx0);
++    const size_t fh = static_cast<size_t>(fy1 - fy0);
++    // ponytail: up to this many pixels the rect plus margin is read again in
++    // one piece; above it, only the margin strips. Each strip is a round trip
++    // (up to four), which costs more than reading a small rect twice; a large
++    // rect read twice costs a second full readback, copy and compare.
++    // Calibrated on SwiftShader (measurements §13), not per GPU.
++    constexpr size_t kOnePieceMaxPixels = size_t{512} * 512;
++    if (fw * fh > kOnePieceMaxPixels) {
++      // Each margin line is read with the rect's line next to it, and that
++      // line must equal the page's (it stands for the page read, as the full
++      // read's probe row does). A strip GL rejected or dropped holds zeros,
++      // which pass only beside an all-zero line of alpha 0; a margin pixel is
++      // a neighbour of that line's pixels alone, so the field is unchanged. As
++      // with the full read's probe row, a page read GL abandoned after its
++      // first chunk of rows is not caught for rows no strip line covers.
++      camoucfg::RgbaFrame frame;
++      frame.side_stride = 8;  // a column strip holds two pixels per row
++      Scratch before(nullptr, &Partitions::BufferAlignedFree);
++      Scratch after(nullptr, &Partitions::BufferAlignedFree);
++      Scratch left(nullptr, &Partitions::BufferAlignedFree);
++      Scratch right(nullptr, &Partitions::BufferAlignedFree);
++      if (fy0 < iy0) {
++        before = read_new(fx0, iy0 - 1, static_cast<int64_t>(fw), 2);
++        if (!before ||
++            !agrees(before, fw * 8, (fw + static_cast<size_t>(ix0 - fx0)) * 4,
++                    4, 0, 4, in_w)) {
++          return;
++        }
++        frame.before = before.get();
++      }
++      if (fy1 > iy1) {
++        after = read_new(fx0, iy1 - 1, static_cast<int64_t>(fw), 2);
++        if (!after || !agrees(after, fw * 8, static_cast<size_t>(ix0 - fx0) * 4,
++                              4, (in_h - 1) * row_bytes, 4, in_w)) {
++          return;
++        }
++        // SAFETY: `after` holds two rows of fw pixels.
++        frame.after = UNSAFE_BUFFERS(after.get() + fw * 4);
++      }
++      if (fx0 < ix0) {
++        left = read_new(ix0 - 1, iy0, 2, static_cast<int64_t>(in_h));
++        if (!left || !agrees(left, in_h * 8, 4, 8, 0, row_bytes, in_h)) {
++          return;
++        }
++        frame.left = left.get();
++      }
++      if (fx1 > ix1) {
++        right = read_new(ix1 - 1, iy0, 2, static_cast<int64_t>(in_h));
++        if (!right ||
++            !agrees(right, in_h * 8, 0, 8, (in_w - 1) * 4, row_bytes, in_h)) {
++          return;
++        }
++        // SAFETY: `right` holds two pixels per row.
++        frame.right = UNSAFE_BUFFERS(right.get() + 4);
++      }
++      camoucfg::PerturbRgbaFromConfig(page.data(), in_w, in_h, row_bytes, scope,
++                                      frame);
++      return;
++    }
++    // Margins, small rect: the framebuffer's part of the expanded rect is
++    // read in one piece and noised, then the rect's part is copied back.
++    const Scratch region =
++        read_new(fx0, fy0, static_cast<int64_t>(fw), static_cast<int64_t>(fh));
++    if (!region) {
++      return;
++    }
++    // SAFETY: the region holds fw * fh * 4 bytes.
++    const base::span<uint8_t> src =
++        UNSAFE_BUFFERS(base::span<uint8_t>(region.get(), fw * fh * 4));
++    const size_t src_rb = fw * 4;
++    // The region must be what the page's own read returned: if GL rejected or
++    // lost this read, the zeroed region would replace the page's pixels.
++    for (size_t r = 0; r < in_h; ++r) {
++      if (!std::ranges::equal(
++              page.subspan(r * row_bytes, in_w * 4),
++              src.subspan(
++                  static_cast<size_t>(iy0 - fy0 + static_cast<int64_t>(r)) *
++                          src_rb +
++                      static_cast<size_t>(ix0 - fx0) * 4,
++                  in_w * 4))) {
++        return;
++      }
++    }
++    camoucfg::PerturbRgbaFromConfig(src.data(), fw, fh, src_rb, scope,
++                                    camoucfg::RgbaFrame());
++    for (size_t r = 0; r < in_h; ++r) {
++      page.subspan(r * row_bytes, in_w * 4)
++          .copy_from(src.subspan(
++              static_cast<size_t>(iy0 - fy0 + static_cast<int64_t>(r)) *
++                      src_rb +
++                  static_cast<size_t>(ix0 - fx0) * 4,
++              in_w * 4));
++    }
++  }();
++  if (shared_copy) {
++    // One copy into the view: the in-framebuffer part of each row.
++    for (size_t r = 0; r < in_h; ++r) {
++      const size_t at = offset + r * row_bytes;
++      // SAFETY: row r's in-framebuffer part ends within `extent`, which both
++      // buffers hold.
++      UNSAFE_BUFFERS(std::memcpy(data + at, shared_copy.get() + at, in_w * 4));
++    }
++  }
++  return true;
++}
++
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
+     GLenum target,
+     GLsizei samples,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index faecaeadae..d81c61240b 100644
+index faecaeadae..da15b1a399 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -640,6 +640,12 @@ class MODULES_EXPORT WebGLRenderingContextBase
@@ -868,3 +1671,28 @@ index faecaeadae..d81c61240b 100644
    void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) override;
  
    V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret getHTMLOrOffscreenCanvas(
+@@ -1963,6 +1969,24 @@ class MODULES_EXPORT WebGLRenderingContextBase
+                             const Platform::WebGLContextInfo&,
+                             const CanvasContextCreationAttributesCore&,
+                             Platform::WebGLContextType);
++  // Camoucrome canvas noise S2c: an RGBA / UNSIGNED_BYTE readPixels of
++  // [x, x + width) x [y, y + height) into `data` at the page's pack layout,
++  // from the default framebuffer or a page `framebuffer`, noised. Decides
++  // first, before the page's read, whether the read is noised (the pack
++  // layout, an 8-bit read attachment, the rect's part inside the framebuffer,
++  // found by probe reads into scratch) and returns false, without writing
++  // `data`, when it is not: the caller then reads stock. Otherwise it does the page's read (through private scratch
++  // for a `shared` view) and the noise, and returns true. Each pixel's
++  // neighbours outside the rect come from the framebuffer (a second read of
++  // the rect plus margin, or only the margin strips for a large rect), each
++  // checked against the page's read on the lines it covers.
++  bool CamouReadPixels(WebGLFramebuffer* framebuffer,
++                       GLint x,
++                       GLint y,
++                       GLsizei width,
++                       GLsizei height,
++                       uint8_t* data,
++                       bool shared);
+   static std::unique_ptr<WebGraphicsContext3DProvider>
+   CreateContextProviderInternal(CanvasRenderingContextHost*,
+                                 const CanvasContextCreationAttributesCore&,
