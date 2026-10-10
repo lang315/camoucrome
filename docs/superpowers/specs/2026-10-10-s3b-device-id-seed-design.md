@@ -37,9 +37,8 @@ On such a host, stock `setSinkId("")` resolves: AOAH reports `OUTPUT_DEVICE_STAT
 ### 3. S3 follow-ups taken into this slice
 
 - **M1:** the browser phantoms gate on `mediaDevices:enabled` only, while the renderer transform also needs a seed. With enabled set and no seed, the phantoms carry configured labels next to a real speaker that shows its real label.
-- **M2:** `MaskedDeviceLabel` turns a bare `Default` sentinel label into the configured name.
 - **M5:** the label defaults are written out in three patches.
-- **M9:** style: include order, a missing `<algorithm>`, lines over 80 columns, a double blank line.
+- **M9:** style: include order, lines over 80 columns, a double blank line. (`<algorithm>` is already included at MDM:10, so that part of M9 needs no change.)
 - **M10:** S3-W2 accepts `len >= 3`.
 - **M11:** S3-8 compares only which fields are empty.
 
@@ -72,7 +71,7 @@ With the helper false, nothing changes (rule 5). `gen.py` always sets a seed. Th
 
 ### Browser: the seed in the HMAC (new patch `s3b-device-id-seed`)
 
-In `GetHMACForRawMediaDeviceID`, after the passthrough return at MDU:243-247, when `MediaDevicesActive(GlobalScope())` is true, add one `hmac.Update` of the 8 seed bytes, little-endian, after the salt. Both `use_group_salt` branches get it, so groupId keeps its per-document frame salt.
+In `GetHMACForRawMediaDeviceID`, after the passthrough return at MDU:243-247, when `MediaDevicesActive(GlobalScope())` is true, add one `hmac.Update` of the seed's 4 bytes, little-endian (`base::U32ToLittleEndian`; the key is `uint32`), after the salt. Both `use_group_salt` branches get it, so groupId keeps its per-document frame salt.
 
 The result:
 - ids keep the stock shape: 64 lowercase hex, separate per origin, stable per profile;
@@ -98,36 +97,31 @@ The result:
 
 The phantoms still never enter `current_snapshot_`.
 
-### Labels (M2)
-
-`MaskedDeviceLabel(id, chrome_label, configured)`:
-- a sentinel id whose Chrome label has no ` - ` returns `chrome_label` unchanged;
-- the existing rules stay;
-- the unit test changes to match.
-
 ### Style (M9)
 
-The include order in `s3-media-phantoms`, `#include <algorithm>`, and `git cl format` on `media_phantoms.{h,cc}` and their tests; plus the double blank line in `device_ids_unittest.cc`.
+The include order in `s3-media-phantoms`, and `git cl format` on `media_phantoms.{h,cc}` and their tests; plus the double blank line in `device_ids_unittest.cc`.
 
 ## Verification (RED first)
 
-**`scripts/verify_s3_media.py`** (WSL content_shell, `--use-fake-ui-for-media-stream`, real WSLg mic and speaker): EXPECTED goes from 8 to 11.
+**`scripts/verify_s3_media.py`** (WSL content_shell, `--use-fake-ui-for-media-stream`, real WSLg mic and speaker): EXPECTED goes from 8 to 12.
 
 | Row | Check | RED on `main` |
 |---|---|---|
 | S3-9 | granted, seed set: `audio.setSinkId(<listed real audiooutput id>)` resolves, and `audio.sinkId` equals it | NotFoundError |
 | S3-10 | granted, seed set: `getUserMedia({audio: {deviceId: {exact: <listed real audioinput id>}}})` succeeds, and the track's `getSettings().deviceId` and `groupId` equal the listed entry's | OverconstrainedError |
 | S3-11 | granted, seed set: `new AudioContext()` then `setSinkId(<listed id>)` resolves | NotFoundError |
+| S3-12 | granted, `mediaDevices:enabled` true and no seed: the list equals stock content_shell (kinds, labels, empty-field shape). This is M1's one activation rule | main lists a labelled phantom camera |
 
 - S3-8 (M11) compares labels by value against stock content_shell, and compares the `getCapabilities()` key sets.
 - The existing rows are updated where the id rewrite is gone. For example, S3-5's fork relation now comes from Chrome itself, and it must still match stock.
 
-**`scripts/verify_s3_host.py`** (Windows host, headless): EXPECTED goes from 4 to 6.
+**`scripts/verify_s3_host.py`** (Windows host, headless): EXPECTED goes from 4 to 7.
 
 | Row | Check | RED |
 |---|---|---|
 | S3-W5 | config `micros: 0, webcams: 0, speakers: 1`, mic granted: the fork's non-sentinel `audiooutput` id is 64 hex | a mutant restoring the input-only grant test |
 | S3-W6 | `setSinkId(<listed real speaker id>)` resolves on the fork, as on stock | the S3 build: NotFoundError |
+| S3-W7 | one user-data-dir, three launches with seeds A, A, B: the fork's speaker id is equal for A/A and differs for B (Chrome's salt persists per profile, so this measures the fold's seed sensitivity, which content_shell cannot) | guard: the S3 renderer hash was seed-sensitive too |
 
 S3-W2 asserts exactly three `audioinput` entries, the third 64 hex (M10).
 
@@ -136,14 +130,15 @@ S3-W2 asserts exactly three `audioinput` entries, the third 64 hex (M10).
 | Row | Check | RED |
 |---|---|---|
 | S3-M1 | `setSinkId(<phantom speaker id>)` resolves | NotFoundError, without the I2 fix |
-| S3-M2 | an AudioContext with the phantom sink survives a synthetic devicechange, with no `error` event | without the NotifyDeviceChange fix |
+| S3-M2 | `new AudioContext({sinkId: <phantom speaker id>})` reaches `state === 'running'` with `sinkId` equal to it and no `error` event within 3 s | without the fold and the I2 fix |
 
-Both rows run in a separate script, `scripts/verify_s3b_phantom_out.py`, whose EXPECTED counts exactly these two rows. The script refuses to run unless the build reports the mutant marker.
+Both rows run in a separate script, `scripts/verify_s3b_phantom_out.py`, whose EXPECTED counts exactly these two rows. The script refuses to count rows unless the build really is the mutant: its stock arm (no config) must list no `audiooutput` at all, or it exits 2. A devicechange cannot be triggered on WSL without real hardware changing, so the `NotifyDeviceChange` part of the fix is unmeasured and recorded as such.
 
 `verify_media_ii`, `verify_phantom` and `verify_sp4_media` must stay GREEN. Their HEX64 and rotation checks are re-baselined, because ids change value, not shape. The Windows verify set and step 2's stability probe are re-run.
 
 ## Not in scope
 
+- M2, the bare `Default` sentinel label. A safe rule would need Chrome's localized sentinel names in the renderer, since a bare label from another audio backend can carry a device name. It is Linux-only, because Windows always labels sentinels `<prefix> - <device>`. It moves to the Linux sentinel-shape work.
 - The phantom mic's latency, which stays parked.
 - getUserMedia with an exact phantom id, which stays NO_HARDWARE → NotReadableError: a phantom cannot capture.
 - The Linux and macOS sentinel shapes.
