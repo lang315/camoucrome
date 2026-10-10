@@ -26,6 +26,14 @@ std::string SyntheticDeviceId(uint64_t seed, std::string_view kind,
                               std::string_view real_id,
                               std::string_view origin);
 
+// The label an enumerated entry shows when the identity's label for its kind
+// is `configured`. A Windows sentinel ("default"/"communications", labelled
+// "<localized prefix> - <device>") keeps Chrome's prefix and swaps only the
+// device name; every other entry shows `configured` (S3).
+std::string MaskedDeviceLabel(std::string_view device_id,
+                              std::string_view chrome_label,
+                              std::string_view configured);
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_DEVICE_IDS_H_

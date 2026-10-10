@@ -27,6 +27,8 @@ static_library("camoucfg") {
     "mask_config.h",
     "mask_config_internal.cc",
     "mask_config_internal.h",
+    "media_phantoms.cc",
+    "media_phantoms.h",
     "mouse_trajectories.cc",
     "mouse_trajectories.h",
     "preset_loader.cc",
@@ -69,6 +71,7 @@ source_set("unit_tests") {
     "gl_params_unittest.cc",
     "keys_unittest.cc",
     "mask_config_unittest.cc",
+    "media_phantoms_unittest.cc",
     "mouse_trajectories_unittest.cc",
     "preset_loader_unittest.cc",
   ]
