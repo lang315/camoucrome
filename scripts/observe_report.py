@@ -24,9 +24,10 @@ CATEGORY = "disabled-by-default-camou.observe"
 # at its end; nested slices carry none, so summing the dumps counts each call once.
 V8_ENTRY = ("V8.Execute", "V8.RunMicrotasks")
 RCS_ARG = "runtime-call-stats"
-INTL = re.compile(r"^Builtin_(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat"
+# a C++ builtin's counter is dumped under its bare name (runtime functions carry "Runtime_")
+INTL = re.compile(r"^(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat"
                   r"|ListFormat|DisplayNames|Segmenter|DurationFormat|Locale|V8BreakIterator)"
-                  r"|^Builtin_\w+PrototypeToLocale")
+                  r"|^[A-Z][A-Za-z]*PrototypeToLocale")
 
 # Mirror of the allow-list in the observe patch (bind_gen/interface.py).
 # A "Interface.member" key wins over its interface's key.

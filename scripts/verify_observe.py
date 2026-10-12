@@ -32,8 +32,8 @@ ON_FILTER = "-*," + CATEGORY
 # same with the stats category left off, which must read as blind, not as zero calls
 INTL_FILTER = ON_FILTER + ",v8,disabled-by-default-v8.runtime_stats"
 NO_RCS_FILTER = ON_FILTER + ",v8"
-INTL_ROWS = ("Builtin_DateTimeFormatConstructor", "Builtin_DateTimeFormatPrototypeResolvedOptions",
-             "Builtin_DateTimeFormatSupportedLocalesOf")
+INTL_ROWS = ("DateTimeFormatConstructor", "DateTimeFormatPrototypeResolvedOptions",
+             "DateTimeFormatSupportedLocalesOf")
 
 PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 height=8></canvas>
 <script src="http://localhost:%(port)d/ext.js"></script>
