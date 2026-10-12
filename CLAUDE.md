@@ -159,7 +159,9 @@ startup abort instead of a silent fall-back to real values.
   (2026-10-06's observe slice: 9477 steps).
 - CI's `out/Default` sets `camou_observe = true` (since 2026-10-08), so it is
   a tracking-observer build (category off by default; `package.py` refuses
-  it). Measure costs in a tree without the flag.
+  it), and `v8_enable_runtime_call_stats = true` (since 2026-10-13, for the
+  observer's Intl counts; idle unless `disabled-by-default-v8.runtime_stats`
+  is traced). Measure costs in a tree without the flags.
 - Pre-flight, both cheap and both exist because the omission already happened:
   `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
   must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there
