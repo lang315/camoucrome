@@ -300,10 +300,57 @@ time and the report otherwise; it does not wait for it.
 - The tracing service links a proto→JSON exporter
   (`services/tracing/perfetto/consumer_host.cc`,
   `//third_party/perfetto/include/perfetto/ext/trace_processor:export_json`).
-- **Not established:** whether a cloned session can be read back as JSON
-  through that exporter. The first plan task is a throwaway probe that
-  settles it. If it cannot, the page decodes the small protobuf subset it
-  needs (TrackEvent, interned names, debug annotations) itself.
+### Clone → JSON (read-only spike, 2026-10-12, box at `ff5ecaa880`)
+
+The question left open on 2026-10-06 was whether a cloned session can be read
+back as JSON through that exporter. Answer: yes, but not through an existing
+call. The handler runs the exporter itself, so the page never decodes
+protobuf.
+
+- No existing call returns a clone as JSON. A cloned
+  `ConsumerHost::TracingSession` never went through `EnableTracing`, so its
+  `convert_to_legacy_json_` is false and `ReadBuffers` returns raw proto
+  (`services/tracing/perfetto/consumer_host.cc:388`). The only JSON entry
+  point, `DisableTracingAndEmitJson` (`:409`), stops the session, so it cannot
+  be used on a live one.
+- The handler does what `ConsumerHost` does after a stop
+  (`consumer_host.cc:409-503`, about 30 lines):
+  1. `CloneTrace`, then `ReadTrace`, as `traces_internals_handler.cc:224-245`
+     does.
+  2. Feed each chunk to its own
+     `perfetto::trace_processor::TraceProcessorStorage::CreateInstance()` →
+     `Parse`.
+  3. `NotifyEndOfFile`, then `json::ExportJson` with an `OutputWriter`.
+- The output format is the same as phase 1's `trace.json`.
+  `--trace-startup-format=json` reaches that same `ExportJson`:
+  `services/tracing/public/cpp/perfetto/perfetto_tracing_backend.cc:431` calls
+  `DisableTracingAndEmitJson` for a session whose config sets
+  `convert_to_legacy_json`. So `observe_report.py` stays the reference for "same
+  exact counts".
+- Nothing new gets linked:
+  - `json::ExportJson` and `TraceProcessorStorage::CreateInstance` are defined
+    in `libthird_party_perfetto_libperfetto.so`, and `libcontent.so` already
+    imports both (`nm -D`, `out/Default`).
+  - `//content/browser` depends on `//services/tracing:lib`, whose
+    `public_deps` carry `.../ext/trace_processor:export_json` and
+    `.../trace_processor:storage` (`services/tracing/BUILD.gn:41-43`).
+  - `content/browser/tracing/DEPS` allows `+third_party/perfetto/include` for
+    every file. A handler placed outside `content/browser/tracing/` needs that
+    DEPS line of its own, which `gn check` and `checkdeps.py` catch only when
+    run explicitly.
+- Constraints for the design:
+  - `CloneTraceArgs` names the source session by `unique_session_name`
+    (`tracing.h:383`), so the `--camou-observe` session sets one in its
+    `TraceConfig` (`traces_internals` uses an unguessable token).
+  - Only one `CloneTrace` may be pending per session (`tracing.h:391`), so the
+    handler serializes its refreshes.
+  - Each refresh re-parses the whole clone. With
+    `record-as-much-as-possible` the buffer grows to its cap, so "every few
+    seconds" (below) can get expensive late in a session. The 1b plan should
+    choose between refresh on demand and a coarse interval.
+- Nothing was built. The runtime check is 1b's first RED test, which this spec
+  already defines: the probe page read through the dashboard shows the counts
+  the report shows. No separate throwaway probe is needed.
 
 ### Design
 
