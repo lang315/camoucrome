@@ -247,6 +247,37 @@ def test_intl_site_comes_from_the_pid():
     assert r.intl_counts(events + [w]) == {("https://a.com", "(unknown)", CTOR): 1}
 
 
+def test_intl_site_prefers_the_page_site_over_worker_origins():
+    # a busy worker must not move the page's Intl rows under the worker's origin
+    page = [dict(ev("Screen.width.get", "https://fb.com", "https://fb.com"), pid=3)] * 3
+    worker = [dict(ev("WorkerNavigator.hardwareConcurrency.get", "https://www.fb.com", ""), pid=3)] * 5
+    events = [rcs(10, 20, {CTOR: [1, 0.1]}, pid=3)] + page + worker
+    assert r.intl_counts(events) == {("https://fb.com", "(unknown)", CTOR): 1}
+
+
+def test_intl_names_cover_the_locale_builtins():
+    # CPP builtin names from this pin's builtins-definitions.h (box, 2026-10-13)
+    for name in ("SegmentsPrototypeContaining", "SegmentIteratorPrototypeNext",
+                 "StringPrototypeLocaleCompareIntl", "StringPrototypeLocaleCompare",
+                 "TemporalInstantPrototypeToLocaleString", "StringPrototypeToLocaleLowerCase",
+                 "LocalePrototypeGetTimeZones", "IntlSupportedValuesOf", "SegmenterConstructor"):
+        assert r.INTL.match(name), name
+    for name in ("Runtime_FormatList", "API_Locale", "StringPrototypeNormalizeIntl",
+                 "ArrayPrototypePush", "GC_Custom_SlowAllocateRaw", "DeserializeIsolate"):
+        assert not r.INTL.match(name), name
+
+
+def test_intl_counts_scale_with_a_recon_sized_trace():
+    import time
+    obs = [dict(ev("Screen.width.get", "https://a.com", "https://a.com"), ts=1000 * i, tid=1 + i % 50)
+           for i in range(25000)]
+    slices = [rcs(1000 * i + 1, 10, {CTOR: [1, 0.1]}, tid=1 + i % 50) for i in range(3000)]
+    t = time.perf_counter()
+    c = r.intl_counts(slices + obs)
+    assert time.perf_counter() - t < 1.5
+    assert sum(c.values()) == 3000
+
+
 def test_intl_blind_only_when_no_dump_holds_a_counter():
     assert r.intl_counts([ev("Screen.width.get", "o", "s")]) is None  # no V8 slices
     assert r.intl_counts([rcs(10, 20, {})]) is None  # v8 on, runtime_stats off

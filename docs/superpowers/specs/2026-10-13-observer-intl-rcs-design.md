@@ -104,8 +104,10 @@ A new section, "V8 built-ins (Intl)", comes after the per-site tables.
   reads the wrong place.
 - Counted names: a dump is a dict of `name -> [count, time]`. Rows are per
   counter name, not a family sum, for names matching
-  `^(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat|ListFormat|DisplayNames|Segmenter|DurationFormat|Locale|V8BreakIterator)`
-  or `^[A-Z][A-Za-z]*PrototypeToLocale`. The section prints only counters that
+  `^(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat|ListFormat|DisplayNames|Segment|DurationFormat|Locale|V8BreakIterator)`,
+  `^[A-Z][A-Za-z]*PrototypeToLocale` or `^StringPrototypeLocaleCompare`.
+  These cover this pin's Intl and locale `CPP` builtins in
+  `builtins-definitions.h`, including `Segments*` and `localeCompare`. The section prints only counters that
   occurred, sorted by count. The dump names a C++ builtin's counter by the
   bare builtin name (`DateTimeFormatConstructor`), not by its
   `kBuiltin_` counter id. The box trace of 2026-10-13 showed this, after a
