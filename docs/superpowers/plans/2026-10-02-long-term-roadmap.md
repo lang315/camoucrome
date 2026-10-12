@@ -453,6 +453,12 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   Windows verify set 21/21; step 2 stability 0 changed rows. Open gaps are in
   section 8 of the measurements.
   Follow-ups S3b are listed in the measurement doc section 8.
+  **S3b DONE 2026-10-10 (`measurements/2026-10-s3b-device-id-seed.md`; branch
+  `s3b/device-id-seed`, PR pending).** One seed rule across the browser and the
+  renderer (ids no longer rewritten in Blink). `verify_s3_media` 12/12 on WSL
+  (RED 8/12 on main); `verify_s3_host` 7/7 on the Windows host (RED 6/7);
+  regressions media_ii 13/13, phantom 6/6, sp4 4/4; Windows verify set 21/21.
+  Open gaps are in section 8 of that doc.
 - **S4. The fork is unstable across launches.** WebGPU's adapter was missing in
   one of two launches (1 of 3 runs). HEVC's answer flipped (2 of 3 runs). One
   CreepJS run reported "rgba noise". The control never did any of this.
