@@ -6,13 +6,6 @@ own spec when picked up.
 
 ## Out of scope for phase 1
 
-- **V8/Intl counts (phase 2).** Designed in
-  `docs/superpowers/specs/2026-10-13-observer-intl-rcs-design.md`: the Intl
-  entry points are C++ `BUILTIN`s, which V8's runtime call stats already count
-  into the trace once the observer build sets
-  `v8_enable_runtime_call_stats = true`. No `v8/` patch and no second-repo
-  tooling. `Date.prototype.getTimezoneOffset` is a CSA builtin (`TFJ`) and
-  stays a blind spot.
 - **No new spoofs.** A leak the recon finds opens its own slice; the observer
   only reports.
 - **No decoding of the Falco `/ajax/bz` `e` payload.**
@@ -37,13 +30,15 @@ Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
   the `observe` commit.
 - **Add a hot row from a cross-origin iframe running an external script**, to
   prove fast-call script/origin attribution across realms.
-- **Re-run `verify_observe.py --timing` 3-5 times** on the observer build and
-  publish a range in the README.
 - **Phase 1b: the live dashboard `chrome://camou-observe`.** Designed in the
   spec, not built; the recon used the report. A read-only spike (2026-10-12,
   PR #34) found the page can export a cloned session through its own
   `TraceProcessorStorage` and `json::ExportJson`, the exporter behind phase
   1's `trace.json`.
+- **Rebuild the Windows `out\Observe` with `v8_enable_runtime_call_stats = true`**
+  (and copy `scripts/windows/observe-recon.ps1` to
+  `D:\camou-win\observe\recon.ps1`) before an Intl recon arm; needs canvas's
+  agreement for the native build window.
 
 ## After the facebook recon (2026-10-07)
 

@@ -104,9 +104,12 @@ A new section, "V8 built-ins (Intl)", comes after the per-site tables.
   reads the wrong place.
 - Counted names: a dump is a dict of `name -> [count, time]`. Rows are per
   counter name, not a family sum, for names matching
-  `^Builtin_(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat|ListFormat|DisplayNames|Segmenter|DurationFormat|Locale|V8BreakIterator)`
-  or `^Builtin_\w+PrototypeToLocale`. The section prints only counters that
-  occurred, sorted by count.
+  `^(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat|ListFormat|DisplayNames|Segmenter|DurationFormat|Locale|V8BreakIterator)`
+  or `^[A-Z][A-Za-z]*PrototypeToLocale`. The section prints only counters that
+  occurred, sorted by count. The dump names a C++ builtin's counter by the
+  bare builtin name (`DateTimeFormatConstructor`), not by its
+  `kBuiltin_` counter id. The box trace of 2026-10-13 showed this, after a
+  first GREEN run with a `Builtin_` prefix read 0 on every Intl row.
 - Site: the slice's `pid`, mapped to the site of the `camou.observe` events
   from the same pid, which is one renderer per site under site isolation. If
   the pid has no observer event, the site is `(site unknown)`.
@@ -128,7 +131,7 @@ A new section, "V8 built-ins (Intl)", comes after the per-site tables.
   counter", not "no dump", for two reasons:
   - With `v8` on and `runtime_stats` off, the `V8.Execute` END lambda still
     runs and can attach an empty dump.
-  - With counting on, any script execution produces `Builtin_*` or `Runtime_*`
+  - With counting on, any script execution produces builtin or `Runtime_*`
     counters, so an all-empty trace means counting was off.
 
   A trace with counters but no Intl call prints `Intl: none called`. Those are
@@ -146,9 +149,9 @@ A new section, "V8 built-ins (Intl)", comes after the per-site tables.
 - The on arm records with the Intl recipe. It asserts these three counters,
   each exactly K on the main thread (script = probe page) and on the worker
   (script = `/worker.js`):
-  - `Builtin_DateTimeFormatConstructor`
-  - `Builtin_DateTimeFormatPrototypeResolvedOptions`
-  - `Builtin_DateTimeFormatSupportedLocalesOf`
+  - `DateTimeFormatConstructor`
+  - `DateTimeFormatPrototypeResolvedOptions`
+  - `DateTimeFormatSupportedLocalesOf`
 
   The existing camou.observe rows stay as they are.
 - `--red` expects K+1 on these rows as well, and must FAIL.

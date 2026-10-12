@@ -165,10 +165,10 @@ new environment variable.
 
 ## Not observable (printed in every report)
 
-- V8 built-ins: `Intl.*` (`resolvedOptions().timeZone`, `supportedLocalesOf`),
-  `Date.prototype.getTimezoneOffset`, `Math`. Intl is phase 2
-  (`docs/observer/followups.md`); `getTimezoneOffset` is a CSA builtin
-  (`TFJ` in `v8/src/builtins/builtins-definitions.h`) and stays blind.
+- V8 built-ins: `Date.prototype.getTimezoneOffset` (a CSA builtin, `TFJ` in
+  `v8/src/builtins/builtins-definitions.h`) and `Math` stay blind. `Intl.*`
+  is counted since 2026-10-13 through V8 runtime call stats
+  (`docs/superpowers/specs/2026-10-13-observer-intl-rcs-design.md`).
 - CSS `@media` rules in stylesheets (only `matchMedia` is seen).
 - Font enumeration by layout measurement beyond the listed layout members.
 - TLS/JA3, HTTP/2 framing, anything computed server-side.
