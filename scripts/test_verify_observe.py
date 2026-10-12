@@ -35,3 +35,34 @@ def test_hot_rows_need_exact_counts_for_both_fast_paths():
     other = {("CanvasRenderingContext2D.fillRect", main, top, main + "/x.js"): n,
              ("CanvasRenderingContext2D.lineWidth.set", main, top, hot): n}
     assert [ok for ok, _ in v.hot_rows(other, main, top, n, 0)] == [False, True]
+
+
+def test_intl_rows_need_exact_counts_per_script():
+    site, main, worker = "http://127.0.0.1", "127.0.0.1:9/probe.html", "127.0.0.1:9/worker.js"
+    exact = {(site, s, n): 3 for s in (main, worker) for n in v.INTL_ROWS}
+    assert all(ok for ok, _ in v.intl_rows(exact, site, (main, worker), 3, 0))
+    assert len(v.intl_rows(exact, site, (main, worker), 3, 0)) == 6
+    # --red bumps every expectation by one
+    assert not any(ok for ok, _ in v.intl_rows(exact, site, (main, worker), 3, 1))
+    short = dict(exact)
+    short[(site, worker, v.INTL_ROWS[0])] = 2
+    assert [ok for ok, _ in v.intl_rows(short, site, (main, worker), 3, 0)].count(False) == 1
+    # a blind trace fails every row instead of raising
+    assert not any(ok for ok, _ in v.intl_rows(None, site, (main, worker), 3, 0))
+
+
+def test_blind_arm_needs_v8_slices_and_no_counters():
+    ex = {"name": "V8.Execute", "cat": "v8", "ph": "X", "pid": 1, "tid": 1, "ts": 0, "dur": 1,
+          "args": {}}
+    assert v.blind_arm([ex]) == (True, 1)
+    assert v.blind_arm([dict(ex, args={"runtime-call-stats": {}})]) == (True, 1)
+    assert v.blind_arm([dict(ex, args={"runtime-call-stats": {"Runtime_X": [1, 0.1]}})]) == (False, 1)
+    # no V8 slices: v8 tracing never ran, so "blind" would have measured nothing
+    assert v.blind_arm([OTHER]) == (False, 0)
+    assert v.blind_arm(None) == (False, None)
+
+
+def test_intl_filters_extend_the_default_recipe():
+    assert v.INTL_FILTER == "-*,disabled-by-default-camou.observe,v8,disabled-by-default-v8.runtime_stats"
+    assert v.NO_RCS_FILTER == "-*,disabled-by-default-camou.observe,v8"
+    assert "Intl.DateTimeFormat.supportedLocalesOf" in v.PROBE and "resolvedOptions" in v.WORKER
