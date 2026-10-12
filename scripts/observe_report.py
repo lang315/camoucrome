@@ -12,6 +12,7 @@ carry tokens and cookie values identify the account, so neither is read.
 docs/observer/README.md is the operator guide.
 """
 import argparse
+import bisect
 import collections
 import json
 import re
@@ -26,8 +27,8 @@ V8_ENTRY = ("V8.Execute", "V8.RunMicrotasks")
 RCS_ARG = "runtime-call-stats"
 # a C++ builtin's counter is dumped under its bare name (runtime functions carry "Runtime_")
 INTL = re.compile(r"^(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat"
-                  r"|ListFormat|DisplayNames|Segmenter|DurationFormat|Locale|V8BreakIterator)"
-                  r"|^[A-Z][A-Za-z]*PrototypeToLocale")
+                  r"|ListFormat|DisplayNames|Segment|DurationFormat|Locale|V8BreakIterator)"
+                  r"|^[A-Z][A-Za-z]*PrototypeToLocale|^StringPrototypeLocaleCompare")
 
 # Mirror of the allow-list in the observe patch (bind_gen/interface.py).
 # A "Interface.member" key wins over its interface's key.
@@ -148,19 +149,32 @@ def _dump(e):
     return d if isinstance(d, dict) else None
 
 
-def _inside(inner, outer):
-    return (inner["pid"] == outer["pid"] and inner["tid"] == outer["tid"]
-            and outer["ts"] <= inner["ts"] <= outer["ts"] + outer.get("dur", 0))
+def _by_thread(events):
+    """(pid, tid) -> (start times, events), both in start order."""
+    groups = collections.defaultdict(list)
+    for e in events:
+        groups[(e["pid"], e["tid"])].append(e)
+    out = {}
+    for key, evs in groups.items():
+        evs.sort(key=lambda e: e["ts"])
+        out[key] = ([e["ts"] for e in evs], evs)
+    return out
 
 
 def _entry_script(s, runs, observe):
     """The Blink v8.run around the slice (classic script top level), else the one script
     of the observer events inside it; handlers, timers, promise jobs and modules have no
     entry script of their own."""
-    run = next((r for r in runs if _inside(s, r)), None)
+    key, start, end = (s["pid"], s["tid"]), s["ts"], s["ts"] + s.get("dur", 0)
+    ts, evs = runs.get(key, ((), ()))
+    i = bisect.bisect_right(ts, start)
+    # shortcut: checks the 8 latest-starting runs; deeper v8.run nesting falls to rule 2
+    run = next((r for r in reversed(evs[max(0, i - 8):i]) if start <= r["ts"] + r.get("dur", 0)), None)
     if run:
         return script_label(run.get("args", {}).get("fileName"))
-    scripts = {e.get("args", {}).get("script") for e in observe if _inside(e, s)}
+    ts, evs = observe.get(key, ((), ()))
+    scripts = {e.get("args", {}).get("script")
+               for e in evs[bisect.bisect_left(ts, start):bisect.bisect_right(ts, end)]}
     return script_label(scripts.pop()) if len(scripts) == 1 else "(unknown)"
 
 
@@ -172,18 +186,23 @@ def intl_counts(events):
     if not any(d for _, d in slices):
         return None
     observe = [e for e in events if e.get("cat") == CATEGORY]
+    # a renderer's page site wins; a worker's origin stands in only where no event has a site
     sites = collections.defaultdict(collections.Counter)
+    origins = collections.defaultdict(collections.Counter)
     for e in observe:
         a = e.get("args", {})
-        if a.get("site") or a.get("origin"):
-            sites[e["pid"]][a.get("site") or a.get("origin")] += 1
-    runs = [e for e in events if e.get("name") == "v8.run"]
+        if a.get("site"):
+            sites[e["pid"]][a["site"]] += 1
+        elif a.get("origin"):
+            origins[e["pid"]][a["origin"]] += 1
+    runs = _by_thread(e for e in events if e.get("name") == "v8.run")
+    observe = _by_thread(observe)
     counts = collections.Counter()
     for s, d in slices:
         hits = {name: v[0] for name, v in d.items() if INTL.match(name)}
         if not hits:
             continue
-        top = sites[s["pid"]].most_common(1)
+        top = (sites.get(s["pid"]) or origins.get(s["pid"]) or collections.Counter()).most_common(1)
         site = top[0][0] if top else "(site unknown)"
         script = _entry_script(s, runs, observe)
         for name, n in hits.items():
