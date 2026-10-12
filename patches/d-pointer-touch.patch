@@ -99,6 +99,18 @@ index 7150d2ea2a..2410152945 100644
    return frame->GetSettings()->GetAvailableHoverTypes();
  }
  
+diff --git a/third_party/blink/renderer/core/exported/BUILD.gn b/third_party/blink/renderer/core/exported/BUILD.gn
+index 1885179bf0..8efe06ec22 100644
+--- a/third_party/blink/renderer/core/exported/BUILD.gn
++++ b/third_party/blink/renderer/core/exported/BUILD.gn
+@@ -25,6 +25,7 @@ blink_core_sources("exported") {
+   sources = blink_core_sources_exported
+ 
+   deps = [
++    "//components/camoucfg",
+     "//third_party/blink/renderer/core:core_generated",
+     "//third_party/blink/renderer/core/probe",
+     "//third_party/blink/renderer/core/url_pattern",
 diff --git a/third_party/blink/renderer/core/exported/web_view_impl.cc b/third_party/blink/renderer/core/exported/web_view_impl.cc
 index 66e05f0dd9..e92e27d625 100644
 --- a/third_party/blink/renderer/core/exported/web_view_impl.cc
