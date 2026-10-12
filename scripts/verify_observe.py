@@ -2,11 +2,12 @@
 
 Launches content_shell on a local probe with startup tracing, no CDP attached,
 and asserts EXACT per-name event counts with the right origin, site and script. Arms:
-  on     category enabled: every row below must match exactly (probe page, then the hot page for V8 fast API calls)
+  on     Intl recipe: every row below must match exactly (probe page with its worker and Intl calls, then the hot page for V8 fast API calls)
   off    tracing on for blink,loading: zero camou.observe events, and at least one
          other event (an empty trace measured nothing)
+  no-rcs v8 traced without runtime_stats: the report must say Intl blind, with V8 slices present
   --red  same as `on` with every expectation off by one: must FAIL
-  --timing  prints call timings with the category off and on (numbers, no verdict)
+  --timing  prints call timings and trace sizes with the category off, on, and on with the Intl recipe (numbers, no verdict)
 Run under ~/camoucrome-verify/venv/bin/python3 on the build box.
 """
 import http.server
@@ -27,6 +28,12 @@ CATEGORY = observe_report.CATEGORY
 # categories still enables all the default ones (box, this probe: 7.17 MB and 77
 # categories without "-*,", 68.9 KB and 2 with it).
 ON_FILTER = "-*," + CATEGORY
+# Intl recipe (docs/observer/README.md): V8 entry slices plus runtime call stats; and the
+# same with the stats category left off, which must read as blind, not as zero calls
+INTL_FILTER = ON_FILTER + ",v8,disabled-by-default-v8.runtime_stats"
+NO_RCS_FILTER = ON_FILTER + ",v8"
+INTL_ROWS = ("Builtin_DateTimeFormatConstructor", "Builtin_DateTimeFormatPrototypeResolvedOptions",
+             "Builtin_DateTimeFormatSupportedLocalesOf")
 
 PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 height=8></canvas>
 <script src="http://localhost:%(port)d/ext.js"></script>
@@ -38,6 +45,9 @@ PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 heigh
     document.getElementById('c').toDataURL(); matchMedia('(min-width: 1px)');
     document.cookie; document.title;
   }
+  const dtfs = [];
+  for (let i = 0; i < K; i++) { dtfs.push(new Intl.DateTimeFormat()); Intl.DateTimeFormat.supportedLocalesOf(['en']); }
+  for (const d of dtfs) d.resolvedOptions();
   const gl = document.createElement('canvas').getContext('webgl');
   if (!gl) out.webgl = 'no context';
   else for (let i = 0; i < K; i++) gl.getParameter(gl.VERSION);
@@ -54,7 +64,9 @@ PROBE = """<!doctype html><title>observe probe</title><canvas id=c width=8 heigh
 # a parser-blocking cross-origin script: runs in the main frame (origin 127.0.0.1)
 # before the inline probe script, like a third-party tag such as fbevents.js
 EXT = "for (let i = 0; i < %(k)d; i++) navigator.userAgent;"
-WORKER = "for (let i = 0; i < %(k)d; i++) navigator.hardwareConcurrency; postMessage('w');"
+WORKER = ("const d = []; for (let i = 0; i < %(k)d; i++) { navigator.hardwareConcurrency; "
+          "d.push(new Intl.DateTimeFormat()); Intl.DateTimeFormat.supportedLocalesOf(['en']); } "
+          "for (const f of d) f.resolvedOptions(); postMessage('w');")
 FRAME = ("<!doctype html><script>for (let i = 0; i < %(k)d; i++) navigator.userAgent;"
          "parent.postMessage('frame-done', '*');</script>")
 TIMING = """<!doctype html><canvas id=c width=64 height=64></canvas><script>
@@ -184,16 +196,36 @@ def hot_rows(c, main_origin, top, n, bump):
     return rows
 
 
+def intl_rows(ic, site, scripts, k, bump):
+    """Exact counts of the probe's three Intl built-ins per entry script (main, worker)."""
+    rows = []
+    for script in scripts:
+        for name in INTL_ROWS:
+            got = (ic or {}).get((site, script, name), 0)
+            rows.append((got == k + bump, f"{name} site={site} script={script}: {got} (want {k + bump})"))
+    return rows
+
+
+def blind_arm(events):
+    """(ok, V8 entry slices): v8 traced without runtime_stats must report blind, and V8
+    slices must be present, or the arm measured nothing."""
+    if events is None:
+        return False, None
+    n = sum(e.get("name") in observe_report.V8_ENTRY for e in events)
+    return observe_report.intl_counts(events) is None and n > 0, n
+
+
 def main():
     red = "--red" in sys.argv
     if "--timing" in sys.argv:
-        for label, cats in (("off", "blink,loading"), ("on", ON_FILTER)):
-            _, res, _ = run("timing.html", cats)
-            print(f"timing {label}: {res}")
+        for label, cats in (("off", "blink,loading"), ("on", ON_FILTER), ("intl", INTL_FILTER)):
+            _, res, trace = run("timing.html", cats)
+            size = os.path.getsize(trace) if os.path.exists(trace) else None
+            print(f"timing {label}: {res} trace_bytes={size}")
         return 0
 
     rows = []
-    events, res, trace = run("probe.html", ON_FILTER)
+    events, res, trace = run("probe.html", INTL_FILTER)
     if events is None:
         print(f"FAIL on-arm: {res}")
         return 1
@@ -235,6 +267,9 @@ def main():
         rows.append((got == K + bump, f"{label}: {got} (want {K + bump})"))
     title = sum(n for (name, _, _, _), n in c.items() if name.startswith("Document.title"))
     rows.append((title == 0 + bump, f"Document.title (not allow-listed): {title} (want {0 + bump})"))
+    label = observe_report.script_label
+    rows += intl_rows(observe_report.intl_counts(events), top,
+                      (label(probe), label(f"{main_origin}/worker.js")), K, bump)
 
     # fast paths: a separate session, so 2 x HOT_N events do not crowd the probe's trace
     hot_events, hot_res, _ = run("hot.html", ON_FILTER)
@@ -252,6 +287,12 @@ def main():
     rows.append((off_ok == (not red), "off arm (blink,loading traced, category not requested): "
                  + ("no file" if off_events is None else f"{off_camou} camou, {off_other} other events")
                  + " (want 0 camou, >0 other)"))
+    rows.append(((off_events is not None and observe_report.intl_counts(off_events) is None) == (not red),
+                 "off arm: report says Intl blind (want blind)"))
+    nr_events, _, _ = run("probe.html", NO_RCS_FILTER)
+    nr_ok, nr_slices = blind_arm(nr_events)
+    rows.append((nr_ok == (not red), f"v8 on, runtime_stats off: Intl blind with {nr_slices} V8 entry "
+                 "slices (want blind, >0 slices)"))
 
     passed = sum(ok for ok, _ in rows)
     for ok, text in rows:
