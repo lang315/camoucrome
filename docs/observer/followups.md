@@ -32,10 +32,6 @@ Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
 
 ## Open
 
-- **Rebuild the Windows `out\Observe` before the next recon.** The recon
-  binary (`D:\camou-win\chromium\src\out\Observe\chrome.exe`) was built on
-  2026-10-07, before fast API calls were counted, so its canvas-2D/WebGL draw
-  and state counts are still lower bounds.
 - **The `Emit` comment in the observe patch is inaccurate.** It says the V8
   heap "must not change" inside fast API calls; V8 allows allocation there
   (`Utf8LengthV2`/`WriteUtf8V2` may flatten). Reword it at the next amend of
@@ -45,12 +41,10 @@ Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
 - **Re-run `verify_observe.py --timing` 3-5 times** on the observer build and
   publish a range in the README.
 - **Phase 1b: the live dashboard `chrome://camou-observe`.** Designed in the
-  spec, not built; the recon used the report.
-- **`d-pointer-touch.patch` lacks a `//components/camoucfg` dep in
-  `third_party/blink/renderer/core/exported/BUILD.gn`.** It includes camoucfg
-  headers from `web_view_impl.cc`, so `gn check` on that directory fails (3
-  errors, also on `camoucrome/main`). Pre-existing, found while checking the
-  observe slice; a separate fix.
+  spec, not built; the recon used the report. A read-only spike (2026-10-12,
+  PR #34) found the page can export a cloned session through its own
+  `TraceProcessorStorage` and `json::ExportJson`, the exporter behind phase
+  1's `trace.json`.
 
 ## After the facebook recon (2026-10-07)
 
