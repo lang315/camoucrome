@@ -5,6 +5,8 @@ Usage: observe_report.py TRACE.json NETLOG.json [--cookies COOKIES_DB]
 TRACE comes from --trace-startup=-*,disabled-by-default-camou.observe
 --trace-startup-format=json; NETLOG from --log-net-log; COOKIES_DB is a copy of
 the profile's Cookies sqlite taken after the browser exited. Prints markdown.
+With the Intl recipe (adding v8,disabled-by-default-v8.runtime_stats) on a build with
+v8_enable_runtime_call_stats = true, the report also counts Intl built-ins.
 Only names, counts, hosts and query-stripped paths are printed: query strings
 carry tokens and cookie values identify the account, so neither is read.
 docs/observer/README.md is the operator guide.
@@ -17,6 +19,14 @@ import sqlite3
 import urllib.parse
 
 CATEGORY = "disabled-by-default-camou.observe"
+# V8 runtime call stats (docs/superpowers/specs/2026-10-13-observer-intl-rcs-design.md):
+# each top-level V8 entry slice resets the counters at its start and carries their dump
+# at its end; nested slices carry none, so summing the dumps counts each call once.
+V8_ENTRY = ("V8.Execute", "V8.RunMicrotasks")
+RCS_ARG = "runtime-call-stats"
+INTL = re.compile(r"^Builtin_(Intl|DateTimeFormat|NumberFormat|Collator|PluralRules|RelativeTimeFormat"
+                  r"|ListFormat|DisplayNames|Segmenter|DurationFormat|Locale|V8BreakIterator)"
+                  r"|^Builtin_\w+PrototypeToLocale")
 
 # Mirror of the allow-list in the observe patch (bind_gen/interface.py).
 # A "Interface.member" key wins over its interface's key.
@@ -44,8 +54,8 @@ GROUPS = {
 }
 
 NOT_OBSERVABLE = [
-    "V8 built-ins: Intl.* (resolvedOptions().timeZone, supportedLocalesOf), "
-    "Date.prototype.getTimezoneOffset, Math (phase 2 covers Intl; getTimezoneOffset stays blind)",
+    "V8 built-ins Date.prototype.getTimezoneOffset (a CSA builtin) and Math; Intl counts need "
+    "the Intl recording recipe and an observer build with v8_enable_runtime_call_stats = true",
     "CSS @media rules in stylesheets (only matchMedia is seen)",
     "Font enumeration by layout measurement beyond the listed layout members",
     "TLS/JA3, HTTP/2 framing, anything computed server-side",
@@ -60,9 +70,12 @@ def load_trace(trace_path):
         return json.load(f)
 
 
+def all_events(data):
+    return data["traceEvents"] if isinstance(data, dict) else data
+
+
 def events_of(data):
-    events = data["traceEvents"] if isinstance(data, dict) else data
-    return [e for e in events if e.get("cat") == CATEGORY]
+    return [e for e in all_events(data) if e.get("cat") == CATEGORY]
 
 
 def load_events(trace_path):
@@ -127,6 +140,56 @@ def surface_counts(events):
     return counts
 
 
+def _dump(e):
+    d = e.get("args", {}).get(RCS_ARG)
+    if isinstance(d, str):  # a legacy JSON annotation can be exported as a string
+        d = json.loads(d)
+    return d if isinstance(d, dict) else None
+
+
+def _inside(inner, outer):
+    return (inner["pid"] == outer["pid"] and inner["tid"] == outer["tid"]
+            and outer["ts"] <= inner["ts"] <= outer["ts"] + outer.get("dur", 0))
+
+
+def _entry_script(s, runs, observe):
+    """The Blink v8.run around the slice (classic script top level), else the one script
+    of the observer events inside it; handlers, timers, promise jobs and modules have no
+    entry script of their own."""
+    run = next((r for r in runs if _inside(s, r)), None)
+    if run:
+        return script_label(run.get("args", {}).get("fileName"))
+    scripts = {e.get("args", {}).get("script") for e in observe if _inside(e, s)}
+    return script_label(scripts.pop()) if len(scripts) == 1 else "(unknown)"
+
+
+def intl_counts(events):
+    """(site, script label, builtin) -> calls; None when no dump holds any counter (the
+    build lacks runtime call stats or the category was off: blind, not zero)."""
+    slices = [(e, _dump(e)) for e in events if e.get("name") in V8_ENTRY]
+    slices = [(e, d) for e, d in slices if d is not None]
+    if not any(d for _, d in slices):
+        return None
+    observe = [e for e in events if e.get("cat") == CATEGORY]
+    sites = collections.defaultdict(collections.Counter)
+    for e in observe:
+        a = e.get("args", {})
+        if a.get("site") or a.get("origin"):
+            sites[e["pid"]][a.get("site") or a.get("origin")] += 1
+    runs = [e for e in events if e.get("name") == "v8.run"]
+    counts = collections.Counter()
+    for s, d in slices:
+        hits = {name: v[0] for name, v in d.items() if INTL.match(name)}
+        if not hits:
+            continue
+        top = sites[s["pid"]].most_common(1)
+        site = top[0][0] if top else "(site unknown)"
+        script = _entry_script(s, runs, observe)
+        for name, n in hits.items():
+            counts[(site, script, name)] += int(n)
+    return dict(counts)
+
+
 _SFC_SITE = re.compile(r"site=([^;}]+)")
 
 
@@ -163,7 +226,7 @@ def load_cookie_names(db_path):
         con.close()
 
 
-def render(events, requests, cookies, buffer=None):
+def render(events, requests, cookies, buffer=None, intl=None):
     lines = ["# Tracking observer report", ""]
     if buffer:
         lines += [buffer, ""]
@@ -190,6 +253,18 @@ def render(events, requests, cookies, buffer=None):
         for (host, req), n in sorted((reqs or {}).items()):
             lines.append(f"| {host} | {req} | {n} |")
         lines.append("")
+    lines += ["## V8 built-ins (Intl)", ""]
+    if intl is None:
+        lines += ["Intl: blind (no V8 runtime call stats in this trace)", ""]
+    elif not intl:
+        lines += ["Intl: none called", ""]
+    else:
+        lines += ["| site | script | builtin | calls |", "|---|---|---|---|"]
+        for (site, script, name), n in sorted(intl.items(), key=lambda kv: (kv[0][0], -kv[1], kv[0][1:])):
+            lines.append(f"| {site} | {script} | {name} | {n} |")
+        lines += ["", "script: the Blink v8.run entry script, else the one script of the observer "
+                  "events in the same V8 slice, else (unknown). Event handlers, timers, promise "
+                  "callbacks and module bodies have no entry script.", ""]
     if cookies:
         lines += ["## Cookies (names only)", "", "| host | name | expires_utc | httponly |",
                   "|---|---|---|---|"]
@@ -207,7 +282,8 @@ def main():
     a = ap.parse_args()
     cookies = load_cookie_names(a.cookies) if a.cookies else []
     data = load_trace(a.trace)
-    print(render(events_of(data), load_requests(a.netlog), cookies, buffer_note(data)), end="")
+    print(render(events_of(data), load_requests(a.netlog), cookies, buffer_note(data),
+                 intl_counts(all_events(data))), end="")
 
 
 if __name__ == "__main__":
