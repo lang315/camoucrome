@@ -65,4 +65,7 @@ def test_blind_arm_needs_v8_slices_and_no_counters():
 def test_intl_filters_extend_the_default_recipe():
     assert v.INTL_FILTER == "-*,disabled-by-default-camou.observe,v8,disabled-by-default-v8.runtime_stats"
     assert v.NO_RCS_FILTER == "-*,disabled-by-default-camou.observe,v8"
+    # bare builtin names, as the runtime-call-stats dump writes them
+    assert v.INTL_ROWS == ("DateTimeFormatConstructor", "DateTimeFormatPrototypeResolvedOptions",
+                           "DateTimeFormatSupportedLocalesOf")
     assert "Intl.DateTimeFormat.supportedLocalesOf" in v.PROBE and "resolvedOptions" in v.WORKER

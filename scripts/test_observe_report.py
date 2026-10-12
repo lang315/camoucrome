@@ -192,9 +192,10 @@ def rcs(ts, dur, stats, **kw):
     return x("V8.Execute", ts, dur, **{"runtime-call-stats": stats}, **kw)
 
 
-CTOR = "Builtin_DateTimeFormatConstructor"
-RO = "Builtin_DateTimeFormatPrototypeResolvedOptions"
-SLO = "Builtin_DateTimeFormatSupportedLocalesOf"
+# the dump names a C++ builtin's counter by the bare builtin name (box trace, 2026-10-13)
+CTOR = "DateTimeFormatConstructor"
+RO = "DateTimeFormatPrototypeResolvedOptions"
+SLO = "DateTimeFormatSupportedLocalesOf"
 APP = "https://a.com/app.js"
 
 
@@ -204,12 +205,13 @@ def at(e, ts, **kw):
 
 def test_intl_counts_sum_dumps_and_keep_only_intl_names():
     events = [x("v8.run", 0, 100, fileName=APP),
-              rcs(10, 20, {CTOR: [2, 5.0], "Builtin_ArrayPrototypePush": [9, 1.0], "Runtime_X": [1, 0.1]}),
-              rcs(40, 20, {CTOR: [1, 1.0], RO: [3, 2.0], "Builtin_NumberPrototypeToLocaleString": [1, 1.0]}),
+              rcs(10, 20, {CTOR: [2, 5.0], "ArrayPrototypePush": [9, 1.0], "Runtime_X": [1, 0.1],
+                           "DeserializeIsolate": [1, 496]}),
+              rcs(40, 20, {CTOR: [1, 1.0], RO: [3, 2.0], "NumberPrototypeToLocaleString": [1, 1.0]}),
               at(ev("Navigator.userAgent.get", "https://a.com", "https://a.com"), 200)]
     s, sc = "https://a.com", "a.com/app.js"
     assert r.intl_counts(events) == {(s, sc, CTOR): 3, (s, sc, RO): 3,
-                                     (s, sc, "Builtin_NumberPrototypeToLocaleString"): 1}
+                                     (s, sc, "NumberPrototypeToLocaleString"): 1}
 
 
 def test_intl_counts_accept_a_dump_exported_as_a_json_string():
