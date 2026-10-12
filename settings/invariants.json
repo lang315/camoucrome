@@ -287,10 +287,10 @@
       "policy": "repair",
       "repair": "set mediaDevices:seed to a non-zero uint32",
       "why": [
-        "mediaDevices:enabled true fabricates synthetic devices; media-ii's",
-        "SyntheticDeviceId is a no-op when mediaDevices:seed is absent or 0, so",
-        "the fabricated devices carry the REAL deviceId hashes -- a spoofed count",
-        "beside real identifiers, which is the incoherence rule 4 exists for.",
+        "With mediaDevices:enabled true and no non-zero mediaDevices:seed nothing",
+        "is spoofed (camoucfg::ActiveMediaDevicesSeed is 0): the configured counts",
+        "and labels are silently ignored. The seed is what activates the",
+        "media-device hooks and is folded into Chrome's device ids by the browser.",
         "A bool keys[0] counts as present only when true; a uint32 keys[1]",
         "counts as absent when 0, matching the consumer's own no-op rule.",
         "enabled false or absent constrains nothing."

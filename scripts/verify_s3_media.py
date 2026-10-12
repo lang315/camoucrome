@@ -11,13 +11,17 @@ types to enumerateDevices without a getUserMedia call
 REAL_KINDS is measured, not assumed: the kinds stock content_shell lists
 under the grant (WSLg may expose a PulseAudio source and sink). Phantom
 expectations apply to the claimed kinds outside REAL_KINDS.
+
+Only the SINK sessions (S3-9..S3-11) pass --use-fake-device-for-media-stream:
+they test the round trip of a listed real-device id, which must not depend on
+WSLg/RDP audio being present. Every other session stays without it.
 """
 
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib_shell, echo_server
 
-EXPECTED = 8
+EXPECTED = 12
 BASE = ["--ozone-platform=headless"]
 GRANT = BASE + ["--use-fake-ui-for-media-stream"]
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -29,6 +33,8 @@ CONFIG = json.dumps({"mediaDevices:enabled": True, "mediaDevices:seed": 424242,
                      "mediaDevices:cameraLabel": "Camo Cam",
                      "mediaDevices:microphoneLabel": "Camo Mic",
                      "mediaDevices:speakerLabel": "Camo Speaker"})
+NOSEED = json.dumps({k: v for k, v in json.loads(CONFIG).items() if k != "mediaDevices:seed"})
+SINKFLAGS = GRANT + ["--use-fake-device-for-media-stream", "--autoplay-policy=no-user-gesture-required"]
 
 # Main document, then a same-origin iframe (a second document: its own frame
 # salt, so its own groupIds), then getCapabilities() per entry.
@@ -52,9 +58,41 @@ PROBE = r"""(async () => {
   } catch (e) { return {error: String(e)}; }
 })()"""
 
+SINK = r"""(async () => {
+  try {
+    const real = d => !['', 'default', 'communications'].includes(d.deviceId);
+    const ds = await navigator.mediaDevices.enumerateDevices();
+    const out = ds.find(d => d.kind === 'audiooutput' && real(d));
+    const mic = ds.find(d => d.kind === 'audioinput' && real(d));
+    const r = {hasOut: !!out, hasMic: !!mic};
+    if (out) {
+      const a = new Audio();
+      try { await a.setSinkId(out.deviceId); r.sink = a.sinkId === out.deviceId ? 'ok' : 'mismatch'; }
+      catch (e) { r.sink = e.name; }
+      const ac = new AudioContext();
+      // AudioContext fills its sink id set from its own enumerate after
+      // construction; let that land before setSinkId.
+      await navigator.mediaDevices.enumerateDevices();
+      await new Promise(f => setTimeout(f, 500));
+      try { await ac.setSinkId(out.deviceId); r.acSink = ac.sinkId === out.deviceId ? 'ok' : 'mismatch'; }
+      catch (e) { r.acSink = e.name; }
+      await ac.close();
+    }
+    if (mic) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({audio: {deviceId: {exact: mic.deviceId}}});
+        const st = s.getAudioTracks()[0].getSettings();
+        r.gum = (st.deviceId === mic.deviceId && st.groupId === mic.groupId) ? 'ok' : 'mismatch';
+        s.getTracks().forEach(t => t.stop());
+      } catch (e) { r.gum = e.name; }
+    }
+    return r;
+  } catch (e) { return {error: String(e)}; }
+})()"""
 
-def run(url, config, flags):
-    vals, err = lib_shell.session(config, [PROBE], navigate_to=url, extra_flags=flags)
+
+def run(url, config, flags, probe=PROBE):
+    vals, err = lib_shell.session(config, [probe], navigate_to=url, extra_flags=flags)
     if err:
         return {"error": str(err)}
     return vals[0]
@@ -73,8 +111,12 @@ def devices(lst):
     return [d for d in lst if d["deviceId"] not in SENTINELS]
 
 
-def shape(lst):
-    return sorted((d["kind"], d["deviceId"] == "", d["groupId"] == "", d["label"] == "") for d in lst)
+def by_value(r):
+    """(kind, label, which-fields-empty) per entry, plus capability key sets per input entry."""
+    lst = sorted((d["kind"], d["label"], d["deviceId"] == "", d["groupId"] == "") for d in r["main"])
+    caps = sorted((c["kind"], tuple(k for k in ("sampleRate", "channelCount", "width", "height") if c[k]))
+                  for c in r["caps"])
+    return lst, caps
 
 
 def main():
@@ -87,6 +129,9 @@ def main():
         pre = run(a_url, CONFIG, BASE)
         post = run(a_url, CONFIG, GRANT)
         other = run(b_url, CONFIG, GRANT)
+        noseed = run(a_url, NOSEED, GRANT)
+        sink_stock = run(a_url, None, SINKFLAGS, SINK)
+        sink_fork = run(a_url, CONFIG, SINKFLAGS, SINK)
     finally:
         a_stop()
         b_stop()
@@ -115,9 +160,9 @@ def main():
         m = post["main"]
         res["S3-1"] = (set(kinds(m)) == set(KINDS) and len(devices(ph(m))) > 0 and
                        all(HEX64.match(d["deviceId"]) for d in devices(ph(m))),
-                       f"kinds={kinds(m)} phantom ids={[d['deviceId'][:8] for d in ph(m)]}")
+                       f"kinds={kinds(m)} phantom ids n={len(ph(m))} hex64={all(HEX64.match(d['deviceId']) for d in ph(m))}")
         res["S3-2"] = (len(ph(m)) > 0 and all(HEX64.match(d["groupId"]) for d in ph(m)),
-                       f"phantom groups={[d['groupId'][:8] for d in ph(m)]}")
+                       f"phantom groups n={len(ph(m))} hex64={all(HEX64.match(d['groupId']) for d in ph(m))}")
         fr = post["frame"]
         # Stock content_shell has no persistent deviceId salt, so a same-origin
         # iframe gets other deviceIds than its main frame. The fork must do what
@@ -196,8 +241,28 @@ def main():
     if bad(unconf):
         res["S3-8"] = (False, f"error {unconf}")
     else:
-        res["S3-8"] = (shape(unconf["main"]) == shape(stock["main"]),
-                       f"guard rule 5: {{}}={shape(unconf['main'])} stock={shape(stock['main'])}")
+        same = by_value(unconf) == by_value(stock)
+        res["S3-8"] = (same, f"guard rule 5: config {{}} equals stock by label and capability keys: {same}")
+
+    # S3-9..11: an id the fork lists must work when passed back, as on stock.
+    # The stock run is the control: a row is only measurable when stock passes.
+    if bad(sink_stock) or bad(sink_fork):
+        for k in ("S3-9", "S3-10", "S3-11"):
+            res[k] = (False, f"error stock={sink_stock} fork={sink_fork}")
+    else:
+        for k, key, need in (("S3-9", "sink", "hasOut"), ("S3-10", "gum", "hasMic"),
+                             ("S3-11", "acSink", "hasOut")):
+            ctl = sink_stock.get(key) == "ok"
+            got = sink_fork.get(key)
+            res[k] = (bool(sink_fork.get(need) and ctl and got == "ok"),
+                      f"{key}: fork={got} stock={sink_stock.get(key)}"
+                      + ("" if ctl else " (stock control failed: not measurable)"))
+    # S3-12 (M1): enabled without a seed is inactive, so the list equals stock.
+    if bad(noseed):
+        res["S3-12"] = (False, f"error {noseed}")
+    else:
+        same = by_value(noseed) == by_value(stock)
+        res["S3-12"] = (same, f"enabled, no seed equals stock by label and capability keys: {same}")
 
     order = [f"S3-{i}" for i in range(1, EXPECTED + 1)]
     for k in order:

@@ -280,11 +280,10 @@ inline constexpr char kMediaDevicesMicros[] = "mediaDevices:micros";
 inline constexpr char kMediaDevicesWebcams[] = "mediaDevices:webcams";
 inline constexpr char kMediaDevicesSpeakers[] = "mediaDevices:speakers";
 
-// media-ii: the seed for SyntheticDeviceId (device_ids.h) and the label
-// overrides for the one synthetic device of each kind that enumeration
-// fabricates. Colon-namespaced, same mediaDevices: namespace as above. Absent
-// or 0 seed => SyntheticDeviceId is a no-op (rule 5). Consumed by media-ii
-// Task 2's enumerate/track-getter sites.
+// With mediaDevices:enabled, a non-zero seed activates every media-device
+// hook (camoucfg::ActiveMediaDevicesSeed) and is folded into every media
+// device and group id by the browser (media_devices_util.cc, S3b). Absent
+// or 0: no media-device spoofing (rule 5).
 inline constexpr char kMediaDevicesSeed[] = "mediaDevices:seed";
 inline constexpr char kMediaDevicesCameraLabel[] = "mediaDevices:cameraLabel";
 inline constexpr char kMediaDevicesMicrophoneLabel[] =

@@ -11,7 +11,7 @@ index d6a91ebb3b..a13d9e73e0 100644
      "//media/webrtc",
      "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index f0e1886c47..842d18bc78 100644
+index f0e1886c47..2a31a60339 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 @@ -14,6 +14,10 @@
@@ -40,25 +40,23 @@ index f0e1886c47..842d18bc78 100644
          }
          media_devices.push_back(input_device_info);
        } else {
-@@ -1493,6 +1497,159 @@ void MediaDevices::DevicesEnumerated(
+@@ -1493,6 +1497,140 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  
 +  // SP4-media / media-ii: rewrite enumerateDevices() when configured.
 +  //  - Pre-grant (real input ids empty): configured counts of empty-field
 +  //    devices per kind (the original sp4-media spoof, unchanged).
-+  //  - Post-grant (a getUserMedia grant populated real ids) AND a non-zero
-+  //    seed: transform each REAL device into an origin-salted synthetic
-+  //    deviceId/groupId via the SAME camoucfg::SyntheticDeviceId the track
-+  //    getters use (=> the granted track is coherent with this list) plus a
-+  //    configured generic per-kind label, keeping the real count.
-+  // A zero/absent seed post-grant falls through to the real list, matching the
-+  // track getters' `seed != 0` guard so the two surfaces never disagree.
-+  // Absent/false enabled => real list untouched.
++  //  - Post-grant (any non-empty id): each device keeps Chrome's ids, which
++  //    the browser already folds the seed into (S3b, media_devices_util.cc),
++  //    and shows the configured generic per-kind label, keeping the real
++  //    count.
++  // Active only with mediaDevices enabled AND a non-zero seed
++  // (camoucfg::ActiveMediaDevicesSeed), the same rule as the browser and the
++  // track getters; otherwise the real list is untouched.
 +  const camoucfg::ConfigScope& camou_scope =
 +      camoucfg::ScopeFor(GetExecutionContext());
-+  if (camoucfg::GetBool(camou_scope, camoucfg::keys::kMediaDevicesEnabled)
-+          .value_or(false)) {
++  if (camoucfg::ActiveMediaDevicesSeed(camou_scope) != 0) {
 +    // S3: a grant shows as ANY non-empty id. A real audiooutput id proves a
 +    // mic or speaker-selection grant (media_devices_permission_checker.cc),
 +    // so a host with speakers and no inputs is post-grant too; before S3 it
@@ -101,27 +99,19 @@ index f0e1886c47..842d18bc78 100644
 +            mojom::blink::MediaDeviceType::kMediaAudioOutput));
 +      }
 +      media_devices = std::move(spoofed);
-+    } else if (const uint32_t seed =
-+                   camoucfg::GetUint32(camou_scope,
-+                                       camoucfg::keys::kMediaDevicesSeed)
-+                       .value_or(0);
-+               seed != 0) {
-+      const std::string origin =
-+          GetExecutionContext()
-+              ? GetExecutionContext()->GetSecurityOrigin()->ToString().Utf8()
-+              : std::string();
++    } else {
 +      const String camera_label = String::FromUtf8(
 +          camoucfg::GetString(camou_scope,
 +                              camoucfg::keys::kMediaDevicesCameraLabel)
-+              .value_or("Integrated Camera"));
++              .value_or(camoucfg::kDefaultCameraLabel));
 +      const String microphone_label = String::FromUtf8(
 +          camoucfg::GetString(camou_scope,
 +                              camoucfg::keys::kMediaDevicesMicrophoneLabel)
-+              .value_or("Microphone (Realtek Audio)"));
++              .value_or(camoucfg::kDefaultMicrophoneLabel));
 +      const String speaker_label = String::FromUtf8(
 +          camoucfg::GetString(camou_scope,
 +                              camoucfg::keys::kMediaDevicesSpeakerLabel)
-+              .value_or("Speakers (Realtek Audio)"));
++              .value_or(camoucfg::kDefaultSpeakerLabel));
 +      MediaDeviceInfoVector transformed;
 +      for (wtf_size_t i = 0;
 +           i < static_cast<wtf_size_t>(
@@ -131,28 +121,22 @@ index f0e1886c47..842d18bc78 100644
 +          const mojom::blink::MediaDeviceType device_type =
 +              static_cast<mojom::blink::MediaDeviceType>(i);
 +          const WebMediaDeviceInfo& device_info = enumeration[i][j];
-+          std::string_view kind;
 +          String label;
 +          switch (device_type) {
 +            case mojom::blink::MediaDeviceType::kMediaVideoInput:
-+              kind = "videoinput";
 +              label = camera_label;
 +              break;
 +            case mojom::blink::MediaDeviceType::kMediaAudioOutput:
-+              kind = "audiooutput";
 +              label = speaker_label;
 +              break;
 +            default:
-+              kind = "audioinput";
 +              label = microphone_label;
 +              break;
 +          }
-+          const String synth_device_id = String::FromUtf8(
-+              camoucfg::SyntheticDeviceId(seed, kind, device_info.device_id,
-+                                          origin));
-+          const String synth_group_id = String::FromUtf8(
-+              camoucfg::SyntheticDeviceId(seed, "group", device_info.group_id,
-+                                          origin));
++          // S3b: Chrome's own ids; the browser folds the seed into them, so
++          // they round-trip through setSinkId, getUserMedia and the track.
++          const String device_id = String::FromUtf8(device_info.device_id);
++          const String group_id = String::FromUtf8(device_info.group_id);
 +          // An ungranted-kind placeholder (empty real device_id, emitted for a
 +          // kind not covered by a partial grant) keeps an empty label: an empty
 +          // deviceId with a non-empty label is a shape real Chrome never emits,
@@ -168,28 +152,25 @@ index f0e1886c47..842d18bc78 100644
 +              device_type == mojom::blink::MediaDeviceType::kMediaVideoInput) {
 +            InputDeviceInfo* input_device_info =
 +                MakeGarbageCollected<InputDeviceInfo>(
-+                    synth_device_id, device_label, synth_group_id,
++                    device_id, device_label, group_id,
 +                    device_type);
-+            // S3: keep the real entry's capabilities under the synthetic ids
-+            // (a phantom camera's width/height, the real mic's sampleRate and
-+            // channelCount); the setters check the capability's id equals the
-+            // info's own.
++            // S3: keep the entry's capabilities (a phantom camera's
++            // width/height, the real mic's sampleRate and channelCount); their
++            // ids already equal the info's own.
 +            if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
 +                !video_input_capabilities.empty()) {
-+              video_input_capabilities[j]->device_id = synth_device_id;
 +              input_device_info->SetVideoInputCapabilities(
 +                  std::move(video_input_capabilities[j]));
 +            }
 +            if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput &&
 +                !audio_input_capabilities.empty()) {
-+              audio_input_capabilities[j]->device_id = synth_device_id;
 +              input_device_info->SetAudioInputCapabilities(
 +                  std::move(audio_input_capabilities[j]));
 +            }
 +            transformed.push_back(input_device_info);
 +          } else {
 +            transformed.push_back(MakeGarbageCollected<MediaDeviceInfo>(
-+                synth_device_id, device_label, synth_group_id, device_type));
++                device_id, device_label, group_id, device_type));
 +          }
 +        }
 +      }

@@ -49,12 +49,15 @@ def main():
     # P5 real device present (fake-device stand-in) -> succeeds, NOT remapped
     p5 = run(cfg(**{"mediaDevices:webcams": 1}), "{video:true}", FAKE)
     r["P5"] = (p5 == "ok", p5)
-    # P6 no-regression: audio on this headless box hits a DIFFERENT path
-    # (NotSupportedError -- no audio subsystem, never reaches NO_HARDWARE), so the
-    # remap must leave it untouched. (The code's audio gate is correct-if-reached
-    # but unexercised here; audio is low-priority per sp4-media §1.5b.)
+    # P6 audio is relative to stock, because the host's audio decides the path.
+    # With a real mic stock gives ok and the fork must too (not remapped). With
+    # no mic stock gives NotFoundError; since S3 a claimed mic is a phantom in
+    # the capability list, so the fork ends NO_HARDWARE and phantom-webcam
+    # remaps it to NotReadableError. Any other stock result must be unchanged.
+    s6 = run(None, "{audio:true}", BASE)
     p6 = run(cfg(**{"mediaDevices:micros": 1}), "{audio:true}", BASE)
-    r["P6"] = (p6 == "NotSupportedError", p6)
+    want = {"NotFoundError": "NotReadableError", "ok": "ok"}.get(s6, s6)
+    r["P6"] = (p6 == want, f"stock={s6} fork={p6}")
 
     order = ["P1", "P2", "P3", "P4", "P5", "P6"]
     for k in order:
