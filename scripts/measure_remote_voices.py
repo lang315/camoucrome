@@ -126,7 +126,7 @@ def main():
     stock = os.path.join(m2.STOCK_APP, "chrome.exe")
     # The run is unattended on the owner's RDP desktop, where the window can be occluded or the
     # client minimised; Chrome then throttles the page's timers to about one wake a minute and the
-    # cells never finish (smoke2, 2026-10-14). Every arm gets the same three scheduling flags.
+    # cells never finish (smoke2, 2026-10-13). Every arm gets the same three scheduling flags.
     # They change when timers fire, not what the speech engine reports.
     awake = ["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
              "--disable-backgrounding-occluded-windows"]

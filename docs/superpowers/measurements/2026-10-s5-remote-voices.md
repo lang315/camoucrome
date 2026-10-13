@@ -17,7 +17,7 @@ So the remote table is one list shared by every Chrome-branded OS build, and the
 ## 2. Host: stock Chrome 154, session 1
 
 **Setup.**
-- Run on 2026-10-14, 10:01–10:26 ICT: stock Chrome 154.0.8037.93 on the build box's Windows host, headed, in the owner's interactive RDP session (session 1). It was launched through a temporary interactive scheduled task by `scripts/measure_remote_voices.py`.
+- Run on 2026-10-13, 10:01–10:26 ICT: stock Chrome 154.0.8037.93 on the build box's Windows host, headed, in the owner's interactive RDP session (session 1). It was launched through a temporary interactive scheduled task by `scripts/measure_remote_voices.py`.
 - Two arms, interleaved: `stock`, and `stock-fr` (`--lang=fr`, voice list only). n = 10 each.
 - Every arm launches with `--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`. Without them, the page's timers on the RDP desktop stalled for more than 9 min (smoke runs). They move timer scheduling, not what the speech engine reports.
 - Each speak is at volume 0, after one real CDP click (user activation; it took 1 click, sometimes 2).
@@ -84,7 +84,7 @@ The duration rows compare `end − start` with the exact value the remote branch
 
 R1 and R8 pass on main + S5 data: the list comes from the data, and R8 is the control.
 
-R5 shows a **gap that predates S5**: `cancel()` on any configured (fake) voice, local or remote, fires no event, while stock fires `error: interrupted` on both (§2, 10/10). The owner ruled that S5 fixes it (2026-10-14).
+R5 shows a **gap that predates S5**: `cancel()` on any configured (fake) voice, local or remote, fires no event, while stock fires `error: interrupted` on both (§2, 10/10). The owner ruled that S5 fixes it (2026-10-13).
 
 ## 4. Host: fork against stock, session 1
 
