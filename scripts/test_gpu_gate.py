@@ -85,6 +85,16 @@ def test_lib_shell_gate_lines():
     assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=lambda p: None) == "UNMEASURED gpu-crash=unknown"
 
 
+def test_lib_shell_gate_skips_a_browser_that_already_exited():
+    # verify_crash_dumps C2 crashes the browser on purpose (2026-10-13 session-1 run printed
+    # "UNMEASURED gpu-crash=unknown" twice): a gone browser has no chrome://gpu to read, and
+    # what it measured is that verify's own business.
+    gone = types.SimpleNamespace(binary_name="chrome.exe", cdp_port=9222, poll=lambda: 3221225477)
+    called = []
+    assert lib_shell.gpu_gate_line(gone, osname="nt", reader=lambda p: called.append(p) or None) is None
+    assert called == []
+
+
 def test_lib_shell_gate_fails_closed_when_the_read_raises():
     def boom(port):
         raise OSError("gone")

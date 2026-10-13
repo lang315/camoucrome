@@ -384,6 +384,8 @@ def gpu_gate_line(proc, osname=None, reader=None):
     osname = os.name if osname is None else osname
     if osname != "nt" or getattr(proc, "binary_name", "") != "chrome.exe" or not getattr(proc, "cdp_port", None):
         return None
+    if getattr(proc, "poll", lambda: None)() is not None:
+        return None  # the browser already exited (verify_crash_dumps crashes it on purpose): nothing to read
     if reader is None:
         import gpu_gate  # lazy: CI copies lib_shell without needing this on Linux
         reader = gpu_gate.read_port
