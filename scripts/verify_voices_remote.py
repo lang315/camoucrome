@@ -5,9 +5,10 @@ a delayed start, the measured end or cut-off (R2-R6);
 a local voice keeps its per-word boundaries (R8, control). EXPECTED rows, not exit 0, decide.
 
 S5_ROOT=<a checkout> reads that checkout's generator and data instead (the R1 RED on main)."""
-import json, os, sys
+import json, math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib_shell
+from verify_voices_ii import predicted_jitter  # the voices-ii FNV jitter, one Python copy
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.environ.get("S5_ROOT") or ROOT
 sys.path.insert(0, os.path.join(ROOT, "client", "python"))
@@ -19,7 +20,6 @@ REMOTE_CPS = 16.05                        # section 2, 200 chars at rate 1
 # section 4: stock 154's remote duration at a rate, relative to rate 1 (43 chars, deterministic to 0.2 %);
 # above rate 2 a remote voice never starts. Interpolated log-log, as speech_synthesis.cc does.
 RATE_CURVE = [(0.1, 3.037), (0.25, 2.512), (0.5, 1.823), (0.75, 1.338), (1.0, 1.0), (1.5, 0.582), (2.0, 0.372)]
-CUTOFF_MS = 0                             # section 2: 0/9 runs of 540 chars were cut
 CFG = json.dumps(gen.voices_keys("Windows", "en-US"))
 BASE = json.load(open(os.path.join(ROOT, "baselines", "chrome-8037-stock-oracle-windows.json"), encoding="utf-8"))["headed"]["voices"]
 
@@ -59,7 +59,6 @@ TXT = lambda n: ("The quick brown fox jumps over the lazy dog. " * 20)[:n]  # th
 
 
 def rate_factor(rate):
-    import math
     rate = min(max(rate, RATE_CURVE[0][0]), RATE_CURVE[-1][0])
     for (r0, f0), (r1, f1) in zip(RATE_CURVE, RATE_CURVE[1:]):
         if rate <= r1:
@@ -70,13 +69,10 @@ def rate_factor(rate):
 def predicted_ms(n, rate=1.0, uri="Google US English"):
     """end - start the remote branch must give: chars / cps x rate_factor(rate) x (1 + jitter), where jitter is
     the voices-ii FNV-1a-64 of (text, voiceURI) UTF-8 mapped to +/-0.15 (mirrors speech_synthesis.cc)."""
-    h, mask = 0xcbf29ce484222325, (1 << 64) - 1
-    for b in TXT(n).encode("utf-8") + uri.encode("utf-8"):
-        h = ((h ^ b) * 0x100000001b3) & mask
-    jitter = ((h >> 11) / float(1 << 53) - 0.5) * 2.0 * 0.15
-    return n / REMOTE_CPS * rate_factor(rate) * (1.0 + jitter) * 1000.0
+    return n / REMOTE_CPS * rate_factor(rate) * (1.0 + predicted_jitter(TXT(n), uri)) * 1000.0
 
 
+def dur(ev): return (first(ev, "end") or 0) - (first(ev, "start") or 0)
 def kinds(ev, k): return [e for e in (ev or []) if e[0] == k]
 def first(ev, k): return next((e[1] for e in (ev or []) if e[0] == k), None)
 
@@ -96,14 +92,14 @@ def main():
     res["R2 remote speak: 0 boundary events, then end"] = g43 is not None and not kinds(g43, "boundary") and first(g43, "end") is not None
     s = first(g43, "start")
     res[f"R3 remote start in [{START_P10_MS - 50}, {START_P90_MS + 150}] ms"] = s is not None and START_P10_MS - 50 <= s <= START_P90_MS + 150
-    d43, want43 = (first(g43, "end") or 0) - (s or 0), predicted_ms(43)
+    d43, want43 = dur(g43), predicted_ms(43)
     print(f"note: g43 end-start {d43} predicted {want43:.0f}")
     res["R4a remote 43 chars: end-start = 43/16.05 cps x (1+jitter), within 120 ms"] = s is not None and abs(d43 - want43) <= 120
     g43r2 = r.get("g43r2")
-    d43r2 = (first(g43r2, "end") or 0) - (first(g43r2, "start") or 0)
+    d43r2 = dur(g43r2)
     want43r2 = predicted_ms(43, 2.0)
     g43h = r.get("g43h")
-    d43h, want43h = (first(g43h, "end") or 0) - (first(g43h, "start") or 0), predicted_ms(43, 0.5)
+    d43h, want43h = dur(g43h), predicted_ms(43, 0.5)
     print(f"note: rate 2 end-start {d43r2} predicted {want43r2:.0f}; rate 0.5 {d43h} predicted {want43h:.0f}")
     res["R4c remote 43 chars at rates 2 and 0.5: end-start = predicted x the measured rate curve, within 120 ms"] = (
         first(g43r2, "start") is not None and abs(d43r2 - want43r2) <= 120 and not kinds(g43r2, "boundary")
@@ -120,16 +116,10 @@ def main():
         and all(START_P10_MS - 50 <= x <= START_P90_MS + 150 for x in reps))
     g540 = r.get("g540")
     print("note: g540", g540 and [e for e in g540 if e[0] != "boundary"])
-    if CUTOFF_MS:
-        t = first(g540, "error")
-        res[f"R4b remote 540 chars: error interrupted near start + {CUTOFF_MS} ms"] = bool(
-            kinds(g540, "error") and kinds(g540, "error")[0][2] == "interrupted" and first(g540, "end") is None
-            and abs(t - (first(g540, "start") or 0) - CUTOFF_MS) <= 0.15 * CUTOFF_MS)
-    else:
-        d540, want540 = (first(g540, "end") or 0) - (first(g540, "start") or 0), predicted_ms(540)
-        print(f"note: g540 end-start {d540} predicted {want540:.0f}")
-        res["R4b remote 540 chars: plain end at the predicted time (no cut-off), within 150 ms"] = (
-            first(g540, "end") is not None and not kinds(g540, "error") and abs(d540 - want540) <= 150)
+    d540, want540 = dur(g540), predicted_ms(540)  # section 2: stock never cut a long speak (0/9)
+    print(f"note: g540 end-start {d540} predicted {want540:.0f}")
+    res["R4b remote 540 chars: plain end at the predicted time (no cut-off), within 150 ms"] = (
+        first(g540, "end") is not None and not kinds(g540, "error") and abs(d540 - want540) <= 150)
     gc = r.get("gcancel")
     print("note: gcancel", gc and [e for e in gc if e[0] != "boundary"])
     res["R5 remote cancel: start, then error interrupted, no end"] = (
@@ -138,7 +128,7 @@ def main():
     print("note: gpause", gp and [e for e in gp if e[0] != "boundary"])
     # stock 154 (section 2): a Google voice fires no pause/resume events, but its end moves by the paused second
     want200 = predicted_ms(200)
-    dp = (first(gp, "end") or 0) - (first(gp, "start") or 0)
+    dp = dur(gp)
     print(f"note: gpause end-start {dp} predicted {want200 + 1000:.0f}")
     flags = [e[2] for e in kinds(gp, "pausedflag")]
     print("note: speechSynthesis.paused after pause() and 1 s later", flags)

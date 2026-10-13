@@ -19,8 +19,8 @@ const get = () => speechSynthesis.getVoices().map(v => ({name: v.name, lang: v.l
 async function run() {
   let voices = get();
   if (voices.length === 0) await new Promise(r => { speechSynthesis.onvoiceschanged = r; setTimeout(r, 4000); });
+  await new Promise(r => setTimeout(r, 1500));  // let the list settle: Chrome's Google voices can arrive late
   voices = get();
-  await new Promise(r => setTimeout(r, 1500)); voices = get();  // let the list settle: Chrome's Google voices can arrive late
   const ac = new AudioContext();
   const out = {voices, sampleRate: ac.sampleRate, baseLatency: ac.baseLatency, state: ac.state, ua: navigator.userAgent};
   REPORT(out);

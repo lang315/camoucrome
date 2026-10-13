@@ -184,9 +184,10 @@ def voices_keys(platform, locale="en-US"):
         return {}
     table = voices[platform]
     if isinstance(table, list):  # macOS ships every language's voices at once (measured: 191 on a 15.7.4 Mac)
-        return {"voices:list": table + voices["remote"]}
-    lang = locale.split("-")[0]
-    row = table.get(locale) or next((v for t, v in table.items() if t.split("-")[0] == lang), table["en-US"])
+        row = table
+    else:
+        lang = locale.split("-")[0]
+        row = table.get(locale) or next((v for t, v in table.items() if t.split("-")[0] == lang), table["en-US"])
     return {"voices:list": row + voices["remote"]}
 
 
