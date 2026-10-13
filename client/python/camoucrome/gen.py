@@ -177,16 +177,17 @@ def fonts_keys(platform):
 
 def voices_keys(platform, locale="en-US"):
     """voices:list for the claimed OS and locale from settings/voices.json: the locale's language-pack row, else the same
-    language's first row, else en-US (only en-US is measured; the rest are quoted). {} when the OS has no table."""
+    language's first row, else en-US (only en-US is measured; the rest are quoted), then Chrome's Google network voices
+    ("remote", the same 19 on every OS). {} when the OS has no table."""
     voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
     if platform not in voices:
         return {}
     table = voices[platform]
     if isinstance(table, list):  # macOS ships every language's voices at once (measured: 191 on a 15.7.4 Mac)
-        return {"voices:list": table}
+        return {"voices:list": table + voices["remote"]}
     lang = locale.split("-")[0]
     row = table.get(locale) or next((v for t, v in table.items() if t.split("-")[0] == lang), table["en-US"])
-    return {"voices:list": row}
+    return {"voices:list": row + voices["remote"]}
 
 
 def audio_keys(platform):
