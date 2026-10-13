@@ -121,4 +121,22 @@ Filled by Task 5.
 
 ## 6. Gaps
 
-Filled by Task 6.
+**Remote voices, not faked:**
+- **Offline.** Stock's Google voices end in `error: interrupted` without `start` when the network is down (Mac, dead proxy). The fork always "succeeds", so a page that can see the network state can see the difference.
+- **The list is volatile on stock and constant on the fork.** 1 of 10 stock launches never got the Google voices (§2). The fork lists them on every launch.
+- **Start delay.** The fork draws it deterministically from [218, 392] ms (per text and voice). Stock's is a network round trip, 109–1226 ms over 63 cells, with a long tail.
+- **Duration.** The fork's duration for a given text is off stock's by the voices-ii jitter (±15 %). Both are deterministic per text, so the same text measures, for example, 2424 ms on the fork against 2961 ms on stock (43 chars). Only a page that already knows stock's number for that text can use it.
+- **Unmeasured on stock:** `pause()` or `cancel()` inside the start delay (before `start`). The fork pauses silently and, on a cancel, fires `interrupted` without `start`.
+- **Activation.** Whether a remote `speak()` without activation gives `not-allowed` was not measured on the host (patchright-driven pages start it). R7 was dropped.
+- **Mac only:** Chrome 155 cut one 540-character speak at 7.5 s (n = 1). The host's stock 154 never did (0/9). The fork follows the host.
+
+**The local fake path, before S5 and unchanged by it** (measured in §2):
+- Stock's local voice starts at about 255 ms; the fork's at about 0.
+- Stock's rate-2 duration is 0.70 × rate 1; the fork's is 0.5.
+- Stock moves `end` by about 640 ms for a paused second; the fork's local path does not move it.
+
+S5 fixed only the local `cancel()` shape.
+
+**Other:**
+- A Linux identity still lists no voices: stock Chrome's Linux list was never captured.
+- `verify_windows_behaviour` V1/V3 read the box's client checkout, so they turn green in-harness only after merge (§5).
