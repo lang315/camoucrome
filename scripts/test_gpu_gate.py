@@ -95,6 +95,18 @@ def test_lib_shell_gate_skips_a_browser_that_already_exited():
     assert called == []
 
 
+def test_lib_shell_gate_off_when_the_launch_opts_out():
+    # verify_crash_dumps crashes a renderer on purpose; afterwards a CDP connect to read
+    # chrome://gpu hangs (>60 s, host 2026-10-13), and none of its rows is GPU-backed.
+    p = types.SimpleNamespace(binary_name="chrome.exe", cdp_port=9222, gpu_gate=False)
+    assert lib_shell.gpu_gate_line(p, osname="nt", reader=lambda port: 1) is None
+
+
+def test_lib_shell_launch_records_the_opt_out():
+    import inspect
+    assert inspect.signature(lib_shell.launch).parameters["gpu_gate"].default is True
+
+
 def test_lib_shell_gate_fails_closed_when_the_read_raises():
     def boom(port):
         raise OSError("gone")
