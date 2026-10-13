@@ -57,6 +57,8 @@ async function cells() {
     for (const [n, rate, act] of [[43, 1, ''], [200, 1, ''], [540, 1, ''], [43, 2, ''], [200, 1, 'cancel'], [200, 1, 'pause']])
       { out.speak.push(await say(voice, n, rate, act)); mark('cell ' + out.speak.length); }
   }
+  // stock's Google voices do not arrive on every launch (smoke6): read the list again at the end
+  out.list_end = speechSynthesis.getVoices().map(x => [x.name, x.lang, x.localService, x.default, x.voiceURI === x.name]);
   document.getElementById('o').textContent = JSON.stringify(out);
 }
 // no activation yet: speak must say not-allowed
