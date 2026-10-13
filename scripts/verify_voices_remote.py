@@ -13,10 +13,11 @@ ROOT = os.environ.get("S5_ROOT") or ROOT
 sys.path.insert(0, os.path.join(ROOT, "client", "python"))
 from camoucrome import gen  # noqa: E402
 
-EXPECTED = 9
-START_P10_MS, START_P90_MS = None, None   # section 2, Google US English, 43 chars (set from Task 1)
-REMOTE_CPS = None                         # section 2
-CUTOFF_MS = None                          # section 2; 0 = none
+EXPECTED = 10
+START_P10_MS, START_P90_MS = 218, 392     # section 2, Google US English, 43 chars
+REMOTE_CPS = 16.05                        # section 2, 200 chars at rate 1
+RATE_EXPONENT = 1.43                      # section 2: rate 2 takes 0.37x rate 1 = 2^-1.43
+CUTOFF_MS = 0                             # section 2: 0/9 runs of 540 chars were cut
 CFG = json.dumps(gen.voices_keys("Windows", "en-US"))
 BASE = json.load(open(os.path.join(ROOT, "baselines", "chrome-8037-stock-oracle-windows.json"), encoding="utf-8"))["headed"]["voices"]
 
@@ -26,10 +27,10 @@ PROBE = r"""(async () => {
   await new Promise(r => setTimeout(r, 300));
   const v = speechSynthesis.getVoices();
   const TXT = n => 'The quick brown fox jumps over the lazy dog. '.repeat(20).slice(0, n);
-  const say = (voice, n, act) => new Promise(res => {
+  const say = (voice, n, act, rate = 1) => new Promise(res => {
     const ev = [], u = new SpeechSynthesisUtterance(TXT(n)), s = performance.now(), at = () => Math.round(performance.now() - s);
     const timers = [], later = (f, ms) => timers.push(setTimeout(f, ms));
-    u.voice = voice; u.lang = voice.lang; u.volume = 0;
+    u.voice = voice; u.lang = voice.lang; u.volume = 0; u.rate = rate;
     for (const k of ['start','end','error','boundary','pause','resume']) u.addEventListener(k, e => ev.push([k, at(), e.error || '']));
     let done = false; const fin = () => { if (!done) { done = true; timers.forEach(clearTimeout); setTimeout(() => res(ev.slice()), 80); } };
     u.addEventListener('end', fin); u.addEventListener('error', fin);
@@ -42,7 +43,7 @@ PROBE = r"""(async () => {
   });
   const g = v.find(x => x.name === 'Google US English'), l = v.find(x => x.localService);
   return {list: v.map(x => [x.name, x.lang, x.localService, x.default]),
-          g43: g && await say(g, 43), g540: g && await say(g, 540), gcancel: g && await say(g, 200, 'cancel'),
+          g43: g && await say(g, 43), g43r2: g && await say(g, 43, '', 2), g540: g && await say(g, 540), gcancel: g && await say(g, 200, 'cancel'),
           gpause: g && await say(g, 200, 'pause'), l43: l && await say(l, 43)};
 })()"""
 
@@ -79,6 +80,12 @@ def main():
     want43 = 43 / REMOTE_CPS * 1000
     d43 = (first(g43, "end") or 0) - (s or 0)
     res["R4a remote 43 chars: end at start + chars/cps within 20%"] = s is not None and abs(d43 - want43) <= 0.2 * want43
+    g43r2 = r.get("g43r2")
+    d43r2 = (first(g43r2, "end") or 0) - (first(g43r2, "start") or 0)
+    want43r2 = want43 * 2 ** -RATE_EXPONENT
+    print(f"note: g43r2 end-start {d43r2} want {want43r2:.0f}")
+    res["R4c remote 43 chars at rate 2: end-start = (chars/cps) x 2^-1.43 within 20%"] = (
+        first(g43r2, "start") is not None and abs(d43r2 - want43r2) <= 0.2 * want43r2 and not kinds(g43r2, "boundary"))
     g540 = r.get("g540")
     print("note: g540", g540 and [e for e in g540 if e[0] != "boundary"])
     if CUTOFF_MS:
@@ -93,8 +100,13 @@ def main():
         first(gc, "start") is not None and [e[2] for e in kinds(gc, "error")] == ["interrupted"] and first(gc, "end") is None)
     gp = r.get("gpause")
     print("note: gpause", gp and [e for e in gp if e[0] != "boundary"])
-    res["R6 remote pause/resume: pause and resume fire, end after resume"] = (
-        first(gp, "pause") is not None and first(gp, "resume") is not None and (first(gp, "end") or -1) > first(gp, "resume"))
+    # stock 154 (section 2): a Google voice fires no pause/resume events, but its end moves by the paused second
+    want200 = 200 / REMOTE_CPS * 1000
+    dp = (first(gp, "end") or 0) - (first(gp, "start") or 0)
+    print(f"note: gpause end-start {dp} want about {want200 + 1000:.0f}")
+    res["R6 remote pause/resume: no pause/resume events, end later by the paused second"] = (
+        first(gp, "start") is not None and not kinds(gp, "pause") and not kinds(gp, "resume")
+        and abs(dp - (want200 + 1000)) <= 0.15 * want200 + 300)
     res["R7 no activation: remote speak -> not-allowed (guard)"] = noact == "not-allowed"
     l43 = r.get("l43")
     res["R8 control: a local voice still fires per-word boundaries at start ~0"] = len(kinds(l43, "boundary")) >= 8 and (first(l43, "start") or 999) < 100
