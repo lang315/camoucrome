@@ -189,7 +189,7 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
 
 
 def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
-           preset=None, sandbox=False, user_data_dir=None):
+           preset=None, sandbox=False, user_data_dir=None, gpu_gate=True):
     """Starts the browser and returns it once its DevTools port answers.
 
     Six details here are deliberate, not defensive. Most were earned by a
@@ -341,6 +341,7 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     # "" gives shutdown() nothing to remove: a caller's profile is the caller's.
     proc.profile_dir = profile if user_data_dir is None else ""
     proc.binary_name = name.lower()
+    proc.gpu_gate = gpu_gate
 
     port_file = pathlib.Path(profile) / "DevToolsActivePort"
     deadline = time.monotonic() + 30
@@ -384,6 +385,8 @@ def gpu_gate_line(proc, osname=None, reader=None):
     osname = os.name if osname is None else osname
     if osname != "nt" or getattr(proc, "binary_name", "") != "chrome.exe" or not getattr(proc, "cdp_port", None):
         return None
+    if not getattr(proc, "gpu_gate", True):
+        return None  # the launch opted out: launch(gpu_gate=False)
     if getattr(proc, "poll", lambda: None)() is not None:
         return None  # the browser already exited (verify_crash_dumps crashes it on purpose): nothing to read
     if reader is None:
