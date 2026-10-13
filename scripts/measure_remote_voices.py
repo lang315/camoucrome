@@ -40,8 +40,11 @@ function say(voice, n, rate, act) {
     setTimeout(() => { ev.push(['timeout', at(), '']); speechSynthesis.cancel(); fin({}); }, 30000);
   });
 }
+const mark = s => { (out.marks = out.marks || []).push([t(), s]); document.getElementById('p').textContent = JSON.stringify(out); };
 async function cells() {
+  mark('clicked ' + document.visibilityState + ' focus=' + document.hasFocus());
   await sleep(3000);
+  mark('slept');
   const v = speechSynthesis.getVoices();
   out.list = v.map(x => [x.name, x.lang, x.localService, x.default, x.voiceURI === x.name]);
   const g = v.find(x => x.name === 'Google US English'), l = v.find(x => x.localService && x.lang === 'en-US');
@@ -50,7 +53,7 @@ async function cells() {
   for (const voice of [g, l]) {
     if (!voice) continue;
     for (const [n, rate, act] of [[43, 1, ''], [200, 1, ''], [540, 1, ''], [43, 2, ''], [200, 1, 'cancel'], [200, 1, 'pause']])
-      { out.speak.push(await say(voice, n, rate, act)); document.getElementById('p').textContent = JSON.stringify(out); }
+      { out.speak.push(await say(voice, n, rate, act)); mark('cell ' + out.speak.length); }
   }
   document.getElementById('o').textContent = JSON.stringify(out);
 }
@@ -85,9 +88,10 @@ def one(pw, arm, mode):
             page = m2.first_page(ctx)
             page.goto(url + ("?list" if arm.name == "stock-fr" else ""), wait_until="load")
             page.wait_for_timeout(500)
+            page.bring_to_front()
             page.mouse.click(5, 5)  # real input over CDP: user activation for speak()
             try:
-                page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=600000)
+                page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=600000, polling=1000)
                 rec.update(json.loads(page.locator("#o").text_content()))
             except Exception as e:  # noqa: BLE001 - keep the cells that did finish (#p, written per cell)
                 rec["error"] = f"{type(e).__name__}: {str(e)[:120]}"
