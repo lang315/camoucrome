@@ -202,3 +202,107 @@ def test_second_null_pair_residue_is_dropped():
         assert r.line_diff(line + "\n", "") == ([], [])
     assert r.line_diff("1024x768Gyroscope sensor tester\n", "1024x768\n") == ([], [])
     assert r.line_diff("springfieldOnline privacy guide\n", "springfield\n") == ([], [])
+
+
+# step2b: synthetic fixtures in the shape each page printed on 2026-10-13; no host value.
+REBROWSER = (
+    "Test name\tTime since load\tNotes\n"
+    "⚪️ dummyFn\t0.2 ms\tCall window.dummyFn() to test if you can access main world objects.\n"
+    "\U0001f7e2 runtimeEnableLeak\t1.2 ms\tNo leak detected.\n"
+    "\U0001f534 navigatorWebdriver\t2 ms\tnavigator.webdriver = true indicates that browser is automated.\n"
+    "typeof navigator.webdriver = boolean; navigator.webdriver = true\n")
+
+
+def test_rebrowser_status_per_test():
+    assert r.parse_rebrowser(REBROWSER) == {
+        "dummyFn": "not triggered", "runtimeEnableLeak": "pass", "navigatorWebdriver": "fail"}
+
+
+DBI = """You are a bot!
+Raw detection details
+{
+  "isBot": true,
+  "details": {
+    "hasBotUserAgent": true,
+    "isPlaywright": false,
+    "isAutomatedWithCDP": false
+  }
+}
+Detection signals explained
+
+hasBotUserAgent: True if the User-Agent string matches known bot patterns.
+isPlaywright: True if Playwright-specific global variables are present.
+"""
+
+
+def test_dbi_reads_only_the_json_booleans():
+    assert r.parse_dbi(DBI) == {"isBot": True, "hasBotUserAgent": True, "isPlaywright": False, "isAutomatedWithCDP": False}
+
+
+INCOLUMITAS = """{
+  "puppeteerEvaluationScript": "OK",
+  "webdriverPresent": "FAIL",
+  "connectionRTT": "OK"
+}
+Old Bot Detection Tests
+{
+    "webDriver": "FAIL",
+    "WEBDRIVER": "FAIL",
+    "connectionRTT": "FAIL"
+}
+"""
+
+
+def test_incolumitas_first_occurrence_wins_and_case_matters():
+    got = r.parse_incolumitas(INCOLUMITAS)
+    assert got == {"puppeteerEvaluationScript": "OK", "webdriverPresent": "FAIL", "connectionRTT": "OK",
+                   "webDriver": "FAIL", "WEBDRIVER": "FAIL"}
+
+
+FP_PRO = ("Your Visitor ID is \n\nABCDEFGHIJ0123456789\nBrowser\t\nHeadlessChrome 154.0.0\n\n"
+          "IP Address\t\n203.0.113.7\n\nGeolocation\nSomewhere City, Region\n\t\n"
+          "Incognito Mode\t\nNot detected\n\nBot\t\nYou are a bad bot (type: headless_chrome)\n\n"
+          "VPN\t\nNot detected\n\nSuspect Score\t\n11\n\n"
+          "VPN (Mobile)\tAvailable in native iOS and Android SDKs\nBot detection\n")
+
+
+def test_fingerprint_pro_named_signals_only():
+    got = r.parse_fingerprint_pro(FP_PRO)
+    assert got == {"Incognito Mode": "Not detected", "Bot": "You are a bad bot (type: headless_chrome)",
+                   "VPN": "Not detected", "Suspect Score": "11"}
+
+
+def test_blocked_names_the_cloudflare_interstitial():
+    assert r.blocked("whoer.net\nPerforming security verification\nRay ID: x") == "cloudflare challenge"
+    assert r.blocked("Antibot\nUser Agent (Old)") == "no"
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("ip_address: \"203.0.113.7\"", "ip_address: \"<ip>\""),
+    ("peer 203.0.113.7:443 up", "peer <ip>:443 up"),
+    ("v6 [2001:db8::1]:443", "v6 [<ip6>]:443"),
+    ("at 10.7623, 106.6602 now", "at <coord> now"),
+    ("HeadlessChrome/154.0.8037.93 Safari/537.36", "HeadlessChrome/154.0.8037.93 Safari/537.36"),
+    ("at 10:00:00 on 2026-10-13T17:15:42.195Z", "at 10:00:00 on 2026-10-13T17:15:42.195Z"),
+    ("mac aa:bb:cc:dd:ee:ff", "mac aa:bb:cc:dd:ee:ff"),
+    ("Somewhere City, Region (SC), Land", "<city>, <region> (SC), <country>"),
+])
+def test_scrub(raw, want):
+    geo = {"<city>": ["Somewhere City"], "<region>": ["Region"], "<country>": ["Land"]}
+    assert r.scrub(raw, geo) == want
+
+
+def test_scrub_walks_rows():
+    doc = {"rows": {"x": {"control": {"headed": {"net.ip": "203.0.113.7", "n": 3}}}}}
+    assert r.scrub(doc, {}) == {"rows": {"x": {"control": {"headed": {"net.ip": "<ip>", "n": 3}}}}}
+
+
+def test_verdict_table_prints_every_cell_even_when_equal():
+    cell = {"det.rebrowser": "ok", "det.rebrowser.navigatorWebdriver": "fail", "det.rebrowser.blocked": "no",
+            "det.sannysoft": "ok", "det.sannysoft.blocked": "no", "det.sannysoft.WEBDRIVER": "x"}
+    doc = {"rows": {"detectors": {"control": {"headed": cell, "headless": None},
+                                  "fork": {"headed": cell, "headless": {"det.rebrowser": "UNMEASURED"}}}}}
+    out = "\n".join(r.verdict_table(doc))
+    assert "| det.rebrowser.navigatorWebdriver | \"fail\" | \"fail\" | UNMEASURED | UNMEASURED |" in out
+    assert "| det.sannysoft.blocked | \"no\" | \"no\" | UNMEASURED | \"<absent>\" |" in out
+    assert "WEBDRIVER" not in out  # a key/value row of a non-verdict site is not a verdict
