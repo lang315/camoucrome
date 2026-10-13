@@ -3,6 +3,7 @@ preconditions, run-to-run comparison and the tables
 (docs/superpowers/specs/2026-10-04-step2-measurement-design.md). No browser,
 no host: test_step2_rows.py runs it in CI. measure_step2.py is the browser half."""
 import collections
+import ipaddress
 import json
 import re
 
@@ -189,7 +190,68 @@ def parse_colon(text):
     return out
 
 
-PARSERS = {"sannysoft": parse_tabbed, "creepjs": parse_colon}
+# step2b verdict parsers: each shape fixed from its first stock capture (2026-10-13), each
+# fixture in test_step2_rows.py synthetic in that shape.
+REBROWSER_STATUS = {"\U0001f7e2": "pass", "\U0001f534": "fail", "⚪": "not triggered"}
+REBROWSER_ROW = re.compile("^(\U0001f7e2|\U0001f534|⚪)️?\\s*(\\w+)\\t")
+JSON_BOOL = re.compile(r'^\s*"(\w+)": (true|false),?$')
+JSON_OKFAIL = re.compile(r'^\s*"(\w+)": "(OK|FAIL)",?$')
+# Fingerprint Pro's smart signals; Geolocation, IP Address, Visitor ID and Velocity carry the host.
+FP_PRO_SIGNALS = ("Incognito Mode", "Bot", "VPN", "Browser Tampering", "Developer Tools", "Virtual Machine",
+                  "Privacy Settings", "IP Blocklist", "Proxy Detection", "High-Activity Device", "Rare Device",
+                  "Suspect Score")
+
+
+def parse_rebrowser(text):
+    """rebrowser-bot-detector: "<status emoji> <test>\\t<ms>\\t<notes>" per test."""
+    out = {}
+    for line in text.splitlines():
+        m = REBROWSER_ROW.match(line)
+        if m:
+            out.setdefault(m.group(2), REBROWSER_STATUS[m.group(1)])
+    return out
+
+
+def parse_dbi(text):
+    """deviceandbrowserinfo are_you_a_bot: the raw-detection JSON's booleans. The prose
+    below it repeats every key with a colon, so only the quoted JSON form counts."""
+    out = {}
+    for line in text.splitlines():
+        m = JSON_BOOL.match(line)
+        if m:
+            out.setdefault(m.group(1), m.group(2) == "true")
+    return out
+
+
+def parse_incolumitas(text):
+    """bot.incolumitas.com: "name": "OK"|"FAIL" lines; the first occurrence of a name wins."""
+    out = {}
+    for line in text.splitlines():
+        m = JSON_OKFAIL.match(line)
+        if m:
+            out.setdefault(m.group(1), m.group(2))
+    return out
+
+
+def parse_fingerprint_pro(text):
+    """Fingerprint Pro playground: a signal's label line ends in a tab, its value is the next non-empty line."""
+    raw, out = text.splitlines(), {}
+    for i, line in enumerate(raw):
+        k = line.strip()
+        if k in FP_PRO_SIGNALS and line.endswith("\t") and k not in out:
+            out[k] = next((x.strip() for x in raw[i + 1:i + 4] if x.strip()), ABSENT)
+    return out
+
+
+def blocked(text):
+    """A Cloudflare interstitial in place of the page (whoer.net to headless stock, 2026-10-13)."""
+    return "cloudflare challenge" if "Performing security verification" in text else "no"
+
+
+PARSERS = {"sannysoft": parse_tabbed, "creepjs": parse_colon, "detect_headless": parse_tabbed,
+           "rebrowser": parse_rebrowser, "dbi_bot": parse_dbi, "incolumitas": parse_incolumitas,
+           "fingerprint_pro": parse_fingerprint_pro}
+VERDICT_SITES = ("rebrowser", "dbi_bot", "incolumitas", "fingerprint_pro")
 
 
 def line_diff(control_text, fork_text):
@@ -253,4 +315,60 @@ def render_tables(doc, texts):
             continue
         co, fo = line_diff(ct, ft)
         out += [f"control only ({len(co)}):", *[f"- `{_cell(s)}`" for s in co], f"fork only ({len(fo)}):", *[f"- `{_cell(s)}`" for s in fo], ""]
+    if "detectors" in doc["rows"]:
+        out += verdict_table(doc)
     return "\n".join(out) + "\n"
+
+
+def _verdict_row(name):
+    parts = name.split(".")
+    return len(parts) >= 3 and parts[0] == "det" and (parts[1] in VERDICT_SITES or parts[2] == "blocked")
+
+
+def verdict_table(doc):
+    """Every verdict row in all four cells, equal or not: both arms flagged is a finding too."""
+    cells = doc["rows"].get("detectors") or {}
+    cols = [(arm, mode) for mode in MODES for arm in ARMS]
+    got = {c: (cells.get(c[0]) or {}).get(c[1]) for c in cols}
+    names = sorted({k for v in got.values() if v for k in v if _verdict_row(k)})
+
+    def val(cell, name):
+        if cell is None or cell.get(".".join(name.split(".")[:2])) == UNMEASURED:
+            return UNMEASURED
+        return _cell(cell.get(name, ABSENT))
+    out = ["## verdicts", "", "| row | " + " | ".join(f"{a} {m}" for a, m in cols) + " |", "|---" * (len(cols) + 1) + "|"]
+    out += [f"| {n} | " + " | ".join(val(got[c], n) for c in cols) + " |" for n in names]
+    return out + [""]
+
+
+_IP_TOKEN = re.compile(r"(?<![\w:.])[0-9A-Fa-f:.]*[.:][0-9A-Fa-f:.]*(?![\w:.])")
+_COORD = re.compile(r"-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}")
+
+
+def _ip(tok):
+    head, _, port = tok.rpartition(":")
+    for cand, tail in ((tok, ""), (head, ":" + port)):
+        try:
+            a = ipaddress.ip_address(cand)
+        except ValueError:
+            continue
+        return ("<ip>" if a.version == 4 else "<ip6>") + tail
+    return tok
+
+
+def scrub(value, geo):
+    """`value` (str, or list/dict walked recursively) with IP addresses, coordinate pairs and the
+    host's geo strings replaced. A candidate counts as an address only if ipaddress parses it, so
+    a version (154.0.8037.93) or a clock (10:00:00) stays. `geo` maps a placeholder to the strings
+    it replaces; it comes from CAMOU_SCRUB on the host and is never committed."""
+    if isinstance(value, dict):
+        return {scrub(k, geo): scrub(v, geo) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub(v, geo) for v in value]
+    if not isinstance(value, str):
+        return value
+    s = _COORD.sub("<coord>", _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value))
+    for label, needles in geo.items():
+        for n in sorted(needles, key=len, reverse=True):
+            s = s.replace(n, label)
+    return s
