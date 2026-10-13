@@ -29,15 +29,17 @@ function say(voice, n, rate, act) {
     u.voice = voice; u.lang = voice.lang; u.volume = 0; u.rate = rate;
     for (const k of ['start', 'end', 'error', 'boundary', 'pause', 'resume'])
       u.addEventListener(k, e => ev.push([k, at(), e.error || '']));
-    let done = false; const fin = x => { if (!done) { done = true; setTimeout(() => res({v: voice.localService ? 'local' : 'remote', n, rate, act, ev, ...x}), 80); } };
+    // every timer this cell sets is cleared when it ends, so none can cancel()/pause() a later cell
+    const timers = [], later = (f, ms) => timers.push(setTimeout(f, ms));
+    let done = false; const fin = x => { if (!done) { done = true; timers.forEach(clearTimeout); setTimeout(() => res({v: voice.localService ? 'local' : 'remote', n, rate, act, ev: ev.slice(), ...x}), 80); } };
     u.addEventListener('end', () => fin({})); u.addEventListener('error', () => fin({}));
     // cancel/pause 1 s after 'start', not after speak(): a remote voice starts late
     u.addEventListener('start', () => {
-      if (act === 'cancel') setTimeout(() => speechSynthesis.cancel(), 1000);
-      if (act === 'pause') setTimeout(() => { speechSynthesis.pause(); setTimeout(() => speechSynthesis.resume(), 1000); }, 1000);
+      if (act === 'cancel') later(() => speechSynthesis.cancel(), 1000);
+      if (act === 'pause') later(() => { speechSynthesis.pause(); later(() => speechSynthesis.resume(), 1000); }, 1000);
     }, {once: true});
     speechSynthesis.speak(u);
-    setTimeout(() => { ev.push(['timeout', at(), '']); speechSynthesis.cancel(); fin({}); }, 30000);
+    later(() => { ev.push(['timeout', at(), '']); speechSynthesis.cancel(); fin({}); }, 45000);
   });
 }
 const mark = s => { (out.marks = out.marks || []).push([t(), s]); document.getElementById('p').textContent = JSON.stringify(out); };
