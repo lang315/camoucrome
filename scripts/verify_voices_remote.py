@@ -13,7 +13,7 @@ ROOT = os.environ.get("S5_ROOT") or ROOT
 sys.path.insert(0, os.path.join(ROOT, "client", "python"))
 from camoucrome import gen  # noqa: E402
 
-EXPECTED = 10
+EXPECTED = 11
 START_P10_MS, START_P90_MS = 218, 392     # section 2, Google US English, 43 chars
 REMOTE_CPS = 16.05                        # section 2, 200 chars at rate 1
 # section 4: stock 154's remote duration at a rate, relative to rate 1 (43 chars, deterministic to 0.2 %);
@@ -47,7 +47,8 @@ PROBE = r"""(async () => {
   const g = v.find(x => x.name === 'Google US English'), l = v.find(x => x.localService);
   return {list: v.map(x => [x.name, x.lang, x.localService, x.default]),
           g43: g && await say(g, 43), g43r2: g && await say(g, 43, '', 2), g43h: g && await say(g, 43, '', 0.5),
-          g43r3: g && await say(g, 43, 'cancel5s', 3), g540: g && await say(g, 540), gcancel: g && await say(g, 200, 'cancel'),
+          g43r3: g && await say(g, 43, 'cancel5s', 3),
+          rep: g && [await say(g, 43), await say(g, 43), await say(g, 43), await say(g, 43)], g540: g && await say(g, 540), gcancel: g && await say(g, 200, 'cancel'),
           gpause: g && await say(g, 200, 'pause'), l43: l && await say(l, 43)};
 })()"""
 
@@ -111,6 +112,11 @@ def main():
     res["R9 remote at rate 3: never starts (no start/boundary/end for 5 s), then cancel -> interrupted"] = (
         g43r3 is not None and first(g43r3, "start") is None and not kinds(g43r3, "boundary") and first(g43r3, "end") is None
         and [e[2] for e in kinds(g43r3, "error")] == ["interrupted"])
+    reps = [first(ev, "start") for ev in (r.get("rep") or [])]
+    print("note: repeated starts", reps)
+    res["R10 the same text spoken 4 times: starts differ (spread > 15 ms), each in the measured band"] = (
+        len(reps) == 4 and None not in reps and max(reps) - min(reps) > 15
+        and all(START_P10_MS - 50 <= x <= START_P90_MS + 150 for x in reps))
     g540 = r.get("g540")
     print("note: g540", g540 and [e for e in g540 if e[0] != "boundary"])
     if CUTOFF_MS:
