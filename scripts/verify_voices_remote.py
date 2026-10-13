@@ -13,10 +13,12 @@ ROOT = os.environ.get("S5_ROOT") or ROOT
 sys.path.insert(0, os.path.join(ROOT, "client", "python"))
 from camoucrome import gen  # noqa: E402
 
-EXPECTED = 9
+EXPECTED = 10
 START_P10_MS, START_P90_MS = 218, 392     # section 2, Google US English, 43 chars
 REMOTE_CPS = 16.05                        # section 2, 200 chars at rate 1
-RATE_EXPONENT = 1.43                      # section 2: rate 2 takes 0.37x rate 1 = 2^-1.43
+# section 4: stock 154's remote duration at a rate, relative to rate 1 (43 chars, deterministic to 0.2 %);
+# above rate 2 a remote voice never starts. Interpolated log-log, as speech_synthesis.cc does.
+RATE_CURVE = [(0.1, 3.037), (0.25, 2.512), (0.5, 1.823), (0.75, 1.338), (1.0, 1.0), (1.5, 0.582), (2.0, 0.372)]
 CUTOFF_MS = 0                             # section 2: 0/9 runs of 540 chars were cut
 CFG = json.dumps(gen.voices_keys("Windows", "en-US"))
 BASE = json.load(open(os.path.join(ROOT, "baselines", "chrome-8037-stock-oracle-windows.json"), encoding="utf-8"))["headed"]["voices"]
@@ -34,6 +36,7 @@ PROBE = r"""(async () => {
     for (const k of ['start','end','error','boundary','pause','resume']) u.addEventListener(k, e => ev.push([k, at(), e.error || '']));
     let done = false; const fin = () => { if (!done) { done = true; timers.forEach(clearTimeout); setTimeout(() => res(ev.slice()), 80); } };
     u.addEventListener('end', fin); u.addEventListener('error', fin);
+    if (act === 'cancel5s') later(() => speechSynthesis.cancel(), 5000);  // a speak that never starts
     u.addEventListener('start', () => {
       if (act === 'cancel') later(() => speechSynthesis.cancel(), 1000);
       if (act === 'pause') later(() => { speechSynthesis.pause(); later(() => speechSynthesis.resume(), 1000); }, 1000);
@@ -43,7 +46,8 @@ PROBE = r"""(async () => {
   });
   const g = v.find(x => x.name === 'Google US English'), l = v.find(x => x.localService);
   return {list: v.map(x => [x.name, x.lang, x.localService, x.default]),
-          g43: g && await say(g, 43), g43r2: g && await say(g, 43, '', 2), g540: g && await say(g, 540), gcancel: g && await say(g, 200, 'cancel'),
+          g43: g && await say(g, 43), g43r2: g && await say(g, 43, '', 2), g43h: g && await say(g, 43, '', 0.5),
+          g43r3: g && await say(g, 43, 'cancel5s', 3), g540: g && await say(g, 540), gcancel: g && await say(g, 200, 'cancel'),
           gpause: g && await say(g, 200, 'pause'), l43: l && await say(l, 43)};
 })()"""
 
@@ -52,14 +56,23 @@ PROBE = r"""(async () => {
 TXT = lambda n: ("The quick brown fox jumps over the lazy dog. " * 20)[:n]  # the probe's TXT()
 
 
+def rate_factor(rate):
+    import math
+    rate = min(max(rate, RATE_CURVE[0][0]), RATE_CURVE[-1][0])
+    for (r0, f0), (r1, f1) in zip(RATE_CURVE, RATE_CURVE[1:]):
+        if rate <= r1:
+            w = (math.log(rate) - math.log(r0)) / (math.log(r1) - math.log(r0))
+            return math.exp(math.log(f0) + w * (math.log(f1) - math.log(f0)))
+
+
 def predicted_ms(n, rate=1.0, uri="Google US English"):
-    """end - start the remote branch must give: chars / cps x rate^-1.43 x (1 + jitter), where jitter is
+    """end - start the remote branch must give: chars / cps x rate_factor(rate) x (1 + jitter), where jitter is
     the voices-ii FNV-1a-64 of (text, voiceURI) UTF-8 mapped to +/-0.15 (mirrors speech_synthesis.cc)."""
     h, mask = 0xcbf29ce484222325, (1 << 64) - 1
     for b in TXT(n).encode("utf-8") + uri.encode("utf-8"):
         h = ((h ^ b) * 0x100000001b3) & mask
     jitter = ((h >> 11) / float(1 << 53) - 0.5) * 2.0 * 0.15
-    return n / REMOTE_CPS * rate ** -RATE_EXPONENT * (1.0 + jitter) * 1000.0
+    return n / REMOTE_CPS * rate_factor(rate) * (1.0 + jitter) * 1000.0
 
 
 def kinds(ev, k): return [e for e in (ev or []) if e[0] == k]
@@ -87,9 +100,17 @@ def main():
     g43r2 = r.get("g43r2")
     d43r2 = (first(g43r2, "end") or 0) - (first(g43r2, "start") or 0)
     want43r2 = predicted_ms(43, 2.0)
-    print(f"note: g43r2 end-start {d43r2} predicted {want43r2:.0f}")
-    res["R4c remote 43 chars at rate 2: end-start = predicted x 2^-1.43, within 120 ms"] = (
-        first(g43r2, "start") is not None and abs(d43r2 - want43r2) <= 120 and not kinds(g43r2, "boundary"))
+    g43h = r.get("g43h")
+    d43h, want43h = (first(g43h, "end") or 0) - (first(g43h, "start") or 0), predicted_ms(43, 0.5)
+    print(f"note: rate 2 end-start {d43r2} predicted {want43r2:.0f}; rate 0.5 {d43h} predicted {want43h:.0f}")
+    res["R4c remote 43 chars at rates 2 and 0.5: end-start = predicted x the measured rate curve, within 120 ms"] = (
+        first(g43r2, "start") is not None and abs(d43r2 - want43r2) <= 120 and not kinds(g43r2, "boundary")
+        and first(g43h, "start") is not None and abs(d43h - want43h) <= 120)
+    g43r3 = r.get("g43r3")
+    print("note: rate 3", g43r3)
+    res["R9 remote at rate 3: never starts (no start/boundary/end for 5 s), then cancel -> interrupted"] = (
+        g43r3 is not None and first(g43r3, "start") is None and not kinds(g43r3, "boundary") and first(g43r3, "end") is None
+        and [e[2] for e in kinds(g43r3, "error")] == ["interrupted"])
     g540 = r.get("g540")
     print("note: g540", g540 and [e for e in g540 if e[0] != "boundary"])
     if CUTOFF_MS:
