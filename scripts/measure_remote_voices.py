@@ -15,7 +15,7 @@ import measure_step2 as m2  # noqa: E402
 from camoucrome.launcher import remove_dir  # noqa: E402
 from patchright.sync_api import sync_playwright  # noqa: E402
 
-PAGE = b"""<!doctype html><title>s5</title><pre id=o></pre><script>
+PAGE = b"""<!doctype html><title>s5</title><pre id=o></pre><pre id=p></pre><script>
 const T0 = performance.now(), t = () => Math.round(performance.now() - T0);
 const out = {arrivals: []};
 const snap = () => { const v = speechSynthesis.getVoices(); out.arrivals.push([t(), v.length, v.filter(x => !x.localService).length]); };
@@ -37,7 +37,7 @@ function say(voice, n, rate, act) {
       if (act === 'pause') setTimeout(() => { speechSynthesis.pause(); setTimeout(() => speechSynthesis.resume(), 1000); }, 1000);
     }, {once: true});
     speechSynthesis.speak(u);
-    setTimeout(() => { ev.push(['timeout', at(), '']); speechSynthesis.cancel(); fin({}); }, 60000);
+    setTimeout(() => { ev.push(['timeout', at(), '']); speechSynthesis.cancel(); fin({}); }, 30000);
   });
 }
 async function cells() {
@@ -50,7 +50,7 @@ async function cells() {
   for (const voice of [g, l]) {
     if (!voice) continue;
     for (const [n, rate, act] of [[43, 1, ''], [200, 1, ''], [540, 1, ''], [43, 2, ''], [200, 1, 'cancel'], [200, 1, 'pause']])
-      out.speak.push(await say(voice, n, rate, act));
+      { out.speak.push(await say(voice, n, rate, act)); document.getElementById('p').textContent = JSON.stringify(out); }
   }
   document.getElementById('o').textContent = JSON.stringify(out);
 }
@@ -86,8 +86,12 @@ def one(pw, arm, mode):
             page.goto(url + ("?list" if arm.name == "stock-fr" else ""), wait_until="load")
             page.wait_for_timeout(500)
             page.mouse.click(5, 5)  # real input over CDP: user activation for speak()
-            page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=600000)
-            rec.update(json.loads(page.locator("#o").text_content()))
+            try:
+                page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=600000)
+                rec.update(json.loads(page.locator("#o").text_content()))
+            except Exception as e:  # noqa: BLE001 - keep the cells that did finish (#p, written per cell)
+                rec["error"] = f"{type(e).__name__}: {str(e)[:120]}"
+                rec.update(json.loads(page.locator("#p").text_content() or "{}"))
             rec["crash"] = gpu_crash_count(ctx)
     except Exception as e:  # noqa: BLE001
         rec["error"] = f"{type(e).__name__}: {str(e)[:200]}"
