@@ -54,7 +54,7 @@ async function cells() {
   if (location.search === '?list') { document.getElementById('o').textContent = JSON.stringify(out); return; }
   for (const voice of [g, l]) {
     if (!voice) continue;
-    for (const [n, rate, act] of [[43, 1, ''], [200, 1, ''], [540, 1, ''], [43, 2, ''], [200, 1, 'cancel'], [200, 1, 'pause']])
+    for (const [n, rate, act] of [[43, 1, ''], [200, 1, ''], [540, 1, ''], [43, 2, ''], [43, 0.5, ''], [43, 1.5, ''], [43, 3, ''], [200, 1, 'cancel'], [200, 1, 'pause']])
       { out.speak.push(await say(voice, n, rate, act)); mark('cell ' + out.speak.length); }
   }
   // stock's Google voices do not arrive on every launch (smoke6): read the list again at the end
