@@ -129,3 +129,16 @@ def test_timeout_becomes_a_bad_line_not_an_abort(monkeypatch, tmp_path, capsys):
     assert w.main(["x", "green"]) == 1
     assert "BAD  verify_x.py: timeout after 1800 s" in capsys.readouterr().out
     assert "PASS  a" in (tmp_path / "windows-verify-set" / "green" / "verify_x.py.log").read_text()
+
+
+@pytest.mark.parametrize("mode", ["green", "red"])
+def test_an_unmeasured_line_is_never_ok(mode):
+    e = w.Entry("verify_x.py", 1, "stock")
+    out = "PASS  a\nUNMEASURED gpu-crash=1\n" if mode == "green" else "FAIL  a\nUNMEASURED gpu-crash=1\n"
+    ok, why = w.judge(mode, e, 0 if mode == "green" else 1, out)
+    assert ok is False and why.startswith("UNMEASURED")
+
+
+def test_unmeasured_lists_the_lines():
+    assert w.unmeasured("PASS  a\nUNMEASURED session=0: x\nnote\n") == ["UNMEASURED session=0: x"]
+    assert w.unmeasured("PASS  a\n") == []

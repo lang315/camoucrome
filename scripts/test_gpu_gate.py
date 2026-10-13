@@ -59,3 +59,33 @@ def test_require_interactive_allows_a_red_run(monkeypatch, capsys):
 def test_session_id_is_none_off_windows():
     if os.name != "nt":
         assert g.session_id() is None
+
+
+import types  # noqa: E402
+
+import lib_shell  # noqa: E402
+
+
+def proc(name="chrome.exe", port=9222):
+    return types.SimpleNamespace(binary_name=name, cdp_port=port)
+
+
+def test_lib_shell_gate_is_off_outside_windows_and_chrome():
+    called = []
+    reader = lambda port: called.append(port) or 1  # noqa: E731
+    assert lib_shell.gpu_gate_line(proc(), osname="posix", reader=reader) is None
+    assert lib_shell.gpu_gate_line(proc("content_shell.exe"), osname="nt", reader=reader) is None
+    assert lib_shell.gpu_gate_line(proc(port=None), osname="nt", reader=reader) is None
+    assert called == []
+
+
+def test_lib_shell_gate_lines():
+    assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=lambda p: 0) is None
+    assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=lambda p: 1) == "UNMEASURED gpu-crash=1"
+    assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=lambda p: None) == "UNMEASURED gpu-crash=unknown"
+
+
+def test_lib_shell_gate_fails_closed_when_the_read_raises():
+    def boom(port):
+        raise OSError("gone")
+    assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=boom) == "UNMEASURED gpu-crash=unknown"
