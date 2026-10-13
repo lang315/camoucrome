@@ -292,6 +292,64 @@ def test_scrub(raw, want):
     assert r.scrub(raw, geo) == want
 
 
+def test_scrub_dms_coordinates_and_geo_case():
+    # BrowserScan prints degrees-minutes-seconds and a lower-case city (step2b null runs, 2026-10-13).
+    geo = {"<city>": ["Somewhere City"]}
+    assert r.scrub("12°34′0.56000″E", geo) == "<coord>"
+    assert r.scrub("somewhere cityOnline privacy security", geo) == "<city>Online privacy security"
+
+
+# step2b null runs 20261013-213709-null / -220324-null (stock against stock): lines that changed.
+@pytest.mark.parametrize("line", [
+    "downlink : 1.35", "rtt\t100", "Downlink\t1.75", "effectiveType : 3g", "Connection Rtt\tConnection-rtt: 100",
+    "DateTimeFormat\tTuesday, October 13, 2026 at 10:06:36 PM Indochina Time", "toLocaleString\t10/13/2026, 9:40:32 PM",
+    "13 hours ago", "1791902611717", "2026-10-13T14:43:31.560Z",
+    "0x1A1A", "JA3\t110d039670ab65feea9580aa5f67e249", "JA4_o\tt13d1517h2_acb858a92679_15f8eb733a2a",
+    "config_id\t166", "payload_length\t144",
+    'event_id: "1791902627741.WwICUm"', "last_seen_at: 1791902627758", "1 IP, 3 Linked IDs in the past 24 hours",
+    "1_hour: 4", "24_hours: 7", "Last Seen\tUnknown", "proxy_ml_score: 0.273", "tampering_ml_score: 0.5616",
+    "virtual_machine_ml_score: 0.17", "vpn_ml_score: 0.046", "score: 0.99", "visitor_found: true",
+    '"ip_checksum": 21267,', '"ip_id": 61889,', '"cHeight": 5693,', '"num_fingerprints": 2,', '"src_port": 32902,',
+    '"tcp_checksum": 15309,', '"tcp_seq": 1262858357,', '"webSocketSupportTimeout": true', '"connectionRTT": "OK",',
+    "\U0001f7e2 viewport\t19 ms\tViewport is different from default values used in automation libraries.",
+    "Time Elapse\tTime elapsed to close alert: 13 (< 30)", "Ray ID: a49f2e295889603a",
+    "1034.8", "+485", "0422b3a2", "3g", "true",
+    "Collecting Data…", "Your Browser Fingerprint is scanning…", "Your Browser Fingerprint is inconsistent",
+    "Masking detected", "No masking detected", "Scroll Down for More Info", "Restart", "How to Fix it?",
+    "Best antidetect browsers", "Detection", "Bot detection service", "Browser fingerprinting tools",
+    "NodeMaven - buy a proxy, get a browser. WHO35 - 35% discount.", "High-quality aged accounts store. Trusted since 2023.",
+    "AccsBulk: Buy Social Media & Email Accounts In Bulk. Aged, Verified, Instant", "Open", "Try",
+])
+def test_step2b_null_run_lines_are_volatile(line):
+    assert r.line_diff(line + "\n", "") == ([], [])
+
+
+def test_browserscan_ad_suffixes_seen_in_step2b():
+    for ad in ("Secure Networks", "Online privacy security", "Protect Privacy"):
+        assert r.line_diff("springfield" + ad + "\n", "springfield\n") == ([], [])
+
+
+@pytest.mark.parametrize("row", ["det.detect_headless.Time Elapse", "det.detect_headless.Connection Rtt",
+                                 "det.incolumitas.connectionRTT"])
+def test_step2b_null_run_rows_are_volatile(row):
+    assert r.label_rows({row: "a"}, {row: "b"})[0][3] == "volatile"
+
+
+def test_compare_skips_a_site_unmeasured_in_either_run():
+    # Null run 2 lost rebrowser in one cell (the page did not load or settle): not a value disagreement.
+    a = {"rows": {"detectors": {"fork": {"headless": {"det.rebrowser": "ok", "det.rebrowser.viewport": "pass",
+                                                       "det.sannysoft": "ok", "det.sannysoft.x": "1"}}}}}
+    b = {"rows": {"detectors": {"fork": {"headless": {"det.rebrowser": "UNMEASURED",
+                                                       "det.sannysoft": "ok", "det.sannysoft.x": "2"}}}}}
+    assert r.compare_runs(a, b) == [("detectors/fork/headless/det.sannysoft.x", "1", "2")]
+    assert r.unmeasured_sites(a, b) == ["b: detectors/fork/headless/det.rebrowser"]
+
+
+def test_a_labelled_identity_line_is_not_volatile():
+    # The calibration must not swallow a value the fork changes on purpose.
+    assert r.line_diff("hardwareConcurrency\t16\n", "hardwareConcurrency\t12\n") == (["hardwareConcurrency\t16"], ["hardwareConcurrency\t12"])
+
+
 def test_scrub_walks_rows():
     doc = {"rows": {"x": {"control": {"headed": {"net.ip": "203.0.113.7", "n": 3}}}}}
     assert r.scrub(doc, {}) == {"rows": {"x": {"control": {"headed": {"net.ip": "<ip>", "n": 3}}}}}
