@@ -39,7 +39,8 @@ PROBE = r"""(async () => {
     if (act === 'cancel5s') later(() => speechSynthesis.cancel(), 5000);  // a speak that never starts
     u.addEventListener('start', () => {
       if (act === 'cancel') later(() => speechSynthesis.cancel(), 1000);
-      if (act === 'pause') later(() => { speechSynthesis.pause(); later(() => speechSynthesis.resume(), 1000); }, 1000);
+      if (act === 'pause') later(() => { speechSynthesis.pause(); ev.push(['pausedflag', at(), String(speechSynthesis.paused)]);
+        later(() => { ev.push(['pausedflag', at(), String(speechSynthesis.paused)]); speechSynthesis.resume(); }, 1000); }, 1000);
     }, {once: true});
     speechSynthesis.speak(u);
     later(() => { ev.push(['timeout', at(), '']); speechSynthesis.cancel(); fin(); }, 60000);
@@ -139,9 +140,12 @@ def main():
     want200 = predicted_ms(200)
     dp = (first(gp, "end") or 0) - (first(gp, "start") or 0)
     print(f"note: gpause end-start {dp} predicted {want200 + 1000:.0f}")
-    res["R6 remote pause/resume: no pause/resume events, end later by the paused second (within 250 ms)"] = (
+    flags = [e[2] for e in kinds(gp, "pausedflag")]
+    print("note: speechSynthesis.paused after pause() and 1 s later", flags)
+    # stock 154 (section 4): speechSynthesis.paused stays false for a Google voice, before and after pause()
+    res["R6 remote pause/resume: no pause/resume events, paused reads false, end later by the paused second (within 250 ms)"] = (
         first(gp, "start") is not None and not kinds(gp, "pause") and not kinds(gp, "resume")
-        and abs(dp - (want200 + 1000)) <= 250)
+        and flags == ["false", "false"] and abs(dp - (want200 + 1000)) <= 250)
     l43 = r.get("l43")
     print("note: l43", l43 and [e for e in l43 if e[0] != "boundary"], "boundaries", len(kinds(l43, "boundary")))
     ls = first(l43, "start")
