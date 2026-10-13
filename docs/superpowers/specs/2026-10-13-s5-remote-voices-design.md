@@ -148,8 +148,11 @@ The measurements (`measurements/2026-10-s5-remote-voices.md` §2 and §4) change
    - A rate sweep (0.1–4) gave a curve, and the fork interpolates it log-log: 0.1 → 3.037, 0.25 → 2.512, 0.5 → 1.823, 0.75 → 1.338, 1 → 1, 1.5 → 0.582, 2 → 0.372.
    - Above rate 2, a Google voice never starts on stock. It fires no event until `cancel()`, which gives `interrupted`. The fork does the same.
    - The threshold inside (2, 2.25] is not measured.
-2. **Pause.** A Google voice's `pause()`/`resume()` fire no `pause`/`resume` events on stock, but `end` still moves by the paused time. The remote branch keeps an end deadline, `camou_end_due_`, that each pause moves.
+2. **Pause.** A Google voice's `pause()`/`resume()` fire no `pause`/`resume` events on stock, and `speechSynthesis.paused` stays false, but `end` still moves by the paused time.
+   - The remote branch keeps an end deadline, `camou_end_due_`, that each pause moves.
+   - It keeps its own pause flag, `camou_paused_at_`, and leaves `is_paused_` alone.
 3. **Cancel.** `cancel()` on any configured (fake) voice, local or remote, fired no event before S5; stock fires `error: interrupted` on both. S5 fixes it for both branches.
-4. **No cut-off; no activation row.** 0/9 long speaks were cut on the host, so there is no cut-off code. Without activation, `content_shell` and CDP-driven stock both start a speak, so the activation row (R7) was dropped.
+4. **Start draw.** Stock's start varies on every call. The remote start therefore mixes the speak's generation and clock into its hash, instead of the per-text FNV bits that §3 specified.
+5. **No cut-off; no activation row.** 0/9 long speaks were cut on the host, so there is no cut-off code. Without activation, `content_shell` and CDP-driven stock both start a speak, so the activation row (R7) was dropped.
 
 Out of scope, recorded as gaps: three gaps in the local fake path (§6 of the measurements), and the Linux voice list.
