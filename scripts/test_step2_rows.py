@@ -350,6 +350,32 @@ def test_a_labelled_identity_line_is_not_volatile():
     assert r.line_diff("hardwareConcurrency\t16\n", "hardwareConcurrency\t12\n") == (["hardwareConcurrency\t16"], ["hardwareConcurrency\t12"])
 
 
+def test_scrub_an_address_glued_to_a_digit():
+    # whoer.net prints an edge address with a digit glued on ("203.0.113.1922  Singapore", step2b fork run 1).
+    assert r.scrub("203.0.113.1922  Singapore", {}) == "<ip>  Singapore"
+    assert r.scrub("Chrome 154.0.8037.93 on Windows", {}) == "Chrome 154.0.8037.93 on Windows"
+
+
+# step2b fork run 20261013-231750: rows the identity or SP2 explain.
+@pytest.mark.parametrize("row,label", [
+    ("det.dbi_bot.isBot", "expected"), ("det.dbi_bot.hasWebdriverTrue", "expected"),
+    ("det.dbi_bot.hasWebdriverInFrameTrue", "expected"), ("det.dbi_bot.hasBotUserAgent", "expected"),
+    ("det.incolumitas.webDriver", "expected"), ("det.incolumitas.webdriverPresent", "expected"),
+    ("det.incolumitas.userAgent", "expected"), ("det.incolumitas.HEADCHR_UA", "expected"),
+    ("det.incolumitas.CHR_MEMORY", "expected"), ("det.rebrowser.navigatorWebdriver", "expected"),
+    ("det.detect_headless.Webdriver", "expected"), ("det.detect_headless.Languages", "expected"),
+    ("det.detect_headless.Outer dimensions", "expected"), ("det.detect_headless.User Agent", "expected"),
+    ("det.detect_headless.App Version", "expected"), ("det.fingerprint_pro.Bot", "expected"),
+    ("det.fingerprint_pro.VPN", "expected"), ("det.fingerprint_pro.Suspect Score", "expected"),
+    ("det.fingerprint_pro.High-Activity Device", "volatile"), ("det.creepjs.images", "expected"),
+    ("det.creepjs.0% headless", "expected"), ("det.creepjs.31% like headless", "expected"),
+    ("det.whoer.blocked", "expected"), ("oracle.audio.sampleRate", "expected"),
+    ("det.fingerprint_pro.Browser Tampering", "unexpected"), ("det.creepjs.remote (0)", "unexpected"),
+])
+def test_step2b_fork_rows_are_labelled(row, label):
+    assert r.label_rows({row: "a"}, {row: "b"})[0][3] == label
+
+
 def test_scrub_walks_rows():
     doc = {"rows": {"x": {"control": {"headed": {"net.ip": "203.0.113.7", "n": 3}}}}}
     assert r.scrub(doc, {}) == {"rows": {"x": {"control": {"headed": {"net.ip": "<ip>", "n": 3}}}}}
