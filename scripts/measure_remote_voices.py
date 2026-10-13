@@ -89,7 +89,18 @@ def one(pw, arm, mode):
             page.goto(url + ("?list" if arm.name == "stock-fr" else ""), wait_until="load")
             page.wait_for_timeout(500)
             page.bring_to_front()
-            page.mouse.click(5, 5)  # real input over CDP: user activation for speak()
+            # real input over CDP: user activation for speak(). The first launch in a fresh
+            # interactive session can drop the first click (smoke1/3/4), so click until the page
+            # marks it, and record how many tries that took.
+            for tries in range(1, 6):
+                page.mouse.click(5, 5)
+                try:
+                    page.wait_for_function("document.getElementById('p').textContent.includes('clicked')",
+                                           timeout=3000, polling=200)
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+            rec["click_tries"] = tries
             try:
                 page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=600000, polling=1000)
                 rec.update(json.loads(page.locator("#o").text_content()))
