@@ -105,9 +105,15 @@ def main():
     out, n, arms = sys.argv[1], int(sys.argv[2]), sys.argv[3].split(",")
     os.makedirs(r"D:\camou-win\cn\s5\p", exist_ok=True)
     stock = os.path.join(m2.STOCK_APP, "chrome.exe")
-    table = {"stock": m2.Arm("stock", stock, None),
-             "stock-fr": m2.Arm("stock-fr", stock, None, ["--lang=fr"]),
-             "fork": m2.Arm("fork", os.environ.get("CAMOU_FORK_EXE", ""), m2.identity(1))}
+    # The run is unattended on the owner's RDP desktop, where the window can be occluded or the
+    # client minimised; Chrome then throttles the page's timers to about one wake a minute and the
+    # cells never finish (smoke2, 2026-10-14). Every arm gets the same three scheduling flags.
+    # They change when timers fire, not what the speech engine reports.
+    awake = ["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+             "--disable-backgrounding-occluded-windows"]
+    table = {"stock": m2.Arm("stock", stock, None, awake),
+             "stock-fr": m2.Arm("stock-fr", stock, None, ["--lang=fr", *awake]),
+             "fork": m2.Arm("fork", os.environ.get("CAMOU_FORK_EXE", ""), m2.identity(1), awake)}
     with sync_playwright() as pw, open(out, "a", encoding="utf-8") as f:
         for i in range(n):
             for a in arms:
