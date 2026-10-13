@@ -369,7 +369,10 @@ def compare_cmd(a):
     diffs = rows.compare_runs(*docs)
     for path, va, vb in diffs:
         print(f"DISAGREE {path}: {json.dumps(va)[:120]} vs {json.dumps(vb)[:120]}")
-    print(f"{len(diffs)} rows disagree outside VOLATILE")
+    skipped = rows.unmeasured_sites(*docs)
+    for s in skipped:
+        print(f"SKIPPED (unmeasured) {s}")
+    print(f"{len(diffs)} rows disagree outside VOLATILE; {len(skipped)} site cells unmeasured, skipped")
     return 1 if diffs else 0
 
 

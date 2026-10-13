@@ -28,6 +28,10 @@ VOLATILE = {
     "det.creepjs.rtt": "a network estimate",
     "det.creepjs.stack": "stack depth, differed between two stock loads",
     "det.creepjs.trap": "a random value per load",
+    # step2b null runs (20261013-143709-null, -150324-null): changed between two stock loads.
+    "det.detect_headless.Time Elapse": "the time to close an alert, a timing",
+    "det.detect_headless.Connection Rtt": "a network estimate",
+    "det.incolumitas.connectionRTT": "a network estimate (FAIL when rtt read 0)",
 }
 # Row name (or dotted prefix) -> why the fork's value differs from stock's by design.
 EXPECTED = {
@@ -81,6 +85,23 @@ VOLATILE_LINES = [
     r"^[0-9A-F]{8}$",                            # BrowserScan per-load hashes
     r"^Ad$", r"^0$",
     r"^Status[0-9a-f]{8}$", r"^0\.1000003814697265\d$", r"^1$",  # CreepJS status section, flipped between two stock loads
+    # step2b, the two null runs of 2026-10-13 (stock against stock, 20 sites):
+    r"^(downlink|rtt|Downlink|effectiveType)\s*[:\t]", r"^Connection Rtt\t",   # network estimates
+    r"\d{1,2}:\d\d:\d\d\s?[AP]M", r"^\d+ (seconds?|minutes?|hours?|days?) ago$",  # clocks
+    r"\b1[7-8]\d{8}(\d{3})?\b", r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z",     # epoch s/ms, ISO times
+    r"^0x([0-9A-F])A\1A$", r"^JA3\t", r"^JA4_o\t", r"^(config_id|payload_length)\t\d+$",  # TLS GREASE, per-connection order
+    r"^(event_id|last_seen_at|first_seen_at|linked_id|visitor_id|timestamp|request_id|visitor_found): ",  # Fingerprint Pro, per load
+    r"^(proxy|tampering|virtual_machine|vpn)_ml_score: ", r"^score: [\d.]+$", r"^Last Seen",
+    r"^\d+ IPs?, \d+ Linked IDs? in the past 24 hours$", r"^(1_hour|24_hours|5_minutes|1_minute): \d+$",
+    r'^"(ip_checksum|ip_id|cHeight|num_fingerprints|src_port|tcp_checksum|tcp_seq|tcp_timestamp|webSocketSupportTimeout|connectionRTT)": ',  # incolumitas, per load
+    r"^\S+ \w+\t[\d.]+ ms\t",                   # rebrowser rows carry a timing; their status is parsed into rows
+    r"^Time Elapse\t", r"^Ray ID: [0-9a-f]+$",
+    r"^[+-]?\d+(\.\d+)?,?$", r"^[0-9a-f]{8,64}$", r"^[2-4]g$", r"^(true|false)$",  # bare values: the line diff cannot name them
+    # Pixelscan's scan state and its verdict lines flipped between two stock loads: not a measurement.
+    "^Collecting Data\u2026$", "^Your Browser Fingerprint is (scanning\u2026|inconsistent)$", r"^(No masking|Masking) detected$",
+    r"^(Scroll Down for More Info|Restart|How to Fix it\?|Best antidetect browsers)$",
+    r"^(Detection|Bot detection service|Browser fingerprinting tools)$",   # BrowserScan ad lines
+    r"WHO\d+", r"aged accounts store", r"^\"?AccsBulk:", r"^(Open|Try)$",   # whoer.net ad unit
 ]
 # BrowserScan's ad unit appends a rotating link text to the line before it ("springfieldTry Web Filters").
 # ponytail: the phrases seen in 12 captures on 2026-10-04; a new one shows up as a --compare disagreement,
@@ -93,7 +114,8 @@ AD_SUFFIX = re.compile("(" + "|".join(re.escape(p) for p in (
     "Privacy protection service", "Client hints checker", "Internet & Telecom", "Proxying & Filtering",
     "Security checking tool", "Internet speed test", "Privacy Issues", "Browser security solutions",
     "Bot detection tools", "Anti detection browser", "Affiliate marketing program", "Discover more", "Utilities",
-    "Antidetect Browser", "Gyroscope sensor tester", "DNS leak test", "Online privacy guide")) + ")$")
+    "Antidetect Browser", "Gyroscope sensor tester", "DNS leak test", "Online privacy guide",
+    "Secure Networks", "Online privacy security", "Protect Privacy")) + ")$")  # the last three: step2b, 2026-10-13
 
 
 def _reason(name, table):
@@ -274,8 +296,23 @@ def compare_runs(a, b):
                 rb = (b["rows"].get(probe) or {}).get(arm, {}).get(mode) or {}
                 for name in sorted(set(ra) | set(rb)):
                     va, vb = ra.get(name, ABSENT), rb.get(name, ABSENT)
+                    site = ".".join(name.split(".")[:2])
+                    if UNMEASURED in (ra.get(site), rb.get(site)):
+                        continue  # a page that did not load in one run is not a value disagreement
                     if va != vb and not _reason(name, VOLATILE):
                         out.append((f"{probe}/{arm}/{mode}/{name}", va, vb))
+    return out
+
+
+def unmeasured_sites(a, b):
+    """The detector sites UNMEASURED in either run, which compare_runs skips: listed, never silent."""
+    out = []
+    for tag, doc in (("a", a), ("b", b)):
+        for probe, arms in doc["rows"].items():
+            for arm, modes in (arms or {}).items():
+                for mode, cell in (modes or {}).items():
+                    out += [f"{tag}: {probe}/{arm}/{mode}/{k}" for k, v in sorted((cell or {}).items())
+                            if k.count(".") == 1 and v == UNMEASURED]
     return out
 
 
@@ -342,7 +379,7 @@ def verdict_table(doc):
 
 
 _IP_TOKEN = re.compile(r"(?<![\w:.])[0-9A-Fa-f:.]*[.:][0-9A-Fa-f:.]*(?![\w:.])")
-_COORD = re.compile(r"-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}")
+_COORD = re.compile(r"-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}|\d{1,3}°\d{1,2}′[\d.]+″[NSEW]")
 
 
 def _ip(tok):
@@ -370,5 +407,5 @@ def scrub(value, geo):
     s = _COORD.sub("<coord>", _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value))
     for label, needles in geo.items():
         for n in sorted(needles, key=len, reverse=True):
-            s = s.replace(n, label)
+            s = re.sub(re.escape(n), label, s, flags=re.IGNORECASE)  # BrowserScan prints the city lower-case
     return s
