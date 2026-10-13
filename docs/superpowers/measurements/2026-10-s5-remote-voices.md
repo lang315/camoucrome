@@ -73,7 +73,18 @@ Every duration varies by under 0.5 % across launches: the engine's timing is det
 
 ## 3. WSL rows (`verify_voices_remote.py`)
 
-Filled by Tasks 3 and 4.
+EXPECTED 9. Rows: R1, R2, R3, R4a, R4c, R4b, R5, R6, R8. R7 was dropped because it measured nothing: `content_shell` with `--autoplay-policy=user-gesture-required`, and patchright-driven stock 154, both start a speak without activation.
+
+The duration rows compare `end − start` with the exact value the remote branch must produce: chars / 16.05 cps × rate^−1.43 × (1 + jitter). The jitter is the voices-ii FNV-1a of text + voiceURI, replicated in the script. The tolerance is 120 ms (R4a, R4c), 150 ms (R4b) and 250 ms (R6, which also includes the paused second).
+
+| build (WSL `content_shell`) | data | result | failing rows |
+|---|---|---|---|
+| main (`1e1c03b5fe`), no S5 C++ | S5 branch | **2/9 FAIL** | R2: 9 boundaries; R3: start 4–7 ms; R4a/R4b/R4c: 12.5 cps, rate divided; R5: cancel fires no event (start, then nothing for 60 s); R6: pause/resume events fire, end +5 s off the prediction |
+| main | main (`S5_ROOT`) | **1/9 FAIL** | R1: only the 3 local voices; R2–R6: no Google voice |
+
+R1 and R8 pass on main + S5 data: the list comes from the data, and R8 is the control.
+
+R5 shows a **gap that predates S5**: `cancel()` on any configured (fake) voice, local or remote, fires no event, while stock fires `error: interrupted` on both (§2, 10/10). The owner ruled that S5 fixes it (2026-10-14).
 
 ## 4. Host: fork against stock, session 1
 
