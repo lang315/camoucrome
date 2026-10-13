@@ -343,3 +343,26 @@ def test_a_gated_detector_launch_leaves_no_text(tmp_path, monkeypatch):
     out = m.probe_detectors(None, m.Arm("fork", "x", None), "headless", run)
     assert out == {"det.sannysoft": "UNMEASURED", "det.sannysoft.gpu_crash": 1}
     assert list((tmp_path / "raw").iterdir()) == []
+
+
+def test_argv_read_survives_a_gpu_crash(monkeypatch):
+    # The argv precondition does not depend on the GPU process: a crash there must not abort
+    # the run before any probe (seen 2026-10-13 in the session-0 RED: a traceback, no rows).
+    import contextlib
+    import sys
+    import types
+    import gpu_gate
+    import measure_step2 as m
+
+    class Page:
+        def goto(self, *a, **k):
+            pass
+
+    @contextlib.contextmanager
+    def crashed(pw, arm, mode, **k):
+        yield type("Ctx", (), {"pages": [Page()]})()
+        raise gpu_gate.GpuCrashed(1)
+
+    monkeypatch.setattr(m, "opened", crashed)
+    monkeypatch.setitem(sys.modules, "camoucrome.probe", types.SimpleNamespace(browser_argv=lambda exe: [exe, "--x"]))
+    assert m.argv_of(None, m.Arm("fork", "chrome.exe", None)) == ["chrome.exe", "--x"]

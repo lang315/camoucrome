@@ -290,9 +290,14 @@ PROBES["detectors"] = probe_detectors
 
 def argv_of(pw, arm):
     from camoucrome.probe import browser_argv
-    with opened(pw, arm, "headless") as ctx:
-        first_page(ctx).goto("about:blank")
-        return browser_argv(arm.exe)
+    argv = None
+    try:
+        with opened(pw, arm, "headless") as ctx:
+            first_page(ctx).goto("about:blank")
+            argv = browser_argv(arm.exe)
+    except gpu_gate.GpuCrashed:
+        pass  # the argv does not depend on the GPU process; the probes gate their own launches
+    return argv
 
 
 def desktop_size():
