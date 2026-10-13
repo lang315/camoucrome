@@ -1,4 +1,4 @@
-# Step 2b: more public detectors, the Windows fork at main, the interactive session — design
+# Step 2b: more public detectors, the session-0 fix, the Windows fork at main — design
 
 Approved in brainstorming on 2026-10-13. Extends
 `docs/superpowers/specs/2026-10-04-step2-measurement-design.md` (step 2) and
@@ -6,6 +6,16 @@ its runner `scripts/measure_step2.py`. Owner's choices: a findings table (not
 a pass/fail gate); the fork's `out\Release` rebuilt at main; three groups of
 sites added (automation detectors, fingerprint aggregators, commercial
 anti-bot demos); built into `measure_step2.py`, not a new runner.
+
+Two later owner decisions, relayed by canvas on 2026-10-13 (the owner
+confirms them by approving this spec):
+- **S4 folds into step2b.** There is no separate S4 slice. Step2b also owns
+  the session-0 fix in the other host harnesses, the O2 question, the
+  reclassification of step 2's "fork unstable" rows, and committing the S4
+  evidence (section "The session-0 fix in every host harness").
+- **E takes option (a).** Windows `out\Observe` is rebuilt with
+  `v8_enable_runtime_call_stats = true`, and E's arm 1 is re-run on it
+  before arms 2/3. That gives canvas's ack for the Windows tree reset.
 
 ## Goal
 
@@ -143,6 +153,67 @@ file, line diff, table):
   1920×1200 screen, the headed `win.outerMinusInner*` artefact of step 2
   persists and the doc says so.
 
+## The session-0 fix in every host harness (S4, folded in)
+
+Every harness that launches a browser on the host through sshgate, sshd or
+`Win32_Process` runs it in session 0 today. Two changes, applied to all of
+them:
+
+1. **Run in the interactive session.**
+   - Host-native runners start whole inside the temporary interactive task
+     (above): `measure_step2.py`, `windows_verify_set.py` (all 21 entries),
+     `verify_host_oracle.py`, `verify_s3_host.py`.
+   - `winhost.py` is called from WSL and starts each Chrome with
+     `Start-Process` over ssh. Each of its launches (`dump_dom`, `cdp_eval`,
+     `cdp_headers`, the headed CDP session) is wrapped in a temporary
+     interactive task, so its callers (`capture_host_oracle.py`,
+     `capture_*`, `verify_font_metrics.py`, `verify_sp7_phonehome.py`)
+     change nothing.
+2. **Gate every launch on the GPU crash count.**
+   - One parser, `crash_count(text)`, reads `GPU process crash count` from
+     a `chrome://gpu` page text, with a unit test on saved text.
+   - Readers, one per launch path:
+     - `lib_shell`'s Windows `chrome.exe` path, which every set entry uses:
+       read `chrome://gpu` over the launch's DevTools port before the
+       browser closes;
+     - `measure_step2.opened()`;
+     - `verify_host_oracle.py`'s `camoucrome.probe` subprocess and its own
+       `launch()` calls, and `verify_s3_host.py`'s launches;
+     - `winhost.py`'s CDP launches over their port. `--dump-dom` has no
+       DevTools port; the plan picks its reader (for example a browser log
+       line) and proves it with the RED below.
+   - The gate applies to every launch, not only those that read GPU-backed
+     leaves. It costs about 1 s per launch, and classifying leaves is how
+     an artefact slips through.
+   - **Non-zero means `UNMEASURED`.** A verify prints the row as
+     `UNMEASURED gpu-crash=<n>`, never PASS or FAIL. `windows_verify_set.py`
+     lists UNMEASURED entries apart, and a set with one is not GREEN
+     (rc != 0).
+   - **RED per gate.** Each gated path is launched once in session 0
+     (sshgate directly). It must come out `UNMEASURED` with a crash count
+     of 1.
+
+**O2 is not this artefact.** `2026-10-04-windows-verify-set.md` traced it to
+code: `windows-oracle.patch`'s renderer block only enables `EnableWebShare`
+and `WebBluetooth` for a Windows or macOS claim, and nothing disables them
+under a Linux claim, while stock Windows Chrome ships them on. The leaves are
+`navigator.share`/`canShare`/`bluetooth`, which are not GPU-backed. The
+session-1 run of the set confirms it: O2 must still fail with the same
+message. The fix is a fork patch (a "Linux claim: disable" branch), outside
+this slice; it stays a backlog item and `known_fail=("O2",)` stays.
+
+**Reclassify step 2.** `2026-10-step2-baseline.md` §5 and §6.5 ("the fork is
+not stable") and its `gpu.*` rows get a note: session-0 artefact, per S4,
+superseded by the step2b recapture. The note names which rows the
+recapture confirms and which it overturns.
+
+**Commit the S4 evidence** as
+`docs/superpowers/measurements/2026-10-12-s4-gpu-session0.md`, from the
+spike write-up: verdict, probe, rate tables, diagnosis with code citations,
+fix and gaps. Counts, log message names and code citations only: no
+detector text, IPs or device labels. The raw data stays on the host
+(`D:\camou-win\cn\s4`).
+
 ## Also re-run: step 2's five probes
 
 `oracle`, `noise`, `network`, `stability` and `linkability` run in the same
@@ -172,7 +243,12 @@ Each seen failing first:
 - each verdict parser on its scrubbed fixture;
 - `scrub()`: IPv4, IPv6, city/region/coordinate/ISP/ASN fields, and that it
   leaves other text alone;
-- the GPU crash-count reader on a saved `chrome://gpu` text;
+- `crash_count()` on a saved `chrome://gpu` text (0, 1, and a page without
+  the line, which is UNMEASURED, not 0);
+- `windows_verify_set.py`'s judging of an `UNMEASURED` row (neither PASS nor
+  FAIL; the set is not GREEN);
+- `winhost.py`'s interactive-task wrapper: the PowerShell it builds
+  registers, starts, waits for and unregisters one task (`test_winhost.py`);
 - the verdict table, including `UNMEASURED`;
 - the Turnstile `action`'s state reading on saved page text.
 
@@ -183,14 +259,16 @@ The Windows source tree `D:\camou-win\chromium\src` is a bare working tree
 observer's `out\Observe`. The pin does not change, so the re-point is the
 runbook §7 procedure without the fetch and sync:
 
-1. **Preconditions, all three before the tree is touched:**
-   - canvas acknowledges (message before, and after);
-   - the owner has chosen how E's arms stay comparable (PR #36's open
-     question): re-pointing the tree means the next `out\Observe` build is
-     main, not the build E's arm 1 ran on;
+1. **Preconditions before the tree is touched:**
+   - canvas is messaged before and after. Its ack came with the owner's E
+     choice (a) on 2026-10-13: the next `out\Observe` build is main, and
+     E's arm 1 is re-run on it;
    - every patch applied in the tree today is in main's `patches/series`
      (`windows-sandbox-env.patch` and `crashpad-no-dumps.patch` are, checked
-     2026-10-13), so the reset discards nothing that main lacks.
+     2026-10-13), so the reset discards nothing that main lacks. The plan
+     checks the tree's dirty paths against main's change set before the
+     reset;
+   - `D:\camou-win\camoucrome` and `observe-backup` are not touched.
 2. Record the tree's state (the line count of `git status --porcelain
    -uall`) and `D:\camou-win\tree.commit`.
 3. Take `scripts/build_lock.sh acquire step2b`.
@@ -201,10 +279,16 @@ runbook §7 procedure without the fetch and sync:
 6. `apply.sh` under `C:\Program Files\Git\bin\bash.exe`; gate: every patch
    applies.
 7. `gn gen out\Release`; `autoninja -C out\Release chrome`, detached; record
-   the non-zero step count and wall time.
-8. Release the lock, message canvas.
+   the non-zero step count and wall time. Release the lock.
+8. **`out\Observe`, a second build, one at a time:** take the lock again;
+   add `v8_enable_runtime_call_stats = true` to `out\Observe\args.gn` (its
+   other args unchanged, diffed before and after); `gn gen`; `autoninja -C
+   out\Observe chrome`, detached; record steps and wall time; release the
+   lock; message canvas.
 
 The fork arm's version precondition then holds as before (`154.0.8037.93`).
+E's arm 1 re-run on the new `out\Observe` belongs to E, not to this slice:
+it needs the owner at the RDP desktop to log in by hand.
 
 ## Operation
 
@@ -223,12 +307,18 @@ The fork arm's version precondition then holds as before (`154.0.8037.93`).
   for both arms in both modes.
 - Two null runs agree under `compare`.
 - Each site's RED is recorded (sees a plant, or blind to plant).
+- Every gated launch path has its session-0 RED (`UNMEASURED`, crash count
+  1) and a session-1 GREEN (crash count 0).
+- `windows_verify_set.py green` in the interactive session: every entry as
+  before, O2 still its known fail, no UNMEASURED.
+- The S4 evidence doc and the step 2 reclassification note are committed.
 - The doc, rows and tables, scrubbed, are committed through a PR with the
   evidence. Not merged without the owner's approval.
 
 ## Out of scope
 
-- Fixing anything the tables find.
+- Fixing anything the tables find, including O2 (a fork patch).
+- E's arm runs.
 - Solving or bypassing a challenge.
 - An aggregate score.
 - Re-ranking the backlog.
