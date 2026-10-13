@@ -99,7 +99,47 @@ R5 shows a **gap that predates S5**: `cancel()` on any configured (fake) voice, 
 
 ## 4. Host: fork against stock, session 1
 
-Filled by Task 5.
+**Setup.**
+- Run 09:43–11:14 UTC, in the owner's interactive session 1, which was *disconnected* (RDP `Disc`) at the time, through the same temporary scheduled task and probe as §2.
+- The fork is `out\Release` on the Windows tree.
+  - RED: `main` (1318226).
+  - GREEN: the 2 speech files replaced from box `camoucrome/s5` (W12, pre-hashes equal to main's), 55 steps.
+- The fork arm's config is the generated identity (seed 1) from the S5 branch, with 22 voices.
+- Afterwards the 2 files were restored byte-exact to main (`ce58c963…` .cc, `96d3deaf…` .h) and `out\Release` was rebuilt.
+- In the disconnected session, Windows' own (SAPI) voices fail on stock with `synthesis-failed` (no audio device), so this run compares only the remote voice. The local stock reference is §2 (active session). The Google voices work normally there.
+
+**Rate sweep, stock only** (3 launches, Google US English, 43 chars; every duration within 0.2 % of its median):
+
+| rate | 0.1 | 0.25 | 0.5 | 0.75 | 1 | 1.5 | 2 | 2.25 | 2.5 | 2.75 | 3 | 4 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| end − start (ms) | 9000 | 7443 | 5402 | 3963 | 2963 | 1724 | 1103 | never starts | never starts | never starts | never starts | never starts |
+| ÷ rate 1 | 3.037 | 2.512 | 1.823 | 1.338 | 1 | 0.582 | 0.372 | – | – | – | – | – |
+
+A speak above rate 2 gets no event at all until `cancel()`, which fires `interrupted`. The curve is not a power law: rate^−1.43 matched at rate 2, but was 48 % off at 0.5. It replaced the exponent the owner had accepted provisionally (spec amendments).
+
+**RED** (fork = main; n = 3 each): the fork lists 22 voices, from the data. On the remote voice it fires per-word boundaries (9 for 43 chars), starts at 0–3 ms, plays rate 3 like any other rate, and fires no event on `cancel()` (the cell times out). Stock: 0 boundaries, start at 84–2850 ms, rate 3 never starts, cancel gives `interrupted`.
+
+**GREEN** (fork = S5; n = 10, stock 9 of 10 with Google voices):
+
+| remote cell | stock kinds | fork kinds | stock start min / med / max | fork start | stock end − start | fork end − start |
+|---|---|---|---|---|---|---|
+| 43, rate 1 | start end | start end | 155 / 229 / 1959 | 389–398 | 2962 | 2425 (−18 %) |
+| 43, rate 0.5 | start end | start end | 111 / 151 / 300 | 389–397 | 5402 | 4419 (−18 %) |
+| 43, rate 1.5 | start end | start end | 90 / 110 / 135 | 389–403 | 1721 | 1408 (−18 %) |
+| 43, rate 2 | start end | start end | 68 / 116 / 1256 | 389–398 | 1103 | 900 (−18 %) |
+| 43, rate 3 | (never starts) timeout, error:interrupted | the same | – | – | – | – |
+| 200 | start end | start end | 73 / 274 / 422 | 239–243 | 12464 | 14036 (+13 %) |
+| 540 | start end | start end | 259 / 355 / 506 | 393–400 | 32962 | 31548 (−4 %) |
+| 200, cancel | start error:interrupted | the same | 87 / 296 / 387 | 237–246 | error +1008 | +1005 |
+| 200, pause/resume | start end (no pause/resume events) | the same | 67 / 226 / 416 | 236–245 | 13460 | 15038 (+12 %) |
+
+All remote cells have 0 boundaries on both arms. Every remote cell has the same event kinds on both arms.
+
+Every fork duration is within 20 % of stock's median; the gap is the voices-ii text jitter, deterministic per text on both sides. Every fork start lies inside stock's pooled start range, 67–1959 ms over all remote cells. Two cells' own n = 9 ranges (rate 0.5 and rate 1.5) sit lower than the fork's starts. Stock's start does not depend on the rate, so the plan's per-cell test is read against the pooled range.
+
+**Finding: the fork's start delay is deterministic per text.** In the table above, every 43-character cell starts at about 394 ms, at any rate. Stock's is a network round trip that varies from call to call. A page that speaks the same text several times sees identical delays on the fork. This is recorded in §6 as a follow-up.
+
+The fork's local cells (no stock reference in this session) kept their shape. `cancel()` now gives `start error:interrupted`, where before S5 it gave `start` and then nothing.
 
 ## 5. Regressions
 
@@ -124,10 +164,11 @@ Filled by Task 5.
 **Remote voices, not faked:**
 - **Offline.** Stock's Google voices end in `error: interrupted` without `start` when the network is down (Mac, dead proxy). The fork always "succeeds", so a page that can see the network state can see the difference.
 - **The list is volatile on stock and constant on the fork.** 1 of 10 stock launches never got the Google voices (§2). The fork lists them on every launch.
-- **Start delay.** The fork draws it deterministically from [218, 392] ms (per text and voice). Stock's is a network round trip, 109–1226 ms over 63 cells, with a long tail.
+- **Start delay: follow-up recommended.** The fork draws it from [218, 392] ms, deterministically per text and voice, so the same text always starts at the same delay (±5 ms, §4). Stock's is a network round trip that varies per call: 67–1959 ms over the GREEN run's remote cells. A page that speaks one sentence a few times can tell the two apart. The fix is small: fold the per-speak generation into the start's hash bits, so each `speak()` draws again.
 - **Duration.** The fork's duration for a given text is off stock's by the voices-ii jitter (±15 %). Both are deterministic per text, so the same text measures, for example, 2424 ms on the fork against 2961 ms on stock (43 chars). Only a page that already knows stock's number for that text can use it.
 - **Unmeasured on stock:** `pause()` or `cancel()` inside the start delay (before `start`). The fork pauses silently and, on a cancel, fires `interrupted` without `start`.
 - **Activation.** Whether a remote `speak()` without activation gives `not-allowed` was not measured on the host (patchright-driven pages start it). R7 was dropped.
+- **Rate threshold.** Stock never starts a remote speak above some rate in (2, 2.25]. The fork uses "above 2.0", and the gap inside that interval is unmeasured. Rates below 0.1 use the 0.1 value.
 - **Mac only:** Chrome 155 cut one 540-character speak at 7.5 s (n = 1). The host's stock 154 never did (0/9). The fork follows the host.
 
 **The local fake path, before S5 and unchanged by it** (measured in §2):
@@ -138,5 +179,7 @@ Filled by Task 5.
 S5 fixed only the local `cancel()` shape.
 
 **Other:**
+- **Host runs.** §4 ran in a *disconnected* RDP session, where stock's SAPI voices fail, so the host fork-vs-stock comparison covers only the remote voice. The local reference is §2 (active session).
+- **`windows_verify_set.py green` (21/21) was not rerun on the S5 Windows build.** The Windows tree had to go back to main for step2b's measurements. S5 touches only the speech fake path, which the WSL regressions in §5 cover.
 - A Linux identity still lists no voices: stock Chrome's Linux list was never captured.
 - `verify_windows_behaviour` V1/V3 read the box's client checkout, so they turn green in-harness only after merge (§5).
