@@ -52,6 +52,26 @@ async function cells() {
   const g = v.find(x => x.name === 'Google US English'), l = v.find(x => x.localService && x.lang === 'en-US');
   out.speak = [];
   if (location.search === '?list') { document.getElementById('o').textContent = JSON.stringify(out); return; }
+  if (location.search === '?paused') {  // final review: speechSynthesis.paused around pause()/resume(); repeated starts
+    if (g) {
+      out.paused = await new Promise(res => {
+        const u = new SpeechSynthesisUtterance(TXT(200)), rd = {}; u.voice = g; u.volume = 0;
+        const ev = []; for (const k of ['start','end','error','pause','resume']) u.addEventListener(k, () => ev.push(k));
+        u.addEventListener('start', () => setTimeout(() => {
+          rd.before = speechSynthesis.paused; speechSynthesis.pause(); rd.sync = speechSynthesis.paused;
+          setTimeout(() => { rd.after200 = speechSynthesis.paused; rd.speaking = speechSynthesis.speaking;
+            speechSynthesis.resume(); rd.resumeSync = speechSynthesis.paused;
+            setTimeout(() => { rd.resume200 = speechSynthesis.paused; }, 200); }, 1000);
+        }, 1000), {once: true});
+        u.addEventListener('end', () => setTimeout(() => res({...rd, ev, end: speechSynthesis.paused}), 300));
+        u.addEventListener('error', () => setTimeout(() => res({...rd, ev}), 300));
+        speechSynthesis.speak(u); setTimeout(() => { speechSynthesis.cancel(); res({...rd, ev, timeout: true}); }, 40000);
+      });
+      out.reps = [];
+      for (let i = 0; i < 4; i++) out.reps.push(await say(g, 43, 1, ''));
+    }
+    document.getElementById('o').textContent = JSON.stringify(out); return;
+  }
   if (location.search === '?rates') {  // rate sweep: the remote voice only, 43 chars (Task 5)
     for (const rate of [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.25, 2.5, 2.75, 3, 4])
       if (g) { out.speak.push(await say(g, 43, rate, '', 20000)); mark('cell ' + out.speak.length); }
@@ -95,7 +115,7 @@ def one(pw, arm, mode):
     try:
         with m2.serve(PAGE) as url, m2.opened(pw, arm, mode, user_data_dir=udd) as ctx:
             page = m2.first_page(ctx)
-            page.goto(url + {"stock-fr": "?list", "stock-rates": "?rates"}.get(arm.name, ""), wait_until="load")
+            page.goto(url + {"stock-fr": "?list", "stock-rates": "?rates", "stock-paused": "?paused"}.get(arm.name, ""), wait_until="load")
             page.wait_for_timeout(500)
             page.bring_to_front()
             # real input over CDP: user activation for speak(). The first launch in a fresh
@@ -138,6 +158,7 @@ def main():
     table = {"stock": m2.Arm("stock", stock, None, awake),
              "stock-fr": m2.Arm("stock-fr", stock, None, ["--lang=fr", *awake]),
              "stock-rates": m2.Arm("stock-rates", stock, None, awake),
+             "stock-paused": m2.Arm("stock-paused", stock, None, awake),
              "fork": m2.Arm("fork", os.environ.get("CAMOU_FORK_EXE", ""), m2.identity(1), awake)}
     with sync_playwright() as pw, open(out, "a", encoding="utf-8") as f:
         for i in range(n):
