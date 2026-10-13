@@ -165,4 +165,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import gpu_gate
+    gpu_gate.require_interactive()
+    try:
+        main()
+    except gpu_gate.GpuCrashed as exc:  # a launch whose GPU process crashed measured nothing (S4)
+        print(exc)
+        sys.exit(3)

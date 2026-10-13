@@ -155,6 +155,11 @@ def cfg_file(cfg):
 
 
 def main():
+    if os.name == "nt":
+        import gpu_gate  # lazy: CI runs this file on Linux from $VERIFY
+        # O1/O2 launch through camoucrome.probe, which gives no context to read chrome://gpu from:
+        # the session check stands in for the crash count there (S4: session 0 crashed every launch).
+        gpu_gate.require_interactive()
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     H.body = cap.page().encode()
@@ -235,7 +240,7 @@ def font_access_rows(cfg, env):
     activation it lists exactly the manifest's captured Windows faces, sorted by PostScript name, none of the bundle's."""
     with cfg_file(cfg) as cf:  # by path: a Windows identity is ~37 KB, over the 32767-char command line
         script = f"""
-import json, sys
+import json, os, sys
 sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))})
 from camoucrome.launcher import launch
 from patchright.sync_api import sync_playwright
@@ -254,6 +259,10 @@ with sync_playwright() as pw:
     ctx.grant_permissions(["local-fonts"], origin=url)
     page.goto(url); page.click("#b"); page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=20000)
     out["granted"] = json.loads(page.locator("#o").text_content())
+    if os.name == "nt":
+        sys.path.insert(0, {json.dumps(str(CLIENT / "scripts"))})
+        import gpu_gate
+        out["gpu"] = gpu_gate.read_ctx(ctx)
     ctx.close()
 print(json.dumps(out))
 """
@@ -262,6 +271,8 @@ print(json.dumps(out))
         print("O3 probe failed:", p.stderr[-900:].replace("\n", " | "))
         return {"O3 queryLocalFonts()": False}
     r = json.loads(p.stdout.strip().splitlines()[-1])
+    if os.name == "nt" and r.get("gpu") != 0:
+        print(f"UNMEASURED gpu-crash={'unknown' if r.get('gpu') is None else r['gpu']} (O3)")
     want = [f.split("\t") for f in cfg["fonts:local"]]
     got = r["granted"].get("faces")
     print(f"note: O3 no grant -> {json.dumps(r['nogrant'])[:120]}; granted -> n={r['granted'].get('n')} first={json.dumps((got or [])[:2])}")
@@ -277,7 +288,7 @@ def brand_header_rows(cfg, env):
     renderer's copy."""
     with cfg_file(cfg) as cf:  # by path: a Windows identity is ~37 KB, over the 32767-char command line
         script = f"""
-import json, sys
+import json, os, sys
 sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))}); sys.path.insert(0, {json.dumps(str(CLIENT / "scripts"))})
 import echo_server
 from camoucrome.launcher import launch
@@ -290,6 +301,9 @@ with sync_playwright() as pw:
     out["js"] = page.evaluate("navigator.userAgentData.getHighEntropyValues(['fullVersionList']).then(h => ({{brands: navigator.userAgentData.brands, full: h.fullVersionList}}))")
     h = {{k.lower(): v for k, v in (headers_for("/") or {{}}).items()}}
     out["hdr"] = {{"ua": h.get("sec-ch-ua"), "full": h.get("sec-ch-ua-full-version-list")}}
+    if os.name == "nt":
+        import gpu_gate
+        out["gpu"] = gpu_gate.read_ctx(ctx)
     ctx.close()
 stop()
 print(json.dumps(out))
@@ -299,6 +313,8 @@ print(json.dumps(out))
         print("O4 probe failed:", p.stderr[-900:].replace("\n", " | "))
         return {"O4 brand headers": False}
     r = json.loads(p.stdout.strip().splitlines()[-1])
+    if os.name == "nt" and r.get("gpu") != 0:
+        print(f"UNMEASURED gpu-crash={'unknown' if r.get('gpu') is None else r['gpu']} (O4)")
 
     def parse(sh):  # RFC 8941 list: "Google Chrome";v="153", ...
         return [{"brand": i.split('";v="')[0].strip().strip('"'), "version": i.split('";v="')[1].rstrip('"')} for i in (sh or "").split(", ") if '";v="' in i]
