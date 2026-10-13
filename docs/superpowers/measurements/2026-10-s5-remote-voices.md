@@ -84,6 +84,17 @@ The duration rows compare `end − start` with the exact value the remote branch
 
 R1 and R8 pass on main + S5 data: the list comes from the data, and R8 is the control.
 
+**After S5** (box `camoucrome/s5` = `b513ace5dc`: `camoucrome/main` + the S5 fixup in `voices-ii`; patch sha256 `b17363b4…`):
+
+| build | result | detail |
+|---|---|---|
+| S5 | **9/9 ALL_PASS** | remote 43 chars: start 390 ms, 0 boundaries, end − start 2423 (predicted 2424); rate 2: 900 (900); 540 chars: 31549 (31547); cancel: start, error:interrupted at +1001; pause/resume: no pause/resume events, end − start 15037 (predicted 15036 = 14036 + the paused 1000) |
+| S5 + test-only mutant (`remote` forced false; never committed) | **3/9 FAIL** | R2, R3, R4a, R4c, R4b, R6 FAIL; R1 (data), R5 (the cancel fix does not depend on the flag) and R8 pass |
+
+The S5 build was rerun after export (`content_shell`, 8 steps) with the same 9/9.
+
+**Review Focus checks** (one launch each): a remote speak of empty text fires `start`, `end`. With `voices:fakeCompletion` false, a remote speak fires only `error: synthesis-failed`.
+
 R5 shows a **gap that predates S5**: `cancel()` on any configured (fake) voice, local or remote, fires no event, while stock fires `error: interrupted` on both (§2, 10/10). The owner ruled that S5 fixes it (2026-10-13).
 
 ## 4. Host: fork against stock, session 1
@@ -92,7 +103,21 @@ Filled by Task 5.
 
 ## 5. Regressions
 
-Filled by Tasks 4 and 5.
+**WSL, S5 build:**
+
+| verify | result |
+|---|---|
+| `verify_sp4_voices` | 5/5 ALL_PASS |
+| `verify_voices_ii` | 5/5 ALL_PASS |
+| `verify_voices_pause` | no FAIL row (VP-RESUME-EVT, VP-STOP and VP-RESPEAK pass) |
+| `verify_windows_behaviour` | 12/14. V1 and V3 FAIL in the harness only because they run `camoucrome.gen` from the box's client checkout (`~/camoucrome-client`, still on main). Pointing `CAMOU_CLIENT` at the branch tree breaks 11 unrelated rows (fonts, runtime). The two row expressions, evaluated on the branch's generator, are both true; `client/python` tests 54/54 cover the same lists. |
+
+**Checks:**
+- `gn check out/Default //third_party/blink/renderer/modules/speech:speech`: Header dependency check OK.
+- `checkdeps` (speech): clean.
+- Export gate: `check_checkout_sync` PASS, all 48 copied files identical. Only `patches/voices-ii.patch` changed.
+
+**A build trap** (W6): the plan reset unchanged files' mtimes to `out/Default/args.gn`. That file was rewritten at 01:05 the same day, when the RCS arg was added to CI's tree, after most objects had been built. So the "reset" files were newer than their objects, and the post-export build started a full rebuild: 3166 objects in 53 min before it was stopped. Re-dating the same 154 files to the pin commit's time (2026-09-28) brought the next build to 8 steps. Reset against a timestamp older than every output, not against `args.gn`.
 
 ## 6. Gaps
 
