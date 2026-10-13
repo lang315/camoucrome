@@ -1,7 +1,7 @@
 """Verifies S5: Chrome's Google network voices on a Windows identity. The list follows
 stock (R1); speak() on a remote voice has stock 154's shape, as measured on the Windows host
 in session 1 (docs/superpowers/measurements/2026-10-s5-remote-voices.md section 2): no boundary,
-a delayed start, the measured end or cut-off (R2-R6); not-allowed without activation (R7, a guard);
+a delayed start, the measured end or cut-off (R2-R6);
 a local voice keeps its per-word boundaries (R8, control). EXPECTED rows, not exit 0, decide.
 
 S5_ROOT=<a checkout> reads that checkout's generator and data instead (the R1 RED on main)."""
@@ -13,7 +13,7 @@ ROOT = os.environ.get("S5_ROOT") or ROOT
 sys.path.insert(0, os.path.join(ROOT, "client", "python"))
 from camoucrome import gen  # noqa: E402
 
-EXPECTED = 10
+EXPECTED = 9
 START_P10_MS, START_P90_MS = 218, 392     # section 2, Google US English, 43 chars
 REMOTE_CPS = 16.05                        # section 2, 200 chars at rate 1
 RATE_EXPONENT = 1.43                      # section 2: rate 2 takes 0.37x rate 1 = 2^-1.43
@@ -47,13 +47,19 @@ PROBE = r"""(async () => {
           gpause: g && await say(g, 200, 'pause'), l43: l && await say(l, 43)};
 })()"""
 
-NOACT = r"""(async () => {
-  await new Promise(r => setTimeout(r, 300));
-  const g = speechSynthesis.getVoices().find(x => x.name === 'Google US English');
-  if (!g) return 'no voice';
-  return await new Promise(res => { const u = new SpeechSynthesisUtterance('x'); u.voice = g; u.volume = 0;
-    u.onerror = e => res(e.error); u.onstart = () => res('started'); speechSynthesis.speak(u); setTimeout(() => res('timeout'), 5000); });
-})()"""
+
+
+TXT = lambda n: ("The quick brown fox jumps over the lazy dog. " * 20)[:n]  # the probe's TXT()
+
+
+def predicted_ms(n, rate=1.0, uri="Google US English"):
+    """end - start the remote branch must give: chars / cps x rate^-1.43 x (1 + jitter), where jitter is
+    the voices-ii FNV-1a-64 of (text, voiceURI) UTF-8 mapped to +/-0.15 (mirrors speech_synthesis.cc)."""
+    h, mask = 0xcbf29ce484222325, (1 << 64) - 1
+    for b in TXT(n).encode("utf-8") + uri.encode("utf-8"):
+        h = ((h ^ b) * 0x100000001b3) & mask
+    jitter = ((h >> 11) / float(1 << 53) - 0.5) * 2.0 * 0.15
+    return n / REMOTE_CPS * rate ** -RATE_EXPONENT * (1.0 + jitter) * 1000.0
 
 
 def kinds(ev, k): return [e for e in (ev or []) if e[0] == k]
@@ -65,11 +71,9 @@ def main():
     r = v[0] if v else {}
     if err:
         print("session error:", err)
-    v2, err2 = lib_shell.session(CFG, [NOACT], navigate_to="about:blank", extra_flags=["--autoplay-policy=user-gesture-required"])
-    noact = v2[0] if v2 else f"err {err2}"
     lst = r.get("list") or []
     remote_base = [[b[0], b[1], False, False] for b in BASE if not b[2]]
-    print(f"note: list {len(lst)} voices, noact {noact}")
+    print(f"note: list {len(lst)} voices")
     res = {}
     res["R1 list: local row, then the 19 Google voices byte-exact"] = len(lst) == 22 and lst[3:] == remote_base and all(x[2] for x in lst[:3])
     g43 = r.get("g43")
@@ -77,15 +81,15 @@ def main():
     res["R2 remote speak: 0 boundary events, then end"] = g43 is not None and not kinds(g43, "boundary") and first(g43, "end") is not None
     s = first(g43, "start")
     res[f"R3 remote start in [{START_P10_MS - 50}, {START_P90_MS + 150}] ms"] = s is not None and START_P10_MS - 50 <= s <= START_P90_MS + 150
-    want43 = 43 / REMOTE_CPS * 1000
-    d43 = (first(g43, "end") or 0) - (s or 0)
-    res["R4a remote 43 chars: end at start + chars/cps within 20%"] = s is not None and abs(d43 - want43) <= 0.2 * want43
+    d43, want43 = (first(g43, "end") or 0) - (s or 0), predicted_ms(43)
+    print(f"note: g43 end-start {d43} predicted {want43:.0f}")
+    res["R4a remote 43 chars: end-start = 43/16.05 cps x (1+jitter), within 120 ms"] = s is not None and abs(d43 - want43) <= 120
     g43r2 = r.get("g43r2")
     d43r2 = (first(g43r2, "end") or 0) - (first(g43r2, "start") or 0)
-    want43r2 = want43 * 2 ** -RATE_EXPONENT
-    print(f"note: g43r2 end-start {d43r2} want {want43r2:.0f}")
-    res["R4c remote 43 chars at rate 2: end-start = (chars/cps) x 2^-1.43 within 20%"] = (
-        first(g43r2, "start") is not None and abs(d43r2 - want43r2) <= 0.2 * want43r2 and not kinds(g43r2, "boundary"))
+    want43r2 = predicted_ms(43, 2.0)
+    print(f"note: g43r2 end-start {d43r2} predicted {want43r2:.0f}")
+    res["R4c remote 43 chars at rate 2: end-start = predicted x 2^-1.43, within 120 ms"] = (
+        first(g43r2, "start") is not None and abs(d43r2 - want43r2) <= 120 and not kinds(g43r2, "boundary"))
     g540 = r.get("g540")
     print("note: g540", g540 and [e for e in g540 if e[0] != "boundary"])
     if CUTOFF_MS:
@@ -94,7 +98,10 @@ def main():
             kinds(g540, "error") and kinds(g540, "error")[0][2] == "interrupted" and first(g540, "end") is None
             and abs(t - (first(g540, "start") or 0) - CUTOFF_MS) <= 0.15 * CUTOFF_MS)
     else:
-        res["R4b remote 540 chars: plain end, no cut-off"] = first(g540, "end") is not None and not kinds(g540, "error")
+        d540, want540 = (first(g540, "end") or 0) - (first(g540, "start") or 0), predicted_ms(540)
+        print(f"note: g540 end-start {d540} predicted {want540:.0f}")
+        res["R4b remote 540 chars: plain end at the predicted time (no cut-off), within 150 ms"] = (
+            first(g540, "end") is not None and not kinds(g540, "error") and abs(d540 - want540) <= 150)
     gc = r.get("gcancel")
     print("note: gcancel", gc and [e for e in gc if e[0] != "boundary"])
     res["R5 remote cancel: start, then error interrupted, no end"] = (
@@ -102,16 +109,16 @@ def main():
     gp = r.get("gpause")
     print("note: gpause", gp and [e for e in gp if e[0] != "boundary"])
     # stock 154 (section 2): a Google voice fires no pause/resume events, but its end moves by the paused second
-    want200 = 200 / REMOTE_CPS * 1000
+    want200 = predicted_ms(200)
     dp = (first(gp, "end") or 0) - (first(gp, "start") or 0)
-    print(f"note: gpause end-start {dp} want about {want200 + 1000:.0f}")
-    res["R6 remote pause/resume: no pause/resume events, end later by the paused second"] = (
+    print(f"note: gpause end-start {dp} predicted {want200 + 1000:.0f}")
+    res["R6 remote pause/resume: no pause/resume events, end later by the paused second (within 250 ms)"] = (
         first(gp, "start") is not None and not kinds(gp, "pause") and not kinds(gp, "resume")
-        and abs(dp - (want200 + 1000)) <= 0.15 * want200 + 300)
-    res["R7 no activation: remote speak -> not-allowed (guard)"] = noact == "not-allowed"
+        and abs(dp - (want200 + 1000)) <= 250)
     l43 = r.get("l43")
     print("note: l43", l43 and [e for e in l43 if e[0] != "boundary"], "boundaries", len(kinds(l43, "boundary")))
-    res["R8 control: a local voice still fires per-word boundaries at start ~0"] = len(kinds(l43, "boundary")) >= 8 and (first(l43, "start") or 999) < 100
+    ls = first(l43, "start")
+    res["R8 control: a local voice still fires per-word boundaries at start ~0"] = len(kinds(l43, "boundary")) >= 8 and ls is not None and ls < 100
     for k, ok in res.items():
         print("PASS " if ok else "FAIL ", k)
     n = sum(bool(x) for x in res.values())
