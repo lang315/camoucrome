@@ -32,6 +32,7 @@ VOLATILE = {
     "det.detect_headless.Time Elapse": "the time to close an alert, a timing",
     "det.detect_headless.Connection Rtt": "a network estimate",
     "det.incolumitas.connectionRTT": "a network estimate (FAIL when rtt read 0)",
+    "det.fingerprint_pro.High-Activity Device": "the visitor's history on the service: stock's id had loaded the page all day",
 }
 # Row name (or dotted prefix) -> why the fork's value differs from stock's by design.
 EXPECTED = {
@@ -67,6 +68,29 @@ EXPECTED = {
     "det.sannysoft.navigator.userAgent": "the identity's value, or a detector hash over identity values",
     "det.sannysoft.CHR_MEMORY": "stock headless fails it (deviceMemory absent); the identity sets it",
     "det.sannysoft.HEADCHR_UA": "stock headless says HeadlessChrome; the identity UA does not",
+    # step2b fork run 20261013-161750:
+    "oracle.audio.sampleRate": "the identity's audio:sampleRate (48000); the RDP session's device runs at 44100",
+    "det.dbi_bot.isBot": "SP2 hides webdriver, and the identity UA is not HeadlessChrome",
+    "det.dbi_bot.hasWebdriverTrue": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.dbi_bot.hasWebdriverInFrameTrue": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.dbi_bot.hasBotUserAgent": "stock headless says HeadlessChrome; the identity UA does not",
+    "det.incolumitas.webDriver": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.incolumitas.webdriverPresent": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.incolumitas.userAgent": "stock headless says HeadlessChrome; the identity UA does not",
+    "det.incolumitas.HEADCHR_UA": "stock headless says HeadlessChrome; the identity UA does not",
+    "det.incolumitas.CHR_MEMORY": "stock headless fails it (deviceMemory absent); the identity sets it",
+    "det.rebrowser.navigatorWebdriver": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.detect_headless.Webdriver": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.detect_headless.Languages": "the identity's navigator.languages",
+    "det.detect_headless.Outer dimensions": "the identity's window size",
+    "det.detect_headless.User Agent": "the identity's User-Agent; stock headless says HeadlessChrome",
+    "det.detect_headless.App Version": "the identity's User-Agent; stock headless says HeadlessChrome",
+    "det.fingerprint_pro.Bot": "SP2 and the identity UA: stock reads as a webdriver / headless_chrome bot",
+    "det.fingerprint_pro.Suspect Score": "the service's sum over its signals, which the rows around it explain",
+    "det.fingerprint_pro.VPN": "'timezone mismatch': the identity's zone (seed 1) against the host's IP; a client pairs the identity with a matching proxy",
+    "det.whoer.blocked": "Cloudflare challenges stock's HeadlessChrome UA; the identity UA is not headless",
+    "det.creepjs.images": "the identity's canvas:seed",
+    r"re:det\.creepjs\.\d+% (like )?headless": "SP2 and the identity UA move CreepJS's headless scores",
 }
 # Oracle leaves compared by type only: a value difference is the identity's or the machine's.
 SHAPE = {f"oracle.{k}": "identity- or machine-bound; compared by type" for k in SHAPE_ONLY}
@@ -119,7 +143,10 @@ AD_SUFFIX = re.compile("(" + "|".join(re.escape(p) for p in (
 
 
 def _reason(name, table):
-    return next((why for k, why in table.items() if name == k or name.startswith(k + ".")), None)
+    """A key is a row name or a dotted prefix; a key starting "re:" is a full-match regex
+    (CreepJS names rows after a percentage that changes)."""
+    return next((why for k, why in table.items()
+                 if (re.fullmatch(k[3:], name) if k.startswith("re:") else name == k or name.startswith(k + "."))), None)
 
 
 def label_rows(control, fork):
@@ -379,6 +406,8 @@ def verdict_table(doc):
 
 
 _IP_TOKEN = re.compile(r"(?<![\w:.])[0-9A-Fa-f:.]*[.:][0-9A-Fa-f:.]*(?![\w:.])")
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+_IP_GLUED = re.compile(rf"(?<![\w.]){_OCTET}(?:\.{_OCTET}){{3}}\d{{1,2}}(?![\w.])")  # whoer: "203.0.113.1922"
 _COORD = re.compile(r"-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}|\d{1,3}°\d{1,2}′[\d.]+″[NSEW]")
 
 
@@ -404,7 +433,7 @@ def scrub(value, geo):
         return [scrub(v, geo) for v in value]
     if not isinstance(value, str):
         return value
-    s = _COORD.sub("<coord>", _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value))
+    s = _COORD.sub("<coord>", _IP_GLUED.sub("<ip>", _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value)))
     for label, needles in geo.items():
         for n in sorted(needles, key=len, reverse=True):
             s = re.sub(re.escape(n), label, s, flags=re.IGNORECASE)  # BrowserScan prints the city lower-case
