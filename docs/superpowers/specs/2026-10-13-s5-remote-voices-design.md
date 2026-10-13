@@ -17,7 +17,7 @@ The cause is data, not mechanism. `voices:list` (sp4-voices) already carries `lo
 - 49 Windows language-pack rows, Microsoft voices only;
 - the macOS list, 191 local voices.
 
-The macOS capture (`scripts/capture_voices.py --where mac`) missed the Google voices. The 2026-10-13 probe saw all 210 voices (191 local + 19 Google) arrive in one `voiceschanged`, 143–191 ms after load. Why the old capture lacked them is not known; the recapture in W0 settles it.
+The macOS capture (`scripts/capture_voices.py --where mac`) missed the Google voices. The 2026-10-13 probe saw all 210 voices (191 local + 19 Google) arrive in one `voiceschanged`, 143–191 ms after load. Why the old capture lacked them is not known; it is moot: the local list is correct.
 
 Adding the voices to the list alone would open a second tell. The fake `speak()` path treats every voice as local:
 - `start` is posted at delay 0;
@@ -60,7 +60,7 @@ Success is measured by four checks:
 - Add a top-level `"remote"` array: the 19 voices in stock's order, taken from `baselines/chrome-8037-stock-oracle-windows.json`. Names stay byte-exact, including the U+00A0 in the two Chinese names. Each entry has `localService: false` and `default: false`.
 - The list is per Chrome, not per OS: the Mac (155) and host (154) lists are identical. So it is one table, not per platform.
 - `$comment` gains three lines: where the list came from, that it is Chrome-branded (the Chromium pin has no such voices of its own), and that the earlier macOS capture lacked it.
-- The macOS row is recaptured in W0 with the fixed capture, which waits for the list to settle rather than taking the first non-empty read. The 19 remote entries are then dropped from that row: they live only in `"remote"`.
+- The macOS row needs no recapture. Stock Chrome 155 on the Mac (2026-10-13) listed 191 local voices equal in order to the committed row. `capture_voices.py` gains a settle wait and keeps remote voices out of the platform row, so a future capture cannot drop them or duplicate them.
 
 ### 2. Generator (`client/python/camoucrome/gen.py`)
 
