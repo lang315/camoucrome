@@ -73,9 +73,19 @@ Every duration varies by under 0.5 % across launches: the engine's timing is det
 
 ## 3. WSL rows (`verify_voices_remote.py`)
 
-EXPECTED 9. Rows: R1, R2, R3, R4a, R4c, R4b, R5, R6, R8. R7 was dropped because it measured nothing: `content_shell` with `--autoplay-policy=user-gesture-required`, and patchright-driven stock 154, both start a speak without activation.
+**EXPECTED 11** (final). Rows: R1, R2, R3, R4a, R4c, R9, R10, R4b, R5, R6, R8.
 
-The duration rows compare `end − start` with the exact value the remote branch must produce: chars / 16.05 cps × rate^−1.43 × (1 + jitter). The jitter is the voices-ii FNV-1a of text + voiceURI, replicated in the script. The tolerance is 120 ms (R4a, R4c), 150 ms (R4b) and 250 ms (R6, which also includes the paused second).
+R7 was dropped because it measured nothing: `content_shell` with `--autoplay-policy=user-gesture-required`, and patchright-driven stock 154, both start a speak without activation.
+
+The rows below were added with the later measurements (§4):
+- R4c covers rates 2 and 0.5.
+- R9 is the rate-3 hang.
+- R10 checks that a repeated text does not repeat its start.
+- R6 checks that `speechSynthesis.paused` stays false.
+
+The duration rows compare `end − start` with the exact value the remote branch must produce: chars / 16.05 cps × the measured rate factor (§4, log-log) × (1 + jitter). The jitter is the voices-ii FNV-1a of text + voiceURI, replicated in the script. The tolerance is 120 ms (R4a, R4c), 150 ms (R4b) and 250 ms (R6, which also includes the paused second).
+
+The two RED runs below used the 9-row version of the script, before the rate table. Each row added later has its own RED, recorded where it was added: R9 on the host against main (§4), R6/R10 on WSL before the fix (end of this section).
 
 | build (WSL `content_shell`) | data | result | failing rows |
 |---|---|---|---|
@@ -92,6 +102,15 @@ R1 and R8 pass on main + S5 data: the list comes from the data, and R8 is the co
 | S5 + test-only mutant (`remote` forced false; never committed) | **3/9 FAIL** | R2, R3, R4a, R4c, R4b, R6 FAIL; R1 (data), R5 (the cancel fix does not depend on the flag) and R8 pass |
 
 The S5 build was rerun after export (`content_shell`, 8 steps) with the same 9/9.
+
+**The rate table** (after §4's sweep): 10/10. Rate 2 end − start 903 (predicted 902), rate 0.5 4420 (4419). At rate 3: no event, then `interrupted` at the 5 s cancel.
+
+**The final-review fix** (11 rows):
+
+| build | result | detail |
+|---|---|---|
+| rate-table build (before the fix) | **9/11 FAIL** | R10: the same text started at 397, 390, 397, 397 ms. R6: `speechSynthesis.paused` read `true`, `true`. |
+| final S5 (`85205069ce`; patch sha256 `0f6fcaeb…`) | **11/11 ALL_PASS** | repeated starts 338, 299, 317, 238 ms; `paused` `false`, `false`; pause cell end − start 15067 (predicted 15036) |
 
 **Review Focus checks** (one launch each): a remote speak of empty text fires `start`, `end`. With `voices:fakeCompletion` false, a remote speak fires only `error: synthesis-failed`.
 
@@ -137,7 +156,24 @@ All remote cells have 0 boundaries on both arms. Every remote cell has the same 
 
 Every fork duration is within 20 % of stock's median; the gap is the voices-ii text jitter, deterministic per text on both sides. Every fork start lies inside stock's pooled start range, 67–1959 ms over all remote cells. Two cells' own n = 9 ranges (rate 0.5 and rate 1.5) sit lower than the fork's starts. Stock's start does not depend on the rate, so the plan's per-cell test is read against the pooled range.
 
-**Finding: the fork's start delay is deterministic per text.** In the table above, every 43-character cell starts at about 394 ms, at any rate. Stock's is a network round trip that varies from call to call. A page that speaks the same text several times sees identical delays on the fork. This is recorded in §6 as a follow-up.
+**Finding (fixed): the fork's start delay was deterministic per text.** In the table above, every 43-character cell starts at about 394 ms, at any rate. Stock's is a network round trip that varies from call to call.
+
+**Stock readings for the final review** (2 launches, the same session):
+- **`speechSynthesis.paused`** reads `false` before `pause()`, right after it, 1 s later, and after `resume()`, on a Google voice. Stock 154 fires no `pause` event there, and `is_paused_` is set only together with that event. The fork had set `paused` to true.
+- **The same 43-character text spoken 4 times in one page** started at 145, 69, 2270, 97 ms and at 153, 137, 91, 96 ms, while every duration stayed within 2 ms.
+
+Both are now in the fork:
+- the remote start mixes the speak's generation and clock into its hash;
+- the remote branch keeps its own pause flag and leaves `paused` false.
+
+The GREEN table above predates that fix. The fix changes only the start draw and the pause flag, and WSL R6/R10 cover both.
+
+**Which cells tell main from S5 on the host.** The 20 % duration band does not separate them at 43 characters and rate 1: main's 12.5 cps, times this text's jitter, lands within 5 % of stock. The RED rests on the cells that do:
+- boundaries (9 against 0);
+- `start` (0–3 ms against stock's 67–1959);
+- rate 2 (+41 % on main);
+- rate 3 (main plays it, stock never starts);
+- `cancel` (main: no event).
 
 The fork's local cells (no stock reference in this session) kept their shape. `cancel()` now gives `start error:interrupted`, where before S5 it gave `start` and then nothing.
 
@@ -164,7 +200,7 @@ The fork's local cells (no stock reference in this session) kept their shape. `c
 **Remote voices, not faked:**
 - **Offline.** Stock's Google voices end in `error: interrupted` without `start` when the network is down (Mac, dead proxy). The fork always "succeeds", so a page that can see the network state can see the difference.
 - **The list is volatile on stock and constant on the fork.** 1 of 10 stock launches never got the Google voices (§2). The fork lists them on every launch.
-- **Start delay: follow-up recommended.** The fork draws it from [218, 392] ms, deterministically per text and voice, so the same text always starts at the same delay (±5 ms, §4). Stock's is a network round trip that varies per call: 67–1959 ms over the GREEN run's remote cells. A page that speaks one sentence a few times can tell the two apart. The fix is small: fold the per-speak generation into the start's hash bits, so each `speak()` draws again.
+- **Start delay.** The fork draws it uniformly from [218, 392] ms on each `speak()`. Stock's is a network round trip: 67–1959 ms across calls, with a long tail. The fork does not reproduce the tail. The final-review fix removed the per-text repetition.
 - **Duration.** The fork's duration for a given text is off stock's by the voices-ii jitter (±15 %). Both are deterministic per text, so the same text measures, for example, 2424 ms on the fork against 2961 ms on stock (43 chars). Only a page that already knows stock's number for that text can use it.
 - **Unmeasured on stock:** `pause()` or `cancel()` inside the start delay (before `start`). The fork pauses silently and, on a cancel, fires `interrupted` without `start`.
 - **Activation.** Whether a remote `speak()` without activation gives `not-allowed` was not measured on the host (patchright-driven pages start it). R7 was dropped.
