@@ -306,3 +306,40 @@ def test_verdict_table_prints_every_cell_even_when_equal():
     assert "| det.rebrowser.navigatorWebdriver | \"fail\" | \"fail\" | UNMEASURED | UNMEASURED |" in out
     assert "| det.sannysoft.blocked | \"no\" | \"no\" | UNMEASURED | \"<absent>\" |" in out
     assert "WEBDRIVER" not in out  # a key/value row of a non-verdict site is not a verdict
+
+
+def test_detectors_are_the_twenty_live_sites():
+    import measure_step2 as m
+    assert len(m.DETECTORS) == 20
+    assert all("." not in name for name in m.DETECTORS)  # label_rows finds a site from the first two dotted parts
+    assert all(url.startswith("https://") for url in m.DETECTORS.values())
+    for dropped in ("brotector", "botd", "areyouheadless", "turnstile"):
+        assert dropped not in m.DETECTORS
+
+
+def test_a_gated_detector_launch_leaves_no_text(tmp_path, monkeypatch):
+    import argparse
+    import contextlib
+    import gpu_gate
+    import measure_step2 as m
+
+    class Page:
+        def goto(self, *a, **k):
+            pass
+
+        def screenshot(self, path, **k):
+            open(path, "wb").write(b"png")
+
+    @contextlib.contextmanager
+    def crashed(pw, arm, mode, **k):
+        yield type("Ctx", (), {"pages": [Page()]})()
+        raise gpu_gate.GpuCrashed(1)
+
+    monkeypatch.setattr(m, "opened", crashed)
+    monkeypatch.setattr(m, "settle", lambda page: "some text")
+    monkeypatch.setattr(m, "DETECTORS", {"sannysoft": "https://bot.sannysoft.com/"})
+    (tmp_path / "raw").mkdir()
+    run = argparse.Namespace(dir=tmp_path)
+    out = m.probe_detectors(None, m.Arm("fork", "x", None), "headless", run)
+    assert out == {"det.sannysoft": "UNMEASURED", "det.sannysoft.gpu_crash": 1}
+    assert list((tmp_path / "raw").iterdir()) == []
