@@ -20,6 +20,7 @@ async function run() {
   let voices = get();
   if (voices.length === 0) await new Promise(r => { speechSynthesis.onvoiceschanged = r; setTimeout(r, 4000); });
   voices = get();
+  await new Promise(r => setTimeout(r, 1500)); voices = get();  // let the list settle: Chrome's Google voices can arrive late
   const ac = new AudioContext();
   const out = {voices, sampleRate: ac.sampleRate, baseLatency: ac.baseLatency, state: ac.state, ua: navigator.userAgent};
   REPORT(out);
@@ -71,8 +72,9 @@ def main():
     ap.add_argument("--locale", help="winhost: the language pack row this capture measures (e.g. fr-FR)")
     a = ap.parse_args()
     r, ver = mac_capture() if a.where == "mac" else winhost_capture()
-    voices = r["voices"]
-    print(f"{a.where}: {len(voices)} voices, sampleRate {r['sampleRate']}, baseLatency {r['baseLatency']}, {ver}")
+    # Chrome's Google voices (localService false) live once in voices.json "remote"; a platform row holds local ones only.
+    voices = [x for x in r["voices"] if x["localService"]]
+    print(f"{a.where}: {len(voices)} local + {len(r['voices']) - len(voices)} remote voices, sampleRate {r['sampleRate']}, baseLatency {r['baseLatency']}, {ver}")
     print("first:", json.dumps(voices[:3]))
     vp = ROOT / "settings" / "voices.json"
     v = json.loads(vp.read_text(encoding="utf-8"))
