@@ -96,6 +96,7 @@ def main():
     else:
         res["R4b remote 540 chars: plain end, no cut-off"] = first(g540, "end") is not None and not kinds(g540, "error")
     gc = r.get("gcancel")
+    print("note: gcancel", gc and [e for e in gc if e[0] != "boundary"])
     res["R5 remote cancel: start, then error interrupted, no end"] = (
         first(gc, "start") is not None and [e[2] for e in kinds(gc, "error")] == ["interrupted"] and first(gc, "end") is None)
     gp = r.get("gpause")
@@ -109,6 +110,7 @@ def main():
         and abs(dp - (want200 + 1000)) <= 0.15 * want200 + 300)
     res["R7 no activation: remote speak -> not-allowed (guard)"] = noact == "not-allowed"
     l43 = r.get("l43")
+    print("note: l43", l43 and [e for e in l43 if e[0] != "boundary"], "boundaries", len(kinds(l43, "boundary")))
     res["R8 control: a local voice still fires per-word boundaries at start ~0"] = len(kinds(l43, "boundary")) >= 8 and (first(l43, "start") or 999) < 100
     for k, ok in res.items():
         print("PASS " if ok else "FAIL ", k)
