@@ -91,7 +91,15 @@ def count_rows(stdout):
     return passed, failed
 
 
+def unmeasured(stdout):
+    """UNMEASURED lines (gpu_gate.py): a launch that measured nothing GPU-backed, or a run in session 0."""
+    return [line for line in stdout.splitlines() if line.startswith("UNMEASURED")]
+
+
 def judge(mode, entry, returncode, stdout):
+    um = unmeasured(stdout)
+    if um:
+        return False, f"UNMEASURED ({len(um)}): {um[0]}"
     passed, failed = count_rows(stdout)
     if mode == "red":
         if entry.red == "own":
@@ -150,6 +158,8 @@ def main(argv):
     if len(argv) < 2 or argv[1] not in ("red", "green"):
         sys.exit(__doc__)
     mode = argv[1]
+    import gpu_gate
+    gpu_gate.require_interactive()
     only_arg = argv[argv.index("--only") + 1] if "--only" in argv else None
     here = pathlib.Path(__file__).resolve().parent
     client = os.environ.get("CAMOU_CLIENT", str(here.parent))
@@ -180,7 +190,9 @@ def main(argv):
             (logs / f"{e.script}.log").write_text(out + "\n--- stderr ---\n" + err, encoding="utf-8")
         good += ok
         print(f"{'OK  ' if ok else 'BAD '} {e.script}: {why}", flush=True)
-    print(f"{good}/{len(entries)} entries OK ({mode})")
+    um = sum(1 for e in entries if (logs / f"{e.script}.log").exists()
+             and unmeasured((logs / f"{e.script}.log").read_text(encoding="utf-8")))
+    print(f"{good}/{len(entries)} entries OK ({mode}); {um} UNMEASURED")
     return 0 if good == len(entries) else 1
 
 

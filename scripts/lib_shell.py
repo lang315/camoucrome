@@ -340,6 +340,7 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
         raise
     # "" gives shutdown() nothing to remove: a caller's profile is the caller's.
     proc.profile_dir = profile if user_data_dir is None else ""
+    proc.binary_name = name.lower()
 
     port_file = pathlib.Path(profile) / "DevToolsActivePort"
     deadline = time.monotonic() + 30
@@ -376,8 +377,28 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
 
 
+def gpu_gate_line(proc, osname=None, reader=None):
+    """On the Windows host, the UNMEASURED line for a chrome.exe launch whose GPU
+    process crashed (gpu_gate.py, S4), else None. Off Windows, and for
+    content_shell, this reads nothing: the Linux CI path stays as it was."""
+    osname = os.name if osname is None else osname
+    if osname != "nt" or getattr(proc, "binary_name", "") != "chrome.exe" or not getattr(proc, "cdp_port", None):
+        return None
+    if reader is None:
+        import gpu_gate  # lazy: CI copies lib_shell without needing this on Linux
+        reader = gpu_gate.read_port
+    try:
+        n = reader(proc.cdp_port)
+    except Exception:  # noqa: BLE001 - an unreadable count is unmeasured, never 0
+        n = None
+    return None if n == 0 else f"UNMEASURED gpu-crash={'unknown' if n is None else n}"
+
+
 def shutdown(proc):
     """Stops the browser and waits for it, so the next launch starts clean."""
+    line = gpu_gate_line(proc)
+    if line:
+        print(line, flush=True)
     proc.terminate()
     try:
         proc.wait(timeout=15)
