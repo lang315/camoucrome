@@ -378,6 +378,18 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
 
 
+_UNMEASURED = []  # gate lines printed by this process; a standalone verify must not exit 0 after one
+
+
+def _exit_if_unmeasured(lines, exit=os._exit):
+    """atexit: a run that printed an UNMEASURED line ends rc 3, whatever its rows said."""
+    if lines:
+        import sys
+        print(f"UNMEASURED: {len(lines)} launch(es) unmeasured; exit 3", flush=True)
+        sys.stdout.flush()
+        exit(3)
+
+
 def gpu_gate_line(proc, osname=None, reader=None):
     """On the Windows host, the UNMEASURED line for a chrome.exe launch whose GPU
     process crashed (gpu_gate.py, S4), else None. Off Windows, and for
@@ -404,6 +416,10 @@ def shutdown(proc):
     line = gpu_gate_line(proc)
     if line:
         print(line, flush=True)
+        if not _UNMEASURED:
+            import atexit
+            atexit.register(_exit_if_unmeasured, _UNMEASURED)
+        _UNMEASURED.append(line)
     proc.terminate()
     try:
         proc.wait(timeout=15)

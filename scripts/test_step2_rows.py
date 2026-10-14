@@ -350,6 +350,35 @@ def test_a_labelled_identity_line_is_not_volatile():
     assert r.line_diff("hardwareConcurrency\t16\n", "hardwareConcurrency\t12\n") == (["hardwareConcurrency\t16"], ["hardwareConcurrency\t12"])
 
 
+@pytest.mark.parametrize("raw,want", [
+    ("Your IP is 203.0.113.5.", "Your IP is <ip>."),            # final review: a sentence's full stop
+    ("IP:203.0.113.5", "IP:<ip>"), ("Address:203.0.113.5", "Address:<ip>"),
+    ("x 2001:db8::1.", "x <ip6>."),
+    ("Chrome/154.0.0.0 Safari/537.36", "Chrome/154.0.0.0 Safari/537.36"),  # a reduced UA version, not an address
+    ("Chrome 154.0.0.0 on Windows", "Chrome 154.0.0.0 on Windows"),
+])
+def test_scrub_final_review_cases(raw, want):
+    assert r.scrub(raw, {}) == want
+
+
+def test_compare_exits_nonzero_when_it_skipped_a_cell(tmp_path):
+    import measure_step2 as m
+    for name, site in (("a", "ok"), ("b", "UNMEASURED")):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "rows.json").write_text(json.dumps(
+            {"rows": {"detectors": {"fork": {"headless": {"det.rebrowser": site}}}}}), encoding="utf-8")
+    assert m.main(["compare", str(tmp_path / "a"), str(tmp_path / "b")]) == 2
+
+
+def test_a_gate_read_that_raises_is_unmeasured_not_an_error():
+    import gpu_gate
+
+    class Ctx:
+        def new_page(self):
+            raise RuntimeError("target closed")
+    assert gpu_gate.read_ctx(Ctx()) is None
+
+
 def test_scrub_an_address_glued_to_a_digit():
     # whoer.net prints an edge address with a digit glued on ("203.0.113.1922  Singapore", step2b fork run 1).
     assert r.scrub("203.0.113.1922  Singapore", {}) == "<ip>  Singapore"

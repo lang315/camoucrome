@@ -408,12 +408,18 @@ def verdict_table(doc):
 _IP_TOKEN = re.compile(r"(?<![\w:.])[0-9A-Fa-f:.]*[.:][0-9A-Fa-f:.]*(?![\w:.])")
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
 _IP_GLUED = re.compile(rf"(?<![\w.]){_OCTET}(?:\.{_OCTET}){{3}}\d{{1,2}}(?![\w.])")  # whoer: "203.0.113.1922"
+# Any dotted quad not inside a longer number: catches "IP:203.0.113.5" and "…203.0.113.5." too.
+_IPV4 = re.compile(rf"(?<![\d.]){_OCTET}(?:\.{_OCTET}){{3}}(?!\d|\.\d)")
+_UA_VERSION = re.compile(r"\d+\.0\.0\.0")  # a reduced UA version ("Chrome/154.0.0.0"), not an address
 _COORD = re.compile(r"-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}|\d{1,3}°\d{1,2}′[\d.]+″[NSEW]")
 
 
 def _ip(tok):
+    if _UA_VERSION.fullmatch(tok):
+        return tok
+    stripped = tok.rstrip(".,")
     head, _, port = tok.rpartition(":")
-    for cand, tail in ((tok, ""), (head, ":" + port)):
+    for cand, tail in ((tok, ""), (stripped, tok[len(stripped):]), (head, ":" + port)):
         try:
             a = ipaddress.ip_address(cand)
         except ValueError:
@@ -433,7 +439,9 @@ def scrub(value, geo):
         return [scrub(v, geo) for v in value]
     if not isinstance(value, str):
         return value
-    s = _COORD.sub("<coord>", _IP_GLUED.sub("<ip>", _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value)))
+    s = _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value)
+    s = _IPV4.sub(lambda m: m.group(0) if _UA_VERSION.fullmatch(m.group(0)) else "<ip>", _IP_GLUED.sub("<ip>", s))
+    s = _COORD.sub("<coord>", s)
     for label, needles in geo.items():
         for n in sorted(needles, key=len, reverse=True):
             s = re.sub(re.escape(n), label, s, flags=re.IGNORECASE)  # BrowserScan prints the city lower-case

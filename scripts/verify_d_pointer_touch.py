@@ -80,11 +80,20 @@ def brief(r):
     return {k: r[k] for k in r if k != "keys"}
 
 
-def v1_status(v1, v2):
+def host_has_mouse():
+    """A fact about the host, never the measured value: Windows' SM_MOUSEPRESENT. Off Windows
+    (the headless Linux box) V1 is always measured."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    return ctypes.windll.user32.GetSystemMetrics(19) != 0  # SM_MOUSEPRESENT
+
+
+def v1_status(v1, v2, host_has_mouse):
     """V1 is the proof V2 changes something, which only a host without a mouse can give.
-    Every interactive Windows session has one (step2b, 2026-10-13: pointer fine with no
-    config), so there V1 is NOT MEASURED -- neither its PASS nor its FAIL means anything."""
-    if v1["pointer"] == "fine":
+    Every interactive Windows session has one (step2b, 2026-10-13), so there V1 is NOT
+    MEASURED -- neither its PASS nor its FAIL means anything."""
+    if host_has_mouse:
         return "NOT MEASURED"
     return "PASS" if v1["ontouchstart"] is False and brief(v1) != brief(v2) else "FAIL"
 
@@ -97,7 +106,7 @@ def main():
     v5 = probe(url, extra=["--touch-events=enabled"])
     srv.shutdown()
     results = {
-        "V1 no config: host values, and V2 differs from them": v1_status(v1, v2),
+        "V1 no config: host values, and V2 differs from them": v1_status(v1, v2, host_has_mouse()),
         "V2 Windows claim: fine/hover, any-pointer fine not coarse, no ontouchstart, keys == V1":
             (v2["pointer"], v2["hover"], v2["anyFine"], v2["anyCoarse"], v2["anyNone"], v2["anyHover"])
             == ("fine", "hover", True, False, False, True)

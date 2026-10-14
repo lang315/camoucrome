@@ -349,8 +349,9 @@ def run_cmd(a):
                           f"{time.monotonic() - t0:.0f}s", flush=True)
     (out_dir / "rows.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
     write_tables(out_dir)
-    print(f"run {out_dir}; {len(doc['errors'])} errors")
-    return 1 if doc["errors"] else 0
+    um = rows.unmeasured_sites(doc, {"rows": {}})
+    print(f"run {out_dir}; {len(doc['errors'])} errors; {len(um)} detector site cells unmeasured")
+    return 1 if doc["errors"] or um else 0
 
 
 def write_tables(out_dir):
@@ -373,7 +374,7 @@ def compare_cmd(a):
     for s in skipped:
         print(f"SKIPPED (unmeasured) {s}")
     print(f"{len(diffs)} rows disagree outside VOLATILE; {len(skipped)} site cells unmeasured, skipped")
-    return 1 if diffs else 0
+    return 1 if diffs else 2 if skipped else 0  # 2: agreed, but not on every cell
 
 
 def scrub_cmd(a):

@@ -90,6 +90,7 @@ class H(http.server.BaseHTTPRequestHandler):
 
 
 EXPECTED_ROWS = 4  # O1 O2 O3 O4
+UNMEASURED = []  # O3/O4 gate lines; any one ends the run rc 3
 
 
 def compare(base, fork):
@@ -225,6 +226,8 @@ def main():
     print(f"{n} PASS {len(results) - n} FAIL")
     if len(results) != expected:
         print(f"FAIL  {len(results)} rows, expected {expected}")
+    if UNMEASURED:
+        sys.exit(3)  # a gated launch measured nothing: neither PASS nor FAIL
     sys.exit(0 if n == len(results) == expected else 1)
 
 
@@ -273,6 +276,7 @@ print(json.dumps(out))
     r = json.loads(p.stdout.strip().splitlines()[-1])
     if os.name == "nt" and r.get("gpu") != 0:
         print(f"UNMEASURED gpu-crash={'unknown' if r.get('gpu') is None else r['gpu']} (O3)")
+        UNMEASURED.append("O3")
     want = [f.split("\t") for f in cfg["fonts:local"]]
     got = r["granted"].get("faces")
     print(f"note: O3 no grant -> {json.dumps(r['nogrant'])[:120]}; granted -> n={r['granted'].get('n')} first={json.dumps((got or [])[:2])}")
@@ -315,6 +319,7 @@ print(json.dumps(out))
     r = json.loads(p.stdout.strip().splitlines()[-1])
     if os.name == "nt" and r.get("gpu") != 0:
         print(f"UNMEASURED gpu-crash={'unknown' if r.get('gpu') is None else r['gpu']} (O4)")
+        UNMEASURED.append("O4")
 
     def parse(sh):  # RFC 8941 list: "Google Chrome";v="153", ...
         return [{"brand": i.split('";v="')[0].strip().strip('"'), "version": i.split('";v="')[1].rstrip('"')} for i in (sh or "").split(", ") if '";v="' in i]
