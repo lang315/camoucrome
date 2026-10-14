@@ -11,8 +11,8 @@ Run `20261013-223445`; control 154.0.8037.93, fork 154.0.8037.93; flags {}.
 | oracle.canvas.shape | "c662b8ad" | "b6d16345" | expected | identity- or machine-bound; compared by type |
 | oracle.canvas.text | "f128eb83" | "e32d3673" | expected | identity- or machine-bound; compared by type |
 | oracle.err.stack | "at http://<ip>:52178/" | "at http://<ip>:52199/" | volatile | names the page's server, whose port changes per launch |
-| oracle.intl.date0 | "<host-date0> <host-offset> (<host-tz-name>)" | "Wed Dec 31 1969 18:00:00 GMT-0600 (Central Standard Time)" | expected | identity- or machine-bound; compared by type |
-| oracle.intl.dtf.timeZone | "<host-tz>" | "America/Chicago" | expected | identity- or machine-bound; compared by type |
+| oracle.intl.date0 | "<host-date0> <host-offset> (<host-zone>)" | "Wed Dec 31 1969 18:00:00 GMT-0600 (Central Standard Time)" | expected | identity- or machine-bound; compared by type |
+| oracle.intl.dtf.timeZone | "<host-zone>" | "America/Chicago" | expected | identity- or machine-bound; compared by type |
 | oracle.mediaDevices | [["audiooutput", "", 0, 0]] | [["audioinput", "", 0, 0], ["videoinput", "", 0, 0], ["audiooutput", "", 0, 0]] | expected | identity- or machine-bound; compared by type |
 | oracle.nav.deviceMemory | 32 | 8 | expected | identity- or machine-bound; compared by type |
 | oracle.nav.hardwareConcurrency | 16 | 12 | expected | identity- or machine-bound; compared by type |
@@ -39,8 +39,8 @@ Run `20261013-223445`; control 154.0.8037.93, fork 154.0.8037.93; flags {}.
 | oracle.canvas.shape | "c662b8ad" | "b6d16345" | expected | identity- or machine-bound; compared by type |
 | oracle.canvas.text | "f128eb83" | "e32d3673" | expected | identity- or machine-bound; compared by type |
 | oracle.err.stack | "at http://<ip>:52204/" | "at http://<ip>:52223/" | volatile | names the page's server, whose port changes per launch |
-| oracle.intl.date0 | "<host-date0> <host-offset> (<host-tz-name>)" | "Wed Dec 31 1969 18:00:00 GMT-0600 (Central Standard Time)" | expected | identity- or machine-bound; compared by type |
-| oracle.intl.dtf.timeZone | "<host-tz>" | "America/Chicago" | expected | identity- or machine-bound; compared by type |
+| oracle.intl.date0 | "<host-date0> <host-offset> (<host-zone>)" | "Wed Dec 31 1969 18:00:00 GMT-0600 (Central Standard Time)" | expected | identity- or machine-bound; compared by type |
+| oracle.intl.dtf.timeZone | "<host-zone>" | "America/Chicago" | expected | identity- or machine-bound; compared by type |
 | oracle.mediaDevices | [["audiooutput", "", 0, 0]] | [["audioinput", "", 0, 0], ["videoinput", "", 0, 0], ["audiooutput", "", 0, 0]] | expected | identity- or machine-bound; compared by type |
 | oracle.nav.appVersion | "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Hea... | "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chr... | expected | the identity's User-Agent; stock headless says HeadlessChrome |
 | oracle.nav.deviceMemory | 32 | 8 | expected | identity- or machine-bound; compared by type |
@@ -447,7 +447,7 @@ control only (28):
 - `"hardwareConcurrency\t16"`
 - `"languages\t[\"en-US\",\"en\"]"`
 - `"level\t1"`
-- `"timeZone\t<host-tz>"`
+- `"timeZone\t<host-zone>"`
 - `"webdriver\ttrue"`
 fork only (8):
 - `"1920×1200 16:10 24-bit TrueColor (viewport: 1269×949)"`
@@ -488,7 +488,7 @@ control only (30):
 - `"hardwareConcurrency\t16"`
 - `"languages\t[\"en-US\",\"en\"]"`
 - `"level\t1"`
-- `"timeZone\t<host-tz>"`
+- `"timeZone\t<host-zone>"`
 - `"userAgent\tMozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT...`
 - `"webdriver\ttrue"`
 fork only (10):
@@ -561,7 +561,7 @@ control only (12):
 - `"1280×1024"`
 - `"1280×984"`
 - `"Anti-detection browser"`
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Bot Control"`
 - `"Fonts listShow all fonts(132)"`
 - `"Web browser testing"`
@@ -584,7 +584,7 @@ fork only (8):
 control only (14):
 - `"800×600"`
 - `"800×600"`
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Bot Control"`
 - `"Chrome Headless"`
 - `"Chrome Headless 154.0.8037.93 Detection"`
@@ -620,17 +620,17 @@ control only (39):
 - `"...screen: 1280 x 1024"`
 - `"33% headless: a427e0b8"`
 - `"@media: 8de3ca33"`
-- `"<host-tz>"`
-- `"<host-tz> <host-offset>"`
+- `"<host-zone>"`
+- `"<host-zone> <host-offset>"`
 - `"Audiod0c60a78"`
 - `"CSS Media Queriese1c4f27c"`
 - `"Canvas 2d019e195f"`
 - `"FP ID: a2aa5927b68b95e4ad9c8ddc183ab65147fd8f848f4ca913e43e602c99cb5b46"`
 - `"Fuzzy: cb3ab5443525861d1ce949f74de0cda8ffb8098f8aee38fe1011000000000000"`
 - `"Headless34760712"`
-- `"<host-tz-name>"`
+- `"<host-zone>"`
 - `"Intl4b9c0772"`
-- `"July at <host-tz-name>"`
+- `"July at <host-zone>"`
 - `"Navigatore8cbab8b"`
 - `"Screend8485e84"`
 - `"Speech77bd6c70"`
@@ -704,17 +704,17 @@ control only (43):
 - `"31% like headless: eea7f026"`
 - `"5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Hea...`
 - `"@media: f73d6ae7"`
-- `"<host-tz>"`
-- `"<host-tz> <host-offset>"`
+- `"<host-zone>"`
+- `"<host-zone> <host-offset>"`
 - `"Audiod0c60a78"`
 - `"CSS Media Queries1c00518e"`
 - `"Canvas 2d019e195f"`
 - `"FP ID: 6a56a9d0abba4747f51c5770c406541d39fede6b0b33d4469a467b50f5acc4b5"`
 - `"Fuzzy: cb3ab5443d25861ebce948f74de4cda8ff96a98f8aee38fe1411000000000000"`
 - `"Headless7519e9f3"`
-- `"<host-tz-name>"`
+- `"<host-zone>"`
 - `"Intl4b9c0772"`
-- `"July at <host-tz-name>"`
+- `"July at <host-zone>"`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"Navigator7a91b622"`
@@ -887,10 +887,10 @@ control only (39):
 - `"suspect_score: 25"`
 - `"suspect_score: 25"`
 - `"text: \"5ce126082d85b80770bfb99467f39671\""`
-- `"timezone: \"<host-tz>\""`
+- `"timezone: \"<host-zone>\""`
 - `"timezone_mismatch: false"`
 - `"timezone_offset: \"+07:00\""`
-- `"vpn_origin_timezone: \"<host-tz>\""`
+- `"vpn_origin_timezone: \"<host-zone>\""`
 fork only (33):
 - `"0: 1920"`
 - `"1: \"MS UI Gothic\""`
@@ -966,11 +966,11 @@ control only (43):
 - `"tampering: false"`
 - `"tampering_confidence: \"high\""`
 - `"text: \"5ce126082d85b80770bfb99467f39671\""`
-- `"timezone: \"<host-tz>\""`
+- `"timezone: \"<host-zone>\""`
 - `"timezone_mismatch: false"`
 - `"timezone_offset: \"+07:00\""`
 - `"user_agent: \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (...`
-- `"vpn_origin_timezone: \"<host-tz>\""`
+- `"vpn_origin_timezone: \"<host-zone>\""`
 fork only (42):
 - `"0: 1920"`
 - `"1: \"MS UI Gothic\""`
@@ -1017,7 +1017,7 @@ fork only (42):
 
 ## detector text fingerprint_scan / headed
 control only (14):
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Bot score 100/100"`
 - `"Browser: HIGH"`
 - `"Network / proxy: MEDIUM"`
@@ -1043,7 +1043,7 @@ fork only (8):
 
 ## detector text fingerprint_scan / headless
 control only (18):
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Bot score 100/100"`
 - `"Browser: HIGH"`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
@@ -1098,7 +1098,7 @@ control only (31):
 - `"\"sHeight\": 1024,"`
 - `"\"sWidth\": 1280,"`
 - `"\"timezone\"<host-offset>"`
-- `"\"timezone2\": \"<host-tz>\","`
+- `"\"timezone2\": \"<host-zone>\","`
 - `"\"wInnerHeight\": 869,"`
 - `"\"wInnerWidth\": 1034,"`
 - `"\"wOuterHeight\": 964,"`
@@ -1166,7 +1166,7 @@ control only (40):
 - `"\"sHeight\": 600,"`
 - `"\"sWidth\": 800,"`
 - `"\"timezone\"<host-offset>"`
-- `"\"timezone2\": \"<host-tz>\","`
+- `"\"timezone2\": \"<host-zone>\","`
 - `"\"userAgent\": \"FAIL\","`
 - `"\"userAgent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3...`
 - `"\"userAgent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3...`
@@ -1222,11 +1222,11 @@ fork only (37):
 ## detector text iphey / headed
 control only (10):
 - `"1280x1024"`
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Chrome"`
 - `"Detected an automated browser environment signal (diver)"`
-- `"<host-offset>"`
-- `"<host-tz-name>"`
+- `"<host-zone>"`
+- `"<host-zone>"`
 - `"Software"`
 - `"<country>"`
 - `"audiooutput"`
@@ -1248,13 +1248,13 @@ fork only (12):
 ## detector text iphey / headless
 control only (14):
 - `"800x600"`
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Chrome Headless"`
 - `"Chrome Headless"`
 - `"Chrome Headless"`
 - `"Detected an automated browser environment signal (diver)"`
-- `"<host-offset>"`
-- `"<host-tz-name>"`
+- `"<host-zone>"`
+- `"<host-zone>"`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"Software"`
@@ -1283,10 +1283,10 @@ fork only (16):
 control only (7):
 - `"1280x1024"`
 - `"1280x984"`
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Automated behavior detected"`
 - `"No"`
-- `"<country> /<city>"`
+- `"<country> / <city>"`
 - `"en"`
 fork only (7):
 - `"1920x1152"`
@@ -1301,7 +1301,7 @@ fork only (7):
 control only (14):
 - `"800x600"`
 - `"800x600"`
-- `"<host-tz>"`
+- `"<host-zone>"`
 - `"Automated behavior detected"`
 - `"Back"`
 - `"Back"`
@@ -1310,7 +1310,7 @@ control only (14):
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"No"`
-- `"<country> /<city>"`
+- `"<country> / <city>"`
 - `"a Сhromium-based browser on Windows"`
 - `"en"`
 fork only (9):
@@ -1554,7 +1554,7 @@ control only (5):
 - `"This website uses a security service to protect against malicious bots. This...`
 - `"whoer.net"`
 fork only (193):
-- `"(VN)"`
+- `"<country>"`
 - `"<ip>"`
 - `"<ip>  Singapore"`
 - `"<ip> - <ip>"`
@@ -1568,7 +1568,7 @@ fork only (193):
 - `"About us"`
 - `"Anonymizer:"`
 - `"Apps Privacy Policy"`
-- `"Asia/Ho_Chi_Minh"`
+- `"<host-zone>"`
 - `"Best VPN services"`
 - `"Blacklist:"`
 - `"Blog"`

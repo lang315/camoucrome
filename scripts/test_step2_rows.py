@@ -302,7 +302,7 @@ def test_scrub_dms_coordinates_and_geo_case():
 # step2b null runs 20261013-143709-null / -150324-null (stock against stock): lines that changed.
 @pytest.mark.parametrize("line", [
     "downlink : 1.35", "rtt\t100", "Downlink\t1.75", "effectiveType : 3g", "Connection Rtt\tConnection-rtt: 100",
-    "DateTimeFormat\tTuesday, October 13, 2026 at 10:06:36 PM <host-tz-name>", "toLocaleString\t10/13/2026, 9:40:32 PM",
+    "DateTimeFormat\tTuesday, October 13, 2026 at 10:06:36 PM Central Daylight Time", "toLocaleString\t10/13/2026, 9:40:32 PM",
     "13 hours ago", "1791902611717", "2026-10-13T14:43:31.560Z",
     "0x1A1A", "JA3\t110d039670ab65feea9580aa5f67e249", "JA4_o\tt13d1517h2_acb858a92679_15f8eb733a2a",
     "config_id\t166", "payload_length\t144",
