@@ -36,7 +36,7 @@
   "oracle": {
    "control": {
     "headed": {
-     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "oracle.windowKeys": [
       "window",
       "self",
@@ -1467,7 +1467,7 @@
      "oracle.nav.product": "Gecko",
      "oracle.nav.productSub": "20030107",
      "oracle.nav.appName": "Netscape",
-     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "oracle.nav.appCodeName": "Mozilla",
      "oracle.nav.language": "en-US",
      "oracle.nav.languages": [
@@ -1570,7 +1570,7 @@
       },
       {
        "brand": "Not A(Brand",
-       "version": "<ip>"
+       "version": "99.0.0.0"
       }
      ],
      "oracle.uadHigh.mobile": false,
@@ -1928,7 +1928,7 @@
      "oracle.done": true
     },
     "headless": {
-     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/<ip> Safari/537.36",
+     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
      "oracle.windowKeys": [
       "window",
       "self",
@@ -3359,7 +3359,7 @@
      "oracle.nav.product": "Gecko",
      "oracle.nav.productSub": "20030107",
      "oracle.nav.appName": "Netscape",
-     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/<ip> Safari/537.36",
+     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
      "oracle.nav.appCodeName": "Mozilla",
      "oracle.nav.language": "en-US",
      "oracle.nav.languages": [
@@ -3462,7 +3462,7 @@
       },
       {
        "brand": "Not A(Brand",
-       "version": "<ip>"
+       "version": "99.0.0.0"
       }
      ],
      "oracle.uadHigh.mobile": false,
@@ -3822,7 +3822,7 @@
    },
    "fork": {
     "headed": {
-     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "oracle.windowKeys": [
       "window",
       "self",
@@ -5253,7 +5253,7 @@
      "oracle.nav.product": "Gecko",
      "oracle.nav.productSub": "20030107",
      "oracle.nav.appName": "Netscape",
-     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "oracle.nav.appCodeName": "Mozilla",
      "oracle.nav.language": "en-US",
      "oracle.nav.languages": [
@@ -5355,7 +5355,7 @@
       },
       {
        "brand": "Not A(Brand",
-       "version": "<ip>"
+       "version": "99.0.0.0"
       }
      ],
      "oracle.uadHigh.mobile": false,
@@ -5629,7 +5629,7 @@
      "oracle.done": true
     },
     "headless": {
-     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "oracle.ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "oracle.windowKeys": [
       "window",
       "self",
@@ -7060,7 +7060,7 @@
      "oracle.nav.product": "Gecko",
      "oracle.nav.productSub": "20030107",
      "oracle.nav.appName": "Netscape",
-     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "oracle.nav.appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "oracle.nav.appCodeName": "Mozilla",
      "oracle.nav.language": "en-US",
      "oracle.nav.languages": [
@@ -7162,7 +7162,7 @@
       },
       {
        "brand": "Not A(Brand",
-       "version": "<ip>"
+       "version": "99.0.0.0"
       }
      ],
      "oracle.uadHigh.mobile": false,
@@ -7485,7 +7485,7 @@
       "accept-language",
       "priority"
      ],
-     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36"
+     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
     },
     "headless": {
      "net.http_version": "h2",
@@ -7511,7 +7511,7 @@
       "accept-language",
       "priority"
      ],
-     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/<ip> Safari/537.36"
+     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36"
     }
    },
    "fork": {
@@ -7539,7 +7539,7 @@
       "accept-language",
       "priority"
      ],
-     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36"
+     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
     },
     "headless": {
      "net.http_version": "h2",
@@ -7565,7 +7565,7 @@
       "accept-language",
       "priority"
      ],
-     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36"
+     "net.user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
     }
    }
   },
@@ -8560,7 +8560,7 @@
      "det.sannysoft.navigator.doNotTrack": "null",
      "det.sannysoft.navigator.msDoNotTrack": "undefined",
      "det.sannysoft.navigator.sendBeacon": "",
-     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "det.sannysoft.navigator.appName": "Netscape",
      "det.sannysoft.navigator.vendor": "Google Inc.",
      "det.sannysoft.navigator.appCodeName": "Mozilla",
@@ -8746,8 +8746,8 @@
      "det.detect_headless": "ok",
      "det.detect_headless.blocked": "no",
      "det.detect_headless.Test": "Result",
-     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
-     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "det.detect_headless.Plugins": "Detected 5 plugins",
      "det.detect_headless.Plugins Prototype": "PluginArray and Plugin prototype are consistent",
      "det.detect_headless.Mime": "Detected 2 mime types",
@@ -8832,7 +8832,7 @@
      "det.sannysoft.navigator.doNotTrack": "null",
      "det.sannysoft.navigator.msDoNotTrack": "undefined",
      "det.sannysoft.navigator.sendBeacon": "",
-     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/<ip> Safari/537.36",
+     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
      "det.sannysoft.navigator.appName": "Netscape",
      "det.sannysoft.navigator.vendor": "Google Inc.",
      "det.sannysoft.navigator.appCodeName": "Mozilla",
@@ -9018,8 +9018,8 @@
      "det.detect_headless": "ok",
      "det.detect_headless.blocked": "no",
      "det.detect_headless.Test": "Result",
-     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/<ip> Safari/537.36",
-     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/<ip> Safari/537.36",
+     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
      "det.detect_headless.Plugins": "Detected 5 plugins",
      "det.detect_headless.Plugins Prototype": "PluginArray and Plugin prototype are consistent",
      "det.detect_headless.Mime": "Detected 2 mime types",
@@ -9106,7 +9106,7 @@
      "det.sannysoft.navigator.doNotTrack": "null",
      "det.sannysoft.navigator.msDoNotTrack": "undefined",
      "det.sannysoft.navigator.sendBeacon": "",
-     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "det.sannysoft.navigator.appName": "Netscape",
      "det.sannysoft.navigator.vendor": "Google Inc.",
      "det.sannysoft.navigator.appCodeName": "Mozilla",
@@ -9292,8 +9292,8 @@
      "det.detect_headless": "ok",
      "det.detect_headless.blocked": "no",
      "det.detect_headless.Test": "Result",
-     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
-     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "det.detect_headless.Plugins": "Detected 5 plugins",
      "det.detect_headless.Plugins Prototype": "PluginArray and Plugin prototype are consistent",
      "det.detect_headless.Mime": "Detected 2 mime types",
@@ -9378,7 +9378,7 @@
      "det.sannysoft.navigator.doNotTrack": "null",
      "det.sannysoft.navigator.msDoNotTrack": "undefined",
      "det.sannysoft.navigator.sendBeacon": "",
-     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "det.sannysoft.navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "det.sannysoft.navigator.appName": "Netscape",
      "det.sannysoft.navigator.vendor": "Google Inc.",
      "det.sannysoft.navigator.appCodeName": "Mozilla",
@@ -9564,8 +9564,8 @@
      "det.detect_headless": "ok",
      "det.detect_headless.blocked": "no",
      "det.detect_headless.Test": "Result",
-     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
-     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/<ip> Safari/537.36",
+     "det.detect_headless.User Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+     "det.detect_headless.App Version": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
      "det.detect_headless.Plugins": "Detected 5 plugins",
      "det.detect_headless.Plugins Prototype": "PluginArray and Plugin prototype are consistent",
      "det.detect_headless.Mime": "Detected 2 mime types",

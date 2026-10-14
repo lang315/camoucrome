@@ -1317,7 +1317,7 @@ fork only (9):
 - `"1920x1152"`
 - `"1920x1200"`
 - `"America/Chicago"`
-- `"Chrome <ip> on Windows"`
+- `"Chrome 154.0.0.0 on Windows"`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge...`
 - `"No automated behavior detected"`
