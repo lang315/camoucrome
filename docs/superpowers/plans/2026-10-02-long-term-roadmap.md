@@ -271,6 +271,11 @@ Evidence: `measurements/2026-10-04-windows-verify-set.md`.
 **Goal:** know what detectors see, for the fork and for a stock control,
 before choosing any new spoofing work.
 
+**Step 2b (2026-10-13/14):** 20 detector pages, the fork at main, and a recapture
+in the interactive session. Every host harness now gates on the GPU crash
+count. The recapture overturned step 2's "fork unstable" rows. See
+`measurements/2026-10-step2b-detectors.md`.
+
 Preconditions: the pin milestone equals the control Chrome's milestone (the
 host's Chrome auto-updates; assert its version), and both arms run through
 the project's client with the same argv. Driving the control over raw CDP
