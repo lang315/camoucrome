@@ -107,6 +107,14 @@ def test_lib_shell_launch_records_the_opt_out():
     assert inspect.signature(lib_shell.launch).parameters["gpu_gate"].default is True
 
 
+def test_lib_shell_exit_code_turns_unmeasured_on_a_standalone_run():
+    # Final review: a gated verify run on its own printed UNMEASURED and still exited 0.
+    exits = []
+    lib_shell._exit_if_unmeasured(["UNMEASURED gpu-crash=1"], exit=exits.append)
+    lib_shell._exit_if_unmeasured([], exit=exits.append)
+    assert exits == [3]
+
+
 def test_lib_shell_gate_fails_closed_when_the_read_raises():
     def boom(port):
         raise OSError("gone")

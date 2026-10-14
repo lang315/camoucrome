@@ -57,12 +57,16 @@ def read_page(page, tries=20):
 
 
 def read_ctx(ctx):
-    """The crash count of the browser behind a Playwright/patchright context, from a page of its own."""
-    page = ctx.new_page()
+    """The crash count of the browser behind a Playwright/patchright context, from a page of its own.
+    A read that fails is None (unmeasured), never an exception that voids the caller's other rows."""
     try:
-        return read_page(page)
-    finally:
-        page.close()
+        page = ctx.new_page()
+        try:
+            return read_page(page)
+        finally:
+            page.close()
+    except Exception:  # noqa: BLE001 - an unreadable count is unmeasured, never 0
+        return None
 
 
 def read_port(port, timeout=60):

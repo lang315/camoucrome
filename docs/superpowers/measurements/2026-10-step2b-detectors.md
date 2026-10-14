@@ -31,11 +31,21 @@ on the host (`D:\camou-win\cn\step2b`).
 
 Every host launch path now runs in the interactive session and is gated on
 `chrome://gpu`'s `GPU process crash count` (`scripts/gpu_gate.py`).
-`camoucrome.probe` launches (host oracle O1/O2) and `winhost.dump_dom` give
-the harness no context to read that page from. There a session-id check
-stands in: S4 measured crash count 1 in every session-0 launch and 0 in
-40 of 40 session-1 launches. This deviates from the spec's "a reader per
-launch path".
+Some launches give the harness no context or port to read that page from:
+- `camoucrome.probe` and the client's own launches: host oracle O1/O2, and
+  the set entries `verify_windows_client`, `verify_sp6b_launcher`,
+  `verify_sp6b_driver`, `verify_sp6b_generator`, `verify_d_pointer_touch` and
+  `verify_windows_fonts`;
+- `winhost.dump_dom`.
+
+There a session-id check stands in: S4 measured crash count 1 in every
+session-0 launch and 0 in 40 of 40 session-1 launches. This deviates from the
+spec's "a reader per launch path".
+
+Since the final review, a standalone verify that printed an `UNMEASURED` line
+exits 3 (`lib_shell`'s atexit, and the host oracle). `measure_step2 run` exits
+1 when any detector site cell is UNMEASURED. `compare` exits 2 when it skipped
+a cell.
 
 **Session gate**, run in session 0 (sshgate directly). Every row refused with
 `UNMEASURED session=0: …` and rc 3:
