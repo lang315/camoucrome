@@ -152,7 +152,7 @@ The measurements (`measurements/2026-10-s5-remote-voices.md` §2 and §4) change
    - The remote branch keeps an end deadline, `camou_end_due_`, that each pause moves.
    - It keeps its own pause flag, `camou_paused_at_`, and leaves `is_paused_` alone.
 3. **Cancel.** `cancel()` on any configured (fake) voice, local or remote, fired no event before S5; stock fires `error: interrupted` on both. S5 fixes it for both branches.
-4. **Start draw.** Stock's start varies on every call. The remote start therefore mixes the speak's generation and clock into its hash, instead of the per-text FNV bits that §3 specified.
+4. **Start draw.** Stock's start varies on every call. The remote start is therefore a fresh `base::RandDouble()` draw per speak, instead of the per-text FNV bits that §3 specified.
 5. **No cut-off; no activation row.** 0/9 long speaks were cut on the host, so there is no cut-off code. Without activation, `content_shell` and CDP-driven stock both start a speak, so the activation row (R7) was dropped.
 
 Out of scope, recorded as gaps: three gaps in the local fake path (§6 of the measurements), and the Linux voice list.

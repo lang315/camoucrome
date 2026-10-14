@@ -111,6 +111,9 @@ The S5 build was rerun after export (`content_shell`, 8 steps) with the same 9/9
 |---|---|---|
 | rate-table build (before the fix) | **9/11 FAIL** | R10: the same text started at 397, 390, 397, 397 ms. R6: `speechSynthesis.paused` read `true`, `true`. |
 | final S5 (`85205069ce`; patch sha256 `0f6fcaeb…`) | **11/11 ALL_PASS** | repeated starts 338, 299, 317, 238 ms; `paused` `false`, `false`; pause cell end − start 15067 (predicted 15036) |
+| after /simplify (`0aec35868d`; patch sha256 `d2ebc8b3…`) | **11/11 ALL_PASS** | the start is `base::RandDouble()`; the remote decision is made once per speak (`camou_remote_`); a paused remote speak no longer polls; repeated starts 393, 242, 300, 375 ms |
+
+After the host reboot of 2026-10-14, `verify_voices_ii` became flaky on its two timing rows (V-JITTER-A/B, ±50 ms on a fake `end`). The /simplify build and the build before it were compared on the same box, 3 runs each, and gave the same result: 5/5 on two runs, 4/5 on the third. So the flakiness is the box, not the change.
 
 **Review Focus checks** (one launch each): a remote speak of empty text fires `start`, `end`. With `voices:fakeCompletion` false, a remote speak fires only `error: synthesis-failed`.
 
@@ -163,7 +166,7 @@ Every fork duration is within 20 % of stock's median; the gap is the voices-ii t
 - **The same 43-character text spoken 4 times in one page** started at 145, 69, 2270, 97 ms and at 153, 137, 91, 96 ms, while every duration stayed within 2 ms.
 
 Both are now in the fork:
-- the remote start mixes the speak's generation and clock into its hash;
+- the remote start is a fresh random draw per speak (`base::RandDouble()`, after /simplify; first as a generation-and-clock mix);
 - the remote branch keeps its own pause flag and leaves `paused` false.
 
 The GREEN table above predates that fix. The fix changes only the start draw and the pause flag, and WSL R6/R10 cover both.
