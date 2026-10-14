@@ -6,7 +6,10 @@ interactive RDP session (session 1), with the owner connected. The S4
 evidence that motivated the session move is `2026-10-12-s4-gpu-session0.md`.
 
 The committed baseline is `step2b-main/rows.json` and `step2b-main/tables.md`,
-both put through `measure_step2.py scrub`. Raw page text and screenshots stay
+both put through `measure_step2.py scrub`. Besides addresses, coordinates,
+city, ISP and the user name, the scrub also replaced the host's country
+(`<country>`) and time zone (`<host-zone>`): the repo is public (owner,
+2026-10-14). Raw page text and screenshots stay
 on the host (`D:\camou-win\cn\step2b`).
 
 ## 1. What was compared
@@ -259,4 +262,5 @@ HEVC paragraph.
 12. `sandbox_env` A2 in session 1 is left as an environment finding.
 13. Both builds ran at `-j 8` after the OOM.
 14. Fingerprint Pro's "timezone mismatch" is labelled expected; the reason is
-    in §7.
+    in §7. The owner confirmed this on 2026-10-14 and opened roadmap backlog
+    item 13 (timezone and locale coherent with the exit IP).
