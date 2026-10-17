@@ -1,0 +1,275 @@
+{
+ "arms": {
+  "cdp100": {
+   "log": {
+    "dpr": 1,
+    "scroll": [
+     {
+      "t": 3095.5,
+      "y": 100
+     }
+    ],
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "wheel": [
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3073.800000011921,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     }
+    ]
+   },
+   "summary": {
+    "dpr": 1,
+    "dy": [
+     100
+    ],
+    "final_y": 100,
+    "modes": [
+     0
+    ],
+    "n_scroll": 1,
+    "n_wheel": 1,
+    "scroll_ms": 0,
+    "trusted": true,
+    "wdy": [
+     -120
+    ]
+   }
+  },
+  "cdp300": {
+   "log": {
+    "dpr": 1,
+    "scroll": [
+     {
+      "t": 3194,
+      "y": 300
+     }
+    ],
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "wheel": [
+     {
+      "dx": 0,
+      "dy": 300,
+      "dz": 0,
+      "mode": 0,
+      "t": 3165.399999976158,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     }
+    ]
+   },
+   "summary": {
+    "dpr": 1,
+    "dy": [
+     300
+    ],
+    "final_y": 300,
+    "modes": [
+     0
+    ],
+    "n_scroll": 1,
+    "n_wheel": 1,
+    "scroll_ms": 0,
+    "trusted": true,
+    "wdy": [
+     -120
+    ]
+   }
+  },
+  "real1": {
+   "log": {
+    "dpr": 1,
+    "scroll": [
+     {
+      "t": 3695.699999988079,
+      "y": 100
+     }
+    ],
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "wheel": [
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3684,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     }
+    ]
+   },
+   "summary": {
+    "dpr": 1,
+    "dy": [
+     100
+    ],
+    "final_y": 100,
+    "modes": [
+     0
+    ],
+    "n_scroll": 1,
+    "n_wheel": 1,
+    "scroll_ms": 0,
+    "trusted": true,
+    "wdy": [
+     -120
+    ]
+   }
+  },
+  "real3": {
+   "log": {
+    "dpr": 1,
+    "scroll": [
+     {
+      "t": 3622.099999964237,
+      "y": 100
+     },
+     {
+      "t": 3656.599999964237,
+      "y": 300
+     }
+    ],
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "wheel": [
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3560.2999999523163,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     },
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3603.199999988079,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     },
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3656,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     }
+    ]
+   },
+   "summary": {
+    "dpr": 1,
+    "dy": [
+     100,
+     100,
+     100
+    ],
+    "final_y": 300,
+    "modes": [
+     0
+    ],
+    "n_scroll": 2,
+    "n_wheel": 3,
+    "scroll_ms": 34,
+    "trusted": true,
+    "wdy": [
+     -120,
+     -120,
+     -120
+    ]
+   }
+  },
+  "real3_dsf1": {
+   "log": {
+    "dpr": 1,
+    "scroll": [
+     {
+      "t": 3725.099999964237,
+      "y": 100
+     },
+     {
+      "t": 3729.699999988079,
+      "y": 200
+     },
+     {
+      "t": 3755.899999976158,
+      "y": 300
+     }
+    ],
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "wheel": [
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3661.099999964237,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     },
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3705.199999988079,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     },
+     {
+      "dx": 0,
+      "dy": 100,
+      "dz": 0,
+      "mode": 0,
+      "t": 3746.599999964237,
+      "trusted": true,
+      "wdx": 0,
+      "wdy": -120
+     }
+    ]
+   },
+   "summary": {
+    "dpr": 1,
+    "dy": [
+     100,
+     100,
+     100
+    ],
+    "final_y": 300,
+    "modes": [
+     0
+    ],
+    "n_scroll": 3,
+    "n_wheel": 3,
+    "scroll_ms": 31,
+    "trusted": true,
+    "wdy": [
+     -120,
+     -120,
+     -120
+    ]
+   }
+  }
+ },
+ "host": {
+  "APPLIEDDPI": "96",
+  "CHROMEVER": "154.0.8037.93",
+  "SESSION": "1",
+  "WHEELLINES": "3"
+ }
+}
