@@ -171,8 +171,9 @@ the 156 `out\Observe` (156.0.8078.36). The host file is
 ends). Arm 1 requires audio, canvas, intl, layout-probe, navigator,
 screen, storage, webgl and webgpu. Arm 3 requires canvas, fonts, intl,
 layout-probe, navigator, screen and storage. Arm 3's `fonts` is 1 call
-per run, so a load that skips it reads as `FAIL fonts 0`: re-run once
-before treating that row as a change. Recalibrate after a re-pin, and
+per run, so a lone `FAIL fonts 0` may be one skipped call, not a change.
+The owner decides whether to run again: tooling never re-runs on its
+own. Recalibrate after a re-pin, and
 whenever facebook's reads change for good. Measurements:
 `docs/superpowers/measurements/2026-10-17-fb-observe-intl.md` §8.
 
