@@ -149,7 +149,7 @@ if ($Wait) {
     foreach ($id in @(Get-Mine).ProcessId) {
       $q = Get-Process -Id $id -ErrorAction SilentlyContinue
       # a process can exit between the handle read and the close once the browser shuts down (cal2/cal3, 2026-10-17)
-      if ($q -and $q.MainWindowHandle -ne 0) { try { [void]$q.CloseMainWindow(); $closed++ } catch [InvalidOperationException] { } }
+      if ($q -and $q.MainWindowHandle -ne 0) { try { [void]$q.CloseMainWindow(); $closed++ } catch [InvalidOperationException] { Write-Host "close: pid $id exited before close" } }
     }
   }
   for ($i = 0; $i -lt 60 -and (Get-Mine); $i++) { Start-Sleep -Seconds 1 }
