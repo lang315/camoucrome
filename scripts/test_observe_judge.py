@@ -106,3 +106,105 @@ def test_judge_parses_as_python_3_9():
     """The Windows host runs Python 3.9.13."""
     import ast
     ast.parse(pathlib.Path(j.__file__).read_text(), feature_version=(3, 9))
+
+
+BASE = {"1": {"required": ["navigator", "canvas", "intl"], "runs": [
+    {"groups": {"navigator": 2, "canvas": 1, "intl": 4}, "intl": {}, "requests": {}}]}}
+
+
+def verdict(tmp_path, arm=1, base=BASE, **kw):
+    return j.judge(make_arm(tmp_path, **kw), arm, base)
+
+
+def test_pass_when_measured_and_every_required_group_seen(tmp_path):
+    v, rows = verdict(tmp_path)
+    assert v == "PASS"
+    assert ("PASS", "canvas 1") in rows
+
+
+@pytest.mark.parametrize("kw,why", [
+    ({"run": "absent"}, "run.json missing"),
+    ({"run": {"session": 0, "session_state": "Active", "report_rc": 0, "left": 0}}, "session=0"),
+    ({"run": {"session": 1, "session_state": "Disc", "report_rc": 0, "left": 0}}, "session_state=Disc"),
+    ({"run": {"session": 1, "session_state": "Active", "report_rc": 1, "left": 0}}, "report_rc=1"),
+    ({"run": {"session": 1, "session_state": "Active", "report_rc": 0, "left": 3}}, "left=3"),
+    ({"run": {"session": 1, "session_state": "Active", "report_rc": 0, "left": 0,
+              "low_memory_kill": True}}, "low-memory"),
+    ({"run": {"session": 1, "session_state": "Active", "report_rc": 0, "left": 0,
+              "gpu_exit_lines": 1}}, "gpu-crash"),
+    ({"discarded": 7}, "buffer full"),
+    ({"buffer_stats": False}, "buffer stats missing"),
+    ({"net_span_ms": 60_000}, "trace short"),
+    ({"events": [ev("Navigator.userAgent.get")]}, "intl blind"),
+    ({"trace": False}, "no trace"),
+    ({"net": False}, "no netlog"),
+])
+def test_unmeasured_causes(tmp_path, kw, why):
+    v, rows = verdict(tmp_path, **kw)
+    assert v == "UNMEASURED"
+    assert any(level == "UNMEASURED" and why in text for level, text in rows), rows
+
+
+def test_arm3_without_login_cookies_is_session_expired(tmp_path):
+    v, rows = verdict(tmp_path, arm=3, base={})
+    assert v == "UNMEASURED"
+    assert any("session expired" in t and "-Arm 2" in t for _l, t in rows)
+    v, _ = verdict(tmp_path / "x", arm=3, base={},
+                   cookies=(("c_user", "1"), ("xs", "2"), ("datr", "3")))
+    assert v == "PASS"
+
+
+def test_fail_when_a_required_group_is_gone(tmp_path):
+    base = {"1": {"required": ["navigator", "webgpu"], "runs": []}}
+    v, rows = verdict(tmp_path, base=base)
+    assert v == "FAIL" and ("FAIL", "webgpu 0") in rows
+
+
+def test_intl_measured_but_empty_fails_a_required_intl(tmp_path):
+    events = [ev("Navigator.userAgent.get"), ev("HTMLCanvasElement.toDataURL"),
+              ev("Navigator.userAgent.get", ts=31_000_000),
+              rcs(2_000_000, {"ArrayPrototypePush": [1, 1.0]})]
+    v, rows = verdict(tmp_path, events=events)
+    assert v == "FAIL" and ("FAIL", "intl 0") in rows
+
+
+def test_unmeasured_wins_over_fail(tmp_path):
+    base = {"1": {"required": ["webgpu"], "runs": []}}
+    assert verdict(tmp_path, base=base, discarded=1)[0] == "UNMEASURED"
+
+
+def test_drift_and_new_groups_are_info_only(tmp_path):
+    base = {"1": {"required": ["navigator"], "runs": [{"groups": {"navigator": 50}}]}}
+    v, rows = verdict(tmp_path, base=base)
+    assert v == "PASS"
+    assert ("INFO", "navigator 2 vs baseline [50]") in rows
+    assert ("INFO", "new group canvas 1") in rows
+
+
+def test_empty_baseline_requires_nothing(tmp_path):
+    assert verdict(tmp_path, base={})[0] == "PASS"
+
+
+def test_baseline_requires_groups_seen_in_every_run(tmp_path):
+    a = {"groups": {"navigator": 2, "canvas": 1}, "intl": {}, "requests": {"total": 1}}
+    b = {"groups": {"navigator": 5, "audio": 9}, "intl": {}, "requests": {"total": 2}}
+    base = j.make_baseline({1: [a, b]})
+    assert base["1"]["required"] == ["navigator"]
+    assert [x["groups"] for x in base["1"]["runs"]] == [a["groups"], b["groups"]]
+
+
+def test_cli_exit_codes_and_usage_errors(tmp_path, capsys):
+    arm = make_arm(tmp_path / "a")
+    bfile = tmp_path / "b.json"
+    bfile.write_text(json.dumps(BASE))
+    assert j.main(["judge", "--baseline", str(bfile), "--arm", "1", str(arm)]) == 0
+    assert "arm1 PASS" in capsys.readouterr().out
+    bfile.write_text(json.dumps({"1": {"required": ["webgpu"], "runs": []}}))
+    assert j.main(["judge", "--baseline", str(bfile), "--arm", "1", str(arm)]) == 1
+    assert j.main(["judge", "--baseline", str(tmp_path / "none.json"), "--arm", "1", str(arm)]) == 2
+    out = tmp_path / "base.json"
+    assert j.main(["baseline", "--arm", "1", str(arm), "-o", str(out)]) == 0
+    assert json.loads(out.read_text())["1"]["required"] == ["canvas", "intl", "navigator"]
+    so = tmp_path / "s.json"
+    j.main(["judge", "--baseline", str(out), "--arm", "1", str(arm), "--summary-out", str(so)])
+    assert json.loads(so.read_text())["groups"]["canvas"] == 1
