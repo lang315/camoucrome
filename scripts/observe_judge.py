@@ -67,8 +67,13 @@ def summarize(arm_dir):
             groups["intl"] = sum(intl.values())
     # shortcut: the netlog is parsed twice (arm 3's is ~110 MB, a few seconds); pass the parsed dict if runs get slow
     reqs = r.load_requests(d / "net.json")
-    db = d / "cookies.db"
-    cookies = sorted(f"{h}:{n}" for h, n, *_ in r.load_cookie_names(db)) if db.exists() else []
+    db, prev = d / "cookies.db", d / "summary.json"
+    if db.exists():
+        cookies = sorted(f"{h}:{n}" for h, n, *_ in r.load_cookie_names(db))
+    elif prev.exists():  # observe-auto deletes cookies.db after its judge wrote the names here
+        cookies = _json(prev).get("cookies", [])
+    else:
+        cookies = []
     run = _json(d / "run.json") if (d / "run.json").exists() else None
     return {"groups": dict(groups), "members": dict(members), "intl": intl, "cookies": cookies,
             "requests": {"total": len(reqs), "ajax_bz": sum("/ajax/bz" in p for _s, _h, p, _m in reqs)},

@@ -259,3 +259,16 @@ def test_baseline_refuses_an_unmeasured_run(tmp_path, capsys, kw, why):
     assert rc == 2
     assert why in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_arm3_login_proof_survives_the_cookies_db_cleanup(tmp_path):
+    """observe-auto deletes cookies.db after its judge; baseline and a re-judge run later."""
+    arm = make_arm(tmp_path / "a", cookies=(("c_user", "1"), ("xs", "2")))
+    so = arm / "summary.json"
+    assert j.judge(arm, 3, {}, so)[0] == "PASS"
+    (arm / "cookies.db").unlink()
+    assert j.judge(arm, 3, {})[0] == "PASS"
+    out = tmp_path / "base.json"
+    assert j.main(["baseline", "--arm", "3", str(arm), "-o", str(out)]) == 0
+    assert j.main(["judge", "--baseline", str(out), "--arm", "3", str(arm), "--summary-out", str(so)]) == 0
+    assert json.loads(so.read_text())["cookies"] == [".facebook.com:c_user", ".facebook.com:xs"]
