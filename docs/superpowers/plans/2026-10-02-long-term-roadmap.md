@@ -638,7 +638,7 @@ stock there. S4's flip turned out to be the session-0 artefact above.
    table keeps the row as `expected`, because the fork does what the config
    says.
 
-**Tracking observer (2026-10-07):** phase 1 (an audit build that counts fingerprint reads per site and script) and the facebook recon shipped (`measurements/2026-10-07-fb-observe.md`); phase 1b dashboard, V8/Intl hooks, fast-call counting and the instagram/threads recon are pending (`docs/observer/followups.md`).
+**Tracking observer (2026-10-07):** phase 1 (an audit build that counts fingerprint reads per site and script) and the facebook recon shipped (`measurements/2026-10-07-fb-observe.md`); fast-call counting and V8/Intl shipped (2026-10-09, 2026-10-17); the facebook recon is re-runnable unattended (`observe-auto.ps1`, 2026-10-17; `measurements/2026-10-17-fb-observe-intl.md`); instagram/threads dropped by the owner; the phase 1b dashboard is pending (`docs/observer/followups.md`).
 
 `screenX` and `measureText` are recorded design trade-offs in the 2026-09-24
 triage, not gaps. Slice residuals in the follow-on roadmap keep their

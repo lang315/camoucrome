@@ -52,11 +52,24 @@ On the Windows host the recon used `scripts/windows/observe-recon.ps1` (one
 owner-driven arm: launch with the flags above, wait for the browser to close,
 copy the cookie database, run the report) and `scripts/windows/observe-arm1.ps1`
 (the tooling-launched logged-out arm, closed by one CDP `Browser.close`). They
-are byte-exact copies of `D:\camou-win\observe\recon.ps1` and `arm1.ps1` and
 hardcode that host's layout (`D:\camou-win\chromium\src\out\Observe\chrome.exe`,
 `observe_report.py` in `D:\camou-win\observe`). `observe-recon.ps1` gained
-`-Intl` on 2026-10-13; the host copy is updated with the `out\Observe`
-rebuild.
+`-Intl` on 2026-10-13 and an unattended mode on 2026-10-17. Since
+2026-10-17, `D:\camou-win\observe` holds byte-exact copies of five repo
+files:
+- `recon.ps1` (`scripts/windows/observe-recon.ps1`);
+- `observe-auto.ps1` (`scripts/windows/`);
+- `run-interactive.ps1` (`scripts/windows/`);
+- `observe_report.py` (`scripts/`);
+- `observe_judge.py` (`scripts/`).
+
+`arm1.ps1` (`scripts/windows/observe-arm1.ps1`) is the 2026-10-07 copy, and
+`observe-auto.ps1` replaces it.
+
+To check that the host copies match a commit, compare the output of
+`Get-FileHash -Algorithm SHA256` on the five files with
+`shasum -a 256` on the repo paths. On 2026-10-17 they were installed from
+`raw.githubusercontent.com` at the branch head, and all five matched.
 
 `--trace-startup-duration=0` (record until exit) is the documented setting for
 `chrome` sessions closed normally. `scripts/verify_observe.py` instead uses
@@ -67,6 +80,80 @@ SIGTERM path wrote no trace; the duration timer flushes it.
 calls and `lineWidth` sets that V8 runs on its fast API path, three Intl
 built-ins counted on the page and in its worker, and two arms that must report
 Intl blind.
+
+## Unattended recon (facebook)
+
+The owner allowed this on 2026-10-17
+(`docs/superpowers/specs/2026-10-17-observe-auto-fb-design.md`). From any
+shell on the host, sshgate included:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File D:\camou-win\observe\observe-auto.ps1
+
+What it runs:
+- **Arm 1:** logged out, fresh profile, 30 s.
+- **Arm 3:** a copy of the backed-up login
+  `D:\camou-win\observe\backup\fb-login-20261017`, 120 s.
+
+Each arm is one load of `https://www.facebook.com/` with `-Intl` and no
+input. Each runs through `run-interactive.ps1` in the owner's session 1.
+Never schedule or loop it. Arm 2 (the login) stays manual.
+
+Before each arm it checks three gates, and a failed gate makes that arm
+`UNMEASURED` without launching it:
+- `quser` shows an `Active` session. `Disc` is not enough, because a
+  disconnected session may mark the window occluded;
+- no Windows `ninja` or `siso` process runs;
+- commit headroom (`Win32_OperatingSystem.FreeVirtualMemory`) is at least
+  8 GB. A WSL build holds most of the commit limit, so the command usually
+  refuses while one runs.
+
+It takes no `build_lock`. During an arm it polls headroom every 5 s and
+force-stops the browser below 4 GB. Each arm is judged by
+`observe_judge.py judge` against `D:\camou-win\observe\baseline-facebook.json`
+(committed as `docs/observer/baselines/facebook-auto.json`). The command
+prints one line per check, then `RESULT <verdict> <run dir>`, and exits with
+the worst arm's code.
+
+| verdict | exit | condition |
+|---|---|---|
+| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; `trace_s < net_s - 5`; `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout |
+| `FAIL` | 1 | a baseline required group, `intl` included, has 0 calls on the facebook site |
+| `PASS` | 0 | every required group is still above 0 |
+| `INFO` | — | count change against the baseline, new group, new Intl built-in, `/ajax/bz` and total requests |
+
+`<run dir>` is `D:\camou-win\observe\auto\<yyyyMMdd-HHmmss>`. The command
+deletes the profile copies and `cookies.db` when it finishes. What stays on
+the host:
+- `arm<N>\trace.json`, `net.json`, `report.md`;
+- `arm<N>\summary.json`, which holds names and counts only;
+- `arm<N>.log`;
+- `arm<N>\run.json`, with these keys:
+  - `session`, `session_state`;
+  - `wait_s`, `closed`, `left`;
+  - `low_memory_kill`, `headroom_launch_gb`, `headroom_min_gb`;
+  - `wsl_build`: the WSL build lock is held;
+  - `gpu_exit_lines`: lines matching `GPU process exited unexpectedly` in
+    `<profile>\chrome_debug.log`;
+  - `report_rc`, `started`, `ended`.
+
+**Expired login.** Arm 3 reports `session expired`. To refresh the backup:
+1. The owner runs `recon.ps1 -Site facebook -Arm 2 -Intl -Force` and logs
+   in by hand.
+2. Run `robocopy D:\camou-win\observe\facebook\profile-arm2 <backup> /MIR`.
+   This copies the whole profile, `Local State` included. The cookies are
+   encrypted with that file's DPAPI-bound key, so a backup with a mismatched
+   `Local State` reads as logged out.
+
+**Recalibrating.** Spec §6:
+1. Write `{}` to the host baseline.
+2. Run the command twice.
+3. Run `observe_judge.py baseline --arm 1 <run1>\arm1 --arm 1 <run2>\arm1
+   --arm 3 <run1>\arm3 --arm 3 <run2>\arm3 -o <file>`. A group is required
+   when both runs saw it.
+4. Check that every required arm-3 group also appears in the manual
+   2026-10-17 arm 3.
+5. Commit the baseline, install it on the host, and judge both runs again:
+   each must be `PASS`.
 
 ## Read
 

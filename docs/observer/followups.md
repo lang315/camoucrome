@@ -35,12 +35,8 @@ Since 2026-10-08 CI's out dir sets `camou_observe = true` and runs
   PR #34) found the page can export a cloned session through its own
   `TraceProcessorStorage` and `json::ExportJson`, the exporter behind phase
   1's `trace.json`.
-- **Rebuild the Windows `out\Observe` with `v8_enable_runtime_call_stats = true`**
-  (and copy `scripts/windows/observe-recon.ps1` to
-  `D:\camou-win\observe\recon.ps1`) before an Intl recon arm; needs canvas's
-  agreement for the native build window.
 
 ## After the facebook recon (2026-10-07)
 
-- Instagram/Threads recon pending (arm 1 ran for both; arms 2-4 not yet); the phone-home finding (`passwordsleakcheck-pa.googleapis.com` at login, `content-autofill.googleapis.com` in every arm) goes to SP7; per-script attribution is done (phase 1c). Details: `docs/superpowers/measurements/2026-10-07-fb-observe.md`.
-- Counts of canvas-2D/WebGL draw and state calls in that recon are lower bounds (V8 fast API calls were not counted before 2026-10-08); re-run arms on a rebuilt `out\Observe` to get exact counts.
+- Instagram/Threads recon dropped by the owner (2026-10-17); facebook re-run with exact counts and Intl in `docs/superpowers/measurements/2026-10-17-fb-observe-intl.md`; unattended re-runs via `observe-auto.ps1`. The phone-home finding (`passwordsleakcheck-pa.googleapis.com` at login, `content-autofill.googleapis.com` in every arm) goes to SP7; per-script attribution is done (phase 1c). Details: `docs/superpowers/measurements/2026-10-07-fb-observe.md`.
+- Counts of canvas-2D/WebGL draw and state calls in that recon are lower bounds (V8 fast API calls were not counted before 2026-10-08); the exact counts are in `docs/superpowers/measurements/2026-10-17-fb-observe-intl.md`.
