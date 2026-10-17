@@ -107,8 +107,10 @@ def crash(url):
     from playwright.sync_api import sync_playwright
 
     since = time.time() - 1
+    # gpu_gate=False: no row here is GPU-backed, and after chrome://crash a CDP connect to
+    # read chrome://gpu hangs (>60 s on the host, 2026-10-13), which would read as UNMEASURED.
     proc = lib_shell.launch(CONFIG, shell=lib_shell.CHROME,
-                            extra_flags=lib_shell.CHROME_FLAGS, sandbox=WINDOWS)
+                            extra_flags=lib_shell.CHROME_FLAGS, sandbox=WINDOWS, gpu_gate=False)
     crashed = []
     try:
         with sync_playwright() as p:

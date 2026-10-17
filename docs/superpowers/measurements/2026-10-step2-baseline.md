@@ -100,6 +100,15 @@ outside VOLATILE`.
 
 ## 5. Three fork runs: the fork is not stable on three rows
 
+> **Session-0 artefact** (S4, `2026-10-12-s4-gpu-session0.md`). These runs
+> launched in Windows session 0, where the GPU process crashes once per launch.
+> The step2b recapture ran in session 1 (`2026-10-step2b-detectors.md`), with
+> the fork at main, in three fork runs. It **overturns** all three rows below:
+> - `stab.changed` is empty on both arms in every cell;
+> - HEVC reads `["probably", true]` on the fork, as on stock;
+> - all 10 `gpu.*` leaves are present and equal to stock's;
+> - CreepJS's rendering rows do not differ.
+
 `compare` across fork runs `224819`, `225315` and `225915` found rows that
 changed between runs of the fork while the control's did not. They are
 findings, kept out of VOLATILE:
@@ -148,7 +157,8 @@ The full lists are in `step2-154/tables.md`.
 4. **No remote voices.** CreepJS counts 19 remote speech voices on stock and
    `unsupported` (0) on the fork.
 5. **The fork is unstable across launches** on WebGPU, HEVC and a CreepJS
-   rendering check (§5).
+   rendering check (§5). *Overturned, 2026-10-14:* this was the session-0 GPU
+   crash (S4). See the note at §5 and `2026-10-step2b-detectors.md`.
 6. **Two identities on one host share 216–218 of 234 oracle leaves.** Among
    them:
    - the host's real GPU (`gpu.*`);
@@ -179,7 +189,9 @@ What did not differ:
 - **HEVC.** On the GPU host, the fork answers HEVC like stock
   (`["probably", true]`) in every read outside the flips of §5. Backlog item 3
   was measured as `["", false]` under SwiftShader. With the real GPU, the
-  remaining issue is the instability, not the claim.
+  remaining issue is the instability, not the claim. *2026-10-14: the
+  instability was the session-0 GPU crash (S4); in session 1 every fork read
+  is `["probably", true]`.*
 - **Detectors that favour the fork.** In every case the stock arm runs under
   the driver, and the fork hides that:
   - BrowserScan says stock "appears to be controlled by a robot" and does not say it of the fork;

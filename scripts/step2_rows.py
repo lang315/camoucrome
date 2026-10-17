@@ -3,6 +3,7 @@ preconditions, run-to-run comparison and the tables
 (docs/superpowers/specs/2026-10-04-step2-measurement-design.md). No browser,
 no host: test_step2_rows.py runs it in CI. measure_step2.py is the browser half."""
 import collections
+import ipaddress
 import json
 import re
 
@@ -27,6 +28,11 @@ VOLATILE = {
     "det.creepjs.rtt": "a network estimate",
     "det.creepjs.stack": "stack depth, differed between two stock loads",
     "det.creepjs.trap": "a random value per load",
+    # step2b null runs (20261013-213709-null, -220324-null): changed between two stock loads.
+    "det.detect_headless.Time Elapse": "the time to close an alert, a timing",
+    "det.detect_headless.Connection Rtt": "a network estimate",
+    "det.incolumitas.connectionRTT": "a network estimate (FAIL when rtt read 0)",
+    "det.fingerprint_pro.High-Activity Device": "the visitor's history on the service: stock's id had loaded the page all day",
 }
 # Row name (or dotted prefix) -> why the fork's value differs from stock's by design.
 EXPECTED = {
@@ -62,6 +68,29 @@ EXPECTED = {
     "det.sannysoft.navigator.userAgent": "the identity's value, or a detector hash over identity values",
     "det.sannysoft.CHR_MEMORY": "stock headless fails it (deviceMemory absent); the identity sets it",
     "det.sannysoft.HEADCHR_UA": "stock headless says HeadlessChrome; the identity UA does not",
+    # step2b fork run 20261013-231750:
+    "oracle.audio.sampleRate": "the identity's audio:sampleRate (48000); the RDP session's device runs at 44100",
+    "det.dbi_bot.isBot": "SP2 hides webdriver, and the identity UA is not HeadlessChrome",
+    "det.dbi_bot.hasWebdriverTrue": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.dbi_bot.hasWebdriverInFrameTrue": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.dbi_bot.hasBotUserAgent": "stock headless says HeadlessChrome; the identity UA does not",
+    "det.incolumitas.webDriver": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.incolumitas.webdriverPresent": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.incolumitas.userAgent": "stock headless says HeadlessChrome; the identity UA does not",
+    "det.incolumitas.HEADCHR_UA": "stock headless says HeadlessChrome; the identity UA does not",
+    "det.incolumitas.CHR_MEMORY": "stock headless fails it (deviceMemory absent); the identity sets it",
+    "det.rebrowser.navigatorWebdriver": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.detect_headless.Webdriver": "SP2: the fork hides automation; stock under the same driver reports true",
+    "det.detect_headless.Languages": "the identity's navigator.languages",
+    "det.detect_headless.Outer dimensions": "the identity's window size",
+    "det.detect_headless.User Agent": "the identity's User-Agent; stock headless says HeadlessChrome",
+    "det.detect_headless.App Version": "the identity's User-Agent; stock headless says HeadlessChrome",
+    "det.fingerprint_pro.Bot": "SP2 and the identity UA: stock reads as a webdriver / headless_chrome bot",
+    "det.fingerprint_pro.Suspect Score": "the service's sum over its signals, which the rows around it explain",
+    "det.fingerprint_pro.VPN": "'timezone mismatch': the identity's zone (seed 1) against the host's IP; a client pairs the identity with a matching proxy",
+    "det.whoer.blocked": "Cloudflare challenges stock's HeadlessChrome UA; the identity UA is not headless",
+    "det.creepjs.images": "the identity's canvas:seed",
+    r"re:det\.creepjs\.\d+% (like )?headless": "SP2 and the identity UA move CreepJS's headless scores",
 }
 # Oracle leaves compared by type only: a value difference is the identity's or the machine's.
 SHAPE = {f"oracle.{k}": "identity- or machine-bound; compared by type" for k in SHAPE_ONLY}
@@ -80,6 +109,23 @@ VOLATILE_LINES = [
     r"^[0-9A-F]{8}$",                            # BrowserScan per-load hashes
     r"^Ad$", r"^0$",
     r"^Status[0-9a-f]{8}$", r"^0\.1000003814697265\d$", r"^1$",  # CreepJS status section, flipped between two stock loads
+    # step2b, the two null runs of 2026-10-13 (stock against stock, 20 sites):
+    r"^(downlink|rtt|Downlink|effectiveType)\s*[:\t]", r"^Connection Rtt\t",   # network estimates
+    r"\d{1,2}:\d\d:\d\d\s?[AP]M", r"^\d+ (seconds?|minutes?|hours?|days?) ago$",  # clocks
+    r"\b1[7-8]\d{8}(\d{3})?\b", r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z",     # epoch s/ms, ISO times
+    r"^0x([0-9A-F])A\1A$", r"^JA3\t", r"^JA4_o\t", r"^(config_id|payload_length)\t\d+$",  # TLS GREASE, per-connection order
+    r"^(event_id|last_seen_at|first_seen_at|linked_id|visitor_id|timestamp|request_id|visitor_found): ",  # Fingerprint Pro, per load
+    r"^(proxy|tampering|virtual_machine|vpn)_ml_score: ", r"^score: [\d.]+$", r"^Last Seen",
+    r"^\d+ IPs?, \d+ Linked IDs? in the past 24 hours$", r"^(1_hour|24_hours|5_minutes|1_minute): \d+$",
+    r'^"(ip_checksum|ip_id|cHeight|num_fingerprints|src_port|tcp_checksum|tcp_seq|tcp_timestamp|webSocketSupportTimeout|connectionRTT)": ',  # incolumitas, per load
+    r"^\S+ \w+\t[\d.]+ ms\t",                   # rebrowser rows carry a timing; their status is parsed into rows
+    r"^Time Elapse\t", r"^Ray ID: [0-9a-f]+$",
+    r"^[+-]?\d+(\.\d+)?,?$", r"^[0-9a-f]{8,64}$", r"^[2-4]g$", r"^(true|false)$",  # bare values: the line diff cannot name them
+    # Pixelscan's scan state and its verdict lines flipped between two stock loads: not a measurement.
+    "^Collecting Data\u2026$", "^Your Browser Fingerprint is (scanning\u2026|inconsistent)$", r"^(No masking|Masking) detected$",
+    r"^(Scroll Down for More Info|Restart|How to Fix it\?|Best antidetect browsers)$",
+    r"^(Detection|Bot detection service|Browser fingerprinting tools)$",   # BrowserScan ad lines
+    r"WHO\d+", r"aged accounts store", r"^\"?AccsBulk:", r"^(Open|Try)$",   # whoer.net ad unit
 ]
 # BrowserScan's ad unit appends a rotating link text to the line before it ("springfieldTry Web Filters").
 # ponytail: the phrases seen in 12 captures on 2026-10-04; a new one shows up as a --compare disagreement,
@@ -92,11 +138,15 @@ AD_SUFFIX = re.compile("(" + "|".join(re.escape(p) for p in (
     "Privacy protection service", "Client hints checker", "Internet & Telecom", "Proxying & Filtering",
     "Security checking tool", "Internet speed test", "Privacy Issues", "Browser security solutions",
     "Bot detection tools", "Anti detection browser", "Affiliate marketing program", "Discover more", "Utilities",
-    "Antidetect Browser", "Gyroscope sensor tester", "DNS leak test", "Online privacy guide")) + ")$")
+    "Antidetect Browser", "Gyroscope sensor tester", "DNS leak test", "Online privacy guide",
+    "Secure Networks", "Online privacy security", "Protect Privacy")) + ")$")  # the last three: step2b, 2026-10-13
 
 
 def _reason(name, table):
-    return next((why for k, why in table.items() if name == k or name.startswith(k + ".")), None)
+    """A key is a row name or a dotted prefix; a key starting "re:" is a full-match regex
+    (CreepJS names rows after a percentage that changes)."""
+    return next((why for k, why in table.items()
+                 if (re.fullmatch(k[3:], name) if k.startswith("re:") else name == k or name.startswith(k + "."))), None)
 
 
 def label_rows(control, fork):
@@ -189,7 +239,68 @@ def parse_colon(text):
     return out
 
 
-PARSERS = {"sannysoft": parse_tabbed, "creepjs": parse_colon}
+# step2b verdict parsers: each shape fixed from its first stock capture (2026-10-13), each
+# fixture in test_step2_rows.py synthetic in that shape.
+REBROWSER_STATUS = {"\U0001f7e2": "pass", "\U0001f534": "fail", "⚪": "not triggered"}
+REBROWSER_ROW = re.compile("^(\U0001f7e2|\U0001f534|⚪)️?\\s*(\\w+)\\t")
+JSON_BOOL = re.compile(r'^\s*"(\w+)": (true|false),?$')
+JSON_OKFAIL = re.compile(r'^\s*"(\w+)": "(OK|FAIL)",?$')
+# Fingerprint Pro's smart signals; Geolocation, IP Address, Visitor ID and Velocity carry the host.
+FP_PRO_SIGNALS = ("Incognito Mode", "Bot", "VPN", "Browser Tampering", "Developer Tools", "Virtual Machine",
+                  "Privacy Settings", "IP Blocklist", "Proxy Detection", "High-Activity Device", "Rare Device",
+                  "Suspect Score")
+
+
+def parse_rebrowser(text):
+    """rebrowser-bot-detector: "<status emoji> <test>\\t<ms>\\t<notes>" per test."""
+    out = {}
+    for line in text.splitlines():
+        m = REBROWSER_ROW.match(line)
+        if m:
+            out.setdefault(m.group(2), REBROWSER_STATUS[m.group(1)])
+    return out
+
+
+def parse_dbi(text):
+    """deviceandbrowserinfo are_you_a_bot: the raw-detection JSON's booleans. The prose
+    below it repeats every key with a colon, so only the quoted JSON form counts."""
+    out = {}
+    for line in text.splitlines():
+        m = JSON_BOOL.match(line)
+        if m:
+            out.setdefault(m.group(1), m.group(2) == "true")
+    return out
+
+
+def parse_incolumitas(text):
+    """bot.incolumitas.com: "name": "OK"|"FAIL" lines; the first occurrence of a name wins."""
+    out = {}
+    for line in text.splitlines():
+        m = JSON_OKFAIL.match(line)
+        if m:
+            out.setdefault(m.group(1), m.group(2))
+    return out
+
+
+def parse_fingerprint_pro(text):
+    """Fingerprint Pro playground: a signal's label line ends in a tab, its value is the next non-empty line."""
+    raw, out = text.splitlines(), {}
+    for i, line in enumerate(raw):
+        k = line.strip()
+        if k in FP_PRO_SIGNALS and line.endswith("\t") and k not in out:
+            out[k] = next((x.strip() for x in raw[i + 1:i + 4] if x.strip()), ABSENT)
+    return out
+
+
+def blocked(text):
+    """A Cloudflare interstitial in place of the page (whoer.net to headless stock, 2026-10-13)."""
+    return "cloudflare challenge" if "Performing security verification" in text else "no"
+
+
+PARSERS = {"sannysoft": parse_tabbed, "creepjs": parse_colon, "detect_headless": parse_tabbed,
+           "rebrowser": parse_rebrowser, "dbi_bot": parse_dbi, "incolumitas": parse_incolumitas,
+           "fingerprint_pro": parse_fingerprint_pro}
+VERDICT_SITES = ("rebrowser", "dbi_bot", "incolumitas", "fingerprint_pro")
 
 
 def line_diff(control_text, fork_text):
@@ -212,8 +323,23 @@ def compare_runs(a, b):
                 rb = (b["rows"].get(probe) or {}).get(arm, {}).get(mode) or {}
                 for name in sorted(set(ra) | set(rb)):
                     va, vb = ra.get(name, ABSENT), rb.get(name, ABSENT)
+                    site = ".".join(name.split(".")[:2])
+                    if UNMEASURED in (ra.get(site), rb.get(site)):
+                        continue  # a page that did not load in one run is not a value disagreement
                     if va != vb and not _reason(name, VOLATILE):
                         out.append((f"{probe}/{arm}/{mode}/{name}", va, vb))
+    return out
+
+
+def unmeasured_sites(a, b):
+    """The detector sites UNMEASURED in either run, which compare_runs skips: listed, never silent."""
+    out = []
+    for tag, doc in (("a", a), ("b", b)):
+        for probe, arms in doc["rows"].items():
+            for arm, modes in (arms or {}).items():
+                for mode, cell in (modes or {}).items():
+                    out += [f"{tag}: {probe}/{arm}/{mode}/{k}" for k, v in sorted((cell or {}).items())
+                            if k.count(".") == 1 and v == UNMEASURED]
     return out
 
 
@@ -253,4 +379,70 @@ def render_tables(doc, texts):
             continue
         co, fo = line_diff(ct, ft)
         out += [f"control only ({len(co)}):", *[f"- `{_cell(s)}`" for s in co], f"fork only ({len(fo)}):", *[f"- `{_cell(s)}`" for s in fo], ""]
+    if "detectors" in doc["rows"]:
+        out += verdict_table(doc)
     return "\n".join(out) + "\n"
+
+
+def _verdict_row(name):
+    parts = name.split(".")
+    return len(parts) >= 3 and parts[0] == "det" and (parts[1] in VERDICT_SITES or parts[2] == "blocked")
+
+
+def verdict_table(doc):
+    """Every verdict row in all four cells, equal or not: both arms flagged is a finding too."""
+    cells = doc["rows"].get("detectors") or {}
+    cols = [(arm, mode) for mode in MODES for arm in ARMS]
+    got = {c: (cells.get(c[0]) or {}).get(c[1]) for c in cols}
+    names = sorted({k for v in got.values() if v for k in v if _verdict_row(k)})
+
+    def val(cell, name):
+        if cell is None or cell.get(".".join(name.split(".")[:2])) == UNMEASURED:
+            return UNMEASURED
+        return _cell(cell.get(name, ABSENT))
+    out = ["## verdicts", "", "| row | " + " | ".join(f"{a} {m}" for a, m in cols) + " |", "|---" * (len(cols) + 1) + "|"]
+    out += [f"| {n} | " + " | ".join(val(got[c], n) for c in cols) + " |" for n in names]
+    return out + [""]
+
+
+_IP_TOKEN = re.compile(r"(?<![\w:.])[0-9A-Fa-f:.]*[.:][0-9A-Fa-f:.]*(?![\w:.])")
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+_IP_GLUED = re.compile(rf"(?<![\w.]){_OCTET}(?:\.{_OCTET}){{3}}\d{{1,2}}(?![\w.])")  # whoer: "203.0.113.1922"
+# Any dotted quad not inside a longer number: catches "IP:203.0.113.5" and "…203.0.113.5." too.
+_IPV4 = re.compile(rf"(?<![\d.]){_OCTET}(?:\.{_OCTET}){{3}}(?!\d|\.\d)")
+_UA_VERSION = re.compile(r"\d+\.0\.0\.0")  # a reduced UA version ("Chrome/154.0.0.0"), not an address
+_COORD = re.compile(r"-?\d{1,3}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}|\d{1,3}°\d{1,2}′[\d.]+″[NSEW]")
+
+
+def _ip(tok):
+    if _UA_VERSION.fullmatch(tok):
+        return tok
+    stripped = tok.rstrip(".,")
+    head, _, port = tok.rpartition(":")
+    for cand, tail in ((tok, ""), (stripped, tok[len(stripped):]), (head, ":" + port)):
+        try:
+            a = ipaddress.ip_address(cand)
+        except ValueError:
+            continue
+        return ("<ip>" if a.version == 4 else "<ip6>") + tail
+    return tok
+
+
+def scrub(value, geo):
+    """`value` (str, or list/dict walked recursively) with IP addresses, coordinate pairs and the
+    host's geo strings replaced. A candidate counts as an address only if ipaddress parses it, so
+    a version (154.0.8037.93) or a clock (10:00:00) stays. `geo` maps a placeholder to the strings
+    it replaces; it comes from CAMOU_SCRUB on the host and is never committed."""
+    if isinstance(value, dict):
+        return {scrub(k, geo): scrub(v, geo) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub(v, geo) for v in value]
+    if not isinstance(value, str):
+        return value
+    s = _IP_TOKEN.sub(lambda m: _ip(m.group(0)), value)
+    s = _IPV4.sub(lambda m: m.group(0) if _UA_VERSION.fullmatch(m.group(0)) else "<ip>", _IP_GLUED.sub("<ip>", s))
+    s = _COORD.sub("<coord>", s)
+    for label, needles in geo.items():
+        for n in sorted(needles, key=len, reverse=True):
+            s = re.sub(re.escape(n), label, s, flags=re.IGNORECASE)  # BrowserScan prints the city lower-case
+    return s

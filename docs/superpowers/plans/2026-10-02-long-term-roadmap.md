@@ -271,6 +271,11 @@ Evidence: `measurements/2026-10-04-windows-verify-set.md`.
 **Goal:** know what detectors see, for the fork and for a stock control,
 before choosing any new spoofing work.
 
+**Step 2b (2026-10-13/14):** 20 detector pages, the fork at main, and a recapture
+in the interactive session. Every host harness now gates on the GPU crash
+count. The recapture overturned step 2's "fork unstable" rows. See
+`measurements/2026-10-step2b-detectors.md`.
+
 Preconditions: the pin milestone equals the control Chrome's milestone (the
 host's Chrome auto-updates; assert its version), and both arms run through
 the project's client with the same argv. Driving the control over raw CDP
@@ -617,6 +622,21 @@ stock there. S4's flip turned out to be the session-0 artefact above.
    object (noise parity only), media device ID reverse map, geolocation
    permission order, the Android claim with a coarse pointer and zero touch
    points (a coherence defect, cheap, not on the Windows path).
+13. **Timezone and locale coherent with the exit IP** (step2b, 2026-10-13; owner
+   decision 2026-10-14). Fingerprint Pro ("timezone mismatch") and Pixelscan
+   ("Timezone spoofed") flag an identity whose zone contradicts its IP's
+   location. `camoucrome.gen` takes the zone from the locale table or
+   `--timezone` and never looks at the exit IP, so every user without a proxy in
+   the identity's region is flagged. This is rule 4, coherence over coverage.
+   Fixes, in order:
+   - a client option that derives `timezone:id` and the locale from the
+     proxy's IP (geoip, as Camoufox does);
+   - failing that, a warning when the zone cannot be checked against the IP.
+   The next recapture (at the 156 re-pin) uses an identity whose zone matches
+   the host's IP, or a proxy in the claimed region. Then Fingerprint Pro's
+   low-confidence "residential proxy" can be judged on its own. The step2b
+   table keeps the row as `expected`, because the fork does what the config
+   says.
 
 **Tracking observer (2026-10-07):** phase 1 (an audit build that counts fingerprint reads per site and script) and the facebook recon shipped (`measurements/2026-10-07-fb-observe.md`); phase 1b dashboard, V8/Intl hooks, fast-call counting and the instagram/threads recon are pending (`docs/observer/followups.md`).
 
