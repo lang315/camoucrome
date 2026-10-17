@@ -212,7 +212,11 @@ for name, kind in ((R8, "same"), (R10, "xsite"), (R11, "xsite-nobfcache")):
 # DSF 2: CDP wheel deltas are CSS px (input_handler.cc does not scale them) and
 # Blink divides a wheel's delta by the page scale, so each notch must still
 # reach the page as kWindowsNotchCssPx.
-got, err = session({**HUMANIZE, **WIN}, wheel_then_read((0, 300)), ["--force-device-scale-factor=2"])
+# At DSF 2 the headless viewport is 500x137 CSS px, so (300, 300) is off-page
+# (stock gets no event there either); wheel at (100, 100).
+got, err = session({**HUMANIZE, **WIN},
+                   lambda page: (page.mouse.move(100, 100), wheel_then_read((0, 300))(page))[1],
+                   ["--force-device-scale-factor=2"])
 row(R9, not err and len(got[0]) == 3 and all(notch_ok(e, 0, 1) for e in got[0]),
     repr(err) if err else json.dumps(got))
 
