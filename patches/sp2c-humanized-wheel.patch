@@ -1,0 +1,196 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 626b4b0e7e..da6cc17c4f 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <stddef.h>
+ 
++#include <cstdlib>
+ #include <memory>
+ #include <tuple>
+ #include <utility>
+@@ -25,6 +26,8 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/trace_event/trace_event.h"
+ #include "base/types/expected.h"
++#include "build/build_config.h"
++#include "components/camoucfg/derive.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "components/camoucfg/mouse_trajectories.h"
+@@ -132,6 +135,16 @@ int GetEventModifiers(int modifiers,
+   return result;
+ }
+ 
++// SP2c: the OS whose wheel encoding to reproduce. Nothing claimed means the
++// real OS, as ClaimedOs's own comment directs.
++bool EffectiveOsIsWindows() {
++  camoucfg::OsFamily os = camoucfg::ClaimedOs(camoucfg::GlobalScope());
++  if (os == camoucfg::OsFamily::kUnknown) {
++    return BUILDFLAG(IS_WIN);
++  }
++  return os == camoucfg::OsFamily::kWindows;
++}
++
+ base::TimeTicks GetEventTimeTicks(const std::optional<double>& timestamp) {
+   // Convert timestamp, in seconds since unix epoch, to an event timestamp
+   // which is time ticks since platform start time. Anchor both clocks to the
+@@ -714,6 +727,32 @@ class InputHandler::InputInjector
+     }
+ 
+     widget_host_->Focus();
++
++    // SP2c: with humanize:enabled and an effective OS of Windows, deliver the
++    // wheel as the whole notches a physical wheel turns. Absent either, this
++    // is skipped and the stock body below runs exactly as before.
++    if (camoucfg::GetBool(camoucfg::GlobalScope(),
++                          camoucfg::keys::kHumanizeEnabled)
++            .value_or(false) &&
++        EffectiveOsIsWindows()) {
++      camoucfg::WheelNotches notches =
++          camoucfg::QuantizeWheel(wheel_event->delta_x, wheel_event->delta_y);
++      if (notches.x != 0 || notches.y != 0) {
++        ScheduleNotches(*wheel_event, notches, std::move(callback));
++        // No callback queued on this injector; the completion task owns it.
++        MaybeSelfDestruct();
++        return;
++      }
++    }
++    ForwardWheelEventNow(wheel_event, std::move(callback));
++  }
++
++  // InjectWheelEvent's stock body, factored out so the last notch of a
++  // humanized wheel (ForwardWheelNotchCompletion) is delivered and acked
++  // exactly as an unhumanized wheel is, phaseEnded follow-up included.
++  void ForwardWheelEventNow(
++      blink::WebMouseWheelEvent* wheel_event,
++      std::unique_ptr<DispatchMouseEventCallback> callback) {
+     input_queued_ = false;
+     pending_mouse_callbacks_.push_back(std::move(callback));
+     // This may destroy the injector if the events get discarded.
+@@ -741,6 +780,59 @@ class InputHandler::InputInjector
+     widget_host_->ForwardWheelEvent(*wheel_event);
+   }
+ 
++  // One event per notch, 18-60 ms apart, each shaped like a Windows notch
++  // through Aura (MakeWebMouseWheelEventFromUiEvent: pixel units, one tick)
++  // with MouseWheelPhaseHandler's phases. Posted in real time, like SP2b's
++  // path, so the renderer consumes each notch before the next arrives. The
++  // last notch carries the CDP callback and goes through ForwardWheelEventNow.
++  void ScheduleNotches(const blink::WebMouseWheelEvent& wheel_event,
++                       camoucfg::WheelNotches notches,
++                       std::unique_ptr<DispatchMouseEventCallback> callback) {
++    const int count = std::max(std::abs(notches.x), std::abs(notches.y));
++    // Blink divides a wheel's delta by the page's scale (wheel_event.cc), so
++    // scale up to keep kWindowsNotchCssPx page-visible at any DPR or zoom.
++    const float notch_px =
++        camoucfg::kWindowsNotchCssPx * owner_->ScaleFactor();
++    base::WeakPtr<InputHandler> handler = owner_->weak_factory_.GetWeakPtr();
++    scoped_refptr<base::SingleThreadTaskRunner> task_runner =
++        base::SingleThreadTaskRunner::GetCurrentDefault();
++    base::TimeDelta at;
++    for (int i = 0; i < count; ++i) {
++      if (i > 0) {
++        at += base::Milliseconds(base::RandIntInclusive(18, 60));
++      }
++      const float tx = i < std::abs(notches.x) ? (notches.x > 0 ? 1 : -1) : 0;
++      const float ty = i < std::abs(notches.y) ? (notches.y > 0 ? 1 : -1) : 0;
++      auto notch = std::make_unique<blink::WebMouseWheelEvent>(wheel_event);
++      notch->delta_x = tx * notch_px;
++      notch->delta_y = ty * notch_px;
++      notch->wheel_ticks_x = tx;
++      notch->wheel_ticks_y = ty;
++      notch->delta_units = ui::ScrollGranularity::kScrollByPixel;
++      notch->phase = i == 0 ? blink::WebMouseWheelEvent::kPhaseBegan
++                            : blink::WebMouseWheelEvent::kPhaseChanged;
++      if (i + 1 < count) {
++        // Without kFromDebugger: OnInputEventAck pops the one queued
++        // callback for any debugger-marked wheel ack, and that callback
++        // belongs to the last notch.
++        notch->SetModifiers(notch->GetModifiers() &
++                            ~blink::WebInputEvent::kFromDebugger);
++        task_runner->PostDelayedTask(
++            FROM_HERE,
++            base::BindOnce(&InputHandler::ForwardSyntheticWheelNotch, handler,
++                           widget_host_, *notch),
++            at);
++      } else {
++        task_runner->PostDelayedTask(
++            FROM_HERE,
++            base::BindOnce(&InputHandler::ForwardWheelNotchCompletion, handler,
++                           widget_host_, std::move(notch),
++                           std::move(callback)),
++            at);
++      }
++    }
++  }
++
+   void InjectMouseEvent(const blink::WebMouseEvent& mouse_event,
+                         std::unique_ptr<DispatchMouseEventCallback> callback) {
+     if (!widget_host_) {
+@@ -2507,6 +2599,34 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+       ->ForwardMouseEventNow(*mouse_event, std::move(callback));
+ }
+ 
++// static
++void InputHandler::ForwardSyntheticWheelNotch(
++    base::WeakPtr<InputHandler> handler,
++    base::WeakPtr<RenderWidgetHostImpl> widget,
++    blink::WebMouseWheelEvent notch) {
++  if (!handler || !widget) {
++    return;
++  }
++  // Stamped when it fires: the real posted delay is the cadence.
++  notch.SetTimeStamp(base::TimeTicks::Now());
++  widget->ForwardWheelEvent(notch);
++}
++
++// static
++void InputHandler::ForwardWheelNotchCompletion(
++    base::WeakPtr<InputHandler> handler,
++    base::WeakPtr<RenderWidgetHostImpl> widget,
++    std::unique_ptr<blink::WebMouseWheelEvent> notch,
++    std::unique_ptr<DispatchMouseEventCallback> callback) {
++  if (!handler || !widget) {
++    callback->sendFailure(Response::InternalError());
++    return;
++  }
++  notch->SetTimeStamp(base::TimeTicks::Now());
++  handler->EnsureInjector(widget.get())
++      ->ForwardWheelEventNow(notch.get(), std::move(callback));
++}
++
+ InputHandler::InputInjector* InputHandler::EnsureInjector(
+     RenderWidgetHostImpl* widget_host) {
+   for (auto& it : injectors_) {
+diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
+index 0362697afd..eb21f78e1b 100644
+--- a/content/browser/devtools/protocol/input_handler.h
++++ b/content/browser/devtools/protocol/input_handler.h
+@@ -27,6 +27,7 @@
+ #include "third_party/blink/public/common/input/pointer_id.h"
+ #include "third_party/blink/public/common/input/web_input_event.h"
+ #include "third_party/blink/public/common/input/web_mouse_event.h"
++#include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
+ #include "third_party/blink/public/mojom/page/widget.mojom.h"
+ #include "ui/gfx/geometry/point_f.h"
+ 
+@@ -358,6 +359,17 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+       base::WeakPtr<RenderWidgetHostImpl> widget,
+       std::unique_ptr<blink::WebMouseEvent> mouse_event,
+       std::unique_ptr<DispatchMouseEventCallback> callback);
++  // Delayed-task callbacks for InputInjector::ScheduleNotches (SP2c). Static
++  // for the same reason as SP2b's: the scheduling injector self-destructs.
++  static void ForwardSyntheticWheelNotch(
++      base::WeakPtr<InputHandler> handler,
++      base::WeakPtr<RenderWidgetHostImpl> widget,
++      blink::WebMouseWheelEvent notch);
++  static void ForwardWheelNotchCompletion(
++      base::WeakPtr<InputHandler> handler,
++      base::WeakPtr<RenderWidgetHostImpl> widget,
++      std::unique_ptr<blink::WebMouseWheelEvent> notch,
++      std::unique_ptr<DispatchMouseEventCallback> callback);
+ 
+   RenderWidgetHostViewBase* GetRootView();
+ 

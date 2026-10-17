@@ -34,3 +34,4 @@ crashpad-no-dumps.patch
 observe.patch
 s3-media-phantoms.patch
 s3b-device-id-seed.patch
+sp2c-humanized-wheel.patch
