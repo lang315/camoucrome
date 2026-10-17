@@ -273,3 +273,41 @@ Limits:
 - Dedicated workers are counted in their own section, not in the site
   totals.
 - Arm 4, Instagram and Threads are not re-run, by the owner's ruling.
+- The host registers a third-party extension
+  as an external extension under
+  `HKLM`/`HKCU\SOFTWARE\Google\Chrome\Extensions`. Every fresh profile
+  therefore downloads it, which is the `chromewebstore.googleapis.com`
+  section. Chrome keeps externally installed extensions disabled until
+  the user approves them, and no report on 10-17, manual or unattended,
+  has a `chrome-extension://` row, so the extension reads nothing.
+
+## 7. Unattended runs (`observe-auto.ps1`, same 154 build)
+
+Run dirs are under `D:\camou-win\observe\auto\`, host only. The baseline
+was `{}`, so a measured arm can only be `PASS` or `UNMEASURED`.
+
+| run | dir | result |
+|---|---|---|
+| gate: headroom | `20261017-090342` | `UNMEASURED low-memory 24.03 GB < 1000 GB`, exit 3 |
+| gate: native build | `20261017-090350` | `UNMEASURED native build running (ninja)`, exit 3 |
+| watchdog (`-KillBelowGB 1000`) | `20261017-090354` | force-stopped, `low_memory_kill` true, `UNMEASURED no trace`, exit 3 |
+| expired login (empty profile) | `20261017-090556` | `UNMEASURED session expired`, exit 3 |
+| GPU signal, session 0 | `red-gpu-s0` | `gpu_exit_lines` 1 (session 1 runs: 0) |
+| calibration 1 | `20261017-091222` | arm 1 `PASS`, arm 3 `PASS`, `RESULT PASS` |
+| calibration 2 | `20261017-091558` | arm 1 `UNMEASURED` (timeout), arm 3 `PASS` |
+| recon throw, no Chrome | `20261017-092950` | `ERROR: missing -FromProfile`, `EXIT=1`, in 5 s |
+| calibration 3 | `20261017-093016` | arm 1 `UNMEASURED` (`CloseMainWindow` race), arm 3 `PASS` |
+
+Requests per unattended load: arm 1 38 (5 to `/ajax/bz`), arm 3 283 to
+311 (0 to `/ajax/bz`).
+
+Arm 1 of calibrations 2 and 3 lost the same race. Once the browser
+closes, a chrome process can exit between the window-handle read and
+`CloseMainWindow()`. The throw then ended recon before `run.json`.
+`recon.ps1` now catches that error (`faf3c79`). Calibration 2 also
+waited out its 5-minute limit, because the throw never reached the log.
+`observe-auto.ps1` now logs it (`3fb031f`).
+
+Calibration has not finished: there is one clean arm-1 sample and three
+arm-3 samples. The owner's session then went `Disc`, and the Windows tree
+moved to 156. The baseline is calibrated on the 156 `out\Observe`.
