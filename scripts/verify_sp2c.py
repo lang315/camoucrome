@@ -10,7 +10,9 @@ whether chrome on Linux animates pixel-unit wheels says nothing about Windows
 """
 
 import json
+import os
 import signal
+import subprocess
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -21,6 +23,7 @@ NOTCH_PX = 100  # baselines/chrome-8037-wheel.json real1 dy[0]
 WIN = {"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
 MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS"}
 HUMANIZE = {"humanize:enabled": True}
+ROW8_TIMEOUT_S = 45  # launch + 5 notches (<= 240 ms) + navigation, with headroom
 
 PAGE = """<!doctype html><body style="margin:0;height:40000px;width:40000px"><script>
 window.__w = [];
@@ -79,6 +82,22 @@ def row(name, ok, note=None):
         notes.append(f"{name}: {note}")
 
 
+if sys.argv[1:] == ["--row8"]:
+    def nav(page):
+        """A 5-notch wheel with a navigation 10 ms in: the command may succeed
+        or error (both allowed), then the browser must still answer."""
+        page.evaluate("setTimeout(() => location.href = 'about:blank', 10)")
+        try:
+            page.mouse.wheel(0, 500)
+        except Exception:  # noqa: BLE001 - an error is an allowed outcome; a hang is not
+            pass
+        page.wait_for_timeout(500)
+        return page.evaluate("1 + 1") == 2
+
+    alive, err = session({**HUMANIZE, **WIN}, nav)
+    print(json.dumps({"returned": True, "alive": bool(alive) and not err}))
+    sys.exit(0)
+
 R1 = "1 no config: wheel(0,300) is one event of deltaY 300"
 R2 = "2 humanize+Windows: wheel(0,300) is 3 notch events, 18-60 ms apart"
 R3 = "3 humanize+Windows: wheel(0,0)=stock count, (0,40)=1 notch, (-250,0)=3 notches on X"
@@ -134,35 +153,27 @@ got, err = session({**HUMANIZE, **WIN}, back_to_back)
 row(R7, not err and len(got) == 6 and all(x > 0 for x in gaps(got)), repr(err) if err else json.dumps(got))
 
 
-class Hung(Exception):
-    pass
-
-
-def _alarm(signum, frame):
-    raise Hung()
-
-
-def nav(page):
-    """A 5-notch wheel with a navigation 10 ms in: the command may succeed or
-    error, but must return within 10 s, and the browser must still answer."""
-    page.evaluate("setTimeout(() => location.href = 'about:blank', 10)")
-    signal.signal(signal.SIGALRM, _alarm)
-    signal.alarm(10)
-    returned = True
+def row8():
+    """Row 8 in a child process with its own process group: a hung wheel
+    command must show up as a timeout, not hang this script. SIGALRM inside
+    Playwright's sync loop wedges the connection instead of interrupting it
+    (seen RED 2026-10-17: the whole verify hung until killed)."""
+    child = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--row8"],
+                             stdout=subprocess.PIPE, text=True, start_new_session=True)
     try:
-        page.mouse.wheel(0, 500)
-    except Hung:
-        returned = False
-    except Exception:  # noqa: BLE001 - an error is an allowed outcome; a hang is not
-        pass
-    finally:
-        signal.alarm(0)
-    page.wait_for_timeout(500)
-    return {"returned": returned, "alive": page.evaluate("1 + 1") == 2}
+        out, _ = child.communicate(timeout=ROW8_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        os.killpg(child.pid, signal.SIGKILL)  # the child's chrome is in its group
+        child.communicate()
+        return {"returned": False, "alive": None}
+    try:
+        return json.loads(out.strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        return {"returned": True, "alive": None, "child_out": out[-300:]}
 
 
-got, err = session({**HUMANIZE, **WIN}, nav)
-row(R8, not err and got == {"returned": True, "alive": True}, repr(err) if err else json.dumps(got))
+got = row8()
+row(R8, got == {"returned": True, "alive": True}, json.dumps(got))
 
 EXPECTED = 8
 for name in sorted(results):

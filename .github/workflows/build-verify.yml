@@ -91,6 +91,7 @@ jobs:
           rc=0
           run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; rc=1; fi; }
           run verify_sp1a_chrome.py
+          run verify_sp2c.py
           run verify_sp4_voices.py
           run verify_fonts_bundle.py
           run verify_host_oracle.py
