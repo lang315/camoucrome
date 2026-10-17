@@ -107,7 +107,7 @@ and in the repo) and reads an arm directory: `trace.json`, `net.json`,
 
 | verdict | exit | condition |
 |---|---|---|
-| `UNMEASURED` | 3 | `run.json` missing; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; `trace_s < net_s - 5`; `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired: the owner logs in with `recon.ps1 -Site facebook -Arm 2 -Intl` and refreshes the backup); the GPU check (§5) fired |
+| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; `trace_s < net_s - 5`; `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired: the owner logs in with `recon.ps1 -Site facebook -Arm 2 -Intl` and refreshes the backup); the GPU check (§5) fired |
 | `FAIL` | 1 | a baseline required group, `intl` included, has 0 calls on the facebook site |
 | `PASS` | 0 | every required group is still above 0 |
 | `INFO` | — | count change against the baseline, new group, new Intl built-in, `/ajax/bz` and total requests |
@@ -125,10 +125,26 @@ session 0.
      disconnected session may mark the window occluded, and the page would
      then be hidden.
    - Otherwise print `UNMEASURED no active session` and exit 3.
-2. **Lock.** Acquire `build_lock.sh acquire observe-auto` through WSL.
-   - If the lock is held, print `UNMEASURED lock held by <owner>` and exit 3.
-     It never waits and never breaks the lock.
-   - The lock is released in `finally`.
+2. **Memory gate, not the build lock** (owner, 2026-10-17). The run takes no
+   `build_lock`, so a build that holds the lock is never blocked by it.
+   - A native Windows `ninja.exe` or `siso.exe` running means `UNMEASURED
+     native build running`, exit 3. The Windows tree's builds at `-j 8` sit
+     near the commit limit.
+   - Windows commit headroom (`CommitLimit - Committed`) under 8 GB means
+     `UNMEASURED low-memory <n> GB`, exit 3. WSL's VM holds about 24 GB of
+     the 38.3 GB limit while it builds.
+   - Both checks run again before arm 3.
+   - **Watchdog during the run** (S5's condition): while the browser runs,
+     `recon.ps1` polls headroom every 5 s. If headroom drops under 4 GB, it
+     force-stops the profile's processes and writes `low_memory_kill: true`.
+     The judge then reads the arm as `UNMEASURED low-memory`. WSL's VM grows
+     on demand and peaks in link steps. An OOM-killed WSL compile costs the
+     re-pin hours.
+   - `run.json` records:
+     - `headroom_launch_gb` and `headroom_min_gb`;
+     - `wsl_build`, whether a WSL build was running (`build_lock.sh status`).
+     Contention slows the page. The observer counts reads, not timing.
+   - At most 10 host runs while a build holds the lock.
 3. **Run directory.** Create `D:\camou-win\observe\auto\<yyyyMMdd-HHmmss>`.
 4. **Arm 1.** Run, through `run-interactive.ps1`:
    `recon.ps1 -Site facebook -Arm 1 -Intl -Wait 30 -Out <run>`.
@@ -139,7 +155,7 @@ session 0.
    - The timeout is 8 min.
 6. **Judge.** Run `observe_judge.py judge` per arm against
    `D:\camou-win\observe\baseline-facebook.json`. Print the rows.
-7. **Cleanup.**
+7. **Cleanup**, in `finally`.
    - Remove the temp scheduled tasks.
    - Delete the arm-3 profile copy and every `cookies.db` in the run. They
      hold session cookies. The cookie names are already in `summary`.
@@ -190,7 +206,9 @@ baseline comes from automated runs, not from the manual ones.
   - Arm 2 (login) is manual, by the owner.
   - The backup profile is never read for values, never copied off the host,
     and never committed.
-  - The command needs the owner's session Active and a free `build_lock`.
+  - The command needs the owner's session Active. It takes no
+    `build_lock`, and it refuses when commit headroom is under 8 GB or a
+    native Windows build is running.
 - **`docs/superpowers/specs/2026-10-06-tracking-observer-design.md`**, Recon:
   add the 2026-10-17 exception beside the 2026-10-07 one.
 - **`docs/observer/README.md`**: an "Unattended recon" section covering the
@@ -213,7 +231,7 @@ baseline comes from automated runs, not from the manual ones.
     and no script path.
   - Write each test first and watch it fail.
   - Add the file to `build-verify.yml`'s pytest list.
-- **Host RED**, each run once, in a window agreed with S5 under `build_lock`:
+- **Host RED**, each run once, under the §4 memory gate:
   - the wrapper with the owner's session `Disc`, or none: `UNMEASURED no
     active session`;
   - arm 3 with `-FromProfile` pointing at a fresh logged-out profile:
@@ -224,12 +242,17 @@ baseline comes from automated runs, not from the manual ones.
   - the §5 GPU RED.
 - **Host GREEN:** the two calibration runs, then one judged run with
   `PASS` on both arms.
-- **Lock RED:** run the wrapper while another owner holds the lock:
-  `UNMEASURED lock held`.
+- **Gate RED:**
+  - a planted 1000 GB headroom floor (a test-only `-MinHeadroomGB` parameter)
+    must give `UNMEASURED low-memory`;
+  - a process named `ninja.exe` (a copied `ping.exe` that sleeps) must give
+    `UNMEASURED native build running`;
+  - a planted watchdog floor (a test-only `-KillBelowGB 1000`) must
+    force-stop the browser within 10 s and give `UNMEASURED low-memory`.
 
-Every host run is gated by `build_lock`. S5's re-pin holds the lock for about
-14 h from 2026-10-17. The host tests run either before S5 acquires the lock,
-or on the 156 `out\Observe` that the re-pin rebuilds.
+The host tests take no `build_lock` (§4). They can run during S5's WSL re-pin
+build, but not during its native Windows build. The harness refuses that case
+by itself.
 
 ## Data handling
 
