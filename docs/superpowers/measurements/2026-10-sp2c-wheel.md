@@ -57,6 +57,34 @@ Following plan Task 1 Step 9, the `tracks_dpr = false` formula is used: the brow
 - sshgate keeps 64 KiB of stdout and cuts the middle. Every arm's output was about 65.5 K, because `chrome://gpu`'s text is long. The page result comes early in the output and was intact. The `chrome://gpu` JSON line was cut, but each arm's `GPU process crash count : 0` line survived the cut. The GPU block was rebuilt from that surviving line before replaying the run through `capture_wheel_oracle.main()`.
 - The first attempt, at 15:20, saw 0 wheel events. Session 1 was locked: `SetCursorPos` returned false and `SendInput` returned 0 with error 5. The run worked once the owner connected RDP.
 
+## Verify (WSL `chrome`, `out/Default`)
+
+Build-box tree on `camoucrome/main` at `3da17048d5` (`sp2c-humanized-wheel`, one commit above `0aec35868d`), 2026-10-17, ICT.
+
+**Unit tests** (`components_unittests --gtest_filter='MouseTrajectoriesTest.*'`):
+- RED, the test alone: `error: use of undeclared identifier 'QuantizeWheel'`.
+- GREEN: a 15-step build, `[  PASSED  ] 10 tests.`
+- Mutant: the clamp moved to `kMaxWheelNotches + 1`. `QuantizeWheelClampsAndRejectsNonFinite` FAILED. After restoring, 10 passed.
+
+**`gn check out/Default //content/browser:browser`**: `Header dependency check OK`. `checkdeps.py content/browser/devtools/protocol`: `SUCCESS`. The hook's build was 49 steps.
+
+**`verify_sp2c.py`**, 8 rows:
+
+| run | result |
+|---|---|
+| before SP2c (chrome built from `0aec35868d`) | R2, R3, R7 FAIL; R1, R4, R5, R6, R8 PASS; rc 1 |
+| SP2c | 8/8 PASS, rc 0 (run three times) |
+| mutant `EffectiveOsIsWindows() → true` | R4 and R5 FAIL, every other row PASS |
+| row-8 guard RED (the child waits 120 s instead of wheeling) | R8 FAIL `{"returned": false}` after 45 s; no Chrome left behind |
+
+On the pin, stock CDP `wheel(0, 0)` delivers one zero-delta `wheel` event. Under SP2c that case keeps stock's path, and row 3 asserts the two match.
+
+**Round trip.**
+- The exported patch was re-applied with `git apply --3way` onto `HEAD~1`. `git diff --cached HEAD` printed 0 lines, and `gn check` passed.
+- `check_checkout_sync.sh local`: `PASS all 48 copied files are identical in repo and checkout`.
+
+**Not done.** The host-native arm: `chrome.exe` with `humanize:enabled` compared against this oracle, including animation on a console session. It needs a Windows rebuild, which is the owner's call.
+
 ## Open
 
 - **Cadence.** The 18–60 ms band is Camoufox's. `SendInput` set this run's cadence (40 ms plus delivery), so it says nothing about a hand's.

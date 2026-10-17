@@ -638,6 +638,13 @@ stock there. S4's flip turned out to be the session-0 artefact above.
    table keeps the row as `expected`, because the fork does what the config
    says.
 
+14. **Real input instead of node clicks** (owner request, 2026-10-17). Three sub-projects, in this order:
+   - **SP2c — wheel notches. DONE on WSL 2026-10-17** (`specs/2026-10-17-sp2c-humanized-wheel-design.md`, `measurements/2026-10-sp2c-wheel.md`, `patches/sp2c-humanized-wheel.patch`). With `humanize:enabled` and an effective OS of Windows, a CDP wheel scroll arrives as whole notches, each 100 px / -120 and 18–60 ms apart, as stock Chrome 154 delivers them. Open items:
+     - the host-native arm, which includes animation on a console session rather than over RDP;
+     - DPR at scales other than 100 %.
+   - **Click helper** in all three clients. It clicks an off-centre point with a humanized approach and holds the button between down and up. It is what automation code calls instead of `element.click()`. Not started.
+   - **Cursory port**: recorded human trajectories replace SP2b's Bézier. The code stays LGPLv3 in its own directory (owner decision 2026-10-17). Not started.
+
 **Tracking observer (2026-10-07):** phase 1 (an audit build that counts fingerprint reads per site and script) and the facebook recon shipped (`measurements/2026-10-07-fb-observe.md`); phase 1b dashboard, V8/Intl hooks, fast-call counting and the instagram/threads recon are pending (`docs/observer/followups.md`).
 
 `screenX` and `measureText` are recorded design trade-offs in the 2026-09-24
