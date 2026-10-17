@@ -9,11 +9,13 @@ whether chrome on Linux animates pixel-unit wheels says nothing about Windows
 (spec section 4); the host-native arm owns that.
 """
 
+import http.server
 import json
 import os
 import signal
 import subprocess
 import sys
+import threading
 
 from playwright.sync_api import sync_playwright
 
@@ -32,12 +34,12 @@ addEventListener('wheel', e => __w.push({dx: e.deltaX, dy: e.deltaY, mode: e.del
 </script>"""
 
 
-def session(config, actions):
+def session(config, actions, flags=()):
     """actions(page) -> value; returns (value, err)."""
     proc = None
     try:
         proc = lib_shell.launch(json.dumps(config) if config else None, shell=lib_shell.CHROME,
-                                extra_flags=lib_shell.CHROME_FLAGS)
+                                extra_flags=lib_shell.CHROME_FLAGS + list(flags))
         with sync_playwright() as p:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
             context = browser.contexts[0]
@@ -82,20 +84,48 @@ def row(name, ok, note=None):
         notes.append(f"{name}: {note}")
 
 
-if sys.argv[1:] == ["--row8"]:
+class _Page(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = PAGE.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+if sys.argv[1:2] == ["--nav"]:
+    # same: same-document target (about:blank). xsite: 127.0.0.1 -> localhost,
+    # a cross-site navigation that swaps the frame's widget (the old one may
+    # sit in the back/forward cache). xsite-nobfcache: same, but the old
+    # widget is destroyed, so the last notch meets a dead widget.
+    kind = sys.argv[2]
+    srv = http.server.ThreadingHTTPServer(("", 0), _Page)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+
     def nav(page):
         """A 5-notch wheel with a navigation 10 ms in: the command may succeed
         or error (both allowed), then the browser must still answer."""
-        page.evaluate("setTimeout(() => location.href = 'about:blank', 10)")
+        target = "about:blank"
+        if kind != "same":
+            page.goto(f"http://127.0.0.1:{port}/")
+            page.mouse.move(300, 300)
+            target = f"http://localhost:{port}/"
+        page.evaluate(f"setTimeout(() => location.href = '{target}', 10)")
         try:
             page.mouse.wheel(0, 500)
         except Exception:  # noqa: BLE001 - an error is an allowed outcome; a hang is not
             pass
         page.wait_for_timeout(500)
-        return page.evaluate("1 + 1") == 2
+        return page.evaluate("location.href") == target
 
-    alive, err = session({**HUMANIZE, **WIN}, nav)
-    print(json.dumps({"returned": True, "alive": bool(alive) and not err}))
+    flags = ["--disable-features=BackForwardCache"] if kind == "xsite-nobfcache" else []
+    arrived, err = session({**HUMANIZE, **WIN}, nav, flags)
+    print(json.dumps({"returned": True, "alive": bool(arrived) and not err}))
     sys.exit(0)
 
 R1 = "1 no config: wheel(0,300) is one event of deltaY 300"
@@ -106,6 +136,9 @@ R5 = "5 humanize, nothing claimed (Linux build): wheel(0,300) is stock's single 
 R6 = "6 no new window keys and WheelEvent accessors native under humanize+Windows"
 R7 = "7 humanize+Windows: two back-to-back wheel(0,300) give 6 events, timeStamps increasing"
 R8 = "8 humanize+Windows: navigating away mid-sequence neither hangs nor kills the browser"
+R9 = "9 humanize+Windows at DSF 2: wheel(0,300) is 3 notch events of deltaY 100"
+R10 = "10 humanize+Windows: cross-site navigation mid-sequence neither hangs nor kills the browser"
+R11 = "11 same as 10 with the back/forward cache off (the last notch meets a dead widget)"
 
 stock, err = session(None, wheel_then_read((0, 300), (0, 0)))
 if err:
@@ -153,12 +186,12 @@ got, err = session({**HUMANIZE, **WIN}, back_to_back)
 row(R7, not err and len(got) == 6 and all(x > 0 for x in gaps(got)), repr(err) if err else json.dumps(got))
 
 
-def row8():
-    """Row 8 in a child process with its own process group: a hung wheel
-    command must show up as a timeout, not hang this script. SIGALRM inside
-    Playwright's sync loop wedges the connection instead of interrupting it
-    (seen RED 2026-10-17: the whole verify hung until killed)."""
-    child = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--row8"],
+def nav_row(kind):
+    """A navigation row in a child process with its own process group: a hung
+    wheel command must show up as a timeout, not hang this script. SIGALRM
+    inside Playwright's sync loop wedges the connection instead of
+    interrupting it (seen RED 2026-10-17: the whole verify hung until killed)."""
+    child = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--nav", kind],
                              stdout=subprocess.PIPE, text=True, start_new_session=True)
     try:
         out, _ = child.communicate(timeout=ROW8_TIMEOUT_S)
@@ -172,10 +205,18 @@ def row8():
         return {"returned": True, "alive": None, "child_out": out[-300:]}
 
 
-got = row8()
-row(R8, got == {"returned": True, "alive": True}, json.dumps(got))
+for name, kind in ((R8, "same"), (R10, "xsite"), (R11, "xsite-nobfcache")):
+    got = nav_row(kind)
+    row(name, got == {"returned": True, "alive": True}, json.dumps(got))
 
-EXPECTED = 8
+# DSF 2: CDP wheel deltas are CSS px (input_handler.cc does not scale them) and
+# Blink divides a wheel's delta by the page scale, so each notch must still
+# reach the page as kWindowsNotchCssPx.
+got, err = session({**HUMANIZE, **WIN}, wheel_then_read((0, 300)), ["--force-device-scale-factor=2"])
+row(R9, not err and len(got[0]) == 3 and all(notch_ok(e, 0, 1) for e in got[0]),
+    repr(err) if err else json.dumps(got))
+
+EXPECTED = 11
 for name in sorted(results):
     print(f"{'PASS' if results[name] else 'FAIL'}  {name}")
 if len(results) != EXPECTED:
