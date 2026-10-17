@@ -84,10 +84,22 @@ Intl blind.
 ## Unattended recon (facebook)
 
 The owner allowed this on 2026-10-17
-(`docs/superpowers/specs/2026-10-17-observe-auto-fb-design.md`). From any
-shell on the host, sshgate included:
+(`docs/superpowers/specs/2026-10-17-observe-auto-fb-design.md`). From a
+shell on the host:
 
     powershell -NoProfile -ExecutionPolicy Bypass -File D:\camou-win\observe\observe-auto.ps1
+
+A run takes up to about 15 minutes. sshgate kills a foreground command at
+about 60 s, before `RESULT` and before the command's cleanup (2026-10-17: a
+profile copy, `cookies.db` and a scheduled task stayed behind). From
+sshgate, launch it detached and poll its output file with calls that sleep
+at most 58 s:
+
+    $s = "powershell -NoProfile -ExecutionPolicy Bypass -File D:\camou-win\observe\observe-auto.ps1 *> 'D:\camou-win\observe\auto\<name>.out'; `"RC=`$LASTEXITCODE`" | Add-Content 'D:\camou-win\observe\auto\<name>.out'"
+    $b = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($s))
+    (Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine = "powershell -NoProfile -EncodedCommand $b"}).ProcessId
+
+The `.out` file ends with `RESULT <verdict> <run dir>` and `RC=<exit>`.
 
 What it runs:
 - **Arm 1:** logged out, fresh profile, 30 s.
@@ -142,6 +154,15 @@ If `recon.ps1` throws, `arm<N>.log` gets `ERROR: <error record>` and its
 script stack trace, then `EXIT=1`. The command echoes the `ERROR:` line
 and the arm is `UNMEASURED` (`run.json missing`) at once, without waiting
 out the arm's time limit.
+
+A timeout stops the arm's scheduled task before it removes it: removing a
+task leaves its running instance alive (host, 2026-10-17), and a late recon
+would copy `cookies.db` after the cleanup. A judge that crashes or fails to
+launch is `UNMEASURED`, never `FAIL` or `PASS`. A calibrated baseline with
+no entry for the arm is a usage error. Against `{}` the judge adds
+`INFO ... baseline requires 0 groups: PASS means measured only`.
+`observe_judge.py baseline` refuses an unmeasured input with exit 2 and
+writes no file.
 
 **Baseline status.** Calibration is not done yet. On 2026-10-17 the host
 baseline is `{}`, so every measured arm is `PASS` and every group shows

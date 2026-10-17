@@ -273,8 +273,7 @@ Limits:
 - Dedicated workers are counted in their own section, not in the site
   totals.
 - Arm 4, Instagram and Threads are not re-run, by the owner's ruling.
-- The host registers IDM Integration Module (`ngpampappnmepgilojfohadhhmbhlaek`)
-  as an external extension under
+- The host registers a third-party extension as an external extension under
   `HKLM`/`HKCU\SOFTWARE\Google\Chrome\Extensions`. Every fresh profile
   therefore downloads it, which is the `chromewebstore.googleapis.com`
   section. Chrome keeps externally installed extensions disabled until

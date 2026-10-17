@@ -118,7 +118,8 @@ or `FAIL`.
 ## 4. `scripts/windows/observe-auto.ps1`
 
 This is the one command. It is run from a shell on the host: sshgate,
-session 0.
+session 0. sshgate kills a foreground command at about 60 s, so it is
+launched detached there (README "Unattended recon"; found 2026-10-17).
 
 1. **Preconditions.**
    - `quser` must show the owner's session Active. `Disc` is not enough: a

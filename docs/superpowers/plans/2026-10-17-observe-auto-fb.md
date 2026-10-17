@@ -63,7 +63,7 @@ sshgate.
 - Use plain `git -C <worktree>` commands: no `cd X && git`, no `$(...)`
   near git.
 - No merge to main without the owner. The PR body carries evidence.
-- Reply to the owner in Vietnamese and give times in ICT.
+- Reply to the owner in the owner's language and give times in local time.
 
 ## Review Focus
 
@@ -1058,7 +1058,9 @@ Append to the end of `2026-10-07-fb-observe.md`:
 - [ ] **Step 4: Privacy grep, red first**
 
 Plant the line `PLANT 203.0.113.9 c_user=123 ?q=1` in the new doc. Then run:
-`grep -nE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\?[a-z_]+=|c_user=|xs=|Ho Chi Minh|Hanoi|Vietnam|Asia/(Ho_Chi_Minh|Saigon)|viettel|lang315|LANG31' docs/superpowers/measurements/2026-10-17-fb-observe-intl.md`
+`grep -nE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\?[a-z_]+=|c_user=|xs=' docs/superpowers/measurements/2026-10-17-fb-observe-intl.md`,
+then grep the same file for the host's location, time zone, ISP and account
+names. Those terms are kept in an uncommitted file, never in the repo.
 
 Expected: the plant line is found. Remove the plant and run the grep again.
 Expected: no output. A version like `154.0.8037.93` is fine; inspect any hit
@@ -1177,4 +1179,4 @@ Commit with the message:
   - the baseline's required groups;
   - the privacy-grep evidence.
 
-  Do not merge. Tell the owner, in Vietnamese with ICT times, and tell S5.
+  Do not merge. Tell the owner, in the owner's language with local times, and tell S5.
