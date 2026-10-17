@@ -322,7 +322,7 @@ git commit -m "feat(sp2c): host wheel oracle (SendInput vs CDP) with RED gate"
 
 - [ ] **Step 8: Run the oracle on the host.** Preconditions:
 - the owner's RDP session is connected and Active (a disconnected session stalls input);
-- the buildpc ssh master is up on the Mac (`ssh -O check buildpc`). If it is not, ask the owner to open it with `! ssh -fNM -o ServerAliveInterval=30 buildpc`.
+- the buildpc ssh master is up on the Mac (`ssh -O check buildpc`). If it is not, ask the owner to open it with `! ssh -fNM -o ServerAliveInterval=30 buildpc`. Never retry a password yourself: three failures trigger a fail2ban lockout. Fallback, as step2b (PR #38) did: replace `winhost.powershell` with a stub that records each script. Send each recorded script through `mcp__sshgate__exec` (gzip+base64, one line), then feed the output back to the stub.
 
 Run: `python3 scripts/capture_wheel_oracle.py`
 
@@ -334,7 +334,7 @@ Expected:
 
 Branches:
 - `UNMEASURED` (session or GPU gate): report it, fix the session, rerun.
-- `RED-GATE real3: no wheel event…`: the Chrome window was not under (500,500). Have the owner check that nothing covers the top-left of the screen, then rerun.
+- `RED-GATE real3: no wheel event…`: first rule out SendInput itself. Run `winhost.powershell(capture_wheel_oracle.SENDINPUT + '"SENT=" + [CamouWheel]::Notch(-120)')`; `SENT=0` means a struct-size mismatch in the `INPUT` declaration, and that is what to fix. If it prints `SENT=1`, the Chrome window was not under (500,500): have the owner check that nothing covers the top-left of the screen, then rerun.
 - Any other `RED-GATE`: STOP and report the five summaries to the owner. The spec's premise is then wrong, and SP2c needs re-design.
 
 - [ ] **Step 9: Read the constants and decide DPR.** From `baselines/chrome-8037-wheel.json`:
@@ -530,7 +530,21 @@ Add includes next to SP2b's camoucfg includes:
 
 (`build/build_config.h` only if it is not already included.)
 
-Replace the body of `InjectWheelEvent` with the gate plus a call to the factored-out stock body, and add the new members right after it. The stock code from `input_queued_ = false;` through the trailing `ForwardWheelEvent(*wheel_event);` moves unchanged into `ForwardWheelEventNow`.
+In the file's top-level anonymous namespace (the one holding `GetEventTimeTicks`, `input_handler.cc:130`), add a free function. It uses no members:
+
+```cpp
+// SP2c: the OS whose wheel encoding to reproduce. Nothing claimed means the
+// real OS, as ClaimedOs's own comment directs.
+bool EffectiveOsIsWindows() {
+  camoucfg::OsFamily os = camoucfg::ClaimedOs(camoucfg::GlobalScope());
+  if (os == camoucfg::OsFamily::kUnknown) {
+    return BUILDFLAG(IS_WIN);
+  }
+  return os == camoucfg::OsFamily::kWindows;
+}
+```
+
+Replace the body of `InjectWheelEvent` with the gate plus a call to the factored-out stock body. Add `ForwardWheelEventNow` and `ScheduleNotches` directly after it, in the same access section and with no new `public:`/`private:` labels. This is the layout SP2b used, with `ForwardMouseEventNow` and `SchedulePath` directly after `InjectMouseEvent` (`grep -n "void ForwardMouseEventNow\|void SchedulePath" input_handler.cc`). The stock code from `input_queued_ = false;` through the trailing `ForwardWheelEvent(*wheel_event);` moves unchanged into `ForwardWheelEventNow`.
 
 ```cpp
   void InjectWheelEvent(blink::WebMouseWheelEvent* wheel_event,
@@ -594,16 +608,6 @@ Replace the body of `InjectWheelEvent` with the gate plus a call to the factored
     widget_host_->ForwardWheelEvent(*wheel_event);
   }
 
- private:
-  static bool EffectiveOsIsWindows() {
-    camoucfg::OsFamily os = camoucfg::ClaimedOs(camoucfg::GlobalScope());
-    if (os == camoucfg::OsFamily::kUnknown) {
-      // Nothing claimed: the real OS, as ClaimedOs's own comment directs.
-      return BUILDFLAG(IS_WIN);
-    }
-    return os == camoucfg::OsFamily::kWindows;
-  }
-
   // One event per notch, 18-60 ms apart, each shaped like a Windows notch
   // through Aura (MakeWebMouseWheelEventFromUiEvent: pixel units, one tick)
   // with MouseWheelPhaseHandler's phases. Posted in real time, like SP2b's
@@ -656,11 +660,9 @@ Replace the body of `InjectWheelEvent` with the gate plus a call to the factored
       }
     }
   }
-
- public:
 ```
 
-Place `private:` / `public:` so that the class keeps its existing access layout. If `InjectWheelEvent` sits in a `public:` block followed by more public members, the trailing `public:` restores it. If it is the last member before `private:`, drop the trailing `public:` and merge into that `private:`. `std::abs` on `int` needs `<cstdlib>`; add it if the file does not include it.
+`std::abs` on `int` needs `<cstdlib>`; add it if the file does not include it.
 
 Next to SP2b's static definitions (after `ForwardHumanizedMouseEventCompletion`):
 
@@ -749,13 +751,14 @@ Also on the box: `bash $X/scripts/check_checkout_sync.sh ~/chromium/src; echo rc
 - [ ] **Step 8: Round-trip the patch** (CLAUDE.md: a single extraction can drop a cross-file dep). On the box:
 
 ```bash
-cd ~/chromium/src && git status --porcelain | wc -l && git checkout HEAD~1 -- content/browser/devtools/protocol/ && git apply --3way $X/patches/sp2c-humanized-wheel.patch && git diff --cached --stat HEAD && gn check out/Default //content/browser:browser; git checkout HEAD -- content/browser/devtools/protocol/ && git status --porcelain | wc -l
+cd ~/chromium/src && git status --porcelain | wc -l && git checkout HEAD~1 -- content/browser/devtools/protocol/ && git apply --3way $X/patches/sp2c-humanized-wheel.patch && echo "vs HEAD~1:" && git diff --cached --stat HEAD~1 -- content/browser/devtools/protocol/ && echo "vs HEAD:" && git diff --cached HEAD -- content/browser/devtools/protocol/ | wc -l && gn check out/Default //content/browser:browser; git checkout HEAD -- content/browser/devtools/protocol/ && git status --porcelain | wc -l
 ```
 
 Both porcelain counts must be `0`. The tree is clean after Step 7's commit, so no stash is needed. If the first count is not 0, STOP.
 
 Expected:
-- `--cached --stat` lists exactly `input_handler.cc` and `input_handler.h`;
+- `vs HEAD~1` lists exactly `input_handler.cc` and `input_handler.h` (sanity);
+- `vs HEAD` prints `0`: the re-applied patch reproduces the commit exactly, which is the actual round-trip test;
 - `Header dependency check OK`.
 
 Finish with `check_checkout_sync.sh` rc 0. Drop the guard stash only if one was created: find it by its tag in `git stash list` and drop it by that index.
