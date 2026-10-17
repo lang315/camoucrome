@@ -92,6 +92,12 @@ while `i < |nx|` (Y likewise). `wheel(0, 250)` therefore delivers 3 notches,
 not 250 px. That changes the number the caller asked for. It is deliberate
 and opt-in, as in Camoufox: a wheel cannot turn 2.5 notches.
 
+Two further effects follow, and both apply to anyone already using `humanize:enabled` for SP2b's cursor:
+- **Large wheels are capped.** Each axis is clamped to `kMaxWheelNotches` = 60, which is 6000 px. So `wheel(0, 100000)`, a common "scroll to the bottom" idiom, scrolls 6000 px. Non-finite deltas take stock's path.
+- **Small wheels grow.** `wheel(0, 10)` is a whole notch, 100 px. A loop of small wheels therefore scrolls ten times as far.
+
+Callers who need exact pixel scrolls leave humanize off. The `humanize:enabled` doc in `settings/keys.json` still names only the cursor. Correcting it regenerates `keys.h`, which every camoucfg consumer includes, so the correction waits for the next key change.
+
 **Per-notch event.** Each notch is a fresh `WebMouseWheelEvent` whose
 fields (`delta_units`, delta per tick, `wheel_ticks`, `phase`,
 `has_precise_scrolling_deltas`, `dispatch_type`) are set to what §2 measures.

@@ -77,6 +77,15 @@ Build-box tree on `camoucrome/main` at `3da17048d5` (`sp2c-humanized-wheel`, one
 | mutant `EffectiveOsIsWindows() → true` | R4 and R5 FAIL, every other row PASS |
 | row-8 guard RED (the child waits 120 s instead of wheeling) | R8 FAIL `{"returned": false}` after 45 s; no Chrome left behind |
 
+**Rows added after the final review**, giving 11 rows. All 11 PASS, rc 0.
+
+| run | result |
+|---|---|
+| R9: DSF 2, `wheel(0,300)` at (100,100) | 3 events, each `deltaY 100` / `wheelDeltaY -120`, 300 px in total. Stock gives 1 event of `deltaY 300` at DSF 2, so the totals match. CDP wheel deltas are CSS px. The first form of the row wheeled at (300,300), which lies outside the 500×137 viewport at DSF 2, so stock got no event there either; probed and fixed. |
+| R10: cross-site navigation (127.0.0.1 to localhost) mid-wheel, bfcache on | PASS |
+| R11: the same with `--disable-features=BackForwardCache` | PASS |
+| mutant: `ForwardWheelNotchCompletion`'s dead-widget branch never answers (`callback.release()`) | R8 and R11 FAIL with `{"returned": false}`, so both reach the dead-widget path. R10 still PASSES, because with bfcache on the old widget is still alive and acks. |
+
 On the pin, stock CDP `wheel(0, 0)` delivers one zero-delta `wheel` event. Under SP2c that case keeps stock's path, and row 3 asserts the two match.
 
 **Round trip.**
