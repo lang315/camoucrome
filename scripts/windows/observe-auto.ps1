@@ -38,6 +38,9 @@ try {
     $cmd = "& $Root\recon.ps1 -Site facebook -Arm $a -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
     if ($a -eq 3) { $cmd += ' -FromProfile ' + $(if ($FromProfileOverride) { $FromProfileOverride } else { $Backup }) }
+    # a recon throw escapes run-interactive's *> block unlogged, with no EXIT= line (cal2, 2026-10-17);
+    # log it and set the code instead. No exit here: it would end run.ps1 before its EXIT= line
+    $cmd = "try { $cmd } catch { 'ERROR: ' + (`$_ | Out-String); `$_.ScriptStackTrace; `$global:LASTEXITCODE = 1 }"
     $log = Join-Path $run "arm$a.log"
     $name = "observe-auto-arm$a"
     powershell -NoProfile -ExecutionPolicy Bypass -File $Ri -Name $name -Log $log -Command $cmd | Out-Null
@@ -49,7 +52,7 @@ try {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     }
     powershell -NoProfile -ExecutionPolicy Bypass -File $Ri -Name $name -Remove | Out-Null
-    Get-Content $log -ErrorAction SilentlyContinue | Select-String 'SESSION=|CLOSED=|low-memory|report exit' | ForEach-Object { $_.Line }
+    Get-Content $log -ErrorAction SilentlyContinue | Select-String 'SESSION=|CLOSED=|low-memory|report exit|ERROR:' | ForEach-Object { $_.Line }
     python (Join-Path $Root 'observe_judge.py') judge --baseline $Baseline --arm $a (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
     $worst = [math]::Max($worst, $LASTEXITCODE)
   }
