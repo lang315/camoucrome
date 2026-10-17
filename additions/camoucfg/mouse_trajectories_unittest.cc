@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -138,7 +139,8 @@ TEST(MouseTrajectoriesTest, QuantizeWheelRoundsToWholeNotches) {
 TEST(MouseTrajectoriesTest, QuantizeWheelClampsAndRejectsNonFinite) {
   EXPECT_EQ(QuantizeWheel(0, 1e9).y, kMaxWheelNotches);
   EXPECT_EQ(QuantizeWheel(-1e9, 0).x, -kMaxWheelNotches);
-  for (double bad : {std::nan(""), INFINITY, -INFINITY}) {
+  constexpr double kInf = std::numeric_limits<double>::infinity();
+  for (double bad : {std::nan(""), kInf, -kInf}) {
     WheelNotches n = QuantizeWheel(bad, 100);
     EXPECT_EQ(n.x, 0);
     EXPECT_EQ(n.y, 0) << "non-finite input must take the stock path";

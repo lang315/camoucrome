@@ -42,6 +42,22 @@ std::vector<TrajectoryPoint> HumanizeTrajectory(
     gfx::PointF start, gfx::PointF end, int steps,
     int min_ms, int max_ms, uint64_t seed);
 
+// A wheel turns in whole notches. Signed notch counts per axis for a CDP
+// wheel delta: |d| / 100 rounded half away from zero, at least 1 for a
+// non-zero delta (Camoufox's rule), clamped to kMaxWheelNotches. A zero or
+// non-finite delta on both axes gives {0, 0}: the caller then takes stock's
+// path. The event count a caller sends is max(|x|, |y|).
+struct WheelNotches {
+  int x;
+  int y;
+};
+inline constexpr int kMaxWheelNotches = 60;
+WheelNotches QuantizeWheel(double delta_x, double delta_y);
+
+// The page-visible deltaY of one notch on Windows at DPR 1, measured on stock
+// Chrome 154 (docs/superpowers/measurements/2026-10-sp2c-wheel.md).
+inline constexpr float kWindowsNotchCssPx = 100.0f;
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_MOUSE_TRAJECTORIES_H_
