@@ -180,6 +180,8 @@ startup abort instead of a silent fall-back to real values.
   - The command needs the owner's session Active. It takes no
     `build_lock`, and it refuses below 8 GB commit headroom or while a
     native Windows build runs.
+  - From sshgate, launch it detached (README "Unattended recon"): a
+    foreground call is killed at about 60 s and skips the cleanup.
   - A verdict is `PASS`, `FAIL` (a baseline group is gone) or `UNMEASURED`
     (it did not measure, including an expired login). See
     `docs/observer/README.md`.

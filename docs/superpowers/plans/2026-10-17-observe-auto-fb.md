@@ -1058,7 +1058,9 @@ Append to the end of `2026-10-07-fb-observe.md`:
 - [ ] **Step 4: Privacy grep, red first**
 
 Plant the line `PLANT 203.0.113.9 c_user=123 ?q=1` in the new doc. Then run:
-`grep -nE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\?[a-z_]+=|c_user=|xs=' docs/superpowers/measurements/2026-10-17-fb-observe-intl.md`
+`grep -nE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\?[a-z_]+=|c_user=|xs=' docs/superpowers/measurements/2026-10-17-fb-observe-intl.md`,
+then grep the same file for the host's location, time zone, ISP and account
+names. Those terms are kept in an uncommitted file, never in the repo.
 
 Expected: the plant line is found. Remove the plant and run the grep again.
 Expected: no output. A version like `154.0.8037.93` is fine; inspect any hit
