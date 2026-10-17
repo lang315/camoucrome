@@ -27,7 +27,7 @@ index bd812ded17..6f56355693 100644
    }
  
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index 372b10936b..10a898ad1b 100644
+index 09a2d1c79e..12800cdd63 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
 @@ -35,9 +35,13 @@
@@ -44,7 +44,7 @@ index 372b10936b..10a898ad1b 100644
  #include "base/numerics/safe_conversions.h"
  #include "base/strings/escape.h"
  #include "base/system/sys_info.h"
-@@ -158,6 +162,38 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+@@ -159,6 +163,38 @@ const FontPlatformData* FontCache::GetFontPlatformData(
      AlternateFontName alternate_font_name) {
    TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
  

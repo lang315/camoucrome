@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 00fe10f55f..b207f6113c 100644
+index b2619baa8f..2a7960badd 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -638,7 +638,8 @@ bool ShouldInstallSodaDuringPostProfileInit(
+@@ -642,7 +642,8 @@ bool ShouldInstallSodaDuringPostProfileInit(
               ash::features::kOnDeviceSpeechRecognition) &&
           ash::IsUserBrowserContext(const_cast<Profile*>(profile));
  #else
@@ -12,7 +12,7 @@ index 00fe10f55f..b207f6113c 100644
  #endif
  }
  #endif  // !BUILDFLAG(IS_ANDROID)
-@@ -1940,12 +1941,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1954,12 +1955,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
      g_browser_process->CreateDevToolsAutoOpener();
    }
  
@@ -88,7 +88,7 @@ index 2ff9716b24..b23eb0ef60 100644
      return {GURL(url_source_override_)};
    }
 diff --git a/components/gcm_driver/gcm_driver_desktop.cc b/components/gcm_driver/gcm_driver_desktop.cc
-index 16e142aed3..e5b016d869 100644
+index 01250860e5..b4bbb10ff6 100644
 --- a/components/gcm_driver/gcm_driver_desktop.cc
 +++ b/components/gcm_driver/gcm_driver_desktop.cc
 @@ -1189,6 +1189,14 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted(
@@ -107,10 +107,10 @@ index 16e142aed3..e5b016d869 100644
      return GCMClient::SUCCESS;
  
 diff --git a/components/network_time/network_time_tracker.cc b/components/network_time/network_time_tracker.cc
-index ada5634005..2ebdebb8c9 100644
+index 3bb0f02378..d64e39293b 100644
 --- a/components/network_time/network_time_tracker.cc
 +++ b/components/network_time/network_time_tracker.cc
-@@ -62,7 +62,9 @@ namespace network_time {
+@@ -74,7 +74,9 @@ namespace network_time {
  #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
  BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_DISABLED_BY_DEFAULT);
  #else
@@ -137,7 +137,7 @@ index c23cef8903..bff6febd16 100644
  BASE_FEATURE(kAimServerEligibilityEnabled, base::FEATURE_ENABLED_BY_DEFAULT);
  
 diff --git a/components/safe_browsing/core/common/safe_browsing_prefs.cc b/components/safe_browsing/core/common/safe_browsing_prefs.cc
-index 3921d014f2..7bef349864 100644
+index ed4747e5ff..0a34193cab 100644
 --- a/components/safe_browsing/core/common/safe_browsing_prefs.cc
 +++ b/components/safe_browsing/core/common/safe_browsing_prefs.cc
 @@ -275,8 +275,11 @@ void RegisterProfilePrefs(PrefRegistrySimple* registry) {
@@ -154,12 +154,12 @@ index 3921d014f2..7bef349864 100644
    if (base::FeatureList::IsEnabled(kEsbAsASyncedSetting)) {
      registry->RegisterBooleanPref(
 diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
-index 61359f6376..d5d6e49da3 100644
+index e2d674d22c..f987d052eb 100644
 --- a/components/signin/public/base/signin_switches.cc
 +++ b/components/signin/public/base/signin_switches.cc
-@@ -87,8 +87,12 @@ base::TimeDelta GetAvatarSyncPromoFeatureMinimumCookeAgeParam() {
+@@ -58,8 +58,12 @@ BASE_FEATURE(kAccountRetrievalWaitsForRestoration,
+              base::FEATURE_ENABLED_BY_DEFAULT);
  #endif
- }
  
 +// camoucrome (SP7): on. With it off, any GetAccountsInCookieJar() on a
 +// stale jar (the BTM sign-in detector does one at profile start) fetches
@@ -172,10 +172,10 @@ index 61359f6376..d5d6e49da3 100644
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  BASE_FEATURE(kBeforeFirstRunDesktopRefreshSurvey,
 diff --git a/components/signin/public/identity_manager/identity_manager.cc b/components/signin/public/identity_manager/identity_manager.cc
-index 37f6f396ed..3526b875ac 100644
+index fb82df3c77..d0a353545d 100644
 --- a/components/signin/public/identity_manager/identity_manager.cc
 +++ b/components/signin/public/identity_manager/identity_manager.cc
-@@ -458,12 +458,10 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
+@@ -460,12 +460,10 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
  void IdentityManager::OnNetworkInitialized() {
    gaia_cookie_manager_service_->InitCookieListener();
    account_fetcher_service_->OnNetworkInitialized();
