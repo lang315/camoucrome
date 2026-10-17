@@ -3,7 +3,8 @@ through the client probe. Each row is one launch; the derived values have no
 key of their own -- they follow the claimed OS and navigator.maxTouchPoints.
 
 V1 no config: the host's values (headless Linux: pointer none, no
-   ontouchstart) -- rule 5, and the proof V2 changes something.
+   ontouchstart) -- rule 5, and the proof V2 changes something. NOT MEASURED
+   on a host that already has a mouse (every interactive Windows session).
 V2 Windows claim, no touch: pointer fine, hover hover, any-pointer fine and
    not coarse, any-hover hover; ontouchstart still absent; Object.keys(window)
    identical to V1 (no claim adds a key).
@@ -75,6 +76,28 @@ def probe(url, config=None, extra=()):
     return json.loads(p.stdout)["report"]
 
 
+def brief(r):
+    return {k: r[k] for k in r if k != "keys"}
+
+
+def host_has_mouse():
+    """A fact about the host, never the measured value: Windows' SM_MOUSEPRESENT. Off Windows
+    (the headless Linux box) V1 is always measured."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    return ctypes.windll.user32.GetSystemMetrics(19) != 0  # SM_MOUSEPRESENT
+
+
+def v1_status(v1, v2, host_has_mouse):
+    """V1 is the proof V2 changes something, which only a host without a mouse can give.
+    Every interactive Windows session has one (step2b, 2026-10-13), so there V1 is NOT
+    MEASURED -- neither its PASS nor its FAIL means anything."""
+    if host_has_mouse:
+        return "NOT MEASURED"
+    return "PASS" if v1["ontouchstart"] is False and brief(v1) != brief(v2) else "FAIL"
+
+
 def main():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -82,10 +105,8 @@ def main():
     v1, v2, v3, v4 = probe(url), probe(url, WIN), probe(url, WIN_TOUCH), probe(url, ANDROID)
     v5 = probe(url, extra=["--touch-events=enabled"])
     srv.shutdown()
-    brief = lambda r: {k: r[k] for k in r if k != "keys"}
     results = {
-        "V1 no config: host values, and V2 differs from them":
-            v1["ontouchstart"] is False and brief(v1) != brief(v2),
+        "V1 no config: host values, and V2 differs from them": v1_status(v1, v2, host_has_mouse()),
         "V2 Windows claim: fine/hover, any-pointer fine not coarse, no ontouchstart, keys == V1":
             (v2["pointer"], v2["hover"], v2["anyFine"], v2["anyCoarse"], v2["anyNone"], v2["anyHover"])
             == ("fine", "hover", True, False, False, True)
@@ -99,13 +120,14 @@ def main():
         "V5 --touch-events=enabled stock switch: ontouchstart present, keys differ from V1 by the touch handlers":
             v5["ontouchstart"] is True and set(v5["keys"]) - set(v1["keys"]) == {"ontouchstart", "ontouchmove", "ontouchend", "ontouchcancel"},
     }
-    for name, ok in results.items():
-        print(("PASS" if ok else "FAIL"), name)
+    status = {name: ok if isinstance(ok, str) else ("PASS" if ok else "FAIL") for name, ok in results.items()}
+    for name, s in status.items():
+        print(s, name)
     for tag, r in (("V1", v1), ("V2", v2), ("V3", v3), ("V4", v4), ("V5", v5)):
         print(f"  {tag} {json.dumps(brief(r))} keys={len(r['keys'])}")
-    n = sum(results.values())
-    print(f"{n} PASS {len(results) - n} FAIL")
-    sys.exit(0 if n == len(results) else 1)
+    n, bad = sum(s == "PASS" for s in status.values()), sum(s == "FAIL" for s in status.values())
+    print(f"{n} PASS {bad} FAIL")
+    sys.exit(0 if bad == 0 else 1)
 
 
 if __name__ == "__main__":

@@ -129,3 +129,32 @@ def test_timeout_becomes_a_bad_line_not_an_abort(monkeypatch, tmp_path, capsys):
     assert w.main(["x", "green"]) == 1
     assert "BAD  verify_x.py: timeout after 1800 s" in capsys.readouterr().out
     assert "PASS  a" in (tmp_path / "windows-verify-set" / "green" / "verify_x.py.log").read_text()
+
+
+@pytest.mark.parametrize("mode", ["green", "red"])
+def test_an_unmeasured_line_is_never_ok(mode):
+    e = w.Entry("verify_x.py", 1, "stock")
+    out = "PASS  a\nUNMEASURED gpu-crash=1\n" if mode == "green" else "FAIL  a\nUNMEASURED gpu-crash=1\n"
+    ok, why = w.judge(mode, e, 0 if mode == "green" else 1, out)
+    assert ok is False and why.startswith("UNMEASURED")
+
+
+@pytest.mark.parametrize("out,rc,ok", [
+    ("NOT MEASURED V1 no config\nPASS V2 a\n1 PASS 0 FAIL", 0, True),    # session 1: the host has a mouse
+    ("PASS V1 no config\nPASS V2 a\n2 PASS 0 FAIL", 0, True),            # session 0: no mouse, V1 measured
+    ("NOT MEASURED V2 a\nPASS V1 no config\n1 PASS 0 FAIL", 0, False),  # only the named row may be skipped
+    ("NOT MEASURED V1 no config\nFAIL V2 a\n0 PASS 1 FAIL", 1, False),
+])
+def test_a_may_skip_row_counts_only_when_it_is_the_named_one(out, rc, ok):
+    e = w.Entry("verify_d_pointer_touch.py", 2, "stock", may_skip=("V1",))
+    assert w.judge("green", e, rc, out)[0] is ok
+
+
+def test_d_pointer_touch_may_skip_v1():
+    e = next(x for x in w.SET if x.script == "verify_d_pointer_touch.py")
+    assert e.may_skip == ("V1",)
+
+
+def test_unmeasured_lists_the_lines():
+    assert w.unmeasured("PASS  a\nUNMEASURED session=0: x\nnote\n") == ["UNMEASURED session=0: x"]
+    assert w.unmeasured("PASS  a\n") == []

@@ -27,7 +27,8 @@ import sys
 import tempfile
 
 # known_fail: row-name prefixes that must FAIL in green (a documented gap, not a pass)
-Entry = collections.namedtuple("Entry", "script rows red known_fail", defaults=((),))
+# may_skip: row-name prefixes that may print NOT MEASURED instead of PASS (a premise the host cannot give)
+Entry = collections.namedtuple("Entry", "script rows red known_fail may_skip", defaults=((), ()))
 
 # Row counts: the script's own EXPECTED where it asserts one, otherwise its row
 # count read from the source (spec section 2). The driver's verdict is a line.
@@ -42,7 +43,8 @@ SET = [
     # green is its RED row plus "36/36 PASS" and ALL_PASS, which it prints only
     # when all 36 pass and the generated count is N per OS.
     Entry("verify_sp6b_generator.py", "ALL_PASS", "stock"),
-    Entry("verify_d_pointer_touch.py", 5, "stock"),
+    # V1 needs a host without a mouse; every interactive session has one (step2b, 2026-10-13).
+    Entry("verify_d_pointer_touch.py", 5, "stock", may_skip=("V1",)),
     Entry("verify_sp1b.py", 8, "stock"),
     Entry("verify_sp3b.py", 9, "stock"),
     Entry("verify_sp4a.py", 6, "stock"),
@@ -91,7 +93,15 @@ def count_rows(stdout):
     return passed, failed
 
 
+def unmeasured(stdout):
+    """UNMEASURED lines (gpu_gate.py): a launch that measured nothing GPU-backed, or a run in session 0."""
+    return [line for line in stdout.splitlines() if line.startswith("UNMEASURED")]
+
+
 def judge(mode, entry, returncode, stdout):
+    um = unmeasured(stdout)
+    if um:
+        return False, f"UNMEASURED ({len(um)}): {um[0]}"
     passed, failed = count_rows(stdout)
     if mode == "red":
         if entry.red == "own":
@@ -107,8 +117,11 @@ def judge(mode, entry, returncode, stdout):
               and len(names) == len(entry.known_fail) and passed == entry.rows - len(entry.known_fail))
         return ok, (f"rc={returncode} {passed} PASS {failed} FAIL (want {entry.rows - len(entry.known_fail)} PASS "
                     f"and exactly the known-failing rows {', '.join(entry.known_fail)} FAIL)")
-    ok = returncode == 0 and failed == 0 and passed == entry.rows
-    return ok, f"rc={returncode} {passed} PASS {failed} FAIL (want {entry.rows} PASS)"
+    skipped = [line[len("NOT MEASURED "):].strip() for line in stdout.splitlines() if line.startswith("NOT MEASURED ")]
+    allowed = all(any(s.startswith(k) for k in entry.may_skip) for s in skipped)
+    ok = returncode == 0 and failed == 0 and allowed and passed + len(skipped) == entry.rows
+    return ok, (f"rc={returncode} {passed} PASS {failed} FAIL {len(skipped)} NOT MEASURED "
+                f"(want {entry.rows} PASS{', or NOT MEASURED for ' + ', '.join(entry.may_skip) if entry.may_skip else ''})")
 
 
 def stock_version(app_dir):
@@ -150,6 +163,8 @@ def main(argv):
     if len(argv) < 2 or argv[1] not in ("red", "green"):
         sys.exit(__doc__)
     mode = argv[1]
+    import gpu_gate
+    gpu_gate.require_interactive()
     only_arg = argv[argv.index("--only") + 1] if "--only" in argv else None
     here = pathlib.Path(__file__).resolve().parent
     client = os.environ.get("CAMOU_CLIENT", str(here.parent))
@@ -180,7 +195,9 @@ def main(argv):
             (logs / f"{e.script}.log").write_text(out + "\n--- stderr ---\n" + err, encoding="utf-8")
         good += ok
         print(f"{'OK  ' if ok else 'BAD '} {e.script}: {why}", flush=True)
-    print(f"{good}/{len(entries)} entries OK ({mode})")
+    um = sum(1 for e in entries if (logs / f"{e.script}.log").exists()
+             and unmeasured((logs / f"{e.script}.log").read_text(encoding="utf-8")))
+    print(f"{good}/{len(entries)} entries OK ({mode}); {um} UNMEASURED")
     return 0 if good == len(entries) else 1
 
 

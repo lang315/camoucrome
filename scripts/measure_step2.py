@@ -8,6 +8,7 @@ Run on the Windows host in the client venv, holding the build lock (owner step2)
                               [--null] [--plant ARG] [--fresh-seeds] [--two-colour]
   python measure_step2.py compare RUN_A RUN_B
   python measure_step2.py tables RUN
+  python measure_step2.py scrub RUN OUT   (needs CAMOU_SCRUB; writes the committable copy)
 --null puts the control executable, unconfigured, in the fork arm: the noise floor.
 --plant adds ARG to the fork arm only (a RED). --fresh-seeds draws new seeds per
 launch in the stability probe (its RED). --two-colour makes the fork arm's noise
@@ -30,6 +31,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import capture_host_oracle as cap  # noqa: E402
 import step2_rows as rows  # noqa: E402
+import gpu_gate  # noqa: E402
 from windows_verify_set import STOCK_APP, pin_tag  # noqa: E402
 
 PROBES = {}  # name -> fn(pw, arm, mode, run) -> {row: value}; filled below
@@ -93,6 +95,8 @@ def opened(pw, arm, mode, user_data_dir=None, config="arm", ident=None):
                  window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"))
     try:
         yield ctx
+        # S4: a launch whose GPU process crashed measured nothing GPU-backed.
+        gpu_gate.check(gpu_gate.read_ctx(ctx))
     finally:
         ctx.close()
 
@@ -206,8 +210,31 @@ PROBES["stability"] = probe_stability
 PROBES["linkability"] = probe_linkability
 
 
-DETECTORS = {"sannysoft": "https://bot.sannysoft.com/", "creepjs": "https://abrahamjuliot.github.io/creepjs/",
-             "browserscan": "https://www.browserscan.net/", "pixelscan": "https://pixelscan.net/fingerprint-check"}
+# The 2026-10-13 stock capture (step2b) dropped brotector and botd (GitHub Pages 404),
+# arh.antoinevastel.com (502) and demo.turnstile.workers.dev (a dummy-sitekey token from
+# 3 s on: it measures nothing). Names carry no dot: label_rows reads a site from two dotted parts.
+DETECTORS = {
+    "sannysoft": "https://bot.sannysoft.com/",
+    "creepjs": "https://abrahamjuliot.github.io/creepjs/",
+    "browserscan": "https://www.browserscan.net/",
+    "pixelscan": "https://pixelscan.net/fingerprint-check",
+    "rebrowser": "https://bot-detector.rebrowser.net/",
+    "dbi_bot": "https://deviceandbrowserinfo.com/are_you_a_bot",
+    "incolumitas": "https://bot.incolumitas.com/",
+    "detect_headless": "https://infosimples.github.io/detect-headless/",
+    "browserleaks_javascript": "https://browserleaks.com/javascript",
+    "browserleaks_canvas": "https://browserleaks.com/canvas",
+    "browserleaks_webgl": "https://browserleaks.com/webgl",
+    "browserleaks_webrtc": "https://browserleaks.com/webrtc",
+    "browserleaks_fonts": "https://browserleaks.com/fonts",
+    "browserleaks_client_hints": "https://browserleaks.com/client-hints",
+    "browserleaks_tls": "https://browserleaks.com/tls",
+    "iphey": "https://iphey.com/",
+    "whoer": "https://whoer.net/",
+    "amiunique": "https://amiunique.org/fingerprint",
+    "fingerprint_scan": "https://fingerprint-scan.com/",
+    "fingerprint_pro": "https://demo.fingerprint.com/playground",
+}
 # pixelscan.net/ is a landing page whose scan waits for a click; /fingerprint-check runs it on load
 # (2026-10-04: stock headless read "Your Browser Fingerprint is inconsistent" there, nothing on /).
 
@@ -230,21 +257,31 @@ def settle(page, first_ms=10000, step_ms=3000, timeout_s=120):
 def probe_detectors(pw, arm, mode, run):
     out = {}
     for site, url in DETECTORS.items():
-        with opened(pw, arm, mode) as ctx:
-            page = first_page(ctx)
-            try:
-                page.goto(url, wait_until="load", timeout=60000)
-                text = settle(page)
-            except Exception:  # noqa: BLE001 - a page that does not load is not measured
-                text = None
-            if text is None:
-                out[f"det.{site}"] = rows.UNMEASURED
-                continue
-            stem = run.dir / "raw" / f"{site}-{arm.name}-{mode}"
-            stem.with_suffix(".txt").write_text(text, encoding="utf-8")
-            page.screenshot(path=str(stem.with_suffix(".png")), full_page=True)
-            out[f"det.{site}"] = "ok"
-            out.update({f"det.{site}.{k}": v for k, v in rows.PARSERS.get(site, lambda t: {})(text).items()})
+        stem = run.dir / "raw" / f"{site}-{arm.name}-{mode}"
+        text = None
+        try:
+            with opened(pw, arm, mode) as ctx:
+                page = first_page(ctx)
+                try:
+                    page.goto(url, wait_until="load", timeout=60000)
+                    text = settle(page)
+                except Exception:  # noqa: BLE001 - a page that does not load is not measured
+                    text = None
+                if text is not None:
+                    stem.with_suffix(".txt").write_text(text, encoding="utf-8")
+                    page.screenshot(path=str(stem.with_suffix(".png")), full_page=True)
+        except gpu_gate.GpuCrashed as exc:
+            # Nothing this launch read counts, and its text must not reach the line diff.
+            for p in (stem.with_suffix(".txt"), stem.with_suffix(".png")):
+                p.unlink(missing_ok=True)
+            out[f"det.{site}"], out[f"det.{site}.gpu_crash"] = rows.UNMEASURED, exc.n
+            continue
+        if text is None:
+            out[f"det.{site}"] = rows.UNMEASURED
+            continue
+        out[f"det.{site}"] = "ok"
+        out[f"det.{site}.blocked"] = rows.blocked(text)
+        out.update({f"det.{site}.{k}": v for k, v in rows.PARSERS.get(site, lambda t: {})(text).items()})
     return out
 
 
@@ -253,12 +290,26 @@ PROBES["detectors"] = probe_detectors
 
 def argv_of(pw, arm):
     from camoucrome.probe import browser_argv
-    with opened(pw, arm, "headless") as ctx:
-        first_page(ctx).goto("about:blank")
-        return browser_argv(arm.exe)
+    argv = None
+    try:
+        with opened(pw, arm, "headless") as ctx:
+            first_page(ctx).goto("about:blank")
+            argv = browser_argv(arm.exe)
+    except gpu_gate.GpuCrashed:
+        pass  # the argv does not depend on the GPU process; the probes gate their own launches
+    return argv
+
+
+def desktop_size():
+    """The interactive desktop's size: a headed window cannot exceed it (step 2's outerMinusInner artefact)."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    return [ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1)]
 
 
 def run_cmd(a):
+    gpu_gate.require_interactive()
     from patchright.sync_api import sync_playwright
     client = os.environ.get("CAMOU_CLIENT", str(HERE.parent))
     stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe")
@@ -275,6 +326,7 @@ def run_cmd(a):
     (out_dir / "raw").mkdir(parents=True)
     run = argparse.Namespace(dir=out_dir, fresh_seeds=a.fresh_seeds, two_colour=a.two_colour)
     doc = {"run": run_id, "versions": versions, "argv": {}, "errors": {},
+           "session": gpu_gate.session_id(), "desktop": desktop_size(),
            "flags": {k: v for k, v in vars(a).items() if k in ("null", "plant", "fresh_seeds", "two_colour") and v},
            "rows": {}}
     with sync_playwright() as pw:
@@ -297,14 +349,15 @@ def run_cmd(a):
                           f"{time.monotonic() - t0:.0f}s", flush=True)
     (out_dir / "rows.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
     write_tables(out_dir)
-    print(f"run {out_dir}; {len(doc['errors'])} errors")
-    return 1 if doc["errors"] else 0
+    um = rows.unmeasured_sites(doc, {"rows": {}})
+    print(f"run {out_dir}; {len(doc['errors'])} errors; {len(um)} detector site cells unmeasured")
+    return 1 if doc["errors"] or um else 0
 
 
 def write_tables(out_dir):
     doc = json.loads((out_dir / "rows.json").read_text(encoding="utf-8"))
     texts = {}
-    for site in rows.PARSERS.keys() | {"browserscan", "pixelscan"}:
+    for site in DETECTORS:
         for mode in rows.MODES:
             got = [out_dir / "raw" / f"{site}-{arm}-{mode}.txt" for arm in rows.ARMS]
             if any(p.exists() for p in got):
@@ -317,8 +370,25 @@ def compare_cmd(a):
     diffs = rows.compare_runs(*docs)
     for path, va, vb in diffs:
         print(f"DISAGREE {path}: {json.dumps(va)[:120]} vs {json.dumps(vb)[:120]}")
-    print(f"{len(diffs)} rows disagree outside VOLATILE")
-    return 1 if diffs else 0
+    skipped = rows.unmeasured_sites(*docs)
+    for s in skipped:
+        print(f"SKIPPED (unmeasured) {s}")
+    print(f"{len(diffs)} rows disagree outside VOLATILE; {len(skipped)} site cells unmeasured, skipped")
+    return 1 if diffs else 2 if skipped else 0  # 2: agreed, but not on every cell
+
+
+def scrub_cmd(a):
+    """The committable copy of a run: rows.json and tables.md through rows.scrub()."""
+    geo = json.loads(os.environ.get("CAMOU_SCRUB") or "null")
+    if not isinstance(geo, dict) or not geo:
+        sys.exit("scrub: set CAMOU_SCRUB to a JSON object {placeholder: [host geo strings]}; it is never committed")
+    src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
+    dst.mkdir(parents=True, exist_ok=True)
+    doc = rows.scrub(json.loads((src / "rows.json").read_text(encoding="utf-8")), geo)
+    (dst / "rows.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
+    (dst / "tables.md").write_text(rows.scrub((src / "tables.md").read_text(encoding="utf-8"), geo), encoding="utf-8")
+    print(f"scrubbed {src} -> {dst}")
+    return 0
 
 
 def main(argv=None):
@@ -337,11 +407,16 @@ def main(argv=None):
     c.add_argument("run_b")
     t = sub.add_parser("tables")
     t.add_argument("run_dir")
+    s = sub.add_parser("scrub")
+    s.add_argument("run_dir")
+    s.add_argument("out_dir")
     a = ap.parse_args(argv)
     if a.cmd == "run":
         return run_cmd(a)
     if a.cmd == "compare":
         return compare_cmd(a)
+    if a.cmd == "scrub":
+        return scrub_cmd(a)
     write_tables(pathlib.Path(a.run_dir))
     return 0
 

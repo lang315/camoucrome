@@ -1,13 +1,21 @@
 """Runs stock Chrome 154.0.8037.93 on the build box's Windows host (the
 same tag as the pin) and returns what a page reports. PowerShell over
 OpenSSH; every launch gets a temp profile and --dump-dom, so nothing on
-the host's own Chrome is touched. Linux side: scripts/lib_shell.py."""
+the host's own Chrome is touched. Linux side: scripts/lib_shell.py.
+
+Every script runs in the owner's interactive session through a temporary
+scheduled task (S4: in session 0, where sshd puts this shell, the GPU
+process crashes once per launch); output from session 0 is refused, and
+the CDP paths refuse a browser whose chrome://gpu reports a crash
+(gpu_gate.py). CAMOU_WINHOST_NO_TASK=1 / CAMOU_ALLOW_SESSION0=1 are for REDs."""
 import base64
 import html
 import json
 import os
 import re
 import subprocess
+
+import gpu_gate
 
 SSH = ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "PasswordAuthentication=no",
        "-o", "PubkeyAuthentication=no", "-o", "ControlMaster=no",
@@ -21,11 +29,61 @@ def ps_quote(s):
     return "'" + re.sub("(['\u2018\u2019\u201a\u201b])", r"\1\1", s) + "'"
 
 
+PS_IN_SESSION = r"""
+$t = "camou-winhost-" + $PID
+$d = Join-Path $env:TEMP $t
+New-Item -ItemType Directory -Force -Path $d | Out-Null
+$body = Join-Path $d "body.ps1"
+$out = Join-Path $d "out.txt"
+$inner = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("__B64__"))
+[IO.File]::WriteAllText($body, "& {`n" + $inner + "`n} *> '" + $out + "'", (New-Object Text.UTF8Encoding $true))
+$a = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File " + $body)
+$p = New-ScheduledTaskPrincipal -UserId (whoami) -LogonType Interactive
+Register-ScheduledTask -TaskName $t -Action $a -Principal $p -Force | Out-Null
+Start-ScheduledTask -TaskName $t
+Start-Sleep -Seconds 1
+$deadline = (Get-Date).AddSeconds(__TIMEOUT__)
+while ((Get-ScheduledTask -TaskName $t).State -eq "Running" -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+if ((Get-ScheduledTask -TaskName $t).State -eq "Running") { Stop-ScheduledTask -TaskName $t; "IN_SESSION_TIMEOUT" }
+Unregister-ScheduledTask -TaskName $t -Confirm:$false
+if (Test-Path $out) { Get-Content -Raw $out }
+Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
+"""
+SESSION_LINE = '"SESSION=" + (Get-Process -Id $PID).SessionId\n'
+
+
+def in_session(script, timeout_s):
+    """`script` run by a temporary scheduled task in the owner's interactive session
+    (S4: in session 0, where sshd puts this shell, the GPU process crashes once per
+    launch). The output comes back through a file; the task is removed afterwards."""
+    b64 = base64.b64encode(script.encode()).decode()
+    return PS_IN_SESSION.replace("__B64__", b64).replace("__TIMEOUT__", str(int(timeout_s)))
+
+
+def session_gate(out):
+    """Refuse output from session 0, or with no SESSION line, unless CAMOU_ALLOW_SESSION0=1 (a RED)."""
+    if os.environ.get("CAMOU_ALLOW_SESSION0") == "1":
+        return
+    m = re.search(r"^SESSION=(\d+)$", out, re.M)
+    why = (gpu_gate.session_problem(int(m.group(1))) if m
+           else "UNMEASURED session=unknown: the host printed no SESSION line")
+    if why:
+        print(why, flush=True)
+        raise gpu_gate.Unmeasured(why)
+
+
 def powershell(script, timeout=300):
-    p = subprocess.run(SSH + [script], capture_output=True, text=True, timeout=timeout)
+    """Runs `script` on the host in the owner's interactive session (CAMOU_WINHOST_NO_TASK=1:
+    in this ssh session, which is session 0 -- a RED) and refuses output from session 0."""
+    script = SESSION_LINE + script
+    if os.environ.get("CAMOU_WINHOST_NO_TASK") != "1":
+        script = in_session(script, timeout)
+    p = subprocess.run(SSH + [script], capture_output=True, text=True, timeout=timeout + 60)
     if p.returncode != 0:
         raise RuntimeError(f"powershell rc={p.returncode}: {p.stderr[-800:]}")
-    return p.stdout.replace("\r", "")
+    out = p.stdout.replace("\r", "")
+    session_gate(out)
+    return out
 
 
 def dump_dom(page_html, args=(), headed=False, timeout_s=60):
@@ -88,6 +146,41 @@ function Cdp-Recv($ws, $ms) {
 """
 
 
+# Opens chrome://gpu as a new target of the browser on `port` and prints Runtime.evaluate's answer.
+PS_GPU = r"""
+try { $gt = (Invoke-WebRequest -UseBasicParsing -Method Put "http://127.0.0.1:__PORT__/json/new?chrome://gpu").Content | ConvertFrom-Json } catch { $gt = $null }
+"GPU_BEGIN"
+if ($gt) {
+  Start-Sleep -Seconds 3
+  $gw = Cdp-Connect $gt.webSocketDebuggerUrl
+  Cdp-Send $gw @{ id = 9; method = "Runtime.evaluate"; params = @{ expression = __JS__; returnByValue = $true } }
+  for ($i = 0; $i -lt 10; $i++) { $m = Cdp-Recv $gw 5000; if ($m -and $m.StartsWith('{"id":9,')) { $m; break } }
+  $gw.Dispose()
+}
+"GPU_END"
+"""
+
+
+def ps_gpu(port=9333):
+    return PS_GPU.replace("__PORT__", str(port)).replace("__JS__", ps_quote(gpu_gate.GPU_JS))
+
+
+def crash_gate(out):
+    """GpuCrashed unless the GPU block reads a crash count of 0 (a missing reading is not a pass)."""
+    m = re.search(r"GPU_BEGIN\n(.*?)GPU_END", out, re.S)
+    text = None
+    if m and m.group(1).strip():
+        try:
+            text = json.loads(m.group(1).strip().splitlines()[0])["result"]["result"]["value"]
+        except (ValueError, KeyError, IndexError, TypeError):
+            text = None
+    n = gpu_gate.crash_count(text)
+    if n != 0:
+        e = gpu_gate.GpuCrashed(n)
+        print(e, flush=True)
+        raise e
+
+
 def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500):
     """Runs stock Chrome on the host with --remote-debugging-port (headed by
     default: --dump-dom does not work headed), loads `page_html` from a temp
@@ -123,6 +216,7 @@ for ($i = 0; $i -lt 20 -and -not $resp; $i++) {{ $m = Cdp-Recv $ws 5000; if ($m 
 "CDP_RESULT_BEGIN"
 $resp
 "CDP_RESULT_END"
+{ps_gpu()}
 $ws.Dispose()
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Sleep -Milliseconds 500
@@ -130,6 +224,7 @@ Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 {"Remove-Item -Recurse -Force " + prof + " -ErrorAction SilentlyContinue" if profile is None else "# profile kept for the caller"}
 """
     out = powershell(ps, timeout=180)
+    crash_gate(out)
     m = re.search(r"CDP_RESULT_BEGIN\n(.*?)\nCDP_RESULT_END", out, re.S)
     if not m or not m.group(1).strip():
         raise RuntimeError("no CDP result: " + out[-3000:])
@@ -177,9 +272,15 @@ Start-Sleep -Seconds 3
         raise RuntimeError("no CDP endpoint through the forward")
 
     def __exit__(self, *a):
+        # The count is read over the forward before it closes; a run already failing keeps its own exception.
+        n = gpu_gate.read_port(self.port) if self.forward and a[0] is None else 0
         if self.forward:
             self.forward.kill()
         powershell(f"Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*remote-debugging-port={self.port}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}; 'STOPPED'")
+        if n != 0:
+            e = gpu_gate.GpuCrashed(n)
+            print(e, flush=True)
+            raise e
 
 
 def cdp_headers(url, seconds=20, headed=True, profile=None, args=()):
@@ -213,11 +314,13 @@ while ((Get-Date) -lt $deadline) {{
   if ($m -match '"method":"Network.requestWillBeSentExtraInfo"') {{ $o = $m | ConvertFrom-Json; $h = @{{}}; $o.params.headers.PSObject.Properties | ForEach-Object {{ $h[$_.Name.ToLower()] = $_.Value }}; @{{ url = $urls[$o.params.requestId]; headers = $h }} | ConvertTo-Json -Compress -Depth 4 }}
 }}
 "CDP_EVENTS_END"
+{ps_gpu()}
 $ws.Dispose()
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 {"Start-Sleep -Milliseconds 500; Remove-Item -Recurse -Force " + prof + " -ErrorAction SilentlyContinue" if profile is None else "# profile kept for the caller"}
 """
     out = powershell(ps, timeout=seconds + 120)
+    crash_gate(out)
     m = re.search(r"CDP_EVENTS_BEGIN\n(.*?)\nCDP_EVENTS_END", out, re.S)
     if not m:
         raise RuntimeError("no CDP events: " + out[-1500:])

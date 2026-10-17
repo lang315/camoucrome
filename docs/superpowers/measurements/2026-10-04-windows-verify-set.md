@@ -250,6 +250,9 @@ Windows.
   `windows-behaviour.patch` is the browser-side share binder, not a gate.) The
   fix is a "Linux claim: disable" branch in that block. The
   set marks the row `known_fail=("O2",)`; delete that when the branch lands.
+  *2026-10-13 (step2b): the set re-run in the interactive session, free of
+  the session-0 GPU crash, fails O2 with the same message. O2 is not that
+  artefact.*
   A Linux claim on a Windows host is off the product path (roadmap decision
   3), so it ranks low.
 - **HEVC on the flagship build**: `known: codecs.video/mp4; codecs="hev1.1.6.L93.B0":

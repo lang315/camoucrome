@@ -162,6 +162,13 @@ startup abort instead of a silent fall-back to real values.
   it), and `v8_enable_runtime_call_stats = true` (since 2026-10-13, for the
   observer's Intl counts; idle unless `disabled-by-default-v8.runtime_stats`
   is traced). Measure costs in a tree without the flags.
+- **Windows host runs** launch through `scripts/windows/run-interactive.ps1`, so
+  they run in the owner's interactive session (session 1). In session 0, where
+  sshgate/sshd put a shell, the GPU process crashes once per launch (S4).
+  Every host launch path gates on `chrome://gpu`'s crash count
+  (`scripts/gpu_gate.py`). A nonzero count is `UNMEASURED`, never PASS or
+  FAIL. Native Windows builds run at `-j 8`, because WSL's VM holds most of the
+  commit limit.
 - Pre-flight, both cheap and both exist because the omission already happened:
   `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
   must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there

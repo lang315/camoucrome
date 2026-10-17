@@ -189,7 +189,7 @@ ACCEPT_CH = ["Sec-CH-UA-Arch", "Sec-CH-UA-Bitness", "Sec-CH-UA-Platform-Version"
 
 
 def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
-           preset=None, sandbox=False, user_data_dir=None):
+           preset=None, sandbox=False, user_data_dir=None, gpu_gate=True):
     """Starts the browser and returns it once its DevTools port answers.
 
     Six details here are deliberate, not defensive. Most were earned by a
@@ -340,6 +340,8 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
         raise
     # "" gives shutdown() nothing to remove: a caller's profile is the caller's.
     proc.profile_dir = profile if user_data_dir is None else ""
+    proc.binary_name = name.lower()
+    proc.gpu_gate = gpu_gate
 
     port_file = pathlib.Path(profile) / "DevToolsActivePort"
     deadline = time.monotonic() + 30
@@ -376,8 +378,48 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
 
 
+_UNMEASURED = []  # gate lines printed by this process; a standalone verify must not exit 0 after one
+
+
+def _exit_if_unmeasured(lines, exit=os._exit):
+    """atexit: a run that printed an UNMEASURED line ends rc 3, whatever its rows said."""
+    if lines:
+        import sys
+        print(f"UNMEASURED: {len(lines)} launch(es) unmeasured; exit 3", flush=True)
+        sys.stdout.flush()
+        exit(3)
+
+
+def gpu_gate_line(proc, osname=None, reader=None):
+    """On the Windows host, the UNMEASURED line for a chrome.exe launch whose GPU
+    process crashed (gpu_gate.py, S4), else None. Off Windows, and for
+    content_shell, this reads nothing: the Linux CI path stays as it was."""
+    osname = os.name if osname is None else osname
+    if osname != "nt" or getattr(proc, "binary_name", "") != "chrome.exe" or not getattr(proc, "cdp_port", None):
+        return None
+    if not getattr(proc, "gpu_gate", True):
+        return None  # the launch opted out: launch(gpu_gate=False)
+    if getattr(proc, "poll", lambda: None)() is not None:
+        return None  # the browser already exited (verify_crash_dumps crashes it on purpose): nothing to read
+    if reader is None:
+        import gpu_gate  # lazy: CI copies lib_shell without needing this on Linux
+        reader = gpu_gate.read_port
+    try:
+        n = reader(proc.cdp_port)
+    except Exception:  # noqa: BLE001 - an unreadable count is unmeasured, never 0
+        n = None
+    return None if n == 0 else f"UNMEASURED gpu-crash={'unknown' if n is None else n}"
+
+
 def shutdown(proc):
     """Stops the browser and waits for it, so the next launch starts clean."""
+    line = gpu_gate_line(proc)
+    if line:
+        print(line, flush=True)
+        if not _UNMEASURED:
+            import atexit
+            atexit.register(_exit_if_unmeasured, _UNMEASURED)
+        _UNMEASURED.append(line)
     proc.terminate()
     try:
         proc.wait(timeout=15)
