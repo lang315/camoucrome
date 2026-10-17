@@ -208,3 +208,54 @@ def test_cli_exit_codes_and_usage_errors(tmp_path, capsys):
     so = tmp_path / "s.json"
     j.main(["judge", "--baseline", str(out), "--arm", "1", str(arm), "--summary-out", str(so)])
     assert json.loads(so.read_text())["groups"]["canvas"] == 1
+
+
+def run_cli(*args):
+    import subprocess
+    return subprocess.run([sys.executable, j.__file__, *args], capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("break_it,err", [
+    (lambda d: (d / "run.json").write_text("{"), "JSONDecodeError"),
+    (lambda d: (d / "cookies.db").write_bytes(b"not a database, padded" * 64), "DatabaseError"),
+])
+def test_cli_judge_crash_is_unmeasured_not_fail(tmp_path, break_it, err):
+    """observe-auto reads exit 1 as FAIL; a crash measured nothing."""
+    arm = make_arm(tmp_path / "a")
+    break_it(arm)
+    bfile = tmp_path / "b.json"
+    bfile.write_text(json.dumps(BASE))
+    p = run_cli("judge", "--baseline", str(bfile), "--arm", "1", str(arm))
+    assert p.returncode == 3, p.stdout + p.stderr
+    assert f"UNMEASURED arm1 judge error ({err})" in p.stdout
+
+
+@pytest.mark.parametrize("base", [[], {"3": {"required": ["navigator"], "runs": []}}])
+def test_cli_judge_refuses_a_baseline_that_is_not_for_this_arm(tmp_path, base):
+    arm = make_arm(tmp_path / "a")
+    bfile = tmp_path / "b.json"
+    bfile.write_text(json.dumps(base))
+    p = run_cli("judge", "--baseline", str(bfile), "--arm", "1", str(arm))
+    assert p.returncode == 2, p.stdout + p.stderr
+    assert "usage error: baseline" in p.stderr
+
+
+def test_empty_required_says_pass_means_measured_only(tmp_path):
+    v, rows = verdict(tmp_path, base={})
+    assert v == "PASS"
+    assert ("INFO", "baseline requires 0 groups: PASS means measured only") in rows
+
+
+@pytest.mark.parametrize("kw,why", [
+    ({"events": [ev("Navigator.userAgent.get")]}, "intl blind"),
+    ({"run": "absent"}, "run.json missing"),
+    ({"trace": False}, "no trace"),
+])
+def test_baseline_refuses_an_unmeasured_run(tmp_path, capsys, kw, why):
+    good = make_arm(tmp_path / "good")
+    bad = make_arm(tmp_path / "bad", **kw)
+    out = tmp_path / "base.json"
+    rc = j.main(["baseline", "--arm", "1", str(good), "--arm", "1", str(bad), "-o", str(out)])
+    assert rc == 2
+    assert why in capsys.readouterr().err
+    assert not out.exists()
