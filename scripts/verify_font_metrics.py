@@ -24,7 +24,7 @@ HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 FONTS = json.loads((CLIENT / "settings" / "fonts.json").read_text(encoding="utf-8"))
 OS = sys.argv[sys.argv.index("--os") + 1] if "--os" in sys.argv else "windows"
-BASE = json.loads((CLIENT / "baselines" / {"windows": "chrome-8037-stock-font-metrics-windows.json",
+BASE = json.loads((CLIENT / "baselines" / {"windows": "chrome-8078-stock-font-metrics-windows.json",
                                             "macos": "chrome-7922-stock-font-metrics-macos.json"}[OS]).read_text(encoding="utf-8"))
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_font_metrics as cap  # noqa: E402

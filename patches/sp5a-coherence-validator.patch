@@ -1,5 +1,5 @@
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index ca073899e4..9ac1d3d021 100644
+index 6a512bb546..76da440fe4 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
 @@ -17,6 +17,7 @@
@@ -18,7 +18,7 @@ index ca073899e4..9ac1d3d021 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
-@@ -541,30 +543,155 @@ void BrowserMainLoop::Init() {
+@@ -534,30 +536,155 @@ void BrowserMainLoop::Init() {
  
  // BrowserMainLoop stages ==================================================
  
@@ -193,7 +193,7 @@ index ca073899e4..9ac1d3d021 100644
  
    if (camoucfg::HasKey(camoucfg::GlobalScope(),
                         camoucfg::keys::kNavigatorUserAgent)) {
-@@ -578,6 +705,30 @@ int BrowserMainLoop::EarlyInitialization() {
+@@ -571,6 +698,30 @@ int BrowserMainLoop::EarlyInitialization() {
             "\"Windows NT 10.0; Win64; x64\".";
    }
  

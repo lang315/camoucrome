@@ -1,5 +1,5 @@
 diff --git a/content/browser/media/media_devices_util.cc b/content/browser/media/media_devices_util.cc
-index d7f5066606..e739d2ceb7 100644
+index f087f323bc..a99d11f4fe 100644
 --- a/content/browser/media/media_devices_util.cc
 +++ b/content/browser/media/media_devices_util.cc
 @@ -9,11 +9,14 @@

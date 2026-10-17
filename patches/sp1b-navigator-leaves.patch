@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
-index 54e747d468..62d37ee397 100644
+index 14f5a7598d..5eaadb2269 100644
 --- a/chrome/browser/ui/browser_commands.cc
 +++ b/chrome/browser/ui/browser_commands.cc
-@@ -2812,22 +2812,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
+@@ -2828,22 +2828,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
  }
  
  void ToggleRequestTabletSite(BrowserWindowInterface* browser) {
@@ -64,7 +64,7 @@ index a57561775c..d09b7bfe53 100644
    return window ? window->GetFrame()->GetSettings()->GetMaxTouchPoints() : 0;
  }
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-index c9332e1fdf..88df693058 100644
+index cf95d6a4d9..91edfac240 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
 +++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
 @@ -7,6 +7,7 @@
@@ -75,7 +75,7 @@ index c9332e1fdf..88df693058 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "third_party/blink/public/common/features.h"
-@@ -62,7 +63,33 @@ String NavigatorBase::platform() const {
+@@ -77,7 +78,33 @@ String NavigatorBase::platform() const {
      return NavigatorID::platform();
    }
  #endif
@@ -282,7 +282,7 @@ index 22243ebf5e..256db394ae 100644
  }
  
 diff --git a/third_party/blink/renderer/core/frame/navigator_language.cc b/third_party/blink/renderer/core/frame/navigator_language.cc
-index 75cd346131..627225163f 100644
+index 03b1faff6b..33d6fbe543 100644
 --- a/third_party/blink/renderer/core/frame/navigator_language.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_language.cc
 @@ -5,6 +5,9 @@

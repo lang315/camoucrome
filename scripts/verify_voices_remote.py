@@ -21,7 +21,7 @@ REMOTE_CPS = 16.05                        # section 2, 200 chars at rate 1
 # above rate 2 a remote voice never starts. Interpolated log-log, as speech_synthesis.cc does.
 RATE_CURVE = [(0.1, 3.037), (0.25, 2.512), (0.5, 1.823), (0.75, 1.338), (1.0, 1.0), (1.5, 0.582), (2.0, 0.372)]
 CFG = json.dumps(gen.voices_keys("Windows", "en-US"))
-BASE = json.load(open(os.path.join(ROOT, "baselines", "chrome-8037-stock-oracle-windows.json"), encoding="utf-8"))["headed"]["voices"]
+BASE = json.load(open(os.path.join(ROOT, "baselines", "chrome-8078-stock-oracle-windows.json"), encoding="utf-8"))["headed"]["voices"]
 
 # Same text and cell shape as scripts/measure_remote_voices.py: cancel/pause are timed from the
 # 'start' event, and every timer a cell sets is cleared when it ends.

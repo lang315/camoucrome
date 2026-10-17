@@ -1,5 +1,5 @@
 diff --git a/content/renderer/BUILD.gn b/content/renderer/BUILD.gn
-index 6a40348748..9327944bd2 100644
+index a63c3bea22..b1aadbc00e 100644
 --- a/content/renderer/BUILD.gn
 +++ b/content/renderer/BUILD.gn
 @@ -236,6 +236,7 @@ target(link_target_type, "renderer") {

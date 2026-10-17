@@ -296,10 +296,10 @@ index 0000000000..7e55ad8668
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_EXECUTION_CONTEXT_CAMOU_OBSERVE_H_
 diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
-index 7bd6e6083c..4ea8d7ca2a 100644
+index 58594ed1a7..4390b72a7c 100644
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
-@@ -271,6 +271,10 @@ declare_args() {
+@@ -272,6 +272,10 @@ declare_args() {
    # Enable TRACE_EVENT instrumentation for Blink bindings.
    # Disabled by default as it increases binary size.
    enable_blink_bindings_tracing = extended_tracing_enabled
@@ -310,7 +310,7 @@ index 7bd6e6083c..4ea8d7ca2a 100644
  }
  
  # ZSTD compression is available on Fuchsia (crbug.com/534838085) but disable in
-@@ -284,6 +288,7 @@ buildflag_header("bindings_buildflags") {
+@@ -285,6 +289,7 @@ buildflag_header("bindings_buildflags") {
    flags = [
      "RCS_COUNT_EVERYTHING=$runtime_call_stats_count_everything",
      "BLINK_BINDINGS_TRACE_ENABLED=$enable_blink_bindings_tracing",
