@@ -255,8 +255,9 @@ counts as logged in only with `c_user` and `xs`.
 5. **The login fired Chrome's password leak check.** Arm 2 sent requests to
    `passwordsleakcheck-pa.googleapis.com`. That is Chrome's own feature
    (a hashed credential prefix sent to Google), not facebook's. A stock
-   Chrome does the same. It is listed because it is traffic the fork sends
-   at login.
+   Chrome does the same. 10-07 saw it too, and it is already filed for SP7
+   (`docs/observer/followups.md`). It fired at both logins observed so
+   far.
 6. **Arms 2 and 3 doubled or tripled their layout-probe and storage counts**
    against 10-07. Both sessions were longer and fully traced, so this shows
    volume, not new behaviour.

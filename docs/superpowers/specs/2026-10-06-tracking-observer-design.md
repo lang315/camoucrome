@@ -237,6 +237,10 @@ call it):
   Pixel or a social plugin, if a public one is found.
 - The owner logs in by hand. Tooling never handles credentials.
 - Owner-approved exception (2026-10-07): arm 1 (logged-out landing) was launched by tooling, one load per site, 30 s, no interaction, from a non-interactive desktop session, with --remote-debugging-port=0 open and a single CDP Browser.close sent at 30 s (no other CDP); arms 2-4 were driven by the owner.
+- Owner-approved exception (2026-10-17): `observe-auto.ps1` may run arm 1
+  and arm 3 unattended, in the owner's Active session 1, one load each, no
+  input and no CDP. Arm 3 restores a backed-up logged-in profile. Never
+  scheduled or repeated. Design: `2026-10-17-observe-auto-fb-design.md`.
 - Every `/ajax/bz` count is reported with the session's total request count as
   its denominator (camoufox's lesson: a bare zero proves nothing).
 - Compared with camoufox's results (`recon_fb_live.json`, `REPORT.md`): what
