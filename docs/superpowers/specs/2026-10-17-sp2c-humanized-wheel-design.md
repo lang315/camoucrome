@@ -100,7 +100,7 @@ The fields are not assumed. The expectation to be confirmed is
 Position and modifiers are the caller's.
 
 **Cadence.** The first notch goes at once. Each later notch is a delayed
-task, `base::RandInt(18, 60)` ms after the previous one (`<random>` is
+task, `base::RandIntInclusive(18, 60)` ms after the previous one (`base::RandInt` does not exist at this pin) (`<random>` is
 banned). The 18–60 ms band is Camoufox's and unmeasured: SendInput sets the
 cadence in §2, so the oracle cannot measure a hand's. The CDP response is
 sent after the last notch is forwarded, since Playwright awaits it. Delivery
