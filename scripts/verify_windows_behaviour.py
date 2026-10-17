@@ -113,16 +113,19 @@ def main():
     results["S4 key absent: cancels within the jitter alone (< 700 ms), page alive (fail-closed, never the broker kill)"] = (
         isinstance(res, dict) and res.get("err") == "AbortError: Share canceled" and res.get("ms", 1e9) < 700 and r.get("alive") is True)
     fr = gen("windows", "fr-FR")["voices:list"]
-    results["V1 fr-FR Windows identity: voices Hortense (default), Julie, Paul, all fr-FR"] = (
-        [v["name"].split(" - ")[0] for v in fr] == ["Microsoft Hortense", "Microsoft Julie", "Microsoft Paul"]
-        and all(v["lang"] == "fr-FR" for v in fr) and [v["default"] for v in fr] == [True, False, False])
+    results["V1 fr-FR Windows identity: voices Hortense (default), Julie, Paul, all fr-FR, then 19 remote"] = (
+        [v["name"].split(" - ")[0] for v in fr[:3]] == ["Microsoft Hortense", "Microsoft Julie", "Microsoft Paul"]
+        and all(v["lang"] == "fr-FR" for v in fr[:3]) and [v["default"] for v in fr] == [True] + [False] * 21
+        and len(fr) == 22 and all(v["localService"] is False for v in fr[3:]))
     nz, uk = gen("windows", "en-NZ")["voices:list"], gen("windows", "uk-UA")["voices:list"]
     results["V2 en-NZ -> the en-AU row (same language); uk-UA -> en-US"] = nz[0]["lang"] == "en-AU" and uk[0]["lang"] == "en-US"
     lin = gen("linux")
     results.update(audio_rows(win, lin))
     results.update(platform_version_rows(win, lin))
     mac = gen("macos")["voices:list"]
-    results["V3 macOS claim: the measured Mac list (191 voices, Samantha default)"] = len(mac) == 191 and mac[0]["name"] == "Samantha" and mac[0]["default"] is True
+    results["V3 macOS claim: the measured Mac list (191 voices, Samantha default), then 19 remote"] = (
+        len(mac) == 210 and mac[0]["name"] == "Samantha" and mac[0]["default"] is True
+        and all(v["localService"] for v in mac[:191]) and all(v["localService"] is False for v in mac[191:]))
     n = sum(results.values())
     for k, v in results.items():
         print("PASS " if v else "FAIL ", k)

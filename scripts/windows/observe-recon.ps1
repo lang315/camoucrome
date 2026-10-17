@@ -1,10 +1,11 @@
 # Recon launcher for the camoucrome observer build. Owner-driven, headed, no CDP.
-# Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force]
+# Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 param(
   [ValidateSet('facebook','instagram','threads')][string]$Site,
   [ValidateSet(1,2,3,4)][int]$Arm,
   [switch]$Force,
+  [switch]$Intl,
   [switch]$PostOnly,
   [string]$Dir,
   [string]$Profile
@@ -93,9 +94,12 @@ Write-Host "Raw files stay in $Dir (host only)."
 Write-Host '=============================================================='
 Write-Host ''
 
+# -Intl adds V8 entry slices and runtime call stats (needs v8_enable_runtime_call_stats = true)
+$cats = '-*,disabled-by-default-camou.observe'
+if ($Intl) { $cats += ',v8,disabled-by-default-v8.runtime_stats' }
 $fl = @(
   "--user-data-dir=$Profile", '--no-first-run', '--no-default-browser-check',
-  '--trace-startup=-*,disabled-by-default-camou.observe', '--trace-startup-format=json',
+  "--trace-startup=$cats", '--trace-startup-format=json',
   "--trace-startup-file=$Dir\trace.json", '--trace-startup-duration=0',
   '--trace-startup-record-mode=record-as-much-as-possible', "--log-net-log=$Dir\net.json"
 )

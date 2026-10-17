@@ -198,7 +198,7 @@ def test_fonts_keys_carry_unique_names_and_the_platform_version_follows_the_list
 def test_brand_voices_and_local_faces_follow_the_windows_claim():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
     assert cfg["ua:brand"] == "Google Chrome"
-    assert [v["name"] for v in cfg["voices:list"]] == ["Microsoft David - English (United States)", "Microsoft Mark - English (United States)", "Microsoft Zira - English (United States)"]
+    assert [v["name"] for v in cfg["voices:list"][:3]] == ["Microsoft David - English (United States)", "Microsoft Mark - English (United States)", "Microsoft Zira - English (United States)"]
     assert cfg["voices:list"][0]["default"] is True and cfg["voices:list"][0]["voiceURI"] == cfg["voices:list"][0]["name"]
     faces = cfg["fonts:local"]
     assert len(faces) > 150 and all(len(f.split("\t")) == 4 for f in faces) and "SegoeUI\tSegoe UI\tSegoe UI\tRegular" in faces
@@ -215,8 +215,8 @@ def test_local_faces_exist_for_every_os_with_a_list_and_are_never_empty():
 
 def test_voices_follow_the_locale_and_share_cancel_is_human_paced():
     fr = gen.from_pool(POOL, "Europe/Paris", locale="fr-FR", rng=random.Random(1))["config"]
-    assert [v["name"] for v in fr["voices:list"]] == ["Microsoft Hortense - French (France)", "Microsoft Julie - French (France)", "Microsoft Paul - French (France)"]
-    assert all(v["lang"] == "fr-FR" for v in fr["voices:list"]) and fr["voices:list"][0]["default"] is True
+    assert [v["name"] for v in fr["voices:list"][:3]] == ["Microsoft Hortense - French (France)", "Microsoft Julie - French (France)", "Microsoft Paul - French (France)"]
+    assert all(v["lang"] == "fr-FR" for v in fr["voices:list"][:3]) and fr["voices:list"][0]["default"] is True
     assert gen.voices_keys("Windows", "en-NZ")["voices:list"][0]["lang"] == "en-AU"   # same language, first row
     assert gen.voices_keys("Windows", "uk-UA")["voices:list"][0]["lang"] == "en-US"   # no Ukrainian pack: en-US
     assert 900 <= fr["share:cancelMs"] <= 2600
@@ -238,3 +238,17 @@ def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version
     lin = json.loads(json.dumps(POOL)); lin["navigator"]["userAgentData"]["platform"] = "Linux"; lin["navigator"]["userAgentData"]["platformVersion"] = ""
     cfg = gen.from_pool(lin, "UTC", rng=random.Random(1))["config"]
     assert "ua:platformVersion" not in cfg and cfg["ua:platform"] == "Linux"
+
+
+def test_remote_google_voices_follow_the_local_row():
+    base = json.loads((ROOT / "baselines" / "chrome-8037-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]["voices"]
+    remote = [[v[0], v[1]] for v in base if not v[2]]
+    assert len(remote) == 19
+    for plat, loc, n_local in [("Windows", "en-US", 3), ("Windows", "fr-FR", 3), ("Windows", "uk-UA", 3), ("macOS", "en-US", 191)]:
+        vl = gen.voices_keys(plat, loc)["voices:list"]
+        assert len(vl) == n_local + 19
+        assert all(v["localService"] for v in vl[:n_local])
+        assert [[v["name"], v["lang"]] for v in vl[n_local:]] == remote
+        assert all(v["localService"] is False and v["default"] is False and v["voiceURI"] == v["name"] for v in vl[n_local:])
+        assert [v["default"] for v in vl].count(True) == 1 and vl[0]["default"] is True
+    assert gen.voices_keys("Linux") == {}
