@@ -10,6 +10,10 @@ sends back (requests, cookie names). Observe-only. Design:
 Add to the out dir's `args.gn` (never to `settings/build-args.gn`):
 
     camou_observe = true
+    v8_enable_runtime_call_stats = true
+
+The second arg compiles in V8's runtime call stats, which the Intl recipe below
+reads; it rebuilds V8, not Blink (box, 2026-10-13: 1634 steps, 22 min).
 
 `scripts/package.py` refuses such an out dir: an observer build is never a
 release. With the arg off, the generated calls compile to nothing.
@@ -30,21 +34,39 @@ The `-*,` prefix matters: a filter listing only disabled-by-default categories
 still enables every default category, which made traces tens to hundreds of MB
 and carried unrelated browsing data.
 
+**Intl recipe.** To also count Intl built-ins (`new Intl.DateTimeFormat`,
+`resolvedOptions`, the `supportedLocalesOf` family, `toLocale*`), record with
+
+    --trace-startup=-*,disabled-by-default-camou.observe,v8,disabled-by-default-v8.runtime_stats
+
+The report's "V8 built-ins (Intl)" section then lists calls per site, entry
+script and built-in. The entry script is the Blink `v8.run` script around the
+V8 slice, else the one script of the observer events inside that slice, else
+`(unknown)`: event handlers, timers, promise callbacks and module bodies have
+no entry script of their own. Without the recipe, or on a build without the
+arg, the section says `Intl: blind`, never zero. The recipe is opt-in because
+`v8` is a busy default category and the call stats time every built-in call
+(see Detectability). On Windows: `observe-recon.ps1 ... -Intl`.
+
 On the Windows host the recon used `scripts/windows/observe-recon.ps1` (one
 owner-driven arm: launch with the flags above, wait for the browser to close,
 copy the cookie database, run the report) and `scripts/windows/observe-arm1.ps1`
 (the tooling-launched logged-out arm, closed by one CDP `Browser.close`). They
 are byte-exact copies of `D:\camou-win\observe\recon.ps1` and `arm1.ps1` and
 hardcode that host's layout (`D:\camou-win\chromium\src\out\Observe\chrome.exe`,
-`observe_report.py` in `D:\camou-win\observe`).
+`observe_report.py` in `D:\camou-win\observe`). `observe-recon.ps1` gained
+`-Intl` on 2026-10-13; the host copy is updated with the `out\Observe`
+rebuild.
 
 `--trace-startup-duration=0` (record until exit) is the documented setting for
 `chrome` sessions closed normally. `scripts/verify_observe.py` instead uses
 `--trace-startup-duration=20` on `content_shell`, because content_shell's
 SIGTERM path wrote no trace; the duration timer flushes it.
 
-`verify_observe.py` has 17 rows, including a hot loop of 100 000 `fillRect`
-calls and `lineWidth` sets that V8 runs on its fast API path.
+`verify_observe.py` has 25 rows, including a hot loop of 100 000 `fillRect`
+calls and `lineWidth` sets that V8 runs on its fast API path, three Intl
+built-ins counted on the page and in its worker, and two arms that must report
+Intl blind.
 
 ## Read
 
@@ -80,7 +102,8 @@ as a read.
 
 ## What it cannot see (silence is not safety)
 
-- V8 built-ins: `Intl.*`, `Date.prototype.getTimezoneOffset`, `Math`.
+- V8 built-ins `Date.prototype.getTimezoneOffset` (a CSA builtin) and `Math`;
+  Intl only with the Intl recipe.
 - CSS `@media` rules in stylesheets (only `matchMedia` is seen).
 - Font enumeration through layout beyond the listed layout members.
 - TLS/JA3, HTTP/2 framing, server-side computation.
@@ -110,6 +133,21 @@ more than 10x what the hook's extra `HandleScope` and script-name copy cost,
 and the off arm moved 15% the other way in the same session, so it is not
 attributed to the hook; it needs repeated runs before replacing the numbers
 above.
+
+Three runs on 2026-10-13, on the build with `v8_enable_runtime_call_stats =
+true`. `intl` is the Intl recipe. `trace_bytes` is the `timing.html` trace.
+
+| recipe | `ua_200k_ms` | `todataurl_300_ms` | `trace_bytes` |
+|---|---|---|---|
+| off (`blink,loading`) | 92.9-94.7 | 29.1-30.3 | 244 830-247 911 |
+| on | 854-884 | 32.9-33.6 | 52 533 915-52 535 207 |
+| intl | 944-1006 | 31.8-34.1 | 52 548 451-52 550 560 |
+
+The Intl recipe adds 8-14% to the on-arm getter loop. Its call stats time
+every built-in and runtime call. It adds about 15 KB of `v8` events to this
+page's trace. With the stats category off, the compiled-in counters cost one
+flag check per C++ built-in: CI's browser verifies on this build matched
+main's (2026-10-13).
 
 Browse a site normally, on a release build, when staying hidden matters.
 

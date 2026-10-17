@@ -6,7 +6,11 @@
   "identical; it spells Hortence, the token is Hortense); the display strings are the OneCore token names as published in the WebbIE",
   "list of Windows 10 voices, kept verbatim with Windows' quirks (Korean (Korean), Catalan (Catalan), Arabic (Saudi), Norwegian (Bokmal),",
   "English (United Kingdom)). gen.voices_keys(platform, locale): the locale's row, else the same language's first row in this order, else en-US.",
-  "Sweden's Bengt is not in Appendix A's table but is in the token list; kept."
+  "Sweden's Bengt is not in Appendix A's table but is in the token list; kept.",
+  "remote: Chrome's 19 Google network voices (localService false), listed after the local ones on every OS Chrome-branded",
+  "builds ship them on. Copied byte-exact (two names carry U+00A0) from baselines/chrome-8037-stock-oracle-windows.json;",
+  "equal to stock Chrome 155 on a Mac (2026-10-13). The Chromium pin has none of its own; gen.voices_keys appends this table.",
+  "The 2026-09 macOS capture omitted them, but its 191 local voices equal the 2026-10-13 Mac list (S5 measurements 1)."
  ],
  "measured": [
   "en-US",
@@ -1994,6 +1998,141 @@
    "lang": "cs-CZ",
    "voiceURI": "Zuzana",
    "localService": true,
+   "default": false
+  }
+ ],
+ "remote": [
+  {
+   "name": "Google Deutsch",
+   "lang": "de-DE",
+   "voiceURI": "Google Deutsch",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google US English",
+   "lang": "en-US",
+   "voiceURI": "Google US English",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google UK English Female",
+   "lang": "en-GB",
+   "voiceURI": "Google UK English Female",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google UK English Male",
+   "lang": "en-GB",
+   "voiceURI": "Google UK English Male",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google español",
+   "lang": "es-ES",
+   "voiceURI": "Google español",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google español de Estados Unidos",
+   "lang": "es-US",
+   "voiceURI": "Google español de Estados Unidos",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google français",
+   "lang": "fr-FR",
+   "voiceURI": "Google français",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google हिन्दी",
+   "lang": "hi-IN",
+   "voiceURI": "Google हिन्दी",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google Bahasa Indonesia",
+   "lang": "id-ID",
+   "voiceURI": "Google Bahasa Indonesia",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google italiano",
+   "lang": "it-IT",
+   "voiceURI": "Google italiano",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google 日本語",
+   "lang": "ja-JP",
+   "voiceURI": "Google 日本語",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google 한국의",
+   "lang": "ko-KR",
+   "voiceURI": "Google 한국의",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google Nederlands",
+   "lang": "nl-NL",
+   "voiceURI": "Google Nederlands",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google polski",
+   "lang": "pl-PL",
+   "voiceURI": "Google polski",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google português do Brasil",
+   "lang": "pt-BR",
+   "voiceURI": "Google português do Brasil",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google русский",
+   "lang": "ru-RU",
+   "voiceURI": "Google русский",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google 普通话（中国大陆）",
+   "lang": "zh-CN",
+   "voiceURI": "Google 普通话（中国大陆）",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google 粤語（香港）",
+   "lang": "zh-HK",
+   "voiceURI": "Google 粤語（香港）",
+   "localService": false,
+   "default": false
+  },
+  {
+   "name": "Google 國語（臺灣）",
+   "lang": "zh-TW",
+   "voiceURI": "Google 國語（臺灣）",
+   "localService": false,
    "default": false
   }
  ]

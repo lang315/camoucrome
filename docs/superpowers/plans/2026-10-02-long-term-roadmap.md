@@ -436,7 +436,7 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   full read.
 - **S2c. DONE 2026-10-08 (`specs/2026-10-07-canvas-noise-s2c-design.md`;
   results in `measurements/2026-10-canvas-noise-s2c.md`; branch
-  `s2c/canvas-cost`, not yet merged).** Canvas noise is marked at flush time,
+  `s2c/canvas-cost`, merged as PR #31, `dfb80e3`).** Canvas noise is marked at flush time,
   `getImageData` noises only the returned rect, and `readPixels` and
   framebuffer reads are noised without the extra copies; `texImage2D` from a
   WebGL canvas is noised (C38). A page framebuffer is noised only when its read
@@ -449,7 +449,7 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   2.00x (target 1.5x, MISS). The gaps are in section 10 of the measurements.
 - **S3. DONE 2026-10-10 (`specs/2026-10-10-s3-media-device-ids-design.md`;
   results in `measurements/2026-10-s3-media-device-ids.md`; branch
-  `s3/media-device-ids`, PR pending).** Device IDs were empty on the fork after
+  `s3/media-device-ids`, merged as PR #32, `d1c8fe4`).** Device IDs were empty on the fork after
   the camera/microphone grant, while stock exposes real IDs. Now a claimed
   device with no real counterpart gets a phantom entry with a seeded id, and the
   ids are stable per profile. `verify_s3_media` 8/8 on WSL (RED 2/8 on main);
@@ -459,23 +459,37 @@ Evidence for all of them: `measurements/2026-10-step2-baseline.md`.
   section 8 of the measurements.
   Follow-ups S3b are listed in the measurement doc section 8.
   **S3b DONE 2026-10-10 (`measurements/2026-10-s3b-device-id-seed.md`; branch
-  `s3b/device-id-seed`, PR pending).** One seed rule across the browser and the
+  `s3b/device-id-seed`, merged as PR #33, `4d075de`).** One seed rule across the browser and the
   renderer (ids no longer rewritten in Blink). `verify_s3_media` 12/12 on WSL
   (RED 8/12 on main); `verify_s3_host` 7/7 on the Windows host (RED 6/7);
   regressions media_ii 13/13, phantom 6/6, sp4 4/4; Windows verify set 21/21.
   Open gaps are in section 8 of that doc.
-- **S4. The fork is unstable across launches.** WebGPU's adapter was missing in
-  one of two launches (1 of 3 runs). HEVC's answer flipped (2 of 3 runs). One
-  CreepJS run reported "rgba noise". The control never did any of this.
+- **S4. Not a fork defect: a harness artefact (spike 2026-10-12).** As measured,
+  WebGPU's adapter was missing in one of two launches (1 of 3 runs), HEVC's
+  answer flipped (2 of 3 runs), and one CreepJS run reported "rgba noise"; the
+  control never did any of this. The cause is the session the host runs used:
+  launched over sshd they run in Windows session 0, where the GPU process
+  crashes once per launch (stock too), and a renderer whose GPU query hits that
+  window latches an empty answer. In the interactive session the GPU process
+  never crashed and neither arm flipped (0/40). Folded into step2b: host runs
+  move to the interactive session behind a crash-count gate, and step 2 is
+  recaptured there.
 - **S5. No remote voices.** Stock lists 19 remote speech voices; the fork lists
-  none. BrowserScan also hits a "WebGL exception" on the fork and counts 95
+  none. **The voice half is done (2026-10-13,
+  `specs/2026-10-13-s5-remote-voices-design.md`; results in `measurements/2026-10-s5-remote-voices.md`; branch
+  `s5/remote-voices`):** a Windows or macOS identity lists Chrome's 19 Google
+  voices after the local ones, and `speak()` on one has stock 154's measured
+  shape (no boundaries, a late start, its own pace and rate curve, pause
+  without events). `cancel()` on any configured voice now fires `interrupted`
+  as stock does. The rest of S5 waits on step2b's session-1 recapture:
+  BrowserScan also hits a "WebGL exception" on the fork and counts 95
   fonts against stock's 132. Pixelscan flags "Masking detected" and
   "Timezone spoofed", because the claimed zone does not match the IP. That
   belongs to the proxy layer, but it is worth one run behind a proxy in the
   claimed region.
 
 Item 3 (HEVC) is answered on a host with a GPU: the fork says `probably` like
-stock there, and what remains is S4's flip.
+stock there. S4's flip turned out to be the session-0 artefact above.
 
 1. **Layer 3: commercial anti-bot** (Cloudflare, DataDome, Akamai,
    PerimeterX). Decide the proxy budget first. Design: both arms through the

@@ -1,27 +1,61 @@
 diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
-index b463dfbdf9..b80c4643f5 100644
+index b463dfbdf9..ad622a1d24 100644
 --- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
 +++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
-@@ -25,6 +25,7 @@
+@@ -25,8 +25,13 @@
  
  #include "third_party/blink/renderer/modules/speech/speech_synthesis.h"
  
++#include <algorithm>
++#include <array>
++#include <cmath>
 +#include <cstdint>
  #include <tuple>
  
++#include "base/rand_util.h"
  #include "base/task/single_thread_task_runner.h"
-@@ -184,6 +185,10 @@ void SpeechSynthesis::cancel() {
+ #include "base/time/time.h"
+ #include "build/build_config.h"
+@@ -179,11 +184,38 @@ void SpeechSynthesis::speak(ScriptState* script_state,
+ }
+ 
+ void SpeechSynthesis::cancel() {
++  // S5: stock fires error 'interrupted' on the utterance a cancel() stops,
++  // for a local or a Google voice alike (measurements section 2). The fake
++  // path has no backend to do it, so post it here; once the utterance has left
++  // the queue, HandleSpeakingCompleted only fires the event.
++  if (SpeechSynthesisUtterance* camou_current = CurrentSpeechUtterance();
++      camou_current && IsCamouVoice(camou_current)) {
++    GetSupplementable()
++        ->GetTaskRunner(TaskType::kMiscPlatformAPI)
++        ->PostTask(
++            FROM_HERE,
++            BindOnce(
++                [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
++                  // Not if a re-speak made it current again: that would
++                  // pop the new speak.
++                  if (self && u && u != self->CurrentSpeechUtterance()) {
++                    self->HandleSpeakingCompleted(
++                        u, mojom::blink::SpeechSynthesisErrorCode::kInterrupted);
++                  }
++                },
++                WrapWeakPersistent(this), WrapWeakPersistent(camou_current)));
++  }
++
+   // Remove all the items from the utterance queue. The platform
+   // may still have references to some of these utterances and may
    // fire events on them asynchronously.
    utterance_queue_.clear();
  
 +  // voices-ii: a cancel ends any paused fake speak, so clear the flag --
 +  // otherwise speechSynthesis.paused would read true with nothing speaking.
 +  is_paused_ = false;
++  camou_paused_at_ = base::TimeTicks();
 +
    if (mojom::blink::SpeechSynthesis* mojom_synthesis =
            TryEnsureMojomSynthesis())
      mojom_synthesis->Cancel();
-@@ -193,6 +198,39 @@ void SpeechSynthesis::pause() {
+@@ -193,6 +225,49 @@ void SpeechSynthesis::pause() {
    if (is_paused_)
      return;
  
@@ -34,6 +68,16 @@ index b463dfbdf9..b80c4643f5 100644
 +  // false, and the synthesized boundary/end events keep firing -- a clear tell.
 +  if (SpeechSynthesisUtterance* utterance = CurrentSpeechUtterance();
 +      utterance && IsCamouVoice(utterance)) {
++    // S5: a Google network voice pauses without 'pause'/'resume' events and
++    // speechSynthesis.paused stays false (stock 154, measurements sections 2
++    // and 4), but its end still moves by the paused time. So the remote
++    // branch keeps its own flag, camou_paused_at_, not is_paused_.
++    if (camou_remote_) {
++      if (camou_paused_at_.is_null()) {
++        camou_paused_at_ = base::TimeTicks::Now();
++      }
++      return;
++    }
 +    is_paused_ = true;
 +    const uint64_t gen = camou_fake_generation_;
 +    GetSupplementable()
@@ -61,13 +105,25 @@ index b463dfbdf9..b80c4643f5 100644
    if (mojom::blink::SpeechSynthesis* mojom_synthesis =
            TryEnsureMojomSynthesis())
      mojom_synthesis->Pause();
-@@ -202,6 +240,30 @@ void SpeechSynthesis::resume() {
+@@ -202,6 +277,42 @@ void SpeechSynthesis::resume() {
    if (!CurrentSpeechUtterance())
      return;
  
 +  // voices-ii: fake-path resume, symmetric with pause(). Clearing is_paused_
 +  // synchronously lets the deferred boundary/finish tasks fire on their next
 +  // poll; the 'resume' event fires async via DidResumeSpeaking.
++  // S5: a remote fake speak resumes silently and moves its end deadline by the
++  // paused time (see pause()).
++  if (SpeechSynthesisUtterance* utterance = CurrentSpeechUtterance();
++      utterance && IsCamouVoice(utterance) && camou_remote_) {
++    if (!camou_paused_at_.is_null()) {
++      if (!camou_end_due_.is_null()) {
++        camou_end_due_ += base::TimeTicks::Now() - camou_paused_at_;
++      }
++      camou_paused_at_ = base::TimeTicks();
++    }
++    return;
++  }
 +  if (SpeechSynthesisUtterance* utterance = CurrentSpeechUtterance();
 +      utterance && IsCamouVoice(utterance) && is_paused_) {
 +    is_paused_ = false;
@@ -92,7 +148,57 @@ index b463dfbdf9..b80c4643f5 100644
    if (mojom::blink::SpeechSynthesis* mojom_synthesis =
            TryEnsureMojomSynthesis())
      mojom_synthesis->Resume();
-@@ -286,6 +348,16 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+@@ -275,6 +386,49 @@ bool SpeechSynthesis::IsCamouVoice(SpeechSynthesisUtterance* utterance) const {
+   return false;
+ }
+ 
++namespace {
++// S5: Chrome's Google network voices (localService false), measured on stock
++// 154 on the Windows host in session 1 (measurements/2026-10-s5-remote-voices.md
++// sections 2 and 4): start comes after a round trip (p10..p90), no word
++// boundaries, their own pace and their own rate curve; above rate 2 a Google
++// voice never starts at all. No length cut-off was measured, so there is none.
++constexpr double kRemoteStartMinMs = 218;
++constexpr double kRemoteStartMaxMs = 392;
++constexpr double kRemoteCharsPerSecond = 16.05;
++// Duration at a rate relative to rate 1 (43 chars, deterministic to 0.2 %),
++// interpolated log-log; below 0.1 it is the 0.1 value. Measured: 2.0 plays,
++// 2.25 and above never start, so a remote speak above kRemoteMaxRate fires
++// nothing (the threshold inside (2, 2.25] is not measured).
++struct RemoteRatePoint {
++  double rate;
++  double factor;
++};
++constexpr std::array<RemoteRatePoint, 7> kRemoteRateCurve = {{{0.1, 3.037},
++                                                             {0.25, 2.512},
++                                                             {0.5, 1.823},
++                                                             {0.75, 1.338},
++                                                             {1.0, 1.0},
++                                                             {1.5, 0.582},
++                                                             {2.0, 0.372}}};
++constexpr double kRemoteMaxRate = kRemoteRateCurve.back().rate;
++
++// The caller never passes a rate above kRemoteMaxRate.
++double RemoteRateFactor(double rate) {
++  const double r = std::max(rate, kRemoteRateCurve.front().rate);
++  for (size_t i = 1; i < kRemoteRateCurve.size(); ++i) {
++    const RemoteRatePoint& lo = kRemoteRateCurve[i - 1];
++    const RemoteRatePoint& hi = kRemoteRateCurve[i];
++    if (r <= hi.rate) {
++      const double w = (std::log(r) - std::log(lo.rate)) /
++                       (std::log(hi.rate) - std::log(lo.rate));
++      return std::exp(std::log(lo.factor) +
++                      w * (std::log(hi.factor) - std::log(lo.factor)));
++    }
++  }
++  return kRemoteRateCurve.back().factor;
++}
++}  // namespace
++
+ void SpeechSynthesis::StartSpeakingImmediately() {
+   SpeechSynthesisUtterance* utterance = CurrentSpeechUtterance();
+   DCHECK(utterance);
+@@ -286,6 +440,16 @@ void SpeechSynthesis::StartSpeakingImmediately() {
    utterance->SetStartTime(millis / 1000.0);
    is_paused_ = false;
  
@@ -109,10 +215,12 @@ index b463dfbdf9..b80c4643f5 100644
    if (IsCamouVoice(utterance)) {
      // Fake completion: never touch the (backend-less) mojo path.
      if (camoucfg::GetBool(camoucfg::ScopeFor(nullptr),
-@@ -296,38 +368,100 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+@@ -296,38 +460,131 @@ void SpeechSynthesis::StartSpeakingImmediately() {
                                camoucfg::keys::kVoicesFakeCompletionCharsPerSecond)
                .value_or(12.5);
        const double rate = utterance->rate() > 0 ? utterance->rate() : 1.0;
+-      const double secs =
+-          static_cast<double>(utterance->text().length()) / (cps * rate);
 +      const String text = utterance->text();
 +      const unsigned text_len = text.length();
 +      // voices-ii: deterministic per-utterance timing jitter in [-0.15, 0.15],
@@ -134,9 +242,34 @@ index b463dfbdf9..b80c4643f5 100644
 +      const double unit = static_cast<double>(hash >> 11) /
 +                          static_cast<double>(1ULL << 53);  // [0, 1)
 +      const double jitter = (unit - 0.5) * 2.0 * 0.15;      // [-0.15, 0.15]
-       const double secs =
--          static_cast<double>(utterance->text().length()) / (cps * rate);
++      double secs =
 +          (static_cast<double>(text_len) / (cps * rate)) * (1.0 + jitter);
++      // S5: a Google network voice starts after a round trip, keeps its own
++      // pace and fires no boundaries. Its start is a network round trip on
++      // stock, different on every call, so it is a fresh random draw: the
++      // same text does not repeat its delay, and the start does not move with
++      // the end's (per-text) jitter.
++      const bool remote = !utterance->voice()->localService();
++      camou_remote_ = remote;
++      double start_ms = 0;
++      if (remote && rate > kRemoteMaxRate) {
++        // S5: stock 154 never starts a Google voice above rate 2: no event
++        // until a cancel() (which fires 'interrupted').
++        camou_end_due_ = base::TimeTicks();
++        camou_pending_boundaries_ = 0;
++        return;
++      }
++      if (remote) {
++        start_ms = kRemoteStartMinMs +
++                   base::RandDouble() * (kRemoteStartMaxMs - kRemoteStartMinMs);
++        secs = (static_cast<double>(text_len) / kRemoteCharsPerSecond) *
++               RemoteRateFactor(rate) * (1.0 + jitter);
++      }
++      camou_paused_at_ = base::TimeTicks();
++      camou_end_due_ = remote ? base::TimeTicks::Now() +
++                                    base::Milliseconds(start_ms) +
++                                    base::Seconds(secs)
++                              : base::TimeTicks();
 +
 +      // `gen` (bumped at the top of this method) is captured by value in every
 +      // posted task below, which no-ops if it no longer matches -- this is what
@@ -146,13 +279,14 @@ index b463dfbdf9..b80c4643f5 100644
            GetSupplementable()->GetTaskRunner(TaskType::kMiscPlatformAPI);
        // FIX B: fire 'start' ASYNC (a real TTS backend fires start after speak()
 -      // returns; a synchronous start is a trivial fingerprint tell).
+-      runner->PostTask(
+-          FROM_HERE,
+-          BindOnce(
+-              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
 +      // returns; a synchronous start is a trivial fingerprint tell). Posted
 +      // FIRST so same-runner FIFO keeps it before a charIndex==0 boundary (also
 +      // delay 0) and before 'end'.
-       runner->PostTask(
-           FROM_HERE,
-           BindOnce(
--              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u) {
++      auto start_task = BindOnce(
 +              [](SpeechSynthesis* self, SpeechSynthesisUtterance* u,
 +                 uint64_t task_gen) {
                  // FIX A: u may be null (WeakPersistent after GC); without the
@@ -167,7 +301,13 @@ index b463dfbdf9..b80c4643f5 100644
 -              WrapWeakPersistent(this), WrapWeakPersistent(utterance)));
 -      // Delayed 'end' (>= the async start, since secs > 0 for non-empty text and
 -      // same-runner FIFO orders the two 0-delay tasks for empty text).
-+              WrapWeakPersistent(this), WrapWeakPersistent(utterance), gen));
++              WrapWeakPersistent(this), WrapWeakPersistent(utterance), gen);
++      if (remote) {
++        runner->PostDelayedTask(FROM_HERE, std::move(start_task),
++                                base::Milliseconds(start_ms));
++      } else {
++        runner->PostTask(FROM_HERE, std::move(start_task));
++      }
 +      // voices-ii: one 'boundary' (name "word") per word, at its proportional
 +      // offset into the (jittered) duration. Skip empty runs -- a charLength==0
 +      // boundary would itself be a tell.
@@ -179,7 +319,8 @@ index b463dfbdf9..b80c4643f5 100644
 +      // O(words) pending delayed tasks synchronously at speak() time.
 +      constexpr unsigned kMaxBoundaryEvents = 4096;
 +      unsigned emitted = 0;
-+      for (unsigned i = 0; i < text_len && emitted < kMaxBoundaryEvents;) {
++      for (unsigned i = 0;
++           !remote && i < text_len && emitted < kMaxBoundaryEvents;) {
 +        if (is_ws(text[i])) {
 +          ++i;
 +          continue;
@@ -215,9 +356,10 @@ index b463dfbdf9..b80c4643f5 100644
 -                }
 -              },
 -              WrapWeakPersistent(this), WrapWeakPersistent(utterance)),
+-          base::Seconds(secs));
 +          BindOnce(&SpeechSynthesis::MaybeFinishFakeSpeak,
 +                   WrapWeakPersistent(this), WrapWeakPersistent(utterance), gen),
-           base::Seconds(secs));
++          base::Milliseconds(start_ms) + base::Seconds(secs));
      } else {
 +      // voices-ii: keep the "reset per speak" invariant (speech_synthesis.h)
 +      // even on the error path, which posts no boundary tasks.
@@ -225,7 +367,7 @@ index b463dfbdf9..b80c4643f5 100644
        SpeakingErrorOccurred(utterance);  // deterministic error
      }
      return;
-@@ -336,6 +470,72 @@ void SpeechSynthesis::StartSpeakingImmediately() {
+@@ -336,6 +593,94 @@ void SpeechSynthesis::StartSpeakingImmediately() {
      utterance->Start(this);
  }
  
@@ -282,15 +424,37 @@ index b463dfbdf9..b80c4643f5 100644
 +  // u != CurrentSpeechUtterance()). Waiting for the count keeps 'end' last, as a
 +  // real backend does. Must defer, never drop -- a dropped 'end' leaves
 +  // speechSynthesis.speaking true forever, a worse tell than the one this closes.
-+  if (is_paused_ || camou_pending_boundaries_ > 0) {
++  if (is_paused_ || !camou_paused_at_.is_null() ||
++      camou_pending_boundaries_ > 0) {
++    // S5: a paused remote speak cannot end sooner than the time it had left
++    // when paused, so it waits that long instead of polling.
++    base::TimeDelta wait = kFakePausePollInterval;
++    if (!camou_paused_at_.is_null() && !camou_end_due_.is_null()) {
++      wait = std::max(wait, camou_end_due_ - camou_paused_at_);
++    }
 +    GetSupplementable()
 +        ->GetTaskRunner(TaskType::kMiscPlatformAPI)
 +        ->PostDelayedTask(FROM_HERE,
 +                          BindOnce(&SpeechSynthesis::MaybeFinishFakeSpeak,
 +                                   WrapWeakPersistent(this),
 +                                   WrapWeakPersistent(u), generation),
-+                          kFakePausePollInterval);
++                          wait);
 +    return;
++  }
++  // S5: a remote speak ends at camou_end_due_, which each pause moved later
++  // (null for a local voice).
++  if (!camou_end_due_.is_null()) {
++    const base::TimeDelta left = camou_end_due_ - base::TimeTicks::Now();
++    if (left.is_positive()) {
++      GetSupplementable()
++          ->GetTaskRunner(TaskType::kMiscPlatformAPI)
++          ->PostDelayedTask(FROM_HERE,
++                            BindOnce(&SpeechSynthesis::MaybeFinishFakeSpeak,
++                                     WrapWeakPersistent(this),
++                                     WrapWeakPersistent(u), generation),
++                            left);
++      return;
++    }
 +  }
 +  DidFinishSpeaking(u, mojom::blink::SpeechSynthesisErrorCode::kNoError);
 +}
@@ -299,19 +463,20 @@ index b463dfbdf9..b80c4643f5 100644
      SpeechSynthesisUtterance* utterance,
      mojom::blink::SpeechSynthesisErrorCode error_code) {
 diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.h b/third_party/blink/renderer/modules/speech/speech_synthesis.h
-index a0cc038fc0..972a2ff399 100644
+index a0cc038fc0..a42dd8d565 100644
 --- a/third_party/blink/renderer/modules/speech/speech_synthesis.h
 +++ b/third_party/blink/renderer/modules/speech/speech_synthesis.h
-@@ -26,6 +26,8 @@
+@@ -26,6 +26,9 @@
  #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_SPEECH_SPEECH_SYNTHESIS_H_
  #define THIRD_PARTY_BLINK_RENDERER_MODULES_SPEECH_SPEECH_SYNTHESIS_H_
  
 +#include <cstdint>
 +
++#include "base/time/time.h"
  #include "third_party/blink/public/mojom/speech/speech_synthesis.mojom-blink-forward.h"
  #include "third_party/blink/renderer/bindings/modules/v8/v8_speech_synthesis_error_code.h"
  #include "third_party/blink/renderer/modules/event_target_modules.h"
-@@ -124,6 +126,18 @@ class MODULES_EXPORT SpeechSynthesis final
+@@ -124,6 +127,18 @@ class MODULES_EXPORT SpeechSynthesis final
    // (backend-less) mojo path.
    bool IsCamouVoice(SpeechSynthesisUtterance*) const;
  
@@ -330,7 +495,7 @@ index a0cc038fc0..972a2ff399 100644
    // Gets a timestamp in millis that is safe to expose to the web.
    // Returns false if it cannot get a timestamp.
    bool GetElapsedTimeMillis(double* millis);
-@@ -147,6 +161,20 @@ class MODULES_EXPORT SpeechSynthesis final
+@@ -147,6 +162,32 @@ class MODULES_EXPORT SpeechSynthesis final
    void ApplyCamouVoices();
    bool camou_voices_applied_ = false;
  
@@ -347,6 +512,18 @@ index a0cc038fc0..972a2ff399 100644
 +  // tasks' relative order) can never let 'end' fire ahead of the remaining
 +  // boundaries and retire them. Reset per speak in StartSpeakingImmediately.
 +  unsigned camou_pending_boundaries_ = 0;
++
++  // S5: when the current remote (Google voice) fake speak ends; each pause
++  // moves it later by the paused time. Null for a local voice. Set per speak
++  // in StartSpeakingImmediately.
++  base::TimeTicks camou_end_due_;
++  // S5: when the current remote fake speak was paused; null while it is not.
++  // The remote branch's pause flag (it leaves is_paused_ alone).
++  base::TimeTicks camou_paused_at_;
++  // S5: whether the current fake speak uses a remote (Google) voice, decided
++  // once in StartSpeakingImmediately; pause() and resume() follow it even if
++  // the page reassigns utterance.voice mid-speak.
++  bool camou_remote_ = false;
 +
    // EventTarget
    const AtomicString& InterfaceName() const override;

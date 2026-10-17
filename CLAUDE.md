@@ -159,7 +159,9 @@ startup abort instead of a silent fall-back to real values.
   (2026-10-06's observe slice: 9477 steps).
 - CI's `out/Default` sets `camou_observe = true` (since 2026-10-08), so it is
   a tracking-observer build (category off by default; `package.py` refuses
-  it). Measure costs in a tree without the flag.
+  it), and `v8_enable_runtime_call_stats = true` (since 2026-10-13, for the
+  observer's Intl counts; idle unless `disabled-by-default-v8.runtime_stats`
+  is traced). Measure costs in a tree without the flags.
 - **Windows host runs** launch through `scripts/windows/run-interactive.ps1`, so
   they run in the owner's interactive session (session 1). In session 0, where
   sshgate/sshd put a shell, the GPU process crashes once per launch (S4).
