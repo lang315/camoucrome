@@ -133,8 +133,21 @@ the host:
   - `low_memory_kill`, `headroom_launch_gb`, `headroom_min_gb`;
   - `wsl_build`: the WSL build lock is held;
   - `gpu_exit_lines`: lines matching `GPU process exited unexpectedly` in
-    `<profile>\chrome_debug.log`;
+    `<profile>\chrome_debug.log`. On 2026-10-17 a launch in session 0
+    logged 1 such line and a launch in session 1 logged 0, so this key
+    detects the S4 crash;
   - `report_rc`, `started`, `ended`.
+
+If `recon.ps1` throws, `arm<N>.log` gets `ERROR: <error record>` and its
+script stack trace, then `EXIT=1`. The command echoes the `ERROR:` line
+and the arm is `UNMEASURED` (`run.json missing`) at once, without waiting
+out the arm's time limit.
+
+**Baseline status.** Calibration is not done yet. On 2026-10-17 the host
+baseline is `{}`, so every measured arm is `PASS` and every group shows
+as `INFO ... new group`. Calibration runs on the 156 `out\Observe` after
+the re-pin. Until then `docs/observer/baselines/facebook-auto.json` does
+not exist.
 
 **Expired login.** Arm 3 reports `session expired`. To refresh the backup:
 1. The owner runs `recon.ps1 -Site facebook -Arm 2 -Intl -Force` and logs
