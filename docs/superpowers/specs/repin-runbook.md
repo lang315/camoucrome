@@ -321,7 +321,11 @@ In order. Durations are what this box took.
    `gclient sync --revision src@<pin> -D`, `gclient runhooks`.
 5. **The branch**: `rebuild_branch.sh` (§4).
 6. **`gn gen out/Default`** with `settings/build-args.gn` (component build,
-   `symbol_level=0`, and the proprietary-codec pair).
+   `symbol_level=0`, and the proprietary-codec pair), then append the
+   observer args from `docs/observer/README.md` (`camou_observe = true`,
+   `v8_enable_runtime_call_stats = true`): CI's `out/Default` is an observer
+   build, and its `verify_observe.py` fails its Intl rows without the second
+   arg.
 7. **The build**: `autoninja -C out/Default chrome content_shell
    components_unittests` — 6 h 10 m from clean, 11 GB in `out/Default`.
 8. **The verify environment** `~/camoucrome-verify` (463 MB): a Python 3.12
