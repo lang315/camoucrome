@@ -83,7 +83,8 @@ owner scoped SP2c to Windows (2026-10-17). Coherence over coverage: no
 unmeasured shape is spoofed. SP2b's move hook takes no OS gate because a
 path's shape is not OS-encoded; a wheel's is.
 
-**Quantize.** A pure function in `components/camoucfg`, Camoufox's rule:
+**Quantize.** A pure function in `components/camoucfg`, Camoufox's rule
+except that both-zero takes stock's path:
 per axis `n = sign(d) · max(1, round(|d| / 100))`, and `0` for `d == 0`.
 The event count is `max(|nx|, |ny|)`. A wheel with both deltas zero gets
 count 0 and takes today's path unchanged, whatever stock does with it. Notch `i` carries `sign(nx)` on X
@@ -107,6 +108,17 @@ reuses SP2b's pattern: static delayed-task callbacks holding a weak widget
 pointer, re-acquiring an injector when they fire, and failing the callback
 if the widget is gone. A detached widget must never crash the browser.
 
+The wheel ack path is not a straight copy of the move path. `InjectWheelEvent`
+has its own bookkeeping that `InjectMouseEvent` lacks:
+- `input_queued_`;
+- the `kPhaseEnded` follow-up, gated on `input_queued_`;
+- `pending_mouse_callbacks_`, popped by the ack.
+
+The plan must establish how SP2b forwards intermediate events with no
+registered callback without an ack popping an empty deque, and mirror that.
+It must also decide what becomes of the `kPhaseEnded` branch if §2 measures
+no phases.
+
 ### 2. Oracle first, RED-first (`scripts/capture_wheel_oracle.py`)
 
 Stock Chrome 154 on the Windows host, headed, launched through
@@ -127,8 +139,23 @@ Arms:
 The capture fails unless the arms differ in at least event count,
 `wheelDeltaY/deltaY` ratio, and the number of `scroll` events per notch
 (animation). If they agree, the probe measures nothing and the slice stops
-there. The capture also records the host's DPR and its "lines to scroll"
-setting (expected 3).
+there. The capture also records the host's "lines to scroll" setting (expected 3),
+its Windows scale percentage and `window.devicePixelRatio`.
+
+**DPR must be resolved here, not deferred.** Blink divides
+`wheel_ticks * kTickMultiplier` by `window.devicePixelRatio()` in one
+`WheelEvent` constructor path (`wheel_event.cc:107-109`). So on a host that
+is not at 100 %, `wheelDeltaY` may not be constant, and `deltaY` may or may
+not be. One run cannot tell "100 constant", "100 × DPR" and "100 / DPR"
+apart. The real arm therefore runs twice: as is, and with
+`--force-device-scale-factor=1`. That flag changes the page's DPR but not the
+Win32 builder's native scale, so a difference between the two runs is itself
+the answer.
+
+If the per-notch values track DPR, the C++ derives them from the spoofed DPR
+(SP4 screen geometry). That is a cross-surface tie: `invariants.json` gains a
+line, and §3's "no invariant change" no longer holds. The plan settles this
+before its C++ task starts.
 
 Output: `baselines/chrome-8037-wheel.json` (recaptured at every re-pin,
 never edited), plus
@@ -151,8 +178,8 @@ The oracle needs no build, so it does not take the build lock.
 | `baselines/chrome-8037-wheel.json`, `measurements/2026-10-sp2c-wheel.md` | §2 output |
 | `docs/superpowers/plans/2026-09-02-followon-roadmap.md` | ledger line |
 
-No new config key, so `keys.json`, `keys.h` and `invariants.json` are
-untouched. `BUILD.gn` is untouched: `mouse_trajectories.cc` is already a
+No new config key, so `keys.json` and `keys.h` are untouched.
+`invariants.json` is untouched unless §2 finds the notch values track DPR. `BUILD.gn` is untouched: `mouse_trajectories.cc` is already a
 source, and `//content/browser` already depends on `//components/camoucfg`.
 
 The patch is cut the project's way: commit on `camoucrome/main` in
@@ -165,7 +192,8 @@ Driven through `lib_shell.session`, so there is no `Runtime.enable` and
 Playwright's default argv is not used. The page records wheel and scroll
 events into the DOM. Rows, with expected counts:
 
-1. no config: `wheel(0, 300)` → exactly **1** `wheel` event, `deltaY 300`.
+1. no config: `wheel(0, 300)` → exactly **1** `wheel` event, `deltaY 300`;
+   `wheel(0, 0)` → its event count recorded as the control for row 3.
 2. `humanize:enabled` + claimed Windows: `wheel(0, 300)` → exactly **3**,
    each with the oracle's per-notch fields, gaps in `[18, 60]` ms with a
    small tolerance for delivery.
@@ -191,10 +219,8 @@ not evidence about Windows.
   next to SP2b, so the re-pin has to rebase it. The build lock is held by the
   156 prep build at the time of writing. The oracle (§2) can run before the
   lock is free; the build and verify cannot.
-- **DPR.** If the host's scale is not 100 %, the per-notch pixel delta the
-  oracle records may be DPR-scaled. The measurement doc states the scale. A
-  fork whose window size implies a different DPR gets the 100 % value until a
-  second scale is measured.
+- **DPR** is an open point that §2 resolves, and its answer can add an
+  invariant (see §2).
 - **Cadence** 18–60 ms is borrowed, not measured (§1).
 - **`wheel(0, d)` with `d < 50`** still delivers a full notch (100 px). This
   is Camoufox's choice, kept for parity; a caller wanting a precise
