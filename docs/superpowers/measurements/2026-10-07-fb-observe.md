@@ -512,3 +512,5 @@ directly and has no new-tab page section.
   arms for those sites are not covered here.
 - Nothing here says what Facebook does with the reads, or decodes the
   `/ajax/bz` payload. That stays out of scope (`docs/observer/followups.md`).
+
+A re-run on 2026-10-17 with exact fast-call counts and Intl built-ins, in session 1, is in `2026-10-17-fb-observe-intl.md`.
