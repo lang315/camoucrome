@@ -164,11 +164,17 @@ no entry for the arm is a usage error. Against `{}` the judge adds
 `observe_judge.py baseline` refuses an unmeasured input with exit 2 and
 writes no file.
 
-**Baseline status.** Calibration is not done yet. On 2026-10-17 the host
-baseline is `{}`, so every measured arm is `PASS` and every group shows
-as `INFO ... new group`. Calibration runs on the 156 `out\Observe` after
-the re-pin. Until then `docs/observer/baselines/facebook-auto.json` does
-not exist.
+**Baseline status.** Calibrated on 2026-10-18 from two unattended runs on
+the 156 `out\Observe` (156.0.8078.36). The host file is
+`D:\camou-win\observe\baseline-facebook.json`, and the committed copy
+`docs/observer/baselines/facebook-auto.json` (the host's has CRLF line
+ends). Arm 1 requires audio, canvas, intl, layout-probe, navigator,
+screen, storage, webgl and webgpu. Arm 3 requires canvas, fonts, intl,
+layout-probe, navigator, screen and storage. Arm 3's `fonts` is 1 call
+per run, so a load that skips it reads as `FAIL fonts 0`: re-run once
+before treating that row as a change. Recalibrate after a re-pin, and
+whenever facebook's reads change for good. Measurements:
+`docs/superpowers/measurements/2026-10-17-fb-observe-intl.md` §8.
 
 **Expired login.** Arm 3 reports `session expired`. To refresh the backup:
 1. The owner runs `recon.ps1 -Site facebook -Arm 2 -Intl -Force` and logs

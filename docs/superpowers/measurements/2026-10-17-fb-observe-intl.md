@@ -309,4 +309,75 @@ waited out its 5-minute limit, because the throw never reached the log.
 
 Calibration has not finished: there is one clean arm-1 sample and three
 arm-3 samples. The owner's session then went `Disc`, and the Windows tree
-moved to 156. The baseline is calibrated on the 156 `out\Observe`.
+moved to 156. The baseline is calibrated on the 156 `out\Observe` (§8).
+
+## 8. Calibration on 156 (2026-10-18)
+
+The build is `out\Observe` at 156.0.8078.36 (`camou_observe` and
+`v8_enable_runtime_call_stats`). The host files matched `e-fb-auto` by
+SHA-256 before the first load. The owner's session was `Active`, with
+22.4 GB of commit headroom and no native build running. Each run was
+launched detached, as the README says.
+
+| run | dir | result |
+|---|---|---|
+| calibration 1 | `20261017-222818` | arm 1 `PASS`, arm 3 `PASS`, `RC=0` |
+| calibration 2 | `20261017-223227` | arm 1 `PASS`, arm 3 `PASS`, `RC=0` |
+| null test, new baseline | `20261017-223636` | every required row `PASS`, `RESULT PASS`, `RC=0` |
+| intl blind (`-Arms 1 -NoIntl`) | `20261017-224036` | `UNMEASURED arm1 intl blind` (and `FAIL arm1 intl 0`), `RC=3` |
+
+Seven facebook loads in total. Judge-only checks, with no load:
+- Re-judging the four calibration arms against the new baseline gives
+  `PASS` each time.
+- Planted FAIL: a copy of the baseline with `fonts` added to arm 1's
+  required set, against the null test's arm 1, gives `FAIL arm1 fonts 0`,
+  `arm1 FAIL`, exit 1.
+- GPU crash: a copy of the null test's arm 1 with `gpu_exit_lines` set
+  from 0 to 1 gives `UNMEASURED arm1 gpu-crash lines=1`, exit 3.
+- Both copies were deleted after the check.
+
+Groups (calls) per unattended load:
+
+| group | arm 1 cal 1 | arm 1 cal 2 | arm 1 null | arm 3 cal 1 | arm 3 cal 2 | arm 3 null |
+|---|---|---|---|---|---|---|
+| layout-probe | 101 | 104 | 101 | 4 108 | 3 583 | 3 694 |
+| storage | 254 | 253 | 254 | 1 404 | 1 486 | 1 473 |
+| navigator | 187 | 197 | 187 | 1 446 | 1 544 | 1 534 |
+| canvas | 374 | 374 | 374 | 2 | 8 | 8 |
+| webgl | 68 | 68 | 68 | 0 | 0 | 0 |
+| webgpu | 2 | 2 | 2 | 0 | 0 | 0 |
+| screen | 18 | 18 | 18 | 2 | 2 | 2 |
+| audio | 9 | 9 | 9 | 0 | 0 | 0 |
+| fonts | 0 | 0 | 0 | 1 | 1 | 1 |
+| intl | 8 | 8 | 8 | 20 | 20 | 20 |
+| requests (`/ajax/bz`) | 38 (5) | 38 (5) | 38 (5) | 293 (0) | 276 (0) | 265 (0) |
+
+Intl per load: arm 1 `DateTimeFormatConstructor` 4 and
+`DateTimeFormatPrototypeResolvedOptions` 4. Arm 3 has the same pair at 2
+each, plus `StringPrototypeLocaleCompareIntl` 16.
+
+Findings:
+1. **156 changed nothing facebook reads on a first load.** Arm 1 on 156
+   matches the 154 arm 1 of 10-17 (§3) group for group, at nearly the
+   same counts. Canvas 374, webgl 68, webgpu 2, audio 9, screen 18 and
+   intl 8 are equal.
+2. **The unattended arm 3 reads the same groups as the manual arm 3.** The
+   manual 10-17 arm 3 (154, 180 s with scrolling) shows canvas 170, fonts
+   2, intl 57, layout-probe 29 814, navigator 3 252, screen 6 and storage
+   8 634. Every group the baseline requires for arm 3 is there, and that
+   arm has no other group. The counts are lower because the run is one
+   load of 120 s with no input.
+3. **Arm 3's groups are not a subset of arm 1's.** Arm 3 reads `fonts`,
+   and arm 1 never does. So a feed that fell back to the logged-out
+   landing could not pass on arm 1's groups alone. The `c_user`/`xs`
+   cookie check reports that case as `UNMEASURED` before any group row.
+4. **Arm 3's `fonts` is one call per load.** It was 1 in all three runs.
+   It is the thinnest required row: one skipped call is a `FAIL`.
+
+Limits:
+- Three samples per arm on one day, with one account.
+- The planted FAIL and the GPU crash were checked at the judge, not
+  through a whole `observe-auto.ps1` run. The script's mapping from the
+  judge's exit code to `RESULT` was checked by a host snippet on 10-17.
+- The host's own Chrome is still 154, so no stock comparison is made on
+  156 here.
