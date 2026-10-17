@@ -118,5 +118,32 @@ TEST(MouseTrajectoriesTest, InvertedOrNegativeRangeIsSanitizedNotFatal) {
   EXPECT_GT(b[1].offset, base::TimeDelta());
 }
 
+TEST(MouseTrajectoriesTest, QuantizeWheelRoundsToWholeNotches) {
+  struct Case {
+    double dx, dy;
+    int x, y;
+  } cases[] = {
+      {0, 0, 0, 0},       {0, 40, 0, 1},      {0, 50, 0, 1},
+      {0, 100, 0, 1},     {0, 149, 0, 1},     {0, 150, 0, 2},
+      {0, 250, 0, 3},     {0, -250, 0, -3},   {-300, 100, -3, 1},
+      {-250, 0, -3, 0},
+  };
+  for (const Case& c : cases) {
+    WheelNotches n = QuantizeWheel(c.dx, c.dy);
+    EXPECT_EQ(n.x, c.x) << c.dx << "," << c.dy;
+    EXPECT_EQ(n.y, c.y) << c.dx << "," << c.dy;
+  }
+}
+
+TEST(MouseTrajectoriesTest, QuantizeWheelClampsAndRejectsNonFinite) {
+  EXPECT_EQ(QuantizeWheel(0, 1e9).y, kMaxWheelNotches);
+  EXPECT_EQ(QuantizeWheel(-1e9, 0).x, -kMaxWheelNotches);
+  for (double bad : {std::nan(""), INFINITY, -INFINITY}) {
+    WheelNotches n = QuantizeWheel(bad, 100);
+    EXPECT_EQ(n.x, 0);
+    EXPECT_EQ(n.y, 0) << "non-finite input must take the stock path";
+  }
+}
+
 }  // namespace
 }  // namespace camoucfg
