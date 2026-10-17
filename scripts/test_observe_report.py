@@ -127,7 +127,7 @@ def test_render_lists_counts_hosts_cookies_and_blind_spots(tmp_path):
             in out)
     assert "| www.facebook.com | POST /ajax/bz | 1 |" in out
     assert "datr" in out and "SECRET" not in out
-    assert "## Not observable" in out and "Intl" in out and "NoAllocDirectCall" not in out
+    assert "## Not observable" in out and "getTimezoneOffset" in out and "NoAllocDirectCall" not in out
 
 
 def test_render_top_scripts_per_site():
@@ -181,3 +181,118 @@ def test_report_parses_as_python_3_9():
     src = pathlib.Path(r.__file__).read_text()
     ast.parse(src, feature_version=(3, 9))
     assert ".total()" not in src
+
+
+def x(name, ts, dur, pid=1, tid=1, cat="v8", **args):
+    return {"name": name, "cat": cat, "ph": "X", "pid": pid, "tid": tid, "ts": ts, "dur": dur,
+            "args": args}
+
+
+def rcs(ts, dur, stats, **kw):
+    return x("V8.Execute", ts, dur, **{"runtime-call-stats": stats}, **kw)
+
+
+# the dump names a C++ builtin's counter by the bare builtin name (box trace, 2026-10-13)
+CTOR = "DateTimeFormatConstructor"
+RO = "DateTimeFormatPrototypeResolvedOptions"
+SLO = "DateTimeFormatSupportedLocalesOf"
+APP = "https://a.com/app.js"
+
+
+def at(e, ts, **kw):
+    return dict(e, ts=ts, **kw)
+
+
+def test_intl_counts_sum_dumps_and_keep_only_intl_names():
+    events = [x("v8.run", 0, 100, fileName=APP),
+              rcs(10, 20, {CTOR: [2, 5.0], "ArrayPrototypePush": [9, 1.0], "Runtime_X": [1, 0.1],
+                           "DeserializeIsolate": [1, 496]}),
+              rcs(40, 20, {CTOR: [1, 1.0], RO: [3, 2.0], "NumberPrototypeToLocaleString": [1, 1.0]}),
+              at(ev("Navigator.userAgent.get", "https://a.com", "https://a.com"), 200)]
+    s, sc = "https://a.com", "a.com/app.js"
+    assert r.intl_counts(events) == {(s, sc, CTOR): 3, (s, sc, RO): 3,
+                                     (s, sc, "NumberPrototypeToLocaleString"): 1}
+
+
+def test_intl_counts_accept_a_dump_exported_as_a_json_string():
+    events = [rcs(10, 20, json.dumps({SLO: [4, 1.0]})),
+              ev("Navigator.userAgent.get", "https://a.com", "https://a.com")]
+    assert r.intl_counts(events) == {("https://a.com", "(unknown)", SLO): 4}
+
+
+def test_intl_script_falls_back_to_the_one_observer_script_in_the_slice():
+    inside = at(ev("Navigator.userAgent.get", "https://n.com", "https://n.com", script=FBQ), 15)
+    events = [x("v8.callFunction", 0, 100), rcs(10, 20, {RO: [1, 0.1]}), inside, inside]
+    assert r.intl_counts(events) == {
+        ("https://n.com", "connect.facebook.net/en_US/fbevents.js", RO): 1}
+    other = dict(inside, args=dict(inside["args"], script="https://n.com/app.js"))
+    events = [rcs(10, 20, {RO: [1, 0.1]}), inside, other]
+    assert r.intl_counts(events) == {("https://n.com", "(unknown)", RO): 1}
+
+
+def test_intl_v8_run_on_another_thread_or_cut_off_does_not_attribute():
+    obs = ev("Screen.width.get", "https://a.com", "https://a.com")
+    events = [x("v8.run", 0, 100, tid=2, fileName=APP), rcs(10, 20, {RO: [1, 0.1]}), obs]
+    assert r.intl_counts(events) == {("https://a.com", "(unknown)", RO): 1}
+    # an incomplete slice (the trace stopped inside it) is exported with dur -1
+    events = [x("v8.run", 0, -1, fileName=APP), rcs(10, 20, {RO: [1, 0.1]}), obs]
+    assert r.intl_counts(events) == {("https://a.com", "(unknown)", RO): 1}
+
+
+def test_intl_site_comes_from_the_pid():
+    events = [rcs(10, 20, {CTOR: [1, 0.1]}, pid=7)]
+    assert r.intl_counts(events) == {("(site unknown)", "(unknown)", CTOR): 1}
+    # a worker's events carry no site: its origin stands in, as in the per-site tables
+    w = dict(ev("WorkerNavigator.hardwareConcurrency.get", "https://a.com", ""), pid=7)
+    assert r.intl_counts(events + [w]) == {("https://a.com", "(unknown)", CTOR): 1}
+
+
+def test_intl_site_prefers_the_page_site_over_worker_origins():
+    # a busy worker must not move the page's Intl rows under the worker's origin
+    page = [dict(ev("Screen.width.get", "https://fb.com", "https://fb.com"), pid=3)] * 3
+    worker = [dict(ev("WorkerNavigator.hardwareConcurrency.get", "https://www.fb.com", ""), pid=3)] * 5
+    events = [rcs(10, 20, {CTOR: [1, 0.1]}, pid=3)] + page + worker
+    assert r.intl_counts(events) == {("https://fb.com", "(unknown)", CTOR): 1}
+
+
+def test_intl_names_cover_the_locale_builtins():
+    # CPP builtin names from this pin's builtins-definitions.h (box, 2026-10-13)
+    for name in ("SegmentsPrototypeContaining", "SegmentIteratorPrototypeNext",
+                 "StringPrototypeLocaleCompareIntl", "StringPrototypeLocaleCompare",
+                 "TemporalInstantPrototypeToLocaleString", "StringPrototypeToLocaleLowerCase",
+                 "LocalePrototypeGetTimeZones", "IntlSupportedValuesOf", "SegmenterConstructor"):
+        assert r.INTL.match(name), name
+    for name in ("Runtime_FormatList", "API_Locale", "StringPrototypeNormalizeIntl",
+                 "ArrayPrototypePush", "GC_Custom_SlowAllocateRaw", "DeserializeIsolate"):
+        assert not r.INTL.match(name), name
+
+
+def test_intl_counts_scale_with_a_recon_sized_trace():
+    import time
+    obs = [dict(ev("Screen.width.get", "https://a.com", "https://a.com"), ts=1000 * i, tid=1 + i % 50)
+           for i in range(25000)]
+    slices = [rcs(1000 * i + 1, 10, {CTOR: [1, 0.1]}, tid=1 + i % 50) for i in range(3000)]
+    t = time.perf_counter()
+    c = r.intl_counts(slices + obs)
+    assert time.perf_counter() - t < 1.5
+    assert sum(c.values()) == 3000
+
+
+def test_intl_blind_only_when_no_dump_holds_a_counter():
+    assert r.intl_counts([ev("Screen.width.get", "o", "s")]) is None  # no V8 slices
+    assert r.intl_counts([rcs(10, 20, {})]) is None  # v8 on, runtime_stats off
+    assert r.intl_counts([rcs(10, 20, json.dumps({}))]) is None
+    assert r.intl_counts([rcs(10, 20, {"Runtime_X": [1, 0.1]})]) == {}  # counting on, no Intl
+
+
+def test_render_intl_section_states():
+    assert "Intl: blind (no V8 runtime call stats in this trace)" in r.render([], [], [])
+    assert "Intl: none called" in r.render([], [], [], intl={})
+    out = r.render([], [], [], intl={("https://a.com", "a.com/app.js", CTOR): 3,
+                                     ("https://a.com", "a.com/app.js", RO): 5})
+    assert "## V8 built-ins (Intl)" in out
+    assert "| site | script | builtin | calls |" in out
+    assert (out.index(f"| https://a.com | a.com/app.js | {RO} | 5 |")
+            < out.index(f"| https://a.com | a.com/app.js | {CTOR} | 3 |"))
+    assert "v8.run" in out and "blind" not in out
+    assert out.index("## V8 built-ins (Intl)") < out.index("## Not observable")
