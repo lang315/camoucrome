@@ -130,6 +130,8 @@ def judge(arm_dir, arm, base, summary_out=None):
     ref = base.get(str(arm), {})
     req, runs = ref.get("required", []), ref.get("runs", [])
     rows = [("UNMEASURED", w) for w in unmeasured(s, arm)]
+    if not req:
+        rows.append(("INFO", "baseline requires 0 groups: PASS means measured only"))
     for g in req:
         n = s["groups"].get(g, 0)
         rows.append(("PASS" if n > 0 else "FAIL", f"{g} {n}"))
@@ -166,16 +168,32 @@ def main(argv=None):
     if a.cmd == "baseline":
         by_arm = collections.defaultdict(list)
         for n, d in a.arm:
-            by_arm[int(n)].append(summarize(d))
+            # an unmeasured run would silently drop groups from the required set
+            try:
+                s = summarize(d)
+                why = unmeasured(s, int(n))
+            except MissingInput as e:
+                why = [str(e)]
+            if why:
+                print(f"usage error: {d} is unmeasured: {'; '.join(why)}", file=sys.stderr)
+                return 2
+            by_arm[int(n)].append(s)
         pathlib.Path(a.o).write_text(json.dumps(make_baseline(by_arm), indent=1, sort_keys=True))
         return 0
+    arm = int(a.arm[0])
     try:
         base = _json(a.baseline)
     except (OSError, ValueError) as e:
         print(f"usage error: baseline {a.baseline}: {e}", file=sys.stderr)
         return 2
-    arm = int(a.arm[0])
-    v, rows = judge(a.arm[1], arm, base, a.summary_out)
+    # a calibrated baseline without this arm would pass it on zero groups; {} is calibration
+    if not isinstance(base, dict) or (base and str(arm) not in base):
+        print(f"usage error: baseline {a.baseline} has no entry for arm {arm}", file=sys.stderr)
+        return 2
+    try:
+        v, rows = judge(a.arm[1], arm, base, a.summary_out)
+    except Exception as e:  # a crash measured nothing, and exit 1 would read as FAIL
+        v, rows = "UNMEASURED", [("UNMEASURED", f"judge error ({type(e).__name__})")]
     for level, text in rows:
         print(f"{level} arm{arm} {text}")
     print(f"arm{arm} {v}")
