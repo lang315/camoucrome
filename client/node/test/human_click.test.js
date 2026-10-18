@@ -101,13 +101,48 @@ test('the B wrapper counts only the human path', async () => {
   const frame = Object.create(frameProto);
   frame.page = () => page;
   frame.locator = () => ({ first: () => target });
-  hc.install(ctx, { effectiveKeys: (config) => config, claimedOs: () => 'Linux' }, {}, undefined);
+  await hc.install(ctx, { effectiveKeys: (config) => config, claimedOs: () => 'Linux' }, {}, undefined);
   const before = hc.wrapperHits();
   await frame.click('#a', { position: { x: 1, y: 2 } });
   assert.equal(hc.wrapperHits(), before);
   await frame.click('#b', {});
   assert.equal(hc.wrapperHits(), before + 1);
   assert.deepEqual(calls, [['#a', { position: { x: 1, y: 2 } }], ['#b', {}]]);
+});
+
+// B acts only for contexts launch() created with humanClick: true. The wrapper
+// lives on the shared Frame.prototype, so an unflagged context (installState
+// only) must still go straight to the stock click.
+test('the B wrapper leaves contexts launched without the flag on the stock click', async () => {
+  const calls = [];
+  const frameProto = { click: async function (selector, options) { calls.push([selector, options]); } };
+  const makeCtx = () => {
+    let evaluated = 0;
+    const target = { evaluate: async () => { evaluated += 1; return null; } };
+    const ctx = {};
+    const page = { mainFrame: () => Object.create(frameProto), context: () => ctx,
+      mouse: { move: async () => {}, wheel: async () => {} } };
+    const frame = Object.create(frameProto);
+    frame.page = () => page;
+    // Only the human path resolves a locator and reads geometry.
+    frame.locator = () => { calls.push(['locator']); return { first: () => target }; };
+    ctx.pages = () => [page];
+    return { ctx, frame, calls: () => evaluated };
+  };
+  const flagged = makeCtx();
+  const plain = makeCtx();
+  const helpers = { effectiveKeys: (config) => config, claimedOs: () => 'Linux' };
+  await hc.install(flagged.ctx, helpers, {}, undefined);
+  hc.installState(plain.ctx, helpers, {}, undefined);
+  const before = hc.wrapperHits();
+  await plain.frame.click('#plain', {});
+  assert.equal(hc.wrapperHits(), before);
+  assert.equal(plain.calls(), 0);
+  assert.deepEqual(calls, [['#plain', {}]]);
+  await flagged.frame.click('#flagged', {});
+  assert.equal(hc.wrapperHits(), before + 1);
+  assert.equal(flagged.calls(), 1);
+  assert.deepEqual(calls.at(-1), ['#flagged', {}]);
 });
 
 test('launch refuses humanClick without humanize:enabled', async () => {

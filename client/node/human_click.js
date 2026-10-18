@@ -6,6 +6,10 @@ const T = require('./click_tables');
 const m = require('./human_math');
 
 const state = new WeakMap();  // BrowserContext -> {scale, windows}
+// Contexts launch() created with humanClick: true. The Frame.click wrapper is
+// process-wide (one shared prototype); without this gate a single flagged
+// launch would humanize every later context.
+const bContexts = new WeakSet();
 const last = new WeakMap();   // Page -> [x, y]
 const PASS_THROUGH = ['position', 'force', 'trial'];
 const GEOMETRY = new Function(`return ${T.geometryJS}`)();
@@ -94,13 +98,15 @@ function installState(ctx, { effectiveKeys, claimedOs }, config, preset) {
 
 async function install(ctx, helpers, config, preset) {
   installState(ctx, helpers, config, preset);
+  bContexts.add(ctx);
   const page = ctx.pages()[0] || await ctx.waitForEvent('page');
   const proto = Object.getPrototypeOf(page.mainFrame());
   if (proto._camouHumanClick) return;
   const orig = proto.click;
   proto.click = async function click(selector, options = {}) {
-    const st = state.get(this.page().context());
-    if (!st || PASS_THROUGH.some((k) => k in options)) return orig.call(this, selector, options);
+    const ctx = this.page().context();
+    const st = state.get(ctx);
+    if (!bContexts.has(ctx) || PASS_THROUGH.some((k) => k in options)) return orig.call(this, selector, options);
     hits += 1;
     const first = this.locator(selector).first();
     return act(first, this.page(), options, st, Math.random, defaultSleep, (o) => orig.call(this, selector, o));
