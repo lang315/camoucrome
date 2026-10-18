@@ -149,3 +149,34 @@ def test_bad_terms_shape_exits(monkeypatch):
     monkeypatch.setenv("PRIVATE_TERMS", '["x"]')
     with pytest.raises(SystemExit):
         cp.load_terms()
+
+
+HOOKS = HERE / "hooks"
+
+
+def hooked(repo):
+    git(repo, "config", "core.hooksPath", str(HOOKS))
+    return repo
+
+
+def try_commit(repo, path, text, msg="m", tz="UTC"):
+    (repo / path).write_text(text)
+    git(repo, "add", path)
+    return git(repo, "commit", "-q", "-m", msg, tz=tz, check=False)
+
+
+def test_pre_commit_hook_refuses_a_non_utc_date(repo):
+    assert try_commit(hooked(repo), "a.md", "clean\n", tz="Etc/GMT-5").returncode != 0
+
+
+def test_pre_commit_hook_refuses_a_planted_file(repo):
+    assert try_commit(hooked(repo), "a.md", "near Plantville\n").returncode != 0
+
+
+def test_commit_msg_hook_refuses_a_session_link(repo):
+    r = try_commit(hooked(repo), "a.md", "clean\n", msg="x\n\nClaude-Session: <removed>")
+    assert r.returncode != 0
+
+
+def test_hooks_pass_a_clean_utc_commit(repo):
+    assert try_commit(hooked(repo), "a.md", "clean\n").returncode == 0

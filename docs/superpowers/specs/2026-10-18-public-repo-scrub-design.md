@@ -224,11 +224,14 @@ A new section, "Public repo: no host-identifying data (never violate)":
   - IPv4 outside an allowlist (loopback, RFC 5737, `x.0.0.0` version
     strings, test fixtures named in the script);
   - `.ts.net`;
-  - a clock time followed by a zone abbreviation other than `UTC`, and
-    `UTC±N` or `GMT±N` offsets;
+  - a clock time followed by a zone abbreviation other than `UTC` or `GMT`.
+    There is no generic `UTC±N`/`GMT±N` pattern, because the measurement
+    data holds the emulated identities' offsets. The host's own offset
+    strings are private terms;
   - `claude.ai/code/session`.
 - **Host-specific terms** (city, ISP, zone name, machine name) are read from
-  `~/.config/camoucrome/private-terms.txt` locally, or from the environment
+  `~/.config/camoucrome/private-terms.json` locally (`{placeholder: [strings]}`,
+  `CAMOU_SCRUB`'s shape), or from the environment
   variable `PRIVATE_TERMS` in CI (an Actions secret). Neither is ever in the
   repository. Fork PRs get no secrets and run the generic patterns only.
 - **Path allowlist for product data:** `settings/locale_zones.json`,
@@ -237,7 +240,8 @@ A new section, "Public repo: no host-identifying data (never violate)":
   - tracked files: all, or the staged ones;
   - `--range A..B`: commit messages, and author and committer date offsets,
     which must be `+0000`;
-  - `--file PATH`: a PR body or comment.
+  - `--file PATH`: a PR body or comment;
+  - `--history`: every blob reachable from every ref.
 - **Output:** path, line and category, never the matched value, so a CI log
   does not re-publish it. Exit 1 on any hit.
 - **Tests, `scripts/test_check_privacy.py`,** written first and watched to
