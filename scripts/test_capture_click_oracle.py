@@ -50,3 +50,13 @@ def test_summary_drops_warmup_and_counts_sessions():
 def test_pack_roundtrip():
     data = {"clicks": human(3)}
     assert o.unpack(o.pack_js_equivalent(data)) == data
+
+
+def test_cdp_arms_get_long_timeout_doctype_first_and_packed_before_done(monkeypatch):
+    import winhost
+    seen = {}
+    monkeypatch.setattr(winhost, "cdp_eval", lambda html, **kw: seen.update(html=html, **kw) or o.pack_js_equivalent({"clicks": []}))
+    o.run_cdp("n=50&s=0", o.WAIT_DONE)
+    assert seen["timeout"] >= 540 + 60
+    assert seen["html"].startswith("<!doctype html>") and "window.PARAMS=" in seen["html"]
+    assert o.PAGE.index("window.packed = ") < o.PAGE.index("window.done = true")

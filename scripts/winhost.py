@@ -181,7 +181,7 @@ def crash_gate(out):
         raise e
 
 
-def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500, act_ps="", window_style="Hidden"):
+def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500, act_ps="", window_style="Hidden", timeout=180):
     """Runs stock Chrome on the host with --remote-debugging-port (headed by
     default: --dump-dom does not work headed), loads `page_html` from a temp
     file, evaluates `expression` through a .NET ClientWebSocket on the host
@@ -226,7 +226,7 @@ Start-Sleep -Milliseconds 500
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 {"Remove-Item -Recurse -Force " + prof + " -ErrorAction SilentlyContinue" if profile is None else "# profile kept for the caller"}
 """
-    out = powershell(ps, timeout=180)
+    out = powershell(ps, timeout=timeout)
     crash_gate(out)
     m = re.search(r"CDP_RESULT_BEGIN\n(.*?)\nCDP_RESULT_END", out, re.S)
     if not m or not m.group(1).strip():

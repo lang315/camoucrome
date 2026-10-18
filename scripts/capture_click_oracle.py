@@ -67,11 +67,12 @@ function scrollTask(i) {
     log.scrolls.push(s); pad.remove(); t.remove(); scrollTask(i + 1); };
 }
 async function finish() {
-  window.done = true; o.textContent = 'done';
+  o.textContent = 'done';
   const raw = JSON.stringify(log);
   const gz = new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip')));
   const b = new Uint8Array(await gz.arrayBuffer()); let s = ''; for (const c of b) s += String.fromCharCode(c);
   window.packed = btoa(s);
+  window.done = true;  // after packed: a reader that sees done can read packed
   if (location.protocol === 'http:') fetch('/log', {method: 'POST', body: raw});
 }
 next();
@@ -86,6 +87,7 @@ for ($i = 0; $i -lt 540; $i++) {
 }
 """
 
+CDP_TIMEOUT_S = 540 + 120  # WAIT_DONE budget + Chrome startup/teardown margin; cdp_eval defaults to 180
 RED_N = 40  # spec: 40 CDP clicks; the red page runs with n=RED_N so it finishes
 RED_CLICKS = r"""
 $id = 1000
@@ -280,9 +282,9 @@ def run_mac(n, s):
 
 def run_cdp(params, act_ps):
     import winhost
-    packed = winhost.cdp_eval("<script>window.PARAMS=%s</script>" % json.dumps(params) + PAGE,
+    packed = winhost.cdp_eval(PAGE.replace("<body", "<script>window.PARAMS=%s</script><body" % json.dumps(params), 1),
                               expression="window.packed || ''", wait_ms=1000, window_style="Normal",
-                              args=["--window-position=0,0", "--window-size=1280,900"], act_ps=act_ps)
+                              args=["--window-position=0,0", "--window-size=1280,900"], act_ps=act_ps, timeout=CDP_TIMEOUT_S)
     if not packed:
         sys.exit("page never produced a packed log (done not reached)")
     return unpack(packed)

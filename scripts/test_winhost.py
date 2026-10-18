@@ -100,3 +100,13 @@ def test_cdp_eval_runs_act_after_connect_and_honours_window_style(captured):
     assert "-WindowStyle Normal" in ps
     winhost.cdp_eval("<p>")
     assert "-WindowStyle Hidden" in captured[-1] and "ACT_MARKER" not in captured[-1]
+
+
+def test_cdp_eval_timeout_reaches_powershell(monkeypatch):
+    seen = []
+    monkeypatch.setattr(winhost, "powershell", lambda script, timeout=300: seen.append(timeout) or (
+        'CDP_RESULT_BEGIN\n{"result":{"result":{"value":1}}}\nCDP_RESULT_END\n'
+        'GPU_BEGIN\n{"id":9,"result":{"result":{"type":"string","value":"GPU process crash count :0"}}}\nGPU_END\n'))
+    winhost.cdp_eval("<p>")
+    winhost.cdp_eval("<p>", timeout=660)
+    assert seen == [180, 660]
