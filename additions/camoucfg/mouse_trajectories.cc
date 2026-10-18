@@ -5,10 +5,13 @@
 #include "components/camoucfg/mouse_trajectories.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <optional>
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/time/time.h"
 #include "ui/gfx/geometry/point_f.h"
 
@@ -26,9 +29,9 @@ namespace {
 // its problem (a stable permutation of at most 4 items) is small enough to
 // solve with a lookup table; a jittered curve needs an actual stream of
 // pseudo-random doubles, hence this instead.
-class SplitMix64 {
+class SplitMix64Stream {
  public:
-  explicit SplitMix64(uint64_t seed) : state_(seed) {}
+  explicit SplitMix64Stream(uint64_t seed) : state_(seed) {}
 
   uint64_t NextUint64() {
     uint64_t z = (state_ += 0x9E3779B97F4A7C15ULL);
@@ -112,7 +115,7 @@ std::vector<TrajectoryPoint> HumanizeTrajectory(
   min_ms = std::max(1, min_ms);
   max_ms = std::max(min_ms, max_ms);
 
-  SplitMix64 rng(seed);
+  SplitMix64Stream rng(seed);
 
   // Two randomized control points bow the path off the straight line, the
   // way camoufox's generateInternalKnots() does. The 80-unit margin around
@@ -184,6 +187,47 @@ WheelNotches QuantizeWheel(double delta_x, double delta_y) {
     return static_cast<int>(d > 0 ? n : -n);
   };
   return {axis(delta_x), axis(delta_y)};
+}
+
+uint64_t SplitMix64(uint64_t x) {
+  uint64_t z = x + 0x9E3779B97F4A7C15ull;
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+  return z ^ (z >> 31);
+}
+
+double ProfileScale(std::optional<uint32_t> seed, ProfileSalt salt) {
+  if (!seed) {
+    return 1.0;
+  }
+  constexpr std::array<uint64_t, 3> kSalts = {0x686F6C64ull, 0x6477656C6Cull, 0x6F6666736574ull};
+  const double u = static_cast<double>(
+                       SplitMix64(uint64_t{*seed} ^ kSalts[static_cast<int>(salt)]) >> 11) *
+                   0x1.0p-53;
+  return std::exp(std::log(1.25) * (2 * u - 1));
+}
+
+double SampleKnots(base::span<const double, 21> knots, double u) {
+  if (!(u > 0)) {
+    u = 0;  // also catches NaN
+  }
+  const double pos = std::min(u, 1.0) * 20;
+  const size_t i = std::min<size_t>(static_cast<size_t>(pos), 19);
+  return knots[i] + (pos - i) * (knots[i + 1] - knots[i]);
+}
+
+gfx::PointF EdgeEntryPoint(double w, double h, double u_edge, double u_along,
+                           double u_inset) {
+  if (!(w >= 2) || !(h >= 2)) {
+    return gfx::PointF();
+  }
+  const double inset = std::min({u_inset * 12.0, w / 2 - 1, h / 2 - 1});
+  switch (std::min(static_cast<int>(u_edge * 4), 3)) {
+    case 0: return gfx::PointF(u_along * (w - 1), inset);
+    case 1: return gfx::PointF(w - 1 - inset, u_along * (h - 1));
+    case 2: return gfx::PointF(u_along * (w - 1), h - 1 - inset);
+    default: return gfx::PointF(inset, u_along * (h - 1));
+  }
 }
 
 }  // namespace camoucfg

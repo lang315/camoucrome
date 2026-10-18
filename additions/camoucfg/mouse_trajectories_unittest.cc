@@ -6,11 +6,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <optional>
 
+#include "base/containers/span.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "components/camoucfg/human_input_tables.h"
+#include "components/camoucfg/human_input_vectors_unittest.inc"
 
 namespace camoucfg {
 namespace {
@@ -145,6 +150,52 @@ TEST(MouseTrajectoriesTest, QuantizeWheelClampsAndRejectsNonFinite) {
     EXPECT_EQ(n.x, 0);
     EXPECT_EQ(n.y, 0) << "non-finite input must take the stock path";
   }
+}
+
+TEST(MouseTrajectoriesTest, SplitMix64MatchesVectors) {
+  EXPECT_EQ(SplitMix64(0), 0xE220A8397B1DCDAFull);
+  for (const auto& v : kVecSplitmix64) {
+    EXPECT_EQ(SplitMix64(v[0]), v[1]);
+  }
+}
+
+TEST(MouseTrajectoriesTest, ProfileScaleMatchesVectorsAndBounds) {
+  for (const auto& v : kVecProfileScale) {
+    std::optional<uint32_t> seed;
+    if (v.has_seed) {
+      seed = v.seed;
+    }
+    EXPECT_NEAR(ProfileScale(seed, static_cast<ProfileSalt>(v.salt_index)), v.scale, 1e-12);
+  }
+  EXPECT_EQ(ProfileScale(std::nullopt, ProfileSalt::kHold), 1.0);
+}
+
+TEST(MouseTrajectoriesTest, SampleKnotsMatchesVectorsAndClamps) {
+  for (const auto& v : kVecSampleKnots) {
+    EXPECT_NEAR(SampleKnots(v.knots, v.u), v.value, 1e-9);
+  }
+  EXPECT_EQ(SampleKnots(kHoldMsKnots, -1.0), kHoldMsKnots[0]);
+  EXPECT_EQ(SampleKnots(kHoldMsKnots, std::numeric_limits<double>::quiet_NaN()), kHoldMsKnots[0]);
+}
+
+TEST(MouseTrajectoriesTest, EdgeEntryMatchesVectors) {
+  for (const auto& v : kVecEdgeEntry) {
+    gfx::PointF p = EdgeEntryPoint(v.w, v.h, v.u[0], v.u[1], v.u[2]);
+    // gfx::PointF holds floats: 1e-3 is far above the ulp at 1280 (1.2e-4).
+    EXPECT_NEAR(p.x(), v.x, 1e-3);
+    EXPECT_NEAR(p.y(), v.y, 1e-3);
+  }
+}
+
+TEST(MouseTrajectoriesTest, GeneratedTablesHave21MonotonicKnots) {
+  const base::span<const double, 21> hold(kHoldMsKnots);
+  const base::span<const double, 21> dwell(kDwellMsKnots);
+  for (size_t i = 1; i < 21; ++i) {
+    EXPECT_LE(hold[i - 1], hold[i]);
+    EXPECT_LE(dwell[i - 1], dwell[i]);
+  }
+  EXPECT_GE(kHoldMsKnots[1], 25.0);
+  EXPECT_GE(kDwellMsKnots[1], 25.0);
 }
 
 }  // namespace

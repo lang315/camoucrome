@@ -32,7 +32,7 @@ BUILD_GN = CAMOUCFG / "BUILD.gn"
 # .json is data copied by apply.sh, not a compilation unit. invariants.json is
 # the one file whose repo location differs from its tree location on purpose:
 # it lives in settings/ and apply.sh copies it beside the header.
-SOURCE_SUFFIXES = {".cc", ".h"}
+SOURCE_SUFFIXES = {".cc", ".h", ".inc"}
 
 
 def listed_in_build_gn(text):

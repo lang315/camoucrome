@@ -6,8 +6,10 @@
 #define COMPONENTS_CAMOUCFG_MOUSE_TRAJECTORIES_H_
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/time/time.h"
 #include "ui/gfx/geometry/point_f.h"
 
@@ -57,6 +59,17 @@ WheelNotches QuantizeWheel(double delta_x, double delta_y);
 // The page-visible deltaY of one notch on Windows at DPR 1, measured on stock
 // Chrome 154 (docs/superpowers/measurements/2026-10-sp2c-wheel.md).
 inline constexpr float kWindowsNotchCssPx = 100.0f;
+
+uint64_t SplitMix64(uint64_t x);
+enum class ProfileSalt { kHold = 0, kDwell = 1, kOffset = 2 };
+// exp(ln 1.25 * (2u - 1)) with u from SplitMix64(seed ^ salt); 1.0 without a seed.
+double ProfileScale(std::optional<uint32_t> seed, ProfileSalt salt);
+// Linear interpolation over 21 quantile knots (p0, p5, ..., p100); u clamped
+// to [0, 1], NaN treated as 0.
+double SampleKnots(base::span<const double, 21> knots, double u);
+// A point on one of the four viewport edges, inset 0-12 px (spec 3).
+gfx::PointF EdgeEntryPoint(double w, double h, double u_edge, double u_along,
+                           double u_inset);
 
 }  // namespace camoucfg
 
