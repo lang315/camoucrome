@@ -130,7 +130,7 @@ def run_cmd(a):
         unconfigured = cell(pw, fork_exe, None)
         seeded = [cell(pw, fork_exe, {"canvas:seed": s, **extra}) for s in range(1, a.seeds + 1)]
     rows_out = verdicts(stock, unconfigured, seeded)
-    label = a.label or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    label = a.label or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     out_dir = pathlib.Path(a.out or tempfile.gettempdir())
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"{label}.json").write_text(json.dumps(

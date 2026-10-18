@@ -163,7 +163,7 @@ def test_measured_volatile_detector_rows(name):
 
 @pytest.mark.parametrize("line", ["1582.20ms", "2143.90 ms", "WebRTC9ce33afb", "candidate:436789896 1 udp 1677729535 x",
                                   "rtt: 100, downlink: 1.55", "stack: 17790", "trap: 0.71", "type & base ip: 2513029441",
-                                  '"depth": 13420,', "Sun Oct 04 2026 22:14:51 <host-offset> (<host-tz-name>)",
+                                  '"depth": 13420,', "Sun Oct 04 2026 15:14:51 GMT+0000 (Coordinated Universal Time)",
                                   "10 22:25", "104.22.67.926 more", "D78AD52E", "Bot detection tools", "Ad", "0"])
 def test_measured_volatile_lines_are_dropped(line):
     assert r.line_diff(line + "\n", "") == ([], [])
