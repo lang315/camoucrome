@@ -64,12 +64,12 @@ It is reviewed before anything irreversible. Then comes a one-off operation, eac
 
 - **The private-terms file is JSON in the `CAMOU_SCRUB` shape** (`private-terms.json`), not one regex per line. `scripts/step2_rows.scrub` already takes that shape, so one file feeds the gate, the capture scripts and `measure_step2.py scrub`. Task 2 updates the spec line.
 - **No generic `UTC±N` / `GMT±N` pattern.** The measurement data legitimately holds the offsets of the identities the fork emulates (for example a `GMT-0600` `date0`). The host's own offset strings go in the private terms instead. Task 2 updates the spec line.
-- **Commits made by GitHub (`noreply@github.com`) are exempt from the date-offset check.** Their offset is GitHub's choice, not the host's.
+- ~~Commits made by GitHub are exempt from the date-offset check.~~ Reversed after the Task 4 review: all 40 GitHub-made merges carried the owner's offset. There is no exemption, and PRs are merged locally with `TZ=UTC` (owner, 2026-10-18). The code shipped in Tasks 1 to 3, after the Task 4 fix pass, supersedes the code embedded below where they differ: `GATE_FILES`, `--ci`, `--require-terms`, path checks, wider home-path patterns, and `capture_host_oracle --raw-out/--from-raw`.
 - **The tooling review runs after Task 3**, not at the end. Tasks 5 to 11 are irreversible operations, and their gates are measured checks, not code.
 
 ## Review Focus
 
-1. **A GitHub-made merge commit in a pushed range.** The gate must not fail `checks` on `main` after a web merge. Pinned by `test_range_exempts_github_made_commits` (Task 1).
+1. **A GitHub-made merge commit in a pushed range.** It carries the owner's offset, so the gate must fail it. PRs are merged locally in UTC. Pinned by `test_range_refuses_a_github_made_commit_with_an_offset` (Task 4 fix pass).
 2. **CI without the secret** (fork PRs, or a secret not yet set). `PRIVATE_TERMS` is the empty string, and the gate must still run the generic patterns. Pinned by `test_empty_private_terms_still_runs_generic` (Task 1).
 3. **A hit reaches a public log.** The gate's output must never contain the matched text. Pinned by `test_output_never_contains_the_matched_text` (Task 1).
 4. **A lower-case or mixed-case private term** (detector pages print a city in lower case). Pinned by the `near plantville` row of `test_each_category_is_caught` (Task 1).
@@ -936,7 +936,10 @@ print("\n".join(sorted(seen)))
 - [ ] **Step 3: Write `scrub-rules.txt`.** It holds one rule per line, in `git-filter-repo` `--replace-text` syntax (`literal==>replacement` or `regex:pattern==>replacement`), in this order:
   1. **Each clock fragment from `W/clocks.txt`:** a literal rule from the exact fragment (date included when it is on the line) to the same instant in UTC, `HH:MM UTC`. Move the date back when the conversion crosses midnight. Where a fragment has no date and crosses midnight, write `HH:MM UTC (previous day)`. Where a sentence names the zone ("times are in <zone>"), reword it to UTC.
   2. **Each private term:** a literal rule to its placeholder, longest needle first. Windows profile paths come before the machine name.
-  3. **Home paths:** `regex:/home/<user>/==>~/` and `regex:/Users/<user>/==>~/`, with `<user>` the OS user name. Also `-Users-<user>-` / `-home-<user>-` slugs go to `-Users-<user>-` as written literally with angle brackets. Phrases naming the OS user (`user \`<user>\``, `User=<user>`, `-u <user>`) go to `<user>`.
+  3. **Home paths:** `regex:/home/<user>/==>~/` and `regex:/Users/<user>/==>~/`, with `<user>` the OS user name. Also cover:
+     - the forms without a trailing slash;
+     - backslash forms (`\home\<user>`, `\\wsl.localhost\<distro>\home\<user>`, `\\wsl$\...`) and their JSON-escaped doubles;
+     - `C:\Users\<user>` and `<drive>:\Users\<user>`. The Task 4 review found a UNC WSL path in kept history. Also `-Users-<user>-` / `-home-<user>-` slugs go to `-Users-<user>-` as written literally with angle brackets. Phrases naming the OS user (`user \`<user>\``, `User=<user>`, `-u <user>`) go to `<user>`.
   4. **Session URLs:** `regex:https://claude\.ai/code/session_[A-Za-z0-9]+==><removed>`.
   5. **Country words describing the host or owner:** one literal rule per occurrence (`check_privacy --history` hits with key `<host-country>`, outside `ALLOW_PATHS`), with neutral wording, for example "a large regional shop".
   6. **Local-clock stamps** (spec §3.1, last row): one literal rule per stamp, from the classification in Step 3b. Run `chmod 600`.
@@ -957,7 +960,8 @@ print("\n".join(sorted(seen)))
   - **An `unknown` stamp the commit-time test cannot decide** is resolved by reading the doc around it. Ledger each one with its reason.
 
   For every local stamp, convert with the host offset from the private terms, and write the literal rule `<local>==><utc>`, same format. Keep the list of local→UTC pairs as `W/stamp-map.txt`; Task 11 renames the host directories from it.
-- [ ] **Step 4: Coverage check.** In a fresh clone of `B/old.git`, run `git filter-repo --force --replace-text ~/.config/camoucrome/scrub-rules.txt --replace-message ~/.config/camoucrome/scrub-rules.txt`. Then run `python3 <this worktree>/scripts/check_privacy.py --history`, with the private terms loaded.
+- [ ] **Step 4: Coverage check.** In a fresh clone of `B/old.git`, run `git filter-repo --force --replace-text ~/.config/camoucrome/scrub-rules.txt --replace-message ~/.config/camoucrome/scrub-rules.txt`. Then run `python3 <this worktree>/scripts/check_privacy.py --history --require-terms`.
+Before this, RED: run the same command in an unrewritten clone. Expected: hits in every category the rules cover, and exit 2 with `PRIVATE_TERMS=`.
 Expected: the only remaining hits are `.superpowers/` paths, which Task 7 removes, and `ip` hits that are not host addresses. Add each of those to `ALLOW_IPS` with its source, in a `TZ=UTC` commit on `privacy-scrub`. Iterate the rules until this holds. Delete the clone.
 
 ---
@@ -994,8 +998,8 @@ for a in ("author_date", "committer_date"):
 
 Expected: "Completely finished". `W/new/.git/filter-repo/commit-map` exists.
 - [ ] **Step 4: Verify (spec §3.4).** Each check is one command, with its expected result:
-  1. Run `cd W/new && python3 scripts/check_privacy.py --history`, with the private terms loaded. Expected: `0 hit(s)`.
-  2. Run `cd W/new && python3 scripts/check_privacy.py --range=--all`. Expected: `0 hit(s)`. This covers messages and `+0000` dates.
+  1. Run `cd W/new && python3 scripts/check_privacy.py --history --require-terms`. Expected: `0 hit(s)`. With `--require-terms`, a missing terms file exits 2 instead of passing.
+  2. Run `cd W/new && python3 scripts/check_privacy.py --range=--all --require-terms`. Expected: `0 hit(s)`. This covers messages and `+0000` dates.
   3. Run `cd W/new && python3 -m pytest -q client/python/tests scripts/ && python3 scripts/gen_keys.py --check && python3 scripts/gen_fontconfig.py --check && python3 scripts/check_additions_build.py`. Expected: all pass.
   4. Run `git -C W/new rev-list --count main e-fb-auto repin/8078-prep`. Expected: the Step 2 count minus the commits that touched only `.superpowers/`.
   5. Run `grep -c . W/new/.git/filter-repo/commit-map`. Expected: one line per old commit plus the header.
@@ -1099,12 +1103,13 @@ print(len(prs), "prs,", len(runs), "runs")
     Replace `export PATH=~/depot_tools:$PATH`, which is what the rewrite left, with `export PATH=$HOME/depot_tools:$PATH`.
   - In `scripts/check_checkout_sync.sh` and `scripts/rebuild_branch.sh`, the default argument the rewrite left as `~/...` inside double quotes becomes `$HOME/...`. A tilde in double quotes does not expand.
   - Then run `bash -n` on both scripts, and `grep -n '~/' .github/workflows/build-verify.yml scripts/check_checkout_sync.sh scripts/rebuild_branch.sh`. Expected: no output.
+  - On `e-fb-auto`, in `scripts/windows/observe-recon.ps1`: the rewrite left the `run.json` build-lock call as `wsl -d Ubuntu-24.04 -u <user> -- bash ~/actions-runner/...` (Task 3 ruling). Make it `wsl -d Ubuntu-24.04 -- bash -lc '$HOME/actions-runner/_work/camoucrome/camoucrome/scripts/build_lock.sh status'`, which relies on WSL's default user, and commit with `TZ=UTC`. Task 11 checks it with one host call.
 - [ ] **Step 4: Links to old pages.**
   - Run `git -C W/new grep -l -E 'github\.com/lang315/camoucrome/(pull|actions/runs)/[0-9]+'`.
   - For each file, replace `https://github.com/lang315/camoucrome/pull/<n>` with `https://github.com/lang315/camoucrome/blob/main/docs/archive/2026-10-18-github-history.md#pr-<n>`, and `.../actions/runs/<id>` with the same file `#run-<id>`.
   - Expected: re-running the grep gives no output.
 - [ ] **Step 5: Gate and commit.**
-  - Run `cd W/new && python3 scripts/check_privacy.py`, `python3 -m pytest -q client/python/tests scripts/` and `python3 scripts/check_privacy.py --range=--all`. Expected: 0 hits, all pass, 0 hits.
+  - Run `cd W/new && python3 scripts/check_privacy.py --require-terms`, `python3 -m pytest -q client/python/tests scripts/` and `python3 scripts/check_privacy.py --range=--all --require-terms`. Expected: 0 hits, all pass, 0 hits.
   - Then `git add -A docs/archive .github scripts docs` and `TZ=UTC git commit -F <msg file>`, with the message "docs(archive): the GitHub history before the 2026-10-18 recreate; repoint old links; $HOME paths".
   - Run `python3 scripts/check_privacy.py --range HEAD~1..HEAD`. Expected: 0 hits.
 - [ ] **Step 5b: Stop tracking `docs/superpowers/`** (owner, 2026-10-18; spec §3.2).
@@ -1189,6 +1194,7 @@ the local folder.
   - Take the old #40 body from the archive section `#pr-40`, and add a first line: "Reopened after the 2026-10-18 recreate; was #40."
   - Run `python3 scripts/check_privacy.py --file <body>`. Expected: 0 hits.
   - Run `gh pr create -R lang315/camoucrome --base main --head e-fb-auto --title "<old #40 title>" --body-file <body>`.
+  - When the owner approves merging it (not in this plan), merge locally: `TZ=UTC git merge --no-ff e-fb-auto` on an up-to-date `main`, then `git push origin main`. Never use the merge button or `gh pr merge` (`CLAUDE.md`).
   - Expected: `checks` is `success` on the PR.
 - [ ] **Step 2: This session's clones.**
   - In the main checkout (the parent repository of this worktree): run `git status --porcelain`. If it is dirty, stop and ask the owner.

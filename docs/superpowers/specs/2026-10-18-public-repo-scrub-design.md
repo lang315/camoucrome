@@ -211,6 +211,8 @@ A new section, "Public repo: no host-identifying data (never violate)":
 - **PR bodies and comments go through `check_privacy.py --file`** before
   `gh pr create` or `gh pr comment`.
 - **Never push from a clone made before 2026-10-18's recreate.**
+- **Merge PRs locally in UTC**, never with GitHub's merge button or
+  `gh pr merge` (owner, 2026-10-18).
 - **Enable the hooks with `git config core.hooksPath scripts/hooks`** in
   every clone.
 
@@ -241,7 +243,20 @@ A new section, "Public repo: no host-identifying data (never violate)":
   - `--range A..B`: commit messages, and author and committer date offsets,
     which must be `+0000`;
   - `--file PATH`: a PR body or comment;
-  - `--history`: every blob reachable from every ref.
+  - `--history`: every blob and path reachable from every ref;
+  - `--ci`: tracked files, then the PR's or push's range. It falls back to
+    the whole history when the old tip is unknown (a new branch or a
+    force-push);
+  - `--require-terms`: exit 2 when no private terms load, so a check meant
+    to use them cannot pass on none.
+- **Paths are checked too.** A path that is itself a hit prints as
+  `<path #n>`.
+- **The gate's own files** are checked for private terms only:
+  `check_privacy.py`, its two tests, this spec and its plan. They quote the
+  generic patterns as examples.
+- **No exemption for GitHub-made commits.** All 40 web merges before
+  2026-10-18 carried the owner's offset. PRs are merged locally with
+  `TZ=UTC` (owner, 2026-10-18; §6.1).
 - **Output:** path, line and category, never the matched value, so a CI log
   does not re-publish it. Exit 1 on any hit.
 - **Tests, `scripts/test_check_privacy.py`,** written first and watched to
@@ -281,7 +296,14 @@ renamed to their UTC names, so the docs and the host agree.
 The Windows host captures (`capture_host_oracle.py` and the scripts that
 write `step2*/rows.json` and `tables.md`) replace the host's own time zone,
 offset, machine name and profile path with the §3.1 placeholders before
-writing. The plan lists every reader of those files and makes each one
+writing. They refuse while a hit is left after the scrub. The private
+terms stay on the Mac (owner, 2026-10-18):
+1. The box runs `capture_host_oracle.py --raw-out <path outside the repo>`.
+2. The Mac runs `--from-raw <path>`.
+3. The raw file is deleted.
+
+`measure_step2.py scrub` adds `CAMOU_SCRUB` to the private terms instead of
+replacing them. The plan lists every reader of those files and makes each one
 accept the placeholders, so a comparison that used the host value still
 means the same. The 2026-10-20 re-pin recapture is the first real run.
 

@@ -20,6 +20,11 @@ TERMS = {"<host-place>": ["Plantville"], "<host-offset>": ["GMT+0999"]}
     ("file:///C:/Users/someone/AppData/x.html", "windows-profile"),
     ("cd /home/someone/chromium/src", "home-path"),
     ("open /Users/someone/Go/x", "home-path"),
+    ("HOME=/home/someone", "home-path"),
+    ("cd /Users/someone", "home-path"),
+    ("see `/home/someone` there", "home-path"),
+    (r"\\wsl.localhost\Ubuntu-24.04\home\someone\x", "home-path"),
+    (r"D:\Users\someone\x", "windows-profile"),
     ("memory at ~/.claude/projects/-Users-someone-Go-x/memory", "home-slug"),
     ("box at mybox.tail1234.ts.net", "tailnet"),
     ("Claude-Session: <removed>", "session-link"),
@@ -41,6 +46,8 @@ def test_each_category_is_caught(line, cat):
     "~/chromium/src, $HOME/x, /home/runner/work and /home/<user>/x",
     r"C:\Users\user.HOST\AppData and C:\Users\<user>",
     "file:///C:/Users/user.HOST/AppData/x.html",
+    "chrome/browser/ui/webui/home/foo.cc and /Users/user.HOST/x",
+    "docs/superpowers/specs/2026-09-10-sp7-phone-home-quiet-design.md",
     "at 22:28 UTC; Thu Jan 01 1970 00:00:00 GMT+0000",
     "Wed Dec 31 1969 18:00:00 GMT-0600 (Central Standard Time)",
 ])
@@ -122,12 +129,47 @@ def test_range_passes_a_clean_utc_commit(repo):
     assert cp.main(["--range", "HEAD"]) == 0
 
 
-def test_range_exempts_github_made_commits(repo):
+def test_range_refuses_a_github_made_commit_with_an_offset(repo):
+    # GitHub's web merges carry the owner's offset (all 40 before 2026-10-18): merges are made locally in UTC
     commit(repo, "a.md", "clean\n")
     env = dict(os.environ, TZ="Etc/GMT-5", GIT_AUTHOR_NAME="GitHub", GIT_AUTHOR_EMAIL="noreply@github.com",
                GIT_COMMITTER_NAME="GitHub", GIT_COMMITTER_EMAIL="noreply@github.com")
     subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "Merge pull request #1"], env=env, check=True)
-    assert cp.main(["--range", "HEAD"]) == 0
+    assert cp.main(["--range", "HEAD"]) == 1
+
+
+def test_gate_files_are_checked_for_private_terms_only(repo):
+    commit(repo, "scripts/test_check_privacy.py", "example DESKTOP-AB12CD3 and /home/someone/x\n")
+    assert cp.main([]) == 0
+    assert cp.main(["--history"]) == 0
+    commit(repo, "scripts/test_check_privacy.py", "near Plantville\n")
+    assert cp.main([]) == 1
+
+
+def test_a_leaking_path_is_caught_and_not_printed(repo, capsys):
+    commit(repo, "notes/near-Plantville.md", "clean\n")
+    assert cp.main([]) == 1
+    assert cp.main(["--history"]) == 1
+    out = capsys.readouterr()
+    assert "<host-place>" in out.out and "Plantville" not in out.out + out.err
+
+
+def test_require_terms_refuses_an_empty_term_set(repo, monkeypatch):
+    commit(repo, "a.md", "clean\n")
+    monkeypatch.setenv("PRIVATE_TERMS", "")
+    assert cp.main(["--require-terms"]) == 2
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(TERMS))
+    assert cp.main(["--require-terms"]) == 0
+
+
+def test_ci_falls_back_when_before_is_gone(repo, monkeypatch):
+    commit(repo, "a.md", "clean\n")
+    monkeypatch.setenv("PR_BASE", "")
+    monkeypatch.setenv("PR_HEAD", "")
+    monkeypatch.setenv("BEFORE", "1234567890abcdef1234567890abcdef12345678")  # a force-pushed-away tip
+    assert cp.main(["--ci"]) == 0
+    commit(repo, "b.md", "clean\n", tz="Etc/GMT-5")
+    assert cp.main(["--ci"]) == 1
 
 
 def test_history_finds_a_term_removed_at_the_tip(repo):

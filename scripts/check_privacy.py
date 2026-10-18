@@ -5,7 +5,9 @@
   check_privacy.py --staged         the index (the pre-commit hook)
   check_privacy.py --file PATH      one file: a PR body, a comment, a commit message
   check_privacy.py --range REVS     messages and date offsets of `git rev-list REVS` (e.g. A..B, HEAD, --all)
-  check_privacy.py --history        every blob reachable from every ref
+  check_privacy.py --history        every blob and path reachable from every ref
+  check_privacy.py --ci             tracked files, then the range of the push or PR in $PR_BASE/$PR_HEAD/$BEFORE
+  ... --require-terms               exit 2 when no private terms load (a check with none measures nothing)
 
 Host-specific strings (zone names, offsets, machine and place names) come from $PRIVATE_TERMS, or
 else ~/.config/camoucrome/private-terms.json, in CAMOU_SCRUB's shape {placeholder: [strings]};
@@ -30,11 +32,18 @@ ALLOW_IPS = {
     "156.0.1.1": "a version string in the step2 version tests",
     "205.185.123.167": "tls.peet.ws's own server address in scripts/fixtures/step2/peet.json",
 }
+# The gate's own code, tests and design docs quote the generic patterns as examples: private terms only.
+GATE_FILES = {"scripts/check_privacy.py", "scripts/test_check_privacy.py", "scripts/test_capture_host_oracle.py",
+              "docs/superpowers/specs/2026-10-18-public-repo-scrub-design.md",
+              "docs/superpowers/plans/2026-10-18-public-repo-scrub.md"}
+_SEP = r"(?:/|\\{1,2})"
 GENERIC = {
     "machine-name": re.compile(r"\bDESKTOP-[A-Z0-9]{7}\b"),
-    "windows-profile": re.compile(r"(?i)\bC:(?:\\{1,2}|/)Users(?:\\{1,2}|/)(?!<|user[.\\/]|public\b|default\b)[\w.-]+"),
-    "home-path": re.compile(r"/(?:home|Users)/(?!<|runner/|user[./]|Shared/)[A-Za-z_][\w.-]*/"),
-    "home-slug": re.compile(r"-(?:home|Users)-(?!<)[a-z][a-z0-9_]*-"),
+    "windows-profile": re.compile(rf"(?i)\b[A-Z]:{_SEP}Users{_SEP}(?!<|user\b|public\b|default\b)[\w.-]+"),
+    # a home directory with a name after it, not inside a longer path ("ui/webui/home/x"), or a WSL UNC path
+    "home-path": re.compile(rf"(?<![\w.-]){_SEP}(?:home|Users){_SEP}(?!<|runner\b|user\b|Shared\b)[A-Za-z_][\w.-]*"
+                            r"|(?i:\\\\wsl(?:\.localhost|\$)\\[^\\\s]+\\home\\(?!<)[A-Za-z_])"),
+    "home-slug": re.compile(r"(?:(?<=[/\s`'\"(])|^)-(?:home|Users)-(?!<)[a-z][a-z0-9_]*-"),
     "tailnet": re.compile(r"\.ts\.net\b"),
     "session-link": re.compile(r"claude\.ai/code/session"),
     # a clock time labelled with a zone abbreviation other than UTC/GMT ("16:37 XST")
@@ -43,7 +52,6 @@ GENERIC = {
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
 IPV4 = re.compile(rf"(?<![\d.]){_OCTET}(?:\.{_OCTET}){{3}}(?!\d|\.\d)")
 DOC_NETS = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
-GITHUB = b"noreply@github.com"
 
 
 def load_terms():
@@ -66,15 +74,16 @@ def _ip_hit(s):
                 or any(a in n for n in DOC_NETS))
 
 
-def hits(text, terms):
+def hits(text, terms, generic=True):
     needles = [(label, n.lower()) for label, ns in terms.items() for n in ns if n]
     out = set()
     for i, line in enumerate(text.splitlines(), 1):
-        for cat, rx in GENERIC.items():
-            if rx.search(line):
-                out.add((i, cat))
-        if any(_ip_hit(m.group(0)) for m in IPV4.finditer(line)):
-            out.add((i, "ip"))
+        if generic:
+            for cat, rx in GENERIC.items():
+                if rx.search(line):
+                    out.add((i, cat))
+            if any(_ip_hit(m.group(0)) for m in IPV4.finditer(line)):
+                out.add((i, "ip"))
         low = line.lower()
         for label, n in needles:
             if n in low:
@@ -90,14 +99,22 @@ def _text(data):
     return None if b"\0" in data[:8000] else data.decode("utf-8", "replace")
 
 
+def _name(p, n, terms):
+    """How a path is printed: itself, or `<path #n>` when the path itself is a hit (printing it would leak)."""
+    cats = {c for _, c in hits(p, terms, generic=p not in GATE_FILES)}
+    return (f"<path #{n}>", [f"<path #{n}>: path {c}" for c in sorted(cats)]) if cats else (p, [])
+
+
 def _scan(paths, read, terms):
     bad = []
-    for p in paths:
+    for n, p in enumerate(paths, 1):
+        name, path_hits = _name(p, n, terms)
+        bad += path_hits
         if p in ALLOW_PATHS:
             continue
         t = _text(read(p))
         if t is not None:
-            bad += [f"{p}:{i}: {c}" for i, c in hits(t, terms)]
+            bad += [f"{name}:{i}: {c}" for i, c in hits(t, terms, generic=p not in GATE_FILES)]
     return bad
 
 
@@ -120,30 +137,44 @@ def _range(revs, terms):
             continue
         sha, ae, ce, ai, ci, msg = rec.split(b"\0", 5)
         s = sha.decode()[:10]
-        if ce != GITHUB and not (ai.endswith(b"+0000") and ci.endswith(b"+0000")):
+        # no exemption for GitHub-made commits: its web merges carry the owner's offset (all 40 before 2026-10-18)
+        if not (ai.endswith(b"+0000") and ci.endswith(b"+0000")):
             bad.append(f"{s}: date offset not +0000 (commit with TZ=UTC)")
         bad += [f"{s}: message line {i}: {c}" for i, c in hits(msg.decode("utf-8", "replace"), terms)]
     return bad
 
 
 def _history(terms):
-    path_of = {}
+    path_of, names, bad = {}, {}, set()
     for line in _git("rev-list", "--objects", "--all").decode().splitlines():
         sha, _, p = line.partition(" ")
         if p:
             path_of.setdefault(sha, p)
+            if p not in names:
+                names[p], path_hits = _name(p, len(names) + 1, terms)
+                bad |= {f"history {h}" for h in path_hits}
     kinds = _git("cat-file", "--batch-check=%(objectname) %(objecttype)", inp="\n".join(path_of).encode()).decode()
     blobs = [k.split()[0] for k in kinds.splitlines() if k.endswith(" blob") and path_of[k.split()[0]] not in ALLOW_PATHS]
-    data, i, bad = _git("cat-file", "--batch", inp="\n".join(blobs).encode()), 0, set()
+    data, i = _git("cat-file", "--batch", inp="\n".join(blobs).encode()), 0
     while i < len(data):
         nl = data.index(b"\n", i)
         sha, _t, size = data[i:nl].decode().split()
         body = data[nl + 1:nl + 1 + int(size)]
         i = nl + 1 + int(size) + 1
-        t = _text(body)
+        t, p = _text(body), path_of[sha]
         if t is not None:
-            bad |= {f"history {path_of[sha]}: {c}" for _, c in hits(t, terms)}
+            bad |= {f"history {names[p]}: {c}" for _, c in hits(t, terms, generic=p not in GATE_FILES)}
     return sorted(bad)
+
+
+def _ci_revs():
+    base, head, before = (os.environ.get(k, "") for k in ("PR_BASE", "PR_HEAD", "BEFORE"))
+    if base:
+        return f"{base}..{head}"
+    known = subprocess.run(["git", "cat-file", "-e", f"{before}^{{commit}}"], capture_output=True).returncode == 0
+    if before and set(before) != {"0"} and known:
+        return f"{before}..HEAD"
+    return "HEAD"  # a new branch, or a force-push whose old tip is gone: the whole history
 
 
 def main(argv=None):
@@ -153,9 +184,16 @@ def main(argv=None):
     g.add_argument("--file")
     g.add_argument("--range", metavar="REVS")
     g.add_argument("--history", action="store_true")
+    g.add_argument("--ci", action="store_true")
+    ap.add_argument("--require-terms", action="store_true")
     a = ap.parse_args(argv)
     terms = load_terms()
-    if a.staged:
+    if a.require_terms and not terms:
+        print("check_privacy: --require-terms, and no private terms loaded", file=sys.stderr)
+        return 2
+    if a.ci:
+        bad = _tracked(terms) + _range(_ci_revs(), terms)
+    elif a.staged:
         bad = _staged(terms)
     elif a.file:
         bad = _scan([a.file], lambda p: pathlib.Path(p).read_bytes(), terms)

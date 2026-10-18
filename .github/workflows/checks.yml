@@ -17,12 +17,8 @@ jobs:
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           BEFORE: ${{ github.event.before }}
-        run: |
-          python3 scripts/check_privacy.py
-          if [ -n "$PR_BASE" ]; then revs="$PR_BASE..$PR_HEAD"
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then revs="$BEFORE..HEAD"
-          else revs=HEAD; fi
-          python3 scripts/check_privacy.py --range "$revs"
+        # --ci: tracked files, then PR_BASE..PR_HEAD, BEFORE..HEAD, or (new branch, force-push) the whole history
+        run: python3 scripts/check_privacy.py --ci
       - uses: actions/setup-go@v5
         with: { go-version: "1.22" }
       - name: additions are all in BUILD.gn

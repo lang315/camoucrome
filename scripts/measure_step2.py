@@ -383,16 +383,26 @@ def run_stamp():
 
 
 def scrub_cmd(a):
-    """The committable copy of a run: rows.json and tables.md through rows.scrub()."""
+    """The committable copy of a run: rows.json and tables.md through rows.scrub(), with the private
+    terms plus CAMOU_SCRUB's geo strings; nothing is written while a host-identifying hit is left."""
     import check_privacy
-    geo = json.loads(os.environ["CAMOU_SCRUB"]) if os.environ.get("CAMOU_SCRUB") else check_privacy.load_terms()
-    if not isinstance(geo, dict) or not geo:
+    geo = check_privacy.load_terms()
+    extra = json.loads(os.environ["CAMOU_SCRUB"]) if os.environ.get("CAMOU_SCRUB") else {}
+    if not isinstance(extra, dict):
+        sys.exit("scrub: CAMOU_SCRUB must be a JSON object {placeholder: [host strings]}")
+    for label, needles in extra.items():
+        geo[label] = geo.get(label, []) + list(needles)
+    if not geo:
         sys.exit("scrub: set CAMOU_SCRUB or the private terms ({placeholder: [host strings]}); neither is ever committed")
     src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
-    dst.mkdir(parents=True, exist_ok=True)
     doc = rows.scrub(json.loads((src / "rows.json").read_text(encoding="utf-8")), geo)
+    tables = rows.scrub((src / "tables.md").read_text(encoding="utf-8"), geo)
+    left = check_privacy.hits(json.dumps(doc, ensure_ascii=False), geo) + check_privacy.hits(tables, geo)
+    if left:
+        sys.exit(f"scrub: host-identifying data left after the scrub: {sorted({c for _, c in left})}")
+    dst.mkdir(parents=True, exist_ok=True)
     (dst / "rows.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
-    (dst / "tables.md").write_text(rows.scrub((src / "tables.md").read_text(encoding="utf-8"), geo), encoding="utf-8")
+    (dst / "tables.md").write_text(tables, encoding="utf-8")
     print(f"scrubbed {src} -> {dst}")
     return 0
 

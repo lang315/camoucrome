@@ -55,9 +55,16 @@ recreated to remove them; spec `docs/superpowers/specs/2026-10-18-public-repo-sc
   `scripts/test_utc_stamps.py` fails on a local one.
 - Commit with `TZ=UTC git commit ...`, so dates carry `+0000`. Enable the
   hooks once per clone: `git config core.hooksPath scripts/hooks`.
+- Merge PRs locally in UTC, never with GitHub's merge button or
+  `gh pr merge`: `TZ=UTC git merge --no-ff <branch> -F <msg>` on an
+  up-to-date `main`, then `git push origin main` (admins may push; GitHub
+  marks the PR merged). GitHub-made merge commits carry the owner's local
+  offset (all 40 before 2026-10-18), and `checks` fails on them.
 - Host captures write placeholders (`<host-tz>`, `user.HOST`) before they
-  write a file. `capture_host_oracle.py` and `measure_step2.py scrub` refuse
-  without private terms.
+  write a file, and refuse while a hit is left. The private terms stay on
+  the Mac: run `capture_host_oracle.py --raw-out <path outside the repo>`
+  on the box, copy that file to the Mac, run `--from-raw <path>` there, and
+  delete the raw file. `measure_step2.py scrub` runs on the Mac.
 - The host-specific strings live in `~/.config/camoucrome/private-terms.json`
   (`{placeholder: [strings]}`, never committed), and CI reads them from the
   secret `PRIVATE_TERMS`.
