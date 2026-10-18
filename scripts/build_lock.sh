@@ -5,7 +5,7 @@
 # (D:\camou-win\chromium\src) share one machine. Neither can see the other's
 # processes: WSL interop is off, and CI's own "is a ninja running" check sees
 # only WSL. So both sides take this lock, a directory in WSL's home that the
-# Windows side reaches with `wsl -u <user> -e bash .../build_lock.sh`.
+# Windows side reaches with `wsl -u <user> -e bash .../build_lock.sh` (<user>: the WSL account that owns the checkout).
 # `mkdir` is the atomic test-and-set.
 #
 #   build_lock.sh acquire <owner>   take the lock, or exit 1 naming the holder

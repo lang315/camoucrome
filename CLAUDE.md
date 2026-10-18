@@ -38,7 +38,49 @@ If a surface can only be reached from JS, say so and treat it as an open problem
 do not quietly inject. This is inherited from Camoufox and is the whole reason
 the project exists.
 
+## Public repo: no host-identifying data (never violate)
+
+The repository is public, and so is every file, commit message, commit date,
+PR body and CI log (2026-10-18: history rewritten and the repository
+recreated to remove them; spec `docs/superpowers/specs/2026-10-18-public-repo-scrub-design.md`).
+
+- Never commit the host's time zone or UTC offset, a machine name, an OS
+  user name or home path (write `~` or `$HOME`), an IP other than loopback
+  or the RFC 5737 documentation ranges, the city, region, country, ISP or
+  ASN of the host or owner, or a session URL. This adds to the list of
+  things never committed: traces, cookies, account ids, screenshots.
+- Times in the repository are UTC (`HH:MM UTC`), and so are timestamps in
+  names (run directories and run ids). Producers take a UTC clock
+  (`ToUniversalTime()`, `datetime.now(datetime.timezone.utc)`), and
+  `scripts/test_utc_stamps.py` fails on a local one.
+- Commit with `TZ=UTC git commit ...`, so dates carry `+0000`. Enable the
+  hooks once per clone: `git config core.hooksPath scripts/hooks`.
+- Merge PRs locally in UTC, never with GitHub's merge button or
+  `gh pr merge`: `TZ=UTC git merge --no-ff <branch> -F <msg>` on an
+  up-to-date `main`, then `git push origin main` (admins may push; GitHub
+  marks the PR merged). GitHub-made merge commits carry the owner's local
+  offset (all 40 before 2026-10-18), and `checks` fails on them.
+- Host captures write placeholders (`<host-tz>`, `user.HOST`) before they
+  write a file, and refuse while a hit is left. The private terms stay on
+  the Mac: run `capture_host_oracle.py --raw-out <path outside the repo>`
+  on the box, copy that file to the Mac, run `--from-raw <path>` there, and
+  delete the raw file. `measure_step2.py scrub` runs on the Mac.
+- The host-specific strings live in `~/.config/camoucrome/private-terms.json`
+  (`{placeholder: [strings]}`, never committed), and CI reads them from the
+  secret `PRIVATE_TERMS`.
+- Run `python3 scripts/check_privacy.py --file <body>` on every PR body or
+  comment before `gh pr create` or `gh pr comment`. CI runs the gate on every
+  push.
+- Never push from a clone made before the 2026-10-18 recreate. Its history
+  is the one that was removed.
+
 ## Read first
+
+`docs/superpowers/` (specs, plans, measurements) is local, not in git, since
+the 2026-10-18 recreate (`.gitignore`). Its history up to then is in git. A
+fresh clone restores the folder with
+`git archive f46525dde7 docs/superpowers | tar -x`, and new specs and plans stay in
+the local folder.
 
 - **[`docs/superpowers/specs/00-conventions.md`](docs/superpowers/specs/00-conventions.md)**
   — the authoritative architecture decisions every spec assumes. Non-negotiable

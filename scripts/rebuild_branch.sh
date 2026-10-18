@@ -17,7 +17,7 @@
 set -euo pipefail
 
 SRC="${1:?usage: rebuild_branch.sh <chromium-src-dir> [worktree-dir] [branch]}"
-WT="${2:-~/camoumain}"
+WT="${2:-$HOME/camoumain}"
 BRANCH="${3:-camoucrome/main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=../upstream.env
