@@ -11,6 +11,7 @@ numbers are the browser's, not copies of them. Every row states what it saw.
 
 import http.server
 import json
+import math
 import os
 import signal
 import statistics
@@ -42,6 +43,9 @@ H3_TIMEOUT_S = 45
 PAGE = """<!doctype html><body style="margin:0"><button id=b
 style="position:absolute;left:300px;top:300px;width:120px;height:40px">b</button><script>
 window.__l = [];
+window.__c = [];  // first coalesced point of each pointermove: the first point the browser delivered
+addEventListener('pointermove', e => { const c = e.getCoalescedEvents()[0] || e;
+  __c.push({x: c.clientX, y: c.clientY}); }, true);
 for (const type of ['mousemove', 'mousedown', 'mouseup', 'click', 'dblclick'])
   addEventListener(type, e => __l.push({type, t: e.timeStamp, x: e.clientX, y: e.clientY,
     detail: e.detail}), true);
@@ -117,7 +121,8 @@ def med(xs):
 
 class _Page(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = (NAV_PAGE if self.path == "/" else "<!doctype html><title>other</title>other").encode()
+        body = {"/": NAV_PAGE, "/c": PAGE}.get(
+            self.path, "<!doctype html><title>other</title>other").encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(body)))
@@ -250,7 +255,120 @@ got, err = session(HUM, dbl)
 row(H4, not err and got == ["mousedown", "mouseup", "mousedown", "mouseup", "dblclick"],
     repr(err) if err else str(got))
 
-EXPECTED = 7
+C0 = "C0 no config: move, cross-site navigation, move leaves exactly one mousemove on page B"
+C1 = "C1 humanize: the same steps, a path on B whose first delivered point is within 150 px of the old cursor"
+C2 = "C2 humanize: a fresh tab's first move enters within 100 px of an edge, nearer it than the centre"
+C3 = "C3 humanize: after the CDP connection drops and is reopened, the next move starts at the old cursor"
+CUR, TARGET = (200, 200), (600, 400)
+# The path is a fast, curved arc and the page misses its first few points, so the first delivered
+# point is not the first step. Measured: 21-103 px from CUR on a 447 px path (50 px failed half the
+# runs), and 1-76 px from an edge on a 218-390 px entry path (40 px failed 1 run in 9). Without
+# continuity the first point is the target itself (447 px) or the centre (218 px from an edge).
+NEAR_PX = 150  # a third of the path
+EDGE_PX = 100
+
+cserver = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Page)
+threading.Thread(target=cserver.serve_forever, daemon=True).start()
+CPORT = cserver.server_address[1]
+
+
+def moves(page):
+    return [e for e in log(page) if e["type"] == "mousemove"]
+
+
+def points(page):
+    """First coalesced point of each pointermove. A mousemove is frame-aligned, so its own
+    clientX/Y is the LAST point of a burst (measured 132 px along a 447 px path); the first
+    coalesced point is the first one the browser delivered."""
+    return page.evaluate("window.__c")
+
+
+def near(e, pt):
+    return math.hypot(e["x"] - pt[0], e["y"] - pt[1])
+
+
+def viewport(page):
+    return page.evaluate("[document.documentElement.clientWidth, innerHeight]")
+
+
+def at_cursor(pt, vw, vh):
+    """(ok, dist): the first delivered point is within NEAR_PX of CUR AND nearer CUR than any edge.
+    The second clause is what tells a continued path from an edge entry: with only the first, a
+    per-session cursor (mutant) passed once at 113.9 px."""
+    d = near(pt, CUR)
+    return d <= NEAR_PX and d < min(pt["x"], vw - pt["x"], pt["y"], vh - pt["y"]), d
+
+
+def cross_site(page):
+    page.mouse.move(*CUR)
+    page.goto(f"http://localhost:{CPORT}/c")  # 127.0.0.1 -> localhost: a different site
+    page.mouse.move(*TARGET)
+    return moves(page), points(page), viewport(page)
+
+
+got, err = session(None, cross_site, url=f"http://127.0.0.1:{CPORT}/c")
+row(C0, not err and len(got[0]) == 1, repr(err) if err else f"{len(got[0])} mousemoves on B")
+print(f"C0 measured: {'error' if err else len(got[0])} mousemove(s) on B")
+
+got, err = session(HUM, cross_site, url=f"http://127.0.0.1:{CPORT}/c")
+if err or not got[1]:
+    row(C1, False, repr(err) if err else "no pointermove on B")
+else:
+    n, (ok, d) = len(got[0]), at_cursor(got[1][0], *got[2])
+    print(f"C1 measured: {n} mousemoves on B, first delivered point {d:.1f} px from {CUR}")
+    row(C1, n > 1 and ok, f"n={n} first {d:.1f} px from {CUR}, near-cursor {ok}")
+
+
+def first_move(page):
+    vw, vh = page.evaluate("[document.documentElement.clientWidth, innerHeight]")
+    page.mouse.move(vw / 2, vh / 2)
+    return vw, vh, points(page)
+
+
+got, err = session(HUM, first_move, url=f"http://127.0.0.1:{CPORT}/c")  # getCoalescedEvents needs a secure context
+if err or not got[2]:
+    row(C2, False, repr(err) if err else "no pointermove")
+else:
+    vw, vh, pts = got
+    x, y = pts[0]["x"], pts[0]["y"]
+    d_edge, d_ctr = min(x, vw - x, y, vh - y), math.hypot(x - vw / 2, y - vh / 2)
+    print(f"C2 measured: viewport {vw}x{vh}, first delivered point ({x:.0f}, {y:.0f}), "
+          f"{d_edge:.1f} px from an edge, {d_ctr:.1f} px from the centre")
+    row(C2, d_edge <= EDGE_PX and d_edge < d_ctr, f"edge {d_edge:.1f} centre {d_ctr:.1f}")
+
+
+def reconnect():
+    proc = None
+    try:
+        proc = lib_shell.launch(json.dumps(HUM), shell=lib_shell.CHROME,
+                                extra_flags=lib_shell.CHROME_FLAGS)
+        endpoint = f"http://127.0.0.1:{proc.cdp_port}"
+        with sync_playwright() as p:
+            ctx = p.chromium.connect_over_cdp(endpoint).contexts[0]
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto(f"http://127.0.0.1:{CPORT}/c")
+            page.mouse.move(*CUR)
+        with sync_playwright() as p:  # the first connection is gone
+            page = p.chromium.connect_over_cdp(endpoint).contexts[0].pages[0]
+            before, before_pts = len(moves(page)), len(points(page))
+            page.mouse.move(*TARGET)
+            return (moves(page)[before:], points(page)[before_pts:], viewport(page)), None
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        return None, exc
+    finally:
+        if proc is not None:
+            lib_shell.shutdown(proc)
+
+
+got, err = reconnect()
+if err or not got[1]:
+    row(C3, False, repr(err) if err else "no pointermove after the reconnect")
+else:
+    n, (ok, d) = len(got[0]), at_cursor(got[1][0], *got[2])
+    print(f"C3 measured: {n} mousemoves after reconnect, first delivered point {d:.1f} px from {CUR}")
+    row(C3, n > 1 and ok, f"n={n} first {d:.1f} px from {CUR}, near-cursor {ok}")
+
+EXPECTED = 11
 for name in sorted(results):
     print(f"{'PASS' if results[name] else 'FAIL'}  {name}")
 if len(results) != EXPECTED:
