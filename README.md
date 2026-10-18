@@ -10,7 +10,9 @@ landed on `main`** — 33 patches in `patches/` (applied in the order of
 Apply the whole set to a pristine Chromium checkout with
 `scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
 design; `docs/superpowers/measurements/` records the per-surface measurement each
-slice was built from.
+slice was built from. `docs/superpowers/` is local, not in git, since the
+2026-10-18 recreate; a fresh clone restores it with
+`git archive f46525dde7 docs/superpowers | tar -x`.
 
 Shipped: the config layer and load-time coherence validator (SP0, SP5a); the
 browser-process UA / UA-CH producer and Blink-side navigator leaves (SP1a, SP1b);

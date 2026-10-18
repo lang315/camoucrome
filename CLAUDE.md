@@ -76,6 +76,12 @@ recreated to remove them; spec `docs/superpowers/specs/2026-10-18-public-repo-sc
 
 ## Read first
 
+`docs/superpowers/` (specs, plans, measurements) is local, not in git, since
+the 2026-10-18 recreate (`.gitignore`). Its history up to then is in git. A
+fresh clone restores the folder with
+`git archive f46525dde7 docs/superpowers | tar -x`, and new specs and plans stay in
+the local folder.
+
 - **[`docs/superpowers/specs/00-conventions.md`](docs/superpowers/specs/00-conventions.md)**
   — the authoritative architecture decisions every spec assumes. Non-negotiable
   rules, the config API shape, the build environment, and (most importantly) the
