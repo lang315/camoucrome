@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index da6cc17c4f..dd3f717b39 100644
+index da6cc17c4f..c1daff101e 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -6,6 +6,7 @@
@@ -18,17 +18,18 @@ index da6cc17c4f..dd3f717b39 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "components/camoucfg/mouse_trajectories.h"
-@@ -912,6 +914,9 @@ class InputHandler::InputInjector
+@@ -912,6 +914,10 @@ class InputHandler::InputInjector
    // draw a path from the just-delivered target to itself.
    void ForwardMouseEventNow(const blink::WebMouseEvent& mouse_event,
                              std::unique_ptr<DispatchMouseEventCallback> callback) {
 +    if (mouse_event.GetType() == blink::WebInputEvent::Type::kMouseMove) {
 +      owner_->last_move_forwarded_at_ = base::TimeTicks::Now();
++      owner_->ReleaseHumanizedMove(owner_->humanized_move_gen_);
 +    }
      input_queued_ = false;
      pending_mouse_callbacks_.push_back(std::move(callback));
      // This may destroy the injector if the events get discarded.
-@@ -1381,7 +1386,9 @@ InputHandler::InputHandler(bool allow_file_access,
+@@ -1381,7 +1387,9 @@ InputHandler::InputHandler(bool allow_file_access,
        allow_file_access_(allow_file_access),
        allow_sending_input_to_browser_(allow_sending_input_to_browser) {}
  
@@ -39,7 +40,7 @@ index da6cc17c4f..dd3f717b39 100644
  
  // static
  std::vector<InputHandler*> InputHandler::ForAgentHost(
-@@ -1415,6 +1422,7 @@ void InputHandler::Wire(UberDispatcher* dispatcher) {
+@@ -1415,6 +1423,7 @@ void InputHandler::Wire(UberDispatcher* dispatcher) {
  }
  
  Response InputHandler::Disable() {
@@ -47,7 +48,7 @@ index da6cc17c4f..dd3f717b39 100644
    ClearInputState();
    scoped_ignore_input_events_.reset();
    ignore_input_events_ = false;
-@@ -1616,6 +1624,7 @@ void InputHandler::DispatchMouseEvent(
+@@ -1616,6 +1625,7 @@ void InputHandler::DispatchMouseEvent(
      std::optional<double> delta_y,
      std::optional<std::string> pointer_type,
      std::unique_ptr<DispatchMouseEventCallback> callback) {
@@ -55,7 +56,7 @@ index da6cc17c4f..dd3f717b39 100644
    base::expected<std::unique_ptr<blink::WebMouseEvent>, protocol::Response>
        maybe_event = CreateWebMouseEvent(
            event_type, x, y, ScaleFactor(), std::move(modifiers),
-@@ -1629,9 +1638,157 @@ void InputHandler::DispatchMouseEvent(
+@@ -1629,9 +1639,176 @@ void InputHandler::DispatchMouseEvent(
      return;
    }
  
@@ -186,23 +187,42 @@ index da6cc17c4f..dd3f717b39 100644
 +    }
 +    last_humanized_type_ = type;
 +    if (type == Type::kMouseMove) {
++      // A move whose final step is never forwarded (a drag takes it, the
++      // widget is gone) is still answered or dropped, which releases the gate;
++      // the timer bounds anything else so input cannot stall.
++      constexpr base::TimeDelta kMoveGateFallback = base::Seconds(2);
 +      humanized_move_pending_ = true;
++      const uint64_t gen = ++humanized_move_gen_;
 +      item->callback = std::make_unique<HumanizedMoveAck>(
 +          std::move(item->callback),
-+          base::BindOnce(&InputHandler::OnHumanizedMoveDone,
-+                         weak_factory_.GetWeakPtr()));
++          base::BindOnce(&InputHandler::ReleaseHumanizedMove,
++                         weak_factory_.GetWeakPtr(), gen));
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&InputHandler::ReleaseHumanizedMove,
++                         weak_factory_.GetWeakPtr(), gen),
++          kMoveGateFallback);
 +    }
 +    HandleMouseEvent(std::move(item->event), std::move(item->callback));
 +  }
 +}
 +
-+void InputHandler::OnHumanizedMoveDone() {
++void InputHandler::ReleaseHumanizedMove(uint64_t gen) {
++  if (!humanized_move_pending_ || gen != humanized_move_gen_) {
++    return;
++  }
 +  humanized_move_pending_ = false;
-+  DrainHumanizedMouseQueue();
++  // Posted: this runs inside InputInjector::Cleanup's loop over its pending
++  // callbacks and inside ForwardMouseEventNow, and a drain there would
++  // dispatch into the injector that is being iterated.
++  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&InputHandler::DrainHumanizedMouseQueue,
++                                weak_factory_.GetWeakPtr()));
 +}
 +
 +void InputHandler::FailHumanizedMouseQueue() {
 +  humanized_move_pending_ = false;
++  ++humanized_move_gen_;
 +  while (!humanized_mouse_queue_.empty()) {
 +    humanized_mouse_queue_.front()->callback->sendFailure(
 +        Response::InternalError());
@@ -214,7 +234,7 @@ index da6cc17c4f..dd3f717b39 100644
      std::unique_ptr<blink::WebMouseEvent> event,
      std::unique_ptr<DispatchMouseEventCallback> callback) {
 diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
-index eb21f78e1b..1e7ff508b6 100644
+index eb21f78e1b..6a5bf7287b 100644
 --- a/content/browser/devtools/protocol/input_handler.h
 +++ b/content/browser/devtools/protocol/input_handler.h
 @@ -10,12 +10,14 @@
@@ -251,12 +271,12 @@ index eb21f78e1b..1e7ff508b6 100644
 +  void DrainHumanizedMouseQueue();
 +  void FailHumanizedMouseQueue();
 +  base::TimeTicks HumanizedReadyAt(const blink::WebMouseEvent& event);
-+  void OnHumanizedMoveDone();
++  void ReleaseHumanizedMove(uint64_t gen);
 +
    void ClearInputState();
    bool PointIsWithinContents(gfx::PointF point) const;
    InputInjector* EnsureInjector(RenderWidgetHostImpl* widget_host);
-@@ -385,6 +404,20 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+@@ -385,6 +404,25 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
    // scoped to it would never survive from one move to the next.
    base::WeakPtr<RenderWidgetHostImpl> last_move_widget_;
    gfx::PointF last_move_position_;
@@ -266,11 +286,16 @@ index eb21f78e1b..1e7ff508b6 100644
 +  base::circular_deque<std::unique_ptr<HumanizedMouseEvent>>
 +      humanized_mouse_queue_;
 +  bool humanized_drain_posted_ = false;
-+  // A move was handed on and its command has not answered yet. Clients
-+  // pipeline move, press, release without awaiting the move, and a humanized
-+  // move answers only when its path has been delivered, so everything behind
-+  // it waits.
++  // A move was handed on and its path has not been fully forwarded yet.
++  // Clients pipeline move, press, release without awaiting the move, and a
++  // humanized move completes only when its path has been delivered, so
++  // everything behind it waits. Released (always by a posted task, never
++  // inside a callback) when the final step is forwarded, when the move's
++  // command is answered or dropped, or after a bounded fallback, whichever
++  // comes first; humanized_move_gen_ names the move so a late release of an
++  // older move cannot open the gate of a newer one.
 +  bool humanized_move_pending_ = false;
++  uint64_t humanized_move_gen_ = 0;
 +  blink::WebInputEvent::Type last_humanized_type_ =
 +      blink::WebInputEvent::Type::kUndefined;
 +  base::flat_map<int, base::TimeTicks> press_forwarded_at_;

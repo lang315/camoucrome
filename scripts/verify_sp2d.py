@@ -31,7 +31,12 @@ HUM = {"humanize:enabled": True, "humanize:seed": SEED}
 S_H = human_math.profile_scale(SEED, "hold")
 S_D = human_math.profile_scale(SEED, "dwell")
 MAX_HOLD, MAX_DWELL = 400.0, 600.0  # kMaxHoldMs, kMaxDwellMs (human_input_tables.h)
-SLACK_MS = 15.0
+# Per-click upper bounds: the browser draws at most the table's last knot (x scale), and the
+# page-measured delta adds the lateness of the delayed drain task plus timeStamp coarsening.
+# 15 ms left 1.6-6 ms margins on the top-5% draw in 4 of 4 runs; 30 ms covers CI load.
+# The medians, D2 and H2 carry the RED power, not these maxima.
+SLACK_MS = 30.0
+D2_MAX_MS = 20.0  # down() after a pause returns with no extra dwell
 H3_TIMEOUT_S = 45
 
 PAGE = """<!doctype html><body style="margin:0"><button id=b
@@ -207,7 +212,7 @@ if err:
 else:
     elapsed, gap = got
     print(f"D2 measured: down() took {elapsed:.1f} ms, press {gap} ms after the last move")
-    row(D2, gap is not None and gap >= 700 and elapsed <= SLACK_MS + 5, f"elapsed={elapsed:.1f} gap={gap}")
+    row(D2, gap is not None and gap >= 700 and elapsed <= D2_MAX_MS, f"elapsed={elapsed:.1f} gap={gap}")
 
 
 def nav_row(arm, cfg):
