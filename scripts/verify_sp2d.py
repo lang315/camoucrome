@@ -370,7 +370,42 @@ else:
     print(f"C3 measured: {n} mousemoves after reconnect, first delivered point {d:.1f} px from {CUR}")
     row(C3, n > 1 and ok, f"n={n} first {d:.1f} px from {CUR}, near-cursor {ok}")
 
-EXPECTED = 11
+T1 = "T1 humanize: window keys and accessor toStrings equal no config; one click() is the trusted five-event sequence"
+# Top-level const, not a window property: the page adds no key to the count it measures.
+T1_PAGE = """<!doctype html><body style="margin:0"><button id=b
+style="position:absolute;left:300px;top:300px;width:120px;height:40px">b</button><script>
+const seq = [];
+for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
+  addEventListener(type, e => seq.push([type, e.isTrusted]), true);
+</script>"""
+T1_SHAPE = """JSON.stringify([Object.keys(window).length, [['MouseEvent', 'clientX'],
+  ['Event', 'timeStamp'], ['MouseEvent', 'detail']].map(([c, k]) => {
+    for (let o = window[c].prototype; o; o = Object.getPrototypeOf(o)) {
+      const d = Object.getOwnPropertyDescriptor(o, k);
+      if (d) return d.get.toString();
+    }
+    return null; })])"""
+
+
+def shape_and_seq(page):
+    shape = json.loads(page.evaluate(T1_SHAPE))
+    page.click("#b")
+    return shape, page.evaluate("seq")
+
+
+base, err0 = session(None, shape_and_seq, page_html=T1_PAGE)
+hum, err1 = session(HUM, shape_and_seq, page_html=T1_PAGE)
+if err0 or err1:
+    row(T1, False, repr(err0 or err1))
+else:
+    order = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]
+    row(T1, base[0][0] > 0 and base[0] == hum[0]
+        and all("[native code]" in t for t in hum[0][1])
+        and [t for t, _ in hum[1]] == order and all(trusted for _, trusted in hum[1]),
+        f"no config {base[0]}, humanize {hum[0]}, sequence {hum[1]}")
+    print(f"T1 measured: {hum[0][0]} window keys in both, sequence {[t for t, _ in hum[1]]}")
+
+EXPECTED = 12
 for name in sorted(results):
     print(f"{'PASS' if results[name] else 'FAIL'}  {name}")
 if len(results) != EXPECTED:
