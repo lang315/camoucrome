@@ -10,6 +10,7 @@ from . import _click_tables as T
 from . import human_math as m
 
 _state = weakref.WeakKeyDictionary()   # impl BrowserContext -> {"scale", "windows"}
+_b_contexts = weakref.WeakSet()        # impl BrowserContext launched with human_click=True
 _last = weakref.WeakKeyDictionary()    # impl Page -> (x, y) last point this client sent
 PASS_THROUGH = ("position", "force", "trial")
 wrapper_hits = 0                       # B: human-path invocations, read by later tasks
@@ -108,8 +109,10 @@ def install_state(ctx_impl, config, preset):
 
 
 def install(ctx_impl, config, preset):
-    """B: wrap Frame._click once per process; act only for contexts in _state."""
+    """B: wrap Frame._click once per process; act only for contexts launched
+    with human_click=True (A only records state in install_state)."""
     install_state(ctx_impl, config, preset)
+    _b_contexts.add(ctx_impl)
     frame_mod = importlib.import_module(type(ctx_impl).__module__.rsplit(".", 1)[0] + "._frame")
     cls = frame_mod.Frame
     if getattr(cls, "_camou_human_click", False):
@@ -119,7 +122,8 @@ def install(ctx_impl, config, preset):
     async def _click(self, selector, **kw):
         global wrapper_hits
         page = self._page
-        st = _state.get(page._browser_context) if page is not None else None
+        bc = page._browser_context if page is not None else None
+        st = _state.get(bc) if bc is not None and bc in _b_contexts else None
         if st is None or any(k in kw for k in PASS_THROUGH):
             return await orig(self, selector, **kw)
         wrapper_hits += 1

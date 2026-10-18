@@ -208,6 +208,30 @@ def test_b_wrapper_counts_only_the_human_path():
     assert hc.wrapper_hits == 1 and calls[-1] == ("button", {"position": {"x": 1, "y": 2}})
 
 
+def test_b_acts_only_for_contexts_launched_with_the_flag():
+    """A launch (install_state only) must not be humanized by a process where
+    some other launch used human_click=True (install)."""
+    Ctx, Frame, calls = _fake_impl_module()
+    b_ctx, a_ctx = Ctx(), Ctx()
+    hc.install(b_ctx, {"humanize:enabled": True}, None)
+    hc.install_state(a_ctx, {"humanize:enabled": True}, None)
+    hc.wrapper_hits = 0
+
+    a_log = []
+    a_frame = Frame(BPage(a_ctx, a_log))
+    a_frame.target = FakeTarget([{**GEO, "y": 100}], a_log)
+    run(a_frame._click("button"))
+    assert calls == [("button", {})] and a_log == []   # straight to the stock click
+    assert hc.wrapper_hits == 0
+
+    b_log = []
+    b_frame = Frame(BPage(b_ctx, b_log))
+    b_frame.target = FakeTarget([{**GEO, "y": 100}], b_log)
+    run(b_frame._click("button"))
+    b_calls = calls[1:]
+    assert hc.wrapper_hits == 1 and b_calls[-1][1]["scroll"] == "none"
+
+
 def _public_locator(module_name):
     class Page:
         def __init__(self):
