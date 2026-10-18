@@ -228,6 +228,11 @@ not evidence about Windows.
 - **DPR** is an open point that §2 resolves, and its answer can add an
   invariant (see §2).
 - **Cadence** 18–60 ms is borrowed, not measured (§1).
+- **Scroll lines.** `kWindowsNotchCssPx` (100) assumes the Windows default
+  `WheelScrollLines = 3`. The oracle host read 3
+  (`baselines/chrome-8037-wheel.json`). A real user who has changed the
+  setting would scroll a different amount per notch. The fork claims the
+  default and does not offer that as a key.
 - **`wheel(0, d)` with `d < 50`** still delivers a full notch (100 px). This
   is Camoufox's choice, kept for parity; a caller wanting a precise
   sub-notch scroll turns humanize off.
