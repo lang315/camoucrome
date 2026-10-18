@@ -169,7 +169,9 @@ if ($Wait) {
   $state = if ($me -match '\s(Active|Disc)\s') { $Matches[1] } else { 'unknown' }
   $dbg = Join-Path $Profile 'chrome_debug.log'
   $gpu = if (Test-Path $dbg) { @(Select-String -Path $dbg -Pattern 'GPU process exited unexpectedly').Count } else { 0 }
-  $lock = (wsl -d Ubuntu-24.04 -u <user> -- bash ~/actions-runner/_work/camoucrome/camoucrome/scripts/build_lock.sh status 2>&1) -join ' '
+  # the runner's WSL owner, by directory: WSL's default user is root, and no account name goes in the public repo
+  $wu = (wsl -d Ubuntu-24.04 -- bash -c 'stat -c %U /home/*/actions-runner' 2>$null | Select-Object -First 1)
+  $lock = (wsl -d Ubuntu-24.04 -u $wu -- bash -lc '$HOME/actions-runner/_work/camoucrome/camoucrome/scripts/build_lock.sh status' 2>&1) -join ' '
   $run = [ordered]@{
     session = (Get-Process -Id $PID).SessionId; session_state = $state
     wait_s = $Wait; closed = $closed; left = $left; low_memory_kill = $lowKill
