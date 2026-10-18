@@ -91,3 +91,12 @@ def test_cdp_paths_read_chrome_gpu(captured):
     winhost.cdp_eval("<p>")
     winhost.cdp_headers("https://a/", seconds=0)
     assert all("json/new?chrome://gpu" in s and "GPU_BEGIN" in s for s in captured)
+
+
+def test_cdp_eval_runs_act_after_connect_and_honours_window_style(captured):
+    winhost.cdp_eval("<p>", act_ps="ACT_MARKER", window_style="Normal")
+    ps = captured[-1]
+    assert ps.index("$ws = Cdp-Connect") < ps.index("ACT_MARKER") < ps.index('id = 1; method = "Runtime.evaluate"')
+    assert "-WindowStyle Normal" in ps
+    winhost.cdp_eval("<p>")
+    assert "-WindowStyle Hidden" in captured[-1] and "ACT_MARKER" not in captured[-1]
