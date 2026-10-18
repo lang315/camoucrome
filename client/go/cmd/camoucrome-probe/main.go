@@ -87,7 +87,11 @@ func main() {
 		fail("goto:", err)
 	}
 	// SP2d: exercise the helper (Go has no B) before reporting.
-	if n, _ := page.Locator("#camou-click").Count(); n > 0 && humanizeOn(*config) {
+	if humanizeOn(*config) {
+		n, err := page.Locator("#camou-click").Count()
+		if err != nil || n == 0 {
+			fail("no #camou-click:", fmt.Errorf("count=%d err=%v", n, err))
+		}
 		if err = camoucrome.HumanClick(page.Locator("#camou-click")); err != nil {
 			fail("human click:", err)
 		}

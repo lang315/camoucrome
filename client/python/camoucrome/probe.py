@@ -88,7 +88,6 @@ def main():
     ap.add_argument("--fonts-dir", help="bundled font dir (FONTCONFIG_FILE follows the claimed OS)")
     a = ap.parse_args()
     window = tuple(int(v) for v in a.window.split(",")) if a.window else None
-    # B (launch(human_click=True)) needs humanize:enabled in the config.
     module = "patchright" if a.driver == "patchright" else "playwright"
     sync_playwright = importlib.import_module(f"{module}.sync_api").sync_playwright
     with sync_playwright() as pw:
@@ -109,7 +108,9 @@ def main():
             # A page that reports from a worker writes #o after load; wait for it.
             page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
             # SP2d: exercise A (the helper) and B (page.click) before reporting.
-            if humanize and page.locator("#camou-click").count():
+            if humanize:
+                if not page.locator("#camou-click").count():
+                    raise RuntimeError("humanize on but the page has no #camou-click")
                 human_click(page.locator("#camou-click"))
                 page.click("#camou-click")
             report = page.locator("#o").text_content()

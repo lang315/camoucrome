@@ -81,7 +81,8 @@ const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFil
   await page.addInitScript('window.__camou_init = 1');
   await page.goto(args.url, { waitUntil: 'load' });
   // SP2d: exercise A (the helper) and B (page.click) before reporting.
-  if (humanize && await page.locator('#camou-click').count()) {
+  if (humanize) {
+    if (!await page.locator('#camou-click').count()) throw new Error('humanize on but the page has no #camou-click');
     await camoucrome.humanClick(page.locator('#camou-click'));
     await page.click('#camou-click');
   }

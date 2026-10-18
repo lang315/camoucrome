@@ -87,7 +87,12 @@ for (let t = 0; t < TRIALS; t++) {
   times.push(performance.now() - t0);
   if (sink < 0) console.log(sink);
 }
+const btn = document.getElementById('camou-click');
+// The report is rebuilt after every trusted click, so C2-C6 see the clicks' effects.
+// `clicks` is the number of isTrusted clicks the button got (a no-op helper reads 0).
+function report() {
 document.getElementById('o').textContent = JSON.stringify({
+  clicks: Number(btn.dataset.clicks || 0),
   windowKeys: Object.keys(window),
   ownNames: Object.getOwnPropertyNames(window).length,
   initScript: typeof window.__camou_init,
@@ -97,6 +102,12 @@ document.getElementById('o').textContent = JSON.stringify({
   hasPrepare: typeof Error.prepareStackTrace,
   ua: navigator.userAgent,
 });
+}
+btn.addEventListener('click', (e) => {
+  if (e.isTrusted) btn.dataset.clicks = Number(btn.dataset.clicks || 0) + 1;
+  report();
+});
+report();
 </script>"""
 
 
@@ -175,6 +186,10 @@ def run_probe(cmd, url):
     return json.loads(p.stdout), p.stderr
 
 
+# Trusted clicks each patchright row must land: Go helper only (1); Python and Node helper + B (2).
+EXPECTED_CLICKS = {"go-patchright": 1, "python-patchright": 2, "node-patchright": 2}
+
+
 def check(label, result, log, base):
     rep = result["report"]
     rows = {}
@@ -211,6 +226,9 @@ def check(label, result, log, base):
     rows["C6 no driver-owned global; only the probe's own init script"] = (
         rep["initScript"] == "number" and rep["ownNames"] == base["ownNames"] + 1,
         f"typeof __camou_init={rep['initScript']} ownNames={rep['ownNames']} baseline={base['ownNames']}")
+    if label in EXPECTED_CLICKS:
+        rows["C7 trusted clicks landed"] = (
+            rep["clicks"] == EXPECTED_CLICKS[label], f"clicks={rep['clicks']} want={EXPECTED_CLICKS[label]}")
     med = statistics.median(rep["timesMs"])
     bmed = statistics.median(base["timesMs"])
     rows[f"C5 stack timing within {int(TIMING_TOLERANCE*100)}% of baseline"] = (
