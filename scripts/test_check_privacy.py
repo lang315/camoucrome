@@ -27,7 +27,7 @@ TERMS = {"<host-place>": ["Plantville"], "<host-offset>": ["GMT+0999"]}
     (r"D:\Users\someone\x", "windows-profile"),
     ("memory at ~/.claude/projects/-Users-someone-Go-x/memory", "home-slug"),
     ("box at mybox.tail1234.ts.net", "tailnet"),
-    ("Claude-Session: <removed>", "session-link"),
+    ("Claude-Session: https://claude.ai/code/session-x", "session-link"),
     ("ran 16:03-16:37 XST on the host", "local-clock"),
     ("peer 100.101.102.103 up", "ip"),
     ("wsl at 172.20.1.9", "ip"),
@@ -109,7 +109,7 @@ def test_staged_checks_the_index(repo):
 
 def test_file_mode(repo, tmp_path):
     body = tmp_path / "body.md"
-    body.write_text("see <removed>\n")
+    body.write_text("see https://claude.ai/code/session-abc\n")
     assert cp.main(["--file", str(body)]) == 1
 
 
@@ -120,7 +120,7 @@ def test_range_refuses_a_non_utc_commit(repo, capsys):
 
 
 def test_range_checks_messages(repo):
-    commit(repo, "a.md", "clean\n", msg="x\n\nClaude-Session: <removed>")
+    commit(repo, "a.md", "clean\n", msg="x\n\nClaude-Session: https://claude.ai/code/session-x")
     assert cp.main(["--range", "HEAD"]) == 1
 
 
@@ -216,7 +216,7 @@ def test_pre_commit_hook_refuses_a_planted_file(repo):
 
 
 def test_commit_msg_hook_refuses_a_session_link(repo):
-    r = try_commit(hooked(repo), "a.md", "clean\n", msg="x\n\nClaude-Session: <removed>")
+    r = try_commit(hooked(repo), "a.md", "clean\n", msg="x\n\nClaude-Session: https://claude.ai/code/session-x")
     assert r.returncode != 0
 
 
