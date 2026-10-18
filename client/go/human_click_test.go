@@ -201,3 +201,52 @@ func TestTrialTimeoutIsFixed(t *testing.T) {
 		t.Fatalf("final timeout must stay the caller's: %+v", f.opts[1])
 	}
 }
+
+// SP2d Task 8b: the Go client reads geometry with no page JS. playwright-go
+// v0.6201.1 never asks the driver for the isolated world, so instead of
+// locator.evaluate the rect comes from BoundingBox and the viewport from CDP
+// Page.getLayoutMetrics; both stay driver-side.
+func TestGeometryFromBox(t *testing.T) {
+	if g := geometryFromBox(nil, 1280, 720); g != nil {
+		t.Fatalf("nil box = %+v, want nil", g)
+	}
+	for _, vp := range [][2]float64{{0, 720}, {1280, 0}, {-1, 720}, {1280, math.NaN()}} {
+		if g := geometryFromBox(&playwright.Rect{X: 1, Y: 2, Width: 3, Height: 4}, vp[0], vp[1]); g != nil {
+			t.Errorf("viewport %vx%v = %+v, want nil", vp[0], vp[1], g)
+		}
+	}
+	g := geometryFromBox(&playwright.Rect{X: 100, Y: 900, Width: 120, Height: 40}, 1280, 720)
+	want := geometry{X: 100, Y: 900, W: 120, H: 40, N: 1, VW: 1280, VH: 720, Scroller: "document"}
+	if g == nil || *g != want {
+		t.Errorf("normal box = %+v, want %+v", g, want)
+	}
+}
+
+func TestViewportFromLayoutMetrics(t *testing.T) {
+	valid := map[string]any{
+		"layoutViewport": map[string]any{"clientWidth": 1265.0, "clientHeight": 705.0},
+		"cssLayoutViewport": map[string]any{
+			"clientWidth": 1280.0, "clientHeight": 720.0, "pageX": 0.0, "pageY": 0.0,
+		},
+	}
+	if vw, vh, ok := viewportFromLayoutMetrics(valid); !ok || vw != 1280 || vh != 720 {
+		t.Errorf("valid metrics = %v,%v,%v, want 1280,720,true", vw, vh, ok)
+	}
+	for _, c := range []struct {
+		name string
+		v    any
+	}{
+		{"nil", nil},
+		{"not a map", 1280.0},
+		{"missing cssLayoutViewport", map[string]any{"layoutViewport": map[string]any{"clientWidth": 1280.0, "clientHeight": 720.0}}},
+		{"cssLayoutViewport not a map", map[string]any{"cssLayoutViewport": 1280.0}},
+		{"non-numeric width", map[string]any{"cssLayoutViewport": map[string]any{"clientWidth": "1280", "clientHeight": 720.0}}},
+		{"non-numeric height", map[string]any{"cssLayoutViewport": map[string]any{"clientWidth": 1280.0, "clientHeight": true}}},
+		{"zero width", map[string]any{"cssLayoutViewport": map[string]any{"clientWidth": 0.0, "clientHeight": 720.0}}},
+		{"zero height", map[string]any{"cssLayoutViewport": map[string]any{"clientWidth": 1280.0, "clientHeight": 0.0}}},
+	} {
+		if vw, vh, ok := viewportFromLayoutMetrics(c.v); ok {
+			t.Errorf("%s = %v,%v,true, want ok=false", c.name, vw, vh)
+		}
+	}
+}

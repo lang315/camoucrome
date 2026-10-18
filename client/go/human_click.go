@@ -4,7 +4,6 @@
 package camoucrome
 
 import (
-	"encoding/json"
 	"math"
 	"math/rand/v2"
 	"reflect"
@@ -57,21 +56,72 @@ type mouser interface {
 
 type locatorTarget struct{ l playwright.Locator }
 
+// geometry reads the element's box and the layout viewport with no page JS.
+// playwright-go v0.6201.1 never sends isolatedContext and accepts only driver
+// 1.62.1, so locator.evaluate would run in the main world -- forbidden by
+// spec §4 step 2 (amended 2026-10-18). BoundingBox and CDP
+// Page.getLayoutMetrics are driver-side, invisible to page scripts.
+//
+// shortcut: only rect[0] of the box is available, so what geometryJS measured
+// is lost -- border width (bl/bt are 0), multi-rect inline elements (n is 1),
+// transform detection (t is false) and nested-scroller detection (scroller is
+// "document"; a wrongly-scrolled target is caught only by the no-progress
+// stop).
 func (t locatorTarget) geometry(timeout *float64) *geometry {
-	opts := playwright.LocatorEvaluateOptions{Timeout: timeout}
-	v, err := t.l.Evaluate(geometryJS, nil, opts)
-	if err != nil || v == nil {
+	box, err := t.l.BoundingBox(playwright.LocatorBoundingBoxOptions{Timeout: timeout})
+	if err != nil || box == nil {
 		return nil // any failure means: fall back to the stock click
 	}
-	raw, err := json.Marshal(v)
+	page, err := t.l.Page()
+	if err != nil || page == nil {
+		return nil
+	}
+	s, err := page.Context().NewCDPSession(page)
 	if err != nil {
 		return nil
 	}
-	var g geometry
-	if json.Unmarshal(raw, &g) != nil {
+	raw, err := s.Send("Page.getLayoutMetrics", nil)
+	_ = s.Detach() // always, also on the error path
+	if err != nil {
 		return nil
 	}
-	return &g
+	vw, vh, ok := viewportFromLayoutMetrics(raw)
+	if !ok {
+		return nil
+	}
+	return geometryFromBox(box, vw, vh)
+}
+
+// geometryFromBox converts a bounding box and layout viewport into the
+// geometry the path math reads. Pure, so the conversion is testable offline.
+func geometryFromBox(box *playwright.Rect, vw, vh float64) *geometry {
+	if box == nil || !(vw > 0) || !(vh > 0) {
+		return nil
+	}
+	return &geometry{
+		X: box.X, Y: box.Y, W: box.Width, H: box.Height, N: 1,
+		VW: vw, VH: vh, Scroller: "document",
+	}
+}
+
+// viewportFromLayoutMetrics pulls cssLayoutViewport's clientWidth and
+// clientHeight out of the decoded Page.getLayoutMetrics reply. A missing
+// viewport, a non-numeric number or a non-positive size reports ok=false.
+func viewportFromLayoutMetrics(v any) (vw, vh float64, ok bool) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return 0, 0, false
+	}
+	lv, ok := m["cssLayoutViewport"].(map[string]any)
+	if !ok {
+		return 0, 0, false
+	}
+	vw, okW := lv["clientWidth"].(float64)
+	vh, okH := lv["clientHeight"].(float64)
+	if !okW || !okH || !(vw > 0) || !(vh > 0) {
+		return 0, 0, false
+	}
+	return vw, vh, true
 }
 
 func (t locatorTarget) Click(o playwright.LocatorClickOptions) error { return t.l.Click(o) }
