@@ -252,7 +252,8 @@ A new section, "Public repo: no host-identifying data (never violate)":
 - **Paths are checked too.** A path that is itself a hit prints as
   `<path #n>`.
 - **The gate's own files** are checked for private terms only:
-  `check_privacy.py`, its two tests, this spec and its plan. They quote the
+  `check_privacy.py`, the tests that plant generic hits (`test_check_privacy.py`,
+  `test_capture_host_oracle.py`, `test_measure_step2_scrub.py`), this spec and its plan. They quote the
   generic patterns as examples.
 - **No exemption for GitHub-made commits.** All 40 web merges before
   2026-10-18 carried the owner's offset. PRs are merged locally with

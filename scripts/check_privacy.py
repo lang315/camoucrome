@@ -34,6 +34,7 @@ ALLOW_IPS = {
 }
 # The gate's own code, tests and design docs quote the generic patterns as examples: private terms only.
 GATE_FILES = {"scripts/check_privacy.py", "scripts/test_check_privacy.py", "scripts/test_capture_host_oracle.py",
+              "scripts/test_measure_step2_scrub.py",
               "docs/superpowers/specs/2026-10-18-public-repo-scrub-design.md",
               "docs/superpowers/plans/2026-10-18-public-repo-scrub.md"}
 _SEP = r"(?:/|\\{1,2})"
