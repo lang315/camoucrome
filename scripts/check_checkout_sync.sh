@@ -22,7 +22,7 @@
 set -u
 
 SSH_TARGET="${1:-buildpc}"
-SRC="${2:-~/chromium/src}"
+SRC="${2:-$HOME/chromium/src}"
 BRANCH="${3:-camoucrome/main}"
 CONTROL="${CONTROL_PATH:-$HOME/.ssh/cm-buildpc}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -77,7 +77,7 @@ if [ "$SSH_TARGET" = local ] || { [ -z "${1:-}" ] && [ -d "$SRC/.git" ]; }; then
   remote_out=$(bash -c "$remote_script" 2>/dev/null)
 else
   remote_out=$(ssh -o ControlPath="$CONTROL" -o ControlMaster=no "$SSH_TARGET" \
-    "wsl -d Ubuntu-24.04 -u <user> -- bash -lc \"echo $(printf '%s' "$remote_script" | base64 | tr -d '\n') | base64 -d > /tmp/sync.sh; bash /tmp/sync.sh\"" 2>/dev/null)
+    "wsl -d Ubuntu-24.04 -u ${CAMOU_WSL_USER:-$USER} -- bash -lc \"echo $(printf '%s' "$remote_script" | base64 | tr -d '\n') | base64 -d > /tmp/sync.sh; bash /tmp/sync.sh\"" 2>/dev/null)
 fi
 
 if [ -z "$remote_out" ]; then
@@ -88,7 +88,7 @@ if [ -z "$remote_out" ]; then
   echo "FAIL  the checkout returned nothing. Could be the SSH master, the wsl" >&2
   echo "      invocation, or this script's own remote command. Check with:" >&2
   echo "      ssh -o ControlPath=$CONTROL -o ControlMaster=no $SSH_TARGET \\" >&2
-  echo "        'wsl -d Ubuntu-24.04 -u <user> -- bash -lc \"echo LINK_OK\"'" >&2
+  echo "        'wsl -d Ubuntu-24.04 -u ${CAMOU_WSL_USER:-$USER} -- bash -lc \"echo LINK_OK\"'" >&2
   exit 2
 fi
 

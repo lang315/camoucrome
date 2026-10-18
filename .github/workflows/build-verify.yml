@@ -28,12 +28,12 @@ jobs:
   build-verify:
     runs-on: [self-hosted, buildpc-wsl]
     timeout-minutes: 180
-    env:
-      SRC: ~/chromium/src
-      VERIFY: ~/camoucrome-verify
-      CLIENT: ~/camoucrome-client
-      PLAYWRIGHT_NODEJS_PATH: ~/camoucrome-driver/node
     steps:
+      # $HOME, not a literal home path: the repository is public (spec 2026-10-18), and env: does not expand ~
+      - name: box paths
+        run: |
+          { echo "SRC=$HOME/chromium/src"; echo "VERIFY=$HOME/camoucrome-verify"
+            echo "CLIENT=$HOME/camoucrome-client"; echo "PLAYWRIGHT_NODEJS_PATH=$HOME/camoucrome-driver/node"; } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - name: checkout is clean and no build is running
         run: |
@@ -63,7 +63,7 @@ jobs:
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
-          export PATH=~/depot_tools:$PATH
+          export PATH=$HOME/depot_tools:$PATH
           L="$GITHUB_WORKSPACE/scripts/build_lock.sh"; OWNER="ci run $GITHUB_RUN_ID"
           bash "$L" acquire "$OWNER"
           trap 'bash "$L" release "$OWNER"' EXIT
