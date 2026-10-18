@@ -68,6 +68,7 @@ file lives at `~/.config/camoucrome/scrub-rules.txt` and is never committed.
 | Linux and macOS home paths | `~/` in prose, `$HOME/` where a shell expands it |
 | clock times labelled with the local zone | the same instant in UTC, written `HH:MM UTC`, with the date moved back where the conversion crosses midnight. One mapping row per occurrence, reviewed by hand |
 | country words that describe the host or owner | neutral wording, per occurrence |
+| local-clock timestamps in names (run directories and run ids, `YYYYMMDD-HHMMSS`) | the same instant in UTC, same format. Only stamps made on a machine whose clock is local are converted: the Windows host and the Mac. The box's WSL clock is UTC, so its stamps stay. One literal rule per stamp, classified by producer |
 | tracked scratch under `.superpowers/` | removed from every commit |
 | commit messages | the same rules (`--replace-message`) |
 | author and committer dates | the same instant with offset `+0000` |
@@ -251,6 +252,18 @@ A new section, "Public repo: no host-identifying data (never violate)":
     `+0000`;
   - `commit-msg` checks the message.
 - `.gitignore` gains `.superpowers/`.
+
+### 6.5 Timestamps are UTC at the source (owner, 2026-10-18)
+
+Every producer of a timestamp that reaches the repository uses a UTC clock:
+- `observe-auto.ps1` run directories;
+- `observe-recon.ps1`'s `run.json` `started`/`ended`;
+- `measure_step2.py` and `measure_canvas_noise.py` run ids.
+
+A test fails on a local-clock call in `scripts/` (`Get-Date -Format` or
+`(Get-Date).ToString(` without `ToUniversalTime()`, and `datetime.now()`
+without a time zone). The host run directories that the docs name are
+renamed to their UTC names, so the docs and the host agree.
 
 ### 6.4 Capture scripts write placeholders
 

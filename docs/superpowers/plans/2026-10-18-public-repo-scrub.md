@@ -45,7 +45,7 @@ It is reviewed before anything irreversible. Then comes a one-off operation, eac
   | ISP | `<host-isp>` |
   | session URLs | `<removed>` |
 
-- Times written into the repository are UTC, as `HH:MM UTC`.
+- Times written into the repository are UTC, as `HH:MM UTC`. So are `YYYYMMDD-HHMMSS` stamps in names (spec §6.5).
 - Every commit is made as `TZ=UTC git commit -F <file>`, and its date carries `+0000`.
 - Commit identity is the repository config (`Lãng <30039912+lang315@users.noreply.github.com>`), never the session's email.
 - Product data stays: `settings/locale_zones.json`, `settings/voices.json` and `settings/invariants.json`.
@@ -576,7 +576,10 @@ recreated to remove them; spec `docs/superpowers/specs/2026-10-18-public-repo-sc
   or the RFC 5737 documentation ranges, the city, region, country, ISP or
   ASN of the host or owner, or a session URL. This adds to the list of
   things never committed: traces, cookies, account ids, screenshots.
-- Times in the repository are UTC (`HH:MM UTC`).
+- Times in the repository are UTC (`HH:MM UTC`), and so are timestamps in
+  names (run directories and run ids). Producers take a UTC clock
+  (`ToUniversalTime()`, `datetime.now(datetime.timezone.utc)`), and
+  `scripts/test_utc_stamps.py` fails on a local one.
 - Commit with `TZ=UTC git commit ...`, so dates carry `+0000`. Enable the
   hooks once per clone: `git config core.hooksPath scripts/hooks`.
 - Host captures write placeholders (`<host-tz>`, `user.HOST`) before they
@@ -743,6 +746,70 @@ git add scripts/capture_host_oracle.py scripts/measure_step2.py scripts/test_cap
 TZ=UTC git commit -F <msg file>   # "feat(privacy): host captures write placeholders and refuse without terms"
 ```
 
+- [ ] **Step 7: Write the failing UTC-stamp test** (spec §6.5), `scripts/test_utc_stamps.py`:
+
+```python
+"""Timestamps that reach the repository come from a UTC clock (spec 2026-10-18 §6.5)."""
+import datetime
+import pathlib
+import re
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+LOCAL = [
+    (re.compile(r"Get-Date\s+-Format|\(Get-Date\)\.ToString\(|\$\w+\.ToString\('yyyy"), "*.ps1"),
+    (re.compile(r"datetime\.(?:datetime\.)?(?:now|today)\(\s*\)|time\.(?:localtime|strftime)\("), "*.py"),
+]
+
+
+def test_no_local_clock_formatting_in_scripts():
+    bad = []
+    for rx, glob in LOCAL:
+        for f in sorted(HERE.rglob(glob)):
+            if f.name.startswith("test_"):
+                continue
+            for i, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if rx.search(line) and "ToUniversalTime" not in line:
+                    bad.append(f"{f.relative_to(HERE)}:{i}")
+    assert bad == []
+
+
+def test_run_stamp_is_utc():
+    import measure_step2
+    s = measure_step2.run_stamp()
+    got = datetime.datetime.strptime(s, "%Y%m%d-%H%M%S").replace(tzinfo=datetime.timezone.utc)
+    assert abs((datetime.datetime.now(datetime.timezone.utc) - got).total_seconds()) < 5
+```
+
+Run: `python3 -m pytest -q scripts/test_utc_stamps.py`
+Expected: FAIL. The first test lists `measure_canvas_noise.py:133` and `measure_step2.py:324`. The second fails with `AttributeError: ... 'run_stamp'`.
+
+- [ ] **Step 8: Make the Python producers use UTC.** In `scripts/measure_step2.py`, add near the other helpers:
+
+```python
+def run_stamp():
+    """A run id's time, in UTC (spec 2026-10-18 §6.5): a local clock in a committed name reveals the host's offset."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+```
+
+Then replace `datetime.datetime.now().strftime("%Y%m%d-%H%M%S")` with `run_stamp()` on the `run_id =` line.
+
+In `scripts/measure_canvas_noise.py`, replace `datetime.datetime.now().strftime("%Y%m%d-%H%M%S")` with `datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")`.
+
+Run: `python3 -m pytest -q scripts/test_utc_stamps.py`
+Expected: 2 passed. Then run the whole suite: all pass. Commit with `TZ=UTC`: "fix(privacy): run ids are UTC at the source, and a test keeps them so".
+
+- [ ] **Step 9: The Windows producers, on `e-fb-auto`.** `observe-auto.ps1` and the unattended `observe-recon.ps1` exist only there.
+  - In a worktree of `e-fb-auto`, change `scripts/windows/observe-auto.ps1` line 30 to `$run = Join-Path $Root ('auto\' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))`.
+  - In `scripts/windows/observe-recon.ps1`, change the `run.json` `started`/`ended` line to `started = $started.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); ended = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')`.
+  - RED/GREEN: copy `scripts/test_utc_stamps.py` from `privacy-scrub` into that worktree, uncommitted.
+    - Before the edit, `python3 -m pytest -q scripts/test_utc_stamps.py::test_no_local_clock_formatting_in_scripts` fails and lists both `.ps1` lines.
+    - After the edit, it lists none (it still lists the two Python lines, which `privacy-scrub` fixes).
+    - Then delete the copy.
+  - Parse-check both files on the host with `[System.Management.Automation.Language.Parser]::ParseFile`, through sshgate with base64 as in `docs/observer/README.md`. Expected: 0 errors.
+  - Commit with `TZ=UTC` ("fix(observer): run directories and run.json times are UTC"), then `git push origin e-fb-auto`. It is pushed before Task 5, so the mirror holds it.
+
 ---
 
 ### Task 4: tooling review before anything irreversible
@@ -871,7 +938,25 @@ print("\n".join(sorted(seen)))
   2. **Each private term:** a literal rule to its placeholder, longest needle first. Windows profile paths come before the machine name.
   3. **Home paths:** `regex:/home/<user>/==>~/` and `regex:/Users/<user>/==>~/`, with `<user>` the OS user name. Also `-Users-<user>-` / `-home-<user>-` slugs go to `-Users-<user>-` as written literally with angle brackets. Phrases naming the OS user (`user \`<user>\``, `User=<user>`, `-u <user>`) go to `<user>`.
   4. **Session URLs:** `regex:https://claude\.ai/code/session_[A-Za-z0-9]+==><removed>`.
-  5. **Country words describing the host or owner:** one literal rule per occurrence (`check_privacy --history` hits with key `<host-country>`, outside `ALLOW_PATHS`), with neutral wording, for example "a large regional shop". Run `chmod 600`.
+  5. **Country words describing the host or owner:** one literal rule per occurrence (`check_privacy --history` hits with key `<host-country>`, outside `ALLOW_PATHS`), with neutral wording, for example "a large regional shop".
+  6. **Local-clock stamps** (spec §3.1, last row): one literal rule per stamp, from the classification in Step 3b. Run `chmod 600`.
+- [ ] **Step 3b: Classify every `YYYYMMDD-HHMMSS` stamp.** Write `W/stamps.py`. For every distinct `\b20\d{6}-\d{6}\b` token in the blobs and messages of the kept branches of `B/old.git`, it prints:
+  - the token;
+  - the first commit that added it (`git log -S<token> --reverse --format='%H %at'`, oldest);
+  - one context line, trimmed to 120 characters;
+  - its producer, guessed from the context:
+    - `observe-auto`/`auto\` or `recon` run dirs, meaning the Windows host, local;
+    - `step2` run ids from `measure_step2.py`, meaning the Mac, local;
+    - `canvas-noise` labels from `measure_canvas_noise.py`, meaning the box's WSL, UTC;
+    - otherwise `unknown`.
+
+  Output goes to `W/stamps.txt`, local. Then classify:
+  - **A stamp read as UTC that is later than the epoch of the commit that added it** cannot be UTC: a run comes before its commit. It is local.
+  - **A Windows-host or Mac stamp** is local.
+  - **A WSL stamp** stays.
+  - **An `unknown` stamp the commit-time test cannot decide** is resolved by reading the doc around it. Ledger each one with its reason.
+
+  For every local stamp, convert with the host offset from the private terms, and write the literal rule `<local>==><utc>`, same format. Keep the list of local→UTC pairs as `W/stamp-map.txt`; Task 11 renames the host directories from it.
 - [ ] **Step 4: Coverage check.** In a fresh clone of `B/old.git`, run `git filter-repo --force --replace-text ~/.config/camoucrome/scrub-rules.txt --replace-message ~/.config/camoucrome/scrub-rules.txt`. Then run `python3 <this worktree>/scripts/check_privacy.py --history`, with the private terms loaded.
 Expected: the only remaining hits are `.superpowers/` paths, which Task 7 removes, and `ip` hits that are not host addresses. Add each of those to `ALLOW_IPS` with its source, in a `TZ=UTC` commit on `privacy-scrub`. Iterate the rules until this holds. Delete the clone.
 
@@ -914,7 +999,8 @@ Expected: "Completely finished". `W/new/.git/filter-repo/commit-map` exists.
   3. Run `cd W/new && python3 -m pytest -q client/python/tests scripts/ && python3 scripts/gen_keys.py --check && python3 scripts/gen_fontconfig.py --check && python3 scripts/check_additions_build.py`. Expected: all pass.
   4. Run `git -C W/new rev-list --count main e-fb-auto repin/8078-prep`. Expected: the Step 2 count minus the commits that touched only `.superpowers/`.
   5. Run `grep -c . W/new/.git/filter-repo/commit-map`. Expected: one line per old commit plus the header.
-  6. This one runs last, because it brings old objects in:
+  6. Run `python3 W/stamps.py W/new > W/stamps-after.txt`. Expected: no left-hand stamp of `W/stamp-map.txt` remains, and every remaining stamp is either a right-hand (UTC) stamp of the map or one classified as UTC in Step 3b.
+  7. This one runs last, because it brings old objects in:
      - `git -C W/new fetch B/old.git main:refs/old/main`
      - `git -C W/new diff --stat refs/old/main main`
      - `git -C W/new update-ref -d refs/old/main`
@@ -1100,6 +1186,10 @@ print(len(prs), "prs,", len(runs), "runs")
   - "re-clone or `git fetch origin && git reset --hard origin/<branch>` after saving local work; never push from a pre-recreate clone; run `git config core.hooksPath scripts/hooks`".
 
   The box clones (`~/camoucrome-x8037`, `~/observe-A/cs`, `~/repin-prep/repo`, `~/camoucrome-cs-review`) and the Windows host clone are listed to the owner, untouched.
+- [ ] **Step 3b: The host follows the docs.**
+  - For each pair in `W/stamp-map.txt` whose local name is a directory under `D:\camou-win\observe\` (`auto\<stamp>` and any other run directory), rename it to the UTC name with `Rename-Item`, through sshgate. This touches no other tree, and never `observe\backup`.
+  - Expected: every UTC name the docs cite exists on the host, and no local name does.
+  - Install the UTC versions of `observe-auto.ps1` and `observe-recon.ps1` from the new repository, as `docs/observer/README.md` says: `Invoke-WebRequest` from `raw.githubusercontent.com/lang315/camoucrome/<new e-fb-auto sha>/...`, then `Get-FileHash` against the repository and `ParseFile` with 0 errors.
 - [ ] **Step 4: Memory.**
   - The `repo-recreated` note gets the second recreate: date, new tips, and the rule "never push from a pre-2026-10-18 clone".
   - A new `feedback` memory, "public repo privacy": what is never committed, where the private terms live, `TZ=UTC` commits, and the hooks.
@@ -1116,6 +1206,6 @@ print(len(prs), "prs,", len(runs), "runs")
   - the new tips;
   - the rulings and the deferred minor findings;
   - what stays outside our reach: public-event archives, caches, and the untouched clones;
-  - local clock times inside run-directory names (for example `auto\YYYYMMDD-HHMMSS`). These stay in the docs, and with UTC commit dates beside them they can still hint at the offset. Whether to scrub them too is the owner's call.
+  - the stamp conversion: how many were converted, how many WSL stamps stayed, and the host directories renamed.
 
   Then release the hold.
