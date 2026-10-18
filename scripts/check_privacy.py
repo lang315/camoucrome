@@ -106,10 +106,10 @@ def _name(p, n, terms):
     return (f"<path #{n}>", [f"<path #{n}>: path {c}" for c in sorted(cats)]) if cats else (p, [])
 
 
-def _scan(paths, read, terms):
+def _scan(paths, read, terms, check_paths=True):
     bad = []
     for n, p in enumerate(paths, 1):
-        name, path_hits = _name(p, n, terms)
+        name, path_hits = _name(p, n, terms) if check_paths else (p, [])
         bad += path_hits
         if p in ALLOW_PATHS:
             continue
@@ -197,7 +197,8 @@ def main(argv=None):
     elif a.staged:
         bad = _staged(terms)
     elif a.file:
-        bad = _scan([a.file], lambda p: pathlib.Path(p).read_bytes(), terms)
+        # a local file (PR body, COMMIT_EDITMSG): its contents are published, its path is not
+        bad = _scan([a.file], lambda p: pathlib.Path(p).read_bytes(), terms, check_paths=False)
     elif a.range:
         bad = _range(a.range, terms)
     elif a.history:
