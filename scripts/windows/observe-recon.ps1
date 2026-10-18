@@ -175,7 +175,7 @@ if ($Wait) {
     wait_s = $Wait; closed = $closed; left = $left; low_memory_kill = $lowKill
     headroom_launch_gb = $hLaunch; headroom_min_gb = $hMin; wsl_build = ($lock -notmatch '^\s*free')
     gpu_exit_lines = $gpu; report_rc = $script:ReportRc
-    started = $started.ToString('yyyy-MM-dd HH:mm:ss'); ended = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    started = $started.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); ended = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
   }
   [IO.File]::WriteAllText((Join-Path $Dir 'run.json'), ($run | ConvertTo-Json))
 }

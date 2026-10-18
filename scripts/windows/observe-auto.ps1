@@ -27,7 +27,7 @@ function Get-Gate {
   return $null
 }
 
-$run = Join-Path $Root ('auto\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$run = Join-Path $Root ('auto\' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $run | Out-Null
 $env:PYTHONUTF8 = '1'
 $worst = 0
