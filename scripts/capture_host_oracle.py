@@ -14,6 +14,20 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "baselines" / "chrome-8037-stock-oracle-windows.json"
 
+
+def committable(doc, terms):
+    """`doc` with the host's own values replaced by placeholders (CLAUDE.md "Public repo").
+    Refuses without terms, or when the scrub leaves a hit, rather than write the host value."""
+    import check_privacy
+    import step2_rows
+    if not terms:
+        sys.exit("capture_host_oracle: no private terms ($PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json)")
+    out = step2_rows.scrub(doc, terms)
+    left = check_privacy.hits(json.dumps(out, ensure_ascii=False), terms)
+    if left:
+        sys.exit(f"capture_host_oracle: host-identifying data left after the scrub: {sorted({c for _, c in left})}")
+    return out
+
 MEDIA = ["(pointer: fine)", "(pointer: coarse)", "(pointer: none)", "(hover: hover)", "(any-pointer: fine)", "(any-hover: hover)",
          "(prefers-color-scheme: dark)", "(prefers-reduced-motion: reduce)", "(prefers-contrast: more)", "(prefers-contrast: no-preference)",
          "(forced-colors: active)", "(color-gamut: srgb)", "(color-gamut: p3)", "(color-gamut: rec2020)", "(dynamic-range: high)",
@@ -76,8 +90,10 @@ def main():
     headless = winhost.dump_dom(page(), args=("--virtual-time-budget=60000", "--use-gl=angle", "--use-angle=d3d11"), timeout_s=180)
     raw = winhost.cdp_eval(page(), "document.getElementById('o').textContent", args=("--use-gl=angle", "--use-angle=d3d11"), headed=True, wait_ms=25000)
     headed = json.loads(raw) if isinstance(raw, str) else raw
-    OUT.write_text(json.dumps({"chrome": "154.0.8037.93", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
-                               "headed": headed, "headless": headless}, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    import check_privacy
+    doc = committable({"chrome": "154.0.8037.93", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
+                       "headed": headed, "headless": headless}, check_privacy.load_terms())
+    OUT.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     for label, r in (("headed", headed), ("headless", headless)):
         print(label, "done", r.get("done"), "pageError", r.get("pageError"), {k: (len(v) if isinstance(v, (list, dict)) else v) for k, v in r.items() if k in ("perms", "storage", "keyboard", "gpu", "voices", "mediaDevices", "audioFp", "canvas")})
 

@@ -8,7 +8,7 @@ Run on the Windows host in the client venv, holding the build lock (owner step2)
                               [--null] [--plant ARG] [--fresh-seeds] [--two-colour]
   python measure_step2.py compare RUN_A RUN_B
   python measure_step2.py tables RUN
-  python measure_step2.py scrub RUN OUT   (needs CAMOU_SCRUB; writes the committable copy)
+  python measure_step2.py scrub RUN OUT   (needs CAMOU_SCRUB or the private terms; writes the committable copy)
 --null puts the control executable, unconfigured, in the fork arm: the noise floor.
 --plant adds ARG to the fork arm only (a RED). --fresh-seeds draws new seeds per
 launch in the stability probe (its RED). --two-colour makes the fork arm's noise
@@ -379,9 +379,10 @@ def compare_cmd(a):
 
 def scrub_cmd(a):
     """The committable copy of a run: rows.json and tables.md through rows.scrub()."""
-    geo = json.loads(os.environ.get("CAMOU_SCRUB") or "null")
+    import check_privacy
+    geo = json.loads(os.environ["CAMOU_SCRUB"]) if os.environ.get("CAMOU_SCRUB") else check_privacy.load_terms()
     if not isinstance(geo, dict) or not geo:
-        sys.exit("scrub: set CAMOU_SCRUB to a JSON object {placeholder: [host geo strings]}; it is never committed")
+        sys.exit("scrub: set CAMOU_SCRUB or the private terms ({placeholder: [host strings]}); neither is ever committed")
     src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
     dst.mkdir(parents=True, exist_ok=True)
     doc = rows.scrub(json.loads((src / "rows.json").read_text(encoding="utf-8")), geo)
