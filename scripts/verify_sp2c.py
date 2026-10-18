@@ -214,14 +214,17 @@ for name, kind in ((R8, "same"), (R10, "xsite"), (R11, "xsite-nobfcache")):
 # reach the page as kWindowsNotchCssPx.
 # At DSF 2 the headless viewport is 500x137 CSS px, so (300, 300) is off-page
 # (stock gets no event there either); wheel at (100, 100).
-got, err = session({**HUMANIZE, **WIN},
-                   lambda page: (page.mouse.move(100, 100), wheel_then_read((0, 300))(page))[1],
-                   ["--force-device-scale-factor=2"])
+def wheel_at_100(page):
+    page.mouse.move(100, 100)
+    return wheel_then_read((0, 300))(page)
+
+
+got, err = session({**HUMANIZE, **WIN}, wheel_at_100, ["--force-device-scale-factor=2"])
 row(R9, not err and len(got[0]) == 3 and all(notch_ok(e, 0, 1) for e in got[0]),
     repr(err) if err else json.dumps(got))
 
 EXPECTED = 11
-for name in sorted(results):
+for name in sorted(results, key=lambda n: int(n.split()[0])):
     print(f"{'PASS' if results[name] else 'FAIL'}  {name}")
 if len(results) != EXPECTED:
     notes.append(f"expected {EXPECTED} rows, found {len(results)}")

@@ -62,10 +62,10 @@ ARMS = {
     "cdp300": dict(act_ps=cdp_act(300), args=WINDOW),
 }
 
-HOST_FACTS = r"""
+HOST_FACTS = rf"""
 "WHEELLINES=" + (Get-ItemProperty 'HKCU:\Control Panel\Desktop').WheelScrollLines
 "APPLIEDDPI=" + (Get-ItemProperty 'HKCU:\Control Panel\Desktop\WindowMetrics' -ErrorAction SilentlyContinue).AppliedDPI
-"CHROMEVER=" + (Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion
+"CHROMEVER=" + (Get-Item '{winhost.CHROME}').VersionInfo.ProductVersion
 """
 
 
@@ -95,8 +95,8 @@ def red_gate(arms):
     problems = []
     if real["n_wheel"] == cdp["n_wheel"]:
         problems.append(f"event count equal ({real['n_wheel']}): count does not separate the arms")
-    if _ratios(real) == _ratios(cdp):
-        problems.append(f"wheelDeltaY/deltaY ratios equal ({_ratios(real)})")
+    if (ratios := _ratios(real)) == _ratios(cdp):
+        problems.append(f"wheelDeltaY/deltaY ratios equal ({ratios})")
     if real["n_scroll"] == cdp["n_scroll"]:
         problems.append(f"scroll event counts equal ({real['n_scroll']}): no animation difference seen")
     return problems
