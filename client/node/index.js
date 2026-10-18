@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const hc = require('./human_click');
 
 // Mirrors settings/launcher.json; test/launcher.test.js asserts it.
 const FORBIDDEN_OPTIONS = new Set([
@@ -247,12 +248,18 @@ function profileSeeds(userDataDir) {
 
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, headless = true,
-  args = [], extensions = [], spkiList = [], fontsDir, ...options
+  args = [], extensions = [], spkiList = [], fontsDir, humanClick = false, ...options
 } = {}) {
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
+  }
+  // The helper's off-centre point and trial click only make sense beside the
+  // browser's own dwell and hold: refuse rather than click at machine speed
+  // under the human spelling.
+  if (humanClick && effectiveKeys(config, preset)['humanize:enabled'] !== true) {
+    throw new Error('humanClick: true needs humanize:enabled true in config or preset');
   }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast
@@ -302,8 +309,12 @@ async function launch(chromium, executablePath, {
       await remove();
     }
   };
+  // Every launch records the profile's offset scale and claimed OS; only B
+  // additionally wraps Frame.click, so A works on its own.
+  if (humanClick) await hc.install(ctx, { effectiveKeys, claimedOs }, config, preset);
+  else hc.installState(ctx, { effectiveKeys, claimedOs }, config, preset);
   return ctx;
 }
 
 module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
-  acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, profileSeeds, launch };
+  acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, profileSeeds, launch, humanClick: hc.humanClick };
