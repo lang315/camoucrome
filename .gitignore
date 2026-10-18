@@ -6,3 +6,5 @@ sp5a-review-package.md
 /wsl-build-server.md
 dist/
 fonts/
+.superpowers/
+docs/superpowers/

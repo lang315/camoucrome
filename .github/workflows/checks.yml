@@ -7,8 +7,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      # The repository is public: every file, message and commit date is published (spec 2026-10-18).
+      - name: no host-identifying data
+        env:
+          PRIVATE_TERMS: ${{ secrets.PRIVATE_TERMS }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+        # --ci: tracked files, then PR_BASE..PR_HEAD, BEFORE..HEAD, or (new branch, force-push) the whole history
+        run: python3 scripts/check_privacy.py --ci
       - uses: actions/setup-go@v5
         with: { go-version: "1.22" }
       - name: additions are all in BUILD.gn

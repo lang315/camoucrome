@@ -181,12 +181,14 @@ def crash_gate(out):
         raise e
 
 
-def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500):
+def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500, act_ps="", window_style="Hidden"):
     """Runs stock Chrome on the host with --remote-debugging-port (headed by
     default: --dump-dom does not work headed), loads `page_html` from a temp
     file, evaluates `expression` through a .NET ClientWebSocket on the host
     itself (no port forward: the ssh mux master refuses forwards), returns
-    the JSON-parsed value. `profile` keeps a profile dir across calls."""
+    the JSON-parsed value. `profile` keeps a profile dir across calls.
+    `act_ps` runs after the page socket `$ws` connects and before the
+    evaluate (input to measure); `window_style` "Normal" for real OS input."""
     b64 = base64.b64encode(page_html.encode()).decode()
     prof = profile or "$env:TEMP\\camou_cdp_" + str(os.getpid())
     argv = ["--no-first-run", "--no-default-browser-check", "--remote-debugging-port=9333", "--remote-allow-origins=*", *args]
@@ -201,7 +203,7 @@ $html = Join-Path $tmp "page.html"
 $url = "file:///" + ($html -replace '\\\\', '/')
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Sleep -Seconds 2
-$p = Start-Process -FilePath "{CHROME}" -ArgumentList @({arglist}, "--user-data-dir={prof}", $url) -WindowStyle Hidden -PassThru
+$p = Start-Process -FilePath "{CHROME}" -ArgumentList @({arglist}, "--user-data-dir={prof}", $url) -WindowStyle {window_style} -PassThru
 $ver = $null
 for ($i = 0; $i -lt 40 -and -not $ver; $i++) {{ Start-Sleep -Milliseconds 500; try {{ $ver = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:9333/json/list).Content }} catch {{ }} }}
 Start-Sleep -Milliseconds {wait_ms}
@@ -210,6 +212,7 @@ $pages = $raw | ConvertFrom-Json
 $pg = $pages | Where-Object {{ $_.type -eq "page" -and $_.url -like "file:*" }} | Select-Object -First 1
 if (-not $pg) {{ $pg = $pages | Where-Object {{ $_.type -eq "page" }} | Select-Object -First 1 }}
 $ws = Cdp-Connect $pg.webSocketDebuggerUrl
+{act_ps}
 Cdp-Send $ws @{{ id = 1; method = "Runtime.evaluate"; params = @{{ expression = {ps_quote(expression)}; returnByValue = $true }} }}
 $resp = $null
 for ($i = 0; $i -lt 20 -and -not $resp; $i++) {{ $m = Cdp-Recv $ws 5000; if ($m -and $m.StartsWith('{{"id":1,')) {{ $resp = $m }} }}

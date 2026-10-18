@@ -1,0 +1,7 @@
+#!/bin/sh
+# Public repo (CLAUDE.md): no host-identifying data, and commit dates in UTC.
+if [ "$(date +%z)" != "+0000" ]; then
+  echo "pre-commit: commit with TZ=UTC so the date carries +0000" >&2
+  exit 1
+fi
+exec python3 "$(dirname "$0")/../check_privacy.py" --staged

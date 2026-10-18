@@ -28,12 +28,12 @@ jobs:
   build-verify:
     runs-on: [self-hosted, buildpc-wsl]
     timeout-minutes: 180
-    env:
-      SRC: ~/chromium/src
-      VERIFY: ~/camoucrome-verify
-      CLIENT: ~/camoucrome-client
-      PLAYWRIGHT_NODEJS_PATH: ~/camoucrome-driver/node
     steps:
+      # $HOME, not a literal home path: the repository is public (spec 2026-10-18), and env: does not expand ~
+      - name: box paths
+        run: |
+          { echo "SRC=$HOME/chromium/src"; echo "VERIFY=$HOME/camoucrome-verify"
+            echo "CLIENT=$HOME/camoucrome-client"; echo "PLAYWRIGHT_NODEJS_PATH=$HOME/camoucrome-driver/node"; } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - name: checkout is clean and no build is running
         run: |
@@ -63,7 +63,7 @@ jobs:
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
-          export PATH=~/depot_tools:$PATH
+          export PATH=$HOME/depot_tools:$PATH
           L="$GITHUB_WORKSPACE/scripts/build_lock.sh"; OWNER="ci run $GITHUB_RUN_ID"
           bash "$L" acquire "$OWNER"
           trap 'bash "$L" release "$OWNER"' EXIT
@@ -83,7 +83,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_package.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_verify_observe.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_verify_observe.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
       - name: browser verifies
         run: |
@@ -91,6 +91,7 @@ jobs:
           rc=0
           run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; rc=1; fi; }
           run verify_sp1a_chrome.py
+          run verify_sp2c.py
           run verify_sp4_voices.py
           run verify_fonts_bundle.py
           run verify_host_oracle.py

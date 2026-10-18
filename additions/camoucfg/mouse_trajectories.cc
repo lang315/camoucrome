@@ -171,4 +171,19 @@ std::vector<TrajectoryPoint> HumanizeTrajectory(
   return path;
 }
 
+WheelNotches QuantizeWheel(double delta_x, double delta_y) {
+  if (!std::isfinite(delta_x) || !std::isfinite(delta_y)) {
+    return {0, 0};
+  }
+  auto axis = [](double d) {
+    if (d == 0) {
+      return 0;
+    }
+    long n = std::max(1L, std::lround(std::min(std::abs(d) / 100.0,
+                                               double{kMaxWheelNotches})));
+    return static_cast<int>(d > 0 ? n : -n);
+  };
+  return {axis(delta_x), axis(delta_y)};
+}
+
 }  // namespace camoucfg

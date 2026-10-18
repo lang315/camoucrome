@@ -8,7 +8,7 @@ Run on the Windows host in the client venv, holding the build lock (owner step2)
                               [--null] [--plant ARG] [--fresh-seeds] [--two-colour]
   python measure_step2.py compare RUN_A RUN_B
   python measure_step2.py tables RUN
-  python measure_step2.py scrub RUN OUT   (needs CAMOU_SCRUB; writes the committable copy)
+  python measure_step2.py scrub RUN OUT   (needs CAMOU_SCRUB or the private terms; writes the committable copy)
 --null puts the control executable, unconfigured, in the fork arm: the noise floor.
 --plant adds ARG to the fork arm only (a RED). --fresh-seeds draws new seeds per
 launch in the stability probe (its RED). --two-colour makes the fork arm's noise
@@ -321,7 +321,7 @@ def run_cmd(a):
     bad = rows.version_problems(versions, pin)
     if bad:
         sys.exit("precondition: " + "; ".join(bad))
-    run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ("-null" if a.null else "") + ("-plant" if a.plant else "")
+    run_id = run_stamp() + ("-null" if a.null else "") + ("-plant" if a.plant else "")
     out_dir = pathlib.Path(a.out or tempfile.gettempdir()) / "step2" / run_id
     (out_dir / "raw").mkdir(parents=True)
     run = argparse.Namespace(dir=out_dir, fresh_seeds=a.fresh_seeds, two_colour=a.two_colour)
@@ -377,16 +377,32 @@ def compare_cmd(a):
     return 1 if diffs else 2 if skipped else 0  # 2: agreed, but not on every cell
 
 
+def run_stamp():
+    """A run id's time, in UTC (spec 2026-10-18 §6.5): a local clock in a committed name reveals the host's offset."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+
 def scrub_cmd(a):
-    """The committable copy of a run: rows.json and tables.md through rows.scrub()."""
-    geo = json.loads(os.environ.get("CAMOU_SCRUB") or "null")
-    if not isinstance(geo, dict) or not geo:
-        sys.exit("scrub: set CAMOU_SCRUB to a JSON object {placeholder: [host geo strings]}; it is never committed")
+    """The committable copy of a run: rows.json and tables.md through rows.scrub(), with the private
+    terms plus CAMOU_SCRUB's geo strings; nothing is written while a host-identifying hit is left."""
+    import check_privacy
+    geo = check_privacy.load_terms()
+    extra = json.loads(os.environ["CAMOU_SCRUB"]) if os.environ.get("CAMOU_SCRUB") else {}
+    if not isinstance(extra, dict):
+        sys.exit("scrub: CAMOU_SCRUB must be a JSON object {placeholder: [host strings]}")
+    for label, needles in extra.items():
+        geo[label] = geo.get(label, []) + list(needles)
+    if not geo:
+        sys.exit("scrub: set CAMOU_SCRUB or the private terms ({placeholder: [host strings]}); neither is ever committed")
     src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
-    dst.mkdir(parents=True, exist_ok=True)
     doc = rows.scrub(json.loads((src / "rows.json").read_text(encoding="utf-8")), geo)
+    tables = rows.scrub((src / "tables.md").read_text(encoding="utf-8"), geo)
+    left = check_privacy.hits(json.dumps(doc, ensure_ascii=False), geo) + check_privacy.hits(tables, geo)
+    if left:
+        sys.exit(f"scrub: host-identifying data left after the scrub: {sorted({c for _, c in left})}")
+    dst.mkdir(parents=True, exist_ok=True)
     (dst / "rows.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
-    (dst / "tables.md").write_text(rows.scrub((src / "tables.md").read_text(encoding="utf-8"), geo), encoding="utf-8")
+    (dst / "tables.md").write_text(tables, encoding="utf-8")
     print(f"scrubbed {src} -> {dst}")
     return 0
 
