@@ -24,7 +24,7 @@ const FORBIDDEN_OPTIONS = new Set([
   'hasTouch', 'isMobile',
 ]);
 const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
-const SEED_KEYS = ['canvas:seed', 'audio:seed', 'mediaDevices:seed'];
+const SEED_KEYS = ['canvas:seed', 'audio:seed', 'mediaDevices:seed', 'humanize:seed'];
 const SEEDS_FILE = 'camoucrome-seeds.json'; // launcher.json per_instance_seeds.profile_file
 
 const asJson = (v) => (typeof v === 'string' ? v : JSON.stringify(v));

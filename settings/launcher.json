@@ -111,7 +111,8 @@
   "keys": [
    "canvas:seed",
    "audio:seed",
-   "mediaDevices:seed"
+   "mediaDevices:seed",
+   "humanize:seed"
   ]
  }
 }

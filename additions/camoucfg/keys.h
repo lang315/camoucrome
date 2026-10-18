@@ -108,12 +108,19 @@ inline constexpr char kUaWow64[] = "ua:wow64";
 // produce the stock order for the same seed (the major version). Absent => the build's real list (rule 5).
 inline constexpr char kUaBrand[] = "ua:brand";
 
-// The humanized-cursor generator's knobs, in their own synthetic `humanize:`
-// namespace -- none mirrors a JS property path. `humanize:` is a pure
-// namespace with no bare `humanize` key, the same shape as `ua:` above.
+// The humanized-input switch and its knobs, in their own synthetic `humanize:`
+// namespace -- none mirrors a JS property path. When true: cursor paths (SP2b),
+// wheel notches under a Windows claim (SP2c), the dwell before a press, the
+// hold before a release, ordered queueing and a per-tab cursor (SP2d).
+// `humanize:` is a pure namespace with no bare `humanize` key.
 inline constexpr char kHumanizeEnabled[] = "humanize:enabled";
 inline constexpr char kHumanizeMinTime[] = "humanize:minTime";
 inline constexpr char kHumanizeMaxTime[] = "humanize:maxTime";
+
+// Per-profile personality for humanized input (SP2d): scales the click
+// hold, the dwell before a press and the client's click-offset spread by
+// exp(ln 1.25 * (2u - 1)), u from splitmix64(seed ^ salt). Absent: scale 1.
+inline constexpr char kHumanizeSeed[] = "humanize:seed";
 
 // Cursor visibility. A separate namespace from `humanize:` on purpose: it is
 // a rendering concern (a visible cursor overlay), not part of humanizing the
@@ -367,7 +374,7 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 90> kAllKeys = {
+inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -382,6 +389,7 @@ inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kHumanizeEnabled,
     kHumanizeMinTime,
     kHumanizeMaxTime,
+    kHumanizeSeed,
     kShowCursor,
     kCanvasSeed,
     kCanvasNoiseDensity,

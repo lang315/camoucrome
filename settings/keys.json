@@ -136,9 +136,11 @@
    "key": "humanize:enabled",
    "type": "bool",
    "doc": [
-    "The humanized-cursor generator's knobs, in their own synthetic `humanize:`",
-    "namespace -- none mirrors a JS property path. `humanize:` is a pure",
-    "namespace with no bare `humanize` key, the same shape as `ua:` above."
+    "The humanized-input switch and its knobs, in their own synthetic `humanize:`",
+    "namespace -- none mirrors a JS property path. When true: cursor paths (SP2b),",
+    "wheel notches under a Windows claim (SP2c), the dwell before a press, the",
+    "hold before a release, ordered queueing and a per-tab cursor (SP2d).",
+    "`humanize:` is a pure namespace with no bare `humanize` key."
    ]
   },
   {
@@ -150,6 +152,16 @@
    "name": "kHumanizeMaxTime",
    "key": "humanize:maxTime",
    "type": "int32"
+  },
+  {
+   "name": "kHumanizeSeed",
+   "key": "humanize:seed",
+   "type": "uint32",
+   "doc": [
+    "Per-profile personality for humanized input (SP2d): scales the click",
+    "hold, the dwell before a press and the client's click-offset spread by",
+    "exp(ln 1.25 * (2u - 1)), u from splitmix64(seed ^ salt). Absent: scale 1."
+   ]
   },
   {
    "name": "kShowCursor",

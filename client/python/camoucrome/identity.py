@@ -8,7 +8,7 @@ import random
 import tempfile
 
 # Mirrors settings/launcher.json "per_instance_seeds"; the test asserts it.
-SEED_KEYS = ("canvas:seed", "audio:seed", "mediaDevices:seed")
+SEED_KEYS = ("canvas:seed", "audio:seed", "mediaDevices:seed", "humanize:seed")
 SEEDS_FILE = "camoucrome-seeds.json"
 
 

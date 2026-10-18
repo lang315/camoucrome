@@ -15,7 +15,7 @@ import (
 
 // SeedKeys mirrors settings/launcher.json "per_instance_seeds". A preset is a
 // device identity; these are per instance and never part of it.
-var SeedKeys = []string{"canvas:seed", "audio:seed", "mediaDevices:seed"}
+var SeedKeys = []string{"canvas:seed", "audio:seed", "mediaDevices:seed", "humanize:seed"}
 
 // SeedsFile mirrors settings/launcher.json "per_instance_seeds.profile_file".
 const SeedsFile = "camoucrome-seeds.json"
