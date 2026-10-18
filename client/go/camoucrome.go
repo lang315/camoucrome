@@ -437,6 +437,13 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 		remove()
 		return nil, err
 	}
+	var seed *uint32
+	if keys, err := effectiveKeys(o.Config, o.Preset); err == nil {
+		seed = clickSeed(keys)
+	}
+	if key, ok := clickStateKey(ctx); ok {
+		clickState.Store(key, &clickProfile{scale: profileScale(seed, "offset"), windows: claimedOS(o) == "Windows"})
+	}
 	ctx.OnClose(func(playwright.BrowserContext) { remove() })
 	return closingContext{ctx, remove}, nil
 }
@@ -454,6 +461,9 @@ type closingContext struct {
 }
 
 func (c closingContext) Close(options ...playwright.BrowserContextCloseOptions) error {
+	if key, ok := clickStateKey(c.BrowserContext); ok {
+		clickState.Delete(key)
+	}
 	defer c.remove()
 	return c.BrowserContext.Close(options...)
 }
