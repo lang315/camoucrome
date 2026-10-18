@@ -11,6 +11,7 @@
 #include <string>
 
 #include "components/camoucfg/keys.h"
+#include "components/camoucfg/mouse_trajectories.h"
 
 namespace camoucfg {
 namespace {
@@ -53,17 +54,6 @@ constexpr std::array<OsForms, 5> kForms = {{
     {OsFamily::kLinux, "Linux", "X11; Linux x86_64", "Linux"},
 }};
 
-// SplitMix64 finalizer (Vigna 2015), used as a stateless mixer of one 64-bit
-// word. mouse_trajectories.cc has a twin, but that one is a stateful *stream*
-// object; this is a stateless function. Two 3-line finalizers are not worth a
-// shared header -- extract one only if a third caller appears.
-uint64_t Mix64(uint64_t z) {
-  z += 0x9E3779B97F4A7C15ULL;
-  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-  return z ^ (z >> 31);
-}
-
 // FNV-1a 64 of the (short) domain string, so "canvas", "audio", "fontmetric"
 // seed uncorrelated streams from a single config seed.
 uint64_t DomainHash(std::string_view domain) {
@@ -75,11 +65,11 @@ uint64_t DomainHash(std::string_view domain) {
   return h;
 }
 
-// One pseudo-random 64-bit word for (seed, domain, index). Mix64(index) first
+// One pseudo-random 64-bit word for (seed, domain, index). SplitMix64(index) first
 // so adjacent indices don't produce trivially related inputs before the outer
 // mix.
 uint64_t DrawKeyed(uint64_t seed, uint64_t domain_key, uint64_t index) {
-  return Mix64(seed ^ domain_key ^ Mix64(index));
+  return SplitMix64(seed ^ domain_key ^ SplitMix64(index));
 }
 
 }  // namespace
