@@ -58,6 +58,7 @@ PY_STOCK = layout({"CAMOU_VENV": os.environ.get("CAMOU_VENV_STOCK",
                                                 f"{HOME}/camoucrome-verify/venv-stock")}).py
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
+DRIVER_NODE = os.environ.get("CAMOU_DRIVER_NODE", f"{HOME}/camoucrome-driver-node")  # Node needs patchright-core 1.62.3 (1.62.1 runs geometry in the main world)
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
 NODE_PROBE = os.environ.get("CAMOU_NODE_PROBE", str(CLIENT / "client" / "node" / "probe.js"))
@@ -76,7 +77,9 @@ MIN_METHODS = 20
 TIMING_TOLERANCE = 0.15  # D1's Runtime.enable signal is +21%; run-to-run noise on the box is ~5-10%
 BASELINE_RUNS = 3
 
-PAGE = b"""<!doctype html><title>driver</title><pre id="o"></pre><script>
+CONFIG = json.dumps({"humanize:enabled": True})  # the probes click #camou-click (helper, and B where it exists)
+
+PAGE = b"""<!doctype html><title>driver</title><pre id="o"></pre><button id=camou-click>click</button><script>
 const TRIALS = 7, N = 10000, times = [];
 for (let t = 0; t < TRIALS; t++) {
   const t0 = performance.now(); let sink = 0;
@@ -152,7 +155,7 @@ DRIVERS = [
     # and playwright-core both export chromium), the same two dirs as Go.
     ("node-stock", "RED", [NODE, NODE_PROBE, "--driver", f"{DRIVER_STOCK}/package",
                            "--label", "node-stock", "--executable", EXE]),
-    ("node-patchright", "GREEN", [NODE, NODE_PROBE, "--driver", f"{DRIVER_PATCHRIGHT}/package",
+    ("node-patchright", "GREEN", [NODE, NODE_PROBE, "--driver", f"{DRIVER_NODE}/package",
                                   "--label", "node-patchright", "--executable", EXE]),
 ]
 
@@ -163,7 +166,7 @@ def run_probe(cmd, url):
         if k.startswith("CAMOU_CONFIG") or k.startswith("CAMOU_PRESET"):
             del env[k]
     try:
-        p = subprocess.run(cmd + ["--url", url], capture_output=True, text=True,
+        p = subprocess.run(cmd + ["--config", CONFIG, "--url", url], capture_output=True, text=True,
                            timeout=300, env=env)
     except FileNotFoundError as e:  # a probe not built on this host: a FAIL row, not a crash
         return None, str(e)

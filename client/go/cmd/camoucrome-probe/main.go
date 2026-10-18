@@ -22,6 +22,12 @@ func fail(what string, err error) {
 	os.Exit(1)
 }
 
+// humanizeOn: the config enables humanize, so the page's button is clicked.
+func humanizeOn(config string) bool {
+	var c map[string]any
+	return json.Unmarshal([]byte(config), &c) == nil && c["humanize:enabled"] == true
+}
+
 func main() {
 	driverDir := flag.String("driver-dir", "", "playwright-go driver directory (patchright-core or playwright-core)")
 	label := flag.String("label", "go", "driver label for the report")
@@ -79,6 +85,12 @@ func main() {
 	}
 	if _, err = page.Goto(*url, playwright.PageGotoOptions{WaitUntil: playwright.WaitUntilStateLoad}); err != nil {
 		fail("goto:", err)
+	}
+	// SP2d: exercise the helper (Go has no B) before reporting.
+	if n, _ := page.Locator("#camou-click").Count(); n > 0 && humanizeOn(*config) {
+		if err = camoucrome.HumanClick(page.Locator("#camou-click")); err != nil {
+			fail("human click:", err)
+		}
 	}
 	text, err := page.Locator("#o").TextContent()
 	if err != nil {

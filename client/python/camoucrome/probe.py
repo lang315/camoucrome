@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 
-from . import launch
+from . import human_click, launch
 
 
 def windows_argv(executable):
@@ -88,15 +88,18 @@ def main():
     ap.add_argument("--fonts-dir", help="bundled font dir (FONTCONFIG_FILE follows the claimed OS)")
     a = ap.parse_args()
     window = tuple(int(v) for v in a.window.split(",")) if a.window else None
+    # B (launch(human_click=True)) needs humanize:enabled in the config.
     module = "patchright" if a.driver == "patchright" else "playwright"
     sync_playwright = importlib.import_module(f"{module}.sync_api").sync_playwright
     with sync_playwright() as pw:
         if a.config and a.config.startswith("@"):
             a.config = pathlib.Path(a.config[1:]).read_text(encoding="utf-8")
+        # B (launch(human_click=True)) needs humanize:enabled in the config.
+        humanize = bool(a.config) and json.loads(a.config).get("humanize:enabled") is True
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
-                     fonts_dir=a.fonts_dir)
+                     fonts_dir=a.fonts_dir, human_click=humanize)
         try:  # a failed goto must still close: the temp profile goes on close
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             # SP2 4.2: a driver's init script must not be observable from the
@@ -105,6 +108,10 @@ def main():
             page.goto(a.url, wait_until="load")
             # A page that reports from a worker writes #o after load; wait for it.
             page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
+            # SP2d: exercise A (the helper) and B (page.click) before reporting.
+            if humanize and page.locator("#camou-click").count():
+                human_click(page.locator("#camou-click"))
+                page.click("#camou-click")
             report = page.locator("#o").text_content()
             argv = browser_argv(a.executable)
         finally:

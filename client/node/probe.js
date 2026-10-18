@@ -65,8 +65,11 @@ const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFil
 
 (async () => {
   const { chromium } = require(args.driver); // absolute path of the package dir
+  const config = fromFile(args.config);
+  // B (launch({humanClick})) needs humanize:enabled in the config.
+  const humanize = !!config && JSON.parse(config)['humanize:enabled'] === true;
   const ctx = await camoucrome.launch(chromium, args.executable, {
-    config: fromFile(args.config), preset: fromFile(args.preset), strict: args.strict === true,
+    config, humanClick: humanize, preset: fromFile(args.preset), strict: args.strict === true,
     // Windows: the sandbox strips CAMOU_* from a renderer unless the
     // windows-sandbox-env patch lets it through, and --no-sandbox hides that.
     headless: args.headed !== true, args: args.sandbox === true ? [] : ['--no-sandbox'],
@@ -77,6 +80,11 @@ const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFil
   // SP2 4.2 item, same as the other probes: the page reports typeof __camou_init.
   await page.addInitScript('window.__camou_init = 1');
   await page.goto(args.url, { waitUntil: 'load' });
+  // SP2d: exercise A (the helper) and B (page.click) before reporting.
+  if (humanize && await page.locator('#camou-click').count()) {
+    await camoucrome.humanClick(page.locator('#camou-click'));
+    await page.click('#camou-click');
+  }
   const text = await page.locator('#o').textContent();
   const argv = browserArgv(args.executable);
   await ctx.close();
