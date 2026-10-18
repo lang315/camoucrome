@@ -560,7 +560,7 @@ After `- uses: actions/setup-python@v5` and its `with:` line, add:
 - [ ] **Step 6: RED the CI commands locally.** In a scratch clone of this branch, plant a line with a generic hit in a tracked file, commit it with `TZ=Etc/GMT-5`, and run the two step commands with `PRIVATE_TERMS=` and `BEFORE` set to the parent commit.
 Expected: the first command exits 1 with `<file>:<line>: machine-name`. The second exits 1 with `date offset not +0000`. Delete the scratch clone.
 
-- [ ] **Step 7: `.gitignore`.** Append the line `.superpowers/`.
+- [ ] **Step 7: `.gitignore`.** Append the lines `.superpowers/` and `docs/superpowers/`. The 152 files that are already tracked stay tracked until Task 8 Step 5b. Until then, edit them as usual; a new file under `docs/superpowers/` needs `git add -f`.
 
 - [ ] **Step 8: `CLAUDE.md`.** Insert after the section "The defining constraint (never violate)":
 
@@ -1107,7 +1107,28 @@ print(len(prs), "prs,", len(runs), "runs")
   - Run `cd W/new && python3 scripts/check_privacy.py`, `python3 -m pytest -q client/python/tests scripts/` and `python3 scripts/check_privacy.py --range=--all`. Expected: 0 hits, all pass, 0 hits.
   - Then `git add -A docs/archive .github scripts docs` and `TZ=UTC git commit -F <msg file>`, with the message "docs(archive): the GitHub history before the 2026-10-18 recreate; repoint old links; $HOME paths".
   - Run `python3 scripts/check_privacy.py --range HEAD~1..HEAD`. Expected: 0 hits.
-- [ ] **Step 6: Rebase the other kept branches only if needed.** `e-fb-auto` and `repin/8078-prep` were rewritten with `main`, and they stay on the rewritten history. Neither is rebased onto the archive commit; their PRs will show it as `main` moving.
+- [ ] **Step 5b: Stop tracking `docs/superpowers/`** (owner, 2026-10-18; spec §3.2).
+  - Record `D=$(git -C W/new rev-parse HEAD)`. This is the last commit that tracks the folder.
+  - Run `git -C W/new rm -r -q --cached docs/superpowers`. Expected: `git -C W/new ls-files docs/superpowers | wc -l` gives 0, and the files are still on disk in `W/new`.
+  - In `CLAUDE.md`, under "Read first", add this paragraph, with `<D>` replaced by the recorded id's first 10 characters:
+
+```markdown
+`docs/superpowers/` (specs, plans, measurements) is local, not in git, since
+the 2026-10-18 recreate (`.gitignore`). Its history up to then is in git. A
+fresh clone restores the folder with
+`git archive <D> docs/superpowers | tar -x`, and new specs and plans stay in
+the local folder.
+```
+
+  - In `README.md`, add the same sentence where it first links into `docs/superpowers/`.
+  - Commit with `TZ=UTC git -C W/new commit -F <msg file>`: "chore: stop tracking docs/superpowers (owner, 2026-10-18); it stays local".
+  - Run `python3 scripts/check_privacy.py` and `python3 -m pytest -q client/python/tests scripts/` in `W/new`. Expected: 0 hits, and all pass. No code reads `docs/superpowers/`; it is cited only in comments.
+  - Write `D` into the ledger. Task 11 uses it.
+- [ ] **Step 6: The other kept branches.**
+  - `e-fb-auto` and `repin/8078-prep` were rewritten with `main` and stay on the rewritten history. Neither is rebased onto the new tip commits.
+  - Both branches add files under `docs/superpowers/`, and merging either one would track them again: `.gitignore` does not stop a merge.
+  - On `e-fb-auto`, this session's branch, make the same untrack commit as Step 5b: `git -C W/new checkout e-fb-auto`, then `git rm -r -q --cached docs/superpowers`, then `TZ=UTC git commit -F <msg file>`, then `git -C W/new checkout main`. Expected: `git -C W/new ls-tree -r --name-only e-fb-auto docs/superpowers | wc -l` gives 0.
+  - `repin/8078-prep` belongs to S5. Do not commit on it. The Task 11 message tells S5 to make that commit before its PR.
 
 ---
 
@@ -1178,12 +1199,13 @@ print(len(prs), "prs,", len(runs), "runs")
   - In this worktree, switch to `e-fb-auto` and run `git reset --hard origin/e-fb-auto`.
   - Delete the local branches `privacy-scrub` and `e-fb-auto-pre-rewrite`, which hold pre-rewrite history; the bundle keeps it.
   - Run `git config core.hooksPath scripts/hooks` in the main checkout.
+  - The reset deletes `docs/superpowers/` from disk, because the tip stopped tracking it. Restore it in the main checkout and in this worktree with `git archive <D> docs/superpowers | tar -x`, run at the checkout root, with `D` from Task 8 Step 5b. Expected: `ls docs/superpowers` shows `measurements`, `plans` and `specs`, and `git status --porcelain docs/superpowers` is empty, because the folder is ignored.
   - Expected: `git log -1 --format='%ai' origin/main` ends in `+0000`.
 - [ ] **Step 3: Other sessions' clones.** Do not modify them. Send each held session, and S5 for `repin/8078-prep`, a message:
   - the recreate is done;
   - the new tips;
   - the path of the commit map, `W/new/.git/filter-repo/commit-map`;
-  - "re-clone or `git fetch origin && git reset --hard origin/<branch>` after saving local work; never push from a pre-recreate clone; run `git config core.hooksPath scripts/hooks`".
+  - "re-clone or `git fetch origin && git reset --hard origin/<branch>` after saving local work; then `git archive <D> docs/superpowers | tar -x` to get the local docs back; before opening a PR from a branch that adds files under `docs/superpowers/` (S5: `repin/8078-prep`), commit `git rm -r --cached docs/superpowers` on it, or the merge tracks them again; never push from a pre-recreate clone; run `git config core.hooksPath scripts/hooks`".
 
   The box clones (`~/camoucrome-x8037`, `~/observe-A/cs`, `~/repin-prep/repo`, `~/camoucrome-cs-review`) and the Windows host clone are listed to the owner, untouched.
 - [ ] **Step 3b: The host follows the docs.**

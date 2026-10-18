@@ -18,6 +18,7 @@ that spelled them out would re-publish them.
 | GitHub-side copies (`refs/pull/*`, Actions logs, PR bodies) | delete and recreate the repository, as on 2026-09-26 |
 | PR pages and Actions history | back up first: raw locally, scrubbed into one docs file |
 | rules | a `CLAUDE.md` section, a gate script in CI and in local hooks, and capture scripts that write placeholders |
+| `docs/superpowers/` and `.superpowers/` | both go in `.gitignore`. `.superpowers/` leaves the whole history. `docs/superpowers/` stops being tracked from the recreate on: its scrubbed history stays, the tip removes it, and each checkout keeps a local copy |
 
 Kept on purpose:
 - product data: the locale-to-zone table `settings/locale_zones.json`, the
@@ -84,6 +85,11 @@ These are one commit on the rewritten `main`, not rules:
   `build-verify` must be green after the recreate (§5 step 8).
 - Links to `github.com/<account>/camoucrome/pull/<n>` and
   `.../actions/runs/<id>` point to anchors in the archive file (§4).
+- `git rm -r --cached docs/superpowers`, after the archive commit. `CLAUDE.md`
+  and `README.md` then say that `docs/superpowers/` is local, not in git,
+  and give the command that restores it from the last commit that tracked
+  it: `git archive <commit> docs/superpowers | tar -x`. A checkout that
+  pulls the removal loses its copy from disk, so §5 step 10 restores it.
 
 ### 3.3 Branches
 
@@ -172,7 +178,8 @@ Checks:
 10. **Sync the clones.**
     - This session's clones: fetch the new history and reset the kept
       branches. Delete local branches that only hold pre-rewrite history.
-      Old objects stay local (no `gc`).
+      Old objects stay local (no `gc`). Restore the local
+      `docs/superpowers/` with the `git archive` command of §3.2.
     - Other sessions' clones on the Mac and the box get a message with the
       old→new SHA map.
     - The Windows host clone that this session must not touch stays as it
@@ -251,7 +258,7 @@ A new section, "Public repo: no host-identifying data (never violate)":
   - `pre-commit` checks the staged files and refuses when `date +%z` is not
     `+0000`;
   - `commit-msg` checks the message.
-- `.gitignore` gains `.superpowers/`.
+- `.gitignore` gains `.superpowers/` and `docs/superpowers/`.
 
 ### 6.5 Timestamps are UTC at the source (owner, 2026-10-18)
 
