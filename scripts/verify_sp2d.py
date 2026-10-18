@@ -378,7 +378,7 @@ const seq = [];
 for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
   addEventListener(type, e => seq.push([type, e.isTrusted]), true);
 </script>"""
-T1_SHAPE = """JSON.stringify([Object.keys(window).length, [['MouseEvent', 'clientX'],
+T1_SHAPE = """JSON.stringify([Object.keys(window), [['MouseEvent', 'clientX'],
   ['Event', 'timeStamp'], ['MouseEvent', 'detail']].map(([c, k]) => {
     for (let o = window[c].prototype; o; o = Object.getPrototypeOf(o)) {
       const d = Object.getOwnPropertyDescriptor(o, k);
@@ -399,11 +399,15 @@ if err0 or err1:
     row(T1, False, repr(err0 or err1))
 else:
     order = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]
-    row(T1, base[0][0] > 0 and base[0] == hum[0]
-        and all("[native code]" in t for t in hum[0][1])
+    # Same page, same load in both arms: the key lists must match in order, not only in count.
+    (bk, _), (hk, hts) = base[0], hum[0]
+    diff = sorted(set(bk) ^ set(hk))
+    row(T1, len(bk) > 0 and bk == hk and base[0][1] == hts
+        and all(t and "[native code]" in t for t in hts)
         and [t for t, _ in hum[1]] == order and all(trusted for _, trusted in hum[1]),
-        f"no config {base[0]}, humanize {hum[0]}, sequence {hum[1]}")
-    print(f"T1 measured: {hum[0][0]} window keys in both, sequence {[t for t, _ in hum[1]]}")
+        f"keys only in one arm {diff}, order equal {bk == hk}, toStrings {base[0][1]} vs {hts}, "
+        f"sequence {hum[1]}")
+    print(f"T1 measured: {len(hk)} window keys in both, sequence {[t for t, _ in hum[1]]}")
 
 EXPECTED = 12
 for name in sorted(results):
