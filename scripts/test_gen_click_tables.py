@@ -16,6 +16,12 @@ def test_outputs_have_21_knots_and_shared_constants(tmp_path):
     assert '"maxNotches": 60' in json.dumps(out["launcher_block"])
 
 
+def test_out_of_scope_is_the_spec_list():
+    block = g.render(g.load(FIX, provisional=False))["launcher_block"]
+    assert len(block["outOfScope"]) == 10
+    assert block["outOfScope"][0].startswith("hover, dblclick, tap")
+
+
 def test_strict_refuses_one_session(tmp_path):
     one = tmp_path / "b"
     one.mkdir()

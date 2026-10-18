@@ -94,10 +94,19 @@ def render(summary):
         "trialTimeoutMs": TRIAL_TIMEOUT_MS,
         "go": "no human_click flag (B); HumanClick only",
         "outOfScope": [
-            "touch taps: A and B act on mouse presses only",
-            "double clicks and drags (B passes them through unchanged)",
-            "elements in a nested scroller, or off the document scroller (stock click)",
-            "clicks that pass position, force or trial themselves (stock click)",
+            "hover, dblclick, tap, check/setChecked, dragTo, ElementHandle.click and "
+            "click(steps>1) still move to or click the centre; steps is passed through; "
+            "neither A nor B touches them",
+            "the multi-click gap",
+            "typing cadence",
+            "the contextmenu order",
+            "scrolling inside a nested scroll container (the helper falls back)",
+            "scrolling when no helper is involved: plain Go click(), fill() and hover() "
+            "still scroll programmatically",
+            "a raw-CDP Go client (backlog item 15)",
+            "Fitts-law movement time and SP2b's shape (Cursory port)",
+            "a shared SP2b/SP2c/SP2d scheduler (Cursory port)",
+            "wheel shapes under macOS and Linux claims",
         ],
     }
     geometry = (ROOT / GEOMETRY).read_text()
