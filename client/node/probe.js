@@ -63,9 +63,76 @@ const browserArgv = (executable) => (process.platform === 'win32' ? windowsArgv(
 // 32767-char command line and Linux's 128 KiB single argument, so @path reads a file.
 const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFileSync(v.slice(1), 'utf8') : v);
 
+// scripts/verify_human_click_clients.py row args.scenario -> {log, extra}: the
+// page's own #o, plus what the page cannot see (error messages, a second context's log).
+async function runScenario(chromium, config) {
+  const n = args.scenario;
+  const kw = { headless: args.headed !== true, args: ['--no-sandbox'] };
+  const errOf = async (fn) => { try { await fn(); return null; } catch (e) { return String(e.message || e); } };
+  if (n === 'B4') {  // launch must refuse humanClick without humanize, before any browser
+    const extra = {};
+    for (const [key, cfg] of [['nohumanize', undefined], ['false', JSON.stringify({ 'humanize:enabled': false })]]) {
+      extra[key] = await errOf(async () => (await camoucrome.launch(chromium, args.executable, { config: cfg, humanClick: true, ...kw })).close());
+    }
+    return { log: {}, extra };
+  }
+  if (!['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'stock-missing', 'B1', 'B2', 'B3'].includes(n)) {
+    throw new Error(`unknown scenario ${n}`);
+  }
+  const logOf = async (page) => { await page.waitForTimeout(500); return JSON.parse(await page.locator('#o').textContent()); };
+  const open = async (c) => { const p = c.pages()[0] || await c.newPage(); await p.goto(args.url, { waitUntil: 'load' }); return p; };
+  const ctx = await camoucrome.launch(chromium, args.executable, { config, humanClick: n.startsWith('B'), ...kw });
+  const others = [];
+  let extra = null, log;
+  try {
+    const page = await open(ctx);
+    const loc = page.locator('#t');
+    if (n === 'A1' || n === 'A7') {
+      for (let i = 0; i < (n === 'A1' ? 20 : 5); i++) await camoucrome.humanClick(loc);
+    } else if (['A2', 'A3', 'A4', 'A5'].includes(n)) {
+      await camoucrome.humanClick(loc);
+    } else if (n === 'A6') {
+      await camoucrome.humanClick(page.locator('#late'));
+      extra = { missing: await errOf(() => camoucrome.humanClick(page.locator('#nope'), { timeout: 500 })),
+        strict: await errOf(() => camoucrome.humanClick(page.locator('.dup'), { timeout: 500 })) };
+    } else if (n === 'stock-missing') {
+      extra = { missing: await errOf(() => page.locator('#nope').click({ timeout: 500 })),
+        strict: await errOf(() => page.locator('.dup').click({ timeout: 500 })) };
+    } else if (n === 'B1') {
+      for (let i = 0; i < 10; i++) { await loc.click(); await page.click('#t'); }
+    } else if (n === 'B3') {
+      await page.click('#t', { position: { x: 5, y: 5 } });
+      await page.click('#t', { force: true });
+      await loc.click({ trial: true });
+    } else if (n === 'B2') {  // contexts launch() did not flag: a direct one, and a launch() without the flag
+      const direct = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(require('os').tmpdir(), 'camoucrome-b2-')),
+        { executablePath: args.executable, ...kw });
+      others.push(direct);
+      const plain = await camoucrome.launch(chromium, args.executable, { config, humanClick: false, ...kw });
+      others.push(plain);
+      extra = {};
+      for (const [key, c] of [['direct', direct], ['plain', plain]]) {
+        const p = await open(c);
+        for (let i = 0; i < 3; i++) await p.click('#t');
+        extra[key] = await logOf(p);
+      }
+    }
+    log = await logOf(page);
+  } finally {
+    for (const c of [ctx, ...others]) await c.close();
+  }
+  return { log, extra };
+}
+
 (async () => {
   const { chromium } = require(args.driver); // absolute path of the package dir
   const config = fromFile(args.config);
+  if (args.scenario) {
+    let out;
+    try { out = { ...(await runScenario(chromium, config)), error: null }; } catch (e) { out = { log: null, extra: null, error: String(e.message || e) }; }
+    process.stdout.write(JSON.stringify({ ...out, wrapper_hits: require('./human_click').wrapperHits() }));
+    return;
+  }
   // B (launch({humanClick})) needs humanize:enabled in the config.
   const humanize = !!config && JSON.parse(config)['humanize:enabled'] === true;
   const ctx = await camoucrome.launch(chromium, args.executable, {

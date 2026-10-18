@@ -28,6 +28,84 @@ func humanizeOn(config string) bool {
 	return json.Unmarshal([]byte(config), &c) == nil && c["humanize:enabled"] == true
 }
 
+// scenarioOut is the probe contract of scripts/verify_human_click_clients.py.
+// Go has no B, so wrapper_hits is always 0.
+type scenarioOut struct {
+	Log         any `json:"log"`
+	Error       any `json:"error"`
+	WrapperHits int `json:"wrapper_hits"`
+	Extra       any `json:"extra"`
+}
+
+// runScenario performs one row's actions and returns the page's own #o log,
+// plus the error messages the page cannot see (A6, stock-missing).
+func runScenario(pw *playwright.Playwright, o camoucrome.Options, name, url string) (log, extra any, err error) {
+	switch name {
+	case "A1", "A2", "A3", "A4", "A5", "A6", "A7", "G1", "stock-missing":
+	default:
+		return nil, nil, fmt.Errorf("unknown scenario %s", name)
+	}
+	ctx, err := camoucrome.Launch(pw, o)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer ctx.Close()
+	var page playwright.Page
+	if pages := ctx.Pages(); len(pages) > 0 {
+		page = pages[0]
+	} else if page, err = ctx.NewPage(); err != nil {
+		return nil, nil, err
+	}
+	if _, err = page.Goto(url, playwright.PageGotoOptions{WaitUntil: playwright.WaitUntilStateLoad}); err != nil {
+		return nil, nil, err
+	}
+	loc := page.Locator("#t")
+	half := playwright.LocatorClickOptions{Timeout: playwright.Float(500)}
+	errText := func(e error) any {
+		if e == nil {
+			return nil
+		}
+		return e.Error()
+	}
+	switch name {
+	case "A1", "A7", "G1":
+		n := 5
+		if name != "A7" {
+			n = 20
+		}
+		for i := 0; i < n && err == nil; i++ {
+			err = camoucrome.HumanClick(loc)
+		}
+		for i := 0; name == "G1" && i < 3 && err == nil; i++ { // plain Click: the centre
+			err = loc.Click()
+		}
+	case "A2", "A3", "A4", "A5":
+		err = camoucrome.HumanClick(loc)
+	case "A6":
+		if err = camoucrome.HumanClick(page.Locator("#late")); err == nil {
+			extra = map[string]any{
+				"missing": errText(camoucrome.HumanClick(page.Locator("#nope"), half)),
+				"strict":  errText(camoucrome.HumanClick(page.Locator(".dup"), half)),
+			}
+		}
+	case "stock-missing":
+		extra = map[string]any{
+			"missing": errText(page.Locator("#nope").Click(half)),
+			"strict":  errText(page.Locator(".dup").Click(half)),
+		}
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	page.WaitForTimeout(500) // the page's 100 ms sync catches the last scroll
+	text, err := page.Locator("#o").TextContent()
+	if err != nil {
+		return nil, nil, err
+	}
+	err = json.Unmarshal([]byte(text), &log)
+	return log, extra, err
+}
+
 func main() {
 	driverDir := flag.String("driver-dir", "", "playwright-go driver directory (patchright-core or playwright-core)")
 	label := flag.String("label", "go", "driver label for the report")
@@ -40,6 +118,7 @@ func main() {
 	// Windows: the sandbox is what strips CAMOU_* from a renderer unless the
 	// windows-sandbox-env patch lets it through, and --no-sandbox hides that.
 	sandbox := flag.Bool("sandbox", false, "omit --no-sandbox")
+	scenario := flag.String("scenario", "", "verify_human_click_clients row: load --url, act, print the page log")
 	flag.Parse()
 	// A generated identity is ~37 KB (Windows) to ~140 KB (macOS): past
 	// Windows' 32767-char command line and Linux's 128 KiB single argument.
@@ -67,6 +146,15 @@ func main() {
 	}
 	if *preset != "" {
 		o.Preset = *preset
+	}
+	if *scenario != "" {
+		var out scenarioOut
+		if out.Log, out.Extra, err = runScenario(pw, o, *scenario, *url); err != nil {
+			out.Error = err.Error()
+		}
+		json.NewEncoder(os.Stdout).Encode(out)
+		pw.Stop()
+		return
 	}
 	ctx, err := camoucrome.Launch(pw, o)
 	if err != nil {

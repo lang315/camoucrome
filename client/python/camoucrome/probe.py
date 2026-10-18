@@ -13,6 +13,7 @@ import pathlib
 import os
 import subprocess
 import sys
+import tempfile
 
 from . import human_click, launch
 
@@ -71,6 +72,84 @@ def browser_argv(executable):
     return []
 
 
+def run_scenario(pw, a):
+    """scripts/verify_human_click_clients.py row `a.scenario` -> (page log, extra).
+    The log is the page's own #o; `extra` carries what the page cannot see
+    (error messages, a second context's log)."""
+    n, url, exe = a.scenario, a.url, a.executable
+    kw = dict(headless=not a.headed, args=["--no-sandbox"])
+    if n == "B4":  # launch must refuse human_click without humanize, before any browser
+        extra = {}
+        for key, cfg in (("nohumanize", None), ("false", json.dumps({"humanize:enabled": False}))):
+            try:
+                launch(pw, exe, config=cfg, human_click=True, **kw).close()
+                extra[key] = None
+            except Exception as e:  # noqa: BLE001 - the message is the datum
+                extra[key] = str(e)
+        return {}, extra
+    if n not in ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "stock-missing", "B1", "B2", "B3"):
+        raise ValueError(f"unknown scenario {n}")
+
+    def log_of(page):
+        page.wait_for_timeout(500)  # the page's 100 ms sync catches the last scroll
+        return json.loads(page.locator("#o").text_content())
+
+    def open_page(ctx):
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(url, wait_until="load")
+        return page
+
+    def err(fn):
+        try:
+            fn()
+            return None
+        except Exception as e:  # noqa: BLE001
+            return str(e)
+
+    ctx = launch(pw, exe, config=a.config, human_click=n.startswith("B"), **kw)
+    extra, others = None, []
+    try:
+        page = open_page(ctx)
+        loc = page.locator("#t")
+        if n in ("A1", "A7"):
+            for _ in range(20 if n == "A1" else 5):
+                human_click(loc)
+        elif n in ("A2", "A3", "A4", "A5"):
+            human_click(loc)
+        elif n == "A6":
+            human_click(page.locator("#late"))
+            extra = {"missing": err(lambda: human_click(page.locator("#nope"), timeout=500)),
+                     "strict": err(lambda: human_click(page.locator(".dup"), timeout=500))}
+        elif n == "stock-missing":
+            extra = {"missing": err(lambda: page.locator("#nope").click(timeout=500)),
+                     "strict": err(lambda: page.locator(".dup").click(timeout=500))}
+        elif n == "B1":
+            for _ in range(10):
+                loc.click()
+                page.click("#t")
+        elif n == "B3":
+            page.click("#t", position={"x": 5, "y": 5})
+            page.click("#t", force=True)
+            loc.click(trial=True)
+        elif n == "B2":  # contexts launch() did not flag: a direct one, and a launch() without the flag
+            tmp = tempfile.mkdtemp(prefix="camoucrome-b2-")
+            direct = pw.chromium.launch_persistent_context(tmp, executable_path=exe, **kw)
+            others.append(direct)
+            plain = launch(pw, exe, config=a.config, human_click=False, **kw)
+            others.append(plain)
+            extra = {}
+            for key, c in (("direct", direct), ("plain", plain)):
+                p = open_page(c)
+                for _ in range(3):
+                    p.click("#t")
+                extra[key] = log_of(p)
+        log = log_of(page)
+    finally:
+        for c in [ctx, *others]:
+            c.close()
+    return log, extra
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--driver", choices=["patchright", "stock"], required=True)
@@ -85,6 +164,7 @@ def main():
     ap.add_argument("--extension", action="append", default=[])
     ap.add_argument("--spki", action="append", default=[])
     ap.add_argument("--arg", action="append", default=[], help="extra browser argv, verbatim")
+    ap.add_argument("--scenario", help="verify_human_click_clients row: load --url, act, print the page log")
     ap.add_argument("--fonts-dir", help="bundled font dir (FONTCONFIG_FILE follows the claimed OS)")
     a = ap.parse_args()
     window = tuple(int(v) for v in a.window.split(",")) if a.window else None
@@ -93,6 +173,15 @@ def main():
     with sync_playwright() as pw:
         if a.config and a.config.startswith("@"):
             a.config = pathlib.Path(a.config[1:]).read_text(encoding="utf-8")
+        if a.scenario:
+            try:
+                log, extra = run_scenario(pw, a)
+                error = None
+            except Exception as e:  # noqa: BLE001 - surfaced in the JSON; the verify prints it
+                log, extra, error = None, None, str(e)
+            hits = sys.modules["camoucrome.human_click"].wrapper_hits
+            json.dump({"log": log, "error": error, "wrapper_hits": hits, "extra": extra}, sys.stdout)
+            return
         # B (launch(human_click=True)) needs humanize:enabled in the config.
         humanize = bool(a.config) and json.loads(a.config).get("humanize:enabled") is True
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
