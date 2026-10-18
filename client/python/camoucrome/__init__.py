@@ -19,6 +19,7 @@ The contract it implements is settings/launcher.json in the repository.
 """
 from .identity import SEED_KEYS, per_instance_config, profile_seeds
 from .launcher import FORBIDDEN_OPTIONS, accept_lang_of, build_args, build_env, launch
+from .human_click import human_click
 
-__all__ = ["FORBIDDEN_OPTIONS", "SEED_KEYS", "accept_lang_of", "build_args", "build_env", "launch",
-           "per_instance_config", "profile_seeds"]
+__all__ = ["FORBIDDEN_OPTIONS", "SEED_KEYS", "accept_lang_of", "build_args", "build_env", "human_click",
+           "launch", "per_instance_config", "profile_seeds"]

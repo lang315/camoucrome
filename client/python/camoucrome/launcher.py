@@ -7,6 +7,10 @@ import sys
 import tempfile
 import time
 
+# The submodule, under a private name: launch()'s `human_click` parameter would
+# otherwise shadow it.
+from . import human_click as _hc
+
 # Mirrors settings/launcher.json "forbidden_context_options"; tests/test_launcher.py
 # asserts the two agree. Each of these duplicates a CAMOU_CONFIG key: a second
 # emulation of the same surface either fails (timezone -> kAlreadyInEffect) or
@@ -237,7 +241,8 @@ def remove_dir(path, wait=10.0):
 
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None,
-           headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, **options):
+           headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None,
+           human_click=False, **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
     Never add_init_script anything a page could enumerate: both patchright
@@ -263,6 +268,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         raise ValueError(
             f"{sorted(bad)} must come through CAMOU_CONFIG, not the driver: "
             "a second emulation of the same surface fights the fork's value")
+    if human_click and effective_keys(config, preset).get("humanize:enabled") is not True:
+        raise ValueError("human_click=True needs humanize:enabled true in config or preset")
     owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
     if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")
@@ -298,9 +305,20 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             except BaseException:
                 remove()
                 raise
+            _wire_human_click(c, human_click, config, preset)
             return removed_on_close(c, remove)
         return started()
+    _wire_human_click(ctx, human_click, config, preset)
     return removed_on_close(ctx, remove)
+
+
+def _wire_human_click(ctx, human_click, config, preset):
+    """B wraps Frame._click; A (and B) record the profile's seed/OS per context.
+    A stand-in context without an impl object has nothing to key that state on."""
+    impl = getattr(ctx, "_impl_obj", None)
+    if impl is None:
+        return
+    (_hc.install if human_click else _hc.install_state)(impl, config, preset)
 
 
 def removed_on_close(ctx, remove):
