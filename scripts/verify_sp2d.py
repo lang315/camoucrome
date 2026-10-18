@@ -256,16 +256,18 @@ row(H4, not err and got == ["mousedown", "mouseup", "mousedown", "mouseup", "dbl
     repr(err) if err else str(got))
 
 C0 = "C0 no config: move, cross-site navigation, move leaves exactly one mousemove on page B"
-C1 = "C1 humanize: the same steps, a path on B whose first delivered point is within 150 px of the old cursor"
-C2 = "C2 humanize: a fresh tab's first move enters within 100 px of an edge, nearer it than the centre"
-C3 = "C3 humanize: after the CDP connection drops and is reopened, the next move starts at the old cursor"
-CUR, TARGET = (200, 200), (600, 400)
-# The path is a fast, curved arc and the page misses its first few points, so the first delivered
-# point is not the first step. Measured: 21-103 px from CUR on a 447 px path (50 px failed half the
-# runs), and 1-76 px from an edge on a 218-390 px entry path (40 px failed 1 run in 9). Without
-# continuity the first point is the target itself (447 px) or the centre (218 px from an edge).
-NEAR_PX = 150  # a third of the path
-EDGE_PX = 100
+C1 = "C1 humanize: the same steps, a path on B whose first delivered point is within 200 px of the old cursor"
+C2 = "C2 humanize: a fresh tab's first move enters within 120 px of an edge, nearer it than the centre"
+C3 = "C3 humanize: after the CDP connection drops and is reopened, the next (short) move starts within 75 px of the old cursor"
+# The first path step itself can be far from the start: the easing (t=0.0816 at step 1) and control
+# points up to 80 px outside the box put path[1] at p50 57 px, max ~124 px from the start (model; the
+# page sees the path's first point). Measured: 21-113 px on a 447 px path (50 px failed half the runs),
+# 1-76 px from an edge on a 218-390 px entry path (40 px failed 1 run in 9).
+# C1 (long path, target 447 px away): correct <= ~124 px, no-continuity first point = the target, so 200.
+# C2: correct <= ~76 measured, modelled tail ~120; teleport = the centre, 218 px from an edge.
+# C3 (short move, 58 px): correct <= ~37 px, per-session cursor (edge entry) >= ~119 px, so 75.
+CUR, TARGET, SHORT = (200, 200), (600, 400), (240, 242)  # SHORT is 58 px from CUR
+NEAR_C1, NEAR_C3, EDGE_PX = 200, 75, 120
 
 cserver = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Page)
 threading.Thread(target=cserver.serve_forever, daemon=True).start()
@@ -291,12 +293,12 @@ def viewport(page):
     return page.evaluate("[document.documentElement.clientWidth, innerHeight]")
 
 
-def at_cursor(pt, vw, vh):
-    """(ok, dist): the first delivered point is within NEAR_PX of CUR AND nearer CUR than any edge.
+def at_cursor(pt, vw, vh, limit):
+    """(ok, dist): the first delivered point is within `limit` of CUR AND nearer CUR than any edge.
     The second clause is what tells a continued path from an edge entry: with only the first, a
     per-session cursor (mutant) passed once at 113.9 px."""
     d = near(pt, CUR)
-    return d <= NEAR_PX and d < min(pt["x"], vw - pt["x"], pt["y"], vh - pt["y"]), d
+    return d <= limit and d < min(pt["x"], vw - pt["x"], pt["y"], vh - pt["y"]), d
 
 
 def cross_site(page):
@@ -314,7 +316,7 @@ got, err = session(HUM, cross_site, url=f"http://127.0.0.1:{CPORT}/c")
 if err or not got[1]:
     row(C1, False, repr(err) if err else "no pointermove on B")
 else:
-    n, (ok, d) = len(got[0]), at_cursor(got[1][0], *got[2])
+    n, (ok, d) = len(got[0]), at_cursor(got[1][0], *got[2], NEAR_C1)
     print(f"C1 measured: {n} mousemoves on B, first delivered point {d:.1f} px from {CUR}")
     row(C1, n > 1 and ok, f"n={n} first {d:.1f} px from {CUR}, near-cursor {ok}")
 
@@ -351,7 +353,7 @@ def reconnect():
         with sync_playwright() as p:  # the first connection is gone
             page = p.chromium.connect_over_cdp(endpoint).contexts[0].pages[0]
             before, before_pts = len(moves(page)), len(points(page))
-            page.mouse.move(*TARGET)
+            page.mouse.move(*SHORT)
             return (moves(page)[before:], points(page)[before_pts:], viewport(page)), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
@@ -364,7 +366,7 @@ got, err = reconnect()
 if err or not got[1]:
     row(C3, False, repr(err) if err else "no pointermove after the reconnect")
 else:
-    n, (ok, d) = len(got[0]), at_cursor(got[1][0], *got[2])
+    n, (ok, d) = len(got[0]), at_cursor(got[1][0], *got[2], NEAR_C3)
     print(f"C3 measured: {n} mousemoves after reconnect, first delivered point {d:.1f} px from {CUR}")
     row(C3, n > 1 and ok, f"n={n} first {d:.1f} px from {CUR}, near-cursor {ok}")
 
