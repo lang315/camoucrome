@@ -303,9 +303,9 @@ Requests per unattended load: arm 1 38 (5 to `/ajax/bz`), arm 3 283 to
 Arm 1 of calibrations 2 and 3 lost the same race. Once the browser
 closes, a chrome process can exit between the window-handle read and
 `CloseMainWindow()`. The throw then ended recon before `run.json`.
-`recon.ps1` now catches that error (`faf3c79`). Calibration 2 also
+`recon.ps1` now catches that error (`37076aa`). Calibration 2 also
 waited out its 5-minute limit, because the throw never reached the log.
-`observe-auto.ps1` now logs it (`3fb031f`).
+`observe-auto.ps1` now logs it (`e66fc18`).
 
 Calibration has not finished: there is one clean arm-1 sample and three
 arm-3 samples. The owner's session then went `Disc`, and the Windows tree
