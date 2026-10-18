@@ -321,7 +321,7 @@ def run_cmd(a):
     bad = rows.version_problems(versions, pin)
     if bad:
         sys.exit("precondition: " + "; ".join(bad))
-    run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ("-null" if a.null else "") + ("-plant" if a.plant else "")
+    run_id = run_stamp() + ("-null" if a.null else "") + ("-plant" if a.plant else "")
     out_dir = pathlib.Path(a.out or tempfile.gettempdir()) / "step2" / run_id
     (out_dir / "raw").mkdir(parents=True)
     run = argparse.Namespace(dir=out_dir, fresh_seeds=a.fresh_seeds, two_colour=a.two_colour)
@@ -375,6 +375,11 @@ def compare_cmd(a):
         print(f"SKIPPED (unmeasured) {s}")
     print(f"{len(diffs)} rows disagree outside VOLATILE; {len(skipped)} site cells unmeasured, skipped")
     return 1 if diffs else 2 if skipped else 0  # 2: agreed, but not on every cell
+
+
+def run_stamp():
+    """A run id's time, in UTC (spec 2026-10-18 §6.5): a local clock in a committed name reveals the host's offset."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 
 def scrub_cmd(a):
