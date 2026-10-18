@@ -50,6 +50,7 @@ def build():
             case_burst({**GEO, "y": -900.0}, 0.3, [0.2, 0.7]),
             case_burst({**GEO, "y": 800.0, "h": 2000.0}, 0.2, [0.9, 0.1]),
             case_burst({**GEO, "y": 99000.0}, 0.3, [1.0, 0.5]),   # clamped at 60
+            case_burst({**GEO, "y": 1440.0}, 2.0, [0.5, 0.5]),    # delta == 0 exactly -> sign is -1
         ],
     }
     salts = {"hold": 0, "dwell": 1, "offset": 2}

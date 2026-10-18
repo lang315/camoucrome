@@ -104,9 +104,9 @@ func nextBurst(g geometry, landing float64, burst, pause [21]float64, r func() f
 	delta := g.Y - landing*g.VH
 	total := int(math.Max(-float64(maxNotches), math.Min(float64(maxNotches), roundAway(delta/100))))
 	if total == 0 {
-		total = 1
-		if delta < 0 {
-			total = -1
+		total = -1
+		if delta > 0 {
+			total = 1
 		}
 	}
 	size := int(math.Max(1, math.Floor(sampleKnots(burst, r())+0.5)))
