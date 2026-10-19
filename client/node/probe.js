@@ -94,16 +94,23 @@ async function runScenario(chromium, config) {
     } else if (n === 'A6') {
       await camoucrome.humanClick(page.locator('#late'));
       extra = { missing: await errOf(() => camoucrome.humanClick(page.locator('#nope'), { timeout: 500 })),
-        strict: await errOf(() => camoucrome.humanClick(page.locator('.dup'), { timeout: 500 })) };
+        strict: await errOf(() => camoucrome.humanClick(page.locator('.dup'), { timeout: 500 })),
+        hidden: await errOf(() => camoucrome.humanClick(page.locator('#hid'), { timeout: 500 })) };
     } else if (n === 'stock-missing') {
       extra = { missing: await errOf(() => page.locator('#nope').click({ timeout: 500 })),
-        strict: await errOf(() => page.locator('.dup').click({ timeout: 500 })) };
+        strict: await errOf(() => page.locator('.dup').click({ timeout: 500 })),
+        hidden: await errOf(() => page.locator('#hid').click({ timeout: 500 })) };
     } else if (n === 'B1') {
       for (let i = 0; i < 10; i++) { await loc.click(); await page.click('#t'); }
     } else if (n === 'B3') {
+      const hitsAfter = [];
       await page.click('#t', { position: { x: 5, y: 5 } });
+      hitsAfter.push(require('./human_click').wrapperHits());
       await page.click('#t', { force: true });
+      hitsAfter.push(require('./human_click').wrapperHits());
       await loc.click({ trial: true });
+      hitsAfter.push(require('./human_click').wrapperHits());
+      extra = { hits_after: hitsAfter };
     } else if (n === 'B2') {  // contexts launch() did not flag: a direct one, and a launch() without the flag
       const direct = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(require('os').tmpdir(), 'camoucrome-b2-')),
         { executablePath: args.executable, ...kw });

@@ -106,6 +106,9 @@ def run_scenario(pw, a):
         except Exception as e:  # noqa: BLE001
             return str(e)
 
+    def wrapper_hits():
+        return sys.modules["camoucrome.human_click"].wrapper_hits
+
     ctx = launch(pw, exe, config=a.config, human_click=n.startswith("B"), **kw)
     extra, others = None, []
     try:
@@ -119,18 +122,24 @@ def run_scenario(pw, a):
         elif n == "A6":
             human_click(page.locator("#late"))
             extra = {"missing": err(lambda: human_click(page.locator("#nope"), timeout=500)),
-                     "strict": err(lambda: human_click(page.locator(".dup"), timeout=500))}
+                     "strict": err(lambda: human_click(page.locator(".dup"), timeout=500)),
+                     "hidden": err(lambda: human_click(page.locator("#hid"), timeout=500))}
         elif n == "stock-missing":
             extra = {"missing": err(lambda: page.locator("#nope").click(timeout=500)),
-                     "strict": err(lambda: page.locator(".dup").click(timeout=500))}
+                     "strict": err(lambda: page.locator(".dup").click(timeout=500)),
+                     "hidden": err(lambda: page.locator("#hid").click(timeout=500))}
         elif n == "B1":
             for _ in range(10):
                 loc.click()
                 page.click("#t")
         elif n == "B3":
             page.click("#t", position={"x": 5, "y": 5})
+            hits = [wrapper_hits()]
             page.click("#t", force=True)
+            hits.append(wrapper_hits())
             loc.click(trial=True)
+            hits.append(wrapper_hits())
+            extra = {"hits_after": hits}
         elif n == "B2":  # contexts launch() did not flag: a direct one, and a launch() without the flag
             tmp = tempfile.mkdtemp(prefix="camoucrome-b2-")
             direct = pw.chromium.launch_persistent_context(tmp, executable_path=exe, **kw)

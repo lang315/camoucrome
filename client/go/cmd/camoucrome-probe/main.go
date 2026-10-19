@@ -86,12 +86,14 @@ func runScenario(pw *playwright.Playwright, o camoucrome.Options, name, url stri
 			extra = map[string]any{
 				"missing": errText(camoucrome.HumanClick(page.Locator("#nope"), half)),
 				"strict":  errText(camoucrome.HumanClick(page.Locator(".dup"), half)),
+				"hidden":  errText(camoucrome.HumanClick(page.Locator("#hid"), half)),
 			}
 		}
 	case "stock-missing":
 		extra = map[string]any{
 			"missing": errText(page.Locator("#nope").Click(half)),
 			"strict":  errText(page.Locator(".dup").Click(half)),
+			"hidden":  errText(page.Locator("#hid").Click(half)),
 		}
 	}
 	if err != nil {

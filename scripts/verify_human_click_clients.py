@@ -22,13 +22,15 @@ import json
 import math
 import os
 import pathlib
+import signal
+import statistics
 import subprocess
 import sys
 import threading
 
 from lib_shell import CHROME as EXE, layout
 
-HOME, PY, NODE_DEFAULT, CLIENT, _ = layout()
+HOME, PY, _, CLIENT, _ = layout()
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
 DRIVER = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_NODE = os.environ.get("CAMOU_DRIVER_NODE", f"{HOME}/camoucrome-driver-node")
@@ -43,6 +45,8 @@ CONFIG = json.dumps({"humanize:enabled": True, "humanize:seed": 12345,
 MIN_METHODS = 20      # a silenced protocol logger must not pass the A2/A3/A5 counts vacuously
 CENTRE_TOL = 0.5      # the brief's "exactly the centre (60, 20) +- 0.5"
 MAX_CENTRE_OF_20 = 5  # a 120x40 button, sd ~2.6 x 1.9 px: ~3% of correct clicks round to the centre
+MIN_OFFSET_SD = 1.0   # px; the tables' scales are OFFSET.along.a = 2.6 and OFFSET.across.a = 1.9, times the seed's profile scale
+LANDING_SLACK = 100   # one wheel notch: the helper stops within it of its goal
 
 _spec = importlib.util.spec_from_file_location("click_tables", TABLES)
 T = importlib.util.module_from_spec(_spec)
@@ -68,16 +72,16 @@ function sync() {
 addEventListener('wheel', (e) => {
   const now = performance.now();
   // A5: the sticky header goes away at the first wheel after a >1.5 s pause, which only a
-  // failed trial click (2 s timeout) followed by a corrective burst produces.
+  // first click that burned its 2 s timeout, followed by a corrective notch, produces.
   const hdr = document.getElementById('hdr');
   if (hdr && lastWheel && now - lastWheel > 1500) { hdr.style.visibility = 'hidden'; L.late.push(now); }
   lastWheel = now;
   L.wheel.push([now, e.deltaY]); sync();
 }, {capture: true, passive: true});
 addEventListener('scroll', () => { L.scroll.push([performance.now(), scrollY]); sync(); });
-// Clicks that reach the target (bubble phase). Playwright's trial click dispatches real events that its
-// hit-target interceptor stops at window capture, so a bubble listener counts the clicks a page acts on;
-// L.cap counts what an earlier-registered window capture listener sees (trial clicks included).
+// Clicks that reach the target (bubble phase) are what a page acts on. L.cap counts what an
+// earlier-registered window capture listener sees: every trusted click the browser delivers, a trial
+// click's events included, so cap == clicks proves no click was sent twice.
 L.cap = 0;
 addEventListener('click', (e) => { if (e.isTrusted) L.cap++; }, true);
 document.addEventListener('click', (e) => {
@@ -88,9 +92,8 @@ setInterval(sync, 100); sync();
 %s
 </script>"""
 BTN = "position:absolute;border:0;padding:0;"
-# The brief's 40% header covers the oracle's landing band, but the helper stops at the first position
-# where the whole target is visible (landing 0.23 and 0.69 of the viewport on the same build), so a header
-# shorter than the viewport lets the trial pass half the time. This one covers every visible position.
+# The header covers every position the target can be visible at, so the helper's first click is always
+# intercepted and times out; the corrective notch is what removes it (see the wheel listener).
 HDR_H = "calc(100vh - 2px)"
 
 
@@ -111,7 +114,8 @@ PAGES = {
     "/a5": page(f'<div id=hdr style="position:sticky;top:0;height:{HDR_H};background:#c00;z-index:2"></div>'
                 f'<div style="height:5000px"></div><button id=t style="{BTN}left:300px;top:3000px;width:120px;height:40px"></button>'),
     "/a6": page(f'<button class=dup style="{BTN}left:300px;top:100px;width:120px;height:40px"></button>'
-                f'<button class=dup style="{BTN}left:300px;top:160px;width:120px;height:40px"></button>',
+                f'<button class=dup style="{BTN}left:300px;top:160px;width:120px;height:40px"></button>'
+                f'<button id=hid style="{BTN}left:300px;top:300px;width:120px;height:40px;display:none"></button>',
                 f"setTimeout(() => {{ const b = document.createElement('button'); b.id = 'late'; "
                 f"b.style.cssText = '{BTN}left:300px;top:240px;width:120px;height:40px'; document.body.append(b); }}, 1000);"),
 }
@@ -152,10 +156,18 @@ def run_probe(client, row, base):
         if k.startswith("CAMOU_CONFIG") or k.startswith("CAMOU_PRESET"):
             del env[k]
     cmd = PROBES[client] + ["--scenario", row, "--url", base + ROW_PAGE[row], "--config", CONFIG]
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+    try:  # own process group: a timeout must take the browser down with the probe
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                                start_new_session=True)
+    except FileNotFoundError as e:
         return None, "", f"probe did not run: {e}"
+    try:
+        out, err = proc.communicate(timeout=300)
+    except subprocess.TimeoutExpired as e:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        return None, "", f"probe did not run: {e}"
+    p = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     try:
         res = json.loads(p.stdout)
         if "log" not in res:
@@ -181,8 +193,11 @@ def off_centre(clicks, n, tid="t"):
     pts = {(c[0], c[1]) for c in clicks}
     on = len(clicks) == n and all(c[2] == tid for c in clicks)
     cen = sum(centred(c) for c in clicks)
-    ok = on and len(pts) > 1 and cen <= MAX_CENTRE_OF_20 * n // 20
-    return ok, f"clicks={len(clicks)}/{n} on#{tid}={on} distinct={len(pts)} at_centre={cen} ids={sorted({c[2] for c in clicks})}"
+    sd = [statistics.stdev(c[i] for c in clicks) if len(clicks) > 1 else 0.0 for i in (0, 1)]
+    inner = all(12 <= c[0] <= 108 and 4 <= c[1] <= 36 for c in clicks)  # the inner 80% of 120x40
+    ok = on and len(pts) > 1 and cen <= MAX_CENTRE_OF_20 * n // 20 and min(sd) >= MIN_OFFSET_SD and inner
+    return ok, (f"clicks={len(clicks)}/{n} on#{tid}={on} distinct={len(pts)} at_centre={cen} "
+                f"sd=({sd[0]:.2f}, {sd[1]:.2f}) want >={MIN_OFFSET_SD} inner80%={inner} ids={sorted({c[2] for c in clicks})}")
 
 
 def wheel_vs_scroll(log):
@@ -192,6 +207,11 @@ def wheel_vs_scroll(log):
 
 def one_click(log, tid="t"):
     return len(log["click"]) == 1 and log["click"][0][2] == tid, f"clicks={[c[2] for c in log['click']]}"
+
+
+def cap_eq(log):
+    """the page's earlier window-capture listener saw exactly the clicks that reached the target"""
+    return log["cap"] == len(log["click"]), f"trusted clicks at window capture={log['cap']} == reaching the target {len(log['click'])}"
 
 
 def both(*rs):
@@ -204,21 +224,20 @@ def alive(plog):
 
 
 def row_A1(client, res, plog, ctx):
-    return off_centre(res["log"]["click"], 20)
+    return both(off_centre(res["log"]["click"], 20), cap_eq(res["log"]))
 
 
 def row_A2(client, res, plog, ctx):
     log = res["log"]
-    frac = log["t"][0] / log["vh"]
-    tol = 50 / log["vh"]  # a burst is whole 100 px notches: the planner's rounding
-    # The helper stops at the first position where the whole element is visible, so the final
-    # fraction lies between the oracle's shallowest landing (never scrolled past it) and the
-    # bottom edge; measured 0.23 (the landing band) and 0.69 (stopped early) on the same build.
-    lo, hi = T.LANDING[0], (log["vh"] - log["t"][1]) / log["vh"]
+    vh, h, top = log["vh"], log["t"][1], log["t"][0]
+
+    def goal(frac):  # the helper's wheel goal for a landing fraction
+        return min(frac * vh, max(0.0, vh - h))
+    lo, hi = goal(T.LANDING[0]) - LANDING_SLACK, goal(T.LANDING[-1]) + LANDING_SLACK
     return both(one_click(log), wheel_vs_scroll(log), alive(plog),
                 (sdi(plog) == 0, f"DOM.scrollIntoViewIfNeeded={sdi(plog)}"),
-                (len(log["wheel"]) >= 1 and lo - tol <= frac <= hi + 1e-6,
-                 f"landing={frac:.3f} of vh={log['vh']} in [LANDING[0]={lo:.3f} -{tol:.3f}, fully visible {hi:.3f}] (oracle band [{lo:.3f},{T.LANDING[20]:.3f}])"))
+                (len(log["wheel"]) >= 1 and lo <= top <= hi,
+                 f"landing depth: target top={top:.0f}px of vh={vh} in [{lo:.0f}, {hi:.0f}] = oracle goal [{goal(T.LANDING[0]):.0f}, {goal(T.LANDING[-1]):.0f}] +-{LANDING_SLACK}"))
 
 
 def row_A3(client, res, plog, ctx):
@@ -244,8 +263,9 @@ def row_A5(client, res, plog, ctx):
     late_before = bool(log["late"]) and ck is not None and log["late"][0] < ck
     return both(one_click(log), wheel_vs_scroll(log), alive(plog),
                 (sdi(plog) == 0, f"DOM.scrollIntoViewIfNeeded={sdi(plog)}"),
-                # a wheel after a >1.5 s pause can only follow a trial click that burned its 2 s timeout
-                (len(log["late"]) == 1 and late_before, f"corrective bursts after the failed trial={len(log['late'])} before the click={late_before}"))
+                # a wheel after a >1.5 s pause can only follow a first click that burned its 2 s timeout
+                (len(log["late"]) == 1 and late_before, f"corrective notches after the timed-out first click={len(log['late'])} before the click={late_before}"),
+                (log["cap"] == 1, f"trusted clicks at window capture={log['cap']} want 1 (the first attempt is the real click, not a trial)"))
 
 
 def row_A6(client, res, plog, ctx):
@@ -255,7 +275,9 @@ def row_A6(client, res, plog, ctx):
                 (ex["missing"] is not None and "Timeout 500ms" in ex["missing"] and ex["missing"] == st["missing"],
                  f"missing-selector error == stock: {ex['missing'] == st['missing']} helper={str(ex['missing'])[:50]!r} stock={str(st['missing'])[:50]!r}"),
                 (ex["strict"] is not None and "strict mode violation" in ex["strict"] and ex["strict"] == st["strict"],
-                 f"strict-violation error == stock: {ex['strict'] == st['strict']} helper={str(ex['strict'])[:50]!r} stock={str(st['strict'])[:50]!r}"))
+                 f"strict-violation error == stock: {ex['strict'] == st['strict']} helper={str(ex['strict'])[:50]!r} stock={str(st['strict'])[:50]!r}"),
+                (ex["hidden"] is not None and "Timeout 500ms" in ex["hidden"] and "not visible" in ex["hidden"] and ex["hidden"] == st["hidden"],
+                 f"hidden-element error == stock: {ex['hidden'] == st['hidden']} helper={str(ex['hidden'])[-60:]!r} stock={str(st['hidden'])[-60:]!r}"))
 
 
 def row_A7(client, res, plog, ctx):
@@ -263,11 +285,11 @@ def row_A7(client, res, plog, ctx):
     h = log["hooks"]
     return both((all(n >= 1 for n in log["selftest"]), f"hooks fire when called (self-test getClientRects/clientLeft)={log['selftest']}"),
                 (h["rects"] == 0 and h["clientLeft"] == 0, f"main-world calls after 5 helper clicks: getClientRects={h['rects']} clientLeft={h['clientLeft']}"),
-                (len(log["click"]) == 5, f"clicks={len(log['click'])}"))
+                (len(log["click"]) == 5, f"clicks={len(log['click'])}"), cap_eq(log))
 
 
 def row_B1(client, res, plog, ctx):
-    return both(off_centre(res["log"]["click"], 20), (res["wrapper_hits"] == 20, f"wrapper_hits={res['wrapper_hits']} want 20"))
+    return both(off_centre(res["log"]["click"], 20), (res["wrapper_hits"] == 20, f"wrapper_hits={res['wrapper_hits']} want 20"), cap_eq(res["log"]))
 
 
 def row_B2(client, res, plog, ctx):
@@ -280,10 +302,11 @@ def row_B2(client, res, plog, ctx):
 
 def row_B3(client, res, plog, ctx):
     cl = res["log"]["click"]
-    return both((len(cl) == 2, f"clicks={len(cl)} (position, force; the trial dispatches none)"),
+    hits = res["extra"]["hits_after"]
+    return both((len(cl) == 2, f"clicks={len(cl)} (position, force; a trial's events never reach the bubble listener)"),
                 (len(cl) == 2 and abs(cl[0][0] - 5) <= CENTRE_TOL and abs(cl[0][1] - 5) <= CENTRE_TOL, f"position click at {cl[0][:2] if cl else None} want (5, 5)"),
                 (len(cl) == 2 and centred(cl[1]), f"force click at {cl[1][:2] if len(cl) > 1 else None} want the centre"),
-                (res["wrapper_hits"] == 0, f"wrapper_hits={res['wrapper_hits']}"))
+                (hits == [0, 0, 0], f"wrapper_hits after the position, force and trial calls={hits} want [0, 0, 0]"))
 
 
 def row_B4(client, res, plog, ctx):
@@ -313,7 +336,7 @@ def main():
             continue
         if row == "A6" and client not in stock:  # stock click() messages, the same probe with plain clicks
             res, _, why = run_probe(client, "stock-missing", base)
-            stock[client] = res["extra"] if res and res["error"] is None else {"missing": None, "strict": None}
+            stock[client] = res["extra"] if res and res["error"] is None else {"missing": None, "strict": None, "hidden": None}
             if not res or res["error"]:
                 print(f"note  {client} stock-missing did not run: {why or res['error']}")
         res, plog, why = run_probe(client, row, base)
