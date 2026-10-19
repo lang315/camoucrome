@@ -168,6 +168,9 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 				break
 			}
 			if sent >= clickMaxNotches || stuck >= clickNoProgressBursts {
+				if visible(*g) { // the page end: arrived as far as it can
+					break
+				}
 				return t.Click(o)
 			}
 			wheelNotches(m, n, st.windows, r, sleep)

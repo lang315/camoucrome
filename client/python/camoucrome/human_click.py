@@ -67,6 +67,8 @@ async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None,
             if burst is None:
                 break
             if sent >= T.MAX_NOTCHES or stuck >= T.NO_PROGRESS_BURSTS:
+                if m.visible(geo):  # the page end: arrived as far as it can
+                    break
                 return await fallback()
             await _wheel(page, burst[0], state["windows"], rand, sleep)
             sent += abs(burst[0])

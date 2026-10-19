@@ -137,8 +137,59 @@ test('wheel continues past first visibility to the landing depth', async () => {
   await hc.act(target, page, {}, { scale: 1, windows: true }, () => 0, noSleep, click);
   const first = tops.findIndex((y) => y >= 0 && y + geo.h <= geo.vh);
   assert.ok(first >= 0 && first < tops.length - 1, `stopped at the first fully visible position: ${tops}`);
-  assert.ok(Math.abs(geo.y - 0.2 * geo.vh) < 50, `final top ${geo.y}`);
+  assert.ok(Math.abs(geo.y - 0.2 * geo.vh) < 100, `final top ${geo.y}`);
 });
+
+// The shipped landing knots top out at 0.2891, so a high rand cannot clamp
+// L; pin the knots to the 0.95 the clamped-goal defect needs.
+function pinnedLanding(fn) {
+  const table = require('../click_tables');
+  const saved = table.landing.slice();
+  table.landing.fill(0.95);
+  return Promise.resolve().then(fn).finally(() => table.landing.splice(0, saved.length, ...saved));
+}
+
+test('a clamped landing arrives within one notch', () => pinnedLanding(async () => {
+  // L clamps to vh - h, so a notch cannot put a visible target inside a
+  // 50 px window; it must still arrive, not oscillate to the notch budget.
+  const log = [];
+  const geo = { ...GEO, y: 1200 };
+  const page = { mouse: {
+    move: async () => {},
+    wheel: async (dx, dy) => { log.push(['wheel', dx, dy]); geo.y -= dy; },
+  } };
+  const target = { evaluate: async () => ({ ...geo }) };
+  const click = async (o) => { log.push(['click', o]); return 'result-1'; };
+  await hc.act(target, page, {}, { scale: 1, windows: true }, () => 0.5, noSleep, click);
+  const goal = Math.min(0.95 * geo.vh, geo.vh - geo.h);
+  assert.ok(geo.y >= 0 && geo.y + geo.h <= geo.vh, `not visible: ${geo.y}`);
+  assert.ok(Math.abs(geo.y - goal) < 100, `final top ${geo.y}, want within 100 of ${goal}`);
+  const notches = log.filter((e) => e[0] === 'wheel').reduce((s, e) => s + Math.abs(e[2]) / 100, 0);
+  assert.ok(notches < 10, `${notches} notches`);
+  const clicks = log.filter((e) => e[0] === 'click').map((e) => e[1]);
+  assert.equal(clicks.length, 1);
+  assert.equal(clicks[0].scroll, 'none');
+  assert.ok('position' in clicks[0]);
+}));
+
+test('a visible target at the page end is clicked, not fallen back', () => pinnedLanding(async () => {
+  // The target cannot be brought to L=680; held visible at 380, it is
+  // clicked where the page end left it, not handed to the stock click.
+  const log = [];
+  const geo = { ...GEO, y: -50 };
+  const page = { mouse: {
+    move: async () => {},
+    wheel: async (dx, dy) => { log.push(['wheel', dx, dy]); geo.y = Math.min(geo.y - dy, 380); },
+  } };
+  const target = { evaluate: async () => ({ ...geo }) };
+  const click = async (o) => { log.push(['click', o]); return 'result-1'; };
+  await hc.act(target, page, {}, { scale: 1, windows: true }, () => 0.5, noSleep, click);
+  assert.equal(geo.y, 380);
+  const clicks = log.filter((e) => e[0] === 'click').map((e) => e[1]);
+  assert.equal(clicks.length, 1);
+  assert.equal(clicks[0].scroll, 'none');
+  assert.ok('position' in clicks[0]);
+}));
 
 // Ruling 3: B counts the human path only; a pass-through or a missing context
 // leaves the stock Frame.click handling the call untouched.

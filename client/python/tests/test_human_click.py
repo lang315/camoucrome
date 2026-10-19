@@ -122,7 +122,55 @@ def test_wheel_continues_past_first_visibility_to_the_landing_depth():
     tops = t.page.mouse.tops
     first = next((i for i, y in enumerate(tops) if 0 <= y and y + geo["h"] <= geo["vh"]), None)
     assert first is not None and first < len(tops) - 1, f"stopped at the first fully visible position: {tops}"
-    assert abs(geo["y"] - 0.2 * geo["vh"]) < 50, f"final top {geo['y']}"
+    assert abs(geo["y"] - 0.2 * geo["vh"]) < 100, f"final top {geo['y']}"
+
+
+class PageEndMouse(FakeMouse):
+    """Scrolling stops at 380, 300 px above the clamped L=680: the page end."""
+    def __init__(self, log, geo): super().__init__(log); self.geo = geo
+    async def wheel(self, dx, dy):
+        self.log.append(("wheel", dx, dy))
+        self.geo["y"] = min(self.geo["y"] - dy, 380)
+
+
+def _pinned_landing(monkeypatch):
+    # The shipped landing knots top out at 0.2891, so a high rand cannot clamp
+    # L; pin the knots to the 0.95 the clamped-goal defect needs.
+    monkeypatch.setattr(hc.T, "LANDING", [0.95] * 21)
+
+
+def test_a_clamped_landing_arrives_within_one_notch(monkeypatch):
+    """L clamps to vh - h, so a notch cannot put a visible target inside a
+    50 px window; it must still arrive, not oscillate to the notch budget."""
+    _pinned_landing(monkeypatch)
+    log = []
+    geo = {**GEO, "y": 1200}
+    t = CopyingTarget([geo], log)
+    t.page.mouse = ScrollingMouse(log, geo)
+    run(hc._act(t, t.page, {}, state={"scale": 1.0, "windows": True}, rand=lambda: 0.5,
+                sleep=lambda s: asyncio.sleep(0)))
+    goal = min(0.95 * geo["vh"], geo["vh"] - geo["h"])
+    assert 0 <= geo["y"] and geo["y"] + geo["h"] <= geo["vh"], f"not visible: {geo['y']}"
+    assert abs(geo["y"] - goal) < 100, f"final top {geo['y']}, want within 100 of {goal}"
+    notches = sum(abs(e[2]) for e in log if e[0] == "wheel") / 100
+    assert notches < 10, f"{notches} notches"
+    clicks = [e[1] for e in log if e[0] == "click"]
+    assert len(clicks) == 1 and clicks[0]["scroll"] == "none" and "position" in clicks[0], clicks
+
+
+def test_a_visible_target_at_the_page_end_is_clicked_not_fallen_back(monkeypatch):
+    """The target cannot be brought to L=680; held visible at 380, it is
+    clicked where the page end left it, not handed to the stock click."""
+    _pinned_landing(monkeypatch)
+    log = []
+    geo = {**GEO, "y": -50}
+    t = CopyingTarget([geo], log)
+    t.page.mouse = PageEndMouse(log, geo)
+    run(hc._act(t, t.page, {}, state={"scale": 1.0, "windows": True}, rand=lambda: 0.5,
+                sleep=lambda s: asyncio.sleep(0)))
+    assert geo["y"] == 380, f"page end left the target at {geo['y']}"
+    clicks = [e[1] for e in log if e[0] == "click"]
+    assert len(clicks) == 1 and clicks[0]["scroll"] == "none" and "position" in clicks[0], clicks
 
 
 def test_launch_refuses_flag_without_humanize():

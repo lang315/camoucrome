@@ -59,7 +59,10 @@ async function act(target, page, opts, st, rand, sleep, click) {
     while (true) {
       const burst = m.nextBurst(geo, landing, T.burst, T.pause, rand, T.maxNotches - sent);
       if (burst === null) break;
-      if (sent >= T.maxNotches || stuck >= T.noProgressBursts) return click(opts);
+      if (sent >= T.maxNotches || stuck >= T.noProgressBursts) {
+        if (m.visible(geo)) break;  // the page end: arrived as far as it can
+        return click(opts);
+      }
       await wheel(page, burst[0], st.windows, rand, sleep);
       sent += Math.abs(burst[0]);
       await sleep(burst[1]);

@@ -100,7 +100,7 @@ func roundAway(x float64) float64 { return math.Copysign(math.Floor(math.Abs(x)+
 func nextBurst(g geometry, landing float64, burst, pause [21]float64, r func() float64, maxNotches int) (int, float64, bool) {
 	goal := math.Min(landing*g.VH, math.Max(0, g.VH-g.H))
 	delta := g.Y - goal
-	if visible(g) && math.Abs(delta) < 50 {
+	if visible(g) && math.Abs(delta) < 100 {
 		return 0, 0, false
 	}
 	total := int(math.Max(-float64(maxNotches), math.Min(float64(maxNotches), roundAway(delta/100))))

@@ -78,7 +78,7 @@ def visible(geo):
 def next_burst(geo, landing, burst_knots, pause_knots, r, max_notches=60):
     goal = min(landing * geo["vh"], max(0, geo["vh"] - geo["h"]))
     delta = geo["y"] - goal
-    if visible(geo) and abs(delta) < 50:
+    if visible(geo) and abs(delta) < 100:
         return None
     total = int(math.copysign(math.floor(abs(delta) / 100 + 0.5), delta))
     total = max(-max_notches, min(max_notches, total))

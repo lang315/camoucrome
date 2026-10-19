@@ -195,8 +195,99 @@ func TestActWheelsPastFirstVisibilityToTheLandingDepth(t *testing.T) {
 	if first < 0 || first >= len(tops)-1 {
 		t.Fatalf("stopped at the first fully visible position: %v", tops)
 	}
-	if math.Abs(geo.Y-0.2*geo.VH) >= 50 {
-		t.Fatalf("final top %v, want within 50 of %v", geo.Y, 0.2*geo.VH)
+	if math.Abs(geo.Y-0.2*geo.VH) >= 100 {
+		t.Fatalf("final top %v, want within 100 of %v", geo.Y, 0.2*geo.VH)
+	}
+}
+
+// pinLanding replaces the shipped landing knots (which top out at 0.2891, so
+// a high r cannot clamp L) with the 0.95 the clamped-goal defect needs.
+func pinLanding(t *testing.T) {
+	t.Helper()
+	old := clickLanding
+	for i := range clickLanding {
+		clickLanding[i] = 0.95
+	}
+	t.Cleanup(func() { clickLanding = old })
+}
+
+type pageEndTarget struct {
+	geo  *geometry
+	opts []playwright.LocatorClickOptions
+}
+
+func (f *pageEndTarget) geometry(*float64) *geometry { g := *f.geo; return &g }
+func (f *pageEndTarget) Click(o playwright.LocatorClickOptions) error {
+	f.opts = append(f.opts, o)
+	return nil
+}
+
+// L clamps to vh - h, so a notch cannot put a visible target inside a 50 px
+// window; it must still arrive, not oscillate to the notch budget.
+func TestActClampedLandingArrivesWithinOneNotch(t *testing.T) {
+	pinLanding(t)
+	geo := testGeo
+	geo.Y, geo.H = 1200, 40
+	var tops []float64
+	target := &pageEndTarget{geo: &geo}
+	err := act(target, scrollingMouse{geo: &geo, tops: &tops}, nil,
+		playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true},
+		func() float64 { return 0.5 }, func(time.Duration) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal := math.Min(0.95*geo.VH, geo.VH-geo.H)
+	if geo.Y < 0 || geo.Y+geo.H > geo.VH {
+		t.Fatalf("not visible: %v", geo.Y)
+	}
+	if math.Abs(geo.Y-goal) >= 100 {
+		t.Fatalf("final top %v, want within 100 of %v", geo.Y, goal)
+	}
+	notches, prev := 0.0, 1200.0
+	for _, y := range tops {
+		notches += math.Abs(prev-y) / 100
+		prev = y
+	}
+	if notches >= 10 {
+		t.Fatalf("%v notches", notches)
+	}
+	if len(target.opts) != 1 {
+		t.Fatalf("clicks: %d", len(target.opts))
+	}
+	if o := target.opts[0]; o.Scroll == nil || *o.Scroll != *playwright.ScrollModeNone || o.Position == nil {
+		t.Fatalf("not a human click: %+v", o)
+	}
+}
+
+type pageEndMouse struct{ geo *geometry }
+
+func (m pageEndMouse) Move(float64, float64, ...playwright.MouseMoveOptions) error { return nil }
+func (m pageEndMouse) Wheel(dx, dy float64) error {
+	m.geo.Y = math.Min(m.geo.Y-dy, 380)
+	return nil
+}
+
+// The target cannot be brought to L=680; held visible at 380, it is clicked
+// where the page end left it, not handed to the stock click.
+func TestActVisibleAtThePageEndIsClickedNotFallenBack(t *testing.T) {
+	pinLanding(t)
+	geo := testGeo
+	geo.Y, geo.H = -50, 40
+	target := &pageEndTarget{geo: &geo}
+	err := act(target, pageEndMouse{geo: &geo}, nil,
+		playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true},
+		func() float64 { return 0.5 }, func(time.Duration) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if geo.Y != 380 {
+		t.Fatalf("page end left the target at %v", geo.Y)
+	}
+	if len(target.opts) != 1 {
+		t.Fatalf("clicks: %d", len(target.opts))
+	}
+	if o := target.opts[0]; o.Scroll == nil || *o.Scroll != *playwright.ScrollModeNone || o.Position == nil {
+		t.Fatalf("not a human click: %+v", o)
 	}
 }
 

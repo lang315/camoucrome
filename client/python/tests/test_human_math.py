@@ -40,8 +40,8 @@ def test_click_position_centre_cases():
 
 
 def test_next_burst_visible_within_a_notch_of_landing_is_none():
-    geo = dict(x=0, y=170, w=10, h=10, vw=800, vh=600)  # L=180: 10 px away
-    assert m.next_burst(geo, 0.3, [3.0] * 21, [200.0] * 21, stream([0.5])) is None
+    geo = dict(x=0, y=90, w=10, h=10, vw=800, vh=600)  # L=180: 90 px away, inside one notch
+    assert m.next_burst(geo, 0.3, [3.0] * 21, [200.0] * 21, stream([0.5, 0.5])) is None
 
 
 def test_vectors_match():

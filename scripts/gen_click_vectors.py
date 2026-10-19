@@ -52,10 +52,11 @@ def build():
             case_burst({**GEO, "y": 99000.0}, 0.3, [1.0, 0.5]),   # clamped at 60
             case_burst({**GEO, "y": 1440.0}, 2.0, [0.5, 0.5]),    # landing 1440 clamps to L=680, delta=760
             case_burst({**GEO, "y": 230.0}, 0.3, [0.5, 0.5]),     # visible, 14 px from L=216 -> None
-            case_burst({**GEO, "y": 265.0}, 0.3, [0.5, 0.5]),     # visible, 49 px from L -> None
-            case_burst({**GEO, "y": 267.0}, 0.3, [0.5, 0.5]),     # visible, 51 px from L: a burst
-            case_burst({**GEO, "y": 690.0}, 0.95, [0.5, 0.5]),    # L clamps to 680; 10 px below it, not fully visible
+            case_burst({**GEO, "y": 117.0}, 0.3, [0.5, 0.5]),     # visible, 99 px above L=216 -> None
+            case_burst({**GEO, "y": 115.0}, 0.3, [0.5, 0.5]),     # visible, 101 px above L: a burst
+            case_burst({**GEO, "y": 690.0}, 0.95, [0.5, 0.5]),    # L clamps to 680; 10 px below it, not fully visible: a burst
             case_burst({**GEO, "y": 670.0}, 0.95, [0.5, 0.5]),    # visible, 10 px above the clamped L -> None
+            case_burst({**GEO, "y": 590.0}, 0.95, [0.5, 0.5]),    # visible, 90 px above the clamped L -> None
             case_burst({**GEO, "y": 20.0, "h": 2000.0}, 0.3, [0.5, 0.5]),  # taller than vh: L=0, visible
         ],
     }
