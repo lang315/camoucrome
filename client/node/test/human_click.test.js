@@ -253,3 +253,57 @@ test('launch refuses humanClick without humanize:enabled', async () => {
     await assert.rejects(c.launch({}, '/x', { config, humanClick: true }), /humanize:enabled/);
   }
 });
+
+// --- round 2: delivery, corrective notch, tall targets ----------------------
+
+const driverTimeout = (message) =>
+  Object.assign(new Error(message), { name: 'TimeoutError' });
+const DELIVERED = 'Timeout 2000ms exceeded.\n  - <header> intercepts pointer events\n'
+  + '  - retrying click action\n  - performing click action';
+const NOT_DELIVERED = 'Timeout 2000ms exceeded.\n  - <header> intercepts pointer events\n'
+  + '  - retrying click action';
+
+test('a timeout after delivery started is not retried', async () => {
+  const f = fake([{ ...GEO, y: 100 }], [driverTimeout(DELIVERED)]);
+  await assert.rejects(hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click),
+    /Timeout 2000ms exceeded/);
+  assert.deepEqual(f.log.map((e) => e[0]), ['click']);
+});
+
+test('a timeout before delivery still retries', async () => {
+  const f = fake([{ ...GEO, y: 100 }], [driverTimeout(NOT_DELIVERED)]);
+  const result = await hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click);
+  assert.deepEqual(f.log.map((e) => e[0]), ['click', 'wheel', 'click']);
+  assert.equal(result, 'result-2');
+});
+
+test('the corrective notch moves away from the cover', async () => {
+  for (const [y, delta] of [[100, -100], [600, 100]]) {
+    const f = fake([{ ...GEO, y }], [driverTimeout(NOT_DELIVERED)]);
+    await hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click);
+    assert.deepEqual(f.log.filter((e) => e[0] === 'wheel'), [['wheel', 0, delta]]);
+  }
+});
+
+test('the second attempt records the point after the corrective notch', async () => {
+  for (const [y, direction] of [[100, -1], [600, 1]]) {
+    const f = fake([{ ...GEO, y }], [driverTimeout(NOT_DELIVERED)]);
+    await hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click);
+    const pos = f.log.filter((e) => e[0] === 'click')[1][1].position;
+    assert.deepEqual(hc.lastPoint(f.page),
+      [GEO.x + GEO.bl + pos.x, y + GEO.bt + pos.y - 100 * direction]);
+  }
+});
+
+test('a bouncing tall target stops at the stuck limit', async () => {
+  const log = [];
+  let i = 0;
+  const ys = [70, -30];
+  const page = { mouse: { move: async () => {}, wheel: async (dx, dy) => log.push(['wheel', dx, dy]) } };
+  const target = { evaluate: async () => ({ ...GEO, y: ys[i++ % 2], h: 700 }) };
+  const click = async (o) => { log.push(['click', o]); return 'result'; };
+  await hc.act(target, page, {}, { scale: 1, windows: true }, () => 0.5, noSleep, click);
+  const wheels = log.filter((e) => e[0] === 'wheel');
+  assert.ok(wheels.length > 0 && wheels.length < 60, `${wheels.length} wheels`);
+  assert.deepEqual(log.at(-1), ['click', {}]);  // the stock fallback
+});

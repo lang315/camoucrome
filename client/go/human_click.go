@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,6 +128,19 @@ func viewportFromLayoutMetrics(v any) (vw, vh float64, ok bool) {
 
 func (t locatorTarget) Click(o playwright.LocatorClickOptions) error { return t.l.Click(o) }
 
+// maybeDelivered reports whether the driver's call log shows the press was
+// dispatched: 'performing click action' after the last 'retrying click action'
+// means a retry would double-click.
+func maybeDelivered(err error) bool {
+	text := err.Error()
+	performed := strings.LastIndex(text, "performing click action")
+	if performed < 0 {
+		return false
+	}
+	retried := strings.LastIndex(text, "retrying click action")
+	return retried < 0 || performed > retried
+}
+
 func wheelNotches(m mouser, notches int, windows bool, r func() float64, sleep func(time.Duration)) {
 	if windows {
 		_ = m.Wheel(0, float64(notches*100)) // SP2c splits it into notches
@@ -161,7 +175,7 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 			lastPoint.Store(page, pt)
 		}
 		landing := sampleKnots(clickLanding, r())
-		sent, stuck := 0, 0
+		sent, stuck, prevSign := 0, 0, 0
 		for {
 			n, pause, ok := nextBurst(*g, landing, clickBurst, clickPause, r, clickMaxNotches-sent)
 			if !ok {
@@ -180,11 +194,16 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 			if g = t.geometry(o.Timeout); g == nil {
 				return t.Click(o)
 			}
-			if math.Abs(g.Y-before) < 1 {
-				stuck++
+			sign := 1
+			if n < 0 {
+				sign = -1
+			}
+			if (prevSign != 0 && sign != prevSign) || math.Abs(g.Y-before) < 1 {
+				stuck++ // a reversal is a bounce, not progress
 			} else {
 				stuck = 0
 			}
+			prevSign = sign
 		}
 	}
 	var last *[2]float64
@@ -200,11 +219,19 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 	final.Position = pos
 	attemptTimeout := float64(clickTrialTimeoutMs) // fixed: the first attempt's timeout, never the caller's
 	final.Timeout = &attemptTimeout
+	dir := 1
+	if g.Y+g.H/2 < g.VH/2 { // away from a cover at the top
+		dir = -1
+	}
 	for attempt := range 2 {
 		err := t.Click(final)
 		if err == nil {
 			if pos != nil && page != nil {
-				lastPoint.Store(page, [2]float64{g.X + g.BL + pos.X, g.Y + g.BT + pos.Y})
+				y := g.Y + g.BT + pos.Y
+				if attempt == 1 {
+					y -= 100 * float64(dir) // the corrective notch moved the target
+				}
+				lastPoint.Store(page, [2]float64{g.X + g.BL + pos.X, y})
 			}
 			return nil
 		}
@@ -212,10 +239,14 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 			// The click may already have been delivered: a second one would double-click.
 			return err
 		}
+		if maybeDelivered(err) {
+			// The press was dispatched before the deadline: a retry would double-click.
+			return err
+		}
 		if attempt == 1 {
 			return t.Click(o)
 		}
-		wheelNotches(m, 1, st.windows, r, sleep) // a covered target: one corrective burst
+		wheelNotches(m, dir, st.windows, r, sleep) // a covered target: one corrective burst
 		sleep(200 * time.Millisecond)
 	}
 	return nil

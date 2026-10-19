@@ -403,3 +403,79 @@ def test_a_async_fallback_calls_the_public_locator_click():
     loc = _public_locator("patchright.async_api._generated", geos=[None])
     assert run(hc.human_click(loc, timeout=50, rand=lambda: 0.5)) == "stock"
     assert loc.clicks == [] and loc.stock == [{"timeout": 50}]
+
+
+# --- round 2: delivery, corrective notch, tall targets ----------------------
+
+def _driver_timeout(message):
+    """A class NAMED TimeoutError, as the driver's is; not the builtin."""
+    class TimeoutError(Exception):
+        pass
+    return TimeoutError(message)
+
+
+DELIVERED = ("Timeout 2000ms exceeded.\n"
+             "  - <header> intercepts pointer events\n"
+             "  - retrying click action\n"
+             "  - performing click action")
+NOT_DELIVERED = ("Timeout 2000ms exceeded.\n"
+                 "  - <header> intercepts pointer events\n"
+                 "  - retrying click action")
+
+
+def test_a_timeout_after_delivery_started_is_not_retried():
+    log = []
+    t = FakeTarget([{**GEO, "y": 100}], log, errors=[_driver_timeout(DELIVERED)])
+    with pytest.raises(Exception) as ei:
+        run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
+    assert type(ei.value).__name__ == "TimeoutError"
+    assert [e[0] for e in log] == ["click"]
+
+
+def test_a_timeout_before_delivery_still_retries():
+    log = []
+    t = FakeTarget([{**GEO, "y": 100}], log, errors=[_driver_timeout(NOT_DELIVERED)])
+    result = run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5,
+                         sleep=lambda s: asyncio.sleep(0)))
+    assert [e[0] for e in log] == ["click", "wheel", "click"]
+    assert result == ("result", 3)
+
+
+@pytest.mark.parametrize("y, delta", [(100, -100), (600, 100)])
+def test_the_corrective_notch_moves_away_from_the_cover(y, delta):
+    log = []
+    t = FakeTarget([{**GEO, "y": y}], log, errors=[_driver_timeout(NOT_DELIVERED)])
+    run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
+    assert [e for e in log if e[0] == "wheel"] == [("wheel", 0, delta)]
+
+
+@pytest.mark.parametrize("y, direction", [(100, -1), (600, 1)])
+def test_the_second_attempt_records_the_point_after_the_corrective_notch(y, direction):
+    log = []
+    t = FakeTarget([{**GEO, "y": y}], log, errors=[_driver_timeout(NOT_DELIVERED)])
+    run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
+    pos = [e[1] for e in log if e[0] == "click"][1]["position"]
+    assert hc._last[t.page] == (GEO["x"] + GEO["bl"] + pos["x"],
+                                y + GEO["bt"] + pos["y"] - 100 * direction)
+
+
+class BounceTarget(FakeTarget):
+    """Geometry alternates between two non-visible tops, as a tall target does
+    when each direction lands it just out of view."""
+    def __init__(self, ys, log):
+        super().__init__([{**GEO, "y": ys[0], "h": 700}], log)
+        self.ys, self.i = list(ys), 0
+    async def evaluate(self, js, arg=None, timeout=None, isolatedContext=True):
+        y = self.ys[self.i % len(self.ys)]
+        self.i += 1
+        return {**GEO, "y": y, "h": 700}
+
+
+def test_a_bouncing_tall_target_stops_at_the_stuck_limit():
+    log = []
+    t = BounceTarget([70, -30], log)
+    run(hc._act(t, t.page, {}, state={"scale": 1.0, "windows": True},
+                rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
+    wheels = [e for e in log if e[0] == "wheel"]
+    assert 0 < len(wheels) < hc.T.MAX_NOTCHES, f"{len(wheels)} wheels"
+    assert log[-1] == ("click", {})  # the stock fallback

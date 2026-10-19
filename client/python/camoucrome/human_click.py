@@ -25,6 +25,16 @@ def _seed(eff):
     return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= UINT32_MAX else None
 
 
+def _maybe_delivered(text):
+    """The driver logs 'performing click action' once it dispatches the press;
+    a retry after that line would double-click."""
+    performed = text.rfind("performing click action")
+    if performed < 0:
+        return False
+    retried = text.rfind("retrying click action")
+    return retried < 0 or performed > retried
+
+
 async def _geometry(target, timeout):
     try:
         return await target.evaluate(T.GEOMETRY_JS, None, timeout=timeout, isolatedContext=True)
@@ -61,7 +71,7 @@ async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None,
         await page.mouse.move(*pt)
         _last[page] = pt
         landing = m.sample_knots(T.LANDING, rand())
-        sent, stuck = 0, 0
+        sent, stuck, prev_sign = 0, 0, 0
         while True:
             burst = m.next_burst(geo, landing, T.BURST, T.PAUSE, rand, T.MAX_NOTCHES - sent)
             if burst is None:
@@ -76,12 +86,18 @@ async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None,
             before, geo = geo["y"], await _geometry(target, timeout)
             if geo is None:
                 return await fallback()
-            stuck = stuck + 1 if abs(geo["y"] - before) < 1 else 0
+            sign = 1 if burst[0] > 0 else -1
+            if (prev_sign and sign != prev_sign) or abs(geo["y"] - before) < 1:
+                stuck += 1  # a reversal is a bounce, not progress
+            else:
+                stuck = 0
+            prev_sign = sign
     pos = m.click_position(geo, _last.get(page), T.OFFSET, state["scale"], rand)  # scale = profile_scale(seed, "offset")
     extra = {"scroll": "none"}
     if pos is not None:
         extra["position"] = {"x": pos[0], "y": pos[1]}
     attempt_timeout = T.TRIAL_TIMEOUT_MS  # fixed: the first attempt's timeout, never the caller's
+    dir = -1 if geo["y"] + geo["h"] / 2 < geo["vh"] / 2 else 1  # away from a cover at the top
     for attempt in range(2):
         try:
             result = await click(**{**opts, **extra, "timeout": attempt_timeout})
@@ -89,13 +105,19 @@ async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None,
             if type(e).__name__ != "TimeoutError":
                 # the click may already have been delivered: a second one would double-click
                 raise
+            if _maybe_delivered(str(e)):
+                # the press was dispatched before the deadline: a retry would double-click
+                raise
             if attempt == 1:
                 return await fallback()
-            await _wheel(page, 1, state["windows"], rand, sleep)  # a covered target: one corrective burst
+            await _wheel(page, dir, state["windows"], rand, sleep)  # a covered target: one corrective burst
             await sleep(0.2)
         else:
             if pos is not None:
-                _last[page] = (geo["x"] + geo["bl"] + pos[0], geo["y"] + geo["bt"] + pos[1])
+                y = geo["y"] + geo["bt"] + pos[1]
+                if attempt == 1:
+                    y -= 100 * dir  # the corrective notch moved the target
+                _last[page] = (geo["x"] + geo["bl"] + pos[0], y)
             return result
 
 

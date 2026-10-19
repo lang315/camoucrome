@@ -28,6 +28,15 @@ function seedOf(eff) {
   return Number.isInteger(v) && v >= 0 && v <= UINT32_MAX ? v : null;
 }
 
+// The driver logs 'performing click action' once it dispatches the press;
+// a retry after that line would double-click.
+function maybeDelivered(text) {
+  const performed = text.lastIndexOf('performing click action');
+  if (performed < 0) return false;
+  const retried = text.lastIndexOf('retrying click action');
+  return retried < 0 || performed > retried;
+}
+
 async function geometry(target, timeout) {
   try {
     return await target.evaluate(GEOMETRY, undefined, { timeout, isolatedContext: true });
@@ -55,7 +64,7 @@ async function act(target, page, opts, st, rand, sleep, click) {
     await page.mouse.move(pt[0], pt[1]);
     last.set(page, pt);
     const landing = m.sampleKnots(T.landing, rand());
-    let sent = 0, stuck = 0;
+    let sent = 0, stuck = 0, prevSign = 0;
     while (true) {
       const burst = m.nextBurst(geo, landing, T.burst, T.pause, rand, T.maxNotches - sent);
       if (burst === null) break;
@@ -69,12 +78,19 @@ async function act(target, page, opts, st, rand, sleep, click) {
       const before = geo.y;
       geo = await geometry(target, timeout);
       if (!geo) return click(opts);
-      stuck = Math.abs(geo.y - before) < 1 ? stuck + 1 : 0;
+      const sign = burst[0] > 0 ? 1 : -1;
+      if ((prevSign !== 0 && sign !== prevSign) || Math.abs(geo.y - before) < 1) {
+        stuck += 1;  // a reversal is a bounce, not progress
+      } else {
+        stuck = 0;
+      }
+      prevSign = sign;
     }
   }
   const pos = m.clickPosition(geo, last.get(page) || null, T.offset, st.scale, rand);
   const extra = { scroll: 'none', ...(pos ? { position: { x: pos[0], y: pos[1] } } : {}) };
   const attemptTimeout = T.trialTimeoutMs;  // fixed: the first attempt's timeout, never the caller's
+  const dir = geo.y + geo.h / 2 < geo.vh / 2 ? -1 : 1;  // away from a cover at the top
   for (let attempt = 0; attempt < 2; attempt++) {
     let result;
     try {
@@ -84,12 +100,19 @@ async function act(target, page, opts, st, rand, sleep, click) {
         // the click may already have been delivered: a second one would double-click
         throw e;
       }
+      if (maybeDelivered(e.message)) {
+        // the press was dispatched before the deadline: a retry would double-click
+        throw e;
+      }
       if (attempt === 1) return click(opts);
-      await wheel(page, 1, st.windows, rand, sleep);  // a covered target: one corrective burst
+      await wheel(page, dir, st.windows, rand, sleep);  // a covered target: one corrective burst
       await sleep(200);
       continue;
     }
-    if (pos) last.set(page, [geo.x + geo.bl + pos[0], geo.y + geo.bt + pos[1]]);
+    if (pos) {
+      const y = geo.y + geo.bt + pos[1] - (attempt === 1 ? 100 * dir : 0);  // the notch moved it
+      last.set(page, [geo.x + geo.bl + pos[0], y]);
+    }
     return result;
   }
 }
@@ -122,4 +145,4 @@ async function install(ctx, helpers, config, preset) {
   proto._camouHumanClick = true;
 }
 
-module.exports = { act, humanClick, install, installState, seedOf, wrapperHits };
+module.exports = { act, humanClick, install, installState, seedOf, wrapperHits, lastPoint: (page) => last.get(page) };

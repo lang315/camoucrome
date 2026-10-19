@@ -441,3 +441,126 @@ func TestViewportFromLayoutMetrics(t *testing.T) {
 		}
 	}
 }
+
+// --- round 2: delivery, corrective notch, tall targets ----------------------
+
+func timeoutWithLog(log string) error {
+	return fmt.Errorf("%w: %s", playwright.ErrTimeout, "Timeout 2000ms exceeded.\n  "+log)
+}
+
+const (
+	deliveredLog    = "- <header> intercepts pointer events\n  - retrying click action\n  - performing click action"
+	notDeliveredLog = "- <header> intercepts pointer events\n  - retrying click action"
+)
+
+func TestActTimeoutAfterDeliveryStartedIsNotRetried(t *testing.T) {
+	inView := testGeo
+	inView.Y = 200
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{}, nil, timeoutWithLog(deliveredLog))
+	if !errors.Is(err, playwright.ErrTimeout) || len(f.opts) != 1 {
+		t.Fatalf("err %v opts %d", err, len(f.opts))
+	}
+	if !reflect.DeepEqual(log, []string{"click"}) {
+		t.Fatalf("log %v", log)
+	}
+}
+
+func TestActTimeoutBeforeDeliveryStillRetries(t *testing.T) {
+	inView := testGeo
+	inView.Y = 200
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{}, nil, timeoutWithLog(notDeliveredLog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(log, []string{"click", "wheel", "click"}) || len(f.opts) != 2 {
+		t.Fatalf("log %v opts %d", log, len(f.opts))
+	}
+}
+
+type notchMouse struct{ deltas []float64 }
+
+func (m *notchMouse) Move(float64, float64, ...playwright.MouseMoveOptions) error { return nil }
+func (m *notchMouse) Wheel(dx, dy float64) error {
+	m.deltas = append(m.deltas, dy)
+	return nil
+}
+
+func TestActCorrectiveNotchMovesAwayFromTheCover(t *testing.T) {
+	for _, c := range []struct{ y, delta float64 }{{100, -100}, {600, 100}} {
+		geo := testGeo
+		geo.Y = c.y
+		var log []string
+		f := &fakeTarget{geos: []*geometry{&geo}, log: &log, errs: []error{timeoutWithLog(notDeliveredLog)}}
+		mouse := &notchMouse{}
+		err := act(f, mouse, nil, playwright.LocatorClickOptions{}, nil,
+			func() float64 { return 0.5 }, func(time.Duration) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(mouse.deltas, []float64{c.delta}) {
+			t.Fatalf("y=%v deltas %v, want [%v]", c.y, mouse.deltas, c.delta)
+		}
+	}
+}
+
+// fakePage is a playwright.Page key for lastPoint: act only stores it.
+type fakePage struct{ playwright.Page }
+
+func TestActSecondAttemptRecordsThePointAfterTheCorrectiveNotch(t *testing.T) {
+	for _, c := range []struct{ y, dir float64 }{{100, -1}, {600, 1}} {
+		geo := testGeo
+		geo.Y = c.y
+		page := fakePage{}
+		var log []string
+		f := &fakeTarget{geos: []*geometry{&geo}, log: &log, errs: []error{timeoutWithLog(notDeliveredLog)}}
+		err := act(f, fakeMouse{&log}, page, playwright.LocatorClickOptions{}, nil,
+			func() float64 { return 0.5 }, func(time.Duration) {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pos := f.opts[1].Position
+		want := [2]float64{geo.X + geo.BL + pos.X, geo.Y + geo.BT + pos.Y - 100*c.dir}
+		got, ok := lastPoint.Load(page)
+		if !ok {
+			t.Fatalf("y=%v no last point stored", c.y)
+		}
+		if got.([2]float64) != want {
+			t.Fatalf("y=%v last point %v, want %v", c.y, got, want)
+		}
+	}
+}
+
+// bounceTarget alternates between two non-visible tops, as a tall target does
+// when each direction lands it just out of view.
+type bounceTarget struct {
+	i    int
+	opts []playwright.LocatorClickOptions
+}
+
+func (f *bounceTarget) geometry(*float64) *geometry {
+	g := testGeo
+	g.Y, g.H = []float64{70, -30}[f.i%2], 700
+	f.i++
+	return &g
+}
+
+func (f *bounceTarget) Click(o playwright.LocatorClickOptions) error {
+	f.opts = append(f.opts, o)
+	return nil
+}
+
+func TestActBouncingTallTargetStopsAtTheStuckLimit(t *testing.T) {
+	target := &bounceTarget{}
+	mouse := &notchMouse{}
+	err := act(target, mouse, nil, playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true},
+		func() float64 { return 0.5 }, func(time.Duration) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(mouse.deltas); n == 0 || n >= clickMaxNotches {
+		t.Fatalf("%d wheels", n)
+	}
+	if o := target.opts[len(target.opts)-1]; o.Scroll != nil || o.Position != nil {
+		t.Fatalf("not the stock fallback: %+v", o)
+	}
+}
