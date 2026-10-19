@@ -2,8 +2,11 @@ package camoucrome
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -90,6 +93,7 @@ type fakeTarget struct {
 	geos []*geometry
 	log  *[]string
 	opts []playwright.LocatorClickOptions
+	errs []error
 }
 
 func (f *fakeTarget) geometry(timeout *float64) *geometry {
@@ -103,6 +107,11 @@ func (f *fakeTarget) geometry(timeout *float64) *geometry {
 func (f *fakeTarget) Click(o playwright.LocatorClickOptions) error {
 	*f.log = append(*f.log, "click")
 	f.opts = append(f.opts, o)
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		return err
+	}
 	return nil
 }
 
@@ -116,26 +125,26 @@ func (m fakeMouse) Wheel(dx, dy float64) error { *m.log = append(*m.log, "wheel"
 
 var testGeo = geometry{X: 100, Y: 900, W: 120, H: 40, N: 1, BL: 1, BT: 1, VW: 1280, VH: 720, Scroller: "document"}
 
-func run(geos []*geometry, opts playwright.LocatorClickOptions, st *clickProfile) (*fakeTarget, []string) {
+func run(geos []*geometry, opts playwright.LocatorClickOptions, st *clickProfile, errs ...error) (*fakeTarget, []string, error) {
 	var log []string
-	f := &fakeTarget{geos: geos, log: &log}
-	_ = act(f, fakeMouse{&log}, nil, opts, st, func() float64 { return 0.4 }, func(time.Duration) {})
-	return f, log
+	f := &fakeTarget{geos: geos, log: &log, errs: errs}
+	err := act(f, fakeMouse{&log}, nil, opts, st, func() float64 { return 0.4 }, func(time.Duration) {})
+	return f, log, err
 }
 
 func TestActPassThroughAndFallbacks(t *testing.T) {
-	if f, log := run([]*geometry{&testGeo}, playwright.LocatorClickOptions{Position: &playwright.Position{X: 1, Y: 2}}, nil); len(log) != 1 || f.opts[0].Position.X != 1 {
+	if f, log, _ := run([]*geometry{&testGeo}, playwright.LocatorClickOptions{Position: &playwright.Position{X: 1, Y: 2}}, nil); len(log) != 1 || f.opts[0].Position.X != 1 {
 		t.Fatalf("pass-through: %v", log)
 	}
-	if _, log := run([]*geometry{nil}, playwright.LocatorClickOptions{}, nil); len(log) != 1 {
+	if _, log, _ := run([]*geometry{nil}, playwright.LocatorClickOptions{}, nil); len(log) != 1 {
 		t.Fatalf("nil geometry: %v", log)
 	}
 	nested := testGeo
 	nested.Scroller = "nested"
-	if _, log := run([]*geometry{&nested}, playwright.LocatorClickOptions{}, nil); len(log) != 1 {
+	if _, log, _ := run([]*geometry{&nested}, playwright.LocatorClickOptions{}, nil); len(log) != 1 {
 		t.Fatalf("nested: %v", log)
 	}
-	_, log := run([]*geometry{&testGeo}, playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true})
+	_, log, _ := run([]*geometry{&testGeo}, playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true})
 	wheels := 0
 	for _, e := range log {
 		if e == "wheel" {
@@ -147,16 +156,77 @@ func TestActPassThroughAndFallbacks(t *testing.T) {
 	}
 }
 
-func TestActWheelsThenScrollNone(t *testing.T) {
+func TestActFirstClickIsTheRealOne(t *testing.T) {
 	inView := testGeo
 	inView.Y = 200
-	f, log := run([]*geometry{&testGeo, &testGeo, &inView}, playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true})
-	if log[0] != "move" || len(f.opts) != 2 {
+	caller := 5000.0
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{Timeout: &caller}, &clickProfile{scale: 1, windows: true})
+	if err != nil || !reflect.DeepEqual(log, []string{"click"}) || len(f.opts) != 1 {
+		t.Fatalf("err %v log %v opts %d", err, log, len(f.opts))
+	}
+	first := f.opts[0]
+	// the first attempt is the real click at the fixed timeout, never the caller's.
+	if first.Trial != nil || first.Scroll == nil || *first.Scroll != *playwright.ScrollModeNone ||
+		first.Position == nil || first.Delay != nil ||
+		first.Timeout == nil || *first.Timeout != float64(clickTrialTimeoutMs) {
+		t.Fatalf("first click %+v", first)
+	}
+}
+
+// A driver timeout earns one corrective burst and one retry; both attempts
+// are real clicks at the fixed timeout.
+func TestActOneTimeoutRetriesOnce(t *testing.T) {
+	inView := testGeo
+	inView.Y = 200
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{},
+		&clickProfile{scale: 1, windows: true}, fmt.Errorf("%w: Timeout 2000ms exceeded", playwright.ErrTimeout))
+	if err != nil {
+		t.Fatalf("err %v", err)
+	}
+	if !reflect.DeepEqual(log, []string{"click", "wheel", "click"}) || len(f.opts) != 2 {
 		t.Fatalf("log %v opts %d", log, len(f.opts))
 	}
-	trial, final := f.opts[0], f.opts[1]
-	if trial.Trial == nil || !*trial.Trial || final.Scroll == nil || *final.Scroll != *playwright.ScrollModeNone || final.Position == nil || final.Delay != nil {
-		t.Fatalf("trial %+v final %+v", trial, final)
+	for i, o := range f.opts {
+		if o.Timeout == nil || *o.Timeout != float64(clickTrialTimeoutMs) {
+			t.Errorf("attempt %d timeout %v", i, o.Timeout)
+		}
+	}
+}
+
+func TestActTwoTimeoutsFallBack(t *testing.T) {
+	inView := testGeo
+	inView.Y = 200
+	caller := 5000.0
+	to := func() error { return fmt.Errorf("%w: Timeout 2000ms exceeded", playwright.ErrTimeout) }
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{Timeout: &caller},
+		&clickProfile{scale: 1, windows: true}, to(), to())
+	if err != nil {
+		t.Fatalf("fallback must not report the timeout: %v", err)
+	}
+	if !reflect.DeepEqual(log, []string{"click", "wheel", "click", "click"}) || len(f.opts) != 3 {
+		t.Fatalf("log %v opts %d", log, len(f.opts))
+	}
+	for i := range 2 {
+		if f.opts[i].Trial != nil || f.opts[i].Timeout == nil || *f.opts[i].Timeout != float64(clickTrialTimeoutMs) {
+			t.Fatalf("attempt %d %+v", i, f.opts[i])
+		}
+	}
+	stock := f.opts[2]
+	if stock.Position != nil || stock.Scroll != nil || stock.Timeout == nil || *stock.Timeout != caller {
+		t.Fatalf("stock fallback %+v", stock)
+	}
+}
+
+func TestActNonTimeoutErrorPropagates(t *testing.T) {
+	inView := testGeo
+	inView.Y = 200
+	boom := errors.New("Target closed")
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{}, nil, boom)
+	if !errors.Is(err, boom) || len(f.opts) != 1 {
+		t.Fatalf("err %v opts %d", err, len(f.opts))
+	}
+	if !reflect.DeepEqual(log, []string{"click"}) {
+		t.Fatalf("log %v", log)
 	}
 }
 
@@ -185,20 +255,6 @@ func TestClickSeed(t *testing.T) {
 	}
 	if s := clickSeed(map[string]any{"humanize:seed": float64(math.MaxUint32)}); s == nil || *s != math.MaxUint32 {
 		t.Errorf("seed 2^32-1 rejected: %v", s)
-	}
-}
-
-// Controller ruling 2: the trial timeout is the fixed 2000 ms, never the caller's.
-func TestTrialTimeoutIsFixed(t *testing.T) {
-	short := 100.0
-	inView := testGeo
-	inView.Y = 200
-	f, _ := run([]*geometry{&inView}, playwright.LocatorClickOptions{Timeout: &short}, nil)
-	if len(f.opts) != 2 || f.opts[0].Timeout == nil || *f.opts[0].Timeout != float64(clickTrialTimeoutMs) {
-		t.Fatalf("trial timeout: %+v", f.opts)
-	}
-	if f.opts[1].Timeout == nil || *f.opts[1].Timeout != short {
-		t.Fatalf("final timeout must stay the caller's: %+v", f.opts[1])
 	}
 }
 

@@ -35,13 +35,19 @@ class FakePage:
 
 
 class FakeTarget:
-    """Stands in for an impl Locator: evaluate() returns successive geometries."""
-    def __init__(self, geos, log):
+    """Stands in for an impl Locator: evaluate() returns successive geometries;
+    click() raises `errors` in order and returns `("result", call number)`."""
+    def __init__(self, geos, log, errors=None):
         self.geos, self.log, self.page = list(geos), log, FakePage(log)
+        self.errors = list(errors or [])
     async def evaluate(self, js, arg=None, timeout=None, isolatedContext=True):
         assert isolatedContext is True
         return self.geos.pop(0) if len(self.geos) > 1 else self.geos[0]
-    async def click(self, **kw): self.log.append(("click", kw))
+    async def click(self, **kw):
+        self.log.append(("click", kw))
+        if self.errors:
+            raise self.errors.pop(0)
+        return ("result", len(self.log))
 
 
 def run(coro):
@@ -62,9 +68,10 @@ def test_scrolls_with_wheel_then_clicks_with_scroll_none():
     run(hc._act(t, t.page, {}, state={"scale": 1.0, "windows": True}, rand=lambda: 0.4, sleep=lambda s: asyncio.sleep(0)))
     kinds = [e[0] for e in log]
     assert kinds[0] == "move" and "wheel" in kinds
-    trial, final = [e for e in log if e[0] == "click"]
-    assert trial[1]["trial"] is True and trial[1]["scroll"] == "none"
-    assert final[1]["scroll"] == "none" and "position" in final[1] and "delay" not in final[1]
+    clicks = [e for e in log if e[0] == "click"]
+    assert len(clicks) == 1
+    assert "trial" not in clicks[0][1] and clicks[0][1]["scroll"] == "none"
+    assert "position" in clicks[0][1] and "delay" not in clicks[0][1]
 
 
 def test_null_geometry_falls_back_unchanged():
@@ -105,14 +112,50 @@ def test_seed_zero_counts_and_everything_but_a_uint32_int_is_absent():
 
 
 @pytest.mark.parametrize("caller_timeout", [0, 5000])
-def test_trial_click_timeout_is_always_the_fixed_constant(caller_timeout):
+def test_the_first_attempt_is_the_real_click_at_the_fixed_timeout(caller_timeout):
     log = []
     t = FakeTarget([{**GEO, "y": 100}], log)
-    run(hc._act(t, t.page, {"timeout": caller_timeout}, state=None,
-                rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
-    trial, final = [e[1] for e in log if e[0] == "click"]
-    assert trial["timeout"] == hc.T.TRIAL_TIMEOUT_MS == 2000
-    assert final["timeout"] == caller_timeout  # the final click keeps the caller's
+    result = run(hc._act(t, t.page, {"timeout": caller_timeout}, state=None,
+                         rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
+    clicks = [e[1] for e in log if e[0] == "click"]
+    assert len(clicks) == 1
+    assert "trial" not in clicks[0]
+    assert clicks[0]["timeout"] == hc.T.TRIAL_TIMEOUT_MS == 2000
+    assert clicks[0]["scroll"] == "none" and "position" in clicks[0]
+    assert result == ("result", 1)
+
+
+def test_one_timeout_earns_one_corrective_burst_and_one_retry():
+    log = []
+    t = FakeTarget([{**GEO, "y": 100}], log, errors=[TimeoutError("Timeout 2000ms exceeded")])
+    result = run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5,
+                         sleep=lambda s: asyncio.sleep(0)))
+    assert [e[0] for e in log] == ["click", "wheel", "click"]
+    clicks = [e[1] for e in log if e[0] == "click"]
+    assert [c["timeout"] for c in clicks] == [2000, 2000]
+    assert result == ("result", 3)
+
+
+def test_two_timeouts_fall_back_to_the_stock_click():
+    log = []
+    t = FakeTarget([{**GEO, "y": 100}], log,
+                   errors=[TimeoutError("Timeout 2000ms exceeded")] * 2)
+    run(hc._act(t, t.page, {"timeout": 5000}, state=None, rand=lambda: 0.5,
+                sleep=lambda s: asyncio.sleep(0)))
+    clicks = [e[1] for e in log if e[0] == "click"]
+    assert len(clicks) == 3
+    assert [c["timeout"] for c in clicks[:2]] == [2000, 2000]
+    assert all("trial" not in c for c in clicks[:2])
+    assert clicks[2] == {"timeout": 5000}
+
+
+def test_a_non_timeout_error_is_not_retried_or_fallen_back():
+    log = []
+    t = FakeTarget([{**GEO, "y": 100}], log, errors=[RuntimeError("Target closed")])
+    with pytest.raises(RuntimeError, match="Target closed"):
+        run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5,
+                    sleep=lambda s: asyncio.sleep(0)))
+    assert [e[0] for e in log] == ["click"]
 
 
 class LaunchContext:
@@ -202,7 +245,8 @@ def test_b_wrapper_counts_only_the_human_path():
 
     run(frame._click("button"))
     assert hc.wrapper_hits == 1
-    assert [c for c in calls if c[1].get("trial")] and len(calls) == 2
+    assert len(calls) == 1 and calls[0][1]["scroll"] == "none"
+    assert calls[0][1]["timeout"] == hc.T.TRIAL_TIMEOUT_MS
 
     run(frame._click("button", position={"x": 1, "y": 2}))  # pass-through
     assert hc.wrapper_hits == 1 and calls[-1] == ("button", {"position": {"x": 1, "y": 2}})
@@ -232,7 +276,7 @@ def test_b_acts_only_for_contexts_launched_with_the_flag():
     assert hc.wrapper_hits == 1 and b_calls[-1][1]["scroll"] == "none"
 
 
-def _public_locator(module_name):
+def _public_locator(module_name, geos=None):
     class Page:
         def __init__(self):
             self._browser_context = Obj()
@@ -241,11 +285,19 @@ def _public_locator(module_name):
         def __init__(self):
             self._impl_obj = types.SimpleNamespace(
                 _frame=types.SimpleNamespace(_page=Page()),
-                evaluate=FakeTarget([{**GEO, "y": 100}], []).evaluate, click=self._click)
-            self.clicks = []
+                evaluate=FakeTarget(geos or [{**GEO, "y": 100}], []).evaluate,
+                click=self._click)
+            self.clicks, self.stock = [], []
         async def _click(self, **kw): self.clicks.append(kw)
         def _sync(self, coro): return asyncio.run(coro)
     Locator.__module__ = module_name
+    if module_name.split(".")[1] == "sync_api":
+        Locator.click = lambda self, **kw: (self.stock.append(kw), "stock")[1]
+    else:
+        async def click(self, **kw):
+            self.stock.append(kw)
+            return "stock"
+        Locator.click = click
     return Locator()
 
 
@@ -261,3 +313,15 @@ def test_human_click_runs_and_returns_none_for_the_sync_api():
     loc = _public_locator("patchright.sync_api._generated")
     assert hc.human_click(loc, rand=lambda: 0.5) is None
     assert loc.clicks and loc.clicks[-1]["scroll"] == "none"
+
+
+def test_a_sync_fallback_calls_the_public_locator_click():
+    loc = _public_locator("patchright.sync_api._generated", geos=[None])
+    assert hc.human_click(loc, timeout=50, rand=lambda: 0.5) == "stock"
+    assert loc.clicks == [] and loc.stock == [{"timeout": 50}]
+
+
+def test_a_async_fallback_calls_the_public_locator_click():
+    loc = _public_locator("patchright.async_api._generated", geos=[None])
+    assert run(hc.human_click(loc, timeout=50, rand=lambda: 0.5)) == "stock"
+    assert loc.clicks == [] and loc.stock == [{"timeout": 50}]

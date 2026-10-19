@@ -13,15 +13,24 @@ const close = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol * Math.max(1, Math.ab
 const GEO = { x: 100, y: 900, w: 120, h: 40, n: 1, bl: 1, bt: 1, t: false, vw: 1280, vh: 720, scroller: 'document' };
 const noSleep = async () => {};
 
-function fake(geos) {
+function fake(geos, errors = []) {
   const log = [];
   const q = [...geos];
+  const errs = [...errors];
+  let n = 0;
   const page = { mouse: { move: async (x, y) => log.push(['move', Math.round(x), Math.round(y)]),
     wheel: async (dx, dy) => log.push(['wheel', dx, dy]) } };
   const target = { evaluate: async () => (q.length > 1 ? q.shift() : q[0]) };
-  const click = async (o) => log.push(['click', o]);
+  const click = async (o) => {
+    log.push(['click', o]);
+    n += 1;
+    if (errs.length) throw errs.shift();
+    return `result-${n}`;
+  };
   return { log, page, target, click };
 }
+
+const timeoutError = () => Object.assign(new Error('Timeout 2000ms exceeded'), { name: 'TimeoutError' });
 
 test('vectors match the Python reference', () => {
   for (const [x, y] of VEC.splitmix64) assert.equal(m.splitmix64(BigInt('0x' + x)).toString(16).padStart(16, '0'), y.toLowerCase().padStart(16, '0'));
@@ -58,19 +67,44 @@ test('caller position passes through', async () => {
   assert.deepEqual(f.log, [['click', { position: { x: 1, y: 2 } }]]);
 });
 
-test('wheels into view, then trial and click with scroll none', async () => {
+test('wheels into view, then clicks once with scroll none', async () => {
   const f = fake([GEO, GEO, { ...GEO, y: 200 }]);
-  await hc.act(f.target, f.page, { timeout: 9999 }, { scale: 1, windows: true }, () => 0.4, noSleep, f.click);
+  const result = await hc.act(f.target, f.page, { timeout: 9999 }, { scale: 1, windows: true }, () => 0.4, noSleep, f.click);
   assert.equal(f.log[0][0], 'move');
   assert.ok(f.log.some((e) => e[0] === 'wheel'));
   const clicks = f.log.filter((e) => e[0] === 'click');
-  assert.equal(clicks.length, 2);
-  assert.equal(clicks[0][1].trial, true);
-  // Ruling 2: the trial never inherits the caller's timeout.
+  assert.equal(clicks.length, 1);
+  assert.equal('trial' in clicks[0][1], false);
+  // the first attempt never inherits the caller's timeout.
   assert.equal(clicks[0][1].timeout, 2000);
-  assert.equal(clicks[1][1].timeout, 9999);
-  assert.equal(clicks[1][1].scroll, 'none');
-  assert.ok('position' in clicks[1][1] && !('delay' in clicks[1][1]));
+  assert.equal(clicks[0][1].scroll, 'none');
+  assert.ok('position' in clicks[0][1] && !('delay' in clicks[0][1]));
+  assert.equal(result, 'result-1');
+});
+
+test('one timeout earns one corrective burst and one retry', async () => {
+  const f = fake([{ ...GEO, y: 100 }], [timeoutError()]);
+  const result = await hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click);
+  assert.deepEqual(f.log.map((e) => e[0]), ['click', 'wheel', 'click']);
+  const clicks = f.log.filter((e) => e[0] === 'click').map((e) => e[1]);
+  assert.deepEqual(clicks.map((o) => o.timeout), [2000, 2000]);
+  assert.equal(result, 'result-2');
+});
+
+test('two timeouts fall back to the stock click', async () => {
+  const f = fake([{ ...GEO, y: 100 }], [timeoutError(), timeoutError()]);
+  await hc.act(f.target, f.page, { timeout: 5000 }, null, () => 0.5, noSleep, f.click);
+  const clicks = f.log.filter((e) => e[0] === 'click').map((e) => e[1]);
+  assert.equal(clicks.length, 3);
+  assert.deepEqual(clicks.slice(0, 2).map((o) => o.timeout), [2000, 2000]);
+  assert.ok(clicks.slice(0, 2).every((o) => !('trial' in o)));
+  assert.deepEqual(clicks[2], { timeout: 5000 });
+});
+
+test('a non-timeout error is not retried or fallen back', async () => {
+  const f = fake([{ ...GEO, y: 100 }], [new Error('Target closed')]);
+  await assert.rejects(hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click), /Target closed/);
+  assert.deepEqual(f.log.map((e) => e[0]), ['click']);
 });
 
 test('null geometry and nested scroller fall back unchanged', async () => {

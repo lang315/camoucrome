@@ -4,6 +4,7 @@
 package camoucrome
 
 import (
+	"errors"
 	"math"
 	"math/rand/v2"
 	"reflect"
@@ -191,30 +192,34 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 	final := o
 	final.Scroll = playwright.ScrollModeNone
 	final.Position = pos
-	trial := final
-	trial.Trial = playwright.Bool(true)
-	tt := float64(clickTrialTimeoutMs) // fixed: never derived from the caller's timeout
-	trial.Timeout = &tt
-	if t.Click(trial) != nil {
-		wheelNotches(m, 1, st.windows, r, sleep) // a covered target: one corrective burst
-		sleep(200 * time.Millisecond)
-		if t.Click(trial) != nil {
+	attemptTimeout := float64(clickTrialTimeoutMs) // fixed: the first attempt's timeout, never the caller's
+	final.Timeout = &attemptTimeout
+	for attempt := range 2 {
+		err := t.Click(final)
+		if err == nil {
+			if pos != nil && page != nil {
+				lastPoint.Store(page, [2]float64{g.X + g.BL + pos.X, g.Y + g.BT + pos.Y})
+			}
+			return nil
+		}
+		if !errors.Is(err, playwright.ErrTimeout) {
+			// The click may already have been delivered: a second one would double-click.
+			return err
+		}
+		if attempt == 1 {
 			return t.Click(o)
 		}
-	}
-	if err := t.Click(final); err != nil {
-		return err
-	}
-	if pos != nil && page != nil {
-		lastPoint.Store(page, [2]float64{g.X + g.BL + pos.X, g.Y + g.BT + pos.Y})
+		wheelNotches(m, 1, st.windows, r, sleep) // a covered target: one corrective burst
+		sleep(200 * time.Millisecond)
 	}
 	return nil
 }
 
 // HumanClick wheels l into view (SP2c notches under a Windows claim) and
-// clicks an off-centre point with Scroll: none. A caller's Position, Force or
-// Trial passes straight through; anything the helper cannot handle falls
-// back to l.Click(opts) unchanged.
+// clicks an off-centre point with Scroll: none. The first attempt is the real
+// click at a fixed timeout; a driver timeout earns one corrective burst and
+// one retry, after which the stock l.Click(opts) takes over. A caller's
+// Position, Force or Trial passes straight through.
 func HumanClick(l playwright.Locator, opts ...playwright.LocatorClickOptions) error {
 	var o playwright.LocatorClickOptions
 	if len(opts) > 0 {

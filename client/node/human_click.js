@@ -70,20 +70,24 @@ async function act(target, page, opts, st, rand, sleep, click) {
   }
   const pos = m.clickPosition(geo, last.get(page) || null, T.offset, st.scale, rand);
   const extra = { scroll: 'none', ...(pos ? { position: { x: pos[0], y: pos[1] } } : {}) };
-  const trialTimeout = T.trialTimeoutMs;  // fixed: never derived from the caller's timeout
+  const attemptTimeout = T.trialTimeoutMs;  // fixed: the first attempt's timeout, never the caller's
   for (let attempt = 0; attempt < 2; attempt++) {
+    let result;
     try {
-      await click({ ...opts, ...extra, trial: true, timeout: trialTimeout });
-      break;
-    } catch (e) {  // a covered target: one corrective burst, then fall back
+      result = await click({ ...opts, ...extra, timeout: attemptTimeout });
+    } catch (e) {  // only a driver timeout is retried
+      if (e.name !== 'TimeoutError') {
+        // the click may already have been delivered: a second one would double-click
+        throw e;
+      }
       if (attempt === 1) return click(opts);
-      await wheel(page, 1, st.windows, rand, sleep);
+      await wheel(page, 1, st.windows, rand, sleep);  // a covered target: one corrective burst
       await sleep(200);
+      continue;
     }
+    if (pos) last.set(page, [geo.x + geo.bl + pos[0], geo.y + geo.bt + pos[1]]);
+    return result;
   }
-  const result = await click({ ...opts, ...extra });
-  if (pos) last.set(page, [geo.x + geo.bl + pos[0], geo.y + geo.bt + pos[1]]);
-  return result;
 }
 
 async function humanClick(locator, opts = {}, rand = Math.random) {

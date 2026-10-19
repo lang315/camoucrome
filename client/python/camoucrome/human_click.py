@@ -41,17 +41,20 @@ async def _wheel(page, notches, windows, rand, sleep):
         await sleep((18 + 42 * rand()) / 1000)
 
 
-async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None):
+async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None, fallback=None):
     """`target` is an impl Locator (or the B wrapper's `.first`), `page` its impl
     Page. `click(**kw)` performs the final driver click (A: target.click; B: the
-    original Frame._click bound to the selector)."""
+    original Frame._click bound to the selector). `fallback()` is the stock
+    click a covered target falls back to (A: the public locator.click, so the
+    error keeps the stock API name)."""
     click = click or target.click
+    fallback = fallback or (lambda: click(**opts))
     if any(k in opts for k in PASS_THROUGH):
-        return await click(**opts)
+        return await fallback()
     timeout = opts.get("timeout")
     geo = await _geometry(target, timeout)
     if geo is None or geo["scroller"] != "document" or geo["x"] < 0 or geo["x"] + geo["w"] > geo["vw"]:
-        return await click(**opts)
+        return await fallback()
     state = state or {"scale": 1.0, "windows": False}
     if not m.visible(geo):
         pt = (geo["vw"] * (0.1 + 0.8 * rand()), geo["vh"] * (0.1 + 0.8 * rand()))
@@ -62,41 +65,58 @@ async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None)
         while not m.visible(geo):
             burst = m.next_burst(geo, landing, T.BURST, T.PAUSE, rand, T.MAX_NOTCHES - sent)
             if burst is None or sent >= T.MAX_NOTCHES or stuck >= T.NO_PROGRESS_BURSTS:
-                return await click(**opts)
+                return await fallback()
             await _wheel(page, burst[0], state["windows"], rand, sleep)
             sent += abs(burst[0])
             await sleep(burst[1] / 1000)
             before, geo = geo["y"], await _geometry(target, timeout)
             if geo is None:
-                return await click(**opts)
+                return await fallback()
             stuck = stuck + 1 if abs(geo["y"] - before) < 1 else 0
     pos = m.click_position(geo, _last.get(page), T.OFFSET, state["scale"], rand)  # scale = profile_scale(seed, "offset")
     extra = {"scroll": "none"}
     if pos is not None:
         extra["position"] = {"x": pos[0], "y": pos[1]}
-    trial_timeout = T.TRIAL_TIMEOUT_MS  # fixed: never derived from the caller's timeout
+    attempt_timeout = T.TRIAL_TIMEOUT_MS  # fixed: the first attempt's timeout, never the caller's
     for attempt in range(2):
         try:
-            await click(**{**opts, **extra, "trial": True, "timeout": trial_timeout})
-            break
-        except Exception:  # noqa: BLE001 - covered target: one corrective burst, then fall back
+            result = await click(**{**opts, **extra, "timeout": attempt_timeout})
+        except Exception as e:  # noqa: BLE001 - only a driver timeout is retried
+            if type(e).__name__ != "TimeoutError":
+                # the click may already have been delivered: a second one would double-click
+                raise
             if attempt == 1:
-                return await click(**opts)
-            await _wheel(page, 1, state["windows"], rand, sleep)
+                return await fallback()
+            await _wheel(page, 1, state["windows"], rand, sleep)  # a covered target: one corrective burst
             await sleep(0.2)
-    result = await click(**{**opts, **extra})
-    if pos is not None:
-        _last[page] = (geo["x"] + geo["bl"] + pos[0], geo["y"] + geo["bt"] + pos[1])
-    return result
+        else:
+            if pos is not None:
+                _last[page] = (geo["x"] + geo["bl"] + pos[0], geo["y"] + geo["bt"] + pos[1])
+            return result
+
+
+_FALLBACK = object()  # A mode: _act returns it instead of calling the stock click
 
 
 def human_click(locator, *, rand=None, **opts):
     impl = locator._impl_obj
     page = impl._frame._page
-    coro = _act(impl, page, opts, _state.get(page._browser_context), rand or random.random)
+
+    async def stock():
+        return _FALLBACK
+
+    act = _act(impl, page, opts, _state.get(page._browser_context), rand or random.random,
+               fallback=stock)
     if type(locator).__module__.split(".")[1] == "sync_api":
-        return locator._sync(coro)
-    return coro
+        result = locator._sync(act)
+        return locator.click(**opts) if result is _FALLBACK else result
+
+    async def run():
+        result = await act
+        # the public click, not the impl one: its error names Locator.click
+        return await locator.click(**opts) if result is _FALLBACK else result
+
+    return run()
 
 
 def install_state(ctx_impl, config, preset):
