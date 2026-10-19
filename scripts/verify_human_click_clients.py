@@ -45,8 +45,10 @@ CONFIG = json.dumps({"humanize:enabled": True, "humanize:seed": 12345,
 MIN_METHODS = 20      # a silenced protocol logger must not pass the A2/A3/A5 counts vacuously
 CENTRE_TOL = 0.5      # the brief's "exactly the centre (60, 20) +- 0.5"
 MAX_CENTRE_OF_20 = 5  # a 120x40 button, sd ~2.6 x 1.9 px: ~3% of correct clicks round to the centre
-MIN_OFFSET_SD = 1.0   # px; the tables' scales are OFFSET.along.a = 2.6 and OFFSET.across.a = 1.9, times the seed's profile scale
-LANDING_SLACK = 100   # one wheel notch: the helper stops within it of its goal
+MIN_OFFSET_SD = 0.8   # px; the tables' scales are OFFSET.along.a = 2.6 and OFFSET.across.a = 1.9, times the seed's profile scale.
+                      # 1.0 failed a correct client in ~1% of runs (simulated); 0.8 gave none and still catches the 0.25x offset mutant
+LANDING_SLACK = 100   # one wheel notch: the helper stops within it of its goal (upper bound)
+LANDING_SLACK_LO = 50 # scrolling down it stops at the first position with y - L < 100, so a burst overshoots L by at most half a notch
 
 _spec = importlib.util.spec_from_file_location("click_tables", TABLES)
 T = importlib.util.module_from_spec(_spec)
@@ -233,11 +235,11 @@ def row_A2(client, res, plog, ctx):
 
     def goal(frac):  # the helper's wheel goal for a landing fraction
         return min(frac * vh, max(0.0, vh - h))
-    lo, hi = goal(T.LANDING[0]) - LANDING_SLACK, goal(T.LANDING[-1]) + LANDING_SLACK
+    lo, hi = goal(T.LANDING[0]) - LANDING_SLACK_LO, goal(T.LANDING[-1]) + LANDING_SLACK
     return both(one_click(log), wheel_vs_scroll(log), alive(plog),
                 (sdi(plog) == 0, f"DOM.scrollIntoViewIfNeeded={sdi(plog)}"),
                 (len(log["wheel"]) >= 1 and lo <= top <= hi,
-                 f"landing depth: target top={top:.0f}px of vh={vh} in [{lo:.0f}, {hi:.0f}] = oracle goal [{goal(T.LANDING[0]):.0f}, {goal(T.LANDING[-1]):.0f}] +-{LANDING_SLACK}"))
+                 f"landing depth: target top={top:.0f}px of vh={vh} in [{lo:.0f}, {hi:.0f}] = oracle goal [{goal(T.LANDING[0]):.0f}, {goal(T.LANDING[-1]):.0f}] -{LANDING_SLACK_LO}/+{LANDING_SLACK}"))
 
 
 def row_A3(client, res, plog, ctx):
