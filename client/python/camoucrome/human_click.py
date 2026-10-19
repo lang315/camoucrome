@@ -62,9 +62,11 @@ async def _act(target, page, opts, state, rand, sleep=asyncio.sleep, click=None,
         _last[page] = pt
         landing = m.sample_knots(T.LANDING, rand())
         sent, stuck = 0, 0
-        while not m.visible(geo):
+        while True:
             burst = m.next_burst(geo, landing, T.BURST, T.PAUSE, rand, T.MAX_NOTCHES - sent)
-            if burst is None or sent >= T.MAX_NOTCHES or stuck >= T.NO_PROGRESS_BURSTS:
+            if burst is None:
+                break
+            if sent >= T.MAX_NOTCHES or stuck >= T.NO_PROGRESS_BURSTS:
                 return await fallback()
             await _wheel(page, burst[0], state["windows"], rand, sleep)
             sent += abs(burst[0])

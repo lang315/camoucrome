@@ -39,8 +39,8 @@ def test_click_position_centre_cases():
     assert 0 <= x + 2 <= 100 and 0 <= y + 2 <= 40  # padding-box relative, inside the border box
 
 
-def test_next_burst_visible_is_none():
-    geo = dict(x=0, y=100, w=10, h=10, vw=800, vh=600)
+def test_next_burst_visible_within_a_notch_of_landing_is_none():
+    geo = dict(x=0, y=170, w=10, h=10, vw=800, vh=600)  # L=180: 10 px away
     assert m.next_burst(geo, 0.3, [3.0] * 21, [200.0] * 21, stream([0.5])) is None
 
 

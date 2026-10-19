@@ -72,8 +72,9 @@ function visible(geo) {
 const roundAway = (x) => Math.sign(x) * Math.floor(Math.abs(x) + 0.5);
 
 function nextBurst(geo, landing, burstKnots, pauseKnots, r, maxNotches = 60) {
-  if (visible(geo)) return null;
-  const delta = geo.y - landing * geo.vh;
+  const goal = Math.min(landing * geo.vh, Math.max(0, geo.vh - geo.h));
+  const delta = geo.y - goal;
+  if (visible(geo) && Math.abs(delta) < 50) return null;
   let total = Math.max(-maxNotches, Math.min(maxNotches, roundAway(delta / 100)));
   if (total === 0) total = delta > 0 ? 1 : -1;
   let size = Math.max(1, Math.floor(sampleKnots(burstKnots, r()) + 0.5));

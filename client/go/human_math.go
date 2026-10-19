@@ -98,10 +98,11 @@ func visible(g geometry) bool {
 func roundAway(x float64) float64 { return math.Copysign(math.Floor(math.Abs(x)+0.5), x) }
 
 func nextBurst(g geometry, landing float64, burst, pause [21]float64, r func() float64, maxNotches int) (int, float64, bool) {
-	if visible(g) {
+	goal := math.Min(landing*g.VH, math.Max(0, g.VH-g.H))
+	delta := g.Y - goal
+	if visible(g) && math.Abs(delta) < 50 {
 		return 0, 0, false
 	}
-	delta := g.Y - landing*g.VH
 	total := int(math.Max(-float64(maxNotches), math.Min(float64(maxNotches), roundAway(delta/100))))
 	if total == 0 {
 		total = -1

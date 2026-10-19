@@ -122,6 +122,24 @@ test('no progress falls back after two bursts', async () => {
   assert.deepEqual(f.log.at(-1), ['click', {}]);
 });
 
+test('wheel continues past first visibility to the landing depth', async () => {
+  // The final top must sit at the landing depth, not near the bottom of the
+  // viewport, where the target first becomes fully visible.
+  const log = [];
+  const geo = { ...GEO, y: 3000, h: 40 };
+  const tops = [];
+  const page = { mouse: {
+    move: async () => {},
+    wheel: async (dx, dy) => { log.push(['wheel', dx, dy]); geo.y -= dy; tops.push(geo.y); },
+  } };
+  const target = { evaluate: async () => ({ ...geo }) };
+  const click = async (o) => { log.push(['click', o]); return 'result-1'; };
+  await hc.act(target, page, {}, { scale: 1, windows: true }, () => 0, noSleep, click);
+  const first = tops.findIndex((y) => y >= 0 && y + geo.h <= geo.vh);
+  assert.ok(first >= 0 && first < tops.length - 1, `stopped at the first fully visible position: ${tops}`);
+  assert.ok(Math.abs(geo.y - 0.2 * geo.vh) < 50, `final top ${geo.y}`);
+});
+
 // Ruling 3: B counts the human path only; a pass-through or a missing context
 // leaves the stock Frame.click handling the call untouched.
 test('the B wrapper counts only the human path', async () => {

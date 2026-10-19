@@ -56,9 +56,10 @@ async function act(target, page, opts, st, rand, sleep, click) {
     last.set(page, pt);
     const landing = m.sampleKnots(T.landing, rand());
     let sent = 0, stuck = 0;
-    while (!m.visible(geo)) {
+    while (true) {
       const burst = m.nextBurst(geo, landing, T.burst, T.pause, rand, T.maxNotches - sent);
-      if (burst === null || sent >= T.maxNotches || stuck >= T.noProgressBursts) return click(opts);
+      if (burst === null) break;
+      if (sent >= T.maxNotches || stuck >= T.noProgressBursts) return click(opts);
       await wheel(page, burst[0], st.windows, rand, sleep);
       sent += Math.abs(burst[0]);
       await sleep(burst[1]);

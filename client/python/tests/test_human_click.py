@@ -95,6 +95,36 @@ def test_no_progress_falls_back_after_two_bursts():
     assert sum(1 for e in log if e[0] == "wheel") == 2 and log[-1] == ("click", {})
 
 
+class ScrollingMouse(FakeMouse):
+    """Each wheel deltaY moves the target up the viewport, like real scrolling."""
+    def __init__(self, log, geo): super().__init__(log); self.geo, self.tops = geo, []
+    async def wheel(self, dx, dy):
+        self.log.append(("wheel", dx, dy))
+        self.geo["y"] -= dy
+        self.tops.append(self.geo["y"])
+
+
+class CopyingTarget(FakeTarget):
+    """evaluate() returns a fresh dict, like a real isolated-world read."""
+    async def evaluate(self, js, arg=None, timeout=None, isolatedContext=True):
+        return dict(await super().evaluate(js, arg, timeout, isolatedContext))
+
+
+def test_wheel_continues_past_first_visibility_to_the_landing_depth():
+    """The final top must sit at the landing depth, not near the bottom of the
+    viewport, where the target first becomes fully visible."""
+    log = []
+    geo = {**GEO, "y": 3000, "h": 40}
+    t = CopyingTarget([geo], log)
+    t.page.mouse = ScrollingMouse(log, geo)
+    run(hc._act(t, t.page, {}, state={"scale": 1.0, "windows": True}, rand=lambda: 0.0,
+                sleep=lambda s: asyncio.sleep(0)))
+    tops = t.page.mouse.tops
+    first = next((i for i, y in enumerate(tops) if 0 <= y and y + geo["h"] <= geo["vh"]), None)
+    assert first is not None and first < len(tops) - 1, f"stopped at the first fully visible position: {tops}"
+    assert abs(geo["y"] - 0.2 * geo["vh"]) < 50, f"final top {geo['y']}"
+
+
 def test_launch_refuses_flag_without_humanize():
     for cfg in ({}, {"humanize:enabled": False}):
         with pytest.raises(ValueError, match="humanize:enabled"):

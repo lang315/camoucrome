@@ -156,6 +156,50 @@ func TestActPassThroughAndFallbacks(t *testing.T) {
 	}
 }
 
+type scrollingTarget struct{ geo *geometry }
+
+func (f *scrollingTarget) geometry(*float64) *geometry { g := *f.geo; return &g }
+func (f *scrollingTarget) Click(playwright.LocatorClickOptions) error { return nil }
+
+type scrollingMouse struct {
+	geo  *geometry
+	tops *[]float64
+}
+
+func (m scrollingMouse) Move(float64, float64, ...playwright.MouseMoveOptions) error { return nil }
+func (m scrollingMouse) Wheel(dx, dy float64) error {
+	m.geo.Y -= dy
+	*m.tops = append(*m.tops, m.geo.Y)
+	return nil
+}
+
+// The final top must sit at the landing depth, not near the bottom of the
+// viewport, where the target first becomes fully visible.
+func TestActWheelsPastFirstVisibilityToTheLandingDepth(t *testing.T) {
+	geo := testGeo
+	geo.Y, geo.H = 3000, 40
+	var tops []float64
+	err := act(&scrollingTarget{geo: &geo}, scrollingMouse{geo: &geo, tops: &tops}, nil,
+		playwright.LocatorClickOptions{}, &clickProfile{scale: 1, windows: true},
+		func() float64 { return 0 }, func(time.Duration) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := -1
+	for i, y := range tops {
+		if y >= 0 && y+geo.H <= geo.VH {
+			first = i
+			break
+		}
+	}
+	if first < 0 || first >= len(tops)-1 {
+		t.Fatalf("stopped at the first fully visible position: %v", tops)
+	}
+	if math.Abs(geo.Y-0.2*geo.VH) >= 50 {
+		t.Fatalf("final top %v, want within 50 of %v", geo.Y, 0.2*geo.VH)
+	}
+}
+
 func TestActFirstClickIsTheRealOne(t *testing.T) {
 	inView := testGeo
 	inView.Y = 200

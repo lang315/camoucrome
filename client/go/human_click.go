@@ -162,9 +162,12 @@ func act(t clickTarget, m mouser, page playwright.Page, o playwright.LocatorClic
 		}
 		landing := sampleKnots(clickLanding, r())
 		sent, stuck := 0, 0
-		for !visible(*g) {
+		for {
 			n, pause, ok := nextBurst(*g, landing, clickBurst, clickPause, r, clickMaxNotches-sent)
-			if !ok || sent >= clickMaxNotches || stuck >= clickNoProgressBursts {
+			if !ok {
+				break
+			}
+			if sent >= clickMaxNotches || stuck >= clickNoProgressBursts {
 				return t.Click(o)
 			}
 			wheelNotches(m, n, st.windows, r, sleep)
