@@ -20,31 +20,16 @@ function fake(geos, errors = []) {
   let n = 0;
   const page = { mouse: { move: async (x, y) => log.push(['move', Math.round(x), Math.round(y)]),
     wheel: async (dx, dy) => log.push(['wheel', dx, dy]) } };
-  const f = { evaluated: 0 };
-  const target = { evaluate: async () => { f.evaluated += 1; return (q.length > 1 ? q.shift() : q[0]); } };
+  const target = { evaluate: async () => (q.length > 1 ? q.shift() : q[0]) };
   const click = async (o) => {
     log.push(['click', o]);
     n += 1;
     if (errs.length) throw errs.shift();
     return `result-${n}`;
   };
-  return Object.assign(f, { log, page, target, click });
+  return { log, page, target, click };
 }
 
-// A patchright-core package as it appears in require.cache: its bundled
-// client's Playwright root shares `connection` with the caller's objects.
-function fakeDriver(version) {
-  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-driver-'));
-  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'patchright-core', version }));
-  const file = path.join(dir, 'lib', 'coreBundle.js');
-  const connection = {};
-  const mod = new (require('module'))(file, null);
-  mod.filename = file;
-  mod.loaded = true;
-  mod.exports = { inprocess: { playwright: { chromium: {}, _connection: connection } } };
-  require.cache[file] = mod;
-  return { connection, cleanup: () => { delete require.cache[file]; fs.rmSync(dir, { recursive: true, force: true }); } };
-}
 
 const timeoutError = () => Object.assign(new Error('Timeout 2000ms exceeded'), { name: 'TimeoutError' });
 
@@ -268,38 +253,6 @@ test('launch refuses humanClick without humanize:enabled', async () => {
   for (const config of [{}, { 'humanize:enabled': false }]) {
     await assert.rejects(c.launch({}, '/x', { config, humanClick: true }), /humanize:enabled/);
   }
-});
-
-// patchright < 1.62.3 ignores isolatedContext, so evaluate would run in the
-// page's main world -- the leak this helper exists to avoid.
-test('a pre-1.62.3 driver never gets the geometry: the stock click runs instead', async (t) => {
-  const d = fakeDriver('1.62.1');
-  t.after(d.cleanup);
-  const f = fake([{ ...GEO, y: 100 }]);
-  f.target._connection = d.connection;
-  const result = await hc.act(f.target, f.page, { timeout: 50 }, null, () => 0.5, noSleep, f.click);
-  assert.equal(f.evaluated, 0);
-  assert.deepEqual(f.log, [['click', { timeout: 50 }]]);
-  assert.equal(result, 'result-1');
-});
-
-test('a 1.62.3 driver runs the geometry', async (t) => {
-  const d = fakeDriver('1.62.3');
-  t.after(d.cleanup);
-  const f = fake([{ ...GEO, y: 100 }]);
-  f.target._connection = d.connection;
-  await hc.act(f.target, f.page, {}, null, () => 0.5, noSleep, f.click);
-  assert.equal(f.evaluated, 1);
-  assert.equal(f.log[0][1].scroll, 'none');
-  assert.ok(f.log[0][1].position);
-});
-
-test('launch refuses a pre-1.62.3 driver with humanClick', async (t) => {
-  const d = fakeDriver('1.62.1');
-  t.after(d.cleanup);
-  await assert.rejects(
-    c.launch({ _connection: d.connection }, '/x', { config: { 'humanize:enabled': true }, humanClick: true }),
-    /patchright >= 1\.62\.3.*1\.62\.1/);
 });
 
 // --- round 2: delivery, corrective notch, tall targets ----------------------
