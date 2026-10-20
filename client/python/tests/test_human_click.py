@@ -405,6 +405,74 @@ def test_a_async_fallback_calls_the_public_locator_click():
     assert loc.clicks == [] and loc.stock == [{"timeout": 50}]
 
 
+def _fake_errors_module():
+    """A driver-shaped errors module: Error with name/stack, and rewrite_error."""
+    mod = types.ModuleType("fakeerrors")
+
+    class Error(Exception):
+        def __init__(self, message):
+            self._message, self._name, self._stack = message, None, None
+            super().__init__(message)
+        @property
+        def name(self): return self._name
+        @property
+        def stack(self): return self._stack
+
+    class TimeoutError(Error):
+        pass
+
+    def rewrite_error(error, message):
+        new = type(error)(message)
+        new._name, new._stack = error.name, error.stack
+        return new
+
+    TimeoutError.__module__ = "fakeerrors"
+    mod.TimeoutError, mod.rewrite_error = TimeoutError, rewrite_error
+    sys.modules["fakeerrors"] = mod
+    return mod
+
+
+def _sync_raising(loc, error):
+    def _sync(coro):
+        coro.close()
+        raise error
+    loc._sync = _sync
+    return loc
+
+
+def test_a_sync_error_inside_the_act_reads_as_locator_click():
+    mod = _fake_errors_module()
+    err = mod.TimeoutError("Locator._sync: Timeout 2000ms exceeded.")
+    err._name, err._stack = "TimeoutError", "driver stack tail"
+    loc = _sync_raising(_public_locator("patchright.sync_api._generated"), err)
+
+    with pytest.raises(mod.TimeoutError) as ei:
+        hc.human_click(loc, rand=lambda: 0.5)
+    assert str(ei.value) == "Locator.click: Timeout 2000ms exceeded."
+    assert type(ei.value) is mod.TimeoutError
+    assert ei.value.name == "TimeoutError" and ei.value.stack == "driver stack tail"
+    assert ei.value.__cause__ is None
+
+
+def test_a_sync_error_without_the_prefix_is_reraised_unchanged():
+    mod = _fake_errors_module()
+    err = mod.TimeoutError("Timeout 2000ms exceeded.")
+    loc = _sync_raising(_public_locator("patchright.sync_api._generated"), err)
+
+    with pytest.raises(mod.TimeoutError) as ei:
+        hc.human_click(loc, rand=lambda: 0.5)
+    assert ei.value is err
+
+
+def test_a_sync_error_whose_module_lacks_rewrite_error_is_unchanged():
+    err = RuntimeError("Locator._sync: Target closed")
+    loc = _sync_raising(_public_locator("patchright.sync_api._generated"), err)
+
+    with pytest.raises(RuntimeError) as ei:
+        hc.human_click(loc, rand=lambda: 0.5)
+    assert ei.value is err
+
+
 # --- round 2: delivery, corrective notch, tall targets ----------------------
 
 def _driver_timeout(message):
@@ -421,6 +489,11 @@ DELIVERED = ("Timeout 2000ms exceeded.\n"
 NOT_DELIVERED = ("Timeout 2000ms exceeded.\n"
                  "  - <header> intercepts pointer events\n"
                  "  - retrying click action")
+PERFORMING_BEFORE_RETRY = ("Timeout 2000ms exceeded.\n"
+                           "  - performing click action\n"
+                           "  - <header> intercepts pointer events\n"
+                           "  - retrying click action\n"
+                           "  - waiting for element to be visible")
 
 
 def test_a_timeout_after_delivery_started_is_not_retried():
@@ -435,6 +508,17 @@ def test_a_timeout_after_delivery_started_is_not_retried():
 def test_a_timeout_before_delivery_still_retries():
     log = []
     t = FakeTarget([{**GEO, "y": 100}], log, errors=[_driver_timeout(NOT_DELIVERED)])
+    result = run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5,
+                         sleep=lambda s: asyncio.sleep(0)))
+    assert [e[0] for e in log] == ["click", "wheel", "click"]
+    assert result == ("result", 3)
+
+
+def test_performing_before_the_last_retry_is_not_delivery():
+    """An earlier 'performing' line (before the last retry) means the press was
+    not dispatched for the attempt that timed out: retry."""
+    log = []
+    t = FakeTarget([{**GEO, "y": 100}], log, errors=[_driver_timeout(PERFORMING_BEFORE_RETRY)])
     result = run(hc._act(t, t.page, {}, state=None, rand=lambda: 0.5,
                          sleep=lambda s: asyncio.sleep(0)))
     assert [e[0] for e in log] == ["click", "wheel", "click"]
@@ -477,5 +561,5 @@ def test_a_bouncing_tall_target_stops_at_the_stuck_limit():
     run(hc._act(t, t.page, {}, state={"scale": 1.0, "windows": True},
                 rand=lambda: 0.5, sleep=lambda s: asyncio.sleep(0)))
     wheels = [e for e in log if e[0] == "wheel"]
-    assert 0 < len(wheels) < hc.T.MAX_NOTCHES, f"{len(wheels)} wheels"
+    assert 0 < len(wheels) <= 4, f"{len(wheels)} wheels"  # two bursts + the corrective notch
     assert log[-1] == ("click", {})  # the stock fallback

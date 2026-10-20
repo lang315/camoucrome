@@ -134,7 +134,18 @@ def human_click(locator, *, rand=None, **opts):
     act = _act(impl, page, opts, _state.get(page._browser_context), rand or random.random,
                fallback=stock)
     if type(locator).__module__.split(".")[1] == "sync_api":
-        result = locator._sync(act)
+        try:
+            result = locator._sync(act)
+        except Exception as e:  # noqa: BLE001 - only the API-name prefix is rewritten
+            prefix = "Locator._sync: "
+            if not str(e).startswith(prefix):
+                raise
+            rewrite = getattr(importlib.import_module(type(e).__module__), "rewrite_error", None)
+            if rewrite is None:  # not a driver error class: nothing to rewrite it with
+                raise
+            # _sync's captured stack names the call Locator._sync; the caller
+            # invoked locator.click, so the error must say so.
+            raise rewrite(e, "Locator.click: " + str(e)[len(prefix):]) from None
         return locator.click(**opts) if result is _FALLBACK else result
 
     async def run():

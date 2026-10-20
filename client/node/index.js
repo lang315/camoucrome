@@ -261,6 +261,15 @@ async function launch(chromium, executablePath, {
   if (humanClick && effectiveKeys(config, preset)['humanize:enabled'] !== true) {
     throw new Error('humanClick: true needs humanize:enabled true in config or preset');
   }
+  // The geometry reads through Locator.evaluate(isolatedContext); a driver
+  // that ignores that option runs it in the page's main world, so refuse
+  // rather than leak a page-visible call under the human spelling.
+  if (humanClick && !hc.supportsIsolation(chromium)) {
+    const version = hc.driverVersion(chromium);
+    throw new Error('humanClick: true needs patchright >= 1.62.3, but '
+      + (version === null ? 'the installed driver version could not be determined' : `found ${version}`)
+      + ": older drivers ignore isolatedContext and run evaluate in the page's main world");
+  }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast
   // Windows' file locks: the close event fires while the browser is still

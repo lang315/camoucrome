@@ -451,6 +451,8 @@ func timeoutWithLog(log string) error {
 const (
 	deliveredLog    = "- <header> intercepts pointer events\n  - retrying click action\n  - performing click action"
 	notDeliveredLog = "- <header> intercepts pointer events\n  - retrying click action"
+	// An earlier 'performing' line does not describe the attempt that timed out.
+	performingBeforeRetryLog = "- performing click action\n  - <header> intercepts pointer events\n  - retrying click action\n  - waiting for element to be visible"
 )
 
 func TestActTimeoutAfterDeliveryStartedIsNotRetried(t *testing.T) {
@@ -469,6 +471,18 @@ func TestActTimeoutBeforeDeliveryStillRetries(t *testing.T) {
 	inView := testGeo
 	inView.Y = 200
 	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{}, nil, timeoutWithLog(notDeliveredLog))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(log, []string{"click", "wheel", "click"}) || len(f.opts) != 2 {
+		t.Fatalf("log %v opts %d", log, len(f.opts))
+	}
+}
+
+func TestActPerformingBeforeTheLastRetryIsNotDelivery(t *testing.T) {
+	inView := testGeo
+	inView.Y = 200
+	f, log, err := run([]*geometry{&inView}, playwright.LocatorClickOptions{}, nil, timeoutWithLog(performingBeforeRetryLog))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +571,7 @@ func TestActBouncingTallTargetStopsAtTheStuckLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(mouse.deltas); n == 0 || n >= clickMaxNotches {
+	if n := len(mouse.deltas); n == 0 || n > 4 { // two bursts + the corrective notch
 		t.Fatalf("%d wheels", n)
 	}
 	if o := target.opts[len(target.opts)-1]; o.Scroll != nil || o.Position != nil {

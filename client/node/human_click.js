@@ -2,6 +2,8 @@
 // then click an off-centre point with scroll: 'none'. The dwell, hold and
 // path are the browser's (humanize:enabled); this never passes `delay`.
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const T = require('./click_tables');
 const m = require('./human_math');
 
@@ -37,6 +39,72 @@ function maybeDelivered(text) {
   return retried < 0 || performed > retried;
 }
 
+// The first driver that honours Locator.evaluate's isolatedContext.
+// patchright 1.62.1 ignores it and runs evaluate in the page's main world --
+// a page-visible call the spec forbids.
+const MIN_DRIVER = [1, 62, 3];
+const versions = new WeakMap();  // driver Connection -> package version
+
+// The driver's client objects share one Connection; a locator reaches it
+// through its frame.
+function connectionOf(obj) {
+  if (!obj) return null;
+  if (obj._connection) return obj._connection;
+  if (obj._frame && obj._frame._connection) return obj._frame._connection;
+  if (typeof obj.page === 'function') {
+    try {
+      const page = obj.page();
+      if (page && page._connection) return page._connection;
+    } catch (e) { /* a closed locator: nothing to gate */ }
+  }
+  return null;
+}
+
+// Version of the package that loaded the caller's client objects: the module
+// in require.cache whose in-process Playwright root owns their connection.
+function driverVersion(obj) {
+  const conn = connectionOf(obj);
+  if (!conn) return null;
+  if (versions.has(conn)) return versions.get(conn);
+  let version = null;
+  for (const file of Object.keys(require.cache)) {
+    const exp = require.cache[file].exports;
+    const root = exp && exp.inprocess && exp.inprocess.playwright;
+    if (root && root._connection === conn) { version = packageVersion(file); break; }
+  }
+  if (version !== null) versions.set(conn, version);
+  return version;
+}
+
+// The nearest package.json above the defining module (patchright-core/lib/...).
+function packageVersion(file) {
+  for (let dir = path.dirname(file); ; dir = path.dirname(dir)) {
+    try {
+      const { version } = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+      if (typeof version === 'string') return version;
+    } catch (e) { /* no readable package.json here: keep walking */ }
+    if (path.dirname(dir) === dir) return null;
+  }
+}
+
+function atLeast(version, min) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!m) return false;
+  for (let i = 0; i < min.length; i++) {
+    const n = Number(m[i + 1]);
+    if (n !== min[i]) return n > min[i];
+  }
+  return true;
+}
+
+// An old or unidentifiable driver must not run the geometry; an object with no
+// driver connection is not a driver object (a test double).
+function supportsIsolation(obj) {
+  if (!connectionOf(obj)) return true;
+  const version = driverVersion(obj);
+  return version !== null && atLeast(version, MIN_DRIVER);
+}
+
 async function geometry(target, timeout) {
   try {
     return await target.evaluate(GEOMETRY, undefined, { timeout, isolatedContext: true });
@@ -55,6 +123,7 @@ async function wheel(page, notches, windows, rand, sleep) {
 
 async function act(target, page, opts, st, rand, sleep, click) {
   if (PASS_THROUGH.some((k) => k in opts)) return click(opts);
+  if (!supportsIsolation(target)) return click(opts);  // no evaluate on an old driver
   const timeout = opts.timeout;
   let geo = await geometry(target, timeout);
   if (!geo || geo.scroller !== 'document' || geo.x < 0 || geo.x + geo.w > geo.vw) return click(opts);
@@ -145,4 +214,5 @@ async function install(ctx, helpers, config, preset) {
   proto._camouHumanClick = true;
 }
 
-module.exports = { act, humanClick, install, installState, seedOf, wrapperHits, lastPoint: (page) => last.get(page) };
+module.exports = { act, humanClick, install, installState, seedOf, wrapperHits, lastPoint: (page) => last.get(page),
+  driverVersion, supportsIsolation };
