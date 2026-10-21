@@ -1,6 +1,6 @@
 """Verifies SP2c: with humanize:enabled and a claimed Windows, a CDP mouseWheel
 reaches the page as whole notches (one event per notch, the per-notch shape
-measured in baselines/chrome-8037-wheel.json, 18-60 ms apart); without either
+measured in baselines/chrome-8078-wheel.json, 18-60 ms apart); without either
 it is stock's single event.
 
 Driven with page.mouse.wheel, one Input.dispatchMouseEvent per call, like
@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 
 import lib_shell
 
-NOTCH_PX = 100  # baselines/chrome-8037-wheel.json real1 dy[0]
+NOTCH_PX = 100  # baselines/chrome-8078-wheel.json real1 dy[0]
 WIN = {"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
 MAC = {"ua:osInfo": "Macintosh; Intel Mac OS X 10_15_7", "ua:platform": "macOS"}
 HUMANIZE = {"humanize:enabled": True}

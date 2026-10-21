@@ -29,11 +29,11 @@
     "vendor": "Google Inc. (Google)"
   },
   "locale": "en-US",
-  "milestone": 154,
+  "milestone": 156,
   "os": "Linux",
   "provenance": {
     "binary": "~/chromium/src/out/Default/chrome",
-    "captured": "2026-10-02",
+    "captured": "2026-10-21",
     "dpr_and_sampleRate": "recorded only; the loader emits neither",
     "flags": [
       "--headless",

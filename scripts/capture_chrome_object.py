@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """window.chrome shape + navigator.plugins/mimeTypes/pdfViewerEnabled (SP2
-§4.7, roadmap B1), captured from stock Chrome 156.0.8078.36 on the build
+§4.7, roadmap B1), captured from stock Chrome 156.0.8078.48 on the build
 box's Windows host (headless via --dump-dom, headed via CDP on the host) into
 baselines/chrome-8078-stock-window-chrome.json; scripts/verify_chrome_object.py
 diffs the fork against it. The tree records, per own property (depth 4):
@@ -60,7 +60,7 @@ def main():
     import winhost
     headless = winhost.dump_dom(PAGE)
     headed = winhost.cdp_eval(PAGE, headed=True)  # --dump-dom does not work headed; CDP on the host does
-    doc = {"provenance": {"binary": "Google Chrome 156.0.8078.36 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
+    doc = {"provenance": {"binary": "Google Chrome 156.0.8078.48 (stock, the build box's Windows 10 host, temp profile, --dump-dom)",
                           "captured": datetime.date.today().isoformat(), "how": "scripts/capture_chrome_object.py --where winhost",
                           "ua_headless": headless.pop("ua"), "ua_headed": headed.pop("ua")},
            "headless": headless, "headed": headed}

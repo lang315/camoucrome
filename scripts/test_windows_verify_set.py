@@ -57,9 +57,9 @@ def test_red_own_entry_is_skipped_with_its_reason():
 
 
 def test_stock_version_is_the_one_version_directory(tmp_path):
-    (tmp_path / "156.0.8078.36").mkdir()
+    (tmp_path / "156.0.8078.48").mkdir()
     (tmp_path / "SetupMetrics").mkdir()
-    assert w.stock_version(tmp_path) == "156.0.8078.36"
+    assert w.stock_version(tmp_path) == "156.0.8078.48"
     (tmp_path / "155.0.8100.1").mkdir()      # an update half-applied: refuse
     with pytest.raises(SystemExit):
         w.stock_version(tmp_path)

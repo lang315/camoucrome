@@ -233,7 +233,7 @@ else:
 # --- Criteria 5-9: the HeadlessChrome product token, across four channels ---
 #
 # Criterion 5 is the proof: on a stock `chrome --headless` build,
-# navigator.userAgent carries "HeadlessChrome/154.0.0.0"
+# navigator.userAgent carries "HeadlessChrome/156.0.0.0"
 # (GetUserAgentInternal(), in user_agent_utils.cc).
 #
 # Criteria 6 and 7 pass on a stock build already. They are PINS on two

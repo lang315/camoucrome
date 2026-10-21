@@ -8,7 +8,7 @@
   "English (United Kingdom)). gen.voices_keys(platform, locale): the locale's row, else the same language's first row in this order, else en-US.",
   "Sweden's Bengt is not in Appendix A's table but is in the token list; kept.",
   "remote: Chrome's 19 Google network voices (localService false), listed after the local ones on every OS Chrome-branded",
-  "builds ship them on. Copied byte-exact (two names carry U+00A0) from baselines/chrome-8037-stock-oracle-windows.json;",
+  "builds ship them on. Copied byte-exact (two names carry U+00A0) from the 2026-10-02 stock 154.0.8037.93 host oracle (then chrome-8037-stock-oracle-windows.json);",
   "equal to stock Chrome 155 on a Mac (2026-10-13). The Chromium pin has none of its own; gen.voices_keys appends this table.",
   "The 2026-09 macOS capture omitted them, but its 191 local voices equal the 2026-10-13 Mac list (S5 measurements 1)."
  ],

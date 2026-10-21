@@ -127,7 +127,7 @@
       "sec-ch-ua-wow64"
     ],
     "binary": "content_shell",
-    "captured_at_commit": "f89f3a4363",
+    "captured_at_commit": "d0c02bfad0",
     "known_absent": [
       "high-entropy request headers advertised via Accept-CH but not sent: sec-ch-ua-arch, sec-ch-ua-bitness, sec-ch-ua-full-version-list, sec-ch-ua-model, sec-ch-ua-platform-version, sec-ch-ua-wow64",
       "userAgentData.platform is the literal \"Unknown\""

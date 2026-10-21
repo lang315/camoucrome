@@ -1,6 +1,6 @@
 """window.chrome shape + navigator.plugins/mimeTypes/pdfViewerEnabled (SP2 §4.7,
 roadmap B1) on the fork's chrome, against baselines/chrome-8078-stock-window-chrome.json
-(stock Chrome 156.0.8078.36 on the box's Windows host, headless + headed).
+(stock Chrome 156.0.8078.48 on the box's Windows host, headless + headed).
 
 O1 fork headless tree == stock headless tree (recursive: names, kinds,
    descriptor flags, function length/name/toString) -- diff empty.

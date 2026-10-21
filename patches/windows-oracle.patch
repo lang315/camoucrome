@@ -23,7 +23,7 @@ index 4f95b49eef..1c8033189d 100644
    "+components/commerce/content/renderer",
    "+components/commerce/core/commerce_heuristics_data_metrics_helper.h",
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index d460c0fb69..8cc6bda0f4 100644
+index d460c0fb69..4cce56233d 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
 @@ -80,6 +80,8 @@
@@ -42,7 +42,7 @@ index d460c0fb69..8cc6bda0f4 100644
 +  // Camoucrome (windows-oracle): interfaces stock Chrome exposes on Windows
 +  // and macOS but not on Linux (navigator.share, Web Bluetooth) follow the
 +  // claimed OS, not the build. A Linux claim keeps Linux's shape. Font Access
-+  // is stock on all three (baselines/chrome-f89f3a4363-stock-ua.json), so it
++  // is stock on all three (baselines/chrome-d0c02bfad0-stock-ua.json), so it
 +  // keeps its stock status; font_access.cc answers with fonts:local.
 +  {
 +    const camoucfg::OsFamily claimed =

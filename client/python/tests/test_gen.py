@@ -241,8 +241,8 @@ def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version
 
 
 def test_remote_google_voices_follow_the_local_row():
-    base = json.loads(next((ROOT / "baselines").glob("chrome-*-stock-oracle-windows.json")).read_text(encoding="utf-8"))["headed"]["voices"]
-    remote = [[v[0], v[1]] for v in base if not v[2]]
+    # The table copied from the 154.0.8037.93 host oracle; stock 156 on the host lists no Google voices (2026-10-21).
+    remote = [[v["name"], v["lang"]] for v in json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))["remote"]]
     assert len(remote) == 19
     for plat, loc, n_local in [("Windows", "en-US", 3), ("Windows", "fr-FR", 3), ("Windows", "uk-UA", 3), ("macOS", "en-US", 191)]:
         vl = gen.voices_keys(plat, loc)["voices:list"]

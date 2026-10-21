@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Per-character advance widths of the claimed Windows families on the real
-host (stock Chrome 154 on the box's Windows 10 host, headless --dump-dom) ->
+host (stock Chrome 156 on the box's Windows 10 host, headless --dump-dom) ->
 baselines/chrome-8078-stock-font-metrics-windows.json. 100 px so 1/100 em is
 one pixel; canvas advances are linear (unhinted) on DirectWrite and FreeType.
 verify_font_metrics.py renders the same page in the fork and compares."""
@@ -79,7 +79,7 @@ def main():
         fams = winhost.dump_dom(page(GRID_FAMILIES), args=("--use-gl=angle", "--use-angle=d3d11"))  # dump_dom parses #o
         if isinstance(fams, str):
             fams = parse(fams)
-        meta = {"chrome": "156.0.8078.36", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile"}
+        meta = {"chrome": "156.0.8078.48", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile"}
     else:
         fams, ver = mac_capture(MAC_FAMILIES)
         meta = {"chrome": ver, "where": "stock Google Chrome on the Mac (macOS 15.7.4), headed 300x200 app window, temp profile; the page POSTs its report"}

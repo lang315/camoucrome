@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The fork under a generated Windows identity vs stock Chrome 154 on the
+"""The fork under a generated Windows identity vs stock Chrome 156 on the
 Windows host (baselines/chrome-8078-stock-oracle-windows.json): the same
 page (capture_host_oracle.page), every difference printed as one line.
 Hardware- and config-bound values (screen, cores, memory, dpr, timezone,
@@ -32,11 +32,8 @@ HEVC = 'video/mp4; codecs="hev1.1.6.L93.B0"'
 # bare reason -- for a row whose evidence is the committed baseline itself, so a recapture is what retires it -- or
 # (reason, predicate-on-the-fork's-report) for a row excused by something that can change under us.
 KNOWN = {
-    # The host is a headless PC with no mouse or keyboard attached: it reports pointer none / hover none and an empty
-    # layout map. A desktop with input reports fine / hover, which d-pointer-touch derives for a Windows claim.
-    "media.(pointer: fine)": "host has no mouse", "media.(pointer: none)": "host has no mouse", "media.(hover: hover)": "host has no mouse",
-    "media.(any-pointer: fine)": "host has no mouse", "media.(any-hover: hover)": "host has no mouse",
-    "keyboard.KeyA": "host has no keyboard", "keyboard.KeyQ": "host has no keyboard", "keyboard.Backquote": "host has no keyboard", "keyboard.Digit1": "host has no keyboard",
+    # (The "host has no mouse / no keyboard" rows retired with the 156 recapture: the 154 oracle ran in session 0,
+    # which reports pointer none and an empty layout map; session 1 reports fine / hover and the layout, as the fork does.)
     # The probe's own init-script marker (patchright's add_init_script lands in the main world; verify_sp6b_driver excludes it too).
     "windowKeys": "probe marker __camou_init", "windowNames": "probe marker __camou_init", "protoCounts.Window": "probe marker __camou_init (+1)",
     # The host plays HEVC through the OS decoder; the WSL build box has none. This leaf is the PAIR
@@ -52,6 +49,13 @@ KNOWN = {
     f"codecs.{HEVC}": ("host decodes HEVC in hardware, the box has no decoder; suppresses canPlayType AND "
                        "MediaSource.isTypeSupported (backlog: HEVC claim)",
                        lambda fork: (fork.get("codecs") or {}).get(HEVC) == ["", False]),
+    # decodingInfo(H.264 1080p) is [supported, smooth, powerEfficient]. powerEfficient is true only with a hardware
+    # decoder: the host (session 1, Intel GPU) has one, the box has none. Excused only while the fork answers
+    # supported and smooth and differs in powerEfficient alone, so the first two stay measured. (The 154 oracle read
+    # false too: in session 0 the GPU process crashed.)
+    "mediaCap": ("host decodes H.264 in hardware (powerEfficient), the box has no decoder "
+                 "(backlog: powerEfficient claim)",
+                 lambda fork: fork.get("mediaCap") == [True, True, False]),
 }
 # Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
 # an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.

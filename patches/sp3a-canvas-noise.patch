@@ -323,7 +323,7 @@ index 1d29be2717..327256df25 100644
      "//third_party/blink/renderer/modules/webgpu",
    ]
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index a40c95e5f8..fbecc1037f 100644
+index e014baae31..97e7fe7e06 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -4,6 +4,7 @@
@@ -407,7 +407,7 @@ index a40c95e5f8..fbecc1037f 100644
    DidFlushRecording(recording, clear_frame_, reason);
    clear_frame_ = false;
    if (shared_image_provider) {
-@@ -1150,6 +1182,31 @@ void BaseRenderingContext2D::DrawTextInternal(
+@@ -1154,6 +1186,31 @@ void BaseRenderingContext2D::DrawTextInternal(
    }
  
    location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
@@ -462,7 +462,7 @@ index 71c52b0ba1..410d4c511d 100644
    void PageVisibilityChanged() override {}
    void Reset() override;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 6296245787..4a9552dd4e 100644
+index c68848fc8a..708c51425c 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 @@ -32,9 +32,16 @@
