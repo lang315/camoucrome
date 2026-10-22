@@ -32,7 +32,7 @@ index 319b8c7b41..377897315c 100644
      }
    }
 diff --git a/content/browser/renderer_host/media/media_devices_manager.cc b/content/browser/renderer_host/media/media_devices_manager.cc
-index d306cf1312..a06c1e53b3 100644
+index da86c44a2a..400bfc3cea 100644
 --- a/content/browser/renderer_host/media/media_devices_manager.cc
 +++ b/content/browser/renderer_host/media/media_devices_manager.cc
 @@ -28,6 +28,10 @@
@@ -46,7 +46,7 @@ index d306cf1312..a06c1e53b3 100644
  #include "content/browser/media/media_devices_permission_checker.h"
  #include "content/browser/renderer_host/media/media_stream_manager.h"
  #include "content/browser/renderer_host/media/video_capture_manager.h"
-@@ -70,6 +74,71 @@ const base::FeatureParam<base::TimeDelta> kReleaseVideoSourceProviderTimeout{
+@@ -71,6 +75,71 @@ const base::FeatureParam<base::TimeDelta> kReleaseVideoSourceProviderTimeout{
      "release_video_source_provider_timeout", base::Seconds(60)};
  #endif
  
@@ -118,7 +118,7 @@ index d306cf1312..a06c1e53b3 100644
  BASE_FEATURE(kEnumerateDevicesRelaxedCache,
  #if BUILDFLAG(IS_WIN)
               base::FEATURE_ENABLED_BY_DEFAULT
-@@ -1195,6 +1264,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+@@ -1201,6 +1270,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
        has_permissions[static_cast<size_t>(MediaDeviceType::kMediaAudioInput)] &&
        request_audio_input_capabilities;
  
@@ -127,7 +127,7 @@ index d306cf1312..a06c1e53b3 100644
    std::vector<blink::WebMediaDeviceInfoArray> translation(
        static_cast<size_t>(MediaDeviceType::kNumMediaDeviceTypes));
    for (size_t i = 0;
-@@ -1202,7 +1273,7 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+@@ -1208,7 +1279,7 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
      if (!requested_types[i])
        continue;
  
@@ -136,7 +136,7 @@ index d306cf1312..a06c1e53b3 100644
        if (!has_permissions[i] && !translation[i].empty()) {
          break;
        }
-@@ -1238,7 +1309,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
+@@ -1244,7 +1315,8 @@ void MediaDevicesManager::OnDevicesEnumeratedAndRanked(
  
    GetAudioInputCapabilities(request_id, video_input_capabilities_requested,
                              audio_input_capabilities_requested,
@@ -146,7 +146,7 @@ index d306cf1312..a06c1e53b3 100644
  }
  
  void MediaDevicesManager::GetAudioInputCapabilities(
-@@ -1288,6 +1360,16 @@ void MediaDevicesManager::GetAudioInputCapabilities(
+@@ -1294,6 +1366,16 @@ void MediaDevicesManager::GetAudioInputCapabilities(
        raw_enumeration_results[static_cast<size_t>(
                                    MediaDeviceType::kMediaAudioInput)]
            .size();
@@ -163,7 +163,7 @@ index d306cf1312..a06c1e53b3 100644
    for (std::size_t i = 0; i < num_audio_input_devices; i++) {
      auto raw_device_info = raw_enumeration_results[static_cast<size_t>(
          MediaDeviceType::kMediaAudioInput)][i];
-@@ -1303,7 +1385,17 @@ void MediaDevicesManager::GetAudioInputCapabilities(
+@@ -1309,7 +1391,17 @@ void MediaDevicesManager::GetAudioInputCapabilities(
          std::move(capabilities));
      size_t capabilities_index =
          enumeration_states_[state_id].audio_capabilities.size() - 1;
@@ -182,7 +182,7 @@ index d306cf1312..a06c1e53b3 100644
        GetIOThreadTaskRunner({})->PostTask(
            FROM_HERE,
            base::BindOnce(&MediaDevicesManager::GotAudioInputCapabilities,
-@@ -1837,8 +1929,11 @@ void MediaDevicesManager::NotifyDeviceChange(
+@@ -1843,8 +1935,11 @@ void MediaDevicesManager::NotifyDeviceChange(
    const SubscriptionRequest& request = it->second;
    request.listener_->OnDevicesChanged(
        type,

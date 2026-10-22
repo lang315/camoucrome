@@ -76,11 +76,11 @@ control; step 3 is the first release, a Windows flagship plus a Linux beta. The
 per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium **`f89f3a4363`, the Chrome stable
-tag `154.0.8037.93`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
+tag `156.0.8078.48`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
 refuses any other HEAD). The pin is the current stable tag so the fork reports
 a version real users run; it moves to the newest stable tag each milestone. The
-next re-pin, to 156, is due by 2026-10-20 (`docs/superpowers/specs/repin-runbook.md`).
+next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook.md`).
 
 ## The defining constraint
 

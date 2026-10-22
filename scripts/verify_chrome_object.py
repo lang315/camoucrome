@@ -1,6 +1,6 @@
 """window.chrome shape + navigator.plugins/mimeTypes/pdfViewerEnabled (SP2 §4.7,
-roadmap B1) on the fork's chrome, against baselines/chrome-8037-stock-window-chrome.json
-(stock Chrome 154.0.8037.93 on the box's Windows host, headless + headed).
+roadmap B1) on the fork's chrome, against baselines/chrome-8078-stock-window-chrome.json
+(stock Chrome 156.0.8078.48 on the box's Windows host, headless + headed).
 
 O1 fork headless tree == stock headless tree (recursive: names, kinds,
    descriptor flags, function length/name/toString) -- diff empty.
@@ -24,7 +24,7 @@ from lib_shell import CHROME as EXE, layout, session
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
-BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", str(CLIENT / "baselines" / "chrome-8037-stock-window-chrome.json")))
+BASELINE = pathlib.Path(os.environ.get("CAMOU_CHROME_BASELINE", str(CLIENT / "baselines" / "chrome-8078-stock-window-chrome.json")))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from capture_chrome_object import PAGE  # noqa: E402
 

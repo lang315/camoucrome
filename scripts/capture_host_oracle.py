@@ -2,8 +2,8 @@
 """The Windows host oracle: one page reads every cheap page-visible surface a
 fingerprinter enumerates (window keys, Navigator prototype, screen, media
 queries, Intl, audio, voices, WebGPU, codecs, permissions, keyboard, storage,
-client hints...) on stock Chrome 154 on the box's Windows 10 host (headless
---dump-dom) -> baselines/chrome-8037-stock-oracle-windows.json.
+client hints...) on stock Chrome 156 on the box's Windows 10 host (headless
+--dump-dom) -> baselines/chrome-8078-stock-oracle-windows.json.
 verify_host_oracle.py renders the same page in the fork under a generated
 Windows identity and diffs, so every remaining Windows-claim tell is a line."""
 import json
@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "baselines" / "chrome-8037-stock-oracle-windows.json"
+OUT = ROOT / "baselines" / "chrome-8078-stock-oracle-windows.json"
 
 
 def committable(doc, terms):
@@ -104,7 +104,7 @@ def main(argv=None):
     headless = winhost.dump_dom(page(), args=("--virtual-time-budget=60000", "--use-gl=angle", "--use-angle=d3d11"), timeout_s=180)
     raw = winhost.cdp_eval(page(), "document.getElementById('o').textContent", args=("--use-gl=angle", "--use-angle=d3d11"), headed=True, wait_ms=25000)
     headed = json.loads(raw) if isinstance(raw, str) else raw
-    doc = {"chrome": "154.0.8037.93", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
+    doc = {"chrome": "156.0.8078.48", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
            "headed": headed, "headless": headless}
     if a.raw_out:
         pathlib.Path(a.raw_out).write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")

@@ -10,18 +10,20 @@ Camoucrome is an anti-detect fork of **Chromium** — the Chromium counterpart t
 plus diffs in `patches/` — that `scripts/apply.sh` lays onto a pristine Chromium
 checkout to produce a fingerprint-spoofing browser.
 
-The change set is generated against Chromium **`f89f3a4363`, the Chrome stable
-tag `154.0.8037.93`** (`upstream.env` holds the full SHA and the tag;
+The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
+tag `156.0.8078.48`** (`upstream.env` holds the full SHA and the tag;
 `scripts/apply.sh` refuses any other HEAD). The pin is a *stable tag*, not
 `main` and not a branch head, so the fork reports a version real users have;
 re-pin to the newest stable tag whenever chromiumdash's stable milestone moves
 (`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`, and
 `2026-10-repin.md` for what one costs). **The next re-pin is due by
-2026-10-20**, when 156 goes stable. The build box's checkout is on branch
-`camoucrome/main` (the exported branch, on this pin), its only branch since
-2026-10-04, when the retired branches of the older pins were deleted
-(`rebuild_branch.sh` recreates a branch from the repo); `a727b57805` was never
-an upstream revision.
+2026-11-03**, when 157 goes stable. The build box's checkout is on branch
+`camoucrome/main` (the exported branch, on this pin). The 154 branch,
+`camoucrome/main-8037`, is kept in `~/chromium-154/src` until that tree is
+retired; that tree holds the git directory both checkouts share, so move it
+before deleting the tree. The branches of the older pins were deleted on
+2026-10-04 (`rebuild_branch.sh` recreates a branch from the repo);
+`a727b57805` was never an upstream revision.
 
 ## The defining constraint (never violate)
 
@@ -106,7 +108,7 @@ the local folder.
 | `client/` | the launchers: `client/python/camoucrome` (patchright), `client/go` (`playwright-go` on the `patchright-core` driver) and `client/node` (patchright). All three implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
 | `docs/observer/` | the tracking observer (an audit build, `camou_observe = true`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verify `scripts/verify_observe.py` |
-| `baselines/` | stock reference captures; nine are committed (`git ls-files baselines`). `*-f89f3a4363-*` and `content_shell-8037-stock-ua.json` are pristine captures of the build at the pin; `chrome-8037-*` are captures of stock Chrome 154.0.8037.93 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
+| `baselines/` | stock reference captures; ten are committed (`git ls-files baselines`). `*-d0c02bfad0-*` and `content_shell-8078-stock-ua.json` are pristine captures of the build at the pin; `chrome-8078-*` are captures of stock Chrome 156.0.8078.48 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
 split (from Camoufox, held across ~64 patches) keeps rebase conflicts confined to
