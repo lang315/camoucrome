@@ -3,12 +3,21 @@ mouse-wheel notches (SendInput, the Win32 path a physical wheel takes),
 against the same binary scrolled over CDP. Writes
 baselines/chrome-8078-wheel.json; exits 1 if the RED gate says the arms do
 not differ (the probe measured nothing). Runs where winhost.py runs (the
-Mac, with the buildpc ssh master up)."""
+Mac, with the buildpc ssh master up).
+
+    capture_wheel_oracle.py --fork 'D:\\camou-win\\chromium\\src\\out\\Release\\chrome.exe'
+
+is SP2c's host-native arm instead: the fork's build scrolled over CDP with
+humanize on and off, compared leaf by leaf with the committed real3 arm;
+writes nothing, exits 0 on a match, 1 on a mismatch, 2 if the RED fails,
+3 if a launch was not measured (no CDP result, a GPU-process crash).
+Run it from the console session: RDP turns client-area animation off."""
 import json
 import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gpu_gate  # noqa: E402
 import winhost  # noqa: E402
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "baselines" / "chrome-8078-wheel.json"
@@ -102,8 +111,58 @@ def red_gate(arms):
     return problems
 
 
+EXACT = ["n_wheel", "dy", "wdy", "modes", "trusted", "final_y", "dpr"]
+# The real arms themselves animate over 9-12 scroll events and 191-266 ms
+# for 1-3 notches, so the animation leaves are a band around the real arm.
+ANIMATION_BAND = (0.5, 1.5)
+
+
+def compare(fork, real):
+    """Each leaf where the fork's summary does not read like the real wheel's."""
+    if real["n_wheel"] == 0:
+        raise ValueError("the real arm saw no wheel event: nothing to compare against")
+    problems =[f"{k}: fork {fork[k]} vs real {real[k]}" for k in EXACT if fork[k] != real[k]]
+    lo, hi = ANIMATION_BAND
+    for k in ("n_scroll", "scroll_ms"):
+        if not lo * real[k] <= fork[k] <= hi * real[k]:
+            problems.append(f"{k}: fork {fork[k]} outside {lo}-{hi} x real {real[k]}")
+    return problems
+
+
+def fork_arms(exe):
+    """SP2c's host-native arm: the fork's chrome.exe scrolled over CDP, with
+    humanize on and off (off is the RED: it must not read like the real wheel)."""
+    real = json.loads(OUT.read_text())["arms"]["real3"]["summary"]
+    verdict = 0
+    for name, on in (("fork_off", False), ("fork_on", True)):
+        # Explicit false, not an absent key: the session could carry a config of its own.
+        env = {"CAMOU_CONFIG_STRICT": "1", "CAMOU_CONFIG": json.dumps({"humanize:enabled": on})}
+        try:
+            s = summarize(winhost.cdp_eval(PAGE, expression=EXPR, wait_ms=2500, act_ps=cdp_act(300),
+                                           args=WINDOW, window_style="Normal", exe=exe, env=env))
+        except (RuntimeError, gpu_gate.GpuCrashed) as e:
+            print(f"UNMEASURED {name}: {e}")
+            return 3
+        problems = compare(s, real)
+        print(name, json.dumps(s, sort_keys=True), flush=True)
+        for p in problems:
+            print("   ", p)
+        if not on and (s["n_wheel"] == 0 or not problems):
+            print("RED-GATE fork_off saw no wheel event or reads like the real wheel: measured nothing")
+            return 2
+        if on:
+            verdict = 1 if problems else 0
+            print("PASS" if not problems else f"FAIL {len(problems)} leaf/leaves", "fork_on vs real3")
+    return verdict
+
+
 def main():
-    facts = dict(line.split("=", 1) for line in winhost.powershell(HOST_FACTS).splitlines() if "=" in line)
+    if "--fork" in sys.argv:
+        if len(sys.argv) != 3 or sys.argv[1] != "--fork":
+            print("usage: capture_wheel_oracle.py --fork <chrome.exe>")
+            return 2
+        return fork_arms(sys.argv[2])
+    facts =dict(line.split("=", 1) for line in winhost.powershell(HOST_FACTS).splitlines() if "=" in line)
     arms = {}
     for name, kw in ARMS.items():
         raw = winhost.cdp_eval(PAGE, expression=EXPR, wait_ms=2500, **kw)
