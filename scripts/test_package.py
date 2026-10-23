@@ -261,3 +261,11 @@ def test_gn_is_launched_by_its_resolved_path(tree, monkeypatch):
                         lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, stdout="chrome\n"))
     assert package.runtime_deps(src, out) == ["chrome"]
     assert seen[0][0] == "/depot/gn.bat"
+
+
+def test_windows_zip_keeps_the_whole_staging_name(tmp_path):
+    """with_suffix would eat the version's last component (.48-windows-x64)."""
+    staging = tmp_path / "camoucrome-156.0.8078.48-windows-x64"
+    staging.mkdir()
+    (staging / "chrome.exe").write_bytes(b"MZ")
+    assert package.archive(staging, "windows-x64").name == "camoucrome-156.0.8078.48-windows-x64.zip"

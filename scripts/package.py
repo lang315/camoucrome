@@ -184,7 +184,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
 
 def archive(staging, platform):
     if platform.startswith("win"):
-        path = staging.with_suffix(".zip")
+        path = pathlib.Path(str(staging) + ".zip")
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(staging.rglob("*")):
                 z.write(f, f.relative_to(staging.parent))
