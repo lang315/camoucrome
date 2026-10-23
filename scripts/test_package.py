@@ -316,18 +316,37 @@ def test_staged_binary_may_hold_a_geo_term_but_staged_text_may_not(tree, tmp_pat
     src, out, deps = tree
     d = package.runtime_deps(src, out, deps)
     monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-tz-name>": ["Geo-Zone-X"]}))
-    (out / "locales" / "en-US.pak").write_bytes(b"..geo-zone-x..")
+    (out / "locales" / "en-US.pak").write_bytes(b"\0..geo-zone-x..")
     package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
     (src / "chrome" / "data.txt").write_text("geo-zone-x")
     with pytest.raises(SystemExit, match="host-tz-name"):
         package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
 
 
+def test_staged_text_with_an_unlisted_suffix_and_no_nul_is_text(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-tz-name>": ["Geo-Zone-X"]}))
+    (out / "locales" / "en-US.pak").write_bytes(b"<html>geo-zone-x</html>")  # no NUL: text whatever the suffix
+    with pytest.raises(SystemExit, match="host-tz-name"):
+        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+
+
+@pytest.mark.parametrize("terms", [{"<x>": []}, {"<x>": [""]}])
+def test_stage_refuses_when_no_non_empty_term_loads(tree, tmp_path, monkeypatch, terms):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(terms))
+    with pytest.raises(SystemExit, match="0 non-empty private term"):
+        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+    assert not list((tmp_path / "dist").glob("*"))
+
+
 def test_stage_refuses_when_no_terms_are_loaded(tree, tmp_path, monkeypatch):
     src, out, deps = tree
     d = package.runtime_deps(src, out, deps)
     monkeypatch.setenv("PRIVATE_TERMS", "{}")
-    with pytest.raises(SystemExit, match="0 private term"):
+    with pytest.raises(SystemExit, match="0 non-empty private term"):
         package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
 
 

@@ -135,13 +135,13 @@ def zip_of(path, **members):
 
 def test_binary_member_with_a_geo_term_passes(monkeypatch, stamps, tmp_path):
     two_classes(monkeypatch)
-    z = zip_of(tmp_path / "a.zip", icudtl__dat=b"..geo-zone-x..")
+    z = zip_of(tmp_path / "a.zip", icudtl__dat=b"\0..geo-zone-x..")
     assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(z))) == 0
 
 
 def test_binary_member_with_an_identity_term_is_refused(monkeypatch, stamps, tmp_path):
     two_classes(monkeypatch)
-    z = zip_of(tmp_path / "a.zip", chrome__dll=b"..secret-box-7..")
+    z = zip_of(tmp_path / "a.zip", chrome__dll=b"\0..secret-box-7..")
     refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
 
 
@@ -153,7 +153,7 @@ def test_text_member_with_a_geo_term_is_refused(monkeypatch, stamps, tmp_path):
 
 def test_unknown_placeholder_in_a_binary_counts_as_identity(monkeypatch, stamps, tmp_path):
     monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<something-new>": [GEO_TERM]}))
-    z = zip_of(tmp_path / "a.zip", chrome__dll=b"..geo-zone-x..")
+    z = zip_of(tmp_path / "a.zip", chrome__dll=b"\0..geo-zone-x..")
     refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
 
 
@@ -249,3 +249,86 @@ def test_checks_text_assets_and_tables_not_archives_and_uploads_sums(monkeypatch
     sums = a / "SHA256SUMS"
     assert str(sums) in create and str(t / "t.tsv") in create
     assert "  x.zip" in sums.read_text()
+
+
+# Fix round 4: a member is binary only with no text suffix AND a NUL in its bytes; everything else is text.
+@pytest.mark.parametrize("name,data", [
+    ("about_credits.html", b"<p>Geo-Zone-X</p>"),
+    ("camoucrome/chrome.VisualElementsManifest.xml", b"<x>geo-zone-x</x>"),
+    ("camoucrome/LICENSE", b"geo-zone-x"),
+    ("camoucrome/data.json", b'{"\0": "geo-zone-x"}'),  # a text suffix stays text even with a NUL
+])
+def test_a_text_member_with_a_geo_term_is_refused(monkeypatch, stamps, tmp_path, name, data):
+    two_classes(monkeypatch)
+    z = tmp_path / "a.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr(name, data)
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def test_a_suffixless_member_with_a_nul_is_binary(monkeypatch, stamps, tmp_path):
+    two_classes(monkeypatch)
+    z = tmp_path / "a.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.writestr("camoucrome/chrome_sandbox", b"\x7fELF\0geo-zone-x")
+    assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(z))) == 0
+
+
+def test_isp_is_identity_even_in_a_binary(monkeypatch, stamps, tmp_path):
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-isp>": [GEO_TERM]}))
+    z = zip_of(tmp_path / "a.zip", chrome__dll=b"\0..geo-zone-x..")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+@pytest.mark.parametrize("name", ["setup.exe", "camoucrome.msi", "camoucrome.7z", "notes.txt"])
+def test_a_non_archive_asset_is_scanned_as_one_member(monkeypatch, stamps, tmp_path, name):
+    a = tmp_path / "as" / name
+    a.parent.mkdir()
+    a.write_bytes(b"MZ\0" + TERM.encode("utf-16le"))
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(a)))
+
+
+@pytest.mark.parametrize("name,mode", [("bad.tgz", "w:gz"), ("bad.tar.bz2", "w:bz2"), ("bad.TAR.GZ", "w:gz")])
+def test_tgz_and_tar_star_open_as_tar(monkeypatch, stamps, tmp_path, name, mode):
+    src = tmp_path / "m.bin"
+    src.write_bytes(b"\0" + TERM.encode())
+    t = tmp_path / name
+    with tarfile.open(t, mode) as tf:
+        tf.add(src, arcname="camoucrome/m.bin")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(t)))
+
+
+@pytest.mark.parametrize("terms", [{"<x>": []}, {"<x>": [""]}, {"<x>": [], "<y>": [""]}])
+def test_refuses_when_no_non_empty_term_loads(monkeypatch, stamps, tmp_path, terms):
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(terms))
+    z = make_zip(tmp_path / "ok.zip", b"MZ clean")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def patched_zip(path, field, value):
+    """A one-member zip with a header field set in both the local and central header
+    (zipfile cannot write an encrypted member or an unknown method). field: offsets (local, central)."""
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("camoucrome/chrome.dll", b"MZ\0 clean")
+    b = bytearray(path.read_bytes())
+    for sig, off in zip((b"PK\x03\x04", b"PK\x01\x02"), field):
+        i = b.index(sig)
+        b[i + off:i + off + 2] = value.to_bytes(2, "little")
+    path.write_bytes(bytes(b))
+    return path
+
+
+@pytest.mark.parametrize("make", [
+    lambda p: patched_zip(p, (6, 8), 0x1),            # flag bit 0, encrypted: RuntimeError, password required
+    lambda p: patched_zip(p, (8, 10), 99),            # compression method 99: NotImplementedError
+    lambda p: p.write_bytes(b"not a zip") or p,       # BadZipFile
+])
+def test_an_unreadable_zip_returns_2(monkeypatch, stamps, tmp_path, make):
+    z = make(tmp_path / "u.zip")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def test_an_unreadable_tar_returns_2(monkeypatch, stamps, tmp_path):
+    t = tmp_path / "u.tar.gz"
+    t.write_bytes(b"not a tar")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(t)))

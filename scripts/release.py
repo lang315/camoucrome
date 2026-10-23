@@ -43,21 +43,27 @@ def privacy_hits(path):
     return int(m.group(1)) if m else 1  # unparseable output counts as a hit
 
 
-def scan_archive(path, terms):
-    """(member, placeholder) for every member of a .zip or .tar.xz whose bytes hold a private term;
-    members are read one at a time, in memory."""
-    found = []
-    if str(path).endswith(".zip"):
+def members(path):
+    """(name, bytes) of each file in a .zip, .tar, .tgz or .tar.*, one at a time, in memory;
+    any other asset is one member, itself."""
+    name = pathlib.Path(path).name.lower()
+    if name.endswith(".zip"):
         with zipfile.ZipFile(path) as z:
             for i in z.infolist():
                 if not i.is_dir():
-                    found += [(i.filename, h) for h in check_privacy.byte_hits(z.read(i), terms, i.filename)]
-    elif str(path).endswith((".tar.xz", ".tar.gz", ".tar")):
+                    yield i.filename, z.read(i)
+    elif name.endswith((".tar", ".tgz")) or ".tar." in name:
         with tarfile.open(path) as t:
             for m in t:
                 if m.isfile():
-                    found += [(m.name, h) for h in check_privacy.byte_hits(t.extractfile(m).read(), terms, m.name)]
-    return found
+                    yield m.name, t.extractfile(m).read()
+    else:
+        yield pathlib.Path(path).name, pathlib.Path(path).read_bytes()
+
+
+def scan_archive(path, terms):
+    """(member, placeholder) for every member of an asset whose bytes hold a private term."""
+    return [(n, h) for n, data in members(path) for h in check_privacy.byte_hits(data, terms, n)]
 
 
 def release_listed(tag):
@@ -125,8 +131,8 @@ def main(argv):
         return refuse(f"--tables {a.tables} is not a directory")
 
     terms = check_privacy.load_terms()
-    if not terms:
-        return refuse("0 private term groups loaded: the archive scan would measure nothing "
+    if not check_privacy.term_count(terms):
+        return refuse("0 non-empty private terms loaded: the archive scan would measure nothing "
                       "(PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json)")
     for p in a.stamp:
         found = check_privacy.byte_hits(pathlib.Path(p).read_bytes(), terms, p)
@@ -136,7 +142,8 @@ def main(argv):
         try:
             for member, label in scan_archive(p, terms):
                 return refuse(f"{p}: member {member} holds a private term ({label})")
-        except (zipfile.BadZipFile, tarfile.TarError) as e:
+        # RuntimeError: an encrypted zip member; NotImplementedError: an unsupported compression method
+        except (zipfile.BadZipFile, tarfile.TarError, RuntimeError, NotImplementedError) as e:
             return refuse(f"{p} is not a readable archive: {e}")
 
     tables = sorted(p for p in pathlib.Path(a.tables).rglob("*") if p.is_file()) if a.tables else []
