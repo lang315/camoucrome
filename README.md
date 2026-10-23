@@ -82,6 +82,60 @@ refuses any other HEAD). The pin is the current stable tag so the fork reports
 a version real users run; it moves to the newest stable tag each milestone. The
 next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook.md`).
 
+## Install
+
+`<tag>` is the release tag, `v<chrome-version>-<n>` (for example `v157.0.8103.NN-1`).
+`<sha>` is a full commit SHA from this repository, for the Go module.
+`<chrome-version>` is the Chrome version the release is built on.
+
+1. Download `camoucrome-<chrome-version>-windows-x64.zip` and `SHA256SUMS` from the
+   release. Compare the output of `certutil -hashfile camoucrome-<chrome-version>-windows-x64.zip SHA256`
+   with the line for that file in `SHA256SUMS`, then extract the zip. The archive
+   carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux beta,
+   `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same release.
+2. Install one client.
+   - Python (needs Python 3.12): `py -3.12 -m venv .venv`, then
+     `.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<tag>#subdirectory=client/python"`.
+     The wheel carries its settings tables; no checkout is needed. patchright
+     installs its driver on first use.
+   - Go: `go get github.com/lang315/camoucrome/client/go@<sha>`. A tag follows the
+     `client/go/vX.Y.Z` scheme once releases publish. Go generates identities by
+     calling `python -m camoucrome.gen`, so install the Python package above too.
+   - Node: `npm install <URL of the release's camoucrome-0.1.0.tgz asset>`. The peer
+     dependency is patchright 1.62.1. Node also calls `python -m camoucrome.gen`, so
+     install the Python package above too.
+
+## Quickstart: two identities
+
+Two Windows identities, each with its own persistent profile. `profile_seeds` draws the
+canvas, audio and media-device seeds once into the profile's `user_data_dir` and reads
+them back on every later launch, so each profile keeps its fingerprint. Run it from the
+venv above, with the zip extracted next to the script.
+
+```python
+import camoucrome
+import camoucrome.gen
+from patchright.sync_api import sync_playwright
+
+CHROME = r"camoucrome-<chrome-version>-windows-x64\chrome.exe"
+
+with sync_playwright() as pw:
+    for name in ("alice", "bob"):
+        udd = rf"profiles\{name}"
+        fp = camoucrome.gen.generate(os="windows")
+        ctx = camoucrome.launch(pw, CHROME, user_data_dir=udd, headless=False,
+                                config={**fp["config"], **camoucrome.profile_seeds(udd)},
+                                window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+        page = ctx.pages[0]
+        page.goto("https://example.com")
+        print(name, page.evaluate("[navigator.hardwareConcurrency, screen.width]"))
+        ctx.close()
+```
+
+The two identities differ in screen size and CPU cores, and in the noise seeds stored in
+each profile. They share the host's GPU, the stock Windows font list, voices and the
+snapped `deviceMemory`.
+
 ## The defining constraint
 
 Fingerprint spoofing is implemented in **C++ at the Blink and browser level, never by
@@ -176,6 +230,17 @@ string naming a Mac GPU is worse than an honest Linux fingerprint. Camoufox lear
 this the expensive way and ended up enforcing coherence in three uncoordinated places
 — C++ patches, an all-or-nothing schema, and Python fixup functions. SP5 exists so
 Camoucrome does not repeat that.
+
+## Known limits
+
+- Every identity on one host shares that host's GPU: only one real GPU profile exists.
+- No Widevine.
+- No auto-update. Re-pins are the security channel, and a release more than one
+  milestone behind Chrome stable is unsupported.
+- Windows SmartScreen warns on first run: choose More info, then Run anyway.
+- The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
+- Linux is a beta. A Linux host claiming Windows is the weaker identity.
+- The archive is about <size> MB (stated per release).
 
 ## Licence and codecs
 
