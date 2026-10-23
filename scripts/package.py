@@ -97,7 +97,7 @@ def runtime_deps(src, out, file=None):
     if file:
         raw = pathlib.Path(file).read_text()
     else:
-        raw = subprocess.run(["gn", "desc", str(out), TARGET, "runtime_deps"], cwd=src,
+        raw = subprocess.run([shutil.which("gn") or "gn", "desc", str(out), TARGET, "runtime_deps"], cwd=src,
                              capture_output=True, text=True, check=True).stdout
     # ponytail: a path line is one token without whitespace; the WARNING block's lines all
     # have spaces or start with "^" (Chromium paths never contain spaces). Out-dir paths

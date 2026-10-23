@@ -250,3 +250,14 @@ def test_fingerprint_orders_camoucfg_files_by_posix_relpath_bytes(tree):
     expected = hashlib.sha256(b"\n" + b"".join(
         f"{n} {hashlib.sha256(n.encode()).hexdigest()}\n".encode() for n in ("BUILD.gn", "DEPS", "a.cc"))).hexdigest()
     assert package.tree_fingerprint(src, rev(src)) == expected
+
+
+def test_gn_is_launched_by_its_resolved_path(tree, monkeypatch):
+    """On Windows gn is gn.bat, which CreateProcess does not find under the bare name."""
+    src, out, _ = tree
+    seen = []
+    monkeypatch.setattr(package.shutil, "which", lambda n: f"/depot/{n}.bat")
+    monkeypatch.setattr(package.subprocess, "run",
+                        lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, stdout="chrome\n"))
+    assert package.runtime_deps(src, out) == ["chrome"]
+    assert seen[0][0] == "/depot/gn.bat"
