@@ -15,7 +15,7 @@ DEST = HERE / "camoucrome" / "_settings" / "settings"
 
 class CopySettings(build_py):
     def run(self):
-        if SETTINGS.is_dir():  # an sdist rebuilt elsewhere already carries the copy
+        if SETTINGS.is_dir():  # only a git/source-tree build is supported; an sdist rebuilt away from the repo would ship no tables
             shutil.rmtree(DEST.parent, ignore_errors=True)
             DEST.mkdir(parents=True)
             for n in NEEDED:
