@@ -45,6 +45,12 @@ def test_runtime_deps_keeps_only_paths_once_and_prunes_the_tool_data(tree):
     assert package.runtime_deps(src, out, deps) == ["chrome", "locales/en-US.pak", "../../chrome/data.txt"]
 
 
+def test_runtime_deps_strips_the_dot_slash_gn_156_puts_on_executables(tree):
+    src, out, deps = tree
+    deps.write_text("./chrome\nlocales/en-US.pak\n./chrome_crashpad_handler\nchrome\n")
+    assert package.runtime_deps(src, out, deps) == ["chrome", "locales/en-US.pak", "chrome_crashpad_handler"]
+
+
 def test_stage_copies_every_dep_and_writes_the_stamp(tree, tmp_path):
     src, out, deps = tree
     d = package.runtime_deps(src, out, deps)

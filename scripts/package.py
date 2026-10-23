@@ -110,9 +110,10 @@ def runtime_deps(src, out, file=None):
                              capture_output=True, text=True, check=True).stdout
     # ponytail: a path line is one token without whitespace; the WARNING block's lines all
     # have spaces or start with "^" (Chromium paths never contain spaces). Out-dir paths
-    # come bare ("chrome", "locales/en-US.pak"), source-tree ones as "../../x".
+    # come bare ("locales/en-US.pak"; executables "./chrome" since 156, made bare here),
+    # source-tree ones as "../../x".
     lines = [l.strip() for l in raw.splitlines()]
-    paths = [l for l in lines if l and " " not in l and not l.startswith("^")]
+    paths = [l.removeprefix("./") for l in lines if l and " " not in l and not l.startswith("^")]
     # gn lists a few files twice (resources.pak, snapshot_blob.bin, the angledata jsons): once each.
     return list(dict.fromkeys(p for p in paths if not pruned(p)))
 
