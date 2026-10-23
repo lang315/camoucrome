@@ -40,6 +40,8 @@ def parse_transcript(text):
     RUN_DONE with elapsed <= 15 min, both identities printed, and screen.width or
     hardwareConcurrency differing."""
     why = [f"step {n} rc={rc}" for n, rc in re.findall(r"^=== END (\S+) rc=(-?\d+)$", text, re.M) if rc != "0"]
+    if not re.search(r"^=== BEGIN \S*checksum", text, re.M):
+        why.append("no checksum step ran")
     for n, body in re.findall(r"^=== BEGIN (\S*checksum\S*)\n(.*?)^=== END \1 rc=", text, re.M | re.S):
         if not re.search(r"^True$", body, re.M):
             why.append(f"checksum step {n} did not print True")

@@ -135,7 +135,7 @@ tar -xf camoucrome-<chrome-version>-windows-x64.zip
 
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<tag>#subdirectory=client/python"
+.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"
 ```
 
 The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux
@@ -153,7 +153,8 @@ Other clients:
 
 Two Windows identities, each with its own persistent profile. `profile_seeds` draws the
 canvas, audio and media-device seeds once into the profile's `user_data_dir` and reads
-them back on every later launch, so each profile keeps its fingerprint. Save the script
+them back on every later launch, so each profile keeps its fingerprint. The fixed `seed` given to `generate` is what keeps
+a profile's screen, cores and user agent the same on every run. Save the script
 as `quickstart.py` in the working folder, where you extracted the zip and created
 `.venv`, and run it with `.venv\Scripts\python quickstart.py`.
 
@@ -165,9 +166,9 @@ from patchright.sync_api import sync_playwright
 CHROME = r"camoucrome-<chrome-version>-windows-x64\chrome.exe"
 
 with sync_playwright() as pw:
-    for name in ("alice", "bob"):
+    for name, seed in (("alice", 1), ("bob", 2)):
         udd = rf"profiles\{name}"
-        fp = camoucrome.gen.generate(os="windows")
+        fp = camoucrome.gen.generate(os="windows", seed=seed)
         ctx = camoucrome.launch(pw, CHROME, user_data_dir=udd, headless=False,
                                 config={**fp["config"], **camoucrome.profile_seeds(udd)},
                                 window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])

@@ -38,7 +38,7 @@ def stamps(tmp_path):
                                  "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": "b"}))
         out.append(p)
     notes = tmp_path / "notes.md"
-    notes.write_text("Chrome 156.0.8078.48. Unsigned.")
+    notes.write_text(f"Chrome 156.0.8078.48. Unsigned. pip install git+https://example.invalid/r@{SHA}")
     return out, notes
 
 
@@ -332,3 +332,55 @@ def test_an_unreadable_tar_returns_2(monkeypatch, stamps, tmp_path):
     t = tmp_path / "u.tar.gz"
     t.write_bytes(b"not a tar")
     refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(t)))
+
+
+def test_create_targets_the_checked_sha(monkeypatch, stamps):
+    gh = Gh()
+    assert run(monkeypatch, gh, stamps) == 0
+    create = next(c for c in gh.calls if c[:2] == ["release", "create"])
+    assert create[create.index("--target") + 1] == SHA
+
+
+def test_refuses_notes_without_the_full_sha(monkeypatch, stamps, tmp_path):
+    notes = stamps[1]
+    notes.write_text("Chrome 156.0.8078.48. Unsigned.")
+    refused(monkeypatch, Gh(), stamps, tmp_path)
+    notes.write_text(f"short {SHA[:12]}")
+    refused(monkeypatch, Gh(), stamps, tmp_path)
+
+
+def archive_with_stamp(path, stamp_bytes):
+    path.parent.mkdir(exist_ok=True)
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("camoucrome-x/chrome.exe", b"MZ clean")
+        if stamp_bytes is not None:
+            z.writestr("camoucrome-x/camoucrome-release.json", stamp_bytes)
+    return path
+
+
+@pytest.mark.parametrize("embedded,ok", [("given", True), (b'{"changeset_commit": "old"}', False), (None, False)])
+def test_platform_archive_must_embed_a_given_stamp(monkeypatch, stamps, tmp_path, embedded, ok):
+    paths, _ = stamps
+    sb = paths[1].read_bytes() if embedded == "given" else embedded
+    z = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.zip", sb)
+    if ok:
+        assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(z))) == 0
+    else:
+        refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def test_npm_tarball_is_not_a_platform_archive(monkeypatch, stamps, tmp_path):
+    src = tmp_path / "p.json"
+    src.write_text("{}")
+    t = tmp_path / "camoucrome-0.1.0.tgz"
+    with tarfile.open(t, "w:gz") as tf:
+        tf.add(src, arcname="package/package.json")
+    assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(t))) == 0
+
+
+@pytest.mark.parametrize("terms", [{"<host-tz-name>": ["Geo-Zone-X"]},
+                                   {"<host-tz-name>": ["Geo-Zone-X"], "<host-city>": ["Cityville"], "<host-name>": [""]}])
+def test_refuses_when_only_geo_terms_load(monkeypatch, stamps, tmp_path, terms):
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(terms))
+    z = make_zip(tmp_path / "ok.zip", b"MZ clean")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))

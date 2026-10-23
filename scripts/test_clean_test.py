@@ -171,3 +171,21 @@ def test_readme_install_block1_checks_installer_exit_codes():
     b1 = clean_test.fenced_blocks(README, "Install")[0][1]
     assert b1.count("-Wait -PassThru") == 2 and b1.count(".ExitCode") >= 2
     assert "Run as administrator" in README.split("## Install", 1)[1].split("```", 1)[0]
+
+
+def test_quickstart_identities_are_seeded():
+    q = clean_test.fenced_blocks(README, "Quickstart: two identities")[0][1]
+    assert "seed=" in q and "generate(os=\"windows\")" not in q
+    assert q.count("seed=seed") == 1 and '(("alice", 1), ("bob", 2))' in q
+
+
+def test_pip_line_pins_the_sha_and_the_fill_substitutes_it():
+    inst = "\n".join(b for _, b in clean_test.fenced_blocks(README, "Install"))
+    assert "camoucrome@<sha>#subdirectory=client/python" in inst
+    assert "@<tag>" not in inst and "@" + "a" * 40 + "#subdirectory" in inst.replace("<sha>", "a" * 40) and "releases/download/<tag>" in README
+
+
+def test_parse_fail_without_a_checksum_step():
+    t = GOOD.replace("=== BEGIN install-3-checksum\nTrue\n=== END install-3-checksum rc=0\n", "")
+    v, why, _ = clean_test.parse_transcript(t)
+    assert v == "FAIL" and any("no checksum step" in w for w in why)

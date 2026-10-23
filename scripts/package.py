@@ -138,6 +138,9 @@ def leak_scan(staging, scan=True):
         shutil.rmtree(staging)
         sys.exit("refusing to package: 0 non-empty private terms loaded, so the leak scan would measure nothing "
                  "(set PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json, or pass --no-leak-scan)")
+    if not check_privacy.identity_term_count(terms):
+        shutil.rmtree(staging)
+        sys.exit("refusing to package: 0 non-empty identity (non-GEO) private terms loaded, so binaries would be scanned for nothing")
     print(f"leak scan: {len(terms)} private term group(s) loaded", file=sys.stderr)
     for f in sorted(p for p in staging.rglob("*") if p.is_file() and not p.is_symlink()):
         found = check_privacy.byte_hits(f.read_bytes(), terms, f.name)

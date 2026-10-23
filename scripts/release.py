@@ -134,10 +134,26 @@ def main(argv):
     if not check_privacy.term_count(terms):
         return refuse("0 non-empty private terms loaded: the archive scan would measure nothing "
                       "(PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json)")
+    if not check_privacy.identity_term_count(terms):
+        return refuse("0 non-empty identity (non-GEO) private terms loaded: binaries would be scanned for nothing")
     for p in a.stamp:
         found = check_privacy.byte_hits(pathlib.Path(p).read_bytes(), terms, p)
         if found:
             return refuse(f"{p} holds a private term ({found[0]})")
+    if sha not in pathlib.Path(a.notes).read_text():
+        return refuse(f"--notes does not contain the full changeset sha {sha} (the README's <sha> is read from there)")
+    stamp_bytes = [pathlib.Path(p).read_bytes() for p in a.stamp]
+    # platform archive = name starts camoucrome-<version>-, so the npm tarball (camoucrome-0.1.0.tgz) is not one
+    prefix = f"camoucrome-{m.group(1)}-"
+    for p in a.asset:
+        n = pathlib.Path(p).name
+        if n.startswith(prefix) and n.lower().endswith((".zip", ".tar", ".tgz")) or n.startswith(prefix) and ".tar." in n.lower():
+            try:
+                embedded = [d for name, d in members(p) if re.fullmatch(r"[^/]+/camoucrome-release\.json", name)]
+            except (zipfile.BadZipFile, tarfile.TarError, RuntimeError, NotImplementedError) as e:
+                return refuse(f"{p} is not a readable archive: {e}")
+            if len(embedded) != 1 or embedded[0] not in stamp_bytes:
+                return refuse(f"{p}: embedded camoucrome-release.json is missing or matches no --stamp")
     for p in a.asset:
         try:
             for member, label in scan_archive(p, terms):
@@ -155,7 +171,7 @@ def main(argv):
     d = pathlib.Path(a.asset[0]).parent if a.asset else pathlib.Path(tempfile.mkdtemp())
     sums = d / "SHA256SUMS"
     sums.write_text(sha256sums(a.asset))
-    rc, out = gh(["release", "create", a.tag, "--draft", "--title", a.tag, "--notes-file", a.notes,
+    rc, out = gh(["release", "create", a.tag, "--draft", "--target", sha, "--title", a.tag, "--notes-file", a.notes,
                   *a.asset, str(sums), *map(str, tables)])
     if rc != 0:
         return refuse("gh release create failed")

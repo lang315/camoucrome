@@ -91,6 +91,11 @@ def term_count(terms):
     return sum(1 for ns in terms.values() for n in ns if n)
 
 
+def identity_term_count(terms):
+    """Non-empty terms outside GEO: the only ones a binary is scanned for."""
+    return term_count({k: v for k, v in terms.items() if k not in GEO})
+
+
 def byte_hits(data, terms, name=""):
     """Placeholders whose term occurs in raw bytes, UTF-8 or UTF-16LE, any case (for files and archive
     members). A binary (no text suffix and a NUL in its bytes) gets identity groups only; anything else,
