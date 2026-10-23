@@ -237,3 +237,16 @@ def test_stage_refuses_a_build_without_credits(tree, tmp_path):
     (out / "gen" / "components" / "resources" / "about_credits.html").unlink()
     with pytest.raises(SystemExit, match="about_credits"):
         package.stage(src, out, package.runtime_deps(src, out, deps), "win-x64", tmp_path / "dist", False)
+
+
+def test_fingerprint_orders_camoucfg_files_by_posix_relpath_bytes(tree):
+    # Path ordering is case-insensitive on Windows: the order must not depend on the platform.
+    import hashlib
+    src, out, deps = tree
+    cfg = src / "components" / "camoucfg"
+    cfg.mkdir(parents=True)
+    for n in ("DEPS", "a.cc", "BUILD.gn"):
+        (cfg / n).write_text(n)
+    expected = hashlib.sha256(b"\n" + b"".join(
+        f"{n} {hashlib.sha256(n.encode()).hexdigest()}\n".encode() for n in ("BUILD.gn", "DEPS", "a.cc"))).hexdigest()
+    assert package.tree_fingerprint(src, rev(src)) == expected

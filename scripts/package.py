@@ -82,11 +82,12 @@ def tree_fingerprint(src, rev):
              if l.startswith("??")]
     if stray:
         sys.exit(f"refusing a tree with {len(stray)} untracked file(s) outside out/ and components/camoucfg: {stray[:5]}")
-    diff = subprocess.run(["git", "diff", "--binary", "--full-index", rev, "--", ".", ":(exclude)out",
+    # flags pinned so the user's git config (diff.renames, external diff, textconv) cannot change the bytes
+    diff = subprocess.run(["git", "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff", "--no-textconv", rev, "--", ".", ":(exclude)out",
                            ":(exclude)components/camoucfg"], cwd=src, capture_output=True, check=True).stdout
     h = hashlib.sha256(diff + b"\n")
     cfg = src / "components" / "camoucfg"
-    for f in sorted(p for p in cfg.rglob("*") if p.is_file()) if cfg.is_dir() else []:
+    for f in sorted((p for p in cfg.rglob("*") if p.is_file()), key=lambda p: p.relative_to(cfg).as_posix()) if cfg.is_dir() else []:
         h.update(f"{f.relative_to(cfg).as_posix()} {hashlib.sha256(f.read_bytes()).hexdigest()}\n".encode())
     return h.hexdigest()
 
