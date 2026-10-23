@@ -4,7 +4,7 @@ An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
 **Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
-landed on `main`** — 33 patches in `patches/` (applied in the order of
+landed on `main`** — 37 patches in `patches/` (applied in the order of
 `patches/series`, which `scripts/export.sh` regenerates from the checkout's
 `camoucrome/main` branch) plus the proprietary-codec GN args in `settings/build-args.gn`.
 Apply the whole set to a pristine Chromium checkout with
@@ -40,14 +40,14 @@ longer leaks) — the codepoint-fallback and native-host completeness parts rema
 open. An open font bundle with a per-OS fontconfig layer and a `fonts:alias`
 key lets a claimed family resolve without redistributing proprietary fonts.
 
-**Windows is the flagship target.** A native `chrome.exe` 154.0.8037.93 builds
+**Windows is the flagship target.** A native `chrome.exe` 156.0.8078.48 builds
 from the same change set on the build PC's Windows host. The Windows-specific
 patches make a Windows claim behave like stock Windows Chrome past mere
 presence (`windows-oracle`, `windows-behaviour`, `windows-behaviour-ii`),
 keep `CAMOU_*` in the sandboxed renderer's environment (`windows-sandbox-env`)
 and stop crash dumps (`crashpad-no-dumps`). The named Windows verify set
 (`scripts/windows_verify_set.py`, 21 entries) reads 21/21 RED against the
-host's stock Chrome 154 and 21/21 GREEN against the fork. One oracle row is a
+host's stock Chrome 156 and 21/21 GREEN against the fork. One oracle row is a
 known failure: a Linux claim does not hide `navigator.share` and
 `navigator.bluetooth` on the Windows build. The Python, Go and Node clients all
 run there (`docs/superpowers/measurements/2026-10-04-windows-verify-set.md`).
