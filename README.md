@@ -88,7 +88,8 @@ next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook
 `<sha>` is a full commit SHA from this repository, for the Go module.
 `<chrome-version>` is the Chrome version the release is built on.
 
-Run everything below in PowerShell, in one working folder. A clean Windows machine has
+Run everything below in an elevated PowerShell ("Run as administrator"), because the
+first step installs machine-wide, in one working folder. A clean Windows machine has
 no prerequisites installed. Go users also need Go 1.22 or newer; Node users also need
 Node.js LTS and `npm install patchright@1.62.1` (the peer dependency).
 
@@ -98,9 +99,11 @@ Node.js LTS and `npm install patchright@1.62.1` (the peer dependency).
 ```powershell
 $ErrorActionPreference = 'Stop'
 Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe -OutFile python-installer.exe
-Start-Process .\python-installer.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1' -Wait
+$p = Start-Process .\python-installer.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1' -Wait -PassThru
+if ($p.ExitCode -ne 0) { throw "Python installer exit code $($p.ExitCode)" }
 Invoke-WebRequest https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe -OutFile git-installer.exe
-Start-Process .\git-installer.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait
+$g = Start-Process .\git-installer.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait -PassThru
+if ($g.ExitCode -ne 0) { throw "Git installer exit code $($g.ExitCode)" }
 ```
 
 2. Download the zip and `SHA256SUMS` from the release.

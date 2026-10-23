@@ -153,3 +153,21 @@ def test_download_step_staged_by_runner_recorded(run):
     *_, rep, rc = run
     text = next(rep.iterdir()).read_text()
     assert "download step staged by the runner" in text and "install-2" in text
+
+
+def test_run_ps1_blocks_run_in_child_powershell():
+    t = (HERE / "windows" / "clean-test-run.ps1.template").read_text()
+    child = [l for l in t.splitlines() if "powershell" in l and "-Command" in l]
+    assert len(child) == 1 and "2>&1" in child[0]
+    # Stop is set only inside the child's command string, never in the parent around the capture
+    assert "ErrorActionPreference='Stop'" in t
+    assert not [l for l in t.splitlines() if "ErrorActionPreference" in l and "Stop" in l and not l.startswith("#") and "-Command" not in l
+                and "$cmd" not in l]
+    assert "$LASTEXITCODE" in t.split("function Block", 1)[1]
+    assert "Block 'quickstart'" in t and "Step " not in t
+
+
+def test_readme_install_block1_checks_installer_exit_codes():
+    b1 = clean_test.fenced_blocks(README, "Install")[0][1]
+    assert b1.count("-Wait -PassThru") == 2 and b1.count(".ExitCode") >= 2
+    assert "Run as administrator" in README.split("## Install", 1)[1].split("```", 1)[0]
