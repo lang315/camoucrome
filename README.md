@@ -16,7 +16,8 @@ slice was built from. `docs/superpowers/` is local, not in git, since the
 
 Shipped: the config layer and load-time coherence validator (SP0, SP5a); the
 browser-process UA / UA-CH producer and Blink-side navigator leaves (SP1a, SP1b);
-automation hiding and the humanized cursor (SP2a, SP2b); canvas and WebGL
+automation hiding, the humanized cursor and the humanized wheel scroll (SP2a, SP2b,
+SP2c); canvas and WebGL
 fingerprints (SP3a, SP3b); the SP4 device-faking arc — screen, fonts, audio, media
 devices, timezone/locale, WebRTC IP, voices, geolocation, battery; the proprietary
 codec build (SP7 D2); and the follow-on slices that close residual tells the SP4
@@ -38,7 +39,10 @@ allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local
 cross-method inconsistency (a listed font still resolves; an unlisted one no
 longer leaks) — the codepoint-fallback and native-host completeness parts remain
 open. An open font bundle with a per-OS fontconfig layer and a `fonts:alias`
-key lets a claimed family resolve without redistributing proprietary fonts.
+key lets a claimed family resolve without redistributing proprietary fonts. SP2c's
+host-native check compares the fork's wheel with a real wheel on Windows: the fork
+produced 13 scroll events over 275 ms, the real wheel 12 over 266 ms, inside the
+0.5–1.5 band.
 
 **Windows is the flagship target.** A native `chrome.exe` 156.0.8078.48 builds
 from the same change set on the build PC's Windows host. The Windows-specific
@@ -70,9 +74,11 @@ unproven are named where they live.
 
 There is no release yet. The path to the first one is the long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
-steps 0 (re-pin and safety) and 1 (Windows foundation) are done; step 2 measures
-the fork against an oracle and public detectors with a like-for-like stock
-control; step 3 is the first release, a Windows flagship plus a Linux beta. The
+steps 0 (re-pin and safety), 1 (Windows foundation) and 2 (measuring the fork
+against an oracle and public detectors with a like-for-like stock control) are
+done; step 3 is the first release, a Windows flagship plus a Linux beta. It is
+being rehearsed on 156 as a draft that is never published; the first published
+release will be on 157, after the 157 re-pin. The
 per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
@@ -280,6 +286,8 @@ Camoucrome does not repeat that.
 ## Known limits
 
 - Every identity on one host shares that host's GPU: only one real GPU profile exists.
+- Identities on one host share only values that stock Windows Chrome shares across
+  profiles too, such as the static 10 GiB storage quota and V8's 4 GB heap cap.
 - No Widevine.
 - No auto-update. Re-pins are the security channel, and a release more than one
   milestone behind Chrome stable is unsupported.
