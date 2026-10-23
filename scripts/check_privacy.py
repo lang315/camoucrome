@@ -75,6 +75,13 @@ def _ip_hit(s):
                 or any(a in n for n in DOC_NETS))
 
 
+def byte_hits(data, terms):
+    """Placeholders whose term occurs in raw bytes, UTF-8 or UTF-16LE, any case (for binaries and archives)."""
+    low = data.lower()
+    return sorted({label for label, ns in terms.items() for n in ns if n
+                   and (n.lower().encode() in low or n.lower().encode("utf-16le") in low)})
+
+
 def hits(text, terms, generic=True):
     needles = [(label, n.lower()) for label, ns in terms.items() for n in ns if n]
     out = set()

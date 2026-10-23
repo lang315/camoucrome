@@ -126,25 +126,28 @@ def changeset_commit(explicit=None):
         sys.exit(f"{ROOT} is not a git checkout: pass --changeset-commit <sha of the change-set commit>")
 
 
-def leak_scan(staging):
-    """Refuse a staged file whose bytes hold a private term (UTF-8 or UTF-16LE, any case).
-    Terms load as check_privacy does: none loaded means nothing to scan for (its default;
-    its --require-terms is the strict form), so say how many were checked."""
+def leak_scan(staging, scan=True):
+    """Refuse a staged file whose bytes hold a private term; refuse too when no terms load
+    (a scan with nothing to look for measures nothing), unless scan=False (--no-leak-scan:
+    the caller scans the archive elsewhere). Returns the value for the stamp."""
+    if not scan:
+        print("leak scan: UNSCANNED (--no-leak-scan)", file=sys.stderr)
+        return "unscanned"
     terms = check_privacy.load_terms()
-    needles = []
-    for label, ns in terms.items():
-        for n in filter(None, ns):
-            needles += [(label, n.lower().encode()), (label, n.lower().encode("utf-16le"))]
+    if not terms:
+        shutil.rmtree(staging)
+        sys.exit("refusing to package: 0 private term groups loaded, so the leak scan would measure nothing "
+                 "(set PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json, or pass --no-leak-scan)")
     print(f"leak scan: {len(terms)} private term group(s) loaded", file=sys.stderr)
     for f in sorted(p for p in staging.rglob("*") if p.is_file() and not p.is_symlink()):
-        data = f.read_bytes().lower()
-        for label, n in needles:
-            if n in data:
-                shutil.rmtree(staging)
-                sys.exit(f"refusing to package: {f.relative_to(staging).as_posix()} holds a private term ({label})")
+        found = check_privacy.byte_hits(f.read_bytes(), terms)
+        if found:
+            shutil.rmtree(staging)
+            sys.exit(f"refusing to package: {f.relative_to(staging).as_posix()} holds a private term ({found[0]})")
+    return f"scanned:{len(terms)} groups"
 
 
-def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False):
+def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False, scan=True):
     args = read_args_gn(out)
     # GN's default is is_component_build = is_debug, and is_debug defaults to
     # true: only an explicit false (or an explicit is_debug = false) is a release.
@@ -196,13 +199,14 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if fonts:
         shutil.copytree(ROOT / "fonts", staging / "fonts", dirs_exist_ok=True)
         shutil.copytree(ROOT / "settings" / "fontconfig", staging / "settings" / "fontconfig", dirs_exist_ok=True)
-    leak_scan(staging)
+    scanned = leak_scan(staging, scan)
     stamp = {
         "name": name, "version": version, "platform": platform,
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
         "changeset_commit": changeset_commit(changeset),
         "branch_tip": git(src, "rev-parse", "HEAD"), "tree_fingerprint": fingerprint,
         "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
+        "leak_scan": scanned,
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
     }
     (staging / "camoucrome-release.json").write_text(json.dumps(stamp, indent=2) + "\n")
@@ -244,6 +248,8 @@ def main():
     ap.add_argument("--allow-component", action="store_true")
     ap.add_argument("--no-archive", action="store_true")
     ap.add_argument("--no-fonts", action="store_true", help="leave the font bundle out even when fonts/ exists")
+    ap.add_argument("--no-leak-scan", action="store_true",
+                    help="skip the staged-bytes private-term scan (release.py scans the archive instead)")
     ap.add_argument("--changeset-commit", metavar="SHA",
                     help="change-set commit to stamp (required when the script is not inside a git checkout)")
     ap.add_argument("--check", nargs="+", metavar="STAMP")
@@ -256,7 +262,7 @@ def main():
     out = (src / a.out).resolve()
     deps = runtime_deps(src, out, a.runtime_deps_file)
     staging, stamp = stage(src, out, deps, a.platform, a.dist, a.allow_component,
-                           changeset=a.changeset_commit, no_fonts=a.no_fonts)
+                           changeset=a.changeset_commit, no_fonts=a.no_fonts, scan=not a.no_leak_scan)
     print(f"staged {stamp['runtime_deps']} runtime deps -> {staging}")
     if not a.no_archive:
         path = archive(staging, a.platform)

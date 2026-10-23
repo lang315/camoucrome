@@ -12,9 +12,12 @@ import pathlib
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
+import zipfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import check_privacy  # noqa: E402
 import package  # noqa: E402
 
 TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+\.\d+)-\d+$")
@@ -38,6 +41,23 @@ def privacy_hits(path):
                        capture_output=True, text=True)
     m = re.search(r"check_privacy: (\d+) hit", p.stdout + p.stderr)
     return int(m.group(1)) if m else 1  # unparseable output counts as a hit
+
+
+def scan_archive(path, terms):
+    """(member, placeholder) for every member of a .zip or .tar.xz whose bytes hold a private term;
+    members are read one at a time, in memory."""
+    found = []
+    if str(path).endswith(".zip"):
+        with zipfile.ZipFile(path) as z:
+            for i in z.infolist():
+                if not i.is_dir():
+                    found += [(i.filename, h) for h in check_privacy.byte_hits(z.read(i), terms)]
+    elif str(path).endswith((".tar.xz", ".tar.gz", ".tar")):
+        with tarfile.open(path) as t:
+            for m in t:
+                if m.isfile():
+                    found += [(m.name, h) for h in check_privacy.byte_hits(t.extractfile(m).read(), terms)]
+    return found
 
 
 def release_listed(tag):
@@ -103,6 +123,21 @@ def main(argv):
             return refuse(f"asset {p} is not a file")
     if a.tables and not pathlib.Path(a.tables).is_dir():
         return refuse(f"--tables {a.tables} is not a directory")
+
+    terms = check_privacy.load_terms()
+    if not terms:
+        return refuse("0 private term groups loaded: the archive scan would measure nothing "
+                      "(PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json)")
+    for p in a.stamp:
+        found = check_privacy.byte_hits(pathlib.Path(p).read_bytes(), terms)
+        if found:
+            return refuse(f"{p} holds a private term ({found[0]})")
+    for p in a.asset:
+        try:
+            for member, label in scan_archive(p, terms):
+                return refuse(f"{p}: member {member} holds a private term ({label})")
+        except (zipfile.BadZipFile, tarfile.TarError) as e:
+            return refuse(f"{p} is not a readable archive: {e}")
 
     tables = sorted(p for p in pathlib.Path(a.tables).rglob("*") if p.is_file()) if a.tables else []
     text = [a.notes] + [p for p in a.asset if pathlib.Path(p).suffix.lower() in TEXT_SUFFIXES] + [str(p) for p in tables]

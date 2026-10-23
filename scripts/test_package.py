@@ -20,7 +20,7 @@ def tree(tmp_path, monkeypatch):
     (src / "chrome" / "VERSION").write_text(f"MAJOR={major}\nMINOR={minor}\nBUILD={build}\nPATCH={patch}\n")
     (src / "LICENSE").write_text("chromium bsd")
     (src / "chrome" / "data.txt").write_text("x")
-    monkeypatch.setenv("PRIVATE_TERMS", "{}")  # tests that want terms set their own
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<dummy>": ["zz-no-such-term"]}))  # the gate needs terms
     subprocess.run(["git", "init", "-q"], cwd=src, check=True)
     subprocess.run(["git", "add", "-A"], cwd=src, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "tip"], cwd=src, check=True)
@@ -310,6 +310,29 @@ def test_stage_refuses_a_term_in_utf16_too(tree, tmp_path, monkeypatch):
     (out / "chrome").write_bytes(b"MZ" + "Secret-Box-7".encode("utf-16le"))
     with pytest.raises(SystemExit, match="host-name"):
         package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+
+
+def test_stage_refuses_when_no_terms_are_loaded(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", "{}")
+    with pytest.raises(SystemExit, match="0 private term"):
+        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+
+
+def test_no_leak_scan_continues_and_the_stamp_says_unscanned(tree, tmp_path, monkeypatch, capsys):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", "{}")
+    _, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False, scan=False)
+    assert stamp["leak_scan"] == "unscanned"
+    assert "leak scan: UNSCANNED (--no-leak-scan)" in capsys.readouterr().err
+
+
+def test_stamp_records_the_scanned_group_count(tree, tmp_path):
+    src, out, deps = tree
+    _, stamp = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    assert stamp["leak_scan"] == "scanned:1 groups"
 
 
 def test_stage_passes_when_no_staged_file_holds_a_term(tree, tmp_path, monkeypatch):

@@ -7,7 +7,8 @@ if (-not $Commit) { $Commit = (Get-Content (Join-Path (Split-Path $Tree -Parent)
 $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
 $env:PATH = 'D:\camou-win\depot_tools;' + $env:PATH
 Set-Location D:\camou-win\chromium\src
+# --no-leak-scan: the private terms never go to this host; release.py scans the archive on the Mac.
 & D:\camou-win\python312\tools\python.exe "$Tree\scripts\package.py" D:\camou-win\chromium\src `
-  --out out\Release --platform windows-x64 --dist $Dist --changeset-commit $Commit --no-fonts
+  --out out\Release --platform windows-x64 --dist $Dist --changeset-commit $Commit --no-fonts --no-leak-scan
 "EXIT $LASTEXITCODE"
 exit $LASTEXITCODE

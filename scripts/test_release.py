@@ -1,6 +1,8 @@
 import json
 import pathlib
 import sys
+import tarfile
+import zipfile
 
 import pytest
 
@@ -96,6 +98,55 @@ def test_refuses_a_tag_that_is_not_the_stamped_version(monkeypatch, stamps, tmp_
     refused(monkeypatch, Gh(), stamps, tmp_path, tag="156.0.8078.48")
 
 
+TERM = "Secret-Box-7"
+
+
+@pytest.fixture(autouse=True)
+def terms(monkeypatch):
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": [TERM]}))
+
+
+def make_zip(path, member_bytes):
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("camoucrome/chrome.exe", member_bytes)
+    return path
+
+
+def test_refuses_an_archive_member_holding_a_term(monkeypatch, stamps, tmp_path, capsys):
+    z = make_zip(tmp_path / "bad.zip", b"MZ" + TERM.lower().encode())
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+    err = capsys.readouterr().err
+    assert "bad.zip" in err and "chrome.exe" in err and "<host-name>" in err and TERM.lower() not in err.lower()
+
+
+def test_refuses_a_tar_xz_member_holding_a_term(monkeypatch, stamps, tmp_path):
+    src = tmp_path / "m.bin"
+    src.write_bytes(TERM.encode("utf-16le"))
+    t = tmp_path / "bad.tar.xz"
+    with tarfile.open(t, "w:xz") as tf:
+        tf.add(src, arcname="camoucrome/m.bin")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(t)))
+
+
+def test_refuses_a_stamp_holding_a_term(monkeypatch, stamps, tmp_path):
+    paths, notes = stamps
+    paths[0].write_text(paths[0].read_text().replace('"branch_tip": "windows-x64"', f'"branch_tip": "{TERM}"'))  # not a field --check compares
+    refused(monkeypatch, Gh(), stamps, tmp_path)
+
+
+def test_a_clean_archive_proceeds(monkeypatch, stamps, tmp_path):
+    z = make_zip(tmp_path / "ok.zip", b"MZ clean")
+    gh = Gh()
+    assert run(monkeypatch, gh, stamps, extra=("--asset", str(z))) == 0
+    assert any(c[:2] == ["release", "create"] for c in gh.calls)
+
+
+def test_refuses_when_no_term_groups_load(monkeypatch, stamps, tmp_path):
+    monkeypatch.setenv("PRIVATE_TERMS", "{}")
+    z = make_zip(tmp_path / "ok.zip", b"MZ clean")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
 def test_refuses_a_privacy_hit(monkeypatch, stamps, tmp_path):
     refused(monkeypatch, Gh(), stamps, tmp_path, hits=1)
 
@@ -133,7 +184,7 @@ def test_uppercase_suffix_is_privacy_checked(monkeypatch, stamps, tmp_path):
 def test_checks_text_assets_and_tables_not_archives_and_uploads_sums(monkeypatch, stamps, tmp_path):
     a = tmp_path / "a"
     a.mkdir()
-    (a / "x.zip").write_bytes(b"\x00zip")
+    make_zip(a / "x.zip", b"MZ clean")
     (a / "m.json").write_text("{}")
     t = tmp_path / "tables"
     t.mkdir()
