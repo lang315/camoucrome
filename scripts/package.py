@@ -36,6 +36,7 @@ checkout); otherwise the commit is `git rev-parse HEAD` of the repo root.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -47,6 +48,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
+CREDITS = pathlib.Path("gen") / "components" / "resources" / "about_credits.html"
 PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf Python bindings, a tool data dep
 
 
@@ -69,6 +71,24 @@ def upstream_env():
 
 def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def tree_fingerprint(src, rev):
+    """One hash for the change set laid on the pin, whether committed (the box's
+    branch) or applied uncommitted (the Windows tree): tracked edits as a full-index
+    binary diff against the pin, plus the untracked camoucfg files by content."""
+    stray = [l[3:] for l in git(src, "status", "--porcelain", "--untracked-files=all", "--", ".",
+                                ":(exclude)out", ":(exclude)components/camoucfg").splitlines()
+             if l.startswith("??")]
+    if stray:
+        sys.exit(f"refusing a tree with {len(stray)} untracked file(s) outside out/ and components/camoucfg: {stray[:5]}")
+    diff = subprocess.run(["git", "diff", "--binary", "--full-index", rev, "--", ".", ":(exclude)out",
+                           ":(exclude)components/camoucfg"], cwd=src, capture_output=True, check=True).stdout
+    h = hashlib.sha256(diff + b"\n")
+    cfg = src / "components" / "camoucfg"
+    for f in sorted(p for p in cfg.rglob("*") if p.is_file()) if cfg.is_dir() else []:
+        h.update(f"{f.relative_to(cfg).as_posix()} {hashlib.sha256(f.read_bytes()).hexdigest()}\n".encode())
+    return h.hexdigest()
 
 
 def runtime_deps(src, out, file=None):
@@ -114,11 +134,14 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if version != env["CHROMIUM_TAG"]:
         sys.exit(f"chrome/VERSION {version} != upstream.env CHROMIUM_TAG {env['CHROMIUM_TAG']}: "
                  "the checkout is not on the pin")
+    fingerprint = tree_fingerprint(src, env["CHROMIUM_REV"])
+    if not (out / CREDITS).is_file():
+        sys.exit(f"{out / CREDITS} missing: build //components/resources:about_credits (it ships with chrome)")
     missing = [d for d in deps if not (out / d).exists()]
     if missing:
         sys.exit(f"{len(missing)} runtime dep(s) GN lists are not on disk (build unfinished?): "
                  f"{missing[:5]}")
-    name = f"camoucrome-{version}-{platform}"
+    name = f"camoucrome-{version}-{platform}" + ("-beta" if platform.startswith("linux") else "")
     staging = pathlib.Path(dist) / name
     if staging.exists():
         shutil.rmtree(staging)
@@ -133,6 +156,9 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(srcp, dst, follow_symlinks=False)
+    shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
+    shutil.copy2(src / "LICENSE", staging / "LICENSE.chromium")
+    shutil.copy2(out / CREDITS, staging / "about_credits.html")
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)
@@ -146,7 +172,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
         "name": name, "version": version, "platform": platform,
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
         "changeset_commit": changeset_commit(changeset),
-        "branch_tip": git(src, "rev-parse", "HEAD"),
+        "branch_tip": git(src, "rev-parse", "HEAD"), "tree_fingerprint": fingerprint,
         "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
     }
@@ -170,7 +196,7 @@ def archive(staging, platform):
 
 def check(stamp_paths):
     stamps = [json.loads(pathlib.Path(p).read_text()) for p in stamp_paths]
-    keys = ("version", "chromium_tag", "chromium_rev", "changeset_commit", "branch_tip")
+    keys = ("version", "chromium_tag", "chromium_rev", "changeset_commit", "tree_fingerprint")
     bad = [k for k in keys if len({s[k] for s in stamps}) > 1]
     for s in stamps:
         print(f"{s['name']}: {s['changeset_commit'][:10]} tip {s['branch_tip'][:10]} {s['built']}")

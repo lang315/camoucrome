@@ -13,19 +13,25 @@ TAG = package.upstream_env()["CHROMIUM_TAG"]
 
 
 @pytest.fixture
-def tree(tmp_path):
+def tree(tmp_path, monkeypatch):
     src = tmp_path / "src"
     (src / "chrome").mkdir(parents=True)
     major, minor, build, patch = TAG.split(".")
     (src / "chrome" / "VERSION").write_text(f"MAJOR={major}\nMINOR={minor}\nBUILD={build}\nPATCH={patch}\n")
+    (src / "LICENSE").write_text("chromium bsd")
+    (src / "chrome" / "data.txt").write_text("x")
     subprocess.run(["git", "init", "-q"], cwd=src, check=True)
-    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "tip"], cwd=src, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=src, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "tip"], cwd=src, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, capture_output=True, text=True, check=True).stdout.strip()
+    monkeypatch.setattr(package, "upstream_env", lambda: {"CHROMIUM_TAG": TAG, "CHROMIUM_REV": head})
     out = src / "out" / "Release"
     (out / "locales").mkdir(parents=True)
     (out / "args.gn").write_text('is_debug = false\nis_component_build = false\nproprietary_codecs = true\n')
     (out / "chrome").write_bytes(b"\x7fELF")
     (out / "locales" / "en-US.pak").write_bytes(b"pak")
-    (src / "chrome" / "data.txt").write_text("x")
+    (out / "gen" / "components" / "resources").mkdir(parents=True)
+    (out / "gen" / "components" / "resources" / "about_credits.html").write_text("<html>credits</html>")
     deps = out / "deps.txt"
     deps.write_text("WARNING at build arg file: Build argument has no effect.\nenable_nacl = false\n\n"
                     "chrome\nlocales/en-US.pak\n../../chrome/data.txt\nchrome\n"
@@ -50,7 +56,7 @@ def test_stage_copies_every_dep_and_writes_the_stamp(tree, tmp_path):
     assert len(stamp["branch_tip"]) == 40 and len(stamp["changeset_commit"]) == 40
     assert json.loads((staging / "camoucrome-release.json").read_text()) == stamp
     path = package.archive(staging, "linux-x64")
-    assert path.name == f"camoucrome-{TAG}-linux-x64.tar.xz" and path.stat().st_size > 0
+    assert path.name == f"camoucrome-{TAG}-linux-x64-beta.tar.xz" and path.stat().st_size > 0
     win = package.archive(staging, "win-x64")
     assert win.suffix == ".zip"
 
@@ -94,9 +100,12 @@ def test_check_refuses_mismatched_stamps(tree, tmp_path, capsys):
     (tmp_path / "b.json").write_text(json.dumps(b))
     package.check([tmp_path / "dist" / f"{a['name']}.release.json", tmp_path / "b.json"])
     assert "2 stamp(s) agree" in capsys.readouterr().out
-    b["branch_tip"] = "0" * 40
+    b["branch_tip"] = "0" * 40  # the Windows tree's tip is the pin, the box's the branch: not a disagreement
     (tmp_path / "b.json").write_text(json.dumps(b))
-    with pytest.raises(SystemExit, match="branch_tip"):
+    package.check([tmp_path / "dist" / f"{a['name']}.release.json", tmp_path / "b.json"])
+    b["tree_fingerprint"] = "0" * 64
+    (tmp_path / "b.json").write_text(json.dumps(b))
+    with pytest.raises(SystemExit, match="tree_fingerprint"):
         package.check([tmp_path / "dist" / f"{a['name']}.release.json", tmp_path / "b.json"])
 
 
@@ -109,6 +118,7 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     (root / "settings" / "fontconfig" / "windows.conf").write_text("<fontconfig/>")
     (root / "settings" / "presets").mkdir()
     (root / "settings" / "launcher.json").write_text("{}")
+    (root / "LICENSE").write_text("mpl")
     (root / "upstream.env").write_text(package.ROOT.joinpath("upstream.env").read_text())
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], cwd=root, check=True)
@@ -160,3 +170,70 @@ def test_a_trailing_comment_does_not_hide_a_release_arg(tree, tmp_path):
     src, out, deps = tree
     (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\n")
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def rev(src):
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def commit_all(src, msg):
+    subprocess.run(["git", "add", "-A", "--", ".", ":(exclude)out", ":(exclude)components/camoucfg"], cwd=src, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", msg], cwd=src, check=True)
+
+
+def test_fingerprint_is_the_same_for_committed_and_uncommitted_change_sets(tree, tmp_path):
+    src, out, deps = tree
+    pin = rev(src)
+    (src / "components" / "camoucfg").mkdir(parents=True)
+    (src / "components" / "camoucfg" / "a.cc").write_text("int a;")
+    (src / "chrome" / "data.txt").write_text("patched")
+    uncommitted = package.tree_fingerprint(src, pin)
+    commit_all(src, "patch")
+    assert package.tree_fingerprint(src, pin) == uncommitted
+
+
+def test_fingerprint_changes_with_the_change_set(tree):
+    src, out, deps = tree
+    pin = rev(src)
+    before = package.tree_fingerprint(src, pin)
+    (src / "chrome" / "data.txt").write_text("other")
+    assert package.tree_fingerprint(src, pin) != before
+    (src / "chrome" / "data.txt").write_text("x")
+    (src / "components" / "camoucfg").mkdir(parents=True)
+    (src / "components" / "camoucfg" / "k.h").write_text("#define K")
+    assert package.tree_fingerprint(src, pin) != before
+
+
+def test_fingerprint_refuses_a_stray_untracked_file(tree):
+    src, out, deps = tree
+    (src / "content").mkdir()
+    (src / "content" / "stray.cc").write_text("x")
+    with pytest.raises(SystemExit, match="stray.cc"):
+        package.tree_fingerprint(src, rev(src))
+
+
+def test_check_refuses_stamps_with_different_fingerprints(tree, tmp_path):
+    a = {"name": "a", "version": "1", "chromium_tag": "t", "chromium_rev": "r", "changeset_commit": "c",
+         "branch_tip": "x", "tree_fingerprint": "f1", "built": "b"}
+    b = dict(a, name="b", branch_tip="y", tree_fingerprint="f2")
+    pa, pb = tmp_path / "a.json", tmp_path / "b.json"
+    pa.write_text(json.dumps(a)); pb.write_text(json.dumps(b))
+    with pytest.raises(SystemExit, match="tree_fingerprint"):
+        package.check([pa, pb])
+
+
+def test_stage_ships_licences_and_credits_and_names_linux_beta(tree, tmp_path):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+    assert staging.name == f"camoucrome-{TAG}-linux-x64-beta"
+    assert (staging / "LICENSE.chromium").read_text() == "chromium bsd"
+    assert (staging / "about_credits.html").exists() and (staging / "LICENSE").exists()
+    assert len(stamp["tree_fingerprint"]) == 64
+
+
+def test_stage_refuses_a_build_without_credits(tree, tmp_path):
+    src, out, deps = tree
+    (out / "gen" / "components" / "resources" / "about_credits.html").unlink()
+    with pytest.raises(SystemExit, match="about_credits"):
+        package.stage(src, out, package.runtime_deps(src, out, deps), "win-x64", tmp_path / "dist", False)
