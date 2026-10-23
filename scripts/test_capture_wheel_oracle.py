@@ -40,3 +40,19 @@ def test_red_gate_flags_identical_arms():
 def test_red_gate_flags_a_real_arm_that_saw_nothing():
     problems = c.red_gate({"real3": c.summarize(log([], [])), "cdp300": c.summarize(CDP)})
     assert any("no wheel event" in p for p in problems)
+
+
+def test_compare_accepts_a_fork_that_scrolls_like_the_real_wheel():
+    fork = log([ev(100, -120, t=0), ev(100, -120, t=30), ev(100, -120, t=75)],
+               [{"y": y, "t": t} for y, t in [(30, 12), (110, 70), (190, 120), (300, 240)]])
+    assert c.compare(c.summarize(fork), c.summarize(REAL)) == []
+
+
+def test_compare_names_each_leaf_a_stock_cdp_wheel_misses():
+    problems = c.compare(c.summarize(CDP), c.summarize(REAL))
+    assert [p.split(":")[0] for p in problems] == ["n_wheel", "dy", "wdy", "n_scroll", "scroll_ms"]
+
+
+def test_compare_refuses_an_unanimated_fork_with_the_right_notches():
+    fork = log([ev(100, -120), ev(100, -120), ev(100, -120)], [{"y": 300, "t": 5}])
+    assert [p.split(":")[0] for p in c.compare(c.summarize(fork), c.summarize(REAL))] == ["n_scroll", "scroll_ms"]
