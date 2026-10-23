@@ -1,54 +1,32 @@
-# Runs inside Windows Sandbox. C:\in is read-only (README blocks, token.env), C:\out is writable.
-# Placeholders {{REPO}} {{TAG}} {{CHROME_VERSION}} are filled by clean_test.py.
-$ErrorActionPreference = 'Continue'
+# Runs inside Windows Sandbox. C:\in is read-only: the README blocks (install-N[-name].ps1,
+# quickstart.py) and assets\ (the release files the Mac staged). C:\out is writable.
+# Nothing here is improvised: it runs only README blocks, each under $ErrorActionPreference='Stop'.
 $T = 'C:\out\transcript.txt'
 $sw = [Diagnostics.Stopwatch]::StartNew()
 function Log($s) { $s | Out-File -FilePath $T -Append -Encoding ascii }
 function Step($name, [scriptblock]$body) {
   Log "=== BEGIN $name"
   $global:LASTEXITCODE = 0
-  try { $o = & $body 2>&1 | Out-String } catch { $o = "EXCEPTION: $_"; $global:LASTEXITCODE = 1 }
+  $rc = 0
+  try {
+    $ErrorActionPreference = 'Stop'
+    $o = & $body 2>&1 | Out-String
+    if ($global:LASTEXITCODE -ne 0) { $rc = $global:LASTEXITCODE }
+  } catch { $o = "EXCEPTION: $_"; $rc = 1 }
+  $ErrorActionPreference = 'Continue'
   Log $o.TrimEnd()
-  Log "=== END $name rc=$($global:LASTEXITCODE)"
+  Log "=== END $name rc=$rc"
 }
 function RefreshPath { $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') }
 New-Item -ItemType Directory -Force -Path 'C:\work' | Out-Null
 Set-Location 'C:\work'
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ProgressPreference = 'SilentlyContinue'
+if (Test-Path 'C:\in\assets') { Copy-Item 'C:\in\assets\*' 'C:\work' }  # the staged download
 
-# README prerequisites (a clean Windows machine has none of them).
-Step 'prereq-python' {
-  Invoke-WebRequest 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' -OutFile py.exe
-  Start-Process .\py.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1' -Wait
-  RefreshPath; py -3.12 --version
-}
-Step 'prereq-git' {
-  Invoke-WebRequest 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe' -OutFile git.exe
-  Start-Process .\git.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait
-  RefreshPath; git --version
-}
-
-# README Install step 1: the draft release assets, fetched with the short-lived token in token.env.
-Step 'download' {
-  $tok = ((Get-Content 'C:\in\token.env' -Raw) -replace '^GH_TOKEN=','').Trim()
-  $h = @{ Authorization = "Bearer $tok"; 'User-Agent' = 'clean-test' }
-  $rels = Invoke-RestMethod -Headers $h 'https://api.github.com/repos/{{REPO}}/releases?per_page=30'
-  $rel = $rels | Where-Object { $_.tag_name -eq '{{TAG}}' } | Select-Object -First 1
-  if (-not $rel) { throw 'release {{TAG}} not found' }
-  foreach ($n in 'camoucrome-{{CHROME_VERSION}}-windows-x64.zip', 'SHA256SUMS') {
-    $a = $rel.assets | Where-Object { $_.name -eq $n } | Select-Object -First 1
-    if (-not $a) { throw "asset $n missing" }
-    Invoke-WebRequest -Headers @{ Authorization = "Bearer $tok"; Accept = 'application/octet-stream'; 'User-Agent' = 'clean-test' } $a.url -OutFile $n
-  }
-  Get-ChildItem
-}
-
-# README Install blocks, in order, literally.
-foreach ($f in Get-ChildItem 'C:\in' -Filter 'install-*' | Sort-Object Name) {
-  $name = $f.BaseName
-  if ($f.Extension -eq '.ps1') { Step $name { powershell -NoProfile -ExecutionPolicy Bypass -File $f.FullName } }
-  else { Step $name { cmd /c $f.FullName } }
+$blocks = Get-ChildItem 'C:\in' -Filter 'install-*.ps1' | Sort-Object { [int](($_.BaseName -split '-')[1]) }
+foreach ($f in $blocks) {
+  $p = $f.FullName
+  Step $f.BaseName { . $p }
   RefreshPath
 }
 

@@ -88,36 +88,63 @@ next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook
 `<sha>` is a full commit SHA from this repository, for the Go module.
 `<chrome-version>` is the Chrome version the release is built on.
 
-Prerequisites (a clean Windows machine has none of them):
+Run everything below in PowerShell, in one working folder. A clean Windows machine has
+no prerequisites installed. Go users also need Go 1.22 or newer; Node users also need
+Node.js LTS and `npm install patchright@1.62.1` (the peer dependency).
 
-- Python 3.12 from python.org, with the "py launcher" option ticked.
-- Git for Windows (git-scm.com), which the Python install line needs.
-- Go users: Go 1.22 or newer.
-- Node users: Node.js LTS, then `npm install patchright@1.62.1` (the peer dependency).
+1. Install Python 3.12 (with the py launcher) and Git for Windows, silently. Open a new
+   PowerShell window afterwards so `py` and `git` are on the path.
 
-Steps, all in one working folder:
+```powershell
+$ErrorActionPreference = 'Stop'
+Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe -OutFile python-installer.exe
+Start-Process .\python-installer.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1' -Wait
+Invoke-WebRequest https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe -OutFile git-installer.exe
+Start-Process .\git-installer.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait
+```
 
-1. Download `camoucrome-<chrome-version>-windows-x64.zip` and `SHA256SUMS` from the
-   release into the working folder. In PowerShell, check the zip; it must print `True`
-   (`-eq` on strings ignores case, and `sha256sum` writes lowercase hex):
-   `(Get-FileHash camoucrome-<chrome-version>-windows-x64.zip -Algorithm SHA256).Hash -eq ((Get-Content SHA256SUMS | Select-String windows-x64.zip).Line -split '\s+')[0]`
-   Then extract it in the same folder with
-   `tar -xf camoucrome-<chrome-version>-windows-x64.zip` (cmd or PowerShell, Windows 10
-   and later). `chrome.exe` ends up at `.\camoucrome-<chrome-version>-windows-x64\chrome.exe`.
-   If you use Explorer instead, extract into the current folder, not a new one.
-   The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux
-   beta, `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same release.
-2. Install one client.
-   - Python (needs Python 3.12): `py -3.12 -m venv .venv`, then
-     `.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<tag>#subdirectory=client/python"`.
-     The wheel carries its settings tables; no checkout is needed. patchright
-     installs its driver on first use.
-   - Go: `go get github.com/lang315/camoucrome/client/go@<sha>`, where `<sha>` is the
-     release's commit, named in the release notes. Go generates identities by
-     calling `python -m camoucrome.gen`, so install the Python package above too.
-   - Node: `npm install https://github.com/lang315/camoucrome/releases/download/<tag>/camoucrome-0.1.0.tgz`.
-     Node also calls `python -m camoucrome.gen`, so
-     install the Python package above too.
+2. Download the zip and `SHA256SUMS` from the release.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$base = 'https://github.com/lang315/camoucrome/releases/download/<tag>'
+Invoke-WebRequest "$base/camoucrome-<chrome-version>-windows-x64.zip" -OutFile camoucrome-<chrome-version>-windows-x64.zip
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
+```
+
+3. Check the zip. It must print `True` (`-eq` on strings ignores case, and `sha256sum`
+   writes lowercase hex).
+
+```powershell
+(Get-FileHash camoucrome-<chrome-version>-windows-x64.zip -Algorithm SHA256).Hash -eq ((Get-Content SHA256SUMS | Select-String windows-x64.zip).Line -split '\s+')[0]
+```
+
+4. Extract it in the same folder (Windows 10 and later). `chrome.exe` ends up at
+   `.\camoucrome-<chrome-version>-windows-x64\chrome.exe`. If you use Explorer instead,
+   extract into the current folder, not a new one.
+
+```powershell
+tar -xf camoucrome-<chrome-version>-windows-x64.zip
+```
+
+5. Install the Python client. The wheel carries its settings tables; no checkout is
+   needed. patchright installs its driver on first use.
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<tag>#subdirectory=client/python"
+```
+
+The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux
+beta, `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same release.
+
+Other clients:
+
+- Go: `go get github.com/lang315/camoucrome/client/go@<sha>`, where `<sha>` is the
+  release's commit, named in the release notes. Go generates identities by
+  calling `python -m camoucrome.gen`, so install the Python package above too.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/<tag>/camoucrome-0.1.0.tgz`.
+  Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 ## Quickstart: two identities
 
