@@ -40,6 +40,20 @@ def privacy_hits(path):
     return int(m.group(1)) if m else 1  # unparseable output counts as a hit
 
 
+def release_listed(tag):
+    """True when a release or draft with this tag exists (`release view` does not see drafts)."""
+    rc, out = gh(["release", "list", "--json", "tagName,isDraft", "--limit", "1000"])
+    if rc != 0:
+        raise RuntimeError("gh release list failed")
+    return any(r.get("tagName") == tag for r in json.loads(out or "[]"))
+
+
+def remote_tag(tag):
+    p = subprocess.run(["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"],
+                       capture_output=True, text=True, check=True)
+    return bool(p.stdout.strip())
+
+
 def sha256sums(paths):
     return "".join(f"{hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()}  {pathlib.Path(p).name}\n"
                    for p in paths)
@@ -80,11 +94,18 @@ def main(argv):
     for w in WORKFLOWS:
         if not any(r.get("workflowName") == w and r.get("conclusion") == "success" for r in runs):
             return refuse(f"CI {w} is not success on {sha}")
-    if gh(["release", "view", a.tag])[0] == 0:
-        return refuse(f"release {a.tag} exists")
+    if release_listed(a.tag):
+        return refuse(f"a release or draft {a.tag} exists")
+    if remote_tag(a.tag):
+        return refuse(f"tag {a.tag} exists on the remote")
+    for p in a.asset:
+        if not pathlib.Path(p).is_file():
+            return refuse(f"asset {p} is not a file")
+    if a.tables and not pathlib.Path(a.tables).is_dir():
+        return refuse(f"--tables {a.tables} is not a directory")
 
     tables = sorted(p for p in pathlib.Path(a.tables).rglob("*") if p.is_file()) if a.tables else []
-    text = [a.notes] + [p for p in a.asset if pathlib.Path(p).suffix in TEXT_SUFFIXES] + [str(p) for p in tables]
+    text = [a.notes] + [p for p in a.asset if pathlib.Path(p).suffix.lower() in TEXT_SUFFIXES] + [str(p) for p in tables]
     for p in text:
         if privacy_hits(p):
             return refuse(f"check_privacy hit in {p}")
