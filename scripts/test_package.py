@@ -312,6 +312,17 @@ def test_stage_refuses_a_term_in_utf16_too(tree, tmp_path, monkeypatch):
         package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
 
 
+def test_staged_binary_may_hold_a_geo_term_but_staged_text_may_not(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-tz-name>": ["Geo-Zone-X"]}))
+    (out / "locales" / "en-US.pak").write_bytes(b"..geo-zone-x..")
+    package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+    (src / "chrome" / "data.txt").write_text("geo-zone-x")
+    with pytest.raises(SystemExit, match="host-tz-name"):
+        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+
+
 def test_stage_refuses_when_no_terms_are_loaded(tree, tmp_path, monkeypatch):
     src, out, deps = tree
     d = package.runtime_deps(src, out, deps)

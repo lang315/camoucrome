@@ -75,10 +75,24 @@ def _ip_hit(s):
                 or any(a in n for n in DOC_NETS))
 
 
-def byte_hits(data, terms):
-    """Placeholders whose term occurs in raw bytes, UTF-8 or UTF-16LE, any case (for binaries and archives)."""
+# Geo and time-zone placeholders: ICU and locale data in every Chromium build names every city and zone,
+# so these match binaries legitimately. Any other (or unknown) placeholder is identity: strict.
+GEO = {"<host-city>", "<host-country>", "<host-isp>", "<host-offset>", "<host-tz-name>", "<host-tz>",
+       "<regional-site>"}
+TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".tsv"}
+
+
+def is_text(name):
+    return pathlib.PurePath(str(name)).suffix.lower() in TEXT_SUFFIXES
+
+
+def byte_hits(data, terms, name=""):
+    """Placeholders whose term occurs in raw bytes, UTF-8 or UTF-16LE, any case (for files and archive
+    members). A non-text `name` is a binary: only identity groups apply to it; text gets all groups."""
     low = data.lower()
+    binary = not is_text(name)
     return sorted({label for label, ns in terms.items() for n in ns if n
+                   and not (binary and label in GEO)
                    and (n.lower().encode() in low or n.lower().encode("utf-16le") in low)})
 
 

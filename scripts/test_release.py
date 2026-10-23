@@ -119,6 +119,51 @@ def test_refuses_an_archive_member_holding_a_term(monkeypatch, stamps, tmp_path,
     assert "bad.zip" in err and "chrome.exe" in err and "<host-name>" in err and TERM.lower() not in err.lower()
 
 
+GEO_TERM = "Geo-Zone-X"
+
+
+def two_classes(monkeypatch):
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-tz-name>": [GEO_TERM], "<host-name>": [TERM]}))
+
+
+def zip_of(path, **members):
+    with zipfile.ZipFile(path, "w") as z:
+        for name, data in members.items():
+            z.writestr(name.replace("__", "."), data)
+    return path
+
+
+def test_binary_member_with_a_geo_term_passes(monkeypatch, stamps, tmp_path):
+    two_classes(monkeypatch)
+    z = zip_of(tmp_path / "a.zip", icudtl__dat=b"..geo-zone-x..")
+    assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(z))) == 0
+
+
+def test_binary_member_with_an_identity_term_is_refused(monkeypatch, stamps, tmp_path):
+    two_classes(monkeypatch)
+    z = zip_of(tmp_path / "a.zip", chrome__dll=b"..secret-box-7..")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def test_text_member_with_a_geo_term_is_refused(monkeypatch, stamps, tmp_path):
+    two_classes(monkeypatch)
+    z = zip_of(tmp_path / "a.zip", manifest__JSON=b'{"x": "Geo-Zone-X"}')
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def test_unknown_placeholder_in_a_binary_counts_as_identity(monkeypatch, stamps, tmp_path):
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<something-new>": [GEO_TERM]}))
+    z = zip_of(tmp_path / "a.zip", chrome__dll=b"..geo-zone-x..")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def test_a_geo_term_in_a_stamp_is_refused(monkeypatch, stamps, tmp_path):
+    two_classes(monkeypatch)
+    paths, notes = stamps
+    paths[0].write_text(paths[0].read_text().replace('"branch_tip": "windows-x64"', f'"branch_tip": "{GEO_TERM}"'))
+    refused(monkeypatch, Gh(), stamps, tmp_path)
+
+
 def test_refuses_a_tar_xz_member_holding_a_term(monkeypatch, stamps, tmp_path):
     src = tmp_path / "m.bin"
     src.write_bytes(TERM.encode("utf-16le"))

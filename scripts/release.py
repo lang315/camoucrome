@@ -21,7 +21,7 @@ import check_privacy  # noqa: E402
 import package  # noqa: E402
 
 TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+\.\d+)-\d+$")
-TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".tsv"}
+TEXT_SUFFIXES = check_privacy.TEXT_SUFFIXES
 WORKFLOWS = ("checks", "build-verify")
 
 
@@ -51,12 +51,12 @@ def scan_archive(path, terms):
         with zipfile.ZipFile(path) as z:
             for i in z.infolist():
                 if not i.is_dir():
-                    found += [(i.filename, h) for h in check_privacy.byte_hits(z.read(i), terms)]
+                    found += [(i.filename, h) for h in check_privacy.byte_hits(z.read(i), terms, i.filename)]
     elif str(path).endswith((".tar.xz", ".tar.gz", ".tar")):
         with tarfile.open(path) as t:
             for m in t:
                 if m.isfile():
-                    found += [(m.name, h) for h in check_privacy.byte_hits(t.extractfile(m).read(), terms)]
+                    found += [(m.name, h) for h in check_privacy.byte_hits(t.extractfile(m).read(), terms, m.name)]
     return found
 
 
@@ -129,7 +129,7 @@ def main(argv):
         return refuse("0 private term groups loaded: the archive scan would measure nothing "
                       "(PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json)")
     for p in a.stamp:
-        found = check_privacy.byte_hits(pathlib.Path(p).read_bytes(), terms)
+        found = check_privacy.byte_hits(pathlib.Path(p).read_bytes(), terms, p)
         if found:
             return refuse(f"{p} holds a private term ({found[0]})")
     for p in a.asset:

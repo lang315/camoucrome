@@ -140,7 +140,7 @@ def leak_scan(staging, scan=True):
                  "(set PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json, or pass --no-leak-scan)")
     print(f"leak scan: {len(terms)} private term group(s) loaded", file=sys.stderr)
     for f in sorted(p for p in staging.rglob("*") if p.is_file() and not p.is_symlink()):
-        found = check_privacy.byte_hits(f.read_bytes(), terms)
+        found = check_privacy.byte_hits(f.read_bytes(), terms, f.name)
         if found:
             shutil.rmtree(staging)
             sys.exit(f"refusing to package: {f.relative_to(staging).as_posix()} holds a private term ({found[0]})")
