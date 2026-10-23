@@ -13,3 +13,6 @@ dependencies = ["patchright==1.62.3", "browserforge==1.2.4"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["camoucrome*"]
+
+[tool.setuptools.package-data]
+camoucrome = ["_settings/settings/*.json", "_settings/settings/webgl/*.json"]
