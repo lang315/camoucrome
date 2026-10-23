@@ -20,6 +20,7 @@ def tree(tmp_path, monkeypatch):
     (src / "chrome" / "VERSION").write_text(f"MAJOR={major}\nMINOR={minor}\nBUILD={build}\nPATCH={patch}\n")
     (src / "LICENSE").write_text("chromium bsd")
     (src / "chrome" / "data.txt").write_text("x")
+    monkeypatch.setenv("PRIVATE_TERMS", "{}")  # tests that want terms set their own
     subprocess.run(["git", "init", "-q"], cwd=src, check=True)
     subprocess.run(["git", "add", "-A"], cwd=src, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "tip"], cwd=src, check=True)
@@ -269,3 +270,50 @@ def test_windows_zip_keeps_the_whole_staging_name(tmp_path):
     staging.mkdir()
     (staging / "chrome.exe").write_bytes(b"MZ")
     assert package.archive(staging, "windows-x64").name == "camoucrome-156.0.8078.48-windows-x64.zip"
+
+
+def test_runtime_deps_prunes_symbols_and_test_gpu_layers_by_basename(tmp_path):
+    names = ["chrome.dll", "chrome.dll.pdb", "sub/x.exe.pdb", "VkICD_mock_icd.dll", "VkICD_mock_icd.dll.pdb",
+             "VkICD_mock_icd.json", "VkLayer_khronos_validation.dll", "VkLayer_khronos_validation.json",
+             "vk_swiftshader.dll", "vk_swiftshader_icd.json", "locales/en-US.pak"]
+    f = tmp_path / "deps.txt"
+    f.write_text("\n".join(names) + "\n")
+    assert package.runtime_deps(tmp_path, tmp_path, f) == ["chrome.dll", "vk_swiftshader.dll",
+                                                          "vk_swiftshader_icd.json", "locales/en-US.pak"]
+
+
+def test_gn_missing_from_path_falls_back_to_the_bare_name(tree, monkeypatch):
+    src, out, _ = tree
+    seen = []
+    monkeypatch.setattr(package.shutil, "which", lambda n: None)
+    monkeypatch.setattr(package.subprocess, "run",
+                        lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, stdout="chrome\n"))
+    package.runtime_deps(src, out)
+    assert seen[0][0] == "gn"
+
+
+def test_stage_refuses_a_staged_file_holding_a_private_term(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": ["Secret-Box-7"]}))
+    (out / "chrome").write_bytes(b"\x7fELF..host SECRET-box-7 name..")
+    with pytest.raises(SystemExit) as e:
+        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+    msg = str(e.value)
+    assert "chrome" in msg and "<host-name>" in msg and "secret-box-7" not in msg.lower()
+
+
+def test_stage_refuses_a_term_in_utf16_too(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": ["Secret-Box-7"]}))
+    (out / "chrome").write_bytes(b"MZ" + "Secret-Box-7".encode("utf-16le"))
+    with pytest.raises(SystemExit, match="host-name"):
+        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
+
+
+def test_stage_passes_when_no_staged_file_holds_a_term(tree, tmp_path, monkeypatch):
+    src, out, deps = tree
+    d = package.runtime_deps(src, out, deps)
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": ["Secret-Box-7"]}))
+    package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)

@@ -46,10 +46,19 @@ import sys
 import tarfile
 import zipfile
 
+import check_privacy
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
 CREDITS = pathlib.Path("gen") / "components" / "resources" / "about_credits.html"
 PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf Python bindings, a tool data dep
+# By basename: debug symbols, and Vulkan's mock ICD and validation layer (test-only; vk_swiftshader* stays).
+PRUNE_BASENAME = ("VkICD_mock_icd", "VkLayer_khronos_validation")
+
+
+def pruned(p):
+    base = p.rsplit("/", 1)[-1]
+    return p.startswith(PRUNE) or base.endswith(".pdb") or base.startswith(PRUNE_BASENAME)
 
 
 def read_args_gn(out):
@@ -105,7 +114,7 @@ def runtime_deps(src, out, file=None):
     lines = [l.strip() for l in raw.splitlines()]
     paths = [l for l in lines if l and " " not in l and not l.startswith("^")]
     # gn lists a few files twice (resources.pak, snapshot_blob.bin, the angledata jsons): once each.
-    return list(dict.fromkeys(p for p in paths if not p.startswith(PRUNE)))
+    return list(dict.fromkeys(p for p in paths if not pruned(p)))
 
 
 def changeset_commit(explicit=None):
@@ -115,6 +124,24 @@ def changeset_commit(explicit=None):
         return git(ROOT, "rev-parse", "HEAD")
     except (subprocess.CalledProcessError, FileNotFoundError):
         sys.exit(f"{ROOT} is not a git checkout: pass --changeset-commit <sha of the change-set commit>")
+
+
+def leak_scan(staging):
+    """Refuse a staged file whose bytes hold a private term (UTF-8 or UTF-16LE, any case).
+    Terms load as check_privacy does: none loaded means nothing to scan for (its default;
+    its --require-terms is the strict form), so say how many were checked."""
+    terms = check_privacy.load_terms()
+    needles = []
+    for label, ns in terms.items():
+        for n in filter(None, ns):
+            needles += [(label, n.lower().encode()), (label, n.lower().encode("utf-16le"))]
+    print(f"leak scan: {len(terms)} private term group(s) loaded", file=sys.stderr)
+    for f in sorted(p for p in staging.rglob("*") if p.is_file() and not p.is_symlink()):
+        data = f.read_bytes().lower()
+        for label, n in needles:
+            if n in data:
+                shutil.rmtree(staging)
+                sys.exit(f"refusing to package: {f.relative_to(staging).as_posix()} holds a private term ({label})")
 
 
 def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False):
@@ -169,6 +196,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if fonts:
         shutil.copytree(ROOT / "fonts", staging / "fonts", dirs_exist_ok=True)
         shutil.copytree(ROOT / "settings" / "fontconfig", staging / "settings" / "fontconfig", dirs_exist_ok=True)
+    leak_scan(staging)
     stamp = {
         "name": name, "version": version, "platform": platform,
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
