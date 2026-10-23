@@ -16,7 +16,8 @@ slice was built from. `docs/superpowers/` is local, not in git, since the
 
 Shipped: the config layer and load-time coherence validator (SP0, SP5a); the
 browser-process UA / UA-CH producer and Blink-side navigator leaves (SP1a, SP1b);
-automation hiding and the humanized cursor (SP2a, SP2b); canvas and WebGL
+automation hiding, the humanized cursor and the humanized wheel scroll (SP2a, SP2b,
+SP2c); canvas and WebGL
 fingerprints (SP3a, SP3b); the SP4 device-faking arc — screen, fonts, audio, media
 devices, timezone/locale, WebRTC IP, voices, geolocation, battery; the proprietary
 codec build (SP7 D2); and the follow-on slices that close residual tells the SP4
@@ -38,7 +39,10 @@ allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local
 cross-method inconsistency (a listed font still resolves; an unlisted one no
 longer leaks) — the codepoint-fallback and native-host completeness parts remain
 open. An open font bundle with a per-OS fontconfig layer and a `fonts:alias`
-key lets a claimed family resolve without redistributing proprietary fonts.
+key lets a claimed family resolve without redistributing proprietary fonts. SP2c's
+host-native check compares the fork's wheel with a real wheel on Windows: the fork
+produced 13 scroll events over 275 ms, the real wheel 12 over 266 ms, inside the
+0.5–1.5 band.
 
 **Windows is the flagship target.** A native `chrome.exe` 156.0.8078.48 builds
 from the same change set on the build PC's Windows host. The Windows-specific
@@ -70,9 +74,11 @@ unproven are named where they live.
 
 There is no release yet. The path to the first one is the long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
-steps 0 (re-pin and safety) and 1 (Windows foundation) are done; step 2 measures
-the fork against an oracle and public detectors with a like-for-like stock
-control; step 3 is the first release, a Windows flagship plus a Linux beta. The
+steps 0 (re-pin and safety), 1 (Windows foundation) and 2 (measuring the fork
+against an oracle and public detectors with a like-for-like stock control) are
+done; step 3 is the first release, a Windows flagship plus a Linux beta. It is
+being rehearsed on 156 as a draft that is never published; the first published
+release will be on 157, after the 157 re-pin. The
 per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
@@ -81,6 +87,106 @@ tag `156.0.8078.48`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
 refuses any other HEAD). The pin is the current stable tag so the fork reports
 a version real users run; it moves to the newest stable tag each milestone. The
 next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook.md`).
+
+## Install
+
+`<tag>` is the release tag, `v<chrome-version>-<n>` (for example `v157.0.8103.NN-1`).
+`<sha>` is a full commit SHA from this repository, for the Go module.
+`<chrome-version>` is the Chrome version the release is built on.
+
+Run everything below in an elevated PowerShell ("Run as administrator"), because the
+first step installs machine-wide, in one working folder. A clean Windows machine has
+no prerequisites installed. Go users also need Go 1.22 or newer; Node users also need
+Node.js LTS and `npm install patchright@1.62.1` (the peer dependency).
+
+1. Install Python 3.12 (with the py launcher) and Git for Windows, silently. Open a new
+   PowerShell window afterwards so `py` and `git` are on the path.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe -OutFile python-installer.exe
+$p = Start-Process .\python-installer.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1' -Wait -PassThru
+if ($p.ExitCode -ne 0) { throw "Python installer exit code $($p.ExitCode)" }
+Invoke-WebRequest https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe -OutFile git-installer.exe
+$g = Start-Process .\git-installer.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait -PassThru
+if ($g.ExitCode -ne 0) { throw "Git installer exit code $($g.ExitCode)" }
+```
+
+2. Download the zip and `SHA256SUMS` from the release.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$base = 'https://github.com/lang315/camoucrome/releases/download/<tag>'
+Invoke-WebRequest "$base/camoucrome-<chrome-version>-windows-x64.zip" -OutFile camoucrome-<chrome-version>-windows-x64.zip
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
+```
+
+3. Check the zip. It must print `True` (`-eq` on strings ignores case, and `sha256sum`
+   writes lowercase hex).
+
+```powershell
+(Get-FileHash camoucrome-<chrome-version>-windows-x64.zip -Algorithm SHA256).Hash -eq ((Get-Content SHA256SUMS | Select-String windows-x64.zip).Line -split '\s+')[0]
+```
+
+4. Extract it in the same folder (Windows 10 and later). `chrome.exe` ends up at
+   `.\camoucrome-<chrome-version>-windows-x64\chrome.exe`. If you use Explorer instead,
+   extract into the current folder, not a new one.
+
+```powershell
+tar -xf camoucrome-<chrome-version>-windows-x64.zip
+```
+
+5. Install the Python client. The wheel carries its settings tables; no checkout is
+   needed. patchright installs its driver on first use.
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"
+```
+
+The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux
+beta, `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same release.
+
+Other clients:
+
+- Go: `go get github.com/lang315/camoucrome/client/go@<sha>`, where `<sha>` is the
+  release's commit, named in the release notes. Go generates identities by
+  calling `python -m camoucrome.gen`, so install the Python package above too.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/<tag>/camoucrome-0.1.0.tgz`.
+  Node also calls `python -m camoucrome.gen`, so install the Python package above too.
+
+## Quickstart: two identities
+
+Two Windows identities, each with its own persistent profile. `profile_seeds` draws the
+canvas, audio and media-device seeds once into the profile's `user_data_dir` and reads
+them back on every later launch, so each profile keeps its fingerprint. The fixed `seed` given to `generate` is what keeps
+a profile's screen, cores and user agent the same on every run. Save the script
+as `quickstart.py` in the working folder, where you extracted the zip and created
+`.venv`, and run it with `.venv\Scripts\python quickstart.py`.
+
+```python
+import camoucrome
+import camoucrome.gen
+from patchright.sync_api import sync_playwright
+
+CHROME = r"camoucrome-<chrome-version>-windows-x64\chrome.exe"
+
+with sync_playwright() as pw:
+    for name, seed in (("alice", 1), ("bob", 2)):
+        udd = rf"profiles\{name}"
+        fp = camoucrome.gen.generate(os="windows", seed=seed)
+        ctx = camoucrome.launch(pw, CHROME, user_data_dir=udd, headless=False,
+                                config={**fp["config"], **camoucrome.profile_seeds(udd)},
+                                window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+        page = ctx.pages[0]
+        page.goto("https://example.com")
+        print(name, page.evaluate("[navigator.hardwareConcurrency, screen.width]"))
+        ctx.close()
+```
+
+The two identities differ in screen size and CPU cores, and in the noise seeds stored in
+each profile. They share the host's GPU, the stock Windows font list, voices and the
+snapped `deviceMemory`.
 
 ## The defining constraint
 
@@ -176,6 +282,19 @@ string naming a Mac GPU is worse than an honest Linux fingerprint. Camoufox lear
 this the expensive way and ended up enforcing coherence in three uncoordinated places
 — C++ patches, an all-or-nothing schema, and Python fixup functions. SP5 exists so
 Camoucrome does not repeat that.
+
+## Known limits
+
+- Every identity on one host shares that host's GPU: only one real GPU profile exists.
+- Identities on one host share only values that stock Windows Chrome shares across
+  profiles too, such as the static 10 GiB storage quota and V8's 4 GB heap cap.
+- No Widevine.
+- No auto-update. Re-pins are the security channel, and a release more than one
+  milestone behind Chrome stable is unsupported.
+- Windows SmartScreen warns on first run: choose More info, then Run anyway.
+- The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
+- Linux is a beta. A Linux host claiming Windows is the weaker identity.
+- The archive is about <size> MB (stated per release).
 
 ## Licence and codecs
 

@@ -252,3 +252,9 @@ def test_remote_google_voices_follow_the_local_row():
         assert all(v["localService"] is False and v["default"] is False and v["voiceURI"] == v["name"] for v in vl[n_local:])
         assert [v["default"] for v in vl].count(True) == 1 and vl[0]["default"] is True
     assert gen.voices_keys("Linux") == {}
+
+
+def test_quickstart_seeds_keep_a_profile_and_tell_two_apart():
+    pytest.importorskip("browserforge")
+    one, again, two = (gen.generate(os="windows", seed=s) for s in (1, 1, 2))
+    assert one == again and one != two

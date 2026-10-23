@@ -75,6 +75,38 @@ def _ip_hit(s):
                 or any(a in n for n in DOC_NETS))
 
 
+# Placeholders exempt in binaries. Any other (or unknown) placeholder is identity: strict everywhere.
+# City, country, offset and zone: ICU and locale data in every Chromium build names every city and zone.
+# <regional-site>: not a place, but the name occurs in Chromium's own binaries (10 hits in the 156 Windows archive).
+GEO = {"<host-city>", "<host-country>", "<host-offset>", "<host-tz-name>", "<host-tz>", "<regional-site>"}
+TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".tsv"}
+
+
+def is_text(name):
+    return pathlib.PurePath(str(name)).suffix.lower() in TEXT_SUFFIXES
+
+
+def term_count(terms):
+    """Non-empty terms: a key with no (or only empty) strings looks for nothing."""
+    return sum(1 for ns in terms.values() for n in ns if n)
+
+
+def identity_term_count(terms):
+    """Non-empty terms outside GEO: the only ones a binary is scanned for."""
+    return term_count({k: v for k, v in terms.items() if k not in GEO})
+
+
+def byte_hits(data, terms, name=""):
+    """Placeholders whose term occurs in raw bytes, UTF-8 or UTF-16LE, any case (for files and archive
+    members). A binary (no text suffix and a NUL in its bytes) gets identity groups only; anything else,
+    whatever its suffix, is text and gets all groups."""
+    low = data.lower()
+    binary = not is_text(name) and b"\0" in data
+    return sorted({label for label, ns in terms.items() for n in ns if n
+                   and not (binary and label in GEO)
+                   and (n.lower().encode() in low or n.lower().encode("utf-16le") in low)})
+
+
 def hits(text, terms, generic=True):
     needles = [(label, n.lower()) for label, ns in terms.items() for n in ns if n]
     out = set()
