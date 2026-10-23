@@ -29,7 +29,7 @@ import lib_shell
 from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 
 BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/chrome-d0c02bfad0-stock-ua.json")
+    "~/camoucrome-verify/baselines/chrome-1aa07b6387-stock-ua.json")
 
 # The pinned upstream revision this baseline must be a capture of (README.md).
 # Not the checkout's current HEAD: a HEAD-tracking guard is refused the
@@ -39,7 +39,7 @@ BASELINE = os.path.expanduser(
 # fork against a recording of itself instead of against stock. Fork-side UA
 # deltas (SP2a's Headless-prefix removal, for one) are reconciled in code at
 # the comparison sites below, not by moving this constant.
-STOCK_BASE_COMMIT = "d0c02bfad0"
+STOCK_BASE_COMMIT = "1aa07b6387"
 
 # The digest of the stock capture itself, because the commit above is a
 # SELF-REPORTED LABEL and this is the file's actual identity. Pinning both

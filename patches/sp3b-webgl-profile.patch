@@ -53,7 +53,7 @@ index 9eb36fe26c..5e044eebf3 100644
      case GL_SHADING_LANGUAGE_VERSION: {
        return WebGLAny(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 033723b262..86a5fad9fe 100644
+index 1584de4191..34539bb7fb 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -28,6 +28,8 @@
@@ -65,7 +65,7 @@ index 033723b262..86a5fad9fe 100644
  
  #include <inttypes.h>
  
-@@ -3819,6 +3821,45 @@ WebGLContextAttributes* WebGLRenderingContextBase::getContextAttributes()
+@@ -3822,6 +3824,45 @@ WebGLContextAttributes* WebGLRenderingContextBase::getContextAttributes()
    result->setAntialias(GetDrawingBuffer()->Multisample());
    result->setXrCompatible(xr_compatible_);
    result->setDesynchronized(Host()->LowLatencyEnabled());
@@ -111,7 +111,7 @@ index 033723b262..86a5fad9fe 100644
    return result;
  }
  
-@@ -3851,6 +3892,25 @@ bool WebGLRenderingContextBase::ExtensionTracker::MatchesName(
+@@ -3854,6 +3895,25 @@ bool WebGLRenderingContextBase::ExtensionTracker::MatchesName(
  
  bool WebGLRenderingContextBase::ExtensionSupportedAndAllowed(
      const ExtensionTracker* tracker) {
@@ -137,7 +137,7 @@ index 033723b262..86a5fad9fe 100644
    if (tracker->Draft() &&
        !RuntimeEnabledFeatures::WebGLDraftExtensionsEnabled())
      return false;
-@@ -4010,10 +4070,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+@@ -4013,10 +4073,127 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
                              webgl_angle_implementation);
  }
  
@@ -265,7 +265,7 @@ index 033723b262..86a5fad9fe 100644
    const int kIntZero = 0;
    switch (pname) {
      case GL_ACTIVE_TEXTURE:
-@@ -4223,6 +4400,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4226,6 +4403,24 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -290,7 +290,7 @@ index 033723b262..86a5fad9fe 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4232,6 +4427,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4235,6 +4430,18 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -309,7 +309,7 @@ index 033723b262..86a5fad9fe 100644
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));
        }
-@@ -4529,6 +4736,23 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
+@@ -4532,6 +4739,23 @@ WebGLShaderPrecisionFormat* WebGLRenderingContextBase::getShaderPrecisionFormat(
        return nullptr;
    }
  
@@ -333,7 +333,7 @@ index 033723b262..86a5fad9fe 100644
    GLint range[2] = {0, 0};
    GLint precision = 0;
    ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
-@@ -4548,6 +4772,9 @@ WebGLRenderingContextBase::getSupportedExtensions() {
+@@ -4551,6 +4775,9 @@ WebGLRenderingContextBase::getSupportedExtensions() {
    if (isContextLost())
      return std::nullopt;
  

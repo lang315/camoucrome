@@ -1,8 +1,8 @@
 diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
-index df80dfe84a..9f0ea474d0 100644
+index a28d0ae008..e28290d299 100644
 --- a/chrome/renderer/BUILD.gn
 +++ b/chrome/renderer/BUILD.gn
-@@ -126,6 +126,7 @@ static_library("renderer") {
+@@ -127,6 +127,7 @@ static_library("renderer") {
    ]
  
    deps = [
@@ -23,10 +23,10 @@ index 4f95b49eef..1c8033189d 100644
    "+components/commerce/content/renderer",
    "+components/commerce/core/commerce_heuristics_data_metrics_helper.h",
 diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
-index d460c0fb69..4cce56233d 100644
+index f209aa8405..cae8814010 100644
 --- a/chrome/renderer/chrome_content_renderer_client.cc
 +++ b/chrome/renderer/chrome_content_renderer_client.cc
-@@ -80,6 +80,8 @@
+@@ -79,6 +79,8 @@
  #include "components/autofill/content/renderer/password_autofill_agent.h"
  #include "components/autofill/content/renderer/password_generation_agent.h"
  #include "components/autofill/core/common/autofill_features.h"
@@ -35,14 +35,14 @@ index d460c0fb69..4cce56233d 100644
  #include "components/commerce/content/renderer/commerce_web_extractor.h"
  #include "components/content_capture/common/content_capture_features.h"
  #include "components/content_capture/renderer/content_capture_sender.h"
-@@ -1524,6 +1526,20 @@ void ChromeContentRendererClient::
+@@ -1529,6 +1531,20 @@ void ChromeContentRendererClient::
      BUILDFLAG(IS_MAC)
    blink::WebRuntimeFeatures::EnableWebShare(true);
  #endif
 +  // Camoucrome (windows-oracle): interfaces stock Chrome exposes on Windows
 +  // and macOS but not on Linux (navigator.share, Web Bluetooth) follow the
 +  // claimed OS, not the build. A Linux claim keeps Linux's shape. Font Access
-+  // is stock on all three (baselines/chrome-d0c02bfad0-stock-ua.json), so it
++  // is stock on all three (baselines/chrome-1aa07b6387-stock-ua.json), so it
 +  // keeps its stock status; font_access.cc answers with fonts:local.
 +  {
 +    const camoucfg::OsFamily claimed =
@@ -57,10 +57,10 @@ index d460c0fb69..4cce56233d 100644
    if (base::FeatureList::IsEnabled(
            autofill::features::kAutofillPolicyControlledFeatureAutofill)) {
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index dfffcb1242..2c3933cb0b 100644
+index 93e3ea0996..a34fdd4d8d 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -168,6 +168,14 @@ const blink::UserAgentBrandList GetUserAgentBrandList(
+@@ -164,6 +164,14 @@ const blink::UserAgentBrandList GetUserAgentBrandList(
  #if !BUILDFLAG(CHROMIUM_BRANDING)
    brand = version_info::GetProductName();
  #endif

@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/modules/webaudio/BUILD.gn b/third_party/blink/renderer/modules/webaudio/BUILD.gn
-index e53243e73e..7c526b1d52 100644
+index 4841d23321..718d259ea9 100644
 --- a/third_party/blink/renderer/modules/webaudio/BUILD.gn
 +++ b/third_party/blink/renderer/modules/webaudio/BUILD.gn
-@@ -190,6 +190,7 @@ blink_modules_sources("webaudio") {
+@@ -192,6 +192,7 @@ blink_modules_sources("webaudio") {
      sources += [ "cpu/arm/oscillator_kernel_neon.cc" ]
    }
    deps = [
@@ -106,7 +106,7 @@ index 0dd11f830e..ce762e0543 100644
    uint32_t length_;
  
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_context.cc b/third_party/blink/renderer/modules/webaudio/audio_context.cc
-index 6185684c09..93ef017ff2 100644
+index 1b7598ba43..1e52cbd648 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_context.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_context.cc
 @@ -14,6 +14,9 @@
@@ -119,7 +119,7 @@ index 6185684c09..93ef017ff2 100644
  #include "media/audio/audio_device_description.h"
  #include "media/base/output_device_info.h"
  #include "services/metrics/public/cpp/ukm_builders.h"
-@@ -1291,6 +1294,11 @@ double AudioContext::baseLatency() const {
+@@ -1307,6 +1310,11 @@ double AudioContext::baseLatency() const {
    DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
    DCHECK(destinationNode());
  
@@ -131,7 +131,7 @@ index 6185684c09..93ef017ff2 100644
    return base_latency_;
  }
  
-@@ -1301,6 +1309,11 @@ double AudioContext::outputLatency() const {
+@@ -1317,6 +1325,11 @@ double AudioContext::outputLatency() const {
    DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
  
    double factor = GetOutputLatencyQuantizingFactor();
