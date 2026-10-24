@@ -123,3 +123,10 @@ def test_registry_labels_map_to_captured_families():
 def test_real_labels_keep_bahnschrift_instances_in_the_list():
     k = gen.fonts_keys("Windows", random.Random(1), host_families={"Bahnschrift", "Arial"})
     assert "Bahnschrift SemiBold Condensed" in k["fonts:list"] and "Tahoma" not in k["fonts:list"]
+
+
+def test_host_families_are_ignored_for_a_non_windows_claim():
+    host = {"Arial", "Times New Roman"}
+    assert gen.fonts_keys("macOS", host_families=host) == gen.fonts_keys("macOS")
+    assert gen.fonts_keys("macOS", random.Random(1), host_families=host) == gen.fonts_keys("macOS", random.Random(1))
+    assert gen.fonts_keys("Linux", host_families=host) == gen.fonts_keys("Linux") == {}
