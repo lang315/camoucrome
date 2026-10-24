@@ -26,6 +26,9 @@ type contract struct {
 		AcceptLangArg     string   `json:"accept_lang_arg"`
 		ExtensionArgs     []string `json:"extension_args"`
 		SPKIArg           string   `json:"spki_arg"`
+		ProxyArg          string   `json:"proxy_arg"`
+		ProxyBypassArg    string   `json:"proxy_bypass_arg"`
+		ProxyOptionFields []string `json:"proxy_option_fields"`
 		Fontconfig        struct {
 			Env   string            `json:"env"`
 			Files map[string]string `json:"files"`
@@ -476,4 +479,58 @@ func TestNativeHostWithoutAliasKeysReturnsTheSameMap(t *testing.T) {
 	if reflect.ValueOf(got).Pointer() != reflect.ValueOf(cfg).Pointer() {
 		t.Fatal("a copy, not the original map")
 	}
+}
+
+func TestProxyArgsMatchTheContractAndKeepCredentialsOffArgv(t *testing.T) {
+	c := load(t).Launch
+	if !reflect.DeepEqual(c.ProxyOptionFields, []string{"server", "bypass", "username", "password"}) {
+		t.Fatalf("contract proxy fields = %v", c.ProxyOptionFields)
+	}
+	args := BuildArgs(Options{Proxy: &Proxy{Server: "http://p.example:8080", Bypass: "a.test, .b.test", Username: "u", Password: "secret"}})
+	want := []string{strings.ReplaceAll(c.ProxyArg, "{server}", "http://p.example:8080"),
+		strings.ReplaceAll(c.ProxyBypassArg, "{bypass}", "a.test;.b.test")}
+	for _, w := range want {
+		if !contains(args, w) {
+			t.Errorf("args %v lack %q", args, w)
+		}
+	}
+	for _, a := range args {
+		if strings.Contains(a, "secret") || strings.Contains(a, "@") {
+			t.Errorf("credential in argv: %q", a)
+		}
+	}
+	if len(BuildArgs(Options{})) != len(BuildArgs(Options{Proxy: nil})) {
+		t.Error("no proxy must add no args")
+	}
+}
+
+func TestProxyOptionHandsTheCredentialsToTheDriver(t *testing.T) {
+	got := proxyOption(&Proxy{Server: "http://p.example:8080", Bypass: "a.test", Username: "u", Password: "secret"})
+	if got == nil || got.Server != "http://p.example:8080" || *got.Username != "u" || *got.Password != "secret" || *got.Bypass != "a.test" {
+		t.Fatalf("proxyOption = %+v", got)
+	}
+	if proxyOption(nil) != nil {
+		t.Error("nil proxy must stay nil")
+	}
+	bare := proxyOption(&Proxy{Server: "http://p.example:8080"})
+	if bare.Username != nil || bare.Password != nil || bare.Bypass != nil {
+		t.Errorf("empty fields must stay unset: %+v", bare)
+	}
+}
+
+func TestLaunchRefusesAProxyThatWouldLeakOrDoNothing(t *testing.T) {
+	for _, p := range []*Proxy{{}, {Username: "u"}, {Server: "http://u:p@h:1"}} {
+		if _, err := Launch(nil, Options{Proxy: p}); err == nil || !strings.Contains(err.Error(), "proxy") {
+			t.Errorf("Launch(%+v) err = %v, want a proxy error before any launch", p, err)
+		}
+	}
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }

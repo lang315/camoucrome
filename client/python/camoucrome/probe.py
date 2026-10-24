@@ -86,6 +86,10 @@ def main():
     ap.add_argument("--spki", action="append", default=[])
     ap.add_argument("--arg", action="append", default=[], help="extra browser argv, verbatim")
     ap.add_argument("--fonts-dir", help="bundled font dir (FONTCONFIG_FILE follows the claimed OS)")
+    ap.add_argument("--proxy", help="proxy server URL (verify_sp6b_driver's proxy mode: C1 must hold with one set)")
+    ap.add_argument("--proxy-bypass")
+    ap.add_argument("--proxy-user")
+    ap.add_argument("--proxy-pass")
     a = ap.parse_args()
     window = tuple(int(v) for v in a.window.split(",")) if a.window else None
     module = "patchright" if a.driver == "patchright" else "playwright"
@@ -96,7 +100,9 @@ def main():
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
-                     fonts_dir=a.fonts_dir)
+                     fonts_dir=a.fonts_dir,
+                     proxy={"server": a.proxy, "bypass": a.proxy_bypass, "username": a.proxy_user,
+                            "password": a.proxy_pass} if a.proxy else None)
         try:  # a failed goto must still close: the temp profile goes on close
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             # SP2 4.2: a driver's init script must not be observable from the
