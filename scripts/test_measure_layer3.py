@@ -108,9 +108,19 @@ def test_the_table_prints_the_site_weighted_d_not_the_pooled_one(tmp_path):
 def test_budget_extrapolates_one_round_and_refuses_over_the_limit(tmp_path, capsys):
     rows_file(tmp_path / "run", {("cloudflare", 0): ("pass", "pass")}, rounds=1)
     args = lambda sites, rounds, limit: type("A", (), {"run_dir": str(tmp_path / "run"), "sites": sites, "rounds": rounds, "limit_gb": limit})()  # noqa: E731
-    assert ml.budget_cmd(args(12, 20, 5.0)) == 0  # 1000 B x 12 x 20 x 2 x 4.5 = 2.2 MB
+    assert ml.budget_cmd(args(12, 20, 5.0)) == 0  # 1000 B x 12 x 20 x 2 x 4 = 1.9 MB
     assert ml.budget_cmd(args(12, 20, 0.000001)) == 2
     assert "OVER" in capsys.readouterr().err
+
+
+def test_budget_pins_four_run_equivalents_against_the_dry_run_mean(tmp_path):
+    run = tmp_path / "run"
+    rows_file(run, {("cloudflare", 0): ("pass", "pass")}, rounds=1)
+    (run / "results.jsonl").write_text((run / "results.jsonl").read_text().replace('"bytes": 1000', '"bytes": 2465956'))  # dry run: 2.47 MB/visit
+    args = lambda rounds: type("A", (), {"run_dir": str(run), "sites": 12, "rounds": rounds, "limit_gb": 5.0})()  # noqa: E731
+    assert ml.budget_cmd(args(15)) == 0  # 3.55 GB
+    assert ml.budget_cmd(args(21)) == 0  # 4 -> 4.97 GB; 4.5 would be 5.59 GB
+    assert ml.budget_cmd(args(22)) == 2  # 5.20 GB
 
 
 @pytest.fixture
