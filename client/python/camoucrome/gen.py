@@ -311,7 +311,11 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     return {"config": config, "launch": launch}
 
 
-def generate(os=None, timezone=None, locale=None, seed=None, gpu=None):
+def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None):
+    """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
+    be resolved the draw proceeds as without it and a GeoIPWarning says so."""
+    if exit_ip:
+        timezone, locale = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
     from browserforge.fingerprints import FingerprintGenerator
     rng = random.Random(seed)
     if seed is not None:
@@ -326,6 +330,18 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None):
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
+def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
+    from . import geoip
+    try:
+        found = geoip.lookup(exit_ip, geoip_db)
+    except geoip.GeoIPError as e:
+        geoip.warn_all([f"the exit IP {exit_ip} was not resolved ({e}): timezone and locale are not derived from it"])
+        return timezone, locale
+    if found["locale"] is None:
+        geoip.warn_all([f"no locale for country {found['country']}: the identity keeps its drawn locale beside {found['timezone']}"])
+    return timezone or found["timezone"], locale or found["locale"]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--os", choices=sorted(OS_ARG))
@@ -333,8 +349,10 @@ def main():
     ap.add_argument("--locale")
     ap.add_argument("--seed", type=int)
     ap.add_argument("--gpu", help="a settings/webgl profile id; default: the first profile for the claimed OS")
+    ap.add_argument("--exit-ip", help="the proxy's exit address: timezone and locale follow where it is (needs --geoip-db or CAMOU_GEOIP_DB)")
+    ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
     a = ap.parse_args()
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db), sys.stdout)
 
 
 if __name__ == "__main__":

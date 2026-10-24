@@ -197,3 +197,73 @@ def test_real_database_zones_match_the_pins(real_pins):
     assert len(real_pins) >= 2
     for ip, zone in real_pins.items():
         assert geoip.lookup(ip, REAL_DB)["timezone"] == zone, ip
+
+
+# generate(): item 13 at generation time, where the locale's voices, languages and Accept-Language are built.
+def _gen(**kw):
+    pytest.importorskip("browserforge")
+    from camoucrome import gen
+    return gen.generate("windows", seed=1, geoip_db=FIXTURE, **kw)["config"]
+
+
+def test_generate_derives_the_zone_and_locale_from_the_exit_ip():
+    cfg = _gen(exit_ip="203.0.113.7")
+    assert cfg["timezone:id"] == "Europe/Paris" and cfg["locale:tag"] == "fr-FR"
+    assert cfg["navigator.languages"][0] == "fr-FR"
+    assert _gen(exit_ip="198.51.100.5")["timezone:id"] == "America/Los_Angeles"
+
+
+def test_generate_keeps_an_explicit_zone_or_locale_over_the_ip():
+    cfg = _gen(exit_ip="203.0.113.7", timezone="Asia/Tokyo")
+    assert cfg["timezone:id"] == "Asia/Tokyo" and cfg["locale:tag"] == "fr-FR"
+    assert _gen(exit_ip="203.0.113.7", locale="de-DE")["locale:tag"] == "de-DE"
+
+
+def test_generate_warns_and_falls_back_when_the_ip_is_not_resolved():
+    with pytest.warns(geoip.GeoIPWarning, match="not resolved"):
+        cfg = _gen(exit_ip="2001:db8:ffff::1")
+    assert cfg["timezone:id"]  # drawn as without an exit IP
+
+
+def test_generate_warns_for_a_country_without_a_locale_row():
+    with pytest.warns(geoip.GeoIPWarning, match="no locale for country SG"):
+        cfg = _gen(exit_ip="2001:db8::1")
+    assert cfg["timezone:id"] == "Asia/Singapore"
+
+
+# launch(geoip=...): checks and warns, never rewrites.
+import warnings as _warnings  # noqa: E402
+
+import camoucrome  # noqa: E402
+from test_launcher import FakePlaywright  # noqa: E402
+
+
+def test_launch_warns_on_a_contradicting_zone_and_still_launches():
+    pw = FakePlaywright()
+    cfg = {"timezone:id": "Asia/Tokyo"}
+    with pytest.warns(geoip.GeoIPWarning, match="contradicts"):
+        camoucrome.launch(pw, "/x/chrome", config=cfg, user_data_dir="/tmp/p", geoip=FIXTURE, exit_ip="192.0.2.5")
+    assert json.loads(pw.chromium.kw["env"]["CAMOU_CONFIG"]) == cfg  # not rewritten
+
+
+def test_launch_is_quiet_when_the_zone_matches_and_does_nothing_without_the_option():
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")
+        camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "America/New_York"},
+                          user_data_dir="/tmp/p", geoip=FIXTURE, exit_ip="192.0.2.5")
+        camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"}, user_data_dir="/tmp/p")
+
+
+def test_launch_warns_when_it_cannot_tell_and_the_browser_still_starts():
+    pw = FakePlaywright()
+    with pytest.warns(geoip.GeoIPWarning, match="could not be checked"):
+        camoucrome.launch(pw, "/x/chrome", config={"timezone:id": "Asia/Tokyo"}, user_data_dir="/tmp/p",
+                          geoip="/nonexistent.mmdb", exit_ip="192.0.2.5")
+    assert pw.chromium.kw["headless"] is True
+
+
+def test_geoip_true_reads_the_environment(monkeypatch):
+    monkeypatch.setenv("CAMOU_GEOIP_DB", FIXTURE)
+    with pytest.warns(geoip.GeoIPWarning, match="contradicts"):
+        camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"},
+                          user_data_dir="/tmp/p", geoip=True, exit_ip="192.0.2.5")
