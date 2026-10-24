@@ -295,6 +295,25 @@ def test_non_gen9_host_keeps_real_gpu_and_warns():
     assert prof is None and "shared" in warn
 
 
+@pytest.mark.parametrize("host", [
+    "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+    "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)"])
+def test_non_windows_host_renderer_keeps_the_default_profile_and_warns(host):
+    prof, warn = gen.gpu_for("Windows", host, random.Random(1))
+    assert prof == gen.profile_for("Windows") and "not a Windows D3D11" in warn
+
+
+def test_warning_does_not_call_other_intel_parts_non_gen9():
+    odd = "ANGLE (Intel, Intel(R) HD Graphics 530 (0x00001912) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    assert "not in the supported Intel Gen9 set" in gen.gpu_for("Windows", odd, random.Random(1))[1]
+
+
+def test_gen9_regex_equals_the_pool_scripts():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gen_gpu_pool
+    assert gen.GEN9_RE.pattern == gen_gpu_pool.RENDERER_RE.pattern
+
+
 def test_gen9_name_with_unknown_device_id_keeps_real_gpu():
     odd = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x0000FFFF) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     prof, warn = gen.gpu_for("Windows", odd, random.Random(1))
@@ -327,7 +346,7 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
-        "rest": "1f7c1e617dcceeb6"},
+        "rest": "a17de27a2435182d"},
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
 }
@@ -341,11 +360,11 @@ def test_seeded_keys_do_not_move(seed):
 
 
 def test_default_args_output_is_unchanged_outside_the_font_subset():
-    """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* and ua:platformVersion are
+    """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* is
     excluded; every other key and launch must be byte-identical to the pre-change run."""
     import hashlib
     r = gen.generate("windows", "Europe/Paris", None, 1)
-    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:") and k != "ua:platformVersion"}
+    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:")}
     assert hashlib.sha256(json.dumps([rest, r["launch"]], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
 
 

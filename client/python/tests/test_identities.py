@@ -7,6 +7,8 @@ PER_INSTANCE_SEEDS = ["canvas:seed", "audio:seed", "mediaDevices:seed"]
 
 # Config keys, or key prefixes ending in ":" or ".", that two identities may share.
 SHARED_ALLOWED = frozenset({
+    # the renderer varies per profile, but two seeds may draw the same one (p = sum(w^2) = 0.13)
+    "webGl:renderer", "webGl2:renderer",
     # the host generation's WebGL tables; only webGl:renderer (name + DeviceId) is per profile
     *(f"{c}:{k}" for c in ("webGl", "webGl2") for k in ("vendor", "parameters", "supportedExtensions", "shaderPrecisionFormats")),
     # stock Windows 10 / Chrome data every user shares

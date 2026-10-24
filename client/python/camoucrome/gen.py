@@ -172,8 +172,10 @@ def gpu_for(platform, host_renderer, rng, gpu=None):
         return base, None
     if host_renderer is None:
         return base, f"host GPU unknown: {SHARED_GPU}"
+    if not host_renderer.endswith(", D3D11)"):
+        return base, f"host renderer is not a Windows D3D11 renderer: {SHARED_GPU}; the shared default is kept"
     if gen9_device_id(host_renderer) is None:
-        return None, f"host GPU is not Intel Gen9: {SHARED_GPU}; the real GPU is kept"
+        return None, f"host GPU is not in the supported Intel Gen9 set: {SHARED_GPU}; the real GPU is kept"
     pool = gen9_pool()["renderers"]
     pick = random.Random(repr(rng.getstate()) + "gpu").choices(pool, weights=[r["weight"] for r in pool])[0]
     return {**base, "renderer": pick["renderer"]}, None

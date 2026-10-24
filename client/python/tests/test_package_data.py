@@ -1,5 +1,6 @@
 """A non-editable install must generate without the repository (spec section 3)."""
 import json
+import re
 import os
 import pathlib
 import shutil
@@ -20,6 +21,9 @@ def copy_tree(dst, ignore_settings_copy=True):
     shutil.copytree(REPO / "settings", dst / "settings")
 
 
+GEN9_HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
 def build_and_run(tmp_path):
     copy_tree(tmp_path / "src")
     wheels = tmp_path / "wheels"
@@ -31,7 +35,7 @@ def build_and_run(tmp_path):
     wheel = next(wheels.glob("camoucrome-*.whl"))
     subprocess.run([str(py), "-m", "pip", "install", "-q", str(wheel), "browserforge==1.2.4"], check=True)
     env = {k: v for k, v in os.environ.items() if k != "CAMOUCROME_ROOT"}
-    out = subprocess.run([str(py), "-m", "camoucrome.gen", "--os", "windows", "--seed", "1"],
+    out = subprocess.run([str(py), "-m", "camoucrome.gen", "--os", "windows", "--seed", "1", "--host-renderer", GEN9_HOST],
                          cwd=tmp_path, env=env, capture_output=True, text=True)
     return out
 
@@ -40,7 +44,9 @@ def build_and_run(tmp_path):
 def test_wheel_generates_outside_the_repository(tmp_path):
     out = build_and_run(tmp_path)
     assert out.returncode == 0, out.stderr
-    assert json.loads(out.stdout)["config"]["ua:platform"] == "Windows"
+    cfg = json.loads(out.stdout)["config"]
+    assert cfg["ua:platform"] == "Windows"
+    assert re.search(r"\(0x[0-9A-F]{8}\)", cfg["webGl:renderer"]), "the packaged Gen9 pool was not read"
 
 
 @pytest.mark.slow
