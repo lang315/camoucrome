@@ -80,6 +80,31 @@ def common_args(proxy_cfg, extra=()):
     return ([WEBRTC_POLICY] if proxy_cfg else []) + list(extra)
 
 
+ECHO_URL = "https://api.ipify.org"
+
+
+def pair_exit_ips(rows, ips):
+    """Both arms of a round share one sticky session, so they must exit on one address. A pair on two addresses, or with an
+    address that could not be read, compares nothing: both rows become unknown. The address itself is never stored."""
+    ok = bool(ips.get("S")) and bool(ips.get("F"))
+    tag = "unread" if not ok else "same" if ips["S"] == ips["F"] else "differ"
+    for r in rows.values():
+        r["ip_pair"] = tag
+        if tag != "same":
+            r.update({"outcome": "unknown", "error": "ip_" + tag})
+    return rows
+
+
+def read_exit_ip(page):
+    """The exit address as the page sees it, or None. Kept in memory for pair_exit_ips; never written to a result."""
+    try:
+        page.goto(ECHO_URL, wait_until="load", timeout=30000)
+        ip = page.inner_text("body").strip()
+        return ip if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip) else None
+    except Exception:  # noqa: BLE001 - an unread address makes the pair unknown, not the run a crash
+        return None
+
+
 def secrets_of(cfg):
     if not cfg:
         return []
@@ -161,6 +186,7 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
             except Exception:  # noqa: BLE001 - a size that cannot be read is not worth a failed run
                 pass
         page.on("requestfinished", count)
+        exit_ip = read_exit_ip(page) if proxy else "direct"
         r1, saw1 = settle(page, ctx, site, load(page, site["url"]), a.settle)
         page.wait_for_timeout(int(a.dwell * 1000))
         for _ in range(3):
@@ -171,7 +197,7 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
             gpu_gate.check(gpu_gate.read_ctx(ctx))  # a crash during the visit is as unmeasured as one at launch
         return {"stage1": r1["outcome"], "stage2": r2["outcome"], "outcome": lc.combine(r1, r2),
                 "interstitial_seen": saw1 or saw2, "markers": sorted(set(r1["markers"] + r2["markers"])),
-                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0]}
+                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0], "_exit_ip": exit_ip}
     finally:
         try:
             ctx.close()
@@ -302,6 +328,7 @@ def run_cmd(a):
                     if wait > 0:
                         time.sleep(wait)
                     proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}")
+                    pending, ips = {}, {}
                     for name in pair:
                         if (rnd, site["idx"], name) in done:
                             continue
@@ -317,6 +344,11 @@ def run_cmd(a):
                             import gpu_gate
                             row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
                                         "error": type(exc).__name__, "bytes": 0})
+                        ips[name] = row.pop("_exit_ip", None)
+                        pending[name] = row
+                    if proxy and len(pending) == 2:  # a resumed half pair has no partner to compare with
+                        pair_exit_ips(pending, ips)
+                    for name, row in pending.items():
                         with (out_dir / "results.jsonl").open("a", encoding="utf-8") as f:
                             f.write(json.dumps(row) + "\n")
                         print(f"round {rnd} {site['vendor']}#{site['idx']} {name}: {row['outcome']}", flush=True)

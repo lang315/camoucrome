@@ -460,3 +460,20 @@ def test_stock_against_stock_finds_no_difference_end_to_end(tmp_path):
     assert all(r["bytes"] > 0 for r in rows) and not any("cookie_values" in r for r in rows)
     assert "SENTINELVALUE" not in (run / "results.jsonl").read_text() and any("__cf_bm" in r["cookie_names"] for r in rows)
     assert lab.hits["img"] == 0
+
+
+@pytest.mark.parametrize("ips,tag", [
+    ({"S": "203.0.113.5", "F": "203.0.113.5"}, "same"),
+    ({"S": "203.0.113.5", "F": "203.0.113.9"}, "differ"),
+    ({"S": "203.0.113.5", "F": None}, "unread"),
+    ({"S": None, "F": None}, "unread"),
+])
+def test_a_pair_on_two_exit_addresses_or_an_unread_one_is_unknown(ips, tag):
+    rows = {"S": {"outcome": "pass", "bytes": 5}, "F": {"outcome": "challenge", "bytes": 7}}
+    out = ml.pair_exit_ips(rows, ips)
+    assert [r["ip_pair"] for r in out.values()] == [tag, tag]
+    if tag == "same":
+        assert [r["outcome"] for r in out.values()] == ["pass", "challenge"]
+    else:
+        assert all(r["outcome"] == "unknown" and r["error"] == "ip_" + tag for r in out.values())
+    assert "203.0.113" not in json.dumps(out)
