@@ -2,6 +2,7 @@
 import os
 import pathlib
 import sys
+import types
 
 import pytest
 
@@ -41,8 +42,13 @@ def fake_pw(monkeypatch, ctx):
         def __exit__(self, *a):
             return False
 
-    import patchright.sync_api as sa
-    monkeypatch.setattr(sa, "sync_playwright", lambda: PW())
+    # host_renderer imports patchright inside the function; CI does not install it.
+    sa = types.ModuleType("patchright.sync_api")
+    sa.sync_playwright = lambda: PW()
+    pkg = types.ModuleType("patchright")
+    pkg.sync_api = sa
+    monkeypatch.setitem(sys.modules, "patchright", pkg)
+    monkeypatch.setitem(sys.modules, "patchright.sync_api", sa)
     calls = []
 
     def launch(pw, exe, **kw):
