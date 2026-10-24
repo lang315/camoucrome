@@ -72,13 +72,16 @@ the owning slice's measurement doc rather than claimed as verified. Coherence
 across channels is the project's thesis (see below), and the rows that remain
 unproven are named where they live.
 
-There is no release yet. The path to the first one is the long-term roadmap,
+The first release is
+[`v156.0.8078.48-1`](https://github.com/lang315/camoucrome/releases/tag/v156.0.8078.48-1)
+(2026-10-24): a Windows flagship plus a Linux beta, built on Chrome stable
+156.0.8078.48. It is supported until Chrome 158 goes stable (scheduled for
+2026-11-17); the 157 release follows the 157 re-pin before then. It closes
+steps 0 to 3 of the long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
-steps 0 (re-pin and safety), 1 (Windows foundation) and 2 (measuring the fork
-against an oracle and public detectors with a like-for-like stock control) are
-done; step 3 is the first release, a Windows flagship plus a Linux beta. It is
-being rehearsed on 156 as a draft that is never published; the first published
-release will be on 157, after the 157 re-pin. The
+re-pin and safety, the Windows foundation, measuring the fork against an
+oracle and public detectors with a like-for-like stock control, and the
+release itself. The
 per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
@@ -90,7 +93,7 @@ next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook
 
 ## Install
 
-`<tag>` is the release tag, `v<chrome-version>-<n>` (for example `v157.0.8103.NN-1`).
+`<tag>` is the release tag, `v<chrome-version>-<n>` (for example `v156.0.8078.48-1`).
 `<sha>` is a full commit SHA from this repository, for the Go module.
 `<chrome-version>` is the Chrome version the release is built on.
 
