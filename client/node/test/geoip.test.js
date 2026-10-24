@@ -66,6 +66,28 @@ test('an invalid proxy throws its own error before any geoip check runs', async 
   assert.deepEqual(said, []);
 });
 
+test('checkGeoip never throws on a malformed config, a null config or a null child result', async () => {
+  const s = seams('{}');
+  assert.deepEqual(await g.checkGeoip({ config: '{not json', geoip: '/db', ...s }), []);
+  assert.deepEqual(await g.checkGeoip({ config: 'null', geoip: '/db', ...s }), []);
+  assert.equal(s.calls.length, 0);
+  const [m] = await g.checkGeoip({ config: cfg, geoip: '/db', ...seams('null') });
+  assert.match(m, /could not be checked.*no JSON/);
+});
+
+test('the real runner turns a missing interpreter into a cannot-warning', async () => {
+  const [m] = await g.checkGeoip({ config: cfg, geoip: '/db', exitIp: '192.0.2.5', python: 'camoucrome-no-such-python' });
+  assert.match(m, /could not be checked.*ENOENT/);
+});
+
+test('a forbidden option throws before any geoip check runs', async () => {
+  const said = [];
+  const chromium = { launchPersistentContext: async () => { throw new Error('must not launch'); } };
+  await assert.rejects(c.launch(chromium, '/x/chrome', { timezoneId: 'UTC', geoip: '/db', config: cfg,
+    exitIp: '192.0.2.5', python: 'camoucrome-no-such-python', warn: (m) => said.push(m) }), /timezoneId/);
+  assert.deepEqual(said, []);
+});
+
 // A proxy that tunnels every CONNECT to one local server, whatever the name: 407 until Proxy-Authorization arrives.
 function connectProxy(echoPort, { auth = false } = {}) {
   const seen = [];

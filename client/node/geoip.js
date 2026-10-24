@@ -82,8 +82,10 @@ async function exitIp(proxy, urls = ECHO_URLS) {
 // Warnings about the config's timezone:id against the exit address. Never throws, never changes the config.
 // `run(python, args)` and `echo(proxy)` are the test seams.
 async function checkGeoip({ config, proxy, exitIp: given, geoip, python = 'python3', run = defaultRun, echo = exitIp }) {
-  const cfg = typeof config === 'string' ? JSON.parse(config) : (config || {});
-  const zone = cfg['timezone:id'];
+  let cfg = config;
+  // a malformed config is launch's to report, as in the Go client
+  try { if (typeof cfg === 'string') cfg = JSON.parse(cfg); } catch { return []; }
+  const zone = cfg && typeof cfg === 'object' ? cfg['timezone:id'] : undefined;
   if (!zone) return [];
   const cannot = (why) => [`timezone:id ${zone} could not be checked against the exit IP: ${why}`];
   let ip = given;
@@ -98,13 +100,14 @@ async function checkGeoip({ config, proxy, exitIp: given, geoip, python = 'pytho
   }
   let r;
   try { r = JSON.parse(out); } catch { return cannot(`camoucrome.geoip printed no JSON (is camoucrome[geoip] installed for ${python}?)`); }
+  if (!r || typeof r !== 'object') return cannot(`camoucrome.geoip printed no JSON (is camoucrome[geoip] installed for ${python}?)`);
   if (r.error) return cannot(r.error);
   return r.warning ? [r.warning] : [];
 }
 
 function defaultRun(python, args) {
-  const p = childProcess.spawnSync(python, args, { encoding: 'utf8' });
-  if (p.error) throw p.error; // exit 2 still prints {"error": ...} on stdout
+  const p = childProcess.spawnSync(python, args, { encoding: 'utf8', timeout: 15000 });
+  if (p.error) throw p.error; // ENOENT or ETIMEDOUT, both become a cannot-warning; exit 2 still prints {"error": ...} on stdout
   return p.stdout;
 }
 

@@ -262,15 +262,15 @@ async function launch(chromium, executablePath, {
     }
     options.proxy = proxy;
   }
-  if (geoip) { // after the proxy check: a rejected proxy gets no echo request
-    const { checkGeoip } = require('./geoip');
-    const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
-    (await checkGeoip({ config, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
-  }
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
+  }
+  if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
+    const { checkGeoip } = require('./geoip');
+    const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
+    (await checkGeoip({ config, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
   }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast
