@@ -589,3 +589,75 @@ def test_a_leak_makes_the_pair_unknown_and_is_not_retried():
     rows = ml.run_pair_with_retries(attempt, 2)
     assert calls == [0]
     assert all(r["outcome"] == "unknown" and r["error"] == "webrtc_leak" and r["ip_pair"] == "same" for r in rows.values())
+
+
+# ---- why a visit read unknown ----------------------------------------------------------------------------------------
+class NavTimeout(Exception):
+    pass
+
+
+def test_load_notes_the_navigation_exception_class_and_returns_no_status():
+    page = type("P", (), {"goto": lambda self, url, **k: (_ for _ in ()).throw(NavTimeout("x"))})()
+    note = {}
+    assert ml.load(page, "https://a.example/", note) is None
+    assert note == {"exc": "NavTimeout"}
+
+
+def test_unknown_reason_has_only_the_class_status_length_and_a_host_bool():
+    page = type("P", (), {"url": "https://b.example/challenge", "evaluate": lambda self, js: 7})()
+    got = ml.unknown_reason(page, "https://a.example/start", 403, {"exc": "NavTimeout"})
+    assert got == {"exc": "NavTimeout", "status": 403, "body_len": 7, "same_host": False}
+    assert "example" not in json.dumps(got)
+    same = ml.unknown_reason(page, "https://b.example/start", None, {})
+    assert same == {"exc": None, "status": None, "body_len": 7, "same_host": True}
+
+
+def test_unknown_reason_survives_a_page_that_cannot_be_read():
+    def boom(self, js):
+        raise RuntimeError("Execution context was destroyed")
+    page = type("P", (), {"url": property(boom), "evaluate": boom})()
+    assert ml.unknown_reason(page, "https://a.example/", None, {}) == {"exc": None, "status": None, "body_len": None, "same_host": None}
+
+
+def _visit_with(monkeypatch, outcomes):
+    import camoucrome
+    import gpu_gate
+
+    class Page:
+        url = "https://a.example/"
+        mouse = type("M", (), {"wheel": lambda self, *a: None})()
+
+        def on(self, *a):
+            pass
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+        def evaluate(self, js):
+            return 5
+
+    class Ctx:
+        pages = [Page()]
+
+        def route(self, *a):
+            pass
+
+        def close(self):
+            pass
+    monkeypatch.setattr(camoucrome, "launch", lambda *a, **k: Ctx())
+    monkeypatch.setattr(gpu_gate, "read_ctx", lambda ctx: 0)
+    it = iter(outcomes)
+    monkeypatch.setattr(ml, "settle", lambda *a, **k: ({"outcome": next(it), "markers": [], "cookies": []}, False))
+    monkeypatch.setattr(ml, "load", lambda *a: 200)
+    a = ns(gpu_gate=False, headed=False, settle=1, dwell=0, warm=False)
+    return ml.visit(None, ns(ident=None, exe="x", args=[]), {"vendor": "cloudflare", "url": "https://a.example/", "next_url": "https://a.example/n", "ok_marker": "m"}, None, a)
+
+
+def test_a_row_with_an_unknown_stage_carries_a_reason_for_that_stage_only(monkeypatch):
+    row = _visit_with(monkeypatch, ["unknown", "pass"])
+    assert set(row["reason"]) == {"stage1"}
+    assert row["reason"]["stage1"] == {"exc": None, "status": 200, "body_len": 5, "same_host": True}
+
+
+def test_a_row_with_no_unknown_stage_has_no_reason(monkeypatch):
+    assert "reason" not in _visit_with(monkeypatch, ["pass", "challenge"])

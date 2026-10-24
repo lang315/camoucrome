@@ -28,6 +28,7 @@ import re
 import sys
 import tempfile
 import time
+import urllib.parse
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -222,12 +223,28 @@ def settle(page, ctx, site, status, limit=SETTLE_S):
         page.wait_for_timeout(1000)
 
 
-def load(page, url):
+def load(page, url, note=None):
     try:
         resp = page.goto(url, wait_until="load", timeout=60000)
         return resp.status if resp else None
-    except Exception:  # noqa: BLE001 - a page that does not finish loading is classified from what is there
+    except Exception as exc:  # noqa: BLE001 - a page that does not finish loading is classified from what is there
+        if note is not None:
+            note["exc"] = type(exc).__name__
         return None
+
+
+def unknown_reason(page, url, status, note):
+    """Why a stage read unknown: the navigation exception class, the main-document status, the body text length and
+    whether the page ended on the host it started on. Nothing else: no host, no text, no markup."""
+    try:
+        body_len = page.evaluate("document.body ? document.body.innerText.length : 0")
+    except Exception:  # noqa: BLE001 - an unreadable page is a None, not a failed run
+        body_len = None
+    try:
+        same_host = urllib.parse.urlparse(page.url).hostname == urllib.parse.urlparse(url).hostname
+    except Exception:  # noqa: BLE001
+        same_host = None
+    return {"exc": note.get("exc"), "status": status, "body_len": body_len, "same_host": same_host}
 
 
 def visit(pw, arm, site, proxy, a, user_data_dir=None):
@@ -257,17 +274,24 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
         page.on("requestfinished", count)
         exit_ip = read_exit_ip(page) if proxy else "direct"
         leaks = read_webrtc_leaks(page, exit_ip) if proxy and exit_ip else (-1 if proxy else 0)
-        r1, saw1 = settle(page, ctx, site, load(page, site["url"]), a.settle)
+        n1, n2 = {}, {}
+        s1 = load(page, site["url"], n1)
+        r1, saw1 = settle(page, ctx, site, s1, a.settle)
+        reason = {"stage1": unknown_reason(page, site["url"], s1, n1)} if r1["outcome"] == "unknown" else {}
         page.wait_for_timeout(int(a.dwell * 1000))
         for _ in range(3):
             page.mouse.wheel(0, 100)
             page.wait_for_timeout(int(min(0.7, a.dwell) * 1000))
-        r2, saw2 = settle(page, ctx, site, load(page, site["next_url"]), a.settle)
+        s2 = load(page, site["next_url"], n2)
+        r2, saw2 = settle(page, ctx, site, s2, a.settle)
+        if r2["outcome"] == "unknown":
+            reason["stage2"] = unknown_reason(page, site["next_url"], s2, n2)
         if a.gpu_gate:
             gpu_gate.check(gpu_gate.read_ctx(ctx))  # a crash during the visit is as unmeasured as one at launch
         return {"stage1": r1["outcome"], "stage2": r2["outcome"], "outcome": lc.combine(r1, r2),
                 "interstitial_seen": saw1 or saw2, "markers": sorted(set(r1["markers"] + r2["markers"])),
-                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0], "webrtc_leaks": leaks, "_exit_ip": exit_ip}
+                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0], "webrtc_leaks": leaks, "_exit_ip": exit_ip,
+                **({"reason": reason} if reason else {})}
     finally:
         try:
             ctx.close()
