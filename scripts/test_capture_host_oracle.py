@@ -51,3 +51,50 @@ def test_page_reads_the_unmasked_webgl_leaves():
     assert "step('webgl'" in html
     assert "UNMASKED_VENDOR_WEBGL" in html and "UNMASKED_RENDERER_WEBGL" in html
     assert "getParameter(36183)" in html
+
+
+class FakeWinhost:
+    """winhost with scripted answers: cdp_eval returns the doc for the mode, powershell the display."""
+    def __init__(self, headed, headless, display="1440x900"):
+        self.calls, self.docs, self.display = [], {True: headed, False: headless}, display
+
+    def cdp_eval(self, page_html, expression, args=(), headed=True, wait_ms=0, **kw):
+        self.calls.append(("cdp", headed, wait_ms))
+        return json.dumps(self.docs[headed])
+
+    def dump_dom(self, *a, **kw):
+        raise AssertionError("headless must not use --dump-dom (virtual time races the async cells)")
+
+    def powershell(self, ps, timeout=0):
+        return f"DISPLAY {self.display}\r\n"
+
+
+def _good(w=1440, h=900):
+    return {"done": True, "screen": {"width": w, "height": h}, "gpu": {"info": 1}}
+
+
+def _run(monkeypatch, tmp_path, fake):
+    monkeypatch.setitem(sys.modules, "winhost", fake)
+    return cho.main(["--raw-out", str(tmp_path / "raw.json")])
+
+
+def test_capture_reads_both_modes_by_cdp_in_real_time(monkeypatch, tmp_path):
+    fake = FakeWinhost(_good(), {"done": True, "gpu": {"info": 1}})
+    assert _run(monkeypatch, tmp_path, fake) == 0
+    assert [c[:2] for c in fake.calls] == [("cdp", True), ("cdp", False)]
+    doc = json.loads((tmp_path / "raw.json").read_text())
+    assert doc["display"] == {"width": 1440, "height": 900} and "dump-dom" not in doc["where"]
+
+
+def test_a_timeout_cell_is_unmeasured_not_a_baseline(monkeypatch, tmp_path):
+    fake = FakeWinhost(_good(), {"done": True, "perms": "timeout"})
+    with pytest.raises(SystemExit, match="UNMEASURED cells.*headless.perms"):
+        _run(monkeypatch, tmp_path, fake)
+    assert not (tmp_path / "raw.json").exists() and (tmp_path / "raw.json.refused").exists()
+
+
+def test_headed_screen_must_equal_the_console_display(monkeypatch, tmp_path):
+    fake = FakeWinhost(_good(1280, 1024), {"done": True}, display="1440x900")
+    with pytest.raises(SystemExit, match="not the console display"):
+        _run(monkeypatch, tmp_path, fake)
+    assert not (tmp_path / "raw.json").exists()
