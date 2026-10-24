@@ -72,17 +72,17 @@ the owning slice's measurement doc rather than claimed as verified. Coherence
 across channels is the project's thesis (see below), and the rows that remain
 unproven are named where they live.
 
-The first release is
-[`v156.0.8078.48-1`](https://github.com/lang315/camoucrome/releases/tag/v156.0.8078.48-1)
-(2026-10-24): a Windows flagship plus a Linux beta, built on Chrome stable
-156.0.8078.48. It is supported until Chrome 158 goes stable (scheduled for
-2026-11-17); the 157 release follows the 157 re-pin before then. It closes
-steps 0 to 3 of the long-term roadmap,
+Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
+a Windows flagship plus a Linux beta, built on a Chrome stable tag. Each
+release's notes give its Chrome version, what it fixes and the date it stops
+being supported (when it falls more than one milestone behind stable).
+
+The first release, `v156.0.8078.48-1` (2026-10-24), closed steps 0 to 3 of the
+long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
 re-pin and safety, the Windows foundation, measuring the fork against an
 oracle and public detectors with a like-for-like stock control, and the
-release itself. The
-per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
+release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
 The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
@@ -93,7 +93,7 @@ next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook
 
 ## Install
 
-`<tag>` is the release tag, `v<chrome-version>-<n>` (for example `v156.0.8078.48-1`).
+`<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
 `<sha>` is a full commit SHA from this repository, for the Go module.
 `<chrome-version>` is the Chrome version the release is built on.
 
