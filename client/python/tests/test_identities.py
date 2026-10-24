@@ -7,8 +7,8 @@ PER_INSTANCE_SEEDS = ["canvas:seed", "audio:seed", "mediaDevices:seed"]
 
 # Config keys, or key prefixes ending in ":" or ".", that two identities may share.
 SHARED_ALLOWED = frozenset({
-    # the one real GPU profile (webgl_keys() output)
-    "webGl:", "webGl2:",
+    # the host generation's WebGL tables; only webGl:renderer (name + DeviceId) is per profile
+    *(f"{c}:{k}" for c in ("webGl", "webGl2") for k in ("vendor", "parameters", "supportedExtensions", "shaderPrecisionFormats")),
     # stock Windows 10 / Chrome data every user shares
     "ua:",                          # osInfo, platform, platformVersion, architecture, bitness, brand, ...
     "locale:tag", "navigator.language", "navigator.languages",  # en-US default
@@ -23,8 +23,11 @@ SHARED_ALLOWED = frozenset({
 })
 
 
+HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
 def keys_of(seed):
-    return gen.generate(os="windows", seed=seed)["config"]
+    return gen.generate(os="windows", seed=seed, host_renderer=HOST)["config"]
 
 
 def allowed(key):
@@ -46,3 +49,8 @@ def test_only_declared_keys_are_shared():
     assert any(k.startswith(("webGl:", "webGl2:")) for k in a), "no WebGL keys: the identity claims no GPU"
     shared = {k for k in a if a[k] == b.get(k)}
     assert {k for k in shared if not allowed(k)} == set()
+
+
+def test_gpu_name_differs_for_some_pair_of_seeds():
+    names = {keys_of(s)["webGl:renderer"] for s in range(1, 6)}
+    assert len(names) > 1

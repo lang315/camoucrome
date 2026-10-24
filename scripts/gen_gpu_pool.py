@@ -10,6 +10,7 @@ OUT = ROOT / "settings" / "webgl" / "intel-gen9-pool.json"
 # ANGLE driver_utils.cpp: Skylake (l.65, gen9), KabyLake (l.78, gen9p5), CoffeeLake (l.89, also
 # holds Whisky/Amber/Comet Lake). The plan's Kabylake/Coffeelake/Cometlake spellings do not exist there.
 # Broxton/GeminiLake (gen9lp) are left out: no desktop UHD 6xx names.
+WEIGHTS_HOW = "assumption: browserforge network frequencies renormalised over the Gen9 subset, not measured real-world share"
 GEN9_TABLES = ("Skylake", "KabyLake", "CoffeeLake")
 RENDERER_RE = re.compile(r"^ANGLE \(Intel, Intel\(R\) (U?HD Graphics( 6\d\d)?) \((0x[0-9A-F]{8})\) "
                          r"Direct3D11 vs_5_0 ps_5_0, D3D11\)$")
@@ -51,7 +52,7 @@ def main():
         sys.exit("no Gen9 renderer in the draws: refusing to write an empty pool")
     OUT.write_text(json.dumps({"source": "browserforge 1.2.4 network, ANGLE driver_utils.cpp Gen9 tables",
                                "generated": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
-                               "draws": a.draws, "device_ids": sorted(ids), "renderers": pool}, indent=1) + "\n")
+                               "weights_how": WEIGHTS_HOW, "draws": a.draws, "device_ids": sorted(ids), "renderers": pool}, indent=1) + "\n")
     print(f"{len(pool)} renderers, {len(ids)} Gen9 ids")
 
 

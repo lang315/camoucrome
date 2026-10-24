@@ -1,6 +1,7 @@
 {
  "source": "browserforge 1.2.4 network, ANGLE driver_utils.cpp Gen9 tables",
  "generated": "2026-10-24",
+ "weights_how": "assumption: browserforge network frequencies renormalised over the Gen9 subset, not measured real-world share",
  "draws": 20000,
  "device_ids": [
   6402,

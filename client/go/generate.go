@@ -18,6 +18,7 @@ type Generated struct {
 		Window [2]int  `json:"window"`
 		DPR    float64 `json:"dpr"`
 	} `json:"launch"`
+	Warnings []string `json:"warnings"`
 }
 
 // ParseGenerated decodes the generator's output and folds it into Options
@@ -33,12 +34,23 @@ func ParseGenerated(raw []byte) (Options, error) {
 	return Options{Config: g.Config, Window: g.Launch.Window, DPR: g.Launch.DPR}, nil
 }
 
+// generatedWarnings is the "warnings" list of the generator's output (the host GPU or fonts it could not match).
+func generatedWarnings(raw []byte) []string {
+	var g Generated
+	_ = json.Unmarshal(raw, &g)
+	return g.Warnings
+}
+
 // GenArgs is what `python -m camoucrome.gen` takes. Seed < 0 means unseeded. ExitIP (with GeoIPDB, a DB-IP Lite or
 // GeoLite2-layout .mmdb) makes the zone and locale follow where the proxy's exit address is, unless set here.
 type GenArgs struct {
 	OS, Timezone, Locale, GPU string
 	Seed                      int
 	ExitIP, GeoIPDB           string
+	// HostRenderer is the host's WebGL renderer (an Intel Gen9 host draws a Gen9 identity per seed); HostFonts limits a
+	// Windows claim's fonts to the families this host has.
+	HostRenderer string
+	HostFonts    bool
 }
 
 // genArgs is the generator's argument list; the order is the old Generate's, the new flags last.
@@ -65,6 +77,12 @@ func genArgs(g GenArgs) []string {
 	if g.GeoIPDB != "" {
 		args = append(args, "--geoip-db="+g.GeoIPDB)
 	}
+	if g.HostRenderer != "" {
+		args = append(args, "--host-renderer="+g.HostRenderer)
+	}
+	if g.HostFonts {
+		args = append(args, "--host-fonts")
+	}
 	return args
 }
 
@@ -86,6 +104,9 @@ func GenerateWith(python string, g GenArgs) (Options, error) {
 	out, err := cmd.Output()
 	if err != nil {
 		return Options{}, fmt.Errorf("camoucrome.gen: %w: %s", err, stderr.String())
+	}
+	for _, w := range generatedWarnings(out) {
+		fmt.Fprintln(os.Stderr, "camoucrome.gen: warning: "+w)
 	}
 	return ParseGenerated(out)
 }

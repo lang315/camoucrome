@@ -61,6 +61,7 @@ import json
 import os
 import pathlib
 import random
+import re
 import sys
 from dataclasses import asdict
 
@@ -143,6 +144,39 @@ def profile_for(platform, gpu=None):
     if gpu:
         return profiles[gpu]
     return next((p for p in profiles.values() if p["os"] == platform), None)
+
+
+GEN9_RE = re.compile(r"^ANGLE \(Intel, Intel\(R\) (U?HD Graphics( 6\d\d)?) \((0x[0-9A-F]{8})\) "
+                     r"Direct3D11 vs_5_0 ps_5_0, D3D11\)$")
+SHARED_GPU = "the GPU is shared by every profile on this host"
+
+
+def gen9_pool():
+    return json.loads((ROOT / "settings" / "webgl" / "intel-gen9-pool.json").read_text(encoding="utf-8"))
+
+
+def gen9_device_id(renderer, ids=None):
+    m = GEN9_RE.match(renderer or "")
+    if not m:
+        return None
+    dev = int(m.group(3), 16)
+    return dev if dev in set(ids if ids is not None else gen9_pool()["device_ids"]) else None
+
+
+def gpu_for(platform, host_renderer, rng, gpu=None):
+    """(profile, warning). An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
+    change, every parameter stays the host generation's. The draw uses its own generator seeded from rng's
+    state (as fonts_keys does), so rng is not advanced and later seeded keys do not move."""
+    base = profile_for(platform, gpu)
+    if gpu or platform != "Windows" or base is None:
+        return base, None
+    if host_renderer is None:
+        return base, f"host GPU unknown: {SHARED_GPU}"
+    if gen9_device_id(host_renderer) is None:
+        return None, f"host GPU is not Intel Gen9: {SHARED_GPU}; the real GPU is kept"
+    pool = gen9_pool()["renderers"]
+    pick = random.Random(repr(rng.getstate()) + "gpu").choices(pool, weights=[r["weight"] for r in pool])[0]
+    return {**base, "renderer": pick["renderer"]}, None
 
 
 def zone_for(locale, rng):
@@ -272,8 +306,8 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
-def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
-    """Pure: one BrowserForge fingerprint dict -> {"config", "launch"}."""
+def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None):
+    """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}."""
     nav, ud, scr = fp["navigator"], fp["navigator"]["userAgentData"], fp["screen"]
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
@@ -318,11 +352,10 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     for k, n in counts.items():
         config[f"mediaDevices:{k}"] = n
     config.update(per_instance_config(rng))
-    profile = profile_for(platform, gpu)
+    profile, warn = gpu_for(platform, host_renderer, rng, gpu)
     if profile:
         config.update(webgl_keys(profile))
-    # Task 4: pass rng and host_families to fonts_keys once generate() has them (PR #14 owns that code)
-    config.update(fonts_keys(platform))
+    config.update(fonts_keys(platform, rng, host_families))
     config.update(voices_keys(platform, tag))
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
@@ -334,10 +367,11 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
     launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
               "dpr": dpr}
-    return {"config": config, "launch": launch}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn,) if w]}
 
 
-def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None):
+def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
+             host_families=None):
     """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so."""
     if exit_ip:
@@ -352,7 +386,7 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng, gpu)
+            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
@@ -377,8 +411,11 @@ def main():
     ap.add_argument("--gpu", help="a settings/webgl profile id; default: the first profile for the claimed OS")
     ap.add_argument("--exit-ip", help="the proxy's exit address: timezone and locale follow where it is (needs --geoip-db or CAMOU_GEOIP_DB)")
     ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
+    ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
+    ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
     a = ap.parse_args()
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db), sys.stdout)
+    families = hostfonts.families() if a.host_fonts else None
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families), sys.stdout)
 
 
 if __name__ == "__main__":
