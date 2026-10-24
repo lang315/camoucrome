@@ -56,7 +56,7 @@ type Options struct {
 	Proxy          *Proxy       // nil = direct
 	GeoIP          string       // a DB-IP Lite / GeoLite2-layout .mmdb: Launch warns when timezone:id contradicts the exit IP
 	ExitIP         string       // skips the echo request
-	Python         string       // the interpreter with camoucrome[geoip] installed; default python3
+	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
 	Warn           func(string) // default: stderr
 }
 

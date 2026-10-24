@@ -2,6 +2,7 @@ package camoucrome
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +27,7 @@ func TestCheckGeoIPSurfacesTheModulesWarning(t *testing.T) {
 	if len(got) != 1 || !strings.Contains(got[0], "contradicts") {
 		t.Fatalf("warnings = %v", got)
 	}
-	want := []string{"py", "-m", "camoucrome.geoip", "--ip", "192.0.2.5", "--db", "/db.mmdb", "--check-zone", "Asia/Tokyo"}
+	want := []string{"py", "-m", "camoucrome.geoip", "--ip=192.0.2.5", "--db=/db.mmdb", "--check-zone=Asia/Tokyo"}
 	if len(*calls) != 1 || strings.Join((*calls)[0], " ") != strings.Join(want, " ") {
 		t.Fatalf("exec = %v, want %v", *calls, want)
 	}
@@ -69,7 +70,7 @@ func TestCheckGeoIPHasNothingToCheckWithoutAZone(t *testing.T) {
 func TestExitIPGivenSkipsTheEchoRequest(t *testing.T) {
 	calls := stubs(t, "", errors.New("must not be asked"), `{"warning":null}`, nil)
 	CheckGeoIP(Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, GeoIP: "/db.mmdb", ExitIP: "192.0.2.9"})
-	if len(*calls) != 1 || (*calls)[0][4] != "192.0.2.9" {
+	if len(*calls) != 1 || (*calls)[0][3] != "--ip=192.0.2.9" {
 		t.Fatalf("exec = %v", *calls)
 	}
 }
@@ -119,7 +120,56 @@ func TestGenArgsKeepTheOldOrderAndAddTheExitIPFlagsLast(t *testing.T) {
 		t.Fatalf("args = %q", got)
 	}
 	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, ExitIP: "192.0.2.5", GeoIPDB: "/db.mmdb"}), " ")
-	if got != "-m camoucrome.gen --os windows --exit-ip 192.0.2.5 --geoip-db /db.mmdb" {
+	if got != "-m camoucrome.gen --os windows --exit-ip=192.0.2.5 --geoip-db=/db.mmdb" {
 		t.Fatalf("args = %q", got)
+	}
+}
+
+func TestExitIPShortFormServerMeansHTTP(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("203.0.113.9\n")) }))
+	defer proxy.Close()
+	old := echoURLs
+	echoURLs = []string{"http://echo.test/"}
+	defer func() { echoURLs = old }()
+	got, err := ExitIP(&Proxy{Server: strings.TrimPrefix(proxy.URL, "http://")})
+	if err != nil || got != "203.0.113.9" {
+		t.Fatalf("got %q err %v", got, err)
+	}
+}
+
+func TestExitIPMakesNoConnectionThroughANonHTTPProxy(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	conns := 0
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns++
+			c.Close()
+		}
+	}()
+	for _, scheme := range []string{"https", "socks5"} {
+		_, err := ExitIP(&Proxy{Server: scheme + "://" + ln.Addr().String(), Username: "uuu", Password: "ppp"})
+		want := "through a " + scheme + " proxy (only http)"
+		if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "uuu") || strings.Contains(err.Error(), "ppp") || strings.Contains(err.Error(), "127.0.0.1") {
+			t.Fatalf("%s: err = %v", scheme, err)
+		}
+	}
+	if conns != 0 {
+		t.Fatalf("%d connections made", conns)
+	}
+}
+
+func TestCheckGeoIPNoJSONHintNamesThePackages(t *testing.T) {
+	stubs(t, "192.0.2.5", nil, "Traceback ...", nil)
+	got := CheckGeoIP(Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Python: "py"})
+	if len(got) != 1 || !strings.Contains(got[0], "maxminddb and timezonefinder installed for py") {
+		t.Fatalf("got %v", got)
 	}
 }

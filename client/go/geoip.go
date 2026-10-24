@@ -2,6 +2,7 @@ package camoucrome
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -35,9 +36,16 @@ var (
 func ExitIP(p *Proxy) (string, error) {
 	transport := &http.Transport{}
 	if p != nil {
-		u, err := url.Parse(p.Server)
+		server := p.Server
+		if !strings.Contains(server, "://") {
+			server = "http://" + server // Playwright's short form
+		}
+		u, err := url.Parse(server)
 		if err != nil {
-			return "", err
+			return "", errors.New("the proxy server is not a URL")
+		}
+		if u.Scheme != "http" { // https would send the credentials before TLS here, socks is not spoken; the clients agree
+			return "", fmt.Errorf("the exit IP cannot be asked through a %s proxy (only http)", u.Scheme)
 		}
 		if p.Username != "" {
 			u.User = url.UserPassword(p.Username, p.Password)
@@ -87,7 +95,7 @@ func CheckGeoIP(o Options) []string {
 	if python == "" {
 		python = "python3"
 	}
-	out, err := execPython(python, "-m", "camoucrome.geoip", "--ip", ip, "--db", o.GeoIP, "--check-zone", zone)
+	out, err := execPython(python, "-m", "camoucrome.geoip", "--ip="+ip, "--db="+o.GeoIP, "--check-zone="+zone)
 	if err != nil {
 		return cannot(err.Error())
 	}
@@ -96,7 +104,7 @@ func CheckGeoIP(o Options) []string {
 		Warning *string `json:"warning"`
 	}
 	if json.Unmarshal(out, &r) != nil {
-		return cannot("camoucrome.geoip printed no JSON (is camoucrome[geoip] installed for " + python + "?)")
+		return cannot("camoucrome.geoip printed no JSON (are maxminddb and timezonefinder installed for " + python + "?)")
 	}
 	if r.Error != "" {
 		return cannot(r.Error)

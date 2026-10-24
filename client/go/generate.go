@@ -60,10 +60,10 @@ func genArgs(g GenArgs) []string {
 		args = append(args, "--seed", fmt.Sprint(g.Seed))
 	}
 	if g.ExitIP != "" {
-		args = append(args, "--exit-ip", g.ExitIP)
+		args = append(args, "--exit-ip="+g.ExitIP)
 	}
 	if g.GeoIPDB != "" {
-		args = append(args, "--geoip-db", g.GeoIPDB)
+		args = append(args, "--geoip-db="+g.GeoIPDB)
 	}
 	return args
 }
