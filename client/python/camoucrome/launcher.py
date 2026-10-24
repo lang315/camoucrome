@@ -264,16 +264,14 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     `geoip` (True, or the path of a DB-IP Lite / GeoLite2-layout .mmdb; True reads CAMOU_GEOIP_DB) checks the
     config's timezone:id against where the exit address is and WARNS (camoucrome.geoip.GeoIPWarning) on a
     contradiction or when it cannot tell; it never changes the config -- the generator derives zone and locale
-    (camoucrome.gen --exit-ip). `exit_ip` skips the echo request. IP Geolocation by DB-IP.
+    (camoucrome.gen --exit-ip). Without `exit_ip` the check makes a blocking echo request (also under an async
+    caller); `exit_ip` skips it. IP Geolocation by DB-IP.
     `proxy` is Playwright's {"server", "bypass", "username", "password"}: the server (and bypass list) go
     into argv, the credentials only to the driver, which answers the proxy's 407.
     `fonts_dir` is the bundled font directory (default: `fonts` beside the
     executable when present); FONTCONFIG_FILE then names the conf of the
     claimed OS so its families resolve.
     """
-    if geoip:
-        from . import geoip as _geoip
-        _geoip.warn_all(_geoip.check_config(_as_dict(config), proxy, exit_ip, None if geoip is True else str(geoip)))
     if proxy is not None:
         server = proxy.get("server") if isinstance(proxy, dict) else None
         if not server or "@" in server:
@@ -285,6 +283,9 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         raise ValueError(
             f"{sorted(bad)} must come through CAMOU_CONFIG, not the driver: "
             "a second emulation of the same surface fights the fork's value")
+    if geoip:
+        from . import geoip as _geoip
+        _geoip.warn_all(_geoip.check_config(_as_dict(config), proxy, exit_ip, None if geoip is True else str(geoip)))
     owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
     if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")

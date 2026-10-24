@@ -126,6 +126,8 @@ def exit_ip(proxy=None, urls=ECHO_URLS, timeout=ECHO_TIMEOUT):
     ({"server", "username", "password"}). One service after another; GeoIPError when none answers."""
     handlers = []
     if proxy:
+        if not isinstance(proxy, dict) or not proxy.get("server"):
+            raise GeoIPError("proxy must be a dict with a 'server' URL")
         u = urllib.parse.urlsplit(proxy["server"])
         auth = ""
         if proxy.get("username"):

@@ -267,3 +267,19 @@ def test_geoip_true_reads_the_environment(monkeypatch):
     with pytest.warns(geoip.GeoIPWarning, match="contradicts"):
         camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"},
                           user_data_dir="/tmp/p", geoip=True, exit_ip="192.0.2.5")
+
+
+@pytest.mark.parametrize("proxy", ["http://h:1", {"username": "u"}])
+def test_exit_ip_raises_geoiperror_for_a_proxy_without_a_server(proxy):
+    with pytest.raises(geoip.GeoIPError):
+        geoip.exit_ip(proxy)
+
+
+def test_launch_rejects_a_bad_proxy_before_any_echo_request(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("echo request made")
+    monkeypatch.setattr(geoip, "exit_ip", boom)
+    with pytest.raises(ValueError):
+        camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"}, geoip=FIXTURE, proxy={"server": "http://u:p@h:1"})
+    with pytest.raises(ValueError):
+        camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"}, geoip=FIXTURE, proxy="http://h:1")
