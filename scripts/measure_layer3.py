@@ -82,7 +82,7 @@ def common_args(proxy_cfg, extra=()):
     return list(extra)
 
 
-ECHO_URL = "https://api.ipify.org"
+ECHO_URLS = ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://icanhazip.com")
 
 
 def pair_exit_ips(rows, ips):
@@ -136,9 +136,19 @@ def read_webrtc_leaks(page, exit_ip):
         return -1
 
 
+def nav_failure(row):
+    """A visit that never got a page: a navigation error (exception, no status) or a server error (5xx) in a stage that
+    read unknown. A 200 on another host or a blank page with no status may be the vendor's block, so they are not this."""
+    for st in (row.get("reason") or {}).values():
+        status = st.get("status")
+        if (st.get("exc") and status is None) or (status is not None and status >= 500):
+            return True
+    return False
+
+
 def run_pair_with_retries(attempt, retries, check=True):
     """attempt(k) -> (rows by arm, exit addresses by arm) for try k on its own fresh session. A pair on two addresses (or an
-    unread one) is tried again on a new session, at most `retries` times; the bytes the discarded tries spent stay on the
+    unread one, or one with a visit that never got a page: nav_failure) is tried again on a new session, at most `retries` times; the bytes the discarded tries spent stay on the
     final rows as retry_bytes, because the proxy charged for them. A half pair (a resumed run) has no partner and is returned as is."""
     spent = {"S": 0, "F": 0}
     for k in range(retries + 1):
@@ -146,8 +156,10 @@ def run_pair_with_retries(attempt, retries, check=True):
         if len(rows) < 2 or not check:  # no partner, or no proxy: there is no exit address to compare
             return rows
         pair_exit_ips(rows, ips)
-        if rows["S"]["ip_pair"] == "same" or any(r.get("error") == "webrtc_leak" for r in rows.values()):
+        if any(r.get("error") == "webrtc_leak" for r in rows.values()):
             break  # a leak is not luck of the session: a retry would only spend bytes
+        if rows["S"]["ip_pair"] == "same" and not any(nav_failure(r) for r in rows.values()):
+            break
         if k < retries:
             for name, r in rows.items():
                 spent[name] += r.get("bytes", 0)
@@ -162,13 +174,17 @@ def visit_cost(row):
 
 
 def read_exit_ip(page):
-    """The exit address as the page sees it, or None. Kept in memory for pair_exit_ips; never written to a result."""
-    try:
-        page.goto(ECHO_URL, wait_until="load", timeout=30000)
-        ip = page.inner_text("body").strip()
-        return ip if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip) else None
-    except Exception:  # noqa: BLE001 - an unread address makes the pair unknown, not the run a crash
-        return None
+    """The exit address as the page sees it, or None. Kept in memory for pair_exit_ips; never written to a result.
+    The echo services are asked in order and the first that answers with an address wins."""
+    for url in ECHO_URLS:
+        try:
+            page.goto(url, wait_until="load", timeout=30000)
+            ip = page.inner_text("body").strip()
+        except Exception:  # noqa: BLE001 - an unread address makes the pair unknown, not the run a crash
+            continue
+        if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip):
+            return ip
+    return None
 
 
 def secrets_of(cfg):

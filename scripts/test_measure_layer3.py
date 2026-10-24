@@ -661,3 +661,88 @@ def test_a_row_with_an_unknown_stage_carries_a_reason_for_that_stage_only(monkey
 
 def test_a_row_with_no_unknown_stage_has_no_reason(monkeypatch):
     assert "reason" not in _visit_with(monkeypatch, ["pass", "challenge"])
+
+
+# ---- navigation errors and server errors are retried; the exit address has fallback echo services --------------------
+def _unknown(reason):
+    return {"outcome": "unknown", "bytes": 10, "reason": reason}
+
+
+NAV_ERR = {"stage1": {"exc": "Error", "status": None, "body_len": 214, "same_host": False}}
+HTTP_502 = {"stage1": {"exc": None, "status": 502, "body_len": 54, "same_host": True}}
+HTTP_200_OTHER = {"stage1": {"exc": None, "status": 200, "body_len": 176, "same_host": False}}
+BLANK = {"stage1": {"exc": None, "status": None, "body_len": 0, "same_host": True}}
+HTTP_403 = {"stage1": {"exc": None, "status": 403, "body_len": 900, "same_host": True}}
+
+
+@pytest.mark.parametrize("reason,retried", [(NAV_ERR, True), (HTTP_502, True), (HTTP_200_OTHER, False), (BLANK, False), (HTTP_403, False)])
+def test_only_a_navigation_error_or_a_5xx_makes_a_pair_try_again(reason, retried):
+    calls = []
+
+    def attempt(k):
+        calls.append(k)
+        bad = _unknown(reason) if k == 0 else {"outcome": "pass", "bytes": 10}
+        return ({"S": bad, "F": {"outcome": "pass", "bytes": 20}}, {"S": "a", "F": "a"})
+    rows = ml.run_pair_with_retries(attempt, 2)
+    assert calls == ([0, 1] if retried else [0])
+    if retried:
+        assert [r["outcome"] for r in rows.values()] == ["pass", "pass"]
+        assert [r["retry_bytes"] for r in rows.values()] == [10, 20]  # the failed try is charged to both arms
+
+
+def test_a_pair_that_keeps_failing_to_navigate_stops_at_the_cap_and_stays_unknown():
+    calls = []
+
+    def attempt(k):
+        calls.append(k)
+        return ({"S": _unknown(NAV_ERR), "F": {"outcome": "pass", "bytes": 20}}, {"S": "a", "F": "a"})
+    rows = ml.run_pair_with_retries(attempt, 2)
+    assert calls == [0, 1, 2] and rows["S"]["outcome"] == "unknown" and rows["S"]["retries"] == 2
+
+
+def test_a_navigation_error_is_not_retried_without_a_proxy():
+    calls = []
+
+    def attempt(k):
+        calls.append(k)
+        return ({"S": _unknown(NAV_ERR), "F": {"outcome": "pass", "bytes": 20}}, {"S": "direct", "F": "direct"})
+    ml.run_pair_with_retries(attempt, 2, check=False)
+    assert calls == [0]
+
+
+class EchoPage:
+    """goto raises for a host listed in `down`; the body is what `bodies` says for the last host visited."""
+    def __init__(self, down=(), bodies=None):
+        self.down, self.bodies, self.visited = set(down), bodies or {}, []
+
+    def goto(self, url, **k):
+        self.visited.append(url)
+        if url in self.down:
+            raise RuntimeError("net::ERR_TIMED_OUT")
+
+    def inner_text(self, _sel):
+        return self.bodies.get(self.visited[-1], "198.51.100.7\n")
+
+
+def test_the_exit_address_is_read_from_the_next_echo_service_when_one_fails():
+    assert ml.ECHO_URLS == ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://icanhazip.com")
+    page = EchoPage(down={ml.ECHO_URLS[0]})
+    assert ml.read_exit_ip(page) == "198.51.100.7" and page.visited == list(ml.ECHO_URLS[:2])
+    page = EchoPage(down=set(ml.ECHO_URLS[:2]))
+    assert ml.read_exit_ip(page) == "198.51.100.7" and page.visited == list(ml.ECHO_URLS)
+    page = EchoPage(bodies={ml.ECHO_URLS[0]: "<html>blocked</html>"})
+    assert ml.read_exit_ip(page) == "198.51.100.7" and len(page.visited) == 2  # a body that is no address is a failure too
+
+
+def test_the_first_echo_service_that_answers_is_the_only_one_asked_and_all_failing_is_unread():
+    page = EchoPage()
+    ml.read_exit_ip(page)
+    assert page.visited == [ml.ECHO_URLS[0]]
+    page = EchoPage(down=set(ml.ECHO_URLS))
+    assert ml.read_exit_ip(page) is None and page.visited == list(ml.ECHO_URLS)
+
+
+def test_no_row_names_an_echo_service_or_an_address():
+    rows = {"S": {"outcome": "pass", "bytes": 5}, "F": {"outcome": "pass", "bytes": 7}}
+    text = json.dumps(ml.pair_exit_ips(rows, {"S": "198.51.100.7", "F": "198.51.100.7"}))
+    assert "198.51.100" not in text and not any(u.split("//")[1] in text for u in ml.ECHO_URLS)
