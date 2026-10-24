@@ -1,6 +1,10 @@
 {
  "chrome": "156.0.8078.48",
- "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
+ "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
+ "display": {
+  "width": 1440,
+  "height": 900
+ },
  "headed": {
   "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
   "windowKeys": [
@@ -1491,7 +1495,7 @@
   "navConnection": {
    "effectiveType": "4g",
    "rtt": 100,
-   "downlink": 1.55,
+   "downlink": 1.6,
    "saveData": false
   },
   "uad": {
@@ -1554,10 +1558,10 @@
    "wow64": false
   },
   "screen": {
-   "width": 1280,
-   "height": 1024,
-   "availWidth": 1280,
-   "availHeight": 984,
+   "width": 1440,
+   "height": 900,
+   "availWidth": 1440,
+   "availHeight": 900,
    "availLeft": 0,
    "availTop": 0,
    "colorDepth": 24,
@@ -1654,7 +1658,7 @@
    "durationFormat": "function"
   },
   "audio": {
-   "sampleRate": 48000,
+   "sampleRate": 44100,
    "baseLatency": 0.01,
    "outputLatency": 0,
    "maxChannelCount": 2,
@@ -1716,6 +1720,11 @@
     "maxComputeWorkgroupSizeX": 1024,
     "maxBindGroups": 4
    }
+  },
+  "webgl": {
+   "vendor": "Google Inc. (Intel)",
+   "renderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "maxSamples": 16
   },
   "codecs": {
    "video/mp4; codecs=\"avc1.42E01E\"": [
@@ -1814,14 +1823,7 @@
   "perfMem": {
    "jsHeapSizeLimit": 3760000000
   },
-  "mediaDevices": [
-   [
-    "audiooutput",
-    "",
-    0,
-    0
-   ]
-  ],
+  "mediaDevices": [],
   "canvas": {
    "text": "f128eb83",
    "shape": "c662b8ad"
@@ -1832,7 +1834,7 @@
    "dejavu": true
   },
   "err": {
-   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_11564/page.html",
+   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_13532/page.html",
    "toStringLen": 39
   },
   "protoCounts": {
@@ -3334,8 +3336,8 @@
   },
   "navConnection": {
    "effectiveType": "4g",
-   "rtt": 150,
-   "downlink": 1.75,
+   "rtt": 100,
+   "downlink": 1.65,
    "saveData": false
   },
   "uad": {
@@ -3498,7 +3500,7 @@
    "durationFormat": "function"
   },
   "audio": {
-   "sampleRate": 48000,
+   "sampleRate": 44100,
    "baseLatency": 0.01,
    "outputLatency": 0,
    "maxChannelCount": 2,
@@ -3561,6 +3563,11 @@
     "maxBindGroups": 4
    }
   },
+  "webgl": {
+   "vendor": "Google Inc. (Intel)",
+   "renderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "maxSamples": 16
+  },
   "codecs": {
    "video/mp4; codecs=\"avc1.42E01E\"": [
     "probably",
@@ -3619,8 +3626,30 @@
     false
    ]
   },
-  "mediaCap": "timeout",
-  "perms": "timeout",
+  "mediaCap": [
+   true,
+   true,
+   true
+  ],
+  "perms": {
+   "geolocation": "prompt",
+   "notifications": "prompt",
+   "camera": "prompt",
+   "microphone": "prompt",
+   "clipboard-read": "prompt",
+   "clipboard-write": "granted",
+   "midi": "prompt",
+   "persistent-storage": "prompt",
+   "screen-wake-lock": "granted",
+   "accelerometer": "granted",
+   "gyroscope": "granted",
+   "magnetometer": "granted",
+   "background-sync": "granted",
+   "payment-handler": "granted",
+   "storage-access": "granted",
+   "window-management": "prompt",
+   "local-fonts": "prompt"
+  },
   "keyboard": {
    "size": 48,
    "KeyA": "a",
@@ -3628,11 +3657,15 @@
    "Backquote": "`",
    "Digit1": "1"
   },
-  "storage": "timeout",
+  "storage": {
+   "quotaGiB": 10,
+   "usage": 0,
+   "persisted": false
+  },
   "perfMem": {
    "jsHeapSizeLimit": 3760000000
   },
-  "mediaDevices": "timeout",
+  "mediaDevices": [],
   "canvas": {
    "text": "f128eb83",
    "shape": "c662b8ad"
@@ -3643,7 +3676,7 @@
    "dejavu": true
   },
   "err": {
-   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_17472/page.html",
+   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_10056/page.html",
    "toStringLen": 39
   },
   "protoCounts": {
