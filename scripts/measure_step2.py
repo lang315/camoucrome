@@ -34,6 +34,9 @@ import step2_rows as rows  # noqa: E402
 import gpu_gate  # noqa: E402
 from windows_verify_set import STOCK_APP, pin_tag  # noqa: E402
 
+ROOT = HERE.parent
+LINK_SEEDS = (1, 2, 3, 4, 5)
+CONSTANTS = json.loads((ROOT / "settings" / "machine_constants.json").read_text(encoding="utf-8"))["leaves"]
 PROBES = {}  # name -> fn(pw, arm, mode, run) -> {row: value}; filled below
 
 
@@ -197,13 +200,15 @@ def probe_stability(pw, arm, mode, run):
 
 
 def probe_linkability(pw, arm, mode, run):
-    """Two profiles of one arm: fork identities from seeds 1 and 2, or two stock profiles."""
+    """LINK_SEEDS profiles of one arm: fork identities from those seeds, or as many stock
+    profiles. `link.unexplained` is what all of them share that no machine constant explains."""
     reports = []
-    for seed in (1, 2):
+    for seed in LINK_SEEDS:
         ident = None if arm.ident is None else identity(seed)
         with serve(cap.page().encode()) as url, opened(pw, arm, mode, ident=ident) as ctx:
             reports.append(read_oracle(ctx, url))
-    return rows.link_rows(*reports)
+    got = rows.link_rows_n(reports)
+    return {**got, "link.unexplained": rows.unexplained(got["link.shared"], CONSTANTS)}
 
 
 PROBES["stability"] = probe_stability
