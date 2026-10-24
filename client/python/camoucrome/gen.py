@@ -112,7 +112,7 @@ if not (ROOT / "settings" / "webgl").is_dir():
 def load_profiles():
     """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
     return {p.stem: json.loads(p.read_text(encoding="utf-8"))
-            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith("-pool")}
+            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith(("-pool", "-thread-caps"))}
 
 
 GL_ENUM = {"VERTEX_SHADER": 35633, "FRAGMENT_SHADER": 35632, "LOW_FLOAT": 36336, "MEDIUM_FLOAT": 36337,
@@ -151,8 +151,23 @@ GEN9_RE = re.compile(r"^ANGLE \(Intel, Intel\(R\) (U?HD Graphics( 6\d\d)?) \((0x
 SHARED_GPU = "the GPU is shared by every profile on this host"
 
 
+# assumption: the thread counts Intel parts typically ship with, not a measured distribution
+THREAD_STEPS = (2, 4, 6, 8, 12, 16, 20)
+
+
 def gen9_pool():
     return json.loads((ROOT / "settings" / "webgl" / "intel-gen9-pool.json").read_text(encoding="utf-8"))
+
+
+def gen9_thread_cap(renderer):
+    """Most threads any CPU shipping this Gen9 GPU has (Intel ARK, settings/webgl/intel-gen9-thread-caps.json);
+    None for a non-Gen9 renderer or one with no sourced cap."""
+    return _thread_caps().get(gen9_device_id(renderer))
+
+
+def _thread_caps():
+    rows = json.loads((ROOT / "settings" / "webgl" / "intel-gen9-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    return {int(r["device_id"], 16): r["max_threads"] for r in rows if r["max_threads"] is not None}
 
 
 def gen9_device_id(renderer, ids=None):
@@ -166,7 +181,9 @@ def gen9_device_id(renderer, ids=None):
 def gpu_for(platform, host_renderer, rng, gpu=None):
     """(profile, warning). An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
     change, every parameter stays the host generation's. The draw uses its own generator seeded from rng's
-    state (as fonts_keys does), so rng is not advanced and later seeded keys do not move."""
+    state (as fonts_keys does), so rng is not advanced and later seeded keys do not move.
+    Only renderers with a sourced thread cap (gen9_thread_cap) are drawn; from_pool then holds
+    navigator.hardwareConcurrency to that cap."""
     base = profile_for(platform, gpu)
     if gpu or platform != "Windows" or base is None:
         return base, None
@@ -176,7 +193,8 @@ def gpu_for(platform, host_renderer, rng, gpu=None):
         return base, f"host renderer is not a Windows D3D11 renderer: {SHARED_GPU}; the shared default is kept"
     if gen9_device_id(host_renderer) is None:
         return None, f"host GPU is not in the supported Intel Gen9 set: {SHARED_GPU}; the real GPU is kept"
-    pool = gen9_pool()["renderers"]
+    caps = _thread_caps()
+    pool = [r for r in gen9_pool()["renderers"] if r["device_id"] in caps]  # no sourced cap: never drawn
     pick = random.Random(repr(rng.getstate()) + "gpu").choices(pool, weights=[r["weight"] for r in pool])[0]
     return {**base, "renderer": pick["renderer"]}, None
 
@@ -309,7 +327,10 @@ def clamp_window_position(config):
 
 
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None):
-    """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}."""
+    """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
+    When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
+    cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
+    a value already within the cap stays as BrowserForge drew it."""
     nav, ud, scr = fp["navigator"], fp["navigator"]["userAgentData"], fp["screen"]
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
@@ -357,6 +378,11 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     profile, warn = gpu_for(platform, host_renderer, rng, gpu)
     if profile:
         config.update(webgl_keys(profile))
+        cap = gen9_thread_cap(profile["renderer"]) if host_renderer and not gpu else None
+        if cap is not None and config["navigator.hardwareConcurrency"] > cap:
+            # own generator: rng stays where it was, so the other seeded keys do not move
+            config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
+                [t for t in THREAD_STEPS if t <= cap])
     config.update(fonts_keys(platform, rng, host_families))
     config.update(voices_keys(platform, tag))
     config.update(audio_keys(platform))
