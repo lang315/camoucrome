@@ -328,7 +328,11 @@ Camoucrome does not repeat that.
 
 ## Known limits
 
-- Every identity on one host shares that host's GPU: only one real GPU profile exists.
+- On a host with an Intel Gen9 GPU (Skylake to Comet Lake, the commonest Windows laptop and desktop
+  parts), each profile reports its own GPU name and DeviceId from that generation, with a thread count
+  that fits the drawn part; the pixels still come from the host's real GPU. On any other host every
+  identity keeps the real GPU: only one real GPU profile exists.
+- Fonts are a per-profile subset of the host's real Windows fonts, never a font the host lacks.
 - Identities on one host share only values that stock Windows Chrome shares across
   profiles too, such as the static 10 GiB storage quota and V8's 4 GB heap cap.
 - No Widevine.
