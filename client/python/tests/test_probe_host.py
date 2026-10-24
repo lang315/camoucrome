@@ -69,6 +69,7 @@ def test_host_renderer_none_for_missing_executable(tmp_path):
     "llvmpipe (LLVM 15.0.7, 256 bits)",
     "Google SwiftShader",
     "Mesa Software Rasterizer",
+    "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)",
 ])
 def test_host_renderer_none_for_software_renderer(monkeypatch, value):
     ctx = FakeCtx(value)

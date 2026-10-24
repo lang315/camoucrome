@@ -76,7 +76,7 @@ HOST_GL_JS = """() => { const g = document.createElement('canvas').getContext('w
   return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : null; }"""
 
 
-SOFTWARE_MARKERS = ("swiftshader", "llvmpipe", "software")
+SOFTWARE_MARKERS = ("swiftshader", "llvmpipe", "software", "basic render")
 
 
 def host_renderer(executable, timeout_s=30):
