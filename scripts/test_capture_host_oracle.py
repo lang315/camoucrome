@@ -43,3 +43,11 @@ def test_from_raw_scrubs_on_the_mac(tmp_path, monkeypatch):
 def test_raw_out_inside_the_repository_is_refused():
     with pytest.raises(SystemExit):
         cho.main(["--raw-out", str(cho.ROOT / "raw.json")])
+
+
+def test_page_reads_the_unmasked_webgl_leaves():
+    # step 6: without these the linkability table cannot see the GPU the fork shares across profiles
+    html = cho.page()
+    assert "step('webgl'" in html
+    assert "UNMASKED_VENDOR_WEBGL" in html and "UNMASKED_RENDERER_WEBGL" in html
+    assert "getParameter(36183)" in html
