@@ -1,7 +1,6 @@
 """Roadmap step 5: one page load -> one outcome, from what the page shows (spec 2026-10-24-step5-layer3-design.md, 4).
 
 A page is a dict the harness reads from the DOM and the response (never a cookie value):
-  status   main-frame HTTP status or None
   title    document.title
   text     document.body.innerText, truncated
   html     document.documentElement.outerHTML, truncated
@@ -12,7 +11,9 @@ A page is a dict the harness reads from the DOM and the response (never a cookie
 classify(vendor, page) -> {"outcome": pass|challenge|block|unknown, "markers": [...], "cookies": [...]}.
 The marker rules come from the vendors' public behaviour and are re-checked against fixtures saved at run time
 (scripts/testdata/layer3). `markers` lists every vendor's rule that fired, so a site behind two vendors says which one
-challenged; the outcome uses the site's own vendor first and any vendor's block/challenge second."""
+challenged; the outcome uses the site's own vendor first and any vendor's block/challenge second.
+A challenge marker is decisive only while the site's own content (`ok`) is absent: a widget or script on a real page
+(a Turnstile login form) stays in `markers` as context but the outcome is pass. A block marker is decisive regardless."""
 import re
 
 # (name, field, regex, severity) -- severity block outranks challenge.
@@ -61,10 +62,10 @@ def classify(vendor, page):
     sevs = {f[2] for f in pool}
     if "block" in sevs:
         outcome = "block"
-    elif "challenge" in sevs:
-        outcome = "challenge"
     elif page.get("ok"):
         outcome = "pass"
+    elif "challenge" in sevs:
+        outcome = "challenge"
     else:
         outcome = "unknown"
     return {"outcome": outcome, "markers": [f"{v}:{n}" for v, n, _ in fired],

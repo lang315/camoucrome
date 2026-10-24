@@ -32,7 +32,7 @@ def test_a_blank_page_is_unknown_not_pass():
 def test_block_outranks_challenge_and_a_foreign_vendors_marker_still_counts():
     page = {"title": "Attention Required! | Cloudflare", "html": 'id="challenge-form"', "ok": True}
     assert lc.classify("cloudflare", page)["outcome"] == "block"
-    page = {"title": "x", "frames": ["https://geo.captcha-delivery.com/c"], "ok": True}
+    page = {"title": "x", "frames": ["https://geo.captcha-delivery.com/c"], "ok": False}
     got = lc.classify("cloudflare", page)  # the site is listed as Cloudflare but DataDome challenged
     assert got["outcome"] == "challenge" and "datadome:captcha-delivery-frame" in got["markers"]
 
