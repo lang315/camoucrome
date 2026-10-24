@@ -191,6 +191,34 @@ The two identities differ in screen size and CPU cores, and in the noise seeds s
 each profile. They share the host's GPU, the stock Windows font list, voices and the
 snapped `deviceMemory`.
 
+## Time zone and locale from the proxy's exit address
+
+A time zone that contradicts the address your traffic comes from is a tell that detectors check
+(Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
+proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
+the optional extra (`pip install "camoucrome[geoip]"`) and a DB-IP "IP to City Lite" database file,
+which you download yourself, once a month, without an account, from
+<https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
+
+```python
+import camoucrome, camoucrome.gen
+from camoucrome import geoip
+
+proxy = {"server": "http://proxy.example:8000", "username": "user", "password": "secret"}
+db = r"dbip-city-lite-2026-10.mmdb"
+ip = geoip.exit_ip(proxy)              # the address the world sees, asked through the proxy
+fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
+ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
+                        window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+```
+
+The zone comes from the address's coordinates and the locale from its country. An explicit
+`timezone` or `locale` you pass to `generate` always wins. If the address cannot be placed (no
+database, not in it, no echo answer) you get a `GeoIPWarning` and nothing is changed. Go
+(`Options.GeoIP`, `GenerateWith`) and Node (`launch({ geoip })`) call the same Python module.
+
+IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
+
 ## The defining constraint
 
 Fingerprint spoofing is implemented in **C++ at the Blink and browser level, never by
