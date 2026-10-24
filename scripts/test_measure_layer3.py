@@ -241,6 +241,138 @@ def test_secret_scan_skips_the_warm_profiles(tmp_path):
     assert ml.secret_scan(tmp_path, ["S3cretPw"]) == []
 
 
+def ns(**kw):
+    return type("NS", (), kw)()
+
+
+def test_the_identity_run_refuses_without_the_host_zone_and_locale():
+    for kw in ({}, {"timezone": "Europe/Paris"}, {"locale": "fr-FR"}):
+        with pytest.raises(SystemExit, match="timezone"):
+            ml.build_identity(ns(aa=False, no_identity=False, identity_seed=1, **{"timezone": None, "locale": None, **kw}))
+    for kw in ({"aa": True, "no_identity": False}, {"aa": False, "no_identity": True}):
+        assert ml.build_identity(ns(identity_seed=1, timezone=None, locale=None, **kw)) is None
+
+
+def test_the_identity_carries_exactly_the_given_zone_and_locale():
+    ident = ml.build_identity(ns(aa=False, no_identity=False, identity_seed=1, timezone="Europe/Paris", locale="fr-FR"))
+    assert ident["config"]["timezone:id"] == "Europe/Paris" and ident["config"]["locale:tag"] == "fr-FR"
+
+
+def test_headed_defaults_to_the_platform_and_can_be_switched_off():
+    p = ml.build_parser()
+    assert p.parse_args(["run"]).headed == (os.name == "nt")
+    assert p.parse_args(["run", "--no-headed"]).headed is False and p.parse_args(["run", "--headed"]).headed is True
+
+
+def test_scrub_header_names_headed_or_headless(tmp_path, terms):
+    rows_file(tmp_path / "run", {("cloudflare", i): ("pass", "challenge") for i in range(3)})
+    for headed, word in ((True, "headed"), (False, "headless")):
+        meta = json.loads((tmp_path / "run" / "meta.json").read_text())
+        meta["flags"] = {"headed": headed}
+        (tmp_path / "run" / "meta.json").write_text(json.dumps(meta))
+        ml.scrub_cmd(scrub_args(tmp_path))
+        assert f"; {word};" in (tmp_path / "out" / "layer3-baseline.md").read_text()
+
+
+def test_a_window_larger_than_the_desktop_is_a_problem():
+    assert ml.window_problems([1920, 1152], [2560, 1440]) == []
+    assert ml.window_problems([1920, 1152], [1920, 1080]) and ml.window_problems([2000, 800], [1920, 1080])
+    assert ml.window_problems([1920, 1152], None) == [] and ml.window_problems(None, [1, 1]) == []
+
+
+def test_budget_refuses_a_measured_visit_without_bytes_and_says_what_the_bytes_are(tmp_path, capsys):
+    rows_file(tmp_path / "run", {("cloudflare", 0): ("pass", "pass")}, rounds=1)
+    a = type("A", (), {"run_dir": str(tmp_path / "run"), "sites": 1, "rounds": 1, "limit_gb": 5.0})()
+    ml.budget_cmd(a)
+    assert "lower bound, not the proxy's counter" in capsys.readouterr().out
+    ml.report_cmd(a)
+    assert "lower bound, not the proxy's counter" in capsys.readouterr().out
+    rows_file(tmp_path / "zero", {("cloudflare", 0): ("pass", "pass")}, rounds=1)
+    rs = [json.loads(line) for line in (tmp_path / "zero" / "results.jsonl").read_text().splitlines()]
+    rs[0]["bytes"] = 0
+    (tmp_path / "zero" / "results.jsonl").write_text("\n".join(json.dumps(r) for r in rs) + "\n")
+    a.run_dir = str(tmp_path / "zero")
+    with pytest.raises(SystemExit, match="bytes"):
+        ml.budget_cmd(a)
+
+
+def test_report_mean_bytes_excludes_failed_visits(tmp_path, capsys):
+    rows_file(tmp_path / "run", {("cloudflare", 0): ("pass", "pass"), ("cloudflare", 1): ("unknown", "unknown")}, rounds=1)
+    ml.report_cmd(type("A", (), {"run_dir": str(tmp_path / "run")})())
+    assert "mean 1000 over 2 measured visits" in capsys.readouterr().out
+
+
+def test_the_version_gate():
+    assert ml.version_problems_for({"S": "156.0.8078.48", "F": "156.0.8078.48"}, "156.0.8078.48", aa=False) == []
+    assert ml.version_problems_for({"S": "157.0.8100.1", "F": "156.0.8078.48"}, "156.0.8078.48", aa=False)
+    assert ml.version_problems_for({"S": "157.0.8100.1", "F": "157.0.8100.1"}, "156.0.8078.48", aa=True) == []
+
+
+def test_resume_also_refuses_a_rebuilt_fork_or_an_edited_site_list():
+    old = {"started": "T0", "rounds": 5, "flags": {"aa": False}, "versions": {"S": "1", "F": "2"}, "sites_per_vendor": {"cloudflare": 3}}
+    same = {"rounds": 5, "started": "T1", "flags": {"aa": False}, "versions": {"S": "1", "F": "2"}, "sites_per_vendor": {"cloudflare": 3}}
+    assert ml.resume_meta(old, same)["started"] == "T0"
+    with pytest.raises(SystemExit, match="versions"):
+        ml.resume_meta(old, {**same, "versions": {"S": "1", "F": "3"}})
+    with pytest.raises(SystemExit, match="sites_per_vendor"):
+        ml.resume_meta(old, {**same, "sites_per_vendor": {"cloudflare": 4}})
+
+
+def test_a_missing_order_does_not_crash_the_report(tmp_path):
+    rows_file(tmp_path / "run", {("cloudflare", i): ("pass", "challenge") for i in range(3)})
+    rs = [json.loads(line) for line in (tmp_path / "run" / "results.jsonl").read_text().splitlines()]
+    for r in rs:
+        del r["order"]
+    (tmp_path / "run" / "results.jsonl").write_text("\n".join(json.dumps(r) for r in rs) + "\n")
+    assert ml.vendor_rows(tmp_path / "run", resamples=100)["cloudflare"]["d"] == 1.0
+
+
+def test_scrub_prints_an_unmeasured_vendor_instead_of_refusing(tmp_path, terms):
+    rows_file(tmp_path / "run", {("cloudflare", i): ("pass", "challenge") for i in range(3)} | {("datadome", i + 3): ("unknown", "unknown") for i in range(3)})
+    assert ml.scrub_cmd(scrub_args(tmp_path)) == 0
+    assert "| datadome |" in (tmp_path / "out" / "layer3-baseline.md").read_text() and "UNMEASURED" in (tmp_path / "out" / "layer3-baseline.md").read_text()
+
+
+def test_a_gpu_crash_during_the_visit_makes_it_unmeasured(monkeypatch):
+    import camoucrome
+    import gpu_gate
+
+    class Page:
+        mouse = type("M", (), {"wheel": lambda self, *a: None})()
+
+        def on(self, *a):
+            pass
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+    class Ctx:
+        pages = [Page()]
+
+        def route(self, *a):
+            pass
+
+        def close(self):
+            pass
+
+    calls = []
+
+    def check(n):
+        calls.append(n)
+        if len(calls) == 2:
+            raise gpu_gate.Unmeasured("crashed")
+    monkeypatch.setattr(camoucrome, "launch", lambda *a, **k: Ctx())
+    monkeypatch.setattr(gpu_gate, "read_ctx", lambda ctx: 0)
+    monkeypatch.setattr(gpu_gate, "check", check)
+    monkeypatch.setattr(ml, "settle", lambda *a, **k: ({"outcome": "pass", "markers": [], "cookies": []}, False))
+    monkeypatch.setattr(ml, "load", lambda *a: 200)
+    a = ns(gpu_gate=True, headed=False, settle=1, dwell=0)
+    arm = ns(ident=None, exe="x", args=[])
+    with pytest.raises(gpu_gate.Unmeasured):
+        ml.visit(None, arm, {"vendor": "cloudflare", "url": "u", "next_url": "n", "ok_marker": "m"}, None, a)
+    assert len(calls) == 2
+
+
 # ---- the whole pipeline, opt-in --------------------------------------------------------------------------------------
 CHROME = os.environ.get("CAMOU_TEST_CHROME")
 live = pytest.mark.skipif(not CHROME, reason="set CAMOU_TEST_CHROME to a Chrome executable")

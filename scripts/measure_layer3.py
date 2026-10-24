@@ -15,7 +15,8 @@ visited by both arms back to back in random order. Images, media and fonts are b
 floor); --plant ARG adds a browser argument to F only (a RED: the harness must see it).
 Private inputs, never in the repository: the site list ($CAMOU_L3_SITES, default ~/.config/camoucrome/layer3-sites.json)
 and the proxy file ($CAMOU_L3_PROXY_FILE: {"server", "username_template" with {session}, "password"}). Results name a
-site by index and vendor only; cookie VALUES are never read into a result."""
+site by index and vendor only; cookie VALUES are never read into a result. The proxy host IS on the live browser command line
+(--proxy-server); argv_of launches without a proxy, and nothing the harness writes contains an argv."""
 import argparse
 import datetime
 import json
@@ -165,6 +166,8 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
             page.mouse.wheel(0, 100)
             page.wait_for_timeout(int(min(0.7, a.dwell) * 1000))
         r2, saw2 = settle(page, ctx, site, load(page, site["next_url"]), a.settle)
+        if a.gpu_gate:
+            gpu_gate.check(gpu_gate.read_ctx(ctx))  # a crash during the visit is as unmeasured as one at launch
         return {"stage1": r1["outcome"], "stage2": r2["outcome"], "outcome": lc.combine(r1, r2),
                 "interstitial_seen": saw1 or saw2, "markers": sorted(set(r1["markers"] + r2["markers"])),
                 "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0]}
@@ -180,6 +183,35 @@ def read_results(run_dir):
     return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()] if p.exists() else []
 
 
+def build_identity(a):
+    """The fork's generated identity, in the HOST's zone and locale: stock reports the real host zone and the proxy exits in
+    the host region, so an identity in another zone would contradict its IP in the fork arm only (spec 3.3)."""
+    if a.aa or a.no_identity:
+        return None
+    if not (a.timezone and a.locale):
+        sys.exit("precondition: an identity run needs --timezone and --locale (the host's own, so the fork is the only difference)")
+    from camoucrome.gen import generate
+    return generate("windows", seed=a.identity_seed, timezone=a.timezone, locale=a.locale)
+
+
+def window_problems(window, desktop):
+    """A headed window cannot exceed the desktop; a clamped window would be a fork-only inconsistency."""
+    if not window or not desktop:
+        return []
+    if window[0] > desktop[0] or window[1] > desktop[1]:
+        return [f"the identity window {window[0]}x{window[1]} is larger than the desktop {desktop[0]}x{desktop[1]}"]
+    return []
+
+
+def version_problems_for(versions, pin, aa):
+    import step2_rows
+    return [] if aa else step2_rows.version_problems(versions, pin)
+
+
+def measured_rows(run_dir):
+    return [r for r in read_results(run_dir) if r["outcome"] not in ("unknown", "unmeasured")]
+
+
 def parity_problems(argv_s, argv_f, plant, on_windows):
     """Problems with the two arms' command lines. An unread argv is a problem on Windows (as in measure_step2); off Windows
     there is no /proc to read, so the check is skipped and says so."""
@@ -191,7 +223,10 @@ def parity_problems(argv_s, argv_f, plant, on_windows):
 
 
 def flags_of(a):
-    return {k: getattr(a, k) for k in ("headed", "warm", "aa", "plant", "arg", "no_identity", "identity_seed", "seed", "dwell", "settle", "min_gap")}
+    # the zone and locale values are host-identifying and meta.json leaves the host: only that they were given is recorded, so a
+    # resume cannot compare them (accepted)
+    return {**{k: getattr(a, k) for k in ("headed", "warm", "aa", "plant", "arg", "no_identity", "identity_seed", "seed", "dwell", "settle", "min_gap")},
+            "identity_zone_given": bool(a.timezone and a.locale)}
 
 
 def resume_meta(old, new):
@@ -202,6 +237,9 @@ def resume_meta(old, new):
     diff = sorted(k for k in set(of) | set(nf) if of.get(k) != nf.get(k))
     if diff:
         sys.exit("resume: flags differ from the run being resumed: " + ", ".join(diff))
+    changed = [k for k in ("versions", "sites_per_vendor") if old.get(k) != new.get(k)]
+    if changed:
+        sys.exit("resume: the run being resumed differs in " + ", ".join(changed) + " (a rebuilt browser or an edited site list)")
     return {**new, "started": old["started"], "rounds": max(old["rounds"], new["rounds"])}
 
 
@@ -215,7 +253,11 @@ def run_cmd(a):
     proxy_cfg = load_proxy(a.proxy_file or os.environ.get("CAMOU_L3_PROXY_FILE"))
     stock_exe = a.stock_exe or os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
     fork_exe = stock_exe if a.aa else (a.fork_exe or os.environ["CAMOU_FORK_EXE"])
-    ident = None if (a.aa or a.no_identity) else m2.identity(a.identity_seed)
+    ident = build_identity(a)
+    desktop = m2.desktop_size() if a.headed and ident else None
+    bad = window_problems(ident["launch"].get("window") if ident else None, desktop)
+    if bad:
+        sys.exit("precondition: " + "; ".join(bad))
     common = common_args(proxy_cfg, a.arg)
     arms = {"S": m2.Arm("stock", stock_exe, None, common), "F": m2.Arm("fork", fork_exe, ident, common + ([a.plant] if a.plant else []))}
     if a.resume:
@@ -237,7 +279,12 @@ def run_cmd(a):
             meta = {"run": run_id, "rounds": a.rounds, "warm": a.warm, "aa": a.aa, "plant": bool(a.plant), "blocked": sorted(BLOCKED_TYPES),
                     "sites_per_vendor": {v: sum(1 for s in sites if s["vendor"] == v) for v in VENDORS},
                     "versions": {k: m2.exe_version(arm.exe) if os.name == "nt" else "" for k, arm in arms.items()},
-                    "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp(), "flags": flags_of(a)}
+                    "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp(), "flags": flags_of(a), "desktop": desktop}
+            if os.name == "nt":
+                import windows_verify_set
+                bad = version_problems_for(meta["versions"], windows_verify_set.pin_tag(os.environ.get("CAMOU_CLIENT", str(HERE.parent))), a.aa)
+                if bad:
+                    sys.exit("precondition: " + "; ".join(bad))
             if a.resume:
                 meta_file = out_dir / "meta.json"
                 if not meta_file.exists():
@@ -290,7 +337,7 @@ def vendor_rows(run_dir, resamples=10000):
     rows = read_results(run_dir)
     out = {}
     for vendor in VENDORS:
-        vr = [{"site": r["site"], "round": r["round"], "arm": r["arm"], "order": r["order"],
+        vr = [{"site": r["site"], "round": r["round"], "arm": r["arm"], "order": r.get("order"),
                "challenged": None if r["outcome"] in ("unknown", "unmeasured") else lc.challenged(r["outcome"])}
               for r in rows if r["vendor"] == vendor]
         if vr:
@@ -322,12 +369,15 @@ def table(rows_by_vendor, header=""):
     return "\n".join(lines)
 
 
+BYTES_NOTE = "page bytes (request+response sizes of the page's requests: a lower bound, not the proxy's counter)"
+
+
 def report_cmd(a):
     rows = vendor_rows(a.run_dir)
     print(table(rows))
-    rs = read_results(a.run_dir)
+    rs = measured_rows(a.run_dir)
     if rs:
-        print(f"\nbytes per visit: mean {sum(r.get('bytes', 0) for r in rs) / len(rs):.0f} over {len(rs)} visits")
+        print(f"\n{BYTES_NOTE}: mean {sum(r.get('bytes', 0) for r in rs) / len(rs):.0f} over {len(rs)} measured visits")
     return 0
 
 
@@ -345,13 +395,15 @@ def compare_cmd(a):
 
 
 def budget_cmd(a):
-    rs = [r for r in read_results(a.run_dir) if r["outcome"] not in ("unknown", "unmeasured")]
+    rs = measured_rows(a.run_dir)
     if not rs:
         sys.exit("budget: the run has no measured visits")
+    if any(not r.get("bytes") for r in rs):
+        sys.exit("budget: a measured visit has 0 bytes (the size could not be read): the extrapolation would be too low")
     mean = sum(r.get("bytes", 0) for r in rs) / len(rs)
     total = mean * a.sites * a.rounds * 2 * RUN_EQUIVALENTS
     gb = total / 1e9
-    print(f"mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x 2 arms x {RUN_EQUIVALENTS} run-equivalents = {gb:.2f} GB")
+    print(f"{BYTES_NOTE}: mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x 2 arms x {RUN_EQUIVALENTS} run-equivalents = {gb:.2f} GB")
     if gb > a.limit_gb:
         print(f"OVER the {a.limit_gb} GB budget: do not start the paid run", file=sys.stderr)
         return 2
@@ -363,11 +415,11 @@ def scrub_cmd(a):
     src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
     meta = json.loads((src / "meta.json").read_text(encoding="utf-8"))
     rows = vendor_rows(src)
-    thin = {v: r.get("sites", 0) for v, r in rows.items() if r.get("sites", 0) < 3}
+    thin = {v: r["sites"] for v, r in rows.items() if "sites" in r and r["sites"] < 3}
     if thin:
         sys.exit(f"scrub: fewer than 3 sites for {sorted(thin)}: a vendor with one or two sites names its sites")
     header = (f"Run {meta['run']} (UTC). Images, media and fonts blocked in both arms; {meta['rounds']} rounds per site; "
-              f"{'warmed profiles' if meta['warm'] else 'fresh profiles'}; {'stock against stock' if meta['aa'] else 'fork (no identity) against stock' if meta.get('flags', {}).get('no_identity') else 'fork against stock'}"
+              f"{'headed' if meta.get('flags', {}).get('headed') else 'headless'}; {'warmed profiles' if meta['warm'] else 'fresh profiles'}; {'stock against stock' if meta['aa'] else 'fork (no identity) against stock' if meta.get('flags', {}).get('no_identity') else 'fork against stock'}"
               f"{'; planted RED' if meta['plant'] else ''}; {'residential proxy in the host region' if meta['proxy'] else 'no proxy'}.\n")
     text = header + "\n" + table(rows) + "\n"
     terms = check_privacy.load_terms()
@@ -382,7 +434,7 @@ def scrub_cmd(a):
     return 0
 
 
-def main(argv=None):
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
@@ -393,7 +445,9 @@ def main(argv=None):
     r.add_argument("--proxy-file")
     r.add_argument("--stock-exe")
     r.add_argument("--fork-exe")
-    r.add_argument("--headed", action="store_true")
+    r.add_argument("--headed", action=argparse.BooleanOptionalAction, default=os.name == "nt")
+    r.add_argument("--timezone", help="the host's IANA zone, for the fork identity (not recorded in meta)")
+    r.add_argument("--locale", help="the host's locale tag, for the fork identity (not recorded in meta)")
     r.add_argument("--warm", action="store_true")
     r.add_argument("--aa", action="store_true")
     r.add_argument("--plant")
@@ -417,7 +471,11 @@ def main(argv=None):
     c = sub.add_parser("compare")
     c.add_argument("run_a")
     c.add_argument("run_b")
-    a = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     return {"run": run_cmd, "report": report_cmd, "compare": compare_cmd, "budget": budget_cmd, "scrub": scrub_cmd}[a.cmd](a)
 
 
