@@ -374,6 +374,32 @@
         "page may local(\"Selawik-Regular\") the bundle's own face beside a local(\"SegoeUI\") that lands on it -- a pair no",
         "Windows host produces. Absent fonts:aliasLocal constrains nothing."
       ]
+    },
+    {
+      "id": "gpu-renderer-fits-threads",
+      "keys": [
+        "webGl:renderer",
+        "navigator.hardwareConcurrency"
+      ],
+      "relation": "renderer-fits-threads",
+      "policy": "repair",
+      "repair": "lower navigator.hardwareConcurrency to the thread count of the CPU the claimed Intel Gen9 GPU ships with (the cap in settings/webgl/intel-gen9-thread-caps.json), or choose a renderer that fits the thread count",
+      "why": [
+        "A mobile Intel iGPU is soldered beside one family of CPUs, and no",
+        "CPU shipping it has more hardware threads than Intel ARK lists for",
+        "it: UHD 620 (0x5917) is only in 4-core/8-thread Kaby Lake R parts.",
+        "A UHD 620 renderer beside navigator.hardwareConcurrency 16 is a",
+        "machine no one built, which rule 4 calls worse than not spoofing.",
+        "The caps are Intel ARK's, per row, with the source URL, in",
+        "settings/webgl/intel-gen9-thread-caps.json (generated into",
+        "gen9_thread_caps.h by scripts/gen_thread_caps_header.py).",
+        "Conservative on purpose: only an exact Gen9 device id with a sourced",
+        "cap constrains anything. The id is the last '(0x...)' group of the",
+        "ANGLE renderer, resolved like the backend entry resolves it. An",
+        "unknown id, a non-Gen9 or non-ANGLE renderer, an unsourced id",
+        "(0x5921) or an absent or non-integer hardwareConcurrency constrains",
+        "nothing. This validator only reports; new_value is the cap."
+      ]
     }
   ]
 }
