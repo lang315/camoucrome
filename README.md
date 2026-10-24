@@ -191,6 +191,46 @@ The two identities differ in screen size and CPU cores, and in the noise seeds s
 each profile. They share the host's GPU, the stock Windows font list, voices and the
 snapped `deviceMemory`.
 
+## Time zone and locale from the proxy's exit address
+
+A time zone that contradicts the address your traffic comes from is a tell that detectors check
+(Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
+proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
+two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"`)
+and a DB-IP "IP to City Lite" database file,
+which you download yourself, once a month, without an account, from
+<https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
+
+This runs inside the Quickstart's `with sync_playwright() as pw:` block, where `pw` and `CHROME` come from.
+
+```python
+import camoucrome, camoucrome.gen
+from camoucrome import geoip
+
+proxy = {"server": "http://proxy.example:8000", "username": "user", "password": "secret"}
+db = r"dbip-city-lite-2026-10.mmdb"
+try:
+    ip = geoip.exit_ip(proxy)          # the address the world sees, asked through the proxy
+except geoip.GeoIPError as e:          # no echo service answered, or the proxy is not http
+    raise SystemExit(f"cannot place the exit address: {e}")
+fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
+ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
+                        window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+```
+
+The zone comes from the address's coordinates and the locale from its country. An explicit
+`timezone` or `locale` you pass to `generate` always wins. `geoip.exit_ip` raises `GeoIPError` when
+no echo service answers; it asks only through an `http` proxy (a bare `host:port` means `http`), so
+an `https` or `socks5` proxy gives that error too. `generate` and `launch` do not raise on an
+address they cannot place (no database, an unreadable one, not in it, no echo answer): they emit
+a `GeoIPWarning` and change nothing. `launch` checks only the config's own `timezone:id`; a zone
+that comes only from a preset is not checked. Go (`Options.GeoIP`, `GenerateWith`) and Node
+(`launch({ geoip })`) call the same Python module, so `maxminddb` and `timezonefinder` must be
+installed in the interpreter they name (`Options.Python` in Go, the `python` option in Node).
+
+IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
+
 ## The defining constraint
 
 Fingerprint spoofing is implemented in **C++ at the Blink and browser level, never by

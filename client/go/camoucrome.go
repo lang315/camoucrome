@@ -52,8 +52,12 @@ type Options struct {
 	Extensions     []string // unpacked extension dirs (--load-extension)
 	SPKIList       []string // base64 SHA-256 SPKI hashes whose cert errors are ignored (a MITM CA)
 	ExtraArgs      []string
-	FontsDir       string // the bundled font dir; default "fonts" beside the executable when present
-	Proxy          *Proxy // nil = direct
+	FontsDir       string       // the bundled font dir; default "fonts" beside the executable when present
+	Proxy          *Proxy       // nil = direct
+	GeoIP          string       // a DB-IP Lite / GeoLite2-layout .mmdb: Launch warns when timezone:id contradicts the exit IP
+	ExitIP         string       // skips the echo request
+	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
+	Warn           func(string) // default: stderr
 }
 
 // Proxy mirrors Playwright's proxy option (settings/launcher.json launch.proxy_option_fields). The launcher puts
@@ -441,6 +445,9 @@ func BuildArgs(o Options) []string {
 func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, error) {
 	if err := validateProxy(o.Proxy); err != nil {
 		return nil, err
+	}
+	if o.GeoIP != "" {
+		o.warn(CheckGeoIP(o))
 	}
 	env, err := BuildEnv(o, os.Environ())
 	if err != nil {
