@@ -39,8 +39,9 @@ SETTLE_S = 15
 RUN_EQUIVALENTS = 4  # primary 1 + A/A 1 + planted RED 1 + second run 1 (the warmed variant is deferred, spec 10.11)
 VENDORS = ("cloudflare", "datadome", "akamai", "perimeterx")
 DEFAULT_SITES = "~/.config/camoucrome/layer3-sites.json"
-# With a proxy, WebRTC can reveal the host's own address; the same policy goes to both arms or only one leaks.
-WEBRTC_POLICY = "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+# --force-webrtc-ip-handling-policy is a no-op in //chrome (only content_shell and headless read it), so stock Chrome
+# leaked a srflx candidate with the host's address behind the proxy. Only the pref works: both arms' profiles get it.
+WEBRTC_PREF = {"ip_handling_policy": "disable_non_proxied_udp"}
 
 
 def load_sites(path):
@@ -77,7 +78,7 @@ def proxy_for(cfg, session):
 
 def common_args(proxy_cfg, extra=()):
     """Browser arguments both arms get, identically."""
-    return ([WEBRTC_POLICY] if proxy_cfg else []) + list(extra)
+    return list(extra)
 
 
 ECHO_URL = "https://api.ipify.org"
@@ -88,11 +89,50 @@ def pair_exit_ips(rows, ips):
     address that could not be read, compares nothing: both rows become unknown. The address itself is never stored."""
     ok = bool(ips.get("S")) and bool(ips.get("F"))
     tag = "unread" if not ok else "same" if ips["S"] == ips["F"] else "differ"
+    leak = any((r.get("webrtc_leaks") or 0) != 0 for r in rows.values())
     for r in rows.values():
         r["ip_pair"] = tag
         if tag != "same":
             r.update({"outcome": "unknown", "error": "ip_" + tag})
+        elif leak:  # a page that could name an address other than the exit one compares nothing
+            r.update({"outcome": "unknown", "error": "webrtc_leak"})
     return rows
+
+
+def seed_profile(user_data_dir):
+    """Write the WebRTC policy into the profile's Preferences before launch, keeping anything already there."""
+    f = pathlib.Path(user_data_dir) / "Default" / "Preferences"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    prefs = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    prefs["webrtc"] = {**prefs.get("webrtc", {}), **WEBRTC_PREF}
+    f.write_text(json.dumps(prefs), encoding="utf-8")
+
+
+RTC_PROBE = """async () => {
+ const out = []; const pc = new RTCPeerConnection({iceServers: [{urls: 'stun:stun.l.google.com:19302'}]});
+ pc.createDataChannel('x'); pc.onicecandidate = e => { if (e.candidate) out.push(e.candidate.candidate) };
+ await pc.setLocalDescription(await pc.createOffer());
+ await new Promise(r => { pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r(); setTimeout(r, 5000) });
+ pc.close(); return out }"""
+
+
+def webrtc_leaks(candidates, exit_ip):
+    """How many ICE candidates name an address other than the exit address (an mDNS name hides the real one and is fine)."""
+    n = 0
+    for c in candidates:
+        parts = c.split()
+        addr = parts[4] if len(parts) > 4 else ""
+        if addr != exit_ip and not addr.endswith(".local"):
+            n += 1
+    return n
+
+
+def read_webrtc_leaks(page, exit_ip):
+    """-1 when the probe could not run: an unread channel is as unmeasured as a leaking one."""
+    try:
+        return webrtc_leaks(page.evaluate(RTC_PROBE), exit_ip)
+    except Exception:  # noqa: BLE001
+        return -1
 
 
 def run_pair_with_retries(attempt, retries, check=True):
@@ -105,8 +145,8 @@ def run_pair_with_retries(attempt, retries, check=True):
         if len(rows) < 2 or not check:  # no partner, or no proxy: there is no exit address to compare
             return rows
         pair_exit_ips(rows, ips)
-        if rows["S"]["ip_pair"] == "same":
-            break
+        if rows["S"]["ip_pair"] == "same" or any(r.get("error") == "webrtc_leak" for r in rows.values()):
+            break  # a leak is not luck of the session: a retry would only spend bytes
         if k < retries:
             for name, r in rows.items():
                 spent[name] += r.get("bytes", 0)
@@ -196,6 +236,10 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
     from camoucrome import launch
     ident = arm.ident
     lo = ident["launch"] if ident else {}
+    own_profile = user_data_dir is None
+    if own_profile:
+        user_data_dir = tempfile.mkdtemp(prefix="l3-")
+    seed_profile(user_data_dir)
     ctx = launch(pw, arm.exe, config=ident["config"] if ident else None, headless=not a.headed, user_data_dir=user_data_dir,
                  args=arm.args, window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"), proxy=proxy)
     total = [0]
@@ -212,6 +256,7 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
                 pass
         page.on("requestfinished", count)
         exit_ip = read_exit_ip(page) if proxy else "direct"
+        leaks = read_webrtc_leaks(page, exit_ip) if proxy and exit_ip else (-1 if proxy else 0)
         r1, saw1 = settle(page, ctx, site, load(page, site["url"]), a.settle)
         page.wait_for_timeout(int(a.dwell * 1000))
         for _ in range(3):
@@ -222,12 +267,15 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
             gpu_gate.check(gpu_gate.read_ctx(ctx))  # a crash during the visit is as unmeasured as one at launch
         return {"stage1": r1["outcome"], "stage2": r2["outcome"], "outcome": lc.combine(r1, r2),
                 "interstitial_seen": saw1 or saw2, "markers": sorted(set(r1["markers"] + r2["markers"])),
-                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0], "_exit_ip": exit_ip}
+                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0], "webrtc_leaks": leaks, "_exit_ip": exit_ip}
     finally:
         try:
             ctx.close()
         except Exception as exc:  # noqa: BLE001 - a good result is kept; the close error is a note
             print(f"NOTE: closing the browser failed: {type(exc).__name__}", file=sys.stderr)
+        if own_profile:
+            from camoucrome.launcher import remove_dir
+            remove_dir(user_data_dir)
 
 
 def read_results(run_dir):

@@ -41,9 +41,9 @@ def test_proxy_for_gives_both_arms_one_value_per_session():
     assert ml.proxy_for(None, "r1") is None
 
 
-def test_both_arms_get_the_webrtc_policy_when_there_is_a_proxy_and_the_same_extra_arguments():
+def test_the_same_extra_arguments_go_to_both_arms_and_no_dead_webrtc_switch():
     cfg = {"server": "http://p.example:1", "username_template": "u-{session}", "password": "pw"}
-    assert ml.common_args(cfg, ["--x"]) == [ml.WEBRTC_POLICY, "--x"]
+    assert ml.common_args(cfg, ["--x"]) == ["--x"] and not hasattr(ml, "WEBRTC_POLICY")
     assert ml.common_args(None, ["--x"]) == ["--x"] and ml.common_args(None) == []
 
 
@@ -523,3 +523,69 @@ def test_a_visit_costs_what_it_spent_on_retries_too():
 
 def test_the_default_round_count_is_twelve():
     assert ml.build_parser().parse_args(["run"]).rounds == 12
+
+
+def test_seed_profile_writes_the_webrtc_pref_and_keeps_what_is_there(tmp_path):
+    (tmp_path / "Default").mkdir()
+    (tmp_path / "Default" / "Preferences").write_text(json.dumps({"webrtc": {"other": 1}, "x": 2}))
+    ml.seed_profile(tmp_path)
+    prefs = json.loads((tmp_path / "Default" / "Preferences").read_text())
+    assert prefs["webrtc"] == {"other": 1, "ip_handling_policy": "disable_non_proxied_udp"} and prefs["x"] == 2
+
+
+def test_every_arm_launches_on_a_profile_that_carries_the_webrtc_pref(monkeypatch):
+    """--force-webrtc-ip-handling-policy is a no-op in //chrome (only the pref works), so stock gets the pref too."""
+    import camoucrome
+    import gpu_gate
+    seen = []
+
+    class Page:
+        mouse = type("M", (), {"wheel": lambda self, *a: None})()
+
+        def on(self, *a):
+            pass
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+    class Ctx:
+        pages = [Page()]
+
+        def route(self, *a):
+            pass
+
+        def close(self):
+            pass
+
+    def launch(pw, exe, **k):
+        f = pathlib.Path(k["user_data_dir"]) / "Default" / "Preferences"
+        seen.append((json.loads(f.read_text())["webrtc"]["ip_handling_policy"], k["user_data_dir"]))
+        return Ctx()
+    monkeypatch.setattr(camoucrome, "launch", launch)
+    monkeypatch.setattr(gpu_gate, "read_ctx", lambda ctx: 0)
+    monkeypatch.setattr(ml, "settle", lambda *a, **k: ({"outcome": "pass", "markers": [], "cookies": []}, False))
+    monkeypatch.setattr(ml, "load", lambda *a: 200)
+    a = ns(gpu_gate=False, headed=False, settle=1, dwell=0, warm=False)
+    for ident in (None, {"config": {}, "launch": {}}):  # stock, fork
+        ml.visit(None, ns(ident=ident, exe="x", args=[]), {"vendor": "cloudflare", "url": "u", "next_url": "n", "ok_marker": "m"}, None, a)
+    assert [v for v, _ in seen] == ["disable_non_proxied_udp"] * 2
+    assert not any(pathlib.Path(d).exists() for _, d in seen)  # the temporary profile is removed afterwards
+
+
+def test_a_webrtc_candidate_on_a_non_exit_address_is_a_leak_and_mdns_names_are_not():
+    c = ["candidate:1 1 udp 2122 abcd-ef.local 5000 typ host", "candidate:2 1 udp 1686 203.0.113.9 5001 typ srflx raddr 0.0.0.0 rport 0",
+         "candidate:3 1 tcp 1518 198.51.100.7 9 typ host tcptype active"]
+    assert ml.webrtc_leaks(c, "198.51.100.7") == 1
+    assert ml.webrtc_leaks([], "198.51.100.7") == 0
+
+
+def test_a_leak_makes_the_pair_unknown_and_is_not_retried():
+    calls = []
+
+    def attempt(k):
+        calls.append(k)
+        return ({"S": {"outcome": "pass", "bytes": 1, "webrtc_leaks": 0}, "F": {"outcome": "pass", "bytes": 1, "webrtc_leaks": 2}},
+                {"S": "a", "F": "a"})
+    rows = ml.run_pair_with_retries(attempt, 2)
+    assert calls == [0]
+    assert all(r["outcome"] == "unknown" and r["error"] == "webrtc_leak" and r["ip_pair"] == "same" for r in rows.values())
