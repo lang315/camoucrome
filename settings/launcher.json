@@ -44,6 +44,10 @@
   ],
   "window_size_arg": "--window-size={width},{height}",
   "dpr_arg": "--force-device-scale-factor={dpr}",
+  "proxy_arg": "--proxy-server={server}",
+  "proxy_bypass_arg": "--proxy-bypass-list={bypass}",
+  "proxy_option_fields": ["server", "bypass", "username", "password"],
+  "why_proxy_arg": "Measured 2026-10-24 (Python, Node, Go): launch(proxy=...) alone reaches the browser as nothing. ignore_default_args drops Playwright's default argv and --proxy-server is one of its defaults, so the traffic went out on the real address. The launcher adds the flag itself (server only, never credentials: a process list shows argv) and still passes the proxy option to the driver, which answers the 407 with the username and password over its own auth path. The bypass list is Playwright's comma form; Chrome takes it joined by semicolons.",
   "env": {
    "config": "CAMOU_CONFIG",
    "config_chunks": "CAMOU_CONFIG_{n}",
