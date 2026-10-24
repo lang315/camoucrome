@@ -10,6 +10,10 @@ requires-python = ">=3.10"
 license = "MPL-2.0"
 dependencies = ["patchright==1.62.3", "browserforge==1.2.4"]
 
+[project.optional-dependencies]
+# Item 13 (camoucrome.geoip): the .mmdb reader, and the zone-from-coordinates lookup the DB-IP Lite file needs.
+geoip = ["maxminddb>=2.6", "timezonefinder>=6.5"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["camoucrome*"]

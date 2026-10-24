@@ -64,7 +64,7 @@ jobs:
       # and test_winhost.py had never run here.
       - name: "python tests: clients, packager, scripts"
         run: |
-          python3 -m pip install -q pytest browserforge==1.2.4
+          python3 -m pip install -q pytest browserforge==1.2.4 maxminddb timezonefinder
           python3 -m pytest -q client/python/tests scripts/
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
