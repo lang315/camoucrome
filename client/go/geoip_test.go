@@ -125,6 +125,23 @@ func TestGenArgsKeepTheOldOrderAndAddTheExitIPFlagsLast(t *testing.T) {
 	}
 }
 
+func TestGenArgsCarryTheHostFlagsLast(t *testing.T) {
+	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: 3, ExitIP: "192.0.2.5", HostRenderer: "ANGLE (Intel, X)", HostFonts: true}), " ")
+	if got != "-m camoucrome.gen --os windows --seed 3 --exit-ip=192.0.2.5 --host-renderer=ANGLE (Intel, X) --host-fonts" {
+		t.Fatalf("args = %q", got)
+	}
+}
+
+func TestParseGeneratedToleratesWarnings(t *testing.T) {
+	raw := []byte(`{"config":{"a":1},"launch":{"window":[1,2],"dpr":1},"warnings":["host GPU unknown"]}`)
+	if _, err := ParseGenerated(raw); err != nil {
+		t.Fatal(err)
+	}
+	if w := generatedWarnings(raw); len(w) != 1 || w[0] != "host GPU unknown" {
+		t.Fatalf("warnings = %q", w)
+	}
+}
+
 func TestExitIPShortFormServerMeansHTTP(t *testing.T) {
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("203.0.113.9\n")) }))
 	defer proxy.Close()

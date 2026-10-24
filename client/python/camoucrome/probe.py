@@ -71,6 +71,44 @@ def browser_argv(executable):
     return []
 
 
+HOST_GL_JS = """() => { const g = document.createElement('canvas').getContext('webgl');
+  const e = g && g.getExtension('WEBGL_debug_renderer_info');
+  return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : null; }"""
+
+
+SOFTWARE_MARKERS = ("swiftshader", "llvmpipe", "software", "basic render")
+
+
+def host_renderer(executable, timeout_s=30):
+    """The host's real WebGL renderer, read once at identity generation.
+
+    None on any failure, and when the browser reports a software renderer
+    (no usable GPU): pinning that into an identity is a bot tell.
+    Launches through the package launcher with no config, so the argv is the
+    contract's; Playwright's default --use-angle=swiftshader-webgl would
+    report SwiftShader.
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            ctx = launch(pw, executable, headless=True, timeout=timeout_s * 1000)
+            try:
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                page.goto("about:blank", timeout=timeout_s * 1000)
+                # shortcut: no wall-clock bound on evaluate, upgrade if a hung GPU process is seen
+                r = page.evaluate(HOST_GL_JS)
+            finally:
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+        if not isinstance(r, str) or not r or any(m in r.lower() for m in SOFTWARE_MARKERS):
+            return None
+        return r
+    except Exception:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--driver", choices=["patchright", "stock"], required=True)
