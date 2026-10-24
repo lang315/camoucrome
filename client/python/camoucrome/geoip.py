@@ -91,7 +91,12 @@ def lookup(ip, db=None):
         raise GeoIPError(f"{ip}: {e}") from e
     if not record:
         raise GeoIPError(f"{ip} is not in the database")
-    zone = zone_of(record)
+    try:
+        zone = zone_of(record)
+        if zone:
+            ZoneInfo(zone)
+    except (KeyError, ValueError) as e:  # bad coordinates, or a zone this machine's tzdata lacks
+        raise GeoIPError(f"{ip}: unusable time zone ({e})") from e
     if not zone:
         raise GeoIPError(f"{ip} has no time zone in the database")
     country = (record.get("country") or {}).get("iso_code")
@@ -101,7 +106,10 @@ def lookup(ip, db=None):
 def check_zone(config_zone, ip_zone, now=None):
     """A warning when the two zones' UTC offsets differ now (what detectors compare), else None."""
     now = now or datetime.now(timezone.utc)
-    a, b = now.astimezone(ZoneInfo(config_zone)).utcoffset(), now.astimezone(ZoneInfo(ip_zone)).utcoffset()
+    try:
+        a, b = now.astimezone(ZoneInfo(config_zone)).utcoffset(), now.astimezone(ZoneInfo(ip_zone)).utcoffset()
+    except (KeyError, ValueError) as e:
+        raise GeoIPError(f"unknown time zone ({e})") from e
     if a != b:
         return f"timezone:id {config_zone} (UTC{_fmt(a)}) contradicts the exit IP's {ip_zone} (UTC{_fmt(b)})"
     return None
@@ -146,9 +154,9 @@ def check_config(config, proxy=None, exit_ip_=None, db=None):
     try:
         ip = exit_ip_ or exit_ip(proxy)
         found = lookup(ip, db)
+        msg = check_zone(zone, found["timezone"])
     except GeoIPError as e:
         return [f"timezone:id {zone} could not be checked against the exit IP: {e}"]
-    msg = check_zone(zone, found["timezone"])
     return [msg] if msg else []
 
 
@@ -168,7 +176,10 @@ def main(argv=None):
     except GeoIPError as e:
         print(json.dumps({"error": str(e)}))
         return 2
-    out["warning"] = check_zone(a.check_zone, out["timezone"]) if a.check_zone else None
+    try:
+        out["warning"] = check_zone(a.check_zone, out["timezone"]) if a.check_zone else None
+    except GeoIPError as e:
+        out["warning"] = f"--check-zone {a.check_zone} could not be checked: {e}"
     print(json.dumps(out))
     return 0
 

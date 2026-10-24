@@ -96,6 +96,30 @@ def test_main_prints_json_and_the_warning(capsys):
     assert "not in the database" in json.loads(capsys.readouterr().out)["error"]
 
 
+def test_check_config_warns_on_an_unknown_configured_zone():
+    [msg] = geoip.check_config({"timezone:id": "Not/AZone"}, exit_ip_="192.0.2.5", db=FIXTURE)
+    assert "Not/AZone" in msg and "could not be checked" in msg
+
+
+def test_lookup_turns_unusable_coordinates_and_zones_into_geoip_error(monkeypatch):
+    def boom(record):
+        raise ValueError("Longitude out of range")
+    monkeypatch.setattr(geoip, "zone_of", boom)
+    with pytest.raises(geoip.GeoIPError, match="unusable time zone"):
+        geoip.lookup("192.0.2.5", FIXTURE)
+    monkeypatch.setattr(geoip, "zone_of", lambda record: "Not/AZone")
+    with pytest.raises(geoip.GeoIPError, match="unusable time zone"):
+        geoip.lookup("192.0.2.5", FIXTURE)
+    [msg] = geoip.check_config({"timezone:id": "Asia/Tokyo"}, exit_ip_="192.0.2.5", db=FIXTURE)
+    assert "could not be checked" in msg
+
+
+def test_main_reports_an_invalid_check_zone_as_a_warning(capsys):
+    assert geoip.main(["--ip", "192.0.2.5", "--db", FIXTURE, "--check-zone", "Not/AZone"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["timezone"] == "America/New_York" and "Not/AZone" in out["warning"]
+
+
 class EchoProxy(http.server.ThreadingHTTPServer):
     """An HTTP proxy that answers every GET with `body`, after one 407 round when `auth` is set."""
 
