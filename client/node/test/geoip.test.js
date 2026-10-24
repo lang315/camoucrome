@@ -15,7 +15,7 @@ const seams = (out, ip = '192.0.2.5') => {
 test('checkGeoip surfaces the modules warning and passes the right arguments', async () => {
   const s = seams('{"timezone":"America/New_York","warning":"contradicts"}');
   assert.deepEqual(await g.checkGeoip({ config: cfg, geoip: '/db.mmdb', python: 'py', ...s }), ['contradicts']);
-  assert.deepEqual(s.calls, [['py', '-m', 'camoucrome.geoip', '--ip', '192.0.2.5', '--db', '/db.mmdb', '--check-zone', 'Asia/Tokyo']]);
+  assert.deepEqual(s.calls, [['py', '-m', 'camoucrome.geoip', '--ip=192.0.2.5', '--db=/db.mmdb', '--check-zone=Asia/Tokyo']]);
 });
 
 test('checkGeoip is quiet on a match and has nothing to check without a zone', async () => {
@@ -42,7 +42,7 @@ test('a given exit IP skips the echo request', async () => {
   const s = seams('{"warning":null}');
   s.echo = async () => { throw new Error('must not be asked'); };
   await g.checkGeoip({ config: cfg, geoip: '/db', exitIp: '192.0.2.9', ...s });
-  assert.equal(s.calls[0][4], '192.0.2.9');
+  assert.equal(s.calls[0][3], '--ip=192.0.2.9');
 });
 
 test('launch warns before it touches the driver, and does nothing without the option', async () => {
@@ -139,4 +139,32 @@ test('exitIp reads a chunked answer and gives up on garbage and on a refused CON
   try {
     await assert.rejects(g.exitIp({ server: p3.server }, ['http://a.test/']), /407/);
   } finally { p3.close(); }
+});
+
+test('exitIp treats a short-form server as http, and refuses https and socks5 without connecting', async () => {
+  const echo = await echoServer('203.0.113.9\n');
+  const p = await connectProxy(echo.port);
+  try {
+    assert.equal(await g.exitIp({ server: p.server.replace('http://', '') }, ['http://echo.test/']), '203.0.113.9');
+    assert.equal(p.seen.length, 1);
+  } finally { p.close(); echo.close(); }
+  for (const scheme of ['https', 'socks5']) {
+    const q = await connectProxy(1);
+    let conns = 0;
+    const probe = net.createServer((s) => { conns += 1; s.destroy(); });
+    await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+    try {
+      await assert.rejects(g.exitIp({ server: `${scheme}://127.0.0.1:${probe.address().port}`, username: 'uuu', password: 'ppp' }, ['http://a.test/']),
+        (e) => e.message.includes(`through a ${scheme} proxy (only http)`) && !/uuu|ppp|127\.0\.0\.1/.test(e.message));
+      const [m] = await g.checkGeoip({ config: cfg, geoip: '/db', proxy: { server: `${scheme}://127.0.0.1:${probe.address().port}`, username: 'uuu', password: 'ppp' } });
+      assert.match(m, /could not be checked.*only http/);
+      assert.doesNotMatch(m, /uuu|ppp/);
+      assert.equal(conns, 0);
+    } finally { probe.close(); q.close(); }
+  }
+});
+
+test('checkGeoip no-JSON hint names the packages', async () => {
+  const [m] = await g.checkGeoip({ config: cfg, geoip: '/db', python: 'py', ...seams('Traceback') });
+  assert.match(m, /maxminddb and timezonefinder installed for py/);
 });

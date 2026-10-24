@@ -20,10 +20,20 @@ function dechunk(buf) {
   }
 }
 
+// The proxy's URL: a server without a scheme is http (Playwright's short form); any other scheme than http is refused
+// before a socket is opened, so credentials never go out in cleartext to https/socks ports. Messages carry the scheme only.
+function proxyUrl(proxy) {
+  const server = /^[a-z][a-z0-9+.-]*:\/\//i.test(proxy.server) ? proxy.server : `http://${proxy.server}`;
+  let u;
+  try { u = new URL(server); } catch { throw new Error('the proxy server is not a URL'); }
+  if (u.protocol !== 'http:') throw new Error(`the exit IP cannot be asked through a ${u.protocol.slice(0, -1)} proxy (only http)`);
+  return u;
+}
+
 // One GET through the proxy's CONNECT, written by hand (decided 2026-10-24: no new dependency). Node's fetch does not
 // use a proxy. Resolves to the response body.
 function getViaConnect(proxy, target, timeoutMs = TIMEOUT_MS) {
-  const p = new URL(proxy.server);
+  const p = proxyUrl(proxy);
   const t = new URL(target);
   const port = Number(t.port) || (t.protocol === 'https:' ? 443 : 80);
   const authority = `${t.hostname}:${port}`;
@@ -63,6 +73,7 @@ function getViaConnect(proxy, target, timeoutMs = TIMEOUT_MS) {
 
 // The address the world sees: an echo service asked through the proxy (undefined = direct, with fetch).
 async function exitIp(proxy, urls = ECHO_URLS) {
+  if (proxy) proxyUrl(proxy);
   const errors = [];
   for (const url of urls) {
     try {
@@ -94,13 +105,13 @@ async function checkGeoip({ config, proxy, exitIp: given, geoip, python = 'pytho
   }
   let out;
   try {
-    out = run(python, ['-m', 'camoucrome.geoip', '--ip', ip, '--db', geoip, '--check-zone', zone]);
+    out = run(python, ['-m', 'camoucrome.geoip', `--ip=${ip}`, `--db=${geoip}`, `--check-zone=${zone}`]);
   } catch (e) {
     return cannot(e.message);
   }
   let r;
-  try { r = JSON.parse(out); } catch { return cannot(`camoucrome.geoip printed no JSON (is camoucrome[geoip] installed for ${python}?)`); }
-  if (!r || typeof r !== 'object') return cannot(`camoucrome.geoip printed no JSON (is camoucrome[geoip] installed for ${python}?)`);
+  try { r = JSON.parse(out); } catch { return cannot(`camoucrome.geoip printed no JSON (are maxminddb and timezonefinder installed for ${python}?)`); }
+  if (!r || typeof r !== 'object') return cannot(`camoucrome.geoip printed no JSON (are maxminddb and timezonefinder installed for ${python}?)`);
   if (r.error) return cannot(r.error);
   return r.warning ? [r.warning] : [];
 }
