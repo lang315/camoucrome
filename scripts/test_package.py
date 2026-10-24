@@ -272,10 +272,10 @@ def test_gn_is_launched_by_its_resolved_path(tree, monkeypatch):
 
 def test_windows_zip_keeps_the_whole_staging_name(tmp_path):
     """with_suffix would eat the version's last component (.48-windows-x64)."""
-    staging = tmp_path / "camoucrome-156.0.8078.48-windows-x64"
+    staging = tmp_path / "camoucrome-157.0.8103.15-windows-x64"
     staging.mkdir()
     (staging / "chrome.exe").write_bytes(b"MZ")
-    assert package.archive(staging, "windows-x64").name == "camoucrome-156.0.8078.48-windows-x64.zip"
+    assert package.archive(staging, "windows-x64").name == "camoucrome-157.0.8103.15-windows-x64.zip"
 
 
 def test_runtime_deps_prunes_symbols_and_test_gpu_layers_by_basename(tmp_path):

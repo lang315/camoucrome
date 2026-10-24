@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 33a6696fd8..4a8650a125 100644
+index 814b9d649a..c447fe3b82 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1138,6 +1138,7 @@ source_set("core") {
+@@ -1306,6 +1306,7 @@ source_set("core") {
      "//components/device_event_log",
      "//components/dom_distiller/content/browser",
      "//components/dom_distiller/content/common/mojom",
@@ -11,7 +11,7 @@ index 33a6696fd8..4a8650a125 100644
      "//components/embedder_support:content_settings",
      "//components/embedder_support:user_agent",
 diff --git a/chrome/browser/DEPS b/chrome/browser/DEPS
-index 76207f5955..b3cdfd956e 100644
+index 92cb35e172..0f394adb20 100644
 --- a/chrome/browser/DEPS
 +++ b/chrome/browser/DEPS
 @@ -146,6 +146,7 @@ include_rules = [

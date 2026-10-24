@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import release  # noqa: E402
 
-V = "156.0.8078.48"
+V = "157.0.8103.15"
 SHA = "a" * 40
 
 
@@ -38,7 +38,7 @@ def stamps(tmp_path):
                                  "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": "b"}))
         out.append(p)
     notes = tmp_path / "notes.md"
-    notes.write_text(f"Chrome 156.0.8078.48. Unsigned. pip install git+https://example.invalid/r@{SHA}")
+    notes.write_text(f"Chrome 157.0.8103.15. Unsigned. pip install git+https://example.invalid/r@{SHA}")
     return out, notes
 
 
@@ -95,7 +95,7 @@ def test_refuses_stamps_off_main(monkeypatch, stamps, tmp_path):
 
 def test_refuses_a_tag_that_is_not_the_stamped_version(monkeypatch, stamps, tmp_path):
     refused(monkeypatch, Gh(), stamps, tmp_path, tag="v156.0.8078.49-1")
-    refused(monkeypatch, Gh(), stamps, tmp_path, tag="156.0.8078.48")
+    refused(monkeypatch, Gh(), stamps, tmp_path, tag="157.0.8103.15")
 
 
 TERM = "Secret-Box-7"
@@ -343,7 +343,7 @@ def test_create_targets_the_checked_sha(monkeypatch, stamps):
 
 def test_refuses_notes_without_the_full_sha(monkeypatch, stamps, tmp_path):
     notes = stamps[1]
-    notes.write_text("Chrome 156.0.8078.48. Unsigned.")
+    notes.write_text("Chrome 157.0.8103.15. Unsigned.")
     refused(monkeypatch, Gh(), stamps, tmp_path)
     notes.write_text(f"short {SHA[:12]}")
     refused(monkeypatch, Gh(), stamps, tmp_path)

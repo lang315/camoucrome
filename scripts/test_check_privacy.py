@@ -40,7 +40,7 @@ def test_each_category_is_caught(line, cat):
 
 
 @pytest.mark.parametrize("line", [
-    "Chrome/154.0.0.0 and 154.0.8037.93 and 156.0.8078.48",
+    "Chrome/154.0.0.0 and 154.0.8037.93 and 157.0.8103.15",
     "doc address 203.0.113.7, 127.0.0.1 and 0.0.0.0:54021",
     "fake webrtc ip 192.168.1.37",
     "~/chromium/src, $HOME/x, /home/runner/work and /home/<user>/x",

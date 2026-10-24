@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index b2619baa8f..2a7960badd 100644
+index 1651c5defa..c519c96a5f 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -642,7 +642,8 @@ bool ShouldInstallSodaDuringPostProfileInit(
@@ -12,7 +12,7 @@ index b2619baa8f..2a7960badd 100644
  #endif
  }
  #endif  // !BUILDFLAG(IS_ANDROID)
-@@ -1954,12 +1955,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1952,12 +1953,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
      g_browser_process->CreateDevToolsAutoOpener();
    }
  
@@ -69,10 +69,10 @@ index f2a1050455..6129ba0e5a 100644
  
    InformListenersOfInitialization();
 diff --git a/components/component_updater/configurator_impl.cc b/components/component_updater/configurator_impl.cc
-index 2ff9716b24..b23eb0ef60 100644
+index 2d595664a6..7caac91b32 100644
 --- a/components/component_updater/configurator_impl.cc
 +++ b/components/component_updater/configurator_impl.cc
-@@ -76,6 +76,14 @@ base::TimeDelta ConfiguratorImpl::UpdateDelay() const {
+@@ -77,6 +77,14 @@ base::TimeDelta ConfiguratorImpl::UpdateDelay() const {
  
  std::vector<GURL> ConfiguratorImpl::UpdateUrl() const {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -88,10 +88,10 @@ index 2ff9716b24..b23eb0ef60 100644
      return {GURL(url_source_override_)};
    }
 diff --git a/components/gcm_driver/gcm_driver_desktop.cc b/components/gcm_driver/gcm_driver_desktop.cc
-index 01250860e5..b4bbb10ff6 100644
+index bf14ded098..d63841a1cc 100644
 --- a/components/gcm_driver/gcm_driver_desktop.cc
 +++ b/components/gcm_driver/gcm_driver_desktop.cc
-@@ -1189,6 +1189,14 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted(
+@@ -1184,6 +1184,14 @@ GCMClient::Result GCMDriverDesktop::EnsureStarted(
      GCMClient::StartMode start_mode) {
    DCHECK(ui_thread_->RunsTasksInCurrentSequence());
  
@@ -154,12 +154,12 @@ index ed4747e5ff..0a34193cab 100644
    if (base::FeatureList::IsEnabled(kEsbAsASyncedSetting)) {
      registry->RegisterBooleanPref(
 diff --git a/components/signin/public/base/signin_switches.cc b/components/signin/public/base/signin_switches.cc
-index e2d674d22c..f987d052eb 100644
+index 00f7590fe4..80bf0a1a98 100644
 --- a/components/signin/public/base/signin_switches.cc
 +++ b/components/signin/public/base/signin_switches.cc
-@@ -58,8 +58,12 @@ BASE_FEATURE(kAccountRetrievalWaitsForRestoration,
+@@ -68,8 +68,12 @@ BASE_FEATURE(kAddSessionFallbackToPrimaryAccount,
               base::FEATURE_ENABLED_BY_DEFAULT);
- #endif
+ #endif  // BUILDFLAG(IS_ANDROID)
  
 +// camoucrome (SP7): on. With it off, any GetAccountsInCookieJar() on a
 +// stale jar (the BTM sign-in detector does one at profile start) fetches
@@ -172,10 +172,10 @@ index e2d674d22c..f987d052eb 100644
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  BASE_FEATURE(kBeforeFirstRunDesktopRefreshSurvey,
 diff --git a/components/signin/public/identity_manager/identity_manager.cc b/components/signin/public/identity_manager/identity_manager.cc
-index fb82df3c77..d0a353545d 100644
+index 4bda6b38f8..b7b81eb59c 100644
 --- a/components/signin/public/identity_manager/identity_manager.cc
 +++ b/components/signin/public/identity_manager/identity_manager.cc
-@@ -460,12 +460,10 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
+@@ -461,12 +461,10 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
  void IdentityManager::OnNetworkInitialized() {
    gaia_cookie_manager_service_->InitCookieListener();
    account_fetcher_service_->OnNetworkInitialized();

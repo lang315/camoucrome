@@ -1,8 +1,8 @@
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 32730354f3..dfffcb1242 100644
+index 6c39ac3969..93e3ea0996 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -217,9 +217,30 @@ const blink::UserAgentBrandList GetUserAgentBrandFullVersionListInternal(
+@@ -518,9 +518,30 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
  // depending on the Reduce User-Agent reduction phase features.
  std::string GetUserAgentInternal() {
    std::string product = GetProductAndVersion();
@@ -37,10 +37,10 @@ index 32730354f3..dfffcb1242 100644
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(kUseMobileUserAgent)) {
 diff --git a/components/embedder_support/user_agent_utils_unittest.cc b/components/embedder_support/user_agent_utils_unittest.cc
-index 0088b253a9..cab073cdb0 100644
+index 2d3e453c33..d0dc231826 100644
 --- a/components/embedder_support/user_agent_utils_unittest.cc
 +++ b/components/embedder_support/user_agent_utils_unittest.cc
-@@ -1051,8 +1051,13 @@ TEST_F(UserAgentUtilsTest, HeadlessUserAgent) {
+@@ -701,8 +701,13 @@ TEST_F(UserAgentUtilsTest, HeadlessUserAgent) {
    command_line->AppendSwitch(kHeadless);
    ASSERT_TRUE(command_line->HasSwitch(kHeadless));
  
@@ -57,10 +57,10 @@ index 0088b253a9..cab073cdb0 100644
  
  namespace {
 diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
-index 583f05f8dd..9da1f2bf93 100644
+index 72964f48db..6541cf4ee3 100644
 --- a/third_party/blink/renderer/core/frame/navigator.cc
 +++ b/third_party/blink/renderer/core/frame/navigator.cc
-@@ -98,12 +98,33 @@ bool Navigator::cookieEnabled() const {
+@@ -79,12 +79,33 @@ bool Navigator::cookieEnabled() const {
  }
  
  bool Navigator::webdriver() const {

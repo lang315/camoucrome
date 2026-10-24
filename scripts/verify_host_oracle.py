@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The fork under a generated Windows identity vs stock Chrome 156 on the
-Windows host (baselines/chrome-8078-stock-oracle-windows.json): the same
+Windows host (baselines/chrome-8103-stock-oracle-windows.json): the same
 page (capture_host_oracle.page), every difference printed as one line.
 Hardware- and config-bound values (screen, cores, memory, dpr, timezone,
 languages, storage quota, heap limit, audio latency, device ids, canvas
@@ -26,7 +26,7 @@ sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_host_oracle as cap  # noqa: E402
 from oracle_rules import SHAPE_ONLY, flatten  # noqa: E402
 
-BASE = json.loads((CLIENT / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
+BASE = json.loads((CLIENT / "baselines" / "chrome-8103-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
 HEVC = 'video/mp4; codecs="hev1.1.6.L93.B0"'
 # Leaves excluded from O1 with the reason each carries (printed as "known:" lines, never as DIFF). A value is either a
 # bare reason -- for a row whose evidence is the committed baseline itself, so a recapture is what retires it -- or
