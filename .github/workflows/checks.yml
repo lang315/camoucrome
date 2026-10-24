@@ -25,6 +25,8 @@ jobs:
         run: python3 scripts/check_additions_build.py
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
+      - name: gen9_thread_caps.h matches the caps JSON
+        run: python3 scripts/gen_thread_caps_header.py --check
       - name: fontconfig files match settings/fonts.json
         run: python3 scripts/gen_fontconfig.py --check
       - name: patches/series names existing patches, once each
