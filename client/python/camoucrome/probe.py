@@ -76,13 +76,18 @@ HOST_GL_JS = """() => { const g = document.createElement('canvas').getContext('w
   return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : null; }"""
 
 
-def host_renderer(executable, timeout_s=30):
-    """The host's real WebGL renderer, read once at identity generation; None on any failure.
+SOFTWARE_MARKERS = ("swiftshader", "llvmpipe", "software")
 
+
+def host_renderer(executable, timeout_s=30):
+    """The host's real WebGL renderer, read once at identity generation.
+
+    None on any failure, and when the browser reports a software renderer
+    (no usable GPU): pinning that into an identity is a bot tell.
     Launches through the package launcher with no config, so the argv is the
-    contract's (Playwright's default --use-angle=swiftshader-webgl would
-    report SwiftShader). evaluate runs in the isolated world; WebGL is
-    reachable from it and no main-world state is read."""
+    contract's; Playwright's default --use-angle=swiftshader-webgl would
+    report SwiftShader.
+    """
     try:
         from patchright.sync_api import sync_playwright
         with sync_playwright() as pw:
@@ -90,10 +95,16 @@ def host_renderer(executable, timeout_s=30):
             try:
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 page.goto("about:blank", timeout=timeout_s * 1000)
+                # shortcut: no wall-clock bound on evaluate, upgrade if a hung GPU process is seen
                 r = page.evaluate(HOST_GL_JS)
-                return r if isinstance(r, str) and r else None
             finally:
-                ctx.close()
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+        if not isinstance(r, str) or not r or any(m in r.lower() for m in SOFTWARE_MARKERS):
+            return None
+        return r
     except Exception:
         return None
 
