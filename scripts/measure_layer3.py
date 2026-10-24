@@ -3,7 +3,7 @@
 (docs/superpowers/specs/2026-10-24-step5-layer3-design.md).
 
 Run on the Windows host in the client venv, in the interactive session (run-interactive.ps1):
-  python measure_layer3.py run --out DIR [--rounds 20] [--headed] [--warm] [--aa] [--plant ARG] [--resume RUNDIR]
+  python measure_layer3.py run --out DIR [--rounds 15] [--headed] [--warm] [--aa] [--plant ARG] [--resume RUNDIR]
   python measure_layer3.py report RUN
   python measure_layer3.py compare RUN_A RUN_B
   python measure_layer3.py budget RUN --sites N --rounds R [--limit-gb 5]
@@ -13,6 +13,7 @@ Two arms, S (stock) and F (fork), through the same client, argv and proxy. One R
 visited by both arms back to back in random order. Images, media and fonts are blocked in BOTH arms the same way
 (traffic budget, owner 2026-10-24): rates here are for that traffic shape. --aa puts stock in the F arm (the noise
 floor); --plant ARG adds a browser argument to F only (a RED: the harness must see it).
+The warm variant (--warm) is deferred and not part of the `budget` run-equivalents.
 Private inputs, never in the repository: the site list ($CAMOU_L3_SITES, default ~/.config/camoucrome/layer3-sites.json)
 and the proxy file ($CAMOU_L3_PROXY_FILE: {"server", "username_template" with {session}, "password"}). Results name a
 site by index and vendor only; cookie VALUES are never read into a result. The proxy host IS on the live browser command line
@@ -35,7 +36,7 @@ import layer3_stats as ls  # noqa: E402
 
 BLOCKED_TYPES = {"image", "media", "font"}
 SETTLE_S = 15
-RUN_EQUIVALENTS = 4.5  # primary 1 + A/A 1 + planted RED 1 + warmed variant 0.5 (10 of 20 rounds) + second run 1
+RUN_EQUIVALENTS = 4  # primary 1 + A/A 1 + planted RED 1 + second run 1 (the warmed variant is deferred, spec 10.11)
 VENDORS = ("cloudflare", "datadome", "akamai", "perimeterx")
 DEFAULT_SITES = "~/.config/camoucrome/layer3-sites.json"
 # With a proxy, WebRTC can reveal the host's own address; the same policy goes to both arms or only one leaks.
@@ -440,7 +441,7 @@ def build_parser():
     r = sub.add_parser("run")
     r.add_argument("--out")
     r.add_argument("--resume")
-    r.add_argument("--rounds", type=int, default=20)
+    r.add_argument("--rounds", type=int, default=15)
     r.add_argument("--sites")
     r.add_argument("--proxy-file")
     r.add_argument("--stock-exe")
