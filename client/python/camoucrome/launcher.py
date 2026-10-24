@@ -271,6 +271,10 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     `fonts_dir` is the bundled font directory (default: `fonts` beside the
     executable when present); FONTCONFIG_FILE then names the conf of the
     claimed OS so its families resolve.
+
+    On a Windows host, generate the identity on that host: probe.host_renderer
+    (chrome_path) reads the host's real WebGL renderer for use by identity
+    generation.
     """
     if proxy is not None:
         server = proxy.get("server") if isinstance(proxy, dict) else None
