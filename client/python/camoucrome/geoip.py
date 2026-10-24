@@ -4,7 +4,7 @@ IP Geolocation by DB-IP (https://db-ip.com), "IP to City Lite", CC BY 4.0. The d
 download (a monthly .mmdb, no account); nothing is fetched or shipped here. Any GeoLite2-layout .mmdb works too:
 a record's location.time_zone is used when it has one (MaxMind), else the zone comes from its coordinates.
 
-    pip install camoucrome[geoip]        # maxminddb + timezonefinder, needed only here
+    pip install maxminddb timezonefinder     # needed only here
     python -m camoucrome.geoip --ip 203.0.113.9 --db dbip-city-lite.mmdb [--check-zone Europe/Paris]
 """
 import argparse
@@ -12,6 +12,7 @@ import functools
 import ipaddress
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -42,7 +43,7 @@ def _finder():
     try:
         from timezonefinder import TimezoneFinder
     except ImportError as e:
-        raise GeoIPError("this database has no time zones and timezonefinder is missing: pip install camoucrome[geoip]") from e
+        raise GeoIPError("this database has no time zones and timezonefinder is missing: pip install maxminddb timezonefinder") from e
     return TimezoneFinder()
 
 
@@ -82,12 +83,12 @@ def lookup(ip, db=None):
     try:
         import maxminddb
     except ImportError as e:
-        raise GeoIPError("maxminddb is missing: pip install camoucrome[geoip]") from e
+        raise GeoIPError("maxminddb is missing: pip install maxminddb timezonefinder") from e
     try:
         ipaddress.ip_address(ip)
         with maxminddb.open_database(path) as reader:
             record = reader.get(ip)
-    except (ValueError, maxminddb.InvalidDatabaseError) as e:
+    except (ValueError, OSError, maxminddb.InvalidDatabaseError) as e:  # OSError: unreadable file
         raise GeoIPError(f"{ip}: {e}") from e
     if not record:
         raise GeoIPError(f"{ip} is not in the database")
@@ -95,7 +96,7 @@ def lookup(ip, db=None):
         zone = zone_of(record)
         if zone:
             ZoneInfo(zone)
-    except (KeyError, ValueError) as e:  # bad coordinates, or a zone this machine's tzdata lacks
+    except (KeyError, ValueError, OSError) as e:  # bad coordinates, a zone this machine's tzdata lacks (OSError: a directory key on Windows)
         raise GeoIPError(f"{ip}: unusable time zone ({e})") from e
     if not zone:
         raise GeoIPError(f"{ip} has no time zone in the database")
@@ -108,7 +109,7 @@ def check_zone(config_zone, ip_zone, now=None):
     now = now or datetime.now(timezone.utc)
     try:
         a, b = now.astimezone(ZoneInfo(config_zone)).utcoffset(), now.astimezone(ZoneInfo(ip_zone)).utcoffset()
-    except (KeyError, ValueError) as e:
+    except (KeyError, ValueError, OSError) as e:
         raise GeoIPError(f"unknown time zone ({e})") from e
     if a != b:
         return f"timezone:id {config_zone} (UTC{_fmt(a)}) contradicts the exit IP's {ip_zone} (UTC{_fmt(b)})"
@@ -128,7 +129,12 @@ def exit_ip(proxy=None, urls=ECHO_URLS, timeout=ECHO_TIMEOUT):
     if proxy:
         if not isinstance(proxy, dict) or not proxy.get("server"):
             raise GeoIPError("proxy must be a dict with a 'server' URL")
-        u = urllib.parse.urlsplit(proxy["server"])
+        server = proxy["server"]
+        if not re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", server):
+            server = "http://" + server  # Playwright's short form
+        u = urllib.parse.urlsplit(server)
+        if u.scheme.lower() != "http":  # https would send the credentials before TLS; socks is not spoken here
+            raise GeoIPError(f"the exit IP cannot be asked through a {u.scheme} proxy (only http)")
         auth = ""
         if proxy.get("username"):
             auth = urllib.parse.quote(proxy["username"], safe="") + ":" + urllib.parse.quote(proxy.get("password") or "", safe="") + "@"
@@ -151,7 +157,7 @@ def exit_ip(proxy=None, urls=ECHO_URLS, timeout=ECHO_TIMEOUT):
 def check_config(config, proxy=None, exit_ip_=None, db=None):
     """Warnings about a config's timezone:id against the exit IP. Never raises; [] when there is nothing to check."""
     zone = (config or {}).get("timezone:id")
-    if not zone:
+    if not zone or not isinstance(zone, str):
         return []
     try:
         ip = exit_ip_ or exit_ip(proxy)
@@ -181,7 +187,7 @@ def main(argv=None):
     try:
         out["warning"] = check_zone(a.check_zone, out["timezone"]) if a.check_zone else None
     except GeoIPError as e:
-        out["warning"] = f"--check-zone {a.check_zone} could not be checked: {e}"
+        out["warning"] = f"timezone:id {a.check_zone} could not be checked against the exit IP: {e}"
     print(json.dumps(out))
     return 0
 

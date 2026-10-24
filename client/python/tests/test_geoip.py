@@ -125,6 +125,7 @@ class EchoProxy(http.server.ThreadingHTTPServer):
 
     def __init__(self, body, auth=False):
         self.seen = []
+        self.connections = 0
         outer = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -147,6 +148,10 @@ class EchoProxy(http.server.ThreadingHTTPServer):
 
         super().__init__(("127.0.0.1", 0), H)
         threading.Thread(target=self.serve_forever, daemon=True).start()
+
+    def get_request(self):
+        self.connections += 1
+        return super().get_request()
 
     @property
     def server(self_):  # noqa: N805 - the proxy URL, named like Playwright's option
@@ -283,3 +288,75 @@ def test_launch_rejects_a_bad_proxy_before_any_echo_request(monkeypatch):
         camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"}, geoip=FIXTURE, proxy={"server": "http://u:p@h:1"})
     with pytest.raises(ValueError):
         camoucrome.launch(FakePlaywright(), "/x/chrome", config={"timezone:id": "Asia/Tokyo"}, geoip=FIXTURE, proxy="http://h:1")
+
+
+def test_exit_ip_short_form_server_means_http():
+    p = EchoProxy(b"203.0.113.9\n")
+    try:
+        got = geoip.exit_ip({"server": p.server.removeprefix("http://")}, urls=("http://echo.test/",))
+    finally:
+        p.shutdown()
+    assert got == "203.0.113.9" and p.seen
+
+
+@pytest.mark.parametrize("scheme", ["https", "socks5"])
+def test_exit_ip_makes_no_connection_through_a_non_http_proxy_and_leaks_no_credentials(scheme):
+    p = EchoProxy(b"203.0.113.9\n")
+    try:
+        with pytest.raises(geoip.GeoIPError, match=f"through a {scheme} proxy \\(only http\\)") as ei:
+            geoip.exit_ip({"server": p.server.replace("http", scheme), "username": "uuu", "password": "ppp"}, urls=("http://echo.test/",))
+        assert "uuu" not in str(ei.value) and "ppp" not in str(ei.value) and "127.0.0.1" not in str(ei.value)
+        [msg] = geoip.check_config({"timezone:id": "Asia/Tokyo"}, {"server": p.server.replace("http", scheme), "username": "uuu", "password": "ppp"}, db=FIXTURE)
+        assert "could not be checked" in msg and scheme in msg and "uuu" not in msg and "ppp" not in msg
+    finally:
+        p.shutdown()
+    assert p.connections == 0 and not p.seen
+
+
+def test_an_unreadable_database_is_a_geoip_error_and_a_warning(tmp_path):
+    if os.geteuid() == 0:
+        pytest.skip("root reads any file")
+    db = tmp_path / "locked.mmdb"
+    db.write_bytes(pathlib.Path(FIXTURE).read_bytes())
+    db.chmod(0)
+    with pytest.raises(geoip.GeoIPError):
+        geoip.lookup("192.0.2.5", str(db))
+    [msg] = geoip.check_config({"timezone:id": "Asia/Tokyo"}, exit_ip_="192.0.2.5", db=str(db))
+    assert "could not be checked" in msg
+    with pytest.warns(geoip.GeoIPWarning, match="not resolved"):
+        cfg = _gen_db(str(db))
+    assert cfg["timezone:id"]
+
+
+def _gen_db(db):
+    pytest.importorskip("browserforge")
+    from camoucrome import gen
+    return gen.generate("windows", seed=1, exit_ip="192.0.2.5", geoip_db=db)["config"]
+
+
+def test_a_non_string_configured_zone_is_nothing_to_check():
+    assert geoip.check_config({"timezone:id": 5}, exit_ip_="192.0.2.5", db=FIXTURE) == []
+
+
+def test_a_zone_key_that_is_a_directory_is_not_an_oserror_escape(monkeypatch):
+    def isdir(key):
+        raise IsADirectoryError(key)
+    monkeypatch.setattr(geoip, "ZoneInfo", isdir)
+    with pytest.raises(geoip.GeoIPError, match="unusable time zone"):
+        geoip.lookup("203.0.113.7", FIXTURE)
+    [msg] = geoip.check_config({"timezone:id": "America"}, exit_ip_="192.0.2.5", db=FIXTURE)
+    assert "could not be checked" in msg
+
+
+def test_cli_check_zone_failure_reads_like_check_configs(capsys):
+    assert geoip.main(["--ip", "192.0.2.5", "--db", FIXTURE, "--check-zone", "Not/AZone"]) == 0
+    assert "timezone:id Not/AZone could not be checked against the exit IP:" in json.loads(capsys.readouterr().out)["warning"]
+
+
+def test_gen_cli_takes_exit_ip_and_db():
+    pytest.importorskip("browserforge")
+    import subprocess
+    root = pathlib.Path(__file__).resolve().parents[1]
+    out = subprocess.run([sys.executable, "-m", "camoucrome.gen", "--os", "windows", "--seed", "1", "--exit-ip", "203.0.113.7",
+                          "--geoip-db", FIXTURE], cwd=root, capture_output=True, text=True, check=True).stdout
+    assert json.loads(out)["config"]["timezone:id"] == "Europe/Paris"
