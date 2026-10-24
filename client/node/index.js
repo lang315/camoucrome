@@ -253,7 +253,7 @@ function profileSeeds(userDataDir) {
 
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, headless = true,
-  args = [], extensions = [], spkiList = [], fontsDir, proxy, ...options
+  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, ...options
 } = {}) {
   if (proxy !== undefined) {
     if (!proxy || typeof proxy !== 'object' || !proxy.server || proxy.server.includes('@')) {
@@ -261,6 +261,11 @@ async function launch(chromium, executablePath, {
         + '(username and password are separate keys; argv is visible to every process)');
     }
     options.proxy = proxy;
+  }
+  if (geoip) { // after the proxy check: a rejected proxy gets no echo request
+    const { checkGeoip } = require('./geoip');
+    const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
+    (await checkGeoip({ config, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
   }
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {
