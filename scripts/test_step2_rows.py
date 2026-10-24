@@ -517,3 +517,22 @@ def test_argv_read_survives_a_gpu_crash(monkeypatch):
     monkeypatch.setattr(m, "opened", crashed)
     monkeypatch.setitem(sys.modules, "camoucrome.probe", types.SimpleNamespace(browser_argv=lambda exe: [exe, "--x"]))
     assert m.argv_of(None, m.Arm("fork", "chrome.exe", None)) == ["chrome.exe", "--x"]
+
+
+def test_measure_step2_identity_passes_host_draw_inputs(monkeypatch):
+    import measure_step2 as m
+    seen = {}
+
+    class G:
+        @staticmethod
+        def generate(os, **kw):
+            seen.update(kw)
+            return {}
+    monkeypatch.setitem(sys.modules, "camoucrome.gen", G)
+    monkeypatch.setattr(m, "HOST_DRAW", {"host_renderer": "R", "host_families": {"F"}})
+    m.identity(3)
+    assert seen == {"seed": 3, "host_renderer": "R", "host_families": {"F"}}
+    seen.clear()
+    monkeypatch.setattr(m, "HOST_DRAW", {})
+    m.identity(3)
+    assert seen == {"seed": 3}
