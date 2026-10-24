@@ -81,15 +81,17 @@ def common_args(proxy_cfg, extra=()):
 def secrets_of(cfg):
     if not cfg:
         return []
-    host = re.sub(r"^\w+://", "", cfg["server"]).split(":")[0].split("/")[0]
-    return [cfg["password"], host]
+    host = re.sub(r"^\w+://", "", cfg["server"]).split("/")[0].rsplit(":", 1)[0].strip("[]")
+    return [cfg["password"]] + ([host] if len(host) >= 4 else [])
 
 
 def secret_scan(out_dir, secrets):
-    """Names of files under out_dir that contain any secret. The host never gets the private terms, so this is its own leak gate."""
+    """Names of files under out_dir that contain any secret. The host never gets the private terms, so this is its own leak gate.
+    profiles/ (--warm) is skipped: it holds vendor cookie values, never leaves the host, and must not be copied to the Mac
+    (only meta.json and results.jsonl are)."""
     bad = []
     for p in pathlib.Path(out_dir).rglob("*"):
-        if p.is_file():
+        if p.is_file() and p.relative_to(out_dir).parts[0] != "profiles":
             data = p.read_bytes().lower()
             if any(s and s.lower().encode() in data for s in secrets):
                 bad.append(str(p))
@@ -114,7 +116,14 @@ def settle(page, ctx, site, status, limit=SETTLE_S):
     not a challenge, one that is still up is. Returns the last classification and whether an interstitial was ever seen."""
     deadline, saw = time.monotonic() + limit, False
     while True:
-        res = lc.classify(site["vendor"], snapshot(page, ctx, site, status))
+        try:
+            res = lc.classify(site["vendor"], snapshot(page, ctx, site, status))
+        except Exception:  # noqa: BLE001 - a navigation during the poll destroys the context: wait for it and look again
+            res = {"outcome": "unknown", "markers": [], "cookies": []}
+            try:
+                page.wait_for_load_state(timeout=5000)
+            except Exception:  # noqa: BLE001
+                pass
         saw = saw or res["outcome"] == "challenge"
         if res["outcome"] in ("pass", "block") or time.monotonic() > deadline:
             return res, saw
@@ -160,7 +169,10 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
                 "interstitial_seen": saw1 or saw2, "markers": sorted(set(r1["markers"] + r2["markers"])),
                 "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0]}
     finally:
-        ctx.close()
+        try:
+            ctx.close()
+        except Exception as exc:  # noqa: BLE001 - a good result is kept; the close error is a note
+            print(f"NOTE: closing the browser failed: {type(exc).__name__}", file=sys.stderr)
 
 
 def read_results(run_dir):
@@ -168,9 +180,37 @@ def read_results(run_dir):
     return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()] if p.exists() else []
 
 
+def parity_problems(argv_s, argv_f, plant, on_windows):
+    """Problems with the two arms' command lines. An unread argv is a problem on Windows (as in measure_step2); off Windows
+    there is no /proc to read, so the check is skipped and says so."""
+    import step2_rows
+    if not on_windows and not (argv_s and argv_f):
+        print("argv parity not checked: no /proc here")
+        return []
+    return step2_rows.argv_problems(argv_s or [], argv_f or [], step2_rows.ARGV_ALLOWED + ((plant,) if plant else ()))
+
+
+def flags_of(a):
+    return {k: getattr(a, k) for k in ("headed", "warm", "aa", "plant", "arg", "no_identity", "identity_seed", "seed", "dwell", "settle", "min_gap")}
+
+
+def resume_meta(old, new):
+    """A resumed run must be the same experiment: refuse a changed flag, keep the original start, allow more rounds."""
+    of, nf = old.get("flags"), new["flags"]
+    if of is None:
+        sys.exit("resume: the run's meta.json records no flags")
+    diff = sorted(k for k in set(of) | set(nf) if of.get(k) != nf.get(k))
+    if diff:
+        sys.exit("resume: flags differ from the run being resumed: " + ", ".join(diff))
+    return {**new, "started": old["started"], "rounds": max(old["rounds"], new["rounds"])}
+
+
 def run_cmd(a):
     from patchright.sync_api import sync_playwright
     import measure_step2 as m2
+    if a.gpu_gate:
+        import gpu_gate
+        gpu_gate.require_interactive()
     sites = load_sites(a.sites or os.environ.get("CAMOU_L3_SITES", DEFAULT_SITES))
     proxy_cfg = load_proxy(a.proxy_file or os.environ.get("CAMOU_L3_PROXY_FILE"))
     stock_exe = a.stock_exe or os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
@@ -188,51 +228,60 @@ def run_cmd(a):
     done = {(r["round"], r["site"], r["arm"]) for r in read_results(out_dir)}
     rng = random.Random(a.seed)
     last = {}
-    with sync_playwright() as pw:
-        argv = {k: m2.argv_of(pw, arm) for k, arm in arms.items()}
-        if argv["S"] and argv["F"]:
-            import step2_rows
-            bad = step2_rows.argv_problems(argv["S"], argv["F"], step2_rows.ARGV_ALLOWED + ((a.plant,) if a.plant else ()))
+    try:
+        with sync_playwright() as pw:
+            argv = {k: m2.argv_of(pw, arm) for k, arm in arms.items()}
+            bad = parity_problems(argv["S"], argv["F"], a.plant, os.name == "nt")
             if bad:
                 sys.exit("precondition, argv parity: " + "; ".join(bad))
-        meta = {"run": run_id, "rounds": a.rounds, "warm": a.warm, "aa": a.aa, "plant": bool(a.plant), "blocked": sorted(BLOCKED_TYPES),
-                "sites_per_vendor": {v: sum(1 for s in sites if s["vendor"] == v) for v in VENDORS},
-                "versions": {k: m2.exe_version(arm.exe) if os.name == "nt" else "" for k, arm in arms.items()},
-                "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp()}
-        (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
-        for rnd in range(a.rounds):
-            order_sites = list(sites)
-            rng.shuffle(order_sites)
-            for site in order_sites:
-                pair = ["S", "F"]
-                rng.shuffle(pair)
-                wait = a.min_gap - (time.monotonic() - last.get(site["idx"], -1e9))
-                if wait > 0:
-                    time.sleep(wait)
-                proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}")
-                for name in pair:
-                    if (rnd, site["idx"], name) in done:
-                        continue
-                    row = {"round": rnd, "site": site["idx"], "vendor": site["vendor"], "arm": name, "order": "".join(pair),
-                           "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-                    udd = None
-                    if a.warm:
-                        udd = out_dir / "profiles" / f"{name}-{site['idx']}"
-                        udd.mkdir(parents=True, exist_ok=True)
-                    try:
-                        row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
-                    except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
-                        import gpu_gate
-                        row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
-                                    "error": type(exc).__name__, "bytes": 0})
-                    with (out_dir / "results.jsonl").open("a", encoding="utf-8") as f:
-                        f.write(json.dumps(row) + "\n")
-                    print(f"round {rnd} {site['vendor']}#{site['idx']} {name}: {row['outcome']}", flush=True)
-                last[site["idx"]] = time.monotonic()
-    leaked = secret_scan(out_dir, secrets_of(proxy_cfg))
-    if leaked:
-        print("LEAK: the proxy secret is in " + ", ".join(leaked), file=sys.stderr)
-        return 3
+            meta = {"run": run_id, "rounds": a.rounds, "warm": a.warm, "aa": a.aa, "plant": bool(a.plant), "blocked": sorted(BLOCKED_TYPES),
+                    "sites_per_vendor": {v: sum(1 for s in sites if s["vendor"] == v) for v in VENDORS},
+                    "versions": {k: m2.exe_version(arm.exe) if os.name == "nt" else "" for k, arm in arms.items()},
+                    "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp(), "flags": flags_of(a)}
+            if a.resume:
+                meta_file = out_dir / "meta.json"
+                if not meta_file.exists():
+                    sys.exit("resume: no meta.json in " + str(out_dir))
+                meta = resume_meta(json.loads(meta_file.read_text(encoding="utf-8")), meta)
+            (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+            for rnd in range(a.rounds):
+                order_sites = list(sites)
+                rng.shuffle(order_sites)
+                for site in order_sites:
+                    pair = ["S", "F"]
+                    rng.shuffle(pair)
+                    wait = a.min_gap - (time.monotonic() - last.get(site["idx"], -1e9))
+                    if wait > 0:
+                        time.sleep(wait)
+                    proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}")
+                    for name in pair:
+                        if (rnd, site["idx"], name) in done:
+                            continue
+                        row = {"round": rnd, "site": site["idx"], "vendor": site["vendor"], "arm": name, "order": "".join(pair),
+                               "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+                        udd = None
+                        if a.warm:
+                            udd = out_dir / "profiles" / f"{name}-{site['idx']}"
+                            udd.mkdir(parents=True, exist_ok=True)
+                        try:
+                            row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
+                        except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
+                            import gpu_gate
+                            row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
+                                        "error": type(exc).__name__, "bytes": 0})
+                        with (out_dir / "results.jsonl").open("a", encoding="utf-8") as f:
+                            f.write(json.dumps(row) + "\n")
+                        print(f"round {rnd} {site['vendor']}#{site['idx']} {name}: {row['outcome']}", flush=True)
+                    last[site["idx"]] = time.monotonic()
+    finally:
+        leaked = secret_scan(out_dir, secrets_of(proxy_cfg))
+        if leaked:
+            print("LEAK: the proxy secret is in " + ", ".join(leaked), file=sys.stderr)
+            sys.exit(3)
+    results = read_results(out_dir)
+    if results and all(r["outcome"] in ("unknown", "unmeasured") for r in results):
+        print("nothing was measured: every visit is unknown or unmeasured", file=sys.stderr)
+        return 1
     print(f"run {out_dir}")
     return 0
 
@@ -284,19 +333,21 @@ def report_cmd(a):
 
 def compare_cmd(a):
     ra, rb = vendor_rows(a.run_a), vendor_rows(a.run_b)
-    bad = 0
+    verdicts = []
     for v in VENDORS:
         if v in ra and v in rb:
             ok = ls.runs_agree(ra[v], rb[v])
             print(f"{v}: {'agree' if ok else 'UNMEASURED' if ok is None else 'DISAGREE'}")
-            bad += ok is False
-    return 2 if bad else 0
+            verdicts.append(ok)
+    if any(ok is False for ok in verdicts):
+        return 2
+    return 3 if not verdicts or any(ok is None for ok in verdicts) else 0
 
 
 def budget_cmd(a):
-    rs = read_results(a.run_dir)
+    rs = [r for r in read_results(a.run_dir) if r["outcome"] not in ("unknown", "unmeasured")]
     if not rs:
-        sys.exit("budget: the run has no visits")
+        sys.exit("budget: the run has no measured visits")
     mean = sum(r.get("bytes", 0) for r in rs) / len(rs)
     total = mean * a.sites * a.rounds * 2 * RUN_EQUIVALENTS
     gb = total / 1e9
@@ -311,14 +362,18 @@ def scrub_cmd(a):
     import check_privacy
     src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
     meta = json.loads((src / "meta.json").read_text(encoding="utf-8"))
-    thin = {v: n for v, n in meta["sites_per_vendor"].items() if n < 3}
+    rows = vendor_rows(src)
+    thin = {v: r.get("sites", 0) for v, r in rows.items() if r.get("sites", 0) < 3}
     if thin:
         sys.exit(f"scrub: fewer than 3 sites for {sorted(thin)}: a vendor with one or two sites names its sites")
     header = (f"Run {meta['run']} (UTC). Images, media and fonts blocked in both arms; {meta['rounds']} rounds per site; "
-              f"{'warmed profiles' if meta['warm'] else 'fresh profiles'}; {'stock against stock' if meta['aa'] else 'fork against stock'}"
+              f"{'warmed profiles' if meta['warm'] else 'fresh profiles'}; {'stock against stock' if meta['aa'] else 'fork (no identity) against stock' if meta.get('flags', {}).get('no_identity') else 'fork against stock'}"
               f"{'; planted RED' if meta['plant'] else ''}; {'residential proxy in the host region' if meta['proxy'] else 'no proxy'}.\n")
-    text = header + "\n" + table(vendor_rows(src)) + "\n"
-    left = check_privacy.hits(text, check_privacy.load_terms())
+    text = header + "\n" + table(rows) + "\n"
+    terms = check_privacy.load_terms()
+    if check_privacy.term_count(terms) == 0:
+        sys.exit("scrub: no private terms loaded (~/.config/camoucrome/private-terms.json or $PRIVATE_TERMS): the gate would pass anything")
+    left = check_privacy.hits(text, terms)
     if left:
         sys.exit(f"scrub: host-identifying data left: {sorted({c for _, c in left})}")
     dst.mkdir(parents=True, exist_ok=True)

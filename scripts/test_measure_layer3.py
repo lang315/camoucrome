@@ -65,7 +65,7 @@ def rows_file(run_dir, spec, rounds=10):
     for (vendor, site), (s, f) in spec.items():
         for r in range(rounds):
             for arm, out in (("S", s), ("F", f)):
-                lines.append(json.dumps({"round": r, "site": site, "vendor": vendor, "arm": arm, "order": "SF", "outcome": out, "bytes": 1000}))
+                lines.append(json.dumps({"round": r, "site": site, "vendor": vendor, "arm": arm, "order": "SF", "outcome": out, "bytes": 1000, "note": "http://lab.example/x"}))
     (run_dir / "results.jsonl").write_text("\n".join(lines) + "\n")
     (run_dir / "meta.json").write_text(json.dumps({"run": run_dir.name, "rounds": rounds, "warm": False, "aa": False, "plant": False, "proxy": True,
                                                      "sites_per_vendor": {v: 3 for v in ml.VENDORS}}))
@@ -113,17 +113,132 @@ def test_budget_extrapolates_one_round_and_refuses_over_the_limit(tmp_path, caps
     assert "OVER" in capsys.readouterr().err
 
 
-def test_scrub_writes_only_the_vendor_table_and_refuses_thin_vendors(tmp_path):
+@pytest.fixture
+def terms(monkeypatch):
+    import check_privacy
+    monkeypatch.setattr(check_privacy, "load_terms", lambda: {"<x>": ["zzqq-private"]})
+
+
+def scrub_args(tmp_path):
+    return type("A", (), {"run_dir": str(tmp_path / "run"), "out_dir": str(tmp_path / "out")})()
+
+
+def test_scrub_writes_only_the_vendor_table(tmp_path, terms):
     rows_file(tmp_path / "run", {("cloudflare", i): ("pass", "challenge") for i in range(3)})
-    a = type("A", (), {"run_dir": str(tmp_path / "run"), "out_dir": str(tmp_path / "out")})()
-    assert ml.scrub_cmd(a) == 0
+    assert ml.scrub_cmd(scrub_args(tmp_path)) == 0  # one vendor of three measured sites scrubs; the others have no rows
     text = (tmp_path / "out" / "layer3-baseline.md").read_text()
-    assert "| cloudflare |" in text and "blocked in both arms" in text and "127.0.0.1" not in text
-    meta = json.loads((tmp_path / "run" / "meta.json").read_text())
-    meta["sites_per_vendor"]["datadome"] = 2
-    (tmp_path / "run" / "meta.json").write_text(json.dumps(meta))
+    assert "| cloudflare |" in text and "blocked in both arms" in text and "fork against stock" in text
+    assert "lab.example" not in text and "http" not in text  # the rows carry a url; the table must not
+
+
+def test_scrub_refuses_a_vendor_with_fewer_than_3_measured_sites_whatever_the_list_says(tmp_path, terms):
+    rows_file(tmp_path / "run", {("cloudflare", 0): ("pass", "challenge"), ("cloudflare", 1): ("pass", "challenge")})  # meta lists 3
     with pytest.raises(SystemExit, match="fewer than 3 sites"):
-        ml.scrub_cmd(a)
+        ml.scrub_cmd(scrub_args(tmp_path))
+
+
+def test_scrub_names_a_no_identity_fork(tmp_path, terms):
+    rows_file(tmp_path / "run", {("cloudflare", i): ("pass", "challenge") for i in range(3)})
+    meta = json.loads((tmp_path / "run" / "meta.json").read_text())
+    meta["flags"] = {"no_identity": True}
+    (tmp_path / "run" / "meta.json").write_text(json.dumps(meta))
+    ml.scrub_cmd(scrub_args(tmp_path))
+    assert "fork (no identity) against stock" in (tmp_path / "out" / "layer3-baseline.md").read_text()
+
+
+def test_scrub_refuses_when_there_are_no_private_terms(tmp_path, monkeypatch):
+    import check_privacy
+    monkeypatch.setattr(check_privacy, "load_terms", lambda: {})
+    rows_file(tmp_path / "run", {("cloudflare", i): ("pass", "challenge") for i in range(3)})
+    with pytest.raises(SystemExit, match="private terms"):
+        ml.scrub_cmd(scrub_args(tmp_path))
+    assert not (tmp_path / "out").exists()
+
+
+def test_budget_averages_only_visits_that_measured_something(tmp_path, capsys):
+    rows_file(tmp_path / "run", {("cloudflare", 0): ("pass", "pass"), ("cloudflare", 1): ("unknown", "unknown")}, rounds=1)
+    a = type("A", (), {"run_dir": str(tmp_path / "run"), "sites": 1, "rounds": 1, "limit_gb": 5.0})()
+    ml.budget_cmd(a)
+    assert "mean 1000 bytes" in capsys.readouterr().out
+    rows_file(tmp_path / "none", {("cloudflare", 0): ("unknown", "unmeasured")}, rounds=1)
+    a.run_dir = str(tmp_path / "none")
+    with pytest.raises(SystemExit, match="budget"):
+        ml.budget_cmd(a)
+
+
+def test_compare_exit_codes(tmp_path, capsys):
+    same = {("cloudflare", i): ("pass", "pass") for i in range(3)}
+    diff = {("cloudflare", i): ("pass", "challenge") for i in range(3)}
+    for name, spec in (("a", same), ("b", same), ("c", diff), ("n", {("akamai", i): ("pass", "pass") for i in range(3)}),
+                       ("u", {("cloudflare", i): ("unknown", "unknown") for i in range(3)})):
+        rows_file(tmp_path / name, spec)
+    cmp = lambda x, y: ml.compare_cmd(type("A", (), {"run_a": str(tmp_path / x), "run_b": str(tmp_path / y)})())  # noqa: E731
+    assert cmp("a", "b") == 0
+    assert cmp("a", "c") == 2
+    assert cmp("a", "n") == 3  # nothing in common was compared
+    assert cmp("a", "u") == 3  # unmeasured
+
+
+def test_parity_problems():
+    s = ["chrome", "--a"]
+    assert ml.parity_problems(s, s, None, on_windows=True) == []
+    assert ml.parity_problems([], s, None, on_windows=True)  # an unread argv refuses the run on Windows
+    assert ml.parity_problems(None, s, None, on_windows=True)
+    assert ml.parity_problems([], [], None, on_windows=False) == []  # no /proc here
+    assert ml.parity_problems(s, s + ["--b"], None, on_windows=True)
+    assert ml.parity_problems(s, s + ["--b"], "--b", on_windows=True) == []
+
+
+def test_resume_refuses_a_changed_flag_and_keeps_started():
+    old = {"started": "T0", "rounds": 5, "flags": {"aa": True, "seed": 1}}
+    with pytest.raises(SystemExit, match="aa"):
+        ml.resume_meta(old, {"rounds": 5, "started": "T1", "flags": {"aa": False, "seed": 1}})
+    with pytest.raises(SystemExit, match="flags"):
+        ml.resume_meta({"started": "T0", "rounds": 5}, {"rounds": 5, "started": "T1", "flags": {"aa": False}})
+    got = ml.resume_meta(old, {"rounds": 8, "started": "T1", "flags": {"aa": True, "seed": 1}})
+    assert got["started"] == "T0" and got["rounds"] == 8
+
+
+class FakePage:
+    def __init__(self, fail=1):
+        self.fail, self.waited = fail, 0
+
+    def evaluate(self, _js):
+        if self.fail:
+            self.fail -= 1
+            raise RuntimeError("Execution context was destroyed")
+        return {"title": "Home", "text": "hi", "html": "<main id=content></main>", "frames": []}
+
+    def locator(self, _sel):
+        return type("L", (), {"count": lambda self: 1})()
+
+    def wait_for_load_state(self, timeout=0):
+        self.waited += 1
+
+    def wait_for_timeout(self, _ms):
+        pass
+
+
+def test_settle_survives_a_navigation_during_the_poll():
+    ctx = type("C", (), {"cookies": lambda self: []})()
+    page = FakePage(fail=1)
+    res, saw = ml.settle(page, ctx, {"vendor": "cloudflare", "ok_marker": "#content"}, 200, limit=5)
+    assert res["outcome"] == "pass" and page.waited == 1
+    res, _ = ml.settle(FakePage(fail=10**6), ctx, {"vendor": "cloudflare", "ok_marker": "#content"}, 200, limit=0.01)
+    assert res["outcome"] == "unknown"
+
+
+def test_secrets_of_handles_an_ipv6_server_and_skips_short_hosts():
+    cfg = {"server": "http://[::1]:8000", "username_template": "u-{session}", "password": "pw"}
+    assert ml.secrets_of(cfg) == ["pw"]
+    cfg["server"] = "http://gate.proxy.example:8000"
+    assert ml.secrets_of(cfg) == ["pw", "gate.proxy.example"]
+
+
+def test_secret_scan_skips_the_warm_profiles(tmp_path):
+    (tmp_path / "profiles" / "S-0").mkdir(parents=True)
+    (tmp_path / "profiles" / "S-0" / "Cookies").write_text("S3cretPw")
+    assert ml.secret_scan(tmp_path, ["S3cretPw"]) == []
 
 
 # ---- the whole pipeline, opt-in --------------------------------------------------------------------------------------
@@ -155,6 +270,7 @@ class Lab(http.server.ThreadingHTTPServer):
                 body = (CF_CHALLENGE if "/cloudflare/" in self.path else PX_CHALLENGE) if challenged else HOME
                 self.send_response(403 if challenged else 200)
                 self.send_header("Content-Type", "text/html")
+                self.send_header("Set-Cookie", "__cf_bm=SENTINELVALUE; Path=/")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -200,4 +316,5 @@ def test_stock_against_stock_finds_no_difference_end_to_end(tmp_path):
     rows = ml.read_results(run)
     assert len(rows) == 12 and {r["outcome"] for r in rows} == {"pass"}
     assert all(r["bytes"] > 0 for r in rows) and not any("cookie_values" in r for r in rows)
+    assert "SENTINELVALUE" not in (run / "results.jsonl").read_text() and any("__cf_bm" in r["cookie_names"] for r in rows)
     assert lab.hits["img"] == 0
