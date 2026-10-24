@@ -3,7 +3,7 @@
 (docs/superpowers/specs/2026-10-24-step5-layer3-design.md).
 
 Run on the Windows host in the client venv, in the interactive session (run-interactive.ps1):
-  python measure_layer3.py run --out DIR [--rounds 15] [--headed] [--warm] [--aa] [--plant ARG] [--resume RUNDIR]
+  python measure_layer3.py run --out DIR [--rounds 12] [--headed] [--warm] [--aa] [--plant ARG] [--resume RUNDIR]
   python measure_layer3.py report RUN
   python measure_layer3.py compare RUN_A RUN_B
   python measure_layer3.py budget RUN --sites N --rounds R [--limit-gb 5]
@@ -39,8 +39,9 @@ SETTLE_S = 15
 RUN_EQUIVALENTS = 4  # primary 1 + A/A 1 + planted RED 1 + second run 1 (the warmed variant is deferred, spec 10.11)
 VENDORS = ("cloudflare", "datadome", "akamai", "perimeterx")
 DEFAULT_SITES = "~/.config/camoucrome/layer3-sites.json"
-# With a proxy, WebRTC can reveal the host's own address; the same policy goes to both arms or only one leaks.
-WEBRTC_POLICY = "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+# --force-webrtc-ip-handling-policy is a no-op in //chrome (only content_shell and headless read it), so stock Chrome
+# leaked a srflx candidate with the host's address behind the proxy. Only the pref works: both arms' profiles get it.
+WEBRTC_PREF = {"ip_handling_policy": "disable_non_proxied_udp"}
 
 
 def load_sites(path):
@@ -77,7 +78,96 @@ def proxy_for(cfg, session):
 
 def common_args(proxy_cfg, extra=()):
     """Browser arguments both arms get, identically."""
-    return ([WEBRTC_POLICY] if proxy_cfg else []) + list(extra)
+    return list(extra)
+
+
+ECHO_URL = "https://api.ipify.org"
+
+
+def pair_exit_ips(rows, ips):
+    """Both arms of a round share one sticky session, so they must exit on one address. A pair on two addresses, or with an
+    address that could not be read, compares nothing: both rows become unknown. The address itself is never stored."""
+    ok = bool(ips.get("S")) and bool(ips.get("F"))
+    tag = "unread" if not ok else "same" if ips["S"] == ips["F"] else "differ"
+    leak = any((r.get("webrtc_leaks") or 0) != 0 for r in rows.values())
+    for r in rows.values():
+        r["ip_pair"] = tag
+        if tag != "same":
+            r.update({"outcome": "unknown", "error": "ip_" + tag})
+        elif leak:  # a page that could name an address other than the exit one compares nothing
+            r.update({"outcome": "unknown", "error": "webrtc_leak"})
+    return rows
+
+
+def seed_profile(user_data_dir):
+    """Write the WebRTC policy into the profile's Preferences before launch, keeping anything already there."""
+    f = pathlib.Path(user_data_dir) / "Default" / "Preferences"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    prefs = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    prefs["webrtc"] = {**prefs.get("webrtc", {}), **WEBRTC_PREF}
+    f.write_text(json.dumps(prefs), encoding="utf-8")
+
+
+RTC_PROBE = """async () => {
+ const out = []; const pc = new RTCPeerConnection({iceServers: [{urls: 'stun:stun.l.google.com:19302'}]});
+ pc.createDataChannel('x'); pc.onicecandidate = e => { if (e.candidate) out.push(e.candidate.candidate) };
+ await pc.setLocalDescription(await pc.createOffer());
+ await new Promise(r => { pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r(); setTimeout(r, 5000) });
+ pc.close(); return out }"""
+
+
+def webrtc_leaks(candidates, exit_ip):
+    """How many ICE candidates name an address other than the exit address (an mDNS name hides the real one and is fine)."""
+    n = 0
+    for c in candidates:
+        parts = c.split()
+        addr = parts[4] if len(parts) > 4 else ""
+        if addr != exit_ip and not addr.endswith(".local"):
+            n += 1
+    return n
+
+
+def read_webrtc_leaks(page, exit_ip):
+    """-1 when the probe could not run: an unread channel is as unmeasured as a leaking one."""
+    try:
+        return webrtc_leaks(page.evaluate(RTC_PROBE), exit_ip)
+    except Exception:  # noqa: BLE001
+        return -1
+
+
+def run_pair_with_retries(attempt, retries, check=True):
+    """attempt(k) -> (rows by arm, exit addresses by arm) for try k on its own fresh session. A pair on two addresses (or an
+    unread one) is tried again on a new session, at most `retries` times; the bytes the discarded tries spent stay on the
+    final rows as retry_bytes, because the proxy charged for them. A half pair (a resumed run) has no partner and is returned as is."""
+    spent = {"S": 0, "F": 0}
+    for k in range(retries + 1):
+        rows, ips = attempt(k)
+        if len(rows) < 2 or not check:  # no partner, or no proxy: there is no exit address to compare
+            return rows
+        pair_exit_ips(rows, ips)
+        if rows["S"]["ip_pair"] == "same" or any(r.get("error") == "webrtc_leak" for r in rows.values()):
+            break  # a leak is not luck of the session: a retry would only spend bytes
+        if k < retries:
+            for name, r in rows.items():
+                spent[name] += r.get("bytes", 0)
+    for name, r in rows.items():
+        r["retries"], r["retry_bytes"] = k, spent[name]
+    return rows
+
+
+def visit_cost(row):
+    """What one measured visit cost the proxy: its own page bytes plus the tries thrown away before it."""
+    return row.get("bytes", 0) + row.get("retry_bytes", 0)
+
+
+def read_exit_ip(page):
+    """The exit address as the page sees it, or None. Kept in memory for pair_exit_ips; never written to a result."""
+    try:
+        page.goto(ECHO_URL, wait_until="load", timeout=30000)
+        ip = page.inner_text("body").strip()
+        return ip if re.fullmatch(r"[0-9a-fA-F:.]{3,45}", ip) else None
+    except Exception:  # noqa: BLE001 - an unread address makes the pair unknown, not the run a crash
+        return None
 
 
 def secrets_of(cfg):
@@ -146,6 +236,10 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
     from camoucrome import launch
     ident = arm.ident
     lo = ident["launch"] if ident else {}
+    own_profile = user_data_dir is None
+    if own_profile:
+        user_data_dir = tempfile.mkdtemp(prefix="l3-")
+    seed_profile(user_data_dir)
     ctx = launch(pw, arm.exe, config=ident["config"] if ident else None, headless=not a.headed, user_data_dir=user_data_dir,
                  args=arm.args, window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"), proxy=proxy)
     total = [0]
@@ -161,6 +255,8 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
             except Exception:  # noqa: BLE001 - a size that cannot be read is not worth a failed run
                 pass
         page.on("requestfinished", count)
+        exit_ip = read_exit_ip(page) if proxy else "direct"
+        leaks = read_webrtc_leaks(page, exit_ip) if proxy and exit_ip else (-1 if proxy else 0)
         r1, saw1 = settle(page, ctx, site, load(page, site["url"]), a.settle)
         page.wait_for_timeout(int(a.dwell * 1000))
         for _ in range(3):
@@ -171,12 +267,15 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
             gpu_gate.check(gpu_gate.read_ctx(ctx))  # a crash during the visit is as unmeasured as one at launch
         return {"stage1": r1["outcome"], "stage2": r2["outcome"], "outcome": lc.combine(r1, r2),
                 "interstitial_seen": saw1 or saw2, "markers": sorted(set(r1["markers"] + r2["markers"])),
-                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0]}
+                "cookie_names": sorted(set(r1["cookies"] + r2["cookies"])), "bytes": total[0], "webrtc_leaks": leaks, "_exit_ip": exit_ip}
     finally:
         try:
             ctx.close()
         except Exception as exc:  # noqa: BLE001 - a good result is kept; the close error is a note
             print(f"NOTE: closing the browser failed: {type(exc).__name__}", file=sys.stderr)
+        if own_profile:
+            from camoucrome.launcher import remove_dir
+            remove_dir(user_data_dir)
 
 
 def read_results(run_dir):
@@ -301,22 +400,30 @@ def run_cmd(a):
                     wait = a.min_gap - (time.monotonic() - last.get(site["idx"], -1e9))
                     if wait > 0:
                         time.sleep(wait)
-                    proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}")
-                    for name in pair:
-                        if (rnd, site["idx"], name) in done:
-                            continue
-                        row = {"round": rnd, "site": site["idx"], "vendor": site["vendor"], "arm": name, "order": "".join(pair),
-                               "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-                        udd = None
-                        if a.warm:
-                            udd = out_dir / "profiles" / f"{name}-{site['idx']}"
-                            udd.mkdir(parents=True, exist_ok=True)
-                        try:
-                            row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
-                        except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
-                            import gpu_gate
-                            row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
-                                        "error": type(exc).__name__, "bytes": 0})
+                    def attempt(k, site=site, pair=pair, rnd=rnd):
+                        # the retry's session id differs, so the proxy gives it a fresh exit address
+                        proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}" + (f"-r{k}" if k else ""))
+                        pending, ips = {}, {}
+                        for name in pair:
+                            if (rnd, site["idx"], name) in done:
+                                continue
+                            row = {"round": rnd, "site": site["idx"], "vendor": site["vendor"], "arm": name, "order": "".join(pair),
+                                   "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+                            udd = None
+                            if a.warm:
+                                udd = out_dir / "profiles" / f"{name}-{site['idx']}"
+                                udd.mkdir(parents=True, exist_ok=True)
+                            try:
+                                row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
+                            except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
+                                import gpu_gate
+                                row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
+                                            "error": type(exc).__name__, "bytes": 0})
+                            ips[name] = row.pop("_exit_ip", None)
+                            pending[name] = row
+                        return pending, ips
+                    pending = run_pair_with_retries(attempt, a.ip_retries, check=bool(proxy_cfg))
+                    for name, row in pending.items():
                         with (out_dir / "results.jsonl").open("a", encoding="utf-8") as f:
                             f.write(json.dumps(row) + "\n")
                         print(f"round {rnd} {site['vendor']}#{site['idx']} {name}: {row['outcome']}", flush=True)
@@ -378,7 +485,7 @@ def report_cmd(a):
     print(table(rows))
     rs = measured_rows(a.run_dir)
     if rs:
-        print(f"\n{BYTES_NOTE}: mean {sum(r.get('bytes', 0) for r in rs) / len(rs):.0f} over {len(rs)} measured visits")
+        print(f"\n{BYTES_NOTE}: mean {sum(visit_cost(r) for r in rs) / len(rs):.0f} over {len(rs)} measured visits")
     return 0
 
 
@@ -401,7 +508,7 @@ def budget_cmd(a):
         sys.exit("budget: the run has no measured visits")
     if any(not r.get("bytes") for r in rs):
         sys.exit("budget: a measured visit has 0 bytes (the size could not be read): the extrapolation would be too low")
-    mean = sum(r.get("bytes", 0) for r in rs) / len(rs)
+    mean = sum(visit_cost(r) for r in rs) / len(rs)
     total = mean * a.sites * a.rounds * 2 * RUN_EQUIVALENTS
     gb = total / 1e9
     print(f"{BYTES_NOTE}: mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x 2 arms x {RUN_EQUIVALENTS} run-equivalents = {gb:.2f} GB")
@@ -441,7 +548,8 @@ def build_parser():
     r = sub.add_parser("run")
     r.add_argument("--out")
     r.add_argument("--resume")
-    r.add_argument("--rounds", type=int, default=15)
+    r.add_argument("--rounds", type=int, default=12)
+    r.add_argument("--ip-retries", type=int, default=2, help="tries of a round on a fresh session when the arms exit on different addresses")
     r.add_argument("--sites")
     r.add_argument("--proxy-file")
     r.add_argument("--stock-exe")
