@@ -93,3 +93,39 @@ def test_runs_agree_when_the_difference_of_d_is_inside_the_combined_interval():
     assert ls.runs_agree(a, {"d": 0.14, "lo": 0.02, "hi": 0.26}) is True
     assert ls.runs_agree(a, {"d": 0.60, "lo": 0.50, "hi": 0.70}) is False
     assert ls.runs_agree(a, {"unmeasured": True}) is None
+
+
+def _pair(site, r, s, f, order="SF"):
+    return [{"site": site, "round": r, "arm": "S", "challenged": s, "order": order},
+            {"site": site, "round": r, "arm": "F", "challenged": f, "order": order}]
+
+
+def test_d_is_the_site_mean_and_d_pooled_is_the_pair_pool():
+    data = _pair("a", 0, False, True)  # site a: d = 1, one pair
+    for r in range(3):
+        data += _pair("b", r, True, True)  # site b: d = 0, three pairs
+    v = ls.vendor_row(data, resamples=200)
+    assert v["d"] == 0.5 and v["d_pooled"] == 0.25 and v["rate_fork"] - v["rate_stock"] == v["d_pooled"]
+
+
+def test_order_effect_ignores_rows_without_or_with_invalid_order():
+    data = _pair("a", 0, False, True)
+    for r in data:
+        del r["order"]
+    assert ls.order_effect(data) is None
+    assert ls.vendor_row(data, resamples=50)["order_effect"] is None
+    mixed = _pair("a", 0, False, True, "SF") + _pair("a", 1, True, False, "XX")
+    assert ls.order_effect(mixed) == 1.0
+
+
+def test_degenerate_flags_a_zero_width_interval():
+    assert ls.vendor_row(rows({"a": (1.0, 1.0), "b": (1.0, 1.0), "c": (1.0, 1.0)}), resamples=200)["degenerate"] is True
+    assert ls.vendor_row(rows({"a": (0.3, 0.6), "b": (0.4, 0.5), "c": (0.2, 0.7)}), resamples=200)["degenerate"] is False
+    assert "degenerate" not in ls.vendor_row([])
+
+
+def test_a_duplicate_row_makes_the_pair_unknown():
+    data = _pair("a", 0, False, False) + _pair("a", 1, False, False)
+    data.append({"site": "a", "round": 1, "arm": "F", "challenged": True, "order": "SF"})
+    sites, unknown = ls.pairs_from(data)
+    assert unknown == 1 and sites == {"a": [(False, False)]}

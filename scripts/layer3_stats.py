@@ -5,7 +5,11 @@ A pair is one round on one site: both arms on the same exit IP. A pair with an u
 and counted. d = rate_fork - rate_stock, positive = the fork is challenged more.
 Primary interval: a percentile bootstrap clustered by site (sites resampled, then pairs within each), each site's
 difference weighted equally. Fallback beside it: the paired Agresti-Min interval on the pooled pairs (it ignores the
-site effect, so it is narrower)."""
+site effect, so it is narrower).
+Reported numbers: d is the equal-weight mean of per-site differences (what the bootstrap interval is about);
+d_pooled = rate_fork - rate_stock is the pooled-pair difference; they differ when sites have unequal pair counts.
+With 3 sites the clustered interval is coarse (few distinct site resamples): read it beside the paired interval.
+A zero-width interval ("degenerate") means no variation was observed, not certainty."""
 import math
 import random
 
@@ -17,7 +21,8 @@ def pairs_from(rows):
     None = unknown outcome."""
     by = {}
     for r in rows:
-        by.setdefault((r["site"], r["round"]), {})[r["arm"]] = r["challenged"]
+        arms = by.setdefault((r["site"], r["round"]), {})
+        arms[r["arm"]] = None if r["arm"] in arms else r["challenged"]  # a duplicate row makes the pair unknown
     sites, unknown = {}, 0
     for (site, _), arms in sorted(by.items()):
         if set(arms) != {"S", "F"} or None in arms.values():
@@ -86,7 +91,9 @@ def order_effect(rows):
     for arms in by.values():
         if set(arms) != {"S", "F"} or any(a["challenged"] is None for a in arms.values()):
             continue
-        order = arms["S"]["order"]
+        order = arms["S"].get("order")
+        if order not in ("SF", "FS"):
+            continue
         a, b = (arms["S"], arms["F"]) if order == "SF" else (arms["F"], arms["S"])
         first.append(a["challenged"])
         second.append(b["challenged"])
@@ -103,7 +110,8 @@ def vendor_row(rows, resamples=10000, seed=1):
         return {"n": 0, "unknown": unknown, "unmeasured": True}
     d, lo, hi = bootstrap_ci(sites, resamples, seed)
     pd, plo, phi, b, c = paired_ci(sites)
-    return {"n": n, "unknown": unknown, "sites": len(sites), "rate_stock": s, "rate_fork": f, "d": d, "lo": lo, "hi": hi,
+    return {"n": n, "unknown": unknown, "sites": len(sites), "rate_stock": s, "rate_fork": f, "d": d, "d_pooled": f - s, "lo": lo, "hi": hi,
+            "degenerate": hi == lo,
             "paired": {"d": pd, "lo": plo, "hi": phi, "b": b, "c": c, "p": mcnemar_exact_p(b, c)},
             "order_effect": order_effect(rows), "unmeasured": unknown / (n + unknown) > 0.10}
 
