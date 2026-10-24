@@ -110,7 +110,7 @@ if not (ROOT / "settings" / "webgl").is_dir():
 def load_profiles():
     """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
     return {p.stem: json.loads(p.read_text(encoding="utf-8"))
-            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._")}
+            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith("-pool")}
 
 
 GL_ENUM = {"VERTEX_SHADER": 35633, "FRAGMENT_SHADER": 35632, "LOW_FLOAT": 36336, "MEDIUM_FLOAT": 36337,

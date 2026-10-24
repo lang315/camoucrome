@@ -258,3 +258,7 @@ def test_quickstart_seeds_keep_a_profile_and_tell_two_apart():
     pytest.importorskip("browserforge")
     one, again, two = (gen.generate(os="windows", seed=s) for s in (1, 1, 2))
     assert one == again and one != two
+
+
+def test_load_profiles_ignores_the_gpu_pool_file():
+    assert not any(stem.endswith("-pool") for stem in gen.load_profiles())
