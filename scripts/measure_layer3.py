@@ -3,7 +3,7 @@
 (docs/superpowers/specs/2026-10-24-step5-layer3-design.md).
 
 Run on the Windows host in the client venv, in the interactive session (run-interactive.ps1):
-  python measure_layer3.py run --out DIR [--rounds 15] [--headed] [--warm] [--aa] [--plant ARG] [--resume RUNDIR]
+  python measure_layer3.py run --out DIR [--rounds 12] [--headed] [--warm] [--aa] [--plant ARG] [--resume RUNDIR]
   python measure_layer3.py report RUN
   python measure_layer3.py compare RUN_A RUN_B
   python measure_layer3.py budget RUN --sites N --rounds R [--limit-gb 5]
@@ -93,6 +93,31 @@ def pair_exit_ips(rows, ips):
         if tag != "same":
             r.update({"outcome": "unknown", "error": "ip_" + tag})
     return rows
+
+
+def run_pair_with_retries(attempt, retries, check=True):
+    """attempt(k) -> (rows by arm, exit addresses by arm) for try k on its own fresh session. A pair on two addresses (or an
+    unread one) is tried again on a new session, at most `retries` times; the bytes the discarded tries spent stay on the
+    final rows as retry_bytes, because the proxy charged for them. A half pair (a resumed run) has no partner and is returned as is."""
+    spent = {"S": 0, "F": 0}
+    for k in range(retries + 1):
+        rows, ips = attempt(k)
+        if len(rows) < 2 or not check:  # no partner, or no proxy: there is no exit address to compare
+            return rows
+        pair_exit_ips(rows, ips)
+        if rows["S"]["ip_pair"] == "same":
+            break
+        if k < retries:
+            for name, r in rows.items():
+                spent[name] += r.get("bytes", 0)
+    for name, r in rows.items():
+        r["retries"], r["retry_bytes"] = k, spent[name]
+    return rows
+
+
+def visit_cost(row):
+    """What one measured visit cost the proxy: its own page bytes plus the tries thrown away before it."""
+    return row.get("bytes", 0) + row.get("retry_bytes", 0)
 
 
 def read_exit_ip(page):
@@ -327,27 +352,29 @@ def run_cmd(a):
                     wait = a.min_gap - (time.monotonic() - last.get(site["idx"], -1e9))
                     if wait > 0:
                         time.sleep(wait)
-                    proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}")
-                    pending, ips = {}, {}
-                    for name in pair:
-                        if (rnd, site["idx"], name) in done:
-                            continue
-                        row = {"round": rnd, "site": site["idx"], "vendor": site["vendor"], "arm": name, "order": "".join(pair),
-                               "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-                        udd = None
-                        if a.warm:
-                            udd = out_dir / "profiles" / f"{name}-{site['idx']}"
-                            udd.mkdir(parents=True, exist_ok=True)
-                        try:
-                            row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
-                        except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
-                            import gpu_gate
-                            row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
-                                        "error": type(exc).__name__, "bytes": 0})
-                        ips[name] = row.pop("_exit_ip", None)
-                        pending[name] = row
-                    if proxy and len(pending) == 2:  # a resumed half pair has no partner to compare with
-                        pair_exit_ips(pending, ips)
+                    def attempt(k, site=site, pair=pair, rnd=rnd):
+                        # the retry's session id differs, so the proxy gives it a fresh exit address
+                        proxy = proxy_for(proxy_cfg, f"{run_id}-{rnd}-{site['idx']}" + (f"-r{k}" if k else ""))
+                        pending, ips = {}, {}
+                        for name in pair:
+                            if (rnd, site["idx"], name) in done:
+                                continue
+                            row = {"round": rnd, "site": site["idx"], "vendor": site["vendor"], "arm": name, "order": "".join(pair),
+                                   "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+                            udd = None
+                            if a.warm:
+                                udd = out_dir / "profiles" / f"{name}-{site['idx']}"
+                                udd.mkdir(parents=True, exist_ok=True)
+                            try:
+                                row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
+                            except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
+                                import gpu_gate
+                                row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
+                                            "error": type(exc).__name__, "bytes": 0})
+                            ips[name] = row.pop("_exit_ip", None)
+                            pending[name] = row
+                        return pending, ips
+                    pending = run_pair_with_retries(attempt, a.ip_retries, check=bool(proxy_cfg))
                     for name, row in pending.items():
                         with (out_dir / "results.jsonl").open("a", encoding="utf-8") as f:
                             f.write(json.dumps(row) + "\n")
@@ -410,7 +437,7 @@ def report_cmd(a):
     print(table(rows))
     rs = measured_rows(a.run_dir)
     if rs:
-        print(f"\n{BYTES_NOTE}: mean {sum(r.get('bytes', 0) for r in rs) / len(rs):.0f} over {len(rs)} measured visits")
+        print(f"\n{BYTES_NOTE}: mean {sum(visit_cost(r) for r in rs) / len(rs):.0f} over {len(rs)} measured visits")
     return 0
 
 
@@ -433,7 +460,7 @@ def budget_cmd(a):
         sys.exit("budget: the run has no measured visits")
     if any(not r.get("bytes") for r in rs):
         sys.exit("budget: a measured visit has 0 bytes (the size could not be read): the extrapolation would be too low")
-    mean = sum(r.get("bytes", 0) for r in rs) / len(rs)
+    mean = sum(visit_cost(r) for r in rs) / len(rs)
     total = mean * a.sites * a.rounds * 2 * RUN_EQUIVALENTS
     gb = total / 1e9
     print(f"{BYTES_NOTE}: mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x 2 arms x {RUN_EQUIVALENTS} run-equivalents = {gb:.2f} GB")
@@ -473,7 +500,8 @@ def build_parser():
     r = sub.add_parser("run")
     r.add_argument("--out")
     r.add_argument("--resume")
-    r.add_argument("--rounds", type=int, default=15)
+    r.add_argument("--rounds", type=int, default=12)
+    r.add_argument("--ip-retries", type=int, default=2, help="tries of a round on a fresh session when the arms exit on different addresses")
     r.add_argument("--sites")
     r.add_argument("--proxy-file")
     r.add_argument("--stock-exe")

@@ -477,3 +477,49 @@ def test_a_pair_on_two_exit_addresses_or_an_unread_one_is_unknown(ips, tag):
     else:
         assert all(r["outcome"] == "unknown" and r["error"] == "ip_" + tag for r in out.values())
     assert "203.0.113" not in json.dumps(out)
+
+
+def _attempt(plan):
+    """A fake attempt(k): plan[k] is the pair of exit addresses the arms got on try k."""
+    def attempt(k):
+        s, f = plan[min(k, len(plan) - 1)]
+        return ({"S": {"outcome": "pass", "bytes": 10}, "F": {"outcome": "pass", "bytes": 20}}, {"S": s, "F": f})
+    return attempt
+
+
+def test_a_pair_on_two_addresses_is_retried_on_a_fresh_session_and_the_wasted_bytes_are_kept():
+    rows = ml.run_pair_with_retries(_attempt([("a", "b"), ("a", "b"), ("c", "c")]), 2)
+    assert [r["outcome"] for r in rows.values()] == ["pass", "pass"]
+    assert [r["ip_pair"] for r in rows.values()] == ["same", "same"]
+    assert [r["retries"] for r in rows.values()] == [2, 2]
+    assert [r["retry_bytes"] for r in rows.values()] == [20, 40]  # two failed tries: 2 x 10 (S), 2 x 20 (F)
+
+
+def test_a_pair_that_never_agrees_stops_after_the_retries_and_stays_unknown():
+    calls = []
+    plan = [("a", "b")]
+
+    def attempt(k):
+        calls.append(k)
+        return _attempt(plan)(k)
+    rows = ml.run_pair_with_retries(attempt, 2)
+    assert calls == [0, 1, 2]
+    assert all(r["outcome"] == "unknown" and r["error"] == "ip_differ" and r["retries"] == 2 for r in rows.values())
+
+
+def test_a_pair_on_one_address_is_not_retried():
+    calls = []
+
+    def attempt(k):
+        calls.append(k)
+        return _attempt([("a", "a")])(k)
+    rows = ml.run_pair_with_retries(attempt, 2)
+    assert calls == [0] and [r["retries"] for r in rows.values()] == [0, 0]
+
+
+def test_a_visit_costs_what_it_spent_on_retries_too():
+    assert ml.visit_cost({"bytes": 5, "retry_bytes": 7}) == 12 and ml.visit_cost({"bytes": 5}) == 5
+
+
+def test_the_default_round_count_is_twelve():
+    assert ml.build_parser().parse_args(["run"]).rounds == 12
