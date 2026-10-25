@@ -1,0 +1,74 @@
+{
+ "$comment": "Unshifted characters of the standard Windows layout per language, for navigator.keyboard.getLayoutMap(). Layout names as Microsoft lists them: US (KBDUS), French (KBDFR; chart https://learn.microsoft.com/en-us/globalization/keyboards/kbdfr, titled 'French (Legacy, AZERTY) Keyboard'), German (KBDGR; chart https://learn.microsoft.com/en-us/globalization/keyboards/kbdgr). The chart pages exist (HTTP 200 checked 2026-10-25) but their key legends are images, so the four characters per layout were NOT read off the chart: assumption, from the layouts' well-known standard form. US has no chart URL here. Unmapped locales keep the host layout (gen warns). Add a layout only with a citable chart and all four codes.",
+ "assumption": true,
+ "layouts": {
+  "us": {
+   "Backquote": "`",
+   "Digit1": "1",
+   "KeyA": "a",
+   "KeyQ": "q"
+  },
+  "fr": {
+   "Backquote": "²",
+   "Digit1": "&",
+   "KeyA": "q",
+   "KeyQ": "a"
+  },
+  "de": {
+   "Backquote": "^",
+   "Digit1": "1",
+   "KeyA": "a",
+   "KeyQ": "q"
+  }
+ },
+ "locales": {
+  "en-US": "us",
+  "fr-FR": "fr",
+  "de-DE": "de"
+ },
+ "unmapped": [
+  "ar-EG",
+  "ar-SA",
+  "cs-CZ",
+  "da-DK",
+  "de-AT",
+  "de-CH",
+  "el-GR",
+  "en-AU",
+  "en-CA",
+  "en-GB",
+  "en-IE",
+  "en-IN",
+  "en-NZ",
+  "en-ZA",
+  "es-ES",
+  "es-MX",
+  "fi-FI",
+  "fil-PH",
+  "fr-BE",
+  "fr-CA",
+  "he-IL",
+  "hi-IN",
+  "hu-HU",
+  "id-ID",
+  "it-IT",
+  "ja-JP",
+  "ko-KR",
+  "ms-MY",
+  "nb-NO",
+  "nl-BE",
+  "nl-NL",
+  "pl-PL",
+  "pt-BR",
+  "pt-PT",
+  "ro-RO",
+  "ru-RU",
+  "sv-SE",
+  "th-TH",
+  "tr-TR",
+  "uk-UA",
+  "vi-VN",
+  "zh-CN",
+  "zh-TW"
+ ]
+}

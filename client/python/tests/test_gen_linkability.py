@@ -53,3 +53,36 @@ def test_window_position_stays_inside_the_screen():
 def test_other_seeded_keys_do_not_move():
     c = gen.generate("windows", timezone="Europe/Paris", seed=3)["config"]
     assert c["share:cancelMs"] == EXPECTED_SHARE_CANCEL_MS_SEED_3
+
+
+CODES = ("Backquote", "Digit1", "KeyA", "KeyQ")
+
+
+def test_fr_locale_gets_an_azerty_map():
+    keys, warn = gen.keyboard_keys("fr-FR")
+    m = keys["keyboard:layoutMap"]
+    assert (m["KeyA"], m["KeyQ"]) == ("q", "a") and warn is None
+
+
+def test_us_locale_gets_the_us_map():
+    m = gen.keyboard_keys("en-US")[0]["keyboard:layoutMap"]
+    assert (m["KeyA"], m["KeyQ"], m["Backquote"], m["Digit1"]) == ("a", "q", "`", "1")
+
+
+def test_unmapped_locale_has_no_layout_and_warns():
+    keys, warn = gen.keyboard_keys("xx-XX")
+    assert keys == {} and "keyboard layout" in warn
+
+
+def test_every_known_locale_is_mapped_or_listed_unmapped():
+    zones = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
+    table = json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text())
+    missing = [l for l in zones if l not in table["locales"] and l not in table["unmapped"]]
+    assert missing == []
+
+
+def test_every_layout_has_the_four_codes_and_every_locale_points_at_one():
+    table = json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text())
+    assert all(set(CODES) <= set(row) for row in table["layouts"].values())
+    assert set(table["locales"].values()) <= set(table["layouts"])
+    assert not set(table["locales"]) & set(table["unmapped"])

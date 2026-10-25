@@ -333,6 +333,15 @@ def window_position(rng, screen, outer):
     return min(max_x, r.randint(0, 120)), min(max_y, r.randint(0, 120))
 
 
+def keyboard_keys(locale):
+    """keyboard:layoutMap for the locale's standard Windows layout; ({}, warning) for a locale with no row."""
+    table = json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text(encoding="utf-8"))
+    name = table["locales"].get(locale)
+    if name is None:
+        return {}, f"no keyboard layout row for {locale}: navigator.keyboard keeps the host's layout, which may contradict the locale"
+    return {"keyboard:layoutMap": table["layouts"][name]}, None
+
+
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
               host_platform_version=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
@@ -395,6 +404,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     if host_platform_version:  # the host's real OS wins over the pool's and the font capture's claim
         config["ua:platformVersion"] = host_platform_version
     config.update(voices_keys(platform, tag))
+    kb, kw = keyboard_keys(tag)
+    config.update(kb)
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
         config["share:cancelMs"] = rng.randint(900, 2600)  # a dismissed share sheet takes a human seconds, never 0 ms
@@ -413,7 +424,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
     launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
               "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn,) if w]}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, kw) if w]}
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,

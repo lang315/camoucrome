@@ -368,7 +368,9 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     import hashlib
     r = gen.generate("windows", "Europe/Paris", None, 1)
     # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
-    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY")}
+    # keyboard:layoutMap is new since Step 6 Task 2 (test_gen_linkability pins it)
+    rest = {k: v for k, v in r["config"].items()
+            if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY", "keyboard:layoutMap")}
     launch = {k: v for k, v in r["launch"].items() if k != "position"}
     assert hashlib.sha256(json.dumps([rest, launch], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
 

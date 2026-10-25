@@ -9,7 +9,7 @@ from setuptools.command.build_py import build_py
 
 HERE = pathlib.Path(__file__).resolve().parent
 SETTINGS = HERE.parents[1] / "settings"
-NEEDED = ["webgl", "fonts.json", "voices.json", "audio.json", "locale_zones.json"]
+NEEDED = ["webgl", "fonts.json", "voices.json", "audio.json", "locale_zones.json", "keyboard_layouts.json"]
 DEST = HERE / "camoucrome" / "_settings" / "settings"
 
 
