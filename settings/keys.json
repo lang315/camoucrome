@@ -229,6 +229,12 @@
    "type": "string"
   },
   {
+   "name": "kKeyboardLayoutMap",
+   "key": "keyboard:layoutMap",
+   "type": "dict",
+   "doc": "navigator.keyboard.getLayoutMap(): code to unshifted character"
+  },
+  {
    "name": "kWebGlParameters",
    "key": "webGl:parameters",
    "type": "dict"

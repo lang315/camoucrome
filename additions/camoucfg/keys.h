@@ -156,6 +156,70 @@ inline constexpr char kWebGlVendor[] = "webGl:vendor";
 inline constexpr char kWebGlRenderer[] = "webGl:renderer";
 inline constexpr char kWebGl2Vendor[] = "webGl2:vendor";
 inline constexpr char kWebGl2Renderer[] = "webGl2:renderer";
+
+// n
+// a
+// v
+// i
+// g
+// a
+// t
+// o
+// r
+// .
+// k
+// e
+// y
+// b
+// o
+// a
+// r
+// d
+// .
+// g
+// e
+// t
+// L
+// a
+// y
+// o
+// u
+// t
+// M
+// a
+// p
+// (
+// )
+// :
+//
+// c
+// o
+// d
+// e
+//
+// t
+// o
+//
+// u
+// n
+// s
+// h
+// i
+// f
+// t
+// e
+// d
+//
+// c
+// h
+// a
+// r
+// a
+// c
+// t
+// e
+// r
+inline constexpr char kKeyboardLayoutMap[] = "keyboard:layoutMap";
 inline constexpr char kWebGlParameters[] = "webGl:parameters";
 inline constexpr char kWebGl2Parameters[] = "webGl2:parameters";
 inline constexpr char kWebGlParamsBlock[] =
@@ -367,7 +431,7 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 90> kAllKeys = {
+inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -390,6 +454,7 @@ inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kWebGlRenderer,
     kWebGl2Vendor,
     kWebGl2Renderer,
+    kKeyboardLayoutMap,
     kWebGlParameters,
     kWebGl2Parameters,
     kWebGlParamsBlock,
