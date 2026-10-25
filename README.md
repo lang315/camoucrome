@@ -181,7 +181,7 @@ with sync_playwright() as pw:
         ctx = camoucrome.launch(pw, CHROME, user_data_dir=udd, headless=False,
                                 config={**fp["config"], **camoucrome.profile_seeds(udd)},
                                 window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
-                                position=tuple(fp["launch"]["position"]))
+                                position=tuple(fp["launch"]["position"]), args=fp["launch"]["args"])
         page = ctx.pages[0]
         page.goto("https://example.com")
         print(name, page.evaluate("[navigator.hardwareConcurrency, screen.width]"))
@@ -218,7 +218,7 @@ except geoip.GeoIPError as e:          # no echo service answered, or the proxy 
 fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
 ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
                         window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
-                        position=tuple(fp["launch"]["position"]))
+                        position=tuple(fp["launch"]["position"]), args=fp["launch"]["args"])
 ```
 
 The zone comes from the address's coordinates and the locale from its country. An explicit

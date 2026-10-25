@@ -29,6 +29,9 @@ def test_args_match_the_contract():
         launch["window_position_arg"].format(x=30, y=60),
         launch["dpr_arg"].format(dpr=1.25)]
     assert launch["ignore_default_args"] is True
+    # a generated identity's launch.args (the display flag) rides as extra, after every other flag
+    assert launch["extra_args_last"] is True
+    assert camoucrome.build_args(headless=False, window=(1, 2), extra=["--force-color-profile=srgb"])[-1] == "--force-color-profile=srgb"
 
 
 def test_env_drops_stale_camou_vars_and_sets_the_transport():

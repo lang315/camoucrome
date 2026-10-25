@@ -15,15 +15,16 @@ import (
 type Generated struct {
 	Config map[string]any `json:"config"`
 	Launch struct {
-		Window   [2]int  `json:"window"`
-		DPR      float64 `json:"dpr"`
-		Position *[2]int `json:"position"`
+		Window   [2]int   `json:"window"`
+		DPR      float64  `json:"dpr"`
+		Position *[2]int  `json:"position"`
+		Args     []string `json:"args"`
 	} `json:"launch"`
 	Warnings []string `json:"warnings"`
 }
 
 // ParseGenerated decodes the generator's output and folds it into Options
-// (Config, Window, DPR, Position); every other field is left for the caller.
+// (Config, Window, DPR, Position, ExtraArgs); every other field is left for the caller.
 func ParseGenerated(raw []byte) (Options, error) {
 	var g Generated
 	if err := json.Unmarshal(raw, &g); err != nil {
@@ -32,7 +33,7 @@ func ParseGenerated(raw []byte) (Options, error) {
 	if len(g.Config) == 0 {
 		return Options{}, fmt.Errorf("generator output has no config")
 	}
-	return Options{Config: g.Config, Window: g.Launch.Window, DPR: g.Launch.DPR, Position: g.Launch.Position}, nil
+	return Options{Config: g.Config, Window: g.Launch.Window, DPR: g.Launch.DPR, Position: g.Launch.Position, ExtraArgs: g.Launch.Args}, nil
 }
 
 // generatedWarnings is the "warnings" list of the generator's output (the host GPU or fonts it could not match).
@@ -54,6 +55,8 @@ type GenArgs struct {
 	HostFonts    bool
 	// HostPlatformVersion is the host's UA-CH platformVersion; it wins over the pool's.
 	HostPlatformVersion string
+	// HostDisplay is probe.host_display's JSON ({"gamut","colorBits","hdr"}); a wide-gamut host gets launch.args.
+	HostDisplay string
 }
 
 // genArgs is the generator's argument list; the order is the old Generate's, the new flags last.
@@ -88,6 +91,9 @@ func genArgs(g GenArgs) []string {
 	}
 	if g.HostPlatformVersion != "" {
 		args = append(args, "--host-platform-version="+g.HostPlatformVersion)
+	}
+	if g.HostDisplay != "" {
+		args = append(args, "--host-display="+g.HostDisplay)
 	}
 	return args
 }

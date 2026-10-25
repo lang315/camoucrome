@@ -60,6 +60,8 @@
   },
   "ignore_default_args": true,
   "headless_arg": "--headless=new",
+  "extra_args_last": true,
+  "why_extra_args_last": "The caller's extra args (the generator's launch.args, e.g. --force-color-profile=srgb on a wide-gamut host) are appended after every other flag, so a later flag wins on argv.",
   "why_ignore_default_args": "Playwright's default argv carries --disable-features=<18 features>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType=2,..., --hide-scrollbars, --mute-audio, --force-color-profile=srgb, --use-angle=swiftshader-webgl, --disable-blink-features=AutomationControlled and more (measured 2026-09-10 on patchright 1.62). Each moves a page-visible surface off the compiled-defaults position SP7 D3 accepted, so the launcher passes ignore_default_args and exactly the list below.",
   "accept_lang_arg": "--accept-lang={languages}",
   "why_accept_lang": "Measured 2026-09-10: a config with locale:tag/navigator.languages fr-FR,fr still sends Accept-Language: en-US,en;q=0.9 (the tree derives nothing for the header; --lang does not change it either). --accept-lang=fr-FR,fr gives fr-FR,fr;q=0.9, Chrome adding the q-values itself. The launcher derives the flag from navigator.languages (else locale:tag) of the effective keys: the preset's locale expanded as preset_loader.cc does ([locale] plus its primary subtag when different), under the explicit config; an explicit member of the preset's OS pair or locale triple re-derives the whole group first (preset_loader.cc OverridePresetGroups), exactly as the browser does.",

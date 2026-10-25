@@ -28,6 +28,8 @@ test('args match the contract', () => {
       ...L.extension_args.map((a) => a.replace('{paths}', '/e1,/e2')),
       L.spki_arg.replace('{hashes}', 'AAA=,BBB=')]);
   assert.equal(L.ignore_default_args, true);
+  assert.equal(L.extra_args_last, true);
+  assert.equal(c.buildArgs({ headless: false, window: [1, 2], extra: ['--force-color-profile=srgb'] }).at(-1), '--force-color-profile=srgb');
 });
 
 test('env drops stale CAMOU vars and sets the transport', () => {

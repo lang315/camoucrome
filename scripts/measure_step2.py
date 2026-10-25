@@ -99,7 +99,7 @@ def opened(pw, arm, mode, user_data_dir=None, config="arm", ident=None):
     ident = ident or arm.ident
     lo = ident["launch"] if ident else {}
     ctx = launch(pw, arm.exe, config=(ident["config"] if ident else None) if config == "arm" else config,
-                 headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args,
+                 headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args + lo.get("args", []),
                  window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"),
                  position=tuple(lo["position"]) if lo.get("position") else None)
     try:

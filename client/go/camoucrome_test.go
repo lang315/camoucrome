@@ -24,6 +24,7 @@ type contract struct {
 		DPRArg            string   `json:"dpr_arg"`
 		HeadlessArg       string   `json:"headless_arg"`
 		IgnoreDefaultArgs bool     `json:"ignore_default_args"`
+		ExtraArgsLast     bool     `json:"extra_args_last"`
 		AcceptLangArg     string   `json:"accept_lang_arg"`
 		ExtensionArgs     []string `json:"extension_args"`
 		SPKIArg           string   `json:"spki_arg"`
@@ -138,6 +139,22 @@ func TestPerInstanceSeedsMatchTheContract(t *testing.T) {
 		if v.(uint32) == 0 {
 			t.Fatalf("%s is zero", k)
 		}
+	}
+}
+
+func TestGeneratedLaunchArgsRideAsExtraArgsLast(t *testing.T) {
+	c := load(t)
+	if !c.Launch.ExtraArgsLast {
+		t.Fatal("contract: extra_args_last is not true")
+	}
+	o, err := ParseGenerated([]byte(`{"config":{"a":1},"launch":{"window":[1,2],"dpr":1,"args":["--force-color-profile=srgb"]}}`))
+	if err != nil || !reflect.DeepEqual(o.ExtraArgs, []string{"--force-color-profile=srgb"}) {
+		t.Fatalf("ExtraArgs %v err %v", o.ExtraArgs, err)
+	}
+	headed := false
+	o.Headless = &headed
+	if got := BuildArgs(o); got[len(got)-1] != "--force-color-profile=srgb" {
+		t.Fatalf("args %v: the display flag is not last", got)
 	}
 }
 
