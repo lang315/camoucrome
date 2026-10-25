@@ -63,6 +63,8 @@ KNOWN = {
                  "(backlog: powerEfficient claim)",
                  lambda fork: fork.get("mediaCap") == [True, True, False]),
 }
+# Leaves the committed baseline predates (recapture is host work). Known only while the baseline lacks them.
+NOT_IN_BASELINE = {"mediaCapAv1"}
 # Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
 # an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
 KNOWN_PREFIX = {
@@ -132,6 +134,10 @@ def compare(base, fork):
             buckets["shape_only"] += 1
             if type(h) != type(f):
                 diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
+            continue
+        if h == "<absent>" and k in NOT_IN_BASELINE:
+            buckets["known"] += 1
+            print(f"known: {k}: not in the committed baseline (fork={json.dumps(f)[:80]})")
             continue
         if h != f:
             entry = KNOWN.get(k)
