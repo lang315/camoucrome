@@ -229,12 +229,6 @@
    "type": "string"
   },
   {
-   "name": "kKeyboardLayoutMap",
-   "key": "keyboard:layoutMap",
-   "type": "dict",
-   "doc": "navigator.keyboard.getLayoutMap(): code to unshifted character"
-  },
-  {
    "name": "kWebGlParameters",
    "key": "webGl:parameters",
    "type": "dict"
@@ -731,6 +725,14 @@
     "AudioManagerBase::GetOutputStreamParameters). AudioContext.baseLatency = frames / rate, so a claimed host's latency needs its",
     "frame count too (Windows WASAPI 480 at 48000 = 0.01 s; macOS 256 = 0.00533 s; the box's PulseAudio 512). The renderer renders",
     "in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real."
+   ]
+  },
+  {
+   "name": "kKeyboardLayoutMap",
+   "key": "keyboard:layoutMap",
+   "type": "dict",
+   "doc": [
+    "navigator.keyboard.getLayoutMap(): KeyboardEvent.code to unshifted character. Only the codes present are replaced; the rest keep the host's layout."
    ]
   }
  ]

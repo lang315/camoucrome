@@ -156,70 +156,6 @@ inline constexpr char kWebGlVendor[] = "webGl:vendor";
 inline constexpr char kWebGlRenderer[] = "webGl:renderer";
 inline constexpr char kWebGl2Vendor[] = "webGl2:vendor";
 inline constexpr char kWebGl2Renderer[] = "webGl2:renderer";
-
-// n
-// a
-// v
-// i
-// g
-// a
-// t
-// o
-// r
-// .
-// k
-// e
-// y
-// b
-// o
-// a
-// r
-// d
-// .
-// g
-// e
-// t
-// L
-// a
-// y
-// o
-// u
-// t
-// M
-// a
-// p
-// (
-// )
-// :
-//
-// c
-// o
-// d
-// e
-//
-// t
-// o
-//
-// u
-// n
-// s
-// h
-// i
-// f
-// t
-// e
-// d
-//
-// c
-// h
-// a
-// r
-// a
-// c
-// t
-// e
-// r
-inline constexpr char kKeyboardLayoutMap[] = "keyboard:layoutMap";
 inline constexpr char kWebGlParameters[] = "webGl:parameters";
 inline constexpr char kWebGl2Parameters[] = "webGl2:parameters";
 inline constexpr char kWebGlParamsBlock[] =
@@ -430,6 +366,9 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 // in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real.
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
+// navigator.keyboard.getLayoutMap(): KeyboardEvent.code to unshifted character. Only the codes present are replaced; the rest keep the host's layout.
+inline constexpr char kKeyboardLayoutMap[] = "keyboard:layoutMap";
+
 // Every key above, in registry order.
 inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kUaOsInfo,
@@ -454,7 +393,6 @@ inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kWebGlRenderer,
     kWebGl2Vendor,
     kWebGl2Renderer,
-    kKeyboardLayoutMap,
     kWebGlParameters,
     kWebGl2Parameters,
     kWebGlParamsBlock,
@@ -523,6 +461,7 @@ inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kShareCancelMs,
     kAudioSampleRate,
     kAudioBufferFrames,
+    kKeyboardLayoutMap,
 };
 
 // The UA client-hint keys, without kUaOsInfo.
