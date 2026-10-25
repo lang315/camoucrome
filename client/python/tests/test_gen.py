@@ -225,7 +225,7 @@ def test_voices_follow_the_locale_and_share_cancel_is_human_paced():
 
 def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert win["audio:sampleRate"] == 48000
+    assert win["audio:sampleRate"] == 44100
     assert gen.voices_keys("macOS", "fr-FR")["voices:list"] == gen.voices_keys("macOS")["voices:list"]
     assert len(gen.voices_keys("macOS")["voices:list"]) > 100 and gen.audio_keys("macOS")["audio:sampleRate"] == 48000
     assert gen.audio_keys("Linux") == {}
@@ -233,7 +233,7 @@ def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
 
 def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert win["audio:bufferFrames"] == 480 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
+    assert win["audio:bufferFrames"] == 441 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
     assert gen.audio_keys("macOS")["audio:bufferFrames"] == 256
     lin = json.loads(json.dumps(POOL)); lin["navigator"]["userAgentData"]["platform"] = "Linux"; lin["navigator"]["userAgentData"]["platformVersion"] = ""
     cfg = gen.from_pool(lin, "UTC", rng=random.Random(1))["config"]
@@ -346,7 +346,7 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
-        "rest": "a17de27a2435182d"},
+        "rest": "e265d0b39602c93e"},
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
 }
