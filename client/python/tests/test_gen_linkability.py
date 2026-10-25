@@ -55,39 +55,6 @@ def test_other_seeded_keys_do_not_move():
     assert c["share:cancelMs"] == EXPECTED_SHARE_CANCEL_MS_SEED_3
 
 
-CODES = ("Backquote", "Digit1", "KeyA", "KeyQ")
-
-
-def test_fr_locale_gets_an_azerty_map():
-    keys, warn = gen.keyboard_keys("fr-FR")
-    m = keys["keyboard:layoutMap"]
-    assert (m["KeyA"], m["KeyQ"]) == ("q", "a") and warn is None
-
-
-def test_us_locale_gets_the_us_map():
-    m = gen.keyboard_keys("en-US")[0]["keyboard:layoutMap"]
-    assert (m["KeyA"], m["KeyQ"], m["Backquote"], m["Digit1"]) == ("a", "q", "`", "1")
-
-
-def test_unmapped_locale_has_no_layout_and_warns():
-    keys, warn = gen.keyboard_keys("xx-XX")
-    assert keys == {} and "keyboard layout" in warn
-
-
-def test_every_known_locale_is_mapped_or_listed_unmapped():
-    zones = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
-    table = json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text())
-    missing = [l for l in zones if l not in table["locales"] and l not in table["unmapped"]]
-    assert missing == []
-
-
-def test_every_layout_has_the_four_codes_and_every_locale_points_at_one():
-    table = json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text())
-    assert all(set(CODES) <= set(row) for row in table["layouts"].values())
-    assert set(table["locales"].values()) <= set(table["layouts"])
-    assert not set(table["locales"]) & set(table["unmapped"])
-
-
 def test_both_axes_vary_and_the_window_stays_inside_the_work_area():
     assert len({_pos(s)[0] for s in range(1, 21)}) >= 6
     assert len({_pos(s)[1] for s in range(1, 21)}) >= 6
@@ -102,13 +69,6 @@ def test_pinned_window_geometry_for_seeds_1_to_3():
     keys = ("window.screenX", "window.screenY", "window.outerWidth", "window.outerHeight")
     got = {s: tuple(gen.generate("windows", timezone="Europe/Paris", seed=s)["config"][k] for k in keys) for s in (1, 2, 3)}
     assert got == {1: (66, 75, 1854, 1077), 2: (101, 115, 1435, 861), 3: (73, 11, 1847, 1021)}
-
-
-def test_keyboard_layout_is_gated_to_windows_claims():
-    for os_ in ("macos", "linux"):
-        assert "keyboard:layoutMap" not in gen.generate(os_, timezone="Europe/Paris", seed=1)["config"]
-    m = gen.generate("windows", timezone="Europe/Paris", locale="fr-FR", seed=1)["config"]["keyboard:layoutMap"]
-    assert (m["KeyA"], m["KeyQ"]) == ("q", "a")
 
 
 def test_host_platform_version_is_windows_only_and_validated():
@@ -150,9 +110,6 @@ def test_generate_carries_the_display_flag_in_launch_args_and_the_warning():
     assert gen.generate("windows", timezone="Europe/Paris", seed=1)["launch"]["args"] == []
 
 
-KEYBOARD_MAPPED = set(json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text())["locales"])
-
-
 def test_locale_keys_move_together_for_every_known_locale():
     zones = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
     bad = []
@@ -160,8 +117,7 @@ def test_locale_keys_move_together_for_every_known_locale():
         r = gen.generate("windows", timezone=zones[loc][0], locale=loc, seed=1)
         c = r["config"]
         ok = (c["locale:tag"] == c["navigator.language"] == c["navigator.languages"][0] == loc
-              and c["timezone:id"] == zones[loc][0]
-              and (loc not in KEYBOARD_MAPPED or "keyboard:layoutMap" in c))
+              and c["timezone:id"] == zones[loc][0])
         if not ok:
             bad.append(loc)
     assert bad == []

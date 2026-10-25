@@ -52,7 +52,6 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kHumanizeEnabled, kHumanizeMinTime, kHumanizeMaxTime, kShowCursor,
       kCanvasSeed, kCanvasNoiseDensity, kCanvasNoiseStrength,
       kWebGlVendor, kWebGlRenderer, kWebGl2Vendor, kWebGl2Renderer,
-      kKeyboardLayoutMap,
       kWebGlParameters, kWebGl2Parameters, kWebGlParamsBlock,
       kWebGl2ParamsBlock,
       kWebGlExtensions, kWebGl2Extensions,

@@ -366,11 +366,8 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 // in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real.
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
-// navigator.keyboard.getLayoutMap(): KeyboardEvent.code to unshifted character. Only the codes present are replaced; the rest keep the host's layout.
-inline constexpr char kKeyboardLayoutMap[] = "keyboard:layoutMap";
-
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 91> kAllKeys = {
+inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -461,7 +458,6 @@ inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kShareCancelMs,
     kAudioSampleRate,
     kAudioBufferFrames,
-    kKeyboardLayoutMap,
 };
 
 // The UA client-hint keys, without kUaOsInfo.

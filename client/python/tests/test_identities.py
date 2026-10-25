@@ -16,7 +16,6 @@ SHARED_ALLOWED = frozenset({
     "locale:tag", "navigator.language", "navigator.languages",  # en-US default
     "fonts:",                       # stock Windows font list and its alias maps
     "voices:list",                  # stock Windows voices
-    "keyboard:layoutMap",           # the en-US default is the US layout
     "navigator.deviceMemory",       # Chrome caps it at 8
     "navigator.maxTouchPoints",     # 0 on a non-touch desktop
     "window.screenX", "window.screenY",  # maximised window at 0,0

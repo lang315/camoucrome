@@ -338,15 +338,6 @@ def window_position(rng, avail, outer):
     return r.randint(0, lim[0]), r.randint(0, lim[1])
 
 
-def keyboard_keys(locale):
-    """keyboard:layoutMap for the locale's standard Windows layout; ({}, warning) for a locale with no row."""
-    table = json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text(encoding="utf-8"))
-    name = table["locales"].get(locale)
-    if name is None:
-        return {}, f"no keyboard layout row for {locale}: navigator.keyboard keeps the host's layout, which may contradict the locale"
-    return {"keyboard:layoutMap": table["layouts"][name]}, None
-
-
 def valid_display(d):
     """True for a {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool} dict; probe and the CLI share it."""
     return (isinstance(d, dict) and d.get("gamut") in ("srgb", "p3", "rec2020") and d.get("colorBits") in (8, 10)
@@ -429,8 +420,6 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         else:
             pv_warn = f"host platform version {host_platform_version!r} is not N.N.N: ignored"
     config.update(voices_keys(platform, tag))
-    kb, kw = keyboard_keys(tag) if platform == "Windows" else ({}, None)  # the table holds Windows KBD* layouts
-    config.update(kb)
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
         config["share:cancelMs"] = rng.randint(900, 2600)  # a dismissed share sheet takes a human seconds, never 0 ms
@@ -459,7 +448,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     else:
         bad_display = None
     launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn, kw, pv_warn, bad_display, dw) if w]}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
