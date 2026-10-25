@@ -15,6 +15,11 @@
   "err.toStringLen": "oracle page marker or error-string length of V8 in Chrome 156",
   "fonts.calibri": "ships with every Windows install",
   "fonts.segoe": "ships with every Windows install",
+  "gpu.limits.maxBindGroups": "not a D3D12 value: the WebGPU default tier of 4 (dawn/native/Limits.cpp:131) (webgpu-limits-source); a constant of the API/Dawn for Intel parts on this Chrome version, not a per-machine value",
+  "gpu.limits.maxBufferSize": "Dawn constant kAssumedMaxBufferSize, not a caps query (PhysicalDeviceD3D12.cpp:410) (webgpu-limits-source); a constant of the API/Dawn for Intel parts on this Chrome version, not a per-machine value",
+  "gpu.limits.maxComputeWorkgroupSizeX": "D3D12_CS_THREAD_GROUP_MAX_X API constant (PhysicalDeviceD3D12.cpp:393) (webgpu-limits-source); a constant of the API/Dawn for Intel parts on this Chrome version, not a per-machine value",
+  "gpu.limits.maxStorageBufferBindingSize": "Dawn constant kAssumedMaxBufferSize; the only other branch (1<<28) is Qualcomm ACPI before Adreno 8xx, no Intel input (PhysicalDeviceD3D12.cpp:426-433) (webgpu-limits-source); a constant of the API/Dawn for Intel parts on this Chrome version, not a per-machine value",
+  "gpu.limits.maxTextureDimension2D": "D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION API constant (PhysicalDeviceD3D12.cpp:319) (webgpu-limits-source); a constant of the API/Dawn for Intel parts on this Chrome version, not a per-machine value",
   "intl.collator": "ICU 156 data, identical in every Chrome 156 (tzCount, formatter option defaults)",
   "intl.dtf.calendar": "ICU 156 data, identical in every Chrome 156 (tzCount, formatter option defaults)",
   "intl.dtf.day": "ICU 156 data, identical in every Chrome 156 (tzCount, formatter option defaults)",
@@ -122,7 +127,6 @@
   "win.showSaveFilePicker": "presence of a Chrome 156 window member",
   "win.speechSynthesis": "presence of a Chrome 156 window member",
   "win.styleMedia": "presence of a Chrome 156 window member",
-  "gpu.limits.": "WebGPU limits (maxBindGroups, maxBufferSize, maxComputeWorkgroupSizeX, maxStorageBufferBindingSize, maxTextureDimension2D) are set by Dawn's D3D12 backend from D3D12 API constants and Dawn constants (PhysicalDeviceD3D12.cpp InitializeSupportedLimitsImpl) with no DeviceId or generation input on Intel, so every D3D12 feature-level-12 Intel machine on this Chrome version reports the same (2026-10-25-webgpu-limits-source.md)",
   "windowKeys": "Chrome 156's own window property names",
   "windowNames": "Chrome 156's own window property names"
  }
