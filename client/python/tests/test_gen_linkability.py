@@ -119,3 +119,20 @@ def test_generate_carries_the_display_flag_in_launch_args_and_the_warning():
                        host_display={"gamut": "p3", "colorBits": 10, "hdr": False})
     assert any("10-bit" in w for w in out["warnings"])
     assert gen.generate("windows", timezone="Europe/Paris", seed=1)["launch"]["args"] == []
+
+
+KEYBOARD_MAPPED = set(json.loads((ROOT / "settings" / "keyboard_layouts.json").read_text())["locales"])
+
+
+def test_locale_keys_move_together_for_every_known_locale():
+    zones = json.loads((ROOT / "settings" / "locale_zones.json").read_text())["zones"]
+    bad = []
+    for loc in zones:
+        r = gen.generate("windows", timezone=zones[loc][0], locale=loc, seed=1)
+        c = r["config"]
+        ok = (c["locale:tag"] == c["navigator.language"] == c["navigator.languages"][0] == loc
+              and c["timezone:id"] == zones[loc][0]
+              and (loc not in KEYBOARD_MAPPED or "keyboard:layoutMap" in c))
+        if not ok:
+            bad.append(loc)
+    assert bad == []
