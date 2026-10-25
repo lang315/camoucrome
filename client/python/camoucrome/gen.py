@@ -326,6 +326,13 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
+def window_position(rng, screen, outer):
+    """A window dragged a little off the corner: x and y 0..120 px (assumption), 1 px steps because pool windows fill the screen width and leave under 50 px of room, never past the screen."""
+    r = random.Random(repr(rng.getstate()) + "window-position")  # own generator: rng and later keys stay put
+    max_x, max_y = max(0, screen[0] - outer[0]), max(0, screen[1] - outer[1])
+    return min(max_x, r.randint(0, 120)), min(max_y, r.randint(0, 120))
+
+
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
               host_platform_version=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
@@ -395,9 +402,17 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)
     clamp_window_position(config)
+    screen = (config["screen.width"], config["screen.height"])
+    outer = (config["window.outerWidth"], config["window.outerHeight"])
+    x, y = window_position(rng, screen, outer)
+    # A pool coordinate of 0, or one clamped to the far edge (the pool sample did not fit the screen), is no
+    # sample of where a person put the window; any other value is real and stays.
+    for key, new, slack in (("window.screenX", x, screen[0] - outer[0]), ("window.screenY", y, screen[1] - outer[1])):
+        if config[key] in (0, slack):
+            config[key] = new
     dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
     launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
-              "dpr": dpr}
+              "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
     return {"config": config, "launch": launch, "warnings": [w for w in (warn,) if w]}
 
 

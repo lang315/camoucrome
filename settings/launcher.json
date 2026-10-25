@@ -43,6 +43,7 @@
    "--no-default-browser-check"
   ],
   "window_size_arg": "--window-size={width},{height}",
+  "window_position_arg": "--window-position={x},{y}",
   "dpr_arg": "--force-device-scale-factor={dpr}",
   "proxy_arg": "--proxy-server={server}",
   "proxy_bypass_arg": "--proxy-bypass-list={bypass}",

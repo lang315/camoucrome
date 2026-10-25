@@ -15,14 +15,15 @@ import (
 type Generated struct {
 	Config map[string]any `json:"config"`
 	Launch struct {
-		Window [2]int  `json:"window"`
-		DPR    float64 `json:"dpr"`
+		Window   [2]int  `json:"window"`
+		DPR      float64 `json:"dpr"`
+		Position *[2]int `json:"position"`
 	} `json:"launch"`
 	Warnings []string `json:"warnings"`
 }
 
 // ParseGenerated decodes the generator's output and folds it into Options
-// (Config, Window, DPR); every other field is left for the caller.
+// (Config, Window, DPR, Position); every other field is left for the caller.
 func ParseGenerated(raw []byte) (Options, error) {
 	var g Generated
 	if err := json.Unmarshal(raw, &g); err != nil {
@@ -31,7 +32,7 @@ func ParseGenerated(raw []byte) (Options, error) {
 	if len(g.Config) == 0 {
 		return Options{}, fmt.Errorf("generator output has no config")
 	}
-	return Options{Config: g.Config, Window: g.Launch.Window, DPR: g.Launch.DPR}, nil
+	return Options{Config: g.Config, Window: g.Launch.Window, DPR: g.Launch.DPR, Position: g.Launch.Position}, nil
 }
 
 // generatedWarnings is the "warnings" list of the generator's output (the host GPU or fonts it could not match).

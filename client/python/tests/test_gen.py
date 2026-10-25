@@ -52,9 +52,10 @@ def test_geometry_is_coherent_after_the_helpers():
     # avail == screen in the pool -> taskbar applied; outer 1600x900 clamped.
     assert cfg["screen.availHeight"] == 864 - 40 and cfg["screen.availWidth"] == 1536
     assert cfg["window.outerWidth"] == 1536 and cfg["window.outerHeight"] == 824  # 824 % 4 == 0
-    assert cfg["window.screenX"] == 0 and cfg["window.screenY"] == 40
+    assert 0 <= cfg["window.screenX"] <= 0 and 0 <= cfg["window.screenY"] <= 40  # position is drawn in gen.window_position
     out = gen.from_pool(POOL, "UTC", rng=random.Random(1))
-    assert out["launch"] == {"window": [1534, 822], "dpr": 1.25}
+    assert out["launch"] == {"window": [1534, 822], "dpr": 1.25,
+                             "position": [cfg["window.screenX"], cfg["window.screenY"]]}
 
 
 def test_locale_and_timezone():
@@ -114,9 +115,10 @@ def test_launch_window_carries_the_measured_dpr_offset():
                           availWidth=2000, availHeight=1160)
     out = gen.from_pool(pool, "UTC", rng=random.Random(1))
     assert out["config"]["window.outerWidth"] == 1530 and out["config"]["window.outerHeight"] == 901
-    assert out["launch"] == {"window": [1528, 899], "dpr": 1.25}
+    assert {k: out["launch"][k] for k in ("window", "dpr")} == {"window": [1528, 899], "dpr": 1.25}
     pool["screen"]["devicePixelRatio"] = 2
-    assert gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"] == {"window": [1530, 901], "dpr": 2}
+    two = gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"]
+    assert {k: two[k] for k in ("window", "dpr")} == {"window": [1530, 901], "dpr": 2}
     odd = json.loads(json.dumps(POOL))
     odd["screen"]["devicePixelRatio"] = 1.2145832777023315
     assert not gen.acceptable(odd)
@@ -344,9 +346,10 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 
 
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
+# seed 1 "rest" recomputed on the pre-Task-6 code without window.screenX/Y and launch.position.
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
-        "rest": "e265d0b39602c93e"},
+        "rest": "bf061a9cf5aac689"},
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
 }
@@ -364,8 +367,10 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     excluded; every other key and launch must be byte-identical to the pre-change run."""
     import hashlib
     r = gen.generate("windows", "Europe/Paris", None, 1)
-    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:")}
-    assert hashlib.sha256(json.dumps([rest, r["launch"]], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
+    # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
+    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY")}
+    launch = {k: v for k, v in r["launch"].items() if k != "position"}
+    assert hashlib.sha256(json.dumps([rest, launch], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
 
 
 def test_host_families_limit_fonts_list_and_alias_local():
