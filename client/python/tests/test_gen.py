@@ -52,7 +52,8 @@ def test_geometry_is_coherent_after_the_helpers():
     # avail == screen in the pool -> taskbar applied; outer 1600x900 clamped.
     assert cfg["screen.availHeight"] == 864 - 40 and cfg["screen.availWidth"] == 1536
     assert cfg["window.outerWidth"] == 1536 and cfg["window.outerHeight"] == 824  # 824 % 4 == 0
-    assert 0 <= cfg["window.screenX"] <= 0 and 0 <= cfg["window.screenY"] <= 40  # position is drawn in gen.window_position
+    # pool screenY 40 is the far-edge slack, so gen.window_position redraws it; the draw for this rng gives 40 again
+    assert cfg["window.screenX"] == 0 and cfg["window.screenY"] == 40
     out = gen.from_pool(POOL, "UTC", rng=random.Random(1))
     assert out["launch"] == {"window": [1534, 822], "dpr": 1.25,
                              "position": [cfg["window.screenX"], cfg["window.screenY"]]}

@@ -100,7 +100,8 @@ def opened(pw, arm, mode, user_data_dir=None, config="arm", ident=None):
     lo = ident["launch"] if ident else {}
     ctx = launch(pw, arm.exe, config=(ident["config"] if ident else None) if config == "arm" else config,
                  headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args,
-                 window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"))
+                 window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"),
+                 position=tuple(lo["position"]) if lo.get("position") else None)
     try:
         yield ctx
         # S4: a launch whose GPU process crashed measured nothing GPU-backed.

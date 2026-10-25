@@ -327,7 +327,8 @@ def clamp_window_position(config):
 
 
 def window_position(rng, screen, outer):
-    """A window dragged a little off the corner: x and y 0..120 px (assumption), 1 px steps because pool windows fill the screen width and leave under 50 px of room, never past the screen."""
+    """A window dragged a little off the corner: x and y 0..120 px (assumption), 1 px steps because pool windows fill the screen width and leave under 50 px of room, never past the screen.
+    In practice only y varies: pool windows fill the screen width, so x slack is 0 and screenX stays 0."""
     r = random.Random(repr(rng.getstate()) + "window-position")  # own generator: rng and later keys stay put
     max_x, max_y = max(0, screen[0] - outer[0]), max(0, screen[1] - outer[1])
     return min(max_x, r.randint(0, 120)), min(max_y, r.randint(0, 120))

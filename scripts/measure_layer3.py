@@ -274,7 +274,8 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
         user_data_dir = tempfile.mkdtemp(prefix="l3-")
     seed_profile(user_data_dir)
     ctx = launch(pw, arm.exe, config=ident["config"] if ident else None, headless=not a.headed, user_data_dir=user_data_dir,
-                 args=arm.args, window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"), proxy=proxy)
+                 args=arm.args, window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"),
+                 position=tuple(lo["position"]) if lo.get("position") else None, proxy=proxy)
     total = [0]
     try:
         if a.gpu_gate:

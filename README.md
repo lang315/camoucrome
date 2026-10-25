@@ -180,7 +180,8 @@ with sync_playwright() as pw:
         fp = camoucrome.gen.generate(os="windows", seed=seed)
         ctx = camoucrome.launch(pw, CHROME, user_data_dir=udd, headless=False,
                                 config={**fp["config"], **camoucrome.profile_seeds(udd)},
-                                window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+                                window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
+                                position=tuple(fp["launch"]["position"]))
         page = ctx.pages[0]
         page.goto("https://example.com")
         print(name, page.evaluate("[navigator.hardwareConcurrency, screen.width]"))
@@ -216,7 +217,8 @@ except geoip.GeoIPError as e:          # no echo service answered, or the proxy 
     raise SystemExit(f"cannot place the exit address: {e}")
 fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
 ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
-                        window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+                        window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
+                        position=tuple(fp["launch"]["position"]))
 ```
 
 The zone comes from the address's coordinates and the locale from its country. An explicit

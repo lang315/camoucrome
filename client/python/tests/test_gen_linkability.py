@@ -86,3 +86,12 @@ def test_every_layout_has_the_four_codes_and_every_locale_points_at_one():
     assert all(set(CODES) <= set(row) for row in table["layouts"].values())
     assert set(table["locales"].values()) <= set(table["layouts"])
     assert not set(table["locales"]) & set(table["unmapped"])
+
+
+def test_only_y_varies_screen_x_is_zero_when_the_window_fills_the_width():
+    # documents the real behaviour: pool windows fill the screen width, so x has no slack
+    for s in range(1, 41):
+        c = gen.generate("windows", timezone="Europe/Paris", seed=s)["config"]
+        if c["window.outerWidth"] == c["screen.width"]:
+            assert c["window.screenX"] == 0
+    assert len({_pos(s)[1] for s in range(1, 21)}) >= 6
