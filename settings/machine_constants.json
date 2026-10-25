@@ -122,6 +122,7 @@
   "win.showSaveFilePicker": "presence of a Chrome 156 window member",
   "win.speechSynthesis": "presence of a Chrome 156 window member",
   "win.styleMedia": "presence of a Chrome 156 window member",
+  "gpu.limits.": "WebGPU limits (maxBindGroups, maxBufferSize, maxComputeWorkgroupSizeX, maxStorageBufferBindingSize, maxTextureDimension2D) are set by Dawn's D3D12 backend from D3D12 API constants and Dawn constants (PhysicalDeviceD3D12.cpp InitializeSupportedLimitsImpl) with no DeviceId or generation input on Intel, so every D3D12 feature-level-12 Intel machine on this Chrome version reports the same (2026-10-25-webgpu-limits-source.md)",
   "windowKeys": "Chrome 156's own window property names",
   "windowNames": "Chrome 156's own window property names"
  }
