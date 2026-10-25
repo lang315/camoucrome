@@ -147,3 +147,23 @@ def test_host_platform_version_none_on_bad_result(monkeypatch, value):
 def test_host_platform_version_none_when_launch_raises(monkeypatch):
     fake_pw(monkeypatch, RuntimeError("no browser"))
     assert probe.host_platform_version("x") is None
+
+
+def test_host_display_returns_dict_and_closes(monkeypatch):
+    d = {"gamut": "p3", "colorBits": 10, "hdr": True}
+    ctx = FakeCtx(d)
+    fake_pw(monkeypatch, ctx)
+    assert probe.host_display("x") == d
+    assert ctx.closed == 1
+
+
+@pytest.mark.parametrize("value", [None, "", 5, {"gamut": "p3"}, {"gamut": "x", "colorBits": 8, "hdr": False},
+                                   {"gamut": "srgb", "colorBits": 9, "hdr": False}])
+def test_host_display_none_on_bad_result(monkeypatch, value):
+    fake_pw(monkeypatch, FakeCtx(value))
+    assert probe.host_display("x") is None
+
+
+def test_host_display_none_when_launch_raises(monkeypatch):
+    fake_pw(monkeypatch, RuntimeError("no browser"))
+    assert probe.host_display("x") is None

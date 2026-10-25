@@ -123,6 +123,17 @@ def host_platform_version(executable, timeout_s=30):
     return r if isinstance(r, str) and r else None
 
 
+HOST_DISPLAY_JS = """() => ({gamut: matchMedia('(color-gamut: rec2020)').matches ? 'rec2020' : matchMedia('(color-gamut: p3)').matches ? 'p3' : 'srgb', colorBits: matchMedia('(color: 10)').matches ? 10 : 8, hdr: matchMedia('(dynamic-range: high)').matches})"""
+
+
+def host_display(executable, timeout_s=30):
+    """The host display's {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool}; None on any failure or odd shape."""
+    r = _probe(executable, HOST_DISPLAY_JS, timeout_s)
+    ok = (isinstance(r, dict) and r.get("gamut") in ("srgb", "p3", "rec2020") and r.get("colorBits") in (8, 10)
+          and isinstance(r.get("hdr"), bool))
+    return r if ok else None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--driver", choices=["patchright", "stock"], required=True)

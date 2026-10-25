@@ -55,7 +55,7 @@ def test_geometry_is_coherent_after_the_helpers():
     # pool screenY 40 is the far-edge slack, so gen.window_position redraws it; the draw for this rng gives 40 again
     assert cfg["window.screenX"] == 0 and cfg["window.screenY"] == 40
     out = gen.from_pool(POOL, "UTC", rng=random.Random(1))
-    assert out["launch"] == {"window": [1534, 822], "dpr": 1.25,
+    assert out["launch"] == {"window": [1534, 822], "dpr": 1.25, "args": [],
                              "position": [cfg["window.screenX"], cfg["window.screenY"]]}
 
 
@@ -372,7 +372,7 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     # keyboard:layoutMap is new since Step 6 Task 2 (test_gen_linkability pins it)
     rest = {k: v for k, v in r["config"].items()
             if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY", "keyboard:layoutMap")}
-    launch = {k: v for k, v in r["launch"].items() if k != "position"}
+    launch = {k: v for k, v in r["launch"].items() if k not in ("position", "args")}
     assert hashlib.sha256(json.dumps([rest, launch], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
 
 

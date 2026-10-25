@@ -343,8 +343,18 @@ def keyboard_keys(locale):
     return {"keyboard:layoutMap": table["layouts"][name]}, None
 
 
+def display_flags(host_display):
+    """--force-color-profile=srgb for a wide-gamut host. 10-bit and HDR have no known launch lever: a warning, not a claim."""
+    if not host_display:
+        return [], "display unknown: gamut, bit depth and HDR keep the host's values"
+    flags = ["--force-color-profile=srgb"] if host_display["gamut"] != "srgb" else []
+    left = [n for n, on in (("10-bit", host_display["colorBits"] != 8), ("hdr", host_display["hdr"])) if on]
+    warn = f"host display is {', '.join(left)}: no lever hides it, every profile shows it" if left else None
+    return flags, warn
+
+
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
-              host_platform_version=None):
+              host_platform_version=None, host_display=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
     cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
@@ -425,11 +435,13 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
     launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
               "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn, kw) if w]}
+    # None = not probed (no claim); a failed probe is the caller's to turn into display_flags(None)
+    launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, kw, dw) if w]}
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
-             host_families=None, host_platform_version=None):
+             host_families=None, host_platform_version=None, host_display=None):
     """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so."""
     if exit_ip:
@@ -444,7 +456,8 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version)
+            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
+                             host_display)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
@@ -472,9 +485,10 @@ def main():
     ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
+    ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
     a = ap.parse_args()
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display), sys.stdout)
 
 
 if __name__ == "__main__":

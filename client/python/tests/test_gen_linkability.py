@@ -95,3 +95,27 @@ def test_only_y_varies_screen_x_is_zero_when_the_window_fills_the_width():
         if c["window.outerWidth"] == c["screen.width"]:
             assert c["window.screenX"] == 0
     assert len({_pos(s)[1] for s in range(1, 21)}) >= 6
+
+
+def test_modal_host_gets_no_flag_and_no_warning():
+    assert gen.display_flags({"gamut": "srgb", "colorBits": 8, "hdr": False}) == ([], None)
+
+
+def test_non_modal_host_gets_srgb_flag_and_warning():
+    flags, warn = gen.display_flags({"gamut": "p3", "colorBits": 10, "hdr": True})
+    assert flags == ["--force-color-profile=srgb"]
+    assert "hdr" in warn and "10-bit" in warn   # the flag cannot hide these two; the warning says so
+
+
+def test_unknown_display_is_left_alone():
+    assert gen.display_flags(None) == ([], "display unknown: gamut, bit depth and HDR keep the host's values")
+
+
+def test_generate_carries_the_display_flag_in_launch_args_and_the_warning():
+    out = gen.generate("windows", timezone="Europe/Paris", seed=1,
+                       host_display={"gamut": "p3", "colorBits": 8, "hdr": False})
+    assert out["launch"]["args"] == ["--force-color-profile=srgb"] and not any("host display" in w for w in out["warnings"])
+    out = gen.generate("windows", timezone="Europe/Paris", seed=1,
+                       host_display={"gamut": "p3", "colorBits": 10, "hdr": False})
+    assert any("10-bit" in w for w in out["warnings"])
+    assert gen.generate("windows", timezone="Europe/Paris", seed=1)["launch"]["args"] == []
