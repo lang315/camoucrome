@@ -95,7 +95,7 @@ EXPECTED = {
 # Oracle leaves compared by type only: a value difference is the identity's or the machine's.
 SHAPE = {f"oracle.{k}": "identity- or machine-bound; compared by type" for k in SHAPE_ONLY}
 # Identity-derived flags the client adds to the fork arm only (launcher.build_args).
-ARGV_ALLOWED = ("--accept-lang=", "--user-data-dir=", "--window-size=", "--force-device-scale-factor=")
+ARGV_ALLOWED = ("--accept-lang=", "--user-data-dir=", "--window-size=", "--window-position=", "--force-device-scale-factor=")
 # Regexes over detector text lines that changed between null runs on 2026-10-04 (timings, clocks,
 # the WebRTC candidates and their hashes, CDN edge IPs, per-load hashes).
 VOLATILE_LINES = [

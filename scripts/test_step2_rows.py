@@ -73,6 +73,11 @@ def test_argv_parity_allows_identity_window_and_dpr():
     assert r.argv_problems(c, f) == []
 
 
+def test_argv_parity_allows_window_position():
+    f = ["chrome.exe", "--no-first-run", "--window-position=7,25"]
+    assert r.argv_problems(["chrome.exe", "--no-first-run"], f) == []
+
+
 def test_argv_parity_flags_extra_arg():
     c = ["chrome.exe", "--no-first-run"]
     f = ["chrome.exe", "--no-first-run", "--use-angle=swiftshader"]
