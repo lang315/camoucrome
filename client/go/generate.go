@@ -51,6 +51,8 @@ type GenArgs struct {
 	// Windows claim's fonts to the families this host has.
 	HostRenderer string
 	HostFonts    bool
+	// HostPlatformVersion is the host's UA-CH platformVersion; it wins over the pool's.
+	HostPlatformVersion string
 }
 
 // genArgs is the generator's argument list; the order is the old Generate's, the new flags last.
@@ -82,6 +84,9 @@ func genArgs(g GenArgs) []string {
 	}
 	if g.HostFonts {
 		args = append(args, "--host-fonts")
+	}
+	if g.HostPlatformVersion != "" {
+		args = append(args, "--host-platform-version="+g.HostPlatformVersion)
 	}
 	return args
 }

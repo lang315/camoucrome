@@ -326,7 +326,8 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
-def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None):
+def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
+              host_platform_version=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
     cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
@@ -384,6 +385,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if t <= cap])
     config.update(fonts_keys(platform, rng, host_families))
+    if host_platform_version:  # the host's real OS wins over the pool's and the font capture's claim
+        config["ua:platformVersion"] = host_platform_version
     config.update(voices_keys(platform, tag))
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
@@ -399,7 +402,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
-             host_families=None):
+             host_families=None, host_platform_version=None):
     """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so."""
     if exit_ip:
@@ -414,7 +417,7 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families)
+            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
@@ -441,9 +444,10 @@ def main():
     ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
     ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
+    ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     a = ap.parse_args()
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version), sys.stdout)
 
 
 if __name__ == "__main__":

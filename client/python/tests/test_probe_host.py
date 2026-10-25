@@ -129,3 +129,21 @@ def test_host_renderer_closes_on_exception(monkeypatch):
 def test_host_renderer_reads_a_real_string():
     r = probe.host_renderer(os.environ["CAMOU_TEST_CHROME"])
     assert r and r.startswith("ANGLE (")
+
+
+def test_host_platform_version_returns_string_and_closes(monkeypatch):
+    ctx = FakeCtx("15.0.0")
+    fake_pw(monkeypatch, ctx)
+    assert probe.host_platform_version("x") == "15.0.0"
+    assert ctx.closed == 1
+
+
+@pytest.mark.parametrize("value", [None, "", 5])
+def test_host_platform_version_none_on_bad_result(monkeypatch, value):
+    fake_pw(monkeypatch, FakeCtx(value))
+    assert probe.host_platform_version("x") is None
+
+
+def test_host_platform_version_none_when_launch_raises(monkeypatch):
+    fake_pw(monkeypatch, RuntimeError("no browser"))
+    assert probe.host_platform_version("x") is None

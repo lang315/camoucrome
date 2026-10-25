@@ -132,6 +132,13 @@ func TestGenArgsCarryTheHostFlagsLast(t *testing.T) {
 	}
 }
 
+func TestGenArgsCarryHostPlatformVersion(t *testing.T) {
+	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, HostPlatformVersion: "15.0.0"}), " ")
+	if got != "-m camoucrome.gen --os windows --host-platform-version=15.0.0" {
+		t.Fatalf("args = %q", got)
+	}
+}
+
 func TestParseGeneratedToleratesWarnings(t *testing.T) {
 	raw := []byte(`{"config":{"a":1},"launch":{"window":[1,2],"dpr":1},"warnings":["host GPU unknown"]}`)
 	if _, err := ParseGenerated(raw); err != nil {
