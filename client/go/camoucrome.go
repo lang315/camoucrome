@@ -52,7 +52,40 @@ type Options struct {
 	Extensions     []string // unpacked extension dirs (--load-extension)
 	SPKIList       []string // base64 SHA-256 SPKI hashes whose cert errors are ignored (a MITM CA)
 	ExtraArgs      []string
-	FontsDir       string // the bundled font dir; default "fonts" beside the executable when present
+	FontsDir       string       // the bundled font dir; default "fonts" beside the executable when present
+	Proxy          *Proxy       // nil = direct
+	GeoIP          string       // a DB-IP Lite / GeoLite2-layout .mmdb: Launch warns when timezone:id contradicts the exit IP
+	ExitIP         string       // skips the echo request
+	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
+	Warn           func(string) // default: stderr
+}
+
+// Proxy mirrors Playwright's proxy option (settings/launcher.json launch.proxy_option_fields). The launcher puts
+// Server (and Bypass) into argv and hands Username and Password to the driver only: a process list shows argv.
+type Proxy struct {
+	Server, Bypass, Username, Password string
+}
+
+// validateProxy refuses what would leak or silently do nothing: no server, or credentials inside the server URL.
+func validateProxy(p *Proxy) error {
+	if p != nil && (p.Server == "" || strings.Contains(p.Server, "@")) {
+		return fmt.Errorf("proxy needs a Server URL with no credentials in it (Username and Password are separate fields; argv is visible to every process)")
+	}
+	return nil
+}
+
+// proxyOption is the driver's proxy option: empty fields stay unset.
+func proxyOption(p *Proxy) *playwright.Proxy {
+	if p == nil {
+		return nil
+	}
+	opt := func(s string) *string {
+		if s == "" {
+			return nil
+		}
+		return playwright.String(s)
+	}
+	return &playwright.Proxy{Server: p.Server, Bypass: opt(p.Bypass), Username: opt(p.Username), Password: opt(p.Password)}
 }
 
 // FontconfigFiles mirrors settings/launcher.json launch.fontconfig.files:
@@ -386,6 +419,20 @@ func BuildArgs(o Options) []string {
 	if len(o.SPKIList) > 0 {
 		args = append(args, "--ignore-certificate-errors-spki-list="+strings.Join(o.SPKIList, ","))
 	}
+	// Playwright adds --proxy-server among its default args, which IgnoreAllDefaultArgs drops: without this line
+	// a Proxy reaches the driver and the traffic goes out on the real address (settings/launcher.json, why_proxy_arg).
+	if o.Proxy != nil && o.Proxy.Server != "" {
+		args = append(args, "--proxy-server="+o.Proxy.Server)
+		if o.Proxy.Bypass != "" {
+			var hosts []string
+			for _, h := range strings.Split(o.Proxy.Bypass, ",") {
+				if h = strings.TrimSpace(h); h != "" {
+					hosts = append(hosts, h)
+				}
+			}
+			args = append(args, "--proxy-bypass-list="+strings.Join(hosts, ";"))
+		}
+	}
 	return append(args, o.ExtraArgs...)
 }
 
@@ -396,6 +443,12 @@ func BuildArgs(o Options) []string {
 // the context closes or the launch fails, and so is every launch's
 // crash-dump directory.
 func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, error) {
+	if err := validateProxy(o.Proxy); err != nil {
+		return nil, err
+	}
+	if o.GeoIP != "" {
+		o.warn(CheckGeoIP(o))
+	}
 	env, err := BuildEnv(o, os.Environ())
 	if err != nil {
 		return nil, err
@@ -429,6 +482,7 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 		IgnoreAllDefaultArgs: playwright.Bool(true),
 		Env:                  env,
 		Args:                 BuildArgs(o),
+		Proxy:                proxyOption(o.Proxy),
 		// Otherwise a 1280x720 viewport is emulated through
 		// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
 		NoViewport: playwright.Bool(true),

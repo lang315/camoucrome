@@ -71,6 +71,44 @@ def browser_argv(executable):
     return []
 
 
+HOST_GL_JS = """() => { const g = document.createElement('canvas').getContext('webgl');
+  const e = g && g.getExtension('WEBGL_debug_renderer_info');
+  return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : null; }"""
+
+
+SOFTWARE_MARKERS = ("swiftshader", "llvmpipe", "software", "basic render")
+
+
+def host_renderer(executable, timeout_s=30):
+    """The host's real WebGL renderer, read once at identity generation.
+
+    None on any failure, and when the browser reports a software renderer
+    (no usable GPU): pinning that into an identity is a bot tell.
+    Launches through the package launcher with no config, so the argv is the
+    contract's; Playwright's default --use-angle=swiftshader-webgl would
+    report SwiftShader.
+    """
+    try:
+        from patchright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            ctx = launch(pw, executable, headless=True, timeout=timeout_s * 1000)
+            try:
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                page.goto("about:blank", timeout=timeout_s * 1000)
+                # shortcut: no wall-clock bound on evaluate, upgrade if a hung GPU process is seen
+                r = page.evaluate(HOST_GL_JS)
+            finally:
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+        if not isinstance(r, str) or not r or any(m in r.lower() for m in SOFTWARE_MARKERS):
+            return None
+        return r
+    except Exception:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--driver", choices=["patchright", "stock"], required=True)
@@ -86,6 +124,10 @@ def main():
     ap.add_argument("--spki", action="append", default=[])
     ap.add_argument("--arg", action="append", default=[], help="extra browser argv, verbatim")
     ap.add_argument("--fonts-dir", help="bundled font dir (FONTCONFIG_FILE follows the claimed OS)")
+    ap.add_argument("--proxy", help="proxy server URL (verify_sp6b_driver's proxy mode: C1 must hold with one set)")
+    ap.add_argument("--proxy-bypass")
+    ap.add_argument("--proxy-user")
+    ap.add_argument("--proxy-pass")
     a = ap.parse_args()
     window = tuple(int(v) for v in a.window.split(",")) if a.window else None
     module = "patchright" if a.driver == "patchright" else "playwright"
@@ -96,7 +138,9 @@ def main():
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
                      strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
-                     fonts_dir=a.fonts_dir)
+                     fonts_dir=a.fonts_dir,
+                     proxy={"server": a.proxy, "bypass": a.proxy_bypass, "username": a.proxy_user,
+                            "password": a.proxy_pass} if a.proxy else None)
         try:  # a failed goto must still close: the temp profile goes on close
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             # SP2 4.2: a driver's init script must not be observable from the

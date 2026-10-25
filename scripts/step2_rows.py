@@ -218,6 +218,23 @@ def link_rows(a, b):
     return {"link.total": total, "link.shared": sorted(k for k in a if k in b and a[k] == b[k])}
 
 
+def link_rows_n(reports):
+    """N flattened oracle reports from N profiles of one arm: the leaves ALL of
+    them share. A VOLATILE leaf is never shared."""
+    total = len(set().union(*reports))
+    steady = [_steady(r) for r in reports]
+    first, rest = steady[0], steady[1:]
+    return {"link.total": total,
+            "link.shared": sorted(k for k in first if all(k in r and r[k] == first[k] for r in rest))}
+
+
+def unexplained(shared, constants):
+    """Shared leaves that settings/machine_constants.json does not explain. A key
+    ending in '.' is a prefix; any other key is one exact leaf."""
+    prefixes = tuple(k for k in constants if k.endswith("."))
+    return sorted(k for k in shared if k not in constants and not k.startswith(prefixes))
+
+
 def parse_tabbed(text):
     """sannysoft: its result tables give one row per line, cells tab-separated."""
     out = {}
@@ -369,8 +386,12 @@ def render_tables(doc, texts):
                 out += ["", "| row | control | fork | label | reason |", "|---|---|---|---|---|"]
                 out += [f"| {n} | {_cell(cv)} | {_cell(fv)} | {lab} | {why} |" for n, cv, fv, lab, why in rows]
             if probe == "linkability":
-                out += ["", f"Leaves the two fork profiles share ({len(f.get('link.shared', []))} of {f.get('link.total')}):",
+                out += ["", f"Leaves all the profiles share ({len(f.get('link.shared', []))} of {f.get('link.total')}):",
                         "", ", ".join(f"`{k}`" for k in f.get("link.shared", []))]
+                if "link.unexplained" in f:
+                    un = f["link.unexplained"]
+                    out += ["", f"Leaves all five profiles share that no machine constant explains ({len(un)}):",
+                            "", ", ".join(f"`{k}`" for k in un)]
             out.append("")
     for (site, mode), (ct, ft) in sorted(texts.items()):
         out.append(f"## detector text {site} / {mode}")

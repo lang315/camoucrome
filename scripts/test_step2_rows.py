@@ -105,6 +105,36 @@ def test_link_rows():
     assert r.link_rows({"a": 1, "b": 2}, {"a": 1, "b": 3}) == {"link.total": 2, "link.shared": ["a"]}
 
 
+def test_link_rows_n_shares_only_what_every_profile_shares():
+    reps = [{"a": 1, "b": 2, "c": 9}, {"a": 1, "b": 2, "c": 8}, {"a": 1, "b": 3, "c": 9}]
+    assert r.link_rows_n(reps) == {"link.total": 3, "link.shared": ["a"]}
+
+
+def test_link_rows_n_two_reports_equals_link_rows():
+    a, b = {"a": 1, "b": 2}, {"a": 1, "b": 3}
+    assert r.link_rows_n([a, b]) == r.link_rows(a, b)
+
+
+def test_link_rows_n_leaf_missing_from_one_report_is_not_shared():
+    assert r.link_rows_n([{"a": 1, "b": 2}, {"a": 1}, {"a": 1, "b": 2}])["link.shared"] == ["a"]
+
+
+def test_unexplained_honours_exact_and_prefix_constants():
+    shared = ["ua.version", "webGl.renderer", "intl.locale.x", "fonts.list"]
+    consts = {"ua.version": "same Chrome", "intl.": "ICU data ships with Chrome"}
+    assert r.unexplained(shared, consts) == ["fonts.list", "webGl.renderer"]
+
+
+def test_unexplained_empty_allowlist_explains_nothing():
+    assert r.unexplained(["b", "a"], {}) == ["a", "b"]
+
+
+def test_machine_constants_file_shape():
+    import json
+    doc = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "settings", "machine_constants.json")))
+    assert isinstance(doc["leaves"], dict) and all(isinstance(v, str) and v for v in doc["leaves"].values())
+
+
 def test_parse_tabbed():
     assert r.parse_tabbed("Test\tResult\nWebDriver (New)\tmissing (passed)\nplain line\n") == {
         "Test": "Result", "WebDriver (New)": "missing (passed)"}
@@ -132,6 +162,14 @@ def test_render_tables_labels_and_unmeasured():
     md = r.render_tables(doc, {})
     assert "| noise.canvas2d | 1 | 7 | unexpected |" in md
     assert "## noise / headed" in md and "UNMEASURED: boom" in md
+
+
+def test_render_tables_lists_unexplained_shared_leaves():
+    cell = {"link.total": 3, "link.shared": ["a", "webGl.renderer"], "link.unexplained": ["webGl.renderer"]}
+    doc = {"run": "t", "versions": {"control": "1", "fork": "1"}, "flags": {}, "errors": {},
+           "rows": {"linkability": {"control": {"headless": dict(cell)}, "fork": {"headless": dict(cell)}}}}
+    md = r.render_tables(doc, {})
+    assert "that no machine constant explains (1)" in md and "`webGl.renderer`" in md
 
 
 # Calibration from the 2026-10-04 host runs (docs/superpowers/measurements/2026-10-step2-baseline.md).
@@ -479,3 +517,22 @@ def test_argv_read_survives_a_gpu_crash(monkeypatch):
     monkeypatch.setattr(m, "opened", crashed)
     monkeypatch.setitem(sys.modules, "camoucrome.probe", types.SimpleNamespace(browser_argv=lambda exe: [exe, "--x"]))
     assert m.argv_of(None, m.Arm("fork", "chrome.exe", None)) == ["chrome.exe", "--x"]
+
+
+def test_measure_step2_identity_passes_host_draw_inputs(monkeypatch):
+    import measure_step2 as m
+    seen = {}
+
+    class G:
+        @staticmethod
+        def generate(os, **kw):
+            seen.update(kw)
+            return {}
+    monkeypatch.setitem(sys.modules, "camoucrome.gen", G)
+    monkeypatch.setattr(m, "HOST_DRAW", {"host_renderer": "R", "host_families": {"F"}})
+    m.identity(3)
+    assert seen == {"seed": 3, "host_renderer": "R", "host_families": {"F"}}
+    seen.clear()
+    monkeypatch.setattr(m, "HOST_DRAW", {})
+    m.identity(3)
+    assert seen == {"seed": 3}

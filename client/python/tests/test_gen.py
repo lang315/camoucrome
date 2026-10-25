@@ -258,3 +258,122 @@ def test_quickstart_seeds_keep_a_profile_and_tell_two_apart():
     pytest.importorskip("browserforge")
     one, again, two = (gen.generate(os="windows", seed=s) for s in (1, 1, 2))
     assert one == again and one != two
+
+
+def test_load_profiles_ignores_the_gpu_pool_file():
+    assert not any(stem.endswith("-pool") for stem in gen.load_profiles())
+
+
+HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
+def test_gen9_host_swaps_only_name_and_device_id():
+    base = gen.profile_for("Windows")
+    prof, warn = gen.gpu_for("Windows", HOST, random.Random(3))
+    assert warn is None
+    assert gen.gen9_device_id(prof["renderer"]) is not None
+    assert prof["webgl"] == base["webgl"] and prof["webgl2"] == base["webgl2"]
+    assert prof["vendor"] == base["vendor"] == "Google Inc. (Intel)"
+
+
+def test_gpu_draw_is_seed_stable_and_varies_across_seeds():
+    draws = {gen.gpu_for("Windows", HOST, random.Random(s))[0]["renderer"] for s in range(40)}
+    assert gen.gpu_for("Windows", HOST, random.Random(7))[0] == gen.gpu_for("Windows", HOST, random.Random(7))[0]
+    assert len(draws) >= 3
+
+
+def test_gpu_draw_does_not_advance_the_rng():
+    rng = random.Random(5)
+    state = rng.getstate()
+    gen.gpu_for("Windows", HOST, rng)
+    assert rng.getstate() == state
+
+
+def test_non_gen9_host_keeps_real_gpu_and_warns():
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    prof, warn = gen.gpu_for("Windows", nv, random.Random(1))
+    assert prof is None and "shared" in warn
+
+
+@pytest.mark.parametrize("host", [
+    "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+    "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)"])
+def test_non_windows_host_renderer_keeps_the_default_profile_and_warns(host):
+    prof, warn = gen.gpu_for("Windows", host, random.Random(1))
+    assert prof == gen.profile_for("Windows") and "not a Windows D3D11" in warn
+
+
+def test_warning_does_not_call_other_intel_parts_non_gen9():
+    odd = "ANGLE (Intel, Intel(R) HD Graphics 530 (0x00001912) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    assert "not in the supported Intel Gen9 set" in gen.gpu_for("Windows", odd, random.Random(1))[1]
+
+
+def test_gen9_regex_equals_the_pool_scripts():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gen_gpu_pool
+    assert gen.GEN9_RE.pattern == gen_gpu_pool.RENDERER_RE.pattern
+
+
+def test_gen9_name_with_unknown_device_id_keeps_real_gpu():
+    odd = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x0000FFFF) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    prof, warn = gen.gpu_for("Windows", odd, random.Random(1))
+    assert prof is None and warn
+
+
+def test_no_host_renderer_keeps_todays_behaviour_and_warns():
+    prof, warn = gen.gpu_for("Windows", None, random.Random(1))
+    assert prof == gen.profile_for("Windows") and warn
+
+
+def test_pool_file_declares_its_weights_are_an_assumption():
+    assert gen.gen9_pool()["weights_how"].startswith("assumption:")
+
+
+def test_non_gen9_host_emits_no_webgl_keys():
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=nv)
+    assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
+    assert r["warnings"] and "shared" in r["warnings"][0]
+
+
+def test_generate_with_host_renderer_draws_a_gen9_identity():
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=HOST)
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
+    assert r["config"]["webGl2:renderer"] == r["config"]["webGl:renderer"]
+    assert r["warnings"] == []
+
+
+# Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
+PRE_CHANGE = {
+    1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
+        "rest": "a17de27a2435182d"},
+    2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
+    3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
+}
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_seeded_keys_do_not_move(seed):
+    cfg = gen.generate("windows", "Europe/Paris", None, seed)["config"]
+    assert {k: cfg[k] for k in ("share:cancelMs", "canvas:seed", "audio:seed", "mediaDevices:seed")} == \
+        {k: v for k, v in PRE_CHANGE[seed].items() if k != "rest"}
+
+
+def test_default_args_output_is_unchanged_outside_the_font_subset():
+    """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* is
+    excluded; every other key and launch must be byte-identical to the pre-change run."""
+    import hashlib
+    r = gen.generate("windows", "Europe/Paris", None, 1)
+    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:")}
+    assert hashlib.sha256(json.dumps([rest, r["launch"]], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
+
+
+def test_host_families_limit_fonts_list_and_alias_local():
+    fam = json.loads((ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))["families"]["Windows"]
+    gone = next(f for f in fam["base"] if any(v["family"] == f for v in fam["unique_names"].values()))
+    host = set(fam["base"]) - {gone}
+    base = gen.generate("windows", "Europe/Paris", None, 1)["config"]
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_families=host)["config"]
+    assert gone in base["fonts:list"] and gone not in r["fonts:list"]
+    names = {n for n, v in fam["unique_names"].items() if v["family"] == gone}
+    assert names & set(base["fonts:aliasLocal"]) and not names & set(r["fonts:aliasLocal"])

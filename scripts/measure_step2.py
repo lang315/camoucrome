@@ -5,14 +5,15 @@ headed and headless, every differing row labelled
 
 Run on the Windows host in the client venv, holding the build lock (owner step2):
   python measure_step2.py run [--only oracle,noise,...] [--modes headed,headless]
-                              [--null] [--plant ARG] [--fresh-seeds] [--two-colour]
+                              [--null] [--plant ARG] [--fresh-seeds] [--two-colour] [--host-draw]
   python measure_step2.py compare RUN_A RUN_B
   python measure_step2.py tables RUN
   python measure_step2.py scrub RUN OUT   (needs CAMOU_SCRUB or the private terms; writes the committable copy)
 --null puts the control executable, unconfigured, in the fork arm: the noise floor.
 --plant adds ARG to the fork arm only (a RED). --fresh-seeds draws new seeds per
 launch in the stability probe (its RED). --two-colour makes the fork arm's noise
-page draw two colours (its RED). The fork is CAMOU_FORK_EXE; the control is the
+page draw two colours (its RED). --host-draw passes the host's real WebGL renderer and font
+families to generate(), so the GPU and fonts differ per profile (step 6's GREEN). The fork is CAMOU_FORK_EXE; the control is the
 stock chrome.exe under CAMOU_STOCK_APP (default: the Program Files install)."""
 import argparse
 import contextlib
@@ -34,6 +35,9 @@ import step2_rows as rows  # noqa: E402
 import gpu_gate  # noqa: E402
 from windows_verify_set import STOCK_APP, pin_tag  # noqa: E402
 
+ROOT = HERE.parent
+LINK_SEEDS = (1, 2, 3, 4, 5)
+CONSTANTS = json.loads((ROOT / "settings" / "machine_constants.json").read_text(encoding="utf-8"))["leaves"]
 PROBES = {}  # name -> fn(pw, arm, mode, run) -> {row: value}; filled below
 
 
@@ -51,10 +55,14 @@ class Arm:
         return {k: v for k, v in self.config.items() if k not in SEED_KEYS}
 
 
+HOST_DRAW = {}  # filled by --host-draw: host_renderer / host_families for generate() (step 6)
+
+
 def identity(seed):
-    """The whole generated identity: the config AND the launch window/dpr a client passes with it."""
+    """The whole generated identity: the config AND the launch window/dpr a client passes with it.
+    Without --host-draw every profile shares the host's GPU and font list (the step 6 RED)."""
     from camoucrome.gen import generate
-    return generate("windows", seed=seed)
+    return generate("windows", seed=seed, **HOST_DRAW)
 
 
 def exe_version(path):
@@ -197,13 +205,15 @@ def probe_stability(pw, arm, mode, run):
 
 
 def probe_linkability(pw, arm, mode, run):
-    """Two profiles of one arm: fork identities from seeds 1 and 2, or two stock profiles."""
+    """LINK_SEEDS profiles of one arm: fork identities from those seeds, or as many stock
+    profiles. `link.unexplained` is what all of them share that no machine constant explains."""
     reports = []
-    for seed in (1, 2):
+    for seed in LINK_SEEDS:
         ident = None if arm.ident is None else identity(seed)
         with serve(cap.page().encode()) as url, opened(pw, arm, mode, ident=ident) as ctx:
             reports.append(read_oracle(ctx, url))
-    return rows.link_rows(*reports)
+    got = rows.link_rows_n(reports)
+    return {**got, "link.unexplained": rows.unexplained(got["link.shared"], CONSTANTS)}
 
 
 PROBES["stability"] = probe_stability
@@ -314,6 +324,11 @@ def run_cmd(a):
     client = os.environ.get("CAMOU_CLIENT", str(HERE.parent))
     stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe")
     fork_exe = stock if a.null else os.environ["CAMOU_FORK_EXE"]
+    if a.host_draw:
+        from camoucrome import hostfonts, probe
+        HOST_DRAW.update(host_renderer=probe.host_renderer(fork_exe), host_families=hostfonts.families())
+        print(f"host draw: renderer={'read' if HOST_DRAW['host_renderer'] else 'NONE'} "
+              f"families={len(HOST_DRAW['host_families'] or ())}")
     control = Arm("control", stock, None)  # stock: no config, no window/dpr (its defaults)
     fork = Arm("fork", fork_exe, None if a.null else identity(1), [a.plant] if a.plant else [])
     pin = pin_tag(client)
@@ -416,6 +431,8 @@ def main(argv=None):
     r.add_argument("--out")
     r.add_argument("--null", action="store_true")
     r.add_argument("--plant")
+    r.add_argument("--host-draw", action="store_true",
+                   help="draw the GPU and fonts within the host's own (step 6); default: the shared ones")
     r.add_argument("--fresh-seeds", action="store_true")
     r.add_argument("--two-colour", action="store_true")
     c = sub.add_parser("compare")

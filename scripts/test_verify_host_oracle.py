@@ -136,6 +136,16 @@ def test_the_media_cap_row_excuses_power_efficient_alone():
     assert buckets["known"] == 0, buckets
 
 
+def test_the_sample_rate_row_excuses_only_standard_device_rates():
+    """RED without the predicate: an odd rate would hide behind an exclusion written for
+    'this machine's output device differs from the host's'."""
+    host = {"audio": {"sampleRate": 44100}}
+    diffs, buckets, _ = vho.compare(host, {"audio": {"sampleRate": 48000}})
+    assert diffs == [] and buckets["known"] == 1, (diffs, buckets)
+    diffs, buckets, _ = vho.compare(host, {"audio": {"sampleRate": 31337}})
+    assert [k for k, *_ in diffs] == ["audio.sampleRate"], diffs
+
+
 def test_a_bare_reason_in_known_still_excludes_unconditionally():
     """The rows whose evidence is the committed baseline (the probe marker) keep the
     plain-string shape; a recapture of the baseline is what retires those, not a predicate."""

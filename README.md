@@ -72,14 +72,17 @@ the owning slice's measurement doc rather than claimed as verified. Coherence
 across channels is the project's thesis (see below), and the rows that remain
 unproven are named where they live.
 
-There is no release yet. The path to the first one is the long-term roadmap,
+Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
+a Windows flagship plus a Linux beta, built on a Chrome stable tag. Each
+release's notes give its Chrome version, what it fixes and the date it stops
+being supported (when it falls more than one milestone behind stable).
+
+The first release, `v156.0.8078.48-1` (2026-10-24), closed steps 0 to 3 of the
+long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
-steps 0 (re-pin and safety), 1 (Windows foundation) and 2 (measuring the fork
-against an oracle and public detectors with a like-for-like stock control) are
-done; step 3 is the first release, a Windows flagship plus a Linux beta. It is
-being rehearsed on 156 as a draft that is never published; the first published
-release will be on 157, after the 157 re-pin. The
-per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
+re-pin and safety, the Windows foundation, measuring the fork against an
+oracle and public detectors with a like-for-like stock control, and the
+release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
 The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
@@ -90,7 +93,7 @@ next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook
 
 ## Install
 
-`<tag>` is the release tag, `v<chrome-version>-<n>` (for example `v157.0.8103.NN-1`).
+`<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
 `<sha>` is a full commit SHA from this repository, for the Go module.
 `<chrome-version>` is the Chrome version the release is built on.
 
@@ -187,6 +190,46 @@ with sync_playwright() as pw:
 The two identities differ in screen size and CPU cores, and in the noise seeds stored in
 each profile. They share the host's GPU, the stock Windows font list, voices and the
 snapped `deviceMemory`.
+
+## Time zone and locale from the proxy's exit address
+
+A time zone that contradicts the address your traffic comes from is a tell that detectors check
+(Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
+proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
+two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"`)
+and a DB-IP "IP to City Lite" database file,
+which you download yourself, once a month, without an account, from
+<https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
+
+This runs inside the Quickstart's `with sync_playwright() as pw:` block, where `pw` and `CHROME` come from.
+
+```python
+import camoucrome, camoucrome.gen
+from camoucrome import geoip
+
+proxy = {"server": "http://proxy.example:8000", "username": "user", "password": "secret"}
+db = r"dbip-city-lite-2026-10.mmdb"
+try:
+    ip = geoip.exit_ip(proxy)          # the address the world sees, asked through the proxy
+except geoip.GeoIPError as e:          # no echo service answered, or the proxy is not http
+    raise SystemExit(f"cannot place the exit address: {e}")
+fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
+ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
+                        window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"])
+```
+
+The zone comes from the address's coordinates and the locale from its country. An explicit
+`timezone` or `locale` you pass to `generate` always wins. `geoip.exit_ip` raises `GeoIPError` when
+no echo service answers; it asks only through an `http` proxy (a bare `host:port` means `http`), so
+an `https` or `socks5` proxy gives that error too. `generate` and `launch` do not raise on an
+address they cannot place (no database, an unreadable one, not in it, no echo answer): they emit
+a `GeoIPWarning` and change nothing. `launch` checks only the config's own `timezone:id`; a zone
+that comes only from a preset is not checked. Go (`Options.GeoIP`, `GenerateWith`) and Node
+(`launch({ geoip })`) call the same Python module, so `maxminddb` and `timezonefinder` must be
+installed in the interpreter they name (`Options.Python` in Go, the `python` option in Node).
+
+IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
 
 ## The defining constraint
 
@@ -285,9 +328,13 @@ Camoucrome does not repeat that.
 
 ## Known limits
 
-- Every identity on one host shares that host's GPU: only one real GPU profile exists.
-- Identities on one host share only values that stock Windows Chrome shares across
-  profiles too, such as the static 10 GiB storage quota and V8's 4 GB heap cap.
+- On a host with an Intel Gen9 GPU (Skylake to Comet Lake, the commonest Windows laptop and desktop
+  parts), each profile reports its own GPU name and DeviceId from that generation, with a thread count
+  that fits the drawn part; the pixels still come from the host's real GPU. On any other host every
+  identity keeps the real GPU: only one real GPU profile exists.
+- Fonts are a per-profile subset of the host's real Windows fonts, never a font the host lacks.
+- Identities on one host still share the host-dependent values that stock Chrome shares across profiles too
+  (audio output, keyboard layout, display and media queries, screen geometry, network, the Windows build): 72 of 241 measured leaves, so profiles on one machine remain linkable through them.
 - No Widevine.
 - No auto-update. Re-pins are the security channel, and a release more than one
   milestone behind Chrome stable is unsupported.

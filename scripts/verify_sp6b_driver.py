@@ -75,6 +75,11 @@ HEADLESS_SELF_ADDED = set(CONTRACT["browser_argv_expected"]["headless_self_added
 MIN_METHODS = 20
 TIMING_TOLERANCE = 0.15  # D1's Runtime.enable signal is +21%; run-to-run noise on the box is ~5-10%
 BASELINE_RUNS = 3
+# CAMOU_VERIFY_PROXY=1: every probe launches with a proxy set, so C1 (zero Runtime.enable) is measured on the
+# driver's proxy-auth path too. The probe page is served through a local forwarding proxy that answers 407 first.
+PROXY_MODE = os.environ.get("CAMOU_VERIFY_PROXY") == "1"
+PROXY_SEEN = []  # [(authenticated)] per request that reached the proxy
+PROXY_URL = ""
 
 PAGE = b"""<!doctype html><title>driver</title><pre id="o"></pre><script>
 const TRIALS = 7, N = 10000, times = [];
@@ -111,6 +116,35 @@ def serve():
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{srv.server_port}/", srv
+
+
+def serve_proxy():
+    """A forwarding HTTP proxy: 407 until Proxy-Authorization arrives, then the origin's answer."""
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            authed = bool(self.headers.get("Proxy-Authorization"))
+            PROXY_SEEN.append(authed)
+            if not authed:
+                self.send_response(407)
+                self.send_header("Proxy-Authenticate", 'Basic realm="verify"')
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = opener.open(self.path, timeout=30).read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{srv.server_port}", srv
 
 
 def baseline_once(url):
@@ -195,6 +229,9 @@ def check(label, result, log, base):
     # rewritten process title shows, and the ozone/ANGLE three are IS_LINUX.
     self_added = HEADLESS_SELF_ADDED if "--headless=new" in got and os.name != "nt" else set()
     expected = EXPECTED_ARGS | self_added
+    if PROXY_MODE:
+        expected |= {CONTRACT["launch"]["proxy_arg"].format(server=PROXY_URL),
+                     CONTRACT["launch"]["proxy_bypass_arg"].format(bypass="<-loopback>")}
     unexpected = sorted(got - expected)
     absent = sorted(expected - got)
     rows["C4 argv == launcher.json expected set"] = (
@@ -213,17 +250,26 @@ def check(label, result, log, base):
     rows[f"C5 stack timing within {int(TIMING_TOLERANCE*100)}% of baseline"] = (
         med <= bmed * (1 + TIMING_TOLERANCE),
         f"median={med:.1f}ms baseline={bmed:.1f}ms ({(med/bmed-1)*100:+.0f}%)")
+    if PROXY_MODE:
+        rows["C7 the page came through the proxy, after its 407"] = (
+            True in PROXY_SEEN and False in PROXY_SEEN, f"requests={len(PROXY_SEEN)} authenticated={PROXY_SEEN.count(True)}")
     return rows
 
 
 def main():
+    global PROXY_URL
     url, srv = serve()
+    proxy_args = []
+    if PROXY_MODE:
+        PROXY_URL, psrv = serve_proxy()
+        proxy_args = ["--proxy", PROXY_URL, "--proxy-user", "u", "--proxy-pass", "p", "--proxy-bypass", "<-loopback>"]
     base = baseline(url)
     print(f"baseline (no driver): {len(base['windowKeys'])} window keys, webdriver={base['webdriver']}, "
           f"stack median {statistics.median(base['timesMs']):.1f} ms, ua ...{base['ua'][-28:]}")
     verdict = True
     for label, expected, cmd in DRIVERS:
-        result, log = run_probe(cmd, url)
+        PROXY_SEEN.clear()
+        result, log = run_probe(cmd + proxy_args, url)
         if result is None:
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False

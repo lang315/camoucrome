@@ -1,0 +1,17 @@
+diff --git a/extensions/browser/extension_prefs.cc b/extensions/browser/extension_prefs.cc
+index 86611a4edc..7ccceea69a 100644
+--- a/extensions/browser/extension_prefs.cc
++++ b/extensions/browser/extension_prefs.cc
+@@ -2281,7 +2281,11 @@ void ExtensionPrefs::RegisterProfilePrefs(
+   registry->RegisterBooleanPref(pref_names::kAppFullscreenAllowed, true);
+ #endif
+ 
+-  registry->RegisterBooleanPref(pref_names::kBlockExternalExtensions, false);
++  // Camoucrome: external extensions (the Windows registry, the Linux/macOS
++  // external dirs) are blocked by default. A desktop app that registers one
++  // makes the browser fetch its store data from chromewebstore.googleapis.com
++  // at startup; the profile pref still overrides this default.
++  registry->RegisterBooleanPref(pref_names::kBlockExternalExtensions, true);
+   registry->RegisterIntegerPref(pref_names::kExtensionUnpublishedAvailability,
+                                 0);
+   registry->RegisterListPref(pref_names::kExtensionInstallTypeBlocklist);

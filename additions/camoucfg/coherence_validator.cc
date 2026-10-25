@@ -16,6 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "components/camoucfg/derive.h"
 #include "components/camoucfg/domain_validator.h"
+#include "components/camoucfg/gen9_thread_caps.h"
 #include "components/camoucfg/gl_params.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
@@ -342,6 +343,37 @@ std::vector<Violation> CheckTouchFitsOs(const ConfigScope& scope,
   return {v};
 }
 
+// The renderer (resolved through ResolvedGLString(), so a renderer supplied
+// via webGl:parameters["37446"] is checked too) names an Intel Gen9 device id
+// that a CPU with at most `cap` threads ships with, while
+// navigator.hardwareConcurrency claims more. An unknown id, a non-Gen9
+// renderer or an absent / non-uint hardwareConcurrency constrains nothing.
+// There is no repair this validator applies; new_value is the cap.
+std::vector<Violation> CheckRendererFitsThreads(
+    const ConfigScope& scope, const invariants::Invariant& inv) {
+  std::optional<std::string> renderer =
+      ResolvedGLString(scope, /*is_webgl2=*/false, /*vendor=*/false);
+  std::optional<uint32_t> threads = GetUint32(scope, inv.keys[1]);
+  std::optional<uint32_t> device_id;
+  if (renderer.has_value()) {
+    device_id = ParseAngleDeviceId(*renderer);
+  }
+  std::optional<uint32_t> cap;
+  if (device_id.has_value()) {
+    cap = Gen9ThreadCapFor(*device_id);
+  }
+  if (!ThreadsExceedCap(cap, threads)) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[1]);
+  v.old_value = base::NumberToString(*threads);
+  v.new_value = base::NumberToString(*cap);
+  return {v};
+}
+
 std::vector<Violation> CheckSamePlatformBucket(
     const ConfigScope& scope, const invariants::Invariant& inv) {
   OsFamily claimed = OsFamilyOfKey(scope, inv.keys[0]);
@@ -446,9 +478,51 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }
+      case invariants::Relation::kRendererFitsThreads: {
+        std::vector<Violation> found = CheckRendererFitsThreads(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
     }
   }
   return violations;
+}
+
+std::optional<uint32_t> ParseAngleDeviceId(std::string_view renderer) {
+  constexpr std::string_view kOpen = "(0x";
+  size_t open = renderer.rfind(kOpen);
+  if (open == std::string_view::npos) {
+    return std::nullopt;
+  }
+  size_t i = open + kOpen.size();
+  uint64_t value = 0;
+  size_t digits = 0;
+  for (; i < renderer.size(); ++i, ++digits) {
+    char c = renderer[i];
+    uint64_t d;
+    if (c >= '0' && c <= '9') {
+      d = c - '0';
+    } else if (c >= 'a' && c <= 'f') {
+      d = c - 'a' + 10;
+    } else if (c >= 'A' && c <= 'F') {
+      d = c - 'A' + 10;
+    } else {
+      break;
+    }
+    value = value * 16 + d;
+    if (value > 0xFFFFFFFFu) {
+      return std::nullopt;
+    }
+  }
+  if (digits == 0 || i >= renderer.size() || renderer[i] != ')') {
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(value);
+}
+
+bool ThreadsExceedCap(std::optional<uint32_t> cap,
+                      std::optional<uint32_t> threads) {
+  return cap.has_value() && threads.has_value() && *threads > *cap;
 }
 
 std::optional<PairingViolation> CheckPairing(bool renderer_resolves,

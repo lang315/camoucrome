@@ -183,7 +183,7 @@ def accept_lang_of(config, preset=None):
 
 
 def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=None,
-               accept_lang=None, extensions=(), spki_list=()):
+               accept_lang=None, extensions=(), spki_list=(), proxy_server=None, proxy_bypass=None):
     """Launch flags the C++ deliberately left to the launcher: window size so
     inner/outer/client widths cohere with screen.*, and the device scale
     factor. Timezone, locale and UA are NOT flags: they come through config.
@@ -215,6 +215,12 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
         args += [f"--disable-extensions-except={paths}", f"--load-extension={paths}"]
     if spki_list:
         args.append("--ignore-certificate-errors-spki-list=" + ",".join(spki_list))
+    # Playwright adds --proxy-server among its default args, which ignore_default_args drops: without this
+    # line a `proxy` option reaches the driver and the traffic goes out on the real address (settings/launcher.json, why_proxy_arg).
+    if proxy_server:
+        args.append(f"--proxy-server={proxy_server}")
+        if proxy_bypass:
+            args.append("--proxy-bypass-list=" + ";".join(h.strip() for h in proxy_bypass.split(",") if h.strip()))
     args.extend(extra)
     return args
 
@@ -237,7 +243,8 @@ def remove_dir(path, wait=10.0):
 
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None,
-           headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, **options):
+           headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, proxy=None,
+           geoip=None, exit_ip=None, **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
     Never add_init_script anything a page could enumerate: both patchright
@@ -254,15 +261,35 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     CA). The Accept-Language header follows the config's (else the preset's)
     languages. A temp profile (no `user_data_dir`) is removed on close or on a
     failed launch, and so is every launch's crash-dump directory.
+    `geoip` (True, or the path of a DB-IP Lite / GeoLite2-layout .mmdb; True reads CAMOU_GEOIP_DB) checks the
+    config's timezone:id against where the exit address is and WARNS (camoucrome.geoip.GeoIPWarning) on a
+    contradiction or when it cannot tell; it never changes the config -- the generator derives zone and locale
+    (camoucrome.gen --exit-ip). Without `exit_ip` the check makes a blocking echo request (also under an async
+    caller); `exit_ip` skips it. IP Geolocation by DB-IP.
+    `proxy` is Playwright's {"server", "bypass", "username", "password"}: the server (and bypass list) go
+    into argv, the credentials only to the driver, which answers the proxy's 407.
     `fonts_dir` is the bundled font directory (default: `fonts` beside the
     executable when present); FONTCONFIG_FILE then names the conf of the
     claimed OS so its families resolve.
+
+    On a Windows host, generate the identity on that host: probe.host_renderer
+    (chrome_path) reads the host's real WebGL renderer for use by identity
+    generation.
     """
+    if proxy is not None:
+        server = proxy.get("server") if isinstance(proxy, dict) else None
+        if not server or "@" in server:
+            raise ValueError("proxy must be a dict with a 'server' URL and no credentials in it "
+                             "(username and password are separate keys; argv is visible to every process)")
+        options["proxy"] = proxy
     bad = FORBIDDEN_OPTIONS.intersection(options)
     if bad:
         raise ValueError(
             f"{sorted(bad)} must come through CAMOU_CONFIG, not the driver: "
             "a second emulation of the same surface fights the fork's value")
+    if geoip:
+        from . import geoip as _geoip
+        _geoip.warn_all(_geoip.check_config(_as_dict(config), proxy, exit_ip, None if geoip is True else str(geoip)))
     owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
     if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")
@@ -281,7 +308,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
                           fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
                           crash_dir=owned[0]),
             args=build_args(window, dpr, args, headless, user_data_dir,
-                            accept_lang_of(config, preset), extensions, spki_list),
+                            accept_lang_of(config, preset), extensions, spki_list,
+                            proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None),
             # Playwright otherwise emulates a 1280x720 viewport through
             # Emulation.setDeviceMetricsOverride, which fights screen.* and the
             # window size above.

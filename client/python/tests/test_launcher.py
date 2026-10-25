@@ -420,3 +420,29 @@ def test_unmapped_host_keeps_aliases_for_a_config_that_names_no_os(monkeypatch):
 def test_native_host_without_alias_keys_passes_the_same_object_through():
     cfg = {"ua:platform": "Windows", "fonts:list": ["Arial"]}
     assert camoucrome.launcher.native_config(cfg, None, "Windows") is cfg
+
+
+def test_proxy_args_match_the_contract_and_keep_credentials_off_argv():
+    launch = CONTRACT["launch"]
+    args = camoucrome.build_args(proxy_server="http://p.example:8080", proxy_bypass="a.test, .b.test")
+    assert launch["proxy_arg"].format(server="http://p.example:8080") in args
+    assert launch["proxy_bypass_arg"].format(bypass="a.test;.b.test") in args
+    assert not any("@" in a for a in args)
+    assert set(CONTRACT["launch"]["proxy_option_fields"]) == {"server", "bypass", "username", "password"}
+
+
+def test_launch_adds_the_proxy_flag_and_hands_the_credentials_to_the_driver():
+    pw = FakePlaywright()
+    proxy = {"server": "http://p.example:8080", "username": "u", "password": "secret", "bypass": "a.test,b.test"}
+    camoucrome.launch(pw, "/x/chrome", user_data_dir="/tmp/p", proxy=proxy)
+    kw = pw.chromium.kw
+    assert "--proxy-server=http://p.example:8080" in kw["args"]
+    assert "--proxy-bypass-list=a.test;b.test" in kw["args"]
+    assert kw["proxy"] == proxy
+    assert not any("secret" in a or "u:" in a for a in kw["args"])
+
+
+@pytest.mark.parametrize("proxy", [{"username": "u"}, {"server": ""}, {"server": "http://u:p@h:1"}, "http://h:1"])
+def test_launch_refuses_a_proxy_that_would_leak_or_do_nothing(proxy):
+    with pytest.raises(ValueError, match="proxy"):
+        camoucrome.launch(FakePlaywright(), "/x/chrome", proxy=proxy)

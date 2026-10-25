@@ -2,12 +2,13 @@
 """The Windows host oracle: one page reads every cheap page-visible surface a
 fingerprinter enumerates (window keys, Navigator prototype, screen, media
 queries, Intl, audio, voices, WebGPU, codecs, permissions, keyboard, storage,
-client hints...) on stock Chrome 156 on the box's Windows 10 host (headless
---dump-dom) -> baselines/chrome-8103-stock-oracle-windows.json.
+client hints...) on stock Chrome 157 on the box's Windows 10 host (the host CDP
+client, headed and headless, real time) -> baselines/chrome-8103-stock-oracle-windows.json.
 verify_host_oracle.py renders the same page in the fork under a generated
 Windows identity and diffs, so every remaining Windows-claim tell is a line."""
 import json
 import pathlib
+import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -69,6 +70,7 @@ await step('audio',async()=>{const ac=new AudioContext();const r={sampleRate:ac.
 await step('audioFp',async()=>{const oc=new OfflineAudioContext(1,5000,44100);const osc=oc.createOscillator();const comp=oc.createDynamicsCompressor();osc.connect(comp);comp.connect(oc.destination);osc.start();const buf=await oc.startRendering();const d=buf.getChannelData(0);let s=0;for(let i=4000;i<5000;i++)s+=Math.abs(d[i]);return s.toFixed(6)},5000);
 await step('voices',()=>new Promise(res=>{const get=()=>speechSynthesis.getVoices().map(v=>[v.name,v.lang,v.localService,v.default]);let v=get();if(v.length)return res(v);speechSynthesis.onvoiceschanged=()=>res(get());setTimeout(()=>res(get()),1500)}));
 await step('gpu',async()=>{const a=await navigator.gpu.requestAdapter();return a?{info:{vendor:a.info.vendor,architecture:a.info.architecture,device:a.info.device,description:a.info.description},features:[...a.features].sort(),limits:{maxTextureDimension2D:a.limits.maxTextureDimension2D,maxBufferSize:a.limits.maxBufferSize,maxStorageBufferBindingSize:a.limits.maxStorageBufferBindingSize,maxComputeWorkgroupSizeX:a.limits.maxComputeWorkgroupSizeX,maxBindGroups:a.limits.maxBindGroups},isFallback:a.isFallbackAdapter}:null},5000);
+await step('webgl',()=>{const r={},u=c=>{const g=document.createElement('canvas').getContext(c),d=g&&g.getExtension('WEBGL_debug_renderer_info');return [g,d]};const [g1,d1]=u('webgl');if(g1&&d1){r.vendor=g1.getParameter(d1.UNMASKED_VENDOR_WEBGL);r.renderer=g1.getParameter(d1.UNMASKED_RENDERER_WEBGL)}const [g2]=u('webgl2');if(g2)r.maxSamples=g2.getParameter(36183);return r});
 await step('codecs',()=>{const v=document.createElement('video');return Object.fromEntries(CODECS.map(c=>[c,[v.canPlayType(c),typeof MediaSource!=='undefined'&&MediaSource.isTypeSupported(c)]]))});
 await step('mediaCap',()=>navigator.mediaCapabilities.decodingInfo({type:'file',video:{contentType:'video/mp4; codecs="avc1.42E01E"',width:1920,height:1080,bitrate:5000000,framerate:30}}).then(r=>[r.supported,r.smooth,r.powerEfficient]));
 await step('perms',async()=>{const r={};for(const p of PERMS){try{r[p]=(await navigator.permissions.query({name:p})).state}catch(e){r[p]='throws:'+e.name}}return r});
@@ -83,6 +85,27 @@ await step('protoCounts',()=>({Window:names(window).length,Document:names(Docume
 out.done=true;emit(true);
 })();
 </script>""" % (json.dumps(MEDIA), json.dumps(CODECS), json.dumps(PERMS))
+
+
+def host_display(winhost):
+    """The console display, read independently of the browser in the same session, or None."""
+    out = winhost.powershell("Add-Type -AssemblyName System.Windows.Forms\n"
+                             "$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds\n"
+                             "'DISPLAY ' + $b.Width + 'x' + $b.Height\n", timeout=60)
+    m = re.search(r"DISPLAY (\d+)x(\d+)", out or "")
+    return {"width": int(m.group(1)), "height": int(m.group(2))} if m else None
+
+
+def unmeasured_cells(doc):
+    """Cells that timed out or threw, as `mode.cell`: a capture with any is UNMEASURED, never a baseline."""
+    out = []
+    for mode in ("headed", "headless"):
+        for k, v in (doc.get(mode) or {}).items():
+            if v == "timeout" or (isinstance(v, str) and v.startswith("throws:")):
+                out.append(f"{mode}.{k}")
+        if (doc.get(mode) or {}).get("done") is not True:
+            out.append(f"{mode}.done")
+    return out
 
 
 def main(argv=None):
@@ -101,11 +124,26 @@ def main(argv=None):
     if a.raw_out and pathlib.Path(a.raw_out).resolve().is_relative_to(ROOT):
         sys.exit("capture_host_oracle: --raw-out must be outside the repository (it holds the host's own values)")
     import winhost
-    headless = winhost.dump_dom(page(), args=("--virtual-time-budget=60000", "--use-gl=angle", "--use-angle=d3d11"), timeout_s=180)
-    raw = winhost.cdp_eval(page(), "document.getElementById('o').textContent", args=("--use-gl=angle", "--use-angle=d3d11"), headed=True, wait_ms=25000)
-    headed = json.loads(raw) if isinstance(raw, str) else raw
-    doc = {"chrome": "157.0.8103.15", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
-           "headed": headed, "headless": headless}
+    glargs = ("--use-gl=angle", "--use-angle=d3d11")
+    # Both modes through the CDP client, in real time. headless --dump-dom (virtual time, ~1 s wall) raced every
+    # cell that waits on a browser-process reply against its own 8 s timer: permissions, storage, mediaDevices,
+    # mediaCapabilities were "timeout" in the 156 baseline and gpu/keyboard flipped between runs (2026-10-24).
+    def read(headed):
+        raw = winhost.cdp_eval(page(), "document.getElementById('o').textContent", args=glargs, headed=headed, wait_ms=25000)
+        return json.loads(raw) if isinstance(raw, str) else raw
+    headed, headless = read(True), read(False)
+    display = host_display(winhost)
+    doc = {"chrome": "157.0.8103.15", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
+           "display": display, "headed": headed, "headless": headless}
+    bad = unmeasured_cells(doc)
+    sc = headed.get("screen") or {}
+    wrong_screen = display is None or (sc.get("width"), sc.get("height")) != (display["width"], display["height"])
+    if (bad or wrong_screen) and a.raw_out:  # kept for the diagnosis, never a baseline
+        pathlib.Path(a.raw_out + ".refused").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    if bad:
+        sys.exit("capture_host_oracle: UNMEASURED cells, not a baseline: " + ", ".join(bad))
+    if wrong_screen:
+        sys.exit(f"capture_host_oracle: headed screen {sc.get('width')}x{sc.get('height')} is not the console display {display}")
     if a.raw_out:
         pathlib.Path(a.raw_out).write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
     else:

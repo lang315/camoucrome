@@ -78,7 +78,8 @@ def _ip_hit(s):
 # Placeholders exempt in binaries. Any other (or unknown) placeholder is identity: strict everywhere.
 # City, country, offset and zone: ICU and locale data in every Chromium build names every city and zone.
 # <regional-site>: not a place, but the name occurs in Chromium's own binaries (10 hits in the 156 Windows archive).
-GEO = {"<host-city>", "<host-country>", "<host-offset>", "<host-tz-name>", "<host-tz>", "<regional-site>"}
+# <layer3-site>: the layer 3 sites' host names; two of the twelve occur in the stock Chrome 156 framework.
+GEO = {"<host-city>", "<host-country>", "<host-offset>", "<host-tz-name>", "<host-tz>", "<regional-site>", "<layer3-site>"}
 TEXT_SUFFIXES = {".md", ".txt", ".json", ".csv", ".tsv"}
 
 
