@@ -88,13 +88,42 @@ def test_every_layout_has_the_four_codes_and_every_locale_points_at_one():
     assert not set(table["locales"]) & set(table["unmapped"])
 
 
-def test_only_y_varies_screen_x_is_zero_when_the_window_fills_the_width():
-    # documents the real behaviour: pool windows fill the screen width, so x has no slack
+def test_both_axes_vary_and_the_window_stays_inside_the_work_area():
+    assert len({_pos(s)[0] for s in range(1, 21)}) >= 6
+    assert len({_pos(s)[1] for s in range(1, 21)}) >= 6
     for s in range(1, 41):
         c = gen.generate("windows", timezone="Europe/Paris", seed=s)["config"]
-        if c["window.outerWidth"] == c["screen.width"]:
-            assert c["window.screenX"] == 0
-    assert len({_pos(s)[1] for s in range(1, 21)}) >= 6
+        assert c["window.screenX"] + c["window.outerWidth"] <= c["screen.availWidth"]
+        assert c["window.screenY"] + c["window.outerHeight"] <= c["screen.availHeight"]
+
+
+def test_pinned_window_geometry_for_seeds_1_to_3():
+    # (screenX, screenY, outerWidth, outerHeight) printed from the code that draws the offset
+    keys = ("window.screenX", "window.screenY", "window.outerWidth", "window.outerHeight")
+    got = {s: tuple(gen.generate("windows", timezone="Europe/Paris", seed=s)["config"][k] for k in keys) for s in (1, 2, 3)}
+    assert got == {1: (66, 75, 1854, 1077), 2: (101, 115, 1435, 861), 3: (73, 11, 1847, 1021)}
+
+
+def test_keyboard_layout_is_gated_to_windows_claims():
+    for os_ in ("macos", "linux"):
+        assert "keyboard:layoutMap" not in gen.generate(os_, timezone="Europe/Paris", seed=1)["config"]
+    m = gen.generate("windows", timezone="Europe/Paris", locale="fr-FR", seed=1)["config"]["keyboard:layoutMap"]
+    assert (m["KeyA"], m["KeyQ"]) == ("q", "a")
+
+
+def test_host_platform_version_is_windows_only_and_validated():
+    ok = gen.generate("windows", timezone="Europe/Paris", seed=1, host_platform_version="15.0.0")
+    assert ok["config"]["ua:platformVersion"] == "15.0.0"
+    for os_ in ("macos", "linux"):
+        r = gen.generate(os_, timezone="Europe/Paris", seed=1, host_platform_version="15.0.0")
+        assert r["config"].get("ua:platformVersion") != "15.0.0"
+    bad = gen.generate("windows", timezone="Europe/Paris", seed=1, host_platform_version="Windows 11")
+    assert bad["config"]["ua:platformVersion"] == "10.0.0" and any("not N.N.N" in w for w in bad["warnings"])
+
+
+def test_malformed_host_display_is_ignored_with_a_warning():
+    r = gen.generate("windows", timezone="Europe/Paris", seed=1, host_display={"gamut": "p3"})
+    assert r["launch"]["args"] == [] and any("malformed" in w for w in r["warnings"])
 
 
 def test_modal_host_gets_no_flag_and_no_warning():

@@ -326,12 +326,16 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
-def window_position(rng, screen, outer):
-    """A window dragged a little off the corner: x and y 0..120 px (assumption), 1 px steps because pool windows fill the screen width and leave under 50 px of room, never past the screen.
-    In practice only y varies: pool windows fill the screen width, so x slack is 0 and screenX stays 0."""
+MIN_WINDOW = (800, 500)  # assumption: a person's window is never narrower or shorter than this
+
+
+def window_position(rng, avail, outer):
+    """How far a person dragged the window off the work-area corner: (dx, dy), each 0..120 px (assumption), and
+    never so far that the window would be narrower or shorter than MIN_WINDOW. from_pool moves the window by
+    (dx, dy) and shrinks it by the same amount, so its far edge stays where it was inside the work area."""
     r = random.Random(repr(rng.getstate()) + "window-position")  # own generator: rng and later keys stay put
-    max_x, max_y = max(0, screen[0] - outer[0]), max(0, screen[1] - outer[1])
-    return min(max_x, r.randint(0, 120)), min(max_y, r.randint(0, 120))
+    lim = [max(0, min(120, min(a, o) - m)) for a, o, m in zip(avail, outer, MIN_WINDOW)]
+    return r.randint(0, lim[0]), r.randint(0, lim[1])
 
 
 def keyboard_keys(locale):
@@ -418,10 +422,14 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if t <= cap])
     config.update(fonts_keys(platform, rng, host_families))
-    if host_platform_version:  # the host's real OS wins over the pool's and the font capture's claim
-        config["ua:platformVersion"] = host_platform_version
+    pv_warn = None
+    if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
+        if re.fullmatch(r"\d+\.\d+\.\d+", host_platform_version):  # the host's real OS wins over the pool's and the font capture's claim
+            config["ua:platformVersion"] = host_platform_version
+        else:
+            pv_warn = f"host platform version {host_platform_version!r} is not N.N.N: ignored"
     config.update(voices_keys(platform, tag))
-    kb, kw = keyboard_keys(tag)
+    kb, kw = keyboard_keys(tag) if platform == "Windows" else ({}, None)  # the table holds Windows KBD* layouts
     config.update(kb)
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
@@ -430,20 +438,28 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)
     clamp_window_position(config)
-    screen = (config["screen.width"], config["screen.height"])
-    outer = (config["window.outerWidth"], config["window.outerHeight"])
-    x, y = window_position(rng, screen, outer)
-    # A pool coordinate of 0, or one clamped to the far edge (the pool sample did not fit the screen), is no
-    # sample of where a person put the window; any other value is real and stays.
-    for key, new, slack in (("window.screenX", x, screen[0] - outer[0]), ("window.screenY", y, screen[1] - outer[1])):
-        if config[key] in (0, slack):
-            config[key] = new
+    # Position: a pool position that is not (0, 0) and lies inside the work area is a real sample and stays. Any
+    # other (the pool puts 36 of 40 windows at 0,0) is drawn, and the window shrinks by the offset so it never
+    # reaches under the taskbar the identity claims: screenX + outerWidth <= availLeft + availWidth, same for Y.
+    pos = (config["window.screenX"], config["window.screenY"])
+    avail = (config["screen.availWidth"], config["screen.availHeight"])
+    outer = [config["window.outerWidth"], config["window.outerHeight"]]
+    origin = (config.get("screen.availLeft", 0), config.get("screen.availTop", 0))
+    inside = all(origin[i] <= pos[i] and pos[i] + outer[i] <= origin[i] + avail[i] for i in (0, 1))
+    if pos == (0, 0) or not inside:
+        d = window_position(rng, avail, outer)
+        config["window.screenX"], config["window.screenY"] = origin[0] + d[0], origin[1] + d[1]
+        config["window.outerWidth"], config["window.outerHeight"] = outer[0] - d[0], outer[1] - d[1]
     dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
     launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
               "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
     # None = not probed (no claim); a failed probe is the caller's to turn into display_flags(None)
+    if host_display is not None and not valid_display(host_display):
+        host_display, bad_display = None, "host display is malformed: ignored"
+    else:
+        bad_display = None
     launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn, kw, dw) if w]}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, kw, pv_warn, bad_display, dw) if w]}
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
