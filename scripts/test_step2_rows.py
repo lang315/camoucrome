@@ -614,3 +614,43 @@ def test_audio_sample_rate_reason_matches_the_shipped_rate():
     rate = json.loads((root / "settings" / "audio.json").read_text(encoding="utf-8"))["Windows"]["sampleRate"]
     why = r.label_rows({"oracle.audio.sampleRate": 1}, {"oracle.audio.sampleRate": 2})[0][4]
     assert str(rate) in why and "48000" not in why
+
+
+def test_link_values_never_reach_tables_or_comparisons():
+    c = {"link.total": 1, "link.shared": ["a"], "link.values": {"a": "CTRL-SECRET"}}
+    f = {"link.total": 1, "link.shared": ["a"], "link.values": {"a": "FORK-SECRET"}}
+    assert r.label_rows(c, f) == []
+    doc = {"run": "t", "versions": {"control": "1", "fork": "1"}, "flags": {}, "errors": {},
+           "rows": {"linkability": {"control": {"headless": c}, "fork": {"headless": f}}}}
+    md = r.render_tables(doc, {})
+    assert "CTRL-SECRET" not in md and "FORK-SECRET" not in md
+    a = {"rows": {"linkability": {"fork": {"headed": c}}}}
+    b = {"rows": {"linkability": {"fork": {"headed": f}}}}
+    assert r.compare_runs(a, b) == []
+
+
+def test_baseline_for_mode_uses_the_same_mode_or_nothing():
+    stock = {"headed": {"x": 1}, "headless": {"x": 2}}
+    assert r.baseline_for_mode(stock, "headless") == {"x": 2}
+    assert r.baseline_for_mode({"headed": {"x": 1}}, "headless") == {}
+    row = {"x": {"value": 1, "class": "windows-desktop", "source": "s" * 20}}
+    n = r.unexplained_counts(["x"], {"x": 1}, {}, row, r.baseline_for_mode({"headed": {"x": 1}}, "headless"))
+    assert (n["raw"], n["net"]) == (1, 1)
+
+
+def test_accepted_requires_leaf_in_baseline_even_for_null():
+    row = {"k": {"value": None, "class": "windows-desktop", "source": "s" * 20}}
+    assert r.accepted(["k"], {"k": None}, row, {}) == []
+    assert r.accepted(["k"], {"k": None}, row, {"k": None}) == ["k"]
+
+
+def test_accepted_equality_is_type_strict():
+    for rowv, val in ((True, 1), (0, False), (1, 1.0)):
+        row = {"k": {"value": rowv, "class": "windows-desktop", "source": "s" * 20}}
+        assert r.accepted(["k"], {"k": val}, row, {"k": rowv}) == []
+        assert r.accepted(["k"], {"k": rowv}, row, {"k": val}) == []
+
+
+def test_accepted_class_must_be_known():
+    row = {"k": {"value": 1, "class": "x", "source": "s" * 20}}
+    assert r.accepted(["k"], {"k": 1}, row, {"k": 1}) == []

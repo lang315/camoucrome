@@ -155,6 +155,8 @@ def label_rows(control, fork):
     reads ABSENT. A detector that did not settle is `unmeasured`, never a difference."""
     out = []
     for name in sorted(set(control) | set(fork)):
+        if name == "link.values":
+            continue  # host values never reach a table
         c, f = control.get(name, ABSENT), fork.get(name, ABSENT)
         if c == f:
             continue
@@ -340,6 +342,8 @@ def compare_runs(a, b):
                 ra = (a["rows"].get(probe) or {}).get(arm, {}).get(mode) or {}
                 rb = (b["rows"].get(probe) or {}).get(arm, {}).get(mode) or {}
                 for name in sorted(set(ra) | set(rb)):
+                    if name == "link.values":
+                        continue
                     va, vb = ra.get(name, ABSENT), rb.get(name, ABSENT)
                     site = ".".join(name.split(".")[:2])
                     if UNMEASURED in (ra.get(site), rb.get(site)):
@@ -361,6 +365,13 @@ def unmeasured_sites(a, b):
     return out
 
 
+ACCEPTED_CLASSES = {"windows-desktop"}
+
+
+def _same(a, b):
+    return type(a) is type(b) and a == b
+
+
 def accepted(shared, values, accepted_rows, baseline):
     """Shared leaves that qualify as an accepted default. BOTH must hold (ruling 2026-10-25):
     (a) the value is the modal value for the CLAIMED device class (a Windows desktop of the drawn
@@ -369,10 +380,15 @@ def accepted(shared, values, accepted_rows, baseline):
     out = []
     for k in shared:
         row = accepted_rows.get(k)
-        if (row and len(row.get("source", "")) >= 20 and row.get("class")
-                and k in values and values[k] == row["value"] and baseline.get(k) == row["value"]):
+        if (row and len(row.get("source", "")) >= 20 and row.get("class") in ACCEPTED_CLASSES
+                and k in values and _same(values[k], row["value"]) and k in baseline and _same(baseline[k], row["value"])):
             out.append(k)
     return out
+
+
+def baseline_for_mode(stock, mode):
+    """Flattened stock reading for the SAME mode; no such section -> {} (nothing can be accepted)."""
+    return flatten(stock[mode]) if isinstance(stock.get(mode), dict) else {}
 
 
 def unexplained_counts(shared, values, constants, accepted_rows, baseline):
