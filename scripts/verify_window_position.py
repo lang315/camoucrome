@@ -38,7 +38,7 @@ def measure(exe, seed, use_position):
     if use_position:
         opts["position"] = g["launch"]["position"]
     with sync_playwright() as pw:
-        ctx = launch(pw, exe, config=g["config"], headless=False, args=["--no-sandbox"], **opts)
+        ctx = launch(pw, exe, config=g["config"], headless=False, args=g["launch"]["args"], **opts)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto("about:blank")

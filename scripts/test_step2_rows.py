@@ -549,6 +549,7 @@ def test_measure_step2_identity_passes_host_draw_inputs(monkeypatch):
 
 def _fake_host(monkeypatch, display, pv):
     import types
+    monkeypatch.syspath_prepend(str(pathlib.Path(__file__).resolve().parents[1] / "client" / "python"))
     import camoucrome
     probe = types.SimpleNamespace(host_renderer=lambda e: "R", host_display=lambda e: display,
                                   host_platform_version=lambda e: pv)
