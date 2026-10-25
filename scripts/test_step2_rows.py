@@ -107,12 +107,12 @@ def test_link_rows():
 
 def test_link_rows_n_shares_only_what_every_profile_shares():
     reps = [{"a": 1, "b": 2, "c": 9}, {"a": 1, "b": 2, "c": 8}, {"a": 1, "b": 3, "c": 9}]
-    assert r.link_rows_n(reps) == {"link.total": 3, "link.shared": ["a"]}
+    assert r.link_rows_n(reps) == {"link.total": 3, "link.shared": ["a"], "link.values": {"a": 1}}
 
 
 def test_link_rows_n_two_reports_equals_link_rows():
     a, b = {"a": 1, "b": 2}, {"a": 1, "b": 3}
-    assert r.link_rows_n([a, b]) == r.link_rows(a, b)
+    assert {k: v for k, v in r.link_rows_n([a, b]).items() if k != "link.values"} == r.link_rows(a, b)
 
 
 def test_link_rows_n_leaf_missing_from_one_report_is_not_shared():
@@ -165,11 +165,20 @@ def test_render_tables_labels_and_unmeasured():
 
 
 def test_render_tables_lists_unexplained_shared_leaves():
-    cell = {"link.total": 3, "link.shared": ["a", "webGl.renderer"], "link.unexplained": ["webGl.renderer"]}
+    cell = {"link.total": 3, "link.shared": ["a", "webGl.renderer"], "link.unexplained": ["webGl.renderer"],
+            "link.unexplained_raw": 2, "link.unexplained_net": 1, "link.values": {"webGl.renderer": "SECRET-VALUE"}}
     doc = {"run": "t", "versions": {"control": "1", "fork": "1"}, "flags": {}, "errors": {},
            "rows": {"linkability": {"control": {"headless": dict(cell)}, "fork": {"headless": dict(cell)}}}}
     md = r.render_tables(doc, {})
-    assert "that no machine constant explains (1)" in md and "`webGl.renderer`" in md
+    assert "that no machine constant explains (raw 2, net 1)" in md and "`webGl.renderer`" in md
+    assert "SECRET-VALUE" not in md
+
+
+def test_drop_link_values_removes_values_from_every_cell():
+    doc = {"rows": {"linkability": {"fork": {"headed": {"link.values": {"a": 1}, "link.shared": ["a"]}}, "control": {"headed": None}}}}
+    out = r.drop_link_values(doc)
+    assert out["rows"]["linkability"]["fork"]["headed"] == {"link.shared": ["a"]}
+    assert "link.values" in doc["rows"]["linkability"]["fork"]["headed"]
 
 
 # Calibration from the 2026-10-04 host runs (docs/superpowers/measurements/2026-10-step2-baseline.md).
@@ -563,3 +572,45 @@ def test_probe_host_draw_leaves_out_a_failed_probe_and_says_so(monkeypatch, caps
     _fake_host(monkeypatch, None, None)
     assert m.probe_host_draw("x") == {"host_renderer": "R", "host_families": {"F"}}
     assert "display unknown: gamut, bit depth and HDR keep the host's values" in capsys.readouterr().out
+
+
+_ROW = {"value": True, "class": "windows-desktop", "source": "CSS Media Queries 4 initial value for a mouse"}
+
+
+def test_accepted_default_needs_a_source_a_class_and_the_baseline_value():
+    base = {"media.(hover: hover)": True}
+    assert r.accepted(["media.(hover: hover)"], {"media.(hover: hover)": True}, {"media.(hover: hover)": _ROW}, base) == ["media.(hover: hover)"]
+
+
+def test_accepted_default_must_equal_stock_baseline():
+    assert r.accepted(["media.(hover: hover)"], {"media.(hover: hover)": True}, {"media.(hover: hover)": _ROW}, {"media.(hover: hover)": False}) == []
+
+
+def test_shared_value_that_differs_from_the_default_stays_unexplained():
+    assert r.accepted(["media.(hover: hover)"], {"media.(hover: hover)": False}, {"media.(hover: hover)": _ROW}, {"media.(hover: hover)": True}) == []
+
+
+def test_accepted_default_without_class_or_source_is_refused():
+    base = {"k": True}
+    for bad in ({"value": True, "class": "windows-desktop", "source": "short"}, {"value": True, "source": "x" * 20}):
+        assert r.accepted(["k"], {"k": True}, {"k": bad}, base) == []
+
+
+def test_counts_report_raw_and_net():
+    acc = {"a": {"value": 1, "class": "windows-desktop", "source": "x" * 20}}
+    out = r.unexplained_counts(["a", "b"], {"a": 1, "b": 2}, {}, acc, {"a": 1, "b": 2})
+    assert (out["raw"], out["net"], out["unexplained"]) == (2, 1, ["b"])
+
+
+def test_accepted_defaults_file_starts_empty_and_states_the_criterion():
+    import json, pathlib
+    d = json.loads((pathlib.Path(__file__).resolve().parent.parent / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))
+    assert d["leaves"] == {} and "BOTH" in d["$comment"]
+
+
+def test_audio_sample_rate_reason_matches_the_shipped_rate():
+    import json, pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    rate = json.loads((root / "settings" / "audio.json").read_text(encoding="utf-8"))["Windows"]["sampleRate"]
+    why = r.label_rows({"oracle.audio.sampleRate": 1}, {"oracle.audio.sampleRate": 2})[0][4]
+    assert str(rate) in why and "48000" not in why

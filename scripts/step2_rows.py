@@ -69,7 +69,7 @@ EXPECTED = {
     "det.sannysoft.CHR_MEMORY": "stock headless fails it (deviceMemory absent); the identity sets it",
     "det.sannysoft.HEADCHR_UA": "stock headless says HeadlessChrome; the identity UA does not",
     # step2b fork run 20261013-161750:
-    "oracle.audio.sampleRate": "the identity's audio:sampleRate (48000); the RDP session's device runs at 44100",
+    "oracle.audio.sampleRate": "the identity reports the stock baseline's audio:sampleRate (44100, settings/audio.json); the device rate is per machine",
     "det.dbi_bot.isBot": "SP2 hides webdriver, and the identity UA is not HeadlessChrome",
     "det.dbi_bot.hasWebdriverTrue": "SP2: the fork hides automation; stock under the same driver reports true",
     "det.dbi_bot.hasWebdriverInFrameTrue": "SP2: the fork hides automation; stock under the same driver reports true",
@@ -224,8 +224,9 @@ def link_rows_n(reports):
     total = len(set().union(*reports))
     steady = [_steady(r) for r in reports]
     first, rest = steady[0], steady[1:]
+    shared = sorted(k for k in first if all(k in r and r[k] == first[k] for r in rest))
     return {"link.total": total,
-            "link.shared": sorted(k for k in first if all(k in r and r[k] == first[k] for r in rest))}
+            "link.shared": shared, "link.values": {k: first[k] for k in shared}}
 
 
 def unexplained(shared, constants):
@@ -360,6 +361,38 @@ def unmeasured_sites(a, b):
     return out
 
 
+def accepted(shared, values, accepted_rows, baseline):
+    """Shared leaves that qualify as an accepted default. BOTH must hold (ruling 2026-10-25):
+    (a) the value is the modal value for the CLAIMED device class (a Windows desktop of the drawn
+    preset), the row citing its source and class; (b) stock Chrome on such a machine reads the
+    same value (`baseline`, the flattened stock oracle). A leaf failing either stays unexplained."""
+    out = []
+    for k in shared:
+        row = accepted_rows.get(k)
+        if (row and len(row.get("source", "")) >= 20 and row.get("class")
+                and k in values and values[k] == row["value"] and baseline.get(k) == row["value"]):
+            out.append(k)
+    return out
+
+
+def unexplained_counts(shared, values, constants, accepted_rows, baseline):
+    """`raw`: shared leaves no machine constant explains; `net`: raw minus the accepted defaults.
+    Report both, always."""
+    raw = unexplained(shared, constants)
+    ok = set(accepted(raw, values, accepted_rows, baseline))
+    net = [k for k in raw if k not in ok]
+    return {"raw": len(raw), "net": len(net), "unexplained": net}
+
+
+def drop_link_values(doc):
+    """A copy of a rows.json doc without any `link.values` (the values stay in the local run dir)."""
+    def walk(v):
+        if isinstance(v, dict):
+            return {k: walk(x) for k, x in v.items() if k != "link.values"}
+        return [walk(x) for x in v] if isinstance(v, list) else v
+    return walk(doc)
+
+
 def _cell(v):
     s = json.dumps(v, ensure_ascii=False)
     return (s if len(s) <= 80 else s[:77] + "...").replace("|", "\\|")
@@ -390,7 +423,8 @@ def render_tables(doc, texts):
                         "", ", ".join(f"`{k}`" for k in f.get("link.shared", []))]
                 if "link.unexplained" in f:
                     un = f["link.unexplained"]
-                    out += ["", f"Leaves all five profiles share that no machine constant explains ({len(un)}):",
+                    counts = f"raw {f['link.unexplained_raw']}, net {f['link.unexplained_net']}" if "link.unexplained_raw" in f else str(len(un))
+                    out += ["", f"Leaves all five profiles share that no machine constant explains ({counts}); the net list:",
                             "", ", ".join(f"`{k}`" for k in un)]
             out.append("")
     for (site, mode), (ct, ft) in sorted(texts.items()):

@@ -38,6 +38,7 @@ from windows_verify_set import STOCK_APP, pin_tag  # noqa: E402
 ROOT = HERE.parent
 LINK_SEEDS = (1, 2, 3, 4, 5)
 CONSTANTS = json.loads((ROOT / "settings" / "machine_constants.json").read_text(encoding="utf-8"))["leaves"]
+ACCEPTED = json.loads((ROOT / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))["leaves"]
 PROBES = {}  # name -> fn(pw, arm, mode, run) -> {row: value}; filled below
 
 
@@ -224,7 +225,9 @@ def probe_linkability(pw, arm, mode, run):
         with serve(cap.page().encode()) as url, opened(pw, arm, mode, ident=ident) as ctx:
             reports.append(read_oracle(ctx, url))
     got = rows.link_rows_n(reports)
-    return {**got, "link.unexplained": rows.unexplained(got["link.shared"], CONSTANTS)}
+    base = rows.flatten(json.loads((ROOT / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"])
+    n = rows.unexplained_counts(got["link.shared"], got["link.values"], CONSTANTS, ACCEPTED, base)
+    return {**got, "link.unexplained_raw": n["raw"], "link.unexplained_net": n["net"], "link.unexplained": n["unexplained"]}
 
 
 PROBES["stability"] = probe_stability
@@ -420,7 +423,7 @@ def scrub_cmd(a):
     if not geo:
         sys.exit("scrub: set CAMOU_SCRUB or the private terms ({placeholder: [host strings]}); neither is ever committed")
     src, dst = pathlib.Path(a.run_dir), pathlib.Path(a.out_dir)
-    doc = rows.scrub(json.loads((src / "rows.json").read_text(encoding="utf-8")), geo)
+    doc = rows.scrub(rows.drop_link_values(json.loads((src / "rows.json").read_text(encoding="utf-8"))), geo)
     tables = rows.scrub((src / "tables.md").read_text(encoding="utf-8"), geo)
     left = check_privacy.hits(json.dumps(doc, ensure_ascii=False), geo) + check_privacy.hits(tables, geo)
     if left:

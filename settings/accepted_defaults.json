@@ -1,0 +1,4 @@
+{
+ "$comment": "Accepted defaults for the linkability count. A leaf is accepted only if BOTH hold: (a) its value is the modal value for the CLAIMED device class (a Windows desktop of the drawn preset), with the source cited in the row; and (b) stock Chrome on such a machine reads the same value (the flattened stock baseline, baselines/chrome-8078-stock-oracle-windows.json, headed). A leaf failing either stays unexplained. Rows: {leaf: {value, class, source}}; source at least 20 characters; the run's value must equal the row's value. Reports always give both the raw and the net count. Starts empty: rows are added only in an owner-reviewed step.",
+ "leaves": {}
+}
