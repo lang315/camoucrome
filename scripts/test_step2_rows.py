@@ -536,3 +536,30 @@ def test_measure_step2_identity_passes_host_draw_inputs(monkeypatch):
     monkeypatch.setattr(m, "HOST_DRAW", {})
     m.identity(3)
     assert seen == {"seed": 3}
+
+
+def _fake_host(monkeypatch, display, pv):
+    import types
+    import camoucrome
+    probe = types.SimpleNamespace(host_renderer=lambda e: "R", host_display=lambda e: display,
+                                  host_platform_version=lambda e: pv)
+    fonts = types.SimpleNamespace(families=lambda: {"F"})
+    for name, mod in (("probe", probe), ("hostfonts", fonts)):
+        monkeypatch.setitem(sys.modules, f"camoucrome.{name}", mod)
+        monkeypatch.setattr(camoucrome, name, mod, raising=False)
+
+
+def test_probe_host_draw_passes_display_and_platform_version(monkeypatch, capsys):
+    import measure_step2 as m
+    d = {"gamut": "p3", "colorBits": 8, "hdr": False}
+    _fake_host(monkeypatch, d, "15.0.0")
+    assert m.probe_host_draw("x") == {"host_renderer": "R", "host_families": {"F"}, "host_display": d,
+                                      "host_platform_version": "15.0.0"}
+    assert "display unknown" not in capsys.readouterr().out
+
+
+def test_probe_host_draw_leaves_out_a_failed_probe_and_says_so(monkeypatch, capsys):
+    import measure_step2 as m
+    _fake_host(monkeypatch, None, None)
+    assert m.probe_host_draw("x") == {"host_renderer": "R", "host_families": {"F"}}
+    assert "display unknown: gamut, bit depth and HDR keep the host's values" in capsys.readouterr().out

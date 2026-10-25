@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 from . import launch
+from .gen import valid_display
 
 
 def windows_argv(executable):
@@ -127,11 +128,10 @@ HOST_DISPLAY_JS = """() => ({gamut: matchMedia('(color-gamut: rec2020)').matches
 
 
 def host_display(executable, timeout_s=30):
-    """The host display's {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool}; None on any failure or odd shape."""
+    """The host display's {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool}; None on any failure or odd shape.
+    Reads in HEADLESS mode: a headless read may not see a wide-gamut display (unverified, Task 3 Step 5)."""
     r = _probe(executable, HOST_DISPLAY_JS, timeout_s)
-    ok = (isinstance(r, dict) and r.get("gamut") in ("srgb", "p3", "rec2020") and r.get("colorBits") in (8, 10)
-          and isinstance(r.get("hdr"), bool))
-    return r if ok else None
+    return r if valid_display(r) else None
 
 
 def main():

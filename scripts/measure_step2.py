@@ -55,6 +55,16 @@ class Arm:
         return {k: v for k, v in self.config.items() if k not in SEED_KEYS}
 
 
+def probe_host_draw(fork_exe):
+    """The host facts generate() takes, read through probe; a probe that returns None is left out (no claim, rule 5)."""
+    from camoucrome import gen, hostfonts, probe
+    d = dict(host_renderer=probe.host_renderer(fork_exe), host_families=hostfonts.families(),
+             host_display=probe.host_display(fork_exe), host_platform_version=probe.host_platform_version(fork_exe))
+    if d["host_display"] is None:
+        print("host draw:", gen.display_flags(None)[1])
+    return {k: v for k, v in d.items() if v is not None or k in ("host_renderer", "host_families")}
+
+
 HOST_DRAW = {}  # filled by --host-draw: host_renderer / host_families for generate() (step 6)
 
 
@@ -326,8 +336,7 @@ def run_cmd(a):
     stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe")
     fork_exe = stock if a.null else os.environ["CAMOU_FORK_EXE"]
     if a.host_draw:
-        from camoucrome import hostfonts, probe
-        HOST_DRAW.update(host_renderer=probe.host_renderer(fork_exe), host_families=hostfonts.families())
+        HOST_DRAW.update(probe_host_draw(fork_exe))
         print(f"host draw: renderer={'read' if HOST_DRAW['host_renderer'] else 'NONE'} "
               f"families={len(HOST_DRAW['host_families'] or ())}")
     control = Arm("control", stock, None)  # stock: no config, no window/dpr (its defaults)

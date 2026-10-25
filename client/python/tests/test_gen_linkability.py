@@ -136,3 +136,12 @@ def test_locale_keys_move_together_for_every_known_locale():
         if not ok:
             bad.append(loc)
     assert bad == []
+
+
+def test_malformed_host_display_exits_with_one_line(monkeypatch, capsys):
+    import pytest
+    for bad in ('{"gamut": "p3"}', '5', '{"gamut":"x","colorBits":8,"hdr":false}'):
+        monkeypatch.setattr(sys, "argv", ["gen", "--host-display", bad])
+        with pytest.raises(SystemExit) as e:
+            gen.main()
+        assert str(e.value).startswith("gen: --host-display must be") and "\n" not in str(e.value)

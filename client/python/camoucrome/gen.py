@@ -343,6 +343,12 @@ def keyboard_keys(locale):
     return {"keyboard:layoutMap": table["layouts"][name]}, None
 
 
+def valid_display(d):
+    """True for a {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool} dict; probe and the CLI share it."""
+    return (isinstance(d, dict) and d.get("gamut") in ("srgb", "p3", "rec2020") and d.get("colorBits") in (8, 10)
+            and isinstance(d.get("hdr"), bool))
+
+
 def display_flags(host_display):
     """--force-color-profile=srgb for a wide-gamut host. 10-bit and HDR have no known launch lever: a warning, not a claim."""
     if not host_display:
@@ -487,6 +493,8 @@ def main():
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
     a = ap.parse_args()
+    if a.host_display is not None and not valid_display(a.host_display):
+        sys.exit('gen: --host-display must be {"gamut": "srgb"|"p3"|"rec2020", "colorBits": 8|10, "hdr": true|false}')
     families = hostfonts.families() if a.host_fonts else None
     json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display), sys.stdout)
 
