@@ -608,10 +608,16 @@ def test_counts_report_raw_and_net():
     assert (out["raw"], out["net"], out["unexplained"]) == (2, 1, ["b"])
 
 
-def test_accepted_defaults_file_starts_empty_and_states_the_criterion():
+def test_accepted_defaults_rows_meet_both_criteria():
+    """(a) a class and a cited source, (b) the value equals what stock Chrome reads in the committed baseline."""
     import json, pathlib
-    d = json.loads((pathlib.Path(__file__).resolve().parent.parent / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))
-    assert d["leaves"] == {} and "BOTH" in d["$comment"]
+    root = pathlib.Path(__file__).resolve().parent.parent
+    d = json.loads((root / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))
+    assert "BOTH" in d["$comment"]
+    base = r.baseline_for_mode(json.loads((root / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8")), "headed")
+    for k, row in d["leaves"].items():
+        assert row["class"] in r.ACCEPTED_CLASSES and len(row["source"]) >= 20, k
+        assert k in base and r._same(base[k], row["value"]), f"{k}: baseline {base.get(k)!r} != row {row['value']!r}"
 
 
 def test_audio_sample_rate_reason_matches_the_shipped_rate():
