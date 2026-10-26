@@ -172,13 +172,14 @@ function acceptLangOf(config, preset) {
 
 // The whole argv besides what the driver adds: launch() ignores Playwright's
 // default args (they carry --disable-features=<18>, --blink-settings, ...).
-function buildArgs({ window, dpr, extra = [], headless = true, userDataDir,
+function buildArgs({ window, dpr, position, extra = [], headless = true, userDataDir,
   acceptLang, extensions = [], spkiList = [], proxyServer, proxyBypass } = {}) {
   const args = [...BASE_ARGS];
   if (headless) args.push('--headless=new');
   args.push('--remote-debugging-pipe');
   if (userDataDir) args.push(`--user-data-dir=${userDataDir}`);
   if (window) args.push(`--window-size=${window[0]},${window[1]}`);
+  if (position) args.push(`--window-position=${position[0]},${position[1]}`);
   if (dpr != null) args.push(`--force-device-scale-factor=${dpr}`);
   if (acceptLang) args.push(`--accept-lang=${acceptLang}`);
   if (extensions.length) {
@@ -252,7 +253,7 @@ function profileSeeds(userDataDir) {
 }
 
 async function launch(chromium, executablePath, {
-  config, preset, strict = false, userDataDir, window, dpr, headless = true,
+  config, preset, strict = false, userDataDir, window, dpr, position, headless = true,
   args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, ...options
 } = {}) {
   if (proxy !== undefined) {
@@ -293,7 +294,7 @@ async function launch(chromium, executablePath, {
       ignoreDefaultArgs: true,
       env: buildEnv({ config, preset, strict,
         fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
-      args: buildArgs({ window, dpr, extra: args, headless, userDataDir: dir,
+      args: buildArgs({ window, dpr, position, extra: args, headless, userDataDir: dir,
         acceptLang: acceptLangOf(config, preset), extensions, spkiList,
         proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass }),
       // Otherwise a 1280x720 viewport is emulated, fighting screen.* and the

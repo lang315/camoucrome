@@ -53,7 +53,7 @@ KNOWN = {
     # machine's real value (no config key). The host reads 44100 since the 2026-10-24 recapture (48000 in the
     # earlier one: its audio device setting moved), the WSL box 48000. Excused only while the fork reports one of
     # the two standard device rates, so an odd value still shows.
-    "audio.sampleRate": ("the output device's rate is per machine: host 44100 (was 48000), box 48000, no key sets it",
+    "audio.sampleRate": ("the output device's rate is per machine: host 44100 (was 48000), box 48000, only the audio:sampleRate key sets it",
                          lambda fork: (fork.get("audio") or {}).get("sampleRate") in (44100, 48000)),
     # decodingInfo(H.264 1080p) is [supported, smooth, powerEfficient]. powerEfficient is true only with a hardware
     # decoder: the host (session 1, Intel GPU) has one, the box has none. Excused only while the fork answers
@@ -63,6 +63,8 @@ KNOWN = {
                  "(backlog: powerEfficient claim)",
                  lambda fork: fork.get("mediaCap") == [True, True, False]),
 }
+# Leaves the committed baseline predates (recapture is host work). Known only while the baseline lacks them.
+NOT_IN_BASELINE = {"mediaCapAv1"}
 # Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
 # an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
 KNOWN_PREFIX = {
@@ -132,6 +134,10 @@ def compare(base, fork):
             buckets["shape_only"] += 1
             if type(h) != type(f):
                 diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
+            continue
+        if h == "<absent>" and k in NOT_IN_BASELINE:
+            buckets["known"] += 1
+            print(f"known: {k}: not in the committed baseline (fork={json.dumps(f)[:80]})")
             continue
         if h != f:
             entry = KNOWN.get(k)

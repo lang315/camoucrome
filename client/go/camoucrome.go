@@ -48,6 +48,7 @@ type Options struct {
 	UserDataDir    string // one profile per identity; a temp dir when empty
 	Window         [2]int // --window-size, so inner/outer widths cohere with screen.*
 	DPR            float64
+	Position       *[2]int  // --window-position, so the real window sits where window.screenX/Y say
 	Headless       *bool    // nil = headless
 	Extensions     []string // unpacked extension dirs (--load-extension)
 	SPKIList       []string // base64 SHA-256 SPKI hashes whose cert errors are ignored (a MITM CA)
@@ -405,6 +406,9 @@ func BuildArgs(o Options) []string {
 	}
 	if o.Window != [2]int{} {
 		args = append(args, fmt.Sprintf("--window-size=%d,%d", o.Window[0], o.Window[1]))
+	}
+	if o.Position != nil {
+		args = append(args, fmt.Sprintf("--window-position=%d,%d", o.Position[0], o.Position[1]))
 	}
 	if o.DPR != 0 {
 		args = append(args, fmt.Sprintf("--force-device-scale-factor=%g", o.DPR))

@@ -47,14 +47,25 @@ def test_never_taken_fields_stay_out():
         assert k not in cfg, k
 
 
+def test_a_pool_position_inside_the_work_area_is_kept():
+    pool = json.loads(json.dumps(POOL))
+    pool["screen"].update(outerWidth=1400, outerHeight=700, screenX=30, screenY=20)
+    cfg = gen.from_pool(pool, "UTC", rng=random.Random(1))["config"]
+    assert (cfg["window.screenX"], cfg["window.screenY"], cfg["window.outerWidth"], cfg["window.outerHeight"]) == (30, 20, 1400, 700)
+
+
 def test_geometry_is_coherent_after_the_helpers():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
     # avail == screen in the pool -> taskbar applied; outer 1600x900 clamped.
     assert cfg["screen.availHeight"] == 864 - 40 and cfg["screen.availWidth"] == 1536
-    assert cfg["window.outerWidth"] == 1536 and cfg["window.outerHeight"] == 824  # 824 % 4 == 0
-    assert cfg["window.screenX"] == 0 and cfg["window.screenY"] == 40
+    # pool window 1536x824 at (0, 0): gen.window_position draws the offset (66, 75) for this rng (a pinned draw,
+    # not a pool value) and the window shrinks by it, so it ends at the work-area corner: 66+1470, 75+749
+    assert (cfg["window.screenX"], cfg["window.screenY"]) == (66, 75)
+    assert (cfg["window.outerWidth"], cfg["window.outerHeight"]) == (1470, 749)
+    assert 66 + 1470 == 1536 and 75 + 749 == 824
     out = gen.from_pool(POOL, "UTC", rng=random.Random(1))
-    assert out["launch"] == {"window": [1534, 822], "dpr": 1.25}
+    assert out["launch"] == {"window": [1468, 747], "dpr": 1.25, "args": [],
+                             "position": [cfg["window.screenX"], cfg["window.screenY"]]}
 
 
 def test_locale_and_timezone():
@@ -114,9 +125,10 @@ def test_launch_window_carries_the_measured_dpr_offset():
                           availWidth=2000, availHeight=1160)
     out = gen.from_pool(pool, "UTC", rng=random.Random(1))
     assert out["config"]["window.outerWidth"] == 1530 and out["config"]["window.outerHeight"] == 901
-    assert out["launch"] == {"window": [1528, 899], "dpr": 1.25}
+    assert {k: out["launch"][k] for k in ("window", "dpr")} == {"window": [1528, 899], "dpr": 1.25}
     pool["screen"]["devicePixelRatio"] = 2
-    assert gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"] == {"window": [1530, 901], "dpr": 2}
+    two = gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"]
+    assert {k: two[k] for k in ("window", "dpr")} == {"window": [1530, 901], "dpr": 2}
     odd = json.loads(json.dumps(POOL))
     odd["screen"]["devicePixelRatio"] = 1.2145832777023315
     assert not gen.acceptable(odd)
@@ -225,7 +237,7 @@ def test_voices_follow_the_locale_and_share_cancel_is_human_paced():
 
 def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert win["audio:sampleRate"] == 48000
+    assert win["audio:sampleRate"] == 44100
     assert gen.voices_keys("macOS", "fr-FR")["voices:list"] == gen.voices_keys("macOS")["voices:list"]
     assert len(gen.voices_keys("macOS")["voices:list"]) > 100 and gen.audio_keys("macOS")["audio:sampleRate"] == 48000
     assert gen.audio_keys("Linux") == {}
@@ -233,7 +245,7 @@ def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
 
 def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert win["audio:bufferFrames"] == 480 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
+    assert win["audio:bufferFrames"] == 441 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
     assert gen.audio_keys("macOS")["audio:bufferFrames"] == 256
     lin = json.loads(json.dumps(POOL)); lin["navigator"]["userAgentData"]["platform"] = "Linux"; lin["navigator"]["userAgentData"]["platformVersion"] = ""
     cfg = gen.from_pool(lin, "UTC", rng=random.Random(1))["config"]
@@ -344,9 +356,11 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 
 
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
+# seed 1 "rest" recomputed on the pre-final-review code without window.screenX/Y, window.outerWidth/Height,
+# launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
-        "rest": "a17de27a2435182d"},
+        "rest": "cfc63531725c99cb"},
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
 }
@@ -364,8 +378,12 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     excluded; every other key and launch must be byte-identical to the pre-change run."""
     import hashlib
     r = gen.generate("windows", "Europe/Paris", None, 1)
-    rest = {k: v for k, v in r["config"].items() if not k.startswith("fonts:")}
-    assert hashlib.sha256(json.dumps([rest, r["launch"]], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
+    # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
+    rest = {k: v for k, v in r["config"].items()
+            if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY",
+                                                                  "window.outerWidth", "window.outerHeight")}
+    launch = {k: v for k, v in r["launch"].items() if k not in ("position", "args", "window")}
+    assert hashlib.sha256(json.dumps([rest, launch], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
 
 
 def test_host_families_limit_fonts_list_and_alias_local():

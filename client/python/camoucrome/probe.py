@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 from . import launch
+from .gen import valid_display
 
 
 def windows_argv(executable):
@@ -79,6 +80,26 @@ HOST_GL_JS = """() => { const g = document.createElement('canvas').getContext('w
 SOFTWARE_MARKERS = ("swiftshader", "llvmpipe", "software", "basic render")
 
 
+def _probe(executable, js, timeout_s):
+    """One headless launch through the package launcher with no config; the page's evaluate() result, None on any failure."""
+    try:
+        from patchright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            ctx = launch(pw, executable, headless=True, timeout=timeout_s * 1000)
+            try:
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                page.goto("about:blank", timeout=timeout_s * 1000)
+                # shortcut: no wall-clock bound on evaluate, upgrade if a hung GPU process is seen
+                return page.evaluate(js)
+            finally:
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+    except Exception:
+        return None
+
+
 def host_renderer(executable, timeout_s=30):
     """The host's real WebGL renderer, read once at identity generation.
 
@@ -88,25 +109,29 @@ def host_renderer(executable, timeout_s=30):
     contract's; Playwright's default --use-angle=swiftshader-webgl would
     report SwiftShader.
     """
-    try:
-        from patchright.sync_api import sync_playwright
-        with sync_playwright() as pw:
-            ctx = launch(pw, executable, headless=True, timeout=timeout_s * 1000)
-            try:
-                page = ctx.pages[0] if ctx.pages else ctx.new_page()
-                page.goto("about:blank", timeout=timeout_s * 1000)
-                # shortcut: no wall-clock bound on evaluate, upgrade if a hung GPU process is seen
-                r = page.evaluate(HOST_GL_JS)
-            finally:
-                try:
-                    ctx.close()
-                except Exception:
-                    pass
-        if not isinstance(r, str) or not r or any(m in r.lower() for m in SOFTWARE_MARKERS):
-            return None
-        return r
-    except Exception:
+    r = _probe(executable, HOST_GL_JS, timeout_s)
+    if not isinstance(r, str) or not r or any(m in r.lower() for m in SOFTWARE_MARKERS):
         return None
+    return r
+
+
+HOST_PV_JS = "() => navigator.userAgentData.getHighEntropyValues(['platformVersion']).then(v => v.platformVersion)"
+
+
+def host_platform_version(executable, timeout_s=30):
+    """The host's real UA-CH platformVersion (Windows 10 reports 10.0.0, Windows 11 13.0.0 or later); None on any failure."""
+    r = _probe(executable, HOST_PV_JS, timeout_s)
+    return r if isinstance(r, str) and r else None
+
+
+HOST_DISPLAY_JS = """() => ({gamut: matchMedia('(color-gamut: rec2020)').matches ? 'rec2020' : matchMedia('(color-gamut: p3)').matches ? 'p3' : 'srgb', colorBits: matchMedia('(color: 10)').matches ? 10 : 8, hdr: matchMedia('(dynamic-range: high)').matches})"""
+
+
+def host_display(executable, timeout_s=30):
+    """The host display's {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool}; None on any failure or odd shape.
+    Reads in HEADLESS mode: a headless read may not see a wide-gamut display (unverified, Task 3 Step 5)."""
+    r = _probe(executable, HOST_DISPLAY_JS, timeout_s)
+    return r if valid_display(r) else None
 
 
 def main():
