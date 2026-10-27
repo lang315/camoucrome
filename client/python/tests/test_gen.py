@@ -51,7 +51,7 @@ def test_a_pool_position_inside_the_work_area_is_kept():
     pool = json.loads(json.dumps(POOL))
     pool["screen"].update(outerWidth=1400, outerHeight=700, screenX=30, screenY=20)
     cfg = gen.from_pool(pool, "UTC", rng=random.Random(1))["config"]
-    assert (cfg["window.screenX"], cfg["window.screenY"], cfg["window.outerWidth"], cfg["window.outerHeight"]) == (30, 20, 1400, 700)
+    assert (cfg["window.screenX"], cfg["window.screenY"], cfg["window.outerWidth"], cfg["window.outerHeight"]) == (30, 20, 1399, 699)  # 1400x700 snapped to a size the browser returns exactly at 1.25 (gen.snap_window)
 
 
 def test_geometry_is_coherent_after_the_helpers():
@@ -59,12 +59,12 @@ def test_geometry_is_coherent_after_the_helpers():
     # avail == screen in the pool -> taskbar applied; outer 1600x900 clamped.
     assert cfg["screen.availHeight"] == 864 - 40 and cfg["screen.availWidth"] == 1536
     # pool window 1536x824 at (0, 0): gen.window_position draws the offset (66, 75) for this rng (a pinned draw,
-    # not a pool value) and the window shrinks by it, so it ends at the work-area corner: 66+1470, 75+749
+    # not a pool value) and the window shrinks by it, so it ends at the work-area corner: 66+1470, 75+749, then the height snaps to 747 (gen.snap_window)
     assert (cfg["window.screenX"], cfg["window.screenY"]) == (66, 75)
-    assert (cfg["window.outerWidth"], cfg["window.outerHeight"]) == (1470, 749)
-    assert 66 + 1470 == 1536 and 75 + 749 == 824
+    assert (cfg["window.outerWidth"], cfg["window.outerHeight"]) == (1470, 747)
+    assert 66 + 1470 == 1536 and 75 + 747 <= 824
     out = gen.from_pool(POOL, "UTC", rng=random.Random(1))
-    assert out["launch"] == {"window": [1468, 747], "dpr": 1.25, "args": [],
+    assert out["launch"] == {"window": [1468, 745], "dpr": 1.25, "args": [],
                              "position": [cfg["window.screenX"], cfg["window.screenY"]]}
 
 
@@ -124,14 +124,53 @@ def test_launch_window_carries_the_measured_dpr_offset():
     pool["screen"].update(outerWidth=1530, outerHeight=901, width=2000, height=1200,
                           availWidth=2000, availHeight=1160)
     out = gen.from_pool(pool, "UTC", rng=random.Random(1))
-    assert out["config"]["window.outerWidth"] == 1530 and out["config"]["window.outerHeight"] == 901
-    assert {k: out["launch"][k] for k in ("window", "dpr")} == {"window": [1528, 899], "dpr": 1.25}
+    assert out["config"]["window.outerWidth"] == 1530 and out["config"]["window.outerHeight"] == 899
+    assert {k: out["launch"][k] for k in ("window", "dpr")} == {"window": [1528, 897], "dpr": 1.25}
     pool["screen"]["devicePixelRatio"] = 2
     two = gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"]
     assert {k: two[k] for k in ("window", "dpr")} == {"window": [1530, 901], "dpr": 2}
     odd = json.loads(json.dumps(POOL))
     odd["screen"]["devicePixelRatio"] = 1.2145832777023315
     assert not gen.acceptable(odd)
+
+
+# What headless Chrome 156 returns for --window-size L at each DPR, measured 2026-10-28 on the build box over L = 1180..1191,
+# 1480..1491 (width) and 660..671, 714..725 (height). `real_window` is (outer, inner) in CSS px along one axis.
+# 1.25 and 1.75 add 2 px (1 px when L % 4 == 2); at 1.25 an L with L % 4 == 3 even comes back with inner 1 px above outer.
+# 1.5 rounds an odd L up to the next even. 1 and 2 are exact. The generator's launch window must come back as the claimed outer.
+def real_window(dpr, length):
+    if dpr in (1.25, 1.75):
+        outer = length + (1 if length % 4 == 2 else 2)
+        return outer, outer + (1 if dpr == 1.25 and length % 4 == 3 else 0)
+    if dpr == 1.5:
+        return length + length % 2, length + length % 2
+    return length, length
+
+
+@pytest.mark.parametrize("dpr", [1, 1.25, 1.5, 1.75, 2])
+def test_launch_window_comes_back_as_the_claimed_outer_with_inner_not_above_it(dpr):
+    """G4 (verify_sp6b_generator): the page reads the claimed window.outerWidth, and the real innerWidth the browser gives for
+    launch.window must not exceed it. The claimed outer must also be the real one, or outer - inner is off by the rounding."""
+    for width in range(1180, 1204):
+        for height in range(700, 712):
+            pool = json.loads(json.dumps(POOL))
+            pool["screen"].update(devicePixelRatio=dpr, outerWidth=width, outerHeight=height, width=2560, height=1440,
+                                  availWidth=2560, availHeight=1400)
+            out = gen.from_pool(pool, "UTC", rng=random.Random(width * 1000 + height))
+            cfg, launch = out["config"], out["launch"]
+            for axis, i in (("Width", 0), ("Height", 1)):
+                outer, inner = real_window(dpr, launch["window"][i])
+                assert outer == cfg[f"window.outer{axis}"], (dpr, width, height, axis, launch["window"], outer)
+                assert axis == "Height" or inner <= cfg["window.outerWidth"], (dpr, width, height, launch["window"], inner)
+
+
+def test_launch_window_invariant_over_generated_seeds():
+    pytest.importorskip("browserforge")
+    for seed in range(1000, 1060):
+        out = gen.generate("windows", seed=seed)
+        cfg, launch = out["config"], out["launch"]
+        outer, inner = real_window(launch["dpr"], launch["window"][0])
+        assert outer == cfg["window.outerWidth"] and inner <= cfg["window.outerWidth"], (seed, launch["dpr"], launch["window"], cfg["window.outerWidth"])
 
 
 def test_pool_wide_properties_hold_over_unseeded_draws():
