@@ -20,9 +20,11 @@ type contract struct {
 	Launch struct {
 		BaseArgs          []string `json:"base_args"`
 		WindowSizeArg     string   `json:"window_size_arg"`
+		WindowPositionArg string   `json:"window_position_arg"`
 		DPRArg            string   `json:"dpr_arg"`
 		HeadlessArg       string   `json:"headless_arg"`
 		IgnoreDefaultArgs bool     `json:"ignore_default_args"`
+		ExtraArgsLast     bool     `json:"extra_args_last"`
 		AcceptLangArg     string   `json:"accept_lang_arg"`
 		ExtensionArgs     []string `json:"extension_args"`
 		SPKIArg           string   `json:"spki_arg"`
@@ -67,8 +69,9 @@ func TestArgsMatchTheContract(t *testing.T) {
 	}
 	want := append(append([]string{}, c.Launch.BaseArgs...), pipe, "--user-data-dir=/p",
 		strings.NewReplacer("{width}", "1920", "{height}", "1040").Replace(c.Launch.WindowSizeArg),
+		strings.NewReplacer("{x}", "30", "{y}", "60").Replace(c.Launch.WindowPositionArg),
 		strings.NewReplacer("{dpr}", "1.25").Replace(c.Launch.DPRArg))
-	if got := BuildArgs(Options{Headless: &headed, UserDataDir: "/p", Window: [2]int{1920, 1040}, DPR: 1.25}); !reflect.DeepEqual(got, want) {
+	if got := BuildArgs(Options{Headless: &headed, UserDataDir: "/p", Window: [2]int{1920, 1040}, Position: &[2]int{30, 60}, DPR: 1.25}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("args %v != %v", got, want)
 	}
 	if !c.Launch.IgnoreDefaultArgs {
@@ -136,6 +139,22 @@ func TestPerInstanceSeedsMatchTheContract(t *testing.T) {
 		if v.(uint32) == 0 {
 			t.Fatalf("%s is zero", k)
 		}
+	}
+}
+
+func TestGeneratedLaunchArgsRideAsExtraArgsLast(t *testing.T) {
+	c := load(t)
+	if !c.Launch.ExtraArgsLast {
+		t.Fatal("contract: extra_args_last is not true")
+	}
+	o, err := ParseGenerated([]byte(`{"config":{"a":1},"launch":{"window":[1,2],"dpr":1,"args":["--force-color-profile=srgb"]}}`))
+	if err != nil || !reflect.DeepEqual(o.ExtraArgs, []string{"--force-color-profile=srgb"}) {
+		t.Fatalf("ExtraArgs %v err %v", o.ExtraArgs, err)
+	}
+	headed := false
+	o.Headless = &headed
+	if got := BuildArgs(o); got[len(got)-1] != "--force-color-profile=srgb" {
+		t.Fatalf("args %v: the display flag is not last", got)
 	}
 }
 

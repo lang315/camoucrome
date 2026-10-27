@@ -1,0 +1,155 @@
+{
+ "$comment": "Accepted defaults for the linkability count. A leaf is accepted only if BOTH hold: (a) its value is the modal value for the CLAIMED device class (a Windows desktop of the drawn preset), with the source cited in the row; and (b) stock Chrome on such a machine reads the same value (the flattened stock baseline, baselines/chrome-8078-stock-oracle-windows.json, headed). A leaf failing either stays unexplained. Rows: {leaf: {value, class, source}}; source at least 20 characters; the run's value must equal the row's value. Reports always give both the raw and the net count. Rows are added only in an owner-reviewed step; scripts/test_step2_rows.py checks every row against the committed baseline.",
+ "leaves": {
+  "audio.channelCount": {
+   "value": 2,
+   "class": "windows-desktop",
+   "source": "Web Audio API: AudioDestinationNode.channelCount defaults to 2; stock baseline reads the same"
+  },
+  "audio.state": {
+   "value": "suspended",
+   "class": "windows-desktop",
+   "source": "Chrome's autoplay policy starts an AudioContext created without a user gesture in 'suspended'; stock baseline reads the same"
+  },
+  "media.(-webkit-min-device-pixel-ratio: 1)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "true for any device pixel ratio of 1 or more; every Windows desktop scale (100%-300%) is at least 1; stock baseline reads the same"
+  },
+  "media.(any-hover: hover)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(any-pointer: fine)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(forced-colors: active)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: Windows high-contrast themes are off by default; stock baseline reads the same"
+  },
+  "media.(hover: hover)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(inverted-colors: inverted)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: Windows has no inverted-colours display mode by default (initial value none); stock baseline reads the same"
+  },
+  "media.(orientation: landscape)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(pointer: coarse)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(pointer: fine)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(pointer: none)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 4 (pointer, hover, any-pointer, any-hover, orientation): a desktop with a mouse and a landscape display; stock Chrome on such a machine reads the same (baseline)"
+  },
+  "media.(prefers-color-scheme: dark)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: the Windows default app mode is Light (Settings > Personalization > Colors); stock baseline reads the same"
+  },
+  "media.(prefers-contrast: more)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: contrast themes are off by default; stock baseline reads the same"
+  },
+  "media.(prefers-contrast: no-preference)": {
+   "value": true,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: contrast themes are off by default; stock baseline reads the same"
+  },
+  "media.(prefers-reduced-data: reduce)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: desktop Chrome has no data-saver setting that sets it; initial value no-preference; stock baseline reads the same"
+  },
+  "media.(prefers-reduced-motion: reduce)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: Windows 'Show animations' is on by default; stock baseline reads the same"
+  },
+  "media.(prefers-reduced-transparency: reduce)": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "CSS Media Queries Level 5 initial value of the feature, and the Windows 10/11 default setting being off: Windows 'Transparency effects' is on by default; stock baseline reads the same"
+  },
+  "nav.doNotTrack": {
+   "value": null,
+   "class": "windows-desktop",
+   "source": "navigator.doNotTrack is null while the browser's 'Send a Do Not Track request' setting is off (chrome/browser/renderer_preferences_util.cc:185 reads the pref); the setting is off in a new Chrome profile; stock baseline reads the same"
+  },
+  "nav.maxTouchPoints": {
+   "value": 0,
+   "class": "windows-desktop",
+   "source": "a Windows desktop without a touch screen reports 0 touch points (Pointer Events spec: maxTouchPoints is 0 without touch hardware); stock baseline reads the same"
+  },
+  "navConnection.effectiveType": {
+   "value": "4g",
+   "class": "windows-desktop",
+   "source": "Network Information API effective connection type '4g' is the top class, reported for any broadband link; stock baseline reads the same"
+  },
+  "navConnection.saveData": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "Network Information API saveData is false unless the user turns on a data saver; desktop Chrome has none; stock baseline reads the same"
+  },
+  "screen.availLeft": {
+   "value": 0,
+   "class": "windows-desktop",
+   "source": "a single monitor with the Windows taskbar at its default bottom position leaves the available area at the origin; stock baseline reads the same"
+  },
+  "screen.availTop": {
+   "value": 0,
+   "class": "windows-desktop",
+   "source": "a single monitor with the Windows taskbar at its default bottom position leaves the available area at the origin; stock baseline reads the same"
+  },
+  "screen.colorDepth": {
+   "value": 24,
+   "class": "windows-desktop",
+   "source": "Chromium reports 24 for an 8-bit-per-channel SDR display (ui/display/win/screen_win.cc sets the colour depth from the display's depth per component); stock baseline reads the same"
+  },
+  "screen.isExtended": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "false with a single monitor (Window Management API: isExtended is true only with more than one screen); stock baseline reads the same"
+  },
+  "screen.pixelDepth": {
+   "value": 24,
+   "class": "windows-desktop",
+   "source": "Chromium reports 24 for an 8-bit-per-channel SDR display (ui/display/win/screen_win.cc sets the colour depth from the display's depth per component); stock baseline reads the same"
+  },
+  "screenOrientation.angle": {
+   "value": 0,
+   "class": "windows-desktop",
+   "source": "Screen Orientation API: a landscape desktop display is at angle 0; stock baseline reads the same"
+  },
+  "screenOrientation.type": {
+   "value": "landscape-primary",
+   "class": "windows-desktop",
+   "source": "Screen Orientation API: a landscape desktop display reports landscape-primary; stock baseline reads the same"
+  },
+  "win.ontouchstart": {
+   "value": false,
+   "class": "windows-desktop",
+   "source": "Window.ontouchstart is [RuntimeEnabled=TouchEventFeatureDetection] (blink global_event_handlers.idl:140), enabled only with touch hardware; a desktop without one lacks it; stock baseline reads the same"
+  }
+ }
+}

@@ -98,3 +98,8 @@ def test_headed_screen_must_equal_the_console_display(monkeypatch, tmp_path):
     with pytest.raises(SystemExit, match="not the console display"):
         _run(monkeypatch, tmp_path, fake)
     assert not (tmp_path / "raw.json").exists()
+
+
+def test_oracle_reads_av1_media_capabilities():
+    src = (pathlib.Path(__file__).resolve().parent / "capture_host_oracle.py").read_text(encoding="utf-8")
+    assert "av01.0.05M.08" in src.split("await step('mediaCapAv1'")[1].split("await step(")[0]

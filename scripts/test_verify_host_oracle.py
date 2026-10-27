@@ -155,3 +155,12 @@ def test_a_bare_reason_in_known_still_excludes_unconditionally():
     fork = {bare[0].split(".", 1)[0]: {bare[0].split(".", 1)[1]: "fork"}} if "." in bare[0] else {bare[0]: "fork"}
     diffs, buckets, _ = vho.compare(host, fork)
     assert diffs == [] and buckets["known"] == 1, (bare[0], diffs, buckets)
+
+
+def test_a_leaf_missing_from_the_baseline_is_known_until_the_baseline_has_it():
+    """mediaCapAv1 is not in the committed baseline (recapture is host work). Absent there it is a known row;
+    once the baseline carries it, it is compared like any leaf."""
+    diffs, buckets, _ = vho.compare({}, {"mediaCapAv1": [True, True, False]})
+    assert diffs == [] and buckets["known"] == 1, (diffs, buckets)
+    diffs, _, _ = vho.compare({"mediaCapAv1": [True, True, True]}, {"mediaCapAv1": [True, True, False]})
+    assert [k for k, *_ in diffs] == ["mediaCapAv1"], diffs

@@ -183,7 +183,8 @@ def accept_lang_of(config, preset=None):
 
 
 def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=None,
-               accept_lang=None, extensions=(), spki_list=(), proxy_server=None, proxy_bypass=None):
+               accept_lang=None, extensions=(), spki_list=(), proxy_server=None, proxy_bypass=None,
+               position=None):
     """Launch flags the C++ deliberately left to the launcher: window size so
     inner/outer/client widths cohere with screen.*, and the device scale
     factor. Timezone, locale and UA are NOT flags: they come through config.
@@ -206,6 +207,8 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
         args.append(f"--user-data-dir={user_data_dir}")
     if window is not None:
         args.append(f"--window-size={window[0]},{window[1]}")
+    if position is not None:
+        args.append(f"--window-position={position[0]},{position[1]}")
     if dpr is not None:
         args.append(f"--force-device-scale-factor={dpr}")
     if accept_lang:
@@ -242,7 +245,7 @@ def remove_dir(path, wait=10.0):
 
 
 def launch(playwright, executable_path, *, config=None, preset=None,
-           strict=False, user_data_dir=None, window=None, dpr=None,
+           strict=False, user_data_dir=None, window=None, dpr=None, position=None,
            headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, proxy=None,
            geoip=None, exit_ip=None, **options):
     """Launches a persistent context (one profile per identity) and returns it.
@@ -309,7 +312,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
                           crash_dir=owned[0]),
             args=build_args(window, dpr, args, headless, user_data_dir,
                             accept_lang_of(config, preset), extensions, spki_list,
-                            proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None),
+                            proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None, position),
             # Playwright otherwise emulates a 1280x720 viewport through
             # Emulation.setDeviceMetricsOverride, which fights screen.* and the
             # window size above.

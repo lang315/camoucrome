@@ -60,10 +60,10 @@ def main(argv=None):
     a = ap.parse_args(argv)
     gpu_gate.require_interactive()
     from patchright.sync_api import sync_playwright
-    from camoucrome import SEED_KEYS, hostfonts, probe
+    from camoucrome import SEED_KEYS
     stock = m2.Arm("stock", os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe"), None)
     fork_exe = os.environ["CAMOU_FORK_EXE"]
-    m2.HOST_DRAW.update(host_renderer=probe.host_renderer(fork_exe), host_families=hostfonts.families())
+    m2.HOST_DRAW.update(m2.probe_host_draw(fork_exe))
     if not m2.HOST_DRAW["host_renderer"]:
         sys.exit("UNMEASURED: no hardware renderer read from the host")
 

@@ -18,15 +18,18 @@ test('args match the contract', () => {
   assert.deepEqual(c.buildArgs({ headless: false }), [...L.base_args, ...pipe]);
   assert.deepEqual(c.buildArgs(), [...L.base_args, L.headless_arg, ...pipe]);
   assert.deepEqual(
-    c.buildArgs({ headless: false, userDataDir: '/p', window: [1920, 1040], dpr: 1.25,
+    c.buildArgs({ headless: false, userDataDir: '/p', window: [1920, 1040], position: [30, 60], dpr: 1.25,
       acceptLang: 'fr-FR,fr', extensions: ['/e1', '/e2'], spkiList: ['AAA=', 'BBB='] }),
     [...L.base_args, ...pipe, '--user-data-dir=/p',
       L.window_size_arg.replace('{width}', '1920').replace('{height}', '1040'),
+      L.window_position_arg.replace('{x}', '30').replace('{y}', '60'),
       L.dpr_arg.replace('{dpr}', '1.25'),
       L.accept_lang_arg.replace('{languages}', 'fr-FR,fr'),
       ...L.extension_args.map((a) => a.replace('{paths}', '/e1,/e2')),
       L.spki_arg.replace('{hashes}', 'AAA=,BBB=')]);
   assert.equal(L.ignore_default_args, true);
+  assert.equal(L.extra_args_last, true);
+  assert.equal(c.buildArgs({ headless: false, window: [1, 2], extra: ['--force-color-profile=srgb'] }).at(-1), '--force-color-profile=srgb');
 });
 
 test('env drops stale CAMOU vars and sets the transport', () => {

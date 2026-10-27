@@ -23,11 +23,15 @@ def test_args_match_the_contract():
     pipe = ["--remote-debugging-pipe"]
     assert camoucrome.build_args(headless=False) == launch["base_args"] + pipe
     assert camoucrome.build_args() == launch["base_args"] + [launch["headless_arg"]] + pipe
-    assert camoucrome.build_args(window=(1920, 1040), dpr=1.25, headless=False, user_data_dir="/p") == \
+    assert camoucrome.build_args(window=(1920, 1040), position=(30, 60), dpr=1.25, headless=False, user_data_dir="/p") == \
         launch["base_args"] + pipe + ["--user-data-dir=/p",
         launch["window_size_arg"].format(width=1920, height=1040),
+        launch["window_position_arg"].format(x=30, y=60),
         launch["dpr_arg"].format(dpr=1.25)]
     assert launch["ignore_default_args"] is True
+    # a generated identity's launch.args (the display flag) rides as extra, after every other flag
+    assert launch["extra_args_last"] is True
+    assert camoucrome.build_args(headless=False, window=(1, 2), extra=["--force-color-profile=srgb"])[-1] == "--force-color-profile=srgb"
 
 
 def test_env_drops_stale_camou_vars_and_sets_the_transport():

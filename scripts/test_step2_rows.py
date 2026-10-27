@@ -73,6 +73,11 @@ def test_argv_parity_allows_identity_window_and_dpr():
     assert r.argv_problems(c, f) == []
 
 
+def test_argv_parity_allows_window_position():
+    f = ["chrome.exe", "--no-first-run", "--window-position=7,25"]
+    assert r.argv_problems(["chrome.exe", "--no-first-run"], f) == []
+
+
 def test_argv_parity_flags_extra_arg():
     c = ["chrome.exe", "--no-first-run"]
     f = ["chrome.exe", "--no-first-run", "--use-angle=swiftshader"]
@@ -107,12 +112,12 @@ def test_link_rows():
 
 def test_link_rows_n_shares_only_what_every_profile_shares():
     reps = [{"a": 1, "b": 2, "c": 9}, {"a": 1, "b": 2, "c": 8}, {"a": 1, "b": 3, "c": 9}]
-    assert r.link_rows_n(reps) == {"link.total": 3, "link.shared": ["a"]}
+    assert r.link_rows_n(reps) == {"link.total": 3, "link.shared": ["a"], "link.values": {"a": 1}}
 
 
 def test_link_rows_n_two_reports_equals_link_rows():
     a, b = {"a": 1, "b": 2}, {"a": 1, "b": 3}
-    assert r.link_rows_n([a, b]) == r.link_rows(a, b)
+    assert {k: v for k, v in r.link_rows_n([a, b]).items() if k != "link.values"} == r.link_rows(a, b)
 
 
 def test_link_rows_n_leaf_missing_from_one_report_is_not_shared():
@@ -165,11 +170,20 @@ def test_render_tables_labels_and_unmeasured():
 
 
 def test_render_tables_lists_unexplained_shared_leaves():
-    cell = {"link.total": 3, "link.shared": ["a", "webGl.renderer"], "link.unexplained": ["webGl.renderer"]}
+    cell = {"link.total": 3, "link.shared": ["a", "webGl.renderer"], "link.unexplained": ["webGl.renderer"],
+            "link.unexplained_raw": 2, "link.unexplained_net": 1, "link.values": {"webGl.renderer": "SECRET-VALUE"}}
     doc = {"run": "t", "versions": {"control": "1", "fork": "1"}, "flags": {}, "errors": {},
            "rows": {"linkability": {"control": {"headless": dict(cell)}, "fork": {"headless": dict(cell)}}}}
     md = r.render_tables(doc, {})
-    assert "that no machine constant explains (1)" in md and "`webGl.renderer`" in md
+    assert "that no machine constant explains (raw 2, net 1)" in md and "`webGl.renderer`" in md
+    assert "SECRET-VALUE" not in md
+
+
+def test_drop_link_values_removes_values_from_every_cell():
+    doc = {"rows": {"linkability": {"fork": {"headed": {"link.values": {"a": 1}, "link.shared": ["a"]}}, "control": {"headed": None}}}}
+    out = r.drop_link_values(doc)
+    assert out["rows"]["linkability"]["fork"]["headed"] == {"link.shared": ["a"]}
+    assert "link.values" in doc["rows"]["linkability"]["fork"]["headed"]
 
 
 # Calibration from the 2026-10-04 host runs (docs/superpowers/measurements/2026-10-step2-baseline.md).
@@ -536,3 +550,119 @@ def test_measure_step2_identity_passes_host_draw_inputs(monkeypatch):
     monkeypatch.setattr(m, "HOST_DRAW", {})
     m.identity(3)
     assert seen == {"seed": 3}
+
+
+def _fake_host(monkeypatch, display, pv):
+    import types
+    monkeypatch.syspath_prepend(str(pathlib.Path(__file__).resolve().parents[1] / "client" / "python"))
+    import camoucrome
+    probe = types.SimpleNamespace(host_renderer=lambda e: "R", host_display=lambda e: display,
+                                  host_platform_version=lambda e: pv)
+    fonts = types.SimpleNamespace(families=lambda: {"F"})
+    for name, mod in (("probe", probe), ("hostfonts", fonts)):
+        monkeypatch.setitem(sys.modules, f"camoucrome.{name}", mod)
+        monkeypatch.setattr(camoucrome, name, mod, raising=False)
+
+
+def test_probe_host_draw_passes_display_and_platform_version(monkeypatch, capsys):
+    import measure_step2 as m
+    d = {"gamut": "p3", "colorBits": 8, "hdr": False}
+    _fake_host(monkeypatch, d, "15.0.0")
+    assert m.probe_host_draw("x") == {"host_renderer": "R", "host_families": {"F"}, "host_display": d,
+                                      "host_platform_version": "15.0.0"}
+    assert "display unknown" not in capsys.readouterr().out
+
+
+def test_probe_host_draw_leaves_out_a_failed_probe_and_says_so(monkeypatch, capsys):
+    import measure_step2 as m
+    _fake_host(monkeypatch, None, None)
+    assert m.probe_host_draw("x") == {"host_renderer": "R", "host_families": {"F"}}
+    assert "display unknown: gamut, bit depth and HDR keep the host's values" in capsys.readouterr().out
+
+
+_ROW = {"value": True, "class": "windows-desktop", "source": "CSS Media Queries 4 initial value for a mouse"}
+
+
+def test_accepted_default_needs_a_source_a_class_and_the_baseline_value():
+    base = {"media.(hover: hover)": True}
+    assert r.accepted(["media.(hover: hover)"], {"media.(hover: hover)": True}, {"media.(hover: hover)": _ROW}, base) == ["media.(hover: hover)"]
+
+
+def test_accepted_default_must_equal_stock_baseline():
+    assert r.accepted(["media.(hover: hover)"], {"media.(hover: hover)": True}, {"media.(hover: hover)": _ROW}, {"media.(hover: hover)": False}) == []
+
+
+def test_shared_value_that_differs_from_the_default_stays_unexplained():
+    assert r.accepted(["media.(hover: hover)"], {"media.(hover: hover)": False}, {"media.(hover: hover)": _ROW}, {"media.(hover: hover)": True}) == []
+
+
+def test_accepted_default_without_class_or_source_is_refused():
+    base = {"k": True}
+    for bad in ({"value": True, "class": "windows-desktop", "source": "short"}, {"value": True, "source": "x" * 20}):
+        assert r.accepted(["k"], {"k": True}, {"k": bad}, base) == []
+
+
+def test_counts_report_raw_and_net():
+    acc = {"a": {"value": 1, "class": "windows-desktop", "source": "x" * 20}}
+    out = r.unexplained_counts(["a", "b"], {"a": 1, "b": 2}, {}, acc, {"a": 1, "b": 2})
+    assert (out["raw"], out["net"], out["unexplained"]) == (2, 1, ["b"])
+
+
+def test_accepted_defaults_rows_meet_both_criteria():
+    """(a) a class and a cited source, (b) the value equals what stock Chrome reads in the committed baseline."""
+    import json, pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    d = json.loads((root / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))
+    assert "BOTH" in d["$comment"]
+    base = r.baseline_for_mode(json.loads((root / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8")), "headed")
+    for k, row in d["leaves"].items():
+        assert row["class"] in r.ACCEPTED_CLASSES and len(row["source"]) >= 20, k
+        assert k in base and r._same(base[k], row["value"]), f"{k}: baseline {base.get(k)!r} != row {row['value']!r}"
+
+
+def test_audio_sample_rate_reason_matches_the_shipped_rate():
+    import json, pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    rate = json.loads((root / "settings" / "audio.json").read_text(encoding="utf-8"))["Windows"]["sampleRate"]
+    why = r.label_rows({"oracle.audio.sampleRate": 1}, {"oracle.audio.sampleRate": 2})[0][4]
+    assert str(rate) in why and "48000" not in why
+
+
+def test_link_values_never_reach_tables_or_comparisons():
+    c = {"link.total": 1, "link.shared": ["a"], "link.values": {"a": "CTRL-SECRET"}}
+    f = {"link.total": 1, "link.shared": ["a"], "link.values": {"a": "FORK-SECRET"}}
+    assert r.label_rows(c, f) == []
+    doc = {"run": "t", "versions": {"control": "1", "fork": "1"}, "flags": {}, "errors": {},
+           "rows": {"linkability": {"control": {"headless": c}, "fork": {"headless": f}}}}
+    md = r.render_tables(doc, {})
+    assert "CTRL-SECRET" not in md and "FORK-SECRET" not in md
+    a = {"rows": {"linkability": {"fork": {"headed": c}}}}
+    b = {"rows": {"linkability": {"fork": {"headed": f}}}}
+    assert r.compare_runs(a, b) == []
+
+
+def test_baseline_for_mode_uses_the_same_mode_or_nothing():
+    stock = {"headed": {"x": 1}, "headless": {"x": 2}}
+    assert r.baseline_for_mode(stock, "headless") == {"x": 2}
+    assert r.baseline_for_mode({"headed": {"x": 1}}, "headless") == {}
+    row = {"x": {"value": 1, "class": "windows-desktop", "source": "s" * 20}}
+    n = r.unexplained_counts(["x"], {"x": 1}, {}, row, r.baseline_for_mode({"headed": {"x": 1}}, "headless"))
+    assert (n["raw"], n["net"]) == (1, 1)
+
+
+def test_accepted_requires_leaf_in_baseline_even_for_null():
+    row = {"k": {"value": None, "class": "windows-desktop", "source": "s" * 20}}
+    assert r.accepted(["k"], {"k": None}, row, {}) == []
+    assert r.accepted(["k"], {"k": None}, row, {"k": None}) == ["k"]
+
+
+def test_accepted_equality_is_type_strict():
+    for rowv, val in ((True, 1), (0, False), (1, 1.0)):
+        row = {"k": {"value": rowv, "class": "windows-desktop", "source": "s" * 20}}
+        assert r.accepted(["k"], {"k": val}, row, {"k": rowv}) == []
+        assert r.accepted(["k"], {"k": rowv}, row, {"k": val}) == []
+
+
+def test_accepted_class_must_be_known():
+    row = {"k": {"value": 1, "class": "x", "source": "s" * 20}}
+    assert r.accepted(["k"], {"k": 1}, row, {"k": 1}) == []

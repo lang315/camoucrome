@@ -326,7 +326,36 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
-def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None):
+MIN_WINDOW = (800, 500)  # assumption: a person's window is never narrower or shorter than this
+
+
+def window_position(rng, avail, outer):
+    """How far a person dragged the window off the work-area corner: (dx, dy), each 0..120 px (assumption), and
+    never so far that the window would be narrower or shorter than MIN_WINDOW. from_pool moves the window by
+    (dx, dy) and shrinks it by the same amount, so its far edge stays where it was inside the work area."""
+    r = random.Random(repr(rng.getstate()) + "window-position")  # own generator: rng and later keys stay put
+    lim = [max(0, min(120, min(a, o) - m)) for a, o, m in zip(avail, outer, MIN_WINDOW)]
+    return r.randint(0, lim[0]), r.randint(0, lim[1])
+
+
+def valid_display(d):
+    """True for a {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool} dict; probe and the CLI share it."""
+    return (isinstance(d, dict) and d.get("gamut") in ("srgb", "p3", "rec2020") and d.get("colorBits") in (8, 10)
+            and isinstance(d.get("hdr"), bool))
+
+
+def display_flags(host_display):
+    """--force-color-profile=srgb for a wide-gamut host. 10-bit and HDR have no known launch lever: a warning, not a claim."""
+    if not host_display:
+        return [], "display unknown: gamut, bit depth and HDR keep the host's values"
+    flags = ["--force-color-profile=srgb"] if host_display["gamut"] != "srgb" else []
+    left = [n for n, on in (("10-bit", host_display["colorBits"] != 8), ("hdr", host_display["hdr"])) if on]
+    warn = f"host display is {', '.join(left)}: no lever hides it, every profile shows it" if left else None
+    return flags, warn
+
+
+def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
+              host_platform_version=None, host_display=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
     cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
@@ -384,6 +413,12 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if t <= cap])
     config.update(fonts_keys(platform, rng, host_families))
+    pv_warn = None
+    if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
+        if re.fullmatch(r"\d+\.\d+\.\d+", host_platform_version):  # the host's real OS wins over the pool's and the font capture's claim
+            config["ua:platformVersion"] = host_platform_version
+        else:
+            pv_warn = f"host platform version {host_platform_version!r} is not N.N.N: ignored"
     config.update(voices_keys(platform, tag))
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
@@ -392,14 +427,32 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)
     clamp_window_position(config)
+    # Position: a pool position that is not (0, 0) and lies inside the work area is a real sample and stays. Any
+    # other (the pool puts 36 of 40 windows at 0,0) is drawn, and the window shrinks by the offset so it never
+    # reaches under the taskbar the identity claims: screenX + outerWidth <= availLeft + availWidth, same for Y.
+    pos = (config["window.screenX"], config["window.screenY"])
+    avail = (config["screen.availWidth"], config["screen.availHeight"])
+    outer = [config["window.outerWidth"], config["window.outerHeight"]]
+    origin = (config.get("screen.availLeft", 0), config.get("screen.availTop", 0))
+    inside = all(origin[i] <= pos[i] and pos[i] + outer[i] <= origin[i] + avail[i] for i in (0, 1))
+    if pos == (0, 0) or not inside:
+        d = window_position(rng, avail, outer)
+        config["window.screenX"], config["window.screenY"] = origin[0] + d[0], origin[1] + d[1]
+        config["window.outerWidth"], config["window.outerHeight"] = outer[0] - d[0], outer[1] - d[1]
     dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
     launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
-              "dpr": dpr}
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn,) if w]}
+              "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
+    # None = not probed (no claim); a failed probe is the caller's to turn into display_flags(None)
+    if host_display is not None and not valid_display(host_display):
+        host_display, bad_display = None, "host display is malformed: ignored"
+    else:
+        bad_display = None
+    launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
-             host_families=None):
+             host_families=None, host_platform_version=None, host_display=None):
     """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so."""
     if exit_ip:
@@ -414,7 +467,8 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families)
+            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
+                             host_display)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
@@ -441,9 +495,13 @@ def main():
     ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
     ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
+    ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
+    ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
     a = ap.parse_args()
+    if a.host_display is not None and not valid_display(a.host_display):
+        sys.exit('gen: --host-display must be {"gamut": "srgb"|"p3"|"rec2020", "colorBits": 8|10, "hdr": true|false}')
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display), sys.stdout)
 
 
 if __name__ == "__main__":
