@@ -614,7 +614,7 @@ def test_accepted_defaults_rows_meet_both_criteria():
     root = pathlib.Path(__file__).resolve().parent.parent
     d = json.loads((root / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))
     assert "BOTH" in d["$comment"]
-    base = r.baseline_for_mode(json.loads((root / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8")), "headed")
+    base = r.baseline_for_mode(json.loads((root / "baselines" / "chrome-8103-stock-oracle-windows.json").read_text(encoding="utf-8")), "headed")
     for k, row in d["leaves"].items():
         assert row["class"] in r.ACCEPTED_CLASSES and len(row["source"]) >= 20, k
         assert k in base and r._same(base[k], row["value"]), f"{k}: baseline {base.get(k)!r} != row {row['value']!r}"
