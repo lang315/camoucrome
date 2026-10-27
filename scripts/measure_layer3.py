@@ -324,15 +324,18 @@ def read_results(run_dir):
     return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()] if p.exists() else []
 
 
-def build_identity(a):
+def build_identity(a, host_draw=None):
     """The fork's generated identity, in the HOST's zone and locale: stock reports the real host zone and the proxy exits in
-    the host region, so an identity in another zone would contradict its IP in the fork arm only (spec 3.3)."""
+    the host region, so an identity in another zone would contradict its IP in the fork arm only (spec 3.3).
+    `host_draw` is measure_step2.probe_host_draw(): the host's renderer, fonts, display and Windows build. Without it the
+    identity claims no GPU (gen.gpu_for fails closed); the run passes it, so a Gen9 host draws a Gen9 identity and any other
+    host keeps its real GPU."""
     if a.aa or a.no_identity:
         return None
     if not (a.timezone and a.locale):
         sys.exit("precondition: an identity run needs --timezone and --locale (the host's own, so the fork is the only difference)")
     from camoucrome.gen import generate
-    return generate("windows", seed=a.identity_seed, timezone=a.timezone, locale=a.locale)
+    return generate("windows", seed=a.identity_seed, timezone=a.timezone, locale=a.locale, **(host_draw or {}))
 
 
 def window_problems(window, desktop):
@@ -394,7 +397,7 @@ def run_cmd(a):
     proxy_cfg = load_proxy(a.proxy_file or os.environ.get("CAMOU_L3_PROXY_FILE"))
     stock_exe = a.stock_exe or os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
     fork_exe = stock_exe if a.aa else (a.fork_exe or os.environ["CAMOU_FORK_EXE"])
-    ident = build_identity(a)
+    ident = build_identity(a, None if a.aa or a.no_identity else m2.probe_host_draw(fork_exe))
     desktop = m2.desktop_size() if a.headed and ident else None
     bad = window_problems(ident["launch"].get("window") if ident else None, desktop)
     if bad:
