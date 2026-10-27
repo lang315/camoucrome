@@ -268,6 +268,26 @@ def test_the_identity_carries_exactly_the_given_zone_and_locale():
     assert ident["config"]["timezone:id"] == "Europe/Paris" and ident["config"]["locale:tag"] == "fr-FR"
 
 
+GEN9_HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+RTX_HOST = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
+def _webgl_keys(ident):
+    return [k for k in ident["config"] if k.startswith(("webGl:", "webGl2:"))]
+
+
+def test_the_identity_claims_no_gpu_without_a_host_probe_and_on_a_non_gen9_host():
+    a = ns(aa=False, no_identity=False, identity_seed=13, timezone="Europe/Paris", locale="fr-FR")
+    assert _webgl_keys(ml.build_identity(a)) == []
+    assert _webgl_keys(ml.build_identity(a, {"host_renderer": RTX_HOST})) == []
+
+
+def test_the_identity_draws_a_gen9_gpu_on_a_gen9_host():
+    a = ns(aa=False, no_identity=False, identity_seed=13, timezone="Europe/Paris", locale="fr-FR")
+    ident = ml.build_identity(a, {"host_renderer": GEN9_HOST})
+    assert "Direct3D11" in ident["config"]["webGl:renderer"] and "Intel" in ident["config"]["webGl:renderer"]
+
+
 def test_headed_defaults_to_the_platform_and_can_be_switched_off():
     p = ml.build_parser()
     assert p.parse_args(["run"]).headed == (os.name == "nt")

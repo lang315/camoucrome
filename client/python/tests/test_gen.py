@@ -164,8 +164,9 @@ def test_webgl_profile_keys_follow_the_claimed_os():
 
 
 def test_from_pool_picks_the_os_profile_and_gpu_overrides():
-    out = gen.from_pool(POOL, "America/New_York", rng=random.Random(1))
+    out = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="windows-intel-uhd-630-d3d11")
     assert "Direct3D11" in out["config"]["webGl:renderer"]
+    assert "webGl:renderer" not in gen.from_pool(POOL, "America/New_York", rng=random.Random(1))["config"]  # no host: no claim
     mac = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="macos-apple-m1-pro-metal")
     assert "Metal" in mac["config"]["webGl:renderer"]
     with pytest.raises(KeyError):
@@ -304,15 +305,15 @@ def test_gpu_draw_does_not_advance_the_rng():
 def test_non_gen9_host_keeps_real_gpu_and_warns():
     nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     prof, warn = gen.gpu_for("Windows", nv, random.Random(1))
-    assert prof is None and "shared" in warn
+    assert prof is None and "real GPU is kept" in warn
 
 
 @pytest.mark.parametrize("host", [
     "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
     "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)"])
-def test_non_windows_host_renderer_keeps_the_default_profile_and_warns(host):
+def test_non_d3d11_host_renderer_keeps_the_real_gpu_and_warns(host):
     prof, warn = gen.gpu_for("Windows", host, random.Random(1))
-    assert prof == gen.profile_for("Windows") and "not a Windows D3D11" in warn
+    assert prof is None and "not a Windows D3D11" in warn
 
 
 def test_warning_does_not_call_other_intel_parts_non_gen9():
@@ -332,9 +333,25 @@ def test_gen9_name_with_unknown_device_id_keeps_real_gpu():
     assert prof is None and warn
 
 
-def test_no_host_renderer_keeps_todays_behaviour_and_warns():
+def test_no_host_renderer_keeps_the_real_gpu_and_warns():
+    """Fail closed: an unknown host must not be given a Gen9 claim it may not back (an RTX host would show
+    nvidia in WebGPU and AV1 hardware decode under an Intel WebGL claim)."""
     prof, warn = gen.gpu_for("Windows", None, random.Random(1))
-    assert prof == gen.profile_for("Windows") and warn
+    assert prof is None and "host GPU unknown" in warn and "real GPU is kept" in warn
+
+
+def test_explicit_gpu_still_claims_without_a_host_renderer():
+    """--gpu is the deliberate opt-in (tests on a box with no GPU): the named profile, no warning."""
+    prof, warn = gen.gpu_for("Windows", None, random.Random(1), gpu="windows-intel-uhd-630-d3d11")
+    assert prof == gen.profile_for("Windows", "windows-intel-uhd-630-d3d11") and warn is None
+
+
+@pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                                  "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"])
+def test_generate_without_a_gen9_host_emits_no_webgl_keys(host):
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=host)
+    assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
+    assert r["warnings"] and "real GPU is kept" in r["warnings"][0]
 
 
 def test_pool_file_declares_its_weights_are_an_assumption():
@@ -345,7 +362,7 @@ def test_non_gen9_host_emits_no_webgl_keys():
     nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=nv)
     assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
-    assert r["warnings"] and "shared" in r["warnings"][0]
+    assert r["warnings"] and "real GPU is kept" in r["warnings"][0]
 
 
 def test_generate_with_host_renderer_draws_a_gen9_identity():
@@ -377,7 +394,7 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* is
     excluded; every other key and launch must be byte-identical to the pre-change run."""
     import hashlib
-    r = gen.generate("windows", "Europe/Paris", None, 1)
+    r = gen.generate("windows", "Europe/Paris", None, 1, gpu="windows-intel-uhd-630-d3d11")  # the pin predates fail-closed
     # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
     rest = {k: v for k, v in r["config"].items()
             if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY",
@@ -395,3 +412,33 @@ def test_host_families_limit_fonts_list_and_alias_local():
     assert gone in base["fonts:list"] and gone not in r["fonts:list"]
     names = {n for n, v in fam["unique_names"].items() if v["family"] == gone}
     assert names & set(base["fonts:aliasLocal"]) and not names & set(r["fonts:aliasLocal"])
+
+
+def _cli(monkeypatch, capsys, argv, probed):
+    from camoucrome import probe
+    monkeypatch.setattr(probe, "host_renderer", lambda exe, *a, **k: probed)
+    monkeypatch.setattr(sys, "argv", ["gen", "--os", "windows", "--timezone", "UTC", "--seed", "1", *argv])
+    gen.main()
+    return json.loads(capsys.readouterr().out)
+
+
+def test_cli_probe_executable_reads_the_host_renderer_for_the_draw(monkeypatch, capsys):
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], HOST)
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
+
+
+def test_cli_probe_executable_on_a_non_gen9_host_claims_no_gpu(monkeypatch, capsys):
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], nv)
+    assert "webGl:renderer" not in r["config"] and "real GPU is kept" in r["warnings"][0]
+
+
+def test_cli_probe_that_fails_claims_no_gpu(monkeypatch, capsys):
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], None)
+    assert "webGl:renderer" not in r["config"]
+
+
+def test_cli_explicit_host_renderer_wins_over_the_probe(monkeypatch, capsys):
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome", "--host-renderer", HOST], nv)
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
