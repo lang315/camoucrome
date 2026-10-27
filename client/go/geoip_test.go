@@ -204,3 +204,10 @@ func TestCheckGeoIPNoJSONHintNamesThePackages(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestGenArgsCarryTheProbeExecutable(t *testing.T) {
+	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, ProbeExecutable: `C:\chrome.exe`}), " ")
+	if got != `-m camoucrome.gen --os windows --probe-executable=C:\chrome.exe` {
+		t.Fatalf("args = %q", got)
+	}
+}

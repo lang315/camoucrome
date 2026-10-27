@@ -53,6 +53,9 @@ type GenArgs struct {
 	// Windows claim's fonts to the families this host has.
 	HostRenderer string
 	HostFonts    bool
+	// ProbeExecutable is a Chrome binary the generator launches once to read the host's WebGL renderer when HostRenderer
+	// is empty. With neither, or a failed probe, a Windows claim carries no GPU (the real one shows); GPU is the opt-in.
+	ProbeExecutable string
 	// HostPlatformVersion is the host's UA-CH platformVersion; it wins over the pool's.
 	HostPlatformVersion string
 	// HostDisplay is probe.host_display's JSON ({"gamut","colorBits","hdr"}); a wide-gamut host gets launch.args.
@@ -85,6 +88,9 @@ func genArgs(g GenArgs) []string {
 	}
 	if g.HostRenderer != "" {
 		args = append(args, "--host-renderer="+g.HostRenderer)
+	}
+	if g.ProbeExecutable != "" {
+		args = append(args, "--probe-executable="+g.ProbeExecutable)
 	}
 	if g.HostFonts {
 		args = append(args, "--host-fonts")

@@ -179,7 +179,8 @@ def gen9_device_id(renderer, ids=None):
 
 
 def gpu_for(platform, host_renderer, rng, gpu=None):
-    """(profile, warning). An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
+    """(profile, warning). A host that is unknown, not a D3D11 renderer or not Intel Gen9 claims no GPU (None: the real
+    GPU is kept). An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
     change, every parameter stays the host generation's. The draw uses its own generator seeded from rng's
     state (as fonts_keys does), so rng is not advanced and later seeded keys do not move.
     Only renderers with a sourced thread cap (gen9_thread_cap) are drawn; from_pool then holds
@@ -187,10 +188,12 @@ def gpu_for(platform, host_renderer, rng, gpu=None):
     base = profile_for(platform, gpu)
     if gpu or platform != "Windows" or base is None:
         return base, None
+    # Fail closed: a host this code cannot identify may not back an Intel claim (an RTX or Arc host shows its own adapter in
+    # WebGPU and AV1 hardware decode under an Intel WebGL string), so it claims no GPU. `--gpu` is the deliberate opt-in.
     if host_renderer is None:
-        return base, f"host GPU unknown: {SHARED_GPU}"
+        return None, f"host GPU unknown: {SHARED_GPU}; the real GPU is kept"
     if not host_renderer.endswith(", D3D11)"):
-        return base, f"host renderer is not a Windows D3D11 renderer: {SHARED_GPU}; the shared default is kept"
+        return None, f"host renderer is not a Windows D3D11 renderer: {SHARED_GPU}; the real GPU is kept"
     if gen9_device_id(host_renderer) is None:
         return None, f"host GPU is not in the supported Intel Gen9 set: {SHARED_GPU}; the real GPU is kept"
     caps = _thread_caps()
@@ -484,20 +487,25 @@ def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
     return timezone or found["timezone"], locale or found["locale"]
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--os", choices=sorted(OS_ARG))
     ap.add_argument("--timezone", help="IANA zone; default from settings/locale_zones.json by locale")
     ap.add_argument("--locale")
     ap.add_argument("--seed", type=int)
-    ap.add_argument("--gpu", help="a settings/webgl profile id; default: the first profile for the claimed OS")
+    ap.add_argument("--gpu", help="a settings/webgl profile id, claimed whatever the host is (a deliberate opt-in, e.g. a test box with no GPU); "
+                                  "default: a Windows claim draws a Gen9 GPU on a Gen9 host and claims none on any other")
     ap.add_argument("--exit-ip", help="the proxy's exit address: timezone and locale follow where it is (needs --geoip-db or CAMOU_GEOIP_DB)")
     ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
     ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
+    ap.add_argument("--probe-executable", help="a Chrome binary: launch it once to read the host's WebGL renderer when --host-renderer is not given (a failed probe claims no GPU)")
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    if a.host_renderer is None and a.probe_executable:
+        from . import probe
+        a.host_renderer = probe.host_renderer(a.probe_executable)
     if a.host_display is not None and not valid_display(a.host_display):
         sys.exit('gen: --host-display must be {"gamut": "srgb"|"p3"|"rec2020", "colorBits": 8|10, "hdr": true|false}')
     families = hostfonts.families() if a.host_fonts else None

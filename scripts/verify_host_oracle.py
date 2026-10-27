@@ -186,7 +186,7 @@ def main():
         a = sys.argv[sys.argv.index("--config") + 1]
         cfg = json.load(open(a[1:], encoding="utf-8")) if a.startswith("@") else json.loads(a)
     else:
-        g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--seed", os.environ.get("CAMOU_SEED", "1")], capture_output=True, text=True, timeout=120)
+        g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--seed", os.environ.get("CAMOU_SEED", "1"), "--gpu", "windows-intel-uhd-630-d3d11"], capture_output=True, text=True, timeout=120)
         if g.returncode != 0:
             sys.exit(g.stderr[-500:])
         cfg = json.loads(g.stdout)["config"]

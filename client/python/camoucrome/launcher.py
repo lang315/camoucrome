@@ -277,7 +277,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
 
     On a Windows host, generate the identity on that host: probe.host_renderer
     (chrome_path) reads the host's real WebGL renderer for use by identity
-    generation.
+    generation (`python -m camoucrome.gen --probe-executable <chrome>` does it). An identity generated
+    without a host renderer, or on a host that is not Intel Gen9, claims no GPU and the real one shows.
     """
     if proxy is not None:
         server = proxy.get("server") if isinstance(proxy, dict) else None
