@@ -58,8 +58,9 @@ STOCK_BASE_COMMIT = "1aa07b6387"
 # 0e8d4a9268 -> 507c6ee3e2 (Chrome stable 153.0.8010.36), captured that way.
 # 2026-10-02: 507c6ee3e2 -> f89f3a4363 (Chrome stable 154.0.8037.93), same way.
 # 2026-10-21: f89f3a4363 -> d0c02bfad0 (Chrome stable 156.0.8078.48), same way.
+# 2026-10-27: d0c02bfad0 -> 1aa07b6387 (Chrome stable 157.0.8103.15), same way (two captures, equal sha256).
 STOCK_BASELINE_SHA256 = (
-    "ad7e02fa58c8196b50370fb94550547e1f62f8f3cd1032d8b3292b4f4b1f2ccf")
+    "1e30ca82108c4ec242bc0ecca02010103afb0d581da9b8885224e2f754b8b01e")
 
 # Identical to verify_sp1a.py's. Kept in step by hand rather than imported:
 # importing it would execute that file, which runs its own browser sessions.
