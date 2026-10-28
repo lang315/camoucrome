@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The fork under a generated Windows identity vs stock Chrome 156 on the
+"""The fork under a generated Windows identity vs stock Chrome 157 on the
 Windows host (baselines/chrome-8103-stock-oracle-windows.json): the same
 page (capture_host_oracle.page), every difference printed as one line.
 Hardware- and config-bound values (screen, cores, memory, dpr, timezone,

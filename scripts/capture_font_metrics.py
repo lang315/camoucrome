@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Per-character advance widths of the claimed Windows families on the real
-host (stock Chrome 156 on the box's Windows 10 host, headless --dump-dom) ->
+host (stock Chrome 157 on the box's Windows 10 host, headless --dump-dom) ->
 baselines/chrome-8103-stock-font-metrics-windows.json. 100 px so 1/100 em is
 one pixel; canvas advances are linear (unhinted) on DirectWrite and FreeType.
 verify_font_metrics.py renders the same page in the fork and compares."""
