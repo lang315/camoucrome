@@ -220,9 +220,6 @@ std::vector<Pt> Knot(const std::vector<Pt>& in, Pt s, Pt e, Rng& rng) {
 }
 
 
-// Caps min_ms/max_ms so a hostile value cannot ask for billions of samples.
-constexpr int kMaxDurationMs = 60000;
-
 double Clamp(double v, double lo, double hi, double fallback) {
   return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
 }

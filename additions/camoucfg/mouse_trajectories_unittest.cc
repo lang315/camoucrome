@@ -177,8 +177,21 @@ TEST(MouseTrajectoriesTest, HumanizePathUsesRecordedTimings) {
   // A recorded 600 px move is sampled at ~60 Hz, so it has well over the
   // Bezier fallback's 25 points (gap-variety does not distinguish them: the
   // Bezier's gaps are jittered too).
-  auto path = HumanizePath({0, 0}, {600, 0}, 80, 1200, /*seed=*/3);
-  EXPECT_GT(path.size(), 30u);
+  for (uint64_t seed : {3, 4, 5}) {
+    auto path = HumanizePath({0, 0}, {900, 0}, 80, 1200, seed);
+    EXPECT_GT(path.size(), 25u) << "seed " << seed;
+  }
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathFallbackCapsHostileBounds) {
+  constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
+  auto path = HumanizePath({50, 50}, {50, 50}, -5, 1'000'000'000, /*seed=*/7);
+  EXPECT_EQ(path.size(), 25u);
+  EXPECT_LE(path.back().offset, base::Milliseconds(60000));
+  // Non-finite start: the generator returns nothing, the fallback runs.
+  auto nan_path =
+      HumanizePath({static_cast<float>(kNan), 0}, {10, 10}, 80, 1200, 1);
+  EXPECT_EQ(nan_path.size(), 25u);
 }
 
 TEST(MouseTrajectoriesTest, HumanizePathDurationWithinBounds) {

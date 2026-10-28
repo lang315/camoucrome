@@ -183,7 +183,13 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
   std::vector<cursory::Sample> samples = cursory::GenerateTrajectory(
       start.x(), start.y(), end.x(), end.y(), seed, params);
   if (samples.size() < 2) {
-    return HumanizeTrajectory(start, end, /*steps=*/24, min_ms, max_ms, seed);
+    // Same cap the generator applies, so a hostile bound cannot stretch the
+    // fallback path either.
+    return HumanizeTrajectory(
+        start, end, /*steps=*/24,
+        std::clamp(min_ms, -cursory::kMaxDurationMs, cursory::kMaxDurationMs),
+        std::clamp(max_ms, -cursory::kMaxDurationMs, cursory::kMaxDurationMs),
+        seed);
   }
   std::vector<TrajectoryPoint> path;
   path.reserve(samples.size());

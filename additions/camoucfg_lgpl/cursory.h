@@ -10,6 +10,9 @@
 
 namespace cursory {
 
+// Caps min_ms/max_ms so a hostile value cannot ask for billions of samples.
+inline constexpr int kMaxDurationMs = 60000;
+
 struct Sample {
   double x;
   double y;
