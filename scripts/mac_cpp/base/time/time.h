@@ -22,6 +22,26 @@ class TimeDelta {
   explicit constexpr TimeDelta(int64_t us) : us_(us) {}
   int64_t us_ = 0;
 };
+class TimeTicks {
+ public:
+  constexpr TimeTicks() = default;
+  constexpr auto operator<=>(const TimeTicks&) const = default;
+  constexpr TimeTicks operator+(TimeDelta d) const { return TimeTicks(us_ + d.InMicroseconds()); }
+  constexpr TimeTicks operator-(TimeDelta d) const { return TimeTicks(us_ - d.InMicroseconds()); }
+  constexpr TimeDelta operator-(TimeTicks o) const { return TimeDelta::FromMicroseconds(us_ - o.us_); }
+
+ private:
+  explicit constexpr TimeTicks(int64_t us) : us_(us) {}
+  int64_t us_ = 0;
+};
+template <typename T>
+constexpr TimeDelta Seconds(T s) {
+  return TimeDelta::FromMicroseconds(static_cast<int64_t>(s * 1000000));
+}
+template <typename T>
+constexpr TimeDelta Microseconds(T us) {
+  return TimeDelta::FromMicroseconds(static_cast<int64_t>(us));
+}
 template <typename T>
 constexpr TimeDelta Milliseconds(T ms) {
   return TimeDelta::FromMicroseconds(static_cast<int64_t>(ms * 1000));

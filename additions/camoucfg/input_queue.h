@@ -1,0 +1,38 @@
+// Copyright 2026 The Camoucrome Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef COMPONENTS_CAMOUCFG_INPUT_QUEUE_H_
+#define COMPONENTS_CAMOUCFG_INPUT_QUEUE_H_
+
+#include <optional>
+
+#include "base/time/time.h"
+
+namespace camoucfg {
+
+// The queue clock of the shared input scheduler: items run one after another,
+// never overlapping. Pure arithmetic on caller-supplied times, so it is
+// testable without a message loop.
+class QueueClock {
+ public:
+  // An item whose end would fall more than this after `now` is refused.
+  static constexpr base::TimeDelta kMaxBacklog = base::Seconds(10);
+
+  // Books `duration` after everything already booked. Returns the delay from
+  // `now` at which the item must start, or nullopt if its end would be more
+  // than kMaxBacklog after `now` (state is left unchanged; the caller takes
+  // the stock path). A non-positive duration books nothing. Never negative.
+  std::optional<base::TimeDelta> Reserve(base::TimeTicks now,
+                                         base::TimeDelta duration);
+
+  // Clears the booking (tab/widget reset).
+  void Reset();
+
+ private:
+  base::TimeTicks free_at_;
+};
+
+}  // namespace camoucfg
+
+#endif  // COMPONENTS_CAMOUCFG_INPUT_QUEUE_H_
