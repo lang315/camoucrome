@@ -115,11 +115,11 @@ inline constexpr char kHumanizeEnabled[] = "humanize:enabled";
 
 // Lower BOUND, in ms, on the movement time of a recorded human path (the
 // generator picks a recording and fits its duration into [minTime, maxTime]).
-// Default 80 when absent; hard cap 60000 (60 s). Swapped if above maxTime.
+// Default 80 when absent; hard cap 10000 (10 s). Swapped if above maxTime.
 inline constexpr char kHumanizeMinTime[] = "humanize:minTime";
 
 // Upper BOUND, in ms, on the movement time of a recorded human path. See
-// humanize:minTime. Default 1200 when absent; hard cap 60000 (60 s).
+// humanize:minTime. Default 1200 when absent; hard cap 10000 (10 s).
 inline constexpr char kHumanizeMaxTime[] = "humanize:maxTime";
 
 // Cursor visibility. A separate namespace from `humanize:` on purpose: it is

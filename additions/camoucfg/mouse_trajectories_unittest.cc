@@ -166,11 +166,14 @@ TEST(MouseTrajectoriesTest, HumanizePathEndpointsAndOffsets) {
   }
 }
 
-TEST(MouseTrajectoriesTest, HumanizePathFallsBackWhenStartEqualsEnd) {
-  // The generator returns nothing for start == end; the 24-step Bezier path
-  // (25 points) is what proves the fallback branch ran.
-  auto path = HumanizePath({50, 50}, {50, 50}, 80, 1200, /*seed=*/7);
-  EXPECT_EQ(path.size(), 25u);
+TEST(MouseTrajectoriesTest, HumanizePathReturnsEmptyWhenNotAMove) {
+  // Not a move: the caller takes stock's path. (The Bezier fallback for a
+  // valid move needs an empty recording table, which no test can arrange.)
+  EXPECT_TRUE(HumanizePath({50, 50}, {50, 50}, 80, 1200, 7).empty());
+  constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  EXPECT_TRUE(HumanizePath({kNan, 0}, {10, 10}, 80, 1200, 1).empty());
+  EXPECT_TRUE(HumanizePath({0, 0}, {10, kInf}, 80, 1200, 1).empty());
 }
 
 TEST(MouseTrajectoriesTest, HumanizePathUsesRecordedTimings) {
@@ -183,17 +186,6 @@ TEST(MouseTrajectoriesTest, HumanizePathUsesRecordedTimings) {
   }
 }
 
-TEST(MouseTrajectoriesTest, HumanizePathFallbackCapsHostileBounds) {
-  constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
-  auto path = HumanizePath({50, 50}, {50, 50}, -5, 1'000'000'000, /*seed=*/7);
-  EXPECT_EQ(path.size(), 25u);
-  EXPECT_LE(path.back().offset, base::Milliseconds(60000));
-  // Non-finite start: the generator returns nothing, the fallback runs.
-  auto nan_path =
-      HumanizePath({static_cast<float>(kNan), 0}, {10, 10}, 80, 1200, 1);
-  EXPECT_EQ(nan_path.size(), 25u);
-}
-
 TEST(MouseTrajectoriesTest, HumanizePathDurationWithinBounds) {
   for (float dist : {3.0f, 50.0f, 400.0f, 4000.0f}) {
     auto path = HumanizePath({0, 0}, {dist, 0}, 80, 1200, /*seed=*/11);
@@ -204,7 +196,7 @@ TEST(MouseTrajectoriesTest, HumanizePathDurationWithinBounds) {
 }
 
 TEST(MouseTrajectoriesTest, HumanizePathSanitizesBounds) {
-  const base::TimeDelta kCap = base::Milliseconds(60000);
+  const base::TimeDelta kCap = base::Milliseconds(10000);  // cursory::kMaxDurationMs
   for (auto [lo, hi] : {std::pair{900, 100}, std::pair{-5, 0},
                         std::pair{0, 1'000'000'000}}) {
     auto path = HumanizePath({0, 0}, {300, 200}, lo, hi, /*seed=*/5);

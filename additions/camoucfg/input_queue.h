@@ -19,15 +19,14 @@ class QueueClock {
   // An item whose end would fall more than this after `now` is refused.
   static constexpr base::TimeDelta kMaxBacklog = base::Seconds(10);
 
-  // Books `duration` after everything already booked. Returns the delay from
-  // `now` at which the item must start, or nullopt if its end would be more
-  // than kMaxBacklog after `now` (state is left unchanged; the caller takes
-  // the stock path). A non-positive duration books nothing. Never negative.
+  // Books `duration` after everything already booked. The item starts at
+  // `now` when the queue is idle, otherwise 1 ms after the previous item's
+  // end. Returns the delay from `now` to that start, or nullopt if the end
+  // would be more than kMaxBacklog after `now` (state is left unchanged; the
+  // caller takes the stock path). A non-positive duration books nothing.
+  // Never negative.
   std::optional<base::TimeDelta> Reserve(base::TimeTicks now,
                                          base::TimeDelta duration);
-
-  // Clears the booking (tab/widget reset).
-  void Reset();
 
  private:
   base::TimeTicks free_at_;

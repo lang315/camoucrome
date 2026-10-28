@@ -9,6 +9,7 @@ class PointF {
   constexpr PointF(float x, float y) : x_(x), y_(y) {}
   constexpr float x() const { return x_; }
   constexpr float y() const { return y_; }
+  constexpr bool operator==(const PointF&) const = default;
 
  private:
   float x_ = 0, y_ = 0;

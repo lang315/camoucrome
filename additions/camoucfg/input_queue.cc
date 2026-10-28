@@ -4,13 +4,14 @@
 
 #include "components/camoucfg/input_queue.h"
 
-#include <algorithm>
-
 namespace camoucfg {
 
 std::optional<base::TimeDelta> QueueClock::Reserve(base::TimeTicks now,
                                                    base::TimeDelta duration) {
-  base::TimeTicks start = std::max(now, free_at_);
+  // Strictly after the previous item's end, so e.g. a wheel's first notch
+  // cannot run before the previous move's final event (posted at that end).
+  base::TimeTicks start =
+      free_at_ > now ? free_at_ + base::Milliseconds(1) : now;
   if (duration <= base::TimeDelta()) {
     return start - now;
   }
@@ -20,10 +21,6 @@ std::optional<base::TimeDelta> QueueClock::Reserve(base::TimeTicks now,
   }
   free_at_ = end;
   return start - now;
-}
-
-void QueueClock::Reset() {
-  free_at_ = base::TimeTicks();
 }
 
 }  // namespace camoucfg

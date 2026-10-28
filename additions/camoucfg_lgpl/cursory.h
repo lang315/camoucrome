@@ -11,7 +11,10 @@
 namespace cursory {
 
 // Caps min_ms/max_ms so a hostile value cannot ask for billions of samples.
-inline constexpr int kMaxDurationMs = 60000;
+// A mouse movement never lasts longer, and 10 s equals the input scheduler's
+// QueueClock::kMaxBacklog (camoucfg/input_queue.h), so every generated path
+// fits that backlog on its own.
+inline constexpr int kMaxDurationMs = 10000;
 
 struct Sample {
   double x;
@@ -23,7 +26,7 @@ struct Params {
   int frequency_hz = 60;        // clamped to [10, 240]
   int frequency_jitter_ms = 1;  // clamped to [0, 5]
   double directness = 0.65;     // clamped to [0, 1]
-  // Total duration bounds. Sanitized: each clamped to +-60000, swapped if
+  // Total duration bounds. Sanitized: each clamped to +-10000, swapped if
   // inverted, then min >= 1 and max >= min.
   int min_ms = 80;
   int max_ms = 1200;

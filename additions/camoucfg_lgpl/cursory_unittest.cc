@@ -1,13 +1,13 @@
 // Copyright 2026 The Camoucrome Authors. Derived from cursory 2.1.0
 // (Vinyzu), LGPL-3.0-or-later; see NOTICE and LICENSE.
 
-#include "components/camoucfg_lgpl/cursory.h"
-
 #ifdef UNSAFE_BUFFERS_BUILD
 // The generated table is indexed as raw extern arrays (kRecordings, kX, kY, kT)
 // within bounds the pinned table test checks; spans would need a copy of 113k points.
 #pragma allow_unsafe_buffers
 #endif
+
+#include "components/camoucfg_lgpl/cursory.h"
 
 #include <algorithm>
 #include <cmath>
@@ -173,8 +173,9 @@ TEST(CursoryTest, HugeBoundsAreCapped) {
   p.max_ms = 2000000000;
   auto v = GenerateTrajectory(0, 0, 300, 200, 5, p);
   ASSERT_FALSE(v.empty());
-  EXPECT_LT(v.size(), 20000u);
-  EXPECT_LE(v.back().t_ms, 60000);
+  // 10 s at the 240 Hz ceiling is 2400 samples.
+  EXPECT_LE(v.size(), 2401u);
+  EXPECT_LE(v.back().t_ms, kMaxDurationMs);
 }
 
 TEST(CursoryTest, DirectnessShiftsSelection) {
@@ -238,7 +239,7 @@ TEST(CursoryTest, DumpForStats) {
   Lcg lcg{7};
   Params params;
   params.min_ms = 1;
-  params.max_ms = 60000;
+  params.max_ms = 10000;
   for (int pair = 0; pair < 200;) {
     const double sx = lcg.Next(0, 1920), sy = lcg.Next(0, 1080);
     const double ex = lcg.Next(0, 1920), ey = lcg.Next(0, 1080);

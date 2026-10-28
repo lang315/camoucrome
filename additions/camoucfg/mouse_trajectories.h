@@ -47,10 +47,12 @@ inline constexpr int kDefaultHumanizeMinMs = 80;
 inline constexpr int kDefaultHumanizeMaxMs = 1200;
 
 // A recorded-human path from `start` to `end` (the cursory generator), with
-// the movement time in [min_ms, max_ms] (sanitized by the generator). Falls
-// back to HumanizeTrajectory (24 steps, same bounds) when the generator
-// returns nothing, so the result always has >= 2 points, strictly increasing
-// offsets, front == start at offset 0 and back == end. Deterministic per seed.
+// the movement time in [min_ms, max_ms] (sanitized by the generator). Empty
+// when start == end or a coordinate is non-finite: such a move takes stock's
+// path. Otherwise >= 2 points, strictly increasing offsets, front == start at
+// offset 0 and back == end; falls back to HumanizeTrajectory (24 steps, same
+// bounds) if the generator returns nothing for a valid move. Deterministic
+// per seed.
 std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
                                           gfx::PointF end,
                                           int min_ms,

@@ -10,12 +10,13 @@
 namespace camoucfg {
 namespace {
 
-TEST(InputQueueTest, FifoOrdering) {
+TEST(InputQueueTest, FifoOrderingWithOneMillisecondGap) {
   QueueClock q;
   base::TimeTicks now;
+  // Item 1: 0..100. Item 2: 101..301. Item 3: 302..602.
   EXPECT_EQ(q.Reserve(now, base::Milliseconds(100)), base::Milliseconds(0));
-  EXPECT_EQ(q.Reserve(now, base::Milliseconds(200)), base::Milliseconds(100));
-  EXPECT_EQ(q.Reserve(now, base::Milliseconds(300)), base::Milliseconds(300));
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(200)), base::Milliseconds(101));
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(300)), base::Milliseconds(302));
 }
 
 TEST(InputQueueTest, IdleClockStartsNow) {
@@ -24,6 +25,9 @@ TEST(InputQueueTest, IdleClockStartsNow) {
   ASSERT_TRUE(q.Reserve(now, base::Milliseconds(100)).has_value());
   EXPECT_EQ(q.Reserve(now + base::Milliseconds(500), base::Milliseconds(10)),
             base::Milliseconds(0));
+  // Exactly at the previous end counts as idle.
+  EXPECT_EQ(q.Reserve(now + base::Milliseconds(510), base::Milliseconds(10)),
+            base::Milliseconds(0));
 }
 
 TEST(InputQueueTest, BacklogCapRefusesWithoutChangingState) {
@@ -31,44 +35,51 @@ TEST(InputQueueTest, BacklogCapRefusesWithoutChangingState) {
   base::TimeTicks now;
   ASSERT_TRUE(q.Reserve(now, base::Seconds(9)).has_value());
   EXPECT_FALSE(q.Reserve(now, base::Seconds(2)).has_value());
-  // free_at_ is still 9 s: a small item starts there.
-  EXPECT_EQ(q.Reserve(now, base::Milliseconds(100)), base::Seconds(9));
+  // free_at_ is still 9 s: a small item starts 1 ms after it.
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(100)),
+            base::Seconds(9) + base::Milliseconds(1));
 }
 
 TEST(InputQueueTest, ExactlyAtCapSucceedsOneMicrosecondMoreFails) {
-  QueueClock q;
   base::TimeTicks now;
-  EXPECT_TRUE(q.Reserve(now, base::Seconds(10)).has_value());
-  q.Reset();
-  EXPECT_FALSE(q.Reserve(now, base::Seconds(10) + base::Microseconds(1))
+  QueueClock a;
+  EXPECT_TRUE(a.Reserve(now, base::Seconds(10)).has_value());
+  QueueClock b;
+  EXPECT_FALSE(b.Reserve(now, base::Seconds(10) + base::Microseconds(1))
                    .has_value());
-}
-
-TEST(InputQueueTest, ResetClearsBooking) {
-  QueueClock q;
-  base::TimeTicks now;
-  ASSERT_TRUE(q.Reserve(now, base::Seconds(5)).has_value());
-  q.Reset();
-  EXPECT_EQ(q.Reserve(now, base::Milliseconds(1)), base::Milliseconds(0));
+  // With a booking the 1 ms gap counts: after 5 s, the item starts at 5.001 s
+  // so 4.999 s fits exactly and one microsecond more does not.
+  QueueClock c;
+  ASSERT_TRUE(c.Reserve(now, base::Seconds(5)).has_value());
+  EXPECT_TRUE(c.Reserve(now, base::Milliseconds(4999)).has_value());
+  QueueClock d;
+  ASSERT_TRUE(d.Reserve(now, base::Seconds(5)).has_value());
+  EXPECT_FALSE(d.Reserve(now, base::Milliseconds(4999) + base::Microseconds(1))
+                   .has_value());
 }
 
 TEST(InputQueueTest, NonPositiveDurationBooksNothing) {
   QueueClock q;
   base::TimeTicks now;
   ASSERT_TRUE(q.Reserve(now, base::Milliseconds(100)).has_value());
-  EXPECT_EQ(q.Reserve(now, base::TimeDelta()), base::Milliseconds(100));
-  EXPECT_EQ(q.Reserve(now, base::Milliseconds(-50)), base::Milliseconds(100));
-  // Past free_at_ the delay is 0, never negative.
+  EXPECT_EQ(q.Reserve(now, base::TimeDelta()), base::Milliseconds(101));
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(-50)), base::Milliseconds(101));
+  // Past the end the delay is 0, never negative.
   EXPECT_EQ(q.Reserve(now + base::Seconds(1), base::Milliseconds(-1)),
             base::Milliseconds(0));
-  EXPECT_EQ(q.Reserve(now, base::Milliseconds(1)), base::Milliseconds(100));
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(1)), base::Milliseconds(101));
 }
 
-TEST(InputQueueTest, TenThousandMillisecondItemsFillTheCapExactly) {
+TEST(InputQueueTest, OneMillisecondItemsFillTheCapWithGaps) {
+  // Item k starts at 2k ms and ends at 2k+1 ms: the last that fits in 10 s is
+  // k = 4999 (ends at 9999 ms), so 5000 succeed and the 5001st (ends at 10001
+  // ms) is refused.
   QueueClock q;
   base::TimeTicks now;
-  for (int i = 0; i < 10000; ++i) {
-    ASSERT_TRUE(q.Reserve(now, base::Milliseconds(1)).has_value()) << i;
+  for (int k = 0; k < 5000; ++k) {
+    auto delay = q.Reserve(now, base::Milliseconds(1));
+    ASSERT_TRUE(delay.has_value()) << k;
+    EXPECT_EQ(*delay, base::Milliseconds(2 * k));
   }
   EXPECT_FALSE(q.Reserve(now, base::Milliseconds(1)).has_value());
 }
