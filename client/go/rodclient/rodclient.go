@@ -19,9 +19,6 @@ import (
 	"github.com/lang315/camoucrome/client/go/rodclient/internal/browser"
 )
 
-// Page is rod's page; callers need no rod import for the type.
-type Page = rod.Page
-
 // startFn is a var so tests can capture argv and env without a browser.
 var startFn = browser.Start
 
@@ -105,7 +102,11 @@ func (b *Browser) OnSend(f func([]byte)) {
 
 // NewPage opens about:blank with no emulation.
 func (b *Browser) NewPage(ctx context.Context) (*Page, error) {
-	return b.rod.Context(ctx).Page(proto.TargetCreateTarget{})
+	p, err := b.rod.Context(ctx).Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return nil, err
+	}
+	return &Page{p: p}, nil
 }
 
 // Close is idempotent and safe after a browser crash.
