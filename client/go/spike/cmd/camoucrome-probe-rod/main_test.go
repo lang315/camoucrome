@@ -207,3 +207,16 @@ func TestProbeWaitsForLateReport(t *testing.T) {
 		t.Fatalf("text %q err %v", text, err)
 	}
 }
+
+func TestProbeErrorsWhenReportNeverFills(t *testing.T) {
+	old := reportWait
+	reportWait = 300 * time.Millisecond
+	defer func() { reportWait = old }()
+	f := newFake("")
+	defer close(f.closeCh)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if text, err := probe(ctx, f, "u", false); err == nil || !strings.Contains(err.Error(), "still empty") {
+		t.Fatalf("text %q err %v", text, err)
+	}
+}

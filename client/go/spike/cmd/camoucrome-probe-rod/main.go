@@ -24,6 +24,9 @@ import (
 	"github.com/lang315/camoucrome/client/go/spike/internal/cdplog"
 )
 
+// reportWait caps the wait for #o; a var so a test can shorten it.
+var reportWait = 20 * time.Second
+
 type cfg struct {
 	exe, url, config, preset, label string
 	headed, strict, sandbox         bool
@@ -100,11 +103,14 @@ func probe(ctx context.Context, ws cdp.WebSocketable, url string, noDefaultDevic
 	}
 	// The page fills #o after load (timing trial); poll until it has text.
 	// Text() is Runtime.callFunctionOn on the element object: part of what is measured.
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(reportWait)
 	for {
 		t, err := el.Text()
-		if err != nil || t != "" || time.Now().After(deadline) {
+		if err != nil || t != "" {
 			return t, err
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("#o still empty after %s", reportWait)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
