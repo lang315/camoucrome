@@ -54,14 +54,14 @@ in the MAIN world, by design, so anything it defines is visible to the page.
 
 ## Contract probe
 
-    cd client/go/rodclient && go build -o bin/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient
+    cd client/go/rodclient && go build -o ~/camoucrome-go/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient
 
 The box's Go (1.22.2) is enough; no toolchain change. On the box, with
 `out/Default` built:
 
     ~/camoucrome-verify/venv/bin/python3 scripts/verify_sp6b_driver.py
 
-or override the binary with `CAMOU_RODCLIENT_PROBE`. The probe takes the same
+or override the binary path with `CAMOU_RODCLIENT_PROBE` (default `~/camoucrome-go/camoucrome-probe-rodclient`, next to the playwright-go probe). The probe takes the same
 flags as `camoucrome-probe` (`--proxy*` exits 2), registers
 `window.__camou_init = 1`, and logs one raw JSON line per sent CDP message to
 stderr.
