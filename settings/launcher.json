@@ -77,7 +77,10 @@
    "layout": "<root>/fonts/<family>/*.ttf and <root>/settings/fontconfig/<os>.conf, the same in the repo, the archive and the box's client copy; the conf's <dir> is relative (../../fonts)"
   },
   "native_fonts": {
-   "drop": ["fonts:alias", "fonts:aliasLocal"],
+   "drop": [
+    "fonts:alias",
+    "fonts:aliasLocal"
+   ],
    "why": "On a host whose OS is the claimed OS, the claimed families are the host's real ones. fonts:alias redirects them to the OFL bundle (Arial -> Liberation Sans), and FontCache::GetFontPlatformData returns the alias target's lookup with no fallback, so on Windows -- where the bundle is not installed -- a generated Windows identity lost its real Arial: Arial, Segoe UI, Times New Roman and Verdana all measured the same 1807.99 px (the face the failed alias lookups fell through to, about Segoe UI's own width) where stock Chrome measured 1794.53 / 1808.06 / 1694.34 / 2057.67 (2026-10-04, verify_windows_fonts.py F2 RED through all three clients). The launcher drops both keys from the config before it is encoded when the claimed OS (derive.cc ClaimedOs over the effective keys) equals the host OS. A claimed family the host lacks then shows as missing, which F3 counts."
   }
  },
@@ -113,6 +116,106 @@
    "audio:seed",
    "mediaDevices:seed",
    "humanize:seed"
+  ]
+ },
+ "humanClick": {
+  "offset": {
+   "along": {
+    "a": 2.5974599994763885,
+    "b": 0.0
+   },
+   "across": {
+    "a": 1.9481807901755375,
+    "b": 0.00027139468020204307
+   }
+  },
+  "landing": [
+   0.2,
+   0.20450000000000002,
+   0.209,
+   0.2135,
+   0.218,
+   0.2225,
+   0.227,
+   0.2315,
+   0.236,
+   0.2405,
+   0.245,
+   0.2495,
+   0.254,
+   0.2585,
+   0.263,
+   0.2675,
+   0.272,
+   0.2765,
+   0.281,
+   0.28550000000000003,
+   0.28909999999999997
+  ],
+  "burst": [
+   3.0,
+   3.0,
+   3.0,
+   3.0,
+   3.8,
+   4.0,
+   4.0,
+   4.0,
+   4.0,
+   4.550000000000001,
+   5.0,
+   5.0,
+   5.0,
+   5.0,
+   5.0,
+   5.25,
+   6.0,
+   6.0,
+   6.0,
+   6.0,
+   6.0
+  ],
+  "pause": [
+   240.0,
+   244.5,
+   249.0,
+   260.5,
+   274.0,
+   282.5,
+   287.0,
+   291.5,
+   296.0,
+   306.0,
+   360.0,
+   414.0,
+   424.0,
+   428.5,
+   433.0,
+   437.5,
+   446.0,
+   459.5,
+   471.0,
+   475.5,
+   479.1
+  ],
+  "innerFraction": 0.8,
+  "minSidePx": 4,
+  "maxRedraws": 8,
+  "maxNotches": 60,
+  "noProgressBursts": 2,
+  "trialTimeoutMs": 2000,
+  "go": "no human_click flag (B); HumanClick only",
+  "outOfScope": [
+   "hover, dblclick, tap, check/setChecked, dragTo, ElementHandle.click and click(steps>1) still move to or click the centre; steps is passed through; neither A nor B touches them",
+   "the multi-click gap",
+   "typing cadence",
+   "the contextmenu order",
+   "scrolling inside a nested scroll container (the helper falls back)",
+   "scrolling when no helper is involved: plain Go click(), fill() and hover() still scroll programmatically",
+   "a raw-CDP Go client (backlog item 15)",
+   "Fitts-law movement time and SP2b's shape (Cursory port)",
+   "a shared SP2b/SP2c/SP2d scheduler (Cursory port)",
+   "wheel shapes under macOS and Linux claims"
   ]
  }
 }
