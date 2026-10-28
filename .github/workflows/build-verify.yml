@@ -96,7 +96,9 @@ jobs:
           run verify_fonts_bundle.py
           run verify_host_oracle.py
           run verify_windows_behaviour.py
-          CAMOU_GEN_N=2 run verify_sp6b_generator.py
+          # 4 configs per OS (was 2): seeds 1000..1003 include a DPR 1.5 identity and 1.25 identities of different
+          # residues, the cases the launch window rounding got wrong (PR #34); 2 never reached them. About 3 s per config.
+          CAMOU_GEN_N=4 run verify_sp6b_generator.py
           run verify_crash_dumps.py
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)
           if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi
