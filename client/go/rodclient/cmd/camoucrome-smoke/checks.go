@@ -138,9 +138,14 @@ func Evaluate(r Run) []Check {
 			sort.Float64s(s)
 			med = s[len(s)/2]
 		}
-		// Recorded paths are sampled at ~60 Hz (16.7 ms), and a short move has a short path.
-		cs = append(cs, row("humanized second click (want >=4 mousemoves, median gap 8-30 ms)",
-			click1 >= 0 && md2 > click1 && len(m) >= 4 && med >= 8 && med <= 30,
+		// Bounds come from the design: the default movement time is within
+		// [80, 1200] ms (humanize:minTime/maxTime), recordings are resampled at
+		// 60 Hz, so a path has at least floor(80*60/1000) = 4 sampled intervals
+		// (interior moves plus the real final event), each delivered separately
+		// because the posts are really delayed. The median gap is the 60 Hz
+		// period (1000/60 ms, jitter ~1 ms); +-25% is [12.5, 20.8].
+		cs = append(cs, row("humanized second click (want >=4 mousemoves, median gap 12.5-20.8 ms)",
+			click1 >= 0 && md2 > click1 && len(m) >= 4 && med >= 12.5 && med <= 20.8,
 			"mousemoves=%d medianGapMs=%.1f gapsMs=%.1f", len(m), med, gaps))
 	}
 

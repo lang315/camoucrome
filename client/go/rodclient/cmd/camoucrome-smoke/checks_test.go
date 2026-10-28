@@ -9,7 +9,7 @@ import (
 )
 
 // good builds a log a healthy humanized run would produce.
-func good() Run { return goodWith(12, 10) }
+func good() Run { return goodWith(12, 17) }
 
 // goodWith: moves mousemoves before the second click, gap ms apart.
 func goodWith(moves int, gap float64) Run {
@@ -130,7 +130,7 @@ func TestHumanizedSecondClick(t *testing.T) {
 		moves int
 		gap   float64
 		green bool
-	}{{7, 17.5, true}, {4, 17.5, true}, {3, 17.5, false}, {12, 1, false}, {7, 40, false}} {
+	}{{7, 17.5, true}, {4, 17.5, true}, {3, 17.5, false}, {12, 1, false}, {6, 40, false}, {6, 12.0, false}, {6, 21.5, false}} {
 		r := goodWith(c.moves, c.gap)
 		ok := true
 		for _, ch := range Evaluate(r) {
