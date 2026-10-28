@@ -1,8 +1,10 @@
 """SP6b driver contract (A4 #1): the CDP driver never sends Runtime.enable,
 leaves no trace in the main world, adds no forbidden flag, and does not move
-the stack-timing signal SP2 D1 measured. One verify, one probe page, six
-drivers (Python, Go, Node; stock and patchright each) -- the stock ones are
-the RED rows and must fail, the patchright ones must pass. Run on the box under ~/camoucrome-verify/venv.
+the stack-timing signal SP2 D1 measured. One verify, one probe page,
+seven drivers (Python, Go, Node; stock and patchright each, plus the go-rodclient
+GREEN row) -- the stock ones are the RED rows and must fail, the patchright ones
+must pass. rodclient probe (client/go/rodclient): go build -o
+~/camoucrome-go/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient. Run on the box under ~/camoucrome-verify/venv.
 
 The page's own script (main world, synchronous, so a --dump-dom run captures
 it too) writes the report into #o; each probe command reads that text through
@@ -62,6 +64,8 @@ HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 PY_STOCK = layout({"CAMOU_VENV": os.environ.get("CAMOU_VENV_STOCK",
                                                 f"{HOME}/camoucrome-verify/venv-stock")}).py
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
+# client/go/rodclient: go build -o ~/camoucrome-go/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient.
+RODCLIENT_PROBE = os.environ.get("CAMOU_RODCLIENT_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe-rodclient")
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
@@ -178,7 +182,10 @@ def baseline(url):
 
 
 DRIVERS = [
-    # (label, expected, command)
+    # (label, expected, command[, {"min_methods": n}]) -- the optional dict
+    # lowers C1's floor for a driver whose log counts less: rodclient's probe
+    # logs SENT CDP messages only, Playwright's log counts sends and
+    # receives. The floor still guards a silent logger.
     ("python-stock", "RED", [PY_STOCK, "-m", "camoucrome.probe",
                              "--driver", "stock", "--executable", EXE]),
     ("python-patchright", "GREEN", [PY, "-m", "camoucrome.probe",
@@ -193,6 +200,12 @@ DRIVERS = [
                            "--label", "node-stock", "--executable", EXE]),
     ("node-patchright", "GREEN", [NODE, NODE_PROBE, "--driver", f"{DRIVER_PATCHRIGHT}/package",
                                   "--label", "node-patchright", "--executable", EXE]),
+    # rodclient owns --no-default-device (Launch applies it), so the command has
+    # no such flag. min_methods 10: the fake-browser run of the probe's flow
+    # (connect, new page, init script, Goto, Text) sends 14 messages with the
+    # send observer installed before connect; 70% is 9.8, floored at 10.
+    ("go-rodclient", "GREEN", [RODCLIENT_PROBE, "--label", "go-rodclient",
+                               "--executable", EXE], {"min_methods": 10}),
 ]
 
 
@@ -211,13 +224,13 @@ def run_probe(cmd, url):
     return json.loads(p.stdout), p.stderr
 
 
-def check(label, result, log, base):
+def check(label, result, log, base, min_methods=MIN_METHODS):
     rep = result["report"]
     rows = {}
     sends = log.count('"method":"')
     runtime_enable = log.count('"method":"Runtime.enable"')
     rows["C1 no Runtime.enable, logger alive"] = (
-        runtime_enable == 0 and sends >= MIN_METHODS,
+        runtime_enable == 0 and sends >= min_methods,
         f"Runtime.enable={runtime_enable} sends={sends}")
     # The probe's own init-script global is accounted for by C6.
     extra = sorted(set(rep["windowKeys"]) - set(base["windowKeys"]) - {"__camou_init"})
@@ -261,6 +274,24 @@ def check(label, result, log, base):
     return rows
 
 
+def verdict_of(expected, rows):
+    """GREEN: every row passes. RED: C1 must fail."""
+    if expected == "GREEN":
+        return all(ok for ok, _ in rows.values())
+    return not rows["C1 no Runtime.enable, logger alive"][0]
+
+
+def judge_row(label, expected, opts, result, log, base):
+    """The per-driver body of main(): (ok, printable lines). Only min_methods
+    reaches check()."""
+    rows = check(label, result, log, base, min_methods=opts.get("min_methods", MIN_METHODS))
+    ok = verdict_of(expected, rows)
+    lines = [f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})"]
+    for name, (r, n) in rows.items():
+        lines.append(f"      {'ok  ' if r else 'FAIL'} {name}: {n}")
+    return ok, lines
+
+
 def main():
     global PROXY_URL
     url, srv = serve()
@@ -272,24 +303,16 @@ def main():
     print(f"baseline (no driver): {len(base['windowKeys'])} window keys, webdriver={base['webdriver']}, "
           f"stack median {statistics.median(base['timesMs']):.1f} ms, ua ...{base['ua'][-28:]}")
     verdict = True
-    for label, expected, cmd in DRIVERS:
+    for label, expected, cmd, *opts in DRIVERS:
         PROXY_SEEN.clear()
         result, log = run_probe(cmd + proxy_args, url)
         if result is None:
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False
             continue
-        rows = check(label, result, log, base)
-        allpass = all(ok for ok, _ in rows.values())
-        c1 = rows["C1 no Runtime.enable, logger alive"][0]
-        if expected == "GREEN":
-            ok = allpass
-        else:  # RED row: the stock driver must be caught by C1
-            ok = not c1
+        ok, lines = judge_row(label, expected, opts[0] if opts else {}, result, log, base)
         verdict &= ok
-        print(f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})")
-        for name, (r, note) in rows.items():
-            print(f"      {'ok  ' if r else 'FAIL'} {name}: {note}")
+        print("\n".join(lines))
     srv.shutdown()
     print("ALL_PASS" if verdict else "FAIL")
     sys.exit(0 if verdict else 1)
