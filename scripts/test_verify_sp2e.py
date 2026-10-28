@@ -4,11 +4,21 @@ import sp2e_analysis as a
 
 
 class OrderTest(unittest.TestCase):
-    def test_good(self):
-        ev = [("m", 1), ("m", 2), ("w", 3), ("w", 4), ("w", 5), ("m", 6)]
+    def test_moves_then_wheels_green(self):
+        ev = [("m", i) for i in range(90)] + [("w", 100), ("w", 101), ("w", 102)]
         self.assertEqual(a.order_violations(ev), [])
 
-    def test_interleaved_is_flagged(self):  # RED control for the checker
+    def test_moves_wheels_moves_green(self):
+        ev = ([("m", i) for i in range(40)] + [("w", 40), ("w", 41), ("w", 42)]
+              + [("m", 43 + i) for i in range(50)])
+        self.assertEqual(a.order_violations(ev), [])
+
+    def test_old_interleaved_is_flagged(self):  # RED control: runs [w1,m5,w1,m3,w1,m2]
+        ev = ([("w", 1)] + [("m", 2 + i) for i in range(5)] + [("w", 8)]
+              + [("m", 9 + i) for i in range(3)] + [("w", 12)] + [("m", 13), ("m", 14)])
+        self.assertTrue(a.order_violations(ev))
+
+    def test_move_between_notches_is_flagged(self):
         ev = [("m", 1), ("w", 2), ("m", 3), ("w", 4), ("w", 5), ("m", 6)]
         self.assertTrue(a.order_violations(ev))
 

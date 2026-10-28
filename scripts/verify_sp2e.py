@@ -7,6 +7,11 @@ UNMEASURED, never PASS; any non-PASS row exits 1. Each row launches its own
 browser. Pure checks live in sp2e_analysis.py (`--self-test` runs them with no
 browser).
 
+  Row 4 asserts NO INTERLEAVING only, not item order: a wheel first waits for a
+  renderer visual-state round trip (InputHandler::HandleMouseEvent), so it
+  reaches the scheduler after the following move, as in stock. Pre-change code
+  interleaved the items (runs w1,m5,w1,m3,w1,m2), which row 4 flags.
+
   RED-capable: 1, 4, 10, 11 (stock path / old queue: one event per move, no
   ordering; the old code let a cap-refused or zero-length move overtake the
   queue as an immediate stock event -- rows 10 and 11 fail on it).
@@ -182,7 +187,7 @@ def dist(a, b):
 R1 = "1 humanize, 600 px move: >=10 mousemoves, ends exactly at target, timeStamps strictly increasing, span 59.2-1200 ms (80 ms path minus the unposted first gap)"
 R2 = "2 humanize, 3 px move: >=2 mousemoves, page span 59.2-1200 ms (floor 80 minus first gap), no NaN"
 R3 = "3 humanize, 600 px move: median inter-event gap 8-25 ms"
-R4 = "4 un-awaited move, wheel(0,300), move: log is exactly [moves, 3 wheel notches, moves], no interleaving"
+R4 = "4 un-awaited move, wheel(0,300), move: 3/3 replies, the 3 notches are one contiguous run, no interleaving (item order not asserted)"
 R5 = "5 flood of 200 un-awaited moves: browser alive, 200/200 replies within 60 s, events arrive"
 R6 = "6 target closed 100 ms into a 1 s move: pending command resolves (no hang), browser still answers"
 R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 10 s cap + 1 s margin, browser alive"

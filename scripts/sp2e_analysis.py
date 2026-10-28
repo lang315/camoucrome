@@ -39,8 +39,12 @@ def gap_stats(ts):
 
 def order_violations(events, wheels=3):
     """events: [(kind, timestamp)], kind 'm' (mousemove) or 'w' (wheel).
-    The un-awaited move, wheel, move must arrive as m+ w{wheels} m+ with
-    non-decreasing timestamps. Returns a list of violation strings (empty = ok)."""
+    The scheduler's guarantee is NO INTERLEAVING: each item's events are
+    contiguous. The order of the items is not asserted (a wheel first waits
+    for a renderer visual-state round trip, so it can reach the scheduler after
+    a later move). So: the wheel notches form exactly ONE run of `wheels`
+    events, and no move event sits between them; moves are then m* w{n} m*.
+    Timestamps must not go backwards. Returns violation strings (empty = ok)."""
     out = []
     runs = []
     for kind, _ in events:
@@ -48,12 +52,10 @@ def order_violations(events, wheels=3):
             runs[-1][1] += 1
         else:
             runs.append([kind, 1])
-    shape = [(k, n) for k, n in runs]
-    if [k for k, _ in shape] != ["m", "w", "m"]:
-        out.append("runs %s, want m,w,m (interleaved or missing)" % (shape,))
-    else:
-        if shape[1][1] != wheels:
-            out.append("%d wheel events, want %d" % (shape[1][1], wheels))
+    wruns = [n for k, n in runs if k == "w"]
+    if wruns != [wheels]:
+        out.append("wheel runs %s, want one run of %d (interleaved or missing); runs=%s"
+                   % (wruns, wheels, [(k, n) for k, n in runs]))
     ts = [t for _, t in events]
     if any(b < a for a, b in zip(ts, ts[1:])):
         out.append("timestamps go backwards")
@@ -114,10 +116,12 @@ def self_test():
     """Fixtures incl. a deliberately interleaved log the checker must flag."""
     good = [("m", 1), ("m", 2), ("w", 3), ("w", 4), ("w", 5), ("m", 6), ("m", 7)]
     assert order_violations(good) == []
-    inter = [("m", 1), ("w", 2), ("m", 3), ("w", 4), ("w", 5), ("m", 6)]
+    assert order_violations([("m", i) for i in range(90)] + [("w", 100 + i) for i in range(3)]) == []
+    inter = [("w", 1), ("m", 2), ("m", 3), ("w", 4), ("m", 5), ("w", 6)]
     assert order_violations(inter), "interleaved log not flagged"
+    assert order_violations([("m", 1), ("w", 2), ("m", 3), ("w", 4), ("w", 5), ("m", 6)]), "split notches not flagged"
     assert order_violations([("m", 1), ("w", 2), ("w", 3), ("m", 4)]), "2 wheels not flagged"
-    assert order_violations([("w", 1), ("w", 2), ("w", 3), ("m", 4)]), "missing first path not flagged"
+    assert order_violations([("w", 1), ("w", 2), ("w", 3), ("m", 4)]) == []  # order of items is not asserted
     assert strictly_increasing([1, 2, 3]) and not strictly_increasing([1, 2, 2])
     assert span_in_bounds([0, 100, 500], 80, 1200) and not span_in_bounds([0, 10], 80, 1200)
     assert gap_stats([0, 10, 20, 40])["median"] == 10
