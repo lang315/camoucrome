@@ -191,7 +191,7 @@ R4 = "4 un-awaited move, wheel(0,300), move: 3/3 replies, the 3 notches are one 
 R5 = "5 flood of 200 un-awaited moves: browser alive, 200/200 replies within 60 s, events arrive"
 R6 = "6 target closed 100 ms into a 1 s move: pending command resolves (no hang), browser still answers"
 R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 10 s cap + 1 s margin, browser alive"
-R8 = "8 no config: 3 mouseMoved calls give exactly 3 mousemoves (1 each)"
+R8 = "8 no config, and humanize:enabled=false: 3 mouseMoved calls give exactly 3 mousemoves (1 each), in both launches"
 R9 = "9 verify_sp2c.py (Windows-claim wheel) exits 0"
 R10 = "10 overflow keeps order: 14 un-awaited moves (1 s each, past the 10 s cap): 14/14 final events in submission order, last event is target 13"
 R11 = "11 zero-length move waits for the queue: its event is in the tail after the path, its reply after the first reply"
@@ -305,18 +305,22 @@ def row7():
 
 
 def row8():
-    try:
-        with browser(None) as proc:
-            c, _ = open_page(proc)
-            counts = []
-            for x in (300.0, 500.0, 200.0):
-                ev(c, "window.__log = []")
-                move(c, x, 300.0)
-                time.sleep(0.3)
-                counts.append(len(log(c)))
-    except Exception as exc:  # noqa: BLE001
-        return unmeasured(R8, exc)
-    row(R8, counts == [1, 1, 1], "per-move counts %s" % counts)
+    # Both absent-like inputs: no config at all, and humanize explicitly off.
+    res = {}
+    for label, cfg in (("no config", None), ("humanize:enabled=false", {"humanize:enabled": False})):
+        try:
+            with browser(cfg) as proc:
+                c, _ = open_page(proc)
+                counts = []
+                for x in (300.0, 500.0, 200.0):
+                    ev(c, "window.__log = []")
+                    move(c, x, 300.0)
+                    time.sleep(0.3)
+                    counts.append(len(log(c)))
+                res[label] = counts
+        except Exception as exc:  # noqa: BLE001
+            return unmeasured(R8, "%s: %r" % (label, exc))
+    row(R8, all(v == [1, 1, 1] for v in res.values()), "per-move counts %s" % res)
 
 
 def row9():
