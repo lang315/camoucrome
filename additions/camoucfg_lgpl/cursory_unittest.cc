@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <vector>
 
@@ -222,6 +224,35 @@ TEST(CursoryTest, TimingScalesWithDistance) {
     longm.push_back(l.back().t_ms);
   }
   EXPECT_LT(Median(shortm), Median(longm));
+}
+
+// Dev aid for scripts/cursory_stats.py: a no-op unless CURSORY_DUMP names a file.
+// Writes "# pair,sx,sy,ex,ey" then "pair,i,x,y,t_ms" lines for 200 deterministic
+// pairs (the same LCG the script regenerates). fprintf, not ofstream: simplest.
+TEST(CursoryTest, DumpForStats) {
+  const char* path = std::getenv("CURSORY_DUMP");
+  if (!path)
+    return;
+  FILE* f = std::fopen(path, "w");
+  ASSERT_TRUE(f);
+  Lcg lcg{7};
+  Params params;
+  params.min_ms = 1;
+  params.max_ms = 60000;
+  for (int pair = 0; pair < 200;) {
+    const double sx = lcg.Next(0, 1920), sy = lcg.Next(0, 1080);
+    const double ex = lcg.Next(0, 1920), ey = lcg.Next(0, 1080);
+    if (std::hypot(ex - sx, ey - sy) < 5)
+      continue;
+    std::fprintf(f, "# %d,%.17g,%.17g,%.17g,%.17g\n", pair, sx, sy, ex, ey);
+    auto v = GenerateTrajectory(sx, sy, ex, ey, pair, params);
+    for (size_t i = 0; i < v.size(); ++i) {
+      std::fprintf(f, "%d,%zu,%.17g,%.17g,%lld\n", pair, i, v[i].x, v[i].y,
+                   static_cast<long long>(v[i].t_ms));
+    }
+    ++pair;
+  }
+  std::fclose(f);
 }
 
 }  // namespace
