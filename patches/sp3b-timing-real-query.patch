@@ -1,0 +1,162 @@
+diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+index 5e044eebf3..9e69eeba74 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -4842,6 +4842,10 @@ void WebGL2RenderingContextBase::deleteFramebuffer(
+ std::optional<ScriptValue> CamoucromeBuildSpoofedGLParam(
+     ScriptState* script_state, GLenum pname, const camoucfg::GLValue& value);
+ bool CamoucromeIsBlockableGLParam(GLenum pname);
++bool CamoucromeInRealQuery();
++void CamoucromeTouchRealGLParam(WebGLRenderingContextBase* context,
++                                ScriptState* script_state,
++                                GLenum pname);
+ 
+ ScriptValue WebGL2RenderingContextBase::getParameter(ScriptState* script_state,
+                                                      GLenum pname) {
+@@ -4854,11 +4858,13 @@ ScriptValue WebGL2RenderingContextBase::getParameter(ScriptState* script_state,
+   // unsupported enum. The unmasked vendor/renderer enums own their dedicated
+   // cases (SP3b Task 2) and must not be shadowed here (the Camoufox #44 trap).
+   if (auto* camou_ec = Host()->GetTopExecutionContext();
+-      camou_ec && pname != 0x9245u && pname != 0x9246u) {
++      camou_ec && pname != 0x9245u && pname != 0x9246u &&
++      !CamoucromeInRealQuery()) {
+     const auto& camou_scope = camoucfg::ScopeFor(camou_ec);
+     if (auto camou_v = camoucfg::GLParam(camou_scope, pname, IsWebGL2())) {
+       if (auto camou_spoofed =
+               CamoucromeBuildSpoofedGLParam(script_state, pname, *camou_v)) {
++        CamoucromeTouchRealGLParam(this, script_state, pname);
+         return *camou_spoofed;
+       }
+       // Defined but the configured type cannot match this pname's stock JS
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 86a5fad9fe..e54de51dc2 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -4076,6 +4076,10 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+ std::optional<ScriptValue> CamoucromeBuildSpoofedGLParam(
+     ScriptState* script_state, GLenum pname, const camoucfg::GLValue& value);
+ bool CamoucromeIsBlockableGLParam(GLenum pname);
++bool CamoucromeInRealQuery();
++void CamoucromeTouchRealGLParam(WebGLRenderingContextBase* context,
++                                ScriptState* script_state,
++                                GLenum pname);
+ 
+ // Turns a configured GLValue into the ScriptValue getParameter would return for
+ // `pname`, matching the JS type the stock switch produces. Returns nullopt when
+@@ -4164,6 +4168,51 @@ bool CamoucromeIsBlockableGLParam(GLenum pname) {
+   }
+ }
+ 
++// Backlog 4c: a page can time getParameter. These pnames' real queries are a
++// round trip to the GPU process (measured 190-220 us on SwiftShader against
++// under 1 us for the cached ones), so a configured value returned without the
++// query is a timing tell whatever the value. The configured value is returned
++// after the real query has run and its result been dropped.
++namespace {
++constinit thread_local bool g_camou_in_real_query = false;
++}  // namespace
++
++bool CamoucromeInRealQuery() {
++  return g_camou_in_real_query;
++}
++
++static bool CamoucromeIsGpuRoundTripParam(GLenum pname) {
++  switch (pname) {
++    case GL_SUBPIXEL_BITS:
++    case GL_RED_BITS:
++    case GL_GREEN_BITS:
++    case GL_BLUE_BITS:
++    case GL_ALPHA_BITS:
++    case GL_DEPTH_BITS:
++    case GL_SAMPLE_BUFFERS:
++    case GL_SAMPLES:
++    case GL_ALIASED_POINT_SIZE_RANGE:
++    case GL_ALIASED_LINE_WIDTH_RANGE:
++    case GL_VERSION:
++    case GL_SHADING_LANGUAGE_VERSION:
++    case GL_IMPLEMENTATION_COLOR_READ_TYPE:
++    case GL_IMPLEMENTATION_COLOR_READ_FORMAT:
++      return true;
++    default:
++      return false;
++  }
++}
++
++void CamoucromeTouchRealGLParam(WebGLRenderingContextBase* context,
++                                ScriptState* script_state,
++                                GLenum pname) {
++  if (g_camou_in_real_query || !CamoucromeIsGpuRoundTripParam(pname))
++    return;
++  g_camou_in_real_query = true;
++  context->getParameter(script_state, pname);  // result dropped
++  g_camou_in_real_query = false;
++}
++
+ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+                                                     GLenum pname) {
+   if (isContextLost())
+@@ -4175,11 +4224,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+   // unsupported enum. The unmasked vendor/renderer enums own their dedicated
+   // cases (SP3b Task 2) and must not be shadowed here (the Camoufox #44 trap).
+   if (auto* camou_ec = Host()->GetTopExecutionContext();
+-      camou_ec && pname != 0x9245u && pname != 0x9246u) {
++      camou_ec && pname != 0x9245u && pname != 0x9246u &&
++      !CamoucromeInRealQuery()) {
+     const auto& camou_scope = camoucfg::ScopeFor(camou_ec);
+     if (auto camou_v = camoucfg::GLParam(camou_scope, pname, IsWebGL2())) {
+       if (auto camou_spoofed =
+               CamoucromeBuildSpoofedGLParam(script_state, pname, *camou_v)) {
++        CamoucromeTouchRealGLParam(this, script_state, pname);
+         return *camou_spoofed;
+       }
+       // Defined but the configured type cannot match this pname's stock JS
+@@ -4401,13 +4452,17 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+         // Camoucrome (SP3b): substitute the configured UNMASKED_RENDERER
+-        // string before the real driver query. webGl:renderer /
++        // string AFTER the real driver query: GetString is a round trip to
++        // the GPU process (tens of microseconds), and a page that times
++        // getParameter sees an override that skips it whatever the value.
++        // Backlog 4c, verify_sp3b_timing. webGl:renderer /
+         // webGl2:renderer wins; otherwise a webGl:parameters entry for
+         // 0x9246 holding a string is honored (mirrors Camoufox's #44
+         // parameter-table fallback). No config -> the real driver string,
+         // unchanged. Placed inside the extension gate so a page reading
+         // UNMASKED_* without the extension still gets INVALID_ENUM exactly
+         // as stock -- no divergence tell.
++        const String camou_real_renderer(ContextGL()->GetString(GL_RENDERER));
+         if (auto* ec = Host()->GetTopExecutionContext()) {
+           if (auto v = camoucfg::GLRenderer(camoucfg::ScopeFor(ec), IsWebGL2()))
+             return WebGLAny(script_state, String::FromUtf8(*v));
+@@ -4418,8 +4473,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+             return WebGLAny(script_state,
+                             String::FromUtf8(std::get<std::string>(*p)));
+         }
+-        return WebGLAny(script_state,
+-                        String(ContextGL()->GetString(GL_RENDERER)));
++        return WebGLAny(script_state, camou_real_renderer);
+       }
+       SynthesizeGLError(
+           GL_INVALID_ENUM, "getParameter",
+@@ -4428,7 +4482,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
+         // Camoucrome (SP3b): substitute the configured UNMASKED_VENDOR
+-        // string. Symmetric with the renderer case above (0x9245 fallback).
++        // string after the real query, as the renderer case above does (the
++        // 0x9245 fallback is symmetric).
++        const String camou_real_vendor(ContextGL()->GetString(GL_VENDOR));
+         if (auto* ec = Host()->GetTopExecutionContext()) {
+           if (auto v = camoucfg::GLVendor(camoucfg::ScopeFor(ec), IsWebGL2()))
+             return WebGLAny(script_state, String::FromUtf8(*v));
+@@ -4439,8 +4495,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+             return WebGLAny(script_state,
+                             String::FromUtf8(std::get<std::string>(*p)));
+         }
+-        return WebGLAny(script_state,
+-                        String(ContextGL()->GetString(GL_VENDOR)));
++        return WebGLAny(script_state, camou_real_vendor);
+       }
+       SynthesizeGLError(
+           GL_INVALID_ENUM, "getParameter",

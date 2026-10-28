@@ -1,0 +1,78 @@
+diff --git a/chrome/browser/renderer_preferences_util.cc b/chrome/browser/renderer_preferences_util.cc
+index 680a3df2d5..61371553aa 100644
+--- a/chrome/browser/renderer_preferences_util.cc
++++ b/chrome/browser/renderer_preferences_util.cc
+@@ -9,12 +9,18 @@
+ #include <string>
+ #include <vector>
+ 
++#include "base/command_line.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/browser_process.h"
++#include "chrome/common/chrome_switches.h"
++#include "components/proxy_config/proxy_config_dictionary.h"
++#include "components/proxy_config/proxy_config_pref_names.h"
++#include "components/proxy_config/proxy_prefs.h"
++#include "content/public/common/content_switches.h"
+ #include "chrome/browser/net/convert_explicitly_allowed_network_ports_pref.h"
+ #include "content/public/browser/reduce_accept_language_utils.h"
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -110,6 +116,29 @@ std::string GetLanguageListForProfile(Profile* profile,
+ 
+ namespace renderer_preferences_util {
+ 
++namespace {
++
++// A proxy is configured when the command line names one or the proxy pref
++// (set by the profile, an enterprise policy, or the command-line pref store)
++// is fixed_servers or pac_script. Not covered: the system proxy (Linux
++// environment variables, gsettings), which is resolved later by the network
++// service and is not reachable from here.
++bool CamoucromeProxyConfigured(const PrefService* pref_service,
++                               const base::CommandLine& command_line) {
++  if (command_line.HasSwitch(::switches::kProxyServer) ||
++      command_line.HasSwitch(::switches::kProxyPacUrl)) {
++    return true;
++  }
++  ProxyConfigDictionary dict(
++      pref_service->GetDict(proxy_config::prefs::kProxy).Clone());
++  ProxyPrefs::ProxyMode mode;
++  return dict.GetMode(&mode) &&
++         (mode == ProxyPrefs::MODE_FIXED_SERVERS ||
++          mode == ProxyPrefs::MODE_PAC_SCRIPT);
++}
++
++}  // namespace
++
+ void UpdateFromSystemSettings(blink::RendererPreferences* prefs,
+                               Profile* profile) {
+   const PrefService* pref_service = profile->GetPrefs();
+@@ -169,6 +198,24 @@ void UpdateFromSystemSettings(blink::RendererPreferences* prefs,
+ 
+   prefs->webrtc_ip_handling_policy = blink::ToWebRTCIPHandlingPolicy(
+       pref_service->GetString(prefs::kWebRTCIPHandlingPolicy));
++  // Camoucrome (backlog 4d): //chrome never read --force-webrtc-ip-handling-
++  // policy (content_shell and headless do), so a client passing it protected
++  // nothing, and with a proxy set the page still got a srflx UDP candidate
++  // holding the host's real public address (a proxy cannot carry UDP).
++  // Precedence, highest first: webrtc:ipHandlingPolicy (camoucfg, applied
++  // later in the renderer) > an explicit pref or enterprise policy > the
++  // switch > this proxy default > Chrome's default.
++  if (pref_service->FindPreference(prefs::kWebRTCIPHandlingPolicy)
++          ->IsDefaultValue()) {
++    const base::CommandLine* camou_cl = base::CommandLine::ForCurrentProcess();
++    if (camou_cl->HasSwitch(switches::kForceWebRtcIPHandlingPolicy)) {
++      prefs->webrtc_ip_handling_policy = blink::ToWebRTCIPHandlingPolicy(
++          camou_cl->GetSwitchValueASCII(switches::kForceWebRtcIPHandlingPolicy));
++    } else if (CamoucromeProxyConfigured(pref_service, *camou_cl)) {
++      prefs->webrtc_ip_handling_policy =
++          blink::mojom::WebRtcIpHandlingPolicy::kDisableNonProxiedUdp;
++    }
++  }
+ 
+   for (const base::Value& entry :
+        pref_service->GetList(prefs::kWebRTCIPHandlingUrl)) {

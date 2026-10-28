@@ -149,6 +149,7 @@ async function runScenario(chromium, config) {
     headless: args.headed !== true, args: args.sandbox === true ? [] : ['--no-sandbox'],
     window: args.window ? args.window.split(',').map(Number) : undefined,
     dpr: args.dpr ? Number(args.dpr) : undefined,
+    proxy: args.proxy ? { server: args.proxy, bypass: args['proxy-bypass'], username: args['proxy-user'], password: args['proxy-pass'] } : undefined,
   });
   const page = ctx.pages()[0] || await ctx.newPage();
   // SP2 4.2 item, same as the other probes: the page reports typeof __camou_init.

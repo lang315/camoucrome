@@ -49,6 +49,12 @@ KNOWN = {
     f"codecs.{HEVC}": ("host decodes HEVC in hardware, the box has no decoder; suppresses canPlayType AND "
                        "MediaSource.isTypeSupported (backlog: HEVC claim)",
                        lambda fork: (fork.get("codecs") or {}).get(HEVC) == ["", False]),
+    # The default output device's sample rate is the machine's, not the identity's: the fork reports its own
+    # machine's real value (no config key). The host reads 44100 since the 2026-10-24 recapture (48000 in the
+    # earlier one: its audio device setting moved), the WSL box 48000. Excused only while the fork reports one of
+    # the two standard device rates, so an odd value still shows.
+    "audio.sampleRate": ("the output device's rate is per machine: host 44100 (was 48000), box 48000, only the audio:sampleRate key sets it",
+                         lambda fork: (fork.get("audio") or {}).get("sampleRate") in (44100, 48000)),
     # decodingInfo(H.264 1080p) is [supported, smooth, powerEfficient]. powerEfficient is true only with a hardware
     # decoder: the host (session 1, Intel GPU) has one, the box has none. Excused only while the fork answers
     # supported and smooth and differs in powerEfficient alone, so the first two stay measured. (The 154 oracle read
@@ -57,6 +63,8 @@ KNOWN = {
                  "(backlog: powerEfficient claim)",
                  lambda fork: fork.get("mediaCap") == [True, True, False]),
 }
+# Leaves the committed baseline predates (recapture is host work). Known only while the baseline lacks them.
+NOT_IN_BASELINE = {"mediaCapAv1"}
 # Subtrees excluded from O1 by PREFIX, same shape as KNOWN, but each one is excluded ONLY while its condition holds --
 # an unconditional prefix exclusion is how a check stops measuring anything. `when` is a predicate on the fork's report.
 KNOWN_PREFIX = {
@@ -127,6 +135,10 @@ def compare(base, fork):
             if type(h) != type(f):
                 diffs.append((k, f"type {type(h).__name__}", f"type {type(f).__name__}"))
             continue
+        if h == "<absent>" and k in NOT_IN_BASELINE:
+            buckets["known"] += 1
+            print(f"known: {k}: not in the committed baseline (fork={json.dumps(f)[:80]})")
+            continue
         if h != f:
             entry = KNOWN.get(k)
             # A bare reason excludes unconditionally; a pair excludes only while its predicate holds.
@@ -174,7 +186,7 @@ def main():
         a = sys.argv[sys.argv.index("--config") + 1]
         cfg = json.load(open(a[1:], encoding="utf-8")) if a.startswith("@") else json.loads(a)
     else:
-        g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--seed", os.environ.get("CAMOU_SEED", "1")], capture_output=True, text=True, timeout=120)
+        g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--seed", os.environ.get("CAMOU_SEED", "1"), "--gpu", "windows-intel-uhd-630-d3d11"], capture_output=True, text=True, timeout=120)
         if g.returncode != 0:
             sys.exit(g.stderr[-500:])
         cfg = json.loads(g.stdout)["config"]

@@ -221,20 +221,30 @@ with sync_playwright() as pw:
     return json.loads(p.stdout.strip().splitlines()[-1])
 
 
+def audio_claim(win, real_rate):
+    """(sampleRate, bufferFrames) for the A rows: the generated Windows claim, unless the device already reports that
+    rate. Then A1/A4 would hold with the hook deleted (measured nothing: 2026-10-25, claim 44100 on a 44100 box), so the
+    other common rate is claimed, with the same 10 ms quantum."""
+    rate, frames = win["audio:sampleRate"], win["audio:bufferFrames"]
+    if rate == real_rate:
+        rate = 48000 if real_rate != 48000 else 44100
+        frames = rate // 100
+    return rate, frames
+
+
 def audio_rows(win, lin):
     """A1-A3: the reported output rate follows audio:sampleRate; the render still runs and an offline render is non-silent."""
-    a = audio_probe(win)
     bare = audio_probe({k: v for k, v in win.items() if k != "audio:sampleRate"})
+    want, frames = audio_claim(win, bare.get("rate"))
+    a = audio_probe({**win, "audio:sampleRate": want, "audio:bufferFrames": frames})
     l = audio_probe(lin)
-    print(f"note: A1 Windows claim -> {json.dumps(a)[:160]}; key absent -> {json.dumps(bare)[:100]}; Linux claim -> {json.dumps(l)[:100]}")
-    want = win["audio:sampleRate"]
-    frames = win["audio:bufferFrames"]
+    print(f"note: A1 Windows claim {want}/{frames} -> {json.dumps(a)[:160]}; key absent -> {json.dumps(bare)[:100]}; Linux claim -> {json.dumps(l)[:100]}")
     return {
         f"A4 Windows claim: baseLatency == audio:bufferFrames / audio:sampleRate ({frames}/{want} = {frames / want:g}), the host's own 0.01 (RED: the box's 512 frames before the key)": (
             a.get("frames") is not None and round(a["frames"]) == frames and abs(a.get("base", 0) - frames / want) < 1e-9),
-        f"A1 Windows claim: AudioContext.sampleRate == audio:sampleRate ({want}), baseLatency*rate an integer frame count, state running, offline render non-silent (RED: the box's real rate before the hook)": (
+        f"A1 Windows claim: AudioContext.sampleRate == audio:sampleRate ({want}, not the box's own), baseLatency*rate an integer frame count, state running, offline render non-silent (RED: the box's real rate before the hook)": (
             a.get("rate") == want and abs(a.get("frames", 0) - round(a.get("frames", 0))) < 1e-6 and a.get("state") == "running" and a.get("offPeak", 0) > 0.5),
-        f"A2 key absent: the device's real rate ({bare.get('rate')}), which on this box differs from the claim's -- the hook is config-gated": bare.get("rate") is not None and bare.get("rate") != want,
+        f"A2 key absent: the device's real rate ({bare.get('rate')}), which differs from the claim's {want} -- the hook is config-gated": bare.get("rate") is not None and bare.get("rate") != want,
         "A3 Linux claim (no key emitted): the real rate, equal to A2": l.get("rate") == bare.get("rate") and l.get("rate") is not None,
     }
 

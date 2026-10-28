@@ -68,7 +68,7 @@ remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . ':(exclude)
 . "$ROOT/upstream.env"
 remote_script+="PIN=$CHROMIUM_REV"$'\n'
 remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..'"$BRANCH"'"); do
-  d=$(git diff --no-ext-diff --no-color --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" | sha256sum | cut -d" " -f1)
+  d=$(git diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" | sha256sum | cut -d" " -f1)
   [ "$d" = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ] || echo "PATCH $(git log -1 --format=%s "$c").patch $d"
 done'$'\n'
 # On the build box itself (the self-hosted runner, or a shell in WSL) there is

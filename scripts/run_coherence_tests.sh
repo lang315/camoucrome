@@ -92,6 +92,7 @@ declare -A MUTATIONS=(
   [mediadevices-seed-when-enabled]='{"mediaDevices:enabled":true}'
   [webgl-identity-set-on-both-contexts]='{"webGl:vendor":"Google Inc. (NVIDIA)","webGl:renderer":"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"}'
   [android-claims-touch]='{"ua:osInfo":"Linux; Android 14; Pixel 8","ua:platform":"Android","navigator.platform":"Linux armv8l"}'
+  [gpu-renderer-fits-threads]='{"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":16}'
   [fonts-alias-requires-list]='{"fonts:alias":{"Segoe UI":"Selawik"}}'
   [fonts-alias-local-requires-list]='{"fonts:aliasLocal":{"SegoeUI":"Selawik"}}'
 )

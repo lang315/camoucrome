@@ -89,6 +89,13 @@ enum class Relation {
   // keys[1] (navigator.maxTouchPoints) is unset or 0. keys must be
   // {kUaOsInfo, kNavigatorMaxTouchPoints}; the repair value is 5.
   kTouchFitsOs,
+  // keys[0] is kWebGlRenderer, resolved like kRendererBackendFitsOs does
+  // (ResolvedGLString); keys[1] is kNavigatorHardwareConcurrency, read with
+  // GetUint32. Violated when the renderer's ANGLE device id has a cap in
+  // kGen9ThreadCaps and keys[1] exceeds it. An unknown id, a non-Gen9
+  // renderer, or an absent / non-uint hardwareConcurrency constrains nothing.
+  // keys[1] is the value the log names as too large; new_value is the cap.
+  kRendererFitsThreads,
 };
 
 struct Invariant {
@@ -105,7 +112,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 15> kAllInvariants = {{
+inline constexpr std::array<Invariant, 16> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kRepair,
@@ -170,6 +177,10 @@ inline constexpr std::array<Invariant, 15> kAllInvariants = {{
      Relation::kRequiresKey,
      Policy::kRepair,
      {keys::kFontsAliasLocal, keys::kFonts}},
+    {"gpu-renderer-fits-threads",
+     Relation::kRendererFitsThreads,
+     Policy::kRepair,
+     {keys::kWebGlRenderer, keys::kNavigatorHardwareConcurrency}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
@@ -337,6 +348,24 @@ static_assert(EveryTouchFitsOsEntryUsesTheOsTouchPair(),
               "a kTouchFitsOs entry must name {ua:osInfo, "
               "navigator.maxTouchPoints}: CheckTouchFitsOs() repairs keys[1] "
               "as the touch-point count");
+
+// CheckRendererFitsThreads() resolves the renderer through ResolvedGLString()
+// and reads keys[1] with GetUint32 regardless of the names; an entry naming
+// any other pair would be read and repaired wrongly with no diagnostic.
+constexpr bool EveryRendererFitsThreadsEntryUsesTheRendererThreadsPair() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kRendererFitsThreads &&
+        (inv.keys[0] != keys::kWebGlRenderer ||
+         inv.keys[1] != keys::kNavigatorHardwareConcurrency)) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(EveryRendererFitsThreadsEntryUsesTheRendererThreadsPair(),
+              "a kRendererFitsThreads entry must name {webGl:renderer, "
+              "navigator.hardwareConcurrency}: CheckRendererFitsThreads() "
+              "resolves the renderer and reads the thread count itself");
 
 }  // namespace camoucfg::invariants
 

@@ -1,0 +1,191 @@
+{
+  "read_utc": "2026-10-24",
+  "source": "Intel ARK SKU pages (intel.com) that list the exact Graphics Device ID; max_threads is the largest Total Threads of any SKU listing that id",
+  "note": "Platform classes come from the kernel pciids.h; caps from ARK SKU pages listing the exact Graphics Device ID. About 12 Coffee Lake SKUs stayed unidentified because ARK's listing is truncated at 32 KB (only the 0x3E91 cap could move). 11 rows were read once through a summarising fetch; the other sourced rows were read twice. 0x5921 is unsourced: no ARK page lists it, so it is never drawn.",
+  "rows": [
+    {
+      "device_id": "0x5917",
+      "max_threads": 8,
+      "cpu": "Core i7-8550U (also i7-8650U, i5-8250U, i5-8350U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/122589/intel-core-i78550u-processor-8m-cache-up-to-4-00-ghz/specifications.html",
+      "note": "only Kaby Lake R SKUs list 0x5917"
+    },
+    {
+      "device_id": "0x3EA0",
+      "max_threads": 8,
+      "cpu": "Core i7-8665U (also i7-8565U, i5-8365U, i5-8265U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/193563/intel-core-i78665u-processor-8m-cache-up-to-4-80-ghz/specifications.html",
+      "note": "none of the enumerated Comet Lake or Coffee Lake pages lists 0x3EA0"
+    },
+    {
+      "device_id": "0x9B41",
+      "max_threads": 8,
+      "cpu": "Core i7-10610U (also i7-10510U, i5-10310U, i5-10210U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/201896/intel-core-i710610u-processor-8m-cache-up-to-4-90-ghz/specifications.html",
+      "note": "pages list several ids, e.g. i7-10610U '0x9B41,0x9BCC'; the 12-thread U parts list 0x9BCA/0x9BCC, not 0x9B41"
+    },
+    {
+      "device_id": "0x5916",
+      "max_threads": 4,
+      "cpu": "Core i7-7600U (also i7-7500U, i5-7200U, i3-7100U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/97466/intel-core-i77600u-processor-4m-cache-up-to-3-90-ghz/specifications.html",
+      "note": ""
+    },
+    {
+      "device_id": "0x3E9B",
+      "max_threads": 16,
+      "cpu": "Core i9-9980HK (also i9-9880H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/192990/intel-core-i99980hk-processor-16m-cache-up-to-5-00-ghz/specifications.html",
+      "note": "Xeon E-2186M/E-2176M (P630) also list 0x3E9B, 12 threads"
+    },
+    {
+      "device_id": "0x9BC4",
+      "max_threads": 16,
+      "cpu": "Core i9-10980HK (also i9-10885H, i7-10875H, i7-10870H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/201838/intel-core-i910980hk-processor-16m-cache-up-to-5-30-ghz/specifications.html",
+      "note": "ARK GPU name is 'UHD Graphics for 10th Gen'; Xeon W-10885M lists 0x9BF6"
+    },
+    {
+      "device_id": "0x5912",
+      "max_threads": 8,
+      "cpu": "Core i7-7700K (also i7-7700, i7-7700T)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/97129/intel-core-i77700k-processor-8m-cache-up-to-4-50-ghz/specifications.html",
+      "note": ""
+    },
+    {
+      "device_id": "0x9BC8",
+      "max_threads": 12,
+      "cpu": "Core i5-10600 (also i5-10505, i5-10500, i5-10400)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/199273/intel-core-i510600-processor-12m-cache-up-to-4-80-ghz/specifications.html",
+      "note": "all 16/20-thread CML-S parts and i5-10600K list 0x9BC5"
+    },
+    {
+      "device_id": "0x591B",
+      "max_threads": 8,
+      "cpu": "Core i7-7920HQ (also i7-7820HK, i7-7820HQ, i7-7700HQ)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/97462/intel-core-i77920hq-processor-8m-cache-up-to-4-10-ghz/specifications.html",
+      "note": "Kaby Lake G (8 threads, HD 630) pages show no device id; cap unchanged either way"
+    },
+    {
+      "device_id": "0x9BC5",
+      "max_threads": 20,
+      "cpu": "Core i9-10900K (also i9-10900, i9-10850K)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/199332/intel-core-i910900k-processor-20m-cache-up-to-5-30-ghz/specifications.html",
+      "note": ""
+    },
+    {
+      "device_id": "0x3E92",
+      "max_threads": 12,
+      "cpu": "Core i7-8700K (also i7-8086K, i7-8700)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/126684/intel-core-i78700k-processor-12m-cache-up-to-4-70-ghz/specifications.html",
+      "note": "9th-gen 8/16-thread desktop parts list 0x3E98"
+    },
+    {
+      "device_id": "0x3E91",
+      "max_threads": 4,
+      "cpu": "Core i3-9350K (also i3-8350K, i3-9100, Pentium Gold G5600T)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/186606/intel-core-i39350k-processor-8m-cache-up-to-4-60-ghz/specifications.html",
+      "note": "26 CFL SKUs not on the ARK listing text; Wikipedia names 14 of them, all 4 threads or fewer; about 12 unidentified, so this cap is the one row the gap could move"
+    },
+    {
+      "device_id": "0x5921",
+      "max_threads": null,
+      "cpu": "",
+      "method": "none",
+      "source_url": "",
+      "note": "no ARK page in the Kaby Lake, Kaby Lake R, Kaby Lake G, Amber Lake Y, Coffee Lake, Whiskey Lake or Comet Lake sweeps lists 0x5921"
+    },
+    {
+      "device_id": "0x3EA1",
+      "max_threads": 8,
+      "cpu": "Core i5-8265U",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/149088/intel-core-i58265u-processor-6m-cache-up-to-3-90-ghz/specifications.html",
+      "note": "i5-8265U page lists '3EA0, 3EA1' (re-read twice). SKUs listing only 0x3EA1 cap at 4: Pentium Gold 5405U https://www.intel.com/content/www/us/en/products/sku/189310/intel-pentium-gold-5405u-processor-2m-cache-2-30-ghz/specifications.html"
+    },
+    {
+      "device_id": "0x3E98",
+      "max_threads": 16,
+      "cpu": "Core i9-9900K (also i9-9900KS, i9-9900, i9-9900T)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/186605/intel-core-i99900k-processor-16m-cache-up-to-5-00-ghz/specifications.html",
+      "note": ""
+    },
+    {
+      "device_id": "0x9BCA",
+      "max_threads": 12,
+      "cpu": "Core i7-10810U (also i7-10710U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/201888/intel-core-i710810u-processor-12m-cache-up-to-4-90-ghz/specifications.html",
+      "note": "page lists '0x9BCA,0x9BCC'"
+    },
+    {
+      "device_id": "0x591C",
+      "max_threads": 4,
+      "cpu": "Core i7-8500Y (also i5-8200Y, i3-10100Y)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/185281/intel-core-i78500y-processor-4m-cache-up-to-4-20-ghz/specifications.html",
+      "note": "8-thread Amber Lake Y parts list 0x87CA"
+    },
+    {
+      "device_id": "0x9BCC",
+      "max_threads": 12,
+      "cpu": "Core i7-10810U (also i7-10710U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/201888/intel-core-i710810u-processor-12m-cache-up-to-4-90-ghz/specifications.html",
+      "note": "page lists '0x9BCA,0x9BCC'"
+    },
+    {
+      "device_id": "0x9BA4",
+      "max_threads": 8,
+      "cpu": "Core i5-10200H",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/208016/intel-core-i510200h-processor-8m-cache-up-to-4-10-ghz/specifications.html",
+      "note": "only SKU listing 0x9BA4; ARK GPU name 'UHD Graphics for 10th Gen'"
+    },
+    {
+      "device_id": "0x591E",
+      "max_threads": 4,
+      "cpu": "Core i7-7Y75 (also i5-7Y57, m3-7Y30, Pentium Gold 4415Y)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/95441/intel-core-i77y75-processor-4m-cache-up-to-3-60-ghz/specifications.html",
+      "note": ""
+    },
+    {
+      "device_id": "0x9B21",
+      "max_threads": 8,
+      "cpu": "Core i5-10210U",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/195436/intel-core-i510210u-processor-6m-cache-up-to-4-20-ghz/specifications.html",
+      "note": "i5-10210U page lists '0x9B21/0x9B41/0x9BAC/0x9BCA/0x9BCC' (re-read twice). SKUs listing only 0x9B21 cap at 4: Pentium Gold 6405U https://www.intel.com/content/www/us/en/products/sku/197888/intel-pentium-gold-6405u-processor-2m-cache-2-40-ghz/specifications.html"
+    },
+    {
+      "device_id": "0x5902",
+      "max_threads": 4,
+      "cpu": "Pentium G4560 (also G4560T; i3-7101TE and i3-7101E list 0x5902 with GPU name HD 630)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/97143/intel-pentium-processor-g4560-3m-cache-3-50-ghz/specifications.html",
+      "note": ""
+    },
+    {
+      "device_id": "0x5906",
+      "max_threads": 4,
+      "cpu": "Pentium Gold 4415U (also Pentium Gold 4417U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/96508/intel-pentium-gold-processor-4415u-2m-cache-2-30-ghz/specifications.html",
+      "note": ""
+    }
+  ]
+}

@@ -243,3 +243,15 @@ def test_commit_msg_hook_passes_in_a_linked_worktree(repo, tmp_path):
     git(wt, "config", "core.hooksPath", str(HOOKS))
     assert try_commit(wt, "b.md", "clean\n").returncode == 0
     assert try_commit(wt, "c.md", "clean\n", msg="x\n\nClaude-Session: https://claude.ai/code/session-x").returncode != 0
+
+
+def test_layer3_site_term_is_exempt_in_a_binary_but_refused_in_text():
+    # Site host names occur in Chromium's own binaries (two of the twelve in the stock Chrome 156 framework),
+    # so the placeholder is GEO: skipped in binaries, strict in text.
+    terms = {"<layer3-site>": ["sitehost.example"], "<host-name>": ["boxname"]}
+    binary = b"\0sitehost.example\0"
+    assert cp.byte_hits(binary, terms, "chrome.dll") == []
+    assert cp.byte_hits(binary + b"boxname", terms, "chrome.dll") == ["<host-name>"]
+    assert cp.byte_hits(b"see sitehost.example", terms, "notes.md") == ["<layer3-site>"]
+    assert cp.byte_hits(b"see sitehost.example", terms, "plain.bin") == ["<layer3-site>"]  # no NUL: text
+    assert cp.identity_term_count(terms) == 1

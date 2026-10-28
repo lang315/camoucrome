@@ -121,6 +121,10 @@ func main() {
 	// windows-sandbox-env patch lets it through, and --no-sandbox hides that.
 	sandbox := flag.Bool("sandbox", false, "omit --no-sandbox")
 	scenario := flag.String("scenario", "", "verify_human_click_clients row: load --url, act, print the page log")
+	proxy := flag.String("proxy", "", "proxy server URL (verify_sp6b_driver's proxy mode)")
+	proxyBypass := flag.String("proxy-bypass", "", "proxy bypass list")
+	proxyUser := flag.String("proxy-user", "", "proxy username")
+	proxyPass := flag.String("proxy-pass", "", "proxy password")
 	flag.Parse()
 	// A generated identity is ~37 KB (Windows) to ~140 KB (macOS): past
 	// Windows' 32767-char command line and Linux's 128 KiB single argument.
@@ -142,6 +146,9 @@ func main() {
 	o := camoucrome.Options{ExecutablePath: *exe, Headless: &headless, Strict: *strict}
 	if !*sandbox {
 		o.ExtraArgs = []string{"--no-sandbox"}
+	}
+	if *proxy != "" {
+		o.Proxy = &camoucrome.Proxy{Server: *proxy, Bypass: *proxyBypass, Username: *proxyUser, Password: *proxyPass}
 	}
 	if *config != "" {
 		o.Config = *config

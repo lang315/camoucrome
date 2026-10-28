@@ -17,7 +17,13 @@ def per_instance_config(rng=None):
     caller's explicit keys over the result; pass it as launch(config=...)
     beside launch(preset=...)."""
     rng = rng or random.SystemRandom()
-    return {k: rng.randint(1, 0xFFFFFFFF) for k in SEED_KEYS}
+    seeds = {k: rng.randint(1, 0xFFFFFFFF) for k in SEED_KEYS if k != "humanize:seed"}
+    try:  # own generator: a seeded rng stays where it was, so later seeded keys (gen.from_pool) do not move
+        own = random.Random(repr(rng.getstate()) + "humanize:seed")
+    except NotImplementedError:  # SystemRandom has no state to keep
+        own = rng
+    seeds["humanize:seed"] = own.randint(1, 0xFFFFFFFF)
+    return seeds
 
 
 def profile_seeds(user_data_dir, rng=None):

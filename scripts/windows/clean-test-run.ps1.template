@@ -1,0 +1,32 @@
+# Runs inside Windows Sandbox. C:\in is read-only: the README blocks (install-N[-name].ps1,
+# quickstart.py) and assets\ (the release files the Mac staged). C:\out is writable.
+# Nothing here is improvised: it runs only README blocks. Each block runs in a CHILD powershell
+# under $ErrorActionPreference='Stop'; the parent stays on Continue, because Stop plus 2>&1 in one
+# process throws on any native stderr text (pip notices). The child's exit code is the block result.
+$T = 'C:\out\transcript.txt'
+$sw = [Diagnostics.Stopwatch]::StartNew()
+function Log($s) { $s | Out-File -FilePath $T -Append -Encoding ascii }
+function Block($name, $p) {
+  Log "=== BEGIN $name"
+  $cmd = "`$ErrorActionPreference='Stop'; . '$p'; if (`$LASTEXITCODE) { exit `$LASTEXITCODE }"
+  $o = powershell -NoProfile -ExecutionPolicy Bypass -Command $cmd 2>&1 | Out-String
+  $rc = $LASTEXITCODE
+  Log $o.TrimEnd()
+  Log "=== END $name rc=$rc"
+}
+function RefreshPath { $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') }
+New-Item -ItemType Directory -Force -Path 'C:\work' | Out-Null
+Set-Location 'C:\work'
+$ProgressPreference = 'SilentlyContinue'
+if (Test-Path 'C:\in\assets') { Copy-Item 'C:\in\assets\*' 'C:\work' }  # the staged download
+
+$blocks = Get-ChildItem 'C:\in' -Filter 'install-*.ps1' | Sort-Object { [int](($_.BaseName -split '-')[1]) }
+foreach ($f in $blocks) {
+  Block $f.BaseName $f.FullName
+  RefreshPath
+}
+
+# README Quickstart: save the block as quickstart.py and run it as the README says.
+Set-Content 'C:\work\quickstart-run.ps1' "Copy-Item 'C:\in\quickstart.py' .`n.venv\Scripts\python quickstart.py"
+Block 'quickstart' 'C:\work\quickstart-run.ps1'
+Log "RUN_DONE elapsed=$([int]$sw.Elapsed.TotalSeconds)"

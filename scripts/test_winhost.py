@@ -110,3 +110,13 @@ def test_cdp_eval_timeout_reaches_powershell(monkeypatch):
     winhost.cdp_eval("<p>")
     winhost.cdp_eval("<p>", timeout=660)
     assert seen == [180, 660]
+
+
+def test_cdp_eval_launches_another_exe_with_literal_env(captured):
+    winhost.cdp_eval("<p>", exe=r"D:\x\out\Release\chrome.exe", env={"CAMOU_CONFIG": ARG})
+    ps = captured[-1]
+    assert r"-FilePath 'D:\x\out\Release\chrome.exe'" in ps
+    assert """$env:CAMOU_CONFIG = '--x=$env:USERNAME "q" it''s'""" in ps
+    assert ps.index("$env:CAMOU_CONFIG =") < ps.index("Start-Process")
+    winhost.cdp_eval("<p>")
+    assert f"-FilePath '{winhost.CHROME}'" in captured[-1] and "$env:CAMOU_CONFIG" not in captured[-1]

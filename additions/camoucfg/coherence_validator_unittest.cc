@@ -5,6 +5,7 @@
 #include "components/camoucfg/coherence_validator.h"
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <set>
@@ -16,6 +17,7 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/path_service.h"
+#include "components/camoucfg/gen9_thread_caps.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config.h"
@@ -126,6 +128,10 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
       EXPECT_EQ(header_entry->relation,
                 invariants::Relation::kGlIdentitySetTogether)
           << *id;
+    } else if (*relation == "renderer-fits-threads") {
+      EXPECT_EQ(header_entry->relation,
+                invariants::Relation::kRendererFitsThreads)
+          << *id;
     } else if (*relation == "touch-fits-os") {
       EXPECT_EQ(header_entry->relation, invariants::Relation::kTouchFitsOs)
           << *id;
@@ -193,7 +199,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 15> kMutations = {{
+constexpr std::array<Mutation, 16> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -257,6 +263,13 @@ constexpr std::array<Mutation, 15> kMutations = {{
      "fonts:list"},
     {"fonts-alias-local-requires-list", R"({"fonts:aliasLocal":{"SegoeUI":"Selawik"}})",
      "fonts:list"},
+    // 0x5917 (UHD 620) ships only on CPUs with at most 8 threads; 16 is
+    // beyond it. Both contexts and vendors set so the agreement, pairing and
+    // set-together entries stay quiet; no ua:osInfo, so the backend entry has
+    // no OS to compare against.
+    {"gpu-renderer-fits-threads",
+     R"json({"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":16})json",
+     "navigator.hardwareConcurrency"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {
@@ -486,6 +499,52 @@ TEST(CapabilityIdentityTest, NoCapabilityNeverLeaks) {
   EXPECT_FALSE(CapabilityLeaksIdentity(/*capability_configured=*/false,
                                        /*renderer_resolves=*/false,
                                        /*vendor_resolves=*/false));
+}
+
+// --- Pure helpers of gpu-renderer-fits-threads (no latched config) ---
+
+TEST(RendererFitsThreadsTest, ParsesTheAngleDeviceId) {
+  EXPECT_EQ(ParseAngleDeviceId("ANGLE (Intel, Intel(R) UHD Graphics 620 "
+                               "(0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+            std::optional<uint32_t>(0x5917u));
+  EXPECT_EQ(ParseAngleDeviceId("x (0x3e91) y"), std::optional<uint32_t>(0x3E91u));
+  EXPECT_EQ(ParseAngleDeviceId("x (0x3E9B) y"), std::optional<uint32_t>(0x3E9Bu));
+}
+
+TEST(RendererFitsThreadsTest, MalformedDeviceIdParsesToNothing) {
+  EXPECT_FALSE(ParseAngleDeviceId(""));
+  EXPECT_FALSE(ParseAngleDeviceId("ANGLE (Apple, ANGLE Metal Renderer)"));
+  EXPECT_FALSE(ParseAngleDeviceId("x (0x) y"));
+  EXPECT_FALSE(ParseAngleDeviceId("x (0xZZ) y"));
+  EXPECT_FALSE(ParseAngleDeviceId("x (0x5917"));
+  EXPECT_FALSE(ParseAngleDeviceId("x (0x5917 y)"));
+  EXPECT_FALSE(ParseAngleDeviceId("x (0x1FFFFFFFF) y"));
+}
+
+TEST(RendererFitsThreadsTest, TheLastGroupWins) {
+  EXPECT_EQ(ParseAngleDeviceId("(0x1111) mid (0x00002222) end"),
+            std::optional<uint32_t>(0x2222u));
+}
+
+TEST(RendererFitsThreadsTest, CapLookup) {
+  EXPECT_EQ(Gen9ThreadCapFor(0x5917), std::optional<uint32_t>(8u));
+  EXPECT_EQ(Gen9ThreadCapFor(0x3E91), std::optional<uint32_t>(4u));
+  EXPECT_FALSE(Gen9ThreadCapFor(0x5921));  // unsourced: no cap
+  EXPECT_FALSE(Gen9ThreadCapFor(0xFFFF));
+}
+
+TEST(RendererFitsThreadsTest, CapTableIsSortedAndUnique) {
+  for (size_t i = 1; i < kGen9ThreadCaps.size(); ++i) {
+    EXPECT_LT(kGen9ThreadCaps[i - 1].device_id, kGen9ThreadCaps[i].device_id);
+  }
+}
+
+TEST(RendererFitsThreadsTest, OnlyMoreThreadsThanTheCapViolate) {
+  EXPECT_FALSE(ThreadsExceedCap(8, 8));
+  EXPECT_TRUE(ThreadsExceedCap(8, 9));
+  EXPECT_FALSE(ThreadsExceedCap(8, 4));
+  EXPECT_FALSE(ThreadsExceedCap(std::nullopt, 64));
+  EXPECT_FALSE(ThreadsExceedCap(8, std::nullopt));
 }
 
 }  // namespace
