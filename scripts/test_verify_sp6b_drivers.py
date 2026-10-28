@@ -73,5 +73,34 @@ class RedVerdictTest(unittest.TestCase):
             self.assertLessEqual(len(opts), 1)
 
 
+class JudgeRowTest(unittest.TestCase):
+    """The per-row loop body of main(), run with a fake result/log/base."""
+
+    def judge(self, label, sends, enables):
+        d = rows()[label]
+        log = '"method":"X"\n' * sends + '"method":"Runtime.enable"\n' * enables
+        rep = {"windowKeys": [], "webdriver": False, "initScript": "number", "ownNames": 1,
+               "timesMs": [1.0], "ua": "ua"}
+        base = {"windowKeys": [], "ownNames": 0, "timesMs": [1.0]}
+        return v.judge_row(d[0], d[1], d[2], d[3] if len(d) > 3 else {},
+                           {"report": rep, "argv": []}, log, base)
+
+    def test_old_three_tuple_row(self):
+        ok, lines = self.judge("go-stock", 5, 0)
+        self.assertTrue(ok)  # RED: C1 fails on the 5-send log
+
+    def test_rod_row_opts_reach_check(self):
+        ok, lines = self.judge("go-rod-own-launcher", 12, 0)
+        self.assertTrue(any("ok   C1" in l for l in lines))
+
+    def test_chromedp_row_zero_runtime_enable_fails_with_note(self):
+        ok, lines = self.judge("go-chromedp-control", 30, 0)
+        self.assertFalse(ok)
+        self.assertTrue(any("control measured nothing" in l for l in lines))
+
+    def test_chromedp_row_with_runtime_enable_passes(self):
+        self.assertTrue(self.judge("go-chromedp-control", 30, 1)[0])
+
+
 if __name__ == "__main__":
     unittest.main()

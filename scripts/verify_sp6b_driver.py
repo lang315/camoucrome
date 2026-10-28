@@ -288,10 +288,24 @@ def verdict_of(expected, rows, log, opts):
     if opts.get("red_requires_runtime_enable"):
         enables = log.count('"method":"Runtime.enable"')
         if enables == 0:
+            sends = log.count('"method":"')
             return False, ("control measured nothing: no Runtime.enable in the log "
-                           f"(sends={log.count('\"method\":\"')})")
+                           f"(sends={sends})")
         return True, ""
     return not c1, ""
+
+
+def judge_row(label, expected, cmd, opts, result, log, base):
+    """The per-driver body of main(): (ok, printable lines). Only min_methods
+    reaches check(); the other opts belong to verdict_of()."""
+    rows = check(label, result, log, base, min_methods=opts.get("min_methods", MIN_METHODS))
+    ok, note = verdict_of(expected, rows, log, opts)
+    lines = [f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})"]
+    if note:
+        lines.append(f"      {note}")
+    for name, (r, n) in rows.items():
+        lines.append(f"      {'ok  ' if r else 'FAIL'} {name}: {n}")
+    return ok, lines
 
 
 def main():
@@ -312,14 +326,9 @@ def main():
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False
             continue
-        rows = check(label, result, log, base, **(opts[0] if opts else {}))
-        ok, note = verdict_of(expected, rows, log, opts[0] if opts else {})
+        ok, lines = judge_row(label, expected, cmd, opts[0] if opts else {}, result, log, base)
         verdict &= ok
-        print(f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})")
-        if note:
-            print(f"      {note}")
-        for name, (r, note) in rows.items():
-            print(f"      {'ok  ' if r else 'FAIL'} {name}: {note}")
+        print("\n".join(lines))
     srv.shutdown()
     print("ALL_PASS" if verdict else "FAIL")
     sys.exit(0 if verdict else 1)
