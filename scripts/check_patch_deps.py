@@ -24,9 +24,16 @@ EXC_FILE = ROOT / "settings" / "checkdeps_exceptions.json"
 ADDITIONS_MAP = {"camoucfg": "components/camoucfg"}
 
 
+# checkdeps reads the includes of source files, so only those widen the set: a BUILD.gn or DEPS hunk
+# in components/ or third_party/blink/renderer/ would otherwise pull in a whole subtree.
+SOURCE_EXT = (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".m", ".mm", ".inc")
+
+
 def dirs_from_patch(text):
     out = set()
     for m in re.finditer(r"^\+\+\+ b/(\S+)", text, re.M):
+        if not m.group(1).endswith(SOURCE_EXT):
+            continue
         d = os.path.dirname(m.group(1))
         if d:  # a root-level file would mean checking the whole tree
             out.add(d)
@@ -45,7 +52,7 @@ def change_set_dirs():
             dirs |= dirs_from_patch((ROOT / "patches" / line.strip()).read_text())
     add = ROOT / "additions"
     for f in add.rglob("*"):
-        if f.is_file():
+        if f.is_file() and f.name.endswith(SOURCE_EXT):
             rel = f.relative_to(add).parent.as_posix()
             top, _, rest = rel.partition("/")
             rel = ADDITIONS_MAP.get(top, top) + ("/" + rest if rest else "")

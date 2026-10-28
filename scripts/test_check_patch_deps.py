@@ -90,3 +90,12 @@ def test_exceptions_file():
     for x in e:
         assert all(x.get(k) for k in ("file", "include", "issue", "why"))
         assert c.re.fullmatch(r"#\d+", x["issue"])
+
+
+def test_build_files_do_not_widen_the_directory_set():
+    # checkdeps reads includes of source files. A BUILD.gn or DEPS hunk in components/ or
+    # third_party/blink/renderer/ would otherwise pull in a whole subtree.
+    text = ("+++ b/components/BUILD.gn\n+++ b/third_party/blink/renderer/DEPS\n"
+            "+++ b/third_party/blink/renderer/x/y.gni\n+++ b/third_party/blink/renderer/modules/font_access/font_access.cc\n"
+            "+++ b/chrome/browser/foo.mm\n+++ b/net/bar.h\n")
+    assert c.dirs_from_patch(text) == {"third_party/blink/renderer/modules/font_access", "chrome/browser", "net"}
