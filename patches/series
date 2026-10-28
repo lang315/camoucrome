@@ -38,3 +38,4 @@ sp2c-humanized-wheel.patch
 block-external-extensions.patch
 sp3b-timing-real-query.patch
 webrtc-proxy-policy.patch
+observe-behaviour.patch

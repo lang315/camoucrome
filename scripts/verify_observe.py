@@ -75,7 +75,12 @@ TIMING = """<!doctype html><canvas id=c width=64 height=64></canvas><script>
   const t1 = performance.now(); const c = document.getElementById('c');
   for (let i = 0; i < 300; i++) c.toDataURL();
   const t2 = performance.now();
-  await fetch('/done', {method: 'POST', body: JSON.stringify({ua_200k_ms: t1 - t0, todataurl_300_ms: t2 - t1})});
+  const el = document.createElement('div'), f = () => {};
+  const d0 = Date.now(); for (let i = 0; i < 100000; i++) el.addEventListener('probe', f);
+  const d1 = Date.now(); for (let i = 0; i < 200000; i++) performance.now();
+  const d2 = Date.now();
+  await fetch('/done', {method: 'POST', body: JSON.stringify({ua_200k_ms: t1 - t0, todataurl_300_ms: t2 - t1,
+    addeventlistener_100k_ms: d1 - d0, performance_now_200k_ms: d2 - d1})});
 })();
 </script>"""
 
@@ -89,6 +94,75 @@ HOT = """<!doctype html><canvas id=c width=8 height=8></canvas><script>
   await fetch('/done', {method: 'POST', body: '{}'});
 })();
 </script>"""
+
+
+# Behaviour signals (docs/superpowers/specs/2026-10-28-observer-behaviour-signals-design.md).
+# The page itself uses no timer, rAF or performance.now except the counted calls below: it waits on
+# promises and fetch only, so every count is exact.
+BEHAVE = """<!doctype html><title>behaviour probe</title><div id=inl onclick="1"></div><div id=el></div>
+<script>
+(async () => {
+  const K = %(k)d, f = () => {};
+  for (let i = 0; i < K; i++) window.addEventListener('wheel', f, {passive: false});
+  window.addEventListener('wheel', f, {passive: true});
+  for (let i = 0; i < 2; i++) { document.addEventListener('keydown', f, true); document.addEventListener('visibilitychange', f); }
+  document.getElementById('el').addEventListener('pointermove', f, {once: true});
+  window.ondevicemotion = f; window.ondeviceorientation = f;
+  window.addEventListener('probe-custom-type-xyz', f);
+  for (let i = 0; i < K; i++) {
+    performance.now(); requestAnimationFrame(f); setTimeout(f, 0);
+    const id = setInterval(() => clearInterval(id), 50);
+    document.hidden; document.visibilityState; document.webkitHidden; document.hasFocus();
+    navigator.clipboard.writeText('x').catch(f); navigator.clipboard.readText().catch(f);
+    new DeviceOrientationEvent('deviceorientation', {alpha: 1}).alpha;
+    new DeviceMotionEvent('devicemotion', {acceleration: {x: 1}}).acceleration;
+    window.removeEventListener('wheel', f); performance.mark('m'); document.title;
+    clearTimeout(0); cancelAnimationFrame(0);
+  }
+  new ClipboardItem({'text/plain': new Blob(['x'], {type: 'text/plain'})});
+  document.execCommand('copy');
+  try { new Accelerometer(); } catch (e) {}
+  const w = new Worker('/bworker.js');
+  await new Promise(r => { w.onmessage = r; });
+  const fr = document.createElement('iframe');
+  fr.src = 'http://localhost:%(port)d/bframe.html';
+  const framed = new Promise(r => { onmessage = e => { if (e.data === 'frame-done') r(); }; });
+  document.body.appendChild(fr);
+  await framed;
+  await fetch('/done', {method: 'POST', body: '{}'});
+})();
+</script>"""
+BWORKER = ("const f = () => {}; self.addEventListener('message', f); self.addEventListener('message', f);"
+           "for (let i = 0; i < %(k)d; i++) { performance.now(); setTimeout(f, 0); } postMessage('w');")
+BFRAME = ("<!doctype html><script>addEventListener('touchstart', () => {});"
+          "parent.postMessage('frame-done', '*');</script>")
+
+
+# Page invisibility (conventions rule 2): the same page on the same binary with the category on and
+# off must report identical values, and the hooked accessors must stay [native code].
+INV = """<!doctype html><script>
+(async () => {
+  const sig = (g) => {
+    const out = {};
+    const t = (o, k) => { try { return Function.prototype.toString.call(o[k]); } catch (e) { return 'ERR ' + e.name; } };
+    out.now = t(g.Performance.prototype, 'now');
+    out.ael = t(g.EventTarget.prototype, 'addEventListener');
+    out.raf = typeof g.requestAnimationFrame === 'function' ? Function.prototype.toString.call(g.requestAnimationFrame) : 'n/a';
+    out.st = Function.prototype.toString.call(g.setTimeout);
+    out.keys = Object.keys(g).join(',');
+    out.nowType = typeof performance.now();
+    return out;
+  };
+  const res = {main: sig(window)};
+  const w = new Worker('/iworker.js');
+  res.worker = await new Promise(r => { w.onmessage = e => r(e.data); });
+  await fetch('/done', {method: 'POST', body: JSON.stringify(res)});
+})();
+</script>"""
+IWORKER = """const t = (o, k) => { try { return Function.prototype.toString.call(o[k]); } catch (e) { return 'ERR ' + e.name; } };
+postMessage({now: t(Performance.prototype, 'now'), ael: t(EventTarget.prototype, 'addEventListener'),
+  raf: typeof self.requestAnimationFrame === 'function' ? Function.prototype.toString.call(self.requestAnimationFrame) : 'n/a',
+  st: Function.prototype.toString.call(self.setTimeout), keys: Object.keys(self).join(','), nowType: typeof performance.now()});"""
 
 
 def serve(k):
@@ -109,6 +183,11 @@ def serve(k):
             pages = {"/probe.html": (PROBE % {"k": k, "port": port}, "text/html"),
                      "/timing.html": (TIMING, "text/html"),
                      "/hot.html": (HOT % {"n": HOT_N}, "text/html"),
+                     "/behave.html": (BEHAVE % {"k": k, "port": port}, "text/html"),
+                     "/bworker.js": (BWORKER % {"k": k}, "application/javascript"),
+                     "/bframe.html": (BFRAME, "text/html"),
+                     "/inv.html": (INV, "text/html"),
+                     "/iworker.js": (IWORKER, "application/javascript"),
                      "/worker.js": (WORKER % {"k": k}, "application/javascript"),
                      "/ext.js": (EXT % {"k": k}, "application/javascript"),
                      "/frame.html": (FRAME % {"k": k}, "text/html")}
@@ -206,6 +285,92 @@ def intl_rows(ic, site, scripts, k, bump):
     return rows
 
 
+def behave_rows(events, main_origin, frame_origin, top, k, bump):
+    """Exact counts of the behaviour-signal probe. Listener rows are keyed by (type, target, opts)
+    and, where it matters, the registering origin and site; the rest by API name."""
+    L = [(e["args"].get("type"), e["args"].get("target"), e["args"].get("opts", ""),
+          e["args"].get("origin"), e["args"].get("site"))
+         for e in events if e["name"] == observe_report.LISTENER]
+    c = tally(events)
+
+    def listeners(typ, target, opts, origin=main_origin, site=top):
+        return sum(1 for (t_, tg, o, og, s) in L if (t_, tg, o, og, s) == (typ, target, opts, origin, site))
+
+    script = f"{main_origin}/behave.html"
+
+    def api(*names, origin=main_origin, site=top, script=None):
+        return sum(n for (nm, og, s, sc), n in c.items() if nm in names and og == origin and s == site
+                   and (script is None or sc == script))
+
+    rows = []
+
+    def row(label, got, want):
+        rows.append((got == want + bump, f"{label}: {got} (want {want + bump})"))
+
+    row("L1 addEventListener wheel Window (passive:false) x K", listeners("wheel", "DOMWindow", ""), k)
+    row("L1 addEventListener wheel Window passive", listeners("wheel", "DOMWindow", "passive"), 1)
+    row("L2 keydown Document capture x2", listeners("keydown", "Document", "capture"), 2)
+    row("L2 visibilitychange Document x2", listeners("visibilitychange", "Document", ""), 2)
+    row("L3 pointermove HTMLDivElement once", listeners("pointermove", "Element", "once"), 1)
+    row("L4 ondevicemotion setter", listeners("devicemotion", "DOMWindow", ""), 1)
+    row("L4 ondeviceorientation setter", listeners("deviceorientation", "DOMWindow", ""), 1)
+    row("L5 inline onclick attribute", listeners("click", "Element", ""), 1)
+    row("L6 worker message x2 (origin of the creator, no site)",
+        listeners("message", "DedicatedWorkerGlobalScope", "", site=""), 2)
+    row("L7 cross-site frame touchstart (passive by default on a window)",
+        listeners("touchstart", "DOMWindow", "passive", origin=frame_origin), 1)
+    row("L8 custom type recorded in the raw trace", listeners("probe-custom-type-xyz", "DOMWindow", ""), 1)
+    md = observe_report.render(observe_report.events_of(events), [], [])
+    rows.append(("probe-custom-type-xyz" not in md, "L8 report never prints a type outside the known set"))
+    row("T1 Performance.now page x K", api("Performance.now"), k)
+    row("T1 Performance.now worker x K", api("Performance.now", site=""), k)
+    row("T2 requestAnimationFrame x K", api("Window.requestAnimationFrame"), k)
+    # a mixin member is emitted under the host interface's name, or the mixin's: both are accepted
+    # and the label says which the generator produced
+    timers = ("Window.setTimeout", "WindowOrWorkerGlobalScope.setTimeout")
+    ivals = ("Window.setInterval", "WindowOrWorkerGlobalScope.setInterval")
+    wtimers = ("WorkerGlobalScope.setTimeout", "DedicatedWorkerGlobalScope.setTimeout",
+               "WindowOrWorkerGlobalScope.setTimeout")
+    row("T2 setTimeout page x K", api(*timers), k)
+    row("T2 setInterval page x K", api(*ivals), k)
+    row("T2 setTimeout worker x K", api(*wtimers, site=""), k)
+    for name in ("Document.hidden.get", "Document.visibilityState.get", "Document.webkitHidden.get",
+                 "Document.hasFocus"):
+        row(f"F1 {name} x K", api(name), k)
+    row("C1 Clipboard.writeText x K", api("Clipboard.writeText"), k)
+    row("C1 Clipboard.readText x K", api("Clipboard.readText"), k)
+    row("C1 ClipboardItem.constructor", api("ClipboardItem.constructor"), 1)
+    row("C1 Document.execCommand", api("Document.execCommand"), 1)
+    row("M1 DeviceOrientationEvent.constructor x K (page script)", api("DeviceOrientationEvent.constructor", script=script), k)
+    row("M1 DeviceOrientationEvent.alpha.get x K", api("DeviceOrientationEvent.alpha.get"), k)
+    row("M1 DeviceMotionEvent.constructor x K (page script)", api("DeviceMotionEvent.constructor", script=script), k)
+    # once ondevicemotion/ondeviceorientation exist, Blink constructs one event of each kind with no
+    # script on the stack: a tell that a page registered motion listeners
+    row("M1 DeviceOrientationEvent.constructor (no script, internal)", api("DeviceOrientationEvent.constructor", script=""), 1)
+    row("M1 DeviceMotionEvent.constructor (no script, internal)", api("DeviceMotionEvent.constructor", script=""), 1)
+    row("M1 DeviceMotionEvent.acceleration.get x K", api("DeviceMotionEvent.acceleration.get"), k)
+    row("M2 Accelerometer.constructor", api("Accelerometer.constructor"), 1)
+    for name in ("Performance.mark", "Document.title.get", "Window.clearTimeout",
+                 "Window.cancelAnimationFrame", "EventTarget.removeEventListener"):
+        row(f"N1 {name} (not allow-listed)", api(name), 0)
+    return rows
+
+
+def invisibility_rows(on, off):
+    """The hooked accessors stay native, and a page sees the same values with the category on and
+    off (same binary): the observer must not be observable from the page."""
+    rows = []
+    for scope in ("main", "worker"):
+        for key in ("now", "ael", "st"):
+            s = (on.get(scope) or {}).get(key, "")
+            rows.append(("[native code]" in s, f"{scope} {key}.toString() is native: {s[:60]!r}"))
+    rows.append((bool(on) and on == off, "page-visible signature identical, category on vs off "
+                 "(toString, Object.keys(global), worker parity)"))
+    rows.append(((on.get("main", {}).get("keys") == off.get("main", {}).get("keys")),
+                 "Object.keys(window) identical, category on vs off"))
+    return rows
+
+
 def blind_arm(events):
     """(ok, V8 entry slices): v8 traced without runtime_stats must report blind, and V8
     slices must be present, or the arm measured nothing."""
@@ -280,6 +445,24 @@ def main():
         hot_port = next((o.rsplit(":", 1)[1] for (_, o, _, _) in hc
                          if o and o.startswith("http://127.0.0.1:")), None)
         rows += hot_rows(hc, f"http://127.0.0.1:{hot_port}", top, HOT_N, bump)
+
+    # behaviour signals: a separate session, so its listener and timer events do not crowd the probe's
+    bev, bres, _ = run("behave.html", ON_FILTER)
+    if bev is None:
+        rows.append((red, f"behaviour arm: {bres}"))  # never an expected --red failure
+    else:
+        bobs = observe_report.events_of(bev)
+        bport = next((o.rsplit(":", 1)[1] for e in bobs for o in [e["args"].get("origin", "")]
+                      if o.startswith("http://127.0.0.1:")), None)
+        rows += behave_rows(bobs, f"http://127.0.0.1:{bport}", f"http://localhost:{bport}", top, K, bump)
+
+    # invisibility: the same page, category on and off
+    inv_on = run("inv.html", ON_FILTER)[1]
+    inv_off = run("inv.html", "blink,loading")[1]
+    if "error" in inv_on or "error" in inv_off:
+        rows.append((red, f"invisibility arm: {inv_on} / {inv_off}"))
+    else:
+        rows += [(ok and not red, text) for ok, text in invisibility_rows(inv_on, inv_off)]
 
     # off arm: a normal default set ("blink,loading") must not pull the category in
     off_events, off_res, _ = run("probe.html", "blink,loading")
