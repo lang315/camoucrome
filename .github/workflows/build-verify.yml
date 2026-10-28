@@ -49,6 +49,8 @@ jobs:
       - name: pre-flight checks
         run: |
           python3 scripts/check_additions_build.py
+          python3 scripts/check_lgpl_boundary.py
+          python3 scripts/gen_cursory_table.py --check
           python3 scripts/gen_keys.py --check
           python3 scripts/gen_fontconfig.py --check
           python3 scripts/check_patch_deps.py --src "$SRC"
@@ -74,7 +76,7 @@ jobs:
       - name: camoucfg unit suites
         run: |
           cd "$SRC"
-          F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
+          F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc components/camoucfg_lgpl/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
           # One run into a file: `| grep -q` would close the pipe early and, under
           # pipefail, fail the step on the test binary's SIGPIPE.
           rc=0; out/Default/components_unittests --gtest_filter="$F" > /tmp/camoucfg_ut.txt 2>&1 || rc=$?
@@ -86,10 +88,15 @@ jobs:
         run: |
           "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_check_patch_deps.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_observe_judge.py scripts/test_verify_observe.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
+          (cd client/go/rodclient && go test ./... 2>&1 | tail -2)
       - name: Go probe
         run: |
           # verify_sp6b_driver runs the Go client through this binary; a stale one would test an old client
           cd client/go && go build -o "$HOME/camoucrome-go/camoucrome-probe" ./cmd/camoucrome-probe
+      - name: rodclient probe
+        run: |
+          # the go-rodclient row of verify_sp6b_driver runs this binary; a stale one would test an old client
+          cd client/go/rodclient && go build -o "$HOME/camoucrome-go/camoucrome-probe-rodclient" ./cmd/camoucrome-probe-rodclient
       - name: browser verifies
         run: |
           cd "$VERIFY"
@@ -105,10 +112,11 @@ jobs:
           # residues, the cases the launch window rounding got wrong (PR #34); 2 never reached them. About 3 s per config.
           CAMOU_GEN_N=4 run verify_sp6b_generator.py
           run verify_crash_dumps.py
-          # verify_sp6b_driver (about 25 s, six drivers) needs on the runner, all under $HOME and present on the box:
+          # verify_sp6b_driver (about 25 s, seven drivers) needs on the runner, all under $HOME and present on the box:
           #   venv/ (patchright) and venv-stock/ (playwright) in camoucrome-verify, camoucrome-driver/ and
           #   camoucrome-driver-stock/ (the patchright-core and playwright-core 1.62.1 packages plus a node), and the Go probe
-          #   at camoucrome-go/camoucrome-probe, rebuilt from client/go by the step "Go probe" so it never lags the client.
+          #   at camoucrome-go/camoucrome-probe, rebuilt from client/go by the step "Go probe" so it never lags the client; the rodclient probe at
+          #   camoucrome-go/camoucrome-probe-rodclient, rebuilt by the step "rodclient probe".
           run verify_sp6b_driver.py
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)
           if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi

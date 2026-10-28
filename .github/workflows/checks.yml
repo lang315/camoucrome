@@ -23,6 +23,10 @@ jobs:
         with: { go-version: "1.22" }
       - name: additions are all in BUILD.gn
         run: python3 scripts/check_additions_build.py
+      - name: LGPL include boundary
+        run: python3 scripts/check_lgpl_boundary.py
+      - name: cursory table matches its data
+        run: python3 scripts/gen_cursory_table.py --check
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
       - name: gen9_thread_caps.h matches the caps JSON
@@ -70,6 +74,8 @@ jobs:
           python3 -m pytest -q client/python/tests scripts/
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
+      - name: go rodclient tests
+        run: cd client/go/rodclient && go vet ./... && go test ./...
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - name: node client tests

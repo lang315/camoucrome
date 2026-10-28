@@ -50,7 +50,13 @@ import check_privacy
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
+# LGPL-3.0 obligations for the embedded Cursory port: license, GPL text it incorporates,
+# notice of changes, and the relinking recipe all ship in the archive.
+CURSORY_FILES = (("LICENSE", "LICENSE.cursory"), ("COPYING", "COPYING.cursory"),
+                 ("NOTICE", "NOTICE.cursory"), ("RELINK.md", "RELINK.cursory.md"))
 CREDITS = pathlib.Path("gen") / "components" / "resources" / "about_credits.html"
+# Chromium writes this page when generate_about_credits is unset: every 156 release shipped it.
+CREDITS_PLACEHOLDER = b"This is sample credits page."
 PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf Python bindings, a tool data dep
 # By basename: debug symbols, and Vulkan's mock ICD and validation layer (test-only; vk_swiftshader* stays).
 PRUNE_BASENAME = ("VkICD_mock_icd", "VkLayer_khronos_validation")
@@ -172,6 +178,10 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     fingerprint = tree_fingerprint(src, env["CHROMIUM_REV"])
     if not (out / CREDITS).is_file():
         sys.exit(f"{out / CREDITS} missing: build //components/resources:about_credits (it ships with chrome)")
+    placeholder = CREDITS_PLACEHOLDER in (out / CREDITS).read_bytes()
+    if placeholder:
+        sys.exit(f"{out / CREDITS} is Chromium's placeholder: set generate_about_credits=true "
+                 "(settings/release-args.gn) and rebuild //components/resources:about_credits")
     missing = [d for d in deps if not (out / d).exists()]
     if missing:
         sys.exit(f"{len(missing)} runtime dep(s) GN lists are not on disk (build unfinished?): "
@@ -194,6 +204,8 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
     shutil.copy2(src / "LICENSE", staging / "LICENSE.chromium")
     shutil.copy2(out / CREDITS, staging / "about_credits.html")
+    for name, dst in CURSORY_FILES:
+        shutil.copy2(ROOT / "additions/camoucfg_lgpl" / name, staging / dst)
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)
@@ -210,7 +222,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
         "changeset_commit": changeset_commit(changeset),
         "branch_tip": git(src, "rev-parse", "HEAD"), "tree_fingerprint": fingerprint,
         "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
-        "leak_scan": scanned,
+        "leak_scan": scanned, "credits_placeholder": placeholder,
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
     }
     (staging / "camoucrome-release.json").write_text(json.dumps(stamp, indent=2) + "\n")
@@ -237,6 +249,9 @@ def check(stamp_paths):
     bad = [k for k in keys if len({s[k] for s in stamps}) > 1]
     for s in stamps:
         print(f"{s['name']}: {s['changeset_commit'][:10]} tip {s['branch_tip'][:10]} {s['built']}")
+    unvouched = [s["name"] for s in stamps if s.get("credits_placeholder") is not False]
+    if unvouched:
+        sys.exit(f"{unvouched}: stamp ships the placeholder credits page, or predates the credits gate")
     if bad:
         sys.exit(f"stamps disagree on {bad}: not one release")
     print(f"{len(stamps)} stamp(s) agree")

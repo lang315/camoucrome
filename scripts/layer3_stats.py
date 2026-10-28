@@ -123,3 +123,65 @@ def runs_agree(row_a, row_b):
         return None
     wa, wb = (row_a["hi"] - row_a["lo"]) / 2, (row_b["hi"] - row_b["lo"]) / 2
     return abs(row_b["d"] - row_a["d"]) <= math.hypot(wa, wb)
+
+
+# --- first-visitor design (docs plan 2026-10-28-px-arms-n-s2.md, section 3): independent visits, no pairs ---
+
+EQUIV_MARGIN = 0.15  # fixed before the run (plan section 3)
+
+
+def _wilson(x, n, z):
+    if n == 0:
+        return 0.0, 0.0, 1.0
+    p = x / n
+    c = (p + z * z / (2 * n)) / (1 + z * z / n)
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    return p, max(0.0, c - h), min(1.0, c + h)
+
+
+def newcombe_diff(x1, n1, x2, n2, conf=0.95):
+    """(p1 - p2, lo, hi): Newcombe-Wilson hybrid score interval, method 10. With either n at 0 nothing is known: (diff, -1, 1)."""
+    from statistics import NormalDist
+    z = NormalDist().inv_cdf(1 - (1 - conf) / 2)
+    p1, l1, u1 = _wilson(x1, n1, z)
+    p2, l2, u2 = _wilson(x2, n2, z)
+    d = p1 - p2
+    if n1 == 0 or n2 == 0:
+        return d, -1.0, 1.0
+    return d, d - math.sqrt((p1 - l1) ** 2 + (u2 - p2) ** 2), d + math.sqrt((u1 - p1) ** 2 + (p2 - l2) ** 2)
+
+
+def gate_g0(f_x, f_n, s_x, s_n):
+    """Does the baseline gap reproduce? Passed only when the 95% lower bound of rate(F) - rate(S) is above 0."""
+    d, lo, hi = newcombe_diff(f_x, f_n, s_x, s_n)
+    return {"passed": lo > 0, "d": d, "lo": lo, "hi": hi}
+
+
+def _unmeasured(c):
+    x, n, u = c
+    return n == 0 or u / (n + u) > 0.10
+
+
+def arm_diffs(counts, gate):
+    """counts: arm -> (challenged, measured, unknown), with S and F. For X in N, S2 (those present): d_X = rate(F) - rate(X) at 97.5%,
+    carries_part (lo > 0), carries_all (also rate(X) - rate(S) inside +/-EQUIV_MARGIN at 95%). A failed gate gives no arm reading;
+    an arm over 10% unknown is "UNMEASURED", so is the whole reading when S or F is."""
+    if _unmeasured(counts["S"]) or _unmeasured(counts["F"]):
+        return {"conclusion": "UNMEASURED"}
+    if not gate["passed"]:
+        return {"conclusion": "gap not reproduced"}
+    (fx, fn, _), (sx, sn, _) = counts["F"], counts["S"]
+    out = {}
+    for arm in ("N", "S2"):
+        if arm not in counts:
+            continue
+        if _unmeasured(counts[arm]):
+            out[arm] = "UNMEASURED"
+            continue
+        ax, an, _ = counts[arm]
+        d, lo, hi = newcombe_diff(fx, fn, ax, an, conf=0.975)
+        _, elo, ehi = newcombe_diff(ax, an, sx, sn)
+        part = lo > 0
+        out[arm] = {"d": d, "lo": lo, "hi": hi, "carries_part": part,
+                    "carries_all": part and -EQUIV_MARGIN <= elo and ehi <= EQUIV_MARGIN, "equiv_lo": elo, "equiv_hi": ehi}
+    return out
