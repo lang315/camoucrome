@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -58,6 +59,11 @@ func TestLaunchNewPageClose(t *testing.T) {
 	if len(owned) != 2 {
 		t.Fatalf("owned %v", owned)
 	}
+	inTemp(t, "crash dir", owned[0], "camoucrome-crash-")
+	inTemp(t, "profile dir", owned[1], "camoucrome-")
+	if !contains(b.Argv(), "--user-data-dir="+owned[1]) {
+		t.Errorf("argv does not name the owned profile %s: %v", owned[1], b.Argv())
+	}
 	if !strings.Contains(strings.Join(b.Argv(), " "), "--remote-debugging-pipe") {
 		t.Fatalf("argv %v", b.Argv())
 	}
@@ -96,5 +102,58 @@ func TestLaunchNewPageClose(t *testing.T) {
 		if strings.HasPrefix(m, "Emulation.") || m == "Network.setUserAgentOverride" || m == "Runtime.enable" {
 			t.Errorf("forbidden CDP method sent: %s (all: %v)", m, methods)
 		}
+	}
+}
+
+func fakeBrowser(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "fake-browser")
+	if err := os.WriteFile(exe, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_LOG", filepath.Join(dir, "methods.log"))
+	return exe
+}
+
+func TestCloseKeepsCallerProfile(t *testing.T) {
+	exe := fakeBrowser(t)
+	prof := t.TempDir()
+	b, err := Launch(context.Background(), camoucrome.Options{ExecutablePath: exe, UserDataDir: prof})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(b.Argv(), "--user-data-dir="+prof) {
+		t.Fatalf("argv lacks caller dir: %v", b.Argv())
+	}
+	crash := b.owned[0]
+	if len(b.owned) != 1 {
+		t.Fatalf("owned %v: the caller's profile must not be owned", b.owned)
+	}
+	b.Close()
+	if _, err := os.Stat(prof); err != nil {
+		t.Errorf("caller profile removed: %v", err)
+	}
+	if _, err := os.Stat(crash); !os.IsNotExist(err) {
+		t.Errorf("crash dir left behind: %v", err)
+	}
+}
+
+// The mmdb itself needs python maxminddb; a stand-in interpreter that prints
+// the module's JSON is enough to test that Launch forwards CheckGeoIP's messages.
+func TestLaunchForwardsGeoIPWarnings(t *testing.T) {
+	py := filepath.Join(t.TempDir(), "py")
+	os.WriteFile(py, []byte("#!/bin/sh\necho '{\"warning\":\"zone contradicts exit IP\"}'\n"), 0o755)
+	_, _, _ = capture(t)
+	var got []string
+	o := camoucrome.Options{ExecutablePath: "/x/chrome", Config: map[string]any{"timezone:id": "Asia/Tokyo"},
+		GeoIP: "/db.mmdb", ExitIP: "192.0.2.5", Python: py, Warn: func(m string) { got = append(got, m) }}
+	want := camoucrome.CheckGeoIP(o)
+	Launch(context.Background(), o)
+	if len(want) != 1 || want[0] != "zone contradicts exit IP" || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
 	}
 }

@@ -24,14 +24,26 @@ func capture(t *testing.T) (exe *string, argv *[]string, env *map[string]string)
 	t.Cleanup(func() { startFn = old })
 	startFn = func(_ context.Context, e string, a []string, v map[string]string) (*browser.Proc, error) {
 		*exe, *argv, *env = e, a, v
-		if d := v[camoucrome.CrashDumpsEnv]; d == "" {
-			t.Error("no crash-dump dir in env")
-		} else if _, err := os.Stat(d); err != nil {
-			t.Errorf("crash dir missing during start: %v", err)
+		inTemp(t, "crash dir", v[camoucrome.CrashDumpsEnv], "camoucrome-crash-")
+		for _, x := range a {
+			if d, ok := strings.CutPrefix(x, "--user-data-dir="); ok {
+				inTemp(t, "profile dir", d, "camoucrome-")
+			}
 		}
 		return nil, errStub
 	}
 	return
+}
+
+// inTemp asserts dir exists, sits directly under os.TempDir and has the prefix.
+func inTemp(t *testing.T, what, dir, prefix string) {
+	t.Helper()
+	if filepath.Dir(dir) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(dir), prefix) {
+		t.Errorf("%s %q is not %s* under %s", what, dir, prefix, os.TempDir())
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		t.Errorf("%s %q missing during start: %v", what, dir, err)
+	}
 }
 
 func TestLaunchParity(t *testing.T) {
@@ -88,18 +100,6 @@ func TestLaunchParity(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestLaunchKeepsCallerProfile(t *testing.T) {
-	_, argv, _ := capture(t)
-	dir := t.TempDir()
-	Launch(context.Background(), camoucrome.Options{ExecutablePath: "/x/chrome", UserDataDir: dir})
-	if !reflect.DeepEqual((*argv)[len(*argv)-1:], []string{"--user-data-dir=" + dir}) && !contains(*argv, "--user-data-dir="+dir) {
-		t.Fatalf("argv lacks caller dir: %v", *argv)
-	}
-	if _, err := os.Stat(dir); err != nil {
-		t.Fatal("caller profile removed")
 	}
 }
 
