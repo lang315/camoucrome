@@ -10,6 +10,7 @@
 
 #include "base/check_op.h"
 #include "base/time/time.h"
+#include "components/camoucfg_lgpl/cursory.h"
 #include "ui/gfx/geometry/point_f.h"
 
 namespace camoucfg {
@@ -168,6 +169,27 @@ std::vector<TrajectoryPoint> HumanizeTrajectory(
   // exactly.
   path.back().offset = base::Milliseconds(duration_ms);
 
+  return path;
+}
+
+std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
+                                          gfx::PointF end,
+                                          int min_ms,
+                                          int max_ms,
+                                          uint64_t seed) {
+  cursory::Params params;
+  params.min_ms = min_ms;
+  params.max_ms = max_ms;
+  std::vector<cursory::Sample> samples = cursory::GenerateTrajectory(
+      start.x(), start.y(), end.x(), end.y(), seed, params);
+  if (samples.size() < 2) {
+    return HumanizeTrajectory(start, end, /*steps=*/24, min_ms, max_ms, seed);
+  }
+  std::vector<TrajectoryPoint> path;
+  path.reserve(samples.size());
+  for (const cursory::Sample& s : samples) {
+    path.push_back({s.x, s.y, base::Milliseconds(s.t_ms)});
+  }
   return path;
 }
 

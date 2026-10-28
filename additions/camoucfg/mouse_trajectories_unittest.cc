@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -144,6 +145,59 @@ TEST(MouseTrajectoriesTest, QuantizeWheelClampsAndRejectsNonFinite) {
     WheelNotches n = QuantizeWheel(bad, 100);
     EXPECT_EQ(n.x, 0);
     EXPECT_EQ(n.y, 0) << "non-finite input must take the stock path";
+  }
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathDefaultsConstants) {
+  EXPECT_EQ(kDefaultHumanizeMinMs, 80);
+  EXPECT_EQ(kDefaultHumanizeMaxMs, 1200);
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathEndpointsAndOffsets) {
+  auto path = HumanizePath({10, 20}, {300, 400}, 80, 1200, /*seed=*/7);
+  ASSERT_GE(path.size(), 2u);
+  EXPECT_EQ(path.front().x, 10.0);
+  EXPECT_EQ(path.front().y, 20.0);
+  EXPECT_EQ(path.front().offset, base::TimeDelta());
+  EXPECT_EQ(path.back().x, 300.0);
+  EXPECT_EQ(path.back().y, 400.0);
+  for (size_t i = 1; i < path.size(); ++i) {
+    EXPECT_GT(path[i].offset, path[i - 1].offset);
+  }
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathFallsBackWhenStartEqualsEnd) {
+  // The generator returns nothing for start == end; the 24-step Bezier path
+  // (25 points) is what proves the fallback branch ran.
+  auto path = HumanizePath({50, 50}, {50, 50}, 80, 1200, /*seed=*/7);
+  EXPECT_EQ(path.size(), 25u);
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathUsesRecordedTimings) {
+  // A recorded 600 px move is sampled at ~60 Hz, so it has well over the
+  // Bezier fallback's 25 points (gap-variety does not distinguish them: the
+  // Bezier's gaps are jittered too).
+  auto path = HumanizePath({0, 0}, {600, 0}, 80, 1200, /*seed=*/3);
+  EXPECT_GT(path.size(), 30u);
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathDurationWithinBounds) {
+  for (float dist : {3.0f, 50.0f, 400.0f, 4000.0f}) {
+    auto path = HumanizePath({0, 0}, {dist, 0}, 80, 1200, /*seed=*/11);
+    ASSERT_GE(path.size(), 2u);
+    EXPECT_GE(path.back().offset, base::Milliseconds(80));
+    EXPECT_LE(path.back().offset, base::Milliseconds(1200));
+  }
+}
+
+TEST(MouseTrajectoriesTest, HumanizePathSanitizesBounds) {
+  const base::TimeDelta kCap = base::Milliseconds(60000);
+  for (auto [lo, hi] : {std::pair{900, 100}, std::pair{-5, 0},
+                        std::pair{0, 1'000'000'000}}) {
+    auto path = HumanizePath({0, 0}, {300, 200}, lo, hi, /*seed=*/5);
+    ASSERT_GE(path.size(), 2u);
+    EXPECT_GT(path.back().offset, base::TimeDelta());
+    EXPECT_LE(path.back().offset, kCap);
   }
 }
 

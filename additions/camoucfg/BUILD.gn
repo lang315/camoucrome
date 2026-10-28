@@ -38,6 +38,7 @@ static_library("camoucfg") {
 
   deps = [
     "//base",
+    "//components/camoucfg_lgpl",
     "//components/version_info",
     "//ui/gfx/geometry",
   ]
@@ -82,6 +83,7 @@ source_set("unit_tests") {
     ":canvas_readback",
     "//base",
     "//base/test:test_support",
+    "//components/camoucfg_lgpl",
     "//skia",
     "//testing/gtest",
     "//ui/gfx/geometry",

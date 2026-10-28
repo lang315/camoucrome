@@ -144,12 +144,21 @@
   {
    "name": "kHumanizeMinTime",
    "key": "humanize:minTime",
-   "type": "int32"
+   "type": "int32",
+   "doc": [
+    "Lower BOUND, in ms, on the movement time of a recorded human path (the",
+    "generator picks a recording and fits its duration into [minTime, maxTime]).",
+    "Default 80 when absent; hard cap 60000 (60 s). Swapped if above maxTime."
+   ]
   },
   {
    "name": "kHumanizeMaxTime",
    "key": "humanize:maxTime",
-   "type": "int32"
+   "type": "int32",
+   "doc": [
+    "Upper BOUND, in ms, on the movement time of a recorded human path. See",
+    "humanize:minTime. Default 1200 when absent; hard cap 60000 (60 s)."
+   ]
   },
   {
    "name": "kShowCursor",
