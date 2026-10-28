@@ -37,7 +37,7 @@ type Options struct {
 	UsePort bool
 }
 
-var wsRe = regexp.MustCompile(`DevTools listening on (ws://\S+)`)
+var wsRe = regexp.MustCompile(`DevTools listening on (ws://\S+)\n`)
 
 // buildArgv is the contract's expected argv (+ profile dir, + --no-sandbox).
 func buildArgv(o Options, dir string) []string {
@@ -102,7 +102,7 @@ func (t *tailBuf) String() string {
 }
 
 // portWatcher is the UsePort stderr sink: it keeps the tail and reports the
-// DevTools URL once (no line-length limit, unlike a bufio.Scanner).
+// DevTools URL once, only on a complete line (no line-length limit, unlike a bufio.Scanner).
 type portWatcher struct {
 	tail *tailBuf
 	ch   chan string
@@ -117,6 +117,8 @@ func (w *portWatcher) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Start launches the browser. Stop is mandatory: the browser and a watcher
+// goroutine live until Stop (or ctx cancel) runs.
 func Start(ctx context.Context, o Options) (*Proc, error) {
 	if err := platformErr(); err != nil {
 		return nil, err
@@ -133,6 +135,7 @@ func Start(ctx context.Context, o Options) (*Proc, error) {
 	argv := buildArgv(o, dir)
 	cmd := exec.CommandContext(ctx, o.Executable, argv...)
 	cmd.Env = env
+	cmd.WaitDelay = 2 * time.Second // a descendant holding stderr must not hang Wait
 	setGroup(cmd)
 	tail := &tailBuf{}
 	watch := &portWatcher{tail: tail, ch: make(chan string, 1)}

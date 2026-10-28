@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,6 +39,9 @@ while True:
 
 func start(t *testing.T, ctx context.Context) *Proc {
 	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
 	exe := filepath.Join(t.TempDir(), "fake-browser")
 	if err := os.WriteFile(exe, []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
@@ -162,5 +166,19 @@ func TestConcurrentSendOrder(t *testing.T) {
 		if want := "echo:" + seen[i]; string(got) != want {
 			t.Fatalf("msg %d: wire %q observed %q", i, got, want)
 		}
+	}
+}
+
+func TestPortWatcherSplitURL(t *testing.T) {
+	w := &portWatcher{tail: &tailBuf{}, ch: make(chan string, 1)}
+	w.Write([]byte("noise\nDevTools listening on ws://127.0.0.1:12"))
+	select {
+	case u := <-w.ch:
+		t.Fatalf("matched a partial line: %q", u)
+	default:
+	}
+	w.Write([]byte("345/devtools/browser/abc\n"))
+	if u := <-w.ch; u != "ws://127.0.0.1:12345/devtools/browser/abc" {
+		t.Fatalf("got %q", u)
 	}
 }
