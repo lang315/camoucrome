@@ -75,7 +75,12 @@ TIMING = """<!doctype html><canvas id=c width=64 height=64></canvas><script>
   const t1 = performance.now(); const c = document.getElementById('c');
   for (let i = 0; i < 300; i++) c.toDataURL();
   const t2 = performance.now();
-  await fetch('/done', {method: 'POST', body: JSON.stringify({ua_200k_ms: t1 - t0, todataurl_300_ms: t2 - t1})});
+  const el = document.createElement('div'), f = () => {};
+  const d0 = Date.now(); for (let i = 0; i < 100000; i++) el.addEventListener('probe', f);
+  const d1 = Date.now(); for (let i = 0; i < 200000; i++) performance.now();
+  const d2 = Date.now();
+  await fetch('/done', {method: 'POST', body: JSON.stringify({ua_200k_ms: t1 - t0, todataurl_300_ms: t2 - t1,
+    addeventlistener_100k_ms: d1 - d0, performance_now_200k_ms: d2 - d1})});
 })();
 </script>"""
 
@@ -133,6 +138,33 @@ BFRAME = ("<!doctype html><script>addEventListener('touchstart', () => {});"
           "parent.postMessage('frame-done', '*');</script>")
 
 
+# Page invisibility (conventions rule 2): the same page on the same binary with the category on and
+# off must report identical values, and the hooked accessors must stay [native code].
+INV = """<!doctype html><script>
+(async () => {
+  const sig = (g) => {
+    const out = {};
+    const t = (o, k) => { try { return Function.prototype.toString.call(o[k]); } catch (e) { return 'ERR ' + e.name; } };
+    out.now = t(g.Performance.prototype, 'now');
+    out.ael = t(g.EventTarget.prototype, 'addEventListener');
+    out.raf = typeof g.requestAnimationFrame === 'function' ? Function.prototype.toString.call(g.requestAnimationFrame) : 'n/a';
+    out.st = Function.prototype.toString.call(g.setTimeout);
+    out.keys = Object.keys(g).join(',');
+    out.nowType = typeof performance.now();
+    return out;
+  };
+  const res = {main: sig(window)};
+  const w = new Worker('/iworker.js');
+  res.worker = await new Promise(r => { w.onmessage = e => r(e.data); });
+  await fetch('/done', {method: 'POST', body: JSON.stringify(res)});
+})();
+</script>"""
+IWORKER = """const t = (o, k) => { try { return Function.prototype.toString.call(o[k]); } catch (e) { return 'ERR ' + e.name; } };
+postMessage({now: t(Performance.prototype, 'now'), ael: t(EventTarget.prototype, 'addEventListener'),
+  raf: typeof self.requestAnimationFrame === 'function' ? Function.prototype.toString.call(self.requestAnimationFrame) : 'n/a',
+  st: Function.prototype.toString.call(self.setTimeout), keys: Object.keys(self).join(','), nowType: typeof performance.now()});"""
+
+
 def serve(k):
     done = threading.Event()
     result = {}
@@ -154,6 +186,8 @@ def serve(k):
                      "/behave.html": (BEHAVE % {"k": k, "port": port}, "text/html"),
                      "/bworker.js": (BWORKER % {"k": k}, "application/javascript"),
                      "/bframe.html": (BFRAME, "text/html"),
+                     "/inv.html": (INV, "text/html"),
+                     "/iworker.js": (IWORKER, "application/javascript"),
                      "/worker.js": (WORKER % {"k": k}, "application/javascript"),
                      "/ext.js": (EXT % {"k": k}, "application/javascript"),
                      "/frame.html": (FRAME % {"k": k}, "text/html")}
@@ -262,26 +296,30 @@ def behave_rows(events, main_origin, frame_origin, top, k, bump):
     def listeners(typ, target, opts, origin=main_origin, site=top):
         return sum(1 for (t_, tg, o, og, s) in L if (t_, tg, o, og, s) == (typ, target, opts, origin, site))
 
-    def api(*names, origin=main_origin, site=top):
-        return sum(n for (nm, og, s, _), n in c.items() if nm in names and og == origin and s == site)
+    script = f"{main_origin}/behave.html"
+
+    def api(*names, origin=main_origin, site=top, script=None):
+        return sum(n for (nm, og, s, sc), n in c.items() if nm in names and og == origin and s == site
+                   and (script is None or sc == script))
 
     rows = []
 
     def row(label, got, want):
         rows.append((got == want + bump, f"{label}: {got} (want {want + bump})"))
 
-    row("L1 addEventListener wheel Window (passive:false) x K", listeners("wheel", "Window", ""), k)
-    row("L1 addEventListener wheel Window passive", listeners("wheel", "Window", "passive"), 1)
+    row("L1 addEventListener wheel Window (passive:false) x K", listeners("wheel", "DOMWindow", ""), k)
+    row("L1 addEventListener wheel Window passive", listeners("wheel", "DOMWindow", "passive"), 1)
     row("L2 keydown Document capture x2", listeners("keydown", "Document", "capture"), 2)
     row("L2 visibilitychange Document x2", listeners("visibilitychange", "Document", ""), 2)
-    row("L3 pointermove HTMLDivElement once", listeners("pointermove", "HTMLDivElement", "once"), 1)
-    row("L4 ondevicemotion setter", listeners("devicemotion", "Window", ""), 1)
-    row("L4 ondeviceorientation setter", listeners("deviceorientation", "Window", ""), 1)
-    row("L5 inline onclick attribute", listeners("click", "HTMLDivElement", ""), 1)
+    row("L3 pointermove HTMLDivElement once", listeners("pointermove", "Element", "once"), 1)
+    row("L4 ondevicemotion setter", listeners("devicemotion", "DOMWindow", ""), 1)
+    row("L4 ondeviceorientation setter", listeners("deviceorientation", "DOMWindow", ""), 1)
+    row("L5 inline onclick attribute", listeners("click", "Element", ""), 1)
     row("L6 worker message x2 (origin of the creator, no site)",
         listeners("message", "DedicatedWorkerGlobalScope", "", site=""), 2)
-    row("L7 cross-site frame touchstart", listeners("touchstart", "Window", "", origin=frame_origin), 1)
-    row("L8 custom type recorded in the raw trace", listeners("probe-custom-type-xyz", "Window", ""), 1)
+    row("L7 cross-site frame touchstart (passive by default on a window)",
+        listeners("touchstart", "DOMWindow", "passive", origin=frame_origin), 1)
+    row("L8 custom type recorded in the raw trace", listeners("probe-custom-type-xyz", "DOMWindow", ""), 1)
     md = observe_report.render(observe_report.events_of(events), [], [])
     rows.append(("probe-custom-type-xyz" not in md, "L8 report never prints a type outside the known set"))
     row("T1 Performance.now page x K", api("Performance.now"), k)
@@ -303,14 +341,33 @@ def behave_rows(events, main_origin, frame_origin, top, k, bump):
     row("C1 Clipboard.readText x K", api("Clipboard.readText"), k)
     row("C1 ClipboardItem.constructor", api("ClipboardItem.constructor"), 1)
     row("C1 Document.execCommand", api("Document.execCommand"), 1)
-    row("M1 DeviceOrientationEvent.constructor x K", api("DeviceOrientationEvent.constructor"), k)
+    row("M1 DeviceOrientationEvent.constructor x K (page script)", api("DeviceOrientationEvent.constructor", script=script), k)
     row("M1 DeviceOrientationEvent.alpha.get x K", api("DeviceOrientationEvent.alpha.get"), k)
-    row("M1 DeviceMotionEvent.constructor x K", api("DeviceMotionEvent.constructor"), k)
+    row("M1 DeviceMotionEvent.constructor x K (page script)", api("DeviceMotionEvent.constructor", script=script), k)
+    # once ondevicemotion/ondeviceorientation exist, Blink constructs one event of each kind with no
+    # script on the stack: a tell that a page registered motion listeners
+    row("M1 DeviceOrientationEvent.constructor (no script, internal)", api("DeviceOrientationEvent.constructor", script=""), 1)
+    row("M1 DeviceMotionEvent.constructor (no script, internal)", api("DeviceMotionEvent.constructor", script=""), 1)
     row("M1 DeviceMotionEvent.acceleration.get x K", api("DeviceMotionEvent.acceleration.get"), k)
     row("M2 Accelerometer.constructor", api("Accelerometer.constructor"), 1)
     for name in ("Performance.mark", "Document.title.get", "Window.clearTimeout",
                  "Window.cancelAnimationFrame", "EventTarget.removeEventListener"):
         row(f"N1 {name} (not allow-listed)", api(name), 0)
+    return rows
+
+
+def invisibility_rows(on, off):
+    """The hooked accessors stay native, and a page sees the same values with the category on and
+    off (same binary): the observer must not be observable from the page."""
+    rows = []
+    for scope in ("main", "worker"):
+        for key in ("now", "ael", "st"):
+            s = (on.get(scope) or {}).get(key, "")
+            rows.append(("[native code]" in s, f"{scope} {key}.toString() is native: {s[:60]!r}"))
+    rows.append((bool(on) and on == off, "page-visible signature identical, category on vs off "
+                 "(toString, Object.keys(global), worker parity)"))
+    rows.append(((on.get("main", {}).get("keys") == off.get("main", {}).get("keys")),
+                 "Object.keys(window) identical, category on vs off"))
     return rows
 
 
@@ -398,6 +455,14 @@ def main():
         bport = next((o.rsplit(":", 1)[1] for e in bobs for o in [e["args"].get("origin", "")]
                       if o.startswith("http://127.0.0.1:")), None)
         rows += behave_rows(bobs, f"http://127.0.0.1:{bport}", f"http://localhost:{bport}", top, K, bump)
+
+    # invisibility: the same page, category on and off
+    inv_on = run("inv.html", ON_FILTER)[1]
+    inv_off = run("inv.html", "blink,loading")[1]
+    if "error" in inv_on or "error" in inv_off:
+        rows.append((red, f"invisibility arm: {inv_on} / {inv_off}"))
+    else:
+        rows += [(ok and not red, text) for ok, text in invisibility_rows(inv_on, inv_off)]
 
     # off arm: a normal default set ("blink,loading") must not pull the category in
     off_events, off_res, _ = run("probe.html", "blink,loading")

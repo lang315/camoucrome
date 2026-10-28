@@ -74,8 +74,8 @@ def test_intl_filters_extend_the_default_recipe():
 MAIN, FRAME, TOP = "http://127.0.0.1:1", "http://localhost:1", "http://127.0.0.1"
 
 
-def _api(name, n, origin=MAIN, site=TOP):
-    return [{"name": name, "args": {"origin": origin, "site": site, "script": ""}} for _ in range(n)]
+def _api(name, n, origin=MAIN, site=TOP, script=MAIN + "/behave.html"):
+    return [{"name": name, "args": {"origin": origin, "site": site, "script": script}} for _ in range(n)]
 
 
 def _lis(typ, target, opts="", n=1, origin=MAIN, site=TOP):
@@ -86,12 +86,12 @@ def _lis(typ, target, opts="", n=1, origin=MAIN, site=TOP):
 
 def _exact_behaviour_trace(k=3):
     ev = []
-    ev += _lis("wheel", "Window", "", k) + _lis("wheel", "Window", "passive")
+    ev += _lis("wheel", "DOMWindow", "", k) + _lis("wheel", "DOMWindow", "passive")
     ev += _lis("keydown", "Document", "capture", 2) + _lis("visibilitychange", "Document", "", 2)
-    ev += _lis("pointermove", "HTMLDivElement", "once") + _lis("devicemotion", "Window")
-    ev += _lis("deviceorientation", "Window") + _lis("click", "HTMLDivElement")
+    ev += _lis("pointermove", "Element", "once") + _lis("devicemotion", "DOMWindow")
+    ev += _lis("deviceorientation", "DOMWindow") + _lis("click", "Element")
     ev += _lis("message", "DedicatedWorkerGlobalScope", "", 2, site="")
-    ev += _lis("touchstart", "Window", "", 1, origin=FRAME) + _lis("probe-custom-type-xyz", "Window")
+    ev += _lis("touchstart", "DOMWindow", "passive", 1, origin=FRAME) + _lis("probe-custom-type-xyz", "DOMWindow")
     ev += _api("Performance.now", k) + _api("Performance.now", k, site="")
     ev += _api("Window.requestAnimationFrame", k) + _api("Window.setTimeout", k)
     ev += _api("Window.setInterval", k) + _api("WorkerGlobalScope.setTimeout", k, site="")
@@ -102,6 +102,8 @@ def _exact_behaviour_trace(k=3):
         ev += _api(n, k)
     for n in ("ClipboardItem.constructor", "Document.execCommand", "Accelerometer.constructor"):
         ev += _api(n, 1)
+    # Blink's own construction after motion listeners exist: no script on the stack
+    ev += _api("DeviceOrientationEvent.constructor", 1, script="") + _api("DeviceMotionEvent.constructor", 1, script="")
     return ev
 
 
@@ -121,3 +123,17 @@ def test_behaviour_rows_fail_on_an_observer_without_the_slice():
                            + [f"N1 {n} (not allow-listed)" for n in (
                                "Performance.mark", "Document.title.get", "Window.clearTimeout",
                                "Window.cancelAnimationFrame", "EventTarget.removeEventListener")])
+
+
+def test_invisibility_rows_need_native_accessors_and_identical_signatures():
+    sig = {"main": {"now": "function now() { [native code] }", "ael": "function addEventListener() { [native code] }",
+                    "st": "function setTimeout() { [native code] }", "keys": "a,b"},
+           "worker": {"now": "function now() { [native code] }", "ael": "function addEventListener() { [native code] }",
+                      "st": "function setTimeout() { [native code] }", "keys": "a"}}
+    assert all(ok for ok, _ in v.invisibility_rows(sig, dict(sig)))
+    patched = {**sig, "main": {**sig["main"], "now": "function now() { return 1; }"}}
+    bad = [t for ok, t in v.invisibility_rows(patched, patched) if not ok]
+    assert bad == ["main now.toString() is native: 'function now() { return 1; }'"]
+    drift = {**sig, "main": {**sig["main"], "keys": "a,b,__camou"}}
+    assert [t for ok, t in v.invisibility_rows(drift, sig) if not ok][0].startswith("page-visible signature identical")
+    assert not v.invisibility_rows({}, {})[0][0]

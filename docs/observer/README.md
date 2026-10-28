@@ -100,6 +100,34 @@ An event fires at the entry of the binding, before argument and receiver
 checks, so a call that throws (for example a brand-check probe) still counts
 as a read.
 
+## Behaviour signals
+
+Since the `observe-behaviour` patch the observer also reports (design:
+`docs/superpowers/specs/2026-10-28-observer-behaviour-signals-design.md`):
+
+- **Listener registrations by event type**, from every `addEventListener`
+  overload and `on*` setter (`EventTarget.addEventListener[<type>] target=<interface>
+  opts=<passive,capture,once>`), with the registering origin, site and script. A
+  type is printed only if it is in the report's known set; any other type is
+  counted under `[other]` and its name is never printed (a page can register any
+  string).
+- **Timing:** `Performance.now`, `requestAnimationFrame`, `setTimeout` and
+  `setInterval`, with a calls-per-second figure per script.
+- **Focus and visibility:** `Document.visibilityState`, `hidden`, the `webkit`
+  forms and `hasFocus`.
+- **Clipboard:** the `Clipboard` and `ClipboardItem` interfaces and
+  `Document.execCommand`.
+- **Motion and orientation:** the `DeviceMotionEvent` and `DeviceOrientationEvent`
+  classes and the Generic Sensor classes.
+
+A registration is counted, not how often the listener fires or what it does. A
+duplicate registration still counts (the page asked), and an `on*` handler
+re-assigned after its first assignment does not. With the category on, each
+call adds about 2 to 4 microseconds, which `performance.now` timings include:
+do not use the timing rows to judge timing detectability. Report groups:
+`input-events`, `focus-visibility`, `clipboard`, `motion`, `timing`,
+`listeners-other`.
+
 ## What it cannot see (silence is not safety)
 
 - V8 built-ins `Date.prototype.getTimezoneOffset` (a CSA builtin) and `Math`;
@@ -110,6 +138,9 @@ as a read.
 - Values: a row says a page read `deviceMemory`, not what it got.
 - Named and indexed access (`localStorage.foo`, `navigator.plugins[0]`) goes
   through interceptors and is not observed.
+- Dispatch: how often a listener fires and what its handler does.
+- `Date.now`, `performance.timeOrigin`, `PerformanceObserver`, `queueMicrotask`,
+  `requestIdleCallback`, scroll offsets, `document.execCommand`'s command.
 
 ## Detectability
 
