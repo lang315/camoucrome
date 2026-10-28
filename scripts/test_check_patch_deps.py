@@ -6,7 +6,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import check_patch_deps as c
 
 # Raising this needs the owner: every exception is a known-illegal include.
-MAX_EXCEPTIONS = 1
+# 1 -> 4 on 2026-10-28: the owner approved the three issue #47 entries (components/camoucfg includes in
+# content/renderer, grant lands with the 157 rebase) next to the issue #45 entry.
+MAX_EXCEPTIONS = 4
 
 PATCH = """diff --git a/a/b/x.cc b/a/b/x.cc
 --- a/a/b/x.cc
@@ -99,3 +101,11 @@ def test_build_files_do_not_widen_the_directory_set():
             "+++ b/third_party/blink/renderer/x/y.gni\n+++ b/third_party/blink/renderer/modules/font_access/font_access.cc\n"
             "+++ b/chrome/browser/foo.mm\n+++ b/net/bar.h\n")
     assert c.dirs_from_patch(text) == {"third_party/blink/renderer/modules/font_access", "chrome/browser", "net"}
+
+
+def test_every_exception_names_an_open_issue_and_shrinks_only():
+    # Each entry is tied to an issue number and goes STALE-fail when its violation is fixed, so the list
+    # can only shrink; the ceiling above must not exceed the entries approved so far.
+    e = json.loads(c.EXC_FILE.read_text())
+    assert {x["issue"] for x in e} <= {"#45", "#47"}
+    assert len(e) == 4

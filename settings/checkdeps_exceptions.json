@@ -4,5 +4,23 @@
     "include": "base/strings/string_split.h",
     "issue": "#45",
     "why": "the windows-oracle patch adds it; the DEPS grant lands with the 157 amend of windows-oracle (B5)"
+  },
+  {
+    "file": "content/renderer/renderer_blink_platform_impl.cc",
+    "include": "components/camoucfg/blink_scope.h",
+    "issue": "#47",
+    "why": "the sp4-webrtc-ip patch adds it without a DEPS grant; the grant lands with the 157 amend of sp4-webrtc-ip (same rebase as #45)"
+  },
+  {
+    "file": "content/renderer/renderer_blink_platform_impl.cc",
+    "include": "components/camoucfg/keys.h",
+    "issue": "#47",
+    "why": "the sp4-webrtc-ip patch adds it without a DEPS grant; the grant lands with the 157 amend of sp4-webrtc-ip (same rebase as #45)"
+  },
+  {
+    "file": "content/renderer/renderer_blink_platform_impl.cc",
+    "include": "components/camoucfg/mask_config.h",
+    "issue": "#47",
+    "why": "the sp4-webrtc-ip patch adds it without a DEPS grant; the grant lands with the 157 amend of sp4-webrtc-ip (same rebase as #45)"
   }
 ]
