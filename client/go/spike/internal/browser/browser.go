@@ -1,5 +1,5 @@
 // Package browser starts the fork with the launcher contract's argv and env,
-// without any driver library: rod and chromedp only get the DevTools URL.
+// without any driver library: the driver under test gets only a Conn.
 package browser
 
 import (
@@ -7,37 +7,47 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 
 	camoucrome "github.com/lang315/camoucrome/client/go"
 )
 
 type Proc struct {
-	Argv  []string
-	WSURL string
+	Argv  []string // the browser's actual argv, what C4 reads
+	Conn  *Conn    // pipe transport (nil with UsePort)
+	WSURL string   // UsePort only
 	Stop  func()
 }
 
 type Options struct {
 	Executable, URL, Config, Preset string
 	Headed, Strict, Sandbox         bool
+	// UsePort swaps the pipe for --remote-debugging-port=0, ONLY for the
+	// chromedp RED control (no pipe transport). C4 flags the port flag on that
+	// row; fine, RED rows are judged on C1 only.
+	UsePort bool
 }
 
 var wsRe = regexp.MustCompile(`DevTools listening on (ws://\S+)`)
 
-// buildArgv is the contract's argv with a debugging port instead of the pipe
-// (--remote-debugging-port=0 is the one deviation: the driver libs need a socket).
+// buildArgv is the contract's expected argv (+ profile dir, + --no-sandbox).
 func buildArgv(o Options, dir string) []string {
 	argv := append([]string{}, camoucrome.BaseArgs...)
 	if !o.Headed {
 		argv = append(argv, "--headless=new")
 	}
-	argv = append(argv, "--remote-debugging-port=0", "--user-data-dir="+dir)
+	if o.UsePort {
+		argv = append(argv, "--remote-debugging-port=0")
+	} else {
+		argv = append(argv, "--remote-debugging-pipe")
+	}
+	argv = append(argv, "--user-data-dir="+dir)
 	if !o.Sandbox {
 		argv = append(argv, "--no-sandbox")
 	}
@@ -66,7 +76,32 @@ func nilIfEmpty(s string) any {
 	return s
 }
 
+// tailBuf keeps the last 4 KiB of stderr for error messages.
+type tailBuf struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (t *tailBuf) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.b = append(t.b, p...)
+	if len(t.b) > 4096 {
+		t.b = t.b[len(t.b)-4096:]
+	}
+	return len(p), nil
+}
+
+func (t *tailBuf) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.b)
+}
+
 func Start(ctx context.Context, o Options) (*Proc, error) {
+	if err := platformErr(); err != nil {
+		return nil, err
+	}
 	dir, err := os.MkdirTemp("", "camoucrome-spike-")
 	if err != nil {
 		return nil, err
@@ -79,52 +114,78 @@ func Start(ctx context.Context, o Options) (*Proc, error) {
 	argv := buildArgv(o, dir)
 	cmd := exec.CommandContext(ctx, o.Executable, argv...)
 	cmd.Env = env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // shortcut: unix only, spike runs on the Linux box
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, err
+	setGroup(cmd)
+	tail := &tailBuf{}
+	var toChild, fromChild [2]*os.File // browser reads fd 3, writes fd 4
+	var closeAll func()
+	if !o.UsePort {
+		cr, cw, err1 := os.Pipe()
+		pr, pw, err2 := os.Pipe()
+		if err1 != nil || err2 != nil {
+			os.RemoveAll(dir)
+			return nil, errors.Join(err1, err2)
+		}
+		toChild, fromChild = [2]*os.File{cr, cw}, [2]*os.File{pr, pw}
+		cmd.ExtraFiles = []*os.File{cr, pw}
+		cmd.Stderr = tail
+		closeAll = func() {
+			for _, f := range []*os.File{cr, cw, pr, pw} {
+				f.Close()
+			}
+		}
+	}
+	var stderr io.ReadCloser
+	if o.UsePort {
+		if stderr, err = cmd.StderrPipe(); err != nil {
+			os.RemoveAll(dir)
+			return nil, err
+		}
 	}
 	if err := cmd.Start(); err != nil {
+		if closeAll != nil {
+			closeAll()
+		}
 		os.RemoveAll(dir)
 		return nil, err
 	}
 	stop := func() {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		killGroup(cmd.Process.Pid)
 		_ = cmd.Wait()
+		if closeAll != nil {
+			closeAll()
+		}
 		os.RemoveAll(dir)
 	}
-	type res struct {
-		ws   string
-		tail string
+	full := append([]string{o.Executable}, argv...)
+	if !o.UsePort {
+		toChild[0].Close() // child's ends; ours stay
+		fromChild[1].Close()
+		return &Proc{Argv: full, Conn: newConn(fromChild[0], toChild[1]), Stop: stop}, nil
 	}
+
+	type res struct{ ws string }
 	ch := make(chan res, 1)
 	go func() {
-		var tail []string
-		sc := bufio.NewScanner(stderr)
+		sc := bufio.NewScanner(io.TeeReader(stderr, tail))
 		for sc.Scan() {
-			line := sc.Text()
-			if m := wsRe.FindStringSubmatch(line); m != nil {
-				ch <- res{ws: m[1]}
+			if m := wsRe.FindStringSubmatch(sc.Text()); m != nil {
+				ch <- res{m[1]}
 				for sc.Scan() { // keep draining so the browser never blocks on stderr
 				}
 				return
 			}
-			if tail = append(tail, line); len(tail) > 20 {
-				tail = tail[1:]
-			}
 		}
-		ch <- res{tail: strings.Join(tail, "\n")}
+		ch <- res{}
 	}()
 	select {
 	case r := <-ch:
 		if r.ws == "" {
 			stop()
-			return nil, fmt.Errorf("browser exited without a DevTools URL; stderr tail:\n%s", r.tail)
+			return nil, fmt.Errorf("browser exited without a DevTools URL; stderr tail:\n%s", strings.TrimSpace(tail.String()))
 		}
-		return &Proc{Argv: append([]string{o.Executable}, argv...), WSURL: r.ws, Stop: stop}, nil
+		return &Proc{Argv: full, WSURL: r.ws, Stop: stop}, nil
 	case <-time.After(20 * time.Second):
 		stop()
-		return nil, errors.New("no DevTools URL within 20s; stderr tail:\n" + (<-ch).tail)
+		return nil, errors.New("no DevTools URL within 20s; stderr tail:\n" + strings.TrimSpace(tail.String()))
 	}
 }

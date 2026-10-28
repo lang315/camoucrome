@@ -1,12 +1,16 @@
 package browser
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
+	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
-
-	camoucrome "github.com/lang315/camoucrome/client/go"
+	"testing/iotest"
 )
 
 func TestArgvHasContractFlags(t *testing.T) {
@@ -15,42 +19,76 @@ func TestArgvHasContractFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	var c struct {
-		MustNot []string `json:"browser_argv_must_not_contain"`
+		MustNot  []string `json:"browser_argv_must_not_contain"`
+		Expected struct {
+			Args []string `json:"args"`
+		} `json:"browser_argv_expected"`
 	}
-	if err := json.Unmarshal(raw, &c); err != nil || len(c.MustNot) == 0 {
-		t.Fatalf("launcher.json: %v, %d forbidden", err, len(c.MustNot))
+	if err := json.Unmarshal(raw, &c); err != nil || len(c.MustNot) == 0 || len(c.Expected.Args) == 0 {
+		t.Fatalf("launcher.json: %v", err)
 	}
-	has := func(argv []string, a string) bool {
-		for _, x := range argv {
-			if x == a {
-				return true
-			}
-		}
-		return false
-	}
+	want := append(append([]string{}, c.Expected.Args...), "--user-data-dir=/p", "--no-sandbox")
+	sort.Strings(want)
 	argv := buildArgv(Options{Executable: "x"}, "/p")
-	for _, a := range append(camoucrome.BaseArgs, "--remote-debugging-port=0", "--headless=new", "--user-data-dir=/p") {
-		if !has(argv, a) {
-			t.Errorf("argv %v lacks %s", argv, a)
-		}
+	got := append([]string{}, argv...)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv %v != contract %v", argv, want)
 	}
-	if has(buildArgv(Options{Executable: "x", Headed: true}, "/p"), "--headless=new") {
-		t.Error("Headed still has --headless=new")
-	}
-	// --remote-debugging-port=0 is the spike's one intended deviation: rod and
-	// chromedp need a socket, the contract says pipe. C4 will flag it.
 	for _, bad := range c.MustNot {
-		if bad == "--remote-debugging-port" {
-			continue
-		}
 		for _, a := range argv {
 			if strings.HasPrefix(a, bad) {
 				t.Errorf("argv has forbidden %s", a)
 			}
 		}
 	}
-	if !has(argv, "--no-sandbox") || has(buildArgv(Options{Sandbox: true}, "/p"), "--no-sandbox") {
-		t.Error("--no-sandbox must follow !Sandbox")
+	if slices.Contains(buildArgv(Options{Headed: true}, "/p"), "--headless=new") {
+		t.Error("Headed still has --headless=new")
+	}
+	if slices.Contains(buildArgv(Options{Sandbox: true}, "/p"), "--no-sandbox") {
+		t.Error("Sandbox still has --no-sandbox")
+	}
+	port := buildArgv(Options{UsePort: true}, "/p")
+	if !slices.Contains(port, "--remote-debugging-port=0") || slices.Contains(port, "--remote-debugging-pipe") {
+		t.Errorf("UsePort argv %v", port)
+	}
+}
+
+type nopW struct{ bytes.Buffer }
+
+func (*nopW) Close() error { return nil }
+
+func TestConnFraming(t *testing.T) {
+	// NUL split across one-byte reads, two messages in one read
+	c := newConn(iotest.OneByteReader(strings.NewReader("{\"a\":1}\x00{\"b\":2}\x00")), &nopW{})
+	for _, want := range []string{`{"a":1}`, `{"b":2}`} {
+		got, err := c.Read()
+		if err != nil || string(got) != want {
+			t.Fatalf("got %q %v want %q", got, err, want)
+		}
+	}
+	if _, err := c.Read(); err != io.EOF {
+		t.Fatalf("clean EOF: %v", err)
+	}
+	c = newConn(strings.NewReader("{\"a\":1}\x00{\"b\""), &nopW{})
+	if _, err := c.Read(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Read(); err != io.ErrUnexpectedEOF {
+		t.Fatalf("EOF mid-message: %v", err)
+	}
+}
+
+func TestConnSend(t *testing.T) {
+	w := &nopW{}
+	c := newConn(strings.NewReader(""), w)
+	var seen string
+	c.Observe = func(m []byte) { seen = string(m) }
+	if err := c.Send([]byte(`{"id":1}`)); err != nil || w.String() != "{\"id\":1}\x00" || seen != `{"id":1}` {
+		t.Fatalf("%q %q %v", w.String(), seen, err)
+	}
+	if c.Send([]byte("a\x00b")) == nil {
+		t.Fatal("NUL inside a message must be refused")
 	}
 }
 
