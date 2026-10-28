@@ -11,3 +11,7 @@ def test_references_observer_sees_emit_and_emitlistener_and_ignores_other_symbol
     assert c.references_observer("U blink::camou_observe::EmitListener(char const*, blink::ExecutionContext*)")
     assert not c.references_observer("T blink::EventTarget::AddEventListenerInternal(...)")
     assert not c.references_observer("")
+
+
+def test_references_observer_sees_countdispatch():
+    assert c.references_observer("U blink::camou_observe::CountDispatch(WTF::AtomicString const&, WTF::AtomicString const&, bool, unsigned int)")
