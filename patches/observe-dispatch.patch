@@ -1,0 +1,167 @@
+diff --git a/third_party/blink/renderer/core/dom/events/event_target.cc b/third_party/blink/renderer/core/dom/events/event_target.cc
+index 613da3d72e..bd10f06142 100644
+--- a/third_party/blink/renderer/core/dom/events/event_target.cc
++++ b/third_party/blink/renderer/core/dom/events/event_target.cc
+@@ -1048,6 +1048,22 @@ bool EventTarget::FireEventListeners(Event& event,
+   if (!context)
+     return false;
+ 
++#if BUILDFLAG(CAMOU_OBSERVE)
++  // Tracking observer: one coalesced count per dispatch to a non-empty listener snapshot.
++  if (camou_observe::Enabled() && !entry.empty()) [[unlikely]] {
++    AtomicString target = InterfaceName();
++    if (context->IsWorkerGlobalScope()) {
++      target = AtomicString("Worker");
++    } else if (const Node* node = ToNode()) {
++      target = node->IsDocumentNode()  ? AtomicString("Document")
++               : node->IsElementNode() ? AtomicString("Element")
++               : node->IsShadowRoot()  ? AtomicString("ShadowRoot")
++                                       : AtomicString("Node");
++    }
++    camou_observe::CountDispatch(event.type(), target, event.isTrusted(), entry.size());
++  }
++#endif
++
+   CountFiringEventListeners(event, ExecutingWindow());
+ 
+   base::TimeDelta blocked_event_threshold =
+diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.cc b/third_party/blink/renderer/core/execution_context/camou_observe.cc
+index 0709f12f0e..d0f1d4d0e7 100644
+--- a/third_party/blink/renderer/core/execution_context/camou_observe.cc
++++ b/third_party/blink/renderer/core/execution_context/camou_observe.cc
+@@ -4,12 +4,17 @@
+ 
+ #include "third_party/blink/renderer/core/execution_context/camou_observe.h"
+ 
++#include <cstdlib>
+ #include <string>
+ #include <utility>
+ 
++#include "base/no_destructor.h"
++#include "base/time/time.h"
++
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
++#include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "v8/include/v8-context.h"
+ #include "v8/include/v8-debug.h"
+ #include "v8/include/v8-isolate.h"
+@@ -109,6 +114,99 @@ void EmitListener(const char* name,
+                       opts);
+ }
+ 
++namespace {
++
++// Coalescing (spec 2026-10-28 section 3.2): a per-thread table of at most kMaxKeys keys. A key is flushed as one
++// trace event when it reaches kFlushDispatches, or when the table's last flush is a second old at the next call.
++// The table holds interned atoms only, never a page string beyond the 48-character truncation done at emit.
++constexpr uint64_t kFlushDispatches = 256;
++constexpr size_t kMaxKeys = 64;
++constexpr base::TimeDelta kFlushInterval = base::Seconds(1);
++
++struct DispatchEntry {
++  AtomicString type;
++  AtomicString target;
++  bool trusted = false;
++  uint64_t dispatches = 0;
++  uint64_t handlers = 0;
++  base::TimeTicks first;
++};
++
++struct DispatchTable {
++  Vector<DispatchEntry> entries;
++  base::TimeTicks last_flush;
++};
++
++DispatchTable& Table() {
++  static thread_local base::NoDestructor<DispatchTable> table;
++  return *table;
++}
++
++void FlushEntry(DispatchEntry& e, base::TimeTicks now) {
++  if (e.dispatches == 0) {
++    return;
++  }
++  std::string type_text;
++  for (unsigned i = 0; i < e.type.length() && type_text.size() < 48; ++i) {
++    UChar c = e.type[i];
++    type_text.push_back(c >= 0x20 && c < 0x7f ? static_cast<char>(c) : '?');
++  }
++  TRACE_EVENT_INSTANT(
++      CAMOU_OBSERVE_CATEGORY, "EventTarget.dispatch", "type", type_text,
++      "target", e.target.Utf8(), "trusted", e.trusted ? "true" : "false",
++      "dispatches", std::to_string(e.dispatches), "handlers",
++      std::to_string(e.handlers), "window_ms",
++      std::to_string((now - e.first).InMilliseconds()));
++  e.dispatches = 0;
++  e.handlers = 0;
++}
++
++}  // namespace
++
++void CountDispatch(const AtomicString& type,
++                   const AtomicString& target,
++                   bool trusted,
++                   wtf_size_t handlers) {
++  DispatchTable& t = Table();
++  const base::TimeTicks now = base::TimeTicks::Now();
++  // Verify-only exact mode (environment variable, read once): flush at every dispatch so a test can assert exact sums.
++  static const bool exact = std::getenv("OBSERVE_DISPATCH_EXACT") != nullptr;
++  const uint64_t threshold = exact ? 1 : kFlushDispatches;
++
++  if (t.last_flush.is_null()) {
++    t.last_flush = now;
++  } else if (now - t.last_flush >= kFlushInterval) {
++    for (DispatchEntry& e : t.entries) {
++      FlushEntry(e, now);
++    }
++    t.last_flush = now;
++  }
++
++  DispatchEntry* hit = nullptr;
++  for (DispatchEntry& e : t.entries) {
++    if (e.type == type && e.target == target && e.trusted == trusted) {
++      hit = &e;
++      break;
++    }
++  }
++  if (!hit) {
++    if (t.entries.size() >= kMaxKeys) {
++      FlushEntry(t.entries.front(), now);
++      t.entries.EraseAt(0);
++    }
++    t.entries.push_back(DispatchEntry{type, target, trusted, 0, 0, now});
++    hit = &t.entries.back();
++  }
++  if (hit->dispatches == 0) {
++    hit->first = now;
++  }
++  hit->dispatches += 1;
++  hit->handlers += handlers;
++  if (hit->dispatches >= threshold) {
++    FlushEntry(*hit, now);
++  }
++}
++
+ }  // namespace blink::camou_observe
+ 
+ #endif  // BUILDFLAG(CAMOU_OBSERVE)
+diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.h b/third_party/blink/renderer/core/execution_context/camou_observe.h
+index 7ccd8603e6..4dfc749062 100644
+--- a/third_party/blink/renderer/core/execution_context/camou_observe.h
++++ b/third_party/blink/renderer/core/execution_context/camou_observe.h
+@@ -54,6 +54,13 @@ CORE_EXPORT void EmitListener(const char* name,
+                               bool passive,
+                               bool capture,
+                               bool once);
++// One coalesced count for the dispatch of an event to a target's listeners (the Blink hook in
++// EventTarget::FireEventListeners). `handlers` is the listener slots in the snapshot. A per-thread table flushes a key
++// as one EventTarget.dispatch event at 256 dispatches or after a second; the tail is lost (spec 2026-10-28).
++CORE_EXPORT void CountDispatch(const AtomicString& type,
++                               const AtomicString& target,
++                               bool trusted,
++                               wtf_size_t handlers);
+ #else
+ inline bool Enabled() {
+   return false;
