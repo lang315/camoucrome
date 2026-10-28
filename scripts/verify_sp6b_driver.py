@@ -20,7 +20,11 @@ Per driver:
   C4 browser argv EQUALS launcher.json's expected set (plus the profile dir
      and the probe's --no-sandbox): the launcher ignores Playwright's default
      args, and absence of the forbidden flags alone would let a new default
-     (a --disable-features list moves feature state) slip in
+     (a --disable-features list moves feature state) slip in. Chrome's own
+     headless_self_added flags may appear but are not required: on Linux /proc
+     shows them only when the browser rewrites its process title, which
+     happens when DBUS_SESSION_BUS_ADDRESS is set in its environment
+     (measured 2026-10-28 on the 156 build; a clean env, as in CI, has none).
   C5 median of 7x10000 `new Error().stack` within TIMING_TOLERANCE of the
      baseline (median of BASELINE_RUNS launches; D1: Runtime.enable costs +21%)
   C6 the probe registers add_init_script("window.__camou_init = 1") before
@@ -49,6 +53,7 @@ import sys
 import tempfile
 import threading
 
+from lib_argv import argv_diff
 from lib_shell import CHROME as EXE, layout
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
@@ -227,13 +232,13 @@ def check(label, result, log, base):
     # Windows reports the command line the driver passed: Chrome appends
     # --noerrdialogs in-process (headless_mode_init.cc), which only Linux's
     # rewritten process title shows, and the ozone/ANGLE three are IS_LINUX.
+    # Optional, not required: /proc shows Chrome's own additions only when the browser rewrites its process title.
     self_added = HEADLESS_SELF_ADDED if "--headless=new" in got and os.name != "nt" else set()
-    expected = EXPECTED_ARGS | self_added
+    expected = set(EXPECTED_ARGS)
     if PROXY_MODE:
         expected |= {CONTRACT["launch"]["proxy_arg"].format(server=PROXY_URL),
                      CONTRACT["launch"]["proxy_bypass_arg"].format(bypass="<-loopback>")}
-    unexpected = sorted(got - expected)
-    absent = sorted(expected - got)
+    unexpected, absent = argv_diff(got, expected, self_added)
     rows["C4 argv == launcher.json expected set"] = (
         bool(argv) and not hits and not unexpected and not absent,
         f"hits={hits} unexpected={unexpected[:6]}{'...' if len(unexpected) > 6 else ''} absent={absent} argc={len(argv)}")
