@@ -91,3 +91,16 @@ flags as `camoucrome-probe` (`--proxy*` exits 2), registers
 stderr.
 
 Tests: `GOTOOLCHAIN=local go test -race -count=1 ./... && go vet ./...`
+
+## Smoke
+
+`cmd/camoucrome-smoke` drives a loopback page that records every input event
+(`window.__ev`: type, isTrusted, timeStamp, button(s), key, code, x, y) with
+`Click` twice, `Type`, `Text`, `Screenshot` and `Cookies`, then judges the
+page's own log, not the client's return values. It prints one JSON report
+(`checks`, `events`, `cdp_sends`, `argv`) and exits 1 if any check is RED.
+`--humanize` adds `{"humanize:enabled": true}` to the config and checks the
+humanized second click (>= 8 mousemoves, median gap > 4 ms).
+
+    cd client/go/rodclient && go build -o ~/camoucrome-go/camoucrome-smoke ./cmd/camoucrome-smoke
+    ~/camoucrome-go/camoucrome-smoke --executable ~/chromium/src/out/Default/chrome --humanize
