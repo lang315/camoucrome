@@ -9,7 +9,7 @@ Precedence, first match wins:
      Active; commit headroom below 8 GB; a native build running.
   2. FAIL (exit 1): build exit non-zero, timed out, or 0 steps; a green row failed or fewer
      rows than expected; a known-failure row that passed; a red entry with red_seen false.
-  3. UNMEASURED (exit 2): gpu_crashes > 0; not_measured beyond allowed_not_measured; headroom
+  3. UNMEASURED (exit 2): the build's exit code was not read (null); gpu_crashes > 0; not_measured beyond allowed_not_measured; headroom
      or session lost mid-run.
   4. PASS (exit 0).
 FAIL outranks UNMEASURED: a run that proved a break is not hidden by a GPU crash elsewhere.
@@ -60,7 +60,7 @@ def _fails(r):
     b = r["build"]
     if b["timed_out"]:
         out.append("build timed out")
-    elif b["exit"] != 0:
+    elif b["exit"] is not None and b["exit"] != 0:
         out.append(f"build exit {b['exit']}")
     elif b["steps"] == 0:
         out.append("build reported 0 steps")
@@ -79,6 +79,8 @@ def _fails(r):
 
 def _unmeasured(r):
     out = []
+    if r["build"]["exit"] is None:
+        out.append("build exit code not read (driver could not read the process exit code)")
     for e in r["verify"]["green"]:
         if e["gpu_crashes"] > 0:
             out.append(f"{e['script']}: gpu crash count {e['gpu_crashes']}")

@@ -197,3 +197,15 @@ def test_cli_prints_result_and_exits_with_verdict(tmp_path):
         assert p.returncode == code
         assert p.stdout.strip() == f"RESULT {name} 20261028T010000Z"
         assert out.read_text().splitlines()[0] == p.stdout.strip()
+
+
+def test_missing_build_exit_is_unmeasured_not_fail():
+    # PS 5.1 gives $null for a -PassThru process's ExitCode unless the handle was read; a good build
+    # must not become a FAIL (and a stamped commit) because the driver could not read the code.
+    assert w.verdict(mut("build.exit", None))[0] == "UNMEASURED"
+
+
+def test_missing_build_exit_with_zero_steps_is_still_fail():
+    r = mut("build.exit", None)
+    r["build"]["steps"] = 0
+    assert w.verdict(r)[0] == "FAIL"

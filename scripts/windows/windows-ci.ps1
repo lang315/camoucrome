@@ -2,6 +2,20 @@
 # with windows_ci_summary.py beside it. Never scheduled, never looped, no retry, loads no site.
 # Exit 0 PASS or SKIPPED, 1 FAIL, 2 UNMEASURED; the last stdout line is `RESULT <verdict> <run id>`.
 #
+# Operating notes (impl01's review of PR #44, 2026-10-28):
+#  - A run that is not skipped takes HOURS: reset --hard plus apply.sh rewrite every patched file, so the whole patched
+#    dependency cone rebuilds (154 to 156 was 16302 steps, 3 h 23 m for both outputs at -j 8), then two verify waits of up
+#    to 90 min. -BuildHours (default 6) caps the build. The first 157 run may need all of it.
+#  - It holds the shared build lock for the whole run, up to about 6 h plus the verify waits, which blocks main's
+#    build-verify on the box. A killed PowerShell skips `finally` and leaves "windows-ci since <UTC>" held; build_lock.sh
+#    has no stale detection. After checking that no build is running:
+#      wsl -d Ubuntu-24.04 -u <wsl-user> -- bash <runner-clone>/scripts/build_lock.sh release windows-ci
+#  - The observe/recon check blocks on any scheduled task named camou-* (except camou-windows-ci-*), including an
+#    unrelated session-1 harness task. That is the safe side; use -Force with -ForceReason only after looking.
+#  - OutRoot must not contain spaces (the tar step is quoted for plain paths).
+#  - The red run sets no CAMOU_OUT on purpose: windows_verify_set.py red points CAMOU_EXE at the host's stock chrome.exe;
+#    only the green run measures the fork build in OutDir.
+#
 # Host config OutRoot\host.config.ps1 (never committed) sets, as plain assignments:
 #   $WslUser    = '<wsl-user>'
 #   $LockScript = '<absolute WSL path of the runner clone>/scripts/build_lock.sh'
@@ -13,6 +27,7 @@ param(
   [switch]$Force,
   [string]$ForceReason,
   [string]$OutRoot = 'D:\camou-win\ci',
+  [int]$BuildHours = 6,
   [int]$DryStubSteps = 5,
   [string]$DryVerifyJson
 )
@@ -125,6 +140,7 @@ if ($inUse) {
 if ($Force) { $rec.forced = $ForceReason; "FORCED: $ForceReason" }
 
 # ---- 3. change set vs the last tested commit ----
+Invoke-Wsl "git -C $RepoClone fetch -q origin" | Out-Null
 $sha = (Invoke-Wsl "git -C $RepoClone rev-parse $Commit" | Select-Object -Last 1).Trim()
 if ($sha -notmatch '^[0-9a-f]{40}$') { throw "cannot resolve $Commit in the runner clone: $sha" }
 $rec.commit = $sha
@@ -178,7 +194,8 @@ if ($lockTaken) {
       Invoke-Step 'apply.sh' { & $GitBash -lc "cd '$(ConvertTo-Unix $Tree)' && bash scripts/apply.sh '$(ConvertTo-Unix $Src)'" }
       Invoke-Step 'gn gen' { gn gen $OutDir }
       $p = Start-Process cmd -ArgumentList "/c autoninja -j 8 -C $OutDir chrome > `"$buildLog`" 2>&1" -PassThru -NoNewWindow -WorkingDirectory $Src
-      if (-not $p.WaitForExit(4 * 3600 * 1000)) {
+      $null = $p.Handle   # PS 5.1: ExitCode is $null for a -PassThru process unless the handle was read
+      if (-not $p.WaitForExit($BuildHours * 3600 * 1000)) {
         $rec.build.timed_out = $true
         taskkill /T /F /PID $p.Id | Out-Null
       }

@@ -87,3 +87,24 @@ def test_host_config_required_and_not_hardcoded():
     assert "host.config.ps1" in t
     assert re.search(r"if \(-not \(Test-Path \$HostConfig\)\) \{ throw", t)
     assert "$WslUser" in t and "$LockScript" in t
+
+
+def _ps():
+    import pathlib
+    return (pathlib.Path(__file__).parent / "windows" / "windows-ci.ps1").read_text()
+
+
+def test_build_process_handle_is_read_before_exitcode():
+    # PS 5.1: ExitCode is $null for a -PassThru process unless $p.Handle was read first.
+    s = _ps()
+    assert s.index("$null = $p.Handle") < s.index("$p.ExitCode")
+
+
+def test_runner_clone_is_fetched_before_the_commit_is_resolved():
+    s = _ps()
+    assert s.index("fetch -q origin") < s.index("rev-parse $Commit")
+
+
+def test_build_timeout_is_a_parameter_not_a_literal():
+    s = _ps()
+    assert "[int]$BuildHours" in s and "4 * 3600" not in s
