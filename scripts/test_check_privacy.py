@@ -40,7 +40,7 @@ def test_each_category_is_caught(line, cat):
 
 
 @pytest.mark.parametrize("line", [
-    "Chrome/154.0.0.0 and 154.0.8037.93 and 156.0.8078.36",
+    "Chrome/154.0.0.0 and 154.0.8037.93 and 156.0.8078.48",
     "doc address 203.0.113.7, 127.0.0.1 and 0.0.0.0:54021",
     "fake webrtc ip 192.168.1.37",
     "~/chromium/src, $HOME/x, /home/runner/work and /home/<user>/x",
@@ -222,3 +222,36 @@ def test_commit_msg_hook_refuses_a_session_link(repo):
 
 def test_hooks_pass_a_clean_utc_commit(repo):
     assert try_commit(hooked(repo), "a.md", "clean\n").returncode == 0
+
+
+def test_file_mode_checks_contents_not_its_own_path(tmp_path, monkeypatch):
+    # --file names a local file (a PR body, COMMIT_EDITMSG); its path is never published
+    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(TERMS))
+    body = tmp_path / "Plantville" / "body.md"
+    body.parent.mkdir()
+    body.write_text("clean\n")
+    assert cp.main(["--file", str(body)]) == 0
+    body.write_text("near Plantville\n")
+    assert cp.main(["--file", str(body)]) == 1
+
+
+def test_commit_msg_hook_passes_in_a_linked_worktree(repo, tmp_path):
+    # git hands a linked worktree's hook an absolute .git/worktrees/<name>/COMMIT_EDITMSG path
+    commit(repo, "a.md", "clean\n")
+    wt = tmp_path / "Plantville-wt"
+    git(repo, "worktree", "add", "-q", "-b", "side", str(wt))
+    git(wt, "config", "core.hooksPath", str(HOOKS))
+    assert try_commit(wt, "b.md", "clean\n").returncode == 0
+    assert try_commit(wt, "c.md", "clean\n", msg="x\n\nClaude-Session: https://claude.ai/code/session-x").returncode != 0
+
+
+def test_layer3_site_term_is_exempt_in_a_binary_but_refused_in_text():
+    # Site host names occur in Chromium's own binaries (two of the twelve in the stock Chrome 156 framework),
+    # so the placeholder is GEO: skipped in binaries, strict in text.
+    terms = {"<layer3-site>": ["sitehost.example"], "<host-name>": ["boxname"]}
+    binary = b"\0sitehost.example\0"
+    assert cp.byte_hits(binary, terms, "chrome.dll") == []
+    assert cp.byte_hits(binary + b"boxname", terms, "chrome.dll") == ["<host-name>"]
+    assert cp.byte_hits(b"see sitehost.example", terms, "notes.md") == ["<layer3-site>"]
+    assert cp.byte_hits(b"see sitehost.example", terms, "plain.bin") == ["<layer3-site>"]  # no NUL: text
+    assert cp.identity_term_count(terms) == 1

@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_CAMOUCFG_COHERENCE_VALIDATOR_H_
 #define COMPONENTS_CAMOUCFG_COHERENCE_VALIDATOR_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -58,6 +59,16 @@ std::optional<PairingViolation> CheckPairing(bool renderer_resolves,
                                              bool vendor_resolves,
                                              std::string_view renderer_key,
                                              std::string_view vendor_key);
+
+// Pure: the hex device id of the LAST "(0x<hex>)" group in an ANGLE renderer
+// string, e.g. "(0x00005917)" -> 0x5917. nullopt when there is no group, the
+// group has no hex digits, is not closed by ')', or overflows 32 bits.
+std::optional<uint32_t> ParseAngleDeviceId(std::string_view renderer);
+
+// Pure: true iff a cap exists, a thread count exists, and threads > cap. Either
+// side absent constrains nothing.
+bool ThreadsExceedCap(std::optional<uint32_t> cap,
+                      std::optional<uint32_t> threads);
 
 // Reads the configuration and reports each API (webGl, webGl2) whose renderer
 // and vendor are not both-present-or-both-absent. "Resolves" mirrors the

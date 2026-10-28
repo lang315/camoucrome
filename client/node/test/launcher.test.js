@@ -18,15 +18,18 @@ test('args match the contract', () => {
   assert.deepEqual(c.buildArgs({ headless: false }), [...L.base_args, ...pipe]);
   assert.deepEqual(c.buildArgs(), [...L.base_args, L.headless_arg, ...pipe]);
   assert.deepEqual(
-    c.buildArgs({ headless: false, userDataDir: '/p', window: [1920, 1040], dpr: 1.25,
+    c.buildArgs({ headless: false, userDataDir: '/p', window: [1920, 1040], position: [30, 60], dpr: 1.25,
       acceptLang: 'fr-FR,fr', extensions: ['/e1', '/e2'], spkiList: ['AAA=', 'BBB='] }),
     [...L.base_args, ...pipe, '--user-data-dir=/p',
       L.window_size_arg.replace('{width}', '1920').replace('{height}', '1040'),
+      L.window_position_arg.replace('{x}', '30').replace('{y}', '60'),
       L.dpr_arg.replace('{dpr}', '1.25'),
       L.accept_lang_arg.replace('{languages}', 'fr-FR,fr'),
       ...L.extension_args.map((a) => a.replace('{paths}', '/e1,/e2')),
       L.spki_arg.replace('{hashes}', 'AAA=,BBB=')]);
   assert.equal(L.ignore_default_args, true);
+  assert.equal(L.extra_args_last, true);
+  assert.equal(c.buildArgs({ headless: false, window: [1, 2], extra: ['--force-color-profile=srgb'] }).at(-1), '--force-color-profile=srgb');
 });
 
 test('env drops stale CAMOU vars and sets the transport', () => {
@@ -250,4 +253,32 @@ test('unmapped host keeps aliases for a config that names no OS', () => {
 test('native host without alias keys encodes the config unchanged', () => {
   const cfg = { 'ua:platform': 'Windows', 'fonts:list': ['Arial'] };
   assert.equal(c.buildEnv({ config: cfg, hostOs: 'Windows' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
+});
+
+test('proxy args match the contract and keep credentials off argv', () => {
+  assert.deepEqual(L.proxy_option_fields.slice().sort(), ['bypass', 'password', 'server', 'username']);
+  const args = c.buildArgs({ proxyServer: 'http://p.example:8080', proxyBypass: 'a.test, .b.test' });
+  assert.ok(args.includes(L.proxy_arg.replace('{server}', 'http://p.example:8080')));
+  assert.ok(args.includes(L.proxy_bypass_arg.replace('{bypass}', 'a.test;.b.test')));
+  assert.ok(!args.some((a) => a.includes('@')));
+});
+
+test('launch adds the proxy flag and hands the credentials to the driver', async () => {
+  const calls = [];
+  const ctx = { on: () => {}, close: async () => {} };
+  const chromium = { launchPersistentContext: async (dir, opts) => { calls.push(opts); return ctx; } };
+  const proxy = { server: 'http://p.example:8080', username: 'u', password: 'secret', bypass: 'a.test,b.test' };
+  await c.launch(chromium, '/x/chrome', { userDataDir: '/tmp/p', proxy });
+  const opts = calls[0];
+  assert.ok(opts.args.includes('--proxy-server=http://p.example:8080'));
+  assert.ok(opts.args.includes('--proxy-bypass-list=a.test;b.test'));
+  assert.deepEqual(opts.proxy, proxy);
+  assert.ok(!opts.args.some((a) => a.includes('secret')));
+});
+
+test('launch refuses a proxy that would leak or do nothing', async () => {
+  const chromium = { launchPersistentContext: async () => assert.fail('must not launch') };
+  for (const proxy of [{ username: 'u' }, { server: '' }, { server: 'http://u:p@h:1' }, 'http://h:1']) {
+    await assert.rejects(c.launch(chromium, '/x/chrome', { proxy }), /proxy/);
+  }
 });

@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-index ec85b03dbd..2890fc5d51 100644
+index ebf3256668..af3570aa54 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
-@@ -208,6 +208,10 @@ void AudioBuffer::CamouEnsureNoised() {
+@@ -209,6 +209,10 @@ void AudioBuffer::CamouEnsureNoised() {
    if (did_camou_noise_) {
      return;
    }
@@ -14,7 +14,7 @@ index ec85b03dbd..2890fc5d51 100644
    const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
    for (unsigned c = 0; c < channels_.size(); ++c) {
 diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
-index 6e89d82897..6a4b3418df 100644
+index ce762e0543..ee9fb98e2c 100644
 --- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
 +++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
 @@ -116,6 +116,14 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {

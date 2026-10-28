@@ -61,9 +61,11 @@ import json
 import os
 import pathlib
 import random
+import re
 import sys
 from dataclasses import asdict
 
+from . import hostfonts
 from .identity import per_instance_config
 
 # derive.cc's kForms: UA-CH platform -> (ua:osInfo, ua:platform). The test
@@ -79,11 +81,29 @@ MAX_DRAWS = 50
 # Measured 2026-09-10 (headless chrome, --window-size WxH, --force-device-
 # scale-factor D, sizes 1528/1600/2048): at D = 1.25 and 1.75 the window
 # comes back exactly 2 px larger on both axes (1528 -> 1530, 2048 -> 2050),
-# at 1, 1.5, 2, 2.5 and 3 it comes back exact. Not rounding -- the offset is
-# constant across sizes. So launch.window is the configured outer minus the
-# offset, and the real innerWidth then never exceeds window.outerWidth.
+# at 1, 1.5, 2, 2.5 and 3 it comes back exact. Those sizes were all multiples
+# of 4. Measured again 2026-10-28 over L = 1180..1191, 1480..1491 and
+# 660..671, 714..725: the offset is not constant. At 1.25 and 1.75 L % 4 == 2
+# comes back +1 (not +2), at 1.5 an odd L comes back +1, and at 1.25 an L with
+# L % 4 == 3 comes back +2 with innerWidth 1 px ABOVE the outer width (G4 of
+# verify_sp6b_generator). So launch.window is the largest L <= outer - offset
+# whose residue is in WINDOW_SAFE[dpr]: there the browser returns L + offset
+# exactly with innerWidth not above it, and the claimed outer is set to that
+# (at most 2 px smaller). The residues are from the same measurement:
+# 1.25: L % 4 in {0, 1}; 1.75: L % 4 in {0, 1, 3}; 1.5: L even.
 # DPRs outside the measured set are redrawn.
 WINDOW_OFFSET = {1: 0, 1.25: 2, 1.5: 0, 1.75: 2, 2: 0, 2.5: 0, 3: 0}
+WINDOW_SAFE = {1.25: (4, (0, 1)), 1.5: (2, (0,)), 1.75: (4, (0, 1, 3))}
+
+
+def snap_window(dpr, outer):
+    """(launch size, outer the browser then reports) along one axis, for a claimed outer size."""
+    off = WINDOW_OFFSET[dpr]
+    mod, ok = WINDOW_SAFE.get(dpr, (1, (0,)))
+    length = outer - off
+    while length % mod not in ok:
+        length -= 1
+    return length, length + off
 
 
 def dpr_of(fp):
@@ -96,18 +116,21 @@ def dpr_of(fp):
 # value <= the pool's. The C++ domain validator has no rule for this key
 # (only the geolocation axes), so the strict oracle cannot catch it.
 DEVICE_MEMORY = (0.25, 0.5, 1, 2, 4, 8)
-# The repository (or an archive/client copy with the same layout): settings/ is
-# not package data, so a non-editable install must name it in CAMOUCROME_ROOT.
+# The repository (or an archive/client copy with the same layout), else the
+# copy a wheel build puts in the package (client/python/setup.py).
+_PACKAGED = pathlib.Path(__file__).resolve().parent / "_settings"
 ROOT = pathlib.Path(os.environ.get("CAMOUCROME_ROOT") or pathlib.Path(__file__).resolve().parents[3])
 if not (ROOT / "settings" / "webgl").is_dir():
-    raise ImportError(f"camoucrome.gen needs the repository's settings/ and {ROOT / 'settings'} has none: "
+    ROOT = _PACKAGED
+if not (ROOT / "settings" / "webgl").is_dir():
+    raise ImportError(f"camoucrome.gen needs settings/ and found none at {ROOT}: "
                       "set CAMOUCROME_ROOT to the repository (or client copy) root")
 
 
 def load_profiles():
     """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
     return {p.stem: json.loads(p.read_text(encoding="utf-8"))
-            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._")}
+            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith(("-pool", "-thread-caps"))}
 
 
 GL_ENUM = {"VERTEX_SHADER": 35633, "FRAGMENT_SHADER": 35632, "LOW_FLOAT": 36336, "MEDIUM_FLOAT": 36337,
@@ -141,6 +164,62 @@ def profile_for(platform, gpu=None):
     return next((p for p in profiles.values() if p["os"] == platform), None)
 
 
+GEN9_RE = re.compile(r"^ANGLE \(Intel, Intel\(R\) (U?HD Graphics( 6\d\d)?) \((0x[0-9A-F]{8})\) "
+                     r"Direct3D11 vs_5_0 ps_5_0, D3D11\)$")
+SHARED_GPU = "the GPU is shared by every profile on this host"
+
+
+# assumption: the thread counts Intel parts typically ship with, not a measured distribution
+THREAD_STEPS = (2, 4, 6, 8, 12, 16, 20)
+
+
+def gen9_pool():
+    return json.loads((ROOT / "settings" / "webgl" / "intel-gen9-pool.json").read_text(encoding="utf-8"))
+
+
+def gen9_thread_cap(renderer):
+    """Most threads any CPU shipping this Gen9 GPU has (Intel ARK, settings/webgl/intel-gen9-thread-caps.json);
+    None for a non-Gen9 renderer or one with no sourced cap."""
+    return _thread_caps().get(gen9_device_id(renderer))
+
+
+def _thread_caps():
+    rows = json.loads((ROOT / "settings" / "webgl" / "intel-gen9-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    return {int(r["device_id"], 16): r["max_threads"] for r in rows if r["max_threads"] is not None}
+
+
+def gen9_device_id(renderer, ids=None):
+    m = GEN9_RE.match(renderer or "")
+    if not m:
+        return None
+    dev = int(m.group(3), 16)
+    return dev if dev in set(ids if ids is not None else gen9_pool()["device_ids"]) else None
+
+
+def gpu_for(platform, host_renderer, rng, gpu=None):
+    """(profile, warning). A host that is unknown, not a D3D11 renderer or not Intel Gen9 claims no GPU (None: the real
+    GPU is kept). An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
+    change, every parameter stays the host generation's. The draw uses its own generator seeded from rng's
+    state (as fonts_keys does), so rng is not advanced and later seeded keys do not move.
+    Only renderers with a sourced thread cap (gen9_thread_cap) are drawn; from_pool then holds
+    navigator.hardwareConcurrency to that cap."""
+    base = profile_for(platform, gpu)
+    if gpu or platform != "Windows" or base is None:
+        return base, None
+    # Fail closed: a host this code cannot identify may not back an Intel claim (an RTX or Arc host shows its own adapter in
+    # WebGPU and AV1 hardware decode under an Intel WebGL string), so it claims no GPU. `--gpu` is the deliberate opt-in.
+    if host_renderer is None:
+        return None, f"host GPU unknown: {SHARED_GPU}; the real GPU is kept"
+    if not host_renderer.endswith(", D3D11)"):
+        return None, f"host renderer is not a Windows D3D11 renderer: {SHARED_GPU}; the real GPU is kept"
+    if gen9_device_id(host_renderer) is None:
+        return None, f"host GPU is not in the supported Intel Gen9 set: {SHARED_GPU}; the real GPU is kept"
+    caps = _thread_caps()
+    pool = [r for r in gen9_pool()["renderers"] if r["device_id"] in caps]  # no sourced cap: never drawn
+    pick = random.Random(repr(rng.getstate()) + "gpu").choices(pool, weights=[r["weight"] for r in pool])[0]
+    return {**base, "renderer": pick["renderer"]}, None
+
+
 def zone_for(locale, rng):
     table = json.loads((ROOT / "settings" / "locale_zones.json").read_text(encoding="utf-8"))["zones"]
     if locale not in table:
@@ -149,14 +228,37 @@ def zone_for(locale, rng):
     return rng.choice(table[locale])
 
 
-def fonts_keys(platform):
+def fonts_keys(platform, rng=None, host_families=None):
     """fonts:list (the claimed OS's captured family list) and fonts:alias (each
-    family's bundled target, generated by scripts/gen_fontconfig.py); {} for Linux."""
+    family's bundled target, generated by scripts/gen_fontconfig.py); {} for Linux.
+    With rng, fonts:list is a subset: the base set plus each optional group drawn at its p
+    (groups in name order, so a seed is stable). host_families (what hostfonts.families()
+    returns: registry labels) limits the list on both paths, for a Windows claim only (ignored for
+    any other platform: a Windows registry says nothing about a macOS claim's fonts); empty or unmappable means
+    "host unknown" and limits nothing. fonts:local, fonts:alias and fonts:aliasLocal drop
+    every entry of a hidden family, so no local() name outlives the list.
+    The draw uses its own generator seeded from rng's state, so rng is not advanced: Task 4
+    passes the generation rng and other seeded keys (share:cancelMs ...) must not move.
+    Without rng it is the whole captured list, as before."""
     fonts = json.loads((ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))
     if platform not in fonts["alias_map"]:
         return {}
     fam = fonts["families"][platform]
-    alias, allowed = dict(fonts["alias_map"][platform]), fam["list"] + fonts["extra_allowed"][platform]
+    chosen = set(fam["list"])
+    if rng is not None and "base" in fam:
+        draw = random.Random(repr(rng.getstate()))
+        chosen = set(fam["base"])
+        for name in sorted(fam["groups"]):
+            if draw.random() < fam["groups"][name]["p"]:
+                chosen |= set(fam["groups"][name]["families"])
+    # the registry set means something only for a Windows claim (the one with a base set)
+    on_host = hostfonts.host_families_from_labels(host_families, fam) if host_families and "base" in fam else set()
+    if on_host and chosen & on_host:
+        chosen &= on_host
+    families = [f for f in fam["list"] if f in chosen]
+    hidden = set(fam["list"]) - chosen
+    alias = {k: v for k, v in fonts["alias_map"][platform].items() if k not in hidden}
+    allowed = families + fonts["extra_allowed"][platform]
     if fam["ps_names_are_css_families"]:
         # macOS Chrome resolves a PostScript/full name as a CSS family (font_matcher_mac.mm falls
         # back to it; measured on stock); Windows does not. Same map keys, family targets.
@@ -167,10 +269,11 @@ def fonts_keys(platform):
         allowed = allowed + sorted(fam["unique_names"])
     return {"fonts:list": allowed,
             # queryLocalFonts() lists the captured host's faces (tab-joined ps, full, family, style), never the bundle's
-            **({"fonts:local": ["\t".join(f) for f in fam["faces"]]} if fam.get("faces") else {}),  # no captured faces: real enumeration (rule 5), never an empty list
+            **({"fonts:local": ["\t".join(f) for f in fam["faces"] if f[2] in families]} if fam.get("faces") else {}),  # no captured faces: real enumeration (rule 5), never an empty list
             "fonts:alias": alias,
             # src:local() names (the local() gate allows this map's keys) land on a face's full name (F-PSNAME)
-            "fonts:aliasLocal": fonts["unique_map"][platform],
+            "fonts:aliasLocal": {k: v for k, v in fonts["unique_map"][platform].items()
+                                 if fam["unique_names"].get(k, {}).get("family") not in hidden},
             # The list was captured on one OS version; the UA-CH claim follows it (rule 4).
             "ua:platformVersion": fam["platform_version"]}
 
@@ -244,8 +347,40 @@ def clamp_window_position(config):
             config[key] = max(0, min(pos, screen - outer))
 
 
-def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
-    """Pure: one BrowserForge fingerprint dict -> {"config", "launch"}."""
+MIN_WINDOW = (800, 500)  # assumption: a person's window is never narrower or shorter than this
+
+
+def window_position(rng, avail, outer):
+    """How far a person dragged the window off the work-area corner: (dx, dy), each 0..120 px (assumption), and
+    never so far that the window would be narrower or shorter than MIN_WINDOW. from_pool moves the window by
+    (dx, dy) and shrinks it by the same amount, so its far edge stays where it was inside the work area."""
+    r = random.Random(repr(rng.getstate()) + "window-position")  # own generator: rng and later keys stay put
+    lim = [max(0, min(120, min(a, o) - m)) for a, o, m in zip(avail, outer, MIN_WINDOW)]
+    return r.randint(0, lim[0]), r.randint(0, lim[1])
+
+
+def valid_display(d):
+    """True for a {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool} dict; probe and the CLI share it."""
+    return (isinstance(d, dict) and d.get("gamut") in ("srgb", "p3", "rec2020") and d.get("colorBits") in (8, 10)
+            and isinstance(d.get("hdr"), bool))
+
+
+def display_flags(host_display):
+    """--force-color-profile=srgb for a wide-gamut host. 10-bit and HDR have no known launch lever: a warning, not a claim."""
+    if not host_display:
+        return [], "display unknown: gamut, bit depth and HDR keep the host's values"
+    flags = ["--force-color-profile=srgb"] if host_display["gamut"] != "srgb" else []
+    left = [n for n, on in (("10-bit", host_display["colorBits"] != 8), ("hdr", host_display["hdr"])) if on]
+    warn = f"host display is {', '.join(left)}: no lever hides it, every profile shows it" if left else None
+    return flags, warn
+
+
+def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
+              host_platform_version=None, host_display=None):
+    """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
+    When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
+    cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
+    a value already within the cap stays as BrowserForge drew it."""
     nav, ud, scr = fp["navigator"], fp["navigator"]["userAgentData"], fp["screen"]
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
@@ -290,10 +425,21 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     for k, n in counts.items():
         config[f"mediaDevices:{k}"] = n
     config.update(per_instance_config(rng))
-    profile = profile_for(platform, gpu)
+    profile, warn = gpu_for(platform, host_renderer, rng, gpu)
     if profile:
         config.update(webgl_keys(profile))
-    config.update(fonts_keys(platform))
+        cap = gen9_thread_cap(profile["renderer"]) if host_renderer and not gpu else None
+        if cap is not None and config["navigator.hardwareConcurrency"] > cap:
+            # own generator: rng stays where it was, so the other seeded keys do not move
+            config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
+                [t for t in THREAD_STEPS if t <= cap])
+    config.update(fonts_keys(platform, rng, host_families))
+    pv_warn = None
+    if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
+        if re.fullmatch(r"\d+\.\d+\.\d+", host_platform_version):  # the host's real OS wins over the pool's and the font capture's claim
+            config["ua:platformVersion"] = host_platform_version
+        else:
+            pv_warn = f"host platform version {host_platform_version!r} is not N.N.N: ignored"
     config.update(voices_keys(platform, tag))
     config.update(audio_keys(platform))
     if platform in ("Windows", "macOS"):
@@ -302,13 +448,37 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None):
     fix_screen_no_taskbar(config, platform)
     clamp_window_dimensions(config)
     clamp_window_position(config)
-    dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
-    launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
-              "dpr": dpr}
-    return {"config": config, "launch": launch}
+    # Position: a pool position that is not (0, 0) and lies inside the work area is a real sample and stays. Any
+    # other (the pool puts 36 of 40 windows at 0,0) is drawn, and the window shrinks by the offset so it never
+    # reaches under the taskbar the identity claims: screenX + outerWidth <= availLeft + availWidth, same for Y.
+    pos = (config["window.screenX"], config["window.screenY"])
+    avail = (config["screen.availWidth"], config["screen.availHeight"])
+    outer = [config["window.outerWidth"], config["window.outerHeight"]]
+    origin = (config.get("screen.availLeft", 0), config.get("screen.availTop", 0))
+    inside = all(origin[i] <= pos[i] and pos[i] + outer[i] <= origin[i] + avail[i] for i in (0, 1))
+    if pos == (0, 0) or not inside:
+        d = window_position(rng, avail, outer)
+        config["window.screenX"], config["window.screenY"] = origin[0] + d[0], origin[1] + d[1]
+        config["window.outerWidth"], config["window.outerHeight"] = outer[0] - d[0], outer[1] - d[1]
+    dpr = dpr_of(fp)
+    (lw, config["window.outerWidth"]), (lh, config["window.outerHeight"]) = (
+        snap_window(dpr, config["window.outerWidth"]), snap_window(dpr, config["window.outerHeight"]))
+    launch = {"window": [lw, lh], "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
+    # None = not probed (no claim); a failed probe is the caller's to turn into display_flags(None)
+    if host_display is not None and not valid_display(host_display):
+        host_display, bad_display = None, "host display is malformed: ignored"
+    else:
+        bad_display = None
+    launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
 
 
-def generate(os=None, timezone=None, locale=None, seed=None, gpu=None):
+def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
+             host_families=None, host_platform_version=None, host_display=None):
+    """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
+    be resolved the draw proceeds as without it and a GeoIPWarning says so."""
+    if exit_ip:
+        timezone, locale = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
     from browserforge.fingerprints import FingerprintGenerator
     rng = random.Random(seed)
     if seed is not None:
@@ -319,19 +489,46 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None):
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng, gpu)
+            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
+                             host_display)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
-def main():
+def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
+    from . import geoip
+    try:
+        found = geoip.lookup(exit_ip, geoip_db)
+    except geoip.GeoIPError as e:
+        geoip.warn_all([f"the exit IP {exit_ip} was not resolved ({e}): timezone and locale are not derived from it"])
+        return timezone, locale
+    if found["locale"] is None:
+        geoip.warn_all([f"no locale for country {found['country']}: the identity keeps its drawn locale beside {found['timezone']}"])
+    return timezone or found["timezone"], locale or found["locale"]
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--os", choices=sorted(OS_ARG))
     ap.add_argument("--timezone", help="IANA zone; default from settings/locale_zones.json by locale")
     ap.add_argument("--locale")
     ap.add_argument("--seed", type=int)
-    ap.add_argument("--gpu", help="a settings/webgl profile id; default: the first profile for the claimed OS")
-    a = ap.parse_args()
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu), sys.stdout)
+    ap.add_argument("--gpu", help="a settings/webgl profile id, claimed whatever the host is (a deliberate opt-in, e.g. a test box with no GPU); "
+                                  "default: a Windows claim draws a Gen9 GPU on a Gen9 host and claims none on any other")
+    ap.add_argument("--exit-ip", help="the proxy's exit address: timezone and locale follow where it is (needs --geoip-db or CAMOU_GEOIP_DB)")
+    ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
+    ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
+    ap.add_argument("--probe-executable", help="a Chrome binary: launch it once to read the host's WebGL renderer when --host-renderer is not given (a failed probe claims no GPU)")
+    ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
+    ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
+    ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
+    a = ap.parse_args(argv)
+    if a.host_renderer is None and a.probe_executable:
+        from . import probe
+        a.host_renderer = probe.host_renderer(a.probe_executable)
+    if a.host_display is not None and not valid_display(a.host_display):
+        sys.exit('gen: --host-display must be {"gamut": "srgb"|"p3"|"rec2020", "colorBits": 8|10, "hdr": true|false}')
+    families = hostfonts.families() if a.host_fonts else None
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display), sys.stdout)
 
 
 if __name__ == "__main__":

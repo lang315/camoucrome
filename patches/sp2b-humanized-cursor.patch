@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index b92fdbe057..626b4b0e7e 100644
+index 8468f4d256..092fbf59a6 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -17,12 +17,17 @@
@@ -177,7 +177,7 @@ index b92fdbe057..626b4b0e7e 100644
    void InjectKeyboardEvent(const input::NativeWebKeyboardEvent& keyboard_event,
                             std::unique_ptr<Array<std::string>> commands,
                             std::unique_ptr<DispatchKeyEventCallback> callback) {
-@@ -2317,6 +2465,48 @@ bool InputHandler::PointIsWithinContents(gfx::PointF point) const {
+@@ -2314,6 +2462,48 @@ bool InputHandler::PointIsWithinContents(gfx::PointF point) const {
    return bounds.Contains(point.x(), point.y());
  }
  

@@ -19,6 +19,7 @@ static_library("camoucfg") {
     "device_ids.h",
     "domain_validator.cc",
     "domain_validator.h",
+    "gen9_thread_caps.h",
     "gl_params.cc",
     "gl_params.h",
     "invariants.h",

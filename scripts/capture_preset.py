@@ -17,6 +17,7 @@ preset is A3 #2's job: captured on real hardware, on the OS it claims.
 """
 import datetime
 import json
+import os
 import sys
 
 import echo_server
@@ -78,9 +79,10 @@ if not observed["platformVersion"]:
     # out rather than have the loader emit an empty ua:platformVersion.
     del observed["platformVersion"]
 observed["provenance"] = {
-    "binary": lib_shell.CHROME,
+    # The file is committed: an absolute path would name the box's OS user.
+    "binary": lib_shell.CHROME.replace(os.path.expanduser("~"), "~", 1),
     "flags": flags,
-    "captured": datetime.date.today().isoformat(),
+    "captured": datetime.datetime.now(datetime.timezone.utc).date().isoformat(),
     "kind": "smoke preset: the build box's own headless SwiftShader identity, "
             "for exercising the loader; not a distributable device identity",
     "fonts": "omitted, no enumeration without a permission prompt",

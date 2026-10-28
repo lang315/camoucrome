@@ -1,8 +1,12 @@
 {
- "chrome": "154.0.8037.93",
- "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed through the host CDP client, headless --dump-dom",
+ "chrome": "156.0.8078.48",
+ "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
+ "display": {
+  "width": 1440,
+  "height": 900
+ },
  "headed": {
-  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
   "windowKeys": [
    "window",
    "self",
@@ -655,6 +659,7 @@
    "PeriodicWave",
    "PerformanceTimingConfidence",
    "PerformanceTiming",
+   "PerformanceSoftNavigation",
    "PerformanceServerTiming",
    "PerformanceResourceTiming",
    "PerformancePaintTiming",
@@ -734,6 +739,7 @@
    "IntersectionObserverEntry",
    "IntersectionObserver",
    "InterestEvent",
+   "InteractionContentfulPaint",
    "InputEvent",
    "InputDeviceInfo",
    "InputDeviceCapabilities",
@@ -1116,9 +1122,7 @@
    "BatteryManager",
    "Cache",
    "CacheStorage",
-   "Clipboard",
    "ClipboardChangeEvent",
-   "ClipboardItem",
    "CookieChangeEvent",
    "CookieStore",
    "CookieStoreManager",
@@ -1234,6 +1238,12 @@
    "BluetoothRemoteGATTServer",
    "BluetoothRemoteGATTService",
    "CaptureController",
+   "Clipboard",
+   "ClipboardItem",
+   "Lock",
+   "LockManager",
+   "ServiceWorker",
+   "ServiceWorkerContainer",
    "CrashReportContext",
    "DevicePosture",
    "DigitalCredential",
@@ -1257,10 +1267,6 @@
    "NavigatorLogin",
    "LanguageDetector",
    "LanguageModel",
-   "Lock",
-   "LockManager",
-   "ServiceWorker",
-   "ServiceWorkerContainer",
    "NotRestoredReasonDetails",
    "NotRestoredReasons",
    "OTPCredential",
@@ -1383,8 +1389,6 @@
    "HTMLGeolocationElement",
    "HTMLUserMediaElement",
    "IntegrityViolationReportBody",
-   "InteractionContentfulPaint",
-   "PerformanceSoftNavigation",
    "LaunchParams",
    "LaunchQueue",
    "MediaMetadata",
@@ -1434,7 +1438,7 @@
    "product": "Gecko",
    "productSub": "20030107",
    "appName": "Netscape",
-   "appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+   "appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
    "appCodeName": "Mozilla",
    "language": "en-US",
    "languages": [
@@ -1491,22 +1495,22 @@
   "navConnection": {
    "effectiveType": "4g",
    "rtt": 100,
-   "downlink": 1.65,
+   "downlink": 1.6,
    "saveData": false
   },
   "uad": {
    "brands": [
     {
+     "brand": "Not:A-Brand",
+     "version": "8"
+    },
+    {
      "brand": "Chromium",
-     "version": "154"
+     "version": "156"
     },
     {
      "brand": "Google Chrome",
-     "version": "154"
-    },
-    {
-     "brand": "Not A(Brand",
-     "version": "99"
+     "version": "156"
     }
    ],
    "mobile": false,
@@ -1517,16 +1521,16 @@
    "bitness": "64",
    "brands": [
     {
+     "brand": "Not:A-Brand",
+     "version": "8"
+    },
+    {
      "brand": "Chromium",
-     "version": "154"
+     "version": "156"
     },
     {
      "brand": "Google Chrome",
-     "version": "154"
-    },
-    {
-     "brand": "Not A(Brand",
-     "version": "99"
+     "version": "156"
     }
    ],
    "formFactors": [
@@ -1534,30 +1538,30 @@
    ],
    "fullVersionList": [
     {
+     "brand": "Not:A-Brand",
+     "version": "8.0.0.0"
+    },
+    {
      "brand": "Chromium",
-     "version": "154.0.8037.93"
+     "version": "156.0.8078.48"
     },
     {
      "brand": "Google Chrome",
-     "version": "154.0.8037.93"
-    },
-    {
-     "brand": "Not A(Brand",
-     "version": "99.0.0.0"
+     "version": "156.0.8078.48"
     }
    ],
    "mobile": false,
    "model": "",
    "platform": "Windows",
    "platformVersion": "10.0.0",
-   "uaFullVersion": "154.0.8037.93",
+   "uaFullVersion": "156.0.8078.48",
    "wow64": false
   },
   "screen": {
-   "width": 1024,
-   "height": 768,
-   "availWidth": 1024,
-   "availHeight": 768,
+   "width": 1440,
+   "height": 900,
+   "availWidth": 1440,
+   "availHeight": 900,
    "availLeft": 0,
    "availTop": 0,
    "colorDepth": 24,
@@ -1592,12 +1596,12 @@
    "Notification": "function"
   },
   "media": {
-   "(pointer: fine)": false,
+   "(pointer: fine)": true,
    "(pointer: coarse)": false,
-   "(pointer: none)": true,
-   "(hover: hover)": false,
-   "(any-pointer: fine)": false,
-   "(any-hover: hover)": false,
+   "(pointer: none)": false,
+   "(hover: hover)": true,
+   "(any-pointer: fine)": true,
+   "(any-hover: hover)": true,
    "(prefers-color-scheme: dark)": false,
    "(prefers-reduced-motion: reduce)": false,
    "(prefers-contrast: more)": false,
@@ -1654,7 +1658,7 @@
    "durationFormat": "function"
   },
   "audio": {
-   "sampleRate": 48000,
+   "sampleRate": 44100,
    "baseLatency": 0.01,
    "outputLatency": 0,
    "maxChannelCount": 2,
@@ -1679,120 +1683,6 @@
     "Microsoft Zira - English (United States)",
     "en-US",
     true,
-    false
-   ],
-   [
-    "Google Deutsch",
-    "de-DE",
-    false,
-    false
-   ],
-   [
-    "Google US English",
-    "en-US",
-    false,
-    false
-   ],
-   [
-    "Google UK English Female",
-    "en-GB",
-    false,
-    false
-   ],
-   [
-    "Google UK English Male",
-    "en-GB",
-    false,
-    false
-   ],
-   [
-    "Google español",
-    "es-ES",
-    false,
-    false
-   ],
-   [
-    "Google español de Estados Unidos",
-    "es-US",
-    false,
-    false
-   ],
-   [
-    "Google français",
-    "fr-FR",
-    false,
-    false
-   ],
-   [
-    "Google हिन्दी",
-    "hi-IN",
-    false,
-    false
-   ],
-   [
-    "Google Bahasa Indonesia",
-    "id-ID",
-    false,
-    false
-   ],
-   [
-    "Google italiano",
-    "it-IT",
-    false,
-    false
-   ],
-   [
-    "Google 日本語",
-    "ja-JP",
-    false,
-    false
-   ],
-   [
-    "Google 한국의",
-    "ko-KR",
-    false,
-    false
-   ],
-   [
-    "Google Nederlands",
-    "nl-NL",
-    false,
-    false
-   ],
-   [
-    "Google polski",
-    "pl-PL",
-    false,
-    false
-   ],
-   [
-    "Google português do Brasil",
-    "pt-BR",
-    false,
-    false
-   ],
-   [
-    "Google русский",
-    "ru-RU",
-    false,
-    false
-   ],
-   [
-    "Google 普通话（中国大陆）",
-    "zh-CN",
-    false,
-    false
-   ],
-   [
-    "Google 粤語（香港）",
-    "zh-HK",
-    false,
-    false
-   ],
-   [
-    "Google 國語（臺灣）",
-    "zh-TW",
-    false,
     false
    ]
   ],
@@ -1830,6 +1720,11 @@
     "maxComputeWorkgroupSizeX": 1024,
     "maxBindGroups": 4
    }
+  },
+  "webgl": {
+   "vendor": "Google Inc. (Intel)",
+   "renderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "maxSamples": 16
   },
   "codecs": {
    "video/mp4; codecs=\"avc1.42E01E\"": [
@@ -1892,7 +1787,7 @@
   "mediaCap": [
    true,
    true,
-   false
+   true
   ],
   "perms": {
    "geolocation": "prompt",
@@ -1914,7 +1809,11 @@
    "local-fonts": "prompt"
   },
   "keyboard": {
-   "size": 0
+   "size": 48,
+   "KeyA": "a",
+   "KeyQ": "q",
+   "Backquote": "`",
+   "Digit1": "1"
   },
   "storage": {
    "quotaGiB": 10,
@@ -1924,17 +1823,10 @@
   "perfMem": {
    "jsHeapSizeLimit": 3760000000
   },
-  "mediaDevices": [
-   [
-    "audiooutput",
-    "",
-    0,
-    0
-   ]
-  ],
+  "mediaDevices": [],
   "canvas": {
-   "text": "9c3103de",
-   "shape": "561c139d"
+   "text": "f128eb83",
+   "shape": "c662b8ad"
   },
   "fonts": {
    "segoe": true,
@@ -1942,7 +1834,7 @@
    "dejavu": true
   },
   "err": {
-   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_20820/page.html",
+   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_13532/page.html",
    "toStringLen": 39
   },
   "protoCounts": {
@@ -1951,12 +1843,12 @@
    "HTMLElement": 144,
    "CSSStyleDeclaration": 10,
    "Element": 153,
-   "cssProps": 748
+   "cssProps": 749
   },
   "done": true
  },
  "headless": {
-  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
   "windowKeys": [
    "window",
    "self",
@@ -2609,6 +2501,7 @@
    "PeriodicWave",
    "PerformanceTimingConfidence",
    "PerformanceTiming",
+   "PerformanceSoftNavigation",
    "PerformanceServerTiming",
    "PerformanceResourceTiming",
    "PerformancePaintTiming",
@@ -2688,6 +2581,7 @@
    "IntersectionObserverEntry",
    "IntersectionObserver",
    "InterestEvent",
+   "InteractionContentfulPaint",
    "InputEvent",
    "InputDeviceInfo",
    "InputDeviceCapabilities",
@@ -3070,9 +2964,7 @@
    "BatteryManager",
    "Cache",
    "CacheStorage",
-   "Clipboard",
    "ClipboardChangeEvent",
-   "ClipboardItem",
    "CookieChangeEvent",
    "CookieStore",
    "CookieStoreManager",
@@ -3188,6 +3080,12 @@
    "BluetoothRemoteGATTServer",
    "BluetoothRemoteGATTService",
    "CaptureController",
+   "Clipboard",
+   "ClipboardItem",
+   "Lock",
+   "LockManager",
+   "ServiceWorker",
+   "ServiceWorkerContainer",
    "CrashReportContext",
    "DevicePosture",
    "DigitalCredential",
@@ -3211,10 +3109,6 @@
    "NavigatorLogin",
    "LanguageDetector",
    "LanguageModel",
-   "Lock",
-   "LockManager",
-   "ServiceWorker",
-   "ServiceWorkerContainer",
    "NotRestoredReasonDetails",
    "NotRestoredReasons",
    "OTPCredential",
@@ -3337,8 +3231,6 @@
    "HTMLGeolocationElement",
    "HTMLUserMediaElement",
    "IntegrityViolationReportBody",
-   "InteractionContentfulPaint",
-   "PerformanceSoftNavigation",
    "LaunchParams",
    "LaunchQueue",
    "MediaMetadata",
@@ -3388,7 +3280,7 @@
    "product": "Gecko",
    "productSub": "20030107",
    "appName": "Netscape",
-   "appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
+   "appVersion": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
    "appCodeName": "Mozilla",
    "language": "en-US",
    "languages": [
@@ -3445,22 +3337,22 @@
   "navConnection": {
    "effectiveType": "4g",
    "rtt": 100,
-   "downlink": 1.5,
+   "downlink": 1.65,
    "saveData": false
   },
   "uad": {
    "brands": [
     {
+     "brand": "Not:A-Brand",
+     "version": "8"
+    },
+    {
      "brand": "Chromium",
-     "version": "154"
+     "version": "156"
     },
     {
      "brand": "Google Chrome",
-     "version": "154"
-    },
-    {
-     "brand": "Not A(Brand",
-     "version": "99"
+     "version": "156"
     }
    ],
    "mobile": false,
@@ -3471,16 +3363,16 @@
    "bitness": "64",
    "brands": [
     {
+     "brand": "Not:A-Brand",
+     "version": "8"
+    },
+    {
      "brand": "Chromium",
-     "version": "154"
+     "version": "156"
     },
     {
      "brand": "Google Chrome",
-     "version": "154"
-    },
-    {
-     "brand": "Not A(Brand",
-     "version": "99"
+     "version": "156"
     }
    ],
    "formFactors": [
@@ -3488,23 +3380,23 @@
    ],
    "fullVersionList": [
     {
+     "brand": "Not:A-Brand",
+     "version": "8.0.0.0"
+    },
+    {
      "brand": "Chromium",
-     "version": "154.0.8037.93"
+     "version": "156.0.8078.48"
     },
     {
      "brand": "Google Chrome",
-     "version": "154.0.8037.93"
-    },
-    {
-     "brand": "Not A(Brand",
-     "version": "99.0.0.0"
+     "version": "156.0.8078.48"
     }
    ],
    "mobile": false,
    "model": "",
    "platform": "Windows",
    "platformVersion": "10.0.0",
-   "uaFullVersion": "154.0.8037.93",
+   "uaFullVersion": "156.0.8078.48",
    "wow64": false
   },
   "screen": {
@@ -3546,12 +3438,12 @@
    "Notification": "function"
   },
   "media": {
-   "(pointer: fine)": false,
+   "(pointer: fine)": true,
    "(pointer: coarse)": false,
-   "(pointer: none)": true,
-   "(hover: hover)": false,
-   "(any-pointer: fine)": false,
-   "(any-hover: hover)": false,
+   "(pointer: none)": false,
+   "(hover: hover)": true,
+   "(any-pointer: fine)": true,
+   "(any-hover: hover)": true,
    "(prefers-color-scheme: dark)": false,
    "(prefers-reduced-motion: reduce)": false,
    "(prefers-contrast: more)": false,
@@ -3608,7 +3500,7 @@
    "durationFormat": "function"
   },
   "audio": {
-   "sampleRate": 48000,
+   "sampleRate": 44100,
    "baseLatency": 0.01,
    "outputLatency": 0,
    "maxChannelCount": 2,
@@ -3634,123 +3526,48 @@
     "en-US",
     true,
     false
-   ],
-   [
-    "Google Deutsch",
-    "de-DE",
-    false,
-    false
-   ],
-   [
-    "Google US English",
-    "en-US",
-    false,
-    false
-   ],
-   [
-    "Google UK English Female",
-    "en-GB",
-    false,
-    false
-   ],
-   [
-    "Google UK English Male",
-    "en-GB",
-    false,
-    false
-   ],
-   [
-    "Google español",
-    "es-ES",
-    false,
-    false
-   ],
-   [
-    "Google español de Estados Unidos",
-    "es-US",
-    false,
-    false
-   ],
-   [
-    "Google français",
-    "fr-FR",
-    false,
-    false
-   ],
-   [
-    "Google हिन्दी",
-    "hi-IN",
-    false,
-    false
-   ],
-   [
-    "Google Bahasa Indonesia",
-    "id-ID",
-    false,
-    false
-   ],
-   [
-    "Google italiano",
-    "it-IT",
-    false,
-    false
-   ],
-   [
-    "Google 日本語",
-    "ja-JP",
-    false,
-    false
-   ],
-   [
-    "Google 한국의",
-    "ko-KR",
-    false,
-    false
-   ],
-   [
-    "Google Nederlands",
-    "nl-NL",
-    false,
-    false
-   ],
-   [
-    "Google polski",
-    "pl-PL",
-    false,
-    false
-   ],
-   [
-    "Google português do Brasil",
-    "pt-BR",
-    false,
-    false
-   ],
-   [
-    "Google русский",
-    "ru-RU",
-    false,
-    false
-   ],
-   [
-    "Google 普通话（中国大陆）",
-    "zh-CN",
-    false,
-    false
-   ],
-   [
-    "Google 粤語（香港）",
-    "zh-HK",
-    false,
-    false
-   ],
-   [
-    "Google 國語（臺灣）",
-    "zh-TW",
-    false,
-    false
    ]
   ],
-  "gpu": "timeout",
+  "gpu": {
+   "info": {
+    "vendor": "intel",
+    "architecture": "gen-9",
+    "device": "",
+    "description": ""
+   },
+   "features": [
+    "bgra8unorm-storage",
+    "clip-distances",
+    "core-features-and-limits",
+    "depth-clip-control",
+    "depth32float-stencil8",
+    "dual-source-blending",
+    "float32-blendable",
+    "float32-filterable",
+    "indirect-first-instance",
+    "primitive-index",
+    "rg11b10ufloat-renderable",
+    "shader-f16",
+    "texture-component-swizzle",
+    "texture-compression-bc",
+    "texture-compression-bc-sliced-3d",
+    "texture-formats-tier1",
+    "texture-formats-tier2",
+    "timestamp-query"
+   ],
+   "limits": {
+    "maxTextureDimension2D": 16384,
+    "maxBufferSize": 2147483648,
+    "maxStorageBufferBindingSize": 2147483644,
+    "maxComputeWorkgroupSizeX": 1024,
+    "maxBindGroups": 4
+   }
+  },
+  "webgl": {
+   "vendor": "Google Inc. (Intel)",
+   "renderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "maxSamples": 16
+  },
   "codecs": {
    "video/mp4; codecs=\"avc1.42E01E\"": [
     "probably",
@@ -3809,19 +3626,49 @@
     false
    ]
   },
-  "mediaCap": "timeout",
-  "perms": "timeout",
-  "keyboard": {
-   "size": 0
+  "mediaCap": [
+   true,
+   true,
+   true
+  ],
+  "perms": {
+   "geolocation": "prompt",
+   "notifications": "prompt",
+   "camera": "prompt",
+   "microphone": "prompt",
+   "clipboard-read": "prompt",
+   "clipboard-write": "granted",
+   "midi": "prompt",
+   "persistent-storage": "prompt",
+   "screen-wake-lock": "granted",
+   "accelerometer": "granted",
+   "gyroscope": "granted",
+   "magnetometer": "granted",
+   "background-sync": "granted",
+   "payment-handler": "granted",
+   "storage-access": "granted",
+   "window-management": "prompt",
+   "local-fonts": "prompt"
   },
-  "storage": "timeout",
+  "keyboard": {
+   "size": 48,
+   "KeyA": "a",
+   "KeyQ": "q",
+   "Backquote": "`",
+   "Digit1": "1"
+  },
+  "storage": {
+   "quotaGiB": 10,
+   "usage": 0,
+   "persisted": false
+  },
   "perfMem": {
    "jsHeapSizeLimit": 3760000000
   },
-  "mediaDevices": "timeout",
+  "mediaDevices": [],
   "canvas": {
-   "text": "9c3103de",
-   "shape": "561c139d"
+   "text": "f128eb83",
+   "shape": "c662b8ad"
   },
   "fonts": {
    "segoe": true,
@@ -3829,7 +3676,7 @@
    "dejavu": true
   },
   "err": {
-   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_21124/page.html",
+   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_10056/page.html",
    "toStringLen": 39
   },
   "protoCounts": {
@@ -3838,7 +3685,7 @@
    "HTMLElement": 144,
    "CSSStyleDeclaration": 10,
    "Element": 153,
-   "cssProps": 748
+   "cssProps": 749
   },
   "done": true
  }

@@ -47,14 +47,25 @@ def test_never_taken_fields_stay_out():
         assert k not in cfg, k
 
 
+def test_a_pool_position_inside_the_work_area_is_kept():
+    pool = json.loads(json.dumps(POOL))
+    pool["screen"].update(outerWidth=1400, outerHeight=700, screenX=30, screenY=20)
+    cfg = gen.from_pool(pool, "UTC", rng=random.Random(1))["config"]
+    assert (cfg["window.screenX"], cfg["window.screenY"], cfg["window.outerWidth"], cfg["window.outerHeight"]) == (30, 20, 1399, 699)  # 1400x700 snapped to a size the browser returns exactly at 1.25 (gen.snap_window)
+
+
 def test_geometry_is_coherent_after_the_helpers():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
     # avail == screen in the pool -> taskbar applied; outer 1600x900 clamped.
     assert cfg["screen.availHeight"] == 864 - 40 and cfg["screen.availWidth"] == 1536
-    assert cfg["window.outerWidth"] == 1536 and cfg["window.outerHeight"] == 824  # 824 % 4 == 0
-    assert cfg["window.screenX"] == 0 and cfg["window.screenY"] == 40
+    # pool window 1536x824 at (0, 0): gen.window_position draws the offset (66, 75) for this rng (a pinned draw,
+    # not a pool value) and the window shrinks by it, so it ends at the work-area corner: 66+1470, 75+749, then the height snaps to 747 (gen.snap_window)
+    assert (cfg["window.screenX"], cfg["window.screenY"]) == (66, 75)
+    assert (cfg["window.outerWidth"], cfg["window.outerHeight"]) == (1470, 747)
+    assert 66 + 1470 == 1536 and 75 + 747 <= 824
     out = gen.from_pool(POOL, "UTC", rng=random.Random(1))
-    assert out["launch"] == {"window": [1534, 822], "dpr": 1.25}
+    assert out["launch"] == {"window": [1468, 745], "dpr": 1.25, "args": [],
+                             "position": [cfg["window.screenX"], cfg["window.screenY"]]}
 
 
 def test_locale_and_timezone():
@@ -113,13 +124,53 @@ def test_launch_window_carries_the_measured_dpr_offset():
     pool["screen"].update(outerWidth=1530, outerHeight=901, width=2000, height=1200,
                           availWidth=2000, availHeight=1160)
     out = gen.from_pool(pool, "UTC", rng=random.Random(1))
-    assert out["config"]["window.outerWidth"] == 1530 and out["config"]["window.outerHeight"] == 901
-    assert out["launch"] == {"window": [1528, 899], "dpr": 1.25}
+    assert out["config"]["window.outerWidth"] == 1530 and out["config"]["window.outerHeight"] == 899
+    assert {k: out["launch"][k] for k in ("window", "dpr")} == {"window": [1528, 897], "dpr": 1.25}
     pool["screen"]["devicePixelRatio"] = 2
-    assert gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"] == {"window": [1530, 901], "dpr": 2}
+    two = gen.from_pool(pool, "UTC", rng=random.Random(1))["launch"]
+    assert {k: two[k] for k in ("window", "dpr")} == {"window": [1530, 901], "dpr": 2}
     odd = json.loads(json.dumps(POOL))
     odd["screen"]["devicePixelRatio"] = 1.2145832777023315
     assert not gen.acceptable(odd)
+
+
+# What headless Chrome 156 returns for --window-size L at each DPR, measured 2026-10-28 on the build box over L = 1180..1191,
+# 1480..1491 (width) and 660..671, 714..725 (height). `real_window` is (outer, inner) in CSS px along one axis.
+# 1.25 and 1.75 add 2 px (1 px when L % 4 == 2); at 1.25 an L with L % 4 == 3 even comes back with inner 1 px above outer.
+# 1.5 rounds an odd L up to the next even. 1 and 2 are exact. The generator's launch window must come back as the claimed outer.
+def real_window(dpr, length):
+    if dpr in (1.25, 1.75):
+        outer = length + (1 if length % 4 == 2 else 2)
+        return outer, outer + (1 if dpr == 1.25 and length % 4 == 3 else 0)
+    if dpr == 1.5:
+        return length + length % 2, length + length % 2
+    return length, length
+
+
+@pytest.mark.parametrize("dpr", [1, 1.25, 1.5, 1.75, 2])
+def test_launch_window_comes_back_as_the_claimed_outer_with_inner_not_above_it(dpr):
+    """G4 (verify_sp6b_generator): the page reads the claimed window.outerWidth, and the real innerWidth the browser gives for
+    launch.window must not exceed it. The claimed outer must also be the real one, or outer - inner is off by the rounding."""
+    for width in range(1180, 1204):
+        for height in range(700, 712):
+            pool = json.loads(json.dumps(POOL))
+            pool["screen"].update(devicePixelRatio=dpr, outerWidth=width, outerHeight=height, width=2560, height=1440,
+                                  availWidth=2560, availHeight=1400)
+            out = gen.from_pool(pool, "UTC", rng=random.Random(width * 1000 + height))
+            cfg, launch = out["config"], out["launch"]
+            for axis, i in (("Width", 0), ("Height", 1)):
+                outer, inner = real_window(dpr, launch["window"][i])
+                assert outer == cfg[f"window.outer{axis}"], (dpr, width, height, axis, launch["window"], outer)
+                assert axis == "Height" or inner <= cfg["window.outerWidth"], (dpr, width, height, launch["window"], inner)
+
+
+def test_launch_window_invariant_over_generated_seeds():
+    pytest.importorskip("browserforge")
+    for seed in range(1000, 1060):
+        out = gen.generate("windows", seed=seed)
+        cfg, launch = out["config"], out["launch"]
+        outer, inner = real_window(launch["dpr"], launch["window"][0])
+        assert outer == cfg["window.outerWidth"] and inner <= cfg["window.outerWidth"], (seed, launch["dpr"], launch["window"], cfg["window.outerWidth"])
 
 
 def test_pool_wide_properties_hold_over_unseeded_draws():
@@ -152,8 +203,9 @@ def test_webgl_profile_keys_follow_the_claimed_os():
 
 
 def test_from_pool_picks_the_os_profile_and_gpu_overrides():
-    out = gen.from_pool(POOL, "America/New_York", rng=random.Random(1))
+    out = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="windows-intel-uhd-630-d3d11")
     assert "Direct3D11" in out["config"]["webGl:renderer"]
+    assert "webGl:renderer" not in gen.from_pool(POOL, "America/New_York", rng=random.Random(1))["config"]  # no host: no claim
     mac = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="macos-apple-m1-pro-metal")
     assert "Metal" in mac["config"]["webGl:renderer"]
     with pytest.raises(KeyError):
@@ -225,7 +277,7 @@ def test_voices_follow_the_locale_and_share_cancel_is_human_paced():
 
 def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert win["audio:sampleRate"] == 48000
+    assert win["audio:sampleRate"] == 44100
     assert gen.voices_keys("macOS", "fr-FR")["voices:list"] == gen.voices_keys("macOS")["voices:list"]
     assert len(gen.voices_keys("macOS")["voices:list"]) > 100 and gen.audio_keys("macOS")["audio:sampleRate"] == 48000
     assert gen.audio_keys("Linux") == {}
@@ -233,7 +285,7 @@ def test_mac_voices_are_the_measured_list_and_sample_rate_follows_the_claim():
 
 def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version():
     win = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert win["audio:bufferFrames"] == 480 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
+    assert win["audio:bufferFrames"] == 441 and win["audio:bufferFrames"] / win["audio:sampleRate"] == 0.01
     assert gen.audio_keys("macOS")["audio:bufferFrames"] == 256
     lin = json.loads(json.dumps(POOL)); lin["navigator"]["userAgentData"]["platform"] = "Linux"; lin["navigator"]["userAgentData"]["platformVersion"] = ""
     cfg = gen.from_pool(lin, "UTC", rng=random.Random(1))["config"]
@@ -241,8 +293,8 @@ def test_buffer_frames_follow_the_rate_and_linux_keeps_its_real_platform_version
 
 
 def test_remote_google_voices_follow_the_local_row():
-    base = json.loads((ROOT / "baselines" / "chrome-8037-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]["voices"]
-    remote = [[v[0], v[1]] for v in base if not v[2]]
+    # The table copied from the 154.0.8037.93 host oracle; stock 156 on the host lists no Google voices (2026-10-21).
+    remote = [[v["name"], v["lang"]] for v in json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))["remote"]]
     assert len(remote) == 19
     for plat, loc, n_local in [("Windows", "en-US", 3), ("Windows", "fr-FR", 3), ("Windows", "uk-UA", 3), ("macOS", "en-US", 191)]:
         vl = gen.voices_keys(plat, loc)["voices:list"]
@@ -252,3 +304,180 @@ def test_remote_google_voices_follow_the_local_row():
         assert all(v["localService"] is False and v["default"] is False and v["voiceURI"] == v["name"] for v in vl[n_local:])
         assert [v["default"] for v in vl].count(True) == 1 and vl[0]["default"] is True
     assert gen.voices_keys("Linux") == {}
+
+
+def test_quickstart_seeds_keep_a_profile_and_tell_two_apart():
+    pytest.importorskip("browserforge")
+    one, again, two = (gen.generate(os="windows", seed=s) for s in (1, 1, 2))
+    assert one == again and one != two
+
+
+def test_load_profiles_ignores_the_gpu_pool_file():
+    assert not any(stem.endswith("-pool") for stem in gen.load_profiles())
+
+
+HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
+def test_gen9_host_swaps_only_name_and_device_id():
+    base = gen.profile_for("Windows")
+    prof, warn = gen.gpu_for("Windows", HOST, random.Random(3))
+    assert warn is None
+    assert gen.gen9_device_id(prof["renderer"]) is not None
+    assert prof["webgl"] == base["webgl"] and prof["webgl2"] == base["webgl2"]
+    assert prof["vendor"] == base["vendor"] == "Google Inc. (Intel)"
+
+
+def test_gpu_draw_is_seed_stable_and_varies_across_seeds():
+    draws = {gen.gpu_for("Windows", HOST, random.Random(s))[0]["renderer"] for s in range(40)}
+    assert gen.gpu_for("Windows", HOST, random.Random(7))[0] == gen.gpu_for("Windows", HOST, random.Random(7))[0]
+    assert len(draws) >= 3
+
+
+def test_gpu_draw_does_not_advance_the_rng():
+    rng = random.Random(5)
+    state = rng.getstate()
+    gen.gpu_for("Windows", HOST, rng)
+    assert rng.getstate() == state
+
+
+def test_non_gen9_host_keeps_real_gpu_and_warns():
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    prof, warn = gen.gpu_for("Windows", nv, random.Random(1))
+    assert prof is None and "real GPU is kept" in warn
+
+
+@pytest.mark.parametrize("host", [
+    "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+    "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)"])
+def test_non_d3d11_host_renderer_keeps_the_real_gpu_and_warns(host):
+    prof, warn = gen.gpu_for("Windows", host, random.Random(1))
+    assert prof is None and "not a Windows D3D11" in warn
+
+
+def test_warning_does_not_call_other_intel_parts_non_gen9():
+    odd = "ANGLE (Intel, Intel(R) HD Graphics 530 (0x00001912) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    assert "not in the supported Intel Gen9 set" in gen.gpu_for("Windows", odd, random.Random(1))[1]
+
+
+def test_gen9_regex_equals_the_pool_scripts():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import gen_gpu_pool
+    assert gen.GEN9_RE.pattern == gen_gpu_pool.RENDERER_RE.pattern
+
+
+def test_gen9_name_with_unknown_device_id_keeps_real_gpu():
+    odd = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x0000FFFF) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    prof, warn = gen.gpu_for("Windows", odd, random.Random(1))
+    assert prof is None and warn
+
+
+def test_no_host_renderer_keeps_the_real_gpu_and_warns():
+    """Fail closed: an unknown host must not be given a Gen9 claim it may not back (an RTX host would show
+    nvidia in WebGPU and AV1 hardware decode under an Intel WebGL claim)."""
+    prof, warn = gen.gpu_for("Windows", None, random.Random(1))
+    assert prof is None and "host GPU unknown" in warn and "real GPU is kept" in warn
+
+
+def test_explicit_gpu_still_claims_without_a_host_renderer():
+    """--gpu is the deliberate opt-in (tests on a box with no GPU): the named profile, no warning."""
+    prof, warn = gen.gpu_for("Windows", None, random.Random(1), gpu="windows-intel-uhd-630-d3d11")
+    assert prof == gen.profile_for("Windows", "windows-intel-uhd-630-d3d11") and warn is None
+
+
+@pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                                  "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"])
+def test_generate_without_a_gen9_host_emits_no_webgl_keys(host):
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=host)
+    assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
+    assert r["warnings"] and "real GPU is kept" in r["warnings"][0]
+
+
+def test_pool_file_declares_its_weights_are_an_assumption():
+    assert gen.gen9_pool()["weights_how"].startswith("assumption:")
+
+
+def test_non_gen9_host_emits_no_webgl_keys():
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=nv)
+    assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
+    assert r["warnings"] and "real GPU is kept" in r["warnings"][0]
+
+
+def test_generate_with_host_renderer_draws_a_gen9_identity():
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=HOST)
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
+    assert r["config"]["webGl2:renderer"] == r["config"]["webGl:renderer"]
+    assert r["warnings"] == []
+
+
+# Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
+# seed 1 "rest" recomputed on the pre-final-review code without window.screenX/Y, window.outerWidth/Height,
+# launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
+PRE_CHANGE = {
+    1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
+        "rest": "cfc63531725c99cb"},
+    2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
+    3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
+}
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_seeded_keys_do_not_move(seed):
+    cfg = gen.generate("windows", "Europe/Paris", None, seed)["config"]
+    assert {k: cfg[k] for k in ("share:cancelMs", "canvas:seed", "audio:seed", "mediaDevices:seed")} == \
+        {k: v for k, v in PRE_CHANGE[seed].items() if k != "rest"}
+
+
+def test_default_args_output_is_unchanged_outside_the_font_subset():
+    """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* is
+    excluded; every other key and launch must be byte-identical to the pre-change run."""
+    import hashlib
+    r = gen.generate("windows", "Europe/Paris", None, 1, gpu="windows-intel-uhd-630-d3d11")  # the pin predates fail-closed
+    # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
+    rest = {k: v for k, v in r["config"].items()
+            if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY",
+                                                                  "window.outerWidth", "window.outerHeight")}
+    launch = {k: v for k, v in r["launch"].items() if k not in ("position", "args", "window")}
+    assert hashlib.sha256(json.dumps([rest, launch], sort_keys=True).encode()).hexdigest()[:16] == PRE_CHANGE[1]["rest"]
+
+
+def test_host_families_limit_fonts_list_and_alias_local():
+    fam = json.loads((ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))["families"]["Windows"]
+    gone = next(f for f in fam["base"] if any(v["family"] == f for v in fam["unique_names"].values()))
+    host = set(fam["base"]) - {gone}
+    base = gen.generate("windows", "Europe/Paris", None, 1)["config"]
+    r = gen.generate("windows", "Europe/Paris", None, 1, host_families=host)["config"]
+    assert gone in base["fonts:list"] and gone not in r["fonts:list"]
+    names = {n for n, v in fam["unique_names"].items() if v["family"] == gone}
+    assert names & set(base["fonts:aliasLocal"]) and not names & set(r["fonts:aliasLocal"])
+
+
+def _cli(monkeypatch, capsys, argv, probed):
+    from camoucrome import probe
+    monkeypatch.setattr(probe, "host_renderer", lambda exe, *a, **k: probed)
+    monkeypatch.setattr(sys, "argv", ["gen", "--os", "windows", "--timezone", "UTC", "--seed", "1", *argv])
+    gen.main()
+    return json.loads(capsys.readouterr().out)
+
+
+def test_cli_probe_executable_reads_the_host_renderer_for_the_draw(monkeypatch, capsys):
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], HOST)
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
+
+
+def test_cli_probe_executable_on_a_non_gen9_host_claims_no_gpu(monkeypatch, capsys):
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], nv)
+    assert "webGl:renderer" not in r["config"] and "real GPU is kept" in r["warnings"][0]
+
+
+def test_cli_probe_that_fails_claims_no_gpu(monkeypatch, capsys):
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], None)
+    assert "webGl:renderer" not in r["config"]
+
+
+def test_cli_explicit_host_renderer_wins_over_the_probe(monkeypatch, capsys):
+    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome", "--host-renderer", HOST], nv)
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None

@@ -1,8 +1,8 @@
 diff --git a/components/BUILD.gn b/components/BUILD.gn
-index 16eb260103..f84a5f0ac7 100644
+index 936e523aa0..94b38977be 100644
 --- a/components/BUILD.gn
 +++ b/components/BUILD.gn
-@@ -204,6 +204,7 @@ test("components_unittests") {
+@@ -203,6 +203,7 @@ test("components_unittests") {
      "//components/browser_actuator:unit_tests",
      "//components/browser_sync:unit_tests",
      "//components/browsing_data/core:unit_tests",
@@ -11,7 +11,7 @@ index 16eb260103..f84a5f0ac7 100644
      "//components/cbor:unit_tests",
      "//components/certificate_matching:unit_tests",
 diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
-index 4e9e524699..48f1ae35a5 100644
+index 3162721b67..ce9660df23 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
 @@ -147,6 +147,7 @@ source_set("browser") {
@@ -23,10 +23,10 @@ index 4e9e524699..48f1ae35a5 100644
      "//components/discardable_memory/common",
      "//components/discardable_memory/service",
 diff --git a/content/browser/DEPS b/content/browser/DEPS
-index 8b644c2b87..f92dabe664 100644
+index b217a04306..f011414ab4 100644
 --- a/content/browser/DEPS
 +++ b/content/browser/DEPS
-@@ -45,6 +45,7 @@ include_rules = [
+@@ -44,6 +44,7 @@ include_rules = [
    "+components/viz",
    "+components/web_package",
    "+components/webauthn/json",
@@ -35,7 +35,7 @@ index 8b644c2b87..f92dabe664 100644
    "+components/os_crypt/common/os_crypt_switches.h",
    "+components/vrp_flags",
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index 90d60c44cc..fe01f49a5f 100644
+index 0559ec1a95..28e639aac6 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
 @@ -60,6 +60,7 @@
@@ -46,7 +46,7 @@ index 90d60c44cc..fe01f49a5f 100644
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
  #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
  #include "components/power_monitor/make_power_monitor_device_source.h"
-@@ -542,6 +543,28 @@ void BrowserMainLoop::Init() {
+@@ -535,6 +536,28 @@ void BrowserMainLoop::Init() {
  int BrowserMainLoop::EarlyInitialization() {
    TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
  
@@ -76,10 +76,10 @@ index 90d60c44cc..fe01f49a5f 100644
    // The initialization of the sandbox host ends up with forking the Zygote
    // process and requires no thread been forked. The initialization has happened
 diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
-index d5142fdb5a..16862468f5 100644
+index 7669da2ec4..228963bed7 100644
 --- a/third_party/blink/renderer/DEPS
 +++ b/third_party/blink/renderer/DEPS
-@@ -43,6 +43,7 @@ include_rules = [
+@@ -42,6 +42,7 @@ include_rules = [
      "+base/metrics/histogram_functions.h",
      "+base/metrics/histogram_macros.h",
      "+base/metrics/single_sample_metrics.h",
@@ -103,7 +103,7 @@ index d5142fdb5a..16862468f5 100644
      "+net/base/features.h",
      "+net/cookies",
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 86d0cefd4c..fe99fbb833 100644
+index 056bd22809..986137e092 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -408,6 +408,7 @@ component("core") {
@@ -115,7 +115,7 @@ index 86d0cefd4c..fe99fbb833 100644
      "//components/performance_manager/public/mojom:mojom_blink",
      "//components/shared_highlighting/core/common",
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-index cccfafe8f9..c9332e1fdf 100644
+index 83f427c5ec..cf95d6a4d9 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
 +++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
 @@ -6,6 +6,9 @@
@@ -128,7 +128,7 @@ index cccfafe8f9..c9332e1fdf 100644
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/renderer/core/execution_context/execution_context.h"
  #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
-@@ -75,6 +78,16 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
+@@ -90,6 +93,16 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
  
    probe::ApplyHardwareConcurrencyOverride(
        probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);

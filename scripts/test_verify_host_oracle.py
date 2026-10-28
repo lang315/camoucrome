@@ -125,12 +125,42 @@ def test_the_hevc_row_is_compared_again_once_the_fork_claims_hevc():
     assert buckets["known"] == 0, buckets
 
 
+def test_the_media_cap_row_excuses_power_efficient_alone():
+    """RED without the predicate: a fork that stops answering supported or smooth
+    would hide behind an exclusion written for a missing hardware decoder."""
+    host = {"mediaCap": [True, True, True]}
+    diffs, buckets, _ = vho.compare(host, {"mediaCap": [True, True, False]})
+    assert diffs == [] and buckets["known"] == 1, (diffs, buckets)
+    diffs, buckets, _ = vho.compare(host, {"mediaCap": [True, False, False]})
+    assert [k for k, *_ in diffs] == ["mediaCap"], diffs
+    assert buckets["known"] == 0, buckets
+
+
+def test_the_sample_rate_row_excuses_only_standard_device_rates():
+    """RED without the predicate: an odd rate would hide behind an exclusion written for
+    'this machine's output device differs from the host's'."""
+    host = {"audio": {"sampleRate": 44100}}
+    diffs, buckets, _ = vho.compare(host, {"audio": {"sampleRate": 48000}})
+    assert diffs == [] and buckets["known"] == 1, (diffs, buckets)
+    diffs, buckets, _ = vho.compare(host, {"audio": {"sampleRate": 31337}})
+    assert [k for k, *_ in diffs] == ["audio.sampleRate"], diffs
+
+
 def test_a_bare_reason_in_known_still_excludes_unconditionally():
-    """The host-artefact rows (no mouse, no keyboard) keep the plain-string shape; a
-    recapture of the baseline is what retires those, not a predicate."""
+    """The rows whose evidence is the committed baseline (the probe marker) keep the
+    plain-string shape; a recapture of the baseline is what retires those, not a predicate."""
     bare = [k for k, v in vho.KNOWN.items() if not isinstance(v, tuple)]
     assert bare, "the plain-string shape must stay supported"
     host = {bare[0].split(".", 1)[0]: {bare[0].split(".", 1)[1]: "host"}} if "." in bare[0] else {bare[0]: "host"}
     fork = {bare[0].split(".", 1)[0]: {bare[0].split(".", 1)[1]: "fork"}} if "." in bare[0] else {bare[0]: "fork"}
     diffs, buckets, _ = vho.compare(host, fork)
     assert diffs == [] and buckets["known"] == 1, (bare[0], diffs, buckets)
+
+
+def test_a_leaf_missing_from_the_baseline_is_known_until_the_baseline_has_it():
+    """mediaCapAv1 is not in the committed baseline (recapture is host work). Absent there it is a known row;
+    once the baseline carries it, it is compared like any leaf."""
+    diffs, buckets, _ = vho.compare({}, {"mediaCapAv1": [True, True, False]})
+    assert diffs == [] and buckets["known"] == 1, (diffs, buckets)
+    diffs, _, _ = vho.compare({"mediaCapAv1": [True, True, True]}, {"mediaCapAv1": [True, True, False]})
+    assert [k for k, *_ in diffs] == ["mediaCapAv1"], diffs

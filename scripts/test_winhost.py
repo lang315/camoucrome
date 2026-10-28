@@ -100,3 +100,13 @@ def test_cdp_eval_runs_act_after_connect_and_honours_window_style(captured):
     assert "-WindowStyle Normal" in ps
     winhost.cdp_eval("<p>")
     assert "-WindowStyle Hidden" in captured[-1] and "ACT_MARKER" not in captured[-1]
+
+
+def test_cdp_eval_launches_another_exe_with_literal_env(captured):
+    winhost.cdp_eval("<p>", exe=r"D:\x\out\Release\chrome.exe", env={"CAMOU_CONFIG": ARG})
+    ps = captured[-1]
+    assert r"-FilePath 'D:\x\out\Release\chrome.exe'" in ps
+    assert """$env:CAMOU_CONFIG = '--x=$env:USERNAME "q" it''s'""" in ps
+    assert ps.index("$env:CAMOU_CONFIG =") < ps.index("Start-Process")
+    winhost.cdp_eval("<p>")
+    assert f"-FilePath '{winhost.CHROME}'" in captured[-1] and "$env:CAMOU_CONFIG" not in captured[-1]

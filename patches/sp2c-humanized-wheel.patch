@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index 626b4b0e7e..da6cc17c4f 100644
+index 092fbf59a6..fc5d5b869e 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -6,6 +6,7 @@
@@ -129,7 +129,7 @@ index 626b4b0e7e..da6cc17c4f 100644
    void InjectMouseEvent(const blink::WebMouseEvent& mouse_event,
                          std::unique_ptr<DispatchMouseEventCallback> callback) {
      if (!widget_host_) {
-@@ -2507,6 +2599,34 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -2504,6 +2596,34 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
        ->ForwardMouseEventNow(*mouse_event, std::move(callback));
  }
  

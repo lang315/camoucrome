@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/modules/mediastream/BUILD.gn b/third_party/blink/renderer/modules/mediastream/BUILD.gn
-index d6a91ebb3b..a13d9e73e0 100644
+index baae392cd4..8ee885df06 100644
 --- a/third_party/blink/renderer/modules/mediastream/BUILD.gn
 +++ b/third_party/blink/renderer/modules/mediastream/BUILD.gn
 @@ -137,6 +137,7 @@ blink_modules_sources("mediastream") {
@@ -11,7 +11,7 @@ index d6a91ebb3b..a13d9e73e0 100644
      "//media/webrtc",
      "//services/viz/public/cpp/gpu",
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index f0e1886c47..2a31a60339 100644
+index cbdf6f2c9b..8fedf4ba53 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
 @@ -14,6 +14,10 @@
@@ -25,7 +25,7 @@ index f0e1886c47..2a31a60339 100644
  #include "media/base/media_permission.h"
  #include "mojo/public/cpp/bindings/remote.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-@@ -1477,12 +1481,12 @@ void MediaDevices::DevicesEnumerated(
+@@ -1479,12 +1483,12 @@ void MediaDevices::DevicesEnumerated(
          if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
              !video_input_capabilities.empty()) {
            input_device_info->SetVideoInputCapabilities(
@@ -40,7 +40,7 @@ index f0e1886c47..2a31a60339 100644
          }
          media_devices.push_back(input_device_info);
        } else {
-@@ -1493,6 +1497,140 @@ void MediaDevices::DevicesEnumerated(
+@@ -1495,6 +1499,140 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  

@@ -4,7 +4,7 @@ An anti-detect fork of Chromium. The Chromium counterpart to
 [Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
 
 **Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
-landed on `main`** — 33 patches in `patches/` (applied in the order of
+landed on `main`** — 37 patches in `patches/` (applied in the order of
 `patches/series`, which `scripts/export.sh` regenerates from the checkout's
 `camoucrome/main` branch) plus the proprietary-codec GN args in `settings/build-args.gn`.
 Apply the whole set to a pristine Chromium checkout with
@@ -16,7 +16,8 @@ slice was built from. `docs/superpowers/` is local, not in git, since the
 
 Shipped: the config layer and load-time coherence validator (SP0, SP5a); the
 browser-process UA / UA-CH producer and Blink-side navigator leaves (SP1a, SP1b);
-automation hiding and the humanized cursor (SP2a, SP2b); canvas and WebGL
+automation hiding, the humanized cursor and the humanized wheel scroll (SP2a, SP2b,
+SP2c); canvas and WebGL
 fingerprints (SP3a, SP3b); the SP4 device-faking arc — screen, fonts, audio, media
 devices, timezone/locale, WebRTC IP, voices, geolocation, battery; the proprietary
 codec build (SP7 D2); and the follow-on slices that close residual tells the SP4
@@ -38,16 +39,19 @@ allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local
 cross-method inconsistency (a listed font still resolves; an unlisted one no
 longer leaks) — the codepoint-fallback and native-host completeness parts remain
 open. An open font bundle with a per-OS fontconfig layer and a `fonts:alias`
-key lets a claimed family resolve without redistributing proprietary fonts.
+key lets a claimed family resolve without redistributing proprietary fonts. SP2c's
+host-native check compares the fork's wheel with a real wheel on Windows: the fork
+produced 13 scroll events over 275 ms, the real wheel 12 over 266 ms, inside the
+0.5–1.5 band.
 
-**Windows is the flagship target.** A native `chrome.exe` 154.0.8037.93 builds
+**Windows is the flagship target.** A native `chrome.exe` 156.0.8078.48 builds
 from the same change set on the build PC's Windows host. The Windows-specific
 patches make a Windows claim behave like stock Windows Chrome past mere
 presence (`windows-oracle`, `windows-behaviour`, `windows-behaviour-ii`),
 keep `CAMOU_*` in the sandboxed renderer's environment (`windows-sandbox-env`)
 and stop crash dumps (`crashpad-no-dumps`). The named Windows verify set
 (`scripts/windows_verify_set.py`, 21 entries) reads 21/21 RED against the
-host's stock Chrome 154 and 21/21 GREEN against the fork. One oracle row is a
+host's stock Chrome 156 and 21/21 GREEN against the fork. One oracle row is a
 known failure: a Linux claim does not hide `navigator.share` and
 `navigator.bluetooth` on the Windows build. The Python, Go and Node clients all
 run there (`docs/superpowers/measurements/2026-10-04-windows-verify-set.md`).
@@ -68,19 +72,166 @@ the owning slice's measurement doc rather than claimed as verified. Coherence
 across channels is the project's thesis (see below), and the rows that remain
 unproven are named where they live.
 
-There is no release yet. The path to the first one is the long-term roadmap,
+Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
+a Windows flagship plus a Linux beta, built on a Chrome stable tag. Each
+release's notes give its Chrome version, what it fixes and the date it stops
+being supported (when it falls more than one milestone behind stable).
+
+The first release, `v156.0.8078.48-1` (2026-10-24), closed steps 0 to 3 of the
+long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
-steps 0 (re-pin and safety) and 1 (Windows foundation) are done; step 2 measures
-the fork against an oracle and public detectors with a like-for-like stock
-control; step 3 is the first release, a Windows flagship plus a Linux beta. The
-per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
+re-pin and safety, the Windows foundation, measuring the fork against an
+oracle and public detectors with a like-for-like stock control, and the
+release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium **`f89f3a4363`, the Chrome stable
-tag `154.0.8037.93`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
+tag `156.0.8078.48`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
 refuses any other HEAD). The pin is the current stable tag so the fork reports
 a version real users run; it moves to the newest stable tag each milestone. The
-next re-pin, to 156, is due by 2026-10-20 (`docs/superpowers/specs/repin-runbook.md`).
+next re-pin, to 157, is due by 2026-11-03 (`docs/superpowers/specs/repin-runbook.md`).
+
+## Install
+
+`<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
+`<sha>` is a full commit SHA from this repository, for the Go module.
+`<chrome-version>` is the Chrome version the release is built on.
+
+Run everything below in an elevated PowerShell ("Run as administrator"), because the
+first step installs machine-wide, in one working folder. A clean Windows machine has
+no prerequisites installed. Go users also need Go 1.22 or newer; Node users also need
+Node.js LTS and `npm install patchright@1.62.1` (the peer dependency).
+
+1. Install Python 3.12 (with the py launcher) and Git for Windows, silently. Open a new
+   PowerShell window afterwards so `py` and `git` are on the path.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+Invoke-WebRequest https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe -OutFile python-installer.exe
+$p = Start-Process .\python-installer.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_launcher=1' -Wait -PassThru
+if ($p.ExitCode -ne 0) { throw "Python installer exit code $($p.ExitCode)" }
+Invoke-WebRequest https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe -OutFile git-installer.exe
+$g = Start-Process .\git-installer.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait -PassThru
+if ($g.ExitCode -ne 0) { throw "Git installer exit code $($g.ExitCode)" }
+```
+
+2. Download the zip and `SHA256SUMS` from the release.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$base = 'https://github.com/lang315/camoucrome/releases/download/<tag>'
+Invoke-WebRequest "$base/camoucrome-<chrome-version>-windows-x64.zip" -OutFile camoucrome-<chrome-version>-windows-x64.zip
+Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
+```
+
+3. Check the zip. It must print `True` (`-eq` on strings ignores case, and `sha256sum`
+   writes lowercase hex).
+
+```powershell
+(Get-FileHash camoucrome-<chrome-version>-windows-x64.zip -Algorithm SHA256).Hash -eq ((Get-Content SHA256SUMS | Select-String windows-x64.zip).Line -split '\s+')[0]
+```
+
+4. Extract it in the same folder (Windows 10 and later). `chrome.exe` ends up at
+   `.\camoucrome-<chrome-version>-windows-x64\chrome.exe`. If you use Explorer instead,
+   extract into the current folder, not a new one.
+
+```powershell
+tar -xf camoucrome-<chrome-version>-windows-x64.zip
+```
+
+5. Install the Python client. The wheel carries its settings tables; no checkout is
+   needed. patchright installs its driver on first use.
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"
+```
+
+The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux
+beta, `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same release.
+
+Other clients:
+
+- Go: `go get github.com/lang315/camoucrome/client/go@<sha>`, where `<sha>` is the
+  release's commit, named in the release notes. Go generates identities by
+  calling `python -m camoucrome.gen`, so install the Python package above too.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/<tag>/camoucrome-0.1.0.tgz`.
+  Node also calls `python -m camoucrome.gen`, so install the Python package above too.
+
+## Quickstart: two identities
+
+Two Windows identities, each with its own persistent profile. `profile_seeds` draws the
+canvas, audio and media-device seeds once into the profile's `user_data_dir` and reads
+them back on every later launch, so each profile keeps its fingerprint. The fixed `seed` given to `generate` is what keeps
+a profile's screen, cores and user agent the same on every run. Save the script
+as `quickstart.py` in the working folder, where you extracted the zip and created
+`.venv`, and run it with `.venv\Scripts\python quickstart.py`.
+
+```python
+import camoucrome
+import camoucrome.gen
+from patchright.sync_api import sync_playwright
+
+CHROME = r"camoucrome-<chrome-version>-windows-x64\chrome.exe"
+
+with sync_playwright() as pw:
+    for name, seed in (("alice", 1), ("bob", 2)):
+        udd = rf"profiles\{name}"
+        fp = camoucrome.gen.generate(os="windows", seed=seed)
+        ctx = camoucrome.launch(pw, CHROME, user_data_dir=udd, headless=False,
+                                config={**fp["config"], **camoucrome.profile_seeds(udd)},
+                                window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
+                                position=tuple(fp["launch"]["position"]), args=fp["launch"]["args"])
+        page = ctx.pages[0]
+        page.goto("https://example.com")
+        print(name, page.evaluate("[navigator.hardwareConcurrency, screen.width]"))
+        ctx.close()
+```
+
+The two identities differ in screen size and CPU cores, and in the noise seeds stored in
+each profile. They share the host's GPU, the stock Windows font list, voices and the
+snapped `deviceMemory`.
+
+## Time zone and locale from the proxy's exit address
+
+A time zone that contradicts the address your traffic comes from is a tell that detectors check
+(Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
+proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
+two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"`)
+and a DB-IP "IP to City Lite" database file,
+which you download yourself, once a month, without an account, from
+<https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
+
+This runs inside the Quickstart's `with sync_playwright() as pw:` block, where `pw` and `CHROME` come from.
+
+```python
+import camoucrome, camoucrome.gen
+from camoucrome import geoip
+
+proxy = {"server": "http://proxy.example:8000", "username": "user", "password": "secret"}
+db = r"dbip-city-lite-2026-10.mmdb"
+try:
+    ip = geoip.exit_ip(proxy)          # the address the world sees, asked through the proxy
+except geoip.GeoIPError as e:          # no echo service answered, or the proxy is not http
+    raise SystemExit(f"cannot place the exit address: {e}")
+fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
+ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
+                        window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
+                        position=tuple(fp["launch"]["position"]), args=fp["launch"]["args"])
+```
+
+The zone comes from the address's coordinates and the locale from its country. An explicit
+`timezone` or `locale` you pass to `generate` always wins. `geoip.exit_ip` raises `GeoIPError` when
+no echo service answers; it asks only through an `http` proxy (a bare `host:port` means `http`), so
+an `https` or `socks5` proxy gives that error too. `generate` and `launch` do not raise on an
+address they cannot place (no database, an unreadable one, not in it, no echo answer): they emit
+a `GeoIPWarning` and change nothing. `launch` checks only the config's own `timezone:id`; a zone
+that comes only from a preset is not checked. Go (`Options.GeoIP`, `GenerateWith`) and Node
+(`launch({ geoip })`) call the same Python module, so `maxminddb` and `timezonefinder` must be
+installed in the interpreter they name (`Options.Python` in Go, the `python` option in Node).
+
+IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
 
 ## The defining constraint
 
@@ -176,6 +327,23 @@ string naming a Mac GPU is worse than an honest Linux fingerprint. Camoufox lear
 this the expensive way and ended up enforcing coherence in three uncoordinated places
 — C++ patches, an all-or-nothing schema, and Python fixup functions. SP5 exists so
 Camoucrome does not repeat that.
+
+## Known limits
+
+- On a host with an Intel Gen9 GPU (Skylake to Comet Lake, the commonest Windows laptop and desktop
+  parts), each profile reports its own GPU name and DeviceId from that generation, with a thread count
+  that fits the drawn part; the pixels still come from the host's real GPU. On any other host every
+  identity keeps the real GPU: only one real GPU profile exists.
+- Fonts are a per-profile subset of the host's real Windows fonts, never a font the host lacks.
+- Identities on one host still share the host-dependent values that stock Chrome shares across profiles too
+  (audio output, keyboard layout, display and media queries, screen geometry, network, the Windows build): 72 of 241 measured leaves, so profiles on one machine remain linkable through them.
+- No Widevine.
+- No auto-update. Re-pins are the security channel, and a release more than one
+  milestone behind Chrome stable is unsupported.
+- Windows SmartScreen warns on first run: choose More info, then Run anyway.
+- The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
+- Linux is a beta. A Linux host claiming Windows is the weaker identity.
+- The archive is about <size> MB (stated per release).
 
 ## Licence and codecs
 

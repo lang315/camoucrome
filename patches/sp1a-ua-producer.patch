@@ -22,7 +22,7 @@ index 85fc43cfc0..65c510a965 100644
    "+components/content_settings/core/browser",
    "+components/content_settings/core/common",
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 5d96c60405..b98f1dac34 100644
+index e699a6a394..32730354f3 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
 @@ -26,6 +26,8 @@
@@ -110,7 +110,7 @@ index 5d96c60405..b98f1dac34 100644
  std::string GetUnifiedPlatform() {
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
    // This constant is only used on Android (desktop) and Linux.
-@@ -480,7 +551,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
+@@ -479,7 +550,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
  
  std::string GetUserAgent() {
    std::optional<std::string> custom_ua = GetUserAgentFromCommandLine();
@@ -124,7 +124,7 @@ index 5d96c60405..b98f1dac34 100644
      return custom_ua.value();
    }
  
-@@ -663,6 +739,7 @@ std::string GetPlatformForUAMetadata() {
+@@ -662,6 +738,7 @@ std::string GetPlatformForUAMetadata() {
  
  blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    blink::UserAgentMetadata metadata;
@@ -132,7 +132,7 @@ index 5d96c60405..b98f1dac34 100644
  
    // Low entropy client hints.
    metadata.brand_version_list =
-@@ -670,14 +747,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -669,14 +746,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.mobile = GetMobileBitForUAMetadata();
    metadata.platform = GetPlatformForUAMetadata();
  
@@ -165,7 +165,7 @@ index 5d96c60405..b98f1dac34 100644
      return base::FeatureList::IsEnabled(blink::features::kUACHOverrideBlank)
                 ? blink::UserAgentMetadata()
                 : metadata;
-@@ -697,6 +791,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -696,6 +790,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.bitness = GetCpuBitness();
    metadata.wow64 = IsWoW64();
    metadata.platform_version = GetPlatformVersion();
@@ -199,7 +199,7 @@ index 5d96c60405..b98f1dac34 100644
    return metadata;
  }
  
-@@ -725,6 +846,10 @@ std::string GetUnifiedPlatformForTesting() {
+@@ -724,6 +845,10 @@ std::string GetUnifiedPlatformForTesting() {
    return GetUnifiedPlatform();
  }
  
@@ -210,7 +210,7 @@ index 5d96c60405..b98f1dac34 100644
  // Return the CPU architecture in Windows/Mac/POSIX/Fuchsia and the empty string
  // on Android or if unknown.
  std::string GetCpuArchitecture() {
-@@ -843,7 +968,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+@@ -842,7 +967,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
  
  std::string BuildUnifiedPlatformUserAgentFromProduct(
      const std::string& product) {
@@ -220,7 +220,7 @@ index 5d96c60405..b98f1dac34 100644
  }
  
  std::string BuildUserAgentFromProduct(const std::string& product) {
-@@ -852,7 +978,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
+@@ -851,7 +977,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
                        BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
                                       IncludeAndroidModel::Include)
                            .c_str());
@@ -350,7 +350,7 @@ index bd28b23706..0088b253a9 100644
 +
  }  // namespace embedder_support
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index fe01f49a5f..ca073899e4 100644
+index 28e639aac6..6a512bb546 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
 @@ -60,6 +60,7 @@
@@ -361,7 +361,7 @@ index fe01f49a5f..ca073899e4 100644
  #include "components/camoucfg/mask_config.h"
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
  #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
-@@ -561,10 +562,22 @@ int BrowserMainLoop::EarlyInitialization() {
+@@ -554,10 +555,22 @@ int BrowserMainLoop::EarlyInitialization() {
    // crash. Conventions rule 5 forbids exactly that: a crash is itself a
    // fingerprint.
    const bool camou_configured = camoucfg::HasKey(

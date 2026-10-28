@@ -172,13 +172,14 @@ function acceptLangOf(config, preset) {
 
 // The whole argv besides what the driver adds: launch() ignores Playwright's
 // default args (they carry --disable-features=<18>, --blink-settings, ...).
-function buildArgs({ window, dpr, extra = [], headless = true, userDataDir,
-  acceptLang, extensions = [], spkiList = [] } = {}) {
+function buildArgs({ window, dpr, position, extra = [], headless = true, userDataDir,
+  acceptLang, extensions = [], spkiList = [], proxyServer, proxyBypass } = {}) {
   const args = [...BASE_ARGS];
   if (headless) args.push('--headless=new');
   args.push('--remote-debugging-pipe');
   if (userDataDir) args.push(`--user-data-dir=${userDataDir}`);
   if (window) args.push(`--window-size=${window[0]},${window[1]}`);
+  if (position) args.push(`--window-position=${position[0]},${position[1]}`);
   if (dpr != null) args.push(`--force-device-scale-factor=${dpr}`);
   if (acceptLang) args.push(`--accept-lang=${acceptLang}`);
   if (extensions.length) {
@@ -186,6 +187,12 @@ function buildArgs({ window, dpr, extra = [], headless = true, userDataDir,
     args.push(`--disable-extensions-except=${paths}`, `--load-extension=${paths}`);
   }
   if (spkiList.length) args.push(`--ignore-certificate-errors-spki-list=${spkiList.join(',')}`);
+  // Playwright adds --proxy-server among its default args, which ignoreDefaultArgs drops: without this a `proxy`
+  // option reaches the driver and the traffic goes out on the real address (settings/launcher.json, why_proxy_arg).
+  if (proxyServer) {
+    args.push(`--proxy-server=${proxyServer}`);
+    if (proxyBypass) args.push(`--proxy-bypass-list=${proxyBypass.split(',').map((h) => h.trim()).filter(Boolean).join(';')}`);
+  }
   return args.concat(extra);
 }
 
@@ -246,13 +253,25 @@ function profileSeeds(userDataDir) {
 }
 
 async function launch(chromium, executablePath, {
-  config, preset, strict = false, userDataDir, window, dpr, headless = true,
-  args = [], extensions = [], spkiList = [], fontsDir, ...options
+  config, preset, strict = false, userDataDir, window, dpr, position, headless = true,
+  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, ...options
 } = {}) {
+  if (proxy !== undefined) {
+    if (!proxy || typeof proxy !== 'object' || !proxy.server || proxy.server.includes('@')) {
+      throw new Error('proxy must be an object with a "server" URL and no credentials in it '
+        + '(username and password are separate keys; argv is visible to every process)');
+    }
+    options.proxy = proxy;
+  }
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
+  }
+  if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
+    const { checkGeoip } = require('./geoip');
+    const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
+    (await checkGeoip({ config, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
   }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast
@@ -275,8 +294,9 @@ async function launch(chromium, executablePath, {
       ignoreDefaultArgs: true,
       env: buildEnv({ config, preset, strict,
         fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
-      args: buildArgs({ window, dpr, extra: args, headless, userDataDir: dir,
-        acceptLang: acceptLangOf(config, preset), extensions, spkiList }),
+      args: buildArgs({ window, dpr, position, extra: args, headless, userDataDir: dir,
+        acceptLang: acceptLangOf(config, preset), extensions, spkiList,
+        proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass }),
       // Otherwise a 1280x720 viewport is emulated, fighting screen.* and the
       // window size.
       viewport: null,

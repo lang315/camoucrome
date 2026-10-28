@@ -69,7 +69,7 @@ EXPECTED = {
     "det.sannysoft.CHR_MEMORY": "stock headless fails it (deviceMemory absent); the identity sets it",
     "det.sannysoft.HEADCHR_UA": "stock headless says HeadlessChrome; the identity UA does not",
     # step2b fork run 20261013-161750:
-    "oracle.audio.sampleRate": "the identity's audio:sampleRate (48000); the RDP session's device runs at 44100",
+    "oracle.audio.sampleRate": "the identity reports the stock baseline's audio:sampleRate (44100, settings/audio.json); the device rate is per machine",
     "det.dbi_bot.isBot": "SP2 hides webdriver, and the identity UA is not HeadlessChrome",
     "det.dbi_bot.hasWebdriverTrue": "SP2: the fork hides automation; stock under the same driver reports true",
     "det.dbi_bot.hasWebdriverInFrameTrue": "SP2: the fork hides automation; stock under the same driver reports true",
@@ -95,7 +95,7 @@ EXPECTED = {
 # Oracle leaves compared by type only: a value difference is the identity's or the machine's.
 SHAPE = {f"oracle.{k}": "identity- or machine-bound; compared by type" for k in SHAPE_ONLY}
 # Identity-derived flags the client adds to the fork arm only (launcher.build_args).
-ARGV_ALLOWED = ("--accept-lang=", "--user-data-dir=", "--window-size=", "--force-device-scale-factor=")
+ARGV_ALLOWED = ("--accept-lang=", "--user-data-dir=", "--window-size=", "--window-position=", "--force-device-scale-factor=")
 # Regexes over detector text lines that changed between null runs on 2026-10-04 (timings, clocks,
 # the WebRTC candidates and their hashes, CDN edge IPs, per-load hashes).
 VOLATILE_LINES = [
@@ -155,6 +155,8 @@ def label_rows(control, fork):
     reads ABSENT. A detector that did not settle is `unmeasured`, never a difference."""
     out = []
     for name in sorted(set(control) | set(fork)):
+        if name == "link.values":
+            continue  # host values never reach a table
         c, f = control.get(name, ABSENT), fork.get(name, ABSENT)
         if c == f:
             continue
@@ -216,6 +218,24 @@ def link_rows(a, b):
     total = len(set(a) | set(b))
     a, b = _steady(a), _steady(b)
     return {"link.total": total, "link.shared": sorted(k for k in a if k in b and a[k] == b[k])}
+
+
+def link_rows_n(reports):
+    """N flattened oracle reports from N profiles of one arm: the leaves ALL of
+    them share. A VOLATILE leaf is never shared."""
+    total = len(set().union(*reports))
+    steady = [_steady(r) for r in reports]
+    first, rest = steady[0], steady[1:]
+    shared = sorted(k for k in first if all(k in r and r[k] == first[k] for r in rest))
+    return {"link.total": total,
+            "link.shared": shared, "link.values": {k: first[k] for k in shared}}
+
+
+def unexplained(shared, constants):
+    """Shared leaves that settings/machine_constants.json does not explain. A key
+    ending in '.' is a prefix; any other key is one exact leaf."""
+    prefixes = tuple(k for k in constants if k.endswith("."))
+    return sorted(k for k in shared if k not in constants and not k.startswith(prefixes))
 
 
 def parse_tabbed(text):
@@ -322,6 +342,8 @@ def compare_runs(a, b):
                 ra = (a["rows"].get(probe) or {}).get(arm, {}).get(mode) or {}
                 rb = (b["rows"].get(probe) or {}).get(arm, {}).get(mode) or {}
                 for name in sorted(set(ra) | set(rb)):
+                    if name == "link.values":
+                        continue
                     va, vb = ra.get(name, ABSENT), rb.get(name, ABSENT)
                     site = ".".join(name.split(".")[:2])
                     if UNMEASURED in (ra.get(site), rb.get(site)):
@@ -341,6 +363,50 @@ def unmeasured_sites(a, b):
                     out += [f"{tag}: {probe}/{arm}/{mode}/{k}" for k, v in sorted((cell or {}).items())
                             if k.count(".") == 1 and v == UNMEASURED]
     return out
+
+
+ACCEPTED_CLASSES = {"windows-desktop"}
+
+
+def _same(a, b):
+    return type(a) is type(b) and a == b
+
+
+def accepted(shared, values, accepted_rows, baseline):
+    """Shared leaves that qualify as an accepted default. BOTH must hold (ruling 2026-10-25):
+    (a) the value is the modal value for the CLAIMED device class (a Windows desktop of the drawn
+    preset), the row citing its source and class; (b) stock Chrome on such a machine reads the
+    same value (`baseline`, the flattened stock oracle). A leaf failing either stays unexplained."""
+    out = []
+    for k in shared:
+        row = accepted_rows.get(k)
+        if (row and len(row.get("source", "")) >= 20 and row.get("class") in ACCEPTED_CLASSES
+                and k in values and _same(values[k], row["value"]) and k in baseline and _same(baseline[k], row["value"])):
+            out.append(k)
+    return out
+
+
+def baseline_for_mode(stock, mode):
+    """Flattened stock reading for the SAME mode; no such section -> {} (nothing can be accepted)."""
+    return flatten(stock[mode]) if isinstance(stock.get(mode), dict) else {}
+
+
+def unexplained_counts(shared, values, constants, accepted_rows, baseline):
+    """`raw`: shared leaves no machine constant explains; `net`: raw minus the accepted defaults.
+    Report both, always."""
+    raw = unexplained(shared, constants)
+    ok = set(accepted(raw, values, accepted_rows, baseline))
+    net = [k for k in raw if k not in ok]
+    return {"raw": len(raw), "net": len(net), "unexplained": net}
+
+
+def drop_link_values(doc):
+    """A copy of a rows.json doc without any `link.values` (the values stay in the local run dir)."""
+    def walk(v):
+        if isinstance(v, dict):
+            return {k: walk(x) for k, x in v.items() if k != "link.values"}
+        return [walk(x) for x in v] if isinstance(v, list) else v
+    return walk(doc)
 
 
 def _cell(v):
@@ -369,8 +435,13 @@ def render_tables(doc, texts):
                 out += ["", "| row | control | fork | label | reason |", "|---|---|---|---|---|"]
                 out += [f"| {n} | {_cell(cv)} | {_cell(fv)} | {lab} | {why} |" for n, cv, fv, lab, why in rows]
             if probe == "linkability":
-                out += ["", f"Leaves the two fork profiles share ({len(f.get('link.shared', []))} of {f.get('link.total')}):",
+                out += ["", f"Leaves all the profiles share ({len(f.get('link.shared', []))} of {f.get('link.total')}):",
                         "", ", ".join(f"`{k}`" for k in f.get("link.shared", []))]
+                if "link.unexplained" in f:
+                    un = f["link.unexplained"]
+                    counts = f"raw {f['link.unexplained_raw']}, net {f['link.unexplained_net']}" if "link.unexplained_raw" in f else str(len(un))
+                    out += ["", f"Leaves all five profiles share that no machine constant explains ({counts}); the net list:",
+                            "", ", ".join(f"`{k}`" for k in un)]
             out.append("")
     for (site, mode), (ct, ft) in sorted(texts.items()):
         out.append(f"## detector text {site} / {mode}")
@@ -431,7 +502,7 @@ def _ip(tok):
 def scrub(value, geo):
     """`value` (str, or list/dict walked recursively) with IP addresses, coordinate pairs and the
     host's geo strings replaced. A candidate counts as an address only if ipaddress parses it, so
-    a version (154.0.8037.93) or a clock (10:00:00) stays. `geo` maps a placeholder to the strings
+    a version (156.0.8078.48) or a clock (10:00:00) stays. `geo` maps a placeholder to the strings
     it replaces; it comes from CAMOU_SCRUB on the host and is never committed."""
     if isinstance(value, dict):
         return {scrub(k, geo): scrub(v, geo) for k, v in value.items()}

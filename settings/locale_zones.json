@@ -1,5 +1,5 @@
 {
- "$comment": "Offline default for timezone:id when the generator gets no --timezone: plausible IANA zones per locale tag, first = most common (specs/2026-09-11-open-items-design.md section 4). No GeoIP by decision; a proxy-exit lookup is the caller's. Validated by client/python/tests/test_gen.py: every zone is in zoneinfo.available_timezones().",
+ "$comment": "Offline default for timezone:id when the generator gets no --timezone: plausible IANA zones per locale tag, first = most common (specs/2026-09-11-open-items-design.md section 4). Used when no exit IP is given; with one, camoucrome.geoip decides the zone and locale (step 5, item 13). Validated by client/python/tests/test_gen.py: every zone is in zoneinfo.available_timezones().",
  "zones": {
   "en-US": [
    "America/New_York",

@@ -4,7 +4,7 @@
   "description": "Launcher for the Camoucrome browser: CAMOU_CONFIG / CAMOU_PRESET transport over a patchright driver",
   "main": "index.js",
   "type": "commonjs",
-  "scripts": { "test": "node --test test/launcher.test.js" },
+  "scripts": { "test": "node --test test/*.test.js" },
   "peerDependencies": { "patchright": "1.62.1" },
   "license": "MPL-2.0"
 }

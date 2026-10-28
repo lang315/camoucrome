@@ -329,13 +329,12 @@
   }
  },
  "provenance": {
-  "binary": "Google Chrome 153.0.8010.36 (stock, the build box's Windows 10 host)",
+  "binary": "Google Chrome 156.0.8078.48 (stock, the build box's Windows 10 host)",
   "how": "scripts/capture_webgl_profile.py --where winhost",
   "headless": true,
   "args": [
-   "--use-gl=angle",
    "--use-angle=d3d11"
   ],
-  "captured": "2026-09-11"
+  "captured": "2026-10-24"
  }
 }

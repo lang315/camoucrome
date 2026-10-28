@@ -36,6 +36,7 @@ checkout); otherwise the commit is `git rev-parse HEAD` of the repo root.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -45,9 +46,19 @@ import sys
 import tarfile
 import zipfile
 
+import check_privacy
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
+CREDITS = pathlib.Path("gen") / "components" / "resources" / "about_credits.html"
 PRUNE = ("gen/third_party/devtools-frontend/", "pyproto/")  # pyproto: protobuf Python bindings, a tool data dep
+# By basename: debug symbols, and Vulkan's mock ICD and validation layer (test-only; vk_swiftshader* stays).
+PRUNE_BASENAME = ("VkICD_mock_icd", "VkLayer_khronos_validation")
+
+
+def pruned(p):
+    base = p.rsplit("/", 1)[-1]
+    return p.startswith(PRUNE) or base.endswith(".pdb") or base.startswith(PRUNE_BASENAME)
 
 
 def read_args_gn(out):
@@ -71,20 +82,40 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
 
 
+def tree_fingerprint(src, rev):
+    """One hash for the change set laid on the pin, whether committed (the box's
+    branch) or applied uncommitted (the Windows tree): tracked edits as a full-index
+    binary diff against the pin, plus the untracked camoucfg files by content."""
+    stray = [l[3:] for l in git(src, "status", "--porcelain", "--untracked-files=all", "--", ".",
+                                ":(exclude)out", ":(exclude)components/camoucfg").splitlines()
+             if l.startswith("??")]
+    if stray:
+        sys.exit(f"refusing a tree with {len(stray)} untracked file(s) outside out/ and components/camoucfg: {stray[:5]}")
+    # flags pinned so the user's git config (diff.renames, external diff, textconv) cannot change the bytes
+    diff = subprocess.run(["git", "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff", "--no-textconv", rev, "--", ".", ":(exclude)out",
+                           ":(exclude)components/camoucfg"], cwd=src, capture_output=True, check=True).stdout
+    h = hashlib.sha256(diff + b"\n")
+    cfg = src / "components" / "camoucfg"
+    for f in sorted((p for p in cfg.rglob("*") if p.is_file()), key=lambda p: p.relative_to(cfg).as_posix()) if cfg.is_dir() else []:
+        h.update(f"{f.relative_to(cfg).as_posix()} {hashlib.sha256(f.read_bytes()).hexdigest()}\n".encode())
+    return h.hexdigest()
+
+
 def runtime_deps(src, out, file=None):
     """Paths relative to `out`, as GN emits them (../../ for source files)."""
     if file:
         raw = pathlib.Path(file).read_text()
     else:
-        raw = subprocess.run(["gn", "desc", str(out), TARGET, "runtime_deps"], cwd=src,
+        raw = subprocess.run([shutil.which("gn") or "gn", "desc", str(out), TARGET, "runtime_deps"], cwd=src,
                              capture_output=True, text=True, check=True).stdout
     # ponytail: a path line is one token without whitespace; the WARNING block's lines all
     # have spaces or start with "^" (Chromium paths never contain spaces). Out-dir paths
-    # come bare ("chrome", "locales/en-US.pak"), source-tree ones as "../../x".
+    # come bare ("locales/en-US.pak"; executables "./chrome" since 156, made bare here),
+    # source-tree ones as "../../x".
     lines = [l.strip() for l in raw.splitlines()]
-    paths = [l for l in lines if l and " " not in l and not l.startswith("^")]
+    paths = [l.removeprefix("./") for l in lines if l and " " not in l and not l.startswith("^")]
     # gn lists a few files twice (resources.pak, snapshot_blob.bin, the angledata jsons): once each.
-    return list(dict.fromkeys(p for p in paths if not p.startswith(PRUNE)))
+    return list(dict.fromkeys(p for p in paths if not pruned(p)))
 
 
 def changeset_commit(explicit=None):
@@ -96,7 +127,31 @@ def changeset_commit(explicit=None):
         sys.exit(f"{ROOT} is not a git checkout: pass --changeset-commit <sha of the change-set commit>")
 
 
-def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False):
+def leak_scan(staging, scan=True):
+    """Refuse a staged file whose bytes hold a private term; refuse too when no terms load
+    (a scan with nothing to look for measures nothing), unless scan=False (--no-leak-scan:
+    the caller scans the archive elsewhere). Returns the value for the stamp."""
+    if not scan:
+        print("leak scan: UNSCANNED (--no-leak-scan)", file=sys.stderr)
+        return "unscanned"
+    terms = check_privacy.load_terms()
+    if not check_privacy.term_count(terms):
+        shutil.rmtree(staging)
+        sys.exit("refusing to package: 0 non-empty private terms loaded, so the leak scan would measure nothing "
+                 "(set PRIVATE_TERMS or ~/.config/camoucrome/private-terms.json, or pass --no-leak-scan)")
+    if not check_privacy.identity_term_count(terms):
+        shutil.rmtree(staging)
+        sys.exit("refusing to package: 0 non-empty identity (non-GEO) private terms loaded, so binaries would be scanned for nothing")
+    print(f"leak scan: {len(terms)} private term group(s) loaded", file=sys.stderr)
+    for f in sorted(p for p in staging.rglob("*") if p.is_file() and not p.is_symlink()):
+        found = check_privacy.byte_hits(f.read_bytes(), terms, f.name)
+        if found:
+            shutil.rmtree(staging)
+            sys.exit(f"refusing to package: {f.relative_to(staging).as_posix()} holds a private term ({found[0]})")
+    return f"scanned:{len(terms)} groups"
+
+
+def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False, scan=True):
     args = read_args_gn(out)
     # GN's default is is_component_build = is_debug, and is_debug defaults to
     # true: only an explicit false (or an explicit is_debug = false) is a release.
@@ -114,11 +169,14 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if version != env["CHROMIUM_TAG"]:
         sys.exit(f"chrome/VERSION {version} != upstream.env CHROMIUM_TAG {env['CHROMIUM_TAG']}: "
                  "the checkout is not on the pin")
+    fingerprint = tree_fingerprint(src, env["CHROMIUM_REV"])
+    if not (out / CREDITS).is_file():
+        sys.exit(f"{out / CREDITS} missing: build //components/resources:about_credits (it ships with chrome)")
     missing = [d for d in deps if not (out / d).exists()]
     if missing:
         sys.exit(f"{len(missing)} runtime dep(s) GN lists are not on disk (build unfinished?): "
                  f"{missing[:5]}")
-    name = f"camoucrome-{version}-{platform}"
+    name = f"camoucrome-{version}-{platform}" + ("-beta" if platform.startswith("linux") else "")
     staging = pathlib.Path(dist) / name
     if staging.exists():
         shutil.rmtree(staging)
@@ -133,6 +191,9 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(srcp, dst, follow_symlinks=False)
+    shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
+    shutil.copy2(src / "LICENSE", staging / "LICENSE.chromium")
+    shutil.copy2(out / CREDITS, staging / "about_credits.html")
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)
@@ -142,12 +203,14 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if fonts:
         shutil.copytree(ROOT / "fonts", staging / "fonts", dirs_exist_ok=True)
         shutil.copytree(ROOT / "settings" / "fontconfig", staging / "settings" / "fontconfig", dirs_exist_ok=True)
+    scanned = leak_scan(staging, scan)
     stamp = {
         "name": name, "version": version, "platform": platform,
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
         "changeset_commit": changeset_commit(changeset),
-        "branch_tip": git(src, "rev-parse", "HEAD"),
+        "branch_tip": git(src, "rev-parse", "HEAD"), "tree_fingerprint": fingerprint,
         "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
+        "leak_scan": scanned,
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
     }
     (staging / "camoucrome-release.json").write_text(json.dumps(stamp, indent=2) + "\n")
@@ -157,7 +220,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
 
 def archive(staging, platform):
     if platform.startswith("win"):
-        path = staging.with_suffix(".zip")
+        path = pathlib.Path(str(staging) + ".zip")
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(staging.rglob("*")):
                 z.write(f, f.relative_to(staging.parent))
@@ -170,7 +233,7 @@ def archive(staging, platform):
 
 def check(stamp_paths):
     stamps = [json.loads(pathlib.Path(p).read_text()) for p in stamp_paths]
-    keys = ("version", "chromium_tag", "chromium_rev", "changeset_commit", "branch_tip")
+    keys = ("version", "chromium_tag", "chromium_rev", "changeset_commit", "tree_fingerprint")
     bad = [k for k in keys if len({s[k] for s in stamps}) > 1]
     for s in stamps:
         print(f"{s['name']}: {s['changeset_commit'][:10]} tip {s['branch_tip'][:10]} {s['built']}")
@@ -189,6 +252,8 @@ def main():
     ap.add_argument("--allow-component", action="store_true")
     ap.add_argument("--no-archive", action="store_true")
     ap.add_argument("--no-fonts", action="store_true", help="leave the font bundle out even when fonts/ exists")
+    ap.add_argument("--no-leak-scan", action="store_true",
+                    help="skip the staged-bytes private-term scan (release.py scans the archive instead)")
     ap.add_argument("--changeset-commit", metavar="SHA",
                     help="change-set commit to stamp (required when the script is not inside a git checkout)")
     ap.add_argument("--check", nargs="+", metavar="STAMP")
@@ -201,7 +266,7 @@ def main():
     out = (src / a.out).resolve()
     deps = runtime_deps(src, out, a.runtime_deps_file)
     staging, stamp = stage(src, out, deps, a.platform, a.dist, a.allow_component,
-                           changeset=a.changeset_commit, no_fonts=a.no_fonts)
+                           changeset=a.changeset_commit, no_fonts=a.no_fonts, scan=not a.no_leak_scan)
     print(f"staged {stamp['runtime_deps']} runtime deps -> {staging}")
     if not a.no_archive:
         path = archive(staging, a.platform)

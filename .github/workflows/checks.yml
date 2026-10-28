@@ -25,6 +25,8 @@ jobs:
         run: python3 scripts/check_additions_build.py
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
+      - name: gen9_thread_caps.h matches the caps JSON
+        run: python3 scripts/gen_thread_caps_header.py --check
       - name: fontconfig files match settings/fonts.json
         run: python3 scripts/gen_fontconfig.py --check
       - name: patches/series names existing patches, once each
@@ -64,7 +66,7 @@ jobs:
       # and test_winhost.py had never run here.
       - name: "python tests: clients, packager, scripts"
         run: |
-          python3 -m pip install -q pytest browserforge==1.2.4
+          python3 -m pip install -q pytest browserforge==1.2.4 maxminddb timezonefinder
           python3 -m pytest -q client/python/tests scripts/
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
