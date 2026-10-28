@@ -50,6 +50,10 @@ import check_privacy
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "//chrome:chrome"
+# LGPL-3.0 obligations for the embedded Cursory port: license, GPL text it incorporates,
+# notice of changes, and the relinking recipe all ship in the archive.
+CURSORY_FILES = (("LICENSE", "LICENSE.cursory"), ("COPYING", "COPYING.cursory"),
+                 ("NOTICE", "NOTICE.cursory"), ("RELINK.md", "RELINK.cursory.md"))
 CREDITS = pathlib.Path("gen") / "components" / "resources" / "about_credits.html"
 # Chromium writes this page when generate_about_credits is unset: every 156 release shipped it.
 CREDITS_PLACEHOLDER = b"This is sample credits page."
@@ -200,8 +204,8 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
     shutil.copy2(src / "LICENSE", staging / "LICENSE.chromium")
     shutil.copy2(out / CREDITS, staging / "about_credits.html")
-    shutil.copy2(ROOT / "additions/camoucfg_lgpl/LICENSE", staging / "LICENSE.cursory")
-    shutil.copy2(ROOT / "additions/camoucfg_lgpl/NOTICE", staging / "NOTICE.cursory")
+    for name, dst in CURSORY_FILES:
+        shutil.copy2(ROOT / "additions/camoucfg_lgpl" / name, staging / dst)
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)

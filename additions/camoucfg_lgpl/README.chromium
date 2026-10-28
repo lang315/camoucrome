@@ -1,0 +1,21 @@
+Name: Cursory
+URL: https://github.com/Vinyzu/cursory
+Version: 2.1.0
+Revision: v2.1.0
+Date: 2026-10-28
+License: LGPL v3
+License File: LICENSE, COPYING
+Security Critical: yes
+Shipped: yes
+
+Description:
+Recorded human mouse trajectories and the path generator built on them, used
+to move the cursor along a human-looking path for CDP-injected mouse moves.
+The code is a C++ port; the trajectory data is Cursory's.
+
+Local Modifications:
+C++ port of the Python original; trajectories repacked as int16/uint16
+tables; SplitMix64 instead of numpy's random source; movement time fitted into
+the configured [min, max] and capped at 10 s; equal-millisecond points
+de-duplicated; timing resampled with a 1 ms jitter floor. See NOTICE.
+Relinking instructions: RELINK.md.

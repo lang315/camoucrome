@@ -1,6 +1,6 @@
 """LGPL include boundary: additions/camoucfg_lgpl/ is reachable only through cursory.h,
 and only from additions/camoucfg/mouse_trajectories.cc. The LGPL dir must not include
-components/camoucfg/, and must carry LICENSE and NOTICE.
+components/camoucfg/, and must carry LICENSE, COPYING, NOTICE and RELINK.md.
 
 Run: python3 scripts/check_lgpl_boundary.py
 """
@@ -11,12 +11,12 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LGPL = "additions/camoucfg_lgpl"
 ALLOWED = ("additions/camoucfg/mouse_trajectories.cc", "cursory.h")
-INCLUDE = re.compile(r'#include\s+"components/(camoucfg_lgpl|camoucfg)/([^"]+)"')
+INCLUDE = re.compile(r'#include\s+["<]components/(camoucfg_lgpl|camoucfg)/([^">]+)[">]')
 
 
 def violations(root: pathlib.Path) -> list[str]:
     out = []
-    for lic in ("LICENSE", "NOTICE"):
+    for lic in ("LICENSE", "COPYING", "NOTICE", "RELINK.md"):
         if not (root / LGPL / lic).is_file():
             out.append(f"{LGPL}/{lic}: missing")
     for top in ("additions", "patches"):

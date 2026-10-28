@@ -36,6 +36,12 @@ class StatsTest(unittest.TestCase):
         self.assertFalse(a.span_in_bounds([0, 1200.1], 80, 1200))
         self.assertFalse(a.span_in_bounds([5], 80, 1200))
 
+    def test_visible_floor_fixture(self):
+        # 3 px move: 80 ms path, first gap unseen -> ~64 ms page span is GREEN
+        self.assertTrue(a.span_in_bounds([0, 20, 40, 64], a.VISIBLE_MIN_MS, a.MAX_TIME_MS))
+        self.assertFalse(a.span_in_bounds([0, 15, 30], a.VISIBLE_MIN_MS, a.MAX_TIME_MS))
+        self.assertAlmostEqual(a.VISIBLE_MIN_MS, 59.17, places=1)
+
     def test_gaps(self):
         s = a.gap_stats([0, 10, 20, 30, 100])
         self.assertEqual(s["median"], 10)

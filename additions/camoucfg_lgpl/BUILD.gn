@@ -7,10 +7,16 @@ static_library("camoucfg_lgpl") {
     "cursory_data.h",
   ]
   deps = [ "//base" ]
+  # Only the config layer links the LGPL code (scripts/check_lgpl_boundary.py).
+  visibility = [
+    "//components/camoucfg:*",
+    "//components:*",
+  ]
 }
 
 source_set("unit_tests") {
   testonly = true
+  visibility = [ "//components:*" ]
   sources = [ "cursory_unittest.cc" ]
   deps = [
     ":camoucfg_lgpl",

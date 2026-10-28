@@ -4,6 +4,18 @@ Events are page-side records; timestamps are `Event.timeStamp` in ms.
 """
 import statistics
 
+# Page-visible span lower bound. The browser clamps a path to >= minTime
+# (default 80 ms), but path[0] (offset 0) is never posted: the page sees events
+# from the FIRST POSTED point, so its span is the path time minus the first
+# gap, one 60 Hz recording period (16.7 ms). 1.25 periods of slack covers a
+# late first event: 80 - 1.25 * 16.7 = 59.2 ms.
+MIN_TIME_MS = 80
+PERIOD_MS = 1000 / 60
+VISIBLE_MIN_MS = MIN_TIME_MS - 1.25 * PERIOD_MS
+MAX_TIME_MS = 1200
+# kMaxDurationMs (cursory.h): no path, whatever the bounds, lasts longer.
+HARD_CAP_MS = 10000
+
 
 def strictly_increasing(ts):
     return all(b > a for a, b in zip(ts, ts[1:]))

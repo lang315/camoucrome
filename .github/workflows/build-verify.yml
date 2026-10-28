@@ -76,7 +76,7 @@ jobs:
       - name: camoucfg unit suites
         run: |
           cd "$SRC"
-          F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
+          F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc components/camoucfg_lgpl/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
           # One run into a file: `| grep -q` would close the pipe early and, under
           # pipefail, fail the step on the test binary's SIGPIPE.
           rc=0; out/Default/components_unittests --gtest_filter="$F" > /tmp/camoucfg_ut.txt 2>&1 || rc=$?

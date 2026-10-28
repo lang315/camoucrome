@@ -128,7 +128,8 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     (root / "LICENSE").write_text("mpl")
     (root / "additions" / "camoucfg_lgpl").mkdir(parents=True)
     (root / "additions" / "camoucfg_lgpl" / "LICENSE").write_text("lgpl")
-    (root / "additions" / "camoucfg_lgpl" / "NOTICE").write_text("notice")
+    for n in ("NOTICE", "COPYING", "RELINK.md"):
+        (root / "additions" / "camoucfg_lgpl" / n).write_text(n)
     (root / "upstream.env").write_text(package.ROOT.joinpath("upstream.env").read_text())
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], cwd=root, check=True)
@@ -239,7 +240,8 @@ def test_stage_ships_licences_and_credits_and_names_linux_beta(tree, tmp_path):
     assert staging.name == f"camoucrome-{TAG}-linux-x64-beta"
     assert (staging / "LICENSE.chromium").read_text() == "chromium bsd"
     assert (staging / "about_credits.html").exists() and (staging / "LICENSE").exists()
-    assert (staging / "LICENSE.cursory").exists() and (staging / "NOTICE.cursory").exists()
+    for n in ("LICENSE.cursory", "NOTICE.cursory", "COPYING.cursory", "RELINK.cursory.md"):
+        assert (staging / n).exists(), n
     assert len(stamp["tree_fingerprint"]) == 64
 
 

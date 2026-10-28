@@ -174,13 +174,13 @@ def dist(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
-R1 = "1 humanize, 600 px move: >=10 mousemoves, ends exactly at target, timeStamps strictly increasing, span 80-1200 ms"
-R2 = "2 humanize, 3 px move: >=2 mousemoves, span 80-1200 ms, no NaN"
+R1 = "1 humanize, 600 px move: >=10 mousemoves, ends exactly at target, timeStamps strictly increasing, span 59.2-1200 ms (80 ms path minus the unposted first gap)"
+R2 = "2 humanize, 3 px move: >=2 mousemoves, page span 59.2-1200 ms (floor 80 minus first gap), no NaN"
 R3 = "3 humanize, 600 px move: median inter-event gap 8-25 ms"
 R4 = "4 un-awaited move, wheel(0,300), move: log is exactly [moves, 3 wheel notches, moves], no interleaving"
 R5 = "5 flood of 200 un-awaited moves: browser alive, 200/200 replies within 60 s, events arrive"
 R6 = "6 target closed 100 ms into a 1 s move: pending command resolves (no hang), browser still answers"
-R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 5.5 s, browser alive"
+R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 10 s cap + 1 s margin, browser alive"
 R8 = "8 no config: 3 mouseMoved calls give exactly 3 mousemoves (1 each)"
 R9 = "9 verify_sp2c.py (Windows-claim wheel) exits 0"
 EXPECTED = 9
@@ -204,12 +204,12 @@ def rows_1_2_3():
             unmeasured(r, exc)
         return
     t1 = [e["t"] for e in e1]
-    row(R1, len(e1) >= 10 and ok_end and an.strictly_increasing(t1) and an.span_in_bounds(t1, 80, 1200)
+    row(R1, len(e1) >= 10 and ok_end and an.strictly_increasing(t1) and an.span_in_bounds(t1, an.VISIBLE_MIN_MS, an.MAX_TIME_MS)
         and dist((e1[0]["x"], e1[0]["y"]), PRIME) <= 0.15 * 600,
         "n=%d end=%s span=%.0f first=%s" % (len(e1), ok_end, an.span(t1), e1[:1]))
     t2 = [e["t"] for e in e2]
     nan = any(v != v for e in e2 for v in (e["x"], e["y"]))
-    row(R2, len(e2) >= 2 and an.span_in_bounds(t2, 80, 1200) and not nan,
+    row(R2, len(e2) >= 2 and an.span_in_bounds(t2, an.VISIBLE_MIN_MS, an.MAX_TIME_MS) and not nan,
         "n=%d span=%.0f nan=%s" % (len(e2), an.span(t2), nan))
     st = an.gap_stats(t1)
     print("      gaps (600 px): %s" % json.dumps(st))
@@ -271,7 +271,7 @@ def row6():
 
 def row7():
     # Dropping the bounds' sanity: swapped, negative and absurd values must
-    # still end at the target quickly (natural recording time, <= 5.5 s).
+    # still end at the target within the 10 s duration cap (kMaxDurationMs) plus margin.
     cfgs = ({"humanize:minTime": 900, "humanize:maxTime": 100},
             {"humanize:minTime": -5, "humanize:maxTime": 0},
             {"humanize:maxTime": 1000000000})
@@ -282,10 +282,10 @@ def row7():
                 c, _ = open_page(proc)
                 tgt = (500.0, 400.0)
                 t0 = time.monotonic()
-                move(c, *tgt, timeout_s=10)
+                move(c, *tgt, timeout_s=20)
                 took = time.monotonic() - t0
                 at = wait_last_at(c, *tgt)
-                if not (at and took <= 5.5 and alive(proc)):
+                if not (at and took <= (an.HARD_CAP_MS / 1000 + 1) and alive(proc)):
                     bad.append("%s at=%s took=%.1fs" % (cfg, at, took))
         except Exception as exc:  # noqa: BLE001
             return unmeasured(R7, exc)
