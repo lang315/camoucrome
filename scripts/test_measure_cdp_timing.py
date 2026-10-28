@@ -33,5 +33,12 @@ class Title(unittest.TestCase):
         self.assertEqual(m.run_driver(boom, "b"),
                          {"error": "ValueError('x')"})
 
+class ExitCode(unittest.TestCase):
+    def test_ok(self):
+        self.assertEqual(m.exit_code({"a": {"n": 3}, "go": "not available"}), 0)
+
+    def test_any_error_fails(self):
+        self.assertEqual(m.exit_code({"a": {"n": 3}, "b": {"error": "x"}}), 1)
+
 if __name__ == "__main__":
     unittest.main()

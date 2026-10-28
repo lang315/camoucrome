@@ -78,7 +78,7 @@ def parse_title(title):
 
 def _page_title(base):
     import urllib.request
-    for t in json.loads(urllib.request.urlopen(base + "/json").read()):
+    for t in json.loads(urllib.request.urlopen(base + "/json", timeout=2).read()):
         if t.get("type") == "page":
             return t.get("title", "")
     return ""
@@ -130,7 +130,7 @@ def drive_patchright(base):
 def drive_raw(base):
     import urllib.request
     import websocket  # websocket-client, as measure_sp2b_attach.py
-    targets = json.loads(urllib.request.urlopen(base + "/json").read())
+    targets = json.loads(urllib.request.urlopen(base + "/json", timeout=2).read())
     url = next(t["webSocketDebuggerUrl"] for t in targets if t.get("type") == "page")
     ws = websocket.create_connection(url, timeout=15, suppress_origin=True)
     ids = iter(range(1, 10 ** 6))
@@ -152,6 +152,11 @@ def drive_raw(base):
         ws.close()
 
 
+def exit_code(results):
+    """1 if any attempted driver recorded an error; the "go" label is a string."""
+    return int(any(isinstance(r, dict) and "error" in r for r in results.values()))
+
+
 def main():
     import lib_shell
     out = {}
@@ -165,7 +170,7 @@ def main():
     # client/go/cmd has only camoucrome-probe, no mouse-move entry point.
     out["go"] = "not available"
     print(json.dumps(out, indent=2))
-    return 0
+    return exit_code(out)
 
 
 if __name__ == "__main__":
