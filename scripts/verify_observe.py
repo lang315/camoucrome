@@ -8,7 +8,7 @@ and asserts EXACT per-name event counts with the right origin, site and script. 
   no-rcs v8 traced without runtime_stats: the report must say Intl blind, with V8 slices present
   --red  same as `on` with every expectation off by one: must FAIL
   dispatch  listener dispatch counts (docs/superpowers/specs/2026-10-28-observer-dispatch-counts-design.md):
-         an exact run (trace started with the extra category disabled-by-default-camou.observe-exact) asserts D1-D5 sums, a
+         an exact run (browser started with OBSERVE_DISPATCH_EXACT=1) asserts D1-D5 sums, a
          production-threshold run asserts the D1/D5 floor bounds and the report warning, and the
          category-off run asserts N-dispatch; --with-cdp-row adds D6 (trusted mousemove over CDP)
   --timing  prints call timings and trace sizes with the category off, on, and on with the Intl recipe (numbers, no verdict)
@@ -32,9 +32,10 @@ CATEGORY = observe_report.CATEGORY
 # categories still enables all the default ones (box, this probe: 7.17 MB and 77
 # categories without "-*,", 68.9 KB and 2 with it).
 ON_FILTER = "-*," + CATEGORY
-# A renderer is not handed an arbitrary browser switch, so the verify-only exact dispatch mode (flush at
-# every dispatch) is a second trace category the test run enables next to the observer one.
-EXACT_CATEGORY = "disabled-by-default-camou.observe-exact"
+# A renderer is not handed an arbitrary browser switch, and a new trace category needs base/ registration, so the
+# verify-only exact dispatch mode (flush at every dispatch) is an environment variable the renderer reads once.
+# Not CAMOU_*: run() drops those.
+EXACT_ENV = {"OBSERVE_DISPATCH_EXACT": "1"}
 # Intl recipe (docs/observer/README.md): V8 entry slices plus runtime call stats; and the
 # same with the stats category left off, which must read as blind, not as zero calls
 INTL_FILTER = ON_FILTER + ",v8,disabled-by-default-v8.runtime_stats"
@@ -245,7 +246,7 @@ def serve(k):
     return server, done, result
 
 
-def run(page, categories, k=K, extra=()):
+def run(page, categories, k=K, extra=(), env_extra=None):
     """One browser session; returns (every trace event or None, page result, trace_path)."""
     server, done, result = serve(k)
     port = server.server_port
@@ -259,6 +260,7 @@ def run(page, categories, k=K, extra=()):
             "--trace-startup-record-mode=record-as-much-as-possible",
             f"http://127.0.0.1:{port}/{page}"]
     env = {k_: v for k_, v in os.environ.items() if not k_.startswith("CAMOU_")}
+    env.update(env_extra or {})
     proc = subprocess.Popen(argv, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         if not done.wait(60):
@@ -411,7 +413,7 @@ def _fires(events, prefix=None, typ=None, target=None, trusted=None):
 
 
 def dispatch_rows_check(events, bump, exact):
-    """Rows D1-D5 on /dispatch.html. exact: the trace enabled the exact category
+    """Rows D1-D5 on /dispatch.html. exact: the browser ran with OBSERVE_DISPATCH_EXACT=1
     (flush threshold 1), so sums are exact; otherwise only the flush-threshold bounds hold. --red (bump)
     makes an exact expectation off by one and inverts a bound (a range has no 'one more')."""
     rows = []
@@ -581,10 +583,10 @@ def main():
                       if o.startswith("http://127.0.0.1:")), None)
         rows += behave_rows(bobs, f"http://127.0.0.1:{bport}", f"http://localhost:{bport}", top, K, bump)
 
-    # dispatch counts: exact run (verify-only category), production-threshold run, category off
-    for label, cats, extra, exact in (("exact", ON_FILTER + "," + EXACT_CATEGORY, [], True),
-                                      ("production-threshold", ON_FILTER, [], False)):
-        dev_, dres, _ = run("dispatch.html", cats, extra=extra)
+    # dispatch counts: exact run (verify-only environment variable), production-threshold run, category off
+    for label, cats, env_x, exact in (("exact", ON_FILTER, EXACT_ENV, True),
+                                      ("production-threshold", ON_FILTER, None, False)):
+        dev_, dres, _ = run("dispatch.html", cats, env_extra=env_x)
         if dev_ is None:
             rows.append((red, f"dispatch arm ({label}): {dres}"))  # never an expected --red failure
         else:
