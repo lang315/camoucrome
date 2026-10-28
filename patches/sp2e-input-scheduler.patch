@@ -1,0 +1,299 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index fc5d5b869e..20635818d1 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -8,6 +8,7 @@
+ 
+ #include <cstdlib>
+ #include <memory>
++#include <optional>
+ #include <tuple>
+ #include <utility>
+ #include <vector>
+@@ -28,6 +29,7 @@
+ #include "base/types/expected.h"
+ #include "build/build_config.h"
+ #include "components/camoucfg/derive.h"
++#include "components/camoucfg/input_queue.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "components/camoucfg/mouse_trajectories.h"
+@@ -737,8 +739,11 @@ class InputHandler::InputInjector
+         EffectiveOsIsWindows()) {
+       camoucfg::WheelNotches notches =
+           camoucfg::QuantizeWheel(wheel_event->delta_x, wheel_event->delta_y);
+-      if (notches.x != 0 || notches.y != 0) {
+-        ScheduleNotches(*wheel_event, notches, std::move(callback));
++      // ScheduleNotches takes `callback` only when it schedules; refused (the
++      // shared queue is over its backlog cap) it posts nothing and leaves
++      // `callback` for the stock forward below.
++      if ((notches.x != 0 || notches.y != 0) &&
++          ScheduleNotches(*wheel_event, notches, std::move(callback))) {
+         // No callback queued on this injector; the completion task owns it.
+         MaybeSelfDestruct();
+         return;
+@@ -785,52 +790,94 @@ class InputHandler::InputInjector
+   // with MouseWheelPhaseHandler's phases. Posted in real time, like SP2b's
+   // path, so the renderer consumes each notch before the next arrives. The
+   // last notch carries the CDP callback and goes through ForwardWheelEventNow.
+-  void ScheduleNotches(const blink::WebMouseWheelEvent& wheel_event,
++  //
++  // Starts after everything already booked on owner_->queue_clock_ (mouse
++  // paths and other wheels), so the kinds never interleave. Returns false,
++  // with nothing posted and `callback` untouched, when the clock refuses the
++  // item (over the cap): the plain event is forwarded once the queue has
++  // drained, so order is preserved, and the reply to that command waits for
++  // the queue, at most the 10 s cap plus 17 ms per deferred command. Each
++  // deferred event takes its own 17 ms slot (BookStockSlot, which ignores the
++  // cap) so they cannot arrive as a burst that Chromium coalesces. With an
++  // idle queue it returns false and the stock path forwards at once.
++  //
++  // The queue orders by arrival at the injector: a wheel reaches it after a
++  // visual-state round trip in InputHandler::HandleMouseEvent (stock
++  // behaviour), so an un-awaited wheel arrives later than a move sent after
++  // it.
++  bool ScheduleNotches(const blink::WebMouseWheelEvent& wheel_event,
+                        camoucfg::WheelNotches notches,
+-                       std::unique_ptr<DispatchMouseEventCallback> callback) {
++                       std::unique_ptr<DispatchMouseEventCallback>&& callback) {
+     const int count = std::max(std::abs(notches.x), std::abs(notches.y));
++    std::vector<base::TimeDelta> at(count);
++    for (int i = 1; i < count; ++i) {
++      at[i] = at[i - 1] + base::Milliseconds(base::RandIntInclusive(18, 60));
++    }
++    const base::TimeTicks now = base::TimeTicks::Now();
++    base::WeakPtr<InputHandler> handler = owner_->weak_factory_.GetWeakPtr();
++    scoped_refptr<base::SingleThreadTaskRunner> task_runner =
++        base::SingleThreadTaskRunner::GetCurrentDefault();
++    std::optional<base::TimeDelta> delay =
++        owner_->queue_clock_.Reserve(now, at.back());
++    if (!delay) {
++      base::TimeDelta behind = owner_->queue_clock_.BookStockSlot(now);
++      if (behind.is_zero()) {
++        return false;
++      }
++      // The plain, unquantized event, in its own 17 ms slot behind the queue.
++      task_runner->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&InputHandler::ForwardWheelNotchCompletion, handler,
++                         widget_host_,
++                         std::make_unique<blink::WebMouseWheelEvent>(
++                             wheel_event),
++                         std::move(callback)),
++          behind);
++      return true;
++    }
+     // Blink divides a wheel's delta by the page's scale (wheel_event.cc), so
+     // scale up to keep kWindowsNotchCssPx page-visible at any DPR or zoom.
+     const float notch_px =
+         camoucfg::kWindowsNotchCssPx * owner_->ScaleFactor();
+-    base::WeakPtr<InputHandler> handler = owner_->weak_factory_.GetWeakPtr();
+-    scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+-        base::SingleThreadTaskRunner::GetCurrentDefault();
+-    base::TimeDelta at;
++    // The sign of axis `n`'s tick at notch `i`: that axis stops turning once
++    // its own count is spent while the other may still go on.
++    auto tick = [](int n, int i) -> float {
++      return i < std::abs(n) ? (n > 0 ? 1.0f : -1.0f) : 0.0f;
++    };
+     for (int i = 0; i < count; ++i) {
+-      if (i > 0) {
+-        at += base::Milliseconds(base::RandIntInclusive(18, 60));
+-      }
+-      const float tx = i < std::abs(notches.x) ? (notches.x > 0 ? 1 : -1) : 0;
+-      const float ty = i < std::abs(notches.y) ? (notches.y > 0 ? 1 : -1) : 0;
+-      auto notch = std::make_unique<blink::WebMouseWheelEvent>(wheel_event);
+-      notch->delta_x = tx * notch_px;
+-      notch->delta_y = ty * notch_px;
+-      notch->wheel_ticks_x = tx;
+-      notch->wheel_ticks_y = ty;
+-      notch->delta_units = ui::ScrollGranularity::kScrollByPixel;
+-      notch->phase = i == 0 ? blink::WebMouseWheelEvent::kPhaseBegan
+-                            : blink::WebMouseWheelEvent::kPhaseChanged;
++      const float tx = tick(notches.x, i);
++      const float ty = tick(notches.y, i);
++      blink::WebMouseWheelEvent notch(wheel_event);
++      notch.delta_x = tx * notch_px;
++      notch.delta_y = ty * notch_px;
++      notch.wheel_ticks_x = tx;
++      notch.wheel_ticks_y = ty;
++      notch.delta_units = ui::ScrollGranularity::kScrollByPixel;
++      notch.phase = i == 0 ? blink::WebMouseWheelEvent::kPhaseBegan
++                           : blink::WebMouseWheelEvent::kPhaseChanged;
+       if (i + 1 < count) {
+         // Without kFromDebugger: OnInputEventAck pops the one queued
+         // callback for any debugger-marked wheel ack, and that callback
+         // belongs to the last notch.
+-        notch->SetModifiers(notch->GetModifiers() &
+-                            ~blink::WebInputEvent::kFromDebugger);
++        notch.SetModifiers(notch.GetModifiers() &
++                           ~blink::WebInputEvent::kFromDebugger);
+         task_runner->PostDelayedTask(
+             FROM_HERE,
+             base::BindOnce(&InputHandler::ForwardSyntheticWheelNotch, handler,
+-                           widget_host_, *notch),
+-            at);
++                           widget_host_, std::move(notch)),
++            *delay + at[i]);
+       } else {
+         task_runner->PostDelayedTask(
+             FROM_HERE,
+             base::BindOnce(&InputHandler::ForwardWheelNotchCompletion, handler,
+-                           widget_host_, std::move(notch),
++                           widget_host_,
++                           std::make_unique<blink::WebMouseWheelEvent>(
++                               std::move(notch)),
+                            std::move(callback)),
+-            at);
++            *delay + at[i]);
+       }
+     }
++    return true;
+   }
+ 
+   void InjectMouseEvent(const blink::WebMouseEvent& mouse_event,
+@@ -868,8 +915,8 @@ class InputHandler::InputInjector
+                           camoucfg::keys::kHumanizeEnabled)
+             .value_or(false) &&
+         mouse_event.GetType() == blink::WebInputEvent::Type::kMouseMove &&
+-        owner_->last_move_widget_.get() == widget_host_.get()) {
+-      SchedulePath(mouse_event, std::move(callback));
++        owner_->last_move_widget_.get() == widget_host_.get() &&
++        SchedulePath(mouse_event, std::move(callback))) {
+       // No pending callback was queued on this injector (it now belongs to
+       // the deferred completion task instead), so it has no more work to
+       // do. Self-destructing here, rather than leaving it idle-but-alive,
+@@ -949,20 +996,54 @@ class InputHandler::InputInjector
+   // flight; that move would read last_move_position_ already at THIS
+   // move's target and start its own path, and the two paths' synthetic
+   // events would interleave out of order on the widget.
+-  void SchedulePath(const blink::WebMouseEvent& mouse_event,
+-                    std::unique_ptr<DispatchMouseEventCallback> callback) {
+-    constexpr int kHumanizeSteps = 24;
+-    constexpr int kDefaultMinTimeMs = 40;
+-    constexpr int kDefaultMaxTimeMs = 120;
++  //
++  // Not awaiting is the same hazard with a client that sends the next command
++  // before this one completes (or a wheel between two moves): the path starts
++  // after everything already booked on owner_->queue_clock_, which mouse
++  // paths and wheel notches share. Returns false, with nothing posted,
++  // last_move_* untouched and `callback` still the caller's, only when there
++  // is nothing to wait for and the stock path should forward at once. Over
++  // the cap, or with no path to draw (same start and end, or a non-finite
++  // coordinate: stock handles those), the plain event is forwarded once the
++  // queue has drained, so order is preserved; it takes its own 17 ms slot
++  // (BookStockSlot, which ignores the cap: 17 ms over per command) so
++  // deferred events cannot arrive as a burst. The reply to that command
++  // waits for the queue, at most the 10 s cap, and the next humanized path
++  // starts from this event's position. HumanizePath runs before Reserve, so
++  // a refused move still pays its generation cost (<= ~0.3 ms).
++  bool SchedulePath(const blink::WebMouseEvent& mouse_event,
++                    std::unique_ptr<DispatchMouseEventCallback>&& callback) {
+     int min_ms = camoucfg::GetInt32(camoucfg::GlobalScope(),
+                                     camoucfg::keys::kHumanizeMinTime)
+-                    .value_or(kDefaultMinTimeMs);
++                    .value_or(camoucfg::kDefaultHumanizeMinMs);
+     int max_ms = camoucfg::GetInt32(camoucfg::GlobalScope(),
+                                     camoucfg::keys::kHumanizeMaxTime)
+-                    .value_or(kDefaultMaxTimeMs);
+-    std::vector<camoucfg::TrajectoryPoint> path = camoucfg::HumanizeTrajectory(
+-        owner_->last_move_position_, mouse_event.PositionInWidget(),
+-        kHumanizeSteps, min_ms, max_ms, base::RandUint64());
++                    .value_or(camoucfg::kDefaultHumanizeMaxMs);
++    std::vector<camoucfg::TrajectoryPoint> path = camoucfg::HumanizePath(
++        owner_->last_move_position_, mouse_event.PositionInWidget(), min_ms,
++        max_ms, base::RandUint64());
++    const base::TimeTicks now = base::TimeTicks::Now();
++    std::optional<base::TimeDelta> delay;
++    if (path.size() >= 2) {
++      delay = owner_->queue_clock_.Reserve(now, path.back().offset);
++    }
++    if (!delay) {
++      base::TimeDelta behind = owner_->queue_clock_.BookStockSlot(now);
++      if (behind.is_zero()) {
++        return false;
++      }
++      // The unchanged event, with no interior points, in its own 17 ms slot.
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++          FROM_HERE,
++          base::BindOnce(&InputHandler::ForwardHumanizedMouseEventCompletion,
++                         owner_->weak_factory_.GetWeakPtr(), widget_host_,
++                         std::make_unique<blink::WebMouseEvent>(mouse_event),
++                         std::move(callback)),
++          behind);
++      owner_->last_move_widget_ = widget_host_;
++      owner_->last_move_position_ = mouse_event.PositionInWidget();
++      return true;
++    }
+ 
+     gfx::Vector2dF screen_offset =
+         mouse_event.PositionInScreen() - mouse_event.PositionInWidget();
+@@ -990,7 +1071,7 @@ class InputHandler::InputInjector
+           FROM_HERE,
+           base::BindOnce(&InputHandler::ForwardSyntheticMouseMove, handler,
+                          widget_host_, synthetic),
+-          path[i].offset);
++          *delay + path[i].offset);
+     }
+ 
+     task_runner->PostDelayedTask(
+@@ -999,10 +1080,11 @@ class InputHandler::InputInjector
+                        handler, widget_host_,
+                        std::make_unique<blink::WebMouseEvent>(mouse_event),
+                        std::move(callback)),
+-        path.back().offset);
++        *delay + path.back().offset);
+ 
+     owner_->last_move_widget_ = widget_host_;
+     owner_->last_move_position_ = mouse_event.PositionInWidget();
++    return true;
+   }
+ 
+   void InjectKeyboardEvent(const input::NativeWebKeyboardEvent& keyboard_event,
+@@ -2568,7 +2650,7 @@ void InputHandler::ForwardSyntheticMouseMove(
+   // Stamped with the real time it actually fires, not a value computed at
+   // schedule time: with a real posted delay (see InputInjector::
+   // SchedulePath's own comment on why), "now" already carries the
+-  // non-uniform spacing HumanizeTrajectory generated.
++  // non-uniform spacing HumanizePath generated.
+   synthetic_event.SetTimeStamp(base::TimeTicks::Now());
+   widget->ForwardMouseEvent(synthetic_event);
+ }
+diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
+index eb21f78e1b..cd4abb4e7f 100644
+--- a/content/browser/devtools/protocol/input_handler.h
++++ b/content/browser/devtools/protocol/input_handler.h
+@@ -16,6 +16,7 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/raw_ref.h"
+ #include "base/memory/weak_ptr.h"
++#include "components/camoucfg/input_queue.h"
+ #include "content/browser/devtools/protocol/devtools_domain_handler.h"
+ #include "content/browser/devtools/protocol/input.h"
+ #include "content/browser/renderer_host/render_widget_host_view_base.h"
+@@ -376,15 +377,18 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+   float ScaleFactor();
+ 
+   raw_ptr<RenderFrameHostImpl> host_ = nullptr;
+-  // The end of the previously forwarded mouse move's path, and the
+-  // widget it was forwarded to. Read/written by InputInjector::
+-  // InjectMouseEvent (input_handler.cc), which explains why this lives
+-  // on InputHandler rather than InputInjector: an InputInjector
+-  // self-destructs once it has no pending callback, i.e. after every
+-  // CDP command that is awaited before the next is issued, so a member
+-  // scoped to it would never survive from one move to the next.
++  // State that must outlive any one InputInjector, which self-destructs once
++  // it has no pending callback, i.e. after every CDP command that is awaited
++  // before the next is issued. Read/written by InputInjector::
++  // InjectMouseEvent, SchedulePath and ScheduleNotches (input_handler.cc).
++  //
++  // The end of the previously forwarded mouse move's path, and the widget it
++  // was forwarded to.
+   base::WeakPtr<RenderWidgetHostImpl> last_move_widget_;
+   gfx::PointF last_move_position_;
++  // What the humanized mouse paths (SchedulePath) and wheel notches
++  // (ScheduleNotches) have booked so far: each starts after the last ends.
++  camoucfg::QueueClock queue_clock_;
+   // WebContents associated with the |host_|.
+   raw_ptr<WebContentsImpl> web_contents_ = nullptr;
+   std::unique_ptr<Input::Frontend> frontend_;

@@ -1,0 +1,12 @@
+diff --git a/tools/licenses/licenses.py b/tools/licenses/licenses.py
+index 07ad95387a..539b12120d 100755
+--- a/tools/licenses/licenses.py
++++ b/tools/licenses/licenses.py
+@@ -170,6 +170,7 @@ ADDITIONAL_PATHS_FILENAME = 'additional_readme_paths.json'
+ #   - Directories that contain example code, or build tooling.
+ #   - Nested third_party code inside other third_party libraries.
+ ADDITIONAL_PATHS = (
++  os.path.join('components', 'camoucfg_lgpl'),
+   os.path.join('chrome', 'test', 'chromeos', 'autotest'),
+   os.path.join('chrome', 'test', 'data'),
+   os.path.join('native_client'),
