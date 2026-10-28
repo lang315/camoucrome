@@ -33,6 +33,8 @@ import (
 //
 // Input: the fork humanizes mouse and wheel events browser-side only.
 // Keystroke timing is client-side with a fixed uniform 40-120 ms distribution.
+//
+// A Page is not safe for concurrent use.
 type Page struct {
 	p     *rod.Page
 	rng   *rand.Rand
@@ -121,9 +123,12 @@ func gone(err error) bool {
 }
 
 // soft keeps a retryable error in *last; a dead session is returned.
-func soft(err error, last *error) error {
+func soft(ctx context.Context, err error, last *error) error {
 	if gone(err) {
 		return err
+	}
+	if ctx.Err() != nil { // an in-flight call cut off by the deadline must not hide the real last error
+		return nil
 	}
 	*last = err
 	return nil
@@ -172,11 +177,12 @@ func (p *Page) Goto(ctx context.Context, url string, w WaitUntil) error {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
 	rp := p.bind(ctx)
+	p.world = 0
 	var last error
 	observe := func() (o, ready, n string, ok bool, fatal error) {
 		o, ready, n, err := p.probe(rp)
 		if err != nil {
-			return "", "", "", false, soft(err, &last)
+			return "", "", "", false, soft(ctx, err, &last)
 		}
 		last = nil
 		return o, ready, n, true, nil
@@ -283,11 +289,11 @@ func (p *Page) Click(ctx context.Context, selector string) error {
 	var last error
 	err = poll(ctx, pollEvery, func() (bool, error) {
 		if err := (proto.DOMScrollIntoViewIfNeeded{NodeID: id}).Call(rp); err != nil {
-			return false, soft(err, &last)
+			return false, soft(ctx, err, &last)
 		}
 		box, err := proto.DOMGetBoxModel{NodeID: id}.Call(rp)
 		if err != nil {
-			return false, soft(err, &last)
+			return false, soft(ctx, err, &last)
 		}
 		if q = box.Model.Content; len(q) != 8 {
 			last = fmt.Errorf("box of %d numbers", len(q))
@@ -312,7 +318,8 @@ func (p *Page) Click(ctx context.Context, selector string) error {
 		return nil
 	}
 	if !p.moved {
-		if err := mouse(proto.InputDispatchMouseEventTypeMouseMoved, float64(50+p.rng.Intn(251)), float64(50+p.rng.Intn(151)), 0); err != nil {
+		x0, y0 := p.startPoint(rp)
+		if err := mouse(proto.InputDispatchMouseEventTypeMouseMoved, x0, y0, 0); err != nil {
 			return err
 		}
 		p.moved = true
@@ -329,6 +336,23 @@ func (p *Page) Click(ctx context.Context, selector string) error {
 		}
 	}
 	return nil
+}
+
+// startPoint is random in [50,300]x[50,200], shrunk to half the CSS layout
+// viewport (Page.getLayoutMetrics) when that is smaller; the fixed range if the
+// viewport is unknown.
+func (p *Page) startPoint(rp *rod.Page) (float64, float64) {
+	hx, hy := 300, 200
+	if m, err := (proto.PageGetLayoutMetrics{}).Call(rp); err == nil && m.CSSLayoutViewport != nil {
+		if w := m.CSSLayoutViewport.ClientWidth; w > 0 && w/2 < hx {
+			hx = w / 2
+		}
+		if h := m.CSSLayoutViewport.ClientHeight; h > 0 && h/2 < hy {
+			hy = h / 2
+		}
+	}
+	lx, ly := min(50, hx/2), min(50, hy/2)
+	return float64(lx + p.rng.Intn(hx-lx+1)), float64(ly + p.rng.Intn(hy-ly+1))
 }
 
 // Type focuses the element (DOM.focus), then sends each rune on a US layout as
@@ -349,7 +373,11 @@ func (p *Page) Type(ctx context.Context, selector, text string) error {
 		return fmt.Errorf("rodclient: type: %w", err)
 	}
 	runes := []rune(text)
-	for i, r := range runes {
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == '\r' && i+1 < len(runes) && runes[i+1] == '\n' {
+			i++ // CRLF is one Enter
+		}
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("rodclient: type: %w", err)
 		}

@@ -30,6 +30,8 @@ func usKey(r rune) (usKeyInfo, bool) {
 	switch {
 	case r == '\n' || r == '\r':
 		return usKeyInfo{"Enter", "Enter", "\r", 13, 0}, true
+	case r == '\t':
+		return usKeyInfo{"Tab", "Tab", "", 9, 0}, true
 	case r >= 'a' && r <= 'z':
 		return usKeyInfo{s, "Key" + strings.ToUpper(s), s, int(r - 'a' + 'A'), 0}, true
 	case r >= 'A' && r <= 'Z':

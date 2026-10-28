@@ -84,9 +84,10 @@ while True:
             res = {"data": base64.b64encode(b"PNG").decode()}
         elif me == "Page.getLayoutMetrics":
             z = {"x": 0, "y": 0, "width": 800, "height": 600}
+            vw, vh = [int(x) for x in ev("FAKE_VIEWPORT", "800x600").split("x")]
             res = {"layoutViewport": {"pageX": 0, "pageY": 0, "clientWidth": 800, "clientHeight": 600},
                    "visualViewport": {"offsetX": 0, "offsetY": 0, "pageX": 0, "pageY": 0, "clientWidth": 800, "clientHeight": 600, "scale": 1},
-                   "contentSize": z, "cssLayoutViewport": {"pageX": 0, "pageY": 0, "clientWidth": 800, "clientHeight": 600},
+                   "contentSize": z, "cssLayoutViewport": {"pageX": 0, "pageY": 0, "clientWidth": vw, "clientHeight": vh},
                    "cssVisualViewport": {"offsetX": 0, "offsetY": 0, "pageX": 0, "pageY": 0, "clientWidth": 800, "clientHeight": 600, "scale": 1},
                    "cssContentSize": z}
         elif me == "Network.getCookies":
@@ -199,7 +200,7 @@ func TestPageOps(t *testing.T) {
 	if err := r.p.Click(ctx, "#b"); err != nil {
 		t.Fatal(err)
 	}
-	got = check("Click", "DOM.getBoxModel", "DOM.getDocument", "DOM.querySelector", "DOM.scrollIntoViewIfNeeded", "Input.dispatchMouseEvent")
+	got = check("Click", "DOM.getBoxModel", "DOM.getDocument", "DOM.querySelector", "DOM.scrollIntoViewIfNeeded", "Input.dispatchMouseEvent", "Page.getLayoutMetrics")
 	checkMouse(t, got, true)
 
 	if err := r.p.Type(ctx, "#i", "aé"); err != nil {
@@ -490,4 +491,65 @@ func setDelay(t *testing.T, d time.Duration) {
 	old := keyDelay
 	t.Cleanup(func() { keyDelay = old })
 	keyDelay = func(*rand.Rand) time.Duration { return d }
+}
+
+func TestSoftIgnoresDeadlineErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var last error
+	real := errors.New("Cannot find context")
+	if err := soft(ctx, real, &last); err != nil || last != real {
+		t.Fatalf("err %v last %v", err, last)
+	}
+	cancel()
+	if err := soft(ctx, context.Canceled, &last); err != nil || last != real {
+		t.Fatalf("deadline error overwrote last: %v", last)
+	}
+}
+
+func TestStartPointClampedToViewport(t *testing.T) {
+	t.Setenv("FAKE_VIEWPORT", "200x150")
+	r := newRig(t)
+	if err := r.p.Click(context.Background(), "#b"); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range r.drain() {
+		if q.Method == "Input.dispatchMouseEvent" {
+			x, y := q.Params["x"].(float64), q.Params["y"].(float64)
+			if x < 0 || x > 100 || y < 0 || y > 75 {
+				t.Errorf("start move (%v,%v) outside half of 200x150", x, y)
+			}
+			return
+		}
+	}
+	t.Fatal("no mouse event")
+}
+
+func TestTypeTabAndCRLF(t *testing.T) {
+	setDelay(t, 0)
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "\t\r\nx\n"); err != nil {
+		t.Fatal(err)
+	}
+	var seq []string
+	for _, q := range r.drain() {
+		if q.Method == "Input.dispatchKeyEvent" {
+			seq = append(seq, fmt.Sprintf("%v:%v:%v:%v", q.Params["type"], q.Params["key"], q.Params["text"], q.Params["windowsVirtualKeyCode"]))
+		}
+	}
+	want := []string{"keyDown:Tab:<nil>:9", "keyUp:Tab:<nil>:9", "keyDown:Enter:\r:13", "keyUp:Enter:<nil>:13",
+		"keyDown:x:x:88", "keyUp:x:<nil>:88", "keyDown:Enter:\r:13", "keyUp:Enter:<nil>:13"}
+	if !reflect.DeepEqual(seq, want) {
+		t.Fatalf("got %v\nwant %v", seq, want)
+	}
+}
+
+func TestGotoResetsWorld(t *testing.T) {
+	r := newRig(t)
+	r.p.world = 99 // stale id from an earlier document
+	if err := r.p.Goto(context.Background(), "http://127.0.0.1/", WaitLoad); err != nil {
+		t.Fatal(err)
+	}
+	if countMethod(r.drain(), "Page.createIsolatedWorld") == 0 {
+		t.Error("stale world reused")
+	}
 }
