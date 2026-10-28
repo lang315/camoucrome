@@ -198,13 +198,23 @@ def gen9_device_id(renderer, ids=None):
 
 def gpu_for(platform, host_renderer, rng, gpu=None):
     """(profile, warning). A host that is unknown, not a D3D11 renderer or not Intel Gen9 claims no GPU (None: the real
-    GPU is kept). An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
+    GPU is kept); a macOS claim keeps its Apple profile only on a host that reports exactly that renderer. An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
     change, every parameter stays the host generation's. The draw uses its own generator seeded from rng's
     state (as fonts_keys does), so rng is not advanced and later seeded keys do not move.
     Only renderers with a sourced thread cap (gen9_thread_cap) are drawn; from_pool then holds
     navigator.hardwareConcurrency to that cap."""
     base = profile_for(platform, gpu)
-    if gpu or platform != "Windows" or base is None:
+    if gpu or base is None:
+        return base, None
+    if platform == "macOS":
+        # Same rule for the Apple claim: only a host that already reports the claimed part backs it. On any other host the
+        # Apple WebGL string would sit over a different GPU's pixels, WebGPU adapter and decoders.
+        if host_renderer is None:
+            return None, f"host GPU unknown: {SHARED_GPU}; the real GPU is kept"
+        if host_renderer != base["renderer"]:
+            return None, f"host GPU is not the claimed Apple part: {SHARED_GPU}; the real GPU is kept"
+        return base, None
+    if platform != "Windows":
         return base, None
     # Fail closed: a host this code cannot identify may not back an Intel claim (an RTX or Arc host shows its own adapter in
     # WebGPU and AV1 hardware decode under an Intel WebGL string), so it claims no GPU. `--gpu` is the deliberate opt-in.

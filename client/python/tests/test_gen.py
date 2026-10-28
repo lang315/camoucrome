@@ -341,6 +341,38 @@ def test_gpu_draw_does_not_advance_the_rng():
     assert rng.getstate() == state
 
 
+MAC_APPLE = gen.profile_for("macOS")["renderer"]
+
+
+@pytest.mark.parametrize("host", [
+    None,                                                                  # not probed
+    HOST,                                                                  # an Intel Windows host
+    "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",  # an Apple host that is not the claimed part
+])
+def test_macos_claim_keeps_the_real_gpu_when_the_host_cannot_back_apple_m1_pro(host):
+    """Same fail-closed rule as the Windows claim: Apple's WebGL string over a GPU that is not the claimed one contradicts
+    the real pixels, WebGPU adapter and decoders."""
+    prof, warn = gen.gpu_for("macOS", host, random.Random(3))
+    assert prof is None and warn and "real GPU is kept" in warn
+
+
+def test_macos_claim_on_the_claimed_apple_host_keeps_the_profile():
+    prof, warn = gen.gpu_for("macOS", MAC_APPLE, random.Random(3))
+    assert warn is None and prof == gen.profile_for("macOS")
+
+
+def test_macos_claim_gpu_opt_in_is_still_deliberate():
+    prof, warn = gen.gpu_for("macOS", HOST, random.Random(3), gpu="macos-apple-m1-pro-metal")
+    assert warn is None and prof["renderer"] == MAC_APPLE
+
+
+def test_generated_macos_identity_on_a_windows_host_has_no_webgl_claim():
+    pytest.importorskip("browserforge")
+    cfg = gen.generate("macos", timezone="America/New_York", seed=4, host_renderer=HOST)["config"]
+    assert not any(k.startswith(("webGl:", "webGl2:")) for k in cfg)
+
+
 def test_non_gen9_host_keeps_real_gpu_and_warns():
     nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     prof, warn = gen.gpu_for("Windows", nv, random.Random(1))
