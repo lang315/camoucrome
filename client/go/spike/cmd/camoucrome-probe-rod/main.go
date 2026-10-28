@@ -98,7 +98,21 @@ func probe(ctx context.Context, ws cdp.WebSocketable, url string, noDefaultDevic
 	if err != nil {
 		return "", fmt.Errorf("element: %w", err)
 	}
-	return el.Text() // Runtime.callFunctionOn on the element object: part of what is measured
+	// The page fills #o after load (timing trial); poll until it has text.
+	// Text() is Runtime.callFunctionOn on the element object: part of what is measured.
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		t, err := el.Text()
+		if err != nil || t != "" || time.Now().After(deadline) {
+			return t, err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// logSends is the stderr wiring run() uses: every sent message, as sent.
+func logSends(c *browser.Conn, w io.Writer) {
+	c.Observe = cdplog.NewLogger(w).Log
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -116,7 +130,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer p.Stop()
-	p.Conn.Observe = cdplog.NewLogger(stderr).Log
+	logSends(p.Conn, stderr)
 	text, err := probe(ctx, p.Conn, c.url, c.noDefaultDevice)
 	if err != nil {
 		fmt.Fprintln(stderr, err)

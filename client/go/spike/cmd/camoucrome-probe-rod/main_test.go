@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lang315/camoucrome/client/go/spike/internal/browser"
 )
 
 func TestOutputShape(t *testing.T) {
@@ -60,6 +61,8 @@ type fakeWS struct {
 	out     chan []byte
 	text    string
 	closeCh chan struct{}
+	lateAt  time.Time    // #o reads empty before this
+	observe func([]byte) // stands in for browser.Conn.Observe
 }
 
 func newFake(text string) *fakeWS {
@@ -77,7 +80,14 @@ func (f *fakeWS) Send(b []byte) error {
 	f.mu.Lock()
 	f.sent = append(f.sent, m.Method)
 	f.mu.Unlock()
-	val, _ := json.Marshal(f.text)
+	if f.observe != nil {
+		f.observe(b)
+	}
+	txt := f.text
+	if time.Now().Before(f.lateAt) {
+		txt = ""
+	}
+	val, _ := json.Marshal(txt)
 	f.out <- []byte(`{"id":` + itoa(m.ID) + `,"result":{"targetId":"T","sessionId":"S","frameId":"F","result":{"type":"object","subtype":"node","objectId":"o1","value":` + string(val) + `}}}`)
 	return nil
 }
@@ -132,7 +142,68 @@ func TestProbeReadError(t *testing.T) {
 	close(f.closeCh)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := probe(ctx, f, "u", false); err == nil || errors.Is(err, context.DeadlineExceeded) && false {
+	if _, err := probe(ctx, f, "u", false); err == nil {
 		t.Fatal("want error from dead transport")
+	}
+}
+
+var deviceMethods = []string{"Emulation.setDeviceMetricsOverride", "Emulation.setTouchEmulationEnabled", "Network.setUserAgentOverride"}
+
+func TestNoDefaultDeviceFlagBites(t *testing.T) {
+	for _, noDev := range []bool{false, true} {
+		f := newFake(`{"a":1}`)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		if _, err := probe(ctx, f, "u", noDev); err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		close(f.closeCh)
+		f.mu.Lock()
+		for _, m := range deviceMethods {
+			if got := contains(f.sent, m); got == noDev {
+				t.Errorf("noDefaultDevice=%v: %s present=%v", noDev, m, got)
+			}
+		}
+		if contains(f.sent, "Runtime.enable") {
+			t.Errorf("noDefaultDevice=%v: Runtime.enable sent", noDev)
+		}
+		f.mu.Unlock()
+	}
+}
+
+func TestSendLogWiring(t *testing.T) {
+	f := newFake(`{"a":1}`)
+	defer close(f.closeCh)
+	var log bytes.Buffer
+	c := &browser.Conn{}
+	logSends(c, &log)
+	f.observe = func(b []byte) { c.Observe(b) }
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := probe(ctx, f, "u", false); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lines := strings.Split(strings.TrimSpace(log.String()), "\n")
+	if len(f.sent) == 0 || len(lines) != len(f.sent) {
+		t.Fatalf("logged %d lines, fake saw %d sends", len(lines), len(f.sent))
+	}
+	for _, l := range lines {
+		if !strings.Contains(l, `"method":`) {
+			t.Errorf("line without method: %s", l)
+		}
+	}
+}
+
+func TestProbeWaitsForLateReport(t *testing.T) {
+	f := newFake(`{"a":1}`)
+	defer close(f.closeCh)
+	f.lateAt = time.Now().Add(400 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	text, err := probe(ctx, f, "u", false)
+	if err != nil || text != `{"a":1}` {
+		t.Fatalf("text %q err %v", text, err)
 	}
 }
