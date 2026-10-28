@@ -10,14 +10,14 @@ Camoucrome is an anti-detect fork of **Chromium** — the Chromium counterpart t
 plus diffs in `patches/` — that `scripts/apply.sh` lays onto a pristine Chromium
 checkout to produce a fingerprint-spoofing browser.
 
-The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
-tag `156.0.8078.48`** (`upstream.env` holds the full SHA and the tag;
+The change set is generated against Chromium **`1aa07b6387`, the Chrome stable
+tag `157.0.8103.15`** (`upstream.env` holds the full SHA and the tag;
 `scripts/apply.sh` refuses any other HEAD). The pin is a *stable tag*, not
 `main` and not a branch head, so the fork reports a version real users have;
 re-pin to the newest stable tag whenever chromiumdash's stable milestone moves
 (`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`, and
 `2026-10-repin.md` for what one costs). **The next re-pin is due by
-2026-11-03**, when 157 goes stable. The build box's checkout is on branch
+2026-11-17**, when 158 goes stable. The build box's checkout is on branch
 `camoucrome/main` (the exported branch, on this pin). The 154 branch,
 `camoucrome/main-8037`, is kept in `~/chromium-154/src` until that tree is
 retired; that tree holds the git directory both checkouts share, so move it
