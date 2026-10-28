@@ -33,6 +33,15 @@ class DriversTest(unittest.TestCase):
         self.assertIn("--no-default-device", r["go-rod-own-launcher"][2])
         self.assertEqual(r["go-rod-own-launcher"][3], {"min_methods": 10})
 
+    def test_rodclient_row(self):
+        r = rows()["go-rodclient"]
+        self.assertEqual(r[1], "GREEN")
+        self.assertNotIn("--no-default-device", r[2])  # the wrapper owns it
+        self.assertIn("--label", r[2])
+        self.assertEqual(r[3], {"min_methods": 10})
+        self.assertTrue(r[2][0].endswith("camoucrome-probe-rodclient"))
+        self.assertEqual(len(v.DRIVERS), 9)
+
     def test_min_methods_override_not_vacuous(self):
         self.assertTrue(run_check(10))
         self.assertFalse(run_check(v.MIN_METHODS))
@@ -91,6 +100,10 @@ class JudgeRowTest(unittest.TestCase):
 
     def test_rod_row_opts_reach_check(self):
         ok, lines = self.judge("go-rod-own-launcher", 12, 0)
+        self.assertTrue(any("ok   C1" in l for l in lines))
+
+    def test_rodclient_row_opts_reach_check(self):
+        ok, lines = self.judge("go-rodclient", 12, 0)
         self.assertTrue(any("ok   C1" in l for l in lines))
 
     def test_chromedp_row_zero_runtime_enable_fails_with_note(self):

@@ -248,6 +248,14 @@ func TestPageOps(t *testing.T) {
 		t.Errorf("Eval expression %v", got[0].Params)
 	}
 
+	if err := r.p.AddInitScript(ctx, "window.__camou_init = 1"); err != nil {
+		t.Fatal(err)
+	}
+	got = check("AddInitScript", "Page.addScriptToEvaluateOnNewDocument")
+	if got[0].Params["source"] != "window.__camou_init = 1" {
+		t.Errorf("AddInitScript params %v", got[0].Params)
+	}
+
 	if err := r.p.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -459,16 +467,19 @@ func TestGotoTimesOutWhenNeverComplete(t *testing.T) {
 }
 
 func TestHungOpsTimeOut(t *testing.T) {
-	for _, m := range []string{"Page.captureScreenshot", "Page.close"} {
+	for _, m := range []string{"Page.captureScreenshot", "Page.close", "Page.addScriptToEvaluateOnNewDocument"} {
 		t.Run(m, func(t *testing.T) {
 			t.Setenv("FAKE_HANG", m)
 			r := newRig(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			defer cancel()
 			var err error
-			if m == "Page.close" {
+			switch m {
+			case "Page.close":
 				err = r.p.Close(ctx)
-			} else {
+			case "Page.addScriptToEvaluateOnNewDocument":
+				err = r.p.AddInitScript(ctx, "1")
+			default:
 				_, err = r.p.Screenshot(ctx)
 			}
 			if err == nil {

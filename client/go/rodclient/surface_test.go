@@ -12,7 +12,10 @@ import (
 )
 
 // The vetted surface, exactly. Adding a method here is a review decision.
-var allowedPageMethods = []string{"Attribute", "Click", "Close", "Cookies", "Eval", "Goto",
+// AddInitScript (Task 4): counterpart of playwright's add_init_script, sends
+// only Page.addScriptToEvaluateOnNewDocument; the script runs in the MAIN world
+// by design (the caller wrote it), so the contract probe can measure C6.
+var allowedPageMethods = []string{"AddInitScript", "Attribute", "Click", "Close", "Cookies", "Eval", "Goto",
 	"Screenshot", "Text", "Type", "WaitForSelector"}
 
 func TestPageSurfaceIsVetted(t *testing.T) {

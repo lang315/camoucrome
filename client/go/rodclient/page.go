@@ -508,6 +508,21 @@ func (p *Page) Eval(ctx context.Context, js string) (string, error) {
 	return string(b), err
 }
 
+// AddInitScript registers js to run in every new document before the page's
+// own scripts (Page.addScriptToEvaluateOnNewDocument only: no Page.enable, no
+// Runtime.enable). It is the counterpart of playwright's add_init_script and,
+// like it, runs in the MAIN world: that is what the caller asked for, so
+// anything it defines is visible to the page. Applies to documents created
+// after the call.
+func (p *Page) AddInitScript(ctx context.Context, js string) error {
+	ctx, cancel := opCtx(ctx)
+	defer cancel()
+	if _, err := (proto.PageAddScriptToEvaluateOnNewDocument{Source: js}).Call(p.bind(ctx)); err != nil {
+		return fmt.Errorf("rodclient: init script: %w", err)
+	}
+	return nil
+}
+
 // Close closes the page (Page.close).
 func (p *Page) Close(ctx context.Context) error {
 	ctx, cancel := opCtx(ctx)

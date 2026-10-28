@@ -1,13 +1,15 @@
 """SP6b driver contract (A4 #1): the CDP driver never sends Runtime.enable,
 leaves no trace in the main world, adds no forbidden flag, and does not move
-the stack-timing signal SP2 D1 measured. One verify, one probe page, eight
-drivers (Python, Go, Node; stock and patchright each, plus the G0 spike's
-go-rod GREEN row and go-chromedp RED control) -- the stock ones are
-the RED rows and must fail, the patchright ones must pass. The chromedp
+the stack-timing signal SP2 D1 measured. One verify, one probe page,
+nine drivers (Python, Go, Node; stock and patchright each, plus the G0 spike's
+go-rod GREEN row, the go-rodclient GREEN row and the go-chromedp RED control)
+-- the stock ones are the RED rows and must fail, the patchright ones must pass. The chromedp
 control is strict: it must fail C1 because Runtime.enable was logged, not
 because the log was silent. Spike probes (client/go/spike): go build -o
 bin/camoucrome-probe-rod ./cmd/camoucrome-probe-rod and go build -o
-bin/camoucrome-probe-chromedp ./cmd/camoucrome-probe-chromedp. Run on the box under ~/camoucrome-verify/venv.
+bin/camoucrome-probe-chromedp ./cmd/camoucrome-probe-chromedp. rodclient probe
+(client/go/rodclient): go build -o bin/camoucrome-probe-rodclient
+./cmd/camoucrome-probe-rodclient. Run on the box under ~/camoucrome-verify/venv.
 
 The page's own script (main world, synchronous, so a --dump-dom run captures
 it too) writes the report into #o; each probe command reads that text through
@@ -71,6 +73,9 @@ GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-pr
 _SPIKE_BIN = pathlib.Path(__file__).resolve().parent.parent / "client" / "go" / "spike" / "bin"
 ROD_PROBE = os.environ.get("CAMOU_ROD_PROBE", str(_SPIKE_BIN / "camoucrome-probe-rod"))
 CHROMEDP_PROBE = os.environ.get("CAMOU_CHROMEDP_PROBE", str(_SPIKE_BIN / "camoucrome-probe-chromedp"))
+# client/go/rodclient: go build -o bin/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient.
+RODCLIENT_PROBE = os.environ.get("CAMOU_RODCLIENT_PROBE", str(
+    pathlib.Path(__file__).resolve().parent.parent / "client" / "go" / "rodclient" / "bin" / "camoucrome-probe-rodclient"))
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
@@ -207,6 +212,13 @@ DRIVERS = [
                                   "--label", "node-patchright", "--executable", EXE]),
     ("go-rod-own-launcher", "GREEN", [ROD_PROBE, "--no-default-device", "--label", "go-rod",
                                       "--executable", EXE], {"min_methods": 10}),
+    # rodclient owns --no-default-device (Launch applies it), so the command has
+    # no such flag. min_methods 10: the fake-browser run of the probe's flow
+    # (init script, Goto, Text) sends exactly 10 messages after OnSend is
+    # installed; Launch's own connect messages precede the sink and are not
+    # logged. A real run sends at least those 10.
+    ("go-rodclient", "GREEN", [RODCLIENT_PROBE, "--label", "go-rodclient",
+                               "--executable", EXE], {"min_methods": 10}),
     # red_requires_runtime_enable: a control that logs no Runtime.enable at all
     # measured nothing (a silent logger would pass the plain RED rule).
     ("go-chromedp-control", "RED", [CHROMEDP_PROBE, "--label", "go-chromedp",
