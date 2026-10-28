@@ -12,7 +12,7 @@
     "selawkl.ttf",
     "selawksb.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/microsoft/Selawik/master/LICENSE.txt",
+   "licence_url": "https://raw.githubusercontent.com/microsoft/Selawik/1908e0b053079879b2afdc03334521dc991b6de9/LICENSE.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Selawik"
@@ -63,7 +63,7 @@
     "LiberationMono-Italic.ttf",
     "LiberationMono-BoldItalic.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/liberationfonts/liberation-fonts/main/LICENSE",
+   "licence_url": "https://raw.githubusercontent.com/liberationfonts/liberation-fonts/380277b57ffb0b49ca655962c850ff0224a61cae/LICENSE",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Liberation Sans",
@@ -160,16 +160,16 @@
     "Carlito-Italic.ttf",
     "Carlito-BoldItalic.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/carlito/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/07ace6abab87a122865e5cb82c7540b39551edb2/ofl/carlito/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Carlito"
    ],
    "urls": [
-    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Regular.ttf",
-    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Bold.ttf",
-    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-Italic.ttf",
-    "https://github.com/google/fonts/raw/main/ofl/carlito/Carlito-BoldItalic.ttf"
+    "https://github.com/google/fonts/raw/07ace6abab87a122865e5cb82c7540b39551edb2/ofl/carlito/Carlito-Regular.ttf",
+    "https://github.com/google/fonts/raw/07ace6abab87a122865e5cb82c7540b39551edb2/ofl/carlito/Carlito-Bold.ttf",
+    "https://github.com/google/fonts/raw/07ace6abab87a122865e5cb82c7540b39551edb2/ofl/carlito/Carlito-Italic.ttf",
+    "https://github.com/google/fonts/raw/07ace6abab87a122865e5cb82c7540b39551edb2/ofl/carlito/Carlito-BoldItalic.ttf"
    ],
    "faces": [
     {
@@ -213,16 +213,16 @@
     "Caladea-Italic.ttf",
     "Caladea-BoldItalic.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/caladea/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/ae5de9569e6af9ef0242e5b840bbbea651d2287e/ofl/caladea/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Caladea"
    ],
    "urls": [
-    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Regular.ttf",
-    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Bold.ttf",
-    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-Italic.ttf",
-    "https://github.com/google/fonts/raw/main/ofl/caladea/Caladea-BoldItalic.ttf"
+    "https://github.com/google/fonts/raw/ae5de9569e6af9ef0242e5b840bbbea651d2287e/ofl/caladea/Caladea-Regular.ttf",
+    "https://github.com/google/fonts/raw/ae5de9569e6af9ef0242e5b840bbbea651d2287e/ofl/caladea/Caladea-Bold.ttf",
+    "https://github.com/google/fonts/raw/ae5de9569e6af9ef0242e5b840bbbea651d2287e/ofl/caladea/Caladea-Italic.ttf",
+    "https://github.com/google/fonts/raw/ae5de9569e6af9ef0242e5b840bbbea651d2287e/ofl/caladea/Caladea-BoldItalic.ttf"
    ],
    "faces": [
     {
@@ -254,12 +254,12 @@
   {
    "name": "Noto Sans",
    "family": "Noto Sans",
-   "url": "https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+   "url": "https://github.com/google/fonts/raw/2984c575fdce412ee02b2baaba67672b9a9434d8/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
    "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
    "files": [
     "NotoSans[wdth,wght].ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/c92b209a838649c205a1565b5f28c1973e049659/ofl/notosans/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Sans"
@@ -276,12 +276,12 @@
   {
    "name": "Noto Serif",
    "family": "Noto Serif",
-   "url": "https://github.com/google/fonts/raw/main/ofl/notoserif/NotoSerif%5Bwdth%2Cwght%5D.ttf",
+   "url": "https://github.com/google/fonts/raw/49af86b54514f1390e126f3139ced33824f5d72e/ofl/notoserif/NotoSerif%5Bwdth%2Cwght%5D.ttf",
    "sha256": "4d8e6761424656867019081a1a01336f3cb086982682698714054fc33f782713",
    "files": [
     "NotoSerif[wdth,wght].ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserif/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/6a23d718de1dbb1be9532aebf9c6ce335070e2ea/ofl/notoserif/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Serif"
@@ -298,12 +298,12 @@
   {
    "name": "Noto Sans Symbols 2",
    "family": "Noto Sans Symbols 2",
-   "url": "https://github.com/google/fonts/raw/main/ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf",
+   "url": "https://github.com/google/fonts/raw/7b6724ac7ececc713e9ba93af309f7520c9a80a3/ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf",
    "sha256": "7d5fb73b7ca67a6798101741f5d280a3d016a56a197afcd4199dbb57b4b82a21",
    "files": [
     "NotoSansSymbols2-Regular.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssymbols2/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/c91a7a16c2859af17e19bd127a45c7aa2f7ab77a/ofl/notosanssymbols2/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Sans Symbols 2"
@@ -320,12 +320,12 @@
   {
    "name": "Noto Sans CJK",
    "family": "Noto Sans CJK",
-   "url": "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTC/NotoSansCJK-Regular.ttc",
+   "url": "https://github.com/notofonts/noto-cjk/raw/165c01b46ea533872e002e0785ff17e44f6d97d8/Sans/OTC/NotoSansCJK-Regular.ttc",
    "files": [
     "NotoSansCJK-Regular.ttc"
    ],
    "sha256": "b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a",
-   "licence_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/LICENSE",
+   "licence_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/a99a4354c68964f6bfac488d01010b1fb6d9178a/Sans/LICENSE",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Noto Sans CJK JP",
@@ -429,7 +429,7 @@
     "InterVariable.ttf",
     "InterVariable-Italic.ttf"
    ],
-   "licence_url": "https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt",
+   "licence_url": "https://raw.githubusercontent.com/rsms/inter/3ac1bd32a473ea60d40d8f444820247e96dd7e70/LICENSE.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Inter Variable"
@@ -457,14 +457,14 @@
     "Gelasio-Italic[wght].ttf"
    ],
    "urls": [
-    "https://raw.githubusercontent.com/google/fonts/main/ofl/gelasio/Gelasio%5Bwght%5D.ttf",
-    "https://raw.githubusercontent.com/google/fonts/main/ofl/gelasio/Gelasio-Italic%5Bwght%5D.ttf"
+    "https://raw.githubusercontent.com/google/fonts/90eb9d28b0fe86d0488a49b25cb219caea7f5222/ofl/gelasio/Gelasio%5Bwght%5D.ttf",
+    "https://raw.githubusercontent.com/google/fonts/90eb9d28b0fe86d0488a49b25cb219caea7f5222/ofl/gelasio/Gelasio-Italic%5Bwght%5D.ttf"
    ],
    "sha256": [
     "4daecea457258c9ebeb8bc99ed3fd24353618bfad3ea4b93fa0b5d0468fc04e4",
     "52559e845a4d33514e5f93bb9ae7dbeae1894a53f2c565a15f18af40cd337c09"
    ],
-   "licence_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/gelasio/OFL.txt",
+   "licence_url": "https://raw.githubusercontent.com/google/fonts/90eb9d28b0fe86d0488a49b25cb219caea7f5222/ofl/gelasio/OFL.txt",
    "licence": "SIL OFL 1.1",
    "provides": [
     "Gelasio"
@@ -493,14 +493,14 @@
     "tahomabd.ttf"
    ],
    "urls": [
-    "https://gitlab.winehq.org/wine/wine/-/raw/master/fonts/tahoma.ttf",
-    "https://gitlab.winehq.org/wine/wine/-/raw/master/fonts/tahomabd.ttf"
+    "https://gitlab.winehq.org/wine/wine/-/raw/e2cbfb68ad63e01384826f4d509cd257280b1197/fonts/tahoma.ttf",
+    "https://gitlab.winehq.org/wine/wine/-/raw/a04343a4173f05135cc7bcf4e320d4b13181f5c9/fonts/tahomabd.ttf"
    ],
    "sha256": [
     "90f1abad4da0ce03da5d2277ee75a9600ce812d37c90eab76e0838ffa7937e55",
     "508a2acc88cd6abdd399ae79c9965db43fba75a46bb115117b55d2be2272d889"
    ],
-   "licence_url": "https://gitlab.winehq.org/wine/wine/-/raw/master/LICENSE",
+   "licence_url": "https://gitlab.winehq.org/wine/wine/-/raw/ab59cc16c56fa7400c2076990b53ea95f6889902/LICENSE",
    "licence": "LGPL 2.1+",
    "provides": [
     "Tahoma"
