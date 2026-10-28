@@ -53,7 +53,54 @@ GROUPS = {
                      "Element.getBoundingClientRect", "Element.getClientRects"], "layout-probe"),
     "Document.cookie": "storage",
     "Storage": "storage",
+    # behaviour signals (docs/superpowers/specs/2026-10-28-observer-behaviour-signals-design.md)
+    **dict.fromkeys(["Performance.now", "Window.requestAnimationFrame",
+                     "DedicatedWorkerGlobalScope.requestAnimationFrame", "Window.setTimeout",
+                     "Window.setInterval", "WorkerGlobalScope.setTimeout",
+                     "WorkerGlobalScope.setInterval"], "timing"),
+    **dict.fromkeys(["Document.visibilityState", "Document.hidden",
+                     "Document.webkitVisibilityState", "Document.webkitHidden",
+                     "Document.hasFocus"], "focus-visibility"),
+    **dict.fromkeys(["Clipboard", "ClipboardItem", "Document.execCommand"], "clipboard"),
+    **dict.fromkeys(["DeviceMotionEvent", "DeviceOrientationEvent", "DeviceMotionEventAcceleration",
+                     "DeviceMotionEventRotationRate", "Sensor", "Accelerometer", "Gyroscope",
+                     "Magnetometer", "AbsoluteOrientationSensor", "RelativeOrientationSensor",
+                     "LinearAccelerationSensor", "GravitySensor"], "motion"),
 }
+
+# Listener registrations (one event per addEventListener call or on* setter, from the Blink hook
+# in EventTarget::AddEventListenerInternal). A page can register any string as an event type, so
+# the report prints a type only if it is in KNOWN_EVENT_TYPES; the others are counted, never named.
+LISTENER = "EventTarget.addEventListener"
+_TYPE_GROUPS = {
+    "input-events": "click dblclick mousedown mouseup mousemove mouseover mouseout mouseenter "
+                    "mouseleave contextmenu auxclick wheel mousewheel DOMMouseScroll pointerdown "
+                    "pointerup pointermove pointerover pointerout pointerenter pointerleave "
+                    "pointercancel pointerrawupdate gotpointercapture lostpointercapture touchstart "
+                    "touchend touchmove touchcancel keydown keyup keypress beforeinput input "
+                    "textInput compositionstart compositionupdate compositionend dragstart drag "
+                    "dragenter dragover dragleave drop dragend scroll scrollend select "
+                    "selectionchange selectstart gesturestart gesturechange gestureend",
+    "focus-visibility": "focus blur focusin focusout visibilitychange pagehide pageshow freeze "
+                        "resume beforeunload unload",
+    "clipboard": "copy cut paste clipboardchange",
+    "motion": "devicemotion deviceorientation deviceorientationabsolute orientationchange reading",
+    "listeners-other": "load DOMContentLoaded readystatechange error abort resize message "
+                       "messageerror storage online offline popstate hashchange change submit "
+                       "reset invalid toggle play pause ended timeupdate canplay canplaythrough "
+                       "loadedmetadata loadeddata loadstart progress stalled waiting seeking "
+                       "seeked volumechange ratechange durationchange emptied suspend playing "
+                       "animationstart animationend animationiteration animationcancel "
+                       "transitionstart transitionrun transitionend transitioncancel "
+                       "fullscreenchange fullscreenerror languagechange securitypolicyviolation "
+                       "open close connect connecting statechange devicechange success complete "
+                       "versionchange install activate push sync controllerchange updatefound "
+                       "fetch beforeinstallprompt appinstalled cancel finish slotchange "
+                       "unhandledrejection rejectionhandled beforeprint afterprint "
+                       "formdata readystatechange timeout loadend",
+}
+TYPE_GROUP = {ty: g for g, names in _TYPE_GROUPS.items() for ty in names.split()}
+KNOWN_EVENT_TYPES = frozenset(TYPE_GROUP)
 
 NOT_OBSERVABLE = [
     "V8 built-ins Date.prototype.getTimezoneOffset (a CSA builtin) and Math; Intl counts need "
@@ -64,6 +111,11 @@ NOT_OBSERVABLE = [
     "Named and indexed access (localStorage.foo, navigator.plugins[0], "
     "mimeTypes['application/pdf']): it goes through interceptor callbacks, not the hooked ones",
     "Values: the report says that a page read a member, not what it got",
+    "Dispatch: a listener registration is counted, not how often it fires or what its handler does",
+    "An on* handler re-assigned after its first assignment (only the first registers a listener)",
+    "Date.now, performance.timeOrigin, PerformanceObserver, queueMicrotask, requestIdleCallback, "
+    "scroll offsets",
+    "document.execCommand: the command is not recorded, so copy cannot be told from bold",
 ]
 
 
@@ -110,7 +162,27 @@ def buffer_note(data):
     return "Trace buffer: no chunks discarded."
 
 
+def listener_name(args):
+    """The API label of one listener registration; an unknown type is never named."""
+    typ = args.get("type", "")
+    label = typ if typ in KNOWN_EVENT_TYPES else "other"
+    opts = args.get("opts")
+    return f"{LISTENER}[{label}] target={args.get('target') or '?'}" + (f" opts={opts}" if opts else "")
+
+
+def other_listener_types(events):
+    """site -> number of distinct event types outside the known set (counted, never printed)."""
+    types = collections.defaultdict(set)
+    for e in events:
+        a = e.get("args", {})
+        if e["name"] == LISTENER and a.get("type", "") not in KNOWN_EVENT_TYPES:
+            types[a.get("site") or a.get("origin", "")].add(a.get("type", ""))
+    return {site: len(s) for site, s in types.items()}
+
+
 def group_of(name):
+    if name.startswith(LISTENER + "["):
+        return TYPE_GROUP.get(name[len(LISTENER) + 1:name.index("]")], "listeners-other")
     parts = name.split(".")
     return GROUPS.get(".".join(parts[:2])) or GROUPS.get(parts[0], "other")
 
@@ -138,8 +210,26 @@ def surface_counts(events):
     for e in events:
         args = e.get("args", {})
         origin = args.get("origin", "")
-        counts[args.get("site") or origin][(origin, script_label(args.get("script")))][e["name"]] += 1
+        name = listener_name(args) if e["name"] == LISTENER else e["name"]
+        counts[args.get("site") or origin][(origin, script_label(args.get("script")))][name] += 1
     return counts
+
+
+def timing_rates(events):
+    """site -> (API name, script label) -> (calls, calls per second between the first and last
+    event of that key; None when under two events or no elapsed time). Counts alone cannot tell
+    a 60 Hz loop from a one-off."""
+    seen = collections.defaultdict(list)
+    for e in events:
+        if group_of(e["name"]) != "timing":
+            continue
+        a = e.get("args", {})
+        seen[(a.get("site") or a.get("origin", ""), e["name"], script_label(a.get("script")))].append(e["ts"])
+    out = collections.defaultdict(dict)
+    for (site, name, script), ts in seen.items():
+        span = (max(ts) - min(ts)) / 1e6  # trace timestamps are microseconds
+        out[site][(name, script)] = (len(ts), len(ts) / span if len(ts) > 1 and span > 0 else None)
+    return out
 
 
 def _dump(e):
@@ -251,6 +341,8 @@ def render(events, requests, cookies, buffer=None, intl=None):
     if buffer:
         lines += [buffer, ""]
     counts = surface_counts(events)
+    others = other_listener_types(events)
+    rates = timing_rates(events)
     by_site = collections.defaultdict(collections.Counter)
     for site, host, path, method in requests:
         by_site[site][(host, f"{method} {path}")] += 1
@@ -267,6 +359,13 @@ def render(events, requests, cookies, buffer=None, intl=None):
             for script, names in sorted(by_script.items(), key=lambda kv: (-sum(kv[1].values()), kv[0])):
                 top = ", ".join(f"{name} ({n})" for name, n in names.most_common(3))
                 lines.append(f"| {script} | {sum(names.values())} | {top} |")
+        if others.get(site):
+            lines += ["", f"Listener types outside the known set: {others[site]} distinct "
+                      "(counted under [other], names not printed)."]
+        if rates.get(site):
+            lines += ["", "Timing call rates", "", "| API | script | calls | per second |", "|---|---|---|---|"]
+            for (name, script), (n, per_s) in sorted(rates[site].items()):
+                lines.append(f"| {name} | {script} | {n} | {'-' if per_s is None else f'{per_s:.1f}'} |")
         reqs = by_site.get(site)
         total = sum(reqs.values()) if reqs else 0
         lines += ["", f"Requests: {total}", "", "| host | request | count |", "|---|---|---|"]

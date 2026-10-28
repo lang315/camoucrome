@@ -296,3 +296,58 @@ def test_render_intl_section_states():
             < out.index(f"| https://a.com | a.com/app.js | {CTOR} | 3 |"))
     assert "v8.run" in out and "blind" not in out
     assert out.index("## V8 built-ins (Intl)") < out.index("## Not observable")
+
+
+def lev(typ, target="Window", opts="", script="https://a.com/app.js", ts=1, site="https://a.com"):
+    e = ev(r.LISTENER, "https://a.com", site, script=script)
+    e["ts"] = ts
+    e["args"].update(type=typ, target=target, opts=opts)
+    return e
+
+
+def test_listener_types_are_grouped_and_unknown_types_are_never_named():
+    secret = "stream-4711-private-id"
+    events = [lev("wheel", opts="capture"), lev("wheel", opts="capture"), lev("keydown", "Document"),
+              lev("visibilitychange", "Document"), lev("devicemotion"), lev("paste", "HTMLDivElement"),
+              lev(secret), lev("another-custom-type")]
+    md = r.render(r.events_of(events), [], [])
+    assert secret not in md and "another-custom-type" not in md
+    assert "Listener types outside the known set: 2 distinct" in md
+    c = r.surface_counts(events)["https://a.com"][("https://a.com", "a.com/app.js")]
+    assert c[f"{r.LISTENER}[wheel] target=Window opts=capture"] == 2
+    assert c[f"{r.LISTENER}[other] target=Window"] == 2
+    assert r.group_of(f"{r.LISTENER}[wheel] target=Window") == "input-events"
+    assert r.group_of(f"{r.LISTENER}[visibilitychange] target=Document") == "focus-visibility"
+    assert r.group_of(f"{r.LISTENER}[devicemotion] target=Window") == "motion"
+    assert r.group_of(f"{r.LISTENER}[paste] target=HTMLDivElement") == "clipboard"
+    assert r.group_of(f"{r.LISTENER}[other] target=Window") == "listeners-other"
+
+
+def test_behaviour_members_have_their_groups():
+    for name, group in [("Performance.now", "timing"), ("Window.requestAnimationFrame", "timing"),
+                        ("Window.setInterval", "timing"), ("WorkerGlobalScope.setTimeout", "timing"),
+                        ("Document.hidden.get", "focus-visibility"), ("Document.hasFocus", "focus-visibility"),
+                        ("Clipboard.readText", "clipboard"), ("Document.execCommand", "clipboard"),
+                        ("DeviceOrientationEvent.alpha.get", "motion"), ("Accelerometer.constructor", "motion")]:
+        assert r.group_of(name) == group, name
+    assert r.group_of("Document.title.get") == "other"
+
+
+def test_timing_rate_separates_a_loop_from_a_single_call():
+    loop = []
+    for i in range(61):  # 61 frames over one second
+        e = ev("Window.requestAnimationFrame", "https://a.com", "https://a.com", script="https://a.com/loop.js")
+        e["ts"] = 1_000_000 + i * 16_667
+        loop.append(e)
+    once = ev("Performance.now", "https://a.com", "https://a.com", script="https://a.com/once.js")
+    md = r.render(r.events_of(loop + [once]), [], [])
+    rates = r.timing_rates(loop + [once])["https://a.com"]
+    assert rates[("Window.requestAnimationFrame", "a.com/loop.js")][0] == 61
+    assert 59 < rates[("Window.requestAnimationFrame", "a.com/loop.js")][1] < 61
+    assert rates[("Performance.now", "a.com/once.js")] == (1, None)
+    assert "Timing call rates" in md
+
+
+def test_not_observable_says_what_a_registration_count_is_not():
+    md = r.render([], [], [])
+    assert "not how often it fires" in md

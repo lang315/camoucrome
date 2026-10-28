@@ -91,6 +91,48 @@ HOT = """<!doctype html><canvas id=c width=8 height=8></canvas><script>
 </script>"""
 
 
+# Behaviour signals (docs/superpowers/specs/2026-10-28-observer-behaviour-signals-design.md).
+# The page itself uses no timer, rAF or performance.now except the counted calls below: it waits on
+# promises and fetch only, so every count is exact.
+BEHAVE = """<!doctype html><title>behaviour probe</title><div id=inl onclick="1"></div><div id=el></div>
+<script>
+(async () => {
+  const K = %(k)d, f = () => {};
+  for (let i = 0; i < K; i++) window.addEventListener('wheel', f, {passive: false});
+  window.addEventListener('wheel', f, {passive: true});
+  for (let i = 0; i < 2; i++) { document.addEventListener('keydown', f, true); document.addEventListener('visibilitychange', f); }
+  document.getElementById('el').addEventListener('pointermove', f, {once: true});
+  window.ondevicemotion = f; window.ondeviceorientation = f;
+  window.addEventListener('probe-custom-type-xyz', f);
+  for (let i = 0; i < K; i++) {
+    performance.now(); requestAnimationFrame(f); setTimeout(f, 0);
+    const id = setInterval(() => clearInterval(id), 50);
+    document.hidden; document.visibilityState; document.webkitHidden; document.hasFocus();
+    navigator.clipboard.writeText('x').catch(f); navigator.clipboard.readText().catch(f);
+    new DeviceOrientationEvent('deviceorientation', {alpha: 1}).alpha;
+    new DeviceMotionEvent('devicemotion', {acceleration: {x: 1}}).acceleration;
+    window.removeEventListener('wheel', f); performance.mark('m'); document.title;
+    clearTimeout(0); cancelAnimationFrame(0);
+  }
+  new ClipboardItem({'text/plain': new Blob(['x'], {type: 'text/plain'})});
+  document.execCommand('copy');
+  try { new Accelerometer(); } catch (e) {}
+  const w = new Worker('/bworker.js');
+  await new Promise(r => { w.onmessage = r; });
+  const fr = document.createElement('iframe');
+  fr.src = 'http://localhost:%(port)d/bframe.html';
+  const framed = new Promise(r => { onmessage = e => { if (e.data === 'frame-done') r(); }; });
+  document.body.appendChild(fr);
+  await framed;
+  await fetch('/done', {method: 'POST', body: '{}'});
+})();
+</script>"""
+BWORKER = ("const f = () => {}; self.addEventListener('message', f); self.addEventListener('message', f);"
+           "for (let i = 0; i < %(k)d; i++) { performance.now(); setTimeout(f, 0); } postMessage('w');")
+BFRAME = ("<!doctype html><script>addEventListener('touchstart', () => {});"
+          "parent.postMessage('frame-done', '*');</script>")
+
+
 def serve(k):
     done = threading.Event()
     result = {}
@@ -109,6 +151,9 @@ def serve(k):
             pages = {"/probe.html": (PROBE % {"k": k, "port": port}, "text/html"),
                      "/timing.html": (TIMING, "text/html"),
                      "/hot.html": (HOT % {"n": HOT_N}, "text/html"),
+                     "/behave.html": (BEHAVE % {"k": k, "port": port}, "text/html"),
+                     "/bworker.js": (BWORKER % {"k": k}, "application/javascript"),
+                     "/bframe.html": (BFRAME, "text/html"),
                      "/worker.js": (WORKER % {"k": k}, "application/javascript"),
                      "/ext.js": (EXT % {"k": k}, "application/javascript"),
                      "/frame.html": (FRAME % {"k": k}, "text/html")}
@@ -206,6 +251,69 @@ def intl_rows(ic, site, scripts, k, bump):
     return rows
 
 
+def behave_rows(events, main_origin, frame_origin, top, k, bump):
+    """Exact counts of the behaviour-signal probe. Listener rows are keyed by (type, target, opts)
+    and, where it matters, the registering origin and site; the rest by API name."""
+    L = [(e["args"].get("type"), e["args"].get("target"), e["args"].get("opts", ""),
+          e["args"].get("origin"), e["args"].get("site"))
+         for e in events if e["name"] == observe_report.LISTENER]
+    c = tally(events)
+
+    def listeners(typ, target, opts, origin=main_origin, site=top):
+        return sum(1 for (t_, tg, o, og, s) in L if (t_, tg, o, og, s) == (typ, target, opts, origin, site))
+
+    def api(*names, origin=main_origin, site=top):
+        return sum(n for (nm, og, s, _), n in c.items() if nm in names and og == origin and s == site)
+
+    rows = []
+
+    def row(label, got, want):
+        rows.append((got == want + bump, f"{label}: {got} (want {want + bump})"))
+
+    row("L1 addEventListener wheel Window (passive:false) x K", listeners("wheel", "Window", ""), k)
+    row("L1 addEventListener wheel Window passive", listeners("wheel", "Window", "passive"), 1)
+    row("L2 keydown Document capture x2", listeners("keydown", "Document", "capture"), 2)
+    row("L2 visibilitychange Document x2", listeners("visibilitychange", "Document", ""), 2)
+    row("L3 pointermove HTMLDivElement once", listeners("pointermove", "HTMLDivElement", "once"), 1)
+    row("L4 ondevicemotion setter", listeners("devicemotion", "Window", ""), 1)
+    row("L4 ondeviceorientation setter", listeners("deviceorientation", "Window", ""), 1)
+    row("L5 inline onclick attribute", listeners("click", "HTMLDivElement", ""), 1)
+    row("L6 worker message x2 (origin of the creator, no site)",
+        listeners("message", "DedicatedWorkerGlobalScope", "", site=""), 2)
+    row("L7 cross-site frame touchstart", listeners("touchstart", "Window", "", origin=frame_origin), 1)
+    row("L8 custom type recorded in the raw trace", listeners("probe-custom-type-xyz", "Window", ""), 1)
+    md = observe_report.render(observe_report.events_of(events), [], [])
+    rows.append(("probe-custom-type-xyz" not in md, "L8 report never prints a type outside the known set"))
+    row("T1 Performance.now page x K", api("Performance.now"), k)
+    row("T1 Performance.now worker x K", api("Performance.now", site=""), k)
+    row("T2 requestAnimationFrame x K", api("Window.requestAnimationFrame"), k)
+    # a mixin member is emitted under the host interface's name, or the mixin's: both are accepted
+    # and the label says which the generator produced
+    timers = ("Window.setTimeout", "WindowOrWorkerGlobalScope.setTimeout")
+    ivals = ("Window.setInterval", "WindowOrWorkerGlobalScope.setInterval")
+    wtimers = ("WorkerGlobalScope.setTimeout", "DedicatedWorkerGlobalScope.setTimeout",
+               "WindowOrWorkerGlobalScope.setTimeout")
+    row("T2 setTimeout page x K", api(*timers), k)
+    row("T2 setInterval page x K", api(*ivals), k)
+    row("T2 setTimeout worker x K", api(*wtimers, site=""), k)
+    for name in ("Document.hidden.get", "Document.visibilityState.get", "Document.webkitHidden.get",
+                 "Document.hasFocus"):
+        row(f"F1 {name} x K", api(name), k)
+    row("C1 Clipboard.writeText x K", api("Clipboard.writeText"), k)
+    row("C1 Clipboard.readText x K", api("Clipboard.readText"), k)
+    row("C1 ClipboardItem.constructor", api("ClipboardItem.constructor"), 1)
+    row("C1 Document.execCommand", api("Document.execCommand"), 1)
+    row("M1 DeviceOrientationEvent.constructor x K", api("DeviceOrientationEvent.constructor"), k)
+    row("M1 DeviceOrientationEvent.alpha.get x K", api("DeviceOrientationEvent.alpha.get"), k)
+    row("M1 DeviceMotionEvent.constructor x K", api("DeviceMotionEvent.constructor"), k)
+    row("M1 DeviceMotionEvent.acceleration.get x K", api("DeviceMotionEvent.acceleration.get"), k)
+    row("M2 Accelerometer.constructor", api("Accelerometer.constructor"), 1)
+    for name in ("Performance.mark", "Document.title.get", "Window.clearTimeout",
+                 "Window.cancelAnimationFrame", "EventTarget.removeEventListener"):
+        row(f"N1 {name} (not allow-listed)", api(name), 0)
+    return rows
+
+
 def blind_arm(events):
     """(ok, V8 entry slices): v8 traced without runtime_stats must report blind, and V8
     slices must be present, or the arm measured nothing."""
@@ -280,6 +388,16 @@ def main():
         hot_port = next((o.rsplit(":", 1)[1] for (_, o, _, _) in hc
                          if o and o.startswith("http://127.0.0.1:")), None)
         rows += hot_rows(hc, f"http://127.0.0.1:{hot_port}", top, HOT_N, bump)
+
+    # behaviour signals: a separate session, so its listener and timer events do not crowd the probe's
+    bev, bres, _ = run("behave.html", ON_FILTER)
+    if bev is None:
+        rows.append((red, f"behaviour arm: {bres}"))  # never an expected --red failure
+    else:
+        bobs = observe_report.events_of(bev)
+        bport = next((o.rsplit(":", 1)[1] for e in bobs for o in [e["args"].get("origin", "")]
+                      if o.startswith("http://127.0.0.1:")), None)
+        rows += behave_rows(bobs, f"http://127.0.0.1:{bport}", f"http://localhost:{bport}", top, K, bump)
 
     # off arm: a normal default set ("blink,loading") must not pull the category in
     off_events, off_res, _ = run("probe.html", "blink,loading")

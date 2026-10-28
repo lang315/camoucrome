@@ -69,3 +69,55 @@ def test_intl_filters_extend_the_default_recipe():
     assert v.INTL_ROWS == ("DateTimeFormatConstructor", "DateTimeFormatPrototypeResolvedOptions",
                            "DateTimeFormatSupportedLocalesOf")
     assert "Intl.DateTimeFormat.supportedLocalesOf" in v.PROBE and "resolvedOptions" in v.WORKER
+
+
+MAIN, FRAME, TOP = "http://127.0.0.1:1", "http://localhost:1", "http://127.0.0.1"
+
+
+def _api(name, n, origin=MAIN, site=TOP):
+    return [{"name": name, "args": {"origin": origin, "site": site, "script": ""}} for _ in range(n)]
+
+
+def _lis(typ, target, opts="", n=1, origin=MAIN, site=TOP):
+    return [{"name": v.LISTENER if hasattr(v, "LISTENER") else v.observe_report.LISTENER,
+             "args": {"origin": origin, "site": site, "script": "", "type": typ, "target": target,
+                      "opts": opts}} for _ in range(n)]
+
+
+def _exact_behaviour_trace(k=3):
+    ev = []
+    ev += _lis("wheel", "Window", "", k) + _lis("wheel", "Window", "passive")
+    ev += _lis("keydown", "Document", "capture", 2) + _lis("visibilitychange", "Document", "", 2)
+    ev += _lis("pointermove", "HTMLDivElement", "once") + _lis("devicemotion", "Window")
+    ev += _lis("deviceorientation", "Window") + _lis("click", "HTMLDivElement")
+    ev += _lis("message", "DedicatedWorkerGlobalScope", "", 2, site="")
+    ev += _lis("touchstart", "Window", "", 1, origin=FRAME) + _lis("probe-custom-type-xyz", "Window")
+    ev += _api("Performance.now", k) + _api("Performance.now", k, site="")
+    ev += _api("Window.requestAnimationFrame", k) + _api("Window.setTimeout", k)
+    ev += _api("Window.setInterval", k) + _api("WorkerGlobalScope.setTimeout", k, site="")
+    for n in ("Document.hidden.get", "Document.visibilityState.get", "Document.webkitHidden.get",
+              "Document.hasFocus", "Clipboard.writeText", "Clipboard.readText",
+              "DeviceOrientationEvent.constructor", "DeviceOrientationEvent.alpha.get",
+              "DeviceMotionEvent.constructor", "DeviceMotionEvent.acceleration.get"):
+        ev += _api(n, k)
+    for n in ("ClipboardItem.constructor", "Document.execCommand", "Accelerometer.constructor"):
+        ev += _api(n, 1)
+    return ev
+
+
+def test_behaviour_rows_pass_on_the_exact_trace_and_fail_when_off_by_one():
+    rows = v.behave_rows(_exact_behaviour_trace(), MAIN, FRAME, TOP, 3, 0)
+    assert rows and all(ok for ok, _ in rows), [t for ok, t in rows if not ok]
+    bumped = v.behave_rows(_exact_behaviour_trace(), MAIN, FRAME, TOP, 3, 1)
+    assert [t for ok, t in bumped if ok] == ["L8 report never prints a type outside the known set"]
+
+
+def test_behaviour_rows_fail_on_an_observer_without_the_slice():
+    """The RED the box run must show: no events, so every positive row fails; the five
+    not-allow-listed controls and the report-text row stay green."""
+    rows = v.behave_rows([], MAIN, FRAME, TOP, 3, 0)
+    green = sorted(t.split(":")[0] for ok, t in rows if ok)
+    assert green == sorted(["L8 report never prints a type outside the known set"]
+                           + [f"N1 {n} (not allow-listed)" for n in (
+                               "Performance.mark", "Document.title.get", "Window.clearTimeout",
+                               "Window.cancelAnimationFrame", "EventTarget.removeEventListener")])
