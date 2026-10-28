@@ -2,14 +2,17 @@
 input scheduler, driven over a raw websocket (no Runtime.enable; Input and
 Runtime.evaluate only).
 
-Nine rows, each with its expected count. A row that cannot run reports
+Eleven rows, each with its expected count. A row that cannot run reports
 UNMEASURED, never PASS; any non-PASS row exits 1. Each row launches its own
 browser. Pure checks live in sp2e_analysis.py (`--self-test` runs them with no
 browser).
 
-  RED before the patch lands (stock/old queue): rows 1, 2, 3, 4.
-  Pass either way (safety / stock rows): 5, 6, 7, 8, 9 -- GREEN-only evidence
-  that the patch broke nothing, not evidence it works.
+  RED-capable: 1, 4, 10, 11 (stock path / old queue: one event per move, no
+  ordering; the old code let a cap-refused or zero-length move overtake the
+  queue as an immediate stock event -- rows 10 and 11 fail on it).
+  Guard-only: 2, 3, 5-9. Rows 2 and 3 bound the new path only (they also fail
+  on stock, but say nothing about the old queue); 5-9 pass either way and are
+  evidence that nothing broke, not that the patch works.
 
 Box command (clean env, under scripts/build_lock.sh):
   env -i HOME="$HOME" PATH="$PATH" PYTHONPATH="$PYTHONPATH" \\
@@ -58,6 +61,7 @@ class Cdp:
         import websocket
         self.ws = websocket.create_connection(url, timeout=15, suppress_origin=True)
         self.n = 0
+        self.arrived = []  # reply ids in arrival order
 
     def send(self, method, params=None):
         self.n += 1
@@ -83,6 +87,7 @@ class Cdp:
                 break
             if "id" in msg:
                 got[msg["id"]] = msg
+                self.arrived.append(msg["id"])
         return got, closed
 
     def call(self, method, params=None, timeout_s=15):
@@ -183,7 +188,9 @@ R6 = "6 target closed 100 ms into a 1 s move: pending command resolves (no hang)
 R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 10 s cap + 1 s margin, browser alive"
 R8 = "8 no config: 3 mouseMoved calls give exactly 3 mousemoves (1 each)"
 R9 = "9 verify_sp2c.py (Windows-claim wheel) exits 0"
-EXPECTED = 9
+R10 = "10 overflow keeps order: 14 un-awaited moves (1 s each, past the 10 s cap): 14/14 final events in submission order, last event is target 13"
+R11 = "11 zero-length move waits for the queue: its event is in the tail after the path, its reply after the first reply"
+EXPECTED = 11
 
 
 def rows_1_2_3():
@@ -317,13 +324,49 @@ def row9():
     row(R9, r.returncode == 0, "rc=%d tail=%s" % (r.returncode, r.stdout[-300:]))
 
 
+def row10():
+    cfg = {**HUM, "humanize:minTime": 1000, "humanize:maxTime": 1000}
+    targets = [100 + 40 * i for i in range(14)]
+    try:
+        with browser(cfg) as proc:
+            c, _ = open_page(proc)
+            ids = [c.send("Input.dispatchMouseEvent", move_params(float(x), 200.0))
+                   for x in targets]
+            got, _ = c.recv_until(ids, an.REPLY_DEADLINE_S)
+            time.sleep(0.5)
+            xs = [e["x"] for e in log(c)]
+    except Exception as exc:  # noqa: BLE001
+        return unmeasured(R10, exc)
+    viol = an.final_order_violations(xs, [float(x) for x in targets])
+    row(R10, len(got) == 14 and not viol,
+        "replies=%d/14 within %.1fs violations=%s" % (len(got), an.REPLY_DEADLINE_S, viol))
+
+
+def row11():
+    tgt = (PRIME[0] + 600, PRIME[1])
+    try:
+        with browser(HUM) as proc:
+            c, _ = open_page(proc)
+            i1 = c.send("Input.dispatchMouseEvent", move_params(*tgt))
+            i2 = c.send("Input.dispatchMouseEvent", move_params(*tgt))  # zero-length from tgt
+            got, _ = c.recv_until([i1, i2], 20)
+            time.sleep(0.5)
+            events = [(e["x"], e["y"], e["t"]) for e in log(c)]
+            order = list(c.arrived)
+    except Exception as exc:  # noqa: BLE001
+        return unmeasured(R11, exc)
+    viol = an.tail_violations(events, tgt)
+    row(R11, len(got) == 2 and not viol and an.reply_before(order, i1, i2),
+        "replies=%d order=%s violations=%s" % (len(got), order, viol))
+
+
 def main():
     if sys.argv[1:2] in (["--self-test"], ["--dry-parse"]):
         an.self_test()
         print("self-test ok")
         return 0
     rows_1_2_3()
-    for f in (row4, row5, row6, row7, row8, row9):
+    for f in (row4, row5, row6, row7, row8, row9, row10, row11):
         f()
     for name in sorted(results, key=lambda n: int(n.split()[0])):
         print("%-10s %s" % (results[name], name))
