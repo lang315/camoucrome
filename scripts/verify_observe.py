@@ -463,6 +463,9 @@ def trusted_mouse_row(events, bump):
 
 def run_cdp_mouse():
     """One Input.dispatchMouseEvent through lib_shell, a separate session from every fidelity arm.
+    UNVERIFIED (2026-10-28): lib_shell.session cannot launch content_shell with --trace-startup (it exits
+    during startup, code 1, even with only the one flag), so this row returns None and reports "never wrote a
+    trace". The trusted split is checked by the first real-input run instead (track A4).
     Returns the raw events or None. shortcut: the page expression only keeps the browser alive past
     --trace-startup-duration, because SIGTERM does not flush the trace."""
     server, _, _ = serve(K)
@@ -472,7 +475,7 @@ def run_cdp_mouse():
              "--trace-startup-duration=6", "--trace-startup-record-mode=record-as-much-as-possible"]
     try:
         _, err = lib_shell.session(
-            {}, ["new Promise(r => setTimeout(r, 9000))"],
+            "{}", ["new Promise(r => setTimeout(r, 9000))"],
             navigate_to=f"http://127.0.0.1:{server.server_port}/mouse.html", extra_flags=flags,
             cdp=[("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 20, "y": 20})])
     finally:
