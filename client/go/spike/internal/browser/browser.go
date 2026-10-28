@@ -3,11 +3,9 @@
 package browser
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -19,11 +17,16 @@ import (
 )
 
 type Proc struct {
+	Pid   int
 	Argv  []string // the browser's actual argv, what C4 reads
 	Conn  *Conn    // pipe transport (nil with UsePort)
 	WSURL string   // UsePort only
 	Stop  func()
+	tail  *tailBuf
 }
+
+// StderrTail is the last 4 KiB the browser wrote to stderr.
+func (p *Proc) StderrTail() string { return p.tail.String() }
 
 type Options struct {
 	Executable, URL, Config, Preset string
@@ -98,6 +101,22 @@ func (t *tailBuf) String() string {
 	return string(t.b)
 }
 
+// portWatcher is the UsePort stderr sink: it keeps the tail and reports the
+// DevTools URL once (no line-length limit, unlike a bufio.Scanner).
+type portWatcher struct {
+	tail *tailBuf
+	ch   chan string
+	once sync.Once
+}
+
+func (w *portWatcher) Write(p []byte) (int, error) {
+	w.tail.Write(p)
+	if m := wsRe.FindStringSubmatch(w.tail.String()); m != nil {
+		w.once.Do(func() { w.ch <- m[1] })
+	}
+	return len(p), nil
+}
+
 func Start(ctx context.Context, o Options) (*Proc, error) {
 	if err := platformErr(); err != nil {
 		return nil, err
@@ -116,9 +135,13 @@ func Start(ctx context.Context, o Options) (*Proc, error) {
 	cmd.Env = env
 	setGroup(cmd)
 	tail := &tailBuf{}
-	var toChild, fromChild [2]*os.File // browser reads fd 3, writes fd 4
-	var closeAll func()
-	if !o.UsePort {
+	watch := &portWatcher{tail: tail, ch: make(chan string, 1)}
+	cmd.Stderr = tail
+	var files []*os.File // all four pipe ends, closed by stop
+	var toChild, fromChild [2]*os.File
+	if o.UsePort {
+		cmd.Stderr = watch
+	} else {
 		cr, cw, err1 := os.Pipe()
 		pr, pw, err2 := os.Pipe()
 		if err1 != nil || err2 != nil {
@@ -126,64 +149,60 @@ func Start(ctx context.Context, o Options) (*Proc, error) {
 			return nil, errors.Join(err1, err2)
 		}
 		toChild, fromChild = [2]*os.File{cr, cw}, [2]*os.File{pr, pw}
-		cmd.ExtraFiles = []*os.File{cr, pw}
-		cmd.Stderr = tail
-		closeAll = func() {
-			for _, f := range []*os.File{cr, cw, pr, pw} {
-				f.Close()
-			}
-		}
+		files = []*os.File{cr, cw, pr, pw}
+		cmd.ExtraFiles = []*os.File{cr, pw} // the browser sees fd 3 (reads) and fd 4 (writes)
 	}
-	var stderr io.ReadCloser
-	if o.UsePort {
-		if stderr, err = cmd.StderrPipe(); err != nil {
-			os.RemoveAll(dir)
-			return nil, err
+	closeFiles := func() {
+		for _, f := range files {
+			f.Close()
 		}
 	}
 	if err := cmd.Start(); err != nil {
-		if closeAll != nil {
-			closeAll()
-		}
+		closeFiles()
 		os.RemoveAll(dir)
 		return nil, err
 	}
+	waited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waited) }()
+	done := make(chan struct{})
+	var once sync.Once
 	stop := func() {
-		killGroup(cmd.Process.Pid)
-		_ = cmd.Wait()
-		if closeAll != nil {
-			closeAll()
-		}
-		os.RemoveAll(dir)
+		once.Do(func() {
+			close(done)
+			killGroup(cmd.Process.Pid)
+			<-waited
+			closeFiles()
+			os.RemoveAll(dir)
+		})
 	}
-	full := append([]string{o.Executable}, argv...)
-	if !o.UsePort {
-		toChild[0].Close() // child's ends; ours stay
-		fromChild[1].Close()
-		return &Proc{Argv: full, Conn: newConn(fromChild[0], toChild[1]), Stop: stop}, nil
-	}
-
-	type res struct{ ws string }
-	ch := make(chan res, 1)
 	go func() {
-		sc := bufio.NewScanner(io.TeeReader(stderr, tail))
-		for sc.Scan() {
-			if m := wsRe.FindStringSubmatch(sc.Text()); m != nil {
-				ch <- res{m[1]}
-				for sc.Scan() { // keep draining so the browser never blocks on stderr
-				}
-				return
-			}
-		}
-		ch <- res{}
-	}()
-	select {
-	case r := <-ch:
-		if r.ws == "" {
+		select {
+		case <-ctx.Done():
 			stop()
-			return nil, fmt.Errorf("browser exited without a DevTools URL; stderr tail:\n%s", strings.TrimSpace(tail.String()))
+		case <-done:
 		}
-		return &Proc{Argv: full, WSURL: r.ws, Stop: stop}, nil
+	}()
+	full := append([]string{o.Executable}, argv...)
+	p := &Proc{Pid: cmd.Process.Pid, tail: tail, Argv: full, Stop: stop}
+	if !o.UsePort {
+		toChild[0].Close() // the child's ends; ours stay
+		fromChild[1].Close()
+		p.Conn = newConn(fromChild[0], toChild[1])
+		p.Conn.onEOF = func(err error) error {
+			select { // let the exit and the stderr copy finish so the tail is complete
+			case <-waited:
+			case <-time.After(2 * time.Second):
+			}
+			return fmt.Errorf("%w; browser stderr tail:\n%s", err, strings.TrimSpace(tail.String()))
+		}
+		return p, nil
+	}
+	select {
+	case p.WSURL = <-watch.ch:
+		return p, nil
+	case <-waited:
+		stop()
+		return nil, fmt.Errorf("browser exited without a DevTools URL; stderr tail:\n%s", strings.TrimSpace(tail.String()))
 	case <-time.After(20 * time.Second):
 		stop()
 		return nil, errors.New("no DevTools URL within 20s; stderr tail:\n" + strings.TrimSpace(tail.String()))

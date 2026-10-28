@@ -14,7 +14,8 @@ type Conn struct {
 	mu      sync.Mutex
 	w       io.WriteCloser
 	r       *bufio.Reader
-	Observe func([]byte) // sees every sent message before it is written
+	Observe func([]byte)      // sees every sent message, in wire order
+	onEOF   func(error) error // decorates EOF errors (set by Start)
 }
 
 func newConn(r io.Reader, w io.WriteCloser) *Conn {
@@ -25,11 +26,11 @@ func (c *Conn) Send(msg []byte) error {
 	if bytes.IndexByte(msg, 0) >= 0 {
 		return errors.New("browser: message contains NUL")
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.Observe != nil {
 		c.Observe(msg)
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	_, err := c.w.Write(append(append([]byte{}, msg...), 0))
 	return err
 }
@@ -39,7 +40,10 @@ func (c *Conn) Read() ([]byte, error) {
 	b, err := c.r.ReadBytes(0)
 	if err != nil {
 		if len(b) > 0 && errors.Is(err, io.EOF) {
-			return nil, io.ErrUnexpectedEOF
+			err = io.ErrUnexpectedEOF
+		}
+		if c.onEOF != nil && (err == io.EOF || err == io.ErrUnexpectedEOF) {
+			err = c.onEOF(err)
 		}
 		return nil, err
 	}
