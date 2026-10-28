@@ -7,6 +7,12 @@ entry point), send N=120 samples along a straight 600 px line at a 16.7 ms
 target period, record the page-visible mousemove.timeStamp, print gap_stats
 per driver as JSON.
 
+Isolation: each driver gets its own freshly launched browser, killed before
+the next starts; the raw-websocket driver runs with nothing else attached, and
+stamps are read over HTTP /json (document.title), never over CDP. The
+patchright driver may have Runtime.enable active (a property of that driver),
+so its figure is a patchright figure, not a clean-CDP figure.
+
 Run on the build box:
   env -i HOME="$HOME" PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
     CAMOU_CLIENT="$CAMOU_CLIENT" CAMOU_FONTS_DIR="$CAMOU_FONTS_DIR" \
@@ -23,9 +29,13 @@ N = 120
 LINE_PX = 600
 X0, Y = 20, 200
 
-PAGE = ("data:text/html,<body style='margin:0'>"
-        "<script>window.__m=[];addEventListener('mousemove',"
-        "e=>__m.push(e.timeStamp))</script></body>")
+# Stamps leave the page through document.title, set once when the last
+# sample (plus one discarded warm-up move) has arrived, and are read from the
+# HTTP /json target list: no CDP command, no domain, nothing for the driver
+# under test to share a session with.
+PAGE = ("data:text/html,<title>wait</title><body style='margin:0'><script>"
+        "var m=[];addEventListener('mousemove',e=>{m.push(e.timeStamp);"
+        f"if(m.length=={N + 1})document.title=JSON.stringify(m)}})</script></body>")
 
 
 def gap_stats(stamps_ms):
@@ -58,54 +68,73 @@ def _paced(send):
             time.sleep(wait)
 
 
-def _read_and_reset(page):
-    got = page.evaluate("(()=>{const m=__m;window.__m=[];return m})()")
-    return got
+def _stamps(base, wait_s=5):
+    import urllib.request
+    deadline = time.monotonic() + wait_s
+    while time.monotonic() < deadline:
+        for t in json.loads(urllib.request.urlopen(base + "/json").read()):
+            if t.get("type") == "page" and t.get("title", "").startswith("["):
+                return json.loads(t["title"])[1:]  # drop the warm-up move
+        time.sleep(0.1)
+    raise RuntimeError("page never recorded all samples")
+
+
+def _launch():
+    import lib_shell
+    # --remote-allow-origins=*: Chrome 141+ rejects websocket-client's Origin.
+    return lib_shell.launch({}, extra_flags=[*lib_shell.SHELL_FLAGS,
+                                             "--remote-allow-origins=*"])
+
+
+def drive_patchright(base):
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.connect_over_cdp(base)
+        ctx = browser.contexts[0]
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(PAGE, wait_until="load")
+        page.mouse.move(X0, Y)  # warm-up
+        _paced(lambda x: page.mouse.move(x, Y))
+        browser.close()
+
+
+def drive_raw(base):
+    import urllib.request
+    import websocket  # websocket-client, as measure_sp2b_attach.py
+    targets = json.loads(urllib.request.urlopen(base + "/json").read())
+    url = next(t["webSocketDebuggerUrl"] for t in targets if t.get("type") == "page")
+    ws = websocket.create_connection(url, timeout=15, suppress_origin=True)
+    ids = iter(range(1, 10 ** 6))
+
+    def call(method, params):
+        i = next(ids)
+        ws.send(json.dumps({"id": i, "method": method, "params": params}))
+        while json.loads(ws.recv()).get("id") != i:
+            pass  # no domain enabled, so only the reply arrives
+
+    try:
+        call("Page.navigate", {"url": PAGE})
+        time.sleep(1)
+        move = lambda x: call("Input.dispatchMouseEvent",
+                              {"type": "mouseMoved", "x": x, "y": Y})
+        move(X0)  # warm-up
+        _paced(move)
+    finally:
+        ws.close()
 
 
 def main():
-    import urllib.request
     import lib_shell
-    import websocket  # websocket-client, as measure_sp2b_attach.py
-    from playwright.sync_api import sync_playwright
-
-    # --remote-allow-origins=*: Chrome 141+ rejects websocket-client's Origin.
-    proc = lib_shell.launch({}, extra_flags=[*lib_shell.SHELL_FLAGS,
-                                                  "--remote-allow-origins=*"])
     out = {}
-    try:
-        base = f"http://127.0.0.1:{proc.cdp_port}"
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(base)
-            ctx = browser.contexts[0]
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto(PAGE, wait_until="load")
-            page.mouse.move(X0, Y)  # warm the input path; discarded
-            _read_and_reset(page)
-
-            _paced(lambda x: page.mouse.move(x, Y))
-            out["patchright_page_mouse_move"] = gap_stats(_read_and_reset(page))
-
-            targets = json.loads(urllib.request.urlopen(base + "/json").read())
-            url = next(t["webSocketDebuggerUrl"] for t in targets
-                       if t.get("type") == "page")
-            ws = websocket.create_connection(url, timeout=15, suppress_origin=True)
-            ids = iter(range(1, 10 ** 6))
-
-            def raw(x):
-                ws.send(json.dumps({"id": next(ids),
-                                    "method": "Input.dispatchMouseEvent",
-                                    "params": {"type": "mouseMoved", "x": x, "y": Y}}))
-                ws.recv()  # reply; events need no domain enable, so none arrive
-
-            try:
-                _paced(raw)
-            finally:
-                ws.close()
-            out["raw_websocket"] = gap_stats(_read_and_reset(page))
-            browser.close()
-    finally:
-        lib_shell.shutdown(proc)
+    for name, drive in (("patchright_page_mouse_move", drive_patchright),
+                        ("raw_websocket", drive_raw)):
+        proc = _launch()  # a fresh browser per driver, killed before the next
+        try:
+            base = f"http://127.0.0.1:{proc.cdp_port}"
+            drive(base)
+            out[name] = gap_stats(_stamps(base))
+        finally:
+            lib_shell.shutdown(proc)
     # client/go/cmd has only camoucrome-probe, no mouse-move entry point.
     out["go"] = "not available"
     print(json.dumps(out, indent=2))
