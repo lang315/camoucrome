@@ -80,8 +80,12 @@ git -C "$SRC" archive "$BRANCH" components/camoucfg | tar -x -C "$ROOT/additions
 # in settings/ and read from beside the header in the tree.
 mv "$ROOT/additions/camoucfg/invariants.json" "$ROOT/settings/invariants.json"
 
+# Extract to a temp dir first: a branch without the dir must not leave additions/ emptied.
+t="$(mktemp -d)"
+mkdir -p "$t/new"
+git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$t/new" --strip-components=1
 rm -rf "$ROOT/additions/camoucfg_lgpl"
-mkdir -p "$ROOT/additions/camoucfg_lgpl"
-git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$ROOT/additions" --strip-components=1
+mv "$t/new" "$ROOT/additions/camoucfg_lgpl"
+rmdir "$t"
 
 echo "exported ${#COMMITS[@]} commits from $BRANCH. Gate: git status --porcelain additions patches settings"
