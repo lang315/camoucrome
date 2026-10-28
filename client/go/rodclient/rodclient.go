@@ -113,18 +113,18 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 	select {
 	case err = <-errc:
 	case <-ctx.Done():
-		p.Stop() // ends the pipe, so Connect returns
+		b.proc.Stop() // ends the pipe, so Connect returns
 		<-errc
-		b.Close()
+		b.abort()
 		return nil, fmt.Errorf("rodclient: launch: %w", ctx.Err())
 	}
 	if err != nil {
 		tail := p.StderrTail()
-		b.Close()
+		b.abort()
 		return nil, fmt.Errorf("rodclient: connect: %w (stderr: %s)", err, tail)
 	}
 	if err := ctx.Err(); err != nil {
-		b.Close()
+		b.abort()
 		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
 	return b, nil
@@ -154,31 +154,50 @@ func (b *Browser) NewPage(ctx context.Context) (*Page, error) {
 	return &Page{p: p, rng: newRand()}, nil
 }
 
-// exitWait caps how long Close waits for the browser to exit by itself after
-// Browser.close, so it can finish writing a persistent profile. A var for tests.
-var exitWait = 5 * time.Second
+// closeCap caps Browser.close and exitWait caps the wait for the browser to
+// exit by itself afterwards, so it can finish writing a persistent profile.
+// Vars for tests, which set them before any Close and restore them with
+// t.Cleanup; nothing mutates them concurrently.
+var (
+	closeCap = 3 * time.Second
+	exitWait = 5 * time.Second
+)
 
-// Close asks the browser to quit (Browser.close, capped 3 s), waits up to
-// exitWait for it to exit, then kills the process group and removes the dirs
+// Close asks the browser to quit (Browser.close, capped 3 s) and, if that
+// succeeded, waits up to 5 s for it to exit (a failed Browser.close means a
+// dead or hung connection: no wait), then kills the process group and removes the dirs
 // Launch created. Idempotent and safe after a browser crash.
 func (b *Browser) Close() error {
 	b.once.Do(func() {
+		quit := false
 		if b.rod != nil {
 			// Best effort: Browser.close, bounded so a dead browser cannot hang us.
-			c, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			_ = b.rod.Context(c).Close()
+			c, cancel := context.WithTimeout(context.Background(), closeCap)
+			quit = b.rod.Context(c).Close() == nil
 			cancel()
 		}
 		if b.proc != nil {
-			select {
-			case <-b.proc.Exited():
-			case <-time.After(exitWait):
+			if quit {
+				select {
+				case <-b.proc.Exited():
+				case <-time.After(exitWait):
+				}
 			}
 			b.proc.Stop()
 		}
 		b.removeOwned()
 	})
 	return nil
+}
+
+// abort is Close without the courtesy: kill, remove, nothing to save.
+func (b *Browser) abort() {
+	b.once.Do(func() {
+		if b.proc != nil {
+			b.proc.Stop()
+		}
+		b.removeOwned()
+	})
 }
 
 func (b *Browser) removeOwned() {

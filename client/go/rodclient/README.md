@@ -37,8 +37,9 @@ world.
 `context.WithoutCancel(ctx)`, so `WithTimeout` + `defer cancel` does not kill
 it; it lives until `Close`. A ctx cancelled before Launch returns (also during
 the connect) aborts with nothing left running or on disk. `Close` asks the
-browser to quit, waits up to 5 s for it to exit (so a persistent profile is
-fully written), then kills the process group. `OnSend` replaces the observer
+browser to quit (up to 3 s), then waits up to 5 s for it to exit (so a
+persistent profile is fully written; skipped when the quit request failed),
+then kills the process group. A failed `Launch` kills at once. `OnSend` replaces the observer
 set by `WithSendObserver`; observers run under the send lock and must not call
 back into `Browser`. Errors from `Launch` and `NewPage` carry a `rodclient:`
 prefix and wrap their cause.

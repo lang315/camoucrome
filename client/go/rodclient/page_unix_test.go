@@ -749,7 +749,14 @@ func TestLaunchAbortsOnCancel(t *testing.T) {
 			} else {
 				cancel()
 			}
+			oc, ow := closeCap, exitWait
+			closeCap, exitWait = 30*time.Second, 30*time.Second // an abort must not touch either
+			t.Cleanup(func() { closeCap, exitWait = oc, ow })
+			begin := time.Now()
 			_, err := Launch(ctx, camoucrome.Options{ExecutablePath: exe})
+			if time.Since(begin) > 5*time.Second {
+				t.Errorf("abort took %v", time.Since(begin))
+			}
 			if !errors.Is(err, context.Canceled) || !strings.HasPrefix(err.Error(), "rodclient:") {
 				t.Fatalf("err = %v", err)
 			}
@@ -808,5 +815,22 @@ func TestArgvIsACopy(t *testing.T) {
 	a[0] = "tampered"
 	if b.Argv()[0] == "tampered" {
 		t.Fatal("Argv exposes internal slice")
+	}
+}
+
+func TestCloseSkipsExitWaitWhenBrowserCloseFails(t *testing.T) {
+	oc, ow := closeCap, exitWait
+	closeCap, exitWait = 200*time.Millisecond, 30*time.Second
+	t.Cleanup(func() { closeCap, exitWait = oc, ow })
+	t.Setenv("FAKE_HANG", "Browser.close")
+	b, _, _ := launchRig(t, context.Background())
+	pid := b.proc.Pid
+	start := time.Now()
+	b.Close()
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("Close took %v: it waited for an exit that cannot come", time.Since(start))
+	}
+	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+		t.Fatalf("process %d survived (%v)", pid, err)
 	}
 }
