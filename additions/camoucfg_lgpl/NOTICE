@@ -1,0 +1,28 @@
+Cursory 2.1.0
+  Author:   Vinyzu
+  Source:   https://github.com/Vinyzu/cursory
+  License:  LGPL-3.0-or-later
+
+This directory (additions/camoucfg_lgpl, components/camoucfg_lgpl in the
+Chromium tree) is derived from Cursory 2.1.0 and is licensed under the GNU
+Lesser General Public License, version 3 or (at your option) any later
+version. The rest of this repository is licensed separately.
+
+LICENSE is the LGPL-3.0 text from the cursory 2.1.0 wheel
+(dist-info/licenses/LICENSE), byte-identical.
+  LICENSE sha256: e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118
+Section 0 of the LGPL-3.0 incorporates the GNU GPL version 3 by reference.
+The GPL text (COPYING) is not bundled by the wheel and is not bundled here:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+Derived from Cursory:
+  - cursory.cc: the trajectory-selection and cursor-path algorithm.
+  - cursory_data.cc / data/trajectories.json.gz: the recorded trajectory data.
+    Snapshot sha256:
+    1bf3af168719a580e2c5d6fb439f894f9bfff72fc90147149cc531dee80b6203
+
+Modifications are by the Camoucrome authors: a C++ port of the Python
+original, the data repacked as int16/uint16 tables, and the random source
+`rng` is SplitMix64 instead of numpy's.
+
+Relinking: see RELINK.md.

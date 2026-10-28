@@ -1,4 +1,5 @@
-"""Every source file in additions/camoucfg/ must be listed in its BUILD.gn.
+"""Every source file in additions/camoucfg/ and additions/camoucfg_lgpl/ must be
+listed in its BUILD.gn.
 
 This exists because the omission already happened. coherence_validator.cc and
 .h sat in the tree for a full build cycle without being in `sources`, and
@@ -26,8 +27,7 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CAMOUCFG = ROOT / "additions" / "camoucfg"
-BUILD_GN = CAMOUCFG / "BUILD.gn"
+DIRS = [ROOT / "additions" / "camoucfg", ROOT / "additions" / "camoucfg_lgpl"]
 
 # .json is data copied by apply.sh, not a compilation unit. invariants.json is
 # the one file whose repo location differs from its tree location on purpose:
@@ -43,30 +43,35 @@ def listed_in_build_gn(text):
     return listed
 
 
-def main():
-    if not BUILD_GN.exists():
-        print(f"FAIL  no BUILD.gn at {BUILD_GN}")
+def check(directory):
+    name = directory.name
+    build_gn = directory / "BUILD.gn"
+    if not build_gn.exists():
+        print(f"FAIL  no BUILD.gn at {build_gn}")
         return 1
 
-    text = BUILD_GN.read_text()
-    listed = listed_in_build_gn(text)
-    on_disk = {p.name for p in CAMOUCFG.iterdir()
+    listed = listed_in_build_gn(build_gn.read_text())
+    on_disk = {p.name for p in directory.iterdir()
                if p.suffix in SOURCE_SUFFIXES}
 
     unbuilt = sorted(on_disk - listed)
     missing = sorted(listed - on_disk)
 
-    for name in unbuilt:
-        print(f"FAIL  {name} is in additions/camoucfg/ but not in BUILD.gn, "
+    for f in unbuilt:
+        print(f"FAIL  {f} is in additions/{name}/ but not in BUILD.gn, "
               f"so it is never compiled and nothing will say so")
-    for name in missing:
-        print(f"FAIL  BUILD.gn lists {name}, which does not exist")
+    for f in missing:
+        print(f"FAIL  BUILD.gn lists {f}, which does not exist")
 
     if unbuilt or missing:
         return 1
-    print(f"PASS  all {len(on_disk)} source files in additions/camoucfg/ "
+    print(f"PASS  all {len(on_disk)} source files in additions/{name}/ "
           f"are listed in BUILD.gn")
     return 0
+
+
+def main():
+    return max(check(d) for d in DIRS)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,11 @@ for f in "$ROOT"/additions/camoucfg/*; do
   REPO_FILES+=("$f")
   TREE_FILES+=("components/camoucfg/$(basename "$f")")
 done
+# components/camoucfg_lgpl is mirrored whole, subdirectories included (data/).
+while IFS= read -r f; do
+  REPO_FILES+=("$f")
+  TREE_FILES+=("components/camoucfg_lgpl/${f#"$ROOT"/additions/camoucfg_lgpl/}")
+done < <(find "$ROOT/additions/camoucfg_lgpl" -type f | sort)
 REPO_FILES+=("$ROOT/settings/invariants.json")
 TREE_FILES+=("components/camoucfg/invariants.json")
 
@@ -61,14 +66,14 @@ done
 # excluded for the reasons above).
 # A failing git (no such branch, not a repo) must print something here, or the
 # section is empty and reads as "in sync".
-remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . ':(exclude)components/camoucfg' || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' | grep '^??' || true; echo BUILDTREE_END"$'\n'
+remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . ':(exclude)components/camoucfg' ':(exclude)components/camoucfg_lgpl' || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' ':(exclude)components/camoucfg_lgpl' | grep '^??' || true; echo BUILDTREE_END"$'\n'
 # And the repo's patches/ against the branch: each commit's diff, generated
 # exactly as export.sh generates it, hashed on the far side. A hand-edited
 # patches/*.patch or a stale series reads as a mismatch below.
 . "$ROOT/upstream.env"
 remote_script+="PIN=$CHROMIUM_REV"$'\n'
 remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..'"$BRANCH"'"); do
-  d=$(git diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" | sha256sum | cut -d" " -f1)
+  d=$(git diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" ":(exclude)components/camoucfg_lgpl" | sha256sum | cut -d" " -f1)
   [ "$d" = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ] || echo "PATCH $(git log -1 --format=%s "$c").patch $d"
 done'$'\n'
 # On the build box itself (the self-hosted runner, or a shell in WSL) there is

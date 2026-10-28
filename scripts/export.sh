@@ -58,12 +58,12 @@ rm -f "$ROOT"/patches/*.patch
 : > "$ROOT/patches/series"
 for i in "${!COMMITS[@]}"; do
   c="${COMMITS[$i]}"; name="${NAMES[$i]}"
-  # components/camoucfg is additions/, exported whole from the tip below; a
+  # components/camoucfg and components/camoucfg_lgpl are additions/, exported whole from the tip below; a
   # commit that only touches it produces no patch and no series line.
   # Pinned flags: user config (diff.noprefix, mnemonicPrefix, an external
   # driver) must not change the bytes of a patch, and neither may the object
   # store's size: git's auto-abbrev grows with it (10 -> 11 hex, 2026-10-23).
-  git -C "$SRC" diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ':(exclude)components/camoucfg' > "$ROOT/patches/$name.patch"
+  git -C "$SRC" diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ':(exclude)components/camoucfg' ':(exclude)components/camoucfg_lgpl' > "$ROOT/patches/$name.patch"
   if [ -s "$ROOT/patches/$name.patch" ]; then
     echo "$name.patch" >> "$ROOT/patches/series"
     echo "  $name.patch"
@@ -79,5 +79,9 @@ git -C "$SRC" archive "$BRANCH" components/camoucfg | tar -x -C "$ROOT/additions
 # The one place the two layouts differ (see apply.sh): the registry is edited
 # in settings/ and read from beside the header in the tree.
 mv "$ROOT/additions/camoucfg/invariants.json" "$ROOT/settings/invariants.json"
+
+rm -rf "$ROOT/additions/camoucfg_lgpl"
+mkdir -p "$ROOT/additions/camoucfg_lgpl"
+git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$ROOT/additions" --strip-components=1
 
 echo "exported ${#COMMITS[@]} commits from $BRANCH. Gate: git status --porcelain additions patches settings"
