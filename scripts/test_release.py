@@ -35,7 +35,8 @@ def stamps(tmp_path):
     for plat in ("windows-x64", "linux-x64-beta"):
         p = tmp_path / f"{plat}.json"
         p.write_text(json.dumps({"name": plat, "version": V, "chromium_tag": V, "chromium_rev": "r",
-                                 "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": "b"}))
+                                 "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": "b",
+                                 "credits_placeholder": False}))
         out.append(p)
     notes = tmp_path / "notes.md"
     notes.write_text(f"Chrome 156.0.8078.48. Unsigned. pip install git+https://example.invalid/r@{SHA}")

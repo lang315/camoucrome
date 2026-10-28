@@ -221,7 +221,7 @@ def test_fingerprint_refuses_a_stray_untracked_file(tree):
 
 def test_check_refuses_stamps_with_different_fingerprints(tree, tmp_path):
     a = {"name": "a", "version": "1", "chromium_tag": "t", "chromium_rev": "r", "changeset_commit": "c",
-         "branch_tip": "x", "tree_fingerprint": "f1", "built": "b"}
+         "branch_tip": "x", "tree_fingerprint": "f1", "built": "b", "credits_placeholder": False}
     b = dict(a, name="b", branch_tip="y", tree_fingerprint="f2")
     pa, pb = tmp_path / "a.json", tmp_path / "b.json"
     pa.write_text(json.dumps(a)); pb.write_text(json.dumps(b))
@@ -244,6 +244,31 @@ def test_stage_refuses_a_build_without_credits(tree, tmp_path):
     (out / "gen" / "components" / "resources" / "about_credits.html").unlink()
     with pytest.raises(SystemExit, match="about_credits"):
         package.stage(src, out, package.runtime_deps(src, out, deps), "win-x64", tmp_path / "dist", False)
+
+
+PLACEHOLDER = "<html><body>This is sample credits page.\n\nTo get correct credits page, set `generate_about_credits=true` in args.gn.</body></html>"
+
+
+def test_stage_refuses_the_placeholder_credits_page(tree, tmp_path):
+    src, out, deps = tree
+    (out / "gen" / "components" / "resources" / "about_credits.html").write_text(PLACEHOLDER)
+    with pytest.raises(SystemExit, match="generate_about_credits"):
+        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_check_refuses_a_stamp_that_ships_or_does_not_vouch_for_real_credits(tree, tmp_path):
+    src, out, deps = tree
+    _, a = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    assert a["credits_placeholder"] is False
+    stamp = tmp_path / "dist" / f"{a['name']}.release.json"
+    package.check([stamp])
+    old = {k: v for k, v in a.items() if k != "credits_placeholder"}  # a stamp from before the gate (-3 and earlier)
+    stamp.write_text(json.dumps(old))
+    with pytest.raises(SystemExit, match="credits"):
+        package.check([stamp])
+    stamp.write_text(json.dumps(dict(a, credits_placeholder=True)))
+    with pytest.raises(SystemExit, match="credits"):
+        package.check([stamp])
 
 
 def test_fingerprint_orders_camoucfg_files_by_posix_relpath_bytes(tree):
