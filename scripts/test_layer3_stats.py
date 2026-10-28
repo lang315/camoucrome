@@ -129,3 +129,95 @@ def test_a_duplicate_row_makes_the_pair_unknown():
     data.append({"site": "a", "round": 1, "arm": "F", "challenged": True, "order": "SF"})
     sites, unknown = ls.pairs_from(data)
     assert unknown == 1 and sites == {"a": [(False, False)]}
+
+
+# --- first-visitor design: Newcombe-Wilson difference, gate G0, arm readings (px-arms plan section 3) ---
+
+def test_newcombe_diff_matches_the_published_example():
+    # Newcombe 1998, Stat Med 17:873, 56/70 against 48/80, method 10: 0.2000 (0.0524, 0.3339)
+    d, lo, hi = ls.newcombe_diff(56, 70, 48, 80)
+    assert d == pytest.approx(0.2) and lo == pytest.approx(0.0524, abs=5e-4) and hi == pytest.approx(0.3339, abs=5e-4)
+
+
+def test_newcombe_diff_wider_at_higher_confidence_and_n0_is_uninformative():
+    _, lo95, hi95 = ls.newcombe_diff(14, 36, 3, 36)
+    _, lo975, hi975 = ls.newcombe_diff(14, 36, 3, 36, conf=0.975)
+    assert lo975 < lo95 < hi95 < hi975
+    assert ls.newcombe_diff(0, 0, 3, 36)[1:] == (-1.0, 1.0)
+    assert ls.newcombe_diff(0, 0, 0, 0) == (0.0, -1.0, 1.0)
+
+
+def test_gate_g0_passes_on_a_clear_gap_and_fails_on_none():
+    g = ls.gate_g0(14, 36, 3, 36)
+    assert g["passed"] and g["lo"] > 0 and g["d"] == pytest.approx(11 / 36)
+    assert not ls.gate_g0(5, 36, 5, 36)["passed"]
+
+
+def test_gate_g0_lo_exactly_zero_is_not_passed(monkeypatch):
+    monkeypatch.setattr(ls, "newcombe_diff", lambda *a, **k: (0.3, 0.0, 0.6))
+    assert ls.gate_g0(1, 2, 3, 4)["passed"] is False
+    monkeypatch.setattr(ls, "newcombe_diff", lambda *a, **k: (0.3, 1e-9, 0.6))
+    assert ls.gate_g0(1, 2, 3, 4)["passed"] is True
+
+
+def test_gate_g0_with_no_visits_is_not_passed():
+    assert ls.gate_g0(0, 0, 0, 0)["passed"] is False
+
+
+def counts(**over):
+    base = {"S": (3, 36, 0), "F": (14, 36, 0), "N": (13, 36, 0), "S2": (3, 36, 1)}
+    base.update(over)
+    return base
+
+
+def test_arm_diffs_gate_failure_gives_no_arm_reading():
+    c = counts(F=(4, 36, 0))
+    out = ls.arm_diffs(c, ls.gate_g0(4, 36, 3, 36))
+    assert out == {"conclusion": "gap not reproduced"}
+
+
+def test_arm_diffs_reads_part_and_all():
+    c = counts()
+    out = ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 36))
+    assert out["N"]["carries_part"] is False and out["N"]["carries_all"] is False  # N is as challenged as F
+    s2 = out["S2"]  # S2 looks like S: it carries the gap
+    assert s2["carries_part"] is True and s2["d"] == pytest.approx(11 / 36) and s2["lo"] > 0
+    assert s2["carries_all"] is True and s2["equiv_hi"] <= 0.15
+    assert ls.arm_diffs(counts(S2=(8, 36, 0)), ls.gate_g0(14, 36, 3, 36))["S2"]["carries_all"] is False  # 0.14 apart: not inside
+
+
+def test_arm_diffs_carries_all_needs_a_tight_equivalence_interval():
+    c = {"S": (300, 1000, 0), "F": (700, 1000, 0), "N": (300, 1000, 0), "S2": (500, 1000, 0)}
+    out = ls.arm_diffs(c, ls.gate_g0(700, 1000, 300, 1000))
+    assert out["N"]["carries_part"] and out["N"]["carries_all"]
+    assert out["S2"]["carries_part"] and not out["S2"]["carries_all"]  # halfway: equivalent to neither
+
+
+def test_arm_diffs_uses_97_5_percent_for_the_primary():
+    c = counts()
+    d = ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 36))["S2"]
+    _, lo, hi = ls.newcombe_diff(14, 36, 3, 36, conf=0.975)
+    assert (d["lo"], d["hi"]) == (lo, hi)
+
+
+def test_arm_diffs_an_arm_with_over_ten_percent_unknown_is_unmeasured():
+    c = counts(N=(10, 30, 6))  # 6 / 36 > 0.10
+    out = ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 36))
+    assert out["N"] == "UNMEASURED" and isinstance(out["S2"], dict)
+
+
+def test_arm_diffs_exactly_ten_percent_unknown_is_measured_and_no_visits_is_not():
+    c = counts(N=(10, 36, 4))  # 4 / 40 == 0.10: not above
+    assert isinstance(ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 36))["N"], dict)
+    c = counts(N=(0, 0, 0))
+    assert ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 36))["N"] == "UNMEASURED"
+
+
+def test_arm_diffs_unmeasured_baseline_makes_everything_unmeasured():
+    c = counts(S=(3, 30, 6))
+    assert ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 30)) == {"conclusion": "UNMEASURED"}
+
+
+def test_arm_diffs_skips_an_arm_that_was_not_run():
+    c = {"S": (3, 36, 0), "F": (14, 36, 0), "N": (13, 36, 0)}
+    assert set(ls.arm_diffs(c, ls.gate_g0(14, 36, 3, 36))) == {"N"}
