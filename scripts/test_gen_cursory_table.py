@@ -35,9 +35,32 @@ class Gen(unittest.TestCase):
         self.assertEqual(len(recs), 2356)
         self.assertEqual(sum(len(r["points"]) for r in recs), 112984)
 
-    def test_check_detects_stale(self):
+    def test_check_missing_files(self):
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(g.main(["--check", "--out-dir", d]), 1)  # nothing generated there
+            self.assertEqual(g.main(["--check", "--out-dir", d]), 1)
+
+    def test_check_fresh_then_stale(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(g.main(["--out-dir", d]), 0)
+            self.assertEqual(g.main(["--check", "--out-dir", d]), 0)
+            p = os.path.join(d, "cursory_data.cc")
+            with open(p, "rb") as f:
+                raw = bytearray(f.read())
+            i = raw.index(b"kPointCount = ") + len(b"kPointCount = ")
+            raw[i] = ord("9") if raw[i] != ord("9") else ord("8")
+            with open(p, "wb") as f:
+                f.write(raw)
+            self.assertEqual(g.main(["--check", "--out-dir", d]), 1)
+
+    def test_check_detects_moved_snapshot_hash(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(g.main(["--out-dir", d]), 0)
+            old = g.PINNED_SHA256
+            g.PINNED_SHA256 = "0" * 64
+            try:
+                self.assertEqual(g.main(["--check", "--out-dir", d]), 1)
+            finally:
+                g.PINNED_SHA256 = old
 
 if __name__ == "__main__":
     unittest.main()

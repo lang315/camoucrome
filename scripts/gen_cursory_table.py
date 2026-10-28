@@ -5,7 +5,7 @@ cursory 2.1.0 recording database (LGPL-3.0-or-later; see ../NOTICE).
     scripts/gen_cursory_table.py           rewrite the generated files
     scripts/gen_cursory_table.py --check   exit 1 if stale or the snapshot hash moved
 """
-import argparse, gzip, hashlib, json, os, sys
+import argparse, gzip, hashlib, json, os, pathlib, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LGPL = os.path.join(ROOT, "additions", "camoucfg_lgpl")
@@ -70,18 +70,18 @@ def main(argv=None):
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--out-dir", default=LGPL)
     a = ap.parse_args(argv)
-    sha = hashlib.sha256(open(SNAPSHOT, "rb").read()).hexdigest()
+    sha = hashlib.sha256(pathlib.Path(SNAPSHOT).read_bytes()).hexdigest()
     if sha != PINNED_SHA256:
         print(f"snapshot sha256 {sha} != pinned {PINNED_SHA256}", file=sys.stderr); return 1
     h, c = render(load(SNAPSHOT))
     paths = {os.path.join(a.out_dir, "cursory_data.h"): h, os.path.join(a.out_dir, "cursory_data.cc"): c}
     if a.check:
         for p, want in paths.items():
-            if not os.path.exists(p) or open(p).read() != want:
+            if not os.path.exists(p) or pathlib.Path(p).read_text() != want:
                 print(f"stale: {p}", file=sys.stderr); return 1
         return 0
     for p, text in paths.items():
-        open(p, "w").write(text)
+        pathlib.Path(p).write_text(text)
     return 0
 
 if __name__ == "__main__":
