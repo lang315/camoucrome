@@ -556,7 +556,7 @@ C1B = ["1b --user-agent loses to a configuration",
        "1b --user-agent still wins when no configuration is present"]
 
 SWITCH_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 "
+             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 "
              "Safari/537.36")
 
 switched, _, err = run(json.dumps(WIN), ["navigator.userAgent"],
