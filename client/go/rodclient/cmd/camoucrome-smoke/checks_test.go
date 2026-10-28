@@ -9,11 +9,17 @@ import (
 )
 
 // good builds a log a healthy humanized run would produce.
-func good() Run {
+func good() Run { return goodWith(12, 10) }
+
+// goodWith: moves mousemoves before the second click, gap ms apart.
+func goodWith(moves int, gap float64) Run {
 	var ev []Event
 	t := 0.0
 	add := func(typ, tgt string, f func(*Event)) {
 		t += 10
+		if typ == "mousemove" && len(ev) > 5 {
+			t += gap - 10
+		}
 		e := Event{Type: typ, IsTrusted: true, T: t, Tgt: tgt}
 		if f != nil {
 			f(&e)
@@ -31,7 +37,7 @@ func good() Run {
 		add("click", "btn", nil)
 	}
 	click(1)
-	click(12)
+	click(moves)
 	val := ""
 	for _, c := range typedASCII {
 		val += string(c)
@@ -86,13 +92,13 @@ func TestBrokenFixturesAreRed(t *testing.T) {
 
 	r = good()
 	r.Sends["Runtime.enable"] = 1
-	red(t, r, "no Runtime.enable")
+	red(t, r, "at most 1 Page.enable")
 	r = good()
 	r.Sends = map[string]int{"Emulation.setDeviceMetricsOverride": 1, "X": 20}
-	red(t, r, "no Runtime.enable")
+	red(t, r, "at most 1 Page.enable")
 	r = good()
 	r.Sends = map[string]int{"X": 2} // silent observer
-	red(t, r, "no Runtime.enable")
+	red(t, r, "at most 1 Page.enable")
 
 	r = good()
 	r.Events[3].IsTrusted = false
@@ -117,15 +123,41 @@ func TestBrokenFixturesAreRed(t *testing.T) {
 	}
 	red(t, r, "per ASCII char")
 
-	r = good() // too few / too tight humanized moves
-	var ev []Event
-	for _, e := range r.Events {
-		if e.Type != "mousemove" || e.T < 100 {
-			ev = append(ev, e)
+}
+
+func TestHumanizedSecondClick(t *testing.T) {
+	for _, c := range []struct {
+		moves int
+		gap   float64
+		green bool
+	}{{7, 17.5, true}, {4, 17.5, true}, {3, 17.5, false}, {12, 1, false}, {7, 40, false}} {
+		r := goodWith(c.moves, c.gap)
+		ok := true
+		for _, ch := range Evaluate(r) {
+			if strings.HasPrefix(ch.Name, "humanized") {
+				ok = ch.OK
+				if !strings.Contains(ch.Detail, "mousemoves=") {
+					t.Errorf("detail lacks counts: %q", ch.Detail)
+				}
+			}
+		}
+		if ok != c.green {
+			t.Errorf("moves=%d gap=%v: ok=%v want %v", c.moves, c.gap, ok, c.green)
 		}
 	}
-	r.Events = ev
-	red(t, r, "humanized second click")
+}
+
+func TestPageEnableAllowedOnce(t *testing.T) {
+	r := good()
+	r.Sends["Page.enable"] = 1
+	if Failed(Evaluate(r)) {
+		t.Fatal("one Page.enable (NewPage) must be GREEN")
+	}
+	r.Sends["Page.enable"] = 2
+	red(t, r, "at most 1 Page.enable")
+	r = good()
+	r.Sends["Runtime.enable"] = 1
+	red(t, r, "at most 1 Page.enable")
 }
 
 func TestOptionsHumanizeMerge(t *testing.T) {

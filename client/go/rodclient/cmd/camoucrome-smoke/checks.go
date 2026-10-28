@@ -138,8 +138,10 @@ func Evaluate(r Run) []Check {
 			sort.Float64s(s)
 			med = s[len(s)/2]
 		}
-		cs = append(cs, row("humanized second click (want >=8 mousemoves, median gap >4 ms)", click1 >= 0 && md2 > click1 && len(m) >= 8 && med > 4,
-			"mousemoves=%d medianGapMs=%.1f", len(m), med))
+		// Recorded paths are sampled at ~60 Hz (16.7 ms), and a short move has a short path.
+		cs = append(cs, row("humanized second click (want >=4 mousemoves, median gap 8-30 ms)",
+			click1 >= 0 && md2 > click1 && len(m) >= 4 && med >= 8 && med <= 30,
+			"mousemoves=%d medianGapMs=%.1f gapsMs=%.1f", len(m), med, gaps))
 	}
 
 	bad := 0
@@ -204,13 +206,14 @@ func Evaluate(r Run) []Check {
 	total := 0
 	for m, c := range r.Sends {
 		total += c
-		if m == "Runtime.enable" || m == "Network.enable" || m == "DOM.enable" || m == "Page.enable" ||
+		// NewPage sends exactly one Page.enable; a second one would come from an op.
+		if m == "Runtime.enable" || m == "Network.enable" || m == "DOM.enable" || (m == "Page.enable" && c > 1) ||
 			m == "Network.setUserAgentOverride" || strings.HasPrefix(m, "Emulation.") {
 			forbidden = append(forbidden, m)
 		}
 	}
 	sort.Strings(forbidden)
-	cs = append(cs, row("no Runtime.enable/Emulation.*/Network.enable/DOM.enable/Page.enable sent, observer alive (want 0 forbidden, >=10 sends)",
+	cs = append(cs, row("no Runtime.enable/Emulation.*/Network.enable/DOM.enable, at most 1 Page.enable, observer alive (want 0 forbidden, >=10 sends)",
 		len(forbidden) == 0 && total >= 10, "forbidden=%v sends=%d", forbidden, total))
 	return cs
 }

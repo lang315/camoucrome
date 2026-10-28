@@ -100,7 +100,8 @@ Tests: `GOTOOLCHAIN=local go test -race -count=1 ./... && go vet ./...`
 page's own log, not the client's return values. It prints one JSON report
 (`checks`, `events`, `cdp_sends`, `argv`) and exits 1 if any check is RED.
 `--humanize` adds `{"humanize:enabled": true}` to the config and checks the
-humanized second click (>= 8 mousemoves, median gap > 4 ms).
+humanized second click (>= 4 mousemoves, median gap 8-30 ms: the ~60 Hz
+recording cadence). The CDP row allows the one `Page.enable` that `NewPage` sends.
 
     cd client/go/rodclient && go build -o ~/camoucrome-go/camoucrome-smoke ./cmd/camoucrome-smoke
     ~/camoucrome-go/camoucrome-smoke --executable ~/chromium/src/out/Default/chrome --humanize
