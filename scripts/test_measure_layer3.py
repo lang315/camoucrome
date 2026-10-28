@@ -883,8 +883,8 @@ def test_is_429_reads_either_stage_status():
 
 
 def test_budget_stop_at_ninety_percent_or_an_unreadable_visit():
-    assert not ml.budget_stop(89, 100, 5) and ml.budget_stop(90, 100, 5) and ml.budget_stop(95, 100, 5)
-    assert ml.budget_stop(1, 100, 0)  # 0 bytes: the extrapolation would be too low
+    assert not ml.budget_stop(89, 100, 5, True) and ml.budget_stop(90, 100, 5, True) and ml.budget_stop(95, 100, 5, True)
+    assert ml.budget_stop(1, 100, 0, last_ok=True)  # a successful visit that read 0 bytes: a broken counter
 
 
 def test_first_visitor_cost_is_visits_times_mean():
@@ -980,3 +980,18 @@ def test_run_first_visitor_loop_on_a_stubbed_visit(tmp_path, monkeypatch):
     out.mkdir()
     monkeypatch.setattr(ml, "visit", fresh(outcome="pass", bytes=0))
     assert ml.run_first_visitor(None, {"S": 0, "F": 0}, sites, cfg, a, out, "r", set(), {}, sleep=lambda s: None) == "budget"
+
+
+def test_an_exception_visit_with_zero_bytes_does_not_stop_the_budget():
+    # owner 2026-10-28: an exception visit is `unknown` (counted by the over-10% rule), not a broken byte counter
+    assert not ml.budget_stop(10, 100, 0, last_ok=False)
+    assert ml.budget_stop(95, 100, 0, last_ok=False)  # the 90% rule still applies
+
+
+def test_s2_drops_the_window_position_too():
+    launch = {"window": [1361, 683], "dpr": 1.0, "position": [2, 0], "args": ["--x"]}
+    s2 = ml.launch_for_arm("S2", launch)
+    assert s2["window"] is None and s2["position"] is None and s2["dpr"] == 1.0 and s2["args"] == ["--x"]
+    for arm in ("F", "N"):
+        assert ml.launch_for_arm(arm, launch) == launch
+    assert launch["window"] == [1361, 683]  # the input is not mutated

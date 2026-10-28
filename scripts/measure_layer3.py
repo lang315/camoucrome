@@ -87,6 +87,11 @@ def window_size_arg(arm, window):
     return None if arm == "S2" else window
 
 
+def launch_for_arm(arm, launch):
+    """The launcher settings for an arm: S2 has no window spoof at all, so neither the size nor the position is passed (owner 2026-10-28)."""
+    return {**launch, "window": window_size_arg(arm, launch.get("window")), "position": None if arm == "S2" else launch.get("position")}
+
+
 def plan_visits(arms, site_idxs, rounds, seed):
     """[(round, site_idx, arm)]: every arm once per (round, site), in a random order per (round, site) from the seed."""
     rng = random.Random(seed)
@@ -178,9 +183,10 @@ class Pause429:
         return "OK"
 
 
-def budget_stop(bytes_so_far, approved_bytes, last_visit_bytes):
-    """Stop rule 3: the running total reached 90% of the approved bytes, or the last visit's size could not be read."""
-    return last_visit_bytes == 0 or bytes_so_far >= BUDGET_STOP * approved_bytes
+def budget_stop(bytes_so_far, approved_bytes, last_visit_bytes, last_ok):
+    """Stop rule 3: the running total reached 90% of the approved bytes, or a SUCCESSFUL visit read 0 bytes (a broken byte
+    counter). An exception visit has no bytes by nature: it counts as unknown (the over-10% rule), not as a stop (owner 2026-10-28)."""
+    return (last_ok and last_visit_bytes == 0) or bytes_so_far >= BUDGET_STOP * approved_bytes
 
 
 def first_visitor_cost(mean_bytes, sites, rounds, n_arms):
@@ -603,7 +609,7 @@ def run_cmd(a):
             sys.exit("first-visitor: needs an identity, --approved-gb, and neither --aa nor --warm")
         for name in a.arms:
             if name not in arms:
-                lo = {**ident["launch"], "window": window_size_arg(name, ident["launch"].get("window"))}
+                lo = launch_for_arm(name, ident["launch"])
                 arms[name] = m2.Arm(name, fork_exe, {**ident, "config": drop_keys(ident["config"], name, drops), "launch": lo}, common)
     if a.resume:
         out_dir = pathlib.Path(a.resume)
@@ -738,7 +744,7 @@ def run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta
             stop = "http_429"
         elif should_stop(reused):
             stop = "reused_address"
-        elif budget_stop(spent, approved, row.get("bytes", 0)):
+        elif budget_stop(spent, approved, row.get("bytes", 0), row.get("outcome") not in ("unknown", "unmeasured")):
             stop = "budget"
     meta.update({"reused_address": reused, "stop": stop})
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
