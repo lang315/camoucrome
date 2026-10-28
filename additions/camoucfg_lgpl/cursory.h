@@ -20,7 +20,9 @@ struct Params {
   int frequency_hz = 60;        // clamped to [10, 240]
   int frequency_jitter_ms = 1;  // clamped to [0, 5]
   double directness = 0.65;     // clamped to [0, 1]
-  int min_ms = 80;              // total duration bounds; sanitized (swap, >=1, max >= min)
+  // Total duration bounds. Sanitized: each clamped to +-60000, swapped if
+  // inverted, then min >= 1 and max >= min.
+  int min_ms = 80;
   int max_ms = 1200;
 };
 
@@ -39,7 +41,7 @@ std::vector<Sample> GenerateTrajectory(double sx,
 namespace internal {
 // Index into data::kRecordings that GenerateTrajectory would pick for the
 // displacement (dx, dy) and seed.
-size_t SelectRecordingForTest(double dx,
+size_t SelectRecordingForTesting(double dx,
                               double dy,
                               double directness,
                               uint64_t seed);

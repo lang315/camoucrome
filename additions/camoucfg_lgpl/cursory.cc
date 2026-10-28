@@ -1,6 +1,13 @@
 // Copyright 2026 The Camoucrome Authors. Derived from cursory 2.1.0 (Vinyzu),
 // LGPL-3.0-or-later; see NOTICE. A C++ port: the numpy generator is replaced
 // by SplitMix64, so outputs match upstream in distribution, not bit for bit.
+
+#ifdef UNSAFE_BUFFERS_BUILD
+// The generated table is indexed as raw extern arrays (kRecordings, kX, kY, kT)
+// within bounds the pinned table test checks; spans would need a copy of 113k points.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "components/camoucfg_lgpl/cursory.h"
 
 #include <algorithm>
@@ -43,7 +50,7 @@ struct Pt { double x, y; };
 
 double Displacement(const data::Recording& r) {
   const size_t a = r.first_point, b = a + r.point_count - 1;
-  return std::hypot(double(data::kX[b]) - data::kX[a], double(data::kY[b]) - data::kY[a]);
+  return std::hypot(static_cast<double>(data::kX[b]) - data::kX[a], static_cast<double>(data::kY[b]) - data::kY[a]);
 }
 
 // Sorted efficiencies (displacement / path length) of every recording, for the
@@ -70,7 +77,7 @@ std::vector<size_t> Nearest(double dx, double dy, size_t top_n) {
   for (size_t i = 0; i < data::kRecordingCount; ++i) {
     const auto& r = data::kRecordings[i];
     const size_t a = r.first_point, b = a + r.point_count - 1;
-    const double rdx = double(data::kX[b]) - data::kX[a], rdy = double(data::kY[b]) - data::kY[a];
+    const double rdx = static_cast<double>(data::kX[b]) - data::kX[a], rdy = static_cast<double>(data::kY[b]) - data::kY[a];
     const double disp = std::hypot(rdx, rdy);
     double s;
     if (len == 0) {
@@ -213,6 +220,9 @@ std::vector<Pt> Knot(const std::vector<Pt>& in, Pt s, Pt e, Rng& rng) {
 }
 
 
+// Caps min_ms/max_ms so a hostile value cannot ask for billions of samples.
+constexpr int kMaxDurationMs = 60000;
+
 double Clamp(double v, double lo, double hi, double fallback) {
   return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
 }
@@ -220,7 +230,7 @@ double Clamp(double v, double lo, double hi, double fallback) {
 }  // namespace
 
 namespace internal {
-size_t SelectRecordingForTest(double dx, double dy, double directness, uint64_t seed) {
+size_t SelectRecordingForTesting(double dx, double dy, double directness, uint64_t seed) {
   Rng rng(seed);
   return SelectRecording(dx, dy, directness, rng);
 }
@@ -235,6 +245,8 @@ std::vector<Sample> GenerateTrajectory(double sx, double sy, double ex, double e
   const int jitter_ms = std::clamp(params.frequency_jitter_ms, 0, 5);
   const double directness = Clamp(params.directness, 0.0, 1.0, 0.65);
   int min_ms = params.min_ms, max_ms = params.max_ms;
+  min_ms = std::clamp(min_ms, -kMaxDurationMs, kMaxDurationMs);
+  max_ms = std::clamp(max_ms, -kMaxDurationMs, kMaxDurationMs);
   if (min_ms > max_ms) std::swap(min_ms, max_ms);
   min_ms = std::max(1, min_ms);
   max_ms = std::max(min_ms, max_ms);
@@ -250,8 +262,8 @@ std::vector<Sample> GenerateTrajectory(double sx, double sy, double ex, double e
   std::vector<Pt> pts(n);
   std::vector<double> t(n);
   for (size_t i = 0; i < n; ++i) {
-    pts[i] = {double(data::kX[rec.first_point + i]), double(data::kY[rec.first_point + i])};
-    t[i] = double(data::kT[rec.first_point + i]) - double(data::kT[rec.first_point]);
+    pts[i] = {static_cast<double>(data::kX[rec.first_point + i]), static_cast<double>(data::kY[rec.first_point + i])};
+    t[i] = static_cast<double>(data::kT[rec.first_point + i]) - static_cast<double>(data::kT[rec.first_point]);
   }
   std::vector<double> intervals;  // the recording's own positive inter-sample gaps
   for (size_t i = 1; i < n; ++i)
@@ -266,11 +278,11 @@ std::vector<Sample> GenerateTrajectory(double sx, double sy, double ex, double e
   // Total duration into [min_ms, max_ms] (not upstream).
   double total_t = t.back();
   if (total_t <= 0) {  // degenerate recording: spread evenly over min_ms
-    for (size_t i = 0; i < n; ++i) t[i] = min_ms * double(i) / double(n - 1);
+    for (size_t i = 0; i < n; ++i) t[i] = min_ms * static_cast<double>(i) / static_cast<double>(n - 1);
     total_t = min_ms;
-    intervals.assign(1, double(min_ms));
+    intervals.assign(1, static_cast<double>(min_ms));
   } else if (total_t < min_ms || total_t > max_ms) {
-    const double f = (total_t < min_ms ? double(min_ms) : double(max_ms)) / total_t;
+    const double f = (total_t < min_ms ? static_cast<double>(min_ms) : static_cast<double>(max_ms)) / total_t;
     for (double& v : t) v *= f;
     for (double& v : intervals) v *= f;
     total_t *= f;
@@ -282,16 +294,16 @@ std::vector<Sample> GenerateTrajectory(double sx, double sy, double ex, double e
 
   // Sample timings (upstream _sample_timings).
   const int64_t total = std::max<int64_t>(1, std::llround(total_t));
-  const size_t count = size_t(std::max<int64_t>(1, std::llround(double(total) * hz / 1000.0)));
+  const size_t count = size_t(std::max<int64_t>(1, std::llround(static_cast<double>(total) * hz / 1000.0)));
   const size_t m = intervals.size();
   const size_t offset = size_t(rng.Next() % m);
   std::vector<double> gaps(count);
   double gap_sum = 0;
   for (size_t k = 0; k < count; ++k) {
-    gaps[k] = intervals[(offset + size_t((double(k) + 0.5) * double(m) / double(count))) % m];
+    gaps[k] = intervals[(offset + size_t((static_cast<double>(k) + 0.5) * static_cast<double>(m) / static_cast<double>(count))) % m];
     gap_sum += gaps[k];
   }
-  for (double& g : gaps) g *= double(total) / gap_sum;
+  for (double& g : gaps) g *= static_cast<double>(total) / gap_sum;
   if (jitter_ms > 0) {
     constexpr double kEps = 1e-3;
     gap_sum = 0;
@@ -299,7 +311,7 @@ std::vector<Sample> GenerateTrajectory(double sx, double sy, double ex, double e
       g = std::max(kEps, g + rng.Uniform(-jitter_ms, jitter_ms));
       gap_sum += g;
     }
-    for (double& g : gaps) g *= double(total) / gap_sum;
+    for (double& g : gaps) g *= static_cast<double>(total) / gap_sum;
   }
   std::vector<int64_t> times{0};
   double acc = 0;
@@ -315,7 +327,7 @@ std::vector<Sample> GenerateTrajectory(double sx, double sy, double ex, double e
   std::vector<Pt> sampled;
   size_t seg = 1;
   for (int64_t ms : times) {
-    const double u = std::min(double(ms) * total_t / double(total), total_t);
+    const double u = std::min(static_cast<double>(ms) * total_t / static_cast<double>(total), total_t);
     while (seg + 1 < n && t[seg] < u) ++seg;
     const double span = t[seg] - t[seg - 1];
     const double f = span > 0 ? std::clamp((u - t[seg - 1]) / span, 0.0, 1.0) : 1.0;

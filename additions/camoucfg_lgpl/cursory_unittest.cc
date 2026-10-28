@@ -3,6 +3,12 @@
 
 #include "components/camoucfg_lgpl/cursory.h"
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// The generated table is indexed as raw extern arrays (kRecordings, kX, kY, kT)
+// within bounds the pinned table test checks; spans would need a copy of 113k points.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -19,7 +25,7 @@ struct Lcg {
   uint64_t s;
   double Next(double lo, double hi) {
     s = s * 6364136223846793005ull + 1442695040888963407ull;
-    return lo + (hi - lo) * double(s >> 11) / 9007199254740992.0;
+    return lo + (hi - lo) * static_cast<double>(s >> 11) / 9007199254740992.0;
   }
 };
 
@@ -117,20 +123,18 @@ TEST(CursoryTest, AllFinite) {
     ASSERT_FALSE(s.empty());
     EXPECT_TRUE(AllFinite(l));
     EXPECT_TRUE(AllFinite(s));
+    auto h1 = GenerateTrajectory(0, 0, 1e9, 1e9, seed);
+    auto h2 = GenerateTrajectory(0, 0, 1e9, 0, seed);
+    ASSERT_FALSE(h1.empty());
+    ASSERT_FALSE(h2.empty());
+    EXPECT_TRUE(AllFinite(h1));
+    EXPECT_TRUE(AllFinite(h2));
   }
 }
 
-TEST(CursoryTest, PicksMatchingDirection) {
-  const double len = 500;
-  for (uint64_t seed = 0; seed < 100; ++seed) {
-    auto v = GenerateTrajectory(100, 300, 100 + len, 300, seed);
-    ASSERT_FALSE(v.empty());
-    double worst = 0;
-    for (const Sample& s : v)
-      worst = std::max(worst, std::fabs(s.y - 300));  // line is y == 300
-    EXPECT_LT(worst, 0.5 * len) << "seed " << seed;
-  }
-}
+// Direction choice is guarded by SelectionPrefersMatchingDirection below: a
+// path-excursion check here cannot tell it apart, because Morph rotates any
+// recording onto the target.
 
 TEST(CursoryTest, InvertedBoundsSanitized) {
   Params a;
@@ -146,7 +150,8 @@ TEST(CursoryTest, InvertedBoundsSanitized) {
   b.max_ms = 0;
   auto vb = GenerateTrajectory(0, 0, 300, 200, 3, b);
   ASSERT_FALSE(vb.empty());
-  EXPECT_GE(vb.back().t_ms, 1);
+  // min -> 1, max -> max(1, 0) = 1: the total is exactly 1 ms.
+  EXPECT_EQ(vb.back().t_ms, 1);
   for (size_t i = 1; i < vb.size(); ++i)
     EXPECT_GE(vb[i].t_ms, 1);
 }
@@ -160,18 +165,45 @@ TEST(CursoryTest, TableMatchesPinned) {
   }
 }
 
+TEST(CursoryTest, HugeBoundsAreCapped) {
+  Params p;
+  p.min_ms = 2000000000;
+  p.max_ms = 2000000000;
+  auto v = GenerateTrajectory(0, 0, 300, 200, 5, p);
+  ASSERT_FALSE(v.empty());
+  EXPECT_LT(v.size(), 20000u);
+  EXPECT_LE(v.back().t_ms, 60000);
+}
+
+TEST(CursoryTest, DirectnessShiftsSelection) {
+  auto efficiency = [](size_t i) {
+    const auto& r = data::kRecordings[i];
+    size_t a = r.first_point, b = a + r.point_count - 1;
+    double dx = static_cast<double>(data::kX[b]) - data::kX[a];
+    double dy = static_cast<double>(data::kY[b]) - data::kY[a];
+    return std::hypot(dx, dy) / r.length;
+  };
+  double lo = 0, hi = 0;
+  const int kSeeds = 200;
+  for (int seed = 0; seed < kSeeds; ++seed) {
+    lo += efficiency(internal::SelectRecordingForTesting(500, 0, 0.0, seed));
+    hi += efficiency(internal::SelectRecordingForTesting(500, 0, 1.0, seed));
+  }
+  EXPECT_GT(hi / kSeeds, lo / kSeeds);
+}
+
 // Guards the port against silent drift: the recording chosen for a rightward
 // move must itself head roughly right, before any morph rotates it.
 TEST(CursoryTest, SelectionPrefersMatchingDirection) {
   double sum_deg = 0;
   const int kSeeds = 200;
   for (int seed = 0; seed < kSeeds; ++seed) {
-    size_t i = internal::SelectRecordingForTest(500, 0, 0.65, seed);
+    size_t i = internal::SelectRecordingForTesting(500, 0, 0.65, seed);
     ASSERT_LT(i, data::kRecordingCount);
     const auto& r = data::kRecordings[i];
     size_t a = r.first_point, b = a + r.point_count - 1;
-    double dx = double(data::kX[b]) - data::kX[a];
-    double dy = double(data::kY[b]) - data::kY[a];
+    double dx = static_cast<double>(data::kX[b]) - data::kX[a];
+    double dy = static_cast<double>(data::kY[b]) - data::kY[a];
     sum_deg += std::fabs(std::atan2(dy, dx)) * 180.0 / 3.14159265358979323846;
   }
   EXPECT_LT(sum_deg / kSeeds, 25.0);
