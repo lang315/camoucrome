@@ -2,6 +2,11 @@
 """Create a DRAFT GitHub Release from built archives. Never publishes: that is the owner's step.
 
   release.py <tag> --stamp <win.json> --stamp <linux.json> [--asset F]... [--tables DIR] --notes FILE
+             [--release-commit SHA]
+
+--release-commit is for a client-only release that reuses binaries built at an earlier commit. SHA must be an
+ancestor of origin/main, and from the stamps' commit to SHA the change set (patches, additions, the GN args)
+may differ only in `//` comment lines of additions/camoucfg/keys.h. CI, `--target` and the notes then name SHA.
 
 Exit 0 after `gh release create --draft`; exit 2 with the reason on any refusal.
 """
@@ -23,6 +28,8 @@ import package  # noqa: E402
 TAG_RE = re.compile(r"^v(\d+\.\d+\.\d+\.\d+)-\d+$")
 TEXT_SUFFIXES = check_privacy.TEXT_SUFFIXES
 WORKFLOWS = ("checks", "build-verify")
+CHANGE_SET = ("patches", "additions", "settings/build-args.gn", "settings/release-args.gn")
+COMMENT_ONLY_FILES = ("additions/camoucfg/keys.h",)
 
 
 def gh(args):
@@ -33,6 +40,34 @@ def gh(args):
 def origin_main():
     subprocess.run(["git", "fetch", "-q", "origin"], check=True)
     return subprocess.run(["git", "rev-parse", "origin/main"], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def is_ancestor(sha, ref):
+    return subprocess.run(["git", "merge-base", "--is-ancestor", sha, ref]).returncode == 0
+
+
+def change_set_diff(old, new):
+    return subprocess.run(["git", "diff", "-U0", old, new, "--", *CHANGE_SET],
+                          check=True, capture_output=True, text=True).stdout
+
+
+def comment_only(diff):
+    """True when every changed line of a `git diff -U0` is a `//` comment line of a COMMENT_ONLY_FILES file.
+    Any other header (rename, mode change, binary, new or deleted file) is not."""
+    path = None
+    for line in diff.splitlines():
+        if not line:
+            continue
+        if line.startswith("diff --git "):
+            path = line.split(" b/", 1)[1]
+        elif line.startswith(("index ", "--- ", "+++ ", "@@")):
+            continue
+        elif line[:1] in "+-":
+            if path not in COMMENT_ONLY_FILES or not line[1:].lstrip().startswith("//"):
+                return False
+        else:
+            return False
+    return True
 
 
 def privacy_hits(path):
@@ -97,6 +132,7 @@ def main(argv):
     ap.add_argument("--asset", action="append", default=[])
     ap.add_argument("--tables")
     ap.add_argument("--notes", required=True)
+    ap.add_argument("--release-commit", metavar="SHA")
     a = ap.parse_args(argv)
 
     if len(a.stamp) < 2:
@@ -111,9 +147,22 @@ def main(argv):
         package.check(a.stamp)
     except SystemExit as e:
         return refuse(f"stamps disagree: {e}")
-    sha = stamps[0]["changeset_commit"]
+    built = stamps[0]["changeset_commit"]
     main_sha = origin_main()
-    if any(s["changeset_commit"] != main_sha for s in stamps):
+    sha = a.release_commit or built
+    if a.release_commit:
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            return refuse("--release-commit must be a full 40-hex sha")
+        if any(s["changeset_commit"] != built for s in stamps):
+            return refuse("stamps disagree on changeset_commit")
+        if not is_ancestor(sha, main_sha):
+            return refuse(f"--release-commit {sha} is not an ancestor of origin/main ({main_sha})")
+        if not is_ancestor(built, sha):
+            return refuse(f"the stamps' commit {built} is not an ancestor of --release-commit")
+        if not comment_only(change_set_diff(built, sha)):
+            return refuse(f"the change set differs between the stamps' commit {built} and {sha} by more than keys.h comments: "
+                          "the binaries are not this commit's")
+    elif any(s["changeset_commit"] != main_sha for s in stamps):
         return refuse(f"stamps' changeset_commit is not origin/main ({main_sha})")
     rc, out = gh(["run", "list", "--commit", sha, "--json", "workflowName,conclusion"])
     runs = json.loads(out) if rc == 0 and out else []
@@ -140,8 +189,10 @@ def main(argv):
         found = check_privacy.byte_hits(pathlib.Path(p).read_bytes(), terms, p)
         if found:
             return refuse(f"{p} holds a private term ({found[0]})")
-    if sha not in pathlib.Path(a.notes).read_text():
-        return refuse(f"--notes does not contain the full changeset sha {sha} (the README's <sha> is read from there)")
+    notes_text = pathlib.Path(a.notes).read_text()
+    for named in dict.fromkeys((sha, built)):
+        if named not in notes_text:
+            return refuse(f"--notes does not contain the full changeset sha {named} (the README's <sha> is read from there)")
     stamp_bytes = [pathlib.Path(p).read_bytes() for p in a.stamp]
     # platform archive = name starts camoucrome-<version>-, so the npm tarball (camoucrome-0.1.0.tgz) is not one
     prefix = f"camoucrome-{m.group(1)}-"
