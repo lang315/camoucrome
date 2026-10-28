@@ -12,6 +12,9 @@ blink_symbol_level = 0
 v8_symbol_level = 0
 dcheck_always_on = false
 use_remoteexec = false
+# chrome://credits is a placeholder page unless this is true (it defaults to
+# is_official_build); Cursory's LGPL notice must be in the real one.
+generate_about_credits = true
 
 # --- settings/build-args.gn, verbatim ---
 proprietary_codecs = true

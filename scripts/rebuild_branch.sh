@@ -62,6 +62,10 @@ trap 'exit 143' TERM
 git -C "$SRC" worktree add -q -b "$TMP" "$WT" "$CHROMIUM_REV"
 mkdir -p "$WT/components/camoucfg"
 cp "$ROOT"/additions/camoucfg/* "$WT/components/camoucfg/"
+if [ -d "$ROOT/additions/camoucfg_lgpl" ]; then
+  mkdir -p "$WT/components/camoucfg_lgpl"
+  cp -R "$ROOT"/additions/camoucfg_lgpl/. "$WT/components/camoucfg_lgpl/"
+fi
 cp "$ROOT/settings/invariants.json" "$WT/components/camoucfg/invariants.json"
 while read -r p || [ -n "$p" ]; do
   case "$p" in ""|\#*) continue ;; esac

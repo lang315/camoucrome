@@ -23,6 +23,10 @@ jobs:
         with: { go-version: "1.22" }
       - name: additions are all in BUILD.gn
         run: python3 scripts/check_additions_build.py
+      - name: LGPL include boundary
+        run: python3 scripts/check_lgpl_boundary.py
+      - name: cursory table matches its data
+        run: python3 scripts/gen_cursory_table.py --check
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
       - name: gen9_thread_caps.h matches the caps JSON

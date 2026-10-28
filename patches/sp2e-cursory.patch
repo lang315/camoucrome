@@ -1,0 +1,12 @@
+diff --git a/components/BUILD.gn b/components/BUILD.gn
+index 94b38977be..4de8cb1ac2 100644
+--- a/components/BUILD.gn
++++ b/components/BUILD.gn
+@@ -204,6 +204,7 @@ test("components_unittests") {
+     "//components/browser_sync:unit_tests",
+     "//components/browsing_data/core:unit_tests",
+     "//components/camoucfg:unit_tests",
++    "//components/camoucfg_lgpl:unit_tests",
+     "//components/captive_portal/core:unit_tests",
+     "//components/cbor:unit_tests",
+     "//components/certificate_matching:unit_tests",

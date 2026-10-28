@@ -1,0 +1,27 @@
+# Copyright 2026 The Camoucrome Authors. LGPL-3.0-or-later (see LICENSE, NOTICE).
+static_library("camoucfg_lgpl") {
+  sources = [
+    "cursory.cc",
+    "cursory.h",
+    "cursory_data.cc",
+    "cursory_data.h",
+  ]
+  deps = [ "//base" ]
+  # Only the config layer links the LGPL code (scripts/check_lgpl_boundary.py).
+  visibility = [
+    ":*",  # this directory's own unit_tests
+    "//components/camoucfg:*",
+    "//components:*",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  visibility = [ "//components:*" ]
+  sources = [ "cursory_unittest.cc" ]
+  deps = [
+    ":camoucfg_lgpl",
+    "//base",
+    "//testing/gtest",
+  ]
+}

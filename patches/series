@@ -40,3 +40,6 @@ sp3b-timing-real-query.patch
 webrtc-proxy-policy.patch
 observe-behaviour.patch
 observe-dispatch.patch
+sp2e-cursory.patch
+sp2e-input-scheduler.patch
+sp2e-credits.patch
