@@ -6,21 +6,25 @@
 
 namespace camoucfg {
 
-std::optional<base::TimeDelta> QueueClock::Reserve(base::TimeTicks now,
-                                                   base::TimeDelta duration) {
+base::TimeDelta QueueClock::DelayBehind(base::TimeTicks now) const {
   // Strictly after the previous item's end, so e.g. a wheel's first notch
   // cannot run before the previous move's final event (posted at that end).
-  base::TimeTicks start =
-      free_at_ > now ? free_at_ + base::Milliseconds(1) : now;
+  return free_at_ > now ? free_at_ + base::Milliseconds(1) - now
+                        : base::TimeDelta();
+}
+
+std::optional<base::TimeDelta> QueueClock::Reserve(base::TimeTicks now,
+                                                   base::TimeDelta duration) {
+  base::TimeDelta delay = DelayBehind(now);
   if (duration <= base::TimeDelta()) {
-    return start - now;
+    return delay;
   }
-  base::TimeTicks end = start + duration;
+  base::TimeTicks end = now + delay + duration;
   if (end - now > kMaxBacklog) {
     return std::nullopt;
   }
   free_at_ = end;
-  return start - now;
+  return delay;
 }
 
 }  // namespace camoucfg

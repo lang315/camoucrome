@@ -84,5 +84,62 @@ TEST(InputQueueTest, OneMillisecondItemsFillTheCapWithGaps) {
   EXPECT_FALSE(q.Reserve(now, base::Milliseconds(1)).has_value());
 }
 
+TEST(InputQueueTest, DelayBehindIdleIsZero) {
+  QueueClock q;
+  EXPECT_EQ(q.DelayBehind(base::TimeTicks()), base::TimeDelta());
+}
+
+TEST(InputQueueTest, DelayBehindBusyAddsTheGap) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(5)).has_value());
+  // End 5000 ms + 1 ms gap - now 1000 ms.
+  EXPECT_EQ(q.DelayBehind(now + base::Seconds(1)), base::Milliseconds(4001));
+  // The end has passed: idle again.
+  EXPECT_EQ(q.DelayBehind(now + base::Seconds(5)), base::TimeDelta());
+  EXPECT_EQ(q.DelayBehind(now + base::Seconds(6)), base::TimeDelta());
+}
+
+TEST(InputQueueTest, DelayBehindAgreesWithZeroDurationReserve) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(5)).has_value());
+  for (int ms : {0, 1000, 4999, 5000, 7000}) {
+    base::TimeTicks t = now + base::Milliseconds(ms);
+    EXPECT_EQ(q.Reserve(t, base::TimeDelta()), q.DelayBehind(t)) << ms;
+  }
+}
+
+TEST(InputQueueTest, DelayBehindDoesNotBook) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(5)).has_value());
+  for (int i = 0; i < 3; ++i) {
+    q.DelayBehind(now);
+    q.Reserve(now, base::TimeDelta());
+  }
+  // Still ends at 5 s: the next item starts at 5001 ms.
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(1)), base::Milliseconds(5001));
+}
+
+TEST(InputQueueTest, RefusalBooksNothingSoDelayBehindKeepsOldEnd) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(9)).has_value());
+  ASSERT_FALSE(q.Reserve(now, base::Seconds(5)).has_value());
+  EXPECT_EQ(q.DelayBehind(now), base::Seconds(9) + base::Milliseconds(1));
+}
+
+TEST(InputQueueTest, DelayBehindAFullQueueIsBoundedByTheBacklog) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(10)).has_value());
+  EXPECT_EQ(q.DelayBehind(now), base::Seconds(10) + base::Milliseconds(1));
+  EXPECT_LE(q.DelayBehind(now + base::Seconds(3)),
+            QueueClock::kMaxBacklog + base::Milliseconds(1) - base::Seconds(3));
+  // A zero-length item never refuses, even on a full queue.
+  EXPECT_TRUE(q.Reserve(now, base::TimeDelta()).has_value());
+}
+
 }  // namespace
 }  // namespace camoucfg

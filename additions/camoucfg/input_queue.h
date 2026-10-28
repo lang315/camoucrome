@@ -23,10 +23,17 @@ class QueueClock {
   // `now` when the queue is idle, otherwise 1 ms after the previous item's
   // end. Returns the delay from `now` to that start, or nullopt if the end
   // would be more than kMaxBacklog after `now` (state is left unchanged; the
-  // caller takes the stock path). A non-positive duration books nothing.
-  // Never negative.
+  // caller takes the stock path). A non-positive duration NEVER refuses and
+  // books nothing: it returns DelayBehind(now), so an item that is not
+  // scheduled itself (over the cap, not a move) still cannot overtake the
+  // queue. Never negative.
   std::optional<base::TimeDelta> Reserve(base::TimeTicks now,
                                          base::TimeDelta duration);
+
+  // The delay from `now` to where the queue currently ends: 0 when idle
+  // (free_at_ <= now), otherwise the end plus the 1 ms gap, minus `now`.
+  // Books nothing; the same value as Reserve(now, 0).
+  base::TimeDelta DelayBehind(base::TimeTicks now) const;
 
  private:
   base::TimeTicks free_at_;
