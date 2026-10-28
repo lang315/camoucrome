@@ -9,6 +9,9 @@ Run on the Windows host in the client venv, in the interactive session (run-inte
   python measure_layer3.py budget RUN --sites N --rounds R [--limit-gb 5]
   python measure_layer3.py scrub RUN OUT        (on the Mac; the committable vendor table)
 
+  python measure_layer3.py run --design first-visitor --arms S,F,N,S2 --approved-gb G [--fork-drop-key N=canvas:seed ...] ...
+(the PerimeterX arms N and S2, docs plan 2026-10-28-px-arms-n-s2.md: every visit on its own fresh exit address, no pairs.)
+
 Two arms, S (stock) and F (fork), through the same client, argv and proxy. One ROUND = one site on one sticky exit IP,
 visited by both arms back to back in random order. Images, media and fonts are blocked in BOTH arms the same way
 (traffic budget, owner 2026-10-24): rates here are for that traffic shape. --aa puts stock in the F arm (the noise
@@ -19,12 +22,15 @@ and the proxy file ($CAMOU_L3_PROXY_FILE: {"server", "username_template" with {s
 site by index and vendor only; cookie VALUES are never read into a result. The proxy host IS on the live browser command line
 (--proxy-server); argv_of launches without a proxy, and nothing the harness writes contains an argv."""
 import argparse
+import collections
 import datetime
+import hashlib
 import json
 import os
 import pathlib
 import random
 import re
+import secrets
 import sys
 import tempfile
 import time
@@ -43,6 +49,191 @@ DEFAULT_SITES = "~/.config/camoucrome/layer3-sites.json"
 # --force-webrtc-ip-handling-policy is a no-op in //chrome (only content_shell and headless read it), so stock Chrome
 # leaked a srflx candidate with the host's address behind the proxy. Only the pref works: both arms' profiles get it.
 WEBRTC_PREF = {"ip_handling_policy": "disable_non_proxied_udp"}
+
+
+# --- first-visitor design (docs plan 2026-10-28-px-arms-n-s2.md): one arm per fresh exit address, arms S F N S2 ---
+
+ARM_NAMES = ("S", "F", "N", "S2")
+PAUSE_S = 1800  # a site that answered 429 twice in a row rests 30 minutes
+BUDGET_STOP = 0.90
+MAX_REUSED = 2
+
+
+def parse_drop(spec):
+    """`ARM=KEY` or `ARM=PREFIX` -> (arm, value). S is stock and has no config to drop from."""
+    arm, sep, val = spec.partition("=")
+    if not sep or not val or arm not in ARM_NAMES or arm == "S":
+        sys.exit(f"--fork-drop-*: {spec!r} is not ARM=VALUE with ARM one of F, N, S2")
+    return arm, val
+
+
+def parse_arms(text):
+    arms = text.split(",")
+    if len(set(arms)) != len(arms) or not set(arms) <= set(ARM_NAMES) or not {"S", "F"} <= set(arms):
+        raise argparse.ArgumentTypeError(f"--arms: {text!r} must be distinct names from {','.join(ARM_NAMES)} including S and F")
+    return arms
+
+
+def drop_keys(config, arm, drops):
+    """A copy of the generated config without the keys and key prefixes bound to this arm.
+    drops = {"keys": [(arm, key)], "prefixes": [(arm, prefix)]}"""
+    keys = {k for a, k in drops["keys"] if a == arm}
+    prefixes = tuple(p for a, p in drops["prefixes"] if a == arm)
+    return {k: v for k, v in config.items() if k not in keys and not (prefixes and k.startswith(prefixes))}
+
+
+def window_size_arg(arm, window):
+    """The window handed to the launcher (which turns it into --window-size): none for S2, so the browser opens its default window."""
+    return None if arm == "S2" else window
+
+
+def plan_visits(arms, site_idxs, rounds, seed):
+    """[(round, site_idx, arm)]: every arm once per (round, site), in a random order per (round, site) from the seed."""
+    rng = random.Random(seed)
+    out = []
+    for rnd in range(rounds):
+        sites = list(site_idxs)
+        rng.shuffle(sites)
+        for idx in sites:
+            order = list(arms)
+            rng.shuffle(order)
+            out += [(rnd, idx, arm) for arm in order]
+    return out
+
+
+class AddressLedger:
+    """Exit addresses seen in this run, as salted hashes in memory only (the salt is per run, so the digests are no use outside
+    it). Never written to a result; a resumed run starts with an empty one."""
+
+    def __init__(self):
+        self._salt = os.urandom(16)
+        self._seen = set()
+
+    def _h(self, addr):
+        return hashlib.sha256(self._salt + addr.encode()).hexdigest()
+
+    def seen(self, addr):
+        return self._h(addr) in self._seen
+
+    def add(self, addr):
+        self._seen.add(self._h(addr))
+
+    def digests(self):
+        return sorted(self._seen)
+
+    def __repr__(self):
+        return f"AddressLedger({len(self._seen)} addresses)"
+
+
+def should_stop(reused_address):
+    """Stop rule 5: more than two visits on an address an earlier visit used."""
+    return reused_address > MAX_REUSED
+
+
+def apply_address_checks(row, ip, ledger):
+    """Mark a proxied first-visitor row unknown when its exit address could not be read, was used before, or a WebRTC candidate
+    named another one. Returns True for a reused address. The address goes into the ledger, never into the row."""
+    reused = False
+    if ip is None:
+        row.update({"outcome": "unknown", "error": "ip_unread"})
+    elif ledger.seen(ip):
+        reused = True
+        row.update({"outcome": "unknown", "error": "reused_address"})
+    elif (row.get("webrtc_leaks") or 0) != 0:
+        row.update({"outcome": "unknown", "error": "webrtc_leak"})
+    if ip is not None:
+        ledger.add(ip)
+    return reused
+
+
+def is_429(row):
+    return any((st or {}).get("status") == 429 for st in (row.get("reason") or {}).values())
+
+
+class Pause429:
+    """Stop rule 2. Two 429 visits in a row at one site pause that site for 30 minutes; the third pause, or 429s on more than 10% of
+    a full window of the last 20 attempts, stops the run. record() -> "OK" | "PAUSE" | "STOP"; allow(site) is False inside a pause,
+    and the caller never visits a site it is not allowed (a 429 is not retried inside the pause)."""
+
+    def __init__(self, clock):
+        self.clock, self.streak, self.until, self.pauses = clock, collections.Counter(), {}, 0
+        self.window = collections.deque(maxlen=20)
+
+    def allow(self, site):
+        return self.clock() >= self.until.get(site, 0)
+
+    def wait_s(self, site):
+        return max(0.0, self.until.get(site, 0) - self.clock())
+
+    def record(self, site, got_429):
+        self.window.append(bool(got_429))
+        self.streak[site] = self.streak[site] + 1 if got_429 else 0
+        if len(self.window) == 20 and sum(self.window) > 2:
+            return "STOP"
+        if self.streak[site] >= 2:
+            self.streak[site] = 0
+            self.pauses += 1
+            self.until[site] = self.clock() + PAUSE_S
+            return "STOP" if self.pauses >= 3 else "PAUSE"
+        return "OK"
+
+
+def budget_stop(bytes_so_far, approved_bytes, last_visit_bytes):
+    """Stop rule 3: the running total reached 90% of the approved bytes, or the last visit's size could not be read."""
+    return last_visit_bytes == 0 or bytes_so_far >= BUDGET_STOP * approved_bytes
+
+
+def first_visitor_cost(mean_bytes, sites, rounds, n_arms):
+    """Bytes of one run-equivalent: one visit per arm per site per round."""
+    return mean_bytes * sites * rounds * n_arms
+
+
+def first_visitor_counts(rows):
+    """{vendor: {arm: (challenged, measured, unknown)}} from result rows."""
+    c = collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0, 0]))
+    for r in rows:
+        t = c[r["vendor"]][r["arm"]]
+        if r["outcome"] in ("unknown", "unmeasured"):
+            t[2] += 1
+        else:
+            t[1] += 1
+            t[0] += lc.challenged(r["outcome"])
+    return {v: {a: tuple(t) for a, t in arms.items()} for v, arms in c.items()}
+
+
+def first_visitor_report(counts, rows=()):
+    """Per vendor: rate and unknown per arm, per-site rates (site by index), gate G0, the N and S2 readings."""
+    out = []
+    for vendor, arms in counts.items():
+        out += [f"{vendor}", "| arm | challenged/measured | rate | unknown |", "|---|---|---|---|"]
+        for a in ARM_NAMES:
+            if a in arms:
+                x, n, u = arms[a]
+                out.append(f"| {a} | {x}/{n} | {x / n:.2f} | {u} |" if n else f"| {a} | 0/0 | | {u} |")
+        sites = sorted({r["site"] for r in rows if r["vendor"] == vendor})
+        for idx in sites:
+            cells = []
+            for a in ARM_NAMES:
+                m = [r for r in rows if r["vendor"] == vendor and r["site"] == idx and r["arm"] == a and r["outcome"] not in ("unknown", "unmeasured")]
+                if m:
+                    cells.append(f"{a} {sum(lc.challenged(r['outcome']) for r in m)}/{len(m)}")
+            out.append(f"site #{idx}: " + ", ".join(cells))
+        if "S" not in arms or "F" not in arms:
+            out += ["G0: no S or F arm in this run", ""]
+            continue
+        g = ls.gate_g0(arms["F"][0], arms["F"][1], arms["S"][0], arms["S"][1])
+        out.append(f"G0 d_FS {g['d']:+.2f} 95% [{g['lo']:+.2f}, {g['hi']:+.2f}]: " + ("passed" if g["passed"] else "not passed"))
+        diffs = ls.arm_diffs(arms, g)
+        if "conclusion" in diffs:
+            out.append(diffs["conclusion"])
+        for a, d in diffs.items():
+            if a == "conclusion":
+                continue
+            out.append(f"{a}: UNMEASURED" if d == "UNMEASURED" else
+                       f"{a}: d_X {d['d']:+.2f} 97.5% [{d['lo']:+.2f}, {d['hi']:+.2f}] carries_part {d['carries_part']} carries_all {d['carries_all']} "
+                       f"(X - S 95% [{d['equiv_lo']:+.2f}, {d['equiv_hi']:+.2f}])")
+        out.append("")
+    return "\n".join(out)
 
 
 def load_sites(path):
@@ -369,8 +560,9 @@ def parity_problems(argv_s, argv_f, plant, on_windows):
 def flags_of(a):
     # the zone and locale values are host-identifying and meta.json leaves the host: only that they were given is recorded, so a
     # resume cannot compare them (accepted)
+    fv = {} if a.design == "pair" else {"design": a.design, "arms": a.arms, "fork_drop_key": a.fork_drop_key, "fork_drop_prefix": a.fork_drop_prefix}
     return {**{k: getattr(a, k) for k in ("headed", "warm", "aa", "plant", "arg", "no_identity", "identity_seed", "seed", "dwell", "settle", "min_gap")},
-            "identity_zone_given": bool(a.timezone and a.locale)}
+            "identity_zone_given": bool(a.timezone and a.locale), **fv}
 
 
 def resume_meta(old, new):
@@ -384,7 +576,8 @@ def resume_meta(old, new):
     changed = [k for k in ("versions", "sites_per_vendor") if old.get(k) != new.get(k)]
     if changed:
         sys.exit("resume: the run being resumed differs in " + ", ".join(changed) + " (a rebuilt browser or an edited site list)")
-    return {**new, "started": old["started"], "rounds": max(old["rounds"], new["rounds"])}
+    kept = {"reused_address": old["reused_address"]} if "reused_address" in old else {}
+    return {**new, "started": old["started"], "rounds": max(old["rounds"], new["rounds"]), **kept}
 
 
 def run_cmd(a):
@@ -404,6 +597,14 @@ def run_cmd(a):
         sys.exit("precondition: " + "; ".join(bad))
     common = common_args(proxy_cfg, a.arg)
     arms = {"S": m2.Arm("stock", stock_exe, None, common), "F": m2.Arm("fork", fork_exe, ident, common + ([a.plant] if a.plant else []))}
+    drops = {"keys": a.fork_drop_key, "prefixes": a.fork_drop_prefix}
+    if a.design != "pair":
+        if a.aa or a.warm or not ident or a.approved_gb is None:
+            sys.exit("first-visitor: needs an identity, --approved-gb, and neither --aa nor --warm")
+        for name in a.arms:
+            if name not in arms:
+                lo = {**ident["launch"], "window": window_size_arg(name, ident["launch"].get("window"))}
+                arms[name] = m2.Arm(name, fork_exe, {**ident, "config": drop_keys(ident["config"], name, drops), "launch": lo}, common)
     if a.resume:
         out_dir = pathlib.Path(a.resume)
     else:
@@ -423,7 +624,9 @@ def run_cmd(a):
             meta = {"run": run_id, "rounds": a.rounds, "warm": a.warm, "aa": a.aa, "plant": bool(a.plant), "blocked": sorted(BLOCKED_TYPES),
                     "sites_per_vendor": {v: sum(1 for s in sites if s["vendor"] == v) for v in VENDORS},
                     "versions": {k: m2.exe_version(arm.exe) if os.name == "nt" else "" for k, arm in arms.items()},
-                    "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp(), "flags": flags_of(a), "desktop": desktop}
+                    "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp(), "flags": flags_of(a), "desktop": desktop,
+                    **({} if a.design == "pair" else {"design": a.design, "arms": a.arms, "drops": drops, "approved_bytes": int(a.approved_gb * 1e9),
+                                                      "reused_address": 0, "stop": None})}
             if os.name == "nt":
                 import windows_verify_set
                 bad = version_problems_for(meta["versions"], windows_verify_set.pin_tag(os.environ.get("CAMOU_CLIENT", str(HERE.parent))), a.aa)
@@ -435,7 +638,8 @@ def run_cmd(a):
                     sys.exit("resume: no meta.json in " + str(out_dir))
                 meta = resume_meta(json.loads(meta_file.read_text(encoding="utf-8")), meta)
             (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
-            for rnd in range(a.rounds):
+            stop = None if a.design == "pair" else run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta)
+            for rnd in (range(a.rounds) if a.design == "pair" else ()):
                 order_sites = list(sites)
                 rng.shuffle(order_sites)
                 for site in order_sites:
@@ -477,12 +681,68 @@ def run_cmd(a):
         if leaked:
             print("LEAK: the proxy secret is in " + ", ".join(leaked), file=sys.stderr)
             sys.exit(3)
+    if stop:
+        print(f"UNMEASURED: the run stopped ({stop}); what it left open is UNMEASURED", file=sys.stderr)
+        return 4
     results = read_results(out_dir)
     if results and all(r["outcome"] in ("unknown", "unmeasured") for r in results):
         print("nothing was measured: every visit is unknown or unmeasured", file=sys.stderr)
         return 1
     print(f"run {out_dir}")
     return 0
+
+
+def run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta, clock=time.monotonic, sleep=time.sleep):
+    """The first-visitor loop: every visit on its own fresh sticky session, the stop rules of the plan. Returns the stop reason or
+    None. Writes the final reused_address count and stop into meta.json. Thin on purpose: the rules are the pure functions above;
+    this wiring is only exercised on the host."""
+    import gpu_gate
+    by_idx = {s["idx"]: s for s in sites}
+    pending = [v for v in plan_visits(a.arms, list(by_idx), a.rounds, a.seed) if v not in done]
+    ledger, pause = AddressLedger(), Pause429(clock)
+    reused, spent, approved, last, stop = meta.get("reused_address", 0), sum(visit_cost(r) for r in read_results(out_dir)), a.approved_gb * 1e9, {}, None
+    while pending and not stop:
+        ready = [v for v in pending if pause.allow(v[1])]
+        if not ready:
+            sleep(min(pause.wait_s(v[1]) for v in pending))
+            continue
+        rnd, idx, name = visit_id = ready[0]
+        pending.remove(visit_id)
+        site = by_idx[idx]
+        wait = a.min_gap - (clock() - last.get(idx, -1e9))
+        if wait > 0:
+            sleep(wait)
+        retry_bytes = 0
+        for k in range(a.ip_retries + 1):
+            # a new random session id per try, never reused: the proxy gives it a fresh exit address
+            proxy = proxy_for(proxy_cfg, f"{run_id}-{secrets.token_hex(6)}")
+            row = {"round": rnd, "site": idx, "vendor": site["vendor"], "arm": name,
+                   "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+            try:
+                row.update(visit(pw, arms[name], site, proxy, a))
+            except Exception as exc:  # noqa: BLE001 - a failed visit is unknown/unmeasured, recorded, never a crash of the batch
+                row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown", "error": type(exc).__name__, "bytes": 0})
+            ip = row.pop("_exit_ip", None)
+            if not proxy_cfg or (ip is not None and not nav_failure(row)) or (row.get("webrtc_leaks") or 0) != 0 or k == a.ip_retries:
+                break
+            retry_bytes += row.get("bytes", 0)
+        if proxy_cfg:
+            reused += apply_address_checks(row, ip, ledger)
+        row["retries"], row["retry_bytes"] = k, retry_bytes
+        with (out_dir / "results.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+        print(f"round {rnd} {site['vendor']}#{idx} {name}: {row['outcome']}", flush=True)
+        last[idx] = clock()
+        spent += visit_cost(row)
+        if pause.record(idx, is_429(row)) == "STOP":
+            stop = "http_429"
+        elif should_stop(reused):
+            stop = "reused_address"
+        elif budget_stop(spent, approved, row.get("bytes", 0)):
+            stop = "budget"
+    meta.update({"reused_address": reused, "stop": stop})
+    (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    return stop
 
 
 def vendor_rows(run_dir, resamples=10000):
@@ -525,6 +785,11 @@ BYTES_NOTE = "page bytes (request+response sizes of the page's requests: a lower
 
 
 def report_cmd(a):
+    meta_file = pathlib.Path(a.run_dir) / "meta.json"
+    if meta_file.exists() and json.loads(meta_file.read_text(encoding="utf-8")).get("design") == "first-visitor":
+        rs = read_results(a.run_dir)
+        print(first_visitor_report(first_visitor_counts(rs), rs))
+        return 0
     rows = vendor_rows(a.run_dir)
     print(table(rows))
     rs = measured_rows(a.run_dir)
@@ -553,9 +818,14 @@ def budget_cmd(a):
     if any(not r.get("bytes") for r in rs):
         sys.exit("budget: a measured visit has 0 bytes (the size could not be read): the extrapolation would be too low")
     mean = sum(visit_cost(r) for r in rs) / len(rs)
-    total = mean * a.sites * a.rounds * 2 * RUN_EQUIVALENTS
-    gb = total / 1e9
-    print(f"{BYTES_NOTE}: mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x 2 arms x {RUN_EQUIVALENTS} run-equivalents = {gb:.2f} GB")
+    if getattr(a, "design", "pair") == "first-visitor":
+        gb = first_visitor_cost(mean, a.sites, a.rounds, len(a.arms)) / 1e9
+        print(f"{BYTES_NOTE}: mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x {len(a.arms)} arms = "
+              f"{a.sites * a.rounds * len(a.arms)} visits, one run-equivalent = {gb:.2f} GB")
+    else:
+        total = mean * a.sites * a.rounds * 2 * RUN_EQUIVALENTS
+        gb = total / 1e9
+        print(f"{BYTES_NOTE}: mean {mean:.0f} bytes per visit; {a.sites} sites x {a.rounds} rounds x 2 arms x {RUN_EQUIVALENTS} run-equivalents = {gb:.2f} GB")
     if gb > a.limit_gb:
         print(f"OVER the {a.limit_gb} GB budget: do not start the paid run", file=sys.stderr)
         return 2
@@ -612,6 +882,11 @@ def build_parser():
     r.add_argument("--settle", type=float, default=SETTLE_S, help="seconds to wait for a challenge to clear or a pass to show")
     r.add_argument("--min-gap", type=float, default=90.0)
     r.add_argument("--gpu-gate", action="store_true", default=os.name == "nt")
+    r.add_argument("--design", choices=("pair", "first-visitor"), default="pair")
+    r.add_argument("--arms", type=parse_arms, default=list(ARM_NAMES), help="first-visitor only; S and F required")
+    r.add_argument("--fork-drop-key", type=parse_drop, action="append", default=[], help="ARM=KEY: remove a config key from that arm's identity")
+    r.add_argument("--fork-drop-prefix", type=parse_drop, action="append", default=[], help="ARM=PREFIX: remove the config keys with this prefix")
+    r.add_argument("--approved-gb", type=float, help="first-visitor only: the approved proxy bytes; the run stops at 90%%")
     for name in ("report", "budget", "scrub"):
         p = sub.add_parser(name)
         p.add_argument("run_dir")
@@ -619,6 +894,8 @@ def build_parser():
             p.add_argument("--sites", type=int, required=True)
             p.add_argument("--rounds", type=int, required=True)
             p.add_argument("--limit-gb", type=float, default=5.0)
+            p.add_argument("--design", choices=("pair", "first-visitor"), default="pair")
+            p.add_argument("--arms", type=parse_arms, default=list(ARM_NAMES))
         if name == "scrub":
             p.add_argument("out_dir")
     c = sub.add_parser("compare")

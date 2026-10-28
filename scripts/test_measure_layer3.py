@@ -766,3 +766,217 @@ def test_no_row_names_an_echo_service_or_an_address():
     rows = {"S": {"outcome": "pass", "bytes": 5}, "F": {"outcome": "pass", "bytes": 7}}
     text = json.dumps(ml.pair_exit_ips(rows, {"S": "198.51.100.7", "F": "198.51.100.7"}))
     assert "198.51.100" not in text and not any(u.split("//")[1] in text for u in ml.ECHO_URLS)
+
+
+# --- first-visitor design (px-arms plan): the pure parts; the run wiring needs the host and is not tested here ---
+
+CFG = {"canvas:seed": 7, "audio:seed": 9, "screen.width": 1920, "screen.height": 1080, "window.outerWidth": 1500,
+       "window.innerHeight": 900, "navigator.hardwareConcurrency": 8}
+
+
+def test_parse_drop_validates_the_arm_and_the_shape():
+    assert ml.parse_drop("N=canvas:seed") == ("N", "canvas:seed")
+    assert ml.parse_drop("S2=screen.") == ("S2", "screen.")
+    for bad in ("canvas:seed", "X=canvas:seed", "N=", "S=audio:seed"):  # S is stock: no config to drop from
+        with pytest.raises(SystemExit):
+            ml.parse_drop(bad)
+
+
+def test_drop_keys_removes_keys_and_prefixes_for_the_named_arm_only():
+    drops = {"keys": [("N", "canvas:seed"), ("N", "audio:seed")], "prefixes": [("S2", "screen."), ("S2", "window.")]}
+    n = ml.drop_keys(CFG, "N", drops)
+    assert set(CFG) - set(n) == {"canvas:seed", "audio:seed"}
+    s2 = ml.drop_keys(CFG, "S2", drops)
+    assert set(s2) == {"canvas:seed", "audio:seed", "navigator.hardwareConcurrency"}
+    assert ml.drop_keys(CFG, "F", drops) == CFG
+    assert len(CFG) == 7  # the input is not changed
+    assert ml.drop_keys(CFG, "N", {"keys": [], "prefixes": []}) == CFG
+
+
+def test_window_size_arg_is_none_only_for_s2():
+    assert ml.window_size_arg("S2", (1500, 900)) is None
+    for arm in ("F", "N", "S"):
+        assert ml.window_size_arg(arm, (1500, 900)) == (1500, 900)
+    assert ml.window_size_arg("F", None) is None
+
+
+def test_plan_visits_counts_determinism_and_one_of_each_arm_per_round_and_site():
+    arms = ["S", "F", "N", "S2"]
+    plan = ml.plan_visits(arms, [0, 1, 2], 12, seed=5)
+    assert len(plan) == 4 * 3 * 12
+    assert all(sum(1 for r, s, a in plan if a == arm) == 36 for arm in arms)
+    assert plan == ml.plan_visits(arms, [0, 1, 2], 12, seed=5) != ml.plan_visits(arms, [0, 1, 2], 12, seed=6)
+    for rnd in range(12):
+        for site in range(3):
+            assert sorted(a for r, s, a in plan if (r, s) == (rnd, site)) == sorted(arms)
+    assert [r for r, _, _ in plan] == sorted(r for r, _, _ in plan)  # rounds in order
+    orders = {tuple(a for r, s, a in plan if (r, s) == (rnd, 0)) for rnd in range(12)}
+    assert len(orders) > 1  # the order really varies
+
+
+def test_address_ledger_detects_a_repeat_and_never_holds_the_raw_address():
+    led = ml.AddressLedger()
+    addr = "198.51.100.77"
+    assert not led.seen(addr)
+    led.add(addr)
+    assert led.seen(addr) and not led.seen("198.51.100.78")
+    dump = repr(led) + str(vars(led)) + json.dumps(led.digests())
+    assert addr not in dump and "198.51.100" not in dump
+    assert ml.AddressLedger().digests() == [] and ml.AddressLedger()._salt != led._salt  # a salt per run
+
+
+def test_should_stop_after_more_than_two_reused_addresses():
+    assert [ml.should_stop(n) for n in (0, 1, 2, 3)] == [False, False, False, True]
+
+
+class Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def test_pause429_two_in_a_row_pauses_the_site_for_30_minutes():
+    c = Clock()
+    p = ml.Pause429(c)
+    assert p.record(0, True) == "OK" and p.allow(0)
+    assert p.record(0, True) == "PAUSE"
+    assert not p.allow(0) and p.allow(1)  # never inside the pause, other sites go on
+    c.t = 1799
+    assert not p.allow(0) and p.wait_s(0) == pytest.approx(1)
+    c.t = 1800
+    assert p.allow(0) and p.wait_s(0) == 0
+
+
+def test_pause429_a_good_visit_resets_the_streak():
+    p = ml.Pause429(Clock())
+    for status in (True, False, True, False, True):
+        assert p.record(0, status) == "OK"
+
+
+def test_pause429_a_third_pause_stops_the_run():
+    c = Clock()
+    p = ml.Pause429(c)
+    out = []
+    for site in (0, 1, 2):
+        c.t += 3600
+        out += [p.record(site, True), p.record(site, True)]
+    assert out == ["OK", "PAUSE", "OK", "PAUSE", "OK", "STOP"]
+
+
+def test_pause429_more_than_ten_percent_of_the_last_20_stops():
+    p = ml.Pause429(Clock())
+    res = []
+    for i in range(20):  # three 429s, never two in a row at one site, in a full window of 20
+        res.append(p.record(i % 5, i in (3, 9, 15)))
+    assert res[:-1] == ["OK"] * 19 and res[-1] == "STOP"
+    q = ml.Pause429(Clock())
+    assert all(q.record(i % 5, i in (3, 9)) == "OK" for i in range(40))  # 2 of 20 is exactly 10%: not more
+    r = ml.Pause429(Clock())  # the window slides: old 429s fall out
+    assert all(r.record(i % 5, i in (3, 9, 30)) == "OK" for i in range(60))
+
+
+def test_is_429_reads_either_stage_status():
+    assert ml.is_429({"reason": {"stage1": {"status": 429}}}) and ml.is_429({"reason": {"stage2": {"status": 429}}})
+    assert not ml.is_429({"reason": {"stage1": {"status": 403}}}) and not ml.is_429({"outcome": "pass"})
+
+
+def test_budget_stop_at_ninety_percent_or_an_unreadable_visit():
+    assert not ml.budget_stop(89, 100, 5) and ml.budget_stop(90, 100, 5) and ml.budget_stop(95, 100, 5)
+    assert ml.budget_stop(1, 100, 0)  # 0 bytes: the extrapolation would be too low
+
+
+def test_first_visitor_cost_is_visits_times_mean():
+    assert ml.first_visitor_cost(5_000_000, sites=3, rounds=12, n_arms=4) == 144 * 5_000_000
+
+
+def test_budget_cmd_first_visitor_prints_the_cost_line(tmp_path, capsys):
+    (tmp_path / "results.jsonl").write_text(json.dumps({"outcome": "pass", "bytes": 5_000_000}) + "\n")
+    a = ml.build_parser().parse_args(["budget", str(tmp_path), "--sites", "3", "--rounds", "12", "--design", "first-visitor",
+                                      "--arms", "S,F,N,S2", "--limit-gb", "1"])
+    assert ml.budget_cmd(a) == 0
+    out = capsys.readouterr().out
+    assert "144 visits" in out and "0.72 GB" in out
+    a.limit_gb = 0.5
+    assert ml.budget_cmd(a) == 2
+
+
+def test_parser_design_and_arms_defaults_and_validation():
+    p = ml.build_parser()
+    a = p.parse_args(["run"])
+    assert a.design == "pair" and a.fork_drop_key == [] and a.fork_drop_prefix == []
+    a = p.parse_args(["run", "--design", "first-visitor", "--arms", "S,F,N,S2", "--fork-drop-key", "N=canvas:seed"])
+    assert a.arms == ["S", "F", "N", "S2"] and a.fork_drop_key == [("N", "canvas:seed")]
+    for bad in ("S,N", "S,F,X", "S,F,N,N"):
+        with pytest.raises(SystemExit):
+            p.parse_args(["run", "--design", "first-visitor", "--arms", bad])
+
+
+def fv_row(arm, outcome, rnd=0, site=0):
+    return {"round": rnd, "site": site, "vendor": "perimeterx", "arm": arm, "outcome": outcome}
+
+
+def test_first_visitor_counts_and_report_lines(tmp_path):
+    rows = ([fv_row("S", "pass", r) for r in range(30)] + [fv_row("S", "unknown", 30 + r) for r in range(2)]
+            + [fv_row("F", "challenge", r) for r in range(20)] + [fv_row("F", "pass", 20 + r) for r in range(12)])
+    c = ml.first_visitor_counts(rows)
+    assert c["perimeterx"]["S"] == (0, 30, 2) and c["perimeterx"]["F"][:2] == (20, 32)
+    text = ml.first_visitor_report(c)
+    assert "G0" in text and "perimeterx" in text and "rate" in text and "UNMEASURED" not in text.split("G0")[0]
+    for r in rows:
+        r["site"] = 0
+    (tmp_path / "results.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+    (tmp_path / "meta.json").write_text(json.dumps({"design": "first-visitor"}))
+    a = ml.build_parser().parse_args(["report", str(tmp_path)])
+    assert ml.report_cmd(a) == 0
+
+
+def test_apply_address_checks_marks_unread_reused_and_leaking_rows_and_keeps_the_address_out():
+    led = ml.AddressLedger()
+    ok = {"outcome": "pass", "webrtc_leaks": 0}
+    assert ml.apply_address_checks(ok, "198.51.100.1", led) is False and ok["outcome"] == "pass"
+    again = {"outcome": "pass", "webrtc_leaks": 0}
+    assert ml.apply_address_checks(again, "198.51.100.1", led) is True and again["error"] == "reused_address" and again["outcome"] == "unknown"
+    unread = {"outcome": "pass"}
+    assert ml.apply_address_checks(unread, None, led) is False and unread["error"] == "ip_unread"
+    leak = {"outcome": "pass", "webrtc_leaks": 2}
+    ml.apply_address_checks(leak, "198.51.100.2", led)
+    assert leak["error"] == "webrtc_leak" and "198.51.100" not in json.dumps([ok, again, unread, leak])
+
+
+def test_run_first_visitor_loop_on_a_stubbed_visit(tmp_path, monkeypatch):
+    """The loop with visit() stubbed: shape of the rows, the ledger, the 429 stop, the budget stop. Not a browser."""
+    sites = [{"idx": i, "vendor": "perimeterx"} for i in range(2)]
+    a = ml.build_parser().parse_args(["run", "--design", "first-visitor", "--arms", "S,F", "--rounds", "2", "--approved-gb", "1",
+                                      "--min-gap", "0", "--ip-retries", "0"])
+    cfg = {"server": "http://p.example:1", "username_template": "u-{session}", "password": "pw"}
+    n = [0]
+
+    def fake(pw, arm, site, proxy, a_, udd=None):
+        n[0] += 1
+        return {"outcome": "pass", "bytes": 10, "webrtc_leaks": 0, "_exit_ip": f"198.51.100.{n[0]}"}
+    monkeypatch.setattr(ml, "visit", fake)
+    meta = {"reused_address": 0}
+    assert ml.run_first_visitor(None, {"S": 0, "F": 0}, sites, cfg, a, tmp_path, "r", set(), meta, sleep=lambda s: None) is None
+    rows = ml.read_results(tmp_path)
+    assert len(rows) == 8 and "198.51.100" not in (tmp_path / "results.jsonl").read_text()
+    n[0] = 0
+    monkeypatch.setattr(ml, "visit", lambda *x, **k: {"outcome": "unknown", "bytes": 10, "webrtc_leaks": 0, "_exit_ip": "198.51.100.9"})
+    out = tmp_path / "b"
+    out.mkdir()
+    assert ml.run_first_visitor(None, {"S": 0, "F": 0}, sites, cfg, a, out, "r", set(), {}, sleep=lambda s: None) == "reused_address"
+    def fresh(**row):
+        def v(*x, **k):
+            n[0] += 1
+            return {"webrtc_leaks": 0, "_exit_ip": f"198.51.100.{n[0]}", **row}
+        return v
+    out = tmp_path / "c"
+    out.mkdir()
+    clock = Clock()
+    monkeypatch.setattr(ml, "visit", fresh(outcome="unknown", bytes=10, reason={"stage1": {"status": 429}}))
+    assert ml.run_first_visitor(None, {"S": 0, "F": 0}, sites, cfg, a, out, "r", set(), {}, clock=clock, sleep=lambda s: setattr(clock, "t", clock.t + s)) == "http_429"
+    out = tmp_path / "d"
+    out.mkdir()
+    monkeypatch.setattr(ml, "visit", fresh(outcome="pass", bytes=0))
+    assert ml.run_first_visitor(None, {"S": 0, "F": 0}, sites, cfg, a, out, "r", set(), {}, sleep=lambda s: None) == "budget"
