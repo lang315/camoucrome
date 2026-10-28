@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -23,7 +24,13 @@ type Proc struct {
 	WSURL string   // UsePort only
 	Stop  func()
 	tail  *tailBuf
+	pipeR io.ReadCloser
+	pipeW io.WriteCloser
 }
+
+// PipeRW is the raw pipe (nil, nil with UsePort), for a driver that frames the
+// transport itself (chromedp's PipeConn). Use it instead of Conn, not with it.
+func (p *Proc) PipeRW() (io.ReadCloser, io.WriteCloser) { return p.pipeR, p.pipeW }
 
 // StderrTail is the last 4 KiB the browser wrote to stderr.
 func (p *Proc) StderrTail() string { return p.tail.String() }
@@ -190,6 +197,7 @@ func Start(ctx context.Context, o Options) (*Proc, error) {
 	if !o.UsePort {
 		toChild[0].Close() // the child's ends; ours stay
 		fromChild[1].Close()
+		p.pipeR, p.pipeW = fromChild[0], toChild[1]
 		p.Conn = newConn(fromChild[0], toChild[1])
 		p.Conn.onEOF = func(err error) error {
 			select { // let the exit and the stderr copy finish so the tail is complete

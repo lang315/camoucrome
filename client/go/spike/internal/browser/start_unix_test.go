@@ -182,3 +182,18 @@ func TestPortWatcherSplitURL(t *testing.T) {
 		t.Fatalf("got %q", u)
 	}
 }
+
+func TestPipeRW(t *testing.T) {
+	p := start(t, context.Background())
+	r, w := p.PipeRW()
+	if _, err := w.Write([]byte("{\"id\":7}\x00")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, len("echo:{\"id\":7}\x00"))
+	if _, err := io.ReadFull(r, buf); err != nil || string(buf) != "echo:{\"id\":7}\x00" {
+		t.Fatalf("got %q err %v", buf, err)
+	}
+	if q := &(Proc{}); func() bool { a, b := q.PipeRW(); return a != nil || b != nil }() {
+		t.Fatal("UsePort-style Proc must return nil pipes")
+	}
+}

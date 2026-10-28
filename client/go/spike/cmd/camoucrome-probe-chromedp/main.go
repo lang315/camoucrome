@@ -1,10 +1,10 @@
 // Probe command for scripts/verify_sp6b_driver.py, the chromedp RED control:
 // chromedp at default settings enables Runtime on every target attach
 // (chromedp.go, runtime.Enable), so verify's C1 must FAIL for this row.
-// The browser is started by browser.Start with UsePort (chromedp has no pipe
-// path through a remote allocator); chromedp only attaches over the websocket,
-// so the argv stays ours. C4 flags --remote-debugging-port: expected, RED
-// rows are judged on C1 only.
+// The browser is started by browser.Start in its default pipe mode, so argv
+// is the contract's (C4 clean) and the transport matches the rod row. chromedp
+// gets the raw pipe through a custom Allocator (pipeAllocator) over its public
+// PipeConn; its ExecAllocator would launch the browser with its own flags.
 package main
 
 import (
@@ -16,10 +16,10 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/chromedp/chromedp/remote"
 
 	"github.com/lang315/camoucrome/client/go/spike/internal/browser"
 	"github.com/lang315/camoucrome/client/go/spike/internal/cdplog"
@@ -76,11 +76,12 @@ func marshalOutput(label, report string, argv []string) ([]byte, error) {
 }
 
 // sentOnly adapts chromedp's protocol logger to a sink that sees sent
-// messages only. chromedp (v0.21.0, remote/conn.go) logs the websocket
-// Conn's traffic through the debugf set by WithDebugf (= WithBrowserOption(
-// WithBrowserDebugf)) as "-> %s" for each Write and "<- %s" for each Read.
+// messages only. chromedp (v0.21.0, pipe.go) logs the PipeConn's traffic
+// through the debugf that NewBrowserTransport hands it from WithDebugf
+// (= WithBrowserOption(WithBrowserDebugf)): "-> %s" in each Write (message
+// without the trailing NUL, newline already trimmed) and "<- %s" in each Read.
 // All browser- and target-level traffic (flattened sessions) shares that one
-// Conn, so every send is covered. The encoder may end a message with "\n".
+// PipeConn, so every send is covered. TrimRight is belt and braces.
 func sentOnly(sink func([]byte)) func(string, ...any) {
 	return func(format string, args ...any) {
 		s := fmt.Sprintf(format, args...)
@@ -90,10 +91,35 @@ func sentOnly(sink func([]byte)) func(string, ...any) {
 	}
 }
 
-// probe attaches chromedp to ws with default settings and returns #o's text.
+// pipeAllocator is a chromedp.Allocator over a browser that already runs with
+// --remote-debugging-pipe. Like remote.Allocator it attaches (Attaches() true:
+// the context opens its own tab) and tears down the Conn after the pages close.
+type pipeAllocator struct {
+	r  io.ReadCloser
+	w  io.WriteCloser
+	wg sync.WaitGroup
+}
+
+func (a *pipeAllocator) Allocate(ctx context.Context, opts ...chromedp.BrowserOption) (*chromedp.Browser, error) {
+	if chromedp.FromContext(ctx) == nil {
+		return nil, chromedp.ErrInvalidContext
+	}
+	wctx, cancel := context.WithCancel(context.Background())
+	a.wg.Go(func() {
+		<-ctx.Done()
+		chromedp.Cancel(ctx) // block until all pages are closed
+		cancel()
+	})
+	return chromedp.NewBrowserTransport(wctx, chromedp.NewPipeConn(a.r, a.w), opts...)
+}
+
+func (a *pipeAllocator) Wait()          { a.wg.Wait() }
+func (a *pipeAllocator) Attaches() bool { return true }
+
+// probe attaches chromedp to the pipe with default settings and returns #o's text.
 // Whatever chromedp sends is the measurement; logf receives its debug output.
-func probe(ctx context.Context, ws, url string, logf func(string, ...any)) (string, error) {
-	allocCtx, cancelA := remote.NewAllocator(ctx, ws)
+func probe(ctx context.Context, r io.ReadCloser, w io.WriteCloser, url string, logf func(string, ...any)) (string, error) {
+	allocCtx, cancelA := chromedp.NewAllocatorContext(ctx, &pipeAllocator{r: r, w: w})
 	defer cancelA()
 	cctx, cancelC := chromedp.NewContext(allocCtx, chromedp.WithDebugf(logf))
 	defer cancelC()
@@ -120,13 +146,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	p, err := browser.Start(ctx, browser.Options{Executable: c.exe, URL: "", Config: c.config, Preset: c.preset,
-		Headed: c.headed, Strict: c.strict, Sandbox: c.sandbox, UsePort: true})
+		Headed: c.headed, Strict: c.strict, Sandbox: c.sandbox})
 	if err != nil {
 		fmt.Fprintln(stderr, "launch:", err)
 		return 1
 	}
 	defer p.Stop()
-	text, err := probe(ctx, p.WSURL, c.url, sentOnly(cdplog.NewLogger(stderr).Log))
+	r, w := p.PipeRW()
+	text, err := probe(ctx, r, w, c.url, sentOnly(cdplog.NewLogger(stderr).Log))
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

@@ -4,14 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"io"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -58,9 +52,9 @@ func TestParseFlags(t *testing.T) {
 	}
 }
 
-// The prefixes are the ones chromedp v0.21.0 remote/conn.go really logs
-// ("-> %s" on Write, "<- %s" on Read); the in-process server test below
-// proves them against the real Conn, this test pins the filter itself.
+// The prefixes are the ones chromedp v0.21.0 pipe.go really logs
+// ("-> %s" on Write, "<- %s" on Read); the in-process peer test below
+// proves them against the real PipeConn, this test pins the filter itself.
 func TestSentOnly(t *testing.T) {
 	var got []string
 	f := sentOnly(func(b []byte) { got = append(got, string(b)) })
@@ -73,24 +67,24 @@ func TestSentOnly(t *testing.T) {
 	}
 }
 
-// fakeChrome is a minimal websocket CDP server, enough for chromedp's attach,
+// fakeChrome is a minimal NUL-framed CDP peer, enough for chromedp's attach,
 // Navigate and Text to run without a browser. It records every method received.
 type fakeChrome struct {
 	mu      sync.Mutex
 	methods []string
 	text    string
 	lateAt  time.Time // #o reads empty before this
-	srv     *httptest.Server
 }
 
-func newFakeChrome(text string) *fakeChrome {
-	f := &fakeChrome{text: text}
-	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
-	return f
-}
+func newFakeChrome(text string) *fakeChrome { return &fakeChrome{text: text} }
 
-func (f *fakeChrome) wsURL() string {
-	return "ws" + strings.TrimPrefix(f.srv.URL, "http") + "/devtools/browser/fake"
+// pipes returns the client's ends (read from the browser, write to it) and
+// starts the peer.
+func (f *fakeChrome) pipes() (io.ReadCloser, io.WriteCloser) {
+	toClientR, toClientW := io.Pipe()
+	toPeerR, toPeerW := io.Pipe()
+	go f.serve(toPeerR, toClientW)
+	return toClientR, toPeerW
 }
 
 func (f *fakeChrome) sent() []string {
@@ -99,74 +93,22 @@ func (f *fakeChrome) sent() []string {
 	return append([]string{}, f.methods...)
 }
 
-func writeFrame(c net.Conn, mu *sync.Mutex, payload []byte) {
-	hdr := []byte{0x81}
-	switch n := len(payload); {
-	case n < 126:
-		hdr = append(hdr, byte(n))
-	case n < 65536:
-		hdr = append(hdr, 126, 0, 0)
-		binary.BigEndian.PutUint16(hdr[2:], uint16(n))
-	default:
-		hdr = append(hdr, 127, 0, 0, 0, 0, 0, 0, 0, 0)
-		binary.BigEndian.PutUint64(hdr[2:], uint64(n))
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	c.Write(append(hdr, payload...))
-}
-
-func readFrame(r *bufio.Reader) ([]byte, byte, error) {
-	var h [2]byte
-	if _, err := io.ReadFull(r, h[:]); err != nil {
-		return nil, 0, err
-	}
-	n := uint64(h[1] & 0x7f)
-	switch n {
-	case 126:
-		var b [2]byte
-		io.ReadFull(r, b[:])
-		n = uint64(binary.BigEndian.Uint16(b[:]))
-	case 127:
-		var b [8]byte
-		io.ReadFull(r, b[:])
-		n = binary.BigEndian.Uint64(b[:])
-	}
-	var mask [4]byte
-	if h[1]&0x80 != 0 {
-		io.ReadFull(r, mask[:])
-	}
-	p := make([]byte, n)
-	if _, err := io.ReadFull(r, p); err != nil {
-		return nil, 0, err
-	}
-	for i := range p {
-		p[i] ^= mask[i%4]
-	}
-	return p, h[0] & 0x0f, nil
-}
-
-func (f *fakeChrome) serve(w http.ResponseWriter, r *http.Request) {
-	key := r.Header.Get("Sec-WebSocket-Key")
-	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-	c, rw, err := w.(http.Hijacker).Hijack()
-	if err != nil {
-		return
-	}
-	defer c.Close()
-	rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " +
-		base64.StdEncoding.EncodeToString(sum[:]) + "\r\n\r\n")
-	rw.Flush()
+func (f *fakeChrome) serve(in io.ReadCloser, out io.WriteCloser) {
+	defer out.Close()
+	br := bufio.NewReader(in)
 	var wmu sync.Mutex
 	emit := func(m map[string]any) {
 		b, _ := json.Marshal(m)
-		writeFrame(c, &wmu, b)
+		wmu.Lock()
+		defer wmu.Unlock()
+		out.Write(append(b, 0))
 	}
 	for {
-		p, op, err := readFrame(rw.Reader)
-		if err != nil || op == 8 {
+		p, err := br.ReadBytes(0)
+		if err != nil {
 			return
 		}
+		p = p[:len(p)-1]
 		var req struct {
 			ID        int64  `json:"id"`
 			Method    string `json:"method"`
@@ -247,13 +189,13 @@ func (f *fakeChrome) result(method, txt string) map[string]any {
 
 func TestProbeAgainstFakeChrome(t *testing.T) {
 	f := newFakeChrome(`{"a":1}`)
-	defer f.srv.Close()
 	var log bytes.Buffer
 	var logMu sync.Mutex
 	w := writerFunc(func(b []byte) (int, error) { logMu.Lock(); defer logMu.Unlock(); return log.Write(b) })
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	text, err := probe(ctx, f.wsURL(), "http://127.0.0.1/p", sentOnly(logSink(w)))
+	rd, wr := f.pipes()
+	text, err := probe(ctx, rd, wr, "http://127.0.0.1/p", sentOnly(logSink(w)))
 	if err != nil {
 		t.Fatalf("%v; sent %v", err, f.sent())
 	}
@@ -306,11 +248,11 @@ func contains(l []string, s string) bool {
 
 func TestProbeWaitsForLateReport(t *testing.T) {
 	f := newFakeChrome(`{"a":1}`)
-	defer f.srv.Close()
 	f.lateAt = time.Now().Add(500 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	text, err := probe(ctx, f.wsURL(), "u", func(string, ...any) {})
+	rd, wr := f.pipes()
+	text, err := probe(ctx, rd, wr, "u", func(string, ...any) {})
 	if err != nil || text != `{"a":1}` {
 		t.Fatalf("text %q err %v", text, err)
 	}
@@ -319,7 +261,9 @@ func TestProbeWaitsForLateReport(t *testing.T) {
 func TestProbeDialError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := probe(ctx, "ws://127.0.0.1:1/devtools/browser/x", "u", func(string, ...any) {}); err == nil {
-		t.Fatal("want error from dead endpoint")
+	r, w := io.Pipe()
+	w.Close() // the browser end hangs up at once
+	if _, err := probe(ctx, r, w, "u", func(string, ...any) {}); err == nil {
+		t.Fatal("want error from dead pipe")
 	}
 }
