@@ -62,6 +62,10 @@ HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 PY_STOCK = layout({"CAMOU_VENV": os.environ.get("CAMOU_VENV_STOCK",
                                                 f"{HOME}/camoucrome-verify/venv-stock")}).py
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
+# G0 spike probes (client/go/spike, throwaway): go build -o bin/camoucrome-probe-{rod,chromedp}.
+_SPIKE_BIN = pathlib.Path(__file__).resolve().parent.parent / "client" / "go" / "spike" / "bin"
+ROD_PROBE = os.environ.get("CAMOU_ROD_PROBE", str(_SPIKE_BIN / "camoucrome-probe-rod"))
+CHROMEDP_PROBE = os.environ.get("CAMOU_CHROMEDP_PROBE", str(_SPIKE_BIN / "camoucrome-probe-chromedp"))
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
@@ -178,7 +182,10 @@ def baseline(url):
 
 
 DRIVERS = [
-    # (label, expected, command)
+    # (label, expected, command[, {"min_methods": n}]) -- the optional dict
+    # lowers C1's floor for a driver whose log counts less: the spike's Go
+    # probes log SENT CDP messages only, Playwright's log counts sends and
+    # receives. The floor still guards a silent logger.
     ("python-stock", "RED", [PY_STOCK, "-m", "camoucrome.probe",
                              "--driver", "stock", "--executable", EXE]),
     ("python-patchright", "GREEN", [PY, "-m", "camoucrome.probe",
@@ -193,6 +200,10 @@ DRIVERS = [
                            "--label", "node-stock", "--executable", EXE]),
     ("node-patchright", "GREEN", [NODE, NODE_PROBE, "--driver", f"{DRIVER_PATCHRIGHT}/package",
                                   "--label", "node-patchright", "--executable", EXE]),
+    ("go-rod-own-launcher", "GREEN", [ROD_PROBE, "--no-default-device", "--label", "go-rod",
+                                      "--executable", EXE], {"min_methods": 10}),
+    ("go-chromedp-control", "RED", [CHROMEDP_PROBE, "--label", "go-chromedp",
+                                    "--executable", EXE]),
 ]
 
 
@@ -211,13 +222,13 @@ def run_probe(cmd, url):
     return json.loads(p.stdout), p.stderr
 
 
-def check(label, result, log, base):
+def check(label, result, log, base, min_methods=MIN_METHODS):
     rep = result["report"]
     rows = {}
     sends = log.count('"method":"')
     runtime_enable = log.count('"method":"Runtime.enable"')
     rows["C1 no Runtime.enable, logger alive"] = (
-        runtime_enable == 0 and sends >= MIN_METHODS,
+        runtime_enable == 0 and sends >= min_methods,
         f"Runtime.enable={runtime_enable} sends={sends}")
     # The probe's own init-script global is accounted for by C6.
     extra = sorted(set(rep["windowKeys"]) - set(base["windowKeys"]) - {"__camou_init"})
@@ -272,14 +283,14 @@ def main():
     print(f"baseline (no driver): {len(base['windowKeys'])} window keys, webdriver={base['webdriver']}, "
           f"stack median {statistics.median(base['timesMs']):.1f} ms, ua ...{base['ua'][-28:]}")
     verdict = True
-    for label, expected, cmd in DRIVERS:
+    for label, expected, cmd, *opts in DRIVERS:
         PROXY_SEEN.clear()
         result, log = run_probe(cmd + proxy_args, url)
         if result is None:
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False
             continue
-        rows = check(label, result, log, base)
+        rows = check(label, result, log, base, **(opts[0] if opts else {}))
         allpass = all(ok for ok, _ in rows.values())
         c1 = rows["C1 no Runtime.enable, logger alive"][0]
         if expected == "GREEN":
