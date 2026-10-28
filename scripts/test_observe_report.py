@@ -348,6 +348,49 @@ def test_timing_rate_separates_a_loop_from_a_single_call():
     assert "Timing call rates" in md
 
 
-def test_not_observable_says_what_a_registration_count_is_not():
+def test_not_observable_names_what_dispatch_counts_do_not_cover():
     md = r.render([], [], [])
-    assert "not how often it fires" in md
+    assert "per-script dispatch attribution" in md and "dispatch counts" not in md
+
+
+def dev(typ, dispatches, handlers, target="Element", trusted="false", ts=1):
+    return {"name": r.DISPATCH, "cat": CAT, "ph": "I", "pid": 1, "tid": 1, "ts": ts,
+            "args": {"type": typ, "target": target, "trusted": trusted, "dispatches": str(dispatches),
+                     "handlers": str(handlers), "window_ms": "5"}}
+
+
+def test_dispatch_rows_sum_flushes_rate_and_join_to_registrations():
+    events = [lev("click", "Element", script="https://a.com/a.js"),
+              lev("click", "Element", script="https://a.com/b.js"),
+              lev("keydown", "Document"), lev("scroll", "DOMWindow"),
+              dev("click", 256, 768, ts=1_000_000), dev("click", 512, 1536, ts=3_000_000),
+              dev("click", 5, 5, trusted="true"), dev("wheel", 3, 3, target="DOMWindow"),
+              dev("mystery-type-7", 2, 2), dev("other-mystery", 4, 4)]
+    rows = {(d["type"], d["target"], d["trusted"]): d for d in r.dispatch_rows(events)}
+    c = rows[("click", "Element", "false")]
+    assert (c["dispatches"], c["handlers"], c["group"]) == (768, 2304, "input-events")
+    assert abs(c["rate"] - 384.0) < 1e-6  # 768 over the 2 s between the first and last flush
+    assert c["registered_by"] == ["a.com/a.js", "a.com/b.js"]
+    assert rows[("click", "Element", "true")]["rate"] is None
+    assert rows[("wheel", "DOMWindow", "false")]["registered_by"] == []
+    o = rows[("[other]", "Element", "false")]
+    assert (o["dispatches"], o["types"]) == (6, 2)
+    md = r.render(r.events_of(events), [], [])
+    assert "## Listener dispatches" in md
+    assert "| input-events | click | Element | false | 768 | 2304 | 384.0 | a.com/a.js, a.com/b.js |" in md
+    assert "[other] (2 types)" in md
+    assert "mystery-type-7" not in md and "other-mystery" not in md
+    assert "Registered but never fired: keydown, scroll" in md
+    assert "Fired with no registration seen: wheel, 2 other" in md
+    assert "dispatch counts are floor values; up to 255 per type unflushed" in md
+
+
+def test_dispatch_section_is_absent_without_dispatch_events():
+    md = r.render(r.events_of([lev("click")]), [], [])
+    assert "Listener dispatches" not in md and "floor values" not in md
+
+
+def test_dispatch_worker_target_joins_worker_global_scope_registrations():
+    events = [lev("message", "DedicatedWorkerGlobalScope", script="https://a.com/w.js"),
+              dev("message", 3, 3, target="Worker")]
+    assert r.dispatch_rows(events)[0]["registered_by"] == ["a.com/w.js"]
