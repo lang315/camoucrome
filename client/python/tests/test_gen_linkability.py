@@ -68,7 +68,7 @@ def test_pinned_window_geometry_for_seeds_1_to_3():
     # (screenX, screenY, outerWidth, outerHeight) printed from the code that draws the offset
     keys = ("window.screenX", "window.screenY", "window.outerWidth", "window.outerHeight")
     got = {s: tuple(gen.generate("windows", timezone="Europe/Paris", seed=s)["config"][k] for k in keys) for s in (1, 2, 3)}
-    assert got == {1: (66, 75, 1854, 1077), 2: (101, 115, 1435, 861), 3: (73, 11, 1847, 1021)}
+    assert got == {1: (66, 75, 1854, 1077), 2: (101, 115, 1434, 860), 3: (73, 11, 1847, 1021)}
 
 
 def test_host_platform_version_is_windows_only_and_validated():

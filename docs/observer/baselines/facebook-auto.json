@@ -1,0 +1,112 @@
+{
+ "1": {
+  "required": [
+   "audio",
+   "canvas",
+   "intl",
+   "layout-probe",
+   "navigator",
+   "screen",
+   "storage",
+   "webgl",
+   "webgpu"
+  ],
+  "runs": [
+   {
+    "groups": {
+     "audio": 9,
+     "canvas": 374,
+     "intl": 8,
+     "layout-probe": 101,
+     "navigator": 187,
+     "screen": 18,
+     "storage": 258,
+     "webgl": 68,
+     "webgpu": 2
+    },
+    "intl": {
+     "DateTimeFormatConstructor": 4,
+     "DateTimeFormatPrototypeResolvedOptions": 4
+    },
+    "requests": {
+     "ajax_bz": 6,
+     "total": 38
+    }
+   },
+   {
+    "groups": {
+     "audio": 9,
+     "canvas": 374,
+     "intl": 8,
+     "layout-probe": 101,
+     "navigator": 187,
+     "screen": 18,
+     "storage": 246,
+     "webgl": 68,
+     "webgpu": 2
+    },
+    "intl": {
+     "DateTimeFormatConstructor": 4,
+     "DateTimeFormatPrototypeResolvedOptions": 4
+    },
+    "requests": {
+     "ajax_bz": 5,
+     "total": 37
+    }
+   }
+  ]
+ },
+ "3": {
+  "required": [
+   "canvas",
+   "fonts",
+   "intl",
+   "layout-probe",
+   "navigator",
+   "screen",
+   "storage"
+  ],
+  "runs": [
+   {
+    "groups": {
+     "canvas": 2,
+     "fonts": 1,
+     "intl": 20,
+     "layout-probe": 3256,
+     "navigator": 1530,
+     "screen": 2,
+     "storage": 1293
+    },
+    "intl": {
+     "DateTimeFormatConstructor": 2,
+     "DateTimeFormatPrototypeResolvedOptions": 2,
+     "StringPrototypeLocaleCompareIntl": 16
+    },
+    "requests": {
+     "ajax_bz": 0,
+     "total": 233
+    }
+   },
+   {
+    "groups": {
+     "canvas": 2,
+     "fonts": 1,
+     "intl": 20,
+     "layout-probe": 3226,
+     "navigator": 1464,
+     "screen": 2,
+     "storage": 1245
+    },
+    "intl": {
+     "DateTimeFormatConstructor": 2,
+     "DateTimeFormatPrototypeResolvedOptions": 2,
+     "StringPrototypeLocaleCompareIntl": 16
+    },
+    "requests": {
+     "ajax_bz": 0,
+     "total": 229
+    }
+   }
+  ]
+ }
+}

@@ -81,11 +81,29 @@ MAX_DRAWS = 50
 # Measured 2026-09-10 (headless chrome, --window-size WxH, --force-device-
 # scale-factor D, sizes 1528/1600/2048): at D = 1.25 and 1.75 the window
 # comes back exactly 2 px larger on both axes (1528 -> 1530, 2048 -> 2050),
-# at 1, 1.5, 2, 2.5 and 3 it comes back exact. Not rounding -- the offset is
-# constant across sizes. So launch.window is the configured outer minus the
-# offset, and the real innerWidth then never exceeds window.outerWidth.
+# at 1, 1.5, 2, 2.5 and 3 it comes back exact. Those sizes were all multiples
+# of 4. Measured again 2026-10-28 over L = 1180..1191, 1480..1491 and
+# 660..671, 714..725: the offset is not constant. At 1.25 and 1.75 L % 4 == 2
+# comes back +1 (not +2), at 1.5 an odd L comes back +1, and at 1.25 an L with
+# L % 4 == 3 comes back +2 with innerWidth 1 px ABOVE the outer width (G4 of
+# verify_sp6b_generator). So launch.window is the largest L <= outer - offset
+# whose residue is in WINDOW_SAFE[dpr]: there the browser returns L + offset
+# exactly with innerWidth not above it, and the claimed outer is set to that
+# (at most 2 px smaller). The residues are from the same measurement:
+# 1.25: L % 4 in {0, 1}; 1.75: L % 4 in {0, 1, 3}; 1.5: L even.
 # DPRs outside the measured set are redrawn.
 WINDOW_OFFSET = {1: 0, 1.25: 2, 1.5: 0, 1.75: 2, 2: 0, 2.5: 0, 3: 0}
+WINDOW_SAFE = {1.25: (4, (0, 1)), 1.5: (2, (0,)), 1.75: (4, (0, 1, 3))}
+
+
+def snap_window(dpr, outer):
+    """(launch size, outer the browser then reports) along one axis, for a claimed outer size."""
+    off = WINDOW_OFFSET[dpr]
+    mod, ok = WINDOW_SAFE.get(dpr, (1, (0,)))
+    length = outer - off
+    while length % mod not in ok:
+        length -= 1
+    return length, length + off
 
 
 def dpr_of(fp):
@@ -442,9 +460,10 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         d = window_position(rng, avail, outer)
         config["window.screenX"], config["window.screenY"] = origin[0] + d[0], origin[1] + d[1]
         config["window.outerWidth"], config["window.outerHeight"] = outer[0] - d[0], outer[1] - d[1]
-    dpr, off = dpr_of(fp), WINDOW_OFFSET[dpr_of(fp)]
-    launch = {"window": [config["window.outerWidth"] - off, config["window.outerHeight"] - off],
-              "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
+    dpr = dpr_of(fp)
+    (lw, config["window.outerWidth"]), (lh, config["window.outerHeight"]) = (
+        snap_window(dpr, config["window.outerWidth"]), snap_window(dpr, config["window.outerHeight"]))
+    launch = {"window": [lw, lh], "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
     # None = not probed (no claim); a failed probe is the caller's to turn into display_flags(None)
     if host_display is not None and not valid_display(host_display):
         host_display, bad_display = None, "host display is malformed: ignored"
