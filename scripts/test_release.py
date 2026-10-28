@@ -384,3 +384,65 @@ def test_refuses_when_only_geo_terms_load(monkeypatch, stamps, tmp_path, terms):
     monkeypatch.setenv("PRIVATE_TERMS", json.dumps(terms))
     z = make_zip(tmp_path / "ok.zip", b"MZ clean")
     refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+REL = "c" * 40
+KEYS_COMMENT = """diff --git a/additions/camoucfg/keys.h b/additions/camoucfg/keys.h
+index 1..2 100644
+--- a/additions/camoucfg/keys.h
++++ b/additions/camoucfg/keys.h
+@@ -3,2 +3,2 @@
+-// generated from settings/keys.json
++// generated from settings/keys.json by scripts/gen_keys.py
+"""
+KEYS_CODE = KEYS_COMMENT.replace("+// generated", "+constexpr int kX = 1;  // generated")
+PATCH_COMMENT = KEYS_COMMENT.replace("additions/camoucfg/keys.h", "patches/0001-x.patch")
+
+
+def client_only(monkeypatch, stamps, gh=None, ancestors=((REL, "d" * 40), (SHA, REL)), diff=KEYS_COMMENT, notes=None, **kw):
+    """A --release-commit run: stamps built at SHA, released at REL, origin/main at d..d."""
+    gh = gh or Gh()
+    monkeypatch.setattr(release, "is_ancestor", lambda a, b: (a, b) in ancestors)
+    monkeypatch.setattr(release, "change_set_diff", lambda old, new: diff)
+    stamps[1].write_text(notes or f"Chrome 156.0.8078.48. built at {SHA}, released at {REL}")
+    return gh, run(monkeypatch, gh, stamps, main="d" * 40, extra=("--release-commit", REL), **kw)
+
+
+def test_release_commit_targets_it_and_checks_ci_there(monkeypatch, stamps):
+    gh, rc = client_only(monkeypatch, stamps)
+    assert rc == 0
+    create = next(c for c in gh.calls if c[:2] == ["release", "create"])
+    assert create[create.index("--target") + 1] == REL
+    ci = next(c for c in gh.calls if c[:2] == ["run", "list"])
+    assert ci[ci.index("--commit") + 1] == REL
+
+
+def test_release_commit_off_main_history_is_refused(monkeypatch, stamps, tmp_path):
+    gh, rc = client_only(monkeypatch, stamps, ancestors=((SHA, REL),))
+    assert rc == 2 and not any(c[:2] == ["release", "create"] for c in gh.calls)
+
+
+def test_stamps_commit_must_be_behind_the_release_commit(monkeypatch, stamps):
+    gh, rc = client_only(monkeypatch, stamps, ancestors=((REL, "d" * 40),))
+    assert rc == 2 and not any(c[:2] == ["release", "create"] for c in gh.calls)
+
+
+@pytest.mark.parametrize("diff", [KEYS_CODE, PATCH_COMMENT, "diff --git a/patches/x b/patches/x\nBinary files a/patches/x and b/patches/x differ\n"])
+def test_a_change_set_diff_beyond_keys_comments_is_refused(monkeypatch, stamps, diff):
+    gh, rc = client_only(monkeypatch, stamps, diff=diff)
+    assert rc == 2 and not any(c[:2] == ["release", "create"] for c in gh.calls)
+
+
+def test_release_commit_needs_both_shas_in_the_notes(monkeypatch, stamps):
+    gh, rc = client_only(monkeypatch, stamps, notes=f"released at {REL}")
+    assert rc == 2 and not any(c[:2] == ["release", "create"] for c in gh.calls)
+
+
+def test_release_commit_must_be_a_full_sha(monkeypatch, stamps):
+    monkeypatch.setattr(release, "is_ancestor", lambda a, b: True)
+    monkeypatch.setattr(release, "change_set_diff", lambda old, new: "")
+    assert run(monkeypatch, Gh(), stamps, main="d" * 40, extra=("--release-commit", REL[:12])) == 2
+
+
+def test_comment_only_accepts_an_empty_diff_and_keys_comments():
+    assert release.comment_only("") and release.comment_only(KEYS_COMMENT)

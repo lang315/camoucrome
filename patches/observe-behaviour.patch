@@ -1,0 +1,208 @@
+diff --git a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
+index 2507212dc7..7e5203f4c9 100644
+--- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
++++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
+@@ -1031,6 +1031,20 @@ _CAMOU_OBSERVE_INTERFACES = frozenset([
+     "RTCPeerConnection",
+     "FontFaceSet",
+     "Storage",
++    "Clipboard",
++    "ClipboardItem",
++    "DeviceMotionEvent",
++    "DeviceOrientationEvent",
++    "DeviceMotionEventAcceleration",
++    "DeviceMotionEventRotationRate",
++    "Sensor",
++    "Accelerometer",
++    "Gyroscope",
++    "Magnetometer",
++    "AbsoluteOrientationSensor",
++    "RelativeOrientationSensor",
++    "LinearAccelerationSensor",
++    "GravitySensor",
+ ])
+ _CAMOU_OBSERVE_MEMBERS = frozenset([
+     "Window.matchMedia",
+@@ -1048,6 +1062,19 @@ _CAMOU_OBSERVE_MEMBERS = frozenset([
+     "Element.getBoundingClientRect",
+     "Element.getClientRects",
+     "Document.cookie",
++    "Performance.now",
++    "Window.requestAnimationFrame",
++    "DedicatedWorkerGlobalScope.requestAnimationFrame",
++    "Window.setTimeout",
++    "Window.setInterval",
++    "WorkerGlobalScope.setTimeout",
++    "WorkerGlobalScope.setInterval",
++    "Document.visibilityState",
++    "Document.hidden",
++    "Document.webkitVisibilityState",
++    "Document.webkitHidden",
++    "Document.hasFocus",
++    "Document.execCommand",
+ ])
+ 
+ 
+diff --git a/third_party/blink/renderer/core/dom/events/event_target.cc b/third_party/blink/renderer/core/dom/events/event_target.cc
+index 039df6e790..2b22cbfa9f 100644
+--- a/third_party/blink/renderer/core/dom/events/event_target.cc
++++ b/third_party/blink/renderer/core/dom/events/event_target.cc
+@@ -55,6 +55,7 @@
+ #include "third_party/blink/renderer/core/dom/subscriber.h"
+ #include "third_party/blink/renderer/core/editing/editor.h"
+ #include "third_party/blink/renderer/core/event_type_names.h"
++#include "third_party/blink/renderer/core/execution_context/camou_observe.h"
+ #include "third_party/blink/renderer/core/events/event_util.h"
+ #include "third_party/blink/renderer/core/events/pointer_event.h"
+ #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
+@@ -601,6 +602,24 @@ bool EventTarget::AddEventListenerInternal(
+     const AtomicString& event_type,
+     EventListener* listener,
+     const AddEventListenerOptionsResolved& options) {
++#if BUILDFLAG(CAMOU_OBSERVE)
++  // Tracking observer: every addEventListener overload and on* setter converges
++  // here. Counts attempts, including ones rejected below as duplicates.
++  if (camou_observe::Enabled()) [[unlikely]] {
++    // Node::InterfaceName() is "Node" for every node: name the kind instead.
++    AtomicString target = InterfaceName();
++    if (const Node* node = ToNode()) {
++      target = node->IsDocumentNode()  ? AtomicString("Document")
++               : node->IsElementNode() ? AtomicString("Element")
++               : node->IsShadowRoot()  ? AtomicString("ShadowRoot")
++                                       : AtomicString("Node");
++    }
++    camou_observe::EmitListener("EventTarget.addEventListener",
++                                GetExecutionContext(), event_type, target,
++                                options.Passive(), options.Capture(),
++                                options.Once());
++  }
++#endif
+   if (!listener)
+     return false;
+ 
+diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.cc b/third_party/blink/renderer/core/execution_context/camou_observe.cc
+index 58e30e2648..0709f12f0e 100644
+--- a/third_party/blink/renderer/core/execution_context/camou_observe.cc
++++ b/third_party/blink/renderer/core/execution_context/camou_observe.cc
+@@ -5,6 +5,7 @@
+ #include "third_party/blink/renderer/core/execution_context/camou_observe.h"
+ 
+ #include <string>
++#include <utility>
+ 
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+@@ -56,6 +57,58 @@ void Emit(const char* name, v8::Isolate* isolate) {
+                       "origin", origin, "site", site, "script", script);
+ }
+ 
++// The registering context is the target's own, not the isolate's current one, so a
++// registration made from C++ (no script on the stack) still has an origin and site.
++// A null context (a target with none) emits nothing.
++void EmitListener(const char* name,
++                  ExecutionContext* context,
++                  const AtomicString& type,
++                  const AtomicString& target,
++                  bool passive,
++                  bool capture,
++                  bool once) {
++  if (!context) {
++    return;
++  }
++  std::string origin;
++  std::string site;
++  if (const SecurityOrigin* security_origin = context->GetSecurityOrigin()) {
++    origin = security_origin->ToString().Utf8();
++  }
++  if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
++    site = window->GetStorageKey().GetTopLevelSite().Serialize().Utf8();
++  }
++  v8::Isolate* isolate = context->GetIsolate();
++  v8::HandleScope handle_scope(isolate);
++  std::string script;
++  v8::Local<v8::String> v8_script =
++      v8::StackTrace::CurrentScriptNameOrSourceURL(isolate);
++  if (!v8_script.IsEmpty()) {
++    script.resize(v8_script->Utf8LengthV2(isolate));
++    v8_script->WriteUtf8V2(isolate, script.data(), script.size());
++  }
++  // A page can register any string: keep 48 printable ASCII characters, so a
++  // long or non-ASCII type can neither bloat the trace nor break its JSON.
++  std::string type_text;
++  for (unsigned i = 0; i < type.length() && type_text.size() < 48; ++i) {
++    UChar c = type[i];
++    type_text.push_back(c >= 0x20 && c < 0x7f ? static_cast<char>(c) : '?');
++  }
++  std::string opts;
++  for (auto [on, label] : {std::pair{passive, "passive"},
++                           std::pair{capture, "capture"},
++                           std::pair{once, "once"}}) {
++    if (on) {
++      opts += (opts.empty() ? "" : ",");
++      opts += label;
++    }
++  }
++  TRACE_EVENT_INSTANT(CAMOU_OBSERVE_CATEGORY, perfetto::StaticString(name),
++                      "origin", origin, "site", site, "script", script,
++                      "type", type_text, "target", target.Utf8(), "opts",
++                      opts);
++}
++
+ }  // namespace blink::camou_observe
+ 
+ #endif  // BUILDFLAG(CAMOU_OBSERVE)
+diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.h b/third_party/blink/renderer/core/execution_context/camou_observe.h
+index 7e55ad8668..7ccd8603e6 100644
+--- a/third_party/blink/renderer/core/execution_context/camou_observe.h
++++ b/third_party/blink/renderer/core/execution_context/camou_observe.h
+@@ -8,6 +8,7 @@
+ #include "third_party/blink/renderer/core/core_export.h"
+ #include "third_party/blink/renderer/platform/bindings/buildflags.h"
+ #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
++#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+ 
+ namespace v8 {
+ class Isolate;
+@@ -23,19 +24,40 @@ class Isolate;
+ #define CAMOU_OBSERVE_CATEGORY TRACE_DISABLED_BY_DEFAULT("camou.observe")
+ 
+ namespace blink {
++class ExecutionContext;
+ namespace camou_observe {
+ 
+ #if BUILDFLAG(CAMOU_OBSERVE)
+ CORE_EXPORT void Emit(const char* name, v8::Isolate* isolate);
+ 
+-inline void Record(const char* name, v8::Isolate* isolate) {
++// True while a trace has enabled the category. Callers whose arguments cost
++// something to compute test this first, so the category-off path stays one check.
++inline bool Enabled() {
+   bool enabled = false;
+   TRACE_EVENT_CATEGORY_GROUP_ENABLED(CAMOU_OBSERVE_CATEGORY, &enabled);
+-  if (enabled) [[unlikely]] {
++  return enabled;
++}
++
++inline void Record(const char* name, v8::Isolate* isolate) {
++  if (Enabled()) [[unlikely]] {
+     Emit(name, isolate);
+   }
+ }
++
++// One event for an addEventListener call or an on* setter (the Blink hook in
++// EventTarget::AddEventListenerInternal). `type` is the page's event type string,
++// truncated and ASCII-only; `target` is the target's interface name.
++CORE_EXPORT void EmitListener(const char* name,
++                              ExecutionContext* context,
++                              const AtomicString& type,
++                              const AtomicString& target,
++                              bool passive,
++                              bool capture,
++                              bool once);
+ #else
++inline bool Enabled() {
++  return false;
++}
+ inline void Record(const char*, v8::Isolate*) {}
+ #endif
+ 

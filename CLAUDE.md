@@ -89,9 +89,14 @@ the local folder.
   rules, the config API shape, the build environment, and (most importantly) the
   catalogue of ways a check can report success while measuring nothing. Read it
   before writing or verifying anything.
-- **[`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md)**
-  — what comes next and in what order: the steps to the first release, the
-  re-pin commitment, and the ranked backlog after it.
+- **[`docs/superpowers/plans/2026-10-24-long-term-roadmap.md`](docs/superpowers/plans/2026-10-24-long-term-roadmap.md)**
+  — what comes next and in what order: steps 4 to 7, the operations lane,
+  the ranked backlog, and a dated status per step. It succeeds
+  `2026-10-02-long-term-roadmap.md`, which keeps steps 0 to 3 and the full
+  text of every backlog item. **After you push a PR (opened, updated or
+  merged), update this roadmap's status:** what the PR finished, what it left
+  open, and the date. Edit the copy in the main clone; worktree copies of
+  `docs/superpowers/` are not kept in sync.
 - **[`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md)**
   — per-slice status ledger for the follow-on arc (shipped / partial / open);
   each slice's residual detail lives in its own measurement doc, not in the

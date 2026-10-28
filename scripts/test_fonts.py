@@ -104,3 +104,19 @@ def test_unique_names_map_onto_a_bundled_face_of_the_same_style():
 def test_every_bundle_entry_records_its_faces():
     for b in FONTS["bundle"]:
         assert b["faces"] and set(b["provides"]) <= {f["family"] for f in b["faces"]}, b["name"]  # legacy families (Selawik Light) may add more
+
+
+def _bundle_urls():
+    for b in FONTS["bundle"]:
+        for u in [b.get("url"), b["licence_url"], *b.get("urls", [])]:
+            if u:
+                yield b["name"], u
+
+
+def test_no_bundle_url_follows_a_branch():
+    # A branch ref moves (the emoji font did on 2026-10-23, and the fetch then 404ed).
+    # A URL must name a 40-hex commit, a release tag or an attachment id.
+    import re
+    ok = re.compile(r"/[0-9a-f]{40}/|/releases/download/|/files/\d+/")
+    bad = [f"{n}: {u}" for n, u in _bundle_urls() if not ok.search(u)]
+    assert not bad, "\n".join(bad)

@@ -94,7 +94,8 @@ next re-pin, to 158, is due by 2026-11-17 (`docs/superpowers/specs/repin-runbook
 ## Install
 
 `<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
-`<sha>` is a full commit SHA from this repository, for the Go module.
+`<sha>` is a full commit SHA from this repository. For the current release, `v156.0.8078.48-4`,
+it is `368059dc7c350041949b9c3e5a73d7d4e789c035`; the Go and Node lines below already name it.
 `<chrome-version>` is the Chrome version the release is built on.
 
 Run everything below in an elevated PowerShell ("Run as administrator"), because the
@@ -152,10 +153,9 @@ beta, `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same releas
 
 Other clients:
 
-- Go: `go get github.com/lang315/camoucrome/client/go@<sha>`, where `<sha>` is the
-  release's commit, named in the release notes. Go generates identities by
+- Go: `go get github.com/lang315/camoucrome/client/go@368059dc7c350041949b9c3e5a73d7d4e789c035`. Go generates identities by
   calling `python -m camoucrome.gen`, so install the Python package above too.
-- Node: `npm install https://github.com/lang315/camoucrome/releases/download/<tag>/camoucrome-0.1.0.tgz`.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-4/camoucrome-0.1.1.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 ## Quickstart: two identities
@@ -198,7 +198,7 @@ A time zone that contradicts the address your traffic comes from is a tell that 
 (Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
 proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
 two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
-above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"`)
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@368059dc7c350041949b9c3e5a73d7d4e789c035#subdirectory=client/python"`)
 and a DB-IP "IP to City Lite" database file,
 which you download yourself, once a month, without an account, from
 <https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
@@ -343,7 +343,7 @@ Camoucrome does not repeat that.
 - Windows SmartScreen warns on first run: choose More info, then Run anyway.
 - The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
 - Linux is a beta. A Linux host claiming Windows is the weaker identity.
-- The archive is about <size> MB (stated per release).
+- The Windows archive is about 200 MB and the Linux archive about 175 MB (exact sizes are in each release's assets).
 
 ## Licence and codecs
 
