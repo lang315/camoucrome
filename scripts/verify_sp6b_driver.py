@@ -1,15 +1,10 @@
 """SP6b driver contract (A4 #1): the CDP driver never sends Runtime.enable,
 leaves no trace in the main world, adds no forbidden flag, and does not move
 the stack-timing signal SP2 D1 measured. One verify, one probe page,
-nine drivers (Python, Go, Node; stock and patchright each, plus the G0 spike's
-go-rod GREEN row, the go-rodclient GREEN row and the go-chromedp RED control)
--- the stock ones are the RED rows and must fail, the patchright ones must pass. The chromedp
-control is strict: it must fail C1 because Runtime.enable was logged, not
-because the log was silent. Spike probes (client/go/spike): go build -o
-bin/camoucrome-probe-rod ./cmd/camoucrome-probe-rod and go build -o
-bin/camoucrome-probe-chromedp ./cmd/camoucrome-probe-chromedp. rodclient probe
-(client/go/rodclient): go build -o bin/camoucrome-probe-rodclient
-./cmd/camoucrome-probe-rodclient. Run on the box under ~/camoucrome-verify/venv.
+seven drivers (Python, Go, Node; stock and patchright each, plus the go-rodclient
+GREEN row) -- the stock ones are the RED rows and must fail, the patchright ones
+must pass. rodclient probe (client/go/rodclient): go build -o
+~/camoucrome-go/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient. Run on the box under ~/camoucrome-verify/venv.
 
 The page's own script (main world, synchronous, so a --dump-dom run captures
 it too) writes the report into #o; each probe command reads that text through
@@ -69,13 +64,8 @@ HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 PY_STOCK = layout({"CAMOU_VENV": os.environ.get("CAMOU_VENV_STOCK",
                                                 f"{HOME}/camoucrome-verify/venv-stock")}).py
 GO_PROBE = os.environ.get("CAMOU_GO_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe")
-# G0 spike probes (client/go/spike, throwaway): go build -o bin/camoucrome-probe-{rod,chromedp}.
-_SPIKE_BIN = pathlib.Path(__file__).resolve().parent.parent / "client" / "go" / "spike" / "bin"
-ROD_PROBE = os.environ.get("CAMOU_ROD_PROBE", str(_SPIKE_BIN / "camoucrome-probe-rod"))
-CHROMEDP_PROBE = os.environ.get("CAMOU_CHROMEDP_PROBE", str(_SPIKE_BIN / "camoucrome-probe-chromedp"))
-# client/go/rodclient: go build -o bin/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient.
-RODCLIENT_PROBE = os.environ.get("CAMOU_RODCLIENT_PROBE", str(
-    pathlib.Path(__file__).resolve().parent.parent / "client" / "go" / "rodclient" / "bin" / "camoucrome-probe-rodclient"))
+# client/go/rodclient: go build -o ~/camoucrome-go/camoucrome-probe-rodclient ./cmd/camoucrome-probe-rodclient.
+RODCLIENT_PROBE = os.environ.get("CAMOU_RODCLIENT_PROBE", f"{HOME}/camoucrome-go/camoucrome-probe-rodclient")
 DRIVER_PATCHRIGHT = os.environ.get("CAMOU_DRIVER", f"{HOME}/camoucrome-driver")
 DRIVER_STOCK = os.environ.get("CAMOU_DRIVER_STOCK", f"{HOME}/camoucrome-driver-stock")
 NODE = os.environ.get("PLAYWRIGHT_NODEJS_PATH", f"{DRIVER_PATCHRIGHT}/node")
@@ -193,8 +183,8 @@ def baseline(url):
 
 DRIVERS = [
     # (label, expected, command[, {"min_methods": n}]) -- the optional dict
-    # lowers C1's floor for a driver whose log counts less: the spike's Go
-    # probes log SENT CDP messages only, Playwright's log counts sends and
+    # lowers C1's floor for a driver whose log counts less: rodclient's probe
+    # logs SENT CDP messages only, Playwright's log counts sends and
     # receives. The floor still guards a silent logger.
     ("python-stock", "RED", [PY_STOCK, "-m", "camoucrome.probe",
                              "--driver", "stock", "--executable", EXE]),
@@ -210,18 +200,12 @@ DRIVERS = [
                            "--label", "node-stock", "--executable", EXE]),
     ("node-patchright", "GREEN", [NODE, NODE_PROBE, "--driver", f"{DRIVER_PATCHRIGHT}/package",
                                   "--label", "node-patchright", "--executable", EXE]),
-    ("go-rod-own-launcher", "GREEN", [ROD_PROBE, "--no-default-device", "--label", "go-rod",
-                                      "--executable", EXE], {"min_methods": 10}),
     # rodclient owns --no-default-device (Launch applies it), so the command has
     # no such flag. min_methods 10: the fake-browser run of the probe's flow
     # (connect, new page, init script, Goto, Text) sends 14 messages with the
     # send observer installed before connect; 70% is 9.8, floored at 10.
     ("go-rodclient", "GREEN", [RODCLIENT_PROBE, "--label", "go-rodclient",
                                "--executable", EXE], {"min_methods": 10}),
-    # red_requires_runtime_enable: a control that logs no Runtime.enable at all
-    # measured nothing (a silent logger would pass the plain RED rule).
-    ("go-chromedp-control", "RED", [CHROMEDP_PROBE, "--label", "go-chromedp",
-                                    "--executable", EXE], {"red_requires_runtime_enable": True}),
 ]
 
 
@@ -290,27 +274,18 @@ def check(label, result, log, base, min_methods=MIN_METHODS):
     return rows
 
 
-def verdict_of(expected, rows, log, opts):
-    """(ok, note). GREEN: every row passes. RED: C1 must fail; with
-    red_requires_runtime_enable it must fail because Runtime.enable was seen."""
+def verdict_of(expected, rows):
+    """(ok, note). GREEN: every row passes. RED: C1 must fail."""
     if expected == "GREEN":
         return all(ok for ok, _ in rows.values()), ""
-    c1 = rows["C1 no Runtime.enable, logger alive"][0]
-    if opts.get("red_requires_runtime_enable"):
-        enables = log.count('"method":"Runtime.enable"')
-        if enables == 0:
-            sends = log.count('"method":"')
-            return False, ("control measured nothing: no Runtime.enable in the log "
-                           f"(sends={sends})")
-        return True, ""
-    return not c1, ""
+    return not rows["C1 no Runtime.enable, logger alive"][0], ""
 
 
 def judge_row(label, expected, cmd, opts, result, log, base):
     """The per-driver body of main(): (ok, printable lines). Only min_methods
-    reaches check(); the other opts belong to verdict_of()."""
+    reaches check()."""
     rows = check(label, result, log, base, min_methods=opts.get("min_methods", MIN_METHODS))
-    ok, note = verdict_of(expected, rows, log, opts)
+    ok, note = verdict_of(expected, rows)
     lines = [f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})"]
     if note:
         lines.append(f"      {note}")
