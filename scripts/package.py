@@ -200,6 +200,8 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
     shutil.copy2(src / "LICENSE", staging / "LICENSE.chromium")
     shutil.copy2(out / CREDITS, staging / "about_credits.html")
+    shutil.copy2(ROOT / "additions/camoucfg_lgpl/LICENSE", staging / "LICENSE.cursory")
+    shutil.copy2(ROOT / "additions/camoucfg_lgpl/NOTICE", staging / "NOTICE.cursory")
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)

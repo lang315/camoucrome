@@ -49,6 +49,8 @@ jobs:
       - name: pre-flight checks
         run: |
           python3 scripts/check_additions_build.py
+          python3 scripts/check_lgpl_boundary.py
+          python3 scripts/gen_cursory_table.py --check
           python3 scripts/gen_keys.py --check
           python3 scripts/gen_fontconfig.py --check
           python3 scripts/check_patch_deps.py --src "$SRC"
