@@ -106,7 +106,7 @@ func (b *Browser) NewPage(ctx context.Context) (*Page, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Page{p: p}, nil
+	return &Page{p: p, rng: newRand()}, nil
 }
 
 // Close is idempotent and safe after a browser crash.

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -17,14 +19,32 @@ import (
 //
 // Every op is raw proto calls on the page session, chosen so that none sends
 // Runtime.enable, Emulation.*, Network.setUserAgentOverride, Network.enable,
-// DOM.enable or Page.enable (page_test.go asserts it for all ops). rod's own
-// helpers are avoided where they enable domains or emulate (Page.Screenshot).
-// The only Runtime traffic is Runtime.evaluate / Runtime.callFunctionOn, which
-// G0 measured as harmless to the stack-timing signal; G0 measured only the
-// Goto+Text path, the other ops are not separately measured.
+// DOM.enable or Page.enable (page_unix_test.go asserts it for all ops). rod's
+// own helpers are avoided where they enable domains or emulate.
+//
+// Goto polls document state from an ISOLATED world, so a page cannot hook the
+// probe. It sends Page.getFrameTree, Page.createIsolatedWorld (no universal
+// access), Runtime.evaluate{contextId} every 100 ms and Page.navigate; the
+// world is recreated whenever a navigation destroys it. This is NOT covered by
+// G0 (which measured Goto+Text with a different wait); measure it at Task 5.
+// The other Runtime traffic is Runtime.callFunctionOn (Text; G0: harmless to
+// stack timing) and main-world Runtime.evaluate (Eval only), also not
+// separately measured.
+//
+// Input: the fork humanizes mouse and wheel events browser-side only.
+// Keystroke timing is client-side with a fixed uniform 40-120 ms distribution.
 type Page struct {
-	p *rod.Page
+	p     *rod.Page
+	rng   *rand.Rand
+	world proto.RuntimeExecutionContextID // isolated world for Goto; 0 = none
+	moved bool                            // the first Click has been made
 }
+
+// newRand and keyDelay are vars so tests can make input deterministic.
+var (
+	newRand  = func() *rand.Rand { return rand.New(rand.NewSource(time.Now().UnixNano())) }
+	keyDelay = func(r *rand.Rand) time.Duration { return time.Duration(40+r.Intn(81)) * time.Millisecond }
+)
 
 // WaitUntil picks when Goto returns.
 type WaitUntil int
@@ -47,6 +67,7 @@ type Cookie struct {
 const (
 	defaultTimeout = 30 * time.Second
 	pollEvery      = 50 * time.Millisecond
+	gotoEvery      = 100 * time.Millisecond
 	idleFor        = 500 * time.Millisecond
 )
 
@@ -62,7 +83,7 @@ func opCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 func (p *Page) bind(ctx context.Context) *rod.Page { return p.p.Context(ctx) }
 
 // poll runs f every pollEvery until it reports done, errors or ctx ends.
-func poll(ctx context.Context, f func() (bool, error)) error {
+func poll(ctx context.Context, every time.Duration, f func() (bool, error)) error {
 	for {
 		done, err := f()
 		if err != nil {
@@ -74,59 +95,121 @@ func poll(ctx context.Context, f func() (bool, error)) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(pollEvery):
+		case <-time.After(every):
 		}
 	}
 }
 
-// state is "origin|readyState|resourceCount": origin changes with every new
+// stateJS is "origin|readyState|resourceCount": origin changes with every new
 // document, so a stale about:blank (already "complete") cannot end Goto early.
 const stateJS = `performance.timeOrigin+"|"+document.readyState+"|"+performance.getEntriesByType("resource").length`
 
-func (p *Page) state(rp *rod.Page) (origin, ready string, res string, err error) {
-	r, err := proto.RuntimeEvaluate{Expression: stateJS, ReturnByValue: true}.Call(rp)
+// gone reports an error that means the session or target is dead, as opposed
+// to a context destroyed by navigation.
+func gone(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	m := err.Error()
+	for _, s := range []string{"Session with given id not found", "No session with given id",
+		"No target with given id", "Target closed", "Browser closed"} {
+		if strings.Contains(m, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// soft keeps a retryable error in *last; a dead session is returned.
+func soft(err error, last *error) error {
+	if gone(err) {
+		return err
+	}
+	*last = err
+	return nil
+}
+
+// probe reads the document state in the isolated world, (re)creating it when
+// there is none; any failure drops the world so the next probe recreates it.
+func (p *Page) probe(rp *rod.Page) (origin, ready, res string, err error) {
+	defer func() {
+		if err != nil {
+			p.world = 0
+		}
+	}()
+	if p.world == 0 {
+		ft, err := proto.PageGetFrameTree{}.Call(rp)
+		if err != nil {
+			return "", "", "", err
+		}
+		w, err := proto.PageCreateIsolatedWorld{FrameID: ft.FrameTree.Frame.ID}.Call(rp)
+		if err != nil {
+			return "", "", "", err
+		}
+		p.world = w.ExecutionContextID
+	}
+	r, err := proto.RuntimeEvaluate{Expression: stateJS, ContextID: p.world, ReturnByValue: true}.Call(rp)
 	if err != nil {
-		return
+		return "", "", "", err
 	}
 	if r.ExceptionDetails != nil {
-		err = errors.New(r.ExceptionDetails.Text)
-		return
+		return "", "", "", errors.New(r.ExceptionDetails.Text)
 	}
 	f := strings.Split(r.Result.Value.Str(), "|")
 	if len(f) != 3 {
-		err = fmt.Errorf("unexpected state %q", r.Result.Value.Str())
-		return
+		return "", "", "", fmt.Errorf("unexpected state %q", r.Result.Value.Str())
 	}
 	return f[0], f[1], f[2], nil
 }
 
 // Goto navigates and waits (default 30 s, ctx deadline wins). Page.navigate
-// only; no Page.enable, so load is observed by polling document state.
-// Limit: a same-document navigation (hash change) keeps the origin and times out.
+// only; no Page.enable, so load is observed by polling document state (see
+// Page). A poll error such as a context destroyed by the navigation means
+// "not ready yet"; only a dead session ends the wait early, and at the timeout
+// the last poll error is reported. Limit: a same-document navigation (hash
+// change) keeps the origin and times out.
 func (p *Page) Goto(ctx context.Context, url string, w WaitUntil) error {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
 	rp := p.bind(ctx)
-	old, _, _, err := p.state(rp)
-	if err != nil {
-		return fmt.Errorf("rodclient: goto: %w", err)
+	var last error
+	observe := func() (o, ready, n string, ok bool, fatal error) {
+		o, ready, n, err := p.probe(rp)
+		if err != nil {
+			return "", "", "", false, soft(err, &last)
+		}
+		last = nil
+		return o, ready, n, true, nil
+	}
+	fail := func(err error) error {
+		if last != nil && ctx.Err() != nil {
+			return fmt.Errorf("rodclient: goto %s: %w (last poll error: %v)", url, err, last)
+		}
+		return fmt.Errorf("rodclient: goto %s: %w", url, err)
+	}
+	var old string
+	if err := poll(ctx, gotoEvery, func() (bool, error) {
+		o, _, _, ok, fatal := observe()
+		if ok {
+			old = o
+		}
+		return ok, fatal
+	}); err != nil {
+		return fail(err)
 	}
 	res, err := proto.PageNavigate{URL: url}.Call(rp)
 	if err != nil {
-		return fmt.Errorf("rodclient: goto: %w", err)
+		return fail(err)
 	}
 	if res.ErrorText != "" {
-		return fmt.Errorf("rodclient: goto: %s", res.ErrorText)
+		return fmt.Errorf("rodclient: goto %s: %s", url, res.ErrorText)
 	}
 	var lastRes string
 	var since time.Time
-	err = poll(ctx, func() (bool, error) {
-		o, ready, n, err := p.state(rp)
-		if err != nil {
-			return false, err
-		}
-		if o == old || ready != "complete" {
-			return false, nil
+	if err := poll(ctx, gotoEvery, func() (bool, error) {
+		o, ready, n, ok, fatal := observe()
+		if !ok || o == old || ready != "complete" {
+			return false, fatal
 		}
 		if w == WaitLoad {
 			return true, nil
@@ -135,9 +218,8 @@ func (p *Page) Goto(ctx context.Context, url string, w WaitUntil) error {
 			lastRes, since = n, time.Now()
 		}
 		return time.Since(since) >= idleFor, nil
-	})
-	if err != nil {
-		return fmt.Errorf("rodclient: goto %s: %w", url, err)
+	}); err != nil {
+		return fail(err)
 	}
 	return nil
 }
@@ -147,7 +229,7 @@ func (p *Page) Goto(ctx context.Context, url string, w WaitUntil) error {
 // getDocument, so each op re-resolves.
 func (p *Page) find(ctx context.Context, rp *rod.Page, selector string) (proto.DOMNodeID, error) {
 	var id proto.DOMNodeID
-	err := poll(ctx, func() (bool, error) {
+	err := poll(ctx, pollEvery, func() (bool, error) {
 		doc, err := proto.DOMGetDocument{}.Call(rp)
 		if err != nil {
 			return false, err
@@ -169,8 +251,12 @@ func (p *Page) find(ctx context.Context, rp *rod.Page, selector string) (proto.D
 	return id, nil
 }
 
-// WaitForSelector errors when selector has not matched within timeout.
+// WaitForSelector errors when selector has not matched within timeout
+// (timeout <= 0 means the 30 s default).
 func (p *Page) WaitForSelector(ctx context.Context, selector string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = defaultTimeout
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if _, err := p.find(ctx, p.bind(ctx), selector); err != nil {
@@ -180,8 +266,11 @@ func (p *Page) WaitForSelector(ctx context.Context, selector string, timeout tim
 }
 
 // Click scrolls the element into view, then sends mouseMoved, mousePressed and
-// mouseReleased at the centre of its content box through Input.dispatchMouseEvent.
-// The fork humanizes dispatchMouseEvent browser-side; there is no client-side path.
+// mouseReleased at the centre of its content box through Input.dispatchMouseEvent
+// (Buttons bitmask set as a real mouse does). The fork humanizes
+// dispatchMouseEvent browser-side, but its SP2b path needs a previous move on
+// the same widget, so the first Click on a Page first moves to a random start
+// point. A box that is not laid out yet is retried until the op timeout.
 func (p *Page) Click(ctx context.Context, selector string) error {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
@@ -190,36 +279,64 @@ func (p *Page) Click(ctx context.Context, selector string) error {
 	if err != nil {
 		return fmt.Errorf("rodclient: click: %w", err)
 	}
-	if err := (proto.DOMScrollIntoViewIfNeeded{NodeID: id}).Call(rp); err != nil {
-		return fmt.Errorf("rodclient: click: %w", err)
-	}
-	box, err := proto.DOMGetBoxModel{NodeID: id}.Call(rp)
+	var q []float64
+	var last error
+	err = poll(ctx, pollEvery, func() (bool, error) {
+		if err := (proto.DOMScrollIntoViewIfNeeded{NodeID: id}).Call(rp); err != nil {
+			return false, soft(err, &last)
+		}
+		box, err := proto.DOMGetBoxModel{NodeID: id}.Call(rp)
+		if err != nil {
+			return false, soft(err, &last)
+		}
+		if q = box.Model.Content; len(q) != 8 {
+			last = fmt.Errorf("box of %d numbers", len(q))
+			return false, nil
+		}
+		return true, nil
+	})
 	if err != nil {
+		if last != nil {
+			err = fmt.Errorf("%w (last error: %v)", err, last)
+		}
 		return fmt.Errorf("rodclient: click: %w", err)
 	}
-	q := box.Model.Content
-	if len(q) != 8 {
-		return fmt.Errorf("rodclient: click: box of %d numbers", len(q))
-	}
-	x := (q[0] + q[2] + q[4] + q[6]) / 4
-	y := (q[1] + q[3] + q[5] + q[7]) / 4
-	for _, t := range []proto.InputDispatchMouseEventType{proto.InputDispatchMouseEventTypeMouseMoved,
-		proto.InputDispatchMouseEventTypeMousePressed, proto.InputDispatchMouseEventTypeMouseReleased} {
-		ev := proto.InputDispatchMouseEvent{Type: t, X: x, Y: y}
+	mouse := func(t proto.InputDispatchMouseEventType, x, y float64, buttons int) error {
+		ev := proto.InputDispatchMouseEvent{Type: t, X: x, Y: y, Buttons: &buttons}
 		if t != proto.InputDispatchMouseEventTypeMouseMoved {
 			ev.Button, ev.ClickCount = proto.InputMouseButtonLeft, 1
 		}
 		if err := ev.Call(rp); err != nil {
 			return fmt.Errorf("rodclient: click: %w", err)
 		}
+		return nil
+	}
+	if !p.moved {
+		if err := mouse(proto.InputDispatchMouseEventTypeMouseMoved, float64(50+p.rng.Intn(251)), float64(50+p.rng.Intn(151)), 0); err != nil {
+			return err
+		}
+		p.moved = true
+	}
+	x := (q[0] + q[2] + q[4] + q[6]) / 4
+	y := (q[1] + q[3] + q[5] + q[7]) / 4
+	for _, s := range []struct {
+		t       proto.InputDispatchMouseEventType
+		buttons int
+	}{{proto.InputDispatchMouseEventTypeMouseMoved, 0}, {proto.InputDispatchMouseEventTypeMousePressed, 1},
+		{proto.InputDispatchMouseEventTypeMouseReleased, 0}} {
+		if err := mouse(s.t, x, y, s.buttons); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// Type focuses the element (DOM.focus) and inserts text with Input.insertText.
-// insertText fires one input event and no key events: no per-character key
-// mapping to get wrong, and no keystroke timing to fake client-side. A page
-// that listens for keydown will not see it; that is the known limit of v1.
+// Type focuses the element (DOM.focus), then sends each rune on a US layout as
+// Input.dispatchKeyEvent keyDown{key,code,text,windowsVirtualKeyCode} and
+// keyUp, with a uniform 40-120 ms delay between characters. Runes off the
+// layout (accents, CJK, emoji) go through Input.insertText. Shift is carried
+// as the modifier bit; no separate Shift key events are sent. The fork does
+// not humanize keys, so this timing is client-side and fixed.
 func (p *Page) Type(ctx context.Context, selector, text string) error {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
@@ -231,10 +348,37 @@ func (p *Page) Type(ctx context.Context, selector, text string) error {
 	if err := (proto.DOMFocus{NodeID: id}).Call(rp); err != nil {
 		return fmt.Errorf("rodclient: type: %w", err)
 	}
-	if err := (proto.InputInsertText{Text: text}).Call(rp); err != nil {
-		return fmt.Errorf("rodclient: type: %w", err)
+	runes := []rune(text)
+	for i, r := range runes {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("rodclient: type: %w", err)
+		}
+		if err := p.key(rp, r); err != nil {
+			return fmt.Errorf("rodclient: type: %w", err)
+		}
+		if d := keyDelay(p.rng); d > 0 && i < len(runes)-1 {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("rodclient: type: %w", ctx.Err())
+			case <-time.After(d):
+			}
+		}
 	}
 	return nil
+}
+
+func (p *Page) key(rp *rod.Page, r rune) error {
+	k, ok := usKey(r)
+	if !ok {
+		return proto.InputInsertText{Text: string(r)}.Call(rp)
+	}
+	down := proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyDown, Key: k.key, Code: k.code,
+		Text: k.text, WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}
+	if err := down.Call(rp); err != nil {
+		return err
+	}
+	return proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyUp, Key: k.key, Code: k.code,
+		WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}.Call(rp)
 }
 
 // Text is the element's innerText. It resolves the node and calls a function

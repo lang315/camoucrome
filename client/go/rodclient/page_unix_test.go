@@ -5,10 +5,14 @@ package rodclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -26,6 +30,9 @@ r, w = os.fdopen(3, "rb", 0), os.fdopen(4, "wb", 0)
 log = open(os.environ["FAKE_LOG"], "a")
 buf = b""
 navs = 0
+polls = 0
+boxes = 0
+ev = os.environ.get
 while True:
     d = r.read(1 << 20)
     if not d:
@@ -36,19 +43,35 @@ while True:
         q = json.loads(m)
         log.write(json.dumps(q) + "\n"); log.flush()
         me, p = q["method"], q.get("params", {})
+        if me == ev("FAKE_HANG"):
+            continue
+        err = None
         res = {"targetId": "T", "sessionId": "S", "frameId": "F"}
         if me == "Page.navigate":
             navs += 1
             res = {"frameId": "F", "loaderId": "L"}
         elif me == "Runtime.evaluate":
-            e = p.get("expression", "")
-            v = "%d|complete|3" % navs if "readyState" in e else "evalresult"
+            if "contextId" in p:
+                polls += 1
+                n = int(ev("FAKE_FAIL_POLLS", "0"))
+                if n < 0 or polls <= n:
+                    err = {"code": -32000, "message": ev("FAKE_POLL_ERR", "Cannot find context with specified id")}
+                v = "%d|%s|3" % (navs, "loading" if ev("FAKE_NEVER_COMPLETE") else "complete")
+            else:
+                v = "evalresult"
             res = {"result": {"type": "string", "value": v}}
+        elif me == "Page.getFrameTree":
+            res = {"frameTree": {"frame": {"id": "F", "loaderId": "L", "url": "", "domainAndRegistry": "", "securityOrigin": "", "mimeType": "", "secureContextType": "Secure", "crossOriginIsolatedContextType": "NotIsolated", "gatedAPIFeatures": []}}}
+        elif me == "Page.createIsolatedWorld":
+            res = {"executionContextId": 7}
         elif me == "DOM.getDocument":
             res = {"root": {"nodeId": 1, "backendNodeId": 1, "nodeType": 9, "nodeName": "#document", "localName": "", "nodeValue": ""}}
         elif me == "DOM.querySelector":
             res = {"nodeId": 0 if p.get("selector") == "#missing" else 2}
         elif me == "DOM.getBoxModel":
+            boxes += 1
+            if boxes <= int(ev("FAKE_BOX_FAILS", "0")):
+                err = {"code": -32000, "message": "Could not compute box model."}
             c = [10, 20, 111, 20, 111, 61, 10, 61]
             res = {"model": {"content": c, "padding": c, "border": c, "margin": c, "width": 101, "height": 41}}
         elif me == "DOM.resolveNode":
@@ -70,7 +93,8 @@ while True:
             res = {"cookies": [{"name": "a", "value": "b", "domain": "d", "path": "/", "expires": -1, "size": 2,
                                 "httpOnly": True, "secure": False, "session": True, "priority": "Medium",
                                 "sameParty": False, "sourceScheme": "Unset", "sourcePort": 80, "sameSite": "Lax"}]}
-        w.write(json.dumps({"id": q["id"], "result": res}).encode() + b"\0")
+        out = {"id": q["id"], "error": err} if err else {"id": q["id"], "result": res}
+        w.write(json.dumps(out).encode() + b"\0")
 `
 
 type req struct {
@@ -91,6 +115,9 @@ func newRig(t *testing.T) *rig {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not on PATH")
 	}
+	oldRand := newRand
+	t.Cleanup(func() { newRand = oldRand })
+	newRand = func() *rand.Rand { return rand.New(rand.NewSource(1)) }
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "fake-browser")
 	if err := os.WriteFile(exe, []byte(fakePage), 0o755); err != nil {
@@ -162,35 +189,23 @@ func TestPageOps(t *testing.T) {
 	if err := r.p.Goto(ctx, "http://127.0.0.1/", WaitLoad); err != nil {
 		t.Fatal(err)
 	}
-	check("Goto", "Page.navigate", "Runtime.evaluate")
+	got := check("Goto", "Page.createIsolatedWorld", "Page.getFrameTree", "Page.navigate", "Runtime.evaluate")
+	for _, q := range got {
+		if q.Method == "Runtime.evaluate" && q.Params["contextId"] != float64(7) {
+			t.Errorf("Goto probe ran in the main world: %v", q.Params)
+		}
+	}
 
 	if err := r.p.Click(ctx, "#b"); err != nil {
 		t.Fatal(err)
 	}
-	got := check("Click", "DOM.getBoxModel", "DOM.getDocument", "DOM.querySelector", "DOM.scrollIntoViewIfNeeded", "Input.dispatchMouseEvent")
-	var types []string
-	for _, q := range got {
-		if q.Method != "Input.dispatchMouseEvent" {
-			continue
-		}
-		types = append(types, q.Params["type"].(string))
-		if math.Abs(q.Params["x"].(float64)-60.5) > 1 || math.Abs(q.Params["y"].(float64)-40.5) > 1 {
-			t.Errorf("click at (%v,%v), box centre is (60.5,40.5)", q.Params["x"], q.Params["y"])
-		}
-	}
-	if strings.Join(types, " ") != "mouseMoved mousePressed mouseReleased" {
-		t.Errorf("mouse events %v", types)
-	}
+	got = check("Click", "DOM.getBoxModel", "DOM.getDocument", "DOM.querySelector", "DOM.scrollIntoViewIfNeeded", "Input.dispatchMouseEvent")
+	checkMouse(t, got, true)
 
-	if err := r.p.Type(ctx, "#i", "héllo"); err != nil {
+	if err := r.p.Type(ctx, "#i", "aé"); err != nil {
 		t.Fatal(err)
 	}
-	got = check("Type", "DOM.focus", "DOM.getDocument", "DOM.querySelector", "Input.insertText")
-	for _, q := range got {
-		if q.Method == "Input.insertText" && q.Params["text"] != "héllo" {
-			t.Errorf("insertText %v", q.Params)
-		}
-	}
+	got = check("Type", "DOM.focus", "DOM.getDocument", "DOM.querySelector", "Input.dispatchKeyEvent", "Input.insertText")
 
 	if err := r.p.WaitForSelector(ctx, "#b", time.Second); err != nil {
 		t.Fatal(err)
@@ -287,4 +302,192 @@ func TestCtxCancelAborts(t *testing.T) {
 	if err == nil || time.Since(start) > 2*time.Second {
 		t.Fatalf("err = %v after %v", err, time.Since(start))
 	}
+}
+
+// checkMouse asserts the events of one Click: an optional start move (first
+// click), then moved/pressed/released at the box centre with the Buttons mask.
+func checkMouse(t *testing.T, got []req, first bool) {
+	t.Helper()
+	var evs []map[string]any
+	for _, q := range got {
+		if q.Method == "Input.dispatchMouseEvent" {
+			evs = append(evs, q.Params)
+		}
+	}
+	want := []string{"mouseMoved", "mousePressed", "mouseReleased"}
+	if first {
+		want = append([]string{"mouseMoved"}, want...)
+	}
+	var types []string
+	for _, e := range evs {
+		types = append(types, e["type"].(string))
+	}
+	if strings.Join(types, " ") != strings.Join(want, " ") {
+		t.Fatalf("mouse events %v, want %v", types, want)
+	}
+	if first {
+		x, y := evs[0]["x"].(float64), evs[0]["y"].(float64)
+		if x < 50 || x > 300 || y < 50 || y > 200 {
+			t.Errorf("start move (%v,%v) outside [50,300]x[50,200]", x, y)
+		}
+		evs = evs[1:]
+	}
+	buttons := []float64{0, 1, 0}
+	for i, e := range evs {
+		if math.Abs(e["x"].(float64)-60.5) > 1 || math.Abs(e["y"].(float64)-40.5) > 1 {
+			t.Errorf("%v at (%v,%v), box centre is (60.5,40.5)", e["type"], e["x"], e["y"])
+		}
+		if b, ok := e["buttons"].(float64); !ok || b != buttons[i] {
+			t.Errorf("%v buttons = %v, want %v", e["type"], e["buttons"], buttons[i])
+		}
+		if i > 0 && (e["button"] != "left" || e["clickCount"] != float64(1)) {
+			t.Errorf("%v button/clickCount = %v/%v", e["type"], e["button"], e["clickCount"])
+		}
+	}
+}
+
+func TestSecondClickHasNoStartMove(t *testing.T) {
+	r := newRig(t)
+	ctx := context.Background()
+	for i, first := range []bool{true, false} {
+		if err := r.p.Click(ctx, "#b"); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("click %d", i)
+		checkMouse(t, r.drain(), first)
+	}
+}
+
+func TestClickRetriesBoxModel(t *testing.T) {
+	t.Setenv("FAKE_BOX_FAILS", "3")
+	r := newRig(t)
+	if err := r.p.Click(context.Background(), "#b"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_BOX_FAILS", "1000")
+	r2 := newRig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	err := r2.p.Click(ctx, "#b")
+	if err == nil || !strings.Contains(err.Error(), "box model") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTypeKeys(t *testing.T) {
+	setDelay(t, 0)
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "aB1é"); err != nil {
+		t.Fatal(err)
+	}
+	var seq []string
+	for _, q := range r.drain() {
+		switch q.Method {
+		case "Input.dispatchKeyEvent":
+			seq = append(seq, fmt.Sprintf("%v:%v:%v:%v:%v:%v", q.Params["type"], q.Params["key"], q.Params["code"], q.Params["text"], q.Params["windowsVirtualKeyCode"], q.Params["modifiers"]))
+		case "Input.insertText":
+			seq = append(seq, "insert:"+q.Params["text"].(string))
+		case "DOM.focus":
+			seq = append(seq, "focus")
+		}
+	}
+	want := []string{"focus",
+		"keyDown:a:KeyA:a:65:<nil>", "keyUp:a:KeyA:<nil>:65:<nil>",
+		"keyDown:B:KeyB:B:66:8", "keyUp:B:KeyB:<nil>:66:8",
+		"keyDown:1:Digit1:1:49:<nil>", "keyUp:1:Digit1:<nil>:49:<nil>",
+		"insert:é"}
+	if !reflect.DeepEqual(seq, want) {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(seq, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestTypeCtxCancelMidText(t *testing.T) {
+	setDelay(t, 50*time.Millisecond)
+	r := newRig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := r.p.Type(ctx, "#i", strings.Repeat("a", 100)); err == nil {
+		t.Fatal("no error")
+	}
+	if n := len(r.drain()); n > 40 {
+		t.Errorf("%d requests: text kept going after cancel", n)
+	}
+}
+
+func TestGotoSurvivesPollErrors(t *testing.T) {
+	t.Setenv("FAKE_FAIL_POLLS", "4")
+	r := newRig(t)
+	if err := r.p.Goto(context.Background(), "http://127.0.0.1/", WaitLoad); err != nil {
+		t.Fatal(err)
+	}
+	if n := countMethod(r.drain(), "Page.createIsolatedWorld"); n < 2 {
+		t.Errorf("world created %d times, want it recreated after failures", n)
+	}
+}
+
+func TestGotoReportsLastPollError(t *testing.T) {
+	t.Setenv("FAKE_FAIL_POLLS", "-1")
+	r := newRig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	err := r.p.Goto(ctx, "http://127.0.0.1/", WaitLoad)
+	if err == nil || !strings.Contains(err.Error(), "Cannot find context") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestGotoDeadSessionReturnsAtOnce(t *testing.T) {
+	t.Setenv("FAKE_FAIL_POLLS", "-1")
+	t.Setenv("FAKE_POLL_ERR", "Session with given id not found.")
+	r := newRig(t)
+	start := time.Now()
+	err := r.p.Goto(context.Background(), "http://127.0.0.1/", WaitLoad)
+	if err == nil || time.Since(start) > 2*time.Second {
+		t.Fatalf("err = %v after %v", err, time.Since(start))
+	}
+}
+
+func TestGotoTimesOutWhenNeverComplete(t *testing.T) {
+	t.Setenv("FAKE_NEVER_COMPLETE", "1")
+	r := newRig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	if err := r.p.Goto(ctx, "http://127.0.0.1/", WaitLoad); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHungOpsTimeOut(t *testing.T) {
+	for _, m := range []string{"Page.captureScreenshot", "Page.close"} {
+		t.Run(m, func(t *testing.T) {
+			t.Setenv("FAKE_HANG", m)
+			r := newRig(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			var err error
+			if m == "Page.close" {
+				err = r.p.Close(ctx)
+			} else {
+				_, err = r.p.Screenshot(ctx)
+			}
+			if err == nil {
+				t.Fatal("no error")
+			}
+		})
+	}
+}
+
+func countMethod(rs []req, m string) (n int) {
+	for _, q := range rs {
+		if q.Method == m {
+			n++
+		}
+	}
+	return
+}
+
+func setDelay(t *testing.T, d time.Duration) {
+	old := keyDelay
+	t.Cleanup(func() { keyDelay = old })
+	keyDelay = func(*rand.Rand) time.Duration { return d }
 }
