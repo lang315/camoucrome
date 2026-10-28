@@ -22,7 +22,8 @@ mkdir -p "$ROOT/additions/camoucfg_lgpl"
 git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$ROOT/additions" --strip-components=1
 """
 ENV = {
-    **os.environ, "TZ": "UTC", "GIT_CONFIG_GLOBAL": os.devnull,
+    **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+    "TZ": "UTC", "GIT_CONFIG_GLOBAL": os.devnull,
     "GIT_CONFIG_SYSTEM": os.devnull, "GIT_AUTHOR_NAME": "t",
     "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t",
     "GIT_COMMITTER_EMAIL": "t@example.invalid",

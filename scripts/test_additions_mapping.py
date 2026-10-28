@@ -9,28 +9,24 @@ Run: python3 scripts/test_additions_mapping.py
 
 import pathlib
 import re
-import sys
+import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ["apply.sh", "rebuild_branch.sh", "check_checkout_sync.sh", "export.sh"]
+DIRS = sorted(p.name for p in (ROOT / "additions").iterdir() if p.is_dir())
 
 
-def main():
-    bad = 0
-    for d in sorted(p.name for p in (ROOT / "additions").iterdir() if p.is_dir()):
-        for s in SCRIPTS:
-            # (?!\w): camoucfg must not satisfy camoucfg_lgpl.
-            text = (ROOT / "scripts" / s).read_text()
-            needle = f"components/{d}"
-            ok = re.search(re.escape(needle) + r"(?!\w)", text)
-            if not ok:
-                print(f"FAIL  scripts/{s} never mentions {needle}")
-                bad += 1
-    if bad:
-        return 1
-    print("PASS  every additions/ dir is mapped in all four scripts")
-    return 0
+class AdditionsMapping(unittest.TestCase):
+    def test_every_dir_mapped(self):
+        self.assertTrue(DIRS, "no directories under additions/")
+        for d in DIRS:
+            for s in SCRIPTS:
+                with self.subTest(dir=d, script=s):
+                    text = (ROOT / "scripts" / s).read_text()
+                    # (?!\w): camoucfg must not satisfy camoucfg_lgpl.
+                    needle = re.escape(f"components/{d}") + r"(?!\w)"
+                    self.assertRegex(text, needle)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    unittest.main()
