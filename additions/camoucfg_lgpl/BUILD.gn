@@ -9,6 +9,7 @@ static_library("camoucfg_lgpl") {
   deps = [ "//base" ]
   # Only the config layer links the LGPL code (scripts/check_lgpl_boundary.py).
   visibility = [
+    ":*",  # this directory's own unit_tests
     "//components/camoucfg:*",
     "//components:*",
   ]
