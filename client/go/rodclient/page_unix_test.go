@@ -15,17 +15,20 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	camoucrome "github.com/lang315/camoucrome/client/go"
+	"github.com/lang315/camoucrome/client/go/rodclient/internal/browser"
 )
 
 // A fake page: logs each request as one JSON line and answers the CDP methods
 // the vetted ops use. "#missing" never matches. The state expression reports
 // the number of Page.navigate calls seen as the document origin.
 const fakePage = `#!/usr/bin/env python3
-import json, os, sys, base64
+import json, os, sys, base64, time
 r, w = os.fdopen(3, "rb", 0), os.fdopen(4, "wb", 0)
 log = open(os.environ["FAKE_LOG"], "a")
 buf = b""
@@ -44,6 +47,9 @@ while True:
         log.write(json.dumps(q) + "\n"); log.flush()
         me, p = q["method"], q.get("params", {})
         if me == ev("FAKE_HANG"):
+            continue
+        if me == "DOM.querySelector" and ev("FAKE_QS_ERR"):
+            w.write(json.dumps({"id": q["id"], "error": {"code": -32000, "message": ev("FAKE_QS_ERR")}}).encode() + b"\0")
             continue
         err = None
         res = {"targetId": "T", "sessionId": "S", "frameId": "F"}
@@ -96,6 +102,12 @@ while True:
                                 "sameParty": False, "sourceScheme": "Unset", "sourcePort": 80, "sameSite": "Lax"}]}
         out = {"id": q["id"], "error": err} if err else {"id": q["id"], "result": res}
         w.write(json.dumps(out).encode() + b"\0")
+        if me == "Browser.close" and not ev("FAKE_NO_EXIT"):
+            time.sleep(float(ev("FAKE_EXIT_DELAY", "0")))
+            ud = [x.split("=", 1)[1] for x in sys.argv if x.startswith("--user-data-dir=")]
+            if ud:
+                open(ud[0] + "/exit.txt", "w").write("done")
+            sys.exit(0)
 `
 
 type req struct {
@@ -168,6 +180,10 @@ func methodSet(rs []req) []string {
 	return out
 }
 
+// forbidden lists what no Page op may send. Page.enable is in it because only
+// Browser.NewPage sends one (TestNewPageExactMethods); the ops start after that
+// point, so it must not appear among their requests. DOM.enable is likewise
+// never sent (DOM.getDocument activates the DOM agent implicitly, silently).
 func forbidden(m string) bool {
 	return m == "Runtime.enable" || m == "Network.enable" || m == "Network.setUserAgentOverride" ||
 		strings.HasPrefix(m, "Emulation.") || m == "DOM.enable" || m == "Page.enable"
@@ -613,5 +629,184 @@ func TestGotoResetsWorld(t *testing.T) {
 	}
 	if countMethod(r.drain(), "Page.createIsolatedWorld") == 0 {
 		t.Error("stale world reused")
+	}
+}
+
+// launchRig starts the fake with a caller-owned profile and returns the
+// browser, the profile dir and every method sent (including connect time).
+func launchRig(t *testing.T, ctx context.Context) (*Browser, string, *[]string) {
+	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "fake-browser")
+	if err := os.WriteFile(exe, []byte(fakePage), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_LOG", filepath.Join(dir, "req.jsonl"))
+	prof := filepath.Join(dir, "profile")
+	os.Mkdir(prof, 0o755)
+	var mu sync.Mutex
+	methods := new([]string)
+	b, err := Launch(ctx, camoucrome.Options{ExecutablePath: exe, UserDataDir: prof}, WithSendObserver(func(m []byte) {
+		var q req
+		json.Unmarshal(m, &q)
+		mu.Lock()
+		*methods = append(*methods, q.Method)
+		mu.Unlock()
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { b.Close() })
+	return b, prof, methods
+}
+
+// Page.enable is sent by NewPage and by nothing else; this pins the claim in
+// the README and the Page doc (reinstating "no Page.enable" fails here).
+func TestNewPageExactMethods(t *testing.T) {
+	b, _, methods := launchRig(t, context.Background())
+	if _, err := b.NewPage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Target.setDiscoverTargets", "Target.createTarget", "Target.attachToTarget", "Page.enable"}
+	if !reflect.DeepEqual(*methods, want) {
+		t.Fatalf("Launch+NewPage sent %v, want %v", *methods, want)
+	}
+}
+
+func TestCloseLetsBrowserFinishProfile(t *testing.T) {
+	t.Setenv("FAKE_EXIT_DELAY", "0.3")
+	b, prof, _ := launchRig(t, context.Background())
+	b.Close()
+	if _, err := os.Stat(filepath.Join(prof, "exit.txt")); err != nil {
+		t.Fatalf("browser was killed before it finished writing: %v", err)
+	}
+}
+
+func TestCloseKillsBrowserThatNeverExits(t *testing.T) {
+	old := exitWait
+	exitWait = 300 * time.Millisecond
+	t.Cleanup(func() { exitWait = old })
+	t.Setenv("FAKE_NO_EXIT", "1")
+	b, _, _ := launchRig(t, context.Background())
+	pid := b.proc.Pid
+	start := time.Now()
+	b.Close()
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("Close took %v", time.Since(start))
+	}
+	if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+		t.Fatalf("process %d survived Close (%v)", pid, err)
+	}
+}
+
+func TestLaunchCtxCancelAfterReturnKeepsBrowser(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	b, _, _ := launchRig(t, ctx)
+	cancel()
+	time.Sleep(300 * time.Millisecond)
+	if err := syscall.Kill(b.proc.Pid, 0); err != nil {
+		t.Fatalf("browser died with the Launch ctx: %v", err)
+	}
+	if _, err := b.NewPage(context.Background()); err != nil {
+		t.Fatalf("NewPage after ctx cancel: %v", err)
+	}
+}
+
+func TestLaunchAbortsOnCancel(t *testing.T) {
+	for name, hang := range map[string]bool{"already": false, "during connect": true} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := exec.LookPath("python3"); err != nil {
+				t.Skip("python3 not on PATH")
+			}
+			dir := t.TempDir()
+			exe := filepath.Join(dir, "fake-browser")
+			os.WriteFile(exe, []byte(fakePage), 0o755)
+			t.Setenv("FAKE_LOG", filepath.Join(dir, "req.jsonl"))
+			var pid int
+			var crash, prof string
+			old := startFn
+			t.Cleanup(func() { startFn = old })
+			startFn = func(ctx context.Context, e string, a []string, v map[string]string) (*browser.Proc, error) {
+				p, err := old(ctx, e, a, v)
+				if p != nil {
+					pid = p.Pid
+				}
+				crash = v[camoucrome.CrashDumpsEnv]
+				for _, x := range a {
+					if d, ok := strings.CutPrefix(x, "--user-data-dir="); ok {
+						prof = d
+					}
+				}
+				return p, err
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			if hang {
+				t.Setenv("FAKE_HANG", "Target.setDiscoverTargets")
+				go func() { time.Sleep(300 * time.Millisecond); cancel() }()
+			} else {
+				cancel()
+			}
+			_, err := Launch(ctx, camoucrome.Options{ExecutablePath: exe})
+			if !errors.Is(err, context.Canceled) || !strings.HasPrefix(err.Error(), "rodclient:") {
+				t.Fatalf("err = %v", err)
+			}
+			if hang {
+				if pid == 0 {
+					t.Fatal("process never started")
+				}
+				if err := syscall.Kill(pid, 0); err != syscall.ESRCH {
+					t.Errorf("process %d leaked (%v)", pid, err)
+				}
+				for _, d := range []string{crash, prof} {
+					if _, err := os.Stat(d); !os.IsNotExist(err) {
+						t.Errorf("left behind: %s", d)
+					}
+				}
+			} else if pid != 0 {
+				t.Error("process started despite cancelled ctx")
+			}
+		})
+	}
+}
+
+func TestTextResolvesInIsolatedWorld(t *testing.T) {
+	r := newRig(t)
+	if _, err := r.p.Text(context.Background(), "#b"); err != nil {
+		t.Fatal(err)
+	}
+	var resolved bool
+	for _, q := range r.drain() {
+		if q.Method == "DOM.resolveNode" {
+			resolved = true
+			if q.Params["executionContextId"] != float64(7) {
+				t.Errorf("resolveNode params %v: not the isolated world", q.Params)
+			}
+		}
+	}
+	if !resolved {
+		t.Fatal("no DOM.resolveNode")
+	}
+}
+
+func TestFindDeadSessionReturnsAtOnce(t *testing.T) {
+	t.Setenv("FAKE_QS_ERR", "Session with given id not found.")
+	r := newRig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	if err := r.p.WaitForSelector(ctx, "#b", 5*time.Second); err == nil || time.Since(start) > 2*time.Second {
+		t.Fatalf("err = %v after %v", err, time.Since(start))
+	}
+}
+
+func TestArgvIsACopy(t *testing.T) {
+	b, _, _ := launchRig(t, context.Background())
+	a := b.Argv()
+	a[0] = "tampered"
+	if b.Argv()[0] == "tampered" {
+		t.Fatal("Argv exposes internal slice")
 	}
 }

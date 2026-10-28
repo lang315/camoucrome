@@ -34,6 +34,8 @@ while True:
         log.write(q["method"] + "\n"); log.flush()
         res = {"targetId": "T", "sessionId": "S", "frameId": "F"}
         w.write(json.dumps({"id": q["id"], "result": res}).encode() + b"\0")
+        if q["method"] == "Browser.close":
+            sys.exit(0)
 `
 
 func TestLaunchNewPageClose(t *testing.T) {

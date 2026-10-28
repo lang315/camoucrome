@@ -29,7 +29,19 @@ absent.
 `Goto(ctx, url, WaitLoad|WaitNetworkIdle)`, `WaitForSelector`, `Click`, `Type`,
 `Text`, `Attribute`, `Screenshot`, `Cookies`, `Eval`, `AddInitScript`, `Close`.
 
-Every op is bounded by the ctx deadline, or 30 s without one.
+Every op is bounded by the ctx deadline, or 30 s without one. `Goto` and
+`Text` run in an isolated world; only `Eval` and `AddInitScript` touch the main
+world.
+
+`Launch`'s ctx bounds Launch only: the browser is started with
+`context.WithoutCancel(ctx)`, so `WithTimeout` + `defer cancel` does not kill
+it; it lives until `Close`. A ctx cancelled before Launch returns (also during
+the connect) aborts with nothing left running or on disk. `Close` asks the
+browser to quit, waits up to 5 s for it to exit (so a persistent profile is
+fully written), then kills the process group. `OnSend` replaces the observer
+set by `WithSendObserver`; observers run under the send lock and must not call
+back into `Browser`. Errors from `Launch` and `NewPage` carry a `rodclient:`
+prefix and wrap their cause.
 `AddInitScript` is the counterpart of playwright's `add_init_script`: it runs
 in the MAIN world, by design, so anything it defines is visible to the page.
 
@@ -38,7 +50,12 @@ in the MAIN world, by design, so anything it defines is visible to the page.
 - rod's `Page`, `Element`, `Browser`: no embedding, accessor or exported field.
   rod helpers enable domains (`Runtime.enable`, `Page.enable`, `Network.enable`,
   `DOM.enable`) or emulate (`Emulation.*`, user agent) behind the caller's back.
-  `page_unix_test.go` asserts that no op sends any of them.
+  `page_unix_test.go` asserts that no `Page` op sends any of them.
+- The one exception is `Page.enable`, sent once by `NewPage` (rod's page setup;
+  playwright and patchright send it too, and the box C5 +0 % includes it).
+  `TestNewPageExactMethods` pins `NewPage`'s exact method set. "No `DOM.enable`"
+  is about messages sent: `DOM.getDocument` still activates Chromium's DOM
+  agent implicitly.
 - Launch applies rod's `NoDefaultDevice()`: rod's implicit laptop emulation
   would fight the fork's `screen.*`.
 - No frame or event APIs: rod's event machinery works through domain enables.
@@ -49,6 +66,12 @@ in the MAIN world, by design, so anything it defines is visible to the page.
 - No frames or OOPIF; elements are found in the top document only.
 - `Type` timing is client-side: uniform 40-120 ms per key (the fork humanizes
   mouse and wheel events only).
+- `Type`: keyDown and keyUp are back to back with no dwell, and shifted
+  characters carry only the Shift modifier bit (no Shift key events).
+- `Click`: press and release are back to back with no hold time, and the click
+  point is the exact box centre.
+- Both match Playwright's defaults (delay 0), so they are parity limits.
+  Planned follow-up: 30-90 ms key dwell, a click hold, real Shift events.
 - `Goto` polls document state from an isolated world; a same-document
   navigation (hash change) times out.
 

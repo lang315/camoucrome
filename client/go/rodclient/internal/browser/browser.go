@@ -23,7 +23,12 @@ type Proc struct {
 	Conn *Conn    // pipe transport
 	Stop func()
 	tail *tailBuf
+
+	waited chan struct{}
 }
+
+// Exited is closed once the process has been reaped.
+func (p *Proc) Exited() <-chan struct{} { return p.waited }
 
 // StderrTail is the last 4 KiB the browser wrote to stderr.
 func (p *Proc) StderrTail() string { return p.tail.String() }
@@ -131,7 +136,7 @@ func Start(ctx context.Context, exe string, argv []string, env map[string]string
 		case <-done:
 		}
 	}()
-	p := &Proc{Pid: cmd.Process.Pid, tail: tail, Argv: append([]string{exe}, argv...), Stop: stop}
+	p := &Proc{Pid: cmd.Process.Pid, tail: tail, Argv: append([]string{exe}, argv...), Stop: stop, waited: waited}
 	cr.Close() // the child's ends; ours stay
 	pw.Close()
 	p.Conn = newConn(pr, cw)

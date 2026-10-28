@@ -239,6 +239,7 @@ func TestCallerProfileNotRemoved(t *testing.T) {
 }
 
 func TestStartRequiresPipeFlag(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir()) // no race with other tests' camoucrome-* dirs
 	before, _ := filepath.Glob(filepath.Join(os.TempDir(), "camoucrome-*"))
 	p, err := Start(context.Background(), "/nonexistent", []string{"--headless=new"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "--remote-debugging-pipe") {

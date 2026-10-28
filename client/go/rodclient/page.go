@@ -20,16 +20,20 @@ import (
 // Every op is raw proto calls on the page session, chosen so that none sends
 // Runtime.enable, Emulation.*, Network.setUserAgentOverride, Network.enable,
 // DOM.enable or Page.enable (page_unix_test.go asserts it for all ops). rod's
-// own helpers are avoided where they enable domains or emulate.
+// own helpers are avoided where they enable domains or emulate. The one
+// Page.enable is sent by Browser.NewPage (rod's page setup; playwright and
+// patchright send it too), not by any op. "No DOM.enable" is about messages
+// sent: DOM.getDocument still activates Chromium's DOM agent implicitly.
 //
 // Goto polls document state from an ISOLATED world, so a page cannot hook the
 // probe. It sends Page.getFrameTree, Page.createIsolatedWorld (no universal
 // access), Runtime.evaluate{contextId} every 100 ms and Page.navigate; the
 // world is recreated whenever a navigation destroys it. This is NOT covered by
 // G0 (which measured Goto+Text with a different wait); measure it at Task 5.
-// The other Runtime traffic is Runtime.callFunctionOn (Text; G0: harmless to
-// stack timing) and main-world Runtime.evaluate (Eval only), also not
-// separately measured.
+// Text resolves the node into the same isolated world (DOM.resolveNode with
+// that executionContextId) and reads innerText with Runtime.callFunctionOn
+// there, so a page cannot hook the read. Only Eval and AddInitScript run in
+// the main world. None of these is separately measured.
 //
 // Input: the fork humanizes mouse and wheel events browser-side only.
 // Keystroke timing is client-side with a fixed uniform 40-120 ms distribution.
@@ -134,6 +138,23 @@ func soft(ctx context.Context, err error, last *error) error {
 	return nil
 }
 
+// ensureWorld creates the isolated world if there is none.
+func (p *Page) ensureWorld(rp *rod.Page) error {
+	if p.world != 0 {
+		return nil
+	}
+	ft, err := proto.PageGetFrameTree{}.Call(rp)
+	if err != nil {
+		return err
+	}
+	w, err := proto.PageCreateIsolatedWorld{FrameID: ft.FrameTree.Frame.ID}.Call(rp)
+	if err != nil {
+		return err
+	}
+	p.world = w.ExecutionContextID
+	return nil
+}
+
 // probe reads the document state in the isolated world, (re)creating it when
 // there is none; any failure drops the world so the next probe recreates it.
 func (p *Page) probe(rp *rod.Page) (origin, ready, res string, err error) {
@@ -142,16 +163,8 @@ func (p *Page) probe(rp *rod.Page) (origin, ready, res string, err error) {
 			p.world = 0
 		}
 	}()
-	if p.world == 0 {
-		ft, err := proto.PageGetFrameTree{}.Call(rp)
-		if err != nil {
-			return "", "", "", err
-		}
-		w, err := proto.PageCreateIsolatedWorld{FrameID: ft.FrameTree.Frame.ID}.Call(rp)
-		if err != nil {
-			return "", "", "", err
-		}
-		p.world = w.ExecutionContextID
+	if err := p.ensureWorld(rp); err != nil {
+		return "", "", "", err
 	}
 	r, err := proto.RuntimeEvaluate{Expression: stateJS, ContextID: p.world, ReturnByValue: true}.Call(rp)
 	if err != nil {
@@ -242,6 +255,9 @@ func (p *Page) find(ctx context.Context, rp *rod.Page, selector string) (proto.D
 		}
 		q, err := proto.DOMQuerySelector{NodeID: doc.Root.NodeID, Selector: selector}.Call(rp)
 		if err != nil {
+			if gone(err) {
+				return false, err
+			}
 			// an invalid selector is permanent, not "not there yet"
 			if strings.Contains(err.Error(), "not a valid selector") {
 				return false, err
@@ -409,8 +425,7 @@ func (p *Page) key(rp *rod.Page, r rune) error {
 		WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}.Call(rp)
 }
 
-// Text is the element's innerText. It resolves the node and calls a function
-// on it (Runtime.callFunctionOn), the one Runtime call G0 measured as harmless.
+// Text is the element's innerText, read in the isolated world (see Page).
 func (p *Page) Text(ctx context.Context, selector string) (string, error) {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
@@ -419,9 +434,18 @@ func (p *Page) Text(ctx context.Context, selector string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("rodclient: text: %w", err)
 	}
-	obj, err := proto.DOMResolveNode{NodeID: id}.Call(rp)
-	if err != nil {
-		return "", fmt.Errorf("rodclient: text: %w", err)
+	var obj *proto.DOMResolveNodeResult
+	for try := 0; ; try++ { // a stale world (navigation) is recreated once
+		if err = p.ensureWorld(rp); err == nil {
+			obj, err = proto.DOMResolveNode{NodeID: id, ExecutionContextID: p.world}.Call(rp)
+		}
+		if err == nil {
+			break
+		}
+		p.world = 0
+		if try == 1 || gone(err) {
+			return "", fmt.Errorf("rodclient: text: %w", err)
+		}
 	}
 	r, err := proto.RuntimeCallFunctionOn{ObjectID: obj.Object.ObjectID,
 		FunctionDeclaration: "function(){return this.innerText}", ReturnByValue: true}.Call(rp)

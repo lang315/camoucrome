@@ -45,6 +45,13 @@ type Option func(*launchConfig)
 func WithSendObserver(f func([]byte)) Option { return func(c *launchConfig) { c.observer = f } }
 
 // Launch is the go-rod twin of camoucrome.Launch. v1 has no proxy support.
+//
+// ctx bounds Launch only: the browser outlives it (it is started with
+// context.WithoutCancel(ctx)), so the usual WithTimeout + defer cancel pattern
+// does not kill it; it lives until Close. A ctx cancelled before Launch
+// returns (including during the connect) aborts: nothing is left running or on
+// disk and ctx.Err() is returned. Errors carry a "rodclient:" prefix and wrap
+// their cause.
 func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser, error) {
 	var lc launchConfig
 	for _, f := range opts {
@@ -52,6 +59,9 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 	}
 	if o.Proxy != nil {
 		return nil, errors.New("rodclient: proxy not supported by rodclient v1")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
 	if o.GeoIP != "" { // o.warn is unexported, so mirror it here
 		for _, m := range camoucrome.CheckGeoIP(o) {
@@ -64,11 +74,11 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 	}
 	env, err := camoucrome.BuildEnv(o, os.Environ())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
 	crash, err := os.MkdirTemp("", "camoucrome-crash-")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
 	env[camoucrome.CrashDumpsEnv] = crash
 	b := &Browser{owned: []string{crash}, sink: lc.observer}
@@ -76,15 +86,15 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 		// Set before BuildArgs so the argv carries it and Start owns no dir.
 		if o.UserDataDir, err = os.MkdirTemp("", "camoucrome-"); err != nil {
 			b.removeOwned()
-			return nil, err
+			return nil, fmt.Errorf("rodclient: launch: %w", err)
 		}
 		b.owned = append(b.owned, o.UserDataDir)
 	}
 	argv := camoucrome.BuildArgs(o)
-	p, err := startFn(ctx, o.ExecutablePath, argv, env)
+	p, err := startFn(context.WithoutCancel(ctx), o.ExecutablePath, argv, env)
 	if err != nil {
 		b.removeOwned()
-		return nil, err
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
 	b.proc = p
 	p.Conn.Observe = func(m []byte) {
@@ -96,35 +106,61 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 		}
 	}
 	// NoDefaultDevice: rod's implicit laptop emulation would fight screen.*.
-	b.rod = rod.New().NoDefaultDevice().Client(cdp.New().Start(p.Conn)).Context(ctx)
-	if err := b.rod.Connect(); err != nil {
+	// rod keeps a background context (its event loop must outlive ctx).
+	b.rod = rod.New().NoDefaultDevice().Client(cdp.New().Start(p.Conn))
+	errc := make(chan error, 1)
+	go func() { errc <- b.rod.Connect() }()
+	select {
+	case err = <-errc:
+	case <-ctx.Done():
+		p.Stop() // ends the pipe, so Connect returns
+		<-errc
+		b.Close()
+		return nil, fmt.Errorf("rodclient: launch: %w", ctx.Err())
+	}
+	if err != nil {
 		tail := p.StderrTail()
 		b.Close()
 		return nil, fmt.Errorf("rodclient: connect: %w (stderr: %s)", err, tail)
 	}
+	if err := ctx.Err(); err != nil {
+		b.Close()
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
+	}
 	return b, nil
 }
 
-// Argv is the browser's real argv, executable first.
-func (b *Browser) Argv() []string { return b.proc.Argv }
+// Argv is a copy of the browser's real argv, executable first.
+func (b *Browser) Argv() []string { return append([]string(nil), b.proc.Argv...) }
 
-// OnSend sets the sink for every CDP message sent, in wire order.
+// OnSend sets the sink for every CDP message sent, in wire order. It replaces
+// the observer set by WithSendObserver. The sink runs under the send lock: it
+// must be quick and must not call back into Browser or a Page.
 func (b *Browser) OnSend(f func([]byte)) {
 	b.mu.Lock()
 	b.sink = f
 	b.mu.Unlock()
 }
 
-// NewPage opens about:blank with no emulation.
+// NewPage opens about:blank with no emulation. It sends Target.createTarget,
+// Target.attachToTarget and Page.enable (rod's page setup; playwright and
+// patchright send Page.enable too). This is the only Page.enable in the
+// package; no Page op sends one.
 func (b *Browser) NewPage(ctx context.Context) (*Page, error) {
 	p, err := b.rod.Context(ctx).Page(proto.TargetCreateTarget{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("rodclient: new page: %w", err)
 	}
 	return &Page{p: p, rng: newRand()}, nil
 }
 
-// Close is idempotent and safe after a browser crash.
+// exitWait caps how long Close waits for the browser to exit by itself after
+// Browser.close, so it can finish writing a persistent profile. A var for tests.
+var exitWait = 5 * time.Second
+
+// Close asks the browser to quit (Browser.close, capped 3 s), waits up to
+// exitWait for it to exit, then kills the process group and removes the dirs
+// Launch created. Idempotent and safe after a browser crash.
 func (b *Browser) Close() error {
 	b.once.Do(func() {
 		if b.rod != nil {
@@ -134,6 +170,10 @@ func (b *Browser) Close() error {
 			cancel()
 		}
 		if b.proc != nil {
+			select {
+			case <-b.proc.Exited():
+			case <-time.After(exitWait):
+			}
 			b.proc.Stop()
 		}
 		b.removeOwned()
