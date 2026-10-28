@@ -32,7 +32,7 @@ class Gh:
 @pytest.fixture
 def stamps(tmp_path):
     out = []
-    for plat in ("windows-x64", "linux-x64-beta"):
+    for plat in ("windows-x64", "linux-x64"):
         p = tmp_path / f"{plat}.json"
         p.write_text(json.dumps({"name": plat, "version": V, "chromium_tag": V, "chromium_rev": "r",
                                  "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": "b",
