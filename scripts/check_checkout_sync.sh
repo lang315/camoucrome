@@ -41,7 +41,7 @@ done
 while IFS= read -r f; do
   REPO_FILES+=("$f")
   TREE_FILES+=("components/camoucfg_lgpl/${f#"$ROOT"/additions/camoucfg_lgpl/}")
-done < <(find "$ROOT/additions/camoucfg_lgpl" -type f | sort)
+done < <([ -d "$ROOT/additions/camoucfg_lgpl" ] && find "$ROOT/additions/camoucfg_lgpl" -type f | sort)
 REPO_FILES+=("$ROOT/settings/invariants.json")
 TREE_FILES+=("components/camoucfg/invariants.json")
 

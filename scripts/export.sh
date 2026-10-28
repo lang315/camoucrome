@@ -80,12 +80,17 @@ git -C "$SRC" archive "$BRANCH" components/camoucfg | tar -x -C "$ROOT/additions
 # in settings/ and read from beside the header in the tree.
 mv "$ROOT/additions/camoucfg/invariants.json" "$ROOT/settings/invariants.json"
 
-# Extract to a temp dir first: a branch without the dir must not leave additions/ emptied.
-t="$(mktemp -d)"
-mkdir -p "$t/new"
-git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$t/new" --strip-components=1
-rm -rf "$ROOT/additions/camoucfg_lgpl"
-mv "$t/new" "$ROOT/additions/camoucfg_lgpl"
-rmdir "$t"
+# A branch without the dir (older than the LGPL slice) is a no-op here. Otherwise
+# extract to a temp dir first, so a failing archive cannot leave additions/ emptied.
+if git -C "$SRC" cat-file -e "$BRANCH:components/camoucfg_lgpl" 2>/dev/null; then
+  t="$(mktemp -d)"
+  mkdir -p "$t/new"
+  git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$t/new" --strip-components=2
+  rm -rf "$ROOT/additions/camoucfg_lgpl"
+  mv "$t/new" "$ROOT/additions/camoucfg_lgpl"
+  rmdir "$t"
+else
+  echo "  components/camoucfg_lgpl absent on $BRANCH: additions/camoucfg_lgpl left as is"
+fi
 
 echo "exported ${#COMMITS[@]} commits from $BRANCH. Gate: git status --porcelain additions patches settings"

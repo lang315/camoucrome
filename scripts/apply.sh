@@ -31,8 +31,10 @@ echo "copying additions"
 mkdir -p "$SRC/components/camoucfg"
 cp "$ROOT"/additions/camoucfg/* "$SRC/components/camoucfg/"
 # LGPL sibling: flat except data/, hence cp -R.
-mkdir -p "$SRC/components/camoucfg_lgpl"
-cp -R "$ROOT"/additions/camoucfg_lgpl/. "$SRC/components/camoucfg_lgpl/"
+if [ -d "$ROOT/additions/camoucfg_lgpl" ]; then
+  mkdir -p "$SRC/components/camoucfg_lgpl"
+  cp -R "$ROOT"/additions/camoucfg_lgpl/. "$SRC/components/camoucfg_lgpl/"
+fi
 
 # The invariant registry lives in settings/ in this repository and beside the
 # header in the tree. That is the one place the two layouts differ, and it is
