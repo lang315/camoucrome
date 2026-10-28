@@ -186,7 +186,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if missing:
         sys.exit(f"{len(missing)} runtime dep(s) GN lists are not on disk (build unfinished?): "
                  f"{missing[:5]}")
-    name = f"camoucrome-{version}-{platform}" + ("-beta" if platform.startswith("linux") else "")
+    name = f"camoucrome-{version}-{platform}"
     staging = pathlib.Path(dist) / name
     if staging.exists():
         shutil.rmtree(staging)
