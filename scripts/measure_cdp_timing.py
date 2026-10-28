@@ -68,21 +68,49 @@ def _paced(send):
             time.sleep(wait)
 
 
-def _stamps(base, wait_s=5):
+def parse_title(title):
+    """The page's stamps from its title; raises unless all N+1 arrived."""
+    stamps = json.loads(title)
+    if len(stamps) != N + 1:
+        raise RuntimeError(f"expected {N + 1} stamps, got {len(stamps)}")
+    return stamps[1:]  # drop the warm-up move
+
+
+def _page_title(base):
     import urllib.request
+    for t in json.loads(urllib.request.urlopen(base + "/json").read()):
+        if t.get("type") == "page":
+            return t.get("title", "")
+    return ""
+
+
+def _wait_title(base, ok, what, wait_s=10):
     deadline = time.monotonic() + wait_s
     while time.monotonic() < deadline:
-        for t in json.loads(urllib.request.urlopen(base + "/json").read()):
-            if t.get("type") == "page" and t.get("title", "").startswith("["):
-                return json.loads(t["title"])[1:]  # drop the warm-up move
+        title = _page_title(base)
+        if ok(title):
+            return title
         time.sleep(0.1)
-    raise RuntimeError("page never recorded all samples")
+    raise RuntimeError(f"timed out waiting for {what}; last title {title!r}")
+
+
+def _stamps(base):
+    return parse_title(_wait_title(base, lambda t: t.startswith("["),
+                                   "all samples"))
+
+
+def run_driver(drive, base):
+    try:
+        drive(base)
+        return gap_stats(_stamps(base))
+    except Exception as e:  # noqa: BLE001 - one driver must not hide the rest
+        return {"error": repr(e)}
 
 
 def _launch():
     import lib_shell
     # --remote-allow-origins=*: Chrome 141+ rejects websocket-client's Origin.
-    return lib_shell.launch({}, extra_flags=[*lib_shell.SHELL_FLAGS,
+    return lib_shell.launch(None, extra_flags=[*lib_shell.SHELL_FLAGS,
                                              "--remote-allow-origins=*"])
 
 
@@ -93,6 +121,7 @@ def drive_patchright(base):
         ctx = browser.contexts[0]
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(PAGE, wait_until="load")
+        _wait_title(base, lambda t: t == "wait", "page ready")
         page.mouse.move(X0, Y)  # warm-up
         _paced(lambda x: page.mouse.move(x, Y))
         browser.close()
@@ -114,7 +143,7 @@ def drive_raw(base):
 
     try:
         call("Page.navigate", {"url": PAGE})
-        time.sleep(1)
+        _wait_title(base, lambda t: t == "wait", "page ready")
         move = lambda x: call("Input.dispatchMouseEvent",
                               {"type": "mouseMoved", "x": x, "y": Y})
         move(X0)  # warm-up
@@ -130,9 +159,7 @@ def main():
                         ("raw_websocket", drive_raw)):
         proc = _launch()  # a fresh browser per driver, killed before the next
         try:
-            base = f"http://127.0.0.1:{proc.cdp_port}"
-            drive(base)
-            out[name] = gap_stats(_stamps(base))
+            out[name] = run_driver(drive, f"http://127.0.0.1:{proc.cdp_port}")
         finally:
             lib_shell.shutdown(proc)
     # client/go/cmd has only camoucrome-probe, no mouse-move entry point.
