@@ -13,6 +13,15 @@ base::TimeDelta QueueClock::DelayBehind(base::TimeTicks now) const {
                         : base::TimeDelta();
 }
 
+base::TimeDelta QueueClock::BookStockSlot(base::TimeTicks now) {
+  base::TimeDelta delay = DelayBehind(now);
+  if (delay > base::TimeDelta()) {
+    // The next start is free_at_ + 1 ms, so book one slot less the gap.
+    free_at_ = now + delay + kStockSlot - base::Milliseconds(1);
+  }
+  return delay;
+}
+
 std::optional<base::TimeDelta> QueueClock::Reserve(base::TimeTicks now,
                                                    base::TimeDelta duration) {
   base::TimeDelta delay = DelayBehind(now);

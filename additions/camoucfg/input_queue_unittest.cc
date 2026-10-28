@@ -141,5 +141,38 @@ TEST(InputQueueTest, DelayBehindAFullQueueIsBoundedByTheBacklog) {
   EXPECT_TRUE(q.Reserve(now, base::TimeDelta()).has_value());
 }
 
+TEST(InputQueueTest, BookStockSlotSpacesDeferredEventsByOneFrame) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(5)).has_value());
+  base::TimeTicks later = now + base::Seconds(1);
+  // First starts at end 5000 + 1 ms gap = 5001 ms, i.e. 4001 ms from `later`;
+  // each next starts one slot (17 ms, gap included) after the previous.
+  EXPECT_EQ(q.BookStockSlot(later), base::Milliseconds(4001));
+  EXPECT_EQ(q.BookStockSlot(later), base::Milliseconds(4018));
+  EXPECT_EQ(q.BookStockSlot(later), base::Milliseconds(4035));
+  EXPECT_EQ(kStockSlot, base::Milliseconds(17));
+}
+
+TEST(InputQueueTest, BookStockSlotWhenIdleBooksNothing) {
+  QueueClock q;
+  base::TimeTicks now;
+  EXPECT_EQ(q.BookStockSlot(now), base::TimeDelta());
+  EXPECT_EQ(q.BookStockSlot(now), base::TimeDelta());
+  EXPECT_EQ(q.Reserve(now, base::Milliseconds(100)), base::TimeDelta());
+}
+
+TEST(InputQueueTest, BookStockSlotIgnoresTheBacklogCap) {
+  QueueClock q;
+  base::TimeTicks now;
+  ASSERT_TRUE(q.Reserve(now, base::Seconds(10)).has_value());
+  EXPECT_EQ(q.BookStockSlot(now), base::Milliseconds(10001));
+  EXPECT_EQ(q.BookStockSlot(now), base::Milliseconds(10018));
+  EXPECT_EQ(q.BookStockSlot(now), base::Milliseconds(10035));
+  // Over the cap now: a positive item is refused, a stock slot still is not.
+  EXPECT_FALSE(q.Reserve(now, base::Milliseconds(1)).has_value());
+  EXPECT_EQ(q.BookStockSlot(now), base::Milliseconds(10052));
+}
+
 }  // namespace
 }  // namespace camoucfg
