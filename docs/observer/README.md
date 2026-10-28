@@ -164,8 +164,15 @@ no entry for the arm is a usage error. Against `{}` the judge adds
 `observe_judge.py baseline` refuses an unmeasured input with exit 2 and
 writes no file.
 
-**Baseline status.** Calibrated on 2026-10-18 from two unattended runs on
-the 156 `out\Observe` (156.0.8078.36). The host file is
+**Baseline status.** Recalibrated on 2026-10-28 from two unattended runs on
+the 156 `out\Observe` at 156.0.8078.48 (the release version), after the
+2026-10-18 calibration on 156.0.8078.36. That build dates from 2026-10-22
+and does not carry the change-set commits made after it (extension block,
+WebRTC proxy policy, WebGL override timing, the GPU thread-cap validator,
+the keyboard keys); none touch the observer or a facebook read surface.
+The required groups are the same as before. Counts moved: arm 3
+`layout-probe` fell from about 4100 and 3600 to about 3200 per load, and
+its `canvas` from 8 to 2. The host file is
 `D:\camou-win\observe\baseline-facebook.json`, and the committed copy
 `docs/observer/baselines/facebook-auto.json` (the host's has CRLF line
 ends). Arm 1 requires audio, canvas, intl, layout-probe, navigator,

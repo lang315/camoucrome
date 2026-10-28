@@ -20,7 +20,7 @@
      "layout-probe": 101,
      "navigator": 187,
      "screen": 18,
-     "storage": 254,
+     "storage": 258,
      "webgl": 68,
      "webgpu": 2
     },
@@ -29,7 +29,7 @@
      "DateTimeFormatPrototypeResolvedOptions": 4
     },
     "requests": {
-     "ajax_bz": 5,
+     "ajax_bz": 6,
      "total": 38
     }
    },
@@ -38,10 +38,10 @@
      "audio": 9,
      "canvas": 374,
      "intl": 8,
-     "layout-probe": 104,
-     "navigator": 197,
+     "layout-probe": 101,
+     "navigator": 187,
      "screen": 18,
-     "storage": 253,
+     "storage": 246,
      "webgl": 68,
      "webgpu": 2
     },
@@ -51,7 +51,7 @@
     },
     "requests": {
      "ajax_bz": 5,
-     "total": 38
+     "total": 37
     }
    }
   ]
@@ -72,10 +72,10 @@
      "canvas": 2,
      "fonts": 1,
      "intl": 20,
-     "layout-probe": 4108,
-     "navigator": 1446,
+     "layout-probe": 3256,
+     "navigator": 1530,
      "screen": 2,
-     "storage": 1404
+     "storage": 1293
     },
     "intl": {
      "DateTimeFormatConstructor": 2,
@@ -84,18 +84,18 @@
     },
     "requests": {
      "ajax_bz": 0,
-     "total": 293
+     "total": 233
     }
    },
    {
     "groups": {
-     "canvas": 8,
+     "canvas": 2,
      "fonts": 1,
      "intl": 20,
-     "layout-probe": 3583,
-     "navigator": 1544,
+     "layout-probe": 3226,
+     "navigator": 1464,
      "screen": 2,
-     "storage": 1486
+     "storage": 1245
     },
     "intl": {
      "DateTimeFormatConstructor": 2,
@@ -104,7 +104,7 @@
     },
     "requests": {
      "ajax_bz": 0,
-     "total": 276
+     "total": 229
     }
    }
   ]
