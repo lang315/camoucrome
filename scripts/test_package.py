@@ -63,7 +63,7 @@ def test_stage_copies_every_dep_and_writes_the_stamp(tree, tmp_path):
     assert len(stamp["branch_tip"]) == 40 and len(stamp["changeset_commit"]) == 40
     assert json.loads((staging / "camoucrome-release.json").read_text()) == stamp
     path = package.archive(staging, "linux-x64")
-    assert path.name == f"camoucrome-{TAG}-linux-x64-beta.tar.xz" and path.stat().st_size > 0
+    assert path.name == f"camoucrome-{TAG}-linux-x64.tar.xz" and path.stat().st_size > 0
     win = package.archive(staging, "win-x64")
     assert win.suffix == ".zip"
 
@@ -233,11 +233,11 @@ def test_check_refuses_stamps_with_different_fingerprints(tree, tmp_path):
         package.check([pa, pb])
 
 
-def test_stage_ships_licences_and_credits_and_names_linux_beta(tree, tmp_path):
+def test_stage_ships_licences_and_credits_and_names_linux_without_beta(tree, tmp_path):
     src, out, deps = tree
     d = package.runtime_deps(src, out, deps)
     staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-    assert staging.name == f"camoucrome-{TAG}-linux-x64-beta"
+    assert staging.name == f"camoucrome-{TAG}-linux-x64"
     assert (staging / "LICENSE.chromium").read_text() == "chromium bsd"
     assert (staging / "about_credits.html").exists() and (staging / "LICENSE").exists()
     for n in ("LICENSE.cursory", "NOTICE.cursory", "COPYING.cursory", "RELINK.cursory.md"):

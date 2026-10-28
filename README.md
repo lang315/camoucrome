@@ -73,7 +73,7 @@ across channels is the project's thesis (see below), and the rows that remain
 unproven are named where they live.
 
 Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
-a Windows flagship plus a Linux beta, built on a Chrome stable tag. Each
+a Windows flagship plus a Linux build for headless server use, built on a Chrome stable tag. Each
 release's notes give its Chrome version, what it fixes and the date it stops
 being supported (when it falls more than one milestone behind stable).
 
@@ -148,8 +148,7 @@ py -3.12 -m venv .venv
 .venv\Scripts\pip install "git+https://github.com/lang315/camoucrome@<sha>#subdirectory=client/python"
 ```
 
-The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`. A Linux
-beta, `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`, is on the same release.
+The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`.
 
 Other clients:
 
@@ -157,6 +156,56 @@ Other clients:
   calling `python -m camoucrome.gen`, so install the Python package above too.
 - Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-4/camoucrome-0.1.1.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
+
+## Install on Linux (headless server use)
+
+Linux is scoped to headless server and container automation. Desktop use (X11, Wayland, a
+real GPU, a headed window) is not tested. The archive is on the same release as the Windows
+one: `camoucrome-<chrome-version>-linux-x64.tar.xz`. Releases up to `v156.0.8078.48-4` name
+it `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`; use that name for them.
+
+1. Install the shared libraries the browser links against, plus Python 3, `git` and `xz`,
+   as root. A bare server or container image lacks them; the archive does not start without
+   them. Fedora and RHEL (tested on Fedora 44):
+
+```sh
+dnf install python3 python3-pip git xz tar nspr nss atk at-spi2-atk at-spi2-core dbus-libs \
+  cups-libs libxcb libxkbcommon alsa-lib mesa-libgbm libX11 libXext cairo pango \
+  libXcomposite libXdamage libXfixes libXrandr
+```
+
+   Debian and Ubuntu (derived, not run on a bare Debian: package names of Ubuntu 24.04, from
+   the same libraries; on Debian 12 drop the `t64` suffixes):
+
+```sh
+apt-get install python3 python3-venv python3-pip git xz-utils libasound2t64 libatk-bridge2.0-0t64 \
+  libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libgbm1 libnspr4 libnss3 \
+  libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+  libxrandr2
+```
+
+2. Download the archive and `SHA256SUMS`, check the archive and extract it, as a normal user.
+
+```sh
+base=https://github.com/lang315/camoucrome/releases/download/<tag>
+curl -fsSLO "$base/camoucrome-<chrome-version>-linux-x64.tar.xz"
+curl -fsSLO "$base/SHA256SUMS"
+grep linux-x64 SHA256SUMS | sha256sum -c
+tar -xf camoucrome-<chrome-version>-linux-x64.tar.xz
+```
+
+3. Install the Python client as in step 5 of the Windows install, with `python3 -m venv .venv` and
+   `.venv/bin/pip install ...`. The quickstart below applies with `os="linux"` or
+   `os="windows"`, `headless=True`, and `CHROME = "camoucrome-<chrome-version>-linux-x64/chrome"`.
+
+The browser starts with its sandbox on, which needs unprivileged user namespaces. A kernel
+or a container that forbids them makes the browser fail at start-up; a container then needs
+either the namespaces allowed or `--no-sandbox` in `args`, which lowers the browser's
+isolation. Ubuntu 24.04 servers restrict unprivileged user namespaces for unconfined programs
+through AppArmor (`kernel.apparmor_restrict_unprivileged_userns=1`): allow them for the
+extracted `chrome` with an AppArmor profile, or set that sysctl to `0`. Measured on Fedora 44
+and on Ubuntu 24.04 under the WSL kernel (neither restricts them): three sandboxed headless
+launches each, exit code 0.
 
 ## Quickstart: two identities
 
@@ -342,7 +391,21 @@ Camoucrome does not repeat that.
   milestone behind Chrome stable is unsupported.
 - Windows SmartScreen warns on first run: choose More info, then Run anyway.
 - The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
-- Linux is a beta. A Linux host claiming Windows is the weaker identity.
+- Linux: headless server use; desktop use is not tested. Headed runs, X11 and Wayland and a
+  real desktop GPU are out of scope, and there is no stock Linux oracle: Linux is verified
+  headless, on one Ubuntu host and one Fedora install.
+- A Linux host claiming Windows is the weaker identity. On Linux the browser cannot play HEVC
+  (the bundled ffmpeg has no HEVC decoder and there is no hardware decoder), so a Windows
+  claim whose real machine plays HEVC contradicts itself there. The GPU is the host's real
+  one.
+- The display class (colour gamut, 10-bit colour, HDR) is the host's. The launcher forces the
+  common sRGB class on a wide-gamut host, but a host that reports 10-bit or HDR keeps them. No
+  public source for the distribution of these classes exists that we could find (searched
+  2026-10-28), so the project makes no claim about how rare a class is.
+- `navigator.connection` (`rtt`, `downlink`, `effectiveType`) is the browser's own estimate of
+  the real network path, as in stock Chrome behind the same proxy; the fork does not set it.
+  Measured on a headless Linux host; the check against a stock build and the headed Windows
+  run behind a real proxy are pending.
 - The Windows archive is about 200 MB and the Linux archive about 175 MB (exact sizes are in each release's assets).
 
 ## Licence and codecs
