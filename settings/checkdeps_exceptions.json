@@ -1,0 +1,8 @@
+[
+  {
+    "file": "third_party/blink/renderer/modules/font_access/font_access.cc",
+    "include": "base/strings/string_split.h",
+    "issue": "#45",
+    "why": "the windows-oracle patch adds it; the DEPS grant lands with the 157 amend of windows-oracle (B5)"
+  }
+]
