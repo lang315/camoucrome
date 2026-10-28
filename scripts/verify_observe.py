@@ -7,6 +7,10 @@ and asserts EXACT per-name event counts with the right origin, site and script. 
          other event (an empty trace measured nothing)
   no-rcs v8 traced without runtime_stats: the report must say Intl blind, with V8 slices present
   --red  same as `on` with every expectation off by one: must FAIL
+  dispatch  listener dispatch counts (docs/superpowers/specs/2026-10-28-observer-dispatch-counts-design.md):
+         an exact run (browser launched with --camou-observe-dispatch-exact) asserts D1-D5 sums, a
+         production-threshold run asserts the D1/D5 floor bounds and the report warning, and the
+         category-off run asserts N-dispatch; --with-cdp-row adds D6 (trusted mousemove over CDP)
   --timing  prints call timings and trace sizes with the category off, on, and on with the Intl recipe (numbers, no verdict)
 Run under ~/camoucrome-verify/venv/bin/python3 on the build box.
 """
@@ -165,6 +169,33 @@ postMessage({now: t(Performance.prototype, 'now'), ael: t(EventTarget.prototype,
   st: Function.prototype.toString.call(self.setTimeout), keys: Object.keys(self).join(','), nowType: typeof performance.now()});"""
 
 
+# Listener dispatch counts. The custom types d1..d5x* are used by this page only. Every listener is a
+# fresh closure: the same function with the same options would be de-duplicated by addEventListener.
+DISPATCH = """<!doctype html><title>dispatch probe</title><div id=p><div id=m><div id=c></div></div></div>
+<script>
+(async () => {
+  const ev = (t, b) => new Event(t, {bubbles: !!b});
+  const d = document.createElement('div');
+  for (let i = 0; i < 3; i++) d.addEventListener('d1', () => {});
+  for (let i = 0; i < 1000; i++) d.dispatchEvent(ev('d1'));
+  for (const id of ['c', 'm', 'p']) document.getElementById(id).addEventListener('d2', () => {});
+  document.getElementById('c').dispatchEvent(ev('d2', true));
+  const g = () => {};
+  d.addEventListener('d3', g); d.removeEventListener('d3', g);
+  for (let i = 0; i < 5; i++) d.dispatchEvent(ev('d3'));
+  const w = new Worker('/dworker.js');
+  await new Promise(r => { w.onmessage = r; });
+  for (let i = 0; i < 100; i++) { d.addEventListener('d5x' + i, () => {}); d.dispatchEvent(ev('d5x' + i)); }
+  await fetch('/done', {method: 'POST', body: '{}'});
+})();
+</script>"""
+DWORKER = ("for (let i = 0; i < 3; i++) self.addEventListener('d4', () => {}); "
+           "self.dispatchEvent(new Event('d4')); postMessage('w');")
+# D6: a page with a trusted-input listener; the move itself comes over CDP (--with-cdp-row)
+MOUSE = "<!doctype html><title>mouse probe</title><script>addEventListener('mousemove', () => {});</script>"
+DISPATCH_EVENT = observe_report.DISPATCH
+
+
 def serve(k):
     done = threading.Event()
     result = {}
@@ -183,6 +214,9 @@ def serve(k):
             pages = {"/probe.html": (PROBE % {"k": k, "port": port}, "text/html"),
                      "/timing.html": (TIMING, "text/html"),
                      "/hot.html": (HOT % {"n": HOT_N}, "text/html"),
+                     "/dispatch.html": (DISPATCH, "text/html"),
+                     "/dworker.js": (DWORKER, "application/javascript"),
+                     "/mouse.html": (MOUSE, "text/html"),
                      "/behave.html": (BEHAVE % {"k": k, "port": port}, "text/html"),
                      "/bworker.js": (BWORKER % {"k": k}, "application/javascript"),
                      "/bframe.html": (BFRAME, "text/html"),
@@ -208,7 +242,7 @@ def serve(k):
     return server, done, result
 
 
-def run(page, categories, k=K):
+def run(page, categories, k=K, extra=()):
     """One browser session; returns (every trace event or None, page result, trace_path)."""
     server, done, result = serve(k)
     port = server.server_port
@@ -217,7 +251,7 @@ def run(page, categories, k=K):
     argv = [lib_shell.SHELL, *lib_shell.SHELL_FLAGS,
             "--use-angle=swiftshader", "--enable-unsafe-swiftshader",  # no GPU on the box
             f"--user-data-dir={tmp}/profile",
-            f"--trace-startup={categories}", "--trace-startup-format=json",
+            *extra, f"--trace-startup={categories}", "--trace-startup-format=json",
             f"--trace-startup-file={trace}", "--trace-startup-duration=20",
             "--trace-startup-record-mode=record-as-much-as-possible",
             f"http://127.0.0.1:{port}/{page}"]
@@ -356,6 +390,94 @@ def behave_rows(events, main_origin, frame_origin, top, k, bump):
     return rows
 
 
+def _fires(events, prefix=None, typ=None, target=None, trusted=None):
+    """(dispatches, handlers, flushed events) over raw EventTarget.dispatch events; the custom
+    types are not in KNOWN_EVENT_TYPES, so the rows read the trace, never the report text."""
+    d = h = n = 0
+    for e in events:
+        a = e.get("args", {})
+        if e["name"] != DISPATCH_EVENT or (typ is not None and a.get("type") != typ) \
+                or (prefix is not None and not a.get("type", "").startswith(prefix)) \
+                or (target is not None and a.get("target") != target) \
+                or (trusted is not None and a.get("trusted") != trusted):
+            continue
+        d += observe_report._int(a.get("dispatches"))
+        h += observe_report._int(a.get("handlers"))
+        n += 1
+    return d, h, n
+
+
+def dispatch_rows_check(events, bump, exact):
+    """Rows D1-D5 on /dispatch.html. exact: the browser ran with --camou-observe-dispatch-exact
+    (threshold 1), so sums are exact; otherwise only the flush-threshold bounds hold. --red (bump)
+    makes an exact expectation off by one and inverts a bound (a range has no 'one more')."""
+    rows = []
+
+    def row(label, got, want):
+        rows.append((got == want + bump, f"{label}: {got} (want {want + bump})"))
+
+    def within(label, got, lo, hi):
+        rows.append(((lo <= got <= hi) != bool(bump), f"{label}: {got} (want {lo}..{hi}"
+                     + (", RED: inverted)" if bump else ")")))
+
+    md = observe_report.render(events, [], [])
+    if exact:
+        d1 = _fires(events, typ="d1", target="Element", trusted="false")
+        row("D1 d1 dispatchEvent x1000 dispatches (Element, trusted false)", d1[0], 1000)
+        row("D1 d1 handlers (3 listeners x 1000)", d1[1], 3000)
+        row("D1 d1 trusted dispatches", _fires(events, typ="d1", trusted="true")[0], 0)
+        d2 = _fires(events, typ="d2", target="Element")
+        row("D2 bubbling child + 2 ancestors dispatches (Element)", d2[0], 3)
+        row("D2 bubbling handlers", d2[1], 3)
+        row("D3 listener removed before dispatch counts", _fires(events, typ="d3")[0], 0)
+        d4 = _fires(events, typ="d4", target="Worker", trusted="false")
+        row("D4 worker dispatchEvent dispatches (target Worker)", d4[0], 1)
+        row("D4 worker handlers (3 listeners)", d4[1], 3)
+        row("D5 100 distinct custom types, dispatches", _fires(events, prefix="d5x")[0], 100)
+    else:
+        within("D1 tail: summed flushed d1 dispatches", _fires(events, typ="d1")[0], 768, 1000)
+        # 100 one-dispatch keys against a 64-key table: at least 36 keys were evicted and flushed
+        within("D5 key cap: distinct d5x keys flushed", _fires(events, prefix="d5x")[2], 36, 100)
+        rows.append(((observe_report.DISPATCH_FLOOR_NOTE in md) != bool(bump),
+                     "report prints the dispatch floor warning"))
+    rows.append(("d5x" not in md, "D5 report never prints a custom type"))
+    return rows
+
+
+def n_dispatch_row(events, bump):
+    """Category off: the page dispatches, the trace holds no EventTarget.dispatch event."""
+    got = _fires(events)[2]
+    return got == bump, f"N-dispatch category off, dispatch events: {got} (want {bump})"
+
+
+def trusted_mouse_row(events, bump):
+    """D6: a browser-delivered mousemove reaches the page listener (a CDP session, verification only)."""
+    got = _fires(events, typ="mousemove", trusted="true")[0]
+    return (got > 0) != bool(bump), f"D6 trusted mousemove dispatches: {got} (want > 0{', RED: inverted' if bump else ''})"
+
+
+def run_cdp_mouse():
+    """One Input.dispatchMouseEvent through lib_shell, a separate session from every fidelity arm.
+    Returns the raw events or None. shortcut: the page expression only keeps the browser alive past
+    --trace-startup-duration, because SIGTERM does not flush the trace."""
+    server, _, _ = serve(K)
+    tmp = tempfile.mkdtemp(prefix="camoucrome-observe-")
+    trace = os.path.join(tmp, "trace.json")
+    flags = [f"--trace-startup={ON_FILTER}", "--trace-startup-format=json", f"--trace-startup-file={trace}",
+             "--trace-startup-duration=6", "--trace-startup-record-mode=record-as-much-as-possible"]
+    try:
+        _, err = lib_shell.session(
+            {}, ["new Promise(r => setTimeout(r, 9000))"],
+            navigate_to=f"http://127.0.0.1:{server.server_port}/mouse.html", extra_flags=flags,
+            cdp=[("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 20, "y": 20})])
+    finally:
+        server.shutdown()
+    if err is not None or not os.path.exists(trace):
+        return None
+    data = observe_report.load_trace(trace)
+    return observe_report.events_of(data)
+
+
 def invisibility_rows(on, off):
     """The hooked accessors stay native, and a page sees the same values with the category on and
     off (same binary): the observer must not be observable from the page."""
@@ -455,6 +577,24 @@ def main():
         bport = next((o.rsplit(":", 1)[1] for e in bobs for o in [e["args"].get("origin", "")]
                       if o.startswith("http://127.0.0.1:")), None)
         rows += behave_rows(bobs, f"http://127.0.0.1:{bport}", f"http://localhost:{bport}", top, K, bump)
+
+    # dispatch counts: exact run (verify-only switch), production-threshold run, category off
+    for label, cats, extra, exact in (("exact", ON_FILTER, ["--camou-observe-dispatch-exact"], True),
+                                      ("production-threshold", ON_FILTER, [], False)):
+        dev_, dres, _ = run("dispatch.html", cats, extra=extra)
+        if dev_ is None:
+            rows.append((red, f"dispatch arm ({label}): {dres}"))  # never an expected --red failure
+        else:
+            rows += dispatch_rows_check(observe_report.events_of(dev_), bump, exact)
+    dn, dnres, _ = run("dispatch.html", "blink,loading")
+    if dn is None:
+        rows.append((red, f"dispatch off arm: {dnres}"))
+    else:
+        rows.append((off_arm(dn)[0] == (not red), "N-dispatch off arm: tracing ran (want 0 camou, >0 other events)"))
+        rows.append(n_dispatch_row(observe_report.events_of(dn), bump))
+    if "--with-cdp-row" in sys.argv:
+        cev = run_cdp_mouse()
+        rows.append(trusted_mouse_row(cev, bump) if cev is not None else (red, "D6 CDP session never wrote a trace"))
 
     # invisibility: the same page, category on and off
     inv_on = run("inv.html", ON_FILTER)[1]

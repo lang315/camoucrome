@@ -111,7 +111,9 @@ NOT_OBSERVABLE = [
     "Named and indexed access (localStorage.foo, navigator.plugins[0], "
     "mimeTypes['application/pdf']): it goes through interceptor callbacks, not the hooked ones",
     "Values: the report says that a page read a member, not what it got",
-    "Dispatch: a listener registration is counted, not how often it fires or what its handler does",
+    "Handlers: a dispatch is counted, not what its handler does or how long it runs",
+    "per-script dispatch attribution: a fire is joined to the scripts that registered that type and "
+    "target kind, so two scripts registering one type cannot be told apart",
     "An on* handler re-assigned after its first assignment (only the first registers a listener)",
     "Date.now, performance.timeOrigin, PerformanceObserver, queueMicrotask, requestIdleCallback, "
     "scroll offsets",
@@ -178,6 +180,73 @@ def other_listener_types(events):
         if e["name"] == LISTENER and a.get("type", "") not in KNOWN_EVENT_TYPES:
             types[a.get("site") or a.get("origin", "")].add(a.get("type", ""))
     return {site: len(s) for site, s in types.items()}
+
+
+DISPATCH = "EventTarget.dispatch"
+DISPATCH_FLOOR_NOTE = "dispatch counts are floor values; up to 255 per type unflushed"
+
+
+def _target_kind(target):
+    """A dispatch reports a worker global scope as Worker; registrations name the scope class."""
+    return "Worker" if target.endswith("WorkerGlobalScope") else target
+
+
+def _int(s):
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return 0
+
+
+def dispatch_rows(events):
+    """Coalesced listener dispatches aggregated by (type, target, trusted) across flushed events.
+    Unknown types fold into one "[other]" row per (target, trusted): the distinct count is kept,
+    the text never. registered_by joins to the scripts that registered that (type, target kind)."""
+    regs = collections.defaultdict(set)
+    for e in events:
+        if e["name"] == LISTENER:
+            a = e.get("args", {})
+            regs[(a.get("type", ""), _target_kind(a.get("target") or "?"))].add(script_label(a.get("script")))
+    agg = {}
+    for e in events:
+        if e["name"] != DISPATCH:
+            continue
+        a = e.get("args", {})
+        typ = a.get("type", "")
+        key = (typ if typ in KNOWN_EVENT_TYPES else "[other]", a.get("target") or "?",
+               str(a.get("trusted")).lower())
+        g = agg.setdefault(key, {"dispatches": 0, "handlers": 0, "ts": [], "types": set()})
+        g["dispatches"] += _int(a.get("dispatches"))
+        g["handlers"] += _int(a.get("handlers"))
+        g["ts"].append(e["ts"])
+        g["types"].add(typ)
+    rows = []
+    for (typ, target, trusted), g in agg.items():
+        span = (max(g["ts"]) - min(g["ts"])) / 1e6  # trace timestamps are microseconds
+        kind = _target_kind(target)
+        if typ == "[other]":
+            by = set().union(*[s for (t, k), s in regs.items() if t not in KNOWN_EVENT_TYPES and k == kind])
+        else:
+            by = regs.get((typ, kind), set())
+        rows.append({"type": typ, "group": TYPE_GROUP.get(typ, "listeners-other"), "target": target,
+                     "trusted": trusted, "dispatches": g["dispatches"], "handlers": g["handlers"],
+                     "rate": g["dispatches"] / span if len(g["ts"]) > 1 and span > 0 else None,
+                     "types": len(g["types"]) if typ == "[other]" else 1,
+                     "registered_by": sorted(by)})
+    return sorted(rows, key=lambda r: (r["group"], r["type"], r["target"], r["trusted"]))
+
+
+def dispatch_type_gaps(events):
+    """(registered but never fired, fired with no registration seen), as sets of event types."""
+    reg = {e.get("args", {}).get("type", "") for e in events if e["name"] == LISTENER}
+    fired = {e.get("args", {}).get("type", "") for e in events if e["name"] == DISPATCH}
+    return reg - fired, fired - reg
+
+
+def _type_list(types):
+    known = sorted(t for t in types if t in KNOWN_EVENT_TYPES)
+    n = len(types) - len(known)
+    return ", ".join(known + ([f"{n} other"] if n else [])) or "none"
 
 
 def group_of(name):
@@ -372,6 +441,19 @@ def render(events, requests, cookies, buffer=None, intl=None):
         for (host, req), n in sorted((reqs or {}).items()):
             lines.append(f"| {host} | {req} | {n} |")
         lines.append("")
+    drows = dispatch_rows(events)
+    if drows:
+        lines += ["## Listener dispatches", "",
+                  "| group | type | target | trusted | dispatches | handlers | per second | registered by |",
+                  "|---|---|---|---|---|---|---|---|"]
+        for d in drows:
+            typ = d["type"] + (f" ({d['types']} types)" if d["type"] == "[other]" else "")
+            rate = "-" if d["rate"] is None else f"{d['rate']:.1f}"
+            lines.append(f"| {d['group']} | {typ} | {d['target']} | {d['trusted']} | {d['dispatches']} "
+                         f"| {d['handlers']} | {rate} | {', '.join(d['registered_by']) or '-'} |")
+        never, unreg = dispatch_type_gaps(events)
+        lines += ["", f"Registered but never fired: {_type_list(never)}",
+                  f"Fired with no registration seen: {_type_list(unreg)}", "", DISPATCH_FLOOR_NOTE, ""]
     lines += ["## V8 built-ins (Intl)", ""]
     if intl is None:
         lines += ["Intl: blind (no V8 runtime call stats in this trace)", ""]
