@@ -33,6 +33,8 @@ There is no row filter: the six older rows (Python, Go, Node) run too, and need
 their usual drivers under `~/camoucrome-driver*`. Read the two rows named
 `go-rod-own-launcher` and `go-chromedp-control`.
 
+CAMOU_VERIFY_PROXY=1 makes the two new rows fail: the probes reject proxy flags.
+
 ## Reading the result
 
 - rod PASS (C1-C6 all ok): G1 is viable.

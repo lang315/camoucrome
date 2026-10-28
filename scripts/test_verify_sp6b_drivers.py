@@ -38,5 +38,40 @@ class DriversTest(unittest.TestCase):
         self.assertFalse(run_check(v.MIN_METHODS))
 
 
+C1 = "C1 no Runtime.enable, logger alive"
+
+
+def verdict(sends, enables, **opts):
+    log = '"method":"X"\n' * sends + '"method":"Runtime.enable"\n' * enables
+    c1 = enables == 0 and sends + enables >= v.MIN_METHODS
+    return v.verdict_of("RED", {C1: (c1, "")}, log, opts)
+
+
+class RedVerdictTest(unittest.TestCase):
+    strict = {"red_requires_runtime_enable": True}
+
+    def test_strict_silent_log_fails(self):
+        ok, note = verdict(12, 0, **self.strict)
+        self.assertFalse(ok)
+        self.assertIn("control measured nothing", note)
+
+    def test_strict_with_runtime_enable_passes(self):
+        self.assertTrue(verdict(20, 1, **self.strict)[0])
+
+    def test_strict_long_log_without_runtime_enable_fails(self):
+        self.assertFalse(verdict(25, 0, **self.strict)[0])
+
+    def test_old_red_row_unchanged(self):
+        self.assertTrue(verdict(5, 0)[0])
+
+    def test_green_uses_all_rows(self):
+        self.assertFalse(v.verdict_of("GREEN", {C1: (True, ""), "x": (False, "")}, "", {})[0])
+
+    def test_main_unpacks_both_tuple_shapes(self):
+        for d in v.DRIVERS:
+            label, expected, cmd, *opts = d
+            self.assertLessEqual(len(opts), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

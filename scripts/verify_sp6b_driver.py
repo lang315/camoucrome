@@ -1,8 +1,13 @@
 """SP6b driver contract (A4 #1): the CDP driver never sends Runtime.enable,
 leaves no trace in the main world, adds no forbidden flag, and does not move
-the stack-timing signal SP2 D1 measured. One verify, one probe page, six
-drivers (Python, Go, Node; stock and patchright each) -- the stock ones are
-the RED rows and must fail, the patchright ones must pass. Run on the box under ~/camoucrome-verify/venv.
+the stack-timing signal SP2 D1 measured. One verify, one probe page, eight
+drivers (Python, Go, Node; stock and patchright each, plus the G0 spike's
+go-rod GREEN row and go-chromedp RED control) -- the stock ones are
+the RED rows and must fail, the patchright ones must pass. The chromedp
+control is strict: it must fail C1 because Runtime.enable was logged, not
+because the log was silent. Spike probes (client/go/spike): go build -o
+bin/camoucrome-probe-rod ./cmd/camoucrome-probe-rod and go build -o
+bin/camoucrome-probe-chromedp ./cmd/camoucrome-probe-chromedp. Run on the box under ~/camoucrome-verify/venv.
 
 The page's own script (main world, synchronous, so a --dump-dom run captures
 it too) writes the report into #o; each probe command reads that text through
@@ -202,8 +207,10 @@ DRIVERS = [
                                   "--label", "node-patchright", "--executable", EXE]),
     ("go-rod-own-launcher", "GREEN", [ROD_PROBE, "--no-default-device", "--label", "go-rod",
                                       "--executable", EXE], {"min_methods": 10}),
+    # red_requires_runtime_enable: a control that logs no Runtime.enable at all
+    # measured nothing (a silent logger would pass the plain RED rule).
     ("go-chromedp-control", "RED", [CHROMEDP_PROBE, "--label", "go-chromedp",
-                                    "--executable", EXE]),
+                                    "--executable", EXE], {"red_requires_runtime_enable": True}),
 ]
 
 
@@ -272,6 +279,21 @@ def check(label, result, log, base, min_methods=MIN_METHODS):
     return rows
 
 
+def verdict_of(expected, rows, log, opts):
+    """(ok, note). GREEN: every row passes. RED: C1 must fail; with
+    red_requires_runtime_enable it must fail because Runtime.enable was seen."""
+    if expected == "GREEN":
+        return all(ok for ok, _ in rows.values()), ""
+    c1 = rows["C1 no Runtime.enable, logger alive"][0]
+    if opts.get("red_requires_runtime_enable"):
+        enables = log.count('"method":"Runtime.enable"')
+        if enables == 0:
+            return False, ("control measured nothing: no Runtime.enable in the log "
+                           f"(sends={log.count('\"method\":\"')})")
+        return True, ""
+    return not c1, ""
+
+
 def main():
     global PROXY_URL
     url, srv = serve()
@@ -291,14 +313,11 @@ def main():
             verdict = False
             continue
         rows = check(label, result, log, base, **(opts[0] if opts else {}))
-        allpass = all(ok for ok, _ in rows.values())
-        c1 = rows["C1 no Runtime.enable, logger alive"][0]
-        if expected == "GREEN":
-            ok = allpass
-        else:  # RED row: the stock driver must be caught by C1
-            ok = not c1
+        ok, note = verdict_of(expected, rows, log, opts[0] if opts else {})
         verdict &= ok
         print(f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})")
+        if note:
+            print(f"      {note}")
         for name, (r, note) in rows.items():
             print(f"      {'ok  ' if r else 'FAIL'} {name}: {note}")
     srv.shutdown()
