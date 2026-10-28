@@ -33,8 +33,23 @@ type Browser struct {
 	once  sync.Once
 }
 
+type launchConfig struct{ observer func([]byte) }
+
+// Option tunes Launch.
+type Option func(*launchConfig)
+
+// WithSendObserver sees every CDP message sent, from the very first one:
+// it is installed before rod connects, so connect-time traffic (such as
+// Target.setDiscoverTargets) is included. Browser.OnSend only sees what is sent
+// after Launch returns, so audit with this option.
+func WithSendObserver(f func([]byte)) Option { return func(c *launchConfig) { c.observer = f } }
+
 // Launch is the go-rod twin of camoucrome.Launch. v1 has no proxy support.
-func Launch(ctx context.Context, o camoucrome.Options) (*Browser, error) {
+func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser, error) {
+	var lc launchConfig
+	for _, f := range opts {
+		f(&lc)
+	}
 	if o.Proxy != nil {
 		return nil, errors.New("rodclient: proxy not supported by rodclient v1")
 	}
@@ -56,7 +71,7 @@ func Launch(ctx context.Context, o camoucrome.Options) (*Browser, error) {
 		return nil, err
 	}
 	env[camoucrome.CrashDumpsEnv] = crash
-	b := &Browser{owned: []string{crash}}
+	b := &Browser{owned: []string{crash}, sink: lc.observer}
 	if o.UserDataDir == "" {
 		// Set before BuildArgs so the argv carries it and Start owns no dir.
 		if o.UserDataDir, err = os.MkdirTemp("", "camoucrome-"); err != nil {

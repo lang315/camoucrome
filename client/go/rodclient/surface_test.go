@@ -39,7 +39,9 @@ func TestPageSurfaceIsVetted(t *testing.T) {
 	}
 }
 
-var allowedExported = []string{"Browser", "Cookie", "Launch", "Page", "WaitLoad", "WaitNetworkIdle", "WaitUntil"}
+// Option and WithSendObserver: Launch must be able to observe connect-time CDP
+// traffic, which Browser.OnSend (set after Launch returns) cannot.
+var allowedExported = []string{"Browser", "Cookie", "Launch", "Option", "Page", "WaitLoad", "WaitNetworkIdle", "WaitUntil", "WithSendObserver"}
 
 // Top-level exported identifiers of the package, parsed from source so that a
 // future func RodPage(*Page) *rod.Page fails here.

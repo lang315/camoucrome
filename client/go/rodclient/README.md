@@ -16,10 +16,14 @@ is unreachable: callers get a small vetted `Page`.
 
 ## API
 
-`Launch(ctx, camoucrome.Options) (*Browser, error)`, then
-`Browser`: `Argv()`, `OnSend(func([]byte))` (every CDP message sent, in wire
-order; install it right after Launch, so messages sent during Launch's connect
-are not seen), `NewPage(ctx)`, `Close()`.
+`Launch(ctx, camoucrome.Options, ...Option) (*Browser, error)`, then
+`Browser`: `Argv()`, `OnSend(func([]byte))`, `NewPage(ctx)`, `Close()`.
+
+To audit CDP traffic, pass `WithSendObserver(f)` to `Launch`: it sees every
+message sent, in wire order, from the first one, including what is sent while
+connecting (`Target.setDiscoverTargets`). `OnSend` only sees messages sent
+after Launch returns, so it cannot prove that a connect-time message was
+absent.
 
 `Page` (exactly these 11 methods, pinned by `surface_test.go`):
 `Goto(ctx, url, WaitLoad|WaitNetworkIdle)`, `WaitForSelector`, `Click`, `Type`,

@@ -214,9 +214,8 @@ DRIVERS = [
                                       "--executable", EXE], {"min_methods": 10}),
     # rodclient owns --no-default-device (Launch applies it), so the command has
     # no such flag. min_methods 10: the fake-browser run of the probe's flow
-    # (init script, Goto, Text) sends exactly 10 messages after OnSend is
-    # installed; Launch's own connect messages precede the sink and are not
-    # logged. A real run sends at least those 10.
+    # (connect, new page, init script, Goto, Text) sends 14 messages with the
+    # send observer installed before connect; 70% is 9.8, floored at 10.
     ("go-rodclient", "GREEN", [RODCLIENT_PROBE, "--label", "go-rodclient",
                                "--executable", EXE], {"min_methods": 10}),
     # red_requires_runtime_enable: a control that logs no Runtime.enable at all

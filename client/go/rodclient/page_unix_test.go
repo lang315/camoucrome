@@ -173,6 +173,57 @@ func forbidden(m string) bool {
 		strings.HasPrefix(m, "Emulation.") || m == "DOM.enable" || m == "Page.enable"
 }
 
+// launchRaw is newRig's launch with options and without draining.
+func launchRaw(t *testing.T, opts ...Option) {
+	t.Helper()
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "fake-browser")
+	if err := os.WriteFile(exe, []byte(fakePage), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_LOG", filepath.Join(dir, "req.jsonl"))
+	b, err := Launch(context.Background(), camoucrome.Options{ExecutablePath: exe}, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { b.Close() })
+}
+
+func TestSendObserverSeesConnectTraffic(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	var with []string
+	launchRaw(t, WithSendObserver(func(m []byte) {
+		var q struct{ Method string }
+		json.Unmarshal(m, &q)
+		with = append(with, q.Method)
+	}))
+	if !contains(with, "Target.setDiscoverTargets") {
+		t.Errorf("WithSendObserver missed connect-time traffic: %v", with)
+	}
+	// OnSend after Launch returns cannot see it: this is why the option exists.
+	var after []string
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "fake-browser")
+	os.WriteFile(exe, []byte(fakePage), 0o755)
+	t.Setenv("FAKE_LOG", filepath.Join(dir, "req.jsonl"))
+	b, err := Launch(context.Background(), camoucrome.Options{ExecutablePath: exe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	b.OnSend(func(m []byte) { after = append(after, string(m)) })
+	if _, err := b.NewPage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range after {
+		if strings.Contains(m, "Target.setDiscoverTargets") {
+			t.Errorf("OnSend saw connect-time message: %s", m)
+		}
+	}
+}
+
 func TestPageOps(t *testing.T) {
 	ctx := context.Background()
 	r := newRig(t)

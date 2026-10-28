@@ -129,13 +129,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	b, err := rodclient.Launch(ctx, c.options())
+	// The observer is installed before connecting, so connect-time traffic is logged too.
+	b, err := rodclient.Launch(ctx, c.options(), rodclient.WithSendObserver(func(m []byte) { fmt.Fprintln(stderr, string(m)) }))
 	if err != nil {
 		fmt.Fprintln(stderr, "launch:", err)
 		return 1
 	}
 	defer b.Close()
-	b.OnSend(func(m []byte) { fmt.Fprintln(stderr, string(m)) })
 	p, err := b.NewPage(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, "page:", err)
