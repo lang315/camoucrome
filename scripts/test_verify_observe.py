@@ -137,3 +137,61 @@ def test_invisibility_rows_need_native_accessors_and_identical_signatures():
     drift = {**sig, "main": {**sig["main"], "keys": "a,b,__camou"}}
     assert [t for ok, t in v.invisibility_rows(drift, sig) if not ok][0].startswith("page-visible signature identical")
     assert not v.invisibility_rows({}, {})[0][0]
+
+
+def _dev(typ, dispatches, handlers, target="Element", trusted="false"):
+    return {"name": v.DISPATCH_EVENT, "cat": v.CATEGORY, "ts": 1, "args": {
+        "type": typ, "target": target, "trusted": trusted, "dispatches": str(dispatches),
+        "handlers": str(handlers), "window_ms": "1"}}
+
+
+def _exact_dispatch_trace():
+    ev = [_dev("d1", 1, 3) for _ in range(1000)] + [_dev("d2", 1, 1) for _ in range(3)]
+    ev += [_dev("d4", 1, 3, target="Worker")]
+    ev += [_dev(f"d5x{i}", 1, 1) for i in range(100)]
+    return ev
+
+
+def test_dispatch_rows_pass_on_the_exact_trace_and_fail_when_off_by_one():
+    rows = v.dispatch_rows_check(_exact_dispatch_trace(), 0, True)
+    assert len(rows) == 10 and all(ok for ok, _ in rows), [t for ok, t in rows if not ok]
+    bumped = v.dispatch_rows_check(_exact_dispatch_trace(), 1, True)
+    assert [t for ok, t in bumped if ok] == ["D5 report never prints a custom type"]
+    short = [e for e in _exact_dispatch_trace() if e["args"]["type"] != "d2"]
+    assert [t.split(" ")[0] for ok, t in v.dispatch_rows_check(short, 0, True) if not ok] == ["D2", "D2"]
+    # script-made events must not count as trusted ones
+    assert not v.dispatch_rows_check(_exact_dispatch_trace() + [_dev("d1", 1, 3, trusted="true")], 0, True)[2][0]
+
+
+def test_dispatch_rows_fail_on_an_observer_without_the_slice():
+    """The RED the box run must show: no events, every positive row fails; the zero-expectation
+    controls (trusted d1, removed listener) and the report-text row stay green."""
+    green = [t.split(":")[0] for ok, t in v.dispatch_rows_check([], 0, True) if ok]
+    assert green == ["D1 d1 trusted dispatches", "D3 listener removed before dispatch counts",
+                     "D5 report never prints a custom type"]
+    assert [t for ok, t in v.dispatch_rows_check([], 0, False) if ok] == ["D5 report never prints a custom type"]
+
+
+def test_dispatch_production_rows_use_bounds_and_the_floor_warning():
+    # 3 flushes of 256 per key, the tail unflushed; 40 of 100 distinct keys evicted and flushed
+    ev = [_dev("d1", 256, 768) for _ in range(3)] + [_dev(f"d5x{i}", 1, 1) for i in range(40)]
+    ev += [{"name": v.observe_report.LISTENER, "cat": v.CATEGORY, "ts": 1, "args": {
+        "type": "click", "target": "Element", "script": ""}}]
+    assert all(ok for ok, _ in v.dispatch_rows_check(ev, 0, False))
+    assert not any(ok for ok, _ in v.dispatch_rows_check(ev, 1, False)[:3])
+    low = [_dev("d1", 256, 768) for _ in range(2)]
+    assert not v.dispatch_rows_check(low, 0, False)[0][0]
+
+
+def test_n_dispatch_row_needs_zero_dispatch_events():
+    assert v.n_dispatch_row([], 0)[0]
+    assert v.n_dispatch_row([CAMOU], 0)[0]
+    assert not v.n_dispatch_row([_dev("d1", 1, 1)], 0)[0]
+    assert not v.n_dispatch_row([], 1)[0]  # --red
+
+
+def test_trusted_mouse_row_needs_a_trusted_mousemove():
+    assert v.trusted_mouse_row([_dev("mousemove", 4, 4, trusted="true")], 0)[0]
+    assert not v.trusted_mouse_row([_dev("mousemove", 4, 4)], 0)[0]
+    assert not v.trusted_mouse_row([], 0)[0]
+    assert not v.trusted_mouse_row([_dev("mousemove", 4, 4, trusted="true")], 1)[0]

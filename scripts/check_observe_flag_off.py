@@ -4,7 +4,7 @@ Recompiles two objects of an existing out dir with BUILDFLAG(CAMOU_OBSERVE) forc
 buildflags.h placed first on the include path) and checks with nm that:
   - the flag-on objects the build produced DO reference the observer (a check that cannot fail
     on a stripped object measures nothing), and
-  - the flag-off recompiles reference none of camou_observe::Emit / EmitListener.
+  - the flag-off recompiles reference none of camou_observe::Emit / EmitListener / CountDispatch.
 Usage (on the build box, tree root as cwd or --src): check_observe_flag_off.py [--src ~/chromium/src] [--out out/Default]
 Compiles two files: a minute, no ninja state is touched.
 """
@@ -22,7 +22,7 @@ RELPATH = "third_party/blink/renderer/platform/bindings/buildflags.h"
 
 
 def references_observer(nm_output):
-    return "camou_observe::Emit" in nm_output
+    return "camou_observe::Emit" in nm_output or "camou_observe::CountDispatch" in nm_output
 
 
 def nm(path):
