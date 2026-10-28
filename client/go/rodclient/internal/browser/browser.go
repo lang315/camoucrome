@@ -51,13 +51,19 @@ func (t *tailBuf) String() string {
 }
 
 // Start launches exe with argv and exactly env (nothing is inherited). The
-// caller's argv must carry --remote-debugging-pipe. A profile dir is owned here
-// only when argv has no --user-data-dir: Start adds a temp one and removes it on
-// stop. A caller-supplied dir is never touched. Stop is mandatory: the browser
-// and a watcher goroutine live until Stop (or ctx cancel) runs.
+// caller's argv must carry --remote-debugging-pipe (checked up front). A profile
+// dir is owned here only when argv has no single-token --user-data-dir=<path>
+// (the two-token form is not detected): Start adds a temp one and removes it on
+// stop. A caller-supplied dir is never touched. The crash-dump dir and
+// BREAKPAD_DUMP_LOCATION are the caller's job (Launch creates and cleans them).
+// Stop is mandatory: the browser and a watcher goroutine live until Stop (or ctx
+// cancel) runs.
 func Start(ctx context.Context, exe string, argv []string, env map[string]string) (*Proc, error) {
 	if err := platformErr(); err != nil {
 		return nil, err
+	}
+	if !slices.Contains(argv, "--remote-debugging-pipe") {
+		return nil, errors.New("browser: argv lacks --remote-debugging-pipe")
 	}
 	argv = append([]string{}, argv...)
 	dir := ""

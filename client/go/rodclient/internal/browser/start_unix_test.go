@@ -237,3 +237,57 @@ func TestCallerProfileNotRemoved(t *testing.T) {
 		t.Fatalf("caller's profile removed: %v", err)
 	}
 }
+
+func TestStartRequiresPipeFlag(t *testing.T) {
+	before, _ := filepath.Glob(filepath.Join(os.TempDir(), "camoucrome-*"))
+	p, err := Start(context.Background(), "/nonexistent", []string{"--headless=new"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "--remote-debugging-pipe") {
+		if p != nil {
+			p.Stop()
+		}
+		t.Fatalf("err = %v", err)
+	}
+	after, _ := filepath.Glob(filepath.Join(os.TempDir(), "camoucrome-*"))
+	if len(after) != len(before) {
+		t.Fatalf("temp dir created before the check: %v -> %v", before, after)
+	}
+}
+
+func TestStartEmptyEnvInheritsNothing(t *testing.T) {
+	t.Setenv("CAMOU_CONFIG", "leak")
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	exe := filepath.Join(t.TempDir(), "fake-browser")
+	if err := os.WriteFile(exe, []byte(strings.Replace(fake, "#!/usr/bin/env python3", "#!"+mustLook(t, "python3"), 1)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Start(context.Background(), exe, []string{"--remote-debugging-pipe"}, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Stop)
+	_ = p.Conn.Send([]byte("info"))
+	raw, err := p.Conn.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct{ Env map[string]string }
+	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("info:")), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"CAMOU_CONFIG", "HOME", "PATH", "USER"} {
+		if _, ok := got.Env[k]; ok {
+			t.Errorf("empty env still has %s", k)
+		}
+	}
+}
+
+func mustLook(t *testing.T, name string) string {
+	t.Helper()
+	p, err := exec.LookPath(name)
+	if err != nil {
+		t.Skip(name + " not on PATH")
+	}
+	return p
+}
