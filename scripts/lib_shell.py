@@ -24,6 +24,23 @@ import tempfile
 import time
 import urllib.request
 
+# CI's runner is a service with none of these; a hand-run shell on the build box inherits them from WSLg, and with
+# them headless Chrome's page.click() timed out on both the 156 and the 157 build (2026-10-28) while CI stayed green.
+# Dropping them here, once, gives every launch path that copies os.environ (launch() below, the clients' build_env,
+# the probes the verifies spawn) CI's environment. A verify that needs the display on purpose (a headed launch on
+# WSLg) calls restore_display_env(); CAMOU_VERIFY_KEEP_DISPLAY=1 keeps the caller's environment for a whole run.
+DISPLAY_ENV = ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "PULSE_SERVER")
+CALLERS_DISPLAY_ENV = {k: os.environ[k] for k in DISPLAY_ENV if k in os.environ}
+
+
+def restore_display_env():
+    os.environ.update(CALLERS_DISPLAY_ENV)
+
+
+if os.environ.get("CAMOU_VERIFY_KEEP_DISPLAY") != "1":
+    for _k in DISPLAY_ENV:
+        os.environ.pop(_k, None)
+
 # playwright is imported inside evaluate(), the one function that uses it.
 # Eleven verify scripts drive the browser through the client in a subprocess and
 # deliberately keep playwright out of their own process; a module-scope import

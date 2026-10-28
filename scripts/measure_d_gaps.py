@@ -25,9 +25,10 @@ import subprocess
 import sys
 import threading
 
-from lib_shell import CHROME as EXE, layout
+from lib_shell import CHROME as EXE, layout, restore_display_env
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+restore_display_env()  # the headed conditions need the WSLg display: lib_shell dropped the display variables so a hand run matches CI
 
 
 PAGE = b"""<!doctype html><title>d-gaps</title><pre id="o"></pre>
