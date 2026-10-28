@@ -26,9 +26,10 @@ import sys
 import tempfile
 import threading
 
-from lib_shell import CHROME as EXE, layout
+from lib_shell import CHROME as EXE, layout, restore_display_env
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
+restore_display_env()  # L4 is a headed launch on the box: lib_shell dropped the display variables so a hand run matches CI
 
 CONTRACT = json.loads(open(next(p for p in [
     os.environ.get("CAMOU_CONTRACT", ""),
