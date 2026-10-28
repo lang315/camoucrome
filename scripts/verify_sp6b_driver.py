@@ -275,20 +275,18 @@ def check(label, result, log, base, min_methods=MIN_METHODS):
 
 
 def verdict_of(expected, rows):
-    """(ok, note). GREEN: every row passes. RED: C1 must fail."""
+    """GREEN: every row passes. RED: C1 must fail."""
     if expected == "GREEN":
-        return all(ok for ok, _ in rows.values()), ""
-    return not rows["C1 no Runtime.enable, logger alive"][0], ""
+        return all(ok for ok, _ in rows.values())
+    return not rows["C1 no Runtime.enable, logger alive"][0]
 
 
-def judge_row(label, expected, cmd, opts, result, log, base):
+def judge_row(label, expected, opts, result, log, base):
     """The per-driver body of main(): (ok, printable lines). Only min_methods
     reaches check()."""
     rows = check(label, result, log, base, min_methods=opts.get("min_methods", MIN_METHODS))
-    ok, note = verdict_of(expected, rows)
+    ok = verdict_of(expected, rows)
     lines = [f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})"]
-    if note:
-        lines.append(f"      {note}")
     for name, (r, n) in rows.items():
         lines.append(f"      {'ok  ' if r else 'FAIL'} {name}: {n}")
     return ok, lines
@@ -312,7 +310,7 @@ def main():
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False
             continue
-        ok, lines = judge_row(label, expected, cmd, opts[0] if opts else {}, result, log, base)
+        ok, lines = judge_row(label, expected, opts[0] if opts else {}, result, log, base)
         verdict &= ok
         print("\n".join(lines))
     srv.shutdown()

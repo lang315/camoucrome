@@ -47,13 +47,13 @@ C1 = "C1 no Runtime.enable, logger alive"
 
 class VerdictTest(unittest.TestCase):
     def test_red_passes_when_c1_fails(self):
-        self.assertTrue(v.verdict_of("RED", {C1: (False, "")})[0])
+        self.assertTrue(v.verdict_of("RED", {C1: (False, "")}))
 
     def test_red_fails_when_c1_passes(self):
-        self.assertFalse(v.verdict_of("RED", {C1: (True, "")})[0])
+        self.assertFalse(v.verdict_of("RED", {C1: (True, "")}))
 
     def test_green_uses_all_rows(self):
-        self.assertFalse(v.verdict_of("GREEN", {C1: (True, ""), "x": (False, "")})[0])
+        self.assertFalse(v.verdict_of("GREEN", {C1: (True, ""), "x": (False, "")}))
 
     def test_main_unpacks_both_tuple_shapes(self):
         for d in v.DRIVERS:
@@ -70,7 +70,7 @@ class JudgeRowTest(unittest.TestCase):
         rep = {"windowKeys": [], "webdriver": False, "initScript": "number", "ownNames": 1,
                "timesMs": [1.0], "ua": "ua"}
         base = {"windowKeys": [], "ownNames": 0, "timesMs": [1.0]}
-        return v.judge_row(d[0], d[1], d[2], d[3] if len(d) > 3 else {},
+        return v.judge_row(d[0], d[1], d[3] if len(d) > 3 else {},
                            {"report": rep, "argv": []}, log, base)
 
     def test_old_three_tuple_row(self):
