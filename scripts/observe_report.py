@@ -256,6 +256,24 @@ def group_of(name):
     return GROUPS.get(".".join(parts[:2])) or GROUPS.get(parts[0], "other")
 
 
+_POP_MEDIA = re.compile(r"^scontent.*\.fbcdn\.net$")
+_POP_FNA = re.compile(r"^.+\.fna\.(fbcdn\.net|whatsapp\.net)$")
+
+
+def public_host(host):
+    """Media CDN host names carry a regional POP code, which is a location: collapse them."""
+    if _POP_MEDIA.match(host):
+        return "scontent.*.fbcdn.net"
+    m = _POP_FNA.match(host)
+    return "*.fna." + m.group(1) if m else host
+
+
+def public_endpoint(endpoint):
+    """public_host on the host part of a 'host/path' key (or a bare host)."""
+    host, sep, rest = endpoint.partition("/")
+    return public_host(host) + sep + rest
+
+
 def script_label(url):
     """Host[:port] and path of a script URL; userinfo, query and fragment can carry
     credentials or ids, so they are dropped."""
@@ -270,7 +288,7 @@ def script_label(url):
         port = f":{u.port}" if u.port else ""
     except ValueError:  # malformed port: one bad event must not abort the report
         port = ""
-    return u.hostname + port + u.path
+    return public_host(u.hostname) + port + u.path
 
 
 def surface_counts(events):
@@ -391,7 +409,7 @@ def load_requests(netlog_path):
             continue
         p = e["params"]
         url = urllib.parse.urlsplit(p["url"])
-        out.append((_request_site(p), url.hostname or "", url.path or "/", p.get("method", "")))
+        out.append((_request_site(p), public_host(url.hostname or ""), url.path or "/", p.get("method", "")))
     return out
 
 
@@ -434,7 +452,8 @@ def load_costs(netlog_path):
     req = {}
     for e in events:
         t, p = names.get(e.get("type")), e.get("params") or {}
-        r = req.setdefault(e["source"]["id"], {"url": None, "method": "GET", "ct": "", "raw": 0, "dec": 0, "sent": False})
+        r = req.setdefault(e["source"]["id"], {"url": None, "method": "GET", "ct": "", "raw": 0, "dec": 0, "sent": False,
+                                               "hdr": False, "enc": False})
         if t == "URL_REQUEST_START_JOB" and r["url"] is None and "url" in p:
             r["url"], r["method"] = p["url"], p.get("method", "GET")
         elif t == "URL_REQUEST_JOB_BYTES_READ":
@@ -448,21 +467,35 @@ def load_costs(netlog_path):
                 k, _, v = h.partition(":")
                 if k.strip().lower() == "content-type":
                     r["ct"] = v.strip()
+                elif k.strip().lower() == "content-encoding":
+                    r["enc"] = True
+            r["hdr"] = True
     out = {"by_host": {}, "by_kind": {}, "posts": collections.Counter()}
     for r in req.values():
         if not r["url"] or not r["url"].startswith("http"):
             continue
         s = urllib.parse.urlsplit(r["url"])
-        host = s.hostname or "?"
+        host = public_host(s.hostname or "?")
+        # URL_REQUEST_JOB_BYTES_READ is logged only when a content decoder reads the stream; an identity
+        # response has FILTERED_BYTES_READ alone, and there raw equals decoded. When the response may have
+        # been encoded (or its headers were not logged) decoded is only a floor: the row is marked.
+        raw, approx = r["raw"], False
+        if not raw and r["dec"]:
+            raw, approx = r["dec"], r["enc"] or not r["hdr"]
         for key, table in ((host, out["by_host"]), (kind_of(r["ct"], r["method"]), out["by_kind"])):
             row = table.setdefault(key, {"n": 0, "network": 0, "cache": 0, "decoded": 0})
             row["n"] += 1
-            row["network" if r["sent"] else "cache"] += r["raw"]
-            row["decoded"] += r["dec"] or r["raw"]
+            row["network" if r["sent"] else "cache"] += raw
+            row["decoded"] += r["dec"] or raw
+            if approx:
+                row["approx"] = True
         if r["method"] == "POST":
             out["posts"][host + s.path] += 1
     out["posts"] = dict(out["posts"])
     return out
+
+
+_APPROX = " (decoded used)"
 
 
 def _mb(n):
@@ -475,10 +508,10 @@ def render_costs(costs):
     lines = ["## Cost", "", "Bytes in MB: network = pre-decode bytes fetched, cache = pre-decode bytes from cache.", "",
              "| host | requests | network | cache | decoded |", "|---|---|---|---|---|"]
     for h, v in sorted(costs["by_host"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"]))[:20]:
-        lines.append(f"| `{h}` | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+        lines.append(f"| `{h}`{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
     lines += ["", "| kind | requests | network | cache | decoded |", "|---|---|---|---|---|"]
     for k, v in sorted(costs["by_kind"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"])):
-        lines.append(f"| {k} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+        lines.append(f"| {k}{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
     return "\n".join(lines) + "\n"
 
 
@@ -550,10 +583,10 @@ def reads_by_script(events):
 def render_channels(channels, costs):
     if not channels:
         return "## Channels\n\nno channels.json (undriven arm): POST counts are in Cost.\n"
-    watched = {ep.split("/", 1)[0] for ep in channels["endpoints"]}
+    watched = {public_endpoint(ep).split("/", 1)[0] for ep in channels["endpoints"]}
     mine, other = 0, collections.Counter()
     for ep, n in (costs or {}).get("posts", {}).items():
-        host = ep.split("/", 1)[0]
+        host = public_host(ep.split("/", 1)[0])
         if host in watched:
             mine += n
         else:
@@ -564,7 +597,7 @@ def render_channels(channels, costs):
     if other:
         lines += [f"{sum(other.values())} POSTs to other hosts: {', '.join(sorted(other))}", ""]
     lines += ["| endpoint | count | bytes | kinds | field | count | classes |", "|---|---|---|---|---|---|---|"]
-    for ep, v in sorted(channels["endpoints"].items(), key=lambda x: -x[1]["count"]):
+    for ep, v in sorted(((public_endpoint(k), v) for k, v in channels["endpoints"].items()), key=lambda x: -x[1]["count"]):
         kinds = ", ".join(f"{k} {n}" for k, n in sorted(v["kinds"].items()))
         rows = sorted(v["fields"].items()) or [("", {"count": "", "classes": {}})]
         for i, (f, fv) in enumerate(rows):
@@ -572,7 +605,7 @@ def render_channels(channels, costs):
             cls = ", ".join(f"{c} {n}" for c, n in sorted(fv["classes"].items()))
             lines.append(f"{head} `{f}` | {fv['count']} | {cls} |" if f else f"{head} | | |")
     lines += ["", "| socket | sent | received | bytes sent | bytes received | topics |", "|---|---|---|---|---|---|"]
-    for ws, v in sorted(channels.get("ws", {}).items()):
+    for ws, v in sorted(((public_endpoint(k), v) for k, v in channels.get("ws", {}).items()), key=lambda x: x[0]):
         topics = ", ".join(f"`{t}` {tv['count']}" for t, tv in sorted(v["topics"].items()))
         lines.append(f"| `{ws}` | {v['frames_sent']} | {v['frames_received']} | {v['bytes_sent']} | {v['bytes_received']} | {topics} |")
     return "\n".join(lines) + "\n"
@@ -584,7 +617,7 @@ def render_matches(matches):
 
     def table(rows):
         out = ["| endpoint | field | surface | encoding | count |", "|---|---|---|---|---|"]
-        out += [f"| `{m['endpoint']}` | `{m['field']}` | {m['surface']} | {m['encoding']} | {m['count']} |" for m in rows]
+        out += [f"| `{public_endpoint(m['endpoint'])}` | `{m['field']}` | {m['surface']} | {m['encoding']} | {m['count']} |" for m in rows]
         return out
     lines = ["## Surfaces sent", ""] + table([m for m in matches if not m["weak"]])
     lines += ["", "Weak matches (a number below 100: may equal a surface by chance)", ""]
@@ -607,7 +640,7 @@ def render_join(channels, matches, reads):
     for script, eps in sorted(by_script.items()):
         top = ", ".join(f"{k} {n}" for k, n in (reads.get(script) or collections.Counter()).most_common(8))
         carried = ", ".join(sorted(set().union(*(sent[e] for e in eps))))
-        lines.append(f"| `{script}` | {top} | {', '.join(f'`{e}`' for e in sorted(eps))} | {carried} |")
+        lines.append(f"| `{public_endpoint(script)}` | {top} | {', '.join(f'`{public_endpoint(e)}`' for e in sorted(eps))} | {carried} |")
     return "\n".join(lines) + "\n"
 
 

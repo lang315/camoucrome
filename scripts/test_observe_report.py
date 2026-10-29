@@ -521,3 +521,61 @@ def test_coverage_counts_only_posts_to_hosts_the_driver_watched():
     assert "captured 3 of 3 POSTs in the netlog (1 without a body)" in out
     assert "6 POSTs to other hosts: content-autofill.googleapis.com, example.org" in out
     assert "/v1/pages" not in out and "/collect" not in out
+
+
+POP = "scontent.xyz9-1.fna.fbcdn.net"  # synthetic: a POP-style name, never a real code
+
+
+def test_public_host_collapses_pop_style_media_hosts():
+    assert r.public_host(POP) == "scontent.*.fbcdn.net"
+    assert r.public_host("scontent-xyz9-1.xx.fbcdn.net") == "scontent.*.fbcdn.net"
+    assert r.public_host("video.xyz9-1.fna.fbcdn.net") == "*.fna.fbcdn.net"
+    assert r.public_host("media.xyz9-1.fna.whatsapp.net") == "*.fna.whatsapp.net"
+    assert r.public_host("static.xx.fbcdn.net") == "static.xx.fbcdn.net"
+    assert r.public_host("www.facebook.com") == "www.facebook.com"
+    assert r.public_endpoint(POP + "/v/t1/a.jpg") == "scontent.*.fbcdn.net/v/t1/a.jpg"
+    assert r.public_endpoint("www.facebook.com/ajax/bz") == "www.facebook.com/ajax/bz"
+
+
+def pop_netlog(tmp_path, with_encoding_header=False):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+             "HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+    hdrs = ["Content-Type: video/mp4"] + (["Content-Encoding: br"] if with_encoding_header else [])
+    ev = [e(1, "URL_REQUEST_START_JOB", url="https://" + POP + "/v/a.mp4?sig=secret", method="GET"),
+          e(1, "HTTP_TRANSACTION_SEND_REQUEST"), e(1, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=hdrs),
+          e(1, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=5000)]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_identity_media_without_a_raw_event_counts_on_the_network(tmp_path):
+    # no Content-Encoding: the job logs only FILTERED_BYTES_READ, and raw equals decoded
+    c = r.load_costs(pop_netlog(tmp_path))
+    h = c["by_host"]["scontent.*.fbcdn.net"]
+    assert (h["n"], h["network"], h["cache"], h["decoded"]) == (1, 5000, 0, 5000)
+    assert not h.get("approx") and POP not in c["by_host"]
+    out = r.render_costs(c)
+    assert "xyz9" not in out and "decoded used" not in out and "scontent.*.fbcdn.net" in out
+
+
+def test_encoded_response_without_a_raw_event_uses_decoded_and_is_marked(tmp_path):
+    c = r.load_costs(pop_netlog(tmp_path, with_encoding_header=True))
+    h = c["by_host"]["scontent.*.fbcdn.net"]
+    assert h["network"] == 5000 and h["approx"]
+    assert "(decoded used)" in r.render_costs(c)
+
+
+def test_request_table_and_script_labels_collapse_pop_hosts(tmp_path):
+    reqs = r.load_requests(pop_netlog(tmp_path))
+    assert reqs[0][1] == "scontent.*.fbcdn.net"
+    assert r.script_label("https://" + POP + "/x.js?q=1") == "scontent.*.fbcdn.net/x.js"
+    ch = {"arm": "x", "posts_captured": 0, "posts_missing": 0, "ws": {},
+          "endpoints": {POP + "/upload": {"count": 1, "bytes": 1, "kinds": {"form": 1}, "initiators": {},
+                                          "fields": {}}}}
+    assert "xyz9" not in r.render_channels(ch, {"posts": {POP + "/upload": 1}})

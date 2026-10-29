@@ -33,3 +33,11 @@ def test_diff_names_what_only_one_arm_sent(tmp_path):
 def test_diff_parses_as_python_3_9():
     import ast
     ast.parse(pathlib.Path(od.__file__).read_text(encoding="utf-8"), feature_version=(3, 9))
+
+
+def test_diff_never_prints_a_pop_style_host(tmp_path):
+    host = "scontent.xyz9-1.fna.fbcdn.net"  # synthetic
+    a = arm(tmp_path, "1d", {host + "/up": ["f"]}, [(host + "/up", "f", "timezone")])
+    b = arm(tmp_path, "1s", {}, [])
+    out = od.render(od.diff(a, b), "fork", "stock")
+    assert "xyz9" not in out and "scontent.*.fbcdn.net/up" in out
