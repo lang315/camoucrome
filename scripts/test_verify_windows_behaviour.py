@@ -15,3 +15,21 @@ def test_claim_keeps_a_ten_millisecond_quantum():
     for real in (44100, 48000, 96000):
         rate, frames = v.audio_claim({"audio:sampleRate": 44100, "audio:bufferFrames": 441}, real)
         assert rate != real and frames == rate // 100
+
+
+def test_interfaces_follow_the_claim():
+    assert v.iface_ok("linux", {"share": "undefined", "bluetooth": "undefined"})
+    assert v.iface_ok("windows", {"share": "function", "bluetooth": "object"})
+    assert v.iface_ok("macos", {"share": "function", "bluetooth": "object"})
+
+
+def test_interface_rows_fail_on_the_wrong_shape():
+    """RED fixtures: the unamended Windows build under a Linux claim, and a build that dropped the enabling branch."""
+    assert not v.iface_ok("linux", {"share": "function", "bluetooth": "object"})
+    assert not v.iface_ok("linux", {"share": "undefined", "bluetooth": "object"})
+    assert not v.iface_ok("windows", {"share": "undefined", "bluetooth": "undefined"})
+    assert not v.iface_ok("macos", {"error": "launch failed"})
+
+
+def test_row_count_includes_the_interface_rows():
+    assert v.EXPECTED_ROWS == 17
