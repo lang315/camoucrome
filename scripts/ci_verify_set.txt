@@ -33,6 +33,8 @@ run verify_webgl_capability_identity.py
 # verify_credits needs generate_about_credits = true in the runner's out/Default/args.gn (hand-managed: the workflow does not
 # write args.gn). Without it the credits page is the 433-character placeholder and the script fails.
 run verify_credits.py
+# verify_sp6b_launcher: L4 (headed launch) is UNMEASURED, exit 3, when no X server answers; the runner has no display.
+run verify_sp6b_launcher.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
 skip verify_chrome_object.py  # not yet evaluated for the runner
 skip verify_font_metrics.py  # not yet evaluated for the runner
@@ -60,7 +62,6 @@ skip verify_sp4_tzlocale.py  # not yet evaluated for the runner
 skip verify_sp4_webrtc.py  # not yet evaluated for the runner
 skip verify_sp5a.py  # not yet evaluated for the runner
 skip verify_sp5b_preset.py  # not yet evaluated for the runner
-skip verify_sp6b_launcher.py  # fails on the runner's out/Default (exit 1, last line "FAIL") in a bare harness, measured 2026-10-29; cause not yet found
 skip verify_sp7_phonehome.py  # not yet evaluated for the runner
 skip verify_voices_ii.py  # not yet evaluated for the runner
 skip verify_voices_pause.py  # not yet evaluated for the runner
