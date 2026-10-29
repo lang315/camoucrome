@@ -46,3 +46,40 @@ def test_gzip_and_base64_are_tried_once():
 def test_opaque_body():
     assert d.fields(b"\x00\x01\x02\xff") == ("opaque", [])
     assert d.fields(b"just some words") == ("opaque", [])
+
+
+def _mqtt_str(s):
+    b = s.encode()
+    return len(b).to_bytes(2, "big") + b
+
+
+def _packet(ptype, flags, body):
+    return bytes([(ptype << 4) | flags, len(body)]) + body
+
+
+def test_mqtt_publish_topic_and_payload():
+    body = _mqtt_str("/t_ms") + b'{"a":1}'
+    assert d.mqtt_packets(_packet(3, 0, body)) == [{"type": "PUBLISH", "topic": "/t_ms", "payload": b'{"a":1}'}]
+
+
+def test_mqtt_publish_qos1_skips_the_packet_id():
+    body = _mqtt_str("/x") + b"\x00\x07" + b"{}"
+    assert d.mqtt_packets(_packet(3, 2, body))[0]["payload"] == b"{}"
+
+
+def test_mqtt_connect_username_is_the_payload():
+    var = _mqtt_str("MQIsdp") + bytes([3, 0x80 | 0x02]) + b"\x00\x3c"
+    body = var + _mqtt_str("client") + _mqtt_str('{"u":"100012345678901"}')
+    p = d.mqtt_packets(_packet(1, 0, body))
+    assert p == [{"type": "CONNECT", "topic": "", "payload": b'{"u":"100012345678901"}'}]
+
+
+def test_two_packets_in_one_frame():
+    f = _packet(12, 0, b"") + _packet(3, 0, _mqtt_str("/a") + b"x")
+    assert [p["type"] for p in d.mqtt_packets(f)] == ["PINGREQ", "PUBLISH"]
+
+
+def test_not_mqtt_or_truncated_gives_nothing():
+    assert d.mqtt_packets(b"\x00\x05ab") == []
+    assert d.mqtt_packets(bytes([0x30, 10]) + b"abc") == []
+    assert d.mqtt_packets(b"") == []
