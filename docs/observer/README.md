@@ -203,6 +203,75 @@ whenever facebook's reads change for good. Measurements:
 5. Commit the baseline, install it on the host, and judge both runs again:
    each must be `PASS`.
 
+## Tracking-map arms (2026-10-29)
+
+The owner relaxed the observer rules on 2026-10-29
+(`docs/superpowers/specs/2026-10-29-fb-tracking-map-design.md`, §2b). Four
+driven arms join the unattended command, to map facebook's tracking
+channels and the cost of a load. Select them with
+`observe-auto.ps1 -Arms 1,3,1d,1s,3w,4a`. The default stays `-Arms 1,3`,
+and arms 1 and 3 run, are judged and are reported as before (the cap below also applies to a default run, because arm 3 is logged in).
+
+Pass the list through `powershell -File`, as strings. In an interactive
+PowerShell session `1d` parses as the decimal `1`, which would run arm 1.
+Install the scripts and the venv first (plan Task 12): the driven arms run
+`observe_drive.py` in `D:\camou-win\observe\venv`.
+
+| arm | browser | profile | time | input |
+|---|---|---|---|---|
+| `1` | fork `out\Observe` | fresh | 30 s | none (as before) |
+| `3` | fork | copy of the login backup | 120 s | none (as before) |
+| `1d` | fork | fresh | 20 s + 40 s wheel | wheel |
+| `1s` | stock Chrome | fresh | 20 s + 40 s wheel | wheel |
+| `3w` | fork | copy of the login backup | 5 pages x (15 s + 60 s wheel) | URL navigation, wheel |
+| `4a` | fork | copy of the login backup | 20 s + 40 s wheel | wheel |
+
+- **Driver.** `1d`, `1s`, `3w` and `4a` run `recon.ps1 -Driver`, which starts
+  `observe_drive.py` (patchright through the product client, no
+  `Runtime.enable`, no click, no key). The gates, the watchdog, the time
+  limit, `run.json` and the cleanup are the ones arms 1 and 3 use. `run.json`
+  gains `drive_rc`. The arm dir gains `chrome-args.json`, `drive.out` and
+  `drive.err`.
+- **`3w`** visits `/`, `/watch/`, `/marketplace/`, `/messages/` and `/me/`
+  on the site, by URL.
+- **`4a`** loads one third-party page that embeds the Meta Pixel, with the
+  login copy. Its URL is the first line of `D:\camou-win\observe\arm4a-url.txt`,
+  which exists only on the host and is never committed. Without the file the
+  arm is `UNMEASURED arm4a no arm4a-url.txt`.
+- **`1s`** has no observer trace (stock has no observe category). It keeps
+  the netlog and the driver capture. Its line is
+  `INFO arm1s measured (stock: no observer trace, no judge)`, or
+  `UNMEASURED arm1s drive_rc=<n>`.
+- **Verdicts of `1d`, `3w` and `4a`.** `drive_rc` 4 (a checkpoint or login
+  page where a session is expected) gives `UNMEASURED arm<N> checkpoint`
+  and skips the rest of the run's logged-in arms
+  (`UNMEASURED arm<N> skipped after checkpoint`). A missing `channels.json`
+  gives `UNMEASURED arm<N> no channels.json`. Otherwise the judge runs
+  against `D:\camou-win\observe\baseline-empty.json` (`{}`), so these arms
+  measure and compare nothing yet: a baseline comes after two runs.
+- **CPU and RAM.** `1d`, `3w` and `4a` also record `devtools.timeline` for
+  CPU per script. Arms 1 and 3 do not, so a trace buffer discard cannot make
+  a baseline arm `UNMEASURED`; `-CpuAll` adds the category to them for a later
+  run. During a driven arm the command samples private memory per process
+  type every 6 s into `arm<N>\ram.json` (the file states the interval), then
+  writes `report.md` again with the RAM section.
+- **Account-risk cap.** A logged-in arm is `3`, `3w` or `4a`. The command
+  refuses a run that includes one (`RESULT UNMEASURED cap: ...`, exit 3) when
+  3 such runs started in the same UTC day, or the last one started less than
+  15 minutes ago. The ledger is `D:\camou-win\observe\auto\ledger.json`
+  (UTC timestamps). A run counts when it starts, even if it ends
+  `UNMEASURED`. Start each run by hand; schedule nothing.
+
+Host-only files and the cleanup: `capture\` (request bodies, WebSocket
+payloads) and `resources\html\` (document HTML) are deleted when the run
+finishes, together with the profile copies and `cookies.db`. `truth.json`
+(the host's own surface values) and `resources\js\` (Meta's public script
+bundles) stay on the host. What may leave it: `report.md`, `summary.json`,
+`channels.json`, `matches.json` and `ram.json`, which carry names, counts,
+value classes and matches only. Check the copies with
+`check_privacy.py --file` and a search for the canary string before they
+leave the host.
+
 ## Read
 
     cp <profile>/Default/Cookies /tmp/cookies.db
