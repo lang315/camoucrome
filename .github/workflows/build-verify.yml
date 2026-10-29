@@ -15,6 +15,8 @@ on:
     branches: [main]
     paths: [patches/**, additions/**, settings/**, scripts/**, client/**, upstream.env, .github/workflows/build-verify.yml]
   workflow_dispatch:
+permissions:
+  contents: read
 # An explicit `shell: bash` makes GitHub run `bash --noprofile --norc -eo
 # pipefail {0}`; the implicit default is `bash -e {0}`, where `cmd | tail`
 # reports tail's status and hides every failure below.
@@ -59,9 +61,9 @@ jobs:
           # --delete so a module removed from the repo cannot linger and still
           # import; baselines/ keeps box-local captures, so it is not mirrored.
           rsync -a --delete --exclude '*.egg-info' --exclude node_modules --exclude __pycache__ client/ "$CLIENT/client/"
-          rsync -a settings/ "$CLIENT/settings/"
+          rsync -a --delete settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
-          rsync -a scripts/ "$CLIENT/scripts/"
+          rsync -a --delete --exclude __pycache__ scripts/ "$CLIENT/scripts/"
           cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
@@ -72,11 +74,14 @@ jobs:
           trap 'bash "$L" release "$OWNER"' EXIT
           cd "$SRC"
           autoninja -C out/Default chrome content_shell components_unittests 2>&1 | tail -3 | tee /tmp/build.txt
-          grep -q "Build Succeeded" /tmp/build.txt
+          python3 "$GITHUB_WORKSPACE/scripts/ci_checks.py" steps /tmp/build.txt
       - name: camoucfg unit suites
         run: |
           cd "$SRC"
           F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc components/camoucfg_lgpl/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
+          test -n "$F" || { echo "no camoucfg test suites found in components/camoucfg*/*_unittest.cc"; exit 1; }
+          out/Default/components_unittests --gtest_list_tests --gtest_filter="$F" > /tmp/camoucfg_list.txt
+          python3 "$GITHUB_WORKSPACE/scripts/ci_checks.py" listed /tmp/camoucfg_list.txt
           # One run into a file: `| grep -q` would close the pipe early and, under
           # pipefail, fail the step on the test binary's SIGPIPE.
           rc=0; out/Default/components_unittests --gtest_filter="$F" > /tmp/camoucfg_ut.txt 2>&1 || rc=$?
@@ -116,8 +121,9 @@ jobs:
           while read -r script envs; do
             ( [ -z "$envs" ] || export $envs; run "$script" ) || rc=1
           done < <(python3 "$GITHUB_WORKSPACE/scripts/ci_verify_set.py" list)
-          # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)
-          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi
+          # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md): a missing arg fails the job, because a
+          # skipped verify_observe left the observer's checks out and the job green
+          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; else echo "FAILED verify_observe.py: camou_observe = true is not in out/Default/args.gn"; rc=1; fi
           exit $rc
       - name: logs
         if: always()

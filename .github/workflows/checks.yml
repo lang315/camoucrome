@@ -2,9 +2,17 @@
 # checkout. Full builds stay on the build box until a release cadence exists.
 name: checks
 on: [push, pull_request]
+permissions:
+  contents: read
+# A push and a pull_request run of one commit are different refs, so both still run (the privacy gate must see every
+# push, PR or not); a newer push to the same ref cancels the older run.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
