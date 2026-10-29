@@ -49,14 +49,7 @@ def failed(keys, label, exc):
     notes.append(f"{label}: {type(exc).__name__}: {exc}")
 
 
-def read_stderr():
-    """Guarded read of this session's browser stderr (verify_sp5a.py's helper).
-    launch() opens the log 'wb', truncating, so each read is its own session."""
-    try:
-        with open(lib_shell.STDERR_LOG, "rb") as handle:
-            return handle.read().decode("utf-8", "replace"), None
-    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
-        return None, exc
+read_stderr = lib_shell.read_stderr  # one copy, in lib_shell
 
 
 def stderr_after(config):

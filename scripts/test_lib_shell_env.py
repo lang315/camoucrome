@@ -92,3 +92,16 @@ def test_every_script_that_launches_headed_restores_the_display():
         if top_level and ('"--headed"' in src or "headless=False" in src) and "restore_display_env" not in src:
             missing.append(p.name)
     assert missing == []
+
+
+def test_read_stderr_returns_this_sessions_log_or_the_fault(tmp_path, monkeypatch):
+    # seven verifies carried the same copy of this guarded read; it lives in lib_shell now
+    import lib_shell
+    log = tmp_path / "stderr.log"
+    monkeypatch.setattr(lib_shell, "STDERR_LOG", str(log))
+    log.write_bytes(b"ok \xff line\n")
+    text, err = lib_shell.read_stderr()
+    assert err is None and text == "ok � line\n"
+    log.unlink()
+    text, err = lib_shell.read_stderr()
+    assert text is None and isinstance(err, FileNotFoundError)  # a fault becomes a FAIL row, never an exception

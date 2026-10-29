@@ -24,14 +24,7 @@ results = {}
 notes = []
 
 
-def read_stderr():
-    """Guarded read of this session's browser stderr (verify_sp5a.py's helper).
-    launch() truncates the log per launch, so a read sees only its own run."""
-    try:
-        with open(lib_shell.STDERR_LOG, "rb") as handle:
-            return handle.read().decode("utf-8", "replace"), None
-    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
-        return None, exc
+read_stderr = lib_shell.read_stderr  # one copy, in lib_shell
 
 
 def run_f1_f4(shell=None, base_flags=None, k1="F1", k4="F4"):
