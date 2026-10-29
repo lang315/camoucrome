@@ -64,3 +64,10 @@ def test_build_verify_uses_the_build_and_filter_checks():
     t = text("build-verify.yml")
     import re
     assert re.search(r'ci_checks\.py"? steps', t) and re.search(r'ci_checks\.py"? listed', t)
+
+
+def test_build_verify_syncs_scripts_and_settings_with_delete():
+    # a file removed from the repo (settings/presets/chromium-154.json on 2026-10-29) must not linger in the client tree the verifies read
+    t = text("build-verify.yml")
+    assert "rsync -a --delete --exclude __pycache__ scripts/ " in t
+    assert "rsync -a --delete settings/ " in t
