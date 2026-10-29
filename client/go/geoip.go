@@ -73,7 +73,7 @@ func ExitIP(p *Proxy) (string, error) {
 // CheckGeoIP is the warnings about the config's timezone:id against the exit address; it never fails the launch and
 // never changes the config. Nothing to check (no timezone:id) gives none.
 func CheckGeoIP(o Options) []string {
-	cfg, err := asObject(o.Config)
+	cfg, err := effectiveKeys(o.Config, o.Preset)
 	if err != nil {
 		return nil // the launch reports a bad config itself
 	}

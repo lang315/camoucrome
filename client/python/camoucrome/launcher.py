@@ -89,6 +89,9 @@ def effective_keys(config=None, preset=None):
             else next((c[k] for k in ("navigator.language", "locale:tag") if isinstance(c.get(k), str)), None))
     if head and "locale:tag" in out:
         set_locale(head)
+    # preset_loader.cc: the preset's timezone becomes timezone:id (explicit config still wins below)
+    if isinstance(p.get("timezone"), str):
+        out["timezone:id"] = p["timezone"]
     out.update(c)
     langs = out.get("navigator.languages")
     if langs is not None and not (isinstance(langs, list) and all(isinstance(l, str) for l in langs)):
@@ -293,7 +296,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             "a second emulation of the same surface fights the fork's value")
     if geoip:
         from . import geoip as _geoip
-        _geoip.warn_all(_geoip.check_config(_as_dict(config), proxy, exit_ip, None if geoip is True else str(geoip)))
+        _geoip.warn_all(_geoip.check_config(effective_keys(config, preset), proxy, exit_ip, None if geoip is True else str(geoip)))
     owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
     if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")
