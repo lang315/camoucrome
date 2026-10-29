@@ -47,22 +47,16 @@ def windows_argv(executable):
     return []
 
 
-def browser_candidates(executable, proc_root="/proc"):
-    """argv of every browser (not renderer/gpu) process running `executable`, read from /proc on Linux and Win32_Process
-    on Windows (the first match only there); empty elsewhere. More than one means a stray earlier run is still alive:
-    the caller must not trust which one it reads (2026-10-29: a stray headless chrome made all three patchright rows of
-    verify_sp6b_driver compare a stock-style argv)."""
-    if os.name == "nt":
-        argv = windows_argv(executable)
-        return [argv] if argv else []
+def proc_candidates(proc_root, executable):
+    """argv of every browser (not renderer/gpu) process running `executable` in a /proc-style directory. More than one
+    means a stray earlier run is still alive: the caller must not trust which one it reads (2026-10-29: a stray headless
+    chrome made all three patchright rows of verify_sp6b_driver compare a stock-style argv)."""
     if not os.path.isdir(proc_root):
         return []
     found = []
-    for pid in sorted(os.listdir(proc_root), key=lambda p: (not p.isdigit(), int(p) if p.isdigit() else 0)):
-        if not pid.isdigit():
-            continue
+    for pid in sorted((p for p in os.listdir(proc_root) if p.isdigit()), key=int):
         try:
-            with open(f"{proc_root}/{pid}/cmdline", "rb") as f:
+            with open(os.path.join(proc_root, pid, "cmdline"), "rb") as f:
                 argv = f.read().split(b"\0")[:-1]
         except OSError:
             continue
@@ -76,9 +70,17 @@ def browser_candidates(executable, proc_root="/proc"):
     return found
 
 
-def browser_argv(executable, proc_root="/proc"):
+def browser_candidates(executable):
+    """proc_candidates over /proc on Linux; on Windows Win32_Process, the first match only (one candidate)."""
+    if os.name == "nt":
+        argv = windows_argv(executable)
+        return [argv] if argv else []
+    return proc_candidates("/proc", executable)
+
+
+def browser_argv(executable):
     """The first candidate's argv, [] when there is none."""
-    found = browser_candidates(executable, proc_root)
+    found = browser_candidates(executable)
     return found[0] if found else []
 
 

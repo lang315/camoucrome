@@ -23,7 +23,7 @@ def test_one_browser_one_candidate_children_and_other_programs_ignored(tmp_path)
         11: [EXE, "--type=renderer", "--lang=en-US"],
         12: ["/usr/bin/python3", "-m", "camoucrome.probe"],
     })
-    assert probe.browser_candidates(EXE, str(root)) == [[EXE, "--headless=new", "--remote-debugging-pipe"]]
+    assert probe.proc_candidates(str(root), EXE) == [[EXE, "--headless=new", "--remote-debugging-pipe"]]
 
 
 def test_a_stray_main_process_is_a_second_candidate(tmp_path):
@@ -31,7 +31,7 @@ def test_a_stray_main_process_is_a_second_candidate(tmp_path):
         10: [EXE, "--headless", "--remote-debugging-port=0", "about:blank"],   # the stray
         20: [EXE, "--headless=new", "--remote-debugging-pipe"],               # the browser under test
     })
-    cands = probe.browser_candidates(EXE, str(root))
+    cands = probe.proc_candidates(str(root), EXE)
     assert len(cands) == 2
 
 
@@ -39,13 +39,15 @@ def test_chromiums_space_joined_title_is_split(tmp_path):
     d = tmp_path / "7"
     d.mkdir()
     (d / "cmdline").write_bytes(f"{EXE} --headless=new --no-sandbox".encode() + b"\0")
-    assert probe.browser_candidates(EXE, str(tmp_path)) == [[EXE, "--headless=new", "--no-sandbox"]]
+    assert probe.proc_candidates(str(tmp_path), EXE) == [[EXE, "--headless=new", "--no-sandbox"]]
 
 
 def test_no_proc_dir_is_no_candidate(tmp_path):
-    assert probe.browser_candidates(EXE, str(tmp_path / "missing")) == []
+    assert probe.proc_candidates(str(tmp_path / "missing"), EXE) == []
 
 
-def test_browser_argv_keeps_returning_the_first_candidate(tmp_path):
-    root = fake_proc(tmp_path, {10: [EXE, "--a"], 20: [EXE, "--b"]})
-    assert probe.browser_argv(EXE, str(root)) == [EXE, "--a"]
+def test_browser_argv_is_the_first_candidate_and_empty_without_one(monkeypatch):
+    monkeypatch.setattr(probe, "browser_candidates", lambda exe: [[exe, "--a"], [exe, "--b"]])
+    assert probe.browser_argv(EXE) == [EXE, "--a"]
+    monkeypatch.setattr(probe, "browser_candidates", lambda exe: [])
+    assert probe.browser_argv(EXE) == []
