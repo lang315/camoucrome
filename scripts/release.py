@@ -96,9 +96,18 @@ def members(path):
         yield pathlib.Path(path).name, pathlib.Path(path).read_bytes()
 
 
+def tar_owners(path):
+    """(member, user and group name) of a tar's headers: the build account's names ride there, not in the data."""
+    name = pathlib.Path(path).name.lower()
+    if name.endswith((".tar", ".tgz")) or ".tar." in name:
+        with tarfile.open(path) as t:
+            for m in t:
+                yield m.name, f"{m.uname}\n{m.gname}".encode()
+
+
 def scan_archive(path, terms):
-    """(member, placeholder) for every member of an asset whose bytes hold a private term."""
-    return [(n, h) for n, data in members(path) for h in check_privacy.byte_hits(data, terms, n)]
+    """(member, placeholder) for every member of an asset whose bytes (or tar owner names) hold a private term."""
+    return [(n, h) for n, data in (*members(path), *tar_owners(path)) for h in check_privacy.byte_hits(data, terms, n)]
 
 
 def release_listed(tag):
@@ -196,6 +205,7 @@ def main(argv):
     stamp_bytes = [pathlib.Path(p).read_bytes() for p in a.stamp]
     # platform archive = name starts camoucrome-<version>-, so the npm tarball (camoucrome-0.1.0.tgz) is not one
     prefix = f"camoucrome-{m.group(1)}-"
+    matched = []
     for p in a.asset:
         n = pathlib.Path(p).name
         if n.startswith(prefix) and n.lower().endswith((".zip", ".tar", ".tgz")) or n.startswith(prefix) and ".tar." in n.lower():
@@ -205,6 +215,12 @@ def main(argv):
                 return refuse(f"{p} is not a readable archive: {e}")
             if len(embedded) != 1 or embedded[0] not in stamp_bytes:
                 return refuse(f"{p}: embedded camoucrome-release.json is missing or matches no --stamp")
+            matched.append(stamp_bytes.index(embedded[0]))
+    # both ways: a platform archive per stamp, once (a forgotten archive made a one-platform draft). No platform
+    # archive at all (an npm or wheel-only asset list) is left alone.
+    if matched and sorted(matched) != list(range(len(stamp_bytes))):
+        missing = [a.stamp[i] for i in range(len(stamp_bytes)) if i not in matched]
+        return refuse(f"no archive embeds {missing}" if missing else "two platform archives embed the same --stamp")
     for p in a.asset:
         try:
             for member, label in scan_archive(p, terms):
