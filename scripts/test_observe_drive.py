@@ -120,3 +120,65 @@ def test_small_numbers_are_weak_and_a_near_miss_does_not_match():
     assert d.match(1921, TRUTH) == []
     assert d.match("1920x1081", TRUTH) == []
     assert d.match(True, TRUTH) == []
+
+
+def _req(url, body, initiator="https://static.xx.fbcdn.net/rsrc.php/v3/a.js", missing=False):
+    return {"url": url, "method": "POST", "content_type": "application/x-www-form-urlencoded",
+            "body_b64": "" if missing else base64.b64encode(body).decode(), "missing": missing, "initiator": initiator}
+
+
+def _frame(url, direction, payload, opcode=2):
+    return {"url": url, "dir": direction, "opcode": opcode, "payload_b64": base64.b64encode(payload).decode()}
+
+
+CANARY = "CANARY-7f3a9c"
+
+
+def _fixture():
+    q = json.dumps([{"name": CANARY + "-name", "dm": 8, "uid": "100012345678901", "tz": "Europe/Berlin"}])
+    reqs = [_req("https://www.facebook.com/ajax/bz?__a=1&tok=" + CANARY, urllib.parse.urlencode({"q": q}).encode()),
+            _req("https://www.facebook.com/ajax/bz", urllib.parse.urlencode({"q": q}).encode()),
+            _req("https://www.facebook.com/ajax/bnzai", b"", missing=True)]
+    pub = _packet(3, 0, _mqtt_str("/t_ms") + json.dumps({"payload": CANARY}).encode())
+    frames = [_frame("wss://gateway.facebook.com/ws/realtime?x=" + CANARY, "sent", pub),
+              _frame("wss://gateway.facebook.com/ws/realtime", "received", b"\x00\x01binary")]
+    return reqs, frames
+
+
+def test_channels_count_fields_classes_and_missing_bodies():
+    reqs, frames = _fixture()
+    c = d.build_channels(reqs, frames, "3w")
+    bz = c["endpoints"]["www.facebook.com/ajax/bz"]
+    assert bz["count"] == 2 and bz["kinds"] == {"form": 2}
+    assert bz["fields"]["q[].dm"] == {"count": 2, "classes": {"int": 2}}
+    assert bz["fields"]["q[].uid"]["classes"] == {"id": 2}
+    assert bz["initiators"] == {"static.xx.fbcdn.net/rsrc.php/v3/a.js": 2}
+    assert c["endpoints"]["www.facebook.com/ajax/bnzai"]["kinds"] == {"missing": 1}
+    assert (c["posts_captured"], c["posts_missing"]) == (3, 1)
+    ws = c["ws"]["gateway.facebook.com/ws/realtime"]
+    assert (ws["frames_sent"], ws["frames_received"]) == (1, 1)
+    assert ws["topics"]["/t_ms"]["fields"]["payload"]["count"] == 1
+    assert ws["topics"]["(opaque)"]["count"] == 1
+
+
+def test_matches_carry_surface_and_weak_flag():
+    reqs, frames = _fixture()
+    m = d.build_matches(reqs, frames, TRUTH)
+    assert {"endpoint": "www.facebook.com/ajax/bz", "field": "q[].tz", "surface": "timezone",
+            "encoding": "exact", "weak": False, "count": 2} in m
+    assert any(r["field"] == "q[].dm" and r["surface"] == "navigator.deviceMemory" and r["weak"] for r in m)
+
+
+def test_value_canary_never_reaches_a_leaving_file(tmp_path):
+    reqs, frames = _fixture()
+    cap = tmp_path / "capture"
+    cap.mkdir()
+    (cap / "requests.jsonl").write_text("\n".join(json.dumps(r) for r in reqs) + '\n{"url": "cut', encoding="utf-8")
+    (cap / "ws.jsonl").write_text("\n".join(json.dumps(f) for f in frames) + "\n", encoding="utf-8")
+    (tmp_path / "truth.json").write_text(json.dumps(TRUTH), encoding="utf-8")
+    d.write_outputs(tmp_path, "3w")
+    for name in ("channels.json", "matches.json"):
+        text = (tmp_path / name).read_text(encoding="utf-8")
+        assert CANARY not in text, name
+        assert "100012345678901" not in text, name
+    assert json.loads((tmp_path / "channels.json").read_text())["posts_captured"] == 3

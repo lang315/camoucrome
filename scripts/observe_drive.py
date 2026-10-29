@@ -6,8 +6,10 @@ channels.json and matches.json carry names, counts, value classes and surface ma
 """
 import base64
 import binascii
+import collections
 import gzip
 import json
+import pathlib
 import re
 import urllib.parse
 import zlib
@@ -192,3 +194,108 @@ def match(value, truth):
         if truth.get(w) is not None and isinstance(value, str) and value in (f"{truth[w]}x{truth[h]}", f"{truth[w]}*{truth[h]}"):
             out.append((name, "WxH", False))
     return out
+
+
+
+def read_jsonl(path):
+    out = []
+    p = pathlib.Path(path)
+    if not p.exists():
+        return out
+    for line in p.read_text(encoding="utf-8").splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue  # a driver killed mid-write leaves a cut last line
+    return out
+
+
+def endpoint(url):
+    s = urllib.parse.urlsplit(url)
+    host = s.hostname or "?"
+    try:
+        host = f"{host}:{s.port}" if s.port else host
+    except ValueError:
+        pass
+    return host + s.path
+
+
+def _b64(s):
+    return base64.b64decode(s) if s else b""
+
+
+def _add_fields(slot, pairs):
+    for path, v in pairs:
+        f = slot.setdefault(path, {"count": 0, "classes": {}})
+        f["count"] += 1
+        c = value_class(v)
+        f["classes"][c] = f["classes"].get(c, 0) + 1
+
+
+def _frame_units(fr):
+    """[(topic, field pairs)] of one frame: MQTT packets, else a JSON text frame, else one opaque unit."""
+    raw = _b64(fr["payload_b64"])
+    if fr.get("opcode") == 2:
+        pk = mqtt_packets(raw)
+        if pk:
+            return [(p["topic"] or p["type"], fields(p["payload"])[1]) for p in pk]
+        return [("(opaque)", [])]
+    kind, f = fields(raw)
+    return [("(text)" if kind != "opaque" else "(opaque)", f)]
+
+
+def build_channels(requests, frames, arm):
+    eps = {}
+    missing = 0
+    for r in requests:
+        e = eps.setdefault(endpoint(r["url"]), {"count": 0, "bytes": 0, "kinds": {}, "initiators": {}, "fields": {}})
+        e["count"] += 1
+        if r.get("missing"):
+            kind, pairs = "missing", []
+            missing += 1
+        else:
+            raw = _b64(r["body_b64"])
+            e["bytes"] += len(raw)
+            kind, pairs = fields(raw)
+        e["kinds"][kind] = e["kinds"].get(kind, 0) + 1
+        ini = endpoint(r["initiator"]) if r.get("initiator") else "(no script)"
+        e["initiators"][ini] = e["initiators"].get(ini, 0) + 1
+        _add_fields(e["fields"], pairs)
+    ws = {}
+    for fr in frames:
+        w = ws.setdefault(endpoint(fr["url"]), {"frames_sent": 0, "frames_received": 0, "bytes_sent": 0,
+                                                "bytes_received": 0, "topics": {}})
+        n = len(_b64(fr["payload_b64"]))
+        w["frames_" + fr["dir"]] += 1
+        w["bytes_" + fr["dir"]] += n
+        for topic, pairs in _frame_units(fr):
+            t = w["topics"].setdefault(topic, {"count": 0, "fields": {}})
+            t["count"] += 1
+            _add_fields(t["fields"], pairs)
+    return {"arm": arm, "posts_captured": len(requests), "posts_missing": missing, "endpoints": eps, "ws": ws}
+
+
+def build_matches(requests, frames, truth):
+    n = collections.Counter()
+    for r in requests:
+        if not r.get("missing"):
+            for path, v in fields(_b64(r["body_b64"]))[1]:
+                for s, enc, weak in match(v, truth):
+                    n[(endpoint(r["url"]), path, s, enc, weak)] += 1
+    for fr in frames:
+        for topic, pairs in _frame_units(fr):
+            for path, v in pairs:
+                for s, enc, weak in match(v, truth):
+                    n[(endpoint(fr["url"]) + " " + topic, path, s, enc, weak)] += 1
+    return [{"endpoint": e, "field": f, "surface": s, "encoding": enc, "weak": weak, "count": c}
+            for (e, f, s, enc, weak), c in sorted(n.items())]
+
+
+def write_outputs(out_dir, arm):
+    out_dir = pathlib.Path(out_dir)
+    reqs = read_jsonl(out_dir / "capture" / "requests.jsonl")
+    frames = read_jsonl(out_dir / "capture" / "ws.jsonl")
+    tp = out_dir / "truth.json"
+    truth = json.loads(tp.read_text(encoding="utf-8")) if tp.exists() else {}
+    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm), indent=1, sort_keys=True), encoding="utf-8")
+    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth), indent=1), encoding="utf-8")
