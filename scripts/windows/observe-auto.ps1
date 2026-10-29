@@ -46,7 +46,10 @@ function Get-Gate {
 # object, so it is unrolled here; parsing it element-wise failed with 2+ entries and the cap was skipped (run 20261029-163107).
 function Read-Ledger([string]$path) {
   try {
-    $json = if (Test-Path $path) { Get-Content -Raw $path | ConvertFrom-Json } else { @() }
+    $text = if (Test-Path $path) { Get-Content -Raw $path } else { '[]' }
+    # a present but blank file is a torn write, not an empty history
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    $json = $text | ConvertFrom-Json
     $utc = [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal
     return , @(foreach ($x in @($json)) {
       if ($x -is [datetime]) { $x.ToUniversalTime() } else { [datetime]::Parse("$x", [Globalization.CultureInfo]::InvariantCulture, $utc) }
