@@ -83,3 +83,40 @@ def test_not_mqtt_or_truncated_gives_nothing():
     assert d.mqtt_packets(b"\x00\x05ab") == []
     assert d.mqtt_packets(bytes([0x30, 10]) + b"abc") == []
     assert d.mqtt_packets(b"") == []
+
+
+TRUTH = {"navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+         "navigator.deviceMemory": 8, "navigator.hardwareConcurrency": 8, "navigator.languages": ["en-US", "en"],
+         "screen.width": 1920, "screen.height": 1080, "window.innerWidth": 1280, "window.innerHeight": 720,
+         "timezone": "Europe/Berlin", "timezoneOffset": -60, "window.devicePixelRatio": 1.25}
+
+
+def test_exact_and_string_forms():
+    assert ("timezone", "exact", False) in d.match("Europe/Berlin", TRUTH)
+    assert ("screen.width", "str", False) in d.match("1920", TRUTH)
+    assert ("window.devicePixelRatio", "exact", False) in d.match(1.25, TRUTH)
+
+
+def test_ua_substring_needs_20_chars():
+    assert ("navigator.userAgent", "substr", False) in d.match("AppleWebKit/537.36 (KHTML", TRUTH)
+    assert all(s != "navigator.userAgent" for s, _, _ in d.match("Chrome", TRUTH))
+
+
+def test_composite_sizes_and_joined_languages():
+    assert ("screen", "WxH", False) in d.match("1920x1080", TRUTH)
+    assert ("window.inner", "WxH", False) in d.match("1280x720", TRUTH)
+    assert ("navigator.languages", "joined", False) in d.match("en-US,en", TRUTH)
+
+
+def test_timezone_offset_both_signs():
+    assert ("timezoneOffset", "exact", True) in d.match(-60, TRUTH)
+    assert ("timezoneOffset", "tzoffset-neg", True) in d.match(60, TRUTH)
+
+
+def test_small_numbers_are_weak_and_a_near_miss_does_not_match():
+    m = d.match(8, TRUTH)
+    assert ("navigator.deviceMemory", "exact", True) in m
+    assert ("navigator.hardwareConcurrency", "exact", True) in m
+    assert d.match(1921, TRUTH) == []
+    assert d.match("1920x1081", TRUTH) == []
+    assert d.match(True, TRUTH) == []

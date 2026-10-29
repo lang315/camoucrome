@@ -154,3 +154,41 @@ def mqtt_packets(frame):
     except (ValueError, IndexError):
         return []
     return out
+
+
+PAIRS = {"screen": ("screen.width", "screen.height"), "screen.avail": ("screen.availWidth", "screen.availHeight"),
+         "window.inner": ("window.innerWidth", "window.innerHeight"),
+         "window.outer": ("window.outerWidth", "window.outerHeight")}
+UA_KEYS = ("navigator.userAgent",)
+
+
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _weak(v):
+    # shortcut: a whole number below 100 equals many surfaces by chance; reported apart, not dropped
+    return _num(v) and float(v).is_integer() and abs(v) < 100
+
+
+def match(value, truth):
+    if isinstance(value, bool) or value is None or value == "":
+        return []
+    out = []
+    for surface, t in truth.items():
+        if t is None or isinstance(t, bool):
+            continue
+        if value == t and type(value) is type(t) or (_num(value) and _num(t) and value == t):
+            out.append((surface, "exact", _weak(value)))
+        elif _num(t) and isinstance(value, str) and value == str(t):
+            out.append((surface, "str", _weak(t)))
+        elif surface in UA_KEYS and isinstance(value, str) and len(value) >= 20 and (value in t or t in value):
+            out.append((surface, "substr", False))
+        elif isinstance(t, list) and all(isinstance(x, str) for x in t) and value == ",".join(t):
+            out.append((surface, "joined", False))
+        if surface == "timezoneOffset" and _num(value) and _num(t) and t != 0 and value == -t:
+            out.append((surface, "tzoffset-neg", _weak(value)))
+    for name, (w, h) in PAIRS.items():
+        if truth.get(w) is not None and isinstance(value, str) and value in (f"{truth[w]}x{truth[h]}", f"{truth[w]}*{truth[h]}"):
+            out.append((name, "WxH", False))
+    return out
