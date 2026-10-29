@@ -147,7 +147,9 @@ test('accept-lang follows the preset locale under the config; bad shapes are rej
   // An explicit member of the locale triple re-derives it (OverridePresetGroups).
   assert.equal(c.acceptLangOf({ 'locale:tag': 'de-DE' }, { locale: 'fr-FR' }), 'de-DE,de');
   assert.equal(c.acceptLangOf({ 'navigator.language': 'ja-JP' }, { locale: 'fr-FR' }), 'ja-JP,ja');
-  for (const bad of ['{not json', '[1]', '"x"', { 'navigator.languages': 'fr' }, { 'navigator.languages': ['fr', 1] }]) {
+  // [], the string "null" and languages: null are rejected by all three clients (the same table is in the Go and Python tests).
+  for (const bad of ['{not json', '[1]', '"x"', '[]', [], 'null', { 'navigator.languages': 'fr' }, { 'navigator.languages': ['fr', 1] },
+    { 'navigator.languages': null }]) {
     assert.throws(() => c.buildEnv({ config: bad }, {}));
     assert.throws(() => c.acceptLangOf(bad));
   }

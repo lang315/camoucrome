@@ -242,3 +242,11 @@ func TestExecPythonGivesUpOnAHungModule(t *testing.T) {
 		t.Errorf("took %s", time.Since(start))
 	}
 }
+
+func TestDefaultPythonIsPythonOnWindows(t *testing.T) {
+	for goos, want := range map[string]string{"windows": "python", "linux": "python3", "darwin": "python3"} {
+		if got := defaultPython(goos); got != want {
+			t.Errorf("defaultPython(%q) = %q, want %q", goos, got, want)
+		}
+	}
+}

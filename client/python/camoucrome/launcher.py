@@ -44,7 +44,7 @@ def native_config(config, preset=None, host_os=None):
 
 
 def _as_dict(v):
-    d = json.loads(v) if isinstance(v, str) else (v or {})
+    d = json.loads(v) if isinstance(v, str) else ({} if v is None else v)
     if not isinstance(d, dict):
         raise ValueError(f"config and preset must be JSON objects, got {type(d).__name__}")
     return d
@@ -94,7 +94,7 @@ def effective_keys(config=None, preset=None):
         out["timezone:id"] = p["timezone"]
     out.update(c)
     langs = out.get("navigator.languages")
-    if langs is not None and not (isinstance(langs, list) and all(isinstance(l, str) for l in langs)):
+    if "navigator.languages" in out and not (isinstance(langs, list) and all(isinstance(l, str) for l in langs)):
         raise ValueError(f"navigator.languages must be a list of strings, got {langs!r}")
     return out
 
@@ -213,7 +213,8 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
     if position is not None:
         args.append(f"--window-position={position[0]},{position[1]}")
     if dpr is not None:
-        args.append(f"--force-device-scale-factor={dpr}")
+        # a whole number prints bare, as in the Node and Go clients ("1", not "1.0")
+        args.append(f"--force-device-scale-factor={int(dpr) if float(dpr).is_integer() else dpr}")
     if accept_lang:
         args.append(f"--accept-lang={accept_lang}")
     if extensions:

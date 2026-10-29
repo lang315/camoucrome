@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -104,7 +105,7 @@ func CheckGeoIP(o Options) []string {
 	}
 	python := o.Python
 	if python == "" {
-		python = "python3"
+		python = defaultPython(runtime.GOOS)
 	}
 	out, err := execPython(python, "-m", "camoucrome.geoip", "--ip="+ip, "--db="+o.GeoIP, "--check-zone="+zone)
 	if err != nil {
@@ -124,6 +125,15 @@ func CheckGeoIP(o Options) []string {
 		return []string{*r.Warning}
 	}
 	return nil
+}
+
+// defaultPython is python3 except on Windows, where python3 is the Microsoft Store stub that exits without running
+// anything and the installer's name is python.
+func defaultPython(goos string) string {
+	if goos == "windows" {
+		return "python"
+	}
+	return "python3"
 }
 
 func (o Options) warn(msgs []string) {

@@ -90,9 +90,12 @@ async function exitIp(proxy, urls = ECHO_URLS) {
   throw new Error(`no echo service answered (${errors.join('; ')})`);
 }
 
+// python3 on Windows is the Microsoft Store stub, which exits without running anything; the installer's name is python.
+const defaultPython = (platform = process.platform) => (platform === 'win32' ? 'python' : 'python3');
+
 // Warnings about the config's timezone:id against the exit address. Never throws, never changes the config.
 // `run(python, args)` and `echo(proxy)` are the test seams.
-async function checkGeoip({ config, preset, proxy, exitIp: given, geoip, python = 'python3', run = defaultRun, echo = exitIp }) {
+async function checkGeoip({ config, preset, proxy, exitIp: given, geoip, python = defaultPython(), run = defaultRun, echo = exitIp }) {
   // the preset's timezone counts, under the explicit config; a malformed config is launch's to report, as in the Go client
   let cfg;
   try { cfg = require('./index').effectiveKeys(config, preset); } catch { return []; }
@@ -122,4 +125,4 @@ function defaultRun(python, args) {
   return p.stdout;
 }
 
-module.exports = { ECHO_URLS, exitIp, getViaConnect, checkGeoip };
+module.exports = { ECHO_URLS, exitIp, getViaConnect, checkGeoip, defaultPython };
