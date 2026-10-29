@@ -73,8 +73,21 @@ def _boundary(raw, content_type):
     return None
 
 
+def _part_value(body, filename):
+    """A part's text, inflated first when the bytes are not text (bnzai and bz send post_0 as a zlib stream). A file part
+    is text only when it is JSON; anything else is an Opaque that keeps the part's length."""
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            text = _inflate(body).decode("utf-8")
+        except UnicodeDecodeError:
+            return Opaque(len(body))
+    return Opaque(len(body)) if filename and _json(text) is None else text
+
+
 def multipart_parts(raw, boundary):
-    """[(name, value)] of a multipart/form-data body; a part with a filename, or bytes that are not text, is an Opaque."""
+    """[(name, value)] of a multipart/form-data body; a file part that is not JSON, or bytes that are not text, is an Opaque."""
     parts = []
     for chunk in raw.split(b"--" + boundary)[1:]:
         if chunk.startswith(b"--"):
@@ -85,11 +98,7 @@ def multipart_parts(raw, boundary):
         if not sep or not name:
             continue
         body = body[:-2] if body.endswith(b"\r\n") else body
-        try:
-            value = Opaque(len(body)) if b"filename=" in disp.group(0) else body.decode("utf-8")
-        except UnicodeDecodeError:
-            value = Opaque(len(body))
-        parts.append((name.group(1).decode("utf-8", "replace"), value))
+        parts.append((name.group(1).decode("utf-8", "replace"), _part_value(body, b"filename=" in disp.group(0))))
     return parts
 
 
@@ -160,6 +169,10 @@ MQTT_TYPES = {1: "CONNECT", 2: "CONNACK", 3: "PUBLISH", 4: "PUBACK", 5: "PUBREC"
               14: "DISCONNECT", 15: "AUTH"}
 
 
+# the least body each type can have; a shorter one is not a packet (an empty CONNACK is the gateway's own byte pattern, not MQTT)
+MQTT_MIN_BODY = {1: 10, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 3, 9: 3, 10: 3, 11: 2}
+
+
 def _varint(b, i):
     mult, val = 1, 0
     while True:
@@ -210,7 +223,7 @@ def mqtt_parse(frame):
                 break
             n, j = _varint(frame, i + 1)
             body = frame[j:j + n]
-            if len(body) != n:
+            if len(body) != n or n < MQTT_MIN_BODY.get(t, 0):
                 break
             out.append(_packet(t, flags, body))
         except (ValueError, IndexError):
@@ -225,6 +238,56 @@ def mqtt_packets(frame):
     return [] if partial else packets
 
 
+GATEWAY_TYPES = range(0x0c, 0x10)
+GATEWAY_PREFIX = {0x0d: 2}  # a type-0d chunk's payload starts 2 bytes before its JSON or MQTT (measured: run 3, lightspeed and realtime)
+
+
+def gateway_chunks(raw):
+    """([(type, payload)], rest): the gateway's chunks at the front of a binary frame, each [type 0x0c-0x0f][2-byte stream id]
+    [3-byte little-endian length][payload], and how many bytes after the last whole chunk are not one."""
+    out, i = [], 0
+    while i + 6 <= len(raw) and raw[i] in GATEWAY_TYPES:
+        n = int.from_bytes(raw[i + 3:i + 6], "little")
+        if i + 6 + n > len(raw):
+            break
+        out.append((raw[i], raw[i + 6:i + 6 + n]))
+        i += 6 + n
+    return out, len(raw) - i
+
+
+def _embedded_json(p):
+    """(offset, value) of the JSON that runs from the first '{' or '[' within the first 16 bytes to the end of p, else None;
+    realtime's type-0d chunks carry a binary header of 2 to 5 more bytes before it."""
+    for i in range(min(16, len(p))):
+        if p[i] in b"{[":
+            try:
+                j = _json(p[i:].decode("utf-8"))
+            except UnicodeDecodeError:
+                continue
+            if j is not None:
+                return i, j
+    return None
+
+
+def _chunk_units(b0, payload):
+    """([(topic, field pairs)], partial) of one chunk; the topic is '<type hex>/<mqtt topic, (json), (json+N), (ack) or
+    (opaque)>', N the bytes of header before the JSON. A type-0c chunk of 2 bytes is an acknowledgement counter: it parses
+    as an empty MQTT packet by chance and is not one."""
+    key = "%02x/" % b0
+    if b0 == 0x0c and len(payload) <= 2:
+        return [(key + "(ack)", [])], 0
+    p = payload[GATEWAY_PREFIX.get(b0, 0):]
+    pk, partial = mqtt_parse(p) if p[:1] not in (b"{", b"[") else ([], 0)
+    if pk and not partial:
+        return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], 0
+    emb = _embedded_json(p)  # before a partial MQTT read: a binary header can look like a packet start
+    if emb:
+        return [(key + ("(json+%d)" % emb[0] if emb[0] else "(json)"), walk(emb[1]))], 0
+    if pk:
+        return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], partial
+    return [(key + "(opaque)", [])], 0
+
+
 PAIRS = {"screen": ("screen.width", "screen.height"), "screen.avail": ("screen.availWidth", "screen.availHeight"),
          "window.inner": ("window.innerWidth", "window.innerHeight"),
          "window.outer": ("window.outerWidth", "window.outerHeight")}
@@ -236,8 +299,8 @@ def _num(v):
 
 
 def _weak(v):
-    # shortcut: a whole number below 100 equals many surfaces by chance; reported apart, not dropped
-    return _num(v) and float(v).is_integer() and abs(v) < 100
+    # shortcut: a whole number below 100, or a string of 3 characters or fewer ("4g"), equals surfaces by chance; reported apart, not dropped
+    return (_num(v) and float(v).is_integer() and abs(v) < 100) or (isinstance(v, str) and len(v) <= 3)
 
 
 def match(value, truth):
@@ -304,6 +367,15 @@ def _frame_units(fr):
     partial), else a JSON text frame, else one opaque unit."""
     raw = _b64(fr["payload_b64"])
     if fr.get("opcode") == 2:
+        if raw in (b"\x09", b"\x0a"):
+            return [("%02x/(single)" % raw[0], [])], 0  # the gateway's keepalive pair
+        chunks, rest = gateway_chunks(raw)
+        if chunks:
+            units, partial = [], rest
+            for b0, payload in chunks:
+                u, n = _chunk_units(b0, payload)
+                units, partial = units + u, partial + n
+            return units + ([("(partial)", [])] if rest else []), partial
         pk, partial = mqtt_parse(raw)
         if not pk:
             return [("(opaque)", [])], partial
@@ -699,10 +771,12 @@ def run(a):
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--arm", required=True)
-    ap.add_argument("--exe", required=True)
-    ap.add_argument("--profile", required=True)
-    ap.add_argument("--out", required=True)
-    ap.add_argument("--url", action="append", required=True)
+    ap.add_argument("--exe")
+    ap.add_argument("--profile")
+    ap.add_argument("--out")
+    ap.add_argument("--url", action="append")
+    ap.add_argument("--rederive", metavar="ARM_DIR", help="write channels.json and matches.json again from the capture and truth.json "
+                    "kept in ARM_DIR; no browser")
     ap.add_argument("--settle", type=float, default=20)
     ap.add_argument("--wheel", type=float, default=40)
     ap.add_argument("--fork", action="store_true")
@@ -716,12 +790,19 @@ def parse_args(argv=None):
     ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
     ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
     ap.add_argument("--doc-hosts", default="www.facebook.com")
-    return ap.parse_args(argv)
+    a = ap.parse_args(argv)
+    missing = [f"--{n}" for n in ("exe", "profile", "out", "url") if not getattr(a, n)]
+    if missing and not a.rederive:
+        ap.error("the following arguments are required: " + ", ".join(missing))
+    return a
 
 
 def main(argv=None):
     a = parse_args(argv)
     try:
+        if a.rederive:
+            write_outputs(a.rederive, a.arm)
+            return 0
         return run(a)
     except Exception as exc:  # noqa: BLE001 - recon.ps1 reads the exit code; the type names the failure
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
