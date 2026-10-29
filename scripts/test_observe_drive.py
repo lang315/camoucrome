@@ -5,6 +5,9 @@ import json
 import pathlib
 import sys
 import urllib.parse
+import zlib
+
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import observe_drive as d  # noqa: E402
@@ -468,3 +471,140 @@ def test_ws_shape_holds_no_payload_bytes_beyond_the_first_byte():
     frames = _ws_fixture()
     text = json.dumps(d.build_channels([], frames, "x")) + json.dumps(d.build_matches([], frames, TRUTH))
     assert CANARY not in text and "midpacket" not in text
+
+
+# --- compressed multipart parts (bnzai and bz: the file part post_0 is a zlib stream of JSON) -----------------------------
+def _post0_body(inner, compress=zlib.compress):
+    return _multipart([("__a", b"1", None), ("post_0", compress(inner), "post_0")])
+
+
+POST0 = json.dumps([{"name": CANARY + "-z", "dm": 8, "uid": "100012345678901"}]).encode()
+
+
+def test_a_zlib_file_part_of_json_is_walked_under_its_part_name():
+    kind, f = d.fields(_post0_body(POST0), "multipart/form-data; boundary=" + BOUNDARY)
+    assert kind == "multipart"
+    assert ("post_0[].name", CANARY + "-z") in f and ("post_0[].dm", 8) in f
+    assert not any(isinstance(v, d.Opaque) for _, v in f)
+
+
+def test_gzip_and_raw_deflate_parts_are_walked_too():
+    def raw_deflate(b):
+        c = zlib.compressobj(wbits=-15)
+        return c.compress(b) + c.flush()
+    for packer in (gzip.compress, raw_deflate):
+        _, f = d.fields(_post0_body(POST0, packer), "multipart/form-data; boundary=" + BOUNDARY)
+        assert ("post_0[].dm", 8) in f, packer
+
+
+def test_a_compressed_file_part_that_is_not_json_stays_opaque_with_its_length():
+    packed = zlib.compress(b"plain text, not JSON " * 4)
+    _, f = d.fields(_post0_body(b"plain text, not JSON " * 4), "multipart/form-data; boundary=" + BOUNDARY)
+    (v,) = [v for p, v in f if p == "post_0"]
+    assert d.value_class(v) == f"opaque<{len(packed)}>"
+
+
+def test_a_compressed_part_without_a_filename_is_walked_too():
+    body = _multipart([("q", zlib.compress(POST0), None)])
+    _, f = d.fields(body, "multipart/form-data; boundary=" + BOUNDARY)
+    assert ("q[].dm", 8) in f
+
+
+def test_the_canary_inside_a_compressed_part_never_reaches_a_leaving_file(tmp_path):
+    req = _req("https://www.facebook.com/ajax/bnzai", _post0_body(POST0))
+    req["content_type"] = "multipart/form-data; boundary=" + BOUNDARY
+    c = d.build_channels([req], [], "x")
+    ep = c["endpoints"]["www.facebook.com/ajax/bnzai"]
+    assert ep["fields"]["post_0[].uid"]["classes"] == {"id": 1}
+    m = d.build_matches([req], [], TRUTH)
+    assert any(r["field"] == "post_0[].dm" and r["surface"] == "navigator.deviceMemory" for r in m)
+    text = json.dumps(c) + json.dumps(m)
+    assert CANARY not in text and "100012345678901" not in text
+
+
+# --- the gateway's WebSocket framing: [type 0x0c-0x0f][2-byte stream id][3-byte LE length][payload], chunks back to back --
+def _gw(b0, payload, sid=b"\x01\x02"):
+    return bytes([b0]) + sid + len(payload).to_bytes(3, "little") + payload
+
+
+GW = "wss://gateway.facebook.com/ws/lightspeed"
+
+
+def _gw_topics(frames):
+    return d.build_channels([], frames, "x")["ws"]["gateway.facebook.com/ws/lightspeed"]["topics"]
+
+
+def test_single_byte_frames_are_keepalives_keyed_by_their_byte():
+    t = _gw_topics([_frame(GW, "sent", b"\x09"), _frame(GW, "received", b"\x0a"), _frame(GW, "received", b"\x0a")])
+    assert t["09/(single)"]["count"] == 1 and t["0a/(single)"]["count"] == 2
+    assert "(opaque)" not in t
+
+
+def test_a_type_0c_chunk_carries_mqtt_at_offset_6():
+    pub = _packet(3, 0, _mqtt_str("/t_ms") + json.dumps({"payload": CANARY, "dm": 8}).encode())
+    t = _gw_topics([_frame(GW, "received", _gw(0x0c, pub))])
+    assert t["0c//t_ms"]["count"] == 1 and t["0c//t_ms"]["fields"]["payload"]["count"] == 1
+    assert "(opaque)" not in t
+
+
+def test_a_type_0d_chunk_skips_two_prefix_bytes_before_its_json():
+    t = _gw_topics([_frame(GW, "sent", _gw(0x0d, b"\x01\x00" + json.dumps({"k": CANARY, "dm": 8}).encode()))])
+    assert t["0d/(json)"]["fields"]["dm"] == {"count": 1, "classes": {"int": 1}}
+
+
+def test_a_type_0f_chunk_carries_json_at_offset_6_and_a_frame_may_hold_two_chunks():
+    one, two = json.dumps({"a": 1}).encode(), json.dumps({"b": 2}).encode()
+    t = _gw_topics([_frame(GW, "received", _gw(0x0f, one) + _gw(0x0f, two))])
+    assert t["0f/(json)"]["count"] == 2 and set(t["0f/(json)"]["fields"]) == {"a", "b"}
+
+
+def test_a_chunk_that_is_neither_json_nor_mqtt_is_opaque_under_its_type():
+    t = _gw_topics([_frame(GW, "received", _gw(0x0c, b"\x00\x01")), _frame(GW, "received", _gw(0x0d, b"\x00\x00" + b"\xff" * 5))])
+    assert t["0c/(opaque)"]["count"] == 1 and t["0d/(opaque)"]["count"] == 1
+
+
+def test_bytes_after_the_last_whole_chunk_are_partial_and_a_non_gateway_frame_is_untouched():
+    pub = _packet(3, 0, _mqtt_str("/t_ms") + b"{}")
+    fr = [_frame(GW, "received", _gw(0x0f, b"{}") + b"\x0c\x01\x02\x09\x00\x00ab"),    # a cut chunk (8 bytes)
+          _frame(GW, "received", pub)]
+    c = d.build_channels([], fr, "x")["ws"]["gateway.facebook.com/ws/lightspeed"]
+    assert c["partial_bytes"] == 8 and c["topics"]["/t_ms"]["count"] == 1 and c["topics"]["(partial)"]["count"] == 1
+
+
+def test_gateway_chunks_keep_the_shape_counters_and_leak_no_value(tmp_path):
+    fr = [_frame(GW, "sent", _gw(0x0d, b"\x01\x00" + json.dumps({"k": CANARY, "dm": 8}).encode())), _frame(GW, "sent", b"\x09")]
+    c = d.build_channels([], fr, "x")["ws"]["gateway.facebook.com/ws/lightspeed"]
+    assert c["shape"]["first_byte"] == {"0x0d": 1, "0x09": 1}
+    text = json.dumps(c) + json.dumps(d.build_matches([], fr, TRUTH))
+    assert CANARY not in text
+    m = d.build_matches([], fr, TRUTH)
+    assert any(r["endpoint"] == "gateway.facebook.com/ws/lightspeed 0d/(json)" and r["field"] == "dm" for r in m)
+
+
+# --- short strings are weak -------------------------------------------------------------------------------------------
+def test_a_string_of_three_characters_or_fewer_is_a_weak_match():
+    truth = {"connection.effectiveType": "4g", "timezone": "Europe/Berlin"}
+    assert d.match("4g", truth) == [("connection.effectiveType", "exact", True)]
+    assert d.match("Europe/Berlin", truth) == [("timezone", "exact", False)]
+    assert d.match("abc", {"x": "abc"}) == [("x", "exact", True)] and d.match("abcd", {"x": "abcd"}) == [("x", "exact", False)]
+
+
+# --- --rederive: the outputs again from a kept capture, no browser ---------------------------------------------------------
+def test_rederive_rewrites_channels_and_matches_from_a_kept_capture(tmp_path):
+    reqs, frames = _fixture()
+    cap = tmp_path / "capture"
+    cap.mkdir()
+    (cap / "requests.jsonl").write_text("\n".join(json.dumps(r) for r in reqs) + "\n", encoding="utf-8")
+    (cap / "ws.jsonl").write_text("\n".join(json.dumps(f) for f in frames) + "\n", encoding="utf-8")
+    (tmp_path / "truth.json").write_text(json.dumps(TRUTH), encoding="utf-8")
+    (tmp_path / "channels.json").write_text("stale", encoding="utf-8")
+    assert d.main(["--rederive", str(tmp_path), "--arm", "3w"]) == 0
+    c = json.loads((tmp_path / "channels.json").read_text(encoding="utf-8"))
+    assert c["arm"] == "3w" and c["posts_captured"] == 3
+    assert json.loads((tmp_path / "matches.json").read_text(encoding="utf-8"))
+    assert CANARY not in (tmp_path / "channels.json").read_text(encoding="utf-8")
+
+
+def test_a_live_run_still_needs_its_arguments():
+    with pytest.raises(SystemExit):
+        d.parse_args(["--arm", "3w"])
