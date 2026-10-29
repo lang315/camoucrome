@@ -19,9 +19,10 @@ def _load(d, name, default):
 
 def _sets(d):
     ch = _load(d, "channels.json", {"endpoints": {}})
-    eps = set(ch["endpoints"])
-    fields = {f"{e} {f}" for e, v in ch["endpoints"].items() for f in v["fields"]}
-    matches = {f"{m['endpoint']} {m['field']} {m['surface']}" for m in _load(d, "matches.json", []) if not m["weak"]}
+    pe = observe_report.public_endpoint
+    eps = {pe(e) for e in ch["endpoints"]}
+    fields = {f"{pe(e)} {f}" for e, v in ch["endpoints"].items() for f in v["fields"]}
+    matches = {f"{pe(m['endpoint'])} {m['field']} {m['surface']}" for m in _load(d, "matches.json", []) if not m["weak"]}
     return eps, fields, matches
 
 
