@@ -251,6 +251,17 @@ def test_launch_warns_on_a_contradicting_zone_and_still_launches():
     assert json.loads(pw.chromium.kw["env"]["CAMOU_CONFIG"]) == cfg  # not rewritten
 
 
+def test_launch_checks_the_zone_a_preset_gives_and_the_explicit_config_wins():
+    # preset_loader.cc maps a preset's "timezone" to timezone:id: the documented preset + seeds launch has no zone in config
+    with pytest.warns(geoip.GeoIPWarning, match="contradicts"):
+        camoucrome.launch(FakePlaywright(), "/x/chrome", preset={"timezone": "Asia/Tokyo"}, config={"canvas:seed": 7},
+                          user_data_dir="/tmp/p", geoip=FIXTURE, exit_ip="192.0.2.5")
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error")
+        camoucrome.launch(FakePlaywright(), "/x/chrome", preset={"timezone": "Asia/Tokyo"},
+                          config={"timezone:id": "America/New_York"}, user_data_dir="/tmp/p", geoip=FIXTURE, exit_ip="192.0.2.5")
+
+
 def test_launch_is_quiet_when_the_zone_matches_and_does_nothing_without_the_option():
     with _warnings.catch_warnings():
         _warnings.simplefilter("error")

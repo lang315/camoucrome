@@ -92,11 +92,11 @@ async function exitIp(proxy, urls = ECHO_URLS) {
 
 // Warnings about the config's timezone:id against the exit address. Never throws, never changes the config.
 // `run(python, args)` and `echo(proxy)` are the test seams.
-async function checkGeoip({ config, proxy, exitIp: given, geoip, python = 'python3', run = defaultRun, echo = exitIp }) {
-  let cfg = config;
-  // a malformed config is launch's to report, as in the Go client
-  try { if (typeof cfg === 'string') cfg = JSON.parse(cfg); } catch { return []; }
-  const zone = cfg && typeof cfg === 'object' ? cfg['timezone:id'] : undefined;
+async function checkGeoip({ config, preset, proxy, exitIp: given, geoip, python = 'python3', run = defaultRun, echo = exitIp }) {
+  // the preset's timezone counts, under the explicit config; a malformed config is launch's to report, as in the Go client
+  let cfg;
+  try { cfg = require('./index').effectiveKeys(config, preset); } catch { return []; }
+  const zone = cfg['timezone:id'];
   if (!zone) return [];
   const cannot = (why) => [`timezone:id ${zone} could not be checked against the exit IP: ${why}`];
   let ip = given;

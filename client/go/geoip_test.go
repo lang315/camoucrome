@@ -211,3 +211,12 @@ func TestGenArgsCarryTheProbeExecutable(t *testing.T) {
 		t.Fatalf("args = %q", got)
 	}
 }
+
+func TestCheckGeoIPTakesTheZoneFromThePresetAndTheExplicitConfigWins(t *testing.T) {
+	calls := stubs(t, "192.0.2.5", nil, `{"warning":null}`, nil)
+	CheckGeoIP(Options{Config: map[string]any{"canvas:seed": 7}, Preset: map[string]any{"timezone": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Python: "py"})
+	CheckGeoIP(Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, Preset: map[string]any{"timezone": "America/New_York"}, GeoIP: "/db.mmdb", Python: "py"})
+	if len(*calls) != 2 || (*calls)[0][len((*calls)[0])-1] != "--check-zone=Asia/Tokyo" || (*calls)[1][len((*calls)[1])-1] != "--check-zone=Asia/Tokyo" {
+		t.Fatalf("exec = %v, want two checks of Asia/Tokyo", *calls)
+	}
+}

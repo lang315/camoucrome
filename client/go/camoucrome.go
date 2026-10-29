@@ -123,7 +123,7 @@ func asObject(v any) (map[string]any, error) {
 }
 
 // effectiveKeys are the keys the browser ends up with for what the launcher
-// reads: the preset's os and locale expanded as preset_loader.cc does, under
+// reads: the preset's os, locale and timezone expanded as preset_loader.cc does, under
 // the explicit config (explicit wins). A shape the browser would ignore is an
 // error rather than a silently dropped value.
 func effectiveKeys(config, preset any) (map[string]any, error) {
@@ -157,6 +157,10 @@ func effectiveKeys(config, preset any) (map[string]any, error) {
 	}
 	if loc, ok := p["locale"].(string); ok {
 		setLocale(loc)
+	}
+	// preset_loader.cc: the preset's timezone becomes timezone:id (explicit config still wins below)
+	if tz, ok := p["timezone"].(string); ok {
+		out["timezone:id"] = tz
 	}
 	// preset_loader.cc OverridePresetGroups: an explicit member of the
 	// preset's OS pair or locale triple re-derives the whole group from it.
