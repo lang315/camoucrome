@@ -3,8 +3,8 @@
 
   D1  the POST of the page is captured: channels.json has the endpoint with field q[].name, at least 2 POSTs, and the
       resources dirs hold one script (both pages include the same app.js) and two documents
-  D2  matches.json maps q[].dm to navigator.deviceMemory (weak) and q[].tz to timezone (the truth is read on the local page:
-      about:blank is no secure context and reads deviceMemory null)
+  D2  matches.json maps q[].dm to navigator.deviceMemory (weak) and q[].tz to timezone, with NO --truth-url, so the default
+      truth page (served on 127.0.0.1, a secure context) is what is proven
   D3  the value canary is in capture/requests.jsonl (the capture saw it) and in no file that leaves the host
   D4  a checkpoint page under --expect-session exits 4 and prints CHECKPOINT
   D5  the wheel reached the page: the title the page counts wheel events into is greater than 0
@@ -75,7 +75,7 @@ def main(argv=None):
     work = pathlib.Path(tempfile.mkdtemp(prefix="obsdrive-"))
     rows, notes = {}, []
     try:
-        main_args = ["--url", base + "/", "--url", base + "/second", "--settle", "2", "--wheel", "5", "--truth-url", base + "/truth"]
+        main_args = ["--url", base + "/", "--url", base + "/second", "--settle", "2", "--wheel", "5"]
         hosts = HOSTS
         if a.red == "D1":
             hosts = ["--post-hosts", "example.invalid", "--resource-hosts", "127.0.0.1", "--doc-hosts", "127.0.0.1"]

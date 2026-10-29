@@ -3,7 +3,6 @@
   /            40 000 px tall; on load a form POST to /ajax/bz and a sendBeacon to /ajax/bnzai, both carrying the value
                canary CANARY-7f3a9c; wheel events are counted into document.title as "wheels=<n>"
   /second      the same page with a comment of its own (so its bytes, and its file in resources/html, differ)
-  /truth       a plain page without script, where the driver reads its ground truth (127.0.0.1 is a secure context)
   /checkpoint/ a plain page, to trip the driver's checkpoint exit
   /app.js      the script `/` and `/second` include
 Every POST answers 204.  --port 0 prints the chosen port as PORT=<n>.
@@ -43,8 +42,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(page("first"), "text/html")
         elif path == "/second":
             self._send(page("second"), "text/html")
-        elif path == "/truth":
-            self._send(b"<!doctype html><title>truth</title>truth", "text/html")
         elif path.startswith("/checkpoint"):
             self._send(b"<!doctype html><title>checkpoint</title>checkpoint", "text/html")
         elif path == "/app.js":

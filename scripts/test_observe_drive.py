@@ -202,3 +202,23 @@ def test_module_imports_without_patchright():
     import subprocess
     code = "import observe_drive, sys; assert 'patchright' not in sys.modules and 'camoucrome' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], cwd=pathlib.Path(__file__).resolve().parent, check=True)
+
+
+def test_truth_page_defaults_to_a_local_secure_origin():
+    # about:blank reads deviceMemory and userAgentData as null; facebook.com would file the driver's reads under its own
+    # section; so with no --truth-url the driver serves an empty page on 127.0.0.1 (a secure context, no outside request)
+    import urllib.request
+    a = d.parse_args(["--arm", "x", "--exe", "e", "--profile", "p", "--out", "o", "--url", "u"])
+    assert a.truth_url is None
+    srv, url = d.truth_page(a.truth_url)
+    try:
+        assert url.startswith("http://127.0.0.1:")
+        assert urllib.request.urlopen(url).read() == b"<!doctype html><title>t</title>"
+    finally:
+        d.stop_truth_page(srv)
+
+
+def test_an_explicit_truth_url_is_kept_and_starts_no_server():
+    srv, url = d.truth_page("https://example.invalid/t")
+    assert srv is None and url == "https://example.invalid/t"
+    d.stop_truth_page(srv)  # nothing to stop

@@ -10,11 +10,13 @@ import binascii
 import collections
 import gzip
 import hashlib
+import http.server
 import json
 import pathlib
 import random
 import re
 import sys
+import threading
 import time
 import urllib.parse
 import zlib
@@ -410,10 +412,40 @@ class Recorder:
         self.ws_f.close()
 
 
-def read_truth(ctx, url="about:blank"):
-    # about:blank is not a secure context: navigator.deviceMemory and navigator.userAgentData are [SecureContext] and read
-    # null there (measured on the box, 2026-10-29), so a surface that is null in truth never matches. A real run therefore
-    # passes --truth-url, a static page on a secure origin with no script of its own.
+TRUTH_PAGE = b"<!doctype html><title>t</title>"
+
+
+class _TruthHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(TRUTH_PAGE)))
+        self.end_headers()
+        self.wfile.write(TRUTH_PAGE)
+
+    def log_message(self, *args):
+        pass
+
+
+def truth_page(explicit):
+    """(server or None, url) of the page the ground truth is read in. About:blank is no secure context, so
+    navigator.deviceMemory and navigator.userAgentData read null there (measured on the box, 2026-10-29); a facebook.com
+    page would file the driver's own reads under facebook's section of the observer. So by default an empty page is served
+    on 127.0.0.1 (a secure context, no outside request, its own observer section); --truth-url overrides it."""
+    if explicit:
+        return None, explicit
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _TruthHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_port}/"
+
+
+def stop_truth_page(srv):
+    if srv is not None:
+        srv.shutdown()
+        srv.server_close()
+
+
+def read_truth(ctx, url):
     page = ctx.new_page()
     try:
         page.goto(url)
@@ -443,7 +475,11 @@ def run(a):
                      headless=a.headless, args=extra)
         try:
             # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth
-            (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx, a.truth_url)), encoding="utf-8")
+            truth_srv, truth_url = truth_page(a.truth_url)
+            try:
+                (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx, truth_url)), encoding="utf-8")
+            finally:
+                stop_truth_page(truth_srv)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             rec.attach(ctx.new_cdp_session(page))
             vp = page.viewport_size or {"width": 1280, "height": 720}
@@ -470,7 +506,7 @@ def run(a):
     return rc
 
 
-def main(argv=None):
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--arm", required=True)
     ap.add_argument("--exe", required=True)
@@ -483,13 +519,17 @@ def main(argv=None):
     ap.add_argument("--chrome-args")
     ap.add_argument("--expect-session", action="store_true")
     ap.add_argument("--headless", action="store_true")
-    ap.add_argument("--truth-url", default="about:blank",
-                    help="page the ground truth is read in: a static page on a secure origin, or deviceMemory and userAgentData read null")
+    ap.add_argument("--truth-url", default=None,
+                    help="page the ground truth is read in; default: an empty page served on 127.0.0.1 (a secure context)")
     ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
     ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
     ap.add_argument("--doc-hosts", default="www.facebook.com")
-    a = ap.parse_args(argv)
+    return ap.parse_args(argv)
+
+
+def main(argv=None):
+    a = parse_args(argv)
     try:
         return run(a)
     except Exception as exc:  # noqa: BLE001 - recon.ps1 reads the exit code; the type names the failure
