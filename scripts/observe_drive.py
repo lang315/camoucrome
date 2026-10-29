@@ -410,10 +410,13 @@ class Recorder:
         self.ws_f.close()
 
 
-def read_truth(ctx):
+def read_truth(ctx, url="about:blank"):
+    # about:blank is not a secure context: navigator.deviceMemory and navigator.userAgentData are [SecureContext] and read
+    # null there (measured on the box, 2026-10-29), so a surface that is null in truth never matches. A real run therefore
+    # passes --truth-url, a static page on a secure origin with no script of its own.
     page = ctx.new_page()
     try:
-        page.goto("about:blank")
+        page.goto(url)
         return page.evaluate(TRUTH_JS)
     finally:
         page.close()
@@ -440,7 +443,7 @@ def run(a):
                      headless=a.headless, args=extra)
         try:
             # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth
-            (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx)), encoding="utf-8")
+            (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx, a.truth_url)), encoding="utf-8")
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             rec.attach(ctx.new_cdp_session(page))
             vp = page.viewport_size or {"width": 1280, "height": 720}
@@ -480,6 +483,8 @@ def main(argv=None):
     ap.add_argument("--chrome-args")
     ap.add_argument("--expect-session", action="store_true")
     ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--truth-url", default="about:blank",
+                    help="page the ground truth is read in: a static page on a secure origin, or deviceMemory and userAgentData read null")
     ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
     ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
