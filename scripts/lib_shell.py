@@ -399,6 +399,35 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
 
 
+def x_server_answers(display, timeout=3.0, sock_dir="/tmp/.X11-unix"):
+    """True when an X server on this machine answers a connection setup request for DISPLAY (":N" or ":N.S").
+    A socket that accepts and never answers is not a server: on 2026-10-29 the box's WSLg X0 did exactly that, and a headed
+    chrome waited 30 s, then exited with "Missing X server or $DISPLAY". Any reply (Success, Failed, Authenticate) counts.
+    shortcut: unix sockets only, no TCP displays; extend if a verify ever needs a remote display."""
+    import re
+    import socket
+    import struct
+    m = re.fullmatch(r":(\d+)(?:\.\d+)?", display or "")
+    if not m:
+        return False
+    path = os.path.join(sock_dir, f"X{m.group(1)}")
+    # Xlib tries the abstract name first, then the file: an Xvfb that cannot create its socket file (WSLg's /tmp/.X11-unix)
+    # listens on the abstract one only
+    for addr in ("\0" + path, path):
+        s = socket.socket(socket.AF_UNIX)
+        s.settimeout(timeout)
+        try:
+            s.connect(addr)
+            s.sendall(struct.pack("<BxHHHHxx", 0x6C, 11, 0, 0, 0))  # byte order, protocol 11.0, no auth name or data
+            if s.recv(1)[:1] in (b"\x00", b"\x01", b"\x02"):
+                return True
+        except OSError:
+            pass
+        finally:
+            s.close()
+    return False
+
+
 _UNMEASURED = []  # gate lines printed by this process; a standalone verify must not exit 0 after one
 
 

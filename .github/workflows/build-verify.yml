@@ -101,7 +101,9 @@ jobs:
         run: |
           cd "$VERIFY"
           rc=0
-          run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; return 1; fi; }
+          # exit 3 is UNMEASURED (a premise the box cannot give, e.g. no X server for a headed launch): printed loudly, not a pass
+          # and not a failure; a script whose FAIL rows exist exits 1 whatever else is unmeasured
+          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 && st=0 || st=$?; if [ $st -eq 0 ]; then tail -1 "/tmp/$1.log"; elif [ $st -eq 3 ]; then echo "UNMEASURED $1 (exit 3, not a pass)"; grep -E "UNMEASURED" "/tmp/$1.log" | head -4 || true; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; return 1; fi; }
           # The scripts and their order come from scripts/ci_verify_set.txt (every verify_*.py is listed there, run or skipped
           # with a reason, and scripts/test_ci_verify_set.py fails on one that is not). A `run` line may carry KEY=VAL words:
           # verify_sp6b_generator takes CAMOU_GEN_N=4 (seeds 1000..1003 include a DPR 1.5 identity and 1.25 identities of
