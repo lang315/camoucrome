@@ -101,25 +101,21 @@ jobs:
         run: |
           cd "$VERIFY"
           rc=0
-          run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; rc=1; fi; }
-          run verify_sp1a_chrome.py
-          run verify_sp2c.py
-          run verify_sp4_voices.py
-          run verify_fonts_bundle.py
-          run verify_host_oracle.py
-          run verify_windows_behaviour.py
-          # 4 configs per OS (was 2): seeds 1000..1003 include a DPR 1.5 identity and 1.25 identities of different
-          # residues, the cases the launch window rounding got wrong (PR #34); 2 never reached them. About 3 s per config.
-          CAMOU_GEN_N=4 run verify_sp6b_generator.py
-          run verify_crash_dumps.py
+          run() { echo "== $1"; if "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1; then tail -1 "/tmp/$1.log"; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; return 1; fi; }
+          # The scripts and their order come from scripts/ci_verify_set.txt (every verify_*.py is listed there, run or skipped
+          # with a reason, and scripts/test_ci_verify_set.py fails on one that is not). A `run` line may carry KEY=VAL words:
+          # verify_sp6b_generator takes CAMOU_GEN_N=4 (seeds 1000..1003 include a DPR 1.5 identity and 1.25 identities of
+          # different residues, the cases the launch window rounding got wrong (PR #34); 2 never reached them; about 3 s per config).
           # verify_sp6b_driver (about 25 s, seven drivers) needs on the runner, all under $HOME and present on the box:
           #   venv/ (patchright) and venv-stock/ (playwright) in camoucrome-verify, camoucrome-driver/ and
           #   camoucrome-driver-stock/ (the patchright-core and playwright-core 1.62.1 packages plus a node), and the Go probe
           #   at camoucrome-go/camoucrome-probe, rebuilt from client/go by the step "Go probe" so it never lags the client; the rodclient probe at
           #   camoucrome-go/camoucrome-probe-rodclient, rebuilt by the step "rodclient probe".
-          run verify_sp6b_driver.py
+          while read -r script envs; do
+            ( [ -z "$envs" ] || export $envs; run "$script" ) || rc=1
+          done < <(python3 "$GITHUB_WORKSPACE/scripts/ci_verify_set.py" list)
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md)
-          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi
+          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; else echo "SKIP verify_observe.py: camou_observe not set in out/Default/args.gn"; fi
           exit $rc
       - name: logs
         if: always()
