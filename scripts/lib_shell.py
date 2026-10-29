@@ -144,6 +144,16 @@ def layout(environ=None, osname=None):
 STDERR_LOG = os.path.join(tempfile.gettempdir(),
                           f"camoucrome_verify_stderr.{os.getpid()}.log")
 
+def read_stderr():
+    """Guarded read of this session's browser stderr. launch() truncates the log per launch, so a read sees only its
+    own run. Returns (text, None), or (None, the fault): any fault must become a FAIL row, not an exception."""
+    try:
+        with open(STDERR_LOG, "rb") as handle:
+            return handle.read().decode("utf-8", "replace"), None
+    except Exception as exc:  # noqa: BLE001
+        return None, exc
+
+
 # content_shell has no --headless switch; --ozone-platform=headless is the
 # equivalent. This is the default so that every call written before Task 8
 # keeps its exact argv.

@@ -47,12 +47,7 @@ def failed(keys, label, exc):
     notes.append(f"{label}: {type(exc).__name__}: {exc}")
 
 
-def read_stderr():
-    try:
-        with open(lib_shell.STDERR_LOG, "rb") as handle:
-            return handle.read().decode("utf-8", "replace"), None
-    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
-        return None, exc
+read_stderr = lib_shell.read_stderr  # one copy, in lib_shell
 
 
 def expect_starts_with_warning(name, config, warning):
