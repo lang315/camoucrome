@@ -21,7 +21,8 @@ import sys
 
 import lib_shell
 
-GL_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+# extra_flags replaces lib_shell.SHELL_FLAGS, so the headless platform is named here: without it content_shell needs an X server
+GL_FLAGS = lib_shell.SHELL_FLAGS + ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 
 # The in-repo WebGL identity strings (verify_sp3b.py:70-71). The renderer is
 # NVIDIA; a coherent vendor would be "Google Inc. (NVIDIA)". The host vendor

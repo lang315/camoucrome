@@ -1,6 +1,7 @@
 package camoucrome
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -20,11 +22,21 @@ import (
 // echoURLs are asked one after another, through the proxy when there is one; the service sees only the exit address.
 var echoURLs = []string{"https://api.ipify.org", "https://checkip.amazonaws.com", "https://icanhazip.com", "https://ifconfig.co/ip"}
 
+// execTimeout bounds the Python lookup: a hung module must not hang Launch.
+var execTimeout = 30 * time.Second
+
 // Seams for the tests.
 var (
 	echoIP     = ExitIP
 	execPython = func(python string, args ...string) ([]byte, error) {
-		out, err := exec.Command(python, args...).Output()
+		ctx, cancel := context.WithTimeout(context.Background(), execTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, python, args...)
+		cmd.WaitDelay = time.Second // a grandchild holding stdout must not outlast the kill
+		out, err := cmd.Output()
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s timed out after %s", python, execTimeout)
+		}
 		if _, isExit := err.(*exec.ExitError); isExit {
 			return out, nil // exit 2 still prints {"error": ...} on stdout
 		}
@@ -73,7 +85,7 @@ func ExitIP(p *Proxy) (string, error) {
 // CheckGeoIP is the warnings about the config's timezone:id against the exit address; it never fails the launch and
 // never changes the config. Nothing to check (no timezone:id) gives none.
 func CheckGeoIP(o Options) []string {
-	cfg, err := asObject(o.Config)
+	cfg, err := effectiveKeys(o.Config, o.Preset)
 	if err != nil {
 		return nil // the launch reports a bad config itself
 	}
@@ -93,7 +105,7 @@ func CheckGeoIP(o Options) []string {
 	}
 	python := o.Python
 	if python == "" {
-		python = "python3"
+		python = defaultPython(runtime.GOOS)
 	}
 	out, err := execPython(python, "-m", "camoucrome.geoip", "--ip="+ip, "--db="+o.GeoIP, "--check-zone="+zone)
 	if err != nil {
@@ -113,6 +125,15 @@ func CheckGeoIP(o Options) []string {
 		return []string{*r.Warning}
 	}
 	return nil
+}
+
+// defaultPython is python3 except on Windows, where python3 is the Microsoft Store stub that exits without running
+// anything and the installer's name is python.
+func defaultPython(goos string) string {
+	if goos == "windows" {
+		return "python"
+	}
+	return "python3"
 }
 
 func (o Options) warn(msgs []string) {

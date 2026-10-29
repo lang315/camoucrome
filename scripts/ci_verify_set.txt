@@ -1,0 +1,77 @@
+# The browser verifies build-verify.yml runs on the box, one per line (scripts/ci_verify_set.py checks it).
+#   run <script> [KEY=VAL ...]   run it in the job, in this order; a nonzero exit fails the job
+#   external <script>  # why     run by its own workflow step
+#   skip <script>  # why         not run in CI (a reason is required)
+# Every scripts/verify_*.py must appear exactly once, so a new verify has to be put here on purpose.
+# "not yet evaluated" means nobody has timed it or checked that it passes on the runner's out/Default build.
+
+run verify_sp1a_chrome.py
+run verify_sp2c.py
+run verify_sp4_voices.py
+run verify_fonts_bundle.py
+run verify_host_oracle.py
+run verify_windows_behaviour.py
+run verify_sp6b_generator.py CAMOU_GEN_N=4
+run verify_crash_dumps.py
+run verify_sp6b_driver.py
+run verify_sp2e.py
+run verify_sp2b.py
+run verify_sp7_codecs.py
+run verify_sp7_fieldtrial.py
+run verify_sp1b.py
+run verify_sp3b.py
+run verify_sp4a.py
+run verify_metric_jitter.py
+run verify_audio_ii.py
+run verify_ua_halfconfig_reject.py
+run verify_sp5b_domain.py
+run verify_navplatform_bucket.py
+run verify_fonts_ii.py
+run verify_d_pointer_touch.py
+run verify_webgl_pairing.py
+run verify_webgl_capability_identity.py
+# verify_credits needs generate_about_credits = true in the runner's out/Default/args.gn (hand-managed: the workflow does not
+# write args.gn). Without it the credits page is the 433-character placeholder and the script fails.
+run verify_credits.py
+# verify_sp6b_launcher: L4 (headed launch) is UNMEASURED, exit 3, when no X server answers; the runner has no display.
+run verify_sp6b_launcher.py
+external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
+skip verify_chrome_object.py  # not yet evaluated for the runner
+skip verify_font_metrics.py  # not yet evaluated for the runner
+skip verify_geo_ii_cadence.py  # not yet evaluated for the runner
+skip verify_geoip_pixelscan.py  # not yet evaluated for the runner
+skip verify_media_ii.py  # not yet evaluated for the runner
+skip verify_navplatform_derive.py  # not yet evaluated for the runner
+skip verify_phantom.py  # not yet evaluated for the runner
+skip verify_pixels_real.py  # not yet evaluated for the runner
+skip verify_px_arms.py  # not yet evaluated for the runner
+skip verify_review_2026_09_24.py  # not yet evaluated for the runner
+skip verify_s3_host.py  # not yet evaluated for the runner
+skip verify_s3_media.py  # not yet evaluated for the runner
+skip verify_s3b_phantom_out.py  # not yet evaluated for the runner
+skip verify_sp0.py  # not yet evaluated for the runner
+skip verify_sp1a.py  # not yet evaluated for the runner
+skip verify_sp2.py  # not yet evaluated for the runner
+skip verify_sp3a.py  # not yet evaluated for the runner
+skip verify_sp4_audio.py  # not yet evaluated for the runner
+skip verify_sp4_battery.py  # not yet evaluated for the runner
+skip verify_sp4_fonts.py  # not yet evaluated for the runner
+skip verify_sp4_geo.py  # not yet evaluated for the runner
+skip verify_sp4_media.py  # not yet evaluated for the runner
+skip verify_sp4_tzlocale.py  # not yet evaluated for the runner
+skip verify_sp4_webrtc.py  # not yet evaluated for the runner
+skip verify_sp5a.py  # not yet evaluated for the runner
+skip verify_sp5b_preset.py  # not yet evaluated for the runner
+skip verify_sp7_phonehome.py  # not yet evaluated for the runner
+skip verify_voices_ii.py  # not yet evaluated for the runner
+skip verify_voices_pause.py  # not yet evaluated for the runner
+skip verify_voices_remote.py  # not yet evaluated for the runner
+skip verify_webgl_profile.py  # not yet evaluated for the runner
+skip verify_webrtc_ii.py  # not yet evaluated for the runner
+skip verify_webrtc_ii_fakeip.py  # not yet evaluated for the runner
+skip verify_webrtc_realproxy.py  # not yet evaluated for the runner
+skip verify_window_geometry.py  # not yet evaluated for the runner
+skip verify_window_position.py  # not yet evaluated for the runner
+skip verify_windows_client.py  # Windows host only (windows_verify_set.py)
+skip verify_windows_fonts.py  # Windows host only (windows_verify_set.py)
+skip verify_windows_sandbox_env.py  # Windows host only (windows_verify_set.py)

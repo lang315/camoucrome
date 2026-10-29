@@ -113,7 +113,10 @@ func asObject(v any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s == "null" {
+	if s == "null" { // a typed nil marshals to null (the empty object); the text "null" is not an object
+		if _, isString := v.(string); isString {
+			return nil, fmt.Errorf("config and preset must be JSON objects: got null")
+		}
 		return m, nil
 	}
 	if err := json.Unmarshal([]byte(s), &m); err != nil {
@@ -123,7 +126,7 @@ func asObject(v any) (map[string]any, error) {
 }
 
 // effectiveKeys are the keys the browser ends up with for what the launcher
-// reads: the preset's os and locale expanded as preset_loader.cc does, under
+// reads: the preset's os, locale and timezone expanded as preset_loader.cc does, under
 // the explicit config (explicit wins). A shape the browser would ignore is an
 // error rather than a silently dropped value.
 func effectiveKeys(config, preset any) (map[string]any, error) {
@@ -157,6 +160,10 @@ func effectiveKeys(config, preset any) (map[string]any, error) {
 	}
 	if loc, ok := p["locale"].(string); ok {
 		setLocale(loc)
+	}
+	// preset_loader.cc: the preset's timezone becomes timezone:id (explicit config still wins below)
+	if tz, ok := p["timezone"].(string); ok {
+		out["timezone:id"] = tz
 	}
 	// preset_loader.cc OverridePresetGroups: an explicit member of the
 	// preset's OS pair or locale triple re-derives the whole group from it.
@@ -447,6 +454,16 @@ func BuildArgs(o Options) []string {
 // the context closes or the launch fails, and so is every launch's
 // crash-dump directory.
 func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, error) {
+	return launch(pw.Chromium, o)
+}
+
+// persistentLauncher is the one method of playwright.BrowserType that Launch
+// calls; the tests give it a fake.
+type persistentLauncher interface {
+	LaunchPersistentContext(userDataDir string, options ...playwright.BrowserTypeLaunchPersistentContextOptions) (playwright.BrowserContext, error)
+}
+
+func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error) {
 	if err := validateProxy(o.Proxy); err != nil {
 		return nil, err
 	}
@@ -480,7 +497,7 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 	if o.Headless != nil {
 		headless = *o.Headless
 	}
-	ctx, err := pw.Chromium.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
+	ctx, err := bt.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
 		ExecutablePath:       playwright.String(o.ExecutablePath),
 		Headless:             playwright.Bool(headless),
 		IgnoreAllDefaultArgs: playwright.Bool(true),

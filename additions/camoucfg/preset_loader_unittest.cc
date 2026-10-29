@@ -125,6 +125,59 @@ TEST(PresetLoaderTest, WrongTypedFieldIsSkipped) {
 }
 
 
+// A preset written by a tool that prints 1920.0 (a JSON double) still sets the
+// screen keys; before, FindInt() skipped it and the real screen showed through.
+TEST(ExpandPresetTest, ScreenSizeGivenAsWholeDoublesIsCopied) {
+  base::DictValue out = ExpandPreset(
+      Preset(R"({"screen": {"width": 1920.0, "height": 1080.0,
+                            "availWidth": 1920.0, "availHeight": 1040.0}})"),
+      kMilestone);
+  EXPECT_EQ(out.FindInt(keys::kScreenWidth), 1920);
+  EXPECT_EQ(out.FindInt(keys::kScreenHeight), 1080);
+  EXPECT_EQ(out.FindInt(keys::kScreenAvailWidth), 1920);
+  EXPECT_EQ(out.FindInt(keys::kScreenAvailHeight), 1040);
+}
+
+TEST(ExpandPresetTest, ScreenSizeWithAFractionIsNotCopied) {
+  base::DictValue out = ExpandPreset(
+      Preset(R"({"screen": {"width": 1920.5}})"), kMilestone);
+  EXPECT_FALSE(out.contains(keys::kScreenWidth));
+}
+
+// The preset's GPU claim is one identity for both contexts. An explicit
+// webGl:* key replaces it in WebGL2 too, or the page reads two GPUs.
+TEST(OverridePresetGroupsTest, ExplicitWebGlVendorAndRendererCarryToWebGl2) {
+  base::DictValue expanded = ExpandPreset(
+      Preset(R"({"gpu": {"vendor": "V0", "renderer": "R0"}})"), kMilestone);
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kWebGlVendor, "V1");
+  explicit_cfg.Set(keys::kWebGlRenderer, "R1");
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_EQ(*expanded.FindString(keys::kWebGl2Vendor), "V1");
+  EXPECT_EQ(*expanded.FindString(keys::kWebGl2Renderer), "R1");
+}
+
+// An explicit webGl2:* key stays the author's word: the carry leaves the slot
+// to the merge, which lets the explicit key win.
+TEST(OverridePresetGroupsTest, ExplicitWebGl2KeyIsNotOverwrittenByTheCarry) {
+  base::DictValue expanded = ExpandPreset(
+      Preset(R"({"gpu": {"vendor": "V0", "renderer": "R0"}})"), kMilestone);
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kWebGlVendor, "V1");
+  explicit_cfg.Set(keys::kWebGl2Vendor, "V2");
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_EQ(*expanded.FindString(keys::kWebGl2Vendor), "V0");
+}
+
+// Without a preset GPU there is nothing to carry into.
+TEST(OverridePresetGroupsTest, WebGlCarryNeedsAPresetGpu) {
+  base::DictValue expanded = ExpandPreset(Preset(R"({"os": "Windows"})"), kMilestone);
+  base::DictValue explicit_cfg;
+  explicit_cfg.Set(keys::kWebGlVendor, "V1");
+  OverridePresetGroups(expanded, explicit_cfg);
+  EXPECT_FALSE(expanded.contains(keys::kWebGl2Vendor));
+}
+
 // The preset derives ua:osInfo and ua:platform from one field. An explicit
 // key for either must re-derive the pair, or ClaimedOs (osInfo first) keeps
 // answering with the preset's OS (review 2026-09-24 #7).

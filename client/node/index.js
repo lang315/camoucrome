@@ -40,7 +40,7 @@ const OS_INFO_MARKERS = [['Android', 'Android'], ['CrOS', 'Chrome OS'], ['Window
   ['Macintosh', 'macOS'], ['Linux', 'Linux']];
 
 // The keys the browser ends up with for what the launcher reads: the preset's
-// os and locale expanded as preset_loader.cc does, under the explicit config
+// os, locale and timezone expanded as preset_loader.cc does, under the explicit config
 // (explicit wins). Throws on a shape the browser would silently drop.
 function effectiveKeys(config, preset) {
   const p = asObject(preset);
@@ -67,6 +67,8 @@ function effectiveKeys(config, preset) {
   const head = Array.isArray(cLangs) && typeof cLangs[0] === 'string' ? cLangs[0]
     : ['navigator.language', 'locale:tag'].map((k) => c[k]).find((v) => typeof v === 'string');
   if (head && 'locale:tag' in out) setLocale(head);
+  // preset_loader.cc: the preset's timezone becomes timezone:id (explicit config still wins below)
+  if (typeof p.timezone === 'string') out['timezone:id'] = p.timezone;
   Object.assign(out, c);
   const langs = out['navigator.languages'];
   if (langs !== undefined && !(Array.isArray(langs) && langs.every((l) => typeof l === 'string'))) {
@@ -271,7 +273,7 @@ async function launch(chromium, executablePath, {
   if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
     const { checkGeoip } = require('./geoip');
     const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
-    (await checkGeoip({ config, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
+    (await checkGeoip({ config, preset, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
   }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast
@@ -326,4 +328,4 @@ async function launch(chromium, executablePath, {
 }
 
 module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
-  acceptLangOf, claimedOs, fontconfigFor, perInstanceConfig, profileSeeds, launch };
+  acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch };

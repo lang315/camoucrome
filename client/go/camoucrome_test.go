@@ -310,8 +310,9 @@ func TestAcceptLangFollowsThePresetLocaleUnderTheConfig(t *testing.T) {
 }
 
 func TestBadConfigShapesAreRejected(t *testing.T) {
-	for _, bad := range []any{"{not json", "[1]", `"x"`, map[string]any{"navigator.languages": "fr"},
-		map[string]any{"navigator.languages": []any{"fr", 1}}} {
+	// [], the string "null" and languages: null are rejected by all three clients (the same table is in the Node and Python tests).
+	for _, bad := range []any{"{not json", "[1]", `"x"`, "[]", []any{}, "null", map[string]any{"navigator.languages": "fr"},
+		map[string]any{"navigator.languages": []any{"fr", 1}}, map[string]any{"navigator.languages": nil}} {
 		if _, err := BuildEnv(Options{Config: bad}, nil); err == nil {
 			t.Fatalf("%v accepted", bad)
 		}
@@ -539,8 +540,8 @@ func TestProxyOptionHandsTheCredentialsToTheDriver(t *testing.T) {
 
 func TestLaunchRefusesAProxyThatWouldLeakOrDoNothing(t *testing.T) {
 	for _, p := range []*Proxy{{}, {Username: "u"}, {Server: "http://u:p@h:1"}} {
-		if _, err := Launch(nil, Options{Proxy: p}); err == nil || !strings.Contains(err.Error(), "proxy") {
-			t.Errorf("Launch(%+v) err = %v, want a proxy error before any launch", p, err)
+		if _, err := launch(&fakeLauncher{}, Options{Proxy: p}); err == nil || !strings.Contains(err.Error(), "proxy") {
+			t.Errorf("launch(%+v) err = %v, want a proxy error before any launch", p, err)
 		}
 	}
 }

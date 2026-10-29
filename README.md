@@ -402,6 +402,11 @@ Camoucrome does not repeat that.
   common sRGB class on a wide-gamut host, but a host that reports 10-bit or HDR keeps them. No
   public source for the distribution of these classes exists that we could find (searched
   2026-10-28), so the project makes no claim about how rare a class is.
+- The audio output channel count (`AudioContext.destination.maxChannelCount`) is the host's
+  default output device, as in stock Chrome; the fork does not set it. On a headless Linux host
+  it reads 2 with and without a Windows identity (40 of 40 launches, with and without a desktop
+  audio session), the same as stock Chrome on Windows. A host whose default output is 5.1 or
+  7.1 would report 6 or 8; that case is not measured.
 - `navigator.connection` (`rtt`, `downlink`, `effectiveType`) is the browser's own estimate of
   the real network path, as in stock Chrome behind the same proxy; the fork does not set it.
   Measured on a headless Linux host; the check against a stock build and the headed Windows

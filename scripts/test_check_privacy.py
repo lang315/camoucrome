@@ -100,6 +100,20 @@ def test_binary_file_is_skipped(repo):
     assert cp.main([]) == 0
 
 
+@pytest.mark.parametrize("codec", ["utf-16", "utf-16-le", "utf-16-be"])  # PowerShell 5.1 `*>` and Out-File write UTF-16LE with a BOM
+def test_a_utf16_text_file_is_scanned_not_skipped_as_binary(repo, codec, capsys):
+    commit(repo, "log.txt", "line one\nnear Plantville on DESKTOP-AB12CD3\n".encode(codec))
+    assert cp.main([]) == 1
+    out = capsys.readouterr().out
+    assert "log.txt:2: <host-place>" in out and "Plantville" not in out
+
+
+def test_a_clean_utf16_file_passes_and_a_real_binary_is_still_skipped(repo):
+    commit(repo, "log.txt", "nothing here\n".encode("utf-16"))
+    commit(repo, "b.bin", bytes(range(256)) * 40 + "near Plantville".encode("utf-16-le"))
+    assert cp.main([]) == 0
+
+
 def test_staged_checks_the_index(repo):
     commit(repo, "a.md", "clean\n")
     (repo / "a.md").write_text("near Plantville\n")
@@ -127,6 +141,20 @@ def test_range_checks_messages(repo):
 def test_range_passes_a_clean_utc_commit(repo):
     commit(repo, "a.md", "clean\n")
     assert cp.main(["--range", "HEAD"]) == 0
+
+
+@pytest.mark.parametrize("who", ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"])
+def test_range_refuses_a_host_identity_in_any_author_or_committer_field(repo, capsys, who):
+    commit(repo, "a.md", "clean\n")
+    value = "me@DESKTOP-AB12CD3.invalid" if who.endswith("EMAIL") else "Plantville"
+    # all four fields set: a hosted runner has no global git identity, so an unset one makes the commit fail
+    env = dict(os.environ, TZ="UTC", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")
+    env[who] = value
+    subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "m"], env=env, check=True)
+    assert cp.main(["--range", "HEAD"]) == 1
+    out = capsys.readouterr()
+    assert "identity" in out.out and "Plantville" not in out.out + out.err and "AB12CD3" not in out.out + out.err
 
 
 def test_range_refuses_a_github_made_commit_with_an_offset(repo):
@@ -222,6 +250,41 @@ def test_commit_msg_hook_refuses_a_session_link(repo):
 
 def test_hooks_pass_a_clean_utc_commit(repo):
     assert try_commit(hooked(repo), "a.md", "clean\n").returncode == 0
+
+
+def push_setup(repo, tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    return remote
+
+
+def test_pre_push_hook_refuses_commits_a_rebase_or_merge_made_in_a_local_offset(repo, tmp_path):
+    # pre-commit does not run for rebase, merge or cherry-pick: this is the commit that reaches a remote unchecked
+    commit(repo, "a.md", "clean\n")
+    push_setup(repo, tmp_path)
+    git(repo, "push", "-q", "origin", "HEAD:refs/heads/main")
+    commit(repo, "b.md", "clean\n", tz="Etc/GMT-5")  # made before the hooks were enabled
+    hooked(repo)
+    r = git(repo, "push", "origin", "HEAD:refs/heads/main", check=False)
+    assert r.returncode != 0 and "date offset" in r.stdout + r.stderr
+
+
+def test_pre_push_hook_passes_a_clean_new_branch_and_an_update(repo, tmp_path):
+    commit(repo, "a.md", "clean\n")
+    push_setup(repo, tmp_path)
+    hooked(repo)
+    assert git(repo, "push", "-q", "origin", "HEAD:refs/heads/new", check=False).returncode == 0
+    commit(repo, "b.md", "clean\n")
+    assert git(repo, "push", "-q", "origin", "HEAD:refs/heads/new", check=False).returncode == 0
+    assert git(repo, "push", "-q", "origin", ":refs/heads/new", check=False).returncode == 0  # a delete has no commits
+
+
+def test_pre_push_hook_refuses_a_new_branch_holding_a_bad_commit(repo, tmp_path):
+    commit(repo, "a.md", "clean\n", msg="x\n\nClaude-Session: https://claude.ai/code/session-x")
+    push_setup(repo, tmp_path)
+    hooked(repo)
+    assert git(repo, "push", "origin", "HEAD:refs/heads/new", check=False).returncode != 0
 
 
 def test_file_mode_checks_contents_not_its_own_path(tmp_path, monkeypatch):

@@ -69,6 +69,10 @@ std::string AssembleRawConfig(EnvGetter get, std::string_view prefix) {
   return single.value_or(std::string());
 }
 
+bool IsStrictValue(const std::optional<std::string>& value) {
+  return value.has_value() && !value->empty() && *value != "0";
+}
+
 base::DictValue ParseConfig(std::string_view raw, bool strict) {
   if (raw.empty()) {
     return base::DictValue();
@@ -254,7 +258,7 @@ const base::DictValue& ParsedConfig() {
       return env->GetVar(name);
     };
     const std::string raw = AssembleRawConfig(get);
-    const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
+    const bool strict = IsStrictValue(env->GetVar("CAMOU_CONFIG_STRICT"));
     base::DictValue parsed = ParseConfig(raw, strict);
     const std::string raw_preset = AssembleRawConfig(get, "CAMOU_PRESET");
     if (!raw_preset.empty()) {

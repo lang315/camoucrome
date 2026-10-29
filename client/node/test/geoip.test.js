@@ -168,3 +168,18 @@ test('checkGeoip no-JSON hint names the packages', async () => {
   const [m] = await g.checkGeoip({ config: cfg, geoip: '/db', python: 'py', ...seams('Traceback') });
   assert.match(m, /maxminddb and timezonefinder installed for py/);
 });
+
+test('checkGeoip takes the zone from the preset, and the explicit config wins', async () => {
+  const s = seams('{"warning":null}');
+  await g.checkGeoip({ config: { 'canvas:seed': 7 }, preset: { timezone: 'Asia/Tokyo' }, geoip: '/db', ...s });
+  assert.deepEqual(s.calls.map((a) => a.at(-1)), ['--check-zone=Asia/Tokyo']);
+  const t = seams('{"warning":null}');
+  await g.checkGeoip({ config: cfg, preset: { timezone: 'America/New_York' }, geoip: '/db', ...t });
+  assert.deepEqual(t.calls.map((a) => a.at(-1)), ['--check-zone=Asia/Tokyo']);
+});
+
+test('the default interpreter is python on Windows (python3 there is the Store stub) and python3 elsewhere', () => {
+  assert.equal(g.defaultPython('win32'), 'python');
+  assert.equal(g.defaultPython('linux'), 'python3');
+  assert.equal(g.defaultPython('darwin'), 'python3');
+});

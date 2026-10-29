@@ -31,9 +31,9 @@ namespace camoucfg::invariants {
 enum class Policy {
   // Refuse to launch. For violations no repair can make plausible.
   kReject,
-  // Fix deterministically and log the key, the old value and the new one.
-  // Must be idempotent: validating the repaired output changes nothing.
-  kRepair,
+  // Log the key, the old value and the value it should have. Nothing is
+  // changed: the configuration is never written after it is parsed.
+  kReport,
 };
 
 // What relation the listed keys must hold.
@@ -115,7 +115,7 @@ struct Invariant {
 inline constexpr std::array<Invariant, 16> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
-     Policy::kRepair,
+     Policy::kReport,
      {"ua:osInfo", "ua:platform"}},
     // keys named via keys:: constants rather than string literals (as the UA
     // entry above does): a rename in keys.h then fails to compile here instead
@@ -123,63 +123,63 @@ inline constexpr std::array<Invariant, 16> kAllInvariants = {{
     // still checks these against invariants.json's literal strings.
     {"screen-avail-width-fits",
      Relation::kFitsWithin,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kScreenWidth, keys::kScreenAvailWidth}},
     {"screen-avail-height-fits",
      Relation::kFitsWithin,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kScreenHeight, keys::kScreenAvailHeight}},
     {"navigator-platform-matches-os",
      Relation::kSamePlatformBucket,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kUaOsInfo, keys::kNavigatorPlatform}},
     {"navigator-language-heads-languages",
      Relation::kListHeadEquals,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kNavigatorLanguages, keys::kNavigatorLanguage}},
     {"locale-tag-matches-navigator-language",
      Relation::kSameString,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kLocaleTag, keys::kNavigatorLanguage}},
     {"webgl2-vendor-agrees-with-webgl",
      Relation::kSameGlString,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kWebGlVendor, keys::kWebGl2Vendor}},
     {"webgl2-renderer-agrees-with-webgl",
      Relation::kSameGlString,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kWebGlRenderer, keys::kWebGl2Renderer}},
     {"webgl-renderer-backend-fits-os",
      Relation::kRendererBackendFitsOs,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kUaOsInfo, keys::kWebGlRenderer}},
     {"timezone-set-with-locale",
      Relation::kRequiresKey,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kLocaleTag, keys::kTimezoneId}},
     {"mediadevices-seed-when-enabled",
      Relation::kRequiresKey,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kMediaDevicesEnabled, keys::kMediaDevicesSeed}},
     {"webgl-identity-set-on-both-contexts",
      Relation::kGlIdentitySetTogether,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kWebGlRenderer, keys::kWebGl2Renderer}},
     {"android-claims-touch",
      Relation::kTouchFitsOs,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kUaOsInfo, keys::kNavigatorMaxTouchPoints}},
     {"fonts-alias-requires-list",
      Relation::kRequiresKey,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kFontsAlias, keys::kFonts}},
     {"fonts-alias-local-requires-list",
      Relation::kRequiresKey,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kFontsAliasLocal, keys::kFonts}},
     {"gpu-renderer-fits-threads",
      Relation::kRendererFitsThreads,
-     Policy::kRepair,
+     Policy::kReport,
      {keys::kWebGlRenderer, keys::kNavigatorHardwareConcurrency}},
 }};
 
@@ -193,15 +193,15 @@ inline constexpr std::array<Invariant, 16> kAllInvariants = {{
 //
 // coherence_validator.cc's ValidateAtStartup() does not read `policy` at
 // all -- it branches only on CAMOU_CONFIG_STRICT, which is correct only
-// because every entry today is Policy::kRepair. A Policy::kReject entry
+// because every entry today is Policy::kReport. A Policy::kReject entry
 // would compile, pass every existing test, and be reported and treated
-// exactly like a kRepair one: read and NOT refused outside strict mode. This
+// exactly like a kReport one: read and NOT refused outside strict mode. This
 // assertion is what makes that assumption falsifiable at build time instead
 // of silently wrong -- the first kReject entry must fail here, forcing
 // ValidateAtStartup() to actually branch on it, rather than fail nowhere.
-constexpr bool AllPoliciesAreRepair() {
+constexpr bool AllPoliciesAreReport() {
   for (const Invariant& inv : kAllInvariants) {
-    if (inv.policy != Policy::kRepair) {
+    if (inv.policy != Policy::kReport) {
       return false;
     }
   }
@@ -236,9 +236,9 @@ constexpr bool EverySameOsFamilyEntryUsesTheUaKeyPair() {
 }
 
 static_assert(
-    AllPoliciesAreRepair(),
+    AllPoliciesAreReport(),
     "a Policy::kReject entry would be silently read and reported as though "
-    "it were kRepair -- coherence_validator.cc's ValidateAtStartup() does "
+    "it were kReport -- coherence_validator.cc's ValidateAtStartup() does "
     "not branch on policy. Implement kReject handling there first.");
 
 static_assert(

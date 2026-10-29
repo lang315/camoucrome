@@ -129,8 +129,23 @@ def _git(*a, inp=None):
     return subprocess.run(["git", *a], input=inp, capture_output=True, check=True).stdout
 
 
+def _utf16_codec(head):
+    """The UTF-16 codec a head of bytes is written in (a BOM, or ASCII text whose every other byte is NUL), else None.
+    PowerShell 5.1 `*>` and Out-File write UTF-16LE, and run-interactive.ps1 logs that way."""
+    if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16"
+    for codec, nuls in (("utf-16-le", head[1::2]), ("utf-16-be", head[0::2])):
+        if len(head) >= 8 and nuls.count(0) >= 0.9 * len(nuls):
+            return codec
+    return None
+
+
 def _text(data):
-    return None if b"\0" in data[:8000] else data.decode("utf-8", "replace")
+    head = data[:8000]
+    if b"\0" not in head:
+        return data.decode("utf-8", "replace")
+    codec = _utf16_codec(head)
+    return None if codec is None else data.decode(codec, "replace")
 
 
 def _name(p, n, terms):
@@ -164,17 +179,19 @@ def _staged(terms):
 
 def _range(revs, terms):
     bad = []
-    log = _git("log", "--format=%H%x00%ae%x00%ce%x00%ai%x00%ci%x00%B%x01", *revs.split())
+    log = _git("log", "--format=%H%x00%an%x00%ae%x00%cn%x00%ce%x00%ai%x00%ci%x00%B%x01", *revs.split())
     for rec in log.split(b"\x01"):
         rec = rec.strip(b"\n")
         if not rec:
             continue
-        sha, ae, ce, ai, ci, msg = rec.split(b"\0", 5)
+        sha, an, ae, cn, ce, ai, ci, msg = rec.split(b"\0", 7)
         s = sha.decode()[:10]
         # no exemption for GitHub-made commits: its web merges carry the owner's offset (all 40 before 2026-10-18)
         if not (ai.endswith(b"+0000") and ci.endswith(b"+0000")):
             bad.append(f"{s}: date offset not +0000 (commit with TZ=UTC)")
         bad += [f"{s}: message line {i}: {c}" for i, c in hits(msg.decode("utf-8", "replace"), terms)]
+        for field, val in (("author name", an), ("author email", ae), ("committer name", cn), ("committer email", ce)):
+            bad += [f"{s}: identity ({field}): {c}" for _, c in hits(val.decode("utf-8", "replace"), terms)]
     return bad
 
 

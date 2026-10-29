@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func stubs(t *testing.T, ip string, ipErr error, out string, outErr error) *[][]string {
@@ -78,10 +79,8 @@ func TestExitIPGivenSkipsTheEchoRequest(t *testing.T) {
 func TestLaunchWarnsBeforeItTouchesTheDriver(t *testing.T) {
 	stubs(t, "192.0.2.5", nil, `{"warning":"contradicts"}`, nil)
 	var got []string
-	func() {
-		defer func() { recover() }() // Launch(nil) panics on the driver, after the check
-		Launch(nil, Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Warn: func(m string) { got = append(got, m) }})
-	}()
+	f := &fakeLauncher{err: errors.New("driver gone")}
+	launch(f, Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Warn: func(m string) { got = append(got, m) }})
 	if len(got) != 1 || got[0] != "contradicts" {
 		t.Fatalf("warned %v", got)
 	}
@@ -115,32 +114,32 @@ func TestExitIPGivesUpAfterEveryService(t *testing.T) {
 }
 
 func TestGenArgsKeepTheOldOrderAndAddTheExitIPFlagsLast(t *testing.T) {
-	old := genArgs(GenArgs{OS: "windows", Timezone: "Europe/Paris", Locale: "fr-FR", GPU: "g1", Seed: 7})
+	old := genArgs(GenArgs{OS: "windows", Timezone: "Europe/Paris", Locale: "fr-FR", GPU: "g1", Seed: intp(7)})
 	if got := strings.Join(old, " "); got != "-m camoucrome.gen --timezone Europe/Paris --gpu g1 --os windows --locale fr-FR --seed 7" {
 		t.Fatalf("args = %q", got)
 	}
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, ExitIP: "192.0.2.5", GeoIPDB: "/db.mmdb"}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", ExitIP: "192.0.2.5", GeoIPDB: "/db.mmdb"}), " ")
 	if got != "-m camoucrome.gen --os windows --exit-ip=192.0.2.5 --geoip-db=/db.mmdb" {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestGenArgsCarryTheHostFlagsLast(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: 3, ExitIP: "192.0.2.5", HostRenderer: "ANGLE (Intel, X)", HostFonts: true}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: intp(3), ExitIP: "192.0.2.5", HostRenderer: "ANGLE (Intel, X)", HostFonts: true}), " ")
 	if got != "-m camoucrome.gen --os windows --seed 3 --exit-ip=192.0.2.5 --host-renderer=ANGLE (Intel, X) --host-fonts" {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestGenArgsCarryHostPlatformVersion(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, HostPlatformVersion: "15.0.0"}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", HostPlatformVersion: "15.0.0"}), " ")
 	if got != "-m camoucrome.gen --os windows --host-platform-version=15.0.0" {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestGenArgsCarryHostDisplay(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, HostDisplay: `{"gamut":"p3"}`}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", HostDisplay: `{"gamut":"p3"}`}), " ")
 	if got != `-m camoucrome.gen --os windows --host-display={"gamut":"p3"}` {
 		t.Fatalf("args = %q", got)
 	}
@@ -206,8 +205,48 @@ func TestCheckGeoIPNoJSONHintNamesThePackages(t *testing.T) {
 }
 
 func TestGenArgsCarryTheProbeExecutable(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, ProbeExecutable: `C:\chrome.exe`}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", ProbeExecutable: `C:\chrome.exe`}), " ")
 	if got != `-m camoucrome.gen --os windows --probe-executable=C:\chrome.exe` {
 		t.Fatalf("args = %q", got)
+	}
+}
+
+func TestCheckGeoIPTakesTheZoneFromThePresetAndTheExplicitConfigWins(t *testing.T) {
+	calls := stubs(t, "192.0.2.5", nil, `{"warning":null}`, nil)
+	CheckGeoIP(Options{Config: map[string]any{"canvas:seed": 7}, Preset: map[string]any{"timezone": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Python: "py"})
+	CheckGeoIP(Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, Preset: map[string]any{"timezone": "America/New_York"}, GeoIP: "/db.mmdb", Python: "py"})
+	if len(*calls) != 2 || (*calls)[0][len((*calls)[0])-1] != "--check-zone=Asia/Tokyo" || (*calls)[1][len((*calls)[1])-1] != "--check-zone=Asia/Tokyo" {
+		t.Fatalf("exec = %v, want two checks of Asia/Tokyo", *calls)
+	}
+}
+
+func TestGenArgsZeroValueIsUnseeded(t *testing.T) {
+	// the zero GenArgs must not pin --seed 0: every identity generated with it would be the same one
+	if got := strings.Join(genArgs(GenArgs{OS: "windows"}), " "); strings.Contains(got, "--seed") {
+		t.Fatalf("zero-value GenArgs passes a seed: %q", got)
+	}
+}
+
+func intp(n int) *int { return &n }
+
+func TestExecPythonGivesUpOnAHungModule(t *testing.T) {
+	old := execTimeout
+	execTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { execTimeout = old })
+	start := time.Now()
+	_, err := execPython("sleep", "30")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err %v, want a timeout", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("took %s", time.Since(start))
+	}
+}
+
+func TestDefaultPythonIsPythonOnWindows(t *testing.T) {
+	for goos, want := range map[string]string{"windows": "python", "linux": "python3", "darwin": "python3"} {
+		if got := defaultPython(goos); got != want {
+			t.Errorf("defaultPython(%q) = %q, want %q", goos, got, want)
+		}
 	}
 }

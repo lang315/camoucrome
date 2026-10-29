@@ -67,11 +67,19 @@ def pruned(p):
     return p.startswith(PRUNE) or base.endswith(".pdb") or base.startswith(PRUNE_BASENAME)
 
 
-def read_args_gn(out):
-    text = (out / "args.gn").read_text()
+def parse_args_gn(text):
     # ponytail: drops "#..." even inside a quoted string; only the bool args are read here
     lines = (l.partition("#")[0] for l in text.splitlines())
     return {k.strip(): v.strip() for k, _, v in (l.partition("=") for l in lines if "=" in l)}
+
+
+def read_args_gn(out):
+    return parse_args_gn((out / "args.gn").read_text())
+
+
+def required_args():
+    """settings/build-args.gn: what a build MUST set (the codec pair and the fieldtrial flag are page-visible tells)."""
+    return parse_args_gn((ROOT / "settings" / "build-args.gn").read_text())
 
 
 def chrome_version(src):
@@ -168,6 +176,13 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if args.get("camou_observe") == "true":
         sys.exit("refusing a build with camou_observe = true: the tracking observer is an audit build, "
                  "never a release (docs/observer/README.md)")
+    wrong = {k: args.get(k) for k, v in required_args().items() if args.get(k) != v}
+    if wrong:
+        sys.exit(f"refusing a build whose args.gn differs from settings/build-args.gn (required, page-visible): {wrong}")
+    shape = {k: args.get(k) for k, v in parse_args_gn((ROOT / "settings" / "release-args.gn").read_text()).items()
+             if args.get(k) != v}
+    if shape:
+        print(f"warning: args.gn differs from settings/release-args.gn (not page-visible, not refused): {shape}", file=sys.stderr)
     if not {"chrome", "chrome.exe"} & set(deps):
         sys.exit(f"GN's runtime deps ({len(deps)} paths) do not list the main binary: wrong target or out dir?")
     version = chrome_version(src)
@@ -204,8 +219,8 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     shutil.copy2(ROOT / "LICENSE", staging / "LICENSE")
     shutil.copy2(src / "LICENSE", staging / "LICENSE.chromium")
     shutil.copy2(out / CREDITS, staging / "about_credits.html")
-    for name, dst in CURSORY_FILES:
-        shutil.copy2(ROOT / "additions/camoucfg_lgpl" / name, staging / dst)
+    for src_name, dst in CURSORY_FILES:
+        shutil.copy2(ROOT / "additions/camoucfg_lgpl" / src_name, staging / dst)
     shutil.copy2(ROOT / "settings" / "launcher.json", staging / "launcher.json")
     if (ROOT / "settings" / "presets").is_dir():
         shutil.copytree(ROOT / "settings" / "presets", staging / "presets", dirs_exist_ok=True)
@@ -230,6 +245,13 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     return staging, stamp
 
 
+def _anonymous(ti):
+    """tar headers otherwise carry the build account's user name, group name and ids into the public archive."""
+    ti.uid = ti.gid = 0
+    ti.uname = ti.gname = ""
+    return ti
+
+
 def archive(staging, platform):
     if platform.startswith("win"):
         path = pathlib.Path(str(staging) + ".zip")
@@ -239,7 +261,7 @@ def archive(staging, platform):
     else:
         path = pathlib.Path(str(staging) + ".tar.xz")
         with tarfile.open(path, "w:xz") as t:
-            t.add(staging, arcname=staging.name)
+            t.add(staging, arcname=staging.name, filter=_anonymous)
     return path
 
 
