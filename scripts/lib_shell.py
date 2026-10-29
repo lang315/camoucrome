@@ -345,6 +345,9 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     # made) raises here, before any shutdown() can see the profile: on the
     # Windows host 14 empty camoucrome-verify-* directories were left this way
     # (2026-10-03).
+    port_file = pathlib.Path(profile) / "DevToolsActivePort"
+    # A reused profile may hold the last run's file: read as this launch's port, it points at a dead or foreign endpoint.
+    port_file.unlink(missing_ok=True)
     try:
         proc = subprocess.Popen(
             [binary, *sandbox_flags, *flags,
@@ -355,12 +358,13 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
         if user_data_dir is None:
             shutil.rmtree(profile, ignore_errors=True)
         raise
+    finally:
+        stderr_file.close()  # the child holds its own descriptor; a long run would otherwise reach the file limit
     # "" gives shutdown() nothing to remove: a caller's profile is the caller's.
     proc.profile_dir = profile if user_data_dir is None else ""
     proc.binary_name = name.lower()
     proc.gpu_gate = gpu_gate
 
-    port_file = pathlib.Path(profile) / "DevToolsActivePort"
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if proc.poll() is not None:

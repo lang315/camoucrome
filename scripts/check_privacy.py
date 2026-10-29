@@ -129,8 +129,23 @@ def _git(*a, inp=None):
     return subprocess.run(["git", *a], input=inp, capture_output=True, check=True).stdout
 
 
+def _utf16_codec(head):
+    """The UTF-16 codec a head of bytes is written in (a BOM, or ASCII text whose every other byte is NUL), else None.
+    PowerShell 5.1 `*>` and Out-File write UTF-16LE, and run-interactive.ps1 logs that way."""
+    if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16"
+    for codec, nuls in (("utf-16-le", head[1::2]), ("utf-16-be", head[0::2])):
+        if len(head) >= 8 and nuls.count(0) >= 0.9 * len(nuls):
+            return codec
+    return None
+
+
 def _text(data):
-    return None if b"\0" in data[:8000] else data.decode("utf-8", "replace")
+    head = data[:8000]
+    if b"\0" not in head:
+        return data.decode("utf-8", "replace")
+    codec = _utf16_codec(head)
+    return None if codec is None else data.decode(codec, "replace")
 
 
 def _name(p, n, terms):
