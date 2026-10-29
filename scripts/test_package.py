@@ -84,6 +84,13 @@ def test_tar_headers_carry_no_account_name_or_id(tree, tmp_path):
     assert members and all((m.uid, m.gid, m.uname, m.gname) == (0, 0, "", "") for m in members)
 
 
+def test_stamp_name_is_the_archive_name_not_the_last_cursory_file(tree, tmp_path):
+    src, out, deps = tree
+    staging, stamp = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    assert stamp["name"] == staging.name == f"camoucrome-{TAG}-linux-x64"
+    assert (tmp_path / "dist" / f"{staging.name}.release.json").exists()
+
+
 def test_runtime_deps_strips_the_dot_slash_gn_156_puts_on_executables(tree):
     src, out, deps = tree
     deps.write_text("./chrome\nlocales/en-US.pak\n./chrome_crashpad_handler\nchrome\n")

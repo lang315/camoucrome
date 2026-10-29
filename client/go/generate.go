@@ -43,11 +43,11 @@ func generatedWarnings(raw []byte) []string {
 	return g.Warnings
 }
 
-// GenArgs is what `python -m camoucrome.gen` takes. Seed < 0 means unseeded. ExitIP (with GeoIPDB, a DB-IP Lite or
+// GenArgs is what `python -m camoucrome.gen` takes. A nil Seed means unseeded. ExitIP (with GeoIPDB, a DB-IP Lite or
 // GeoLite2-layout .mmdb) makes the zone and locale follow where the proxy's exit address is, unless set here.
 type GenArgs struct {
 	OS, Timezone, Locale, GPU string
-	Seed                      int
+	Seed                      *int
 	ExitIP, GeoIPDB           string
 	// HostRenderer is the host's WebGL renderer (an Intel Gen9 host draws a Gen9 identity per seed); HostFonts limits a
 	// Windows claim's fonts to the families this host has.
@@ -77,8 +77,8 @@ func genArgs(g GenArgs) []string {
 	if g.Locale != "" {
 		args = append(args, "--locale", g.Locale)
 	}
-	if g.Seed >= 0 {
-		args = append(args, "--seed", fmt.Sprint(g.Seed))
+	if g.Seed != nil {
+		args = append(args, "--seed", fmt.Sprint(*g.Seed))
 	}
 	if g.ExitIP != "" {
 		args = append(args, "--exit-ip="+g.ExitIP)
@@ -110,7 +110,11 @@ func genArgs(g GenArgs) []string {
 // locale->zone table), an optional locale and an optional settings/webgl
 // profile id. seed < 0 means unseeded.
 func Generate(python, osName, timezone, locale, gpu string, seed int) (Options, error) {
-	return GenerateWith(python, GenArgs{OS: osName, Timezone: timezone, Locale: locale, GPU: gpu, Seed: seed})
+	g := GenArgs{OS: osName, Timezone: timezone, Locale: locale, GPU: gpu}
+	if seed >= 0 {
+		g.Seed = &seed
+	}
+	return GenerateWith(python, g)
 }
 
 // GenerateWith is Generate with the exit-IP flags. The generator's warnings (an exit IP it could not place) go to

@@ -115,32 +115,32 @@ func TestExitIPGivesUpAfterEveryService(t *testing.T) {
 }
 
 func TestGenArgsKeepTheOldOrderAndAddTheExitIPFlagsLast(t *testing.T) {
-	old := genArgs(GenArgs{OS: "windows", Timezone: "Europe/Paris", Locale: "fr-FR", GPU: "g1", Seed: 7})
+	old := genArgs(GenArgs{OS: "windows", Timezone: "Europe/Paris", Locale: "fr-FR", GPU: "g1", Seed: intp(7)})
 	if got := strings.Join(old, " "); got != "-m camoucrome.gen --timezone Europe/Paris --gpu g1 --os windows --locale fr-FR --seed 7" {
 		t.Fatalf("args = %q", got)
 	}
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, ExitIP: "192.0.2.5", GeoIPDB: "/db.mmdb"}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", ExitIP: "192.0.2.5", GeoIPDB: "/db.mmdb"}), " ")
 	if got != "-m camoucrome.gen --os windows --exit-ip=192.0.2.5 --geoip-db=/db.mmdb" {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestGenArgsCarryTheHostFlagsLast(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: 3, ExitIP: "192.0.2.5", HostRenderer: "ANGLE (Intel, X)", HostFonts: true}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: intp(3), ExitIP: "192.0.2.5", HostRenderer: "ANGLE (Intel, X)", HostFonts: true}), " ")
 	if got != "-m camoucrome.gen --os windows --seed 3 --exit-ip=192.0.2.5 --host-renderer=ANGLE (Intel, X) --host-fonts" {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestGenArgsCarryHostPlatformVersion(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, HostPlatformVersion: "15.0.0"}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", HostPlatformVersion: "15.0.0"}), " ")
 	if got != "-m camoucrome.gen --os windows --host-platform-version=15.0.0" {
 		t.Fatalf("args = %q", got)
 	}
 }
 
 func TestGenArgsCarryHostDisplay(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, HostDisplay: `{"gamut":"p3"}`}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", HostDisplay: `{"gamut":"p3"}`}), " ")
 	if got != `-m camoucrome.gen --os windows --host-display={"gamut":"p3"}` {
 		t.Fatalf("args = %q", got)
 	}
@@ -206,7 +206,7 @@ func TestCheckGeoIPNoJSONHintNamesThePackages(t *testing.T) {
 }
 
 func TestGenArgsCarryTheProbeExecutable(t *testing.T) {
-	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: -1, ProbeExecutable: `C:\chrome.exe`}), " ")
+	got := strings.Join(genArgs(GenArgs{OS: "windows", ProbeExecutable: `C:\chrome.exe`}), " ")
 	if got != `-m camoucrome.gen --os windows --probe-executable=C:\chrome.exe` {
 		t.Fatalf("args = %q", got)
 	}
@@ -220,3 +220,12 @@ func TestCheckGeoIPTakesTheZoneFromThePresetAndTheExplicitConfigWins(t *testing.
 		t.Fatalf("exec = %v, want two checks of Asia/Tokyo", *calls)
 	}
 }
+
+func TestGenArgsZeroValueIsUnseeded(t *testing.T) {
+	// the zero GenArgs must not pin --seed 0: every identity generated with it would be the same one
+	if got := strings.Join(genArgs(GenArgs{OS: "windows"}), " "); strings.Contains(got, "--seed") {
+		t.Fatalf("zero-value GenArgs passes a seed: %q", got)
+	}
+}
+
+func intp(n int) *int { return &n }

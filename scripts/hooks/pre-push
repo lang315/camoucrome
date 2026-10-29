@@ -1,0 +1,9 @@
+#!/bin/sh
+# Public repo (CLAUDE.md): pre-commit does not run for rebase, merge, cherry-pick or --amend --no-edit, which rewrite
+# the committer date in the host offset (2026-10-28). Check every commit this push would publish.
+zero=0000000000000000000000000000000000000000
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$zero" ] && continue  # a delete publishes no commits
+  if [ "$rsha" = "$zero" ]; then revs="$lsha --not --remotes"; else revs="$rsha..$lsha"; fi
+  python3 "$(dirname "$0")/../check_privacy.py" --range "$revs" || exit 1
+done
