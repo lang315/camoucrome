@@ -9,7 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 def test_audio_json_windows_row_equals_the_stock_baseline():
-    base = json.loads((ROOT / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text())["headed"]["audio"]
+    base = json.loads((ROOT / "baselines" / "chrome-8103-stock-oracle-windows.json").read_text())["headed"]["audio"]
     row = json.loads((ROOT / "settings" / "audio.json").read_text())["Windows"]
     assert row["sampleRate"] == base["sampleRate"]
     assert row["bufferFrames"] == round(base["baseLatency"] * base["sampleRate"])

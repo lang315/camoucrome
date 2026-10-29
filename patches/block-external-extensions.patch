@@ -1,8 +1,8 @@
 diff --git a/extensions/browser/extension_prefs.cc b/extensions/browser/extension_prefs.cc
-index f1760c5b03..7063bd4d1e 100644
+index 86611a4edc..7ccceea69a 100644
 --- a/extensions/browser/extension_prefs.cc
 +++ b/extensions/browser/extension_prefs.cc
-@@ -2276,7 +2276,11 @@ void ExtensionPrefs::RegisterProfilePrefs(
+@@ -2281,7 +2281,11 @@ void ExtensionPrefs::RegisterProfilePrefs(
    registry->RegisterBooleanPref(pref_names::kAppFullscreenAllowed, true);
  #endif
  

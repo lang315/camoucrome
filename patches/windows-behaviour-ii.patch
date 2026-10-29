@@ -1,5 +1,5 @@
 diff --git a/media/audio/BUILD.gn b/media/audio/BUILD.gn
-index 6aa7e5cafa..71f2fa965a 100644
+index 8667a1ba4f..df18629595 100644
 --- a/media/audio/BUILD.gn
 +++ b/media/audio/BUILD.gn
 @@ -137,6 +137,7 @@ source_set("audio") {
@@ -79,10 +79,10 @@ index f4df4ede31..b600d4c8b7 100644
        const std::string& device_id) override;
    std::string GetAssociatedOutputDeviceID(
 diff --git a/media/base/BUILD.gn b/media/base/BUILD.gn
-index cc0dd6bdb0..d140c9798c 100644
+index be4a2d8864..6da50b11cc 100644
 --- a/media/base/BUILD.gn
 +++ b/media/base/BUILD.gn
-@@ -418,6 +418,7 @@ source_set("base") {
+@@ -417,6 +417,7 @@ source_set("base") {
      "//ui/gl",
    ]
    deps = [
@@ -101,7 +101,7 @@ index d91b0bc706..bacc7b61e0 100644
    "+third_party/widevine/cdm/widevine_cdm_common.h",
  ]
 diff --git a/media/base/audio_parameters.cc b/media/base/audio_parameters.cc
-index 3695886e1b..883b19cee4 100644
+index 9a75ad697e..b454d30530 100644
 --- a/media/base/audio_parameters.cc
 +++ b/media/base/audio_parameters.cc
 @@ -4,6 +4,11 @@
@@ -116,7 +116,7 @@ index 3695886e1b..883b19cee4 100644
  #include <sstream>
  
  #include "base/check_op.h"
-@@ -365,6 +370,23 @@ bool AudioParameters::RequireOffload() const {
+@@ -360,6 +365,23 @@ bool AudioParameters::RequireOffload() const {
  
  // static
  AudioParameters AudioParameters::UnavailableDeviceParams() {

@@ -2,8 +2,8 @@
 """The Windows host oracle: one page reads every cheap page-visible surface a
 fingerprinter enumerates (window keys, Navigator prototype, screen, media
 queries, Intl, audio, voices, WebGPU, codecs, permissions, keyboard, storage,
-client hints...) on stock Chrome 156 on the box's Windows 10 host (the host CDP
-client, headed and headless, real time) -> baselines/chrome-8078-stock-oracle-windows.json.
+client hints...) on stock Chrome 157 on the box's Windows 10 host (the host CDP
+client, headed and headless, real time) -> baselines/chrome-8103-stock-oracle-windows.json.
 verify_host_oracle.py renders the same page in the fork under a generated
 Windows identity and diffs, so every remaining Windows-claim tell is a line."""
 import json
@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "baselines" / "chrome-8078-stock-oracle-windows.json"
+OUT = ROOT / "baselines" / "chrome-8103-stock-oracle-windows.json"
 
 
 def committable(doc, terms):
@@ -134,7 +134,7 @@ def main(argv=None):
         return json.loads(raw) if isinstance(raw, str) else raw
     headed, headless = read(True), read(False)
     display = host_display(winhost)
-    doc = {"chrome": "156.0.8078.48", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
+    doc = {"chrome": "157.0.8103.15", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
            "display": display, "headed": headed, "headless": headless}
     bad = unmeasured_cells(doc)
     sc = headed.get("screen") or {}

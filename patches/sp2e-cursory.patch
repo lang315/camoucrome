@@ -1,8 +1,8 @@
 diff --git a/components/BUILD.gn b/components/BUILD.gn
-index 94b38977be..4de8cb1ac2 100644
+index 23af9e199a..42a97c5ca4 100644
 --- a/components/BUILD.gn
 +++ b/components/BUILD.gn
-@@ -204,6 +204,7 @@ test("components_unittests") {
+@@ -205,6 +205,7 @@ test("components_unittests") {
      "//components/browser_sync:unit_tests",
      "//components/browsing_data/core:unit_tests",
      "//components/camoucfg:unit_tests",

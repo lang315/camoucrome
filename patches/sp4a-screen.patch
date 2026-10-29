@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/css/media_values.cc b/third_party/blink/renderer/core/css/media_values.cc
-index 0d60244742..7150d2ea2a 100644
+index 8d4c98859d..81aeae6986 100644
 --- a/third_party/blink/renderer/core/css/media_values.cc
 +++ b/third_party/blink/renderer/core/css/media_values.cc
 @@ -4,6 +4,9 @@

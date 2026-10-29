@@ -225,7 +225,7 @@ def probe_linkability(pw, arm, mode, run):
         with serve(cap.page().encode()) as url, opened(pw, arm, mode, ident=ident) as ctx:
             reports.append(read_oracle(ctx, url))
     got = rows.link_rows_n(reports)
-    stock = json.loads((ROOT / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8"))
+    stock = json.loads((ROOT / "baselines" / "chrome-8103-stock-oracle-windows.json").read_text(encoding="utf-8"))
     base = rows.baseline_for_mode(stock, mode)
     n = rows.unexplained_counts(got["link.shared"], got["link.values"], CONSTANTS, ACCEPTED, base)
     return {**got, "link.unexplained_raw": n["raw"], "link.unexplained_net": n["net"], "link.unexplained": n["unexplained"]}

@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-index 1ce5f44a59..ce76dc0c3d 100644
+index 2507212dc7..7e5203f4c9 100644
 --- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
 +++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-@@ -872,6 +872,20 @@ _CAMOU_OBSERVE_INTERFACES = frozenset([
+@@ -1031,6 +1031,20 @@ _CAMOU_OBSERVE_INTERFACES = frozenset([
      "RTCPeerConnection",
      "FontFaceSet",
      "Storage",
@@ -23,7 +23,7 @@ index 1ce5f44a59..ce76dc0c3d 100644
  ])
  _CAMOU_OBSERVE_MEMBERS = frozenset([
      "Window.matchMedia",
-@@ -889,6 +903,19 @@ _CAMOU_OBSERVE_MEMBERS = frozenset([
+@@ -1048,6 +1062,19 @@ _CAMOU_OBSERVE_MEMBERS = frozenset([
      "Element.getBoundingClientRect",
      "Element.getClientRects",
      "Document.cookie",
@@ -44,10 +44,10 @@ index 1ce5f44a59..ce76dc0c3d 100644
  
  
 diff --git a/third_party/blink/renderer/core/dom/events/event_target.cc b/third_party/blink/renderer/core/dom/events/event_target.cc
-index d585491b80..613da3d72e 100644
+index 039df6e790..2b22cbfa9f 100644
 --- a/third_party/blink/renderer/core/dom/events/event_target.cc
 +++ b/third_party/blink/renderer/core/dom/events/event_target.cc
-@@ -54,6 +54,7 @@
+@@ -55,6 +55,7 @@
  #include "third_party/blink/renderer/core/dom/subscriber.h"
  #include "third_party/blink/renderer/core/editing/editor.h"
  #include "third_party/blink/renderer/core/event_type_names.h"
@@ -55,7 +55,7 @@ index d585491b80..613da3d72e 100644
  #include "third_party/blink/renderer/core/events/event_util.h"
  #include "third_party/blink/renderer/core/events/pointer_event.h"
  #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
-@@ -599,6 +600,24 @@ bool EventTarget::AddEventListenerInternal(
+@@ -601,6 +602,24 @@ bool EventTarget::AddEventListenerInternal(
      const AtomicString& event_type,
      EventListener* listener,
      const AddEventListenerOptionsResolved& options) {

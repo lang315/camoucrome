@@ -11,10 +11,10 @@ index a63c3bea22..b1aadbc00e 100644
      "//components/input",
      "//components/metrics",
 diff --git a/content/renderer/renderer_blink_platform_impl.cc b/content/renderer/renderer_blink_platform_impl.cc
-index 4341f407c4..4f98a2bcce 100644
+index 063cec06ba..bb53cc443c 100644
 --- a/content/renderer/renderer_blink_platform_impl.cc
 +++ b/content/renderer/renderer_blink_platform_impl.cc
-@@ -34,6 +34,9 @@
+@@ -36,6 +36,9 @@
  #include "base/time/time_delta_from_string.h"
  #include "build/build_config.h"
  #include "cc/base/features.h"
@@ -24,7 +24,7 @@ index 4341f407c4..4f98a2bcce 100644
  #include "components/content_settings/core/common/content_settings_pattern.h"
  #include "components/input/features.h"
  #include "components/input/input_constants.h"
-@@ -89,6 +92,7 @@
+@@ -91,6 +94,7 @@
  #include "storage/common/database/database_identifier.h"
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
@@ -32,7 +32,7 @@ index 4341f407c4..4f98a2bcce 100644
  #include "third_party/blink/public/common/security/protocol_handler_security_level.h"
  #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
  #include "third_party/blink/public/mojom/cpu_performance.mojom.h"
-@@ -675,6 +679,23 @@ void RendererBlinkPlatformImpl::GetWebRTCRendererPreferences(
+@@ -689,6 +693,23 @@ void RendererBlinkPlatformImpl::GetWebRTCRendererPreferences(
      }
    }
  

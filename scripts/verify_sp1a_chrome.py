@@ -29,7 +29,7 @@ import lib_shell
 from lib_shell import ACCEPT_CH, HIGH_ENTROPY
 
 BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/chrome-d0c02bfad0-stock-ua.json")
+    "~/camoucrome-verify/baselines/chrome-1aa07b6387-stock-ua.json")
 
 # The pinned upstream revision this baseline must be a capture of (README.md).
 # Not the checkout's current HEAD: a HEAD-tracking guard is refused the
@@ -39,7 +39,7 @@ BASELINE = os.path.expanduser(
 # fork against a recording of itself instead of against stock. Fork-side UA
 # deltas (SP2a's Headless-prefix removal, for one) are reconciled in code at
 # the comparison sites below, not by moving this constant.
-STOCK_BASE_COMMIT = "d0c02bfad0"
+STOCK_BASE_COMMIT = "1aa07b6387"
 
 # The digest of the stock capture itself, because the commit above is a
 # SELF-REPORTED LABEL and this is the file's actual identity. Pinning both
@@ -58,8 +58,9 @@ STOCK_BASE_COMMIT = "d0c02bfad0"
 # 0e8d4a9268 -> 507c6ee3e2 (Chrome stable 153.0.8010.36), captured that way.
 # 2026-10-02: 507c6ee3e2 -> f89f3a4363 (Chrome stable 154.0.8037.93), same way.
 # 2026-10-21: f89f3a4363 -> d0c02bfad0 (Chrome stable 156.0.8078.48), same way.
+# 2026-10-27: d0c02bfad0 -> 1aa07b6387 (Chrome stable 157.0.8103.15), same way (two captures, equal sha256).
 STOCK_BASELINE_SHA256 = (
-    "ad7e02fa58c8196b50370fb94550547e1f62f8f3cd1032d8b3292b4f4b1f2ccf")
+    "1e30ca82108c4ec242bc0ecca02010103afb0d581da9b8885224e2f754b8b01e")
 
 # Identical to verify_sp1a.py's. Kept in step by hand rather than imported:
 # importing it would execute that file, which runs its own browser sessions.
@@ -555,7 +556,7 @@ C1B = ["1b --user-agent loses to a configuration",
        "1b --user-agent still wins when no configuration is present"]
 
 SWITCH_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 "
+             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 "
              "Safari/537.36")
 
 switched, _, err = run(json.dumps(WIN), ["navigator.userAgent"],

@@ -1,8 +1,8 @@
 diff --git a/components/BUILD.gn b/components/BUILD.gn
-index 936e523aa0..94b38977be 100644
+index 9413748ab4..23af9e199a 100644
 --- a/components/BUILD.gn
 +++ b/components/BUILD.gn
-@@ -203,6 +203,7 @@ test("components_unittests") {
+@@ -204,6 +204,7 @@ test("components_unittests") {
      "//components/browser_actuator:unit_tests",
      "//components/browser_sync:unit_tests",
      "//components/browsing_data/core:unit_tests",
@@ -11,10 +11,10 @@ index 936e523aa0..94b38977be 100644
      "//components/cbor:unit_tests",
      "//components/certificate_matching:unit_tests",
 diff --git a/content/browser/BUILD.gn b/content/browser/BUILD.gn
-index 3162721b67..ce9660df23 100644
+index bee9872ba3..7a936f4802 100644
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -147,6 +147,7 @@ source_set("browser") {
+@@ -148,6 +148,7 @@ source_set("browser") {
      "//cc/paint",
      "//components/back_forward_cache:enum",
      "//components/browsing_data/core:cookie_or_cache_deletion_choice",
@@ -35,10 +35,10 @@ index b217a04306..f011414ab4 100644
    "+components/os_crypt/common/os_crypt_switches.h",
    "+components/vrp_flags",
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index 0559ec1a95..28e639aac6 100644
+index 3d221a6703..9d511356de 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
-@@ -60,6 +60,7 @@
+@@ -61,6 +61,7 @@
  #include "build/build_config.h"
  #include "build/chromecast_buildflags.h"
  #include "cc/base/histograms.h"
@@ -46,7 +46,7 @@ index 0559ec1a95..28e639aac6 100644
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
  #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
  #include "components/power_monitor/make_power_monitor_device_source.h"
-@@ -535,6 +536,28 @@ void BrowserMainLoop::Init() {
+@@ -540,6 +541,28 @@ void BrowserMainLoop::Init() {
  int BrowserMainLoop::EarlyInitialization() {
    TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
  
@@ -103,10 +103,10 @@ index 7669da2ec4..228963bed7 100644
      "+net/base/features.h",
      "+net/cookies",
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 056bd22809..986137e092 100644
+index e5fe811ee0..bed0fb242c 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
-@@ -408,6 +408,7 @@ component("core") {
+@@ -411,6 +411,7 @@ component("core") {
      ":make_deprecation_info",
      ":xml_ffi",
      "//base",

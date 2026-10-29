@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
-index 14f5a7598d..5eaadb2269 100644
+index 365dcd789d..a23de7a043 100644
 --- a/chrome/browser/ui/browser_commands.cc
 +++ b/chrome/browser/ui/browser_commands.cc
-@@ -2828,22 +2828,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
+@@ -2897,22 +2897,14 @@ bool IsRequestingTabletSite(BrowserWindowInterface* browser) {
  }
  
  void ToggleRequestTabletSite(BrowserWindowInterface* browser) {
@@ -111,7 +111,7 @@ index cf95d6a4d9..91edfac240 100644
  
  void NavigatorBase::Trace(Visitor* visitor) const {
 diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
-index 9da1f2bf93..71d4a3c057 100644
+index 6541cf4ee3..e9009d0629 100644
 --- a/third_party/blink/renderer/core/frame/navigator.cc
 +++ b/third_party/blink/renderer/core/frame/navigator.cc
 @@ -23,6 +23,9 @@
@@ -124,7 +124,7 @@ index 9da1f2bf93..71d4a3c057 100644
  #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
  #include "third_party/blink/renderer/core/dom/document.h"
  #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
-@@ -34,16 +37,27 @@
+@@ -34,12 +37,21 @@
  #include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
  #include "third_party/blink/renderer/platform/language.h"
@@ -133,36 +133,6 @@ index 9da1f2bf93..71d4a3c057 100644
  namespace blink {
  
  Navigator::Navigator(ExecutionContext* context) : NavigatorBase(context) {}
- 
- String Navigator::productSub() const {
-+  if (std::optional<std::string> configured = camoucfg::GetString(
-+          camoucfg::ScopeFor(GetExecutionContext()),
-+          camoucfg::keys::kNavigatorProductSub)) {
-+    return String::FromUtf8(*configured);
-+  }
-   return "20030107";
- }
- 
- String Navigator::vendor() const {
-+  if (std::optional<std::string> configured = camoucfg::GetString(
-+          camoucfg::ScopeFor(GetExecutionContext()),
-+          camoucfg::keys::kNavigatorVendor)) {
-+    return String::FromUtf8(*configured);
-+  }
-   // Do not change without good cause. History:
-   // https://code.google.com/p/chromium/issues/detail?id=276813
-   // https://www.w3.org/Bugs/Public/show_bug.cgi?id=27786
-@@ -52,10 +66,23 @@ String Navigator::vendor() const {
- }
- 
- String Navigator::vendorSub() const {
-+  if (std::optional<std::string> configured = camoucfg::GetString(
-+          camoucfg::ScopeFor(GetExecutionContext()),
-+          camoucfg::keys::kNavigatorVendorSub)) {
-+    return String::FromUtf8(*configured);
-+  }
-   return "";
- }
  
  String Navigator::platform() const {
 +  // Camoucrome: a configured navigator.platform wins over everything below,
@@ -173,9 +143,9 @@ index 9da1f2bf93..71d4a3c057 100644
 +          camoucfg::keys::kNavigatorPlatform)) {
 +    return String::FromUtf8(*configured);
 +  }
-   // TODO(955620): Consider changing devtools overrides to only allow overriding
-   // the platform with a frozen platform to distinguish between
-   // mobile and desktop when ReduceUserAgent is enabled.
+   if (!DomWindow())
+     return NavigatorBase::platform();
+   const String& platform_override =
 diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
 index 05fa33e456..9b21f16dd4 100644
 --- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
@@ -206,7 +176,7 @@ index 05fa33e456..9b21f16dd4 100644
  }
  
 diff --git a/third_party/blink/renderer/core/frame/navigator_id.cc b/third_party/blink/renderer/core/frame/navigator_id.cc
-index 22243ebf5e..256db394ae 100644
+index 26681d0fbc..c73f166bfd 100644
 --- a/third_party/blink/renderer/core/frame/navigator_id.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_id.cc
 @@ -33,6 +33,9 @@
@@ -270,7 +240,7 @@ index 22243ebf5e..256db394ae 100644
  #if BUILDFLAG(IS_MAC)
    // Match Safari and Mozilla on Mac x86.
    return "MacIntel";
-@@ -84,6 +117,10 @@ String NavigatorID::platform() const {
+@@ -84,14 +117,27 @@ String NavigatorID::platform() const {
  }
  
  String NavigatorID::product() {
@@ -281,21 +251,49 @@ index 22243ebf5e..256db394ae 100644
    return "Gecko";
  }
  
+ String NavigatorID::productSub() const {
++  if (std::optional<std::string> configured =
++          camoucfg::GetString(camoucfg::ScopeFor(nullptr),
++                              camoucfg::keys::kNavigatorProductSub)) {
++    return String::FromUtf8(*configured);
++  }
+   return "20030107";
+ }
+ 
+ String NavigatorID::vendor() const {
++  if (std::optional<std::string> configured = camoucfg::GetString(
++          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorVendor)) {
++    return String::FromUtf8(*configured);
++  }
+   // Do not change without good cause. History:
+   // https://code.google.com/p/chromium/issues/detail?id=276813
+   // https://www.w3.org/Bugs/Public/show_bug.cgi?id=27786
+@@ -101,6 +147,10 @@ String NavigatorID::vendor() const {
+ }
+ 
+ String NavigatorID::vendorSub() const {
++  if (std::optional<std::string> configured = camoucfg::GetString(
++          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorVendorSub)) {
++    return String::FromUtf8(*configured);
++  }
+   return "";
+ }
+ 
 diff --git a/third_party/blink/renderer/core/frame/navigator_language.cc b/third_party/blink/renderer/core/frame/navigator_language.cc
-index 03b1faff6b..33d6fbe543 100644
+index 4bb64aa4d0..27fedfe26e 100644
 --- a/third_party/blink/renderer/core/frame/navigator_language.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_language.cc
-@@ -5,6 +5,9 @@
+@@ -4,6 +4,9 @@
+ 
  #include "third_party/blink/renderer/core/frame/navigator_language.h"
  
- #include "base/command_line.h"
 +#include "components/camoucfg/blink_scope.h"
 +#include "components/camoucfg/keys.h"
 +#include "components/camoucfg/mask_config.h"
  #include "services/network/public/cpp/features.h"
- #include "third_party/blink/public/common/switches.h"
- #include "third_party/blink/renderer/core/frame/web_feature.h"
-@@ -37,6 +40,14 @@ NavigatorLanguage::NavigatorLanguage(ExecutionContext* execution_context)
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/platform/language.h"
+@@ -34,6 +37,14 @@ NavigatorLanguage::NavigatorLanguage(ExecutionContext* execution_context)
      : execution_context_(execution_context) {}
  
  AtomicString NavigatorLanguage::language() {
@@ -310,7 +308,7 @@ index 03b1faff6b..33d6fbe543 100644
    return AtomicString(languages().front());
  }
  
-@@ -69,6 +80,25 @@ void NavigatorLanguage::SetLanguagesForTesting(const String& languages) {
+@@ -66,6 +77,25 @@ void NavigatorLanguage::SetLanguagesForTesting(const String& languages) {
  }
  
  void NavigatorLanguage::EnsureUpdatedLanguage() {

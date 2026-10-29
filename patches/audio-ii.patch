@@ -33,7 +33,7 @@ index ce762e0543..ee9fb98e2c 100644
    bool CreatedSuccessfully(unsigned desired_number_of_channels) const;
  
 diff --git a/third_party/blink/renderer/modules/webaudio/script_processor_node.cc b/third_party/blink/renderer/modules/webaudio/script_processor_node.cc
-index fe57574a0a..608ee02e1c 100644
+index 6a7df71b9d..69a31be2a3 100644
 --- a/third_party/blink/renderer/modules/webaudio/script_processor_node.cc
 +++ b/third_party/blink/renderer/modules/webaudio/script_processor_node.cc
 @@ -277,6 +277,9 @@ void ScriptProcessorNode::DispatchEvent(double playback_time,

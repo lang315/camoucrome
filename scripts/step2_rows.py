@@ -502,7 +502,7 @@ def _ip(tok):
 def scrub(value, geo):
     """`value` (str, or list/dict walked recursively) with IP addresses, coordinate pairs and the
     host's geo strings replaced. A candidate counts as an address only if ipaddress parses it, so
-    a version (156.0.8078.48) or a clock (10:00:00) stays. `geo` maps a placeholder to the strings
+    a version (157.0.8103.15) or a clock (10:00:00) stays. `geo` maps a placeholder to the strings
     it replaces; it comes from CAMOU_SCRUB on the host and is never committed."""
     if isinstance(value, dict):
         return {scrub(k, geo): scrub(v, geo) for k, v in value.items()}
