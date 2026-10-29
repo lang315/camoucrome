@@ -451,6 +451,16 @@ func BuildArgs(o Options) []string {
 // the context closes or the launch fails, and so is every launch's
 // crash-dump directory.
 func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, error) {
+	return launch(pw.Chromium, o)
+}
+
+// persistentLauncher is the one method of playwright.BrowserType that Launch
+// calls; the tests give it a fake.
+type persistentLauncher interface {
+	LaunchPersistentContext(userDataDir string, options ...playwright.BrowserTypeLaunchPersistentContextOptions) (playwright.BrowserContext, error)
+}
+
+func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error) {
 	if err := validateProxy(o.Proxy); err != nil {
 		return nil, err
 	}
@@ -484,7 +494,7 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 	if o.Headless != nil {
 		headless = *o.Headless
 	}
-	ctx, err := pw.Chromium.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
+	ctx, err := bt.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
 		ExecutablePath:       playwright.String(o.ExecutablePath),
 		Headless:             playwright.Bool(headless),
 		IgnoreAllDefaultArgs: playwright.Bool(true),

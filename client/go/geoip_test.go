@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func stubs(t *testing.T, ip string, ipErr error, out string, outErr error) *[][]string {
@@ -78,10 +79,8 @@ func TestExitIPGivenSkipsTheEchoRequest(t *testing.T) {
 func TestLaunchWarnsBeforeItTouchesTheDriver(t *testing.T) {
 	stubs(t, "192.0.2.5", nil, `{"warning":"contradicts"}`, nil)
 	var got []string
-	func() {
-		defer func() { recover() }() // Launch(nil) panics on the driver, after the check
-		Launch(nil, Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Warn: func(m string) { got = append(got, m) }})
-	}()
+	f := &fakeLauncher{err: errors.New("driver gone")}
+	launch(f, Options{Config: map[string]any{"timezone:id": "Asia/Tokyo"}, GeoIP: "/db.mmdb", Warn: func(m string) { got = append(got, m) }})
 	if len(got) != 1 || got[0] != "contradicts" {
 		t.Fatalf("warned %v", got)
 	}
@@ -229,3 +228,17 @@ func TestGenArgsZeroValueIsUnseeded(t *testing.T) {
 }
 
 func intp(n int) *int { return &n }
+
+func TestExecPythonGivesUpOnAHungModule(t *testing.T) {
+	old := execTimeout
+	execTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { execTimeout = old })
+	start := time.Now()
+	_, err := execPython("sleep", "30")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err %v, want a timeout", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("took %s", time.Since(start))
+	}
+}

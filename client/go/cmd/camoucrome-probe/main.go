@@ -17,7 +17,14 @@ import (
 	camoucrome "github.com/lang315/camoucrome/client/go"
 )
 
+// cleanups run, last first, before fail exits: os.Exit skips defers, and the
+// launch's temp profile and crash dir are removed only by closing the context.
+var cleanups []func()
+
 func fail(what string, err error) {
+	for i := len(cleanups) - 1; i >= 0; i-- {
+		cleanups[i]()
+	}
 	fmt.Fprintln(os.Stderr, what, err)
 	os.Exit(1)
 }
@@ -55,6 +62,7 @@ func main() {
 	if err != nil {
 		fail("run:", err)
 	}
+	cleanups = append(cleanups, func() { pw.Stop() })
 	headless := !*headed
 	o := camoucrome.Options{ExecutablePath: *exe, Headless: &headless, Strict: *strict}
 	if !*sandbox {
@@ -73,6 +81,7 @@ func main() {
 	if err != nil {
 		fail("launch:", err)
 	}
+	cleanups = append(cleanups, func() { ctx.Close() })
 	var page playwright.Page
 	if pages := ctx.Pages(); len(pages) > 0 {
 		page = pages[0]

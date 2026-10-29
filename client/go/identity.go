@@ -63,6 +63,9 @@ func ProfileSeeds(userDataDir string, read func([]byte) (int, error)) (map[strin
 		if err := d.Decode(&stored); err != nil {
 			return nil, fmt.Errorf("%s must hold a JSON object: %w", path, err)
 		}
+		if stored == nil { // the file holds JSON null
+			return nil, fmt.Errorf("%s must hold a JSON object, not null", path)
+		}
 	}
 	seeds := make(map[string]any, len(SeedKeys))
 	var missing []string

@@ -81,7 +81,7 @@ func TestProfileSeedsReadAnotherClientsFileAndDrawOnlyTheMissingKeys(t *testing.
 // device-ID fingerprint than every earlier session showed.
 func TestProfileSeedsRefuseADamagedFileRatherThanRedraw(t *testing.T) {
 	for _, damaged := range []string{`{"canvas:seed"`, `[1, 2]`, `{"audio:seed": 0}`,
-		`{"audio:seed": 4294967296}`, `{"audio:seed": "7"}`, `{"audio:seed": true}`, `{"audio:seed": 1.5}`} {
+		`{"audio:seed": 4294967296}`, `{"audio:seed": "7"}`, `{"audio:seed": true}`, `{"audio:seed": 1.5}`, `null`} {
 		dir := t.TempDir()
 		path := filepath.Join(dir, seedsFileName(t))
 		if err := os.WriteFile(path, []byte(damaged), 0o644); err != nil {
