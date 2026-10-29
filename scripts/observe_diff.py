@@ -1,7 +1,7 @@
 """What one tracking-map arm sent that another did not (fork against stock): endpoints, field paths,
-surface matches, and bytes per kind. Reads channels.json, matches.json and net.json of two arm dirs.
+surface matches, and bytes per kind of the page site (the browser's own traffic is a separate total). Reads channels.json, matches.json and net.json of two arm dirs.
 
-Usage: observe_diff.py DIR_A DIR_B [--names fork,stock]
+Usage: observe_diff.py DIR_A DIR_B [--names fork,stock] [--site https://facebook.com]
 """
 import argparse
 import json
@@ -26,22 +26,31 @@ def _sets(d):
     return eps, fields, matches
 
 
+def _bytes(row):
+    return (row["network"] + row["cache"]) if row else 0
+
+
+def _bytes_sum(kinds):
+    return sum(_bytes(v) for v in kinds.values())
+
+
+def _site_kinds(d, site):
+    costs = observe_report.load_costs(pathlib.Path(d) / "net.json")
+    return (costs or {"by_site_kind": {}})["by_site_kind"].get(site, {})
+
+
 def _split(a, b):
     return {"only_a": sorted(a - b), "only_b": sorted(b - a)}
 
 
-def diff(dir_a, dir_b):
+def diff(dir_a, dir_b, site="https://facebook.com"):
     ea, fa, ma = _sets(dir_a)
     eb, fb, mb = _sets(dir_b)
-    ca = observe_report.load_costs(pathlib.Path(dir_a) / "net.json") or {"by_kind": {}}
-    cb = observe_report.load_costs(pathlib.Path(dir_b) / "net.json") or {"by_kind": {}}
-    kinds = {}
-    for k in sorted(set(ca["by_kind"]) | set(cb["by_kind"])):
-        def tot(c):
-            v = c["by_kind"].get(k, {"network": 0, "cache": 0})
-            return v["network"] + v["cache"]
-        kinds[k] = (tot(ca), tot(cb))
-    return {"endpoints": _split(ea, eb), "fields": _split(fa, fb), "matches": _split(ma, mb), "kinds": kinds}
+    ka, kb = (_site_kinds(d, site) for d in (dir_a, dir_b))
+    kinds = {k: (_bytes(ka.get(k)), _bytes(kb.get(k))) for k in sorted(set(ka) | set(kb))}
+    browser = tuple(_bytes_sum(_site_kinds(d, observe_report.BROWSER)) for d in (dir_a, dir_b))
+    return {"endpoints": _split(ea, eb), "fields": _split(fa, fb), "matches": _split(ma, mb), "kinds": kinds,
+            "browser": browser}
 
 
 def render(d, name_a, name_b):
@@ -52,8 +61,10 @@ def render(d, name_a, name_b):
             lines.append(f"## {key}: only {name} ({len(items)})")
             lines += [f"- `{x}`" for x in items] or ["- none"]
             lines.append("")
-    lines += [f"## bytes per kind (network + cache, MB): {name_a} / {name_b}", ""]
+    lines += [f"## bytes per kind of the page site (network + cache, MB): {name_a} / {name_b}", ""]
     lines += [f"- {k}: {a / 1e6:.2f} / {b / 1e6:.2f}" for k, (a, b) in d["kinds"].items()]
+    lines += ["", f"browser-internal, not compared (MB): {name_a} {d['browser'][0] / 1e6:.2f}",
+              f"browser-internal, not compared (MB): {name_b} {d['browser'][1] / 1e6:.2f}"]
     return "\n".join(lines) + "\n"
 
 
@@ -62,9 +73,10 @@ def main(argv=None):
     ap.add_argument("dir_a")
     ap.add_argument("dir_b")
     ap.add_argument("--names", default="A,B")
+    ap.add_argument("--site", default="https://facebook.com")
     a = ap.parse_args(argv)
     na, nb = a.names.split(",", 1)
-    print(render(diff(a.dir_a, a.dir_b), na, nb))
+    print(render(diff(a.dir_a, a.dir_b, a.site), na, nb))
     return 0
 
 

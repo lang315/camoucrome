@@ -579,3 +579,34 @@ def test_request_table_and_script_labels_collapse_pop_hosts(tmp_path):
           "endpoints": {POP + "/upload": {"count": 1, "bytes": 1, "kinds": {"form": 1}, "initiators": {},
                                           "fields": {}}}}
     assert "xyz9" not in r.render_channels(ch, {"posts": {POP + "/upload": 1}})
+
+
+def site_netlog(tmp_path):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "HTTP_TRANSACTION_SEND_REQUEST",
+             "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+
+    def job(sid, url, nik, n, ct):
+        return [e(sid, "URL_REQUEST_START_JOB", url=url, method="GET", network_isolation_key=nik),
+                e(sid, "HTTP_TRANSACTION_SEND_REQUEST"),
+                e(sid, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["Content-Type: " + ct]),
+                e(sid, "URL_REQUEST_JOB_BYTES_READ", byte_count=n)]
+    ev = (job(1, "https://static.xx.fbcdn.net/a.js", "https://facebook.com https://facebook.com", 100, "text/javascript")
+          + job(2, "https://optimizationguide-pa.googleapis.com/v1/x", "", 4000, "text/html")
+          + job(3, "https://edgedl.example.net/c.crx", "chrome://newtab chrome://newtab", 50, "text/html"))
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_costs_split_by_top_level_site_and_browser_internal(tmp_path):
+    c = r.load_costs(site_netlog(tmp_path))
+    assert c["by_site_kind"]["https://facebook.com"] == {"js": {"n": 1, "network": 100, "cache": 0, "decoded": 100}}
+    b = c["by_site_kind"]["browser"]["html"]
+    assert (b["n"], b["network"]) == (2, 4050)
+    out = r.render_costs(c)
+    assert out.index("https://facebook.com") < out.index("browser-internal")
