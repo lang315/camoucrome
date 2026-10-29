@@ -18,7 +18,14 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
           BEFORE: ${{ github.event.before }}
         # --ci: tracked files, then PR_BASE..PR_HEAD, BEFORE..HEAD, or (new branch, force-push) the whole history
-        run: python3 scripts/check_privacy.py --ci
+        # A secret is empty on a fork PR (and after it is deleted or renamed), and the gate would then run its generic
+        # patterns only and stay green: refuse that on a push and on a same-repo PR. Only a fork PR may run without terms.
+        run: |
+          extra=""
+          if [ "${{ github.event_name }}" = push ] || [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            extra="--require-terms"
+          fi
+          python3 scripts/check_privacy.py --ci $extra
       - uses: actions/setup-go@v5
         with: { go-version: "1.22" }
       - name: additions are all in BUILD.gn

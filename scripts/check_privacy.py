@@ -164,17 +164,19 @@ def _staged(terms):
 
 def _range(revs, terms):
     bad = []
-    log = _git("log", "--format=%H%x00%ae%x00%ce%x00%ai%x00%ci%x00%B%x01", *revs.split())
+    log = _git("log", "--format=%H%x00%an%x00%ae%x00%cn%x00%ce%x00%ai%x00%ci%x00%B%x01", *revs.split())
     for rec in log.split(b"\x01"):
         rec = rec.strip(b"\n")
         if not rec:
             continue
-        sha, ae, ce, ai, ci, msg = rec.split(b"\0", 5)
+        sha, an, ae, cn, ce, ai, ci, msg = rec.split(b"\0", 7)
         s = sha.decode()[:10]
         # no exemption for GitHub-made commits: its web merges carry the owner's offset (all 40 before 2026-10-18)
         if not (ai.endswith(b"+0000") and ci.endswith(b"+0000")):
             bad.append(f"{s}: date offset not +0000 (commit with TZ=UTC)")
         bad += [f"{s}: message line {i}: {c}" for i, c in hits(msg.decode("utf-8", "replace"), terms)]
+        for field, val in (("author name", an), ("author email", ae), ("committer name", cn), ("committer email", ce)):
+            bad += [f"{s}: identity ({field}): {c}" for _, c in hits(val.decode("utf-8", "replace"), terms)]
     return bad
 
 
