@@ -177,3 +177,9 @@ test('checkGeoip takes the zone from the preset, and the explicit config wins', 
   await g.checkGeoip({ config: cfg, preset: { timezone: 'America/New_York' }, geoip: '/db', ...t });
   assert.deepEqual(t.calls.map((a) => a.at(-1)), ['--check-zone=Asia/Tokyo']);
 });
+
+test('the default interpreter is python on Windows (python3 there is the Store stub) and python3 elsewhere', () => {
+  assert.equal(g.defaultPython('win32'), 'python');
+  assert.equal(g.defaultPython('linux'), 'python3');
+  assert.equal(g.defaultPython('darwin'), 'python3');
+});

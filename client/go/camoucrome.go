@@ -113,7 +113,10 @@ func asObject(v any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s == "null" {
+	if s == "null" { // a typed nil marshals to null (the empty object); the text "null" is not an object
+		if _, isString := v.(string); isString {
+			return nil, fmt.Errorf("config and preset must be JSON objects: got null")
+		}
 		return m, nil
 	}
 	if err := json.Unmarshal([]byte(s), &m); err != nil {

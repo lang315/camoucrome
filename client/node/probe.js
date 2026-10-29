@@ -74,12 +74,16 @@ const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFil
     dpr: args.dpr ? Number(args.dpr) : undefined,
     proxy: args.proxy ? { server: args.proxy, bypass: args['proxy-bypass'], username: args['proxy-user'], password: args['proxy-pass'] } : undefined,
   });
-  const page = ctx.pages()[0] || await ctx.newPage();
-  // SP2 4.2 item, same as the other probes: the page reports typeof __camou_init.
-  await page.addInitScript('window.__camou_init = 1');
-  await page.goto(args.url, { waitUntil: 'load' });
-  const text = await page.locator('#o').textContent();
-  const argv = browserArgv(args.executable);
-  await ctx.close();
+  let text; let argv;
+  try {
+    const page = ctx.pages()[0] || await ctx.newPage();
+    // SP2 4.2 item, same as the other probes: the page reports typeof __camou_init.
+    await page.addInitScript('window.__camou_init = 1');
+    await page.goto(args.url, { waitUntil: 'load' });
+    text = await page.locator('#o').textContent();
+    argv = browserArgv(args.executable);
+  } finally {
+    await ctx.close(); // removes the launch's temp profile and crash dir, also when the page step threw
+  }
   process.stdout.write(JSON.stringify({ driver: args.label || 'node', report: JSON.parse(text), argv }));
 })().catch((e) => { console.error(String(e)); process.exit(1); });

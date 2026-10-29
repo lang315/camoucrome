@@ -175,7 +175,9 @@ def test_accept_lang_follows_the_preset_locale_under_the_config():
 
 
 def test_bad_config_shapes_are_rejected():
-    for bad in ("{not json", "[1]", '"x"', {"navigator.languages": "fr"}, {"navigator.languages": ["fr", 1]}):
+    # [], the string "null" and languages: null are rejected by all three clients (the same table is in the Go and Node tests).
+    for bad in ("{not json", "[1]", '"x"', "[]", [], "null", {"navigator.languages": "fr"}, {"navigator.languages": ["fr", 1]},
+                {"navigator.languages": None}):
         with pytest.raises(ValueError):
             camoucrome.build_env(bad, base={})
         with pytest.raises(ValueError):
@@ -450,3 +452,9 @@ def test_launch_adds_the_proxy_flag_and_hands_the_credentials_to_the_driver():
 def test_launch_refuses_a_proxy_that_would_leak_or_do_nothing(proxy):
     with pytest.raises(ValueError, match="proxy"):
         camoucrome.launch(FakePlaywright(), "/x/chrome", proxy=proxy)
+
+
+def test_device_scale_factor_text_matches_node_and_go():
+    # Node's template literal and Go's %g print a whole number without ".0"
+    for dpr, text in ((1.0, "1"), (2, "2"), (2.0, "2"), (1.25, "1.25"), (1.5, "1.5")):
+        assert f"--force-device-scale-factor={text}" in camoucrome.build_args(dpr=dpr), dpr
