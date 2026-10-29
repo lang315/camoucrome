@@ -133,7 +133,10 @@ def test_range_passes_a_clean_utc_commit(repo):
 def test_range_refuses_a_host_identity_in_any_author_or_committer_field(repo, capsys, who):
     commit(repo, "a.md", "clean\n")
     value = "me@DESKTOP-AB12CD3.invalid" if who.endswith("EMAIL") else "Plantville"
-    env = dict(os.environ, TZ="UTC", **{who: value})
+    # all four fields set: a hosted runner has no global git identity, so an unset one makes the commit fail
+    env = dict(os.environ, TZ="UTC", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")
+    env[who] = value
     subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "m"], env=env, check=True)
     assert cp.main(["--range", "HEAD"]) == 1
     out = capsys.readouterr()
