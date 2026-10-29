@@ -84,7 +84,10 @@ try {
       if (-not (Test-Path $f4)) { "UNMEASURED arm4a no arm4a-url.txt"; $worst = [math]::Max($worst, 3); continue }
       $armUrls = @((Get-Content $f4 -TotalCount 1).Trim())
     }
-    $cmd = "& $Root\recon.ps1 -Site facebook -Arm $a -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
+    $armDir = Join-Path $run "arm$a"
+    $existed = Test-Path $armDir
+    # the arm name is quoted: PowerShell 5.1 reads an unquoted 1d as the decimal 1 (run 20261029-145829)
+    $cmd = "& $Root\recon.ps1 -Site facebook -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
     if ($a -in '3', '3w', '4a') { $cmd += ' -FromProfile ' + $(if ($FromProfileOverride) { $FromProfileOverride } else { $Backup }) }
     if ($drivenArm) {
@@ -114,7 +117,7 @@ try {
         if ($by.Count) { [void]$samples.Add([ordered]@{ t = [int]((Get-Date) - $t0).TotalSeconds; by_type = $by }) }
       }
     }
-    if ($drivenArm -and (Test-Path (Join-Path $run "arm$a"))) {
+    if ($drivenArm -and -not $existed -and (Test-Path $armDir)) {
       [IO.File]::WriteAllText((Join-Path $run "arm$a\ram.json"), (ConvertTo-Json -Depth 4 ([ordered]@{ interval_s = 6; samples = @($samples) })))
     }
     $timedOut = -not (Select-String -Path $log -Pattern '^EXIT=' -Quiet -ErrorAction SilentlyContinue)
@@ -129,6 +132,12 @@ try {
     powershell -NoProfile -ExecutionPolicy Bypass -File $Ri -Name $name -Remove | Out-Null
     Get-Content $log -ErrorAction SilentlyContinue | Select-String 'SESSION=|CLOSED=|low-memory|report exit|ERROR:|drive_rc=' | ForEach-Object { $_.Line }
     if ($timedOut) { continue }
+    # a recon that threw, or one that never made this arm's dir, measured nothing: judging a dir that
+    # another arm made would print that arm's verdict under this arm's name
+    $errored = (Test-Path $log) -and (Select-String -Path $log -Pattern '^ERROR:' -Quiet)
+    if ($errored -or $existed -or -not (Test-Path $armDir)) {
+      "UNMEASURED arm$a recon error"; $worst = [math]::Max($worst, 3); continue
+    }
     # a python that fails to launch leaves the -Remove call's 0 in LASTEXITCODE; global, or a script-scope copy shadows it
     $global:LASTEXITCODE = 3
     if ($drivenArm) {

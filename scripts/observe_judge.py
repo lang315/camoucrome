@@ -40,6 +40,24 @@ def coverage(data, net):
     return {"trace_s": round(trace_s, 1), "net_s": round(net_s, 1), "discarded": discarded}
 
 
+def netlog_vs_trace(data, net):
+    """Request starts after the trace's last event, and how long the netlog began before the trace.
+
+    The netlog's time (ms) and the trace's ts (us) are one clock (host, 2026-10-29: first events within 0.2 s).
+    The netlog outlives the trace by shutdown work (sockets, QUIC), so its span says nothing about lost
+    observation; a request that STARTS after the last event is one the trace could not have seen."""
+    evs = [e["ts"] for e in r.all_events(data) if e.get("ph") != "M" and e.get("ts", 0) > 0]
+    if not evs or "constants" not in net:
+        return {"starts_after_trace": 0, "head_s": 0.0}
+    start = net["constants"]["logEventTypes"]["URL_REQUEST_START_JOB"]
+    begin = net["constants"]["logEventPhase"]["PHASE_BEGIN"]
+    starts = [int(e["time"]) * 1000 for e in net.get("events", [])
+              if e.get("type") == start and e.get("phase") == begin and "time" in e]
+    times = [int(e["time"]) * 1000 for e in net.get("events", []) if "time" in e]
+    head = (min(evs) - min(times)) / 1e6 if times else 0.0
+    return {"starts_after_trace": sum(t > max(evs) for t in starts), "head_s": round(max(head, 0.0), 1)}
+
+
 def summarize(arm_dir):
     d = pathlib.Path(arm_dir)
     try:
@@ -77,7 +95,7 @@ def summarize(arm_dir):
     run = _json(d / "run.json") if (d / "run.json").exists() else None
     return {"groups": dict(groups), "members": dict(members), "intl": intl, "cookies": cookies,
             "requests": {"total": len(reqs), "ajax_bz": sum("/ajax/bz" in p for _s, _h, p, _m in reqs)},
-            "coverage": coverage(data, net), "run": run}
+            "coverage": coverage(data, net), "netlog": netlog_vs_trace(data, net), "run": run}
 
 
 EXIT = {"PASS": 0, "FAIL": 1, "UNMEASURED": 3}
@@ -107,8 +125,11 @@ def unmeasured(s, arm):
         why.append("buffer stats missing")
     elif c["discarded"]:
         why.append(f"buffer full ({c['discarded']} chunks discarded)")
-    if c["trace_s"] < c["net_s"] - SLACK_S:
-        why.append(f"trace short ({c['trace_s']} s of {c['net_s']} s)")
+    nl = s["netlog"]
+    if nl["starts_after_trace"]:
+        why.append(f"{nl['starts_after_trace']} URL requests started after the trace ended")
+    if nl["head_s"] > SLACK_S:
+        why.append(f"netlog began {nl['head_s']} s before the trace")
     if s["intl"] is None:
         why.append("intl blind")
     if arm == 3 and not all(f".facebook.com:{n}" in s["cookies"] for n in LOGGED_IN):
