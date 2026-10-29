@@ -22,7 +22,7 @@ struct Violation {
   // rather than reporting a contradiction without saying against what.
   std::string authoritative_key;
   // The key this violation would change. Every registry entry is
-  // Policy::kRepair -- invariants.h's AllPoliciesAreRepair static_assert
+  // Policy::kReport -- invariants.h's AllPoliciesAreReport static_assert
   // enforces it, since kReject is declared but not handled below -- so this
   // is always populated for a reported violation.
   std::string repaired_key;
@@ -111,9 +111,9 @@ std::vector<CapabilityViolation> ValidateCapabilityIdentity(
 // false when startup must be refused.
 //
 // It does not branch on `policy` at all -- only on CAMOU_CONFIG_STRICT.
-// Every entry in the registry is Policy::kRepair; invariants.h static_asserts
+// Every entry in the registry is Policy::kReport; invariants.h static_asserts
 // that, so a Policy::kReject entry fails the build instead of being silently
-// read and reported as though it were kRepair. Under strict mode every
+// read and reported as though it were kReport. Under strict mode every
 // violation refuses startup; otherwise every violation is reported loudly
 // and none of them is applied.
 //

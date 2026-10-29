@@ -1,0 +1,14 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 20635818d1..c506c6e19e 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -818,7 +818,8 @@ class InputHandler::InputInjector
+     scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+         base::SingleThreadTaskRunner::GetCurrentDefault();
+     std::optional<base::TimeDelta> delay =
+-        owner_->queue_clock_.Reserve(now, at.back());
++        owner_->queue_clock_.Reserve(
++            now, std::max(at.back(), base::Milliseconds(1)));
+     if (!delay) {
+       base::TimeDelta behind = owner_->queue_clock_.BookStockSlot(now);
+       if (behind.is_zero()) {

@@ -43,3 +43,4 @@ observe-dispatch.patch
 sp2e-cursory.patch
 sp2e-input-scheduler.patch
 sp2e-credits.patch
+audit-cpp-fixes.patch

@@ -142,8 +142,8 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
 
     const std::string* policy = dict.FindString("policy");
     ASSERT_TRUE(policy) << *id;
-    if (*policy == "repair") {
-      EXPECT_EQ(header_entry->policy, invariants::Policy::kRepair) << *id;
+    if (*policy == "report") {
+      EXPECT_EQ(header_entry->policy, invariants::Policy::kReport) << *id;
     } else if (*policy == "reject") {
       EXPECT_EQ(header_entry->policy, invariants::Policy::kReject) << *id;
     } else {
