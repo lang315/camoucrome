@@ -2,6 +2,8 @@
 """windows-behaviour: navigator.share() under a Windows/macOS claim behaves like a dismissed share sheet instead of
 killing the renderer (the broker's "no binder" path); voices follow the claimed locale.
 
+B1-B3 alone on the Windows host: `verify_windows_behaviour.py --interfaces-only` (interactive session, GPU gate).
+
 Runs on the box against out/Default/chrome (content_shell has no chrome/browser binders) through the patchright
 client. RED for S1 is the pre-fix run: "Target crashed" (2026-09-12, share_probe.py)."""
 import json
@@ -85,7 +87,20 @@ def gen(os_name, locale=None):
 EXPECTED_ROWS = 17  # S1 S1b S2 S3 S4 V1 V2 A1-A4 U1 U2 V3 B1-B3
 
 
+def interfaces_only():
+    """B1-B3 alone, for the Windows host (157 step 8): gated to the interactive session, no share() call."""
+    import gpu_gate
+    gpu_gate.require_interactive()
+    mac = gen("macos")
+    results = interface_rows(gen("windows"), gen("linux"), mac)
+    for k, v in results.items():
+        print("PASS " if v else "FAIL ", k)
+    sys.exit(0 if all(results.values()) and len(results) == 3 else 1)
+
+
 def main():
+    if "--interfaces-only" in sys.argv:
+        interfaces_only()
     results = {}
     win = gen("windows")
     ms = win["share:cancelMs"]
