@@ -2,6 +2,8 @@
 """windows-behaviour: navigator.share() under a Windows/macOS claim behaves like a dismissed share sheet instead of
 killing the renderer (the broker's "no binder" path); voices follow the claimed locale.
 
+B1-B3 alone on the Windows host: `verify_windows_behaviour.py --interfaces-only` (interactive session, GPU gate).
+
 Runs on the box against out/Default/chrome (content_shell has no chrome/browser binders) through the patchright
 client. RED for S1 is the pre-fix run: "Target crashed" (2026-09-12, share_probe.py)."""
 import json
@@ -82,10 +84,23 @@ def gen(os_name, locale=None):
     return json.loads(g.stdout)["config"]
 
 
-EXPECTED_ROWS = 14  # S1 S1b S2 S3 S4 V1 V2 A1-A4 U1 U2 V3
+EXPECTED_ROWS = 17  # S1 S1b S2 S3 S4 V1 V2 A1-A4 U1 U2 V3 B1-B3
+
+
+def interfaces_only():
+    """B1-B3 alone, for the Windows host (157 step 8): gated to the interactive session, no share() call."""
+    import gpu_gate
+    gpu_gate.require_interactive()
+    mac = gen("macos")
+    results = interface_rows(gen("windows"), gen("linux"), mac)
+    for k, v in results.items():
+        print("PASS " if v else "FAIL ", k)
+    sys.exit(0 if all(results.values()) and len(results) == 3 else 1)
 
 
 def main():
+    if "--interfaces-only" in sys.argv:
+        interfaces_only()
     results = {}
     win = gen("windows")
     ms = win["share:cancelMs"]
@@ -122,7 +137,9 @@ def main():
     lin = gen("linux")
     results.update(audio_rows(win, lin))
     results.update(platform_version_rows(win, lin))
-    mac = gen("macos")["voices:list"]
+    mac_cfg = gen("macos")
+    results.update(interface_rows(win, lin, mac_cfg))
+    mac = mac_cfg["voices:list"]
     results["V3 macOS claim: the measured Mac list (191 voices, Samantha default), then 19 remote"] = (
         len(mac) == 210 and mac[0]["name"] == "Samantha" and mac[0]["default"] is True
         and all(v["localService"] for v in mac[:191]) and all(v["localService"] is False for v in mac[191:]))
@@ -251,3 +268,56 @@ def audio_rows(win, lin):
 
 if __name__ == "__main__":
     main()
+
+
+IFACE_PAGE = b"""<!doctype html><title>iface</title><pre id=o></pre><script>
+document.getElementById('o').textContent = JSON.stringify({share: typeof navigator.share, bluetooth: typeof navigator.bluetooth});
+</script>"""
+
+
+def iface_expect(claim):
+    """navigator.share (Web Share) and navigator.bluetooth (Web Bluetooth) follow the claimed OS, not the build (B5):
+    stock Windows and macOS Chrome expose both, stock Linux Chrome neither."""
+    return {"share": "undefined", "bluetooth": "undefined"} if claim == "linux" else {"share": "function", "bluetooth": "object"}
+
+
+def iface_ok(claim, seen):
+    return seen == iface_expect(claim)
+
+
+def iface_probe(cfg):
+    script = f"""
+import json, sys
+sys.path.insert(0, {json.dumps(str(CLIENT / "client" / "python"))})
+from camoucrome.launcher import launch
+from patchright.sync_api import sync_playwright
+import http.server, threading
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers(); self.wfile.write({IFACE_PAGE!r})
+    def log_message(self, *a): pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H); threading.Thread(target=srv.serve_forever, daemon=True).start()
+with sync_playwright() as pw:
+    ctx = launch(pw, {json.dumps(EXE)}, config=json.loads({json.dumps(json.dumps(cfg))}), headless=True, args=["--no-sandbox"], fonts_dir={json.dumps(FONTS_DIR)})
+    page = ctx.new_page(); page.goto(f"http://127.0.0.1:{{srv.server_port}}/")
+    print(page.locator("#o").text_content())
+    ctx.close()
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
+    env["PLAYWRIGHT_NODEJS_PATH"] = NODE
+    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+    if p.returncode != 0:
+        return {"error": p.stderr[-400:].replace("\n", " | ")}
+    return json.loads(p.stdout.strip().splitlines()[-1])
+
+
+def interface_rows(win, lin, mac):
+    """B1-B3. On the Linux box build B1 holds with the claim branch deleted (stock Linux never had the interfaces), so only
+    a Windows or macOS build can turn it RED; B2/B3 are RED on a build without the Windows/Mac enabling branch."""
+    seen = {c: iface_probe(cfg) for c, cfg in (("linux", lin), ("windows", win), ("macos", mac))}
+    print(f"note: B interfaces -> {json.dumps(seen)}")
+    return {
+        "B1 Linux claim: navigator.share and navigator.bluetooth both undefined (RED only on a Windows/macOS build without the Linux-claim branch)": iface_ok("linux", seen["linux"]),
+        "B2 Windows claim: navigator.share a function and navigator.bluetooth an object": iface_ok("windows", seen["windows"]),
+        "B3 macOS claim: navigator.share a function and navigator.bluetooth an object": iface_ok("macos", seen["macos"]),
+    }
