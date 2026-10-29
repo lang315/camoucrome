@@ -423,6 +423,7 @@ def load_cookie_names(db_path):
         con.close()
 
 
+BROWSER = "browser"  # a request with no page site, or a chrome:// one: the browser's own traffic
 NET_KINDS = (("javascript", "js"), ("ecmascript", "js"), ("css", "css"), ("html", "html"), ("wasm", "wasm"),
              ("image", "image"), ("video", "video"), ("audio", "video"), ("font", "font"), ("json", "json"))
 SEND_EVENTS = {"HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS",
@@ -453,9 +454,10 @@ def load_costs(netlog_path):
     for e in events:
         t, p = names.get(e.get("type")), e.get("params") or {}
         r = req.setdefault(e["source"]["id"], {"url": None, "method": "GET", "ct": "", "raw": 0, "dec": 0, "sent": False,
-                                               "hdr": False, "enc": False})
+                                               "hdr": False, "enc": False, "site": ""})
         if t == "URL_REQUEST_START_JOB" and r["url"] is None and "url" in p:
             r["url"], r["method"] = p["url"], p.get("method", "GET")
+            r["site"] = _request_site(p)
         elif t == "URL_REQUEST_JOB_BYTES_READ":
             r["raw"] += p.get("byte_count", 0)
         elif t == "URL_REQUEST_JOB_FILTERED_BYTES_READ":
@@ -470,7 +472,7 @@ def load_costs(netlog_path):
                 elif k.strip().lower() == "content-encoding":
                     r["enc"] = True
             r["hdr"] = True
-    out = {"by_host": {}, "by_kind": {}, "posts": collections.Counter()}
+    out = {"by_host": {}, "by_kind": {}, "by_site_kind": {}, "posts": collections.Counter()}
     for r in req.values():
         if not r["url"] or not r["url"].startswith("http"):
             continue
@@ -482,7 +484,10 @@ def load_costs(netlog_path):
         raw, approx = r["raw"], False
         if not raw and r["dec"]:
             raw, approx = r["dec"], r["enc"] or not r["hdr"]
-        for key, table in ((host, out["by_host"]), (kind_of(r["ct"], r["method"]), out["by_kind"])):
+        kind = kind_of(r["ct"], r["method"])
+        site = r["site"] if r["site"].startswith("http") else BROWSER
+        site_table = out["by_site_kind"].setdefault(site, {})
+        for key, table in ((host, out["by_host"]), (kind, out["by_kind"]), (kind, site_table)):
             row = table.setdefault(key, {"n": 0, "network": 0, "cache": 0, "decoded": 0})
             row["n"] += 1
             row["network" if r["sent"] else "cache"] += raw
@@ -509,9 +514,15 @@ def render_costs(costs):
              "| host | requests | network | cache | decoded |", "|---|---|---|---|---|"]
     for h, v in sorted(costs["by_host"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"]))[:20]:
         lines.append(f"| `{h}`{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
-    lines += ["", "| kind | requests | network | cache | decoded |", "|---|---|---|---|---|"]
-    for k, v in sorted(costs["by_kind"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"])):
-        lines.append(f"| {k}{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+    def total(kinds):
+        return sum(v["network"] + v["cache"] for v in kinds.values())
+    sites = costs["by_site_kind"]
+    pages = sorted((s for s in sites if s != BROWSER), key=lambda s: -total(sites[s]))
+    for site in pages + ([BROWSER] if BROWSER in sites else []):
+        lines += ["", f"### {'browser-internal' if site == BROWSER else site}", "",
+                  "| kind | requests | network | cache | decoded |", "|---|---|---|---|---|"]
+        for k, v in sorted(sites[site].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"])):
+            lines.append(f"| {k}{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
     return "\n".join(lines) + "\n"
 
 

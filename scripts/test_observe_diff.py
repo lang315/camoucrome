@@ -41,3 +41,17 @@ def test_diff_never_prints_a_pop_style_host(tmp_path):
     b = arm(tmp_path, "1s", {}, [])
     out = od.render(od.diff(a, b), "fork", "stock")
     assert "xyz9" not in out and "scontent.*.fbcdn.net/up" in out
+
+
+def test_diff_bytes_per_kind_count_only_the_page_site(tmp_path):
+    import test_observe_report as tr
+    a = arm(tmp_path, "1d", {}, [])
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (a / "net.json").write_bytes(tr.site_netlog(scratch).read_bytes())
+    b = arm(tmp_path, "1s", {}, [])
+    d = od.diff(a, b)
+    assert d["kinds"] == {"js": (100, 0)}
+    assert d["browser"] == (4050, 0)
+    out = od.render(d, "fork", "stock")
+    assert "browser-internal" in out and "html" not in out
