@@ -101,12 +101,27 @@ def crashed_exit(code):
     return code is not None and (code >= 0x80000000 if WINDOWS else code < 0)
 
 
+def verdict(url, crashed, code, alive, swallowed):
+    """(crash seen, detail). The exceptions crash() swallows are expected on a crash (the CDP connection drops), so they only
+    show when nothing was seen: a hung or failed launch then says why it measured nothing."""
+    if url is None:
+        seen = crashed_exit(code)
+        detail = f"exit code {hex(code) if WINDOWS and code is not None else code}"
+    else:
+        seen = bool(crashed) and alive
+        detail = f"renderer crashed {bool(crashed)}, browser alive {alive}"
+    if not seen and swallowed:
+        detail += f"; swallowed: {', '.join(swallowed)}"
+    return seen, detail
+
+
 def crash(url):
     """One launch, one crash: a renderer crash at `url`, or a browser crash
     when `url` is None. Returns (crash seen, detail, profile, since, proc)."""
     from playwright.sync_api import sync_playwright
 
     since = time.time() - 1
+    swallowed = []
     # gpu_gate=False: no row here is GPU-backed, and after chrome://crash a CDP connect to
     # read chrome://gpu hangs (>60 s on the host, 2026-10-13), which would read as UNMEASURED.
     proc = lib_shell.launch(CONFIG, shell=lib_shell.CHROME,
@@ -121,34 +136,28 @@ def crash(url):
             if url is None:
                 try:
                     browser.new_browser_cdp_session().send("Browser.crash")
-                except Exception:  # noqa: BLE001 - the crash is the expected outcome
-                    pass
+                except Exception as e:  # noqa: BLE001 - the crash is the expected outcome
+                    swallowed.append(repr(e)[:80])
                 try:
                     proc.wait(timeout=20)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    swallowed.append(repr(e)[:80])
             else:
                 try:
                     page.goto(url, timeout=10000)
-                except Exception:  # noqa: BLE001 - the crash is the expected outcome
-                    pass
+                except Exception as e:  # noqa: BLE001 - the crash is the expected outcome
+                    swallowed.append(repr(e)[:80])
                 deadline = time.monotonic() + 5
                 while not crashed and time.monotonic() < deadline:
                     page.wait_for_timeout(100)
-    except Exception:  # noqa: BLE001 - a dropped CDP connection is the browser crash
+    except Exception as e:  # noqa: BLE001 - a dropped CDP connection is the browser crash
+        swallowed.append(repr(e)[:80])
         if url is None:
             try:
                 proc.wait(timeout=20)
-            except Exception:  # noqa: BLE001
-                pass
-    if url is None:
-        code = proc.poll()
-        seen = crashed_exit(code)
-        detail = f"exit code {hex(code) if WINDOWS and code is not None else code}"
-    else:
-        alive = proc.poll() is None
-        seen = bool(crashed) and alive
-        detail = f"renderer crashed {bool(crashed)}, browser alive {alive}"
+            except Exception as e2:  # noqa: BLE001
+                swallowed.append(repr(e2)[:80])
+    seen, detail = verdict(url, crashed, proc.poll(), proc.poll() is None, swallowed)
     time.sleep(3)  # the handler writes after the crash; count after it has had time
     return seen, detail, proc.profile_dir, since, proc
 
