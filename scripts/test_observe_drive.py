@@ -270,3 +270,143 @@ def test_the_boundary_and_the_canary_never_reach_channels_for_a_multipart_post()
     assert ep["kinds"] == {"multipart": 1} and ep["fields"]["upload"]["classes"] == {"opaque<48>": 1}
     text = json.dumps(c) + json.dumps(d.build_matches([req], [], TRUTH))
     assert "Boundary" not in text and CANARY not in text
+
+
+# --- request bodies CDP does not carry: getRequestPostData, then ctx.route on the telemetry paths -------------------------
+
+class FakeCdp:
+    def __init__(self, post_data=None, fail=False):
+        self.calls, self.post_data, self.fail = [], post_data or {}, fail
+
+    def send(self, method, params=None):
+        self.calls.append((method, params))
+        if method == "Network.getRequestPostData":
+            if self.fail or params["requestId"] not in self.post_data:
+                raise RuntimeError("No resource with given identifier found")
+            return {"postData": self.post_data[params["requestId"]]}
+        return {}
+
+    def on(self, *a):
+        pass
+
+
+class FakeRequest:
+    def __init__(self, url, body, method="POST", headers=None):
+        self.url, self.method, self.headers = url, method, headers or {"content-type": "text/plain"}
+        self._body = body
+
+    @property
+    def post_data_buffer(self):
+        if isinstance(self._body, Exception):
+            raise self._body
+        return self._body
+
+
+class FakeRoute:
+    def __init__(self, request):
+        self.request, self.continued = request, 0
+
+    def continue_(self):
+        self.continued += 1
+
+
+def _event(rid, url, has_post_data=True, post_data=None, script="https://static.xx.fbcdn.net/rsrc.php/v3/a.js"):
+    r = {"url": url, "method": "POST", "headers": {"Content-Type": "text/plain"}, "hasPostData": has_post_data}
+    if post_data is not None:
+        r["postData"] = post_data
+    return {"requestId": rid, "request": r, "initiator": {"stack": {"callFrames": [{"url": script}]}}}
+
+
+def _recorder(tmp_path, cdp, route=True):
+    rec = d.Recorder(tmp_path, ["www.facebook.com"], [], [], route=route)
+    rec.cdp = cdp
+    return rec
+
+
+def _records(tmp_path):
+    return d.read_jsonl(tmp_path / "capture" / "requests.jsonl")
+
+
+def test_a_body_in_the_event_is_recorded_via_event(tmp_path):
+    rec = _recorder(tmp_path, FakeCdp())
+    rec.on_request(_event("1", "https://www.facebook.com/ajax/other", post_data="a=1"))
+    rec.drain()
+    rec.close()
+    (r,) = _records(tmp_path)
+    assert r["via"] == "event" and not r["missing"] and base64.b64decode(r["body_b64"]) == b"a=1"
+
+
+def test_a_body_missing_from_the_event_is_fetched_by_get_request_post_data(tmp_path):
+    cdp = FakeCdp(post_data={"7": "q=" + CANARY})
+    rec = _recorder(tmp_path, cdp)
+    rec.on_request(_event("7", "https://www.facebook.com/ajax/other"))
+    assert _records(tmp_path) == []  # not inside the handler: the fetch happens in drain()
+    rec.drain()
+    rec.close()
+    (r,) = _records(tmp_path)
+    assert r["via"] == "getRequestPostData" and not r["missing"] and CANARY.encode() in base64.b64decode(r["body_b64"])
+    assert ("Network.getRequestPostData", {"requestId": "7"}) in cdp.calls
+
+
+def test_a_body_nothing_can_fetch_stays_missing_and_counted(tmp_path):
+    rec = _recorder(tmp_path, FakeCdp(fail=True))
+    rec.on_request(_event("9", "https://www.facebook.com/ajax/other"))
+    rec.drain()
+    rec.close()
+    (r,) = _records(tmp_path)
+    assert r["missing"] is True and r["via"] == ""
+    assert d.build_channels([r], [], "x")["posts_missing"] == 1
+
+
+def test_route_captures_the_telemetry_paths_and_pairs_the_event_initiator(tmp_path):
+    rec = _recorder(tmp_path, FakeCdp())
+    url = "https://www.facebook.com/ajax/bnzai"
+    rec.on_request(_event("3", url, script="https://static.xx.fbcdn.net/rsrc.php/v3/beacon.js"))  # a Blob: no body in the event
+    route = FakeRoute(FakeRequest(url, b'{"u":"' + CANARY.encode() + b'"}'))
+    rec.on_route(route)
+    assert route.continued == 1  # forwarded unmodified
+    rec.drain()
+    rec.close()
+    (r,) = _records(tmp_path)
+    assert r["via"] == "route" and r["missing"] is False
+    assert r["initiator"] == "https://static.xx.fbcdn.net/rsrc.php/v3/beacon.js"
+    c = d.build_channels([r], [], "x")
+    ep = c["endpoints"]["www.facebook.com/ajax/bnzai"]
+    assert (c["posts_captured"], c["posts_missing"]) == (1, 0) and ep["via"] == {"route": 1}
+    assert ep["fields"]["u"]["classes"] == {"str<%d>" % len(CANARY): 1}
+
+
+def test_a_route_that_never_fired_leaves_the_event_counted_as_missing(tmp_path):
+    rec = _recorder(tmp_path, FakeCdp())
+    rec.on_request(_event("4", "https://www.facebook.com/ajax/qm/"))
+    rec.drain()
+    assert _records(tmp_path) == []  # may still be paired with a route that has not run yet
+    rec.close()
+    (r,) = _records(tmp_path)
+    assert r["missing"] is True and r["url"].endswith("/ajax/qm/")
+
+
+def test_route_comes_first_or_second_and_a_failing_read_still_forwards(tmp_path):
+    rec = _recorder(tmp_path, FakeCdp())
+    url = "https://www.facebook.com/ajax/bz"
+    route = FakeRoute(FakeRequest(url, b"a=1"))
+    rec.on_route(route)           # route before the event
+    rec.on_request(_event("5", url))
+    bad = FakeRoute(FakeRequest(url, RuntimeError("no body")))
+    rec.on_route(bad)             # a read that raises
+    other = FakeRoute(FakeRequest("https://elsewhere.example/x", b"z"))
+    rec.on_route(other)           # not a post host: nothing recorded
+    rec.close()
+    assert route.continued == bad.continued == other.continued == 1
+    recs = _records(tmp_path)
+    assert sorted((r["via"], r["missing"]) for r in recs) == [("route", False), ("route", True)]
+    assert recs[0]["initiator"] or recs[1]["initiator"]  # the one event's initiator went to one of them
+
+
+def test_without_route_the_telemetry_paths_use_the_event_and_the_fetch(tmp_path):
+    rec = _recorder(tmp_path, FakeCdp(post_data={"8": "k=v"}), route=False)
+    rec.on_request(_event("8", "https://www.facebook.com/ajax/bz"))
+    rec.drain()
+    rec.close()
+    (r,) = _records(tmp_path)
+    assert r["via"] == "getRequestPostData"

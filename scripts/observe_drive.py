@@ -299,8 +299,11 @@ def build_channels(requests, frames, arm):
     eps = {}
     missing = 0
     for r in requests:
-        e = eps.setdefault(endpoint(r["url"]), {"count": 0, "bytes": 0, "kinds": {}, "initiators": {}, "fields": {}})
+        e = eps.setdefault(endpoint(r["url"]), {"count": 0, "bytes": 0, "kinds": {}, "initiators": {}, "fields": {},
+                                                "via": {}})
         e["count"] += 1
+        if r.get("via"):
+            e["via"][r["via"]] = e["via"].get(r["via"], 0) + 1  # how the body was captured: event, getRequestPostData, route
         if r.get("missing"):
             kind, pairs = "missing", []
             missing += 1
@@ -385,10 +388,26 @@ def host_in(url, hosts):
     return any(h == x or (x.startswith(".") and h.endswith(x)) for x in hosts)
 
 
-class Recorder:
-    """One CDP session with Network.enable only (never Runtime.enable). Raw data goes to capture/ and resources/."""
+# The telemetry paths whose bodies CDP does not carry (sendBeacon and keepalive Blobs): ctx.route reads them. Nothing else is routed.
+ROUTE_PATHS = ("/ajax/bz", "/ajax/bnzai", "/ajax/qm/")
+ROUTE_RE = re.compile(r"^https?://[^/]+/ajax/(?:bz|bnzai|qm/)")
 
-    def __init__(self, out, post_hosts, resource_hosts, doc_hosts):
+
+def is_route_path(url):
+    path = urllib.parse.urlsplit(url).path
+    return any(path.startswith(p) for p in ROUTE_PATHS)
+
+
+class Recorder:
+    """One CDP session with Network.enable only (never Runtime.enable). Raw data goes to capture/ and resources/.
+
+    A POST body reaches requests.jsonl one of three ways, recorded as `via`: the event itself, Network.getRequestPostData
+    (queued by the handler, fetched in drain(), never inside a handler), or ctx.route for the ROUTE_PATHS, where the route
+    handler reads post_data_buffer and forwards the request unmodified. With route on, those paths are written by the
+    route only: the event gives their initiator, paired by URL in arrival order (shortcut: two requests to one URL that
+    swap order swap initiators; upgrade if the map needs it), and an event no route ever answers is a `missing` record."""
+
+    def __init__(self, out, post_hosts, resource_hosts, doc_hosts, route=True):
         self.cap = out / "capture"
         self.res = out / "resources"
         for p in (self.cap, self.res / "js", self.res / "html"):
@@ -396,7 +415,11 @@ class Recorder:
         self.req_f = open(self.cap / "requests.jsonl", "a", encoding="utf-8")
         self.ws_f = open(self.cap / "ws.jsonl", "a", encoding="utf-8")
         self.post_hosts, self.resource_hosts, self.doc_hosts = post_hosts, resource_hosts, doc_hosts
+        self.route = route
         self.ws_url, self.wanted, self.done = {}, {}, []
+        self.pending = {}                                  # requestId -> record waiting for getRequestPostData
+        self.inits = collections.defaultdict(list)         # endpoint -> [(url, content_type, initiator)] of routed paths
+        self.routed = collections.defaultdict(list)        # endpoint -> [record] read by the route, waiting for an initiator
 
     def attach(self, cdp):
         self.cdp = cdp
@@ -407,6 +430,10 @@ class Recorder:
         cdp.on("Network.webSocketCreated", lambda e: self.ws_url.__setitem__(e["requestId"], e["url"]))
         cdp.on("Network.webSocketFrameSent", lambda e: self.on_frame(e, "sent"))
         cdp.on("Network.webSocketFrameReceived", lambda e: self.on_frame(e, "received"))
+
+    def _write(self, rec):
+        self.req_f.write(json.dumps(rec) + "\n")
+        self.req_f.flush()  # a killed driver leaves whole lines, at worst one cut
 
     def on_request(self, e):
         r = e["request"]
@@ -419,10 +446,44 @@ class Recorder:
             body = r.get("postData", "").encode("utf-8") if "postData" in r else None
         stack = (e.get("initiator") or {}).get("stack") or {}
         frames = stack.get("callFrames") or []
-        rec = {"url": r["url"], "method": "POST", "content_type": (r.get("headers") or {}).get("Content-Type", ""),
+        ctype = (r.get("headers") or {}).get("Content-Type", "")
+        initiator = frames[0]["url"] if frames else (e.get("initiator") or {}).get("url", "")
+        if self.route and is_route_path(r["url"]):
+            self.inits[endpoint(r["url"])].append((r["url"], ctype, initiator))
+            return
+        rec = {"url": r["url"], "method": "POST", "content_type": ctype,
                "body_b64": base64.b64encode(body).decode() if body else "", "missing": body is None and bool(r.get("hasPostData")),
-               "initiator": frames[0]["url"] if frames else (e.get("initiator") or {}).get("url", "")}
-        self.req_f.write(json.dumps(rec) + "\n")
+               "initiator": initiator, "via": "" if body is None and r.get("hasPostData") else "event"}
+        if rec["missing"]:
+            self.pending[e["requestId"]] = rec
+        else:
+            self._write(rec)
+
+    def on_route(self, route):
+        """ctx.route handler for ROUTE_PATHS: read the body, record it, forward the request unmodified, always."""
+        try:
+            req = route.request
+            if req.method == "POST" and host_in(req.url, self.post_hosts):
+                try:
+                    body = req.post_data_buffer
+                except Exception:  # noqa: BLE001 - a body the route cannot read is a missing record, not a blocked request
+                    body = None
+                self.routed[endpoint(req.url)].append({
+                    "url": req.url, "method": "POST", "content_type": (req.headers or {}).get("content-type", ""),
+                    "body_b64": base64.b64encode(body).decode() if body else "", "missing": body is None,
+                    "initiator": "", "via": "route"})
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            route.continue_()
+
+    def _pair_routes(self):
+        for key, recs in self.routed.items():
+            inits = self.inits[key]
+            while recs and inits:
+                rec = recs.pop(0)
+                rec["initiator"] = inits.pop(0)[2]
+                self._write(rec)
 
     def on_response(self, e):
         t, url = e.get("type"), e["response"]["url"]
@@ -450,8 +511,29 @@ class Recorder:
             raw = base64.b64decode(b["body"]) if b.get("base64Encoded") else b["body"].encode("utf-8")
             ext = "js" if kind == "js" else "html"
             (self.res / kind / f"{hashlib.sha256(raw).hexdigest()}.{ext}").write_bytes(raw)
+        for rid in list(self.pending):
+            rec = self.pending.pop(rid)
+            try:
+                b = self.cdp.send("Network.getRequestPostData", {"requestId": rid})
+                raw = base64.b64decode(b["postData"]) if b.get("base64Encoded") else b["postData"].encode("utf-8")
+                rec.update(body_b64=base64.b64encode(raw).decode(), missing=False, via="getRequestPostData")
+            except Exception:  # noqa: BLE001 - an evicted body stays a `missing` record, counted in the report
+                pass
+            self._write(rec)
+        self._pair_routes()
 
     def close(self):
+        """The last records: routed bodies no event came for, and events no route answered (missing)."""
+        for rid in list(self.pending):
+            self._write(self.pending.pop(rid))
+        self._pair_routes()
+        for recs in self.routed.values():
+            for rec in recs:
+                self._write(rec)
+        for inits in self.inits.values():
+            for url, ctype, initiator in inits:
+                self._write({"url": url, "method": "POST", "content_type": ctype, "body_b64": "", "missing": True,
+                             "initiator": initiator, "via": ""})
         self.req_f.close()
         self.ws_f.close()
 
@@ -512,7 +594,7 @@ def run(a):
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     extra = json.loads(pathlib.Path(a.chrome_args).read_text(encoding="utf-8")) if a.chrome_args else []
-    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","))
+    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route)
     rc = 0
     with sync_playwright() as pw:
         ctx = launch(pw, a.exe, config=FORK_CONFIG if a.fork else None, user_data_dir=a.profile,
@@ -526,6 +608,8 @@ def run(a):
                 stop_truth_page(truth_srv)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             rec.attach(ctx.new_cdp_session(page))
+            if not a.no_route:
+                ctx.route(ROUTE_RE, rec.on_route)  # exactly the ROUTE_PATHS; the handler forwards every request unmodified
             vp = page.viewport_size or {"width": 1280, "height": 720}
             page.mouse.move(vp["width"] / 2, vp["height"] / 2)
             rng = random.Random()
@@ -566,6 +650,7 @@ def parse_args(argv=None):
     ap.add_argument("--truth-url", default=None,
                     help="page the ground truth is read in; default: an empty page served on 127.0.0.1 (a secure context)")
     ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--no-route", action="store_true", help=argparse.SUPPRESS)  # only verify_observe_drive: D6's RED
     ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
     ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
     ap.add_argument("--doc-hosts", default="www.facebook.com")
