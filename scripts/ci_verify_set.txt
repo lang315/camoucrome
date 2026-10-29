@@ -51,7 +51,6 @@ skip verify_sp0.py  # not yet evaluated for the runner
 skip verify_sp1a.py  # not yet evaluated for the runner
 skip verify_sp2.py  # not yet evaluated for the runner
 skip verify_sp3a.py  # not yet evaluated for the runner
-skip verify_sp3b_timing.py  # not yet evaluated for the runner
 skip verify_sp4_audio.py  # not yet evaluated for the runner
 skip verify_sp4_battery.py  # not yet evaluated for the runner
 skip verify_sp4_fonts.py  # not yet evaluated for the runner
@@ -69,7 +68,6 @@ skip verify_voices_remote.py  # not yet evaluated for the runner
 skip verify_webgl_profile.py  # not yet evaluated for the runner
 skip verify_webrtc_ii.py  # not yet evaluated for the runner
 skip verify_webrtc_ii_fakeip.py  # not yet evaluated for the runner
-skip verify_webrtc_proxy.py  # not yet evaluated for the runner
 skip verify_webrtc_realproxy.py  # not yet evaluated for the runner
 skip verify_window_geometry.py  # not yet evaluated for the runner
 skip verify_window_position.py  # not yet evaluated for the runner
