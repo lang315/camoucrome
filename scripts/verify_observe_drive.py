@@ -8,9 +8,13 @@
   D3  the value canary is in capture/requests.jsonl (the capture saw it) and in no file that leaves the host
   D4  a checkpoint page under --expect-session exits 4 and prints CHECKPOINT
   D5  the wheel reached the page: the title the page counts wheel events into is greater than 0
+  D6  a sendBeacon with a Blob body to /ajax/qm/ (CDP does not carry such a body) has its fields in channels.json, and the
+      endpoint's `via` says route
+  D7  a multipart POST has the part names as fields (no boundary), kind multipart, the file part opaque<40>
 
   verify_observe_drive.py [--exe CHROME] [--red D1|D2|D4|D5] [--keep]
---red makes one row fail on purpose (D3 is made RED by hand: let value_class return the value). Needs patchright and the
+--red makes one row fail on purpose (D3 and D7 are made RED by hand: let value_class return the value; let _boundary
+return None). Needs patchright and the
 camoucrome client in the interpreter (the box venv, or the observe venv on the host). Exit 0 and ALL_PASS, else 1.
 """
 import argparse
@@ -63,7 +67,7 @@ def canary_in_capture(arm):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe")
-    ap.add_argument("--red", choices=["D1", "D2", "D4", "D5"])
+    ap.add_argument("--red", choices=["D1", "D2", "D4", "D5", "D6"])
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args(argv)
     exe = a.exe
@@ -81,6 +85,8 @@ def main(argv=None):
             hosts = ["--post-hosts", "example.invalid", "--resource-hosts", "127.0.0.1", "--doc-hosts", "127.0.0.1"]
         if a.red == "D2":
             main_args.append("--no-truth")
+        if a.red == "D6":
+            main_args.append("--no-route")
         if a.red == "D5":
             main_args[main_args.index("--wheel") + 1] = "0"
         rc, out, err, arm = drive(exe, work / "main", [*main_args, *hosts])
@@ -100,6 +106,14 @@ def main(argv=None):
         rows["D3 the canary is captured on the host and in no file that leaves"] = canary_in_capture(arm) and not leaked
         if leaked:
             notes.append(f"D3 files: {leaked}")
+        qm = ch.get("endpoints", {}).get(f"127.0.0.1:{port}/ajax/qm/", {})
+        rows["D6 the Blob beacon's fields are captured via route"] = (
+            {"bl", "k"} <= set(qm.get("fields", {})) and qm.get("via", {}).get("route", 0) >= 1 and "missing" not in qm.get("kinds", {}))
+        mp = ch.get("endpoints", {}).get(f"127.0.0.1:{port}/ajax/mp", {})
+        rows["D7 a multipart POST is keyed by part name, the file part opaque"] = (
+            {"__a", "q[].name", "q[].tz", "upload"} <= set(mp.get("fields", {})) and set(mp.get("kinds", {})) == {"multipart"}
+            and mp.get("fields", {}).get("upload", {}).get("classes") == {"opaque<40>": mp.get("count")}
+            and not any("Boundary" in f or "Content-Disposition" in f for f in mp.get("fields", {})))
         titles = re.findall(r"TITLE=wheels=(\d+)", out)
         rows["D5 the wheel reached the page"] = bool(titles) and int(titles[-1]) > 0
         d4_args = ["--url", base + "/checkpoint/", "--settle", "1", "--wheel", "2", *HOSTS]
@@ -117,7 +131,7 @@ def main(argv=None):
         print(f"{'PASS' if rows[name] else 'FAIL'}  {name}")
     for n in notes:
         print("  " + n)
-    ok = all(rows.values()) and len(rows) == 5
+    ok = all(rows.values()) and len(rows) == 7
     print(f"{sum(rows.values())} PASS {len(rows) - sum(rows.values())} FAIL")
     print("ALL_PASS" if ok else "FAIL")
     return 0 if ok else 1

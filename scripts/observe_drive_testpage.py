@@ -1,7 +1,7 @@
 """Local page for the dry runs of observe_drive.py (verify_observe_drive.py): http.server only, 127.0.0.1.
 
-  /            40 000 px tall; on load a form POST to /ajax/bz and a sendBeacon to /ajax/bnzai, both carrying the value
-               canary CANARY-7f3a9c; wheel events are counted into document.title as "wheels=<n>"
+  /            40 000 px tall; on load a form POST to /ajax/bz, a sendBeacon to /ajax/bnzai, a sendBeacon with a Blob body to
+               /ajax/qm/ (the body CDP does not carry) and a multipart POST to /ajax/mp, all carrying the value canary CANARY-7f3a9c; wheel events are counted into document.title as "wheels=<n>"
   /second      the same page with a comment of its own (so its bytes, and its file in resources/html, differ)
   /checkpoint/ a plain page, to trip the driver's checkpoint exit
   /app.js      the script `/` and `/second` include
@@ -17,6 +17,12 @@ APP_JS = f"""
 fetch('/ajax/bz', {{method: 'POST', body: '__a=1&q=' + encodeURIComponent(JSON.stringify([{{name: '{CANARY}',
   dm: navigator.deviceMemory, tz: Intl.DateTimeFormat().resolvedOptions().timeZone}}]))}});
 navigator.sendBeacon('/ajax/bnzai', JSON.stringify({{u: '{CANARY}-u'}}));
+navigator.sendBeacon('/ajax/qm/', new Blob([JSON.stringify({{bl: '{CANARY}-blob', k: 7}})], {{type: 'text/plain'}}));
+const fd = new FormData();
+fd.append('__a', '1');
+fd.append('q', JSON.stringify([{{name: '{CANARY}-mp', tz: Intl.DateTimeFormat().resolvedOptions().timeZone}}]));
+fd.append('upload', new Blob([new Uint8Array(40)]), 'blob.bin');
+fetch('/ajax/mp', {{method: 'POST', body: fd}});
 let wheels = 0;
 document.title = 'wheels=0';
 addEventListener('wheel', () => {{ wheels += 1; document.title = 'wheels=' + wheels; }}, {{passive: true}});

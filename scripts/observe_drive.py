@@ -24,7 +24,16 @@ import zlib
 ID_RE = re.compile(r"^\d{10,}$")
 
 
+class Opaque:
+    """A value that is not text (a multipart file part): only its length is known, and only the length is kept."""
+
+    def __init__(self, n):
+        self.n = n
+
+
 def value_class(v):
+    if isinstance(v, Opaque):
+        return f"opaque<{v.n}>"
     if isinstance(v, bool):
         return "bool"
     if v is None:
@@ -54,8 +63,43 @@ def _inflate(raw):
     return raw
 
 
-def decode_body(raw, _b64=True):
+def _boundary(raw, content_type):
+    m = re.search(r'boundary="?([^";,\s]+)"?', content_type or "", re.I)
+    if m:
+        return m.group(1).encode()
+    first = raw.split(b"\r\n", 1)[0]
+    if first.startswith(b"--") and 2 < len(first) <= 200 and b" " not in first:
+        return first[2:]
+    return None
+
+
+def multipart_parts(raw, boundary):
+    """[(name, value)] of a multipart/form-data body; a part with a filename, or bytes that are not text, is an Opaque."""
+    parts = []
+    for chunk in raw.split(b"--" + boundary)[1:]:
+        if chunk.startswith(b"--"):
+            break  # the closing delimiter
+        head, sep, body = chunk.lstrip(b"\r\n").partition(b"\r\n\r\n")
+        disp = re.search(rb"content-disposition:[^\r\n]*", head, re.I)
+        name = re.search(rb'(?<![A-Za-z])name="([^"]*)"', disp.group(0)) if disp else None
+        if not sep or not name:
+            continue
+        body = body[:-2] if body.endswith(b"\r\n") else body
+        try:
+            value = Opaque(len(body)) if b"filename=" in disp.group(0) else body.decode("utf-8")
+        except UnicodeDecodeError:
+            value = Opaque(len(body))
+        parts.append((name.group(1).decode("utf-8", "replace"), value))
+    return parts
+
+
+def decode_body(raw, content_type="", _b64=True):
     raw = _inflate(raw)
+    boundary = _boundary(raw, content_type)
+    if boundary:
+        parts = multipart_parts(raw, boundary)
+        if parts:
+            return "multipart", parts
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -99,11 +143,11 @@ def walk(value, prefix=""):
     return [(prefix, value)]
 
 
-def fields(raw):
-    kind, v = decode_body(raw)
+def fields(raw, content_type=""):
+    kind, v = decode_body(raw, content_type)
     if kind == "json":
         return kind, walk(v)
-    if kind == "form":
+    if kind in ("form", "multipart"):
         out = []
         for k, val in v:
             out += walk(val, k)
@@ -111,8 +155,9 @@ def fields(raw):
     return kind, []
 
 
-MQTT_TYPES = {1: "CONNECT", 2: "CONNACK", 3: "PUBLISH", 4: "PUBACK", 8: "SUBSCRIBE", 9: "SUBACK",
-              10: "UNSUBSCRIBE", 11: "UNSUBACK", 12: "PINGREQ", 13: "PINGRESP", 14: "DISCONNECT"}
+MQTT_TYPES = {1: "CONNECT", 2: "CONNACK", 3: "PUBLISH", 4: "PUBACK", 5: "PUBREC", 6: "PUBREL", 7: "PUBCOMP",
+              8: "SUBSCRIBE", 9: "SUBACK", 10: "UNSUBSCRIBE", 11: "UNSUBACK", 12: "PINGREQ", 13: "PINGRESP",
+              14: "DISCONNECT", 15: "AUTH"}
 
 
 def _varint(b, i):
@@ -135,34 +180,49 @@ def _mstr(b, i):
     return b[i + 2:i + 2 + n], i + 2 + n
 
 
-def mqtt_packets(frame):
+def _packet(t, flags, body):
+    p = {"type": MQTT_TYPES[t], "topic": "", "payload": b""}
+    if t == 3:
+        topic, k = _mstr(body, 0)
+        if (flags >> 1) & 3:
+            k += 2
+        p["topic"], p["payload"] = topic.decode("utf-8", "replace"), body[k:]
+    elif t == 1:
+        _, k = _mstr(body, 0)
+        cflags = body[k + 1]
+        _, k = _mstr(body, k + 4)
+        if cflags & 0x04:
+            _, k = _mstr(body, k)
+            _, k = _mstr(body, k)
+        if cflags & 0x80:
+            p["payload"], k = _mstr(body, k)
+    return p
+
+
+def mqtt_parse(frame):
+    """(packets, partial): the whole MQTT packets at the front of a frame, and how many bytes after them are not one. A
+    frame that starts mid-packet, or ends in a cut packet, is not an error: the front is kept and the rest is counted."""
     out, i = [], 0
-    try:
-        while i < len(frame):
+    while i < len(frame):
+        try:
             t, flags = frame[i] >> 4, frame[i] & 15
+            if t not in MQTT_TYPES:
+                break
             n, j = _varint(frame, i + 1)
-            body, i = frame[j:j + n], j + n
-            if len(body) != n or t not in MQTT_TYPES:
-                return []
-            p = {"type": MQTT_TYPES[t], "topic": "", "payload": b""}
-            if t == 3:
-                topic, k = _mstr(body, 0)
-                if (flags >> 1) & 3:
-                    k += 2
-                p["topic"], p["payload"] = topic.decode("utf-8", "replace"), body[k:]
-            elif t == 1:
-                _, k = _mstr(body, 0)
-                cflags = body[k + 1]
-                _, k = _mstr(body, k + 4)
-                if cflags & 0x04:
-                    _, k = _mstr(body, k)
-                    _, k = _mstr(body, k)
-                if cflags & 0x80:
-                    p["payload"], k = _mstr(body, k)
-            out.append(p)
-    except (ValueError, IndexError):
-        return []
-    return out
+            body = frame[j:j + n]
+            if len(body) != n:
+                break
+            out.append(_packet(t, flags, body))
+        except (ValueError, IndexError):
+            break
+        i = j + n
+    return out, len(frame) - i
+
+
+def mqtt_packets(frame):
+    """All packets of a frame that is whole MQTT, else []."""
+    packets, partial = mqtt_parse(frame)
+    return [] if partial else packets
 
 
 PAIRS = {"screen": ("screen.width", "screen.height"), "screen.avail": ("screen.availWidth", "screen.availHeight"),
@@ -181,7 +241,7 @@ def _weak(v):
 
 
 def match(value, truth):
-    if isinstance(value, bool) or value is None or value == "":
+    if isinstance(value, (bool, Opaque)) or value is None or value == "":
         return []
     out = []
     for surface, t in truth.items():
@@ -240,30 +300,75 @@ def _add_fields(slot, pairs):
 
 
 def _frame_units(fr):
-    """[(topic, field pairs)] of one frame: MQTT packets, else a JSON text frame, else one opaque unit."""
+    """([(topic, field pairs)], partial bytes) of one frame: MQTT packets (a cut or mid-packet remainder is counted as
+    partial), else a JSON text frame, else one opaque unit."""
     raw = _b64(fr["payload_b64"])
     if fr.get("opcode") == 2:
-        pk = mqtt_packets(raw)
-        if pk:
-            return [(p["topic"] or p["type"], fields(p["payload"])[1]) for p in pk]
-        return [("(opaque)", [])]
+        pk, partial = mqtt_parse(raw)
+        if not pk:
+            return [("(opaque)", [])], partial
+        units = [(p["topic"] or p["type"], fields(p["payload"])[1]) for p in pk]
+        return units + ([("(partial)", [])] if partial else []), partial
     kind, f = fields(raw)
-    return [("(text)" if kind != "opaque" else "(opaque)", f)]
+    return [("(text)" if kind != "opaque" else "(opaque)", f)], 0
+
+
+def _length_fit(raw):
+    """How the fixed header's declared remaining length sits against the frame: exact, trailing, short or invalid."""
+    try:
+        n, j = _varint(raw, 1)
+    except (ValueError, IndexError):
+        return "invalid"
+    return "exact" if len(raw) == j + n else "trailing" if len(raw) > j + n else "short"
+
+
+def _first_char_class(raw):
+    c = raw[:1]
+    if not c:
+        return "empty"
+    if c == b"{":
+        return "json-object"
+    if c == b"[":
+        return "json-array"
+    if c.isdigit():
+        return "digit"
+    if c.isalpha():
+        return "alpha"
+    return "space" if c.isspace() else "other"
+
+
+def _count(slot, key):
+    slot[key] = slot.get(key, 0) + 1
+
+
+def _shape(shape, fr, raw):
+    """Structure only: opcode, first byte (hex, binary frames), first character class (text frames) and the length fit.
+    No payload byte beyond the first is kept."""
+    _count(shape["opcodes"], str(fr.get("opcode")))
+    if fr.get("opcode") == 2:
+        if raw:
+            _count(shape["first_byte"], "0x%02x" % raw[0])
+        _count(shape["mqtt_length"], _length_fit(raw) if raw else "invalid")
+    else:
+        _count(shape["first_char"], _first_char_class(raw))
 
 
 def build_channels(requests, frames, arm):
     eps = {}
     missing = 0
     for r in requests:
-        e = eps.setdefault(endpoint(r["url"]), {"count": 0, "bytes": 0, "kinds": {}, "initiators": {}, "fields": {}})
+        e = eps.setdefault(endpoint(r["url"]), {"count": 0, "bytes": 0, "kinds": {}, "initiators": {}, "fields": {},
+                                                "via": {}})
         e["count"] += 1
+        if r.get("via"):
+            e["via"][r["via"]] = e["via"].get(r["via"], 0) + 1  # how the body was captured: event, getRequestPostData, route
         if r.get("missing"):
             kind, pairs = "missing", []
             missing += 1
         else:
             raw = _b64(r["body_b64"])
             e["bytes"] += len(raw)
-            kind, pairs = fields(raw)
+            kind, pairs = fields(raw, r.get("content_type", ""))
         e["kinds"][kind] = e["kinds"].get(kind, 0) + 1
         ini = endpoint(r["initiator"]) if r.get("initiator") else "(no script)"
         e["initiators"][ini] = e["initiators"].get(ini, 0) + 1
@@ -271,11 +376,15 @@ def build_channels(requests, frames, arm):
     ws = {}
     for fr in frames:
         w = ws.setdefault(endpoint(fr["url"]), {"frames_sent": 0, "frames_received": 0, "bytes_sent": 0,
-                                                "bytes_received": 0, "topics": {}})
-        n = len(_b64(fr["payload_b64"]))
+                                                "bytes_received": 0, "partial_bytes": 0, "topics": {},
+                                                "shape": {"opcodes": {}, "first_byte": {}, "first_char": {}, "mqtt_length": {}}})
+        raw = _b64(fr["payload_b64"])
         w["frames_" + fr["dir"]] += 1
-        w["bytes_" + fr["dir"]] += n
-        for topic, pairs in _frame_units(fr):
+        w["bytes_" + fr["dir"]] += len(raw)
+        _shape(w["shape"], fr, raw)
+        units, partial = _frame_units(fr)
+        w["partial_bytes"] += partial
+        for topic, pairs in units:
             t = w["topics"].setdefault(topic, {"count": 0, "fields": {}})
             t["count"] += 1
             _add_fields(t["fields"], pairs)
@@ -286,11 +395,11 @@ def build_matches(requests, frames, truth):
     n = collections.Counter()
     for r in requests:
         if not r.get("missing"):
-            for path, v in fields(_b64(r["body_b64"]))[1]:
+            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""))[1]:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1
     for fr in frames:
-        for topic, pairs in _frame_units(fr):
+        for topic, pairs in _frame_units(fr)[0]:
             for path, v in pairs:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(fr["url"]) + " " + topic, path, s, enc, weak)] += 1
@@ -341,10 +450,26 @@ def host_in(url, hosts):
     return any(h == x or (x.startswith(".") and h.endswith(x)) for x in hosts)
 
 
-class Recorder:
-    """One CDP session with Network.enable only (never Runtime.enable). Raw data goes to capture/ and resources/."""
+# The telemetry paths whose bodies CDP does not carry (sendBeacon and keepalive Blobs): ctx.route reads them. Nothing else is routed.
+ROUTE_PATHS = ("/ajax/bz", "/ajax/bnzai", "/ajax/qm/")
+ROUTE_RE = re.compile(r"^https?://[^/]+/ajax/(?:bz|bnzai|qm/)")
 
-    def __init__(self, out, post_hosts, resource_hosts, doc_hosts):
+
+def is_route_path(url):
+    path = urllib.parse.urlsplit(url).path
+    return any(path.startswith(p) for p in ROUTE_PATHS)
+
+
+class Recorder:
+    """One CDP session with Network.enable only (never Runtime.enable). Raw data goes to capture/ and resources/.
+
+    A POST body reaches requests.jsonl one of three ways, recorded as `via`: the event itself, Network.getRequestPostData
+    (queued by the handler, fetched in drain(), never inside a handler), or ctx.route for the ROUTE_PATHS, where the route
+    handler reads post_data_buffer and forwards the request unmodified. With route on, those paths are written by the
+    route only: the event gives their initiator, paired by URL in arrival order (shortcut: two requests to one URL that
+    swap order swap initiators; upgrade if the map needs it), and an event no route ever answers is a `missing` record."""
+
+    def __init__(self, out, post_hosts, resource_hosts, doc_hosts, route=True):
         self.cap = out / "capture"
         self.res = out / "resources"
         for p in (self.cap, self.res / "js", self.res / "html"):
@@ -352,7 +477,11 @@ class Recorder:
         self.req_f = open(self.cap / "requests.jsonl", "a", encoding="utf-8")
         self.ws_f = open(self.cap / "ws.jsonl", "a", encoding="utf-8")
         self.post_hosts, self.resource_hosts, self.doc_hosts = post_hosts, resource_hosts, doc_hosts
+        self.route = route
         self.ws_url, self.wanted, self.done = {}, {}, []
+        self.pending = {}                                  # requestId -> record waiting for getRequestPostData
+        self.inits = collections.defaultdict(list)         # endpoint -> [(url, content_type, initiator)] of routed paths
+        self.routed = collections.defaultdict(list)        # endpoint -> [record] read by the route, waiting for an initiator
 
     def attach(self, cdp):
         self.cdp = cdp
@@ -363,6 +492,10 @@ class Recorder:
         cdp.on("Network.webSocketCreated", lambda e: self.ws_url.__setitem__(e["requestId"], e["url"]))
         cdp.on("Network.webSocketFrameSent", lambda e: self.on_frame(e, "sent"))
         cdp.on("Network.webSocketFrameReceived", lambda e: self.on_frame(e, "received"))
+
+    def _write(self, rec):
+        self.req_f.write(json.dumps(rec) + "\n")
+        self.req_f.flush()  # a killed driver leaves whole lines, at worst one cut
 
     def on_request(self, e):
         r = e["request"]
@@ -375,10 +508,44 @@ class Recorder:
             body = r.get("postData", "").encode("utf-8") if "postData" in r else None
         stack = (e.get("initiator") or {}).get("stack") or {}
         frames = stack.get("callFrames") or []
-        rec = {"url": r["url"], "method": "POST", "content_type": (r.get("headers") or {}).get("Content-Type", ""),
+        ctype = (r.get("headers") or {}).get("Content-Type", "")
+        initiator = frames[0]["url"] if frames else (e.get("initiator") or {}).get("url", "")
+        if self.route and is_route_path(r["url"]):
+            self.inits[endpoint(r["url"])].append((r["url"], ctype, initiator))
+            return
+        rec = {"url": r["url"], "method": "POST", "content_type": ctype,
                "body_b64": base64.b64encode(body).decode() if body else "", "missing": body is None and bool(r.get("hasPostData")),
-               "initiator": frames[0]["url"] if frames else (e.get("initiator") or {}).get("url", "")}
-        self.req_f.write(json.dumps(rec) + "\n")
+               "initiator": initiator, "via": "" if body is None and r.get("hasPostData") else "event"}
+        if rec["missing"]:
+            self.pending[e["requestId"]] = rec
+        else:
+            self._write(rec)
+
+    def on_route(self, route):
+        """ctx.route handler for ROUTE_PATHS: read the body, record it, forward the request unmodified, always."""
+        try:
+            req = route.request
+            if req.method == "POST" and host_in(req.url, self.post_hosts):
+                try:
+                    body = req.post_data_buffer
+                except Exception:  # noqa: BLE001 - a body the route cannot read is a missing record, not a blocked request
+                    body = None
+                self.routed[endpoint(req.url)].append({
+                    "url": req.url, "method": "POST", "content_type": (req.headers or {}).get("content-type", ""),
+                    "body_b64": base64.b64encode(body).decode() if body else "", "missing": body is None,
+                    "initiator": "", "via": "route"})
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            route.continue_()
+
+    def _pair_routes(self):
+        for key, recs in self.routed.items():
+            inits = self.inits[key]
+            while recs and inits:
+                rec = recs.pop(0)
+                rec["initiator"] = inits.pop(0)[2]
+                self._write(rec)
 
     def on_response(self, e):
         t, url = e.get("type"), e["response"]["url"]
@@ -406,8 +573,29 @@ class Recorder:
             raw = base64.b64decode(b["body"]) if b.get("base64Encoded") else b["body"].encode("utf-8")
             ext = "js" if kind == "js" else "html"
             (self.res / kind / f"{hashlib.sha256(raw).hexdigest()}.{ext}").write_bytes(raw)
+        for rid in list(self.pending):
+            rec = self.pending.pop(rid)
+            try:
+                b = self.cdp.send("Network.getRequestPostData", {"requestId": rid})
+                raw = base64.b64decode(b["postData"]) if b.get("base64Encoded") else b["postData"].encode("utf-8")
+                rec.update(body_b64=base64.b64encode(raw).decode(), missing=False, via="getRequestPostData")
+            except Exception:  # noqa: BLE001 - an evicted body stays a `missing` record, counted in the report
+                pass
+            self._write(rec)
+        self._pair_routes()
 
     def close(self):
+        """The last records: routed bodies no event came for, and events no route answered (missing)."""
+        for rid in list(self.pending):
+            self._write(self.pending.pop(rid))
+        self._pair_routes()
+        for recs in self.routed.values():
+            for rec in recs:
+                self._write(rec)
+        for inits in self.inits.values():
+            for url, ctype, initiator in inits:
+                self._write({"url": url, "method": "POST", "content_type": ctype, "body_b64": "", "missing": True,
+                             "initiator": initiator, "via": ""})
         self.req_f.close()
         self.ws_f.close()
 
@@ -468,7 +656,7 @@ def run(a):
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     extra = json.loads(pathlib.Path(a.chrome_args).read_text(encoding="utf-8")) if a.chrome_args else []
-    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","))
+    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route)
     rc = 0
     with sync_playwright() as pw:
         ctx = launch(pw, a.exe, config=FORK_CONFIG if a.fork else None, user_data_dir=a.profile,
@@ -482,6 +670,8 @@ def run(a):
                 stop_truth_page(truth_srv)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             rec.attach(ctx.new_cdp_session(page))
+            if not a.no_route:
+                ctx.route(ROUTE_RE, rec.on_route)  # exactly the ROUTE_PATHS; the handler forwards every request unmodified
             vp = page.viewport_size or {"width": 1280, "height": 720}
             page.mouse.move(vp["width"] / 2, vp["height"] / 2)
             rng = random.Random()
@@ -522,6 +712,7 @@ def parse_args(argv=None):
     ap.add_argument("--truth-url", default=None,
                     help="page the ground truth is read in; default: an empty page served on 127.0.0.1 (a secure context)")
     ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--no-route", action="store_true", help=argparse.SUPPRESS)  # only verify_observe_drive: D6's RED
     ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
     ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
     ap.add_argument("--doc-hosts", default="www.facebook.com")
