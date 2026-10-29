@@ -128,7 +128,7 @@ the worst arm's code.
 
 | verdict | exit | condition |
 |---|---|---|
-| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; `trace_s < net_s - 5`; `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout |
+| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; a URL request that started after the trace's last event, or a netlog that began more than 5 s before the trace (the netlog's own end is not checked: it runs past the trace on socket and QUIC teardown, 10.5 s in a 405 s arm); `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout |
 | `FAIL` | 1 | a baseline required group, `intl` included, has 0 calls on the facebook site |
 | `PASS` | 0 | every required group is still above 0 |
 | `INFO` | — | count change against the baseline, new group, new Intl built-in, `/ajax/bz` and total requests |
@@ -152,8 +152,10 @@ the host:
 
 If `recon.ps1` throws, `arm<N>.log` gets `ERROR: <error record>` and its
 script stack trace, then `EXIT=1`. The command echoes the `ERROR:` line
-and the arm is `UNMEASURED` (`run.json missing`) at once, without waiting
-out the arm's time limit.
+and the arm is `UNMEASURED arm<N> recon error` at once, without waiting
+out the arm's time limit. The judge is skipped for that arm, and also when
+`arm<N>` was not created by this arm (a judge of another arm's directory
+would print that arm's verdict under this name).
 
 A timeout stops the arm's scheduled task before it removes it: removing a
 task leaves its running instance alive (host, 2026-10-17), and a late recon

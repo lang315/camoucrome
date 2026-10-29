@@ -25,7 +25,7 @@ def rcs(ts, stats):
 
 
 def make_arm(tmp_path, events=None, discarded=0, buffer_stats=True, net_span_ms=30_000,
-             cookies=(("datr", "SECRETVAL"),), run=None, bom=False, trace=True, net=True):
+             cookies=(("datr", "SECRETVAL"),), run=None, bom=False, trace=True, net=True, net_extra=()):
     d = tmp_path / "arm"
     d.mkdir(parents=True, exist_ok=True)
     if events is None:
@@ -47,7 +47,7 @@ def make_arm(tmp_path, events=None, discarded=0, buffer_stats=True, net_span_ms=
         (d / "net.json").write_text(json.dumps({
             "constants": {"logEventTypes": {"URL_REQUEST_START_JOB": 7},
                           "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_END": 2}},
-            "events": [start, end]}))
+            "events": [start, end, *net_extra]}))
     con = sqlite3.connect(d / "cookies.db")
     con.execute("create table cookies (host_key text, name text, value text, "
                 "encrypted_value blob, expires_utc integer, is_httponly integer)")
@@ -108,6 +108,20 @@ def test_judge_parses_as_python_3_9():
     ast.parse(pathlib.Path(j.__file__).read_text(), feature_version=(3, 9))
 
 
+# the trace's events end at 31 s (ts 31_000_000); the netlog's time is the same clock in ms
+START_AT_40S = {"type": 7, "phase": 1, "time": "40000", "params": {
+    "url": "https://www.facebook.com/x", "method": "GET", "network_isolation_key": "", "site_for_cookies": ""}}
+TEARDOWN = [{"type": t, "phase": 0, "time": "40000"} for t in (99, 98, 97)]
+
+
+def test_teardown_socket_events_after_the_trace_ends_are_measured(tmp_path):
+    """arm 3w, 2026-10-29: the netlog ran 10.5 s past the trace on socket and QUIC teardown, with no request start."""
+    v, rows = verdict(tmp_path, net_span_ms=60_000, net_extra=TEARDOWN)
+    assert v == "PASS", rows
+    s = j.summarize(make_arm(tmp_path / "again", net_span_ms=60_000, net_extra=TEARDOWN))
+    assert s["coverage"]["net_s"] == 60.0 and s["coverage"]["trace_s"] == 30.0  # still reported, as INFO
+
+
 BASE = {"1": {"required": ["navigator", "canvas", "intl"], "runs": [
     {"groups": {"navigator": 2, "canvas": 1, "intl": 4}, "intl": {}, "requests": {}}]}}
 
@@ -134,7 +148,10 @@ def test_pass_when_measured_and_every_required_group_seen(tmp_path):
               "gpu_exit_lines": 1}}, "gpu-crash"),
     ({"discarded": 7}, "buffer full"),
     ({"buffer_stats": False}, "buffer stats missing"),
-    ({"net_span_ms": 60_000}, "trace short"),
+    ({"net_extra": [START_AT_40S]}, "1 URL requests started after the trace ended"),
+    ({"net_extra": [START_AT_40S, dict(START_AT_40S, time="41000")]}, "2 URL requests started after the trace ended"),
+    ({"events": [ev("Navigator.userAgent.get", ts=7_000_000), ev("Navigator.userAgent.get", ts=31_000_000),
+                 rcs(8_000_000, {"DateTimeFormatConstructor": [4, 1.0]})]}, "netlog began 6.0 s before the trace"),
     ({"events": [ev("Navigator.userAgent.get")]}, "intl blind"),
     ({"trace": False}, "no trace"),
     ({"net": False}, "no netlog"),
