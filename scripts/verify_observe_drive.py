@@ -11,6 +11,7 @@
   D6  a sendBeacon with a Blob body to /ajax/qm/ (CDP does not carry such a body) has its fields in channels.json, and the
       endpoint's `via` says route
   D7  a multipart POST has the part names as fields (no boundary), kind multipart, the file part opaque<40>
+  D8  truth.json carries the GPU and capability keys (null without a GPU) and bool_fields.json is written
 
   verify_observe_drive.py [--exe CHROME] [--red D1|D2|D4|D5] [--keep]
 --red makes one row fail on purpose (D3 and D7 are made RED by hand: let value_class return the value; let _boundary
@@ -114,6 +115,11 @@ def main(argv=None):
             {"__a", "q[].name", "q[].tz", "upload"} <= set(mp.get("fields", {})) and set(mp.get("kinds", {})) == {"multipart"}
             and mp.get("fields", {}).get("upload", {}).get("classes") == {"opaque<40>": mp.get("count")}
             and not any("Boundary" in f or "Content-Disposition" in f for f in mp.get("fields", {})))
+        tr = load(arm, "truth.json", {})
+        rows["D8 truth.json has the GPU and capability keys, bool_fields.json is written"] = (
+            all(k in tr for k in ("webgl.vendor", "webgl.renderer", "webgl.version", "media.dynamicRangeHigh", "navigator.gpu.present",
+                                  "webgpu.shaderF16", "navigator.ml.present"))
+            and isinstance(tr.get("media.dynamicRangeHigh"), bool) and isinstance(load(arm, "bool_fields.json", None), list))
         titles = re.findall(r"TITLE=wheels=(\d+)", out)
         rows["D5 the wheel reached the page"] = bool(titles) and int(titles[-1]) > 0
         d4_args = ["--url", base + "/checkpoint/", "--settle", "1", "--wheel", "2", *HOSTS]
@@ -131,7 +137,7 @@ def main(argv=None):
         print(f"{'PASS' if rows[name] else 'FAIL'}  {name}")
     for n in notes:
         print("  " + n)
-    ok = all(rows.values()) and len(rows) == 7
+    ok = all(rows.values()) and len(rows) == 8
     print(f"{sum(rows.values())} PASS {len(rows) - sum(rows.values())} FAIL")
     print("ALL_PASS" if ok else "FAIL")
     return 0 if ok else 1

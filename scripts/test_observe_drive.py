@@ -625,3 +625,54 @@ def test_rederive_rewrites_channels_and_matches_from_a_kept_capture(tmp_path):
 def test_a_live_run_still_needs_its_arguments():
     with pytest.raises(SystemExit):
         d.parse_args(["--arm", "3w"])
+
+
+# --- GPU and capability truth (the bz post_0 batch sends gpu_renderer, gpu_vendor, ram, display_hdr, webgpu_*, webnn_*) -----
+NEW_TRUTH_KEYS = ("webgl.vendor", "webgl.renderer", "webgl.version", "media.dynamicRangeHigh", "navigator.gpu.present",
+                  "webgpu.shaderF16", "navigator.ml.present")
+GPU_TRUTH = {**TRUTH, "webgl.vendor": "Google Inc. (NVIDIA)", "webgl.renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11)",
+             "webgl.version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)", "media.dynamicRangeHigh": False, "navigator.gpu.present": True,
+             "webgpu.shaderF16": True, "navigator.ml.present": True}
+
+
+def test_truth_js_reads_the_gpu_and_capability_surfaces():
+    for k in NEW_TRUTH_KEYS:
+        assert f'"{k}"' in d.TRUTH_JS, k
+    assert "WEBGL_debug_renderer_info" in d.TRUTH_JS and "dynamic-range: high" in d.TRUTH_JS and "shader-f16" in d.TRUTH_JS
+
+
+def test_a_gpu_renderer_string_joins_webgl_renderer_strongly():
+    m = d.match("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11)", GPU_TRUTH)
+    assert m == [("webgl.renderer", "exact", False)]
+    assert d.match("Google Inc. (NVIDIA)", GPU_TRUTH) == [("webgl.vendor", "exact", False)]
+
+
+def test_a_truth_without_webgl_has_nulls_and_matches_nothing_from_them():
+    bare = {**TRUTH, **{k: None for k in NEW_TRUTH_KEYS}}
+    assert d.match("ANGLE (NVIDIA)", bare) == []
+    assert d.match(True, bare) == [] and d.bool_matches(True, bare) == []
+
+
+def test_booleans_are_never_matches_but_are_listed_with_their_surface():
+    assert d.match(True, GPU_TRUTH) == [] and d.match(False, GPU_TRUTH) == []
+    assert sorted(d.bool_matches(True, GPU_TRUTH)) == ["navigator.gpu.present", "navigator.ml.present", "webgpu.shaderF16"]
+    assert d.bool_matches(False, GPU_TRUTH) == ["media.dynamicRangeHigh"]
+    assert d.bool_matches(1, GPU_TRUTH) == [] and d.bool_matches("true", GPU_TRUTH) == []
+
+
+def test_bool_fields_list_field_path_surface_and_count_and_write_outputs_writes_it(tmp_path):
+    body = json.dumps([{"display_hdr": False, "webgpu_available": True, "webgl": CANARY}]).encode()
+    req = _req("https://www.facebook.com/ajax/bz", urllib.parse.urlencode({"q": body.decode()}).encode())
+    got = d.build_bool_fields([req, req], [], GPU_TRUTH)
+    assert {"endpoint": "www.facebook.com/ajax/bz", "field": "q[].display_hdr", "surface": "media.dynamicRangeHigh", "count": 2} in got
+    assert {"endpoint": "www.facebook.com/ajax/bz", "field": "q[].webgpu_available", "surface": "navigator.gpu.present", "count": 2} in got
+    assert not any(r["field"] == "q[].webgl" for r in got)
+    assert not any("bool" in r["surface"] and "dm" in r["field"] for r in got)
+    cap = tmp_path / "capture"
+    cap.mkdir()
+    (cap / "requests.jsonl").write_text(json.dumps(req) + "\n", encoding="utf-8")
+    (tmp_path / "truth.json").write_text(json.dumps(GPU_TRUTH), encoding="utf-8")
+    d.write_outputs(tmp_path, "3w")
+    out = (tmp_path / "bool_fields.json").read_text(encoding="utf-8")
+    assert "display_hdr" in out and CANARY not in out
+    assert not any(r["surface"] == "media.dynamicRangeHigh" for r in json.loads((tmp_path / "matches.json").read_text()))

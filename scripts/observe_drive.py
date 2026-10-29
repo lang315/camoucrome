@@ -463,6 +463,28 @@ def build_channels(requests, frames, arm):
     return {"arm": arm, "posts_captured": len(requests), "posts_missing": missing, "endpoints": eps, "ws": ws}
 
 
+def bool_matches(value, truth):
+    """The surfaces whose boolean truth equals a boolean value. Listed apart from match(): true or false equals any boolean."""
+    if not isinstance(value, bool):
+        return []
+    return [s for s, t in truth.items() if isinstance(t, bool) and t is value]
+
+
+def build_bool_fields(requests, frames, truth):
+    n = collections.Counter()
+    for r in requests:
+        if not r.get("missing"):
+            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""))[1]:
+                for s in bool_matches(v, truth):
+                    n[(endpoint(r["url"]), path, s)] += 1
+    for fr in frames:
+        for topic, pairs in _frame_units(fr)[0]:
+            for path, v in pairs:
+                for s in bool_matches(v, truth):
+                    n[(endpoint(fr["url"]) + " " + topic, path, s)] += 1
+    return [{"endpoint": e, "field": f, "surface": s, "count": c} for (e, f, s), c in sorted(n.items())]
+
+
 def build_matches(requests, frames, truth):
     n = collections.Counter()
     for r in requests:
@@ -487,12 +509,28 @@ def write_outputs(out_dir, arm):
     truth = json.loads(tp.read_text(encoding="utf-8")) if tp.exists() else {}
     (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm), indent=1, sort_keys=True), encoding="utf-8")
     (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth), indent=1), encoding="utf-8")
+    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth), indent=1), encoding="utf-8")
 
 
 FORK_CONFIG = {"humanize:enabled": True, "ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
 CHECKPOINT_PARTS = ("/checkpoint", "/login", "/recover", "two_step_verification")
 TRUTH_JS = """async () => {
   const n = navigator, s = screen, c = n.connection || {}, ua = n.userAgentData;
+  let gl = {}, f16 = null;
+  try {  // null where there is no WebGL (the box has no GPU) or no adapter
+    const cv = document.createElement("canvas"), ctx = cv.getContext("webgl") || cv.getContext("experimental-webgl");
+    if (ctx) {
+      const e = ctx.getExtension("WEBGL_debug_renderer_info");
+      gl = {vendor: e ? ctx.getParameter(e.UNMASKED_VENDOR_WEBGL) : null, renderer: e ? ctx.getParameter(e.UNMASKED_RENDERER_WEBGL) : null,
+            version: ctx.getParameter(ctx.VERSION)};
+    }
+  } catch (_) {}
+  try {
+    if (n.gpu) {
+      const ad = await Promise.race([n.gpu.requestAdapter(), new Promise(r => setTimeout(() => r(null), 2000))]);
+      f16 = ad ? ad.features.has("shader-f16") : null;
+    }
+  } catch (_) {}
   const he = ua ? await ua.getHighEntropyValues(["architecture", "bitness", "model", "platformVersion", "fullVersionList"]) : {};
   return {"navigator.userAgent": n.userAgent, "navigator.platform": n.platform, "navigator.vendor": n.vendor,
     "navigator.language": n.language, "navigator.languages": [...n.languages],
@@ -508,7 +546,10 @@ TRUTH_JS = """async () => {
     "uaData.brands": ua ? ua.brands.map(b => ({brand: b.brand, version: b.version})) : null,
     "uaData.architecture": he.architecture || null, "uaData.bitness": he.bitness || null, "uaData.model": he.model || null,
     "uaData.platformVersion": he.platformVersion || null,
-    "uaData.fullVersionList": he.fullVersionList ? he.fullVersionList.map(b => ({brand: b.brand, version: b.version})) : null};
+    "uaData.fullVersionList": he.fullVersionList ? he.fullVersionList.map(b => ({brand: b.brand, version: b.version})) : null,
+    "webgl.vendor": gl.vendor || null, "webgl.renderer": gl.renderer || null, "webgl.version": gl.version || null,
+    "media.dynamicRangeHigh": matchMedia("(dynamic-range: high)").matches, "navigator.gpu.present": !!n.gpu,
+    "webgpu.shaderF16": f16, "navigator.ml.present": "ml" in n};
 }"""
 
 
