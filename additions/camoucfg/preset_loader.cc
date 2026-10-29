@@ -5,10 +5,13 @@
 #include "components/camoucfg/preset_loader.h"
 
 #include <algorithm>
+#include <climits>
+#include <cmath>
 #include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -57,10 +60,15 @@ void CopyString(const base::DictValue& from, std::string_view field,
   }
 }
 
+// A whole number written as a double (1920.0) counts, as it does for the
+// config getters; a fraction does not.
 void CopyInt(const base::DictValue& from, std::string_view field,
              base::DictValue& to, std::string_view key) {
   if (std::optional<int> i = from.FindInt(field)) {
     to.Set(key, *i);
+  } else if (std::optional<double> d = from.FindDouble(field);
+             d && *d == std::trunc(*d) && std::abs(*d) <= INT_MAX) {
+    to.Set(key, static_cast<int>(*d));
   }
 }
 
@@ -185,6 +193,19 @@ void OverridePresetGroups(base::DictValue& expanded,
   }
   if (head && expanded.contains(keys::kLocaleTag)) {
     SetLocaleKeys(expanded, *head);
+  }
+
+  // The GPU identity: the preset gave both contexts one vendor and renderer,
+  // so an explicit webGl:* string moves webGl2:* with it unless the author
+  // set webGl2:* too (the merge then lets that key win).
+  static constexpr std::pair<std::string_view, std::string_view> kGpuPairs[] = {
+      {keys::kWebGlVendor, keys::kWebGl2Vendor},
+      {keys::kWebGlRenderer, keys::kWebGl2Renderer}};
+  for (const auto& [webgl, webgl2] : kGpuPairs) {
+    if (const std::string* value = explicit_cfg.FindString(webgl);
+        value && expanded.contains(webgl2) && !explicit_cfg.contains(webgl2)) {
+      expanded.Set(webgl2, *value);
+    }
   }
 }
 

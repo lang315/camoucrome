@@ -641,7 +641,8 @@ bool ValidateAtStartup(const ConfigScope& scope) {
   }
 
   std::unique_ptr<base::Environment> env = base::Environment::Create();
-  const bool strict = env->GetVar("CAMOU_CONFIG_STRICT").has_value();
+  const bool strict =
+      internal::IsStrictValue(env->GetVar("CAMOU_CONFIG_STRICT"));
 
   for (const Violation& v : violations) {
     if (v.old_value.empty()) {

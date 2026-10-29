@@ -45,6 +45,11 @@ using EnvGetter =
 std::string AssembleRawConfig(EnvGetter get,
                               std::string_view prefix = "CAMOU_CONFIG");
 
+// Whether CAMOU_CONFIG_STRICT asks for strict mode: set to anything other than
+// empty or "0". `value` is the variable's value, nullopt when unset. A launcher
+// that wants strict off must be able to say so with CAMOU_CONFIG_STRICT=0.
+bool IsStrictValue(const std::optional<std::string>& value);
+
 // Parses the assembled configuration. The expected shape is a flat JSON
 // object whose keys are dotted or colon-separated strings.
 //

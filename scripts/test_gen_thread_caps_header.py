@@ -55,7 +55,7 @@ def test_registry_entry():
     assert len(inv) == 16
     e = next(e for e in inv if e["id"] == "gpu-renderer-fits-threads")
     assert e["keys"] == ["webGl:renderer", "navigator.hardwareConcurrency"]
-    assert e["relation"] == "renderer-fits-threads" and e["policy"] == "repair"
+    assert e["relation"] == "renderer-fits-threads" and e["policy"] == "report"
 
 
 def test_cpp_array_sizes():

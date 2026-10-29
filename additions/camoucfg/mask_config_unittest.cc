@@ -94,6 +94,37 @@ TEST(AssembleRawConfigTest, PresentButEmptyChunkFallsBackToUnnumbered) {
   EXPECT_EQ(AssembleRawConfig(env), "ignored");
 }
 
+// CAMOU_CONFIG_STRICT=0 must not turn strict mode on (audit 2026-10-29 #13).
+TEST(IsStrictValueTest, OnlyANonEmptyValueOtherThanZeroIsStrict) {
+  EXPECT_FALSE(IsStrictValue(std::nullopt));
+  EXPECT_FALSE(IsStrictValue(""));
+  EXPECT_FALSE(IsStrictValue("0"));
+  EXPECT_TRUE(IsStrictValue("1"));
+  EXPECT_TRUE(IsStrictValue("true"));
+  EXPECT_TRUE(IsStrictValue("00"));
+}
+
+// A gap in the numbered chunks is not silent (audit 2026-10-29, appendix): the
+// chunks after the gap are dropped, what is left is a prefix of the JSON
+// object, and a prefix is never a valid object, so ParseConfig reports it
+// (an error log; the CHECK under strict) instead of returning a partial dict.
+TEST(AssembleRawConfigTest, AGapTruncatesToAnInvalidPrefixThatParseConfigRejects) {
+  std::map<std::string, std::string> vars{
+      {"CAMOU_CONFIG_1", R"({"navigator.hardwareConcurrency":8,)"},
+      {"CAMOU_CONFIG_3", R"("navigator.deviceMemory":8})"},
+  };
+  auto env = EnvFrom(vars);
+  const std::string raw = AssembleRawConfig(env);
+  EXPECT_EQ(raw, R"({"navigator.hardwareConcurrency":8,)");
+  EXPECT_TRUE(ParseConfig(raw, /*strict=*/false).empty());
+}
+
+TEST(ParseConfigDeathTest, AChunkGapAbortsWhenStrict) {
+  EXPECT_CHECK_DEATH_WITH(ParseConfig(R"({"navigator.hardwareConcurrency":8,)",
+                                      /*strict=*/true),
+                          "camoucfg");
+}
+
 TEST(ParseConfigTest, EmptyInputYieldsEmptyDict) {
   base::DictValue dict = ParseConfig("", /*strict=*/false);
   EXPECT_TRUE(dict.empty());

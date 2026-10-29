@@ -21,7 +21,7 @@
         "ua:platform"
       ],
       "relation": "same-os-family",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set ua:platform to the canonical UA-CH platform for the OS family of ua:osInfo",
       "why": [
         "ua:osInfo lands in the user-agent string. ua:platform lands in",
@@ -53,7 +53,7 @@
         "screen.availWidth"
       ],
       "relation": "fits-within",
-      "policy": "repair",
+      "policy": "report",
       "repair": "lower screen.availWidth to screen.width",
       "why": [
         "The available screen area is the display minus the OS chrome",
@@ -87,7 +87,7 @@
         "screen.availHeight"
       ],
       "relation": "fits-within",
-      "policy": "repair",
+      "policy": "report",
       "repair": "lower screen.availHeight to screen.height",
       "why": [
         "The height axis of screen-avail-width-fits: screen.availHeight <=",
@@ -105,7 +105,7 @@
         "navigator.platform"
       ],
       "relation": "same-platform-bucket",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set navigator.platform to the canonical reduced platform for the OS family of ua:osInfo",
       "why": [
         "ua:osInfo lands in the user-agent string; navigator.platform is its",
@@ -140,7 +140,7 @@
         "navigator.language"
       ],
       "relation": "list-head-equals",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set navigator.language to navigator.languages[0]",
       "why": [
         "Real Chrome derives navigator.language from the same accept-languages",
@@ -160,7 +160,7 @@
         "navigator.language"
       ],
       "relation": "same-string",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set navigator.language to locale:tag",
       "why": [
         "locale:tag drives blink's LocaleController (Intl.*.resolvedOptions().locale,",
@@ -184,7 +184,7 @@
         "webGl2:vendor"
       ],
       "relation": "same-gl-string",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set webGl2:vendor to webGl:vendor",
       "why": [
         "A page can create a WebGLRenderingContext and a WebGL2RenderingContext",
@@ -211,7 +211,7 @@
         "webGl2:renderer"
       ],
       "relation": "same-gl-string",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set webGl2:renderer to webGl:renderer",
       "why": [
         "Same reasoning as webgl2-vendor-agrees-with-webgl for",
@@ -233,7 +233,7 @@
         "webGl:renderer"
       ],
       "relation": "renderer-backend-fits-os",
-      "policy": "repair",
+      "policy": "report",
       "repair": "choose a webGl:renderer whose ANGLE backend runs on the claimed OS (Direct3D11 on Windows, Metal on macOS)",
       "why": [
         "Chrome's UNMASKED_RENDERER_WEBGL is ANGLE's renderer description, and",
@@ -263,7 +263,7 @@
         "timezone:id"
       ],
       "relation": "requires-key",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set timezone:id to an IANA zone plausible for locale:tag",
       "why": [
         "A presence relation: locale:tag set, timezone:id absent. The 2026-09-01",
@@ -284,7 +284,7 @@
         "mediaDevices:seed"
       ],
       "relation": "requires-key",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set mediaDevices:seed to a non-zero uint32",
       "why": [
         "With mediaDevices:enabled true and no non-zero mediaDevices:seed nothing",
@@ -303,7 +303,7 @@
         "webGl2:renderer"
       ],
       "relation": "gl-identity-set-together",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set the other context's vendor and renderer to the same strings",
       "why": [
         "GLVendor/GLRenderer have no WebGL1->WebGL2 fallback (gl_params.cc), so a",
@@ -325,7 +325,7 @@
         "navigator.maxTouchPoints"
       ],
       "relation": "touch-fits-os",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set navigator.maxTouchPoints to 5 (a phone) when the claimed OS is Android",
       "why": [
         "d-pointer-touch (measurements/2026-09-11-d-gaps.md) derives pointer:",
@@ -346,7 +346,7 @@
         "fonts:list"
       ],
       "relation": "requires-key",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set fonts:list to the families the alias map's keys claim (gen.py emits both together)",
       "why": [
         "A presence relation: fonts:alias set, fonts:list absent. The alias",
@@ -367,7 +367,7 @@
         "fonts:list"
       ],
       "relation": "requires-key",
-      "policy": "repair",
+      "policy": "report",
       "repair": "set fonts:list to the families and unique names the local alias map's keys claim (gen.py emits both together)",
       "why": [
         "The src:local() twin of fonts-alias-requires-list: fonts:aliasLocal set, fonts:list absent. With no allowlist a",
@@ -382,7 +382,7 @@
         "navigator.hardwareConcurrency"
       ],
       "relation": "renderer-fits-threads",
-      "policy": "repair",
+      "policy": "report",
       "repair": "lower navigator.hardwareConcurrency to the thread count of the CPU the claimed Intel Gen9 GPU ships with (the cap in settings/webgl/intel-gen9-thread-caps.json), or choose a renderer that fits the thread count",
       "why": [
         "A mobile Intel iGPU is soldered beside one family of CPUs, and no",
