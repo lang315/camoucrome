@@ -1,8 +1,9 @@
 # Unattended facebook recon: arm 1 (logged out) and arm 3 (backed-up login), one load each,
 # no input, never scheduled or repeated. Takes no build_lock; gates on the owner's Active
 # session, no native build, and commit headroom (S5, 2026-10-17). Exit 0 PASS, 1 FAIL, 3 UNMEASURED.
-# Tracking-map arms (2026-10-29): -Arms 1,3,1d,1s,3w,4a. 1d 1s 3w 4a run observe_drive.py (wheel only).
-# Pass the arm list through -File (strings): in a PowerShell session 1d would parse as the decimal 1.
+# Tracking-map arms (2026-10-29): -Arms 1,3,1f,1c,3w,4a. 1f 1c 3w 4a run observe_drive.py (wheel only).
+# Arm names must not read as numbers (1d is a decimal, 1s a short in PowerShell 7): a list typed in a PowerShell session still wants quotes.
+# -KeepCapture keeps capture\ and resources\html\ for on-host analysis (the default deletes them).
 param(
   [string]$Backup = 'D:\camou-win\observe\backup\fb-login-20261017',
   [string]$Baseline = 'D:\camou-win\observe\baseline-facebook.json',
@@ -11,6 +12,7 @@ param(
   [string[]]$Arms = @('1', '3'),
   [switch]$NoIntl,
   [switch]$CpuAll,
+  [switch]$KeepCapture,
   [string]$FromProfileOverride
 )
 # Continue, not Stop: PS 5.1 turns native stderr (quser with nobody logged on, the judge's
@@ -19,15 +21,15 @@ $ErrorActionPreference = 'Continue'
 $Root = 'D:\camou-win\observe'
 $Ri = Join-Path $Root 'run-interactive.ps1'
 $Arms = @($Arms | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
-$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1d', '1s', '3w', '4a' })
+$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a' })
 if ($bad.Count) { "UNMEASURED unknown arm: $($bad -join ' ')"; exit 3 }
-$Wait  = @{ '1' = 30; '3' = 120; '1d' = 90; '1s' = 90; '3w' = 480; '4a' = 90 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
-$Limit = @{ '1' = 5;  '3' = 8;   '1d' = 6;  '1s' = 6;  '3w' = 12;  '4a' = 6 }
+$Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
+$Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6 }
 $Venv  = Join-Path $Root 'venv\Scripts\python.exe'
 $Stock = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 $Fb    = 'https://www.facebook.com'
-$Urls  = @{ '1d' = @("$Fb/"); '1s' = @("$Fb/"); '3w' = @("$Fb/", "$Fb/watch/", "$Fb/marketplace/", "$Fb/messages/", "$Fb/me/") }
-$Driven   = @('1d', '1s', '3w', '4a')
+$Urls  = @{ '1f' = @("$Fb/"); '1c' = @("$Fb/"); '3w' = @("$Fb/", "$Fb/watch/", "$Fb/marketplace/", "$Fb/messages/", "$Fb/me/") }
+$Driven   = @('1f', '1c', '3w', '4a')
 $LoggedIn = @('3', '3w', '4a')
 $Discovery = Join-Path $Root 'baseline-empty.json'   # contains {}
 
@@ -86,15 +88,15 @@ try {
     }
     $armDir = Join-Path $run "arm$a"
     $existed = Test-Path $armDir
-    # the arm name is quoted: PowerShell 5.1 reads an unquoted 1d as the decimal 1 (run 20261029-145829)
+    # the arm name is quoted anyway: an unquoted 1d was read as the decimal 1 (runs 20261029-145829 and -155547)
     $cmd = "& $Root\recon.ps1 -Site facebook -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
     if ($a -in '3', '3w', '4a') { $cmd += ' -FromProfile ' + $(if ($FromProfileOverride) { $FromProfileOverride } else { $Backup }) }
     if ($drivenArm) {
       # no double quotes: the command is passed through a nested powershell -File call
       $cmd += " -Driver '$Venv' -Url @(" + (($armUrls | ForEach-Object { "'$_'" }) -join ',') + ')'
-      if ($a -eq '1s') { $cmd += " -Exe '$Stock'" }
-      if ($a -in '1d', '3w', '4a') { $cmd += ' -Cpu' }
+      if ($a -eq '1c') { $cmd += " -Exe '$Stock'" }
+      if ($a -in '1f', '3w', '4a') { $cmd += ' -Cpu' }
       if ($a -in '3w', '4a') { $cmd += ' -ExpectSession' }
     } elseif ($CpuAll) { $cmd += ' -Cpu' }
     # a recon throw escapes run-interactive's *> block unlogged, with no EXIT= line (cal2, 2026-10-17);
@@ -147,14 +149,14 @@ try {
       $dj = Get-Content -Raw (Join-Path $run "arm$a\run.json") -ErrorAction SilentlyContinue | ConvertFrom-Json
       $drc = if ($dj) { $dj.drive_rc } else { $null }
       $hasCh = Test-Path (Join-Path $run "arm$a\channels.json")
-      if ($a -eq '1s') {
-        if ($drc -eq 0 -and $hasCh) { "INFO arm1s measured (stock: no observer trace, no judge)" }
-        else { "UNMEASURED arm1s drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
+      if ($a -eq '1c') {
+        if ($drc -eq 0 -and $hasCh) { "INFO arm1c measured (stock: no observer trace, no judge)" }
+        else { "UNMEASURED arm1c drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
         continue
       }
       if ($drc -eq 4) { "UNMEASURED arm$a checkpoint"; $worst = [math]::Max($worst, 3); $checkpoint = $true; continue }
       if (-not $hasCh) { "UNMEASURED arm$a no channels.json"; $worst = [math]::Max($worst, 3); continue }
-      $judgeBase = $Discovery; $judgeArm = if ($a -eq '1d') { '1' } else { '3' }
+      $judgeBase = $Discovery; $judgeArm = if ($a -eq '1f') { '1' } else { '3' }
     } else { $judgeBase = $Baseline; $judgeArm = $a }
     python (Join-Path $Root 'observe_judge.py') judge --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
     $rc = $LASTEXITCODE; if ($rc -notin 0, 1, 2, 3) { $rc = 3 }  # a crash code is no verdict
@@ -167,8 +169,13 @@ try {
   Get-ChildItem $run -Recurse -Filter 'cookies.db' -ErrorAction SilentlyContinue | Remove-Item -Force
   # the driver's raw captures (bodies, WebSocket payloads, truth) and the saved document HTML stay only until the report is done;
   # resources\js (public Meta code) and truth.json stay on the host
-  @(Get-ChildItem $run -Directory -Recurse -Filter 'capture' -ErrorAction SilentlyContinue) | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-  @(Get-ChildItem $run -Recurse -Directory -Filter 'html' -ErrorAction SilentlyContinue | Where-Object { $_.Parent.Name -eq 'resources' }) | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  $raw = @(Get-ChildItem $run -Directory -Recurse -Filter 'capture' -ErrorAction SilentlyContinue) +
+    @(Get-ChildItem $run -Recurse -Directory -Filter 'html' -ErrorAction SilentlyContinue | Where-Object { $_.Parent.Name -eq 'resources' })
+  if ($KeepCapture) {
+    if ($raw.Count) { "KEPT raw capture: $(($raw | ForEach-Object { $_.FullName }) -join ', ') (host only; delete after analysis)" }
+  } else {
+    $raw | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 if ($worst -eq 2) { $worst = 3 }  # the judge's usage error (no baseline) measured nothing
 "RESULT $(@{0 = 'PASS'; 1 = 'FAIL'; 3 = 'UNMEASURED'}[[int]$worst]) $run"

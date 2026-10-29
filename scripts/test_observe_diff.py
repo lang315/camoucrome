@@ -20,8 +20,8 @@ def arm(tmp_path, name, endpoints, matches):
 
 
 def test_diff_names_what_only_one_arm_sent(tmp_path):
-    a = arm(tmp_path, "1d", {"www.facebook.com/ajax/bz": ["q[].a", "q[].b"]}, [("www.facebook.com/ajax/bz", "q[].b", "timezone")])
-    b = arm(tmp_path, "1s", {"www.facebook.com/ajax/bz": ["q[].a"], "www.facebook.com/ajax/qm/": []}, [])
+    a = arm(tmp_path, "1f", {"www.facebook.com/ajax/bz": ["q[].a", "q[].b"]}, [("www.facebook.com/ajax/bz", "q[].b", "timezone")])
+    b = arm(tmp_path, "1c", {"www.facebook.com/ajax/bz": ["q[].a"], "www.facebook.com/ajax/qm/": []}, [])
     d = od.diff(a, b)
     assert d["endpoints"] == {"only_a": [], "only_b": ["www.facebook.com/ajax/qm/"]}
     assert d["fields"]["only_a"] == ["www.facebook.com/ajax/bz q[].b"]

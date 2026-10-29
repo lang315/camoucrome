@@ -1,11 +1,11 @@
 # Recon launcher for the camoucrome observer build. Headed, no CDP.
 # Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
-# Driven arms (1d 1s 3w 4a, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession]
+# Driven arms (1f 1c 3w 4a, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
   [ValidateSet('facebook','instagram','threads')][string]$Site,
-  [ValidateSet('1','2','3','4','1d','1s','3w','4a')][string]$Arm,
+  [ValidateSet('1','2','3','4','1f','1c','3w','4a')][string]$Arm,
   [switch]$Force,
   [switch]$Intl,
   [switch]$PostOnly,
@@ -80,7 +80,7 @@ if ($PostOnly) {
 }
 
 if (-not $Site -or -not $Arm) { throw '-Site and -Arm are required' }
-$driven = $Arm -in '1d','1s','3w','4a'
+$driven = $Arm -in '1f','1c','3w','4a'
 if ($driven -and (-not $Driver -or -not $Out)) { throw "arm $Arm is driven: needs -Driver and -Out (unattended only)" }
 if ($driven -and -not $Url) { throw "arm $Arm needs -Url" }
 $script:DriveRc = $null
@@ -123,8 +123,8 @@ $what = @{
   '2' = 'ARM 2 fresh login: log in BY HAND, wait for the feed to load, close the browser.'
   '3' = "ARM 3 established session (arm 2's profile): browse the feed for about 2 minutes, close the browser."
   '4' = 'ARM 4 third-party page: type the URL of a public page that embeds the Meta Pixel or a social plugin, wait about 30 s, close the browser. NOTE THAT URL for the measurement doc.'
-  '1d' = 'ARM 1d driven, logged out: landing page, wheel only.'
-  '1s' = 'ARM 1s driven, stock Chrome, logged out: landing page, wheel only.'
+  '1f' = 'ARM 1f driven, logged out: landing page, wheel only.'
+  '1c' = 'ARM 1c driven, stock Chrome, logged out: landing page, wheel only.'
   '3w' = 'ARM 3w driven: feed, watch, marketplace, messages, profile by URL, wheel only.'
   '4a' = 'ARM 4a driven: one third-party page with the Meta Pixel, logged-in profile copy, wheel only.'
 }[$Arm]
