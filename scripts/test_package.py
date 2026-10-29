@@ -3,6 +3,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tarfile
 
 import pytest
 
@@ -10,6 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import package  # noqa: E402
 
 TAG = package.upstream_env()["CHROMIUM_TAG"]
+REQUIRED = (package.ROOT / "settings" / "build-args.gn").read_text()  # a build must carry these
 
 
 @pytest.fixture
@@ -28,7 +30,7 @@ def tree(tmp_path, monkeypatch):
     monkeypatch.setattr(package, "upstream_env", lambda: {"CHROMIUM_TAG": TAG, "CHROMIUM_REV": head})
     out = src / "out" / "Release"
     (out / "locales").mkdir(parents=True)
-    (out / "args.gn").write_text('is_debug = false\nis_component_build = false\nproprietary_codecs = true\n')
+    (out / "args.gn").write_text('is_debug = false\nis_component_build = false\n' + REQUIRED)
     (out / "chrome").write_bytes(b"\x7fELF")
     (out / "locales" / "en-US.pak").write_bytes(b"pak")
     (out / "gen" / "components" / "resources").mkdir(parents=True)
@@ -43,6 +45,43 @@ def tree(tmp_path, monkeypatch):
 def test_runtime_deps_keeps_only_paths_once_and_prunes_the_tool_data(tree):
     src, out, deps = tree
     assert package.runtime_deps(src, out, deps) == ["chrome", "locales/en-US.pak", "../../chrome/data.txt"]
+
+
+@pytest.mark.parametrize("key", sorted(package.required_args()))
+def test_stage_refuses_a_build_without_a_required_arg(tree, tmp_path, key):
+    # a hand-made args.gn that forgets ffmpeg_branding or the fieldtrial flag packages cleanly and ships both tells
+    src, out, deps = tree
+    keep = [l for l in (out / "args.gn").read_text().splitlines() if not l.startswith(key + " ")]
+    (out / "args.gn").write_text("\n".join(keep) + "\n")
+    with pytest.raises(SystemExit) as e:
+        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    assert key in str(e.value) and "build-args.gn" in str(e.value)
+
+
+def test_stage_refuses_a_required_arg_with_the_wrong_value(tree, tmp_path):
+    src, out, deps = tree
+    (out / "args.gn").write_text((out / "args.gn").read_text().replace('ffmpeg_branding = "Chrome"', 'ffmpeg_branding = "Chromium"'))
+    with pytest.raises(SystemExit):
+        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_stage_warns_when_the_release_shape_differs(tree, tmp_path, capsys):
+    src, out, deps = tree
+    (out / "args.gn").write_text((out / "args.gn").read_text() + "symbol_level = 2\n")
+    package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    assert "symbol_level" in capsys.readouterr().err
+
+
+def test_build_args_are_a_subset_of_release_args():
+    assert package.required_args().items() <= package.parse_args_gn((package.ROOT / "settings" / "release-args.gn").read_text()).items()
+
+
+def test_tar_headers_carry_no_account_name_or_id(tree, tmp_path):
+    src, out, deps = tree
+    staging, _ = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    with tarfile.open(package.archive(staging, "linux-x64")) as t:
+        members = t.getmembers()
+    assert members and all((m.uid, m.gid, m.uname, m.gname) == (0, 0, "", "") for m in members)
 
 
 def test_runtime_deps_strips_the_dot_slash_gn_156_puts_on_executables(tree):
@@ -80,7 +119,7 @@ def test_explicit_changeset_commit_wins_over_git(tree, tmp_path, monkeypatch):
 
 def test_refuses_component_build(tree, tmp_path):
     src, out, deps = tree
-    (out / "args.gn").write_text("is_component_build = true\n")
+    (out / "args.gn").write_text("is_component_build = true\n" + REQUIRED)
     with pytest.raises(SystemExit, match="component build"):
         package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", True)
@@ -133,6 +172,8 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     (root / "upstream.env").write_text(package.ROOT.joinpath("upstream.env").read_text())
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], cwd=root, check=True)
+    for f in ("build-args.gn", "release-args.gn"):
+        (root / "settings" / f).write_text((package.ROOT / "settings" / f).read_text())
     monkeypatch.setattr(package, "ROOT", root)
     d = package.runtime_deps(src, out, deps)
     staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
@@ -150,7 +191,7 @@ def test_refuses_implicit_component_build(tree, tmp_path):
         (out / "args.gn").write_text(args)
         with pytest.raises(SystemExit, match="component build"):
             package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\n")
+    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\n" + REQUIRED)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
@@ -179,7 +220,7 @@ def test_refuses_observer_build_with_a_comment_or_no_spaces(tree, tmp_path):
 
 def test_a_trailing_comment_does_not_hide_a_release_arg(tree, tmp_path):
     src, out, deps = tree
-    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\n")
+    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\n" + REQUIRED)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
