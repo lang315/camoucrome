@@ -80,3 +80,22 @@ def test_a_socket_that_accepts_and_never_answers_is_not_live(xdir):
 @pytest.mark.parametrize("display", [None, "", "nonsense", ":", "host:0", ":99"])
 def test_no_display_a_foreign_display_or_a_missing_socket_is_not_live(xdir, display):
     assert lib_shell.x_server_answers(display, timeout=0.5, sock_dir=xdir) is False
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="abstract unix sockets are Linux-only")
+def test_an_abstract_socket_server_is_live(xdir):
+    # Xvfb on a box whose /tmp/.X11-unix cannot take a new socket file listens only on the abstract name, which Xlib tries first
+    name = "\0" + os.path.join(xdir, "X5")
+    srv = socket.socket(socket.AF_UNIX)
+    srv.bind(name)
+    srv.listen(2)
+
+    def serve():
+        c, _ = srv.accept()
+        c.recv(12)
+        c.sendall(struct.pack("<BxHHHI", 1, 11, 0, 0, 0))
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        assert lib_shell.x_server_answers(":5", timeout=2, sock_dir=xdir) is True
+    finally:
+        srv.close()
