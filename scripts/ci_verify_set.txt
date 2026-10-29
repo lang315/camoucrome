@@ -18,18 +18,23 @@ run verify_sp2e.py
 run verify_sp2b.py
 run verify_sp7_codecs.py
 run verify_sp7_fieldtrial.py
+run verify_sp1b.py
+run verify_sp3b.py
+run verify_sp4a.py
+run verify_metric_jitter.py
+run verify_audio_ii.py
+run verify_ua_halfconfig_reject.py
+run verify_sp5b_domain.py
+run verify_navplatform_bucket.py
+run verify_fonts_ii.py
+run verify_d_pointer_touch.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
-skip verify_audio_ii.py  # not yet evaluated for the runner
 skip verify_credits.py  # needs generate_about_credits = true in the runner's out/Default/args.gn (433-char placeholder page without it, measured 2026-10-29)
 skip verify_chrome_object.py  # not yet evaluated for the runner
-skip verify_d_pointer_touch.py  # not yet evaluated for the runner
 skip verify_font_metrics.py  # not yet evaluated for the runner
-skip verify_fonts_ii.py  # not yet evaluated for the runner
 skip verify_geo_ii_cadence.py  # not yet evaluated for the runner
 skip verify_geoip_pixelscan.py  # not yet evaluated for the runner
 skip verify_media_ii.py  # not yet evaluated for the runner
-skip verify_metric_jitter.py  # not yet evaluated for the runner
-skip verify_navplatform_bucket.py  # not yet evaluated for the runner
 skip verify_navplatform_derive.py  # not yet evaluated for the runner
 skip verify_phantom.py  # not yet evaluated for the runner
 skip verify_pixels_real.py  # not yet evaluated for the runner
@@ -40,10 +45,8 @@ skip verify_s3_media.py  # not yet evaluated for the runner
 skip verify_s3b_phantom_out.py  # not yet evaluated for the runner
 skip verify_sp0.py  # not yet evaluated for the runner
 skip verify_sp1a.py  # not yet evaluated for the runner
-skip verify_sp1b.py  # not yet evaluated for the runner
 skip verify_sp2.py  # not yet evaluated for the runner
 skip verify_sp3a.py  # not yet evaluated for the runner
-skip verify_sp3b.py  # not yet evaluated for the runner
 skip verify_sp3b_timing.py  # not yet evaluated for the runner
 skip verify_sp4_audio.py  # not yet evaluated for the runner
 skip verify_sp4_battery.py  # not yet evaluated for the runner
@@ -52,18 +55,15 @@ skip verify_sp4_geo.py  # not yet evaluated for the runner
 skip verify_sp4_media.py  # not yet evaluated for the runner
 skip verify_sp4_tzlocale.py  # not yet evaluated for the runner
 skip verify_sp4_webrtc.py  # not yet evaluated for the runner
-skip verify_sp4a.py  # not yet evaluated for the runner
 skip verify_sp5a.py  # not yet evaluated for the runner
-skip verify_sp5b_domain.py  # not yet evaluated for the runner
 skip verify_sp5b_preset.py  # not yet evaluated for the runner
-skip verify_sp6b_launcher.py  # not yet evaluated for the runner
+skip verify_sp6b_launcher.py  # fails on the runner's out/Default in a bare harness (exit 1, needs the client layout env), measured 2026-10-29; cause not yet found
 skip verify_sp7_phonehome.py  # not yet evaluated for the runner
-skip verify_ua_halfconfig_reject.py  # not yet evaluated for the runner
 skip verify_voices_ii.py  # not yet evaluated for the runner
 skip verify_voices_pause.py  # not yet evaluated for the runner
 skip verify_voices_remote.py  # not yet evaluated for the runner
-skip verify_webgl_capability_identity.py  # not yet evaluated for the runner
-skip verify_webgl_pairing.py  # not yet evaluated for the runner
+skip verify_webgl_capability_identity.py  # content_shell exited during startup, code 1, in the baseline row on the runner's out/Default (measured 2026-10-29); cause under investigation
+skip verify_webgl_pairing.py  # content_shell exited during startup, code 1, in the baseline row on the runner's out/Default (measured 2026-10-29); cause under investigation
 skip verify_webgl_profile.py  # not yet evaluated for the runner
 skip verify_webrtc_ii.py  # not yet evaluated for the runner
 skip verify_webrtc_ii_fakeip.py  # not yet evaluated for the runner
