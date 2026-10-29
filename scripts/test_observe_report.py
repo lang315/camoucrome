@@ -1,4 +1,5 @@
 """observe_report.py on hand-made fixtures shaped like the real files."""
+import collections
 import json
 import pathlib
 import sqlite3
@@ -464,3 +465,50 @@ def test_ram_summary_peak_and_mean(tmp_path):
     assert s["renderer"] == {"peak_mb": 300.0, "mean_mb": 200.0, "samples": 2}
     assert r.ram_summary(tmp_path / "absent.json") is None
     assert "renderer" in r.render_ram(s)
+
+
+CH = {"arm": "3w", "posts_captured": 3, "posts_missing": 1,
+      "endpoints": {"www.facebook.com/ajax/bz": {"count": 2, "bytes": 100, "kinds": {"form": 2},
+                    "initiators": {"static.xx.fbcdn.net/rsrc.php/v3/a.js": 2},
+                    "fields": {"q[].dm": {"count": 2, "classes": {"int": 2}}}},
+                    "www.facebook.com/ajax/bnzai": {"count": 1, "bytes": 0, "kinds": {"missing": 1},
+                    "initiators": {"(no script)": 1}, "fields": {}}},
+      "ws": {"gateway.facebook.com/ws/realtime": {"frames_sent": 1, "frames_received": 2, "bytes_sent": 10,
+             "bytes_received": 20, "topics": {"/t_ms": {"count": 1, "fields": {}}}}}}
+MT = [{"endpoint": "www.facebook.com/ajax/bz", "field": "q[].dm", "surface": "navigator.deviceMemory",
+       "encoding": "exact", "weak": True, "count": 2},
+      {"endpoint": "www.facebook.com/ajax/bz", "field": "q[].tz", "surface": "timezone",
+       "encoding": "exact", "weak": False, "count": 2}]
+
+
+def test_channels_list_fields_classes_ws_and_coverage():
+    out = r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2, "www.facebook.com/ajax/bnzai": 1,
+                                           "www.facebook.com/ajax/qm/": 4}})
+    assert "`q[].dm`" in out and "int" in out
+    assert "/t_ms" in out
+    assert "captured 3 of 7 POSTs in the netlog (1 without a body)" in out
+
+
+def test_weak_matches_are_listed_apart():
+    out = r.render_matches(MT)
+    strong, weak = out.split("Weak matches")
+    assert "timezone" in strong and "deviceMemory" not in strong
+    assert "deviceMemory" in weak
+
+
+def test_join_puts_reads_next_to_the_channels_a_script_sent():
+    reads = {"static.xx.fbcdn.net/rsrc.php/v3/a.js": collections.Counter({"Navigator.deviceMemory.get": 820})}
+    out = r.render_join(CH, MT, reads)
+    assert "static.xx.fbcdn.net/rsrc.php/v3/a.js" in out
+    assert "Navigator.deviceMemory.get 820" in out and "www.facebook.com/ajax/bz" in out
+
+
+def test_main_runs_without_a_trace(tmp_path, capsys):
+    net = cost_netlog(tmp_path)
+    (tmp_path / "channels.json").write_text(json.dumps(CH))
+    (tmp_path / "matches.json").write_text(json.dumps(MT))
+    sys.argv = ["observe_report.py", "-", str(net), "--channels", str(tmp_path / "channels.json"),
+                "--matches", str(tmp_path / "matches.json")]
+    r.main()
+    out = capsys.readouterr().out
+    assert "## Cost" in out and "## Channels" in out and "## Surfaces sent" in out

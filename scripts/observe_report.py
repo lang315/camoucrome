@@ -539,6 +539,76 @@ def render_ram(ram):
     return "\n".join(lines) + "\n"
 
 
+def reads_by_script(events):
+    out = collections.defaultdict(collections.Counter)
+    for site_rows in surface_counts(events).values():
+        for (_origin, script), members in site_rows.items():
+            out[script].update(members)
+    return dict(out)
+
+
+def render_channels(channels, costs):
+    if not channels:
+        return "## Channels\n\nno channels.json (undriven arm): POST counts are in Cost.\n"
+    netlog_posts = sum((costs or {}).get("posts", {}).values())
+    lines = ["## Channels", "",
+             f"captured {channels['posts_captured']} of {netlog_posts} POSTs in the netlog "
+             f"({channels['posts_missing']} without a body)", "",
+             "| endpoint | count | bytes | kinds | field | count | classes |", "|---|---|---|---|---|---|---|"]
+    for ep, v in sorted(channels["endpoints"].items(), key=lambda x: -x[1]["count"]):
+        kinds = ", ".join(f"{k} {n}" for k, n in sorted(v["kinds"].items()))
+        rows = sorted(v["fields"].items()) or [("", {"count": "", "classes": {}})]
+        for i, (f, fv) in enumerate(rows):
+            head = f"| `{ep}` | {v['count']} | {v['bytes']} | {kinds} |" if i == 0 else "| | | | |"
+            cls = ", ".join(f"{c} {n}" for c, n in sorted(fv["classes"].items()))
+            lines.append(f"{head} `{f}` | {fv['count']} | {cls} |" if f else f"{head} | | |")
+    lines += ["", "| socket | sent | received | bytes sent | bytes received | topics |", "|---|---|---|---|---|---|"]
+    for ws, v in sorted(channels.get("ws", {}).items()):
+        topics = ", ".join(f"`{t}` {tv['count']}" for t, tv in sorted(v["topics"].items()))
+        lines.append(f"| `{ws}` | {v['frames_sent']} | {v['frames_received']} | {v['bytes_sent']} | {v['bytes_received']} | {topics} |")
+    return "\n".join(lines) + "\n"
+
+
+def render_matches(matches):
+    if not matches:
+        return "## Surfaces sent\n\nno matches.json.\n"
+
+    def table(rows):
+        out = ["| endpoint | field | surface | encoding | count |", "|---|---|---|---|---|"]
+        out += [f"| `{m['endpoint']}` | `{m['field']}` | {m['surface']} | {m['encoding']} | {m['count']} |" for m in rows]
+        return out
+    lines = ["## Surfaces sent", ""] + table([m for m in matches if not m["weak"]])
+    lines += ["", "Weak matches (a number below 100: may equal a surface by chance)", ""]
+    lines += table([m for m in matches if m["weak"]])
+    return "\n".join(lines) + "\n"
+
+
+def render_join(channels, matches, reads):
+    if not channels:
+        return ""
+    sent = collections.defaultdict(set)
+    for m in matches or []:
+        if not m["weak"]:
+            sent[m["endpoint"]].add(m["surface"])
+    by_script = collections.defaultdict(list)
+    for ep, v in channels["endpoints"].items():
+        for script in v["initiators"]:
+            by_script[script].append(ep)
+    lines = ["## Surface, script, channel", "", "| script | reads (top 8) | sends to | surfaces carried |", "|---|---|---|---|"]
+    for script, eps in sorted(by_script.items()):
+        top = ", ".join(f"{k} {n}" for k, n in (reads.get(script) or collections.Counter()).most_common(8))
+        carried = ", ".join(sorted(set().union(*(sent[e] for e in eps))))
+        lines.append(f"| `{script}` | {top} | {', '.join(f'`{e}`' for e in sorted(eps))} | {carried} |")
+    return "\n".join(lines) + "\n"
+
+
+def _load_json(path):
+    if not path:
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def render(events, requests, cookies, buffer=None, intl=None):
     lines = ["# Tracking observer report", ""]
     if buffer:
@@ -611,14 +681,26 @@ def render(events, requests, cookies, buffer=None, intl=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("trace")
+    ap.add_argument("trace", help="trace JSON, or - for a trace-less arm")
     ap.add_argument("netlog")
     ap.add_argument("--cookies")
+    ap.add_argument("--ram")
+    ap.add_argument("--channels")
+    ap.add_argument("--matches")
     a = ap.parse_args()
     cookies = load_cookie_names(a.cookies) if a.cookies else []
-    data = load_trace(a.trace)
-    print(render(events_of(data), load_requests(a.netlog), cookies, buffer_note(data),
-                 intl_counts(all_events(data))), end="")
+    data = None if a.trace == "-" else load_trace(a.trace)
+    events = events_of(data) if data else []
+    print(render(events, load_requests(a.netlog), cookies, buffer_note(data) if data else None,
+                 intl_counts(all_events(data)) if data else None), end="")
+    costs = load_costs(a.netlog)
+    ch, mt = _load_json(a.channels), _load_json(a.matches)
+    print(render_costs(costs))
+    print(render_cpu(cpu_by_script(all_events(data) if data else [])))
+    print(render_ram(ram_summary(a.ram) if a.ram else None))
+    print(render_channels(ch, costs))
+    print(render_matches(mt))
+    print(render_join(ch, mt, reads_by_script(events)), end="")
 
 
 if __name__ == "__main__":
