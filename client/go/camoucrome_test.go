@@ -539,8 +539,8 @@ func TestProxyOptionHandsTheCredentialsToTheDriver(t *testing.T) {
 
 func TestLaunchRefusesAProxyThatWouldLeakOrDoNothing(t *testing.T) {
 	for _, p := range []*Proxy{{}, {Username: "u"}, {Server: "http://u:p@h:1"}} {
-		if _, err := Launch(nil, Options{Proxy: p}); err == nil || !strings.Contains(err.Error(), "proxy") {
-			t.Errorf("Launch(%+v) err = %v, want a proxy error before any launch", p, err)
+		if _, err := launch(&fakeLauncher{}, Options{Proxy: p}); err == nil || !strings.Contains(err.Error(), "proxy") {
+			t.Errorf("launch(%+v) err = %v, want a proxy error before any launch", p, err)
 		}
 	}
 }

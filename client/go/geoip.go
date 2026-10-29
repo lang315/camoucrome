@@ -1,6 +1,7 @@
 package camoucrome
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,11 +21,21 @@ import (
 // echoURLs are asked one after another, through the proxy when there is one; the service sees only the exit address.
 var echoURLs = []string{"https://api.ipify.org", "https://checkip.amazonaws.com", "https://icanhazip.com", "https://ifconfig.co/ip"}
 
+// execTimeout bounds the Python lookup: a hung module must not hang Launch.
+var execTimeout = 30 * time.Second
+
 // Seams for the tests.
 var (
 	echoIP     = ExitIP
 	execPython = func(python string, args ...string) ([]byte, error) {
-		out, err := exec.Command(python, args...).Output()
+		ctx, cancel := context.WithTimeout(context.Background(), execTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, python, args...)
+		cmd.WaitDelay = time.Second // a grandchild holding stdout must not outlast the kill
+		out, err := cmd.Output()
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s timed out after %s", python, execTimeout)
+		}
 		if _, isExit := err.(*exec.ExitError); isExit {
 			return out, nil // exit 2 still prints {"error": ...} on stdout
 		}
