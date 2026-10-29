@@ -1,4 +1,5 @@
 """observe_report.py on hand-made fixtures shaped like the real files."""
+import collections
 import json
 import pathlib
 import sqlite3
@@ -394,3 +395,129 @@ def test_dispatch_worker_target_joins_worker_global_scope_registrations():
     events = [lev("message", "DedicatedWorkerGlobalScope", script="https://a.com/w.js"),
               dev("message", 3, 3, target="Worker")]
     assert r.dispatch_rows(events)[0]["registered_by"] == ["a.com/w.js"]
+
+
+def cost_netlog(tmp_path):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+             "HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS",
+             "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        # load_requests keeps only PHASE_BEGIN start-job events, so the fixture serves both readers
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+    ev = [e(1, "URL_REQUEST_START_JOB", url="https://static.xx.fbcdn.net/a.js?x=1", method="GET"),
+          e(1, "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"),
+          e(1, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["content-type: application/javascript; charset=utf-8"]),
+          e(1, "URL_REQUEST_JOB_BYTES_READ", byte_count=300), e(1, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=1000),
+          e(2, "URL_REQUEST_START_JOB", url="https://static.xx.fbcdn.net/b.css", method="GET"),
+          e(2, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["Content-Type: text/css"]),
+          e(2, "URL_REQUEST_JOB_BYTES_READ", byte_count=50), e(2, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=200),
+          e(3, "URL_REQUEST_START_JOB", url="https://www.facebook.com/ajax/bz?q=secret", method="POST"),
+          e(3, "HTTP_TRANSACTION_SEND_REQUEST"), e(3, "URL_REQUEST_JOB_BYTES_READ", byte_count=10)]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_costs_split_network_cache_decoded_by_host_and_kind(tmp_path):
+    c = r.load_costs(cost_netlog(tmp_path))
+    h = c["by_host"]["static.xx.fbcdn.net"]
+    assert (h["n"], h["network"], h["cache"], h["decoded"]) == (2, 300, 50, 1200)
+    assert c["by_kind"]["js"]["network"] == 300 and c["by_kind"]["css"]["cache"] == 50
+    assert c["by_kind"]["beacon"]["n"] == 1
+    assert c["posts"] == {"www.facebook.com/ajax/bz": 1}
+
+
+def test_costs_of_a_cut_netlog_is_none_and_renders_a_line(tmp_path):
+    p = tmp_path / "net.json"
+    p.write_text('{"constants": {"logEventTypes": {}}, "events": [{"source"')
+    assert r.load_costs(p) is None
+    assert "netlog unreadable" in r.render_costs(None)
+
+
+def test_render_costs_never_prints_a_query(tmp_path):
+    out = r.render_costs(r.load_costs(cost_netlog(tmp_path)))
+    assert "secret" not in out and "x=1" not in out
+    assert "static.xx.fbcdn.net" in out
+
+
+def tl(name, ts, dur, url, tid=1):
+    return {"name": name, "cat": "devtools.timeline", "ph": "X", "pid": 1, "tid": tid, "ts": ts, "dur": dur,
+            "args": {"data": {"url": url}}}
+
+
+def test_cpu_counts_nested_slices_once_and_labels_scripts():
+    A = "https://static.xx.fbcdn.net/rsrc.php/v3/a.js?x=1"
+    ev = [tl("FunctionCall", 0, 5000, A), tl("FunctionCall", 1000, 1000, A),
+          tl("v8.compile", 10000, 2000, A), tl("EvaluateScript", 0, 3000, A, tid=2)]
+    c = r.cpu_by_script(ev)
+    assert c["static.xx.fbcdn.net/rsrc.php/v3/a.js"] == {"run": 8.0, "compile": 2.0}
+
+
+def test_ram_summary_peak_and_mean(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 5, "samples": [
+        {"t": 0, "by_type": {"renderer": 100 * 2**20, "browser": 50 * 2**20}},
+        {"t": 5, "by_type": {"renderer": 300 * 2**20}}]}))
+    s = r.ram_summary(p)
+    assert s["renderer"] == {"peak_mb": 300.0, "mean_mb": 200.0, "samples": 2}
+    assert r.ram_summary(tmp_path / "absent.json") is None
+    assert "renderer" in r.render_ram(s)
+
+
+CH = {"arm": "3w", "posts_captured": 3, "posts_missing": 1,
+      "endpoints": {"www.facebook.com/ajax/bz": {"count": 2, "bytes": 100, "kinds": {"form": 2},
+                    "initiators": {"static.xx.fbcdn.net/rsrc.php/v3/a.js": 2},
+                    "fields": {"q[].dm": {"count": 2, "classes": {"int": 2}}}},
+                    "www.facebook.com/ajax/bnzai": {"count": 1, "bytes": 0, "kinds": {"missing": 1},
+                    "initiators": {"(no script)": 1}, "fields": {}}},
+      "ws": {"gateway.facebook.com/ws/realtime": {"frames_sent": 1, "frames_received": 2, "bytes_sent": 10,
+             "bytes_received": 20, "topics": {"/t_ms": {"count": 1, "fields": {}}}}}}
+MT = [{"endpoint": "www.facebook.com/ajax/bz", "field": "q[].dm", "surface": "navigator.deviceMemory",
+       "encoding": "exact", "weak": True, "count": 2},
+      {"endpoint": "www.facebook.com/ajax/bz", "field": "q[].tz", "surface": "timezone",
+       "encoding": "exact", "weak": False, "count": 2}]
+
+
+def test_channels_list_fields_classes_ws_and_coverage():
+    out = r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2, "www.facebook.com/ajax/bnzai": 1,
+                                           "www.facebook.com/ajax/qm/": 4}})
+    assert "`q[].dm`" in out and "int" in out
+    assert "/t_ms" in out
+    assert "captured 3 of 7 POSTs in the netlog (1 without a body)" in out
+
+
+def test_weak_matches_are_listed_apart():
+    out = r.render_matches(MT)
+    strong, weak = out.split("Weak matches")
+    assert "timezone" in strong and "deviceMemory" not in strong
+    assert "deviceMemory" in weak
+
+
+def test_join_puts_reads_next_to_the_channels_a_script_sent():
+    reads = {"static.xx.fbcdn.net/rsrc.php/v3/a.js": collections.Counter({"Navigator.deviceMemory.get": 820})}
+    out = r.render_join(CH, MT, reads)
+    assert "static.xx.fbcdn.net/rsrc.php/v3/a.js" in out
+    assert "Navigator.deviceMemory.get 820" in out and "www.facebook.com/ajax/bz" in out
+
+
+def test_main_runs_without_a_trace(tmp_path, capsys):
+    net = cost_netlog(tmp_path)
+    (tmp_path / "channels.json").write_text(json.dumps(CH))
+    (tmp_path / "matches.json").write_text(json.dumps(MT))
+    sys.argv = ["observe_report.py", "-", str(net), "--channels", str(tmp_path / "channels.json"),
+                "--matches", str(tmp_path / "matches.json")]
+    r.main()
+    out = capsys.readouterr().out
+    assert "## Cost" in out and "## Channels" in out and "## Surfaces sent" in out
+
+
+def test_coverage_counts_only_posts_to_hosts_the_driver_watched():
+    out = r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2, "www.facebook.com/ajax/bnzai": 1,
+                                           "content-autofill.googleapis.com/v1/pages/x": 5,
+                                           "example.org/collect": 1}})
+    assert "captured 3 of 3 POSTs in the netlog (1 without a body)" in out
+    assert "6 POSTs to other hosts: content-autofill.googleapis.com, example.org" in out
+    assert "/v1/pages" not in out and "/collect" not in out
