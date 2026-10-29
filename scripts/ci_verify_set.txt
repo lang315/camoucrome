@@ -30,8 +30,10 @@ run verify_fonts_ii.py
 run verify_d_pointer_touch.py
 run verify_webgl_pairing.py
 run verify_webgl_capability_identity.py
+# verify_credits needs generate_about_credits = true in the runner's out/Default/args.gn (hand-managed: the workflow does not
+# write args.gn). Without it the credits page is the 433-character placeholder and the script fails.
+run verify_credits.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
-skip verify_credits.py  # needs generate_about_credits = true in the runner's out/Default/args.gn (433-char placeholder page without it, measured 2026-10-29)
 skip verify_chrome_object.py  # not yet evaluated for the runner
 skip verify_font_metrics.py  # not yet evaluated for the runner
 skip verify_geo_ii_cadence.py  # not yet evaluated for the runner
