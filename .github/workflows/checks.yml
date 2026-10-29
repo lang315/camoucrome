@@ -87,3 +87,27 @@ jobs:
         with: { node-version: "22" }
       - name: node client tests
         run: cd client/node && npm test
+  # Windows is a shipped platform: hostfonts.families, windows_argv, removeDir's retry loop and the HOST_OS font drop
+  # (the 2026-10-04 Arial regression) ran on no Windows machine in CI (audit 2026-10-29, finding 15). Client tests only;
+  # nothing here needs Chromium. A red step here is a real Windows failure: fix it, do not skip the test.
+  windows-clients:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: python client tests
+        run: |
+          python -m pip install -q pytest browserforge==1.2.4 maxminddb timezonefinder
+          python -m pytest -q client/python/tests
+      - name: go client tests
+        run: cd client/go && go vet ./... && go test ./...
+      - name: node client tests
+        run: cd client/node && npm test
