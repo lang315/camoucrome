@@ -251,20 +251,37 @@ def gateway_chunks(raw):
     return out, len(raw) - i
 
 
+def _embedded_json(p):
+    """(offset, value) of the JSON that runs from the first '{' or '[' within the first 16 bytes to the end of p, else None;
+    realtime's type-0d chunks carry a binary header of 2 to 5 more bytes before it."""
+    for i in range(min(16, len(p))):
+        if p[i] in b"{[":
+            try:
+                j = _json(p[i:].decode("utf-8"))
+            except UnicodeDecodeError:
+                continue
+            if j is not None:
+                return i, j
+    return None
+
+
 def _chunk_units(b0, payload):
-    """([(topic, field pairs)], partial) of one chunk; the topic is '<type hex>/<mqtt topic, (json) or (opaque)>'."""
-    p = payload[GATEWAY_PREFIX.get(b0, 0):]
+    """([(topic, field pairs)], partial) of one chunk; the topic is '<type hex>/<mqtt topic, (json), (json+N), (ack) or
+    (opaque)>', N the bytes of header before the JSON. A type-0c chunk of 2 bytes is an acknowledgement counter: it parses
+    as an empty MQTT packet by chance and is not one."""
     key = "%02x/" % b0
-    try:
-        j = _json(p.decode("utf-8"))
-    except UnicodeDecodeError:
-        j = None
-    if j is not None:
-        return [(key + "(json)", walk(j))], 0
-    pk, partial = mqtt_parse(p)
-    if not pk:
-        return [(key + "(opaque)", [])], 0
-    return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], partial
+    if b0 == 0x0c and len(payload) <= 2:
+        return [(key + "(ack)", [])], 0
+    p = payload[GATEWAY_PREFIX.get(b0, 0):]
+    pk, partial = mqtt_parse(p) if p[:1] not in (b"{", b"[") else ([], 0)
+    if pk and not partial:
+        return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], 0
+    emb = _embedded_json(p)  # before a partial MQTT read: a binary header can look like a packet start
+    if emb:
+        return [(key + ("(json+%d)" % emb[0] if emb[0] else "(json)"), walk(emb[1]))], 0
+    if pk:
+        return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], partial
+    return [(key + "(opaque)", [])], 0
 
 
 PAIRS = {"screen": ("screen.width", "screen.height"), "screen.avail": ("screen.availWidth", "screen.availHeight"),

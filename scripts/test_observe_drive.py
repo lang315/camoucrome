@@ -558,8 +558,20 @@ def test_a_type_0f_chunk_carries_json_at_offset_6_and_a_frame_may_hold_two_chunk
     assert t["0f/(json)"]["count"] == 2 and set(t["0f/(json)"]["fields"]) == {"a", "b"}
 
 
+def test_a_two_byte_type_0c_chunk_is_an_ack_counter_not_an_empty_mqtt_packet():
+    t = _gw_topics([_frame(GW, "sent", _gw(0x0c, b"\x05\x00")), _frame(GW, "received", _gw(0x0c, b"\x20\x00"))])
+    assert t == {"0c/(ack)": {"count": 2, "fields": {}}}
+
+
+def test_a_type_0d_chunk_with_a_binary_header_before_its_json_is_counted_by_that_header_length():
+    body = json.dumps({"k": CANARY, "dm": 8}).encode()
+    t = _gw_topics([_frame(GW, "sent", _gw(0x0d, b"\x01\x80\x2c\x18\xc6\x2d" + body)),    # 4 bytes after the 2-byte prefix
+                    _frame(GW, "sent", _gw(0x0d, b"\x02\x80\x3c\x16\x4a\x18\x0d" + body))])  # 5 bytes
+    assert t["0d/(json+4)"]["fields"]["dm"]["count"] == 1 and t["0d/(json+5)"]["count"] == 1
+
+
 def test_a_chunk_that_is_neither_json_nor_mqtt_is_opaque_under_its_type():
-    t = _gw_topics([_frame(GW, "received", _gw(0x0c, b"\x00\x01")), _frame(GW, "received", _gw(0x0d, b"\x00\x00" + b"\xff" * 5))])
+    t = _gw_topics([_frame(GW, "received", _gw(0x0c, b"\x00\x01\x02")), _frame(GW, "received", _gw(0x0d, b"\x00\x00" + b"\xff" * 5))])
     assert t["0c/(opaque)"]["count"] == 1 and t["0d/(opaque)"]["count"] == 1
 
 
