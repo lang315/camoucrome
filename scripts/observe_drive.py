@@ -24,7 +24,16 @@ import zlib
 ID_RE = re.compile(r"^\d{10,}$")
 
 
+class Opaque:
+    """A value that is not text (a multipart file part): only its length is known, and only the length is kept."""
+
+    def __init__(self, n):
+        self.n = n
+
+
 def value_class(v):
+    if isinstance(v, Opaque):
+        return f"opaque<{v.n}>"
     if isinstance(v, bool):
         return "bool"
     if v is None:
@@ -54,8 +63,43 @@ def _inflate(raw):
     return raw
 
 
-def decode_body(raw, _b64=True):
+def _boundary(raw, content_type):
+    m = re.search(r'boundary="?([^";,\s]+)"?', content_type or "", re.I)
+    if m:
+        return m.group(1).encode()
+    first = raw.split(b"\r\n", 1)[0]
+    if first.startswith(b"--") and 2 < len(first) <= 200 and b" " not in first:
+        return first[2:]
+    return None
+
+
+def multipart_parts(raw, boundary):
+    """[(name, value)] of a multipart/form-data body; a part with a filename, or bytes that are not text, is an Opaque."""
+    parts = []
+    for chunk in raw.split(b"--" + boundary)[1:]:
+        if chunk.startswith(b"--"):
+            break  # the closing delimiter
+        head, sep, body = chunk.lstrip(b"\r\n").partition(b"\r\n\r\n")
+        disp = re.search(rb"content-disposition:[^\r\n]*", head, re.I)
+        name = re.search(rb'(?<![A-Za-z])name="([^"]*)"', disp.group(0)) if disp else None
+        if not sep or not name:
+            continue
+        body = body[:-2] if body.endswith(b"\r\n") else body
+        try:
+            value = Opaque(len(body)) if b"filename=" in disp.group(0) else body.decode("utf-8")
+        except UnicodeDecodeError:
+            value = Opaque(len(body))
+        parts.append((name.group(1).decode("utf-8", "replace"), value))
+    return parts
+
+
+def decode_body(raw, content_type="", _b64=True):
     raw = _inflate(raw)
+    boundary = _boundary(raw, content_type)
+    if boundary:
+        parts = multipart_parts(raw, boundary)
+        if parts:
+            return "multipart", parts
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -99,11 +143,11 @@ def walk(value, prefix=""):
     return [(prefix, value)]
 
 
-def fields(raw):
-    kind, v = decode_body(raw)
+def fields(raw, content_type=""):
+    kind, v = decode_body(raw, content_type)
     if kind == "json":
         return kind, walk(v)
-    if kind == "form":
+    if kind in ("form", "multipart"):
         out = []
         for k, val in v:
             out += walk(val, k)
@@ -181,7 +225,7 @@ def _weak(v):
 
 
 def match(value, truth):
-    if isinstance(value, bool) or value is None or value == "":
+    if isinstance(value, (bool, Opaque)) or value is None or value == "":
         return []
     out = []
     for surface, t in truth.items():
@@ -263,7 +307,7 @@ def build_channels(requests, frames, arm):
         else:
             raw = _b64(r["body_b64"])
             e["bytes"] += len(raw)
-            kind, pairs = fields(raw)
+            kind, pairs = fields(raw, r.get("content_type", ""))
         e["kinds"][kind] = e["kinds"].get(kind, 0) + 1
         ini = endpoint(r["initiator"]) if r.get("initiator") else "(no script)"
         e["initiators"][ini] = e["initiators"].get(ini, 0) + 1
@@ -286,7 +330,7 @@ def build_matches(requests, frames, truth):
     n = collections.Counter()
     for r in requests:
         if not r.get("missing"):
-            for path, v in fields(_b64(r["body_b64"]))[1]:
+            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""))[1]:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1
     for fr in frames:

@@ -222,3 +222,51 @@ def test_an_explicit_truth_url_is_kept_and_starts_no_server():
     srv, url = d.truth_page("https://example.invalid/t")
     assert srv is None and url == "https://example.invalid/t"
     d.stop_truth_page(srv)  # nothing to stop
+
+
+BOUNDARY = "----WebKitFormBoundaryAbC123xyz"
+
+
+def _multipart(parts, boundary=BOUNDARY):
+    out = b""
+    for name, value, filename in parts:
+        disp = f'form-data; name="{name}"' + (f'; filename="{filename}"' if filename else "")
+        out += f"--{boundary}\r\nContent-Disposition: {disp}\r\n\r\n".encode() + value + b"\r\n"
+    return out + f"--{boundary}--\r\n".encode()
+
+
+MULTIPART = _multipart([
+    ("__a", b"1", None),
+    ("q", json.dumps([{"name": CANARY + "-mp", "dm": 8}]).encode(), None),
+    ("upload", b"\x89PNG\r\n\x1a\n" + b"\x00" * 40, "blob.png"),
+])
+
+
+def test_multipart_parts_are_named_by_their_name_attribute_and_walked():
+    kind, f = d.fields(MULTIPART, "multipart/form-data; boundary=" + BOUNDARY)
+    assert kind == "multipart"
+    assert ("__a", "1") in f
+    assert ("q[].name", CANARY + "-mp") in f and ("q[].dm", 8) in f
+    paths = [p for p, _ in f]
+    assert "upload" in paths and not any("Boundary" in p or "Content-Disposition" in p for p in paths)
+
+
+def test_a_file_part_is_opaque_with_its_length():
+    _, f = d.fields(MULTIPART, "multipart/form-data; boundary=" + BOUNDARY)
+    (v,) = [v for p, v in f if p == "upload"]
+    assert d.value_class(v) == "opaque<48>"
+
+
+def test_multipart_is_recognised_by_its_first_line_without_a_content_type():
+    assert d.fields(MULTIPART)[0] == "multipart"
+    assert d.fields(b"--just a dash line\r\nbut no parts")[0] == "opaque"
+
+
+def test_the_boundary_and_the_canary_never_reach_channels_for_a_multipart_post():
+    req = _req("https://www.facebook.com/ajax/mp", MULTIPART)
+    req["content_type"] = "multipart/form-data; boundary=" + BOUNDARY
+    c = d.build_channels([req], [], "x")
+    ep = c["endpoints"]["www.facebook.com/ajax/mp"]
+    assert ep["kinds"] == {"multipart": 1} and ep["fields"]["upload"]["classes"] == {"opaque<48>": 1}
+    text = json.dumps(c) + json.dumps(d.build_matches([req], [], TRUTH))
+    assert "Boundary" not in text and CANARY not in text
