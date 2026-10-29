@@ -394,3 +394,49 @@ def test_dispatch_worker_target_joins_worker_global_scope_registrations():
     events = [lev("message", "DedicatedWorkerGlobalScope", script="https://a.com/w.js"),
               dev("message", 3, 3, target="Worker")]
     assert r.dispatch_rows(events)[0]["registered_by"] == ["a.com/w.js"]
+
+
+def cost_netlog(tmp_path):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+             "HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS",
+             "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        # load_requests keeps only PHASE_BEGIN start-job events, so the fixture serves both readers
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+    ev = [e(1, "URL_REQUEST_START_JOB", url="https://static.xx.fbcdn.net/a.js?x=1", method="GET"),
+          e(1, "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"),
+          e(1, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["content-type: application/javascript; charset=utf-8"]),
+          e(1, "URL_REQUEST_JOB_BYTES_READ", byte_count=300), e(1, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=1000),
+          e(2, "URL_REQUEST_START_JOB", url="https://static.xx.fbcdn.net/b.css", method="GET"),
+          e(2, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["Content-Type: text/css"]),
+          e(2, "URL_REQUEST_JOB_BYTES_READ", byte_count=50), e(2, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=200),
+          e(3, "URL_REQUEST_START_JOB", url="https://www.facebook.com/ajax/bz?q=secret", method="POST"),
+          e(3, "HTTP_TRANSACTION_SEND_REQUEST"), e(3, "URL_REQUEST_JOB_BYTES_READ", byte_count=10)]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_costs_split_network_cache_decoded_by_host_and_kind(tmp_path):
+    c = r.load_costs(cost_netlog(tmp_path))
+    h = c["by_host"]["static.xx.fbcdn.net"]
+    assert (h["n"], h["network"], h["cache"], h["decoded"]) == (2, 300, 50, 1200)
+    assert c["by_kind"]["js"]["network"] == 300 and c["by_kind"]["css"]["cache"] == 50
+    assert c["by_kind"]["beacon"]["n"] == 1
+    assert c["posts"] == {"www.facebook.com/ajax/bz": 1}
+
+
+def test_costs_of_a_cut_netlog_is_none_and_renders_a_line(tmp_path):
+    p = tmp_path / "net.json"
+    p.write_text('{"constants": {"logEventTypes": {}}, "events": [{"source"')
+    assert r.load_costs(p) is None
+    assert "netlog unreadable" in r.render_costs(None)
+
+
+def test_render_costs_never_prints_a_query(tmp_path):
+    out = r.render_costs(r.load_costs(cost_netlog(tmp_path)))
+    assert "secret" not in out and "x=1" not in out
+    assert "static.xx.fbcdn.net" in out

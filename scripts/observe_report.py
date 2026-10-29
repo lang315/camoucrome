@@ -405,6 +405,83 @@ def load_cookie_names(db_path):
         con.close()
 
 
+NET_KINDS = (("javascript", "js"), ("ecmascript", "js"), ("css", "css"), ("html", "html"), ("wasm", "wasm"),
+             ("image", "image"), ("video", "video"), ("audio", "video"), ("font", "font"), ("json", "json"))
+SEND_EVENTS = {"HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS",
+               "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"}
+
+
+def kind_of(content_type, method):
+    if method == "POST":
+        return "beacon"
+    ct = (content_type or "").lower()
+    for needle, k in NET_KINDS:
+        if needle in ct:
+            return k
+    return "other"
+
+
+def load_costs(netlog_path):
+    """Bytes per host and kind. network = pre-decode bytes of a request that went out (HTTP/1, 2 or QUIC);
+    cache = pre-decode bytes of one that did not; decoded = after content decoding. None when unreadable."""
+    try:
+        with open(netlog_path, encoding="utf-8") as f:
+            d = json.load(f)
+        names = {v: k for k, v in d["constants"]["logEventTypes"].items()}
+        events = d["events"]
+    except (OSError, ValueError, KeyError):
+        return None
+    req = {}
+    for e in events:
+        t, p = names.get(e.get("type")), e.get("params") or {}
+        r = req.setdefault(e["source"]["id"], {"url": None, "method": "GET", "ct": "", "raw": 0, "dec": 0, "sent": False})
+        if t == "URL_REQUEST_START_JOB" and r["url"] is None and "url" in p:
+            r["url"], r["method"] = p["url"], p.get("method", "GET")
+        elif t == "URL_REQUEST_JOB_BYTES_READ":
+            r["raw"] += p.get("byte_count", 0)
+        elif t == "URL_REQUEST_JOB_FILTERED_BYTES_READ":
+            r["dec"] += p.get("byte_count", 0)
+        elif t in SEND_EVENTS:
+            r["sent"] = True
+        elif t == "HTTP_TRANSACTION_READ_RESPONSE_HEADERS":
+            for h in p.get("headers", []):
+                k, _, v = h.partition(":")
+                if k.strip().lower() == "content-type":
+                    r["ct"] = v.strip()
+    out = {"by_host": {}, "by_kind": {}, "posts": collections.Counter()}
+    for r in req.values():
+        if not r["url"] or not r["url"].startswith("http"):
+            continue
+        s = urllib.parse.urlsplit(r["url"])
+        host = s.hostname or "?"
+        for key, table in ((host, out["by_host"]), (kind_of(r["ct"], r["method"]), out["by_kind"])):
+            row = table.setdefault(key, {"n": 0, "network": 0, "cache": 0, "decoded": 0})
+            row["n"] += 1
+            row["network" if r["sent"] else "cache"] += r["raw"]
+            row["decoded"] += r["dec"] or r["raw"]
+        if r["method"] == "POST":
+            out["posts"][host + s.path] += 1
+    out["posts"] = dict(out["posts"])
+    return out
+
+
+def _mb(n):
+    return f"{n / 1e6:.2f}"
+
+
+def render_costs(costs):
+    if costs is None:
+        return "## Cost\n\nnetlog unreadable: no byte counts.\n"
+    lines = ["## Cost", "", "Bytes in MB: network = pre-decode bytes fetched, cache = pre-decode bytes from cache.", "",
+             "| host | requests | network | cache | decoded |", "|---|---|---|---|---|"]
+    for h, v in sorted(costs["by_host"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"]))[:20]:
+        lines.append(f"| `{h}` | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+    lines += ["", "| kind | requests | network | cache | decoded |", "|---|---|---|---|---|"]
+    for k, v in sorted(costs["by_kind"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"])):
+        lines.append(f"| {k} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+    return "\n".join(lines) + "\n"
+
+
 def render(events, requests, cookies, buffer=None, intl=None):
     lines = ["# Tracking observer report", ""]
     if buffer:
