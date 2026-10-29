@@ -550,11 +550,20 @@ def reads_by_script(events):
 def render_channels(channels, costs):
     if not channels:
         return "## Channels\n\nno channels.json (undriven arm): POST counts are in Cost.\n"
-    netlog_posts = sum((costs or {}).get("posts", {}).values())
+    watched = {ep.split("/", 1)[0] for ep in channels["endpoints"]}
+    mine, other = 0, collections.Counter()
+    for ep, n in (costs or {}).get("posts", {}).items():
+        host = ep.split("/", 1)[0]
+        if host in watched:
+            mine += n
+        else:
+            other[host] += n
     lines = ["## Channels", "",
-             f"captured {channels['posts_captured']} of {netlog_posts} POSTs in the netlog "
-             f"({channels['posts_missing']} without a body)", "",
-             "| endpoint | count | bytes | kinds | field | count | classes |", "|---|---|---|---|---|---|---|"]
+             f"captured {channels['posts_captured']} of {mine} POSTs in the netlog "
+             f"({channels['posts_missing']} without a body)", ""]
+    if other:
+        lines += [f"{sum(other.values())} POSTs to other hosts: {', '.join(sorted(other))}", ""]
+    lines += ["| endpoint | count | bytes | kinds | field | count | classes |", "|---|---|---|---|---|---|---|"]
     for ep, v in sorted(channels["endpoints"].items(), key=lambda x: -x[1]["count"]):
         kinds = ", ".join(f"{k} {n}" for k, n in sorted(v["kinds"].items()))
         rows = sorted(v["fields"].items()) or [("", {"count": "", "classes": {}})]

@@ -512,3 +512,12 @@ def test_main_runs_without_a_trace(tmp_path, capsys):
     r.main()
     out = capsys.readouterr().out
     assert "## Cost" in out and "## Channels" in out and "## Surfaces sent" in out
+
+
+def test_coverage_counts_only_posts_to_hosts_the_driver_watched():
+    out = r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2, "www.facebook.com/ajax/bnzai": 1,
+                                           "content-autofill.googleapis.com/v1/pages/x": 5,
+                                           "example.org/collect": 1}})
+    assert "captured 3 of 3 POSTs in the netlog (1 without a body)" in out
+    assert "6 POSTs to other hosts: content-autofill.googleapis.com, example.org" in out
+    assert "/v1/pages" not in out and "/collect" not in out
