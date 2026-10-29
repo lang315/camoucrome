@@ -21,6 +21,18 @@ def run_check(min_methods, sends=12):
     return r["C1 no Runtime.enable, logger alive"][0]
 
 
+def c4(strays, argv=None):
+    """C4 for a result whose argv is exactly the contract's expected set (so only `strays` can fail it)."""
+    argv = argv if argv is not None else ["/x/chrome", *sorted(v.EXPECTED_ARGS)]
+    log = '"method":"X"\n' * 12
+    rep = {"windowKeys": [], "webdriver": False, "initScript": "number", "ownNames": 1, "timesMs": [1.0], "ua": ""}
+    base = {"windowKeys": [], "ownNames": 0, "timesMs": [1.0]}
+    result = {"report": rep, "argv": argv}
+    if strays is not None:
+        result["strays"] = strays
+    return v.check("x", result, log, base)["C4 argv == launcher.json expected set"]
+
+
 class DriversTest(unittest.TestCase):
     def test_old_rows_unchanged(self):
         self.assertEqual([(d[0], d[1]) for d in v.DRIVERS[:6]], OLD)
@@ -80,6 +92,20 @@ class JudgeRowTest(unittest.TestCase):
     def test_rodclient_row_opts_reach_check(self):
         ok, lines = self.judge("go-rodclient", 12, 0)
         self.assertTrue(any("ok   C1" in l for l in lines))
+
+
+
+
+class StrayBrowserTest(unittest.TestCase):
+    def test_a_clean_run_passes_with_or_without_the_strays_field(self):
+        self.assertTrue(c4(0)[0])
+        self.assertTrue(c4(None)[0])  # a probe from before the field
+
+    def test_a_stray_browser_process_fails_c4_and_says_so(self):
+        # 2026-10-29: a stray headless chrome made the probes read ITS argv; refuse instead of comparing it
+        ok, detail = c4(1)
+        self.assertFalse(ok)
+        self.assertIn("stray browser process", detail)
 
 
 if __name__ == "__main__":

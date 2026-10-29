@@ -70,3 +70,11 @@ func split(cmdline string) ([]string, error) {
 	}
 	return argv, nil
 }
+
+// browserArgvs is every main browser process of the executable; here only the first match.
+func browserArgvs(executable string) [][]string {
+	if argv := browserArgv(executable); len(argv) > 0 {
+		return [][]string{argv}
+	}
+	return nil
+}

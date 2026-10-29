@@ -9,10 +9,14 @@ import (
 	"strings"
 )
 
-func browserArgv(executable string) []string {
-	entries, _ := os.ReadDir("/proc")
+// browserCandidates is the argv of every browser (not renderer/gpu) process running executable, read from procRoot.
+// More than one means a stray earlier run is still alive: the probe reports that instead of trusting which one it read
+// (2026-10-29: a stray headless chrome made all three patchright rows of verify_sp6b_driver compare a stock-style argv).
+func browserCandidates(procRoot, executable string) [][]string {
+	var found [][]string
+	entries, _ := os.ReadDir(procRoot)
 	for _, e := range entries {
-		raw, err := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+		raw, err := os.ReadFile(filepath.Join(procRoot, e.Name(), "cmdline"))
 		if err != nil || len(raw) == 0 {
 			continue
 		}
@@ -32,8 +36,10 @@ func browserArgv(executable string) []string {
 			}
 		}
 		if !child {
-			return argv
+			found = append(found, argv)
 		}
 	}
-	return nil
+	return found
 }
+
+func browserArgvs(executable string) [][]string { return browserCandidates("/proc", executable) }
