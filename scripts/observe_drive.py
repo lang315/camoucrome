@@ -155,8 +155,9 @@ def fields(raw, content_type=""):
     return kind, []
 
 
-MQTT_TYPES = {1: "CONNECT", 2: "CONNACK", 3: "PUBLISH", 4: "PUBACK", 8: "SUBSCRIBE", 9: "SUBACK",
-              10: "UNSUBSCRIBE", 11: "UNSUBACK", 12: "PINGREQ", 13: "PINGRESP", 14: "DISCONNECT"}
+MQTT_TYPES = {1: "CONNECT", 2: "CONNACK", 3: "PUBLISH", 4: "PUBACK", 5: "PUBREC", 6: "PUBREL", 7: "PUBCOMP",
+              8: "SUBSCRIBE", 9: "SUBACK", 10: "UNSUBSCRIBE", 11: "UNSUBACK", 12: "PINGREQ", 13: "PINGRESP",
+              14: "DISCONNECT", 15: "AUTH"}
 
 
 def _varint(b, i):
@@ -179,34 +180,49 @@ def _mstr(b, i):
     return b[i + 2:i + 2 + n], i + 2 + n
 
 
-def mqtt_packets(frame):
+def _packet(t, flags, body):
+    p = {"type": MQTT_TYPES[t], "topic": "", "payload": b""}
+    if t == 3:
+        topic, k = _mstr(body, 0)
+        if (flags >> 1) & 3:
+            k += 2
+        p["topic"], p["payload"] = topic.decode("utf-8", "replace"), body[k:]
+    elif t == 1:
+        _, k = _mstr(body, 0)
+        cflags = body[k + 1]
+        _, k = _mstr(body, k + 4)
+        if cflags & 0x04:
+            _, k = _mstr(body, k)
+            _, k = _mstr(body, k)
+        if cflags & 0x80:
+            p["payload"], k = _mstr(body, k)
+    return p
+
+
+def mqtt_parse(frame):
+    """(packets, partial): the whole MQTT packets at the front of a frame, and how many bytes after them are not one. A
+    frame that starts mid-packet, or ends in a cut packet, is not an error: the front is kept and the rest is counted."""
     out, i = [], 0
-    try:
-        while i < len(frame):
+    while i < len(frame):
+        try:
             t, flags = frame[i] >> 4, frame[i] & 15
+            if t not in MQTT_TYPES:
+                break
             n, j = _varint(frame, i + 1)
-            body, i = frame[j:j + n], j + n
-            if len(body) != n or t not in MQTT_TYPES:
-                return []
-            p = {"type": MQTT_TYPES[t], "topic": "", "payload": b""}
-            if t == 3:
-                topic, k = _mstr(body, 0)
-                if (flags >> 1) & 3:
-                    k += 2
-                p["topic"], p["payload"] = topic.decode("utf-8", "replace"), body[k:]
-            elif t == 1:
-                _, k = _mstr(body, 0)
-                cflags = body[k + 1]
-                _, k = _mstr(body, k + 4)
-                if cflags & 0x04:
-                    _, k = _mstr(body, k)
-                    _, k = _mstr(body, k)
-                if cflags & 0x80:
-                    p["payload"], k = _mstr(body, k)
-            out.append(p)
-    except (ValueError, IndexError):
-        return []
-    return out
+            body = frame[j:j + n]
+            if len(body) != n:
+                break
+            out.append(_packet(t, flags, body))
+        except (ValueError, IndexError):
+            break
+        i = j + n
+    return out, len(frame) - i
+
+
+def mqtt_packets(frame):
+    """All packets of a frame that is whole MQTT, else []."""
+    packets, partial = mqtt_parse(frame)
+    return [] if partial else packets
 
 
 PAIRS = {"screen": ("screen.width", "screen.height"), "screen.avail": ("screen.availWidth", "screen.availHeight"),
@@ -284,15 +300,57 @@ def _add_fields(slot, pairs):
 
 
 def _frame_units(fr):
-    """[(topic, field pairs)] of one frame: MQTT packets, else a JSON text frame, else one opaque unit."""
+    """([(topic, field pairs)], partial bytes) of one frame: MQTT packets (a cut or mid-packet remainder is counted as
+    partial), else a JSON text frame, else one opaque unit."""
     raw = _b64(fr["payload_b64"])
     if fr.get("opcode") == 2:
-        pk = mqtt_packets(raw)
-        if pk:
-            return [(p["topic"] or p["type"], fields(p["payload"])[1]) for p in pk]
-        return [("(opaque)", [])]
+        pk, partial = mqtt_parse(raw)
+        if not pk:
+            return [("(opaque)", [])], partial
+        units = [(p["topic"] or p["type"], fields(p["payload"])[1]) for p in pk]
+        return units + ([("(partial)", [])] if partial else []), partial
     kind, f = fields(raw)
-    return [("(text)" if kind != "opaque" else "(opaque)", f)]
+    return [("(text)" if kind != "opaque" else "(opaque)", f)], 0
+
+
+def _length_fit(raw):
+    """How the fixed header's declared remaining length sits against the frame: exact, trailing, short or invalid."""
+    try:
+        n, j = _varint(raw, 1)
+    except (ValueError, IndexError):
+        return "invalid"
+    return "exact" if len(raw) == j + n else "trailing" if len(raw) > j + n else "short"
+
+
+def _first_char_class(raw):
+    c = raw[:1]
+    if not c:
+        return "empty"
+    if c == b"{":
+        return "json-object"
+    if c == b"[":
+        return "json-array"
+    if c.isdigit():
+        return "digit"
+    if c.isalpha():
+        return "alpha"
+    return "space" if c.isspace() else "other"
+
+
+def _count(slot, key):
+    slot[key] = slot.get(key, 0) + 1
+
+
+def _shape(shape, fr, raw):
+    """Structure only: opcode, first byte (hex, binary frames), first character class (text frames) and the length fit.
+    No payload byte beyond the first is kept."""
+    _count(shape["opcodes"], str(fr.get("opcode")))
+    if fr.get("opcode") == 2:
+        if raw:
+            _count(shape["first_byte"], "0x%02x" % raw[0])
+        _count(shape["mqtt_length"], _length_fit(raw) if raw else "invalid")
+    else:
+        _count(shape["first_char"], _first_char_class(raw))
 
 
 def build_channels(requests, frames, arm):
@@ -318,11 +376,15 @@ def build_channels(requests, frames, arm):
     ws = {}
     for fr in frames:
         w = ws.setdefault(endpoint(fr["url"]), {"frames_sent": 0, "frames_received": 0, "bytes_sent": 0,
-                                                "bytes_received": 0, "topics": {}})
-        n = len(_b64(fr["payload_b64"]))
+                                                "bytes_received": 0, "partial_bytes": 0, "topics": {},
+                                                "shape": {"opcodes": {}, "first_byte": {}, "first_char": {}, "mqtt_length": {}}})
+        raw = _b64(fr["payload_b64"])
         w["frames_" + fr["dir"]] += 1
-        w["bytes_" + fr["dir"]] += n
-        for topic, pairs in _frame_units(fr):
+        w["bytes_" + fr["dir"]] += len(raw)
+        _shape(w["shape"], fr, raw)
+        units, partial = _frame_units(fr)
+        w["partial_bytes"] += partial
+        for topic, pairs in units:
             t = w["topics"].setdefault(topic, {"count": 0, "fields": {}})
             t["count"] += 1
             _add_fields(t["fields"], pairs)
@@ -337,7 +399,7 @@ def build_matches(requests, frames, truth):
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1
     for fr in frames:
-        for topic, pairs in _frame_units(fr):
+        for topic, pairs in _frame_units(fr)[0]:
             for path, v in pairs:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(fr["url"]) + " " + topic, path, s, enc, weak)] += 1

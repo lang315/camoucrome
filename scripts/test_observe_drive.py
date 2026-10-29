@@ -410,3 +410,61 @@ def test_without_route_the_telemetry_paths_use_the_event_and_the_fetch(tmp_path)
     rec.close()
     (r,) = _records(tmp_path)
     assert r["via"] == "getRequestPostData"
+
+
+# --- WebSocket frames: tolerant MQTT parse and the structural shape ------------------------------------------------------
+
+def test_mqtt_parse_keeps_whole_packets_at_the_front_and_counts_the_rest():
+    whole = _packet(3, 0, _mqtt_str("/t_ms") + b"{}")
+    pk, partial = d.mqtt_parse(whole + b"\x30\x09abc")             # a trailing partial packet
+    assert [p["topic"] for p in pk] == ["/t_ms"] and partial == 5
+    pk, partial = d.mqtt_parse(whole + _packet(12, 0, b"") + b"\x01")
+    assert [p["type"] for p in pk] == ["PUBLISH", "PINGREQ"] and partial == 1
+
+
+def test_mqtt_parse_a_frame_that_starts_mid_packet_is_all_partial():
+    pk, partial = d.mqtt_parse(b"\x00\x05hello world")
+    assert pk == [] and partial == 13
+    assert d.mqtt_parse(b"") == ([], 0)
+
+
+def test_more_mqtt_types_are_recognised():
+    for t, name in ((5, "PUBREC"), (6, "PUBREL"), (7, "PUBCOMP"), (15, "AUTH")):
+        assert d.mqtt_packets(_packet(t, 0, b"\x00\x01"))[0]["type"] == name
+
+
+def test_mqtt_packets_still_gives_nothing_for_a_frame_with_a_remainder():
+    assert d.mqtt_packets(_packet(3, 0, _mqtt_str("/a") + b"x") + b"\x30\x09abc") == []
+
+
+def _ws_fixture():
+    sock = "wss://gateway.facebook.com/ws/realtime"
+    pub = _packet(3, 0, _mqtt_str("/t_ms") + json.dumps({"payload": CANARY}).encode())
+    return [
+        _frame(sock, "sent", pub),                                          # exact
+        _frame(sock, "received", pub + b"\x30\x09abc"),                     # a whole packet, then a partial one (5 bytes)
+        _frame(sock, "received", b"\x00\x05midpacket"),                     # starts mid-packet (11 bytes)
+        _frame(sock, "received", bytes([0x30, 10]) + b"abc"),               # declared length longer than the frame (5 bytes)
+        _frame(sock, "received", b"\x30\xff\xff\xff\xff\xff"),              # a length that never ends (6 bytes)
+        _frame(sock, "sent", json.dumps({"op": CANARY}).encode(), opcode=1),   # text, JSON object
+        _frame(sock, "received", b"42[\"x\"]", opcode=1),                   # text, digit first
+    ]
+
+
+def test_ws_shape_counts_frames_by_opcode_first_byte_length_and_first_char_class():
+    c = d.build_channels([], _ws_fixture(), "x")
+    ws = c["ws"]["gateway.facebook.com/ws/realtime"]
+    shape = ws["shape"]
+    assert shape["opcodes"] == {"1": 2, "2": 5}
+    assert shape["first_byte"] == {"0x30": 4, "0x00": 1}
+    assert shape["mqtt_length"] == {"exact": 1, "trailing": 2, "short": 1, "invalid": 1}
+    assert shape["first_char"] == {"json-object": 1, "digit": 1}
+    assert ws["topics"]["/t_ms"]["count"] == 2 and ws["topics"]["(partial)"]["count"] == 1
+    assert ws["topics"]["(opaque)"]["count"] == 4 and ws["topics"]["(text)"]["count"] == 1
+    assert ws["partial_bytes"] == 5 + 11 + 5 + 6
+
+
+def test_ws_shape_holds_no_payload_bytes_beyond_the_first_byte():
+    frames = _ws_fixture()
+    text = json.dumps(d.build_channels([], frames, "x")) + json.dumps(d.build_matches([], frames, TRUTH))
+    assert CANARY not in text and "midpacket" not in text
