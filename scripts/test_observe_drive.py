@@ -182,3 +182,23 @@ def test_value_canary_never_reaches_a_leaving_file(tmp_path):
         assert CANARY not in text, name
         assert "100012345678901" not in text, name
     assert json.loads((tmp_path / "channels.json").read_text())["posts_captured"] == 3
+
+
+def test_checkpoint_urls():
+    for u in ("https://www.facebook.com/checkpoint/1501092823525282/", "https://www.facebook.com/login/?next=x",
+              "https://www.facebook.com/recover/initiate/", "https://www.facebook.com/two_step_verification/two_factor/"):
+        assert d.is_checkpoint(u), u
+    assert not d.is_checkpoint("https://www.facebook.com/")
+    assert not d.is_checkpoint("https://www.facebook.com/watch/")
+
+
+def test_host_lists_match_exact_hosts_and_suffixes():
+    assert d.host_in("https://www.facebook.com/ajax/bz", ["www.facebook.com"])
+    assert not d.host_in("https://evil.com/www.facebook.com", ["www.facebook.com"])
+    assert d.host_in("wss://edge-chat.facebook.com/x", [".facebook.com"])
+
+
+def test_module_imports_without_patchright():
+    import subprocess
+    code = "import observe_drive, sys; assert 'patchright' not in sys.modules and 'camoucrome' not in sys.modules"
+    subprocess.run([sys.executable, "-c", code], cwd=pathlib.Path(__file__).resolve().parent, check=True)

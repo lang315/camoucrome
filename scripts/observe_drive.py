@@ -4,13 +4,18 @@ Spec: docs/superpowers/specs/2026-10-29-fb-tracking-map-design.md (local). Runs 
 host in the observe venv (Python 3.12, patchright, the client). Values never leave the host:
 channels.json and matches.json carry names, counts, value classes and surface matches only.
 """
+import argparse
 import base64
 import binascii
 import collections
 import gzip
+import hashlib
 import json
 import pathlib
+import random
 import re
+import sys
+import time
 import urllib.parse
 import zlib
 
@@ -299,3 +304,193 @@ def write_outputs(out_dir, arm):
     truth = json.loads(tp.read_text(encoding="utf-8")) if tp.exists() else {}
     (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm), indent=1, sort_keys=True), encoding="utf-8")
     (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth), indent=1), encoding="utf-8")
+
+
+FORK_CONFIG = {"humanize:enabled": True, "ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
+CHECKPOINT_PARTS = ("/checkpoint", "/login", "/recover", "two_step_verification")
+TRUTH_JS = """async () => {
+  const n = navigator, s = screen, c = n.connection || {}, ua = n.userAgentData;
+  const he = ua ? await ua.getHighEntropyValues(["architecture", "bitness", "model", "platformVersion", "fullVersionList"]) : {};
+  return {"navigator.userAgent": n.userAgent, "navigator.platform": n.platform, "navigator.vendor": n.vendor,
+    "navigator.language": n.language, "navigator.languages": [...n.languages],
+    "navigator.hardwareConcurrency": n.hardwareConcurrency, "navigator.deviceMemory": n.deviceMemory,
+    "navigator.maxTouchPoints": n.maxTouchPoints,
+    "screen.width": s.width, "screen.height": s.height, "screen.availWidth": s.availWidth,
+    "screen.availHeight": s.availHeight, "screen.colorDepth": s.colorDepth,
+    "window.devicePixelRatio": devicePixelRatio, "window.innerWidth": innerWidth, "window.innerHeight": innerHeight,
+    "window.outerWidth": outerWidth, "window.outerHeight": outerHeight,
+    "timezone": Intl.DateTimeFormat().resolvedOptions().timeZone, "timezoneOffset": new Date().getTimezoneOffset(),
+    "connection.effectiveType": c.effectiveType, "connection.rtt": c.rtt, "connection.downlink": c.downlink,
+    "uaData.platform": ua ? ua.platform : null, "uaData.mobile": ua ? ua.mobile : null,
+    "uaData.brands": ua ? ua.brands.map(b => ({brand: b.brand, version: b.version})) : null,
+    "uaData.architecture": he.architecture || null, "uaData.bitness": he.bitness || null, "uaData.model": he.model || null,
+    "uaData.platformVersion": he.platformVersion || null,
+    "uaData.fullVersionList": he.fullVersionList ? he.fullVersionList.map(b => ({brand: b.brand, version: b.version})) : null};
+}"""
+
+
+def is_checkpoint(url):
+    path = urllib.parse.urlsplit(url).path
+    return any(p in path for p in CHECKPOINT_PARTS)
+
+
+def host_in(url, hosts):
+    h = urllib.parse.urlsplit(url).hostname or ""
+    return any(h == x or (x.startswith(".") and h.endswith(x)) for x in hosts)
+
+
+class Recorder:
+    """One CDP session with Network.enable only (never Runtime.enable). Raw data goes to capture/ and resources/."""
+
+    def __init__(self, out, post_hosts, resource_hosts, doc_hosts):
+        self.cap = out / "capture"
+        self.res = out / "resources"
+        for p in (self.cap, self.res / "js", self.res / "html"):
+            p.mkdir(parents=True, exist_ok=True)
+        self.req_f = open(self.cap / "requests.jsonl", "a", encoding="utf-8")
+        self.ws_f = open(self.cap / "ws.jsonl", "a", encoding="utf-8")
+        self.post_hosts, self.resource_hosts, self.doc_hosts = post_hosts, resource_hosts, doc_hosts
+        self.ws_url, self.wanted, self.done = {}, {}, []
+
+    def attach(self, cdp):
+        self.cdp = cdp
+        cdp.send("Network.enable", {"maxPostDataSize": 4 << 20})
+        cdp.on("Network.requestWillBeSent", self.on_request)
+        cdp.on("Network.responseReceived", self.on_response)
+        cdp.on("Network.loadingFinished", lambda e: self.done.append(e["requestId"]) if e["requestId"] in self.wanted else None)
+        cdp.on("Network.webSocketCreated", lambda e: self.ws_url.__setitem__(e["requestId"], e["url"]))
+        cdp.on("Network.webSocketFrameSent", lambda e: self.on_frame(e, "sent"))
+        cdp.on("Network.webSocketFrameReceived", lambda e: self.on_frame(e, "received"))
+
+    def on_request(self, e):
+        r = e["request"]
+        if r.get("method") != "POST" or not host_in(r["url"], self.post_hosts):
+            return
+        entries = r.get("postDataEntries") or []
+        if entries:
+            body = b"".join(base64.b64decode(x.get("bytes", "")) for x in entries)
+        else:
+            body = r.get("postData", "").encode("utf-8") if "postData" in r else None
+        stack = (e.get("initiator") or {}).get("stack") or {}
+        frames = stack.get("callFrames") or []
+        rec = {"url": r["url"], "method": "POST", "content_type": (r.get("headers") or {}).get("Content-Type", ""),
+               "body_b64": base64.b64encode(body).decode() if body else "", "missing": body is None and bool(r.get("hasPostData")),
+               "initiator": frames[0]["url"] if frames else (e.get("initiator") or {}).get("url", "")}
+        self.req_f.write(json.dumps(rec) + "\n")
+
+    def on_response(self, e):
+        t, url = e.get("type"), e["response"]["url"]
+        if (t == "Script" and host_in(url, self.resource_hosts)) or (t == "Document" and host_in(url, self.doc_hosts)):
+            self.wanted[e["requestId"]] = "js" if t == "Script" else "html"
+
+    def on_frame(self, e, direction):
+        url = self.ws_url.get(e["requestId"], "")
+        if not host_in(url, [".facebook.com"]):
+            return
+        r = e["response"]
+        data = r.get("payloadData", "")
+        payload = data if r.get("opcode") == 2 else base64.b64encode(data.encode("utf-8")).decode()
+        self.ws_f.write(json.dumps({"url": url, "dir": direction, "opcode": r.get("opcode"), "payload_b64": payload}) + "\n")
+
+    def drain(self):
+        """Fetches finished resource bodies; called between steps, never inside an event handler."""
+        while self.done:
+            rid = self.done.pop()
+            kind = self.wanted.pop(rid, None)
+            try:
+                b = self.cdp.send("Network.getResponseBody", {"requestId": rid})
+            except Exception:  # noqa: BLE001 - an evicted body is a missing file, not a failed arm
+                continue
+            raw = base64.b64decode(b["body"]) if b.get("base64Encoded") else b["body"].encode("utf-8")
+            ext = "js" if kind == "js" else "html"
+            (self.res / kind / f"{hashlib.sha256(raw).hexdigest()}.{ext}").write_bytes(raw)
+
+    def close(self):
+        self.req_f.close()
+        self.ws_f.close()
+
+
+def read_truth(ctx):
+    page = ctx.new_page()
+    try:
+        page.goto("about:blank")
+        return page.evaluate(TRUTH_JS)
+    finally:
+        page.close()
+
+
+def scroll(page, seconds, rng, rec):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        page.mouse.wheel(0, 100)
+        page.wait_for_timeout(int(rng.uniform(0.6, 2.5) * 1000))
+        rec.drain()
+
+
+def run(a):
+    from patchright.sync_api import sync_playwright
+    from camoucrome.launcher import launch
+    out = pathlib.Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    extra = json.loads(pathlib.Path(a.chrome_args).read_text(encoding="utf-8")) if a.chrome_args else []
+    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","))
+    rc = 0
+    with sync_playwright() as pw:
+        ctx = launch(pw, a.exe, config=FORK_CONFIG if a.fork else None, user_data_dir=a.profile,
+                     headless=a.headless, args=extra)
+        try:
+            # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth
+            (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx)), encoding="utf-8")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            rec.attach(ctx.new_cdp_session(page))
+            vp = page.viewport_size or {"width": 1280, "height": 720}
+            page.mouse.move(vp["width"] / 2, vp["height"] / 2)
+            rng = random.Random()
+            for url in a.url:
+                page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                page.wait_for_timeout(int(a.settle * 1000))
+                if a.expect_session and is_checkpoint(page.url):
+                    print("CHECKPOINT " + endpoint(page.url), flush=True)
+                    rc = 4
+                    break
+                scroll(page, a.wheel, rng, rec)
+                if a.headless:
+                    print("TITLE=" + page.title(), flush=True)  # the dry-run page counts wheel events into document.title
+            page.wait_for_timeout(3000)  # the last beacons of the section leave
+            rec.drain()
+        finally:
+            rec.close()
+            try:
+                ctx.close()
+            finally:
+                write_outputs(out, a.arm)  # a killed arm still leaves a partial channels.json to diagnose
+    return rc
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--arm", required=True)
+    ap.add_argument("--exe", required=True)
+    ap.add_argument("--profile", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--url", action="append", required=True)
+    ap.add_argument("--settle", type=float, default=20)
+    ap.add_argument("--wheel", type=float, default=40)
+    ap.add_argument("--fork", action="store_true")
+    ap.add_argument("--chrome-args")
+    ap.add_argument("--expect-session", action="store_true")
+    ap.add_argument("--headless", action="store_true")
+    ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
+    ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
+    ap.add_argument("--doc-hosts", default="www.facebook.com")
+    a = ap.parse_args(argv)
+    try:
+        return run(a)
+    except Exception as exc:  # noqa: BLE001 - recon.ps1 reads the exit code; the type names the failure
+        print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
