@@ -13,6 +13,15 @@ MIN_TIME_MS = 80
 PERIOD_MS = 1000 / 60
 VISIBLE_MIN_MS = MIN_TIME_MS - 1.25 * PERIOD_MS
 MAX_TIME_MS = 1200
+# Measured, not derived (20 runs of rows 1-2 on the runner's out/Default, 2026-10-29): a 3 px move (clamped to the 80 ms
+# floor) spans 63-67 ms in 19 runs and 52 ms in one, so VISIBLE_MIN_MS (59.2, a quarter frame under the 63.3 expected) failed
+# a healthy run: first and last event are separate delayed tasks and their lateness differs by up to a frame or more.
+# What row 2 guards is "the floor is honoured, not a burst": a burst spans ~0 and the old 40 ms Bezier path ~23, so half
+# the floor (40) separates them from the lowest healthy run with 12 ms to spare.
+SHORT_MOVE_MIN_MS = MIN_TIME_MS / 2
+# The long path is cut at MAX_TIME_MS and its first gap is unposted, so a capped path spans 1183 ms (seen in 1 of 20 runs);
+# a last event one frame late then exceeds 1200. The same 1.25 periods of slack as the floor, on the top side.
+VISIBLE_MAX_MS = MAX_TIME_MS + 1.25 * PERIOD_MS
 # kMaxDurationMs (cursory.h): no path, whatever the bounds, lasts longer.
 HARD_CAP_MS = 10000
 
