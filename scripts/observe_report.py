@@ -482,6 +482,63 @@ def render_costs(costs):
     return "\n".join(lines) + "\n"
 
 
+CPU_NAMES = {"FunctionCall": "run", "EvaluateScript": "run", "v8.compile": "compile"}
+
+
+def _cpu_url(e):
+    a = e.get("args") or {}
+    return (a.get("data") or {}).get("url") or a.get("fileName") or ""
+
+
+def cpu_by_script(events):
+    """ms per script from complete devtools.timeline/v8 slices; a slice inside a counted one (same thread) counts once."""
+    by_thread = collections.defaultdict(list)
+    for e in events:
+        if e.get("ph") == "X" and e.get("name") in CPU_NAMES:
+            by_thread[(e.get("pid"), e.get("tid"))].append(e)
+    out = collections.defaultdict(lambda: {"run": 0.0, "compile": 0.0})
+    for evs in by_thread.values():
+        end = None
+        for e in sorted(evs, key=lambda e: (e["ts"], -e.get("dur", 0))):
+            if end is not None and e["ts"] < end:
+                continue
+            end = e["ts"] + e.get("dur", 0)
+            out[script_label(_cpu_url(e))][CPU_NAMES[e["name"]]] += e.get("dur", 0) / 1000
+    return dict(out)
+
+
+def ram_summary(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    by = collections.defaultdict(list)
+    for s in d.get("samples", []):
+        for t, b in s.get("by_type", {}).items():
+            by[t].append(b)
+    return {t: {"peak_mb": round(max(v) / 2**20, 1), "mean_mb": round(sum(v) / len(v) / 2**20, 1), "samples": len(v)}
+            for t, v in by.items()}
+
+
+def render_cpu(cpu):
+    if not cpu:
+        return "## CPU per script\n\nno devtools.timeline slices (category not recorded).\n"
+    lines = ["## CPU per script", "", "| script | run ms | compile ms |", "|---|---|---|"]
+    for k, v in sorted(cpu.items(), key=lambda x: -(x[1]["run"] + x[1]["compile"]))[:20]:
+        lines.append(f"| `{k}` | {v['run']:.0f} | {v['compile']:.0f} |")
+    return "\n".join(lines) + "\n"
+
+
+def render_ram(ram):
+    if not ram:
+        return "## RAM\n\nno ram.json.\n"
+    lines = ["## RAM (private bytes)", "", "| process | peak MB | mean MB | samples |", "|---|---|---|---|"]
+    for t, v in sorted(ram.items()):
+        lines.append(f"| {t} | {v['peak_mb']} | {v['mean_mb']} | {v['samples']} |")
+    return "\n".join(lines) + "\n"
+
+
 def render(events, requests, cookies, buffer=None, intl=None):
     lines = ["# Tracking observer report", ""]
     if buffer:

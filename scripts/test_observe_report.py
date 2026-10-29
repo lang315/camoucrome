@@ -440,3 +440,27 @@ def test_render_costs_never_prints_a_query(tmp_path):
     out = r.render_costs(r.load_costs(cost_netlog(tmp_path)))
     assert "secret" not in out and "x=1" not in out
     assert "static.xx.fbcdn.net" in out
+
+
+def tl(name, ts, dur, url, tid=1):
+    return {"name": name, "cat": "devtools.timeline", "ph": "X", "pid": 1, "tid": tid, "ts": ts, "dur": dur,
+            "args": {"data": {"url": url}}}
+
+
+def test_cpu_counts_nested_slices_once_and_labels_scripts():
+    A = "https://static.xx.fbcdn.net/rsrc.php/v3/a.js?x=1"
+    ev = [tl("FunctionCall", 0, 5000, A), tl("FunctionCall", 1000, 1000, A),
+          tl("v8.compile", 10000, 2000, A), tl("EvaluateScript", 0, 3000, A, tid=2)]
+    c = r.cpu_by_script(ev)
+    assert c["static.xx.fbcdn.net/rsrc.php/v3/a.js"] == {"run": 8.0, "compile": 2.0}
+
+
+def test_ram_summary_peak_and_mean(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 5, "samples": [
+        {"t": 0, "by_type": {"renderer": 100 * 2**20, "browser": 50 * 2**20}},
+        {"t": 5, "by_type": {"renderer": 300 * 2**20}}]}))
+    s = r.ram_summary(p)
+    assert s["renderer"] == {"peak_mb": 300.0, "mean_mb": 200.0, "samples": 2}
+    assert r.ram_summary(tmp_path / "absent.json") is None
+    assert "renderer" in r.render_ram(s)
