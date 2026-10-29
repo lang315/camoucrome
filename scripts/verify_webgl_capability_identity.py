@@ -15,7 +15,8 @@ import json
 import sys
 import lib_shell
 
-GL = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+# extra_flags replaces lib_shell.SHELL_FLAGS, so the headless platform is named here: without it content_shell needs an X server
+GL = lib_shell.SHELL_FLAGS + ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 
 V_RENDERER = "NVIDIA GeForce RTX 4090"
 V_VENDOR = "Google Inc. (NVIDIA)"

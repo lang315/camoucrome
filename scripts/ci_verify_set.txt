@@ -28,6 +28,8 @@ run verify_sp5b_domain.py
 run verify_navplatform_bucket.py
 run verify_fonts_ii.py
 run verify_d_pointer_touch.py
+run verify_webgl_pairing.py
+run verify_webgl_capability_identity.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
 skip verify_credits.py  # needs generate_about_credits = true in the runner's out/Default/args.gn (433-char placeholder page without it, measured 2026-10-29)
 skip verify_chrome_object.py  # not yet evaluated for the runner
@@ -62,8 +64,6 @@ skip verify_sp7_phonehome.py  # not yet evaluated for the runner
 skip verify_voices_ii.py  # not yet evaluated for the runner
 skip verify_voices_pause.py  # not yet evaluated for the runner
 skip verify_voices_remote.py  # not yet evaluated for the runner
-skip verify_webgl_capability_identity.py  # content_shell exited during startup, code 1, in the baseline row on the runner's out/Default (measured 2026-10-29); cause under investigation
-skip verify_webgl_pairing.py  # content_shell exited during startup, code 1, in the baseline row on the runner's out/Default (measured 2026-10-29); cause under investigation
 skip verify_webgl_profile.py  # not yet evaluated for the runner
 skip verify_webrtc_ii.py  # not yet evaluated for the runner
 skip verify_webrtc_ii_fakeip.py  # not yet evaluated for the runner
