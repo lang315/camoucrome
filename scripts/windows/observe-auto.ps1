@@ -42,14 +42,27 @@ function Get-Gate {
   return $null
 }
 
+# The ledger's UTC start times, or $null when it cannot be read. PowerShell 5.1 hands a JSON array over as ONE
+# object, so it is unrolled here; parsing it element-wise failed with 2+ entries and the cap was skipped (run 20261029-163107).
+function Read-Ledger([string]$path) {
+  try {
+    $json = if (Test-Path $path) { Get-Content -Raw $path | ConvertFrom-Json } else { @() }
+    $utc = [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal
+    return , @(foreach ($x in @($json)) {
+      if ($x -is [datetime]) { $x.ToUniversalTime() } else { [datetime]::Parse("$x", [Globalization.CultureInfo]::InvariantCulture, $utc) }
+    })
+  } catch { return $null }
+}
+
 # account-risk cap (owner ruling 6, 2026-10-29): at most 3 runs a UTC day that include a logged-in arm,
 # 15 minutes apart. The run is recorded when it starts, so a run that ends UNMEASURED still counts
 if (@($Arms | Where-Object { $_ -in $LoggedIn }).Count) {
   New-Item -ItemType Directory -Force (Join-Path $Root 'auto') | Out-Null
   $Ledger = Join-Path $Root 'auto\ledger.json'
   $now = (Get-Date).ToUniversalTime()
-  $utc = [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal
-  $past = @(@(if (Test-Path $Ledger) { Get-Content -Raw $Ledger | ConvertFrom-Json }) | ForEach-Object { [datetime]::Parse("$_", [Globalization.CultureInfo]::InvariantCulture, $utc) })
+  $past = Read-Ledger $Ledger
+  # an unreadable ledger hides the day's count, and the cap protects the owner's real account: refuse
+  if ($null -eq $past) { "RESULT UNMEASURED cap: ledger unreadable"; exit 3 }
   $today = @($past | Where-Object { $_.Date -eq $now.Date })
   if ($today.Count -ge 3) { "RESULT UNMEASURED cap: 3 logged-in runs today (UTC)"; exit 3 }
   $last = $past | Sort-Object | Select-Object -Last 1
