@@ -12,7 +12,8 @@ dependencies = ["patchright==1.62.3", "browserforge==1.2.4"]
 
 [project.optional-dependencies]
 # Item 13 (camoucrome.geoip): the .mmdb reader, and the zone-from-coordinates lookup the DB-IP Lite file needs.
-geoip = ["maxminddb>=2.6", "timezonefinder>=6.5"]
+# tzdata: Windows has no system zone database, so zoneinfo finds no zone at all without it (found by the windows-latest job).
+geoip = ["maxminddb>=2.6", "timezonefinder>=6.5", "tzdata; sys_platform == 'win32'"]
 
 [tool.setuptools.packages.find]
 where = ["."]
