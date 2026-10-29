@@ -325,11 +325,9 @@ def test_exit_ip_makes_no_connection_through_a_non_http_proxy_and_leaks_no_crede
 
 
 def test_an_unreadable_database_is_a_geoip_error_and_a_warning(tmp_path):
-    if os.geteuid() == 0:
-        pytest.skip("root reads any file")
+    # A directory at the path fails to open on every OS; chmod(0) denies nothing on Windows and nothing to root.
     db = tmp_path / "locked.mmdb"
-    db.write_bytes(pathlib.Path(FIXTURE).read_bytes())
-    db.chmod(0)
+    db.mkdir()
     with pytest.raises(geoip.GeoIPError):
         geoip.lookup("192.0.2.5", str(db))
     [msg] = geoip.check_config({"timezone:id": "Asia/Tokyo"}, exit_ip_="192.0.2.5", db=str(db))
@@ -371,3 +369,9 @@ def test_gen_cli_takes_exit_ip_and_db():
     out = subprocess.run([sys.executable, "-m", "camoucrome.gen", "--os", "windows", "--seed", "1", "--exit-ip", "203.0.113.7",
                           "--geoip-db", FIXTURE], cwd=root, capture_output=True, text=True, check=True).stdout
     assert json.loads(out)["config"]["timezone:id"] == "Europe/Paris"
+
+
+def test_the_geoip_extra_brings_tzdata_on_windows():
+    # Windows has no system zone database: without tzdata every ZoneInfo(...) raises there.
+    text = (pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    assert "tzdata; sys_platform == 'win32'" in text
