@@ -39,6 +39,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 import lib_shell
+import sp2b_analysis
 
 # min/maxTime per the brief's own example. steps is the hook's concern, not
 # this script's -- nothing here asserts a step count.
@@ -94,65 +95,65 @@ def run(config):
             lib_shell.shutdown(proc)
 
 
-results = {}
-notes = []
+def main():
+    results = {}
+    notes = []
 
-C1 = "1 un-configured move produces exactly one mousemove"
-C2 = "2 humanize:enabled move produces more than one mousemove, ending at the target"
-C3 = "3 humanize:enabled events trace the path, not just the endpoint"
+    C1 = "1 un-configured move produces exactly one mousemove"
+    C2 = "2 humanize:enabled move produces more than one mousemove, ending at the target"
+    C3 = "3 humanize:enabled events trace the path, not just the endpoint"
 
-events, err = run(None)
-if err is not None:
-    results[C1] = False
-    notes.append(f"criterion 1 session: {type(err).__name__}: {err}")
-else:
-    results[C1] = len(events) == 1
-
-events, err = run(HUMANIZE)
-if err is not None:
-    results[C2] = False
-    results[C3] = False
-    notes.append(f"criteria 2/3 session: {type(err).__name__}: {err}")
-else:
-    n = len(events)
-    results[C2] = (n > 1 and events[-1]["x"] == TARGET[0]
-                   and events[-1]["y"] == TARGET[1])
-    # Criterion 3 asserts the events TRACE THE PATH rather than clustering at
-    # the target. The earlier form -- "inter-event timeStamps are not all
-    # equal" -- was too weak: OS scheduler jitter satisfies it for any n>=3
-    # even for a robotic generator, so it did not discriminate what it
-    # claimed (whole-branch review, Minor). Spatial spread does: a synchronous
-    # burst coalesces to events clustered at the target (x-span ~0), while
-    # real async delivery spreads them from near the start toward the target.
-    # Position-based, so it does not hinge on wall-clock timing precision.
-    # The generator's TIMING non-uniformity is proven separately and stably by
-    # MouseTrajectoriesTest.InterPointTimingIsNotUniform (Task 2).
-    if n < 2:
-        results[C3] = False
-        notes.append("criterion 3: fewer than two events, no path to trace")
+    events, err = run(None)
+    if err is not None:
+        results[C1] = False
+        notes.append(f"criterion 1 session: {type(err).__name__}: {err}")
     else:
-        x_span = max(e["x"] for e in events) - min(e["x"] for e in events)
+        results[C1] = len(events) == 1
+
+    events, err = run(HUMANIZE)
+    if err is not None:
+        results[C2] = False
+        results[C3] = False
+        notes.append(f"criteria 2/3 session: {type(err).__name__}: {err}")
+    else:
+        n = len(events)
+        results[C2] = (n > 1 and events[-1]["x"] == TARGET[0]
+                       and events[-1]["y"] == TARGET[1])
+        # Criterion 3 asserts the events TRACE THE PATH rather than clustering at
+        # the target. The earlier form -- "inter-event timeStamps are not all
+        # equal" -- was too weak: OS scheduler jitter satisfies it for any n>=3
+        # even for a robotic generator, so it did not discriminate what it
+        # claimed (whole-branch review, Minor). Spatial spread does: a synchronous
+        # burst coalesces to events clustered at the target (x-span ~0), while
+        # real async delivery spreads them from near the start toward the target.
+        # The judgement and its measured bar live in sp2b_analysis.py. Position-
+        # based, so it does not hinge on wall-clock timing precision. The
+        # generator's TIMING non-uniformity is proven separately and stably by
+        # MouseTrajectoriesTest.InterPointTimingIsNotUniform (Task 2).
         path_dx = abs(TARGET[0] - PRIME[0])  # 320 for (100 -> 420)
-        results[C3] = x_span > path_dx * 0.3  # > ~96px of the 320px path
-        if not results[C3]:
-            notes.append(f"criterion 3: events clustered, x_span={x_span:.0f} "
-                         f"of path {path_dx:.0f} -- not traced along the path")
+        results[C3], note = sp2b_analysis.traces_path(events, path_dx)
+        if note:
+            notes.append(note)
 
-EXPECTED = 3  # criteria 1, 2, 3
+    EXPECTED = 3  # criteria 1, 2, 3
 
-for name, ok in sorted(results.items()):
-    print(f"{'PASS' if ok else 'FAIL'}  {name}")
+    for name, ok in sorted(results.items()):
+        print(f"{'PASS' if ok else 'FAIL'}  {name}")
 
-# Checked AFTER the print loop, not before -- same reasoning as verify_sp2.py:
-# raising on a count mismatch would discard results already in hand and
-# print nothing.
-if len(results) != EXPECTED:
-    notes.append(
-        f"expected {EXPECTED} criteria in `results`, found {len(results)}: "
-        "a criterion was added or removed without updating EXPECTED")
+    # Checked AFTER the print loop, not before -- same reasoning as verify_sp2.py:
+    # raising on a count mismatch would discard results already in hand and
+    # print nothing.
+    if len(results) != EXPECTED:
+        notes.append(
+            f"expected {EXPECTED} criteria in `results`, found {len(results)}: "
+            "a criterion was added or removed without updating EXPECTED")
 
-for note in notes:
-    print(f"      {note}")
+    for note in notes:
+        print(f"      {note}")
 
-sys.exit(0 if results and len(results) == EXPECTED and all(results.values())
-         else 1)
+    sys.exit(0 if results and len(results) == EXPECTED and all(results.values())
+             else 1)
+
+
+if __name__ == "__main__":
+    main()
