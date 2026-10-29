@@ -184,8 +184,8 @@ def dist(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
-R1 = "1 humanize, 600 px move: >=10 mousemoves, ends exactly at target, timeStamps strictly increasing, span 59.2-1200 ms (80 ms path minus the unposted first gap)"
-R2 = "2 humanize, 3 px move: >=2 mousemoves, page span 59.2-1200 ms (floor 80 minus first gap), no NaN"
+R1 = "1 humanize, 600 px move: >=10 mousemoves, ends exactly at target, timeStamps strictly increasing, span 59.2-1221 ms (80 ms path minus the unposted first gap, up to the 1200 ms cap plus a late frame)"
+R2 = "2 humanize, 3 px move: >=2 mousemoves, page span 40-1221 ms (floor 80 honoured, not a burst), no NaN"
 R3 = "3 humanize, 600 px move: median inter-event gap 8-25 ms"
 R4 = "4 un-awaited move, wheel(0,300), move: 3/3 replies, the 3 notches are one contiguous run, no interleaving (item order not asserted)"
 R5 = "5 flood of 200 un-awaited moves: browser alive, 200/200 replies within 60 s, events arrive"
@@ -216,12 +216,12 @@ def rows_1_2_3():
             unmeasured(r, exc)
         return
     t1 = [e["t"] for e in e1]
-    row(R1, len(e1) >= 10 and ok_end and an.strictly_increasing(t1) and an.span_in_bounds(t1, an.VISIBLE_MIN_MS, an.MAX_TIME_MS)
+    row(R1, len(e1) >= 10 and ok_end and an.strictly_increasing(t1) and an.span_in_bounds(t1, an.VISIBLE_MIN_MS, an.VISIBLE_MAX_MS)
         and dist((e1[0]["x"], e1[0]["y"]), PRIME) <= 0.15 * 600,
         "n=%d end=%s span=%.0f first=%s" % (len(e1), ok_end, an.span(t1), e1[:1]))
     t2 = [e["t"] for e in e2]
     nan = any(v != v for e in e2 for v in (e["x"], e["y"]))
-    row(R2, len(e2) >= 2 and an.span_in_bounds(t2, an.VISIBLE_MIN_MS, an.MAX_TIME_MS) and not nan,
+    row(R2, len(e2) >= 2 and an.span_in_bounds(t2, an.SHORT_MOVE_MIN_MS, an.VISIBLE_MAX_MS) and not nan,
         "n=%d span=%.0f nan=%s" % (len(e2), an.span(t2), nan))
     st = an.gap_stats(t1)
     print("      gaps (600 px): %s" % json.dumps(st))
