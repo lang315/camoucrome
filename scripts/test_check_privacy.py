@@ -100,6 +100,20 @@ def test_binary_file_is_skipped(repo):
     assert cp.main([]) == 0
 
 
+@pytest.mark.parametrize("codec", ["utf-16", "utf-16-le", "utf-16-be"])  # PowerShell 5.1 `*>` and Out-File write UTF-16LE with a BOM
+def test_a_utf16_text_file_is_scanned_not_skipped_as_binary(repo, codec, capsys):
+    commit(repo, "log.txt", "line one\nnear Plantville on DESKTOP-AB12CD3\n".encode(codec))
+    assert cp.main([]) == 1
+    out = capsys.readouterr().out
+    assert "log.txt:2: <host-place>" in out and "Plantville" not in out
+
+
+def test_a_clean_utf16_file_passes_and_a_real_binary_is_still_skipped(repo):
+    commit(repo, "log.txt", "nothing here\n".encode("utf-16"))
+    commit(repo, "b.bin", bytes(range(256)) * 40 + "near Plantville".encode("utf-16-le"))
+    assert cp.main([]) == 0
+
+
 def test_staged_checks_the_index(repo):
     commit(repo, "a.md", "clean\n")
     (repo / "a.md").write_text("near Plantville\n")

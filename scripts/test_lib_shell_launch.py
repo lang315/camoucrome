@@ -208,6 +208,58 @@ try:
 finally:
     shutil.rmtree(caller_profile, ignore_errors=True)
 
+# 3b. The launch's stderr file (audit 2026-10-29, finding 18) and a reused profile's DevToolsActivePort.
+#     launch() opened STDERR_LOG and never closed it: a long run (hundreds of launches) hit the
+#     1024 file limit, reported as a verify failure. Popen duplicates the descriptor, so the
+#     parent closes it right after Popen, and in the branch where Popen raises.
+def launch_with_recorded_stderr(popen):
+    opened = []
+
+    def recording_open(path, mode="r", *a, **k):
+        f = open(path, mode, *a, **k)
+        if path == lib_shell.STDERR_LOG and "a" in mode:
+            opened.append(f)
+        return f
+
+    real_popen = lib_shell.subprocess.Popen
+    lib_shell.subprocess.Popen = popen
+    lib_shell.open = recording_open  # shadows the builtin for lib_shell only
+    try:
+        lib_shell.launch(None, user_data_dir=reused_profile)
+    except (RuntimeError, OSError):
+        pass
+    finally:
+        lib_shell.subprocess.Popen = real_popen
+        del lib_shell.open
+    return opened
+
+
+def raising_popen(argv, env=None, stdout=None, stderr=None):
+    raise OSError("no such binary")
+
+
+seen_stale = []
+reused_profile = tempfile.mkdtemp(prefix="camoucrome-test-reused-")
+try:
+    stale = os.path.join(reused_profile, "DevToolsActivePort")
+    with open(stale, "w") as f:
+        f.write("9\n/devtools/browser/old\n")
+
+    def watching_popen(argv, env=None, stdout=None, stderr=None):
+        seen_stale.append(os.path.exists(stale))
+        return FakeProc(argv, env)
+
+    opened = launch_with_recorded_stderr(watching_popen)
+    check("launch closes the stderr file once Popen has it",
+          len(opened) == 1 and opened[0].closed, f"opened {len(opened)}, closed {[f.closed for f in opened]}")
+    check("a stale DevToolsActivePort in a reused profile is gone before the browser starts",
+          seen_stale == [False], f"existed at Popen: {seen_stale}")
+    opened = launch_with_recorded_stderr(raising_popen)
+    check("launch closes the stderr file when Popen raises",
+          len(opened) == 1 and opened[0].closed, f"opened {len(opened)}, closed {[f.closed for f in opened]}")
+finally:
+    shutil.rmtree(reused_profile, ignore_errors=True)
+
 # 4. Where the binaries are. _binaries() is the single place that resolves the
 #    two binary paths, so these cases are the whole surface for THOSE two; the
 #    rest of the box's layout is layout()'s, checked in section 5. They pass
