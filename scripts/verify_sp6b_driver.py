@@ -252,9 +252,13 @@ def check(label, result, log, base, min_methods=MIN_METHODS):
         expected |= {CONTRACT["launch"]["proxy_arg"].format(server=PROXY_URL),
                      CONTRACT["launch"]["proxy_bypass_arg"].format(bypass="<-loopback>")}
     unexpected, absent = argv_diff(got, expected, self_added)
+    # The probe reads the browser's argv from the process table; a second main process of the executable (a stray earlier
+    # run) makes that read a guess, so it is refused, not compared (2026-10-29: three patchright rows compared a stray's argv).
+    strays = result.get("strays", 0)
     rows["C4 argv == launcher.json expected set"] = (
-        bool(argv) and not hits and not unexpected and not absent,
-        f"hits={hits} unexpected={unexpected[:6]}{'...' if len(unexpected) > 6 else ''} absent={absent} argc={len(argv)}")
+        bool(argv) and not strays and not hits and not unexpected and not absent,
+        f"hits={hits} unexpected={unexpected[:6]}{'...' if len(unexpected) > 6 else ''} absent={absent} argc={len(argv)}"
+        + (f" stray browser process: {strays} other main process(es) of the executable, argv not trusted" if strays else ""))
     # Measured 2026-09-10: BOTH drivers run a user's add_init_script in the
     # main world (typeof number) -- by design, that is what the caller asked
     # for. What must not appear is anything of the driver's own: own-name

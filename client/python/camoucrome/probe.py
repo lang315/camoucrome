@@ -47,18 +47,16 @@ def windows_argv(executable):
     return []
 
 
-def browser_argv(executable):
-    """argv of the browser (not renderer/gpu) process running `executable`,
-    read from /proc on Linux and Win32_Process on Windows; empty elsewhere."""
-    if os.name == "nt":
-        return windows_argv(executable)
-    if not os.path.isdir("/proc"):
+def proc_candidates(proc_root, executable):
+    """argv of every browser (not renderer/gpu) process running `executable` in a /proc-style directory. More than one
+    means a stray earlier run is still alive: the caller must not trust which one it reads (2026-10-29: a stray headless
+    chrome made all three patchright rows of verify_sp6b_driver compare a stock-style argv)."""
+    if not os.path.isdir(proc_root):
         return []
-    for pid in os.listdir("/proc"):
-        if not pid.isdigit():
-            continue
+    found = []
+    for pid in sorted((p for p in os.listdir(proc_root) if p.isdigit()), key=int):
         try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
+            with open(os.path.join(proc_root, pid, "cmdline"), "rb") as f:
                 argv = f.read().split(b"\0")[:-1]
         except OSError:
             continue
@@ -68,8 +66,22 @@ def browser_argv(executable):
             argv = argv[0].split(b" ")
         if argv and argv[0].decode(errors="replace") == executable and \
                 not any(a.startswith(b"--type=") for a in argv):
-            return [a.decode(errors="replace") for a in argv]
-    return []
+            found.append([a.decode(errors="replace") for a in argv])
+    return found
+
+
+def browser_candidates(executable):
+    """proc_candidates over /proc on Linux; on Windows Win32_Process, the first match only (one candidate)."""
+    if os.name == "nt":
+        argv = windows_argv(executable)
+        return [argv] if argv else []
+    return proc_candidates("/proc", executable)
+
+
+def browser_argv(executable):
+    """The first candidate's argv, [] when there is none."""
+    found = browser_candidates(executable)
+    return found[0] if found else []
 
 
 HOST_GL_JS = """() => { const g = document.createElement('canvas').getContext('webgl');
@@ -175,11 +187,13 @@ def main():
             # A page that reports from a worker writes #o after load; wait for it.
             page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=30000)
             report = page.locator("#o").text_content()
-            argv = browser_argv(a.executable)
+            candidates = browser_candidates(a.executable)
+            argv = candidates[0] if candidates else []
         finally:
             ctx.close()
     json.dump({"driver": f"python-{a.driver}", "module": module,
-               "report": json.loads(report), "argv": argv}, sys.stdout)
+               "report": json.loads(report), "argv": argv,
+               "strays": max(len(candidates) - 1, 0)}, sys.stdout)
 
 
 if __name__ == "__main__":
