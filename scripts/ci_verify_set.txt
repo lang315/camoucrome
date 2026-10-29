@@ -75,3 +75,4 @@ skip verify_window_position.py  # not yet evaluated for the runner
 skip verify_windows_client.py  # Windows host only (windows_verify_set.py)
 skip verify_windows_fonts.py  # Windows host only (windows_verify_set.py)
 skip verify_windows_sandbox_env.py  # Windows host only (windows_verify_set.py)
+skip verify_observe_drive.py  # dry run of the Windows-host driver against a local page; run by hand on the box (not yet evaluated for the runner)
