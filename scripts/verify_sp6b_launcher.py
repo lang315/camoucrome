@@ -26,7 +26,7 @@ import sys
 import tempfile
 import threading
 
-from lib_shell import CHROME as EXE, layout, restore_display_env
+from lib_shell import CHROME as EXE, layout, restore_display_env, x_server_answers
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 restore_display_env()  # L4 is a headed launch on the box: lib_shell dropped the display variables so a hand run matches CI
@@ -112,7 +112,7 @@ def make_cert(d):
 
 
 def main():
-    results, notes = {}, []
+    results, notes, unmeasured = {}, [], {}
     url, srv = serve()
     work = tempfile.mkdtemp(prefix="camoucrome-launcher-")
 
@@ -144,9 +144,17 @@ def main():
         notes.append(f"L3: without={out_red is not None} with={out is not None} {log[-200:] if out is None else ''}")
     ssrv.shutdown()
 
-    out, log = probe(url, headed=True)
     L4 = "L4 headed launch starts; argv == contract set minus the headless flags"
-    if out is None:
+    if not x_server_answers(os.environ.get("DISPLAY")):
+        # a headed chrome needs an X server that answers: without one it waits 30 s and exits (the box's WSLg X0 on
+        # 2026-10-29 accepted connections and never spoke). That is a missing premise, not a launcher failure.
+        unmeasured[L4] = f"no X server answers on DISPLAY={os.environ.get('DISPLAY')!r}"
+        out = None
+    else:
+        out, log = probe(url, headed=True)
+    if L4 in unmeasured:
+        pass
+    elif out is None:
         results[L4] = False
         notes.append(f"L4: {log[-300:]}")
     else:
@@ -171,12 +179,15 @@ def main():
 
     for name, ok in results.items():
         print(f"{'PASS' if ok else 'FAIL'}  {name}")
+    for name, why in unmeasured.items():
+        print(f"UNMEASURED  {name}: {why}")
     for n in notes:
         print("  " + n)
     ok = all(results.values())
-    print(f"{sum(results.values())} PASS {len(results) - sum(results.values())} FAIL")
-    print("ALL_PASS" if ok else "FAIL")
-    sys.exit(0 if ok else 1)
+    print(f"{sum(results.values())} PASS {len(results) - sum(results.values())} FAIL {len(unmeasured)} UNMEASURED")
+    # a FAIL row wins over UNMEASURED; UNMEASURED is exit 3 (as the GPU gate), never PASS and never FAIL
+    print("ALL_PASS" if ok and not unmeasured else "UNMEASURED" if ok else "FAIL")
+    sys.exit(1 if not ok else 3 if unmeasured else 0)
 
 
 if __name__ == "__main__":
