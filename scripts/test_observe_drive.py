@@ -436,6 +436,11 @@ def test_more_mqtt_types_are_recognised():
         assert d.mqtt_packets(_packet(t, 0, b"\x00\x01"))[0]["type"] == name
 
 
+def test_a_packet_shorter_than_its_type_can_be_is_not_a_packet():
+    assert d.mqtt_parse(b"\x20\x00") == ([], 2) and d.mqtt_parse(b"\x60\x00") == ([], 2)
+    assert d.mqtt_parse(b"\xc0\x00")[0][0]["type"] == "PINGREQ"
+
+
 def test_mqtt_packets_still_gives_nothing_for_a_frame_with_a_remainder():
     assert d.mqtt_packets(_packet(3, 0, _mqtt_str("/a") + b"x") + b"\x30\x09abc") == []
 

@@ -169,6 +169,10 @@ MQTT_TYPES = {1: "CONNECT", 2: "CONNACK", 3: "PUBLISH", 4: "PUBACK", 5: "PUBREC"
               14: "DISCONNECT", 15: "AUTH"}
 
 
+# the least body each type can have; a shorter one is not a packet (an empty CONNACK is the gateway's own byte pattern, not MQTT)
+MQTT_MIN_BODY = {1: 10, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 3, 9: 3, 10: 3, 11: 2}
+
+
 def _varint(b, i):
     mult, val = 1, 0
     while True:
@@ -219,7 +223,7 @@ def mqtt_parse(frame):
                 break
             n, j = _varint(frame, i + 1)
             body = frame[j:j + n]
-            if len(body) != n:
+            if len(body) != n or n < MQTT_MIN_BODY.get(t, 0):
                 break
             out.append(_packet(t, flags, body))
         except (ValueError, IndexError):
