@@ -359,15 +359,50 @@ def archive_with_stamp(path, stamp_bytes):
     return path
 
 
-@pytest.mark.parametrize("embedded,ok", [("given", True), (b'{"changeset_commit": "old"}', False), (None, False)])
-def test_platform_archive_must_embed_a_given_stamp(monkeypatch, stamps, tmp_path, embedded, ok):
+@pytest.mark.parametrize("embedded", [b'{"changeset_commit": "old"}', None])
+def test_platform_archive_must_embed_a_given_stamp(monkeypatch, stamps, tmp_path, embedded):
+    z = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.zip", embedded)
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+
+
+def both_archives(tmp_path, stamps):
     paths, _ = stamps
-    sb = paths[1].read_bytes() if embedded == "given" else embedded
-    z = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.zip", sb)
-    if ok:
-        assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(z))) == 0
-    else:
-        refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+    return [archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-{plat}.zip", p.read_bytes())
+            for plat, p in zip(("windows-x64", "linux-x64"), paths)]
+
+
+def test_one_archive_per_stamp_proceeds(monkeypatch, stamps, tmp_path):
+    a, b = both_archives(tmp_path, stamps)
+    assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(a), "--asset", str(b))) == 0
+
+
+def test_refuses_a_stamp_with_no_archive(monkeypatch, stamps, tmp_path, capsys):
+    # --stamp win --stamp linux with only one platform archive built a one-platform draft before
+    a, _ = both_archives(tmp_path, stamps)
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(a)))
+    assert "no archive embeds" in capsys.readouterr().err
+
+
+def test_refuses_two_archives_of_one_stamp(monkeypatch, stamps, tmp_path):
+    paths, _ = stamps
+    a = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.zip", paths[0].read_bytes())
+    b = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64-again.zip", paths[0].read_bytes())
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(a), "--asset", str(b)))
+
+
+def test_refuses_a_tar_header_holding_a_term(monkeypatch, stamps, tmp_path, capsys):
+    # the build account's name rides in uname/gname, which the member data scan never reads
+    src = tmp_path / "m.bin"
+    src.write_bytes(b"clean")
+    t = tmp_path / "bad.tar.xz"
+    with tarfile.open(t, "w:xz") as tf:
+        ti = tf.gettarinfo(src, arcname="camoucrome/m.bin")
+        ti.uname = TERM
+        with open(src, "rb") as f:
+            tf.addfile(ti, f)
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(t)))
+    err = capsys.readouterr().err
+    assert "bad.tar.xz" in err and TERM.lower() not in err.lower()
 
 
 def test_npm_tarball_is_not_a_platform_archive(monkeypatch, stamps, tmp_path):
