@@ -62,7 +62,7 @@ jobs:
           rsync -a settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
           rsync -a scripts/ "$CLIENT/scripts/"
-          cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py "$VERIFY/"
+          cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
