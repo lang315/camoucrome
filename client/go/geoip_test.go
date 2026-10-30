@@ -145,6 +145,16 @@ func TestGenArgsCarryHostDisplay(t *testing.T) {
 	}
 }
 
+func TestGenArgsCarryLightLast(t *testing.T) {
+	got := strings.Join(genArgs(GenArgs{OS: "windows", Seed: intp(7), HostDisplay: `{"gamut":"srgb"}`, Light: true}), " ")
+	if got != `-m camoucrome.gen --os windows --seed 7 --host-display={"gamut":"srgb"} --light` {
+		t.Fatalf("args = %q", got)
+	}
+	if strings.Contains(strings.Join(genArgs(GenArgs{OS: "windows"}), " "), "--light") {
+		t.Fatal("--light without Light")
+	}
+}
+
 func TestParseGeneratedToleratesWarnings(t *testing.T) {
 	raw := []byte(`{"config":{"a":1},"launch":{"window":[1,2],"dpr":1},"warnings":["host GPU unknown"]}`)
 	if _, err := ParseGenerated(raw); err != nil {
