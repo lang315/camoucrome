@@ -293,6 +293,37 @@ Spec `docs/superpowers/specs/2026-10-30-fb-unlink-design.md`.
   sub-arm that did not measure, or fewer than 3 + 3 profiles, is
   `UNMEASURED unlink: ...` (exit 3).
 
+**Light mode pair (part 3, 2026-10-30).**
+Spec `docs/superpowers/specs/2026-10-30-fb-light-design.md` (its `3l` is
+`lw` here: PowerShell reads `3l` as a long). The pair is two logged-in runs,
+so it uses 2 of the day's 3 in the ledger. Launch both detached.
+1. `-Arms 3w -KeepWarm`: the baseline, today's state. If the arm measured and
+   no checkpoint was seen, the profile copy moves to `auto\warm\<run id>`.
+2. The owner turns "Autoplay videos" Off on the account, by hand, from any
+   device. Tooling never clicks a setting.
+3. At least 15 minutes after run 1: `-Arms lw -WarmFrom <run 1 id>`. It
+   browses like 3w from the warm copy (wheel and URL only), then
+   `observe_light.py` compares `auto\<run 1 id>\arm3w` with its own `armlw`
+   and writes `light.json` and `light.md`.
+- `-Light` (with `-Arms 'lf,lc'`) makes the `lf` identity draw DPR 1 only.
+  It is refused (`UNMEASURED -Light needs arm lf`) without an `lf` arm;
+  `-KeepWarm` is refused without arm `3w`.
+- `lw` without `-WarmFrom <run id>`, or with an id that has no warm copy, is
+  `UNMEASURED` (exit 3). All refusals and the sweep run before the ledger
+  write, so a refused run does not count.
+- The `WARM` lines: `WARM kept <id>`; `WARM not kept: checkpoint`,
+  `WARM not kept: arm3w did not measure` or `WARM not kept: no profile-arm3w`;
+  `WARM deleted <id>` (the `lw` run's `finally`); `WARM delete FAILED <id>
+  (delete it by hand)`; `WARM deleted <n> stale` (a start-of-run sweep of
+  copies older than 24 hours).
+- The warm copy is a logged-in profile. It stays under
+  `D:\camou-win\observe\auto\warm\`, is never read for values and never
+  copied off the host.
+- Only `light.json` and `light.md` leave the host, after
+  `check_privacy.py --file`. They hold kinds, request counts, MB, RAM per
+  process type, CPU seconds, URL paths and load milliseconds. A cold cache in
+  `lw` is `UNMEASURED light: ... cache cold`, not a saving.
+
 Host-only files and the cleanup: `capture\` (request bodies, WebSocket
 payloads) and `resources\html\` (document HTML) are deleted when the run
 finishes, together with the profile copies and `cookies.db`. With

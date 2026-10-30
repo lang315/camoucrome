@@ -1,11 +1,11 @@
 # Recon launcher for the camoucrome observer build. Headed, no CDP.
 # Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
-# Driven arms (1f 1c 3w 4a lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>]
+# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
   [ValidateSet('facebook','instagram','threads')][string]$Site,
-  [ValidateSet('1','2','3','4','1f','1c','3w','4a','lf1','lf2','lf3','lc1','lc2','lc3')][string]$Arm,
+  [ValidateSet('1','2','3','4','1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3')][string]$Arm,
   [switch]$Force,
   [switch]$Intl,
   [switch]$PostOnly,
@@ -20,7 +20,8 @@ param(
   [string]$Exe,
   [switch]$Cpu,
   [switch]$ExpectSession,
-  [int]$Seed = 0
+  [int]$Seed = 0,
+  [switch]$Light
 )
 $ErrorActionPreference = 'Stop'
 $Root   = 'D:\camou-win\observe'
@@ -81,7 +82,7 @@ if ($PostOnly) {
 }
 
 if (-not $Site -or -not $Arm) { throw '-Site and -Arm are required' }
-$driven = $Arm -in '1f','1c','3w','4a','lf1','lf2','lf3','lc1','lc2','lc3'
+$driven = $Arm -in '1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3'
 if ($driven -and (-not $Driver -or -not $Out)) { throw "arm $Arm is driven: needs -Driver and -Out (unattended only)" }
 if ($driven -and -not $Url) { throw "arm $Arm needs -Url" }
 $script:DriveRc = $null
@@ -89,7 +90,7 @@ $script:DriveRc = $null
 $siteUrl = @{ facebook = 'https://www.facebook.com/'; instagram = 'https://www.instagram.com/'; threads = 'https://www.threads.com/' }[$Site]
 if ($Out) {
   if (-not $Wait) { throw '-Out is for unattended runs; pass -Wait' }
-  if ($Arm -in '3','3w','4a' -and -not $FromProfile) { throw "unattended arm $Arm needs -FromProfile" }
+  if ($Arm -in '3','3w','4a','lw' -and -not $FromProfile) { throw "unattended arm $Arm needs -FromProfile" }
   $Dir     = Join-Path $Out "arm$Arm"
   $Profile = Join-Path $Out "profile-arm$Arm"
   if ((Test-Path $Dir) -or (Test-Path $Profile)) { throw "$Dir or $Profile exists; -Out wants a fresh run dir" }
@@ -127,6 +128,7 @@ $what = @{
   '1f' = 'ARM 1f driven, logged out: landing page, wheel only.'
   '1c' = 'ARM 1c driven, stock Chrome, logged out: landing page, wheel only.'
   '3w' = 'ARM 3w driven: feed, watch, marketplace, messages, profile by URL, wheel only.'
+  'lw' = 'ARM lw driven, light mode: arm 3w''s URLs from a warm profile copy, wheel only.'
   '4a' = 'ARM 4a driven: one third-party page with the Meta Pixel, logged-in profile copy, wheel only.'
   'lf1' = 'ARM lf1..3 driven, fork with a generated identity, logged out: landing page, wheel only.'
   'lf2' = 'ARM lf1..3 driven, fork with a generated identity, logged out: landing page, wheel only.'
@@ -167,9 +169,10 @@ if ($driven) {
   $da = @((Join-Path $Root 'observe_drive.py'), '--arm', $Arm, '--exe', $exeUsed, '--profile', $Profile, '--out', $Dir,
           '--chrome-args', (Join-Path $Dir 'chrome-args.json'))
   foreach ($u in $Url) { $da += @('--url', $u) }
-  if ($Arm -eq '3w') { $da += @('--settle', '15', '--wheel', '60') } else { $da += @('--settle', '20', '--wheel', '40') }
+  if ($Arm -in '3w','lw') { $da += @('--settle', '15', '--wheel', '60') } else { $da += @('--settle', '20', '--wheel', '40') }
   if (-not $Exe) { $da += '--fork' }
   if ($Seed) { $da += @('--identity-seed', "$Seed") }
+  if ($Light) { $da += '--light' }
   if ($ExpectSession) { $da += '--expect-session' }
   # PS 5.1 Start-Process joins -ArgumentList with spaces and quotes nothing ('C:\Program Files\...')
   $da = $da | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
