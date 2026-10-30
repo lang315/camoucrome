@@ -40,6 +40,8 @@ $Fb    = 'https://www.facebook.com'
 $Urls  = @{ '1f' = @("$Fb/"); '1c' = @("$Fb/"); '3w' = @("$Fb/", "$Fb/watch/", "$Fb/marketplace/", "$Fb/messages/", "$Fb/me/") }
 $Driven   = @('1f', '1c', '3w', '4a')
 foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6; $Urls[$u] = @("$Fb/") }
+# a seeded fork arm can take 180 s for its browser to appear + 90 s wait + 60 s close + 60 s driver exit + post, over 6 min
+foreach ($u in 'lf1', 'lf2', 'lf3') { $Limit[$u] = 8 }
 $Driven += $Unlink
 $LoggedIn = @('3', '3w', '4a')
 $Discovery = Join-Path $Root 'baseline-empty.json'   # contains {}
