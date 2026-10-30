@@ -150,6 +150,8 @@ try {
       if ($a -eq '1c' -or $a -like 'lc*') { $cmd += " -Exe '$Stock'" }
       if ($SeedOf[$a]) { $cmd += " -Seed $($SeedOf[$a])" }
       if ($Light -and $a -like 'lf*') { $cmd += ' -Light' }
+      # request interception turns the HTTP cache off, so both pair arms run without the route (their /ajax/bz bodies are not recorded)
+      if ($a -eq 'lw' -or ($a -eq '3w' -and $KeepWarm)) { $cmd += ' -NoRoute' }
       if ($a -in '1f', '3w', '4a', 'lw') { $cmd += ' -Cpu' }
       if ($a -in '3w', '4a', 'lw') { $cmd += ' -ExpectSession' }
     } elseif ($CpuAll) { $cmd += ' -Cpu' }
