@@ -4,6 +4,7 @@
 # Tracking-map arms (2026-10-29): -Arms 1,3,1f,1c,3w,4a,lf,lc. 1f 1c 3w 4a lf lc run observe_drive.py (wheel only).
 # lf lc (logged out, so outside the ledger): three profiles each, then observe_unlink.py; -UnlinkSeeds '1,1,1' is the RED.
 # Arm names must not read as numbers (1d is a decimal, 1s a short in PowerShell 7): a list typed in a PowerShell session still wants quotes.
+# Light mode (part 3, 2026-10-30): -Light for lf; -Arms 3w -KeepWarm, then -Arms lw -WarmFrom <run id> 15+ min later.
 # -KeepCapture keeps capture\ and resources\html\ for on-host analysis (the default deletes them).
 param(
   [string]$Backup = 'D:\camou-win\observe\backup\fb-login-20261017',
@@ -15,6 +16,9 @@ param(
   [switch]$CpuAll,
   [switch]$KeepCapture,
   [string]$UnlinkSeeds = '1,2,3',
+  [switch]$Light,
+  [switch]$KeepWarm,
+  [string]$WarmFrom,
   [string]$FromProfileOverride
 )
 # Continue, not Stop: PS 5.1 turns native stderr (quser with nobody logged on, the judge's
@@ -23,27 +27,42 @@ $ErrorActionPreference = 'Continue'
 $Root = 'D:\camou-win\observe'
 $Ri = Join-Path $Root 'run-interactive.ps1'
 $Arms = @($Arms | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
-$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lf', 'lc' })
+$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lw', 'lf', 'lc' })
 if ($bad.Count) { "UNMEASURED unknown arm: $($bad -join ' ')"; exit 3 }
 # unlink arms (part 2, 2026-10-30): lf and lc expand to one sub-arm per profile; lfN gets seed N of -UnlinkSeeds
 $Seeds = @("$UnlinkSeeds" -split ',' | Where-Object { $_ })
 if ($Seeds.Count -ne 3 -or @($Seeds | Where-Object { $_ -notmatch '^[1-9][0-9]*$' }).Count) { "UNMEASURED -UnlinkSeeds wants three whole numbers, got '$UnlinkSeeds'"; exit 3 }
+# light mode (part 3): refusals and the sweep run before the ledger write, so a refused run never touches auto\ledger.json
+$WarmRoot = Join-Path $Root 'auto\warm'
+if ('lw' -in $Arms) {
+  if ($WarmFrom -notmatch '^\d{8}-\d{6}$') { "UNMEASURED arm lw needs -WarmFrom <run id>, got '$WarmFrom'"; exit 3 }
+  if (-not (Test-Path (Join-Path $WarmRoot $WarmFrom))) { "UNMEASURED arm lw: no warm copy $WarmFrom"; exit 3 }
+}
+if ($KeepWarm -and '3w' -notin $Arms) { "UNMEASURED -KeepWarm needs arm 3w"; exit 3 }
+if ($Light -and -not @($Arms | Where-Object { $_ -like 'lf*' }).Count) { "UNMEASURED -Light needs arm lf"; exit 3 }
+# the 24-hour sweep (spec section 7): a warm copy outlives no pair; it never reaches the copy this run uses
+if (Test-Path $WarmRoot) {
+  $stale = @(Get-ChildItem $WarmRoot -Directory | Where-Object { $_.Name -ne $WarmFrom -and $_.CreationTimeUtc -lt (Get-Date).ToUniversalTime().AddHours(-24) })
+  $stale | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  if ($stale.Count) { "WARM deleted $($stale.Count) stale" }
+}
 $Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
 $Unlink = @('lf1', 'lf2', 'lf3', 'lc1', 'lc2', 'lc3')
 $SeedOf = @{ 'lf1' = $Seeds[0]; 'lf2' = $Seeds[1]; 'lf3' = $Seeds[2] }
 $UnlinkOk = @{}
-$Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
-$Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6 }
+$Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90; 'lw' = 480 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
+$Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6; 'lw' = 12 }
 $Venv  = Join-Path $Root 'venv\Scripts\python.exe'
 $Stock = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 $Fb    = 'https://www.facebook.com'
 $Urls  = @{ '1f' = @("$Fb/"); '1c' = @("$Fb/"); '3w' = @("$Fb/", "$Fb/watch/", "$Fb/marketplace/", "$Fb/messages/", "$Fb/me/") }
-$Driven   = @('1f', '1c', '3w', '4a')
+$Urls['lw'] = $Urls['3w']
+$Driven   = @('1f', '1c', '3w', '4a', 'lw')
 foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6; $Urls[$u] = @("$Fb/") }
 # a seeded fork arm can take 180 s for its browser to appear + 90 s wait + 60 s close + 60 s driver exit + post, over 6 min
 foreach ($u in 'lf1', 'lf2', 'lf3') { $Limit[$u] = 8 }
 $Driven += $Unlink
-$LoggedIn = @('3', '3w', '4a')
+$LoggedIn = @('3', '3w', '4a', 'lw')
 $Discovery = Join-Path $Root 'baseline-empty.json'   # contains {}
 
 function Get-Gate {
@@ -92,6 +111,7 @@ New-Item -ItemType Directory -Force $run | Out-Null
 $env:PYTHONUTF8 = '1'
 $worst = 0
 $checkpoint = $false
+$WarmOk = $false
 # the report args recon.ps1 builds, rebuilt once ram.json exists
 function Get-ReportArgs([string]$d) {
   $trace = Join-Path $d 'trace.json'
@@ -120,14 +140,18 @@ try {
     # the arm name is quoted anyway: an unquoted 1d was read as the decimal 1 (runs 20261029-145829 and -155547)
     $cmd = "& $Root\recon.ps1 -Site facebook -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
-    if ($a -in '3', '3w', '4a') { $cmd += ' -FromProfile ' + $(if ($FromProfileOverride) { $FromProfileOverride } else { $Backup }) }
+    if ($a -in '3', '3w', '4a', 'lw') {
+      $src = if ($a -eq 'lw') { Join-Path $WarmRoot $WarmFrom } elseif ($FromProfileOverride) { $FromProfileOverride } else { $Backup }
+      $cmd += " -FromProfile $src"
+    }
     if ($drivenArm) {
       # no double quotes: the command is passed through a nested powershell -File call
       $cmd += " -Driver '$Venv' -Url @(" + (($armUrls | ForEach-Object { "'$_'" }) -join ',') + ')'
       if ($a -eq '1c' -or $a -like 'lc*') { $cmd += " -Exe '$Stock'" }
       if ($SeedOf[$a]) { $cmd += " -Seed $($SeedOf[$a])" }
-      if ($a -in '1f', '3w', '4a') { $cmd += ' -Cpu' }
-      if ($a -in '3w', '4a') { $cmd += ' -ExpectSession' }
+      if ($Light -and $a -like 'lf*') { $cmd += ' -Light' }
+      if ($a -in '1f', '3w', '4a', 'lw') { $cmd += ' -Cpu' }
+      if ($a -in '3w', '4a', 'lw') { $cmd += ' -ExpectSession' }
     } elseif ($CpuAll) { $cmd += ' -Cpu' }
     # a recon throw escapes run-interactive's *> block unlogged, with no EXIT= line (cal2, 2026-10-17);
     # log it and set the code instead. No exit here: it would end run.ps1 before its EXIT= line
@@ -188,6 +212,7 @@ try {
       }
       if ($drc -eq 4) { "UNMEASURED arm$a checkpoint"; $worst = [math]::Max($worst, 3); $checkpoint = $true; continue }
       if (-not $hasCh) { "UNMEASURED arm$a no channels.json"; $worst = [math]::Max($worst, 3); continue }
+      if ($a -eq '3w' -and $drc -eq 0) { $WarmOk = $true }
       $judgeBase = $Discovery; $judgeArm = if ($a -eq '1f') { '1' } else { '3' }
     } else { $judgeBase = $Baseline; $judgeArm = $a }
     python (Join-Path $Root 'observe_judge.py') judge --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
@@ -206,9 +231,31 @@ try {
       else { "UNMEASURED unlink rc=$urc"; $worst = [math]::Max($worst, 3) }
     } else { "UNMEASURED unlink: $($uf.Count) fork and $($us.Count) stock profiles measured, 3 each needed"; $worst = [math]::Max($worst, 3) }
   }
+  # light pair (part 3): the warm arm against its 3w baseline, on the host; only light.json and light.md hold the result
+  if ('lw' -in $Arms) {
+    $base = Join-Path $Root "auto\$WarmFrom\arm3w"
+    & $Venv (Join-Path $Root 'observe_light.py') $base (Join-Path $run 'armlw') `
+      --out (Join-Path $run 'light.json') --md (Join-Path $run 'light.md') 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) { $worst = [math]::Max($worst, 3) }
+  }
 } finally {
   Get-ScheduledTask -TaskName 'camou-observe-auto-*' -ErrorAction SilentlyContinue |
     ForEach-Object { $_ | Stop-ScheduledTask; $_ | Unregister-ScheduledTask -Confirm:$false }
+  if ($KeepWarm) {
+    $p3w = Join-Path $run 'profile-arm3w'
+    if ($checkpoint) { "WARM not kept: checkpoint" }
+    elseif (-not $WarmOk) { "WARM not kept: arm3w did not measure" }
+    elseif (-not (Test-Path $p3w)) { "WARM not kept: no profile-arm3w" }
+    else {
+      New-Item -ItemType Directory -Force $WarmRoot | Out-Null
+      Move-Item $p3w (Join-Path $WarmRoot (Split-Path $run -Leaf))
+      "WARM kept $(Split-Path $run -Leaf)"
+    }
+  }
+  if ('lw' -in $Arms -and $WarmFrom) {
+    Remove-Item (Join-Path $WarmRoot $WarmFrom) -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path (Join-Path $WarmRoot $WarmFrom)) { "WARM delete FAILED $WarmFrom (delete it by hand)" } else { "WARM deleted $WarmFrom" }
+  }
   Remove-Item (Join-Path $run 'profile-arm*') -Recurse -Force -ErrorAction SilentlyContinue
   Get-ChildItem $run -Recurse -Filter 'cookies.db' -ErrorAction SilentlyContinue | Remove-Item -Force
   # the driver's raw captures (bodies, WebSocket payloads, truth) and the saved document HTML stay only until the report is done;
