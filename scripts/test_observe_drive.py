@@ -694,7 +694,8 @@ def test_unlink_identity_uses_seed_zone_and_host_draw(monkeypatch):
     monkeypatch.setattr(gen, "generate", lambda *a, **kw: seen.update(a=a, kw=kw) or {"config": {}, "launch": {}})
     d.unlink_identity("chrome.exe", 2)
     assert seen["a"] == ("windows",)
-    assert seen["kw"] == {"seed": 2, "timezone": "Europe/Paris", "locale": "fr-FR", "host_renderer": "R", "host_families": None}
+    assert seen["kw"] == {"seed": 2, "timezone": "Europe/Paris", "locale": "fr-FR", "host_renderer": "R",
+                          "host_families": None, "light": False}
 
 
 def test_unlink_identity_refuses_without_a_zone(monkeypatch):
@@ -738,7 +739,7 @@ def test_identity_is_built_before_playwright_starts(monkeypatch, tmp_path):
     def stop(*a, **kw):
         raise RuntimeError("stop")
     monkeypatch.setattr(launcher, "launch", stop)
-    monkeypatch.setattr(d, "unlink_identity", lambda exe, seed: order.append("identity") or {"config": {}, "launch": {}})
+    monkeypatch.setattr(d, "unlink_identity", lambda exe, seed, light=False: order.append("identity") or {"config": {}, "launch": {}})
     a = d.parse_args(["--arm", "lf1", "--exe", "x", "--profile", str(tmp_path / "p"), "--out", str(tmp_path / "o"),
                       "--url", "https://example.invalid/", "--fork", "--identity-seed", "1"])
     with pytest.raises(RuntimeError, match="stop"):
@@ -765,3 +766,75 @@ def test_total_mem_equal_to_the_heap_limit_is_a_strong_match():
     rows = d.build_matches([req], [], HEAP_TRUTH)
     assert [(r["field"], r["surface"], r["weak"]) for r in rows] == [
         ("q.metadata.memory_stats.total_mem", "performance.memory.jsHeapSizeLimit", False)]
+
+
+# --- light mode (part 3) -----
+def test_unlink_identity_passes_light(monkeypatch):
+    from camoucrome import gen, probe
+    seen = {}
+    monkeypatch.setattr(probe, "host_zone", lambda exe: {"timezone": "UTC", "locale": "en-US"})
+    monkeypatch.setattr(probe, "host_draw", lambda exe: {})
+    monkeypatch.setattr(gen, "generate", lambda *a, **kw: seen.update(kw) or {"config": {}, "launch": {}})
+    d.unlink_identity("chrome.exe", 7, light=True)
+    assert seen["light"] is True
+
+
+def test_light_needs_identity_seed(capsys):
+    with pytest.raises(SystemExit):
+        d.parse_args([*_FULL, "--fork", "--light"])
+    assert "--light needs --identity-seed" in capsys.readouterr().err
+    assert d.parse_args([*_FULL, "--fork", "--identity-seed", "7", "--light"]).light is True
+
+
+class _Page:
+    def __init__(self, fail_on=None):
+        self.fail_on = fail_on
+
+    def goto(self, url, wait_until=None, timeout=None):
+        assert wait_until == "domcontentloaded" and timeout == 60000
+        if url == self.fail_on:
+            raise TimeoutError("goto timeout")
+
+
+def test_goto_timed_records_the_path_only():
+    loads = []
+    d.goto_timed(_Page(), "https://www.facebook.invalid/watch/?v=CANARY&x=1", loads)
+    d.goto_timed(_Page(), "https://www.facebook.invalid", loads)
+    assert [x["path"] for x in loads] == ["/watch/", "/"]
+    assert all(isinstance(x["ms"], int) and x["ms"] >= 0 for x in loads)
+    assert "CANARY" not in repr(loads)
+
+
+def test_goto_timed_records_nothing_for_a_failed_load():
+    loads = []
+    with pytest.raises(TimeoutError):
+        d.goto_timed(_Page(fail_on="https://x.invalid/b"), "https://x.invalid/b", loads)
+    assert loads == []
+
+
+def test_loads_json_is_written_when_the_run_fails(monkeypatch, tmp_path):
+    import types
+    from camoucrome import launcher
+
+    class PW:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    sa = types.ModuleType("patchright.sync_api")
+    sa.sync_playwright = lambda: PW()
+    pkg = types.ModuleType("patchright")
+    pkg.sync_api = sa
+    monkeypatch.setitem(sys.modules, "patchright", pkg)
+    monkeypatch.setitem(sys.modules, "patchright.sync_api", sa)
+
+    def stop(*a, **kw):
+        raise RuntimeError("stop")
+    monkeypatch.setattr(launcher, "launch", stop)
+    a = d.parse_args(["--arm", "3w", "--exe", "x", "--profile", str(tmp_path / "p"), "--out", str(tmp_path / "o"),
+                      "--url", "https://example.invalid/", "--fork"])
+    with pytest.raises(RuntimeError, match="stop"):
+        d.run(a)
+    assert json.loads((tmp_path / "o" / "loads.json").read_text(encoding="utf-8")) == []

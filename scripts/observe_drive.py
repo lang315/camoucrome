@@ -524,14 +524,16 @@ def launch_kwargs(identity):
             "position": tuple(lo["position"]) if lo.get("position") else None, "args": lo.get("args", [])}
 
 
-def unlink_identity(exe, seed):
+def unlink_identity(exe, seed, light=False):
     """Arm lf's identity (spec 2026-10-30, ruling R1): seed N, the step-6 host draw, and the host's own zone and
-    locale, which on a direct connection are the exit IP's. Lives only in capture/ on the host."""
+    locale, which on a direct connection are the exit IP's. light (part 3, L1): DPR-1 samples only. Lives only in
+    capture/ on the host."""
     from camoucrome import gen, probe
     zone = probe.host_zone(exe)
     if not zone:
         raise RuntimeError("host zone probe failed: no identity without the exit IP's zone")
-    return gen.generate("windows", seed=seed, timezone=zone["timezone"], locale=zone["locale"], **probe.host_draw(exe))
+    return gen.generate("windows", seed=seed, timezone=zone["timezone"], locale=zone["locale"], light=light,
+                        **probe.host_draw(exe))
 CHECKPOINT_PARTS = ("/checkpoint", "/login", "/recover", "two_step_verification")
 TRUTH_JS = """async () => {
   const n = navigator, s = screen, c = n.connection || {}, ua = n.userAgentData;
@@ -777,6 +779,13 @@ def read_truth(ctx, url):
         page.close()
 
 
+def goto_timed(page, url, loads):
+    """Load url; on success append its path (never the query) and the ms to domcontentloaded (part 3, speed)."""
+    t0 = time.monotonic()
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+    loads.append({"path": urllib.parse.urlsplit(url).path or "/", "ms": round((time.monotonic() - t0) * 1000)})
+
+
 def scroll(page, seconds, rng, rec):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
@@ -792,48 +801,51 @@ def run(a):
     out.mkdir(parents=True, exist_ok=True)
     extra = json.loads(pathlib.Path(a.chrome_args).read_text(encoding="utf-8")) if a.chrome_args else []
     rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route)
-    rc = 0
+    rc, loads = 0, []
     kw = {"config": FORK_CONFIG if a.fork else None, "args": []}
     if a.identity_seed is not None:
         # before sync_playwright(): the host probes open their own, which patchright refuses nested
-        ident = unlink_identity(a.exe, a.identity_seed)
+        ident = unlink_identity(a.exe, a.identity_seed, light=a.light)
         (out / "capture").mkdir(parents=True, exist_ok=True)
         (out / "capture" / "identity.json").write_text(json.dumps(ident), encoding="utf-8")  # host only: capture/ is deleted
         kw = launch_kwargs(ident)
-    with sync_playwright() as pw:
-        ctx = launch(pw, a.exe, user_data_dir=a.profile, headless=a.headless, args=extra + kw.pop("args"), **kw)
-        try:
-            # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth
-            truth_srv, truth_url = truth_page(a.truth_url)
+    try:
+        with sync_playwright() as pw:
+            ctx = launch(pw, a.exe, user_data_dir=a.profile, headless=a.headless, args=extra + kw.pop("args"), **kw)
             try:
-                (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx, truth_url)), encoding="utf-8")
+                # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth
+                truth_srv, truth_url = truth_page(a.truth_url)
+                try:
+                    (out / "truth.json").write_text(json.dumps({} if a.no_truth else read_truth(ctx, truth_url)), encoding="utf-8")
+                finally:
+                    stop_truth_page(truth_srv)
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
+                rec.attach(ctx.new_cdp_session(page))
+                if not a.no_route:
+                    ctx.route(ROUTE_RE, rec.on_route)  # exactly the ROUTE_PATHS; the handler forwards every request unmodified
+                vp = page.viewport_size or {"width": 1280, "height": 720}
+                page.mouse.move(vp["width"] / 2, vp["height"] / 2)
+                rng = random.Random()
+                for url in a.url:
+                    goto_timed(page, url, loads)
+                    page.wait_for_timeout(int(a.settle * 1000))
+                    if a.expect_session and is_checkpoint(page.url):
+                        print("CHECKPOINT " + endpoint(page.url), flush=True)
+                        rc = 4
+                        break
+                    scroll(page, a.wheel, rng, rec)
+                    if a.headless:
+                        print("TITLE=" + page.title(), flush=True)  # the dry-run page counts wheel events into document.title
+                page.wait_for_timeout(3000)  # the last beacons of the section leave
+                rec.drain()
             finally:
-                stop_truth_page(truth_srv)
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            rec.attach(ctx.new_cdp_session(page))
-            if not a.no_route:
-                ctx.route(ROUTE_RE, rec.on_route)  # exactly the ROUTE_PATHS; the handler forwards every request unmodified
-            vp = page.viewport_size or {"width": 1280, "height": 720}
-            page.mouse.move(vp["width"] / 2, vp["height"] / 2)
-            rng = random.Random()
-            for url in a.url:
-                page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(int(a.settle * 1000))
-                if a.expect_session and is_checkpoint(page.url):
-                    print("CHECKPOINT " + endpoint(page.url), flush=True)
-                    rc = 4
-                    break
-                scroll(page, a.wheel, rng, rec)
-                if a.headless:
-                    print("TITLE=" + page.title(), flush=True)  # the dry-run page counts wheel events into document.title
-            page.wait_for_timeout(3000)  # the last beacons of the section leave
-            rec.drain()
-        finally:
-            rec.close()
-            try:
-                ctx.close()
-            finally:
-                write_outputs(out, a.arm)  # a killed arm still leaves a partial channels.json to diagnose
+                rec.close()
+                try:
+                    ctx.close()
+                finally:
+                    write_outputs(out, a.arm)  # a killed arm still leaves a partial channels.json to diagnose
+    finally:
+        (out / "loads.json").write_text(json.dumps(loads), encoding="utf-8")  # speed (part 3): paths and ms only
     return rc
 
 
@@ -849,6 +861,7 @@ def parse_args(argv=None):
     ap.add_argument("--settle", type=float, default=20)
     ap.add_argument("--wheel", type=float, default=40)
     ap.add_argument("--fork", action="store_true")
+    ap.add_argument("--light", action="store_true", help="with --identity-seed: draw a DPR-1 identity (part 3, L1)")
     ap.add_argument("--identity-seed", type=int, help="with --fork: launch gen.generate(seed) with the host draw and host zone; "
                     "writes capture/identity.json (fb-unlink)")
     ap.add_argument("--chrome-args")
@@ -867,6 +880,8 @@ def parse_args(argv=None):
         ap.error("the following arguments are required: " + ", ".join(missing))
     if a.identity_seed is not None and not a.fork:
         ap.error("--identity-seed needs --fork")
+    if a.light and a.identity_seed is None:
+        ap.error("--light needs --identity-seed")
     return a
 
 
