@@ -48,6 +48,7 @@
     "webnn_gpu": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
     "webnn_npu": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
     "server_pixel_ratio": {"why": "The server's first-load guess, not the client DPR (pixel_ratio is unlinked).", "approved": "2026-10-30"},
+    "document_font_size": {"why": "Chrome's default font size; the same on every default install; the stock baseline has no leaf for it.", "approved": "2026-10-30"},
     "__req": {"why": "A one-character request counter.", "approved": "2026-10-30"}
   }
 }

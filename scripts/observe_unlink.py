@@ -95,6 +95,10 @@ def classify(fork, stock, doc, constants, accepted):
             cls = "site-constant"
         elif sd > 1:
             cls = "pinned"
+            if key in doc.get("limits", {}):
+                r["explained_by"] = "limit"
+            else:
+                counts["net_pinned"] += 1
         else:
             cls = "gap"
             r["explained_by"] = explain(key, doc, constants, accepted, fv[0], sv[0] if sv else [])
@@ -113,7 +117,7 @@ def classify(fork, stock, doc, constants, accepted):
     in_stock = {p for s in stock for p in s}
     sjd = next((r["fork_distinct"] for r in rows if r.get("key") == "sjd" and "fork_distinct" in r), None)
     return {"rows": rows, "counts": {k: counts.get(k, 0) for k in
-                                     ("net_gap", "raw_gap", "pinned", "unlinked", "ip-bound", "site-constant", "sparse", "absent")},
+                                     ("net_gap", "raw_gap", "pinned", "net_pinned", "unlinked", "ip-bound", "site-constant", "sparse", "absent")},
             "fork_only": sorted(in_fork - in_stock), "stock_only": sorted(in_stock - in_fork), "sjd_fork_distinct": sjd}
 
 
@@ -162,7 +166,8 @@ def render(doc):
     lines = [head, ""]
     for title, keep in (("Gaps (net)", lambda r: r["class"] == "gap" and not r.get("explained_by")),
                         ("Gaps (explained)", lambda r: r["class"] == "gap" and r.get("explained_by")),
-                        ("Pinned", lambda r: r["class"] == "pinned"),
+                        ("Pinned (net)", lambda r: r["class"] == "pinned" and not r.get("explained_by")),
+                        ("Pinned (explained)", lambda r: r["class"] == "pinned" and r.get("explained_by")),
                         ("Site constants (unmapped, same everywhere: review the names)", lambda r: r["class"] == "site-constant"),
                         ("Absent", lambda r: r["class"] == "absent")):
         rs = [r for r in doc["rows"] if keep(r)]
