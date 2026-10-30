@@ -1,5 +1,5 @@
 {
-  "$comment": "Facebook's device-identifying fields (map 2026-10-30, sections 3-4) for scripts/observe_unlink.py. A key matches a captured path equal to it or ending in '.' + key. keys: the generated-identity keys the field derives from (config keys, or launch.window / launch.dpr); [] = no key varies it (the host's real value); null = unknown. leaves: step-2 leaf names, for settings/machine_constants.json and accepted_defaults.json. limits: owner-approved 'shared, as stock' rows, each with why and approved (UTC date). Vendor-level reasons only; check_privacy --file at every edit.",
+  "$comment": "Facebook's device-identifying fields (map 2026-10-30, sections 3-4) for scripts/observe_unlink.py. A key matches a captured path equal to it or ending in '.' + key. keys: the generated-identity keys the field derives from (config keys, or launch.window / launch.dpr); [] = no key varies it (the host's real value); null = unknown. leaves: step-2 leaf names, for settings/machine_constants.json and accepted_defaults.json. limits: owner-approved 'shared, as stock' rows, each with why and approved (UTC date). Network-quality estimates (ip_bound rtt/downlink) follow the connection like the IP. Vendor-level reasons only; check_privacy --file at every edit.",
   "fields": {
     "gpu_renderer": {"keys": ["webGl:renderer"], "leaves": ["gpu.info.description"]},
     "gpu_vendor": {"keys": ["webGl:vendor"], "leaves": ["gpu.info.vendor"]},
@@ -33,8 +33,19 @@
     "locale_info.locale": {"keys": ["locale:tag"], "leaves": ["nav.language"]},
     "locale_info.isRTL": {"keys": ["locale:tag"], "leaves": []},
     "device_timezone": {"keys": ["timezone:id"], "leaves": ["intl.dtf.timeZone"]},
+    "annotations_int.network_RTT": {"keys": [], "leaves": ["navConnection.rtt"]},
+    "annotations_int.network_bandwidth": {"keys": [], "leaves": ["navConnection.downlink"]},
+    "__req": {"keys": [], "leaves": []},
     "sjd": {"keys": null, "leaves": []}
   },
-  "ip_bound": ["locale_info.locale", "locale_info.isRTL", "device_timezone"],
-  "limits": {}
+  "ip_bound": ["locale_info.locale", "locale_info.isRTL", "device_timezone", "network_stats.rtt_ms", "network_stats.downlink_megabits", "annotations_int.network_RTT", "annotations_int.network_bandwidth"],
+  "limits": {
+    "gpu_vendor": {"why": "Every drawn GPU is of the host's vendor class (step 6); another vendor would contradict real rendering (rule 4).", "approved": "2026-10-30"},
+    "display_hdr": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
+    "webgpu_shader_f16": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
+    "webnn_gpu": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
+    "webnn_npu": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
+    "server_pixel_ratio": {"why": "The server's first-load guess, not the client DPR (pixel_ratio is unlinked).", "approved": "2026-10-30"},
+    "__req": {"why": "A one-character request counter.", "approved": "2026-10-30"}
+  }
 }
