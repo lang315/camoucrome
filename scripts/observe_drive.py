@@ -550,6 +550,7 @@ TRUTH_JS = """async () => {
       f16 = ad ? ad.features.has("shader-f16") : null;
     }
   } catch (_) {}
+  const pm = performance.memory;  // Chromium only: absent, the heap keys are omitted
   const he = ua ? await ua.getHighEntropyValues(["architecture", "bitness", "model", "platformVersion", "fullVersionList"]) : {};
   return {"navigator.userAgent": n.userAgent, "navigator.platform": n.platform, "navigator.vendor": n.vendor,
     "navigator.language": n.language, "navigator.languages": [...n.languages],
@@ -568,7 +569,9 @@ TRUTH_JS = """async () => {
     "uaData.fullVersionList": he.fullVersionList ? he.fullVersionList.map(b => ({brand: b.brand, version: b.version})) : null,
     "webgl.vendor": gl.vendor || null, "webgl.renderer": gl.renderer || null, "webgl.version": gl.version || null,
     "media.dynamicRangeHigh": matchMedia("(dynamic-range: high)").matches, "navigator.gpu.present": !!n.gpu,
-    "webgpu.shaderF16": f16, "navigator.ml.present": "ml" in n};
+    "webgpu.shaderF16": f16, "navigator.ml.present": "ml" in n,
+    ...(pm ? {"performance.memory.jsHeapSizeLimit": pm.jsHeapSizeLimit, "performance.memory.totalJSHeapSize": pm.totalJSHeapSize,
+              "performance.memory.usedJSHeapSize": pm.usedJSHeapSize} : {})};
 }"""
 
 
