@@ -790,13 +790,14 @@ def run(a):
     extra = json.loads(pathlib.Path(a.chrome_args).read_text(encoding="utf-8")) if a.chrome_args else []
     rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route)
     rc = 0
+    kw = {"config": FORK_CONFIG if a.fork else None, "args": []}
+    if a.identity_seed is not None:
+        # before sync_playwright(): the host probes open their own, which patchright refuses nested
+        ident = unlink_identity(a.exe, a.identity_seed)
+        (out / "capture").mkdir(parents=True, exist_ok=True)
+        (out / "capture" / "identity.json").write_text(json.dumps(ident), encoding="utf-8")  # host only: capture/ is deleted
+        kw = launch_kwargs(ident)
     with sync_playwright() as pw:
-        kw = {"config": FORK_CONFIG if a.fork else None, "args": []}
-        if a.identity_seed is not None:
-            ident = unlink_identity(a.exe, a.identity_seed)
-            (out / "capture").mkdir(parents=True, exist_ok=True)
-            (out / "capture" / "identity.json").write_text(json.dumps(ident), encoding="utf-8")  # host only: capture/ is deleted
-            kw = launch_kwargs(ident)
         ctx = launch(pw, a.exe, user_data_dir=a.profile, headless=a.headless, args=extra + kw.pop("args"), **kw)
         try:
             # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth

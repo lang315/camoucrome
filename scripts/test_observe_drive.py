@@ -712,3 +712,36 @@ def test_identity_seed_needs_fork(capsys):
         d.parse_args([*_FULL, "--identity-seed", "1"])
     assert "--identity-seed needs --fork" in capsys.readouterr().err
     assert d.parse_args([*_FULL, "--fork", "--identity-seed", "1"]).identity_seed == 1
+
+
+def test_identity_is_built_before_playwright_starts(monkeypatch, tmp_path):
+    # probe._probe opens its own sync_playwright, which patchright refuses inside another one
+    import types
+    from camoucrome import launcher
+    order = []
+
+    class PW:
+        def __enter__(self):
+            order.append("enter")
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    sa = types.ModuleType("patchright.sync_api")
+    sa.sync_playwright = lambda: PW()
+    pkg = types.ModuleType("patchright")
+    pkg.sync_api = sa
+    monkeypatch.setitem(sys.modules, "patchright", pkg)
+    monkeypatch.setitem(sys.modules, "patchright.sync_api", sa)
+
+    def stop(*a, **kw):
+        raise RuntimeError("stop")
+    monkeypatch.setattr(launcher, "launch", stop)
+    monkeypatch.setattr(d, "unlink_identity", lambda exe, seed: order.append("identity") or {"config": {}, "launch": {}})
+    a = d.parse_args(["--arm", "lf1", "--exe", "x", "--profile", str(tmp_path / "p"), "--out", str(tmp_path / "o"),
+                      "--url", "https://example.invalid/", "--fork", "--identity-seed", "1"])
+    with pytest.raises(RuntimeError, match="stop"):
+        d.run(a)
+    assert order == ["identity", "enter"]
+    assert (tmp_path / "o" / "capture" / "identity.json").exists()
