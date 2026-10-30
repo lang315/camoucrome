@@ -745,3 +745,23 @@ def test_identity_is_built_before_playwright_starts(monkeypatch, tmp_path):
         d.run(a)
     assert order == ["identity", "enter"]
     assert (tmp_path / "o" / "capture" / "identity.json").exists()
+
+
+# --- heap limit truth (bz metadata.memory_stats.total_mem) -----
+HEAP_TRUTH = {**TRUTH, "performance.memory.jsHeapSizeLimit": 4294705152, "performance.memory.totalJSHeapSize": 10000000,
+              "performance.memory.usedJSHeapSize": 9000000}
+
+
+def test_truth_js_reads_the_heap_numbers_only_where_performance_memory_exists():
+    for k in ("jsHeapSizeLimit", "totalJSHeapSize", "usedJSHeapSize"):
+        assert f'"performance.memory.{k}"' in d.TRUTH_JS, k
+    assert "performance.memory" in d.TRUTH_JS and "pm ?" in d.TRUTH_JS  # absent: the keys are omitted
+
+
+def test_total_mem_equal_to_the_heap_limit_is_a_strong_match():
+    raw = urllib.parse.urlencode({"q": json.dumps({"metadata": {"memory_stats": {"total_mem": 4294705152}}})}).encode()
+    req = {"url": "https://www.facebook.com/ajax/bz", "body_b64": base64.b64encode(raw).decode(),
+           "content_type": "application/x-www-form-urlencoded"}
+    rows = d.build_matches([req], [], HEAP_TRUTH)
+    assert [(r["field"], r["surface"], r["weak"]) for r in rows] == [
+        ("q.metadata.memory_stats.total_mem", "performance.memory.jsHeapSizeLimit", False)]
