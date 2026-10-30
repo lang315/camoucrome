@@ -112,13 +112,6 @@ def valid_screen(s):
             and all(type(v) is int and v > 0 for v in s.values()))
 
 
-def fits_screen(fp, host_screen):
-    """The draw's claimed work area, in physical px, fits the host's: Windows clamps a window bigger than the monitor."""
-    scr, dpr = fp["screen"], dpr_of(fp)
-    return (scr.get("availWidth", scr["width"]) * dpr <= host_screen["availWidth"]
-            and scr.get("availHeight", scr["height"]) * dpr <= host_screen["availHeight"])
-
-
 def dpr_of(fp):
     return fp["screen"].get("devicePixelRatio") or 1
 
@@ -382,6 +375,31 @@ def window_position(rng, avail, outer):
     return r.randint(0, lim[0]), r.randint(0, lim[1])
 
 
+def holds_min_window(host_screen, dpr):
+    return host_screen["availWidth"] / dpr >= MIN_WINDOW[0] and host_screen["availHeight"] / dpr >= MIN_WINDOW[1]
+
+
+def fit_window(rng, host_screen, dpr, avail, origin, pos, outer):
+    """(pos, outer) with the window inside the host's work area as well as the claimed one, on each axis. A window
+    larger than the host is drawn again from 60-100 % of what fits (own generator: other seeded keys stay put);
+    a position that would put its far edge past the host's is drawn again too. A real window off the host's monitor
+    could be treated as occluded and throttled, so the launch position must be inside."""
+    host = (host_screen["availWidth"], host_screen["availHeight"])
+    cap = [min(avail[i], int(host[i] // dpr)) for i in (0, 1)]
+    pos, outer = list(pos), list(outer)
+    r = random.Random(repr(rng.getstate()) + "window-fit")
+    for i in (0, 1):
+        if outer[i] > cap[i]:
+            outer[i] = r.randint(max(MIN_WINDOW[i], round(0.6 * cap[i])), cap[i])
+    bad = [i for i in (0, 1) if pos[i] + outer[i] > origin[i] + cap[i]]
+    if bad:
+        d = window_position(rng, cap, outer)
+        for i in bad:
+            pos[i] = origin[i] + d[i]
+            outer[i] = min(outer[i], cap[i] - d[i])
+    return pos, outer
+
+
 def valid_display(d):
     """True for a {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool} dict; probe and the CLI share it."""
     return (isinstance(d, dict) and d.get("gamut") in ("srgb", "p3", "rec2020") and d.get("colorBits") in (8, 10)
@@ -399,7 +417,7 @@ def display_flags(host_display):
 
 
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
-              host_platform_version=None, host_display=None):
+              host_platform_version=None, host_display=None, host_screen=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
     cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
@@ -484,6 +502,11 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         config["window.screenX"], config["window.screenY"] = origin[0] + d[0], origin[1] + d[1]
         config["window.outerWidth"], config["window.outerHeight"] = outer[0] - d[0], outer[1] - d[1]
     dpr = dpr_of(fp)
+    if host_screen is not None:
+        p, o = fit_window(rng, host_screen, dpr, avail, origin, (config["window.screenX"], config["window.screenY"]),
+                          (config["window.outerWidth"], config["window.outerHeight"]))
+        config["window.screenX"], config["window.screenY"] = p
+        config["window.outerWidth"], config["window.outerHeight"] = o
     (lw, config["window.outerWidth"]), (lh, config["window.outerHeight"]) = (
         snap_window(dpr, config["window.outerWidth"]), snap_window(dpr, config["window.outerHeight"]))
     launch = {"window": [lw, lh], "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
@@ -502,7 +525,8 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so. light (part 3, L1): only samples with
     DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
-    host_screen (host-fit): only samples whose work area fits the host's are acceptable; None changes nothing."""
+    host_screen (window fit): the claimed screen and DPR stay the pool's; only the window is made to fit the host's
+    work area (fit_window), and a draw is rejected when the host cannot hold MIN_WINDOW at its DPR. None changes nothing."""
     if exit_ip:
         timezone, locale = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
     from browserforge.fingerprints import FingerprintGenerator
@@ -515,9 +539,9 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         if (acceptable(fp) and (not light or dpr_of(fp) == 1)
-                and (host_screen is None or fits_screen(fp, host_screen))):
+                and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
             return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
-                             host_display)
+                             host_display, host_screen)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
 
 
