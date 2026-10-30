@@ -206,7 +206,7 @@ def test_main_writes_counts_and_never_a_value(tmp_path):
     out = (tmp_path / "unlink.json").read_text(encoding="utf-8")
     md = (tmp_path / "unlink.md").read_text(encoding="utf-8")
     assert PLANT not in out and PLANT not in md
-    assert md.splitlines()[0].startswith("UNLINK net_gap=2 raw_gap=2 ")
+    assert md.splitlines()[0].startswith("UNLINK net_gap=2 raw_gap=2 pinned=0 net_pinned=0 ")
     assert json.loads(out)["seeds"] == "1,1,1"
 
 
@@ -251,3 +251,23 @@ def test_storage_quota_gap_is_a_machine_constant():
         r = row(doc, f"/ajax/bz q.annotations_int.{f}")
         assert (r["class"], r["explained_by"]) == ("gap", "machine-constant")
     assert doc["counts"]["net_gap"] == 0
+
+
+def test_owner_limit_explains_a_pinned_row_but_it_stays_pinned():
+    fork = [pv(req("/ajax/bz", {"__req": "a"})) for _ in range(3)]
+    stock = [pv(req("/ajax/bz", {"__req": v})) for v in "abc"]
+    out = u.classify(fork, stock, DOC, CONSTANTS, ACCEPTED)  # __req carries an owner limit
+    r = row(out, "/ajax/bz __req")
+    assert (r["class"], r["explained_by"]) == ("pinned", "limit")
+    assert out["counts"]["pinned"] == 1 and out["counts"]["net_pinned"] == 0
+    bare = dict(DOC, limits={})
+    out = u.classify(fork, stock, bare, CONSTANTS, ACCEPTED)
+    assert row(out, "/ajax/bz __req").get("explained_by") is None
+    assert out["counts"]["pinned"] == 1 and out["counts"]["net_pinned"] == 1
+
+
+def test_pinned_section_is_split_like_gaps():
+    fork = [pv(req("/ajax/bz", {"__req": "a"}), bz(ram=8)) for _ in range(3)]
+    stock = [pv(req("/ajax/bz", {"__req": v}), bz(ram=v)) for v, _ in zip((8, 16, 32), range(3))]
+    md = u.render(u.attach_prediction(u.classify(fork, stock, DOC, CONSTANTS, ACCEPTED), {}))
+    assert "## Pinned (net) (1)" in md and "## Pinned (explained) (1)" in md
