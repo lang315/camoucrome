@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 from . import launch
-from .gen import valid_display
+from .gen import valid_display, valid_screen
 
 
 def windows_argv(executable):
@@ -157,12 +157,31 @@ def host_zone(executable, timeout_s=30):
     return None
 
 
+def host_screen():
+    """The primary monitor's work area in PHYSICAL px, {"availWidth", "availHeight"}; None off Windows or on any failure.
+    The process is made DPI-aware first, so the rectangle is not scaled."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        ctypes.windll.user32.SetProcessDPIAware()
+        r = wintypes.RECT()
+        if not ctypes.windll.user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0):  # SPI_GETWORKAREA
+            return None
+        out = {"availWidth": r.right - r.left, "availHeight": r.bottom - r.top}
+        return out if valid_screen(out) else None
+    except Exception:
+        return None
+
+
 def host_draw(executable):
     """The host facts gen.generate() takes; a probe that returns None is left out (no claim, rule 5),
     except host_renderer and host_families, which generate() reads as "unknown host"."""
     from . import hostfonts
     d = dict(host_renderer=host_renderer(executable), host_families=hostfonts.families(),
-             host_display=host_display(executable), host_platform_version=host_platform_version(executable))
+             host_display=host_display(executable), host_platform_version=host_platform_version(executable),
+             host_screen=host_screen())
     return {k: v for k, v in d.items() if v is not None or k in ("host_renderer", "host_families")}
 
 

@@ -260,3 +260,13 @@ func TestDefaultPythonIsPythonOnWindows(t *testing.T) {
 		}
 	}
 }
+
+func TestGenArgsCarryHostScreenBeforeLight(t *testing.T) {
+	got := strings.Join(genArgs(GenArgs{OS: "windows", HostScreen: `{"availWidth":1920,"availHeight":1032}`, Light: true}), " ")
+	if got != `-m camoucrome.gen --os windows --host-screen={"availWidth":1920,"availHeight":1032} --light` {
+		t.Fatalf("args = %q", got)
+	}
+	if strings.Contains(strings.Join(genArgs(GenArgs{OS: "windows"}), " "), "--host-screen") {
+		t.Fatal("--host-screen without HostScreen")
+	}
+}

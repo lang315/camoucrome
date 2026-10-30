@@ -106,6 +106,19 @@ def snap_window(dpr, outer):
     return length, length + off
 
 
+def valid_screen(s):
+    """{"availWidth": int > 0, "availHeight": int > 0}: the host's work area in physical px (probe.host_screen)."""
+    return (isinstance(s, dict) and set(s) == {"availWidth", "availHeight"}
+            and all(type(v) is int and v > 0 for v in s.values()))
+
+
+def fits_screen(fp, host_screen):
+    """The draw's claimed work area, in physical px, fits the host's: Windows clamps a window bigger than the monitor."""
+    scr, dpr = fp["screen"], dpr_of(fp)
+    return (scr.get("availWidth", scr["width"]) * dpr <= host_screen["availWidth"]
+            and scr.get("availHeight", scr["height"]) * dpr <= host_screen["availHeight"])
+
+
 def dpr_of(fp):
     return fp["screen"].get("devicePixelRatio") or 1
 
@@ -484,10 +497,12 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
 
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
-             host_families=None, host_platform_version=None, host_display=None, light=False):
+             host_families=None, host_platform_version=None, host_display=None, light=False,
+             host_screen=None):
     """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so. light (part 3, L1): only samples with
-    DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged."""
+    DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
+    host_screen (host-fit): only samples whose work area fits the host's are acceptable; None changes nothing."""
     if exit_ip:
         timezone, locale = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
     from browserforge.fingerprints import FingerprintGenerator
@@ -499,7 +514,8 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     gen = FingerprintGenerator(browser="chrome", **({"os": os} if os else {}))
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
-        if acceptable(fp) and (not light or dpr_of(fp) == 1):
+        if (acceptable(fp) and (not light or dpr_of(fp) == 1)
+                and (host_screen is None or fits_screen(fp, host_screen))):
             return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
                              host_display)
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
@@ -532,6 +548,7 @@ def main(argv=None):
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
+    ap.add_argument("--host-screen", type=json.loads, help='the host work area as JSON (probe.host_screen): {"availWidth","availHeight"} in physical px; draws that do not fit are rejected')
     ap.add_argument("--light", action="store_true", help="light mode (part 3): draw only pool samples with DPR 1")
     a = ap.parse_args(argv)
     if a.host_renderer is None and a.probe_executable:
@@ -539,8 +556,10 @@ def main(argv=None):
         a.host_renderer = probe.host_renderer(a.probe_executable)
     if a.host_display is not None and not valid_display(a.host_display):
         sys.exit('gen: --host-display must be {"gamut": "srgb"|"p3"|"rec2020", "colorBits": 8|10, "hdr": true|false}')
+    if a.host_screen is not None and not valid_screen(a.host_screen):
+        sys.exit('gen: --host-screen must be {"availWidth": <positive int>, "availHeight": <positive int>}')
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen), sys.stdout)
 
 
 if __name__ == "__main__":
