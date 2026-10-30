@@ -242,3 +242,12 @@ def test_accepted_default_explains_ram_only_when_all_values_equal_the_row():
     other = [pv(bz(ram=16)) for _ in range(3)]
     out = u.classify(same, other, DOC, CONSTANTS, acc)
     assert row(out, "/ajax/bz q.payload.ram")["explained_by"] is None and out["counts"]["net_gap"] == 1
+
+
+def test_storage_quota_gap_is_a_machine_constant():
+    fork = [pv(req("/ajax/bz", {"q": {"annotations_int": {"storageQuota": 10, "storageUsage": 0}}})) for _ in range(3)]
+    doc = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)
+    for f in ("storageQuota", "storageUsage"):
+        r = row(doc, f"/ajax/bz q.annotations_int.{f}")
+        assert (r["class"], r["explained_by"]) == ("gap", "machine-constant")
+    assert doc["counts"]["net_gap"] == 0

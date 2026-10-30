@@ -35,6 +35,8 @@
     "device_timezone": {"keys": ["timezone:id"], "leaves": ["intl.dtf.timeZone"]},
     "annotations_int.network_RTT": {"keys": [], "leaves": ["navConnection.rtt"]},
     "annotations_int.network_bandwidth": {"keys": [], "leaves": ["navConnection.downlink"]},
+    "annotations_int.storageQuota": {"keys": [], "leaves": ["storage.quotaGiB"]},
+    "annotations_int.storageUsage": {"keys": [], "leaves": ["storage.usage"]},
     "__req": {"keys": [], "leaves": []},
     "sjd": {"keys": null, "leaves": []}
   },
