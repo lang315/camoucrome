@@ -214,3 +214,31 @@ def test_profile_without_bz_is_unmeasured(tmp_path):
     reqs = [[bz(ram=8)], [bz(ram=8)], [req("/ajax/qm/", {"a": "1"})]]
     assert run_main(tmp_path, reqs, [[bz(ram=8)]] * 3) == 3
     assert not (tmp_path / "unlink.json").exists()
+
+
+def test_approved_limit_rows_are_explained():
+    fork = [pv(bz(gpu_vendor="X"), req("/ajax/bz", {"__req": "a"})) for _ in range(3)]
+    doc = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)
+    for f in ("gpu_vendor", "__req"):
+        r = row(doc, f"/ajax/bz {'q.payload.' if f == 'gpu_vendor' else ''}{f}")
+        assert (r["class"], r["explained_by"]) == ("gap", "limit")
+    assert doc["counts"]["net_gap"] == 0
+
+
+def test_network_estimates_are_ip_bound():
+    fork = [pv(req("/ajax/bz", {"q": {"metadata": {"network_stats": {"rtt_ms": 50}},
+                                       "annotations_int": {"network_RTT": 50, "network_bandwidth": 9}}})) for _ in range(3)]
+    doc = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)
+    for f in ("network_stats.rtt_ms", "annotations_int.network_RTT", "annotations_int.network_bandwidth"):
+        assert next(r for r in doc["rows"] if r.get("key") == f and r["fork_n"])["class"] == "ip-bound"
+    assert doc["counts"]["net_gap"] == 0
+
+
+def test_accepted_default_explains_ram_only_when_all_values_equal_the_row():
+    acc = {"nav.deviceMemory": {"value": 8, "class": "windows-desktop", "source": "test row, twenty characters"}}
+    same = [pv(bz(ram=8)) for _ in range(3)]
+    out = u.classify(same, same, DOC, CONSTANTS, acc)
+    assert row(out, "/ajax/bz q.payload.ram")["explained_by"] == "accepted-default" and out["counts"]["net_gap"] == 0
+    other = [pv(bz(ram=16)) for _ in range(3)]
+    out = u.classify(same, other, DOC, CONSTANTS, acc)
+    assert row(out, "/ajax/bz q.payload.ram")["explained_by"] is None and out["counts"]["net_gap"] == 1
