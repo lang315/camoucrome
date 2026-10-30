@@ -1,11 +1,11 @@
 # Recon launcher for the camoucrome observer build. Headed, no CDP.
 # Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
-# Driven arms (1f 1c 3w 4a, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession]
+# Driven arms (1f 1c 3w 4a lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
   [ValidateSet('facebook','instagram','threads')][string]$Site,
-  [ValidateSet('1','2','3','4','1f','1c','3w','4a')][string]$Arm,
+  [ValidateSet('1','2','3','4','1f','1c','3w','4a','lf1','lf2','lf3','lc1','lc2','lc3')][string]$Arm,
   [switch]$Force,
   [switch]$Intl,
   [switch]$PostOnly,
@@ -19,7 +19,8 @@ param(
   [string[]]$Url,
   [string]$Exe,
   [switch]$Cpu,
-  [switch]$ExpectSession
+  [switch]$ExpectSession,
+  [int]$Seed = 0
 )
 $ErrorActionPreference = 'Stop'
 $Root   = 'D:\camou-win\observe'
@@ -80,7 +81,7 @@ if ($PostOnly) {
 }
 
 if (-not $Site -or -not $Arm) { throw '-Site and -Arm are required' }
-$driven = $Arm -in '1f','1c','3w','4a'
+$driven = $Arm -in '1f','1c','3w','4a','lf1','lf2','lf3','lc1','lc2','lc3'
 if ($driven -and (-not $Driver -or -not $Out)) { throw "arm $Arm is driven: needs -Driver and -Out (unattended only)" }
 if ($driven -and -not $Url) { throw "arm $Arm needs -Url" }
 $script:DriveRc = $null
@@ -127,6 +128,12 @@ $what = @{
   '1c' = 'ARM 1c driven, stock Chrome, logged out: landing page, wheel only.'
   '3w' = 'ARM 3w driven: feed, watch, marketplace, messages, profile by URL, wheel only.'
   '4a' = 'ARM 4a driven: one third-party page with the Meta Pixel, logged-in profile copy, wheel only.'
+  'lf1' = 'ARM lf1..3 driven, fork with a generated identity, logged out: landing page, wheel only.'
+  'lf2' = 'ARM lf1..3 driven, fork with a generated identity, logged out: landing page, wheel only.'
+  'lf3' = 'ARM lf1..3 driven, fork with a generated identity, logged out: landing page, wheel only.'
+  'lc1' = 'ARM lc1..3 driven, stock Chrome, logged out: landing page, wheel only.'
+  'lc2' = 'ARM lc1..3 driven, stock Chrome, logged out: landing page, wheel only.'
+  'lc3' = 'ARM lc1..3 driven, stock Chrome, logged out: landing page, wheel only.'
 }[$Arm]
 Write-Host ''
 Write-Host '=============================================================='
@@ -162,6 +169,7 @@ if ($driven) {
   foreach ($u in $Url) { $da += @('--url', $u) }
   if ($Arm -eq '3w') { $da += @('--settle', '15', '--wheel', '60') } else { $da += @('--settle', '20', '--wheel', '40') }
   if (-not $Exe) { $da += '--fork' }
+  if ($Seed) { $da += @('--identity-seed', "$Seed") }
   if ($ExpectSession) { $da += '--expect-session' }
   # PS 5.1 Start-Process joins -ArgumentList with spaces and quotes nothing ('C:\Program Files\...')
   $da = $da | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
@@ -175,8 +183,9 @@ if ($driven) {
 
 # chrome may re-launch, so wait on the command line, not the started process
 function Get-Mine { Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Profile) } }
-# a driver starts python and the launcher first, so give its browser longer to appear
-for ($i = 0; $i -lt $(if ($driven) { 90 } else { 30 }) -and -not (Get-Mine); $i++) { Start-Sleep -Seconds 1 }
+# a driver starts python and the launcher first, so give its browser longer to appear;
+# a seeded arm runs four headless probe launches (zone, renderer, platform version, display) before it
+for ($i = 0; $i -lt $(if ($Seed) { 180 } elseif ($driven) { 90 } else { 30 }) -and -not (Get-Mine); $i++) { Start-Sleep -Seconds 1 }
 $started = Get-Date
 $hLaunch = Get-HeadroomGB; $hMin = $hLaunch; $lowKill = $false; $closed = 0
 if ($Wait) {

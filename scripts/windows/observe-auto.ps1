@@ -1,7 +1,8 @@
 # Unattended facebook recon: arm 1 (logged out) and arm 3 (backed-up login), one load each,
 # no input, never scheduled or repeated. Takes no build_lock; gates on the owner's Active
 # session, no native build, and commit headroom (S5, 2026-10-17). Exit 0 PASS, 1 FAIL, 3 UNMEASURED.
-# Tracking-map arms (2026-10-29): -Arms 1,3,1f,1c,3w,4a. 1f 1c 3w 4a run observe_drive.py (wheel only).
+# Tracking-map arms (2026-10-29): -Arms 1,3,1f,1c,3w,4a,lf,lc. 1f 1c 3w 4a lf lc run observe_drive.py (wheel only).
+# lf lc (logged out, so outside the ledger): three profiles each, then observe_unlink.py; -UnlinkSeeds '1,1,1' is the RED.
 # Arm names must not read as numbers (1d is a decimal, 1s a short in PowerShell 7): a list typed in a PowerShell session still wants quotes.
 # -KeepCapture keeps capture\ and resources\html\ for on-host analysis (the default deletes them).
 param(
@@ -13,6 +14,7 @@ param(
   [switch]$NoIntl,
   [switch]$CpuAll,
   [switch]$KeepCapture,
+  [string]$UnlinkSeeds = '1,2,3',
   [string]$FromProfileOverride
 )
 # Continue, not Stop: PS 5.1 turns native stderr (quser with nobody logged on, the judge's
@@ -21,8 +23,15 @@ $ErrorActionPreference = 'Continue'
 $Root = 'D:\camou-win\observe'
 $Ri = Join-Path $Root 'run-interactive.ps1'
 $Arms = @($Arms | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
-$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a' })
+$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lf', 'lc' })
 if ($bad.Count) { "UNMEASURED unknown arm: $($bad -join ' ')"; exit 3 }
+# unlink arms (part 2, 2026-10-30): lf and lc expand to one sub-arm per profile; lfN gets seed N of -UnlinkSeeds
+$Seeds = @("$UnlinkSeeds" -split ',' | Where-Object { $_ })
+if ($Seeds.Count -ne 3 -or @($Seeds | Where-Object { $_ -notmatch '^[1-9][0-9]*$' }).Count) { "UNMEASURED -UnlinkSeeds wants three whole numbers, got '$UnlinkSeeds'"; exit 3 }
+$Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
+$Unlink = @('lf1', 'lf2', 'lf3', 'lc1', 'lc2', 'lc3')
+$SeedOf = @{ 'lf1' = $Seeds[0]; 'lf2' = $Seeds[1]; 'lf3' = $Seeds[2] }
+$UnlinkOk = @{}
 $Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
 $Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6 }
 $Venv  = Join-Path $Root 'venv\Scripts\python.exe'
@@ -30,6 +39,10 @@ $Stock = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 $Fb    = 'https://www.facebook.com'
 $Urls  = @{ '1f' = @("$Fb/"); '1c' = @("$Fb/"); '3w' = @("$Fb/", "$Fb/watch/", "$Fb/marketplace/", "$Fb/messages/", "$Fb/me/") }
 $Driven   = @('1f', '1c', '3w', '4a')
+foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6; $Urls[$u] = @("$Fb/") }
+# a seeded fork arm can take 180 s for its browser to appear + 90 s wait + 60 s close + 60 s driver exit + post, over 6 min
+foreach ($u in 'lf1', 'lf2', 'lf3') { $Limit[$u] = 8 }
+$Driven += $Unlink
 $LoggedIn = @('3', '3w', '4a')
 $Discovery = Join-Path $Root 'baseline-empty.json'   # contains {}
 
@@ -111,7 +124,8 @@ try {
     if ($drivenArm) {
       # no double quotes: the command is passed through a nested powershell -File call
       $cmd += " -Driver '$Venv' -Url @(" + (($armUrls | ForEach-Object { "'$_'" }) -join ',') + ')'
-      if ($a -eq '1c') { $cmd += " -Exe '$Stock'" }
+      if ($a -eq '1c' -or $a -like 'lc*') { $cmd += " -Exe '$Stock'" }
+      if ($SeedOf[$a]) { $cmd += " -Seed $($SeedOf[$a])" }
       if ($a -in '1f', '3w', '4a') { $cmd += ' -Cpu' }
       if ($a -in '3w', '4a') { $cmd += ' -ExpectSession' }
     } elseif ($CpuAll) { $cmd += ' -Cpu' }
@@ -165,9 +179,11 @@ try {
       $dj = Get-Content -Raw (Join-Path $run "arm$a\run.json") -ErrorAction SilentlyContinue | ConvertFrom-Json
       $drc = if ($dj) { $dj.drive_rc } else { $null }
       $hasCh = Test-Path (Join-Path $run "arm$a\channels.json")
-      if ($a -eq '1c') {
-        if ($drc -eq 0 -and $hasCh) { "INFO arm1c measured (stock: no observer trace, no judge)" }
-        else { "UNMEASURED arm1c drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
+      if ($a -eq '1c' -or $a -in $Unlink) {
+        if ($drc -eq 0 -and $hasCh) {
+          if ($a -eq '1c') { "INFO arm1c measured (stock: no observer trace, no judge)" } else { "INFO arm$a measured (no judge)"; $UnlinkOk[$a] = $true }
+        }
+        else { "UNMEASURED arm$a drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
         continue
       }
       if ($drc -eq 4) { "UNMEASURED arm$a checkpoint"; $worst = [math]::Max($worst, 3); $checkpoint = $true; continue }
@@ -177,6 +193,18 @@ try {
     python (Join-Path $Root 'observe_judge.py') judge --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
     $rc = $LASTEXITCODE; if ($rc -notin 0, 1, 2, 3) { $rc = 3 }  # a crash code is no verdict
     $worst = [math]::Max($worst, $rc)
+  }
+  # unlink comparison: runs on the host, before the finally deletes the capture dirs; only unlink.json and unlink.md hold its result
+  if (@($Arms | Where-Object { $_ -in $Unlink }).Count) {
+    $uf = @($Unlink[0..2] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
+    $us = @($Unlink[3..5] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
+    if ($uf.Count -eq 3 -and $us.Count -eq 3) {
+      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @uf --stock @us --settings $Root --seeds "$UnlinkSeeds" `
+        --out (Join-Path $run 'unlink.json') --md (Join-Path $run 'unlink.md') 2>&1 | ForEach-Object { "$_" }
+      $urc = $LASTEXITCODE
+      if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink.md') -TotalCount 1 }
+      else { "UNMEASURED unlink rc=$urc"; $worst = [math]::Max($worst, 3) }
+    } else { "UNMEASURED unlink: $($uf.Count) fork and $($us.Count) stock profiles measured, 3 each needed"; $worst = [math]::Max($worst, 3) }
   }
 } finally {
   Get-ScheduledTask -TaskName 'camou-observe-auto-*' -ErrorAction SilentlyContinue |
