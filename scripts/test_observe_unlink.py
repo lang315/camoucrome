@@ -133,3 +133,38 @@ def test_other_endpoints_are_ignored():
     assert u.endpoint_path("https://www.facebook.com/api/graphql/") is None
     assert u.endpoint_path("https://web.facebook.com/ajax/qm/?a=1") == "/ajax/qm/"
     assert u.endpoint_path("https://www.facebook.com/ajax/bz") == "/ajax/bz"
+
+
+def ident(mem, window=(1280, 720)):
+    return {"config": {"navigator.deviceMemory": mem}, "launch": {"window": list(window), "dpr": 1}}
+
+
+def test_same_device_memory_predicts_ram_shared():
+    p = u.predict(DOC["fields"], [ident(8), ident(8), ident(8)])
+    assert p["ram"] == "shared" and p["memory_stats.total_mem"] == "shared"
+
+
+def test_different_device_memory_predicts_ram_varies():
+    assert u.predict(DOC["fields"], [ident(4), ident(8), ident(8)])["ram"] == "varies"
+
+
+def test_launch_keys_and_unknown():
+    p = u.predict(DOC["fields"], [ident(8, (1280, 720)), ident(8, (1366, 768)), ident(8)])
+    assert p["viewport_x"] == "varies"
+    assert p["sjd"] == "unknown"
+    assert p["webgpu_available"] == "shared"  # keys [] is the host's own value
+
+
+def test_prediction_disagreement_is_listed():
+    fork = [pv(bz(ram=8)) for _ in range(3)]
+    doc = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)
+    u.attach_prediction(doc, u.predict(DOC["fields"], [ident(4), ident(8), ident(16)]))
+    assert row(doc, "/ajax/bz q.payload.ram")["prediction"] == "varies"
+    assert doc["disagreements"] == ["/ajax/bz q.payload.ram"]
+
+
+def test_agreeing_prediction_is_not_listed():
+    fork = [pv(bz(ram=8)) for _ in range(3)]
+    doc = u.attach_prediction(u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED),
+                              u.predict(DOC["fields"], [ident(8)] * 3))
+    assert doc["disagreements"] == []

@@ -115,3 +115,37 @@ def classify(fork, stock, doc, constants, accepted):
     return {"rows": rows, "counts": {k: counts.get(k, 0) for k in
                                      ("net_gap", "raw_gap", "pinned", "unlinked", "ip-bound", "site-constant", "sparse", "absent")},
             "fork_only": sorted(in_fork - in_stock), "stock_only": sorted(in_stock - in_fork), "sjd_fork_distinct": sjd}
+
+
+def lookup(identity, key):
+    if key.startswith("launch."):
+        return identity["launch"].get(key[len("launch."):])
+    return identity["config"].get(key)
+
+
+def predict(fields, identities):
+    """B (ruling R2): a field whose identity keys take one value in every identity is predicted shared."""
+    out = {}
+    for k, f in fields.items():
+        keys = f.get("keys")
+        if keys is None:
+            out[k] = "unknown"
+        else:
+            seen = {json.dumps([lookup(i, x) for x in keys], sort_keys=True) for i in identities}
+            out[k] = "varies" if len(seen) > 1 else "shared"
+    return out
+
+
+def attach_prediction(doc, prediction):
+    """A measured gap or pinned row predicted to vary, or an unlinked row predicted shared, is a disagreement:
+    facebook transforms the value before sending it, or the identity does not reach the field."""
+    bad = []
+    for r in doc["rows"]:
+        p = prediction.get(r.get("key"))
+        if p is None:
+            continue
+        r["prediction"] = p
+        if (p == "varies" and r["class"] in ("gap", "pinned")) or (p == "shared" and r["class"] == "unlinked"):
+            bad.append(r["field"])
+    doc["disagreements"] = bad
+    return doc
