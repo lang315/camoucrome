@@ -308,6 +308,9 @@ so it uses 2 of the day's 3 in the ledger. Launch both detached.
 - `-Light` (with `-Arms 'lf,lc'`) makes the `lf` identity draw DPR 1 only.
   It is refused (`UNMEASURED -Light needs arm lf`) without an `lf` arm;
   `-KeepWarm` is refused without arm `3w`.
+- The pair runs with `--no-route` (request interception disables the HTTP
+  cache, so the warm cache would go unused), so `/ajax/bz` bodies are not
+  recorded in those two arms.
 - `lw` without `-WarmFrom <run id>`, or with an id that has no warm copy, is
   `UNMEASURED` (exit 3). All refusals and the sweep run before the ledger
   write, so a refused run does not count.

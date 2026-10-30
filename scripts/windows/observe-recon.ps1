@@ -1,6 +1,6 @@
 # Recon launcher for the camoucrome observer build. Headed, no CDP.
 # Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
-# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light]
+# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light] [-NoRoute]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
@@ -21,7 +21,8 @@ param(
   [switch]$Cpu,
   [switch]$ExpectSession,
   [int]$Seed = 0,
-  [switch]$Light
+  [switch]$Light,
+  [switch]$NoRoute
 )
 $ErrorActionPreference = 'Stop'
 $Root   = 'D:\camou-win\observe'
@@ -173,6 +174,7 @@ if ($driven) {
   if (-not $Exe) { $da += '--fork' }
   if ($Seed) { $da += @('--identity-seed', "$Seed") }
   if ($Light) { $da += '--light' }
+  if ($NoRoute) { $da += '--no-route' }
   if ($ExpectSession) { $da += '--expect-session' }
   # PS 5.1 Start-Process joins -ArgumentList with spaces and quotes nothing ('C:\Program Files\...')
   $da = $da | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }

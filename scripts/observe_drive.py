@@ -870,7 +870,7 @@ def parse_args(argv=None):
     ap.add_argument("--truth-url", default=None,
                     help="page the ground truth is read in; default: an empty page served on 127.0.0.1 (a secure context)")
     ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
-    ap.add_argument("--no-route", action="store_true", help=argparse.SUPPRESS)  # only verify_observe_drive: D6's RED
+    ap.add_argument("--no-route", action="store_true", help=argparse.SUPPRESS)  # verify_observe_drive D6's RED, and the light pair (the route turns the HTTP cache off)
     ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
     ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
     ap.add_argument("--doc-hosts", default="www.facebook.com")
