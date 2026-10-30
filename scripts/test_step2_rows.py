@@ -558,6 +558,7 @@ def _fake_host(monkeypatch, display, pv):
     monkeypatch.setattr(probe, "host_renderer", lambda e: "R")
     monkeypatch.setattr(probe, "host_display", lambda e: display)
     monkeypatch.setattr(probe, "host_platform_version", lambda e: pv)
+    monkeypatch.setattr(probe, "host_screen", lambda: None)  # on Windows the real work area would add a key
     monkeypatch.setattr(hostfonts, "families", lambda: {"F"})
 
 

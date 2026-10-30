@@ -185,6 +185,7 @@ def test_host_draw_keeps_renderer_and_families_even_when_none(monkeypatch):
     monkeypatch.setattr(probe, "host_renderer", lambda exe: None)
     monkeypatch.setattr(probe, "host_display", lambda exe: None)
     monkeypatch.setattr(probe, "host_platform_version", lambda exe: "10.0.0")
+    monkeypatch.setattr(probe, "host_screen", lambda: None)  # on Windows the real work area would add a key
     from camoucrome import hostfonts
     monkeypatch.setattr(hostfonts, "families", lambda: None)
     assert probe.host_draw("chrome.exe") == {"host_renderer": None, "host_families": None, "host_platform_version": "10.0.0"}
