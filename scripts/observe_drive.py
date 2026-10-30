@@ -513,6 +513,25 @@ def write_outputs(out_dir, arm):
 
 
 FORK_CONFIG = {"humanize:enabled": True, "ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
+
+
+def launch_kwargs(identity):
+    """A generated identity as launch() keywords, as measure_step2.opened passes them: config (with humanize,
+    as FORK_CONFIG), window, dpr, position and the display args."""
+    lo = identity.get("launch", {})
+    return {"config": {**identity["config"], "humanize:enabled": True},
+            "window": tuple(lo["window"]) if lo.get("window") else None, "dpr": lo.get("dpr"),
+            "position": tuple(lo["position"]) if lo.get("position") else None, "args": lo.get("args", [])}
+
+
+def unlink_identity(exe, seed):
+    """Arm lf's identity (spec 2026-10-30, ruling R1): seed N, the step-6 host draw, and the host's own zone and
+    locale, which on a direct connection are the exit IP's. Lives only in capture/ on the host."""
+    from camoucrome import gen, probe
+    zone = probe.host_zone(exe)
+    if not zone:
+        raise RuntimeError("host zone probe failed: no identity without the exit IP's zone")
+    return gen.generate("windows", seed=seed, timezone=zone["timezone"], locale=zone["locale"], **probe.host_draw(exe))
 CHECKPOINT_PARTS = ("/checkpoint", "/login", "/recover", "two_step_verification")
 TRUTH_JS = """async () => {
   const n = navigator, s = screen, c = n.connection || {}, ua = n.userAgentData;
@@ -772,8 +791,13 @@ def run(a):
     rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route)
     rc = 0
     with sync_playwright() as pw:
-        ctx = launch(pw, a.exe, config=FORK_CONFIG if a.fork else None, user_data_dir=a.profile,
-                     headless=a.headless, args=extra)
+        kw = {"config": FORK_CONFIG if a.fork else None, "args": []}
+        if a.identity_seed is not None:
+            ident = unlink_identity(a.exe, a.identity_seed)
+            (out / "capture").mkdir(parents=True, exist_ok=True)
+            (out / "capture" / "identity.json").write_text(json.dumps(ident), encoding="utf-8")  # host only: capture/ is deleted
+            kw = launch_kwargs(ident)
+        ctx = launch(pw, a.exe, user_data_dir=a.profile, headless=a.headless, args=extra + kw.pop("args"), **kw)
         try:
             # --no-truth: only verify_observe_drive uses it, to show the matcher row goes RED without ground truth
             truth_srv, truth_url = truth_page(a.truth_url)
@@ -821,6 +845,8 @@ def parse_args(argv=None):
     ap.add_argument("--settle", type=float, default=20)
     ap.add_argument("--wheel", type=float, default=40)
     ap.add_argument("--fork", action="store_true")
+    ap.add_argument("--identity-seed", type=int, help="with --fork: launch gen.generate(seed) with the host draw and host zone; "
+                    "writes capture/identity.json (fb-unlink)")
     ap.add_argument("--chrome-args")
     ap.add_argument("--expect-session", action="store_true")
     ap.add_argument("--headless", action="store_true")
@@ -835,6 +861,8 @@ def parse_args(argv=None):
     missing = [f"--{n}" for n in ("exe", "profile", "out", "url") if not getattr(a, n)]
     if missing and not a.rederive:
         ap.error("the following arguments are required: " + ", ".join(missing))
+    if a.identity_seed is not None and not a.fork:
+        ap.error("--identity-seed needs --fork")
     return a
 
 
