@@ -159,7 +159,8 @@ def host_zone(executable, timeout_s=30):
 
 def host_screen():
     """The primary monitor's work area in PHYSICAL px, {"availWidth", "availHeight"}; None off Windows or on any failure.
-    The process is made DPI-aware first, so the rectangle is not scaled."""
+    The process is made DPI-aware first, so the rectangle is not scaled. Only meaningful in the user's own session
+    (session 1): in session 0, e.g. over ssh, SystemParametersInfo returns a default desktop, not their monitor."""
     if sys.platform != "win32":
         return None
     try:
