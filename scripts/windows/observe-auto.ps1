@@ -224,7 +224,8 @@ try {
     $uf = @($Unlink[0..2] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
     $us = @($Unlink[3..5] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
     if ($uf.Count -eq 3 -and $us.Count -eq 3) {
-      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @uf --stock @us --settings $Root --seeds "$UnlinkSeeds" `
+      $ul = @(); if ($Light) { $ul = @('--light') }  # light_limits explain the DPR rows of a light run only
+      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @uf --stock @us --settings $Root --seeds "$UnlinkSeeds" @ul `
         --out (Join-Path $run 'unlink.json') --md (Join-Path $run 'unlink.md') 2>&1 | ForEach-Object { "$_" }
       $urc = $LASTEXITCODE
       if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink.md') -TotalCount 1 }

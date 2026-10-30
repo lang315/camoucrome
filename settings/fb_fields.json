@@ -1,5 +1,5 @@
 {
-  "$comment": "Facebook's device-identifying fields (map 2026-10-30, sections 3-4) for scripts/observe_unlink.py. A key matches a captured path equal to it or ending in '.' + key. keys: the generated-identity keys the field derives from (config keys, or launch.window / launch.dpr); [] = no key varies it (the host's real value); null = unknown. leaves: step-2 leaf names, for settings/machine_constants.json and accepted_defaults.json. limits: owner-approved 'shared, as stock' rows, each with why and approved (UTC date). Network-quality estimates (ip_bound rtt/downlink) follow the connection like the IP. Vendor-level reasons only; check_privacy --file at every edit.",
+  "$comment": "Facebook's device-identifying fields (map 2026-10-30, sections 3-4) for scripts/observe_unlink.py. A key matches a captured path equal to it or ending in '.' + key. keys: the generated-identity keys the field derives from (config keys, or launch.window / launch.dpr); [] = no key varies it (the host's real value); null = unknown. leaves: step-2 leaf names, for settings/machine_constants.json and accepted_defaults.json. limits: owner-approved 'shared, as stock' rows, each with why and approved (UTC date). light_limits: the same, accepted only when observe_unlink runs with --light. Network-quality estimates (ip_bound rtt/downlink) follow the connection like the IP. Vendor-level reasons only; check_privacy --file at every edit.",
   "fields": {
     "gpu_renderer": {"keys": ["webGl:renderer"], "leaves": ["gpu.info.description"]},
     "gpu_vendor": {"keys": ["webGl:vendor"], "leaves": ["gpu.info.vendor"]},
@@ -50,5 +50,9 @@
     "server_pixel_ratio": {"why": "The server's first-load guess, not the client DPR (pixel_ratio is unlinked).", "approved": "2026-10-30"},
     "document_font_size": {"why": "Chrome's default font size; the same on every default install; the stock baseline has no leaf for it.", "approved": "2026-10-30"},
     "__req": {"why": "A one-character request counter.", "approved": "2026-10-30"}
+  },
+  "light_limits": {
+    "pixel_ratio": {"why": "Light mode (part 3, L1) draws DPR 1 for every profile by design; DPR 1 is the majority desktop value.", "approved": "2026-10-30"},
+    "annotations_double.devicePixelRatio": {"why": "Light mode (part 3, L1) draws DPR 1 for every profile by design; DPR 1 is the majority desktop value.", "approved": "2026-10-30"}
   }
 }
