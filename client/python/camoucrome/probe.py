@@ -146,6 +146,26 @@ def host_display(executable, timeout_s=30):
     return r if valid_display(r) else None
 
 
+HOST_ZONE_JS = "() => ({timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, locale: navigator.language})"
+
+
+def host_zone(executable, timeout_s=30):
+    """The host's real IANA time zone and navigator.language, read with no config (rule 5); None on any failure."""
+    r = _probe(executable, HOST_ZONE_JS, timeout_s)
+    if isinstance(r, dict) and all(isinstance(r.get(k), str) and r[k] for k in ("timezone", "locale")):
+        return {"timezone": r["timezone"], "locale": r["locale"]}
+    return None
+
+
+def host_draw(executable):
+    """The host facts gen.generate() takes; a probe that returns None is left out (no claim, rule 5),
+    except host_renderer and host_families, which generate() reads as "unknown host"."""
+    from . import hostfonts
+    d = dict(host_renderer=host_renderer(executable), host_families=hostfonts.families(),
+             host_display=host_display(executable), host_platform_version=host_platform_version(executable))
+    return {k: v for k, v in d.items() if v is not None or k in ("host_renderer", "host_families")}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--driver", choices=["patchright", "stock"], required=True)
