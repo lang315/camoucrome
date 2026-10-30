@@ -269,6 +269,30 @@ Install the scripts and the venv first (plan Task 12): the driven arms run
   (UTC timestamps). A run counts when it starts, even if it ends
   `UNMEASURED`. Start each run by hand; schedule nothing.
 
+**Unlink arms `lf` and `lc` (2026-10-30).**
+`-Arms 'lf,lc' [-UnlinkSeeds '1,2,3']` expands each into three logged-out
+landing loads (`lf1`..`lf3`, `lc1`..`lc3`) and then runs
+`observe_unlink.py` over the six captures. It measures which facebook
+fields tie three fork profiles on one host together, against three stock
+Chrome loads, so each field is classed as unlinked, a gap or machine-bound.
+Spec `docs/superpowers/specs/2026-10-30-fb-unlink-design.md`.
+- A fork sub-arm `lfN` launches a generated Windows identity: seed N of
+  `-UnlinkSeeds`, the host draw and the host's own zone and locale
+  (`observe_drive.py --identity-seed`). Run it on the direct connection,
+  never through the layer-3 proxy. A seeded sub-arm runs four headless
+  probe launches first, so `recon.ps1` waits up to 180 s for its browser.
+- `-UnlinkSeeds` must be three whole numbers. Anything else prints
+  `UNMEASURED -UnlinkSeeds wants three whole numbers` before any browser
+  starts. `-UnlinkSeeds '1,1,1'` is the RED: three equal identities must
+  leave the hardware fields as gaps.
+- Only `unlink.json` and `unlink.md` leave the host. They hold field names,
+  value classes, counts and class labels. The captures and `identity.json`
+  stay under each arm's `capture\` dir, which the command deletes.
+- The arms are logged out, so they are outside the account-risk ledger. The
+  first line of `unlink.md` is printed as `UNLINK net_gap=<n> ...`; a
+  sub-arm that did not measure, or fewer than 3 + 3 profiles, is
+  `UNMEASURED unlink: ...` (exit 3).
+
 Host-only files and the cleanup: `capture\` (request bodies, WebSocket
 payloads) and `resources\html\` (document HTML) are deleted when the run
 finishes, together with the profile copies and `cookies.db`. With
