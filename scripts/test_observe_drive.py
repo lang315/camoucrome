@@ -10,6 +10,7 @@ import zlib
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "client" / "python"))
 import observe_drive as d  # noqa: E402
 
 
@@ -676,3 +677,38 @@ def test_bool_fields_list_field_path_surface_and_count_and_write_outputs_writes_
     out = (tmp_path / "bool_fields.json").read_text(encoding="utf-8")
     assert "display_hdr" in out and CANARY not in out
     assert not any(r["surface"] == "media.dynamicRangeHigh" for r in json.loads((tmp_path / "matches.json").read_text()))
+
+
+def test_launch_kwargs_carries_the_whole_identity():
+    ident = {"config": {"navigator.deviceMemory": 8}, "launch": {"window": [1366, 768], "dpr": 1.25, "args": ["--x"]}}
+    kw = d.launch_kwargs(ident)
+    assert kw == {"config": {"navigator.deviceMemory": 8, "humanize:enabled": True}, "window": (1366, 768),
+                  "dpr": 1.25, "position": None, "args": ["--x"]}
+
+
+def test_unlink_identity_uses_seed_zone_and_host_draw(monkeypatch):
+    from camoucrome import gen, probe
+    seen = {}
+    monkeypatch.setattr(probe, "host_zone", lambda exe: {"timezone": "Europe/Paris", "locale": "fr-FR"})
+    monkeypatch.setattr(probe, "host_draw", lambda exe: {"host_renderer": "R", "host_families": None})
+    monkeypatch.setattr(gen, "generate", lambda *a, **kw: seen.update(a=a, kw=kw) or {"config": {}, "launch": {}})
+    d.unlink_identity("chrome.exe", 2)
+    assert seen["a"] == ("windows",)
+    assert seen["kw"] == {"seed": 2, "timezone": "Europe/Paris", "locale": "fr-FR", "host_renderer": "R", "host_families": None}
+
+
+def test_unlink_identity_refuses_without_a_zone(monkeypatch):
+    from camoucrome import probe
+    monkeypatch.setattr(probe, "host_zone", lambda exe: None)
+    with pytest.raises(RuntimeError, match="host zone"):
+        d.unlink_identity("chrome.exe", 1)
+
+
+_FULL = ["--arm", "lc1", "--exe", "x", "--profile", "p", "--out", "o", "--url", "https://example.invalid/"]
+
+
+def test_identity_seed_needs_fork(capsys):
+    with pytest.raises(SystemExit):
+        d.parse_args([*_FULL, "--identity-seed", "1"])
+    assert "--identity-seed needs --fork" in capsys.readouterr().err
+    assert d.parse_args([*_FULL, "--fork", "--identity-seed", "1"]).identity_seed == 1

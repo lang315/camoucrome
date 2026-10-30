@@ -58,12 +58,11 @@ class Arm:
 
 def probe_host_draw(fork_exe):
     """The host facts generate() takes, read through probe; a probe that returns None is left out (no claim, rule 5)."""
-    from camoucrome import gen, hostfonts, probe
-    d = dict(host_renderer=probe.host_renderer(fork_exe), host_families=hostfonts.families(),
-             host_display=probe.host_display(fork_exe), host_platform_version=probe.host_platform_version(fork_exe))
-    if d["host_display"] is None:
+    from camoucrome import gen, probe
+    d = probe.host_draw(fork_exe)
+    if "host_display" not in d:
         print("host draw:", gen.display_flags(None)[1])
-    return {k: v for k, v in d.items() if v is not None or k in ("host_renderer", "host_families")}
+    return d
 
 
 HOST_DRAW = {}  # filled by --host-draw: host_renderer / host_families for generate() (step 6)

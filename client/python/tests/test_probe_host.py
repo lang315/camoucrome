@@ -167,3 +167,24 @@ def test_host_display_none_on_bad_result(monkeypatch, value):
 def test_host_display_none_when_launch_raises(monkeypatch):
     fake_pw(monkeypatch, RuntimeError("no browser"))
     assert probe.host_display("x") is None
+
+
+def test_host_zone_reads_zone_and_language(monkeypatch):
+    calls = fake_pw(monkeypatch, FakeCtx({"timezone": "Europe/Paris", "locale": "fr-FR"}))
+    assert probe.host_zone("chrome.exe") == {"timezone": "Europe/Paris", "locale": "fr-FR"}
+    assert calls[0].get("config") is None  # no config: the host's real values (rule 5)
+
+
+@pytest.mark.parametrize("value", [None, {}, {"timezone": "Europe/Paris"}, {"timezone": "", "locale": "fr-FR"}, "Europe/Paris"])
+def test_host_zone_none_on_bad_result(monkeypatch, value):
+    fake_pw(monkeypatch, FakeCtx(value))
+    assert probe.host_zone("chrome.exe") is None
+
+
+def test_host_draw_keeps_renderer_and_families_even_when_none(monkeypatch):
+    monkeypatch.setattr(probe, "host_renderer", lambda exe: None)
+    monkeypatch.setattr(probe, "host_display", lambda exe: None)
+    monkeypatch.setattr(probe, "host_platform_version", lambda exe: "10.0.0")
+    from camoucrome import hostfonts
+    monkeypatch.setattr(hostfonts, "families", lambda: None)
+    assert probe.host_draw("chrome.exe") == {"host_renderer": None, "host_families": None, "host_platform_version": "10.0.0"}

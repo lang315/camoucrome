@@ -553,15 +553,12 @@ def test_measure_step2_identity_passes_host_draw_inputs(monkeypatch):
 
 
 def _fake_host(monkeypatch, display, pv):
-    import types
     monkeypatch.syspath_prepend(str(pathlib.Path(__file__).resolve().parents[1] / "client" / "python"))
-    import camoucrome
-    probe = types.SimpleNamespace(host_renderer=lambda e: "R", host_display=lambda e: display,
-                                  host_platform_version=lambda e: pv)
-    fonts = types.SimpleNamespace(families=lambda: {"F"})
-    for name, mod in (("probe", probe), ("hostfonts", fonts)):
-        monkeypatch.setitem(sys.modules, f"camoucrome.{name}", mod)
-        monkeypatch.setattr(camoucrome, name, mod, raising=False)
+    from camoucrome import hostfonts, probe  # the real host_draw, over fake probes
+    monkeypatch.setattr(probe, "host_renderer", lambda e: "R")
+    monkeypatch.setattr(probe, "host_display", lambda e: display)
+    monkeypatch.setattr(probe, "host_platform_version", lambda e: pv)
+    monkeypatch.setattr(hostfonts, "families", lambda: {"F"})
 
 
 def test_probe_host_draw_passes_display_and_platform_version(monkeypatch, capsys):
