@@ -149,3 +149,64 @@ def attach_prediction(doc, prediction):
             bad.append(r["field"])
     doc["disagreements"] = bad
     return doc
+
+
+def has_bz(requests):
+    return any(not r.get("missing") and endpoint_path(r.get("url", "")) == "/ajax/bz" for r in requests)
+
+
+def render(doc):
+    c = doc["counts"]
+    head = "UNLINK " + " ".join(f"{k}={c[k]}" for k in c) + f" disagreements={len(doc['disagreements'])}" \
+        + f" sjd_fork_distinct={doc['sjd_fork_distinct'] if doc['sjd_fork_distinct'] is not None else '-'} seeds={doc.get('seeds', '-')}"
+    lines = [head, ""]
+    for title, keep in (("Gaps (net)", lambda r: r["class"] == "gap" and not r.get("explained_by")),
+                        ("Gaps (explained)", lambda r: r["class"] == "gap" and r.get("explained_by")),
+                        ("Pinned", lambda r: r["class"] == "pinned"),
+                        ("Site constants (unmapped, same everywhere: review the names)", lambda r: r["class"] == "site-constant"),
+                        ("Absent", lambda r: r["class"] == "absent")):
+        rs = [r for r in doc["rows"] if keep(r)]
+        lines += [f"## {title} ({len(rs)})", ""]
+        lines += [f"- `{r['field']}` {r.get('value_class', '')} fork {r.get('fork_distinct', '-')}/{r.get('fork_n', '-')}"
+                  f" stock {r.get('stock_distinct', '-')}/{r.get('stock_n', '-')}"
+                  f"{' low-cardinality' if r.get('low_cardinality') else ''}"
+                  f"{' explained: ' + r['explained_by'] if r.get('explained_by') else ''}"
+                  f"{' predicted: ' + r['prediction'] if r.get('prediction') else ''}" for r in rs]
+        lines.append("")
+    for title, names in (("Disagreements with the prediction", doc["disagreements"]),
+                         ("Fork only", doc["fork_only"]), ("Stock only", doc["stock_only"])):
+        lines += [f"## {title} ({len(names)})", ""] + [f"- `{n}`" for n in names] + [""]
+    return "\n".join(lines)
+
+
+def _load(path):
+    return json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--fork", nargs=3, required=True, metavar="ARM_DIR")
+    ap.add_argument("--stock", nargs=3, required=True, metavar="ARM_DIR")
+    ap.add_argument("--settings", required=True, help="a dir with fb_fields.json, machine_constants.json, accepted_defaults.json")
+    ap.add_argument("--seeds", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--md", required=True)
+    a = ap.parse_args(argv)
+    caps = [d.read_jsonl(pathlib.Path(x) / "capture" / "requests.jsonl") for x in a.fork + a.stock]
+    empty = [pathlib.Path(x).name for x, c in zip(a.fork + a.stock, caps) if not has_bz(c)]
+    if empty:
+        print("UNMEASURED unlink: no /ajax/bz body in " + ", ".join(empty), file=sys.stderr)  # ruling R5
+        return 3
+    s = pathlib.Path(a.settings)
+    doc = _load(s / "fb_fields.json")
+    out = classify([profile_values(c) for c in caps[:3]], [profile_values(c) for c in caps[3:]], doc,
+                   _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"])
+    attach_prediction(out, predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork]))
+    out["seeds"] = a.seeds
+    pathlib.Path(a.out).write_text(json.dumps(out, indent=1), encoding="utf-8")
+    pathlib.Path(a.md).write_text(render(out), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

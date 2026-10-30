@@ -168,3 +168,49 @@ def test_agreeing_prediction_is_not_listed():
     doc = u.attach_prediction(u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED),
                               u.predict(DOC["fields"], [ident(8)] * 3))
     assert doc["disagreements"] == []
+
+
+import shutil  # noqa: E402
+
+PLANT = "PLANTED-RENDERER-7f3a"
+
+
+def arm(tmp, name, requests, identity=None):
+    cap = tmp / name / "capture"
+    cap.mkdir(parents=True)
+    (cap / "requests.jsonl").write_text("".join(json.dumps(r) + "\n" for r in requests), encoding="utf-8")
+    if identity is not None:
+        (cap / "identity.json").write_text(json.dumps(identity), encoding="utf-8")
+    return str(tmp / name)
+
+
+def settings(tmp):
+    s = tmp / "settings"
+    s.mkdir()
+    for f in ("fb_fields.json", "machine_constants.json", "accepted_defaults.json"):
+        shutil.copy(ROOT / "settings" / f, s / f)
+    return str(s)
+
+
+def run_main(tmp, fork_reqs, stock_reqs):
+    fork = [arm(tmp, f"armlf{i}", r, ident(8)) for i, r in enumerate(fork_reqs, 1)]
+    stock = [arm(tmp, f"armlc{i}", r) for i, r in enumerate(stock_reqs, 1)]
+    rc = u.main(["--fork", *fork, "--stock", *stock, "--settings", settings(tmp), "--seeds", "1,1,1",
+                 "--out", str(tmp / "unlink.json"), "--md", str(tmp / "unlink.md")])
+    return rc
+
+
+def test_main_writes_counts_and_never_a_value(tmp_path):
+    reqs = [[bz(gpu_renderer=PLANT, ram=8)] for _ in range(3)]
+    assert run_main(tmp_path, reqs, reqs) == 0
+    out = (tmp_path / "unlink.json").read_text(encoding="utf-8")
+    md = (tmp_path / "unlink.md").read_text(encoding="utf-8")
+    assert PLANT not in out and PLANT not in md
+    assert md.splitlines()[0].startswith("UNLINK net_gap=2 raw_gap=2 ")
+    assert json.loads(out)["seeds"] == "1,1,1"
+
+
+def test_profile_without_bz_is_unmeasured(tmp_path):
+    reqs = [[bz(ram=8)], [bz(ram=8)], [req("/ajax/qm/", {"a": "1"})]]
+    assert run_main(tmp_path, reqs, [[bz(ram=8)]] * 3) == 3
+    assert not (tmp_path / "unlink.json").exists()
