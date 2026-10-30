@@ -58,10 +58,17 @@ def _same(a, b):
     return type(a) is type(b) and a == b  # step2_rows._same: type-strict, so True is not 1
 
 
-def explain(key, doc, constants, accepted, fork_vals, stock_vals):
-    """Why a gap is acceptable, or None: an owner limit, a machine constant, or an accepted default (ruling R6)."""
+def limit_kind(key, doc, light):
+    """"limit", or "light-limit" (owner ruling 2026-10-30: DPR 1 by design, accepted in a light run only), or None."""
     if key in doc.get("limits", {}):
         return "limit"
+    return "light-limit" if light and key in doc.get("light_limits", {}) else None
+
+
+def explain(key, doc, constants, accepted, fork_vals, stock_vals, light=False):
+    """Why a gap is acceptable, or None: an owner limit, a machine constant, or an accepted default (ruling R6)."""
+    if limit_kind(key, doc, light):
+        return limit_kind(key, doc, light)
     leaves = (doc["fields"].get(key) or {}).get("leaves") or []
     prefixes = tuple(k for k in constants if k.endswith("."))  # step2_rows.unexplained: a key ending in '.' is a prefix
     if any(leaf in constants or leaf.startswith(prefixes) for leaf in leaves):
@@ -73,7 +80,7 @@ def explain(key, doc, constants, accepted, fork_vals, stock_vals):
     return None
 
 
-def classify(fork, stock, doc, constants, accepted):
+def classify(fork, stock, doc, constants, accepted, light=False):
     """fork, stock: one profile_values() dict per profile. Returns the unlink document (no values)."""
     fields, ip_bound = doc["fields"], set(doc["ip_bound"])
     rows, counts = [], collections.Counter()
@@ -95,13 +102,13 @@ def classify(fork, stock, doc, constants, accepted):
             cls = "site-constant"
         elif sd > 1:
             cls = "pinned"
-            if key in doc.get("limits", {}):
-                r["explained_by"] = "limit"
+            if limit_kind(key, doc, light):
+                r["explained_by"] = limit_kind(key, doc, light)
             else:
                 counts["net_pinned"] += 1
         else:
             cls = "gap"
-            r["explained_by"] = explain(key, doc, constants, accepted, fv[0], sv[0] if sv else [])
+            r["explained_by"] = explain(key, doc, constants, accepted, fv[0], sv[0] if sv else [], light)
             r["low_cardinality"] = all(d._weak(v) for v in fv[0])
             if r["explained_by"] is None:
                 counts["net_gap"] += 1
@@ -196,6 +203,7 @@ def main(argv=None):
     ap.add_argument("--seeds", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--md", required=True)
+    ap.add_argument("--light", action="store_true", help="a light run: light_limits in fb_fields.json explain rows like limits")
     a = ap.parse_args(argv)
     caps = [d.read_jsonl(pathlib.Path(x) / "capture" / "requests.jsonl") for x in a.fork + a.stock]
     empty = [pathlib.Path(x).name for x, c in zip(a.fork + a.stock, caps) if not has_bz(c)]
@@ -205,7 +213,7 @@ def main(argv=None):
     s = pathlib.Path(a.settings)
     doc = _load(s / "fb_fields.json")
     out = classify([profile_values(c) for c in caps[:3]], [profile_values(c) for c in caps[3:]], doc,
-                   _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"])
+                   _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"], light=a.light)
     attach_prediction(out, predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork]))
     out["seeds"] = a.seeds
     pathlib.Path(a.out).write_text(json.dumps(out, indent=1), encoding="utf-8")

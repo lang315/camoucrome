@@ -192,11 +192,11 @@ def settings(tmp):
     return str(s)
 
 
-def run_main(tmp, fork_reqs, stock_reqs):
+def run_main(tmp, fork_reqs, stock_reqs, *extra):
     fork = [arm(tmp, f"armlf{i}", r, ident(8)) for i, r in enumerate(fork_reqs, 1)]
     stock = [arm(tmp, f"armlc{i}", r) for i, r in enumerate(stock_reqs, 1)]
     rc = u.main(["--fork", *fork, "--stock", *stock, "--settings", settings(tmp), "--seeds", "1,1,1",
-                 "--out", str(tmp / "unlink.json"), "--md", str(tmp / "unlink.md")])
+                 "--out", str(tmp / "unlink.json"), "--md", str(tmp / "unlink.md"), *extra])
     return rc
 
 
@@ -271,3 +271,51 @@ def test_pinned_section_is_split_like_gaps():
     stock = [pv(req("/ajax/bz", {"__req": v}), bz(ram=v)) for v, _ in zip((8, 16, 32), range(3))]
     md = u.render(u.attach_prediction(u.classify(fork, stock, DOC, CONSTANTS, ACCEPTED), {}))
     assert "## Pinned (net) (1)" in md and "## Pinned (explained) (1)" in md
+
+
+# --- light limits (owner ruling 2026-10-30): DPR 1 for every profile by design, accepted in a light run only -----
+def _dpr_fork():
+    return [pv(bz(pixel_ratio=1), req("/ajax/bz", {"q": {"annotations_double": {"devicePixelRatio": 1}}})) for _ in range(3)]
+
+
+def test_light_limits_are_ignored_without_light():
+    fork = _dpr_fork()
+    assert u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)["counts"]["net_gap"] == 2
+
+
+def test_light_limits_explain_the_dpr_rows_in_a_light_run():
+    fork = _dpr_fork()
+    out = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED, light=True)
+    assert out["counts"]["net_gap"] == 0 and out["counts"]["raw_gap"] == 2
+    for f in ("/ajax/bz q.payload.pixel_ratio", "/ajax/bz q.annotations_double.devicePixelRatio"):
+        assert (row(out, f)["class"], row(out, f)["explained_by"]) == ("gap", "light-limit")
+    assert "explained: light-limit" in u.render(dict(out, disagreements=[]))
+
+
+def test_light_limit_explains_a_pinned_row_too():
+    fork = [pv(bz(pixel_ratio=1)) for _ in range(3)]
+    stock = [pv(bz(pixel_ratio=v)) for v in (1, 1.25, 2)]
+    out = u.classify(fork, stock, DOC, CONSTANTS, ACCEPTED, light=True)
+    r = row(out, "/ajax/bz q.payload.pixel_ratio")
+    assert (r["class"], r["explained_by"]) == ("pinned", "light-limit") and out["counts"]["net_pinned"] == 0
+    assert u.classify(fork, stock, DOC, CONSTANTS, ACCEPTED)["counts"]["net_pinned"] == 1
+
+
+def test_an_ordinary_limit_still_works_in_a_light_run():
+    fork = [pv(bz(gpu_vendor="X")) for _ in range(3)]
+    r = row(u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED, light=True), "/ajax/bz q.payload.gpu_vendor")
+    assert r["explained_by"] == "limit"
+
+
+def _dpr_req():
+    return [bz(pixel_ratio=1), req("/ajax/bz", {"q": {"annotations_double": {"devicePixelRatio": 1}}})]
+
+
+def test_main_light_flag(tmp_path):
+    reqs = [_dpr_req() for _ in range(3)]
+    (tmp_path / "light").mkdir()
+    (tmp_path / "plain").mkdir()
+    assert run_main(tmp_path / "light", reqs, reqs, "--light") == 0
+    assert run_main(tmp_path / "plain", reqs, reqs) == 0
+    assert json.loads((tmp_path / "light" / "unlink.json").read_text(encoding="utf-8"))["counts"]["net_gap"] == 0
+    assert json.loads((tmp_path / "plain" / "unlink.json").read_text(encoding="utf-8"))["counts"]["net_gap"] == 2
