@@ -19,7 +19,9 @@ param(
   [switch]$Light,
   [switch]$KeepWarm,
   [string]$WarmFrom,
-  [string]$FromProfileOverride
+  [string]$FromProfileOverride,
+  [switch]$NoRoute,
+  [string]$Flags
 )
 # Continue, not Stop: PS 5.1 turns native stderr (quser with nobody logged on, the judge's
 # usage error) into a terminating error under Stop, and every arm must still get its line
@@ -40,6 +42,15 @@ if ('lw' -in $Arms) {
 }
 if ($KeepWarm -and '3w' -notin $Arms) { "UNMEASURED -KeepWarm needs arm 3w"; exit 3 }
 if ($Light -and -not @($Arms | Where-Object { $_ -like 'lf*' }).Count) { "UNMEASURED -Light needs arm lf"; exit 3 }
+# approach B (2026-10-31): -Flags takes only flags whose page-blind gate passed (light_flags.json gate=pass), arm 3w only
+$FlagList = @("$Flags" -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($FlagList.Count) {
+  $passed = @()
+  try { $passed = @((Get-Content (Join-Path $Root 'light_flags.json') -Raw | ConvertFrom-Json).flags | Where-Object { $_.gate -eq 'pass' } | ForEach-Object { $_.flag }) } catch { }
+  $nogo = @($FlagList | Where-Object { $_ -notin $passed })
+  if ($nogo.Count) { "UNMEASURED -Flags not gate-passed in light_flags.json: $($nogo -join ' ')"; exit 3 }
+  if (@($Arms | Where-Object { $_ -ne '3w' }).Count) { "UNMEASURED -Flags runs arm 3w only"; exit 3 }
+}
 # the 24-hour sweep (spec section 7): a warm copy outlives no pair; it never reaches the copy this run uses
 if (Test-Path $WarmRoot) {
   $stale = @(Get-ChildItem $WarmRoot -Directory | Where-Object { $_.Name -ne $WarmFrom -and $_.CreationTimeUtc -lt (Get-Date).ToUniversalTime().AddHours(-24) })
@@ -151,7 +162,9 @@ try {
       if ($SeedOf[$a]) { $cmd += " -Seed $($SeedOf[$a])" }
       if ($Light -and $a -like 'lf*') { $cmd += ' -Light' }
       # request interception turns the HTTP cache off, so both pair arms run without the route (their /ajax/bz bodies are not recorded)
-      if ($a -eq 'lw' -or ($a -eq '3w' -and $KeepWarm)) { $cmd += ' -NoRoute' }
+      if ($a -eq 'lw' -or ($a -eq '3w' -and ($KeepWarm -or $NoRoute -or $FlagList.Count))) { $cmd += ' -NoRoute' }
+      # approach B: the flags ride in the fork's argv
+      if ($FlagList.Count) { $cmd += ' -Flags ' + (($FlagList | ForEach-Object { "'$_'" }) -join ',') }
       if ($a -in '1f', '3w', '4a', 'lw') { $cmd += ' -Cpu' }
       if ($a -in '3w', '4a', 'lw') { $cmd += ' -ExpectSession' }
     } elseif ($CpuAll) { $cmd += ' -Cpu' }
