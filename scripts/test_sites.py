@@ -96,3 +96,9 @@ def test_load_finds_host_layout(tmp_path):
     out = subprocess.run([sys.executable, "-c", "import sites; s = sites.load(); print(s.dir)"], cwd=tmp_path,
                          capture_output=True, text=True, check=True).stdout.strip()
     assert pathlib.Path(out) == (tmp_path / "settings" / "sites" / "facebook").resolve()
+
+
+def test_facebook_has_the_logged_in_unlink_pages():
+    s = sites.load("facebook")
+    for arm in ("lu1", "lu2", "lu3"):
+        assert s.pages[arm] == s.pages["3w"]
