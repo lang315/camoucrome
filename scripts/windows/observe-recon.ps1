@@ -54,6 +54,7 @@ function Invoke-Post([string]$Dir, [string]$Profile) {
   $net = Join-Path $Dir 'net.json'
   $rep = Join-Path $Dir 'report.md'
   $pa = @($ReportPy, $trace, $net)
+  if ($SiteDoc) { $pa += @('--site', $Site) }
   if (Test-Path $cookiesDb) { $pa += @('--cookies', $cookiesDb) }
   foreach ($f in @(@('--ram', 'ram.json'), @('--channels', 'channels.json'), @('--matches', 'matches.json'))) {
     if (Test-Path (Join-Path $Dir $f[1])) { $pa += @($f[0], (Join-Path $Dir $f[1])) }
@@ -63,7 +64,7 @@ function Invoke-Post([string]$Dir, [string]$Profile) {
   Write-Host "report exit=$LASTEXITCODE -> $rep"
   Get-Content $rep -TotalCount 40
 
-  # request count from the netlog: URL_REQUEST_START_JOB events, with and without /ajax/bz
+  # request count from the netlog: URL_REQUEST_START_JOB events, with and without the site's beacon path
   $cnt = Join-Path $Root 'count_requests.py'
   Set-Content -Encoding ascii $cnt @'
 import json, sys
@@ -72,9 +73,9 @@ t = d['constants']['logEventTypes']['URL_REQUEST_START_JOB']
 b = d['constants']['logEventPhase']['PHASE_BEGIN']
 urls = [e['params']['url'] for e in d['events'] if e.get('type') == t and e.get('phase') == b]
 print('total requests:', len(urls))
-print('/ajax/bz requests:', sum('/ajax/bz' in u.split('?')[0] for u in urls))
+print(sys.argv[2] + ' requests:', sum(sys.argv[2] in u.split('?')[0] for u in urls))
 '@
-  & $Py $cnt $net
+  & $Py $cnt $net $Beacon
 }
 
 if ($PostOnly) {
@@ -89,7 +90,10 @@ if ($driven -and (-not $Driver -or -not $Out)) { throw "arm $Arm is driven: need
 if ($driven -and -not $Url) { throw "arm $Arm needs -Url" }
 $script:DriveRc = $null
 # not $url: PowerShell variable names are case-insensitive and -Url is a parameter
-$siteUrl = @{ facebook = 'https://www.facebook.com/'; instagram = 'https://www.instagram.com/'; threads = 'https://www.threads.com/' }[$Site]
+$SiteFile = Join-Path $Root "settings\sites\$Site\site.json"
+$SiteDoc = if (Test-Path $SiteFile) { Get-Content $SiteFile -Raw | ConvertFrom-Json } else { $null }
+$siteUrl = if ($SiteDoc) { $SiteDoc.origin + '/' } else { @{ facebook = 'https://www.facebook.com/'; instagram = 'https://www.instagram.com/'; threads = 'https://www.threads.com/' }[$Site] }
+$Beacon  = if ($SiteDoc) { $SiteDoc.beacon_path } else { '/ajax/bz' }
 if ($Out) {
   if (-not $Wait) { throw '-Out is for unattended runs; pass -Wait' }
   if ($Arm -in '3','3w','4a','lw' -and -not $FromProfile) { throw "unattended arm $Arm needs -FromProfile" }
@@ -173,6 +177,7 @@ if ($driven) {
   $da = @((Join-Path $Root 'observe_drive.py'), '--arm', $Arm, '--exe', $exeUsed, '--profile', $Profile, '--out', $Dir,
           '--chrome-args', (Join-Path $Dir 'chrome-args.json'))
   foreach ($u in $Url) { $da += @('--url', $u) }
+  if ($SiteDoc) { $da += @('--site', $Site) }
   if ($Arm -in '3w','lw') { $da += @('--settle', '15', '--wheel', '60') } else { $da += @('--settle', '20', '--wheel', '40') }
   if (-not $Exe) { $da += '--fork' }
   if ($Seed) { $da += @('--identity-seed', "$Seed") }

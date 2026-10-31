@@ -1,4 +1,4 @@
-# Unattended facebook recon: arm 1 (logged out) and arm 3 (backed-up login), one load each,
+# Unattended recon of one site profile (-Site, default facebook): arm 1 (logged out) and arm 3 (backed-up login), one load each,
 # no input, never scheduled or repeated. Takes no build_lock; gates on the owner's Active
 # session, no native build, and commit headroom (S5, 2026-10-17). Exit 0 PASS, 1 FAIL, 3 UNMEASURED.
 # Tracking-map arms (2026-10-29): -Arms 1,3,1f,1c,3w,4a,lf,lc. 1f 1c 3w 4a lf lc run observe_drive.py (wheel only).
@@ -7,8 +7,9 @@
 # Light mode (part 3, 2026-10-30): -Light for lf; -Arms 3w -KeepWarm, then -Arms lw -WarmFrom <run id> 15+ min later.
 # -KeepCapture keeps capture\ and resources\html\ for on-host analysis (the default deletes them).
 param(
-  [string]$Backup = 'D:\camou-win\observe\backup\fb-login-20261017',
-  [string]$Baseline = 'D:\camou-win\observe\baseline-facebook.json',
+  [string]$Site = 'facebook',
+  [string]$Backup = '',
+  [string]$Baseline = '',
   [double]$MinHeadroomGB = 8,
   [double]$KillBelowGB = 4,
   [string[]]$Arms = @('1', '3'),
@@ -28,13 +29,22 @@ param(
 $ErrorActionPreference = 'Continue'
 $Root = 'D:\camou-win\observe'
 $Ri = Join-Path $Root 'run-interactive.ps1'
+# site profile (2026-10-31): every site-specific value comes from settings\sites\<site>\site.json; a bad one refuses here,
+# before the ledger write
+if ($Site -notmatch '^[a-z0-9_-]+$') { "UNMEASURED site: bad site name '$Site'"; exit 3 }
+$SiteFile = Join-Path $Root "settings\sites\$Site\site.json"
+try { $S = Get-Content $SiteFile -Raw -ErrorAction Stop | ConvertFrom-Json } catch { "UNMEASURED site: $Site not found"; exit 3 }
+$miss = @('origin', 'pages', 'backup', 'baseline', 'ledger', 'cap') | Where-Object { $_ -notin $S.PSObject.Properties.Name }
+if ($miss.Count) { "UNMEASURED site: $Site site.json lacks $($miss -join ' ')"; exit 3 }
+if (-not $Backup) { $Backup = $S.backup }
+if (-not $Baseline) { $Baseline = $S.baseline }
 $Arms = @($Arms | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
 $bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lw', 'lf', 'lc' })
 if ($bad.Count) { "UNMEASURED unknown arm: $($bad -join ' ')"; exit 3 }
 # unlink arms (part 2, 2026-10-30): lf and lc expand to one sub-arm per profile; lfN gets seed N of -UnlinkSeeds
 $Seeds = @("$UnlinkSeeds" -split ',' | Where-Object { $_ })
 if ($Seeds.Count -ne 3 -or @($Seeds | Where-Object { $_ -notmatch '^[1-9][0-9]*$' }).Count) { "UNMEASURED -UnlinkSeeds wants three whole numbers, got '$UnlinkSeeds'"; exit 3 }
-# light mode (part 3): refusals and the sweep run before the ledger write, so a refused run never touches auto\ledger.json
+# light mode (part 3): refusals and the sweep run before the ledger write, so a refused run never touches the site's ledger
 $WarmRoot = Join-Path $Root 'auto\warm'
 if ('lw' -in $Arms) {
   if ($WarmFrom -notmatch '^\d{8}-\d{6}$') { "UNMEASURED arm lw needs -WarmFrom <run id>, got '$WarmFrom'"; exit 3 }
@@ -65,11 +75,11 @@ $Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90; 'l
 $Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6; 'lw' = 12 }
 $Venv  = Join-Path $Root 'venv\Scripts\python.exe'
 $Stock = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-$Fb    = 'https://www.facebook.com'
-$Urls  = @{ '1f' = @("$Fb/"); '1c' = @("$Fb/"); '3w' = @("$Fb/", "$Fb/watch/", "$Fb/marketplace/", "$Fb/messages/", "$Fb/me/") }
-$Urls['lw'] = $Urls['3w']
+$Fb    = $S.origin
+$Urls  = @{}
+foreach ($p in $S.pages.PSObject.Properties) { $Urls[$p.Name] = @($p.Value | ForEach-Object { "$Fb$_" }) }
 $Driven   = @('1f', '1c', '3w', '4a', 'lw')
-foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6; $Urls[$u] = @("$Fb/") }
+foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6 }
 # a seeded fork arm can take 180 s for its browser to appear + 90 s wait + 60 s close + 60 s driver exit + post, over 6 min
 foreach ($u in 'lf1', 'lf2', 'lf3') { $Limit[$u] = 8 }
 $Driven += $Unlink
@@ -104,15 +114,15 @@ function Read-Ledger([string]$path) {
 # 15 minutes apart. The run is recorded when it starts, so a run that ends UNMEASURED still counts
 if (@($Arms | Where-Object { $_ -in $LoggedIn }).Count) {
   New-Item -ItemType Directory -Force (Join-Path $Root 'auto') | Out-Null
-  $Ledger = Join-Path $Root 'auto\ledger.json'
+  $Ledger = Join-Path $Root $S.ledger
   $now = (Get-Date).ToUniversalTime()
   $past = Read-Ledger $Ledger
   # an unreadable ledger hides the day's count, and the cap protects the owner's real account: refuse
   if ($null -eq $past) { "RESULT UNMEASURED cap: ledger unreadable"; exit 3 }
   $today = @($past | Where-Object { $_.Date -eq $now.Date })
-  if ($today.Count -ge 3) { "RESULT UNMEASURED cap: 3 logged-in runs today (UTC)"; exit 3 }
+  if ($today.Count -ge $S.cap.per_day) { "RESULT UNMEASURED cap: $($S.cap.per_day) logged-in runs today (UTC)"; exit 3 }
   $last = $past | Sort-Object | Select-Object -Last 1
-  if ($last -and ($now - $last).TotalMinutes -lt 15) { "RESULT UNMEASURED cap: last logged-in run $([int]($now - $last).TotalMinutes) min ago (< 15)"; exit 3 }
+  if ($last -and ($now - $last).TotalMinutes -lt $S.cap.min_gap_min) { "RESULT UNMEASURED cap: last logged-in run $([int]($now - $last).TotalMinutes) min ago (< $($S.cap.min_gap_min))"; exit 3 }
   $all = @($past | Select-Object -Last 9 | ForEach-Object { $_.ToString('o') }) + $now.ToString('o')
   [IO.File]::WriteAllText($Ledger, (ConvertTo-Json @($all)))
 }
@@ -149,7 +159,7 @@ try {
     $armDir = Join-Path $run "arm$a"
     $existed = Test-Path $armDir
     # the arm name is quoted anyway: an unquoted 1d was read as the decimal 1 (runs 20261029-145829 and -155547)
-    $cmd = "& $Root\recon.ps1 -Site facebook -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
+    $cmd = "& $Root\recon.ps1 -Site $Site -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
     if ($a -in '3', '3w', '4a', 'lw') {
       $src = if ($a -eq 'lw') { Join-Path $WarmRoot $WarmFrom } elseif ($FromProfileOverride) { $FromProfileOverride } else { $Backup }
@@ -234,7 +244,7 @@ try {
       if ($a -eq '3w' -and $drc -eq 0) { $WarmOk = $true }
       $judgeBase = $Discovery; $judgeArm = if ($a -eq '1f') { '1' } else { '3' }
     } else { $judgeBase = $Baseline; $judgeArm = $a }
-    python (Join-Path $Root 'observe_judge.py') judge --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
+    python (Join-Path $Root 'observe_judge.py') judge --site $Site --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
     $rc = $LASTEXITCODE; if ($rc -notin 0, 1, 2, 3) { $rc = 3 }  # a crash code is no verdict
     $worst = [math]::Max($worst, $rc)
   }
@@ -244,7 +254,7 @@ try {
     $us = @($Unlink[3..5] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
     if ($uf.Count -eq 3 -and $us.Count -eq 3) {
       $ul = @(); if ($Light) { $ul = @('--light') }  # light_limits explain the DPR rows of a light run only
-      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @uf --stock @us --settings $Root --seeds "$UnlinkSeeds" @ul `
+      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @uf --stock @us --site $Site --settings $Root --seeds "$UnlinkSeeds" @ul `
         --out (Join-Path $run 'unlink.json') --md (Join-Path $run 'unlink.md') 2>&1 | ForEach-Object { "$_" }
       $urc = $LASTEXITCODE
       if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink.md') -TotalCount 1 }
@@ -254,7 +264,7 @@ try {
   # light pair (part 3): the warm arm against its 3w baseline, on the host; only light.json and light.md hold the result
   if ('lw' -in $Arms) {
     $base = Join-Path $Root "auto\$WarmFrom\arm3w"
-    & $Venv (Join-Path $Root 'observe_light.py') $base (Join-Path $run 'armlw') `
+    & $Venv (Join-Path $Root 'observe_light.py') $base (Join-Path $run 'armlw') --site $Site `
       --out (Join-Path $run 'light.json') --md (Join-Path $run 'light.md') 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { $worst = [math]::Max($worst, 3) }
   }
