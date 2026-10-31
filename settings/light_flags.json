@@ -1,0 +1,14 @@
+{
+  "doc": [
+    "Approach B candidates: browser-internal flags that may cut RAM or CPU per profile (spec 2026-10-31-fb-light-b-design.md, local).",
+    "gate: scripts/verify_light_flag.py, the oracle page with and without the flag in the fork; pass means no page-readable leaf moved.",
+    "measured: arm 3w -Flags against two flag-less baselines; kept means the target process fell 10 % in peak and mean, beyond the baselines' spread, CPU rose 10 % at most and no page load rose more than 20 %.",
+    "observe-auto -Flags takes only gate=pass. settings/launcher.json launch.light_args holds exactly the kept flags, in this order.",
+    "A flag never contains ',' (observe-auto -Flags splits on it)."
+  ],
+  "flags": [
+    {"flag": "--js-flags=--optimize-for-size", "targets": "renderer", "gate": "pending", "gate_run": null, "measured": "pending", "runs": []},
+    {"flag": "--num-raster-threads=1", "targets": "renderer", "gate": "pending", "gate_run": null, "measured": "pending", "runs": []},
+    {"flag": "--disable-features=BackForwardCache", "targets": "renderer", "gate": "pending", "gate_run": null, "measured": "pending", "runs": []}
+  ]
+}
