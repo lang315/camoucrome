@@ -327,6 +327,8 @@ so it uses 2 of the day's 3 in the ledger. Launch both detached.
   process type, CPU seconds, URL paths and load milliseconds. A cold cache in
   `lw` is `UNMEASURED light: ... cache cold`, not a saving.
 
+**Approach B flags.** `observe-auto.ps1 -Arms 3w -Flags '<flag>'` runs arm 3w with candidate flags from `settings/light_flags.json` added to the fork's argv, without request interception; its baseline is `-Arms 3w -NoRoute`, so both keep the HTTP cache. A flag must have `gate: pass` there first; `scripts/verify_light_flag.py --flag <flag>`, run in the owner's session, is that gate (RED: `--js-flags=--max-old-space-size=512` fails on `perfMem.jsHeapSizeLimit`). Anything else is refused before the ledger write. `ram.json` keys utilities as `utility:<sub-type>` and counts renderers (`n_renderer`); `observe_light.py` prints one row per process.
+
 Host-only files and the cleanup: `capture\` (request bodies, WebSocket
 payloads) and `resources\html\` (document HTML) are deleted when the run
 finishes, together with the profile copies and `cookies.db`. With

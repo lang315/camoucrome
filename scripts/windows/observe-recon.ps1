@@ -1,6 +1,6 @@
 # Recon launcher for the camoucrome observer build. Headed, no CDP.
 # Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
-# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light] [-NoRoute]
+# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light] [-NoRoute] [-Flags <flag>,...]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
@@ -22,7 +22,8 @@ param(
   [switch]$ExpectSession,
   [int]$Seed = 0,
   [switch]$Light,
-  [switch]$NoRoute
+  [switch]$NoRoute,
+  [string[]]$Flags
 )
 $ErrorActionPreference = 'Stop'
 $Root   = 'D:\camou-win\observe'
@@ -161,6 +162,8 @@ if ($Exe) {
     '--trace-startup-record-mode=record-as-much-as-possible', "--log-net-log=$Dir\net.json"
   )
 }
+# approach B (light_flags.json): candidate flags go into the fork's argv, so chrome-args.json records them
+if ($Flags) { $fl += $Flags }
 # unattended runs log to <profile>\chrome_debug.log so a GPU process crash is countable
 if ($Wait) { $fl += @('--enable-logging', '--v=0') }
 if ($driven) {
