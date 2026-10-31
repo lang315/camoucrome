@@ -42,6 +42,8 @@
    "--no-first-run",
    "--no-default-browser-check"
   ],
+  "light_args": [],
+  "why_light_args": "Approach B (2026-10-31): browser-internal flags appended after base_args when a client's light option is on; only flags with gate pass and measured kept in settings/light_flags.json (scripts/test_light_flags.py). Off by default, so browser_argv_expected is unchanged.",
   "window_size_arg": "--window-size={width},{height}",
   "window_position_arg": "--window-position={x},{y}",
   "dpr_arg": "--force-device-scale-factor={dpr}",

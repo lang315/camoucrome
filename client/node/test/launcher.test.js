@@ -284,3 +284,18 @@ test('launch refuses a proxy that would leak or do nothing', async () => {
     await assert.rejects(c.launch(chromium, '/x/chrome', { proxy }), /proxy/);
   }
 });
+
+test('light args match the contract', () => {
+  assert.deepEqual(c.LIGHT_ARGS, L.light_args);
+});
+
+test('light puts light args after base args and off changes nothing', () => {
+  const saved = c.LIGHT_ARGS.splice(0, c.LIGHT_ARGS.length, '--x-light');
+  try {
+    const pipe = ['--remote-debugging-pipe'];
+    assert.deepEqual(c.buildArgs({ headless: false }), [...L.base_args, ...pipe]);
+    assert.deepEqual(c.buildArgs({ headless: false, light: true }), [...L.base_args, '--x-light', ...pipe]);
+  } finally {
+    c.LIGHT_ARGS.splice(0, c.LIGHT_ARGS.length, ...saved);
+  }
+});

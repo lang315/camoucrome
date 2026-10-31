@@ -19,6 +19,7 @@ type contract struct {
 	} `json:"forbidden_context_options"`
 	Launch struct {
 		BaseArgs          []string `json:"base_args"`
+		LightArgs         []string `json:"light_args"`
 		WindowSizeArg     string   `json:"window_size_arg"`
 		WindowPositionArg string   `json:"window_position_arg"`
 		DPRArg            string   `json:"dpr_arg"`
@@ -553,4 +554,27 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+func TestLightArgsMatchTheContract(t *testing.T) {
+	c := load(t)
+	if !reflect.DeepEqual(append([]string{}, LightArgs...), append([]string{}, c.Launch.LightArgs...)) {
+		t.Fatalf("LightArgs %v != contract %v", LightArgs, c.Launch.LightArgs)
+	}
+}
+
+func TestLightPutsLightArgsAfterBaseArgs(t *testing.T) {
+	c := load(t)
+	saved := LightArgs
+	LightArgs = []string{"--x-light"}
+	defer func() { LightArgs = saved }()
+	headed := false
+	pipe := "--remote-debugging-pipe"
+	if got := BuildArgs(Options{Headless: &headed}); !reflect.DeepEqual(got, append(append([]string{}, c.Launch.BaseArgs...), pipe)) {
+		t.Fatalf("light off changed argv: %v", got)
+	}
+	want := append(append(append([]string{}, c.Launch.BaseArgs...), "--x-light"), pipe)
+	if got := BuildArgs(Options{Headless: &headed, Light: true}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("light on %v != %v", got, want)
+	}
 }

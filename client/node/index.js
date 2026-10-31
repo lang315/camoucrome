@@ -23,6 +23,8 @@ const FORBIDDEN_OPTIONS = new Set([
   'hasTouch', 'isMobile',
 ]);
 const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
+// Mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BASE_ARGS when light is on.
+const LIGHT_ARGS = [];
 const SEED_KEYS = ['canvas:seed', 'audio:seed', 'mediaDevices:seed'];
 const SEEDS_FILE = 'camoucrome-seeds.json'; // launcher.json per_instance_seeds.profile_file
 
@@ -175,8 +177,8 @@ function acceptLangOf(config, preset) {
 // The whole argv besides what the driver adds: launch() ignores Playwright's
 // default args (they carry --disable-features=<18>, --blink-settings, ...).
 function buildArgs({ window, dpr, position, extra = [], headless = true, userDataDir,
-  acceptLang, extensions = [], spkiList = [], proxyServer, proxyBypass } = {}) {
-  const args = [...BASE_ARGS];
+  acceptLang, extensions = [], spkiList = [], proxyServer, proxyBypass, light = false } = {}) {
+  const args = [...BASE_ARGS, ...(light ? LIGHT_ARGS : [])];
   if (headless) args.push('--headless=new');
   args.push('--remote-debugging-pipe');
   if (userDataDir) args.push(`--user-data-dir=${userDataDir}`);
@@ -256,7 +258,7 @@ function profileSeeds(userDataDir) {
 
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, position, headless = true,
-  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, ...options
+  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, light = false, ...options
 } = {}) {
   if (proxy !== undefined) {
     if (!proxy || typeof proxy !== 'object' || !proxy.server || proxy.server.includes('@')) {
@@ -298,7 +300,7 @@ async function launch(chromium, executablePath, {
         fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
       args: buildArgs({ window, dpr, position, extra: args, headless, userDataDir: dir,
         acceptLang: acceptLangOf(config, preset), extensions, spkiList,
-        proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass }),
+        proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass, light }),
       // Otherwise a 1280x720 viewport is emulated, fighting screen.* and the
       // window size.
       viewport: null,
@@ -327,5 +329,5 @@ async function launch(chromium, executablePath, {
   return ctx;
 }
 
-module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
+module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
   acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch };

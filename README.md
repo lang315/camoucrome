@@ -241,6 +241,8 @@ The two identities differ in screen size and CPU cores, and in the noise seeds s
 each profile. They share the host's GPU, the stock Windows font list, voices and the
 snapped `deviceMemory`.
 
+The Python, Go (`Options.Light`) and Node clients take an opt-in `light` option (default off): it appends `launch.light_args` from `settings/launcher.json`, approach B's browser-internal flags that passed the page-blind gate and cut RAM in measurement. Independent of the generator's `--light` (DPR 1 draw); a host that wants both passes both.
+
 ## Time zone and locale from the proxy's exit address
 
 A time zone that contradicts the address your traffic comes from is a tell that detectors check
