@@ -53,6 +53,7 @@
   },
   "light_limits": {
     "pixel_ratio": {"why": "Light mode (part 3, L1) draws DPR 1 for every profile by design; DPR 1 is the majority desktop value.", "approved": "2026-10-30"},
-    "annotations_double.devicePixelRatio": {"why": "Light mode (part 3, L1) draws DPR 1 for every profile by design; DPR 1 is the majority desktop value.", "approved": "2026-10-30"}
+    "annotations_double.devicePixelRatio": {"why": "Light mode (part 3, L1) draws DPR 1 for every profile by design; DPR 1 is the majority desktop value.", "approved": "2026-10-30"},
+    "zoom_ratio": {"why": "Light mode (part 3, L1) draws DPR 1 for every profile by design; DPR 1 is the majority desktop value.", "approved": "2026-10-31"}
   }
 }

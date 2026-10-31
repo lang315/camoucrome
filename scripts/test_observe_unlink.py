@@ -319,3 +319,12 @@ def test_main_light_flag(tmp_path):
     assert run_main(tmp_path / "plain", reqs, reqs) == 0
     assert json.loads((tmp_path / "light" / "unlink.json").read_text(encoding="utf-8"))["counts"]["net_gap"] == 0
     assert json.loads((tmp_path / "plain" / "unlink.json").read_text(encoding="utf-8"))["counts"]["net_gap"] == 2
+
+
+def test_zoom_ratio_is_a_light_limit_only_with_light():
+    fork = [pv(bz(zoom_ratio=1)) for _ in range(3)]
+    f = "/ajax/bz q.payload.zoom_ratio"
+    out = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED, light=True)
+    assert (row(out, f)["class"], row(out, f)["explained_by"]) == ("gap", "light-limit") and out["counts"]["net_gap"] == 0
+    out = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)
+    assert row(out, f)["explained_by"] is None and out["counts"]["net_gap"] == 1
