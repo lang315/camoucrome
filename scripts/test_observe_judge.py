@@ -289,3 +289,15 @@ def test_arm3_login_proof_survives_the_cookies_db_cleanup(tmp_path):
     assert j.main(["baseline", "--arm", "3", str(arm), "-o", str(out)]) == 0
     assert j.main(["judge", "--baseline", str(out), "--arm", "3", str(arm), "--summary-out", str(so)]) == 0
     assert json.loads(so.read_text())["cookies"] == [".facebook.com:c_user", ".facebook.com:xs"]
+
+
+import sites  # noqa: E402
+
+
+def test_expired_hint_and_cookie_domain_come_from_the_site():
+    fb = sites.load("facebook")
+    s = {"run": {"session": 1, "session_state": "Active", "report_rc": 0}, "coverage": {"discarded": 0},
+         "netlog": {"starts_after_trace": 0, "head_s": 0}, "intl": {}, "cookies": [".facebook.com:c_user"]}
+    assert j.unmeasured(s, 3) == [fb.expired_hint]
+    assert j.unmeasured(dict(s, cookies=[".facebook.com:c_user", ".facebook.com:xs"]), 3) == []
+    assert j.unmeasured(dict(s, cookies=[]), 3, sites.load("testpage")) == []  # no login cookies to miss

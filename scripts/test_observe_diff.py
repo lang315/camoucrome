@@ -55,3 +55,9 @@ def test_diff_bytes_per_kind_count_only_the_page_site(tmp_path):
     assert d["browser"] == (4050, 0)
     out = od.render(d, "fork", "stock")
     assert "browser-internal" in out and "html" not in out
+
+
+def test_diff_main_takes_a_site_name(tmp_path, capsys):
+    a, b = arm(tmp_path, "a", {}, []), arm(tmp_path, "b", {}, [])
+    assert od.main([str(a), str(b), "--site", "facebook"]) == 0
+    assert od.main([str(a), str(b), "--site", "nosuch"]) == 3

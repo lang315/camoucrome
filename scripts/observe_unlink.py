@@ -15,20 +15,21 @@ import urllib.parse
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import observe_drive as d  # noqa: E402
+import sites  # noqa: E402
 
-ENDPOINTS = ("/ajax/bz", "/ajax/qm/", "/ajax/webstorage/process_keys/")
 
 
-def endpoint_path(url):
+def endpoint_path(url, endpoints=None):
     p = urllib.parse.urlsplit(url).path.rstrip("/")
-    return next((e for e in ENDPOINTS if e.rstrip("/") == p), None)
+    endpoints = endpoints if endpoints is not None else sites.load().unlink_endpoints
+    return next((e for e in endpoints if e.rstrip("/") == p), None)
 
 
-def profile_values(requests):
-    """{"<endpoint> <path>": [values]} over one profile's captured POST bodies on ENDPOINTS."""
+def profile_values(requests, endpoints=None):
+    """{"<endpoint> <path>": [values]} over one profile's captured POST bodies on the site's unlink endpoints."""
     out = collections.defaultdict(list)
     for r in requests:
-        ep = None if r.get("missing") else endpoint_path(r.get("url", ""))
+        ep = None if r.get("missing") else endpoint_path(r.get("url", ""), endpoints)
         if ep:
             for path, v in d.fields(d._b64(r["body_b64"]), r.get("content_type", ""))[1]:
                 out[f"{ep} {path}"].append(v)
@@ -46,7 +47,7 @@ def digest(values):
 
 
 def field_key(path, fields):
-    """The fb_fields.json key a captured path belongs to: equal to it, or ending in '.' + key (longest key wins)."""
+    """The site's fields.json key a captured path belongs to: equal to it, or ending in '.' + key (longest key wins)."""
     p = path.split(" ", 1)[1]
     for k in sorted(fields, key=len, reverse=True):
         if p == k or p.endswith("." + k):
@@ -162,8 +163,10 @@ def attach_prediction(doc, prediction):
     return doc
 
 
-def has_bz(requests):
-    return any(not r.get("missing") and endpoint_path(r.get("url", "")) == "/ajax/bz" for r in requests)
+def has_bz(requests, site=None):
+    site = site or sites.load()
+    return any(not r.get("missing") and endpoint_path(r.get("url", ""), site.unlink_endpoints) == site.beacon_path
+               for r in requests)
 
 
 def render(doc):
@@ -199,20 +202,26 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fork", nargs=3, required=True, metavar="ARM_DIR")
     ap.add_argument("--stock", nargs=3, required=True, metavar="ARM_DIR")
-    ap.add_argument("--settings", required=True, help="a dir with fb_fields.json, machine_constants.json, accepted_defaults.json")
+    ap.add_argument("--settings", required=True, help="a dir with machine_constants.json and accepted_defaults.json (fields come from the site profile)")
+    ap.add_argument("--site", default="facebook")
     ap.add_argument("--seeds", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--md", required=True)
-    ap.add_argument("--light", action="store_true", help="a light run: light_limits in fb_fields.json explain rows like limits")
+    ap.add_argument("--light", action="store_true", help="a light run: light_limits in the site's fields.json explain rows like limits")
     a = ap.parse_args(argv)
+    try:
+        site = sites.load(a.site)
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
     caps = [d.read_jsonl(pathlib.Path(x) / "capture" / "requests.jsonl") for x in a.fork + a.stock]
-    empty = [pathlib.Path(x).name for x, c in zip(a.fork + a.stock, caps) if not has_bz(c)]
+    empty = [pathlib.Path(x).name for x, c in zip(a.fork + a.stock, caps) if not has_bz(c, site)]
     if empty:
-        print("UNMEASURED unlink: no /ajax/bz body in " + ", ".join(empty), file=sys.stderr)  # ruling R5
+        print(f"UNMEASURED unlink: no {site.beacon_path} body in " + ", ".join(empty), file=sys.stderr)  # ruling R5
         return 3
     s = pathlib.Path(a.settings)
-    doc = _load(s / "fb_fields.json")
-    out = classify([profile_values(c) for c in caps[:3]], [profile_values(c) for c in caps[3:]], doc,
+    doc = _load(site.dir / "fields.json")
+    out = classify([profile_values(c, site.unlink_endpoints) for c in caps[:3]], [profile_values(c, site.unlink_endpoints) for c in caps[3:]], doc,
                    _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"], light=a.light)
     attach_prediction(out, predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork]))
     out["seeds"] = a.seeds
