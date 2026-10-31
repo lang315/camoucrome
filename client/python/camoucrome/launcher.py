@@ -18,6 +18,8 @@ FORBIDDEN_OPTIONS = frozenset({
 })
 
 BASE_ARGS = ["--no-first-run", "--no-default-browser-check"]
+# Mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BASE_ARGS when light is on.
+LIGHT_ARGS = []
 
 
 def _as_json(value):
@@ -187,7 +189,7 @@ def accept_lang_of(config, preset=None):
 
 def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=None,
                accept_lang=None, extensions=(), spki_list=(), proxy_server=None, proxy_bypass=None,
-               position=None):
+               position=None, light=False):
     """Launch flags the C++ deliberately left to the launcher: window size so
     inner/outer/client widths cohere with screen.*, and the device scale
     factor. Timezone, locale and UA are NOT flags: they come through config.
@@ -198,7 +200,7 @@ def build_args(window=None, dpr=None, extra=(), headless=True, user_data_dir=Non
     --blink-settings=primaryHoverType=..., --hide-scrollbars, --mute-audio,
     --force-color-profile=srgb and more, each moving a page-visible surface
     off the compiled defaults (settings/launcher.json, "why_ignore_default_args")."""
-    args = list(BASE_ARGS)
+    args = list(BASE_ARGS) + (list(LIGHT_ARGS) if light else [])
     if headless:
         args.append("--headless=new")
     # Both are Playwright defaults too, so ignore_default_args drops them:
@@ -251,7 +253,7 @@ def remove_dir(path, wait=10.0):
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None, position=None,
            headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, proxy=None,
-           geoip=None, exit_ip=None, **options):
+           geoip=None, exit_ip=None, light=False, **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
     Never add_init_script anything a page could enumerate: both patchright
@@ -273,6 +275,8 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     contradiction or when it cannot tell; it never changes the config -- the generator derives zone and locale
     (camoucrome.gen --exit-ip). Without `exit_ip` the check makes a blocking echo request (also under an async
     caller); `exit_ip` skips it. IP Geolocation by DB-IP.
+
+    `light=True` appends settings/launcher.json light_args (approach B's kept flags); independent of `gen --light`.
     `proxy` is Playwright's {"server", "bypass", "username", "password"}: the server (and bypass list) go
     into argv, the credentials only to the driver, which answers the proxy's 407.
     `fonts_dir` is the bundled font directory (default: `fonts` beside the
@@ -317,7 +321,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
                           crash_dir=owned[0]),
             args=build_args(window, dpr, args, headless, user_data_dir,
                             accept_lang_of(config, preset), extensions, spki_list,
-                            proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None, position),
+                            proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None, position, light=light),
             # Playwright otherwise emulates a 1280x720 viewport through
             # Emulation.setDeviceMetricsOverride, which fights screen.* and the
             # window size above.

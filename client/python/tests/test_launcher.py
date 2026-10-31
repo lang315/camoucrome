@@ -458,3 +458,21 @@ def test_device_scale_factor_text_matches_node_and_go():
     # Node's template literal and Go's %g print a whole number without ".0"
     for dpr, text in ((1.0, "1"), (2, "2"), (2.0, "2"), (1.25, "1.25"), (1.5, "1.5")):
         assert f"--force-device-scale-factor={text}" in camoucrome.build_args(dpr=dpr), dpr
+
+
+def test_light_args_match_the_contract():
+    assert camoucrome.launcher.LIGHT_ARGS == CONTRACT["launch"]["light_args"]
+
+
+def test_light_puts_light_args_after_base_args_and_off_changes_nothing(monkeypatch):
+    monkeypatch.setattr(camoucrome.launcher, "LIGHT_ARGS", ["--x-light"])
+    base, pipe = CONTRACT["launch"]["base_args"], ["--remote-debugging-pipe"]
+    assert camoucrome.build_args(headless=False) == base + pipe
+    assert camoucrome.build_args(headless=False, light=True) == base + ["--x-light"] + pipe
+
+
+def test_launch_passes_light_through(monkeypatch):
+    monkeypatch.setattr(camoucrome.launcher, "LIGHT_ARGS", ["--x-light"])
+    pw = FakePlaywright()
+    camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p", light=True)
+    assert "--x-light" in pw.chromium.kw["args"]

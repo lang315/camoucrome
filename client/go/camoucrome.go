@@ -29,6 +29,10 @@ import (
 // BaseArgs mirrors settings/launcher.json "launch.base_args".
 var BaseArgs = []string{"--no-first-run", "--no-default-browser-check"}
 
+// LightArgs mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BaseArgs
+// when Options.Light is set.
+var LightArgs = []string{}
+
 // CrashDumpsEnv mirrors settings/launcher.json launch.crash_dumps.env. A
 // crash's minidump holds the process's whole environment block, CAMOU_CONFIG
 // verbatim beside the host's variables (measured 2026-10-03 on Windows), and
@@ -55,6 +59,7 @@ type Options struct {
 	ExtraArgs      []string
 	FontsDir       string       // the bundled font dir; default "fonts" beside the executable when present
 	Proxy          *Proxy       // nil = direct
+	Light          bool         // append LightArgs (approach B); independent of the generator's --light
 	GeoIP          string       // a DB-IP Lite / GeoLite2-layout .mmdb: Launch warns when timezone:id contradicts the exit IP
 	ExitIP         string       // skips the echo request
 	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
@@ -404,6 +409,9 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 // page-visible surface off the compiled defaults (settings/launcher.json).
 func BuildArgs(o Options) []string {
 	args := append([]string{}, BaseArgs...)
+	if o.Light {
+		args = append(args, LightArgs...)
+	}
 	if o.Headless == nil || *o.Headless {
 		args = append(args, "--headless=new")
 	}
