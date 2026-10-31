@@ -626,3 +626,24 @@ def test_costs_split_by_top_level_site_and_browser_internal(tmp_path):
     assert (b["n"], b["network"]) == (2, 4050)
     out = r.render_costs(c)
     assert out.index("https://facebook.com") < out.index("browser-internal")
+
+
+def test_ram_summary_sums_sub_typed_utilities_into_one_utility_row(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 6, "samples": [
+        {"t": 0, "n_renderer": 2, "by_type": {"renderer": 100 * 2**20, "utility:network.mojom.NetworkService": 30 * 2**20,
+                                              "utility:audio.mojom.AudioService": 10 * 2**20, "utility": 5 * 2**20}},
+        {"t": 6, "n_renderer": 3, "by_type": {"renderer": 100 * 2**20, "utility:network.mojom.NetworkService": 50 * 2**20}}]}))
+    s = r.ram_summary(p)
+    assert s["utility"] == {"peak_mb": 50.0, "mean_mb": 47.5, "samples": 2}
+    assert s["utility:network.mojom.NetworkService"]["peak_mb"] == 50.0
+    assert s["utility:audio.mojom.AudioService"]["samples"] == 1
+    assert r.renderer_max(p) == 3
+
+
+def test_an_old_ram_json_keeps_its_utility_row_and_has_no_renderer_count(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 6, "samples": [{"t": 0, "by_type": {"utility": 70 * 2**20}}]}))
+    assert r.ram_summary(p)["utility"] == {"peak_mb": 70.0, "mean_mb": 70.0, "samples": 1}
+    assert r.renderer_max(p) is None
+    assert r.renderer_max(tmp_path / "absent.json") is None
