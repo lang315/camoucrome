@@ -1,4 +1,4 @@
-"""Driven arms of the facebook tracking map: capture on the host, names and matches out.
+"""Driven arms of the observe toolchain (one site profile per run): capture on the host, names and matches out.
 
 Spec: docs/superpowers/specs/2026-10-29-fb-tracking-map-design.md (local). Runs on the Windows
 host in the observe venv (Python 3.12, patchright, the client). Values never leave the host:
@@ -20,6 +20,8 @@ import threading
 import time
 import urllib.parse
 import zlib
+
+import sites
 
 ID_RE = re.compile(r"^\d{10,}$")
 
@@ -238,56 +240,6 @@ def mqtt_packets(frame):
     return [] if partial else packets
 
 
-GATEWAY_TYPES = range(0x0c, 0x10)
-GATEWAY_PREFIX = {0x0d: 2}  # a type-0d chunk's payload starts 2 bytes before its JSON or MQTT (measured: run 3, lightspeed and realtime)
-
-
-def gateway_chunks(raw):
-    """([(type, payload)], rest): the gateway's chunks at the front of a binary frame, each [type 0x0c-0x0f][2-byte stream id]
-    [3-byte little-endian length][payload], and how many bytes after the last whole chunk are not one."""
-    out, i = [], 0
-    while i + 6 <= len(raw) and raw[i] in GATEWAY_TYPES:
-        n = int.from_bytes(raw[i + 3:i + 6], "little")
-        if i + 6 + n > len(raw):
-            break
-        out.append((raw[i], raw[i + 6:i + 6 + n]))
-        i += 6 + n
-    return out, len(raw) - i
-
-
-def _embedded_json(p):
-    """(offset, value) of the JSON that runs from the first '{' or '[' within the first 16 bytes to the end of p, else None;
-    realtime's type-0d chunks carry a binary header of 2 to 5 more bytes before it."""
-    for i in range(min(16, len(p))):
-        if p[i] in b"{[":
-            try:
-                j = _json(p[i:].decode("utf-8"))
-            except UnicodeDecodeError:
-                continue
-            if j is not None:
-                return i, j
-    return None
-
-
-def _chunk_units(b0, payload):
-    """([(topic, field pairs)], partial) of one chunk; the topic is '<type hex>/<mqtt topic, (json), (json+N), (ack) or
-    (opaque)>', N the bytes of header before the JSON. A type-0c chunk of 2 bytes is an acknowledgement counter: it parses
-    as an empty MQTT packet by chance and is not one."""
-    key = "%02x/" % b0
-    if b0 == 0x0c and len(payload) <= 2:
-        return [(key + "(ack)", [])], 0
-    p = payload[GATEWAY_PREFIX.get(b0, 0):]
-    pk, partial = mqtt_parse(p) if p[:1] not in (b"{", b"[") else ([], 0)
-    if pk and not partial:
-        return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], 0
-    emb = _embedded_json(p)  # before a partial MQTT read: a binary header can look like a packet start
-    if emb:
-        return [(key + ("(json+%d)" % emb[0] if emb[0] else "(json)"), walk(emb[1]))], 0
-    if pk:
-        return [(key + (q["topic"] or q["type"]), fields(q["payload"])[1]) for q in pk], partial
-    return [(key + "(opaque)", [])], 0
-
-
 PAIRS = {"screen": ("screen.width", "screen.height"), "screen.avail": ("screen.availWidth", "screen.availHeight"),
          "window.inner": ("window.innerWidth", "window.innerHeight"),
          "window.outer": ("window.outerWidth", "window.outerHeight")}
@@ -362,20 +314,15 @@ def _add_fields(slot, pairs):
         f["classes"][c] = f["classes"].get(c, 0) + 1
 
 
-def _frame_units(fr):
-    """([(topic, field pairs)], partial bytes) of one frame: MQTT packets (a cut or mid-packet remainder is counted as
-    partial), else a JSON text frame, else one opaque unit."""
+def _frame_units(fr, site=None):
+    """([(topic, field pairs)], partial bytes) of one frame: the site's binary framing, else MQTT packets (a cut or
+    mid-packet remainder is counted as partial), else a JSON text frame, else one opaque unit."""
+    site = site or sites.load()
     raw = _b64(fr["payload_b64"])
     if fr.get("opcode") == 2:
-        if raw in (b"\x09", b"\x0a"):
-            return [("%02x/(single)" % raw[0], [])], 0  # the gateway's keepalive pair
-        chunks, rest = gateway_chunks(raw)
-        if chunks:
-            units, partial = [], rest
-            for b0, payload in chunks:
-                u, n = _chunk_units(b0, payload)
-                units, partial = units + u, partial + n
-            return units + ([("(partial)", [])] if rest else []), partial
+        got = site.binary_units(raw)
+        if got is not None:
+            return got
         pk, partial = mqtt_parse(raw)
         if not pk:
             return [("(opaque)", [])], partial
@@ -425,7 +372,8 @@ def _shape(shape, fr, raw):
         _count(shape["first_char"], _first_char_class(raw))
 
 
-def build_channels(requests, frames, arm):
+def build_channels(requests, frames, arm, site=None):
+    site = site or sites.load()
     eps = {}
     missing = 0
     for r in requests:
@@ -454,7 +402,7 @@ def build_channels(requests, frames, arm):
         w["frames_" + fr["dir"]] += 1
         w["bytes_" + fr["dir"]] += len(raw)
         _shape(w["shape"], fr, raw)
-        units, partial = _frame_units(fr)
+        units, partial = _frame_units(fr, site)
         w["partial_bytes"] += partial
         for topic, pairs in units:
             t = w["topics"].setdefault(topic, {"count": 0, "fields": {}})
@@ -470,7 +418,8 @@ def bool_matches(value, truth):
     return [s for s, t in truth.items() if isinstance(t, bool) and t is value]
 
 
-def build_bool_fields(requests, frames, truth):
+def build_bool_fields(requests, frames, truth, site=None):
+    site = site or sites.load()
     n = collections.Counter()
     for r in requests:
         if not r.get("missing"):
@@ -478,14 +427,15 @@ def build_bool_fields(requests, frames, truth):
                 for s in bool_matches(v, truth):
                     n[(endpoint(r["url"]), path, s)] += 1
     for fr in frames:
-        for topic, pairs in _frame_units(fr)[0]:
+        for topic, pairs in _frame_units(fr, site)[0]:
             for path, v in pairs:
                 for s in bool_matches(v, truth):
                     n[(endpoint(fr["url"]) + " " + topic, path, s)] += 1
     return [{"endpoint": e, "field": f, "surface": s, "count": c} for (e, f, s), c in sorted(n.items())]
 
 
-def build_matches(requests, frames, truth):
+def build_matches(requests, frames, truth, site=None):
+    site = site or sites.load()
     n = collections.Counter()
     for r in requests:
         if not r.get("missing"):
@@ -493,7 +443,7 @@ def build_matches(requests, frames, truth):
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1
     for fr in frames:
-        for topic, pairs in _frame_units(fr)[0]:
+        for topic, pairs in _frame_units(fr, site)[0]:
             for path, v in pairs:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(fr["url"]) + " " + topic, path, s, enc, weak)] += 1
@@ -501,15 +451,16 @@ def build_matches(requests, frames, truth):
             for (e, f, s, enc, weak), c in sorted(n.items())]
 
 
-def write_outputs(out_dir, arm):
+def write_outputs(out_dir, arm, site=None):
+    site = site or sites.load()
     out_dir = pathlib.Path(out_dir)
     reqs = read_jsonl(out_dir / "capture" / "requests.jsonl")
     frames = read_jsonl(out_dir / "capture" / "ws.jsonl")
     tp = out_dir / "truth.json"
     truth = json.loads(tp.read_text(encoding="utf-8")) if tp.exists() else {}
-    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm), indent=1, sort_keys=True), encoding="utf-8")
-    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth), indent=1), encoding="utf-8")
-    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth), indent=1), encoding="utf-8")
+    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm, site), indent=1, sort_keys=True), encoding="utf-8")
+    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth, site), indent=1), encoding="utf-8")
+    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth, site), indent=1), encoding="utf-8")
 
 
 FORK_CONFIG = {"humanize:enabled": True, "ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
@@ -587,26 +538,27 @@ def host_in(url, hosts):
     return any(h == x or (x.startswith(".") and h.endswith(x)) for x in hosts)
 
 
-# The telemetry paths whose bodies CDP does not carry (sendBeacon and keepalive Blobs): ctx.route reads them. Nothing else is routed.
-ROUTE_PATHS = ("/ajax/bz", "/ajax/bnzai", "/ajax/qm/")
-ROUTE_RE = re.compile(r"^https?://[^/]+/ajax/(?:bz|bnzai|qm/)")
+# The telemetry paths whose bodies CDP does not carry (sendBeacon and keepalive Blobs): ctx.route reads them. Nothing else
+# is routed. The paths come from the site profile (site.json route_paths).
+def route_re(paths):
+    return re.compile(r"^https?://[^/]+(?:" + "|".join(re.escape(p) for p in paths) + ")")
 
 
-def is_route_path(url):
+def is_route_path(url, paths):
     path = urllib.parse.urlsplit(url).path
-    return any(path.startswith(p) for p in ROUTE_PATHS)
+    return any(path.startswith(p) for p in paths)
 
 
 class Recorder:
     """One CDP session with Network.enable only (never Runtime.enable). Raw data goes to capture/ and resources/.
 
     A POST body reaches requests.jsonl one of three ways, recorded as `via`: the event itself, Network.getRequestPostData
-    (queued by the handler, fetched in drain(), never inside a handler), or ctx.route for the ROUTE_PATHS, where the route
+    (queued by the handler, fetched in drain(), never inside a handler), or ctx.route for the site's route paths, where the route
     handler reads post_data_buffer and forwards the request unmodified. With route on, those paths are written by the
     route only: the event gives their initiator, paired by URL in arrival order (shortcut: two requests to one URL that
     swap order swap initiators; upgrade if the map needs it), and an event no route ever answers is a `missing` record."""
 
-    def __init__(self, out, post_hosts, resource_hosts, doc_hosts, route=True):
+    def __init__(self, out, post_hosts, resource_hosts, doc_hosts, route=True, route_paths=None, ws_hosts=None):
         self.cap = out / "capture"
         self.res = out / "resources"
         for p in (self.cap, self.res / "js", self.res / "html"):
@@ -615,6 +567,8 @@ class Recorder:
         self.ws_f = open(self.cap / "ws.jsonl", "a", encoding="utf-8")
         self.post_hosts, self.resource_hosts, self.doc_hosts = post_hosts, resource_hosts, doc_hosts
         self.route = route
+        self.route_paths = tuple(route_paths) if route_paths is not None else sites.load().route_paths
+        self.ws_hosts = list(ws_hosts) if ws_hosts is not None else list(sites.load().ws_hosts)
         self.ws_url, self.wanted, self.done = {}, {}, []
         self.pending = {}                                  # requestId -> record waiting for getRequestPostData
         self.inits = collections.defaultdict(list)         # endpoint -> [(url, content_type, initiator)] of routed paths
@@ -647,7 +601,7 @@ class Recorder:
         frames = stack.get("callFrames") or []
         ctype = (r.get("headers") or {}).get("Content-Type", "")
         initiator = frames[0]["url"] if frames else (e.get("initiator") or {}).get("url", "")
-        if self.route and is_route_path(r["url"]):
+        if self.route and is_route_path(r["url"], self.route_paths):
             self.inits[endpoint(r["url"])].append((r["url"], ctype, initiator))
             return
         rec = {"url": r["url"], "method": "POST", "content_type": ctype,
@@ -659,7 +613,7 @@ class Recorder:
             self._write(rec)
 
     def on_route(self, route):
-        """ctx.route handler for ROUTE_PATHS: read the body, record it, forward the request unmodified, always."""
+        """ctx.route handler for the site's route paths: read the body, record it, forward the request unmodified, always."""
         try:
             req = route.request
             if req.method == "POST" and host_in(req.url, self.post_hosts):
@@ -691,7 +645,7 @@ class Recorder:
 
     def on_frame(self, e, direction):
         url = self.ws_url.get(e["requestId"], "")
-        if not host_in(url, [".facebook.com"]):
+        if not host_in(url, self.ws_hosts):
             return
         r = e["response"]
         data = r.get("payloadData", "")
@@ -800,7 +754,9 @@ def run(a):
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     extra = json.loads(pathlib.Path(a.chrome_args).read_text(encoding="utf-8")) if a.chrome_args else []
-    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route)
+    site = sites.load(a.site)
+    rec = Recorder(out, a.post_hosts.split(","), a.resource_hosts.split(","), a.doc_hosts.split(","), route=not a.no_route,
+                   route_paths=site.route_paths, ws_hosts=site.ws_hosts)
     rc, loads = 0, []
     kw = {"config": FORK_CONFIG if a.fork else None, "args": []}
     if a.identity_seed is not None:
@@ -822,7 +778,7 @@ def run(a):
                 page = ctx.pages[0] if ctx.pages else ctx.new_page()
                 rec.attach(ctx.new_cdp_session(page))
                 if not a.no_route:
-                    ctx.route(ROUTE_RE, rec.on_route)  # exactly the ROUTE_PATHS; the handler forwards every request unmodified
+                    ctx.route(route_re(site.route_paths), rec.on_route)  # exactly the route paths; the handler forwards every request unmodified
                 vp = page.viewport_size or {"width": 1280, "height": 720}
                 page.mouse.move(vp["width"] / 2, vp["height"] / 2)
                 rng = random.Random()
@@ -843,7 +799,7 @@ def run(a):
                 try:
                     ctx.close()
                 finally:
-                    write_outputs(out, a.arm)  # a killed arm still leaves a partial channels.json to diagnose
+                    write_outputs(out, a.arm, site)  # a killed arm still leaves a partial channels.json to diagnose
     finally:
         (out / "loads.json").write_text(json.dumps(loads), encoding="utf-8")  # speed (part 3): paths and ms only
     return rc
@@ -871,10 +827,15 @@ def parse_args(argv=None):
                     help="page the ground truth is read in; default: an empty page served on 127.0.0.1 (a secure context)")
     ap.add_argument("--no-truth", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--no-route", action="store_true", help=argparse.SUPPRESS)  # verify_observe_drive D6's RED, and the light pair (the route turns the HTTP cache off)
-    ap.add_argument("--post-hosts", default="www.facebook.com,web.facebook.com,graph.facebook.com,www.fbsbx.com,gateway.facebook.com")
-    ap.add_argument("--resource-hosts", default="static.xx.fbcdn.net,connect.facebook.net")
-    ap.add_argument("--doc-hosts", default="www.facebook.com")
+    ap.add_argument("--post-hosts", default=None)
+    ap.add_argument("--resource-hosts", default=None)
+    ap.add_argument("--doc-hosts", default=None)
+    ap.add_argument("--site", default="facebook", help="site profile in settings/sites")
     a = ap.parse_args(argv)
+    site = sites.load(a.site)  # SiteError propagates to main, which reports it as UNMEASURED
+    for flag in ("post_hosts", "resource_hosts", "doc_hosts"):
+        if getattr(a, flag) is None:
+            setattr(a, flag, ",".join(getattr(site, flag)))
     missing = [f"--{n}" for n in ("exe", "profile", "out", "url") if not getattr(a, n)]
     if missing and not a.rederive:
         ap.error("the following arguments are required: " + ", ".join(missing))
@@ -886,12 +847,15 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    a = parse_args(argv)
     try:
+        a = parse_args(argv)
         if a.rederive:
-            write_outputs(a.rederive, a.arm)
+            write_outputs(a.rederive, a.arm, sites.load(a.site))
             return 0
         return run(a)
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
     except Exception as exc:  # noqa: BLE001 - recon.ps1 reads the exit code; the type names the failure
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

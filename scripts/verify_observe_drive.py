@@ -13,7 +13,9 @@
   D7  a multipart POST has the part names as fields (no boundary), kind multipart, the file part opaque<40>
   D8  truth.json carries the GPU and capability keys (null without a GPU) and bool_fields.json is written
 
-  verify_observe_drive.py [--exe CHROME] [--red D1|D2|D4|D5] [--keep]
+  verify_observe_drive.py [--exe CHROME] [--red D1|D2|D4|D5|D6|D7] [--keep]
+The driver runs on the testpage site profile (settings/sites/testpage). --red D7 makes the D6 row fail: the driver runs from a
+temp copy of the scripts with testpage route_paths set to /ajax/nothere, so the /ajax/qm/ Blob canary is not captured.
 --red makes one row fail on purpose (D3 and D7 are made RED by hand: let value_class return the value; let _boundary
 return None). Needs patchright and the
 camoucrome client in the interpreter (the box venv, or the observe venv on the host). Exit 0 and ALL_PASS, else 1.
@@ -36,9 +38,9 @@ CANARY = page.CANARY
 HOSTS = ["--post-hosts", "127.0.0.1", "--resource-hosts", "127.0.0.1", "--doc-hosts", "127.0.0.1"]
 
 
-def drive(exe, out, args, timeout=180):
-    cmd = [sys.executable, str(HERE / "observe_drive.py"), "--arm", "dry", "--exe", exe, "--profile", str(out / "profile"),
-           "--out", str(out / "arm"), "--headless", *args]
+def drive(exe, out, args, timeout=180, scripts=None):
+    cmd = [sys.executable, str((scripts or HERE) / "observe_drive.py"), "--arm", "dry", "--site", "testpage", "--exe", exe,
+           "--profile", str(out / "profile"), "--out", str(out / "arm"), "--headless", *args]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     return p.returncode, p.stdout, p.stderr, out / "arm"
 
@@ -65,10 +67,23 @@ def canary_in_capture(arm):
     return False
 
 
+def redroute_scripts(work):
+    """A copy of scripts/ laid out as on the host (scripts flat, sites/ beside them, settings/sites above) whose testpage
+    profile routes /ajax/nothere only. Returns the directory holding observe_drive.py."""
+    root = work / "observe"
+    shutil.copytree(HERE, root, ignore=shutil.ignore_patterns("test_*", "__pycache__", "windows", "hooks"))
+    shutil.copytree(HERE.parent / "settings" / "sites", root / "settings" / "sites")
+    sj = root / "settings" / "sites" / "testpage" / "site.json"
+    doc = json.loads(sj.read_text(encoding="utf-8"))
+    doc["route_paths"] = ["/ajax/nothere"]
+    sj.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    return root
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe")
-    ap.add_argument("--red", choices=["D1", "D2", "D4", "D5", "D6"])
+    ap.add_argument("--red", choices=["D1", "D2", "D4", "D5", "D6", "D7"])
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args(argv)
     exe = a.exe
@@ -90,7 +105,8 @@ def main(argv=None):
             main_args.append("--no-route")
         if a.red == "D5":
             main_args[main_args.index("--wheel") + 1] = "0"
-        rc, out, err, arm = drive(exe, work / "main", [*main_args, *hosts])
+        scripts = redroute_scripts(work) if a.red == "D7" else None
+        rc, out, err, arm = drive(exe, work / "main", [*main_args, *hosts], scripts=scripts)
         if rc != 0:
             notes.append(f"main run rc={rc}: {err.strip()[-200:]}")
         ch = load(arm, "channels.json", {})
