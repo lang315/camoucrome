@@ -7,8 +7,8 @@
     "A flag never contains ',' (observe-auto -Flags splits on it)."
   ],
   "flags": [
-    {"flag": "--js-flags=--optimize-for-size", "targets": "renderer", "gate": "pending", "gate_run": null, "measured": "pending", "runs": []},
-    {"flag": "--num-raster-threads=1", "targets": "renderer", "gate": "pending", "gate_run": null, "measured": "pending", "runs": []},
-    {"flag": "--disable-features=BackForwardCache", "targets": "renderer", "gate": "pending", "gate_run": null, "measured": "pending", "runs": []}
+    {"flag": "--js-flags=--optimize-for-size", "targets": "renderer", "gate": "fail", "gate_run": "20261031-110608", "measured": "pending", "runs": []},
+    {"flag": "--num-raster-threads=1", "targets": "renderer", "gate": "pass", "gate_run": "20261031-110608", "measured": "pending", "runs": []},
+    {"flag": "--disable-features=BackForwardCache", "targets": "renderer", "gate": "pass", "gate_run": "20261031-110608", "measured": "pending", "runs": []}
   ]
 }
