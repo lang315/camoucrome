@@ -838,3 +838,53 @@ def test_loads_json_is_written_when_the_run_fails(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="stop"):
         d.run(a)
     assert json.loads((tmp_path / "o" / "loads.json").read_text(encoding="utf-8")) == []
+
+
+import sites  # noqa: E402
+
+
+def test_route_re_matches_exactly_the_paths_literally():
+    rx = d.route_re(("/ajax/bz", "/a.b"))
+    assert rx.match("https://www.facebook.com/ajax/bz?x=1")
+    assert rx.match("http://127.0.0.1:8000/a.b")
+    assert not rx.match("http://127.0.0.1:8000/aXb")
+    assert not rx.match("https://www.facebook.com/ajax/qm/")
+
+
+def test_route_re_of_facebook_equals_the_old_pattern():
+    rx = d.route_re(sites.load("facebook").route_paths)
+    for u in ("https://www.facebook.com/ajax/bz", "https://web.facebook.com/ajax/bnzai?a", "https://x/ajax/qm/",
+              "https://x/ajax/bzz", "https://x/ajax/qm", "https://x/ajax/other", "https://x/bz"):
+        old = bool(__import__("re").match(r"^https?://[^/]+/ajax/(?:bz|bnzai|qm/)", u))
+        assert bool(rx.match(u)) == old, u
+
+
+def test_gateway_framing_lives_in_the_facebook_hooks():
+    fb = sites.load("facebook")
+    assert fb.binary_units(b"\x09") == ([("09/(single)", [])], 0)
+    chunk = b"\x0c\x00\x01" + (2).to_bytes(3, "little") + b"\x00\x05"
+    assert fb.binary_units(chunk) == ([("0c/(ack)", [])], 0)
+    assert fb.binary_units(b"\x30\x00") is None  # not a gateway chunk: observe_drive falls back to MQTT
+    assert sites.load("testpage").binary_units(b"\x09") is None
+
+
+def test_a_site_without_framing_gets_mqtt_or_opaque():
+    tp = sites.load("testpage")
+    import base64 as b64
+    fr = {"opcode": 2, "payload_b64": b64.b64encode(b"\x0c\x00\x01\x02\x00\x00\x00\x05").decode()}
+    assert d._frame_units(fr, tp)[0] != d._frame_units(fr)[0]  # facebook reads a gateway ack, testpage does not
+
+
+def test_parse_args_takes_hosts_from_the_site():
+    a = d.parse_args(["--arm", "x", "--exe", "e", "--profile", "p", "--out", "o", "--url", "u"])
+    assert a.site == "facebook" and a.post_hosts == ",".join(sites.load("facebook").post_hosts)
+    a = d.parse_args(["--arm", "x", "--exe", "e", "--profile", "p", "--out", "o", "--url", "u", "--site", "testpage"])
+    assert a.post_hosts == "127.0.0.1" and a.doc_hosts == "127.0.0.1"
+    a = d.parse_args(["--arm", "x", "--exe", "e", "--profile", "p", "--out", "o", "--url", "u", "--site", "testpage",
+                      "--post-hosts", "example.invalid"])
+    assert a.post_hosts == "example.invalid"  # an explicit flag still wins (verify_observe_drive's RED uses it)
+
+
+def test_an_unknown_site_is_unmeasured(capsys):
+    assert d.main(["--arm", "x", "--rederive", "nowhere", "--site", "nosuch"]) == 3
+    assert "UNMEASURED site: nosuch not found" in capsys.readouterr().out
