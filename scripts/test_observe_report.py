@@ -647,3 +647,21 @@ def test_an_old_ram_json_keeps_its_utility_row_and_has_no_renderer_count(tmp_pat
     assert r.ram_summary(p)["utility"] == {"peak_mb": 70.0, "mean_mb": 70.0, "samples": 1}
     assert r.renderer_max(p) is None
     assert r.renderer_max(tmp_path / "absent.json") is None
+
+
+import sites  # noqa: E402
+
+
+def test_public_host_follows_the_active_site():
+    try:
+        r.use_site(sites.load("testpage"))
+        assert r.public_host(POP) == POP
+    finally:
+        r.use_site(sites.load("facebook"))
+    assert r.public_host(POP) == "scontent.*.fbcdn.net"
+
+
+def test_report_main_refuses_an_unknown_site(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["observe_report.py", "-", str(tmp_path / "net.json"), "--site", "nosuch"])
+    assert r.main() == 3
+    assert "UNMEASURED site: nosuch not found" in capsys.readouterr().out

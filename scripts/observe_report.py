@@ -17,7 +17,10 @@ import collections
 import json
 import re
 import sqlite3
+import sys
 import urllib.parse
+
+import sites
 
 CATEGORY = "disabled-by-default-camou.observe"
 # V8 runtime call stats (docs/superpowers/specs/2026-10-13-observer-intl-rcs-design.md):
@@ -256,16 +259,21 @@ def group_of(name):
     return GROUPS.get(".".join(parts[:2])) or GROUPS.get(parts[0], "other")
 
 
-_POP_MEDIA = re.compile(r"^scontent.*\.fbcdn\.net$")
-_POP_FNA = re.compile(r"^.+\.fna\.(fbcdn\.net|whatsapp\.net)$")
+_SITE = None
+
+
+def use_site(site):
+    """The site whose CDN host names public_host collapses; one site per process (the CLI's --site)."""
+    global _SITE
+    _SITE = site
 
 
 def public_host(host):
-    """Media CDN host names carry a regional POP code, which is a location: collapse them."""
-    if _POP_MEDIA.match(host):
-        return "scontent.*.fbcdn.net"
-    m = _POP_FNA.match(host)
-    return "*.fna." + m.group(1) if m else host
+    """Media CDN host names carry a regional POP code, which is a location: collapse them (the site's pop_host)."""
+    global _SITE
+    if _SITE is None:
+        _SITE = sites.load()
+    return _SITE.pop_host(host)
 
 
 def public_endpoint(endpoint):
@@ -766,7 +774,13 @@ def main():
     ap.add_argument("--ram")
     ap.add_argument("--channels")
     ap.add_argument("--matches")
+    ap.add_argument("--site", default="facebook")
     a = ap.parse_args()
+    try:
+        use_site(sites.load(a.site))
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
     cookies = load_cookie_names(a.cookies) if a.cookies else []
     data = None if a.trace == "-" else load_trace(a.trace)
     events = events_of(data) if data else []
@@ -783,4 +797,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

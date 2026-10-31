@@ -9,7 +9,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import observe_unlink as u  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DOC = json.loads((ROOT / "settings" / "fb_fields.json").read_text(encoding="utf-8"))
+DOC = json.loads((ROOT / "settings" / "sites" / "facebook" / "fields.json").read_text(encoding="utf-8"))
 CONSTANTS = json.loads((ROOT / "settings" / "machine_constants.json").read_text(encoding="utf-8"))["leaves"]
 ACCEPTED = json.loads((ROOT / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))["leaves"]
 
@@ -187,7 +187,7 @@ def arm(tmp, name, requests, identity=None):
 def settings(tmp):
     s = tmp / "settings"
     s.mkdir()
-    for f in ("fb_fields.json", "machine_constants.json", "accepted_defaults.json"):
+    for f in ("machine_constants.json", "accepted_defaults.json"):
         shutil.copy(ROOT / "settings" / f, s / f)
     return str(s)
 
@@ -328,3 +328,16 @@ def test_zoom_ratio_is_a_light_limit_only_with_light():
     assert (row(out, f)["class"], row(out, f)["explained_by"]) == ("gap", "light-limit") and out["counts"]["net_gap"] == 0
     out = u.classify(fork, fork, DOC, CONSTANTS, ACCEPTED)
     assert row(out, f)["explained_by"] is None and out["counts"]["net_gap"] == 1
+
+
+import sites  # noqa: E402
+
+
+def test_fields_live_in_the_facebook_profile():
+    assert (sites.load("facebook").dir / "fields.json").exists()
+    assert not (ROOT / "settings" / "fb_fields.json").exists()
+
+
+def test_has_bz_uses_the_site_beacon_path():
+    req = [{"url": "https://www.facebook.com/ajax/bz", "missing": False}]
+    assert u.has_bz(req) and u.has_bz(req, sites.load("facebook"))

@@ -11,6 +11,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import observe_report as rep  # noqa: E402
+import sites  # noqa: E402
 
 
 class Unmeasured(Exception):
@@ -108,7 +109,14 @@ def main(argv=None):
     ap.add_argument("b")
     ap.add_argument("--out", required=True)
     ap.add_argument("--md", required=True)
+    ap.add_argument("--site", default="facebook")
     x = ap.parse_args(argv)
+    try:
+        site = sites.load(x.site)
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
+    rep.use_site(site)
     try:
         na, nb = arm_numbers(x.a, "a"), arm_numbers(x.b, "b")
         cmp = compare(na, nb)

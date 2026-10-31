@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import observe_report  # noqa: E402
+import sites  # noqa: E402
 
 
 def _load(d, name, default):
@@ -73,10 +74,16 @@ def main(argv=None):
     ap.add_argument("dir_a")
     ap.add_argument("dir_b")
     ap.add_argument("--names", default="A,B")
-    ap.add_argument("--site", default="https://facebook.com")
+    ap.add_argument("--site", default="facebook", help="site profile in settings/sites")
     a = ap.parse_args(argv)
+    try:
+        site = sites.load(a.site)
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
+    observe_report.use_site(site)
     na, nb = a.names.split(",", 1)
-    print(render(diff(a.dir_a, a.dir_b, a.site), na, nb))
+    print(render(diff(a.dir_a, a.dir_b, site.surface_site), na, nb))
     return 0
 
 
