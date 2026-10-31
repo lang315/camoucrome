@@ -41,6 +41,7 @@ skip verify_font_metrics.py  # not yet evaluated for the runner
 skip verify_geo_ii_cadence.py  # not yet evaluated for the runner
 skip verify_geoip_pixelscan.py  # not yet evaluated for the runner
 skip verify_media_ii.py  # not yet evaluated for the runner
+skip verify_light_flag.py  # runs on the Windows host in session 1 (GPU process), not on the runner
 skip verify_navplatform_derive.py  # not yet evaluated for the runner
 skip verify_phantom.py  # not yet evaluated for the runner
 skip verify_pixels_real.py  # not yet evaluated for the runner
