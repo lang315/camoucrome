@@ -430,6 +430,22 @@ def test_costs_split_network_cache_decoded_by_host_and_kind(tmp_path):
     assert c["posts"] == {"www.facebook.com/ajax/bz": 1}
 
 
+def test_costs_kind_a_cache_hit_by_its_path(tmp_path):
+    # a cache hit logs no HTTP_TRANSACTION_READ_RESPONSE_HEADERS, so it has no content-type (run 20261031-080540)
+    t = {n: i for i, n in enumerate(["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_FILTERED_BYTES_READ", "HTTP_CACHE_READ_DATA"])}
+    ev = []
+    for sid, url in ((1, "https://static.xx.fbcdn.net/rsrc.php/v4/a.js?x=1"), (2, "https://video.xx.fbcdn.net/v/b.mp4?q=2"),
+                     (3, "https://static.xx.fbcdn.net/rsrc.php/v4/c.WEBP"), (4, "https://www.facebook.com/plain")):
+        ev += [{"source": {"id": sid}, "type": t["URL_REQUEST_START_JOB"], "phase": 1, "params": {"url": url, "method": "GET"}},
+               {"source": {"id": sid}, "type": t["HTTP_CACHE_READ_DATA"], "phase": 0, "params": {}},
+               {"source": {"id": sid}, "type": t["URL_REQUEST_JOB_FILTERED_BYTES_READ"], "phase": 0, "params": {"byte_count": 100 * sid}}]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t}, "events": ev}))
+    k = r.load_costs(p)["by_kind"]
+    assert (k["js"]["cache"], k["video"]["cache"], k["image"]["cache"], k["other"]["cache"]) == (100, 200, 300, 400)
+    assert sum(x["network"] for x in k.values()) == 0
+
+
 def test_costs_of_a_cut_netlog_is_none_and_renders_a_line(tmp_path):
     p = tmp_path / "net.json"
     p.write_text('{"constants": {"logEventTypes": {}}, "events": [{"source"')
