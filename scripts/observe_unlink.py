@@ -81,7 +81,7 @@ def explain(key, doc, constants, accepted, fork_vals, stock_vals, light=False):
     return None
 
 
-def classify(fork, stock, doc, constants, accepted, light=False):
+def classify(fork, stock, doc, constants, accepted, light=False, fork_only=False, prediction=None):
     """fork, stock: one profile_values() dict per profile. Returns the unlink document (no values)."""
     fields, ip_bound = doc["fields"], set(doc["ip_bound"])
     rows, counts = [], collections.Counter()
@@ -99,6 +99,10 @@ def classify(fork, stock, doc, constants, accepted, light=False):
             cls = "sparse"
         elif fd > 1:
             cls = "unlinked"
+        elif fork_only and key is None:
+            cls = "unmapped-same"  # no stock to tell a site constant from a link: listed for a review of its names
+        elif key is None and len(sv) < 2:
+            cls = "unmapped-thin"  # owner ruling 2026-11-01: too few stock loads to call it a gap or a site constant
         elif key is None and len(sv) >= 2 and sd == 1 and digest(sv[0]) == digest(fv[0]):
             cls = "site-constant"
         elif sd > 1:
@@ -111,6 +115,8 @@ def classify(fork, stock, doc, constants, accepted, light=False):
             cls = "gap"
             r["explained_by"] = explain(key, doc, constants, accepted, fv[0], sv[0] if sv else [], light)
             r["low_cardinality"] = all(d._weak(v) for v in fv[0])
+            if r["explained_by"] is None and fork_only and (prediction or {}).get(key) == "shared":
+                r["explained_by"] = "predicted-shared"  # every identity carries one value: equal is expected, not a link
             if r["explained_by"] is None:
                 counts["net_gap"] += 1
         r["class"] = cls
@@ -124,9 +130,14 @@ def classify(fork, stock, doc, constants, accepted, light=False):
     in_fork = {p for f in fork for p in f}
     in_stock = {p for s in stock for p in s}
     sjd = next((r["fork_distinct"] for r in rows if r.get("key") == "sjd" and "fork_distinct" in r), None)
-    return {"rows": rows, "counts": {k: counts.get(k, 0) for k in
-                                     ("net_gap", "raw_gap", "pinned", "net_pinned", "unlinked", "ip-bound", "site-constant", "sparse", "absent")},
-            "fork_only": sorted(in_fork - in_stock), "stock_only": sorted(in_stock - in_fork), "sjd_fork_distinct": sjd}
+    names = ("net_gap", "raw_gap", "pinned", "net_pinned", "unlinked", "ip-bound", "site-constant") \
+        + (() if fork_only else ("unmapped-thin",)) + ("sparse", "absent")
+    out = {"rows": rows, "counts": {k: counts.get(k, 0) for k in names},
+           "fork_only": sorted(in_fork - in_stock), "stock_only": sorted(in_stock - in_fork), "sjd_fork_distinct": sjd}
+    if fork_only:
+        out["counts"]["unmapped-same"] = counts.get("unmapped-same", 0)
+        out["fork_only_mode"] = True
+    return out
 
 
 def lookup(identity, key):
@@ -174,12 +185,17 @@ def render(doc):
     head = "UNLINK " + " ".join(f"{k}={c[k]}" for k in c) + f" disagreements={len(doc['disagreements'])}" \
         + f" sjd_fork_distinct={doc['sjd_fork_distinct'] if doc['sjd_fork_distinct'] is not None else '-'} seeds={doc.get('seeds', '-')}"
     lines = [head, ""]
-    for title, keep in (("Gaps (net)", lambda r: r["class"] == "gap" and not r.get("explained_by")),
-                        ("Gaps (explained)", lambda r: r["class"] == "gap" and r.get("explained_by")),
-                        ("Pinned (net)", lambda r: r["class"] == "pinned" and not r.get("explained_by")),
-                        ("Pinned (explained)", lambda r: r["class"] == "pinned" and r.get("explained_by")),
-                        ("Site constants (unmapped, same everywhere: review the names)", lambda r: r["class"] == "site-constant"),
-                        ("Absent", lambda r: r["class"] == "absent")):
+    sections = [("Gaps (net)", lambda r: r["class"] == "gap" and not r.get("explained_by")),
+                ("Gaps (explained)", lambda r: r["class"] == "gap" and r.get("explained_by")),
+                ("Pinned (net)", lambda r: r["class"] == "pinned" and not r.get("explained_by")),
+                ("Pinned (explained)", lambda r: r["class"] == "pinned" and r.get("explained_by")),
+                ("Site constants (unmapped, same everywhere: review the names)", lambda r: r["class"] == "site-constant")]
+    if "unmapped-thin" in c:
+        sections.append(("Unmapped, fewer than two stock loads (review the names)", lambda r: r["class"] == "unmapped-thin"))
+    sections.append(("Absent", lambda r: r["class"] == "absent"))
+    if doc.get("fork_only_mode"):
+        sections.append(("Unmapped, same in all three (review the names)", lambda r: r["class"] == "unmapped-same"))
+    for title, keep in sections:
         rs = [r for r in doc["rows"] if keep(r)]
         lines += [f"## {title} ({len(rs)})", ""]
         lines += [f"- `{r['field']}` {r.get('value_class', '')} fork {r.get('fork_distinct', '-')}/{r.get('fork_n', '-')}"
@@ -188,8 +204,17 @@ def render(doc):
                   f"{' explained: ' + r['explained_by'] if r.get('explained_by') else ''}"
                   f"{' predicted: ' + r['prediction'] if r.get('prediction') else ''}" for r in rs]
         lines.append("")
-    for title, names in (("Disagreements with the prediction", doc["disagreements"]),
-                         ("Fork only", doc["fork_only"]), ("Stock only", doc["stock_only"])):
+    if doc.get("fork_only_mode"):
+        seen = doc.get("not_seen_logged_out")
+        if seen is None:
+            lines += ["## Not seen logged out: no logged-out reference given", ""]
+        else:
+            lines += [f"## Not seen logged out ({len(seen)})", ""] + [f"- `{n}`" for n in seen] + [""]
+        tail = (("Disagreements with the prediction", doc["disagreements"]),)
+    else:
+        tail = (("Disagreements with the prediction", doc["disagreements"]),
+                ("Fork only", doc["fork_only"]), ("Stock only", doc["stock_only"]))
+    for title, names in tail:
         lines += [f"## {title} ({len(names)})", ""] + [f"- `{n}`" for n in names] + [""]
     return "\n".join(lines)
 
@@ -201,7 +226,9 @@ def _load(path):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fork", nargs=3, required=True, metavar="ARM_DIR")
-    ap.add_argument("--stock", nargs=3, required=True, metavar="ARM_DIR")
+    ap.add_argument("--stock", nargs=3, metavar="ARM_DIR")
+    ap.add_argument("--fork-only", action="store_true", help="logged-in unlinking (S5): three fork profiles, no stock")
+    ap.add_argument("--logged-out", help="the unlink.json of a logged-out run: lists the paths it never saw")
     ap.add_argument("--settings", required=True, help="a dir with machine_constants.json and accepted_defaults.json (fields come from the site profile)")
     ap.add_argument("--site", default="facebook")
     ap.add_argument("--seeds", required=True)
@@ -209,21 +236,33 @@ def main(argv=None):
     ap.add_argument("--md", required=True)
     ap.add_argument("--light", action="store_true", help="a light run: light_limits in the site's fields.json explain rows like limits")
     a = ap.parse_args(argv)
+    if bool(a.fork_only) == bool(a.stock):
+        ap.error("give either --stock or --fork-only")
+    stock_dirs = a.stock or []
     try:
         site = sites.load(a.site)
     except sites.SiteError as e:
         print(f"UNMEASURED site: {e}")
         return 3
-    caps = [d.read_jsonl(pathlib.Path(x) / "capture" / "requests.jsonl") for x in a.fork + a.stock]
-    empty = [pathlib.Path(x).name for x, c in zip(a.fork + a.stock, caps) if not has_bz(c, site)]
+    caps = [d.read_jsonl(pathlib.Path(x) / "capture" / "requests.jsonl") for x in a.fork + stock_dirs]
+    empty = [pathlib.Path(x).name for x, c in zip(a.fork + stock_dirs, caps) if not has_bz(c, site)]
     if empty:
         print(f"UNMEASURED unlink: no {site.beacon_path} body in " + ", ".join(empty), file=sys.stderr)  # ruling R5
         return 3
     s = pathlib.Path(a.settings)
     doc = _load(site.dir / "fields.json")
+    prediction = predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork])
     out = classify([profile_values(c, site.unlink_endpoints) for c in caps[:3]], [profile_values(c, site.unlink_endpoints) for c in caps[3:]], doc,
-                   _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"], light=a.light)
-    attach_prediction(out, predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork]))
+                   _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"],
+                   light=a.light, fork_only=a.fork_only, prediction=prediction)
+    attach_prediction(out, prediction)
+    if a.fork_only:
+        ref = pathlib.Path(a.logged_out) if a.logged_out else None
+        if ref and ref.exists():
+            before = {r["field"] for r in _load(ref)["rows"] if r.get("fork_n")}
+            out["not_seen_logged_out"] = sorted({r["field"] for r in out["rows"] if r.get("fork_n")} - before)
+        else:
+            out["not_seen_logged_out"] = None
     out["seeds"] = a.seeds
     pathlib.Path(a.out).write_text(json.dumps(out, indent=1), encoding="utf-8")
     pathlib.Path(a.md).write_text(render(out), encoding="utf-8")

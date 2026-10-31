@@ -20,6 +20,7 @@
     "annotations_int.width": {"keys": ["launch.window"], "leaves": ["win.innerWidth"]},
     "annotations_int.height": {"keys": ["launch.window"], "leaves": ["win.innerHeight"]},
     "pixel_ratio": {"keys": ["launch.dpr"], "leaves": ["win.devicePixelRatio"]},
+    "dpr": {"keys": ["launch.dpr"], "leaves": ["win.devicePixelRatio"]},
     "server_pixel_ratio": {"keys": ["launch.dpr"], "leaves": ["win.devicePixelRatio"]},
     "annotations_double.devicePixelRatio": {"keys": ["launch.dpr"], "leaves": ["win.devicePixelRatio"]},
     "zoom_ratio": {"keys": ["launch.dpr"], "leaves": []},
