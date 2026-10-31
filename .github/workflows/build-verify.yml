@@ -65,6 +65,9 @@ jobs:
           rsync -a baselines/ "$CLIENT/baselines/"
           rsync -a --delete --exclude __pycache__ scripts/ "$CLIENT/scripts/"
           cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
+          # observe_report imports the site profiles (scripts/sites + settings/sites); $VERIFY mirrors the host layout
+          rsync -a --delete --exclude __pycache__ scripts/sites/ "$VERIFY/sites/"
+          mkdir -p "$VERIFY/settings" && rsync -a --delete settings/sites/ "$VERIFY/settings/sites/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
