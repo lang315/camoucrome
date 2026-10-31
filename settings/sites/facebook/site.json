@@ -1,0 +1,27 @@
+{
+  "$comment": "facebook's profile for the observe toolchain (spec 2026-10-31-site-profile-design.md, local). Values equal the constants they replaced; scripts/test_sites.py pins them.",
+  "name": "facebook",
+  "module": "facebook",
+  "origin": "https://www.facebook.com",
+  "surface_site": "https://facebook.com",
+  "cookie_domain": ".facebook.com",
+  "logged_in_cookies": ["c_user", "xs"],
+  "pages": {
+    "1f": ["/"], "1c": ["/"],
+    "3w": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"],
+    "lw": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"],
+    "lf1": ["/"], "lf2": ["/"], "lf3": ["/"], "lc1": ["/"], "lc2": ["/"], "lc3": ["/"]
+  },
+  "route_paths": ["/ajax/bz", "/ajax/bnzai", "/ajax/qm/"],
+  "unlink_endpoints": ["/ajax/bz", "/ajax/qm/", "/ajax/webstorage/process_keys/"],
+  "beacon_path": "/ajax/bz",
+  "post_hosts": ["www.facebook.com", "web.facebook.com", "graph.facebook.com", "www.fbsbx.com", "gateway.facebook.com"],
+  "resource_hosts": ["static.xx.fbcdn.net", "connect.facebook.net"],
+  "doc_hosts": ["www.facebook.com"],
+  "ws_hosts": [".facebook.com"],
+  "backup": "D:\\camou-win\\observe\\backup\\fb-login-20261017",
+  "baseline": "D:\\camou-win\\observe\\baseline-facebook.json",
+  "ledger": "auto\\ledger.json",
+  "cap": {"per_day": 3, "min_gap_min": 15},
+  "expired_hint": "session expired: log in with recon.ps1 -Site facebook -Arm 2 -Intl and refresh the backup"
+}
