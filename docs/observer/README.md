@@ -205,6 +205,15 @@ whenever facebook's reads change for good. Measurements:
 5. Commit the baseline, install it on the host, and judge both runs again:
    each must be `PASS`.
 
+### Site profiles
+
+Every site-specific value of the observe toolchain lives in `settings/sites/<site>/site.json` (and `fields.json`), with
+the site's parsers in `scripts/sites/<module>.py`. `observe-auto.ps1 -Site <site>` (default `facebook`) and `--site` on
+the Python scripts select one. A new site needs a profile, not script edits; `testpage` (the local driver page) is the
+second profile and proves it. On the host the package goes to `<observe>\sites\` and the data to
+`<observe>\settings\sites\`. A site without a `site.json`, or one that lacks a key, is `UNMEASURED site: ...` (exit 3)
+before the ledger is touched. Each site has its own ledger and cap.
+
 ## Tracking-map arms (2026-10-29)
 
 The owner relaxed the observer rules on 2026-10-29
