@@ -426,6 +426,11 @@ def load_cookie_names(db_path):
 BROWSER = "browser"  # a request with no page site, or a chrome:// one: the browser's own traffic
 NET_KINDS = (("javascript", "js"), ("ecmascript", "js"), ("css", "css"), ("html", "html"), ("wasm", "wasm"),
              ("image", "image"), ("video", "video"), ("audio", "video"), ("font", "font"), ("json", "json"))
+# a cache hit logs no response headers, so its kind comes from the path's extension
+PATH_KINDS = {"js": "js", "mjs": "js", "css": "css", "html": "html", "htm": "html", "wasm": "wasm", "json": "json",
+              "jpg": "image", "jpeg": "image", "png": "image", "webp": "image", "gif": "image", "svg": "image",
+              "ico": "image", "avif": "image", "mp4": "video", "m4s": "video", "webm": "video", "m4a": "video",
+              "mp3": "video", "woff": "font", "woff2": "font", "ttf": "font", "otf": "font"}
 SEND_EVENTS = {"HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS",
                "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"}
 
@@ -485,6 +490,9 @@ def load_costs(netlog_path):
         if not raw and r["dec"]:
             raw, approx = r["dec"], r["enc"] or not r["hdr"]
         kind = kind_of(r["ct"], r["method"])
+        if kind == "other" and not r["ct"]:
+            last = s.path.rsplit("/", 1)[-1]
+            kind = PATH_KINDS.get(last.rsplit(".", 1)[-1].lower(), "other") if "." in last else "other"
         site = r["site"] if r["site"].startswith("http") else BROWSER
         site_table = out["by_site_kind"].setdefault(site, {})
         for key, table in ((host, out["by_host"]), (kind, out["by_kind"]), (kind, site_table)):
