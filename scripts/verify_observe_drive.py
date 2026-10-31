@@ -71,8 +71,15 @@ def redroute_scripts(work):
     """A copy of scripts/ laid out as on the host (scripts flat, sites/ beside them, settings/sites above) whose testpage
     profile routes /ajax/nothere only. Returns the directory holding observe_drive.py."""
     root = work / "observe"
-    shutil.copytree(HERE, root, ignore=shutil.ignore_patterns("test_*", "__pycache__", "windows", "hooks"))
-    shutil.copytree(HERE.parent / "settings" / "sites", root / "settings" / "sites")
+    # only the Python scripts and the sites package: on the host HERE is the observe dir, which also holds the login
+    # backup, the venv and every run, and none of that may be copied
+    root.mkdir(parents=True)
+    for f in HERE.glob("*.py"):
+        if not f.name.startswith("test_"):
+            shutil.copy2(f, root / f.name)
+    shutil.copytree(HERE / "sites", root / "sites", ignore=shutil.ignore_patterns("__pycache__"))
+    data = next(p for p in (HERE / "settings" / "sites", HERE.parent / "settings" / "sites") if p.is_dir())  # host, repo
+    shutil.copytree(data, root / "settings" / "sites")
     sj = root / "settings" / "sites" / "testpage" / "site.json"
     doc = json.loads(sj.read_text(encoding="utf-8"))
     doc["route_paths"] = ["/ajax/nothere"]
