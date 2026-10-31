@@ -47,6 +47,7 @@ def arm_numbers(arm_dir, label=None):
         "total_network_mb": _mb(sum(x["network"] for x in kinds.values())),
         "video": {"n": v["n"], "mb": video_mb, "mb_per_request": round(video_mb / v["n"], 3) if v["n"] else None},
         "js": {"network_mb": _mb(js["network"]), "cache_mb": _mb(js["cache"])},
+        "renderer_max": rep.renderer_max(d / "ram.json"),
         "ram": {t: {"peak_mb": x["peak_mb"], "mean_mb": x["mean_mb"]} for t, x in sorted(ram.items())},
         "cpu": cpu,
         "loads": [{"path": x["path"], "ms": x["ms"]} for x in json.loads((d / "loads.json").read_text(encoding="utf-8"))],
@@ -84,6 +85,12 @@ def render(cmp):
     out = ["# Light mode: A against B", "", "One pair is one sample, not a benchmark.", "",
            "| metric | A | B | delta % |", "|---|---|---|---|"]
     out += [f"| {m} | {x} | {y} | {'' if p is None else p} |" for m, x, y, p in rows]
+    out += ["", "| process | A peak MB | A mean MB | B peak MB | B mean MB |", "|---|---|---|---|---|"]
+    for t in sorted(set(a["ram"]) | set(b["ram"])):
+        x, y = a["ram"].get(t, {}), b["ram"].get(t, {})
+        out.append(f"| {t} | {x.get('peak_mb', '')} | {x.get('mean_mb', '')} | {y.get('peak_mb', '')} | {y.get('mean_mb', '')} |")
+    unk = lambda v: "unknown" if v is None else v  # noqa: E731
+    out.append(f"| renderer processes, most | {unk(a.get('renderer_max'))} |  | {unk(b.get('renderer_max'))} |  |")
     out += ["", "| kind | A requests | A network MB | A cache MB | B requests | B network MB | B cache MB |", "|---|---|---|---|---|---|---|"]
     for k in sorted(set(a["kinds"]) | set(b["kinds"])):
         x, y = a["kinds"].get(k, {}), b["kinds"].get(k, {})

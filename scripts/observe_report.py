@@ -560,6 +560,8 @@ def cpu_by_script(events):
 
 
 def ram_summary(path):
+    """Private MB per process type. Every `utility` and `utility:<sub-type>` key also adds into one `utility` row per
+    sample, so a run with the breakdown compares with one without. None when unreadable."""
     try:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
@@ -567,10 +569,26 @@ def ram_summary(path):
         return None
     by = collections.defaultdict(list)
     for s in d.get("samples", []):
-        for t, b in s.get("by_type", {}).items():
-            by[t].append(b)
+        types = s.get("by_type", {})
+        for t, b in types.items():
+            if t != "utility":
+                by[t].append(b)
+        u = [b for t, b in types.items() if t == "utility" or t.startswith("utility:")]
+        if u:
+            by["utility"].append(sum(u))
     return {t: {"peak_mb": round(max(v) / 2**20, 1), "mean_mb": round(sum(v) / len(v) / 2**20, 1), "samples": len(v)}
             for t, v in by.items()}
+
+
+def renderer_max(path):
+    """The most renderer processes in one sample, or None when no sample counts them (runs before approach B)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    n = [s["n_renderer"] for s in d.get("samples", []) if "n_renderer" in s]
+    return max(n) if n else None
 
 
 def render_cpu(cpu):

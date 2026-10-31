@@ -91,3 +91,14 @@ def test_cli_unmeasured_exit_3(tmp_path, capsys):
     a, b = _arm(tmp_path, "a"), _arm(tmp_path, "b", ram=False)
     assert L.main([str(a), str(b), "--out", str(tmp_path / "l.json"), "--md", str(tmp_path / "l.md")]) == 3
     assert capsys.readouterr().out.startswith("UNMEASURED light: b ram.json")
+
+
+def test_render_lists_each_process_and_the_renderer_count(tmp_path):
+    a, b = _arm(tmp_path, "a"), _arm(tmp_path, "b")
+    (b / "ram.json").write_text(json.dumps({"interval_s": 6, "samples": [
+        {"t": 0, "n_renderer": 2, "by_type": {"renderer": 500 * 2**20, "utility:network.mojom.NetworkService": 200 * 2**20,
+                                              "gpu-process": 90 * 2**20}}]}))
+    md = L.render(L.compare(L.arm_numbers(a), L.arm_numbers(b)))
+    assert "| utility:network.mojom.NetworkService |  |  | 200.0 | 200.0 |" in md
+    assert "| gpu-process |  |  | 90.0 | 90.0 |" in md
+    assert "| renderer processes, most | unknown |  | 2 |  |" in md

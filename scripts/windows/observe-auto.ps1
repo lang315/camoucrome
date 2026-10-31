@@ -167,12 +167,16 @@ try {
     while ((Get-Date) -lt $until -and -not ((Test-Path $log) -and (Select-String -Path $log -Pattern '^EXIT=' -Quiet))) {
       Start-Sleep -Seconds 3; $tick++
       if ($drivenArm -and $tick % 2 -eq 0) {
-        $by = @{}
-        Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains("$run\profile-arm$a") } | ForEach-Object {
-          $ty = if ($_.CommandLine -match '--type=(\S+)') { $Matches[1] } else { 'browser' }
-          $by[$ty] = [int64]$by[$ty] + [int64]$_.PrivatePageCount
+        # approach B (2026-10-31): utilities by sub-type, and the renderer count, so RAM shows which process holds it
+        $by = @{}; $nr = 0
+        $procs = @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains("$run\profile-arm$a") })
+        foreach ($p in $procs) {
+          $ty = if ($p.CommandLine -match '--type=(\S+)') { $Matches[1] } else { 'browser' }
+          if ($ty -eq 'utility' -and $p.CommandLine -match '--utility-sub-type=(\S+)') { $ty = "utility:$($Matches[1])" }
+          if ($ty -eq 'renderer') { $nr++ }
+          $by[$ty] = [int64]$by[$ty] + [int64]$p.PrivatePageCount
         }
-        if ($by.Count) { [void]$samples.Add([ordered]@{ t = [int]((Get-Date) - $t0).TotalSeconds; by_type = $by }) }
+        if ($by.Count) { [void]$samples.Add([ordered]@{ t = [int]((Get-Date) - $t0).TotalSeconds; by_type = $by; n_renderer = $nr }) }
       }
     }
     if ($drivenArm -and -not $existed -and (Test-Path $armDir)) {
