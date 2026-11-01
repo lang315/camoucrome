@@ -411,6 +411,12 @@ def test_dpr_is_a_facebook_field():
     assert fields["dpr"] == {"keys": ["launch.dpr"], "leaves": ["win.devicePixelRatio"]}
 
 
+def test_dpr_has_the_server_pixel_ratio_limit():
+    import sites
+    doc = json.loads((sites.load("facebook").dir / "fields.json").read_text(encoding="utf-8"))
+    assert u.limit_kind("dpr", doc, False) == "limit" == u.limit_kind("server_pixel_ratio", doc, False)
+
+
 def _thin(key_path, fork_vals, stock_vals):
     fork = _fo({key_path: fork_vals})
     stock = [{key_path: [v]} for v in stock_vals]
