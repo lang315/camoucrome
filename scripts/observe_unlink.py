@@ -174,10 +174,13 @@ def attach_prediction(doc, prediction):
     return doc
 
 
+def has_beacon(requests, endpoints, path):
+    return any(not r.get("missing") and endpoint_path(r.get("url", ""), endpoints) == path for r in requests)
+
+
 def has_bz(requests, site=None):
     site = site or sites.load()
-    return any(not r.get("missing") and endpoint_path(r.get("url", ""), site.unlink_endpoints) == site.beacon_path
-               for r in requests)
+    return has_beacon(requests, site.unlink_endpoints, site.beacon_path)
 
 
 def render(doc):
@@ -245,14 +248,16 @@ def main(argv=None):
         print(f"UNMEASURED site: {e}")
         return 3
     caps = [d.read_jsonl(pathlib.Path(x) / "capture" / "requests.jsonl") for x in a.fork + stock_dirs]
-    empty = [pathlib.Path(x).name for x, c in zip(a.fork + stock_dirs, caps) if not has_bz(c, site)]
+    endpoints, beacon = (site.logged_in_unlink_endpoints, site.logged_in_beacon_path) if a.fork_only \
+        else (site.unlink_endpoints, site.beacon_path)  # a logged-in session sends no beacon to the logged-out path
+    empty = [pathlib.Path(x).name for x, c in zip(a.fork + stock_dirs, caps) if not has_beacon(c, endpoints, beacon)]
     if empty:
-        print(f"UNMEASURED unlink: no {site.beacon_path} body in " + ", ".join(empty), file=sys.stderr)  # ruling R5
+        print(f"UNMEASURED unlink: no {beacon} body in " + ", ".join(empty), file=sys.stderr)  # ruling R5
         return 3
     s = pathlib.Path(a.settings)
     doc = _load(site.dir / "fields.json")
     prediction = predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork])
-    out = classify([profile_values(c, site.unlink_endpoints) for c in caps[:3]], [profile_values(c, site.unlink_endpoints) for c in caps[3:]], doc,
+    out = classify([profile_values(c, endpoints) for c in caps[:3]], [profile_values(c, endpoints) for c in caps[3:]], doc,
                    _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"],
                    light=a.light, fork_only=a.fork_only, prediction=prediction)
     attach_prediction(out, prediction)
