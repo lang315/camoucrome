@@ -39,11 +39,13 @@ if ($miss.Count) { "UNMEASURED site: $Site site.json lacks $($miss -join ' ')"; 
 if (-not $Backup) { $Backup = $S.backup }
 if (-not $Baseline) { $Baseline = $S.baseline }
 $Arms = @($Arms | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
-$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lw', 'lf', 'lc' })
+$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lw', 'lf', 'lc', 'lu' })
 if ($bad.Count) { "UNMEASURED unknown arm: $($bad -join ' ')"; exit 3 }
 # unlink arms (part 2, 2026-10-30): lf and lc expand to one sub-arm per profile; lfN gets seed N of -UnlinkSeeds
 $Seeds = @("$UnlinkSeeds" -split ',' | Where-Object { $_ })
 if ($Seeds.Count -ne 3 -or @($Seeds | Where-Object { $_ -notmatch '^[1-9][0-9]*$' }).Count) { "UNMEASURED -UnlinkSeeds wants three whole numbers, got '$UnlinkSeeds'"; exit 3 }
+# logged-in unlinking (S5): lu is one capped run and runs alone
+if (@($Arms | Where-Object { $_ -like 'lu*' }).Count -and @($Arms | Where-Object { $_ -notlike 'lu*' }).Count) { "UNMEASURED -Arms lu runs alone"; exit 3 }
 # light mode (part 3): refusals and the sweep run before the ledger write, so a refused run never touches the site's ledger
 $WarmRoot = Join-Path $Root 'auto\warm'
 if ('lw' -in $Arms) {
@@ -67,10 +69,11 @@ if (Test-Path $WarmRoot) {
   $stale | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   if ($stale.Count) { "WARM deleted $($stale.Count) stale" }
 }
-$Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
+$Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc', 'lu') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
 $Unlink = @('lf1', 'lf2', 'lf3', 'lc1', 'lc2', 'lc3')
-$SeedOf = @{ 'lf1' = $Seeds[0]; 'lf2' = $Seeds[1]; 'lf3' = $Seeds[2] }
+$SeedOf = @{ 'lf1' = $Seeds[0]; 'lf2' = $Seeds[1]; 'lf3' = $Seeds[2]; 'lu1' = $Seeds[0]; 'lu2' = $Seeds[1]; 'lu3' = $Seeds[2] }
 $UnlinkOk = @{}
+$LoginUnlink = @('lu1', 'lu2', 'lu3')
 $Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90; 'lw' = 480 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
 $Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6; 'lw' = 12 }
 $Venv  = Join-Path $Root 'venv\Scripts\python.exe'
@@ -82,8 +85,11 @@ $Driven   = @('1f', '1c', '3w', '4a', 'lw')
 foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6 }
 # a seeded fork arm can take 180 s for its browser to appear + 90 s wait + 60 s close + 60 s driver exit + post, over 6 min
 foreach ($u in 'lf1', 'lf2', 'lf3') { $Limit[$u] = 8 }
+# lu: the 3w load (about 8 min) + a seeded launch (up to 3 min) + the close and the driver exit, 15 min
+foreach ($u in $LoginUnlink) { $Wait[$u] = 480; $Limit[$u] = 15 }
 $Driven += $Unlink
-$LoggedIn = @('3', '3w', '4a', 'lw')
+$Driven += $LoginUnlink
+$LoggedIn = @('3', '3w', '4a', 'lw', 'lu1', 'lu2', 'lu3')
 $Discovery = Join-Path $Root 'baseline-empty.json'   # contains {}
 
 function Get-Gate {
@@ -161,7 +167,7 @@ try {
     # the arm name is quoted anyway: an unquoted 1d was read as the decimal 1 (runs 20261029-145829 and -155547)
     $cmd = "& $Root\recon.ps1 -Site $Site -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
-    if ($a -in '3', '3w', '4a', 'lw') {
+    if ($a -in '3', '3w', '4a', 'lw' -or $a -in $LoginUnlink) {
       $src = if ($a -eq 'lw') { Join-Path $WarmRoot $WarmFrom } elseif ($FromProfileOverride) { $FromProfileOverride } else { $Backup }
       $cmd += " -FromProfile $src"
     }
@@ -176,7 +182,7 @@ try {
       # approach B: the flags ride in the fork's argv
       if ($FlagList.Count) { $cmd += ' -Flags ' + (($FlagList | ForEach-Object { "'$_'" }) -join ',') }
       if ($a -in '1f', '3w', '4a', 'lw') { $cmd += ' -Cpu' }
-      if ($a -in '3w', '4a', 'lw') { $cmd += ' -ExpectSession' }
+      if ($a -in '3w', '4a', 'lw' -or $a -in $LoginUnlink) { $cmd += ' -ExpectSession' }
     } elseif ($CpuAll) { $cmd += ' -Cpu' }
     # a recon throw escapes run-interactive's *> block unlogged, with no EXIT= line (cal2, 2026-10-17);
     # log it and set the code instead. No exit here: it would end run.ps1 before its EXIT= line
@@ -216,6 +222,11 @@ try {
     }
     powershell -NoProfile -ExecutionPolicy Bypass -File $Ri -Name $name -Remove | Out-Null
     Get-Content $log -ErrorAction SilentlyContinue | Select-String 'SESSION=|CLOSED=|low-memory|report exit|ERROR:|drive_rc=' | ForEach-Object { $_.Line }
+    if ($a -in $LoginUnlink) {
+      # a logged-in copy outlives no sub-arm (spec S5 section 2)
+      Remove-Item (Join-Path $run "profile-arm$a") -Recurse -Force -ErrorAction SilentlyContinue
+      if (Test-Path (Join-Path $run "profile-arm$a")) { "PROFILE delete FAILED arm$a (delete it by hand)" } else { "PROFILE deleted arm$a" }
+    }
     if ($timedOut) { continue }
     # a recon that threw, or one that never made this arm's dir, measured nothing: judging a dir that
     # another arm made would print that arm's verdict under this arm's name
@@ -232,6 +243,12 @@ try {
       $dj = Get-Content -Raw (Join-Path $run "arm$a\run.json") -ErrorAction SilentlyContinue | ConvertFrom-Json
       $drc = if ($dj) { $dj.drive_rc } else { $null }
       $hasCh = Test-Path (Join-Path $run "arm$a\channels.json")
+      if ($a -in $LoginUnlink) {
+        if ($drc -eq 4) { "UNMEASURED arm$a checkpoint"; $worst = [math]::Max($worst, 3); $checkpoint = $true }
+        elseif ($drc -eq 0 -and $hasCh) { "INFO arm$a measured (no judge)"; $UnlinkOk[$a] = $true }
+        else { "UNMEASURED arm$a drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
+        continue
+      }
       if ($a -eq '1c' -or $a -in $Unlink) {
         if ($drc -eq 0 -and $hasCh) {
           if ($a -eq '1c') { "INFO arm1c measured (stock: no observer trace, no judge)" } else { "INFO arm$a measured (no judge)"; $UnlinkOk[$a] = $true }
@@ -260,6 +277,19 @@ try {
       if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink.md') -TotalCount 1 }
       else { "UNMEASURED unlink rc=$urc"; $worst = [math]::Max($worst, 3) }
     } else { "UNMEASURED unlink: $($uf.Count) fork and $($us.Count) stock profiles measured, 3 each needed"; $worst = [math]::Max($worst, 3) }
+  }
+  # logged-in unlinking (S5): the three fork profiles only, against the identity prediction; the logged-out run 20261030-053053 lists the new paths
+  if (@($Arms | Where-Object { $_ -in $LoginUnlink }).Count) {
+    $lf = @($LoginUnlink | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
+    if ($lf.Count -eq 3) {
+      $lo = Join-Path $Root 'auto\20261030-053053\unlink.json'
+      $la = @(); if (Test-Path $lo) { $la = @('--logged-out', $lo) }
+      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @lf --fork-only @la --site $Site --settings $Root --seeds "$UnlinkSeeds" `
+        --out (Join-Path $run 'unlink-lu.json') --md (Join-Path $run 'unlink-lu.md') 2>&1 | ForEach-Object { "$_" }
+      $urc = $LASTEXITCODE
+      if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink-lu.md') -TotalCount 1 }
+      else { "UNMEASURED unlink-lu rc=$urc"; $worst = [math]::Max($worst, 3) }
+    } else { "UNMEASURED unlink-lu: $($lf.Count) of 3 logged-in profiles measured"; $worst = [math]::Max($worst, 3) }
   }
   # light pair (part 3): the warm arm against its 3w baseline, on the host; only light.json and light.md hold the result
   if ('lw' -in $Arms) {

@@ -10,7 +10,9 @@
     "1f": ["/"], "1c": ["/"],
     "3w": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"],
     "lw": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"],
-    "lf1": ["/"], "lf2": ["/"], "lf3": ["/"], "lc1": ["/"], "lc2": ["/"], "lc3": ["/"]
+    "lf1": ["/"], "lf2": ["/"], "lf3": ["/"], "lc1": ["/"], "lc2": ["/"], "lc3": ["/"],
+    "lu1": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"], "lu2": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"],
+    "lu3": ["/", "/watch/", "/marketplace/", "/messages/", "/me/"]
   },
   "route_paths": ["/ajax/bz", "/ajax/bnzai", "/ajax/qm/"],
   "unlink_endpoints": ["/ajax/bz", "/ajax/qm/", "/ajax/webstorage/process_keys/"],

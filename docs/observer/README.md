@@ -301,6 +301,7 @@ Spec `docs/superpowers/specs/2026-10-30-fb-unlink-design.md`.
   first line of `unlink.md` is printed as `UNLINK net_gap=<n> ...`; a
   sub-arm that did not measure, or fewer than 3 + 3 profiles, is
   `UNMEASURED unlink: ...` (exit 3).
+- `-Arms lu -UnlinkSeeds '7,8,9'` (2026-10-31, S5): three fork profiles from copies of the login backup, one capped logged-in run, compared with `observe_unlink --fork-only`; each copy is deleted right after its sub-arm, and a checkpoint stops the run.
 
 **Light mode pair (part 3, 2026-10-30).**
 Spec `docs/superpowers/specs/2026-10-30-fb-light-design.md` (its `3l` is

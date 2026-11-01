@@ -1,11 +1,11 @@
 # Recon launcher for the camoucrome observer build. Headed, no CDP.
 # Usage: recon.ps1 -Site facebook|instagram|threads -Arm 1|2|3|4 [-Force] [-Intl]
-# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light] [-NoRoute] [-Flags <flag>,...]
+# Driven arms (1f 1c 3w 4a lw lf1..3 lc1..3 lu1..3, unattended only): -Driver <python.exe> -Url <url>... [-Exe <stock chrome.exe>] [-Cpu] [-ExpectSession] [-Seed <n>] [-Light] [-NoRoute] [-Flags <flag>,...]
 #        recon.ps1 -PostOnly -Dir <arm dir> -Profile <profile dir>
 # Unattended (observe-auto.ps1): -Wait <s> -Out <run dir> [-FromProfile <dir>] [-KillBelowGB <n>]
 param(
   [ValidateSet('facebook','instagram','threads')][string]$Site,
-  [ValidateSet('1','2','3','4','1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3')][string]$Arm,
+  [ValidateSet('1','2','3','4','1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3','lu1','lu2','lu3')][string]$Arm,
   [switch]$Force,
   [switch]$Intl,
   [switch]$PostOnly,
@@ -85,7 +85,7 @@ if ($PostOnly) {
 }
 
 if (-not $Site -or -not $Arm) { throw '-Site and -Arm are required' }
-$driven = $Arm -in '1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3'
+$driven = $Arm -in '1f','1c','3w','4a','lw','lf1','lf2','lf3','lc1','lc2','lc3','lu1','lu2','lu3'
 if ($driven -and (-not $Driver -or -not $Out)) { throw "arm $Arm is driven: needs -Driver and -Out (unattended only)" }
 if ($driven -and -not $Url) { throw "arm $Arm needs -Url" }
 $script:DriveRc = $null
@@ -96,7 +96,7 @@ $siteUrl = if ($SiteDoc) { $SiteDoc.origin + '/' } else { @{ facebook = 'https:/
 $Beacon  = if ($SiteDoc) { $SiteDoc.beacon_path } else { '/ajax/bz' }
 if ($Out) {
   if (-not $Wait) { throw '-Out is for unattended runs; pass -Wait' }
-  if ($Arm -in '3','3w','4a','lw' -and -not $FromProfile) { throw "unattended arm $Arm needs -FromProfile" }
+  if ($Arm -in '3','3w','4a','lw','lu1','lu2','lu3' -and -not $FromProfile) { throw "unattended arm $Arm needs -FromProfile" }
   $Dir     = Join-Path $Out "arm$Arm"
   $Profile = Join-Path $Out "profile-arm$Arm"
   if ((Test-Path $Dir) -or (Test-Path $Profile)) { throw "$Dir or $Profile exists; -Out wants a fresh run dir" }
@@ -134,6 +134,9 @@ $what = @{
   '1f' = 'ARM 1f driven, logged out: landing page, wheel only.'
   '1c' = 'ARM 1c driven, stock Chrome, logged out: landing page, wheel only.'
   '3w' = 'ARM 3w driven: feed, watch, marketplace, messages, profile by URL, wheel only.'
+  'lu1' = 'ARM lu1..3 driven, fork with a generated identity, logged in (backup copy): feed pages, wheel only.'
+  'lu2' = 'ARM lu1..3 driven, fork with a generated identity, logged in (backup copy): feed pages, wheel only.'
+  'lu3' = 'ARM lu1..3 driven, fork with a generated identity, logged in (backup copy): feed pages, wheel only.'
   'lw' = 'ARM lw driven, light mode: arm 3w''s URLs from a warm profile copy, wheel only.'
   '4a' = 'ARM 4a driven: one third-party page with the Meta Pixel, logged-in profile copy, wheel only.'
   'lf1' = 'ARM lf1..3 driven, fork with a generated identity, logged out: landing page, wheel only.'
@@ -178,7 +181,7 @@ if ($driven) {
           '--chrome-args', (Join-Path $Dir 'chrome-args.json'))
   foreach ($u in $Url) { $da += @('--url', $u) }
   if ($SiteDoc) { $da += @('--site', $Site) }
-  if ($Arm -in '3w','lw') { $da += @('--settle', '15', '--wheel', '60') } else { $da += @('--settle', '20', '--wheel', '40') }
+  if ($Arm -in '3w','lw','lu1','lu2','lu3') { $da += @('--settle', '15', '--wheel', '60') } else { $da += @('--settle', '20', '--wheel', '40') }
   if (-not $Exe) { $da += '--fork' }
   if ($Seed) { $da += @('--identity-seed', "$Seed") }
   if ($Light) { $da += '--light' }
