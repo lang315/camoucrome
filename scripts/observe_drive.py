@@ -135,33 +135,44 @@ def decode_body(raw, content_type="", _b64=True):
     return "opaque", None
 
 
-def walk(value, prefix=""):
-    """[(path, leaf)]: dict keys joined by '.', list items as '[]'; a string that is JSON is walked into."""
+def walk(value, prefix="", site=None, stats=None):
+    """[(path, leaf)]: dict keys joined by '.', list items as '[]'; a string that is JSON is walked into. With a site,
+    each leaf of a dict is also offered to site.expand_fields(path, leaf, dict): the dict is the event the leaf
+    belongs to (a hook needs a sibling such as a key), and what it returns is added beside the leaf. `stats`
+    counts the tries: 'decoded' when the hook added fields, 'failed' when it returned []."""
     if isinstance(value, dict):
         out = []
         for k, v in value.items():
-            out += walk(v, f"{prefix}.{k}" if prefix else str(k))
+            path = f"{prefix}.{k}" if prefix else str(k)
+            got = walk(v, path, site, stats)
+            out += got
+            if site is not None and isinstance(v, str):
+                extra = site.expand_fields(path, v, value)
+                if extra is not None:
+                    out += extra
+                    if stats is not None:
+                        stats["decoded" if extra else "failed"] += 1
         return out
     if isinstance(value, list):
         out = []
         for v in value:
-            out += walk(v, prefix + "[]")
+            out += walk(v, prefix + "[]", site, stats)
         return out
     if isinstance(value, str):
         j = _json(value)
         if j is not None:
-            return walk(j, prefix)
+            return walk(j, prefix, site, stats)
     return [(prefix, value)]
 
 
-def fields(raw, content_type=""):
+def fields(raw, content_type="", site=None, stats=None):
     kind, v = decode_body(raw, content_type)
     if kind == "json":
-        return kind, walk(v)
+        return kind, walk(v, "", site, stats)
     if kind in ("form", "multipart"):
         out = []
         for k, val in v:
-            out += walk(val, k)
+            out += walk(val, k, site, stats)
         return kind, out
     return kind, []
 
@@ -379,6 +390,7 @@ def build_channels(requests, frames, arm, site=None):
     for r in requests:
         e = eps.setdefault(endpoint(r["url"]), {"count": 0, "bytes": 0, "kinds": {}, "initiators": {}, "fields": {},
                                                 "via": {}})
+        sjd = {"decoded": 0, "failed": 0}
         e["count"] += 1
         if r.get("via"):
             e["via"][r["via"]] = e["via"].get(r["via"], 0) + 1  # how the body was captured: event, getRequestPostData, route
@@ -388,7 +400,11 @@ def build_channels(requests, frames, arm, site=None):
         else:
             raw = _b64(r["body_b64"])
             e["bytes"] += len(raw)
-            kind, pairs = fields(raw, r.get("content_type", ""))
+            kind, pairs = fields(raw, r.get("content_type", ""), site, sjd)
+        if sjd["decoded"] or sjd["failed"]:  # how many sjd beacons the hook opened: "decoded 0" must show
+            tot = e.setdefault("sjd", {"decoded": 0, "failed": 0})
+            tot["decoded"] += sjd["decoded"]
+            tot["failed"] += sjd["failed"]
         e["kinds"][kind] = e["kinds"].get(kind, 0) + 1
         ini = endpoint(r["initiator"]) if r.get("initiator") else "(no script)"
         e["initiators"][ini] = e["initiators"].get(ini, 0) + 1
@@ -423,7 +439,7 @@ def build_bool_fields(requests, frames, truth, site=None):
     n = collections.Counter()
     for r in requests:
         if not r.get("missing"):
-            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""))[1]:
+            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 for s in bool_matches(v, truth):
                     n[(endpoint(r["url"]), path, s)] += 1
     for fr in frames:
@@ -439,7 +455,7 @@ def build_matches(requests, frames, truth, site=None):
     n = collections.Counter()
     for r in requests:
         if not r.get("missing"):
-            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""))[1]:
+            for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1
     for fr in frames:

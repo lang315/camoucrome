@@ -888,3 +888,86 @@ def test_parse_args_takes_hosts_from_the_site():
 def test_an_unknown_site_is_unmeasured(capsys):
     assert d.main(["--arm", "x", "--rederive", "nowhere", "--site", "nosuch"]) == 3
     assert "UNMEASURED site: nosuch not found" in capsys.readouterr().out
+
+
+# --- sjd: facebook's browser-integrity beacon, Blowfish-CBC under a key taken from the event's own asid (S4b) ---
+
+ASID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"  # made up: only its shape matters
+SIGNALS = {"3": ["Mozilla/5.0 test"], "7": [4, 8], "12": [True, False, None]}
+
+
+def _sjd(plain, asid=ASID):
+    from Crypto.Cipher import Blowfish
+    key = (asid[19:23] + asid[24:36]).encode()
+    iv = bytes(a ^ b for a, b in zip(key[:8], key[8:16]))
+    data = json.dumps(plain).encode()
+    data += b"\x00" * (-len(data) % 8)  # the library zero-pads
+    return base64.b64encode(Blowfish.new(key, Blowfish.MODE_CBC, iv).encrypt(data)).decode()
+
+
+def _sjd_req(sjd, asid=ASID):
+    q = json.dumps([{"asid": asid, "ct": 1, "sjd": sjd, "sid": 2}])
+    return _req("https://www.facebook.com/ajax/bz", urllib.parse.urlencode({"q": q}).encode())
+
+
+def test_decode_sjd_returns_the_plaintext():
+    fb = sites.load("facebook")
+    assert fb.hooks.decode_sjd({"asid": ASID, "sjd": _sjd(SIGNALS)}) == SIGNALS
+
+
+def test_decode_sjd_fails_closed():
+    fb = sites.load("facebook").hooks
+    good = _sjd(SIGNALS)
+    assert fb.decode_sjd({"asid": ASID.replace("9e0f", "9e0e"), "sjd": good}) is None  # wrong key
+    assert fb.decode_sjd({"asid": ASID, "sjd": "!!not base64!!"}) is None
+    assert fb.decode_sjd({"asid": ASID, "sjd": "QUJD"}) is None  # 3 bytes: not a whole block
+    assert fb.decode_sjd({"asid": ASID, "sjd": _sjd("not an object")}) is None  # JSON, but not {id: [..]}
+    assert fb.decode_sjd({"asid": "short", "sjd": good}) is None
+    assert fb.decode_sjd({"sjd": good}) is None
+    assert fb.decode_sjd({"asid": ASID, "sjd": 5}) is None
+
+
+def test_fields_walk_emits_one_path_per_signal_value():
+    fb = sites.load("facebook")
+    body = urllib.parse.urlencode({"q": json.dumps([{"asid": ASID, "sjd": _sjd(SIGNALS)}])}).encode()
+    kind, pairs = d.fields(body, "application/x-www-form-urlencoded", fb)
+    paths = sorted(p for p, _ in pairs if ".sjd." in p)
+    assert paths == ["q[].sjd.12[]"] * 3 + ["q[].sjd.3[]", "q[].sjd.7[]", "q[].sjd.7[]"]
+    assert ("q[].sjd.3[]", "Mozilla/5.0 test") in pairs
+
+
+def test_channels_carry_signal_fields_and_the_decode_count():
+    fb = sites.load("facebook")
+    reqs = [_sjd_req(_sjd(SIGNALS)), _sjd_req(_sjd(SIGNALS)), _sjd_req(_sjd(SIGNALS), asid=ASID.replace("9e0f", "9e0e"))]
+    ep = d.build_channels(reqs, [], "3w", fb)["endpoints"]["www.facebook.com/ajax/bz"]
+    assert ep["sjd"] == {"decoded": 2, "failed": 1}
+    assert ep["fields"]["q[].sjd.7[]"] == {"count": 4, "classes": {"int": 4}}
+    assert "q[].sjd" in ep["fields"]  # the opaque string stays beside its parts
+
+
+def test_signal_values_match_surfaces_like_any_field():
+    fb = sites.load("facebook")
+    m = d.build_matches([_sjd_req(_sjd({"3": ["Europe/Berlin"]}))], [], TRUTH, fb)
+    assert any(r["field"] == "q[].sjd.3[]" and r["surface"] == "timezone" for r in m)
+
+
+def test_without_pycryptodome_decode_is_none_and_counted(monkeypatch):
+    import builtins
+    real = builtins.__import__
+
+    def deny(name, *a, **k):
+        if name.split(".")[0] == "Crypto":
+            raise ImportError(name)
+        return real(name, *a, **k)
+    body = _sjd(SIGNALS)  # encrypt first: the fixture needs Crypto
+    monkeypatch.setattr(builtins, "__import__", deny)
+    fb = sites.load("facebook")
+    assert fb.hooks.decode_sjd({"asid": ASID, "sjd": body}) is None
+    ep = d.build_channels([_sjd_req(body)], [], "3w", fb)["endpoints"]["www.facebook.com/ajax/bz"]
+    assert ep["sjd"] == {"decoded": 0, "failed": 1}
+
+
+def test_a_site_with_no_expand_hook_adds_nothing():
+    tp = sites.load("testpage")
+    ep = d.build_channels([_sjd_req(_sjd(SIGNALS))], [], "3w", tp)["endpoints"]["www.facebook.com/ajax/bz"]
+    assert "sjd" not in ep and not any(".sjd." in f for f in ep["fields"])

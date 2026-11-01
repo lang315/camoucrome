@@ -1,4 +1,7 @@
 """facebook's hooks: the media CDN POP collapse and the DGW gateway framing."""
+import base64
+import binascii
+import json
 import re
 
 _POP_MEDIA = re.compile(r"^scontent.*\.fbcdn\.net$")
@@ -78,3 +81,31 @@ def binary_units(raw):
         u, n = _chunk_units(b0, payload)
         units, partial = units + u, partial + n
     return units + ([("(partial)", [])] if rest else []), partial
+
+
+def decode_sjd(event):
+    """{signal id: [values]} from a /ajax/bz event's `sjd`, or None on any failure (never raises). `sjd` is base64 of
+    Blowfish-CBC of JSON, zero-padded; the key is asid[19:23] + asid[24:36] and the IV is key[0:8] XOR key[8:16]
+    (BDClientSignalCollectionTrigger). The key comes from the same event, so no secret is involved."""
+    try:
+        from Crypto.Cipher import Blowfish  # pycryptodome; a host without it still runs everything else
+        asid, sjd = event.get("asid"), event.get("sjd")
+        if not isinstance(asid, str) or not isinstance(sjd, str) or len(asid) < 36:
+            return None
+        key = (asid[19:23] + asid[24:36]).encode("ascii")
+        iv = bytes(a ^ b for a, b in zip(key[:8], key[8:16]))
+        plain = Blowfish.new(key, Blowfish.MODE_CBC, iv).decrypt(base64.b64decode(sjd, validate=True))
+        doc = json.loads(plain.rstrip(b"\x00").decode("utf-8"))
+    except (ImportError, ValueError, TypeError, binascii.Error, UnicodeError):
+        return None
+    ok = isinstance(doc, dict) and all(isinstance(v, list) for v in doc.values())
+    return doc if ok else None
+
+
+def expand_fields(path, value, event):
+    """The decoded signals of an `sjd` leaf as (path + '.' + id + '[]', value) pairs; [] when it could not be decoded;
+    None for any other leaf."""
+    if path.rsplit(".", 1)[-1] != "sjd":
+        return None
+    doc = decode_sjd(event)
+    return [(f"{path}.{k}[]", v) for k, vs in (doc or {}).items() for v in vs]

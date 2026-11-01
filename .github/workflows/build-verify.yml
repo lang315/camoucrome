@@ -69,6 +69,8 @@ jobs:
           rsync -a --delete --exclude __pycache__ scripts/sites/ "$VERIFY/sites/"
           mkdir -p "$VERIFY/settings" && rsync -a --delete settings/sites/ "$VERIFY/settings/sites/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
+          # observe_drive decodes facebook's sjd beacon (scripts/sites/facebook.py); without it the decode count reads "failed"
+          "$VERIFY/venv/bin/python3" -m pip install -q pycryptodome==3.23.0 2>&1 | tail -1
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
           export PATH=$HOME/depot_tools:$PATH

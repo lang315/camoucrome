@@ -282,6 +282,9 @@ list anyway when you type it in a PowerShell session:
 `-Arms '1f,1c,3w'`.
 Install the scripts and the venv first (plan Task 12): the driven arms run
 `observe_drive.py` in `D:\camou-win\observe\venv`.
+That venv needs `pycryptodome==3.23.0`: `observe_drive.py` uses it to open facebook's `sjd` beacon into
+its signal fields (`q[].sjd.<id>[]`). Without it the run still works, and `channels.json` and the report
+show `sjd` as `decoded 0, failed N`.
 
 | arm | browser | profile | time | input |
 |---|---|---|---|---|

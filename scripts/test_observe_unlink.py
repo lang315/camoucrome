@@ -483,3 +483,21 @@ def test_fork_only_network_bound_logged_in_fields_are_ip_bound():
     for p in NET_PATHS:
         assert row(doc, p)["class"] == "ip-bound"
     assert doc["counts"]["unmapped-same"] == 0 and doc["counts"]["net_gap"] == 0
+
+
+def test_decoded_sjd_signals_reach_the_comparison():
+    import sites
+    from test_observe_drive import _sjd
+    fb = sites.load("facebook")
+
+    def profile(i):  # a made-up asid per profile: the ciphertext differs, the signal does not
+        asid = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c%02d" % i
+        return req("/ajax/bz", {"q": [{"asid": asid, "sjd": _sjd({"3": ["same everywhere"]}, asid)}]})
+    caps = [[profile(i)] for i in range(6)]
+    plain = [u.profile_values(c) for c in caps]
+    assert not any(".sjd." in k for p in plain for k in p)  # without a site nothing is opened
+    vals = [u.profile_values(c, site=fb) for c in caps]
+    doc = u.classify(vals[:3], vals[3:], DOC, CONSTANTS, ACCEPTED)
+    r = row(doc, "/ajax/bz q[].sjd.3[]")
+    assert (r["fork_distinct"], r["stock_distinct"]) == (1, 1)
+    assert row(doc, "/ajax/bz q[].sjd")["fork_distinct"] == 3  # the opaque string differs per profile
