@@ -463,3 +463,23 @@ def test_fork_only_main_reads_the_logged_in_endpoints(tmp_path):
 def test_the_same_captures_without_fork_only_are_unmeasured(tmp_path):
     reqs = [[gql(device_timezone="Z")] for _ in range(3)]
     assert run_main(tmp_path, reqs, reqs) == 3
+
+
+NET_PATHS = {
+    "/api/graphql/ variables.connectionClass": "connectionClass",
+    "/ajax/webstorage/process_keys/ local_storage[_oz_bandwidthEstimate]": "local_storage[_oz_bandwidthEstimate]",
+    "/ajax/webstorage/process_keys/ local_storage[_oz_bandwidthAndTTFBSamples]": "local_storage[_oz_bandwidthAndTTFBSamples]",
+}
+
+
+def test_network_bound_logged_in_fields_map_to_their_keys():
+    for path, key in NET_PATHS.items():
+        assert u.field_key(path, DOC["fields"]) == key and key in DOC["ip_bound"]
+
+
+def test_fork_only_network_bound_logged_in_fields_are_ip_bound():
+    fork = _fo({p: ["same"] * 3 for p in NET_PATHS})
+    doc = u.classify(fork, [], DOC, {}, {}, fork_only=True, prediction={})
+    for p in NET_PATHS:
+        assert row(doc, p)["class"] == "ip-bound"
+    assert doc["counts"]["unmapped-same"] == 0 and doc["counts"]["net_gap"] == 0
