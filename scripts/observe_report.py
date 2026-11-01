@@ -641,6 +641,9 @@ def render_channels(channels, costs):
              f"({channels['posts_missing']} without a body)", ""]
     if other:
         lines += [f"{sum(other.values())} POSTs to other hosts: {', '.join(sorted(other))}", ""]
+    for ep, v in sorted((public_endpoint(k), v) for k, v in channels["endpoints"].items()):
+        if "sjd" in v:  # "decoded 0" must show: a missing decoder or a bad key is not silence
+            lines += [f"sjd beacons on `{ep}`: decoded {v['sjd']['decoded']}, failed {v['sjd']['failed']}", ""]
     lines += ["| endpoint | count | bytes | kinds | field | count | classes |", "|---|---|---|---|---|---|---|"]
     for ep, v in sorted(((public_endpoint(k), v) for k, v in channels["endpoints"].items()), key=lambda x: -x[1]["count"]):
         kinds = ", ".join(f"{k} {n}" for k, n in sorted(v["kinds"].items()))

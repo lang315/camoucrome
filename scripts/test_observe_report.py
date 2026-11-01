@@ -505,6 +505,15 @@ def test_channels_list_fields_classes_ws_and_coverage():
     assert "captured 3 of 7 POSTs in the netlog (1 without a body)" in out
 
 
+def test_channels_show_the_sjd_decode_counts():
+    import copy
+    ch = copy.deepcopy(CH)
+    ch["endpoints"]["www.facebook.com/ajax/bz"]["sjd"] = {"decoded": 0, "failed": 2}
+    out = r.render_channels(ch, {"posts": {"www.facebook.com/ajax/bz": 2}})
+    assert "sjd beacons on `www.facebook.com/ajax/bz`: decoded 0, failed 2" in out
+    assert "sjd beacons" not in r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2}})
+
+
 def test_weak_matches_are_listed_apart():
     out = r.render_matches(MT)
     strong, weak = out.split("Weak matches")

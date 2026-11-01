@@ -53,6 +53,9 @@ class Site:
     def binary_units(self, raw):
         return self.hooks.binary_units(raw)
 
+    def expand_fields(self, path, value, event):
+        return self.hooks.expand_fields(path, value, event)
+
 
 def _roots():
     # host: <observe>\sites\__init__.py with data in <observe>\settings\sites; repo: scripts/sites with settings/sites
