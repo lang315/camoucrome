@@ -214,6 +214,56 @@ second profile and proves it. On the host the package goes to `<observe>\sites\`
 `<observe>\settings\sites\`. A site without a `site.json`, or one that lacks a key, is `UNMEASURED site: ...` (exit 3)
 before the ledger is touched. Each site has its own ledger and cap.
 
+### Adding a site
+
+A new site is data plus, if it needs them, two small hooks. No existing script is edited.
+
+**1. The data: `settings/sites/<site>/site.json`.** The name is `^[a-z0-9_-]+$` and equals the folder name.
+`settings/sites/testpage/site.json` is the minimal example; `settings/sites/facebook/site.json` is the full one.
+Every key of `sites.REQUIRED` must be present, or the site is `UNMEASURED site: ...`:
+
+| key | controls |
+|---|---|
+| `name` | the profile name; must equal the folder |
+| `origin` | the site's base URL; arms load `origin` plus a page path |
+| `surface_site` | the script-surface key the judge and `observe_diff` count (the form the observer reports the site in) |
+| `cookie_domain`, `logged_in_cookies` | the cookies that prove a login; arm 3 reports `session expired` when one is missing |
+| `pages` | per arm, the page paths a driven arm visits, by URL |
+| `route_paths` | telemetry paths whose bodies CDP does not carry (`sendBeacon`, keepalive); only these are routed. Matched literally |
+| `unlink_endpoints`, `beacon_path` | the endpoints `observe_unlink` reads for a logged-out run, and the one that must carry a body or the run is `UNMEASURED` |
+| `post_hosts`, `resource_hosts`, `doc_hosts` | hosts whose POST bodies, scripts and documents the driver records |
+| `ws_hosts` | hosts whose WebSocket frames the driver records |
+| `backup`, `baseline`, `ledger` | the login backup folder, the judge baseline file, and the run ledger (each site has its own) |
+| `cap` | `per_day` and `min_gap_min`: the account-risk cap on runs that include a login |
+| `expired_hint` | the text printed when the login has expired |
+
+Optional keys: `module` (the hook module, default `base`), and `logged_in_unlink_endpoints` and `logged_in_beacon_path`
+(a logged-in session may post to other endpoints than a logged-out one; both default to the logged-out values). Find the
+real endpoints in a recon capture first; do not copy another site's. A `site.json` saved by PowerShell may carry a BOM; the
+loader reads it. On the host the data goes to `<observe>\settings\sites\`.
+
+**2. The hooks: `scripts/sites/<module>.py`.** Name the module in `site.json`. A site needs one only when:
+- its WebSocket carries a binary framing the driver cannot split: `binary_units(raw)` returns the units, or `None` to fall back to MQTT and then one opaque unit;
+- its CDN host names carry a regional POP code, which is a location: `pop_host(host)` collapses them.
+
+`scripts/sites/base.py` holds the defaults (`pop_host` returns the host, `binary_units` returns `None`); a site with
+neither need names no module. `scripts/sites/facebook.py` is the full example (it also expands `sjd`; see that file). Hooks
+run on the host and may see values; what leaves the host (`channels.json`, `matches.json`, `unlink.json` and the reports) keeps names, value classes, counts and matches only.
+
+**3. The order of work for a new site** (the order the facebook lane followed):
+1. Recon arms: logged out first, then logged in from the owner's backup (see "Unattended recon" above). Credentials are never typed by tooling.
+2. The tracking map: channels, fields and costs (see "Tracking-map arms").
+3. `settings/sites/<site>/fields.json`: each device field with its identity keys and leaves, plus `limits` and `ip_bound` entries, which only an owner ruling adds.
+4. Unlinking: `lf`/`lc` alternating loads (see "Unlink arms `lf` and `lc`"), then `lu`, a logged-in run on the three fork profiles alone.
+5. Light mode, if wanted (see "Light mode pair").
+
+**4. The rules that carry over.**
+- The account cap is per site: `cap` and `ledger` in `site.json`. A logged-in arm counts against it.
+- Values never leave the host. The reports hold names, classes and counts. The login backup is only copied, never read for values.
+- No typed credentials, ever; the owner logs in by hand.
+- The repository is public: no host-identifying data in any file, commit or PR (`scripts/check_privacy.py`). Name a site at vendor level only.
+- One load per run, with no scheduling and no loops. Automated recon runs only through `observe-auto.ps1`.
+
 ## Tracking-map arms (2026-10-29)
 
 The owner relaxed the observer rules on 2026-10-29
