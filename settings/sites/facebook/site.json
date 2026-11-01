@@ -17,6 +17,8 @@
   "route_paths": ["/ajax/bz", "/ajax/bnzai", "/ajax/qm/"],
   "unlink_endpoints": ["/ajax/bz", "/ajax/qm/", "/ajax/webstorage/process_keys/"],
   "beacon_path": "/ajax/bz",
+  "logged_in_unlink_endpoints": ["/api/graphql/", "/ajax/bnzai", "/ajax/qm/", "/ajax/webstorage/process_keys/"],
+  "logged_in_beacon_path": "/api/graphql/",
   "post_hosts": ["www.facebook.com", "web.facebook.com", "graph.facebook.com", "www.fbsbx.com", "gateway.facebook.com"],
   "resource_hosts": ["static.xx.fbcdn.net", "connect.facebook.net"],
   "doc_hosts": ["www.facebook.com"],

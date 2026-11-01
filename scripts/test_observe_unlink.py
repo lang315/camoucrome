@@ -435,3 +435,25 @@ def test_unmapped_with_two_equal_stock_values_is_still_site_constant():
     doc = _thin("/ajax/bz q.other", ["a", "a", "a"], ["a", "a"])
     assert row(doc, "/ajax/bz q.other")["class"] == "site-constant"
     assert doc["counts"]["unmapped-thin"] == 0
+
+
+def gql(**variables):
+    return req("/api/graphql/", {"variables": {"input": {"fb_web_fb_intervals_payload": variables}}, "doc_id": "1"})
+
+
+def run_fork_only(tmp, fork_reqs):
+    fork = [arm(tmp, f"armlu{i}", r, ident(8)) for i, r in enumerate(fork_reqs, 1)]
+    return u.main(["--fork", *fork, "--fork-only", "--settings", settings(tmp), "--seeds", "7,8,9",
+                   "--out", str(tmp / "unlink.json"), "--md", str(tmp / "unlink.md")])
+
+
+def test_fork_only_main_reads_the_logged_in_endpoints(tmp_path):
+    reqs = [[gql(device_timezone="Z", dpr=1)] for _ in range(3)]
+    assert run_fork_only(tmp_path, reqs) == 0
+    out = json.loads((tmp_path / "unlink.json").read_text(encoding="utf-8"))
+    assert any(r["field"].endswith(".device_timezone") and r["key"] == "device_timezone" for r in out["rows"])
+
+
+def test_the_same_captures_without_fork_only_are_unmeasured(tmp_path):
+    reqs = [[gql(device_timezone="Z")] for _ in range(3)]
+    assert run_main(tmp_path, reqs, reqs) == 3

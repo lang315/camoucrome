@@ -44,6 +44,8 @@ class Site:
     cap: dict
     expired_hint: str
     hooks: types.ModuleType
+    logged_in_unlink_endpoints: tuple = None  # optional: a logged-in session posts to other endpoints; default the logged-out ones
+    logged_in_beacon_path: str = None
 
     def pop_host(self, host):
         return self.hooks.pop_host(host)
@@ -76,4 +78,6 @@ def load(name="facebook", root=None):
     hooks = importlib.import_module("sites." + doc.get("module", "base"))
     kw = {k: (tuple(doc[k]) if k in _TUPLES else doc[k]) for k in REQUIRED}
     kw["pages"] = {arm: tuple(paths) for arm, paths in doc["pages"].items()}
+    kw["logged_in_unlink_endpoints"] = tuple(doc.get("logged_in_unlink_endpoints", doc["unlink_endpoints"]))
+    kw["logged_in_beacon_path"] = doc.get("logged_in_beacon_path", doc["beacon_path"])
     return Site(dir=d.resolve(), hooks=hooks, **kw)

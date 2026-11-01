@@ -102,3 +102,15 @@ def test_facebook_has_the_logged_in_unlink_pages():
     s = sites.load("facebook")
     for arm in ("lu1", "lu2", "lu3"):
         assert s.pages[arm] == s.pages["3w"]
+
+
+def test_facebook_logged_in_endpoints_are_pinned():
+    s = sites.load("facebook")
+    assert s.logged_in_unlink_endpoints == ("/api/graphql/", "/ajax/bnzai", "/ajax/qm/", "/ajax/webstorage/process_keys/")
+    assert s.logged_in_beacon_path == "/api/graphql/"
+
+
+def test_logged_in_endpoints_default_to_the_logged_out_ones():
+    s = sites.load("testpage")
+    assert s.logged_in_unlink_endpoints == s.unlink_endpoints and s.logged_in_beacon_path == s.beacon_path
+    assert "logged_in_unlink_endpoints" not in sites.REQUIRED and "logged_in_beacon_path" not in sites.REQUIRED
