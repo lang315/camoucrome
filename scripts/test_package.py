@@ -251,6 +251,22 @@ def test_fingerprint_is_the_same_for_committed_and_uncommitted_change_sets(tree,
     assert package.tree_fingerprint(src, pin) == uncommitted
 
 
+def test_fingerprint_takes_the_lgpl_additions_committed_or_not(tree):
+    # the Windows tree has no commits, so components/camoucfg_lgpl is untracked there and committed on the box
+    src, out, deps = tree
+    pin = rev(src)
+    lgpl = src / "components" / "camoucfg_lgpl"
+    (lgpl / "data").mkdir(parents=True)
+    (lgpl / "cursory.cc").write_text("int c;")
+    (lgpl / "data" / "t.json.gz").write_bytes(b"\x1f\x8b")
+    uncommitted = package.tree_fingerprint(src, pin)
+    subprocess.run(["git", "add", "-A", "--", "components/camoucfg_lgpl"], cwd=src, check=True)
+    commit_all(src, "lgpl")
+    assert package.tree_fingerprint(src, pin) == uncommitted
+    (lgpl / "cursory.cc").write_text("int d;")
+    assert package.tree_fingerprint(src, pin) != uncommitted
+
+
 def test_fingerprint_changes_with_the_change_set(tree):
     src, out, deps = tree
     pin = rev(src)

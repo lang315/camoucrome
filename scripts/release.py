@@ -2,7 +2,9 @@
 """Create a DRAFT GitHub Release from built archives. Never publishes: that is the owner's step.
 
   release.py <tag> --stamp <win.json> --stamp <linux.json> [--asset F]... [--tables DIR] --notes FILE
-             [--release-commit SHA]
+             [--release-commit SHA] [--single-platform]
+
+--single-platform is for a one-platform pre-release: exactly one --stamp, where a release otherwise needs two.
 
 --release-commit is for a client-only release that reuses binaries built at an earlier commit. SHA must be an
 ancestor of origin/main, and from the stamps' commit to SHA the change set (patches, additions, the GN args)
@@ -142,10 +144,13 @@ def main(argv):
     ap.add_argument("--tables")
     ap.add_argument("--notes", required=True)
     ap.add_argument("--release-commit", metavar="SHA")
+    ap.add_argument("--single-platform", action="store_true")
     a = ap.parse_args(argv)
 
-    if len(a.stamp) < 2:
-        return refuse("need at least 2 --stamp")
+    if a.single_platform and len(a.stamp) != 1:
+        return refuse("--single-platform takes exactly 1 --stamp")
+    if not a.single_platform and len(a.stamp) < 2:
+        return refuse("need at least 2 --stamp (or --single-platform with 1)")
     m = TAG_RE.match(a.tag)
     if not m:
         return refuse(f"tag {a.tag!r} does not match vA.B.C.D-N")
