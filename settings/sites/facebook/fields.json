@@ -39,9 +39,12 @@
     "annotations_int.storageQuota": {"keys": [], "leaves": ["storage.quotaGiB"]},
     "annotations_int.storageUsage": {"keys": [], "leaves": ["storage.usage"]},
     "__req": {"keys": [], "leaves": []},
+    "connectionClass": {"keys": [], "leaves": []},
+    "local_storage[_oz_bandwidthEstimate]": {"keys": [], "leaves": []},
+    "local_storage[_oz_bandwidthAndTTFBSamples]": {"keys": [], "leaves": []},
     "sjd": {"keys": null, "leaves": []}
   },
-  "ip_bound": ["locale_info.locale", "locale_info.isRTL", "device_timezone", "network_stats.rtt_ms", "network_stats.downlink_megabits", "annotations_int.network_RTT", "annotations_int.network_bandwidth"],
+  "ip_bound": ["locale_info.locale", "locale_info.isRTL", "device_timezone", "network_stats.rtt_ms", "network_stats.downlink_megabits", "annotations_int.network_RTT", "annotations_int.network_bandwidth", "connectionClass", "local_storage[_oz_bandwidthEstimate]", "local_storage[_oz_bandwidthAndTTFBSamples]"],
   "limits": {
     "gpu_vendor": {"why": "Every drawn GPU is of the host's vendor class (step 6); another vendor would contradict real rendering (rule 4).", "approved": "2026-10-30"},
     "display_hdr": {"why": "Host capability boolean for the claimed GPU class; stock on that class reads the same.", "approved": "2026-10-30"},
