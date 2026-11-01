@@ -71,6 +71,11 @@ if (Test-Path $WarmRoot) {
 }
 $Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc', 'lu') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
 $Unlink = @('lf1', 'lf2', 'lf3', 'lc1', 'lc2', 'lc3')
+# owner ruling 2026-11-01: fork and stock profiles alternate (lf1 lc1 lf2 lc2 lf3 lc3), so a change facebook makes during
+# the run reaches both sides instead of reading as a fork-side pin (S3 run 20261031-164250: fork first, stock after)
+if (@($Arms | Where-Object { $_ -like 'lf*' }).Count -and @($Arms | Where-Object { $_ -like 'lc*' }).Count) {
+  $Arms = @($Arms | Where-Object { $_ -notin $Unlink }) + @(1..3 | ForEach-Object { "lf$_"; "lc$_" })
+}
 $SeedOf = @{ 'lf1' = $Seeds[0]; 'lf2' = $Seeds[1]; 'lf3' = $Seeds[2]; 'lu1' = $Seeds[0]; 'lu2' = $Seeds[1]; 'lu3' = $Seeds[2] }
 $UnlinkOk = @{}
 $LoginUnlink = @('lu1', 'lu2', 'lu3')
