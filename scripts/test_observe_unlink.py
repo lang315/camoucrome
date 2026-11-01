@@ -5,6 +5,8 @@ import pathlib
 import sys
 import urllib.parse
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import observe_unlink as u  # noqa: E402
 
@@ -341,3 +343,95 @@ def test_fields_live_in_the_facebook_profile():
 def test_has_bz_uses_the_site_beacon_path():
     req = [{"url": "https://www.facebook.com/ajax/bz", "missing": False}]
     assert u.has_bz(req) and u.has_bz(req, sites.load("facebook"))
+
+
+FO_DOC = {"fields": {"tz": {"keys": ["timezone:id"], "leaves": []}, "w": {"keys": ["launch.dpr"], "leaves": []}},
+          "ip_bound": [], "limits": {}, "light_limits": {}}
+
+
+def _fo(values):
+    """three fork profiles: values maps a captured path to its three values, one per profile"""
+    return [{p: [v[i]] for p, v in values.items()} for i in range(3)]
+
+
+def test_fork_only_varies_predicted_but_equal_is_a_net_gap():
+    fork = _fo({"/ajax/bz q.w": [1, 1, 1]})
+    doc = u.classify(fork, [], FO_DOC, {}, {}, fork_only=True, prediction={"w": "varies", "tz": "shared"})
+    assert row(doc, "/ajax/bz q.w")["class"] == "gap" and row(doc, "/ajax/bz q.w").get("explained_by") is None
+    assert doc["counts"]["net_gap"] == 1
+
+
+def test_fork_only_predicted_shared_is_explained():
+    fork = _fo({"/ajax/bz q.tz": ["Z", "Z", "Z"]})
+    doc = u.classify(fork, [], FO_DOC, {}, {}, fork_only=True, prediction={"w": "varies", "tz": "shared"})
+    assert row(doc, "/ajax/bz q.tz")["explained_by"] == "predicted-shared"
+    assert doc["counts"]["net_gap"] == 0
+
+
+def test_fork_only_unmapped_equal_is_unmapped_same():
+    fork = _fo({"/ajax/bz q.other": ["a", "a", "a"]})
+    doc = u.classify(fork, [], FO_DOC, {}, {}, fork_only=True, prediction={})
+    assert row(doc, "/ajax/bz q.other")["class"] == "unmapped-same"
+    assert doc["counts"]["unmapped-same"] == 1 and doc["counts"]["net_gap"] == 0
+
+
+def test_fork_only_three_values_are_unlinked():
+    fork = _fo({"/ajax/bz q.w": [1, 2, 3]})
+    assert row(u.classify(fork, [], FO_DOC, {}, {}, fork_only=True, prediction={"w": "varies"}), "/ajax/bz q.w")["class"] == "unlinked"
+
+
+def test_normal_mode_has_no_fork_only_keys():
+    fork = _fo({"/ajax/bz q.w": [1, 2, 3]})
+    doc = u.classify(fork, fork, FO_DOC, {}, {})
+    assert "unmapped-same" not in doc["counts"] and "fork_only_mode" not in doc and "not_seen_logged_out" not in doc
+    assert "Unmapped, same in all three" not in u.render(dict(doc, seeds="1,2,3", disagreements=[]))
+
+
+def test_render_fork_only_sections():
+    fork = _fo({"/ajax/bz q.other": ["a", "a", "a"]})
+    doc = u.classify(fork, [], FO_DOC, {}, {}, fork_only=True, prediction={})
+    doc.update(seeds="7,8,9", disagreements=[], not_seen_logged_out=None)
+    md = u.render(doc)
+    assert "## Unmapped, same in all three (review the names) (1)" in md
+    assert "## Not seen logged out: no logged-out reference given" in md
+    assert "## Fork only" not in md and "## Stock only" not in md
+
+
+@pytest.mark.parametrize("extra", [["--fork-only", "--stock", "d", "e", "f"], []])
+def test_fork_only_and_stock_are_exclusive(extra, tmp_path):
+    with pytest.raises(SystemExit) as e:
+        u.main(["--fork", "a", "b", "c", *extra, "--settings", str(tmp_path), "--seeds", "7,8,9",
+                "--out", str(tmp_path / "o.json"), "--md", str(tmp_path / "o.md")])
+    assert e.value.code == 2
+
+
+def test_dpr_is_a_facebook_field():
+    import sites
+    fields = json.loads((sites.load("facebook").dir / "fields.json").read_text(encoding="utf-8"))["fields"]
+    assert fields["dpr"] == {"keys": ["launch.dpr"], "leaves": ["win.devicePixelRatio"]}
+
+
+def _thin(key_path, fork_vals, stock_vals):
+    fork = _fo({key_path: fork_vals})
+    stock = [{key_path: [v]} for v in stock_vals]
+    return u.classify(fork, stock, FO_DOC, {}, {})
+
+
+def test_unmapped_with_one_stock_load_is_unmapped_thin_not_a_gap():
+    doc = _thin("/ajax/bz q.other", ["a", "a", "a"], ["b"])
+    assert row(doc, "/ajax/bz q.other")["class"] == "unmapped-thin"
+    assert doc["counts"]["unmapped-thin"] == 1 and doc["counts"]["net_gap"] == 0
+    md = u.render(dict(doc, seeds="1,2,3", disagreements=[]))
+    assert "## Unmapped, fewer than two stock loads (review the names) (1)" in md
+
+
+def test_mapped_field_with_one_stock_load_is_still_a_gap():
+    doc = _thin("/ajax/bz q.w", [1, 1, 1], [1])
+    assert row(doc, "/ajax/bz q.w")["class"] == "gap"
+    assert doc["counts"]["unmapped-thin"] == 0 and doc["counts"]["net_gap"] == 1
+
+
+def test_unmapped_with_two_equal_stock_values_is_still_site_constant():
+    doc = _thin("/ajax/bz q.other", ["a", "a", "a"], ["a", "a"])
+    assert row(doc, "/ajax/bz q.other")["class"] == "site-constant"
+    assert doc["counts"]["unmapped-thin"] == 0
