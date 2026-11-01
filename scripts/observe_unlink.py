@@ -25,13 +25,14 @@ def endpoint_path(url, endpoints=None):
     return next((e for e in endpoints if e.rstrip("/") == p), None)
 
 
-def profile_values(requests, endpoints=None):
-    """{"<endpoint> <path>": [values]} over one profile's captured POST bodies on the site's unlink endpoints."""
+def profile_values(requests, endpoints=None, site=None):
+    """{"<endpoint> <path>": [values]} over one profile's captured POST bodies on the site's unlink endpoints.
+    With a site, its expand_fields hook adds fields (facebook: the decoded sjd signals)."""
     out = collections.defaultdict(list)
     for r in requests:
         ep = None if r.get("missing") else endpoint_path(r.get("url", ""), endpoints)
         if ep:
-            for path, v in d.fields(d._b64(r["body_b64"]), r.get("content_type", ""))[1]:
+            for path, v in d.fields(d._b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 out[f"{ep} {path}"].append(v)
     return dict(out)
 
@@ -257,7 +258,7 @@ def main(argv=None):
     s = pathlib.Path(a.settings)
     doc = _load(site.dir / "fields.json")
     prediction = predict(doc["fields"], [_load(pathlib.Path(x) / "capture" / "identity.json") for x in a.fork])
-    out = classify([profile_values(c, endpoints) for c in caps[:3]], [profile_values(c, endpoints) for c in caps[3:]], doc,
+    out = classify([profile_values(c, endpoints, site) for c in caps[:3]], [profile_values(c, endpoints, site) for c in caps[3:]], doc,
                    _load(s / "machine_constants.json")["leaves"], _load(s / "accepted_defaults.json")["leaves"],
                    light=a.light, fork_only=a.fork_only, prediction=prediction)
     attach_prediction(out, prediction)
