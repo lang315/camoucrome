@@ -196,11 +196,22 @@ startup abort instead of a silent fall-back to real values.
   suite, client tests, the main browser verifies. It refuses a dirty checkout
   or a running ninja rather than racing them; `gh workflow run build-verify`
   re-runs by hand (`measurements/2026-09-13-ci-build-verify.md`).
-- **One build at a time:** the box has 25 GB RAM, so every Chromium build
-  (WSL or the native Windows tree) takes `scripts/build_lock.sh acquire
-  <owner>` and releases it after; CI refuses to start while it is held.
-  Parallel sessions use their own gclient workdir (e.g. `~/chromium-s2c`)
-  and still share this lock.
+- **One build at a time:** the box has 32 GB of RAM, shared by Windows and
+  the WSL VM (capped at 26 GB plus 12 GB swap in `.wslconfig`), so every
+  Chromium build (WSL or the native Windows tree) takes
+  `scripts/build_lock.sh acquire <owner>` and releases it after; CI refuses
+  to start while it is held. Parallel sessions use their own gclient workdir
+  (e.g. `~/chromium-s2c`) and still share this lock.
+- **Memory on the box (measured 2026-11-02):** a native Windows build is
+  limited by the Windows commit limit (about 36.6 GB, RAM plus pagefile),
+  and the WSL VM's `vmmem` keeps memory the Linux side no longer uses
+  (10.3 GB with WSL idle). Read both sides before a decision:
+  `Win32_OperatingSystem.FreeVirtualMemory` on Windows, `free -m` in WSL.
+  `.wslconfig` has `autoMemoryReclaim=gradual` since 2026-11-02. When
+  Windows headroom is short and WSL is idle, `wsl --shutdown` frees the held
+  memory (about 11 GB that day), but only with the build lock free, no CI
+  job running and the other sessions on the box told; then restart the
+  `CamouWslKeepAlive` scheduled task.
 - **A slice that changes the bindings generator lands on the box first:**
   commit it in `~/chromium/src`, rebuild `out/Default` by hand under the
   lock, get `check_checkout_sync.sh` `rc=0`, then merge — merging first turns
