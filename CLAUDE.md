@@ -22,8 +22,9 @@ milestone cost more than the feature work; spec
 `docs/superpowers/specs/2026-11-03-camoufox-port-pivot-design.md`,
 `2026-10-repin.md` for what one costs). There is no re-pin for a patch
 release. A host run's stock control (`windows_verify_set.py`,
-`measure_step2.py`) may be a later patch of the pin's build, never another
-build. The 157 re-pin is paused (`repin/8103-prep`, draft PR #9). The build
+`measure_step2.py`, `measure_canvas_noise.py`) may be another patch of the
+pin's build, never another build; the fork must be the pin exactly, and
+`measure_layer3.py` keeps the exact rule for both arms. The 157 re-pin is paused (`repin/8103-prep`, draft PR #9). The build
 box's checkout is on branch
 `camoucrome/main` (the exported branch, on this pin). The 154 branch,
 `camoucrome/main-8037`, is kept in `~/chromium-154/src` until that tree is
