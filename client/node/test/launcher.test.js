@@ -70,18 +70,33 @@ test("profile seeds read another client's file and draw only the missing keys", 
   const dir = scratch();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
-  fs.writeFileSync(file, '{"canvas:seed": 5, "audio:seed": 4294967295}');
+  fs.writeFileSync(file, '{"canvas:seed": 5, "mediaDevices:seed": 4294967295}');
   const seeds = c.profileSeeds(dir);
   assert.equal(seeds['canvas:seed'], 5);
-  assert.equal(seeds['audio:seed'], 0xffffffff);
+  assert.equal(seeds['mediaDevices:seed'], 0xffffffff);
   assert.deepEqual(JSON.parse(fs.readFileSync(file)), seeds);
 });
 
-// A redraw would silently give the profile a different canvas, audio and
+test('SEED_KEYS has no audio:seed, and neither does a drawn config', () => {
+  assert.deepEqual(c.SEED_KEYS, ['canvas:seed', 'mediaDevices:seed']);
+  assert.deepEqual(Object.keys(c.perInstanceConfig()).sort(), ['canvas:seed', 'mediaDevices:seed']);
+});
+
+test("an old profile file that still holds audio:seed loads unchanged", (t) => {
+  const dir = scratch();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
+  const raw = '{"canvas:seed": 11, "audio:seed": 22, "mediaDevices:seed": 33}';
+  fs.writeFileSync(file, raw);
+  assert.deepEqual(c.profileSeeds(dir), { 'canvas:seed': 11, 'mediaDevices:seed': 33 });
+  assert.equal(fs.readFileSync(file, 'utf8'), raw);
+});
+
+// A redraw would silently give the profile a different canvas and
 // device-ID fingerprint than every earlier session showed.
 test('profile seeds refuse a damaged file rather than redraw', (t) => {
-  for (const damaged of ['{"canvas:seed"', '[1, 2]', '{"audio:seed": 0}', '{"audio:seed": 4294967296}',
-    '{"audio:seed": "7"}', '{"audio:seed": true}', '{"audio:seed": 1.5}']) {
+  for (const damaged of ['{"canvas:seed"', '[1, 2]', '{"mediaDevices:seed": 0}', '{"mediaDevices:seed": 4294967296}',
+    '{"mediaDevices:seed": "7"}', '{"mediaDevices:seed": true}', '{"mediaDevices:seed": 1.5}']) {
     const dir = scratch();
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);

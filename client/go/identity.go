@@ -15,7 +15,7 @@ import (
 
 // SeedKeys mirrors settings/launcher.json "per_instance_seeds". A preset is a
 // device identity; these are per instance and never part of it.
-var SeedKeys = []string{"canvas:seed", "audio:seed", "mediaDevices:seed"}
+var SeedKeys = []string{"canvas:seed", "mediaDevices:seed"}
 
 // SeedsFile mirrors settings/launcher.json "per_instance_seeds.profile_file".
 const SeedsFile = "camoucrome-seeds.json"
@@ -45,8 +45,9 @@ func PerInstanceConfig(read func([]byte) (int, error)) (map[string]any, error) {
 
 // ProfileSeeds returns the seeds a kept profile launches with: drawn once into
 // <userDataDir>/camoucrome-seeds.json and read back on every later launch, so
-// the profile shows the same canvas, audio and device-ID fingerprint each
-// session. Keys missing from the file are drawn (with read, as
+// the profile shows the same canvas and device-ID fingerprint each
+// session. A key no longer in SeedKeys (audio:seed) that an old file holds is
+// ignored and left in place. Keys missing from the file are drawn (with read, as
 // PerInstanceConfig) and added. A damaged file is an error, never a redraw,
 // which would change the fingerprint silently. The Python and Node clients
 // read and write the same file.

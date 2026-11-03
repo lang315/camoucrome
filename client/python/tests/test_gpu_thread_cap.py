@@ -65,16 +65,16 @@ def test_check_can_fail_when_the_cap_lookup_is_dead(monkeypatch):
 
 
 PINNED = {
-    1: (2543, 577090038, 2444712011, 3639700192),
-    2: (1015, 4106135924, 3707026330, 4070888060),
-    3: (1167, 1022050302, 2545373331, 2337446731),
+    1: (2543, 577090038, 3639700192),
+    2: (1015, 4106135924, 4070888060),
+    3: (1167, 1022050302, 2337446731),
 }
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_seeded_keys_do_not_move(seed):
     cfg = swap(seed)
-    assert tuple(cfg[k] for k in ("share:cancelMs", "canvas:seed", "audio:seed", "mediaDevices:seed")) == PINNED[seed]
+    assert tuple(cfg[k] for k in ("share:cancelMs", "canvas:seed", "mediaDevices:seed")) == PINNED[seed]
 
 
 def test_swap_path_is_deterministic():

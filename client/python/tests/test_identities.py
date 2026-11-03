@@ -3,7 +3,7 @@ from camoucrome import gen
 
 # Keys that must differ between two seeds.
 DEVICE_KEYS = ["screen.width", "screen.height", "navigator.hardwareConcurrency"]
-PER_INSTANCE_SEEDS = ["canvas:seed", "audio:seed", "mediaDevices:seed"]
+PER_INSTANCE_SEEDS = ["canvas:seed", "mediaDevices:seed"]
 
 # Config keys, or key prefixes ending in ":" or ".", that two identities may share.
 SHARED_ALLOWED = frozenset({
@@ -56,3 +56,18 @@ def test_only_declared_keys_are_shared():
 def test_gpu_name_differs_for_some_pair_of_seeds():
     names = {keys_of(s)["webGl:renderer"] for s in range(1, 6)}
     assert len(names) > 1
+
+
+def test_seed_keys_have_no_audio_seed():
+    from camoucrome import SEED_KEYS, per_instance_config
+    assert SEED_KEYS == ("canvas:seed", "mediaDevices:seed")
+    assert set(per_instance_config()) == {"canvas:seed", "mediaDevices:seed"}
+
+
+def test_old_seeds_file_with_audio_seed_still_loads_unchanged(tmp_path):
+    from camoucrome import profile_seeds
+    f = tmp_path / "camoucrome-seeds.json"
+    raw = '{"canvas:seed": 11, "audio:seed": 22, "mediaDevices:seed": 33}'
+    f.write_text(raw)
+    assert profile_seeds(str(tmp_path)) == {"canvas:seed": 11, "mediaDevices:seed": 33}
+    assert f.read_text() == raw  # not rewritten: nothing was missing

@@ -8,7 +8,7 @@ import random
 import tempfile
 
 # Mirrors settings/launcher.json "per_instance_seeds"; the test asserts it.
-SEED_KEYS = ("canvas:seed", "audio:seed", "mediaDevices:seed")
+SEED_KEYS = ("canvas:seed", "mediaDevices:seed")
 SEEDS_FILE = "camoucrome-seeds.json"
 
 
@@ -17,14 +17,18 @@ def per_instance_config(rng=None):
     caller's explicit keys over the result; pass it as launch(config=...)
     beside launch(preset=...)."""
     rng = rng or random.SystemRandom()
-    return {k: rng.randint(1, 0xFFFFFFFF) for k in SEED_KEYS}
+    # shortcut: the middle draw is the old audio:seed slot, consumed and dropped so
+    # a seeded gen.generate() stream keeps every later value; drop it when a re-pin moves them anyway.
+    draws = [rng.randint(1, 0xFFFFFFFF) for _ in range(3)]
+    return dict(zip(SEED_KEYS, (draws[0], draws[2])))
 
 
 def profile_seeds(user_data_dir, rng=None):
     """The seeds a kept profile launches with: drawn once into
     <user_data_dir>/camoucrome-seeds.json and read back on every later launch,
-    so the profile shows the same canvas, audio and device-ID fingerprint each
-    session. Keys missing from the file are drawn and added. A damaged file
+    so the profile shows the same canvas and device-ID fingerprint each
+    session. A key no longer in SEED_KEYS (audio:seed) that an old file holds
+    is ignored and left in place. Keys missing from the file are drawn and added. A damaged file
     raises ValueError instead of being redrawn, which would change the
     fingerprint silently. The Go and Node clients read and write the same file.
 

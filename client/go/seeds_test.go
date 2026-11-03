@@ -60,28 +60,52 @@ func TestProfileSeedsAreDrawnOnceAndReadBack(t *testing.T) {
 func TestProfileSeedsReadAnotherClientsFileAndDrawOnlyTheMissingKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, seedsFileName(t))
-	if err := os.WriteFile(path, []byte(`{"canvas:seed": 5, "audio:seed": 4294967295}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"canvas:seed": 5, "mediaDevices:seed": 4294967295}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	seeds, err := ProfileSeeds(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seeds["canvas:seed"] != uint32(5) || seeds["audio:seed"] != uint32(0xFFFFFFFF) || seeds["mediaDevices:seed"] == nil {
+	if seeds["canvas:seed"] != uint32(5) || seeds["mediaDevices:seed"] != uint32(0xFFFFFFFF) {
 		t.Fatalf("seeds %v", seeds)
 	}
-	var stored map[string]uint32
-	raw, _ := os.ReadFile(path)
-	if err := json.Unmarshal(raw, &stored); err != nil || stored["mediaDevices:seed"] != seeds["mediaDevices:seed"] {
-		t.Fatalf("stored %s (%v)", raw, err)
+	if len(seeds) != 2 {
+		t.Fatalf("seeds %v", seeds)
 	}
 }
 
-// A redraw would silently give the profile a different canvas, audio and
+func TestSeedKeysHaveNoAudioSeed(t *testing.T) {
+	if !reflect.DeepEqual(SeedKeys, []string{"canvas:seed", "mediaDevices:seed"}) {
+		t.Fatalf("SeedKeys %v", SeedKeys)
+	}
+}
+
+// A kept profile from before audio:seed was removed still holds it.
+func TestProfileSeedsOldFileWithAudioSeedLoadsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, seedsFileName(t))
+	raw := `{"canvas:seed":11,"audio:seed":22,"mediaDevices:seed":33}`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seeds, err := ProfileSeeds(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(seeds, map[string]any{"canvas:seed": uint32(11), "mediaDevices:seed": uint32(33)}) {
+		t.Fatalf("seeds %v", seeds)
+	}
+	if got, _ := os.ReadFile(path); string(got) != raw {
+		t.Fatalf("file rewritten to %s", got)
+	}
+}
+
+// A redraw would silently give the profile a different canvas and
 // device-ID fingerprint than every earlier session showed.
 func TestProfileSeedsRefuseADamagedFileRatherThanRedraw(t *testing.T) {
-	for _, damaged := range []string{`{"canvas:seed"`, `[1, 2]`, `{"audio:seed": 0}`,
-		`{"audio:seed": 4294967296}`, `{"audio:seed": "7"}`, `{"audio:seed": true}`, `{"audio:seed": 1.5}`, `null`} {
+	for _, damaged := range []string{`{"canvas:seed"`, `[1, 2]`, `{"mediaDevices:seed": 0}`,
+		`{"mediaDevices:seed": 4294967296}`, `{"mediaDevices:seed": "7"}`, `{"mediaDevices:seed": true}`, `{"mediaDevices:seed": 1.5}`, `null`} {
 		dir := t.TempDir()
 		path := filepath.Join(dir, seedsFileName(t))
 		if err := os.WriteFile(path, []byte(damaged), 0o644); err != nil {
