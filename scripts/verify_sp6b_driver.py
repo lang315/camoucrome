@@ -305,6 +305,13 @@ def missing_probe(cmd):
     return None
 
 
+def final_verdict(verdict, unmeasured):
+    """A defect is never reported as a missing premise: FAIL outranks UNMEASURED."""
+    if not verdict:
+        return "FAIL"
+    return "UNMEASURED" if unmeasured else "ALL_PASS"
+
+
 def main():
     global PROXY_URL
     url, srv = serve()
@@ -333,11 +340,9 @@ def main():
         verdict &= ok
         print("\n".join(lines))
     srv.shutdown()
-    if unmeasured:
-        print("UNMEASURED")
-        sys.exit(1)
-    print("ALL_PASS" if verdict else "FAIL")
-    sys.exit(0 if verdict else 1)
+    final = final_verdict(verdict, unmeasured)
+    print(final)
+    sys.exit(0 if final == "ALL_PASS" else 1)
 
 
 if __name__ == "__main__":

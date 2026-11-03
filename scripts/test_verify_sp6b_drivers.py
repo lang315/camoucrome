@@ -121,5 +121,17 @@ class MissingProbe(unittest.TestCase):
         self.assertIsNone(v.missing_probe(["node", "probe.js"]))
 
 
+class FinalVerdict(unittest.TestCase):
+    def test_a_failure_wins_over_a_missing_premise(self):
+        self.assertEqual(v.final_verdict(False, True), "FAIL")
+        self.assertEqual(v.final_verdict(False, False), "FAIL")
+
+    def test_unmeasured_without_failure(self):
+        self.assertEqual(v.final_verdict(True, True), "UNMEASURED")
+
+    def test_all_pass(self):
+        self.assertEqual(v.final_verdict(True, False), "ALL_PASS")
+
+
 if __name__ == "__main__":
     unittest.main()
