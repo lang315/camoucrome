@@ -186,8 +186,19 @@ def argv_problems(control_argv, fork_argv, allowed=ARGV_ALLOWED):
     return [f"control only: {a}" for a in c if a not in f] + [f"fork only: {a}" for a in f if a not in c]
 
 
+def same_build(a, b):
+    """True when two Chrome versions share MAJOR.MINOR.BUILD; the patch number may differ.
+    An unread version ('') is never the same build."""
+    pa, pb = a.split("."), b.split(".")
+    return len(pa) == len(pb) == 4 and pa[:3] == pb[:3]
+
+
 def version_problems(versions, pin):
-    return [f"{arm} is {v}, the pin is {pin}" for arm, v in versions.items() if v != pin]
+    """The fork must be the pin exactly. The stock control may be a later patch of the pin's
+    build: the host auto-updates within a milestone and keeps no copy of the pinned patch
+    (spec 2026-11-03-camoufox-port-pivot-design §1)."""
+    return [f"{arm} is {v}, the pin is {pin}" for arm, v in versions.items()
+            if v != pin and not (arm == "control" and same_build(v, pin))]
 
 
 def network_rows(data):
