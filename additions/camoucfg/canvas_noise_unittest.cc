@@ -110,7 +110,7 @@ TEST(PerturbRgbaTest, ZeroSizeIsNoOp) {
 
 TEST(CanvasNoiseTest, NoOpWhenSeedZero) {
   // seed == 0 -> stock unchanged, for both a fractional and an integer field
-  // (rule 5: no canvas:seed -> real value).
+  // (rule 5: no textMetrics:seed -> real value).
   EXPECT_EQ(PerturbMetric(148.04, 0, 99, "tm.w"), 148.04);
   EXPECT_EQ(PerturbMetric(45.0, 0, 99, "tm.fa"), 45.0);
 }
