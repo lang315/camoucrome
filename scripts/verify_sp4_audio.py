@@ -23,7 +23,7 @@ results already collected.
      Object.keys() of the four prototypes this task's patch touches --
      AudioContext.prototype, AudioBuffer.prototype, AnalyserNode.prototype,
      AudioDestinationNode.prototype -- match a genuinely STOCK content_shell
-     (this task's six files reverted, then rebuilt) exactly: nothing added,
+     (this task's three files reverted, then rebuilt) exactly: nothing added,
      nothing removed. Unlike navigator's instance keys in verify_sp4_fonts.py's
      F6 (which measure vacuously empty there -- WebIDL members normally live
      on Interface.prototype, not the instance), these four prototypes on this
@@ -35,8 +35,8 @@ results already collected.
      might recur. Plus a standing native-accessor regression check:
      AudioBuffer.prototype.getChannelData.toString() and AnalyserNode.
      prototype.getFloatFrequencyData.toString() still match /[native code]/
-     -- the noise is injected inside the C++ implementation, not via a JS
-     override of the accessor itself, so this should never move.
+     -- the scalar overrides live in the C++ implementation, not in a JS
+     override of any accessor, so this should never move.
      The stock reference is a PERSISTED baseline, captured once from a real
      stock content_shell into baselines/, exactly as verify_sp4_fonts.py's F6
      and verify_sp3a.py's C10 do for their own key-diff checks -- run with
@@ -48,7 +48,7 @@ results already collected.
      in this file, an OfflineAudioContext getChannelData sum, a bare
      getFloatFrequencyData read, and the three A4
      scalars all equal the values measured on a genuinely STOCK binary --
-     i.e. the noise/override paths are gated on config being present, not
+     i.e. the scalar overrides are gated on config being present, not
      unconditional, so an unconfigured session is bit-for-bit
      indistinguishable from a real, unpatched device on these surfaces.
      OfflineAudioContext rendering of a fixed synthetic graph is fully
@@ -61,12 +61,12 @@ results already collected.
 CAPTURE NOTE (A5/A6's stock baseline): this script's A4 runs against the
 CURRENT (already-patched) binary under test, matching every other verify_* script in this repo. A5 and A6 are the two
 criteria that additionally need a reading from a binary that does NOT have
-this task's six-file patch applied at all, because both "no new surface" and
-"no noise absent config" are invisible to any same-binary configured-vs-bare
-comparison (build-time property additions and a config-gated noise path both
+this task's three-file patch applied at all, because both "no new surface" and
+"stock values absent config" are invisible to any same-binary configured-vs-bare
+comparison (build-time property additions and a config-gated override both
 read identically whether or not the patch itself is present, only whether
 CAMOU_CONFIG is set). Recapturing after this task lands requires: `git
-checkout HEAD -- <the six sp4-audio files>` in the checkout, rebuild
+checkout HEAD -- <the three sp4-audio files: BUILD.gn, audio_context.cc, audio_destination_node.cc>` in the checkout, rebuild
 content_shell, run this script with `--capture-baseline` (writes
 ~/camoucrome-verify/baselines/content_shell-sp4audio-stock.json; A4 is
 expected to read FAIL during that capture run, since the scalar overrides
@@ -244,7 +244,7 @@ notes = []
 # the --capture-baseline write and the normal current-vs-baseline compare --
 # the same pattern verify_sp4_fonts.py's F6 uses its single KEYS_JS session
 # for. During a --capture-baseline run this binary is the genuinely stock one
-# (this task's six files reverted, per the CAPTURE NOTE), so these readings
+# (this task's three files reverted, per the CAPTURE NOTE), so these readings
 # ARE the stock reference; during a normal run this binary is the patched
 # one, and these are the "current, bare" readings A5/A6 compare against the
 # persisted baseline. render_sum/render_analyser/render_audio_scalars are
