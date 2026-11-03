@@ -140,6 +140,12 @@ inline constexpr char kCanvasSeed[] = "canvas:seed";
 inline constexpr char kCanvasNoiseDensity[] = "canvas:noiseDensity";
 inline constexpr char kCanvasNoiseStrength[] = "canvas:noiseStrength";
 
+// Seed of the measureText metric jitter (metric-jitter slice). Synthetic control -> colon.
+// Absent or 0 => measureText reports the real metrics (rule 5). Split off canvas:seed on
+// 2026-11-03 (owner ruling after M0): no launcher or preset sets it, because jittered
+// bounding boxes are not yet measured against the pixels the same text draws.
+inline constexpr char kTextMetricsSeed[] = "textMetrics:seed";
+
 // The WebGL identity and parameter-table knobs, in their own `webGl:` /
 // `webGl2:` namespaces -- one pair per context type, because a page can
 // probe a WebGLRenderingContext and a WebGL2RenderingContext side by side
@@ -370,7 +376,7 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 89> kAllKeys = {
+inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -389,6 +395,7 @@ inline constexpr std::array<std::string_view, 89> kAllKeys = {
     kCanvasSeed,
     kCanvasNoiseDensity,
     kCanvasNoiseStrength,
+    kTextMetricsSeed,
     kWebGlVendor,
     kWebGlRenderer,
     kWebGl2Vendor,

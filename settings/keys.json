@@ -197,6 +197,17 @@
    "type": "int32"
   },
   {
+   "name": "kTextMetricsSeed",
+   "key": "textMetrics:seed",
+   "type": "uint32",
+   "doc": [
+    "Seed of the measureText metric jitter (metric-jitter slice). Synthetic control -> colon.",
+    "Absent or 0 => measureText reports the real metrics (rule 5). Split off canvas:seed on",
+    "2026-11-03 (owner ruling after M0): no launcher or preset sets it, because jittered",
+    "bounding boxes are not yet measured against the pixels the same text draws."
+   ]
+  },
+  {
    "name": "kWebGlVendor",
    "key": "webGl:vendor",
    "type": "string",

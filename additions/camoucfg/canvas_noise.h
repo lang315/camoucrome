@@ -132,7 +132,7 @@ void PerturbRgbaFromConfig(uint8_t* data,
 // slice). Pure: the same (stock, seed, index, domain) yields the same output, so
 // a page re-reading the same (text, font) sees identical metrics and cannot
 // detect the jitter by re-measuring.
-//   - seed == 0  -> stock unchanged (rule 5: no canvas:seed -> real value).
+//   - seed == 0  -> stock unchanged (rule 5: no textMetrics:seed -> real value).
 //   - stock == 0 -> stock unchanged (zero guard: real Chrome returns exact 0 for
 //     empty ink / empty string / zero baseline; a non-zero there is a tell).
 //   - integer stock -> stock + DeriveDelta(seed, domain, index, 1)      (integer grid).
@@ -144,9 +144,13 @@ void PerturbRgbaFromConfig(uint8_t* data,
 double PerturbMetric(double stock, uint64_t seed, uint64_t index,
                      std::string_view domain);
 
-// canvas:seed as a uint64 (0 if absent). The one place the metric path reads the
-// seed key; Blink reads it once per measureText and calls PerturbMetric per field.
+// canvas:seed as a uint64 (0 if absent): the canvas pixel readback noise.
 uint64_t CanvasSeed(const ConfigScope& scope);
+
+// textMetrics:seed as a uint64 (0 if absent). The one place the metric-jitter
+// path reads its seed; Blink reads it once per measureText and calls
+// PerturbMetric per field. Off unless the key is set (owner, 2026-11-03).
+uint64_t TextMetricsSeed(const ConfigScope& scope);
 
 // The per-profile sub-pixel origin of canvas text (canvas noise redesign,
 // target design): {dx, dy}, each in [0, 1), derived from canvas:seed alone

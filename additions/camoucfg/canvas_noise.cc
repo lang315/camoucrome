@@ -295,6 +295,10 @@ uint64_t CanvasSeed(const ConfigScope& scope) {
   return GetUint32(scope, keys::kCanvasSeed).value_or(0);
 }
 
+uint64_t TextMetricsSeed(const ConfigScope& scope) {
+  return GetUint32(scope, keys::kTextMetricsSeed).value_or(0);
+}
+
 std::array<float, 2> TextOffset(uint64_t seed) {
   if (seed == 0) {
     return {0.0f, 0.0f};

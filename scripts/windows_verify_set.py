@@ -50,7 +50,7 @@ SET = [
     Entry("verify_sp1b.py", 8, "stock"),
     Entry("verify_sp3b.py", 9, "stock"),
     Entry("verify_sp4a.py", 6, "stock"),
-    Entry("verify_metric_jitter.py", 11, "stock"),
+    Entry("verify_metric_jitter.py", 12, "stock"),
     Entry("verify_ua_halfconfig_reject.py", 6, "stock"),
     Entry("verify_sp5b_domain.py", 4, "stock"),
     Entry("verify_webgl_pairing.py", 9, "stock"),
