@@ -103,6 +103,15 @@ def test_profile_seeds_draw_only_the_missing_keys(tmp_path):
     assert json.loads(stored.read_text()) == seeds
 
 
+def test_profile_seeds_rewrite_of_an_old_file_keeps_audio_seed_in_place(tmp_path):
+    stored = tmp_path / CONTRACT["per_instance_seeds"]["profile_file"]
+    stored.write_text('{"canvas:seed": 11, "audio:seed": 22}')
+    seeds = camoucrome.profile_seeds(tmp_path)
+    assert set(seeds) == {"canvas:seed", "mediaDevices:seed"} and seeds["canvas:seed"] == 11
+    assert json.loads(stored.read_text()) == {"canvas:seed": 11, "audio:seed": 22,
+                                              "mediaDevices:seed": seeds["mediaDevices:seed"]}
+
+
 @pytest.mark.parametrize("damaged", ['{"canvas:seed"', '[1, 2]', '{"mediaDevices:seed": 0}',
                                      '{"mediaDevices:seed": 4294967296}', '{"mediaDevices:seed": "7"}',
                                      '{"mediaDevices:seed": true}'])

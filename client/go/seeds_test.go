@@ -60,18 +60,44 @@ func TestProfileSeedsAreDrawnOnceAndReadBack(t *testing.T) {
 func TestProfileSeedsReadAnotherClientsFileAndDrawOnlyTheMissingKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, seedsFileName(t))
-	if err := os.WriteFile(path, []byte(`{"canvas:seed": 5, "mediaDevices:seed": 4294967295}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"canvas:seed": 5}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	seeds, err := ProfileSeeds(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seeds["canvas:seed"] != uint32(5) || seeds["mediaDevices:seed"] != uint32(0xFFFFFFFF) {
+	if seeds["canvas:seed"] != uint32(5) || seeds["mediaDevices:seed"] == nil || len(seeds) != 2 {
 		t.Fatalf("seeds %v", seeds)
 	}
-	if len(seeds) != 2 {
+	var stored map[string]uint32
+	raw, _ := os.ReadFile(path)
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) != 2 ||
+		stored["canvas:seed"] != 5 || stored["mediaDevices:seed"] != seeds["mediaDevices:seed"] {
+		t.Fatalf("stored %s (%v)", raw, err)
+	}
+}
+
+// An old file lacking mediaDevices:seed is rewritten with it drawn; the old
+// audio:seed stays in the file but never reaches the caller.
+func TestProfileSeedsRewriteOfAnOldFileKeepsAudioSeedInPlace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, seedsFileName(t))
+	if err := os.WriteFile(path, []byte(`{"canvas:seed":11,"audio:seed":22}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seeds, err := ProfileSeeds(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, has := seeds["audio:seed"]; has || len(seeds) != 2 || seeds["canvas:seed"] != uint32(11) {
 		t.Fatalf("seeds %v", seeds)
+	}
+	var stored map[string]uint32
+	raw, _ := os.ReadFile(path)
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) != 3 ||
+		stored["audio:seed"] != 22 || stored["canvas:seed"] != 11 || stored["mediaDevices:seed"] != seeds["mediaDevices:seed"] {
+		t.Fatalf("stored %s (%v)", raw, err)
 	}
 }
 

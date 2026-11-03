@@ -70,11 +70,23 @@ test("profile seeds read another client's file and draw only the missing keys", 
   const dir = scratch();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
-  fs.writeFileSync(file, '{"canvas:seed": 5, "mediaDevices:seed": 4294967295}');
+  fs.writeFileSync(file, '{"canvas:seed": 5}');
   const seeds = c.profileSeeds(dir);
   assert.equal(seeds['canvas:seed'], 5);
-  assert.equal(seeds['mediaDevices:seed'], 0xffffffff);
+  assert.ok(seeds['mediaDevices:seed'] >= 1 && seeds['mediaDevices:seed'] <= 0xffffffff);
+  assert.deepEqual(Object.keys(seeds).sort(), ['canvas:seed', 'mediaDevices:seed']);
   assert.deepEqual(JSON.parse(fs.readFileSync(file)), seeds);
+});
+
+test('rewriting an old file keeps audio:seed in place and out of the result', (t) => {
+  const dir = scratch();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
+  fs.writeFileSync(file, '{"canvas:seed": 11, "audio:seed": 22}');
+  const seeds = c.profileSeeds(dir);
+  assert.deepEqual(Object.keys(seeds).sort(), ['canvas:seed', 'mediaDevices:seed']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)),
+    { 'canvas:seed': 11, 'audio:seed': 22, 'mediaDevices:seed': seeds['mediaDevices:seed'] });
 });
 
 test('SEED_KEYS has no audio:seed, and neither does a drawn config', () => {

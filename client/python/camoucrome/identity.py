@@ -18,7 +18,7 @@ def per_instance_config(rng=None):
     beside launch(preset=...)."""
     rng = rng or random.SystemRandom()
     # shortcut: the middle draw is the old audio:seed slot, consumed and dropped so
-    # a seeded gen.generate() stream keeps every later value; drop it when a re-pin moves them anyway.
+    # a seeded gen.generate() stream keeps every later value; drop it when the PRE_CHANGE/PINNED pins are next recomputed.
     draws = [rng.randint(1, 0xFFFFFFFF) for _ in range(3)]
     return dict(zip(SEED_KEYS, (draws[0], draws[2])))
 
