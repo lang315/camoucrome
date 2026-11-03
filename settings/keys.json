@@ -487,15 +487,6 @@
    ]
   },
   {
-   "name": "kAudioSeed",
-   "key": "audio:seed",
-   "type": "uint32",
-   "doc": [
-    "Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or",
-    "0 => no perturbation (rule 5)."
-   ]
-  },
-  {
    "name": "kAudioOutputLatency",
    "key": "AudioContext:outputLatency",
    "type": "double",

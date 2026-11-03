@@ -770,26 +770,26 @@ def test_no_row_names_an_echo_service_or_an_address():
 
 # --- first-visitor design (px-arms plan): the pure parts; the run wiring needs the host and is not tested here ---
 
-CFG = {"canvas:seed": 7, "audio:seed": 9, "screen.width": 1920, "screen.height": 1080, "window.outerWidth": 1500,
+CFG = {"canvas:seed": 7, "screen.width": 1920, "screen.height": 1080, "window.outerWidth": 1500,
        "window.innerHeight": 900, "navigator.hardwareConcurrency": 8}
 
 
 def test_parse_drop_validates_the_arm_and_the_shape():
     assert ml.parse_drop("N=canvas:seed") == ("N", "canvas:seed")
     assert ml.parse_drop("S2=screen.") == ("S2", "screen.")
-    for bad in ("canvas:seed", "X=canvas:seed", "N=", "S=audio:seed"):  # S is stock: no config to drop from
+    for bad in ("canvas:seed", "X=canvas:seed", "N=", "S=canvas:seed"):  # S is stock: no config to drop from
         with pytest.raises(SystemExit):
             ml.parse_drop(bad)
 
 
 def test_drop_keys_removes_keys_and_prefixes_for_the_named_arm_only():
-    drops = {"keys": [("N", "canvas:seed"), ("N", "audio:seed")], "prefixes": [("S2", "screen."), ("S2", "window.")]}
+    drops = {"keys": [("N", "canvas:seed")], "prefixes": [("S2", "screen."), ("S2", "window.")]}
     n = ml.drop_keys(CFG, "N", drops)
-    assert set(CFG) - set(n) == {"canvas:seed", "audio:seed"}
+    assert set(CFG) - set(n) == {"canvas:seed"}
     s2 = ml.drop_keys(CFG, "S2", drops)
-    assert set(s2) == {"canvas:seed", "audio:seed", "navigator.hardwareConcurrency"}
+    assert set(s2) == {"canvas:seed", "navigator.hardwareConcurrency"}
     assert ml.drop_keys(CFG, "F", drops) == CFG
-    assert len(CFG) == 7  # the input is not changed
+    assert len(CFG) == 6  # the input is not changed
     assert ml.drop_keys(CFG, "N", {"keys": [], "prefixes": []}) == CFG
 
 

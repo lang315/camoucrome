@@ -22,7 +22,6 @@ run verify_sp1b.py
 run verify_sp3b.py
 run verify_sp4a.py
 run verify_metric_jitter.py
-run verify_audio_ii.py
 run verify_ua_halfconfig_reject.py
 run verify_sp5b_domain.py
 run verify_navplatform_bucket.py

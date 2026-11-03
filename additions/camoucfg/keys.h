@@ -268,10 +268,6 @@ inline constexpr char kFontsAliasLocal[] = "fonts:aliasLocal";
 // granted, replacing the host enumeration -- which would list the bundle's own faces. The generator emits the captured host's
 // faces (settings/fonts.json families.<os>.faces). A malformed line is skipped. Absent => the real enumeration (rule 5).
 inline constexpr char kFontsLocal[] = "fonts:local";
-
-// Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or
-// 0 => no perturbation (rule 5).
-inline constexpr char kAudioSeed[] = "audio:seed";
 // AudioContext scalar getters. Synthetic AudioContext: namespace (mirrors JS but
 // grouped like webGl:). sampleRate is deliberately absent -- see the measurement.
 inline constexpr char kAudioOutputLatency[] = "AudioContext:outputLatency";
@@ -374,7 +370,7 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 90> kAllKeys = {
+inline constexpr std::array<std::string_view, 89> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -432,7 +428,6 @@ inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kFontsAlias,
     kFontsAliasLocal,
     kFontsLocal,
-    kAudioSeed,
     kAudioOutputLatency,
     kAudioBaseLatency,
     kAudioMaxChannelCount,

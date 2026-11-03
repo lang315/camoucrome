@@ -19,7 +19,6 @@ window-geometry.patch
 metric-jitter.patch
 media-ii-track.patch
 phantom-webcam.patch
-audio-ii.patch
 voices-ii.patch
 fonts-ii.patch
 webrtc-ii.patch

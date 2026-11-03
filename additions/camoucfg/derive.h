@@ -79,8 +79,8 @@ OsFamily ClaimedOs(const ConfigScope& scope);
 // arguments: the same (seed, domain, index, bound) yields the same value in
 // any process with no shared state -- that purity is exactly the cross-process
 // reproducibility that lets canvas readback, a worker's OffscreenCanvas, and
-// (SP4) audio and font-metric jitter all reproduce one config's noise. `domain`
-// ("canvas", "audio", "fontmetric") separates surfaces that share a seed so
+// (SP4) font-metric jitter all reproduce one config's noise. `domain`
+// ("canvas", "fontmetric") separates surfaces that share a seed so
 // their sequences do not correlate. `index` is any stable integer the caller
 // can reproduce -- a flattened pixel offset, an audio sample number, a glyph
 // id. bound == 0 returns 0; a negative bound is taken by magnitude.

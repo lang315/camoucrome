@@ -13,9 +13,8 @@ R2  getImageData of a sub-rect agrees with a full read on the same pixel.
 R3  a transparent canvas with one half-transparent arc: every alpha-0 pixel
     has RGB 0, also next to the arc's anti-aliased edge (the canvas is eligible,
     so the noise path runs; seeded must differ from unconfigured, else vacuous).
-R4  AudioBuffer copyToChannel then copyFromChannel is an identity under
-    audio:seed (was: 128/128 samples differ)...
-R5  ...and a rendered OfflineAudioContext buffer is still noised.
+R4, R5 (the audio:seed rows) were removed 2026-11-03 with the audio readback
+    noise; the other rows keep their numbers.
 R6  queryLocalFonts is a function with no config (stock Linux has it).
 R7  navigator.maxTouchPoints -1 falls back to the real value.
 R8  navigator.languages alone sets the Intl locale (was: en-US).
@@ -58,16 +57,6 @@ CANVAS_TRANSPARENT = """() => { const c=document.createElement('canvas'); c.widt
  const x=c.getContext('2d'); x.fillStyle='rgba(255,0,0,0.5)'; x.beginPath();
  x.arc(32,32,20,0,7); x.fill();
  return JSON.stringify(Array.from(x.getImageData(0,0,64,64).data)); }"""
-
-AUDIO_ROUNDTRIP = """() => { const ctx=new OfflineAudioContext(1,128,44100);
- const b=ctx.createBuffer(1,128,44100); b.copyToChannel(new Float32Array(128).fill(0.5),0);
- const out=new Float32Array(128); b.copyFromChannel(out,0);
- let diff=0; for(let i=0;i<128;i++) if(out[i]!==0.5) diff++; return diff; }"""
-
-AUDIO_RENDER = """async () => { const ctx=new OfflineAudioContext(1,4410,44100);
- const o=ctx.createOscillator(); o.connect(ctx.destination); o.start();
- const buf=await ctx.startRendering(); const d=buf.getChannelData(0);
- let s=0; for(let i=0;i<d.length;i++) s+=Math.abs(d[i]); return s; }"""
 
 MISC = """() => JSON.stringify({qlf: typeof window.queryLocalFonts,
  mtp: navigator.maxTouchPoints, intl: Intl.DateTimeFormat().resolvedOptions().locale,
@@ -135,14 +124,6 @@ def main():
             changed = sum(1 for i in range(0, len(s), 4) if s[i:i + 4] != u[i:i + 4])
             return tinted == 0 and len(a0) > 0 and changed > 0, (tinted, len(a0), changed)
         row("R3 half-transparent arc canvas has no RGB under alpha 0", transparent)
-        row("R4 copyToChannel/copyFromChannel is an identity",
-            lambda: (lambda n: (n == 0, n))(
-                one({"audio:seed": 12345}, AUDIO_ROUNDTRIP)))
-        def rendered():
-            a = one({"audio:seed": 12345}, AUDIO_RENDER)
-            b = one(None, AUDIO_RENDER)
-            return a != b, (a, b)
-        row("R5 rendered audio is still noised", rendered)
         # [SecureContext]: about:blank would read undefined on stock too.
         row("R6 queryLocalFonts present with no config",
             lambda: (lambda m: (m["qlf"] == "function", m))(
@@ -189,7 +170,7 @@ def main():
         print(f"{'PASS' if ok else 'FAIL'}  {name}")
     for n in notes:
         print("  ", n)
-    expected = 12
+    expected = 10
     passed = sum(rows.values())
     print(f"{passed}/{expected} " + (
         "ALL_PASS" if passed == expected == len(rows) else "FAIL"))

@@ -87,7 +87,6 @@ TEST(PresetLoaderTest, DoesNotEmitDerivedOrPerInstanceKeys) {
   EXPECT_FALSE(out.contains(keys::kScreenColorDepth));
   EXPECT_FALSE(out.contains(keys::kWindowOuterWidth));
   EXPECT_FALSE(out.contains(keys::kCanvasSeed));
-  EXPECT_FALSE(out.contains(keys::kAudioSeed));
   EXPECT_FALSE(out.contains(keys::kMediaDevicesSeed));
   EXPECT_FALSE(out.contains("dpr"));
   EXPECT_FALSE(out.contains("sampleRate"));
