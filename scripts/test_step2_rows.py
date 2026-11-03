@@ -664,3 +664,32 @@ def test_accepted_equality_is_type_strict():
 def test_accepted_class_must_be_known():
     row = {"k": {"value": 1, "class": "x", "source": "s" * 20}}
     assert r.accepted(["k"], {"k": 1}, row, {"k": 1}) == []
+
+
+def test_control_may_be_a_later_patch_of_the_pin_build_but_the_fork_may_not():
+    pin = "156.0.8078.48"
+    assert r.version_problems({"control": "156.0.8078.79", "fork": pin}, pin) == []
+    assert r.version_problems({"control": pin, "fork": "156.0.8078.79"}, pin) == [
+        "fork is 156.0.8078.79, the pin is 156.0.8078.48"]
+    assert r.version_problems({"control": "156.0.8079.1", "fork": pin}, pin) == [
+        "control is 156.0.8079.1, the pin is 156.0.8078.48"]
+    assert r.version_problems({"control": "", "fork": pin}, pin) == [
+        "control is , the pin is 156.0.8078.48"]
+
+
+def test_same_build_compares_major_minor_build_only():
+    assert r.same_build("156.0.8078.79", "156.0.8078.48")
+    assert not r.same_build("156.0.8079.48", "156.0.8078.48")
+    assert not r.same_build("157.0.8078.48", "156.0.8078.48")
+    assert not r.same_build("", "156.0.8078.48")
+    assert not r.same_build("156.0.8078", "156.0.8078.48")
+    assert not r.same_build("156.0.8078.x", "156.0.8078.48")
+
+
+def test_null_run_holds_the_fork_arm_to_the_control_rule():
+    pin = "156.0.8078.48"
+    v = {"control": "156.0.8078.79", "fork": "156.0.8078.79"}
+    assert r.version_problems(v, pin, null=True) == []
+    assert r.version_problems(v, pin) == ["fork is 156.0.8078.79, the pin is 156.0.8078.48"]
+    assert r.version_problems({"control": pin, "fork": "156.0.8079.1"}, pin, null=True) == [
+        "fork is 156.0.8079.1, the pin is 156.0.8078.48"]

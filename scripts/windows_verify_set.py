@@ -26,6 +26,8 @@ import subprocess
 import sys
 import tempfile
 
+from step2_rows import same_build
+
 # known_fail: row-name prefixes that must FAIL in green (a documented gap, not a pass)
 # may_skip: row-name prefixes that may print NOT MEASURED instead of PASS (a premise the host cannot give)
 Entry = collections.namedtuple("Entry", "script rows red known_fail may_skip", defaults=((), ()))
@@ -139,6 +141,14 @@ def pin_tag(client):
     sys.exit("upstream.env has no CHROMIUM_TAG")
 
 
+def control_problem(have, want):
+    """None when the stock control may stand in for the pin: the pin itself, or another patch of
+    the pin's build (spec 2026-11-03-camoufox-port-pivot-design §1). Any other build is refused."""
+    if have == want or same_build(have, want):
+        return None
+    return f"stock Chrome is {have}, the pin is {want}: the control is not the pin's build"
+
+
 def select(only_arg):
     """Select entries by --only arg. None → all of SET; string → comma-separated
     names (whitespace stripped). Raises SystemExit if a name is not in SET or if
@@ -170,8 +180,9 @@ def main(argv):
     client = os.environ.get("CAMOU_CLIENT", str(here.parent))
     app = os.environ.get("CAMOU_STOCK_APP", STOCK_APP)
     have, want = stock_version(app), pin_tag(client)
-    if have != want:
-        sys.exit(f"stock Chrome is {have}, the pin is {want}: the control is not the pin's version")
+    problem = control_problem(have, want)
+    if problem:
+        sys.exit(problem)
     env = dict(os.environ, CAMOU_SHELL="chrome", CAMOU_STOCK_EXE=os.path.join(app, "chrome.exe"))
     if mode == "red":
         env["CAMOU_EXE"] = os.path.join(app, "chrome.exe")
