@@ -296,6 +296,15 @@ def judge_row(label, expected, opts, result, log, base):
     return ok, lines
 
 
+def missing_probe(cmd):
+    """Why an arm cannot run, or None: its executable is an absolute path that does not exist (the host had no
+    rodclient probe on 2026-11-03). A bare name is left to PATH; run_probe reports it if it fails."""
+    exe = cmd[0]
+    if os.path.isabs(exe) and not os.path.isfile(exe):
+        return f"probe binary {exe} does not exist"
+    return None
+
+
 def main():
     global PROXY_URL
     url, srv = serve()
@@ -307,7 +316,13 @@ def main():
     print(f"baseline (no driver): {len(base['windowKeys'])} window keys, webdriver={base['webdriver']}, "
           f"stack median {statistics.median(base['timesMs']):.1f} ms, ua ...{base['ua'][-28:]}")
     verdict = True
+    unmeasured = False
     for label, expected, cmd, *opts in DRIVERS:
+        why = missing_probe(cmd)
+        if why:
+            print(f"UNMEASURED  {label}: {why}")
+            unmeasured = True
+            continue
         PROXY_SEEN.clear()
         result, log = run_probe(cmd + proxy_args, url)
         if result is None:
@@ -318,6 +333,9 @@ def main():
         verdict &= ok
         print("\n".join(lines))
     srv.shutdown()
+    if unmeasured:
+        print("UNMEASURED")
+        sys.exit(1)
     print("ALL_PASS" if verdict else "FAIL")
     sys.exit(0 if verdict else 1)
 

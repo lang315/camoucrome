@@ -105,3 +105,12 @@ def test_read_stderr_returns_this_sessions_log_or_the_fault(tmp_path, monkeypatc
     log.unlink()
     text, err = lib_shell.read_stderr()
     assert text is None and isinstance(err, FileNotFoundError)  # a fault becomes a FAIL row, never an exception
+
+
+def test_headed_premise_is_linux_only():
+    import lib_shell
+    never = lambda d: False  # an X server that never answers
+    assert lib_shell.headed_premise(None, platform="win32", answers=never) is None
+    assert lib_shell.headed_premise(None, platform="darwin", answers=never) is None
+    assert lib_shell.headed_premise(":0", platform="linux", answers=never) == "no X server answers on DISPLAY=':0'"
+    assert lib_shell.headed_premise(":0", platform="linux", answers=lambda d: True) is None

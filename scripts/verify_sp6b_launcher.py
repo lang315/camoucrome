@@ -26,7 +26,7 @@ import sys
 import tempfile
 import threading
 
-from lib_shell import CHROME as EXE, layout, restore_display_env, x_server_answers
+from lib_shell import CHROME as EXE, headed_premise, layout, restore_display_env
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 restore_display_env()  # L4 is a headed launch on the box: lib_shell dropped the display variables so a hand run matches CI
@@ -145,10 +145,11 @@ def main():
     ssrv.shutdown()
 
     L4 = "L4 headed launch starts; argv == contract set minus the headless flags"
-    if not x_server_answers(os.environ.get("DISPLAY")):
-        # a headed chrome needs an X server that answers: without one it waits 30 s and exits (the box's WSLg X0 on
-        # 2026-10-29 accepted connections and never spoke). That is a missing premise, not a launcher failure.
-        unmeasured[L4] = f"no X server answers on DISPLAY={os.environ.get('DISPLAY')!r}"
+    why = headed_premise(os.environ.get("DISPLAY"))
+    if why:
+        # a headed chrome on Linux needs an X server that answers: without one it waits 30 s and exits (the box's
+        # WSLg X0 on 2026-10-29 accepted connections and never spoke). That is a missing premise, not a launcher failure.
+        unmeasured[L4] = why
         out = None
     else:
         out, log = probe(url, headed=True)

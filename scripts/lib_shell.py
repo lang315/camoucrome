@@ -20,6 +20,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -407,6 +408,16 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
 
     shutdown(proc)
     raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
+
+
+def headed_premise(display, platform=None, answers=None):
+    """Why a headed launch cannot run here, or None. Only Linux needs an X server: Windows and macOS draw
+    without one (f0d9dd2 applied the check everywhere, so L4 never ran on the Windows host)."""
+    platform = platform or sys.platform
+    answers = answers or x_server_answers
+    if platform.startswith("linux") and not answers(display):
+        return f"no X server answers on DISPLAY={display!r}"
+    return None
 
 
 def x_server_answers(display, timeout=3.0, sock_dir="/tmp/.X11-unix"):
