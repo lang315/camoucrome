@@ -140,6 +140,12 @@ inline constexpr char kCanvasSeed[] = "canvas:seed";
 inline constexpr char kCanvasNoiseDensity[] = "canvas:noiseDensity";
 inline constexpr char kCanvasNoiseStrength[] = "canvas:noiseStrength";
 
+// Seed of the measureText metric jitter (metric-jitter slice). Synthetic control -> colon.
+// Absent or 0 => measureText reports the real metrics (rule 5). Split off canvas:seed on
+// 2026-11-03 (owner ruling after M0): no launcher or preset sets it, because jittered
+// bounding boxes are not yet measured against the pixels the same text draws.
+inline constexpr char kTextMetricsSeed[] = "textMetrics:seed";
+
 // The WebGL identity and parameter-table knobs, in their own `webGl:` /
 // `webGl2:` namespaces -- one pair per context type, because a page can
 // probe a WebGLRenderingContext and a WebGL2RenderingContext side by side
@@ -268,10 +274,6 @@ inline constexpr char kFontsAliasLocal[] = "fonts:aliasLocal";
 // granted, replacing the host enumeration -- which would list the bundle's own faces. The generator emits the captured host's
 // faces (settings/fonts.json families.<os>.faces). A malformed line is skipped. Absent => the real enumeration (rule 5).
 inline constexpr char kFontsLocal[] = "fonts:local";
-
-// Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or
-// 0 => no perturbation (rule 5).
-inline constexpr char kAudioSeed[] = "audio:seed";
 // AudioContext scalar getters. Synthetic AudioContext: namespace (mirrors JS but
 // grouped like webGl:). sampleRate is deliberately absent -- see the measurement.
 inline constexpr char kAudioOutputLatency[] = "AudioContext:outputLatency";
@@ -393,6 +395,7 @@ inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kCanvasSeed,
     kCanvasNoiseDensity,
     kCanvasNoiseStrength,
+    kTextMetricsSeed,
     kWebGlVendor,
     kWebGlRenderer,
     kWebGl2Vendor,
@@ -432,7 +435,6 @@ inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kFontsAlias,
     kFontsAliasLocal,
     kFontsLocal,
-    kAudioSeed,
     kAudioOutputLatency,
     kAudioBaseLatency,
     kAudioMaxChannelCount,

@@ -85,7 +85,7 @@ def test_ua_battery_media_and_seeds():
     assert cfg["battery:charging"] is True and cfg["battery:chargingTime"] == 600.0
     assert "battery:dischargingTime" not in cfg
     assert cfg["mediaDevices:enabled"] is True and cfg["mediaDevices:webcams"] == 0
-    assert all(1 <= cfg[k] <= 0xFFFFFFFF for k in ("canvas:seed", "audio:seed", "mediaDevices:seed"))
+    assert all(1 <= cfg[k] <= 0xFFFFFFFF for k in ("canvas:seed", "mediaDevices:seed"))
 
 
 def test_os_forms_match_derive_cc():
@@ -444,20 +444,20 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 
 
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
-# seed 1 "rest" recomputed on the pre-final-review code without window.screenX/Y, window.outerWidth/Height,
+# seed 1 "rest" (was cfc63531725c99cb with audio:seed in the hash; identical once it is added back) recomputed on the pre-final-review code without window.screenX/Y, window.outerWidth/Height,
 # launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
 PRE_CHANGE = {
-    1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
-        "rest": "cfc63531725c99cb"},
-    2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
-    3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
+    1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "mediaDevices:seed": 3639700192,
+        "rest": "dcf4b9c17059de9c"},
+    2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "mediaDevices:seed": 4070888060},
+    3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "mediaDevices:seed": 2337446731},
 }
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_seeded_keys_do_not_move(seed):
     cfg = gen.generate("windows", "Europe/Paris", None, seed)["config"]
-    assert {k: cfg[k] for k in ("share:cancelMs", "canvas:seed", "audio:seed", "mediaDevices:seed")} == \
+    assert {k: cfg[k] for k in ("share:cancelMs", "canvas:seed", "mediaDevices:seed")} == \
         {k: v for k, v in PRE_CHANGE[seed].items() if k != "rest"}
 
 

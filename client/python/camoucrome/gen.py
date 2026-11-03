@@ -26,7 +26,7 @@ Pool field -> config key (mirrors the preset loader's table style):
   battery.*                        -> battery:charging, battery:level, and the two
                                      times when the pool has them
   multimediaDevices                -> mediaDevices:enabled + the three counts
-  per_instance_config()            -> canvas:seed, audio:seed, mediaDevices:seed
+  per_instance_config()            -> canvas:seed, mediaDevices:seed
 
 Never taken, and why:
   navigator.userAgent, appVersion, brands, fullVersionList, headers

@@ -1,13 +1,14 @@
-"""Verify the TextMetrics metric-jitter slice (J1-J11).
+"""Verify the TextMetrics metric-jitter slice (J1-J12).
 
 measureText() is the classic canvas font fingerprint. This checks that under a
-canvas:seed the readback is jittered (J1/J4), that the jitter is deterministic
+textMetrics:seed the readback is jittered (J1/J4), that the jitter is deterministic
 within a session and across process launches (J2/J3), that seed-absent is a
 byte-exact no-op (J5), that deltas stay on the sub-pixel/integer grid and every
 field remains float32-round-trippable (J6/J7), that the zero guard holds (J8),
 that font-constant fields are text-independent while width is not (J9/J10), and
 -- the mirror gate -- that the seed-keyed rewrite of the y-block preserves every
-cross-baseline / cross-align identity a page could invert (J11).
+cross-baseline / cross-align identity a page could invert (J11), and that
+canvas:seed alone leaves measureText byte-equal to stock (J12).
 
 NO CDP: measureText is not secure-context gated, so about:blank is enough. Each
 lib_shell.session() is a fresh content_shell launch (own user-data-dir), so J3
@@ -65,10 +66,10 @@ def measure(config, specs):
 
 
 def cfg(seed):
-    return json.dumps({"canvas:seed": seed})
+    return json.dumps({"textMetrics:seed": seed})
 
 
-STOCK = json.dumps({})          # no canvas:seed -> jitter off (rule 5)
+STOCK = json.dumps({})          # no textMetrics:seed -> jitter off (rule 5)
 SEED_A, SEED_B = 12345, 54321
 
 
@@ -222,8 +223,13 @@ def main():
         print(f"    seed {s}: delta_fa={d_fa:+.5f} delta_fd={d_fd:+.5f}")
     r["J11"] = j11
 
-    EXPECTED = 11
-    keys = [f"J{i}" for i in range(1, 12)]
+    # J12 -- the split (owner ruling 2026-11-03): canvas:seed alone, which every launcher profile sets,
+    #   leaves measureText byte-equal to stock. Only textMetrics:seed turns the jitter on.
+    specs12 = [SP, ["14px Arial", "aA0!", "center", "top"], [FONT, TC, "right", "hanging"]]
+    r["J12"] = measure(json.dumps({"canvas:seed": SEED_A}), specs12) == measure(STOCK, specs12)
+
+    EXPECTED = 12
+    keys = [f"J{i}" for i in range(1, 13)]
     for k in keys:
         print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
     n = sum(1 for k in keys if r[k])

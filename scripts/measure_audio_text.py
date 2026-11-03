@@ -4,7 +4,7 @@ measure text the same on every launch? Launches <exe> headless N times, each wit
 profile, loads a self-contained probe page by --dump-dom (no CDP), and prints one JSON line
 per launch, then the number of distinct values per probe.
 
-  measure_audio_text.py --exe <chrome> [--runs 5] [--config '{"audio:seed":1}'] [--label x]
+  measure_audio_text.py --exe <chrome> [--runs 5] [--config '{"textMetrics:seed":1}'] [--label x]
 
 A launch whose probe did not finish is UNMEASURED and is not counted as a value; its JSON
 line carries "seen", the first 200 characters of the page's <pre> (pending, an error, or no pre).

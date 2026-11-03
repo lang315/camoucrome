@@ -25,7 +25,7 @@ const FORBIDDEN_OPTIONS = new Set([
 const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
 // Mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BASE_ARGS when light is on.
 const LIGHT_ARGS = [];
-const SEED_KEYS = ['canvas:seed', 'audio:seed', 'mediaDevices:seed'];
+const SEED_KEYS = ['canvas:seed', 'mediaDevices:seed'];
 const SEEDS_FILE = 'camoucrome-seeds.json'; // launcher.json per_instance_seeds.profile_file
 
 const asJson = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
@@ -213,8 +213,9 @@ function perInstanceConfig() {
 
 // The seeds a kept profile launches with: drawn once into
 // <userDataDir>/camoucrome-seeds.json and read back on every later launch, so
-// the profile shows the same canvas, audio and device-ID fingerprint each
-// session. Keys missing from the file are drawn and added. A damaged file
+// the profile shows the same canvas and device-ID fingerprint each
+// session. A key no longer in SEED_KEYS (audio:seed) that an old file holds is
+// ignored and left in place. Keys missing from the file are drawn and added. A damaged file
 // throws instead of being redrawn, which would change the fingerprint
 // silently. The Python and Go clients read and write the same file.
 function profileSeeds(userDataDir) {
