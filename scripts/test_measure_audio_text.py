@@ -33,3 +33,22 @@ def test_summary_counts_distinct_values_per_probe():
 
 def test_summary_of_no_measured_launch_is_empty():
     assert m.summarize([]) == {}
+
+
+def test_clean_env_drops_every_camou_config_and_preset_variable():
+    env = {"CAMOU_CONFIG": "{}", "CAMOU_CONFIG_1": "{", "CAMOU_CONFIG_2": "}",
+           "CAMOU_PRESET": "p", "CAMOU_PRESET_1": "p", "PATH": "/bin", "CAMOU_OTHER": "x"}
+    got = m.clean_env(env, None)
+    assert got == {"PATH": "/bin", "CAMOU_OTHER": "x"}
+    assert "CAMOU_CONFIG" in env  # input untouched
+
+
+def test_clean_env_sets_the_given_config():
+    assert m.clean_env({"CAMOU_CONFIG_1": "x"}, '{"a":1}') == {"CAMOU_CONFIG": '{"a":1}'}
+
+
+def test_seen_tells_pending_error_and_missing_pre_apart():
+    assert m.seen(dom("pending")) == "pending"
+    assert m.seen(dom('{"error":"TypeError: x"}')) == '{"error":"TypeError: x"}'
+    assert m.seen("<html><body></body></html>") == "no pre"
+    assert len(m.seen(dom("x" * 500))) == 200

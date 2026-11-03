@@ -6,7 +6,10 @@ per launch, then the number of distinct values per probe.
 
   measure_audio_text.py --exe <chrome> [--runs 5] [--config '{"audio:seed":1}'] [--label x]
 
-A launch whose probe did not finish is UNMEASURED and is not counted as a value.
+A launch whose probe did not finish is UNMEASURED and is not counted as a value; its JSON
+line carries "seen", the first 200 characters of the page's <pre> (pending, an error, or no pre).
+--virtual-time-budget is virtual time, not a wait: the audio render and crypto.subtle run off
+the main thread, so a tiny budget can still finish and a large one is no guarantee.
 The audio probe is fingerprintjs' (the one camoufox's audio study used); the text probe is
 measureText at 72px for six families, every TextMetrics field the metric-jitter patch moves.
 """
@@ -65,6 +68,20 @@ def parse(dom):
     return got if isinstance(got, dict) and got.get("done") is True else None
 
 
+def seen(dom):
+    m = re.search(r'<pre id="r">(.*?)</pre>', dom, re.S)
+    return html.unescape(m.group(1))[:200] if m else "no pre"
+
+
+def clean_env(environ, config):
+    """Copy of environ without any CAMOU_CONFIG* / CAMOU_PRESET* variable (the browser reads
+    CAMOU_CONFIG_1..N and CAMOU_PRESET too), then CAMOU_CONFIG=config when given."""
+    env = {k: v for k, v in environ.items() if not k.startswith(("CAMOU_CONFIG", "CAMOU_PRESET"))}
+    if config:
+        env["CAMOU_CONFIG"] = config
+    return env
+
+
 def summarize(results):
     keys = {}
     for r in results:
@@ -77,10 +94,7 @@ def summarize(results):
 
 def launch(exe, config, budget_ms, page):
     prof = tempfile.mkdtemp(prefix="m0-")
-    env = dict(os.environ)
-    env.pop("CAMOU_CONFIG", None)
-    if config:
-        env["CAMOU_CONFIG"] = config
+    env = clean_env(os.environ, config)
     argv = [exe, "--headless=new", "--no-first-run", "--no-default-browser-check",
             f"--user-data-dir={prof}", f"--virtual-time-budget={budget_ms}", "--dump-dom", page.as_uri()]
     try:
@@ -99,19 +113,26 @@ def main(argv):
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--config")
     ap.add_argument("--label", default="")
-    ap.add_argument("--budget-ms", type=int, default=10000)
+    ap.add_argument("--budget-ms", type=int, default=10000,
+                    help="--virtual-time-budget in virtual ms; NOT a real-time wait for the async probe")
     a = ap.parse_args(argv)
-    page = pathlib.Path(tempfile.mkdtemp(prefix="m0-page-")) / "probe.html"
+    pagedir = pathlib.Path(tempfile.mkdtemp(prefix="m0-page-"))
+    page = pagedir / "probe.html"
     page.write_text(PROBE, encoding="utf-8")
     measured, unmeasured = [], 0
-    for i in range(a.runs):
-        r = parse(launch(a.exe, a.config, a.budget_ms, page))
-        if r is None:
-            unmeasured += 1
-            print(json.dumps({"label": a.label, "run": i, "outcome": "UNMEASURED"}))
-            continue
-        measured.append(r)
-        print(json.dumps({"label": a.label, "run": i, "fpjs": r["fpjs"], "bufSha": r["bufSha"], "text": r["text"]}))
+    try:
+        for i in range(a.runs):
+            dom = launch(a.exe, a.config, a.budget_ms, page)
+            r = parse(dom)
+            if r is None:
+                unmeasured += 1
+                print(json.dumps({"label": a.label, "run": i, "outcome": "UNMEASURED", "seen": seen(dom)}))
+                continue
+            measured.append(r)
+            print(json.dumps({"label": a.label, "run": i, "fpjs": r["fpjs"], "bufSha": r["bufSha"],
+                              "text": r["text"]}))
+    finally:
+        shutil.rmtree(pagedir, ignore_errors=True)
     print(json.dumps({"label": a.label, "config": a.config, "measured": len(measured),
                       "unmeasured": unmeasured, "distinct": summarize(measured)}))
     return 0 if measured else 1
