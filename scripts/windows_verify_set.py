@@ -142,7 +142,7 @@ def pin_tag(client):
 
 
 def control_problem(have, want):
-    """None when the stock control may stand in for the pin: the pin itself, or a later patch of
+    """None when the stock control may stand in for the pin: the pin itself, or another patch of
     the pin's build (spec 2026-11-03-camoufox-port-pivot-design §1). Any other build is refused."""
     if have == want or same_build(have, want):
         return None

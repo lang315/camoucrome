@@ -188,17 +188,21 @@ def argv_problems(control_argv, fork_argv, allowed=ARGV_ALLOWED):
 
 def same_build(a, b):
     """True when two Chrome versions share MAJOR.MINOR.BUILD; the patch number may differ.
-    An unread version ('') is never the same build."""
-    pa, pb = a.split("."), b.split(".")
-    return len(pa) == len(pb) == 4 and pa[:3] == pb[:3]
+    Anything that is not four dotted numbers (an unread '', '156.0.8078.x') is never the same build."""
+    v = re.compile(r"\d+(\.\d+){3}")
+    if not (v.fullmatch(a) and v.fullmatch(b)):
+        return False
+    return a.split(".")[:3] == b.split(".")[:3]
 
 
-def version_problems(versions, pin):
-    """The fork must be the pin exactly. The stock control may be a later patch of the pin's
+def version_problems(versions, pin, null=False):
+    """The fork must be the pin exactly. The stock control may be another patch of the pin's
     build: the host auto-updates within a milestone and keeps no copy of the pinned patch
-    (spec 2026-11-03-camoufox-port-pivot-design §1)."""
+    (spec 2026-11-03-camoufox-port-pivot-design §1). In a null run the fork arm IS the stock
+    exe, so it gets the control rule."""
+    stock = ("control", "fork") if null else ("control",)
     return [f"{arm} is {v}, the pin is {pin}" for arm, v in versions.items()
-            if v != pin and not (arm == "control" and same_build(v, pin))]
+            if v != pin and not (arm in stock and same_build(v, pin))]
 
 
 def network_rows(data):

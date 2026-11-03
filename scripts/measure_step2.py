@@ -346,7 +346,7 @@ def run_cmd(a):
     fork = Arm("fork", fork_exe, None if a.null else identity(1), [a.plant] if a.plant else [])
     pin = pin_tag(client)
     versions = {"control": exe_version(control.exe), "fork": exe_version(fork.exe)}
-    bad = rows.version_problems(versions, pin)
+    bad = rows.version_problems(versions, pin, null=a.null)
     if bad:
         sys.exit("precondition: " + "; ".join(bad))
     run_id = run_stamp() + ("-null" if a.null else "") + ("-plant" if a.plant else "")
