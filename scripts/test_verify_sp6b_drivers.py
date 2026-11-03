@@ -108,5 +108,30 @@ class StrayBrowserTest(unittest.TestCase):
         self.assertIn("stray browser process", detail)
 
 
+class MissingProbe(unittest.TestCase):
+    def test_absolute_path_that_does_not_exist_is_missing(self):
+        why = v.missing_probe(["/nonexistent/camoucrome-probe-rodclient", "--label", "x"])
+        self.assertEqual(why, "probe binary /nonexistent/camoucrome-probe-rodclient does not exist")
+
+    def test_existing_absolute_path_is_not_missing(self):
+        import sys
+        self.assertIsNone(v.missing_probe([sys.executable, "-c", "pass"]))
+
+    def test_bare_name_on_path_is_not_judged(self):
+        self.assertIsNone(v.missing_probe(["node", "probe.js"]))
+
+
+class FinalVerdict(unittest.TestCase):
+    def test_a_failure_wins_over_a_missing_premise(self):
+        self.assertEqual(v.final_verdict(False, True), "FAIL")
+        self.assertEqual(v.final_verdict(False, False), "FAIL")
+
+    def test_unmeasured_without_failure(self):
+        self.assertEqual(v.final_verdict(True, True), "UNMEASURED")
+
+    def test_all_pass(self):
+        self.assertEqual(v.final_verdict(True, False), "ALL_PASS")
+
+
 if __name__ == "__main__":
     unittest.main()
