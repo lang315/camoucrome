@@ -96,8 +96,9 @@ func TestNoForbiddenOptionField(t *testing.T) {
 }
 
 func TestEnvDropsStaleCamouVarsAndSetsTheTransport(t *testing.T) {
-	env, err := BuildEnv(Options{Config: map[string]int{"screen.width": 1}, Preset: `{"os":"Windows"}`, Strict: true},
-		[]string{"CAMOU_CONFIG_1=stale", "PATH=/bin"})
+	// a Windows host: on a Linux host this Windows claim with no fonts dir is refused
+	env, err := buildEnvFor(Options{Config: map[string]int{"screen.width": 1}, Preset: `{"os":"Windows"}`, Strict: true},
+		[]string{"CAMOU_CONFIG_1=stale", "PATH=/bin"}, "Windows")
 	if err != nil {
 		t.Fatal(err)
 	}
