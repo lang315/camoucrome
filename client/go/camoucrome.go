@@ -66,6 +66,7 @@ type Options struct {
 	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
 	Warn           func(string) // default: stderr
 	Permissions    []string     // Playwright's context permissions; Launch adds "geolocation" when the config carries coordinates
+	PinCPUCores    *bool        // nil = true: a navigator.hardwareConcurrency claim below the driver's CPUs pins the driver for the launch call (pin.go)
 }
 
 // Proxy mirrors Playwright's proxy option (settings/launcher.json launch.proxy_option_fields). The launcher puts
@@ -531,18 +532,27 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	if o.Headless != nil {
 		headless = *o.Headless
 	}
-	ctx, err := bt.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
-		ExecutablePath:       playwright.String(o.ExecutablePath),
-		Headless:             playwright.Bool(headless),
-		IgnoreAllDefaultArgs: playwright.Bool(true),
-		Env:                  env,
-		Args:                 BuildArgs(o),
-		Proxy:                proxyOption(o.Proxy),
-		Permissions:          perms,
-		// Otherwise a 1280x720 viewport is emulated through
-		// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
-		NoViewport: playwright.Bool(true),
-	})
+	var ctx playwright.BrowserContext
+	start := func() (err error) {
+		ctx, err = bt.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
+			ExecutablePath:       playwright.String(o.ExecutablePath),
+			Headless:             playwright.Bool(headless),
+			IgnoreAllDefaultArgs: playwright.Bool(true),
+			Env:                  env,
+			Args:                 BuildArgs(o),
+			Proxy:                proxyOption(o.Proxy),
+			Permissions:          perms,
+			// Otherwise a 1280x720 viewport is emulated through
+			// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
+			NoViewport: playwright.Bool(true),
+		})
+		return
+	}
+	if n, ok := keys["navigator.hardwareConcurrency"].(float64); ok && n >= 1 && n == float64(int(n)) && (o.PinCPUCores == nil || *o.PinCPUCores) {
+		err = pinned(int(n), start)
+	} else {
+		err = start()
+	}
 	if err != nil {
 		remove()
 		return nil, err
