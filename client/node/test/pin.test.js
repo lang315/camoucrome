@@ -17,6 +17,7 @@ beforeEach(() => {
   pin.io.get = () => new Set(state.mask);
   pin.io.set = (pid, cpus) => {
     if (state.fail) throw new Error(state.fail);
+    if (state.failAfter !== undefined && log.length >= state.failAfter) throw new Error('restore denied');
     log.push([pid, new Set(cpus)]);
     state.mask = new Set(cpus);
   };
@@ -72,4 +73,24 @@ test('overlapping launches are serialised: each restores what it pinned', async 
   await Promise.all([run(2, slow('a')), run(3, slow('b'))]);
   assert.deepEqual(order, ['start a', 'end a', 'start b', 'end b']);
   assert.deepEqual(state.mask, ALLOWED);
+});
+
+test('a restore that fails after a good launch closes the browser, then throws', async () => {
+  let closed = 0;
+  const ok = { on() {}, close: async () => { closed++; } };
+  await assert.rejects(run(2, { launchPersistentContext: async () => { state.failAfter = 1; return ok; } }), /cannot restore/);
+  assert.equal(closed, 1);
+});
+
+test('a pin that fails part-way puts the allowed mask back', async () => {
+  const sets = [];
+  pin.io.set = (pid, cpus) => { sets.push(new Set(cpus)); if (sets.length === 1) throw new Error('half'); };
+  await assert.rejects(run(2, { launchPersistentContext: async () => assert.fail('must not launch') }), /half/);
+  assert.equal(sets.length, 2);
+  assert.deepEqual(sets[1], ALLOWED);
+});
+
+test('CPU lists are not limited to 64 CPUs', () => {
+  assert.deepEqual([...pin.fromList('0-1,8,70-71')], [0, 1, 8, 70, 71]);
+  assert.equal(pin.toList(new Set([70, 0, 8])), '0,8,70');
 });
