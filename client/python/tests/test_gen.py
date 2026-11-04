@@ -78,8 +78,10 @@ def test_locale_and_timezone():
 
 def test_ua_battery_media_and_seeds():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert cfg["navigator.deviceMemory"] == 8  # the sample says 16, Chrome caps at 8
-    assert gen.chrome_device_memory(32) == 8 and gen.chrome_device_memory(3) == 2 and gen.chrome_device_memory(0.1) == 0.25
+    assert cfg["navigator.deviceMemory"] == 8  # the sample says 16; the domain validator caps the key at 8
+    low = {**POOL, "navigator": {**POOL["navigator"], "deviceMemory": 4}}
+    # a 4 beside the host's capped jsHeapSizeLimit is a device no real Chrome shows
+    assert gen.from_pool(low, "UTC", rng=random.Random(1))["config"]["navigator.deviceMemory"] == 8
     assert cfg["ua:osInfo"] == "Windows NT 10.0; Win64; x64" and cfg["ua:platform"] == "Windows"
     assert cfg["ua:platformVersion"] == "10.0.0" and cfg["ua:mobile"] is False
     assert cfg["battery:charging"] is True and cfg["battery:chargingTime"] == 600.0
@@ -179,7 +181,7 @@ def test_pool_wide_properties_hold_over_unseeded_draws():
     for i in range(200):
         out = gen.generate(timezone="UTC")
         cfg, launch = out["config"], out["launch"]
-        assert cfg["navigator.deviceMemory"] in gen.DEVICE_MEMORY, cfg["navigator.deviceMemory"]
+        assert cfg["navigator.deviceMemory"] == gen.DEVICE_MEMORY, cfg["navigator.deviceMemory"]
         assert cfg["navigator.hardwareConcurrency"] >= 1
         assert launch["dpr"] in gen.WINDOW_OFFSET
         for axis in ("Width", "Height"):
