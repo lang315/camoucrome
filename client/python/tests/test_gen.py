@@ -78,10 +78,14 @@ def test_locale_and_timezone():
 
 def test_ua_battery_media_and_seeds():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert cfg["navigator.deviceMemory"] == 8  # the sample says 16; the domain validator caps the key at 8
-    low = {**POOL, "navigator": {**POOL["navigator"], "deviceMemory": 4}}
+    assert cfg["navigator.deviceMemory"] == 16  # the sample's own value: Chrome 156 desktop reports 2..32
+
+    def memory(value):
+        fp = {**POOL, "navigator": {**POOL["navigator"], "deviceMemory": value}}
+        return gen.from_pool(fp, "UTC", rng=random.Random(1))["config"]["navigator.deviceMemory"]
     # a 4 beside the host's capped jsHeapSizeLimit is a device no real Chrome shows
-    assert gen.from_pool(low, "UTC", rng=random.Random(1))["config"]["navigator.deviceMemory"] == 8
+    assert memory(4) == 8
+    assert memory(64) == 32  # Chrome caps the API at 32
     assert cfg["ua:osInfo"] == "Windows NT 10.0; Win64; x64" and cfg["ua:platform"] == "Windows"
     assert cfg["ua:platformVersion"] == "10.0.0" and cfg["ua:mobile"] is False
     assert cfg["battery:charging"] is True and cfg["battery:chargingTime"] == 600.0
@@ -181,7 +185,7 @@ def test_pool_wide_properties_hold_over_unseeded_draws():
     for i in range(200):
         out = gen.generate(timezone="UTC")
         cfg, launch = out["config"], out["launch"]
-        assert cfg["navigator.deviceMemory"] == gen.DEVICE_MEMORY, cfg["navigator.deviceMemory"]
+        assert cfg["navigator.deviceMemory"] in (8, 16, 32), cfg["navigator.deviceMemory"]
         assert cfg["navigator.hardwareConcurrency"] >= 1
         assert launch["dpr"] in gen.WINDOW_OFFSET
         for axis in ("Width", "Height"):
@@ -450,7 +454,7 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 # launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "mediaDevices:seed": 3639700192,
-        "rest": "dcf4b9c17059de9c"},
+        "rest": "c3cf3c0213de1b36"},  # was dcf4b9c17059de9c with navigator.deviceMemory 8; the seed draws 16
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "mediaDevices:seed": 2337446731},
 }
