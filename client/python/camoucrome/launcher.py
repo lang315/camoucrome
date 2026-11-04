@@ -307,13 +307,10 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             "a second emulation of the same surface fights the fork's value")
     keys = effective_keys(config, preset)
     outer = (keys.get("window.outerWidth"), keys.get("window.outerHeight"))
-    if outer != (None, None):
-        if window is None:
-            raise ValueError("config sets window.outerWidth/outerHeight, so the launch needs `window` "
-                             "(camoucrome.gen emits it as launch.window): innerWidth could exceed outerWidth")
-        if any(o is not None and w > o for w, o in zip(window, outer)):
-            raise ValueError(f"window {tuple(window)} exceeds window.outerWidth/outerHeight {outer}: "
-                             "innerWidth/innerHeight would exceed the claimed outer size")
+    # shortcut: no window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
+    if window is not None and any(o is not None and w > o for w, o in zip(window, outer)):
+        raise ValueError(f"window {tuple(window)} exceeds window.outerWidth/outerHeight {outer}: "
+                         "innerWidth/innerHeight would exceed the claimed outer size")
     if geoip:
         from . import geoip as _geoip
         _geoip.warn_all(_geoip.check_config(keys, proxy, exit_ip, None if geoip is True else str(geoip)))

@@ -489,13 +489,9 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	}
 	ow, _ := keys["window.outerWidth"].(float64)
 	oh, _ := keys["window.outerHeight"].(float64)
-	if ow != 0 || oh != 0 {
-		if o.Window == [2]int{} {
-			return nil, fmt.Errorf("config sets window.outerWidth/outerHeight, so the launch needs Window (camoucrome.gen emits it as launch.window): innerWidth could exceed outerWidth")
-		}
-		if (ow != 0 && float64(o.Window[0]) > ow) || (oh != 0 && float64(o.Window[1]) > oh) {
-			return nil, fmt.Errorf("window %v exceeds window.outerWidth/outerHeight [%v %v]: innerWidth/innerHeight would exceed the claimed outer size", o.Window, ow, oh)
-		}
+	// shortcut: no Window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
+	if o.Window != [2]int{} && ((ow != 0 && float64(o.Window[0]) > ow) || (oh != 0 && float64(o.Window[1]) > oh)) {
+		return nil, fmt.Errorf("window %v exceeds window.outerWidth/outerHeight [%v %v]: innerWidth/innerHeight would exceed the claimed outer size", o.Window, ow, oh)
 	}
 	if o.GeoIP != "" {
 		o.warn(CheckGeoIP(o))

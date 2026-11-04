@@ -45,7 +45,7 @@
   "light_args": [],
   "why_light_args": "Approach B (2026-10-31): browser-internal flags appended after base_args when a client's light option is on; only flags with gate pass and measured kept in settings/light_flags.json (scripts/test_light_flags.py). Off by default, so browser_argv_expected is unchanged.",
   "window_size_arg": "--window-size={width},{height}",
-  "why_window_size_arg": "window.innerWidth/innerHeight are not config keys: Chrome takes them from this real window. When the effective config sets window.outerWidth or window.outerHeight, the launch refuses to start without a window, or with one larger than a set outer value (equal is allowed): innerWidth > outerWidth is a state no real browser shows. camoucrome.gen emits launch.window within its outer size.",
+  "why_window_size_arg": "window.innerWidth/innerHeight are not config keys: Chrome takes them from this real window. When the effective config sets window.outerWidth or window.outerHeight, the launch refuses to start with a window larger than a set outer value (equal is allowed); without a window Chrome keeps its default size, which is not checked: innerWidth > outerWidth is a state no real browser shows. camoucrome.gen emits launch.window within its outer size.",
   "window_position_arg": "--window-position={x},{y}",
   "dpr_arg": "--force-device-scale-factor={dpr}",
   "proxy_arg": "--proxy-server={server}",

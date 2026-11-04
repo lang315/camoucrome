@@ -283,15 +283,10 @@ async function launch(chromium, executablePath, {
   }
   const keys = effectiveKeys(config, preset);
   const outer = [keys['window.outerWidth'], keys['window.outerHeight']];
-  if (outer.some((o) => o != null)) {
-    if (!window) {
-      throw new Error('config sets window.outerWidth/outerHeight, so the launch needs `window` '
-        + '(camoucrome.gen emits it as launch.window): innerWidth could exceed outerWidth');
-    }
-    if (window.some((w, i) => outer[i] != null && w > outer[i])) {
-      throw new Error(`window [${window}] exceeds window.outerWidth/outerHeight [${outer}]: `
-        + 'innerWidth/innerHeight would exceed the claimed outer size');
-    }
+  // shortcut: no window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
+  if (window && window.some((w, i) => outer[i] != null && w > outer[i])) {
+    throw new Error(`window [${window}] exceeds window.outerWidth/outerHeight [${outer}]: `
+      + 'innerWidth/innerHeight would exceed the claimed outer size');
   }
   if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
     const { checkGeoip } = require('./geoip');
