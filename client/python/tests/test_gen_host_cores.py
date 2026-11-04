@@ -50,9 +50,15 @@ def test_seeded_keys_are_the_same_with_and_without_a_snap():
 
 
 def test_unset_host_cores_uses_this_machine(monkeypatch):
-    monkeypatch.setattr(gen._os,"cpu_count", lambda: 2)
+    monkeypatch.setattr(gen, "allowed_cpus", lambda: 2)
     for s in SEEDS:
         assert gen.generate("windows", "Europe/Paris", None, s)["config"]["navigator.hardwareConcurrency"] <= 2
+
+
+def test_allowed_cpus_is_the_affinity_mask_size(monkeypatch):
+    monkeypatch.setattr(gen.pin, "get_mask", lambda pid: {0, 1})
+    monkeypatch.setattr(gen._os, "cpu_count", lambda: 64)
+    assert gen.allowed_cpus() == 2
 
 
 def test_cli_passes_host_cores(capsys):
