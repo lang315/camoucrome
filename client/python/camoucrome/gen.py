@@ -11,8 +11,8 @@ Pool field -> config key (mirrors the preset loader's table style):
                                   -> ua:platformVersion, ua:architecture, ua:bitness,
                                      ua:model, ua:mobile; ua:wow64 false
   navigator.hardwareConcurrency, maxTouchPoints -> same-named keys
-  navigator.deviceMemory           -> snapped to Chrome's set {0.25..8} (DEVICE_MEMORY);
-                                     the pool says 16/32 in half its samples
+  navigator.deviceMemory           -> always 8 (DEVICE_MEMORY): the real jsHeapSizeLimit
+                                     of an 8 GB+ host rules out a smaller claim
   screen.width/height/availWidth/availHeight -> screen.*
   screen.outerWidth/outerHeight/screenX/screenY -> window.*, and launch.window
   screen.devicePixelRatio          -> launch.dpr (a launcher flag; DPR has no key);
@@ -116,12 +116,15 @@ def dpr_of(fp):
     return fp["screen"].get("devicePixelRatio") or 1
 
 
-# Chrome clamps navigator.deviceMemory to a power of two in [0.25, 8]; the
-# pool carries 16 and 32 in over half of its samples (200 draws: 8 x76,
-# 16 x76, 32 x33, 4 x15), values no real Chrome reports. Largest allowed
-# value <= the pool's. The C++ domain validator has no rule for this key
-# (only the geolocation axes), so the strict oracle cannot catch it.
-DEVICE_MEMORY = (0.25, 0.5, 1, 2, 4, 8)
+# navigator.deviceMemory is always 8, whatever the pool says. The fork leaves
+# performance.memory.jsHeapSizeLimit real, and V8 sizes the heap from physical
+# memory (old generation = RAM / 2, capped at 4 GB on 64-bit), so a host with
+# 8 GB or more shows the capped heap (3760000000 on Chrome 156, Windows and
+# Linux, measured 2026-11-04), which no real 0.25..4 GB device shows; facebook
+# sends both (measurements/2026-11-04-fb-tracking-map.md). Chrome 156 itself
+# reports 16 and 32, but domain_validator.cc caps the key at 8.
+# shortcut: a host under 8 GB RAM shows a smaller heap beside this 8; derive the claim from host RAM then.
+DEVICE_MEMORY = 8
 # The repository (or an archive/client copy with the same layout), else the
 # copy a wheel build puts in the package (client/python/setup.py).
 _PACKAGED = pathlib.Path(__file__).resolve().parent / "_settings"
@@ -318,10 +321,6 @@ def audio_keys(platform):
     return {"audio:sampleRate": audio[platform]["sampleRate"], "audio:bufferFrames": audio[platform]["bufferFrames"]}
 
 
-def chrome_device_memory(value):
-    return max((m for m in DEVICE_MEMORY if m <= value), default=DEVICE_MEMORY[0])
-
-
 def acceptable(fp):
     ud = fp["navigator"].get("userAgentData") or {}
     brands = " ".join(b.get("brand", "") for b in ud.get("brands", []))
@@ -443,7 +442,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         "ua:mobile": False, "ua:wow64": False,
         "ua:brand": "Google Chrome",  # the pool's brands carry it; a Chromium build would ship two brands where Chrome ships three
         "navigator.hardwareConcurrency": nav["hardwareConcurrency"],
-        "navigator.deviceMemory": chrome_device_memory(nav["deviceMemory"]),
+        "navigator.deviceMemory": DEVICE_MEMORY,
         "navigator.maxTouchPoints": nav["maxTouchPoints"],
         "screen.width": scr["width"], "screen.height": scr["height"],
         "screen.availWidth": scr["availWidth"], "screen.availHeight": scr["availHeight"],
