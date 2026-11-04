@@ -45,6 +45,7 @@
   "light_args": [],
   "why_light_args": "Approach B (2026-10-31): browser-internal flags appended after base_args when a client's light option is on; only flags with gate pass and measured kept in settings/light_flags.json (scripts/test_light_flags.py). Off by default, so browser_argv_expected is unchanged.",
   "window_size_arg": "--window-size={width},{height}",
+  "why_window_size_arg": "window.innerWidth/innerHeight are not config keys: Chrome takes them from this real window. When the effective config sets window.outerWidth or window.outerHeight, the launch refuses to start without a window, or with one larger than a set outer value (equal is allowed): innerWidth > outerWidth is a state no real browser shows. camoucrome.gen emits launch.window within its outer size.",
   "window_position_arg": "--window-position={x},{y}",
   "dpr_arg": "--force-device-scale-factor={dpr}",
   "proxy_arg": "--proxy-server={server}",
@@ -82,7 +83,7 @@
     "Windows": "settings/fontconfig/windows.conf",
     "macOS": "settings/fontconfig/macos.conf"
    },
-   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A FONTCONFIG_FILE in the parent environment is never inherited.",
+   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A Windows or macOS claim on a Linux host with no fonts dir refuses to launch (host fonts would be a tell); other hosts ignore FONTCONFIG_FILE. A FONTCONFIG_FILE in the parent environment is never inherited.",
    "layout": "<root>/fonts/<family>/*.ttf and <root>/settings/fontconfig/<os>.conf, the same in the repo, the archive and the box's client copy; the conf's <dir> is relative (../../fonts)"
   },
   "native_fonts": {

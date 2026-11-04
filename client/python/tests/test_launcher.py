@@ -151,7 +151,7 @@ def test_fontconfig_env_follows_the_claimed_os(tmp_path):
     assert win == str(tmp_path / "settings" / "fontconfig" / "windows.conf")
     assert launcher.fontconfig_for({"ua:platform": "Linux"}, None, tmp_path / "fonts") is None
     assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts") == str(tmp_path / "settings" / "fontconfig" / "macos.conf")
-    assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome") is None
+    assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome", host_os="Windows") is None
     (tmp_path / "chrome").write_bytes(b"")
     assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "chrome") == win
     assert launcher.build_env(fontconfig="/x/windows.conf")["FONTCONFIG_FILE"] == "/x/windows.conf"
@@ -213,6 +213,33 @@ def test_fontconfig_env_is_never_inherited_and_the_conf_must_exist(tmp_path):
     (tmp_path / "fonts").mkdir()
     with pytest.raises(FileNotFoundError):
         launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
+
+
+def test_foreign_claim_without_a_fonts_dir_fails_on_linux_only(tmp_path):
+    fc = camoucrome.launcher.fontconfig_for
+    win = {"ua:platform": "Windows"}
+    with pytest.raises(FileNotFoundError, match="Windows.*fonts"):
+        fc(win, None, None, tmp_path / "chrome", host_os="Linux")
+    assert fc(win, None, None, tmp_path / "chrome", host_os="Windows") is None
+    assert fc({"ua:platform": "Linux"}, None, None, tmp_path / "chrome", host_os="Linux") is None
+    assert fc(None, None, None, tmp_path / "chrome", host_os="Linux") is None
+
+
+@pytest.mark.parametrize("cfg, window, ok", [
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, None, False),
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1921, 1000), False),
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1900, 1081), False),
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1920, 1080), True),
+    ({"window.outerWidth": 1920}, (1920, 5000), True),
+    ({"a": 1}, None, True),
+])
+def test_launch_window_must_fit_the_configured_outer_size(cfg, window, ok):
+    pw = FakePlaywright()
+    if ok:
+        camoucrome.launch(pw, "/x/chrome", config=cfg, user_data_dir="/tmp/p", window=window)
+    else:
+        with pytest.raises(ValueError, match="window.outer"):
+            camoucrome.launch(pw, "/x/chrome", config=cfg, user_data_dir="/tmp/p", window=window)
 
 
 def test_a_large_preset_is_chunked_like_the_config():

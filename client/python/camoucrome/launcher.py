@@ -112,11 +112,14 @@ def claimed_os(config=None, preset=None):
     return keys.get("ua:platform")
 
 
-def fontconfig_for(config=None, preset=None, fonts_dir=None, executable_path=None):
+def fontconfig_for(config=None, preset=None, fonts_dir=None, executable_path=None, host_os=None):
     """The FONTCONFIG_FILE for the claimed OS (contract launch.fontconfig): the
     generated conf beside the bundled fonts dir, which lives beside the
-    executable in an archive. Linux claim or no fonts dir: None. A fonts dir
-    without its conf raises: host fonts under a Windows claim are a tell."""
+    executable in an archive. Linux or no claim: None. A fonts dir without its
+    conf raises, and so does a Windows/macOS claim with no fonts dir on a Linux
+    host: host fonts under that claim are a tell. Other hosts ignore
+    FONTCONFIG_FILE, so no fonts dir gives None there."""
+    host_os = HOST_OS if host_os is None else host_os
     os_name = claimed_os(config, preset)
     if os_name not in FONTCONFIG_FILES:
         return None
@@ -124,6 +127,9 @@ def fontconfig_for(config=None, preset=None, fonts_dir=None, executable_path=Non
         cand = os.path.join(os.path.dirname(os.path.abspath(str(executable_path))), "fonts")
         fonts_dir = cand if os.path.isdir(cand) else None
     if fonts_dir is None:
+        if host_os == "Linux":
+            raise FileNotFoundError(f"{os_name} claim on a Linux host needs the bundled fonts dir, "
+                                    "but none was given and no fonts dir sits beside the executable")
         return None
     conf = os.path.abspath(os.path.join(str(fonts_dir), os.pardir, FONTCONFIG_FILES[os_name]))
     if not os.path.isfile(conf):
@@ -299,9 +305,18 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         raise ValueError(
             f"{sorted(bad)} must come through CAMOU_CONFIG, not the driver: "
             "a second emulation of the same surface fights the fork's value")
+    keys = effective_keys(config, preset)
+    outer = (keys.get("window.outerWidth"), keys.get("window.outerHeight"))
+    if outer != (None, None):
+        if window is None:
+            raise ValueError("config sets window.outerWidth/outerHeight, so the launch needs `window` "
+                             "(camoucrome.gen emits it as launch.window): innerWidth could exceed outerWidth")
+        if any(o is not None and w > o for w, o in zip(window, outer)):
+            raise ValueError(f"window {tuple(window)} exceeds window.outerWidth/outerHeight {outer}: "
+                             "innerWidth/innerHeight would exceed the claimed outer size")
     if geoip:
         from . import geoip as _geoip
-        _geoip.warn_all(_geoip.check_config(effective_keys(config, preset), proxy, exit_ip, None if geoip is True else str(geoip)))
+        _geoip.warn_all(_geoip.check_config(keys, proxy, exit_ip, None if geoip is True else str(geoip)))
     owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
     if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")

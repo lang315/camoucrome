@@ -85,7 +85,8 @@ def probe(url, config, launch):
     env.update(DEBUG="pw:browser", PLAYWRIGHT_NODEJS_PATH=NODE)
     cmd = [PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE,
            "--url", url, "--strict", "--config", "@" + config_path(config),
-           "--window", f"{launch['window'][0]},{launch['window'][1]}", "--dpr", str(launch["dpr"])]
+           "--window", f"{launch['window'][0]},{launch['window'][1]}", "--dpr", str(launch["dpr"]),
+           "--fonts-dir", FONTS_DIR]  # the launcher refuses a Windows/macOS claim on a Linux host without it
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=180, env=env)
     report = json.loads(p.stdout)["report"] if p.returncode == 0 and p.stdout else None
     return p.returncode, report, p.stderr
