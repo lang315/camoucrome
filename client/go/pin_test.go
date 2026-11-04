@@ -150,6 +150,7 @@ func TestOverlappingLaunchesAreSerialised(t *testing.T) {
 type duringLauncher struct {
 	onLaunch func()
 	err      error
+	ctx      playwright.BrowserContext
 	launched bool
 }
 
@@ -160,6 +161,9 @@ func (d *duringLauncher) LaunchPersistentContext(string, ...playwright.BrowserTy
 	}
 	if d.err != nil {
 		return nil, d.err
+	}
+	if d.ctx != nil {
+		return d.ctx, nil
 	}
 	return noEvents{}, nil
 }

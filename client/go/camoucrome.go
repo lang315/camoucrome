@@ -550,6 +550,9 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	}
 	if n, ok := keys["navigator.hardwareConcurrency"].(float64); ok && n >= 1 && n == float64(int(n)) && (o.PinCPUCores == nil || *o.PinCPUCores) {
 		err = pinned(int(n), start)
+		if err != nil && ctx != nil { // the launch worked but the mask was not restored: no browser may run unowned
+			ctx.Close()
+		}
 	} else {
 		err = start()
 	}

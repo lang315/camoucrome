@@ -30,13 +30,17 @@ var (
 
 func osAffinityGet(pid int) ([]int, error) {
 	switch runtime.GOOS {
-	case "linux":
-		out, err := exec.Command("taskset", "-p", strconv.Itoa(pid)).Output()
+	case "linux": // the list form has no 64-CPU limit, and needs no taskset
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
 		if err != nil {
 			return nil, err
 		}
-		f := strings.Fields(string(out))
-		return cpusOf(f[len(f)-1], 16)
+		for _, line := range strings.Split(string(b), "\n") {
+			if l, ok := strings.CutPrefix(line, "Cpus_allowed_list:"); ok {
+				return cpusFromList(strings.TrimSpace(l))
+			}
+		}
+		return nil, fmt.Errorf("no Cpus_allowed_list in /proc/%d/status", pid)
 	case "windows":
 		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
 			fmt.Sprintf("(Get-Process -Id %d).ProcessorAffinity.ToInt64()", pid)).Output()
@@ -49,7 +53,37 @@ func osAffinityGet(pid int) ([]int, error) {
 	return nil, nil
 }
 
-// cpusOf decodes a mask. shortcut: one processor group, so at most 64 CPUs; upgrade for a bigger host.
+// cpusFromList decodes "0-3,8".
+func cpusFromList(l string) ([]int, error) {
+	var cpus []int
+	for _, r := range strings.Split(l, ",") {
+		lo, hi, found := strings.Cut(r, "-")
+		a, err := strconv.Atoi(lo)
+		b := a
+		if err == nil && found {
+			b, err = strconv.Atoi(hi)
+		}
+		if err != nil || b < a {
+			return nil, fmt.Errorf("unreadable CPU list %q", l)
+		}
+		for c := a; c <= b; c++ {
+			cpus = append(cpus, c)
+		}
+	}
+	return cpus, nil
+}
+
+func cpuList(cpus []int) string {
+	c := append([]int(nil), cpus...)
+	sort.Ints(c)
+	parts := make([]string, len(c))
+	for i, x := range c {
+		parts[i] = strconv.Itoa(x)
+	}
+	return strings.Join(parts, ",")
+}
+
+// cpusOf decodes a Windows mask. shortcut: one processor group, so at most 64 CPUs; upgrade for a bigger host.
 func cpusOf(s string, base int) ([]int, error) {
 	m, err := strconv.ParseUint(s, base, 64)
 	if err != nil {
@@ -65,15 +99,15 @@ func cpusOf(s string, base int) ([]int, error) {
 }
 
 func osAffinitySet(pid int, cpus []int) error {
-	var m uint64
-	for _, c := range cpus {
-		m |= 1 << c
-	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "linux": // -a: every thread of the process
-		cmd = exec.Command("taskset", "-a", "-p", strconv.FormatUint(m, 16), strconv.Itoa(pid))
+		cmd = exec.Command("taskset", "-a", "-c", "-p", cpuList(cpus), strconv.Itoa(pid))
 	case "windows":
+		var m uint64
+		for _, c := range cpus {
+			m |= 1 << c
+		}
 		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
 			fmt.Sprintf("(Get-Process -Id %d).ProcessorAffinity = %d", pid, m))
 	default:
@@ -83,6 +117,13 @@ func osAffinitySet(pid int, cpus []int) error {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// driverQueryScript lists the children of pid running the driver. This script is itself a child's command line, so
+// the pattern is built from two strings (the literal would match the query) and its own $PID is excluded.
+func driverQueryScript(pid int) string {
+	return fmt.Sprintf("$p = '*run-' + 'driver*'; Get-CimInstance Win32_Process -Filter 'ParentProcessId=%d' | "+
+		"Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like $p } | ForEach-Object { $_.ProcessId }", pid)
 }
 
 func osDriverPIDs() ([]int, error) {
@@ -112,8 +153,7 @@ func osDriverPIDs() ([]int, error) {
 		}
 		return pids, nil
 	case "windows":
-		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", fmt.Sprintf(
-			"Get-CimInstance Win32_Process -Filter 'ParentProcessId=%d' | Where-Object { $_.CommandLine -like '*run-driver*' } | ForEach-Object { $_.ProcessId }", self)).Output()
+		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", driverQueryScript(self)).Output()
 		if err != nil {
 			return nil, err
 		}
