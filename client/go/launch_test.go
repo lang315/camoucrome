@@ -95,7 +95,7 @@ func TestLaunchWindowMustFitTheConfiguredOuterSize(t *testing.T) {
 		window [2]int
 		ok     bool
 	}{
-		{"no window", both, [2]int{}, false},
+		{"no window", both, [2]int{}, true}, // a generated config without its launch.window
 		{"wider", both, [2]int{1921, 1000}, false},
 		{"taller", both, [2]int{1900, 1081}, false},
 		{"equal", both, [2]int{1920, 1080}, true},

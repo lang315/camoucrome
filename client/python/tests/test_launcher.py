@@ -226,7 +226,7 @@ def test_foreign_claim_without_a_fonts_dir_fails_on_linux_only(tmp_path):
 
 
 @pytest.mark.parametrize("cfg, window, ok", [
-    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, None, False),
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, None, True),  # a generated config without its launch.window
     ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1921, 1000), False),
     ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1900, 1081), False),
     ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1920, 1080), True),

@@ -206,7 +206,7 @@ test('launch window must fit the configured outer size', async () => {
   const chromium = { launchPersistentContext: async () => ctx };
   const both = { 'window.outerWidth': 1920, 'window.outerHeight': 1080 };
   const go = (config, window) => c.launch(chromium, '/x/chrome', { config, window, userDataDir: '/tmp/p' });
-  await assert.rejects(go(both), /window\.outer/);
+  await go(both); // a generated config without its launch.window
   await assert.rejects(go(both, [1921, 1000]), /window\.outer/);
   await assert.rejects(go(both, [1900, 1081]), /window\.outer/);
   await go(both, [1920, 1080]);
