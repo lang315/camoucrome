@@ -133,3 +133,56 @@ def test_async_restored_when_the_launch_raises(calls):
     with pytest.raises(RuntimeError, match="no chrome"):
         asyncio.run(go())
     assert calls[-1] == (PID, ALLOWED)
+
+
+def test_restore_failure_after_a_good_launch_closes_the_browser(calls):
+    closed = []
+
+    class C(Ctx):
+        def close(self):
+            closed.append(1)
+    real = pin.set_mask
+
+    def set_(pid, cpus):
+        if len(calls) == 1:  # the restore
+            raise OSError("restore denied")
+        real(pid, cpus)
+    pin.set_mask = set_
+    try:
+        with pytest.raises(RuntimeError, match="restore"):
+            run(2, fake_pw(lambda *a, **k: C()))
+    finally:
+        pin.set_mask = real
+    assert closed == [1]
+
+
+def test_partial_pin_is_rolled_back(monkeypatch):
+    log = []
+
+    def set_(pid, cpus):
+        log.append(set(cpus))
+        if len(log) == 1:
+            raise OSError("half")
+    monkeypatch.setattr(pin, "get_mask", lambda pid: set(ALLOWED))
+    monkeypatch.setattr(pin, "set_mask", set_)
+    with pytest.raises(RuntimeError, match="half"):
+        run(2, fake_pw(lambda *a, **k: Ctx()))
+    assert log[-1] == ALLOWED and len(log) == 2
+
+
+def test_overlapping_threads_are_serialised(calls):
+    import threading
+    import time
+    order = []
+
+    def slow(name):
+        def call():
+            order.append("start " + name)
+            time.sleep(0.05)
+            order.append("end " + name)
+        return call
+    ts = [threading.Thread(target=pin.apply, args=(fake_pw(None), 2, slow(n))) for n in "ab"]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert order[0][6:] == order[1][4:] and order[2][6:] == order[3][4:]
+    assert calls.state["mask"] == ALLOWED

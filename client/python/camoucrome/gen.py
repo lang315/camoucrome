@@ -72,7 +72,7 @@ import re
 import sys
 from dataclasses import asdict
 
-from . import hostfonts
+from . import hostfonts, pin
 from .identity import per_instance_config
 
 # derive.cc's kForms: UA-CH platform -> (ua:osInfo, ua:platform). The test
@@ -531,17 +531,23 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
 
 
+def allowed_cpus():
+    """The CPUs this process may use (the mask the launch pin compares with), else all of them."""
+    mask = pin.get_mask(_os.getpid())
+    return len(mask) if mask else _os.cpu_count()
+
+
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
              host_families=None, host_platform_version=None, host_display=None, light=False,
              host_screen=None, host_cores=None):
-    """host_cores: the CPUs of the machine the browser will run on (default os.cpu_count(), since identities are
+    """host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are
     generated on the host); see from_pool. exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so. light (part 3, L1): only samples with
     DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
     host_screen (window fit): the claimed screen and DPR stay the pool's; only the window is made to fit the host's
     work area (fit_window), and a draw is rejected when the host cannot hold MIN_WINDOW at its DPR. None changes nothing."""
     if host_cores is None:
-        host_cores = _os.cpu_count()
+        host_cores = allowed_cpus()
     point = None
     if exit_ip:
         timezone, locale, point = _from_exit_ip(exit_ip, geoip_db, timezone, locale)

@@ -29,7 +29,7 @@ HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 p
 
 
 def keys_of(seed):
-    return gen.generate(os="windows", seed=seed, host_renderer=HOST)["config"]
+    return gen.generate(os="windows", seed=seed, host_renderer=HOST, host_cores=64)["config"]
 
 
 def allowed(key):

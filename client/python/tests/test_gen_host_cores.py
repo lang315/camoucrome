@@ -62,3 +62,9 @@ def test_cli_passes_host_cores(capsys):
 
 def test_from_pool_defaults_to_no_snap():
     assert inspect.signature(gen.from_pool).parameters["host_cores"].default is None
+
+
+def test_without_an_affinity_api_all_cpus_count(monkeypatch):
+    monkeypatch.setattr(gen.pin, "get_mask", lambda pid: None)
+    monkeypatch.setattr(gen._os, "cpu_count", lambda: 6)
+    assert gen.allowed_cpus() == 6

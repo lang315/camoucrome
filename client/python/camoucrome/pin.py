@@ -32,7 +32,10 @@ def set_mask(pid, cpus):
         except OSError:
             tids = [pid]
         for tid in tids:
-            os.sched_setaffinity(tid, cpus)
+            try:
+                os.sched_setaffinity(tid, cpus)
+            except ProcessLookupError:  # a thread that exited since the listing
+                pass
     elif sys.platform == "win32":
         _win_mask(pid, cpus)
 
@@ -43,6 +46,10 @@ def _win_mask(pid, cpus=None):
     from ctypes import wintypes
     k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.OpenProcess.restype = wintypes.HANDLE
+    k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k.GetProcessAffinityMask.argtypes = [wintypes.HANDLE, ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_size_t)]
+    k.SetProcessAffinityMask.argtypes = [wintypes.HANDLE, ctypes.c_size_t]
+    k.CloseHandle.argtypes = [wintypes.HANDLE]
     h = k.OpenProcess(0x0400 | 0x0200, False, pid)  # QUERY_INFORMATION | SET_INFORMATION
     if not h:
         raise ctypes.WinError(ctypes.get_last_error())
@@ -66,7 +73,7 @@ def driver_pid(playwright):
         return None
 
 
-def engage(playwright, n, rng=random):
+def engage(playwright, n, rng=random.SystemRandom()):  # not the global one: generate(seed=) seeds it
     """Pins the driver to n of its allowed CPUs when n is below them. Returns the mask to restore, or None when
     nothing was pinned. Raises RuntimeError (fail closed) when a needed pin cannot be set."""
     own = get_mask(os.getpid())  # the driver inherited this mask
@@ -76,10 +83,16 @@ def engage(playwright, n, rng=random):
     if pid is None:
         raise RuntimeError(f"cannot pin to {n} CPUs: no driver subprocess pid on {type(playwright).__name__} "
                            "(pass pin_cpu_cores=False to launch unpinned)")
+    allowed = None
     try:
         allowed = get_mask(pid)
         set_mask(pid, set(rng.sample(sorted(allowed), n)))
     except Exception as e:
+        if allowed:  # a half-applied pin: put back what was read, best effort
+            try:
+                set_mask(pid, allowed)
+            except Exception:
+                pass
         raise RuntimeError(f"cannot pin driver pid {pid} to {n} CPUs: {e}") from e
     return pid, allowed
 
@@ -97,15 +110,35 @@ def apply(playwright, n, call):
     with _lock:
         saved = engage(playwright, n)
         try:
-            return call()
-        finally:
+            ctx = call()
+        except BaseException:
+            try:
+                release(saved)
+            except RuntimeError:
+                pass  # the launch error is the one to report
+            raise
+        try:
             release(saved)
+        except RuntimeError:
+            ctx.close()
+            raise
+        return ctx
 
 
 async def apply_async(playwright, n, call):
     async with _alocks.setdefault(asyncio.get_running_loop(), asyncio.Lock()):
         saved = engage(playwright, n)
         try:
-            return await call()
-        finally:
+            ctx = await call()
+        except BaseException:
+            try:
+                release(saved)
+            except RuntimeError:
+                pass
+            raise
+        try:
             release(saved)
+        except RuntimeError:
+            await ctx.close()
+            raise
+        return ctx
