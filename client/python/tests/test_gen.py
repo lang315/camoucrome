@@ -471,7 +471,7 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* is
     excluded; every other key and launch must be byte-identical to the pre-change run."""
     import hashlib
-    r = gen.generate("windows", "Europe/Paris", None, 1, gpu="windows-intel-uhd-630-d3d11")  # the pin predates fail-closed
+    r = gen.generate("windows", "Europe/Paris", None, 1, gpu="windows-intel-uhd-630-d3d11", host_cores=64)  # the pin predates fail-closed; 64: no snap, whatever machine runs this
     # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
     rest = {k: v for k, v in r["config"].items()
             if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY",

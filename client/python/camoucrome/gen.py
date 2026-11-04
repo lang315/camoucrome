@@ -10,7 +10,10 @@ Pool field -> config key (mirrors the preset loader's table style):
   userAgentData.platformVersion/architecture/bitness/model/mobile
                                   -> ua:platformVersion, ua:architecture, ua:bitness,
                                      ua:model, ua:mobile; ua:wow64 false
-  navigator.hardwareConcurrency, maxTouchPoints -> same-named keys
+  navigator.hardwareConcurrency, maxTouchPoints -> same-named keys; a claim above the host's cores
+                                     (host_cores, default os.cpu_count()) snaps to the largest THREAD_STEPS
+                                     value within them (or to host_cores when none fits): timing on the host
+                                     shows the real count
   navigator.deviceMemory           -> the pool's value in [8, 32] (DEVICE_MEMORY): the real
                                      jsHeapSizeLimit of an 8 GB+ host rules out a smaller claim
   screen.width/height/availWidth/availHeight -> screen.*
@@ -62,13 +65,14 @@ import argparse
 import json
 import math
 import os
+import os as _os  # generate() has an `os` parameter
 import pathlib
 import random
 import re
 import sys
 from dataclasses import asdict
 
-from . import hostfonts
+from . import hostfonts, pin
 from .identity import per_instance_config
 
 # derive.cc's kForms: UA-CH platform -> (ua:osInfo, ua:platform). The test
@@ -421,11 +425,13 @@ def display_flags(host_display):
 
 
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
-              host_platform_version=None, host_display=None, host_screen=None):
+              host_platform_version=None, host_display=None, host_screen=None, host_cores=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
     cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
-    a value already within the cap stays as BrowserForge drew it."""
+    a value already within the cap stays as BrowserForge drew it.
+    host_cores: a claim above it snaps to the largest THREAD_STEPS value within it (deterministic, nothing drawn);
+    None leaves the claim alone."""
     nav, ud, scr = fp["navigator"], fp["navigator"]["userAgentData"], fp["screen"]
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
@@ -478,6 +484,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             # own generator: rng stays where it was, so the other seeded keys do not move
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if t <= cap])
+    if host_cores is not None and config["navigator.hardwareConcurrency"] > host_cores:
+        config["navigator.hardwareConcurrency"] = max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
     config.update(fonts_keys(platform, rng, host_families))
     pv_warn = None
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
@@ -523,14 +531,23 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
 
 
+def allowed_cpus():
+    """The CPUs this process may use (the mask the launch pin compares with), else all of them."""
+    mask = pin.get_mask(_os.getpid())
+    return len(mask) if mask else _os.cpu_count()
+
+
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
              host_families=None, host_platform_version=None, host_display=None, light=False,
-             host_screen=None):
-    """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
+             host_screen=None, host_cores=None):
+    """host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are
+    generated on the host); see from_pool. exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so. light (part 3, L1): only samples with
     DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
     host_screen (window fit): the claimed screen and DPR stay the pool's; only the window is made to fit the host's
     work area (fit_window), and a draw is rejected when the host cannot hold MIN_WINDOW at its DPR. None changes nothing."""
+    if host_cores is None:
+        host_cores = allowed_cpus()
     point = None
     if exit_ip:
         timezone, locale, point = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
@@ -546,7 +563,7 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
         if (acceptable(fp) and (not light or dpr_of(fp) == 1)
                 and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
-                            host_display, host_screen)
+                            host_display, host_screen, host_cores)
             if point:  # drawn after the pool, so an identity without an exit IP is unchanged
                 out["config"].update(geolocation_keys(point, rng))
             return out
@@ -594,6 +611,7 @@ def main(argv=None):
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
     ap.add_argument("--host-screen", type=json.loads, help='the host work area as JSON (probe.host_screen): {"availWidth","availHeight"} in physical px; draws that do not fit are rejected')
+    ap.add_argument("--host-cores", type=int, help="the host's CPU count (default: os.cpu_count()): a navigator.hardwareConcurrency claim above it snaps down")
     ap.add_argument("--light", action="store_true", help="light mode (part 3): draw only pool samples with DPR 1")
     a = ap.parse_args(argv)
     if a.host_renderer is None and a.probe_executable:
@@ -604,7 +622,7 @@ def main(argv=None):
     if a.host_screen is not None and not valid_screen(a.host_screen):
         sys.exit('gen: --host-screen must be {"availWidth": <positive int>, "availHeight": <positive int>}')
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen, host_cores=a.host_cores), sys.stdout)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pinned } = require('./pin');
 
 // Mirrors settings/launcher.json; test/launcher.test.js asserts it.
 const FORBIDDEN_OPTIONS = new Set([
@@ -267,7 +268,7 @@ function profileSeeds(userDataDir) {
 
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, position, headless = true,
-  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, light = false, ...options
+  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, light = false, pinCpuCores = true, ...options
 } = {}) {
   if (proxy !== undefined) {
     if (!proxy || typeof proxy !== 'object' || !proxy.server || proxy.server.includes('@')) {
@@ -312,9 +313,7 @@ async function launch(chromium, executablePath, {
   // replace the launch error. A directory still locked after ~10 s stays.
   const remove = () => Promise.all(owned.map((d) =>
     fs.promises.rm(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }).catch(() => {})));
-  let ctx;
-  try {
-    ctx = await chromium.launchPersistentContext(dir, {
+  const start = () => chromium.launchPersistentContext(dir, {
       executablePath: String(executablePath),
       headless,
       ignoreDefaultArgs: true,
@@ -328,6 +327,11 @@ async function launch(chromium, executablePath, {
       viewport: null,
       ...options,
     });
+  // A claim below the CPUs this process may use pins it for the launch call (pin.js; Chrome inherits the mask).
+  const n = keys['navigator.hardwareConcurrency'];
+  let ctx;
+  try {
+    ctx = await (pinCpuCores && Number.isInteger(n) && n >= 1 ? pinned(n, start) : start());
   } catch (e) {
     await remove();
     throw e;

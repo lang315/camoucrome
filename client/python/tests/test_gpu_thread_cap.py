@@ -17,7 +17,7 @@ CAP_OF = {int(r["device_id"], 16): r["max_threads"] for r in CAPS["rows"]}
 
 
 def swap(seed, host=HOST):
-    return gen.generate("windows", "Europe/Paris", None, seed, host_renderer=host)["config"]
+    return gen.generate("windows", "Europe/Paris", None, seed, host_renderer=host, host_cores=64)["config"]
 
 
 def test_caps_file_covers_the_pool_and_every_sourced_row_cites_ark():
@@ -51,7 +51,7 @@ def test_threads_never_exceed_the_drawn_gpus_cap():
 def test_compatible_old_values_are_untouched():
     kept = 0
     for s in SEEDS:
-        old = gen.generate("windows", "Europe/Paris", None, s)["config"]["navigator.hardwareConcurrency"]
+        old = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]["navigator.hardwareConcurrency"]
         new = swap(s)
         if old <= CAP_OF[gen.gen9_device_id(new["webGl:renderer"])]:
             assert new["navigator.hardwareConcurrency"] == old, s
@@ -103,5 +103,5 @@ def test_redraw_does_not_advance_the_callers_rng():
 @pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"])
 def test_no_gen9_host_leaves_the_drawn_threads(host):
     for s in range(1, 30):
-        base = gen.generate("windows", "Europe/Paris", None, s)["config"]["navigator.hardwareConcurrency"]
+        base = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]["navigator.hardwareConcurrency"]
         assert swap(s, host)["navigator.hardwareConcurrency"] == base
