@@ -7,6 +7,8 @@ import sys
 import tempfile
 import time
 
+from . import pin
+
 # Mirrors settings/launcher.json "forbidden_context_options"; tests/test_launcher.py
 # asserts the two agree. Each of these duplicates a CAMOU_CONFIG key: a second
 # emulation of the same surface either fails (timezone -> kAlreadyInEffect) or
@@ -259,7 +261,7 @@ def remove_dir(path, wait=10.0):
 def launch(playwright, executable_path, *, config=None, preset=None,
            strict=False, user_data_dir=None, window=None, dpr=None, position=None,
            headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, proxy=None,
-           geoip=None, exit_ip=None, light=False, **options):
+           geoip=None, exit_ip=None, light=False, pin_cpu_cores=True, **options):
     """Launches a persistent context (one profile per identity) and returns it.
 
     Never add_init_script anything a page could enumerate: both patchright
@@ -282,6 +284,9 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     (camoucrome.gen --exit-ip). Without `exit_ip` the check makes a blocking echo request (also under an async
     caller); `exit_ip` skips it. IP Geolocation by DB-IP.
 
+    `pin_cpu_cores` (default on): a navigator.hardwareConcurrency claim below the CPUs the driver may use pins the
+    driver subprocess (which spawns Chrome; Chrome inherits) to that many random CPUs for the launch call and
+    restores its mask after (camoucrome.pin); a pin that cannot be set raises. False launches unpinned.
     `light=True` appends settings/launcher.json light_args (approach B's kept flags); independent of `gen --light`.
     `proxy` is Playwright's {"server", "bypass", "username", "password"}: the server (and bypass list) go
     into argv, the credentials only to the driver, which answers the proxy's 407.
@@ -329,22 +334,30 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         for d in owned:
             remove_dir(d)
     try:
-        ctx = playwright.chromium.launch_persistent_context(
-            user_data_dir,
-            executable_path=str(executable_path),
-            headless=headless,
-            ignore_default_args=True,
-            env=build_env(config, preset, strict,
-                          fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
-                          crash_dir=owned[0]),
-            args=build_args(window, dpr, args, headless, user_data_dir,
-                            accept_lang_of(config, preset), extensions, spki_list,
-                            proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None, position, light=light),
-            # Playwright otherwise emulates a 1280x720 viewport through
-            # Emulation.setDeviceMetricsOverride, which fights screen.* and the
-            # window size above.
-            no_viewport=True,
-            **options)
+        def start():
+            return playwright.chromium.launch_persistent_context(
+                user_data_dir,
+                executable_path=str(executable_path),
+                headless=headless,
+                ignore_default_args=True,
+                env=build_env(config, preset, strict,
+                              fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
+                              crash_dir=owned[0]),
+                args=build_args(window, dpr, args, headless, user_data_dir,
+                                accept_lang_of(config, preset), extensions, spki_list,
+                                proxy["server"] if proxy else None, proxy.get("bypass") if proxy else None, position, light=light),
+                # Playwright otherwise emulates a 1280x720 viewport through
+                # Emulation.setDeviceMetricsOverride, which fights screen.* and the
+                # window size above.
+                no_viewport=True,
+                **options)
+        n = keys.get("navigator.hardwareConcurrency")
+        if not pin_cpu_cores or not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            ctx = start()
+        elif inspect.iscoroutinefunction(playwright.chromium.launch_persistent_context):
+            ctx = pin.apply_async(playwright, n, start)
+        else:
+            ctx = pin.apply(playwright, n, start)
     except BaseException:
         remove()
         raise
