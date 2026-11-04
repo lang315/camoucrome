@@ -44,6 +44,8 @@ Never taken, and why:
                                    (settings/fonts.json), which the bundled fontconfig
                                    layer makes resolvable; Linux claims get none
   voices, geolocation              Chrome voice names and GeoIP are their own catalogues;
+                                   with an exit IP, geolocation:latitude/longitude are the
+                                   database's point for it plus a seeded offset within 2 km;
                                    timezone:id without --timezone comes from
                                    settings/locale_zones.json by locale
 
@@ -58,6 +60,7 @@ are copied instead, revisit when a second target appears or they diverge.
 """
 import argparse
 import json
+import math
 import os
 import pathlib
 import random
@@ -528,8 +531,9 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
     host_screen (window fit): the claimed screen and DPR stay the pool's; only the window is made to fit the host's
     work area (fit_window), and a draw is rejected when the host cannot hold MIN_WINDOW at its DPR. None changes nothing."""
+    point = None
     if exit_ip:
-        timezone, locale = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
+        timezone, locale, point = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
     from browserforge.fingerprints import FingerprintGenerator
     rng = random.Random(seed)
     if seed is not None:
@@ -541,9 +545,24 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
         fp = asdict(gen.generate())
         if (acceptable(fp) and (not light or dpr_of(fp) == 1)
                 and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
-            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
-                             host_display, host_screen)
+            out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
+                            host_display, host_screen)
+            if point:  # drawn after the pool, so an identity without an exit IP is unchanged
+                out["config"].update(geolocation_keys(point, rng))
+            return out
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
+
+
+GEO_RADIUS_KM = 2
+
+
+def geolocation_keys(point, rng):
+    """The record's (lat, lng) moved to a uniform random spot within GEO_RADIUS_KM, so the identity does not sit on
+    the database's own point. accuracy is left to the browser's default."""
+    lat, lng = point
+    r, theta = GEO_RADIUS_KM * math.sqrt(rng.random()), rng.random() * 2 * math.pi
+    return {"geolocation:latitude": round(lat + r * math.cos(theta) / 111.32, 6),
+            "geolocation:longitude": round(lng + r * math.sin(theta) / (111.32 * math.cos(math.radians(lat))), 6)}
 
 
 def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
@@ -552,10 +571,11 @@ def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
         found = geoip.lookup(exit_ip, geoip_db)
     except geoip.GeoIPError as e:
         geoip.warn_all([f"the exit IP {exit_ip} was not resolved ({e}): timezone and locale are not derived from it"])
-        return timezone, locale
+        return timezone, locale, None
     if found["locale"] is None:
         geoip.warn_all([f"no locale for country {found['country']}: the identity keeps its drawn locale beside {found['timezone']}"])
-    return timezone or found["timezone"], locale or found["locale"]
+    point = None if None in (found["latitude"], found["longitude"]) else (found["latitude"], found["longitude"])
+    return timezone or found["timezone"], locale or found["locale"], point
 
 
 def main(argv=None):

@@ -73,7 +73,8 @@ def locale_for(country):
 
 
 def lookup(ip, db=None):
-    """{"country", "timezone", "locale"} for an IP. locale is None for a country with no row in locale_zones.json.
+    """{"country", "timezone", "locale", "latitude", "longitude"} for an IP. locale is None for a country with no row in
+    locale_zones.json; latitude and longitude are the record's point, None when it has none.
     Raises GeoIPError (no database, unreadable, IP not in it, no zone for its coordinates)."""
     path = db_path(db)
     if not path:
@@ -101,7 +102,9 @@ def lookup(ip, db=None):
     if not zone:
         raise GeoIPError(f"{ip} has no time zone in the database")
     country = (record.get("country") or {}).get("iso_code")
-    return {"country": country, "timezone": zone, "locale": locale_for(country)}
+    loc = record.get("location") or {}
+    return {"country": country, "timezone": zone, "locale": locale_for(country),
+            "latitude": loc.get("latitude"), "longitude": loc.get("longitude")}
 
 
 def check_zone(config_zone, ip_zone, now=None):

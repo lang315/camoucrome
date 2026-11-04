@@ -52,6 +52,7 @@
   "proxy_bypass_arg": "--proxy-bypass-list={bypass}",
   "proxy_option_fields": ["server", "bypass", "username", "password"],
   "why_proxy_arg": "Measured 2026-10-24 (Python, Node, Go): launch(proxy=...) alone reaches the browser as nothing. ignore_default_args drops Playwright's default argv and --proxy-server is one of its defaults, so the traffic went out on the real address. The launcher adds the flag itself (server only, never credentials: a process list shows argv) and still passes the proxy option to the driver, which answers the 407 with the username and password over its own auth path. The bypass list is Playwright's comma form; Chrome takes it joined by semicolons.",
+  "why_geolocation_permission": "When the effective config carries both geolocation:latitude and geolocation:longitude the launch adds \"geolocation\" to the context's permissions option (merged with the caller's list, no duplicate), so a page's getCurrentPosition is granted the configured point instead of prompting; without both keys nothing is added. A proxy given without geoip warns that timezone, locale and geolocation are not checked against the exit IP.",
   "env": {
    "config": "CAMOU_CONFIG",
    "config_chunks": "CAMOU_CONFIG_{n}",
