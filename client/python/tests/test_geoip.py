@@ -18,17 +18,23 @@ FIXTURE = str(pathlib.Path(__file__).resolve().parent / "data" / "geoip-test.mmd
 REAL_DB = os.path.expanduser(os.environ.get("CAMOU_TEST_GEOIP_DB", "~/.config/camoucrome/dbip-city-lite.mmdb"))
 
 
+def zlc(ip):
+    """country, timezone and locale of a lookup (the point has its own test in test_geolocation.py)"""
+    r = geoip.lookup(ip, FIXTURE)
+    return {k: r[k] for k in ("country", "timezone", "locale")}
+
+
 def test_zone_comes_from_the_coordinates():
-    assert geoip.lookup("192.0.2.5", FIXTURE) == {"country": "US", "timezone": "America/New_York", "locale": "en-US"}
+    assert zlc("192.0.2.5") == {"country": "US", "timezone": "America/New_York", "locale": "en-US"}
     assert geoip.lookup("198.51.100.5", FIXTURE)["timezone"] == "America/Los_Angeles"  # same country, another zone
 
 
 def test_a_records_own_time_zone_wins_over_its_coordinates():
-    assert geoip.lookup("203.0.113.7", FIXTURE) == {"country": "FR", "timezone": "Europe/Paris", "locale": "fr-FR"}
+    assert zlc("203.0.113.7") == {"country": "FR", "timezone": "Europe/Paris", "locale": "fr-FR"}
 
 
 def test_a_country_without_a_locale_row_still_gives_its_zone():
-    assert geoip.lookup("2001:db8::1", FIXTURE) == {"country": "SG", "timezone": "Asia/Singapore", "locale": None}
+    assert zlc("2001:db8::1") == {"country": "SG", "timezone": "Asia/Singapore", "locale": None}
 
 
 @pytest.mark.parametrize("ip,why", [("2001:db8:1::1", "no time zone"), ("2001:db8:ffff::1", "not in the database"), ("nonsense", "nonsense")])

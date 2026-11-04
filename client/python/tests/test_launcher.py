@@ -476,7 +476,8 @@ def test_proxy_args_match_the_contract_and_keep_credentials_off_argv():
 def test_launch_adds_the_proxy_flag_and_hands_the_credentials_to_the_driver():
     pw = FakePlaywright()
     proxy = {"server": "http://p.example:8080", "username": "u", "password": "secret", "bypass": "a.test,b.test"}
-    camoucrome.launch(pw, "/x/chrome", user_data_dir="/tmp/p", proxy=proxy)
+    with pytest.warns(UserWarning, match="proxy without geoip"):  # a proxy without geoip
+        camoucrome.launch(pw, "/x/chrome", user_data_dir="/tmp/p", proxy=proxy)
     kw = pw.chromium.kw
     assert "--proxy-server=http://p.example:8080" in kw["args"]
     assert "--proxy-bypass-list=a.test;b.test" in kw["args"]

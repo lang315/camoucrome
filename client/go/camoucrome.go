@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ type Options struct {
 	ExitIP         string       // skips the echo request
 	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
 	Warn           func(string) // default: stderr
+	Permissions    []string     // Playwright's context permissions; Launch adds "geolocation" when the config carries coordinates
 }
 
 // Proxy mirrors Playwright's proxy option (settings/launcher.json launch.proxy_option_fields). The launcher puts
@@ -495,6 +497,12 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	}
 	if o.GeoIP != "" {
 		o.warn(CheckGeoIP(o))
+	} else if o.Proxy != nil {
+		o.warn([]string{"a proxy without geoip: timezone, locale and geolocation are not checked against the exit IP"})
+	}
+	perms := o.Permissions
+	if keys["geolocation:latitude"] != nil && keys["geolocation:longitude"] != nil && !slices.Contains(perms, "geolocation") {
+		perms = append(append([]string(nil), perms...), "geolocation")
 	}
 	env, err := BuildEnv(o, os.Environ())
 	if err != nil {
@@ -530,6 +538,7 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 		Env:                  env,
 		Args:                 BuildArgs(o),
 		Proxy:                proxyOption(o.Proxy),
+		Permissions:          perms,
 		// Otherwise a 1280x720 viewport is emulated through
 		// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
 		NoViewport: playwright.Bool(true),

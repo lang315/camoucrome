@@ -288,10 +288,16 @@ async function launch(chromium, executablePath, {
     throw new Error(`window [${window}] exceeds window.outerWidth/outerHeight [${outer}]: `
       + 'innerWidth/innerHeight would exceed the claimed outer size');
   }
+  const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
   if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
     const { checkGeoip } = require('./geoip');
-    const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
     (await checkGeoip({ config, preset, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
+  } else if (proxy) {
+    say('a proxy without geoip: timezone, locale and geolocation are not checked against the exit IP');
+  }
+  if (keys['geolocation:latitude'] != null && keys['geolocation:longitude'] != null) {
+    const have = options.permissions || [];
+    options.permissions = have.includes('geolocation') ? have : [...have, 'geolocation'];
   }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast

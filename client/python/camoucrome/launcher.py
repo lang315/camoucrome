@@ -314,6 +314,12 @@ def launch(playwright, executable_path, *, config=None, preset=None,
     if geoip:
         from . import geoip as _geoip
         _geoip.warn_all(_geoip.check_config(keys, proxy, exit_ip, None if geoip is True else str(geoip)))
+    if proxy is not None and not geoip:
+        from . import geoip as _geoip
+        _geoip.warn_all(["a proxy without geoip: timezone, locale and geolocation are not checked against the exit IP"])
+    if keys.get("geolocation:latitude") is not None and keys.get("geolocation:longitude") is not None:
+        perms = list(options.get("permissions") or [])
+        options["permissions"] = perms + ["geolocation"] * ("geolocation" not in perms)
     owned = [tempfile.mkdtemp(prefix="camoucrome-crash-")]
     if user_data_dir is None:
         user_data_dir = tempfile.mkdtemp(prefix="camoucrome-")
