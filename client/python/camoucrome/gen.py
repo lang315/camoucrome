@@ -11,8 +11,8 @@ Pool field -> config key (mirrors the preset loader's table style):
                                   -> ua:platformVersion, ua:architecture, ua:bitness,
                                      ua:model, ua:mobile; ua:wow64 false
   navigator.hardwareConcurrency, maxTouchPoints -> same-named keys
-  navigator.deviceMemory           -> always 8 (DEVICE_MEMORY): the real jsHeapSizeLimit
-                                     of an 8 GB+ host rules out a smaller claim
+  navigator.deviceMemory           -> the pool's value in [8, 32] (DEVICE_MEMORY): the real
+                                     jsHeapSizeLimit of an 8 GB+ host rules out a smaller claim
   screen.width/height/availWidth/availHeight -> screen.*
   screen.outerWidth/outerHeight/screenX/screenY -> window.*, and launch.window
   screen.devicePixelRatio          -> launch.dpr (a launcher flag; DPR has no key);
@@ -116,15 +116,17 @@ def dpr_of(fp):
     return fp["screen"].get("devicePixelRatio") or 1
 
 
-# navigator.deviceMemory is always 8, whatever the pool says. The fork leaves
+# navigator.deviceMemory is the pool's value clamped to [8, 32]. The fork leaves
 # performance.memory.jsHeapSizeLimit real, and V8 sizes the heap from physical
 # memory (old generation = RAM / 2, capped at 4 GB on 64-bit), so a host with
 # 8 GB or more shows the capped heap (3760000000 on Chrome 156, Windows and
 # Linux, measured 2026-11-04), which no real 0.25..4 GB device shows; facebook
-# sends both (measurements/2026-11-04-fb-tracking-map.md). Chrome 156 itself
-# reports 16 and 32, but domain_validator.cc caps the key at 8.
-# shortcut: a host under 8 GB RAM shows a smaller heap beside this 8; derive the claim from host RAM then.
-DEVICE_MEMORY = 8
+# sends both (measurements/2026-11-04-fb-tracking-map.md). 8, 16 and 32 all sit
+# beside that heap. Chrome 156 desktop clamps the API to [2, 32]
+# (approximated_device_memory.cc), and so does domain_validator.cc. The pool
+# draws 8 x76, 16 x76, 32 x33, 4 x15 in 200 samples.
+# shortcut: a host under 8 GB RAM shows a smaller heap beside this claim; derive the claim from host RAM then.
+DEVICE_MEMORY = (8, 32)
 # The repository (or an archive/client copy with the same layout), else the
 # copy a wheel build puts in the package (client/python/setup.py).
 _PACKAGED = pathlib.Path(__file__).resolve().parent / "_settings"
@@ -442,7 +444,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         "ua:mobile": False, "ua:wow64": False,
         "ua:brand": "Google Chrome",  # the pool's brands carry it; a Chromium build would ship two brands where Chrome ships three
         "navigator.hardwareConcurrency": nav["hardwareConcurrency"],
-        "navigator.deviceMemory": DEVICE_MEMORY,
+        "navigator.deviceMemory": min(max(nav["deviceMemory"], DEVICE_MEMORY[0]), DEVICE_MEMORY[1]),
         "navigator.maxTouchPoints": nav["maxTouchPoints"],
         "screen.width": scr["width"], "screen.height": scr["height"],
         "screen.availWidth": scr["availWidth"], "screen.availHeight": scr["availHeight"],

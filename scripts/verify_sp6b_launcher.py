@@ -11,9 +11,10 @@ L3 --ignore-certificate-errors-spki-list: a self-signed HTTPS server here;
    with the cert's SPKI hash the page loads, RED: without it the probe fails.
 L4 headed launch (WSLg DISPLAY on the box): starts, argv equals the
    contract's set minus --headless=new and Chrome's headless-only flags.
-L5 domain: navigator.deviceMemory 16 (what the fingerprint pool says, what
-   Chrome never reports) is refused under strict and the log names it;
-   non-strict starts and logs it.
+L5 domain: navigator.deviceMemory 64 (above Chrome 156 desktop's clamp of
+   [2, 32]) is refused under strict and the log names it; non-strict starts
+   and logs it. 16, which the domain refused up to 2026-11-04, is no longer
+   a RED case.
 """
 import base64
 import http.server
@@ -165,12 +166,12 @@ def main():
         if not results[L4]:
             notes.append(f"L4: unexpected={sorted(got - expected)} absent={sorted(expected - got)}")
 
-    dm = dict(FR, **{"navigator.deviceMemory": 16})
+    dm = dict(FR, **{"navigator.deviceMemory": 64})
     out_s, log_s = probe(url, dm, strict=True)
     out_w, log_w = probe(url, dm)
-    named = "'navigator.deviceMemory' is '16'"
-    L5 = "L5 deviceMemory 16: refused under strict, logged non-strict (domain entry)"
-    results[L5] = (out_s is None and named in log_s and "[0.25, 8]" in log_s
+    named = "'navigator.deviceMemory' is '64'"
+    L5 = "L5 deviceMemory 64: refused under strict, logged non-strict (domain entry)"
+    results[L5] = (out_s is None and named in log_s and "[2, 32]" in log_s
                    and out_w is not None and named in log_w)
     if not results[L5]:
         notes.append(f"L5: strict_started={out_s is not None} strict_named={named in log_s} "

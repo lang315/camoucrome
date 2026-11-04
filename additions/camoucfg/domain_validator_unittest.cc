@@ -45,11 +45,12 @@ TEST(DomainValidatorTest, AccuracyLowerBoundOnly) {
 }
 
 TEST(DomainValidatorTest, DeviceMemoryBoundariesInclusive) {
-  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 0.25).has_value());
-  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 8.0).has_value());
-  // The motivating cases: what the pool says and Chrome never does.
-  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 16.0).has_value());
-  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 32.0).has_value());
+  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 2.0).has_value());
+  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 16.0).has_value());
+  EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 32.0).has_value());
+  // Outside Chrome 156 desktop's clamp.
+  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 1.0).has_value());
+  EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 64.0).has_value());
   EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 0.0).has_value());
 }
 
