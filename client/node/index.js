@@ -150,8 +150,10 @@ const FONTCONFIG_FILES = { Windows: 'settings/fontconfig/windows.conf', macOS: '
 
 // The FONTCONFIG_FILE for the claimed OS: the generated conf beside the
 // bundled fonts dir (default: `fonts` beside the executable when present).
-// Linux claim or no fonts dir: null. A fonts dir without its conf throws.
-function fontconfigFor({ config, preset, fontsDir, executablePath } = {}) {
+// Linux or no claim: null. A fonts dir without its conf throws, and so does a
+// Windows/macOS claim with no fonts dir on a Linux host (host fonts under that
+// claim are a tell); other hosts ignore FONTCONFIG_FILE, so null there.
+function fontconfigFor({ config, preset, fontsDir, executablePath, hostOs = HOST_OS } = {}) {
   const file = FONTCONFIG_FILES[claimedOs(config, preset)];
   if (!file) return null;
   let dir = fontsDir;
@@ -159,7 +161,13 @@ function fontconfigFor({ config, preset, fontsDir, executablePath } = {}) {
     const cand = path.join(path.dirname(path.resolve(String(executablePath))), 'fonts');
     if (fs.existsSync(cand) && fs.statSync(cand).isDirectory()) dir = cand;
   }
-  if (!dir) return null;
+  if (!dir) {
+    if (hostOs === 'Linux') {
+      throw new Error(`${claimedOs(config, preset)} claim on a Linux host needs the bundled fonts dir, `
+        + 'but none was given and no fonts dir sits beside the executable');
+    }
+    return null;
+  }
   const conf = path.resolve(dir, '..', file);
   if (!fs.existsSync(conf)) throw new Error(`fonts dir ${dir} has no fontconfig ${file} beside it: ${conf}`);
   return conf;
@@ -272,6 +280,18 @@ async function launch(chromium, executablePath, {
   if (bad.length) {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
+  }
+  const keys = effectiveKeys(config, preset);
+  const outer = [keys['window.outerWidth'], keys['window.outerHeight']];
+  if (outer.some((o) => o != null)) {
+    if (!window) {
+      throw new Error('config sets window.outerWidth/outerHeight, so the launch needs `window` '
+        + '(camoucrome.gen emits it as launch.window): innerWidth could exceed outerWidth');
+    }
+    if (window.some((w, i) => outer[i] != null && w > outer[i])) {
+      throw new Error(`window [${window}] exceeds window.outerWidth/outerHeight [${outer}]: `
+        + 'innerWidth/innerHeight would exceed the claimed outer size');
+    }
   }
   if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
     const { checkGeoip } = require('./geoip');

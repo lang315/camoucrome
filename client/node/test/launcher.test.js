@@ -193,6 +193,27 @@ test('claimed OS mirrors derive.cc ClaimedOs over the effective keys', () => {
   assert.equal(k(null, null), null);
 });
 
+test('a foreign claim without a fonts dir throws on a Linux host only', () => {
+  const win = { 'ua:platform': 'Windows' };
+  assert.throws(() => c.fontconfigFor({ config: win, executablePath: '/nowhere/chrome', hostOs: 'Linux' }), /Windows.*fonts/);
+  assert.equal(c.fontconfigFor({ config: win, executablePath: '/nowhere/chrome', hostOs: 'Windows' }), null);
+  assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Linux' }, hostOs: 'Linux' }), null);
+  assert.equal(c.fontconfigFor({ hostOs: 'Linux' }), null);
+});
+
+test('launch window must fit the configured outer size', async () => {
+  const ctx = { on() {}, close: async () => {} };
+  const chromium = { launchPersistentContext: async () => ctx };
+  const both = { 'window.outerWidth': 1920, 'window.outerHeight': 1080 };
+  const go = (config, window) => c.launch(chromium, '/x/chrome', { config, window, userDataDir: '/tmp/p' });
+  await assert.rejects(go(both), /window\.outer/);
+  await assert.rejects(go(both, [1921, 1000]), /window\.outer/);
+  await assert.rejects(go(both, [1900, 1081]), /window\.outer/);
+  await go(both, [1920, 1080]);
+  await go({ 'window.outerWidth': 1920 }, [1920, 5000]);
+  await go({ a: 1 });
+});
+
 test('FONTCONFIG_FILE is never inherited and the conf must exist', () => {
   assert.equal('FONTCONFIG_FILE' in c.buildEnv({}, { FONTCONFIG_FILE: '/host.conf' }), false);
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'camou-fc-'));

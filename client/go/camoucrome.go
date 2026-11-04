@@ -238,7 +238,8 @@ func claimedOS(o Options) string {
 
 // FontconfigFor is the FONTCONFIG_FILE for the claimed OS (contract
 // launch.fontconfig): the conf beside the bundled fonts dir, which lives
-// beside the executable in an archive. Linux claim or no fonts dir: "".
+// beside the executable in an archive. Linux or no claim, or no fonts dir: "";
+// BuildEnv turns the last into an error for a Windows/macOS claim on a Linux host.
 func FontconfigFor(o Options) string {
 	file, ok := FontconfigFiles[claimedOS(o)]
 	if !ok {
@@ -388,7 +389,14 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 	if o.Strict {
 		env["CAMOU_CONFIG_STRICT"] = "1"
 	}
-	if fc := FontconfigFor(o); fc != "" {
+	fc := FontconfigFor(o)
+	if fc == "" && hostOS == "Linux" {
+		// FONTCONFIG_FILE only matters where Chrome uses fontconfig; host fonts under a Windows/macOS claim are a tell.
+		if _, ok := FontconfigFiles[claimedOS(o)]; ok {
+			return nil, fmt.Errorf("%s claim on a Linux host needs the bundled fonts dir, but none was given and no fonts dir sits beside the executable", claimedOS(o))
+		}
+	}
+	if fc != "" {
 		if _, err := os.Stat(fc); err != nil {
 			return nil, fmt.Errorf("the fonts dir has no fontconfig for the claimed OS: %w", err)
 		}
@@ -474,6 +482,20 @@ type persistentLauncher interface {
 func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error) {
 	if err := validateProxy(o.Proxy); err != nil {
 		return nil, err
+	}
+	keys, err := effectiveKeys(o.Config, o.Preset)
+	if err != nil {
+		return nil, err
+	}
+	ow, _ := keys["window.outerWidth"].(float64)
+	oh, _ := keys["window.outerHeight"].(float64)
+	if ow != 0 || oh != 0 {
+		if o.Window == [2]int{} {
+			return nil, fmt.Errorf("config sets window.outerWidth/outerHeight, so the launch needs Window (camoucrome.gen emits it as launch.window): innerWidth could exceed outerWidth")
+		}
+		if (ow != 0 && float64(o.Window[0]) > ow) || (oh != 0 && float64(o.Window[1]) > oh) {
+			return nil, fmt.Errorf("window %v exceeds window.outerWidth/outerHeight [%v %v]: innerWidth/innerHeight would exceed the claimed outer size", o.Window, ow, oh)
+		}
 	}
 	if o.GeoIP != "" {
 		o.warn(CheckGeoIP(o))
