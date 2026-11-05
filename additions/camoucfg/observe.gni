@@ -1,0 +1,7 @@
+# Camoucrome tracking observer (docs/observer/README.md): the renderer read
+# hooks, the network-service and WebSocket send hooks, and chrome://observer.
+# Off by default; settings/release-args.gn turns it on for releases. While no
+# recording runs, every hook is one category check.
+declare_args() {
+  camou_observe = false
+}

@@ -2,6 +2,12 @@ include_rules = [
   # components/DEPS forbids cross-component includes unless declared here.
   "+components/camoucfg_lgpl/cursory.h",
   "+components/version_info",
+  # observe_tables: the generated protozero readers for the perfetto trace.
+  "+third_party/perfetto/include/perfetto/protozero",
+  "+third_party/perfetto/protos/perfetto/common",
+  "+third_party/perfetto/protos/perfetto/trace",
   "+third_party/skia/include/core",
+  "+third_party/zlib/google/compression_utils.h",
+  "+third_party/zlib/zlib.h",
   "+ui/gfx/geometry",
 ]

@@ -120,7 +120,7 @@ the local folder.
 | `scripts/` | `apply.sh` (the applier), `verify_*.py` (per-slice browser verifications), `package.py` (release archive from GN's runtime-deps list; refuses a component build, an off-pin version, a missing dep, mismatched stamps), `winhost.py` (stock Chrome on the box's Windows host over ssh: headless `--dump-dom`, headed CDP), `capture_*.py` (baselines, presets, WebGL profiles, font lists, the Windows host oracle), `verify_host_oracle.py` (the fork under a generated Windows identity vs stock Chrome on the host, every differing leaf as a line), `verify_windows_behaviour.py` (the exposed interfaces called, not only enumerated: `share()` under a claim, voices per locale) |
 | `client/` | the launchers: `client/python/camoucrome` (patchright), `client/go` (`playwright-go` on the `patchright-core` driver) and `client/node` (patchright). All three implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
-| `docs/observer/` | the tracking observer (an audit build, `camou_observe = true`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verify `scripts/verify_observe.py` |
+| `docs/observer/` | the tracking observer (`camou_observe = true`, shipped in releases as `chrome://observer`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verifies `scripts/verify_observe.py` and `scripts/verify_observer_page.py` |
 | `baselines/` | stock reference captures; ten are committed (`git ls-files baselines`). `*-d0c02bfad0-*` and `content_shell-8078-stock-ua.json` are pristine captures of the build at the pin; `chrome-8078-*` are captures of stock Chrome 156.0.8078.48 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
@@ -225,11 +225,12 @@ startup abort instead of a silent fall-back to real values.
   lock, get `check_checkout_sync.sh` `rc=0`, then merge — merging first turns
   CI red (sync gate), or into a bindings rebuild in CI's 180-min window
   (2026-10-06's observe slice: 9477 steps).
-- CI's `out/Default` sets `camou_observe = true` (since 2026-10-08), so it is
-  a tracking-observer build (category off by default; `package.py` refuses
-  it), and `v8_enable_runtime_call_stats = true` (since 2026-10-13, for the
-  observer's Intl counts; idle unless `disabled-by-default-v8.runtime_stats`
-  is traced). Measure costs in a tree without the flags.
+- Releases carry the observer since `-7` (`chrome://observer`, category off by
+  default): `package.py` requires `camou_observe = true` and refuses
+  `v8_enable_runtime_call_stats = true`. CI's `out/Default` sets both
+  (`camou_observe` since 2026-10-08, RCS since 2026-10-13, for the observer's
+  Intl counts; idle unless `disabled-by-default-v8.runtime_stats` is traced).
+  Measure costs in a tree without the flags.
 - **Windows host runs** launch through `scripts/windows/run-interactive.ps1`, so
   they run in the owner's interactive session (session 1). In session 0, where
   sshgate/sshd put a shell, the GPU process crashes once per launch (S4).

@@ -15,8 +15,38 @@ Add to the out dir's `args.gn` (never to `settings/build-args.gn`):
 The second arg compiles in V8's runtime call stats, which the Intl recipe below
 reads; it rebuilds V8, not Blink (box, 2026-10-13: 1634 steps, 22 min).
 
-`scripts/package.py` refuses such an out dir: an observer build is never a
-release. With the arg off, the generated calls compile to nothing.
+Releases carry the observer hooks (`camou_observe = true` is in
+`settings/release-args.gn`; `scripts/package.py` requires it) but never the
+second arg: `package.py` refuses `v8_enable_runtime_call_stats = true`.
+`out\Observe` stays the audit build for the Intl counts.
+
+## chrome://observer
+
+Open `chrome://observer` in a release build. Pick a tab in `select#tab`, then
+click Record. The page records that tab's network and signal events and
+shows them live. State words:
+
+- `recording`: the trace is running.
+- `blind`: the observer's own read hooks stopped reporting (the page's canary
+  read did not appear after a refresh), so the whole capture is unreliable —
+  an empty table here is not evidence the tab tracked nothing.
+- `lost`: the trace buffer wrapped and dropped events (its drop counters, plus
+  every packet seen after a drop).
+- `cut`: a body or field was clipped at a cap below.
+- `missing`: an expected record never arrived.
+- `buffer full`: a single refresh snapshot exceeded the page's 64 MiB trace
+  cap. With the 32 MiB ring buffer and a fresh snapshot each refresh this does
+  not arise in normal use; `lost` (above), not this, is how buffer wrap shows.
+- `recording could not start`: the trace session did not open. Nothing was
+  captured.
+
+Data stays in memory. Stop, or closing the page, clears it. The page records
+under the `.send` category, which carries request bodies for the observer
+only. `--trace-startup` and the trace toolchain do not record bodies unless
+that category is named explicitly, which they do not do by default.
+
+Caps: body 256 KiB per element, WebSocket 256 KiB, fragment 16 KiB, raw trace
+64 MiB, buffer 32 MiB (ring), inflate 8 MiB, depth 64, 5000 fields.
 
 ## Run
 
@@ -517,9 +547,16 @@ page's trace. With the stats category off, the compiled-in counters cost one
 flag check per C++ built-in: CI's browser verifies on this build matched
 main's (2026-10-13).
 
+Off state, shipped in every release (2026-11-04): the cost with the category
+off is within the arm-A noise
+(`docs/superpowers/measurements/2026-11-04-observer-off-cost.md`).
+
 Browse a site normally, on a release build, when staying hidden matters.
 
 ## Data handling
+
+The `chrome://observer` page shows captured values, so a screenshot of it is
+never committed.
 
 Traces, netlogs and profiles hold the operator's real browsing. Keep them on
 the machine that made them. Commit only names, counts, hosts and

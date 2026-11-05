@@ -30,7 +30,7 @@ def tree(tmp_path, monkeypatch):
     monkeypatch.setattr(package, "upstream_env", lambda: {"CHROMIUM_TAG": TAG, "CHROMIUM_REV": head})
     out = src / "out" / "Release"
     (out / "locales").mkdir(parents=True)
-    (out / "args.gn").write_text('is_debug = false\nis_component_build = false\n' + REQUIRED)
+    (out / "args.gn").write_text('is_debug = false\nis_component_build = false\ncamou_observe = true\n' + REQUIRED)
     (out / "chrome").write_bytes(b"\x7fELF")
     (out / "locales" / "en-US.pak").write_bytes(b"pak")
     (out / "gen" / "components" / "resources").mkdir(parents=True)
@@ -126,7 +126,7 @@ def test_explicit_changeset_commit_wins_over_git(tree, tmp_path, monkeypatch):
 
 def test_refuses_component_build(tree, tmp_path):
     src, out, deps = tree
-    (out / "args.gn").write_text("is_component_build = true\n" + REQUIRED)
+    (out / "args.gn").write_text("is_component_build = true\ncamou_observe = true\n" + REQUIRED)
     with pytest.raises(SystemExit, match="component build"):
         package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", True)
@@ -198,7 +198,7 @@ def test_refuses_implicit_component_build(tree, tmp_path):
         (out / "args.gn").write_text(args)
         with pytest.raises(SystemExit, match="component build"):
             package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\n" + REQUIRED)
+    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\ncamou_observe = true\n" + REQUIRED)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
@@ -210,24 +210,39 @@ def test_refuses_deps_without_the_binary(tree, tmp_path):
             package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
-def test_refuses_observer_build(tree, tmp_path):
+def _stage(tree, tmp_path):
     src, out, deps = tree
-    (out / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n")
+    return package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_refuses_build_without_observer(tree, tmp_path):
+    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\n" + REQUIRED)
     with pytest.raises(SystemExit, match="camou_observe"):
-        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+        _stage(tree, tmp_path)
 
 
-def test_refuses_observer_build_with_a_comment_or_no_spaces(tree, tmp_path):
-    src, out, deps = tree
-    for line in ("camou_observe = true # audit build", "camou_observe=true", "camou_observe=true#x"):
-        (out / "args.gn").write_text(f"is_debug = false\nis_component_build = false\n{line}\n")
-        with pytest.raises(SystemExit, match="camou_observe"):
-            package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+def test_refuses_observer_false(tree, tmp_path):
+    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = false\n" + REQUIRED)
+    with pytest.raises(SystemExit, match="camou_observe"):
+        _stage(tree, tmp_path)
+
+
+def test_accepts_observer_with_a_comment_or_no_spaces(tree, tmp_path):
+    for line in ("camou_observe = true # x", "camou_observe=true", "camou_observe=true#x"):
+        (tree[1] / "args.gn").write_text(f"is_debug = false\nis_component_build = false\n{line}\n" + REQUIRED)
+        _stage(tree, tmp_path / line.replace(" ", "_").replace("#", "h"))
+
+
+def test_refuses_rcs(tree, tmp_path):
+    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n"
+                                     "v8_enable_runtime_call_stats = true\n" + REQUIRED)
+    with pytest.raises(SystemExit, match="v8_enable_runtime_call_stats"):
+        _stage(tree, tmp_path)
 
 
 def test_a_trailing_comment_does_not_hide_a_release_arg(tree, tmp_path):
     src, out, deps = tree
-    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\n" + REQUIRED)
+    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\ncamou_observe = true\n" + REQUIRED)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 

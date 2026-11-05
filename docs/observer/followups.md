@@ -64,3 +64,27 @@ recalibration (no input sent, no extra load):
   5. field names (not values) of the `/ajax/bz` batch.
 - An input arm against facebook is not allowed (2026-10-17 rules), so a listener inventory would answer
   "registered", never "reacts to".
+
+## chrome://observer page — parked minors (final review 2026-11-05, all non-load-bearing)
+
+- **M1 (dead branch):** the handler's 64 MiB `kMaxTraceBytes` / `buffer_full_`
+  path is unreachable with the 32 MiB ring plus per-refresh replace
+  (`trace_.clear()` at OnCloned). It is defensive; keep it unless the ring size
+  or the replace semantics change. README now says `buffer full` is not
+  expected in normal use.
+- **M3 (observer.ts):** the malformed-`tables_json` path calls
+  `setStatus('bad tables')`, which zeroes the displayed counts, instead of
+  keeping the last status/counts the way the refresh-error path does. Only
+  reachable if our own trusted decoder emits non-JSON. Fix: keep last counts on
+  a parse failure. Fold into the next observer-page touch.
+- **M4 (http attribution):** http/body rows are keyed to the Start-time
+  top-frame token with no site fallback, so a recorded tab that navigates its
+  main frame cross-site silently stops producing http/body rows while
+  site-keyed reads and WS rows continue. Accepted limitation (the operator
+  guide promises no continuity; T12 verify never navigates the recorded tab).
+  If continuity is wanted later, add a top_site fallback to the http matcher.
+- **M5 (decoder disconnect):** `OnDecoderDisconnected` can release
+  `refresh_callback_` mid-stream, and `session_gen_` is per-session not
+  per-refresh, so a same-session stale chunk could in theory contaminate a
+  later refresh. Unreachable at the 5000 ms refresh cadence. Per-refresh
+  generation would close it.

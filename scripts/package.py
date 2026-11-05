@@ -175,9 +175,12 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if component != "false" and not allow_component:
         sys.exit("refusing a component build (is_component_build not explicitly false in args.gn): use a "
                  "release out dir (settings/release-args.gn) or --allow-component for a smoke test")
-    if args.get("camou_observe") == "true":
-        sys.exit("refusing a build with camou_observe = true: the tracking observer is an audit build, "
-                 "never a release (docs/observer/README.md)")
+    if args.get("camou_observe") != "true":
+        sys.exit("refusing a release without camou_observe = true: chrome://observer ships in every release "
+                 "(settings/release-args.gn, docs/observer/README.md)")
+    if args.get("v8_enable_runtime_call_stats") == "true":
+        sys.exit("refusing a release with v8_enable_runtime_call_stats = true: the observer's Intl counts are an "
+                 "audit-build feature, never a release (docs/observer/README.md)")
     wrong = {k: args.get(k) for k, v in required_args().items() if args.get(k) != v}
     if wrong:
         sys.exit(f"refusing a build whose args.gn differs from settings/build-args.gn (required, page-visible): {wrong}")

@@ -1,0 +1,1110 @@
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index 4a8650a125..40fd2bdae4 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1087,6 +1087,7 @@ source_set("core") {
+     "//chrome/browser/ui/webui/internal_debug_pages_disabled",
+     "//chrome/browser/ui/webui/location_internals",
+     "//chrome/browser/ui/webui/media",
++    "//chrome/browser/ui/webui/observer",
+     "//chrome/browser/ui/webui/omnibox",
+     "//chrome/browser/ui/webui/omnibox/aim_eligibility:mojo_bindings",
+     "//chrome/browser/ui/webui/policy",
+@@ -3566,6 +3567,7 @@ group("browser_generated_files") {
+     "//chrome/browser/ui/webui/content_settings:mojo_bindings",
+     "//chrome/browser/ui/webui/context_hub:mojo_bindings",
+     "//chrome/browser/ui/webui/location_internals:mojo_bindings",
++    "//chrome/browser/ui/webui/observer:mojo_bindings",
+     "//chrome/browser/ui/webui/omnibox:mojo_bindings",
+     "//chrome/browser/ui/webui/reset_password:mojo_bindings",
+     "//chrome/browser/ui/webui/segmentation_internals:mojo_bindings",
+diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
+index f58d5edfdc..86f0c6a48f 100644
+--- a/chrome/browser/chrome_browser_interface_binders_webui.cc
++++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
+@@ -27,6 +27,8 @@
+ #include "chrome/browser/ui/webui/engagement/site_engagement_ui.h"
+ #include "chrome/browser/ui/webui/location_internals/location_internals.mojom.h"
+ #include "chrome/browser/ui/webui/location_internals/location_internals_ui.h"
++#include "chrome/browser/ui/webui/observer/observer.mojom.h"
++#include "chrome/browser/ui/webui/observer/observer_ui.h"
+ #include "chrome/browser/ui/webui/media/media_engagement_ui.h"
+ #include "chrome/browser/ui/webui/omnibox/aim_eligibility/aim_eligibility.mojom.h"
+ #include "chrome/browser/ui/webui/omnibox/omnibox_internals.mojom.h"
+@@ -267,6 +269,8 @@ void PopulateChromeWebUIFrameBindersPartsAllPlatforms(
+ 
+   RegisterWebUIControllerInterfaceBinder<::mojom::LocationInternalsHandler,
+                                          LocationInternalsUI>(map);
++  RegisterWebUIControllerInterfaceBinder<observer::mojom::PageHandler,
++                                         ObserverUI>(map);
+ 
+   RegisterWebUIControllerInterfaceBinder<
+       actor_internals::mojom::PageHandlerFactory, ActorInternalsUI>(map);
+diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
+index 5ded1d6276..6c23a44d2e 100644
+--- a/chrome/browser/resources/BUILD.gn
++++ b/chrome/browser/resources/BUILD.gn
+@@ -426,6 +426,7 @@ group("dev_ui_resources") {
+     "location_internals:resources",
+     "media:resources",
+     "net_internals:resources",
++    "observer:resources",
+     "omnibox:resources",
+     "predictors:resources",
+     "segmentation_internals:resources",
+@@ -519,6 +520,7 @@ repack("dev_ui_paks") {
+     "$root_gen_dir/chrome/location_internals_resources.pak",
+     "$root_gen_dir/chrome/media_resources.pak",
+     "$root_gen_dir/chrome/net_internals_resources.pak",
++    "$root_gen_dir/chrome/observer_resources.pak",
+     "$root_gen_dir/chrome/omnibox_resources.pak",
+     "$root_gen_dir/chrome/predictors_resources.pak",
+     "$root_gen_dir/chrome/segmentation_internals_resources.pak",
+diff --git a/chrome/browser/resources/observer/BUILD.gn b/chrome/browser/resources/observer/BUILD.gn
+new file mode 100644
+index 0000000000..376ad34eb8
+--- /dev/null
++++ b/chrome/browser/resources/observer/BUILD.gn
+@@ -0,0 +1,28 @@
++# Copyright 2026 The Camoucrome Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//ui/webui/resources/tools/build_webui.gni")
++
++build_webui("build") {
++  grd_prefix = "observer"
++
++  static_files = [
++    "observer.css",
++    "observer.html",
++  ]
++
++  ts_files = [ "observer.ts" ]
++
++  ts_deps = [
++    "//ui/webui/resources/js:build_ts",
++    "//ui/webui/resources/mojo:build_ts",
++  ]
++  ts_composite = true
++
++  mojo_files_deps =
++      [ "//chrome/browser/ui/webui/observer:mojo_bindings_ts__generator" ]
++  mojo_files = [ "$root_gen_dir/chrome/browser/ui/webui/observer/observer.mojom-webui.ts" ]
++
++  webui_context_type = "trusted"
++}
+diff --git a/chrome/browser/resources/observer/observer.css b/chrome/browser/resources/observer/observer.css
+new file mode 100644
+index 0000000000..6a8f21d667
+--- /dev/null
++++ b/chrome/browser/resources/observer/observer.css
+@@ -0,0 +1,32 @@
++/* Copyright 2026 The Camoucrome Authors
++ * Use of this source code is governed by a BSD-style license that can be
++ * found in the LICENSE file. */
++
++header {
++  align-items: center;
++  display: flex;
++  gap: 8px;
++}
++
++#tab {
++  max-width: 50vw;
++}
++
++table {
++  border-collapse: collapse;
++  font-size: 12px;
++}
++
++th,
++td {
++  border: 1px solid #888;
++  max-width: 40ch;
++  padding: 2px 6px;
++  text-align: left;
++  vertical-align: top;
++  word-break: break-all;
++}
++
++tr.field td {
++  background: rgba(128, 128, 128, 0.12);
++}
+diff --git a/chrome/browser/resources/observer/observer.html b/chrome/browser/resources/observer/observer.html
+new file mode 100644
+index 0000000000..56ac2f35f6
+--- /dev/null
++++ b/chrome/browser/resources/observer/observer.html
+@@ -0,0 +1,29 @@
++<!DOCTYPE html>
++<!--
++Copyright 2026 The Camoucrome Authors
++Use of this source code is governed by a BSD-style license that can be
++found in the LICENSE file.
++-->
++<html dir="$i18n{textdirection}" lang="$i18n{language}">
++  <head>
++    <meta charset="utf-8">
++    <title>Observer</title>
++    <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
++    <link rel="stylesheet" href="observer.css">
++  </head>
++  <body>
++    <h2>Observer</h2>
++    <header>
++      <select id="tab"></select>
++      <button id="record">Record</button>
++      <button id="stop" disabled>Stop</button>
++      <span id="status">off</span>
++    </header>
++    <h3>Reads</h3>
++    <table id="reads"></table>
++    <h3>Sends</h3>
++    <table id="sends"></table>
++    <pre id="raw" hidden></pre>
++    <script type="module" src="observer.js"></script>
++  </body>
++</html>
+diff --git a/chrome/browser/resources/observer/observer.ts b/chrome/browser/resources/observer/observer.ts
+new file mode 100644
+index 0000000000..dd9ed93954
+--- /dev/null
++++ b/chrome/browser/resources/observer/observer.ts
+@@ -0,0 +1,280 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++import {getRequiredElement} from 'chrome://resources/js/util.js';
++
++import {PageHandler} from './observer.mojom-webui.js';
++
++const REFRESH_MS = 5000;
++
++const handler = PageHandler.getRemote();
++const tabSelect = getRequiredElement<HTMLSelectElement>('tab');
++const recordButton = getRequiredElement<HTMLButtonElement>('record');
++const stopButton = getRequiredElement<HTMLButtonElement>('stop');
++const statusEl = getRequiredElement('status');
++const readsTable = getRequiredElement<HTMLTableElement>('reads');
++const sendsTable = getRequiredElement<HTMLTableElement>('sends');
++const rawEl = getRequiredElement('raw');
++
++let timer: number|undefined;
++let refreshes = 0;
++let busy = false;
++let lastStatus: Tables['status']|undefined;
++
++// Everything below renders with textContent only: the values are strings a
++// page chose.
++function setStatus(
++    label: string, st?: {events?: number, lost?: number, cut?: number, missing?: number}) {
++  const s = st || {};
++  statusEl.textContent = `${label} events ${s.events || 0} lost ${s.lost || 0} ` +
++      `cut ${s.cut || 0} missing ${s.missing || 0}`;
++}
++
++function render(
++    table: HTMLTableElement, headers: string[], rows: string[][],
++    fieldRows: Set<number> = new Set()) {
++  table.textContent = '';
++  const head = table.createTHead().insertRow();
++  for (const h of headers) {
++    const th = document.createElement('th');
++    th.textContent = h;
++    head.appendChild(th);
++  }
++  const body = table.createTBody();
++  rows.forEach((cells, i) => {
++    const tr = body.insertRow();
++    if (fieldRows.has(i)) {
++      tr.className = 'field';
++    }
++    for (const c of cells) {
++      tr.insertCell().textContent = c;
++    }
++  });
++}
++
++function map(m: unknown): string {
++  return Object.entries((m || {}) as Record<string, unknown>)
++      .map(([k, v]) => `${k}:${v}`)
++      .join(' ');
++}
++
++function hits(l: unknown): string {
++  return ((l || []) as Array<{surface: string, encoding: string, count: number}>)
++      .map(h => `${h.surface}/${h.encoding}:${h.count}`)
++      .join(' ');
++}
++
++interface Tables {
++  status?: {events?: number, lost?: number, cut?: number, missing?: number, self_reads?: number};
++  reads?: Array<Record<string, unknown>>;
++  sends?: Array<Record<string, unknown>>;
++}
++
++function renderTables(t: Tables) {
++  render(
++      readsTable, ['site', 'member', 'count', 'origin', 'script', 'by'],
++      (t.reads || []).map(
++          r => [r['site'], r['member'], r['count'], r['origin'], r['script'], r['by']].map(String)));
++  const rows: string[][] = [];
++  const fieldRows = new Set<number>();
++  for (const s of t.sends || []) {
++    rows.push(
++        [s['via'], s['endpoint'], s['topic'], s['by'], s['count'], map(s['kinds']), s['cut'], s['missing'], '', '', '', '', '', '']
++            .map(String));
++    type Field = {path: string, classes: unknown, samples: string[], strong: unknown, weak: unknown, bool: Array<{surface: string, count: number}>};
++    for (const f of (s['fields'] || []) as Field[]) {
++      fieldRows.add(rows.length);
++      rows.push([
++        '', '', '', '', '', '', '', '', f.path, map(f.classes), (f.samples || []).join(' | '),
++        hits(f.strong), hits(f.weak), (f.bool || []).map(b => `${b.surface}:${b.count}`).join(' '),
++      ]);
++    }
++  }
++  render(
++      sendsTable,
++      ['via', 'endpoint', 'topic', 'by', 'count', 'kinds', 'cut', 'missing', 'path', 'classes', 'samples', 'strong', 'weak', 'bool'],
++      rows, fieldRows);
++}
++
++function clearTables() {
++  readsTable.textContent = '';
++  sendsTable.textContent = '';
++  rawEl.textContent = '';
++}
++
++// A port of observe_drive.TRUTH_JS: same keys, same fallbacks.
++async function readTruth(): Promise<Record<string, unknown>> {
++  /* eslint-disable @typescript-eslint/no-explicit-any */
++  const n = navigator as any;
++  const s = screen;
++  const c = n.connection || {};
++  const ua = n.userAgentData;
++  let gl: {vendor?: unknown, renderer?: unknown, version?: unknown} = {};
++  let f16: boolean|null = null;
++  try {  // null where there is no WebGL or no adapter
++    const cv = document.createElement('canvas');
++    const ctx = (cv.getContext('webgl') || cv.getContext('experimental-webgl')) as WebGLRenderingContext | null;
++    if (ctx) {
++      const e = ctx.getExtension('WEBGL_debug_renderer_info');
++      gl = {
++        vendor: e ? ctx.getParameter(e.UNMASKED_VENDOR_WEBGL) : null,
++        renderer: e ? ctx.getParameter(e.UNMASKED_RENDERER_WEBGL) : null,
++        version: ctx.getParameter(ctx.VERSION),
++      };
++    }
++  } catch (_) {
++  }
++  try {
++    if (n.gpu) {
++      const ad = await Promise.race([
++        n.gpu.requestAdapter(),
++        new Promise(r => setTimeout(() => r(null), 2000)),
++      ]);
++      f16 = ad ? ad.features.has('shader-f16') : null;
++    }
++  } catch (_) {
++  }
++  const pm = (performance as any).memory;  // Chromium only; absent: keys omitted
++  const he = ua ?
++      await ua.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList']) :
++      {};
++  const brands = (l: Array<{brand: string, version: string}>) => l.map(b => ({brand: b.brand, version: b.version}));
++  return {
++    'navigator.userAgent': n.userAgent,
++    'navigator.platform': n.platform,
++    'navigator.vendor': n.vendor,
++    'navigator.language': n.language,
++    'navigator.languages': [...n.languages],
++    'navigator.hardwareConcurrency': n.hardwareConcurrency,
++    'navigator.deviceMemory': n.deviceMemory,
++    'navigator.maxTouchPoints': n.maxTouchPoints,
++    'screen.width': s.width,
++    'screen.height': s.height,
++    'screen.availWidth': s.availWidth,
++    'screen.availHeight': s.availHeight,
++    'screen.colorDepth': s.colorDepth,
++    'window.devicePixelRatio': devicePixelRatio,
++    'window.innerWidth': innerWidth,
++    'window.innerHeight': innerHeight,
++    'window.outerWidth': outerWidth,
++    'window.outerHeight': outerHeight,
++    'timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
++    'timezoneOffset': new Date().getTimezoneOffset(),
++    'connection.effectiveType': c.effectiveType,
++    'connection.rtt': c.rtt,
++    'connection.downlink': c.downlink,
++    'uaData.platform': ua ? ua.platform : null,
++    'uaData.mobile': ua ? ua.mobile : null,
++    'uaData.brands': ua ? brands(ua.brands) : null,
++    'uaData.architecture': he.architecture || null,
++    'uaData.bitness': he.bitness || null,
++    'uaData.model': he.model || null,
++    'uaData.platformVersion': he.platformVersion || null,
++    'uaData.fullVersionList': he.fullVersionList ? brands(he.fullVersionList) : null,
++    'webgl.vendor': gl.vendor || null,
++    'webgl.renderer': gl.renderer || null,
++    'webgl.version': gl.version || null,
++    'media.dynamicRangeHigh': matchMedia('(dynamic-range: high)').matches,
++    'navigator.gpu.present': !!n.gpu,
++    'webgpu.shaderF16': f16,
++    'navigator.ml.present': 'ml' in n,
++    ...(pm ? {
++      'performance.memory.jsHeapSizeLimit': pm.jsHeapSizeLimit,
++      'performance.memory.totalJSHeapSize': pm.totalJSHeapSize,
++      'performance.memory.usedJSHeapSize': pm.usedJSHeapSize,
++    } : {}),
++  };
++}
++
++async function loadTabs() {
++  const {tabs} = await handler.getTabs();
++  tabSelect.textContent = '';
++  for (const t of tabs) {
++    const o = document.createElement('option');
++    o.value = `${t.childId},${t.frameRoutingId}`;
++    o.textContent = `${t.title} - ${t.url}`;
++    tabSelect.appendChild(o);
++  }
++}
++
++async function refresh() {
++  if (busy) {
++    return;
++  }
++  busy = true;
++  try {
++    // The canary: the page's own read, origin chrome://observer. Its event
++    // proves the hooks report; self_reads == 0 after a refresh means blind.
++    void navigator.hardwareConcurrency;
++    const {result} = await handler.refresh();
++    if (timer === undefined) {
++      return;  // stopped meanwhile
++    }
++    if (result.error) {
++      setStatus(result.error, lastStatus);
++      return;
++    }
++    rawEl.textContent = result.tablesJson;
++    let t: Tables = {};
++    try {
++      t = JSON.parse(result.tablesJson) as Tables;
++    } catch (_) {
++      setStatus('bad tables');
++      return;
++    }
++    refreshes++;
++    lastStatus = t.status;
++    renderTables(t);
++    const blind = refreshes > 1 && (t.status?.self_reads || 0) === 0;
++    setStatus(result.bufferFull ? 'buffer full' : blind ? 'blind' : 'recording', t.status);
++  } finally {
++    busy = false;
++  }
++}
++
++async function record() {
++  recordButton.disabled = true;
++  const [childId, frameRoutingId] = tabSelect.value.split(',').map(Number);
++  if (childId === undefined || frameRoutingId === undefined || Number.isNaN(childId)) {
++    recordButton.disabled = false;
++    setStatus('tab gone');
++    return;
++  }
++  let error = '';
++  try {
++    const truth = await readTruth();
++    ({error} = await handler.start(childId, frameRoutingId, JSON.stringify(truth)));
++  } catch (e) {
++    error = String(e);
++  }
++  if (error) {
++    setStatus(error);
++    recordButton.disabled = false;
++    return;
++  }
++  refreshes = 0;
++  lastStatus = undefined;
++  stopButton.disabled = false;
++  tabSelect.disabled = true;
++  setStatus('recording');
++  timer = window.setInterval(() => void refresh(), REFRESH_MS);
++}
++
++async function stop() {
++  window.clearInterval(timer);
++  timer = undefined;
++  await handler.stop();
++  clearTables();
++  setStatus('off');
++  stopButton.disabled = true;
++  recordButton.disabled = false;
++  tabSelect.disabled = false;
++  void loadTabs();
++}
++
++recordButton.addEventListener('click', () => void record());
++stopButton.addEventListener('click', () => void stop());
++tabSelect.addEventListener('focus', () => void loadTabs());
++void loadTabs();
++setStatus('off');
+diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
+index 7341632b43..026a821bf2 100644
+--- a/chrome/browser/ui/webui/BUILD.gn
++++ b/chrome/browser/ui/webui/BUILD.gn
+@@ -85,6 +85,7 @@ source_set("configs") {
+     "//chrome/browser/ui/webui/metrics_internals",
+     "//chrome/browser/ui/webui/net_internals",
+     "//chrome/browser/ui/webui/notebooks_internals:notebooks_internals_ui_config",
++    "//chrome/browser/ui/webui/observer",
+     "//chrome/browser/ui/webui/omnibox",
+     "//chrome/browser/ui/webui/policy",
+     "//chrome/browser/ui/webui/predictors",
+diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+index 139fecebd5..ac488aadc0 100644
+--- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
++++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
+@@ -46,6 +46,7 @@
+ #include "chrome/browser/ui/webui/net_internals/net_internals_ui.h"
+ #include "chrome/browser/ui/webui/notebooks_internals/notebooks_internals_ui_config.h"
+ #include "chrome/browser/ui/webui/ntp_tiles_internals_ui.h"
++#include "chrome/browser/ui/webui/observer/observer_ui.h"
+ #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
+ #include "chrome/browser/ui/webui/policy/policy_ui.h"
+ #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
+@@ -305,6 +306,7 @@ void RegisterChromeWebUIConfigs() {
+   map.AddWebUIConfig(std::make_unique<NetInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<notebooks::NotebooksInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<NTPTilesInternalsUIConfig>());
++  map.AddWebUIConfig(std::make_unique<ObserverUIConfig>());
+   map.AddWebUIConfig(std::make_unique<OmniboxUIConfig>());
+   map.AddWebUIConfig(std::make_unique<OptimizationGuideInternalsUIConfig>());
+   map.AddWebUIConfig(std::make_unique<PasswordManagerInternalsUIConfig>());
+diff --git a/chrome/browser/ui/webui/observer/BUILD.gn b/chrome/browser/ui/webui/observer/BUILD.gn
+new file mode 100644
+index 0000000000..4836c55c78
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/BUILD.gn
+@@ -0,0 +1,40 @@
++# Copyright 2026 The Camoucrome Authors
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//mojo/public/tools/bindings/mojom.gni")
++
++mojom("mojo_bindings") {
++  sources = [ "observer.mojom" ]
++  webui_module_path = "/"
++}
++
++source_set("observer") {
++  sources = [
++    "observer_page_handler.cc",
++    "observer_page_handler.h",
++    "observer_ui.cc",
++    "observer_ui.h",
++  ]
++  public_deps = [
++    ":mojo_bindings",
++    "//content/public/browser",
++    "//mojo/public/cpp/bindings",
++    "//ui/webui",
++  ]
++  deps = [
++    "//base",
++    "//chrome/browser/profiles:profile",
++    "//chrome/browser/resources/observer:resources",
++    "//chrome/browser/ui/tab_contents",
++    "//chrome/common",
++    "//components/tabs:public",
++    "//net",
++    "//services/data_decoder/public/cpp",
++    "//services/data_decoder/public/mojom",
++    "//services/tracing/public/cpp",
++    "//third_party/perfetto:libperfetto",
++    "//third_party/blink/public/common",
++    "//url",
++  ]
++}
+diff --git a/chrome/browser/ui/webui/observer/DEPS b/chrome/browser/ui/webui/observer/DEPS
+new file mode 100644
+index 0000000000..df39bca737
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/DEPS
+@@ -0,0 +1,5 @@
++include_rules = [
++  "+services/data_decoder/public",
++  "+services/tracing/public/cpp/perfetto",
++  "+third_party/perfetto/include/perfetto/tracing",
++]
+diff --git a/chrome/browser/ui/webui/observer/observer.mojom b/chrome/browser/ui/webui/observer/observer.mojom
+new file mode 100644
+index 0000000000..0b18923f51
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/observer.mojom
+@@ -0,0 +1,28 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++module observer.mojom;
++
++struct Tab {
++  int32 child_id;
++  int32 frame_routing_id;
++  string title;
++  string url;
++};
++
++struct RefreshResult {
++  string tables_json;  // from the sandboxed decoder, unparsed here
++  bool buffer_full;
++  string error;        // empty on success
++};
++
++interface PageHandler {
++  GetTabs() => (array<Tab> tabs);
++  // truth_json: the page's own reads. error is empty once recording runs,
++  // else "recording could not start: <perfetto's error>" or "tab gone".
++  Start(int32 child_id, int32 frame_routing_id, string truth_json)
++      => (string error);
++  Refresh() => (RefreshResult result);
++  Stop() => ();
++};
+diff --git a/chrome/browser/ui/webui/observer/observer_page_handler.cc b/chrome/browser/ui/webui/observer/observer_page_handler.cc
+new file mode 100644
+index 0000000000..39030b964a
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/observer_page_handler.cc
+@@ -0,0 +1,320 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/observer/observer_page_handler.h"
++
++#include <algorithm>
++#include <utility>
++
++#include "base/byte_size.h"
++#include "base/compiler_specific.h"
++#include "base/environment.h"
++#include "base/containers/span.h"
++#include "base/functional/bind.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/trace_event/trace_config.h"
++#include "base/unguessable_token.h"
++#include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
++#include "chrome/common/webui_url_constants.h"
++#include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/browser_thread.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/web_contents.h"
++#include "mojo/public/cpp/base/big_buffer.h"
++#include "net/base/schemeful_site.h"
++#include "services/tracing/public/cpp/perfetto/perfetto_config.h"
++#include "third_party/blink/public/common/tokens/tokens.h"
++
++namespace {
++
++constexpr char kDefaultFilter[] =
++    "-*,disabled-by-default-camou.observe,disabled-by-default-camou.observe."
++    "send";
++// Verify-only override (Task 12's blind row), like OBSERVE_DISPATCH_EXACT.
++constexpr char kFilterEnv[] = "OBSERVER_PAGE_FILTER";
++
++}  // namespace
++
++ObserverPageHandler::ObserverPageHandler(
++    mojo::PendingReceiver<observer::mojom::PageHandler> receiver)
++    : receiver_(this, std::move(receiver)) {}
++
++ObserverPageHandler::~ObserverPageHandler() {
++  AbortPending("page closed");
++  StopSession();
++}
++
++void ObserverPageHandler::GetTabs(GetTabsCallback callback) {
++  std::vector<observer::mojom::TabPtr> tabs;
++  tabs::ForEachTabInterface([&tabs](tabs::TabInterface* tab) {
++    content::WebContents* contents = tab->GetContents();
++    if (!contents) {
++      return true;
++    }
++    const GURL& url = contents->GetVisibleURL();
++    if (url.SchemeIs(content::kChromeUIScheme) &&
++        url.host() == chrome::kChromeUIObserverHost) {
++      return true;
++    }
++    const content::GlobalRenderFrameHostId id =
++        contents->GetPrimaryMainFrame()->GetGlobalId();
++    tabs.push_back(observer::mojom::Tab::New(
++        id.child_id.value(), id.frame_routing_id,
++        base::UTF16ToUTF8(contents->GetTitle()), url.spec()));
++    return true;
++  });
++  std::move(callback).Run(std::move(tabs));
++}
++
++void ObserverPageHandler::Start(int32_t child_id,
++                                int32_t frame_routing_id,
++                                const std::string& truth_json,
++                                StartCallback callback) {
++  AbortPending("restarted");
++  StopSession();
++  ++session_gen_;
++  trace_.clear();
++  trace_.shrink_to_fit();
++  buffer_full_ = false;
++
++  content::RenderFrameHost* rfh =
++      content::RenderFrameHost::FromID(child_id, frame_routing_id);
++  if (!rfh) {
++    std::move(callback).Run("tab gone");
++    return;
++  }
++  // The same token the network service got as top_frame_id
++  // (RenderFrameHostImpl::GetTopFrameToken). The key is stored, never the frame.
++  content::RenderFrameHost* top = rfh;
++  while (top->GetParent()) {
++    top = top->GetParent();
++  }
++  tab_ = data_decoder::mojom::CamouObserveTabKey::New(
++      net::SchemefulSite(rfh->GetLastCommittedOrigin()).Serialize(),
++      top->GetFrameToken().value().ToString());
++  truth_json_ = truth_json;
++  BindDecoder();
++
++  std::string filter = kDefaultFilter;
++  if (std::optional<std::string> env =
++          base::Environment::Create()->GetVar(kFilterEnv)) {
++    filter = *env;
++  }
++  base::trace_event::TraceConfig chrome_config(
++      filter, base::trace_event::RECORD_CONTINUOUSLY);
++  chrome_config.SetTraceBufferSizeInBytes(base::MiB(32));
++  perfetto::TraceConfig config = tracing::GetDefaultPerfettoConfig(
++      chrome_config, /*privacy_filtering_enabled=*/false,
++      /*convert_to_legacy_json=*/false);
++
++  start_callback_ = std::move(callback);
++  session_name_ = base::UnguessableToken::Create().ToString();
++  config.set_unique_session_name(session_name_);
++  session_ = perfetto::Tracing::NewTrace(perfetto::kCustomBackend);
++  session_->Setup(config);
++  base::WeakPtr<ObserverPageHandler> weak = weak_factory_.GetWeakPtr();
++  const uint32_t gen = session_gen_;
++  session_->SetOnStartCallback([weak, gen] {
++    content::GetUIThreadTaskRunner({})->PostTask(
++        FROM_HERE, base::BindOnce(&ObserverPageHandler::OnStarted, weak, gen));
++  });
++  session_->SetOnErrorCallback([weak, gen](perfetto::TracingError error) {
++    content::GetUIThreadTaskRunner({})->PostTask(
++        FROM_HERE, base::BindOnce(&ObserverPageHandler::OnStartFailed, weak,
++                                  gen, error.message));
++  });
++  session_->Start();
++}
++
++void ObserverPageHandler::OnStarted(uint32_t gen) {
++  if (gen == session_gen_ && start_callback_) {
++    std::move(start_callback_).Run(std::string());
++  }
++}
++
++void ObserverPageHandler::OnStartFailed(uint32_t gen,
++                                        const std::string& message) {
++  if (gen != session_gen_) {
++    return;
++  }
++  session_.reset();
++  if (start_callback_) {
++    std::move(start_callback_).Run("recording could not start: " + message);
++  }
++  if (refresh_callback_) {
++    FinishRefresh(std::string(), "recording stopped: " + message);
++  }
++}
++
++void ObserverPageHandler::Refresh(RefreshCallback callback) {
++  if (refresh_callback_) {
++    std::move(callback).Run(
++        observer::mojom::RefreshResult::New("", buffer_full_, "busy"));
++    return;
++  }
++  if (!session_ && !buffer_full_) {
++    std::move(callback).Run(
++        observer::mojom::RefreshResult::New("", false, "not recording"));
++    return;
++  }
++  refresh_callback_ = std::move(callback);
++  if (!session_) {
++    // The buffer filled and the session was stopped: decode what was kept.
++    Decode({});
++    return;
++  }
++  // The custom backend's consumer endpoint does not implement Flush() (it is a
++  // NOTREACHED, a browser abort), and the producers commit a chunk only when it
++  // is full. CloneTrace() flushes every producer and snapshots the whole buffer
++  // (as chrome://traces does), so each refresh reads the full recording again.
++  clone_ = perfetto::Tracing::NewTrace(perfetto::kCustomBackend);
++  base::WeakPtr<ObserverPageHandler> weak = weak_factory_.GetWeakPtr();
++  const uint32_t gen = session_gen_;
++  perfetto::TracingSession::CloneTraceArgs args{
++      .unique_session_name = session_name_};
++  clone_->CloneTrace(
++      args, [weak, gen](perfetto::TracingSession::CloneTraceCallbackArgs args) {
++        content::GetUIThreadTaskRunner({})->PostTask(
++            FROM_HERE, base::BindOnce(&ObserverPageHandler::OnCloned, weak, gen,
++                                      args.success, args.error));
++      });
++}
++
++void ObserverPageHandler::OnCloned(uint32_t gen,
++                                   bool success,
++                                   const std::string& error) {
++  if (gen != session_gen_ || !refresh_callback_) {
++    return;
++  }
++  if (!success || !clone_) {
++    clone_.reset();
++    FinishRefresh(std::string(), "recording could not be read: " + error);
++    return;
++  }
++  trace_.clear();  // the snapshot holds the whole recording
++  base::WeakPtr<ObserverPageHandler> weak = weak_factory_.GetWeakPtr();
++  clone_->ReadTrace(
++      [weak, gen](perfetto::TracingSession::ReadTraceCallbackArgs args) {
++        // args.data is valid only inside this callback: copy it.
++        std::vector<uint8_t> chunk;
++        if (args.data && args.size) {
++          base::span<const uint8_t> bytes = UNSAFE_BUFFERS(base::span(
++              reinterpret_cast<const uint8_t*>(args.data), args.size));
++          chunk.assign(bytes.begin(), bytes.end());
++        }
++        content::GetUIThreadTaskRunner({})->PostTask(
++            FROM_HERE, base::BindOnce(&ObserverPageHandler::OnTraceChunk, weak,
++                                      gen, std::move(chunk), args.has_more));
++      });
++}
++
++void ObserverPageHandler::OnTraceChunk(uint32_t gen,
++                                       std::vector<uint8_t> chunk,
++                                       bool has_more) {
++  if (gen != session_gen_ || !refresh_callback_) {
++    return;
++  }
++  if (!buffer_full_) {
++    if (trace_.size() + chunk.size() > kMaxTraceBytes) {
++      // Drop the chunk and every later one: the kept trace is a clean prefix.
++      buffer_full_ = true;
++    } else {
++      trace_.insert(trace_.end(), chunk.begin(), chunk.end());
++    }
++  }
++  if (has_more) {
++    return;
++  }
++  clone_.reset();
++  if (buffer_full_ || !session_) {
++    StopSession();
++    Decode({});
++    return;
++  }
++  base::WeakPtr<ObserverPageHandler> weak = weak_factory_.GetWeakPtr();
++  session_->GetTraceStats(
++      [weak, gen](perfetto::TracingSession::GetTraceStatsCallbackArgs args) {
++        content::GetUIThreadTaskRunner({})->PostTask(
++            FROM_HERE,
++            base::BindOnce(&ObserverPageHandler::OnStats, weak, gen,
++                           args.success, std::move(args.trace_stats_data)));
++      });
++}
++
++void ObserverPageHandler::OnStats(uint32_t gen,
++                                  bool success,
++                                  std::vector<uint8_t> stats) {
++  if (gen != session_gen_ || !refresh_callback_) {
++    return;
++  }
++  Decode(success ? std::move(stats) : std::vector<uint8_t>());
++}
++
++void ObserverPageHandler::Decode(std::vector<uint8_t> stats) {
++  if (!remote_.is_bound()) {
++    BindDecoder();
++  }
++  remote_->Decode(
++      mojo_base::BigBuffer(trace_), mojo_base::BigBuffer(stats), truth_json_,
++      tab_.Clone(),
++      base::BindOnce(&ObserverPageHandler::OnDecoded,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void ObserverPageHandler::OnDecoded(const std::string& tables_json) {
++  FinishRefresh(tables_json, std::string());
++}
++
++void ObserverPageHandler::FinishRefresh(const std::string& tables_json,
++                                        const std::string& error) {
++  if (refresh_callback_) {
++    std::move(refresh_callback_)
++        .Run(observer::mojom::RefreshResult::New(tables_json, buffer_full_,
++                                                 error));
++  }
++}
++
++void ObserverPageHandler::BindDecoder() {
++  remote_.reset();
++  decoder_ = std::make_unique<data_decoder::DataDecoder>();
++  decoder_->GetService()->BindCamouObserveDecoder(
++      remote_.BindNewPipeAndPassReceiver());
++  remote_.set_disconnect_handler(base::BindOnce(
++      &ObserverPageHandler::OnDecoderDisconnected, base::Unretained(this)));
++}
++
++void ObserverPageHandler::OnDecoderDisconnected() {
++  // Rebound by the next Refresh.
++  remote_.reset();
++  decoder_.reset();
++  FinishRefresh(std::string(), "decoder stopped");
++}
++
++void ObserverPageHandler::Stop(StopCallback callback) {
++  AbortPending("stopped");
++  StopSession();
++  ++session_gen_;
++  trace_.clear();
++  trace_.shrink_to_fit();
++  truth_json_.clear();
++  tab_.reset();
++  buffer_full_ = false;
++  remote_.reset();
++  decoder_.reset();
++  std::move(callback).Run();
++}
++
++void ObserverPageHandler::AbortPending(const std::string& error) {
++  if (start_callback_) {
++    std::move(start_callback_).Run(error);
++  }
++  FinishRefresh(std::string(), error);
++}
++
++void ObserverPageHandler::StopSession() {
++  // Destroying the session stops it and drops in-flight perfetto callbacks;
++  // the ones already posted to the UI thread find their WeakPtr or state gone.
++  session_.reset();
++  clone_.reset();
++}
+diff --git a/chrome/browser/ui/webui/observer/observer_page_handler.h b/chrome/browser/ui/webui/observer/observer_page_handler.h
+new file mode 100644
+index 0000000000..c2e6002995
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/observer_page_handler.h
+@@ -0,0 +1,82 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_PAGE_HANDLER_H_
++#define CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_PAGE_HANDLER_H_
++
++#include <cstdint>
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "base/memory/weak_ptr.h"
++#include "chrome/browser/ui/webui/observer/observer.mojom.h"
++#include "mojo/public/cpp/bindings/pending_receiver.h"
++#include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/bindings/remote.h"
++#include "services/data_decoder/public/cpp/data_decoder.h"
++#include "services/data_decoder/public/mojom/camou_observe_decoder.mojom.h"
++#include "third_party/perfetto/include/perfetto/tracing/tracing.h"
++
++// Browser-process side of chrome://observer. Records the tracing categories the
++// observer hooks emit and hands the raw trace to the sandboxed decoder. It
++// parses nothing it captured. The recorded tab is a key (top site and top frame
++// id), never a frame pointer, so a closed or navigated tab keeps its recording.
++// Every perfetto callback runs on a perfetto thread and hops to the UI thread
++// through a WeakPtr, so a closed page drops it.
++class ObserverPageHandler : public observer::mojom::PageHandler {
++ public:
++  static constexpr size_t kMaxTraceBytes = size_t{64} << 20;
++
++  explicit ObserverPageHandler(
++      mojo::PendingReceiver<observer::mojom::PageHandler> receiver);
++  ObserverPageHandler(const ObserverPageHandler&) = delete;
++  ObserverPageHandler& operator=(const ObserverPageHandler&) = delete;
++  ~ObserverPageHandler() override;
++
++  // observer::mojom::PageHandler:
++  void GetTabs(GetTabsCallback callback) override;
++  void Start(int32_t child_id,
++             int32_t frame_routing_id,
++             const std::string& truth_json,
++             StartCallback callback) override;
++  void Refresh(RefreshCallback callback) override;
++  void Stop(StopCallback callback) override;
++
++ private:
++  // The first argument is the session_gen_ the callback was bound under; a
++  // callback from an earlier session is ignored.
++  void OnStarted(uint32_t gen);
++  void OnStartFailed(uint32_t gen, const std::string& message);
++  void OnCloned(uint32_t gen, bool success, const std::string& error);
++  void OnTraceChunk(uint32_t gen, std::vector<uint8_t> chunk, bool has_more);
++  void OnStats(uint32_t gen, bool success, std::vector<uint8_t> stats);
++  void Decode(std::vector<uint8_t> stats);
++  void OnDecoded(const std::string& tables_json);
++  void FinishRefresh(const std::string& tables_json, const std::string& error);
++  void OnDecoderDisconnected();
++  void AbortPending(const std::string& error);
++  void BindDecoder();
++  void StopSession();
++
++  std::unique_ptr<perfetto::TracingSession> session_;
++  // The snapshot session of one refresh (see Refresh()), and the name its
++  // CloneTrace() finds the recording by.
++  std::unique_ptr<perfetto::TracingSession> clone_;
++  std::string session_name_;
++  std::vector<uint8_t> trace_;
++  std::string truth_json_;
++  data_decoder::mojom::CamouObserveTabKeyPtr tab_;
++  std::unique_ptr<data_decoder::DataDecoder> decoder_;
++  mojo::Remote<data_decoder::mojom::CamouObserveDecoder> remote_;
++  bool buffer_full_ = false;
++  uint32_t session_gen_ = 0;
++  StartCallback start_callback_;
++  RefreshCallback refresh_callback_;
++
++  mojo::Receiver<observer::mojom::PageHandler> receiver_;
++  base::WeakPtrFactory<ObserverPageHandler> weak_factory_{this};
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_PAGE_HANDLER_H_
+diff --git a/chrome/browser/ui/webui/observer/observer_ui.cc b/chrome/browser/ui/webui/observer/observer_ui.cc
+new file mode 100644
+index 0000000000..42de251088
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/observer_ui.cc
+@@ -0,0 +1,31 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/webui/observer/observer_ui.h"
++
++#include <utility>
++
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/webui/observer/observer_page_handler.h"
++#include "chrome/grit/observer_resources.h"
++#include "chrome/grit/observer_resources_map.h"
++#include "content/public/browser/web_ui_data_source.h"
++#include "ui/webui/webui_util.h"
++
++ObserverUI::ObserverUI(content::WebUI* web_ui)
++    : ui::MojoWebUIController(web_ui) {
++  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
++      Profile::FromWebUI(web_ui), chrome::kChromeUIObserverHost);
++  webui::SetupWebUIDataSource(source, kObserverResources,
++                              IDR_OBSERVER_OBSERVER_HTML);
++}
++
++ObserverUI::~ObserverUI() = default;
++
++WEB_UI_CONTROLLER_TYPE_IMPL(ObserverUI)
++
++void ObserverUI::BindInterface(
++    mojo::PendingReceiver<observer::mojom::PageHandler> receiver) {
++  handler_ = std::make_unique<ObserverPageHandler>(std::move(receiver));
++}
+diff --git a/chrome/browser/ui/webui/observer/observer_ui.h b/chrome/browser/ui/webui/observer/observer_ui.h
+new file mode 100644
+index 0000000000..3bc0ccff69
+--- /dev/null
++++ b/chrome/browser/ui/webui/observer/observer_ui.h
+@@ -0,0 +1,47 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_UI_H_
++#define CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_UI_H_
++
++#include <memory>
++
++#include "chrome/browser/ui/webui/observer/observer.mojom-forward.h"
++#include "chrome/common/webui_url_constants.h"
++#include "content/public/browser/webui_config.h"
++#include "content/public/common/url_constants.h"
++#include "mojo/public/cpp/bindings/pending_receiver.h"
++#include "ui/webui/mojo_web_ui_controller.h"
++
++class ObserverPageHandler;
++class ObserverUI;
++
++// A public (not internal-only) config: DefaultInternalWebUIConfig shows the
++// "debug pages disabled" stub while kInternalOnlyUisEnabled is off. The host is
++// not in ChromeURLHosts(), so chrome://chrome-urls matches stock.
++class ObserverUIConfig : public content::DefaultWebUIConfig<ObserverUI> {
++ public:
++  ObserverUIConfig()
++      : DefaultWebUIConfig(content::kChromeUIScheme,
++                           chrome::kChromeUIObserverHost) {}
++};
++
++// chrome://observer: records what a chosen tab reads and sends.
++class ObserverUI : public ui::MojoWebUIController {
++ public:
++  explicit ObserverUI(content::WebUI* web_ui);
++  ObserverUI(const ObserverUI&) = delete;
++  ObserverUI& operator=(const ObserverUI&) = delete;
++  ~ObserverUI() override;
++
++  void BindInterface(
++      mojo::PendingReceiver<observer::mojom::PageHandler> receiver);
++
++ private:
++  std::unique_ptr<ObserverPageHandler> handler_;
++
++  WEB_UI_CONTROLLER_TYPE_DECL();
++};
++
++#endif  // CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_UI_H_
+diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
+index a462094cd3..3b758c2cc4 100644
+--- a/chrome/common/webui_url_constants.h
++++ b/chrome/common/webui_url_constants.h
+@@ -217,6 +217,8 @@ inline constexpr char16_t kChromeUIManagementURL16[] = u"chrome://management";
+ inline constexpr char kChromeUIMediaEngagementHost[] = "media-engagement";
+ inline constexpr char kChromeUIMediaRouterInternalsHost[] =
+     "media-router-internals";
++inline constexpr char kChromeUIObserverHost[] = "observer";
++inline constexpr char kChromeUIObserverURL[] = "chrome://observer/";
+ inline constexpr char kChromeUIMetricsInternalsHost[] = "metrics-internals";
+ inline constexpr char kChromeUINetExportHost[] = "net-export";
+ inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+index 8749c14d44..fae16724ef 100644
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -636,6 +636,10 @@
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [4420],
+   },
++  "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/observer/resources.grd": {
++    "META": {"sizes": {"includes": [10]}},
++    "includes": [4430],
++  },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/new_tab_page_third_party/resources.grd": {
+     "META": {"sizes": {"includes": [10]}},
+     "includes": [4440],

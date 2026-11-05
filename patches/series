@@ -43,3 +43,7 @@ sp2e-cursory.patch
 sp2e-input-scheduler.patch
 sp2e-credits.patch
 audit-cpp-fixes.patch
+observe-net.patch
+observe-ws.patch
+observe-decoder-service.patch
+observer-page.patch

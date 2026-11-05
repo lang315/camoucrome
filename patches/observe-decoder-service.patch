@@ -1,0 +1,228 @@
+diff --git a/services/data_decoder/BUILD.gn b/services/data_decoder/BUILD.gn
+index 89d2b7189f..6200203a33 100644
+--- a/services/data_decoder/BUILD.gn
++++ b/services/data_decoder/BUILD.gn
+@@ -17,6 +17,8 @@ source_set("lib") {
+   ]
+ 
+   sources = [
++    "camou_observe_decoder_impl.cc",
++    "camou_observe_decoder_impl.h",
+     "data_decoder_service.cc",
+     "data_decoder_service.h",
+     "gzipper.cc",
+@@ -32,6 +34,7 @@ source_set("lib") {
+   deps = [
+     "//base",
+     "//build:blink_buildflags",
++    "//components/camoucfg:observe_decoder",
+     "//components/web_package",
+     "//mojo/public/cpp/bindings",
+     "//net",
+diff --git a/services/data_decoder/DEPS b/services/data_decoder/DEPS
+index 4e8694400e..aa727ec360 100644
+--- a/services/data_decoder/DEPS
++++ b/services/data_decoder/DEPS
+@@ -1,4 +1,5 @@
+ include_rules = [
++  "+components/camoucfg/observe_tables.h",
+   "+components/web_package",
+   "+device/bluetooth/public",
+   "+gin",
+diff --git a/services/data_decoder/camou_observe_decoder_impl.cc b/services/data_decoder/camou_observe_decoder_impl.cc
+new file mode 100644
+index 0000000000..bc1442bebc
+--- /dev/null
++++ b/services/data_decoder/camou_observe_decoder_impl.cc
+@@ -0,0 +1,24 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "services/data_decoder/camou_observe_decoder_impl.h"
++
++#include <utility>
++
++#include "base/containers/span.h"
++#include "components/camoucfg/observe_tables.h"
++
++namespace data_decoder {
++
++void CamouObserveDecoderImpl::Decode(mojo_base::BigBuffer trace,
++                                     mojo_base::BigBuffer trace_stats,
++                                     const std::string& truth_json,
++                                     mojom::CamouObserveTabKeyPtr tab,
++                                     DecodeCallback callback) {
++  std::move(callback).Run(camoucfg::observe::DecodeTables(
++      base::span(trace), base::span(trace_stats), truth_json,
++      {tab->top_site, tab->top_frame_id}));
++}
++
++}  // namespace data_decoder
+diff --git a/services/data_decoder/camou_observe_decoder_impl.h b/services/data_decoder/camou_observe_decoder_impl.h
+new file mode 100644
+index 0000000000..9a32fd5bd2
+--- /dev/null
++++ b/services/data_decoder/camou_observe_decoder_impl.h
+@@ -0,0 +1,31 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef SERVICES_DATA_DECODER_CAMOU_OBSERVE_DECODER_IMPL_H_
++#define SERVICES_DATA_DECODER_CAMOU_OBSERVE_DECODER_IMPL_H_
++
++#include <string>
++
++#include "services/data_decoder/public/mojom/camou_observe_decoder.mojom.h"
++
++namespace data_decoder {
++
++class CamouObserveDecoderImpl : public mojom::CamouObserveDecoder {
++ public:
++  CamouObserveDecoderImpl() = default;
++  CamouObserveDecoderImpl(const CamouObserveDecoderImpl&) = delete;
++  CamouObserveDecoderImpl& operator=(const CamouObserveDecoderImpl&) = delete;
++  ~CamouObserveDecoderImpl() override = default;
++
++  // mojom::CamouObserveDecoder:
++  void Decode(mojo_base::BigBuffer trace,
++              mojo_base::BigBuffer trace_stats,
++              const std::string& truth_json,
++              mojom::CamouObserveTabKeyPtr tab,
++              DecodeCallback callback) override;
++};
++
++}  // namespace data_decoder
++
++#endif  // SERVICES_DATA_DECODER_CAMOU_OBSERVE_DECODER_IMPL_H_
+diff --git a/services/data_decoder/data_decoder_service.cc b/services/data_decoder/data_decoder_service.cc
+index ad73fa11be..6685934ce1 100644
+--- a/services/data_decoder/data_decoder_service.cc
++++ b/services/data_decoder/data_decoder_service.cc
+@@ -13,6 +13,7 @@
+ #include "components/web_package/web_bundle_parser_factory.h"
+ #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
+ #include "mojo/public/cpp/bindings/self_owned_receiver.h"
++#include "services/data_decoder/camou_observe_decoder_impl.h"
+ #include "services/data_decoder/gzipper.h"
+ #include "services/data_decoder/public/mojom/image_decoder.mojom.h"
+ #include "services/data_decoder/structured_headers_parser_impl.h"
+@@ -73,4 +74,10 @@ void DataDecoderService::BindGzipper(
+   mojo::MakeSelfOwnedReceiver(std::make_unique<Gzipper>(), std::move(receiver));
+ }
+ 
++void DataDecoderService::BindCamouObserveDecoder(
++    mojo::PendingReceiver<mojom::CamouObserveDecoder> receiver) {
++  mojo::MakeSelfOwnedReceiver(std::make_unique<CamouObserveDecoderImpl>(),
++                              std::move(receiver));
++}
++
+ }  // namespace data_decoder
+diff --git a/services/data_decoder/data_decoder_service.h b/services/data_decoder/data_decoder_service.h
+index 79defef1a0..beab6602b3 100644
+--- a/services/data_decoder/data_decoder_service.h
++++ b/services/data_decoder/data_decoder_service.h
+@@ -8,6 +8,7 @@
+ #include "components/web_package/mojom/web_bundle_parser.mojom.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
++#include "services/data_decoder/public/mojom/camou_observe_decoder.mojom.h"
+ #include "services/data_decoder/public/mojom/data_decoder_service.mojom.h"
+ #include "services/data_decoder/public/mojom/gzipper.mojom.h"
+ #include "services/data_decoder/public/mojom/image_decoder.mojom.h"
+@@ -43,6 +44,8 @@ class DataDecoderService : public mojom::DataDecoderService {
+       mojo::PendingReceiver<web_package::mojom::WebBundleParserFactory>
+           receiver) override;
+   void BindGzipper(mojo::PendingReceiver<mojom::Gzipper> receiver) override;
++  void BindCamouObserveDecoder(
++      mojo::PendingReceiver<mojom::CamouObserveDecoder> receiver) override;
+ 
+   // In-process instances (e.g. on iOS or in tests) may have multiple concurrent
+   // remote DataDecoderService clients.
+diff --git a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc
+index e454c61b58..82d047d472 100644
+--- a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc
++++ b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc
+@@ -39,4 +39,9 @@ void FakeDataDecoderService::BindGzipper(
+   FAIL();
+ }
+ 
++void FakeDataDecoderService::BindCamouObserveDecoder(
++    mojo::PendingReceiver<data_decoder::mojom::CamouObserveDecoder> receiver) {
++  FAIL();
++}
++
+ }  // namespace data_decoder
+diff --git a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h
+index cdaaddf763..ae5ab16545 100644
+--- a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h
++++ b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h
+@@ -37,6 +37,9 @@ class FakeDataDecoderService : public mojom::DataDecoderService {
+           receiver) override;
+   void BindGzipper(
+       mojo::PendingReceiver<data_decoder::mojom::Gzipper> receiver) override;
++  void BindCamouObserveDecoder(
++      mojo::PendingReceiver<data_decoder::mojom::CamouObserveDecoder> receiver)
++      override;
+ };
+ 
+ }  // namespace data_decoder
+diff --git a/services/data_decoder/public/mojom/BUILD.gn b/services/data_decoder/public/mojom/BUILD.gn
+index f3a0596863..5fe198ffbb 100644
+--- a/services/data_decoder/public/mojom/BUILD.gn
++++ b/services/data_decoder/public/mojom/BUILD.gn
+@@ -6,6 +6,7 @@ import("//mojo/public/tools/bindings/mojom.gni")
+ 
+ mojom("mojom") {
+   sources = [
++    "camou_observe_decoder.mojom",
+     "data_decoder_service.mojom",
+     "gzipper.mojom",
+     "image_decoder.mojom",
+diff --git a/services/data_decoder/public/mojom/camou_observe_decoder.mojom b/services/data_decoder/public/mojom/camou_observe_decoder.mojom
+new file mode 100644
+index 0000000000..3cd99d9f67
+--- /dev/null
++++ b/services/data_decoder/public/mojom/camou_observe_decoder.mojom
+@@ -0,0 +1,20 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++module data_decoder.mojom;
++
++import "mojo/public/mojom/base/big_buffer.mojom";
++
++// The tracking observer's decoder (docs/observer/README.md). The trace holds
++// bytes a page sent: untrusted, so it is parsed only here.
++struct CamouObserveTabKey {
++  string top_site;
++  string top_frame_id;
++};
++
++interface CamouObserveDecoder {
++  // tables_json is the JSON described in components/camoucfg/observe_tables.h.
++  Decode(mojo_base.mojom.BigBuffer trace, mojo_base.mojom.BigBuffer trace_stats,
++         string truth_json, CamouObserveTabKey tab) => (string tables_json);
++};
+diff --git a/services/data_decoder/public/mojom/data_decoder_service.mojom b/services/data_decoder/public/mojom/data_decoder_service.mojom
+index 770a300316..cb38c747dd 100644
+--- a/services/data_decoder/public/mojom/data_decoder_service.mojom
++++ b/services/data_decoder/public/mojom/data_decoder_service.mojom
+@@ -6,6 +6,7 @@ module data_decoder.mojom;
+ 
+ import "components/web_package/mojom/web_bundle_parser.mojom";
+ import "sandbox/policy/mojom/sandbox.mojom";
++import "services/data_decoder/public/mojom/camou_observe_decoder.mojom";
+ import "services/data_decoder/public/mojom/gzipper.mojom";
+ import "services/data_decoder/public/mojom/image_decoder.mojom";
+ import "services/data_decoder/public/mojom/structured_headers_parser.mojom";
+@@ -36,4 +37,7 @@ interface DataDecoderService {
+   // Binds an interface which can be used to parse structured headers.
+   BindStructuredHeadersParser(
+       pending_receiver<StructuredHeadersParser> receiver);
++
++  // Binds the tracking observer's decoder (camoucrome).
++  BindCamouObserveDecoder(pending_receiver<CamouObserveDecoder> receiver);
+ };
