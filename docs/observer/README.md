@@ -34,7 +34,9 @@ shows them live. State words:
   every packet seen after a drop).
 - `cut`: a body or field was clipped at a cap below.
 - `missing`: an expected record never arrived.
-- `buffer full`: the ring overwrote its oldest events.
+- `buffer full`: a single refresh snapshot exceeded the page's 64 MiB trace
+  cap. With the 32 MiB ring buffer and a fresh snapshot each refresh this does
+  not arise in normal use; `lost` (above), not this, is how buffer wrap shows.
 - `recording could not start`: the trace session did not open. Nothing was
   captured.
 
