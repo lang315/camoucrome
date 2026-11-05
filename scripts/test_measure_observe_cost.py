@@ -27,3 +27,8 @@ def test_session_state_keeps_states_only():
          " other     rdp-tcp#3     2  Disc        4:10   1/1/2026 1:00 AM\n")
     assert m.session_state(q) == "Active,Disc"
     assert m.session_state("") == "none"
+
+def test_post_loops_name_three_metrics():
+    import re
+    names = re.findall(r"\b(\w+_ms)\s*:", m.POST_PAGE)
+    assert sorted(names) == ["post_500_ms", "post_blob_200_ms", "ws_2000_ms"]
