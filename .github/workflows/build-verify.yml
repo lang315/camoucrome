@@ -64,7 +64,7 @@ jobs:
           rsync -a --delete settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
           rsync -a --delete --exclude __pycache__ scripts/ "$CLIENT/scripts/"
-          cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
+          cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/lib_ws_server.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
           # observe_report imports the site profiles (scripts/sites + settings/sites); $VERIFY mirrors the host layout
           rsync -a --delete --exclude __pycache__ scripts/sites/ "$VERIFY/sites/"
           mkdir -p "$VERIFY/settings" && rsync -a --delete settings/sites/ "$VERIFY/settings/sites/"
@@ -96,7 +96,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_check_patch_deps.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_observe_judge.py scripts/test_verify_observe.py scripts/test_measure_audio_text.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_check_patch_deps.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_observe_judge.py scripts/test_verify_observe.py scripts/test_lib_ws_server.py scripts/test_measure_audio_text.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
           (cd client/go/rodclient && go test ./... 2>&1 | tail -2)
       - name: Go probe
@@ -128,7 +128,7 @@ jobs:
           done < <(python3 "$GITHUB_WORKSPACE/scripts/ci_verify_set.py" list)
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md): a missing arg fails the job, because a
           # skipped verify_observe left the observer's checks out and the job green
-          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; else echo "FAILED verify_observe.py: camou_observe = true is not in out/Default/args.gn"; rc=1; fi
+          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; run verify_observer_page.py || rc=1; else echo "FAILED verify_observe.py: camou_observe = true is not in out/Default/args.gn"; rc=1; fi
           exit $rc
       - name: logs
         if: always()
