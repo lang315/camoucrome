@@ -32,3 +32,4 @@ def test_post_loops_name_three_metrics():
     import re
     names = re.findall(r"\b(\w+_ms)\s*:", m.POST_PAGE)
     assert sorted(names) == ["post_500_ms", "post_blob_200_ms", "ws_2000_ms"]
+    assert sorted(set(re.findall(r"\w+_ms", m.POST_PAGE))) == sorted(names)  # quoted keys too

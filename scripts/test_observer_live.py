@@ -32,3 +32,13 @@ def test_names_only_shape():
                                        "weak": ["screen.height"]}]}]
     assert o["reads"] == [{"member": "Screen.width", "count": 7}]
     assert o["lost"] == 0
+
+
+def test_raising_step_still_writes_unmeasured(tmp_path, monkeypatch):
+    def boom(a):
+        raise RuntimeError("tab not listed")
+    monkeypatch.setattr(ol, "_measure", boom)
+    out = tmp_path / "o.json"
+    rc = ol.main(["--exe", "x", "--profile", "p", "--out", str(out)])
+    d = json.loads(out.read_text())
+    assert rc == 3 and d["status"] == "UNMEASURED" and "tab not listed" in d["why"] and d["tables"] == {}

@@ -53,7 +53,8 @@ class _Tabs:
         urllib.request.urlopen(f"{self.base}/json/close/{tid}", timeout=10).read()
 
 
-def run(a):
+def _measure(a):
+    """(raw tables or None, reason or None)."""
     from patchright.sync_api import sync_playwright
     from camoucrome.launcher import launch
     import gpu_gate
@@ -66,7 +67,8 @@ def run(a):
         ctx = launch(pw, a.exe, user_data_dir=a.profile, headless=False, args=[f"--remote-debugging-port={port}"])
         try:
             tabs = _Tabs(port, vop.Cdp)
-            _, fb = tabs.open(FB)
+            _, fb_cdp = tabs.open(FB)
+            fb_cdp.close()  # only the tab is needed, not its socket
             obs = vop.Observer(tabs)
             obs.pick("facebook.com")
             obs.record()
@@ -80,6 +82,14 @@ def run(a):
                 why = f"GPU crash count {crashes}"
         finally:
             ctx.close()
+    return tables, why
+
+
+def run(a):
+    try:
+        tables, why = _measure(a)
+    except Exception as e:  # noqa: BLE001 - a detached run must always leave --out
+        tables, why = None, f"{type(e).__name__}: {e}"
     status = "MEASURED" if why is None else "UNMEASURED"
     out = {"status": status, "tables": names_only(tables) if tables and why is None else {}}
     if why:
