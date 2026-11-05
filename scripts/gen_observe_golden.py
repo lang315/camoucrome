@@ -12,6 +12,7 @@ import gzip
 import json
 import pathlib
 import random
+import re
 import sys
 import zlib
 
@@ -37,6 +38,8 @@ TRUTH = {"navigator.userAgent": UA, "navigator.languages": ["en-US", "en"], "nav
 rng = random.Random(1234)
 b64e = lambda b: base64.b64encode(b).decode("ascii")
 J = lambda o: json.dumps(o, separators=(",", ":")).encode()
+# The gzip header's OS byte is zlib's OS_CODE (19 on macOS, 3 on Linux); pin the one the golden was made with.
+gz = lambda b: (lambda z: z[:9] + b"\x13" + z[10:])(gzip.compress(b, mtime=0))
 BODY = J({"w": 1517, "h": 853, "tz": "Pacific/Chatham"})
 ASID = "0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -79,12 +82,12 @@ HTTP_IN = [
     ("number-classes", JCT, J({"dpr": 2.0, "i32max": 2147483647, "above32": 2147483648, "neg": -2147483649,
                                 "mid": 10**15, "big": 10**16})),
     ("integral-float-match", JCT, J({"a": "2.0", "b": "2", "c": 2.0, "d": 2})),
-    ("gzip-json", JCT, gzip.compress(BODY, mtime=0)),
+    ("gzip-json", JCT, gz(BODY)),
     ("zlib-json", JCT, zlib.compress(BODY, 6)),
     ("raw-deflate-json", JCT, raw_deflate(BODY)),
     ("json-in-string", JCT, J({"d": '{"w":1517,"x":"[1,2]"}'})),
     ("b64-json", "", b64e(BODY).encode()),
-    ("b64-of-gzip-json", "", b64e(gzip.compress(BODY, mtime=0)).encode()),
+    ("b64-of-gzip-json", "", b64e(gz(BODY)).encode()),
     ("form-plus-percent", FORMCT, b"res=1517x853&tz=Pacific%2FChatham&q=a+b&blank&%zz=1"),
     ("multipart-strings", MPCT, mp([(fd(b"w"), b"1517"), (fd(b"tz"), b"Pacific/Chatham"), (fd(b"res"), b"1517x853")])),
     ("multipart-no-ct", "", mp([(fd(b"w"), b"1517"), (fd(b"h"), b"853")])),
@@ -101,7 +104,7 @@ HTTP_IN = [
     ("str-number", JCT, J({"w": "1517"})),
     ("weak-small", JCT, J({"c": 12, "e": "4g"})),
     ("bool-field", JCT, J({"mobile": False, "hdr": False, "x": True})),
-    ("truncated-gzip", JCT, gzip.compress(BODY, mtime=0)[:-3]),
+    ("truncated-gzip", JCT, gz(BODY)[:-3]),
     ("garbage", "", garbage),
     ("empty", "", b""),
     ("utf8-invalid-name", MPCT, mp([(fd(b"\xff"), b"1517")])),
@@ -185,20 +188,29 @@ def sjd_cases():
     return [{"name": n, "event": e, "doc": SITE.hooks.decode_sjd(e)} for n, e in cases]
 
 
+def b64_strict(s):
+    """B64DecodeStrict (observe_leaf.cc): b64decode(validate=True) as Python 3.12.1 had it. Later 3.12 patches
+    refuse "YWJj=", so the rule is spelled out rather than taken from the running Python."""
+    m = re.fullmatch(r"([A-Za-z0-9+/]*)(=*)", s)
+    if not m or (not m[1] and m[2]):
+        return None
+    data, pads = len(m[1]), len(m[2])
+    if data % 4 and {2: 2, 3: 1}.get(data % 4) != pads:
+        return None
+    return base64.b64decode(m[1] + "=" * (-data % 4))
+
+
 def b64_cases():
     out = []
     for s in ["YQ", "YQ=", "YQ==", "YR==", "YWJj", "YQ===", "=", "YQ==YQ==", "Y===", "YWI=", "YWJj=", "YW Jj", ""]:
-        try:
-            r = b64e(base64.b64decode(s, validate=True))
-        except Exception:
-            r = None
-        out.append({"in": s, "out_b64": r})
+        r = b64_strict(s)
+        out.append({"in": s, "out_b64": None if r is None else b64e(r)})
     return out
 
 
 def inflate_cases():
     data = b"hello synthetic body " * 4
-    codecs = {"gzip": lambda b: gzip.compress(b, mtime=0), "zlib": lambda b: zlib.compress(b, 6), "raw": raw_deflate}
+    codecs = {"gzip": gz, "zlib": lambda b: zlib.compress(b, 6), "raw": raw_deflate}
     ins = [("empty", b"")]
     for c, f in codecs.items():
         x = f(data)
