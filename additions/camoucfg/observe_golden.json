@@ -55,7 +55,26 @@
  ],
  "divergent": [
   {
-   "b64": "eyJhIjoxLjB9",
+   "b64": "eyJhIjo5MDA3MTk5MjU0NzQwOTkzfQ==",
+   "ct": "",
+   "fields": [
+    [
+     "a",
+     "id"
+    ]
+   ],
+   "kind": "json",
+   "name": "big-int-precision",
+   "text": [
+    [
+     "a",
+     "9007199254740993"
+    ]
+   ],
+   "why": "Python keeps 9007199254740993, C++ holds 9007199254740992: base::Value stores a JSON integer past int32 as a double, so digits past 2^53 are lost"
+  },
+  {
+   "b64": "eyJhIjoxMDAwMDAwMDAwMDAwMDAwLjB9",
    "ct": "",
    "fields": [
     [
@@ -64,8 +83,14 @@
     ]
    ],
    "kind": "json",
-   "name": "json-float-integral",
-   "why": "Python float, C++ int: base::JSONReader keeps no int/float token kind"
+   "name": "integral-float-past-int32",
+   "text": [
+    [
+     "a",
+     "1000000000000000.0"
+    ]
+   ],
+   "why": "Python float, C++ id: an integral float written with a point or exponent past int32 (JS never writes one) reads as a big integer"
   },
   {
    "b64": "W1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1d",
@@ -73,6 +98,7 @@
    "fields": [],
    "kind": "json",
    "name": "json-depth-300",
+   "text": [],
    "why": "Python json, C++ opaque: base::JSONReader's depth limit"
   },
   {
@@ -86,6 +112,12 @@
    ],
    "kind": "json",
    "name": "unicode-digits-id",
+   "text": [
+    [
+     "a",
+     "١٢٣٤٥٦٧٨٩٠"
+    ]
+   ],
    "why": "Python id, C++ str<10>: Python's \\d matches Unicode digits"
   }
  ],
@@ -177,6 +209,100 @@
     ]
    ],
    "name": "json-plain",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJkcHIiOjIuMCwiaTMybWF4IjoyMTQ3NDgzNjQ3LCJhYm92ZTMyIjoyMTQ3NDgzNjQ4LCJuZWciOi0yMTQ3NDgzNjQ5LCJtaWQiOjEwMDAwMDAwMDAwMDAwMDAsImJpZyI6MTAwMDAwMDAwMDAwMDAwMDB9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "above32",
+     "id"
+    ],
+    [
+     "big",
+     "id"
+    ],
+    [
+     "dpr",
+     "float"
+    ],
+    [
+     "i32max",
+     "id"
+    ],
+    [
+     "mid",
+     "id"
+    ],
+    [
+     "neg",
+     "id"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "dpr",
+     "test.integralFloat",
+     "exact",
+     true
+    ]
+   ],
+   "name": "number-classes",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJhIjoiMi4wIiwiYiI6IjIiLCJjIjoyLjAsImQiOjJ9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "a",
+     "str<3>"
+    ],
+    [
+     "b",
+     "str<1>"
+    ],
+    [
+     "c",
+     "float"
+    ],
+    [
+     "d",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "a",
+     "test.integralFloat",
+     "str",
+     true
+    ],
+    [
+     "c",
+     "test.integralFloat",
+     "exact",
+     true
+    ],
+    [
+     "d",
+     "test.integralFloat",
+     "exact",
+     true
+    ]
+   ],
+   "name": "integral-float-match",
    "sjd": [
     0,
     0
@@ -390,6 +516,12 @@
      "window.outerWidth",
      "exact",
      false
+    ],
+    [
+     "d.x[]",
+     "test.integralFloat",
+     "exact",
+     true
     ]
    ],
    "name": "json-in-string",
@@ -1406,6 +1538,7 @@
   "screen.availWidth": 1517,
   "screen.height": 853,
   "screen.width": 1517,
+  "test.integralFloat": 2.0,
   "timezone": "Pacific/Chatham",
   "timezoneOffset": -825,
   "uaData.mobile": false,

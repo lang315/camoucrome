@@ -32,6 +32,7 @@ TRUTH = {"navigator.userAgent": UA, "navigator.languages": ["en-US", "en"], "nav
          "window.outerWidth": 1517, "window.outerHeight": 813, "window.devicePixelRatio": 1.25,
          "timezone": "Pacific/Chatham", "timezoneOffset": -825, "connection.effectiveType": "4g",
          "uaData.mobile": False, "media.dynamicRangeHigh": False,
+         "test.integralFloat": 2.0,
          "webgl.renderer": "ANGLE (Synthetic, Synthetic Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"}
 rng = random.Random(1234)
 b64e = lambda b: base64.b64encode(b).decode("ascii")
@@ -74,6 +75,10 @@ file_rand = rng.randbytes(300)
 HTTP_IN = [
     ("json-plain", JCT, J({"w": 1517, "h": 853, "tz": "Pacific/Chatham", "dpr": 1.25, "m": False, "n": None,
                             "ids": [12345678901, "98765432109"]})),
+    # base::Value keeps no int/float token kind: 2.0 stays a float, a JSON integer past int32 is a big int
+    ("number-classes", JCT, J({"dpr": 2.0, "i32max": 2147483647, "above32": 2147483648, "neg": -2147483649,
+                                "mid": 10**15, "big": 10**16})),
+    ("integral-float-match", JCT, J({"a": "2.0", "b": "2", "c": 2.0, "d": 2})),
     ("gzip-json", JCT, gzip.compress(BODY, mtime=0)),
     ("zlib-json", JCT, zlib.compress(BODY, 6)),
     ("raw-deflate-json", JCT, raw_deflate(BODY)),
@@ -204,7 +209,10 @@ def inflate_cases():
 
 
 def divergent_cases():
-    ins = [("json-float-integral", "Python float, C++ int: base::JSONReader keeps no int/float token kind", b'{"a":1.0}'),
+    ins = [("big-int-precision", "Python keeps 9007199254740993, C++ holds 9007199254740992: base::Value stores a "
+            "JSON integer past int32 as a double, so digits past 2^53 are lost", b'{"a":9007199254740993}'),
+           ("integral-float-past-int32", "Python float, C++ id: an integral float written with a point or exponent "
+            "past int32 (JS never writes one) reads as a big integer", b'{"a":1000000000000000.0}'),
            ("json-depth-300", "Python json, C++ opaque: base::JSONReader's depth limit", b"[" * 300 + b"]" * 300),
            ("unicode-digits-id", "Python id, C++ str<10>: Python's \\d matches Unicode digits",
             '{"a":"١٢٣٤٥٦٧٨٩٠"}'.encode())]
@@ -212,7 +220,8 @@ def divergent_cases():
     for n, why, raw in ins:
         k, fl = d.fields(raw, "", SITE)
         out.append({"name": n, "why": why, "ct": "", "b64": b64e(raw), "kind": k,
-                    "fields": srt([p, d.value_class(v)] for p, v in fl)})
+                    "fields": srt([p, d.value_class(v)] for p, v in fl),
+                    "text": srt([p, str(v)] for p, v in fl)})
     return out
 
 

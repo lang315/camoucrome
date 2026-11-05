@@ -185,6 +185,13 @@ std::optional<std::string> Attribute(const Args& a, const TabKey& tab) {
   return "unattributed";
 }
 
+// a + b without wrapping (both are untrusted trace values).
+uint64_t SatAdd(uint64_t a, uint64_t b) {
+  return a > std::numeric_limits<uint64_t>::max() - b
+             ? std::numeric_limits<uint64_t>::max()
+             : a + b;
+}
+
 int Clamp(uint64_t v) {
   return static_cast<int>(
       std::min<uint64_t>(v, std::numeric_limits<int>::max()));
@@ -255,16 +262,23 @@ base::ListValue HitList(
   return l;
 }
 
+// "host" of host[:port][/path]; an IPv6 literal keeps its brackets.
+std::string HostOfEndpoint(std::string_view endpoint) {
+  if (endpoint.starts_with('[')) {
+    const size_t close = endpoint.find(']');
+    if (close != std::string_view::npos) {
+      return std::string(endpoint.substr(0, close + 1));
+    }
+  }
+  return std::string(endpoint.substr(0, endpoint.find_first_of("/:")));
+}
+
 std::string HostOfSite(std::string_view site) {
   const size_t scheme = site.find("://");
   if (scheme != std::string_view::npos) {
     site.remove_prefix(scheme + 3);
   }
-  return std::string(site.substr(0, site.find_first_of("/:")));
-}
-
-std::string HostOfEndpoint(std::string_view endpoint) {
-  return std::string(endpoint.substr(0, endpoint.find_first_of("/:")));
+  return HostOfEndpoint(site);
 }
 
 }  // namespace
@@ -353,7 +367,11 @@ std::string DecodeTables(base::span<const uint8_t> trace,
     } else if (ev.name == "camou.send.ws") {
       const auto by = Attribute(ev.args, tab);
       std::string raw;
-      if (!by || !base::Base64Decode(Arg(ev.args, "b64"), &raw)) {
+      if (!by) {
+        continue;
+      }
+      if (!base::Base64Decode(Arg(ev.args, "b64"), &raw)) {
+        ++missing;  // a message whose bytes could not be read
         continue;
       }
       const int opcode = Clamp(UintArg(ev.args, "opcode").value_or(2));
@@ -369,7 +387,7 @@ std::string DecodeTables(base::span<const uint8_t> trace,
         SendRow& r = row_for("ws", endpoint, "", *by);
         ++r.count;
         ++r.kinds[kind];
-        r.bytes += size;
+        r.bytes = SatAdd(r.bytes, size);
         r.cut += was_cut;
         r.partial += Clamp(partial);
         continue;
@@ -379,7 +397,7 @@ std::string DecodeTables(base::span<const uint8_t> trace,
         ++r.count;
         ++r.kinds[kind];
         if (i == 0) {  // message-level numbers go on the first unit only
-          r.bytes += size;
+          r.bytes = SatAdd(r.bytes, size);
           r.cut += was_cut;
           r.partial += Clamp(partial);
         }
@@ -408,13 +426,27 @@ std::string DecodeTables(base::span<const uint8_t> trace,
     if (!by) {
       continue;
     }
+    // Fragments must tile each element from offset 0, and the elements seen
+    // (bytes or file) must be exactly 0..elements-1; any hole means the trace
+    // lost a fragment, and a spliced body is never decoded.
     std::string body;
+    bool gap = false;
     for (const auto& [index, frags] : l.elements) {
+      uint64_t next = 0;
       for (const auto& [offset, bytes] : frags) {
+        gap |= offset != next;
+        next = SatAdd(offset, bytes.size());
         body += bytes;
       }
     }
     const uint64_t elements = UintArg(l.http, "elements").value_or(0);
+    if (elements > 0) {
+      std::set<uint64_t> seen(l.files);
+      for (const auto& [index, frags] : l.elements) {
+        seen.insert(index);
+      }
+      gap |= seen.size() != elements || (!seen.empty() && *seen.rbegin() >= elements);
+    }
     if (body.empty() && l.files.empty() && elements == 0) {
       continue;  // no body at all
     }
@@ -435,7 +467,12 @@ std::string DecodeTables(base::span<const uint8_t> trace,
       }
       continue;
     }
-    r.bytes += body.size();
+    if (gap) {
+      ++r.partial;
+      ++r.kinds["partial"];
+      continue;
+    }
+    r.bytes = SatAdd(r.bytes, body.size());
     SjdStats sjd;
     BodyFields bf = Fields(body, Arg(l.http, "content_type"),
                            /*site_hooks=*/true, &sjd);

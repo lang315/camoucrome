@@ -6,12 +6,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <string>
 
 #include "base/json/json_reader.h"
-#include "base/notreached.h"
 #include "base/json/json_writer.h"
+#include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 
@@ -96,9 +100,15 @@ Leaf Leaf::FromValue(const base::Value& v) {
       l.num = v.GetInt();
       break;
     case base::Value::Type::DOUBLE: {
-      double d = v.GetDouble();
-      l.type = (std::trunc(d) == d && std::fabs(d) < 1e21) ? Type::kInt
-                                                           : Type::kFloat;
+      // JSONReader stores an integer token that fits int32 as INTEGER and any
+      // other number as DOUBLE. So an integral double below 2^31 had a decimal
+      // point or exponent (Python float); one from 2^31 up was a big integer
+      // (Python int), except from 1e21 up, where JS writes exponent form.
+      const double d = v.GetDouble();
+      const double a = std::fabs(d);
+      l.type = (std::trunc(d) == d && a >= 2147483648.0 && a < 1e21)
+                   ? Type::kInt
+                   : Type::kFloat;
       l.num = d;
       break;
     }
@@ -114,9 +124,68 @@ Leaf Leaf::FromValue(const base::Value& v) {
   return l;
 }
 
+namespace {
+
+// The decimal digits of an integral double that was a JSON integer. Exact
+// below 2^53; above it base::Value already lost digits (pinned divergence,
+// golden "big-int-precision"), and this prints the double's own digits.
+std::string IntegerText(double d) {
+  return base::StringPrintf("%.0f", d);
+}
+
+// Python repr(float): the shortest digits that round-trip, written plain for
+// decimal exponents -4..15 and as d.ddde+XX (two exponent digits) otherwise.
+std::string FloatRepr(double d) {
+  if (d == 0) {
+    return std::signbit(d) ? "-0.0" : "0.0";
+  }
+  std::string sci;
+  for (int prec = 0; prec < 17; ++prec) {
+    sci = base::StringPrintf("%.*e", prec, d);
+    double back = 0;
+    if (base::StringToDouble(sci, &back) && back == d) {
+      break;
+    }
+  }
+  const bool neg = sci[0] == '-';
+  const size_t e_at = sci.find('e');
+  std::string digits;
+  for (size_t i = neg ? 1 : 0; i < e_at; ++i) {
+    if (sci[i] != '.') {
+      digits.push_back(sci[i]);
+    }
+  }
+  while (digits.size() > 1 && digits.back() == '0') {
+    digits.pop_back();
+  }
+  const int exp = std::stoi(sci.substr(e_at + 1));
+  std::string out;
+  if (exp >= -4 && exp < 16) {
+    if (exp < 0) {
+      out = "0." + std::string(-exp - 1, '0') + digits;
+    } else if (digits.size() <= static_cast<size_t>(exp) + 1) {
+      out = digits + std::string(exp + 1 - digits.size(), '0') + ".0";
+    } else {
+      out = digits.substr(0, exp + 1) + "." + digits.substr(exp + 1);
+    }
+  } else {
+    out = digits.substr(0, 1);
+    if (digits.size() > 1) {
+      out += "." + digits.substr(1);
+    }
+    const int a = std::abs(exp);
+    out += base::StringPrintf("e%c%02d", exp < 0 ? '-' : '+', a);
+  }
+  return neg ? "-" + out : out;
+}
+
+}  // namespace
+
 std::string PyNumStr(const Leaf& leaf) {
-  // base::NumberToString writes 1e+16 and 1e-05 as Python's repr does.
-  return base::NumberToString(leaf.num);
+  if (leaf.type == Leaf::Type::kInt) {
+    return IntegerText(leaf.num);
+  }
+  return FloatRepr(leaf.num);
 }
 
 std::string ValueClass(const Leaf& v) {
@@ -128,7 +197,7 @@ std::string ValueClass(const Leaf& v) {
     case Leaf::Type::kNull:
       return "null";
     case Leaf::Type::kInt:
-      return base::NumberToString(std::fabs(v.num)).size() >= 10 ? "id" : "int";
+      return IntegerText(std::fabs(v.num)).size() >= 10 ? "id" : "int";
     case Leaf::Type::kFloat:
       return "float";
     case Leaf::Type::kStr:

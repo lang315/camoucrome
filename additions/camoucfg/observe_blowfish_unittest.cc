@@ -70,7 +70,7 @@ TEST(ObserveSjdTest, GoldenParity) {
   }
 }
 
-// Known divergence: a container signal value is a str<n> of its JSON length here; Python measures its repr.
+// Pins a documented divergence, not parity: a container signal value is a str<n> of its JSON length here; Python measures its repr.
 TEST(ObserveSjdTest, ContainerValueIsItsJson) {
   base::DictValue d;
   d.Set("a", 1);

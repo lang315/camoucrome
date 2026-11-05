@@ -33,9 +33,11 @@ struct SjdStats {
 std::optional<std::string> Inflate(std::string_view raw, bool* capped = nullptr);
 std::optional<std::string> Boundary(std::string_view raw,
                                     std::string_view content_type);
+// *cut (when given) is set when a part's inflate hit kMaxInflated.
 std::vector<std::pair<std::string, Leaf>> MultipartParts(
     std::string_view raw,
-    std::string_view boundary);
+    std::string_view boundary,
+    bool* cut = nullptr);
 std::vector<std::pair<std::string, std::string>> ParseQsl(std::string_view);
 
 struct Decoded {

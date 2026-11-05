@@ -114,11 +114,11 @@ std::optional<std::string_view> FindName(std::string_view disp) {
 
 // _part_value(): text, inflated first when the bytes are not text; a file part
 // is text only when it is JSON; anything else keeps only its length.
-Leaf PartValue(std::string_view body, bool filename) {
+Leaf PartValue(std::string_view body, bool filename, bool* cut) {
   std::string text;
   if (IsUtf8(body)) {
     text = std::string(body);
-  } else if (std::optional<std::string> inflated = Inflate(body);
+  } else if (std::optional<std::string> inflated = Inflate(body, cut);
              inflated && IsUtf8(*inflated)) {
     text = std::move(*inflated);
   } else {
@@ -193,7 +193,8 @@ std::optional<std::string> Boundary(std::string_view raw, std::string_view ct) {
 }
 
 std::vector<std::pair<std::string, Leaf>> MultipartParts(std::string_view raw,
-                                                         std::string_view boundary) {
+                                                         std::string_view boundary,
+                                                         bool* cut) {
   std::vector<std::pair<std::string, Leaf>> parts;
   const std::vector<std::string_view> chunks = SplitOn(raw, base::StrCat({"--", boundary}));
   for (size_t c = 1; c < chunks.size(); ++c) {
@@ -217,7 +218,7 @@ std::vector<std::pair<std::string, Leaf>> MultipartParts(std::string_view raw,
       body.remove_suffix(2);
     }
     parts.emplace_back(Utf8Replace(*name),
-                       PartValue(body, disp->find("filename=") != std::string_view::npos));
+                       PartValue(body, disp->find("filename=") != std::string_view::npos, cut));
   }
   return parts;
 }
@@ -242,7 +243,7 @@ Decoded DecodeBody(std::string_view raw_in, std::string_view content_type, bool 
   d.kind = "opaque";
   const std::string raw = Inflate(raw_in, &d.cut).value_or(std::string(raw_in));
   if (std::optional<std::string> boundary = Boundary(raw, content_type)) {
-    auto parts = MultipartParts(raw, *boundary);
+    auto parts = MultipartParts(raw, *boundary, &d.cut);
     if (!parts.empty()) {
       d.kind = "multipart";
       d.pairs = std::move(parts);
@@ -264,6 +265,7 @@ Decoded DecodeBody(std::string_view raw_in, std::string_view content_type, bool 
     if (inner && !inner->empty() && *inner != raw) {
       Decoded in = DecodeBody(*inner, "", false);
       if (in.kind != "opaque") {
+        in.cut |= d.cut;
         return in;
       }
       d.cut = d.cut || in.cut;
@@ -283,7 +285,7 @@ Decoded DecodeBody(std::string_view raw_in, std::string_view content_type, bool 
 }
 
 void Walker::Walk(const base::Value& v, const std::string& prefix, int depth) {
-  if (out->size() >= kMaxFields || depth > kMaxWalkDepth) {
+  if (depth > kMaxWalkDepth) {
     cut = true;
     return;
   }
@@ -309,6 +311,10 @@ void Walker::Walk(const base::Value& v, const std::string& prefix, int depth) {
       return;
     }
   }
+  if (out->size() >= kMaxFields) {
+    cut = true;
+    return;
+  }
   out->emplace_back(prefix, Leaf::FromValue(v));
 }
 
@@ -331,10 +337,11 @@ void Walker::ExpandSjd(const std::string& path, const base::DictValue& event) {
   if (std::string_view(path).substr(dot == std::string::npos ? 0 : dot + 1) != "sjd") {
     return;
   }
-  const size_t before = out->size();
+  bool any = false;  // the hook returned at least one pair
   if (std::optional<base::DictValue> doc = DecodeSjd(event)) {
     for (auto [id, values] : *doc) {
       for (const base::Value& item : values.GetList()) {
+        any = true;
         if (out->size() >= kMaxFields) {
           cut = true;
           break;
@@ -344,7 +351,7 @@ void Walker::ExpandSjd(const std::string& path, const base::DictValue& event) {
     }
   }
   if (stats) {
-    ++(out->size() > before ? stats->decoded : stats->failed);
+    ++(any ? stats->decoded : stats->failed);
   }
 }
 

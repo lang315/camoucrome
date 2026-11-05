@@ -5,6 +5,7 @@
 #include "components/camoucfg/observe_tables.h"
 
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <set>
 #include <string>
@@ -347,6 +348,137 @@ TEST(ObserveTablesTest, RandomBytesNeverCrash) {
     EXPECT_TRUE(d.has_value()) << "buffer " << i;
   }
   EXPECT_LT(timer.Elapsed().InSeconds(), 10);
+}
+
+Args WsArgs(const std::string& top_frame,
+            const std::string& site,
+            const std::string& b64,
+            const std::string& size,
+            const std::string& cut = "") {
+  return {{"endpoint", "a.test/ws"}, {"top_frame", top_frame}, {"site", site},
+          {"origin", site},          {"script", ""},           {"opcode", "1"},
+          {"size", size},            {"b64", b64},             {"cut", cut}};
+}
+
+TEST(ObserveTablesTest, DroppedMiddleFragmentIsPartialNotDecoded) {
+  TraceBuilder b;
+  b.Add(1, "camou.send.http", Http("7", "a.test/s", kJson, "TOKEN-A", "1"));
+  b.Add(1, "camou.send.body", Body("7", "0", "0", std::string_view(kBody).substr(0, 10)));
+  // bytes 10..19 never arrived
+  b.Add(1, "camou.send.body", Body("7", "0", "20", std::string_view(kBody).substr(20)));
+  const base::DictValue r = Decode(b.Bytes());
+  ASSERT_EQ(r.FindList("sends")->size(), 1u);
+  const base::DictValue& row = SendRow(r, 0);
+  EXPECT_EQ(*row.FindInt("partial"), 1);
+  EXPECT_EQ(*row.FindDict("kinds")->FindInt("partial"), 1);
+  EXPECT_FALSE(row.FindDict("kinds")->contains("json"));
+  EXPECT_TRUE(row.FindList("fields")->empty());
+}
+
+TEST(ObserveTablesTest, FragmentsNotStartingAtZeroArePartial) {
+  TraceBuilder b;
+  b.Add(1, "camou.send.http", Http("7", "a.test/s", kJson, "TOKEN-A", "1"));
+  b.Add(1, "camou.send.body", Body("7", "0", "10", std::string_view(kBody).substr(10)));
+  const base::DictValue r = Decode(b.Bytes());
+  EXPECT_EQ(*SendRow(r, 0).FindInt("partial"), 1);
+  EXPECT_TRUE(SendRow(r, 0).FindList("fields")->empty());
+}
+
+TEST(ObserveTablesTest, MissingElementIsPartialNotDecoded) {
+  TraceBuilder b;
+  // Two elements announced, only element 0 arrived whole.
+  b.Add(1, "camou.send.http", Http("7", "a.test/s", kJson, "TOKEN-A", "2"));
+  b.Add(1, "camou.send.body", Body("7", "0", "0", kBody));
+  const base::DictValue r = Decode(b.Bytes());
+  EXPECT_EQ(*SendRow(r, 0).FindInt("partial"), 1);
+  EXPECT_FALSE(SendRow(r, 0).FindDict("kinds")->contains("json"));
+}
+
+TEST(ObserveTablesTest, CutAndBodyCutAreSurfacedInStatus) {
+  TraceBuilder b;
+  b.Add(1, "camou.send.http", Http("7", "a.test/s", kJson, "TOKEN-A", "1"));
+  Args cut = Body("7", "0", "0", kBody);
+  cut.back().second = "1";
+  b.Add(1, "camou.send.body", cut);
+  std::string many = "[";
+  for (int i = 0; i < 6000; ++i) many += i ? ",1" : "1";
+  many += "]";
+  b.Add(1, "camou.send.http", Http("8", "a.test/s", kJson, "TOKEN-A", "1"));
+  b.Add(1, "camou.send.body", Body("8", "0", "0", many));
+  const base::DictValue r = Decode(b.Bytes());
+  EXPECT_EQ(*r.FindDict("status")->FindInt("cut"), 1);
+  EXPECT_EQ(*r.FindDict("status")->FindInt("body_cut"), 1);
+}
+
+TEST(ObserveTablesTest, WsFrameKeyBeatsSiteAndFailedB64IsMissing) {
+  const std::string text = kBody;
+  TraceBuilder b;
+  // The frame key names another tab though the site is ours: not ours.
+  b.Add(1, "camou.send.ws", WsArgs("TOKEN-B", "https://a.test", B64(text), "40"));
+  EXPECT_TRUE(Decode(b.Bytes()).FindList("sends")->empty());
+  // The frame key is ours though the site is not: attributed by frame.
+  TraceBuilder c;
+  c.Add(1, "camou.send.ws", WsArgs("TOKEN-A", "https://other.test", B64(text), "40"));
+  const base::DictValue r = Decode(c.Bytes());
+  ASSERT_EQ(r.FindList("sends")->size(), 1u);
+  EXPECT_EQ(*SendRow(r, 0).FindString("by"), "frame");
+  // Bytes that do not decode count as missing and make no row.
+  TraceBuilder d;
+  d.Add(1, "camou.send.ws", WsArgs("TOKEN-A", "https://a.test", "!!!", "40"));
+  const base::DictValue m = Decode(d.Bytes());
+  EXPECT_TRUE(m.FindList("sends")->empty());
+  EXPECT_EQ(*m.FindDict("status")->FindInt("missing"), 1);
+}
+
+TEST(ObserveTablesTest, UntrustedSizeDoesNotWrapBytes) {
+  TraceBuilder b;
+  b.Add(1, "camou.send.ws",
+        WsArgs("TOKEN-A", "https://a.test", B64("abc"), "18446744073709551615"));
+  b.Add(1, "camou.send.ws", WsArgs("TOKEN-A", "https://a.test", B64("abc"), "2"));
+  const base::DictValue r = Decode(b.Bytes());
+  ASSERT_EQ(r.FindList("sends")->size(), 1u);
+  EXPECT_EQ(*SendRow(r, 0).FindInt("bytes"), std::numeric_limits<int>::max());
+}
+
+TEST(ObserveTablesTest, Ipv6HostIsOwnHost) {
+  TraceBuilder b;
+  for (int i = 0; i < 5; ++i) {
+    const std::string id = std::to_string(10 + i);
+    b.Add(1, "camou.send.http", Http(id, "[::2]:80/y", kJson, "", "1", "http://[::1]:80"));
+    b.Add(1, "camou.send.body", Body(id, "0", "0", kBody));
+  }
+  b.Add(1, "camou.send.http", Http("20", "[::1]:80/x", kJson, "", "1", "http://[::1]:80"));
+  b.Add(1, "camou.send.body", Body("20", "0", "0", kBody));
+  const base::DictValue r = Decode(b.Bytes(), "{}", {"http://[::1]:80", "TOKEN-A"});
+  ASSERT_EQ(r.FindList("sends")->size(), 2u);
+  EXPECT_EQ(*SendRow(r, 0).FindString("endpoint"), "[::1]:80/x");
+}
+
+TEST(ObserveTablesTest, MutatedValidTraceNeverCrashes) {
+  TraceBuilder b;
+  b.Add(1, "camou.send.http", Http("7", "a.test/s", kJson, "TOKEN-A", "2"));
+  b.Add(1, "camou.send.body", Body("7", "0", "0", kBody));
+  b.Add(1, "camou.send.file", {{"loader", "7"}, {"element", "1"}, {"size", "9"}});
+  b.Add(1, "camou.send.ws", WsArgs("TOKEN-A", "https://a.test", B64(kBody), "40"));
+  b.Add(1, "Screen.width",
+        {{"origin", "https://a.test"}, {"site", "https://a.test"}, {"script", "x.js"}},
+        kRead);
+  const std::vector<uint8_t> good = b.Bytes();
+  ASSERT_GT(good.size(), 100u);
+  std::mt19937 rng(7);
+  for (int i = 0; i < 2000; ++i) {
+    std::vector<uint8_t> m = good;
+    if (i % 4 == 0) {
+      m.resize(rng() % m.size());  // truncation
+    } else {
+      for (int k = 0; k <= i % 3; ++k) {
+        m[rng() % m.size()] ^= static_cast<uint8_t>(1u << (rng() % 8));
+      }
+    }
+    auto d = base::JSONReader::ReadDict(
+        DecodeTables(m, {}, "{}", {"https://a.test", "TOKEN-A"}), base::JSON_PARSE_RFC);
+    ASSERT_TRUE(d.has_value()) << "mutation " << i;
+  }
 }
 
 }  // namespace

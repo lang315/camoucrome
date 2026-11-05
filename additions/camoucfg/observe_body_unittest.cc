@@ -61,7 +61,8 @@ TEST(ObserveBodyTest, GoldenHttpParity) {
 
 TEST(ObserveBodyTest, GoldenDivergentCasesPinCpp) {
   const std::map<std::string, std::pair<std::string, std::vector<std::pair<std::string, std::string>>>> cpp = {
-      {"json-float-integral", {"json", {{"a", "int"}}}},
+      {"big-int-precision", {"json", {{"a", "id"}}}},
+      {"integral-float-past-int32", {"json", {{"a", "id"}}}},
       {"json-depth-300", {"opaque", {}}},
       {"unicode-digits-id", {"json", {{"a", "str<10>"}}}},
   };
@@ -73,6 +74,13 @@ TEST(ObserveBodyTest, GoldenDivergentCasesPinCpp) {
     BodyFields f = Fields(FromB64(*d.FindString("b64")), *d.FindString("ct"), true, nullptr);
     EXPECT_EQ(f.kind, it->second.first);
     EXPECT_EQ(Classes(f.fields), it->second.second);
+    if (it->first == "big-int-precision") {
+      // The class agrees; the digits do not (base::Value stores the integer
+      // as a double, which holds 9007199254740992).
+      ASSERT_EQ(f.fields.size(), 1u);
+      EXPECT_EQ((*d.FindList("text"))[0].GetList()[1].GetString(), "9007199254740993");
+      EXPECT_EQ(Display(f.fields[0].second), "9007199254740992");
+    }
     ++seen;
   }
   EXPECT_EQ(seen, cpp.size());
@@ -111,6 +119,7 @@ TEST(ObserveBodyTest, DeepNestingStops) {
   BodyFields f = Fields(deep, "", true, nullptr);
   EXPECT_EQ(f.kind, "json");
   EXPECT_TRUE(f.cut);
+  EXPECT_TRUE(f.fields.empty());
   // JSON inside a string inside a string is walked into (3 levels).
   std::string s = "{\"w\":1517}";
   for (int i = 0; i < 2; ++i) {
@@ -122,6 +131,40 @@ TEST(ObserveBodyTest, DeepNestingStops) {
   ASSERT_EQ(g.fields.size(), 1u);
   EXPECT_EQ(g.fields[0].first, "[][].w");
   EXPECT_FALSE(g.cut);
+}
+
+TEST(ObserveBodyTest, MultipartPartBombSetsCut) {
+  std::string zeros(20 << 20, '\0');
+  std::string packed;
+  ASSERT_TRUE(compression::GzipCompress(zeros, &packed));
+  const std::string raw =
+      "--B\r\nContent-Disposition: form-data; name=\"p\"\r\n\r\n" + packed +
+      "\r\n--B--\r\n";
+  BodyFields f = Fields(raw, "multipart/form-data; boundary=B", true, nullptr);
+  EXPECT_EQ(f.kind, "multipart");
+  ASSERT_EQ(f.fields.size(), 1u);
+  EXPECT_EQ(f.fields[0].second.type, Leaf::Type::kOpaque);
+  EXPECT_TRUE(f.cut);
+}
+
+TEST(ObserveBodyTest, ExactFieldCapThenEmptyContainerDoesNotCut) {
+  std::string s = "[";
+  for (size_t i = 0; i < kMaxFields; ++i) s += "1,";
+  s += "[]]";
+  BodyFields f = Fields(s, "", true, nullptr);
+  EXPECT_EQ(f.fields.size(), kMaxFields);
+  EXPECT_FALSE(f.cut);
+  BodyFields g = Fields(s.substr(0, s.size() - 3) + "2]", "", true, nullptr);
+  EXPECT_TRUE(g.cut);  // a field past the cap does cut
+}
+
+TEST(ObserveBodyTest, NumberClassesMatchOracle) {
+  BodyFields f = Fields(
+      R"({"dpr":2.0,"mid":1000000000000000,"big":10000000000000000,"s":2147483647,"a":2147483648})",
+      "", true, nullptr);
+  EXPECT_EQ(Classes(f.fields),
+            (std::vector<std::pair<std::string, std::string>>{
+                {"a", "id"}, {"big", "id"}, {"dpr", "float"}, {"mid", "id"}, {"s", "id"}}));
 }
 
 TEST(ObserveBodyTest, FieldCapCuts) {

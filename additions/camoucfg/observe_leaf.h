@@ -27,9 +27,10 @@ struct Leaf {
 
   static Leaf Str(std::string s);
   static Leaf Opaque(size_t n);
-  // A JSON scalar. base::JSONReader keeps no int/float token kind: an integral
-  // double below 1e21 counts as Python's int (JS JSON writes integers that
-  // way). A container becomes kStr of its JSON (sjd signal values only).
+  // A JSON scalar. base::JSONReader keeps no int/float token kind: an INTEGER
+  // is a Python int, an integral DOUBLE from 2^31 up to 1e21 is a big int,
+  // and any other DOUBLE (including 2.0) is a Python float. A container
+  // becomes kStr of its JSON (sjd signal values only).
   static Leaf FromValue(const base::Value& v);
 };
 

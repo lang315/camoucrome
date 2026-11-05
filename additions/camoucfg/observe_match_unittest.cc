@@ -53,14 +53,24 @@ TEST(ObserveMatchTest, GoldenHttpMatchParity) {
   EXPECT_GE(hits, 10);  // every encoding appears in the golden file
 }
 
-// Not a divergence after all (found at compile time): base::NumberToString
-// writes 1e+16 like Python's str(1e16), so the string form matches.
-TEST(ObserveMatchTest, LargeFloatReprMatchesPython) {
+// A truth value from 2^31 up is a Python int: its digits match, not 1e+16.
+TEST(ObserveMatchTest, BigIntegerTruthMatchesDigits) {
   base::DictValue truth;
   truth.Set("x", 1e16);
-  const std::vector<Hit> hits = Match(Leaf::Str("1e+16"), truth);
+  const std::vector<Hit> hits = Match(Leaf::Str("10000000000000000"), truth);
   ASSERT_EQ(hits.size(), 1u);
   EXPECT_EQ(hits[0].encoding, "str");
+  EXPECT_TRUE(Match(Leaf::Str("1e+16"), truth).empty());
+}
+
+// An integral truth float below 2^31 prints as Python's str(2.0).
+TEST(ObserveMatchTest, IntegralFloatTruthMatchesDotZero) {
+  base::DictValue truth;
+  truth.Set("x", 2.0);
+  const std::vector<Hit> hits = Match(Leaf::Str("2.0"), truth);
+  ASSERT_EQ(hits.size(), 1u);
+  EXPECT_EQ(hits[0].encoding, "str");
+  EXPECT_TRUE(Match(Leaf::Str("2"), truth).empty());
 }
 
 TEST(ObserveMatchTest, SkippedValues) {

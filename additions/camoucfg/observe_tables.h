@@ -42,12 +42,19 @@ namespace camoucfg::observe {
 //   camou.send.ws     one per WebSocket message
 //     endpoint, site (top-level site, "" in a worker), origin, script,
 //     opcode (uint, 1 text or 2 binary), size (uint, the whole message),
-//     b64 (base64 of at most 256 KiB, fragmented by the hook if it must be),
+//     b64 (base64 of at most 256 KiB; one arg carries the whole message),
 //     cut (uint 1 when the message was cut at that cap, else ""/0)
 //
 // A body event whose loader has no camou.send.http event is dropped (counted
 // nowhere); an http event with elements > 0 and neither bytes nor file
 // elements is "missing". Fragments over 16 KiB are never emitted.
+// A request whose fragments do not tile each element from offset 0, or whose
+// bytes and file elements are not exactly 0..elements-1, is "partial": its row
+// counts it (kinds.partial, partial) and the body is not decoded.
+// A send row's kinds map holds json, form, multipart, opaque (decoded bodies),
+// text, binary (ws), file (only file elements, their bytes never read),
+// missing and partial. A ws message whose b64 does not decode adds to
+// status.missing and has no row.
 //
 // The output is the tables JSON the page renders (documented in
 // docs/observer/README.md). status: events, lost (trace buffer wrap: stats

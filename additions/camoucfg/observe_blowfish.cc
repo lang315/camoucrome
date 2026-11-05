@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Bit-twiddling over fixed tables and byte frames; bounds are checked by hand.
+// File-wide on purpose: the cipher indexes fixed 18/256-word tables by masked
+// bytes and Load32/Store32 walk 8-byte blocks of a length-checked buffer (some
+// 20 sites); wrapping each in UNSAFE_BUFFERS would only add noise.
 #pragma allow_unsafe_buffers
 
 #include "components/camoucfg/observe_blowfish.h"

@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Bit-twiddling over fixed tables and byte frames; bounds are checked by hand.
+// File-wide on purpose: frame and MQTT parsing index a string_view whose
+// length is checked at every step (see the j + n > frame.size() style guards).
 #pragma allow_unsafe_buffers
 
 #include "components/camoucfg/observe_frames.h"
