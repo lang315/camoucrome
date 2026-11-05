@@ -59,6 +59,35 @@ source_set("canvas_readback") {
   ]
 }
 
+# The tracking observer's decoder (docs/observer/README.md): a port of
+# scripts/observe_drive.py and scripts/sites/facebook.py. Linked only into the
+# data_decoder utility (services/data_decoder) and the unit tests; it reads
+# untrusted bytes and never runs in the browser process.
+static_library("observe_decoder") {
+  sources = [
+    "observe_blowfish.cc",
+    "observe_blowfish.h",
+    "observe_blowfish_init.cc",
+    "observe_body.cc",
+    "observe_body.h",
+    "observe_frames.cc",
+    "observe_frames.h",
+    "observe_leaf.cc",
+    "observe_leaf.h",
+    "observe_match.cc",
+    "observe_match.h",
+    "observe_tables.cc",
+    "observe_tables.h",
+  ]
+  deps = [
+    "//base",
+    "//third_party/perfetto:libperfetto",
+    "//third_party/perfetto/protos/perfetto/common:zero",
+    "//third_party/perfetto/protos/perfetto/trace:zero",
+    "//third_party/zlib",
+  ]
+}
+
 source_set("unit_tests") {
   testonly = true
   sources = [
@@ -75,17 +104,29 @@ source_set("unit_tests") {
     "mask_config_unittest.cc",
     "media_phantoms_unittest.cc",
     "mouse_trajectories_unittest.cc",
+    "observe_blowfish_unittest.cc",
+    "observe_body_unittest.cc",
+    "observe_frames_unittest.cc",
+    "observe_golden_test_util.h",
+    "observe_leaf_unittest.cc",
+    "observe_match_unittest.cc",
+    "observe_tables_unittest.cc",
     "preset_loader_unittest.cc",
   ]
 
   deps = [
     ":camoucfg",
     ":canvas_readback",
+    ":observe_decoder",
     "//base",
     "//base/test:test_support",
     "//components/camoucfg_lgpl",
     "//skia",
     "//testing/gtest",
+    "//third_party/perfetto:libperfetto",
+    "//third_party/perfetto/protos/perfetto/common:zero",
+    "//third_party/perfetto/protos/perfetto/trace:zero",
+    "//third_party/zlib/google:compression_utils",
     "//ui/gfx/geometry",
   ]
 }
