@@ -12,6 +12,7 @@ import gzip
 import json
 import pathlib
 import random
+import re
 import sys
 import zlib
 
@@ -187,14 +188,23 @@ def sjd_cases():
     return [{"name": n, "event": e, "doc": SITE.hooks.decode_sjd(e)} for n, e in cases]
 
 
+def b64_strict(s):
+    """B64DecodeStrict (observe_leaf.cc): b64decode(validate=True) as Python 3.12.1 had it. Later 3.12 patches
+    refuse "YWJj=", so the rule is spelled out rather than taken from the running Python."""
+    m = re.fullmatch(r"([A-Za-z0-9+/]*)(=*)", s)
+    if not m or (not m[1] and m[2]):
+        return None
+    data, pads = len(m[1]), len(m[2])
+    if data % 4 and {2: 2, 3: 1}.get(data % 4) != pads:
+        return None
+    return base64.b64decode(m[1] + "=" * (-data % 4))
+
+
 def b64_cases():
     out = []
     for s in ["YQ", "YQ=", "YQ==", "YR==", "YWJj", "YQ===", "=", "YQ==YQ==", "Y===", "YWI=", "YWJj=", "YW Jj", ""]:
-        try:
-            r = b64e(base64.b64decode(s, validate=True))
-        except Exception:
-            r = None
-        out.append({"in": s, "out_b64": r})
+        r = b64_strict(s)
+        out.append({"in": s, "out_b64": None if r is None else b64e(r)})
     return out
 
 
