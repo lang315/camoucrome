@@ -1,0 +1,1764 @@
+{
+ "b64": [
+  {
+   "in": "YQ",
+   "out_b64": null
+  },
+  {
+   "in": "YQ=",
+   "out_b64": null
+  },
+  {
+   "in": "YQ==",
+   "out_b64": "YQ=="
+  },
+  {
+   "in": "YR==",
+   "out_b64": "YQ=="
+  },
+  {
+   "in": "YWJj",
+   "out_b64": "YWJj"
+  },
+  {
+   "in": "YQ===",
+   "out_b64": null
+  },
+  {
+   "in": "=",
+   "out_b64": null
+  },
+  {
+   "in": "YQ==YQ==",
+   "out_b64": null
+  },
+  {
+   "in": "Y===",
+   "out_b64": null
+  },
+  {
+   "in": "YWI=",
+   "out_b64": "YWI="
+  },
+  {
+   "in": "YWJj=",
+   "out_b64": "YWJj"
+  },
+  {
+   "in": "YW Jj",
+   "out_b64": null
+  },
+  {
+   "in": "",
+   "out_b64": ""
+  }
+ ],
+ "divergent": [
+  {
+   "b64": "eyJhIjoxLjB9",
+   "ct": "",
+   "fields": [
+    [
+     "a",
+     "float"
+    ]
+   ],
+   "kind": "json",
+   "name": "json-float-integral",
+   "why": "Python float, C++ int: base::JSONReader keeps no int/float token kind"
+  },
+  {
+   "b64": "W1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1d",
+   "ct": "",
+   "fields": [],
+   "kind": "json",
+   "name": "json-depth-300",
+   "why": "Python json, C++ opaque: base::JSONReader's depth limit"
+  },
+  {
+   "b64": "eyJhIjoi2aHZotmj2aTZpdmm2afZqNmp2aAifQ==",
+   "ct": "",
+   "fields": [
+    [
+     "a",
+     "id"
+    ]
+   ],
+   "kind": "json",
+   "name": "unicode-digits-id",
+   "why": "Python id, C++ str<10>: Python's \\d matches Unicode digits"
+  }
+ ],
+ "http": [
+  {
+   "b64": "eyJ3IjoxNTE3LCJoIjo4NTMsInR6IjoiUGFjaWZpYy9DaGF0aGFtIiwiZHByIjoxLjI1LCJtIjpmYWxzZSwibiI6bnVsbCwiaWRzIjpbMTIzNDU2Nzg5MDEsIjk4NzY1NDMyMTA5Il19",
+   "bools": [
+    [
+     "m",
+     "media.dynamicRangeHigh"
+    ],
+    [
+     "m",
+     "uaData.mobile"
+    ]
+   ],
+   "ct": "application/json",
+   "fields": [
+    [
+     "dpr",
+     "float"
+    ],
+    [
+     "h",
+     "int"
+    ],
+    [
+     "ids[]",
+     "id"
+    ],
+    [
+     "ids[]",
+     "id"
+    ],
+    [
+     "m",
+     "bool"
+    ],
+    [
+     "n",
+     "null"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "dpr",
+     "window.devicePixelRatio",
+     "exact",
+     false
+    ],
+    [
+     "h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "json-plain",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "H4sIAAAAAAACE6tWKleyMjQ1NNdRylCysjA11lEqqVKyUgpITM5My0zWd85ILMlIzFWqBQAIV5KqKQAAAA==",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "h",
+     "int"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "gzip-json",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eJyrVipXsjI0NTTXUcpQsrIwNdZRKqlSslIKSEzOTMtM1nfOSCzJSMxVqgUA4OgL3g==",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "h",
+     "int"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "zlib-json",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "q1YqV7IyNDU011HKULKyMDXWUSqpUrJSCkhMzkzLTNZ3zkgsyUjMVaoFAA==",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "h",
+     "int"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "raw-deflate-json",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJkIjoie1wid1wiOjE1MTcsXCJ4XCI6XCJbMSwyXVwifSJ9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "d.w",
+     "int"
+    ],
+    [
+     "d.x[]",
+     "int"
+    ],
+    [
+     "d.x[]",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "d.w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "d.w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "d.w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "json-in-string",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "ZXlKM0lqb3hOVEUzTENKb0lqbzROVE1zSW5SNklqb2lVR0ZqYVdacFl5OURhR0YwYUdGdEluMD0=",
+   "bools": [],
+   "ct": "",
+   "fields": [
+    [
+     "h",
+     "int"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "b64-json",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "SDRzSUFBQUFBQUFDRTZ0V0tsZXlNalExTk5kUnlsQ3lzakExMWxFcXFWS3lVZ3BJVE01TXkweldkODVJTE1sSXpGV3FCUUFJVjVLcUtRQUFBQT09",
+   "bools": [],
+   "ct": "",
+   "fields": [
+    [
+     "h",
+     "int"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "b64-of-gzip-json",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "cmVzPTE1MTd4ODUzJnR6PVBhY2lmaWMlMkZDaGF0aGFtJnE9YStiJmJsYW5rJiV6ej0x",
+   "bools": [],
+   "ct": "application/x-www-form-urlencoded",
+   "fields": [
+    [
+     "%zz",
+     "str<1>"
+    ],
+    [
+     "blank",
+     "str<0>"
+    ],
+    [
+     "q",
+     "str<3>"
+    ],
+    [
+     "res",
+     "str<8>"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ]
+   ],
+   "kind": "form",
+   "matches": [
+    [
+     "res",
+     "screen",
+     "WxH",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ]
+   ],
+   "name": "form-plus-percent",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0idyINCg0KMTUxNw0KLS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0idHoiDQoNClBhY2lmaWMvQ2hhdGhhbQ0KLS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0icmVzIg0KDQoxNTE3eDg1Mw0KLS0tLS0tQjBVTkQtLQ0K",
+   "bools": [],
+   "ct": "multipart/form-data; boundary=----B0UND",
+   "fields": [
+    [
+     "res",
+     "str<8>"
+    ],
+    [
+     "tz",
+     "str<15>"
+    ],
+    [
+     "w",
+     "str<4>"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [
+    [
+     "res",
+     "screen",
+     "WxH",
+     false
+    ],
+    [
+     "tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "str",
+     false
+    ]
+   ],
+   "name": "multipart-strings",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0idyINCg0KMTUxNw0KLS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0iaCINCg0KODUzDQotLS0tLS1CMFVORC0tDQo=",
+   "bools": [],
+   "ct": "",
+   "fields": [
+    [
+     "h",
+     "str<3>"
+    ],
+    [
+     "w",
+     "str<4>"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [
+    [
+     "h",
+     "screen.height",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "screen.availWidth",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "str",
+     false
+    ]
+   ],
+   "name": "multipart-no-ct",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0icG9zdF8wIg0KDQp4nKtWKleyMjQ1NNdRylCysjA11lEqqVKyUgpITM5My0zWd85ILMlIzFWqBQDg6AveDQotLS0tLS1CMFVORA0KQ29udGVudC1EaXNwb3NpdGlvbjogZm9ybS1kYXRhOyBuYW1lPSJ4Ig0KDQoxDQotLS0tLS1CMFVORC0tDQo=",
+   "bools": [],
+   "ct": "multipart/form-data; boundary=----B0UND",
+   "fields": [
+    [
+     "post_0.h",
+     "int"
+    ],
+    [
+     "post_0.tz",
+     "str<15>"
+    ],
+    [
+     "post_0.w",
+     "int"
+    ],
+    [
+     "x",
+     "str<1>"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [
+    [
+     "post_0.h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "post_0.tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "post_0.w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "post_0.w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "post_0.w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "multipart-zlib-part",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0iZiI7IGZpbGVuYW1lPSJhLmpzb24iDQoNCnsidyI6MTUxNywiaCI6ODUzLCJ0eiI6IlBhY2lmaWMvQ2hhdGhhbSJ9DQotLS0tLS1CMFVORC0tDQo=",
+   "bools": [],
+   "ct": "multipart/form-data; boundary=----B0UND",
+   "fields": [
+    [
+     "f.h",
+     "int"
+    ],
+    [
+     "f.tz",
+     "str<15>"
+    ],
+    [
+     "f.w",
+     "int"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [
+    [
+     "f.h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "f.tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "f.w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "f.w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "f.w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "multipart-file-json",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0iZiI7IGZpbGVuYW1lPSJhLmJpbiINCg0KNhg4xChmyVrJkJ88Iip2BGBt4wenmZf8SALtyTAeDgRTSZlYCgr4pftfj59Nivd7/RimnXUUq3ZfrQcmQZleF0MH3y6wC6K2EitKHc/CaNhmDr4DtxfKgK6/m3xxgmbh/8kD94y79D9WJ4cQaELRqlzBhIo1fI3p1yBFdw7BjRE8gvmZZh7VrDMKxBan/NmDIIU5lBtixAsijgNFS60K01ddco7l2yUQxb8GpY/9a00fMyV7DUql2eDz8FpiWDZE5m7IP8Kmzacj3/rux081M7A8EXTr42XgGKW4h1FpWKry0PAEpooE8cb3EoLKExISUdB6AbrqYFXhAc4kwW7DtXwvC3lhYkioldeZYNrhxyoIbd4N6xGEE6pEaJb++R9/nR38KWFISBPIMa2ODQotLS0tLS1CMFVORC0tDQo=",
+   "bools": [],
+   "ct": "multipart/form-data; boundary=----B0UND",
+   "fields": [
+    [
+     "f",
+     "opaque<300>"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [],
+   "name": "multipart-file-opaque",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgZmlsZW5hbWU9ImEiOyBuYW1lPSJiIg0KDQp7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifQ0KLS0tLS0tQjBVTkQtLQ0K",
+   "bools": [],
+   "ct": "multipart/form-data; boundary=----B0UND",
+   "fields": [
+    [
+     "b.h",
+     "int"
+    ],
+    [
+     "b.tz",
+     "str<15>"
+    ],
+    [
+     "b.w",
+     "int"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [
+    [
+     "b.h",
+     "screen.height",
+     "exact",
+     false
+    ],
+    [
+     "b.tz",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "b.w",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "b.w",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "b.w",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "multipart-filename-before-name",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJhc2lkIjoiMDEyMzQ1Njc4OWFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6Iiwic2pkIjoialplL09ySU8yZDc0dWlSWjhadVdHbmFsNkRVekdMZ1k3RDhCck93a1N4RWpiYmF4RGFjQkdJVTI5SGYvTzUyTyJ9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "asid",
+     "str<36>"
+    ],
+    [
+     "sjd",
+     "str<64>"
+    ],
+    [
+     "sjd.12[]",
+     "int"
+    ],
+    [
+     "sjd.12[]",
+     "str<15>"
+    ],
+    [
+     "sjd.7[]",
+     "bool"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "sjd.12[]",
+     "screen.availWidth",
+     "exact",
+     false
+    ],
+    [
+     "sjd.12[]",
+     "screen.width",
+     "exact",
+     false
+    ],
+    [
+     "sjd.12[]",
+     "timezone",
+     "exact",
+     false
+    ],
+    [
+     "sjd.12[]",
+     "window.outerWidth",
+     "exact",
+     false
+    ]
+   ],
+   "name": "sjd-ok",
+   "sjd": [
+    1,
+    0
+   ]
+  },
+  {
+   "b64": "eyJhc2lkIjoienp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6Iiwic2pkIjoialplL09ySU8yZDc0dWlSWjhadVdHbmFsNkRVekdMZ1k3RDhCck93a1N4RWpiYmF4RGFjQkdJVTI5SGYvTzUyTyJ9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "asid",
+     "str<36>"
+    ],
+    [
+     "sjd",
+     "str<64>"
+    ]
+   ],
+   "kind": "json",
+   "matches": [],
+   "name": "sjd-bad-key",
+   "sjd": [
+    0,
+    1
+   ]
+  },
+  {
+   "b64": "eyJhc2lkIjoic2hvcnQiLCJzamQiOiJqWmUvT3JJTzJkNzR1aVJaOFp1V0duYWw2RFV6R0xnWTdEOEJyT3drU3hFamJiYXhEYWNCR0lVMjlIZi9PNTJPIn0=",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "asid",
+     "str<5>"
+    ],
+    [
+     "sjd",
+     "str<64>"
+    ]
+   ],
+   "kind": "json",
+   "matches": [],
+   "name": "sjd-short-asid",
+   "sjd": [
+    0,
+    1
+   ]
+  },
+  {
+   "b64": "eyJ1IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE1Ni4wLjAuMCBTYWZhcmkvNTM3LjM2IFN5bnRoZXRpIHN1ZmZpeCJ9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "u",
+     "str<127>"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "u",
+     "navigator.userAgent",
+     "substr",
+     false
+    ]
+   ],
+   "name": "ua-substr",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJsIjoiZW4tVVMsZW4ifQ==",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "l",
+     "str<8>"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "l",
+     "navigator.languages",
+     "joined",
+     false
+    ]
+   ],
+   "name": "languages-joined",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJvIjo4MjV9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "o",
+     "int"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "o",
+     "timezoneOffset",
+     "tzoffset-neg",
+     false
+    ]
+   ],
+   "name": "tz-negated",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJ3IjoiMTUxNyJ9",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "w",
+     "str<4>"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "w",
+     "screen.availWidth",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "screen.width",
+     "str",
+     false
+    ],
+    [
+     "w",
+     "window.outerWidth",
+     "str",
+     false
+    ]
+   ],
+   "name": "str-number",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJjIjoxMiwiZSI6IjRnIn0=",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [
+    [
+     "c",
+     "int"
+    ],
+    [
+     "e",
+     "str<2>"
+    ]
+   ],
+   "kind": "json",
+   "matches": [
+    [
+     "c",
+     "navigator.hardwareConcurrency",
+     "exact",
+     true
+    ],
+    [
+     "e",
+     "connection.effectiveType",
+     "exact",
+     true
+    ]
+   ],
+   "name": "weak-small",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "eyJtb2JpbGUiOmZhbHNlLCJoZHIiOmZhbHNlLCJ4Ijp0cnVlfQ==",
+   "bools": [
+    [
+     "hdr",
+     "media.dynamicRangeHigh"
+    ],
+    [
+     "hdr",
+     "uaData.mobile"
+    ],
+    [
+     "mobile",
+     "media.dynamicRangeHigh"
+    ],
+    [
+     "mobile",
+     "uaData.mobile"
+    ]
+   ],
+   "ct": "application/json",
+   "fields": [
+    [
+     "hdr",
+     "bool"
+    ],
+    [
+     "mobile",
+     "bool"
+    ],
+    [
+     "x",
+     "bool"
+    ]
+   ],
+   "kind": "json",
+   "matches": [],
+   "name": "bool-field",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "H4sIAAAAAAACE6tWKleyMjQ1NNdRylCysjA11lEqqVKyUgpITM5My0zWd85ILMlIzFWqBQAIV5KqKQ==",
+   "bools": [],
+   "ct": "application/json",
+   "fields": [],
+   "kind": "opaque",
+   "matches": [],
+   "name": "truncated-gzip",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "uX9p917fNccf2tNwZurpHRT26gFFazQXcLg16UL1SfHR7nPwvbWXztndDJXU6/AIkpXrq1wtbrHG+XwV7S8yGQ==",
+   "bools": [],
+   "ct": "",
+   "fields": [],
+   "kind": "opaque",
+   "matches": [],
+   "name": "garbage",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "",
+   "bools": [],
+   "ct": "",
+   "fields": [],
+   "kind": "opaque",
+   "matches": [],
+   "name": "empty",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "LS0tLS0tQjBVTkQNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0i/yINCg0KMTUxNw0KLS0tLS0tQjBVTkQtLQ0K",
+   "bools": [],
+   "ct": "multipart/form-data; boundary=----B0UND",
+   "fields": [
+    [
+     "�",
+     "str<4>"
+    ]
+   ],
+   "kind": "multipart",
+   "matches": [
+    [
+     "�",
+     "screen.availWidth",
+     "str",
+     false
+    ],
+    [
+     "�",
+     "screen.width",
+     "str",
+     false
+    ],
+    [
+     "�",
+     "window.outerWidth",
+     "str",
+     false
+    ]
+   ],
+   "name": "utf8-invalid-name",
+   "sjd": [
+    0,
+    0
+   ]
+  },
+  {
+   "b64": "YWJjAGRlZj0xAA==",
+   "bools": [],
+   "ct": "",
+   "fields": [
+    [
+     "abc\u0000def",
+     "str<2>"
+    ]
+   ],
+   "kind": "form",
+   "matches": [],
+   "name": "nul-text",
+   "sjd": [
+    0,
+    0
+   ]
+  }
+ ],
+ "inflate": [
+  {
+   "in_b64": "",
+   "name": "empty",
+   "out_b64": null
+  },
+  {
+   "in_b64": "H4sIAAAAAAACE8tIzcnJVyiuzCvJSC3JTFZIyk+pVMigTBAAV76TG1QAAAA=",
+   "name": "gzip-exact",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "H4sIAAAAAAACE8tIzcnJVyiuzCvJSC3JTFZIyk+pVMigTBAAV76TG1QAAABqdW5r",
+   "name": "gzip-junk",
+   "out_b64": null
+  },
+  {
+   "in_b64": "H4sIAAAAAAACE8tIzcnJVyiuzCvJSC3JTFZIyk+pVMigTBAAV76TG1QAAAAAAA==",
+   "name": "gzip-nuls",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "H4sIAAAAAAACE8tIzcnJVyiuzCvJSC3JTFZIyk+pVMigTBAAV76TG1Q=",
+   "name": "gzip-truncated",
+   "out_b64": null
+  },
+  {
+   "in_b64": "H4sIAAAAAAACE8tIzcnJVyiuzCvJSC3JTFZIyk+pVMigTBAAV76TG1QAAAAfiwgAAAAAAAITy0jNyclXKK7MK8lILclMVkjKT6lUyKBMEABXvpMbVAAAAA==",
+   "name": "gzip-two-members",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "eJzLSM3JyVcorswryUgtyUxWSMpPqVTIoEwQAFrBH/U=",
+   "name": "zlib-exact",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "eJzLSM3JyVcorswryUgtyUxWSMpPqVTIoEwQAFrBH/VqdW5r",
+   "name": "zlib-junk",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "eJzLSM3JyVcorswryUgtyUxWSMpPqVTIoEwQAFrBH/UAAA==",
+   "name": "zlib-nuls",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "eJzLSM3JyVcorswryUgtyUxWSMpPqVTIoEwQAFo=",
+   "name": "zlib-truncated",
+   "out_b64": null
+  },
+  {
+   "in_b64": "eJzLSM3JyVcorswryUgtyUxWSMpPqVTIoEwQAFrBH/V4nMtIzcnJVyiuzCvJSC3JTFZIyk+pVMigTBAAWsEf9Q==",
+   "name": "zlib-two-members",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "y0jNyclXKK7MK8lILclMVkjKT6lUyKBMEAA=",
+   "name": "raw-exact",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "y0jNyclXKK7MK8lILclMVkjKT6lUyKBMEABqdW5r",
+   "name": "raw-junk",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "y0jNyclXKK7MK8lILclMVkjKT6lUyKBMEAAAAA==",
+   "name": "raw-nuls",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  },
+  {
+   "in_b64": "y0jNyclXKK7MK8lILclMVkjKT6lUyKA=",
+   "name": "raw-truncated",
+   "out_b64": null
+  },
+  {
+   "in_b64": "y0jNyclXKK7MK8lILclMVkjKT6lUyKBMEADLSM3JyVcorswryUgtyUxWSMpPqVTIoEwQAA==",
+   "name": "raw-two-members",
+   "out_b64": "aGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkgaGVsbG8gc3ludGhldGljIGJvZHkg"
+  }
+ ],
+ "sjd": [
+  {
+   "doc": {
+    "12": [
+     "Pacific/Chatham",
+     1517
+    ],
+    "7": [
+     true
+    ]
+   },
+   "event": {
+    "asid": "0123456789abcdefghijklmnopqrstuvwxyz",
+    "sjd": "jZe/OrIO2d74uiRZ8ZuWGnal6DUzGLgY7D8BrOwkSxEjbbaxDacBGIU29Hf/O52O"
+   },
+   "name": "ok"
+  },
+  {
+   "doc": null,
+   "event": {
+    "asid": "0123456789abcdefghijklmnopqrstuvwxyz",
+    "sjd": "MTIzNDU2Nw=="
+   },
+   "name": "ciphertext-not-multiple-of-8"
+  },
+  {
+   "doc": null,
+   "event": {
+    "asid": "0123456789abcdefghijklmnopqrstuvwxyz",
+    "sjd": "!!not base64!!"
+   },
+   "name": "non-base64"
+  },
+  {
+   "doc": null,
+   "event": {
+    "asid": "0123456789abcdefghijklmnopqrstuvwxyz",
+    "sjd": "9yxjoMwHSx+X4bg2EQn1wQ=="
+   },
+   "name": "plaintext-not-json"
+  },
+  {
+   "doc": null,
+   "event": {
+    "asid": "0123456789abcdefghijklmnopqrstuvwxyz",
+    "sjd": "Tu9gNbVqIx8="
+   },
+   "name": "plaintext-list"
+  },
+  {
+   "doc": null,
+   "event": {
+    "asid": "0123456789abcdefghijklmnopqrstuvwxyz",
+    "sjd": "SiUYHUMr09LwtMqzY+cbe8nVM3axuQwX"
+   },
+   "name": "non-list-value"
+  },
+  {
+   "doc": null,
+   "event": {
+    "asid": "0123456789abcdefghiéééénopqrstuvwxyz",
+    "sjd": "jZe/OrIO2d74uiRZ8ZuWGnal6DUzGLgY7D8BrOwkSxEjbbaxDacBGIU29Hf/O52O"
+   },
+   "name": "non-ascii-key"
+  }
+ ],
+ "truth": {
+  "connection.effectiveType": "4g",
+  "media.dynamicRangeHigh": false,
+  "navigator.deviceMemory": 16,
+  "navigator.hardwareConcurrency": 12,
+  "navigator.languages": [
+   "en-US",
+   "en"
+  ],
+  "navigator.userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Syntheti",
+  "screen.availHeight": 813,
+  "screen.availWidth": 1517,
+  "screen.height": 853,
+  "screen.width": 1517,
+  "timezone": "Pacific/Chatham",
+  "timezoneOffset": -825,
+  "uaData.mobile": false,
+  "webgl.renderer": "ANGLE (Synthetic, Synthetic Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "window.devicePixelRatio": 1.25,
+  "window.innerHeight": 700,
+  "window.innerWidth": 1400,
+  "window.outerHeight": 813,
+  "window.outerWidth": 1517
+ },
+ "ws": [
+  {
+   "b64": "eyJ3IjoxNTE3LCJoIjo4NTMsInR6IjoiUGFjaWZpYy9DaGF0aGFtIn0=",
+   "name": "text-json",
+   "opcode": 1,
+   "partial": 0,
+   "units": [
+    [
+     "(text)",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "//4AZ2FyYmFnZQ==",
+   "name": "text-garbage",
+   "opcode": 1,
+   "partial": 0,
+   "units": [
+    [
+     "(opaque)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "CQ==",
+   "name": "keepalive-09",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "09/(single)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "Cg==",
+   "name": "keepalive-0a",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "0a/(single)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "MjEABC90L3gAB3sidyI6MTUxNywiaCI6ODUzLCJ0eiI6IlBhY2lmaWMvQ2hhdGhhbSJ9",
+   "name": "mqtt-publish-json",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "/t/x",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "EDkABE1RVFQEgAA8AAJpZAApeyJ3IjoxNTE3LCJoIjo4NTMsInR6IjoiUGFjaWZpYy9DaGF0aGFtIn0=",
+   "name": "mqtt-connect-username",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "CONNECT",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "MC8ABC90L2F7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifTAPAAQvdC9ieyJoIjo4NTN9",
+   "name": "mqtt-two-packets",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "/t/a",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ],
+    [
+     "/t/b",
+     [
+      [
+       "h",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "MC8ABC90L2F7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifTAvAAQv",
+   "name": "mqtt-cut",
+   "opcode": 2,
+   "partial": 5,
+   "units": [
+    [
+     "/t/a",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ],
+    [
+     "(partial)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "IAEA",
+   "name": "mqtt-short-connack",
+   "opcode": 2,
+   "partial": 3,
+   "units": [
+    [
+     "(opaque)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "DQABKwAAAAF7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifQ==",
+   "name": "gw-0d-json",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "0d/(json)",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "DQABLgAAAAEBAgN7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifQ==",
+   "name": "gw-0d-json-header",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "0d/(json+3)",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "DQABMwAAAAEwLwAEL3QveHsidyI6MTUxNywiaCI6ODUzLCJ0eiI6IlBhY2lmaWMvQ2hhdGhhbSJ9",
+   "name": "gw-0d-mqtt",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "0d//t/x",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ]
+   ]
+  },
+  {
+   "b64": "DAABAgAAAAU=",
+   "name": "gw-0c-ack",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "0c/(ack)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "DQABKwAAAAF7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifQwAAQIAAAAG",
+   "name": "gw-two-chunks",
+   "opcode": 2,
+   "partial": 0,
+   "units": [
+    [
+     "0d/(json)",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ],
+    [
+     "0c/(ack)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "DQABKwAAAAF7InciOjE1MTcsImgiOjg1MywidHoiOiJQYWNpZmljL0NoYXRoYW0ifQABAgM=",
+   "name": "gw-rest",
+   "opcode": 2,
+   "partial": 4,
+   "units": [
+    [
+     "0d/(json)",
+     [
+      [
+       "h",
+       "int"
+      ],
+      [
+       "tz",
+       "str<15>"
+      ],
+      [
+       "w",
+       "int"
+      ]
+     ]
+    ],
+    [
+     "(partial)",
+     []
+    ]
+   ]
+  },
+  {
+   "b64": "uX9p917fNccf2tNwZurpHRT26gFFazQXcLg16UL1SfHR7nPwvbWXztndDJXU6/AIkpXrq1wtbrHG+XwV7S8yGQ==",
+   "name": "binary-garbage",
+   "opcode": 2,
+   "partial": 64,
+   "units": [
+    [
+     "(opaque)",
+     []
+    ]
+   ]
+  }
+ ]
+}
