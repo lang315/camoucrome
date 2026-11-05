@@ -1,0 +1,567 @@
+diff --git a/base/trace_event/builtin_categories.h b/base/trace_event/builtin_categories.h
+index 18dbbc179c..e8f2f3abc1 100644
+--- a/base/trace_event/builtin_categories.h
++++ b/base/trace_event/builtin_categories.h
+@@ -315,6 +315,7 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
+     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("blink.invalidation"))
+         .SetTags("slow"),
+     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("camou.observe")),
++    perfetto::Category(TRACE_DISABLED_BY_DEFAULT("camou.observe.send")),
+     perfetto::Category("blink.webdx_feature_usage").SetTags("slow"),
+     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("cc"))
+         .SetTags("slow"),
+diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
+index 3603695f3e..698980761c 100644
+--- a/services/network/BUILD.gn
++++ b/services/network/BUILD.gn
+@@ -2,17 +2,26 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
++import("//build/buildflag_header.gni")
+ import("//build/config/features.gni")
++import("//components/camoucfg/observe.gni")
+ import("//components/vrp_flags/features.gni")
+ import("//mojo/public/tools/bindings/mojom.gni")
+ import("//net/features.gni")
+ import("//services/network/public/cpp/features.gni")
+ import("//testing/libfuzzer/fuzzer_test.gni")
+ 
++buildflag_header("camou_observe_buildflags") {
++  header = "camou_observe_buildflags.h"
++  flags = [ "CAMOU_OBSERVE=$camou_observe" ]
++}
++
+ component("network_service") {
+   sources = [
+     "accept_ch_frame_interceptor.cc",
+     "accept_ch_frame_interceptor.h",
++    "camou_observe_net.cc",
++    "camou_observe_net.h",
+     "chunked_data_pipe_upload_data_stream.cc",
+     "chunked_data_pipe_upload_data_stream.h",
+     "conditional_cache_deletion_helper.cc",
+@@ -358,6 +367,7 @@ component("network_service") {
+   configs += [ "//build/config/compiler:wexit_time_destructors" ]
+ 
+   deps = [
++    ":camou_observe_buildflags",
+     "//base",
+     "//base:build_time",
+     "//build:chromecast_buildflags",
+diff --git a/services/network/camou_observe_net.cc b/services/network/camou_observe_net.cc
+new file mode 100644
+index 0000000000..6a04bfb0b6
+--- /dev/null
++++ b/services/network/camou_observe_net.cc
+@@ -0,0 +1,112 @@
++#include "services/network/camou_observe_net.h"
++
++#if BUILDFLAG(CAMOU_OBSERVE)
++
++#include <algorithm>
++#include <atomic>
++#include <string>
++
++#include "base/base64.h"
++#include "net/base/isolation_info.h"
++#include "net/base/schemeful_site.h"
++#include "net/http/http_request_headers.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/resource_request_body.h"
++#include "url/gurl.h"
++
++namespace network::camou_observe {
++
++uint64_t NextLoaderId() {
++  static std::atomic<uint64_t> next{1};
++  return next.fetch_add(1);
++}
++
++void EmitBody(uint64_t loader,
++              uint32_t element,
++              uint64_t offset,
++              base::span<const uint8_t> bytes) {
++  if (offset >= kMaxBodyBytes) {
++    // A streamed element read past the cap: one terminal fragment marks the
++    // cut (readers send it once). An empty chunk past the cap hides nothing.
++    if (!bytes.empty()) {
++      TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("camou.observe.send"),
++                          "camou.send.body", "loader", loader, "element",
++                          element, "offset", uint64_t{kMaxBodyBytes}, "b64", "",
++                          "cut", "1");
++    }
++    return;
++  }
++  const bool cut = offset + bytes.size() > kMaxBodyBytes;
++  bytes = bytes.first(std::min<size_t>(bytes.size(), kMaxBodyBytes - offset));
++  if (bytes.empty()) {
++    TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("camou.observe.send"),
++                        "camou.send.body", "loader", loader, "element", element,
++                        "offset", offset, "b64", "", "cut", "");
++    return;
++  }
++  for (size_t at = 0; at < bytes.size(); at += kFragmentBytes) {
++    const auto part =
++        bytes.subspan(at, std::min(kFragmentBytes, bytes.size() - at));
++    const bool last = at + part.size() == bytes.size();
++    TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("camou.observe.send"),
++                        "camou.send.body", "loader", loader, "element", element,
++                        "offset", offset + at, "b64", base::Base64Encode(part),
++                        "cut", (cut && last) ? "1" : "");
++  }
++}
++
++void EmitRequest(uint64_t loader,
++                 const ResourceRequest& request,
++                 const net::IsolationInfo& isolation,
++                 const std::optional<base::UnguessableToken>& top_frame_id) {
++  const GURL& url = request.url;
++  std::string endpoint(url.host());
++  if (url.has_port()) {
++    endpoint += ":";
++    endpoint += url.port();
++  }
++  endpoint += url.path();
++  std::string top_site;
++  if (isolation.top_frame_origin()) {
++    top_site = net::SchemefulSite(*isolation.top_frame_origin()).Serialize();
++  }
++  const std::string top_frame = top_frame_id ? top_frame_id->ToString() : "";
++  const std::string content_type =
++      request.headers.GetHeader(net::HttpRequestHeaders::kContentType)
++          .value_or("");
++  const auto& elements = *request.request_body->elements();
++  TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("camou.observe.send"),
++                      "camou.send.http", "loader", loader, "endpoint", endpoint,
++                      "method", request.method, "top_site", top_site,
++                      "top_frame", top_frame, "content_type", content_type,
++                      "elements", static_cast<uint64_t>(elements.size()));
++  uint32_t i = 0;
++  for (const auto& element : elements) {
++    if (element.type() == mojom::DataElementDataView::Tag::kBytes) {
++      EmitBody(loader, i, 0, element.As<DataElementBytes>().bytes());
++    } else if (element.type() == mojom::DataElementDataView::Tag::kFile) {
++      TRACE_EVENT_INSTANT(TRACE_DISABLED_BY_DEFAULT("camou.observe.send"),
++                          "camou.send.file", "loader", loader, "element", i,
++                          "size", element.As<DataElementFile>().length());
++    }
++    // Data pipes emit from their readers as the upload reads them.
++    ++i;
++  }
++}
++
++}  // namespace network::camou_observe
++
++#else  // !BUILDFLAG(CAMOU_OBSERVE)
++
++namespace network::camou_observe {
++uint64_t NextLoaderId() {
++  return 0;
++}
++void EmitRequest(uint64_t,
++                 const ResourceRequest&,
++                 const net::IsolationInfo&,
++                 const std::optional<base::UnguessableToken>&) {}
++void EmitBody(uint64_t, uint32_t, uint64_t, base::span<const uint8_t>) {}
++}  // namespace network::camou_observe
++
++#endif
+diff --git a/services/network/camou_observe_net.h b/services/network/camou_observe_net.h
+new file mode 100644
+index 0000000000..058f1a4c4b
+--- /dev/null
++++ b/services/network/camou_observe_net.h
+@@ -0,0 +1,57 @@
++// Camoucrome tracking observer: request-body send events. Contract in
++// components/camoucfg/observe_tables.h. Everything is a no-op unless
++// camou_observe is on and the .send category is recording.
++#ifndef SERVICES_NETWORK_CAMOU_OBSERVE_NET_H_
++#define SERVICES_NETWORK_CAMOU_OBSERVE_NET_H_
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include <optional>
++
++#include "base/containers/span.h"
++#include "base/trace_event/trace_event.h"
++#include "base/unguessable_token.h"
++#include "services/network/camou_observe_buildflags.h"
++
++namespace net {
++class IsolationInfo;
++}
++
++namespace network {
++
++struct ResourceRequest;
++
++namespace camou_observe {
++
++inline constexpr size_t kMaxBodyBytes = 256 * 1024;  // per body element
++inline constexpr size_t kFragmentBytes = 16 * 1024;
++
++inline bool Enabled() {
++#if BUILDFLAG(CAMOU_OBSERVE)
++  bool enabled = false;
++  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
++      TRACE_DISABLED_BY_DEFAULT("camou.observe.send"), &enabled);
++  return enabled;
++#else
++  return false;
++#endif
++}
++
++uint64_t NextLoaderId();
++
++void EmitRequest(uint64_t loader,
++                 const ResourceRequest& request,
++                 const net::IsolationInfo& isolation,
++                 const std::optional<base::UnguessableToken>& top_frame_id);
++
++// Zero-length `bytes` emits one empty fragment so the element is covered.
++void EmitBody(uint64_t loader,
++              uint32_t element,
++              uint64_t offset,
++              base::span<const uint8_t> bytes);
++
++}  // namespace camou_observe
++}  // namespace network
++
++#endif  // SERVICES_NETWORK_CAMOU_OBSERVE_NET_H_
+diff --git a/services/network/chunked_data_pipe_upload_data_stream.cc b/services/network/chunked_data_pipe_upload_data_stream.cc
+index 8da5039090..fab06c3436 100644
+--- a/services/network/chunked_data_pipe_upload_data_stream.cc
++++ b/services/network/chunked_data_pipe_upload_data_stream.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "services/network/chunked_data_pipe_upload_data_stream.h"
+ 
++#include <algorithm>
++
+ #include "base/check_op.h"
+ #include "base/containers/span.h"
+ #include "base/functional/bind.h"
+@@ -15,6 +17,7 @@
+ #include "mojo/public/cpp/bindings/message.h"
+ #include "net/base/io_buffer.h"
+ #include "net/base/net_errors.h"
++#include "services/network/camou_observe_net.h"
+ 
+ namespace network {
+ 
+@@ -49,6 +52,9 @@ bool ChunkedDataPipeUploadDataStream::AllowHTTP1() const {
+ 
+ int ChunkedDataPipeUploadDataStream::InitInternal(
+     const net::NetLogWithSource& net_log) {
++#if BUILDFLAG(CAMOU_OBSERVE)
++  camou_pos_ = 0;
++#endif
+   // If there was an error either passed to the ReadCallback or as a result of
+   // closing the DataPipeGetter pipe, fail the read.
+   if (status_ != net::OK)
+@@ -130,6 +136,24 @@ int ChunkedDataPipeUploadDataStream::ReadInternal(net::IOBuffer* buf,
+     if (size_ && *size_ == bytes_read_)
+       SetIsFinalChunk();
+     WriteToCacheIfNeeded(buf, num_bytes);
++#if BUILDFLAG(CAMOU_OBSERVE)
++    if (camou_loader_) [[unlikely]] {
++      const uint64_t end = camou_pos_ + num_bytes;
++      if (end > camou_emitted_ && camou_observe::Enabled()) {
++        const uint64_t from = std::max(camou_pos_, camou_emitted_);
++        // Past the cap EmitBody emits one terminal cut fragment; send it once.
++        const bool past_cap = from >= camou_observe::kMaxBodyBytes;
++        if (!past_cap || !camou_cut_sent_) {
++          camou_cut_sent_ = past_cap;
++          camou_observe::EmitBody(
++              camou_loader_, camou_element_, from,
++              buf->first(num_bytes).subspan(from - camou_pos_));
++        }
++        camou_emitted_ = end;
++      }
++      camou_pos_ = end;
++    }
++#endif
+     return num_bytes;
+   }
+ 
+@@ -297,6 +321,9 @@ int ChunkedDataPipeUploadDataStream::ReadFromCacheIfNeeded(net::IOBuffer* buf,
+   buf->span().copy_prefix_from(base::as_byte_span(cache_).subspan(
+       bytes_read_, base::checked_cast<size_t>(read_size)));
+   bytes_read_ += read_size;
++#if BUILDFLAG(CAMOU_OBSERVE)
++  camou_pos_ += read_size;  // replayed from cache: already emitted
++#endif
+   return read_size;
+ }
+ 
+diff --git a/services/network/chunked_data_pipe_upload_data_stream.h b/services/network/chunked_data_pipe_upload_data_stream.h
+index 1ea909709c..26252f975d 100644
+--- a/services/network/chunked_data_pipe_upload_data_stream.h
++++ b/services/network/chunked_data_pipe_upload_data_stream.h
+@@ -20,6 +20,7 @@
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/net_errors.h"
+ #include "net/base/upload_data_stream.h"
++#include "services/network/camou_observe_buildflags.h"
+ #include "services/network/public/cpp/resource_request_body.h"
+ #include "services/network/public/mojom/chunked_data_pipe_getter.mojom.h"
+ 
+@@ -103,6 +104,20 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) ChunkedDataPipeUploadDataStream
+   std::optional<uint64_t> size_;
+ 
+   size_t bytes_read_ = 0;
++#if BUILDFLAG(CAMOU_OBSERVE)
++ public:
++  void SetCamouObserve(uint64_t loader, uint32_t element) {
++    camou_loader_ = loader;
++    camou_element_ = element;
++  }
++
++ private:
++  uint64_t camou_loader_ = 0;
++  uint32_t camou_element_ = 0;
++  uint64_t camou_pos_ = 0;       // bytes of this element read since Init
++  uint64_t camou_emitted_ = 0;   // high-water mark; a re-read emits nothing
++  bool camou_cut_sent_ = false;  // terminal cut fragment already emitted
++#endif
+ 
+   // Set to a net::Error other than net::OK if the DataPipeGetter returns an
+   // error.
+diff --git a/services/network/data_pipe_element_reader.cc b/services/network/data_pipe_element_reader.cc
+index 682ffdc129..033461731d 100644
+--- a/services/network/data_pipe_element_reader.cc
++++ b/services/network/data_pipe_element_reader.cc
+@@ -16,6 +16,7 @@
+ #include "mojo/public/c/system/types.h"
+ #include "net/base/io_buffer.h"
+ #include "net/base/net_errors.h"
++#include "services/network/camou_observe_net.h"
+ 
+ namespace network {
+ 
+@@ -40,6 +41,9 @@ int DataPipeElementReader::Init(net::CompletionOnceCallback callback) {
+   handle_watcher_.Cancel();
+   size_ = 0;
+   bytes_read_ = 0;
++#if BUILDFLAG(CAMOU_OBSERVE)
++  camou_pos_ = 0;
++#endif
+   // Need to do this to prevent any previously pending ReadCallback() invocation
+   // from running.
+   weak_factory_.InvalidateWeakPtrs();
+@@ -136,6 +140,24 @@ int DataPipeElementReader::ReadInternal(net::IOBuffer* buf, int buf_length) {
+                                        buf->first(max_bytes), bytes_received);
+   if (rv == MOJO_RESULT_OK) {
+     bytes_read_ += bytes_received;
++#if BUILDFLAG(CAMOU_OBSERVE)
++    if (camou_loader_) [[unlikely]] {
++      const uint64_t end = camou_pos_ + bytes_received;
++      if (end > camou_emitted_ && camou_observe::Enabled()) {
++        const uint64_t from = std::max(camou_pos_, camou_emitted_);
++        // Past the cap EmitBody emits one terminal cut fragment; send it once.
++        const bool past_cap = from >= camou_observe::kMaxBodyBytes;
++        if (!past_cap || !camou_cut_sent_) {
++          camou_cut_sent_ = past_cap;
++          camou_observe::EmitBody(
++              camou_loader_, camou_element_, from,
++              buf->first(bytes_received).subspan(from - camou_pos_));
++        }
++        camou_emitted_ = end;
++      }
++      camou_pos_ = end;
++    }
++#endif
+     return base::checked_cast<int>(bytes_received);
+   }
+ 
+diff --git a/services/network/data_pipe_element_reader.h b/services/network/data_pipe_element_reader.h
+index af7d9134b9..eda6f4ee2b 100644
+--- a/services/network/data_pipe_element_reader.h
++++ b/services/network/data_pipe_element_reader.h
+@@ -16,6 +16,7 @@
+ #include "mojo/public/cpp/system/simple_watcher.h"
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/upload_element_reader.h"
++#include "services/network/camou_observe_buildflags.h"
+ #include "services/network/public/cpp/resource_request_body.h"
+ #include "services/network/public/mojom/data_pipe_getter.mojom.h"
+ 
+@@ -80,6 +81,20 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) DataPipeElementReader
+   uint64_t size_ = 0;
+ 
+   uint64_t bytes_read_ = 0;
++#if BUILDFLAG(CAMOU_OBSERVE)
++ public:
++  void SetCamouObserve(uint64_t loader, uint32_t element) {
++    camou_loader_ = loader;
++    camou_element_ = element;
++  }
++
++ private:
++  uint64_t camou_loader_ = 0;
++  uint32_t camou_element_ = 0;
++  uint64_t camou_pos_ = 0;       // bytes of this element read since Init
++  uint64_t camou_emitted_ = 0;   // high-water mark; a re-read emits nothing
++  bool camou_cut_sent_ = false;  // terminal cut fragment already emitted
++#endif
+   net::CompletionOnceCallback init_callback_;
+   net::CompletionOnceCallback read_callback_;
+ 
+diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
+index 729337bbde..8444b90a95 100644
+--- a/services/network/url_loader.cc
++++ b/services/network/url_loader.cc
+@@ -86,6 +86,7 @@
+ #include "net/url_request/url_request_context.h"
+ #include "net/url_request/url_request_context_getter.h"
+ #include "services/network/accept_ch_frame_interceptor.h"
++#include "services/network/camou_observe_net.h"
+ #include "services/network/cookie_settings.h"
+ #include "services/network/devtools_durable_msg_writer.h"
+ #include "services/network/file_opener_for_upload.h"
+@@ -535,6 +536,16 @@ URLLoader::URLLoader(
+   if (context.ShouldRequireIsolationInfo()) {
+     DCHECK(!url_request_->isolation_info().IsEmpty());
+   }
++#if BUILDFLAG(CAMOU_OBSERVE)
++  // Bytes elements are recorded when the request is built, not when sent: a
++  // later cancelled or blocked request still shows its body (intended).
++  if (request.request_body && camou_observe::Enabled()) [[unlikely]] {
++    camou_loader_ = camou_observe::NextLoaderId();
++    camou_observe::EmitRequest(camou_loader_, request,
++                               url_request_->isolation_info(),
++                               factory_params_->top_frame_id);
++  }
++#endif
+   SetUpUrlRequestCallbacks(shared_dictionary_manager);
+ 
+   throttling_token_ = network::ScopedThrottlingToken::MaybeCreate(
+@@ -651,7 +662,13 @@ void URLLoader::SetUpUpload(
+       base::ThreadPool::CreateSequencedTaskRunner(
+           {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
+   url_request_->set_upload(url_loader_util::CreateUploadDataStream(
+-      request.request_body.get(), file_open_result.value(), task_runner.get()));
++      request.request_body.get(), file_open_result.value(), task_runner.get(),
++#if BUILDFLAG(CAMOU_OBSERVE)
++      camou_loader_
++#else
++      0
++#endif
++      ));
+ 
+   if (request.enable_upload_progress) {
+     upload_progress_tracker_ = std::make_unique<UploadProgressTracker>(
+diff --git a/services/network/url_loader.h b/services/network/url_loader.h
+index bf23e0501a..fe4a8964f6 100644
+--- a/services/network/url_loader.h
++++ b/services/network/url_loader.h
+@@ -38,6 +38,7 @@
+ #include "net/socket/socket_tag.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "net/url_request/url_request.h"
++#include "services/network/camou_observe_buildflags.h"
+ #include "services/network/devtools_durable_msg.h"
+ #include "services/network/keepalive_statistics_recorder.h"
+ #include "services/network/local_network_access_url_loader_interceptor.h"
+@@ -499,6 +500,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
+ 
+   const int32_t request_id_;
+   const int keepalive_request_size_;
++#if BUILDFLAG(CAMOU_OBSERVE)
++  uint64_t camou_loader_ = 0;
++#endif
+   const bool keepalive_;
+   // ClientSecurityState from ResourceRequest::trusted_params, if present.
+   // Otherwise, null. Use GetClientSecurityState() to access, which falls back
+diff --git a/services/network/url_loader_util.cc b/services/network/url_loader_util.cc
+index 370ca04034..bf151e3872 100644
+--- a/services/network/url_loader_util.cc
++++ b/services/network/url_loader_util.cc
+@@ -24,6 +24,7 @@
+ #include "net/http/http_response_info.h"
+ #include "net/storage_access_api/status.h"
+ #include "net/url_request/url_request.h"
++#include "services/network/camou_observe_net.h"
+ #include "services/network/chunked_data_pipe_upload_data_stream.h"
+ #include "services/network/cookie_manager.h"
+ #include "services/network/cookie_settings.h"
+@@ -345,7 +346,8 @@ bool HasFetchStreamingUploadBody(const ResourceRequest& request) {
+ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
+     ResourceRequestBody* body,
+     std::vector<base::File>& opened_files,
+-    base::SequencedTaskRunner* file_task_runner) {
++    base::SequencedTaskRunner* file_task_runner,
++    uint64_t camou_loader) {
+   // In the case of a chunked upload, there will just be one element.
+   if (body->elements()->size() == 1) {
+     if (auto* element = body->elements_mutable()
+@@ -358,6 +360,11 @@ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
+       if (element->read_only_once()) {
+         upload_data_stream->EnableCache();
+       }
++#if BUILDFLAG(CAMOU_OBSERVE)
++      if (camou_loader) {
++        upload_data_stream->SetCamouObserve(camou_loader, 0);
++      }
++#endif
+       return upload_data_stream;
+     }
+   }
+@@ -377,9 +384,16 @@ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
+             std::move(*opened_file++)));
+         break;
+       case network::mojom::DataElementDataView::Tag::kDataPipe: {
+-        element_readers.push_back(std::make_unique<DataPipeElementReader>(
++        auto reader = std::make_unique<DataPipeElementReader>(
+             body,
+-            element.As<network::DataElementDataPipe>().CloneDataPipeGetter()));
++            element.As<network::DataElementDataPipe>().CloneDataPipeGetter());
++#if BUILDFLAG(CAMOU_OBSERVE)
++        if (camou_loader) {
++          reader->SetCamouObserve(
++              camou_loader, static_cast<uint32_t>(element_readers.size()));
++        }
++#endif
++        element_readers.push_back(std::move(reader));
+         break;
+       }
+       case network::mojom::DataElementDataView::Tag::kChunkedDataPipe: {
+diff --git a/services/network/url_loader_util.h b/services/network/url_loader_util.h
+index 229f6cee81..8972df6102 100644
+--- a/services/network/url_loader_util.h
++++ b/services/network/url_loader_util.h
+@@ -61,7 +61,8 @@ bool HasFetchStreamingUploadBody(const ResourceRequest&);
+ std::unique_ptr<net::UploadDataStream> CreateUploadDataStream(
+     ResourceRequestBody* body,
+     std::vector<base::File>& opened_files,
+-    base::SequencedTaskRunner* file_task_runner);
++    base::SequencedTaskRunner* file_task_runner,
++    uint64_t camou_loader = 0);
+ 
+ // Computes the CookieSettingOverrides to use for a given `ResourceRequest`.
+ COMPONENT_EXPORT(NETWORK_SERVICE)
+diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
+index 4390b72a7c..4a7e6978da 100644
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -7,6 +7,7 @@ import("//build/buildflag_header.gni")
+ import("//build/compiled_action.gni")
+ import("//build/config/compiler/compiler.gni")
+ import("//build/config/ui.gni")
++import("//components/camoucfg/observe.gni")
+ import("//build/nocompile.gni")
+ import("//media/media_options.gni")
+ import("//testing/libfuzzer/fuzzer_test.gni")
+@@ -272,10 +273,6 @@ declare_args() {
+   # Enable TRACE_EVENT instrumentation for Blink bindings.
+   # Disabled by default as it increases binary size.
+   enable_blink_bindings_tracing = extended_tracing_enabled
+-
+-  # Camoucrome tracking observer (docs/observer/README.md). An audit build
+-  # only: scripts/package.py refuses a release with it on.
+-  camou_observe = false
+ }
+ 
+ # ZSTD compression is available on Fuchsia (crbug.com/534838085) but disable in

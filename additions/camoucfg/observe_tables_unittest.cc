@@ -47,6 +47,9 @@ class TraceBuilder {
     p->set_trusted_packet_sequence_id(seq);
     if (seen_.insert(seq).second) {
       p->set_sequence_flags(pb::TracePacket::SEQ_INCREMENTAL_STATE_CLEARED);
+      // As the service delivers a sequence start: dropped-before, and first.
+      p->set_first_packet_on_sequence(true);
+      p->set_previous_packet_dropped(true);
     }
     if (drop_next_) {
       p->set_previous_packet_dropped(true);

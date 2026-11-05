@@ -70,7 +70,9 @@ std::vector<Event> ParseTrace(base::span<const uint8_t> trace, int* lost) {
   for (auto it = t.packet(); it; ++it) {
     pb::TracePacket_Decoder p(*it);
     const uint32_t seq = p.trusted_packet_sequence_id();
-    if (p.previous_packet_dropped()) {
+    // The service marks the first packet of every sequence as dropped-before; that
+    // is no loss. A packet that is not first on its sequence is.
+    if (p.previous_packet_dropped() && !p.first_packet_on_sequence()) {
       ++*lost;
     }
     if (p.incremental_state_cleared() ||
