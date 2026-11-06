@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Live recon through chrome://observer: names and matches out, never a value.
 
-Launches a chrome.exe with the camoucrome launcher on the profile dir the caller gives
+Starts a chrome.exe (no identity config, the launcher's flags) on the profile dir the caller gives
 (--profile, used as is: a fresh empty dir is logged out, a warm copy made by
 observe-auto.ps1 -KeepWarm is logged in; this script never copies or reads a profile),
-opens https://www.facebook.com/ and chrome://observer, presses Record on the facebook
-tab, waits --seconds, reads pre#raw and writes {"status", "tables": names_only(..)} to
---out. The only input to any page is the Record click on chrome://observer.
+opens https://www.facebook.com/ and chrome://observer, presses Record on the facebook tab,
+with --reload then reloads that tab (on -7 the reloaded document is not recorded),
+waits --seconds, reads pre#raw and writes {"status", "tables": names_only(..)} to --out.
+The only inputs are the Record click on chrome://observer and, with --reload, that one reload.
 
-Driving: patchright launches the browser; the pages are read over a raw CDP client that
-sends Runtime.evaluate only (never Runtime.enable), as verify_observer_page does.
+Driving: no Playwright; the pages are read over a raw CDP client that
+sends Runtime.evaluate and, with --reload, one Page.reload (never Runtime.enable or Page.enable).
 Run it through scripts/windows/run-interactive.ps1 (session 1), detached.
 Exit: 0 MEASURED, 3 UNMEASURED.
 """
@@ -17,6 +18,7 @@ import argparse
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -55,34 +57,48 @@ class _Tabs:
 
 def _measure(a):
     """(raw tables or None, reason or None)."""
-    from patchright.sync_api import sync_playwright
-    from camoucrome.launcher import launch
     import gpu_gate
     import verify_observer_page as vop
 
     port = vop.free_port()
     tables, why = None, None
-    with sync_playwright() as pw:
-        # --user-data-dir comes from user_data_dir=; the debugging port is the only extra argument
-        ctx = launch(pw, a.exe, user_data_dir=a.profile, headless=False, args=[f"--remote-debugging-port={port}"])
+    # chrome.exe directly, as recon.ps1 arm 2 starts the login: patchright's auto-attach sends
+    # Network.setCacheDisabled into the session facebook's reload closes, and its driver dies.
+    # These are the flags the camoucrome launcher adds with no config; no CAMOU_CONFIG is set.
+    proc = subprocess.Popen([a.exe, f"--user-data-dir={a.profile}", "--no-first-run", "--no-default-browser-check",
+                             f"--remote-debugging-port={port}", "about:blank"])
+    try:
+        vop.until(lambda: _json(port, "version"), 30, "DevTools port never answered")
+        tabs = _Tabs(port, vop.Cdp)
+        _, fb_cdp = tabs.open(FB)
+        obs = vop.Observer(tabs)
+        obs.pick("facebook.com")
+        obs.record()
+        if a.reload:  # 2026-11-06: the reloaded document is not recorded (0 reads, 0 sends on -7)
+            fb_cdp.call("Page.reload", {})
+        fb_cdp.close()
+        time.sleep(a.seconds)
+        obs.wait_refreshes(1)
+        tables = obs.raw()
+        crashes = gpu_gate.read_port(port)
+        if tables is None:
+            why = "pre#raw empty: " + obs.status()
+        elif crashes != 0:
+            why = f"GPU crash count {crashes}"
+    finally:
         try:
-            tabs = _Tabs(port, vop.Cdp)
-            _, fb_cdp = tabs.open(FB)
-            fb_cdp.close()  # only the tab is needed, not its socket
-            obs = vop.Observer(tabs)
-            obs.pick("facebook.com")
-            obs.record()
-            time.sleep(a.seconds)
-            obs.wait_refreshes(1)
-            tables = obs.raw()
-            crashes = gpu_gate.read_port(port)
-            if tables is None:
-                why = "pre#raw empty: " + obs.status()
-            elif crashes != 0:
-                why = f"GPU crash count {crashes}"
-        finally:
-            ctx.close()
+            vop.Cdp(_json(port, "version")["webSocketDebuggerUrl"]).call("Browser.close")
+            proc.wait(30)
+        except Exception:  # noqa: BLE001 - a browser that will not close is killed, never left running
+            proc.kill()
     return tables, why
+
+
+def _json(port, what):
+    try:
+        return json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json/{what}", timeout=5))
+    except OSError:
+        return None
 
 
 def run(a):
@@ -105,6 +121,7 @@ def main(argv=None):
     ap.add_argument("--profile", required=True, help="user-data-dir, used as is")
     ap.add_argument("--out", required=True, help="the names-only JSON file")
     ap.add_argument("--seconds", type=int, default=60)
+    ap.add_argument("--reload", action="store_true", help="reload the facebook tab after Record")
     return run(ap.parse_args(argv))
 
 
