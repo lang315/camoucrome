@@ -77,12 +77,14 @@ recalibration (no input sent, no extra load):
   keeping the last status/counts the way the refresh-error path does. Only
   reachable if our own trusted decoder emits non-JSON. Fix: keep last counts on
   a parse failure. Fold into the next observer-page touch.
-- **M4 (http attribution):** http/body rows are keyed to the Start-time
-  top-frame token with no site fallback, so a recorded tab that navigates its
-  main frame cross-site silently stops producing http/body rows while
-  site-keyed reads and WS rows continue. Accepted limitation (the operator
-  guide promises no continuity; T12 verify never navigates the recorded tab).
-  If continuity is wanted later, add a top_site fallback to the http matcher.
+- **M4 (http attribution): FIXED 2026-11-06.** The key was frozen at Start to
+  one document's top frame token and site, so a reload (new token) dropped the
+  tab's http rows and a Record before the first commit (site of the initial
+  about:blank) dropped its main-frame reads. The handler now observes the tab's
+  WebContents and adds every committed primary document's token and site
+  (`PrimaryPageChanged`; opaque sites skipped; capped at 256 documents). Two
+  same-site tabs stay apart for http (frame tokens); reads were and stay
+  site-keyed. verify_observer_page `follow reload *` / `follow early *`.
 - **M5 (decoder disconnect):** `OnDecoderDisconnected` can release
   `refresh_callback_` mid-stream, and `session_gen_` is per-session not
   per-refresh, so a same-session stale chunk could in theory contaminate a

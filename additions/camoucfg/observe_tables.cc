@@ -169,7 +169,7 @@ bool CutArg(const Args& a) {
 std::optional<std::string> Attribute(const Args& a, const TabKey& tab) {
   const std::string frame = Arg(a, "top_frame");
   if (!frame.empty()) {
-    if (frame == tab.top_frame_id) {
+    if (std::ranges::contains(tab.top_frame_ids, frame)) {
       return "frame";
     }
     return std::nullopt;
@@ -179,7 +179,7 @@ std::optional<std::string> Attribute(const Args& a, const TabKey& tab) {
     site = Arg(a, "site");
   }
   if (!site.empty()) {
-    if (site == tab.top_site) {
+    if (std::ranges::contains(tab.top_sites, site)) {
       return "site";
     }
     return std::nullopt;
@@ -505,14 +505,19 @@ std::string DecodeTables(base::span<const uint8_t> trace,
 
   // Sends: the tab site's own hosts first (no compiled host list), then count
   // descending, then endpoint, topic.
-  const std::string tab_host = HostOfSite(tab.top_site);
-  auto own = [&tab_host](const SendRow* r) {
-    if (tab_host.empty()) return false;
+  std::vector<std::string> tab_hosts;
+  for (const std::string& site : tab.top_sites) {
+    tab_hosts.push_back(HostOfSite(site));
+  }
+  auto own = [&tab_hosts](const SendRow* r) {
     const std::string h = HostOfEndpoint(r->endpoint);
-    return h == tab_host ||
-           (h.size() > tab_host.size() &&
-            h.compare(h.size() - tab_host.size() - 1, std::string::npos,
-                      "." + tab_host) == 0);
+    return std::ranges::any_of(tab_hosts, [&h](const std::string& tab_host) {
+      return !tab_host.empty() &&
+             (h == tab_host ||
+              (h.size() > tab_host.size() &&
+               h.compare(h.size() - tab_host.size() - 1, std::string::npos,
+                         "." + tab_host) == 0));
+    });
   };
   std::vector<const SendRow*> send_rows;
   for (const auto& [k, r] : sends) {

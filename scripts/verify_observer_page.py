@@ -33,7 +33,7 @@ import lib_ws_server  # noqa: E402
 
 WIDTH_COUNT = 8  # Screen.width reads on the test page: 1 + 7
 HWC_COUNT = 5  # Navigator.hardwareConcurrency: 1 + 4
-EXPECTED = 33
+EXPECTED = 37
 CONFIG = {"screen.width": 1517, "screen.height": 853, "navigator.hardwareConcurrency": 12,
           "navigator.deviceMemory": 16, "timezone:id": "Pacific/Chatham",
           "navigator.languages": ["en-US", "en"]}
@@ -89,6 +89,11 @@ const gz = async (s, f) => new Response(new Blob([s]).stream().pipeThrough(new C
   await post('/done', JSON.stringify({w: W, h: H, hc: HC, dm: DM, tz: TZ, langs: [...LG], gl: gl || null}));
 })();
 </script>"""
+# follow_run: reads a surface and POSTs once at load (__P__ is the POST path).
+FOLLOW_PAGE = ("<!doctype html><meta charset=utf-8><title>observer follow</title><script>"
+               "const hc = navigator.hardwareConcurrency;"
+               "fetch('__P__',{method:'POST',headers:{'Content-Type':'application/json'},"
+               "body:JSON.stringify({hc})})</script>")
 POST_PAGE = "<!doctype html><meta charset=utf-8><title>observer e2e post</title><script>fetch('/post/fetch-string',{method:'POST',body:'{\"p\":1}'})</script>"
 
 # ---------------------------------------------------------------------------- rows
@@ -135,13 +140,19 @@ class Site:
                         "__SJD__", json.dumps(SJD_BODY)).encode()
                 elif path == "/post.html":
                     ctype, out = "text/html", POST_PAGE.encode()
+                elif path == "/follow.html":
+                    ctype, out = "text/html", FOLLOW_PAGE.replace("__P__", "/f/reload").encode()
+                elif path == "/slow.html":
+                    time.sleep(3)  # Record lands while the tab still shows its initial about:blank
+                    ctype, out = "text/html", FOLLOW_PAGE.replace("__P__", "/f/early").encode()
                 elif path == "/go":
                     out = b"1" if site.go else b"0"
                 elif path == "/r307":
                     code, extra = 307, {"Location": "/s/redirected"}
                 elif path == "/done":
                     site.done = json.loads(body)
-                if path not in ("/go", "/page.html", "/post.html", "/favicon.ico"):
+                if path not in ("/go", "/page.html", "/post.html", "/follow.html", "/slow.html",
+                                "/favicon.ico"):
                     with site.lock:
                         site.reqs.append(path)
                 self.send_response(code)
@@ -158,9 +169,9 @@ class Site:
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
-    def seen(self, path):
+    def seen(self, path, n=1):
         with self.lock:
-            return path in self.reqs
+            return self.reqs.count(path) >= n
 
 
 # ---------------------------------------------------------------------------- raw CDP
@@ -468,6 +479,45 @@ def main_run(browser, site, frames):
     post_c.close()
 
 
+def follow_run(site):
+    """The key follows the tab: a reload after Record (a new top frame token) and a Record while
+    the tab is still on its initial about:blank (no site yet) both keep the page's rows."""
+    browser = Browser()
+    try:
+        _, pc = browser.open(f"http://127.0.0.1:{site.port}/follow.html")
+        until(lambda: site.seen("/f/reload"), 30, "follow page never sent")
+        obs = Observer(browser)
+        obs.pick(f"127.0.0.1:{site.port}/follow.html")
+        obs.record()
+        pc.call("Page.reload", {})
+        until(lambda: site.seen("/f/reload", 2), 30, "reloaded follow page never sent")
+        obs.wait_refreshes(1)
+        t = obs.raw() or {"sends": [], "reads": []}
+        rr = http_rows(t, "/f/reload")
+        row("follow reload http", len(rr) == 1 and rr[0]["count"] == 1 and rr[0]["by"] == "frame",
+            f"rows {[(r['endpoint'], r['by'], r['count']) for r in rr]}")
+        _, n = read_count(t, "Navigator.hardwareConcurrency.get")
+        row("follow reload read", n >= 1, f"count {n}")
+        obs.stop()
+        pc.close()
+
+        _, sc = browser.open(f"http://127.0.0.1:{site.port}/slow.html")
+        obs.pick(f"127.0.0.1:{site.port}/slow.html")
+        obs.record()
+        until(lambda: site.seen("/f/early"), 30, "slow page never sent")
+        obs.wait_refreshes(1)
+        t = obs.raw() or {"sends": [], "reads": []}
+        er = http_rows(t, "/f/early")
+        row("follow early http", len(er) == 1 and er[0]["count"] == 1,
+            f"rows {[(r['endpoint'], r['by'], r['count']) for r in er]}")
+        _, n = read_count(t, "Navigator.hardwareConcurrency.get")
+        row("follow early read", n >= 1, f"count {n}")
+        sc.close()
+        obs.close()
+    finally:
+        browser.stop()
+
+
 def blind_run(site):
     browser = Browser(filter_env="-*,camou.none")
     try:
@@ -499,6 +549,10 @@ def main():
             browser.stop()
     try:
         blind_run(site)
+    except Exception:  # noqa: BLE001
+        traceback.print_exc()
+    try:
+        follow_run(site)
     except Exception:  # noqa: BLE001
         traceback.print_exc()
     return finish()

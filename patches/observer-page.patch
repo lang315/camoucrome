@@ -578,10 +578,10 @@ index 0000000000..0b18923f51
 +};
 diff --git a/chrome/browser/ui/webui/observer/observer_page_handler.cc b/chrome/browser/ui/webui/observer/observer_page_handler.cc
 new file mode 100644
-index 0000000000..39030b964a
+index 0000000000..655199bc81
 --- /dev/null
 +++ b/chrome/browser/ui/webui/observer/observer_page_handler.cc
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,348 @@
 +// Copyright 2026 The Camoucrome Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -603,12 +603,14 @@ index 0000000000..39030b964a
 +#include "chrome/common/webui_url_constants.h"
 +#include "components/tabs/public/tab_interface.h"
 +#include "content/public/browser/browser_thread.h"
++#include "content/public/browser/page.h"
 +#include "content/public/browser/render_frame_host.h"
 +#include "content/public/browser/web_contents.h"
 +#include "mojo/public/cpp/base/big_buffer.h"
 +#include "net/base/schemeful_site.h"
 +#include "services/tracing/public/cpp/perfetto/perfetto_config.h"
 +#include "third_party/blink/public/common/tokens/tokens.h"
++#include "url/origin.h"
 +
 +namespace {
 +
@@ -664,19 +666,18 @@ index 0000000000..39030b964a
 +
 +  content::RenderFrameHost* rfh =
 +      content::RenderFrameHost::FromID(child_id, frame_routing_id);
-+  if (!rfh) {
++  content::WebContents* contents =
++      rfh ? content::WebContents::FromRenderFrameHost(rfh) : nullptr;
++  if (!contents) {
 +    std::move(callback).Run("tab gone");
 +    return;
 +  }
-+  // The same token the network service got as top_frame_id
-+  // (RenderFrameHostImpl::GetTopFrameToken). The key is stored, never the frame.
-+  content::RenderFrameHost* top = rfh;
-+  while (top->GetParent()) {
-+    top = top->GetParent();
-+  }
-+  tab_ = data_decoder::mojom::CamouObserveTabKey::New(
-+      net::SchemefulSite(rfh->GetLastCommittedOrigin()).Serialize(),
-+      top->GetFrameToken().value().ToString());
++  // The tab, not the frame picked: GetTabs lists the visible URL, so the frame
++  // may be the initial about:blank of a tab still loading. PrimaryPageChanged
++  // adds every document the tab commits from here on.
++  tab_ = data_decoder::mojom::CamouObserveTabKey::New();
++  Observe(contents);
++  AddDocument(contents->GetPrimaryMainFrame());
 +  truth_json_ = truth_json;
 +  BindDecoder();
 +
@@ -883,10 +884,37 @@ index 0000000000..39030b964a
 +  trace_.shrink_to_fit();
 +  truth_json_.clear();
 +  tab_.reset();
++  Observe(nullptr);
 +  buffer_full_ = false;
 +  remote_.reset();
 +  decoder_.reset();
 +  std::move(callback).Run();
++}
++
++void ObserverPageHandler::PrimaryPageChanged(content::Page& page) {
++  AddDocument(&page.GetMainDocument());
++}
++
++void ObserverPageHandler::AddDocument(content::RenderFrameHost* main) {
++  if (!tab_ || tab_->top_frame_ids.size() >= kMaxDocuments) {
++    return;
++  }
++  // The same token the network service gets as top_frame_id
++  // (RenderFrameHostImpl::GetTopFrameToken). The key is stored, never the frame.
++  std::string token = main->GetFrameToken().value().ToString();
++  if (!std::ranges::contains(tab_->top_frame_ids, token)) {
++    tab_->top_frame_ids.push_back(std::move(token));
++  }
++  // An opaque origin (the initial about:blank) would match other tabs' blank
++  // pages, so it adds no site.
++  const url::Origin& origin = main->GetLastCommittedOrigin();
++  if (origin.opaque()) {
++    return;
++  }
++  std::string site = net::SchemefulSite(origin).Serialize();
++  if (!std::ranges::contains(tab_->top_sites, site)) {
++    tab_->top_sites.push_back(std::move(site));
++  }
 +}
 +
 +void ObserverPageHandler::AbortPending(const std::string& error) {
@@ -904,10 +932,10 @@ index 0000000000..39030b964a
 +}
 diff --git a/chrome/browser/ui/webui/observer/observer_page_handler.h b/chrome/browser/ui/webui/observer/observer_page_handler.h
 new file mode 100644
-index 0000000000..c2e6002995
+index 0000000000..530d2e21a5
 --- /dev/null
 +++ b/chrome/browser/ui/webui/observer/observer_page_handler.h
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,94 @@
 +// Copyright 2026 The Camoucrome Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -922,6 +950,7 @@ index 0000000000..c2e6002995
 +
 +#include "base/memory/weak_ptr.h"
 +#include "chrome/browser/ui/webui/observer/observer.mojom.h"
++#include "content/public/browser/web_contents_observer.h"
 +#include "mojo/public/cpp/bindings/pending_receiver.h"
 +#include "mojo/public/cpp/bindings/receiver.h"
 +#include "mojo/public/cpp/bindings/remote.h"
@@ -931,13 +960,19 @@ index 0000000000..c2e6002995
 +
 +// Browser-process side of chrome://observer. Records the tracing categories the
 +// observer hooks emit and hands the raw trace to the sandboxed decoder. It
-+// parses nothing it captured. The recorded tab is a key (top site and top frame
-+// id), never a frame pointer, so a closed or navigated tab keeps its recording.
++// parses nothing it captured. The recorded tab is a key (the top sites and top
++// frame ids of every document it committed while recording, collected by
++// observing its WebContents), never a frame pointer, so a reloaded, navigated
++// or closed tab keeps its recording.
 +// Every perfetto callback runs on a perfetto thread and hops to the UI thread
 +// through a WeakPtr, so a closed page drops it.
-+class ObserverPageHandler : public observer::mojom::PageHandler {
++class ObserverPageHandler : public observer::mojom::PageHandler,
++                            public content::WebContentsObserver {
 + public:
 +  static constexpr size_t kMaxTraceBytes = size_t{64} << 20;
++  // shortcut: past this many documents in one recording the key stops growing
++  // (later documents' events are dropped); raise it if long sessions need it.
++  static constexpr size_t kMaxDocuments = 256;
 +
 +  explicit ObserverPageHandler(
 +      mojo::PendingReceiver<observer::mojom::PageHandler> receiver);
@@ -954,7 +989,12 @@ index 0000000000..c2e6002995
 +  void Refresh(RefreshCallback callback) override;
 +  void Stop(StopCallback callback) override;
 +
++  // content::WebContentsObserver:
++  void PrimaryPageChanged(content::Page& page) override;
++
 + private:
++  // Adds the recorded tab's main document to tab_.
++  void AddDocument(content::RenderFrameHost* main);
 +  // The first argument is the session_gen_ the callback was bound under; a
 +  // callback from an earlier session is ignored.
 +  void OnStarted(uint32_t gen);

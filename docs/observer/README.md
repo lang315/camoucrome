@@ -24,9 +24,12 @@ second arg: `package.py` refuses `v8_enable_runtime_call_stats = true`.
 
 Open `chrome://observer` in a release build. Pick a tab in `select#tab`, then
 click Record. The page records that tab's network and signal events and
-shows them live. Nothing the tab did before Record is in the table, so a
-page's load-time reads and sends are missing when Record follows the load
-(live facebook on `-7`, 2026-11-06). State words:
+shows them live. Nothing the tab did before Record is in the table: to see a
+page's load, click Record and then reload the tab. The recording follows the
+tab, not one document: every document the tab commits while recording
+(a reload, a navigation, the first load after Record on a still-blank tab)
+adds to it (since 2026-11-06; on `-7` a reload lost the http rows and a
+Record before the first commit lost the main frame's reads). State words:
 
 - `recording`: the trace is running.
 - `blind`: the observer's own read hooks stopped reporting (the page's canary
