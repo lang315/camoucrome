@@ -1,0 +1,90 @@
+diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
+index 831aaa964e..b10bb77c4c 100644
+--- a/chrome/browser/prefs/BUILD.gn
++++ b/chrome/browser/prefs/BUILD.gn
+@@ -138,6 +138,7 @@ source_set("impl") {
+     "//components/breadcrumbs/core:status",
+     "//components/browser_sync:switches",
+     "//components/browsing_data/core",
++    "//components/camoucfg",
+     "//components/certificate_transparency",
+     "//components/collaboration/public:prefs",
+     "//components/commerce/core:prefs",
+diff --git a/chrome/browser/prefs/chrome_command_line_pref_store.cc b/chrome/browser/prefs/chrome_command_line_pref_store.cc
+index 3e93688a11..e39dc77345 100644
+--- a/chrome/browser/prefs/chrome_command_line_pref_store.cc
++++ b/chrome/browser/prefs/chrome_command_line_pref_store.cc
+@@ -6,7 +6,9 @@
+ 
+ #include <stddef.h>
+ 
++#include <algorithm>
+ #include <memory>
++#include <optional>
+ #include <string>
+ #include <string_view>
+ #include <utility>
+@@ -16,6 +18,7 @@
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/common/chrome_switches.h"
+@@ -27,6 +30,8 @@
+ #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+ #include "components/safe_browsing/core/common/safebrowsing_switches.h"
+ #include "components/sync/base/pref_names.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "content/public/common/content_switches.h"
+ #include "extensions/buildflags/buildflags.h"
+ #include "net/base/port_util.h"
+@@ -105,10 +110,46 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
+     ChromeCommandLinePrefStore::integer_switch_map_[] = {
+         {switches::kDiskCacheSize, prefs::kDiskCacheSize}};
+ 
++namespace {
++
++// camoucrome: the languages the config claims, in --accept-lang's form, so a
++// launch without the launcher's flag sends the header navigator.languages
++// reports. Empty when it claims none, or when one is not a plain tag: config
++// text must not reach a header.
++std::string CamoucfgLanguages() {
++  const camoucfg::ConfigScope& scope = camoucfg::GlobalScope();
++  std::vector<std::string> languages =
++      camoucfg::GetStringList(scope, camoucfg::keys::kNavigatorLanguages);
++  if (languages.empty()) {
++    std::optional<std::string> tag =
++        camoucfg::GetString(scope, camoucfg::keys::kLocaleTag);
++    if (tag) {
++      languages.push_back(*tag);
++    }
++  }
++  for (const std::string& language : languages) {
++    if (language.empty() || !std::ranges::all_of(language, [](char c) {
++          return base::IsAsciiAlpha(c) || base::IsAsciiDigit(c) || c == '-';
++        })) {
++      return std::string();
++    }
++  }
++  return base::JoinString(languages, ",");
++}
++
++}  // namespace
++
+ ChromeCommandLinePrefStore::ChromeCommandLinePrefStore(
+     const base::CommandLine* command_line)
+     : CommandLinePrefStore(command_line) {
+   ApplySimpleSwitches();
++  if (!command_line->HasSwitch(switches::kAcceptLang)) {
++    std::string languages = CamoucfgLanguages();
++    if (!languages.empty()) {
++      SetValue(language::prefs::kSelectedLanguages, base::Value(languages),
++               WriteablePrefStore::DEFAULT_PREF_WRITE_FLAGS);
++    }
++  }
+   ApplyProxyMode();
+   ValidateProxySwitches();
+   ApplySSLSwitches();
