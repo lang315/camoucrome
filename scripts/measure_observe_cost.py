@@ -31,6 +31,29 @@ import time
 
 MIN_RUNS = 5
 
+# The send hooks' loop: fetch string, fetch Blob (the data-pipe reader path), WebSocket.
+# __WSP__ is the lib_ws_server port. The page posts its result to /done, the loops to /sink.
+POST_PAGE = """<!doctype html><script>
+(async () => {
+  const kib = 'x'.repeat(1024), blob = new Blob(['x'.repeat(65536)]);
+  const t0 = performance.now();
+  for (let i = 0; i < 500; i++) await fetch('/sink', {method: 'POST', body: kib});
+  const t1 = performance.now();
+  for (let i = 0; i < 200; i++) await fetch('/sink', {method: 'POST', body: blob});
+  const t2 = performance.now();
+  const ws = new WebSocket('ws://127.0.0.1:__WSP__/');
+  await new Promise(r => ws.onopen = r);
+  const ok = new Promise(r => ws.onmessage = r);
+  const t3 = performance.now();
+  for (let i = 0; i < 2000; i++) ws.send(kib);
+  ws.send('done');
+  await ok;
+  const t4 = performance.now();
+  await fetch('/done', {method: 'POST', body: JSON.stringify({post_500_ms: t1 - t0,
+    post_blob_200_ms: t2 - t1, ws_2000_ms: t4 - t3})});
+})();
+</script>"""
+
 
 def verdict(a_runs, b_runs):
     if set(a_runs) != set(b_runs):
@@ -88,9 +111,14 @@ def kill_tree(proc):
         pass
 
 
-def one_run(exe, extra, timing_page, gpu_gate, run_timeout):
+def one_run(exe, extra, page, gpu_gate, run_timeout):
     """(metrics dict, None) or (None, reason) when the run is UNMEASURED."""
     done, result = threading.Event(), {}
+    ws = None
+    if "__WSP__" in page:
+        import lib_ws_server
+        ws, ws_port, _ = lib_ws_server.start()
+        page = page.replace("__WSP__", str(ws_port))
 
     class H(http.server.BaseHTTPRequestHandler):
         def _send(self, body, ctype):
@@ -102,10 +130,14 @@ def one_run(exe, extra, timing_page, gpu_gate, run_timeout):
             self.wfile.write(data)
 
         def do_GET(self):
-            self._send(timing_page if self.path == "/timing.html" else "", "text/html")
+            self._send(page if self.path == "/timing.html" else "", "text/html")
 
         def do_POST(self):
             n = int(self.headers.get("Content-Length", 0))
+            if self.path == "/sink":
+                self.rfile.read(n)
+                self._send("", "text/plain")
+                return
             result.update(json.loads(self.rfile.read(n) or b"{}"))
             self._send("", "text/plain")
             done.set()
@@ -136,6 +168,9 @@ def one_run(exe, extra, timing_page, gpu_gate, run_timeout):
             kill_tree(proc)
         server.shutdown()
         server.server_close()
+        if ws:
+            ws.shutdown()
+            ws.server_close()
         remove_tree(tmp)
 
 
@@ -144,14 +179,15 @@ def main(argv=None):
     ap.add_argument("--a", required=True, help="chrome.exe of arm A (no observer)")
     ap.add_argument("--b", required=True, help="chrome.exe of arm B (observer built, category off)")
     ap.add_argument("--runs", type=int, default=10)
-    ap.add_argument("--b-extra", default="", help="extra browser arguments for arm B (the RED run)")
-    ap.add_argument("--loops", choices=["timing"], default="timing")
+    ap.add_argument("--b-extra", default="", help="extra browser arguments for arm B (the RED run). Pass it as --b-extra='--x ...' when the value starts with --, and use forward slashes in paths: shlex.split drops backslashes")
+    ap.add_argument("--loops", choices=["timing", "post"], default="timing")
     ap.add_argument("--run-timeout", type=int, default=120)
     args = ap.parse_args(argv)
 
     import gpu_gate
     import verify_observe
     gpu_gate.require_interactive()
+    page = verify_observe.TIMING if args.loops == "timing" else POST_PAGE
     b_extra = shlex.split(args.b_extra)
     runs = {"A": {}, "B": {}}
     state0 = None
@@ -164,7 +200,7 @@ def main(argv=None):
                     print("UNMEASURED session state changed", flush=True)
                     return 3
                 for attempt in (1, 2):
-                    res, why = one_run(exe, extra, verify_observe.TIMING, gpu_gate, args.run_timeout)
+                    res, why = one_run(exe, extra, page, gpu_gate, args.run_timeout)
                     if res is not None:
                         break
                     print(f"run {i} {arm} UNMEASURED attempt {attempt}: {why}", flush=True)
