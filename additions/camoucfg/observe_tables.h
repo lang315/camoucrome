@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/containers/span.h"
 
@@ -65,10 +66,12 @@ namespace camoucfg::observe {
 // There are seven Observe* suites in components/camoucfg.
 // ---------------------------------------------------------------------------
 
+// Every document the recorded tab committed while recording: a reload gives a
+// new top frame token, the first commit after the initial about:blank a new
+// site. Empty lists match only unattributed events.
 struct TabKey {
-  std::string top_site;      // e.g. "https://a.test"; "" matches only
-                             // unattributed events
-  std::string top_frame_id;  // UnguessableToken::ToString(); "" likewise
+  std::vector<std::string> top_sites;      // e.g. "https://a.test"
+  std::vector<std::string> top_frame_ids;  // UnguessableToken::ToString()
 };
 
 // trace: a serialized perfetto Trace (the TracePacket stream). trace_stats: a

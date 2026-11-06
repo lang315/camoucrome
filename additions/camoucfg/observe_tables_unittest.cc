@@ -90,7 +90,7 @@ using Args = std::vector<std::pair<std::string, std::string>>;
 
 base::DictValue Decode(const std::vector<uint8_t>& trace,
                        std::string_view truth = "{}",
-                       TabKey tab = {"https://a.test", "TOKEN-A"},
+                       TabKey tab = {{"https://a.test"}, {"TOKEN-A"}},
                        const std::vector<uint8_t>& stats = {}) {
   auto d = base::JSONReader::ReadDict(DecodeTables(trace, stats, truth, tab),
                                       base::JSON_PARSE_RFC);
@@ -193,6 +193,34 @@ TEST(ObserveTablesTest, FrameKeyBeatsSite) {
         Http("7", "a.test/s", kJson, "TOKEN-B", "1", "https://a.test"));
   b.Add(1, "camou.send.body", Body("7", "0", "0", kBody));
   EXPECT_TRUE(Decode(b.Bytes()).FindList("sends")->empty());
+}
+
+// The key holds every document the recorded tab committed while recording
+// (a reload gives a new frame token, the first commit after about:blank a new
+// site); events of any of them count, another tab's do not.
+TEST(ObserveTablesTest, EveryDocumentOfTheTabCounts) {
+  TraceBuilder b;
+  b.Add(1, "camou.send.http", Http("7", "b.test/s", kJson, "TOKEN-B", "1"));
+  b.Add(1, "camou.send.body", Body("7", "0", "0", kBody));
+  b.Add(1, "camou.send.http", Http("8", "c.test/s", kJson, "TOKEN-C", "1"));
+  b.Add(1, "camou.send.body", Body("8", "0", "0", kBody));
+  auto read = [&](const char* site) {
+    b.Add(1, "Screen.width",
+          {{"origin", site}, {"site", site}, {"script", "https://b.test/x.js"}},
+          kRead);
+  };
+  read("https://b.test");
+  read("https://c.test");
+  const base::DictValue r =
+      Decode(b.Bytes(), "{}",
+             {{"https://a.test", "https://b.test"}, {"TOKEN-A", "TOKEN-B"}});
+  ASSERT_EQ(r.FindList("sends")->size(), 1u);
+  EXPECT_EQ(*SendRow(r, 0).FindString("endpoint"), "b.test/s");
+  EXPECT_EQ(*SendRow(r, 0).FindString("by"), "frame");
+  const base::ListValue& reads = *r.FindList("reads");
+  ASSERT_EQ(reads.size(), 1u);
+  EXPECT_EQ(*reads[0].GetDict().FindString("by"), "site");
+  EXPECT_EQ(*reads[0].GetDict().FindInt("count"), 1);
 }
 
 TEST(ObserveTablesTest, BodyWithoutRequestIsIgnored) {
@@ -307,7 +335,7 @@ TEST(ObserveTablesTest, LostCountsFromStatsAndDroppedFlag) {
   b.Add(1, "camou.send.http", Http("7", "a.test/s", kJson, "TOKEN-A", "1"));
   b.Dropped().Add(1, "camou.send.body", Body("7", "0", "0", kBody));
   const base::DictValue r = Decode(
-      b.Bytes(), "{}", {"https://a.test", "TOKEN-A"}, stats.SerializeAsArray());
+      b.Bytes(), "{}", {{"https://a.test"}, {"TOKEN-A"}}, stats.SerializeAsArray());
   EXPECT_EQ(*r.FindDict("status")->FindInt("lost"), 3);
 }
 
@@ -346,7 +374,7 @@ TEST(ObserveTablesTest, RandomBytesNeverCrash) {
       c = static_cast<uint8_t>(rng());
     }
     auto d = base::JSONReader::ReadDict(
-        DecodeTables(buf, stats, "{}", {"https://a.test", "TOKEN-A"}),
+        DecodeTables(buf, stats, "{}", {{"https://a.test"}, {"TOKEN-A"}}),
         base::JSON_PARSE_RFC);
     EXPECT_TRUE(d.has_value()) << "buffer " << i;
   }
@@ -452,7 +480,7 @@ TEST(ObserveTablesTest, Ipv6HostIsOwnHost) {
   }
   b.Add(1, "camou.send.http", Http("20", "[::1]:80/x", kJson, "", "1", "http://[::1]:80"));
   b.Add(1, "camou.send.body", Body("20", "0", "0", kBody));
-  const base::DictValue r = Decode(b.Bytes(), "{}", {"http://[::1]:80", "TOKEN-A"});
+  const base::DictValue r = Decode(b.Bytes(), "{}", {{"http://[::1]:80"}, {"TOKEN-A"}});
   ASSERT_EQ(r.FindList("sends")->size(), 2u);
   EXPECT_EQ(*SendRow(r, 0).FindString("endpoint"), "[::1]:80/x");
 }
@@ -479,7 +507,7 @@ TEST(ObserveTablesTest, MutatedValidTraceNeverCrashes) {
       }
     }
     auto d = base::JSONReader::ReadDict(
-        DecodeTables(m, {}, "{}", {"https://a.test", "TOKEN-A"}), base::JSON_PARSE_RFC);
+        DecodeTables(m, {}, "{}", {{"https://a.test"}, {"TOKEN-A"}}), base::JSON_PARSE_RFC);
     ASSERT_TRUE(d.has_value()) << "mutation " << i;
   }
 }
