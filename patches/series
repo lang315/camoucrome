@@ -47,3 +47,4 @@ observe-net.patch
 observe-ws.patch
 observe-decoder-service.patch
 observer-page.patch
+accept-language-from-config.patch
