@@ -338,6 +338,19 @@ def test_the_version_gate():
     assert ml.version_problems_for({"S": "157.0.8100.1", "F": "157.0.8100.1"}, "156.0.8078.48", aa=True) == []
 
 
+def test_the_stock_arm_may_be_another_patch_of_the_pins_build():
+    pin = "156.0.8078.48"
+    assert ml.version_problems_for({"S": "156.0.8078.80", "F": pin, "N": pin, "S2": pin}, pin, aa=False) == []
+    assert ml.version_problems_for({"S": "156.0.8079.1", "F": pin}, pin, aa=False)
+
+
+def test_every_fork_arm_must_be_the_pin_exactly():
+    pin = "156.0.8078.48"
+    for arm in ("F", "N", "S2"):
+        assert ml.version_problems_for({"S": pin, "F": pin, arm: "156.0.8078.80"}, pin, aa=False) == [
+            f"{arm} is 156.0.8078.80, the pin is {pin}"]
+
+
 def test_resume_also_refuses_a_rebuilt_fork_or_an_edited_site_list():
     old = {"started": "T0", "rounds": 5, "flags": {"aa": False}, "versions": {"S": "1", "F": "2"}, "sites_per_vendor": {"cloudflare": 3}}
     same = {"rounds": 5, "started": "T1", "flags": {"aa": False}, "versions": {"S": "1", "F": "2"}, "sites_per_vendor": {"cloudflare": 3}}

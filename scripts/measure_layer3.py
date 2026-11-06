@@ -546,7 +546,8 @@ def window_problems(window, desktop):
 
 def version_problems_for(versions, pin, aa):
     import step2_rows
-    return [] if aa else step2_rows.version_problems(versions, pin)
+    # Arm S is the stock control: the host auto-updates within a milestone and no copy of the pinned patch exists.
+    return [] if aa else step2_rows.version_problems({"control" if k == "S" else k: v for k, v in versions.items()}, pin)
 
 
 def measured_rows(run_dir):
@@ -638,6 +639,7 @@ def run_cmd(a):
                 bad = version_problems_for(meta["versions"], windows_verify_set.pin_tag(os.environ.get("CAMOU_CLIENT", str(HERE.parent))), a.aa)
                 if bad:
                     sys.exit("precondition: " + "; ".join(bad))
+                print("versions:", meta["versions"])
             if a.resume:
                 meta_file = out_dir / "meta.json"
                 if not meta_file.exists():
