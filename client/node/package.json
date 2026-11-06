@@ -1,6 +1,6 @@
 {
   "name": "camoucrome",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Launcher for the Camoucrome browser: CAMOU_CONFIG / CAMOU_PRESET transport over a patchright driver",
   "main": "index.js",
   "type": "commonjs",

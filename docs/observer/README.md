@@ -24,7 +24,9 @@ second arg: `package.py` refuses `v8_enable_runtime_call_stats = true`.
 
 Open `chrome://observer` in a release build. Pick a tab in `select#tab`, then
 click Record. The page records that tab's network and signal events and
-shows them live. State words:
+shows them live. Nothing the tab did before Record is in the table, so a
+page's load-time reads and sends are missing when Record follows the load
+(live facebook on `-7`, 2026-11-06). State words:
 
 - `recording`: the trace is running.
 - `blind`: the observer's own read hooks stopped reporting (the page's canary
@@ -547,8 +549,12 @@ page's trace. With the stats category off, the compiled-in counters cost one
 flag check per C++ built-in: CI's browser verifies on this build matched
 main's (2026-10-13).
 
-Off state, shipped in every release (2026-11-04): the cost with the category
-off is within the arm-A noise
+Off state, shipped in every release (2026-11-04): with the category off, a
+loop of 200 000 `navigator.userAgent` reads ran 0.85 to 2.85 ms (1 to 5 %)
+slower than the same build without the observer, in five of five
+comparisons on `-7` (2026-11-05). That is inside one build's own run-to-run
+spread and not separated from code layout; the other timing loops, a blob
+POST and WebSocket sends showed no shift
 (`docs/superpowers/measurements/2026-11-04-observer-off-cost.md`).
 
 Browse a site normally, on a release build, when staying hidden matters.

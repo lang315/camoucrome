@@ -179,7 +179,7 @@ def main(argv=None):
     ap.add_argument("--a", required=True, help="chrome.exe of arm A (no observer)")
     ap.add_argument("--b", required=True, help="chrome.exe of arm B (observer built, category off)")
     ap.add_argument("--runs", type=int, default=10)
-    ap.add_argument("--b-extra", default="", help="extra browser arguments for arm B (the RED run)")
+    ap.add_argument("--b-extra", default="", help="extra browser arguments for arm B (the RED run). Pass it as --b-extra='--x ...' when the value starts with --, and use forward slashes in paths: shlex.split drops backslashes")
     ap.add_argument("--loops", choices=["timing", "post"], default="timing")
     ap.add_argument("--run-timeout", type=int, default=120)
     args = ap.parse_args(argv)
