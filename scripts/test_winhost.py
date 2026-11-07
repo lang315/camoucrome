@@ -110,3 +110,17 @@ def test_cdp_eval_launches_another_exe_with_literal_env(captured):
     assert ps.index("$env:CAMOU_CONFIG =") < ps.index("Start-Process")
     winhost.cdp_eval("<p>")
     assert f"-FilePath '{winhost.CHROME}'" in captured[-1] and "$env:CAMOU_CONFIG" not in captured[-1]
+
+
+def test_local_mode_runs_no_ssh_and_no_task(monkeypatch):
+    # CAMOU_WINHOST_LOCAL=1: already on the host in the owner's session; the capture needs no ssh master
+    seen = []
+    monkeypatch.setenv("CAMOU_WINHOST_LOCAL", "1")
+    monkeypatch.setattr(winhost, "_powershell_local", lambda script, timeout: seen.append(script) or "SESSION=1\nok\n")
+
+    def no_ssh(*a, **k):
+        raise AssertionError("ssh must not run in local mode")
+
+    monkeypatch.setattr(winhost.subprocess, "run", no_ssh)
+    assert winhost.powershell("'x'") == "SESSION=1\nok\n"
+    assert seen and seen[0].startswith(winhost.SESSION_LINE) and "Register-ScheduledTask" not in seen[0]

@@ -72,10 +72,31 @@ def session_gate(out):
         raise gpu_gate.Unmeasured(why)
 
 
+def _powershell_local(script, timeout):
+    """CAMOU_WINHOST_LOCAL=1: this process already runs on the host, in the owner's session (started by
+    scripts/windows/run-interactive.ps1), so no ssh and no scheduled task. The session gate still applies:
+    output from session 0 is refused. For the captures that need the Mac's ssh master when it is down."""
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8-sig") as f:
+        f.write(script)
+    try:
+        p = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", f.name],
+                           capture_output=True, text=True, timeout=timeout + 60)
+    finally:
+        os.unlink(f.name)
+    if p.returncode != 0:
+        raise RuntimeError(f"powershell rc={p.returncode}: {p.stderr[-800:]}")
+    out = p.stdout.replace("\r", "")
+    session_gate(out)
+    return out
+
+
 def powershell(script, timeout=300):
     """Runs `script` on the host in the owner's interactive session (CAMOU_WINHOST_NO_TASK=1:
     in this ssh session, which is session 0 -- a RED) and refuses output from session 0."""
     script = SESSION_LINE + script
+    if os.environ.get("CAMOU_WINHOST_LOCAL") == "1":
+        return _powershell_local(script, timeout)
     if os.environ.get("CAMOU_WINHOST_NO_TASK") != "1":
         script = in_session(script, timeout)
     p = subprocess.run(SSH + [script], capture_output=True, text=True, timeout=timeout + 60)

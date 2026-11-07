@@ -1,6 +1,6 @@
 {
- "chrome": "156.0.8078.48",
- "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
+ "chrome": "156.0.8078.80",
+ "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile primed with its variations seed by one earlier launch; headed and headless (--headless=new) through the host CDP client, real time",
  "display": {
   "width": 1440,
   "height": 900
@@ -280,8 +280,6 @@
    "vibrate",
    "constructor",
    "cpuPerformance",
-   "deprecatedRunAdAuctionEnforcesKAnonymity",
-   "protectedAudience",
    "bluetooth",
    "clipboard",
    "credentials",
@@ -308,9 +306,6 @@
    "usb",
    "xr",
    "storageBuckets",
-   "adAuctionComponents",
-   "runAdAuction",
-   "canLoadAdAuctionFencedFrame",
    "canShare",
    "share",
    "clearAppBadge",
@@ -320,15 +315,7 @@
    "requestMediaKeySystemAccess",
    "setAppBadge",
    "webkitGetUserMedia",
-   "clearOriginJoinedAdInterestGroups",
-   "createAuctionNonce",
-   "joinAdInterestGroup",
-   "leaveAdInterestGroup",
-   "updateAdInterestGroups",
-   "deprecatedReplaceInURN",
-   "deprecatedURNToURL",
    "getInstalledRelatedApps",
-   "getInterestGroupAdAuctionData",
    "registerProtocolHandler",
    "unregisterProtocolHandler"
   ],
@@ -1480,7 +1467,6 @@
    "locks": "object",
    "userActivation": "object",
    "managed": "object",
-   "protectedAudience": "object",
    "getBattery": "function",
    "vibrate": "function",
    "sendBeacon": "function",
@@ -1494,7 +1480,7 @@
   },
   "navConnection": {
    "effectiveType": "4g",
-   "rtt": 100,
+   "rtt": 200,
    "downlink": 1.6,
    "saveData": false
   },
@@ -1543,18 +1529,18 @@
     },
     {
      "brand": "Chromium",
-     "version": "156.0.8078.48"
+     "version": "156.0.8078.80"
     },
     {
      "brand": "Google Chrome",
-     "version": "156.0.8078.48"
+     "version": "156.0.8078.80"
     }
    ],
    "mobile": false,
    "model": "",
    "platform": "Windows",
    "platformVersion": "10.0.0",
-   "uaFullVersion": "156.0.8078.48",
+   "uaFullVersion": "156.0.8078.80",
    "wow64": false
   },
   "screen": {
@@ -1684,6 +1670,120 @@
     "en-US",
     true,
     false
+   ],
+   [
+    "Google Deutsch",
+    "de-DE",
+    false,
+    false
+   ],
+   [
+    "Google US English",
+    "en-US",
+    false,
+    false
+   ],
+   [
+    "Google UK English Female",
+    "en-GB",
+    false,
+    false
+   ],
+   [
+    "Google UK English Male",
+    "en-GB",
+    false,
+    false
+   ],
+   [
+    "Google español",
+    "es-ES",
+    false,
+    false
+   ],
+   [
+    "Google español de Estados Unidos",
+    "es-US",
+    false,
+    false
+   ],
+   [
+    "Google français",
+    "fr-FR",
+    false,
+    false
+   ],
+   [
+    "Google हिन्दी",
+    "hi-IN",
+    false,
+    false
+   ],
+   [
+    "Google Bahasa Indonesia",
+    "id-ID",
+    false,
+    false
+   ],
+   [
+    "Google italiano",
+    "it-IT",
+    false,
+    false
+   ],
+   [
+    "Google 日本語",
+    "ja-JP",
+    false,
+    false
+   ],
+   [
+    "Google 한국의",
+    "ko-KR",
+    false,
+    false
+   ],
+   [
+    "Google Nederlands",
+    "nl-NL",
+    false,
+    false
+   ],
+   [
+    "Google polski",
+    "pl-PL",
+    false,
+    false
+   ],
+   [
+    "Google português do Brasil",
+    "pt-BR",
+    false,
+    false
+   ],
+   [
+    "Google русский",
+    "ru-RU",
+    false,
+    false
+   ],
+   [
+    "Google 普通话（中国大陆）",
+    "zh-CN",
+    false,
+    false
+   ],
+   [
+    "Google 粤語（香港）",
+    "zh-HK",
+    false,
+    false
+   ],
+   [
+    "Google 國語（臺灣）",
+    "zh-TW",
+    false,
+    false
    ]
   ],
   "gpu": {
@@ -1789,6 +1889,11 @@
    true,
    true
   ],
+  "mediaCapAv1": [
+   true,
+   true,
+   false
+  ],
   "perms": {
    "geolocation": "prompt",
    "notifications": "prompt",
@@ -1834,12 +1939,12 @@
    "dejavu": true
   },
   "err": {
-   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_13532/page.html",
+   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_19420/page.html",
    "toStringLen": 39
   },
   "protoCounts": {
    "Window": 1234,
-   "Document": 250,
+   "Document": 249,
    "HTMLElement": 144,
    "CSSStyleDeclaration": 10,
    "Element": 153,
@@ -2122,8 +2227,6 @@
    "vibrate",
    "constructor",
    "cpuPerformance",
-   "deprecatedRunAdAuctionEnforcesKAnonymity",
-   "protectedAudience",
    "bluetooth",
    "clipboard",
    "credentials",
@@ -2150,9 +2253,6 @@
    "usb",
    "xr",
    "storageBuckets",
-   "adAuctionComponents",
-   "runAdAuction",
-   "canLoadAdAuctionFencedFrame",
    "canShare",
    "share",
    "clearAppBadge",
@@ -2162,15 +2262,7 @@
    "requestMediaKeySystemAccess",
    "setAppBadge",
    "webkitGetUserMedia",
-   "clearOriginJoinedAdInterestGroups",
-   "createAuctionNonce",
-   "joinAdInterestGroup",
-   "leaveAdInterestGroup",
-   "updateAdInterestGroups",
-   "deprecatedReplaceInURN",
-   "deprecatedURNToURL",
    "getInstalledRelatedApps",
-   "getInterestGroupAdAuctionData",
    "registerProtocolHandler",
    "unregisterProtocolHandler"
   ],
@@ -3322,7 +3414,6 @@
    "locks": "object",
    "userActivation": "object",
    "managed": "object",
-   "protectedAudience": "object",
    "getBattery": "function",
    "vibrate": "function",
    "sendBeacon": "function",
@@ -3336,8 +3427,8 @@
   },
   "navConnection": {
    "effectiveType": "4g",
-   "rtt": 100,
-   "downlink": 1.65,
+   "rtt": 150,
+   "downlink": 1.45,
    "saveData": false
   },
   "uad": {
@@ -3385,18 +3476,18 @@
     },
     {
      "brand": "Chromium",
-     "version": "156.0.8078.48"
+     "version": "156.0.8078.80"
     },
     {
      "brand": "Google Chrome",
-     "version": "156.0.8078.48"
+     "version": "156.0.8078.80"
     }
    ],
    "mobile": false,
    "model": "",
    "platform": "Windows",
    "platformVersion": "10.0.0",
-   "uaFullVersion": "156.0.8078.48",
+   "uaFullVersion": "156.0.8078.80",
    "wow64": false
   },
   "screen": {
@@ -3526,6 +3617,120 @@
     "en-US",
     true,
     false
+   ],
+   [
+    "Google Deutsch",
+    "de-DE",
+    false,
+    false
+   ],
+   [
+    "Google US English",
+    "en-US",
+    false,
+    false
+   ],
+   [
+    "Google UK English Female",
+    "en-GB",
+    false,
+    false
+   ],
+   [
+    "Google UK English Male",
+    "en-GB",
+    false,
+    false
+   ],
+   [
+    "Google español",
+    "es-ES",
+    false,
+    false
+   ],
+   [
+    "Google español de Estados Unidos",
+    "es-US",
+    false,
+    false
+   ],
+   [
+    "Google français",
+    "fr-FR",
+    false,
+    false
+   ],
+   [
+    "Google हिन्दी",
+    "hi-IN",
+    false,
+    false
+   ],
+   [
+    "Google Bahasa Indonesia",
+    "id-ID",
+    false,
+    false
+   ],
+   [
+    "Google italiano",
+    "it-IT",
+    false,
+    false
+   ],
+   [
+    "Google 日本語",
+    "ja-JP",
+    false,
+    false
+   ],
+   [
+    "Google 한국의",
+    "ko-KR",
+    false,
+    false
+   ],
+   [
+    "Google Nederlands",
+    "nl-NL",
+    false,
+    false
+   ],
+   [
+    "Google polski",
+    "pl-PL",
+    false,
+    false
+   ],
+   [
+    "Google português do Brasil",
+    "pt-BR",
+    false,
+    false
+   ],
+   [
+    "Google русский",
+    "ru-RU",
+    false,
+    false
+   ],
+   [
+    "Google 普通话（中国大陆）",
+    "zh-CN",
+    false,
+    false
+   ],
+   [
+    "Google 粤語（香港）",
+    "zh-HK",
+    false,
+    false
+   ],
+   [
+    "Google 國語（臺灣）",
+    "zh-TW",
+    false,
+    false
    ]
   ],
   "gpu": {
@@ -3631,6 +3836,11 @@
    true,
    true
   ],
+  "mediaCapAv1": [
+   true,
+   true,
+   false
+  ],
   "perms": {
    "geolocation": "prompt",
    "notifications": "prompt",
@@ -3668,7 +3878,7 @@
   "mediaDevices": [],
   "canvas": {
    "text": "f128eb83",
-   "shape": "c662b8ad"
+   "shape": "32662b68"
   },
   "fonts": {
    "segoe": true,
@@ -3676,12 +3886,12 @@
    "dejavu": true
   },
   "err": {
-   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_10056/page.html",
+   "stack": "at file:///C:/Users/user.HOST/AppData/Local/Temp/camou_cdp_page_2732/page.html",
    "toStringLen": 39
   },
   "protoCounts": {
    "Window": 1234,
-   "Document": 250,
+   "Document": 249,
    "HTMLElement": 144,
    "CSSStyleDeclaration": 10,
    "Element": 153,
