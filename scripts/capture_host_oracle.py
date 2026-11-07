@@ -124,17 +124,47 @@ def main(argv=None):
         return 0
     if a.raw_out and pathlib.Path(a.raw_out).resolve().is_relative_to(ROOT):
         sys.exit("capture_host_oracle: --raw-out must be outside the repository (it holds the host's own values)")
+    import os
     import winhost
     glargs = ("--use-gl=angle", "--use-angle=d3d11")
+    # Stock Chrome gets its feature states from a variations seed it fetches on the first launch (about 30 s). A fresh
+    # temp profile has none, so the 2026-10-24 capture measured compiled defaults (Topics, Protected Audience and
+    # Attribution Reporting present, libxml2 vs Rust XML...), not what a real user's stock Chrome reports
+    # (measurements/2026-11-07-finch-feature-gap.md). Each mode therefore reads on a profile primed by one launch.
+    # CAMOU_STOCK_APP names the frozen stock build (the install in Program Files can update past the pin).
+    app = os.environ.get("CAMOU_STOCK_APP")
+    exe = os.path.join(app, "chrome.exe") if app else None
+    tag = str(os.getpid())
+
+    def seeded(headed):
+        prof = f"$env:TEMP\\camou_oracle_seeded_{tag}_{'h' if headed else 'l'}"
+        winhost.cdp_eval("<!doctype html><title>seed</title>", expression="1", args=glargs, headed=headed,
+                         profile=prof, wait_ms=60000, exe=exe)
+        return prof
     # Both modes through the CDP client, in real time. headless --dump-dom (virtual time, ~1 s wall) raced every
     # cell that waits on a browser-process reply against its own 8 s timer: permissions, storage, mediaDevices,
     # mediaCapabilities were "timeout" in the 156 baseline and gpu/keyboard flipped between runs (2026-10-24).
+    profiles = []
+
     def read(headed):
-        raw = winhost.cdp_eval(page(), "document.getElementById('o').textContent", args=glargs, headed=headed, wait_ms=25000)
+        prof = seeded(headed)
+        profiles.append(prof)
+        raw = winhost.cdp_eval(page(), "document.getElementById('o').textContent", args=glargs, headed=headed,
+                               profile=prof, wait_ms=25000, exe=exe)
         return json.loads(raw) if isinstance(raw, str) else raw
-    headed, headless = read(True), read(False)
+    try:
+        headed, headless = read(True), read(False)
+    finally:
+        for prof in profiles:
+            winhost.powershell(f"Remove-Item -Recurse -Force {prof} -ErrorAction SilentlyContinue\n", timeout=60)
+    unseeded = [m for m, r in (("headed", headed), ("headless", headless)) if "joinAdInterestGroup" in (r.get("navProto") or [])]
+    if unseeded:
+        sys.exit("capture_host_oracle: UNSEEDED (Protected Audience still on Navigator in " + ", ".join(unseeded)
+                 + "): the priming launch did not fetch the seed, not a baseline")
     display = host_display(winhost)
-    doc = {"chrome": "156.0.8078.48", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile; headed and headless (--headless=new) through the host CDP client, real time",
+    # the build that was measured: the frozen stock's directory is named by its version, else the pin
+    m = re.fullmatch(r"\d+\.\d+\.\d+\.\d+", os.path.basename(os.path.normpath(app))) if app else None
+    doc = {"chrome": m.group(0) if m else "156.0.8078.48", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile primed with its variations seed by one earlier launch; headed and headless (--headless=new) through the host CDP client, real time",
            "display": display, "headed": headed, "headless": headless}
     bad = unmeasured_cells(doc)
     sc = headed.get("screen") or {}
