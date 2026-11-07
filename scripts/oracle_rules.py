@@ -20,3 +20,23 @@ def flatten(v, prefix=""):
             out.update(flatten(x, f"{prefix}.{k}" if prefix else k))
         return out
     return {prefix: v}
+
+
+# The brands whose version is the browser build's own. A GREASE brand ("Not:A-Brand";v="8.0.0.0") is not.
+BUILD_BRANDS = ("Chromium", "Google Chrome")
+
+
+def read_pin(upstream_env_text):
+    """CHROMIUM_TAG from upstream.env: the full version the fork reports (never hard-coded here)."""
+    for line in upstream_env_text.splitlines():
+        if line.startswith("CHROMIUM_TAG="):
+            return line.split("=", 1)[1].strip().strip('"')
+    raise ValueError("no CHROMIUM_TAG in upstream.env")
+
+
+def expected_full_list(host_full, pin):
+    """The full-version list the fork must report: the host stock's list, brands and order exact, GREASE exact,
+    with only the Chromium / Google Chrome entries' version replaced by the pin's full version. The stock control
+    may be another patch of the pin's build (the frozen .80 against the .48 pin), so its own patch number is
+    not the fork's to copy -- and a fork that reports 156.0.8078.0 must not pass."""
+    return [{**i, "version": pin} if i["brand"] in BUILD_BRANDS else dict(i) for i in host_full]
