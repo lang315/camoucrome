@@ -19,6 +19,9 @@ F5b the same, in behaviour: an unload handler does not run on a top-level naviga
 F7  the levers still work: --enable-features=BrowsingTopics,ConversionMeasurement,Fledge,
     AdInterestGroupAPI,XMLRustForNonXslt turns those five back on, and
     --disable-features=DeprecateUnload brings 'unload' back (RED for a flip that hard-codes it).
+F8  the five Blink flags stay off under --enable-experimental-web-platform-features (chrome://flags
+    "Experimental Web Platform features"), as in stock: they are "test" status, not "experimental"
+    (RED on the experimental-status build: the flag turned all five back on in the fork).
 F6  ConfigureQuicHints on (HOST ONLY, needs the internet; CAMOU_FINCH_QUIC=1): a cold profile's
     first navigation to https://www.google.com/robots.txt negotiates h3.
 """
@@ -34,7 +37,7 @@ QUIC = os.environ.get("CAMOU_FINCH_QUIC") == "1"
 # The stock control: CAMOU_EXE=<stock chrome.exe> CAMOU_FINCH_PROFILE=<a profile that has fetched its
 # seed>. Without a seed, stock runs compiled defaults too and the control would measure nothing.
 PROFILE = os.environ.get("CAMOU_FINCH_PROFILE") or None
-EXPECTED_ROWS = 8 if QUIC else 7
+EXPECTED_ROWS = 9 if QUIC else 8
 
 NAV_MEMBERS = ["joinAdInterestGroup", "leaveAdInterestGroup", "runAdAuction", "updateAdInterestGroups",
                "clearOriginJoinedAdInterestGroups", "createAuctionNonce", "canLoadAdAuctionFencedFrame",
@@ -120,6 +123,24 @@ def overridden():
         server.server_close()
 
 
+def experimental():
+    """F1-F4's expressions under the experimental web platform switch. Stock ignores it for these five."""
+    url, _, server = serve()
+    proc = None
+    try:
+        proc = lib_shell.launch("{}", shell=lib_shell.CHROME,
+                                extra_flags=lib_shell.CHROME_FLAGS + ["--enable-experimental-web-platform-features"],
+                                user_data_dir=PROFILE)
+        return lib_shell.evaluate(proc, [F1, F2, F3, F4], navigate_to=url), None
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)[:200]
+    finally:
+        if proc is not None:
+            lib_shell.shutdown(proc)
+        server.shutdown()
+        server.server_close()
+
+
 def quic():
     """Cold profile, first load of www.google.com: the protocol the navigation negotiated."""
     proc = None
@@ -147,6 +168,11 @@ def rows():
            err is None and "/pagehide" in seen and "/unloaded" not in seen, (seen, err))
     on, oerr = overridden()
     yield "F7 --enable-features/--disable-features turn the six back on", on == [True] * 5, (on, oerr)
+    ex, eerr = experimental()
+    ex = ex or [None] * 4
+    yield ("F8 the five flags stay off under --enable-experimental-web-platform-features",
+           isinstance(ex[0], str) and "Opening and ending tag mismatch" in ex[0] and ex[1] == [False, []] and ex[2] == []
+           and ex[3] == [[], False], (ex, eerr))
     if QUIC:
         proto, qerr = quic()
         yield "F6 first load of www.google.com is h3 (host only)", proto == "h3", (proto, qerr)
