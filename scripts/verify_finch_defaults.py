@@ -35,7 +35,10 @@ import lib_shell
 
 QUIC = os.environ.get("CAMOU_FINCH_QUIC") == "1"
 # The stock control: CAMOU_EXE=<stock chrome.exe> CAMOU_FINCH_PROFILE=<a profile that has fetched its
-# seed>. Without a seed, stock runs compiled defaults too and the control would measure nothing.
+# seed>. Without a seed, stock runs compiled defaults too and the control would measure nothing. The profile
+# stays seeded for 4 killed launches only (measured 2026-11-07: launches 1-4 seeded, 5-7 compiled defaults, the
+# variations safe-mode fallback), and this script makes exactly 4 (probes, overridden, experimental, quic):
+# prime a fresh profile for every stock run, and do not add a launch without raising that count.
 PROFILE = os.environ.get("CAMOU_FINCH_PROFILE") or None
 EXPECTED_ROWS = 9 if QUIC else 8
 
