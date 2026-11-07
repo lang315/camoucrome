@@ -76,78 +76,88 @@ index fbdd973c66..b3818de425 100644
  
  BASE_FEATURE(kIncreaseCookieAccessCacheSize, base::FEATURE_ENABLED_BY_DEFAULT);
 diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-index 32931ee250..3c93fcff85 100644
+index 32931ee250..9f504cfbaf 100644
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -318,8 +318,12 @@
+@@ -318,8 +318,14 @@
      },
      {
        // Interest Group JS API/runtimeflag.
 +      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
-+      // variations seed turns it off. "experimental" makes the generated base feature default
-+      // disabled and leaves --enable-features working. "stable" cannot be turned off through
-+      // base_feature_status (enabled_or_overridden keeps the flag on while not overridden).
++      // variations seed turns it off. "test" (enabled only by --enable-blink-test-features) makes the
++      // generated base feature default disabled and leaves --enable-features working; "experimental"
++      // would also turn it on under --enable-experimental-web-platform-features, which stock ignores.
++      // "stable" cannot be turned off through base_feature_status (enabled_or_overridden keeps the
++      // flag on while the base feature is not overridden).
        name: "AdInterestGroupAPI",
 -      status: "stable",
-+      status: "experimental",
++      status: "test",
        origin_trial_feature_name: "AdInterestGroupAPI",
        implied_by: ["Fledge", "Parakeet"],
        public: true,
-@@ -736,8 +740,12 @@
+@@ -736,8 +742,14 @@
        status: "stable",
      },
      {
 +      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
 +      // variations seed turns the base feature off. base_feature is "none": content/child/
 +      // runtime_features.cc turns the flag on or off only when the base feature is enabled or
-+      // overridden, so a default-disabled base feature leaves a "stable" flag on. Status decides.
++      // overridden, so a default-disabled base feature leaves a "stable" flag on. Status decides:
++      // "test", not "experimental", which --enable-experimental-web-platform-features would turn on
++      // (stock ignores that switch for these).
        name: "AttributionReporting",
 -      status: "stable",
-+      status: "experimental",
++      status: "test",
        base_feature: "none",
        public: true,
      },
-@@ -3143,8 +3151,12 @@
+@@ -3143,8 +3155,14 @@
        status: "stable",
      },
      {
 +      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
-+      // variations seed turns it off. "experimental" makes the generated base feature default
-+      // disabled and leaves --enable-features working. "stable" cannot be turned off through
-+      // base_feature_status (enabled_or_overridden keeps the flag on while not overridden).
++      // variations seed turns it off. "test" (enabled only by --enable-blink-test-features) makes the
++      // generated base feature default disabled and leaves --enable-features working; "experimental"
++      // would also turn it on under --enable-experimental-web-platform-features, which stock ignores.
++      // "stable" cannot be turned off through base_feature_status (enabled_or_overridden keeps the
++      // flag on while the base feature is not overridden).
        name: "Fledge",
 -      status: "stable",
-+      status: "experimental",
++      status: "test",
        public: true,
      },
      {
-@@ -6534,10 +6546,14 @@
+@@ -6534,10 +6552,16 @@
        status: "experimental",
      },
      {
 +      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
 +      // variations seed turns the base feature off. base_feature is "none": content/child/
 +      // runtime_features.cc turns the flag on or off only when the base feature is enabled or
-+      // overridden, so a default-disabled base feature leaves a "stable" flag on. Status decides.
++      // overridden, so a default-disabled base feature leaves a "stable" flag on. Status decides:
++      // "test", not "experimental", which --enable-experimental-web-platform-features would turn on
++      // (stock ignores that switch for these).
        name: "TopicsAPI",
        base_feature: "none",
        public: true,
 -      status: "stable",
-+      status: "experimental",
++      status: "test",
      },
      // This feature allows touch dragging and a context menu to occur
      // simultaneously, with the assumption that the menu is non-modal.  Without
-@@ -7596,8 +7612,12 @@
+@@ -7596,8 +7620,14 @@
        // JS DOMParser API to parse XML, and usage of XMLHttpRequest
        // with its responseXML document.
        // https://crbug.com/466303347
 +      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
-+      // variations seed turns it off. "experimental" makes the generated base feature default
-+      // disabled and leaves --enable-features working. "stable" cannot be turned off through
-+      // base_feature_status (enabled_or_overridden keeps the flag on while not overridden).
++      // variations seed turns it off. "test" (enabled only by --enable-blink-test-features) makes the
++      // generated base feature default disabled and leaves --enable-features working; "experimental"
++      // would also turn it on under --enable-experimental-web-platform-features, which stock ignores.
++      // "stable" cannot be turned off through base_feature_status (enabled_or_overridden keeps the
++      // flag on while the base feature is not overridden).
        name: "XMLRustForNonXslt",
 -      status: "stable",
-+      status: "experimental",
++      status: "test",
      },
      {
        name: "XMLSerializerConsistentDefaultNsDeclMatching",
