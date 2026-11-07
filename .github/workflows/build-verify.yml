@@ -63,6 +63,9 @@ jobs:
           rsync -a --delete --exclude '*.egg-info' --exclude node_modules --exclude __pycache__ client/ "$CLIENT/client/"
           rsync -a --delete settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
+          # the pin: verify_host_oracle O4 reads $CLIENT/upstream.env (oracle_rules.read_pin); a copy from the
+          # day the box was set up held the 153 tag, so O4 expected 153 for a fork that reports 156
+          cp upstream.env "$CLIENT/upstream.env"
           rsync -a --delete --exclude __pycache__ scripts/ "$CLIENT/scripts/"
           cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/lib_ws_server.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
           # observe_report imports the site profiles (scripts/sites + settings/sites); $VERIFY mirrors the host layout
