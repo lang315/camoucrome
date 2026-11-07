@@ -76,12 +76,6 @@ Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
 a Windows flagship plus a Linux build for headless server use, built on a Chrome stable tag. Each
 release's notes give its Chrome version and what it fixes.
 
-**Beta: [`v156.0.8078.48-8`](https://github.com/lang315/camoucrome/releases/tag/v156.0.8078.48-8)**,
-a Windows-only pre-release; it has no Linux archive. It is newer than the Latest
-release, `v156.0.8078.48-4`, in the browser (`chrome://observer`, no `audio:seed`,
-`navigator.deviceMemory` 16 or 32) and in the clients. To install it, use the `<tag>` and
-`<sha>` given under [Install](#install).
-
 The first release, `v156.0.8078.48-1` (2026-10-24), closed steps 0 to 3 of the
 long-term roadmap,
 [`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
@@ -101,10 +95,8 @@ later patches of its own milestone.**
 ## Install
 
 `<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
-`<sha>` is a full commit SHA from this repository. For the Latest release, `v156.0.8078.48-4`,
-it is `368059dc7c350041949b9c3e5a73d7d4e789c035`; the Go and Node lines below already name it.
-For the beta, `v156.0.8078.48-8`, it is `587d1cc93966da03ada58567bf1c935302d9922d`; the
-Go and Node lines are in its release notes.
+`<sha>` is a full commit SHA from this repository. For the Latest release, `v156.0.8078.48-9`,
+it is `2607d5bf0922390440b285c3805ece11ff818743`; the Go and Node lines below already name it.
 `<chrome-version>` is the Chrome version the release is built on.
 
 Run everything below in an elevated PowerShell ("Run as administrator"), because the
@@ -161,9 +153,9 @@ The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`.
 
 Other clients:
 
-- Go: `go get github.com/lang315/camoucrome/client/go@368059dc7c350041949b9c3e5a73d7d4e789c035`. Go generates identities by
+- Go: `go get github.com/lang315/camoucrome/client/go@2607d5bf0922390440b285c3805ece11ff818743`. Go generates identities by
   calling `python -m camoucrome.gen`, so install the Python package above too.
-- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-4/camoucrome-0.1.1.tgz`.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-9/camoucrome-0.1.3.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 ## Install on Linux (headless server use)
@@ -258,7 +250,7 @@ A time zone that contradicts the address your traffic comes from is a tell that 
 (Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
 proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
 two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
-above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@368059dc7c350041949b9c3e5a73d7d4e789c035#subdirectory=client/python"`)
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@2607d5bf0922390440b285c3805ece11ff818743#subdirectory=client/python"`)
 and a DB-IP "IP to City Lite" database file,
 which you download yourself, once a month, without an account, from
 <https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
