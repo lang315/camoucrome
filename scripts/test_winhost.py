@@ -124,3 +124,11 @@ def test_local_mode_runs_no_ssh_and_no_task(monkeypatch):
     monkeypatch.setattr(winhost.subprocess, "run", no_ssh)
     assert winhost.powershell("'x'") == "SESSION=1\nok\n"
     assert seen and seen[0].startswith(winhost.SESSION_LINE) and "Register-ScheduledTask" not in seen[0]
+
+
+def test_cdp_eval_graceful_close_asks_the_browser_to_exit_before_the_kill(captured):
+    winhost.cdp_eval("<p>", profile=r"D:\p", graceful_close=True)
+    ps = captured[-1]
+    assert ps.index("$ws.Dispose()") < ps.index('method = "Browser.close"') < ps.index("WaitForExit") < ps.rindex("Stop-Process")
+    winhost.cdp_eval("<p>", profile=r"D:\p")
+    assert "Browser.close" not in captured[-1] and "WaitForExit" not in captured[-1]
