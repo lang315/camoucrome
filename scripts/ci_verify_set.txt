@@ -36,6 +36,7 @@ run verify_credits.py
 run verify_sp6b_launcher.py
 run verify_accept_language.py
 run verify_finch_defaults.py
+run verify_href_translate.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
 external verify_observer_page.py  # has its own step in build-verify.yml, after verify_observe.py (same camou_observe = true)
 skip verify_chrome_object.py  # not yet evaluated for the runner
