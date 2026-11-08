@@ -12,63 +12,11 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-// Timing parameters of human input. They are the maintainers' choice from
-// published keystroke and pointing studies (e.g. Dhakal et al., CHI 2018, 136M
-// keystrokes; Fitts-law pointing work). They are NOT calibrated on a person.
-// Each duration is lognormal (right-skewed, as human timings are) and
-// truncated to [min, max] by redrawing, so no value is drawn more often than
-// its neighbours; none is a flat uniform.
-const (
-	dwellMedian = 95 * time.Millisecond  // key hold time of a typical typist: about 90-100 ms in large typing studies
-	dwellSigma  = 0.30                   // log-scale spread of the key hold time
-	dwellMin    = 40 * time.Millisecond  // shortest plausible key hold
-	dwellMax    = 250 * time.Millisecond // a very slow press
-
-	flightMedian = 160 * time.Millisecond // keyDown-to-keyDown of a fast-to-average typist (about 75 wpm)
-	flightSigma  = 0.45                   // inter-key intervals are right-skewed with a long tail
-	flightMin    = 60 * time.Millisecond  // fastest sustained key pairs
-	flightMax    = 600 * time.Millisecond // beyond this it is a pause, modelled separately
-
-	flightAfterPunct  = 1.4  // typists slow down after a space or punctuation (word and clause boundaries)
-	flightBeforeShift = 1.25 // reaching for Shift costs time before a capital or symbol
-
-	pauseChance = 0.03                   // rare thinking pause at a word boundary
-	pauseMedian = 500 * time.Millisecond // typical hesitation between words
-	pauseSigma  = 0.40                   // log-scale spread of the pause
-	pauseMin    = 300 * time.Millisecond // shorter than this is not a pause
-	pauseMax    = 900 * time.Millisecond // longer pauses are rarer than the model needs
-
-	shiftLeadMedian = 55 * time.Millisecond // the Shift finger lands about 35-90 ms before the letter
-	shiftLeadSigma  = 0.30                  // log-scale spread of the Shift lead
-	shiftLeadMin    = 35 * time.Millisecond // Shift never lands less than this before the key
-	shiftLeadMax    = 90 * time.Millisecond // nor more than this
-
-	shiftReleaseMedian = 30 * time.Millisecond // Shift is let go shortly after the letter
-	shiftReleaseSigma  = 0.50                  // release is sloppier than the press
-	shiftReleaseMin    = 10 * time.Millisecond // fastest release after the key's keyUp
-	shiftReleaseMax    = 60 * time.Millisecond // slowest release after the key's keyUp
-
-	settleMedian = 120 * time.Millisecond // pointer rests briefly on the target before the press
-	settleSigma  = 0.40                   // log-scale spread of the settle
-	settleMin    = 40 * time.Millisecond  // shortest settle
-	settleMax    = 400 * time.Millisecond // longest settle before it reads as hesitation
-
-	clickHoldMedian = 85 * time.Millisecond  // mouse button hold of a normal click: about 80-100 ms
-	clickHoldSigma  = 0.30                   // log-scale spread of the hold
-	clickHoldMin    = 40 * time.Millisecond  // shortest plausible click
-	clickHoldMax    = 200 * time.Millisecond // a slow click
-
-	tremorMedian  = 190 * time.Millisecond // a held hand drifts a pixel or two every 120-300 ms
-	tremorSigma   = 0.30                   // log-scale spread of the interval
-	tremorMin     = 120 * time.Millisecond // fastest drift
-	tremorMax     = 300 * time.Millisecond // slowest drift
-	tremorPx      = 2.0                    // drift stays within 2 px of the press point
-	tremorSigmaPx = 0.8                    // most drifts are under a pixel
-
-	clickSpread = 1.0 / 6 // Gaussian sigma of the click point, as a fraction of the box side
-	clickInner  = 0.35    // the point stays within centre +-35% of the side (the inner 70%)
-	clickMinBox = 8.0     // a side under 8 px: its centre
-)
+// The timing parameters of human input are in human_params.go, generated from
+// settings/human_input.json (public keystroke and mouse datasets; each value's
+// source is recorded there). Each duration is lognormal (right-skewed, as human
+// timings are) and truncated to [min, max] by redrawing, so no value is drawn
+// more often than its neighbours; none is a flat uniform.
 
 // sleep is a var so tests can record waits instead of spending them.
 var sleep = realSleep

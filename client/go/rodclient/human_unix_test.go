@@ -42,15 +42,15 @@ func TestDwellDistribution(t *testing.T) {
 	seen := map[time.Duration]bool{}
 	for i := 0; i < 5000; i++ {
 		d := dwell(r)
-		if !inRange(d, 40*ms, 250*ms) {
-			t.Fatalf("dwell %v outside 40-250 ms", d)
+		if !inRange(d, dwellMin, dwellMax) {
+			t.Fatalf("dwell %v outside %v-%v", d, dwellMin, dwellMax)
 		}
 		seen[d] = true
 		xs = append(xs, float64(d))
 	}
 	sort.Float64s(xs)
-	if med := time.Duration(xs[len(xs)/2]); !inRange(med, 85*ms, 105*ms) {
-		t.Errorf("median dwell %v, want about 95 ms", med)
+	if med := time.Duration(xs[len(xs)/2]); !inRange(med, dwellMedian*9/10, dwellMedian*11/10) {
+		t.Errorf("median dwell %v, want about %v", med, dwellMedian)
 	}
 	if len(seen) < 4000 {
 		t.Errorf("only %d distinct dwells in 5000 draws", len(seen))
@@ -64,8 +64,8 @@ func TestFlightDistribution(t *testing.T) {
 	sum := 0.0
 	for i := 0; i < 200; i++ {
 		d := flight(r, 'a', 'b')
-		if !inRange(d, 60*ms, 600*ms) {
-			t.Fatalf("flight %v outside 60-600 ms", d)
+		if !inRange(d, flightMin, flightMax) {
+			t.Fatalf("flight %v outside %v-%v", d, flightMin, flightMax)
 		}
 		if seen[d] {
 			t.Fatalf("flight %v drawn twice in 200 draws", d)
@@ -104,12 +104,12 @@ func TestFlightLongerAfterPunctAndBeforeShift(t *testing.T) {
 }
 
 func TestFlightThinkingPauseOnlyAtWordBoundary(t *testing.T) {
-	// Without a pause a flight after a space is at most 600 ms x 1.4.
+	// Without a pause a flight after a space is at most flightMax x flightAfterPunct.
 	over := func(prev rune) int {
 		r := seeded()
 		n := 0
 		for i := 0; i < 20000; i++ {
-			if flight(r, prev, 'b') > 840*ms {
+			if flight(r, prev, 'b') > time.Duration(float64(flightMax)*flightAfterPunct) {
 				n++
 			}
 		}
@@ -215,9 +215,9 @@ func TestTypeShiftBracket(t *testing.T) {
 			if q.Params["code"] != "ShiftLeft" || q.Params["windowsVirtualKeyCode"] != float64(16) || q.Params["location"] != float64(1) {
 				t.Errorf("Shift keyDown fields %v", q.Params)
 			}
-			if i+2 >= len(tr) || tr[i+1].Method != "sleep" || !inRange(ns(tr[i+1]), 35*ms, 90*ms) ||
+			if i+2 >= len(tr) || tr[i+1].Method != "sleep" || !inRange(ns(tr[i+1]), shiftLeadMin, shiftLeadMax) ||
 				tr[i+2].Params["type"] != "keyDown" || tr[i+2].Params["modifiers"] != float64(8) {
-				t.Errorf("Shift keyDown not followed by a 35-90 ms lead and the shifted key")
+				t.Errorf("Shift keyDown not followed by a shiftLead lead and the shifted key")
 			}
 		case isKey(q, "keyUp", "Shift"):
 			ups++
@@ -225,8 +225,8 @@ func TestTypeShiftBracket(t *testing.T) {
 				t.Errorf("Shift released while not held (event %d)", i)
 			}
 			held = false
-			if i < 2 || tr[i-1].Method != "sleep" || !inRange(ns(tr[i-1]), 10*ms, 60*ms) || tr[i-2].Params["type"] != "keyUp" {
-				t.Errorf("Shift keyUp not 10-60 ms after a key's keyUp")
+			if i < 2 || tr[i-1].Method != "sleep" || !inRange(ns(tr[i-1]), shiftReleaseMin, shiftReleaseMax) || tr[i-2].Params["type"] != "keyUp" {
+				t.Errorf("Shift keyUp not shiftRelease after a key's keyUp")
 			}
 		case q.Params["type"] == "keyDown":
 			if shifted[key] != held {

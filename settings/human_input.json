@@ -1,0 +1,1010 @@
+{
+  "backspace_dwell": {
+    "date": "2026-11-09",
+    "max_ms": 199.0,
+    "median_ms": 82.72,
+    "min_ms": 20.42,
+    "n": 19286,
+    "sigma": 0.3646,
+    "source": "keyrecs"
+  },
+  "backspace_flight": {
+    "date": "2026-11-09",
+    "max_ms": 812.2,
+    "median_ms": 62.67,
+    "min_ms": 31.0,
+    "n": 864,
+    "sigma": 0.8371,
+    "source": "keyrecs"
+  },
+  "click_hold": {
+    "date": "2026-11-09",
+    "max_ms": 436.0,
+    "median_ms": 101.1,
+    "min_ms": 12.0,
+    "n": 626551,
+    "session_files": 15317,
+    "sigma": 0.5697,
+    "source": "boun"
+  },
+  "click_point": {
+    "date": "2026-11-09",
+    "inner": 0.35,
+    "min_box": 8.0,
+    "source": "maintainer",
+    "spread": 0.16666666666666666
+  },
+  "digraph": {
+    "date": "2026-11-09",
+    "min_n": 300,
+    "pairs": {
+      "ab": {
+        "median_ms": 202.0,
+        "n": 812
+      },
+      "ac": {
+        "median_ms": 210.0,
+        "n": 976
+      },
+      "ad": {
+        "median_ms": 194.0,
+        "n": 905
+      },
+      "ag": {
+        "median_ms": 200.0,
+        "n": 484
+      },
+      "ai": {
+        "median_ms": 144.0,
+        "n": 800
+      },
+      "ak": {
+        "median_ms": 141.0,
+        "n": 822
+      },
+      "al": {
+        "median_ms": 141.0,
+        "n": 2326
+      },
+      "am": {
+        "median_ms": 144.0,
+        "n": 642
+      },
+      "an": {
+        "median_ms": 138.0,
+        "n": 6511
+      },
+      "ar": {
+        "median_ms": 190.5,
+        "n": 2280
+      },
+      "as": {
+        "median_ms": 161.5,
+        "n": 1722
+      },
+      "aspace": {
+        "median_ms": 140.0,
+        "n": 1061
+      },
+      "at": {
+        "median_ms": 180.0,
+        "n": 3849
+      },
+      "au": {
+        "median_ms": 170.0,
+        "n": 516
+      },
+      "av": {
+        "median_ms": 180.5,
+        "n": 800
+      },
+      "aw": {
+        "median_ms": 207.5,
+        "n": 474
+      },
+      "ay": {
+        "median_ms": 201.0,
+        "n": 1390
+      },
+      "be": {
+        "median_ms": 128.0,
+        "n": 2176
+      },
+      "bl": {
+        "median_ms": 177.0,
+        "n": 1461
+      },
+      "bo": {
+        "median_ms": 166.0,
+        "n": 537
+      },
+      "bu": {
+        "median_ms": 170.0,
+        "n": 1135
+      },
+      "ca": {
+        "median_ms": 152.0,
+        "n": 1480
+      },
+      "ce": {
+        "median_ms": 165.5,
+        "n": 1236
+      },
+      "ch": {
+        "median_ms": 129.0,
+        "n": 1461
+      },
+      "co": {
+        "median_ms": 121.0,
+        "n": 1745
+      },
+      "cr": {
+        "median_ms": 236.0,
+        "n": 367
+      },
+      "ct": {
+        "median_ms": 235.0,
+        "n": 582
+      },
+      "da": {
+        "median_ms": 152.0,
+        "n": 506
+      },
+      "de": {
+        "median_ms": 160.0,
+        "n": 2213
+      },
+      "di": {
+        "median_ms": 131.0,
+        "n": 911
+      },
+      "do": {
+        "median_ms": 118.0,
+        "n": 1194
+      },
+      "ds": {
+        "median_ms": 200.5,
+        "n": 886
+      },
+      "dspace": {
+        "median_ms": 141.0,
+        "n": 5999
+      },
+      "ea": {
+        "median_ms": 188.0,
+        "n": 2759
+      },
+      "ec": {
+        "median_ms": 235.0,
+        "n": 1293
+      },
+      "ed": {
+        "median_ms": 195.0,
+        "n": 1774
+      },
+      "ee": {
+        "median_ms": 162.0,
+        "n": 1303
+      },
+      "el": {
+        "median_ms": 160.0,
+        "n": 1439
+      },
+      "em": {
+        "median_ms": 150.0,
+        "n": 893
+      },
+      "en": {
+        "median_ms": 140.0,
+        "n": 1695
+      },
+      "eo": {
+        "median_ms": 139.0,
+        "n": 500
+      },
+      "ep": {
+        "median_ms": 164.0,
+        "n": 590
+      },
+      "er": {
+        "median_ms": 161.0,
+        "n": 5539
+      },
+      "es": {
+        "median_ms": 201.0,
+        "n": 2846
+      },
+      "espace": {
+        "median_ms": 137.0,
+        "n": 17871
+      },
+      "et": {
+        "median_ms": 205.0,
+        "n": 1497
+      },
+      "ev": {
+        "median_ms": 210.5,
+        "n": 950
+      },
+      "ey": {
+        "median_ms": 194.5,
+        "n": 550
+      },
+      "fa": {
+        "median_ms": 146.0,
+        "n": 893
+      },
+      "fe": {
+        "median_ms": 168.0,
+        "n": 877
+      },
+      "fi": {
+        "median_ms": 124.0,
+        "n": 332
+      },
+      "fo": {
+        "median_ms": 128.0,
+        "n": 627
+      },
+      "fr": {
+        "median_ms": 192.0,
+        "n": 387
+      },
+      "fspace": {
+        "median_ms": 135.0,
+        "n": 2027
+      },
+      "ge": {
+        "median_ms": 135.0,
+        "n": 1097
+      },
+      "gh": {
+        "median_ms": 136.0,
+        "n": 1299
+      },
+      "gi": {
+        "median_ms": 129.5,
+        "n": 892
+      },
+      "go": {
+        "median_ms": 122.0,
+        "n": 803
+      },
+      "gs": {
+        "median_ms": 196.5,
+        "n": 862
+      },
+      "gspace": {
+        "median_ms": 152.0,
+        "n": 2775
+      },
+      "ha": {
+        "median_ms": 114.0,
+        "n": 4237
+      },
+      "he": {
+        "median_ms": 122.0,
+        "n": 7638
+      },
+      "hi": {
+        "median_ms": 162.0,
+        "n": 2950
+      },
+      "ho": {
+        "median_ms": 182.0,
+        "n": 1174
+      },
+      "hr": {
+        "median_ms": 216.5,
+        "n": 642
+      },
+      "hspace": {
+        "median_ms": 190.0,
+        "n": 1911
+      },
+      "ht": {
+        "median_ms": 144.0,
+        "n": 943
+      },
+      "hy": {
+        "median_ms": 182.0,
+        "n": 466
+      },
+      "ic": {
+        "median_ms": 170.0,
+        "n": 490
+      },
+      "id": {
+        "median_ms": 145.5,
+        "n": 614
+      },
+      "ie": {
+        "median_ms": 136.0,
+        "n": 748
+      },
+      "if": {
+        "median_ms": 182.5,
+        "n": 446
+      },
+      "ig": {
+        "median_ms": 202.0,
+        "n": 615
+      },
+      "ik": {
+        "median_ms": 175.0,
+        "n": 780
+      },
+      "il": {
+        "median_ms": 207.0,
+        "n": 1938
+      },
+      "im": {
+        "median_ms": 182.0,
+        "n": 1267
+      },
+      "in": {
+        "median_ms": 173.0,
+        "n": 7555
+      },
+      "io": {
+        "median_ms": 155.0,
+        "n": 1123
+      },
+      "ir": {
+        "median_ms": 159.0,
+        "n": 1216
+      },
+      "is": {
+        "median_ms": 128.0,
+        "n": 2847
+      },
+      "ispace": {
+        "median_ms": 168.0,
+        "n": 410
+      },
+      "it": {
+        "median_ms": 154.0,
+        "n": 4405
+      },
+      "iv": {
+        "median_ms": 189.0,
+        "n": 599
+      },
+      "ke": {
+        "median_ms": 118.0,
+        "n": 1871
+      },
+      "kspace": {
+        "median_ms": 189.0,
+        "n": 710
+      },
+      "la": {
+        "median_ms": 122.0,
+        "n": 1191
+      },
+      "ld": {
+        "median_ms": 128.0,
+        "n": 785
+      },
+      "le": {
+        "median_ms": 128.0,
+        "n": 2797
+      },
+      "li": {
+        "median_ms": 184.0,
+        "n": 2467
+      },
+      "ll": {
+        "median_ms": 142.0,
+        "n": 3599
+      },
+      "lo": {
+        "median_ms": 176.0,
+        "n": 1693
+      },
+      "lspace": {
+        "median_ms": 180.0,
+        "n": 2684
+      },
+      "lu": {
+        "median_ms": 235.0,
+        "n": 335
+      },
+      "ly": {
+        "median_ms": 212.0,
+        "n": 1223
+      },
+      "ma": {
+        "median_ms": 112.0,
+        "n": 2061
+      },
+      "me": {
+        "median_ms": 116.0,
+        "n": 3319
+      },
+      "mi": {
+        "median_ms": 165.0,
+        "n": 1056
+      },
+      "mo": {
+        "median_ms": 172.0,
+        "n": 907
+      },
+      "mp": {
+        "median_ms": 205.0,
+        "n": 489
+      },
+      "mspace": {
+        "median_ms": 192.0,
+        "n": 1242
+      },
+      "nc": {
+        "median_ms": 144.0,
+        "n": 674
+      },
+      "nd": {
+        "median_ms": 132.0,
+        "n": 4134
+      },
+      "ne": {
+        "median_ms": 118.0,
+        "n": 1683
+      },
+      "ng": {
+        "median_ms": 137.5,
+        "n": 4384
+      },
+      "ni": {
+        "median_ms": 182.0,
+        "n": 426
+      },
+      "nk": {
+        "median_ms": 170.5,
+        "n": 412
+      },
+      "nl": {
+        "median_ms": 198.0,
+        "n": 406
+      },
+      "no": {
+        "median_ms": 168.0,
+        "n": 1682
+      },
+      "ns": {
+        "median_ms": 156.5,
+        "n": 646
+      },
+      "nspace": {
+        "median_ms": 168.0,
+        "n": 5413
+      },
+      "nt": {
+        "median_ms": 151.0,
+        "n": 1513
+      },
+      "ob": {
+        "median_ms": 224.0,
+        "n": 417
+      },
+      "od": {
+        "median_ms": 165.5,
+        "n": 800
+      },
+      "of": {
+        "median_ms": 132.0,
+        "n": 1648
+      },
+      "ol": {
+        "median_ms": 192.0,
+        "n": 827
+      },
+      "om": {
+        "median_ms": 177.0,
+        "n": 1703
+      },
+      "on": {
+        "median_ms": 190.0,
+        "n": 3280
+      },
+      "oo": {
+        "median_ms": 144.0,
+        "n": 1014
+      },
+      "op": {
+        "median_ms": 175.5,
+        "n": 584
+      },
+      "or": {
+        "median_ms": 143.0,
+        "n": 3859
+      },
+      "os": {
+        "median_ms": 123.0,
+        "n": 1321
+      },
+      "ospace": {
+        "median_ms": 164.0,
+        "n": 6226
+      },
+      "ot": {
+        "median_ms": 149.0,
+        "n": 1725
+      },
+      "ou": {
+        "median_ms": 179.0,
+        "n": 8754
+      },
+      "ov": {
+        "median_ms": 177.0,
+        "n": 498
+      },
+      "ow": {
+        "median_ms": 140.5,
+        "n": 682
+      },
+      "pa": {
+        "median_ms": 112.0,
+        "n": 710
+      },
+      "pe": {
+        "median_ms": 135.0,
+        "n": 911
+      },
+      "pl": {
+        "median_ms": 170.0,
+        "n": 975
+      },
+      "po": {
+        "median_ms": 152.0,
+        "n": 434
+      },
+      "pspace": {
+        "median_ms": 208.0,
+        "n": 405
+      },
+      "ra": {
+        "median_ms": 176.0,
+        "n": 1248
+      },
+      "rd": {
+        "median_ms": 221.0,
+        "n": 580
+      },
+      "re": {
+        "median_ms": 137.0,
+        "n": 5429
+      },
+      "ri": {
+        "median_ms": 146.0,
+        "n": 1001
+      },
+      "rm": {
+        "median_ms": 154.0,
+        "n": 1423
+      },
+      "rn": {
+        "median_ms": 144.0,
+        "n": 627
+      },
+      "ro": {
+        "median_ms": 130.0,
+        "n": 1416
+      },
+      "rs": {
+        "median_ms": 224.0,
+        "n": 1224
+      },
+      "rspace": {
+        "median_ms": 152.0,
+        "n": 4823
+      },
+      "rt": {
+        "median_ms": 188.5,
+        "n": 744
+      },
+      "ry": {
+        "median_ms": 192.0,
+        "n": 465
+      },
+      "sa": {
+        "median_ms": 153.0,
+        "n": 1374
+      },
+      "se": {
+        "median_ms": 176.0,
+        "n": 2421
+      },
+      "sh": {
+        "median_ms": 152.0,
+        "n": 390
+      },
+      "si": {
+        "median_ms": 140.0,
+        "n": 1407
+      },
+      "sn": {
+        "median_ms": 173.5,
+        "n": 320
+      },
+      "so": {
+        "median_ms": 128.0,
+        "n": 1512
+      },
+      "spacea": {
+        "median_ms": 188.0,
+        "n": 5677
+      },
+      "spaceb": {
+        "median_ms": 261.0,
+        "n": 4109
+      },
+      "spacec": {
+        "median_ms": 224.0,
+        "n": 3117
+      },
+      "spaced": {
+        "median_ms": 232.0,
+        "n": 2730
+      },
+      "spacee": {
+        "median_ms": 257.0,
+        "n": 1715
+      },
+      "spacef": {
+        "median_ms": 286.0,
+        "n": 2733
+      },
+      "spaceg": {
+        "median_ms": 281.0,
+        "n": 1560
+      },
+      "spaceh": {
+        "median_ms": 280.0,
+        "n": 1984
+      },
+      "spacei": {
+        "median_ms": 227.0,
+        "n": 6972
+      },
+      "spacej": {
+        "median_ms": 336.0,
+        "n": 324
+      },
+      "spacel": {
+        "median_ms": 236.0,
+        "n": 2579
+      },
+      "spacem": {
+        "median_ms": 202.0,
+        "n": 3502
+      },
+      "spacen": {
+        "median_ms": 208.0,
+        "n": 1899
+      },
+      "spaceo": {
+        "median_ms": 241.0,
+        "n": 6247
+      },
+      "spacep": {
+        "median_ms": 240.0,
+        "n": 1650
+      },
+      "spacer": {
+        "median_ms": 248.0,
+        "n": 1691
+      },
+      "spaces": {
+        "median_ms": 203.0,
+        "n": 5750
+      },
+      "spacet": {
+        "median_ms": 219.0,
+        "n": 13604
+      },
+      "spaceu": {
+        "median_ms": 281.0,
+        "n": 969
+      },
+      "spacew": {
+        "median_ms": 236.0,
+        "n": 6947
+      },
+      "spacey": {
+        "median_ms": 320.0,
+        "n": 4173
+      },
+      "ss": {
+        "median_ms": 160.0,
+        "n": 436
+      },
+      "sspace": {
+        "median_ms": 153.0,
+        "n": 7887
+      },
+      "st": {
+        "median_ms": 199.0,
+        "n": 3933
+      },
+      "su": {
+        "median_ms": 151.0,
+        "n": 607
+      },
+      "ta": {
+        "median_ms": 155.0,
+        "n": 1948
+      },
+      "tc": {
+        "median_ms": 273.0,
+        "n": 351
+      },
+      "te": {
+        "median_ms": 155.5,
+        "n": 1706
+      },
+      "th": {
+        "median_ms": 132.0,
+        "n": 12138
+      },
+      "ti": {
+        "median_ms": 128.0,
+        "n": 1531
+      },
+      "tl": {
+        "median_ms": 160.5,
+        "n": 316
+      },
+      "to": {
+        "median_ms": 119.0,
+        "n": 5007
+      },
+      "tr": {
+        "median_ms": 171.0,
+        "n": 519
+      },
+      "ts": {
+        "median_ms": 220.0,
+        "n": 440
+      },
+      "tspace": {
+        "median_ms": 157.0,
+        "n": 10267
+      },
+      "tt": {
+        "median_ms": 147.0,
+        "n": 417
+      },
+      "tu": {
+        "median_ms": 143.5,
+        "n": 422
+      },
+      "ug": {
+        "median_ms": 200.0,
+        "n": 830
+      },
+      "ul": {
+        "median_ms": 216.0,
+        "n": 971
+      },
+      "un": {
+        "median_ms": 193.0,
+        "n": 1119
+      },
+      "ur": {
+        "median_ms": 153.0,
+        "n": 2874
+      },
+      "us": {
+        "median_ms": 126.0,
+        "n": 1589
+      },
+      "uspace": {
+        "median_ms": 178.0,
+        "n": 2908
+      },
+      "ut": {
+        "median_ms": 153.0,
+        "n": 2069
+      },
+      "ve": {
+        "median_ms": 142.0,
+        "n": 3026
+      },
+      "vi": {
+        "median_ms": 136.0,
+        "n": 304
+      },
+      "wa": {
+        "median_ms": 168.0,
+        "n": 1495
+      },
+      "we": {
+        "median_ms": 161.0,
+        "n": 1423
+      },
+      "wh": {
+        "median_ms": 149.5,
+        "n": 1810
+      },
+      "wi": {
+        "median_ms": 128.0,
+        "n": 2502
+      },
+      "wn": {
+        "median_ms": 158.0,
+        "n": 402
+      },
+      "wo": {
+        "median_ms": 128.0,
+        "n": 885
+      },
+      "wspace": {
+        "median_ms": 157.5,
+        "n": 696
+      },
+      "ye": {
+        "median_ms": 128.0,
+        "n": 305
+      },
+      "yo": {
+        "median_ms": 131.0,
+        "n": 4600
+      },
+      "ys": {
+        "median_ms": 181.0,
+        "n": 383
+      },
+      "yspace": {
+        "median_ms": 178.0,
+        "n": 2389
+      },
+      "yt": {
+        "median_ms": 201.5,
+        "n": 304
+      }
+    },
+    "source": "keyrecs"
+  },
+  "dwell": {
+    "date": "2026-11-09",
+    "max_ms": 226.0,
+    "median_ms": 92.16,
+    "min_ms": 32.0,
+    "n": 507853,
+    "sigma": 0.3474,
+    "source": "keyrecs"
+  },
+  "flight": {
+    "date": "2026-11-09",
+    "max_ms": 914.9,
+    "median_ms": 172.4,
+    "min_ms": 34.0,
+    "n": 442229,
+    "sigma": 0.6154,
+    "source": "keyrecs"
+  },
+  "flight_after_punct": {
+    "date": "2026-11-09",
+    "factor": 1.428,
+    "n": 93547,
+    "source": "keyrecs"
+  },
+  "flight_before_shift": {
+    "date": "2026-11-09",
+    "factor": 1.25,
+    "source": "maintainer"
+  },
+  "pause": {
+    "chance": 0.03,
+    "date": "2026-11-09",
+    "max_ms": 900.0,
+    "median_ms": 500.0,
+    "min_ms": 300.0,
+    "sigma": 0.4,
+    "source": "maintainer"
+  },
+  "refs": {
+    "boun": {
+      "cite": "Bogazici University Mouse Dynamics Dataset, Mendeley Data, V2 (doi:10.17632/w6cxr8yc7p.2); data article PMC8141654",
+      "dataset": "Bogazici University Mouse Dynamics Dataset",
+      "licence": "CC BY 4.0",
+      "url": "https://data.mendeley.com/datasets/w6cxr8yc7p/2"
+    },
+    "keyrecs": {
+      "cite": "Pinto Praca I. et al., KeyRecs, Data in Brief 2023, doi:10.1016/j.dib.2023.109509; Zenodo doi:10.5281/zenodo.7886743",
+      "dataset": "KeyRecs: A keystroke dynamics and typing pattern recognition dataset (free-text.csv)",
+      "licence": "CC BY 4.0",
+      "url": "https://zenodo.org/records/7886743"
+    },
+    "maintainer": {
+      "cite": "Chosen by the maintainers in PR #156; no dataset gives it",
+      "dataset": "maintainer default, unsourced",
+      "licence": "n/a",
+      "url": ""
+    }
+  },
+  "rollover": {
+    "chance": 0.1757,
+    "date": "2026-11-09",
+    "max_ms": 132.0,
+    "median_ms": 25.91,
+    "min_ms": 1.0,
+    "n": 81781,
+    "pairs": 465438,
+    "sigma": 0.8897,
+    "source": "keyrecs"
+  },
+  "rollover_max_down": {
+    "date": "2026-11-09",
+    "keys": 2,
+    "source": "maintainer"
+  },
+  "schema": 1,
+  "settle": {
+    "date": "2026-11-09",
+    "max_ms": 400.0,
+    "median_ms": 120.0,
+    "min_ms": 40.0,
+    "sigma": 0.4,
+    "source": "maintainer"
+  },
+  "shift_lead": {
+    "date": "2026-11-09",
+    "max_ms": 295.0,
+    "median_ms": 132.0,
+    "min_ms": 4.0,
+    "n": 1949,
+    "sigma": 0.7767,
+    "source": "keyrecs"
+  },
+  "shift_release": {
+    "date": "2026-11-09",
+    "max_ms": 159.8,
+    "median_ms": 28.05,
+    "min_ms": 2.0,
+    "n": 1909,
+    "sigma": 0.9408,
+    "source": "keyrecs"
+  },
+  "tremor": {
+    "date": "2026-11-09",
+    "max_ms": 300.0,
+    "median_ms": 190.0,
+    "min_ms": 120.0,
+    "px": 2.0,
+    "sigma": 0.3,
+    "sigma_px": 0.8,
+    "source": "maintainer"
+  },
+  "typos": {
+    "chars": 511235,
+    "date": "2026-11-09",
+    "note": "corrections per typed key from Backspace runs; transcription task",
+    "rate": 0.03625,
+    "run_len_probs": [
+      0.5308,
+      0.2725,
+      0.1967
+    ],
+    "runs": 18530,
+    "source": "keyrecs"
+  },
+  "typos_notice": {
+    "date": "2026-11-09",
+    "max_ms": 1886.0,
+    "median_ms": 441.0,
+    "min_ms": 151.0,
+    "n": 18261,
+    "sigma": 0.4419,
+    "source": "keyrecs"
+  },
+  "typos_retype": {
+    "date": "2026-11-09",
+    "max_ms": 959.0,
+    "median_ms": 240.3,
+    "min_ms": 40.0,
+    "n": 17258,
+    "sigma": 0.7396,
+    "source": "keyrecs"
+  }
+}
