@@ -116,7 +116,7 @@ def run_cmd(a):
     extra = {} if a.density is None else {"canvas:noiseDensity": a.density}
 
     def cell(pw, exe, config):
-        with m2.serve(PAGE) as url, m2.opened(pw, m2.Arm("x", exe, None), a.mode, config=config) as ctx:
+        with m2.serve(PAGE) as url, m2.opened(pw, m2.Arm("x", exe, None, stock=exe == stock_exe), a.mode, config=config) as ctx:
             page = m2.first_page(ctx)
             page.goto(url, wait_until="load")
             page.wait_for_function("document.getElementById('o').textContent !== ''", timeout=60000)
@@ -125,7 +125,7 @@ def run_cmd(a):
             sys.exit(f"page error: {got['error']}")
         return got
 
-    with sync_playwright() as pw:
+    with m2.seeded_control(stock_exe), sync_playwright() as pw:
         stock = cell(pw, stock_exe, None)
         unconfigured = cell(pw, fork_exe, None)
         seeded = [cell(pw, fork_exe, {"canvas:seed": s, **extra}) for s in range(1, a.seeds + 1)]

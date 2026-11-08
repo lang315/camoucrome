@@ -140,6 +140,26 @@ def opened(pw, arm, mode, user_data_dir=None, config="arm", ident=None):
             SEED.drop(user_data_dir)
 
 
+@contextlib.contextmanager
+def seeded_control(stock_exe, headed=True):
+    """For a script that launches the stock control through `opened()`: one priming launch of `stock_exe` (direct, no proxy,
+    a local page, so no site is touched), SEED set for the body, everything removed after. A template without a seed, or a
+    stock launch that shows the compiled defaults, ends the script `UNMEASURED` (stock_seed.py). The template does not
+    depend on the mode, so `headed=True` serves a headless script too."""
+    global SEED
+    os.environ.setdefault("CAMOU_WINHOST_LOCAL", "1")  # this process runs on the host, in the owner's session
+    import winhost
+    try:
+        with stock_seed.seeded_stock(winhost, stock_exe, headed=headed) as seed:
+            SEED = seed
+            try:
+                yield seed
+            finally:
+                SEED = None
+    except stock_seed.Unseeded as exc:
+        sys.exit(f"UNMEASURED: {exc}")
+
+
 def first_page(ctx):
     return ctx.pages[0] if ctx.pages else ctx.new_page()
 

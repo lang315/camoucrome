@@ -46,12 +46,12 @@ def main(argv=None):
     if geoip.check_zone(red_zone, zone) is None:
         sys.exit(f"precondition: --red-zone {red_zone} has the host's UTC offset; pick a zone that contradicts it")
     stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
-    arms = {"stock": m2.Arm("stock", stock, None),
+    arms = {"stock": m2.Arm("stock", stock, None, stock=True),
             "red": m2.Arm("red", os.environ["CAMOU_FORK_EXE"], gen.generate("windows", seed=1, timezone=red_zone)),
             "green": m2.Arm("green", os.environ["CAMOU_FORK_EXE"], gen.generate("windows", seed=1, exit_ip=ip, geoip_db=db))}
     print("exit IP resolved; identities generated")
     texts = {}
-    with sync_playwright() as pw:
+    with m2.seeded_control(stock), sync_playwright() as pw:
         for name, arm in arms.items():
             with m2.opened(pw, arm, "headed") as ctx:
                 page = m2.first_page(ctx)
