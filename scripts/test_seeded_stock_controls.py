@@ -248,3 +248,17 @@ def test_a_template_that_fails_its_checks_ends_every_script_unmeasured_before_a_
     with pytest.raises(SystemExit, match="UNMEASURED: UNSEEDED.*priming launch"):
         run_s3()()
     assert w.launches == []
+
+
+# ---- the stock path: CAMOU_STOCK_APP, else the shared default m2.STOCK_APP ----
+def test_voices_stock_arm_honours_camou_stock_app(w, tmp_path, monkeypatch):
+    monkeypatch.setenv("CAMOU_STOCK_APP", "elsewhere")
+    run_voices(tmp_path, monkeypatch, "stock")()
+    assert w.launches[0]["exe"] == "elsewhere/chrome.exe"
+
+
+def test_webrtc_stock_arm_uses_the_shared_stock_default(w, tmp_path, monkeypatch):
+    monkeypatch.delenv("CAMOU_STOCK_APP")
+    monkeypatch.setattr(m2, "STOCK_APP", "pinned")  # m2's own default is the installed Chrome path, so mark it
+    run_webrtc(tmp_path, monkeypatch, "stock")()
+    assert w.launches[0]["exe"] == "pinned/chrome.exe"

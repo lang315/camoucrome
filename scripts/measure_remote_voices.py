@@ -150,7 +150,7 @@ def one(pw, arm, mode):
 def main():
     out, n, arms = sys.argv[1], int(sys.argv[2]), sys.argv[3].split(",")
     os.makedirs(r"D:\camou-win\cn\s5\p", exist_ok=True)
-    stock = os.path.join(m2.STOCK_APP, "chrome.exe")
+    stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
     # The run is unattended on the owner's RDP desktop, where the window can be occluded or the
     # client minimised; Chrome then throttles the page's timers to about one wake a minute and the
     # cells never finish (smoke2, 2026-10-13). Every arm gets the same three scheduling flags.
