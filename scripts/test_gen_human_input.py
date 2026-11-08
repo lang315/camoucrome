@@ -26,7 +26,8 @@ def test_render_same_numbers_three_languages():
     out = gen.render(doc())
     assert set(out) == {"client/go/rodclient/human_params.go",
                         "client/python/camoucrome/human_params.py",
-                        "client/node/human_params.js"}
+                        "client/node/human_params.js",
+                        "client/go/rodclient/cmd/camoucrome-smoke/calibrated_floors.go"}
     go = out["client/go/rodclient/human_params.go"]
     py = out["client/python/camoucrome/human_params.py"]
     js = out["client/node/human_params.js"]
@@ -36,6 +37,9 @@ def test_render_same_numbers_three_languages():
     assert "const dwellMedianMs = 92.16;" in js
     assert "rolloverChance = 0.1757" in go
     assert '"th": 150.0' in py and '"th": 150' in js and 'digraphFlight["th"] = 150000 *' in go
+    floors = out["client/go/rodclient/cmd/camoucrome-smoke/calibrated_floors.go"]
+    assert "package main" in floors and "calibDwellMinMs = 32.0" in floors
+    assert "calibHoldMinMs" in floors and "calibLeadMinMs" in floors
     assert "DO NOT EDIT" in go and "DO NOT EDIT" in py and "DO NOT EDIT" in js
 
 

@@ -199,8 +199,9 @@ def keyrecs_params(path, digraph_min_n=300, date=None):
         i += 1
 
     out = {}
-    out["dwell"] = dist(dwell, "keyrecs", date)
-    out["flight"] = dist(flight, "keyrecs", date)
+    # an empty sample (a partial file) keeps the default, as every other field does
+    out["dwell"] = dist(dwell, "keyrecs", date) if dwell else default("dwell", date)
+    out["flight"] = dist(flight, "keyrecs", date) if flight else default("flight", date)
     if len(after_punct) >= 100 and len(after_letter) >= 100:
         out["flight_after_punct"] = {
             "factor": _r(quantile(after_punct, 0.5) / quantile(after_letter, 0.5)),
@@ -210,9 +211,9 @@ def keyrecs_params(path, digraph_min_n=300, date=None):
         ov.update({"chance": _r(roll / n_pairs), "n": roll, "pairs": n_pairs, "source": "keyrecs"})
         out["rollover"] = ov
     if len(lead) >= 100:
-        out["shift_lead"] = dist(lead, "keyrecs", date, 0.01, 0.99)
+        out["shift_lead"] = dist(lead, "keyrecs", date, 0.05, 0.95)
     if len(release) >= 100:
-        out["shift_release"] = dist(release, "keyrecs", date, 0.01, 0.99)
+        out["shift_release"] = dist(release, "keyrecs", date, 0.05, 0.95)
     if len(bs_dwell) >= 100:
         out["backspace_dwell"] = dist(bs_dwell, "keyrecs", date)
     if len(bs_flight) >= 100:

@@ -23,6 +23,7 @@ SRC = "settings/human_input.json"
 GO = "client/go/rodclient/human_params.go"
 PY = "client/python/camoucrome/human_params.py"
 JS = "client/node/human_params.js"
+FLOORS = "client/go/rodclient/cmd/camoucrome-smoke/calibrated_floors.go"
 
 # (json key, name base). Every lognormal group has median_ms, sigma, min_ms, max_ms.
 DISTS = [
@@ -164,8 +165,21 @@ def js_text(doc):
     return "\n".join(L) + "\n"
 
 
+def floors_text(doc):
+    """The smallest values rodclient can draw, for camoucrome-smoke's floors (a
+    separate package that cannot see rodclient's unexported constants)."""
+    L = header(doc, "//")
+    L[0] = L[0].replace("// Generated", "// Code generated", 1)
+    L += ["", "package main", "", "const ("]
+    L.append(f"\tcalibDwellMinMs = {num(doc['dwell']['min_ms'])} // dwell.min_ms")
+    L.append(f"\tcalibHoldMinMs  = {num(doc['click_hold']['min_ms'])} // click_hold.min_ms")
+    L.append(f"\tcalibLeadMinMs  = {num(doc['shift_lead']['min_ms'])} // shift_lead.min_ms")
+    L.append(")")
+    return "\n".join(L) + "\n"
+
+
 def render(doc):
-    return {GO: go_text(doc), PY: py_text(doc), JS: js_text(doc)}
+    return {GO: go_text(doc), PY: py_text(doc), JS: js_text(doc), FLOORS: floors_text(doc)}
 
 
 def main(argv=None):

@@ -129,3 +129,22 @@ def test_boun_accepts_a_directory(tmp_path):
             w.writerow([1.09, 1, 1, "Left", "Released", "w"])
     out = cal.boun_params([tmp_path / "s"])
     assert out["click_hold"]["n"] == 2
+
+
+def test_shift_clamp_uses_the_inner_quantiles(tmp_path):
+    """Shift lead/release are fitted on ~2k rows, so a 0.5% tail is noise: clamp at 5%/95%."""
+    rng = random.Random(5)
+    p = tmp_path / "free-text.csv"
+    with open(p, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(HEADER)
+        for _ in range(4000):
+            lead = draw(rng, 0.06, 0.4)
+            if lead >= 0.3:
+                continue
+            rel = draw(rng, 0.03, 0.5)
+            w.writerow(["p", 1, "A", "Shift", 0.09, round(-lead, 4), 0.2, 0.1, round(rel, 4), ""])
+    out = cal.keyrecs_params(p)
+    # q5 of lognormal(60 ms, 0.4) is about 31 ms; q0.5 would be about 21 ms
+    assert out["shift_lead"]["min_ms"] > 28
+    assert out["shift_release"]["max_ms"] < 0.03 * 1000 * math.exp(1.7 * 0.5) * 1.1

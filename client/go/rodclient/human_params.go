@@ -27,14 +27,14 @@ const pauseMax = 900000 * time.Microsecond
 // shift_lead: keyrecs, n=1949, 2026-11-09
 const shiftLeadMedian = 132000 * time.Microsecond
 const shiftLeadSigma = 0.7767
-const shiftLeadMin = 4000 * time.Microsecond
-const shiftLeadMax = 295000 * time.Microsecond
+const shiftLeadMin = 28400 * time.Microsecond
+const shiftLeadMax = 277000 * time.Microsecond
 
 // shift_release: keyrecs, n=1909, 2026-11-09
 const shiftReleaseMedian = 28050 * time.Microsecond
 const shiftReleaseSigma = 0.9408
-const shiftReleaseMin = 2000 * time.Microsecond
-const shiftReleaseMax = 159800 * time.Microsecond
+const shiftReleaseMin = 6000 * time.Microsecond
+const shiftReleaseMax = 108000 * time.Microsecond
 
 // settle: maintainer, 2026-11-09
 const settleMedian = 120000 * time.Microsecond

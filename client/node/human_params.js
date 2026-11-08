@@ -25,14 +25,14 @@ const pauseMaxMs = 900;
 // shift_lead: keyrecs, n=1949, 2026-11-09
 const shiftLeadMedianMs = 132;
 const shiftLeadSigma = 0.7767;
-const shiftLeadMinMs = 4;
-const shiftLeadMaxMs = 295;
+const shiftLeadMinMs = 28.4;
+const shiftLeadMaxMs = 277;
 
 // shift_release: keyrecs, n=1909, 2026-11-09
 const shiftReleaseMedianMs = 28.05;
 const shiftReleaseSigma = 0.9408;
-const shiftReleaseMinMs = 2;
-const shiftReleaseMaxMs = 159.8;
+const shiftReleaseMinMs = 6;
+const shiftReleaseMaxMs = 108;
 
 // settle: maintainer, 2026-11-09
 const settleMedianMs = 120;
