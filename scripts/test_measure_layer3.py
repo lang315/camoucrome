@@ -465,7 +465,7 @@ def run_lab(tmp_path, *extra):
     lab = Lab()
     sites = write_sites(tmp_path, base=lab.base, vendors=("cloudflare", "perimeterx"), per=1)
     code = ml.main(["run", "--out", str(tmp_path), "--rounds", "3", "--sites", sites, "--stock-exe", CHROME, "--fork-exe", CHROME,
-                    "--no-identity", "--dwell", "0.2", "--settle", "1", "--min-gap", "0", *extra])
+                    "--no-identity", "--no-seed-stock", "--dwell", "0.2", "--settle", "1", "--min-gap", "0", *extra])
     lab.shutdown()
     run = next((tmp_path / "layer3").iterdir())
     return code, run, lab

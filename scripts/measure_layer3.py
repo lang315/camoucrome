@@ -23,6 +23,7 @@ site by index and vendor only; cookie VALUES are never read into a result. The p
 (--proxy-server); argv_of launches without a proxy, and nothing the harness writes contains an argv."""
 import argparse
 import collections
+import contextlib
 import datetime
 import hashlib
 import json
@@ -40,6 +41,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import layer3_classify as lc  # noqa: E402
 import layer3_stats as ls  # noqa: E402
+import stock_seed  # noqa: E402
 
 BLOCKED_TYPES = {"image", "media", "font"}
 SETTLE_S = 15
@@ -352,6 +354,8 @@ def run_pair_with_retries(attempt, retries, check=True):
         rows, ips = attempt(k)
         if len(rows) < 2 or not check:  # no partner, or no proxy: there is no exit address to compare
             return rows
+        if any(r.get("error") == "Unseeded" for r in rows.values()):
+            break  # the stock row stays UNMEASURED (not unknown) and a retry would only spend proxy bytes
         pair_exit_ips(rows, ips)
         if any(r.get("error") == "webrtc_leak" for r in rows.values()):
             break  # a leak is not luck of the session: a retry would only spend bytes
@@ -460,24 +464,32 @@ def unknown_reason(page, url, status, note):
     return {"exc": note.get("exc"), "status": status, "body_len": body_len, "same_host": same_host}
 
 
-def visit(pw, arm, site, proxy, a, user_data_dir=None):
-    """One run of one arm on one site: stage 1, a fixed interaction, stage 2. Returns the result row fields."""
+def visit(pw, arm, site, proxy, a, user_data_dir=None, seed=None):
+    """One run of one arm on one site: stage 1, a fixed interaction, stage 2. Returns the result row fields.
+    `seed` (stock_seed.SeededStock) gives a stock arm (`arm.stock`) its variations seed: a fresh copy per visit, or the seed
+    written once into a --warm profile that has none. A stock launch that still shows the compiled defaults raises
+    stock_seed.Unseeded before it touches the proxy or a site."""
     import gpu_gate
     from camoucrome import launch
     ident = arm.ident
     lo = ident["launch"] if ident else {}
+    stock = getattr(arm, "stock", False)
     own_profile = user_data_dir is None
     if own_profile:
-        user_data_dir = tempfile.mkdtemp(prefix="l3-")
+        user_data_dir = seed.fresh_copy() if stock and seed else tempfile.mkdtemp(prefix="l3-")
+    elif stock and seed and not (pathlib.Path(user_data_dir) / "Local State").exists():
+        seed.seed(user_data_dir)  # a new warm profile; later visits keep what the browser made of it
     seed_profile(user_data_dir)
     ctx = launch(pw, arm.exe, config=ident["config"] if ident else None, headless=not a.headed, user_data_dir=user_data_dir,
                  args=arm.args + lo.get("args", []), window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"),
                  position=tuple(lo["position"]) if lo.get("position") else None, proxy=proxy)
     total = [0]
     try:
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        if stock:  # an unseeded stock is not a result: this visit is UNMEASURED, and it has sent nothing yet
+            stock_seed.guard(page.evaluate("'" + stock_seed.UNSEEDED_MARKER + "' in Navigator.prototype"), arm.name)
         if a.gpu_gate:
             gpu_gate.check(gpu_gate.read_ctx(ctx))
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
         ctx.route("**/*", lambda route: route.abort() if route.request.resource_type in BLOCKED_TYPES else route.continue_())
 
         def count(request):
@@ -514,6 +526,14 @@ def visit(pw, arm, site, proxy, a, user_data_dir=None):
         if own_profile:
             from camoucrome.launcher import remove_dir
             remove_dir(user_data_dir)
+            if stock and seed:
+                seed.drop(user_data_dir)
+
+
+def unmeasured(exc):
+    """Whether a visit's exception leaves the row UNMEASURED (the setup was not the experiment) rather than unknown."""
+    import gpu_gate
+    return isinstance(exc, (gpu_gate.Unmeasured, stock_seed.Unseeded))
 
 
 def read_results(run_dir):
@@ -568,7 +588,7 @@ def flags_of(a):
     # the zone and locale values are host-identifying and meta.json leaves the host: only that they were given is recorded, so a
     # resume cannot compare them (accepted)
     fv = {} if a.design == "pair" else {"design": a.design, "arms": a.arms, "fork_drop_key": a.fork_drop_key, "fork_drop_prefix": a.fork_drop_prefix}
-    return {**{k: getattr(a, k) for k in ("headed", "warm", "aa", "plant", "arg", "no_identity", "identity_seed", "seed", "dwell", "settle", "min_gap")},
+    return {**{k: getattr(a, k) for k in ("headed", "warm", "aa", "plant", "arg", "no_identity", "no_seed_stock", "identity_seed", "seed", "dwell", "settle", "min_gap")},
             "identity_zone_given": bool(a.timezone and a.locale), **fv}
 
 
@@ -587,6 +607,21 @@ def resume_meta(old, new):
     return {**new, "started": old["started"], "rounds": max(old["rounds"], new["rounds"]), **kept}
 
 
+def pair_arms(stock_exe, fork_exe, ident, common, plant=None):
+    """S and F. Every arm that runs the stock exe is a stock arm and gets the seeded profile: F too under --aa."""
+    import measure_step2 as m2
+    return {"S": m2.Arm("stock", stock_exe, None, common, stock=True),
+            "F": m2.Arm("fork", fork_exe, ident, common + ([plant] if plant else []), stock=fork_exe == stock_exe)}
+
+
+def stock_note(meta):
+    """What the report says about the stock control. Runs before 2026-11-08 have no key: their stock had no seed."""
+    return ("stock control: seeded (a profile that has fetched its variations seed, as a real stock Chrome has)"
+            if meta.get("stock_seeded") else
+            "stock control: NO variations seed (compiled defaults: Protected Audience on, Topics off), so its rates "
+            "are not those of a stock Chrome as users run it")
+
+
 def run_cmd(a):
     from patchright.sync_api import sync_playwright
     import measure_step2 as m2
@@ -603,7 +638,7 @@ def run_cmd(a):
     if bad:
         sys.exit("precondition: " + "; ".join(bad))
     common = common_args(proxy_cfg, a.arg)
-    arms = {"S": m2.Arm("stock", stock_exe, None, common), "F": m2.Arm("fork", fork_exe, ident, common + ([a.plant] if a.plant else []))}
+    arms = pair_arms(stock_exe, fork_exe, ident, common, a.plant)
     drops = {"keys": a.fork_drop_key, "prefixes": a.fork_drop_prefix}
     if a.design != "pair":
         if a.aa or a.warm or not ident or a.approved_gb is None:
@@ -611,7 +646,8 @@ def run_cmd(a):
         for name in a.arms:
             if name not in arms:
                 lo = launch_for_arm(name, ident["launch"])
-                arms[name] = m2.Arm(name, fork_exe, {**ident, "config": drop_keys(ident["config"], name, drops), "launch": lo}, common)
+                arms[name] = m2.Arm(name, fork_exe, {**ident, "config": drop_keys(ident["config"], name, drops), "launch": lo}, common,
+                                    stock=fork_exe == stock_exe)
     if a.resume:
         out_dir = pathlib.Path(a.resume)
     else:
@@ -622,7 +658,17 @@ def run_cmd(a):
     done = {(r["round"], r["site"], r["arm"]) for r in read_results(out_dir)}
     rng = random.Random(a.seed)
     last = {}
+    seed, stack = None, contextlib.ExitStack()
     try:
+        if not a.no_seed_stock:
+            # One priming launch per run, direct from the host: no proxy argument, no vendor site, only the variations fetch Chrome
+            # makes itself. Each stock visit then gets its own copy of the template (stock_seed.py).
+            os.environ.setdefault("CAMOU_WINHOST_LOCAL", "1")  # this process runs on the host, in the owner's session
+            import winhost
+            try:
+                seed = stack.enter_context(stock_seed.seeded_stock(winhost, stock_exe, headed=a.headed))
+            except stock_seed.Unseeded as exc:
+                sys.exit(f"UNMEASURED: {exc}")
         with sync_playwright() as pw:
             argv = {k: m2.argv_of(pw, arm) for k, arm in arms.items()}
             bad = parity_problems(argv["S"], argv["F"], a.plant, os.name == "nt")
@@ -632,6 +678,7 @@ def run_cmd(a):
                     "sites_per_vendor": {v: sum(1 for s in sites if s["vendor"] == v) for v in VENDORS},
                     "versions": {k: m2.exe_version(arm.exe) if os.name == "nt" else "" for k, arm in arms.items()},
                     "argv_read": bool(argv["S"] and argv["F"]), "proxy": bool(proxy_cfg), "started": m2.run_stamp(), "flags": flags_of(a), "desktop": desktop,
+                    "stock_seeded": seed is not None,
                     **({} if a.design == "pair" else {"design": a.design, "arms": a.arms, "drops": drops, "approved_bytes": int(a.approved_gb * 1e9),
                                                       "reused_address": 0, "stop": None})}
             if os.name == "nt":
@@ -646,7 +693,7 @@ def run_cmd(a):
                     sys.exit("resume: no meta.json in " + str(out_dir))
                 meta = resume_meta(json.loads(meta_file.read_text(encoding="utf-8")), meta)
             (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
-            stop = None if a.design == "pair" else run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta)
+            stop = None if a.design == "pair" else run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta, seed=seed)
             for rnd in (range(a.rounds) if a.design == "pair" else ()):
                 order_sites = list(sites)
                 rng.shuffle(order_sites)
@@ -670,10 +717,9 @@ def run_cmd(a):
                                 udd = out_dir / "profiles" / f"{name}-{site['idx']}"
                                 udd.mkdir(parents=True, exist_ok=True)
                             try:
-                                row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None))
+                                row.update(visit(pw, arms[name], site, proxy, a, str(udd) if udd else None, seed))
                             except Exception as exc:  # noqa: BLE001 - a failed run is unknown/unmeasured, recorded, never a crash of the batch
-                                import gpu_gate
-                                row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown",
+                                row.update({"outcome": "unmeasured" if unmeasured(exc) else "unknown",
                                             "error": type(exc).__name__, "bytes": 0})
                             ips[name] = row.pop("_exit_ip", None)
                             pending[name] = row
@@ -685,6 +731,7 @@ def run_cmd(a):
                         print(f"round {rnd} {site['vendor']}#{site['idx']} {name}: {row['outcome']}", flush=True)
                     last[site["idx"]] = time.monotonic()
     finally:
+        stack.close()  # the template and any copy left by an error
         leaked = secret_scan(out_dir, secrets_of(proxy_cfg))
         if leaked:
             print("LEAK: the proxy secret is in " + ", ".join(leaked), file=sys.stderr)
@@ -700,11 +747,10 @@ def run_cmd(a):
     return 0
 
 
-def run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta, clock=time.monotonic, sleep=time.sleep):
+def run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta, clock=time.monotonic, sleep=time.sleep, seed=None):
     """The first-visitor loop: every visit on its own fresh sticky session, the stop rules of the plan. Returns the stop reason or
     None. Writes the final reused_address count and stop into meta.json. Thin on purpose: the rules are the pure functions above;
     this wiring is only exercised on the host."""
-    import gpu_gate
     by_idx = {s["idx"]: s for s in sites}
     pending = [v for v in plan_visits(a.arms, list(by_idx), a.rounds, a.seed) if v not in done]
     ledger, pause = AddressLedger(), Pause429(clock)
@@ -727,10 +773,12 @@ def run_first_visitor(pw, arms, sites, proxy_cfg, a, out_dir, run_id, done, meta
             row = {"round": rnd, "site": idx, "vendor": site["vendor"], "arm": name,
                    "t": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
             try:
-                row.update(visit(pw, arms[name], site, proxy, a))
+                row.update(visit(pw, arms[name], site, proxy, a, seed=seed))
             except Exception as exc:  # noqa: BLE001 - a failed visit is unknown/unmeasured, recorded, never a crash of the batch
-                row.update({"outcome": "unmeasured" if isinstance(exc, gpu_gate.Unmeasured) else "unknown", "error": type(exc).__name__, "bytes": 0})
+                row.update({"outcome": "unmeasured" if unmeasured(exc) else "unknown", "error": type(exc).__name__, "bytes": 0})
             ip = row.pop("_exit_ip", None)
+            if row.get("error") == "Unseeded":
+                break  # not an address problem: a retry would launch the same unseeded stock again
             if not proxy_cfg or (ip is not None and not nav_failure(row)) or (row.get("webrtc_leaks") or 0) != 0 or k == a.ip_retries:
                 break
             retry_bytes += row.get("bytes", 0)
@@ -796,9 +844,11 @@ def report_cmd(a):
     meta_file = pathlib.Path(a.run_dir) / "meta.json"
     if meta_file.exists() and json.loads(meta_file.read_text(encoding="utf-8")).get("design") == "first-visitor":
         rs = read_results(a.run_dir)
+        print(stock_note(json.loads(meta_file.read_text(encoding="utf-8"))))
         print(first_visitor_report(first_visitor_counts(rs), rs))
         return 0
     rows = vendor_rows(a.run_dir)
+    print(stock_note(json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}))
     print(table(rows))
     rs = measured_rows(a.run_dir)
     if rs:
@@ -850,7 +900,8 @@ def scrub_cmd(a):
         sys.exit(f"scrub: fewer than 3 sites for {sorted(thin)}: a vendor with one or two sites names its sites")
     header = (f"Run {meta['run']} (UTC). Images, media and fonts blocked in both arms; {meta['rounds']} rounds per site; "
               f"{'headed' if meta.get('flags', {}).get('headed') else 'headless'}; {'warmed profiles' if meta['warm'] else 'fresh profiles'}; {'stock against stock' if meta['aa'] else 'fork (no identity) against stock' if meta.get('flags', {}).get('no_identity') else 'fork against stock'}"
-              f"{'; planted RED' if meta['plant'] else ''}; {'residential proxy in the host region' if meta['proxy'] else 'no proxy'}.\n")
+              f"{'; planted RED' if meta['plant'] else ''}; {'residential proxy in the host region' if meta['proxy'] else 'no proxy'}.\n"
+              + stock_note(meta) + ".\n")
     text = header + "\n" + table(rows) + "\n"
     terms = check_privacy.load_terms()
     if check_privacy.term_count(terms) == 0:
@@ -884,6 +935,8 @@ def build_parser():
     r.add_argument("--plant")
     r.add_argument("--arg", action="append", default=[], help="a browser argument for BOTH arms")
     r.add_argument("--no-identity", action="store_true")
+    r.add_argument("--no-seed-stock", action="store_true", help="do not prime a seeded stock profile (a host-only step: off the host, and for the "
+                   "opt-in live tests); the run records stock_seeded false")
     r.add_argument("--identity-seed", type=int, default=1)
     r.add_argument("--seed", type=int, default=1)
     r.add_argument("--dwell", type=float, default=3.0)
