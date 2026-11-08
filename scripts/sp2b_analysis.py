@@ -22,6 +22,13 @@ def x_span(events):
     return max(xs) - min(xs) if xs else 0.0
 
 
+def evidence(events):
+    """`n=.. x=[..] t=[..]` of a recorded move: what a failing row needs to be read."""
+    xs = [round(e["x"]) for e in events]
+    ts = [round(e["t"], 1) for e in events]
+    return f"n={len(events)} x={xs} t={ts}"
+
+
 def traces_path(events, path_dx):
     """(ok, note): the delivered mousemoves cover a real part of the path.
 
@@ -33,11 +40,9 @@ def traces_path(events, path_dx):
     span = x_span(events)
     if span > path_dx * SPAN_FRACTION:
         return True, ""
-    xs = [round(e["x"]) for e in events]
-    ts = [round(e["t"], 1) for e in events]
     return False, (f"criterion 3: events clustered, x_span={span:.0f} of path "
                    f"{path_dx:.0f}, bar {path_dx * SPAN_FRACTION:.0f}; "
-                   f"n={len(events)} x={xs} t={ts}")
+                   f"{evidence(events)}")
 
 
 def _self_test():

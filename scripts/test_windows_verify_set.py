@@ -172,3 +172,14 @@ def test_control_may_differ_from_the_pin_in_the_patch_number_only(have, ok):
     assert (problem is None) == ok
     if not ok:
         assert problem == f"stock Chrome is {have}, the pin is 156.0.8078.48: the control is not the pin's build"
+
+
+def test_log_head_keeps_the_first_lines_and_the_stderr_tail():
+    out = "\n".join(f"line{i}" for i in range(30))
+    head = w.log_head(out, "a\nb\nc\nd\ne\nf\ng")
+    assert "line0" in head and "line11" in head and "line12" not in head
+    assert "--- stderr ---" in head and "g" in head and "\nb\n" not in head
+
+
+def test_log_head_of_a_silent_run_says_so():
+    assert "no output" in w.log_head("", "")

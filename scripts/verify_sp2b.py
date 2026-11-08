@@ -109,6 +109,8 @@ def main():
         notes.append(f"criterion 1 session: {type(err).__name__}: {err}")
     else:
         results[C1] = len(events) == 1
+        if not results[C1]:
+            notes.append(f"criterion 1: want exactly one event; {sp2b_analysis.evidence(events)}")
 
     events, err = run(HUMANIZE)
     if err is not None:
@@ -119,6 +121,9 @@ def main():
         n = len(events)
         results[C2] = (n > 1 and events[-1]["x"] == TARGET[0]
                        and events[-1]["y"] == TARGET[1])
+        if not results[C2]:
+            notes.append(f"criterion 2: want n>1 ending at {TARGET}; {sp2b_analysis.evidence(events)}"
+                         + (f" last=({events[-1]['x']}, {events[-1]['y']})" if events else ""))
         # Criterion 3 asserts the events TRACE THE PATH rather than clustering at
         # the target. The earlier form -- "inter-event timeStamps are not all
         # equal" -- was too weak: OS scheduler jitter satisfies it for any n>=3

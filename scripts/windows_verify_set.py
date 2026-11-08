@@ -125,6 +125,19 @@ def judge(mode, entry, returncode, stdout):
                 f"(want {entry.rows} PASS{', or NOT MEASURED for ' + ', '.join(entry.may_skip) if entry.may_skip else ''})")
 
 
+def log_head(out, err, lines=12, err_lines=5):
+    """The first lines of a script's output plus the tail of its stderr, so a BAD entry's
+    failing row is in the batch output and not only in a log the next run overwrites."""
+    head = out.splitlines()[:lines]
+    tail = err.splitlines()[-err_lines:]
+    if not head and not tail:
+        return "      (no output)"
+    text = ["      " + l for l in head]
+    if tail:
+        text += ["      --- stderr ---"] + ["      " + l for l in tail]
+    return "\n".join(text)
+
+
 def stock_version(app_dir):
     versions = [p.name for p in pathlib.Path(app_dir).iterdir()
                 if p.is_dir() and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", p.name)]
@@ -205,6 +218,8 @@ def main(argv):
             (logs / f"{e.script}.log").write_text(out + "\n--- stderr ---\n" + err, encoding="utf-8")
         good += ok
         print(f"{'OK  ' if ok else 'BAD '} {e.script}: {why}", flush=True)
+        if not ok and not (mode == "red" and e.red == "own"):
+            print(log_head(out, err), flush=True)
     um = sum(1 for e in entries if (logs / f"{e.script}.log").exists()
              and unmeasured((logs / f"{e.script}.log").read_text(encoding="utf-8")))
     print(f"{good}/{len(entries)} entries OK ({mode}); {um} UNMEASURED")

@@ -36,3 +36,9 @@ class TracesPathTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_evidence_carries_count_positions_and_timestamps():
+    ev = a.evidence([{"x": 100.4, "t": 1.04}, {"x": 420.0, "t": 18.5}])
+    assert ev == "n=2 x=[100, 420] t=[1.0, 18.5]"
+    assert a.evidence([]) == "n=0 x=[] t=[]"
