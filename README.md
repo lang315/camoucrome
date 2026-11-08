@@ -244,6 +244,32 @@ snapped `deviceMemory`.
 
 The Python, Go (`Options.Light`) and Node clients take an opt-in `light` option (default off): it appends `launch.light_args` from `settings/launcher.json`, approach B's browser-internal flags that passed the page-blind gate and cut RAM in measurement. Independent of the generator's `--light` (DPR 1 draw); a host that wants both passes both.
 
+## Human input (Python and Node)
+
+The Python and Node clients ship `click`, `hold` and `type` helpers on a patchright Page, with the same model and the
+same generated parameters (`settings/human_input.json`) as the Go client. Input goes only through `page.mouse` and
+`page.keyboard`: no page JS and no `Runtime.enable`.
+
+```python
+from camoucrome import human
+human.click(page, "#buy")                          # press point in the inner 70%, settle, lognormal hold
+human.hold(page, "#hold-me", 1200)                 # ms; 1-2 px tremor, released at the last point
+human.type(page, "#name", "Hello, World!")         # dwell, digraph flights, real ShiftLeft, key rollover
+human.type(page, "#name", "Hello", typos=True)     # opt-in neighbour-key typos, corrected with Backspace
+# async API: await human.click(page, "#buy")
+```
+
+```js
+const { human } = require('camoucrome');
+await human.click(page, '#buy');
+await human.hold(page, '#hold-me', 1200);
+await human.type(page, '#name', 'Hello, World!', { typos: true });
+```
+
+At most two typed keys are down at once (Shift is a modifier and is not counted). Runes off the US layout go through
+`insertText`, with no key events and no typos. The final field value always equals the text. An error or a cancel
+releases every key and the button. A random seed per page; pass `rng=` / `{ rng }` to fix it in tests.
+
 ## Time zone and locale from the proxy's exit address
 
 A time zone that contradicts the address your traffic comes from is a tell that detectors check
