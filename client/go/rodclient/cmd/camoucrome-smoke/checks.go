@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Event is one entry of the page's window.__ev log. The page is the source of
@@ -19,8 +20,10 @@ type Event struct {
 	Code      string  `json:"code"`
 	X         float64 `json:"x"`
 	Y         float64 `json:"y"`
-	V         string  `json:"v"`   // target value, for input events
-	Tgt       string  `json:"tgt"` // target id
+	Loc       int     `json:"loc"`   // KeyboardEvent.location
+	Shift     bool    `json:"shift"` // event.shiftKey
+	V         string  `json:"v"`     // target value, for input events
+	Tgt       string  `json:"tgt"`   // target id
 }
 
 // Check is one named row.
@@ -38,9 +41,26 @@ type Run struct {
 	Cookies  map[string]string
 	Typed    string // what Type was asked to type
 	Humanize bool
+	Hold     time.Duration // what Hold was asked to hold #pad for
 }
 
 const typedASCII = "Hello, World! "
+
+// The human-input rows. The timing floors sit below the lowest value rodclient
+// draws (key dwell 40 ms, click hold 40 ms, Shift lead 35 ms) so event-timestamp
+// jitter cannot fail a healthy run, and far above the ~1 ms back-to-back gap of
+// a client without them.
+const (
+	minDwellMs = 30.0
+	minHoldMs  = 30.0
+	minLeadMs  = 30.0
+)
+
+// #btn is at left:200 top:150, 120x40 (border box), so its centre is (260,170).
+const (
+	btnX0, btnY0, btnX1, btnY1 = 200.0, 150.0, 320.0, 190.0
+	btnCX, btnCY               = 260.0, 170.0
+)
 
 var clickSeq = []string{"pointerdown", "mousedown", "pointerup", "mouseup", "click"}
 
@@ -80,6 +100,9 @@ func codeOf(r rune) string {
 	}
 	return map[rune]string{' ': "Space", ',': "Comma", '!': "Digit1"}[r]
 }
+
+// shiftedKey is a typedASCII key that needs Shift on a US layout.
+func shiftedKey(k string) bool { return k == "!" || len(k) == 1 && k[0] >= 'A' && k[0] <= 'Z' }
 
 // Evaluate returns the rows; every one has a stated expected count.
 func Evaluate(r Run) []Check {
@@ -201,6 +224,109 @@ func Evaluate(r Run) []Check {
 	}
 	cs = append(cs, row("#in value after typing equals the text and ends with é (page-side)", val == r.Typed && strings.HasSuffix(val, "é"),
 		"value=%q inputs=%d", val, inputs))
+
+	// Human input: dwell, Shift events, click hold and point, Hold.
+	var short []string
+	nkeys := 0
+	for i, e := range ev {
+		if e.Tgt != "in" || e.Type != "keydown" || e.Key == "Shift" {
+			continue
+		}
+		nkeys++
+		up := -1
+		for j := i + 1; j < len(ev); j++ {
+			if ev[j].Type == "keyup" && ev[j].Key == e.Key && ev[j].Tgt == "in" {
+				up = j
+				break
+			}
+		}
+		if up < 0 || ev[up].T-e.T < minDwellMs {
+			short = append(short, e.Key)
+		}
+	}
+	cs = append(cs, row("every key held >=30 ms between keydown and keyup (want 14 keys, 0 short)", nkeys == len(typedASCII) && len(short) == 0,
+		"keys=%d short=%q", nkeys, short))
+
+	nshift, badShift := 0, 0
+	for i, e := range ev {
+		if e.Tgt != "in" || e.Type != "keydown" || !shiftedKey(e.Key) {
+			continue
+		}
+		nshift++
+		down, keyUp, up := -1, -1, -1
+		for j := i - 1; j >= 0 && down < 0; j-- { // the nearest Shift event before the key
+			if ev[j].Key == "Shift" && ev[j].Type == "keydown" {
+				down = j
+			} else if ev[j].Key == "Shift" {
+				break
+			}
+		}
+		for j := i + 1; j < len(ev); j++ {
+			if keyUp < 0 && ev[j].Type == "keyup" && ev[j].Key == e.Key {
+				keyUp = j
+			}
+			if ev[j].Type == "keyup" && ev[j].Key == "Shift" {
+				up = j
+				break
+			}
+		}
+		if down < 0 || ev[down].Loc != 1 || !ev[down].Shift || e.T-ev[down].T < minLeadMs || !e.Shift || keyUp < 0 || up < keyUp {
+			badShift++
+		}
+	}
+	cs = append(cs, row("Shift keydown (location 1) >=30 ms before each shifted key, shiftKey true on it, Shift keyup after (want 3 shifted keys, 0 wrong)",
+		nshift == 3 && badShift == 0, "shifted=%d wrong=%d", nshift, badShift))
+
+	var holds []float64
+	var offs []string
+	for i, e := range ev {
+		if e.Tgt != "btn" || e.Type != "mousedown" {
+			continue
+		}
+		for j := i + 1; j < len(ev); j++ {
+			if ev[j].Type == "mouseup" && ev[j].Tgt == "btn" {
+				holds = append(holds, ev[j].T-e.T)
+				break
+			}
+		}
+		if e.X < btnX0 || e.X > btnX1 || e.Y < btnY0 || e.Y > btnY1 || e.X == btnCX && e.Y == btnCY {
+			offs = append(offs, fmt.Sprintf("(%.1f,%.1f)", e.X, e.Y))
+		}
+	}
+	minHold := 1e9
+	for _, h := range holds {
+		minHold = min(minHold, h)
+	}
+	cs = append(cs, row("mousedown to mouseup >=30 ms on both clicks (want 2 clicks, 0 short)", len(holds) == 2 && minHold >= minHoldMs,
+		"holdsMs=%.1f", holds))
+	cs = append(cs, row("press point inside #btn and not its exact centre (260,170) on both clicks (want 0 bad of 2)", len(holds) == 2 && len(offs) == 0,
+		"bad=%v", offs))
+
+	var padDown, padUp float64
+	var lastMove, upAt *Event
+	haveDown, haveUp, tremor := false, false, 0
+	for _, e := range ev {
+		if e.Tgt != "pad" {
+			continue
+		}
+		switch {
+		case e.Type == "mousedown" && !haveDown:
+			padDown, haveDown = e.T, true
+		case e.Type == "mousemove" && haveDown && !haveUp && e.Buttons == 1:
+			tremor++
+			e := e
+			lastMove = &e
+		case e.Type == "mouseup" && haveDown && !haveUp:
+			padUp, haveUp = e.T, true
+			e := e
+			upAt = &e
+		}
+	}
+	heldMs := padUp - padDown
+	cs = append(cs, row("Hold: mousedown, >=1 mousemove with buttons 1, mouseup after >= the asked duration, at the last mousemove's point",
+		haveDown && haveUp && tremor >= 1 && heldMs >= float64(r.Hold.Milliseconds()) && lastMove != nil && upAt.X == lastMove.X && upAt.Y == lastMove.Y,
+		"down=%v up=%v tremorMoves=%d heldMs=%.1f askedMs=%d lastMove=%v upAt=%v", haveDown, haveUp, tremor, heldMs, r.Hold.Milliseconds(),
+		lastMove != nil && upAt != nil && upAt.X == lastMove.X && upAt.Y == lastMove.Y, upAt != nil))
 
 	png := bytes.HasPrefix(r.PNG, []byte("\x89PNG\r\n\x1a\n"))
 	cs = append(cs, row("screenshot is a PNG of >=500 bytes", png && len(r.PNG) >= 500, "png=%v bytes=%d", png, len(r.PNG)))

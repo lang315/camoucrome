@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -147,12 +146,45 @@ func newRig(t *testing.T) *rig {
 		t.Fatal(err)
 	}
 	r := &rig{t: t, b: b, p: p, log: filepath.Join(dir, "req.jsonl")}
+	r.recordSleeps()
 	r.drain()
 	return r
 }
 
-// drain returns the requests logged since the last drain.
+// recordSleeps replaces sleep so a wait is logged in order with the CDP
+// requests as {"Method":"sleep","Params":{"ns":N}} and not spent. It still
+// honours ctx, as the real one does. drain() hides these lines, drainAll()
+// keeps them.
+func (r *rig) recordSleeps() {
+	old := sleep
+	r.t.Cleanup(func() { sleep = old })
+	sleep = func(ctx context.Context, d time.Duration) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(r.log, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = fmt.Fprintf(f, "{\"Method\":\"sleep\",\"Params\":{\"ns\":%d}}\n", d.Nanoseconds())
+		return err
+	}
+}
+
+// drain returns the CDP requests logged since the last drain.
 func (r *rig) drain() []req {
+	var out []req
+	for _, q := range r.drainAll() {
+		if q.Method != "sleep" {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+// drainAll is drain plus the recorded sleeps.
+func (r *rig) drainAll() []req {
 	raw, _ := os.ReadFile(r.log)
 	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
 	var out []req
@@ -381,7 +413,7 @@ func TestCtxCancelAborts(t *testing.T) {
 }
 
 // checkMouse asserts the events of one Click: an optional start move (first
-// click), then moved/pressed/released at the box centre with the Buttons mask.
+// click), then moved/pressed/released at one off-centre point with the Buttons mask.
 func checkMouse(t *testing.T, got []req, first bool) {
 	t.Helper()
 	var evs []map[string]any
@@ -409,9 +441,17 @@ func checkMouse(t *testing.T, got []req, first bool) {
 		evs = evs[1:]
 	}
 	buttons := []float64{0, 1, 0}
+	px, py := evs[0]["x"].(float64), evs[0]["y"].(float64)
+	// The fake box is x 10..111, y 20..61; the press point lies in its inner 70%.
+	if px < 25.15 || px > 95.85 || py < 26.15 || py > 54.85 {
+		t.Errorf("press point (%v,%v) outside the inner 70%% of the box", px, py)
+	}
+	if px == 60.5 && py == 40.5 {
+		t.Errorf("press point is the exact box centre")
+	}
 	for i, e := range evs {
-		if math.Abs(e["x"].(float64)-60.5) > 1 || math.Abs(e["y"].(float64)-40.5) > 1 {
-			t.Errorf("%v at (%v,%v), box centre is (60.5,40.5)", e["type"], e["x"], e["y"])
+		if e["x"].(float64) != px || e["y"].(float64) != py {
+			t.Errorf("%v at (%v,%v), want the press point (%v,%v)", e["type"], e["x"], e["y"], px, py)
 		}
 		if b, ok := e["buttons"].(float64); !ok || b != buttons[i] {
 			t.Errorf("%v buttons = %v, want %v", e["type"], e["buttons"], buttons[i])
@@ -451,7 +491,6 @@ func TestClickRetriesBoxModel(t *testing.T) {
 }
 
 func TestTypeKeys(t *testing.T) {
-	setDelay(t, 0)
 	r := newRig(t)
 	if err := r.p.Type(context.Background(), "#i", "aB1é"); err != nil {
 		t.Fatal(err)
@@ -469,7 +508,7 @@ func TestTypeKeys(t *testing.T) {
 	}
 	want := []string{"focus",
 		"keyDown:a:KeyA:a:65:<nil>", "keyUp:a:KeyA:<nil>:65:<nil>",
-		"keyDown:B:KeyB:B:66:8", "keyUp:B:KeyB:<nil>:66:8",
+		"keyDown:Shift:ShiftLeft:<nil>:16:8", "keyDown:B:KeyB:B:66:8", "keyUp:B:KeyB:<nil>:66:8", "keyUp:Shift:ShiftLeft:<nil>:16:<nil>",
 		"keyDown:1:Digit1:1:49:<nil>", "keyUp:1:Digit1:<nil>:49:<nil>",
 		"insert:é"}
 	if !reflect.DeepEqual(seq, want) {
@@ -478,8 +517,8 @@ func TestTypeKeys(t *testing.T) {
 }
 
 func TestTypeCtxCancelMidText(t *testing.T) {
-	setDelay(t, 50*time.Millisecond)
 	r := newRig(t)
+	sleep = realSleep // this one needs the waits to be spent
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	if err := r.p.Type(ctx, "#i", strings.Repeat("a", 100)); err == nil {
@@ -565,12 +604,6 @@ func countMethod(rs []req, m string) (n int) {
 	return
 }
 
-func setDelay(t *testing.T, d time.Duration) {
-	old := keyDelay
-	t.Cleanup(func() { keyDelay = old })
-	keyDelay = func(*rand.Rand) time.Duration { return d }
-}
-
 func TestSoftIgnoresDeadlineErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var last error
@@ -603,7 +636,6 @@ func TestStartPointClampedToViewport(t *testing.T) {
 }
 
 func TestTypeTabAndCRLF(t *testing.T) {
-	setDelay(t, 0)
 	r := newRig(t)
 	if err := r.p.Type(context.Background(), "#i", "\t\r\nx\n"); err != nil {
 		t.Fatal(err)

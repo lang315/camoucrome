@@ -22,8 +22,9 @@ import (
 
 const pageHTML = `<!doctype html><title>smoke</title>
 <style>body{margin:0}#btn{position:absolute;left:200px;top:150px;width:120px;height:40px}
-#in{position:absolute;left:200px;top:250px;width:300px}#out{position:absolute;left:200px;top:300px;white-space:pre}</style>
-<button id="btn">Click me</button><input id="in"><div id="out"></div>
+#in{position:absolute;left:200px;top:250px;width:300px}#out{position:absolute;left:200px;top:300px;white-space:pre}
+#pad{position:absolute;left:200px;top:400px;width:200px;height:60px;background:#ddd}</style>
+<button id="btn">Click me</button><input id="in"><div id="out"></div><div id="pad">hold</div>
 <script>
 document.cookie = "smoke=1; path=/";
 window.__ev = [];
@@ -31,7 +32,7 @@ let pending = false;
 function rec(e) {
   const t = e.target;
   window.__ev.push({type: e.type, isTrusted: e.isTrusted, t: e.timeStamp, button: e.button || 0, buttons: e.buttons || 0,
-    key: e.key || "", code: e.code || "", x: e.clientX || 0, y: e.clientY || 0,
+    key: e.key || "", code: e.code || "", loc: e.location || 0, shift: !!e.shiftKey, x: e.clientX || 0, y: e.clientY || 0,
     v: t && t.value !== undefined ? t.value : "", tgt: t && t.id ? t.id : ""});
   if (!pending) {
     pending = true;
@@ -136,6 +137,9 @@ func drive(ctx context.Context, b *rodclient.Browser, url string, r *Run) error 
 	if err := p.Type(ctx, "#in", r.Typed); err != nil {
 		return err
 	}
+	if err := p.Hold(ctx, "#pad", r.Hold); err != nil {
+		return err
+	}
 	if s, err := p.Text(ctx, "#btn"); err != nil || s != "Click me" {
 		return fmt.Errorf("Text(#btn) = %q, %v", s, err)
 	}
@@ -149,7 +153,7 @@ func drive(ctx context.Context, b *rodclient.Browser, url string, r *Run) error 
 		var evs []Event
 		if json.Unmarshal([]byte(s), &evs) == nil && len(evs) > 0 {
 			r.Events = evs
-			if last := lastInput(evs); last == r.Typed {
+			if lastInput(evs) == r.Typed && padClicked(evs) {
 				break
 			}
 		}
@@ -170,6 +174,16 @@ func drive(ctx context.Context, b *rodclient.Browser, url string, r *Run) error 
 		r.Cookies[c.Name] = c.Value
 	}
 	return p.Close(ctx)
+}
+
+// padClicked: Hold's release has reached the log (the click ends a press).
+func padClicked(evs []Event) bool {
+	for _, e := range evs {
+		if e.Type == "click" && e.Tgt == "pad" {
+			return true
+		}
+	}
+	return false
 }
 
 func lastInput(evs []Event) string {
@@ -217,7 +231,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer b.Close()
-	rn := &Run{Typed: typedASCII + "é", Humanize: c.humanize}
+	rn := &Run{Typed: typedASCII + "é", Humanize: c.humanize, Hold: 800 * time.Millisecond}
 	derr := drive(ctx, b, url, rn)
 	mu.Lock()
 	rn.Sends = sends

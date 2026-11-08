@@ -16,7 +16,7 @@ import (
 // only Page.addScriptToEvaluateOnNewDocument; the script runs in the MAIN world
 // by design (the caller wrote it), so the contract probe can measure C6.
 var allowedPageMethods = []string{"AddInitScript", "Attribute", "Click", "Close", "Cookies", "Eval", "Goto",
-	"Screenshot", "Text", "Type", "WaitForSelector"}
+	"Hold", "Screenshot", "Text", "Type", "WaitForSelector"}
 
 func TestPageSurfaceIsVetted(t *testing.T) {
 	pt := reflect.TypeOf(&Page{})

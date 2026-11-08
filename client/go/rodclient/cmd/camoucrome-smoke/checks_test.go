@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // good builds a log a healthy humanized run would produce.
@@ -31,7 +32,8 @@ func goodWith(moves int, gap float64) Run {
 			add("mousemove", "btn", nil)
 		}
 		add("pointerdown", "btn", func(e *Event) { e.Buttons = 1 })
-		add("mousedown", "btn", func(e *Event) { e.Buttons = 1 })
+		add("mousedown", "btn", func(e *Event) { e.Buttons, e.X, e.Y = 1, 265.5, 172.25 })
+		t += 80 // the hold
 		add("pointerup", "btn", nil)
 		add("mouseup", "btn", nil)
 		add("click", "btn", nil)
@@ -41,14 +43,35 @@ func goodWith(moves int, gap float64) Run {
 	val := ""
 	for _, c := range typedASCII {
 		val += string(c)
+		sh := shiftedKey(string(c))
+		if sh {
+			t += 20 // Shift pressed 60 ms ahead of the key
+			add("keydown", "in", func(e *Event) { e.Key, e.Code, e.Loc, e.Shift = "Shift", "ShiftLeft", 1, true })
+			t += 50
+		}
 		for _, ty := range []string{"keydown", "keypress", "keyup"} {
 			ty := ty
-			add(ty, "in", func(e *Event) { e.Key, e.Code = string(c), codeOf(c) })
+			add(ty, "in", func(e *Event) { e.Key, e.Code, e.Shift = string(c), codeOf(c), sh })
+			if ty == "keypress" {
+				t += 80 // the dwell
+			}
+		}
+		if sh {
+			t += 20
+			add("keyup", "in", func(e *Event) { e.Key, e.Code, e.Loc = "Shift", "ShiftLeft", 1 })
 		}
 		add("input", "in", func(e *Event) { e.V = val })
 	}
 	add("input", "in", func(e *Event) { e.V = val + "é" })
-	return Run{Events: ev, Sends: map[string]int{"Page.navigate": 3, "DOM.getDocument": 20}, Typed: typedASCII + "é",
+	add("mousedown", "pad", func(e *Event) { e.Buttons = 1 })
+	for i := 0; i < 3; i++ {
+		t += 200
+		add("mousemove", "pad", func(e *Event) { e.Buttons = 1 })
+	}
+	t += 200
+	add("mouseup", "pad", nil)
+	add("click", "pad", nil)
+	return Run{Hold: 800 * time.Millisecond, Events: ev, Sends: map[string]int{"Page.navigate": 3, "DOM.getDocument": 20}, Typed: typedASCII + "é",
 		PNG: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 600)...), Cookies: map[string]string{"smoke": "1"}, Humanize: true}
 }
 
@@ -64,7 +87,7 @@ func red(t *testing.T, r Run, want string) {
 
 func TestGoodRunIsGreen(t *testing.T) {
 	cs := Evaluate(good())
-	if len(cs) != 10 || Failed(cs) {
+	if len(cs) != 15 || Failed(cs) {
 		t.Fatalf("rows=%d %+v", len(cs), cs)
 	}
 }
@@ -72,7 +95,7 @@ func TestGoodRunIsGreen(t *testing.T) {
 func TestHumanizeRowOnlyWhenAsked(t *testing.T) {
 	r := good()
 	r.Humanize = false
-	if len(Evaluate(r)) != 9 {
+	if len(Evaluate(r)) != 14 {
 		t.Fatal("humanize row present without the flag")
 	}
 }
@@ -105,7 +128,12 @@ func TestBrokenFixturesAreRed(t *testing.T) {
 	red(t, r, "isTrusted")
 
 	r = good()
-	r.Events = r.Events[:len(r.Events)-1] // no final input for é
+	for i := len(r.Events) - 1; i >= 0; i-- { // no final input for é
+		if r.Events[i].Type == "input" {
+			r.Events = append(r.Events[:i], r.Events[i+1:]...)
+			break
+		}
+	}
 	red(t, r, "#in value")
 
 	r = good()
@@ -123,6 +151,130 @@ func TestBrokenFixturesAreRed(t *testing.T) {
 	}
 	red(t, r, "per ASCII char")
 
+}
+
+// each mutates a good run the way a client without human input would.
+func TestHumanInputRowsAreRed(t *testing.T) {
+	mut := func(f func(ev []Event) []Event) Run {
+		r := good()
+		r.Events = f(append([]Event{}, r.Events...))
+		return r
+	}
+	// no dwell: every keyup 1 ms after its keydown
+	r := mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Tgt == "in" && e.Type == "keyup" && e.Key != "Shift" {
+				ev[i].T = ev[i-2].T + 1
+			}
+		}
+		return ev
+	})
+	red(t, r, "every key held")
+	// no Shift events at all, as the old client
+	r = mut(func(ev []Event) []Event {
+		var out []Event
+		for _, e := range ev {
+			if e.Key != "Shift" {
+				out = append(out, e)
+			}
+		}
+		return out
+	})
+	red(t, r, "Shift keydown")
+	// Shift keydown without location 1
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Key == "Shift" {
+				ev[i].Loc = 0
+			}
+		}
+		return ev
+	})
+	red(t, r, "Shift keydown")
+	// Shift pressed 1 ms before the key
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Key == "Shift" && e.Type == "keydown" {
+				ev[i].T = ev[i+1].T - 1
+			}
+		}
+		return ev
+	})
+	red(t, r, "Shift keydown")
+	// shiftKey false on the shifted key
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Type == "keydown" && shiftedKey(e.Key) {
+				ev[i].Shift = false
+			}
+		}
+		return ev
+	})
+	red(t, r, "Shift keydown")
+	// press and release back to back
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Type == "mouseup" && e.Tgt == "btn" {
+				ev[i].T = ev[i-2].T + 0.5
+			}
+		}
+		return ev
+	})
+	red(t, r, "mousedown to mouseup")
+	// press at the exact centre
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Type == "mousedown" && e.Tgt == "btn" {
+				ev[i].X, ev[i].Y = 260, 170
+			}
+		}
+		return ev
+	})
+	red(t, r, "press point")
+	// press outside the button
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Type == "mousedown" && e.Tgt == "btn" {
+				ev[i].X = 400
+			}
+		}
+		return ev
+	})
+	red(t, r, "press point")
+	// Hold with no tremor, released early, or never pressed
+	r = mut(func(ev []Event) []Event {
+		var out []Event
+		for _, e := range ev {
+			if !(e.Tgt == "pad" && e.Type == "mousemove") {
+				out = append(out, e)
+			}
+		}
+		return out
+	})
+	red(t, r, "Hold:")
+	r = good()
+	r.Hold = 5 * time.Second
+	red(t, r, "Hold:")
+	// mouseup jumps away from the last mousemove
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Tgt == "pad" && e.Type == "mouseup" {
+				ev[i].X = 3
+			}
+		}
+		return ev
+	})
+	red(t, r, "Hold:")
+	r = mut(func(ev []Event) []Event {
+		var out []Event
+		for _, e := range ev {
+			if e.Tgt != "pad" {
+				out = append(out, e)
+			}
+		}
+		return out
+	})
+	red(t, r, "Hold:")
 }
 
 func TestHumanizedSecondClick(t *testing.T) {
