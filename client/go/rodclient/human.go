@@ -156,13 +156,15 @@ func mouse(rp *rod.Page, op string, t proto.InputDispatchMouseEventType, x, y fl
 }
 
 // pressAt presses the left button at (x,y), runs while (the held time), then
-// releases. When while fails the button is still released, on the page without
-// the op's context (which may be the reason it failed), so no button is left down.
-func (p *Page) pressAt(rp *rod.Page, op string, x, y float64, while func() error) error {
+// releases where while says the pointer ended up, so mouseup sits at the last
+// mouseMoved (a pointer cannot jump without a move). When while fails the button
+// is still released, on the page without the op's context (which may be the
+// reason it failed), so no button is left down.
+func (p *Page) pressAt(rp *rod.Page, op string, x, y float64, while func() (float64, float64, error)) error {
 	if err := mouse(rp, op, proto.InputDispatchMouseEventTypeMousePressed, x, y, 1); err != nil {
 		return err
 	}
-	werr := while()
+	x, y, werr := while()
 	if werr != nil {
 		rp = p.p
 	}
@@ -234,20 +236,22 @@ func (p *Page) Hold(ctx context.Context, selector string, d time.Duration) error
 	if err != nil {
 		return err
 	}
-	return p.pressAt(rp, "hold", x, y, func() error {
+	px, py := x, y // the pointer's current position
+	return p.pressAt(rp, "hold", x, y, func() (float64, float64, error) {
 		for left := d; left > 0; {
 			w := min(left, lognormal(p.rng, tremorMedian, tremorSigma, tremorMin, tremorMax))
 			if err := sleep(ctx, w); err != nil {
-				return err
+				return px, py, err
 			}
 			if left -= w; left > 0 {
 				dx := max(-tremorPx, min(tremorPx, p.rng.NormFloat64()*tremorSigmaPx))
 				dy := max(-tremorPx, min(tremorPx, p.rng.NormFloat64()*tremorSigmaPx))
 				if err := mouse(rp, "hold", proto.InputDispatchMouseEventTypeMouseMoved, x+dx, y+dy, 1); err != nil {
-					return err
+					return px, py, err
 				}
+				px, py = x+dx, y+dy
 			}
 		}
-		return nil
+		return px, py, nil
 	})
 }

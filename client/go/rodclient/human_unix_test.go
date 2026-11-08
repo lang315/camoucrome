@@ -349,8 +349,10 @@ func TestHold(t *testing.T) {
 			t.Errorf("tremor gap %d = %v outside 120-300 ms", i, g)
 		}
 	}
-	if release.Params["x"] != press.Params["x"] || release.Params["y"] != press.Params["y"] {
-		t.Errorf("released at a different point than pressed")
+	last := tremor[len(tremor)-1]
+	if release.Params["x"] != last.Params["x"] || release.Params["y"] != last.Params["y"] {
+		t.Errorf("released at (%v,%v), the last mouseMoved was at (%v,%v): the pointer jumped without a move",
+			release.Params["x"], release.Params["y"], last.Params["x"], last.Params["y"])
 	}
 }
 
@@ -367,13 +369,16 @@ func TestHoldReleasesTheButtonOnError(t *testing.T) {
 	if err := r.p.Hold(context.Background(), "#b", time.Hour); err == nil {
 		t.Fatal("no error")
 	}
-	var last string
+	var last, prev req
 	for _, q := range r.drain() {
 		if q.Method == "Input.dispatchMouseEvent" {
-			last = q.Params["type"].(string)
+			prev, last = last, q
 		}
 	}
-	if last != "mouseReleased" {
-		t.Errorf("last mouse event %q, want mouseReleased", last)
+	if last.Params["type"] != "mouseReleased" {
+		t.Fatalf("last mouse event %v, want mouseReleased", last.Params["type"])
+	}
+	if prev.Params["x"] != last.Params["x"] || prev.Params["y"] != last.Params["y"] {
+		t.Errorf("released at (%v,%v), the event before was at (%v,%v)", last.Params["x"], last.Params["y"], prev.Params["x"], prev.Params["y"])
 	}
 }

@@ -255,6 +255,16 @@ func TestHumanInputRowsAreRed(t *testing.T) {
 	r = good()
 	r.Hold = 5 * time.Second
 	red(t, r, "Hold:")
+	// mouseup jumps away from the last mousemove
+	r = mut(func(ev []Event) []Event {
+		for i, e := range ev {
+			if e.Tgt == "pad" && e.Type == "mouseup" {
+				ev[i].X = 3
+			}
+		}
+		return ev
+	})
+	red(t, r, "Hold:")
 	r = mut(func(ev []Event) []Event {
 		var out []Event
 		for _, e := range ev {

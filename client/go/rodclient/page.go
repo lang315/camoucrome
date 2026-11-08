@@ -301,8 +301,8 @@ func (p *Page) Click(ctx context.Context, selector string) error {
 	if err != nil {
 		return err
 	}
-	return p.pressAt(rp, "click", x, y, func() error {
-		return sleep(ctx, lognormal(p.rng, clickHoldMedian, clickHoldSigma, clickHoldMin, clickHoldMax))
+	return p.pressAt(rp, "click", x, y, func() (float64, float64, error) {
+		return x, y, sleep(ctx, lognormal(p.rng, clickHoldMedian, clickHoldSigma, clickHoldMin, clickHoldMax))
 	})
 }
 

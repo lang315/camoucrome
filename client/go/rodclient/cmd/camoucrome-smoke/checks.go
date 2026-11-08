@@ -303,6 +303,7 @@ func Evaluate(r Run) []Check {
 		"bad=%v", offs))
 
 	var padDown, padUp float64
+	var lastMove, upAt *Event
 	haveDown, haveUp, tremor := false, false, 0
 	for _, e := range ev {
 		if e.Tgt != "pad" {
@@ -313,14 +314,19 @@ func Evaluate(r Run) []Check {
 			padDown, haveDown = e.T, true
 		case e.Type == "mousemove" && haveDown && !haveUp && e.Buttons == 1:
 			tremor++
+			e := e
+			lastMove = &e
 		case e.Type == "mouseup" && haveDown && !haveUp:
 			padUp, haveUp = e.T, true
+			e := e
+			upAt = &e
 		}
 	}
 	heldMs := padUp - padDown
-	cs = append(cs, row("Hold: mousedown, >=1 mousemove with buttons 1, mouseup after >= the asked duration",
-		haveDown && haveUp && tremor >= 1 && heldMs >= float64(r.Hold.Milliseconds()),
-		"down=%v up=%v tremorMoves=%d heldMs=%.1f askedMs=%d", haveDown, haveUp, tremor, heldMs, r.Hold.Milliseconds()))
+	cs = append(cs, row("Hold: mousedown, >=1 mousemove with buttons 1, mouseup after >= the asked duration, at the last mousemove's point",
+		haveDown && haveUp && tremor >= 1 && heldMs >= float64(r.Hold.Milliseconds()) && lastMove != nil && upAt.X == lastMove.X && upAt.Y == lastMove.Y,
+		"down=%v up=%v tremorMoves=%d heldMs=%.1f askedMs=%d lastMove=%v upAt=%v", haveDown, haveUp, tremor, heldMs, r.Hold.Milliseconds(),
+		lastMove != nil && upAt != nil && upAt.X == lastMove.X && upAt.Y == lastMove.Y, upAt != nil))
 
 	png := bytes.HasPrefix(r.PNG, []byte("\x89PNG\r\n\x1a\n"))
 	cs = append(cs, row("screenshot is a PNG of >=500 bytes", png && len(r.PNG) >= 500, "png=%v bytes=%d", png, len(r.PNG)))
