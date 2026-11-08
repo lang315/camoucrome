@@ -325,16 +325,26 @@ func (p *Page) startPoint(rp *rod.Page) (float64, float64) {
 
 // Type focuses the element (DOM.focus), then sends each rune on a US layout as
 // Input.dispatchKeyEvent keyDown{key,code,text,windowsVirtualKeyCode}, a dwell
-// and keyUp. The time from one keyDown to the next is right-skewed, longer
-// after a space or punctuation and before a shifted key, with a rare pause at
-// a word boundary. A shifted character is bracketed by real ShiftLeft key
-// events (a lead before it, a release after its keyUp); consecutive shifted
-// characters share one Shift press. Runes off the layout (accents, CJK, emoji)
-// go through Input.insertText with no key events. The fork does not humanize
-// keys, so this timing is client-side (see human.go). When the previous key is
-// still down for longer than the drawn flight, the next key waits for its
-// keyUp: keys never overlap.
-func (p *Page) Type(ctx context.Context, selector, text string) (err error) {
+// and keyUp. The time from one keyDown to the next is right-skewed, set by the
+// letter pair for frequent English digraphs, longer after a space or
+// punctuation and before a shifted key, with a rare pause at a word boundary.
+// Now and then the next key goes down before the previous one is up (key
+// rollover, as a fast typist does), never with more than two keys down. A
+// shifted character is bracketed by real ShiftLeft key events (a lead before
+// it, a release after its keyUp); consecutive shifted characters share one
+// Shift press. Runes off the layout (accents, CJK, emoji) go through
+// Input.insertText with no key events. The fork does not humanize keys, so
+// this timing is client-side (see human.go). On any error or cancellation every
+// key still down is released. Type makes no typos; TypeWith can.
+func (p *Page) Type(ctx context.Context, selector, text string) error {
+	return p.TypeWith(ctx, selector, text, TypeOptions{})
+}
+
+// TypeWith is Type with options. With Typos, the typist now and then types a
+// neighbouring key, notices after a calibrated delay, presses Backspace (real
+// key events) and types the right characters, so the field's final value is
+// text and the page sees the correction.
+func (p *Page) TypeWith(ctx context.Context, selector, text string, o TypeOptions) (err error) {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
 	rp := p.bind(ctx)
@@ -352,68 +362,66 @@ func (p *Page) Type(ctx context.Context, selector, text string) (err error) {
 		}
 		runes = append(runes, r)
 	}
+	evs := planTyping(p.rng, typeItems(p.rng, runes, o.Typos))
+	var held []usKeyInfo // keys down, in order
 	shiftDown := false
 	defer func() {
-		if shiftDown && err != nil { // never leave Shift held, even when ctx is what failed
-			p.shift(p.p, proto.InputDispatchKeyEventTypeKeyUp)
+		if err != nil { // never leave a key held, even when ctx is what failed
+			for i := len(held) - 1; i >= 0; i-- {
+				keyUp(p.p, held[i])
+			}
+			if shiftDown {
+				p.shift(p.p, proto.InputDispatchKeyEventTypeKeyUp)
+			}
 		}
 	}()
 	wrap := func(err error) error { return fmt.Errorf("rodclient: type: %w", err) }
-	for i, r := range runes {
+	var now time.Duration
+	for _, e := range evs {
+		if w := e.at - now; w > 0 {
+			if err := sleep(ctx, w); err != nil {
+				return wrap(err)
+			}
+			now = e.at
+		}
 		if err := ctx.Err(); err != nil {
 			return wrap(err)
 		}
-		k, ok := usKey(r)
-		spent := time.Duration(0) // time since this key's keyDown
-		if !ok {
-			if err := (proto.InputInsertText{Text: string(r)}).Call(rp); err != nil {
-				return wrap(err)
-			}
-		} else {
-			if k.mod == shiftBit && !shiftDown {
-				if err := p.shift(rp, proto.InputDispatchKeyEventTypeKeyDown); err != nil {
-					return wrap(err)
-				}
+		switch e.op {
+		case opInsert:
+			err = (proto.InputInsertText{Text: string(e.r)}).Call(rp)
+		case opShiftDown:
+			if err = p.shift(rp, proto.InputDispatchKeyEventTypeKeyDown); err == nil {
 				shiftDown = true
-				if err := sleep(ctx, lognormal(p.rng, shiftLeadMedian, shiftLeadSigma, shiftLeadMin, shiftLeadMax)); err != nil {
-					return wrap(err)
-				}
 			}
-			d := dwell(p.rng)
-			down := proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyDown, Key: k.key, Code: k.code,
-				Text: k.text, WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}
-			if err := down.Call(rp); err != nil {
-				return wrap(err)
-			}
-			if err := sleep(ctx, d); err != nil {
-				return wrap(err)
-			}
-			if err := (proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyUp, Key: k.key, Code: k.code,
-				WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}).Call(rp); err != nil {
-				return wrap(err)
-			}
-			spent = d
-			if shiftDown && (i+1 == len(runes) || !isShifted(runes[i+1])) {
-				rel := lognormal(p.rng, shiftReleaseMedian, shiftReleaseSigma, shiftReleaseMin, shiftReleaseMax)
-				if err := sleep(ctx, rel); err != nil {
-					return wrap(err)
-				}
-				if err := p.shift(rp, proto.InputDispatchKeyEventTypeKeyUp); err != nil {
-					return wrap(err)
-				}
+		case opShiftUp:
+			if err = p.shift(rp, proto.InputDispatchKeyEventTypeKeyUp); err == nil {
 				shiftDown = false
-				spent += rel
+			}
+		case opDown:
+			held = append(held, e.k)
+			err = (proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyDown, Key: e.k.key, Code: e.k.code,
+				Text: e.k.text, WindowsVirtualKeyCode: e.k.vk, Modifiers: e.k.mod}).Call(rp)
+		case opUp:
+			if err = keyUp(rp, e.k); err == nil {
+				for i := range held {
+					if held[i].code == e.k.code {
+						held = append(held[:i], held[i+1:]...)
+						break
+					}
+				}
 			}
 		}
-		if i+1 < len(runes) {
-			if w := flight(p.rng, r, runes[i+1]) - spent; w > 0 {
-				if err := sleep(ctx, w); err != nil {
-					return wrap(err)
-				}
-			}
+		if err != nil {
+			return wrap(err)
 		}
 	}
 	return nil
+}
+
+func keyUp(rp *rod.Page, k usKeyInfo) error {
+	return proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyUp, Key: k.key, Code: k.code,
+		WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}.Call(rp)
 }
 
 // shift sends a ShiftLeft keyDown or keyUp (location 1, as a real left Shift).
