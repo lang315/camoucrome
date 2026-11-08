@@ -87,7 +87,7 @@ def main(argv=None):
     import measure_step2 as m2
     real = urllib.request.urlopen(ECHO, timeout=30).read().decode().strip()
     exe = os.environ["CAMOU_FORK_EXE"] if a.arm == "fork" else os.path.join(
-        os.environ.get("CAMOU_STOCK_APP", r"C:\Program Files\Google\Chrome\Application"), "chrome.exe")
+        os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
     proxy = load_proxy(a.proxy)  # a bad proxy file ends the run before the priming launch
     # The stock control runs on a seeded profile (stock_seed.py): the one priming launch is direct, before any proxy use.
     with sync_playwright() as pw, (m2.seeded_control(exe) if a.arm == "stock" else contextlib.nullcontext()):
