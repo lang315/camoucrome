@@ -46,14 +46,16 @@ type Run struct {
 
 const typedASCII = "Hello, World! "
 
-// The human-input rows. The timing floors sit below the lowest value rodclient
-// draws (key dwell 40 ms, click hold 40 ms, Shift lead 35 ms) so event-timestamp
-// jitter cannot fail a healthy run, and far above the ~1 ms back-to-back gap of
-// a client without them.
+// The human-input rows. Each floor is the smallest value rodclient can draw
+// (calibrated_floors.go, from settings/human_input.json) less timestampJitterMs
+// for event-timestamp jitter, so a healthy run never fails, and it stays far
+// above the ~1 ms back-to-back gap of a client without human input.
+const timestampJitterMs = 2.0
+
 const (
-	minDwellMs = 30.0
-	minHoldMs  = 30.0
-	minLeadMs  = 30.0
+	minDwellMs = calibDwellMinMs - timestampJitterMs
+	minHoldMs  = calibHoldMinMs - timestampJitterMs
+	minLeadMs  = calibLeadMinMs - timestampJitterMs
 )
 
 // #btn is at left:200 top:150, 120x40 (border box), so its centre is (260,170).
@@ -244,7 +246,7 @@ func Evaluate(r Run) []Check {
 			short = append(short, e.Key)
 		}
 	}
-	cs = append(cs, row("every key held >=30 ms between keydown and keyup (want 14 keys, 0 short)", nkeys == len(typedASCII) && len(short) == 0,
+	cs = append(cs, row("every key held >= the calibrated floor between keydown and keyup (want 14 keys, 0 short)", nkeys == len(typedASCII) && len(short) == 0,
 		"keys=%d short=%q", nkeys, short))
 
 	nshift, badShift := 0, 0
@@ -274,7 +276,7 @@ func Evaluate(r Run) []Check {
 			badShift++
 		}
 	}
-	cs = append(cs, row("Shift keydown (location 1) >=30 ms before each shifted key, shiftKey true on it, Shift keyup after (want 3 shifted keys, 0 wrong)",
+	cs = append(cs, row("Shift keydown (location 1) >= the calibrated floor before each shifted key, shiftKey true on it, Shift keyup after (want 3 shifted keys, 0 wrong)",
 		nshift == 3 && badShift == 0, "shifted=%d wrong=%d", nshift, badShift))
 
 	var holds []float64
@@ -297,7 +299,7 @@ func Evaluate(r Run) []Check {
 	for _, h := range holds {
 		minHold = min(minHold, h)
 	}
-	cs = append(cs, row("mousedown to mouseup >=30 ms on both clicks (want 2 clicks, 0 short)", len(holds) == 2 && minHold >= minHoldMs,
+	cs = append(cs, row("mousedown to mouseup >= the calibrated floor on both clicks (want 2 clicks, 0 short)", len(holds) == 2 && minHold >= minHoldMs,
 		"holdsMs=%.1f", holds))
 	cs = append(cs, row("press point inside #btn and not its exact centre (260,170) on both clicks (want 0 bad of 2)", len(holds) == 2 && len(offs) == 0,
 		"bad=%v", offs))

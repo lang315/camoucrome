@@ -344,3 +344,20 @@ func TestRunErrors(t *testing.T) {
 		t.Fatalf("code %d %q", code, se.String())
 	}
 }
+
+// The floors follow the generated minimums, so a healthy draw at the minimum
+// passes, and stay far above the ~1 ms gap of a client without human input.
+func TestFloorsTrackCalibration(t *testing.T) {
+	for name, c := range map[string]struct{ floor, min float64 }{
+		"dwell": {minDwellMs, calibDwellMinMs},
+		"hold":  {minHoldMs, calibHoldMinMs},
+		"lead":  {minLeadMs, calibLeadMinMs},
+	} {
+		if c.floor > c.min {
+			t.Errorf("%s floor %.1f above the generated minimum %.1f: a healthy draw would fail", name, c.floor, c.min)
+		}
+		if c.floor < 10 {
+			t.Errorf("%s floor %.1f too close to the ~1 ms back-to-back gap: RED would go green", name, c.floor)
+		}
+	}
+}

@@ -44,6 +44,8 @@ jobs:
         run: python3 scripts/gen_cursory_table.py --check
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
+      - name: human_params.* match settings/human_input.json
+        run: python3 scripts/gen_human_input.py --check
       - name: gen9_thread_caps.h matches the caps JSON
         run: python3 scripts/gen_thread_caps_header.py --check
       - name: fontconfig files match settings/fonts.json
