@@ -202,7 +202,7 @@ def crash_gate(out):
         raise e
 
 
-def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500, act_ps="", window_style="Hidden", exe=None, env=None):
+def cdp_eval(page_html, expression="document.getElementById('o').textContent", args=(), headed=True, profile=None, wait_ms=1500, act_ps="", window_style="Hidden", exe=None, env=None, graceful_close=False):
     """Runs stock Chrome on the host with --remote-debugging-port (headed by
     default: --dump-dom does not work headed), loads `page_html` from a temp
     file, evaluates `expression` through a .NET ClientWebSocket on the host
@@ -210,7 +210,13 @@ def cdp_eval(page_html, expression="document.getElementById('o').textContent", a
     the JSON-parsed value. `profile` keeps a profile dir across calls.
     `act_ps` runs after the page socket `$ws` connects and before the
     evaluate (input to measure); `window_style` "Normal" for real OS input.
-    `exe` launches another chrome.exe (the fork's build) with `env` set."""
+    `exe` launches another chrome.exe (the fork's build) with `env` set.
+    `graceful_close` ends the browser with Browser.close and waits for it to exit before the kill below, so the
+    profile records a clean exit (a killed launch raises its variations crash streak)."""
+    graceful_ps = ("try { $bv = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:9333/json/version -ErrorAction Stop).Content | ConvertFrom-Json; "
+                   "$bws = Cdp-Connect $bv.webSocketDebuggerUrl; Cdp-Send $bws @{ id = 1; method = \"Browser.close\" }; "
+                   "$null = $p.WaitForExit(20000); \"GRACEFUL_EXIT=\" + $p.HasExited } catch { \"graceful close error: \" + $_ }"
+                   if graceful_close else "")
     env_ps = "\n".join(f"$env:{k} = {ps_quote(v)}" for k, v in (env or {}).items())
     b64 = base64.b64encode(page_html.encode()).decode()
     prof = profile or "$env:TEMP\\camou_cdp_" + str(os.getpid())
@@ -245,6 +251,7 @@ $resp
 "CDP_RESULT_END"
 {ps_gpu()}
 $ws.Dispose()
+{graceful_ps}
 Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object {{ $_.CommandLine -like "*remote-debugging-port=9333*" }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}
 Start-Sleep -Milliseconds 500
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

@@ -125,6 +125,7 @@ def main(argv=None):
     if a.raw_out and pathlib.Path(a.raw_out).resolve().is_relative_to(ROOT):
         sys.exit("capture_host_oracle: --raw-out must be outside the repository (it holds the host's own values)")
     import os
+    import stock_seed
     import winhost
     glargs = ("--use-gl=angle", "--use-angle=d3d11")
     # Stock Chrome gets its feature states from a variations seed it fetches on the first launch (about 30 s). A fresh
@@ -138,8 +139,7 @@ def main(argv=None):
 
     def seeded(headed):
         prof = f"$env:TEMP\\camou_oracle_seeded_{tag}_{'h' if headed else 'l'}"
-        winhost.cdp_eval("<!doctype html><title>seed</title>", expression="1", args=glargs, headed=headed,
-                         profile=prof, wait_ms=60000, exe=exe)
+        stock_seed.prime(winhost, exe, prof, headed, glargs)  # the shared priming (stock_seed.py)
         return prof
     # Both modes through the CDP client, in real time. headless --dump-dom (virtual time, ~1 s wall) raced every
     # cell that waits on a browser-process reply against its own 8 s timer: permissions, storage, mediaDevices,
@@ -157,7 +157,7 @@ def main(argv=None):
     finally:
         for prof in profiles:
             winhost.powershell(f"Remove-Item -Recurse -Force {prof} -ErrorAction SilentlyContinue\n", timeout=60)
-    unseeded = [m for m, r in (("headed", headed), ("headless", headless)) if "joinAdInterestGroup" in (r.get("navProto") or [])]
+    unseeded = stock_seed.unseeded_modes({"headed": headed, "headless": headless})
     if unseeded:
         sys.exit("capture_host_oracle: UNSEEDED (Protected Audience still on Navigator in " + ", ".join(unseeded)
                  + "): the priming launch did not fetch the seed, not a baseline")
