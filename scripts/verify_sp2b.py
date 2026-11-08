@@ -54,6 +54,10 @@ TARGET = (420.0, 260.0)
 
 INSTALL_LISTENER = """() => {
   window.__moves = [];
+  window.__frames = [];
+  window.__vis = [document.visibilityState];
+  const tick = (t) => { window.__frames.push(t); window.__vis.push(document.visibilityState); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
   window.addEventListener('mousemove', (e) => {
     window.__moves.push({x: e.clientX, y: e.clientY, t: e.timeStamp});
   });
@@ -63,7 +67,8 @@ INSTALL_LISTENER = """() => {
 def run(config):
     """One `chrome` session: prime, clear, move to TARGET, collect its events.
 
-    Returns (events, err). `events` is the list the page recorded for the
+    Returns (events, err, frames), frames = (rAF timestamps, visibility states).
+    `events` is the list the page recorded for the
     TARGET move only -- the primer's own event(s) are deliberately excluded
     by clearing window.__moves between the two moves (see module docstring).
     """
@@ -87,9 +92,10 @@ def run(config):
             # back.
             page.wait_for_timeout(1000)
             events = page.evaluate("window.__moves")
-        return events, None
+            frames = (page.evaluate("window.__frames"), page.evaluate("window.__vis"))
+        return events, None, frames
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
-        return None, exc
+        return None, exc, None
     finally:
         if proc is not None:
             lib_shell.shutdown(proc)
@@ -103,14 +109,17 @@ def main():
     C2 = "2 humanize:enabled move produces more than one mousemove, ending at the target"
     C3 = "3 humanize:enabled events trace the path, not just the endpoint"
 
-    events, err = run(None)
+    events, err, _ = run(None)
     if err is not None:
         results[C1] = False
         notes.append(f"criterion 1 session: {type(err).__name__}: {err}")
     else:
         results[C1] = len(events) == 1
+        if not results[C1]:
+            notes.append(f"criterion 1: want exactly one event; {sp2b_analysis.evidence(events)}")
 
-    events, err = run(HUMANIZE)
+    events, err, frames = run(HUMANIZE)
+    unmeasured = None
     if err is not None:
         results[C2] = False
         results[C3] = False
@@ -119,6 +128,9 @@ def main():
         n = len(events)
         results[C2] = (n > 1 and events[-1]["x"] == TARGET[0]
                        and events[-1]["y"] == TARGET[1])
+        if not results[C2]:
+            notes.append(f"criterion 2: want n>1 ending at {TARGET}; {sp2b_analysis.evidence(events)}"
+                         + (f" last=({events[-1]['x']}, {events[-1]['y']})" if events else ""))
         # Criterion 3 asserts the events TRACE THE PATH rather than clustering at
         # the target. The earlier form -- "inter-event timeStamps are not all
         # equal" -- was too weak: OS scheduler jitter satisfies it for any n>=3
@@ -135,7 +147,16 @@ def main():
         if note:
             notes.append(note)
 
-    EXPECTED = 3  # criteria 1, 2, 3
+    # A failing humanized run on a throttled window measured the window, not the
+    # hook: UNMEASURED with the frame evidence, never FAIL (sp2b_analysis.throttled).
+    if err is None and not (results[C2] and results[C3]):
+        why = sp2b_analysis.throttled(*frames)
+        if why:
+            unmeasured = f"UNMEASURED humanize session: frames throttled, {why}; {sp2b_analysis.evidence(events)}"
+            del results[C2], results[C3]
+            notes = [n for n in notes if not n.startswith(("criterion 2", "criterion 3"))]
+
+    EXPECTED = 3 - (2 if unmeasured else 0)  # criteria 1, 2, 3
 
     for name, ok in sorted(results.items()):
         print(f"{'PASS' if ok else 'FAIL'}  {name}")
@@ -151,6 +172,9 @@ def main():
     for note in notes:
         print(f"      {note}")
 
+    if unmeasured:
+        print(unmeasured)
+        sys.exit(3)
     sys.exit(0 if results and len(results) == EXPECTED and all(results.values())
              else 1)
 

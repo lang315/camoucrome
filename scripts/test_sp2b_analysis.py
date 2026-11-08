@@ -1,5 +1,7 @@
 import unittest
 
+import pytest
+
 import sp2b_analysis as a
 
 
@@ -36,3 +38,45 @@ class TracesPathTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_evidence_carries_count_positions_and_timestamps():
+    ev = a.evidence([{"x": 100.4, "t": 1.04}, {"x": 420.0, "t": 18.5}])
+    assert ev == "n=2 x=[100, 420] t=[1.0, 18.5]"
+    assert a.evidence([]) == "n=0 x=[] t=[]"
+
+
+BURST = [{"x": 420.0, "y": 260.0, "t": 100.0 + i * 0.1} for i in range(7)]
+SMOOTH = [16.7 * i for i in range(60)]
+
+
+def test_throttled_frames_make_a_clustered_trace_unmeasured_not_fail():
+    assert a.traces_path(BURST, 320.0)[0] is False  # the trace alone is a FAIL
+    assert a.throttled(SMOOTH, ["visible"]) is None  # normal frames: stays a FAIL
+    assert "median frame interval 300 ms" in a.throttled([300.0 * i for i in range(12)], ["visible"])
+    assert "not visible" in a.throttled(SMOOTH, ["visible", "hidden"])
+    assert "only 2 animation frames" in a.throttled([0.0, 16.7], ["visible"])
+
+
+def _main_with(monkeypatch, capsys, humanized_events, frames):
+    import verify_sp2b as v
+    one = [{"x": 420.0, "y": 260.0, "t": 1.0}]
+    runs = iter([(one, None, ([], [])), (humanized_events, None, frames)])
+    monkeypatch.setattr(v, "run", lambda config: next(runs))
+    with pytest.raises(SystemExit) as e:
+        v.main()
+    return e.value.code, capsys.readouterr().out
+
+
+def test_main_clustered_trace_on_throttled_frames_is_unmeasured(monkeypatch, capsys):
+    rc, out = _main_with(monkeypatch, capsys, BURST, ([300.0 * i for i in range(12)], ["visible"]))
+    assert rc == 3
+    assert "UNMEASURED humanize session: frames throttled, median frame interval 300 ms" in out
+    assert "FAIL" not in out
+
+
+def test_main_the_same_trace_on_normal_frames_still_fails(monkeypatch, capsys):
+    rc, out = _main_with(monkeypatch, capsys, BURST, (SMOOTH, ["visible"]))
+    assert rc == 1
+    assert "FAIL  3 humanize:enabled events trace the path" in out
+    assert "UNMEASURED" not in out

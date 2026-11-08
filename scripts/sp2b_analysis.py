@@ -17,9 +17,41 @@ import sys
 SPAN_FRACTION = 0.1
 
 
+# A window whose frames are throttled (occluded, minimised, a disconnected RDP
+# client) coalesces the whole humanized path into one frame: x_span=0, a FAIL
+# that measures the window, not the hook (seen in an earlier release's verify
+# set; the failures passed with RDP connected). Frames are sampled by a rAF
+# loop over the roughly 1.1 s the session runs; a healthy page delivers about 60.
+MAX_MEDIAN_FRAME_MS = 50.0
+MIN_FRAMES = 10
+
+
+def throttled(frames, visibility):
+    """A note when the page's frames were throttled during the run, else None.
+
+    `frames` are rAF timestamps (ms), `visibility` every document.visibilityState
+    seen. Judged only for a run that would FAIL: throttling then makes it UNMEASURED."""
+    if any(v != "visible" for v in visibility):
+        return f"document not visible: {sorted(set(visibility))}"
+    if len(frames) < MIN_FRAMES:
+        return f"only {len(frames)} animation frames (want >= {MIN_FRAMES})"
+    gaps = sorted(b - a for a, b in zip(frames, frames[1:]))
+    median = gaps[len(gaps) // 2]
+    if median > MAX_MEDIAN_FRAME_MS:
+        return f"median frame interval {median:.0f} ms (want <= {MAX_MEDIAN_FRAME_MS:.0f})"
+    return None
+
+
 def x_span(events):
     xs = [e["x"] for e in events]
     return max(xs) - min(xs) if xs else 0.0
+
+
+def evidence(events):
+    """`n=.. x=[..] t=[..]` of a recorded move: what a failing row needs to be read."""
+    xs = [round(e["x"]) for e in events]
+    ts = [round(e["t"], 1) for e in events]
+    return f"n={len(events)} x={xs} t={ts}"
 
 
 def traces_path(events, path_dx):
@@ -33,11 +65,9 @@ def traces_path(events, path_dx):
     span = x_span(events)
     if span > path_dx * SPAN_FRACTION:
         return True, ""
-    xs = [round(e["x"]) for e in events]
-    ts = [round(e["t"], 1) for e in events]
     return False, (f"criterion 3: events clustered, x_span={span:.0f} of path "
                    f"{path_dx:.0f}, bar {path_dx * SPAN_FRACTION:.0f}; "
-                   f"n={len(events)} x={xs} t={ts}")
+                   f"{evidence(events)}")
 
 
 def _self_test():
