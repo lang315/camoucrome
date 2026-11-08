@@ -87,9 +87,9 @@ def id_ok(d):
 def main():
     from patchright.sync_api import sync_playwright
     stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
-    control = m2.Arm("control", stock, None)
+    control = m2.Arm("control", stock, None, stock=True)
     fork = m2.Arm("fork", os.environ["CAMOU_FORK_EXE"], m2.identity(1))
-    with sync_playwright() as pw:
+    with m2.seeded_control(stock), sync_playwright() as pw:
         got = {a.name: session(pw, a) for a in (control, fork)}
         cfg = dict(fork.ident["config"])
         assert "mediaDevices:seed" in cfg, "identity has no mediaDevices:seed"

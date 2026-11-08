@@ -16,6 +16,7 @@ printed: an address, a proxy field or a username never reaches the output.
 No policy argument is passed: the browser must protect by default.
 """
 import argparse
+import contextlib
 import json
 import os
 import pathlib
@@ -57,25 +58,40 @@ def load_proxy(path):
             "password": cfg["password"]}
 
 
+def read_candidates(pw, exe, proxy, stock):
+    """One headed launch through the proxy: (the exit address as the page reads it, the ICE candidates). A stock launch runs
+    on a copy of the seeded template and is guarded before it sends a byte."""
+    import measure_step2 as m2
+    import stock_seed
+    from camoucrome import launch
+    udd = m2.SEED.fresh_copy() if stock else None
+    ctx = launch(pw, exe, headless=False, args=[], proxy=proxy, user_data_dir=udd)
+    try:
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        if stock:  # an unseeded stock is not a result: UNMEASURED before the proxy sees a byte
+            stock_seed.guard(page.evaluate("'" + stock_seed.UNSEEDED_MARKER + "' in Navigator.prototype"), "stock")
+        page.goto("about:blank")
+        return page.evaluate(f"fetch('{ECHO}').then(r => r.text())").strip(), page.evaluate(RTC)
+    finally:
+        ctx.close()
+        if udd:
+            m2.SEED.drop(udd)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", choices=("fork", "stock"), default="fork")
     ap.add_argument("--proxy", default=os.path.expanduser("~/.config/camoucrome/layer3-proxy.json"))
     a = ap.parse_args(argv)
     from patchright.sync_api import sync_playwright
-    from camoucrome import launch
+    import measure_step2 as m2
     real = urllib.request.urlopen(ECHO, timeout=30).read().decode().strip()
     exe = os.environ["CAMOU_FORK_EXE"] if a.arm == "fork" else os.path.join(
         os.environ.get("CAMOU_STOCK_APP", r"C:\Program Files\Google\Chrome\Application"), "chrome.exe")
-    with sync_playwright() as pw:
-        ctx = launch(pw, exe, headless=False, args=[], proxy=load_proxy(a.proxy))
-        try:
-            page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            page.goto("about:blank")
-            exit_ip = page.evaluate(f"fetch('{ECHO}').then(r => r.text())").strip()
-            cands = page.evaluate(RTC)
-        finally:
-            ctx.close()
+    proxy = load_proxy(a.proxy)  # a bad proxy file ends the run before the priming launch
+    # The stock control runs on a seeded profile (stock_seed.py): the one priming launch is direct, before any proxy use.
+    with sync_playwright() as pw, (m2.seeded_control(exe) if a.arm == "stock" else contextlib.nullcontext()):
+        exit_ip, cands = read_candidates(pw, exe, proxy, a.arm == "stock")
     leaks, n = classify(cands, exit_ip, real)
     ok_probe = bool(exit_ip) and exit_ip != real
     print(f"R1 probe capability (exit read through the proxy, differs from the host's own): {'PASS' if ok_probe else 'FAIL'}")
