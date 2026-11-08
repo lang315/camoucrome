@@ -35,8 +35,9 @@ import (
 // there, so a page cannot hook the read. Only Eval and AddInitScript run in
 // the main world. None of these is separately measured.
 //
-// Input: the fork humanizes mouse and wheel events browser-side only.
-// Keystroke timing is client-side with a fixed uniform 40-120 ms distribution.
+// Input: the fork humanizes the mouse path and wheel events browser-side only.
+// Press point, press and hold timing, key dwell, inter-key rhythm and Shift
+// events are client-side (human.go); every draw comes from Page.rng.
 //
 // A Page is not safe for concurrent use.
 type Page struct {
@@ -46,11 +47,8 @@ type Page struct {
 	moved bool                            // the first Click has been made
 }
 
-// newRand and keyDelay are vars so tests can make input deterministic.
-var (
-	newRand  = func() *rand.Rand { return rand.New(rand.NewSource(time.Now().UnixNano())) }
-	keyDelay = func(r *rand.Rand) time.Duration { return time.Duration(40+r.Intn(81)) * time.Millisecond }
-)
+// newRand is a var so tests can make input deterministic.
+var newRand = func() *rand.Rand { return rand.New(rand.NewSource(time.Now().UnixNano())) }
 
 // WaitUntil picks when Goto returns.
 type WaitUntil int
@@ -287,71 +285,25 @@ func (p *Page) WaitForSelector(ctx context.Context, selector string, timeout tim
 	return nil
 }
 
-// Click scrolls the element into view, then sends mouseMoved, mousePressed and
-// mouseReleased at the centre of its content box through Input.dispatchMouseEvent
-// (Buttons bitmask set as a real mouse does). The fork humanizes
-// dispatchMouseEvent browser-side, but its SP2b path needs a previous move on
-// the same widget, so the first Click on a Page first moves to a random start
-// point. A box that is not laid out yet is retried until the op timeout.
+// Click scrolls the element into view, moves to a press point drawn inside the
+// inner 70% of its content box (never fixed at the centre), settles for a
+// human beat, then presses, holds for tens of ms and releases there through
+// Input.dispatchMouseEvent (Buttons bitmask set as a real mouse does). The fork
+// humanizes the move's path browser-side, but its SP2b path needs a previous
+// move on the same widget, so the first Click on a Page first moves to a random
+// start point. A box that is not laid out yet is retried until the op timeout.
+// Timings are in human.go.
 func (p *Page) Click(ctx context.Context, selector string) error {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
 	rp := p.bind(ctx)
-	id, err := p.find(ctx, rp, selector)
+	x, y, err := p.approach(ctx, rp, selector, "click")
 	if err != nil {
-		return fmt.Errorf("rodclient: click: %w", err)
+		return err
 	}
-	var q []float64
-	var last error
-	err = poll(ctx, pollEvery, func() (bool, error) {
-		if err := (proto.DOMScrollIntoViewIfNeeded{NodeID: id}).Call(rp); err != nil {
-			return false, soft(ctx, err, &last)
-		}
-		box, err := proto.DOMGetBoxModel{NodeID: id}.Call(rp)
-		if err != nil {
-			return false, soft(ctx, err, &last)
-		}
-		if q = box.Model.Content; len(q) != 8 {
-			last = fmt.Errorf("box of %d numbers", len(q))
-			return false, nil
-		}
-		return true, nil
+	return p.pressAt(rp, "click", x, y, func() error {
+		return sleep(ctx, lognormal(p.rng, clickHoldMedian, clickHoldSigma, clickHoldMin, clickHoldMax))
 	})
-	if err != nil {
-		if last != nil {
-			err = fmt.Errorf("%w (last error: %v)", err, last)
-		}
-		return fmt.Errorf("rodclient: click: %w", err)
-	}
-	mouse := func(t proto.InputDispatchMouseEventType, x, y float64, buttons int) error {
-		ev := proto.InputDispatchMouseEvent{Type: t, X: x, Y: y, Buttons: &buttons}
-		if t != proto.InputDispatchMouseEventTypeMouseMoved {
-			ev.Button, ev.ClickCount = proto.InputMouseButtonLeft, 1
-		}
-		if err := ev.Call(rp); err != nil {
-			return fmt.Errorf("rodclient: click: %w", err)
-		}
-		return nil
-	}
-	if !p.moved {
-		x0, y0 := p.startPoint(rp)
-		if err := mouse(proto.InputDispatchMouseEventTypeMouseMoved, x0, y0, 0); err != nil {
-			return err
-		}
-		p.moved = true
-	}
-	x := (q[0] + q[2] + q[4] + q[6]) / 4
-	y := (q[1] + q[3] + q[5] + q[7]) / 4
-	for _, s := range []struct {
-		t       proto.InputDispatchMouseEventType
-		buttons int
-	}{{proto.InputDispatchMouseEventTypeMouseMoved, 0}, {proto.InputDispatchMouseEventTypeMousePressed, 1},
-		{proto.InputDispatchMouseEventTypeMouseReleased, 0}} {
-		if err := mouse(s.t, x, y, s.buttons); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // startPoint is random in [50,300]x[50,200], shrunk to half the CSS layout
@@ -372,12 +324,17 @@ func (p *Page) startPoint(rp *rod.Page) (float64, float64) {
 }
 
 // Type focuses the element (DOM.focus), then sends each rune on a US layout as
-// Input.dispatchKeyEvent keyDown{key,code,text,windowsVirtualKeyCode} and
-// keyUp, with a uniform 40-120 ms delay between characters. Runes off the
-// layout (accents, CJK, emoji) go through Input.insertText. Shift is carried
-// as the modifier bit; no separate Shift key events are sent. The fork does
-// not humanize keys, so this timing is client-side and fixed.
-func (p *Page) Type(ctx context.Context, selector, text string) error {
+// Input.dispatchKeyEvent keyDown{key,code,text,windowsVirtualKeyCode}, a dwell
+// and keyUp. The time from one keyDown to the next is right-skewed, longer
+// after a space or punctuation and before a shifted key, with a rare pause at
+// a word boundary. A shifted character is bracketed by real ShiftLeft key
+// events (a lead before it, a release after its keyUp); consecutive shifted
+// characters share one Shift press. Runes off the layout (accents, CJK, emoji)
+// go through Input.insertText with no key events. The fork does not humanize
+// keys, so this timing is client-side (see human.go). When the previous key is
+// still down for longer than the drawn flight, the next key waits for its
+// keyUp: keys never overlap.
+func (p *Page) Type(ctx context.Context, selector, text string) (err error) {
 	ctx, cancel := opCtx(ctx)
 	defer cancel()
 	rp := p.bind(ctx)
@@ -388,41 +345,85 @@ func (p *Page) Type(ctx context.Context, selector, text string) error {
 	if err := (proto.DOMFocus{NodeID: id}).Call(rp); err != nil {
 		return fmt.Errorf("rodclient: type: %w", err)
 	}
-	runes := []rune(text)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if r == '\r' && i+1 < len(runes) && runes[i+1] == '\n' {
-			i++ // CRLF is one Enter
+	var runes []rune
+	for _, r := range text {
+		if r == '\n' && len(runes) > 0 && runes[len(runes)-1] == '\r' {
+			continue // CRLF is one Enter
 		}
+		runes = append(runes, r)
+	}
+	shiftDown := false
+	defer func() {
+		if shiftDown && err != nil { // never leave Shift held, even when ctx is what failed
+			p.shift(p.p, proto.InputDispatchKeyEventTypeKeyUp)
+		}
+	}()
+	wrap := func(err error) error { return fmt.Errorf("rodclient: type: %w", err) }
+	for i, r := range runes {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("rodclient: type: %w", err)
+			return wrap(err)
 		}
-		if err := p.key(rp, r); err != nil {
-			return fmt.Errorf("rodclient: type: %w", err)
+		k, ok := usKey(r)
+		spent := time.Duration(0) // time since this key's keyDown
+		if !ok {
+			if err := (proto.InputInsertText{Text: string(r)}).Call(rp); err != nil {
+				return wrap(err)
+			}
+		} else {
+			if k.mod == shiftBit && !shiftDown {
+				if err := p.shift(rp, proto.InputDispatchKeyEventTypeKeyDown); err != nil {
+					return wrap(err)
+				}
+				shiftDown = true
+				if err := sleep(ctx, lognormal(p.rng, shiftLeadMedian, shiftLeadSigma, shiftLeadMin, shiftLeadMax)); err != nil {
+					return wrap(err)
+				}
+			}
+			d := dwell(p.rng)
+			down := proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyDown, Key: k.key, Code: k.code,
+				Text: k.text, WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}
+			if err := down.Call(rp); err != nil {
+				return wrap(err)
+			}
+			if err := sleep(ctx, d); err != nil {
+				return wrap(err)
+			}
+			if err := (proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyUp, Key: k.key, Code: k.code,
+				WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}).Call(rp); err != nil {
+				return wrap(err)
+			}
+			spent = d
+			if shiftDown && (i+1 == len(runes) || !isShifted(runes[i+1])) {
+				rel := lognormal(p.rng, shiftReleaseMedian, shiftReleaseSigma, shiftReleaseMin, shiftReleaseMax)
+				if err := sleep(ctx, rel); err != nil {
+					return wrap(err)
+				}
+				if err := p.shift(rp, proto.InputDispatchKeyEventTypeKeyUp); err != nil {
+					return wrap(err)
+				}
+				shiftDown = false
+				spent += rel
+			}
 		}
-		if d := keyDelay(p.rng); d > 0 && i < len(runes)-1 {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("rodclient: type: %w", ctx.Err())
-			case <-time.After(d):
+		if i+1 < len(runes) {
+			if w := flight(p.rng, r, runes[i+1]) - spent; w > 0 {
+				if err := sleep(ctx, w); err != nil {
+					return wrap(err)
+				}
 			}
 		}
 	}
 	return nil
 }
 
-func (p *Page) key(rp *rod.Page, r rune) error {
-	k, ok := usKey(r)
-	if !ok {
-		return proto.InputInsertText{Text: string(r)}.Call(rp)
+// shift sends a ShiftLeft keyDown or keyUp (location 1, as a real left Shift).
+func (p *Page) shift(rp *rod.Page, t proto.InputDispatchKeyEventType) error {
+	loc := 1
+	ev := proto.InputDispatchKeyEvent{Type: t, Key: "Shift", Code: "ShiftLeft", WindowsVirtualKeyCode: 16, Location: &loc}
+	if t == proto.InputDispatchKeyEventTypeKeyDown {
+		ev.Modifiers = shiftBit
 	}
-	down := proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyDown, Key: k.key, Code: k.code,
-		Text: k.text, WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}
-	if err := down.Call(rp); err != nil {
-		return err
-	}
-	return proto.InputDispatchKeyEvent{Type: proto.InputDispatchKeyEventTypeKeyUp, Key: k.key, Code: k.code,
-		WindowsVirtualKeyCode: k.vk, Modifiers: k.mod}.Call(rp)
+	return ev.Call(rp)
 }
 
 // Text is the element's innerText, read in the isolated world (see Page).
