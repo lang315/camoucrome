@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Launcher for the Camoucrome browser: CAMOU_CONFIG / CAMOU_PRESET transport over a patchright driver"
 requires-python = ">=3.10"
 license = "MPL-2.0"
-dependencies = ["patchright==1.62.3", "browserforge==1.2.4"]
+# apify_fingerprint_datapoints is browserforge's data; an unpinned release (0.16.0, 2026-11-09) changed every
+# generated identity and the pinned test values, so the data is pinned with the code.
+dependencies = ["patchright==1.62.3", "browserforge==1.2.4", "apify_fingerprint_datapoints==0.15.0"]
 
 [project.optional-dependencies]
 # Item 13 (camoucrome.geoip): the .mmdb reader, and the zone-from-coordinates lookup the DB-IP Lite file needs.
