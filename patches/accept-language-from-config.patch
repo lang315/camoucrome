@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
-index 831aaa964e..b10bb77c4c 100644
+index 66f9c0d285..9322d2193d 100644
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
-@@ -138,6 +138,7 @@ source_set("impl") {
+@@ -137,6 +137,7 @@ source_set("impl") {
      "//components/breadcrumbs/core:status",
      "//components/browser_sync:switches",
      "//components/browsing_data/core",

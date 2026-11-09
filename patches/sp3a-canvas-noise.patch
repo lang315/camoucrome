@@ -257,7 +257,7 @@ index 46eac9998c..a197570b6c 100644
  
  template <typename T>
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 13c0ced1be..43f64fc8d5 100644
+index 3da40c38fa..c775d66e67 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -1434,6 +1434,9 @@ String HTMLCanvasElement::ToDataURLInternal(
@@ -280,7 +280,7 @@ index 13c0ced1be..43f64fc8d5 100644
    if (image_bitmap) {
      auto* options = ImageEncodeOptions::Create();
      options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
-@@ -1991,6 +1997,9 @@ HTMLCanvasElement::GetSourceImageForCanvasInternal(SourceImageStatus* status) {
+@@ -1998,6 +2004,9 @@ HTMLCanvasElement::GetSourceImageForCanvasInternal(SourceImageStatus* status) {
        // This is either CanvasRenderingContext2D or ImageBitmapRenderingContext.
        image = RenderingContext()->GetImage();
      }
