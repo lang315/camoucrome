@@ -56,7 +56,6 @@ verify_sp3a's C6 discipline.
 import json
 import sys
 
-from playwright.sync_api import sync_playwright
 
 import lib_shell
 
@@ -278,19 +277,17 @@ PROBE_ATTRS = """(type) => {
 def probe_with(config, probe_js, arg):
     """One content_shell session under SwiftShader. Runs probe_js(arg) in the
     page. Returns (value, err); any fault becomes a FAIL, never a traceback."""
-    proc = None
+    proc = conn = None
     try:
-        proc = lib_shell.launch(config, extra_flags=GL_FLAGS)
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                f"http://127.0.0.1:{proc.cdp_port}")
-            context = browser.contexts[0]
-            page = context.pages[0] if context.pages else context.new_page()
-            page.goto("about:blank", wait_until="load")
-            return page.evaluate(probe_js, arg), None
+        proc, conn = lib_shell.launch_and_prime(
+            lambda: lib_shell.launch(config, extra_flags=GL_FLAGS),
+            lambda p: lib_shell.attach(p, lambda page: page.goto("about:blank", wait_until="load")))
+        return conn.page.evaluate(probe_js, arg), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:
+        if conn is not None:
+            conn.close()
         if proc is not None:
             lib_shell.shutdown(proc)
 

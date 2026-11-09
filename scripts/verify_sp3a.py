@@ -144,7 +144,6 @@ import json
 import os
 import sys
 
-from playwright.sync_api import sync_playwright
 
 import lib_shell
 
@@ -1094,26 +1093,25 @@ def session(config, fn, extra_flags=None, screenshot=False):
     """One content_shell session. Runs page-function `fn` (a JS string) after
     navigating to about:blank, or captures a CDP screenshot if `screenshot`.
     Returns (value, err); any fault becomes a FAIL, never a traceback."""
-    proc = None
+    proc = conn = None
     try:
-        proc = lib_shell.launch(config, extra_flags=extra_flags)
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(
-                f"http://127.0.0.1:{proc.cdp_port}")
-            context = browser.contexts[0]
-            page = context.pages[0] if context.pages else context.new_page()
-            page.goto("about:blank", wait_until="load")
-            if screenshot:
-                # Draw the scene into the visible document, then screenshot via
-                # the DevTools protocol -- NOT a canvas readback API.
-                page.evaluate(f"() => {{ {SCENE_NO_TEXT} document.body.appendChild(c); }}")
-                cdp = context.new_cdp_session(page)
-                shot = cdp.send("Page.captureScreenshot", {"format": "png"})
-                return shot["data"], None
-            return page.evaluate(fn), None
+        proc, conn = lib_shell.launch_and_prime(
+            lambda: lib_shell.launch(config, extra_flags=extra_flags),
+            lambda p: lib_shell.attach(p, lambda page: page.goto("about:blank", wait_until="load")))
+        page = conn.page
+        if screenshot:
+            # Draw the scene into the visible document, then screenshot via
+            # the DevTools protocol -- NOT a canvas readback API.
+            page.evaluate(f"() => {{ {SCENE_NO_TEXT} document.body.appendChild(c); }}")
+            cdp = conn.context.new_cdp_session(page)
+            shot = cdp.send("Page.captureScreenshot", {"format": "png"})
+            return shot["data"], None
+        return page.evaluate(fn), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:
+        if conn is not None:
+            conn.close()
         if proc is not None:
             lib_shell.shutdown(proc)
 

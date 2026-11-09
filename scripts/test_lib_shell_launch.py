@@ -503,6 +503,78 @@ check("a second GPU death is UNMEASURED, after exactly one relaunch",
       f"starts {n}, unmeasured {lib_shell._UNMEASURED}")
 del lib_shell._UNMEASURED[:]  # else the atexit hook exits this test run with 3
 
+class FakePlaywright:
+    """sync_playwright() stand-in: counts starts and stops, hands out one page per proc."""
+    stops = starts = 0
+
+    def __call__(self):
+        return self
+
+    def start(self):
+        FakePlaywright.starts += 1
+        return self
+
+    def stop(self):
+        FakePlaywright.stops += 1
+
+    @property
+    def chromium(self):
+        return self
+
+    def connect_over_cdp(self, url):
+        page = types.SimpleNamespace(url=url)
+        ctx = types.SimpleNamespace(pages=[page])
+        return types.SimpleNamespace(contexts=[ctx])
+
+
+def attach_run(stderr_texts, fail_setup_on):
+    """launch_and_prime(start, attach) with a fake launcher; setup fails on the listed attempts."""
+    log = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False)
+    log.close()
+    real_log, lib_shell.STDERR_LOG = lib_shell.STDERR_LOG, log.name
+    real_pw = sys.modules["playwright.sync_api"].sync_playwright
+    sys.modules["playwright.sync_api"].sync_playwright = FakePlaywright()
+    FakePlaywright.stops = FakePlaywright.starts = 0
+    starts, printed, setups = [], [], []
+
+    def start():
+        open(lib_shell.STDERR_LOG, "w").write(stderr_texts[min(len(starts), len(stderr_texts) - 1)])
+        starts.append(1)
+        proc = Dying(False)
+        proc.cdp_port = 9
+        return proc
+
+    def setup(page):
+        setups.append(page)
+        if len(starts) in fail_setup_on:
+            raise ConnectionError("socket closed")
+
+    handle = error = None
+    try:
+        _, handle = lib_shell.launch_and_prime(start, lambda p: lib_shell.attach(p, setup), out=printed.append)
+    except Exception as exc:  # noqa: BLE001
+        error = exc
+    finally:
+        sys.modules["playwright.sync_api"].sync_playwright = real_pw
+        lib_shell.STDERR_LOG = real_log
+        os.unlink(log.name)
+    return len(starts), printed, handle, error, len(setups)
+
+
+n, printed, handle, error, nsetups = attach_run([GOODBYE, ""], fail_setup_on=(1,))
+check("attach under launch_and_prime: a GPU death during the page setup is relaunched once, then attached",
+      (n, error, nsetups) == (2, None, 2) and handle is not None and handle.page.url.endswith(":9")
+      and len(printed) == 1 and FakePlaywright.starts == 2 and FakePlaywright.stops == 1,
+      f"starts {n}, error {error!r}, setups {nsetups}, pw {FakePlaywright.starts}/{FakePlaywright.stops}")
+handle.close()
+check("attach: close() stops the playwright connection", FakePlaywright.stops == 2, f"stops {FakePlaywright.stops}")
+
+n, printed, handle, error, nsetups = attach_run(["some other crash\n"], fail_setup_on=(1,))
+check("attach: a setup failure that is not a GPU death is raised, not retried, and stops playwright",
+      n == 1 and isinstance(error, ConnectionError) and FakePlaywright.starts == FakePlaywright.stops == 1,
+      f"starts {n}, error {error!r}, pw {FakePlaywright.starts}/{FakePlaywright.stops}")
+del lib_shell._UNMEASURED[:]
+
 print()
 if failures:
     print(f"{len(failures)} FAILED of {len(results)}: {', '.join(failures)}")
