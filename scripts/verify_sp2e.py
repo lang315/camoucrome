@@ -109,8 +109,13 @@ class Cdp:
 @contextlib.contextmanager
 def browser(config):
     import lib_shell
-    proc = lib_shell.launch(json.dumps(config) if config else None, shell=lib_shell.CHROME,
-                            extra_flags=lib_shell.CHROME_FLAGS + ["--remote-allow-origins=*"])
+    # The first CDP use (the page prime) is inside the relaunch: a browser that dies of an unusable GPU
+    # process right after launch() returns is started once more, before anything is measured.
+    proc, primed = lib_shell.launch_and_prime(
+        lambda: lib_shell.launch(json.dumps(config) if config else None, shell=lib_shell.CHROME,
+                                 extra_flags=lib_shell.CHROME_FLAGS + ["--remote-allow-origins=*"]),
+        prime_page)
+    proc.primed = primed
     try:
         yield proc
     finally:
@@ -130,7 +135,13 @@ def alive(proc):
 
 
 def open_page(proc):
-    """(Cdp on the page target, target id) with PAGE loaded and the primer move done."""
+    """(Cdp on the page target, target id) with PAGE loaded and the primer move done: the one browser()
+    already primed, once."""
+    primed, proc.primed = proc.primed, None
+    return primed if primed is not None else prime_page(proc)
+
+
+def prime_page(proc):
     t = next(t for t in targets(proc) if t.get("type") == "page")
     c = Cdp(t["webSocketDebuggerUrl"])
     c.call("Page.navigate", {"url": "data:text/html," + urllib.parse.quote(PAGE)})

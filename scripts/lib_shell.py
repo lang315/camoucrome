@@ -482,15 +482,64 @@ def gpu_gate_line(proc, osname=None, reader=None):
     return None if n == 0 else f"UNMEASURED gpu-crash={'unknown' if n is None else n}"
 
 
+def _mark_unmeasured(line):
+    """Prints an UNMEASURED line and makes the process exit 3 at the end (see _exit_if_unmeasured)."""
+    print(line, flush=True)
+    if not _UNMEASURED:
+        import atexit
+        atexit.register(_exit_if_unmeasured, _UNMEASURED)
+    _UNMEASURED.append(line)
+
+
+# content_shell logs the first when the zygote's ForkRequest returns no pid (error_code=1002 is
+# LAUNCH_RESULT_SUCCESS reused by OnProcessLaunchFailed) and the second when GPU fallback runs out.
+GPU_FATAL = ("GPU process isn't usable", "GPU process launch failed")
+
+
+def gpu_fatal_line(proc):
+    """The stderr line that says the browser died of an unusable GPU process, else None. With a proc,
+    it counts only after the proc has EXITED: its CDP socket closes a moment before that, so wait up to 2 s."""
+    if proc is not None:
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            return None
+    text, _ = read_stderr()
+    for line in (text or "").splitlines():
+        if any(marker in line for marker in GPU_FATAL):
+            return line.strip()
+    return None
+
+
+def launch_and_prime(start, prime, out=print):
+    """(proc, prime(proc)). start() launches; prime(proc) is the first CDP use, with nothing measured yet.
+
+    One relaunch when the first attempt died of an unusable GPU process (a 1-in-53 abort about 2 s after
+    launch, after launch() had returned). Never for another failure, never after prime() returned, so no
+    result is ever discarded. A second death is UNMEASURED."""
+    for attempt in (1, 2):
+        proc = None
+        try:
+            proc = start()
+            return proc, prime(proc)
+        except Exception:
+            line = gpu_fatal_line(proc)
+            if proc is not None:
+                shutdown(proc)
+            if line is None:
+                raise
+            if attempt == 1:
+                out(f"RELAUNCH: browser died at startup: {line}")
+            else:
+                _mark_unmeasured(f"UNMEASURED relaunched browser died at startup too: {line}")
+                raise
+
+
 def shutdown(proc):
     """Stops the browser and waits for it, so the next launch starts clean."""
     line = gpu_gate_line(proc)
     if line:
-        print(line, flush=True)
-        if not _UNMEASURED:
-            import atexit
-            atexit.register(_exit_if_unmeasured, _UNMEASURED)
-        _UNMEASURED.append(line)
+        _mark_unmeasured(line)
     proc.terminate()
     try:
         proc.wait(timeout=15)
@@ -541,10 +590,12 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
     """
     proc = None
     try:
-        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
-                      preset=preset,
-                      debug_port=debug_port, sandbox=sandbox)
-        return evaluate(proc, expressions, navigate_to, cdp=cdp), None
+        proc, values = launch_and_prime(
+            lambda: launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
+                           preset=preset,
+                           debug_port=debug_port, sandbox=sandbox),
+            lambda p: evaluate(p, expressions, navigate_to, cdp=cdp))
+        return values, None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:

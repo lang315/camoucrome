@@ -421,6 +421,88 @@ except ValueError as e:
 check("an unknown CAMOU_SHELL value is refused, not ignored",
       bad is not None and "chrom" in bad, f"got {bad!r}")
 
+# 7. Relaunch once when the browser dies of an unusable GPU AFTER its endpoint
+#    was up (the real shape: content_shell logged "GPU process launch failed:
+#    error_code=1002" then FATAL "GPU process isn't usable. Goodbye." about 2 s
+#    after launch, so launch() had already returned). Anything else is not retried.
+GOODBYE = ("[1:1:1109/000000.000000:FATAL:content/browser/gpu/gpu_data_manager_impl_private.cc:388] "
+           "GPU process isn't usable. Goodbye.")
+
+
+class Dying:
+    """A launched browser (endpoint up) that has exited, or is still alive."""
+    profile_dir = ""
+
+    def __init__(self, alive=False):
+        self.alive = alive
+
+    def poll(self):
+        return None if self.alive else 133
+
+    def wait(self, timeout=None):
+        if self.alive:
+            raise subprocess.TimeoutExpired("fake", timeout)
+        return 133
+
+    def terminate(self):
+        pass
+
+    def kill(self):
+        self.alive = False
+
+
+def relaunch_run(stderr_texts, alive=False, prime_ok_on=None):
+    """Runs launch_and_prime with a fake launcher; returns (starts, printed, result, error)."""
+    log = tempfile.NamedTemporaryFile("w", suffix=".log", delete=False)
+    log.close()
+    real_log, lib_shell.STDERR_LOG = lib_shell.STDERR_LOG, log.name
+    starts, printed = [], []
+
+    def start():
+        open(lib_shell.STDERR_LOG, "w").write(stderr_texts[min(len(starts), len(stderr_texts) - 1)])
+        starts.append(1)
+        return Dying(alive)
+
+    def prime(proc):
+        if prime_ok_on == len(starts):
+            return "primed"
+        raise ConnectionError("socket closed")
+
+    result = error = None
+    try:
+        result = lib_shell.launch_and_prime(start, prime, out=printed.append)[1]
+    except Exception as exc:  # noqa: BLE001
+        error = exc
+    finally:
+        lib_shell.STDERR_LOG = real_log
+        os.unlink(log.name)
+    return len(starts), printed, result, error
+
+
+n, printed, result, error = relaunch_run([GOODBYE, ""], prime_ok_on=2)
+check("a browser that dies of 'GPU process isn't usable' after launch() returned is relaunched once",
+      (n, result, error) == (2, "primed", None), f"starts {n}, result {result}, error {error!r}")
+check("the relaunch prints one loud RELAUNCH line quoting the Goodbye line",
+      len(printed) == 1 and printed[0].startswith("RELAUNCH: browser died at startup: ")
+      and "GPU process isn't usable. Goodbye." in printed[0], f"printed {printed}")
+
+n, printed, result, error = relaunch_run(["some other crash\n"])
+check("a browser that dies of anything else is not relaunched",
+      n == 1 and isinstance(error, ConnectionError) and printed == [],
+      f"starts {n}, printed {printed}, error {error!r}")
+
+n, printed, result, error = relaunch_run([GOODBYE], alive=True)
+check("a failure with the browser still running is not relaunched",
+      n == 1 and isinstance(error, ConnectionError) and printed == [],
+      f"starts {n}, printed {printed}, error {error!r}")
+
+n, printed, result, error = relaunch_run([GOODBYE])
+check("a second GPU death is UNMEASURED, after exactly one relaunch",
+      n == 2 and isinstance(error, ConnectionError)
+      and len(lib_shell._UNMEASURED) == 1 and "UNMEASURED" in lib_shell._UNMEASURED[0],
+      f"starts {n}, unmeasured {lib_shell._UNMEASURED}")
+del lib_shell._UNMEASURED[:]  # else the atexit hook exits this test run with 3
+
 print()
 if failures:
     print(f"{len(failures)} FAILED of {len(results)}: {', '.join(failures)}")
