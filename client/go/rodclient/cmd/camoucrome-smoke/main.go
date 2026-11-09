@@ -23,8 +23,9 @@ import (
 const pageHTML = `<!doctype html><title>smoke</title>
 <style>body{margin:0}#btn{position:absolute;left:200px;top:150px;width:120px;height:40px}
 #in{position:absolute;left:200px;top:250px;width:300px}#out{position:absolute;left:200px;top:300px;white-space:pre}
+#in2{position:absolute;left:550px;top:250px;width:300px}#in3{position:absolute;left:550px;top:280px;width:300px}
 #pad{position:absolute;left:200px;top:400px;width:200px;height:60px;background:#ddd}</style>
-<button id="btn">Click me</button><input id="in"><div id="out"></div><div id="pad">hold</div>
+<button id="btn">Click me</button><input id="in"><input id="in2"><input id="in3"><div id="out"></div><div id="pad">hold</div>
 <script>
 document.cookie = "smoke=1; path=/";
 window.__ev = [];
@@ -137,6 +138,26 @@ func drive(ctx context.Context, b *rodclient.Browser, url string, r *Run) error 
 	if err := p.Type(ctx, "#in", r.Typed); err != nil {
 		return err
 	}
+	if err := p.Type(ctx, "#in2", r.RolloverText); err != nil {
+		return err
+	}
+	// Typos are random: type chunks until one slipped (60 chars slip with
+	// probability ~0.9), at most five, so a run without a typo is a ~1e-5 event.
+	for i := 0; i < 5; i++ {
+		if err := p.TypeWith(ctx, "#in3", typosChunk, rodclient.TypeOptions{Typos: true}); err != nil {
+			return err
+		}
+		r.TyposText += typosChunk
+		time.Sleep(100 * time.Millisecond)
+		s, err := p.Text(ctx, "#out")
+		if err != nil {
+			return err
+		}
+		var evs []Event
+		if json.Unmarshal([]byte(s), &evs) == nil && backspaces(evs, "in3") > 0 {
+			break
+		}
+	}
 	if err := p.Hold(ctx, "#pad", r.Hold); err != nil {
 		return err
 	}
@@ -153,7 +174,7 @@ func drive(ctx context.Context, b *rodclient.Browser, url string, r *Run) error 
 		var evs []Event
 		if json.Unmarshal([]byte(s), &evs) == nil && len(evs) > 0 {
 			r.Events = evs
-			if lastInput(evs) == r.Typed && padClicked(evs) {
+			if lastInput(evs) == r.Typed && padClicked(evs) && lastInputOf(evs, "in3") == r.TyposText {
 				break
 			}
 		}
@@ -186,10 +207,12 @@ func padClicked(evs []Event) bool {
 	return false
 }
 
-func lastInput(evs []Event) string {
+func lastInput(evs []Event) string { return lastInputOf(evs, "in") }
+
+func lastInputOf(evs []Event, tgt string) string {
 	v := ""
 	for _, e := range evs {
-		if e.Type == "input" && e.Tgt == "in" {
+		if e.Type == "input" && e.Tgt == tgt {
 			v = e.V
 		}
 	}
@@ -231,7 +254,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer b.Close()
-	rn := &Run{Typed: typedASCII + "é", Humanize: c.humanize, Hold: 800 * time.Millisecond}
+	rn := &Run{Typed: typedASCII + "é", RolloverText: rolloverText, Humanize: c.humanize, Hold: 800 * time.Millisecond}
 	derr := drive(ctx, b, url, rn)
 	mu.Lock()
 	rn.Sends = sends

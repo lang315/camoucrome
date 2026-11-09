@@ -91,14 +91,14 @@ func meanFlight(prev, next rune, n int) float64 {
 }
 
 func TestFlightLongerAfterPunctAndBeforeShift(t *testing.T) {
-	base := meanFlight('a', 'b', 20000)
+	base := meanFlight('1', 'b', 20000)
 	if base == 0 {
 		t.Fatal("flight is always zero")
 	}
 	if f := meanFlight('.', 'b', 20000) / base; f < 1.3 || f > 1.5 {
 		t.Errorf("after punctuation x%.2f, want about x1.4", f)
 	}
-	if f := meanFlight('a', 'B', 20000) / base; f < 1.15 || f > 1.35 {
+	if f := meanFlight('1', 'B', 20000) / base; f < 1.15 || f > 1.35 {
 		t.Errorf("before a shifted key x%.2f, want about x1.25", f)
 	}
 }
@@ -172,22 +172,23 @@ func TestTypeEveryKeyHasDwell(t *testing.T) {
 
 func TestTypeFlightBetweenKeys(t *testing.T) {
 	r := newRig(t)
-	if err := r.p.Type(context.Background(), "#i", "abc"); err != nil {
+	if err := r.p.Type(context.Background(), "#i", "abcdefgh"); err != nil {
 		t.Fatal(err)
 	}
 	tr := keyTrace(r.drainAll())
-	// keyDown a, sleep, keyUp a, sleep(flight - dwell), keyDown b ...
-	var gaps []time.Duration
-	for i := 0; i+1 < len(tr); i++ {
-		if tr[i].Params["type"] == "keyUp" && tr[i+1].Method == "sleep" {
-			gaps = append(gaps, ns(tr[i+1]))
+	// keyDown a, sleep, keyUp a, sleep(flight - dwell), keyDown b ... A flight
+	// shorter than its dwell has no gap, so not every key pair shows one.
+	gaps := map[time.Duration]bool{}
+	for i := 0; i < len(tr); i++ {
+		if tr[i].Params["type"] == "keyUp" && i+1 < len(tr) && tr[i+1].Method == "sleep" {
+			if i+2 >= len(tr) {
+				t.Fatal("a sleep after the last keyUp")
+			}
+			gaps[ns(tr[i+1])] = true
 		}
 	}
-	if len(gaps) != 2 {
-		t.Fatalf("%d gaps after keyUp, want 2 (none after the last key)", len(gaps))
-	}
-	if gaps[0] == gaps[1] {
-		t.Errorf("both gaps are %v", gaps[0])
+	if len(gaps) < 3 {
+		t.Fatalf("%d distinct gaps after keyUp, want >= 3 of 7", len(gaps))
 	}
 }
 
@@ -380,5 +381,99 @@ func TestHoldReleasesTheButtonOnError(t *testing.T) {
 	}
 	if prev.Params["x"] != last.Params["x"] || prev.Params["y"] != last.Params["y"] {
 		t.Errorf("released at (%v,%v), the event before was at (%v,%v)", last.Params["x"], last.Params["y"], prev.Params["x"], prev.Params["y"])
+	}
+}
+
+// keyEvents is the key and insertText requests of a drain, as "type:key" strings.
+func keyEvents(rs []req) []string {
+	var out []string
+	for _, q := range rs {
+		switch q.Method {
+		case "Input.dispatchKeyEvent":
+			out = append(out, q.Params["type"].(string)+":"+q.Params["key"].(string))
+		case "Input.insertText":
+			out = append(out, "insert:"+q.Params["text"].(string))
+		}
+	}
+	return out
+}
+
+func TestTypeWithTyposSendsBackspaceTypeDoesNot(t *testing.T) {
+	r := newRig(t)
+	old := typoProb
+	typoProb = 0.3
+	defer func() { typoProb = old }()
+	text := strings.Repeat("hello world ", 8)
+	if err := r.p.Type(context.Background(), "#i", text); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(strings.Join(keyEvents(r.drain()), " "), "keyDown:Backspace"); n != 0 {
+		t.Errorf("Type sent %d Backspace keyDowns", n)
+	}
+	if err := r.p.TypeWith(context.Background(), "#i", text, TypeOptions{Typos: true}); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(strings.Join(keyEvents(r.drain()), " "), "keyDown:Backspace"); n == 0 {
+		t.Error("TypeWith{Typos: true} sent no Backspace keyDown")
+	}
+}
+
+func TestTypeRolloverOverlapsWhenChanceIsOne(t *testing.T) {
+	r := newRig(t) // the rig turns rollover off; this test turns it on
+	rolloverProb = 1
+	if err := r.p.Type(context.Background(), "#i", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(keyEvents(r.drain()), " ")
+	if !strings.Contains(got, "keyDown:b keyUp:a") {
+		t.Errorf("no overlap (keyDown b before keyUp a) in %s", got)
+	}
+}
+
+func TestTypeDefaultRolloverIsCalibrated(t *testing.T) {
+	if rolloverProb != rolloverChance {
+		t.Fatalf("rolloverProb %v, want the calibrated %v", rolloverProb, rolloverChance)
+	}
+}
+
+// TestTypeWithCancelReleasesEveryKey cancels the context after k waits, for
+// every k, with every pair rolling over and Shift held, and checks the page
+// ends with every keyDown matched by a keyUp.
+func TestTypeWithCancelReleasesEveryKey(t *testing.T) {
+	for k := 0; k < 14; k++ {
+		r := newRig(t)
+		rolloverProb = 1
+		ctx, cancel := context.WithCancel(context.Background())
+		rec := sleep
+		n := 0
+		sleep = func(c context.Context, d time.Duration) error {
+			if n++; n > k {
+				cancel()
+			}
+			return rec(c, d)
+		}
+		err := r.p.TypeWith(ctx, "#i", "abCDef", TypeOptions{Typos: true})
+		cancel()
+		sleep = rec
+		if err == nil && n > k {
+			t.Fatalf("k=%d: cancelled but no error", k)
+		}
+		down := map[string]int{}
+		for _, q := range r.drain() {
+			if q.Method != "Input.dispatchKeyEvent" {
+				continue
+			}
+			key := q.Params["key"].(string)
+			if q.Params["type"] == "keyDown" {
+				down[key]++
+			} else {
+				down[key]--
+			}
+		}
+		for key, v := range down {
+			if v != 0 {
+				t.Errorf("k=%d: key %q left down (balance %d)", k, key, v)
+			}
+		}
 	}
 }

@@ -63,6 +63,22 @@ func goodWith(moves int, gap float64) Run {
 		add("input", "in", func(e *Event) { e.V = val })
 	}
 	add("input", "in", func(e *Event) { e.V = val + "é" })
+	key := func(typ, tgt, k, v string) {
+		t += 40
+		add(typ, tgt, func(e *Event) { e.Key, e.Code, e.V = k, "Key"+strings.ToUpper(k), v })
+	}
+	// #in2: "ab" with b going down before a is up.
+	key("keydown", "in2", "a", "")
+	key("keydown", "in2", "b", "")
+	key("keyup", "in2", "a", "")
+	key("keyup", "in2", "b", "")
+	key("input", "in2", "", "ab")
+	// #in3: a slip (x), Backspace, then the right key.
+	for _, k := range [][3]string{{"x", "x", ""}, {"Backspace", "", ""}, {"a", "a", "a"}} {
+		key("keydown", "in3", k[0], k[2])
+		key("keyup", "in3", k[0], k[2])
+		key("input", "in3", "", k[2])
+	}
 	add("mousedown", "pad", func(e *Event) { e.Buttons = 1 })
 	for i := 0; i < 3; i++ {
 		t += 200
@@ -71,7 +87,7 @@ func goodWith(moves int, gap float64) Run {
 	t += 200
 	add("mouseup", "pad", nil)
 	add("click", "pad", nil)
-	return Run{Hold: 800 * time.Millisecond, Events: ev, Sends: map[string]int{"Page.navigate": 3, "DOM.getDocument": 20}, Typed: typedASCII + "é",
+	return Run{Hold: 800 * time.Millisecond, Events: ev, Sends: map[string]int{"Page.navigate": 3, "DOM.getDocument": 20}, Typed: typedASCII + "é", RolloverText: "ab", TyposText: "a",
 		PNG: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 600)...), Cookies: map[string]string{"smoke": "1"}, Humanize: true}
 }
 
@@ -87,7 +103,7 @@ func red(t *testing.T, r Run, want string) {
 
 func TestGoodRunIsGreen(t *testing.T) {
 	cs := Evaluate(good())
-	if len(cs) != 15 || Failed(cs) {
+	if len(cs) != 18 || Failed(cs) {
 		t.Fatalf("rows=%d %+v", len(cs), cs)
 	}
 }
@@ -95,7 +111,7 @@ func TestGoodRunIsGreen(t *testing.T) {
 func TestHumanizeRowOnlyWhenAsked(t *testing.T) {
 	r := good()
 	r.Humanize = false
-	if len(Evaluate(r)) != 14 {
+	if len(Evaluate(r)) != 17 {
 		t.Fatal("humanize row present without the flag")
 	}
 }
@@ -129,7 +145,7 @@ func TestBrokenFixturesAreRed(t *testing.T) {
 
 	r = good()
 	for i := len(r.Events) - 1; i >= 0; i-- { // no final input for é
-		if r.Events[i].Type == "input" {
+		if r.Events[i].Type == "input" && r.Events[i].Tgt == "in" {
 			r.Events = append(r.Events[:i], r.Events[i+1:]...)
 			break
 		}
@@ -151,6 +167,42 @@ func TestBrokenFixturesAreRed(t *testing.T) {
 	}
 	red(t, r, "per ASCII char")
 
+}
+
+func TestRolloverAndTypoRowsAreRed(t *testing.T) {
+	drop := func(r Run, f func(Event) bool) Run {
+		var out []Event
+		for _, e := range r.Events {
+			if !f(e) {
+				out = append(out, e)
+			}
+		}
+		r.Events = out
+		return r
+	}
+	// An old client: a's keyup before b's keydown, no Backspace.
+	r := good()
+	for i := range r.Events {
+		if e := r.Events[i]; e.Tgt == "in2" && e.Type == "keyup" && e.Key == "a" {
+			r.Events[i-1], r.Events[i] = r.Events[i], r.Events[i-1] // keyup a, then keydown b
+		}
+	}
+	red(t, r, "Type: a keydown comes before")
+	red(t, drop(good(), func(e Event) bool { return e.Tgt == "in3" && e.Key == "Backspace" }), "TypeWith{Typos}")
+	r = good()
+	r.TyposText = "b" // the field ended with something other than the text
+	red(t, r, "TypeWith{Typos}")
+	r = good()
+	for i := range r.Events {
+		if r.Events[i].Tgt == "in2" && r.Events[i].Key == "b" {
+			r.Events[i].Key = "Backspace"
+		}
+	}
+	red(t, r, "Type without typos sends no Backspace")
+	r = good()
+	r.Events = append(r.Events, Event{Type: "keydown", Tgt: "in3", Key: "q", Code: "KeyQ"}, Event{Type: "keydown", Tgt: "in3", Key: "w", Code: "KeyW"},
+		Event{Type: "keydown", Tgt: "in3", Key: "e", Code: "KeyE"})
+	red(t, r, "never 3 keys down")
 }
 
 // each mutates a good run the way a client without human input would.

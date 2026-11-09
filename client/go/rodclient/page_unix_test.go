@@ -130,6 +130,10 @@ func newRig(t *testing.T) *rig {
 	oldRand := newRand
 	t.Cleanup(func() { newRand = oldRand })
 	newRand = func() *rand.Rand { return rand.New(rand.NewSource(1)) }
+	// Exact-sequence tests assume keys never overlap; rollover tests set it back.
+	oldRoll := rolloverProb
+	t.Cleanup(func() { rolloverProb = oldRoll })
+	rolloverProb = 0
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "fake-browser")
 	if err := os.WriteFile(exe, []byte(fakePage), 0o755); err != nil {
