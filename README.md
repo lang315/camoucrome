@@ -95,8 +95,8 @@ later patches of its own milestone.**
 ## Install
 
 `<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
-`<sha>` is a full commit SHA from this repository. For the Latest release, `v156.0.8078.48-10`,
-it is `2ed8270023d3e5459ef4d98aeb970e7c2b1075be`; the Go and Node lines below already name it.
+`<sha>` is a full commit SHA from this repository. For the Latest release, `v156.0.8078.48-11`,
+it is `1fc182cf166df077fe1ce371682852c69a029a54`; the Go and Node lines below already name it.
 `<chrome-version>` is the Chrome version the release is built on.
 
 Run everything below in an elevated PowerShell ("Run as administrator"), because the
@@ -153,9 +153,9 @@ The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`.
 
 Other clients:
 
-- Go: `go get github.com/lang315/camoucrome/client/go@2ed8270023d3e5459ef4d98aeb970e7c2b1075be`. Go generates identities by
+- Go: `go get github.com/lang315/camoucrome/client/go@1fc182cf166df077fe1ce371682852c69a029a54`. Go generates identities by
   calling `python -m camoucrome.gen`, so install the Python package above too.
-- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-10/camoucrome-0.1.3.tgz`.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-11/camoucrome-0.1.4.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 ## Install on Linux (headless server use)
@@ -276,7 +276,7 @@ A time zone that contradicts the address your traffic comes from is a tell that 
 (Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
 proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
 two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
-above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@2ed8270023d3e5459ef4d98aeb970e7c2b1075be#subdirectory=client/python"`)
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@1fc182cf166df077fe1ce371682852c69a029a54#subdirectory=client/python"`)
 and a DB-IP "IP to City Lite" database file,
 which you download yourself, once a month, without an account, from
 <https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
