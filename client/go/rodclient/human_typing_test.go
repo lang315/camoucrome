@@ -337,3 +337,42 @@ func TestTypoTimings(t *testing.T) {
 		t.Fatal("no Backspace seen")
 	}
 }
+
+func TestRolloverParityRules(t *testing.T) {
+	old := rolloverProb
+	rolloverProb = 1
+	defer func() { rolloverProb = old }()
+	for seed := int64(0); seed < 100; seed++ {
+		for _, text := range []string{"aaaaaa", "AAAAAA", "......"} {
+			if r := sim(plan(seed, text, false)); r.overlaps != 0 {
+				t.Fatalf("seed %d %q: the same physical key rolled onto itself", seed, text)
+			}
+		}
+	}
+	// Enter and Tab may roll over a neighbour.
+	if r := sim(plan(1, "a\nb\tc", false)); r.overlaps == 0 {
+		t.Error("Enter and Tab never rolled with rollover forced to 1")
+	}
+}
+
+func TestTypoRunStopsAtEnterTabAndOffLayout(t *testing.T) {
+	old := typoProb
+	typoProb = 1
+	defer func() { typoProb = old }()
+	for seed := int64(0); seed < 200; seed++ {
+		text := "ab\ncd\tef€gh"
+		r := sim(plan(seed, text, true))
+		if want := "ab\ncdef€gh"; r.value != want { // the replay adds nothing for Tab
+			t.Fatalf("seed %d: value %q, want %q", seed, r.value, want)
+		}
+		// Backspace count equals typed-then-corrected characters, none over \n, \t or €.
+		for _, it := range typeItems(rand.New(rand.NewSource(seed)), []rune(text), true) {
+			if it.kind == kindBackspace {
+				continue
+			}
+			if (it.r == '\n' || it.r == '\t' || it.r == '€') && it.gap != 0 {
+				t.Fatalf("seed %d: %q retyped after a Backspace run", seed, it.r)
+			}
+		}
+	}
+}
