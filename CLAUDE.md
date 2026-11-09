@@ -10,8 +10,8 @@ Camoucrome is an anti-detect fork of **Chromium** — the Chromium counterpart t
 plus diffs in `patches/` — that `scripts/apply.sh` lays onto a pristine Chromium
 checkout to produce a fingerprint-spoofing browser.
 
-The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
-tag `156.0.8078.48`** (`upstream.env` holds the full SHA and the tag;
+The change set is generated against Chromium **`9a31f0acec`, the Chrome stable
+tag `157.0.8103.39`** (`upstream.env` holds the full SHA and the tag;
 `scripts/apply.sh` refuses any other HEAD). The pin is a *stable tag*, not
 `main` and not a branch head, so the fork reports a version real users have
 (`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`). Since
@@ -26,7 +26,7 @@ release. A host run's stock control (`windows_verify_set.py`,
 another patch of the pin's build, never another build; the fork must be the
 pin exactly. The host's copy of that control is kept at
 `D:\camou-win\stock\<version>` (point `CAMOU_STOCK_APP` at it), because the
-host's own Chrome updates past the build. The 157 re-pin is paused (`repin/8103-prep`, draft PR #9). The build
+host's own Chrome updates past the build. The 157 re-pin is in prep (`repin/8103-prep`, draft PR #9; box branch `camoucrome/main-8103-39`, `camoucrome/main` stays on 156 until the switch). The build
 box's checkout is on branch
 `camoucrome/main` (the exported branch, on this pin). The 154 branch,
 `camoucrome/main-8037`, is kept in `~/chromium-154/src` until that tree is
@@ -123,7 +123,7 @@ the local folder.
 | `client/` | the launchers: `client/python/camoucrome` (patchright), `client/go` (`playwright-go` on the `patchright-core` driver) and `client/node` (patchright). All three implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
 | `docs/observer/` | the tracking observer (`camou_observe = true`, shipped in releases as `chrome://observer`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verifies `scripts/verify_observe.py` and `scripts/verify_observer_page.py` |
-| `baselines/` | stock reference captures; ten are committed (`git ls-files baselines`). `*-d0c02bfad0-*` and `content_shell-8078-stock-ua.json` are pristine captures of the build at the pin; `chrome-8078-*` are captures of stock Chrome 156.0.8078.48 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
+| `baselines/` | stock reference captures; ten are committed (`git ls-files baselines`). `*-9a31f0acec-*` and `content_shell-8103-stock-ua.json` are pristine captures of the build at the pin; `chrome-8103-*` are captures of stock Chrome 156.0.8103.48 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
 split (from Camoufox, held across ~64 patches) keeps rebase conflicts confined to
