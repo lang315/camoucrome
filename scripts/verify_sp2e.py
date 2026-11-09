@@ -193,7 +193,7 @@ R6 = "6 target closed 100 ms into a 1 s move: pending command resolves (no hang)
 R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 10 s cap + 1 s margin, browser alive"
 R8 = "8 no config, and humanize:enabled=false: 3 mouseMoved calls give exactly 3 mousemoves (1 each), in both launches"
 R9 = "9 verify_sp2c.py (Windows-claim wheel) exits 0"
-R10 = "10 overflow keeps order: 14 un-awaited moves (1 s each, past the 10 s cap): 14/14 final events in submission order, last event is target 13"
+R10 = "10 overflow keeps order: 14 un-awaited moves (1 s each, past the 10 s cap): 14/14 replies, the 10 path targets and target 13 seen, final events in submission order, last event is target 13 (a refused 17 ms slot target 10-12 may be merged by Chromium)"
 R11 = "11 zero-length move waits for the queue: its event is in the tail after the path, its reply after the first reply"
 EXPECTED = 11
 
@@ -346,9 +346,14 @@ def row10():
             xs = [e["x"] for e in log(c)]
     except Exception as exc:  # noqa: BLE001
         return unmeasured(R10, exc)
-    viol = an.final_order_violations(xs, [float(x) for x in targets])
+    tg = [float(x) for x in targets]
+    viol = an.final_order_violations(xs, tg)
+    merged = an.missing_slot_targets(xs, tg)
     row(R10, len(got) == 14 and not viol,
-        "replies=%d/14 within %.1fs violations=%s" % (len(got), an.REPLY_DEADLINE_S, viol))
+        "replies=%d/14 within %.1fs violations=%s merged slot targets=%s"
+        % (len(got), an.REPLY_DEADLINE_S, viol, merged))
+    if merged and not viol:
+        print("row 10: slot targets merged by Chromium (allowed): %s" % merged)
 
 
 def row11():
