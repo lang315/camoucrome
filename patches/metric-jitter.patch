@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/html/canvas/text_metrics.cc b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
-index a78150b4a6..7b249feb5c 100644
+index a78150b4a6..a50c35e755 100644
 --- a/third_party/blink/renderer/core/html/canvas/text_metrics.cc
 +++ b/third_party/blink/renderer/core/html/canvas/text_metrics.cc
 @@ -4,7 +4,14 @@
@@ -92,7 +92,7 @@ index a78150b4a6..7b249feb5c 100644
 +  // so the per-field delta is reproducible across launches. f_index keys the
 +  // font-constant fields (text-independent); tf_index adds the text for the
 +  // text-dependent ones. seed == 0 -> every PerturbMetric is a no-op (rule 5).
-+  const uint64_t seed = camoucfg::CanvasSeed(camoucfg::ScopeFor(nullptr));
++  const uint64_t seed = camoucfg::TextMetricsSeed(camoucfg::ScopeFor(nullptr));
 +  uint64_t f_index = 0, tf_index = 0;
 +  if (seed) {
 +    const FontDescription& jitter_fd = font->GetFontDescription();

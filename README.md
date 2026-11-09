@@ -74,8 +74,7 @@ unproven are named where they live.
 
 Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
 a Windows flagship plus a Linux build for headless server use, built on a Chrome stable tag. Each
-release's notes give its Chrome version, what it fixes and the date it stops
-being supported (when it falls more than one milestone behind stable).
+release's notes give its Chrome version and what it fixes.
 
 The first release, `v156.0.8078.48-1` (2026-10-24), closed steps 0 to 3 of the
 long-term roadmap,
@@ -85,17 +84,19 @@ oracle and public detectors with a like-for-like stock control, and the
 release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium **`1aa07b6387`, the Chrome stable
-tag `157.0.8103.15`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
-refuses any other HEAD). The pin is the current stable tag so the fork reports
-a version real users run; it moves to the newest stable tag each milestone. The
-next re-pin, to 158, is due by 2026-11-17 (`docs/superpowers/specs/repin-runbook.md`).
+The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
+tag `156.0.8078.48`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+refuses any other HEAD). The pin is a stable tag that shipped, so the fork reports
+a version real users have run. It may lag: it stays while it is at most 3 milestones
+behind Chrome stable, then moves straight to the newest stable tag. There is no re-pin
+for a patch release, so **the binary lacks the security fixes of newer Chrome, including
+later patches of its own milestone.**
 
 ## Install
 
 `<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
-`<sha>` is a full commit SHA from this repository. For the current release, `v156.0.8078.48-4`,
-it is `368059dc7c350041949b9c3e5a73d7d4e789c035`; the Go and Node lines below already name it.
+`<sha>` is a full commit SHA from this repository. For the Latest release, `v156.0.8078.48-11`,
+it is `1fc182cf166df077fe1ce371682852c69a029a54`; the Go and Node lines below already name it.
 `<chrome-version>` is the Chrome version the release is built on.
 
 Run everything below in an elevated PowerShell ("Run as administrator"), because the
@@ -152,9 +153,9 @@ The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`.
 
 Other clients:
 
-- Go: `go get github.com/lang315/camoucrome/client/go@368059dc7c350041949b9c3e5a73d7d4e789c035`. Go generates identities by
+- Go: `go get github.com/lang315/camoucrome/client/go@1fc182cf166df077fe1ce371682852c69a029a54`. Go generates identities by
   calling `python -m camoucrome.gen`, so install the Python package above too.
-- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-4/camoucrome-0.1.1.tgz`.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v156.0.8078.48-11/camoucrome-0.1.4.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 ## Install on Linux (headless server use)
@@ -241,13 +242,41 @@ The two identities differ in screen size and CPU cores, and in the noise seeds s
 each profile. They share the host's GPU, the stock Windows font list, voices and the
 snapped `deviceMemory`.
 
+The Python, Go (`Options.Light`) and Node clients take an opt-in `light` option (default off): it appends `launch.light_args` from `settings/launcher.json`, approach B's browser-internal flags that passed the page-blind gate and cut RAM in measurement. Independent of the generator's `--light` (DPR 1 draw); a host that wants both passes both.
+
+## Human input (Python and Node)
+
+The Python and Node clients ship `click`, `hold` and `type` helpers on a patchright Page, with the same model and the
+same generated parameters (`settings/human_input.json`) as the Go client. Input goes only through `page.mouse` and
+`page.keyboard`: no page JS and no `Runtime.enable`.
+
+```python
+from camoucrome import human
+human.click(page, "#buy")                          # press point in the inner 70%, settle, lognormal hold
+human.hold(page, "#hold-me", 1200)                 # ms; 1-2 px tremor, released at the last point
+human.type(page, "#name", "Hello, World!")         # dwell, digraph flights, real ShiftLeft, key rollover
+human.type(page, "#name", "Hello", typos=True)     # opt-in neighbour-key typos, corrected with Backspace
+# async API: await human.click(page, "#buy")
+```
+
+```js
+const { human } = require('camoucrome');
+await human.click(page, '#buy');
+await human.hold(page, '#hold-me', 1200);
+await human.type(page, '#name', 'Hello, World!', { typos: true });
+```
+
+At most two typed keys are down at once (Shift is a modifier and is not counted). Runes off the US layout go through
+`insertText`, with no key events and no typos. The final field value always equals the text. An error or a cancel
+releases every key and the button. A random seed per page; pass `rng=` / `{ rng }` to fix it in tests.
+
 ## Time zone and locale from the proxy's exit address
 
 A time zone that contradicts the address your traffic comes from is a tell that detectors check
 (Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
 proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
 two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
-above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@368059dc7c350041949b9c3e5a73d7d4e789c035#subdirectory=client/python"`)
+above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@1fc182cf166df077fe1ce371682852c69a029a54#subdirectory=client/python"`)
 and a DB-IP "IP to City Lite" database file,
 which you download yourself, once a month, without an account, from
 <https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
@@ -387,8 +416,8 @@ Camoucrome does not repeat that.
 - Identities on one host still share the host-dependent values that stock Chrome shares across profiles too
   (audio output, keyboard layout, display and media queries, screen geometry, network, the Windows build): 72 of 241 measured leaves, so profiles on one machine remain linkable through them.
 - No Widevine.
-- No auto-update. Re-pins are the security channel, and a release more than one
-  milestone behind Chrome stable is unsupported.
+- No auto-update. Re-pins are the security channel, and they come only when the pin
+  would fall more than 3 milestones behind Chrome stable.
 - Windows SmartScreen warns on first run: choose More info, then Run anyway.
 - The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
 - Linux: headless server use; desktop use is not tested. Headed runs, X11 and Wayland and a

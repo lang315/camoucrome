@@ -64,3 +64,29 @@ recalibration (no input sent, no extra load):
   5. field names (not values) of the `/ajax/bz` batch.
 - An input arm against facebook is not allowed (2026-10-17 rules), so a listener inventory would answer
   "registered", never "reacts to".
+
+## chrome://observer page — parked minors (final review 2026-11-05, all non-load-bearing)
+
+- **M1 (dead branch):** the handler's 64 MiB `kMaxTraceBytes` / `buffer_full_`
+  path is unreachable with the 32 MiB ring plus per-refresh replace
+  (`trace_.clear()` at OnCloned). It is defensive; keep it unless the ring size
+  or the replace semantics change. README now says `buffer full` is not
+  expected in normal use.
+- **M3 (observer.ts):** the malformed-`tables_json` path calls
+  `setStatus('bad tables')`, which zeroes the displayed counts, instead of
+  keeping the last status/counts the way the refresh-error path does. Only
+  reachable if our own trusted decoder emits non-JSON. Fix: keep last counts on
+  a parse failure. Fold into the next observer-page touch.
+- **M4 (http attribution): FIXED 2026-11-06.** The key was frozen at Start to
+  one document's top frame token and site, so a reload (new token) dropped the
+  tab's http rows and a Record before the first commit (site of the initial
+  about:blank) dropped its main-frame reads. The handler now observes the tab's
+  WebContents and adds every committed primary document's token and site
+  (`PrimaryPageChanged`; opaque sites skipped; capped at 256 documents). Two
+  same-site tabs stay apart for http (frame tokens); reads were and stay
+  site-keyed. verify_observer_page `follow reload *` / `follow early *`.
+- **M5 (decoder disconnect):** `OnDecoderDisconnected` can release
+  `refresh_callback_` mid-stream, and `session_gen_` is per-session not
+  per-refresh, so a same-session stale chunk could in theory contaminate a
+  later refresh. Unreachable at the 5000 ms refresh cadence. Per-refresh
+  generation would close it.

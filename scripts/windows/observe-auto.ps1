@@ -1,22 +1,101 @@
-# Unattended facebook recon: arm 1 (logged out) and arm 3 (backed-up login), one load each,
+# Unattended recon of one site profile (-Site, default facebook): arm 1 (logged out) and arm 3 (backed-up login), one load each,
 # no input, never scheduled or repeated. Takes no build_lock; gates on the owner's Active
 # session, no native build, and commit headroom (S5, 2026-10-17). Exit 0 PASS, 1 FAIL, 3 UNMEASURED.
+# Tracking-map arms (2026-10-29): -Arms 1,3,1f,1c,3w,4a,lf,lc. 1f 1c 3w 4a lf lc run observe_drive.py (wheel only).
+# lf lc (logged out, so outside the ledger): three profiles each, then observe_unlink.py; -UnlinkSeeds '1,1,1' is the RED.
+# Arm names must not read as numbers (1d is a decimal, 1s a short in PowerShell 7): a list typed in a PowerShell session still wants quotes.
+# Light mode (part 3, 2026-10-30): -Light for lf; -Arms 3w -KeepWarm, then -Arms lw -WarmFrom <run id> 15+ min later.
+# -KeepCapture keeps capture\ and resources\html\ for on-host analysis (the default deletes them).
 param(
-  [string]$Backup = 'D:\camou-win\observe\backup\fb-login-20261017',
-  [string]$Baseline = 'D:\camou-win\observe\baseline-facebook.json',
+  [string]$Site = 'facebook',
+  [string]$Backup = '',
+  [string]$Baseline = '',
   [double]$MinHeadroomGB = 8,
   [double]$KillBelowGB = 4,
-  [int[]]$Arms = @(1, 3),
+  [string[]]$Arms = @('1', '3'),
   [switch]$NoIntl,
-  [string]$FromProfileOverride
+  [switch]$CpuAll,
+  [switch]$KeepCapture,
+  [string]$UnlinkSeeds = '1,2,3',
+  [switch]$Light,
+  [switch]$KeepWarm,
+  [string]$WarmFrom,
+  [string]$FromProfileOverride,
+  [switch]$NoRoute,
+  [string]$Flags
 )
 # Continue, not Stop: PS 5.1 turns native stderr (quser with nobody logged on, the judge's
 # usage error) into a terminating error under Stop, and every arm must still get its line
 $ErrorActionPreference = 'Continue'
 $Root = 'D:\camou-win\observe'
 $Ri = Join-Path $Root 'run-interactive.ps1'
-$Wait = @{ 1 = 30; 3 = 120 }
-$Limit = @{ 1 = 5; 3 = 8 }
+# site profile (2026-10-31): every site-specific value comes from settings\sites\<site>\site.json; a bad one refuses here,
+# before the ledger write
+if ($Site -notmatch '^[a-z0-9_-]+$') { "UNMEASURED site: bad site name '$Site'"; exit 3 }
+$SiteFile = Join-Path $Root "settings\sites\$Site\site.json"
+try { $S = Get-Content $SiteFile -Raw -ErrorAction Stop | ConvertFrom-Json } catch { "UNMEASURED site: $Site not found"; exit 3 }
+$miss = @('origin', 'pages', 'backup', 'baseline', 'ledger', 'cap') | Where-Object { $_ -notin $S.PSObject.Properties.Name }
+if ($miss.Count) { "UNMEASURED site: $Site site.json lacks $($miss -join ' ')"; exit 3 }
+if (-not $Backup) { $Backup = $S.backup }
+if (-not $Baseline) { $Baseline = $S.baseline }
+$Arms = @($Arms | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
+$bad = @($Arms | Where-Object { $_ -notin '1', '3', '1f', '1c', '3w', '4a', 'lw', 'lf', 'lc', 'lu' })
+if ($bad.Count) { "UNMEASURED unknown arm: $($bad -join ' ')"; exit 3 }
+# unlink arms (part 2, 2026-10-30): lf and lc expand to one sub-arm per profile; lfN gets seed N of -UnlinkSeeds
+$Seeds = @("$UnlinkSeeds" -split ',' | Where-Object { $_ })
+if ($Seeds.Count -ne 3 -or @($Seeds | Where-Object { $_ -notmatch '^[1-9][0-9]*$' }).Count) { "UNMEASURED -UnlinkSeeds wants three whole numbers, got '$UnlinkSeeds'"; exit 3 }
+# logged-in unlinking (S5): lu is one capped run and runs alone
+if (@($Arms | Where-Object { $_ -like 'lu*' }).Count -and @($Arms | Where-Object { $_ -notlike 'lu*' }).Count) { "UNMEASURED -Arms lu runs alone"; exit 3 }
+# light mode (part 3): refusals and the sweep run before the ledger write, so a refused run never touches the site's ledger
+$WarmRoot = Join-Path $Root 'auto\warm'
+if ('lw' -in $Arms) {
+  if ($WarmFrom -notmatch '^\d{8}-\d{6}$') { "UNMEASURED arm lw needs -WarmFrom <run id>, got '$WarmFrom'"; exit 3 }
+  if (-not (Test-Path (Join-Path $WarmRoot $WarmFrom))) { "UNMEASURED arm lw: no warm copy $WarmFrom"; exit 3 }
+}
+if ($KeepWarm -and '3w' -notin $Arms) { "UNMEASURED -KeepWarm needs arm 3w"; exit 3 }
+if ($Light -and -not @($Arms | Where-Object { $_ -like 'lf*' }).Count) { "UNMEASURED -Light needs arm lf"; exit 3 }
+# approach B (2026-10-31): -Flags takes only flags whose page-blind gate passed (light_flags.json gate=pass), arm 3w only
+$FlagList = @("$Flags" -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($FlagList.Count) {
+  $passed = @()
+  try { $passed = @((Get-Content (Join-Path $Root 'light_flags.json') -Raw | ConvertFrom-Json).flags | Where-Object { $_.gate -eq 'pass' } | ForEach-Object { $_.flag }) } catch { }
+  $nogo = @($FlagList | Where-Object { $_ -notin $passed })
+  if ($nogo.Count) { "UNMEASURED -Flags not gate-passed in light_flags.json: $($nogo -join ' ')"; exit 3 }
+  if (@($Arms | Where-Object { $_ -ne '3w' }).Count) { "UNMEASURED -Flags runs arm 3w only"; exit 3 }
+}
+# the 24-hour sweep (spec section 7): a warm copy outlives no pair; it never reaches the copy this run uses
+if (Test-Path $WarmRoot) {
+  $stale = @(Get-ChildItem $WarmRoot -Directory | Where-Object { $_.Name -ne $WarmFrom -and $_.CreationTimeUtc -lt (Get-Date).ToUniversalTime().AddHours(-24) })
+  $stale | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  if ($stale.Count) { "WARM deleted $($stale.Count) stale" }
+}
+$Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc', 'lu') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
+$Unlink = @('lf1', 'lf2', 'lf3', 'lc1', 'lc2', 'lc3')
+# owner ruling 2026-11-01: fork and stock profiles alternate (lf1 lc1 lf2 lc2 lf3 lc3), so a change facebook makes during
+# the run reaches both sides instead of reading as a fork-side pin (S3 run 20261031-164250: fork first, stock after)
+if (@($Arms | Where-Object { $_ -like 'lf*' }).Count -and @($Arms | Where-Object { $_ -like 'lc*' }).Count) {
+  $Arms = @($Arms | Where-Object { $_ -notin $Unlink }) + @(1..3 | ForEach-Object { "lf$_"; "lc$_" })
+}
+$SeedOf = @{ 'lf1' = $Seeds[0]; 'lf2' = $Seeds[1]; 'lf3' = $Seeds[2]; 'lu1' = $Seeds[0]; 'lu2' = $Seeds[1]; 'lu3' = $Seeds[2] }
+$UnlinkOk = @{}
+$LoginUnlink = @('lu1', 'lu2', 'lu3')
+$Wait  = @{ '1' = 30; '3' = 120; '1f' = 90; '1c' = 90; '3w' = 480; '4a' = 90; 'lw' = 480 }   # 3w: 5 x (15 + 60) s + 5 loads + truth + tail, about 400 s
+$Limit = @{ '1' = 5;  '3' = 8;   '1f' = 6;  '1c' = 6;  '3w' = 12;  '4a' = 6; 'lw' = 12 }
+$Venv  = Join-Path $Root 'venv\Scripts\python.exe'
+$Stock = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+$Fb    = $S.origin
+$Urls  = @{}
+foreach ($p in $S.pages.PSObject.Properties) { $Urls[$p.Name] = @($p.Value | ForEach-Object { "$Fb$_" }) }
+$Driven   = @('1f', '1c', '3w', '4a', 'lw')
+foreach ($u in $Unlink) { $Wait[$u] = 90; $Limit[$u] = 6 }
+# a seeded fork arm can take 180 s for its browser to appear + 90 s wait + 60 s close + 60 s driver exit + post, over 6 min
+foreach ($u in 'lf1', 'lf2', 'lf3') { $Limit[$u] = 8 }
+# lu: the 3w load (about 8 min) + a seeded launch (up to 3 min) + the close and the driver exit, 15 min
+foreach ($u in $LoginUnlink) { $Wait[$u] = 480; $Limit[$u] = 15 }
+$Driven += $Unlink
+$Driven += $LoginUnlink
+$LoggedIn = @('3', '3w', '4a', 'lw', 'lu1', 'lu2', 'lu3')
+$Discovery = Join-Path $Root 'baseline-empty.json'   # contains {}
 
 function Get-Gate {
   if (-not ((quser 2>$null) | Where-Object { $_ -match '\sActive\s' })) { return 'no active session' }
@@ -27,17 +106,89 @@ function Get-Gate {
   return $null
 }
 
+# The ledger's UTC start times, or $null when it cannot be read. PowerShell 5.1 hands a JSON array over as ONE
+# object, so it is unrolled here; parsing it element-wise failed with 2+ entries and the cap was skipped (run 20261029-163107).
+function Read-Ledger([string]$path) {
+  try {
+    $text = if (Test-Path $path) { Get-Content -Raw $path } else { '[]' }
+    # a present but blank file is a torn write, not an empty history
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    $json = $text | ConvertFrom-Json
+    $utc = [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal
+    return , @(foreach ($x in @($json)) {
+      if ($x -is [datetime]) { $x.ToUniversalTime() } else { [datetime]::Parse("$x", [Globalization.CultureInfo]::InvariantCulture, $utc) }
+    })
+  } catch { return $null }
+}
+
+# account-risk cap (owner ruling 6, 2026-10-29): at most 3 runs a UTC day that include a logged-in arm,
+# 15 minutes apart. The run is recorded when it starts, so a run that ends UNMEASURED still counts
+if (@($Arms | Where-Object { $_ -in $LoggedIn }).Count) {
+  New-Item -ItemType Directory -Force (Join-Path $Root 'auto') | Out-Null
+  $Ledger = Join-Path $Root $S.ledger
+  $now = (Get-Date).ToUniversalTime()
+  $past = Read-Ledger $Ledger
+  # an unreadable ledger hides the day's count, and the cap protects the owner's real account: refuse
+  if ($null -eq $past) { "RESULT UNMEASURED cap: ledger unreadable"; exit 3 }
+  $today = @($past | Where-Object { $_.Date -eq $now.Date })
+  if ($today.Count -ge $S.cap.per_day) { "RESULT UNMEASURED cap: $($S.cap.per_day) logged-in runs today (UTC)"; exit 3 }
+  $last = $past | Sort-Object | Select-Object -Last 1
+  if ($last -and ($now - $last).TotalMinutes -lt $S.cap.min_gap_min) { "RESULT UNMEASURED cap: last logged-in run $([int]($now - $last).TotalMinutes) min ago (< $($S.cap.min_gap_min))"; exit 3 }
+  $all = @($past | Select-Object -Last 9 | ForEach-Object { $_.ToString('o') }) + $now.ToString('o')
+  [IO.File]::WriteAllText($Ledger, (ConvertTo-Json @($all)))
+}
+
 $run = Join-Path $Root ('auto\' + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $run | Out-Null
 $env:PYTHONUTF8 = '1'
 $worst = 0
+$checkpoint = $false
+$WarmOk = $false
+# the report args recon.ps1 builds, rebuilt once ram.json exists
+function Get-ReportArgs([string]$d) {
+  $trace = Join-Path $d 'trace.json'
+  if (-not (Test-Path $trace)) { $trace = '-' }
+  $pa = @((Join-Path $Root 'observe_report.py'), $trace, (Join-Path $d 'net.json'))
+  if (Test-Path (Join-Path $d 'cookies.db')) { $pa += @('--cookies', (Join-Path $d 'cookies.db')) }
+  foreach ($f in @(@('--ram', 'ram.json'), @('--channels', 'channels.json'), @('--matches', 'matches.json'))) {
+    if (Test-Path (Join-Path $d $f[1])) { $pa += @($f[0], (Join-Path $d $f[1])) }
+  }
+  return $pa
+}
 try {
   foreach ($a in $Arms) {
+    if ($checkpoint -and $a -in $LoggedIn) { "UNMEASURED arm$a skipped after checkpoint"; $worst = [math]::Max($worst, 3); continue }
     $why = Get-Gate
     if ($why) { "UNMEASURED arm$a $why"; $worst = [math]::Max($worst, 3); continue }
-    $cmd = "& $Root\recon.ps1 -Site facebook -Arm $a -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
+    $drivenArm = $a -in $Driven
+    $armUrls = $Urls[$a]
+    if ($a -eq '4a') {
+      $f4 = Join-Path $Root 'arm4a-url.txt'
+      if (-not (Test-Path $f4)) { "UNMEASURED arm4a no arm4a-url.txt"; $worst = [math]::Max($worst, 3); continue }
+      $armUrls = @((Get-Content $f4 -TotalCount 1).Trim())
+    }
+    $armDir = Join-Path $run "arm$a"
+    $existed = Test-Path $armDir
+    # the arm name is quoted anyway: an unquoted 1d was read as the decimal 1 (runs 20261029-145829 and -155547)
+    $cmd = "& $Root\recon.ps1 -Site $Site -Arm '$a' -Wait $($Wait[$a]) -Out $run -KillBelowGB $KillBelowGB"
     if (-not $NoIntl) { $cmd += ' -Intl' }
-    if ($a -eq 3) { $cmd += ' -FromProfile ' + $(if ($FromProfileOverride) { $FromProfileOverride } else { $Backup }) }
+    if ($a -in '3', '3w', '4a', 'lw' -or $a -in $LoginUnlink) {
+      $src = if ($a -eq 'lw') { Join-Path $WarmRoot $WarmFrom } elseif ($FromProfileOverride) { $FromProfileOverride } else { $Backup }
+      $cmd += " -FromProfile $src"
+    }
+    if ($drivenArm) {
+      # no double quotes: the command is passed through a nested powershell -File call
+      $cmd += " -Driver '$Venv' -Url @(" + (($armUrls | ForEach-Object { "'$_'" }) -join ',') + ')'
+      if ($a -eq '1c' -or $a -like 'lc*') { $cmd += " -Exe '$Stock'" }
+      if ($SeedOf[$a]) { $cmd += " -Seed $($SeedOf[$a])" }
+      if ($Light -and $a -like 'lf*') { $cmd += ' -Light' }
+      # request interception turns the HTTP cache off, so both pair arms run without the route (their /ajax/bz bodies are not recorded)
+      if ($a -eq 'lw' -or ($a -eq '3w' -and ($KeepWarm -or $NoRoute -or $FlagList.Count))) { $cmd += ' -NoRoute' }
+      # approach B: the flags ride in the fork's argv
+      if ($FlagList.Count) { $cmd += ' -Flags ' + (($FlagList | ForEach-Object { "'$_'" }) -join ',') }
+      if ($a -in '1f', '3w', '4a', 'lw') { $cmd += ' -Cpu' }
+      if ($a -in '3w', '4a', 'lw' -or $a -in $LoginUnlink) { $cmd += ' -ExpectSession' }
+    } elseif ($CpuAll) { $cmd += ' -Cpu' }
     # a recon throw escapes run-interactive's *> block unlogged, with no EXIT= line (cal2, 2026-10-17);
     # log it and set the code instead. No exit here: it would end run.ps1 before its EXIT= line
     $cmd = "try { $cmd } catch { 'ERROR: ' + (`$_ | Out-String); `$_.ScriptStackTrace; `$global:LASTEXITCODE = 1 }"
@@ -45,7 +196,26 @@ try {
     $name = "observe-auto-arm$a"
     powershell -NoProfile -ExecutionPolicy Bypass -File $Ri -Name $name -Log $log -Command $cmd | Out-Null
     $until = (Get-Date).AddMinutes($Limit[$a])
-    while ((Get-Date) -lt $until -and -not ((Test-Path $log) -and (Select-String -Path $log -Pattern '^EXIT=' -Quiet))) { Start-Sleep -Seconds 3 }
+    # driven arms: private memory per process type every second turn (6 s); ram.json states the real interval
+    $samples = New-Object System.Collections.ArrayList; $t0 = Get-Date; $tick = 0
+    while ((Get-Date) -lt $until -and -not ((Test-Path $log) -and (Select-String -Path $log -Pattern '^EXIT=' -Quiet))) {
+      Start-Sleep -Seconds 3; $tick++
+      if ($drivenArm -and $tick % 2 -eq 0) {
+        # approach B (2026-10-31): utilities by sub-type, and the renderer count, so RAM shows which process holds it
+        $by = @{}; $nr = 0
+        $procs = @(Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains("$run\profile-arm$a") })
+        foreach ($p in $procs) {
+          $ty = if ($p.CommandLine -match '--type=(\S+)') { $Matches[1] } else { 'browser' }
+          if ($ty -eq 'utility' -and $p.CommandLine -match '--utility-sub-type=(\S+)') { $ty = "utility:$($Matches[1])" }
+          if ($ty -eq 'renderer') { $nr++ }
+          $by[$ty] = [int64]$by[$ty] + [int64]$p.PrivatePageCount
+        }
+        if ($by.Count) { [void]$samples.Add([ordered]@{ t = [int]((Get-Date) - $t0).TotalSeconds; by_type = $by; n_renderer = $nr }) }
+      }
+    }
+    if ($drivenArm -and -not $existed -and (Test-Path $armDir)) {
+      [IO.File]::WriteAllText((Join-Path $run "arm$a\ram.json"), (ConvertTo-Json -Depth 4 ([ordered]@{ interval_s = 6; samples = @($samples) })))
+    }
     $timedOut = -not (Select-String -Path $log -Pattern '^EXIT=' -Quiet -ErrorAction SilentlyContinue)
     if ($timedOut) {
       "UNMEASURED arm$a timeout after $($Limit[$a]) min"
@@ -56,19 +226,112 @@ try {
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     }
     powershell -NoProfile -ExecutionPolicy Bypass -File $Ri -Name $name -Remove | Out-Null
-    Get-Content $log -ErrorAction SilentlyContinue | Select-String 'SESSION=|CLOSED=|low-memory|report exit|ERROR:' | ForEach-Object { $_.Line }
+    Get-Content $log -ErrorAction SilentlyContinue | Select-String 'SESSION=|CLOSED=|low-memory|report exit|ERROR:|drive_rc=' | ForEach-Object { $_.Line }
+    if ($a -in $LoginUnlink) {
+      # a logged-in copy outlives no sub-arm (spec S5 section 2)
+      Remove-Item (Join-Path $run "profile-arm$a") -Recurse -Force -ErrorAction SilentlyContinue
+      if (Test-Path (Join-Path $run "profile-arm$a")) { "PROFILE delete FAILED arm$a (delete it by hand)" } else { "PROFILE deleted arm$a" }
+    }
     if ($timedOut) { continue }
+    # a recon that threw, or one that never made this arm's dir, measured nothing: judging a dir that
+    # another arm made would print that arm's verdict under this arm's name
+    $errored = (Test-Path $log) -and (Select-String -Path $log -Pattern '^ERROR:' -Quiet)
+    if ($errored -or $existed -or -not (Test-Path $armDir)) {
+      "UNMEASURED arm$a recon error"; $worst = [math]::Max($worst, 3); continue
+    }
     # a python that fails to launch leaves the -Remove call's 0 in LASTEXITCODE; global, or a script-scope copy shadows it
     $global:LASTEXITCODE = 3
-    python (Join-Path $Root 'observe_judge.py') judge --baseline $Baseline --arm $a (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
+    if ($drivenArm) {
+      # recon wrote report.md before ram.json existed: write it again with the RAM section
+      $pa = Get-ReportArgs (Join-Path $run "arm$a")
+      python @pa | Out-File -Encoding utf8 (Join-Path $run "arm$a\report.md")
+      $dj = Get-Content -Raw (Join-Path $run "arm$a\run.json") -ErrorAction SilentlyContinue | ConvertFrom-Json
+      $drc = if ($dj) { $dj.drive_rc } else { $null }
+      $hasCh = Test-Path (Join-Path $run "arm$a\channels.json")
+      if ($a -in $LoginUnlink) {
+        if ($drc -eq 4) { "UNMEASURED arm$a checkpoint"; $worst = [math]::Max($worst, 3); $checkpoint = $true }
+        elseif ($drc -eq 0 -and $hasCh) { "INFO arm$a measured (no judge)"; $UnlinkOk[$a] = $true }
+        else { "UNMEASURED arm$a drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
+        continue
+      }
+      if ($a -eq '1c' -or $a -in $Unlink) {
+        if ($drc -eq 0 -and $hasCh) {
+          if ($a -eq '1c') { "INFO arm1c measured (stock: no observer trace, no judge)" } else { "INFO arm$a measured (no judge)"; $UnlinkOk[$a] = $true }
+        }
+        else { "UNMEASURED arm$a drive_rc=$drc"; $worst = [math]::Max($worst, 3) }
+        continue
+      }
+      if ($drc -eq 4) { "UNMEASURED arm$a checkpoint"; $worst = [math]::Max($worst, 3); $checkpoint = $true; continue }
+      if (-not $hasCh) { "UNMEASURED arm$a no channels.json"; $worst = [math]::Max($worst, 3); continue }
+      if ($a -eq '3w' -and $drc -eq 0) { $WarmOk = $true }
+      $judgeBase = $Discovery; $judgeArm = if ($a -eq '1f') { '1' } else { '3' }
+    } else { $judgeBase = $Baseline; $judgeArm = $a }
+    python (Join-Path $Root 'observe_judge.py') judge --site $Site --baseline $judgeBase --arm $judgeArm (Join-Path $run "arm$a") --summary-out (Join-Path $run "arm$a\summary.json")
     $rc = $LASTEXITCODE; if ($rc -notin 0, 1, 2, 3) { $rc = 3 }  # a crash code is no verdict
     $worst = [math]::Max($worst, $rc)
+  }
+  # unlink comparison: runs on the host, before the finally deletes the capture dirs; only unlink.json and unlink.md hold its result
+  if (@($Arms | Where-Object { $_ -in $Unlink }).Count) {
+    $uf = @($Unlink[0..2] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
+    $us = @($Unlink[3..5] | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
+    if ($uf.Count -eq 3 -and $us.Count -eq 3) {
+      $ul = @(); if ($Light) { $ul = @('--light') }  # light_limits explain the DPR rows of a light run only
+      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @uf --stock @us --site $Site --settings $Root --seeds "$UnlinkSeeds" @ul `
+        --out (Join-Path $run 'unlink.json') --md (Join-Path $run 'unlink.md') 2>&1 | ForEach-Object { "$_" }
+      $urc = $LASTEXITCODE
+      if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink.md') -TotalCount 1 }
+      else { "UNMEASURED unlink rc=$urc"; $worst = [math]::Max($worst, 3) }
+    } else { "UNMEASURED unlink: $($uf.Count) fork and $($us.Count) stock profiles measured, 3 each needed"; $worst = [math]::Max($worst, 3) }
+  }
+  # logged-in unlinking (S5): the three fork profiles only, against the identity prediction; the logged-out run 20261030-053053 lists the new paths
+  if (@($Arms | Where-Object { $_ -in $LoginUnlink }).Count) {
+    $lf = @($LoginUnlink | Where-Object { $UnlinkOk[$_] } | ForEach-Object { Join-Path $run "arm$_" })
+    if ($lf.Count -eq 3) {
+      $lo = Join-Path $Root 'auto\20261030-053053\unlink.json'
+      $la = @(); if (Test-Path $lo) { $la = @('--logged-out', $lo) }
+      & $Venv (Join-Path $Root 'observe_unlink.py') --fork @lf --fork-only @la --site $Site --settings $Root --seeds "$UnlinkSeeds" `
+        --out (Join-Path $run 'unlink-lu.json') --md (Join-Path $run 'unlink-lu.md') 2>&1 | ForEach-Object { "$_" }
+      $urc = $LASTEXITCODE
+      if ($urc -eq 0) { Get-Content (Join-Path $run 'unlink-lu.md') -TotalCount 1 }
+      else { "UNMEASURED unlink-lu rc=$urc"; $worst = [math]::Max($worst, 3) }
+    } else { "UNMEASURED unlink-lu: $($lf.Count) of 3 logged-in profiles measured"; $worst = [math]::Max($worst, 3) }
+  }
+  # light pair (part 3): the warm arm against its 3w baseline, on the host; only light.json and light.md hold the result
+  if ('lw' -in $Arms) {
+    $base = Join-Path $Root "auto\$WarmFrom\arm3w"
+    & $Venv (Join-Path $Root 'observe_light.py') $base (Join-Path $run 'armlw') --site $Site `
+      --out (Join-Path $run 'light.json') --md (Join-Path $run 'light.md') 2>&1 | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -ne 0) { $worst = [math]::Max($worst, 3) }
   }
 } finally {
   Get-ScheduledTask -TaskName 'camou-observe-auto-*' -ErrorAction SilentlyContinue |
     ForEach-Object { $_ | Stop-ScheduledTask; $_ | Unregister-ScheduledTask -Confirm:$false }
+  if ($KeepWarm) {
+    $p3w = Join-Path $run 'profile-arm3w'
+    if ($checkpoint) { "WARM not kept: checkpoint" }
+    elseif (-not $WarmOk) { "WARM not kept: arm3w did not measure" }
+    elseif (-not (Test-Path $p3w)) { "WARM not kept: no profile-arm3w" }
+    else {
+      New-Item -ItemType Directory -Force $WarmRoot | Out-Null
+      Move-Item $p3w (Join-Path $WarmRoot (Split-Path $run -Leaf))
+      "WARM kept $(Split-Path $run -Leaf)"
+    }
+  }
+  if ('lw' -in $Arms -and $WarmFrom) {
+    Remove-Item (Join-Path $WarmRoot $WarmFrom) -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path (Join-Path $WarmRoot $WarmFrom)) { "WARM delete FAILED $WarmFrom (delete it by hand)" } else { "WARM deleted $WarmFrom" }
+  }
   Remove-Item (Join-Path $run 'profile-arm*') -Recurse -Force -ErrorAction SilentlyContinue
   Get-ChildItem $run -Recurse -Filter 'cookies.db' -ErrorAction SilentlyContinue | Remove-Item -Force
+  # the driver's raw captures (bodies, WebSocket payloads, truth) and the saved document HTML stay only until the report is done;
+  # resources\js (public Meta code) and truth.json stay on the host
+  $raw = @(Get-ChildItem $run -Directory -Recurse -Filter 'capture' -ErrorAction SilentlyContinue) +
+    @(Get-ChildItem $run -Recurse -Directory -Filter 'html' -ErrorAction SilentlyContinue | Where-Object { $_.Parent.Name -eq 'resources' })
+  if ($KeepCapture) {
+    if ($raw.Count) { "KEPT raw capture: $(($raw | ForEach-Object { $_.FullName }) -join ', ') (host only; delete after analysis)" }
+  } else {
+    $raw | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 if ($worst -eq 2) { $worst = 3 }  # the judge's usage error (no baseline) measured nothing
 "RESULT $(@{0 = 'PASS'; 1 = 'FAIL'; 3 = 'UNMEASURED'}[[int]$worst]) $run"

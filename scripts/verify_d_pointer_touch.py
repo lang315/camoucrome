@@ -65,7 +65,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def probe(url, config=None, extra=()):
     env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
     env["PLAYWRIGHT_NODEJS_PATH"] = NODE
-    cmd = [PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE, "--url", url]
+    # the launcher refuses a Windows claim on a Linux host without the font bundle
+    cmd = [PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE, "--url", url,
+           "--fonts-dir", FONTS_DIR]
     if config is not None:
         cmd += ["--config", json.dumps(config)]
     for a in extra:

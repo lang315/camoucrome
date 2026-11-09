@@ -197,6 +197,17 @@
    "type": "int32"
   },
   {
+   "name": "kTextMetricsSeed",
+   "key": "textMetrics:seed",
+   "type": "uint32",
+   "doc": [
+    "Seed of the measureText metric jitter (metric-jitter slice). Synthetic control -> colon.",
+    "Absent or 0 => measureText reports the real metrics (rule 5). Split off canvas:seed on",
+    "2026-11-03 (owner ruling after M0): no launcher or preset sets it, because jittered",
+    "bounding boxes are not yet measured against the pixels the same text draws."
+   ]
+  },
+  {
    "name": "kWebGlVendor",
    "key": "webGl:vendor",
    "type": "string",
@@ -484,15 +495,6 @@
     "FontAccess::DidGetEnumerationResponse after the real permission flow (user activation, the local-fonts prompt) has",
     "granted, replacing the host enumeration -- which would list the bundle's own faces. The generator emits the captured host's",
     "faces (settings/fonts.json families.<os>.faces). A malformed line is skipped. Absent => the real enumeration (rule 5)."
-   ]
-  },
-  {
-   "name": "kAudioSeed",
-   "key": "audio:seed",
-   "type": "uint32",
-   "doc": [
-    "Audio readback-noise seed (SP4-audio). Synthetic control -> colon. Absent or",
-    "0 => no perturbation (rule 5)."
    ]
   },
   {

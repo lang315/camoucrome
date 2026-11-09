@@ -78,14 +78,20 @@ def test_locale_and_timezone():
 
 def test_ua_battery_media_and_seeds():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
-    assert cfg["navigator.deviceMemory"] == 8  # the sample says 16, Chrome caps at 8
-    assert gen.chrome_device_memory(32) == 8 and gen.chrome_device_memory(3) == 2 and gen.chrome_device_memory(0.1) == 0.25
+    assert cfg["navigator.deviceMemory"] == 16  # the sample's own value: Chrome 156 desktop reports 2..32
+
+    def memory(value):
+        fp = {**POOL, "navigator": {**POOL["navigator"], "deviceMemory": value}}
+        return gen.from_pool(fp, "UTC", rng=random.Random(1))["config"]["navigator.deviceMemory"]
+    # a 4 beside the host's capped jsHeapSizeLimit is a device no real Chrome shows
+    assert memory(4) == 8
+    assert memory(64) == 32  # Chrome caps the API at 32
     assert cfg["ua:osInfo"] == "Windows NT 10.0; Win64; x64" and cfg["ua:platform"] == "Windows"
     assert cfg["ua:platformVersion"] == "10.0.0" and cfg["ua:mobile"] is False
     assert cfg["battery:charging"] is True and cfg["battery:chargingTime"] == 600.0
     assert "battery:dischargingTime" not in cfg
     assert cfg["mediaDevices:enabled"] is True and cfg["mediaDevices:webcams"] == 0
-    assert all(1 <= cfg[k] <= 0xFFFFFFFF for k in ("canvas:seed", "audio:seed", "mediaDevices:seed"))
+    assert all(1 <= cfg[k] <= 0xFFFFFFFF for k in ("canvas:seed", "mediaDevices:seed"))
 
 
 def test_os_forms_match_derive_cc():
@@ -179,7 +185,7 @@ def test_pool_wide_properties_hold_over_unseeded_draws():
     for i in range(200):
         out = gen.generate(timezone="UTC")
         cfg, launch = out["config"], out["launch"]
-        assert cfg["navigator.deviceMemory"] in gen.DEVICE_MEMORY, cfg["navigator.deviceMemory"]
+        assert cfg["navigator.deviceMemory"] in (8, 16, 32), cfg["navigator.deviceMemory"]
         assert cfg["navigator.hardwareConcurrency"] >= 1
         assert launch["dpr"] in gen.WINDOW_OFFSET
         for axis in ("Width", "Height"):
@@ -444,20 +450,20 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 
 
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
-# seed 1 "rest" recomputed on the pre-final-review code without window.screenX/Y, window.outerWidth/Height,
+# seed 1 "rest" (was cfc63531725c99cb with audio:seed in the hash; identical once it is added back) recomputed on the pre-final-review code without window.screenX/Y, window.outerWidth/Height,
 # launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
 PRE_CHANGE = {
-    1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "audio:seed": 2444712011, "mediaDevices:seed": 3639700192,
-        "rest": "cfc63531725c99cb"},
-    2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "audio:seed": 3707026330, "mediaDevices:seed": 4070888060},
-    3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "audio:seed": 2545373331, "mediaDevices:seed": 2337446731},
+    1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "mediaDevices:seed": 3639700192,
+        "rest": "c3cf3c0213de1b36"},  # was dcf4b9c17059de9c with navigator.deviceMemory 8; the seed draws 16
+    2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "mediaDevices:seed": 4070888060},
+    3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "mediaDevices:seed": 2337446731},
 }
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_seeded_keys_do_not_move(seed):
     cfg = gen.generate("windows", "Europe/Paris", None, seed)["config"]
-    assert {k: cfg[k] for k in ("share:cancelMs", "canvas:seed", "audio:seed", "mediaDevices:seed")} == \
+    assert {k: cfg[k] for k in ("share:cancelMs", "canvas:seed", "mediaDevices:seed")} == \
         {k: v for k, v in PRE_CHANGE[seed].items() if k != "rest"}
 
 
@@ -465,7 +471,7 @@ def test_default_args_output_is_unchanged_outside_the_font_subset():
     """Passing rng to fonts_keys draws a font subset (Task 7's intent), so fonts:* is
     excluded; every other key and launch must be byte-identical to the pre-change run."""
     import hashlib
-    r = gen.generate("windows", "Europe/Paris", None, 1, gpu="windows-intel-uhd-630-d3d11")  # the pin predates fail-closed
+    r = gen.generate("windows", "Europe/Paris", None, 1, gpu="windows-intel-uhd-630-d3d11", host_cores=64)  # the pin predates fail-closed; 64: no snap, whatever machine runs this
     # the window position is drawn since Task 6 (test_gen_linkability pins it), so it is excluded too
     rest = {k: v for k, v in r["config"].items()
             if not k.startswith("fonts:") and k not in ("window.screenX", "window.screenY",

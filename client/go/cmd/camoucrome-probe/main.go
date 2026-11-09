@@ -100,12 +100,16 @@ func main() {
 	if err != nil {
 		fail("report:", err)
 	}
-	argv := browserArgv(*exe)
+	candidates := browserArgvs(*exe)
+	var argv []string
+	if len(candidates) > 0 {
+		argv = candidates[0]
+	}
 	ctx.Close()
 	pw.Stop()
 	var report any
 	if err := json.Unmarshal([]byte(text), &report); err != nil {
 		fail("report json:", err)
 	}
-	json.NewEncoder(os.Stdout).Encode(map[string]any{"driver": *label, "report": report, "argv": argv})
+	json.NewEncoder(os.Stdout).Encode(map[string]any{"driver": *label, "report": report, "argv": argv, "strays": max(len(candidates)-1, 0)})
 }

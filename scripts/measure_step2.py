@@ -14,7 +14,11 @@ Run on the Windows host in the client venv, holding the build lock (owner step2)
 launch in the stability probe (its RED). --two-colour makes the fork arm's noise
 page draw two colours (its RED). --host-draw passes the host's real WebGL renderer and font
 families to generate(), so the GPU and fonts differ per profile (step 6's GREEN). The fork is CAMOU_FORK_EXE; the control is the
-stock chrome.exe under CAMOU_STOCK_APP (default: the Program Files install)."""
+stock chrome.exe under CAMOU_STOCK_APP (default: the Program Files install).
+The control (and the fork arm under --null) runs on a seeded profile, as a real user's stock does: one priming launch per
+run fetches the variations seed, and every stock launch starts on a copy of its three seed files (stock_seed.py). A
+stock that still has Protected Audience on Navigator is UNMEASURED, not a result. Runs on the host in the owner's
+session; it sets CAMOU_WINHOST_LOCAL=1 for the priming launch."""
 import argparse
 import contextlib
 import datetime
@@ -32,6 +36,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import capture_host_oracle as cap  # noqa: E402
 import step2_rows as rows  # noqa: E402
+import stock_seed  # noqa: E402
 import gpu_gate  # noqa: E402
 from windows_verify_set import STOCK_APP, pin_tag  # noqa: E402
 
@@ -40,12 +45,14 @@ LINK_SEEDS = (1, 2, 3, 4, 5)
 CONSTANTS = json.loads((ROOT / "settings" / "machine_constants.json").read_text(encoding="utf-8"))["leaves"]
 ACCEPTED = json.loads((ROOT / "settings" / "accepted_defaults.json").read_text(encoding="utf-8"))["leaves"]
 PROBES = {}  # name -> fn(pw, arm, mode, run) -> {row: value}; filled below
+SEED = None  # the run's stock_seed.SeededStock while a run is open: a fresh seeded profile per stock launch
 
 
 class Arm:
     """`ident` is a whole camoucrome.gen result ({"config", "launch": {"window", "dpr"}}) or None (stock)."""
-    def __init__(self, name, exe, ident, args=()):
+    def __init__(self, name, exe, ident, args=(), stock=False):
         self.name, self.exe, self.ident, self.args = name, exe, ident, list(args)
+        self.stock = stock  # the frozen stock build: every launch of it gets a seeded profile (stock_seed.py)
 
     @property
     def config(self):
@@ -58,12 +65,11 @@ class Arm:
 
 def probe_host_draw(fork_exe):
     """The host facts generate() takes, read through probe; a probe that returns None is left out (no claim, rule 5)."""
-    from camoucrome import gen, hostfonts, probe
-    d = dict(host_renderer=probe.host_renderer(fork_exe), host_families=hostfonts.families(),
-             host_display=probe.host_display(fork_exe), host_platform_version=probe.host_platform_version(fork_exe))
-    if d["host_display"] is None:
+    from camoucrome import gen, probe
+    d = probe.host_draw(fork_exe)
+    if "host_display" not in d:
         print("host draw:", gen.display_flags(None)[1])
-    return {k: v for k, v in d.items() if v is not None or k in ("host_renderer", "host_families")}
+    return d
 
 
 HOST_DRAW = {}  # filled by --host-draw: host_renderer / host_families for generate() (step 6)
@@ -109,16 +115,49 @@ def opened(pw, arm, mode, user_data_dir=None, config="arm", ident=None):
     from camoucrome import launch
     ident = ident or arm.ident
     lo = ident["launch"] if ident else {}
-    ctx = launch(pw, arm.exe, config=(ident["config"] if ident else None) if config == "arm" else config,
-                 headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args + lo.get("args", []),
-                 window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"),
-                 position=tuple(lo["position"]) if lo.get("position") else None)
+    # A stock launch reads a copy of the primed template, never a bare profile (no variations seed) and never a
+    # profile another launch has been through (its crash streak). A caller's own directory (stability's two launches
+    # of one profile) was seeded by the caller.
+    own = arm.stock and user_data_dir is None
+    if own:
+        user_data_dir = SEED.fresh_copy()
+    ctx = None
     try:
+        ctx = launch(pw, arm.exe, config=(ident["config"] if ident else None) if config == "arm" else config,
+                     headless=mode == "headless", user_data_dir=user_data_dir, args=arm.args + lo.get("args", []),
+                     window=tuple(lo["window"]) if lo.get("window") else None, dpr=lo.get("dpr"),
+                     position=tuple(lo["position"]) if lo.get("position") else None)
+        if arm.stock:  # an unseeded stock is not a result: this launch, and so its cell, is UNMEASURED
+            stock_seed.guard(first_page(ctx).evaluate("'" + stock_seed.UNSEEDED_MARKER + "' in Navigator.prototype"),
+                             f"{arm.name}/{mode}")
         yield ctx
         # S4: a launch whose GPU process crashed measured nothing GPU-backed.
         gpu_gate.check(gpu_gate.read_ctx(ctx))
     finally:
-        ctx.close()
+        if ctx is not None:
+            ctx.close()
+        if own:
+            SEED.drop(user_data_dir)
+
+
+@contextlib.contextmanager
+def seeded_control(stock_exe, headed=True):
+    """For a script that launches the stock control through `opened()`: one priming launch of `stock_exe` (direct, no proxy,
+    a local page, so no site is touched), SEED set for the body, everything removed after. A template without a seed, or a
+    stock launch that shows the compiled defaults, ends the script `UNMEASURED` (stock_seed.py). The template does not
+    depend on the mode, so `headed=True` serves a headless script too."""
+    global SEED
+    os.environ.setdefault("CAMOU_WINHOST_LOCAL", "1")  # this process runs on the host, in the owner's session
+    import winhost
+    try:
+        with stock_seed.seeded_stock(winhost, stock_exe, headed=headed) as seed:
+            SEED = seed
+            try:
+                yield seed
+            finally:
+                SEED = None
+    except stock_seed.Unseeded as exc:
+        sys.exit(f"UNMEASURED: {exc}")
 
 
 def first_page(ctx):
@@ -191,6 +230,8 @@ def probe_stability(pw, arm, mode, run):
     from camoucrome import per_instance_config, profile_seeds
     from camoucrome.launcher import remove_dir
     udd = tempfile.mkdtemp(prefix="camoucrome-step2-stab-")
+    if arm.stock:
+        SEED.seed(udd)  # both launches of the stock profile start from the seed, as a user's profile does
     try:
         reports = []
         for _ in (1, 2):
@@ -343,11 +384,11 @@ def run_cmd(a):
         HOST_DRAW.update(probe_host_draw(fork_exe))
         print(f"host draw: renderer={'read' if HOST_DRAW['host_renderer'] else 'NONE'} "
               f"families={len(HOST_DRAW['host_families'] or ())}")
-    control = Arm("control", stock, None)  # stock: no config, no window/dpr (its defaults)
-    fork = Arm("fork", fork_exe, None if a.null else identity(1), [a.plant] if a.plant else [])
+    control = Arm("control", stock, None, stock=True)  # stock: no config, no window/dpr (its defaults)
+    fork = Arm("fork", fork_exe, None if a.null else identity(1), [a.plant] if a.plant else [], stock=a.null)
     pin = pin_tag(client)
     versions = {"control": exe_version(control.exe), "fork": exe_version(fork.exe)}
-    bad = rows.version_problems(versions, pin)
+    bad = rows.version_problems(versions, pin, null=a.null)
     if bad:
         sys.exit("precondition: " + "; ".join(bad))
     run_id = run_stamp() + ("-null" if a.null else "") + ("-plant" if a.plant else "")
@@ -358,24 +399,36 @@ def run_cmd(a):
            "session": gpu_gate.session_id(), "desktop": desktop_size(),
            "flags": {k: v for k, v in vars(a).items() if k in ("null", "plant", "fresh_seeds", "two_colour") and v},
            "rows": {}}
-    with sync_playwright() as pw:
-        doc["argv"] = {"control": argv_of(pw, control), "fork": argv_of(pw, fork)}
-        bad = rows.argv_problems(doc["argv"]["control"], doc["argv"]["fork"],
-                                 rows.ARGV_ALLOWED + ((a.plant,) if a.plant else ()))
-        if bad:
-            sys.exit("precondition, argv parity: " + "; ".join(bad))
-        for probe in a.only.split(","):
-            for mode in a.modes.split(","):
-                for arm in (control, fork):
-                    cell = doc["rows"].setdefault(probe, {}).setdefault(arm.name, {})
-                    t0 = time.monotonic()
-                    try:
-                        cell[mode] = PROBES[probe](pw, arm, mode, run)
-                    except Exception as exc:  # noqa: BLE001 - a failed cell is UNMEASURED, recorded
-                        cell[mode] = None
-                        doc["errors"][f"{probe}/{arm.name}/{mode}"] = f"{type(exc).__name__}: {str(exc)[:300]}"
-                    print(f"{probe}/{arm.name}/{mode}: {'ok' if cell[mode] is not None else 'ERROR'} "
-                          f"{time.monotonic() - t0:.0f}s", flush=True)
+    global SEED
+    os.environ.setdefault("CAMOU_WINHOST_LOCAL", "1")  # this process runs on the host, in the owner's session
+    import winhost
+    try:
+        # One priming launch per run; each stock launch then gets its own copy of the template (stock_seed.py).
+        with stock_seed.seeded_stock(winhost, stock) as seed:
+            SEED = seed
+            try:
+                with sync_playwright() as pw:
+                    doc["argv"] = {"control": argv_of(pw, control), "fork": argv_of(pw, fork)}
+                    bad = rows.argv_problems(doc["argv"]["control"], doc["argv"]["fork"],
+                                             rows.ARGV_ALLOWED + ((a.plant,) if a.plant else ()))
+                    if bad:
+                        sys.exit("precondition, argv parity: " + "; ".join(bad))
+                    for probe in a.only.split(","):
+                        for mode in a.modes.split(","):
+                            for arm in (control, fork):
+                                cell = doc["rows"].setdefault(probe, {}).setdefault(arm.name, {})
+                                t0 = time.monotonic()
+                                try:
+                                    cell[mode] = PROBES[probe](pw, arm, mode, run)
+                                except Exception as exc:  # noqa: BLE001 - a failed cell is UNMEASURED, recorded
+                                    cell[mode] = None
+                                    doc["errors"][f"{probe}/{arm.name}/{mode}"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+                                print(f"{probe}/{arm.name}/{mode}: {'ok' if cell[mode] is not None else 'ERROR'} "
+                                      f"{time.monotonic() - t0:.0f}s", flush=True)
+            finally:
+                SEED = None
+    except stock_seed.Unseeded as exc:
+        sys.exit(f"UNMEASURED: {exc}")
     (out_dir / "rows.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
     write_tables(out_dir)
     um = rows.unmeasured_sites(doc, {"rows": {}})

@@ -10,8 +10,8 @@ F1     ROG Fonts is invisible to measureText in a window and a worker under a
        generated Windows identity, AND visible to stock (in the same row, so F1
        cannot pass on a font the host lacks)
 F2-*   claimed families the host has (Arial, Segoe UI, Times New Roman, Verdana)
-       measure as stock within JITTER_TOL (canvas:seed jitters measureText by
-       design) and win over both fallbacks, through the Python, Go and Node clients. They
+       measure as stock within JITTER_TOL (canvas:seed does not jitter measureText;
+       metric jitter is textMetrics:seed, which launchers leave unset) and win over both fallbacks, through the Python, Go and Node clients. They
        measure the launcher rule (settings/launcher.json launch.native_fonts: the
        client drops fonts:alias/aliasLocal when the claimed OS is the host's).
        Confirmed 2026-10-04: before the fix every claimed family measured the
@@ -20,7 +20,7 @@ F2-*   claimed families the host has (Arial, Segoe UI, Times New Roman, Verdana)
        2057.67; gen --os windows emits fonts:alias Arial -> Liberation Sans and
        GetFontPlatformData returns the alias target's lookup with no fallback.
 F4     per-character system fallback (CJK, Thai, emoji in a family nobody has)
-       measures as stock within JITTER_TOL (same canvas:seed jitter): the fallback is the host's real one, which is what a
+       measures as stock within JITTER_TOL (kept as slack: measureText is not jittered): the fallback is the host's real one, which is what a
        Windows host claiming Windows should show. fonts:list does not filter it
        (no patch touches PlatformFallbackFontForCharacter).
 F3     note, measured: of the identity's fonts:list, how many families stock
@@ -77,7 +77,8 @@ def page(claimed):
     return PAGE_TMPL % (json.dumps(fams), json.dumps(TEXT), json.dumps(FALLBACK_TEXT))
 
 
-# measureText jitter under canvas:seed measured at <= 0.12 px on a 28-char string at 100 px; distinct fonts here
+# canvas:seed does not move measureText (metric jitter is textMetrics:seed, unset by launchers), so JITTER_TOL = 1.0 is
+# kept as slack and is no longer a jitter allowance. Distinct fonts here
 # differ by >= 13 px except Segoe UI vs the 1807.99 face the failed alias lookups fell through to (0.07 px; the bare
 # monospace fallback is 1539.45), which the two-variant check decides.
 JITTER_TOL = 1.0

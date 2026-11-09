@@ -1,9 +1,9 @@
 diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
-index 228963bed7..2b666a325f 100644
+index 3fdbc9fed4..f488d9ac27 100644
 --- a/third_party/blink/renderer/DEPS
 +++ b/third_party/blink/renderer/DEPS
-@@ -96,6 +96,8 @@ include_rules = [
-     "+components/camoucfg/audio_noise.h",
+@@ -95,6 +95,8 @@ include_rules = [
+     "+cc/paint",
      "+components/camoucfg/blink_scope.h",
      "+components/camoucfg/canvas_noise.h",
 +    "+components/camoucfg/canvas_mask.h",

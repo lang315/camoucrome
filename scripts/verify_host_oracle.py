@@ -24,6 +24,7 @@ HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 
 sys.path.insert(0, str(CLIENT / "scripts"))
 import capture_host_oracle as cap  # noqa: E402
+import oracle_rules  # noqa: E402
 from oracle_rules import SHAPE_ONLY, flatten  # noqa: E402
 
 BASE = json.loads((CLIENT / "baselines" / "chrome-8103-stock-oracle-windows.json").read_text(encoding="utf-8"))["headed"]
@@ -339,9 +340,10 @@ print(json.dumps(out))
 
     def parse(sh):  # RFC 8941 list: "Google Chrome";v="153", ...
         return [{"brand": i.split('";v="')[0].strip().strip('"'), "version": i.split('";v="')[1].rstrip('"')} for i in (sh or "").split(", ") if '";v="' in i]
-    host = BASE["uad"]["brands"], BASE["uadHigh"]["fullVersionList"]
+    pin = oracle_rules.read_pin((CLIENT / "upstream.env").read_text(encoding="utf-8"))
+    host = BASE["uad"]["brands"], oracle_rules.expected_full_list(BASE["uadHigh"]["fullVersionList"], pin)
     got = (r["js"]["brands"], r["js"]["full"], parse(r["hdr"]["ua"]), parse(r["hdr"]["full"]))
-    print(f"note: O4 Sec-CH-UA={r['hdr']['ua']!r} full={r['hdr']['full']!r}")
+    print(f"note: O4 Sec-CH-UA={r['hdr']['ua']!r} full={r['hdr']['full']!r} expected full={host[1]!r}")
     return {"O4 brands: Sec-CH-UA and Sec-CH-UA-Full-Version-List request headers == navigator.userAgentData == the host's stock list in stock order": (
         got[0] == host[0] and got[1] == host[1] and got[2] == host[0] and got[3] == host[1])}
 

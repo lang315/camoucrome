@@ -17,7 +17,10 @@ import collections
 import json
 import re
 import sqlite3
+import sys
 import urllib.parse
+
+import sites
 
 CATEGORY = "disabled-by-default-camou.observe"
 # V8 runtime call stats (docs/superpowers/specs/2026-10-13-observer-intl-rcs-design.md):
@@ -256,6 +259,29 @@ def group_of(name):
     return GROUPS.get(".".join(parts[:2])) or GROUPS.get(parts[0], "other")
 
 
+_SITE = None
+
+
+def use_site(site):
+    """The site whose CDN host names public_host collapses; one site per process (the CLI's --site)."""
+    global _SITE
+    _SITE = site
+
+
+def public_host(host):
+    """Media CDN host names carry a regional POP code, which is a location: collapse them (the site's pop_host)."""
+    global _SITE
+    if _SITE is None:
+        _SITE = sites.load()
+    return _SITE.pop_host(host)
+
+
+def public_endpoint(endpoint):
+    """public_host on the host part of a 'host/path' key (or a bare host)."""
+    host, sep, rest = endpoint.partition("/")
+    return public_host(host) + sep + rest
+
+
 def script_label(url):
     """Host[:port] and path of a script URL; userinfo, query and fragment can carry
     credentials or ids, so they are dropped."""
@@ -270,7 +296,7 @@ def script_label(url):
         port = f":{u.port}" if u.port else ""
     except ValueError:  # malformed port: one bad event must not abort the report
         port = ""
-    return u.hostname + port + u.path
+    return public_host(u.hostname) + port + u.path
 
 
 def surface_counts(events):
@@ -391,7 +417,7 @@ def load_requests(netlog_path):
             continue
         p = e["params"]
         url = urllib.parse.urlsplit(p["url"])
-        out.append((_request_site(p), url.hostname or "", url.path or "/", p.get("method", "")))
+        out.append((_request_site(p), public_host(url.hostname or ""), url.path or "/", p.get("method", "")))
     return out
 
 
@@ -403,6 +429,274 @@ def load_cookie_names(db_path):
         ).fetchall()
     finally:
         con.close()
+
+
+BROWSER = "browser"  # a request with no page site, or a chrome:// one: the browser's own traffic
+NET_KINDS = (("javascript", "js"), ("ecmascript", "js"), ("css", "css"), ("html", "html"), ("wasm", "wasm"),
+             ("image", "image"), ("video", "video"), ("audio", "video"), ("font", "font"), ("json", "json"))
+# a cache hit logs no response headers, so its kind comes from the path's extension
+PATH_KINDS = {"js": "js", "mjs": "js", "css": "css", "html": "html", "htm": "html", "wasm": "wasm", "json": "json",
+              "jpg": "image", "jpeg": "image", "png": "image", "webp": "image", "gif": "image", "svg": "image",
+              "ico": "image", "avif": "image", "mp4": "video", "m4s": "video", "webm": "video", "m4a": "video",
+              "mp3": "video", "woff": "font", "woff2": "font", "ttf": "font", "otf": "font"}
+SEND_EVENTS = {"HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS",
+               "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"}
+
+
+def kind_of(content_type, method):
+    if method == "POST":
+        return "beacon"
+    ct = (content_type or "").lower()
+    for needle, k in NET_KINDS:
+        if needle in ct:
+            return k
+    return "other"
+
+
+def load_costs(netlog_path):
+    """Bytes per host and kind. network = pre-decode bytes of a request that went out (HTTP/1, 2 or QUIC);
+    cache = pre-decode bytes of one that did not; decoded = after content decoding. None when unreadable."""
+    try:
+        with open(netlog_path, encoding="utf-8") as f:
+            d = json.load(f)
+        names = {v: k for k, v in d["constants"]["logEventTypes"].items()}
+        events = d["events"]
+    except (OSError, ValueError, KeyError):
+        return None
+    req = {}
+    for e in events:
+        t, p = names.get(e.get("type")), e.get("params") or {}
+        r = req.setdefault(e["source"]["id"], {"url": None, "method": "GET", "ct": "", "raw": 0, "dec": 0, "sent": False,
+                                               "hdr": False, "enc": False, "site": ""})
+        if t == "URL_REQUEST_START_JOB" and r["url"] is None and "url" in p:
+            r["url"], r["method"] = p["url"], p.get("method", "GET")
+            r["site"] = _request_site(p)
+        elif t == "URL_REQUEST_JOB_BYTES_READ":
+            r["raw"] += p.get("byte_count", 0)
+        elif t == "URL_REQUEST_JOB_FILTERED_BYTES_READ":
+            r["dec"] += p.get("byte_count", 0)
+        elif t in SEND_EVENTS:
+            r["sent"] = True
+        elif t == "HTTP_TRANSACTION_READ_RESPONSE_HEADERS":
+            for h in p.get("headers", []):
+                k, _, v = h.partition(":")
+                if k.strip().lower() == "content-type":
+                    r["ct"] = v.strip()
+                elif k.strip().lower() == "content-encoding":
+                    r["enc"] = True
+            r["hdr"] = True
+    out = {"by_host": {}, "by_kind": {}, "by_site_kind": {}, "posts": collections.Counter()}
+    for r in req.values():
+        if not r["url"] or not r["url"].startswith("http"):
+            continue
+        s = urllib.parse.urlsplit(r["url"])
+        host = public_host(s.hostname or "?")
+        # URL_REQUEST_JOB_BYTES_READ is logged only when a content decoder reads the stream; an identity
+        # response has FILTERED_BYTES_READ alone, and there raw equals decoded. When the response may have
+        # been encoded (or its headers were not logged) decoded is only a floor: the row is marked.
+        raw, approx = r["raw"], False
+        if not raw and r["dec"]:
+            raw, approx = r["dec"], r["enc"] or not r["hdr"]
+        kind = kind_of(r["ct"], r["method"])
+        if kind == "other" and not r["ct"]:
+            last = s.path.rsplit("/", 1)[-1]
+            kind = PATH_KINDS.get(last.rsplit(".", 1)[-1].lower(), "other") if "." in last else "other"
+        site = r["site"] if r["site"].startswith("http") else BROWSER
+        site_table = out["by_site_kind"].setdefault(site, {})
+        for key, table in ((host, out["by_host"]), (kind, out["by_kind"]), (kind, site_table)):
+            row = table.setdefault(key, {"n": 0, "network": 0, "cache": 0, "decoded": 0})
+            row["n"] += 1
+            row["network" if r["sent"] else "cache"] += raw
+            row["decoded"] += r["dec"] or raw
+            if approx:
+                row["approx"] = True
+        if r["method"] == "POST":
+            out["posts"][host + s.path] += 1
+    out["posts"] = dict(out["posts"])
+    return out
+
+
+_APPROX = " (decoded used)"
+
+
+def _mb(n):
+    return f"{n / 1e6:.2f}"
+
+
+def render_costs(costs):
+    if costs is None:
+        return "## Cost\n\nnetlog unreadable: no byte counts.\n"
+    lines = ["## Cost", "", "Bytes in MB: network = pre-decode bytes fetched, cache = pre-decode bytes from cache.", "",
+             "| host | requests | network | cache | decoded |", "|---|---|---|---|---|"]
+    for h, v in sorted(costs["by_host"].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"]))[:20]:
+        lines.append(f"| `{h}`{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+    def total(kinds):
+        return sum(v["network"] + v["cache"] for v in kinds.values())
+    sites = costs["by_site_kind"]
+    pages = sorted((s for s in sites if s != BROWSER), key=lambda s: -total(sites[s]))
+    for site in pages + ([BROWSER] if BROWSER in sites else []):
+        lines += ["", f"### {'browser-internal' if site == BROWSER else site}", "",
+                  "| kind | requests | network | cache | decoded |", "|---|---|---|---|---|"]
+        for k, v in sorted(sites[site].items(), key=lambda x: -(x[1]["network"] + x[1]["cache"])):
+            lines.append(f"| {k}{_APPROX if v.get('approx') else ''} | {v['n']} | {_mb(v['network'])} | {_mb(v['cache'])} | {_mb(v['decoded'])} |")
+    return "\n".join(lines) + "\n"
+
+
+CPU_NAMES = {"FunctionCall": "run", "EvaluateScript": "run", "v8.compile": "compile"}
+
+
+def _cpu_url(e):
+    a = e.get("args") or {}
+    return (a.get("data") or {}).get("url") or a.get("fileName") or ""
+
+
+def cpu_by_script(events):
+    """ms per script from complete devtools.timeline/v8 slices; a slice inside a counted one (same thread) counts once."""
+    by_thread = collections.defaultdict(list)
+    for e in events:
+        if e.get("ph") == "X" and e.get("name") in CPU_NAMES:
+            by_thread[(e.get("pid"), e.get("tid"))].append(e)
+    out = collections.defaultdict(lambda: {"run": 0.0, "compile": 0.0})
+    for evs in by_thread.values():
+        end = None
+        for e in sorted(evs, key=lambda e: (e["ts"], -e.get("dur", 0))):
+            if end is not None and e["ts"] < end:
+                continue
+            end = e["ts"] + e.get("dur", 0)
+            out[script_label(_cpu_url(e))][CPU_NAMES[e["name"]]] += e.get("dur", 0) / 1000
+    return dict(out)
+
+
+def ram_summary(path):
+    """Private MB per process type. Every `utility` and `utility:<sub-type>` key also adds into one `utility` row per
+    sample, so a run with the breakdown compares with one without. None when unreadable."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    by = collections.defaultdict(list)
+    for s in d.get("samples", []):
+        types = s.get("by_type", {})
+        for t, b in types.items():
+            if t != "utility":
+                by[t].append(b)
+        u = [b for t, b in types.items() if t == "utility" or t.startswith("utility:")]
+        if u:
+            by["utility"].append(sum(u))
+    return {t: {"peak_mb": round(max(v) / 2**20, 1), "mean_mb": round(sum(v) / len(v) / 2**20, 1), "samples": len(v)}
+            for t, v in by.items()}
+
+
+def renderer_max(path):
+    """The most renderer processes in one sample, or None when no sample counts them (runs before approach B)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    n = [s["n_renderer"] for s in d.get("samples", []) if "n_renderer" in s]
+    return max(n) if n else None
+
+
+def render_cpu(cpu):
+    if not cpu:
+        return "## CPU per script\n\nno devtools.timeline slices (category not recorded).\n"
+    lines = ["## CPU per script", "", "| script | run ms | compile ms |", "|---|---|---|"]
+    for k, v in sorted(cpu.items(), key=lambda x: -(x[1]["run"] + x[1]["compile"]))[:20]:
+        lines.append(f"| `{k}` | {v['run']:.0f} | {v['compile']:.0f} |")
+    return "\n".join(lines) + "\n"
+
+
+def render_ram(ram):
+    if not ram:
+        return "## RAM\n\nno ram.json.\n"
+    lines = ["## RAM (private bytes)", "", "| process | peak MB | mean MB | samples |", "|---|---|---|---|"]
+    for t, v in sorted(ram.items()):
+        lines.append(f"| {t} | {v['peak_mb']} | {v['mean_mb']} | {v['samples']} |")
+    return "\n".join(lines) + "\n"
+
+
+def reads_by_script(events):
+    out = collections.defaultdict(collections.Counter)
+    for site_rows in surface_counts(events).values():
+        for (_origin, script), members in site_rows.items():
+            out[script].update(members)
+    return dict(out)
+
+
+def render_channels(channels, costs):
+    if not channels:
+        return "## Channels\n\nno channels.json (undriven arm): POST counts are in Cost.\n"
+    watched = {public_endpoint(ep).split("/", 1)[0] for ep in channels["endpoints"]}
+    mine, other = 0, collections.Counter()
+    for ep, n in (costs or {}).get("posts", {}).items():
+        host = public_host(ep.split("/", 1)[0])
+        if host in watched:
+            mine += n
+        else:
+            other[host] += n
+    lines = ["## Channels", "",
+             f"captured {channels['posts_captured']} of {mine} POSTs in the netlog "
+             f"({channels['posts_missing']} without a body)", ""]
+    if other:
+        lines += [f"{sum(other.values())} POSTs to other hosts: {', '.join(sorted(other))}", ""]
+    for ep, v in sorted((public_endpoint(k), v) for k, v in channels["endpoints"].items()):
+        if "sjd" in v:  # "decoded 0" must show: a missing decoder or a bad key is not silence
+            lines += [f"sjd beacons on `{ep}`: decoded {v['sjd']['decoded']}, failed {v['sjd']['failed']}", ""]
+    lines += ["| endpoint | count | bytes | kinds | field | count | classes |", "|---|---|---|---|---|---|---|"]
+    for ep, v in sorted(((public_endpoint(k), v) for k, v in channels["endpoints"].items()), key=lambda x: -x[1]["count"]):
+        kinds = ", ".join(f"{k} {n}" for k, n in sorted(v["kinds"].items()))
+        rows = sorted(v["fields"].items()) or [("", {"count": "", "classes": {}})]
+        for i, (f, fv) in enumerate(rows):
+            head = f"| `{ep}` | {v['count']} | {v['bytes']} | {kinds} |" if i == 0 else "| | | | |"
+            cls = ", ".join(f"{c} {n}" for c, n in sorted(fv["classes"].items()))
+            lines.append(f"{head} `{f}` | {fv['count']} | {cls} |" if f else f"{head} | | |")
+    lines += ["", "| socket | sent | received | bytes sent | bytes received | topics |", "|---|---|---|---|---|---|"]
+    for ws, v in sorted(((public_endpoint(k), v) for k, v in channels.get("ws", {}).items()), key=lambda x: x[0]):
+        topics = ", ".join(f"`{t}` {tv['count']}" for t, tv in sorted(v["topics"].items()))
+        lines.append(f"| `{ws}` | {v['frames_sent']} | {v['frames_received']} | {v['bytes_sent']} | {v['bytes_received']} | {topics} |")
+    return "\n".join(lines) + "\n"
+
+
+def render_matches(matches):
+    if not matches:
+        return "## Surfaces sent\n\nno matches.json.\n"
+
+    def table(rows):
+        out = ["| endpoint | field | surface | encoding | count |", "|---|---|---|---|---|"]
+        out += [f"| `{public_endpoint(m['endpoint'])}` | `{m['field']}` | {m['surface']} | {m['encoding']} | {m['count']} |" for m in rows]
+        return out
+    lines = ["## Surfaces sent", ""] + table([m for m in matches if not m["weak"]])
+    lines += ["", "Weak matches (a number below 100: may equal a surface by chance)", ""]
+    lines += table([m for m in matches if m["weak"]])
+    return "\n".join(lines) + "\n"
+
+
+def render_join(channels, matches, reads):
+    if not channels:
+        return ""
+    sent = collections.defaultdict(set)
+    for m in matches or []:
+        if not m["weak"]:
+            sent[m["endpoint"]].add(m["surface"])
+    by_script = collections.defaultdict(list)
+    for ep, v in channels["endpoints"].items():
+        for script in v["initiators"]:
+            by_script[script].append(ep)
+    lines = ["## Surface, script, channel", "", "| script | reads (top 8) | sends to | surfaces carried |", "|---|---|---|---|"]
+    for script, eps in sorted(by_script.items()):
+        top = ", ".join(f"{k} {n}" for k, n in (reads.get(script) or collections.Counter()).most_common(8))
+        carried = ", ".join(sorted(set().union(*(sent[e] for e in eps))))
+        lines.append(f"| `{public_endpoint(script)}` | {top} | {', '.join(f'`{public_endpoint(e)}`' for e in sorted(eps))} | {carried} |")
+    return "\n".join(lines) + "\n"
+
+
+def _load_json(path):
+    if not path:
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def render(events, requests, cookies, buffer=None, intl=None):
@@ -477,15 +771,33 @@ def render(events, requests, cookies, buffer=None, intl=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("trace")
+    ap.add_argument("trace", help="trace JSON, or - for a trace-less arm")
     ap.add_argument("netlog")
     ap.add_argument("--cookies")
+    ap.add_argument("--ram")
+    ap.add_argument("--channels")
+    ap.add_argument("--matches")
+    ap.add_argument("--site", default="facebook")
     a = ap.parse_args()
+    try:
+        use_site(sites.load(a.site))
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
     cookies = load_cookie_names(a.cookies) if a.cookies else []
-    data = load_trace(a.trace)
-    print(render(events_of(data), load_requests(a.netlog), cookies, buffer_note(data),
-                 intl_counts(all_events(data))), end="")
+    data = None if a.trace == "-" else load_trace(a.trace)
+    events = events_of(data) if data else []
+    print(render(events, load_requests(a.netlog), cookies, buffer_note(data) if data else None,
+                 intl_counts(all_events(data)) if data else None), end="")
+    costs = load_costs(a.netlog)
+    ch, mt = _load_json(a.channels), _load_json(a.matches)
+    print(render_costs(costs))
+    print(render_cpu(cpu_by_script(all_events(data) if data else [])))
+    print(render_ram(ram_summary(a.ram) if a.ram else None))
+    print(render_channels(ch, costs))
+    print(render_matches(mt))
+    print(render_join(ch, mt, reads_by_script(events)), end="")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

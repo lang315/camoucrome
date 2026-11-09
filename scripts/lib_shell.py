@@ -20,8 +20,10 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 # CI's runner is a service with none of these; a hand-run shell on the build box inherits them from WSLg, and with
@@ -143,6 +145,16 @@ def layout(environ=None, osname=None):
 # first launch.
 STDERR_LOG = os.path.join(tempfile.gettempdir(),
                           f"camoucrome_verify_stderr.{os.getpid()}.log")
+
+def read_stderr():
+    """Guarded read of this session's browser stderr. launch() truncates the log per launch, so a read sees only its
+    own run. Returns (text, None), or (None, the fault): any fault must become a FAIL row, not an exception."""
+    try:
+        with open(STDERR_LOG, "rb") as handle:
+            return handle.read().decode("utf-8", "replace"), None
+    except Exception as exc:  # noqa: BLE001
+        return None, exc
+
 
 # content_shell has no --headless switch; --ozone-platform=headless is the
 # equivalent. This is the default so that every call written before Task 8
@@ -399,6 +411,16 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
     raise RuntimeError(f"{name} opened no DevTools endpoint within 30s")
 
 
+def headed_premise(display, platform=None, answers=None):
+    """Why a headed launch cannot run here, or None. Only Linux needs an X server: Windows and macOS draw
+    without one (f0d9dd2 applied the check everywhere, so L4 never ran on the Windows host)."""
+    platform = platform or sys.platform
+    answers = answers or x_server_answers
+    if platform.startswith("linux") and not answers(display):
+        return f"no X server answers on DISPLAY={display!r}"
+    return None
+
+
 def x_server_answers(display, timeout=3.0, sock_dir="/tmp/.X11-unix"):
     """True when an X server on this machine answers a connection setup request for DISPLAY (":N" or ":N.S").
     A socket that accepts and never answers is not a server: on 2026-10-29 the box's WSLg X0 did exactly that, and a headed
@@ -461,15 +483,85 @@ def gpu_gate_line(proc, osname=None, reader=None):
     return None if n == 0 else f"UNMEASURED gpu-crash={'unknown' if n is None else n}"
 
 
+def _mark_unmeasured(line):
+    """Prints an UNMEASURED line and makes the process exit 3 at the end (see _exit_if_unmeasured)."""
+    print(line, flush=True)
+    if not _UNMEASURED:
+        import atexit
+        atexit.register(_exit_if_unmeasured, _UNMEASURED)
+    _UNMEASURED.append(line)
+
+
+# content_shell logs the first when the zygote's ForkRequest returns no pid (error_code=1002 is
+# LAUNCH_RESULT_SUCCESS reused by OnProcessLaunchFailed) and the second when GPU fallback runs out.
+GPU_FATAL = ("GPU process isn't usable", "GPU process launch failed")
+
+
+def gpu_fatal_line(proc):
+    """The stderr line that says the browser died of an unusable GPU process, else None. With a proc,
+    it counts only after the proc has EXITED: its CDP socket closes a moment before that, so wait up to 2 s."""
+    if proc is not None:
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            return None
+    text, _ = read_stderr()
+    for line in (text or "").splitlines():
+        if any(marker in line for marker in GPU_FATAL):
+            return line.strip()
+    return None
+
+
+def launch_and_prime(start, prime, out=print):
+    """(proc, prime(proc)). start() launches; prime(proc) is the first CDP use, with nothing measured yet.
+
+    One relaunch when the first attempt died of an unusable GPU process (a 1-in-53 abort about 2 s after
+    launch, after launch() had returned). Never for another failure, never after prime() returned, so no
+    result is ever discarded. A second death is UNMEASURED."""
+    for attempt in (1, 2):
+        proc = None
+        try:
+            proc = start()
+            return proc, prime(proc)
+        except Exception:
+            line = gpu_fatal_line(proc)
+            if proc is not None:
+                shutdown(proc)
+            if line is None:
+                raise
+            if attempt == 1:
+                out(f"RELAUNCH: browser died at startup: {line}")
+            else:
+                _mark_unmeasured(f"UNMEASURED relaunched browser died at startup too: {line}")
+                raise
+
+
+def attach(proc, setup=None):
+    """The prime for launch_and_prime when a script keeps one Playwright connection for its whole run.
+
+    Connects, takes the first page, runs setup(page) (page load or script install, nothing measured yet) and
+    returns a handle with .browser .context .page; the caller measures on it and calls .close() before
+    shutdown(). A failure here stops Playwright and raises, so launch_and_prime sees it."""
+    from playwright.sync_api import sync_playwright
+
+    pw = sync_playwright().start()
+    try:
+        browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
+        context = browser.contexts[0]
+        page = context.pages[0] if context.pages else context.new_page()
+        if setup is not None:
+            setup(page)
+    except BaseException:
+        pw.stop()
+        raise
+    return types.SimpleNamespace(browser=browser, context=context, page=page, close=pw.stop)
+
+
 def shutdown(proc):
     """Stops the browser and waits for it, so the next launch starts clean."""
     line = gpu_gate_line(proc)
     if line:
-        print(line, flush=True)
-        if not _UNMEASURED:
-            import atexit
-            atexit.register(_exit_if_unmeasured, _UNMEASURED)
-        _UNMEASURED.append(line)
+        _mark_unmeasured(line)
     proc.terminate()
     try:
         proc.wait(timeout=15)
@@ -520,10 +612,12 @@ def session(config, expressions, navigate_to=None, shell=None, extra_flags=None,
     """
     proc = None
     try:
-        proc = launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
-                      preset=preset,
-                      debug_port=debug_port, sandbox=sandbox)
-        return evaluate(proc, expressions, navigate_to, cdp=cdp), None
+        proc, values = launch_and_prime(
+            lambda: launch(config, shell=shell, extra_flags=extra_flags, strict=strict,
+                           preset=preset,
+                           debug_port=debug_port, sandbox=sandbox),
+            lambda p: evaluate(p, expressions, navigate_to, cdp=cdp))
+        return values, None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:

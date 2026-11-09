@@ -338,6 +338,19 @@ def test_the_version_gate():
     assert ml.version_problems_for({"S": "157.0.8100.1", "F": "157.0.8100.1"}, "156.0.8078.48", aa=True) == []
 
 
+def test_the_stock_arm_may_be_another_patch_of_the_pins_build():
+    pin = "156.0.8078.48"
+    assert ml.version_problems_for({"S": "156.0.8078.80", "F": pin, "N": pin, "S2": pin}, pin, aa=False) == []
+    assert ml.version_problems_for({"S": "156.0.8079.1", "F": pin}, pin, aa=False)
+
+
+def test_every_fork_arm_must_be_the_pin_exactly():
+    pin = "156.0.8078.48"
+    for arm in ("F", "N", "S2"):
+        assert ml.version_problems_for({"S": pin, "F": pin, arm: "156.0.8078.80"}, pin, aa=False) == [
+            f"{arm} is 156.0.8078.80, the pin is {pin}"]
+
+
 def test_resume_also_refuses_a_rebuilt_fork_or_an_edited_site_list():
     old = {"started": "T0", "rounds": 5, "flags": {"aa": False}, "versions": {"S": "1", "F": "2"}, "sites_per_vendor": {"cloudflare": 3}}
     same = {"rounds": 5, "started": "T1", "flags": {"aa": False}, "versions": {"S": "1", "F": "2"}, "sites_per_vendor": {"cloudflare": 3}}
@@ -452,7 +465,7 @@ def run_lab(tmp_path, *extra):
     lab = Lab()
     sites = write_sites(tmp_path, base=lab.base, vendors=("cloudflare", "perimeterx"), per=1)
     code = ml.main(["run", "--out", str(tmp_path), "--rounds", "3", "--sites", sites, "--stock-exe", CHROME, "--fork-exe", CHROME,
-                    "--no-identity", "--dwell", "0.2", "--settle", "1", "--min-gap", "0", *extra])
+                    "--no-identity", "--no-seed-stock", "--dwell", "0.2", "--settle", "1", "--min-gap", "0", *extra])
     lab.shutdown()
     run = next((tmp_path / "layer3").iterdir())
     return code, run, lab
@@ -770,26 +783,26 @@ def test_no_row_names_an_echo_service_or_an_address():
 
 # --- first-visitor design (px-arms plan): the pure parts; the run wiring needs the host and is not tested here ---
 
-CFG = {"canvas:seed": 7, "audio:seed": 9, "screen.width": 1920, "screen.height": 1080, "window.outerWidth": 1500,
+CFG = {"canvas:seed": 7, "screen.width": 1920, "screen.height": 1080, "window.outerWidth": 1500,
        "window.innerHeight": 900, "navigator.hardwareConcurrency": 8}
 
 
 def test_parse_drop_validates_the_arm_and_the_shape():
     assert ml.parse_drop("N=canvas:seed") == ("N", "canvas:seed")
     assert ml.parse_drop("S2=screen.") == ("S2", "screen.")
-    for bad in ("canvas:seed", "X=canvas:seed", "N=", "S=audio:seed"):  # S is stock: no config to drop from
+    for bad in ("canvas:seed", "X=canvas:seed", "N=", "S=canvas:seed"):  # S is stock: no config to drop from
         with pytest.raises(SystemExit):
             ml.parse_drop(bad)
 
 
 def test_drop_keys_removes_keys_and_prefixes_for_the_named_arm_only():
-    drops = {"keys": [("N", "canvas:seed"), ("N", "audio:seed")], "prefixes": [("S2", "screen."), ("S2", "window.")]}
+    drops = {"keys": [("N", "canvas:seed")], "prefixes": [("S2", "screen."), ("S2", "window.")]}
     n = ml.drop_keys(CFG, "N", drops)
-    assert set(CFG) - set(n) == {"canvas:seed", "audio:seed"}
+    assert set(CFG) - set(n) == {"canvas:seed"}
     s2 = ml.drop_keys(CFG, "S2", drops)
-    assert set(s2) == {"canvas:seed", "audio:seed", "navigator.hardwareConcurrency"}
+    assert set(s2) == {"canvas:seed", "navigator.hardwareConcurrency"}
     assert ml.drop_keys(CFG, "F", drops) == CFG
-    assert len(CFG) == 7  # the input is not changed
+    assert len(CFG) == 6  # the input is not changed
     assert ml.drop_keys(CFG, "N", {"keys": [], "prefixes": []}) == CFG
 
 

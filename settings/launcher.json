@@ -42,13 +42,19 @@
    "--no-first-run",
    "--no-default-browser-check"
   ],
+  "light_args": [],
+  "why_light_args": "Approach B (2026-10-31): browser-internal flags appended after base_args when a client's light option is on; only flags with gate pass and measured kept in settings/light_flags.json (scripts/test_light_flags.py). Off by default, so browser_argv_expected is unchanged.",
   "window_size_arg": "--window-size={width},{height}",
+  "why_window_size_arg": "window.innerWidth/innerHeight are not config keys: Chrome takes them from this real window. When the effective config sets window.outerWidth or window.outerHeight, the launch refuses to start with a window larger than a set outer value (equal is allowed); without a window Chrome keeps its default size, which is not checked: innerWidth > outerWidth is a state no real browser shows. camoucrome.gen emits launch.window within its outer size.",
   "window_position_arg": "--window-position={x},{y}",
   "dpr_arg": "--force-device-scale-factor={dpr}",
   "proxy_arg": "--proxy-server={server}",
   "proxy_bypass_arg": "--proxy-bypass-list={bypass}",
   "proxy_option_fields": ["server", "bypass", "username", "password"],
   "why_proxy_arg": "Measured 2026-10-24 (Python, Node, Go): launch(proxy=...) alone reaches the browser as nothing. ignore_default_args drops Playwright's default argv and --proxy-server is one of its defaults, so the traffic went out on the real address. The launcher adds the flag itself (server only, never credentials: a process list shows argv) and still passes the proxy option to the driver, which answers the 407 with the username and password over its own auth path. The bypass list is Playwright's comma form; Chrome takes it joined by semicolons.",
+  "why_geolocation_permission": "When the effective config carries both geolocation:latitude and geolocation:longitude the launch adds \"geolocation\" to the context's permissions option (merged with the caller's list, no duplicate), so a page's getCurrentPosition is granted the configured point instead of prompting; without both keys nothing is added. A proxy given without geoip warns that timezone, locale and geolocation are not checked against the exit IP.",
+  "pin_cpu_cores": {"option": "pin_cpu_cores", "default": true},
+  "why_pin_cpu_cores": "navigator.hardwareConcurrency is a claim, and a page can measure the real count by timing parallel workers, so a claim above the host's cores is snapped down by the generator (gen.py host_cores) and a claim below them is enforced: the process that spawns Chrome (the Node process, or the patchright/playwright-go driver subprocess) is pinned to that many random CPUs of its allowed set right before the launch call and restored right after, and Chrome and its children inherit the mask. Linux sched_setaffinity (taskset -a) and Windows SetProcessAffinityMask do it; macOS has no affinity API, so it is a no-op there. A pin that cannot be set raises rather than launching unpinned; a client option of the same name (pin_cpu_cores, PinCPUCores, pinCpuCores) turns it off.",
   "env": {
    "config": "CAMOU_CONFIG",
    "config_chunks": "CAMOU_CONFIG_{n}",
@@ -80,7 +86,7 @@
     "Windows": "settings/fontconfig/windows.conf",
     "macOS": "settings/fontconfig/macos.conf"
    },
-   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A FONTCONFIG_FILE in the parent environment is never inherited.",
+   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A Windows or macOS claim on a Linux host with no fonts dir refuses to launch (host fonts would be a tell); other hosts ignore FONTCONFIG_FILE. A FONTCONFIG_FILE in the parent environment is never inherited.",
    "layout": "<root>/fonts/<family>/*.ttf and <root>/settings/fontconfig/<os>.conf, the same in the repo, the archive and the box's client copy; the conf's <dir> is relative (../../fonts)"
   },
   "native_fonts": {
@@ -113,11 +119,10 @@
   }
  },
  "per_instance_seeds": {
-  "why": "A preset is a device identity; these are per instance and never part of it (preset_loader.cc emits none). Each client draws them fresh, non-zero uint32, unless the caller pins them. A kept profile keeps its seeds: profile_seeds(user_data_dir) draws them once into profile_file and reads them back on every later launch, so the same profile shows the same canvas, audio and device-ID fingerprint each session. A damaged file is an error, never a redraw.",
+  "why": "A preset is a device identity; these are per instance and never part of it (preset_loader.cc emits none). Each client draws them fresh, non-zero uint32, unless the caller pins them. A kept profile keeps its seeds: profile_seeds(user_data_dir) draws them once into profile_file and reads them back on every later launch, so the same profile shows the same canvas and device-ID fingerprint each session. A damaged file is an error, never a redraw. audio:seed was removed on 2026-11-03 (owner ruling after M0: seeded audio values are values no stock run produced); a kept profile's file may still hold it, and it is ignored.",
   "profile_file": "camoucrome-seeds.json",
   "keys": [
    "canvas:seed",
-   "audio:seed",
    "mediaDevices:seed"
   ]
  }

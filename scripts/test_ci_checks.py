@@ -71,3 +71,8 @@ def test_build_verify_syncs_scripts_and_settings_with_delete():
     t = text("build-verify.yml")
     assert "rsync -a --delete --exclude __pycache__ scripts/ " in t
     assert "rsync -a --delete settings/ " in t
+
+
+def test_run_prints_the_tail_of_a_failing_log():
+    # the row detail lines ("n=.. span=..") do not match FAIL|DIFF|Error, so without the tail a CI failure hides its numbers
+    assert 'tail -15 "/tmp/$1.log"' in text("build-verify.yml")

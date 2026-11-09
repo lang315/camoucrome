@@ -158,3 +158,28 @@ def test_d_pointer_touch_may_skip_v1():
 def test_unmeasured_lists_the_lines():
     assert w.unmeasured("PASS  a\nUNMEASURED session=0: x\nnote\n") == ["UNMEASURED session=0: x"]
     assert w.unmeasured("PASS  a\n") == []
+
+
+@pytest.mark.parametrize("have,ok", [
+    ("156.0.8078.48", True),
+    ("156.0.8078.79", True),
+    ("156.0.8079.48", False),
+    ("157.0.8103.15", False),
+    ("", False),
+])
+def test_control_may_differ_from_the_pin_in_the_patch_number_only(have, ok):
+    problem = w.control_problem(have, "156.0.8078.48")
+    assert (problem is None) == ok
+    if not ok:
+        assert problem == f"stock Chrome is {have}, the pin is 156.0.8078.48: the control is not the pin's build"
+
+
+def test_log_head_keeps_the_first_lines_and_the_stderr_tail():
+    out = "\n".join(f"line{i}" for i in range(30))
+    head = w.log_head(out, "a\nb\nc\nd\ne\nf\ng")
+    assert "line0" in head and "line11" in head and "line12" not in head
+    assert "--- stderr ---" in head and "g" in head and "\nb\n" not in head
+
+
+def test_log_head_of_a_silent_run_says_so():
+    assert "no output" in w.log_head("", "")

@@ -252,9 +252,13 @@ def check(label, result, log, base, min_methods=MIN_METHODS):
         expected |= {CONTRACT["launch"]["proxy_arg"].format(server=PROXY_URL),
                      CONTRACT["launch"]["proxy_bypass_arg"].format(bypass="<-loopback>")}
     unexpected, absent = argv_diff(got, expected, self_added)
+    # The probe reads the browser's argv from the process table; a second main process of the executable (a stray earlier
+    # run) makes that read a guess, so it is refused, not compared (2026-10-29: three patchright rows compared a stray's argv).
+    strays = result.get("strays", 0)
     rows["C4 argv == launcher.json expected set"] = (
-        bool(argv) and not hits and not unexpected and not absent,
-        f"hits={hits} unexpected={unexpected[:6]}{'...' if len(unexpected) > 6 else ''} absent={absent} argc={len(argv)}")
+        bool(argv) and not strays and not hits and not unexpected and not absent,
+        f"hits={hits} unexpected={unexpected[:6]}{'...' if len(unexpected) > 6 else ''} absent={absent} argc={len(argv)}"
+        + (f" stray browser process: {strays} other main process(es) of the executable, argv not trusted" if strays else ""))
     # Measured 2026-09-10: BOTH drivers run a user's add_init_script in the
     # main world (typeof number) -- by design, that is what the caller asked
     # for. What must not appear is anything of the driver's own: own-name
@@ -292,6 +296,22 @@ def judge_row(label, expected, opts, result, log, base):
     return ok, lines
 
 
+def missing_probe(cmd):
+    """Why an arm cannot run, or None: its executable is an absolute path that does not exist (the host had no
+    rodclient probe on 2026-11-03). A bare name is left to PATH; run_probe reports it if it fails."""
+    exe = cmd[0]
+    if os.path.isabs(exe) and not os.path.isfile(exe):
+        return f"probe binary {exe} does not exist"
+    return None
+
+
+def final_verdict(verdict, unmeasured):
+    """A defect is never reported as a missing premise: FAIL outranks UNMEASURED."""
+    if not verdict:
+        return "FAIL"
+    return "UNMEASURED" if unmeasured else "ALL_PASS"
+
+
 def main():
     global PROXY_URL
     url, srv = serve()
@@ -303,7 +323,13 @@ def main():
     print(f"baseline (no driver): {len(base['windowKeys'])} window keys, webdriver={base['webdriver']}, "
           f"stack median {statistics.median(base['timesMs']):.1f} ms, ua ...{base['ua'][-28:]}")
     verdict = True
+    unmeasured = False
     for label, expected, cmd, *opts in DRIVERS:
+        why = missing_probe(cmd)
+        if why:
+            print(f"UNMEASURED  {label}: {why}")
+            unmeasured = True
+            continue
         PROXY_SEEN.clear()
         result, log = run_probe(cmd + proxy_args, url)
         if result is None:
@@ -314,8 +340,9 @@ def main():
         verdict &= ok
         print("\n".join(lines))
     srv.shutdown()
-    print("ALL_PASS" if verdict else "FAIL")
-    sys.exit(0 if verdict else 1)
+    final = final_verdict(verdict, unmeasured)
+    print(final)
+    sys.exit(0 if final == "ALL_PASS" else 1)
 
 
 if __name__ == "__main__":

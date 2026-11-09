@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,10 @@ import (
 
 // BaseArgs mirrors settings/launcher.json "launch.base_args".
 var BaseArgs = []string{"--no-first-run", "--no-default-browser-check"}
+
+// LightArgs mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BaseArgs
+// when Options.Light is set.
+var LightArgs = []string{}
 
 // CrashDumpsEnv mirrors settings/launcher.json launch.crash_dumps.env. A
 // crash's minidump holds the process's whole environment block, CAMOU_CONFIG
@@ -55,10 +60,13 @@ type Options struct {
 	ExtraArgs      []string
 	FontsDir       string       // the bundled font dir; default "fonts" beside the executable when present
 	Proxy          *Proxy       // nil = direct
+	Light          bool         // append LightArgs (approach B); independent of the generator's --light
 	GeoIP          string       // a DB-IP Lite / GeoLite2-layout .mmdb: Launch warns when timezone:id contradicts the exit IP
 	ExitIP         string       // skips the echo request
 	Python         string       // the interpreter with maxminddb and timezonefinder installed; default python3
 	Warn           func(string) // default: stderr
+	Permissions    []string     // Playwright's context permissions; Launch adds "geolocation" when the config carries coordinates
+	PinCPUCores    *bool        // nil = true: a navigator.hardwareConcurrency claim below the driver's CPUs pins the driver for the launch call (pin.go)
 }
 
 // Proxy mirrors Playwright's proxy option (settings/launcher.json launch.proxy_option_fields). The launcher puts
@@ -233,7 +241,8 @@ func claimedOS(o Options) string {
 
 // FontconfigFor is the FONTCONFIG_FILE for the claimed OS (contract
 // launch.fontconfig): the conf beside the bundled fonts dir, which lives
-// beside the executable in an archive. Linux claim or no fonts dir: "".
+// beside the executable in an archive. Linux or no claim, or no fonts dir: "";
+// BuildEnv turns the last into an error for a Windows/macOS claim on a Linux host.
 func FontconfigFor(o Options) string {
 	file, ok := FontconfigFiles[claimedOS(o)]
 	if !ok {
@@ -383,7 +392,14 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 	if o.Strict {
 		env["CAMOU_CONFIG_STRICT"] = "1"
 	}
-	if fc := FontconfigFor(o); fc != "" {
+	fc := FontconfigFor(o)
+	if fc == "" && hostOS == "Linux" {
+		// FONTCONFIG_FILE only matters where Chrome uses fontconfig; host fonts under a Windows/macOS claim are a tell.
+		if _, ok := FontconfigFiles[claimedOS(o)]; ok {
+			return nil, fmt.Errorf("%s claim on a Linux host needs the bundled fonts dir, but none was given and no fonts dir sits beside the executable", claimedOS(o))
+		}
+	}
+	if fc != "" {
 		if _, err := os.Stat(fc); err != nil {
 			return nil, fmt.Errorf("the fonts dir has no fontconfig for the claimed OS: %w", err)
 		}
@@ -404,6 +420,9 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 // page-visible surface off the compiled defaults (settings/launcher.json).
 func BuildArgs(o Options) []string {
 	args := append([]string{}, BaseArgs...)
+	if o.Light {
+		args = append(args, LightArgs...)
+	}
 	if o.Headless == nil || *o.Headless {
 		args = append(args, "--headless=new")
 	}
@@ -467,8 +486,24 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	if err := validateProxy(o.Proxy); err != nil {
 		return nil, err
 	}
+	keys, err := effectiveKeys(o.Config, o.Preset)
+	if err != nil {
+		return nil, err
+	}
+	ow, _ := keys["window.outerWidth"].(float64)
+	oh, _ := keys["window.outerHeight"].(float64)
+	// shortcut: no Window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
+	if o.Window != [2]int{} && ((ow != 0 && float64(o.Window[0]) > ow) || (oh != 0 && float64(o.Window[1]) > oh)) {
+		return nil, fmt.Errorf("window %v exceeds window.outerWidth/outerHeight [%v %v]: innerWidth/innerHeight would exceed the claimed outer size", o.Window, ow, oh)
+	}
 	if o.GeoIP != "" {
 		o.warn(CheckGeoIP(o))
+	} else if o.Proxy != nil {
+		o.warn([]string{"a proxy without geoip: timezone, locale and geolocation are not checked against the exit IP"})
+	}
+	perms := o.Permissions
+	if keys["geolocation:latitude"] != nil && keys["geolocation:longitude"] != nil && !slices.Contains(perms, "geolocation") {
+		perms = append(append([]string(nil), perms...), "geolocation")
 	}
 	env, err := BuildEnv(o, os.Environ())
 	if err != nil {
@@ -497,17 +532,30 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	if o.Headless != nil {
 		headless = *o.Headless
 	}
-	ctx, err := bt.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
-		ExecutablePath:       playwright.String(o.ExecutablePath),
-		Headless:             playwright.Bool(headless),
-		IgnoreAllDefaultArgs: playwright.Bool(true),
-		Env:                  env,
-		Args:                 BuildArgs(o),
-		Proxy:                proxyOption(o.Proxy),
-		// Otherwise a 1280x720 viewport is emulated through
-		// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
-		NoViewport: playwright.Bool(true),
-	})
+	var ctx playwright.BrowserContext
+	start := func() (err error) {
+		ctx, err = bt.LaunchPersistentContext(dir, playwright.BrowserTypeLaunchPersistentContextOptions{
+			ExecutablePath:       playwright.String(o.ExecutablePath),
+			Headless:             playwright.Bool(headless),
+			IgnoreAllDefaultArgs: playwright.Bool(true),
+			Env:                  env,
+			Args:                 BuildArgs(o),
+			Proxy:                proxyOption(o.Proxy),
+			Permissions:          perms,
+			// Otherwise a 1280x720 viewport is emulated through
+			// Emulation.setDeviceMetricsOverride, fighting screen.* and --window-size.
+			NoViewport: playwright.Bool(true),
+		})
+		return
+	}
+	if n, ok := keys["navigator.hardwareConcurrency"].(float64); ok && n >= 1 && n == float64(int(n)) && (o.PinCPUCores == nil || *o.PinCPUCores) {
+		err = pinned(int(n), start)
+		if err != nil && ctx != nil { // the launch worked but the mask was not restored: no browser may run unowned
+			ctx.Close()
+		}
+	} else {
+		err = start()
+	}
 	if err != nil {
 		remove()
 		return nil, err

@@ -63,9 +63,17 @@ jobs:
           rsync -a --delete --exclude '*.egg-info' --exclude node_modules --exclude __pycache__ client/ "$CLIENT/client/"
           rsync -a --delete settings/ "$CLIENT/settings/"
           rsync -a baselines/ "$CLIENT/baselines/"
+          # the pin: verify_host_oracle O4 reads $CLIENT/upstream.env (oracle_rules.read_pin); a copy from the
+          # day the box was set up held the 153 tag, so O4 expected 153 for a fork that reports 156
+          cp upstream.env "$CLIENT/upstream.env"
           rsync -a --delete --exclude __pycache__ scripts/ "$CLIENT/scripts/"
-          cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
+          cp scripts/verify_*.py scripts/lib_shell.py scripts/lib_argv.py scripts/lib_ws_server.py scripts/gpu_gate.py scripts/capture_host_oracle.py scripts/echo_server.py scripts/observe_report.py scripts/sp2b_analysis.py scripts/sp2e_analysis.py "$VERIFY/"
+          # observe_report imports the site profiles (scripts/sites + settings/sites); $VERIFY mirrors the host layout
+          rsync -a --delete --exclude __pycache__ scripts/sites/ "$VERIFY/sites/"
+          mkdir -p "$VERIFY/settings" && rsync -a --delete settings/sites/ "$VERIFY/settings/sites/"
           (cd "$CLIENT/client/python" && "$VERIFY/venv/bin/python3" -m pip install -q -e . 2>&1 | tail -1)
+          # observe_drive decodes facebook's sjd beacon (scripts/sites/facebook.py); without it the decode count reads "failed"
+          "$VERIFY/venv/bin/python3" -m pip install -q pycryptodome==3.23.0 2>&1 | tail -1
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
           export PATH=$HOME/depot_tools:$PATH
@@ -91,7 +99,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
-          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_check_patch_deps.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_observe_judge.py scripts/test_verify_observe.py 2>&1 | tail -1
+          "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_check_patch_deps.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_observe_judge.py scripts/test_verify_observe.py scripts/test_lib_ws_server.py scripts/test_measure_audio_text.py scripts/test_measure_observe_cost.py scripts/test_observer_live.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
           (cd client/go/rodclient && go test ./... 2>&1 | tail -2)
       - name: Go probe
@@ -108,7 +116,7 @@ jobs:
           rc=0
           # exit 3 is UNMEASURED (a premise the box cannot give, e.g. no X server for a headed launch): printed loudly, not a pass
           # and not a failure; a script whose FAIL rows exist exits 1 whatever else is unmeasured
-          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 && st=0 || st=$?; if [ $st -eq 0 ]; then tail -1 "/tmp/$1.log"; elif [ $st -eq 3 ]; then echo "UNMEASURED $1 (exit 3, not a pass)"; grep -E "UNMEASURED" "/tmp/$1.log" | head -4 || true; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; return 1; fi; }
+          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 && st=0 || st=$?; if [ $st -eq 0 ]; then tail -1 "/tmp/$1.log"; elif [ $st -eq 3 ]; then echo "UNMEASURED $1 (exit 3, not a pass)"; grep -E "UNMEASURED" "/tmp/$1.log" | head -4 || true; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; echo "-- tail of $1.log:"; tail -15 "/tmp/$1.log"; return 1; fi; }
           # The scripts and their order come from scripts/ci_verify_set.txt (every verify_*.py is listed there, run or skipped
           # with a reason, and scripts/test_ci_verify_set.py fails on one that is not). A `run` line may carry KEY=VAL words:
           # verify_sp6b_generator takes CAMOU_GEN_N=4 (seeds 1000..1003 include a DPR 1.5 identity and 1.25 identities of
@@ -123,7 +131,7 @@ jobs:
           done < <(python3 "$GITHUB_WORKSPACE/scripts/ci_verify_set.py" list)
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md): a missing arg fails the job, because a
           # skipped verify_observe left the observer's checks out and the job green
-          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; else echo "FAILED verify_observe.py: camou_observe = true is not in out/Default/args.gn"; rc=1; fi
+          if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; run verify_observer_page.py || rc=1; else echo "FAILED verify_observe.py: camou_observe = true is not in out/Default/args.gn"; rc=1; fi
           exit $rc
       - name: logs
         if: always()

@@ -1,0 +1,163 @@
+diff --git a/components/attribution_reporting/features.cc b/components/attribution_reporting/features.cc
+index b199e7682a..d667c37684 100644
+--- a/components/attribution_reporting/features.cc
++++ b/components/attribution_reporting/features.cc
+@@ -9,6 +9,7 @@
+ namespace attribution_reporting::features {
+ 
+ // Controls whether the Conversion Measurement API infrastructure is enabled.
+-BASE_FEATURE(kConversionMeasurement, base::FEATURE_ENABLED_BY_DEFAULT);
++// camoucrome (finch-stable-defaults): off, as in stock Chrome 156 (AttributionReportingDeprecation).
++BASE_FEATURE(kConversionMeasurement, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ }  // namespace attribution_reporting::features
+diff --git a/net/base/features.cc b/net/base/features.cc
+index 2876df4285..be67542942 100644
+--- a/net/base/features.cc
++++ b/net/base/features.cc
+@@ -874,12 +874,14 @@ BASE_FEATURE(kQuicUseReadMultiple, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE(kEnableUdpGro, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+-BASE_FEATURE(kConfigureQuicHints, base::FEATURE_DISABLED_BY_DEFAULT);
++// camoucrome (finch-stable-defaults): on with stock Chrome 156's hints (IncreaseHttp3Usage), so the
++// first navigation to google.com negotiates h3 as it does in stock.
++BASE_FEATURE(kConfigureQuicHints, base::FEATURE_ENABLED_BY_DEFAULT);
+ BASE_FEATURE_PARAM(std::string,
+                    kQuicHintHostPortPairs,
+                    &kConfigureQuicHints,
+                    /*name=*/"quic_hints",
+-                   /*default_value=*/"");
++                   /*default_value=*/"google.com,443,443,www.google.com,443,443");
+ BASE_FEATURE_PARAM(std::string,
+                    kWildcardQuicHintHostPortPairs,
+                    &kConfigureQuicHints,
+diff --git a/services/network/public/cpp/features.cc b/services/network/public/cpp/features.cc
+index fbdd973c66..b3818de425 100644
+--- a/services/network/public/cpp/features.cc
++++ b/services/network/public/cpp/features.cc
+@@ -351,7 +351,10 @@ BASE_FEATURE(kCloneDevToolsConnectionOnlyIfRequested,
+ 
+ // Enables unload handler deprecation via Permissions-Policy.
+ // https://crbug.com/1324111
+-BASE_FEATURE(kDeprecateUnload, base::FEATURE_DISABLED_BY_DEFAULT);
++// camoucrome (finch-stable-defaults): on with ByBucket on and rollout_percent 100 (its default), as in
++// stock Chrome 156. UnloadDeprecationAllowedForOrigin then returns true for every http(s) host, so
++// the allowlist (ByAllowList) never decides anything and is left off.
++BASE_FEATURE(kDeprecateUnload, base::FEATURE_ENABLED_BY_DEFAULT);
+ // If < 100, each user experiences the deprecation on this % of origins. Which
+ // origins varies by which bucket the user is in. This parameter only takes
+ // effect if DeprecateUnloadByBucket is enabled. They are are separated so that
+@@ -381,14 +384,14 @@ BASE_FEATURE_PARAM(std::string,
+ // another study to control what fraction of users experience a specific value
+ // of `kDeprecateUnloadPercent`. Doing both in one study greatly complicates the
+ // study because we must deal in 100 1% groups.
+-BASE_FEATURE(kDeprecateUnloadByBucket, base::FEATURE_DISABLED_BY_DEFAULT);
++BASE_FEATURE(kDeprecateUnloadByBucket, base::FEATURE_ENABLED_BY_DEFAULT);
+ // This buckets users, with users in each bucket having a consistent experience
+ // of the unload deprecation rollout.
+ BASE_FEATURE_PARAM(int,
+                    kDeprecateUnloadBucket,
+                    &kDeprecateUnloadByBucket,
+                    "rollout_bucket",
+-                   0);
++                   51);
+ 
+ // When enabled, a `Sec-Fetch-Frame-Top` header will be emitted on
+ // outgoing requests.
+@@ -405,7 +408,8 @@ BASE_FEATURE(kAvoidCorsURLLoaderRestartOnRedirect,
+ 
+ // https://github.com/patcg-individual-drafts/topics
+ // Kill switch for the Topics API.
+-BASE_FEATURE(kBrowsingTopics, base::FEATURE_ENABLED_BY_DEFAULT);
++// camoucrome (finch-stable-defaults): off, as in stock Chrome 156 (TopicsDeprecation).
++BASE_FEATURE(kBrowsingTopics, base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ 
+ BASE_FEATURE(kIncreaseCookieAccessCacheSize, base::FEATURE_ENABLED_BY_DEFAULT);
+diff --git a/third_party/blink/renderer/platform/runtime_enabled_features.json5 b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+index 32931ee250..9f504cfbaf 100644
+--- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
++++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
+@@ -318,8 +318,14 @@
+     },
+     {
+       // Interest Group JS API/runtimeflag.
++      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
++      // variations seed turns it off. "test" (enabled only by --enable-blink-test-features) makes the
++      // generated base feature default disabled and leaves --enable-features working; "experimental"
++      // would also turn it on under --enable-experimental-web-platform-features, which stock ignores.
++      // "stable" cannot be turned off through base_feature_status (enabled_or_overridden keeps the
++      // flag on while the base feature is not overridden).
+       name: "AdInterestGroupAPI",
+-      status: "stable",
++      status: "test",
+       origin_trial_feature_name: "AdInterestGroupAPI",
+       implied_by: ["Fledge", "Parakeet"],
+       public: true,
+@@ -736,8 +742,14 @@
+       status: "stable",
+     },
+     {
++      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
++      // variations seed turns the base feature off. base_feature is "none": content/child/
++      // runtime_features.cc turns the flag on or off only when the base feature is enabled or
++      // overridden, so a default-disabled base feature leaves a "stable" flag on. Status decides:
++      // "test", not "experimental", which --enable-experimental-web-platform-features would turn on
++      // (stock ignores that switch for these).
+       name: "AttributionReporting",
+-      status: "stable",
++      status: "test",
+       base_feature: "none",
+       public: true,
+     },
+@@ -3143,8 +3155,14 @@
+       status: "stable",
+     },
+     {
++      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
++      // variations seed turns it off. "test" (enabled only by --enable-blink-test-features) makes the
++      // generated base feature default disabled and leaves --enable-features working; "experimental"
++      // would also turn it on under --enable-experimental-web-platform-features, which stock ignores.
++      // "stable" cannot be turned off through base_feature_status (enabled_or_overridden keeps the
++      // flag on while the base feature is not overridden).
+       name: "Fledge",
+-      status: "stable",
++      status: "test",
+       public: true,
+     },
+     {
+@@ -6534,10 +6552,16 @@
+       status: "experimental",
+     },
+     {
++      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
++      // variations seed turns the base feature off. base_feature is "none": content/child/
++      // runtime_features.cc turns the flag on or off only when the base feature is enabled or
++      // overridden, so a default-disabled base feature leaves a "stable" flag on. Status decides:
++      // "test", not "experimental", which --enable-experimental-web-platform-features would turn on
++      // (stock ignores that switch for these).
+       name: "TopicsAPI",
+       base_feature: "none",
+       public: true,
+-      status: "stable",
++      status: "test",
+     },
+     // This feature allows touch dragging and a context menu to occur
+     // simultaneously, with the assumption that the menu is non-modal.  Without
+@@ -7596,8 +7620,14 @@
+       // JS DOMParser API to parse XML, and usage of XMLHttpRequest
+       // with its responseXML document.
+       // https://crbug.com/466303347
++      // camoucrome (finch-stable-defaults): off by default, as in stock Chrome 156, where its
++      // variations seed turns it off. "test" (enabled only by --enable-blink-test-features) makes the
++      // generated base feature default disabled and leaves --enable-features working; "experimental"
++      // would also turn it on under --enable-experimental-web-platform-features, which stock ignores.
++      // "stable" cannot be turned off through base_feature_status (enabled_or_overridden keeps the
++      // flag on while the base feature is not overridden).
+       name: "XMLRustForNonXslt",
+-      status: "stable",
++      status: "test",
+     },
+     {
+       name: "XMLSerializerConsistentDefaultNsDeclMatching",

@@ -111,6 +111,8 @@ def gpu_crash_count(ctx):
 
 def one(pw, arm, mode):
     udd = tempfile.mkdtemp(prefix="s5-", dir=r"D:\camou-win\cn\s5\p")
+    if arm.stock:
+        m2.SEED.seed(udd)  # this script keeps its own profile directory: it gets the variations seed too
     rec = {"arm": arm.name, "mode": mode}
     try:
         with m2.serve(PAGE) as url, m2.opened(pw, arm, mode, user_data_dir=udd) as ctx:
@@ -148,19 +150,19 @@ def one(pw, arm, mode):
 def main():
     out, n, arms = sys.argv[1], int(sys.argv[2]), sys.argv[3].split(",")
     os.makedirs(r"D:\camou-win\cn\s5\p", exist_ok=True)
-    stock = os.path.join(m2.STOCK_APP, "chrome.exe")
+    stock = os.path.join(os.environ.get("CAMOU_STOCK_APP", m2.STOCK_APP), "chrome.exe")
     # The run is unattended on the owner's RDP desktop, where the window can be occluded or the
     # client minimised; Chrome then throttles the page's timers to about one wake a minute and the
     # cells never finish (smoke2, 2026-10-13). Every arm gets the same three scheduling flags.
     # They change when timers fire, not what the speech engine reports.
     awake = ["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
              "--disable-backgrounding-occluded-windows"]
-    table = {"stock": m2.Arm("stock", stock, None, awake),
-             "stock-fr": m2.Arm("stock-fr", stock, None, ["--lang=fr", *awake]),
-             "stock-rates": m2.Arm("stock-rates", stock, None, awake),
-             "stock-paused": m2.Arm("stock-paused", stock, None, awake),
+    table = {"stock": m2.Arm("stock", stock, None, awake, stock=True),
+             "stock-fr": m2.Arm("stock-fr", stock, None, ["--lang=fr", *awake], stock=True),
+             "stock-rates": m2.Arm("stock-rates", stock, None, awake, stock=True),
+             "stock-paused": m2.Arm("stock-paused", stock, None, awake, stock=True),
              "fork": m2.Arm("fork", os.environ.get("CAMOU_FORK_EXE", ""), m2.identity(1), awake)}
-    with sync_playwright() as pw, open(out, "a", encoding="utf-8") as f:
+    with m2.seeded_control(stock), sync_playwright() as pw, open(out, "a", encoding="utf-8") as f:
         for i in range(n):
             for a in arms:
                 rec = one(pw, table[a], "headed")

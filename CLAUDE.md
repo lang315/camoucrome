@@ -10,14 +10,24 @@ Camoucrome is an anti-detect fork of **Chromium** — the Chromium counterpart t
 plus diffs in `patches/` — that `scripts/apply.sh` lays onto a pristine Chromium
 checkout to produce a fingerprint-spoofing browser.
 
-The change set is generated against Chromium **`1aa07b6387`, the Chrome stable
-tag `157.0.8103.15`** (`upstream.env` holds the full SHA and the tag;
+The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
+tag `156.0.8078.48`** (`upstream.env` holds the full SHA and the tag;
 `scripts/apply.sh` refuses any other HEAD). The pin is a *stable tag*, not
-`main` and not a branch head, so the fork reports a version real users have;
-re-pin to the newest stable tag whenever chromiumdash's stable milestone moves
-(`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`, and
-`2026-10-repin.md` for what one costs). **The next re-pin is due by
-2026-11-17**, when 158 goes stable. The build box's checkout is on branch
+`main` and not a branch head, so the fork reports a version real users have
+(`docs/superpowers/measurements/2026-09-09-sp6a-version-honesty.md`). Since
+2026-11-03 the pin may lag: it stays while it is at most 3 milestones behind
+chromiumdash's stable milestone, and a re-pin then goes straight to the
+newest stable tag (Chrome stable moves every two weeks, and a re-pin per
+milestone cost more than the feature work; spec
+`docs/superpowers/specs/2026-11-03-camoufox-port-pivot-design.md`,
+`2026-10-repin.md` for what one costs). There is no re-pin for a patch
+release. A host run's stock control (`windows_verify_set.py`,
+`measure_step2.py`, `measure_canvas_noise.py`, `measure_layer3.py`) may be
+another patch of the pin's build, never another build; the fork must be the
+pin exactly. The host's copy of that control is kept at
+`D:\camou-win\stock\<version>` (point `CAMOU_STOCK_APP` at it), because the
+host's own Chrome updates past the build. The 157 re-pin is paused (`repin/8103-prep`, draft PR #9). The build
+box's checkout is on branch
 `camoucrome/main` (the exported branch, on this pin). The 154 branch,
 `camoucrome/main-8037`, is kept in `~/chromium-154/src` until that tree is
 retired; that tree holds the git directory both checkouts share, so move it
@@ -112,7 +122,7 @@ the local folder.
 | `scripts/` | `apply.sh` (the applier), `verify_*.py` (per-slice browser verifications), `package.py` (release archive from GN's runtime-deps list; refuses a component build, an off-pin version, a missing dep, mismatched stamps), `winhost.py` (stock Chrome on the box's Windows host over ssh: headless `--dump-dom`, headed CDP), `capture_*.py` (baselines, presets, WebGL profiles, font lists, the Windows host oracle), `verify_host_oracle.py` (the fork under a generated Windows identity vs stock Chrome on the host, every differing leaf as a line), `verify_windows_behaviour.py` (the exposed interfaces called, not only enumerated: `share()` under a claim, voices per locale) |
 | `client/` | the launchers: `client/python/camoucrome` (patchright), `client/go` (`playwright-go` on the `patchright-core` driver) and `client/node` (patchright). All three implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
-| `docs/observer/` | the tracking observer (an audit build, `camou_observe = true`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verify `scripts/verify_observe.py` |
+| `docs/observer/` | the tracking observer (`camou_observe = true`, shipped in releases as `chrome://observer`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verifies `scripts/verify_observe.py` and `scripts/verify_observer_page.py` |
 | `baselines/` | stock reference captures; ten are committed (`git ls-files baselines`). `*-d0c02bfad0-*` and `content_shell-8078-stock-ua.json` are pristine captures of the build at the pin; `chrome-8078-*` are captures of stock Chrome 156.0.8078.48 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
@@ -196,21 +206,33 @@ startup abort instead of a silent fall-back to real values.
   suite, client tests, the main browser verifies. It refuses a dirty checkout
   or a running ninja rather than racing them; `gh workflow run build-verify`
   re-runs by hand (`measurements/2026-09-13-ci-build-verify.md`).
-- **One build at a time:** the box has 25 GB RAM, so every Chromium build
-  (WSL or the native Windows tree) takes `scripts/build_lock.sh acquire
-  <owner>` and releases it after; CI refuses to start while it is held.
-  Parallel sessions use their own gclient workdir (e.g. `~/chromium-s2c`)
-  and still share this lock.
+- **One build at a time:** the box has 32 GB of RAM, shared by Windows and
+  the WSL VM (capped at 26 GB plus 12 GB swap in `.wslconfig`), so every
+  Chromium build (WSL or the native Windows tree) takes
+  `scripts/build_lock.sh acquire <owner>` and releases it after; CI refuses
+  to start while it is held. Parallel sessions use their own gclient workdir
+  (e.g. `~/chromium-s2c`) and still share this lock.
+- **Memory on the box (measured 2026-11-02):** a native Windows build is
+  limited by the Windows commit limit (about 36.6 GB, RAM plus pagefile),
+  and the WSL VM's `vmmem` keeps memory the Linux side no longer uses
+  (10.3 GB with WSL idle). Read both sides before a decision:
+  `Win32_OperatingSystem.FreeVirtualMemory` on Windows, `free -m` in WSL.
+  `.wslconfig` has `autoMemoryReclaim=gradual` since 2026-11-02. When
+  Windows headroom is short and WSL is idle, `wsl --shutdown` frees the held
+  memory (about 11 GB that day), but only with the build lock free, no CI
+  job running and the other sessions on the box told; then restart the
+  `CamouWslKeepAlive` scheduled task.
 - **A slice that changes the bindings generator lands on the box first:**
   commit it in `~/chromium/src`, rebuild `out/Default` by hand under the
   lock, get `check_checkout_sync.sh` `rc=0`, then merge — merging first turns
   CI red (sync gate), or into a bindings rebuild in CI's 180-min window
   (2026-10-06's observe slice: 9477 steps).
-- CI's `out/Default` sets `camou_observe = true` (since 2026-10-08), so it is
-  a tracking-observer build (category off by default; `package.py` refuses
-  it), and `v8_enable_runtime_call_stats = true` (since 2026-10-13, for the
-  observer's Intl counts; idle unless `disabled-by-default-v8.runtime_stats`
-  is traced). Measure costs in a tree without the flags.
+- Releases carry the observer since `-7` (`chrome://observer`, category off by
+  default): `package.py` requires `camou_observe = true` and refuses
+  `v8_enable_runtime_call_stats = true`. CI's `out/Default` sets both
+  (`camou_observe` since 2026-10-08, RCS since 2026-10-13, for the observer's
+  Intl counts; idle unless `disabled-by-default-v8.runtime_stats` is traced).
+  Measure costs in a tree without the flags.
 - **Windows host runs** launch through `scripts/windows/run-interactive.ps1`, so
   they run in the owner's interactive session (session 1). In session 0, where
   sshgate/sshd put a shell, the GPU process crashes once per launch (S4).

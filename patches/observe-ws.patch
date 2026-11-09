@@ -1,0 +1,190 @@
+diff --git a/third_party/blink/renderer/core/execution_context/DEPS b/third_party/blink/renderer/core/execution_context/DEPS
+index 127003ae64..dc4a898602 100644
+--- a/third_party/blink/renderer/core/execution_context/DEPS
++++ b/third_party/blink/renderer/core/execution_context/DEPS
+@@ -3,6 +3,10 @@ include_rules = [
+ ]
+ 
+ specific_include_rules = {
++  "camou_observe\\.cc": [
++    # EmitWebSocketSend base64-encodes the kept message bytes for the trace.
++    "+base/base64.h",
++  ],
+   "agent_metrics_collector\\.cc": [
+     # Intentionally limited to scope to encourage use of histogram helpers over
+     # the raw factory getters.
+diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.cc b/third_party/blink/renderer/core/execution_context/camou_observe.cc
+index d0f1d4d0e7..17cbb9a545 100644
+--- a/third_party/blink/renderer/core/execution_context/camou_observe.cc
++++ b/third_party/blink/renderer/core/execution_context/camou_observe.cc
+@@ -4,15 +4,18 @@
+ 
+ #include "third_party/blink/renderer/core/execution_context/camou_observe.h"
+ 
++#include <algorithm>
+ #include <cstdlib>
+ #include <string>
+ #include <utility>
+ 
++#include "base/base64.h"
+ #include "base/no_destructor.h"
+ #include "base/time/time.h"
+ 
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
++#include "third_party/blink/renderer/platform/weborigin/kurl.h"
+ #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "v8/include/v8-context.h"
+@@ -114,6 +117,47 @@ void EmitListener(const char* name,
+                       opts);
+ }
+ 
++// A WebSocket message. origin, site and script derive exactly as in
++// EmitListener. The kept bytes are copied from what Blink already holds.
++void EmitWebSocketSend(ExecutionContext* context,
++                       const KURL& url,
++                       bool binary,
++                       base::span<const uint8_t> data) {
++  if (!context) {
++    return;
++  }
++  constexpr size_t kMaxBytes = 256 * 1024;
++  std::string origin;
++  std::string site;
++  if (const SecurityOrigin* security_origin = context->GetSecurityOrigin()) {
++    origin = security_origin->ToString().Utf8();
++  }
++  if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
++    site = window->GetStorageKey().GetTopLevelSite().Serialize().Utf8();
++  }
++  v8::Isolate* isolate = context->GetIsolate();
++  v8::HandleScope handle_scope(isolate);
++  std::string script;
++  v8::Local<v8::String> v8_script =
++      v8::StackTrace::CurrentScriptNameOrSourceURL(isolate);
++  if (!v8_script.IsEmpty()) {
++    script.resize(v8_script->Utf8LengthV2(isolate));
++    v8_script->WriteUtf8V2(isolate, script.data(), script.size());
++  }
++  std::string endpoint = url.Host().ToString().Utf8();
++  if (url.HasPort()) {
++    endpoint += ":" + std::to_string(url.Port());
++  }
++  endpoint += url.GetPath().ToString().Utf8();
++  const bool cut = data.size() > kMaxBytes;
++  TRACE_EVENT_INSTANT(
++      TRACE_DISABLED_BY_DEFAULT("camou.observe.send"), "camou.send.ws",
++      "endpoint", endpoint, "site", site, "origin", origin, "script", script,
++      "opcode", binary ? "2" : "1", "size", std::to_string(data.size()), "b64",
++      base::Base64Encode(data.first(std::min(data.size(), kMaxBytes))), "cut",
++      cut ? "1" : "");
++}
++
+ namespace {
+ 
+ // Coalescing (spec 2026-10-28 section 3.2): a per-thread table of at most kMaxKeys keys. A key is flushed as one
+diff --git a/third_party/blink/renderer/core/execution_context/camou_observe.h b/third_party/blink/renderer/core/execution_context/camou_observe.h
+index 4dfc749062..15e00d1c9d 100644
+--- a/third_party/blink/renderer/core/execution_context/camou_observe.h
++++ b/third_party/blink/renderer/core/execution_context/camou_observe.h
+@@ -5,6 +5,9 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EXECUTION_CONTEXT_CAMOU_OBSERVE_H_
+ #define THIRD_PARTY_BLINK_RENDERER_CORE_EXECUTION_CONTEXT_CAMOU_OBSERVE_H_
+ 
++#include <stdint.h>
++
++#include "base/containers/span.h"
+ #include "third_party/blink/renderer/core/core_export.h"
+ #include "third_party/blink/renderer/platform/bindings/buildflags.h"
+ #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+@@ -25,6 +28,7 @@ class Isolate;
+ 
+ namespace blink {
+ class ExecutionContext;
++class KURL;
+ namespace camou_observe {
+ 
+ #if BUILDFLAG(CAMOU_OBSERVE)
+@@ -61,11 +65,33 @@ CORE_EXPORT void CountDispatch(const AtomicString& type,
+                                const AtomicString& target,
+                                bool trusted,
+                                wtf_size_t handlers);
++
++// True while a trace has enabled the send category (WebSocket message bodies).
++inline bool SendEnabled() {
++  bool enabled = false;
++  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
++      TRACE_DISABLED_BY_DEFAULT("camou.observe.send"), &enabled);
++  return enabled;
++}
++
++// One camou.send.ws event per WebSocket message (contract: observe_tables.h).
++// Keeps at most 256 KiB of `data`; `size` is the whole length.
++CORE_EXPORT void EmitWebSocketSend(ExecutionContext* context,
++                                   const KURL& url,
++                                   bool binary,
++                                   base::span<const uint8_t> data);
+ #else
+ inline bool Enabled() {
+   return false;
+ }
+ inline void Record(const char*, v8::Isolate*) {}
++inline bool SendEnabled() {
++  return false;
++}
++inline void EmitWebSocketSend(ExecutionContext*,
++                              const KURL&,
++                              bool,
++                              base::span<const uint8_t>) {}
+ #endif
+ 
+ }  // namespace camou_observe
+diff --git a/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc b/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
+index 33ca454b36..ad486cbdd5 100644
+--- a/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
++++ b/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
+@@ -59,6 +59,7 @@
+ #include "third_party/blink/public/platform/web_url.h"
+ #include "third_party/blink/public/platform/websocket_handshake_throttle.h"
+ #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
++#include "third_party/blink/renderer/core/execution_context/camou_observe.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/fileapi/file_error.h"
+ #include "third_party/blink/renderer/core/fileapi/file_reader_client.h"
+@@ -419,6 +420,11 @@ void WebSocketChannelImpl::Send(
+   probe::DidSendWebSocketMessage(execution_context_, identifier_,
+                                  WebSocketOpCode::kOpCodeText, true,
+                                  base::as_byte_span(message));
++#if BUILDFLAG(CAMOU_OBSERVE)
++  if (camou_observe::SendEnabled()) [[unlikely]] {
++    camou_observe::EmitWebSocketSend(execution_context_, url_, false, base::as_byte_span(message));
++  }
++#endif
+   DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT(
+     "WebSocketSend", InspectorWebSocketTransferEvent::Data,
+     execution_context_.Get(), identifier_, message.length());
+@@ -457,6 +463,11 @@ void WebSocketChannelImpl::Send(
+   probe::DidSendWebSocketMessage(
+       execution_context_, identifier_, WebSocketOpCode::kOpCodeBinary, true,
+       buffer.ByteSpan().subspan(byte_offset, byte_length));
++#if BUILDFLAG(CAMOU_OBSERVE)
++  if (camou_observe::SendEnabled()) [[unlikely]] {
++    camou_observe::EmitWebSocketSend(execution_context_, url_, true, buffer.ByteSpan().subspan(byte_offset, byte_length));
++  }
++#endif
+   DEVTOOLS_TIMELINE_TRACE_EVENT_INSTANT(
+       "WebSocketSend", InspectorWebSocketTransferEvent::Data,
+       execution_context_.Get(), identifier_, byte_length);
+@@ -967,6 +978,11 @@ void WebSocketChannelImpl::DidFinishLoadingBlob(MessageData data) {
+   DCHECK_EQ(GetState(), State::kOpen);
+ 
+   blob_loader_.Clear();
++#if BUILDFLAG(CAMOU_OBSERVE)
++  if (camou_observe::SendEnabled()) [[unlikely]] {
++    camou_observe::EmitWebSocketSend(execution_context_, url_, true, data.as_span());
++  }
++#endif
+   // The loaded blob is always placed on |messages_[0]|.
+   DCHECK_GT(messages_.size(), 0u);
+   DCHECK_EQ(messages_.front().Type(), kMessageTypeBlob);

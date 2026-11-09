@@ -25,9 +25,36 @@ connecting (`Target.setDiscoverTargets`). `OnSend` only sees messages sent
 after Launch returns, so it cannot prove that a connect-time message was
 absent.
 
-`Page` (exactly these 11 methods, pinned by `surface_test.go`):
-`Goto(ctx, url, WaitLoad|WaitNetworkIdle)`, `WaitForSelector`, `Click`, `Type`,
-`Text`, `Attribute`, `Screenshot`, `Cookies`, `Eval`, `AddInitScript`, `Close`.
+`Page` (exactly these 13 methods, pinned by `surface_test.go`):
+`Goto(ctx, url, WaitLoad|WaitNetworkIdle)`, `WaitForSelector`, `Click`, `Hold`,
+`Type`, `TypeWith`, `Text`, `Attribute`, `Screenshot`, `Cookies`, `Eval`, `AddInitScript`,
+`Close`.
+
+Input is human-like, client-side (`human.go`; the fork humanizes the mouse path
+and wheel browser-side):
+- `Click` moves to a press point drawn inside the inner 70 % of the element's
+  content box (not the centre), settles, then presses, holds tens of ms and
+  releases. `Hold(ctx, selector, d)` is the same approach, then keeps the button
+  down for `d` with sparse 1-2 px `mouseMoved` events (buttons=1).
+- `Type` gives every key a dwell and a right-skewed gap to the next key (longer
+  after a space or punctuation and before a shifted key, with a rare pause at a
+  word boundary). A shifted US-layout character is bracketed by real `ShiftLeft`
+  key events; consecutive shifted characters share one press. Runes off the
+  layout still go through `Input.insertText`. The gap for a frequent English
+  letter pair (`th`, `er`, `e` then space, ...) is that pair's calibrated
+  median; other pairs use the overall one. With the calibrated probability
+  (about 18 %) the next key goes down before the previous one is up (key
+  rollover), by a lognormal overlap; never more than two keys are down at once
+  (Shift apart), and on any error or cancel every key still down is released.
+- `TypeWith(ctx, selector, text, TypeOptions{Typos: true})` adds typos, off in
+  `Type`: now and then a neighbouring US-QWERTY key is typed instead (same Shift
+  state), 1 to 3 characters pass, then after a notice delay Backspace is pressed
+  (real key events) once per character and they are retyped. The field's final
+  value is always `text`. Enter, Tab and runes off the layout get no typos.
+- Every timing is a named constant in `human.go`, drawn from `Page`'s seeded
+  `rand` (lognormal, truncated; no flat uniform). The values come from
+  published keystroke and pointing studies; they are not calibrated on a
+  person.
 
 Every op is bounded by the ctx deadline, or 30 s without one. `Goto` and
 `Text` run in an isolated world; only `Eval` and `AddInitScript` touch the main
@@ -65,14 +92,11 @@ in the MAIN world, by design, so anything it defines is visible to the page.
 
 - No proxy: `Launch` rejects `Options.Proxy` (proxy auth is not implemented).
 - No frames or OOPIF; elements are found in the top document only.
-- `Type` timing is client-side: uniform 40-120 ms per key (the fork humanizes
-  mouse and wheel events only).
-- `Type`: keyDown and keyUp are back to back with no dwell, and shifted
-  characters carry only the Shift modifier bit (no Shift key events).
-- `Click`: press and release are back to back with no hold time, and the click
-  point is the exact box centre.
-- Both match Playwright's defaults (delay 0), so they are parity limits.
-  Planned follow-up: 30-90 ms key dwell, a click hold, real Shift events.
+- Input timing is parametric, not recorded from a person: a detector that
+  fits individual typists or pointing trajectories can still tell. `Type` has
+  no typos or Backspace corrections (`TypeWith` adds them), and
+  no layouts other than US; runes off it are inserted as text, with no key
+  events.
 - `Goto` polls document state from an isolated world; a same-document
   navigation (hash change) times out.
 
@@ -95,8 +119,9 @@ Tests: `GOTOOLCHAIN=local go test -race -count=1 ./... && go vet ./...`
 ## Smoke
 
 `cmd/camoucrome-smoke` drives a loopback page that records every input event
-(`window.__ev`: type, isTrusted, timeStamp, button(s), key, code, x, y) with
-`Click` twice, `Type`, `Text`, `Screenshot` and `Cookies`, then judges the
+(`window.__ev`: type, isTrusted, timeStamp, button(s), key, code, location, shiftKey, x, y) with
+`Click` twice, `Type` (into `#in` and, for the key-rollover row, `#in2`),
+`TypeWith{Typos}` (into `#in3`, in chunks until one typo was seen), `Hold`, `Text`, `Screenshot` and `Cookies`, then judges the
 page's own log, not the client's return values. It prints one JSON report
 (`checks`, `events`, `cdp_sends`, `argv`) and exits 1 if any check is RED.
 `--humanize` adds `{"humanize:enabled": true}` to the config and checks the

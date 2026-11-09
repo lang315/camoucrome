@@ -15,8 +15,43 @@ Add to the out dir's `args.gn` (never to `settings/build-args.gn`):
 The second arg compiles in V8's runtime call stats, which the Intl recipe below
 reads; it rebuilds V8, not Blink (box, 2026-10-13: 1634 steps, 22 min).
 
-`scripts/package.py` refuses such an out dir: an observer build is never a
-release. With the arg off, the generated calls compile to nothing.
+Releases carry the observer hooks (`camou_observe = true` is in
+`settings/release-args.gn`; `scripts/package.py` requires it) but never the
+second arg: `package.py` refuses `v8_enable_runtime_call_stats = true`.
+`out\Observe` stays the audit build for the Intl counts.
+
+## chrome://observer
+
+Open `chrome://observer` in a release build. Pick a tab in `select#tab`, then
+click Record. The page records that tab's network and signal events and
+shows them live. Nothing the tab did before Record is in the table: to see a
+page's load, click Record and then reload the tab. The recording follows the
+tab, not one document: every document the tab commits while recording
+(a reload, a navigation, the first load after Record on a still-blank tab)
+adds to it (since 2026-11-06; on `-7` a reload lost the http rows and a
+Record before the first commit lost the main frame's reads). State words:
+
+- `recording`: the trace is running.
+- `blind`: the observer's own read hooks stopped reporting (the page's canary
+  read did not appear after a refresh), so the whole capture is unreliable —
+  an empty table here is not evidence the tab tracked nothing.
+- `lost`: the trace buffer wrapped and dropped events (its drop counters, plus
+  every packet seen after a drop).
+- `cut`: a body or field was clipped at a cap below.
+- `missing`: an expected record never arrived.
+- `buffer full`: a single refresh snapshot exceeded the page's 64 MiB trace
+  cap. With the 32 MiB ring buffer and a fresh snapshot each refresh this does
+  not arise in normal use; `lost` (above), not this, is how buffer wrap shows.
+- `recording could not start`: the trace session did not open. Nothing was
+  captured.
+
+Data stays in memory. Stop, or closing the page, clears it. The page records
+under the `.send` category, which carries request bodies for the observer
+only. `--trace-startup` and the trace toolchain do not record bodies unless
+that category is named explicitly, which they do not do by default.
+
+Caps: body 256 KiB per element, WebSocket 256 KiB, fragment 16 KiB, raw trace
+64 MiB, buffer 32 MiB (ring), inflate 8 MiB, depth 64, 5000 fields.
 
 ## Run
 
@@ -128,7 +163,7 @@ the worst arm's code.
 
 | verdict | exit | condition |
 |---|---|---|
-| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; `trace_s < net_s - 5`; `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout |
+| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; a URL request that started after the trace's last event, or a netlog that began more than 5 s before the trace (the netlog's own end is not checked: it runs past the trace on socket and QUIC teardown, 10.5 s in a 405 s arm); `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout |
 | `FAIL` | 1 | a baseline required group, `intl` included, has 0 calls on the facebook site |
 | `PASS` | 0 | every required group is still above 0 |
 | `INFO` | — | count change against the baseline, new group, new Intl built-in, `/ajax/bz` and total requests |
@@ -152,8 +187,10 @@ the host:
 
 If `recon.ps1` throws, `arm<N>.log` gets `ERROR: <error record>` and its
 script stack trace, then `EXIT=1`. The command echoes the `ERROR:` line
-and the arm is `UNMEASURED` (`run.json missing`) at once, without waiting
-out the arm's time limit.
+and the arm is `UNMEASURED arm<N> recon error` at once, without waiting
+out the arm's time limit. The judge is skipped for that arm, and also when
+`arm<N>` was not created by this arm (a judge of another arm's directory
+would print that arm's verdict under this name).
 
 A timeout stops the arm's scheduled task before it removes it: removing a
 task leaves its running instance alive (host, 2026-10-17), and a late recon
@@ -202,6 +239,206 @@ whenever facebook's reads change for good. Measurements:
    2026-10-17 arm 3.
 5. Commit the baseline, install it on the host, and judge both runs again:
    each must be `PASS`.
+
+### Site profiles
+
+Every site-specific value of the observe toolchain lives in `settings/sites/<site>/site.json` (and `fields.json`), with
+the site's parsers in `scripts/sites/<module>.py`. `observe-auto.ps1 -Site <site>` (default `facebook`) and `--site` on
+the Python scripts select one. A new site needs a profile, not script edits; `testpage` (the local driver page) is the
+second profile and proves it. On the host the package goes to `<observe>\sites\` and the data to
+`<observe>\settings\sites\`. A site without a `site.json`, or one that lacks a key, is `UNMEASURED site: ...` (exit 3)
+before the ledger is touched. Each site has its own ledger and cap.
+
+### Adding a site
+
+A new site is data plus, if it needs them, two small hooks. No existing script is edited.
+
+**1. The data: `settings/sites/<site>/site.json`.** The name is `^[a-z0-9_-]+$` and equals the folder name.
+`settings/sites/testpage/site.json` is the minimal example; `settings/sites/facebook/site.json` is the full one.
+Every key of `sites.REQUIRED` must be present, or the site is `UNMEASURED site: ...`:
+
+| key | controls |
+|---|---|
+| `name` | the profile name; must equal the folder |
+| `origin` | the site's base URL; arms load `origin` plus a page path |
+| `surface_site` | the script-surface key the judge and `observe_diff` count (the form the observer reports the site in) |
+| `cookie_domain`, `logged_in_cookies` | the cookies that prove a login; arm 3 reports `session expired` when one is missing |
+| `pages` | per arm, the page paths a driven arm visits, by URL |
+| `route_paths` | telemetry paths whose bodies CDP does not carry (`sendBeacon`, keepalive); only these are routed. Matched literally |
+| `unlink_endpoints`, `beacon_path` | the endpoints `observe_unlink` reads for a logged-out run, and the one that must carry a body or the run is `UNMEASURED` |
+| `post_hosts`, `resource_hosts`, `doc_hosts` | hosts whose POST bodies, scripts and documents the driver records |
+| `ws_hosts` | hosts whose WebSocket frames the driver records |
+| `backup`, `baseline`, `ledger` | the login backup folder, the judge baseline file, and the run ledger (each site has its own) |
+| `cap` | `per_day` and `min_gap_min`: the account-risk cap on runs that include a login |
+| `expired_hint` | the text printed when the login has expired |
+
+Optional keys: `module` (the hook module, default `base`), and `logged_in_unlink_endpoints` and `logged_in_beacon_path`
+(a logged-in session may post to other endpoints than a logged-out one; both default to the logged-out values). Find the
+real endpoints in a recon capture first; do not copy another site's. A `site.json` saved by PowerShell may carry a BOM; the
+loader reads it. On the host the data goes to `<observe>\settings\sites\`.
+
+**2. The hooks: `scripts/sites/<module>.py`.** Name the module in `site.json`. A site needs one only when:
+- its WebSocket carries a binary framing the driver cannot split: `binary_units(raw)` returns the units, or `None` to fall back to MQTT and then one opaque unit;
+- its CDN host names carry a regional POP code, which is a location: `pop_host(host)` collapses them.
+
+`scripts/sites/base.py` holds the defaults (`pop_host` returns the host, `binary_units` returns `None`); a site with
+neither need names no module. `scripts/sites/facebook.py` is the full example (it also expands `sjd`; see that file). Hooks
+run on the host and may see values; what leaves the host (`channels.json`, `matches.json`, `unlink.json` and the reports) keeps names, value classes, counts and matches only.
+
+**3. The order of work for a new site** (the order the facebook lane followed):
+1. Recon arms: logged out first, then logged in from the owner's backup (see "Unattended recon" above). Credentials are never typed by tooling.
+2. The tracking map: channels, fields and costs (see "Tracking-map arms").
+3. `settings/sites/<site>/fields.json`: each device field with its identity keys and leaves, plus `limits` and `ip_bound` entries, which only an owner ruling adds.
+4. Unlinking: `lf`/`lc` alternating loads (see "Unlink arms `lf` and `lc`"), then `lu`, a logged-in run on the three fork profiles alone.
+5. Light mode, if wanted (see "Light mode pair").
+
+**4. The rules that carry over.**
+- The account cap is per site: `cap` and `ledger` in `site.json`. A logged-in arm counts against it.
+- Values never leave the host. The reports hold names, classes and counts. The login backup is only copied, never read for values.
+- No typed credentials, ever; the owner logs in by hand.
+- The repository is public: no host-identifying data in any file, commit or PR (`scripts/check_privacy.py`). Name a site at vendor level only.
+- One load per run, with no scheduling and no loops. Automated recon runs only through `observe-auto.ps1`.
+
+## Tracking-map arms (2026-10-29)
+
+The owner relaxed the observer rules on 2026-10-29
+(`docs/superpowers/specs/2026-10-29-fb-tracking-map-design.md`, §2b). Four
+driven arms join the unattended command, to map facebook's tracking
+channels and the cost of a load. Select them with
+`observe-auto.ps1 -Arms 1,3,1f,1c,3w,4a`. The default stays `-Arms 1,3`,
+and arms 1 and 3 run, are judged and are reported as before (the cap below also applies to a default run, because arm 3 is logged in).
+
+Arm names must not read as numbers in PowerShell: `1d` is a decimal literal
+(PowerShell 7 also reads `1s` as a short), so an unquoted `-Arms 1d,...`
+typed in a PowerShell session, or in the wrapper that launches the command
+detached, reached the script as arm `1` (runs 20261029-145829 and
+-155547). `1f` and `1c` are not numeric in PowerShell 5.1 or 7. Quote the
+list anyway when you type it in a PowerShell session:
+`-Arms '1f,1c,3w'`.
+Install the scripts and the venv first (plan Task 12): the driven arms run
+`observe_drive.py` in `D:\camou-win\observe\venv`.
+That venv needs `pycryptodome==3.23.0`: `observe_drive.py` uses it to open facebook's `sjd` beacon into
+its signal fields (`q[].sjd.<id>[]`). Without it the run still works, and `channels.json` and the report
+show `sjd` as `decoded 0, failed N`.
+
+| arm | browser | profile | time | input |
+|---|---|---|---|---|
+| `1` | fork `out\Observe` | fresh | 30 s | none (as before) |
+| `3` | fork | copy of the login backup | 120 s | none (as before) |
+| `1f` | fork | fresh | 20 s + 40 s wheel | wheel |
+| `1c` | stock Chrome | fresh | 20 s + 40 s wheel | wheel |
+| `3w` | fork | copy of the login backup | 5 pages x (15 s + 60 s wheel) | URL navigation, wheel |
+| `4a` | fork | copy of the login backup | 20 s + 40 s wheel | wheel |
+
+- **Driver.** `1f`, `1c`, `3w` and `4a` run `recon.ps1 -Driver`, which starts
+  `observe_drive.py` (patchright through the product client, no
+  `Runtime.enable`, no click, no key). The gates, the watchdog, the time
+  limit, `run.json` and the cleanup are the ones arms 1 and 3 use. `run.json`
+  gains `drive_rc`. The arm dir gains `chrome-args.json`, `drive.out` and
+  `drive.err`.
+- **`3w`** visits `/`, `/watch/`, `/marketplace/`, `/messages/` and `/me/`
+  on the site, by URL.
+- **`4a`** loads one third-party page that embeds the Meta Pixel, with the
+  login copy. Its URL is the first line of `D:\camou-win\observe\arm4a-url.txt`,
+  which exists only on the host and is never committed. Without the file the
+  arm is `UNMEASURED arm4a no arm4a-url.txt`.
+- **`1c`** has no observer trace (stock has no observe category). It keeps
+  the netlog and the driver capture. Its line is
+  `INFO arm1c measured (stock: no observer trace, no judge)`, or
+  `UNMEASURED arm1c drive_rc=<n>`.
+- **Verdicts of `1f`, `3w` and `4a`.** `drive_rc` 4 (a checkpoint or login
+  page where a session is expected) gives `UNMEASURED arm<N> checkpoint`
+  and skips the rest of the run's logged-in arms
+  (`UNMEASURED arm<N> skipped after checkpoint`). A missing `channels.json`
+  gives `UNMEASURED arm<N> no channels.json`. Otherwise the judge runs
+  against `D:\camou-win\observe\baseline-empty.json` (`{}`), so these arms
+  measure and compare nothing yet: a baseline comes after two runs.
+- **CPU and RAM.** `1f`, `3w` and `4a` also record `devtools.timeline` for
+  CPU per script. Arms 1 and 3 do not, so a trace buffer discard cannot make
+  a baseline arm `UNMEASURED`; `-CpuAll` adds the category to them for a later
+  run. During a driven arm the command samples private memory per process
+  type every 6 s into `arm<N>\ram.json` (the file states the interval), then
+  writes `report.md` again with the RAM section.
+- **Account-risk cap.** A logged-in arm is `3`, `3w` or `4a`. The command
+  refuses a run that includes one (`RESULT UNMEASURED cap: ...`, exit 3) when
+  3 such runs started in the same UTC day, or the last one started less than
+  15 minutes ago. The ledger is `D:\camou-win\observe\auto\ledger.json`
+  (UTC timestamps). A run counts when it starts, even if it ends
+  `UNMEASURED`. Start each run by hand; schedule nothing.
+
+**Unlink arms `lf` and `lc` (2026-10-30).**
+`-Arms 'lf,lc' [-UnlinkSeeds '1,2,3']` expands each into three logged-out
+landing loads (`lf1`..`lf3`, `lc1`..`lc3`) and then runs
+`observe_unlink.py` over the six captures. It measures which facebook
+fields tie three fork profiles on one host together, against three stock
+Chrome loads, so each field is classed as unlinked, a gap or machine-bound.
+Spec `docs/superpowers/specs/2026-10-30-fb-unlink-design.md`.
+- A fork sub-arm `lfN` launches a generated Windows identity: seed N of
+  `-UnlinkSeeds`, the host draw and the host's own zone and locale
+  (`observe_drive.py --identity-seed`). Run it on the direct connection,
+  never through the layer-3 proxy. A seeded sub-arm runs four headless
+  probe launches first, so `recon.ps1` waits up to 180 s for its browser.
+- `-UnlinkSeeds` must be three whole numbers. Anything else prints
+  `UNMEASURED -UnlinkSeeds wants three whole numbers` before any browser
+  starts. `-UnlinkSeeds '1,1,1'` is the RED: three equal identities must
+  leave the hardware fields as gaps.
+- Only `unlink.json` and `unlink.md` leave the host. They hold field names,
+  value classes, counts and class labels. The captures and `identity.json`
+  stay under each arm's `capture\` dir, which the command deletes.
+- The arms are logged out, so they are outside the account-risk ledger. The
+  first line of `unlink.md` is printed as `UNLINK net_gap=<n> ...`; a
+  sub-arm that did not measure, or fewer than 3 + 3 profiles, is
+  `UNMEASURED unlink: ...` (exit 3).
+- `-Arms lu -UnlinkSeeds '7,8,9'` (2026-10-31, S5): three fork profiles from copies of the login backup, one capped logged-in run, compared with `observe_unlink --fork-only`; each copy is deleted right after its sub-arm, and a checkpoint stops the run.
+
+**Light mode pair (part 3, 2026-10-30).**
+Spec `docs/superpowers/specs/2026-10-30-fb-light-design.md` (its `3l` is
+`lw` here: PowerShell reads `3l` as a long). The pair is two logged-in runs,
+so it uses 2 of the day's 3 in the ledger. Launch both detached.
+1. `-Arms 3w -KeepWarm`: the baseline, today's state. If the arm measured and
+   no checkpoint was seen, the profile copy moves to `auto\warm\<run id>`.
+2. The owner turns "Autoplay videos" Off on the account, by hand, from any
+   device. Tooling never clicks a setting.
+3. At least 15 minutes after run 1: `-Arms lw -WarmFrom <run 1 id>`. It
+   browses like 3w from the warm copy (wheel and URL only), then
+   `observe_light.py` compares `auto\<run 1 id>\arm3w` with its own `armlw`
+   and writes `light.json` and `light.md`.
+- `-Light` (with `-Arms 'lf,lc'`) makes the `lf` identity draw DPR 1 only.
+  It is refused (`UNMEASURED -Light needs arm lf`) without an `lf` arm;
+  `-KeepWarm` is refused without arm `3w`.
+- The pair runs with `--no-route` (request interception disables the HTTP
+  cache, so the warm cache would go unused), so `/ajax/bz` bodies are not
+  recorded in those two arms.
+- `lw` without `-WarmFrom <run id>`, or with an id that has no warm copy, is
+  `UNMEASURED` (exit 3). All refusals and the sweep run before the ledger
+  write, so a refused run does not count.
+- The `WARM` lines: `WARM kept <id>`; `WARM not kept: checkpoint`,
+  `WARM not kept: arm3w did not measure` or `WARM not kept: no profile-arm3w`;
+  `WARM deleted <id>` (the `lw` run's `finally`); `WARM delete FAILED <id>
+  (delete it by hand)`; `WARM deleted <n> stale` (a start-of-run sweep of
+  copies older than 24 hours).
+- The warm copy is a logged-in profile. It stays under
+  `D:\camou-win\observe\auto\warm\`, is never read for values and never
+  copied off the host.
+- Only `light.json` and `light.md` leave the host, after
+  `check_privacy.py --file`. They hold kinds, request counts, MB, RAM per
+  process type, CPU seconds, URL paths and load milliseconds. A cold cache in
+  `lw` is `UNMEASURED light: ... cache cold`, not a saving.
+
+**Approach B flags.** `observe-auto.ps1 -Arms 3w -Flags '<flag>'` runs arm 3w with candidate flags from `settings/light_flags.json` added to the fork's argv, without request interception; its baseline is `-Arms 3w -NoRoute`, so both keep the HTTP cache. A flag must have `gate: pass` there first; `scripts/verify_light_flag.py --flag <flag>`, run in the owner's session, is that gate (RED: `--js-flags=--max-old-space-size=512` fails on `perfMem.jsHeapSizeLimit`). Anything else is refused before the ledger write. `ram.json` keys utilities as `utility:<sub-type>` and counts renderers (`n_renderer`); `observe_light.py` prints one row per process.
+
+Host-only files and the cleanup: `capture\` (request bodies, WebSocket
+payloads) and `resources\html\` (document HTML) are deleted when the run
+finishes, together with the profile copies and `cookies.db`. With
+`-KeepCapture` the two directories stay and the command prints
+`KEPT raw capture: <dirs> (host only; delete after analysis)`; use it only
+to analyse the raw frames on the host, then delete them by hand. `truth.json`
+(the host's own surface values) and `resources\js\` (Meta's public script
+bundles) stay on the host. What may leave it: `report.md`, `summary.json`,
+`channels.json`, `matches.json` and `ram.json`, which carry names, counts,
+value classes and matches only. Check the copies with
+`check_privacy.py --file` and a search for the canary string before they
+leave the host.
 
 ## Read
 
@@ -315,9 +552,20 @@ page's trace. With the stats category off, the compiled-in counters cost one
 flag check per C++ built-in: CI's browser verifies on this build matched
 main's (2026-10-13).
 
+Off state, shipped in every release (2026-11-04): with the category off, a
+loop of 200 000 `navigator.userAgent` reads ran 0.85 to 2.85 ms (1 to 5 %)
+slower than the same build without the observer, in five of five
+comparisons on `-7` (2026-11-05). That is inside one build's own run-to-run
+spread and not separated from code layout; the other timing loops, a blob
+POST and WebSocket sends showed no shift
+(`docs/superpowers/measurements/2026-11-04-observer-off-cost.md`).
+
 Browse a site normally, on a release build, when staying hidden matters.
 
 ## Data handling
+
+The `chrome://observer` page shows captured values, so a screenshot of it is
+never committed.
 
 Traces, netlogs and profiles hold the operator's real browsing. Keep them on
 the machine that made them. Commit only names, counts, hosts and

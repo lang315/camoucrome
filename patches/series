@@ -19,7 +19,6 @@ window-geometry.patch
 metric-jitter.patch
 media-ii-track.patch
 phantom-webcam.patch
-audio-ii.patch
 voices-ii.patch
 fonts-ii.patch
 webrtc-ii.patch
@@ -44,3 +43,11 @@ sp2e-cursory.patch
 sp2e-input-scheduler.patch
 sp2e-credits.patch
 audit-cpp-fixes.patch
+observe-net.patch
+observe-ws.patch
+observe-decoder-service.patch
+observer-page.patch
+accept-language-from-config.patch
+startup-best-effort-delay-on.patch
+finch-stable-defaults.patch
+href-translate-without-key.patch

@@ -22,7 +22,6 @@ run verify_sp1b.py
 run verify_sp3b.py
 run verify_sp4a.py
 run verify_metric_jitter.py
-run verify_audio_ii.py
 run verify_ua_halfconfig_reject.py
 run verify_sp5b_domain.py
 run verify_navplatform_bucket.py
@@ -35,12 +34,17 @@ run verify_webgl_capability_identity.py
 run verify_credits.py
 # verify_sp6b_launcher: L4 (headed launch) is UNMEASURED, exit 3, when no X server answers; the runner has no display.
 run verify_sp6b_launcher.py
+run verify_accept_language.py
+run verify_finch_defaults.py
+run verify_href_translate.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
+external verify_observer_page.py  # has its own step in build-verify.yml, after verify_observe.py (same camou_observe = true)
 skip verify_chrome_object.py  # not yet evaluated for the runner
 skip verify_font_metrics.py  # not yet evaluated for the runner
 skip verify_geo_ii_cadence.py  # not yet evaluated for the runner
 skip verify_geoip_pixelscan.py  # not yet evaluated for the runner
 skip verify_media_ii.py  # not yet evaluated for the runner
+skip verify_light_flag.py  # runs on the Windows host in session 1 (GPU process), not on the runner
 skip verify_navplatform_derive.py  # not yet evaluated for the runner
 skip verify_phantom.py  # not yet evaluated for the runner
 skip verify_pixels_real.py  # not yet evaluated for the runner
@@ -75,3 +79,4 @@ skip verify_window_position.py  # not yet evaluated for the runner
 skip verify_windows_client.py  # Windows host only (windows_verify_set.py)
 skip verify_windows_fonts.py  # Windows host only (windows_verify_set.py)
 skip verify_windows_sandbox_env.py  # Windows host only (windows_verify_set.py)
+skip verify_observe_drive.py  # dry run of the Windows-host driver against a local page; run by hand on the box (not yet evaluated for the runner)

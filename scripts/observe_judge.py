@@ -14,9 +14,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import observe_report as r  # noqa: E402
+import sites  # noqa: E402
 
-SITE = "https://facebook.com"
-LOGGED_IN = ("c_user", "xs")
 SLACK_S = 5
 
 
@@ -40,7 +39,26 @@ def coverage(data, net):
     return {"trace_s": round(trace_s, 1), "net_s": round(net_s, 1), "discarded": discarded}
 
 
-def summarize(arm_dir):
+def netlog_vs_trace(data, net):
+    """Request starts after the trace's last event, and how long the netlog began before the trace.
+
+    The netlog's time (ms) and the trace's ts (us) are one clock (host, 2026-10-29: first events within 0.2 s).
+    The netlog outlives the trace by shutdown work (sockets, QUIC), so its span says nothing about lost
+    observation; a request that STARTS after the last event is one the trace could not have seen."""
+    evs = [e["ts"] for e in r.all_events(data) if e.get("ph") != "M" and e.get("ts", 0) > 0]
+    if not evs or "constants" not in net:
+        return {"starts_after_trace": 0, "head_s": 0.0}
+    start = net["constants"]["logEventTypes"]["URL_REQUEST_START_JOB"]
+    begin = net["constants"]["logEventPhase"]["PHASE_BEGIN"]
+    starts = [int(e["time"]) * 1000 for e in net.get("events", [])
+              if e.get("type") == start and e.get("phase") == begin and "time" in e]
+    times = [int(e["time"]) * 1000 for e in net.get("events", []) if "time" in e]
+    head = (min(evs) - min(times)) / 1e6 if times else 0.0
+    return {"starts_after_trace": sum(t > max(evs) for t in starts), "head_s": round(max(head, 0.0), 1)}
+
+
+def summarize(arm_dir, site=None):
+    site = site or sites.load()
     d = pathlib.Path(arm_dir)
     try:
         data = _json(d / "trace.json")
@@ -51,7 +69,7 @@ def summarize(arm_dir):
     except (OSError, ValueError) as e:
         raise MissingInput(f"no netlog ({type(e).__name__})")
     members = collections.Counter()
-    for per_script in r.surface_counts(r.events_of(data)).get(SITE, {}).values():
+    for per_script in r.surface_counts(r.events_of(data)).get(site.surface_site, {}).values():
         members.update(per_script)
     groups = collections.Counter()
     for api, n in members.items():
@@ -59,8 +77,8 @@ def summarize(arm_dir):
     intl = r.intl_counts(r.all_events(data))
     if intl is not None:
         per = collections.Counter()
-        for (site, _script, builtin), n in intl.items():
-            if site == SITE:
+        for (host, _script, builtin), n in intl.items():
+            if host == site.surface_site:
                 per[builtin] += n
         intl = dict(per)
         if intl:
@@ -76,16 +94,14 @@ def summarize(arm_dir):
         cookies = []
     run = _json(d / "run.json") if (d / "run.json").exists() else None
     return {"groups": dict(groups), "members": dict(members), "intl": intl, "cookies": cookies,
-            "requests": {"total": len(reqs), "ajax_bz": sum("/ajax/bz" in p for _s, _h, p, _m in reqs)},
-            "coverage": coverage(data, net), "run": run}
+            "requests": {"total": len(reqs), "ajax_bz": sum(site.beacon_path in p for _s, _h, p, _m in reqs)},
+            "coverage": coverage(data, net), "netlog": netlog_vs_trace(data, net), "run": run}
 
 
 EXIT = {"PASS": 0, "FAIL": 1, "UNMEASURED": 3}
-EXPIRED = ("session expired: log in with recon.ps1 -Site facebook -Arm 2 -Intl "
-           "and refresh the backup")
 
-
-def unmeasured(s, arm):
+def unmeasured(s, arm, site=None):
+    site = site or sites.load()
     run = s["run"]
     if run is None:
         return ["run.json missing"]
@@ -107,12 +123,15 @@ def unmeasured(s, arm):
         why.append("buffer stats missing")
     elif c["discarded"]:
         why.append(f"buffer full ({c['discarded']} chunks discarded)")
-    if c["trace_s"] < c["net_s"] - SLACK_S:
-        why.append(f"trace short ({c['trace_s']} s of {c['net_s']} s)")
+    nl = s["netlog"]
+    if nl["starts_after_trace"]:
+        why.append(f"{nl['starts_after_trace']} URL requests started after the trace ended")
+    if nl["head_s"] > SLACK_S:
+        why.append(f"netlog began {nl['head_s']} s before the trace")
     if s["intl"] is None:
         why.append("intl blind")
-    if arm == 3 and not all(f".facebook.com:{n}" in s["cookies"] for n in LOGGED_IN):
-        why.append(EXPIRED)
+    if arm == 3 and not all(f"{site.cookie_domain}:{n}" in s["cookies"] for n in site.logged_in_cookies):
+        why.append(site.expired_hint)
     return why
 
 
@@ -125,16 +144,16 @@ def make_baseline(by_arm):
     return out
 
 
-def judge(arm_dir, arm, base, summary_out=None):
+def judge(arm_dir, arm, base, summary_out=None, site=None):
     try:
-        s = summarize(arm_dir)
+        s = summarize(arm_dir, site)
     except MissingInput as e:
         return "UNMEASURED", [("UNMEASURED", str(e))]
     if summary_out:
         pathlib.Path(summary_out).write_text(json.dumps(s, indent=1, sort_keys=True))
     ref = base.get(str(arm), {})
     req, runs = ref.get("required", []), ref.get("runs", [])
-    rows = [("UNMEASURED", w) for w in unmeasured(s, arm)]
+    rows = [("UNMEASURED", w) for w in unmeasured(s, arm, site)]
     if not req:
         rows.append(("INFO", "baseline requires 0 groups: PASS means measured only"))
     for g in req:
@@ -159,24 +178,33 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("summary")
     p.add_argument("arm_dir")
+    p.add_argument("--site", default="facebook")
     p = sub.add_parser("baseline")
     p.add_argument("--arm", nargs=2, action="append", metavar=("N", "DIR"), required=True)
     p.add_argument("-o", required=True)
+    p.add_argument("--site", default="facebook")
     p = sub.add_parser("judge")
     p.add_argument("--baseline", required=True)
     p.add_argument("--arm", nargs=2, metavar=("N", "DIR"), required=True)
     p.add_argument("--summary-out")
+    p.add_argument("--site", default="facebook")
     a = ap.parse_args(argv)
+    try:
+        site = sites.load(a.site)
+    except sites.SiteError as e:
+        print(f"UNMEASURED site: {e}")
+        return 3
+    r.use_site(site)
     if a.cmd == "summary":
-        print(json.dumps(summarize(a.arm_dir), indent=1, sort_keys=True))
+        print(json.dumps(summarize(a.arm_dir, site), indent=1, sort_keys=True))
         return 0
     if a.cmd == "baseline":
         by_arm = collections.defaultdict(list)
         for n, d in a.arm:
             # an unmeasured run would silently drop groups from the required set
             try:
-                s = summarize(d)
-                why = unmeasured(s, int(n))
+                s = summarize(d, site)
+                why = unmeasured(s, int(n), site)
             except MissingInput as e:
                 why = [str(e)]
             if why:
@@ -196,7 +224,7 @@ def main(argv=None):
         print(f"usage error: baseline {a.baseline} has no entry for arm {arm}", file=sys.stderr)
         return 2
     try:
-        v, rows = judge(a.arm[1], arm, base, a.summary_out)
+        v, rows = judge(a.arm[1], arm, base, a.summary_out, site)
     except Exception as e:  # a crash measured nothing, and exit 1 would read as FAIL
         v, rows = "UNMEASURED", [("UNMEASURED", f"judge error ({type(e).__name__})")]
     for level, text in rows:

@@ -1,0 +1,21 @@
+{
+  "$comment": "The local driver test page (scripts/observe_drive_testpage.py) as a second site: proves the toolchain runs a site it was not written for. Base hooks; used by verify_observe_drive.py --site testpage.",
+  "name": "testpage",
+  "origin": "http://127.0.0.1",
+  "surface_site": "http://127.0.0.1",
+  "cookie_domain": "127.0.0.1",
+  "logged_in_cookies": [],
+  "pages": {"dry": ["/", "/second"]},
+  "route_paths": ["/ajax/bz", "/ajax/bnzai", "/ajax/qm/"],
+  "unlink_endpoints": ["/ajax/bz", "/ajax/qm/"],
+  "beacon_path": "/ajax/bz",
+  "post_hosts": ["127.0.0.1"],
+  "resource_hosts": ["127.0.0.1"],
+  "doc_hosts": ["127.0.0.1"],
+  "ws_hosts": ["127.0.0.1"],
+  "backup": "",
+  "baseline": "",
+  "ledger": "auto\\ledger-testpage.json",
+  "cap": {"per_day": 3, "min_gap_min": 15},
+  "expired_hint": "testpage has no login"
+}

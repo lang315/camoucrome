@@ -70,18 +70,45 @@ test("profile seeds read another client's file and draw only the missing keys", 
   const dir = scratch();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
-  fs.writeFileSync(file, '{"canvas:seed": 5, "audio:seed": 4294967295}');
+  fs.writeFileSync(file, '{"canvas:seed": 5}');
   const seeds = c.profileSeeds(dir);
   assert.equal(seeds['canvas:seed'], 5);
-  assert.equal(seeds['audio:seed'], 0xffffffff);
+  assert.ok(seeds['mediaDevices:seed'] >= 1 && seeds['mediaDevices:seed'] <= 0xffffffff);
+  assert.deepEqual(Object.keys(seeds).sort(), ['canvas:seed', 'mediaDevices:seed']);
   assert.deepEqual(JSON.parse(fs.readFileSync(file)), seeds);
 });
 
-// A redraw would silently give the profile a different canvas, audio and
+test('rewriting an old file keeps audio:seed in place and out of the result', (t) => {
+  const dir = scratch();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
+  fs.writeFileSync(file, '{"canvas:seed": 11, "audio:seed": 22}');
+  const seeds = c.profileSeeds(dir);
+  assert.deepEqual(Object.keys(seeds).sort(), ['canvas:seed', 'mediaDevices:seed']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)),
+    { 'canvas:seed': 11, 'audio:seed': 22, 'mediaDevices:seed': seeds['mediaDevices:seed'] });
+});
+
+test('SEED_KEYS has no audio:seed, and neither does a drawn config', () => {
+  assert.deepEqual(c.SEED_KEYS, ['canvas:seed', 'mediaDevices:seed']);
+  assert.deepEqual(Object.keys(c.perInstanceConfig()).sort(), ['canvas:seed', 'mediaDevices:seed']);
+});
+
+test("an old profile file that still holds audio:seed loads unchanged", (t) => {
+  const dir = scratch();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
+  const raw = '{"canvas:seed": 11, "audio:seed": 22, "mediaDevices:seed": 33}';
+  fs.writeFileSync(file, raw);
+  assert.deepEqual(c.profileSeeds(dir), { 'canvas:seed': 11, 'mediaDevices:seed': 33 });
+  assert.equal(fs.readFileSync(file, 'utf8'), raw);
+});
+
+// A redraw would silently give the profile a different canvas and
 // device-ID fingerprint than every earlier session showed.
 test('profile seeds refuse a damaged file rather than redraw', (t) => {
-  for (const damaged of ['{"canvas:seed"', '[1, 2]', '{"audio:seed": 0}', '{"audio:seed": 4294967296}',
-    '{"audio:seed": "7"}', '{"audio:seed": true}', '{"audio:seed": 1.5}']) {
+  for (const damaged of ['{"canvas:seed"', '[1, 2]', '{"mediaDevices:seed": 0}', '{"mediaDevices:seed": 4294967296}',
+    '{"mediaDevices:seed": "7"}', '{"mediaDevices:seed": true}', '{"mediaDevices:seed": 1.5}']) {
     const dir = scratch();
     t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
     const file = path.join(dir, CONTRACT.per_instance_seeds.profile_file);
@@ -164,6 +191,27 @@ test('claimed OS mirrors derive.cc ClaimedOs over the effective keys', () => {
   assert.equal(k({ 'ua:platform': 'Bogus' }, { os: 'macOS' }), 'macOS');
   assert.equal(k(null, { os: 'Windows' }), 'Windows');
   assert.equal(k(null, null), null);
+});
+
+test('a foreign claim without a fonts dir throws on a Linux host only', () => {
+  const win = { 'ua:platform': 'Windows' };
+  assert.throws(() => c.fontconfigFor({ config: win, executablePath: '/nowhere/chrome', hostOs: 'Linux' }), /Windows.*fonts/);
+  assert.equal(c.fontconfigFor({ config: win, executablePath: '/nowhere/chrome', hostOs: 'Windows' }), null);
+  assert.equal(c.fontconfigFor({ config: { 'ua:platform': 'Linux' }, hostOs: 'Linux' }), null);
+  assert.equal(c.fontconfigFor({ hostOs: 'Linux' }), null);
+});
+
+test('launch window must fit the configured outer size', async () => {
+  const ctx = { on() {}, close: async () => {} };
+  const chromium = { launchPersistentContext: async () => ctx };
+  const both = { 'window.outerWidth': 1920, 'window.outerHeight': 1080 };
+  const go = (config, window) => c.launch(chromium, '/x/chrome', { config, window, userDataDir: '/tmp/p' });
+  await go(both); // a generated config without its launch.window
+  await assert.rejects(go(both, [1921, 1000]), /window\.outer/);
+  await assert.rejects(go(both, [1900, 1081]), /window\.outer/);
+  await go(both, [1920, 1080]);
+  await go({ 'window.outerWidth': 1920 }, [1920, 5000]);
+  await go({ a: 1 });
 });
 
 test('FONTCONFIG_FILE is never inherited and the conf must exist', () => {
@@ -282,5 +330,20 @@ test('launch refuses a proxy that would leak or do nothing', async () => {
   const chromium = { launchPersistentContext: async () => assert.fail('must not launch') };
   for (const proxy of [{ username: 'u' }, { server: '' }, { server: 'http://u:p@h:1' }, 'http://h:1']) {
     await assert.rejects(c.launch(chromium, '/x/chrome', { proxy }), /proxy/);
+  }
+});
+
+test('light args match the contract', () => {
+  assert.deepEqual(c.LIGHT_ARGS, L.light_args);
+});
+
+test('light puts light args after base args and off changes nothing', () => {
+  const saved = c.LIGHT_ARGS.splice(0, c.LIGHT_ARGS.length, '--x-light');
+  try {
+    const pipe = ['--remote-debugging-pipe'];
+    assert.deepEqual(c.buildArgs({ headless: false }), [...L.base_args, ...pipe]);
+    assert.deepEqual(c.buildArgs({ headless: false, light: true }), [...L.base_args, '--x-light', ...pipe]);
+  } finally {
+    c.LIGHT_ARGS.splice(0, c.LIGHT_ARGS.length, ...saved);
   }
 });

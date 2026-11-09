@@ -1,0 +1,479 @@
+//go:build unix
+
+package rodclient
+
+import (
+	"context"
+	"errors"
+	"math"
+	"math/rand"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+)
+
+const ms = time.Millisecond
+
+func ns(q req) time.Duration { return time.Duration(q.Params["ns"].(float64)) }
+
+// keyTrace is the keyboard and sleep entries of a drainAll, in order.
+func keyTrace(rs []req) []req {
+	var out []req
+	for _, q := range rs {
+		if q.Method == "Input.dispatchKeyEvent" || q.Method == "Input.insertText" || q.Method == "sleep" {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+func isKey(q req, typ, key string) bool {
+	return q.Method == "Input.dispatchKeyEvent" && q.Params["type"] == typ && q.Params["key"] == key
+}
+
+func inRange(d, lo, hi time.Duration) bool { return d >= lo && d <= hi }
+
+func seeded() *rand.Rand { return rand.New(rand.NewSource(7)) }
+
+func TestDwellDistribution(t *testing.T) {
+	r := seeded()
+	var xs []float64
+	seen := map[time.Duration]bool{}
+	for i := 0; i < 5000; i++ {
+		d := dwell(r)
+		if !inRange(d, dwellMin, dwellMax) {
+			t.Fatalf("dwell %v outside %v-%v", d, dwellMin, dwellMax)
+		}
+		seen[d] = true
+		xs = append(xs, float64(d))
+	}
+	sort.Float64s(xs)
+	if med := time.Duration(xs[len(xs)/2]); !inRange(med, dwellMedian*9/10, dwellMedian*11/10) {
+		t.Errorf("median dwell %v, want about %v", med, dwellMedian)
+	}
+	if len(seen) < 4000 {
+		t.Errorf("only %d distinct dwells in 5000 draws", len(seen))
+	}
+}
+
+func TestFlightDistribution(t *testing.T) {
+	r := seeded()
+	var xs []float64
+	seen := map[time.Duration]bool{}
+	sum := 0.0
+	for i := 0; i < 200; i++ {
+		d := flight(r, 'a', 'b')
+		if !inRange(d, flightMin, flightMax) {
+			t.Fatalf("flight %v outside %v-%v", d, flightMin, flightMax)
+		}
+		if seen[d] {
+			t.Fatalf("flight %v drawn twice in 200 draws", d)
+		}
+		seen[d] = true
+		xs = append(xs, float64(d))
+		sum += float64(d)
+	}
+	sort.Float64s(xs)
+	mean, med := sum/200, xs[100]
+	if mean <= med {
+		t.Errorf("flight not right-skewed: mean %v <= median %v", time.Duration(mean), time.Duration(med))
+	}
+}
+
+func meanFlight(prev, next rune, n int) float64 {
+	r := seeded()
+	sum := 0.0
+	for i := 0; i < n; i++ {
+		sum += float64(flight(r, prev, next))
+	}
+	return sum / float64(n)
+}
+
+func TestFlightLongerAfterPunctAndBeforeShift(t *testing.T) {
+	base := meanFlight('1', 'b', 20000)
+	if base == 0 {
+		t.Fatal("flight is always zero")
+	}
+	if f := meanFlight('.', 'b', 20000) / base; f < 1.3 || f > 1.5 {
+		t.Errorf("after punctuation x%.2f, want about x1.4", f)
+	}
+	if f := meanFlight('1', 'B', 20000) / base; f < 1.15 || f > 1.35 {
+		t.Errorf("before a shifted key x%.2f, want about x1.25", f)
+	}
+}
+
+func TestFlightThinkingPauseOnlyAtWordBoundary(t *testing.T) {
+	// Without a pause a flight after a space is at most flightMax x flightAfterPunct.
+	over := func(prev rune) int {
+		r := seeded()
+		n := 0
+		for i := 0; i < 20000; i++ {
+			if flight(r, prev, 'b') > time.Duration(float64(flightMax)*flightAfterPunct) {
+				n++
+			}
+		}
+		return n
+	}
+	if n := over('a'); n != 0 {
+		t.Errorf("%d long flights inside a word", n)
+	}
+	if n := over(' '); n < 20 || n > 1000 {
+		t.Errorf("%d long flights after a space in 20000 draws, want a few percent at most", n)
+	}
+}
+
+func TestClickPointOffCentreAndInside(t *testing.T) {
+	r := seeded()
+	var sx, sy float64
+	for i := 0; i < 1000; i++ {
+		x, y := clickPoint(r, 100, 200, 300, 280) // 200 x 80, centre (200,240)
+		if x < 130 || x > 270 || y < 212 || y > 268 {
+			t.Fatalf("point (%v,%v) outside the inner 70%%", x, y)
+		}
+		if x == 200 && y == 240 {
+			t.Fatal("point is the exact centre")
+		}
+		sx += x
+		sy += y
+	}
+	if math.Abs(sx/1000-200) > 6 || math.Abs(sy/1000-240) > 3 {
+		t.Errorf("mean point (%v,%v) not around the centre", sx/1000, sy/1000)
+	}
+}
+
+func TestClickPointTinyBoxUsesCentre(t *testing.T) {
+	r := seeded()
+	if x, y := clickPoint(r, 10, 10, 17, 17); x != 13.5 || y != 13.5 {
+		t.Errorf("7x7 box gave (%v,%v), want its centre", x, y)
+	}
+}
+
+func TestTypeEveryKeyHasDwell(t *testing.T) {
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	tr := keyTrace(r.drainAll())
+	downs := 0
+	for i, q := range tr {
+		if q.Method == "Input.dispatchKeyEvent" && q.Params["type"] == "keyDown" {
+			downs++
+			if i+2 >= len(tr) || tr[i+1].Method != "sleep" || !inRange(ns(tr[i+1]), 40*ms, 250*ms) ||
+				tr[i+2].Params["type"] != "keyUp" || tr[i+2].Params["key"] != q.Params["key"] {
+				t.Errorf("key %v: keyDown is not followed by a 40-250 ms sleep and its keyUp", q.Params["key"])
+			}
+		}
+	}
+	if downs != 3 {
+		t.Errorf("%d keyDowns, want 3", downs)
+	}
+}
+
+func TestTypeFlightBetweenKeys(t *testing.T) {
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "abcdefgh"); err != nil {
+		t.Fatal(err)
+	}
+	tr := keyTrace(r.drainAll())
+	// keyDown a, sleep, keyUp a, sleep(flight - dwell), keyDown b ... A flight
+	// shorter than its dwell has no gap, so not every key pair shows one.
+	gaps := map[time.Duration]bool{}
+	for i := 0; i < len(tr); i++ {
+		if tr[i].Params["type"] == "keyUp" && i+1 < len(tr) && tr[i+1].Method == "sleep" {
+			if i+2 >= len(tr) {
+				t.Fatal("a sleep after the last keyUp")
+			}
+			gaps[ns(tr[i+1])] = true
+		}
+	}
+	if len(gaps) < 3 {
+		t.Fatalf("%d distinct gaps after keyUp, want >= 3 of 7", len(gaps))
+	}
+}
+
+func TestTypeShiftBracket(t *testing.T) {
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "Hello, World!"); err != nil {
+		t.Fatal(err)
+	}
+	tr := keyTrace(r.drainAll())
+	shifted := map[string]bool{"H": true, "W": true, "!": true}
+	var downs, ups int
+	held := false
+	for i, q := range tr {
+		if q.Method != "Input.dispatchKeyEvent" {
+			continue
+		}
+		key, _ := q.Params["key"].(string)
+		switch {
+		case isKey(q, "keyDown", "Shift"):
+			downs++
+			if held {
+				t.Errorf("Shift pressed twice without a release (event %d)", i)
+			}
+			held = true
+			if q.Params["code"] != "ShiftLeft" || q.Params["windowsVirtualKeyCode"] != float64(16) || q.Params["location"] != float64(1) {
+				t.Errorf("Shift keyDown fields %v", q.Params)
+			}
+			if i+2 >= len(tr) || tr[i+1].Method != "sleep" || !inRange(ns(tr[i+1]), shiftLeadMin, shiftLeadMax) ||
+				tr[i+2].Params["type"] != "keyDown" || tr[i+2].Params["modifiers"] != float64(8) {
+				t.Errorf("Shift keyDown not followed by a shiftLead lead and the shifted key")
+			}
+		case isKey(q, "keyUp", "Shift"):
+			ups++
+			if !held {
+				t.Errorf("Shift released while not held (event %d)", i)
+			}
+			held = false
+			if i < 2 || tr[i-1].Method != "sleep" || !inRange(ns(tr[i-1]), shiftReleaseMin, shiftReleaseMax) || tr[i-2].Params["type"] != "keyUp" {
+				t.Errorf("Shift keyUp not shiftRelease after a key's keyUp")
+			}
+		case q.Params["type"] == "keyDown":
+			if shifted[key] != held {
+				t.Errorf("key %q keyDown with Shift held = %v, want %v", key, held, shifted[key])
+			}
+			if shifted[key] && q.Params["modifiers"] != float64(8) {
+				t.Errorf("shifted key %q lacks the modifier bit", key)
+			}
+		}
+	}
+	if downs != 3 || ups != 3 || held {
+		t.Errorf("Shift downs/ups = %d/%d held=%v, want 3/3 released", downs, ups, held)
+	}
+}
+
+func TestTypeConsecutiveShiftedKeysShareOnePress(t *testing.T) {
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "ABc"); err != nil {
+		t.Fatal(err)
+	}
+	var seq []string
+	for _, q := range keyTrace(r.drainAll()) {
+		switch {
+		case q.Method == "sleep":
+		case q.Params["type"] == "keyDown":
+			seq = append(seq, "v"+q.Params["key"].(string))
+		default:
+			seq = append(seq, "^"+q.Params["key"].(string))
+		}
+	}
+	if got, want := strings.Join(seq, " "), "vShift vA ^A vB ^B ^Shift vc ^c"; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestTypeOffLayoutRuneHasNoShiftOrDwell(t *testing.T) {
+	r := newRig(t)
+	if err := r.p.Type(context.Background(), "#i", "é"); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range keyTrace(r.drainAll()) {
+		if q.Method == "Input.dispatchKeyEvent" {
+			t.Errorf("key event %v for a rune off the layout", q.Params)
+		}
+	}
+}
+
+func TestClickWaitsBeforeAndDuringPress(t *testing.T) {
+	r := newRig(t)
+	if err := r.p.Click(context.Background(), "#b"); err != nil {
+		t.Fatal(err)
+	}
+	// start move, move, settle, pressed, hold, released
+	var seq []string
+	var sl []time.Duration
+	for _, q := range r.drainAll() {
+		switch q.Method {
+		case "Input.dispatchMouseEvent":
+			seq = append(seq, q.Params["type"].(string))
+		case "sleep":
+			seq = append(seq, "sleep")
+			sl = append(sl, ns(q))
+		}
+	}
+	if got, want := strings.Join(seq, " "), "mouseMoved mouseMoved sleep mousePressed sleep mouseReleased"; got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	if !inRange(sl[0], 40*ms, 400*ms) {
+		t.Errorf("settle %v outside 40-400 ms", sl[0])
+	}
+	if !inRange(sl[1], 40*ms, 200*ms) {
+		t.Errorf("hold %v outside 40-200 ms", sl[1])
+	}
+}
+
+func TestHold(t *testing.T) {
+	r := newRig(t)
+	const d = 1500 * ms
+	if err := r.p.Hold(context.Background(), "#b", d); err != nil {
+		t.Fatal(err)
+	}
+	var press, release *req
+	var held time.Duration
+	var tremor []req
+	var gaps []time.Duration
+	for _, q := range r.drainAll() {
+		q := q
+		switch {
+		case q.Method == "Input.dispatchMouseEvent" && q.Params["type"] == "mousePressed":
+			press = &q
+		case q.Method == "Input.dispatchMouseEvent" && q.Params["type"] == "mouseReleased":
+			release = &q
+		case press != nil && release == nil && q.Method == "sleep":
+			held += ns(q)
+			gaps = append(gaps, ns(q))
+		case press != nil && release == nil && q.Method == "Input.dispatchMouseEvent":
+			tremor = append(tremor, q)
+		}
+	}
+	if press == nil || release == nil {
+		t.Fatal("no press/release")
+	}
+	if held != d {
+		t.Errorf("held for %v, want exactly %v", held, d)
+	}
+	if len(tremor) < 1 {
+		t.Fatal("no tremor mouseMoved while held")
+	}
+	px, py := press.Params["x"].(float64), press.Params["y"].(float64)
+	for _, m := range tremor {
+		if m.Params["type"] != "mouseMoved" || m.Params["buttons"] != float64(1) {
+			t.Errorf("tremor event %v, want mouseMoved with buttons 1", m.Params)
+		}
+		if math.Abs(m.Params["x"].(float64)-px) > 2 || math.Abs(m.Params["y"].(float64)-py) > 2 {
+			t.Errorf("tremor (%v,%v) more than 2 px from the press point (%v,%v)", m.Params["x"], m.Params["y"], px, py)
+		}
+	}
+	for i, g := range gaps[:len(gaps)-1] { // the last wait may be cut short to end at d
+		if !inRange(g, 120*ms, 300*ms) {
+			t.Errorf("tremor gap %d = %v outside 120-300 ms", i, g)
+		}
+	}
+	last := tremor[len(tremor)-1]
+	if release.Params["x"] != last.Params["x"] || release.Params["y"] != last.Params["y"] {
+		t.Errorf("released at (%v,%v), the last mouseMoved was at (%v,%v): the pointer jumped without a move",
+			release.Params["x"], release.Params["y"], last.Params["x"], last.Params["y"])
+	}
+}
+
+func TestHoldReleasesTheButtonOnError(t *testing.T) {
+	r := newRig(t)
+	rec := sleep
+	n := 0
+	sleep = func(ctx context.Context, d time.Duration) error {
+		if n++; n == 3 { // settle, then the second tremor wait fails
+			return errors.New("boom")
+		}
+		return rec(ctx, d)
+	}
+	if err := r.p.Hold(context.Background(), "#b", time.Hour); err == nil {
+		t.Fatal("no error")
+	}
+	var last, prev req
+	for _, q := range r.drain() {
+		if q.Method == "Input.dispatchMouseEvent" {
+			prev, last = last, q
+		}
+	}
+	if last.Params["type"] != "mouseReleased" {
+		t.Fatalf("last mouse event %v, want mouseReleased", last.Params["type"])
+	}
+	if prev.Params["x"] != last.Params["x"] || prev.Params["y"] != last.Params["y"] {
+		t.Errorf("released at (%v,%v), the event before was at (%v,%v)", last.Params["x"], last.Params["y"], prev.Params["x"], prev.Params["y"])
+	}
+}
+
+// keyEvents is the key and insertText requests of a drain, as "type:key" strings.
+func keyEvents(rs []req) []string {
+	var out []string
+	for _, q := range rs {
+		switch q.Method {
+		case "Input.dispatchKeyEvent":
+			out = append(out, q.Params["type"].(string)+":"+q.Params["key"].(string))
+		case "Input.insertText":
+			out = append(out, "insert:"+q.Params["text"].(string))
+		}
+	}
+	return out
+}
+
+func TestTypeWithTyposSendsBackspaceTypeDoesNot(t *testing.T) {
+	r := newRig(t)
+	old := typoProb
+	typoProb = 0.3
+	defer func() { typoProb = old }()
+	text := strings.Repeat("hello world ", 8)
+	if err := r.p.Type(context.Background(), "#i", text); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(strings.Join(keyEvents(r.drain()), " "), "keyDown:Backspace"); n != 0 {
+		t.Errorf("Type sent %d Backspace keyDowns", n)
+	}
+	if err := r.p.TypeWith(context.Background(), "#i", text, TypeOptions{Typos: true}); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(strings.Join(keyEvents(r.drain()), " "), "keyDown:Backspace"); n == 0 {
+		t.Error("TypeWith{Typos: true} sent no Backspace keyDown")
+	}
+}
+
+func TestTypeRolloverOverlapsWhenChanceIsOne(t *testing.T) {
+	r := newRig(t) // the rig turns rollover off; this test turns it on
+	rolloverProb = 1
+	if err := r.p.Type(context.Background(), "#i", "abc"); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(keyEvents(r.drain()), " ")
+	if !strings.Contains(got, "keyDown:b keyUp:a") {
+		t.Errorf("no overlap (keyDown b before keyUp a) in %s", got)
+	}
+}
+
+func TestTypeDefaultRolloverIsCalibrated(t *testing.T) {
+	if rolloverProb != rolloverChance {
+		t.Fatalf("rolloverProb %v, want the calibrated %v", rolloverProb, rolloverChance)
+	}
+}
+
+// TestTypeWithCancelReleasesEveryKey cancels the context after k waits, for
+// every k, with every pair rolling over and Shift held, and checks the page
+// ends with every keyDown matched by a keyUp.
+func TestTypeWithCancelReleasesEveryKey(t *testing.T) {
+	for k := 0; k < 14; k++ {
+		r := newRig(t)
+		rolloverProb = 1
+		ctx, cancel := context.WithCancel(context.Background())
+		rec := sleep
+		n := 0
+		sleep = func(c context.Context, d time.Duration) error {
+			if n++; n > k {
+				cancel()
+			}
+			return rec(c, d)
+		}
+		err := r.p.TypeWith(ctx, "#i", "abCDef", TypeOptions{Typos: true})
+		cancel()
+		sleep = rec
+		if err == nil && n > k {
+			t.Fatalf("k=%d: cancelled but no error", k)
+		}
+		down := map[string]int{}
+		for _, q := range r.drain() {
+			if q.Method != "Input.dispatchKeyEvent" {
+				continue
+			}
+			key := q.Params["key"].(string)
+			if q.Params["type"] == "keyDown" {
+				down[key]++
+			} else {
+				down[key]--
+			}
+		}
+		for key, v := range down {
+			if v != 0 {
+				t.Errorf("k=%d: key %q left down (balance %d)", k, key, v)
+			}
+		}
+	}
+}

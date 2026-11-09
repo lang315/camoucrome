@@ -9,21 +9,10 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const camoucrome = require('.');
+const { procCandidates } = require('./procargv');
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) =>
   a.startsWith('--') ? [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true] : null).filter(Boolean));
-
-function procArgv(executable) {
-  for (const pid of fs.readdirSync('/proc')) {
-    if (!/^\d+$/.test(pid)) continue;
-    let raw;
-    try { raw = fs.readFileSync(`/proc/${pid}/cmdline`); } catch { continue; }
-    let parts = raw.toString('binary').replace(/\0$/, '').split('\0');
-    if (parts.length === 1) parts = parts[0].split(' '); // Chromium rewrites its cmdline into one string
-    if (parts[0] === executable && !parts.some((p) => p.startsWith('--type='))) return parts;
-  }
-  return [];
-}
 
 // Windows: Win32_Process has each process's command line as one string, and
 // CommandLineToArgvW splits it the way the process itself did. Node cannot
@@ -57,7 +46,12 @@ function windowsArgv(executable) {
   return [];
 }
 
-const browserArgv = (executable) => (process.platform === 'win32' ? windowsArgv(executable) : procArgv(executable));
+// Every main browser process of the executable (Windows: the first match only).
+const browserCandidates = (executable) => {
+  if (process.platform !== 'win32') return procCandidates('/proc', executable);
+  const argv = windowsArgv(executable);
+  return argv.length ? [argv] : [];
+};
 
 // A generated identity is ~37 KB (Windows) to ~140 KB (macOS): past Windows'
 // 32767-char command line and Linux's 128 KiB single argument, so @path reads a file.
@@ -74,16 +68,17 @@ const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFil
     dpr: args.dpr ? Number(args.dpr) : undefined,
     proxy: args.proxy ? { server: args.proxy, bypass: args['proxy-bypass'], username: args['proxy-user'], password: args['proxy-pass'] } : undefined,
   });
-  let text; let argv;
+  let text; let argv; let candidates;
   try {
     const page = ctx.pages()[0] || await ctx.newPage();
     // SP2 4.2 item, same as the other probes: the page reports typeof __camou_init.
     await page.addInitScript('window.__camou_init = 1');
     await page.goto(args.url, { waitUntil: 'load' });
     text = await page.locator('#o').textContent();
-    argv = browserArgv(args.executable);
+    candidates = browserCandidates(args.executable);
+    argv = candidates[0] || [];
   } finally {
     await ctx.close(); // removes the launch's temp profile and crash dir, also when the page step threw
   }
-  process.stdout.write(JSON.stringify({ driver: args.label || 'node', report: JSON.parse(text), argv }));
+  process.stdout.write(JSON.stringify({ driver: args.label || 'node', report: JSON.parse(text), argv, strays: Math.max(candidates.length - 1, 0) }));
 })().catch((e) => { console.error(String(e)); process.exit(1); });

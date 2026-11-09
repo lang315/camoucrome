@@ -482,3 +482,19 @@ def test_release_commit_must_be_a_full_sha(monkeypatch, stamps):
 
 def test_comment_only_accepts_an_empty_diff_and_keys_comments():
     assert release.comment_only("") and release.comment_only(KEYS_COMMENT)
+
+
+def test_one_stamp_is_refused_without_single_platform(monkeypatch, stamps, tmp_path):
+    paths, notes = stamps
+    refused(monkeypatch, Gh(), (paths[:1], notes), tmp_path)
+
+
+def test_single_platform_takes_one_stamp(monkeypatch, stamps):
+    paths, notes = stamps
+    gh = Gh()
+    assert run(monkeypatch, gh, (paths[:1], notes), extra=("--single-platform",)) == 0
+    assert any(c[:2] == ["release", "create"] for c in gh.calls)
+
+
+def test_single_platform_still_refuses_two_stamps(monkeypatch, stamps, tmp_path):
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--single-platform",))

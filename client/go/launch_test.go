@@ -70,3 +70,43 @@ func TestLaunchHandsTheDriverTheConfigInTheEnvAndExtraArgsLast(t *testing.T) {
 		t.Errorf("IgnoreAllDefaultArgs and NoViewport must both be true: %+v", f.opts)
 	}
 }
+
+func TestForeignClaimWithoutAFontsDirFailsOnLinuxOnly(t *testing.T) {
+	o := Options{Config: map[string]any{"ua:platform": "Windows"}, ExecutablePath: "/nowhere/chrome"}
+	if _, err := buildEnvFor(o, nil, "Linux"); err == nil || !strings.Contains(err.Error(), "Windows") {
+		t.Fatalf("Linux host, Windows claim, no fonts dir: err %v", err)
+	}
+	env, err := buildEnvFor(o, nil, "Windows")
+	if _, ok := env["FONTCONFIG_FILE"]; err != nil || ok {
+		t.Fatalf("Windows host: env %v err %v", env, err)
+	}
+	for _, c := range []any{map[string]any{"ua:platform": "Linux"}, nil} {
+		if _, err := buildEnvFor(Options{Config: c}, nil, "Linux"); err != nil {
+			t.Fatalf("Linux or no claim must pass: %v", err)
+		}
+	}
+}
+
+func TestLaunchWindowMustFitTheConfiguredOuterSize(t *testing.T) {
+	both := map[string]any{"window.outerWidth": 1920, "window.outerHeight": 1080}
+	for _, c := range []struct {
+		name   string
+		config any
+		window [2]int
+		ok     bool
+	}{
+		{"no window", both, [2]int{}, true}, // a generated config without its launch.window
+		{"wider", both, [2]int{1921, 1000}, false},
+		{"taller", both, [2]int{1900, 1081}, false},
+		{"equal", both, [2]int{1920, 1080}, true},
+		{"one key", map[string]any{"window.outerWidth": 1920}, [2]int{1920, 5000}, true},
+		{"no outer keys", map[string]any{"a": 1}, [2]int{}, true},
+	} {
+		f := &fakeLauncher{err: errors.New("stop here")}
+		_, err := launch(f, Options{Config: c.config, Window: c.window, UserDataDir: t.TempDir()})
+		refused := err != nil && strings.Contains(err.Error(), "window.outer")
+		if refused == c.ok {
+			t.Errorf("%s: err %v, want ok=%v", c.name, err, c.ok)
+		}
+	}
+}

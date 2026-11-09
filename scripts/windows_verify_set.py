@@ -26,6 +26,8 @@ import subprocess
 import sys
 import tempfile
 
+from step2_rows import same_build
+
 # known_fail: row-name prefixes that must FAIL in green (a documented gap, not a pass)
 # may_skip: row-name prefixes that may print NOT MEASURED instead of PASS (a premise the host cannot give)
 Entry = collections.namedtuple("Entry", "script rows red known_fail may_skip", defaults=((), ()))
@@ -48,8 +50,7 @@ SET = [
     Entry("verify_sp1b.py", 8, "stock"),
     Entry("verify_sp3b.py", 9, "stock"),
     Entry("verify_sp4a.py", 6, "stock"),
-    Entry("verify_metric_jitter.py", 11, "stock"),
-    Entry("verify_audio_ii.py", 4, "stock"),
+    Entry("verify_metric_jitter.py", 12, "stock"),
     Entry("verify_ua_halfconfig_reject.py", 6, "stock"),
     Entry("verify_sp5b_domain.py", 4, "stock"),
     Entry("verify_webgl_pairing.py", 9, "stock"),
@@ -124,6 +125,19 @@ def judge(mode, entry, returncode, stdout):
                 f"(want {entry.rows} PASS{', or NOT MEASURED for ' + ', '.join(entry.may_skip) if entry.may_skip else ''})")
 
 
+def log_head(out, err, lines=12, err_lines=5):
+    """The first lines of a script's output plus the tail of its stderr, so a BAD entry's
+    failing row is in the batch output and not only in a log the next run overwrites."""
+    head = out.splitlines()[:lines]
+    tail = err.splitlines()[-err_lines:]
+    if not head and not tail:
+        return "      (no output)"
+    text = ["      " + l for l in head]
+    if tail:
+        text += ["      --- stderr ---"] + ["      " + l for l in tail]
+    return "\n".join(text)
+
+
 def stock_version(app_dir):
     versions = [p.name for p in pathlib.Path(app_dir).iterdir()
                 if p.is_dir() and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", p.name)]
@@ -137,6 +151,14 @@ def pin_tag(client):
         if line.startswith("CHROMIUM_TAG="):
             return line.split("=", 1)[1].strip().strip('"')
     sys.exit("upstream.env has no CHROMIUM_TAG")
+
+
+def control_problem(have, want):
+    """None when the stock control may stand in for the pin: the pin itself, or another patch of
+    the pin's build (spec 2026-11-03-camoufox-port-pivot-design §1). Any other build is refused."""
+    if have == want or same_build(have, want):
+        return None
+    return f"stock Chrome is {have}, the pin is {want}: the control is not the pin's build"
 
 
 def select(only_arg):
@@ -170,8 +192,9 @@ def main(argv):
     client = os.environ.get("CAMOU_CLIENT", str(here.parent))
     app = os.environ.get("CAMOU_STOCK_APP", STOCK_APP)
     have, want = stock_version(app), pin_tag(client)
-    if have != want:
-        sys.exit(f"stock Chrome is {have}, the pin is {want}: the control is not the pin's version")
+    problem = control_problem(have, want)
+    if problem:
+        sys.exit(problem)
     env = dict(os.environ, CAMOU_SHELL="chrome", CAMOU_STOCK_EXE=os.path.join(app, "chrome.exe"))
     if mode == "red":
         env["CAMOU_EXE"] = os.path.join(app, "chrome.exe")
@@ -195,6 +218,8 @@ def main(argv):
             (logs / f"{e.script}.log").write_text(out + "\n--- stderr ---\n" + err, encoding="utf-8")
         good += ok
         print(f"{'OK  ' if ok else 'BAD '} {e.script}: {why}", flush=True)
+        if not ok and not (mode == "red" and e.red == "own"):
+            print(log_head(out, err), flush=True)
     um = sum(1 for e in entries if (logs / f"{e.script}.log").exists()
              and unmeasured((logs / f"{e.script}.log").read_text(encoding="utf-8")))
     print(f"{good}/{len(entries)} entries OK ({mode}); {um} UNMEASURED")

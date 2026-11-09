@@ -11,9 +11,10 @@ L3 --ignore-certificate-errors-spki-list: a self-signed HTTPS server here;
    with the cert's SPKI hash the page loads, RED: without it the probe fails.
 L4 headed launch (WSLg DISPLAY on the box): starts, argv equals the
    contract's set minus --headless=new and Chrome's headless-only flags.
-L5 domain: navigator.deviceMemory 16 (what the fingerprint pool says, what
-   Chrome never reports) is refused under strict and the log names it;
-   non-strict starts and logs it.
+L5 domain: navigator.deviceMemory 64 (above Chrome 156 desktop's clamp of
+   [2, 32]) is refused under strict and the log names it; non-strict starts
+   and logs it. 16, which the domain refused up to 2026-11-04, is no longer
+   a RED case.
 """
 import base64
 import http.server
@@ -26,7 +27,7 @@ import sys
 import tempfile
 import threading
 
-from lib_shell import CHROME as EXE, layout, restore_display_env, x_server_answers
+from lib_shell import CHROME as EXE, headed_premise, layout, restore_display_env
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 restore_display_env()  # L4 is a headed launch on the box: lib_shell dropped the display variables so a hand run matches CI
@@ -145,10 +146,11 @@ def main():
     ssrv.shutdown()
 
     L4 = "L4 headed launch starts; argv == contract set minus the headless flags"
-    if not x_server_answers(os.environ.get("DISPLAY")):
-        # a headed chrome needs an X server that answers: without one it waits 30 s and exits (the box's WSLg X0 on
-        # 2026-10-29 accepted connections and never spoke). That is a missing premise, not a launcher failure.
-        unmeasured[L4] = f"no X server answers on DISPLAY={os.environ.get('DISPLAY')!r}"
+    why = headed_premise(os.environ.get("DISPLAY"))
+    if why:
+        # a headed chrome on Linux needs an X server that answers: without one it waits 30 s and exits (the box's
+        # WSLg X0 on 2026-10-29 accepted connections and never spoke). That is a missing premise, not a launcher failure.
+        unmeasured[L4] = why
         out = None
     else:
         out, log = probe(url, headed=True)
@@ -164,12 +166,12 @@ def main():
         if not results[L4]:
             notes.append(f"L4: unexpected={sorted(got - expected)} absent={sorted(expected - got)}")
 
-    dm = dict(FR, **{"navigator.deviceMemory": 16})
+    dm = dict(FR, **{"navigator.deviceMemory": 64})
     out_s, log_s = probe(url, dm, strict=True)
     out_w, log_w = probe(url, dm)
-    named = "'navigator.deviceMemory' is '16'"
-    L5 = "L5 deviceMemory 16: refused under strict, logged non-strict (domain entry)"
-    results[L5] = (out_s is None and named in log_s and "[0.25, 8]" in log_s
+    named = "'navigator.deviceMemory' is '64'"
+    L5 = "L5 deviceMemory 64: refused under strict, logged non-strict (domain entry)"
+    results[L5] = (out_s is None and named in log_s and "[2, 32]" in log_s
                    and out_w is not None and named in log_w)
     if not results[L5]:
         notes.append(f"L5: strict_started={out_s is not None} strict_named={named in log_s} "

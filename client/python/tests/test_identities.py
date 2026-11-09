@@ -3,7 +3,7 @@ from camoucrome import gen
 
 # Keys that must differ between two seeds.
 DEVICE_KEYS = ["screen.width", "screen.height", "navigator.hardwareConcurrency"]
-PER_INSTANCE_SEEDS = ["canvas:seed", "audio:seed", "mediaDevices:seed"]
+PER_INSTANCE_SEEDS = ["canvas:seed", "mediaDevices:seed"]
 
 # Config keys, or key prefixes ending in ":" or ".", that two identities may share.
 SHARED_ALLOWED = frozenset({
@@ -16,7 +16,7 @@ SHARED_ALLOWED = frozenset({
     "locale:tag", "navigator.language", "navigator.languages",  # en-US default
     "fonts:",                       # stock Windows font list and its alias maps
     "voices:list",                  # stock Windows voices
-    "navigator.deviceMemory",       # Chrome caps it at 8
+    "navigator.deviceMemory",       # 8, 16 or 32 (gen.DEVICE_MEMORY): two seeds often draw the same
     "navigator.maxTouchPoints",     # 0 on a non-touch desktop
     "window.screenX", "window.screenY",  # maximised window at 0,0
     "audio:sampleRate", "audio:bufferFrames",  # stock Windows audio output
@@ -29,7 +29,7 @@ HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 p
 
 
 def keys_of(seed):
-    return gen.generate(os="windows", seed=seed, host_renderer=HOST)["config"]
+    return gen.generate(os="windows", seed=seed, host_renderer=HOST, host_cores=64)["config"]
 
 
 def allowed(key):
@@ -56,3 +56,18 @@ def test_only_declared_keys_are_shared():
 def test_gpu_name_differs_for_some_pair_of_seeds():
     names = {keys_of(s)["webGl:renderer"] for s in range(1, 6)}
     assert len(names) > 1
+
+
+def test_seed_keys_have_no_audio_seed():
+    from camoucrome import SEED_KEYS, per_instance_config
+    assert SEED_KEYS == ("canvas:seed", "mediaDevices:seed")
+    assert set(per_instance_config()) == {"canvas:seed", "mediaDevices:seed"}
+
+
+def test_old_seeds_file_with_audio_seed_still_loads_unchanged(tmp_path):
+    from camoucrome import profile_seeds
+    f = tmp_path / "camoucrome-seeds.json"
+    raw = '{"canvas:seed": 11, "audio:seed": 22, "mediaDevices:seed": 33}'
+    f.write_text(raw)
+    assert profile_seeds(str(tmp_path)) == {"canvas:seed": 11, "mediaDevices:seed": 33}
+    assert f.read_text() == raw  # not rewritten: nothing was missing

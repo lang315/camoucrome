@@ -17,7 +17,7 @@ CAP_OF = {int(r["device_id"], 16): r["max_threads"] for r in CAPS["rows"]}
 
 
 def swap(seed, host=HOST):
-    return gen.generate("windows", "Europe/Paris", None, seed, host_renderer=host)["config"]
+    return gen.generate("windows", "Europe/Paris", None, seed, host_renderer=host, host_cores=64)["config"]
 
 
 def test_caps_file_covers_the_pool_and_every_sourced_row_cites_ark():
@@ -51,7 +51,7 @@ def test_threads_never_exceed_the_drawn_gpus_cap():
 def test_compatible_old_values_are_untouched():
     kept = 0
     for s in SEEDS:
-        old = gen.generate("windows", "Europe/Paris", None, s)["config"]["navigator.hardwareConcurrency"]
+        old = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]["navigator.hardwareConcurrency"]
         new = swap(s)
         if old <= CAP_OF[gen.gen9_device_id(new["webGl:renderer"])]:
             assert new["navigator.hardwareConcurrency"] == old, s
@@ -65,16 +65,16 @@ def test_check_can_fail_when_the_cap_lookup_is_dead(monkeypatch):
 
 
 PINNED = {
-    1: (2543, 577090038, 2444712011, 3639700192),
-    2: (1015, 4106135924, 3707026330, 4070888060),
-    3: (1167, 1022050302, 2545373331, 2337446731),
+    1: (2543, 577090038, 3639700192),
+    2: (1015, 4106135924, 4070888060),
+    3: (1167, 1022050302, 2337446731),
 }
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_seeded_keys_do_not_move(seed):
     cfg = swap(seed)
-    assert tuple(cfg[k] for k in ("share:cancelMs", "canvas:seed", "audio:seed", "mediaDevices:seed")) == PINNED[seed]
+    assert tuple(cfg[k] for k in ("share:cancelMs", "canvas:seed", "mediaDevices:seed")) == PINNED[seed]
 
 
 def test_swap_path_is_deterministic():
@@ -103,5 +103,5 @@ def test_redraw_does_not_advance_the_callers_rng():
 @pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"])
 def test_no_gen9_host_leaves_the_drawn_threads(host):
     for s in range(1, 30):
-        base = gen.generate("windows", "Europe/Paris", None, s)["config"]["navigator.hardwareConcurrency"]
+        base = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]["navigator.hardwareConcurrency"]
         assert swap(s, host)["navigator.hardwareConcurrency"] == base

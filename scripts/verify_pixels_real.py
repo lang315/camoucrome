@@ -61,7 +61,7 @@ def main(argv=None):
     gpu_gate.require_interactive()
     from patchright.sync_api import sync_playwright
     from camoucrome import SEED_KEYS
-    stock = m2.Arm("stock", os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe"), None)
+    stock = m2.Arm("stock", os.path.join(os.environ.get("CAMOU_STOCK_APP", STOCK_APP), "chrome.exe"), None, stock=True)
     fork_exe = os.environ["CAMOU_FORK_EXE"]
     m2.HOST_DRAW.update(m2.probe_host_draw(fork_exe))
     if not m2.HOST_DRAW["host_renderer"]:
@@ -71,7 +71,7 @@ def main(argv=None):
         return {k: v for k, v in ident["config"].items() if k not in SEED_KEYS}
 
     table = {}
-    with sync_playwright() as pw:
+    with m2.seeded_control(stock.exe), sync_playwright() as pw:
         table["stock-1"] = read(pw, stock, None)
         table["stock-2"] = read(pw, stock, None)
         for seed in m2.LINK_SEEDS:

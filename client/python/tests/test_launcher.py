@@ -103,11 +103,20 @@ def test_profile_seeds_draw_only_the_missing_keys(tmp_path):
     assert json.loads(stored.read_text()) == seeds
 
 
-@pytest.mark.parametrize("damaged", ['{"canvas:seed"', '[1, 2]', '{"audio:seed": 0}',
-                                     '{"audio:seed": 4294967296}', '{"audio:seed": "7"}',
-                                     '{"audio:seed": true}'])
+def test_profile_seeds_rewrite_of_an_old_file_keeps_audio_seed_in_place(tmp_path):
+    stored = tmp_path / CONTRACT["per_instance_seeds"]["profile_file"]
+    stored.write_text('{"canvas:seed": 11, "audio:seed": 22}')
+    seeds = camoucrome.profile_seeds(tmp_path)
+    assert set(seeds) == {"canvas:seed", "mediaDevices:seed"} and seeds["canvas:seed"] == 11
+    assert json.loads(stored.read_text()) == {"canvas:seed": 11, "audio:seed": 22,
+                                              "mediaDevices:seed": seeds["mediaDevices:seed"]}
+
+
+@pytest.mark.parametrize("damaged", ['{"canvas:seed"', '[1, 2]', '{"mediaDevices:seed": 0}',
+                                     '{"mediaDevices:seed": 4294967296}', '{"mediaDevices:seed": "7"}',
+                                     '{"mediaDevices:seed": true}'])
 def test_profile_seeds_refuse_a_damaged_file_rather_than_redraw(tmp_path, damaged):
-    # A redraw would silently give the profile a different canvas, audio and
+    # A redraw would silently give the profile a different canvas and
     # device-ID fingerprint than every earlier session showed.
     stored = tmp_path / CONTRACT["per_instance_seeds"]["profile_file"]
     stored.write_text(damaged)
@@ -142,7 +151,7 @@ def test_fontconfig_env_follows_the_claimed_os(tmp_path):
     assert win == str(tmp_path / "settings" / "fontconfig" / "windows.conf")
     assert launcher.fontconfig_for({"ua:platform": "Linux"}, None, tmp_path / "fonts") is None
     assert launcher.fontconfig_for(None, {"os": "macOS"}, tmp_path / "fonts") == str(tmp_path / "settings" / "fontconfig" / "macos.conf")
-    assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome") is None
+    assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "nowhere" / "chrome", host_os="Windows") is None
     (tmp_path / "chrome").write_bytes(b"")
     assert launcher.fontconfig_for({"ua:platform": "Windows"}, None, None, tmp_path / "chrome") == win
     assert launcher.build_env(fontconfig="/x/windows.conf")["FONTCONFIG_FILE"] == "/x/windows.conf"
@@ -204,6 +213,33 @@ def test_fontconfig_env_is_never_inherited_and_the_conf_must_exist(tmp_path):
     (tmp_path / "fonts").mkdir()
     with pytest.raises(FileNotFoundError):
         launcher.fontconfig_for({"ua:platform": "Windows"}, None, tmp_path / "fonts")
+
+
+def test_foreign_claim_without_a_fonts_dir_fails_on_linux_only(tmp_path):
+    fc = camoucrome.launcher.fontconfig_for
+    win = {"ua:platform": "Windows"}
+    with pytest.raises(FileNotFoundError, match="Windows.*fonts"):
+        fc(win, None, None, tmp_path / "chrome", host_os="Linux")
+    assert fc(win, None, None, tmp_path / "chrome", host_os="Windows") is None
+    assert fc({"ua:platform": "Linux"}, None, None, tmp_path / "chrome", host_os="Linux") is None
+    assert fc(None, None, None, tmp_path / "chrome", host_os="Linux") is None
+
+
+@pytest.mark.parametrize("cfg, window, ok", [
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, None, True),  # a generated config without its launch.window
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1921, 1000), False),
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1900, 1081), False),
+    ({"window.outerWidth": 1920, "window.outerHeight": 1080}, (1920, 1080), True),
+    ({"window.outerWidth": 1920}, (1920, 5000), True),
+    ({"a": 1}, None, True),
+])
+def test_launch_window_must_fit_the_configured_outer_size(cfg, window, ok):
+    pw = FakePlaywright()
+    if ok:
+        camoucrome.launch(pw, "/x/chrome", config=cfg, user_data_dir="/tmp/p", window=window)
+    else:
+        with pytest.raises(ValueError, match="window.outer"):
+            camoucrome.launch(pw, "/x/chrome", config=cfg, user_data_dir="/tmp/p", window=window)
 
 
 def test_a_large_preset_is_chunked_like_the_config():
@@ -440,7 +476,8 @@ def test_proxy_args_match_the_contract_and_keep_credentials_off_argv():
 def test_launch_adds_the_proxy_flag_and_hands_the_credentials_to_the_driver():
     pw = FakePlaywright()
     proxy = {"server": "http://p.example:8080", "username": "u", "password": "secret", "bypass": "a.test,b.test"}
-    camoucrome.launch(pw, "/x/chrome", user_data_dir="/tmp/p", proxy=proxy)
+    with pytest.warns(UserWarning, match="proxy without geoip"):  # a proxy without geoip
+        camoucrome.launch(pw, "/x/chrome", user_data_dir="/tmp/p", proxy=proxy)
     kw = pw.chromium.kw
     assert "--proxy-server=http://p.example:8080" in kw["args"]
     assert "--proxy-bypass-list=a.test;b.test" in kw["args"]
@@ -458,3 +495,21 @@ def test_device_scale_factor_text_matches_node_and_go():
     # Node's template literal and Go's %g print a whole number without ".0"
     for dpr, text in ((1.0, "1"), (2, "2"), (2.0, "2"), (1.25, "1.25"), (1.5, "1.5")):
         assert f"--force-device-scale-factor={text}" in camoucrome.build_args(dpr=dpr), dpr
+
+
+def test_light_args_match_the_contract():
+    assert camoucrome.launcher.LIGHT_ARGS == CONTRACT["launch"]["light_args"]
+
+
+def test_light_puts_light_args_after_base_args_and_off_changes_nothing(monkeypatch):
+    monkeypatch.setattr(camoucrome.launcher, "LIGHT_ARGS", ["--x-light"])
+    base, pipe = CONTRACT["launch"]["base_args"], ["--remote-debugging-pipe"]
+    assert camoucrome.build_args(headless=False) == base + pipe
+    assert camoucrome.build_args(headless=False, light=True) == base + ["--x-light"] + pipe
+
+
+def test_launch_passes_light_through(monkeypatch):
+    monkeypatch.setattr(camoucrome.launcher, "LIGHT_ARGS", ["--x-light"])
+    pw = FakePlaywright()
+    camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p", light=True)
+    assert "--x-light" in pw.chromium.kw["args"]

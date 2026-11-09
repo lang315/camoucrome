@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index fc5d5b869e..20635818d1 100644
+index fc5d5b869e..3e9699f5bd 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -8,6 +8,7 @@
@@ -32,7 +32,7 @@ index fc5d5b869e..20635818d1 100644
          // No callback queued on this injector; the completion task owns it.
          MaybeSelfDestruct();
          return;
-@@ -785,52 +790,94 @@ class InputHandler::InputInjector
+@@ -785,52 +790,96 @@ class InputHandler::InputInjector
    // with MouseWheelPhaseHandler's phases. Posted in real time, like SP2b's
    // path, so the renderer consumes each notch before the next arrives. The
    // last notch carries the CDP callback and goes through ForwardWheelEventNow.
@@ -45,8 +45,10 @@ index fc5d5b869e..20635818d1 100644
 +  // drained, so order is preserved, and the reply to that command waits for
 +  // the queue, at most the 10 s cap plus 17 ms per deferred command. Each
 +  // deferred event takes its own 17 ms slot (BookStockSlot, which ignores the
-+  // cap) so they cannot arrive as a burst that Chromium coalesces. With an
-+  // idle queue it returns false and the stock path forwards at once.
++  // cap), which spaces the events one frame apart. Chromium may still
++  // coalesce two of them, so order is the guarantee, not one dispatch per
++  // slot. With an idle queue it returns false and the stock path forwards at
++  // once.
 +  //
 +  // The queue orders by arrival at the injector: a wheel reaches it after a
 +  // visual-state round trip in InputHandler::HandleMouseEvent (stock
@@ -152,7 +154,7 @@ index fc5d5b869e..20635818d1 100644
    }
  
    void InjectMouseEvent(const blink::WebMouseEvent& mouse_event,
-@@ -868,8 +915,8 @@ class InputHandler::InputInjector
+@@ -868,8 +917,8 @@ class InputHandler::InputInjector
                            camoucfg::keys::kHumanizeEnabled)
              .value_or(false) &&
          mouse_event.GetType() == blink::WebInputEvent::Type::kMouseMove &&
@@ -163,7 +165,7 @@ index fc5d5b869e..20635818d1 100644
        // No pending callback was queued on this injector (it now belongs to
        // the deferred completion task instead), so it has no more work to
        // do. Self-destructing here, rather than leaving it idle-but-alive,
-@@ -949,20 +996,54 @@ class InputHandler::InputInjector
+@@ -949,20 +998,55 @@ class InputHandler::InputInjector
    // flight; that move would read last_move_position_ already at THIS
    // move's target and start its own path, and the two paths' synthetic
    // events would interleave out of order on the widget.
@@ -182,9 +184,10 @@ index fc5d5b869e..20635818d1 100644
 +  // the cap, or with no path to draw (same start and end, or a non-finite
 +  // coordinate: stock handles those), the plain event is forwarded once the
 +  // queue has drained, so order is preserved; it takes its own 17 ms slot
-+  // (BookStockSlot, which ignores the cap: 17 ms over per command) so
-+  // deferred events cannot arrive as a burst. The reply to that command
-+  // waits for the queue, at most the 10 s cap, and the next humanized path
++  // (BookStockSlot, which ignores the cap: 17 ms over per command), which
++  // spaces deferred events one frame apart. Chromium may still coalesce two
++  // of them; order is the guarantee. The reply to that command waits for
++  // the queue, at most the 10 s cap, and the next humanized path
 +  // starts from this event's position. HumanizePath runs before Reserve, so
 +  // a refused move still pays its generation cost (<= ~0.3 ms).
 +  bool SchedulePath(const blink::WebMouseEvent& mouse_event,
@@ -228,7 +231,7 @@ index fc5d5b869e..20635818d1 100644
  
      gfx::Vector2dF screen_offset =
          mouse_event.PositionInScreen() - mouse_event.PositionInWidget();
-@@ -990,7 +1071,7 @@ class InputHandler::InputInjector
+@@ -990,7 +1074,7 @@ class InputHandler::InputInjector
            FROM_HERE,
            base::BindOnce(&InputHandler::ForwardSyntheticMouseMove, handler,
                           widget_host_, synthetic),
@@ -237,7 +240,7 @@ index fc5d5b869e..20635818d1 100644
      }
  
      task_runner->PostDelayedTask(
-@@ -999,10 +1080,11 @@ class InputHandler::InputInjector
+@@ -999,10 +1083,11 @@ class InputHandler::InputInjector
                         handler, widget_host_,
                         std::make_unique<blink::WebMouseEvent>(mouse_event),
                         std::move(callback)),
@@ -250,7 +253,7 @@ index fc5d5b869e..20635818d1 100644
    }
  
    void InjectKeyboardEvent(const input::NativeWebKeyboardEvent& keyboard_event,
-@@ -2568,7 +2650,7 @@ void InputHandler::ForwardSyntheticMouseMove(
+@@ -2568,7 +2653,7 @@ void InputHandler::ForwardSyntheticMouseMove(
    // Stamped with the real time it actually fires, not a value computed at
    // schedule time: with a real posted delay (see InputInjector::
    // SchedulePath's own comment on why), "now" already carries the

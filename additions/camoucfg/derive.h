@@ -78,12 +78,11 @@ OsFamily ClaimedOs(const ConfigScope& scope);
 // A deterministic signed delta in [-|bound|, +|bound|]. A pure function of its
 // arguments: the same (seed, domain, index, bound) yields the same value in
 // any process with no shared state -- that purity is exactly the cross-process
-// reproducibility that lets canvas readback, a worker's OffscreenCanvas, and
-// (SP4) audio and font-metric jitter all reproduce one config's noise. `domain`
-// ("canvas", "audio", "fontmetric") separates surfaces that share a seed so
+// reproducibility that lets canvas readback (canvas:seed), a worker's
+// OffscreenCanvas, and font-metric jitter (textMetrics:seed) each reproduce one
+// config's noise. `domain` ("canvas", "fontmetric") separates the surfaces so
 // their sequences do not correlate. `index` is any stable integer the caller
-// can reproduce -- a flattened pixel offset, an audio sample number, a glyph
-// id. bound == 0 returns 0; a negative bound is taken by magnitude.
+// can reproduce -- a flattened pixel offset, a glyph id. bound == 0 returns 0; a negative bound is taken by magnitude.
 int32_t DeriveDelta(uint64_t seed, std::string_view domain, uint64_t index,
                     int32_t bound);
 

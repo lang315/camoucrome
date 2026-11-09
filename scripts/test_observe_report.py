@@ -1,4 +1,5 @@
 """observe_report.py on hand-made fixtures shaped like the real files."""
+import collections
 import json
 import pathlib
 import sqlite3
@@ -394,3 +395,282 @@ def test_dispatch_worker_target_joins_worker_global_scope_registrations():
     events = [lev("message", "DedicatedWorkerGlobalScope", script="https://a.com/w.js"),
               dev("message", 3, 3, target="Worker")]
     assert r.dispatch_rows(events)[0]["registered_by"] == ["a.com/w.js"]
+
+
+def cost_netlog(tmp_path):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+             "HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS",
+             "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        # load_requests keeps only PHASE_BEGIN start-job events, so the fixture serves both readers
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+    ev = [e(1, "URL_REQUEST_START_JOB", url="https://static.xx.fbcdn.net/a.js?x=1", method="GET"),
+          e(1, "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"),
+          e(1, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["content-type: application/javascript; charset=utf-8"]),
+          e(1, "URL_REQUEST_JOB_BYTES_READ", byte_count=300), e(1, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=1000),
+          e(2, "URL_REQUEST_START_JOB", url="https://static.xx.fbcdn.net/b.css", method="GET"),
+          e(2, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["Content-Type: text/css"]),
+          e(2, "URL_REQUEST_JOB_BYTES_READ", byte_count=50), e(2, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=200),
+          e(3, "URL_REQUEST_START_JOB", url="https://www.facebook.com/ajax/bz?q=secret", method="POST"),
+          e(3, "HTTP_TRANSACTION_SEND_REQUEST"), e(3, "URL_REQUEST_JOB_BYTES_READ", byte_count=10)]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_costs_split_network_cache_decoded_by_host_and_kind(tmp_path):
+    c = r.load_costs(cost_netlog(tmp_path))
+    h = c["by_host"]["static.xx.fbcdn.net"]
+    assert (h["n"], h["network"], h["cache"], h["decoded"]) == (2, 300, 50, 1200)
+    assert c["by_kind"]["js"]["network"] == 300 and c["by_kind"]["css"]["cache"] == 50
+    assert c["by_kind"]["beacon"]["n"] == 1
+    assert c["posts"] == {"www.facebook.com/ajax/bz": 1}
+
+
+def test_costs_kind_a_cache_hit_by_its_path(tmp_path):
+    # a cache hit logs no HTTP_TRANSACTION_READ_RESPONSE_HEADERS, so it has no content-type (run 20261031-080540)
+    t = {n: i for i, n in enumerate(["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_FILTERED_BYTES_READ", "HTTP_CACHE_READ_DATA"])}
+    ev = []
+    for sid, url in ((1, "https://static.xx.fbcdn.net/rsrc.php/v4/a.js?x=1"), (2, "https://video.xx.fbcdn.net/v/b.mp4?q=2"),
+                     (3, "https://static.xx.fbcdn.net/rsrc.php/v4/c.WEBP"), (4, "https://www.facebook.com/plain")):
+        ev += [{"source": {"id": sid}, "type": t["URL_REQUEST_START_JOB"], "phase": 1, "params": {"url": url, "method": "GET"}},
+               {"source": {"id": sid}, "type": t["HTTP_CACHE_READ_DATA"], "phase": 0, "params": {}},
+               {"source": {"id": sid}, "type": t["URL_REQUEST_JOB_FILTERED_BYTES_READ"], "phase": 0, "params": {"byte_count": 100 * sid}}]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t}, "events": ev}))
+    k = r.load_costs(p)["by_kind"]
+    assert (k["js"]["cache"], k["video"]["cache"], k["image"]["cache"], k["other"]["cache"]) == (100, 200, 300, 400)
+    assert sum(x["network"] for x in k.values()) == 0
+
+
+def test_costs_of_a_cut_netlog_is_none_and_renders_a_line(tmp_path):
+    p = tmp_path / "net.json"
+    p.write_text('{"constants": {"logEventTypes": {}}, "events": [{"source"')
+    assert r.load_costs(p) is None
+    assert "netlog unreadable" in r.render_costs(None)
+
+
+def test_render_costs_never_prints_a_query(tmp_path):
+    out = r.render_costs(r.load_costs(cost_netlog(tmp_path)))
+    assert "secret" not in out and "x=1" not in out
+    assert "static.xx.fbcdn.net" in out
+
+
+def tl(name, ts, dur, url, tid=1):
+    return {"name": name, "cat": "devtools.timeline", "ph": "X", "pid": 1, "tid": tid, "ts": ts, "dur": dur,
+            "args": {"data": {"url": url}}}
+
+
+def test_cpu_counts_nested_slices_once_and_labels_scripts():
+    A = "https://static.xx.fbcdn.net/rsrc.php/v3/a.js?x=1"
+    ev = [tl("FunctionCall", 0, 5000, A), tl("FunctionCall", 1000, 1000, A),
+          tl("v8.compile", 10000, 2000, A), tl("EvaluateScript", 0, 3000, A, tid=2)]
+    c = r.cpu_by_script(ev)
+    assert c["static.xx.fbcdn.net/rsrc.php/v3/a.js"] == {"run": 8.0, "compile": 2.0}
+
+
+def test_ram_summary_peak_and_mean(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 5, "samples": [
+        {"t": 0, "by_type": {"renderer": 100 * 2**20, "browser": 50 * 2**20}},
+        {"t": 5, "by_type": {"renderer": 300 * 2**20}}]}))
+    s = r.ram_summary(p)
+    assert s["renderer"] == {"peak_mb": 300.0, "mean_mb": 200.0, "samples": 2}
+    assert r.ram_summary(tmp_path / "absent.json") is None
+    assert "renderer" in r.render_ram(s)
+
+
+CH = {"arm": "3w", "posts_captured": 3, "posts_missing": 1,
+      "endpoints": {"www.facebook.com/ajax/bz": {"count": 2, "bytes": 100, "kinds": {"form": 2},
+                    "initiators": {"static.xx.fbcdn.net/rsrc.php/v3/a.js": 2},
+                    "fields": {"q[].dm": {"count": 2, "classes": {"int": 2}}}},
+                    "www.facebook.com/ajax/bnzai": {"count": 1, "bytes": 0, "kinds": {"missing": 1},
+                    "initiators": {"(no script)": 1}, "fields": {}}},
+      "ws": {"gateway.facebook.com/ws/realtime": {"frames_sent": 1, "frames_received": 2, "bytes_sent": 10,
+             "bytes_received": 20, "topics": {"/t_ms": {"count": 1, "fields": {}}}}}}
+MT = [{"endpoint": "www.facebook.com/ajax/bz", "field": "q[].dm", "surface": "navigator.deviceMemory",
+       "encoding": "exact", "weak": True, "count": 2},
+      {"endpoint": "www.facebook.com/ajax/bz", "field": "q[].tz", "surface": "timezone",
+       "encoding": "exact", "weak": False, "count": 2}]
+
+
+def test_channels_list_fields_classes_ws_and_coverage():
+    out = r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2, "www.facebook.com/ajax/bnzai": 1,
+                                           "www.facebook.com/ajax/qm/": 4}})
+    assert "`q[].dm`" in out and "int" in out
+    assert "/t_ms" in out
+    assert "captured 3 of 7 POSTs in the netlog (1 without a body)" in out
+
+
+def test_channels_show_the_sjd_decode_counts():
+    import copy
+    ch = copy.deepcopy(CH)
+    ch["endpoints"]["www.facebook.com/ajax/bz"]["sjd"] = {"decoded": 0, "failed": 2}
+    out = r.render_channels(ch, {"posts": {"www.facebook.com/ajax/bz": 2}})
+    assert "sjd beacons on `www.facebook.com/ajax/bz`: decoded 0, failed 2" in out
+    assert "sjd beacons" not in r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2}})
+
+
+def test_weak_matches_are_listed_apart():
+    out = r.render_matches(MT)
+    strong, weak = out.split("Weak matches")
+    assert "timezone" in strong and "deviceMemory" not in strong
+    assert "deviceMemory" in weak
+
+
+def test_join_puts_reads_next_to_the_channels_a_script_sent():
+    reads = {"static.xx.fbcdn.net/rsrc.php/v3/a.js": collections.Counter({"Navigator.deviceMemory.get": 820})}
+    out = r.render_join(CH, MT, reads)
+    assert "static.xx.fbcdn.net/rsrc.php/v3/a.js" in out
+    assert "Navigator.deviceMemory.get 820" in out and "www.facebook.com/ajax/bz" in out
+
+
+def test_main_runs_without_a_trace(tmp_path, capsys):
+    net = cost_netlog(tmp_path)
+    (tmp_path / "channels.json").write_text(json.dumps(CH))
+    (tmp_path / "matches.json").write_text(json.dumps(MT))
+    sys.argv = ["observe_report.py", "-", str(net), "--channels", str(tmp_path / "channels.json"),
+                "--matches", str(tmp_path / "matches.json")]
+    r.main()
+    out = capsys.readouterr().out
+    assert "## Cost" in out and "## Channels" in out and "## Surfaces sent" in out
+
+
+def test_coverage_counts_only_posts_to_hosts_the_driver_watched():
+    out = r.render_channels(CH, {"posts": {"www.facebook.com/ajax/bz": 2, "www.facebook.com/ajax/bnzai": 1,
+                                           "content-autofill.googleapis.com/v1/pages/x": 5,
+                                           "example.org/collect": 1}})
+    assert "captured 3 of 3 POSTs in the netlog (1 without a body)" in out
+    assert "6 POSTs to other hosts: content-autofill.googleapis.com, example.org" in out
+    assert "/v1/pages" not in out and "/collect" not in out
+
+
+POP = "scontent.xyz9-1.fna.fbcdn.net"  # synthetic: a POP-style name, never a real code
+
+
+def test_public_host_collapses_pop_style_media_hosts():
+    assert r.public_host(POP) == "scontent.*.fbcdn.net"
+    assert r.public_host("scontent-xyz9-1.xx.fbcdn.net") == "scontent.*.fbcdn.net"
+    assert r.public_host("video.xyz9-1.fna.fbcdn.net") == "*.fna.fbcdn.net"
+    assert r.public_host("media.xyz9-1.fna.whatsapp.net") == "*.fna.whatsapp.net"
+    assert r.public_host("static.xx.fbcdn.net") == "static.xx.fbcdn.net"
+    assert r.public_host("www.facebook.com") == "www.facebook.com"
+    assert r.public_endpoint(POP + "/v/t1/a.jpg") == "scontent.*.fbcdn.net/v/t1/a.jpg"
+    assert r.public_endpoint("www.facebook.com/ajax/bz") == "www.facebook.com/ajax/bz"
+
+
+def pop_netlog(tmp_path, with_encoding_header=False):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+             "HTTP_TRANSACTION_SEND_REQUEST", "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+    hdrs = ["Content-Type: video/mp4"] + (["Content-Encoding: br"] if with_encoding_header else [])
+    ev = [e(1, "URL_REQUEST_START_JOB", url="https://" + POP + "/v/a.mp4?sig=secret", method="GET"),
+          e(1, "HTTP_TRANSACTION_SEND_REQUEST"), e(1, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=hdrs),
+          e(1, "URL_REQUEST_JOB_FILTERED_BYTES_READ", byte_count=5000)]
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_identity_media_without_a_raw_event_counts_on_the_network(tmp_path):
+    # no Content-Encoding: the job logs only FILTERED_BYTES_READ, and raw equals decoded
+    c = r.load_costs(pop_netlog(tmp_path))
+    h = c["by_host"]["scontent.*.fbcdn.net"]
+    assert (h["n"], h["network"], h["cache"], h["decoded"]) == (1, 5000, 0, 5000)
+    assert not h.get("approx") and POP not in c["by_host"]
+    out = r.render_costs(c)
+    assert "xyz9" not in out and "decoded used" not in out and "scontent.*.fbcdn.net" in out
+
+
+def test_encoded_response_without_a_raw_event_uses_decoded_and_is_marked(tmp_path):
+    c = r.load_costs(pop_netlog(tmp_path, with_encoding_header=True))
+    h = c["by_host"]["scontent.*.fbcdn.net"]
+    assert h["network"] == 5000 and h["approx"]
+    assert "(decoded used)" in r.render_costs(c)
+
+
+def test_request_table_and_script_labels_collapse_pop_hosts(tmp_path):
+    reqs = r.load_requests(pop_netlog(tmp_path))
+    assert reqs[0][1] == "scontent.*.fbcdn.net"
+    assert r.script_label("https://" + POP + "/x.js?q=1") == "scontent.*.fbcdn.net/x.js"
+    ch = {"arm": "x", "posts_captured": 0, "posts_missing": 0, "ws": {},
+          "endpoints": {POP + "/upload": {"count": 1, "bytes": 1, "kinds": {"form": 1}, "initiators": {},
+                                          "fields": {}}}}
+    assert "xyz9" not in r.render_channels(ch, {"posts": {POP + "/upload": 1}})
+
+
+def site_netlog(tmp_path):
+    names = ["URL_REQUEST_START_JOB", "URL_REQUEST_JOB_BYTES_READ", "HTTP_TRANSACTION_SEND_REQUEST",
+             "HTTP_TRANSACTION_READ_RESPONSE_HEADERS"]
+    t = {n: i for i, n in enumerate(names)}
+
+    def e(sid, name, **p):
+        return {"source": {"id": sid}, "type": t[name], "phase": 1 if name == "URL_REQUEST_START_JOB" else 0, "params": p}
+
+    def job(sid, url, nik, n, ct):
+        return [e(sid, "URL_REQUEST_START_JOB", url=url, method="GET", network_isolation_key=nik),
+                e(sid, "HTTP_TRANSACTION_SEND_REQUEST"),
+                e(sid, "HTTP_TRANSACTION_READ_RESPONSE_HEADERS", headers=["Content-Type: " + ct]),
+                e(sid, "URL_REQUEST_JOB_BYTES_READ", byte_count=n)]
+    ev = (job(1, "https://static.xx.fbcdn.net/a.js", "https://facebook.com https://facebook.com", 100, "text/javascript")
+          + job(2, "https://optimizationguide-pa.googleapis.com/v1/x", "", 4000, "text/html")
+          + job(3, "https://edgedl.example.net/c.crx", "chrome://newtab chrome://newtab", 50, "text/html"))
+    p = tmp_path / "net.json"
+    p.write_text(json.dumps({"constants": {"logEventTypes": t, "logEventPhase": {"PHASE_BEGIN": 1, "PHASE_NONE": 0}},
+                             "events": ev}))
+    return p
+
+
+def test_costs_split_by_top_level_site_and_browser_internal(tmp_path):
+    c = r.load_costs(site_netlog(tmp_path))
+    assert c["by_site_kind"]["https://facebook.com"] == {"js": {"n": 1, "network": 100, "cache": 0, "decoded": 100}}
+    b = c["by_site_kind"]["browser"]["html"]
+    assert (b["n"], b["network"]) == (2, 4050)
+    out = r.render_costs(c)
+    assert out.index("https://facebook.com") < out.index("browser-internal")
+
+
+def test_ram_summary_sums_sub_typed_utilities_into_one_utility_row(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 6, "samples": [
+        {"t": 0, "n_renderer": 2, "by_type": {"renderer": 100 * 2**20, "utility:network.mojom.NetworkService": 30 * 2**20,
+                                              "utility:audio.mojom.AudioService": 10 * 2**20, "utility": 5 * 2**20}},
+        {"t": 6, "n_renderer": 3, "by_type": {"renderer": 100 * 2**20, "utility:network.mojom.NetworkService": 50 * 2**20}}]}))
+    s = r.ram_summary(p)
+    assert s["utility"] == {"peak_mb": 50.0, "mean_mb": 47.5, "samples": 2}
+    assert s["utility:network.mojom.NetworkService"]["peak_mb"] == 50.0
+    assert s["utility:audio.mojom.AudioService"]["samples"] == 1
+    assert r.renderer_max(p) == 3
+
+
+def test_an_old_ram_json_keeps_its_utility_row_and_has_no_renderer_count(tmp_path):
+    p = tmp_path / "ram.json"
+    p.write_text(json.dumps({"interval_s": 6, "samples": [{"t": 0, "by_type": {"utility": 70 * 2**20}}]}))
+    assert r.ram_summary(p)["utility"] == {"peak_mb": 70.0, "mean_mb": 70.0, "samples": 1}
+    assert r.renderer_max(p) is None
+    assert r.renderer_max(tmp_path / "absent.json") is None
+
+
+import sites  # noqa: E402
+
+
+def test_public_host_follows_the_active_site():
+    try:
+        r.use_site(sites.load("testpage"))
+        assert r.public_host(POP) == POP
+    finally:
+        r.use_site(sites.load("facebook"))
+    assert r.public_host(POP) == "scontent.*.fbcdn.net"
+
+
+def test_report_main_refuses_an_unknown_site(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["observe_report.py", "-", str(tmp_path / "net.json"), "--site", "nosuch"])
+    assert r.main() == 3
+    assert "UNMEASURED site: nosuch not found" in capsys.readouterr().out

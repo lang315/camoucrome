@@ -10,9 +10,12 @@ Pool field -> config key (mirrors the preset loader's table style):
   userAgentData.platformVersion/architecture/bitness/model/mobile
                                   -> ua:platformVersion, ua:architecture, ua:bitness,
                                      ua:model, ua:mobile; ua:wow64 false
-  navigator.hardwareConcurrency, maxTouchPoints -> same-named keys
-  navigator.deviceMemory           -> snapped to Chrome's set {0.25..8} (DEVICE_MEMORY);
-                                     the pool says 16/32 in half its samples
+  navigator.hardwareConcurrency, maxTouchPoints -> same-named keys; a claim above the host's cores
+                                     (host_cores, default os.cpu_count()) snaps to the largest THREAD_STEPS
+                                     value within them (or to host_cores when none fits): timing on the host
+                                     shows the real count
+  navigator.deviceMemory           -> the pool's value in [8, 32] (DEVICE_MEMORY): the real
+                                     jsHeapSizeLimit of an 8 GB+ host rules out a smaller claim
   screen.width/height/availWidth/availHeight -> screen.*
   screen.outerWidth/outerHeight/screenX/screenY -> window.*, and launch.window
   screen.devicePixelRatio          -> launch.dpr (a launcher flag; DPR has no key);
@@ -26,7 +29,7 @@ Pool field -> config key (mirrors the preset loader's table style):
   battery.*                        -> battery:charging, battery:level, and the two
                                      times when the pool has them
   multimediaDevices                -> mediaDevices:enabled + the three counts
-  per_instance_config()            -> canvas:seed, audio:seed, mediaDevices:seed
+  per_instance_config()            -> canvas:seed, mediaDevices:seed
 
 Never taken, and why:
   navigator.userAgent, appVersion, brands, fullVersionList, headers
@@ -44,6 +47,8 @@ Never taken, and why:
                                    (settings/fonts.json), which the bundled fontconfig
                                    layer makes resolvable; Linux claims get none
   voices, geolocation              Chrome voice names and GeoIP are their own catalogues;
+                                   with an exit IP, geolocation:latitude/longitude are the
+                                   database's point for it plus a seeded offset within 2 km;
                                    timezone:id without --timezone comes from
                                    settings/locale_zones.json by locale
 
@@ -58,14 +63,16 @@ are copied instead, revisit when a second target appears or they diverge.
 """
 import argparse
 import json
+import math
 import os
+import os as _os  # generate() has an `os` parameter
 import pathlib
 import random
 import re
 import sys
 from dataclasses import asdict
 
-from . import hostfonts
+from . import hostfonts, pin
 from .identity import per_instance_config
 
 # derive.cc's kForms: UA-CH platform -> (ua:osInfo, ua:platform). The test
@@ -106,16 +113,27 @@ def snap_window(dpr, outer):
     return length, length + off
 
 
+def valid_screen(s):
+    """{"availWidth": int > 0, "availHeight": int > 0}: the host's work area in physical px (probe.host_screen)."""
+    return (isinstance(s, dict) and set(s) == {"availWidth", "availHeight"}
+            and all(type(v) is int and v > 0 for v in s.values()))
+
+
 def dpr_of(fp):
     return fp["screen"].get("devicePixelRatio") or 1
 
 
-# Chrome clamps navigator.deviceMemory to a power of two in [0.25, 8]; the
-# pool carries 16 and 32 in over half of its samples (200 draws: 8 x76,
-# 16 x76, 32 x33, 4 x15), values no real Chrome reports. Largest allowed
-# value <= the pool's. The C++ domain validator has no rule for this key
-# (only the geolocation axes), so the strict oracle cannot catch it.
-DEVICE_MEMORY = (0.25, 0.5, 1, 2, 4, 8)
+# navigator.deviceMemory is the pool's value clamped to [8, 32]. The fork leaves
+# performance.memory.jsHeapSizeLimit real, and V8 sizes the heap from physical
+# memory (old generation = RAM / 2, capped at 4 GB on 64-bit), so a host with
+# 8 GB or more shows the capped heap (3760000000 on Chrome 156, Windows and
+# Linux, measured 2026-11-04), which no real 0.25..4 GB device shows; facebook
+# sends both (measurements/2026-11-04-fb-tracking-map.md). 8, 16 and 32 all sit
+# beside that heap. Chrome 156 desktop clamps the API to [2, 32]
+# (approximated_device_memory.cc), and so does domain_validator.cc. The pool
+# draws 8 x76, 16 x76, 32 x33, 4 x15 in 200 samples.
+# shortcut: a host under 8 GB RAM shows a smaller heap beside this claim; derive the claim from host RAM then.
+DEVICE_MEMORY = (8, 32)
 # The repository (or an archive/client copy with the same layout), else the
 # copy a wheel build puts in the package (client/python/setup.py).
 _PACKAGED = pathlib.Path(__file__).resolve().parent / "_settings"
@@ -312,10 +330,6 @@ def audio_keys(platform):
     return {"audio:sampleRate": audio[platform]["sampleRate"], "audio:bufferFrames": audio[platform]["bufferFrames"]}
 
 
-def chrome_device_memory(value):
-    return max((m for m in DEVICE_MEMORY if m <= value), default=DEVICE_MEMORY[0])
-
-
 def acceptable(fp):
     ud = fp["navigator"].get("userAgentData") or {}
     brands = " ".join(b.get("brand", "") for b in ud.get("brands", []))
@@ -369,6 +383,31 @@ def window_position(rng, avail, outer):
     return r.randint(0, lim[0]), r.randint(0, lim[1])
 
 
+def holds_min_window(host_screen, dpr):
+    return host_screen["availWidth"] / dpr >= MIN_WINDOW[0] and host_screen["availHeight"] / dpr >= MIN_WINDOW[1]
+
+
+def fit_window(rng, host_screen, dpr, avail, origin, pos, outer):
+    """(pos, outer) with the window inside the host's work area as well as the claimed one, on each axis. A window
+    larger than the host is drawn again from 60-100 % of what fits (own generator: other seeded keys stay put);
+    a position that would put its far edge past the host's is drawn again too. A real window off the host's monitor
+    could be treated as occluded and throttled, so the launch position must be inside."""
+    host = (host_screen["availWidth"], host_screen["availHeight"])
+    cap = [min(avail[i], int(host[i] // dpr)) for i in (0, 1)]
+    pos, outer = list(pos), list(outer)
+    r = random.Random(repr(rng.getstate()) + "window-fit")
+    for i in (0, 1):
+        if outer[i] > cap[i]:
+            outer[i] = r.randint(max(MIN_WINDOW[i], round(0.6 * cap[i])), cap[i])
+    bad = [i for i in (0, 1) if pos[i] + outer[i] > origin[i] + cap[i]]
+    if bad:
+        d = window_position(rng, cap, outer)
+        for i in bad:
+            pos[i] = origin[i] + d[i]
+            outer[i] = min(outer[i], cap[i] - d[i])
+    return pos, outer
+
+
 def valid_display(d):
     """True for a {"gamut": srgb|p3|rec2020, "colorBits": 8|10, "hdr": bool} dict; probe and the CLI share it."""
     return (isinstance(d, dict) and d.get("gamut") in ("srgb", "p3", "rec2020") and d.get("colorBits") in (8, 10)
@@ -386,11 +425,13 @@ def display_flags(host_display):
 
 
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
-              host_platform_version=None, host_display=None):
+              host_platform_version=None, host_display=None, host_screen=None, host_cores=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
     cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
-    a value already within the cap stays as BrowserForge drew it."""
+    a value already within the cap stays as BrowserForge drew it.
+    host_cores: a claim above it snaps to the largest THREAD_STEPS value within it (deterministic, nothing drawn);
+    None leaves the claim alone."""
     nav, ud, scr = fp["navigator"], fp["navigator"]["userAgentData"], fp["screen"]
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
@@ -412,7 +453,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         "ua:mobile": False, "ua:wow64": False,
         "ua:brand": "Google Chrome",  # the pool's brands carry it; a Chromium build would ship two brands where Chrome ships three
         "navigator.hardwareConcurrency": nav["hardwareConcurrency"],
-        "navigator.deviceMemory": chrome_device_memory(nav["deviceMemory"]),
+        "navigator.deviceMemory": min(max(nav["deviceMemory"], DEVICE_MEMORY[0]), DEVICE_MEMORY[1]),
         "navigator.maxTouchPoints": nav["maxTouchPoints"],
         "screen.width": scr["width"], "screen.height": scr["height"],
         "screen.availWidth": scr["availWidth"], "screen.availHeight": scr["availHeight"],
@@ -443,6 +484,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             # own generator: rng stays where it was, so the other seeded keys do not move
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if t <= cap])
+    if host_cores is not None and config["navigator.hardwareConcurrency"] > host_cores:
+        config["navigator.hardwareConcurrency"] = max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
     config.update(fonts_keys(platform, rng, host_families))
     pv_warn = None
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
@@ -471,6 +514,11 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         config["window.screenX"], config["window.screenY"] = origin[0] + d[0], origin[1] + d[1]
         config["window.outerWidth"], config["window.outerHeight"] = outer[0] - d[0], outer[1] - d[1]
     dpr = dpr_of(fp)
+    if host_screen is not None:
+        p, o = fit_window(rng, host_screen, dpr, avail, origin, (config["window.screenX"], config["window.screenY"]),
+                          (config["window.outerWidth"], config["window.outerHeight"]))
+        config["window.screenX"], config["window.screenY"] = p
+        config["window.outerWidth"], config["window.outerHeight"] = o
     (lw, config["window.outerWidth"]), (lh, config["window.outerHeight"]) = (
         snap_window(dpr, config["window.outerWidth"]), snap_window(dpr, config["window.outerHeight"]))
     launch = {"window": [lw, lh], "dpr": dpr, "position": [config["window.screenX"], config["window.screenY"]]}
@@ -483,12 +531,26 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
 
 
+def allowed_cpus():
+    """The CPUs this process may use (the mask the launch pin compares with), else all of them."""
+    mask = pin.get_mask(_os.getpid())
+    return len(mask) if mask else _os.cpu_count()
+
+
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
-             host_families=None, host_platform_version=None, host_display=None):
-    """exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
-    be resolved the draw proceeds as without it and a GeoIPWarning says so."""
+             host_families=None, host_platform_version=None, host_display=None, light=False,
+             host_screen=None, host_cores=None):
+    """host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are
+    generated on the host); see from_pool. exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
+    be resolved the draw proceeds as without it and a GeoIPWarning says so. light (part 3, L1): only samples with
+    DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
+    host_screen (window fit): the claimed screen and DPR stay the pool's; only the window is made to fit the host's
+    work area (fit_window), and a draw is rejected when the host cannot hold MIN_WINDOW at its DPR. None changes nothing."""
+    if host_cores is None:
+        host_cores = allowed_cpus()
+    point = None
     if exit_ip:
-        timezone, locale = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
+        timezone, locale, point = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
     from browserforge.fingerprints import FingerprintGenerator
     rng = random.Random(seed)
     if seed is not None:
@@ -498,10 +560,26 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     gen = FingerprintGenerator(browser="chrome", **({"os": os} if os else {}))
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
-        if acceptable(fp):
-            return from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
-                             host_display)
+        if (acceptable(fp) and (not light or dpr_of(fp) == 1)
+                and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
+            out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
+                            host_display, host_screen, host_cores)
+            if point:  # drawn after the pool, so an identity without an exit IP is unchanged
+                out["config"].update(geolocation_keys(point, rng))
+            return out
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
+
+
+GEO_RADIUS_KM = 2
+
+
+def geolocation_keys(point, rng):
+    """The record's (lat, lng) moved to a uniform random spot within GEO_RADIUS_KM, so the identity does not sit on
+    the database's own point. accuracy is left to the browser's default."""
+    lat, lng = point
+    r, theta = GEO_RADIUS_KM * math.sqrt(rng.random()), rng.random() * 2 * math.pi
+    return {"geolocation:latitude": round(lat + r * math.cos(theta) / 111.32, 6),
+            "geolocation:longitude": round(lng + r * math.sin(theta) / (111.32 * math.cos(math.radians(lat))), 6)}
 
 
 def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
@@ -510,10 +588,11 @@ def _from_exit_ip(exit_ip, geoip_db, timezone, locale):
         found = geoip.lookup(exit_ip, geoip_db)
     except geoip.GeoIPError as e:
         geoip.warn_all([f"the exit IP {exit_ip} was not resolved ({e}): timezone and locale are not derived from it"])
-        return timezone, locale
+        return timezone, locale, None
     if found["locale"] is None:
         geoip.warn_all([f"no locale for country {found['country']}: the identity keeps its drawn locale beside {found['timezone']}"])
-    return timezone or found["timezone"], locale or found["locale"]
+    point = None if None in (found["latitude"], found["longitude"]) else (found["latitude"], found["longitude"])
+    return timezone or found["timezone"], locale or found["locale"], point
 
 
 def main(argv=None):
@@ -531,14 +610,19 @@ def main(argv=None):
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
+    ap.add_argument("--host-screen", type=json.loads, help='the host work area as JSON (probe.host_screen): {"availWidth","availHeight"} in physical px; draws that do not fit are rejected')
+    ap.add_argument("--host-cores", type=int, help="the host's CPU count (default: os.cpu_count()): a navigator.hardwareConcurrency claim above it snaps down")
+    ap.add_argument("--light", action="store_true", help="light mode (part 3): draw only pool samples with DPR 1")
     a = ap.parse_args(argv)
     if a.host_renderer is None and a.probe_executable:
         from . import probe
         a.host_renderer = probe.host_renderer(a.probe_executable)
     if a.host_display is not None and not valid_display(a.host_display):
         sys.exit('gen: --host-display must be {"gamut": "srgb"|"p3"|"rec2020", "colorBits": 8|10, "hdr": true|false}')
+    if a.host_screen is not None and not valid_screen(a.host_screen):
+        sys.exit('gen: --host-screen must be {"availWidth": <positive int>, "availHeight": <positive int>}')
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen, host_cores=a.host_cores), sys.stdout)
 
 
 if __name__ == "__main__":

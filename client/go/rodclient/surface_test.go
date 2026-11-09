@@ -16,7 +16,7 @@ import (
 // only Page.addScriptToEvaluateOnNewDocument; the script runs in the MAIN world
 // by design (the caller wrote it), so the contract probe can measure C6.
 var allowedPageMethods = []string{"AddInitScript", "Attribute", "Click", "Close", "Cookies", "Eval", "Goto",
-	"Screenshot", "Text", "Type", "WaitForSelector"}
+	"Hold", "Screenshot", "Text", "Type", "TypeWith", "WaitForSelector"}
 
 func TestPageSurfaceIsVetted(t *testing.T) {
 	pt := reflect.TypeOf(&Page{})
@@ -41,7 +41,7 @@ func TestPageSurfaceIsVetted(t *testing.T) {
 
 // Option and WithSendObserver: Launch must be able to observe connect-time CDP
 // traffic, which Browser.OnSend (set after Launch returns) cannot.
-var allowedExported = []string{"Browser", "Cookie", "Launch", "Option", "Page", "WaitLoad", "WaitNetworkIdle", "WaitUntil", "WithSendObserver"}
+var allowedExported = []string{"Browser", "Cookie", "Launch", "Option", "Page", "TypeOptions", "WaitLoad", "WaitNetworkIdle", "WaitUntil", "WithSendObserver"}
 
 // Top-level exported identifiers of the package, parsed from source so that a
 // future func RodPage(*Page) *rod.Page fails here.

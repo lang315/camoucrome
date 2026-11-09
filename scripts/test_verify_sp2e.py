@@ -52,6 +52,19 @@ class StatsTest(unittest.TestCase):
         self.assertFalse(a.span_in_bounds([0, 15, 30], a.VISIBLE_MIN_MS, a.MAX_TIME_MS))
         self.assertAlmostEqual(a.VISIBLE_MIN_MS, 59.17, places=1)
 
+    def test_short_move_and_upper_bars_come_from_the_measured_distribution(self):
+        # 20 runs of rows 1-2 on the runner build (2026-10-29): row 2 spans 63-67 ms in 19 runs and 52 in one (the old 59.2 floor
+        # failed it); row 1 spans 436-717 ms in 19 runs and 1183 in one, which is the 1200 ms cap minus the unposted first gap
+        self.assertTrue(a.span_in_bounds([0, 52], a.SHORT_MOVE_MIN_MS, a.VISIBLE_MAX_MS))
+        self.assertFalse(a.span_in_bounds([0, 52], a.VISIBLE_MIN_MS, a.MAX_TIME_MS))  # what the old bar did to that run
+        self.assertFalse(a.span_in_bounds([0, 0], a.SHORT_MOVE_MIN_MS, a.VISIBLE_MAX_MS))  # a burst
+        self.assertFalse(a.span_in_bounds([0, 23], a.SHORT_MOVE_MIN_MS, a.VISIBLE_MAX_MS))  # the old 40 ms Bezier path
+        self.assertTrue(a.span_in_bounds([0, 1183], a.VISIBLE_MIN_MS, a.VISIBLE_MAX_MS))
+        self.assertTrue(a.span_in_bounds([0, 1215], a.VISIBLE_MIN_MS, a.VISIBLE_MAX_MS))  # the cap path with a late last event
+        self.assertFalse(a.span_in_bounds([0, 1225], a.VISIBLE_MIN_MS, a.VISIBLE_MAX_MS))
+        self.assertAlmostEqual(a.VISIBLE_MAX_MS, 1220.83, places=1)
+        self.assertEqual(a.SHORT_MOVE_MIN_MS, 40)
+
     def test_gaps(self):
         s = a.gap_stats([0, 10, 20, 30, 100])
         self.assertEqual(s["median"], 10)

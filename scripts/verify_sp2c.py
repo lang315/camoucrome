@@ -17,7 +17,6 @@ import subprocess
 import sys
 import threading
 
-from playwright.sync_api import sync_playwright
 
 import lib_shell
 
@@ -36,20 +35,23 @@ addEventListener('wheel', e => __w.push({dx: e.deltaX, dy: e.deltaY, mode: e.del
 
 def session(config, actions, flags=()):
     """actions(page) -> value; returns (value, err)."""
-    proc = None
+    proc = conn = None
+
+    def setup(page):
+        page.set_content(PAGE)
+        page.mouse.move(300, 300)
+
     try:
-        proc = lib_shell.launch(json.dumps(config) if config else None, shell=lib_shell.CHROME,
-                                extra_flags=lib_shell.CHROME_FLAGS + list(flags))
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
-            context = browser.contexts[0]
-            page = context.pages[0] if context.pages else context.new_page()
-            page.set_content(PAGE)
-            page.mouse.move(300, 300)
-            return actions(page), None
+        proc, conn = lib_shell.launch_and_prime(
+            lambda: lib_shell.launch(json.dumps(config) if config else None, shell=lib_shell.CHROME,
+                                     extra_flags=lib_shell.CHROME_FLAGS + list(flags)),
+            lambda p: lib_shell.attach(p, setup))
+        return actions(conn.page), None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:
+        if conn is not None:
+            conn.close()
         if proc is not None:
             lib_shell.shutdown(proc)
 

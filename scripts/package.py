@@ -99,19 +99,21 @@ def git(cwd, *args):
 def tree_fingerprint(src, rev):
     """One hash for the change set laid on the pin, whether committed (the box's
     branch) or applied uncommitted (the Windows tree): tracked edits as a full-index
-    binary diff against the pin, plus the untracked camoucfg files by content."""
-    stray = [l[3:] for l in git(src, "status", "--porcelain", "--untracked-files=all", "--", ".",
-                                ":(exclude)out", ":(exclude)components/camoucfg").splitlines()
+    binary diff against the pin, plus the untracked camoucfg and camoucfg_lgpl files by content."""
+    excl = [":(exclude)out", ":(exclude)components/camoucfg", ":(exclude)components/camoucfg_lgpl"]
+    stray = [l[3:] for l in git(src, "status", "--porcelain", "--untracked-files=all", "--", ".", *excl).splitlines()
              if l.startswith("??")]
     if stray:
-        sys.exit(f"refusing a tree with {len(stray)} untracked file(s) outside out/ and components/camoucfg: {stray[:5]}")
+        sys.exit(f"refusing a tree with {len(stray)} untracked file(s) outside out/ and components/camoucfg*: {stray[:5]}")
     # flags pinned so the user's git config (diff.renames, external diff, textconv) cannot change the bytes
-    diff = subprocess.run(["git", "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff", "--no-textconv", rev, "--", ".", ":(exclude)out",
-                           ":(exclude)components/camoucfg"], cwd=src, capture_output=True, check=True).stdout
+    diff = subprocess.run(["git", "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff", "--no-textconv", rev, "--", ".", *excl],
+                          cwd=src, capture_output=True, check=True).stdout
     h = hashlib.sha256(diff + b"\n")
-    cfg = src / "components" / "camoucfg"
-    for f in sorted((p for p in cfg.rglob("*") if p.is_file()), key=lambda p: p.relative_to(cfg).as_posix()) if cfg.is_dir() else []:
-        h.update(f"{f.relative_to(cfg).as_posix()} {hashlib.sha256(f.read_bytes()).hexdigest()}\n".encode())
+    # camoucfg files keep their bare relative path, so a tree without camoucfg_lgpl hashes as before
+    for d, prefix in (("camoucfg", ""), ("camoucfg_lgpl", "camoucfg_lgpl/")):
+        cfg = src / "components" / d
+        for f in sorted((p for p in cfg.rglob("*") if p.is_file()), key=lambda p: p.relative_to(cfg).as_posix()) if cfg.is_dir() else []:
+            h.update(f"{prefix}{f.relative_to(cfg).as_posix()} {hashlib.sha256(f.read_bytes()).hexdigest()}\n".encode())
     return h.hexdigest()
 
 
@@ -173,9 +175,12 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if component != "false" and not allow_component:
         sys.exit("refusing a component build (is_component_build not explicitly false in args.gn): use a "
                  "release out dir (settings/release-args.gn) or --allow-component for a smoke test")
-    if args.get("camou_observe") == "true":
-        sys.exit("refusing a build with camou_observe = true: the tracking observer is an audit build, "
-                 "never a release (docs/observer/README.md)")
+    if args.get("camou_observe") != "true":
+        sys.exit("refusing a release without camou_observe = true: chrome://observer ships in every release "
+                 "(settings/release-args.gn, docs/observer/README.md)")
+    if args.get("v8_enable_runtime_call_stats") == "true":
+        sys.exit("refusing a release with v8_enable_runtime_call_stats = true: the observer's Intl counts are an "
+                 "audit-build feature, never a release (docs/observer/README.md)")
     wrong = {k: args.get(k) for k, v in required_args().items() if args.get(k) != v}
     if wrong:
         sys.exit(f"refusing a build whose args.gn differs from settings/build-args.gn (required, page-visible): {wrong}")

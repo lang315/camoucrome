@@ -44,6 +44,8 @@ jobs:
         run: python3 scripts/gen_cursory_table.py --check
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
+      - name: human_params.* match settings/human_input.json
+        run: python3 scripts/gen_human_input.py --check
       - name: gen9_thread_caps.h matches the caps JSON
         run: python3 scripts/gen_thread_caps_header.py --check
       - name: fontconfig files match settings/fonts.json
@@ -85,7 +87,7 @@ jobs:
       # and test_winhost.py had never run here.
       - name: "python tests: clients, packager, scripts"
         run: |
-          python3 -m pip install -q pytest browserforge==1.2.4 maxminddb timezonefinder
+          python3 -m pip install -q pytest browserforge==1.2.4 apify_fingerprint_datapoints==0.15.0 maxminddb timezonefinder pycryptodome==3.23.0
           python3 -m pytest -q client/python/tests scripts/
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
@@ -113,7 +115,7 @@ jobs:
         with: { node-version: "22" }
       - name: python client tests
         run: |
-          python -m pip install -q pytest browserforge==1.2.4 maxminddb timezonefinder tzdata
+          python -m pip install -q pytest browserforge==1.2.4 apify_fingerprint_datapoints==0.15.0 maxminddb timezonefinder tzdata
           python -m pytest -q client/python/tests
       # !cancelled(): a red python step must not hide the Go and Node results of the same run.
       - name: go client tests

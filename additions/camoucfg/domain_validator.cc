@@ -41,12 +41,12 @@ constexpr auto kDomains = std::to_array<DomainEntry>({
      "longitude must be in [-180, 180]"},
     {keys::kGeolocationAccuracy, 0.0, std::numeric_limits<double>::infinity(),
      "accuracy must be >= 0"},
-    // Chrome clamps the API to a power of two in [0.25, 8]; a fingerprint
-    // pool reports 16 and 32 in half its samples (generator measurement,
-    // 2026-09-10), values no real Chrome emits. The range catches those; the
-    // power-of-two shape is not enforced here (a range entry cannot say it).
-    {keys::kNavigatorDeviceMemory, 0.25, 8.0,
-     "deviceMemory must be in [0.25, 8]"},
+    // Chrome 156 desktop clamps the API to a power of two in [2, 32]
+    // (approximated_device_memory.cc; Android is [1, 8], never claimed).
+    // The range catches values outside it; the power-of-two shape is not
+    // enforced here (a range entry cannot say it).
+    {keys::kNavigatorDeviceMemory, 2.0, 32.0,
+     "deviceMemory must be in [2, 32]"},
 });
 
 }  // namespace

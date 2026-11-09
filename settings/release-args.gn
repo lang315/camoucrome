@@ -15,6 +15,9 @@ use_remoteexec = false
 # chrome://credits is a placeholder page unless this is true (it defaults to
 # is_official_build); Cursory's LGPL notice must be in the real one.
 generate_about_credits = true
+# chrome://observer ships in every release (off-state cost measured 2026-11-04,
+# measurements/2026-11-04-observer-off-cost.md); package.py requires it.
+camou_observe = true
 
 # --- settings/build-args.gn, verbatim ---
 proprietary_codecs = true

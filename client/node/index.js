@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { pinned } = require('./pin');
 
 // Mirrors settings/launcher.json; test/launcher.test.js asserts it.
 const FORBIDDEN_OPTIONS = new Set([
@@ -23,7 +24,9 @@ const FORBIDDEN_OPTIONS = new Set([
   'hasTouch', 'isMobile',
 ]);
 const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
-const SEED_KEYS = ['canvas:seed', 'audio:seed', 'mediaDevices:seed'];
+// Mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BASE_ARGS when light is on.
+const LIGHT_ARGS = [];
+const SEED_KEYS = ['canvas:seed', 'mediaDevices:seed'];
 const SEEDS_FILE = 'camoucrome-seeds.json'; // launcher.json per_instance_seeds.profile_file
 
 const asJson = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
@@ -148,8 +151,10 @@ const FONTCONFIG_FILES = { Windows: 'settings/fontconfig/windows.conf', macOS: '
 
 // The FONTCONFIG_FILE for the claimed OS: the generated conf beside the
 // bundled fonts dir (default: `fonts` beside the executable when present).
-// Linux claim or no fonts dir: null. A fonts dir without its conf throws.
-function fontconfigFor({ config, preset, fontsDir, executablePath } = {}) {
+// Linux or no claim: null. A fonts dir without its conf throws, and so does a
+// Windows/macOS claim with no fonts dir on a Linux host (host fonts under that
+// claim are a tell); other hosts ignore FONTCONFIG_FILE, so null there.
+function fontconfigFor({ config, preset, fontsDir, executablePath, hostOs = HOST_OS } = {}) {
   const file = FONTCONFIG_FILES[claimedOs(config, preset)];
   if (!file) return null;
   let dir = fontsDir;
@@ -157,7 +162,13 @@ function fontconfigFor({ config, preset, fontsDir, executablePath } = {}) {
     const cand = path.join(path.dirname(path.resolve(String(executablePath))), 'fonts');
     if (fs.existsSync(cand) && fs.statSync(cand).isDirectory()) dir = cand;
   }
-  if (!dir) return null;
+  if (!dir) {
+    if (hostOs === 'Linux') {
+      throw new Error(`${claimedOs(config, preset)} claim on a Linux host needs the bundled fonts dir, `
+        + 'but none was given and no fonts dir sits beside the executable');
+    }
+    return null;
+  }
   const conf = path.resolve(dir, '..', file);
   if (!fs.existsSync(conf)) throw new Error(`fonts dir ${dir} has no fontconfig ${file} beside it: ${conf}`);
   return conf;
@@ -175,8 +186,8 @@ function acceptLangOf(config, preset) {
 // The whole argv besides what the driver adds: launch() ignores Playwright's
 // default args (they carry --disable-features=<18>, --blink-settings, ...).
 function buildArgs({ window, dpr, position, extra = [], headless = true, userDataDir,
-  acceptLang, extensions = [], spkiList = [], proxyServer, proxyBypass } = {}) {
-  const args = [...BASE_ARGS];
+  acceptLang, extensions = [], spkiList = [], proxyServer, proxyBypass, light = false } = {}) {
+  const args = [...BASE_ARGS, ...(light ? LIGHT_ARGS : [])];
   if (headless) args.push('--headless=new');
   args.push('--remote-debugging-pipe');
   if (userDataDir) args.push(`--user-data-dir=${userDataDir}`);
@@ -211,8 +222,9 @@ function perInstanceConfig() {
 
 // The seeds a kept profile launches with: drawn once into
 // <userDataDir>/camoucrome-seeds.json and read back on every later launch, so
-// the profile shows the same canvas, audio and device-ID fingerprint each
-// session. Keys missing from the file are drawn and added. A damaged file
+// the profile shows the same canvas and device-ID fingerprint each
+// session. A key no longer in SEED_KEYS (audio:seed) that an old file holds is
+// ignored and left in place. Keys missing from the file are drawn and added. A damaged file
 // throws instead of being redrawn, which would change the fingerprint
 // silently. The Python and Go clients read and write the same file.
 function profileSeeds(userDataDir) {
@@ -256,7 +268,7 @@ function profileSeeds(userDataDir) {
 
 async function launch(chromium, executablePath, {
   config, preset, strict = false, userDataDir, window, dpr, position, headless = true,
-  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, ...options
+  args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, light = false, pinCpuCores = true, ...options
 } = {}) {
   if (proxy !== undefined) {
     if (!proxy || typeof proxy !== 'object' || !proxy.server || proxy.server.includes('@')) {
@@ -270,10 +282,23 @@ async function launch(chromium, executablePath, {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
   }
+  const keys = effectiveKeys(config, preset);
+  const outer = [keys['window.outerWidth'], keys['window.outerHeight']];
+  // shortcut: no window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
+  if (window && window.some((w, i) => outer[i] != null && w > outer[i])) {
+    throw new Error(`window [${window}] exceeds window.outerWidth/outerHeight [${outer}]: `
+      + 'innerWidth/innerHeight would exceed the claimed outer size');
+  }
+  const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
   if (geoip) { // after the proxy and forbidden-option checks: a rejected proxy gets no echo request
     const { checkGeoip } = require('./geoip');
-    const say = warn || ((m) => process.emitWarning(m, 'CamoucromeGeoIPWarning'));
     (await checkGeoip({ config, preset, proxy, exitIp, geoip: geoip === true ? '' : geoip, python })).forEach(say);
+  } else if (proxy) {
+    say('a proxy without geoip: timezone, locale and geolocation are not checked against the exit IP');
+  }
+  if (keys['geolocation:latitude'] != null && keys['geolocation:longitude'] != null) {
+    const have = options.permissions || [];
+    options.permissions = have.includes('geolocation') ? have : [...have, 'geolocation'];
   }
   // What the launch owns -- the crash-dump dir, and a temp profile -- lives as
   // long as the context; a failed launch removes it too. fs.rm's retries outlast
@@ -288,9 +313,7 @@ async function launch(chromium, executablePath, {
   // replace the launch error. A directory still locked after ~10 s stays.
   const remove = () => Promise.all(owned.map((d) =>
     fs.promises.rm(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }).catch(() => {})));
-  let ctx;
-  try {
-    ctx = await chromium.launchPersistentContext(dir, {
+  const start = () => chromium.launchPersistentContext(dir, {
       executablePath: String(executablePath),
       headless,
       ignoreDefaultArgs: true,
@@ -298,12 +321,17 @@ async function launch(chromium, executablePath, {
         fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
       args: buildArgs({ window, dpr, position, extra: args, headless, userDataDir: dir,
         acceptLang: acceptLangOf(config, preset), extensions, spkiList,
-        proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass }),
+        proxyServer: proxy && proxy.server, proxyBypass: proxy && proxy.bypass, light }),
       // Otherwise a 1280x720 viewport is emulated, fighting screen.* and the
       // window size.
       viewport: null,
       ...options,
     });
+  // A claim below the CPUs this process may use pins it for the launch call (pin.js; Chrome inherits the mask).
+  const n = keys['navigator.hardwareConcurrency'];
+  let ctx;
+  try {
+    ctx = await (pinCpuCores && Number.isInteger(n) && n >= 1 ? pinned(n, start) : start());
   } catch (e) {
     await remove();
     throw e;
@@ -327,5 +355,5 @@ async function launch(chromium, executablePath, {
   return ctx;
 }
 
-module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
-  acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch };
+module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
+  acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch, human: require('./human') };

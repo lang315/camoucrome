@@ -19,6 +19,7 @@ type contract struct {
 	} `json:"forbidden_context_options"`
 	Launch struct {
 		BaseArgs          []string `json:"base_args"`
+		LightArgs         []string `json:"light_args"`
 		WindowSizeArg     string   `json:"window_size_arg"`
 		WindowPositionArg string   `json:"window_position_arg"`
 		DPRArg            string   `json:"dpr_arg"`
@@ -95,8 +96,9 @@ func TestNoForbiddenOptionField(t *testing.T) {
 }
 
 func TestEnvDropsStaleCamouVarsAndSetsTheTransport(t *testing.T) {
-	env, err := BuildEnv(Options{Config: map[string]int{"screen.width": 1}, Preset: `{"os":"Windows"}`, Strict: true},
-		[]string{"CAMOU_CONFIG_1=stale", "PATH=/bin"})
+	// a Windows host: on a Linux host this Windows claim with no fonts dir is refused
+	env, err := buildEnvFor(Options{Config: map[string]int{"screen.width": 1}, Preset: `{"os":"Windows"}`, Strict: true},
+		[]string{"CAMOU_CONFIG_1=stale", "PATH=/bin"}, "Windows")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +231,7 @@ func TestFontconfigFollowsTheClaimedOS(t *testing.T) {
 	if env["FONTCONFIG_FILE"] != want {
 		t.Fatalf("env: %q", env["FONTCONFIG_FILE"])
 	}
-	env, _ = BuildEnv(Options{Config: map[string]any{"ua:platform": "Windows"}}, nil)
+	env, _ = buildEnvFor(Options{Config: map[string]any{"ua:platform": "Windows"}}, nil, "Windows")
 	if _, ok := env["FONTCONFIG_FILE"]; ok {
 		t.Fatal("no fonts dir must set nothing")
 	}
@@ -443,8 +445,12 @@ func TestNativeHostDropsFontAliases(t *testing.T) {
 		return map[string]any{"ua:platform": "Windows", "fonts:alias": map[string]any{"Arial": "Liberation Sans"},
 			"fonts:aliasLocal": map[string]any{"ArialMT": "Liberation Sans"}, "fonts:list": []any{"Arial"}}
 	}
+	root := t.TempDir() // a Linux host needs the bundle for a Windows claim
+	os.MkdirAll(filepath.Join(root, "fonts"), 0o755)
+	os.MkdirAll(filepath.Join(root, "settings", "fontconfig"), 0o755)
+	os.WriteFile(filepath.Join(root, "settings", "fontconfig", "windows.conf"), []byte("<fontconfig/>"), 0o644)
 	decode := func(config any, host string) map[string]any {
-		env, err := buildEnvFor(Options{Config: config}, nil, host)
+		env, err := buildEnvFor(Options{Config: config, FontsDir: filepath.Join(root, "fonts")}, nil, host)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -553,4 +559,27 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+func TestLightArgsMatchTheContract(t *testing.T) {
+	c := load(t)
+	if !reflect.DeepEqual(append([]string{}, LightArgs...), append([]string{}, c.Launch.LightArgs...)) {
+		t.Fatalf("LightArgs %v != contract %v", LightArgs, c.Launch.LightArgs)
+	}
+}
+
+func TestLightPutsLightArgsAfterBaseArgs(t *testing.T) {
+	c := load(t)
+	saved := LightArgs
+	LightArgs = []string{"--x-light"}
+	defer func() { LightArgs = saved }()
+	headed := false
+	pipe := "--remote-debugging-pipe"
+	if got := BuildArgs(Options{Headless: &headed}); !reflect.DeepEqual(got, append(append([]string{}, c.Launch.BaseArgs...), pipe)) {
+		t.Fatalf("light off changed argv: %v", got)
+	}
+	want := append(append(append([]string{}, c.Launch.BaseArgs...), "--x-light"), pipe)
+	if got := BuildArgs(Options{Headless: &headed, Light: true}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("light on %v != %v", got, want)
+	}
 }

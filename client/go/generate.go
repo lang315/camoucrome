@@ -60,6 +60,10 @@ type GenArgs struct {
 	HostPlatformVersion string
 	// HostDisplay is probe.host_display's JSON ({"gamut","colorBits","hdr"}); a wide-gamut host gets launch.args.
 	HostDisplay string
+	// HostScreen is probe.host_screen's JSON ({"availWidth","availHeight"}, physical px); draws that do not fit are rejected.
+	HostScreen string
+	// Light (social mode part 3, L1) draws only pool samples with DPR 1.
+	Light bool
 }
 
 // genArgs is the generator's argument list; the order is the old Generate's, the new flags last.
@@ -100,6 +104,12 @@ func genArgs(g GenArgs) []string {
 	}
 	if g.HostDisplay != "" {
 		args = append(args, "--host-display="+g.HostDisplay)
+	}
+	if g.HostScreen != "" {
+		args = append(args, "--host-screen="+g.HostScreen)
+	}
+	if g.Light {
+		args = append(args, "--light")
 	}
 	return args
 }
