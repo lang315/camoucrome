@@ -143,7 +143,7 @@ def main():
         # generator's TIMING non-uniformity is proven separately and stably by
         # MouseTrajectoriesTest.InterPointTimingIsNotUniform (Task 2).
         path_dx = abs(TARGET[0] - PRIME[0])  # 320 for (100 -> 420)
-        results[C3], note = sp2b_analysis.traces_path(events, path_dx)
+        results[C3], note = sp2b_analysis.traces_path(events, path_dx, sp2b_analysis.median_gap(frames[0]))
         if note:
             notes.append(note)
 
