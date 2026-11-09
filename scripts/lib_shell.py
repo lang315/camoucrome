@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 # CI's runner is a service with none of these; a hand-run shell on the build box inherits them from WSLg, and with
@@ -533,6 +534,27 @@ def launch_and_prime(start, prime, out=print):
             else:
                 _mark_unmeasured(f"UNMEASURED relaunched browser died at startup too: {line}")
                 raise
+
+
+def attach(proc, setup=None):
+    """The prime for launch_and_prime when a script keeps one Playwright connection for its whole run.
+
+    Connects, takes the first page, runs setup(page) (page load or script install, nothing measured yet) and
+    returns a handle with .browser .context .page; the caller measures on it and calls .close() before
+    shutdown(). A failure here stops Playwright and raises, so launch_and_prime sees it."""
+    from playwright.sync_api import sync_playwright
+
+    pw = sync_playwright().start()
+    try:
+        browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
+        context = browser.contexts[0]
+        page = context.pages[0] if context.pages else context.new_page()
+        if setup is not None:
+            setup(page)
+    except BaseException:
+        pw.stop()
+        raise
+    return types.SimpleNamespace(browser=browser, context=context, page=page, close=pw.stop)
 
 
 def shutdown(proc):

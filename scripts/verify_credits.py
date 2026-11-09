@@ -16,7 +16,6 @@ Run on the box like the other verify_*.py (clean env, venv python).
 """
 import sys
 
-from playwright.sync_api import sync_playwright
 
 import lib_shell
 
@@ -28,18 +27,17 @@ CHECKS = ((R1, "Cursory"), (R2, "GNU LESSER GENERAL PUBLIC LICENSE"),
 
 
 def credits_text():
-    proc = None
+    proc = conn = None
     try:
-        proc = lib_shell.launch(None, shell=lib_shell.CHROME, extra_flags=lib_shell.CHROME_FLAGS)
-        with sync_playwright() as p:
-            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{proc.cdp_port}")
-            context = browser.contexts[0]
-            page = context.pages[0] if context.pages else context.new_page()
-            page.goto("chrome://credits", wait_until="load")
-            return page.evaluate("document.documentElement.innerHTML"), None
+        proc, conn = lib_shell.launch_and_prime(
+            lambda: lib_shell.launch(None, shell=lib_shell.CHROME, extra_flags=lib_shell.CHROME_FLAGS),
+            lambda p: lib_shell.attach(p, lambda page: page.goto("chrome://credits", wait_until="load")))
+        return conn.page.evaluate("document.documentElement.innerHTML"), None
     except Exception as exc:  # noqa: BLE001
         return None, exc
     finally:
+        if conn is not None:
+            conn.close()
         if proc is not None:
             lib_shell.shutdown(proc)
 
