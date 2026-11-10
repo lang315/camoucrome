@@ -1,7 +1,7 @@
-"""SP2c oracle: how stock Chrome 156 on the Windows host shows a page real
+"""SP2c oracle: how stock Chrome 157 on the Windows host shows a page real
 mouse-wheel notches (SendInput, the Win32 path a physical wheel takes),
 against the same binary scrolled over CDP. Writes
-baselines/chrome-8078-wheel.json; exits 1 if the RED gate says the arms do
+baselines/chrome-8103-wheel.json; exits 1 if the RED gate says the arms do
 not differ (the probe measured nothing). Runs where winhost.py runs (the
 Mac, with the buildpc ssh master up).
 
@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gpu_gate  # noqa: E402
 import winhost  # noqa: E402
 
-OUT = pathlib.Path(__file__).resolve().parent.parent / "baselines" / "chrome-8078-wheel.json"
+OUT = pathlib.Path(__file__).resolve().parent.parent / "baselines" / "chrome-8103-wheel.json"
 
 PAGE = """<!doctype html><meta charset=utf-8>
 <body style="margin:0;height:20000px"><script>
