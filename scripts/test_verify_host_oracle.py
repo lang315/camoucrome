@@ -169,14 +169,14 @@ def test_a_leaf_missing_from_the_baseline_is_known_until_the_baseline_has_it():
 # O4's expected full-version list: the host's, with only the Chrome/Chromium versions set to the pin.
 def _host_full():
     import json
-    base = json.loads((ROOT / "baselines" / "chrome-8078-stock-oracle-windows.json").read_text(encoding="utf-8"))
+    base = json.loads((ROOT / "baselines" / "chrome-8103-stock-oracle-windows.json").read_text(encoding="utf-8"))
     return base["headed"]["uadHigh"]["fullVersionList"]
 
 
 def test_o4_expected_list_swaps_only_the_build_brands_to_the_pin():
     import oracle_rules
     pin = oracle_rules.read_pin((ROOT / "upstream.env").read_text(encoding="utf-8"))
-    assert pin == "156.0.8078.48"  # read from upstream.env, not typed here: this fails on a re-pin until the baseline is too
+    assert pin == "157.0.8103.51"  # read from upstream.env, not typed here: this fails on a re-pin until the baseline is too
     host = _host_full()
     want = oracle_rules.expected_full_list(host, pin)
     assert [i["brand"] for i in want] == [i["brand"] for i in host]  # brands and order exact
@@ -189,7 +189,7 @@ def test_o4_red_a_fork_reporting_a_zero_patch_or_a_wrong_grease_does_not_match()
     pin = oracle_rules.read_pin((ROOT / "upstream.env").read_text(encoding="utf-8"))
     want = oracle_rules.expected_full_list(_host_full(), pin)
     zero_patch = [{**i, "version": "156.0.8078.0"} if i["brand"] in oracle_rules.BUILD_BRANDS else i for i in want]
-    wrong_grease = [{**i, "version": "99.0.0.0"} if i["brand"] not in oracle_rules.BUILD_BRANDS else i for i in want]
+    wrong_grease = [{**i, "version": "1.0.0.0"} if i["brand"] not in oracle_rules.BUILD_BRANDS else i for i in want]
     reordered = list(reversed(want))
     assert want != zero_patch and want != wrong_grease and want != reordered
 
