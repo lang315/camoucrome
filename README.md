@@ -84,8 +84,8 @@ oracle and public detectors with a like-for-like stock control, and the
 release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium **`9a31f0acec`, the Chrome stable
-tag `157.0.8103.39`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+The change set is generated against Chromium **`653674df29`, the Chrome stable
+tag `157.0.8103.51`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
 refuses any other HEAD). The pin is a stable tag that shipped, so the fork reports
 a version real users have run. It may lag: it stays while it is at most 3 milestones
 behind Chrome stable, then moves straight to the newest stable tag. There is no re-pin

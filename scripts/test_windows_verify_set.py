@@ -57,9 +57,9 @@ def test_red_own_entry_is_skipped_with_its_reason():
 
 
 def test_stock_version_is_the_one_version_directory(tmp_path):
-    (tmp_path / "157.0.8103.39").mkdir()
+    (tmp_path / "157.0.8103.51").mkdir()
     (tmp_path / "SetupMetrics").mkdir()
-    assert w.stock_version(tmp_path) == "157.0.8103.39"
+    assert w.stock_version(tmp_path) == "157.0.8103.51"
     (tmp_path / "155.0.8100.1").mkdir()      # an update half-applied: refuse
     with pytest.raises(SystemExit):
         w.stock_version(tmp_path)
@@ -164,7 +164,7 @@ def test_unmeasured_lists_the_lines():
     ("156.0.8078.48", True),
     ("156.0.8078.79", True),
     ("156.0.8079.48", False),
-    ("157.0.8103.39", False),
+    ("157.0.8103.51", False),
     ("", False),
 ])
 def test_control_may_differ_from_the_pin_in_the_patch_number_only(have, ok):

@@ -79,7 +79,7 @@ def main():
         fams = winhost.dump_dom(page(GRID_FAMILIES), args=("--use-gl=angle", "--use-angle=d3d11"))  # dump_dom parses #o
         if isinstance(fams, str):
             fams = parse(fams)
-        meta = {"chrome": "157.0.8103.39", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile"}
+        meta = {"chrome": "157.0.8103.51", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), headless --dump-dom, temp profile"}
     else:
         fams, ver = mac_capture(MAC_FAMILIES)
         meta = {"chrome": ver, "where": "stock Google Chrome on the Mac (macOS 15.7.4), headed 300x200 app window, temp profile; the page POSTs its report"}

@@ -28,7 +28,7 @@
     "fullVersionList": [
       {
         "brand": "Chromium",
-        "version": "157.0.8103.15"
+        "version": "157.0.8103.51"
       },
       {
         "brand": "Not-A.Brand",
@@ -126,7 +126,7 @@
       "sec-ch-ua-wow64"
     ],
     "binary": "chrome",
-    "captured_at_commit": "1aa07b6387",
+    "captured_at_commit": "653674df29",
     "known_absent": [],
     "metadata_producer": "chrome/browser/chrome_content_browser_client.cc:7700 ChromeContentBrowserClient::GetUserAgentMetadata -> embedder_support::GetUserAgentMetadata",
     "ua_string_producer": "chrome/browser/chrome_content_browser_client.cc:7696 ChromeContentBrowserClient::GetUserAgent -> embedder_support::GetUserAgent"
@@ -135,7 +135,7 @@
     "sec-ch-ua": "\"Chromium\";v=\"157\", \"Not-A.Brand\";v=\"99\"",
     "sec-ch-ua-arch": "\"x86\"",
     "sec-ch-ua-bitness": "\"64\"",
-    "sec-ch-ua-full-version-list": "\"Chromium\";v=\"157.0.8103.15\", \"Not-A.Brand\";v=\"99.0.0.0\"",
+    "sec-ch-ua-full-version-list": "\"Chromium\";v=\"157.0.8103.51\", \"Not-A.Brand\";v=\"99.0.0.0\"",
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-model": "\"\"",
     "sec-ch-ua-platform": "\"Linux\"",

@@ -89,9 +89,9 @@ def test_argv_parity_refuses_unread_argv():
 
 
 def test_version_precondition():
-    assert r.version_problems({"control": "157.0.8103.39", "fork": "157.0.8103.39"}, "157.0.8103.39") == []
-    assert r.version_problems({"control": "156.0.1.1", "fork": "157.0.8103.39"}, "157.0.8103.39") == [
-        "control is 156.0.1.1, the pin is 157.0.8103.39"]
+    assert r.version_problems({"control": "157.0.8103.51", "fork": "157.0.8103.51"}, "157.0.8103.51") == []
+    assert r.version_problems({"control": "156.0.1.1", "fork": "157.0.8103.51"}, "157.0.8103.51") == [
+        "control is 156.0.1.1, the pin is 157.0.8103.51"]
 
 
 def test_network_rows_from_fixture():
@@ -224,9 +224,9 @@ def test_measured_volatile_lines_are_dropped(line):
 def test_ad_suffix_is_stripped_and_the_value_kept():
     # BrowserScan's ad unit appends a rotating link text to the value line before it.
     assert r.line_diff("springfieldTry Web Filters\n", "springfieldPrivacy Issues\n") == ([], [])
-    assert r.line_diff("Chrome Headless 157.0.8103.39 DetectionKernel detection tool\n",
-                       "Chrome 157.0.8103.39 DetectionCanvas fingerprint detection\n") == (
-        ["Chrome Headless 157.0.8103.39 Detection"], ["Chrome 157.0.8103.39 Detection"])
+    assert r.line_diff("Chrome Headless 157.0.8103.51 DetectionKernel detection tool\n",
+                       "Chrome 157.0.8103.51 DetectionCanvas fingerprint detection\n") == (
+        ["Chrome Headless 157.0.8103.51 Detection"], ["Chrome 157.0.8103.51 Detection"])
 
 
 def test_a_real_value_line_survives():
@@ -334,7 +334,7 @@ def test_blocked_names_the_cloudflare_interstitial():
     ("peer 203.0.113.7:443 up", "peer <ip>:443 up"),
     ("v6 [2001:db8::1]:443", "v6 [<ip6>]:443"),
     ("at 10.7623, 106.6602 now", "at <coord> now"),
-    ("HeadlessChrome/157.0.8103.39 Safari/537.36", "HeadlessChrome/157.0.8103.39 Safari/537.36"),
+    ("HeadlessChrome/157.0.8103.51 Safari/537.36", "HeadlessChrome/157.0.8103.51 Safari/537.36"),
     ("at 10:00:00 on 2026-10-13T17:15:42.195Z", "at 10:00:00 on 2026-10-13T17:15:42.195Z"),
     ("mac aa:bb:cc:dd:ee:ff", "mac aa:bb:cc:dd:ee:ff"),
     ("Somewhere City, Region (SC), Land", "<city>, <region> (SC), <country>"),
@@ -434,7 +434,7 @@ def test_a_gate_read_that_raises_is_unmeasured_not_an_error():
 def test_scrub_an_address_glued_to_a_digit():
     # whoer.net prints an edge address with a digit glued on ("203.0.113.1922  Singapore", step2b fork run 1).
     assert r.scrub("203.0.113.1922  Singapore", {}) == "<ip>  Singapore"
-    assert r.scrub("Chrome 157.0.8103.39 on Windows", {}) == "Chrome 157.0.8103.39 on Windows"
+    assert r.scrub("Chrome 157.0.8103.51 on Windows", {}) == "Chrome 157.0.8103.51 on Windows"
 
 
 # step2b fork run 20261013-161750: rows the identity or SP2 explain.
