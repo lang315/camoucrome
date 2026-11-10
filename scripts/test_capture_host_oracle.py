@@ -8,6 +8,9 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import capture_host_oracle as cho  # noqa: E402
+import oracle_rules  # noqa: E402
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 TERMS = {"<host-tz>": ["Mars/Olympus"], "user.HOST": ["someone.BOX"]}
 DOC = {"headed": {"intl": {"dtf": {"timeZone": "Mars/Olympus"}},
@@ -103,7 +106,7 @@ def test_each_mode_reads_on_a_profile_primed_by_an_earlier_launch(monkeypatch, t
     assert prime_read[0][2][0] != prime_read[2][2][0] and prime_read[0][2][0] is not None
     assert all(exe == os.path.join(r"D:\stock\156", "chrome.exe") for _, _, (_, exe) in prime_read)
     # the doc names the build measured: the version a frozen stock's directory carries, else the pin
-    assert json.loads((tmp_path / "raw.json").read_text())["chrome"] == "156.0.8078.48"
+    assert json.loads((tmp_path / "raw.json").read_text())["chrome"] == oracle_rules.read_pin((ROOT / "upstream.env").read_text())
     monkeypatch.setenv("CAMOU_STOCK_APP", os.path.join(os.sep, "stock", "156.0.8078.80"))
     assert _run(monkeypatch, tmp_path, FakeWinhost(_good(), {"done": True, "gpu": {"info": 1}})) == 0
     assert json.loads((tmp_path / "raw.json").read_text())["chrome"] == "156.0.8078.80"

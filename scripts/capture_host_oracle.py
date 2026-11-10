@@ -12,6 +12,7 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import oracle_rules  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "baselines" / "chrome-8103-stock-oracle-windows.json"
 
@@ -164,7 +165,7 @@ def main(argv=None):
     display = host_display(winhost)
     # the build that was measured: the frozen stock's directory is named by its version, else the pin
     m = re.fullmatch(r"\d+\.\d+\.\d+\.\d+", os.path.basename(os.path.normpath(app))) if app else None
-    doc = {"chrome": m.group(0) if m else "157.0.8103.50", "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile primed with its variations seed by one earlier launch; headed and headless (--headless=new) through the host CDP client, real time",
+    doc = {"chrome": m.group(0) if m else oracle_rules.read_pin((ROOT / "upstream.env").read_text()), "where": "stock Google Chrome on the build box's Windows 10 host (build 19045), temp profile primed with its variations seed by one earlier launch; headed and headless (--headless=new) through the host CDP client, real time",
            "display": display, "headed": headed, "headless": headless}
     bad = unmeasured_cells(doc)
     sc = headed.get("screen") or {}
