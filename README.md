@@ -44,7 +44,7 @@ host-native check compares the fork's wheel with a real wheel on Windows: the fo
 produced 13 scroll events over 275 ms, the real wheel 12 over 266 ms, inside the
 0.5–1.5 band.
 
-**Windows is the flagship target.** A native `chrome.exe` 156.0.8078.48 builds
+**Windows is the flagship target.** A native `chrome.exe` 157.0.8103.51 builds
 from the same change set on the build PC's Windows host. The Windows-specific
 patches make a Windows claim behave like stock Windows Chrome past mere
 presence (`windows-oracle`, `windows-behaviour`, `windows-behaviour-ii`),
@@ -84,8 +84,8 @@ oracle and public detectors with a like-for-like stock control, and the
 release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
 [`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
 
-The change set is generated against Chromium **`d0c02bfad0`, the Chrome stable
-tag `156.0.8078.48`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
+The change set is generated against Chromium **`653674df29`, the Chrome stable
+tag `157.0.8103.51`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
 refuses any other HEAD). The pin is a stable tag that shipped, so the fork reports
 a version real users have run. It may lag: it stays while it is at most 3 milestones
 behind Chrome stable, then moves straight to the newest stable tag. There is no re-pin

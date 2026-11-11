@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 2e0f287290..a5fe9c7781 100644
+index 1defcfa514..3468d3e663 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -195,6 +195,7 @@
+@@ -201,6 +201,7 @@
  #include "chrome/browser/tab_group_sync/tab_group_sync_utils.h"
  #include "chrome/browser/task_manager/task_manager_interface.h"
  #include "chrome/browser/tracing/chrome_tracing_delegate.h"
@@ -10,7 +10,7 @@ index 2e0f287290..a5fe9c7781 100644
  #include "chrome/browser/translate/translate_service.h"
  #include "chrome/browser/ui/blocked_content/blocked_window_params.h"
  #include "chrome/browser/ui/blocked_content/chrome_popup_navigation_delegate.h"
-@@ -339,6 +340,7 @@
+@@ -345,6 +346,7 @@
  #include "components/site_token_provider/features.h"
  #include "components/supervised_user/core/common/features.h"
  #include "components/sync_tab_context/http_rpc_constants.h"
@@ -18,7 +18,7 @@ index 2e0f287290..a5fe9c7781 100644
  #include "components/translate/core/common/translate_switches.h"
  #include "components/user_prefs/user_prefs.h"
  #include "components/variations/variations_associated_data.h"
-@@ -4943,7 +4945,11 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
+@@ -4980,7 +4982,11 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
    web_prefs->root_scrollbar_theme_color =
        GetRootScrollbarThemeColor(web_contents);
  

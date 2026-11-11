@@ -1,5 +1,5 @@
 diff --git a/components/embedder_support/BUILD.gn b/components/embedder_support/BUILD.gn
-index 847ba42327..bdcc1bdaa5 100644
+index 4fcfc8913e..435dfb87f6 100644
 --- a/components/embedder_support/BUILD.gn
 +++ b/components/embedder_support/BUILD.gn
 @@ -58,6 +58,7 @@ static_library("user_agent") {
@@ -7,9 +7,9 @@ index 847ba42327..bdcc1bdaa5 100644
      ":embedder_support",
      "//build:branding_buildflags",
 +    "//components/camoucfg",
-     "//components/policy/core/common",
-     "//components/prefs",
      "//components/version_info",
+     "//net",
+     "//third_party/blink/public/common:headers",
 diff --git a/components/embedder_support/DEPS b/components/embedder_support/DEPS
 index 85fc43cfc0..65c510a965 100644
 --- a/components/embedder_support/DEPS
@@ -22,19 +22,19 @@ index 85fc43cfc0..65c510a965 100644
    "+components/content_settings/core/browser",
    "+components/content_settings/core/common",
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index e699a6a394..32730354f3 100644
+index bf4a8960a0..6c39ac3969 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -26,6 +26,8 @@
- #include "base/version.h"
+@@ -25,6 +25,8 @@
+ #include "base/system/sys_info.h"
  #include "build/branding_buildflags.h"
  #include "build/build_config.h"
 +#include "components/camoucfg/keys.h"
 +#include "components/camoucfg/mask_config.h"
- #include "components/embedder_support/pref_names.h"
  #include "components/embedder_support/switches.h"
- #include "components/policy/core/common/policy_pref_names.h"
-@@ -298,6 +300,75 @@ std::string GetUserAgentPlatform() {
+ #include "components/version_info/version_info.h"
+ #include "net/http/http_util.h"
+@@ -275,6 +277,75 @@ std::string GetUserAgentPlatform() {
  #endif
  }
  
@@ -110,7 +110,17 @@ index e699a6a394..32730354f3 100644
  std::string GetUnifiedPlatform() {
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
    // This constant is only used on Android (desktop) and Linux.
-@@ -479,7 +550,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
+@@ -439,7 +510,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
+                       BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
+                                      IncludeAndroidModel::Include)
+                           .c_str());
+-  return BuildUserAgentFromOSAndProduct(os_info, product);
++  return BuildUserAgentFromOSAndProduct(OsInfoOverrideOr(std::move(os_info)),
++                                        product);
+ }
+ 
+ // Internal function to handle return the full or "reduced" user agent string,
+@@ -484,7 +556,12 @@ std::optional<std::string> GetUserAgentFromCommandLine() {
  
  std::string GetUserAgent() {
    std::optional<std::string> custom_ua = GetUserAgentFromCommandLine();
@@ -124,7 +134,7 @@ index e699a6a394..32730354f3 100644
      return custom_ua.value();
    }
  
-@@ -662,6 +738,7 @@ std::string GetPlatformForUAMetadata() {
+@@ -634,6 +711,7 @@ std::string GetPlatformForUAMetadata() {
  
  blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    blink::UserAgentMetadata metadata;
@@ -132,7 +142,7 @@ index e699a6a394..32730354f3 100644
  
    // Low entropy client hints.
    metadata.brand_version_list =
-@@ -669,14 +746,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -641,14 +719,31 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.mobile = GetMobileBitForUAMetadata();
    metadata.platform = GetPlatformForUAMetadata();
  
@@ -165,7 +175,7 @@ index e699a6a394..32730354f3 100644
      return base::FeatureList::IsEnabled(blink::features::kUACHOverrideBlank)
                 ? blink::UserAgentMetadata()
                 : metadata;
-@@ -696,6 +790,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -668,6 +763,33 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.bitness = GetCpuBitness();
    metadata.wow64 = IsWoW64();
    metadata.platform_version = GetPlatformVersion();
@@ -199,7 +209,7 @@ index e699a6a394..32730354f3 100644
    return metadata;
  }
  
-@@ -724,6 +845,10 @@ std::string GetUnifiedPlatformForTesting() {
+@@ -696,6 +818,10 @@ std::string GetUnifiedPlatformForTesting() {
    return GetUnifiedPlatform();
  }
  
@@ -210,7 +220,7 @@ index e699a6a394..32730354f3 100644
  // Return the CPU architecture in Windows/Mac/POSIX/Fuchsia and the empty string
  // on Android or if unknown.
  std::string GetCpuArchitecture() {
-@@ -842,7 +967,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
+@@ -814,7 +940,8 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
  
  std::string BuildUnifiedPlatformUserAgentFromProduct(
      const std::string& product) {
@@ -219,19 +229,9 @@ index e699a6a394..32730354f3 100644
 +                                        product);
  }
  
- std::string BuildUserAgentFromProduct(const std::string& product) {
-@@ -851,7 +977,8 @@ std::string BuildUserAgentFromProduct(const std::string& product) {
-                       BuildOSCpuInfo(IncludeAndroidBuildNumber::Exclude,
-                                      IncludeAndroidModel::Include)
-                           .c_str());
--  return BuildUserAgentFromOSAndProduct(os_info, product);
-+  return BuildUserAgentFromOSAndProduct(OsInfoOverrideOr(std::move(os_info)),
-+                                        product);
- }
- 
  std::string BuildModelInfo() {
 diff --git a/components/embedder_support/user_agent_utils.h b/components/embedder_support/user_agent_utils.h
-index 7b4e9ca1cf..fe9faf21a9 100644
+index 969d223d70..7c4f3a98d3 100644
 --- a/components/embedder_support/user_agent_utils.h
 +++ b/components/embedder_support/user_agent_utils.h
 @@ -112,6 +112,10 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
@@ -242,14 +242,14 @@ index 7b4e9ca1cf..fe9faf21a9 100644
 +// exposes the real computed platform value to tests.
 +std::string GetPlatformForUAMetadataForTesting();
 +
- // Helper function to generate a full user agent string from a short
- // product name.
- std::string BuildUserAgentFromProduct(const std::string& product);
+ // Helper function to generate a reduced user agent string with unified
+ // platform from a given product name.
+ std::string BuildUnifiedPlatformUserAgentFromProduct(
 diff --git a/components/embedder_support/user_agent_utils_unittest.cc b/components/embedder_support/user_agent_utils_unittest.cc
-index bd28b23706..0088b253a9 100644
+index 23fa11bc9e..2d3e453c33 100644
 --- a/components/embedder_support/user_agent_utils_unittest.cc
 +++ b/components/embedder_support/user_agent_utils_unittest.cc
-@@ -1197,4 +1197,99 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
+@@ -847,4 +847,99 @@ TEST_F(UserAgentUtilsTest, GetCpuBitness) {
  #endif
  }
  
@@ -350,10 +350,10 @@ index bd28b23706..0088b253a9 100644
 +
  }  // namespace embedder_support
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index 28e639aac6..6a512bb546 100644
+index 9d511356de..fc114b4c79 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
-@@ -60,6 +60,7 @@
+@@ -61,6 +61,7 @@
  #include "build/build_config.h"
  #include "build/chromecast_buildflags.h"
  #include "cc/base/histograms.h"
@@ -361,7 +361,7 @@ index 28e639aac6..6a512bb546 100644
  #include "components/camoucfg/mask_config.h"
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
  #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
-@@ -554,10 +555,22 @@ int BrowserMainLoop::EarlyInitialization() {
+@@ -559,10 +560,22 @@ int BrowserMainLoop::EarlyInitialization() {
    // crash. Conventions rule 5 forbids exactly that: a crash is itself a
    // fingerprint.
    const bool camou_configured = camoucfg::HasKey(

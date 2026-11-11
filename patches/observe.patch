@@ -11,10 +11,10 @@ index 9377661e94..18dbbc179c 100644
      perfetto::Category(TRACE_DISABLED_BY_DEFAULT("cc"))
          .SetTags("slow"),
 diff --git a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-index 995d8584f3..1ce5f44a59 100644
+index 7f5e77594e..2507212dc7 100644
 --- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
 +++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-@@ -836,6 +836,81 @@ def _make_bindings_logging_id(cg_context):
+@@ -995,6 +995,81 @@ def _make_bindings_logging_id(cg_context):
      return logging_id
  
  
@@ -96,16 +96,16 @@ index 995d8584f3..1ce5f44a59 100644
  def make_bindings_trace_event(cg_context):
      assert isinstance(cg_context, CodeGenContext)
  
-@@ -1890,6 +1965,7 @@ def make_attribute_get_callback_def(cg_context, function_name):
-         EmptyNode(),
-         make_runtime_call_timer_scope(cg_context),
-         make_bindings_trace_event(cg_context),
-+        make_camou_observe_record(cg_context),
-         make_report_coop_access(cg_context),
-         make_report_deprecate_as(cg_context),
-         make_report_measure_as(cg_context),
-@@ -1973,6 +2049,9 @@ def make_attribute_set_nadc_callback_def(cg_context):
-     ])
+@@ -2259,6 +2334,7 @@ def make_attribute_get_callback_def(cg_context, function_name):
+             EmptyNode(),
+             make_runtime_call_timer_scope(cg_context),
+             make_bindings_trace_event(cg_context),
++            make_camou_observe_record(cg_context),
+             make_report_coop_access(cg_context),
+             make_report_deprecate_as(cg_context),
+             make_report_measure_as(cg_context),
+@@ -2373,6 +2449,9 @@ def make_attribute_set_nadc_callback_def(cg_context):
+     )
  
      bind_callback_local_vars(body, cg_context)
 +    camou_record = make_camou_observe_record(cg_context)
@@ -114,40 +114,40 @@ index 995d8584f3..1ce5f44a59 100644
  
      # If [CallWith=Isolate] is specified, make sure ${isolate} is passed first.
      blink_arguments = list()
-@@ -2024,6 +2103,7 @@ def make_attribute_set_callback_def(cg_context, function_name):
-         EmptyNode(),
-         make_runtime_call_timer_scope(cg_context),
-         make_bindings_trace_event(cg_context),
-+        make_camou_observe_record(cg_context),
-         make_report_deprecate_as(cg_context),
-         make_report_measure_as(cg_context),
-         make_log_activity(cg_context),
-@@ -2185,6 +2265,7 @@ def make_constructor_entry(cg_context):
-     return SequenceNode([
-         make_runtime_call_timer_scope(cg_context),
-         make_bindings_trace_event(cg_context),
-+        make_camou_observe_record(cg_context),
-         EmptyNode(),
-         make_check_constructor_call(cg_context),
-     ])
-@@ -2300,6 +2381,7 @@ def make_exposed_construct_callback_def(cg_context, function_name):
-     body.extend([
-         make_runtime_call_timer_scope(cg_context),
-         make_bindings_trace_event(cg_context),
-+        make_camou_observe_record(cg_context),
-         make_report_deprecate_as(cg_context),
-         make_report_measure_as(cg_context),
-         make_log_activity(cg_context),
-@@ -2321,6 +2403,7 @@ def make_legacy_factory_function_property_callback_def(cg_context,
-     body.extend([
-         make_runtime_call_timer_scope(cg_context),
-         make_bindings_trace_event(cg_context),
-+        make_camou_observe_record(cg_context),
-         make_report_deprecate_as(cg_context),
-         make_report_measure_as(cg_context),
-         make_log_activity(cg_context),
-@@ -2519,6 +2602,9 @@ def make_no_alloc_direct_call_callback_def(cg_context, function_name,
-         ))
+@@ -2430,6 +2509,7 @@ def make_attribute_set_callback_def(cg_context, function_name):
+             EmptyNode(),
+             make_runtime_call_timer_scope(cg_context),
+             make_bindings_trace_event(cg_context),
++            make_camou_observe_record(cg_context),
+             make_report_deprecate_as(cg_context),
+             make_report_measure_as(cg_context),
+             make_log_activity(cg_context),
+@@ -2629,6 +2709,7 @@ def make_constructor_entry(cg_context):
+         [
+             make_runtime_call_timer_scope(cg_context),
+             make_bindings_trace_event(cg_context),
++            make_camou_observe_record(cg_context),
+             EmptyNode(),
+             make_check_constructor_call(cg_context),
+         ]
+@@ -2770,6 +2851,7 @@ def make_exposed_construct_callback_def(cg_context, function_name):
+         [
+             make_runtime_call_timer_scope(cg_context),
+             make_bindings_trace_event(cg_context),
++            make_camou_observe_record(cg_context),
+             make_report_deprecate_as(cg_context),
+             make_report_measure_as(cg_context),
+             make_log_activity(cg_context),
+@@ -2794,6 +2876,7 @@ def make_legacy_factory_function_property_callback_def(
+         [
+             make_runtime_call_timer_scope(cg_context),
+             make_bindings_trace_event(cg_context),
++            make_camou_observe_record(cg_context),
+             make_report_deprecate_as(cg_context),
+             make_report_measure_as(cg_context),
+             make_log_activity(cg_context),
+@@ -3029,6 +3112,9 @@ def make_no_alloc_direct_call_callback_def(
+     )
  
      bind_callback_local_vars(body, cg_context)
 +    camou_record = make_camou_observe_record(cg_context)
@@ -156,13 +156,13 @@ index 995d8584f3..1ce5f44a59 100644
  
      if cg_context.may_throw_exception:
          body.append(T("<% handle_scope.request_symbol_definition() %>"))
-@@ -2587,6 +2673,7 @@ def make_operation_entry(cg_context):
-     return SequenceNode([
-         make_runtime_call_timer_scope(cg_context),
-         make_bindings_trace_event(cg_context),
-+        make_camou_observe_record(cg_context),
-     ])
- 
+@@ -3115,6 +3201,7 @@ def make_operation_entry(cg_context):
+         [
+             make_runtime_call_timer_scope(cg_context),
+             make_bindings_trace_event(cg_context),
++            make_camou_observe_record(cg_context),
+         ]
+     )
  
 diff --git a/third_party/blink/renderer/core/execution_context/build.gni b/third_party/blink/renderer/core/execution_context/build.gni
 index a158629b41..3ac9b3d648 100644
@@ -296,10 +296,10 @@ index 0000000000..7e55ad8668
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_EXECUTION_CONTEXT_CAMOU_OBSERVE_H_
 diff --git a/third_party/blink/renderer/platform/BUILD.gn b/third_party/blink/renderer/platform/BUILD.gn
-index 58594ed1a7..4390b72a7c 100644
+index 5823f6f558..19dd18e8cf 100644
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
-@@ -272,6 +272,10 @@ declare_args() {
+@@ -344,6 +344,10 @@ declare_args() {
    # Enable TRACE_EVENT instrumentation for Blink bindings.
    # Disabled by default as it increases binary size.
    enable_blink_bindings_tracing = extended_tracing_enabled
@@ -310,7 +310,7 @@ index 58594ed1a7..4390b72a7c 100644
  }
  
  # ZSTD compression is available on Fuchsia (crbug.com/534838085) but disable in
-@@ -285,6 +289,7 @@ buildflag_header("bindings_buildflags") {
+@@ -357,6 +361,7 @@ buildflag_header("bindings_buildflags") {
    flags = [
      "RCS_COUNT_EVERYTHING=$runtime_call_stats_count_everything",
      "BLINK_BINDINGS_TRACE_ENABLED=$enable_blink_bindings_tracing",

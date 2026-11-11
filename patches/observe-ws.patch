@@ -141,7 +141,7 @@ index 4dfc749062..15e00d1c9d 100644
  
  }  // namespace camou_observe
 diff --git a/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc b/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
-index 33ca454b36..ad486cbdd5 100644
+index 2703401f81..a7929cc7cd 100644
 --- a/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
 +++ b/third_party/blink/renderer/modules/websockets/websocket_channel_impl.cc
 @@ -59,6 +59,7 @@

@@ -103,8 +103,8 @@ finally:
 # browser work succeeded, discarding a capture that cost a browser launch.
 try:
     commit = subprocess.run(
-        ["git", "-C", os.path.expanduser("~/chromium/src"),
-         "rev-parse", "--short", "HEAD"],
+        ["git", "-C", os.path.expanduser(os.environ.get("CAMOU_SRC", "~/chromium/src")),  # the tree the binary was built from
+         "rev-parse", "--short=10", "HEAD"],  # 10 hex like upstream.env pins; auto-abbrev grows with the object store
         capture_output=True, text=True, check=True).stdout.strip()
 except Exception as exc:  # noqa: BLE001 - provenance must never lose a capture
     print(f"capture failed: could not read the checkout's revision: "

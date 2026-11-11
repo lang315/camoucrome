@@ -1,25 +1,25 @@
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 4a8650a125..40fd2bdae4 100644
+index c447fe3b82..e256c4a171 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -1087,6 +1087,7 @@ source_set("core") {
+@@ -1255,6 +1255,7 @@ source_set("core") {
      "//chrome/browser/ui/webui/internal_debug_pages_disabled",
      "//chrome/browser/ui/webui/location_internals",
      "//chrome/browser/ui/webui/media",
 +    "//chrome/browser/ui/webui/observer",
-     "//chrome/browser/ui/webui/omnibox",
-     "//chrome/browser/ui/webui/omnibox/aim_eligibility:mojo_bindings",
+     "//chrome/browser/ui/webui/omnibox_internals",
+     "//chrome/browser/ui/webui/omnibox_internals/aim_eligibility:mojo_bindings",
      "//chrome/browser/ui/webui/policy",
-@@ -3566,6 +3567,7 @@ group("browser_generated_files") {
+@@ -5437,6 +5438,7 @@ group("browser_generated_files") {
      "//chrome/browser/ui/webui/content_settings:mojo_bindings",
      "//chrome/browser/ui/webui/context_hub:mojo_bindings",
      "//chrome/browser/ui/webui/location_internals:mojo_bindings",
 +    "//chrome/browser/ui/webui/observer:mojo_bindings",
-     "//chrome/browser/ui/webui/omnibox:mojo_bindings",
+     "//chrome/browser/ui/webui/omnibox_internals:mojo_bindings",
      "//chrome/browser/ui/webui/reset_password:mojo_bindings",
      "//chrome/browser/ui/webui/segmentation_internals:mojo_bindings",
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index f58d5edfdc..86f0c6a48f 100644
+index 4ef3e944e5..74fa310c3e 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
 @@ -27,6 +27,8 @@
@@ -29,9 +29,9 @@ index f58d5edfdc..86f0c6a48f 100644
 +#include "chrome/browser/ui/webui/observer/observer.mojom.h"
 +#include "chrome/browser/ui/webui/observer/observer_ui.h"
  #include "chrome/browser/ui/webui/media/media_engagement_ui.h"
- #include "chrome/browser/ui/webui/omnibox/aim_eligibility/aim_eligibility.mojom.h"
- #include "chrome/browser/ui/webui/omnibox/omnibox_internals.mojom.h"
-@@ -267,6 +269,8 @@ void PopulateChromeWebUIFrameBindersPartsAllPlatforms(
+ #include "chrome/browser/ui/webui/omnibox_internals/aim_eligibility/aim_eligibility.mojom.h"
+ #include "chrome/browser/ui/webui/omnibox_internals/omnibox_internals.mojom.h"
+@@ -263,6 +265,8 @@ void PopulateChromeWebUIFrameBindersPartsAllPlatforms(
  
    RegisterWebUIControllerInterfaceBinder<::mojom::LocationInternalsHandler,
                                           LocationInternalsUI>(map);
@@ -41,23 +41,23 @@ index f58d5edfdc..86f0c6a48f 100644
    RegisterWebUIControllerInterfaceBinder<
        actor_internals::mojom::PageHandlerFactory, ActorInternalsUI>(map);
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index 5ded1d6276..6c23a44d2e 100644
+index b0e80f7a4d..d579a0aa7f 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
-@@ -426,6 +426,7 @@ group("dev_ui_resources") {
+@@ -431,6 +431,7 @@ group("dev_ui_resources") {
      "location_internals:resources",
      "media:resources",
      "net_internals:resources",
 +    "observer:resources",
-     "omnibox:resources",
+     "omnibox_internals:resources",
      "predictors:resources",
      "segmentation_internals:resources",
-@@ -519,6 +520,7 @@ repack("dev_ui_paks") {
+@@ -524,6 +525,7 @@ repack("dev_ui_paks") {
      "$root_gen_dir/chrome/location_internals_resources.pak",
      "$root_gen_dir/chrome/media_resources.pak",
      "$root_gen_dir/chrome/net_internals_resources.pak",
 +    "$root_gen_dir/chrome/observer_resources.pak",
-     "$root_gen_dir/chrome/omnibox_resources.pak",
+     "$root_gen_dir/chrome/omnibox_internals_resources.pak",
      "$root_gen_dir/chrome/predictors_resources.pak",
      "$root_gen_dir/chrome/segmentation_internals_resources.pak",
 diff --git a/chrome/browser/resources/observer/BUILD.gn b/chrome/browser/resources/observer/BUILD.gn
@@ -454,19 +454,19 @@ index 0000000000..dd9ed93954
 +void loadTabs();
 +setStatus('off');
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 7341632b43..026a821bf2 100644
+index d591f47324..987eb235e4 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -85,6 +85,7 @@ source_set("configs") {
+@@ -78,6 +78,7 @@ source_set("configs") {
      "//chrome/browser/ui/webui/metrics_internals",
      "//chrome/browser/ui/webui/net_internals",
      "//chrome/browser/ui/webui/notebooks_internals:notebooks_internals_ui_config",
 +    "//chrome/browser/ui/webui/observer",
-     "//chrome/browser/ui/webui/omnibox",
+     "//chrome/browser/ui/webui/omnibox_internals",
      "//chrome/browser/ui/webui/policy",
      "//chrome/browser/ui/webui/predictors",
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index 139fecebd5..ac488aadc0 100644
+index d79e9dfdb0..ab86de828f 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 @@ -46,6 +46,7 @@
@@ -474,15 +474,15 @@ index 139fecebd5..ac488aadc0 100644
  #include "chrome/browser/ui/webui/notebooks_internals/notebooks_internals_ui_config.h"
  #include "chrome/browser/ui/webui/ntp_tiles_internals_ui.h"
 +#include "chrome/browser/ui/webui/observer/observer_ui.h"
- #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
+ #include "chrome/browser/ui/webui/omnibox_internals/omnibox_internals_ui.h"
  #include "chrome/browser/ui/webui/policy/policy_ui.h"
  #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
-@@ -305,6 +306,7 @@ void RegisterChromeWebUIConfigs() {
+@@ -311,6 +312,7 @@ void RegisterChromeWebUIConfigs() {
    map.AddWebUIConfig(std::make_unique<NetInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<notebooks::NotebooksInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<NTPTilesInternalsUIConfig>());
 +  map.AddWebUIConfig(std::make_unique<ObserverUIConfig>());
-   map.AddWebUIConfig(std::make_unique<OmniboxUIConfig>());
+   map.AddWebUIConfig(std::make_unique<OmniboxInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<OptimizationGuideInternalsUIConfig>());
    map.AddWebUIConfig(std::make_unique<PasswordManagerInternalsUIConfig>());
 diff --git a/chrome/browser/ui/webui/observer/BUILD.gn b/chrome/browser/ui/webui/observer/BUILD.gn
@@ -1121,7 +1121,7 @@ index 0000000000..3bc0ccff69
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_OBSERVER_OBSERVER_UI_H_
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
-index a462094cd3..3b758c2cc4 100644
+index 066f46dbe1..56a54a6502 100644
 --- a/chrome/common/webui_url_constants.h
 +++ b/chrome/common/webui_url_constants.h
 @@ -217,6 +217,8 @@ inline constexpr char16_t kChromeUIManagementURL16[] = u"chrome://management";
@@ -1134,7 +1134,7 @@ index a462094cd3..3b758c2cc4 100644
  inline constexpr char kChromeUINetExportHost[] = "net-export";
  inline constexpr char kChromeUINetInternalsHost[] = "net-internals";
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 8749c14d44..fae16724ef 100644
+index 52b97ceee9..4cad5f8a53 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
 @@ -636,6 +636,10 @@

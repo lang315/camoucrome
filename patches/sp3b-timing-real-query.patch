@@ -29,10 +29,10 @@ index 5e044eebf3..9e69eeba74 100644
        }
        // Defined but the configured type cannot match this pname's stock JS
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 86a5fad9fe..e54de51dc2 100644
+index 34539bb7fb..09d5e928e8 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -4076,6 +4076,10 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
+@@ -4079,6 +4079,10 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
  std::optional<ScriptValue> CamoucromeBuildSpoofedGLParam(
      ScriptState* script_state, GLenum pname, const camoucfg::GLValue& value);
  bool CamoucromeIsBlockableGLParam(GLenum pname);
@@ -43,7 +43,7 @@ index 86a5fad9fe..e54de51dc2 100644
  
  // Turns a configured GLValue into the ScriptValue getParameter would return for
  // `pname`, matching the JS type the stock switch produces. Returns nullopt when
-@@ -4164,6 +4168,51 @@ bool CamoucromeIsBlockableGLParam(GLenum pname) {
+@@ -4167,6 +4171,51 @@ bool CamoucromeIsBlockableGLParam(GLenum pname) {
    }
  }
  
@@ -95,7 +95,7 @@ index 86a5fad9fe..e54de51dc2 100644
  ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
                                                      GLenum pname) {
    if (isContextLost())
-@@ -4175,11 +4224,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4178,11 +4227,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
    // unsupported enum. The unmasked vendor/renderer enums own their dedicated
    // cases (SP3b Task 2) and must not be shadowed here (the Camoufox #44 trap).
    if (auto* camou_ec = Host()->GetTopExecutionContext();
@@ -110,7 +110,7 @@ index 86a5fad9fe..e54de51dc2 100644
          return *camou_spoofed;
        }
        // Defined but the configured type cannot match this pname's stock JS
-@@ -4401,13 +4452,17 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4404,13 +4455,17 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
          // Camoucrome (SP3b): substitute the configured UNMASKED_RENDERER
@@ -129,7 +129,7 @@ index 86a5fad9fe..e54de51dc2 100644
          if (auto* ec = Host()->GetTopExecutionContext()) {
            if (auto v = camoucfg::GLRenderer(camoucfg::ScopeFor(ec), IsWebGL2()))
              return WebGLAny(script_state, String::FromUtf8(*v));
-@@ -4418,8 +4473,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4421,8 +4476,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
              return WebGLAny(script_state,
                              String::FromUtf8(std::get<std::string>(*p)));
          }
@@ -139,7 +139,7 @@ index 86a5fad9fe..e54de51dc2 100644
        }
        SynthesizeGLError(
            GL_INVALID_ENUM, "getParameter",
-@@ -4428,7 +4482,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4431,7 +4485,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
          // Camoucrome (SP3b): substitute the configured UNMASKED_VENDOR
@@ -150,7 +150,7 @@ index 86a5fad9fe..e54de51dc2 100644
          if (auto* ec = Host()->GetTopExecutionContext()) {
            if (auto v = camoucfg::GLVendor(camoucfg::ScopeFor(ec), IsWebGL2()))
              return WebGLAny(script_state, String::FromUtf8(*v));
-@@ -4439,8 +4495,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4442,8 +4498,7 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
              return WebGLAny(script_state,
                              String::FromUtf8(std::get<std::string>(*p)));
          }

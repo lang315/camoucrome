@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/core/dom/events/event_target.cc b/third_party/blink/renderer/core/dom/events/event_target.cc
-index 613da3d72e..bd10f06142 100644
+index 2b22cbfa9f..3140b7bdcb 100644
 --- a/third_party/blink/renderer/core/dom/events/event_target.cc
 +++ b/third_party/blink/renderer/core/dom/events/event_target.cc
-@@ -1048,6 +1048,22 @@ bool EventTarget::FireEventListeners(Event& event,
+@@ -1050,6 +1050,22 @@ bool EventTarget::FireEventListeners(Event& event,
    if (!context)
      return false;
  

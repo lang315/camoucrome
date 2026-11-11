@@ -1,5 +1,5 @@
 diff --git a/services/data_decoder/BUILD.gn b/services/data_decoder/BUILD.gn
-index 89d2b7189f..6200203a33 100644
+index f66383627d..ecc46d0b3a 100644
 --- a/services/data_decoder/BUILD.gn
 +++ b/services/data_decoder/BUILD.gn
 @@ -17,6 +17,8 @@ source_set("lib") {
@@ -16,19 +16,19 @@ index 89d2b7189f..6200203a33 100644
      "//base",
      "//build:blink_buildflags",
 +    "//components/camoucfg:observe_decoder",
-     "//components/web_package",
      "//mojo/public/cpp/bindings",
      "//net",
+     "//skia",
 diff --git a/services/data_decoder/DEPS b/services/data_decoder/DEPS
-index 4e8694400e..aa727ec360 100644
+index 7a621f6874..31b4129b67 100644
 --- a/services/data_decoder/DEPS
 +++ b/services/data_decoder/DEPS
 @@ -1,4 +1,5 @@
  include_rules = [
 +  "+components/camoucfg/observe_tables.h",
-   "+components/web_package",
    "+device/bluetooth/public",
    "+gin",
+   "+net",
 diff --git a/services/data_decoder/camou_observe_decoder_impl.cc b/services/data_decoder/camou_observe_decoder_impl.cc
 new file mode 100644
 index 0000000000..9b3f2cfa8d
@@ -97,18 +97,18 @@ index 0000000000..9a32fd5bd2
 +
 +#endif  // SERVICES_DATA_DECODER_CAMOU_OBSERVE_DECODER_IMPL_H_
 diff --git a/services/data_decoder/data_decoder_service.cc b/services/data_decoder/data_decoder_service.cc
-index ad73fa11be..6685934ce1 100644
+index 04668e66e7..f19c191002 100644
 --- a/services/data_decoder/data_decoder_service.cc
 +++ b/services/data_decoder/data_decoder_service.cc
-@@ -13,6 +13,7 @@
- #include "components/web_package/web_bundle_parser_factory.h"
+@@ -12,6 +12,7 @@
+ #include "build/build_config.h"
  #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
  #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 +#include "services/data_decoder/camou_observe_decoder_impl.h"
  #include "services/data_decoder/gzipper.h"
  #include "services/data_decoder/public/mojom/image_decoder.mojom.h"
  #include "services/data_decoder/structured_headers_parser_impl.h"
-@@ -73,4 +74,10 @@ void DataDecoderService::BindGzipper(
+@@ -64,4 +65,10 @@ void DataDecoderService::BindGzipper(
    mojo::MakeSelfOwnedReceiver(std::make_unique<Gzipper>(), std::move(receiver));
  }
  
@@ -120,20 +120,20 @@ index ad73fa11be..6685934ce1 100644
 +
  }  // namespace data_decoder
 diff --git a/services/data_decoder/data_decoder_service.h b/services/data_decoder/data_decoder_service.h
-index 79defef1a0..beab6602b3 100644
+index 6fbda77dd2..3585428033 100644
 --- a/services/data_decoder/data_decoder_service.h
 +++ b/services/data_decoder/data_decoder_service.h
-@@ -8,6 +8,7 @@
- #include "components/web_package/mojom/web_bundle_parser.mojom.h"
+@@ -7,6 +7,7 @@
+ 
  #include "mojo/public/cpp/bindings/pending_receiver.h"
  #include "mojo/public/cpp/bindings/receiver_set.h"
 +#include "services/data_decoder/public/mojom/camou_observe_decoder.mojom.h"
  #include "services/data_decoder/public/mojom/data_decoder_service.mojom.h"
  #include "services/data_decoder/public/mojom/gzipper.mojom.h"
  #include "services/data_decoder/public/mojom/image_decoder.mojom.h"
-@@ -43,6 +44,8 @@ class DataDecoderService : public mojom::DataDecoderService {
-       mojo::PendingReceiver<web_package::mojom::WebBundleParserFactory>
-           receiver) override;
+@@ -39,6 +40,8 @@ class DataDecoderService : public mojom::DataDecoderService {
+       mojo::PendingReceiver<mojom::StructuredHeadersParser> receiver) override;
+   void BindXmlParser(mojo::PendingReceiver<mojom::XmlParser> receiver) override;
    void BindGzipper(mojo::PendingReceiver<mojom::Gzipper> receiver) override;
 +  void BindCamouObserveDecoder(
 +      mojo::PendingReceiver<mojom::CamouObserveDecoder> receiver) override;
@@ -141,10 +141,10 @@ index 79defef1a0..beab6602b3 100644
    // In-process instances (e.g. on iOS or in tests) may have multiple concurrent
    // remote DataDecoderService clients.
 diff --git a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc
-index e454c61b58..82d047d472 100644
+index 328157b2d4..c9275810e7 100644
 --- a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc
 +++ b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.cc
-@@ -39,4 +39,9 @@ void FakeDataDecoderService::BindGzipper(
+@@ -33,4 +33,9 @@ void FakeDataDecoderService::BindGzipper(
    FAIL();
  }
  
@@ -155,11 +155,11 @@ index e454c61b58..82d047d472 100644
 +
  }  // namespace data_decoder
 diff --git a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h
-index cdaaddf763..ae5ab16545 100644
+index 293e1c5f59..c35fd9fd92 100644
 --- a/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h
 +++ b/services/data_decoder/public/cpp/test_support/fake_data_decoder_service.h
-@@ -37,6 +37,9 @@ class FakeDataDecoderService : public mojom::DataDecoderService {
-           receiver) override;
+@@ -33,6 +33,9 @@ class FakeDataDecoderService : public mojom::DataDecoderService {
+       mojo::PendingReceiver<data_decoder::mojom::XmlParser> receiver) override;
    void BindGzipper(
        mojo::PendingReceiver<data_decoder::mojom::Gzipper> receiver) override;
 +  void BindCamouObserveDecoder(
@@ -169,7 +169,7 @@ index cdaaddf763..ae5ab16545 100644
  
  }  // namespace data_decoder
 diff --git a/services/data_decoder/public/mojom/BUILD.gn b/services/data_decoder/public/mojom/BUILD.gn
-index f3a0596863..5fe198ffbb 100644
+index 6975336afd..615d4206b4 100644
 --- a/services/data_decoder/public/mojom/BUILD.gn
 +++ b/services/data_decoder/public/mojom/BUILD.gn
 @@ -6,6 +6,7 @@ import("//mojo/public/tools/bindings/mojom.gni")
@@ -209,18 +209,18 @@ index 0000000000..cce22f4879
 +         string truth_json, CamouObserveTabKey tab) => (string tables_json);
 +};
 diff --git a/services/data_decoder/public/mojom/data_decoder_service.mojom b/services/data_decoder/public/mojom/data_decoder_service.mojom
-index 770a300316..cb38c747dd 100644
+index 063d425de2..80d453d134 100644
 --- a/services/data_decoder/public/mojom/data_decoder_service.mojom
 +++ b/services/data_decoder/public/mojom/data_decoder_service.mojom
-@@ -6,6 +6,7 @@ module data_decoder.mojom;
+@@ -5,6 +5,7 @@
+ module data_decoder.mojom;
  
- import "components/web_package/mojom/web_bundle_parser.mojom";
  import "sandbox/policy/mojom/sandbox.mojom";
 +import "services/data_decoder/public/mojom/camou_observe_decoder.mojom";
  import "services/data_decoder/public/mojom/gzipper.mojom";
  import "services/data_decoder/public/mojom/image_decoder.mojom";
  import "services/data_decoder/public/mojom/structured_headers_parser.mojom";
-@@ -36,4 +37,7 @@ interface DataDecoderService {
+@@ -31,4 +32,7 @@ interface DataDecoderService {
    // Binds an interface which can be used to parse structured headers.
    BindStructuredHeadersParser(
        pending_receiver<StructuredHeadersParser> receiver);
