@@ -44,7 +44,7 @@ host-native check compares the fork's wheel with a real wheel on Windows: the fo
 produced 13 scroll events over 275 ms, the real wheel 12 over 266 ms, inside the
 0.5–1.5 band.
 
-**Windows is the flagship target.** A native `chrome.exe` 156.0.8078.48 builds
+**Windows is the flagship target.** A native `chrome.exe` 157.0.8103.51 builds
 from the same change set on the build PC's Windows host. The Windows-specific
 patches make a Windows claim behave like stock Windows Chrome past mere
 presence (`windows-oracle`, `windows-behaviour`, `windows-behaviour-ii`),
