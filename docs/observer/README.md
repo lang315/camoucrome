@@ -87,7 +87,7 @@ On the Windows host the recon used `scripts/windows/observe-recon.ps1` (one
 owner-driven arm: launch with the flags above, wait for the browser to close,
 copy the cookie database, run the report) and `scripts/windows/observe-arm1.ps1`
 (the tooling-launched logged-out arm, closed by one CDP `Browser.close`). They
-hardcode that host's layout (`D:\camou-win\chromium\src\out\Observe\chrome.exe`,
+hardcode that host's layout (`D:\camou-win\chromium157\src\out\Observe\chrome.exe`,
 `observe_report.py` in `D:\camou-win\observe`). `observe-recon.ps1` gained
 `-Intl` on 2026-10-13 and an unattended mode on 2026-10-17. Since
 2026-10-17, `D:\camou-win\observe` holds byte-exact copies of five repo

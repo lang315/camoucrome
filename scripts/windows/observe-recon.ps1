@@ -27,7 +27,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root   = 'D:\camou-win\observe'
-$Chrome = 'D:\camou-win\chromium\src\out\Observe\chrome.exe'
+$Chrome = 'D:\camou-win\chromium157\src\out\Observe\chrome.exe'
 $Py     = 'python'
 $ReportPy = Join-Path $Root 'observe_report.py'
 
