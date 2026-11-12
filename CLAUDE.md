@@ -29,8 +29,8 @@ pin exactly. The host's copy of that control is kept at
 host's own Chrome updates past the build. The build
 box's checkout is on branch
 `camoucrome/main` (the exported branch, on this pin; the 157 re-pin landed
-with PR #9 on 2026-11-11). The 156 branch, `camoucrome/main-8078`, is kept in
-`~/chromium-156/src`. `~/chromium-154/src` holds the git directory all
+with PR #9 on 2026-11-11). The 156 branch, `camoucrome/main-8078`, is kept as a
+ref only (its tree was deleted on 2026-11-12). `~/chromium-154/src` holds the git directory all
 checkouts share, so move it before deleting that tree. The branches of the older pins were deleted on
 2026-10-04 (`rebuild_branch.sh` recreates a branch from the repo);
 `a727b57805` was never an upstream revision.
