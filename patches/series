@@ -51,3 +51,4 @@ accept-language-from-config.patch
 startup-best-effort-delay-on.patch
 finch-stable-defaults.patch
 href-translate-without-key.patch
+getter-cost-hot-config.patch
