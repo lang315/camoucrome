@@ -434,12 +434,15 @@ Camoucrome does not repeat that.
 - The audio output channel count (`AudioContext.destination.maxChannelCount`) is the host's
   default output device, as in stock Chrome; the fork does not set it. On a headless Linux host
   it reads 2 with and without a Windows identity (40 of 40 launches, with and without a desktop
-  audio session), the same as stock Chrome on Windows. A host whose default output is 5.1 or
-  7.1 would report 6 or 8; that case is not measured.
+  audio session), the same as stock Chrome on Windows. On the Windows host (2026-11-13, headed,
+  30 launches each of stock 157.0.8103.50 and the fork) every launch of both reads 2 and 2. A
+  host whose default output is 5.1 or 7.1 would report 6 or 8; that case is not measured.
 - `navigator.connection` (`rtt`, `downlink`, `effectiveType`) is the browser's own estimate of
   the real network path, as in stock Chrome behind the same proxy; the fork does not set it.
-  Measured on a headless Linux host; the check against a stock build and the headed Windows
-  run behind a real proxy are pending.
+  On the Windows host (2026-11-13, headed, direct connection, 30 launches each of seeded stock
+  157.0.8103.50 and the fork, alternating, `scripts/measure_netinfo.py`) both read `4g`, no
+  `type`, an `rtt` median of 100 (stock read 50, 100 or 150; the fork 100 or 150) and `downlink`
+  1.45 to 1.75 Mbps, in the window and in a worker. Behind a proxy it is not measured.
 - The Windows archive is about 200 MB and the Linux archive about 175 MB (exact sizes are in each release's assets).
 
 ## Licence and codecs
