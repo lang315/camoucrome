@@ -236,3 +236,100 @@ def test_session_active_reads_session_one_only():
     act = " services   0  Disc\n>rdp-tcp#17  lang315  1  Active\n console  3  Conn"
     disc = " services   0  Disc\n lang315  1  Disc\n console  3  Conn"
     assert m.session_active(act) and not m.session_active(disc) and not m.session_active("")
+
+
+# ---- review fixes (PR #179) ----
+
+def write_run(tmp_path, ok_arms, bad_arms):
+    run = tmp_path / "run"
+    run.mkdir()
+    for arm, recs in ok_arms.items():
+        for i, r in enumerate(recs):
+            (run / f"launch-{arm}-{i:02d}.json").write_text(json.dumps({"arm": arm, "result": r}))
+    for arm in bad_arms:
+        (run / f"launch-{arm}-00.json").write_text(json.dumps({"arm": arm, "unmeasured": "the page never reported"}))
+    return run
+
+
+def report_code(run, ref="S"):
+    import argparse
+    return m.report_cmd(argparse.Namespace(dir=str(run), ref=ref, p_factor=1.15))
+
+
+def test_report_exits_3_when_an_arm_has_no_measured_launch(tmp_path):
+    run = write_run(tmp_path, {"S": run_of("S")}, ["F"])
+    assert report_code(run) == 3
+
+
+def test_report_exits_0_for_equal_arms_and_1_for_a_gap(tmp_path):
+    assert report_code(write_run(tmp_path, {"S": run_of("S"), "F": run_of("F")}, [])) == 0
+    sub = tmp_path / "b"
+    sub.mkdir()
+    assert report_code(write_run(sub, {"S": run_of("S"), "F": run_of("F", scale=2.0)}, [])) == 1
+
+
+def test_report_exits_3_when_a_row_is_unmeasured(tmp_path):
+    other = run_of("F")
+    for r in other:
+        del r["g_window"]["screen.width"]
+    run = write_run(tmp_path, {"S": run_of("S"), "F": other}, [])
+    assert report_code(run) == 3
+
+
+def test_a_getter_missing_on_one_side_is_an_unmeasured_row_not_dropped():
+    other = run_of("F")
+    for r in other:
+        del r["g_window"]["screen.width"]
+    rows = m.compare(run_of("S"), other)
+    row = [r for r in rows["g"] if r["name"] == "screen.width"]
+    assert row and row[0]["verdict"] == "UNMEASURED"
+    assert m.totals(rows)[2] >= 1
+
+
+def test_a_first_read_missing_on_one_side_is_unmeasured():
+    other = run_of("F")
+    for r in other:
+        del r["first"]["window"]["screen.width"]
+    rows = m.compare(run_of("S"), other)
+    row = [r for r in rows["first"] if r["name"] == "screen.width"]
+    assert row and row[0]["verdict"] == "UNMEASURED"
+
+
+def test_page_keeps_the_getter_result_alive_outside_the_loop():
+    page = m.page_html()
+    assert page.count("self.__s = x") == 2          # the measured loop and the empty loop both sink
+
+
+def test_page_builds_the_first_read_function_before_the_clock_starts():
+    page = m.page_html()
+    assert "f = new Function('return (' + e + ');')" in page
+    assert page.index("f = new Function('return (' + e") < page.index("const t = clk(); let v, ok = true")
+    assert "!ok ? null" in page                      # a throw records null, not a time
+
+
+def test_lock_problem_free_and_held():
+    assert m.lock_problem("free\n") is None
+    assert "build_lock" in m.lock_problem("held by getter-cost since 2026-11-14T00:00:00Z\n")
+    assert m.lock_problem("") is not None
+
+
+def test_g_verdict_a_much_cheaper_fork_control_is_not_comparable_either():
+    # stock control 100 ns, the fork's 40 ns: more than 2x the other way, over the gap
+    assert m.g_verdict(60, 60, 100, 40) == "FAIL-control"
+    assert m.g_verdict(60, 60, 100, 70) != "FAIL-control"      # under the factor
+
+
+def test_parse_result_missing_worker_getter_block_is_unmeasured():
+    bad = good()
+    del bad["g_worker"]
+    r, why = m.parse_result(bad)
+    assert r is None and why
+
+
+def test_a_first_read_missing_on_the_stock_side_is_unmeasured_too():
+    stock = run_of("S")
+    for r in stock:
+        del r["first"]["window"]["screen.width"]
+    rows = m.compare(stock, run_of("F"))
+    row = [r for r in rows["first"] if r["name"] == "screen.width"]
+    assert row and row[0]["verdict"] == "UNMEASURED"

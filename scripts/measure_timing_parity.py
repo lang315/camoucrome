@@ -103,8 +103,8 @@ def page_spec(arm, plant=None):
                        "first": FIRST_READS})
 
 
-# One page. Phase order: first reads in this fresh page, a fresh worker's first reads, then P, then G window, then G
-# worker. The result goes back by POST, never by evaluate.
+# One page. Phase order: first reads in this fresh page; the fresh worker's first reads and its getters (G worker) run
+# in the worker, started before P; then P; then G window. The result goes back by POST, never by evaluate.
 _PAGE = r"""<!doctype html><meta charset=utf-8><title>timing</title><body><script>
 const SPEC = JSON.parse(decodeURIComponent(location.hash.slice(1)));
 const MIN_READS = __MIN_READS__;
@@ -112,8 +112,8 @@ const clk = () => performance.now();
 function benchG(exprs, setup, ctx) {            // shared by the window and the worker: serialised with toString()
   eval(setup);
   const out = {};
-  const mk = (e) => new Function('A', 'M', 'N', 'let x; const t = performance.now(); for (let i = 0; i < N; i++) { x = (' + e + '); } return performance.now() - t;');
-  const empty = new Function('A', 'M', 'N', 'let x; const t = performance.now(); for (let i = 0; i < N; i++) { x = i; } return performance.now() - t;');
+  const mk = (e) => new Function('A', 'M', 'N', 'let x; const t = performance.now(); for (let i = 0; i < N; i++) { x = (' + e + '); } const d = performance.now() - t; self.__s = x; return d;');
+  const empty = new Function('A', 'M', 'N', 'let x; const t = performance.now(); for (let i = 0; i < N; i++) { x = i; } const d = performance.now() - t; self.__s = x; return d;');
   const A = ctx.A, M = ctx.M;
   const fast = (f, N) => { let b = Infinity; let rounds = 0; const t0 = performance.now();
     while (rounds < 7 && (rounds < 3 || performance.now() - t0 < 1500)) { b = Math.min(b, f(A, M, N)); rounds++; } return b; };
@@ -129,7 +129,7 @@ function benchG(exprs, setup, ctx) {            // shared by the window and the 
 }
 const WORKER_SRC = 'const MIN_READS = ' + MIN_READS + '; const benchG = ' + benchG.toString() + ';' +
   'onmessage = (ev) => { const s = ev.data; const first = {};' +
-  ' for (const e of s.first) { const t = performance.now(); let v; try { v = (new Function("return (" + e + ");"))(); } catch (x) { v = null; } first[e] = v === undefined ? undefined : performance.now() - t; }' +
+  ' for (const e of s.first) { let f = null; try { f = new Function("return (" + e + ");"); } catch (x) {} const t = performance.now(); let v, ok = true; try { v = f(); } catch (x) { ok = false; } const d = performance.now() - t; first[e] = !ok ? null : v === undefined ? undefined : d; }' +
   ' postMessage({first: first, g: benchG(s.worker, "", {A: null, M: null})}); };';
 
 function workloads(plant) {
@@ -187,8 +187,10 @@ function benchP(W) {
                first: {window: {}, worker: {}}, p: {}, g_window: {}, g_worker: {}};
   try {
     for (const e of SPEC.first.window) {                 // 1. first reads, fresh page, before anything else
-      const t = clk(); let v; try { v = (new Function('return (' + e + ');'))(); } catch (x) { v = null; }
-      res.first.window[e] = v === undefined ? undefined : clk() - t;
+      let f = null; try { f = new Function('return (' + e + ');'); } catch (x) {}   // built before the clock starts
+      const t = clk(); let v, ok = true; try { v = f(); } catch (x) { ok = false; }
+      const d = clk() - t;
+      res.first.window[e] = !ok ? null : v === undefined ? undefined : d;
     }
     const w = new Worker(URL.createObjectURL(new Blob([WORKER_SRC])));   // 2. fresh worker: its first reads, then its getters
     const wr = new Promise((ok, no) => { w.onmessage = (ev) => ok(ev.data); w.onerror = (ev) => no(new Error('worker error')); setTimeout(() => no(new Error('worker timeout')), 120000); });
@@ -256,8 +258,8 @@ def verdict(s, c, stock_base, camou_base):
 def g_verdict(s, c, stock_base, camou_base):
     if None in (s, c, stock_base, camou_base) or not stock_base or not camou_base:
         return "UNMEASURED"
-    if camou_base > SLOWER_FACTOR * stock_base and camou_base - stock_base >= MIN_GAP_NS:
-        return "FAIL-control"          # the browsers are not comparable here
+    if max(camou_base / stock_base, stock_base / camou_base) > SLOWER_FACTOR and abs(camou_base - stock_base) >= MIN_GAP_NS:
+        return "FAIL-control"          # the browsers are not comparable here (either way: a much cheaper control inflates the scaling)
     slower, faster = verdict(s, c, stock_base, camou_base)
     return "FAIL-slower" if slower else "FAIL-faster" if faster else "PASS"
 
@@ -300,20 +302,18 @@ def compare(stock_runs, other_runs, p_factor=P_FACTOR):
     for where, key, ctl in (("window", "g_window", WINDOW_CONTROL), ("worker", "g_worker", WORKER_CONTROL)):
         s, o = median_over(stock_runs, key), median_over(other_runs, key)
         sb, ob = s.get(ctl), o.get(ctl)
-        for n in s:
-            if n not in o:
-                continue
-            v = g_verdict(s[n], o[n], sb, ob)
+        for n in list(s) + [k for k in o if k not in s]:    # a row missing on one side is UNMEASURED, never dropped
+            v = g_verdict(s.get(n), o.get(n), sb, ob)
             if n == ctl and v != "FAIL-control":
                 v = "control"
-            rows["g"].append({"where": where, "name": n, "stock": s[n], "other": o[n], "stock_ctl": sb, "other_ctl": ob,
+            rows["g"].append({"where": where, "name": n, "stock": s.get(n), "other": o.get(n), "stock_ctl": sb, "other_ctl": ob,
                               "verdict": v})
     for where in ("window", "worker"):
         s = median_over([{"x": r["first"][where]} for r in stock_runs], "x")
         o = median_over([{"x": r["first"][where]} for r in other_runs], "x")
-        for n in s:
-            rows["first"].append({"where": where, "name": n, "stock": s[n], "other": o.get(n),
-                                  "verdict": first_read_verdict(s[n], o.get(n))})
+        for n in list(s) + [k for k in o if k not in s]:
+            rows["first"].append({"where": where, "name": n, "stock": s.get(n), "other": o.get(n),
+                                  "verdict": first_read_verdict(s.get(n), o.get(n))})
     return rows
 
 
@@ -324,7 +324,7 @@ def fmt(v, nd=1):
 
 
 def render(arm, rows):
-    out = [f"\n== {arm} against S ==", "P  ratio over the integer loop (median [min, max] over launches)",
+    out = [f"\n== {arm} against S ==", "P  ratio over the regexp replace (median [min, max] over launches)",
            f"{'workload':24s} {'group':8s} {'S':>22s} {arm:>22s}  verdict"]
     for r in rows["p"]:
         def cell(v):
@@ -369,6 +369,10 @@ def report_cmd(a):
     for arm, reasons in bad.items():
         print(f"UNMEASURED launches of {arm}: {len(reasons)} ({'; '.join(sorted(set(reasons)))})")
     code = 0
+    for arm in bad:
+        if arm not in ok and arm != ref:
+            print(f"\n{arm}: UNMEASURED, no launch measured")
+            code = 3
     for arm, runs in ok.items():
         if arm == ref:
             continue
@@ -376,7 +380,7 @@ def report_cmd(a):
         print(render(arm, rows))
         gap, fail, unm = totals(rows)
         print(f"\n{arm}: {gap} GAP, {fail} FAIL, {unm} UNMEASURED rows")
-        code = max(code, 1 if gap or fail else 0)
+        code = max(code, 3 if unm else 1 if gap or fail else 0)
     return code
 
 
@@ -440,8 +444,22 @@ def _session_text():
     return subprocess.run(["query", "session"], capture_output=True, text=True, timeout=60).stdout
 
 
+BUILD_LOCK = "$HOME/actions-runner/_work/camoucrome/camoucrome/scripts/build_lock.sh"
+
+
+def lock_problem(text):
+    """Why the box's build lock says a build may run (its `status` output), or None when it is free."""
+    first = (text or "").strip().splitlines()[:1]
+    return None if first and first[0].strip() == "free" else f"build_lock is not free: {first[0].strip() if first else 'unreadable'}"
+
+
 def _busy():
-    """Why this launch cannot be trusted, or None: another browser or a build is running."""
+    """Why this launch cannot be trusted, or None: another browser or a build is running (a Windows process, or a
+    WSL build, which Windows cannot see: the build lock says)."""
+    lock = subprocess.run(["wsl.exe", "-d", "Ubuntu-24.04", "-u", "lang", "--", "bash", "-c", f"bash {BUILD_LOCK} status timing-parity"],
+                          capture_output=True, text=True, timeout=60)
+    if lock_problem(lock.stdout):
+        return lock_problem(lock.stdout)
     p = subprocess.run(["powershell", "-NoProfile", "-Command",
                         "(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -in "
                         "'chrome','siso','ninja','clang-cl' } | Select-Object -ExpandProperty ProcessName) -join ','"],
