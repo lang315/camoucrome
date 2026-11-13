@@ -77,3 +77,31 @@ def test_r_row_ok():
 def test_page_defines_no_global():
     body = verify_course.PAGE[verify_course.PAGE.index("<script>") + 8:].lstrip()
     assert re.match(r"\(\s*(async\s*)?(\(\)\s*=>|function)", body)
+
+
+def test_creep_server_serves_vendor_and_harness():
+    html, ct = verify_course.creep_response("index.html")
+    wrap = b"<script>" + verify_course.HARNESS.encode() + b"</script>"
+    assert ct.startswith("text/html") and html.count(wrap) == 1 and html.index(wrap) < html.rindex(b"</body>")
+    assert html.replace(wrap, b"") == (verify_course.CREEP_DIR / "index.html").read_bytes()
+    js, ct = verify_course.creep_response("creep.js")
+    assert js == (verify_course.CREEP_DIR / "creep.js").read_bytes() and "javascript" in ct
+    assert verify_course.creep_response("") [1].startswith("text/html")
+    assert verify_course.creep_response("../verify_course.py") is None
+
+
+K6_OK = {"lies": {"Navigator.userAgent": ["x"]}, "trash": ["a"], "stealth": [], "workerLied": False, "done": True}
+
+
+def test_k6():
+    assert verify_course.k6_problems(K6_OK, dict(K6_OK)) == []
+    ident = {**K6_OK, "lies": {**K6_OK["lies"], "Navigator.hardwareConcurrency": ["lie"]}}
+    p = verify_course.k6_problems(K6_OK, ident)
+    assert len(p) == 1 and p[0].startswith("k6 lie Navigator.hardwareConcurrency") and "lie" in p[0]
+    assert verify_course.k6_problems(K6_OK, {**K6_OK, "trash": ["a", "b"]}) == ["k6 trash b"]
+    assert verify_course.k6_problems(K6_OK, {**K6_OK, "stealth": ["hasIframeProxy"]}) == ["k6 stealth hasIframeProxy"]
+    assert verify_course.k6_problems(K6_OK, {**K6_OK, "workerLied": True}) == ["k6 worker lied"]
+    err = {"error": "timeout"}
+    assert verify_course.k6_problems(K6_OK, err) == ["k6 error ident timeout"]
+    assert verify_course.k6_problems(err, K6_OK) == ["k6 error base timeout"]
+    assert len(verify_course.k6_problems(err, err)) == 2

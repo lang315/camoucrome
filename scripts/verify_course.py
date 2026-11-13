@@ -3,7 +3,8 @@
 K1-K5 read a page (PAGE) the fork loads untouched; each R row runs the same checks under a deliberate
 lie (an init script, main world) and passes only if the check named for that lie notices it. The control
 row runs them under a no-op init script, so a harness that always reports problems cannot pass the R rows.
-K6 / R6 (CreepJS) are not implemented yet: they FAIL as such so the row count stays 12 and the gap shows.
+K6 / R6 run the vendored CreepJS (served under /creep/, index.html with HARNESS appended) against the fork with no
+config (base) and with the generated identity; a CreepJS lie, trash or stealth hit that the base lacks is a problem.
 
 Box-only: needs patchright and the fork build (lib_shell layout). The pure checks run anywhere.
 """
@@ -112,6 +113,40 @@ document.getElementById('o').textContent = JSON.stringify(out.error ? { error: o
 })()</script>"""
 
 
+# Appended to the served index.html only (the vendored files stay byte for byte). Reads window.Fingerprint, which
+# CreepJS sets when done, into <pre id="o">; 90 s without it is {"error": "timeout"}.
+HARNESS = r"""(()=>{const t0=Date.now();const w=s=>{const p=document.createElement('pre');p.id='o';p.hidden=true;p.textContent=s;document.body.appendChild(p)};
+const i=setInterval(()=>{const fp=window.Fingerprint;
+if(fp){clearInterval(i);try{w(JSON.stringify({lies:Object.fromEntries(Object.entries(fp.lies?.data||{}).map(([k,v])=>[k,v])),
+trash:(fp.trash?.trashBin||[]).map(t=>t.name),stealth:Object.keys(fp.headless?.stealth||{}).filter(k=>fp.headless.stealth[k]),
+workerLied:!!fp.workerScope?.lied,done:true}))}catch(e){w(JSON.stringify({error:String(e)}))}}
+else if(Date.now()-t0>90000){clearInterval(i);w('{"error": "timeout"}')}},250)})()"""
+CREEP_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+               ".ico": "image/x-icon"}
+
+
+def creep_response(rel):
+    """(body, content type) of a vendored CreepJS file; index.html carries HARNESS. None: not a file in CREEP_DIR."""
+    f = (CREEP_DIR / (rel or "index.html")).resolve()
+    if f.parent != CREEP_DIR.resolve() or not f.is_file():
+        return None
+    body = f.read_bytes()
+    if f.name == "index.html":
+        i = body.rindex(b"</body>")
+        body = body[:i] + b"<script>" + HARNESS.encode() + b"</script>" + body[i:]
+    return body, CREEP_TYPES.get(f.suffix, "application/octet-stream")
+
+
+def k6_problems(base, ident):
+    out = [f"k6 error {side} {r['error']}" for side, r in (("base", base), ("ident", ident)) if "error" in r]
+    if out:
+        return out
+    out = [f"k6 lie {k} {json.dumps(v)[:200]}" for k, v in ident["lies"].items() if k not in base["lies"]]
+    out += [f"k6 trash {t}" for t in ident["trash"] if t not in base["trash"]]
+    out += [f"k6 stealth {k}" for k in ident["stealth"]]
+    return out + (["k6 worker lied"] if ident["workerLied"] else [])
+
+
 def check_vendor(d: Path) -> list[str]:
     """One string per file whose sha256 differs from, or is missing against, SHA256SUMS."""
     bad = []
@@ -188,10 +223,14 @@ def r_row_ok(problems, expect):
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/creep/") and (CREEP_DIR / self.path[7:].split("?")[0]).is_file():
-            body, ctype = (CREEP_DIR / self.path[7:].split("?")[0]).read_bytes(), "text/javascript; charset=utf-8"
+        if self.path.startswith("/creep/"):
+            got = creep_response(self.path[7:].split("?")[0])
         else:
-            body, ctype = PAGE.encode(), "text/html; charset=utf-8"
+            got = PAGE.encode(), "text/html; charset=utf-8"
+        if got is None:
+            self.send_error(404)
+            return
+        body, ctype = got
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.end_headers()
@@ -228,6 +267,24 @@ def _group(pw, exe, cfg, fonts_dir, url, init_js, pin):
             "k4": k4_problems(reps, K4_VOLATILE), "k5": k5_problems(reps[0], pin)}
 
 
+def _creep(pw, exe, cfg, fonts_dir, url, init_js):
+    """The harness's report for one CreepJS load; a launch or page failure is an error report (FAIL), never a crash."""
+    from camoucrome.launcher import launch
+    try:
+        ctx = launch(pw, exe, config=cfg, headless=True, args=["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader"], fonts_dir=fonts_dir)
+        try:
+            if init_js is not None:
+                ctx.add_init_script(init_js)
+            page = ctx.new_page()
+            page.goto(url)
+            page.wait_for_selector("#o", state="attached", timeout=100000)
+            return json.loads(page.locator("#o").text_content())
+        finally:
+            ctx.close()
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"[:200]}
+
+
 def main() -> int:
     for name, v in (("K2_FLOOR", K2_FLOOR), ("K4_VOLATILE", K4_VOLATILE)):
         if v is None:
@@ -256,6 +313,7 @@ def main() -> int:
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_port}/"
+    creep_url = url + "creep/index.html"
     rows = {}  # label -> (ok, problems)
     with sync_playwright() as pw:
         def grp(js):
@@ -266,7 +324,9 @@ def main() -> int:
             k = {c: [f"{c} did not report: {e}"] for c in ("k1", "k2", "k3", "k4", "k5")}
         for c in ("k1", "k2", "k3", "k4", "k5"):
             rows[c.upper()] = (not k[c], k[c])
-        rows["K6"] = (False, ["k6 not implemented"])
+        k6_base = _creep(pw, CHROME, None, fonts_dir, creep_url, None)  # a plain launch: the launcher default
+        k6 = k6_problems(k6_base, _creep(pw, CHROME, cfg, fonts_dir, creep_url, None))
+        rows["K6"] = (not k6, k6)
         try:
             ctrl = grp(CTRL_JS)
         except Exception as e:
@@ -275,11 +335,8 @@ def main() -> int:
         rows["CTRL"] = (ctrl_clean, [p for ps in ctrl.values() for p in ps])
         for rid in ("R1", "R2", "R3", "R4", "R6"):
             js, expect = MUTANTS[rid]
-            if rid == "R6":
-                rows[rid] = (False, ["k6 not implemented"])
-                continue
             try:
-                got = grp(js)[expect.split()[0]]
+                got = k6_problems(k6_base, _creep(pw, CHROME, cfg, fonts_dir, creep_url, js)) if rid == "R6" else grp(js)[expect.split()[0]]
             except Exception as e:
                 rows[rid] = (False, [f"did not report: {e}"])
                 continue
