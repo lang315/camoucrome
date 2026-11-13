@@ -108,11 +108,10 @@ def test_summarise_skips_launches_without_a_figure():
     assert m.median_over(runs, "g_window")["g"] == 11
 
 
-def test_ratios_are_workload_over_the_integer_loop():
+def test_ratios_are_workload_over_the_regexp_replace():
     r = m.ratios({"int": 2.0, "json_parse": 5.0, "regexp": 4.0})
-    assert r["json_parse"] == 2.5
-    assert r["json_parse/regexp"] == 1.25
-    assert "int" not in r
+    assert r["json_parse"] == 1.25 and r["int"] == 0.5
+    assert "regexp" not in r
 
 
 # ---- page generation ----
@@ -224,7 +223,7 @@ def test_tables_stock_against_stock_gives_no_gap_and_no_fail():
 def test_tables_a_planted_workload_gaps_only_that_ratio():
     rows = m.compare(run_of("S"), run_of("S2", scale=2.0), p_factor=1.15)
     gaps = sorted(r["name"] for r in rows["p"] if r["verdict"] == "GAP")
-    assert gaps == ["json_parse", "json_parse/regexp"], gaps
+    assert gaps == ["json_parse"], gaps
 
 
 def test_tables_a_slow_getter_fails_only_that_getter():

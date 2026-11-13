@@ -2,7 +2,7 @@
 """Timing parity (spec 2026-11-13-timing-parity-design.md): does the fork's timing differ from stock Chrome's,
 from page script, on the same Windows host?
 
-  P  workload ratios (build optimisation): each workload's time over the integer loop's, JIT side against C++ side.
+  P  workload ratios (build optimisation): each workload's time over the regexp replace's, JIT side against C++ side.
   G  spoofed getter cost (port item B6): a getter's ns per read against an untouched control getter, window and worker,
      plus the first read in a fresh page and a fresh worker.
 
@@ -226,12 +226,11 @@ def median_over(runs, key):
 
 
 def ratios(p):
-    """Each workload's time over the integer loop's, plus the ratio camoufox found (JSON.parse over regexp replace)."""
-    base = p.get("int")
-    out = {k: v / base for k, v in p.items() if k != "int" and isinstance(v, (int, float)) and base}
-    if p.get("regexp") and p.get("json_parse"):
-        out["json_parse/regexp"] = p["json_parse"] / p["regexp"]
-    return out
+    """Each workload's time over the regexp replace's. Camoufox's denominator: irregexp compiles to native code on x64
+    (JIT side, not PGO'd). The spec's integer loop is no denominator: V8 reduces it to ~0.5 ns in stock and the fork
+    and leaves ~3.8 ns in the vanilla snapshot (other V8 version), so every ratio over it moved 7x between arms."""
+    base = p.get("regexp")
+    return {k: v / base for k, v in p.items() if k != "regexp" and isinstance(v, (int, float)) and base}
 
 
 def p_verdict(stock, fork, factor=P_FACTOR):
