@@ -1,96 +1,39 @@
 # Camoucrome
 
-An anti-detect fork of Chromium. The Chromium counterpart to
-[Camoufox](https://github.com/lang315/camoufox), which does the same job for Firefox.
+An anti-detect browser built on Chromium: real Chrome stable, with the fingerprint a page can read set
+per profile. It is the Chromium counterpart of [Camoufox](https://github.com/lang315/camoufox), which does
+the same for Firefox.
 
-**Status: the SP0–SP7 spoofing arc plus its follow-on residual-closing slices have
-landed on `main`** — 37 patches in `patches/` (applied in the order of
-`patches/series`, which `scripts/export.sh` regenerates from the checkout's
-`camoucrome/main` branch) plus the proprietary-codec GN args in `settings/build-args.gn`.
-Apply the whole set to a pristine Chromium checkout with
-`scripts/apply.sh <chromium-src>`. The specs in `docs/superpowers/specs/` define the
-design; `docs/superpowers/measurements/` records the per-surface measurement each
-slice was built from. `docs/superpowers/` is local, not in git, since the
-2026-10-18 recreate; a fresh clone restores it with
-`git archive f46525dde7 docs/superpowers | tar -x`.
+Every substituted value is set in C++, inside Blink and the browser process, never by injecting
+JavaScript into the page. Accessors still report `[native code]`, `Object.keys(window)` matches stock
+Chrome, and a worker reads what its window reads. A config is checked at startup against a registry of
+cross-surface rules, because a spoofed value that contradicts another (a Windows user agent with a Mac
+GPU) is worse than no spoofing at all.
 
-Shipped: the config layer and load-time coherence validator (SP0, SP5a); the
-browser-process UA / UA-CH producer and Blink-side navigator leaves (SP1a, SP1b);
-automation hiding, the humanized cursor and the humanized wheel scroll (SP2a, SP2b,
-SP2c); canvas and WebGL
-fingerprints (SP3a, SP3b); the SP4 device-faking arc — screen, fonts, audio, media
-devices, timezone/locale, WebRTC IP, voices, geolocation, battery; the proprietary
-codec build (SP7 D2); and the follow-on slices that close residual tells the SP4
-measurements deferred — window geometry, canvas metric jitter, media-device
-getSettings/id coherence, phantom-webcam error coherence, render-thread audio input
-masking, and SpeechSynthesis boundary/jitter/generation fixes. SP5b adds a
-single-key config-domain validator (a generalized mechanism, populated with the
-geolocation range-checks) so an out-of-range value is refused loudly at startup
-instead of being dropped silently downstream. SP7 also compiles the field-trial
-testing config out of the build (`disable_fieldtrial_testing_config`), so feature
-state is the build's compiled defaults rather than the public per-milestone
-testing set that an unbranded Chromium applies, and `sp7-phone-home.patch`
-stops the component updater, GCM check-in, the startup `ListAccounts`, network
-time, the omnibox AI-mode eligibility fetch, the spellcheck dictionary
-download and Safe Browsing's list fetch (off by default, the "No protection"
-state) — a fresh headless `chrome` on Linux now issues zero outbound requests
-in 330 s (`scripts/verify_sp7_phonehome.py`). fonts-ii extends the sp4-fonts
-allowlist to the `@font-face { src: local() }` path, closing the direct-vs-local()
-cross-method inconsistency (a listed font still resolves; an unlisted one no
-longer leaks) — the codepoint-fallback and native-host completeness parts remain
-open. An open font bundle with a per-OS fontconfig layer and a `fonts:alias`
-key lets a claimed family resolve without redistributing proprietary fonts. SP2c's
-host-native check compares the fork's wheel with a real wheel on Windows: the fork
-produced 13 scroll events over 275 ms, the real wheel 12 over 266 ms, inside the
-0.5–1.5 band.
+## What it covers
 
-**Windows is the flagship target.** A native `chrome.exe` 157.0.8103.51 builds
-from the same change set on the build PC's Windows host. The Windows-specific
-patches make a Windows claim behave like stock Windows Chrome past mere
-presence (`windows-oracle`, `windows-behaviour`, `windows-behaviour-ii`),
-keep `CAMOU_*` in the sandboxed renderer's environment (`windows-sandbox-env`)
-and stop crash dumps (`crashpad-no-dumps`). The named Windows verify set
-(`scripts/windows_verify_set.py`, 21 entries) reads 21/21 RED against the
-host's stock Chrome 156 and 21/21 GREEN against the fork. One oracle row is a
-known failure: a Linux claim does not hide `navigator.share` and
-`navigator.bluetooth` on the Windows build. The Python, Go and Node clients all
-run there (`docs/superpowers/measurements/2026-10-04-windows-verify-set.md`).
+- User agent and client hints (`navigator.userAgent`, `userAgentData`, `Sec-CH-UA*`), platform,
+  languages and the `Accept-Language` header.
+- Screen, window geometry and device pixel ratio.
+- Canvas and WebGL, with a per-profile noise seed, and the GPU name on Intel Gen9 hosts.
+- Audio, fonts (a per-profile subset of the host's fonts), speech voices and media devices.
+- Time zone, locale, geolocation, battery and the WebRTC address.
+- Automation hiding over CDP, and human-like mouse, wheel and keyboard input.
+- No phone-home: the component updater, GCM check-in, network time and Safe Browsing's list fetch are off.
 
-**Verification is per-slice and RED-first.** Each slice ships a `scripts/verify_*.py`
-that drives a real `content_shell` over CDP, is confirmed to go red against the
-pre-change binary, and is re-run after a full revert-and-reapply round-trip
-(`gn check` + rebuild) so the committed patches — not just the working tree — are
-what passed. Unit coverage backs the config layer and the invariant validator.
+A generator (`python -m camoucrome.gen`) draws a coherent identity per profile, and the profile keeps it
+on every later launch. Python, Go and Node clients launch the browser with it through patchright.
 
-**What `content_shell` cannot reach is stated, not hidden.** Surfaces it
-reimplements or omits are verified against `chrome` instead: the `Sec-CH-UA*`
-header and `userAgentData` channels (`scripts/verify_sp1a_chrome.py`), and the
-whole Windows set on `chrome.exe`. Some still need a backend the headless Linux
-host lacks — `AudioWorklet` input (its worklet thread never starts headless) and
-the backend-present SpeechSynthesis paths. These are documented as residuals in
-the owning slice's measurement doc rather than claimed as verified. Coherence
-across channels is the project's thesis (see below), and the rows that remain
-unproven are named where they live.
+## Platforms and versions
 
-Use the [latest release](https://github.com/lang315/camoucrome/releases/latest):
-a Windows flagship plus a Linux build for headless server use, built on a Chrome stable tag. Each
-release's notes give its Chrome version and what it fixes.
+- **Windows x64** is the main target, checked against stock Chrome on a real Windows machine.
+- **Linux x64** is for headless server and container use; desktop use is not tested.
 
-The first release, `v156.0.8078.48-1` (2026-10-24), closed steps 0 to 3 of the
-long-term roadmap,
-[`docs/superpowers/plans/2026-10-02-long-term-roadmap.md`](docs/superpowers/plans/2026-10-02-long-term-roadmap.md):
-re-pin and safety, the Windows foundation, measuring the fork against an
-oracle and public detectors with a like-for-like stock control, and the
-release itself. The per-slice residuals (geo-ii, battery-ii, fonts-ii, webrtc-ii) stay in
-[`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md).
-
-The change set is generated against Chromium **`653674df29`, the Chrome stable
-tag `157.0.8103.51`** (full SHA and tag in `upstream.env`; `scripts/apply.sh`
-refuses any other HEAD). The pin is a stable tag that shipped, so the fork reports
-a version real users have run. It may lag: it stays while it is at most 3 milestones
-behind Chrome stable, then moves straight to the newest stable tag. There is no re-pin
-for a patch release, so **the binary lacks the security fixes of newer Chrome, including
-later patches of its own milestone.**
+Each release is built on a Chrome stable tag, currently `157.0.8103.51`, so the browser reports a
+version real users run. The pin may lag: it stays while it is at most 3 milestones behind Chrome stable,
+then moves to the newest stable tag. There is no rebuild for a patch release, so **the binary lacks the
+security fixes of newer Chrome, including later patches of its own milestone.** Releases are on the
+[releases page](https://github.com/lang315/camoucrome/releases/latest).
 
 ## Install
 
@@ -160,14 +103,10 @@ Other clients:
 
 ## Install on Linux (headless server use)
 
-Linux is scoped to headless server and container automation. Desktop use (X11, Wayland, a
-real GPU, a headed window) is not tested. The archive is on the same release as the Windows
-one: `camoucrome-<chrome-version>-linux-x64.tar.xz`. Releases up to `v156.0.8078.48-4` name
-it `camoucrome-<chrome-version>-linux-x64-beta.tar.xz`; use that name for them.
+The archive is on the same release: `camoucrome-<chrome-version>-linux-x64.tar.xz` (releases up to
+`v156.0.8078.48-4` name it `...-linux-x64-beta.tar.xz`).
 
-1. Install the shared libraries the browser links against, plus Python 3, `git` and `xz`,
-   as root. A bare server or container image lacks them; the archive does not start without
-   them. Fedora and RHEL (tested on Fedora 44):
+1. As root, install the shared libraries the browser needs, plus Python 3, `git` and `xz`. Fedora and RHEL:
 
 ```sh
 dnf install python3 python3-pip git xz tar nspr nss atk at-spi2-atk at-spi2-core dbus-libs \
@@ -175,8 +114,7 @@ dnf install python3 python3-pip git xz tar nspr nss atk at-spi2-atk at-spi2-core
   libXcomposite libXdamage libXfixes libXrandr
 ```
 
-   Debian and Ubuntu (derived, not run on a bare Debian: package names of Ubuntu 24.04, from
-   the same libraries; on Debian 12 drop the `t64` suffixes):
+   Debian and Ubuntu (on Debian 12, drop the `t64` suffixes):
 
 ```sh
 apt-get install python3 python3-venv python3-pip git xz-utils libasound2t64 libatk-bridge2.0-0t64 \
@@ -185,7 +123,7 @@ apt-get install python3 python3-venv python3-pip git xz-utils libasound2t64 liba
   libxrandr2
 ```
 
-2. Download the archive and `SHA256SUMS`, check the archive and extract it, as a normal user.
+2. As a normal user, download, check and extract the archive.
 
 ```sh
 base=https://github.com/lang315/camoucrome/releases/download/<tag>
@@ -195,18 +133,14 @@ grep linux-x64 SHA256SUMS | sha256sum -c
 tar -xf camoucrome-<chrome-version>-linux-x64.tar.xz
 ```
 
-3. Install the Python client as in step 5 of the Windows install, with `python3 -m venv .venv` and
-   `.venv/bin/pip install ...`. The quickstart below applies with `os="linux"` or
-   `os="windows"`, `headless=True`, and `CHROME = "camoucrome-<chrome-version>-linux-x64/chrome"`.
+3. Install the Python client as in step 5 above, with `python3 -m venv .venv` and
+   `.venv/bin/pip install ...`. The quickstart below then applies with `headless=True` and
+   `CHROME = "camoucrome-<chrome-version>-linux-x64/chrome"`.
 
-The browser starts with its sandbox on, which needs unprivileged user namespaces. A kernel
-or a container that forbids them makes the browser fail at start-up; a container then needs
-either the namespaces allowed or `--no-sandbox` in `args`, which lowers the browser's
-isolation. Ubuntu 24.04 servers restrict unprivileged user namespaces for unconfined programs
-through AppArmor (`kernel.apparmor_restrict_unprivileged_userns=1`): allow them for the
-extracted `chrome` with an AppArmor profile, or set that sysctl to `0`. Measured on Fedora 44
-and on Ubuntu 24.04 under the WSL kernel (neither restricts them): three sandboxed headless
-launches each, exit code 0.
+The browser's sandbox needs unprivileged user namespaces. In a container that forbids them, allow them or
+pass `--no-sandbox` in `args` (less isolation). Ubuntu 24.04 servers restrict them through AppArmor
+(`kernel.apparmor_restrict_unprivileged_userns=1`): add an AppArmor profile for `chrome` or set that
+sysctl to `0`.
 
 ## Quickstart: two identities
 
@@ -238,20 +172,16 @@ with sync_playwright() as pw:
         ctx.close()
 ```
 
-The two identities differ in screen size and CPU cores, and in the noise seeds stored in
-each profile. They share the host's GPU, the stock Windows font list, voices and the
-snapped `deviceMemory`.
+The two identities differ in screen, CPU cores, memory, fonts and noise seeds. To keep a site's login
+alive across launches and updates, see [`docs/profiles-and-sessions.md`](docs/profiles-and-sessions.md).
 
-To keep a site's login alive across launches and camoucrome updates, see
-[`docs/profiles-and-sessions.md`](docs/profiles-and-sessions.md).
+All three clients take an opt-in `light` option (default off) that adds browser flags which lower memory
+use without changing what a page can read.
 
-The Python, Go (`Options.Light`) and Node clients take an opt-in `light` option (default off): it appends `launch.light_args` from `settings/launcher.json`, approach B's browser-internal flags that passed the page-blind gate and cut RAM in measurement. Independent of the generator's `--light` (DPR 1 draw); a host that wants both passes both.
+## Human input
 
-## Human input (Python and Node)
-
-The Python and Node clients ship `click`, `hold` and `type` helpers on a patchright Page, with the same model and the
-same generated parameters (`settings/human_input.json`) as the Go client. Input goes only through `page.mouse` and
-`page.keyboard`: no page JS and no `Runtime.enable`.
+The Python and Node clients ship `click`, `hold` and `type` helpers on a patchright page; the Go client
+has the same model. Input goes only through `page.mouse` and `page.keyboard`, with no page JavaScript.
 
 ```python
 from camoucrome import human
@@ -259,32 +189,14 @@ human.click(page, "#buy")                          # press point in the inner 70
 human.hold(page, "#hold-me", 1200)                 # ms; 1-2 px tremor, released at the last point
 human.type(page, "#name", "Hello, World!")         # dwell, digraph flights, real ShiftLeft, key rollover
 human.type(page, "#name", "Hello", typos=True)     # opt-in neighbour-key typos, corrected with Backspace
-# async API: await human.click(page, "#buy")
 ```
 
-```js
-const { human } = require('camoucrome');
-await human.click(page, '#buy');
-await human.hold(page, '#hold-me', 1200);
-await human.type(page, '#name', 'Hello, World!', { typos: true });
-```
+## Behind a proxy: time zone and locale from the exit address
 
-At most two typed keys are down at once (Shift is a modifier and is not counted). Runes off the US layout go through
-`insertText`, with no key events and no typos. The final field value always equals the text. An error or a cancel
-releases every key and the button. A random seed per page; pass `rng=` / `{ rng }` to fix it in tests.
-
-## Time zone and locale from the proxy's exit address
-
-A time zone that contradicts the address your traffic comes from is a tell that detectors check
-(Pixelscan: "Timezone spoofed"). When you launch through a proxy, generate the identity from the
-proxy's exit address, and let `launch` warn if the zone and the address still disagree. This needs
-two extra packages (`pip install maxminddb timezonefinder`; the `geoip` extra of the git install
-above pulls the same two: `pip install "camoucrome[geoip] @ git+https://github.com/lang315/camoucrome@c242240ef0d4988239d753d975347155cba0f2c2#subdirectory=client/python"`)
-and a DB-IP "IP to City Lite" database file,
-which you download yourself, once a month, without an account, from
-<https://db-ip.com/db/download/ip-to-city-lite> (an `.mmdb`; unpack the `.gz`).
-
-This runs inside the Quickstart's `with sync_playwright() as pw:` block, where `pw` and `CHROME` come from.
+A time zone that contradicts your exit address is a tell detectors check. Generate the identity from the
+proxy's exit address, and `launch` warns if the zone and the address still disagree. This needs
+`pip install maxminddb timezonefinder` (or the client's `geoip` extra) and the free DB-IP
+"IP to City Lite" database (<https://db-ip.com/db/download/ip-to-city-lite>, an `.mmdb`, updated monthly).
 
 ```python
 import camoucrome, camoucrome.gen
@@ -292,166 +204,43 @@ from camoucrome import geoip
 
 proxy = {"server": "http://proxy.example:8000", "username": "user", "password": "secret"}
 db = r"dbip-city-lite-2026-10.mmdb"
-try:
-    ip = geoip.exit_ip(proxy)          # the address the world sees, asked through the proxy
-except geoip.GeoIPError as e:          # no echo service answered, or the proxy is not http
-    raise SystemExit(f"cannot place the exit address: {e}")
+ip = geoip.exit_ip(proxy)              # the address the world sees; raises GeoIPError if none answers
 fp = camoucrome.gen.generate(os="windows", seed=1, exit_ip=ip, geoip_db=db)
 ctx = camoucrome.launch(pw, CHROME, config=fp["config"], proxy=proxy, geoip=db, exit_ip=ip,
                         window=tuple(fp["launch"]["window"]), dpr=fp["launch"]["dpr"],
                         position=tuple(fp["launch"]["position"]), args=fp["launch"]["args"])
 ```
 
-The zone comes from the address's coordinates and the locale from its country. An explicit
-`timezone` or `locale` you pass to `generate` always wins. `geoip.exit_ip` raises `GeoIPError` when
-no echo service answers; it asks only through an `http` proxy (a bare `host:port` means `http`), so
-an `https` or `socks5` proxy gives that error too. `generate` and `launch` do not raise on an
-address they cannot place (no database, an unreadable one, not in it, no echo answer): they emit
-a `GeoIPWarning` and change nothing. `launch` checks only the config's own `timezone:id`; a zone
-that comes only from a preset is not checked. Go (`Options.GeoIP`, `GenerateWith`) and Node
-(`launch({ geoip })`) call the same Python module, so `maxminddb` and `timezonefinder` must be
-installed in the interpreter they name (`Options.Python` in Go, the `python` option in Node).
+An explicit `timezone` or `locale` passed to `generate` always wins. `exit_ip` asks only through an
+`http` proxy. Go and Node call the same Python module.
 
 IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
 
-## The defining constraint
+## Known limits
 
-Fingerprint spoofing is implemented in **C++ at the Blink and browser level, never by
-injecting JavaScript into the page**. A page must not be able to observe that a value
-was substituted — accessors keep reporting `[native code]`, and no property appears on
-`window` that is not on a stock build.
+- Profiles on one machine stay linkable through what stock Chrome profiles on that machine share too:
+  the GPU, audio output, display class, keyboard layout, codecs, network estimate and Windows build.
+- Only Intel Gen9 GPUs can be claimed per profile; on any other host every identity keeps the real GPU.
+- A Linux host claiming Windows is the weaker identity: no HEVC playback, and the host's GPU.
+- No Widevine. No auto-update: releases are the only security channel, and they lag Chrome.
+- Windows SmartScreen warns on first run: choose More info, then Run anyway.
 
-This is inherited from Camoufox and is the whole reason the project exists. Anything
-achievable by injecting a script into the page can already be done with an existing
-tool; the hard, durable part is doing it below the point where page JavaScript can look.
+## Building from source
 
-## Relationship to Camoufox
-
-Camoufox is the reference design, not a codebase to copy. Firefox and Chromium share no
-code. What ports is the architecture: a C++ config layer that patched call sites
-consult, fed by an out-of-process fingerprint generator.
-
-Two things deliberately carry over byte-for-byte so tooling can be shared:
-
-- the `CAMOU_CONFIG_1..N` environment-variable transport, chunked to survive the
-  Windows environment-variable size cap
-- the flat JSON config format with dotted and colon-separated keys
-
-Two things explicitly do **not** port:
-
-- Camoufox hides Juggler, Firefox's automation protocol. Chromium uses CDP, a different
-  model with different leaks. That work is new (SP2).
-- Camoufox cross-compiles Windows and macOS binaries from Linux. Chromium cannot — a
-  Windows build needs Windows and Visual Studio, a macOS build needs macOS and Xcode
-  (SP6).
-
-## Layout
+The repository is a change set, not the Chromium source: new files in `additions/` and diffs in
+`patches/`, applied in `patches/series` order to a Chromium checkout at the tag in `upstream.env` with
+`scripts/apply.sh <chromium-src>`. GN arguments are in `settings/build-args.gn` and
+`settings/release-args.gn`. [`CLAUDE.md`](CLAUDE.md) is the working guide for building, verifying and
+exporting the change set.
 
 | Path | Contents |
 |---|---|
-| `docs/superpowers/specs/` | design specs, one per sub-project |
-| `docs/superpowers/plans/` | implementation plans, one per slice |
-| `docs/superpowers/measurements/` | per-surface measurements each slice was built from |
-| `additions/` | whole new files, copied into the Chromium tree verbatim |
-| `patches/` | diffs against files that already exist in Chromium |
-| `settings/` | the invariant registry (`invariants.json`), the key registry (`keys.json`), captured device presets (`presets/`), the launcher contract (`launcher.json`), canonical GN args (`build-args.gn`, `release-args.gn`), the font bundle manifest and per-OS fontconfig (`fonts.json`, `fontconfig/`), captured GPU profiles (`webgl/`), and the audio, voice and locale-to-zone tables |
-| `client/` | launchers for Python (`camoucrome` on patchright), Go (`playwright-go` on the `patchright-core` driver) and Node (patchright), all implementing `settings/launcher.json`, plus the generator (`python -m camoucrome.gen`) |
-| `baselines/` | stock reference captures, recaptured at every re-pin |
-| `dist/` | release archives from `scripts/package.py` (not committed) |
-| `scripts/` | apply and export, the re-pin script, packaging, per-slice `verify_*.py` browser verifications, and the Windows verify set |
-
-New files go in `additions/` and edits to existing files go in `patches/`. This split
-held up across Camoufox's ~64 patches and keeps rebase conflicts confined to the small
-diffs.
-
-`CLAUDE.md` at the repo root is the operational guide for agents working here; it
-distills the apply/verify loop, the config-layer API, and the patch-extraction traps.
-
-## Sub-projects
-
-Read [`00-conventions.md`](docs/superpowers/specs/00-conventions.md) first — every spec
-assumes the architecture decisions recorded there.
-
-| SP | Scope | Depends on |
-|----|-------|-----------|
-| SP0 | Config layer plus a tracer-bullet surface | — |
-| SP6a | Patch management and the key registry | SP0 |
-| SP5a | Invariant registry, reader, load-time validator | SP0 |
-| SP1a | Browser-process UA producer: `navigator.userAgent`, `userAgentData`, `Sec-CH-UA*` headers | SP0 |
-| SP1b | Blink-side leaf accessors and languages | SP1a, SP6a, SP5a |
-| SP2 | Automation hiding and CDP invisibility | SP0 |
-| SP3 | WebGL and canvas fingerprints | SP0 |
-| SP4 | Audio, fonts, screen, media devices, battery, WebRTC | SP1a, SP1b, SP3, SP5a |
-| SP5b | Invariant catalogue and fingerprint presets | SP1a, SP1b, SP3, SP4 |
-| SP6b | Packaging and driver API | SP1a–SP5b |
-| SP7 | Phone-home removal and build-level hardening | — |
-
-SP5 and SP6 are each split. Both specs argue that half their content is needed far
-earlier than the other half: a branch in the Chromium tree is at risk from the next
-`gclient sync` the moment SP0's first commit exists, and a key registry that arrives
-after twenty keys have been added as string literals has already failed. Deferring
-either to the end is the mistake the split prevents.
-
-SP2 and SP3 are independent of each other and of SP1. SP7 is GN arguments and build
-configuration, so it depends on nothing and can start at any time.
-
-TLS, JA3 and HTTP/2 fingerprinting are deliberately not a sub-project. Camoucrome is a
-real Chromium build on BoringSSL and Chromium's own network stack, so those
-fingerprints are already Chrome's. The exposure is a proxy or driver in front that
-re-terminates TLS — a deployment constraint to verify, not a surface to build.
-
-## Why coherence matters more than coverage
-
-A spoofed value that contradicts another spoofed value is a stronger detection signal
-than not spoofing at all. A user agent claiming Windows alongside a WebGL renderer
-string naming a Mac GPU is worse than an honest Linux fingerprint. Camoufox learned
-this the expensive way and ended up enforcing coherence in three uncoordinated places
-— C++ patches, an all-or-nothing schema, and Python fixup functions. SP5 exists so
-Camoucrome does not repeat that.
-
-## Known limits
-
-- On a host with an Intel Gen9 GPU (Skylake to Comet Lake, the commonest Windows laptop and desktop
-  parts), each profile reports its own GPU name and DeviceId from that generation, with a thread count
-  that fits the drawn part; the pixels still come from the host's real GPU. On any other host every
-  identity keeps the real GPU: only one real GPU profile exists.
-- Fonts are a per-profile subset of the host's real Windows fonts, never a font the host lacks.
-- Identities on one host still share the host-dependent values that stock Chrome shares across profiles too
-  (the GPU, audio output, keyboard layout, display and media queries, codecs, network, the Windows build), so
-  profiles on one machine remain linkable through them. Measured on the Windows host on 2026-11-13 (157, five
-  profiles each): five fork identities share 64 of 241 leaves headed (65 headless) that no machine constant
-  explains, and five stock profiles share 81. Of the fork's leaves outside the accepted defaults (34 headed, 35
-  headless), stock shares every one, all but `navigator.languages` with the same value. That one read `["en-US"]`
-  on the fork; the generator now gives `["en-US", "en"]` as stock Chrome does (not re-measured on the host).
-- No Widevine.
-- No auto-update. Re-pins are the security channel, and they come only when the pin
-  would fall more than 3 milestones behind Chrome stable.
-- Windows SmartScreen warns on first run: choose More info, then Run anyway.
-- The build includes the H.264 and AAC codecs; see [Licence and codecs](#licence-and-codecs).
-- Linux: headless server use; desktop use is not tested. Headed runs, X11 and Wayland and a
-  real desktop GPU are out of scope, and there is no stock Linux oracle: Linux is verified
-  headless, on one Ubuntu host and one Fedora install.
-- A Linux host claiming Windows is the weaker identity. On Linux the browser cannot play HEVC
-  (the bundled ffmpeg has no HEVC decoder and there is no hardware decoder), so a Windows
-  claim whose real machine plays HEVC contradicts itself there. The GPU is the host's real
-  one.
-- The display class (colour gamut, 10-bit colour, HDR) is the host's. The launcher forces the
-  common sRGB class on a wide-gamut host, but a host that reports 10-bit or HDR keeps them. No
-  public source for the distribution of these classes exists that we could find (searched
-  2026-10-28), so the project makes no claim about how rare a class is.
-- The audio output channel count (`AudioContext.destination.maxChannelCount`) is the host's
-  default output device, as in stock Chrome; the fork does not set it. On a headless Linux host
-  it reads 2 with and without a Windows identity (40 of 40 launches, with and without a desktop
-  audio session), the same as stock Chrome on Windows. On the Windows host (2026-11-13, headed,
-  30 launches each of stock 157.0.8103.50 and the fork) every launch of both reads 2 and 2. A
-  host whose default output is 5.1 or 7.1 would report 6 or 8; that case is not measured.
-- `navigator.connection` (`rtt`, `downlink`, `effectiveType`) is the browser's own estimate of
-  the real network path, as in stock Chrome behind the same proxy; the fork does not set it.
-  On the Windows host (2026-11-13, headed, direct connection, 30 launches each of seeded stock
-  157.0.8103.50 and the fork, alternating, `scripts/measure_netinfo.py`) both read `4g`, no
-  `type`, an `rtt` median of 100 (stock read 50, 100 or 150; the fork 100 or 150) and `downlink`
-  1.45 to 1.75 Mbps, in the window and in a worker. Behind a proxy it is not measured.
-- The Windows archive is about 200 MB and the Linux archive about 175 MB (exact sizes are in each release's assets).
+| `additions/`, `patches/` | the change set |
+| `settings/` | config keys, invariants, presets, GPU profiles, fonts, launcher contract, GN args |
+| `client/` | the Python, Go and Node clients and the identity generator |
+| `scripts/` | apply, export, packaging and the verification scripts |
+| `baselines/` | stock Chrome reference captures |
+| `docs/` | user docs and the tracking observer's guide |
 
 ## Licence and codecs
 
