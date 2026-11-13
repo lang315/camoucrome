@@ -52,10 +52,18 @@ def verdicts(stock, fork):
         else:
             out.append((name,) + check(s_, f_))
 
+    # Chrome salts rtt/downlink per read, so stock's own worker differs from its window
+    # (run 20261113-025840: downlink 10/10): exact keys must agree, the estimates must read as stock's worker.
     def v1(s_, f_):
-        bad = sum(r["win"] != r["worker"] for r in f_)
-        sbad = sum(r["win"] != r["worker"] for r in s_)
-        return bad == 0, f"fork launches where worker differs: {bad}/{len(f_)}; stock: {sbad}/{len(s_)}"
+        exact = ("effectiveType", "saveData", "hasType")
+        diff = lambda a: sum(any(r["win"][k] != r["worker"][k] for k in exact) for r in a)
+        ok, d = diff(f_) == 0, [f"exact keys differ: fork {diff(f_)}/{len(f_)}, stock {diff(s_)}/{len(s_)}"]
+        for k in ("rtt", "downlink"):
+            col = lambda a: [r["worker"][k] for r in a]
+            lo, hi, med = min(col(s_)), max(col(s_)), statistics.median(col(f_))
+            ok &= lo <= med <= hi
+            d.append(f"worker {k} fork median {med} stock [{lo}, {hi}]")
+        return ok, ", ".join(d)
 
     def v2(s_, f_):
         vals = lambda a, k: {r["win"][k] for r in a}
@@ -72,6 +80,7 @@ def verdicts(stock, fork):
             lo, hi, med = min(col(s_, k)), max(col(s_, k)), statistics.median(col(f_, k))
             ok &= lo <= med <= hi
             d.append(f"{k} fork median {med} stock [{lo}, {hi}]")
+        d.append(f"rtt values stock {sorted(set(col(s_, 'rtt')))} fork {sorted(set(col(f_, 'rtt')))}")
         return ok, ", ".join(d)
 
     row("V1 worker reads what the window reads", [r for r in s if r["worker"]], [r for r in f if r["worker"]], v1)

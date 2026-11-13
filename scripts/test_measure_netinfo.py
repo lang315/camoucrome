@@ -25,10 +25,25 @@ def test_all_pass():
     assert all(v is True for _, v, _ in rows), rows
 
 
-def test_v1_fails_on_worker_mismatch():
+def test_v1_fails_on_worker_exact_key_mismatch():
     fork = arm()
-    fork[0]["worker"]["rtt"] = 50
+    fork[0]["worker"]["saveData"] = True
     assert ok(arm(), fork, "V1") is False
+
+
+def test_v1_fails_when_fork_worker_rtt_out_of_stock_worker_range():
+    fork = arm()
+    for r in fork:
+        r["worker"]["rtt"] = 300
+    assert ok(arm(), fork, "V1") is False
+
+
+def test_v1_passes_on_salted_estimates_like_stock():
+    # run 20261113-025840: stock's own worker downlink differs from its window in 10 of 10 launches
+    stock, fork = arm(), arm()
+    for i, r in enumerate(stock + fork):
+        r["worker"]["downlink"] = r["win"]["downlink"] + (0.05 if i % 2 else -0.05)
+    assert ok(stock, fork, "V1") is True
 
 
 def test_v1_ignores_worker_timeout():
