@@ -178,6 +178,14 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if args.get("camou_observe") != "true":
         sys.exit("refusing a release without camou_observe = true: chrome://observer ships in every release "
                  "(settings/release-args.gn, docs/observer/README.md)")
+    # A release is built like stock Chrome: PGO, ThinLTO (and CFI on Linux) come with is_official_build, and the C++ side's
+    # timing against a page's regexp replace shows it (measurements/2026-11-13-timing-parity.md). A smoke test of a
+    # component build (--allow-component) is not a release.
+    if not allow_component and (args.get("is_official_build") != "true" or args.get("chrome_pgo_phase") != "2"):
+        sys.exit("refusing a release whose args.gn lacks is_official_build = true and chrome_pgo_phase = 2: a "
+                 "non-official build's C++-side timing differs from stock's, from page script "
+                 f"(settings/release-args.gn); got is_official_build={args.get('is_official_build')} "
+                 f"chrome_pgo_phase={args.get('chrome_pgo_phase')}")
     if args.get("v8_enable_runtime_call_stats") == "true":
         sys.exit("refusing a release with v8_enable_runtime_call_stats = true: the observer's Intl counts are an "
                  "audit-build feature, never a release (docs/observer/README.md)")

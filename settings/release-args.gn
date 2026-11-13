@@ -2,10 +2,26 @@
 # The dev loop (out/Default) is is_component_build = true for 1-3 min
 # incremental relinks; a release is one static chrome binary plus the runtime
 # deps GN lists for it. Everything below build-args.gn's three lines is the
-# non-component, non-official, symbol-less shape used on the build box on
-# 2026-09-10 (out/Release). is_official_build (PGO/LTO) is deliberately off:
-# it multiplies build time and changes nothing page-visible.
+# non-component, symbol-less, OFFICIAL-shaped build (is_official_build: PGO
+# from the profile Chromium names for the pin, ThinLTO, and on Linux x64 CFI),
+# as stock Chrome ships. It was non-official until 2026-11-14: the timing-parity
+# run (PR measure_timing_parity, measurements/2026-11-13-timing-parity.md)
+# showed that "PGO/LTO changes nothing page-visible" was false: C++-side
+# workloads over a regexp replace read 1.3-4x the stock figure in the fork and
+# in vanilla Chromium alike (JSON.parse 126 vs 90, getComputedStyle with
+# layout 216 vs 53), a ratio a page can time with no reference machine. The
+# cost is build time and memory (the ThinLTO link is the peak): see
+# measurements/2026-10-repin.md.
+# Host-only args stay out of this file (they depend on the machine's RAM): on the Windows
+# host out\\Official adds concurrent_links = 1 and extra_ldflags to cap the ThinLTO backend
+# jobs (build/config/compiler/BUILD.gn hard-codes /opt:lldltojobs=all; there is no gn knob).
+# scripts/package.py refuses a release dir without is_official_build = true and chrome_pgo_phase = 2.
 is_debug = false
+is_official_build = true
+# The default under is_official_build (not is_debug, not dcheck_always_on), stated
+# so that a changed default cannot silently build unprofiled; gn gen fails when
+# the profile named by chrome/build/<target>.pgo.txt is missing (tools/update_pgo_profiles.py).
+chrome_pgo_phase = 2
 is_component_build = false
 symbol_level = 0
 blink_symbol_level = 0
