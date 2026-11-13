@@ -14,7 +14,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 NAME_RE = re.compile(r"^[a-z0-9_-]+$")
 REQUIRED = ("name", "origin", "surface_site", "cookie_domain", "logged_in_cookies", "pages", "route_paths",
             "unlink_endpoints", "beacon_path", "post_hosts", "resource_hosts", "doc_hosts", "ws_hosts", "backup",
-            "baseline", "ledger", "cap", "expired_hint")
+            "baseline", "ledger", "expired_hint")
 _TUPLES = ("logged_in_cookies", "route_paths", "unlink_endpoints", "post_hosts", "resource_hosts", "doc_hosts", "ws_hosts")
 
 
@@ -41,11 +41,11 @@ class Site:
     backup: str
     baseline: str
     ledger: str
-    cap: dict
     expired_hint: str
     hooks: types.ModuleType
     logged_in_unlink_endpoints: tuple = None  # optional: a logged-in session posts to other endpoints; default the logged-out ones
     logged_in_beacon_path: str = None
+    cap: dict = None  # optional: {per_day, min_gap_min} on runs with a logged-in arm; absent = no cap
 
     def pop_host(self, host):
         return self.hooks.pop_host(host)
@@ -83,4 +83,5 @@ def load(name="facebook", root=None):
     kw["pages"] = {arm: tuple(paths) for arm, paths in doc["pages"].items()}
     kw["logged_in_unlink_endpoints"] = tuple(doc.get("logged_in_unlink_endpoints", doc["unlink_endpoints"]))
     kw["logged_in_beacon_path"] = doc.get("logged_in_beacon_path", doc["beacon_path"])
+    kw["cap"] = doc.get("cap")
     return Site(dir=d.resolve(), hooks=hooks, **kw)

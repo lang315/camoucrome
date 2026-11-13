@@ -282,10 +282,10 @@ Every key of `sites.REQUIRED` must be present, or the site is `UNMEASURED site: 
 | `post_hosts`, `resource_hosts`, `doc_hosts` | hosts whose POST bodies, scripts and documents the driver records |
 | `ws_hosts` | hosts whose WebSocket frames the driver records |
 | `backup`, `baseline`, `ledger` | the login backup folder, the judge baseline file, and the run ledger (each site has its own) |
-| `cap` | `per_day` and `min_gap_min`: the account-risk cap on runs that include a login |
 | `expired_hint` | the text printed when the login has expired |
 
-Optional keys: `module` (the hook module, default `base`), and `logged_in_unlink_endpoints` and `logged_in_beacon_path`
+Optional keys: `cap` (`per_day` and `min_gap_min`, the account-risk cap on runs that include a login; absent means no
+cap, as for facebook since the owner lifted it on 2026-11-06), `module` (the hook module, default `base`), and `logged_in_unlink_endpoints` and `logged_in_beacon_path`
 (a logged-in session may post to other endpoints than a logged-out one; both default to the logged-out values). Find the
 real endpoints in a recon capture first; do not copy another site's. A `site.json` saved by PowerShell may carry a BOM; the
 loader reads it. On the host the data goes to `<observe>\settings\sites\`.
@@ -306,7 +306,8 @@ run on the host and may see values; what leaves the host (`channels.json`, `matc
 5. Light mode, if wanted (see "Light mode pair").
 
 **4. The rules that carry over.**
-- The account cap is per site: `cap` and `ledger` in `site.json`. A logged-in arm counts against it.
+- The account cap is per site and optional: `cap` and `ledger` in `site.json`. A logged-in arm counts against it; every
+  logged-in run is still recorded in the ledger.
 - Values never leave the host. The reports hold names, classes and counts. The login backup is only copied, never read for values.
 - No typed credentials, ever; the owner logs in by hand.
 - The repository is public: no host-identifying data in any file, commit or PR (`scripts/check_privacy.py`). Name a site at vendor level only.
@@ -319,7 +320,7 @@ The owner relaxed the observer rules on 2026-10-29
 driven arms join the unattended command, to map facebook's tracking
 channels and the cost of a load. Select them with
 `observe-auto.ps1 -Arms 1,3,1f,1c,3w,4a`. The default stays `-Arms 1,3`,
-and arms 1 and 3 run, are judged and are reported as before (the cap below also applies to a default run, because arm 3 is logged in).
+and arms 1 and 3 run, are judged and are reported as before (a site's cap, where set, also applies to a default run, because arm 3 is logged in).
 
 Arm names must not read as numbers in PowerShell: `1d` is a decimal literal
 (PowerShell 7 also reads `1s` as a short), so an unquoted `-Arms 1d,...`
