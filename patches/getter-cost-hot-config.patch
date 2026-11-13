@@ -1,0 +1,429 @@
+diff --git a/third_party/blink/renderer/DEPS b/third_party/blink/renderer/DEPS
+index f488d9ac27..5a911b0665 100644
+--- a/third_party/blink/renderer/DEPS
++++ b/third_party/blink/renderer/DEPS
+@@ -100,6 +100,7 @@ include_rules = [
+     "+components/camoucfg/derive.h",
+     "+components/camoucfg/device_ids.h",
+     "+components/camoucfg/gl_params.h",
++    "+components/camoucfg/hot_config.h",
+     "+components/camoucfg/keys.h",
+     "+components/camoucfg/mask_config.h",
+     "+components/crash/core/common/crash_key.h",
+diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+index 91edfac240..9bf5ec2bcf 100644
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+@@ -8,6 +8,7 @@
+ #include "build/build_config.h"
+ #include "components/camoucfg/blink_scope.h"
+ #include "components/camoucfg/derive.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/features.h"
+@@ -78,32 +79,27 @@ String NavigatorBase::platform() const {
+     return NavigatorID::platform();
+   }
+ #endif
++  // Camoucrome configuration is authoritative (see the notes below). The value
++  // is read out of the config once (camoucfg::Hot) and its String is cached per
++  // thread: a Blink String is not shareable across threads.
++  const camoucfg::HotConfig& hot =
++      camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext()));
++  if (hot.platform) {
++    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<String>, cached, ());
++    if (cached->IsNull())
++      *cached = String::FromUtf8(*hot.platform);
++    return *cached;
++  }
+   String platform = GetReducedNavigatorPlatform();
+ 
+   // Camoucrome configuration is authoritative. WorkerNavigator does not
+   // override platform(), so this shared path is the only hook that reaches a
+-  // worker; applying the override (and the derive below) here keeps a worker's
+-  // navigator.platform coherent with the window's (Navigator::platform()
+-  // applies the same key on the window path). A DevTools override on the window
+-  // is applied in Navigator::platform() before this runs, so it still wins;
+-  // this path is reached only when there is no such override.
+-  const camoucfg::ConfigScope& scope =
+-      camoucfg::ScopeFor(GetExecutionContext());
+-  if (std::optional<std::string> configured =
+-          camoucfg::GetString(scope, camoucfg::keys::kNavigatorPlatform)) {
+-    platform = String::FromUtf8(*configured);
+-  } else if (std::string_view derived = camoucfg::CanonicalNavigatorPlatformFor(
+-                 camoucfg::ClaimedOs(scope));
+-             !derived.empty()) {
+-    // No navigator.platform configured, but the UA claims an OS (ClaimedOs reads
+-    // ua:osInfo first, then ua:platform). The reduced host platform above would
+-    // otherwise disagree with the claimed UA -- e.g. a Windows UA beside the
+-    // host's "Linux x86_64". CanonicalNavigatorPlatformFor returns the frozen
+-    // reduced literal for that OS (Win32 / MacIntel / Linux x86_64 / Linux
+-    // armv81); empty only when nothing is claimed, leaving the host value. SP1
+-    // design section 410 names this mapping; SP5 owns the coherence SP1b deferred.
+-    platform = String::FromUtf8(derived);
+-  }
++  // worker; applying the override here keeps a worker's navigator.platform
++  // coherent with the window's. hot.platform is navigator.platform if set, else
++  // the frozen reduced literal of the claimed OS (CanonicalNavigatorPlatformFor
++  // of ClaimedOs: ua:osInfo, then ua:platform), else absent (the host value
++  // above stays). A DevTools override on the window is applied in
++  // Navigator::platform() before this runs, so it still wins.
+   return platform;
+ }
+ 
+@@ -125,9 +121,9 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
+   // browser is presenting, and a CDP emulation override must not be able to
+   // contradict it, so it is applied last. When no key is set this is a no-op
+   // and the real value plus any emulation override survives unchanged.
+-  if (std::optional<uint32_t> configured = camoucfg::GetUint32(
+-          camoucfg::ScopeFor(GetExecutionContext()),
+-          camoucfg::keys::kNavigatorHardwareConcurrency)) {
++  if (const std::optional<uint32_t>& configured =
++          camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext()))
++              .navigator_hardware_concurrency) {
+     hardware_concurrency = *configured;
+   }
+   return hardware_concurrency;
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index d186df7a75..dc269e4db0 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -38,6 +38,7 @@
+ #include "build/build_config.h"
+ #include "cc/input/snap_selection_strategy.h"
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+@@ -1712,9 +1713,9 @@ int LocalDOMWindow::outerHeight() const {
+     return 0;
+   }
+ 
+-  if (std::optional<int32_t> v = camoucfg::GetInt32(
+-          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
+-          camoucfg::keys::kWindowOuterHeight)) {
++  if (const std::optional<int32_t>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
++              .window_outer_height) {
+     return *v;
+   }
+ 
+@@ -1750,9 +1751,9 @@ int LocalDOMWindow::outerWidth() const {
+     return 0;
+   }
+ 
+-  if (std::optional<int32_t> v = camoucfg::GetInt32(
+-          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
+-          camoucfg::keys::kWindowOuterWidth)) {
++  if (const std::optional<int32_t>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
++              .window_outer_width) {
+     return *v;
+   }
+ 
+@@ -1822,9 +1823,9 @@ int LocalDOMWindow::innerWidth() const {
+ }
+ 
+ int LocalDOMWindow::screenX() const {
+-  if (std::optional<int32_t> v = camoucfg::GetInt32(
+-          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
+-          camoucfg::keys::kWindowScreenX)) {
++  if (const std::optional<int32_t>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
++              .window_screen_x) {
+     return *v;
+   }
+ 
+@@ -1853,9 +1854,9 @@ int LocalDOMWindow::screenX() const {
+ }
+ 
+ int LocalDOMWindow::screenY() const {
+-  if (std::optional<int32_t> v = camoucfg::GetInt32(
+-          camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)),
+-          camoucfg::keys::kWindowScreenY)) {
++  if (const std::optional<int32_t>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
++              .window_screen_y) {
+     return *v;
+   }
+ 
+diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
+index e9009d0629..1fa02ba4ff 100644
+--- a/third_party/blink/renderer/core/frame/navigator.cc
++++ b/third_party/blink/renderer/core/frame/navigator.cc
+@@ -24,6 +24,7 @@
+ #include "third_party/blink/renderer/core/frame/navigator.h"
+ 
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
+@@ -37,7 +38,9 @@
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/platform/language.h"
++#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++#include "third_party/blink/renderer/platform/wtf/thread_specific.h"
+ 
+ namespace blink {
+ 
+@@ -47,10 +50,13 @@ String Navigator::platform() const {
+   // Camoucrome: a configured navigator.platform wins over everything below,
+   // including the DevTools platform override, so an automation client cannot
+   // desync this leaf from the chosen fingerprint. No-op when the key is absent.
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(GetExecutionContext()),
+-          camoucfg::keys::kNavigatorPlatform)) {
+-    return String::FromUtf8(*configured);
++  if (const std::optional<std::string>& configured =
++          camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext()))
++              .platform_configured) {
++    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<String>, cached, ());
++    if (cached->IsNull())
++      *cached = String::FromUtf8(*configured);
++    return *cached;
+   }
+   if (!DomWindow())
+     return NavigatorBase::platform();
+diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+index 9b21f16dd4..4346c21652 100644
+--- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
++++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+@@ -5,6 +5,7 @@
+ #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
+ 
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
+@@ -19,8 +20,8 @@ float NavigatorDeviceMemory::deviceMemory() const {
+   // process-global scope directly, as NavigatorID does. No-op when absent.
+   // ScopeFor ignores its argument today (returns GlobalScope()); if it ever
+   // becomes context-sensitive this context-less mixin hook must be revisited.
+-  if (std::optional<double> configured = camoucfg::GetDouble(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorDeviceMemory)) {
++  if (const std::optional<double>& configured =
++          camoucfg::Hot(camoucfg::ScopeFor(nullptr)).navigator_device_memory) {
+     return static_cast<float>(*configured);
+   }
+   return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
+diff --git a/third_party/blink/renderer/core/frame/navigator_id.cc b/third_party/blink/renderer/core/frame/navigator_id.cc
+index 4d4140dcba..b8e78173eb 100644
+--- a/third_party/blink/renderer/core/frame/navigator_id.cc
++++ b/third_party/blink/renderer/core/frame/navigator_id.cc
+@@ -34,6 +34,7 @@
+ #include "base/feature_list.h"
+ #include "build/build_config.h"
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/features.h"
+@@ -43,10 +44,26 @@
+ #include <sys/utsname.h>
+ #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
+ #include "third_party/blink/renderer/platform/wtf/threading.h"
++#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
++#include "third_party/blink/renderer/platform/wtf/thread_specific.h"
+ #endif
+ 
+ namespace blink {
+ 
++// Camoucrome: a configured navigator leaf, read from the once-built HotConfig and
++// cached as a String per thread (a Blink String is not shareable across threads).
++#define CAMOU_CACHED_LEAF(field)                                              \
++  {                                                                           \
++    const std::optional<std::string>& camou_configured =                      \
++        camoucfg::Hot(camoucfg::ScopeFor(nullptr)).field;                     \
++    if (camou_configured) {                                                   \
++      DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<String>, cached, ());    \
++      if (cached->IsNull())                                                   \
++        *cached = String::FromUtf8(*camou_configured);                        \
++      return *cached;                                                         \
++    }                                                                         \
++  }
++
+ String NavigatorID::appCodeName() {
+   // NavigatorID is a context-less mixin shared by Navigator and
+   // WorkerNavigator, so it has no ExecutionContext to resolve; ScopeFor
+@@ -57,26 +74,17 @@ String NavigatorID::appCodeName() {
+   // revisited.
+   // appCodeName/appName/product are expert-override-only near-constants: the
+   // key defaults absent, so real Chrome's fixed strings are returned unchanged.
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorAppCodeName)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_app_code_name);
+   return "Mozilla";
+ }
+ 
+ String NavigatorID::appName() {
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorAppName)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_app_name);
+   return "Netscape";
+ }
+ 
+ String NavigatorID::appVersion() {
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorAppVersion)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_app_version);
+   // Version is everything in the user agent string past the "Mozilla/" prefix.
+   const String& agent = userAgent();
+   return agent.substr(agent.find('/') + 1);
+@@ -117,26 +125,17 @@ String NavigatorID::platform() const {
+ }
+ 
+ String NavigatorID::product() {
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorProduct)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_product);
+   return "Gecko";
+ }
+ 
+ String NavigatorID::productSub() const {
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorProductSub)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_product_sub);
+   return "20030107";
+ }
+ 
+ String NavigatorID::vendor() const {
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorVendor)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_vendor);
+   // Do not change without good cause. History:
+   // https://code.google.com/p/chromium/issues/detail?id=276813
+   // https://www.w3.org/Bugs/Public/show_bug.cgi?id=27786
+@@ -146,10 +145,7 @@ String NavigatorID::vendor() const {
+ }
+ 
+ String NavigatorID::vendorSub() const {
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorVendorSub)) {
+-    return String::FromUtf8(*configured);
+-  }
++  CAMOU_CACHED_LEAF(navigator_vendor_sub);
+   return "";
+ }
+ 
+diff --git a/third_party/blink/renderer/core/frame/navigator_language.cc b/third_party/blink/renderer/core/frame/navigator_language.cc
+index 27fedfe26e..c687dbfab7 100644
+--- a/third_party/blink/renderer/core/frame/navigator_language.cc
++++ b/third_party/blink/renderer/core/frame/navigator_language.cc
+@@ -5,11 +5,14 @@
+ #include "third_party/blink/renderer/core/frame/navigator_language.h"
+ 
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "services/network/public/cpp/features.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/platform/language.h"
++#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
++#include "third_party/blink/renderer/platform/wtf/thread_specific.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+ 
+ namespace blink {
+@@ -40,10 +43,12 @@ AtomicString NavigatorLanguage::language() {
+   // Camoucrome: a configured navigator.language wins over the real value. When
+   // both keys are set consistently this equals languages().front(); when only
+   // this key is set the generator owns the two-key coherence. No-op when absent.
+-  if (std::optional<std::string> configured = camoucfg::GetString(
+-          camoucfg::ScopeFor(execution_context_),
+-          camoucfg::keys::kNavigatorLanguage)) {
+-    return AtomicString(String::FromUtf8(*configured));
++  if (const std::optional<std::string>& configured =
++          camoucfg::Hot(camoucfg::ScopeFor(execution_context_)).language) {
++    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<AtomicString>, cached, ());
++    if (cached->IsNull())
++      *cached = AtomicString(String::FromUtf8(*configured));
++    return *cached;
+   }
+   return AtomicString(languages().front());
+ }
+diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
+index 291a3f250e..1edc2fe4c8 100644
+--- a/third_party/blink/renderer/core/frame/screen.cc
++++ b/third_party/blink/renderer/core/frame/screen.cc
+@@ -30,6 +30,7 @@
+ 
+ #include "base/numerics/safe_conversions.h"
+ #include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+@@ -114,9 +115,9 @@ unsigned Screen::colorDepth() const {
+   }
+   // Camoucrome (SP4a): config override. pixelDepth() returns colorDepth(), so
+   // this one key carries both -- no separate pixelDepth key exists.
+-  if (std::optional<uint32_t> v = camoucfg::GetUint32(
+-          camoucfg::ScopeFor(GetExecutionContext()),
+-          camoucfg::keys::kScreenColorDepth)) {
++  if (const std::optional<uint32_t>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext()))
++              .screen_color_depth) {
+     return *v;
+   }
+   return GetScreenInfo().depth == 0
+@@ -187,28 +188,22 @@ gfx::Rect Screen::GetRect(bool available) const {
+   gfx::Rect rect = available ? screen_info.available_rect : screen_info.rect;
+   // Camoucrome (SP4a): config override, authoritative over the host display.
+   // Same keys media_values.cc reads, so JS screen.* and CSS device-* agree.
+-  ExecutionContext* camou_ctx = GetExecutionContext();
+-  const camoucfg::ConfigScope& camou_scope = camoucfg::ScopeFor(camou_ctx);
++  const camoucfg::HotConfig& camou_hot =
++      camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext()));
+   if (available) {
+-    if (std::optional<uint32_t> v =
+-            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailLeft))
+-      rect.set_x(static_cast<int>(*v));
+-    if (std::optional<uint32_t> v =
+-            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailTop))
+-      rect.set_y(static_cast<int>(*v));
+-    if (std::optional<uint32_t> v =
+-            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailWidth))
+-      rect.set_width(static_cast<int>(*v));
+-    if (std::optional<uint32_t> v =
+-            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenAvailHeight))
+-      rect.set_height(static_cast<int>(*v));
++    if (camou_hot.screen_avail_left)
++      rect.set_x(static_cast<int>(*camou_hot.screen_avail_left));
++    if (camou_hot.screen_avail_top)
++      rect.set_y(static_cast<int>(*camou_hot.screen_avail_top));
++    if (camou_hot.screen_avail_width)
++      rect.set_width(static_cast<int>(*camou_hot.screen_avail_width));
++    if (camou_hot.screen_avail_height)
++      rect.set_height(static_cast<int>(*camou_hot.screen_avail_height));
+   } else {
+-    if (std::optional<uint32_t> v =
+-            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenWidth))
+-      rect.set_width(static_cast<int>(*v));
+-    if (std::optional<uint32_t> v =
+-            camoucfg::GetUint32(camou_scope, camoucfg::keys::kScreenHeight))
+-      rect.set_height(static_cast<int>(*v));
++    if (camou_hot.screen_width)
++      rect.set_width(static_cast<int>(*camou_hot.screen_width));
++    if (camou_hot.screen_height)
++      rect.set_height(static_cast<int>(*camou_hot.screen_height));
+   }
+   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk())
+     return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
