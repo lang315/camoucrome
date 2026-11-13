@@ -21,8 +21,11 @@ from pathlib import Path
 CREEP_DIR = Path(__file__).parent / "third_party" / "creepjs"
 EXPECTED_ROWS = 12  # K1-K6, R1-R4, R6, CTRL
 # Box calibration (measured there, never guessed here). While either is None, main() refuses to run.
-K2_FLOOR = None  # fewest functions the K2 sweep must visit, or it measured nothing
-K4_VOLATILE = None  # leaf -> reason, for K4 leaves that legitimately differ between loads
+# Measured on the box 2026-11-13 (out/Default chrome at the pin, generated Windows identity seed 1): the sweep visited
+# 10057 functions (stock Chrome 157 on the Mac: 10073), 0 anomalies. The floor sits about 10% below.
+K2_FLOOR = 9000  # fewest functions the K2 sweep must visit, or it measured nothing
+# Same run: every K4 leaf was identical across the three loads, so nothing is exempt.
+K4_VOLATILE = {}  # leaf -> reason, for K4 leaves that legitimately differ between loads
 
 
 def f32(x):
