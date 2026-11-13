@@ -543,7 +543,7 @@ def arch_fits(fp, profile):
             or fp["navigator"]["userAgentData"].get("architecture") == "arm")
 
 
-def generate(os=None,timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
+def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
              host_families=None, host_platform_version=None, host_display=None, light=False,
              host_screen=None, host_cores=None):
     """host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are

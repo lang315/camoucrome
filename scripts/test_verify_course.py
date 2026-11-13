@@ -105,3 +105,27 @@ def test_k6():
     assert verify_course.k6_problems(K6_OK, err) == ["k6 error ident timeout"]
     assert verify_course.k6_problems(err, K6_OK) == ["k6 error base timeout"]
     assert len(verify_course.k6_problems(err, err)) == 2
+
+
+def test_k6_missing_sections():
+    empty = {"missing": ["lies", "trash", "headless", "workerScope"], "lies": {}, "trash": [], "stealth": [],
+             "workerLied": False, "done": True}
+    p = verify_course.k6_problems(K6_OK, empty)
+    assert len(p) == 4 and all("missing" in x and "ident" in x for x in p)
+    assert p[0] == "k6 error ident missing lies"
+    assert all("base" in x for x in verify_course.k6_problems(empty, K6_OK))
+    assert verify_course.k6_problems(K6_OK, {**K6_OK, "missing": []}) == []
+
+
+def test_k6_note():
+    assert verify_course.k6_note("base", {**K6_OK, "lies": {"B": 1, "A": 2}, "trash": ["x", "y"]}) == "note: K6 base lies=2 ['A', 'B'] trash=['x', 'y']"
+    assert verify_course.k6_note("ident", {"error": "timeout"}) == "note: K6 ident error timeout"
+
+
+def test_r6_strict():
+    exp = verify_course.MUTANTS["R6"][1]
+    assert exp == "k6 lie Navigator.hardwareConcurrency"
+    assert not verify_course.r_row_ok(["k6 lie Navigator.deviceMemory [...]"], exp)
+    assert verify_course.r_row_pass(["k6 lie Navigator.hardwareConcurrency []"], exp, True, True)
+    assert not verify_course.r_row_pass(["k6 lie Navigator.hardwareConcurrency []"], exp, True, False)
+    assert not verify_course.r_row_pass(["k6 lie Navigator.hardwareConcurrency []"], exp, False, True)

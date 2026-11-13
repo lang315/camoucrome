@@ -45,7 +45,7 @@ MUTANTS = {
            "Object.defineProperty(Navigator.prototype,'hardwareConcurrency',{get(){return v},configurable:true,enumerable:true})})()",
            "k4 nav.hardwareConcurrency"),
 }
-MUTANTS["R6"] = (MUTANTS["R2"][0], "k6 lie")
+MUTANTS["R6"] = (MUTANTS["R2"][0], "k6 lie Navigator.hardwareConcurrency")
 CTRL_JS = "void 0"
 
 # One IIFE, no global. Every anomaly is [kind, label].
@@ -122,7 +122,8 @@ HARNESS = r"""(()=>{const t0=Date.now();const w=s=>{const p=document.createEleme
 const i=setInterval(()=>{const fp=window.Fingerprint;
 if(fp){clearInterval(i);try{w(JSON.stringify({lies:Object.fromEntries(Object.entries(fp.lies?.data||{}).map(([k,v])=>[k,v])),
 trash:(fp.trash?.trashBin||[]).map(t=>t.name),stealth:Object.keys(fp.headless?.stealth||{}).filter(k=>fp.headless.stealth[k]),
-workerLied:!!fp.workerScope?.lied,done:true}))}catch(e){w(JSON.stringify({error:String(e)}))}}
+workerLied:!!fp.workerScope?.lied,
+missing:['lies','trash','headless','workerScope'].filter(k=>!fp[k]),done:true}))}catch(e){w(JSON.stringify({error:String(e)}))}}
 else if(Date.now()-t0>90000){clearInterval(i);w('{"error": "timeout"}')}},250)})()"""
 CREEP_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
                ".ico": "image/x-icon"}
@@ -144,10 +145,19 @@ def k6_problems(base, ident):
     out = [f"k6 error {side} {r['error']}" for side, r in (("base", base), ("ident", ident)) if "error" in r]
     if out:
         return out
+    out = [f"k6 error {side} missing {m}" for side, r in (("base", base), ("ident", ident)) for m in r.get("missing", [])]
+    if out:  # an absent CreepJS section reads as clean, so it is a failure
+        return out
     out = [f"k6 lie {k} {json.dumps(v)[:200]}" for k, v in ident["lies"].items() if k not in base["lies"]]
     out += [f"k6 trash {t}" for t in ident["trash"] if t not in base["trash"]]
     out += [f"k6 stealth {k}" for k in ident["stealth"]]
     return out + (["k6 worker lied"] if ident["workerLied"] else [])
+
+
+def k6_note(side, r):
+    if "error" in r:
+        return f"note: K6 {side} error {r['error']}"
+    return f"note: K6 {side} lies={len(r['lies'])} {sorted(r['lies'])} trash={r['trash']}"
 
 
 def check_vendor(d: Path) -> list[str]:
@@ -222,6 +232,11 @@ def k5_problems(rep, pin):
 
 def r_row_ok(problems, expect):
     return any(expect in p for p in problems)
+
+
+def r_row_pass(problems, expect, ctrl_clean, k_ok):
+    """k_ok: the mutant's own K row passed (an identity lie the base lacks must not pass R6 without the mutant)."""
+    return r_row_ok(problems, expect) and ctrl_clean and k_ok
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -328,7 +343,10 @@ def main() -> int:
         for c in ("k1", "k2", "k3", "k4", "k5"):
             rows[c.upper()] = (not k[c], k[c])
         k6_base = _creep(pw, CHROME, None, fonts_dir, creep_url, None)  # a plain launch: the launcher default
-        k6 = k6_problems(k6_base, _creep(pw, CHROME, cfg, fonts_dir, creep_url, None))
+        k6_ident = _creep(pw, CHROME, cfg, fonts_dir, creep_url, None)
+        for side, rep in (("base", k6_base), ("ident", k6_ident)):
+            print(k6_note(side, rep))
+        k6 = k6_problems(k6_base, k6_ident)
         rows["K6"] = (not k6, k6)
         try:
             ctrl = grp(CTRL_JS)
@@ -343,7 +361,7 @@ def main() -> int:
             except Exception as e:
                 rows[rid] = (False, [f"did not report: {e}"])
                 continue
-            rows[rid] = (r_row_ok(got, expect) and ctrl_clean, got)
+            rows[rid] = (r_row_pass(got, expect, ctrl_clean, rid != "R6" or rows["K6"][0]), got)
     srv.shutdown()
     n = 0
     for label, (ok, problems) in rows.items():
