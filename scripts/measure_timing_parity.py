@@ -7,7 +7,7 @@ from page script, on the same Windows host?
      plus the first read in a fresh page and a fresh worker.
 
 Arms: S stock (frozen copy, seeded profile), S2 stock again (the RED), F the fork with a generated Windows identity,
-F0 the fork with no config, V a vanilla Chromium snapshot. Every arm is spawned directly (`chrome.exe --user-data-dir
+FH the same identity claiming the host's core count (no CPU pin), F0 the fork with no config, V a vanilla Chromium snapshot. Every arm is spawned directly (`chrome.exe --user-data-dir
 <dir> <url>`), with no driver attached: the page POSTs its result to a local server, and a CDP connection is made only
 AFTER the result is in, to read chrome://gpu's crash count (every arm carries the same --remote-debugging-port).
 
@@ -463,7 +463,7 @@ def run_cmd(a):
     arms = a.arms.split(",")
     stock_exe = os.path.join(a.stock_app or os.environ.get("CAMOU_STOCK_APP") or m2.STOCK_APP, "chrome.exe")
     fork_exe = os.path.join(a.fork_dir, "chrome.exe") if a.fork_dir else os.environ.get("CAMOU_FORK_EXE")
-    exe_of = {"S": stock_exe, "S2": stock_exe, "F": fork_exe, "F0": fork_exe,
+    exe_of = {"S": stock_exe, "S2": stock_exe, "F": fork_exe, "F0": fork_exe, "FH": fork_exe,
               "V": _find_chrome(a.snapshot_dir) if "V" in arms and a.snapshot_dir else None}
     for arm in arms:
         if arm not in exe_of:
@@ -503,17 +503,21 @@ def run_cmd(a):
         argv = [exe_of[arm], *launcher.BASE_ARGS, f"--user-data-dir={udd}", f"--remote-debugging-port={port}"]
         saved = None
         try:
-            if arm == "F":
+            if arm in ("F", "FH"):
                 ident = m2.identity(a.seed_base + i)
                 cfg, lo = ident["config"], ident["launch"]
+                if arm == "FH":     # the same identity, claiming the host's core count: no pin, so the pin and the build tell apart
+                    cfg = {**cfg, "navigator.hardwareConcurrency": os.cpu_count()}
                 args = launcher.build_args(tuple(lo["window"]) if lo.get("window") else None, lo.get("dpr"),
                                            lo.get("args", []), False, udd, launcher.accept_lang_of(cfg),
                                            position=tuple(lo["position"]) if lo.get("position") else None)
                 argv = [exe_of[arm]] + [x for x in args if x != "--remote-debugging-pipe"] + [f"--remote-debugging-port={port}"]
                 env = launcher.build_env(cfg, fontconfig=launcher.fontconfig_for(cfg, None, None, exe_of[arm]), crash_dir=crash)
                 n = launcher.effective_keys(cfg).get("navigator.hardwareConcurrency")
+                rec["claimed_hc"], rec["host_cpus"] = n, os.cpu_count()
                 if isinstance(n, int) and not isinstance(n, bool) and n >= 1:
-                    saved = pin.engage_self(n) if hasattr(pin, "engage_self") else _pin_self(pin, n)
+                    saved, chosen = _pin_self(pin, n)
+                    rec["pin_mask"] = sorted(chosen) if chosen else None
             server.results = []
             proc = subprocess.Popen(argv + [url], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if saved is not None:
@@ -569,14 +573,14 @@ def run_cmd(a):
 
 def _pin_self(pin, n):
     """Pin this process to n random CPUs of the ones it may use, so a child spawned now inherits the mask (the same
-    rule as camoucrome.pin: a claim of N cores is enforced by affinity). Returns the mask to restore, or None."""
+    rule as camoucrome.pin: a claim of N cores is enforced by affinity). Returns (the mask to restore, the mask set), or (None, None)."""
     import random
     allowed = sorted(pin.get_mask(os.getpid()) or [])
     if not allowed or n >= len(allowed):
-        return None
-    saved = set(allowed)
-    pin.set_mask(os.getpid(), set(random.SystemRandom().sample(allowed, n)))
-    return saved
+        return None, None
+    saved, chosen = set(allowed), set(random.SystemRandom().sample(allowed, n))
+    pin.set_mask(os.getpid(), chosen)
+    return saved, chosen
 
 
 def main(argv=None):
