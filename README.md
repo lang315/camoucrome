@@ -414,7 +414,12 @@ Camoucrome does not repeat that.
   identity keeps the real GPU: only one real GPU profile exists.
 - Fonts are a per-profile subset of the host's real Windows fonts, never a font the host lacks.
 - Identities on one host still share the host-dependent values that stock Chrome shares across profiles too
-  (audio output, keyboard layout, display and media queries, screen geometry, network, the Windows build): 72 of 241 measured leaves, so profiles on one machine remain linkable through them.
+  (the GPU, audio output, keyboard layout, display and media queries, codecs, network, the Windows build), so
+  profiles on one machine remain linkable through them. Measured on the Windows host on 2026-11-13 (157, five
+  profiles each): five fork identities share 64 of 241 leaves headed (65 headless) that no machine constant
+  explains, and five stock profiles share 81. Of the fork's leaves outside the accepted defaults (34 headed, 35
+  headless), stock shares every one, all but `navigator.languages` with the same value. That one read `["en-US"]`
+  on the fork; the generator now gives `["en-US", "en"]` as stock Chrome does (not re-measured on the host).
 - No Widevine.
 - No auto-update. Re-pins are the security channel, and they come only when the pin
   would fall more than 3 milestones behind Chrome stable.
