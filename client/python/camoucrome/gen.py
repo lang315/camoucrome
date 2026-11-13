@@ -537,7 +537,13 @@ def allowed_cpus():
     return len(mask) if mask else _os.cpu_count()
 
 
-def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
+def arch_fits(fp, profile):
+    """False only for an Apple GPU profile beside a UA-CH architecture that is not arm."""
+    return (profile is None or "Apple" not in profile["renderer"]
+            or fp["navigator"]["userAgentData"].get("architecture") == "arm")
+
+
+def generate(os=None,timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
              host_families=None, host_platform_version=None, host_display=None, light=False,
              host_screen=None, host_cores=None):
     """host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are
@@ -560,7 +566,9 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     gen = FingerprintGenerator(browser="chrome", **({"os": os} if os else {}))
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
+        # an Apple GPU string over an x86 claim is a cross-surface lie
         if (acceptable(fp) and (not light or dpr_of(fp) == 1)
+                and arch_fits(fp, gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu)[0])
                 and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
                             host_display, host_screen, host_cores)
