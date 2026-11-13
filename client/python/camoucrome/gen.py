@@ -436,12 +436,11 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     platform = ud["platform"]
     os_info, ua_platform = OS_FORMS[platform]
     rng = rng or random.Random()
-    if locale:
-        tag = locale
-        languages = [tag] if "-" not in tag else [tag, tag.split("-")[0]]
-    else:
-        tag = nav["language"]
-        languages = [tag] + [l for l in nav.get("languages", []) if l != tag]
+    # Stock Chrome lists the primary subtag after a regional tag (["en-US", "en"]); the pool's rows often omit it.
+    tag = locale or nav["language"]
+    languages = [tag] if "-" not in tag else [tag, tag.split("-")[0]]
+    if not locale:
+        languages += [l for l in nav.get("languages", []) if l not in languages]
     config = {
         "ua:osInfo": os_info, "ua:platform": ua_platform,
         # The pool's Linux rows carry no platformVersion; an empty override would replace the real kernel version

@@ -76,6 +76,14 @@ def test_locale_and_timezone():
     assert cfg["navigator.languages"] == ["fr-FR", "fr"] and cfg["locale:tag"] == "fr-FR"
 
 
+def test_pool_language_alone_gets_its_primary_subtag():
+    # The real pool's Windows rows carry ["en-US"] only; stock Chrome reads ["en-US", "en"] (linkability 2026-11-13).
+    pool = json.loads(json.dumps(POOL))
+    pool["navigator"]["languages"] = ["en-US"]
+    assert gen.from_pool(pool, "UTC", rng=random.Random(1))["config"]["navigator.languages"] == ["en-US", "en"]
+    assert gen.generate("windows", seed=1)["config"]["navigator.languages"] == ["en-US", "en"]
+
+
 def test_ua_battery_media_and_seeds():
     cfg = gen.from_pool(POOL, "UTC", rng=random.Random(1))["config"]
     assert cfg["navigator.deviceMemory"] == 16  # the sample's own value: Chrome 156 desktop reports 2..32
@@ -454,7 +462,7 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 # launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "mediaDevices:seed": 3639700192,
-        "rest": "c3cf3c0213de1b36"},  # was dcf4b9c17059de9c with navigator.deviceMemory 8; the seed draws 16
+        "rest": "8725d4839e119eae"},  # was c3cf3c0213de1b36 with navigator.languages ["en-US"], before that dcf4b9c17059de9c with navigator.deviceMemory 8
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "mediaDevices:seed": 2337446731},
 }
