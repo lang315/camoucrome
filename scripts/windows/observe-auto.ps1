@@ -34,7 +34,7 @@ $Ri = Join-Path $Root 'run-interactive.ps1'
 if ($Site -notmatch '^[a-z0-9_-]+$') { "UNMEASURED site: bad site name '$Site'"; exit 3 }
 $SiteFile = Join-Path $Root "settings\sites\$Site\site.json"
 try { $S = Get-Content $SiteFile -Raw -ErrorAction Stop | ConvertFrom-Json } catch { "UNMEASURED site: $Site not found"; exit 3 }
-$miss = @('origin', 'pages', 'backup', 'baseline', 'ledger', 'cap') | Where-Object { $_ -notin $S.PSObject.Properties.Name }
+$miss = @('origin', 'pages', 'backup', 'baseline', 'ledger') | Where-Object { $_ -notin $S.PSObject.Properties.Name }
 if ($miss.Count) { "UNMEASURED site: $Site site.json lacks $($miss -join ' ')"; exit 3 }
 if (-not $Backup) { $Backup = $S.backup }
 if (-not $Baseline) { $Baseline = $S.baseline }
@@ -121,8 +121,9 @@ function Read-Ledger([string]$path) {
   } catch { return $null }
 }
 
-# account-risk cap (owner ruling 6, 2026-10-29): at most 3 runs a UTC day that include a logged-in arm,
-# 15 minutes apart. The run is recorded when it starts, so a run that ends UNMEASURED still counts
+# account-risk cap (owner ruling 6, 2026-10-29): the site's `cap` limits runs that include a logged-in arm per UTC
+# day and their spacing; facebook has none since the owner lifted it 2026-11-06. The run is recorded when it starts,
+# so a run that ends UNMEASURED still counts
 if (@($Arms | Where-Object { $_ -in $LoggedIn }).Count) {
   New-Item -ItemType Directory -Force (Join-Path $Root 'auto') | Out-Null
   $Ledger = Join-Path $Root $S.ledger
@@ -131,9 +132,9 @@ if (@($Arms | Where-Object { $_ -in $LoggedIn }).Count) {
   # an unreadable ledger hides the day's count, and the cap protects the owner's real account: refuse
   if ($null -eq $past) { "RESULT UNMEASURED cap: ledger unreadable"; exit 3 }
   $today = @($past | Where-Object { $_.Date -eq $now.Date })
-  if ($today.Count -ge $S.cap.per_day) { "RESULT UNMEASURED cap: $($S.cap.per_day) logged-in runs today (UTC)"; exit 3 }
+  if ($S.cap -and $today.Count -ge $S.cap.per_day) { "RESULT UNMEASURED cap: $($S.cap.per_day) logged-in runs today (UTC)"; exit 3 }
   $last = $past | Sort-Object | Select-Object -Last 1
-  if ($last -and ($now - $last).TotalMinutes -lt $S.cap.min_gap_min) { "RESULT UNMEASURED cap: last logged-in run $([int]($now - $last).TotalMinutes) min ago (< $($S.cap.min_gap_min))"; exit 3 }
+  if ($S.cap -and $last -and ($now - $last).TotalMinutes -lt $S.cap.min_gap_min) { "RESULT UNMEASURED cap: last logged-in run $([int]($now - $last).TotalMinutes) min ago (< $($S.cap.min_gap_min))"; exit 3 }
   $all = @($past | Select-Object -Last 9 | ForEach-Object { $_.ToString('o') }) + $now.ToString('o')
   [IO.File]::WriteAllText($Ledger, (ConvertTo-Json @($all)))
 }

@@ -41,7 +41,7 @@ def test_facebook_pins_the_old_constants():
     assert s.backup == "D:\\camou-win\\observe\\backup\\fb-login-20261017"
     assert s.baseline == "D:\\camou-win\\observe\\baseline-facebook.json"
     assert s.ledger == "auto\\ledger.json"
-    assert s.cap == {"per_day": 3, "min_gap_min": 15}
+    assert s.cap is None  # owner lifted the facebook cap 2026-11-06
     assert s.expired_hint == "session expired: log in with recon.ps1 -Site facebook -Arm 2 -Intl and refresh the backup"
 
 
@@ -57,6 +57,7 @@ def test_testpage_uses_the_base_hooks():
     s = sites.load("testpage")
     assert s.pop_host("scontent.fxyz1-1.fna.fbcdn.net") == "scontent.fxyz1-1.fna.fbcdn.net"
     assert s.binary_units(b"\x0d\x00\x01\x02\x00\x00{}") is None
+    assert s.cap == {"per_day": 3, "min_gap_min": 15}  # a site that keeps a cap still loads it
 
 
 @pytest.mark.parametrize("name", ["", "../facebook", "Facebook", "face book", "nosuch"])

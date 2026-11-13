@@ -26,6 +26,5 @@
   "backup": "D:\\camou-win\\observe\\backup\\fb-login-20261017",
   "baseline": "D:\\camou-win\\observe\\baseline-facebook.json",
   "ledger": "auto\\ledger.json",
-  "cap": {"per_day": 3, "min_gap_min": 15},
   "expired_hint": "session expired: log in with recon.ps1 -Site facebook -Arm 2 -Intl and refresh the backup"
 }
