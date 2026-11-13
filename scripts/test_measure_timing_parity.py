@@ -231,3 +231,9 @@ def test_tables_a_slow_getter_fails_only_that_getter():
     rows = m.compare(run_of("S"), run_of("F", gscale=4.0), p_factor=1.15)
     fails = [r["name"] for r in rows["g"] if r["verdict"].startswith("FAIL")]
     assert fails == ["screen.width"], fails
+
+
+def test_session_active_reads_session_one_only():
+    act = " services   0  Disc\n>rdp-tcp#17  lang315  1  Active\n console  3  Conn"
+    disc = " services   0  Disc\n lang315  1  Disc\n console  3  Conn"
+    assert m.session_active(act) and not m.session_active(disc) and not m.session_active("")

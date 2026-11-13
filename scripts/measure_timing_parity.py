@@ -22,6 +22,7 @@ import http.server
 import json
 import os
 import pathlib
+import re
 import statistics
 import subprocess
 import sys
@@ -427,6 +428,15 @@ def _cpu_load():
         return None
 
 
+def session_active(text):
+    """True when `query session` output shows session 1 (the owner's) Active."""
+    return bool(re.search(r"\s1\s+Active\b", text or ""))
+
+
+def _session_text():
+    return subprocess.run(["query", "session"], capture_output=True, text=True, timeout=60).stdout
+
+
 def _busy():
     """Why this launch cannot be trusted, or None: another browser or a build is running."""
     p = subprocess.run(["powershell", "-NoProfile", "-Command",
@@ -488,7 +498,7 @@ def run_cmd(a):
     base = f"http://127.0.0.1:{server.server_address[1]}/"
 
     def launch_one(arm, i):
-        why = _busy()
+        why = _busy() or (None if session_active(_session_text()) else "session 1 is not Active")
         rec = {"arm": arm, "i": i, "fvm_gb": None, "cpu_load": None}
         if why:
             rec["unmeasured"] = why
@@ -531,7 +541,9 @@ def run_cmd(a):
                 return rec
             res, why = parse_result(server.results[0])
             crashes = gpu_gate.read_port(port)             # after the result: the only CDP connection of the launch
-            if crashes != 0:
+            if not session_active(_session_text()):
+                rec["unmeasured"] = "session 1 left Active during the launch"
+            elif crashes != 0:
                 rec["unmeasured"] = f"gpu-crash={'unknown' if crashes is None else crashes}"
             elif why:
                 rec["unmeasured"] = why
