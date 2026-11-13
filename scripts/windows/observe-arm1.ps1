@@ -1,6 +1,6 @@
 param([string]$Url, [string]$Dir, [string]$Profile, [int]$Wait = 30)
 $ErrorActionPreference = 'Stop'
-$Chrome = 'D:\camou-win\chromium\src\out\Observe\chrome.exe'
+$Chrome = 'D:\camou-win\chromium157\src\out\Observe\chrome.exe'
 if ((Test-Path $Profile) -or ((Test-Path $Dir) -and (Get-ChildItem $Dir -Force | Select-Object -First 1))) { throw "dir or profile exists: $Dir" }
 New-Item -ItemType Directory -Force $Dir | Out-Null
 $fl = @("--user-data-dir=$Profile", '--no-first-run', '--no-default-browser-check',
