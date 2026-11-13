@@ -33,7 +33,10 @@ with PR #9 on 2026-11-11). The 156 branch, `camoucrome/main-8078`, is kept as a
 ref only (its tree was deleted on 2026-11-12). `~/chromium-154/src` holds the git directory all
 checkouts share, so move it before deleting that tree. The branches of the older pins were deleted on
 2026-10-04 (`rebuild_branch.sh` recreates a branch from the repo);
-`a727b57805` was never an upstream revision.
+`a727b57805` was never an upstream revision. At the next re-pin `~/chromium`
+becomes a symlink to the prep tree `~/chromium-<ver>`. Never move a built
+tree: siso's state is bound to the absolute path, and the 157 move cost a
+6.5 h rebuild. The switch is in `measurements/2026-10-repin.md`.
 
 ## The defining constraint (never violate)
 
@@ -209,7 +212,9 @@ startup abort instead of a silent fall-back to real values.
 - **One build at a time:** the box has 32 GB of RAM, shared by Windows and
   the WSL VM (capped at 26 GB plus 12 GB swap in `.wslconfig`), so every
   Chromium build (WSL or the native Windows tree) takes
-  `scripts/build_lock.sh acquire <owner>` and releases it after; CI refuses
+  `scripts/build_lock.sh acquire <owner>` and releases it after (on the box
+  the script is in the runner's clone,
+  `~/actions-runner/_work/camoucrome/camoucrome/scripts/build_lock.sh`); CI refuses
   to start while it is held. Parallel sessions use their own gclient workdir
   (e.g. `~/chromium-s2c`) and still share this lock.
 - **Memory on the box (measured 2026-11-02):** a native Windows build is
@@ -256,6 +261,10 @@ startup abort instead of a silent fall-back to real values.
   - A verdict is `PASS`, `FAIL` (a baseline group is gone) or `UNMEASURED`
     (it did not measure, including an expired login). See
     `docs/observer/README.md`.
+  - After a re-pin, recalibrate the baseline (`docs/observer/README.md`,
+    "Recalibrating"). A backup made on the old build may expire on its
+    first load with the new one (2026-11-12). The owner then logs in again
+    by hand (README "Expired login").
 - Pre-flight, both cheap and both exist because the omission already happened:
   `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
   must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there
