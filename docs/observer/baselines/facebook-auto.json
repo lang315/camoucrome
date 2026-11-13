@@ -3,11 +3,16 @@
   "required": [
    "audio",
    "canvas",
+   "clipboard",
+   "focus-visibility",
+   "input-events",
    "intl",
    "layout-probe",
+   "listeners-other",
    "navigator",
    "screen",
    "storage",
+   "timing",
    "webgl",
    "webgpu"
   ],
@@ -15,12 +20,18 @@
    {
     "groups": {
      "audio": 9,
-     "canvas": 374,
+     "canvas": 4109,
+     "clipboard": 6,
+     "focus-visibility": 43,
+     "fonts": 1,
+     "input-events": 153,
      "intl": 8,
-     "layout-probe": 101,
-     "navigator": 187,
+     "layout-probe": 100,
+     "listeners-other": 170,
+     "navigator": 188,
      "screen": 18,
-     "storage": 258,
+     "storage": 281,
+     "timing": 14731,
      "webgl": 68,
      "webgpu": 2
     },
@@ -30,18 +41,23 @@
     },
     "requests": {
      "ajax_bz": 6,
-     "total": 38
+     "total": 42
     }
    },
    {
     "groups": {
      "audio": 9,
      "canvas": 374,
+     "clipboard": 6,
+     "focus-visibility": 45,
+     "input-events": 153,
      "intl": 8,
      "layout-probe": 101,
+     "listeners-other": 169,
      "navigator": 187,
      "screen": 18,
-     "storage": 246,
+     "storage": 258,
+     "timing": 5156,
      "webgl": 68,
      "webgpu": 2
     },
@@ -50,61 +66,76 @@
      "DateTimeFormatPrototypeResolvedOptions": 4
     },
     "requests": {
-     "ajax_bz": 5,
-     "total": 37
+     "ajax_bz": 6,
+     "total": 36
     }
    }
   ]
  },
  "3": {
   "required": [
-   "canvas",
+   "clipboard",
+   "focus-visibility",
    "fonts",
+   "input-events",
    "intl",
    "layout-probe",
+   "listeners-other",
    "navigator",
    "screen",
-   "storage"
+   "storage",
+   "timing"
   ],
   "runs": [
    {
     "groups": {
-     "canvas": 2,
+     "audio": 9,
+     "canvas": 381,
+     "clipboard": 43,
+     "focus-visibility": 1503,
      "fonts": 1,
-     "intl": 20,
-     "layout-probe": 3256,
-     "navigator": 1530,
-     "screen": 2,
-     "storage": 1293
+     "input-events": 890,
+     "intl": 34,
+     "layout-probe": 3734,
+     "listeners-other": 1578,
+     "navigator": 1246,
+     "screen": 20,
+     "storage": 2498,
+     "timing": 87881,
+     "webgl": 68,
+     "webgpu": 2
     },
     "intl": {
-     "DateTimeFormatConstructor": 2,
-     "DateTimeFormatPrototypeResolvedOptions": 2,
-     "StringPrototypeLocaleCompareIntl": 16
+     "DateTimeFormatConstructor": 5,
+     "DateTimeFormatPrototypeResolvedOptions": 5,
+     "StringPrototypeLocaleCompareIntl": 24
     },
     "requests": {
-     "ajax_bz": 0,
-     "total": 233
+     "ajax_bz": 9,
+     "total": 459
     }
    },
    {
     "groups": {
-     "canvas": 2,
+     "clipboard": 19,
+     "focus-visibility": 1010,
      "fonts": 1,
-     "intl": 20,
-     "layout-probe": 3226,
-     "navigator": 1464,
+     "input-events": 462,
+     "intl": 2,
+     "layout-probe": 3264,
+     "listeners-other": 997,
+     "navigator": 1602,
      "screen": 2,
-     "storage": 1245
+     "storage": 1471,
+     "timing": 71568
     },
     "intl": {
-     "DateTimeFormatConstructor": 2,
-     "DateTimeFormatPrototypeResolvedOptions": 2,
-     "StringPrototypeLocaleCompareIntl": 16
+     "DateTimeFormatConstructor": 1,
+     "DateTimeFormatPrototypeResolvedOptions": 1
     },
     "requests": {
      "ajax_bz": 0,
-     "total": 229
+     "total": 253
     }
    }
   ]

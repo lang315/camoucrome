@@ -201,21 +201,34 @@ no entry for the arm is a usage error. Against `{}` the judge adds
 `observe_judge.py baseline` refuses an unmeasured input with exit 2 and
 writes no file.
 
-**Baseline status.** Recalibrated on 2026-10-28 from two unattended runs on
-the 156 `out\Observe` at 156.0.8078.48 (the release version), after the
-2026-10-18 calibration on 156.0.8078.36. That build dates from 2026-10-22
-and does not carry the change-set commits made after it (extension block,
-WebRTC proxy policy, WebGL override timing, the GPU thread-cap validator,
-the keyboard keys); none touch the observer or a facebook read surface.
-The required groups are the same as before. Counts moved: arm 3
-`layout-probe` fell from about 4100 and 3600 to about 3200 per load, and
-its `canvas` from 8 to 2. The host file is
-`D:\camou-win\observe\baseline-facebook.json`, and the committed copy
-`docs/observer/baselines/facebook-auto.json` (the host's has CRLF line
-ends). Arm 1 requires audio, canvas, intl, layout-probe, navigator,
-screen, storage, webgl and webgpu. Arm 3 requires canvas, fonts, intl,
-layout-probe, navigator, screen and storage. Arm 3's `fonts` is 1 call
-per run, so a lone `FAIL fonts 0` may be one skipped call, not a change.
+**Baseline status.** Recalibrated on 2026-11-12/13 after the 157 re-pin,
+from two unattended runs on the 157 `out\Observe` at 157.0.8103.51 (built
+2026-11-12 from the release tree, `out\Release` args plus
+`v8_enable_runtime_call_stats = true`): run `20261112-152555` and run
+`20261113-021031`. Run `20261112-154248` is not used: its arm 3 was
+UNMEASURED (`session expired`), and the owner logged in again by hand
+before the second run. Each arm of both runs judges PASS against the new
+baseline. The host file is `D:\camou-win\observe\baseline-facebook.json`,
+and the committed copy `docs/observer/baselines/facebook-auto.json` (the
+host's has CRLF line ends). Arm 1 requires audio, canvas, clipboard,
+focus-visibility, input-events, intl, layout-probe, listeners-other,
+navigator, screen, storage, timing, webgl and webgpu. Arm 3 requires
+clipboard, focus-visibility, fonts, input-events, intl, layout-probe,
+listeners-other, navigator, screen, storage and timing. Against the 156
+baseline (2026-10-28):
+- Added in both arms: clipboard, focus-visibility, input-events,
+  listeners-other and timing. These are report groups that
+  `observe_report.py` gained on 2026-10-28 (commit `d327909`), after the 156
+  calibration, not new facebook reads.
+- Dropped from arm 3: `canvas` (2 calls per load on 156). The two 157 samples
+  disagree (381, then 0), so it is no longer required. The 381 sample (run
+  `20261112-152555`, the old login backup) also carries arm 1's whole
+  fingerprint set (audio 9, webgl 68, webgpu 2), and that login expired
+  within 17 minutes. The second sample, on the fresh login, has the 156
+  shape. Arm 3 `intl` was 34 and 2 calls (20 on 156), and `ajax_bz` 9 and 0.
+
+Arm 3's `fonts` is 1 call per run, so a lone `FAIL fonts 0` may be one
+skipped call, not a change.
 The owner decides whether to run again: tooling never re-runs on its
 own. Recalibrate after a re-pin, and
 whenever facebook's reads change for good. Measurements:
