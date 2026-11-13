@@ -25,6 +25,8 @@ import sys
 
 # Product data: what the fork emulates, not the host (spec 2026-10-18 §1).
 ALLOW_PATHS = {"settings/locale_zones.json", "settings/voices.json", "settings/invariants.json"}
+# vendored CreepJS (scripts/third_party/creepjs/PIN): the full IANA Etc/GMT±N list, not the host; SHA256SUMS + test_verify_course.py lock its bytes
+ALLOW_PATHS.add("scripts/third_party/creepjs/creep.js")
 # Addresses that are not the host's, each with where it comes from.
 ALLOW_IPS = {
     "1.2.3.4": "placeholder address in the SP1a and SP4 plans",
