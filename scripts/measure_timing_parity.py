@@ -76,6 +76,7 @@ WORKLOAD_GROUP = {
     "int": "jit", "float": "jit", "regexp": "jit",
     "json_parse": "cpp", "json_stringify": "cpp", "structured_clone": "cpp", "text_codec": "cpp",
     "dom_append": "cpp", "inner_html": "cpp", "query_selector_all": "cpp", "computed_style": "cpp", "canvas2d": "cpp",
+    "gcs_read": "cpp", "style_set": "cpp", "layout_read": "cpp",   # computed_style split: getComputedStyle alone, style write alone, forced layout alone
     "sort_builtin": "builtin",
 }
 
@@ -158,6 +159,9 @@ function workloads(plant) {
     inner_html: (n) => { const e = document.createElement('div'); for (let i = 0; i < n; i++) e.innerHTML = H; sink = e; },
     query_selector_all: (n) => { for (let i = 0; i < n; i++) sink = tree.querySelectorAll('.k3'); },
     computed_style: (n) => { for (let i = 0; i < n; i++) { target.style.height = (i & 1 ? 11 : 12) + 'px'; sink = getComputedStyle(target).height; sink = target.offsetHeight; } },
+    gcs_read: (n) => { for (let i = 0; i < n; i++) sink = getComputedStyle(target).height; },
+    style_set: (n) => { for (let i = 0; i < n; i++) target.style.height = (i & 1 ? 11 : 12) + 'px'; },
+    layout_read: (n) => { for (let i = 0; i < n; i++) { sink = target.offsetHeight; } },
     canvas2d: (n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } },
     sort_builtin: (n) => { for (let i = 0; i < n; i++) sink = arr.slice().sort((a, b) => a - b); },
   };
