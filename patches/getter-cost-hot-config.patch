@@ -11,7 +11,7 @@ index f488d9ac27..5a911b0665 100644
      "+components/camoucfg/mask_config.h",
      "+components/crash/core/common/crash_key.h",
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
-index 91edfac240..9bf5ec2bcf 100644
+index 91edfac240..eb271c1ac3 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
 +++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
 @@ -8,6 +8,7 @@
@@ -22,7 +22,17 @@ index 91edfac240..9bf5ec2bcf 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "third_party/blink/public/common/features.h"
-@@ -78,32 +79,27 @@ String NavigatorBase::platform() const {
+@@ -15,7 +16,9 @@
+ #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
++#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
++#include "third_party/blink/renderer/platform/wtf/thread_specific.h"
+ 
+ #if BUILDFLAG(IS_ANDROID)
+ #include "base/android/device_info.h"
+@@ -78,32 +81,27 @@ String NavigatorBase::platform() const {
      return NavigatorID::platform();
    }
  #endif
@@ -72,7 +82,7 @@ index 91edfac240..9bf5ec2bcf 100644
    return platform;
  }
  
-@@ -125,9 +121,9 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
+@@ -125,9 +123,9 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
    // browser is presenting, and a CDP emulation override must not be able to
    // contradict it, so it is applied last. When no key is set this is a no-op
    // and the real value plus any emulation override survives unchanged.
@@ -213,10 +223,10 @@ index 9b21f16dd4..4346c21652 100644
    }
    return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
 diff --git a/third_party/blink/renderer/core/frame/navigator_id.cc b/third_party/blink/renderer/core/frame/navigator_id.cc
-index 4d4140dcba..b8e78173eb 100644
+index 4d4140dcba..af7a8e15b8 100644
 --- a/third_party/blink/renderer/core/frame/navigator_id.cc
 +++ b/third_party/blink/renderer/core/frame/navigator_id.cc
-@@ -34,6 +34,7 @@
+@@ -34,10 +34,13 @@
  #include "base/feature_list.h"
  #include "build/build_config.h"
  #include "components/camoucfg/blink_scope.h"
@@ -224,13 +234,13 @@ index 4d4140dcba..b8e78173eb 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "third_party/blink/public/common/features.h"
-@@ -43,10 +44,26 @@
- #include <sys/utsname.h>
- #include "third_party/blink/renderer/platform/wtf/thread_specific.h"
- #include "third_party/blink/renderer/platform/wtf/threading.h"
 +#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 +#include "third_party/blink/renderer/platform/wtf/thread_specific.h"
- #endif
+ 
+ #if !BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_WIN)
+ #include <sys/utsname.h>
+@@ -47,6 +50,20 @@
  
  namespace blink {
  
