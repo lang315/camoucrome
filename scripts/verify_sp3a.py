@@ -151,7 +151,7 @@ CANVAS = json.dumps({"canvas:seed": 987654321})
 # SwiftShader gives a stable, host-independent GL context so WebGL readback is
 # reproducible; --enable-unsafe-swiftshader is required on current Chromium for
 # the fallback to engage at all (SP3 spec Section 6).
-GL_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+GL_FLAGS = lib_shell.SHELL_FLAGS + ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 
 BASELINE = os.path.expanduser(
     "~/camoucrome-verify/baselines/content_shell-sp3a-stock-canvas.json")
@@ -1626,7 +1626,80 @@ flood_row()
 C53 = "53 a WebGL2 PACK_ROW_LENGTH / SKIP readPixels from a page framebuffer agrees with the default"
 gl_row(C53, "layoutfbo", lambda s, u: s["inside"] == 0 and s["outside"] == 0 and s["h"] != u["h"])
 
-EXPECTED = 63
+# N1: noise keeps the relations between channels that stock anti-aliasing
+# keeps. One launch per seed draws all four scenes (the WebGL one needs
+# GL_FLAGS, so every launch has them); the unseeded launch is the "differs"
+# reference. Each scene reports its bad-pixel count and a hash of the read.
+N1_SEEDS = range(1, 21)
+N1_SCENES = "() => {" + HASH_FN + """
+  const out = {};
+  const arc = (bg, fg, bad) => {
+    const c = document.createElement('canvas'); c.width = 200; c.height = 100;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    if (bg) { x.fillStyle = bg; x.fillRect(0, 0, 200, 100); }
+    x.fillStyle = fg; x.beginPath(); x.arc(100, 50, 38.3, 0, Math.PI * 2); x.fill();
+    const d = x.getImageData(0, 0, 200, 100).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (bad(d[i], d[i + 1], d[i + 2], d[i + 3])) n++;
+    return { bad: n, h: H(d) };
+  };
+  out.a = arc(null, 'rgb(0,0,0)', (r, g, b, a) => a > 0 && (r | g | b) !== 0);
+  out.b = arc('rgb(255,255,255)', 'rgb(128,128,128)', (r, g, b) => r !== g || g !== b);
+  out.c = arc('rgb(0,0,255)', 'rgb(255,0,0)', (r, g) => g !== 0);
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+  const gl = c.getContext('webgl', { antialias: true });
+  if (!gl) { out.d = { err: 'no-webgl' }; return out; }
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s);
+    gl.compileShader(o); return o; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+    'attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}'));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+    // A grey ramp (R = G = B) whose pixels all differ from their 4 neighbours,
+    // so the triangle's interior is eligible: a flat fill leaves ~11 eligible
+    // pixels and a quarter of the seeds read as unseeded.
+    'precision highp float;void main(){gl_FragColor=vec4(vec3(' +
+    'mod(floor(gl_FragCoord.x)*3.0+floor(gl_FragCoord.y)*5.0,256.0)/255.0),1);}'));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.8, -0.7, 0.75, -0.55, -0.15, 0.85]),
+    gl.STATIC_DRAW);
+  const lp = gl.getAttribLocation(pr, 'p');
+  gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 0, 0);
+  gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const p = new Uint8Array(128 * 128 * 4);
+  gl.readPixels(0, 0, 128, 128, gl.RGBA, gl.UNSIGNED_BYTE, p);
+  let n = 0;
+  for (let i = 0; i < p.length; i += 4) if (p[i] !== p[i + 1] || p[i + 1] !== p[i + 2]) n++;
+  out.d = { bad: n, h: H(p) };
+  return out;
+}"""
+
+n1_unseeded = session(None, N1_SCENES, extra_flags=GL_FLAGS)
+n1_seeded = {s: session(json.dumps({"canvas:seed": s}), N1_SCENES, extra_flags=GL_FLAGS)
+             for s in N1_SEEDS}
+
+N1_ROWS = (("a", "N1a black arc on transparent keeps RGB 0 (seeds 1-20)"),
+           ("b", "N1b grey arc on white keeps R == G == B (seeds 1-20)"),
+           ("c", "N1c red arc on blue keeps G == 0 (seeds 1-20)"),
+           ("d", "N1d WebGL grey-ramp triangle keeps R == G == B (seeds 1-20)"))
+for key, name in N1_ROWS:
+    uv, ue = n1_unseeded
+    faults = [str(e) for (v, e) in [n1_unseeded, *n1_seeded.values()] if v is None]
+    scenes = [v[key] for (v, e) in [n1_unseeded, *n1_seeded.values()] if v is not None]
+    if faults or any("err" in sc for sc in scenes):
+        results[name] = False
+        notes.append(f"{name[:4]}: session fault or no WebGL: {faults[:1] or scenes[0]}")
+        continue
+    bad = {s: v[key]["bad"] for s, (v, e) in n1_seeded.items()}
+    same = [s for s, (v, e) in n1_seeded.items() if v[key]["h"] == uv[key]["h"]]
+    results[name] = uv[key]["bad"] == 0 and not any(bad.values()) and not same
+    if not results[name]:
+        notes.append(f"{name[:4]}: unseeded bad {uv[key]['bad']}; bad per seed {bad}; "
+                     f"seeds whose read equals unseeded {same}")
+
+EXPECTED = 67
 
 for name, ok in sorted(results.items()):
     print(f"{'PASS' if ok else 'FAIL'}  {name}")

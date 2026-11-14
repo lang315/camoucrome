@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 
@@ -30,16 +31,26 @@ uint32_t Load32(const uint8_t* p) {
 }
 
 struct NoiseKeys {
-  std::array<uint64_t, 3> gate;
-  std::array<uint64_t, 3> delta;
+  uint64_t gate;
+  uint64_t dir;
+  uint64_t step;
 };
 
 const NoiseKeys& Keys() {
-  static const NoiseKeys keys = {
-      {DomainKey("canvas-gate-r"), DomainKey("canvas-gate-g"),
-       DomainKey("canvas-gate-b")},
-      {DomainKey("canvas-r"), DomainKey("canvas-g"), DomainKey("canvas-b")}};
+  static const NoiseKeys keys = {DomainKey("canvas-jitter-gate"),
+                                 DomainKey("canvas-jitter-dir"),
+                                 DomainKey("canvas-jitter-step")};
   return keys;
+}
+
+// A draw in [0, k) for k >= 1, from DeriveDeltaKeyed's integer output (span
+// 2^21 + 1): no float rounding, so every platform draws the same value. The
+// modulo bias is below k / 2^21, and k <= 255.
+uint32_t DrawBelow(uint64_t seed, uint64_t key, uint64_t index, uint32_t k) {
+  constexpr int32_t kBound = 1 << 20;
+  return static_cast<uint32_t>(DeriveDeltaKeyed(seed, key, index, kBound) +
+                               kBound) %
+         k;
 }
 
 // FNV-1a 64 over the 3x3 neighbourhood of interior pixel x: 12 bytes of each
@@ -109,15 +120,45 @@ void NoiseRow(uint8_t* out,
     // The 3x3 source patch, not the position (canvas noise S2b): one patch
     // gets one noise wherever it is.
     const uint64_t index = PatchHash(top, src, bottom, x);
-    uint8_t* o = out + x * 4;
-    for (size_t ch = 0; ch < 3; ++ch) {
-      if (DeriveUnitKeyed(seed, keys.gate[ch], index) >= density) {
-        continue;
-      }
-      const int32_t d = int32_t{px[ch]} +
-                        DeriveDeltaKeyed(seed, keys.delta[ch], index, strength);
-      o[ch] = static_cast<uint8_t>(std::clamp(d, 0, int32_t{alpha}));
+    if (DeriveUnitKeyed(seed, keys.gate, index) >= density) {
+      continue;
     }
+    // The 4 neighbours with enough alpha, left, right, top, bottom, where top
+    // and bottom are the logical rows (never memory order).
+    const uint8_t* cand[4];
+    uint32_t count = 0;
+    for (const uint8_t* n :
+         {px - 4, px + 4, top + x * 4, bottom + x * 4}) {
+      if (n[3] >= min_alpha) {
+        cand[count++] = n;
+      }
+    }
+    if (count == 0) {
+      continue;
+    }
+    const uint8_t* n = cand[DrawBelow(seed, keys.dir, index, count)];
+    int32_t m = 0;
+    for (size_t ch = 0; ch < 4; ++ch) {
+      m = std::max(m, std::abs(int32_t{n[ch]} - int32_t{px[ch]}));
+    }
+    // m >= 1: the eligibility test made n differ from p.
+    const int32_t step = std::min<int32_t>(
+        1 + static_cast<int32_t>(
+                DrawBelow(seed, keys.step, index, static_cast<uint32_t>(strength))),
+        m);
+    uint8_t* o = out + x * 4;
+    // p' = p + RoundHalfAway(step * (n - p) / m), in integers, on all four
+    // premultiplied channels: a convex mix of two colours already present.
+    int32_t moved[4];
+    for (size_t ch = 0; ch < 4; ++ch) {
+      const int32_t diff = int32_t{n[ch]} - int32_t{px[ch]};
+      const int32_t mag = (2 * step * std::abs(diff) + m) / (2 * m);
+      moved[ch] = int32_t{px[ch]} + (diff < 0 ? -mag : mag);
+    }
+    for (size_t ch = 0; ch < 3; ++ch) {
+      o[ch] = static_cast<uint8_t>(std::clamp(moved[ch], 0, moved[3]));
+    }
+    o[3] = static_cast<uint8_t>(moved[3]);
   }
 }
 
@@ -251,7 +292,11 @@ bool PerturbRgbaFramed(uint8_t* data,
 // place the canvas noise keys are read.
 void CanvasNoiseParams(const ConfigScope& scope, double& density,
                        int32_t& strength) {
-  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.04);
+  // Per pixel: one gate per pixel since the coverage jitter. The old default,
+  // 0.04 per channel, noised 1 - 0.96^3 = 11.5% of eligible pixels, and the
+  // calibrated minimum was 0.02 per channel (5.9% per pixel); 0.12 keeps the
+  // same 2x margin over it.
+  density = GetDouble(scope, keys::kCanvasNoiseDensity).value_or(0.12);
   strength = GetInt32(scope, keys::kCanvasNoiseStrength).value_or(1);
 }
 

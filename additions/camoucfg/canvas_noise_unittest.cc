@@ -8,7 +8,9 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
+#include <utility>
 #include <vector>
 
 #include "base/containers/span.h"
@@ -56,22 +58,43 @@ TEST(PerturbRgbaTest, ActuallyChangesSomePixels) {
   EXPECT_NE(a, orig) << "high density left every pixel untouched";
 }
 
+// PerturbRgba is the min_alpha 255 path: a pixel moves only toward an opaque
+// neighbour, both ends have alpha 255, so alpha is never written. (Under
+// min_alpha 1 alpha does move; see PartialAlphaMovesTowardANeighbour.)
 TEST(PerturbRgbaTest, AlphaChannelNeverChanges) {
   auto a = Scene(256), orig = Scene(256);
   PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, 4, /*bottom_up=*/false);
+  EXPECT_NE(a, orig);
   for (size_t i = 3; i < a.size(); i += 4)
     EXPECT_EQ(a[i], orig[i]) << "alpha byte " << i << " was perturbed";
 }
 
+// Every channel moves by at most `strength`, and never by more than the
+// largest |n_c - p_c| over the four neighbours (the step is capped at m).
 TEST(PerturbRgbaTest, DeltaStaysWithinStrength) {
+  constexpr size_t kW = 16;
   auto a = Scene(256), orig = Scene(256);
-  PerturbRgba(a.data(), 16, 16, 16 * 4, 12345, /*density=*/1.0, /*strength=*/3, /*bottom_up=*/false);
-  for (size_t i = 0; i < a.size(); ++i) {
-    if ((i & 3u) == 3u) continue;  // alpha untouched
-    int d = static_cast<int>(a[i]) - static_cast<int>(orig[i]);
-    EXPECT_GE(d, -3);
-    EXPECT_LE(d, 3);
+  PerturbRgba(a.data(), kW, 16, kW * 4, 12345, /*density=*/1.0, /*strength=*/3, /*bottom_up=*/false);
+  bool changed = false;
+  for (size_t y = 1; y + 1 < 16; ++y) {
+    for (size_t x = 1; x + 1 < kW; ++x) {
+      for (size_t k = 0; k < 4; ++k) {
+        int widest = 0;
+        for (auto [nx, ny] : {std::pair{x - 1, y}, std::pair{x + 1, y},
+                              std::pair{x, y - 1}, std::pair{x, y + 1}}) {
+          widest = std::max(
+              widest, std::abs(int{orig[(ny * kW + nx) * 4 + k]} -
+                               int{orig[(y * kW + x) * 4 + k]}));
+        }
+        const int d = std::abs(int{a[(y * kW + x) * 4 + k]} -
+                               int{orig[(y * kW + x) * 4 + k]});
+        EXPECT_LE(d, 3) << x << "," << y << " ch " << k;
+        EXPECT_LE(d, widest) << x << "," << y << " ch " << k;
+        changed |= d != 0;
+      }
+    }
   }
+  EXPECT_TRUE(changed);
 }
 
 TEST(PerturbRgbaTest, PaddedRowsGetTheTightField) {
@@ -226,7 +249,8 @@ Px Get(const std::vector<uint8_t>& v, size_t w, size_t x, size_t y) {
 // PerturbRgbaEdgesInPlace computes, straight from its definition. Every
 // eligibility test reads `source`, an unperturbed copy of `data`, and each
 // pixel is computed on its own: a 3x3 patch hashed top-down (FNV-1a 64), a
-// gate and a delta per RGB channel keyed by the patch, a mask cell of
+// one gate, one neighbour and one step keyed by the patch (the pixel moves
+// toward that neighbour on all four channels), a mask cell of
 // exactly kNoiseMaskAa, alpha at least max(min_alpha, 1), and a pixel unlike
 // each of its four neighbours. A mask window that does not fit, or a mask
 // with `bottom_up`, does nothing.
@@ -249,11 +273,14 @@ void ReferenceEdges(std::vector<uint8_t>& data,
   density = std::min(density, 1.0);
   strength = std::min(strength, 255);
   min_alpha = std::max<uint8_t>(min_alpha, 1);
-  const std::array<uint64_t, 3> gate = {DomainKey("canvas-gate-r"),
-                                        DomainKey("canvas-gate-g"),
-                                        DomainKey("canvas-gate-b")};
-  const std::array<uint64_t, 3> delta = {
-      DomainKey("canvas-r"), DomainKey("canvas-g"), DomainKey("canvas-b")};
+  const uint64_t gate = DomainKey("canvas-jitter-gate");
+  const uint64_t dir = DomainKey("canvas-jitter-dir");
+  const uint64_t step_key = DomainKey("canvas-jitter-step");
+  // A draw in [0, k) from the integer delta, as the pass does.
+  auto below = [&](uint64_t key, uint64_t hash, int64_t k) {
+    const int64_t bound = int64_t{1} << 20;
+    return (int64_t{DeriveDeltaKeyed(seed, key, hash, 1 << 20)} + bound) % k;
+  };
   auto px = [&](size_t x, size_t y, size_t k) {
     return source[y * rb + x * 4 + k];
   };
@@ -291,15 +318,40 @@ void ReferenceEdges(std::vector<uint8_t>& data,
           }
         }
       }
-      for (size_t ch = 0; ch < 3; ++ch) {
-        if (DeriveUnitKeyed(seed, gate[ch], hash) >= density) {
-          continue;
-        }
-        const int32_t d = int32_t{px(x, y, ch)} +
-                          DeriveDeltaKeyed(seed, delta[ch], hash, strength);
-        data[y * rb + x * 4 + ch] =
-            static_cast<uint8_t>(std::clamp(d, 0, int32_t{a}));
+      if (DeriveUnitKeyed(seed, gate, hash) >= density) {
+        continue;
       }
+      // Left, right, logical top, logical bottom; those with alpha enough.
+      std::vector<std::pair<size_t, size_t>> cand;
+      for (auto [nx, ny] : {std::pair{x - 1, y}, std::pair{x + 1, y},
+                            std::pair{x, bottom_up ? y + 1 : y - 1},
+                            std::pair{x, bottom_up ? y - 1 : y + 1}}) {
+        if (px(nx, ny, 3) >= min_alpha) {
+          cand.push_back({nx, ny});
+        }
+      }
+      if (cand.empty()) {
+        continue;
+      }
+      const auto [nx, ny] = cand[below(dir, hash, cand.size())];
+      int64_t m = 0;
+      for (size_t k = 0; k < 4; ++k) {
+        m = std::max<int64_t>(m, std::abs(int64_t{px(nx, ny, k)} - px(x, y, k)));
+      }
+      const int64_t step =
+          std::min<int64_t>(1 + below(step_key, hash, strength), m);
+      std::array<int64_t, 4> moved;
+      for (size_t k = 0; k < 4; ++k) {
+        const int64_t diff = int64_t{px(nx, ny, k)} - px(x, y, k);
+        // Round half away from zero, on the magnitude.
+        const int64_t mag = (2 * step * std::abs(diff) + m) / (2 * m);
+        moved[k] = px(x, y, k) + (diff < 0 ? -mag : mag);
+      }
+      for (size_t k = 0; k < 3; ++k) {
+        data[y * rb + x * 4 + k] =
+            static_cast<uint8_t>(std::clamp<int64_t>(moved[k], 0, moved[3]));
+      }
+      data[y * rb + x * 4 + 3] = static_cast<uint8_t>(moved[3]);
     }
   }
 }
@@ -381,8 +433,10 @@ TEST(PerturbRgbaEdgesTest, BorderPixelsAreUntouched) {
   EXPECT_NE(v, orig) << "the checkerboard's interior did not move";
 }
 
-// Alpha 0 never changes; a partial-alpha pixel moves but stays a valid
-// premultiplied value, which Skia unpremultiplies onto stock's grid.
+// Alpha 0 never changes (a transparent pixel is not eligible, so the shape's
+// bounding box does not grow); a partial-alpha pixel moves, alpha included,
+// toward a non-transparent neighbour, and stays a valid premultiplied value,
+// which Skia unpremultiplies onto stock's grid.
 TEST(PerturbRgbaEdgesTest, PartialAlphaStaysPremultiplied) {
   auto v = PartialAlphaScene(16, 16);
   const auto orig = v;
@@ -391,11 +445,11 @@ TEST(PerturbRgbaEdgesTest, PartialAlphaStaysPremultiplied) {
   for (size_t y = 0; y < 16; ++y) {
     for (size_t x = 0; x < 16; ++x) {
       const Px got = Get(v, 16, x, y), was = Get(orig, 16, x, y);
-      EXPECT_EQ(got[3], was[3]);
       if (was[3] == 0) {
         EXPECT_EQ(got, was);
         continue;
       }
+      EXPECT_GE(got[3], 1) << x << "," << y;
       for (size_t ch = 0; ch < 3; ++ch)
         EXPECT_LE(got[ch], got[3]) << x << "," << y << " ch " << ch;
       partial_moved |= was[3] < 255 && got != was;
@@ -600,9 +654,169 @@ uint64_t Fnv(const std::vector<uint8_t>& v) {
   return h;
 }
 
-// Pins the S2b field byte for byte: the S2c loop rewrite must not move it.
-// The value was captured from the S2b implementation (8cf90b48). Both the
-// production pass and the reference must give it.
+// Coverage jitter: a checkerboard of two colours, so every interior pixel is
+// eligible and its four neighbours are all the other colour. Every result is
+// a mix of the two colours already present.
+std::vector<uint8_t> Checker(size_t w, size_t h, Px a, Px b) {
+  std::vector<uint8_t> v(w * h * 4);
+  for (size_t y = 0; y < h; ++y)
+    for (size_t x = 0; x < w; ++x)
+      Set(v, w, x, y, (x + y) % 2 ? a : b);
+  return v;
+}
+
+// Grey ramp on white: R == G == B on every pixel before, so after.
+TEST(PerturbRgbaEdgesTest, EqualChannelsStayEqual) {
+  constexpr size_t kW = 24, kH = 24;
+  std::vector<uint8_t> v = Fill(kW, kH, {255, 255, 255, 255});
+  for (size_t y = 4; y < 20; ++y)
+    for (size_t x = 4; x < 20; ++x) {
+      const uint8_t g = static_cast<uint8_t>((x * 29 + y * 53) % 250);
+      Set(v, kW, x, y, {g, g, g, 255});
+    }
+  const auto orig = v;
+  bool changed = false;
+  for (uint64_t seed = 1; seed <= 20; ++seed) {
+    auto w = orig;
+    Edges(w, kW, kH, seed, 1.0, 4);
+    changed |= w != orig;
+    for (size_t i = 0; i < w.size(); i += 4) {
+      EXPECT_EQ(w[i], w[i + 1]) << "seed " << seed << " px " << i / 4;
+      EXPECT_EQ(w[i + 1], w[i + 2]) << "seed " << seed << " px " << i / 4;
+    }
+  }
+  EXPECT_TRUE(changed);
+}
+
+// A channel that is 0 in a pixel and in all its neighbours stays 0: red on
+// blue keeps G, black on transparent keeps RGB.
+TEST(PerturbRgbaEdgesTest, ZeroChannelsStayZero) {
+  constexpr size_t kW = 16, kH = 16;
+  const auto red_blue = Checker(kW, kH, {255, 0, 0, 255}, {0, 0, 255, 255});
+  std::vector<uint8_t> black(kW * kH * 4);  // black, alpha varying, some 0
+  for (size_t y = 0; y < kH; ++y)
+    for (size_t x = 0; x < kW; ++x)
+      Set(black, kW, x, y,
+          {0, 0, 0, static_cast<uint8_t>((x * 37 + y * 11) % 5 == 0
+                                             ? 0
+                                             : 1 + (x * 61 + y * 23) % 255)});
+  bool red_changed = false, black_changed = false;
+  for (uint64_t seed = 1; seed <= 20; ++seed) {
+    auto a = red_blue, b = black;
+    Edges(a, kW, kH, seed, 1.0, 4);
+    Edges(b, kW, kH, seed, 1.0, 4);
+    red_changed |= a != red_blue;
+    black_changed |= b != black;
+    for (size_t i = 0; i < a.size(); i += 4)
+      EXPECT_EQ(a[i + 1], 0) << "seed " << seed << " px " << i / 4;
+    for (size_t i = 0; i < b.size(); i += 4) {
+      EXPECT_EQ(b[i], 0);
+      EXPECT_EQ(b[i + 1], 0);
+      EXPECT_EQ(b[i + 2], 0);
+    }
+  }
+  EXPECT_TRUE(red_changed);
+  EXPECT_TRUE(black_changed) << "alpha should move";
+}
+
+// Under min_alpha 255 alpha is never written, on a buffer that has partial
+// alpha around opaque pixels.
+TEST(PerturbRgbaEdgesTest, AlphaNeverWrittenUnderMinAlpha255) {
+  constexpr size_t kW = 48, kH = 40;
+  const std::vector<uint8_t> src = MixedScene(kW, kH, 5);
+  for (uint64_t seed = 1; seed <= 10; ++seed) {
+    auto v = src;
+    Edges(v, kW, kH, seed, 1.0, 4, /*min_alpha=*/255);
+    EXPECT_NE(v, src);
+    for (size_t i = 3; i < v.size(); i += 4)
+      EXPECT_EQ(v[i], src[i]);
+  }
+}
+
+// Under min_alpha 1 alpha does move, toward a non-transparent neighbour.
+TEST(PerturbRgbaEdgesTest, PartialAlphaMovesTowardANeighbour) {
+  auto v = Checker(8, 8, {10, 10, 10, 100}, {60, 60, 60, 200});
+  const auto orig = v;
+  bool alpha_moved = false;
+  for (uint64_t seed = 1; seed <= 20; ++seed) {
+    v = orig;
+    Edges(v, 8, 8, seed, 1.0, 4);
+    for (size_t i = 3; i < v.size(); i += 4) {
+      EXPECT_GE(v[i], 100);
+      EXPECT_LE(v[i], 200);
+      alpha_moved |= v[i] != orig[i];
+    }
+  }
+  EXPECT_TRUE(alpha_moved);
+}
+
+// A transparent pixel is never pulled toward an opaque neighbour (the
+// shape's bounding box would grow), and never changes.
+TEST(PerturbRgbaEdgesTest, TransparentPixelNextToOpaqueNeverChanges) {
+  auto v = Fill(5, 5, {255, 255, 255, 255});
+  Set(v, 5, 2, 2, {0, 0, 0, 0});
+  const auto orig = v;
+  for (uint64_t seed = 1; seed <= 50; ++seed) {
+    auto w = orig;
+    Edges(w, 5, 5, seed, 1.0, 4);
+    EXPECT_EQ(Get(w, 5, 2, 2), (Px{0, 0, 0, 0})) << "seed " << seed;
+    EXPECT_EQ(w, orig);
+  }
+}
+
+// The step is at most `strength` on every channel of every pixel, at every
+// strength, and the output stays premultiplied.
+TEST(PerturbRgbaEdgesTest, StepBoundedAndPremultiplied) {
+  constexpr size_t kW = 48, kH = 40;
+  const std::vector<uint8_t> src = MixedScene(kW, kH, 11);
+  for (int32_t strength : {1, 2, 5, 40, 255}) {
+    auto v = src;
+    Edges(v, kW, kH, 3, 1.0, strength);
+    bool changed = false;
+    for (size_t i = 0; i < v.size(); ++i) {
+      EXPECT_LE(std::abs(int{v[i]} - int{src[i]}), strength);
+      changed |= v[i] != src[i];
+      if ((i & 3u) != 3u)
+        EXPECT_LE(v[i], v[i | 3u]) << "RGB exceeds alpha at " << i;
+    }
+    EXPECT_TRUE(changed) << "strength " << strength;
+  }
+}
+
+// Brute force over premultiplied grey pairs (p, n), p != n, each channel at
+// most its alpha, for many seeds and strengths 1..6 (so every step size is
+// drawn): the lone pixel is surrounded by n on all four sides, so n is the
+// candidate. The result keeps R == G == B and stays <= alpha.
+TEST(PerturbRgbaEdgesTest, GreyPairsStayGreyAndPremultiplied) {
+  uint32_t s = 12345;
+  auto rnd = [&s](uint32_t k) {
+    s = s * 1103515245u + 12345u;
+    return (s >> 8) % k;
+  };
+  size_t moved = 0;
+  for (int i = 0; i < 4000; ++i) {
+    const uint8_t pa = static_cast<uint8_t>(1 + rnd(255));
+    const uint8_t na = static_cast<uint8_t>(1 + rnd(255));
+    const uint8_t pg = static_cast<uint8_t>(rnd(pa + 1));
+    const uint8_t ng = static_cast<uint8_t>(rnd(na + 1));
+    const Px p{pg, pg, pg, pa}, n{ng, ng, ng, na};
+    if (p == n) continue;
+    auto v = Fill(3, 3, n);
+    Set(v, 3, 1, 1, p);
+    const int32_t strength = 1 + static_cast<int32_t>(rnd(6));
+    Edges(v, 3, 3, 1 + rnd(1000), 1.0, strength);
+    const Px got = Get(v, 3, 1, 1);
+    EXPECT_EQ(got[0], got[1]) << i;
+    EXPECT_EQ(got[1], got[2]) << i;
+    EXPECT_LE(got[0], got[3]) << i;
+    EXPECT_GE(got[3], std::min(pa, na)) << i;
+    EXPECT_LE(got[3], std::max(pa, na)) << i;
+    moved += got != p;
+  }
+  EXPECT_GT(moved, 3000u);
+}
+
+// Pins the field byte for byte: a refactor of the loop must not move it.
 TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
   constexpr size_t kW = 48, kH = 40;
   const std::vector<uint8_t> src = MixedScene(kW, kH, 2026);
@@ -620,15 +834,17 @@ TEST(PerturbRgbaEdgesTest, GoldenFieldUnchanged) {
                                       /*bottom_up=*/true));
   EXPECT_NE(top, src);
   EXPECT_NE(bottom, src);
-  EXPECT_EQ(Fnv(top), 0x9AC9002D1AA8339BULL);
-  EXPECT_EQ(Fnv(bottom), 0x5CAC490D0AEE43C6ULL);
   std::vector<uint8_t> ref_top = src, ref_bottom = src;
   ReferenceEdges(ref_top, src, kW, kH, kW * 4, 987654321, 0.5, 3, 1, mask,
                  /*bottom_up=*/false);
   ReferenceEdges(ref_bottom, src, kW, kH, kW * 4, 987654321, 0.5, 3, 1,
                  NoiseMask(), /*bottom_up=*/true);
-  EXPECT_EQ(Fnv(ref_top), 0x9AC9002D1AA8339BULL);
-  EXPECT_EQ(Fnv(ref_bottom), 0x5CAC490D0AEE43C6ULL);
+  EXPECT_EQ(top, ref_top);
+  EXPECT_EQ(bottom, ref_bottom);
+  EXPECT_EQ(Fnv(top), 0x5423C3282B1E2CA9ULL);
+  EXPECT_EQ(Fnv(bottom), 0x80205CE4AEBFD70DULL);
+  EXPECT_EQ(Fnv(ref_top), 0x5423C3282B1E2CA9ULL);
+  EXPECT_EQ(Fnv(ref_bottom), 0x80205CE4AEBFD70DULL);
 }
 
 // The in-place pass (two-row ring) equals the reference on every shape:

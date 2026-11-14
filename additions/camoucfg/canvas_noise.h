@@ -43,14 +43,16 @@ struct NoiseMask {
 //   - its alpha is at least max(min_alpha, 1),
 //   - it differs, in any of its four bytes, from each of its four neighbours.
 // A solid region, a hard edge and a 1px line give every pixel a same-coloured
-// neighbour, so they read as stock (S1). Each RGB channel is gated by
-// `density` and moved by up to +-`strength`, clamped to [0, alpha]: for
-// premultiplied data every result is a value stock can store at that alpha.
-// `density` is the fraction of eligible pixels' RGB channels perturbed; the
-// default is calibrated in measurements/2026-10-canvas-noise.md.
+// neighbour, so they read as stock (S1). Each eligible pixel is gated by `density`
+// (the default is calibrated in measurements/2026-10-canvas-noise.md), then moved toward one
+// of its 4-neighbours whose alpha is at least max(min_alpha, 1): by a step of
+// 1..`strength` along the largest channel difference, scaled onto all four
+// premultiplied channels at once (coverage jitter). The result is a mix of two
+// colours already present, so equal channels stay equal, a channel that is 0
+// in both stays 0, and RGB stays <= alpha.
 // Data that is not premultiplied passes min_alpha 255.
 // Pure: the noise of a pixel is a function of (seed, its 3x3 neighbourhood in
-// `source`, channel) -- no position and no whole-image state (canvas noise
+// `source`) -- no position and no whole-image state (canvas noise
 // S2b), so one patch gets one noise wherever it is and whatever else the
 // image holds. The patch is hashed in top-down row order; `bottom_up` says the
 // buffer's rows run bottom-up (WebGL readPixels), so one image gets one field
