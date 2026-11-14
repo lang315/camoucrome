@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include "components/camoucfg/derive.h"
 #include "components/camoucfg/mask_config.h"
 
 namespace base {
@@ -56,6 +57,13 @@ struct HotConfig {
   std::optional<uint32_t> screen_avail_top;
   std::optional<uint32_t> screen_avail_width;
   std::optional<uint32_t> screen_avail_height;
+  // ClaimedOs(scope), once: media_values.cc answers pointer/hover media
+  // queries from it on every evaluation.
+  OsFamily claimed_os = OsFamily::kUnknown;
+  std::optional<uint32_t> navigator_max_touch_points;
+  std::optional<double> audio_base_latency;
+  std::optional<double> audio_output_latency;
+  std::optional<uint32_t> audio_max_channel_count;
 };
 
 // The process's HotConfig, built on first use (the same instant ParsedConfig()
@@ -64,8 +72,10 @@ const HotConfig& Hot(const ConfigScope& scope);
 
 namespace internal {
 // `derived_platform` is CanonicalNavigatorPlatformFor(ClaimedOs): empty when
-// nothing is claimed.
-HotConfig HotFrom(const base::DictValue& cfg, std::string_view derived_platform);
+// nothing is claimed. `claimed_os` is that ClaimedOs.
+HotConfig HotFrom(const base::DictValue& cfg,
+                  std::string_view derived_platform,
+                  OsFamily claimed_os = OsFamily::kUnknown);
 }  // namespace internal
 
 }  // namespace camoucfg

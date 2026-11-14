@@ -15,8 +15,11 @@ namespace camoucfg {
 
 namespace internal {
 
-HotConfig HotFrom(const base::DictValue& cfg, std::string_view derived_platform) {
+HotConfig HotFrom(const base::DictValue& cfg,
+                  std::string_view derived_platform,
+                  OsFamily claimed_os) {
   HotConfig hot;
+  hot.claimed_os = claimed_os;
   hot.platform_configured = GetStringFrom(cfg, keys::kNavigatorPlatform);
   hot.platform = hot.platform_configured;
   if (!hot.platform && !derived_platform.empty()) {
@@ -50,6 +53,11 @@ HotConfig HotFrom(const base::DictValue& cfg, std::string_view derived_platform)
   hot.screen_avail_top = GetUint32From(cfg, keys::kScreenAvailTop);
   hot.screen_avail_width = GetUint32From(cfg, keys::kScreenAvailWidth);
   hot.screen_avail_height = GetUint32From(cfg, keys::kScreenAvailHeight);
+  hot.navigator_max_touch_points =
+      GetUint32From(cfg, keys::kNavigatorMaxTouchPoints);
+  hot.audio_base_latency = GetDoubleFrom(cfg, keys::kAudioBaseLatency);
+  hot.audio_output_latency = GetDoubleFrom(cfg, keys::kAudioOutputLatency);
+  hot.audio_max_channel_count = GetUint32From(cfg, keys::kAudioMaxChannelCount);
   return hot;
 }
 
@@ -57,8 +65,11 @@ HotConfig HotFrom(const base::DictValue& cfg, std::string_view derived_platform)
 
 const HotConfig& Hot(const ConfigScope& scope) {
   // A function-local static: thread-safe initialisation, immutable after.
-  static const base::NoDestructor<HotConfig> hot(internal::HotFrom(
-      internal::ParsedConfig(), CanonicalNavigatorPlatformFor(ClaimedOs(scope))));
+  static const base::NoDestructor<HotConfig> hot([&scope] {
+    const OsFamily os = ClaimedOs(scope);
+    return internal::HotFrom(internal::ParsedConfig(),
+                             CanonicalNavigatorPlatformFor(os), os);
+  }());
   return *hot;
 }
 

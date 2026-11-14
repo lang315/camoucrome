@@ -10,6 +10,40 @@ index f488d9ac27..5a911b0665 100644
      "+components/camoucfg/keys.h",
      "+components/camoucfg/mask_config.h",
      "+components/crash/core/common/crash_key.h",
+diff --git a/third_party/blink/renderer/core/css/media_values.cc b/third_party/blink/renderer/core/css/media_values.cc
+index d4fb54d55b..716a4b311a 100644
+--- a/third_party/blink/renderer/core/css/media_values.cc
++++ b/third_party/blink/renderer/core/css/media_values.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "components/camoucfg/blink_scope.h"
+ #include "components/camoucfg/derive.h"
++#include "components/camoucfg/hot_config.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/css/scripting.h"
+@@ -383,8 +384,9 @@ struct ClaimedPointerHoverTypes {
+ };
+ 
+ std::optional<ClaimedPointerHoverTypes> ClaimedPointerHover(LocalFrame* frame) {
+-  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(frame->DomWindow());
+-  const camoucfg::OsFamily os = camoucfg::ClaimedOs(scope);
++  const camoucfg::HotConfig& hot =
++      camoucfg::Hot(camoucfg::ScopeFor(frame->DomWindow()));
++  const camoucfg::OsFamily os = hot.claimed_os;
+   if (os == camoucfg::OsFamily::kUnknown) {
+     return std::nullopt;
+   }
+@@ -397,8 +399,7 @@ std::optional<ClaimedPointerHoverTypes> ClaimedPointerHover(LocalFrame* frame) {
+         HoverType::kHoverNone};
+   }
+   int pointer_types = static_cast<int>(PointerType::kPointerFineType);
+-  if (camoucfg::GetUint32(scope, camoucfg::keys::kNavigatorMaxTouchPoints)
+-          .value_or(0) > 0) {
++  if (hot.navigator_max_touch_points.value_or(0) > 0) {
+     pointer_types |= static_cast<int>(PointerType::kPointerCoarseType);
+   }
+   return ClaimedPointerHoverTypes{
 diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
 index 91edfac240..eb271c1ac3 100644
 --- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
@@ -414,3 +448,68 @@ index 291a3f250e..1edc2fe4c8 100644
    }
    if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk())
      return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_context.cc b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+index 1e52cbd648..5607dac017 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_context.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+@@ -15,8 +15,7 @@
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+ #include "components/camoucfg/blink_scope.h"
+-#include "components/camoucfg/keys.h"
+-#include "components/camoucfg/mask_config.h"
++#include "components/camoucfg/hot_config.h"
+ #include "media/audio/audio_device_description.h"
+ #include "media/base/output_device_info.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+@@ -1310,9 +1309,8 @@ double AudioContext::baseLatency() const {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+   DCHECK(destinationNode());
+ 
+-  if (std::optional<double> v = camoucfg::GetDouble(
+-          camoucfg::ScopeFor(GetExecutionContext()),
+-          camoucfg::keys::kAudioBaseLatency)) {
++  if (const std::optional<double>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext())).audio_base_latency) {
+     return *v;
+   }
+   return base_latency_;
+@@ -1325,9 +1323,8 @@ double AudioContext::outputLatency() const {
+   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
+ 
+   double factor = GetOutputLatencyQuantizingFactor();
+-  if (std::optional<double> v = camoucfg::GetDouble(
+-          camoucfg::ScopeFor(GetExecutionContext()),
+-          camoucfg::keys::kAudioOutputLatency)) {
++  if (const std::optional<double>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext())).audio_output_latency) {
+     return *v;
+   }
+   return std::round(output_position_.hardware_output_latency / factor) * factor;
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc b/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc
+index 7e6b5afd9e..dbb7cf9252 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_destination_node.cc
+@@ -26,8 +26,7 @@
+ #include "third_party/blink/renderer/modules/webaudio/audio_destination_node.h"
+ 
+ #include "components/camoucfg/blink_scope.h"
+-#include "components/camoucfg/keys.h"
+-#include "components/camoucfg/mask_config.h"
++#include "components/camoucfg/hot_config.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_destination_handler.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
+ 
+@@ -42,9 +41,9 @@ AudioDestinationHandler& AudioDestinationNode::GetAudioDestinationHandler()
+ }
+ 
+ uint32_t AudioDestinationNode::maxChannelCount() const {
+-  if (std::optional<uint32_t> v = camoucfg::GetUint32(
+-          camoucfg::ScopeFor(GetExecutionContext()),
+-          camoucfg::keys::kAudioMaxChannelCount)) {
++  if (const std::optional<uint32_t>& v =
++          camoucfg::Hot(camoucfg::ScopeFor(GetExecutionContext()))
++              .audio_max_channel_count) {
+     return *v;
+   }
+   return GetAudioDestinationHandler().MaxChannelCount();

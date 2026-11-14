@@ -132,6 +132,34 @@ TEST(CamoucfgHotConfigTest, OutOfDomainDeviceMemoryIsAbsent) {
   EXPECT_EQ(mem(R"({"navigator.deviceMemory": 32})"), 32.0);
 }
 
+// The pointer/hover and AudioContext fields: present when configured, absent
+// otherwise or when wrong-typed; claimed_os is what Hot() passes in.
+TEST(CamoucfgHotConfigTest, PointerAndAudioFields) {
+  HotConfig hot = internal::HotFrom(
+      Parse(R"({"navigator.maxTouchPoints": 5, "AudioContext:baseLatency": 0.01,
+                "AudioContext:outputLatency": 0.02,
+                "AudioContext:maxChannelCount": 6})"),
+      "Win32", OsFamily::kWindows);
+  EXPECT_EQ(hot.claimed_os, OsFamily::kWindows);
+  EXPECT_EQ(hot.navigator_max_touch_points, 5u);
+  EXPECT_EQ(hot.audio_base_latency, 0.01);
+  EXPECT_EQ(hot.audio_output_latency, 0.02);
+  EXPECT_EQ(hot.audio_max_channel_count, 6u);
+
+  HotConfig none = internal::HotFrom(Parse("{}"), "");
+  EXPECT_EQ(none.claimed_os, OsFamily::kUnknown);
+  EXPECT_FALSE(none.navigator_max_touch_points.has_value());
+  EXPECT_FALSE(none.audio_base_latency.has_value());
+  EXPECT_FALSE(none.audio_output_latency.has_value());
+  EXPECT_FALSE(none.audio_max_channel_count.has_value());
+
+  HotConfig wrong = internal::HotFrom(
+      Parse(R"({"navigator.maxTouchPoints": "five",
+                "AudioContext:baseLatency": "low"})"), "");
+  EXPECT_FALSE(wrong.navigator_max_touch_points.has_value());
+  EXPECT_FALSE(wrong.audio_base_latency.has_value());
+}
+
 // Built once: a second read returns the same object, no second parse.
 TEST(CamoucfgHotConfigTest, TheProcessInstanceIsBuiltOnce) {
   EXPECT_EQ(&Hot(GlobalScope()), &Hot(GlobalScope()));
