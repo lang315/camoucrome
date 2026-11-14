@@ -151,7 +151,7 @@ CANVAS = json.dumps({"canvas:seed": 987654321})
 # SwiftShader gives a stable, host-independent GL context so WebGL readback is
 # reproducible; --enable-unsafe-swiftshader is required on current Chromium for
 # the fallback to engage at all (SP3 spec Section 6).
-GL_FLAGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+GL_FLAGS = lib_shell.SHELL_FLAGS + ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
 
 BASELINE = os.path.expanduser(
     "~/camoucrome-verify/baselines/content_shell-sp3a-stock-canvas.json")
