@@ -146,35 +146,6 @@ index 6541cf4ee3..e9009d0629 100644
    if (!DomWindow())
      return NavigatorBase::platform();
    const String& platform_override =
-diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-index 05fa33e456..9b21f16dd4 100644
---- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-+++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
-@@ -4,6 +4,9 @@
- 
- #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
- 
-+#include "components/camoucfg/blink_scope.h"
-+#include "components/camoucfg/keys.h"
-+#include "components/camoucfg/mask_config.h"
- #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
- #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
- #include "third_party/blink/renderer/core/dom/document.h"
-@@ -12,6 +15,14 @@
- namespace blink {
- 
- float NavigatorDeviceMemory::deviceMemory() const {
-+  // Context-less mixin (shared by Navigator and WorkerNavigator): resolve the
-+  // process-global scope directly, as NavigatorID does. No-op when absent.
-+  // ScopeFor ignores its argument today (returns GlobalScope()); if it ever
-+  // becomes context-sensitive this context-less mixin hook must be revisited.
-+  if (std::optional<double> configured = camoucfg::GetDouble(
-+          camoucfg::ScopeFor(nullptr), camoucfg::keys::kNavigatorDeviceMemory)) {
-+    return static_cast<float>(*configured);
-+  }
-   return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
- }
- 
 diff --git a/third_party/blink/renderer/core/frame/navigator_id.cc b/third_party/blink/renderer/core/frame/navigator_id.cc
 index 26681d0fbc..4d4140dcba 100644
 --- a/third_party/blink/renderer/core/frame/navigator_id.cc

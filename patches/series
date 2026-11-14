@@ -52,3 +52,4 @@ startup-best-effort-delay-on.patch
 finch-stable-defaults.patch
 href-translate-without-key.patch
 getter-cost-hot-config.patch
+device-memory-client-hint.patch

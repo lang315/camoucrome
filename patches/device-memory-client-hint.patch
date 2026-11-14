@@ -1,0 +1,73 @@
+diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
+index cea2f37dd0..1e525b3c41 100644
+--- a/third_party/blink/common/BUILD.gn
++++ b/third_party/blink/common/BUILD.gn
+@@ -308,6 +308,7 @@ source_set("common") {
+     "//base",
+     "//build:android_buildflags",
+     "//build:chromecast_buildflags",
++    "//components/camoucfg",
+     "//media/capture:capture_base",
+     "//media/capture/mojom:video_capture_mojom_support",
+     "//mojo/public/cpp/system",
+diff --git a/third_party/blink/common/DEPS b/third_party/blink/common/DEPS
+index 0f2f0b8ad3..dbcf60234c 100644
+--- a/third_party/blink/common/DEPS
++++ b/third_party/blink/common/DEPS
+@@ -75,5 +75,9 @@ specific_include_rules = {
+   ],
+   'features.cc': [
+     "+net/http/http_cache.h"
+-  ]
++  ],
++  'approximated_device_memory.cc': [
++    "+components/camoucfg/hot_config.h",
++    "+components/camoucfg/mask_config.h",
++  ],
+ }
+diff --git a/third_party/blink/common/device_memory/approximated_device_memory.cc b/third_party/blink/common/device_memory/approximated_device_memory.cc
+index 7fd53ebba0..efa47be2d5 100644
+--- a/third_party/blink/common/device_memory/approximated_device_memory.cc
++++ b/third_party/blink/common/device_memory/approximated_device_memory.cc
+@@ -8,6 +8,8 @@
+ #include "base/check_op.h"
+ #include "base/feature_list.h"
+ #include "base/system/sys_info.h"
++#include "components/camoucfg/hot_config.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/public/common/features.h"
+ 
+ namespace blink {
+@@ -27,6 +29,17 @@ void ApproximatedDeviceMemory::Initialize() {
+ 
+ // static
+ float ApproximatedDeviceMemory::GetApproximatedDeviceMemory() {
++  // Camoucrome: the configured navigator.deviceMemory, so the Device-Memory
++  // client hints (browser: navigations; renderer: subresources) and
++  // navigator.deviceMemory, which reads this too, report one value. Hot()
++  // already dropped a value stock never reports (not a power of two in
++  // [2, 32]); then, and with no config, the real value as stock.
++  // GlobalScope(): there is no ExecutionContext here, and ScopeFor() returns
++  // it anyway.
++  if (const std::optional<double>& configured =
++          camoucfg::Hot(camoucfg::GlobalScope()).navigator_device_memory) {
++    return static_cast<float>(*configured);
++  }
+   return approximated_device_memory_gb_;
+ }
+ 
+diff --git a/third_party/blink/renderer/core/frame/navigator_id.cc b/third_party/blink/renderer/core/frame/navigator_id.cc
+index af7a8e15b8..c12541c85f 100644
+--- a/third_party/blink/renderer/core/frame/navigator_id.cc
++++ b/third_party/blink/renderer/core/frame/navigator_id.cc
+@@ -70,8 +70,8 @@ String NavigatorID::appCodeName() {
+   // ignores its argument today (every context maps to the one process-global
+   // configuration, returning GlobalScope()), so nullptr resolves the same scope
+   // every clean site does. If ScopeFor ever becomes context-sensitive, these
+-  // context-less mixin hooks (here and navigator_device_memory.cc) must be
+-  // revisited.
++  // context-less mixin hooks (here, and GlobalScope() in blink/common's
++  // approximated_device_memory.cc for deviceMemory) must be revisited.
+   // appCodeName/appName/product are expert-override-only near-constants: the
+   // key defaults absent, so real Chrome's fixed strings are returned unchanged.
+   CAMOU_CACHED_LEAF(navigator_app_code_name);
