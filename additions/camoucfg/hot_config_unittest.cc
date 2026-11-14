@@ -127,6 +127,7 @@ TEST(CamoucfgHotConfigTest, OutOfDomainDeviceMemoryIsAbsent) {
   };
   EXPECT_FALSE(mem(R"({"navigator.deviceMemory": 64})").has_value());
   EXPECT_FALSE(mem(R"({"navigator.deviceMemory": 1})").has_value());
+  EXPECT_FALSE(mem(R"({"navigator.deviceMemory": 12})").has_value());
   EXPECT_EQ(mem(R"({"navigator.deviceMemory": 8})"), 8.0);
   EXPECT_EQ(mem(R"({"navigator.deviceMemory": 32})"), 32.0);
 }

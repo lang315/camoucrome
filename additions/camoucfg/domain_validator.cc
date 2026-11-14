@@ -5,6 +5,7 @@
 #include "components/camoucfg/domain_validator.h"
 
 #include <array>
+#include <cmath>
 #include <limits>
 
 #include "base/strings/string_number_conversions.h"
@@ -22,6 +23,8 @@ struct DomainEntry {
   double min;
   double max;
   std::string_view reason;
+  // In range is not enough: the value must also be a power of two.
+  bool power_of_two = false;
 };
 
 // Numeric domains that a downstream Chromium consumer ALREADY rejects. An entry
@@ -43,10 +46,9 @@ constexpr auto kDomains = std::to_array<DomainEntry>({
      "accuracy must be >= 0"},
     // Chrome 156 desktop clamps the API to a power of two in [2, 32]
     // (approximated_device_memory.cc; Android is [1, 8], never claimed).
-    // The range catches values outside it; the power-of-two shape is not
-    // enforced here (a range entry cannot say it).
+    // Range and shape are both enforced: stock reports only 2, 4, 8, 16, 32.
     {keys::kNavigatorDeviceMemory, 2.0, 32.0,
-     "deviceMemory must be in [2, 32]"},
+     "deviceMemory must be a power of two in [2, 32]", true},
 });
 
 }  // namespace
@@ -58,7 +60,10 @@ std::optional<DomainViolation> CheckDomain(std::string_view key, double value) {
     }
     // A NaN value fails both comparisons and is reported -- which is correct, a
     // NaN coordinate is not in any range.
-    if (value >= entry.min && value <= entry.max) {
+    // frexp gives exactly 0.5 for every power of two; false for NaN and 0.
+    int exponent;
+    if (value >= entry.min && value <= entry.max &&
+        (!entry.power_of_two || std::frexp(value, &exponent) == 0.5)) {
       return std::nullopt;
     }
     DomainViolation violation;
