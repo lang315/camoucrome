@@ -676,7 +676,10 @@ bool ValidateAtStartup(const ConfigScope& scope) {
 
   for (const DomainViolation& v : domain_violations) {
     // Same report-don't-repair posture: the value is wrong and untouched, so
-    // the surface it feeds will not be spoofed. Said loudly because the
+    // the surface it feeds will not be spoofed. True for every entry of
+    // kDomains: geolocation is dropped downstream by ValidateGeoposition,
+    // navigator.deviceMemory by Hot() (hot_config.cc). A new entry needs its
+    // own drop before it may share this message. Said loudly because the
     // alternative -- a silently dropped value and a stock-looking result -- is
     // exactly the footgun this check exists to remove.
     LOG(ERROR) << "camoucfg: '" << v.key << "' is '" << v.value

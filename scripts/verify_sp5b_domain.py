@@ -12,9 +12,11 @@ new one, same config -- is what proves the check measures something. A build
 that merely fails to compile the new symbol is NOT a RED result.
 """
 
+import http.server
 import json
 import os
 import sys
+import threading
 
 import lib_shell
 
@@ -110,6 +112,46 @@ else:
         results[D_WARN] = all(s in stderr for s in DOMAIN_LINE)
         if not results[D_WARN]:
             notes.append(f"D-WARN: stderr lacked the domain line: {stderr!r}")
+
+# --- D-MEM: an out-of-domain deviceMemory is logged AND not applied ---
+#
+# The page must not read 64 (stock never reports it); it reads the real value.
+# deviceMemory is [SecureContext] and about:blank is not one, so the page is
+# served from loopback (http://127.0.0.1 is a secure context).
+
+D_MEM = "D-MEM non-strict + deviceMemory=64 logs the domain line, page reads not 64"
+
+
+class _Blank(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"<!doctype html><title>d</title>")
+
+    def log_message(self, *a):
+        pass
+
+
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Blank)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+values, err = lib_shell.session(
+    json.dumps({"navigator.deviceMemory": 64}), ["navigator.deviceMemory"],
+    navigate_to=f"http://127.0.0.1:{srv.server_address[1]}/")
+srv.shutdown()
+if err is not None:
+    failed([D_MEM], "deviceMemory session", err)
+else:
+    stderr, read_err = read_stderr()
+    if read_err is not None:
+        failed([D_MEM], f"stderr read from {lib_shell.STDERR_LOG}", read_err)
+    else:
+        results[D_MEM] = (
+            all(s in stderr for s in
+                ["camoucfg:", "navigator.deviceMemory", "out of range", "[2, 32]"])
+            and values[0] is not None and values[0] != 64)
+        if not results[D_MEM]:
+            notes.append(f"D-MEM: page read {values!r}, stderr {stderr!r}")
 
 # --- D-CLEAN: a valid coordinate pair is untouched (regression) ---
 

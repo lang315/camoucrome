@@ -7,6 +7,7 @@
 #include "base/no_destructor.h"
 
 #include "components/camoucfg/derive.h"
+#include "components/camoucfg/domain_validator.h"
 #include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config_internal.h"
 
@@ -32,6 +33,12 @@ HotConfig HotFrom(const base::DictValue& cfg, std::string_view derived_platform)
   hot.navigator_hardware_concurrency =
       GetUint32From(cfg, keys::kNavigatorHardwareConcurrency);
   hot.navigator_device_memory = GetDoubleFrom(cfg, keys::kNavigatorDeviceMemory);
+  // Out of its domain: left empty, so the consumer reports the real value
+  // (stock Chrome never reports e.g. 64). The startup check already logged it.
+  if (hot.navigator_device_memory &&
+      CheckDomain(keys::kNavigatorDeviceMemory, *hot.navigator_device_memory)) {
+    hot.navigator_device_memory.reset();
+  }
   hot.window_outer_width = GetInt32From(cfg, keys::kWindowOuterWidth);
   hot.window_outer_height = GetInt32From(cfg, keys::kWindowOuterHeight);
   hot.window_screen_x = GetInt32From(cfg, keys::kWindowScreenX);

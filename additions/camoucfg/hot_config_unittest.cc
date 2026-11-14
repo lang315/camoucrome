@@ -119,6 +119,18 @@ TEST(CamoucfgHotConfigTest, WrongTypedKeysAreAbsent) {
   EXPECT_FALSE(hot.window_screen_x.has_value());
 }
 
+// An out-of-domain deviceMemory is dropped so the consumer reports the real
+// value. RED on the old code: 64 and 1 came back as 64.0 and 1.0, not nullopt.
+TEST(CamoucfgHotConfigTest, OutOfDomainDeviceMemoryIsAbsent) {
+  auto mem = [](const char* json) {
+    return internal::HotFrom(Parse(json), "").navigator_device_memory;
+  };
+  EXPECT_FALSE(mem(R"({"navigator.deviceMemory": 64})").has_value());
+  EXPECT_FALSE(mem(R"({"navigator.deviceMemory": 1})").has_value());
+  EXPECT_EQ(mem(R"({"navigator.deviceMemory": 8})"), 8.0);
+  EXPECT_EQ(mem(R"({"navigator.deviceMemory": 32})"), 32.0);
+}
+
 // Built once: a second read returns the same object, no second parse.
 TEST(CamoucfgHotConfigTest, TheProcessInstanceIsBuiltOnce) {
   EXPECT_EQ(&Hot(GlobalScope()), &Hot(GlobalScope()));
