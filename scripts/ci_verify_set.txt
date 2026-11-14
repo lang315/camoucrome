@@ -36,6 +36,7 @@ run verify_credits.py
 # verify_sp6b_launcher: L4 (headed launch) is UNMEASURED, exit 3, when no X server answers; the runner has no display.
 run verify_sp6b_launcher.py
 run verify_accept_language.py
+run verify_device_memory_hint.py
 run verify_finch_defaults.py
 run verify_href_translate.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
