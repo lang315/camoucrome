@@ -88,7 +88,8 @@ TEST(NoisedImageTest, OneColourImageReadsAsStock) {
       EXPECT_EQ(*got.getAddr32(x, y), Pack(10, 20, 30, 255));
 }
 
-// Partial alpha moves and stays premultiplied: alpha kept, channels <= alpha.
+// Partial alpha moves and stays premultiplied: alpha moves toward a
+// non-transparent neighbour (so stays >= 1), channels <= alpha.
 TEST(NoisedImageTest, PartialAlphaStaysPremultiplied) {
   const sk_sp<SkImage> noised = NoisedImage(*Image(16, 16, Partial), 7, 1.0, 3, /*min_alpha=*/1,
                   NoiseMask(), /*bottom_up=*/false);
@@ -99,7 +100,7 @@ TEST(NoisedImageTest, PartialAlphaStaysPremultiplied) {
     for (int x = 0; x < 16; ++x) {
       const uint32_t p = *got.getAddr32(x, y), was = Partial(x, y);
       const uint32_t a = p >> 24;
-      EXPECT_EQ(a, was >> 24);
+      EXPECT_GE(a, 1u) << x << "," << y;  // never pulled to transparent
       for (int sh = 0; sh < 24; sh += 8)
         EXPECT_LE((p >> sh) & 0xFF, a) << x << "," << y;
       moved |= p != was;
