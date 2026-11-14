@@ -11,6 +11,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import package  # noqa: E402
 
 TAG = package.upstream_env()["CHROMIUM_TAG"]
+OFFICIAL = "is_official_build = true\nchrome_pgo_phase = 2\n"  # what a release out dir carries (settings/release-args.gn)
 REQUIRED = (package.ROOT / "settings" / "build-args.gn").read_text()  # a build must carry these
 
 
@@ -30,7 +31,7 @@ def tree(tmp_path, monkeypatch):
     monkeypatch.setattr(package, "upstream_env", lambda: {"CHROMIUM_TAG": TAG, "CHROMIUM_REV": head})
     out = src / "out" / "Release"
     (out / "locales").mkdir(parents=True)
-    (out / "args.gn").write_text('is_debug = false\nis_component_build = false\ncamou_observe = true\n' + REQUIRED)
+    (out / "args.gn").write_text('is_debug = false\nis_component_build = false\ncamou_observe = true\n' + OFFICIAL + REQUIRED)
     (out / "chrome").write_bytes(b"\x7fELF")
     (out / "locales" / "en-US.pak").write_bytes(b"pak")
     (out / "gen" / "components" / "resources").mkdir(parents=True)
@@ -198,7 +199,7 @@ def test_refuses_implicit_component_build(tree, tmp_path):
         (out / "args.gn").write_text(args)
         with pytest.raises(SystemExit, match="component build"):
             package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\ncamou_observe = true\n" + REQUIRED)
+    (out / "args.gn").write_text("is_debug = true\nis_component_build = false\ncamou_observe = true\n" + OFFICIAL + REQUIRED)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
@@ -229,20 +230,20 @@ def test_refuses_observer_false(tree, tmp_path):
 
 def test_accepts_observer_with_a_comment_or_no_spaces(tree, tmp_path):
     for line in ("camou_observe = true # x", "camou_observe=true", "camou_observe=true#x"):
-        (tree[1] / "args.gn").write_text(f"is_debug = false\nis_component_build = false\n{line}\n" + REQUIRED)
+        (tree[1] / "args.gn").write_text(f"is_debug = false\nis_component_build = false\n{line}\n" + OFFICIAL + REQUIRED)
         _stage(tree, tmp_path / line.replace(" ", "_").replace("#", "h"))
 
 
 def test_refuses_rcs(tree, tmp_path):
     (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n"
-                                     "v8_enable_runtime_call_stats = true\n" + REQUIRED)
+                                     "v8_enable_runtime_call_stats = true\n" + OFFICIAL + REQUIRED)
     with pytest.raises(SystemExit, match="v8_enable_runtime_call_stats"):
         _stage(tree, tmp_path)
 
 
 def test_a_trailing_comment_does_not_hide_a_release_arg(tree, tmp_path):
     src, out, deps = tree
-    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\ncamou_observe = true\n" + REQUIRED)
+    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\ncamou_observe = true\n" + OFFICIAL + REQUIRED)
     package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
@@ -496,3 +497,31 @@ def test_stage_refuses_when_only_geo_terms_load(tree, tmp_path, monkeypatch, ter
     with pytest.raises(SystemExit, match="0 non-empty identity"):
         package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
     assert not list((tmp_path / "dist").glob("*"))
+
+
+def test_refuses_a_release_dir_built_without_official_args(tree, tmp_path):
+    # RED: out\\Release-shaped args (non-official, no PGO) must be refused, whatever else they carry
+    for extra in ("", "is_official_build = false\nchrome_pgo_phase = 0\n", "is_official_build = true\n",
+                  "chrome_pgo_phase = 2\n", "is_official_build = true\nchrome_pgo_phase = 1\n"):
+        (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n" + extra + REQUIRED)
+        with pytest.raises(SystemExit, match="is_official_build = true and chrome_pgo_phase = 2"):
+            _stage(tree, tmp_path / ("x" + str(abs(hash(extra)))))
+
+
+def test_accepts_official_args(tree, tmp_path):
+    # GREEN: the shape settings/release-args.gn states, with its comments and spacing variants
+    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n"
+                                     "is_official_build=true # ships\nchrome_pgo_phase = 2\n" + REQUIRED)
+    _stage(tree, tmp_path)
+
+
+def test_a_component_smoke_test_is_not_held_to_official_args(tree, tmp_path):
+    (tree[1] / "args.gn").write_text("is_component_build = true\ncamou_observe = true\n" + REQUIRED)
+    src, out, deps = tree
+    package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", True)
+
+
+def test_release_args_file_itself_passes_the_gate():
+    # the committed file and the refusal cannot drift apart
+    a = package.parse_args_gn((package.ROOT / "settings" / "release-args.gn").read_text())
+    assert a["is_official_build"] == "true" and a["chrome_pgo_phase"] == "2"
