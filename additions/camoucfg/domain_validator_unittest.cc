@@ -48,6 +48,13 @@ TEST(DomainValidatorTest, DeviceMemoryBoundariesInclusive) {
   EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 2.0).has_value());
   EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 16.0).has_value());
   EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, 32.0).has_value());
+  for (double ok : {4.0, 8.0}) {
+    EXPECT_FALSE(CheckDomain(keys::kNavigatorDeviceMemory, ok).has_value());
+  }
+  // In range but not a power of two: stock never reports these.
+  for (double bad : {3.0, 12.0, 2.5}) {
+    EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, bad).has_value());
+  }
   // Outside Chrome 156 desktop's clamp.
   EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 1.0).has_value());
   EXPECT_TRUE(CheckDomain(keys::kNavigatorDeviceMemory, 64.0).has_value());

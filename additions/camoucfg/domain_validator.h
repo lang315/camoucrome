@@ -23,10 +23,10 @@ struct DomainViolation {
   std::string reason;  // human-readable description of the allowed range
 };
 
-// Pure per-value domain check: table lookup plus a range compare, with NO
-// configuration access. Returns a violation when `value` is outside the domain
-// registered for `key`, and nullopt when it is in range OR when `key` has no
-// registered domain.
+// Pure per-value domain check: table lookup plus a range compare (and, for
+// deviceMemory, a power-of-two check), with NO configuration access. Returns
+// a violation when `value` is outside the domain registered for `key`, and
+// nullopt when it is in range OR when `key` has no registered domain.
 //
 // It is factored out from ValidateDomains precisely so it can be tested
 // exhaustively with literals. ScopeFor() is process-global and the parsed
