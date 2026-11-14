@@ -12,9 +12,13 @@
 # layout 216 vs 53), a ratio a page can time with no reference machine. The
 # cost is build time and memory (the ThinLTO link is the peak): see
 # measurements/2026-10-repin.md.
-# Host-only args stay out of this file (they depend on the machine's RAM): on the Windows
-# host out\\Official adds concurrent_links = 1 and extra_ldflags to cap the ThinLTO backend
-# jobs (build/config/compiler/BUILD.gn hard-codes /opt:lldltojobs=all; there is no gn knob).
+# Host-only knobs stay out of this file (they depend on the machine's RAM). GN has no arg for the
+# ThinLTO backend job count (build/config/compiler/BUILD.gn hard-codes /opt:lldltojobs=all, every
+# link carries /lldignoreenv so LINK/_LINK_ cannot set it, and concurrent_links is refused with
+# ThinLTO). On the Windows host (32 GB, shared with WSL) the generated out\\Official/*.ninja files
+# are edited after `gn gen`: lldltojobs=all -> lldltojobs=2 (the output does not depend on the job
+# count), before the first build; any later `gn gen` reverts it. See the Windows build notes in
+# measurements/2026-11-14-official-build-windows.md.
 # scripts/package.py refuses a release dir without is_official_build = true and chrome_pgo_phase = 2.
 is_debug = false
 is_official_build = true
