@@ -223,6 +223,8 @@ IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
 - Only Intel Gen9 GPUs can be claimed per profile; on any other host every identity keeps the real GPU.
 - A Linux host claiming Windows is the weaker identity: no HEVC playback, and the host's GPU.
 - No Widevine. No auto-update: releases are the only security channel, and they lag Chrome.
+- `navigator.webdriver` is always false, including under `--enable-automation`, where stock Chrome
+  reports true. Do not pass that switch yourself; the bundled clients never do.
 - Windows SmartScreen warns on first run: choose More info, then Run anyway.
 
 ## Building from source
