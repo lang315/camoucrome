@@ -152,6 +152,10 @@ CANVAS = json.dumps({"canvas:seed": 987654321})
 # reproducible; --enable-unsafe-swiftshader is required on current Chromium for
 # the fallback to engage at all (SP3 spec Section 6).
 GL_FLAGS = lib_shell.SHELL_FLAGS + ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+# CAMOU_SP3A_GPU_CANVAS=1: every session without flags of its own runs on ANGLE/SwiftShader, whose 2D canvas is
+# GPU-rastered (a default canvas differs from the SVG shapes it draws; content_shell's default one is a CPU canvas,
+# exact). Readback noise is only put on GPU-rastered pixels (release -5, CPU gate), so the noise rows need it.
+GPU_CANVAS = os.environ.get("CAMOU_SP3A_GPU_CANVAS") == "1"
 
 BASELINE = os.path.expanduser(
     "~/camoucrome-verify/baselines/content_shell-sp3a-stock-canvas.json")
@@ -1094,6 +1098,8 @@ def session(config, fn, extra_flags=None, screenshot=False, gate=False):
     navigating to about:blank, or captures a CDP screenshot if `screenshot`.
     Returns (value, err); any fault becomes a FAIL, never a traceback."""
     proc = conn = None
+    if extra_flags is None and GPU_CANVAS:
+        extra_flags = GL_FLAGS
     try:
         proc, conn = lib_shell.launch_and_prime(
             lambda: lib_shell.launch(config, extra_flags=extra_flags),
