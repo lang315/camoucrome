@@ -157,3 +157,9 @@ def test_variation_count_counts_distinct_ids_only():
     assert g.variation_count(page) == 2
     assert g.variation_count("Variations: ") == 0
     assert g.variation_count("Google Chrome 157") is None
+
+
+def test_status_lines_accept_the_bulleted_form_of_chrome_gpu():
+    assert g.status_lines("* Canvas: Hardware accelerated\n* Rasterization: Hardware accelerated\n"
+                          "GL_VERSION :OpenGL ES 3.0 (ANGLE 2.1.3)") == ["Canvas: Hardware accelerated",
+                                                                         "Rasterization: Hardware accelerated"]

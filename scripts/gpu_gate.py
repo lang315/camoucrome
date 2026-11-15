@@ -73,14 +73,13 @@ def read_page(page, tries=20):
 
 
 # The graphics feature status lines of chrome://gpu: a feature name and its state, never a device or a driver.
-STATUS = re.compile(r"^(Canvas|Direct Rendering Display Compositor|Compositing|Multiple Raster Threads|OpenGL|"
-                    r"Rasterization|Raw Draw|Skia Graphite|Video Decode|WebGL|WebGL2|WebGPU)\s*:?\s+"
-                    r"((?:Hardware|Software|Disabled|Enabled|Unavailable|Force|Not)[A-Za-z ,.\-]*)$", re.M)
+STATUS = re.compile(r"^\*?\s*(Canvas|Direct Rendering Display Compositor|Compositing|Multiple Raster Threads|OpenGL|"
+                    r"Rasterization|Raw Draw|Skia Graphite|Video Decode|WebGL|WebGL2|WebGPU)\b([^\n]{0,80})$", re.M)
 
 
 def status_lines(text):
     """['Canvas: Hardware accelerated', ...] from a chrome://gpu text."""
-    return [f"{m.group(1)}: {m.group(2).strip()}" for m in STATUS.finditer(text or "")]
+    return [f"{m.group(1)}: {m.group(2).strip(' :')}" for m in STATUS.finditer(text or "")]
 
 
 def read_ctx(ctx):
