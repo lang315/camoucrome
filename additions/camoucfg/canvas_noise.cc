@@ -36,11 +36,14 @@ struct NoiseKeys {
   uint64_t step;
 };
 
-const NoiseKeys& Keys() {
-  static const NoiseKeys keys = {DomainKey("canvas-jitter-gate"),
-                                 DomainKey("canvas-jitter-dir"),
-                                 DomainKey("canvas-jitter-step")};
-  return keys;
+const NoiseKeys& Keys(NoiseDomain domain) {
+  static const NoiseKeys k2d = {DomainKey("canvas-jitter-gate"),
+                                DomainKey("canvas-jitter-dir"),
+                                DomainKey("canvas-jitter-step")};
+  static const NoiseKeys webgl = {DomainKey("webgl-jitter-gate"),
+                                  DomainKey("webgl-jitter-dir"),
+                                  DomainKey("webgl-jitter-step")};
+  return domain == NoiseDomain::kWebGl ? webgl : k2d;
 }
 
 // A draw in [0, k) for k >= 1, from DeriveDeltaKeyed's integer output (span
@@ -101,8 +104,9 @@ void NoiseRow(uint8_t* out,
               uint8_t min_alpha,
               const uint8_t* cells,
               const NoiseMask& mask,
-              bool bottom_up) {
-  const NoiseKeys& keys = Keys();
+              bool bottom_up,
+              NoiseDomain domain) {
+  const NoiseKeys& keys = Keys(domain);
   const uint8_t* top = bottom_up ? mem_below : mem_above;
   const uint8_t* bottom = bottom_up ? mem_above : mem_below;
   for (size_t x = 1; x + 1 < width; ++x) {
@@ -180,7 +184,8 @@ void PerturbRgba(uint8_t* data, size_t width, size_t height, size_t row_bytes,
   }
   // In place: a failed ring allocation leaves the read stock, never a crash.
   PerturbRgbaEdgesInPlace(data, width, height, row_bytes, seed, density,
-                          strength, /*min_alpha=*/255, NoiseMask(), bottom_up);
+                          strength, /*min_alpha=*/255, NoiseMask(), bottom_up,
+                          NoiseDomain::kWebGl);
 }
 
 bool PerturbRgbaEdgesInPlace(uint8_t* data,
@@ -192,7 +197,8 @@ bool PerturbRgbaEdgesInPlace(uint8_t* data,
                              int32_t strength,
                              uint8_t min_alpha,
                              const NoiseMask& mask,
-                             bool bottom_up) {
+                             bool bottom_up,
+                             NoiseDomain domain) {
   if (!Active(data, width, height, row_bytes, seed, density, strength, mask,
               bottom_up)) {
     return true;
@@ -214,7 +220,7 @@ bool PerturbRgbaEdgesInPlace(uint8_t* data,
     uint8_t* out = data + y * row_bytes;
     std::memcpy(row, out, tight);
     NoiseRow(out, above, row, data + (y + 1) * row_bytes, width, seed, density,
-             strength, min_alpha, CellRow(mask, y), mask, bottom_up);
+             strength, min_alpha, CellRow(mask, y), mask, bottom_up, domain);
     std::swap(above, row);
   }
   return true;
@@ -280,7 +286,8 @@ bool PerturbRgbaFramed(uint8_t* data,
     }
     std::memcpy(out, row, tight);
     NoiseRow(out, above, row, next, ext, seed, density, strength,
-             /*min_alpha=*/255, nullptr, NoiseMask(), bottom_up);
+             /*min_alpha=*/255, nullptr, NoiseMask(), bottom_up,
+             NoiseDomain::kWebGl);
     std::memcpy(data + y * row_bytes, out + lo * 4, width * 4);
     std::swap(above, row);
     std::swap(row, below);

@@ -28,7 +28,8 @@ bool MaskFits(const NoiseMask& mask, int width, int height) {
 
 sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
                            double density, int32_t strength, uint8_t min_alpha,
-                           const NoiseMask& mask, bool bottom_up) {
+                           const NoiseMask& mask, bool bottom_up,
+                           NoiseDomain domain) {
   const SkColorType ct = canvas.colorType();
   if (seed == 0 ||
       (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType) ||
@@ -52,7 +53,8 @@ sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
   // crash.
   if (!PerturbRgbaEdgesInPlace(static_cast<uint8_t*>(bitmap.getPixels()), w, h,
                                row, seed, density, strength,
-                               std::max(min_alpha, floor), mask, bottom_up)) {
+                               std::max(min_alpha, floor), mask, bottom_up,
+                               domain)) {
     return nullptr;
   }
   bitmap.setImmutable();
@@ -61,12 +63,13 @@ sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
 
 sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
                                  const ConfigScope& scope, uint8_t min_alpha,
-                                 const NoiseMask& mask, bool bottom_up) {
+                                 const NoiseMask& mask, bool bottom_up,
+                                 NoiseDomain domain) {
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
   return NoisedImage(canvas, CanvasSeed(scope), density, strength, min_alpha,
-                     mask, bottom_up);
+                     mask, bottom_up, domain);
 }
 
 SkBitmap NoisedRegion(const SkImageInfo& canvas,
@@ -76,7 +79,8 @@ SkBitmap NoisedRegion(const SkImageInfo& canvas,
                       double density,
                       int32_t strength,
                       uint8_t min_alpha,
-                      const NoiseMask& mask) {
+                      const NoiseMask& mask,
+                      NoiseDomain domain) {
   const SkColorType ct = canvas.colorType();
   if (seed == 0 ||
       (ct != kRGBA_8888_SkColorType && ct != kBGRA_8888_SkColorType) ||
@@ -106,7 +110,7 @@ SkBitmap NoisedRegion(const SkImageInfo& canvas,
                                info.width(), info.height(), bitmap.rowBytes(),
                                seed, density, strength,
                                std::max(min_alpha, floor), at,
-                               /*bottom_up=*/false)) {
+                               /*bottom_up=*/false, domain)) {
     return SkBitmap();
   }
   SkBitmap out;
@@ -122,12 +126,13 @@ SkBitmap NoisedCanvasRegion(const SkImageInfo& canvas,
                             const SkIRect& rect,
                             const ConfigScope& scope,
                             uint8_t min_alpha,
-                            const NoiseMask& mask) {
+                            const NoiseMask& mask,
+                            NoiseDomain domain) {
   double density;
   int32_t strength;
   CanvasNoiseParams(scope, density, strength);
   return NoisedRegion(canvas, read, rect, CanvasSeed(scope), density, strength,
-                      min_alpha, mask);
+                      min_alpha, mask, domain);
 }
 
 }  // namespace camoucfg

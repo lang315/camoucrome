@@ -1,0 +1,54 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+index f4b0524e29..d7667400e2 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+@@ -613,7 +613,8 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
+       camou_noised_generation_ != generation) {
+     sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
+         *sk_image, *scope, CamouNoiseMinAlpha(), CamouNoiseMask(),
+-        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
++        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft,
++        CamouNoiseDomain());
+     if (!noised) {
+       return image;
+     }
+@@ -673,7 +674,8 @@ SkBitmap CanvasRenderingContext::CamouNoisedRegion(
+         return paint_image.readPixels(dst.info(), dst.writable_addr(),
+                                       dst.rowBytes(), src_x, src_y);
+       },
+-      rect, *scope, CamouNoiseMinAlpha(), CamouNoiseMask());
++      rect, *scope, CamouNoiseMinAlpha(), CamouNoiseMask(),
++      CamouNoiseDomain());
+ }
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+index a197570b6c..7298868aa7 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+@@ -202,6 +202,11 @@ class CORE_EXPORT CanvasRenderingContext
+   // The lowest alpha a pixel may have and still change; WebGL is
+   // opaque-only.
+   virtual uint8_t CamouNoiseMinAlpha() const { return 1; }
++  // The key domain of this context's readback noise: WebGL has its own, so a 2D
++  // canvas uploaded to WebGL does not read back with the 2D noise.
++  virtual camoucfg::NoiseDomain CamouNoiseDomain() const {
++    return camoucfg::NoiseDomain::k2d;
++  }
+   virtual bool IsComposited() const = 0;
+ 
+   // Called when the entire tab is backgrounded or unbackgrounded.
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+index ad40617e4b..957bb2c7b7 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+@@ -643,6 +643,9 @@ class MODULES_EXPORT WebGLRenderingContextBase
+   // Opaque only, as readPixels: the snapshot and readPixels share one
+   // field (canvas noise S2b).
+   uint8_t CamouNoiseMinAlpha() const override { return 255; }
++  camoucfg::NoiseDomain CamouNoiseDomain() const override {
++    return camoucfg::NoiseDomain::kWebGl;
++  }
+   void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) override;
+ 
+   V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret getHTMLOrOffscreenCanvas(
