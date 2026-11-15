@@ -63,6 +63,9 @@ SET = [
     # while stock Windows Chrome ships them on (measured 2026-10-04: the Linux-claim sub-run differed from the host
     # only in UA/platform leaves) -- filed as a backlog item; delete known_fail when a Linux-claim disable branch lands.
     Entry("verify_host_oracle.py", 4, "stock", known_fail=("O2",)),
+    # UVPA: stock passes these rows too (its own reading is the oracle), so red mode skips it; the script runs both
+    # binaries itself and --plant is its RED.
+    Entry("verify_uvpa.py", 2, "own"),
 ]
 
 ROW = re.compile(r"^(?:(PASS|FAIL)\s+\S|\S+: (PASS|FAIL)\s*$)")

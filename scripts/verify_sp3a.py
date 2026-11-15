@@ -1699,10 +1699,226 @@ for key, name in N1_ROWS:
         notes.append(f"{name[:4]}: unseeded bad {uv[key]['bad']}; bad per seed {bad}; "
                      f"seeds whose read equals unseeded {same}")
 
-EXPECTED = 67
+# --- Canvas audit N2-N4 (release -5): C65, C66, C67 ---
+# Each row can read UNMEASURED (`unmeasured`: row name -> reason): a precondition it needs was not met, so it has
+# no PASS or FAIL. results[name] is None for those rows.
+unmeasured = {}
+REAL_GPU = os.environ.get("CAMOU_SP3A_REAL_GPU") == "1"       # C66, C67 on the host's own GPU, not SwiftShader
+GL_ROW_FLAGS = lib_shell.SHELL_FLAGS if REAL_GPU else GL_FLAGS
+PLANT_C65 = os.environ.get("CAMOU_SP3A_PLANT") == "c65"       # test-only: the seeded sessions draw text 0.5 px lower
+N234_SEEDS = range(1, 9)
+
+C65 = "C65 text transition points match unconfigured (8 seeds)"
+C66 = "C66 RGB implementation-format read equals the RGBA read"
+C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
+
+
+def mark_unmeasured(name, why):
+    results[name] = None
+    unmeasured[name] = why
+
+
+# C65: where the ink of a glyph jumps as the draw position moves in 1/64 px steps. Stock quantises glyph positions,
+# so the jump points are CPU constants, the same on every machine; a seed-dependent origin shift moves them.
+# Three sweeps: y (a), x (b), y under scale(1.5) (c). The ink's bounding box counts pixels of alpha >= 200 only,
+# so the noise on the anti-aliased edge cannot move it.
+C65_SCENE = """(shift) => {
+  const sweep = (mode) => {
+    const c = document.createElement('canvas'); c.width = 200; c.height = 160;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    const sig = [];
+    for (let k = 0; k < 64; k++) {
+      x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, 200, 160);
+      x.fillStyle = '#000'; x.font = '48px sans-serif';
+      if (mode === 'ys') x.scale(1.5, 1.5);
+      const px = mode === 'x' ? 20 + k / 64 : 20;
+      const py = mode === 'x' ? 80 : (mode === 'ys' ? 50 : 80) + shift + k / 64;
+      x.fillText('H', px, py);
+      const d = x.getImageData(0, 0, 200, 160).data;
+      let top = 999, bot = -1, left = 999, right = -1;
+      for (let j = 0; j < 160; j++) for (let i = 0; i < 200; i++) {
+        if (d[(j * 200 + i) * 4 + 3] >= 200) {
+          if (j < top) top = j; if (j > bot) bot = j; if (i < left) left = i; if (i > right) right = i; } }
+      sig.push(bot < 0 ? 'blank' : (mode === 'x' ? left + ',' + right : top + ',' + bot));
+    }
+    return sig;
+  };
+  return { a: sweep('y'), b: sweep('x'), c: sweep('ys') };
+}"""
+
+
+def transitions(sig):
+    return [k for k in range(1, len(sig)) if sig[k] != sig[k - 1]]
+
+
+def c65_row():
+    def run(config, shift):
+        return session(config, f"() => ({C65_SCENE})({shift})")
+    un, un_e = run(None, 0)
+    seeded = {s: run(json.dumps({"canvas:seed": s}), 0.5 if PLANT_C65 else 0) for s in N234_SEEDS}
+    faults = [str(e) for (v, e) in [(un, un_e), *seeded.values()] if v is None]
+    if un is None or faults:
+        results[C65] = False
+        notes.append(f"C65: session fault: {faults[:1]}")
+        return
+    ref = {k: transitions(un[k]) for k in "abc"}
+    blank = [k for k in "abc" if "blank" in un[k] or not ref[k]]
+    if blank:
+        mark_unmeasured(C65, f"no ink transition in sweep(s) {blank} of the unconfigured run "
+                        f"(blank glyph or a missing font): {[ref[k] for k in blank]}")
+        return
+    bad = {}
+    for s, (v, e) in seeded.items():
+        if v is None:
+            bad[s] = str(e)
+            continue
+        off = [k for k in "abc" if transitions(v[k]) != ref[k]]
+        if off:
+            bad[s] = {k: transitions(v[k]) for k in off}
+    results[C65] = not bad
+    notes.append(f"C65 unconfigured transitions: a {ref['a']}, b {ref['b']}, c {ref['c']}")
+    if bad:
+        notes.append(f"C65: seeds whose transitions differ: {bad}")
+
+
+c65_row()
+
+# C66: the implementation-format read. A framebuffer with an RGB8 attachment reports (RGB, UNSIGNED_BYTE) as its
+# read pair; stock returns the rendered bytes for both reads, so the RGB bytes of an RGB read equal the first three
+# bytes of the RGBA read. C66a: an RGB8 texture framebuffer with the C6 scene. C66b: an alpha:false default buffer,
+# 63 px wide (a row of 189 bytes: with PACK_ALIGNMENT 4 the padding bytes stay untouched).
+C66_SCENE = tri("webgl2", 63, 64, """
+  const GLRGB = gl.RGB, pairOf = () => [gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT),
+                                         gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE)];
+  const cmp = (w, h) => {
+    const pair = pairOf();
+    const A = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, RGBA, UB, A);
+    if (pair[0] !== GLRGB || pair[1] !== UB) return { pair };
+    const stride = Math.ceil(w * 3 / 4) * 4;
+    const B = new Uint8Array(stride * h).fill(0xAB); gl.readPixels(0, 0, w, h, GLRGB, UB, B);
+    let pix = 0, pad = 0;
+    for (let y = 0; y < h; y++) {
+      for (let i = 0; i < w; i++) for (let c = 0; c < 3; c++) if (B[y * stride + i * 3 + c] !== A[(y * w + i) * 4 + c]) pix++;
+      if (y < h - 1) for (let i = w * 3; i < stride; i++) if (B[y * stride + i] !== 0xAB) pad++; }
+    return { pair, pix, pad, h: H(A) };
+  };
+  const out = {};
+  // (a) an RGB8 texture framebuffer, 64 x 64
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, 64, 64, 0, gl.RGB, UB, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) out.a = { err: 'fbo-incomplete' };
+  else { gl.viewport(0, 0, 64, 64); gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+         gl.drawArrays(gl.TRIANGLES, 0, 3); out.a = cmp(64, 64); }
+  return out;""")
+# (b) the alpha:false default framebuffer of a 63-wide canvas: its own context, the C6 scene again
+C66B_SCENE = C66_SCENE.replace("c.getContext('webgl2')", "c.getContext('webgl2', { alpha: false })").replace(
+    "  // (a) an RGB8", "  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, 63, 64);\n"
+    "  gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3);\n"
+    "  out.b = cmp(63, 64);\n  return out;\n  // (a) an RGB8")
+
+
+def c66_row():
+    seed7 = json.dumps({"canvas:seed": 7})
+    parts = {}
+    for key, scene in (("a", C66_SCENE), ("b", C66B_SCENE)):
+        u, ue = session(None, scene, extra_flags=GL_ROW_FLAGS)
+        sd, se = session(seed7, scene, extra_flags=GL_ROW_FLAGS)
+        parts[key] = (u, sd, ue or se)
+    why, fail = [], []
+    for key, (u, sd, err) in parts.items():
+        if u is None or sd is None:
+            fail.append(f"C66{key}: session fault {err}")
+            continue
+        ru, rs = u.get(key) or {}, sd.get(key) or {}
+        if "err" in u or "err" in ru or "err" in rs:
+            why.append(f"C66{key}: {ru.get('err') or rs.get('err') or u.get('err')}")
+        elif ru.get("pair") != [0x1907, 0x1401]:
+            why.append(f"C66{key}: implementation pair {ru.get('pair')} is not (RGB, UNSIGNED_BYTE)")
+        elif "pix" not in rs:
+            why.append(f"C66{key}: the seeded pair {rs.get('pair')} is not (RGB, UNSIGNED_BYTE)")
+        elif rs["h"] == ru["h"]:
+            why.append(f"C66{key}: the seeded RGBA read equals the unconfigured one (the noise did not act)")
+        elif rs["pix"] or rs["pad"]:
+            fail.append(f"C66{key}: RGB bytes differing from the RGBA read {rs['pix']}, touched padding bytes {rs['pad']}")
+        else:
+            notes.append(f"C66{key} measured: pair (RGB, UNSIGNED_BYTE), {rs['pix']} differing bytes, {rs['pad']} padding bytes touched")
+    if fail:
+        results[C66] = False
+        notes.extend(fail)
+    elif why:
+        mark_unmeasured(C66, "; ".join(why))
+    else:
+        results[C66] = True
+
+
+c66_row()
+
+# C67: an opaque 2D scene, S unconfigured. Under seed 7 the page reads it with getImageData (N2d), uploads the same
+# canvas to WebGL, draws it NEAREST 1:1 and reads that back (NW). If WebGL noise used the 2D keys, NW would be
+# N2d again, and a page could tell the two paths by comparing them.
+C67_SCENE = """() => {
+  const c = document.createElement('canvas'); c.width = 100; c.height = 100;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.fillStyle = '#fff'; x.fillRect(0, 0, 100, 100);
+  x.fillStyle = 'rgb(200,40,40)'; x.beginPath(); x.arc(50, 50, 33.3, 0, Math.PI * 2); x.fill();
+  x.fillStyle = 'rgb(20,60,200)'; x.fillRect(10, 10, 30, 12);
+  const n2d = Array.from(x.getImageData(0, 0, 100, 100).data);
+  const g = document.createElement('canvas'); g.width = 100; g.height = 100;
+  const gl = g.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+  if (!gl) return { err: 'no-webgl' };
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, 'attribute vec2 p;varying vec2 u;void main(){u=p*0.5+0.5;gl_Position=vec4(p,0,1);}'));
+  gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, 'precision mediump float;varying vec2 u;uniform sampler2D t;void main(){gl_FragColor=texture2D(t,u);}'));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const lp = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 0, 0);
+  const tx = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tx);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  gl.viewport(0, 0, 100, 100); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  const p = new Uint8Array(100 * 100 * 4); gl.readPixels(0, 0, 100, 100, gl.RGBA, gl.UNSIGNED_BYTE, p);
+  return { n2d, nw: Array.from(p) };
+}"""
+
+
+def c67_row():
+    u, ue = session(None, C67_SCENE, extra_flags=GL_ROW_FLAGS)
+    sd, se = session(json.dumps({"canvas:seed": 7}), C67_SCENE, extra_flags=GL_ROW_FLAGS)
+    if u is None or sd is None:
+        results[C67] = False
+        notes.append(f"C67: session fault: {ue or se}")
+        return
+    if "err" in u or "err" in sd:
+        mark_unmeasured(C67, str(u.get("err") or sd.get("err")))
+        return
+    S, N, W = u["n2d"], sd["n2d"], sd["nw"]
+    diff = [i for i in range(0, len(S), 4) if S[i:i + 4] != N[i:i + 4]]
+    if not diff:
+        mark_unmeasured(C67, "no pixel where the seeded 2D read differs from the unconfigured one")
+        return
+    differ = sum(1 for i in diff if W[i:i + 4] != N[i:i + 4])
+    frac = differ / len(diff)
+    results[C67] = frac >= 0.9
+    notes.append(f"C67: {len(diff)} pixels carry 2D noise; the WebGL read differs from the 2D read at {differ} ({frac:.0%})")
+
+
+c67_row()
+
+EXPECTED = 70
 
 for name, ok in sorted(results.items()):
-    print(f"{'PASS' if ok else 'FAIL'}  {name}")
+    print(f"{'UNMEASURED' if ok is None else 'PASS' if ok else 'FAIL'}  {name}")
+for name, why in unmeasured.items():
+    print(f"      {name[:4]}: UNMEASURED: {why}")
 
 if len(results) != EXPECTED:
     notes.append(f"expected {EXPECTED} criteria, found {len(results)} -- a "
@@ -1711,8 +1927,11 @@ if len(results) != EXPECTED:
 for note in notes:
     print(f"      {note}")
 
-if results and len(results) == EXPECTED and all(results.values()):
+if len(results) == EXPECTED and all(v is True for v in results.values()):
     print("ALL_PASS")
     sys.exit(0)
+if len(results) == EXPECTED and all(v is not False for v in results.values()):
+    print("UNMEASURED")
+    sys.exit(3)
 print("FAIL")
 sys.exit(1)
