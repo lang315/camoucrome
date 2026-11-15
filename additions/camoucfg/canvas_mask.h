@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/time/time.h"
 
 #include "components/camoucfg/canvas_noise.h"
 
@@ -92,7 +93,16 @@ class CanvasNoiseMask {
 // (never the whole queue: a frame stalls for one flush's walk, not sixteen).
 class LazyCanvasNoiseMask {
  public:
-  // Applies one change to the mask of the canvas size it was queued for.
+  // One queued change to the mask of the canvas size it was queued for, worked in slices: Step() works until it
+  // is done (true) or `deadline` has passed (false), checking the clock before every slice, the first included
+  // (a maximal deadline never stops it). A recording's walk is such a job, so an idle task can stop inside a
+  // recording instead of running one flush's walk, which can be tens of milliseconds, to its end.
+  class Job {
+   public:
+    virtual ~Job() = default;
+    virtual bool Step(CanvasNoiseMask& mask, base::TimeTicks deadline) = 0;
+  };
+  // A change that is done in one go.
   using Event = base::OnceCallback<void(CanvasNoiseMask&)>;
   static constexpr size_t kMaxPendingEvents = 16;
   static constexpr size_t kMaxPendingBytes = size_t{16} << 20;
@@ -107,10 +117,13 @@ class LazyCanvasNoiseMask {
   // alive. `apply_now` applies the whole queue, this event last: for an event
   // that holds images, which the queue must not pin. Past a cap the oldest
   // event is applied.
+  void Add(size_t width, size_t height, size_t bytes, std::unique_ptr<Job> job,
+           bool apply_now = false);
   void Add(size_t width, size_t height, size_t bytes, Event event,
            bool apply_now = false);
-  // Applies the oldest queued event; false when none is queued.
-  bool ApplyOldest();
+  // Works the oldest queued job until `deadline` (it stays queued, part done, when the deadline stops it);
+  // false when none is queued.
+  bool ApplyOldest(base::TimeTicks deadline = base::TimeTicks::Max());
   // The canvas restarts clear: the mask and every queued event are dropped.
   void Reset();
 
@@ -128,10 +141,10 @@ class LazyCanvasNoiseMask {
     size_t width;
     size_t height;
     size_t bytes;
-    Event event;
+    std::unique_ptr<Job> job;
   };
   void Materialize() const;
-  void ApplyFront() const;
+  void StepFront(base::TimeTicks deadline) const;
   void Retire() const;
 
   mutable std::unique_ptr<CanvasNoiseMask> mask_;

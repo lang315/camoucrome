@@ -5,10 +5,14 @@
 #include "components/camoucfg/canvas_mask.h"
 
 #include <cstdint>
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
+#include "base/memory/raw_ptr.h"
+#include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace camoucfg {
@@ -156,7 +160,7 @@ TEST(CanvasNoiseMaskTest, HasAaOnCoarseCells) {
 // ---- LazyCanvasNoiseMask: the queue builds the mask the eager calls build ----
 
 // One scripted change: a coverage merge or a rect mark on a canvas of a size.
-struct Step {
+struct ScriptStep {
   size_t w, h;
   int64_t x, y;
   size_t cw, ch;
@@ -165,7 +169,7 @@ struct Step {
   bool rect;
 };
 
-void Apply(const Step& s, CanvasNoiseMask& m) {
+void Apply(const ScriptStep& s, CanvasNoiseMask& m) {
   if (s.rect) {
     m.MarkRect(s.x, s.y, static_cast<int64_t>(s.cw), static_cast<int64_t>(s.ch), s.kind);
   } else {
@@ -187,7 +191,7 @@ std::vector<uint8_t> Cells(const NoiseMask& v) {
   return out;
 }
 
-std::vector<Step> Script() {
+std::vector<ScriptStep> Script() {
   return {
       {32, 32, 2, 2, 8, 8, 100, Kind::kAa, false},
       {32, 32, 4, 4, 4, 4, 255, Kind::kSolidOpaque, false},
@@ -201,7 +205,7 @@ std::vector<Step> Script() {
 }
 
 // The eager mask after steps [0, n) of the script, resets at `reset_at` (-1: none).
-std::vector<uint8_t> EagerCells(const std::vector<Step>& steps, size_t n, int reset_at, uint64_t* aa) {
+std::vector<uint8_t> EagerCells(const std::vector<ScriptStep>& steps, size_t n, int reset_at, uint64_t* aa) {
   std::unique_ptr<CanvasNoiseMask> m;
   for (size_t i = 0; i < n; ++i) {
     if (static_cast<int>(i) == reset_at) {
@@ -218,8 +222,8 @@ std::vector<uint8_t> EagerCells(const std::vector<Step>& steps, size_t n, int re
   return m ? Cells(m->view()) : std::vector<uint8_t>();
 }
 
-LazyCanvasNoiseMask::Event Ev(const Step& s) {
-  return base::BindOnce([](Step s, CanvasNoiseMask& m) { Apply(s, m); }, s);
+LazyCanvasNoiseMask::Event Ev(const ScriptStep& s) {
+  return base::BindOnce([](ScriptStep s, CanvasNoiseMask& m) { Apply(s, m); }, s);
 }
 
 TEST(LazyCanvasNoiseMaskTest, ReadAtEveryPointEqualsTheEagerMaskByteForByte) {
@@ -250,7 +254,7 @@ TEST(LazyCanvasNoiseMaskTest, ResetBetweenRetainedEventsAndTheReadDropsTheEarlie
         lazy.Reset();
         EXPECT_EQ(lazy.pending_events(), 0u);
       }
-      lazy.Add(steps[i].w, steps[i].h, 1, base::BindOnce([](int* ran, Step s, CanvasNoiseMask& m) {
+      lazy.Add(steps[i].w, steps[i].h, 1, base::BindOnce([](int* ran, ScriptStep s, CanvasNoiseMask& m) {
         ++*ran;
         Apply(s, m);
       }, &ran, steps[i]));
@@ -344,7 +348,7 @@ TEST(LazyCanvasNoiseMaskTest, ApplyOldestOneByOneThenReadEqualsTheEagerMask) {
   const auto steps = Script();
   for (size_t idle_steps = 0; idle_steps <= steps.size(); ++idle_steps) {
     LazyCanvasNoiseMask lazy;
-    for (const Step& s : steps) {
+    for (const ScriptStep& s : steps) {
       lazy.Add(s.w, s.h, 1, Ev(s));
     }
     for (size_t i = 0; i < idle_steps; ++i) {
@@ -355,6 +359,76 @@ TEST(LazyCanvasNoiseMaskTest, ApplyOldestOneByOneThenReadEqualsTheEagerMask) {
   }
   LazyCanvasNoiseMask empty;
   EXPECT_FALSE(empty.ApplyOldest());
+}
+
+// A job that works one scripted step per allowed slice: the idle deadline stops it between steps.
+class SliceJob final : public LazyCanvasNoiseMask::Job {
+ public:
+  SliceJob(std::vector<ScriptStep> steps, int* allowed) : steps_(std::move(steps)), allowed_(allowed) {}
+  bool Step(CanvasNoiseMask& m, base::TimeTicks deadline) override {
+    while (next_ < steps_.size()) {
+      if (!deadline.is_max() && (*allowed_)-- <= 0) {
+        return false;  // the clock is checked before every slice, the first one too
+      }
+      Apply(steps_[next_++], m);
+    }
+    return true;
+  }
+
+ private:
+  std::vector<ScriptStep> steps_;
+  size_t next_ = 0;
+  raw_ptr<int> allowed_;
+};
+
+TEST(LazyCanvasNoiseMaskTest, AJobStoppedByTheDeadlineStaysAtTheFrontAndFinishesToTheEagerMask) {
+  const auto steps = Script();
+  const base::TimeTicks later = base::TimeTicks::Now() + base::Hours(1);
+  for (int per_idle_task = 1; per_idle_task <= 3; ++per_idle_task) {
+    LazyCanvasNoiseMask lazy;
+    int allowed = 0;
+    // one job per run of steps of one canvas size, as one flush is one job
+    std::vector<ScriptStep> run;
+    size_t jobs = 0;
+    auto flush = [&] {
+      if (run.empty()) return;
+      lazy.Add(run[0].w, run[0].h, 1, std::make_unique<SliceJob>(run, &allowed));
+      run.clear();
+      ++jobs;
+    };
+    for (const ScriptStep& s : steps) {
+      if (!run.empty() && (run[0].w != s.w || run[0].h != s.h)) flush();
+      run.push_back(s);
+    }
+    flush();
+    // no slice allowed: the first slice is not worked either, and the job stays queued
+    allowed = 0;
+    EXPECT_TRUE(lazy.ApplyOldest(later));
+    EXPECT_EQ(lazy.pending_events(), jobs);
+    size_t idle_tasks = 0;
+    while (lazy.pending_events() > 0) {
+      allowed = per_idle_task;
+      EXPECT_TRUE(lazy.ApplyOldest(later));
+      ASSERT_LT(++idle_tasks, 100u);
+    }
+    uint64_t aa = 0;
+    EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, steps.size(), -1, &aa)) << per_idle_task << " slices per idle task";
+  }
+}
+
+TEST(LazyCanvasNoiseMaskTest, AReadFinishesAPartlyWorkedJobAndLaterEventsInOrder) {
+  const auto steps = Script();
+  LazyCanvasNoiseMask lazy;
+  int allowed = 1;
+  std::vector<ScriptStep> first(steps.begin(), steps.begin() + 5);   // the 32 x 32 steps
+  lazy.Add(32, 32, 1, std::make_unique<SliceJob>(first, &allowed));
+  EXPECT_TRUE(lazy.ApplyOldest(base::TimeTicks::Now() + base::Hours(1)));   // one slice
+  EXPECT_EQ(lazy.pending_events(), 1u);
+  for (size_t i = 5; i < steps.size(); ++i) {
+    lazy.Add(steps[i].w, steps[i].h, 1, Ev(steps[i]));
+  }
+  uint64_t aa = 0;
+  EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, steps.size(), -1, &aa));
 }
 
 TEST(LazyCanvasNoiseMaskTest, NothingQueuedReadsAsNoMask) {

@@ -5,6 +5,7 @@
 #include "components/camoucfg/canvas_mask.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "base/compiler_specific.h"
@@ -150,9 +151,32 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
 LazyCanvasNoiseMask::LazyCanvasNoiseMask() = default;
 LazyCanvasNoiseMask::~LazyCanvasNoiseMask() = default;
 
+namespace {
+
+// An Event as a job: one slice that always finishes.
+class EventJob final : public LazyCanvasNoiseMask::Job {
+ public:
+  explicit EventJob(LazyCanvasNoiseMask::Event event) : event_(std::move(event)) {}
+  bool Step(CanvasNoiseMask& mask, base::TimeTicks) override {
+    std::move(event_).Run(mask);
+    return true;
+  }
+
+ private:
+  LazyCanvasNoiseMask::Event event_;
+};
+
+}  // namespace
+
 void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
                               Event event, bool apply_now) {
-  pending_.push_back({width, height, bytes, std::move(event)});
+  Add(width, height, bytes, std::make_unique<EventJob>(std::move(event)),
+      apply_now);
+}
+
+void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
+                              std::unique_ptr<Job> job, bool apply_now) {
+  pending_.push_back({width, height, bytes, std::move(job)});
   pending_bytes_ += bytes;
   if (apply_now) {
     Materialize();
@@ -160,27 +184,28 @@ void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
   }
   while (pending_.size() > kMaxPendingEvents ||
          (pending_bytes_ > kMaxPendingBytes && pending_.size() > 1)) {
-    ApplyFront();
+    StepFront(base::TimeTicks::Max());
   }
 }
 
-bool LazyCanvasNoiseMask::ApplyOldest() {
+bool LazyCanvasNoiseMask::ApplyOldest(base::TimeTicks deadline) {
   if (pending_.empty()) {
     return false;
   }
-  ApplyFront();
+  StepFront(deadline);
   return true;
 }
 
-void LazyCanvasNoiseMask::ApplyFront() const {
-  Pending p = std::move(pending_.front());
-  pending_.erase(pending_.begin());
-  pending_bytes_ -= p.bytes;
+void LazyCanvasNoiseMask::StepFront(base::TimeTicks deadline) const {
+  Pending& p = pending_.front();
   if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
     Retire();
     mask_ = std::make_unique<CanvasNoiseMask>(p.width, p.height);
   }
-  std::move(p.event).Run(*mask_);
+  if (p.job->Step(*mask_, deadline)) {
+    pending_bytes_ -= p.bytes;
+    pending_.erase(pending_.begin());
+  }
 }
 
 void LazyCanvasNoiseMask::Retire() const {
@@ -198,7 +223,7 @@ void LazyCanvasNoiseMask::Reset() {
 
 void LazyCanvasNoiseMask::Materialize() const {
   while (!pending_.empty()) {
-    ApplyFront();
+    StepFront(base::TimeTicks::Max());
   }
 }
 
