@@ -1725,6 +1725,9 @@ if REAL_GPU:
 
 C65 = "C65 text transition points match unconfigured (8 seeds)"
 C65E = "C65e canvas fillText equals drawImage of the same SVG text (16 origins, 8 seeds)"
+C68 = "C68 a willReadFrequently canvas reads like the SVG shapes it draws (8 seeds)"
+C68B = "C68b a default canvas that has switched to the CPU reads like the SVG shapes it draws (8 seeds)"
+C68C = "C68c unchanged content reads the same before and after the CPU switch (8 seeds)"
 C66 = "C66 RGB implementation-format read equals the RGBA read"
 SOFT_ROWS = (C66,)
 C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
@@ -1881,6 +1884,70 @@ def c65e_row():
 
 
 c65e_row()
+
+# C68 (owner 2026-11-15, canvas audit shape oracle): pixels a 2D canvas rasterised on the CPU are exact in stock: an
+# arc and a fractional rect equal the same shapes imported as an SVG image, pixel for pixel, so readback noise on them
+# is detectable without a seed. C68: a willReadFrequently canvas. C68b: a default canvas that stock switched to the
+# CPU after repeated reads, drawn on afterwards. C68c: the same unchanged content read before and after the switch must
+# read the same (a gate decided per canvas, not per raster, would flip it). The unconfigured run must be exact (GPU
+# canvases are not: stock differs from the SVG by tens of levels), else UNMEASURED.
+C68_SCENE = """async (mode) => {
+  const W = 200, H = 100;
+  const svgImg = (inner) => new Promise((res, rej) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${inner}</svg>`;
+    const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('svg image'));
+    im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+  const SVG = '<rect width="200" height="100" fill="#fff"/><circle cx="100" cy="50" r="38.3" fill="rgb(128,128,128)"/>' +
+              '<rect x="10.3" y="10.6" width="30.2" height="12.7" fill="rgb(20,60,200)"/>';
+  const draw = (x) => { x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.fillStyle = 'rgb(128,128,128)';
+    x.beginPath(); x.arc(100, 50, 38.3, 0, Math.PI * 2); x.fill();
+    x.fillStyle = 'rgb(20,60,200)'; x.fillRect(10.3, 10.6, 30.2, 12.7); };
+  const read = (x) => x.getImageData(0, 0, W, H).data;
+  const same = (a, b) => { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d; };
+  const ref = document.createElement('canvas'); ref.width = W; ref.height = H;
+  const xr = ref.getContext('2d', { willReadFrequently: true }); xr.drawImage(await svgImg(SVG), 0, 0);
+  const svgPx = read(xr);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  if (mode === 'wrf') {
+    const x = c.getContext('2d', { willReadFrequently: true }); draw(x);
+    return { diff: same(read(x), svgPx) };
+  }
+  const x = c.getContext('2d');
+  draw(x);
+  const before = Array.from(read(x));              // unchanged content, before the switch
+  for (let i = 0; i < 8; i++) read(x);              // repeated reads: stock switches the canvas to the CPU
+  const after = Array.from(read(x));               // the same content after it
+  if (mode === 'same') return { diff: same(before, after) };
+  x.clearRect(0, 0, W, H); draw(x);                // drawn after the switch
+  return { diff: same(read(x), svgPx) };
+}"""
+
+
+def c68_rows():
+    for name, mode in ((C68, "wrf"), (C68B, "after"), (C68C, "same")):
+        un, un_e = session(None, f"() => ({C68_SCENE})('{mode}')")
+        if un is None:
+            results[name] = False
+            notes.append(f"{name[:4]}: session fault: {un_e}")
+            continue
+        if un["diff"]:
+            mark_unmeasured(name, f"the unconfigured canvas is not exact against the SVG shapes here "
+                                  f"({un['diff']} channel bytes differ): a GPU-rastered canvas, no reference")
+            continue
+        bad = {}
+        for seed in N234_SEEDS:
+            v, e = session(json.dumps({"canvas:seed": seed}), f"() => ({C68_SCENE})('{mode}')")
+            if v is None:
+                bad[seed] = str(e)
+            elif v["diff"]:
+                bad[seed] = f"{v['diff']} channel bytes differ"
+        results[name] = not bad
+        if bad:
+            notes.append(f"{name[:4]}: seeds whose read differs from the exact one: {bad}")
+
+
+c68_rows()
 
 # C66: the implementation-format read. A framebuffer with an RGB8 attachment reports (RGB, UNSIGNED_BYTE) as its
 # read pair; stock returns the rendered bytes for both reads, so the RGB bytes of an RGB read equal the first three
@@ -2071,7 +2138,7 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 70   # C66 is a soft row (see SOFT_ROWS), not counted
+EXPECTED = 73   # C66 is a soft row (see SOFT_ROWS), not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
