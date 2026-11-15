@@ -1744,8 +1744,7 @@ C65_SCENE = """(shift) => {
     const c = document.createElement('canvas'); c.width = 200; c.height = 160;
     const x = c.getContext('2d', { willReadFrequently: true });
     const sig = [];
-    const steps = mode === 'x' ? 128 : 64;    // x: two pixels, so a shift by a whole subpixel bin still shows every phase
-    for (let k = 0; k < steps; k++) {
+    for (let k = 0; k < 64; k++) {
       x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, 200, 160);
       x.fillStyle = '#000'; x.font = '48px sans-serif';
       if (mode === 'ys') x.scale(1.5, 1.5);
@@ -1761,7 +1760,23 @@ C65_SCENE = """(shift) => {
     }
     return sig;
   };
-  return { a: sweep('y'), b: sweep('x'), c: sweep('ys') };
+  // d: the same text at the identity and under scale(1 + 1e-6), which stock renders the same: a profile that moves
+  // text by a gate on the transform (or on anything but the draw itself) renders the two differently.
+  const same = () => {
+    const out = [];
+    for (let j = 0; j < 16; j++) {
+      const c = document.createElement('canvas'); c.width = 200; c.height = 160;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      const draw = (m) => { x.setTransform(m, 0, 0, m, 0, 0); x.clearRect(0, 0, 200, 160);
+        x.fillStyle = '#000'; x.font = '48px sans-serif'; x.fillText('H', (20 + j / 16) / m, 80 / m);
+        return x.getImageData(0, 0, 200, 160).data; };
+      const a = draw(1), b = draw(1 + 1e-6);
+      let eq = true; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { eq = false; break; }
+      out.push(eq);
+    }
+    return out;
+  };
+  return { a: sweep('y'), b: sweep('x'), c: sweep('ys'), d: same() };
 }"""
 
 
@@ -1769,15 +1784,8 @@ def transitions(sig):
     return [k for k in range(1, len(sig)) if sig[k] != sig[k - 1]]
 
 
-# Skia places a glyph at one of 4 subpixel bins in x (1/4 px = 16 steps of the sweep), so a shift by a whole bin moves
-# every x transition onto another one of the same phase: stock's set of transition points, as positions, is unchanged.
-# The x sweep (b) is compared by phase (k mod 16); the y sweeps by position.
-X_BIN_STEPS = 16
-
-
 def reading(key, sig):
-    t = transitions(sig)
-    return sorted({k % X_BIN_STEPS for k in t}) if key == "b" else t
+    return transitions(sig)
 
 
 def c65_row():
@@ -1789,6 +1797,10 @@ def c65_row():
     if un is None or faults:
         results[C65] = False
         notes.append(f"C65: session fault: {faults[:1]}")
+        return
+    if not all(un["d"]):
+        mark_unmeasured(C65, f"stock renders the same text differently at the identity and under scale(1 + 1e-6) "
+                        f"({un['d'].count(False)} of 16 positions): C65d has no reference")
         return
     ref = {k: reading(k, un[k]) for k in "abc"}
     blank = [k for k in "abc" if "blank" in un[k] or not ref[k]]
@@ -1804,8 +1816,10 @@ def c65_row():
         off = [k for k in "abc" if reading(k, v[k]) != ref[k]]
         if off:
             bad[s] = {k: reading(k, v[k]) for k in off}
+        if not all(v["d"]):
+            bad.setdefault(s, {})["d"] = f"{v['d'].count(False)} of 16 positions differ at scale(1 + 1e-6)"
     results[C65] = not bad
-    notes.append(f"C65 unconfigured transitions: a {ref['a']}, b {ref['b']}, c {ref['c']}")
+    notes.append(f"C65 unconfigured transitions: a {ref['a']}, b {ref['b']}, c {ref['c']}; d: identity == scale(1+1e-6) at 16 of 16")
     if bad:
         notes.append(f"C65: seeds whose transitions differ: {bad}")
 
