@@ -9,7 +9,7 @@ from page script, on the same Windows host?
 Arms: S stock (frozen copy, seeded profile), S2 stock again (the RED), F the fork with a generated Windows identity,
 FH the same identity claiming the host's core count (no CPU pin), F0 the fork with no config, V a vanilla Chromium snapshot.
 Bisection arms (release -5, see arm_spec): FA F's launch args and no config, FS only canvas:seed, FN the identity without canvas:seed, SP stock under F's CPU pin, SA stock under F's launch args.
-Bisection arms aside: Every arm is spawned directly (`chrome.exe --user-data-dir
+Every arm is spawned directly (`chrome.exe --user-data-dir
 <dir> <url>`), with no driver attached: the page POSTs its result to a local server, and a CDP connection is made only
 AFTER the result is in, to read chrome://gpu's crash count (every arm carries the same --remote-debugging-port).
 
