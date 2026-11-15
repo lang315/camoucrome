@@ -7,7 +7,9 @@ from page script, on the same Windows host?
      plus the first read in a fresh page and a fresh worker.
 
 Arms: S stock (frozen copy, seeded profile), S2 stock again (the RED), F the fork with a generated Windows identity,
-FH the same identity claiming the host's core count (no CPU pin), F0 the fork with no config, V a vanilla Chromium snapshot. Every arm is spawned directly (`chrome.exe --user-data-dir
+FH the same identity claiming the host's core count (no CPU pin), F0 the fork with no config, V a vanilla Chromium snapshot.
+Bisection arms (release -5, see arm_spec): FA F's launch args and no config, FS only canvas:seed, FN the identity without canvas:seed, SP stock under F's CPU pin, SA stock under F's launch args.
+Bisection arms aside: Every arm is spawned directly (`chrome.exe --user-data-dir
 <dir> <url>`), with no driver attached: the page POSTs its result to a local server, and a CDP connection is made only
 AFTER the result is in, to read chrome://gpu's crash count (every arm carries the same --remote-debugging-port).
 
@@ -485,6 +487,38 @@ def _find_chrome(d):
     raise SystemExit(f"UNMEASURED: no chrome.exe under {d}")
 
 
+FORK_ARMS = ("F", "FH", "FA", "FS", "FN", "F0")
+STOCK_ARMS = ("S", "S2", "SP", "SA")
+# Arms that draw the identity (the others launch with no identity).
+IDENTITY_ARMS = ("F", "FH", "FA", "FS", "FN", "SP", "SA")
+
+
+def arm_spec(arm, ident):
+    """(config, launch_opts, pin) of one arm, from the generated identity {"config", "launch"}.
+    config None: no CAMOU_CONFIG. launch_opts None: the plain argv. pin: pin the browser to the identity's claimed
+    core count. The bisection arms of release -5 take one factor of F away at a time (canvas2d read 1.76 for F against
+    2.52 for S): FH the pin, FA the config (F's launch args kept), FS everything but canvas:seed, FN the seed only;
+    SP and SA put stock under the pin and under F's launch args."""
+    cfg, lo = ident["config"], ident["launch"]
+    if arm == "F":
+        return cfg, lo, True
+    if arm == "FH":     # the same identity claiming the host's core count: no pin, so the pin and the build tell apart
+        return {**cfg, "navigator.hardwareConcurrency": os.cpu_count()}, lo, False
+    if arm == "FA":
+        return None, lo, False
+    if arm == "FS":
+        return {"canvas:seed": cfg["canvas:seed"]}, None, False
+    if arm == "FN":
+        return {k: v for k, v in cfg.items() if k != "canvas:seed"}, lo, True
+    if arm == "SP":
+        return None, None, True
+    if arm == "SA":
+        return None, lo, False
+    if arm in ("S", "S2", "F0", "V"):
+        return None, None, False
+    raise KeyError(arm)
+
+
 def run_cmd(a):
     import gpu_gate
     import measure_step2 as m2
@@ -494,7 +528,7 @@ def run_cmd(a):
     arms = a.arms.split(",")
     stock_exe = os.path.join(a.stock_app or os.environ.get("CAMOU_STOCK_APP") or m2.STOCK_APP, "chrome.exe")
     fork_exe = os.path.join(a.fork_dir, "chrome.exe") if a.fork_dir else os.environ.get("CAMOU_FORK_EXE")
-    exe_of = {"S": stock_exe, "S2": stock_exe, "F": fork_exe, "F0": fork_exe, "FH": fork_exe,
+    exe_of = {**{x: stock_exe for x in STOCK_ARMS}, **{x: fork_exe for x in FORK_ARMS},
               "V": _find_chrome(a.snapshot_dir) if "V" in arms and a.snapshot_dir else None}
     for arm in arms:
         if arm not in exe_of:
@@ -526,7 +560,7 @@ def run_cmd(a):
             return rec
         rec["fvm_gb"], rec["cpu_load"] = round(_fvm_gb(), 1), _cpu_load()
         port = _free_port()
-        own_seed = arm in ("S", "S2")
+        own_seed = arm in STOCK_ARMS
         udd = m2.SEED.fresh_copy() if own_seed else tempfile.mkdtemp(prefix="timing-parity-")
         crash = tempfile.mkdtemp(prefix="timing-parity-crash-")
         url = base + "#" + __import__("urllib.parse").parse.quote(page_spec(arm, a.plant if arm == "S2" else None))
@@ -534,19 +568,19 @@ def run_cmd(a):
         argv = [exe_of[arm], *launcher.BASE_ARGS, f"--user-data-dir={udd}", f"--remote-debugging-port={port}"]
         saved = None
         try:
-            if arm in ("F", "FH"):
+            if arm in IDENTITY_ARMS:
                 ident = m2.identity(a.seed_base + i)
-                cfg, lo = ident["config"], ident["launch"]
-                if arm == "FH":     # the same identity, claiming the host's core count: no pin, so the pin and the build tell apart
-                    cfg = {**cfg, "navigator.hardwareConcurrency": os.cpu_count()}
-                args = launcher.build_args(tuple(lo["window"]) if lo.get("window") else None, lo.get("dpr"),
-                                           lo.get("args", []), False, udd, launcher.accept_lang_of(cfg),
-                                           position=tuple(lo["position"]) if lo.get("position") else None)
-                argv = [exe_of[arm]] + [x for x in args if x != "--remote-debugging-pipe"] + [f"--remote-debugging-port={port}"]
-                env = launcher.build_env(cfg, fontconfig=launcher.fontconfig_for(cfg, None, None, exe_of[arm]), crash_dir=crash)
-                n = launcher.effective_keys(cfg).get("navigator.hardwareConcurrency")
+                cfg, lo, pin_on = arm_spec(arm, ident)
+                if lo is not None:
+                    args = launcher.build_args(tuple(lo["window"]) if lo.get("window") else None, lo.get("dpr"),
+                                               lo.get("args", []), False, udd, launcher.accept_lang_of(ident["config"]),
+                                               position=tuple(lo["position"]) if lo.get("position") else None)
+                    argv = [exe_of[arm]] + [x for x in args if x != "--remote-debugging-pipe"] + [f"--remote-debugging-port={port}"]
+                if cfg is not None:
+                    env = launcher.build_env(cfg, fontconfig=launcher.fontconfig_for(cfg, None, None, exe_of[arm]), crash_dir=crash)
+                n = launcher.effective_keys(cfg if cfg is not None else ident["config"]).get("navigator.hardwareConcurrency")
                 rec["claimed_hc"], rec["host_cpus"] = n, os.cpu_count()
-                if isinstance(n, int) and not isinstance(n, bool) and n >= 1:
+                if pin_on and isinstance(n, int) and not isinstance(n, bool) and n >= 1:
                     saved, chosen = _pin_self(pin, n)
                     rec["pin_mask"] = sorted(chosen) if chosen else None
             server.results = []
@@ -593,7 +627,7 @@ def run_cmd(a):
                 print(f"{arm}/{i}: {'UNMEASURED ' + rec['unmeasured'] if rec.get('unmeasured') else 'ok'}", flush=True)
 
     try:
-        if any(x in arms for x in ("S", "S2")):
+        if any(x in arms for x in STOCK_ARMS):
             with m2.seeded_control(stock_exe):
                 go()
         else:

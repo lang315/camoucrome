@@ -333,3 +333,37 @@ def test_a_first_read_missing_on_the_stock_side_is_unmeasured_too():
     rows = m.compare(stock, run_of("F"))
     row = [r for r in rows["first"] if r["name"] == "screen.width"]
     assert row and row[0]["verdict"] == "UNMEASURED"
+
+
+# ---- arm_spec: the canvas2d bisection arms (release -5, Task 3) ----
+
+IDENT = {"config": {"canvas:seed": 5, "navigator.hardwareConcurrency": 4, "navigator.language": "en-US"},
+         "launch": {"window": [1280, 800], "dpr": 1.5, "position": [10, 20], "args": ["--x"]}}
+
+
+def test_arm_spec_table():
+    cfg, lo = IDENT["config"], IDENT["launch"]
+    assert m.arm_spec("F", IDENT) == (cfg, lo, True)
+    c, l, p = m.arm_spec("FH", IDENT)
+    assert c == {**cfg, "navigator.hardwareConcurrency": __import__("os").cpu_count()} and l == lo and p is False
+    assert m.arm_spec("FA", IDENT) == (None, lo, False)
+    assert m.arm_spec("FS", IDENT) == ({"canvas:seed": 5}, None, False)
+    c, l, p = m.arm_spec("FN", IDENT)
+    assert "canvas:seed" not in c and c["navigator.hardwareConcurrency"] == 4 and l == lo and p is True
+    assert m.arm_spec("SP", IDENT) == (None, None, True)
+    assert m.arm_spec("SA", IDENT) == (None, lo, False)
+    for arm in ("S", "S2", "F0", "V"):
+        assert m.arm_spec(arm, IDENT) == (None, None, False)
+
+
+def test_arm_spec_does_not_mutate_the_identity():
+    import copy
+    before = copy.deepcopy(IDENT)
+    for arm in m.FORK_ARMS + m.STOCK_ARMS:
+        m.arm_spec(arm, IDENT)
+    assert IDENT == before
+
+
+def test_arm_spec_unknown_arm_refused():
+    with pytest.raises(KeyError):
+        m.arm_spec("ZZ", IDENT)
