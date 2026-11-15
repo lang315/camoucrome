@@ -463,7 +463,7 @@ index e3d1a36fd0..e2543653d5 100644
    merge(CamouOpArea(op, &coverage, canvas), kind,
          [&] { raster_with(coverage); });
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index af7fd0e390..a175ead8ce 100644
+index af7fd0e390..708b929cec 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -12,6 +12,7 @@
@@ -474,12 +474,24 @@ index af7fd0e390..a175ead8ce 100644
  #include "base/check.h"
  #include "base/compiler_specific.h"
  #include "base/dcheck_is_on.h"
-@@ -415,27 +416,44 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
-   // marked aa, page-supplied ones imported, and a full opaque solid cover
-   // clears both. Null until the first flush or putImageData with
-   // canvas:seed set.
+@@ -408,34 +409,49 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   const Font* AccessFont(HTMLCanvasElement* canvas);
+ 
+   // Camoucrome canvas noise S2b: which pixels may carry readback noise.
+-  // Computed at flush from the page's own recording (CamouMarkRecord,
+-  // canvas noise S2c); putImageData and transferToImageBitmap are hooked
++  // Each flushed recording (CamouMarkRecord, canvas noise S2c) is queued as a
++  // walk job and the mask is built from the queue when a read needs it, or by
++  // an idle task; putImageData and transferToImageBitmap are hooked
+   // separately; drawFocusIfNeeded's ring is a draw op like any other.
+-  // Anti-aliased and rasteriser-dependent pixels are
+-  // marked aa, page-supplied ones imported, and a full opaque solid cover
+-  // clears both. Null until the first flush or putImageData with
+-  // canvas:seed set.
 -  std::unique_ptr<camoucfg::CanvasNoiseMask> camou_mask_;
-+  // Built when a read needs it (LazyCanvasNoiseMask), from events queued at flush.
++  // Anti-aliased and rasteriser-dependent pixels are marked aa, page-supplied
++  // ones imported, and a full opaque solid cover clears both. Holds no mask
++  // until the first flush or putImageData with canvas:seed set.
 +  camoucfg::LazyCanvasNoiseMask camou_mask_;
 +  // Some flush since the last reset was rastered on the GPU: only then can a cell hold GPU-era noise. A
 +  // canvas that never was (willReadFrequently from creation, or a machine with no GPU raster) marks nothing
@@ -495,16 +507,18 @@ index af7fd0e390..a175ead8ce 100644
 +  // Queues marking `area` (device pixels) with `kind`.
    void CamouMarkRect(const SkIRect& area,
                       camoucfg::CanvasNoiseMask::Kind kind);
-   // Merges the coverage of every draw op of `record` (one released main
-   // recording) into camou_mask_, in order: canvas noise S2c computes the
-   // mask at flush, from the page's own recording, not per draw.
+-  // Merges the coverage of every draw op of `record` (one released main
+-  // recording) into camou_mask_, in order: canvas noise S2c computes the
+-  // mask at flush, from the page's own recording, not per draw.
 -  void CamouMarkRecord(const cc::PaintRecord& record);
-+  // `cpu`: the recording is rastered on the CPU, so its draws are marked
-+  // imported over their areas and nothing is rastered for them (no
-+  // readback noise on CPU pixels). `bytes`: what the queued event keeps
-+  // alive. The walk runs from an idle task, one event at a time, or when a read
-+  // needs the mask (CamouWalkRecord); a recording that holds images is walked at
-+  // once, so the queue never pins an image.
++  // Queues the walk of `record` (one released main recording): the draw ops'
++  // coverage is merged into camou_mask_, in order, when an idle task or a read
++  // gets to it (CamouWalk), not at flush and not per draw.
++  // `cpu`: the recording is rastered on the CPU: on a canvas that no flush has
++  // GPU-rastered it is not queued at all, on one stock switched from the GPU
++  // every draw's real coverage is merged as imported (no readback noise on CPU
++  // pixels). `bytes`: what the queued job keeps alive. A recording that holds
++  // images is walked at once, so the queue never pins an image.
 +  void CamouMarkRecord(cc::PaintRecord record, bool cpu, size_t bytes);
 +  void CamouScheduleIdleWalk();
 +  void CamouIdleWalk(base::TimeTicks deadline);
