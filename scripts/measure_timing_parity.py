@@ -7,7 +7,9 @@ from page script, on the same Windows host?
      plus the first read in a fresh page and a fresh worker.
 
 Arms: S stock (frozen copy, seeded profile), S2 stock again (the RED), F the fork with a generated Windows identity,
-FH the same identity claiming the host's core count (no CPU pin), F0 the fork with no config, V a vanilla Chromium snapshot. Every arm is spawned directly (`chrome.exe --user-data-dir
+FH the same identity claiming the host's core count (no CPU pin), F0 the fork with no config, V a vanilla Chromium snapshot.
+Bisection arms (release -5, see arm_spec): FA F's launch args and no config, FS only canvas:seed, FN the identity without canvas:seed, SP stock under F's CPU pin, SA stock under F's launch args.
+Every arm is spawned directly (`chrome.exe --user-data-dir
 <dir> <url>`), with no driver attached: the page POSTs its result to a local server, and a CDP connection is made only
 AFTER the result is in, to read chrome://gpu's crash count (every arm carries the same --remote-debugging-port).
 
@@ -76,6 +78,7 @@ WORKLOAD_GROUP = {
     "int": "jit", "float": "jit", "regexp": "jit",
     "json_parse": "cpp", "json_stringify": "cpp", "structured_clone": "cpp", "text_codec": "cpp",
     "dom_append": "cpp", "inner_html": "cpp", "query_selector_all": "cpp", "computed_style": "cpp", "canvas2d": "cpp",
+    "canvas2d_read": "cpp",   # canvas2d plus ONE getImageData of the canvas: the cost a lazy noise mask moves to read time
     "gcs_read": "cpp", "style_set": "cpp", "layout_read": "cpp",   # computed_style split: getComputedStyle alone, style write alone, forced layout alone
     "sort_builtin": "builtin",
 }
@@ -98,9 +101,17 @@ def worker_getters():
     return [k for k in _dot_keys() if k.startswith("navigator.")] + SYNTHETIC_WORKER + [WORKER_CONTROL]
 
 
-def page_spec(arm, plant=None):
+def page_spec(arm, plant=None, n=None):
+    """`n`: workload -> repetitions per rep, calibrated on the first stock launch, so every arm times the same amount of
+    work (a cost that is bimodal, a flush in most reps and none in a few, moves a per-arm calibration)."""
     return json.dumps({"arm": arm, "plant": plant, "window": window_getters(), "worker": worker_getters(),
-                       "first": FIRST_READS})
+                       "first": FIRST_READS, "n": n})
+
+
+def calibration(res):
+    """workload -> n from a launch's result (its `p_n`); {} when it has none."""
+    got = res.get("p_n") if isinstance(res, dict) else None
+    return {k: v for k, v in (got or {}).items() if isinstance(v, int) and not isinstance(v, bool) and v > 0}
 
 
 # One page. Phase order: first reads in this fresh page; the fresh worker's first reads and its getters (G worker) run
@@ -147,6 +158,7 @@ function workloads(plant) {
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256; const cx = cv.getContext('2d');
   const arr = Array.from({length: 500}, (_, i) => (i * 7919) % 1009);
   let sink;
+  const canvasOps = (cx, n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } };
   const W = {
     int: (n) => { let x = 0; for (let i = 0; i < n; i++) x = (x + i * 7) | 0; sink = x; },
     float: (n) => { let x = 0.5; for (let i = 0; i < n; i++) x = x * 1.0000001 + Math.sin(i) * 1e-9; sink = x; },
@@ -162,24 +174,32 @@ function workloads(plant) {
     gcs_read: (n) => { for (let i = 0; i < n; i++) sink = getComputedStyle(target).height; },
     style_set: (n) => { for (let i = 0; i < n; i++) target.style.height = (i & 1 ? 11 : 12) + 'px'; },
     layout_read: (n) => { for (let i = 0; i < n; i++) { sink = target.offsetHeight; } },
-    canvas2d: (n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } },
+    canvas2d: (n) => canvasOps(cx, n),
+    // a FRESH canvas per call: repeated reads of one canvas make Chrome switch it to the CPU, where a seeded canvas has
+    // no mask to build and the workload would hide the cost it exists to keep
+    canvas2d_read: (n) => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d'); canvasOps(x, n); sink = x.getImageData(0, 0, 256, 256); },
     sort_builtin: (n) => { for (let i = 0; i < n; i++) sink = arr.slice().sort((a, b) => a - b); },
   };
   if (plant && W[plant]) { const f = W[plant]; W[plant] = (n) => { f(n); f(n); }; }   // test-only slowdown: twice the work
   return W;
 }
-function benchP(W) {
-  const out = {};
+function benchP(W, fixed) {
+  const out = {}, med = {}, p75 = {}, ns = {};
   for (const name of Object.keys(W)) {
     const f = W[name];
     f(2);
-    let n = 8;
-    while (n < 1e9 && (() => { const t = clk(); f(n); return clk() - t; })() < 15) n *= 2;
-    let best = Infinity;
-    for (let r = 0; r < 9; r++) { const t = clk(); f(n); best = Math.min(best, clk() - t); }
-    out[name] = best * 1e6 / n;
+    let n = fixed && fixed[name] > 0 ? fixed[name] : 8;
+    if (!(fixed && fixed[name] > 0)) while (n < 1e9 && (() => { const t = clk(); f(n); return clk() - t; })() < 15) n *= 2;
+    f(n);                                         // one untimed pass at the final n: every rep starts warm
+    const reps = [];
+    for (let r = 0; r < 9; r++) { const t = clk(); f(n); reps.push(clk() - t); }
+    reps.sort((a, b) => a - b);
+    out[name] = reps[0] * 1e6 / n;                 // the fastest rep, as before
+    p75[name] = reps[6] * 1e6 / n;                 // the slow tail: a flush that lands in a third of the reps
+    med[name] = reps[4] * 1e6 / n;                 // the median rep: a cost that flushes in most reps shows here
+    ns[name] = n;
   }
-  return out;
+  return {out, med, p75, ns};
 }
 
 (async () => {
@@ -198,12 +218,14 @@ function benchP(W) {
     let wdata = null;
     try { wdata = await wr; } catch (err) { res.errors.push(String(err)); }
     if (wdata) { res.first.worker = wdata.first; res.g_worker = wdata.g; res.worker_ok = true; }
-    res.p = benchP(workloads(SPEC.plant));               // 3. P
+    { const b = benchP(workloads(SPEC.plant), SPEC.n); res.p = b.out; res.p_med = b.med; res.p_p75 = b.p75; res.p_n = b.ns; }   // 3. P
     const A = new (self.AudioContext || self.webkitAudioContext)();
     const M = matchMedia('(pointer: fine)');
     res.g_window = benchG(SPEC.window, '', {A, M});      // 4. G window
     try { A.close(); } catch (x) {}
   } catch (err) { res.errors.push(String(err && err.stack || err)); }
+  try { const g = document.createElement('canvas').getContext('webgl'); const d = g && g.getExtension('WEBGL_debug_renderer_info');
+        res.gl = d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; } catch (x) {}   // after every timed phase
   fetch('/result', {method: 'POST', body: JSON.stringify(res)});
 })();
 </script></body>"""
@@ -289,8 +311,14 @@ def parse_result(raw):
 def compare(stock_runs, other_runs, p_factor=P_FACTOR):
     """Rows of P (ratios), G (getters) and first reads for `other_runs` against `stock_runs`."""
     rows = {"p": [], "g": [], "first": []}
-    sr = [ratios(r["p"]) for r in stock_runs]
-    orr = [ratios(r["p"]) for r in other_runs]
+    # The verdict is on the median rep of each launch (`p_med`, the minimum when a launch has none); the fastest-rep
+    # ratios stay in the row beside it. A cost that is bimodal (a flush in most reps) reads low on the minimum.
+    sr = [ratios(r.get("p_med") or r["p"]) for r in stock_runs]
+    orr = [ratios(r.get("p_med") or r["p"]) for r in other_runs]
+    smin = [ratios(r["p"]) for r in stock_runs]
+    omin = [ratios(r["p"]) for r in other_runs]
+    s75 = [ratios(r.get("p_p75") or r.get("p_med") or r["p"]) for r in stock_runs]
+    o75 = [ratios(r.get("p_p75") or r.get("p_med") or r["p"]) for r in other_runs]
     names = []
     for r in sr + orr:
         names += [n for n in r if n not in names]
@@ -298,7 +326,11 @@ def compare(stock_runs, other_runs, p_factor=P_FACTOR):
         sv = [r[n] for r in sr if n in r]
         ov = [r[n] for r in orr if n in r]
         group = WORKLOAD_GROUP.get(n, "pair")
-        rows["p"].append({"name": n, "group": group, "stock": sv, "other": ov, "verdict": p_verdict(sv, ov, p_factor)})
+        v = p_verdict(sv, ov, p_factor)
+        direction = (None if v != "GAP" else "slower" if statistics.median(ov) > statistics.median(sv) else "faster")
+        rows["p"].append({"name": n, "group": group, "stock": sv, "other": ov, "verdict": v, "direction": direction,
+                           "stock_min": [r[n] for r in smin if n in r], "other_min": [r[n] for r in omin if n in r],
+                           "stock_p75": [r[n] for r in s75 if n in r], "other_p75": [r[n] for r in o75 if n in r]})
     for where, key, ctl in (("window", "g_window", WINDOW_CONTROL), ("worker", "g_worker", WORKER_CONTROL)):
         s, o = median_over(stock_runs, key), median_over(other_runs, key)
         sb, ob = s.get(ctl), o.get(ctl)
@@ -324,12 +356,15 @@ def fmt(v, nd=1):
 
 
 def render(arm, rows):
-    out = [f"\n== {arm} against S ==", "P  ratio over the regexp replace (median [min, max] over launches)",
+    out = [f"\n== {arm} against S ==", "P  ratio over the regexp replace of the median rep (median [min, max] over launches; the fastest rep beside)",
            f"{'workload':24s} {'group':8s} {'S':>22s} {arm:>22s}  verdict"]
     for r in rows["p"]:
         def cell(v):
             return f"{statistics.median(v):7.3f} [{min(v):.3f},{max(v):.3f}]" if v else "-"
-        out.append(f"{r['name']:24s} {r['group']:8s} {cell(r['stock']):>22s} {cell(r['other']):>22s}  {r['verdict']}")
+        gap = r["verdict"] + (f" {r['direction']}" if r.get("direction") else "")
+        out.append(f"{r['name']:24s} {r['group']:8s} {cell(r['stock']):>22s} {cell(r['other']):>22s}  {gap}"
+                   f"   (fastest rep {cell(r.get('stock_min')).split(' [')[0].strip()} / {cell(r.get('other_min')).split(' [')[0].strip()};"
+                   f" p75 rep {cell(r.get('stock_p75')).split(' [')[0].strip()} / {cell(r.get('other_p75')).split(' [')[0].strip()})")
     out.append("\nG  getter cost, ns per read (median over launches of the fastest round)")
     out.append(f"{'scope':7s} {'getter':52s} {'S':>9s} {arm:>9s}  verdict")
     for r in rows["g"]:
@@ -350,10 +385,16 @@ def totals(rows):
 def load_run(run_dir):
     """arm -> [measured launch records]; the unmeasured launches (arm -> [reason]) beside them."""
     ok, bad = {}, {}
-    for f in sorted(pathlib.Path(run_dir).glob("launch-*.json")):
-        d = json.loads(f.read_text(encoding="utf-8"))
+    recs = [json.loads(f.read_text(encoding="utf-8")) for f in sorted(pathlib.Path(run_dir).glob("launch-*.json"))]
+    # Every launch times the n of the first measured stock launch; one that calibrated on its own measured other work.
+    stock = sorted((d for d in recs if d["arm"] == "S" and not d.get("unmeasured") and d["result"].get("p_n")),
+                   key=lambda d: d["i"])
+    ref_n = stock[0]["result"]["p_n"] if stock else None
+    for d in recs:
         if d.get("unmeasured"):
             bad.setdefault(d["arm"], []).append(d["unmeasured"])
+        elif ref_n and d["result"].get("p_n") != ref_n:
+            bad.setdefault(d["arm"], []).append("n differs from the first stock launch's (calibrated on its own)")
         else:
             ok.setdefault(d["arm"], []).append(d["result"])
     return ok, bad
@@ -485,16 +526,92 @@ def _find_chrome(d):
     raise SystemExit(f"UNMEASURED: no chrome.exe under {d}")
 
 
+FORK_ARMS = ("F", "FH", "FA", "FS", "FN", "F0", "F0P")
+STOCK_ARMS = ("S", "S2", "SP", "SA", "SE")
+# Arms whose profile is a copy of the seeded stock profile (Finch seed present): stock's own arms and F0P (F0 on that
+# profile); SE is stock on a fresh empty profile. Two arms that tell the profile from the build.
+SEEDED_PROFILE_ARMS = ("S", "S2", "SP", "SA", "F0P")
+# Arms that draw the identity (the others launch with no identity).
+IDENTITY_ARMS = ("F", "FH", "FA", "FS", "FN", "SP", "SA")
+
+
+def arm_spec(arm, ident):
+    """(config, launch_opts, pin) of one arm, from the generated identity {"config", "launch"}.
+    config None: no CAMOU_CONFIG. launch_opts None: the plain argv. pin: pin the browser to the identity's claimed
+    core count. The bisection arms of release -5 take one factor of F away at a time (canvas2d read 1.76 for F against
+    2.52 for S): FH the pin, FA the config (F's launch args kept), FS everything but canvas:seed, FN the seed only;
+    SP and SA put stock under the pin and under F's launch args."""
+    cfg, lo = ident["config"], ident["launch"]
+    if arm == "F":
+        return cfg, lo, True
+    if arm == "FH":     # the same identity claiming the host's core count: no pin, so the pin and the build tell apart
+        return {**cfg, "navigator.hardwareConcurrency": os.cpu_count()}, lo, False
+    if arm == "FA":
+        return None, lo, False
+    if arm == "FS":
+        return {"canvas:seed": cfg["canvas:seed"]}, None, False
+    if arm == "FN":
+        return {k: v for k, v in cfg.items() if k != "canvas:seed"}, lo, True
+    if arm == "SP":
+        return None, None, True
+    if arm == "SA":
+        return None, lo, False
+    if arm in ("S", "S2", "F0", "V", "F0P", "SE"):
+        return None, None, False
+    raise KeyError(arm)
+
+
+def _finch_seed(udd):
+    """Whether the profile's Local State carries a variations (Finch) seed: True / False / None (no Local State yet)."""
+    try:
+        state = json.loads(pathlib.Path(udd, "Local State").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return any(k.startswith("variations") and "seed" in k for k in state)
+
+
+GPU_VENDORS = {"intel", "nvidia", "amd", "ati", "advanced", "qualcomm", "apple", "arm"}
+
+
+def adapter_families(names):
+    """'Vendor, Vendor' from display adapter names: the first word of each, no model and no driver, and only a GPU
+    vendor: a remote-display or virtual adapter (Parsec, Microsoft Remote Display) names the owner's remote-access
+    software, so it is dropped."""
+    words = [re.split(r"[\s(]", n.strip(), maxsplit=1)[0] for n in names.split(";") if n.strip()]
+    return ", ".join(dict.fromkeys(w for w in words if w.lower() in GPU_VENDORS))
+
+
+def _adapters():
+    """The display adapters' vendors, once per run (the GPU process may use the physical one or the RDP/Basic one)."""
+    p = subprocess.run(["powershell", "-NoProfile", "-Command",
+                        "(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join '; '"],
+                       capture_output=True, text=True, timeout=60)
+    return adapter_families(p.stdout)
+
+
+def renderer_note(res):
+    """(family, software?) of a result's UNMASKED_RENDERER; the string itself (device id, driver build) is removed from
+    the result, so it never reaches a launch record."""
+    return gpu_gate_family(res.pop("gl", None))
+
+
+def gpu_gate_family(renderer):
+    import gpu_gate
+    return gpu_gate.renderer_family(renderer)
+
+
 def run_cmd(a):
+    arms = a.arms.split(",")
+    if "S" not in arms:
+        sys.exit("refusing a run without arm S: the iteration count and every ratio come from S (stock)")
     import gpu_gate
     import measure_step2 as m2
     from camoucrome import launcher, pin
 
     gpu_gate.require_interactive()
-    arms = a.arms.split(",")
     stock_exe = os.path.join(a.stock_app or os.environ.get("CAMOU_STOCK_APP") or m2.STOCK_APP, "chrome.exe")
     fork_exe = os.path.join(a.fork_dir, "chrome.exe") if a.fork_dir else os.environ.get("CAMOU_FORK_EXE")
-    exe_of = {"S": stock_exe, "S2": stock_exe, "F": fork_exe, "F0": fork_exe, "FH": fork_exe,
+    exe_of = {**{x: stock_exe for x in STOCK_ARMS}, **{x: fork_exe for x in FORK_ARMS},
               "V": _find_chrome(a.snapshot_dir) if "V" in arms and a.snapshot_dir else None}
     for arm in arms:
         if arm not in exe_of:
@@ -510,7 +627,8 @@ def run_cmd(a):
     run_dir.mkdir()
     versions = {arm: m2.exe_version(exe) for arm, exe in exe_of.items() if exe and arm in arms}
     (run_dir / "run.json").write_text(json.dumps({"arms": arms, "launches": a.launches, "versions": versions,
-                                                  "plant": a.plant, "min_reads": MIN_READS}, indent=1), encoding="utf-8")
+                                                  "plant": a.plant, "min_reads": MIN_READS,
+                                                  "adapters": _adapters()}, indent=1), encoding="utf-8")
     print(f"run {run_dir}; versions {versions}", flush=True)
 
     server = _Server(("127.0.0.1", 0), _Handler)
@@ -518,35 +636,40 @@ def run_cmd(a):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}/"
 
+    calib = {}      # workload -> n, from the first measured stock launch: every later launch times the same work
+
     def launch_one(arm, i):
         why = _busy() or (None if session_active(_session_text()) else "session 1 is not Active")
-        rec = {"arm": arm, "i": i, "fvm_gb": None, "cpu_load": None}
+        rec = {"arm": arm, "i": i, "fvm_gb": None, "cpu_load": None, "n_from_s": bool(calib)}
         if why:
             rec["unmeasured"] = why
             return rec
+        if "S" in arms and arm != "S" and not calib:
+            rec["unmeasured"] = "no stock launch has set the repetition counts yet (S did not measure)"
+            return rec
         rec["fvm_gb"], rec["cpu_load"] = round(_fvm_gb(), 1), _cpu_load()
         port = _free_port()
-        own_seed = arm in ("S", "S2")
+        own_seed = arm in SEEDED_PROFILE_ARMS
         udd = m2.SEED.fresh_copy() if own_seed else tempfile.mkdtemp(prefix="timing-parity-")
         crash = tempfile.mkdtemp(prefix="timing-parity-crash-")
-        url = base + "#" + __import__("urllib.parse").parse.quote(page_spec(arm, a.plant if arm == "S2" else None))
+        url = base + "#" + __import__("urllib.parse").parse.quote(page_spec(arm, a.plant if arm == "S2" else None, calib or None))
         env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
         argv = [exe_of[arm], *launcher.BASE_ARGS, f"--user-data-dir={udd}", f"--remote-debugging-port={port}"]
         saved = None
         try:
-            if arm in ("F", "FH"):
+            if arm in IDENTITY_ARMS:
                 ident = m2.identity(a.seed_base + i)
-                cfg, lo = ident["config"], ident["launch"]
-                if arm == "FH":     # the same identity, claiming the host's core count: no pin, so the pin and the build tell apart
-                    cfg = {**cfg, "navigator.hardwareConcurrency": os.cpu_count()}
-                args = launcher.build_args(tuple(lo["window"]) if lo.get("window") else None, lo.get("dpr"),
-                                           lo.get("args", []), False, udd, launcher.accept_lang_of(cfg),
-                                           position=tuple(lo["position"]) if lo.get("position") else None)
-                argv = [exe_of[arm]] + [x for x in args if x != "--remote-debugging-pipe"] + [f"--remote-debugging-port={port}"]
-                env = launcher.build_env(cfg, fontconfig=launcher.fontconfig_for(cfg, None, None, exe_of[arm]), crash_dir=crash)
-                n = launcher.effective_keys(cfg).get("navigator.hardwareConcurrency")
+                cfg, lo, pin_on = arm_spec(arm, ident)
+                if lo is not None:
+                    args = launcher.build_args(tuple(lo["window"]) if lo.get("window") else None, lo.get("dpr"),
+                                               lo.get("args", []), False, udd, launcher.accept_lang_of(ident["config"]),
+                                               position=tuple(lo["position"]) if lo.get("position") else None)
+                    argv = [exe_of[arm]] + [x for x in args if x != "--remote-debugging-pipe"] + [f"--remote-debugging-port={port}"]
+                if cfg is not None:
+                    env = launcher.build_env(cfg, fontconfig=launcher.fontconfig_for(cfg, None, None, exe_of[arm]), crash_dir=crash)
+                n = launcher.effective_keys(cfg if cfg is not None else ident["config"]).get("navigator.hardwareConcurrency")
                 rec["claimed_hc"], rec["host_cpus"] = n, os.cpu_count()
-                if isinstance(n, int) and not isinstance(n, bool) and n >= 1:
+                if pin_on and isinstance(n, int) and not isinstance(n, bool) and n >= 1:
                     saved, chosen = _pin_self(pin, n)
                     rec["pin_mask"] = sorted(chosen) if chosen else None
             server.results = []
@@ -561,15 +684,22 @@ def run_cmd(a):
                 rec["unmeasured"] = "the page never reported" + (f" (exit {proc.returncode})" if proc.poll() is not None else "")
                 return rec
             res, why = parse_result(server.results[0])
-            crashes = gpu_gate.read_port(port)             # after the result: the only CDP connection of the launch
+            if isinstance(server.results[0], dict):
+                rec["gl_family"], rec["gl_software"] = renderer_note(server.results[0])   # vendor / backend only
+            rec["finch_seed"] = _finch_seed(udd)
+            crashes, rec["gpu_status"], rec["variations"] = gpu_gate.read_port_status(port)             # after the result: the only CDP connection of the launch
             if not session_active(_session_text()):
                 rec["unmeasured"] = "session 1 left Active during the launch"
             elif crashes != 0:
                 rec["unmeasured"] = f"gpu-crash={'unknown' if crashes is None else crashes}"
             elif why:
                 rec["unmeasured"] = why
+            elif calib and arm != "S" and res.get("p_n") != calib:
+                rec["unmeasured"] = "the page timed other repetition counts than S's"
             else:
                 rec["result"] = res
+                if not calib and arm == "S":
+                    calib.update(calibration(res))
             return rec
         finally:
             if saved is not None:
@@ -587,13 +717,13 @@ def run_cmd(a):
 
     def go():
         for i in range(a.launches):
-            for arm in arms:
+            for arm in sorted(arms, key=lambda x: x != "S"):        # S first: the other arms time its n
                 rec = launch_one(arm, i)
                 (run_dir / f"launch-{arm}-{i:02d}.json").write_text(json.dumps(rec), encoding="utf-8")
                 print(f"{arm}/{i}: {'UNMEASURED ' + rec['unmeasured'] if rec.get('unmeasured') else 'ok'}", flush=True)
 
     try:
-        if any(x in arms for x in ("S", "S2")):
+        if any(x in arms for x in SEEDED_PROFILE_ARMS):
             with m2.seeded_control(stock_exe):
                 go()
         else:

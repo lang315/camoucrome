@@ -119,3 +119,51 @@ def test_lib_shell_gate_fails_closed_when_the_read_raises():
     def boom(port):
         raise OSError("gone")
     assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=boom) == "UNMEASURED gpu-crash=unknown"
+
+
+def test_renderer_family_names_vendor_and_backend_only():
+    fam, software = g.renderer_family(
+        "ANGLE (ExampleVendor, ExampleVendor Model 1 (0x0000ABCD) Direct3D11 vs_5_0 ps_5_0, D3D11-1.2.3.4)")
+    assert fam == "ExampleVendor / Direct3D11" and software is False
+    assert "Model 1" not in fam and "1.2.3.4" not in fam
+
+
+def test_renderer_family_flags_software_renderers():
+    for r in ("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+              "ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)",
+              "Mesa llvmpipe"):
+        assert g.renderer_family(r)[1] is True
+
+
+def test_renderer_family_unreadable_is_not_a_family():
+    assert g.renderer_family(None) == ("unknown vendor / unknown backend", False)
+
+
+def test_status_lines_keep_feature_states_only():
+    text = ("Canvas: Hardware accelerated\nRasterization: Hardware accelerated on all threads\n"
+            "GL_RENDERER: ANGLE (ExampleVendor, ExampleVendor Model 1 Direct3D11, D3D11)\nWebGL: Hardware accelerated\n"
+            "Driver version: 1.2.3.4\nGPU process crash count :0")
+    assert g.status_lines(text) == ["Canvas: Hardware accelerated", "Rasterization: Hardware accelerated on all threads",
+                                    "WebGL: Hardware accelerated"]
+
+
+def test_status_lines_accept_the_table_row_form_without_a_colon():
+    assert g.status_lines("Canvas Hardware accelerated\nRasterization Software only. Hardware acceleration disabled")[0] == \
+        "Canvas: Hardware accelerated"
+
+
+def test_variation_count_counts_distinct_ids_only():
+    page = "Variations: a1b2c3d4-0000ffff 11112222-33334444 a1b2c3d4-0000ffff"
+    assert g.variation_count(page) == 2
+    assert g.variation_count("Variations: ") == 0
+    assert g.variation_count("Google Chrome 157") is None
+
+
+def test_status_lines_accept_the_bulleted_form_of_chrome_gpu():
+    assert g.status_lines("* Canvas: Hardware accelerated\n* Rasterization: Hardware accelerated\n"
+                          "GL_VERSION :OpenGL ES 3.0 (ANGLE 2.1.3)") == ["Canvas: Hardware accelerated",
+                                                                         "Rasterization: Hardware accelerated"]
+
+
+def test_status_lines_drop_a_line_whose_value_is_not_a_state_word():
+    assert g.status_lines("* Canvas: ANGLE (ExampleVendor, Model 1)\n* WebGL: Hardware accelerated") == ["WebGL: Hardware accelerated"]

@@ -1,6 +1,7 @@
 """measure_timing_parity: the pure parts (verdicts, page generation, result parsing)."""
 import json
 import pathlib
+import statistics
 
 import pytest
 
@@ -333,3 +334,145 @@ def test_a_first_read_missing_on_the_stock_side_is_unmeasured_too():
     rows = m.compare(stock, run_of("F"))
     row = [r for r in rows["first"] if r["name"] == "screen.width"]
     assert row and row[0]["verdict"] == "UNMEASURED"
+
+
+# ---- arm_spec: the canvas2d bisection arms (release -5, Task 3) ----
+
+IDENT = {"config": {"canvas:seed": 5, "navigator.hardwareConcurrency": 4, "navigator.language": "en-US"},
+         "launch": {"window": [1280, 800], "dpr": 1.5, "position": [10, 20], "args": ["--x"]}}
+
+
+def test_arm_spec_table():
+    cfg, lo = IDENT["config"], IDENT["launch"]
+    assert m.arm_spec("F", IDENT) == (cfg, lo, True)
+    c, l, p = m.arm_spec("FH", IDENT)
+    assert c == {**cfg, "navigator.hardwareConcurrency": __import__("os").cpu_count()} and l == lo and p is False
+    assert m.arm_spec("FA", IDENT) == (None, lo, False)
+    assert m.arm_spec("FS", IDENT) == ({"canvas:seed": 5}, None, False)
+    c, l, p = m.arm_spec("FN", IDENT)
+    assert "canvas:seed" not in c and c["navigator.hardwareConcurrency"] == 4 and l == lo and p is True
+    assert m.arm_spec("SP", IDENT) == (None, None, True)
+    assert m.arm_spec("SA", IDENT) == (None, lo, False)
+    for arm in ("S", "S2", "F0", "V", "F0P", "SE"):
+        assert m.arm_spec(arm, IDENT) == (None, None, False)
+
+
+def test_arm_spec_does_not_mutate_the_identity():
+    import copy
+    before = copy.deepcopy(IDENT)
+    for arm in m.FORK_ARMS + m.STOCK_ARMS:
+        m.arm_spec(arm, IDENT)
+    assert IDENT == before
+
+
+def test_arm_spec_unknown_arm_refused():
+    with pytest.raises(KeyError):
+        m.arm_spec("ZZ", IDENT)
+
+
+def test_profile_arms_split_seeded_from_fresh():
+    assert "F0P" in m.SEEDED_PROFILE_ARMS and "SE" not in m.SEEDED_PROFILE_ARMS
+    assert "S" in m.SEEDED_PROFILE_ARMS and "F0" not in m.SEEDED_PROFILE_ARMS
+
+
+def test_finch_seed_reads_local_state(tmp_path):
+    assert m._finch_seed(tmp_path) is None
+    (tmp_path / "Local State").write_text('{"variations_compressed_seed": "x"}', encoding="utf-8")
+    assert m._finch_seed(tmp_path) is True
+    (tmp_path / "Local State").write_text('{"other": 1}', encoding="utf-8")
+    assert m._finch_seed(tmp_path) is False
+
+
+# ---- release -5: the harness must not hide a bimodal cost behind the minimum ----
+
+def bimodal_run(arm, min_c, med_c, n=6):
+    return [{"arm": arm,
+             "p": {"regexp": 4.0, "json_parse": 8.0, "canvas2d": min_c},
+             "p_med": {"regexp": 4.0, "json_parse": 8.0, "canvas2d": med_c},
+             "g_window": {"navigator.onLine": 50.0, "screen.width": 60.0},
+             "g_worker": {"navigator.onLine": 60.0, "navigator.hardwareConcurrency": 70.0},
+             "first": {"window": {"screen.width": 0.05}, "worker": {"navigator.hardwareConcurrency": 0.1}}}
+            for _ in range(n)]
+
+
+def test_p_verdict_is_on_the_median_of_reps_and_names_the_direction():
+    # -4's canvas2d: the seeded canvas flushes in most reps (7 us/op) and not in one (0.27 us/op); the minimum
+    # read "faster than stock" while the median is slower. Stock: both read 1.7 (ratio over regexp).
+    rows = m.compare(bimodal_run("S", 1.7, 1.7), bimodal_run("F", 1.1, 12.0))
+    r = next(x for x in rows["p"] if x["name"] == "canvas2d")
+    assert r["verdict"] == "GAP" and r["direction"] == "slower", r
+    assert statistics.median(r["other_min"]) < statistics.median(r["stock_min"]), r    # the old (min) reading
+
+
+def test_p_verdict_falls_back_to_the_minimum_without_median_reps():
+    old = [{k: v for k, v in r.items() if k != "p_med"} for r in bimodal_run("F", 1.1, 12.0)]
+    rows = m.compare(bimodal_run("S", 1.7, 1.7), old)
+    r = next(x for x in rows["p"] if x["name"] == "canvas2d")
+    assert r["verdict"] == "GAP" and r["direction"] == "faster"
+
+
+def test_page_spec_carries_the_calibrated_repetition_counts():
+    spec = json.loads(m.page_spec("F", None, n={"canvas2d": 8192}))
+    assert spec["n"] == {"canvas2d": 8192}
+    assert json.loads(m.page_spec("S"))["n"] is None
+
+
+def test_calibration_is_the_first_stock_runs_counts():
+    assert m.calibration({"p_n": {"canvas2d": 8192, "regexp": 65536}}) == {"canvas2d": 8192, "regexp": 65536}
+    assert m.calibration({}) == {}
+    assert m.calibration({"p_n": {"x": "bad", "y": 0, "z": 4}}) == {"z": 4}
+
+
+# ---- release -5 review: calibration, privacy of the launch records, adapters ----
+
+def _launch(tmp_path, arm, i, n, unmeasured=None):
+    rec = {"arm": arm, "i": i}
+    if unmeasured:
+        rec["unmeasured"] = unmeasured
+    else:
+        rec["result"] = {"arm": arm, "p": {"regexp": 4.0}, "p_n": n}
+    (tmp_path / f"launch-{arm}-{i:02d}.json").write_text(json.dumps(rec), encoding="utf-8")
+
+
+def test_load_run_drops_a_launch_whose_n_differs_from_the_first_stock_launch(tmp_path):
+    _launch(tmp_path, "S", 0, {"canvas2d": 8192})
+    _launch(tmp_path, "F", 0, {"canvas2d": 8192})
+    _launch(tmp_path, "F", 1, {"canvas2d": 65536})          # calibrated on its own: not comparable
+    ok, bad = m.load_run(tmp_path)
+    assert len(ok["F"]) == 1 and len(bad["F"]) == 1 and "differs" in bad["F"][0]
+
+
+def test_load_run_without_a_measured_stock_launch_keeps_every_launch(tmp_path):
+    _launch(tmp_path, "S", 0, None, unmeasured="session 1 is not Active")
+    _launch(tmp_path, "F", 0, {"canvas2d": 8192})
+    ok, bad = m.load_run(tmp_path)
+    assert len(ok["F"]) == 1
+
+
+def test_adapter_families_keep_gpu_vendors_only():
+    got = m.adapter_families("Intel(R) Gpu 9000 (driver 1.2.3.4); Microsoft Remote Display Adapter; Parsec Virtual Display Adapter; NVIDIA Model 5")
+    assert got == "Intel, NVIDIA" and "9000" not in got and "1.2.3.4" not in got
+    assert "Parsec" not in got and "Microsoft" not in got   # remote-access software names are not a GPU vendor
+
+
+def test_the_launch_record_never_carries_the_unmasked_renderer():
+    res = {"arm": "S", "gl": "ANGLE (ExampleVendor, ExampleVendor Model 1 (0x0000ABCD) Direct3D11, D3D11-1.2.3.4)"}
+    fam = m.renderer_note(res)
+    assert "gl" not in res and fam == ("ExampleVendor / Direct3D11", False)
+
+
+def test_compare_rows_carry_the_p75_ratios_beside_the_median():
+    runs = bimodal_run("F", 1.1, 12.0)
+    for r in runs:
+        r["p_p75"] = {"regexp": 4.0, "json_parse": 8.0, "canvas2d": 20.0}
+    rows = m.compare(bimodal_run("S", 1.7, 1.7), runs)
+    r = next(x for x in rows["p"] if x["name"] == "canvas2d")
+    assert statistics.median(r["other_p75"]) == 5.0 and statistics.median(r["other"]) == 3.0
+
+
+def test_a_run_without_arm_s_is_refused():
+    import argparse
+    import pytest
+    with pytest.raises(SystemExit) as e:
+        m.run_cmd(argparse.Namespace(arms="F0,F"))
+    assert "without arm S" in str(e.value)

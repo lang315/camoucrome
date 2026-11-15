@@ -183,3 +183,12 @@ def test_log_head_keeps_the_first_lines_and_the_stderr_tail():
 
 def test_log_head_of_a_silent_run_says_so():
     assert "no output" in w.log_head("", "")
+
+
+def test_plant_entry_red_wants_rc_1_and_every_row_failing():
+    e = w.Entry("verify_uvpa.py", 2, "plant")
+    ok, _ = w.judge("red", e, 1, "FAIL  U1 a\nFAIL  U2 b\n")
+    assert ok
+    assert not w.judge("red", e, 1, "FAIL  U1 a\nPASS  U2 b\n")[0]
+    assert not w.judge("red", e, 0, "FAIL  U1 a\nFAIL  U2 b\n")[0]
+    assert w.judge("green", e, 0, "PASS  U1 a\nPASS  U2 b\n")[0]
