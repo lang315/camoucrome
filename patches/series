@@ -53,3 +53,4 @@ finch-stable-defaults.patch
 href-translate-without-key.patch
 getter-cost-hot-config.patch
 device-memory-client-hint.patch
+webgl-noise-keys.patch
