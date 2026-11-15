@@ -1704,7 +1704,10 @@ for key, name in N1_ROWS:
 # no PASS or FAIL. results[name] is None for those rows.
 unmeasured = {}
 REAL_GPU = os.environ.get("CAMOU_SP3A_REAL_GPU") == "1"       # C66, C67 on the host's own GPU, not SwiftShader
-GL_ROW_FLAGS = lib_shell.SHELL_FLAGS if REAL_GPU else GL_FLAGS
+# The host's own GPU needs a headed browser: --headless always renders in software (SwiftShader), so the real-GPU
+# flags are the default ones without the headless switches.
+GL_ROW_FLAGS = ([f for f in lib_shell.SHELL_FLAGS if f not in ("--headless", "--ozone-platform=headless")]
+                if REAL_GPU else GL_FLAGS)
 PLANT_C65 = os.environ.get("CAMOU_SP3A_PLANT") == "c65"       # test-only: the seeded sessions draw text 0.5 px lower
 N234_SEEDS = range(1, 9)
 
