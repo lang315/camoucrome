@@ -622,7 +622,7 @@ def run_cmd(a):
                 fam, soft = gpu_gate.renderer_family(server.results[0].get("gl"))
                 rec["gl_family"], rec["gl_software"] = fam, soft          # vendor / backend only, never a device id
             rec["finch_seed"] = _finch_seed(udd)
-            crashes, rec["gpu_status"] = gpu_gate.read_port_status(port)             # after the result: the only CDP connection of the launch
+            crashes, rec["gpu_status"], rec["variations"] = gpu_gate.read_port_status(port)             # after the result: the only CDP connection of the launch
             if not session_active(_session_text()):
                 rec["unmeasured"] = "session 1 left Active during the launch"
             elif crashes != 0:

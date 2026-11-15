@@ -150,3 +150,10 @@ def test_status_lines_keep_feature_states_only():
 def test_status_lines_accept_the_table_row_form_without_a_colon():
     assert g.status_lines("Canvas Hardware accelerated\nRasterization Software only. Hardware acceleration disabled")[0] == \
         "Canvas: Hardware accelerated"
+
+
+def test_variation_count_counts_distinct_ids_only():
+    page = "Variations: a1b2c3d4-0000ffff 11112222-33334444 a1b2c3d4-0000ffff"
+    assert g.variation_count(page) == 2
+    assert g.variation_count("Variations: ") == 0
+    assert g.variation_count("Google Chrome 157") is None
