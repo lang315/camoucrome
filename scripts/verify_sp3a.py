@@ -1724,12 +1724,13 @@ if REAL_GPU:
     gpu_gate.require_interactive()      # session 0 crashes the GPU process once per launch: UNMEASURED, exit 3
 
 C65 = "C65 text transition points match unconfigured (8 seeds)"
+C65D = "C65d the same text reads the same at the identity and under scale(1 + 1e-6) (8 seeds)"
 C65E = "C65e canvas fillText equals drawImage of the same SVG text (16 origins, 8 seeds)"
 C68 = "C68 a willReadFrequently canvas reads like the SVG shapes it draws (8 seeds)"
 C68B = "C68b a default canvas that has switched to the CPU reads like the SVG shapes it draws (8 seeds)"
 C68C = "C68c unchanged content reads the same before and after the CPU switch (8 seeds)"
 C66 = "C66 RGB implementation-format read equals the RGBA read"
-SOFT_ROWS = (C66,)
+SOFT_ROWS = (C66, C65D)    # C65d has no reference where stock itself renders the two differently (the box's content_shell)
 C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
 
 
@@ -1807,17 +1808,17 @@ def c65_row():
         results[C65] = False
         notes.append(f"C65: session fault: {faults[:1]}")
         return
-    if not all(un["d"]):
-        mark_unmeasured(C65, f"stock renders the same text differently at the identity and under scale(1 + 1e-6) "
-                        f"({un['d'].count(False)} of 16 positions): C65d has no reference")
-        return
+    d_ref = all(un["d"])
+    if not d_ref:
+        mark_unmeasured(C65D, f"stock renders the same text differently at the identity and under scale(1 + 1e-6) "
+                        f"({un['d'].count(False)} of 16 positions): no reference (C65e is the oracle there)")
     ref = {k: reading(k, un[k]) for k in "abc"}
     blank = [k for k in "abc" if "blank" in un[k] or not ref[k]]
     if blank:
         mark_unmeasured(C65, f"no ink transition in sweep(s) {blank} of the unconfigured run "
                         f"(blank glyph or a missing font): {[ref[k] for k in blank]}")
         return
-    bad = {}
+    bad, bad_d = {}, {}
     for s, (v, e) in seeded.items():
         if v is None:
             bad[s] = str(e)
@@ -1825,10 +1826,14 @@ def c65_row():
         off = [k for k in "abc" if reading(k, v[k]) != ref[k]]
         if off:
             bad[s] = {k: reading(k, v[k]) for k in off}
-        if not all(v["d"]):
-            bad.setdefault(s, {})["d"] = f"{v['d'].count(False)} of 16 positions differ at scale(1 + 1e-6)"
+        if d_ref and not all(v["d"]):
+            bad_d[s] = f"{v['d'].count(False)} of 16 positions differ at scale(1 + 1e-6)"
     results[C65] = not bad
-    notes.append(f"C65 unconfigured transitions: a {ref['a']}, b {ref['b']}, c {ref['c']}; d: identity == scale(1+1e-6) at 16 of 16")
+    if d_ref:
+        soft[C65D] = not bad_d
+        if bad_d:
+            notes.append(f"C65d: seeds whose text differs under scale(1 + 1e-6): {bad_d}")
+    notes.append(f"C65 unconfigured transitions: a {ref['a']}, b {ref['b']}, c {ref['c']}")
     if bad:
         notes.append(f"C65: seeds whose transitions differ: {bad}")
 
