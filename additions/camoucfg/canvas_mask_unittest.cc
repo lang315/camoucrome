@@ -290,24 +290,71 @@ TEST(LazyCanvasNoiseMaskTest, GenerationNeverRepeatsAcrossResizeAndReset) {
   }
 }
 
-TEST(LazyCanvasNoiseMaskTest, QueueIsAppliedAtTheEventCapAndTheByteCap) {
+TEST(LazyCanvasNoiseMaskTest, PastTheCapsOnlyTheOldestEventIsAppliedPerAdd) {
+  std::vector<int> order;
+  auto note = [&](int id) {
+    return base::BindOnce([](std::vector<int>* order, int id, CanvasNoiseMask&) { order->push_back(id); }, &order, id);
+  };
+  LazyCanvasNoiseMask lazy;
+  for (size_t i = 0; i < LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
+    lazy.Add(8, 8, 1, note(static_cast<int>(i)));
+  }
+  EXPECT_TRUE(order.empty());  // at the cap nothing was built
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  lazy.Add(8, 8, 1, note(100));  // over it: the oldest, only the oldest
+  EXPECT_EQ(order, std::vector<int>({0}));
+  lazy.Add(8, 8, 1, note(101));
+  EXPECT_EQ(order, std::vector<int>({0, 1}));
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  // A read applies the rest, in order.
+  EXPECT_FALSE(lazy.has_aa());
+  EXPECT_EQ(order.size(), LazyCanvasNoiseMask::kMaxPendingEvents + 2);
+  for (size_t i = 1; i < order.size(); ++i) {
+    EXPECT_LT(order[i - 1], order[i]);
+  }
+  EXPECT_EQ(lazy.pending_events(), 0u);
+}
+
+TEST(LazyCanvasNoiseMaskTest, TheByteCapAppliesOldestEventsUntilUnderIt) {
   int ran = 0;
   auto count = [&] { return base::BindOnce([](int* ran, CanvasNoiseMask&) { ++*ran; }, &ran); };
   LazyCanvasNoiseMask lazy;
-  for (size_t i = 0; i + 1 < LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
-    lazy.Add(8, 8, 1, count());
-  }
-  EXPECT_EQ(ran, 0);  // under the cap nothing was built
-  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents - 1);
-  lazy.Add(8, 8, 1, count());
-  EXPECT_EQ(static_cast<size_t>(ran), LazyCanvasNoiseMask::kMaxPendingEvents);
-  EXPECT_EQ(lazy.pending_events(), 0u);
-  ran = 0;
   lazy.Add(8, 8, LazyCanvasNoiseMask::kMaxPendingBytes - 1, count());
   EXPECT_EQ(ran, 0);
-  lazy.Add(8, 8, 1, count());  // the bytes reach the cap
-  EXPECT_EQ(ran, 2);
-  EXPECT_EQ(lazy.pending_bytes(), 0u);
+  lazy.Add(8, 8, 2, count());  // over the cap with two events: the oldest goes
+  EXPECT_EQ(ran, 1);
+  EXPECT_EQ(lazy.pending_events(), 1u);
+  EXPECT_EQ(lazy.pending_bytes(), 2u);
+}
+
+TEST(LazyCanvasNoiseMaskTest, ApplyNowAppliesTheWholeQueueThisEventLast) {
+  std::vector<int> order;
+  auto note = [&](int id) {
+    return base::BindOnce([](std::vector<int>* order, int id, CanvasNoiseMask&) { order->push_back(id); }, &order, id);
+  };
+  LazyCanvasNoiseMask lazy;
+  lazy.Add(8, 8, 1, note(1));
+  lazy.Add(8, 8, 1, note(2));
+  lazy.Add(8, 8, 1, note(3), /*apply_now=*/true);
+  EXPECT_EQ(order, std::vector<int>({1, 2, 3}));
+  EXPECT_EQ(lazy.pending_events(), 0u);
+}
+
+TEST(LazyCanvasNoiseMaskTest, ApplyOldestOneByOneThenReadEqualsTheEagerMask) {
+  const auto steps = Script();
+  for (size_t idle_steps = 0; idle_steps <= steps.size(); ++idle_steps) {
+    LazyCanvasNoiseMask lazy;
+    for (const Step& s : steps) {
+      lazy.Add(s.w, s.h, 1, Ev(s));
+    }
+    for (size_t i = 0; i < idle_steps; ++i) {
+      EXPECT_TRUE(lazy.ApplyOldest());  // the idle task
+    }
+    uint64_t aa = 0;
+    EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, steps.size(), -1, &aa)) << idle_steps << " idle steps";
+  }
+  LazyCanvasNoiseMask empty;
+  EXPECT_FALSE(empty.ApplyOldest());
 }
 
 TEST(LazyCanvasNoiseMaskTest, NothingQueuedReadsAsNoMask) {

@@ -151,13 +151,36 @@ LazyCanvasNoiseMask::LazyCanvasNoiseMask() = default;
 LazyCanvasNoiseMask::~LazyCanvasNoiseMask() = default;
 
 void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
-                              Event event) {
-  pending_.push_back({width, height, std::move(event)});
+                              Event event, bool apply_now) {
+  pending_.push_back({width, height, bytes, std::move(event)});
   pending_bytes_ += bytes;
-  if (pending_.size() >= kMaxPendingEvents ||
-      pending_bytes_ >= kMaxPendingBytes) {
+  if (apply_now) {
     Materialize();
+    return;
   }
+  while (pending_.size() > kMaxPendingEvents ||
+         (pending_bytes_ > kMaxPendingBytes && pending_.size() > 1)) {
+    ApplyFront();
+  }
+}
+
+bool LazyCanvasNoiseMask::ApplyOldest() {
+  if (pending_.empty()) {
+    return false;
+  }
+  ApplyFront();
+  return true;
+}
+
+void LazyCanvasNoiseMask::ApplyFront() const {
+  Pending p = std::move(pending_.front());
+  pending_.erase(pending_.begin());
+  pending_bytes_ -= p.bytes;
+  if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
+    Retire();
+    mask_ = std::make_unique<CanvasNoiseMask>(p.width, p.height);
+  }
+  std::move(p.event).Run(*mask_);
 }
 
 void LazyCanvasNoiseMask::Retire() const {
@@ -174,16 +197,8 @@ void LazyCanvasNoiseMask::Reset() {
 }
 
 void LazyCanvasNoiseMask::Materialize() const {
-  // An event may not queue another: take the queue first.
-  std::vector<Pending> pending;
-  pending.swap(pending_);
-  pending_bytes_ = 0;
-  for (Pending& p : pending) {
-    if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
-      Retire();
-      mask_ = std::make_unique<CanvasNoiseMask>(p.width, p.height);
-    }
-    std::move(p.event).Run(*mask_);
+  while (!pending_.empty()) {
+    ApplyFront();
   }
 }
 
