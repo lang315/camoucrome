@@ -74,7 +74,9 @@ def read_page(page, tries=20):
 
 # The graphics feature status lines of chrome://gpu: a feature name and its state, never a device or a driver.
 STATUS = re.compile(r"^\*?\s*(Canvas|Direct Rendering Display Compositor|Compositing|Multiple Raster Threads|OpenGL|"
-                    r"Rasterization|Raw Draw|Skia Graphite|Video Decode|WebGL|WebGL2|WebGPU)\b([^\n]{0,80})$", re.M)
+                    r"Rasterization|Raw Draw|Skia Graphite|Video Decode|WebGL|WebGL2|WebGPU)\b\s*:?\s*"
+                    r"((?:Hardware accelerated|Software only|Disabled|Enabled|Unavailable|Force[A-Za-z ]*|Not [A-Za-z ]+)"
+                    r"[A-Za-z ,.\-]{0,60})$", re.M)
 
 
 def status_lines(text):

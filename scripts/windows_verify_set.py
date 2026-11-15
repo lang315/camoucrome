@@ -8,6 +8,9 @@ for the one script whose verdict is a line), and its RED kind:
          must exit non-zero with at least one FAIL row
   own    stock passes these rows too (worker parity, fallback); the script's own
          control rows are its RED, so red mode skips it and says so
+  plant  stock passes these rows too and the script carries a test-only --plant
+         that must fail every row: red mode runs it with --plant and wants rc 1
+         and every row FAIL (a comparison that cannot fail measures nothing)
 red first, then green; a GREEN counts only after its RED was seen.
 
 Run on the Windows host from the tree's scripts directory, with the layout env
@@ -63,9 +66,9 @@ SET = [
     # while stock Windows Chrome ships them on (measured 2026-10-04: the Linux-claim sub-run differed from the host
     # only in UA/platform leaves) -- filed as a backlog item; delete known_fail when a Linux-claim disable branch lands.
     Entry("verify_host_oracle.py", 4, "stock", known_fail=("O2",)),
-    # UVPA: stock passes these rows too (its own reading is the oracle), so red mode skips it; the script runs both
-    # binaries itself and --plant is its RED.
-    Entry("verify_uvpa.py", 2, "own"),
+    # UVPA: stock passes these rows too (its own reading is the oracle); the script runs both binaries itself and
+    # --plant is its RED.
+    Entry("verify_uvpa.py", 2, "plant"),
 ]
 
 ROW = re.compile(r"^(?:(PASS|FAIL)\s+\S|\S+: (PASS|FAIL)\s*$)")
@@ -110,6 +113,9 @@ def judge(mode, entry, returncode, stdout):
     if mode == "red":
         if entry.red == "own":
             return True, "own RED: the script's control rows; not run against stock"
+        if entry.red == "plant":
+            ok = returncode == 1 and failed == entry.rows
+            return ok, f"--plant: rc={returncode} {passed} PASS {failed} FAIL (want rc 1 and {entry.rows} FAIL)"
         ok = returncode != 0 and failed > 0
         return ok, f"rc={returncode} {passed} PASS {failed} FAIL (want rc!=0 and a FAIL row)"
     if entry.rows == "ALL_PASS":
@@ -211,7 +217,8 @@ def main(argv):
             ok, why = judge(mode, e, 0, "")
         else:
             try:
-                p = subprocess.run([sys.executable, str(here / e.script)], cwd=here, env=env,
+                plant = ["--plant"] if mode == "red" and e.red == "plant" else []
+                p = subprocess.run([sys.executable, str(here / e.script), *plant], cwd=here, env=env,
                                    capture_output=True, text=True, timeout=1800)
                 out, err, rc = p.stdout, p.stderr, p.returncode
                 ok, why = judge(mode, e, rc, out)

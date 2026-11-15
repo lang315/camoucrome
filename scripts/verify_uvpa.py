@@ -68,6 +68,16 @@ def rows(readings, plant=False):
     return out
 
 
+def stock_note(readings):
+    """A note line when stock reads UVPA false: the host has no Windows Hello, so a PASS means the arms are equal, not
+    that the fork exposes a platform authenticator."""
+    st = readings.get("stock")
+    if st and st.get("pkc") != "undefined" and st.get("uvpa") is False:
+        return ("      NOTE stock reads isUserVerifyingPlatformAuthenticatorAvailable() false: this host has no platform "
+                "authenticator, so PASS means the arms are equal, not that one is exposed")
+    return None
+
+
 class _Server(http.server.ThreadingHTTPServer):
     results = None
 
@@ -150,6 +160,9 @@ def main(argv):
             readings[arm] = launch(arm)
             print(f"      {arm}: {json.dumps(readings[arm], sort_keys=True)}", flush=True)
     verdicts = rows(readings, plant)
+    note = stock_note(readings)
+    if note:
+        print(note)
     unm = False
     for name, ok, why in verdicts:
         if ok is None:

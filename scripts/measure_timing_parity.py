@@ -179,20 +179,22 @@ function workloads(plant) {
   return W;
 }
 function benchP(W, fixed) {
-  const out = {}, med = {}, ns = {};
+  const out = {}, med = {}, p75 = {}, ns = {};
   for (const name of Object.keys(W)) {
     const f = W[name];
     f(2);
     let n = fixed && fixed[name] > 0 ? fixed[name] : 8;
     if (!(fixed && fixed[name] > 0)) while (n < 1e9 && (() => { const t = clk(); f(n); return clk() - t; })() < 15) n *= 2;
+    f(n);                                         // one untimed pass at the final n: every rep starts warm
     const reps = [];
     for (let r = 0; r < 9; r++) { const t = clk(); f(n); reps.push(clk() - t); }
     reps.sort((a, b) => a - b);
     out[name] = reps[0] * 1e6 / n;                 // the fastest rep, as before
+    p75[name] = reps[6] * 1e6 / n;                 // the slow tail: a flush that lands in a third of the reps
     med[name] = reps[4] * 1e6 / n;                 // the median rep: a cost that flushes in most reps shows here
     ns[name] = n;
   }
-  return {out, med, ns};
+  return {out, med, p75, ns};
 }
 
 (async () => {
@@ -211,7 +213,7 @@ function benchP(W, fixed) {
     let wdata = null;
     try { wdata = await wr; } catch (err) { res.errors.push(String(err)); }
     if (wdata) { res.first.worker = wdata.first; res.g_worker = wdata.g; res.worker_ok = true; }
-    { const b = benchP(workloads(SPEC.plant), SPEC.n); res.p = b.out; res.p_med = b.med; res.p_n = b.ns; }   // 3. P
+    { const b = benchP(workloads(SPEC.plant), SPEC.n); res.p = b.out; res.p_med = b.med; res.p_p75 = b.p75; res.p_n = b.ns; }   // 3. P
     const A = new (self.AudioContext || self.webkitAudioContext)();
     const M = matchMedia('(pointer: fine)');
     res.g_window = benchG(SPEC.window, '', {A, M});      // 4. G window
@@ -310,6 +312,8 @@ def compare(stock_runs, other_runs, p_factor=P_FACTOR):
     orr = [ratios(r.get("p_med") or r["p"]) for r in other_runs]
     smin = [ratios(r["p"]) for r in stock_runs]
     omin = [ratios(r["p"]) for r in other_runs]
+    s75 = [ratios(r.get("p_p75") or r.get("p_med") or r["p"]) for r in stock_runs]
+    o75 = [ratios(r.get("p_p75") or r.get("p_med") or r["p"]) for r in other_runs]
     names = []
     for r in sr + orr:
         names += [n for n in r if n not in names]
@@ -320,7 +324,8 @@ def compare(stock_runs, other_runs, p_factor=P_FACTOR):
         v = p_verdict(sv, ov, p_factor)
         direction = (None if v != "GAP" else "slower" if statistics.median(ov) > statistics.median(sv) else "faster")
         rows["p"].append({"name": n, "group": group, "stock": sv, "other": ov, "verdict": v, "direction": direction,
-                           "stock_min": [r[n] for r in smin if n in r], "other_min": [r[n] for r in omin if n in r]})
+                           "stock_min": [r[n] for r in smin if n in r], "other_min": [r[n] for r in omin if n in r],
+                           "stock_p75": [r[n] for r in s75 if n in r], "other_p75": [r[n] for r in o75 if n in r]})
     for where, key, ctl in (("window", "g_window", WINDOW_CONTROL), ("worker", "g_worker", WORKER_CONTROL)):
         s, o = median_over(stock_runs, key), median_over(other_runs, key)
         sb, ob = s.get(ctl), o.get(ctl)
@@ -353,7 +358,8 @@ def render(arm, rows):
             return f"{statistics.median(v):7.3f} [{min(v):.3f},{max(v):.3f}]" if v else "-"
         gap = r["verdict"] + (f" {r['direction']}" if r.get("direction") else "")
         out.append(f"{r['name']:24s} {r['group']:8s} {cell(r['stock']):>22s} {cell(r['other']):>22s}  {gap}"
-                   f"   (fastest rep {cell(r.get('stock_min')).split(' [')[0].strip()} / {cell(r.get('other_min')).split(' [')[0].strip()})")
+                   f"   (fastest rep {cell(r.get('stock_min')).split(' [')[0].strip()} / {cell(r.get('other_min')).split(' [')[0].strip()};"
+                   f" p75 rep {cell(r.get('stock_p75')).split(' [')[0].strip()} / {cell(r.get('other_p75')).split(' [')[0].strip()})")
     out.append("\nG  getter cost, ns per read (median over launches of the fastest round)")
     out.append(f"{'scope':7s} {'getter':52s} {'S':>9s} {arm:>9s}  verdict")
     for r in rows["g"]:
@@ -374,10 +380,16 @@ def totals(rows):
 def load_run(run_dir):
     """arm -> [measured launch records]; the unmeasured launches (arm -> [reason]) beside them."""
     ok, bad = {}, {}
-    for f in sorted(pathlib.Path(run_dir).glob("launch-*.json")):
-        d = json.loads(f.read_text(encoding="utf-8"))
+    recs = [json.loads(f.read_text(encoding="utf-8")) for f in sorted(pathlib.Path(run_dir).glob("launch-*.json"))]
+    # Every launch times the n of the first measured stock launch; one that calibrated on its own measured other work.
+    stock = sorted((d for d in recs if d["arm"] == "S" and not d.get("unmeasured") and d["result"].get("p_n")),
+                   key=lambda d: d["i"])
+    ref_n = stock[0]["result"]["p_n"] if stock else None
+    for d in recs:
         if d.get("unmeasured"):
             bad.setdefault(d["arm"], []).append(d["unmeasured"])
+        elif ref_n and d["result"].get("p_n") != ref_n:
+            bad.setdefault(d["arm"], []).append("n differs from the first stock launch's (calibrated on its own)")
         else:
             ok.setdefault(d["arm"], []).append(d["result"])
     return ok, bad
@@ -553,12 +565,29 @@ def _finch_seed(udd):
     return any(k.startswith("variations") and "seed" in k for k in state)
 
 
+def adapter_families(names):
+    """'Vendor, Vendor' from display adapter names: the first word of each, no model and no driver."""
+    words = [re.split(r"[\s(]", n.strip(), maxsplit=1)[0] for n in names.split(";") if n.strip()]
+    return ", ".join(dict.fromkeys(words))
+
+
 def _adapters():
-    """The Windows display adapters' names, once per run (the GPU process may use the physical one or the RDP/Basic one)."""
+    """The display adapters' vendors, once per run (the GPU process may use the physical one or the RDP/Basic one)."""
     p = subprocess.run(["powershell", "-NoProfile", "-Command",
                         "(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join '; '"],
                        capture_output=True, text=True, timeout=60)
-    return p.stdout.strip()
+    return adapter_families(p.stdout)
+
+
+def renderer_note(res):
+    """(family, software?) of a result's UNMASKED_RENDERER; the string itself (device id, driver build) is removed from
+    the result, so it never reaches a launch record."""
+    return gpu_gate_family(res.pop("gl", None))
+
+
+def gpu_gate_family(renderer):
+    import gpu_gate
+    return gpu_gate.renderer_family(renderer)
 
 
 def run_cmd(a):
@@ -603,6 +632,9 @@ def run_cmd(a):
         if why:
             rec["unmeasured"] = why
             return rec
+        if "S" in arms and arm != "S" and not calib:
+            rec["unmeasured"] = "no stock launch has set the repetition counts yet (S did not measure)"
+            return rec
         rec["fvm_gb"], rec["cpu_load"] = round(_fvm_gb(), 1), _cpu_load()
         port = _free_port()
         own_seed = arm in SEEDED_PROFILE_ARMS
@@ -641,8 +673,7 @@ def run_cmd(a):
                 return rec
             res, why = parse_result(server.results[0])
             if isinstance(server.results[0], dict):
-                fam, soft = gpu_gate.renderer_family(server.results[0].get("gl"))
-                rec["gl_family"], rec["gl_software"] = fam, soft          # vendor / backend only, never a device id
+                rec["gl_family"], rec["gl_software"] = renderer_note(server.results[0])   # vendor / backend only
             rec["finch_seed"] = _finch_seed(udd)
             crashes, rec["gpu_status"], rec["variations"] = gpu_gate.read_port_status(port)             # after the result: the only CDP connection of the launch
             if not session_active(_session_text()):
@@ -651,9 +682,11 @@ def run_cmd(a):
                 rec["unmeasured"] = f"gpu-crash={'unknown' if crashes is None else crashes}"
             elif why:
                 rec["unmeasured"] = why
+            elif calib and arm != "S" and res.get("p_n") != calib:
+                rec["unmeasured"] = "the page timed other repetition counts than S's"
             else:
                 rec["result"] = res
-                if not calib and arm in ("S", "S2"):
+                if not calib and arm == "S":
                     calib.update(calibration(res))
             return rec
         finally:
@@ -672,7 +705,7 @@ def run_cmd(a):
 
     def go():
         for i in range(a.launches):
-            for arm in arms:
+            for arm in sorted(arms, key=lambda x: x != "S"):        # S first: the other arms time its n
                 rec = launch_one(arm, i)
                 (run_dir / f"launch-{arm}-{i:02d}.json").write_text(json.dumps(rec), encoding="utf-8")
                 print(f"{arm}/{i}: {'UNMEASURED ' + rec['unmeasured'] if rec.get('unmeasured') else 'ok'}", flush=True)

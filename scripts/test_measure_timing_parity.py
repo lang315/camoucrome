@@ -421,3 +421,49 @@ def test_calibration_is_the_first_stock_runs_counts():
     assert m.calibration({"p_n": {"canvas2d": 8192, "regexp": 65536}}) == {"canvas2d": 8192, "regexp": 65536}
     assert m.calibration({}) == {}
     assert m.calibration({"p_n": {"x": "bad", "y": 0, "z": 4}}) == {"z": 4}
+
+
+# ---- release -5 review: calibration, privacy of the launch records, adapters ----
+
+def _launch(tmp_path, arm, i, n, unmeasured=None):
+    rec = {"arm": arm, "i": i}
+    if unmeasured:
+        rec["unmeasured"] = unmeasured
+    else:
+        rec["result"] = {"arm": arm, "p": {"regexp": 4.0}, "p_n": n}
+    (tmp_path / f"launch-{arm}-{i:02d}.json").write_text(json.dumps(rec), encoding="utf-8")
+
+
+def test_load_run_drops_a_launch_whose_n_differs_from_the_first_stock_launch(tmp_path):
+    _launch(tmp_path, "S", 0, {"canvas2d": 8192})
+    _launch(tmp_path, "F", 0, {"canvas2d": 8192})
+    _launch(tmp_path, "F", 1, {"canvas2d": 65536})          # calibrated on its own: not comparable
+    ok, bad = m.load_run(tmp_path)
+    assert len(ok["F"]) == 1 and len(bad["F"]) == 1 and "differs" in bad["F"][0]
+
+
+def test_load_run_without_a_measured_stock_launch_keeps_every_launch(tmp_path):
+    _launch(tmp_path, "S", 0, None, unmeasured="session 1 is not Active")
+    _launch(tmp_path, "F", 0, {"canvas2d": 8192})
+    ok, bad = m.load_run(tmp_path)
+    assert len(ok["F"]) == 1
+
+
+def test_adapter_families_keep_vendors_only():
+    got = m.adapter_families("ExampleVendor(R) Gpu 9000 (driver 1.2.3.4); Microsoft Remote Display Adapter; Parsec Virtual Display Adapter")
+    assert got == "ExampleVendor, Microsoft, Parsec" and "9000" not in got and "1.2.3.4" not in got
+
+
+def test_the_launch_record_never_carries_the_unmasked_renderer():
+    res = {"arm": "S", "gl": "ANGLE (ExampleVendor, ExampleVendor Model 1 (0x0000ABCD) Direct3D11, D3D11-1.2.3.4)"}
+    fam = m.renderer_note(res)
+    assert "gl" not in res and fam == ("ExampleVendor / Direct3D11", False)
+
+
+def test_compare_rows_carry_the_p75_ratios_beside_the_median():
+    runs = bimodal_run("F", 1.1, 12.0)
+    for r in runs:
+        r["p_p75"] = {"regexp": 4.0, "json_parse": 8.0, "canvas2d": 20.0}
+    rows = m.compare(bimodal_run("S", 1.7, 1.7), runs)
+    r = next(x for x in rows["p"] if x["name"] == "canvas2d")
+    assert statistics.median(r["other_p75"]) == 5.0 and statistics.median(r["other"]) == 3.0

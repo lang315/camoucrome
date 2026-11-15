@@ -123,9 +123,9 @@ def test_lib_shell_gate_fails_closed_when_the_read_raises():
 
 def test_renderer_family_names_vendor_and_backend_only():
     fam, software = g.renderer_family(
-        "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11-31.0.15.5222)")
-    assert fam == "NVIDIA / Direct3D11" and software is False
-    assert "4090" not in fam and "31.0" not in fam
+        "ANGLE (ExampleVendor, ExampleVendor Model 1 (0x0000ABCD) Direct3D11 vs_5_0 ps_5_0, D3D11-1.2.3.4)")
+    assert fam == "ExampleVendor / Direct3D11" and software is False
+    assert "Model 1" not in fam and "1.2.3.4" not in fam
 
 
 def test_renderer_family_flags_software_renderers():
@@ -141,8 +141,8 @@ def test_renderer_family_unreadable_is_not_a_family():
 
 def test_status_lines_keep_feature_states_only():
     text = ("Canvas: Hardware accelerated\nRasterization: Hardware accelerated on all threads\n"
-            "GL_RENDERER: ANGLE (Intel, Intel UHD Graphics 630 Direct3D11, D3D11)\nWebGL: Hardware accelerated\n"
-            "Driver version: 31.0.101.2111\nGPU process crash count :0")
+            "GL_RENDERER: ANGLE (ExampleVendor, ExampleVendor Model 1 Direct3D11, D3D11)\nWebGL: Hardware accelerated\n"
+            "Driver version: 1.2.3.4\nGPU process crash count :0")
     assert g.status_lines(text) == ["Canvas: Hardware accelerated", "Rasterization: Hardware accelerated on all threads",
                                     "WebGL: Hardware accelerated"]
 
@@ -163,3 +163,7 @@ def test_status_lines_accept_the_bulleted_form_of_chrome_gpu():
     assert g.status_lines("* Canvas: Hardware accelerated\n* Rasterization: Hardware accelerated\n"
                           "GL_VERSION :OpenGL ES 3.0 (ANGLE 2.1.3)") == ["Canvas: Hardware accelerated",
                                                                          "Rasterization: Hardware accelerated"]
+
+
+def test_status_lines_drop_a_line_whose_value_is_not_a_state_word():
+    assert g.status_lines("* Canvas: ANGLE (ExampleVendor, Model 1)\n* WebGL: Hardware accelerated") == ["WebGL: Hardware accelerated"]

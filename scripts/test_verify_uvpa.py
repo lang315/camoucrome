@@ -30,3 +30,9 @@ def test_an_arm_without_publickeycredential_is_unmeasured_not_pass():
     got = v.rows({"stock": R, "F0": gone, "F": dict(R)})
     assert [ok for _, ok, _ in got] == [None, True] and "F0" in got[0][2]
     assert [ok for _, ok, _ in v.rows({"stock": None, "F0": dict(R), "F": dict(R)})] == [None, None]
+
+
+def test_a_note_names_the_host_without_a_platform_authenticator():
+    assert "no platform authenticator" in v.stock_note({"stock": dict(R, uvpa=False)})
+    assert v.stock_note({"stock": dict(R, uvpa=True)}) is None
+    assert v.stock_note({"stock": None}) is None
