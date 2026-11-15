@@ -5,6 +5,7 @@
 #include "components/camoucfg/canvas_mask.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -144,6 +145,61 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
   if (changed) {
     ++generation_;
   }
+}
+
+LazyCanvasNoiseMask::LazyCanvasNoiseMask() = default;
+LazyCanvasNoiseMask::~LazyCanvasNoiseMask() = default;
+
+void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
+                              Event event) {
+  pending_.push_back({width, height, std::move(event)});
+  pending_bytes_ += bytes;
+  if (pending_.size() >= kMaxPendingEvents ||
+      pending_bytes_ >= kMaxPendingBytes) {
+    Materialize();
+  }
+}
+
+void LazyCanvasNoiseMask::Retire() const {
+  if (mask_) {
+    retired_generations_ += mask_->generation() + 1;
+    mask_.reset();
+  }
+}
+
+void LazyCanvasNoiseMask::Reset() {
+  pending_.clear();
+  pending_bytes_ = 0;
+  Retire();
+}
+
+void LazyCanvasNoiseMask::Materialize() const {
+  // An event may not queue another: take the queue first.
+  std::vector<Pending> pending;
+  pending.swap(pending_);
+  pending_bytes_ = 0;
+  for (Pending& p : pending) {
+    if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
+      Retire();
+      mask_ = std::make_unique<CanvasNoiseMask>(p.width, p.height);
+    }
+    std::move(p.event).Run(*mask_);
+  }
+}
+
+bool LazyCanvasNoiseMask::has_aa() const {
+  Materialize();
+  return mask_ && mask_->has_aa();
+}
+
+NoiseMask LazyCanvasNoiseMask::view() const {
+  Materialize();
+  return mask_ ? mask_->view() : NoiseMask();
+}
+
+uint64_t LazyCanvasNoiseMask::generation() const {
+  Materialize();
+  return mask_ ? retired_generations_ + mask_->generation() + 1 : 0;
 }
 
 }  // namespace camoucfg

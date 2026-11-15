@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/functional/bind.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace camoucfg {
@@ -150,6 +151,170 @@ TEST(CanvasNoiseMaskTest, HasAaOnCoarseCells) {
   EXPECT_TRUE(c.has_aa());
   c.MarkRect(0, 0, 4, 4, Kind::kClear);
   EXPECT_FALSE(c.has_aa());
+}
+
+// ---- LazyCanvasNoiseMask: the queue builds the mask the eager calls build ----
+
+// One scripted change: a coverage merge or a rect mark on a canvas of a size.
+struct Step {
+  size_t w, h;
+  int64_t x, y;
+  size_t cw, ch;
+  uint8_t edge;
+  Kind kind;
+  bool rect;
+};
+
+void Apply(const Step& s, CanvasNoiseMask& m) {
+  if (s.rect) {
+    m.MarkRect(s.x, s.y, static_cast<int64_t>(s.cw), static_cast<int64_t>(s.ch), s.kind);
+  } else {
+    const auto c = Coverage(s.cw, s.ch, s.edge);
+    m.Merge(c.data(), s.cw, s.x, s.y, s.cw, s.ch, s.kind);
+  }
+}
+
+// The cells of a view, as bytes; empty for a mask that holds none.
+std::vector<uint8_t> Cells(const NoiseMask& v) {
+  std::vector<uint8_t> out;
+  if (!v.cells) {
+    return out;
+  }
+  const size_t rows = (v.height + (size_t{1} << v.shift) - 1) >> v.shift;
+  for (size_t i = 0; i < rows * v.stride; ++i) {
+    out.push_back(UNSAFE_BUFFERS(v.cells[i]));
+  }
+  return out;
+}
+
+std::vector<Step> Script() {
+  return {
+      {32, 32, 2, 2, 8, 8, 100, Kind::kAa, false},
+      {32, 32, 4, 4, 4, 4, 255, Kind::kSolidOpaque, false},
+      {32, 32, 10, 10, 6, 6, 0, Kind::kImported, true},
+      {32, 32, 0, 0, 12, 12, 128, Kind::kSolid, false},
+      {32, 32, 20, 20, 8, 8, 0, Kind::kClear, true},
+      {48, 40, 5, 5, 9, 9, 90, Kind::kAa, false},   // a resize: a fresh mask
+      {48, 40, 6, 6, 3, 3, 0, Kind::kSolidOpaque, true},
+      {48, 40, 30, 20, 10, 10, 77, Kind::kAa, false},
+  };
+}
+
+// The eager mask after steps [0, n) of the script, resets at `reset_at` (-1: none).
+std::vector<uint8_t> EagerCells(const std::vector<Step>& steps, size_t n, int reset_at, uint64_t* aa) {
+  std::unique_ptr<CanvasNoiseMask> m;
+  for (size_t i = 0; i < n; ++i) {
+    if (static_cast<int>(i) == reset_at) {
+      m.reset();
+    }
+    if (!m || m->width() != steps[i].w || m->height() != steps[i].h) {
+      m = std::make_unique<CanvasNoiseMask>(steps[i].w, steps[i].h);
+    }
+    Apply(steps[i], *m);
+  }
+  if (aa) {
+    *aa = m && m->has_aa();
+  }
+  return m ? Cells(m->view()) : std::vector<uint8_t>();
+}
+
+LazyCanvasNoiseMask::Event Ev(const Step& s) {
+  return base::BindOnce([](Step s, CanvasNoiseMask& m) { Apply(s, m); }, s);
+}
+
+TEST(LazyCanvasNoiseMaskTest, ReadAtEveryPointEqualsTheEagerMaskByteForByte) {
+  const auto steps = Script();
+  for (size_t read_after = 1; read_after <= steps.size(); ++read_after) {
+    LazyCanvasNoiseMask lazy;
+    for (size_t i = 0; i < steps.size(); ++i) {
+      lazy.Add(steps[i].w, steps[i].h, 1, Ev(steps[i]));
+      if (i + 1 == read_after) {
+        uint64_t aa = 0;
+        const auto want = EagerCells(steps, i + 1, -1, &aa);
+        EXPECT_EQ(Cells(lazy.view()), want) << "read after step " << i;
+        EXPECT_EQ(lazy.has_aa(), aa != 0);
+      }
+    }
+    uint64_t aa = 0;
+    EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, steps.size(), -1, &aa));
+  }
+}
+
+TEST(LazyCanvasNoiseMaskTest, ResetBetweenRetainedEventsAndTheReadDropsTheEarlierOnes) {
+  const auto steps = Script();
+  for (size_t reset_at = 1; reset_at < steps.size(); ++reset_at) {
+    LazyCanvasNoiseMask lazy;
+    int ran = 0;
+    for (size_t i = 0; i < steps.size(); ++i) {
+      if (i == reset_at) {
+        lazy.Reset();
+        EXPECT_EQ(lazy.pending_events(), 0u);
+      }
+      lazy.Add(steps[i].w, steps[i].h, 1, base::BindOnce([](int* ran, Step s, CanvasNoiseMask& m) {
+        ++*ran;
+        Apply(s, m);
+      }, &ran, steps[i]));
+    }
+    uint64_t aa = 0;
+    EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, steps.size(), static_cast<int>(reset_at), &aa))
+        << "reset before step " << reset_at;
+    EXPECT_EQ(static_cast<size_t>(ran), steps.size() - reset_at);  // the dropped events never ran
+  }
+}
+
+TEST(LazyCanvasNoiseMaskTest, ResizeBetweenEventsBuildsAFreshMask) {
+  LazyCanvasNoiseMask lazy;
+  lazy.Add(16, 16, 1, base::BindOnce([](CanvasNoiseMask& m) { m.MarkRect(0, 0, 16, 16, Kind::kImported); }));
+  lazy.Add(8, 8, 1, base::BindOnce([](CanvasNoiseMask& m) { m.MarkRect(0, 0, 2, 2, Kind::kAa); }));
+  const NoiseMask v = lazy.view();
+  EXPECT_EQ(v.width, 8u);
+  EXPECT_EQ(v.height, 8u);
+  EXPECT_TRUE(lazy.has_aa());
+}
+
+TEST(LazyCanvasNoiseMaskTest, GenerationNeverRepeatsAcrossResizeAndReset) {
+  LazyCanvasNoiseMask lazy;
+  EXPECT_EQ(lazy.generation(), 0u);
+  std::vector<uint64_t> seen;
+  for (size_t size : {16u, 16u, 8u, 8u}) {
+    lazy.Add(size, size, 1, base::BindOnce([](CanvasNoiseMask& m) { m.MarkRect(0, 0, 2, 2, Kind::kAa); }));
+    seen.push_back(lazy.generation());
+    lazy.Add(size, size, 1, base::BindOnce([](CanvasNoiseMask& m) { m.MarkRect(4, 4, 2, 2, Kind::kAa); }));
+    seen.push_back(lazy.generation());
+    lazy.Reset();
+  }
+  for (size_t i = 0; i < seen.size(); ++i) {
+    for (size_t j = i + 1; j < seen.size(); ++j) {
+      EXPECT_NE(seen[i], seen[j]) << i << " vs " << j;
+    }
+  }
+}
+
+TEST(LazyCanvasNoiseMaskTest, QueueIsAppliedAtTheEventCapAndTheByteCap) {
+  int ran = 0;
+  auto count = [&] { return base::BindOnce([](int* ran, CanvasNoiseMask&) { ++*ran; }, &ran); };
+  LazyCanvasNoiseMask lazy;
+  for (size_t i = 0; i + 1 < LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
+    lazy.Add(8, 8, 1, count());
+  }
+  EXPECT_EQ(ran, 0);  // under the cap nothing was built
+  EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents - 1);
+  lazy.Add(8, 8, 1, count());
+  EXPECT_EQ(static_cast<size_t>(ran), LazyCanvasNoiseMask::kMaxPendingEvents);
+  EXPECT_EQ(lazy.pending_events(), 0u);
+  ran = 0;
+  lazy.Add(8, 8, LazyCanvasNoiseMask::kMaxPendingBytes - 1, count());
+  EXPECT_EQ(ran, 0);
+  lazy.Add(8, 8, 1, count());  // the bytes reach the cap
+  EXPECT_EQ(ran, 2);
+  EXPECT_EQ(lazy.pending_bytes(), 0u);
+}
+
+TEST(LazyCanvasNoiseMaskTest, NothingQueuedReadsAsNoMask) {
+  LazyCanvasNoiseMask lazy;
+  EXPECT_FALSE(lazy.has_aa());
+  EXPECT_EQ(lazy.view().cells, nullptr);
+  EXPECT_EQ(lazy.generation(), 0u);
 }
 
 }  // namespace

@@ -7,7 +7,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
+
+#include "base/functional/callback.h"
 
 #include "components/camoucfg/canvas_noise.h"
 
@@ -75,6 +78,58 @@ class CanvasNoiseMask {
   std::vector<uint8_t> cells_;
   uint64_t generation_ = 0;
   size_t aa_cells_ = 0;  // cells whose byte equals kNoiseMaskAa
+};
+
+// The mask of one 2D canvas, built when a read needs it instead of at every
+// flush (release -5: building at flush cost the seeded canvas 3 us per op, 66%
+// of it the software coverage raster, whether or not the page ever read the
+// canvas back). A change to the mask is queued as an event that keeps what it
+// needs alive (a flushed recording); every reader materializes the queue first,
+// in order, so the mask is byte for byte the one built at each event. Past
+// kMaxPendingEvents events or kMaxPendingBytes of retained recordings the queue
+// is applied at once, which bounds the memory a never-read canvas holds.
+class LazyCanvasNoiseMask {
+ public:
+  // Applies one change to the mask of the canvas size it was queued for.
+  using Event = base::OnceCallback<void(CanvasNoiseMask&)>;
+  static constexpr size_t kMaxPendingEvents = 16;
+  static constexpr size_t kMaxPendingBytes = size_t{16} << 20;
+
+  LazyCanvasNoiseMask();
+  LazyCanvasNoiseMask(const LazyCanvasNoiseMask&) = delete;
+  LazyCanvasNoiseMask& operator=(const LazyCanvasNoiseMask&) = delete;
+  ~LazyCanvasNoiseMask();
+
+  // Queues `event` for a canvas of `width` x `height` (a mask of another size
+  // is replaced first, as a resize does); `bytes` is what the event keeps
+  // alive. Applies the whole queue now when it is over a cap.
+  void Add(size_t width, size_t height, size_t bytes, Event event);
+  // The canvas restarts clear: the mask and every queued event are dropped.
+  void Reset();
+
+  // Each of these applies the queue first.
+  bool has_aa() const;
+  NoiseMask view() const;
+  // Bumps on every change and never repeats, across resizes and resets too.
+  uint64_t generation() const;
+
+  size_t pending_events() const { return pending_.size(); }
+  size_t pending_bytes() const { return pending_bytes_; }
+
+ private:
+  struct Pending {
+    size_t width;
+    size_t height;
+    Event event;
+  };
+  void Materialize() const;
+  void Retire() const;
+
+  mutable std::unique_ptr<CanvasNoiseMask> mask_;
+  mutable std::vector<Pending> pending_;
+  mutable size_t pending_bytes_ = 0;
+  // Generations the retired masks used up.
+  mutable uint64_t retired_generations_ = 0;
 };
 
 }  // namespace camoucfg
