@@ -34,6 +34,13 @@ struct NoiseMask {
   size_t y0 = 0;
 };
 
+// Which key domain a readback's noise draws from. A 2D canvas and a WebGL read of
+// the same pixels must not carry the same noise (a page could upload a 2D canvas
+// to WebGL, read it back and compare the two fields), so WebGL has its own gate,
+// direction and step keys. Every WebGL read (readPixels and a WebGL canvas's
+// snapshot) uses kWebGl; everything else k2d.
+enum class NoiseDomain { k2d, kWebGl };
+
 // Readback noise, in place, on a `width` x `height` RGBA8 image whose rows are
 // `row_bytes` apart. Every eligibility test reads the unperturbed pixels
 // (the rows it needs are kept in a two-row ring, so no copy of the buffer is
@@ -71,9 +78,10 @@ bool PerturbRgbaEdgesInPlace(uint8_t* data,
                              int32_t strength,
                              uint8_t min_alpha,
                              const NoiseMask& mask,
-                             bool bottom_up);
+                             bool bottom_up,
+                             NoiseDomain domain = NoiseDomain::k2d);
 
-// PerturbRgbaEdgesInPlace over a `width` x `height` RGBA8 rect whose rows are
+// PerturbRgbaEdgesInPlace (domain kWebGl) over a `width` x `height` RGBA8 rect whose rows are
 // `row_bytes` apart (the WebGL readPixels destination at its pack layout),
 // neighbours read within the rect, no mask. The field depends only on each
 // pixel's 3x3 patch, so row padding and stride do not change it. Only opaque
@@ -153,11 +161,6 @@ uint64_t CanvasSeed(const ConfigScope& scope);
 // path reads its seed; Blink reads it once per measureText and calls
 // PerturbMetric per field. Off unless the key is set (owner, 2026-11-03).
 uint64_t TextMetricsSeed(const ConfigScope& scope);
-
-// The per-profile sub-pixel origin of canvas text (canvas noise redesign,
-// target design): {dx, dy}, each in [0, 1), derived from canvas:seed alone
-// (domain canvas-text-offset). {0, 0} for seed 0, so no seed draws as stock.
-std::array<float, 2> TextOffset(uint64_t seed);
 
 }  // namespace camoucfg
 

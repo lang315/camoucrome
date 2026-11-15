@@ -34,13 +34,15 @@ namespace camoucfg {
 // pixels), or a failed read.
 sk_sp<SkImage> NoisedImage(const SkImage& canvas, uint64_t seed,
                            double density, int32_t strength, uint8_t min_alpha,
-                           const NoiseMask& mask, bool bottom_up);
+                           const NoiseMask& mask, bool bottom_up,
+                           NoiseDomain domain = NoiseDomain::k2d);
 
 // NoisedImage with canvas:seed / canvas:noiseDensity / canvas:noiseStrength
 // from `scope`. The Blink snapshot hook (CanvasRenderingContext::CamouNoised).
 sk_sp<SkImage> NoisedCanvasImage(const SkImage& canvas,
                                  const ConfigScope& scope, uint8_t min_alpha,
-                                 const NoiseMask& mask, bool bottom_up);
+                                 const NoiseMask& mask, bool bottom_up,
+                                 NoiseDomain domain = NoiseDomain::k2d);
 
 // Reads the `dst.width()` x `dst.height()` pixels at (`src_x`, `src_y`) of a
 // canvas into `dst`, converting to its colour type; false on failure. Blink
@@ -63,14 +65,16 @@ SkBitmap NoisedRegion(const SkImageInfo& canvas,
                       double density,
                       int32_t strength,
                       uint8_t min_alpha,
-                      const NoiseMask& mask);
+                      const NoiseMask& mask,
+                      NoiseDomain domain = NoiseDomain::k2d);
 // NoisedRegion with canvas:seed / noiseDensity / noiseStrength from `scope`.
 SkBitmap NoisedCanvasRegion(const SkImageInfo& canvas,
                             PixelReader read,
                             const SkIRect& rect,
                             const ConfigScope& scope,
                             uint8_t min_alpha,
-                            const NoiseMask& mask);
+                            const NoiseMask& mask,
+                            NoiseDomain domain = NoiseDomain::k2d);
 
 }  // namespace camoucfg
 

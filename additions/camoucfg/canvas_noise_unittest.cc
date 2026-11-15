@@ -492,21 +492,6 @@ TEST(PerturbRgbaEdgesTest, ExtremeParametersAreClamped) {
   EXPECT_EQ(b, c);
 }
 
-TEST(CanvasNoiseTest, TextOffsetIsPerSeedAndSubPixel) {
-  EXPECT_EQ(TextOffset(0), (std::array<float, 2>{0.0f, 0.0f}));
-  bool varies = false;
-  for (uint64_t seed = 1; seed < 64; ++seed) {
-    const std::array<float, 2> o = TextOffset(seed);
-    EXPECT_EQ(o, TextOffset(seed));
-    for (float v : o) {
-      EXPECT_GE(v, 0.0f);
-      EXPECT_LT(v, 1.0f);
-    }
-    varies |= o != TextOffset(1);
-  }
-  EXPECT_TRUE(varies);
-}
-
 // S2b: the noise is keyed by the 3x3 source patch, not by position. One
 // lone pixel at two places gets the same delta.
 TEST(PerturbRgbaEdgesTest, SamePatchGetsSameNoiseAnywhere) {
@@ -1005,4 +990,38 @@ TEST(PerturbRgbaFramedTest, EqualsTheWholeImagePass) {
 }
 
 }  // namespace
+
+namespace {
+
+// Release -5 (canvas audit N4): WebGL reads draw their noise from keys of their
+// own, so a 2D canvas uploaded to WebGL and read back does not carry the 2D field.
+TEST(CanvasNoiseTest, WebGlKeysDifferFrom2d) {
+  const std::vector<uint8_t> scene = PartialAlphaScene(16, 16);
+  auto run = [&scene](NoiseDomain domain) {
+    std::vector<uint8_t> v = scene;
+    EXPECT_TRUE(PerturbRgbaEdgesInPlace(v.data(), 16, 16, 16 * 4, /*seed=*/7,
+                                        /*density=*/1.0, /*strength=*/3,
+                                        /*min_alpha=*/1, NoiseMask(),
+                                        /*bottom_up=*/false, domain));
+    return v;
+  };
+  const std::vector<uint8_t> a = run(NoiseDomain::k2d);
+  const std::vector<uint8_t> b = run(NoiseDomain::kWebGl);
+  EXPECT_NE(a, scene);
+  EXPECT_NE(b, scene);
+  EXPECT_NE(a, b);
+  EXPECT_EQ(a, run(NoiseDomain::k2d));
+  EXPECT_EQ(b, run(NoiseDomain::kWebGl));
+  // PerturbRgba is the WebGL readPixels kernel: it draws from the WebGL keys.
+  std::vector<uint8_t> c = scene;
+  PerturbRgba(c.data(), 16, 16, 16 * 4, 7, 1.0, 3, /*bottom_up=*/false);
+  std::vector<uint8_t> d = scene;
+  EXPECT_TRUE(PerturbRgbaEdgesInPlace(d.data(), 16, 16, 16 * 4, 7, 1.0, 3,
+                                      /*min_alpha=*/255, NoiseMask(),
+                                      /*bottom_up=*/false, NoiseDomain::kWebGl));
+  EXPECT_EQ(c, d);
+}
+
+}  // namespace
+
 }  // namespace camoucfg

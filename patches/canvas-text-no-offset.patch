@@ -1,0 +1,37 @@
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index ae3ca3a1e0..344fe96a8c 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -1509,32 +1509,6 @@ void BaseRenderingContext2D::DrawTextInternal(
+   }
+ 
+   location.Offset(0, TextMetrics::GetFontBaseline(baseline, *font_data));
+-  // Camoucrome canvas noise redesign: the text origin moves by a
+-  // per-profile sub-pixel offset, so text rasterises differently per
+-  // canvas:seed at draw time and every readback and copy agrees. No-op
+-  // without canvas:seed (rule 5).
+-  // The offset is in device pixels: it is mapped back through the inverse of
+-  // the transform's linear part, so a scaled or rotated context still moves
+-  // the glyphs by less than one device pixel (a page cannot magnify it with
+-  // ctx.scale() and read the profile's offset back).
+-  {
+-    const std::array<float, 2> camou_offset = camoucfg::TextOffset(
+-        camoucfg::CanvasSeed(camoucfg::ScopeFor(GetTopExecutionContext())));
+-    const AffineTransform& camou_t = state.GetTransform();
+-    const double camou_det =
+-        camou_t.A() * camou_t.D() - camou_t.B() * camou_t.C();
+-    if ((camou_offset[0] != 0 || camou_offset[1] != 0) &&
+-        std::isfinite(camou_det) && camou_det != 0) {
+-      location.Offset(
+-          ClampTo<float>((camou_t.D() * camou_offset[0] -
+-                          camou_t.C() * camou_offset[1]) /
+-                         camou_det),
+-          ClampTo<float>((camou_t.A() * camou_offset[1] -
+-                          camou_t.B() * camou_offset[0]) /
+-                         camou_det));
+-    }
+-  }
+-
+   if (host && host->ShouldCaptureRenderedText()) {
+     gfx::RectF exact_bounds = bounds;
+     // If the text is scaled horizontally to fit maxWidth, scale the bounding
