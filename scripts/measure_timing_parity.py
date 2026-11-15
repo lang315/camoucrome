@@ -530,7 +530,7 @@ def _finch_seed(udd):
         state = json.loads(pathlib.Path(udd, "Local State").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return any(k in state for k in ("variations_compressed_seed", "variations_seed"))
+    return any(k.startswith("variations") and "seed" in k for k in state)
 
 
 def _adapters():

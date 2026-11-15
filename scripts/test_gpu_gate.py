@@ -145,3 +145,8 @@ def test_status_lines_keep_feature_states_only():
             "Driver version: 31.0.101.2111\nGPU process crash count :0")
     assert g.status_lines(text) == ["Canvas: Hardware accelerated", "Rasterization: Hardware accelerated on all threads",
                                     "WebGL: Hardware accelerated"]
+
+
+def test_status_lines_accept_the_table_row_form_without_a_colon():
+    assert g.status_lines("Canvas Hardware accelerated\nRasterization Software only. Hardware acceleration disabled")[0] == \
+        "Canvas: Hardware accelerated"
