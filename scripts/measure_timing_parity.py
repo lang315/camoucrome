@@ -601,13 +601,13 @@ def gpu_gate_family(renderer):
 
 
 def run_cmd(a):
+    arms = a.arms.split(",")
+    if "S" not in arms:
+        sys.exit("refusing a run without arm S: the iteration count and every ratio come from S (stock)")
     import gpu_gate
     import measure_step2 as m2
     from camoucrome import launcher, pin
 
-    arms = a.arms.split(",")
-    if "S" not in arms:
-        sys.exit("refusing a run without arm S: the iteration count and every ratio come from S (stock)")
     gpu_gate.require_interactive()
     stock_exe = os.path.join(a.stock_app or os.environ.get("CAMOU_STOCK_APP") or m2.STOCK_APP, "chrome.exe")
     fork_exe = os.path.join(a.fork_dir, "chrome.exe") if a.fork_dir else os.environ.get("CAMOU_FORK_EXE")
