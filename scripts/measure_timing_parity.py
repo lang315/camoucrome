@@ -206,6 +206,8 @@ function benchP(W) {
     res.g_window = benchG(SPEC.window, '', {A, M});      // 4. G window
     try { A.close(); } catch (x) {}
   } catch (err) { res.errors.push(String(err && err.stack || err)); }
+  try { const g = document.createElement('canvas').getContext('webgl'); const d = g && g.getExtension('WEBGL_debug_renderer_info');
+        res.gl = d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; } catch (x) {}   // after every timed phase
   fetch('/result', {method: 'POST', body: JSON.stringify(res)});
 })();
 </script></body>"""
@@ -487,8 +489,11 @@ def _find_chrome(d):
     raise SystemExit(f"UNMEASURED: no chrome.exe under {d}")
 
 
-FORK_ARMS = ("F", "FH", "FA", "FS", "FN", "F0")
-STOCK_ARMS = ("S", "S2", "SP", "SA")
+FORK_ARMS = ("F", "FH", "FA", "FS", "FN", "F0", "F0P")
+STOCK_ARMS = ("S", "S2", "SP", "SA", "SE")
+# Arms whose profile is a copy of the seeded stock profile (Finch seed present): stock's own arms and F0P (F0 on that
+# profile); SE is stock on a fresh empty profile. Two arms that tell the profile from the build.
+SEEDED_PROFILE_ARMS = ("S", "S2", "SP", "SA", "F0P")
 # Arms that draw the identity (the others launch with no identity).
 IDENTITY_ARMS = ("F", "FH", "FA", "FS", "FN", "SP", "SA")
 
@@ -514,9 +519,26 @@ def arm_spec(arm, ident):
         return None, None, True
     if arm == "SA":
         return None, lo, False
-    if arm in ("S", "S2", "F0", "V"):
+    if arm in ("S", "S2", "F0", "V", "F0P", "SE"):
         return None, None, False
     raise KeyError(arm)
+
+
+def _finch_seed(udd):
+    """Whether the profile's Local State carries a variations (Finch) seed: True / False / None (no Local State yet)."""
+    try:
+        state = json.loads(pathlib.Path(udd, "Local State").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return any(k in state for k in ("variations_compressed_seed", "variations_seed"))
+
+
+def _adapters():
+    """The Windows display adapters' names, once per run (the GPU process may use the physical one or the RDP/Basic one)."""
+    p = subprocess.run(["powershell", "-NoProfile", "-Command",
+                        "(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join '; '"],
+                       capture_output=True, text=True, timeout=60)
+    return p.stdout.strip()
 
 
 def run_cmd(a):
@@ -544,7 +566,8 @@ def run_cmd(a):
     run_dir.mkdir()
     versions = {arm: m2.exe_version(exe) for arm, exe in exe_of.items() if exe and arm in arms}
     (run_dir / "run.json").write_text(json.dumps({"arms": arms, "launches": a.launches, "versions": versions,
-                                                  "plant": a.plant, "min_reads": MIN_READS}, indent=1), encoding="utf-8")
+                                                  "plant": a.plant, "min_reads": MIN_READS,
+                                                  "adapters": _adapters()}, indent=1), encoding="utf-8")
     print(f"run {run_dir}; versions {versions}", flush=True)
 
     server = _Server(("127.0.0.1", 0), _Handler)
@@ -560,7 +583,7 @@ def run_cmd(a):
             return rec
         rec["fvm_gb"], rec["cpu_load"] = round(_fvm_gb(), 1), _cpu_load()
         port = _free_port()
-        own_seed = arm in STOCK_ARMS
+        own_seed = arm in SEEDED_PROFILE_ARMS
         udd = m2.SEED.fresh_copy() if own_seed else tempfile.mkdtemp(prefix="timing-parity-")
         crash = tempfile.mkdtemp(prefix="timing-parity-crash-")
         url = base + "#" + __import__("urllib.parse").parse.quote(page_spec(arm, a.plant if arm == "S2" else None))
@@ -595,7 +618,11 @@ def run_cmd(a):
                 rec["unmeasured"] = "the page never reported" + (f" (exit {proc.returncode})" if proc.poll() is not None else "")
                 return rec
             res, why = parse_result(server.results[0])
-            crashes = gpu_gate.read_port(port)             # after the result: the only CDP connection of the launch
+            if isinstance(server.results[0], dict):
+                fam, soft = gpu_gate.renderer_family(server.results[0].get("gl"))
+                rec["gl_family"], rec["gl_software"] = fam, soft          # vendor / backend only, never a device id
+            rec["finch_seed"] = _finch_seed(udd)
+            crashes, rec["gpu_status"] = gpu_gate.read_port_status(port)             # after the result: the only CDP connection of the launch
             if not session_active(_session_text()):
                 rec["unmeasured"] = "session 1 left Active during the launch"
             elif crashes != 0:
@@ -627,7 +654,7 @@ def run_cmd(a):
                 print(f"{arm}/{i}: {'UNMEASURED ' + rec['unmeasured'] if rec.get('unmeasured') else 'ok'}", flush=True)
 
     try:
-        if any(x in arms for x in STOCK_ARMS):
+        if any(x in arms for x in SEEDED_PROFILE_ARMS):
             with m2.seeded_control(stock_exe):
                 go()
         else:

@@ -352,7 +352,7 @@ def test_arm_spec_table():
     assert "canvas:seed" not in c and c["navigator.hardwareConcurrency"] == 4 and l == lo and p is True
     assert m.arm_spec("SP", IDENT) == (None, None, True)
     assert m.arm_spec("SA", IDENT) == (None, lo, False)
-    for arm in ("S", "S2", "F0", "V"):
+    for arm in ("S", "S2", "F0", "V", "F0P", "SE"):
         assert m.arm_spec(arm, IDENT) == (None, None, False)
 
 
@@ -367,3 +367,16 @@ def test_arm_spec_does_not_mutate_the_identity():
 def test_arm_spec_unknown_arm_refused():
     with pytest.raises(KeyError):
         m.arm_spec("ZZ", IDENT)
+
+
+def test_profile_arms_split_seeded_from_fresh():
+    assert "F0P" in m.SEEDED_PROFILE_ARMS and "SE" not in m.SEEDED_PROFILE_ARMS
+    assert "S" in m.SEEDED_PROFILE_ARMS and "F0" not in m.SEEDED_PROFILE_ARMS
+
+
+def test_finch_seed_reads_local_state(tmp_path):
+    assert m._finch_seed(tmp_path) is None
+    (tmp_path / "Local State").write_text('{"variations_compressed_seed": "x"}', encoding="utf-8")
+    assert m._finch_seed(tmp_path) is True
+    (tmp_path / "Local State").write_text('{"other": 1}', encoding="utf-8")
+    assert m._finch_seed(tmp_path) is False

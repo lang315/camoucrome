@@ -137,3 +137,11 @@ def test_renderer_family_flags_software_renderers():
 
 def test_renderer_family_unreadable_is_not_a_family():
     assert g.renderer_family(None) == ("unknown vendor / unknown backend", False)
+
+
+def test_status_lines_keep_feature_states_only():
+    text = ("Canvas: Hardware accelerated\nRasterization: Hardware accelerated on all threads\n"
+            "GL_RENDERER: ANGLE (Intel, Intel UHD Graphics 630 Direct3D11, D3D11)\nWebGL: Hardware accelerated\n"
+            "Driver version: 31.0.101.2111\nGPU process crash count :0")
+    assert g.status_lines(text) == ["Canvas: Hardware accelerated", "Rasterization: Hardware accelerated on all threads",
+                                    "WebGL: Hardware accelerated"]

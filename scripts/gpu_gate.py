@@ -10,6 +10,7 @@ UNMEASURED, never PASS or FAIL. Off Windows every entry point is a no-op.
 
   python gpu_gate.py PORT   prints the crash count of the browser on that DevTools port
 """
+import json
 import os
 import re
 import subprocess
@@ -56,7 +57,7 @@ def renderer_family(renderer):
     return f"{vendor} / {backend}", software
 
 
-def read_page(page, tries=20):
+def read_text(page, tries=20):
     page.goto("chrome://gpu", wait_until="load", timeout=15000)
     text = ""
     for _ in range(tries):
@@ -64,7 +65,21 @@ def read_page(page, tries=20):
         if CRASH.search(text):
             break
         time.sleep(0.25)
-    return crash_count(text)
+    return text
+
+
+def read_page(page, tries=20):
+    return crash_count(read_text(page, tries))
+
+
+# The graphics feature status lines of chrome://gpu: a feature name and its state, never a device or a driver.
+STATUS = re.compile(r"^(Canvas|Direct Rendering Display Compositor|Compositing|Multiple Raster Threads|OpenGL|"
+                    r"Rasterization|Raw Draw|Skia Graphite|Video Decode|WebGL|WebGL2|WebGPU)\s*:\s*([A-Za-z ,.\-]+)$", re.M)
+
+
+def status_lines(text):
+    """['Canvas: Hardware accelerated', ...] from a chrome://gpu text."""
+    return [f"{m.group(1)}: {m.group(2).strip()}" for m in STATUS.finditer(text or "")]
 
 
 def read_ctx(ctx):
@@ -90,6 +105,17 @@ def read_port(port, timeout=60):
         return None
     tail = (p.stdout.strip().splitlines() or ["None"])[-1]
     return int(tail) if tail.isdigit() else None
+
+
+def read_port_status(port, timeout=60):
+    """(crash count, feature status lines) of the browser on a DevTools port; (None, []) when unreadable."""
+    try:
+        p = subprocess.run([sys.executable, os.path.abspath(__file__), str(port), "status"],
+                           capture_output=True, text=True, timeout=timeout)
+        got = json.loads((p.stdout.strip().splitlines() or ["{}"])[-1])
+        return got.get("crash"), got.get("status", [])
+    except (subprocess.TimeoutExpired, ValueError):
+        return None, []
 
 
 def session_id():
@@ -126,4 +152,9 @@ if __name__ == "__main__":
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
         browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{sys.argv[1]}")
-        print(read_ctx(browser.contexts[0]))
+        if len(sys.argv) > 2 and sys.argv[2] == "status":
+            page = browser.contexts[0].new_page()
+            text = read_text(page)
+            print(json.dumps({"crash": crash_count(text), "status": status_lines(text)}))
+        else:
+            print(read_ctx(browser.contexts[0]))
