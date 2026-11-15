@@ -1649,7 +1649,7 @@ N1_SCENES = "() => {" + HASH_FN + """
   const out = {};
   const arc = (bg, fg, bad) => {
     const c = document.createElement('canvas'); c.width = 200; c.height = 100;
-    const x = c.getContext('2d', { willReadFrequently: true });
+    const x = c.getContext('2d');   // a default 200x100 canvas: GPU-rastered, the only kind that carries noise
     if (bg) { x.fillStyle = bg; x.fillRect(0, 0, 200, 100); }
     x.fillStyle = fg; x.beginPath(); x.arc(100, 50, 38.3, 0, Math.PI * 2); x.fill();
     const d = x.getImageData(0, 0, 200, 100).data;
@@ -1750,6 +1750,14 @@ def mark_unmeasured(name, why):
     (soft if name in SOFT_ROWS else results)[name] = False
     unmeasured[name] = why
 
+
+if GPU_CANVAS:
+    # Rows whose reference is a CPU canvas: with GPU-rastered canvases an equality with it measures nothing.
+    for _name in (C2, C3, C4, C5):
+        mark_unmeasured(_name, "the stock baseline JSON is a CPU-canvas capture; under CAMOU_SP3A_GPU_CANVAS=1 the "
+                               "canvases are GPU-rastered, so equality or inequality with it says nothing")
+    mark_unmeasured(C40, "an unconfigured GPU raster does not give one picture for one flush or many (vacuous); the "
+                         "lazy mask's one-or-many equivalence is LazyCanvasNoiseMaskTest")
 
 # C65: where the ink of a glyph jumps as the draw position moves in 1/64 px steps. Stock quantises glyph positions,
 # so the jump points are CPU constants, the same on every machine; a seed-dependent origin shift moves them.
@@ -2070,7 +2078,7 @@ c66_row()
 # not move the pixel as 2D did.
 C67_SCENE = """(clean) => {
   const c = document.createElement('canvas'); c.width = 300; c.height = 300;
-  const x = c.getContext('2d', { willReadFrequently: true });
+  const x = c.getContext('2d');   // GPU-rastered: a CPU canvas carries no noise
   x.fillStyle = '#fff'; x.fillRect(0, 0, 300, 300);
   for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {       // nine arcs: enough edge pixels for a rate
     x.fillStyle = `rgb(${200 - 30 * i},${40 + 50 * j},${40 + 60 * i})`;
