@@ -1927,6 +1927,9 @@ C67_SCENE = """(clean) => {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   const src = new ImageData(new Uint8ClampedArray(clean || n2d), 100, 100);   // clean bytes: no canvas snapshot, no 2D noise
+  // readPixels rows run bottom-up and the noise reads them as such: flipping on upload makes buffer row 0 the image's
+  // bottom row, so the WebGL field sees the same top-down patches the 2D read does (flipped back below).
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
   gl.viewport(0, 0, 100, 100); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   const p = new Uint8Array(100 * 100 * 4); gl.readPixels(0, 0, 100, 100, gl.RGBA, gl.UNSIGNED_BYTE, p);
@@ -1959,6 +1962,7 @@ def c67_row():
         mark_unmeasured(C67, str(sd.get("err")))
         return
     N, W = sd["n2d"], sd["nw"]
+    W = [b for r in range(99, -1, -1) for b in W[r * 400:(r + 1) * 400]]   # buffer rows are bottom-up
     diff = [i for i in range(0, len(S), 4) if S[i:i + 4] != N[i:i + 4]]
     if not diff:
         mark_unmeasured(C67, "no pixel where the seeded 2D read differs from the unconfigured one")
