@@ -449,9 +449,10 @@ def test_load_run_without_a_measured_stock_launch_keeps_every_launch(tmp_path):
     assert len(ok["F"]) == 1
 
 
-def test_adapter_families_keep_vendors_only():
-    got = m.adapter_families("ExampleVendor(R) Gpu 9000 (driver 1.2.3.4); Microsoft Remote Display Adapter; Parsec Virtual Display Adapter")
-    assert got == "ExampleVendor, Microsoft, Parsec" and "9000" not in got and "1.2.3.4" not in got
+def test_adapter_families_keep_gpu_vendors_only():
+    got = m.adapter_families("Intel(R) Gpu 9000 (driver 1.2.3.4); Microsoft Remote Display Adapter; Parsec Virtual Display Adapter; NVIDIA Model 5")
+    assert got == "Intel, NVIDIA" and "9000" not in got and "1.2.3.4" not in got
+    assert "Parsec" not in got and "Microsoft" not in got   # remote-access software names are not a GPU vendor
 
 
 def test_the_launch_record_never_carries_the_unmasked_renderer():
@@ -467,3 +468,11 @@ def test_compare_rows_carry_the_p75_ratios_beside_the_median():
     rows = m.compare(bimodal_run("S", 1.7, 1.7), runs)
     r = next(x for x in rows["p"] if x["name"] == "canvas2d")
     assert statistics.median(r["other_p75"]) == 5.0 and statistics.median(r["other"]) == 3.0
+
+
+def test_a_run_without_arm_s_is_refused():
+    import argparse
+    import pytest
+    with pytest.raises(SystemExit) as e:
+        m.run_cmd(argparse.Namespace(arms="F0,F"))
+    assert "without arm S" in str(e.value)

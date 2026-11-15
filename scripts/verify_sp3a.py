@@ -1138,6 +1138,32 @@ capture = "--capture-baseline" in sys.argv[1:]
 results = {}
 notes = []
 
+# --- Which canvas this launch gives a page ---
+# Readback noise is put on GPU-rastered pixels only (release -5, rule B). Where the default 2D canvas is a CPU canvas
+# (content_shell without ANGLE/SwiftShader, a machine without GPU raster) the noise rows have nothing to measure: the
+# valid modes are CAMOU_SP3A_GPU_CANVAS=1 on the build box and a GPU host (default launch). CAMOU_SP3A_ALLOW_CPU_DEFAULT=1
+# runs the rows anyway (a RED run on an older binary, whose seeded canvases were noised everywhere).
+CPU_PROBE = """async () => {
+  const W = 200, H = 100;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="200" height="100" fill="#fff"/>` +
+              `<circle cx="100" cy="50" r="38.3" fill="rgb(128,128,128)"/></svg>`;
+  const im = new Image(); await new Promise((res, rej) => { im.onload = res; im.onerror = rej;
+    im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+  const ref = document.createElement('canvas'); ref.width = W; ref.height = H;
+  const xr = ref.getContext('2d', { willReadFrequently: true }); xr.drawImage(im, 0, 0);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.fillStyle = 'rgb(128,128,128)';
+  x.beginPath(); x.arc(100, 50, 38.3, 0, Math.PI * 2); x.fill();
+  const a = x.getImageData(0, 0, W, H).data, b = xr.getImageData(0, 0, W, H).data;
+  let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  return { diff: d };
+}"""
+_probe, _probe_err = session(None, f"() => ({CPU_PROBE})()")
+if _probe is not None and not _probe["diff"] and os.environ.get("CAMOU_SP3A_ALLOW_CPU_DEFAULT") != "1":
+    print("UNMEASURED: the default 2D canvas of this launch is a CPU canvas (it reads exact against the SVG shapes): the "
+          "noise rows have nothing to measure. Run with CAMOU_SP3A_GPU_CANVAS=1 (build box) or on a GPU host.")
+    sys.exit(3)
+
 # --- Live runs on the binary under test ---
 seeded, seeded_err = session(CANVAS, DRAW_AND_READ)
 unconf, unconf_err = session(None, DRAW_AND_READ)
@@ -1737,9 +1763,15 @@ C65E = "C65e canvas fillText equals drawImage of the same SVG text (16 origins, 
 C68 = "C68 a willReadFrequently canvas reads like the SVG shapes it draws (8 seeds)"
 C68B = "C68b a default canvas that has switched to the CPU reads like the SVG shapes it draws (8 seeds)"
 C68C = "C68c unchanged content reads the same before and after the CPU switch (8 seeds)"
+C68E = "C68e text drawn after the GPU->CPU switch, over cells an earlier GPU draw marked, reads noise-free on its ink (8 seeds)"
 C68D = "C68d a default 200 x 50 canvas keeps its noise where stock rasters it on the GPU: size is no CPU criterion (8 seeds)"
 C66 = "C66 RGB implementation-format read equals the RGBA read"
-SOFT_ROWS = (C66, C65D)    # C65d has no reference where stock itself renders the two differently (the box's content_shell)
+# Rows outside EXPECTED: UNMEASURED by construction somewhere, so they must not block ALL_PASS, while a measured FAIL
+# still fails the script. C66 and C65d: no reference on the backends measured. C68d: UNMEASURED where the unconfigured
+# default canvas is a CPU canvas (no GPU raster). Under CAMOU_SP3A_GPU_CANVAS=1 also the rows whose reference is a
+# CPU-canvas capture (2-5) and the one that needs a deterministic CPU raster (40).
+GPU_MODE_SOFT = (C2, C3, C4, C5, C40)
+SOFT_ROWS = (C66, C65D, C68D) + (GPU_MODE_SOFT if GPU_CANVAS else ())
 C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
 
 
@@ -1748,13 +1780,15 @@ soft = {}   # rows outside EXPECTED: C66 is UNMEASURED on every backend measured
 
 def mark_unmeasured(name, why):
     """The row has no verdict: it is named in `unmeasured` (and only there: results[name] is never read for it)."""
+    if name in SOFT_ROWS:
+        results.pop(name, None)
     (soft if name in SOFT_ROWS else results)[name] = False
     unmeasured[name] = why
 
 
 if GPU_CANVAS:
     # Rows whose reference is a CPU canvas: with GPU-rastered canvases an equality with it measures nothing.
-    for _name in (C2, C3, C4, C5):
+    for _name in (C2, C3, C4, C5):   # GPU_MODE_SOFT
         mark_unmeasured(_name, "the stock baseline JSON is a CPU-canvas capture; under CAMOU_SP3A_GPU_CANVAS=1 the "
                                "canvases are GPU-rastered, so equality or inequality with it says nothing")
     mark_unmeasured(C40, "an unconfigured GPU raster does not give one picture for one flush or many (vacuous); the "
@@ -1823,6 +1857,7 @@ def c65_row():
     faults = [str(e) for (v, e) in [(un, un_e), *seeded.values()] if v is None]
     if un is None or faults:
         results[C65] = False
+        mark_unmeasured(C65D, "C65's sessions faulted: no reading")
         notes.append(f"C65: session fault: {faults[:1]}")
         return
     d_ref = all(un["d"])
@@ -1834,6 +1869,8 @@ def c65_row():
     if blank:
         mark_unmeasured(C65, f"no ink transition in sweep(s) {blank} of the unconfigured run "
                         f"(blank glyph or a missing font): {[ref[k] for k in blank]}")
+        if C65D not in unmeasured:
+            mark_unmeasured(C65D, "C65 has no ink to read (blank glyph or a missing font)")
         return
     bad, bad_d = {}, {}
     for s, (v, e) in seeded.items():
@@ -1945,11 +1982,13 @@ C68_SCENE = """async (mode) => {
   const x = c.getContext('2d');
   draw(x);
   const before = Array.from(read(x));              // unchanged content, before the switch
+  const pre = same(before, svgPx);                 // > 0: GPU-rastered until now (a CPU canvas from the start reads exact)
   for (let i = 0; i < 8; i++) read(x);              // repeated reads: stock switches the canvas to the CPU
   const after = Array.from(read(x));               // the same content after it
-  if (mode === 'same') return { diff: same(before, after) };
+  const kept = same(before, after);
   x.clearRect(0, 0, W, H); draw(x);                // drawn after the switch
-  return { diff: same(read(x), svgPx) };
+  const post = same(read(x), svgPx);               // 0: the canvas is a CPU canvas now (the switch happened)
+  return { diff: mode === 'same' ? kept : post, pre, post };
 }"""
 
 
@@ -1957,8 +1996,16 @@ def c68_rows():
     for name, mode in ((C68, "wrf"), (C68B, "after"), (C68C, "same"), (C68D, "small")):
         un, un_e = session(None, f"() => ({C68_SCENE})('{mode}')")
         if un is None:
-            results[name] = False
+            (soft if name in SOFT_ROWS else results)[name] = False
             notes.append(f"{name[:4]}: session fault: {un_e}")
+            continue
+        if mode in ("after", "same") and not un["pre"]:
+            mark_unmeasured(name, "the canvas reads exact before any readback: a CPU canvas from the start, so there is "
+                                  "no GPU->CPU switch to test")
+            continue
+        if mode in ("after", "same") and un["post"]:
+            mark_unmeasured(name, f"the redraw after {8} readbacks is not exact ({un['post']} channel bytes differ): "
+                                  f"the canvas did not switch to the CPU")
             continue
         if un["diff"] and mode != "small":
             mark_unmeasured(name, f"the unconfigured canvas is not exact against the SVG shapes here "
@@ -1981,12 +2028,93 @@ def c68_rows():
                     bad[seed] = "the seeded read equals the unconfigured one: no noise on a GPU-rastered small canvas"
             elif v["diff"]:
                 bad[seed] = f"{v['diff']} channel bytes differ"
-        results[name] = not bad
+        (soft if name in SOFT_ROWS else results)[name] = not bad
         if bad:
             notes.append(f"{name[:4]}: seeds whose read differs from the exact one: {bad}")
 
 
 c68_rows()
+
+# C68e: the rule-B hole. After stock switches a canvas to the CPU, text drawn over cells that GPU-era draws marked
+# anti-aliased must not keep their noise: the ink's pixels read as the unconfigured canvas reads them. A dense field of
+# small circles (GPU-rastered, anti-aliased edges everywhere in the box), eight readbacks (the switch), a corner circle
+# that proves the switch (CPU: exact against the SVG), then fillText over the field. The ink is the SVG text's own alpha.
+C68E_SCENE = """async () => {
+  const W = 200, H = 100;
+  const load = (svg) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('svg'));
+    im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+  const wrap = (inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${inner}</svg>`;
+  const refPx = async (inner) => { const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(await load(wrap(inner)), 0, 0);
+    return x.getImageData(0, 0, W, H).data; };
+  const dots = [];
+  // the field spans the canvas, well past the text's bounds (Skia's blob bounds are conservative: about x - 1.0 * size to
+  // x + 1.8 * size across, y - 1.2 * size to y + 0.5 * size), so noise outside the text's area exists to prove the row measures
+  for (let i = 0; i < 32; i++) for (let j = 0; j < 18; j++) {
+    const px = 22.3 + 5 * i, py = 7.3 + 5 * j;
+    if (px > 140 && py < 38) continue;                                 // the corner circle's own place
+    dots.push([px, py]);
+  }
+  const FIELD = dots.map(([cx, cy]) => `<circle cx="${cx}" cy="${cy}" r="3.3" fill="rgb(128,128,128)"/>`).join('');
+  const CORNER = '<circle cx="170" cy="15" r="10.3" fill="rgb(0,0,0)"/>';
+  const fieldRef = await refPx('<rect width="200" height="100" fill="#fff"/>' + FIELD);
+  const cornerRef = await refPx('<rect width="200" height="100" fill="#fff"/>' + CORNER);
+  const inkRef = await refPx('<text x="86" y="58" font-family="sans-serif" font-size="36" fill="#000">H</text>');
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.fillStyle = 'rgb(128,128,128)';
+  for (const [cx, cy] of dots) { x.beginPath(); x.arc(cx, cy, 3.3, 0, Math.PI * 2); x.fill(); }
+  const first = x.getImageData(0, 0, W, H).data;
+  let pre = 0; for (let i = 0; i < first.length; i++) if (first[i] !== fieldRef[i]) pre++;     // > 0: GPU-rastered so far
+  for (let i = 0; i < 8; i++) x.getImageData(0, 0, 1, 1);                                        // stock switches to the CPU
+  x.fillStyle = 'rgb(0,0,0)'; x.beginPath(); x.arc(170, 15, 10.3, 0, Math.PI * 2); x.fill();
+  x.font = '36px sans-serif'; x.fillText('H', 86, 58);
+  const d = x.getImageData(0, 0, W, H).data;
+  let corner = 0;                                                                                  // the corner circle, exact on a CPU canvas
+  for (let y = 0; y < 30; y++) for (let xx = 150; xx < 200; xx++) for (let k = 0; k < 4; k++)
+    if (d[(y * W + xx) * 4 + k] !== cornerRef[(y * W + xx) * 4 + k]) corner++;
+  const ink = []; for (let i = 3; i < inkRef.length; i += 4) if (inkRef[i] > 0) ink.push((i - 3) / 4);
+  return { pre, corner, ink, px: Array.from(d) };
+}"""
+
+
+def c68e_row():
+    un, un_e = session(None, f"() => ({C68E_SCENE})()")
+    if un is None:
+        results[C68E] = False
+        notes.append(f"C68e: session fault: {un_e}")
+        return
+    if not un["pre"]:
+        mark_unmeasured(C68E, "the field reads exact before any readback: a CPU canvas from the start, no GPU->CPU switch")
+        return
+    if un["corner"]:
+        mark_unmeasured(C68E, f"the corner circle drawn after eight readbacks is not exact ({un['corner']} channel bytes "
+                              f"differ): the canvas did not switch to the CPU")
+        return
+    ink = [4 * i + k for i in un["ink"] for k in range(4)]
+    if not ink:
+        mark_unmeasured(C68E, "the SVG text has no ink (a missing font)")
+        return
+    bad, vacuous = {}, True
+    for seed in N234_SEEDS:
+        v, e = session(json.dumps({"canvas:seed": seed}), f"() => ({C68E_SCENE})()")
+        if v is None:
+            bad[seed] = str(e)
+            continue
+        off = sum(1 for i in ink if v["px"][i] != un["px"][i])
+        if off:
+            bad[seed] = f"{off} channel bytes of the ink differ from the unconfigured read"
+        if v["px"] != un["px"]:
+            vacuous = False       # noise acted somewhere (the GPU-era field), so equality on the ink says something
+    if vacuous and not bad:
+        mark_unmeasured(C68E, "no seed changed any pixel of the canvas: no noise to keep off the ink")
+        return
+    results[C68E] = not bad
+    if bad:
+        notes.append(f"C68e: seeds whose ink carries noise: {bad}")
+
+
+c68e_row()
 
 # C66: the implementation-format read. A framebuffer with an RGB8 attachment reports (RGB, UNSIGNED_BYTE) as its
 # read pair; stock returns the rendered bytes for both reads, so the RGB bytes of an RGB read equal the first three
@@ -2146,7 +2274,7 @@ def c67_row():
     S = u["n2d"]
     sd, se = session(json.dumps({"canvas:seed": 7}), f"() => ({C67_SCENE})({json.dumps(S)})",
                      extra_flags=GL_ROW_FLAGS, gate=REAL_GPU)
-    if gpu_unmeasured(C67, [ue, se], [u.get("renderer")]):
+    if gpu_unmeasured(C67, [ue, se], [u.get("renderer"), (sd or {}).get("renderer")]):
         return
     if sd is None:
         results[C67] = False
@@ -2177,7 +2305,7 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 74   # C66 is a soft row (see SOFT_ROWS), not counted
+EXPECTED = 74 - (len(GPU_MODE_SOFT) if GPU_CANVAS else 0)   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")

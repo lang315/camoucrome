@@ -158,6 +158,7 @@ function workloads(plant) {
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256; const cx = cv.getContext('2d');
   const arr = Array.from({length: 500}, (_, i) => (i * 7919) % 1009);
   let sink;
+  const canvasOps = (cx, n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } };
   const W = {
     int: (n) => { let x = 0; for (let i = 0; i < n; i++) x = (x + i * 7) | 0; sink = x; },
     float: (n) => { let x = 0.5; for (let i = 0; i < n; i++) x = x * 1.0000001 + Math.sin(i) * 1e-9; sink = x; },
@@ -173,8 +174,10 @@ function workloads(plant) {
     gcs_read: (n) => { for (let i = 0; i < n; i++) sink = getComputedStyle(target).height; },
     style_set: (n) => { for (let i = 0; i < n; i++) target.style.height = (i & 1 ? 11 : 12) + 'px'; },
     layout_read: (n) => { for (let i = 0; i < n; i++) { sink = target.offsetHeight; } },
-    canvas2d: (n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } },
-    canvas2d_read: (n) => { W.canvas2d(n); sink = cx.getImageData(0, 0, 256, 256); },
+    canvas2d: (n) => canvasOps(cx, n),
+    // a FRESH canvas per call: repeated reads of one canvas make Chrome switch it to the CPU, where a seeded canvas has
+    // no mask to build and the workload would hide the cost it exists to keep
+    canvas2d_read: (n) => { const c = document.createElement('canvas'); c.width = 256; c.height = 256; const x = c.getContext('2d'); canvasOps(x, n); sink = x.getImageData(0, 0, 256, 256); },
     sort_builtin: (n) => { for (let i = 0; i < n; i++) sink = arr.slice().sort((a, b) => a - b); },
   };
   if (plant && W[plant]) { const f = W[plant]; W[plant] = (n) => { f(n); f(n); }; }   // test-only slowdown: twice the work
@@ -567,10 +570,15 @@ def _finch_seed(udd):
     return any(k.startswith("variations") and "seed" in k for k in state)
 
 
+GPU_VENDORS = {"intel", "nvidia", "amd", "ati", "advanced", "qualcomm", "apple", "arm"}
+
+
 def adapter_families(names):
-    """'Vendor, Vendor' from display adapter names: the first word of each, no model and no driver."""
+    """'Vendor, Vendor' from display adapter names: the first word of each, no model and no driver, and only a GPU
+    vendor: a remote-display or virtual adapter (Parsec, Microsoft Remote Display) names the owner's remote-access
+    software, so it is dropped."""
     words = [re.split(r"[\s(]", n.strip(), maxsplit=1)[0] for n in names.split(";") if n.strip()]
-    return ", ".join(dict.fromkeys(words))
+    return ", ".join(dict.fromkeys(w for w in words if w.lower() in GPU_VENDORS))
 
 
 def _adapters():
@@ -597,8 +605,10 @@ def run_cmd(a):
     import measure_step2 as m2
     from camoucrome import launcher, pin
 
-    gpu_gate.require_interactive()
     arms = a.arms.split(",")
+    if "S" not in arms:
+        sys.exit("refusing a run without arm S: the iteration count and every ratio come from S (stock)")
+    gpu_gate.require_interactive()
     stock_exe = os.path.join(a.stock_app or os.environ.get("CAMOU_STOCK_APP") or m2.STOCK_APP, "chrome.exe")
     fork_exe = os.path.join(a.fork_dir, "chrome.exe") if a.fork_dir else os.environ.get("CAMOU_FORK_EXE")
     exe_of = {**{x: stock_exe for x in STOCK_ARMS}, **{x: fork_exe for x in FORK_ARMS},
