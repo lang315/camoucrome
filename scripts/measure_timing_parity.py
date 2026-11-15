@@ -100,9 +100,17 @@ def worker_getters():
     return [k for k in _dot_keys() if k.startswith("navigator.")] + SYNTHETIC_WORKER + [WORKER_CONTROL]
 
 
-def page_spec(arm, plant=None):
+def page_spec(arm, plant=None, n=None):
+    """`n`: workload -> repetitions per rep, calibrated on the first stock launch, so every arm times the same amount of
+    work (a cost that is bimodal, a flush in most reps and none in a few, moves a per-arm calibration)."""
     return json.dumps({"arm": arm, "plant": plant, "window": window_getters(), "worker": worker_getters(),
-                       "first": FIRST_READS})
+                       "first": FIRST_READS, "n": n})
+
+
+def calibration(res):
+    """workload -> n from a launch's result (its `p_n`); {} when it has none."""
+    got = res.get("p_n") if isinstance(res, dict) else None
+    return {k: v for k, v in (got or {}).items() if isinstance(v, int) and not isinstance(v, bool) and v > 0}
 
 
 # One page. Phase order: first reads in this fresh page; the fresh worker's first reads and its getters (G worker) run
@@ -170,18 +178,21 @@ function workloads(plant) {
   if (plant && W[plant]) { const f = W[plant]; W[plant] = (n) => { f(n); f(n); }; }   // test-only slowdown: twice the work
   return W;
 }
-function benchP(W) {
-  const out = {};
+function benchP(W, fixed) {
+  const out = {}, med = {}, ns = {};
   for (const name of Object.keys(W)) {
     const f = W[name];
     f(2);
-    let n = 8;
-    while (n < 1e9 && (() => { const t = clk(); f(n); return clk() - t; })() < 15) n *= 2;
-    let best = Infinity;
-    for (let r = 0; r < 9; r++) { const t = clk(); f(n); best = Math.min(best, clk() - t); }
-    out[name] = best * 1e6 / n;
+    let n = fixed && fixed[name] > 0 ? fixed[name] : 8;
+    if (!(fixed && fixed[name] > 0)) while (n < 1e9 && (() => { const t = clk(); f(n); return clk() - t; })() < 15) n *= 2;
+    const reps = [];
+    for (let r = 0; r < 9; r++) { const t = clk(); f(n); reps.push(clk() - t); }
+    reps.sort((a, b) => a - b);
+    out[name] = reps[0] * 1e6 / n;                 // the fastest rep, as before
+    med[name] = reps[4] * 1e6 / n;                 // the median rep: a cost that flushes in most reps shows here
+    ns[name] = n;
   }
-  return out;
+  return {out, med, ns};
 }
 
 (async () => {
@@ -200,7 +211,7 @@ function benchP(W) {
     let wdata = null;
     try { wdata = await wr; } catch (err) { res.errors.push(String(err)); }
     if (wdata) { res.first.worker = wdata.first; res.g_worker = wdata.g; res.worker_ok = true; }
-    res.p = benchP(workloads(SPEC.plant));               // 3. P
+    { const b = benchP(workloads(SPEC.plant), SPEC.n); res.p = b.out; res.p_med = b.med; res.p_n = b.ns; }   // 3. P
     const A = new (self.AudioContext || self.webkitAudioContext)();
     const M = matchMedia('(pointer: fine)');
     res.g_window = benchG(SPEC.window, '', {A, M});      // 4. G window
@@ -293,8 +304,12 @@ def parse_result(raw):
 def compare(stock_runs, other_runs, p_factor=P_FACTOR):
     """Rows of P (ratios), G (getters) and first reads for `other_runs` against `stock_runs`."""
     rows = {"p": [], "g": [], "first": []}
-    sr = [ratios(r["p"]) for r in stock_runs]
-    orr = [ratios(r["p"]) for r in other_runs]
+    # The verdict is on the median rep of each launch (`p_med`, the minimum when a launch has none); the fastest-rep
+    # ratios stay in the row beside it. A cost that is bimodal (a flush in most reps) reads low on the minimum.
+    sr = [ratios(r.get("p_med") or r["p"]) for r in stock_runs]
+    orr = [ratios(r.get("p_med") or r["p"]) for r in other_runs]
+    smin = [ratios(r["p"]) for r in stock_runs]
+    omin = [ratios(r["p"]) for r in other_runs]
     names = []
     for r in sr + orr:
         names += [n for n in r if n not in names]
@@ -302,7 +317,10 @@ def compare(stock_runs, other_runs, p_factor=P_FACTOR):
         sv = [r[n] for r in sr if n in r]
         ov = [r[n] for r in orr if n in r]
         group = WORKLOAD_GROUP.get(n, "pair")
-        rows["p"].append({"name": n, "group": group, "stock": sv, "other": ov, "verdict": p_verdict(sv, ov, p_factor)})
+        v = p_verdict(sv, ov, p_factor)
+        direction = (None if v != "GAP" else "slower" if statistics.median(ov) > statistics.median(sv) else "faster")
+        rows["p"].append({"name": n, "group": group, "stock": sv, "other": ov, "verdict": v, "direction": direction,
+                           "stock_min": [r[n] for r in smin if n in r], "other_min": [r[n] for r in omin if n in r]})
     for where, key, ctl in (("window", "g_window", WINDOW_CONTROL), ("worker", "g_worker", WORKER_CONTROL)):
         s, o = median_over(stock_runs, key), median_over(other_runs, key)
         sb, ob = s.get(ctl), o.get(ctl)
@@ -328,12 +346,14 @@ def fmt(v, nd=1):
 
 
 def render(arm, rows):
-    out = [f"\n== {arm} against S ==", "P  ratio over the regexp replace (median [min, max] over launches)",
+    out = [f"\n== {arm} against S ==", "P  ratio over the regexp replace of the median rep (median [min, max] over launches; the fastest rep beside)",
            f"{'workload':24s} {'group':8s} {'S':>22s} {arm:>22s}  verdict"]
     for r in rows["p"]:
         def cell(v):
             return f"{statistics.median(v):7.3f} [{min(v):.3f},{max(v):.3f}]" if v else "-"
-        out.append(f"{r['name']:24s} {r['group']:8s} {cell(r['stock']):>22s} {cell(r['other']):>22s}  {r['verdict']}")
+        gap = r["verdict"] + (f" {r['direction']}" if r.get("direction") else "")
+        out.append(f"{r['name']:24s} {r['group']:8s} {cell(r['stock']):>22s} {cell(r['other']):>22s}  {gap}"
+                   f"   (fastest rep {cell(r.get('stock_min')).split(' [')[0].strip()} / {cell(r.get('other_min')).split(' [')[0].strip()})")
     out.append("\nG  getter cost, ns per read (median over launches of the fastest round)")
     out.append(f"{'scope':7s} {'getter':52s} {'S':>9s} {arm:>9s}  verdict")
     for r in rows["g"]:
@@ -575,9 +595,11 @@ def run_cmd(a):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}/"
 
+    calib = {}      # workload -> n, from the first measured stock launch: every later launch times the same work
+
     def launch_one(arm, i):
         why = _busy() or (None if session_active(_session_text()) else "session 1 is not Active")
-        rec = {"arm": arm, "i": i, "fvm_gb": None, "cpu_load": None}
+        rec = {"arm": arm, "i": i, "fvm_gb": None, "cpu_load": None, "n_from_s": bool(calib)}
         if why:
             rec["unmeasured"] = why
             return rec
@@ -586,7 +608,7 @@ def run_cmd(a):
         own_seed = arm in SEEDED_PROFILE_ARMS
         udd = m2.SEED.fresh_copy() if own_seed else tempfile.mkdtemp(prefix="timing-parity-")
         crash = tempfile.mkdtemp(prefix="timing-parity-crash-")
-        url = base + "#" + __import__("urllib.parse").parse.quote(page_spec(arm, a.plant if arm == "S2" else None))
+        url = base + "#" + __import__("urllib.parse").parse.quote(page_spec(arm, a.plant if arm == "S2" else None, calib or None))
         env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
         argv = [exe_of[arm], *launcher.BASE_ARGS, f"--user-data-dir={udd}", f"--remote-debugging-port={port}"]
         saved = None
@@ -631,6 +653,8 @@ def run_cmd(a):
                 rec["unmeasured"] = why
             else:
                 rec["result"] = res
+                if not calib and arm in ("S", "S2"):
+                    calib.update(calibration(res))
             return rec
         finally:
             if saved is not None:

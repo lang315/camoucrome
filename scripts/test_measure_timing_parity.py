@@ -1,6 +1,7 @@
 """measure_timing_parity: the pure parts (verdicts, page generation, result parsing)."""
 import json
 import pathlib
+import statistics
 
 import pytest
 
@@ -380,3 +381,43 @@ def test_finch_seed_reads_local_state(tmp_path):
     assert m._finch_seed(tmp_path) is True
     (tmp_path / "Local State").write_text('{"other": 1}', encoding="utf-8")
     assert m._finch_seed(tmp_path) is False
+
+
+# ---- release -5: the harness must not hide a bimodal cost behind the minimum ----
+
+def bimodal_run(arm, min_c, med_c, n=6):
+    return [{"arm": arm,
+             "p": {"regexp": 4.0, "json_parse": 8.0, "canvas2d": min_c},
+             "p_med": {"regexp": 4.0, "json_parse": 8.0, "canvas2d": med_c},
+             "g_window": {"navigator.onLine": 50.0, "screen.width": 60.0},
+             "g_worker": {"navigator.onLine": 60.0, "navigator.hardwareConcurrency": 70.0},
+             "first": {"window": {"screen.width": 0.05}, "worker": {"navigator.hardwareConcurrency": 0.1}}}
+            for _ in range(n)]
+
+
+def test_p_verdict_is_on_the_median_of_reps_and_names_the_direction():
+    # -4's canvas2d: the seeded canvas flushes in most reps (7 us/op) and not in one (0.27 us/op); the minimum
+    # read "faster than stock" while the median is slower. Stock: both read 1.7 (ratio over regexp).
+    rows = m.compare(bimodal_run("S", 1.7, 1.7), bimodal_run("F", 1.1, 12.0))
+    r = next(x for x in rows["p"] if x["name"] == "canvas2d")
+    assert r["verdict"] == "GAP" and r["direction"] == "slower", r
+    assert statistics.median(r["other_min"]) < statistics.median(r["stock_min"]), r    # the old (min) reading
+
+
+def test_p_verdict_falls_back_to_the_minimum_without_median_reps():
+    old = [{k: v for k, v in r.items() if k != "p_med"} for r in bimodal_run("F", 1.1, 12.0)]
+    rows = m.compare(bimodal_run("S", 1.7, 1.7), old)
+    r = next(x for x in rows["p"] if x["name"] == "canvas2d")
+    assert r["verdict"] == "GAP" and r["direction"] == "faster"
+
+
+def test_page_spec_carries_the_calibrated_repetition_counts():
+    spec = json.loads(m.page_spec("F", None, n={"canvas2d": 8192}))
+    assert spec["n"] == {"canvas2d": 8192}
+    assert json.loads(m.page_spec("S"))["n"] is None
+
+
+def test_calibration_is_the_first_stock_runs_counts():
+    assert m.calibration({"p_n": {"canvas2d": 8192, "regexp": 65536}}) == {"canvas2d": 8192, "regexp": 65536}
+    assert m.calibration({}) == {}
+    assert m.calibration({"p_n": {"x": "bad", "y": 0, "z": 4}}) == {"z": 4}
