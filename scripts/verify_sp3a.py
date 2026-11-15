@@ -1737,6 +1737,7 @@ C65E = "C65e canvas fillText equals drawImage of the same SVG text (16 origins, 
 C68 = "C68 a willReadFrequently canvas reads like the SVG shapes it draws (8 seeds)"
 C68B = "C68b a default canvas that has switched to the CPU reads like the SVG shapes it draws (8 seeds)"
 C68C = "C68c unchanged content reads the same before and after the CPU switch (8 seeds)"
+C68D = "C68d a default 200 x 50 canvas keeps its noise where stock rasters it on the GPU: size is no CPU criterion (8 seeds)"
 C66 = "C66 RGB implementation-format read equals the RGBA read"
 SOFT_ROWS = (C66, C65D)    # C65d has no reference where stock itself renders the two differently (the box's content_shell)
 C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
@@ -1913,16 +1914,17 @@ c65e_row()
 # read the same (a gate decided per canvas, not per raster, would flip it). The unconfigured run must be exact (GPU
 # canvases are not: stock differs from the SVG by tens of levels), else UNMEASURED.
 C68_SCENE = """async (mode) => {
-  const W = 200, H = 100;
+  const small = mode === 'small';            // 200 x 50: under 128 x 129 px, a CPU canvas in stock
+  const W = 200, H = small ? 50 : 100, CY = H / 2, R = small ? 19.3 : 38.3;
   const svgImg = (inner) => new Promise((res, rej) => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${inner}</svg>`;
     const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('svg image'));
     im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   });
-  const SVG = '<rect width="200" height="100" fill="#fff"/><circle cx="100" cy="50" r="38.3" fill="rgb(128,128,128)"/>' +
+  const SVG = `<rect width="200" height="${H}" fill="#fff"/><circle cx="100" cy="${CY}" r="${R}" fill="rgb(128,128,128)"/>` +
               '<rect x="10.3" y="10.6" width="30.2" height="12.7" fill="rgb(20,60,200)"/>';
   const draw = (x) => { x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.fillStyle = 'rgb(128,128,128)';
-    x.beginPath(); x.arc(100, 50, 38.3, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.arc(100, CY, R, 0, Math.PI * 2); x.fill();
     x.fillStyle = 'rgb(20,60,200)'; x.fillRect(10.3, 10.6, 30.2, 12.7); };
   const read = (x) => x.getImageData(0, 0, W, H).data;
   const same = (a, b) => { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d; };
@@ -1930,6 +1932,12 @@ C68_SCENE = """async (mode) => {
   const xr = ref.getContext('2d', { willReadFrequently: true }); xr.drawImage(await svgImg(SVG), 0, 0);
   const svgPx = read(xr);
   const c = document.createElement('canvas'); c.width = W; c.height = H;
+  if (mode === 'small') {
+    const x = c.getContext('2d'); draw(x);
+    const d = read(x); let h = 2166136261;
+    for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619) >>> 0;
+    return { diff: same(d, svgPx), h };
+  }
   if (mode === 'wrf') {
     const x = c.getContext('2d', { willReadFrequently: true }); draw(x);
     return { diff: same(read(x), svgPx) };
@@ -1946,21 +1954,31 @@ C68_SCENE = """async (mode) => {
 
 
 def c68_rows():
-    for name, mode in ((C68, "wrf"), (C68B, "after"), (C68C, "same")):
+    for name, mode in ((C68, "wrf"), (C68B, "after"), (C68C, "same"), (C68D, "small")):
         un, un_e = session(None, f"() => ({C68_SCENE})('{mode}')")
         if un is None:
             results[name] = False
             notes.append(f"{name[:4]}: session fault: {un_e}")
             continue
-        if un["diff"]:
+        if un["diff"] and mode != "small":
             mark_unmeasured(name, f"the unconfigured canvas is not exact against the SVG shapes here "
                                   f"({un['diff']} channel bytes differ): a GPU-rastered canvas, no reference")
             continue
         bad = {}
+        if mode == "small":
+            # AcceleratedSmallCanvases is stable: a small default canvas is GPU-rastered like a large one, so it keeps
+            # N1 noise (opposite polarity to C68: the seeded read must differ from the exact one).
+            if not un["diff"]:
+                mark_unmeasured(name, "the unconfigured 200 x 50 canvas is exact against the SVG shapes: a CPU canvas "
+                                      "here (no GPU rasterization), nothing to keep")
+                continue
         for seed in N234_SEEDS:
             v, e = session(json.dumps({"canvas:seed": seed}), f"() => ({C68_SCENE})('{mode}')")
             if v is None:
                 bad[seed] = str(e)
+            elif mode == "small":
+                if v["h"] == un["h"]:
+                    bad[seed] = "the seeded read equals the unconfigured one: no noise on a GPU-rastered small canvas"
             elif v["diff"]:
                 bad[seed] = f"{v['diff']} channel bytes differ"
         results[name] = not bad
@@ -2159,7 +2177,7 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 73   # C66 is a soft row (see SOFT_ROWS), not counted
+EXPECTED = 74   # C66 is a soft row (see SOFT_ROWS), not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
