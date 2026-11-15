@@ -45,6 +45,17 @@ def check(n):
         raise GpuCrashed(n)
 
 
+def renderer_family(renderer):
+    """(vendor / backend family, software?) of a WEBGL_debug_renderer_info UNMASKED_RENDERER string. Only the family
+    is returned for printing: no device id and no driver version leave this function."""
+    r = renderer or ""
+    software = bool(re.search(r"swiftshader|basic render|llvmpipe|software", r, re.I))
+    m = re.match(r"ANGLE \(([^,]+),", r)
+    vendor = m.group(1).strip() if m else "unknown vendor"
+    backend = next((b for b in ("Direct3D11", "Vulkan", "OpenGL", "Metal") if b in r), "unknown backend")
+    return f"{vendor} / {backend}", software
+
+
 def read_page(page, tries=20):
     page.goto("chrome://gpu", wait_until="load", timeout=15000)
     text = ""

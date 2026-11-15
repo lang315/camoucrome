@@ -119,3 +119,21 @@ def test_lib_shell_gate_fails_closed_when_the_read_raises():
     def boom(port):
         raise OSError("gone")
     assert lib_shell.gpu_gate_line(proc(), osname="nt", reader=boom) == "UNMEASURED gpu-crash=unknown"
+
+
+def test_renderer_family_names_vendor_and_backend_only():
+    fam, software = g.renderer_family(
+        "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11-31.0.15.5222)")
+    assert fam == "NVIDIA / Direct3D11" and software is False
+    assert "4090" not in fam and "31.0" not in fam
+
+
+def test_renderer_family_flags_software_renderers():
+    for r in ("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+              "ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)",
+              "Mesa llvmpipe"):
+        assert g.renderer_family(r)[1] is True
+
+
+def test_renderer_family_unreadable_is_not_a_family():
+    assert g.renderer_family(None) == ("unknown vendor / unknown backend", False)

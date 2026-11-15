@@ -1089,7 +1089,7 @@ S2B_2D = "() => {" + HASH_FN + ELIG_FN + """
 }"""
 
 
-def session(config, fn, extra_flags=None, screenshot=False):
+def session(config, fn, extra_flags=None, screenshot=False, gate=False):
     """One content_shell session. Runs page-function `fn` (a JS string) after
     navigating to about:blank, or captures a CDP screenshot if `screenshot`.
     Returns (value, err); any fault becomes a FAIL, never a traceback."""
@@ -1106,7 +1106,13 @@ def session(config, fn, extra_flags=None, screenshot=False):
             cdp = conn.context.new_cdp_session(page)
             shot = cdp.send("Page.captureScreenshot", {"format": "png"})
             return shot["data"], None
-        return page.evaluate(fn), None
+        value = page.evaluate(fn)
+        if gate:    # a host GPU run: the GPU process must not have crashed during the launch (else UNMEASURED)
+            import gpu_gate
+            n = gpu_gate.read_ctx(conn.context)
+            if n != 0:
+                return None, gpu_gate.GpuCrashed(n)
+        return value, None
     except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
         return None, exc
     finally:
@@ -1710,6 +1716,9 @@ GL_ROW_FLAGS = ([f for f in lib_shell.SHELL_FLAGS if f not in ("--headless", "--
                 if REAL_GPU else GL_FLAGS)
 PLANT_C65 = os.environ.get("CAMOU_SP3A_PLANT") == "c65"       # test-only: the seeded sessions draw text 0.5 px lower
 N234_SEEDS = range(1, 9)
+if REAL_GPU:
+    import gpu_gate
+    gpu_gate.require_interactive()      # session 0 crashes the GPU process once per launch: UNMEASURED, exit 3
 
 C65 = "C65 text transition points match unconfigured (8 seeds)"
 C66 = "C66 RGB implementation-format read equals the RGBA read"
@@ -1719,6 +1728,11 @@ C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
 def mark_unmeasured(name, why):
     results[name] = None
     unmeasured[name] = why
+
+
+def gated():
+    """Sessions of a host GPU run are gated on chrome://gpu's crash count, and need session 1."""
+    return REAL_GPU
 
 
 # C65: where the ink of a glyph jumps as the draw position moves in 1/64 px steps. Stock quantises glyph positions,
@@ -1806,6 +1820,8 @@ C66_SCENE = tri("webgl2", 63, 64, """
     return { pair, pix, pad, h: H(A) };
   };
   const out = {};
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  out.renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : null;
   // (a) an RGB8 texture framebuffer, 64 x 64
   const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, 64, 64, 0, gl.RGB, UB, null);
@@ -1824,13 +1840,33 @@ C66B_SCENE = C66_SCENE.replace("c.getContext('webgl2')", "c.getContext('webgl2',
     "  out.b = cmp(63, 64);\n  return out;\n  // (a) an RGB8")
 
 
+def gpu_unmeasured(name, errs, renderers):
+    """True (and the row marked UNMEASURED) when a host GPU run cannot give a verdict: a gated session saw a GPU
+    crash, or the unconfigured session's renderer is software (headless, or no GPU) or unreadable."""
+    import gpu_gate
+    crash = [e for e in errs if isinstance(e, gpu_gate.Unmeasured)]
+    if crash:
+        mark_unmeasured(name, str(crash[0]))
+        return True
+    if REAL_GPU:
+        fam, software = gpu_gate.renderer_family(renderers[0] if renderers else None)
+        notes.append(f"{name[:3]} renderer family: {fam}")
+        if software or not renderers or not renderers[0]:
+            mark_unmeasured(name, f"the host GPU run rendered in software or the renderer is unreadable ({fam})")
+            return True
+    return False
+
+
 def c66_row():
     seed7 = json.dumps({"canvas:seed": 7})
     parts = {}
     for key, scene in (("a", C66_SCENE), ("b", C66B_SCENE)):
-        u, ue = session(None, scene, extra_flags=GL_ROW_FLAGS)
-        sd, se = session(seed7, scene, extra_flags=GL_ROW_FLAGS)
+        u, ue = session(None, scene, extra_flags=GL_ROW_FLAGS, gate=gated())
+        sd, se = session(seed7, scene, extra_flags=GL_ROW_FLAGS, gate=gated())
         parts[key] = (u, sd, ue or se)
+    if gpu_unmeasured(C66, [e for _, _, e in parts.values()],
+                      [(p[0] or {}).get("renderer") for p in parts.values()]):
+        return
     why, fail = [], []
     for key, (u, sd, err) in parts.items():
         if u is None or sd is None:
@@ -1889,13 +1925,16 @@ C67_SCENE = """() => {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
   gl.viewport(0, 0, 100, 100); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   const p = new Uint8Array(100 * 100 * 4); gl.readPixels(0, 0, 100, 100, gl.RGBA, gl.UNSIGNED_BYTE, p);
-  return { n2d, nw: Array.from(p) };
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  return { n2d, nw: Array.from(p), renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : null };
 }"""
 
 
 def c67_row():
-    u, ue = session(None, C67_SCENE, extra_flags=GL_ROW_FLAGS)
-    sd, se = session(json.dumps({"canvas:seed": 7}), C67_SCENE, extra_flags=GL_ROW_FLAGS)
+    u, ue = session(None, C67_SCENE, extra_flags=GL_ROW_FLAGS, gate=gated())
+    sd, se = session(json.dumps({"canvas:seed": 7}), C67_SCENE, extra_flags=GL_ROW_FLAGS, gate=gated())
+    if gpu_unmeasured(C67, [ue, se], [(u or {}).get("renderer")]):
+        return
     if u is None or sd is None:
         results[C67] = False
         notes.append(f"C67: session fault: {ue or se}")
