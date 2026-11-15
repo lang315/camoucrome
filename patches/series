@@ -55,3 +55,4 @@ getter-cost-hot-config.patch
 device-memory-client-hint.patch
 webgl-noise-keys.patch
 canvas-text-no-offset.patch
+mask-lazy-cpu-gate.patch

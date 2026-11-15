@@ -5,6 +5,8 @@
 #include "components/camoucfg/canvas_mask.h"
 
 #include <algorithm>
+#include <memory>
+#include <utility>
 
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -144,6 +146,100 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
   if (changed) {
     ++generation_;
   }
+}
+
+LazyCanvasNoiseMask::LazyCanvasNoiseMask() = default;
+LazyCanvasNoiseMask::~LazyCanvasNoiseMask() = default;
+
+namespace {
+
+// An Event as a job: one slice that always finishes.
+class EventJob final : public LazyCanvasNoiseMask::Job {
+ public:
+  explicit EventJob(LazyCanvasNoiseMask::Event event) : event_(std::move(event)) {}
+  bool Step(CanvasNoiseMask& mask, base::TimeTicks) override {
+    std::move(event_).Run(mask);
+    return true;
+  }
+
+ private:
+  LazyCanvasNoiseMask::Event event_;
+};
+
+}  // namespace
+
+void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
+                              Event event, bool apply_now) {
+  Add(width, height, bytes, std::make_unique<EventJob>(std::move(event)),
+      apply_now);
+}
+
+void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
+                              std::unique_ptr<Job> job, bool apply_now) {
+  pending_.push_back({width, height, bytes, std::move(job)});
+  pending_bytes_ += bytes;
+  if (apply_now) {
+    Materialize();
+    return;
+  }
+  while (pending_.size() > kMaxPendingEvents ||
+         (pending_bytes_ > kMaxPendingBytes && pending_.size() > 1)) {
+    StepFront(base::TimeTicks::Max());
+  }
+}
+
+bool LazyCanvasNoiseMask::ApplyOldest(base::TimeTicks deadline) {
+  if (pending_.empty()) {
+    return false;
+  }
+  StepFront(deadline);
+  return true;
+}
+
+void LazyCanvasNoiseMask::StepFront(base::TimeTicks deadline) const {
+  Pending& p = pending_.front();
+  if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
+    Retire();
+    mask_ = std::make_unique<CanvasNoiseMask>(p.width, p.height);
+  }
+  if (p.job->Step(*mask_, deadline)) {
+    pending_bytes_ -= p.bytes;
+    pending_.erase(pending_.begin());
+  }
+}
+
+void LazyCanvasNoiseMask::Retire() const {
+  if (mask_) {
+    retired_generations_ += mask_->generation() + 1;
+    mask_.reset();
+  }
+}
+
+void LazyCanvasNoiseMask::Reset() {
+  pending_.clear();
+  pending_bytes_ = 0;
+  Retire();
+}
+
+void LazyCanvasNoiseMask::Materialize() const {
+  while (!pending_.empty()) {
+    StepFront(base::TimeTicks::Max());
+  }
+}
+
+bool LazyCanvasNoiseMask::has_aa() const {
+  Materialize();
+  return mask_ && mask_->has_aa();
+}
+
+NoiseMask LazyCanvasNoiseMask::view() const {
+  Materialize();
+  return mask_ ? mask_->view() : NoiseMask();
+}
+
+uint64_t LazyCanvasNoiseMask::generation() const {
+  Materialize();
+  return mask_ ? retired_generations_ + mask_->generation() + 1 : 0;
 }
 
 }  // namespace camoucfg

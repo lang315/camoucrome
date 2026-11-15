@@ -7,7 +7,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
+
+#include "base/functional/callback.h"
+#include "base/time/time.h"
 
 #include "components/camoucfg/canvas_noise.h"
 
@@ -75,6 +79,79 @@ class CanvasNoiseMask {
   std::vector<uint8_t> cells_;
   uint64_t generation_ = 0;
   size_t aa_cells_ = 0;  // cells whose byte equals kNoiseMaskAa
+};
+
+// The mask of one 2D canvas, built when a read needs it instead of at every
+// flush (release -5: building at flush cost the seeded canvas 3 us per op, 66%
+// of it the software coverage raster, whether or not the page ever read the
+// canvas back). A change to the mask is queued as an event that keeps what it
+// needs alive (a flushed recording). The owner applies the queue event by event
+// from an idle task (ApplyOldest), and every reader applies what is left first,
+// in order, so a read pays for the tail only and the mask is byte for byte the
+// one built at each event. A queue past kMaxPendingEvents events or
+// kMaxPendingBytes of retained recordings applies its OLDEST event at each Add
+// (never the whole queue: a frame stalls for one flush's walk, not sixteen).
+class LazyCanvasNoiseMask {
+ public:
+  // One queued change to the mask of the canvas size it was queued for, worked in slices: Step() works until it
+  // is done (true) or `deadline` has passed (false), checking the clock before every slice, the first included
+  // (a maximal deadline never stops it). A recording's walk is such a job, so an idle task can stop inside a
+  // recording instead of running one flush's walk, which can be tens of milliseconds, to its end.
+  class Job {
+   public:
+    virtual ~Job() = default;
+    virtual bool Step(CanvasNoiseMask& mask, base::TimeTicks deadline) = 0;
+  };
+  // A change that is done in one go.
+  using Event = base::OnceCallback<void(CanvasNoiseMask&)>;
+  static constexpr size_t kMaxPendingEvents = 16;
+  static constexpr size_t kMaxPendingBytes = size_t{16} << 20;
+
+  LazyCanvasNoiseMask();
+  LazyCanvasNoiseMask(const LazyCanvasNoiseMask&) = delete;
+  LazyCanvasNoiseMask& operator=(const LazyCanvasNoiseMask&) = delete;
+  ~LazyCanvasNoiseMask();
+
+  // Queues `event` for a canvas of `width` x `height` (a mask of another size
+  // is replaced first, as a resize does); `bytes` is what the event keeps
+  // alive. `apply_now` applies the whole queue, this event last: for an event
+  // that holds images, which the queue must not pin. Past a cap the oldest
+  // event is applied.
+  void Add(size_t width, size_t height, size_t bytes, std::unique_ptr<Job> job,
+           bool apply_now = false);
+  void Add(size_t width, size_t height, size_t bytes, Event event,
+           bool apply_now = false);
+  // Works the oldest queued job until `deadline` (it stays queued, part done, when the deadline stops it);
+  // false when none is queued.
+  bool ApplyOldest(base::TimeTicks deadline = base::TimeTicks::Max());
+  // The canvas restarts clear: the mask and every queued event are dropped.
+  void Reset();
+
+  // Each of these applies the queue first.
+  bool has_aa() const;
+  NoiseMask view() const;
+  // Bumps on every change and never repeats, across resizes and resets too.
+  uint64_t generation() const;
+
+  size_t pending_events() const { return pending_.size(); }
+  size_t pending_bytes() const { return pending_bytes_; }
+
+ private:
+  struct Pending {
+    size_t width;
+    size_t height;
+    size_t bytes;
+    std::unique_ptr<Job> job;
+  };
+  void Materialize() const;
+  void StepFront(base::TimeTicks deadline) const;
+  void Retire() const;
+
+  mutable std::unique_ptr<CanvasNoiseMask> mask_;
+  mutable std::vector<Pending> pending_;
+  mutable size_t pending_bytes_ = 0;
+  // Generations the retired masks used up.
+  mutable uint64_t retired_generations_ = 0;
 };
 
 }  // namespace camoucfg
