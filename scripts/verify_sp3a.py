@@ -1744,7 +1744,8 @@ C65_SCENE = """(shift) => {
     const c = document.createElement('canvas'); c.width = 200; c.height = 160;
     const x = c.getContext('2d', { willReadFrequently: true });
     const sig = [];
-    for (let k = 0; k < 64; k++) {
+    const steps = mode === 'x' ? 128 : 64;    // x: two pixels, so a shift by a whole subpixel bin still shows every phase
+    for (let k = 0; k < steps; k++) {
       x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, 200, 160);
       x.fillStyle = '#000'; x.font = '48px sans-serif';
       if (mode === 'ys') x.scale(1.5, 1.5);
@@ -1768,6 +1769,17 @@ def transitions(sig):
     return [k for k in range(1, len(sig)) if sig[k] != sig[k - 1]]
 
 
+# Skia places a glyph at one of 4 subpixel bins in x (1/4 px = 16 steps of the sweep), so a shift by a whole bin moves
+# every x transition onto another one of the same phase: stock's set of transition points, as positions, is unchanged.
+# The x sweep (b) is compared by phase (k mod 16); the y sweeps by position.
+X_BIN_STEPS = 16
+
+
+def reading(key, sig):
+    t = transitions(sig)
+    return sorted({k % X_BIN_STEPS for k in t}) if key == "b" else t
+
+
 def c65_row():
     def run(config, shift):
         return session(config, f"() => ({C65_SCENE})({shift})")
@@ -1778,7 +1790,7 @@ def c65_row():
         results[C65] = False
         notes.append(f"C65: session fault: {faults[:1]}")
         return
-    ref = {k: transitions(un[k]) for k in "abc"}
+    ref = {k: reading(k, un[k]) for k in "abc"}
     blank = [k for k in "abc" if "blank" in un[k] or not ref[k]]
     if blank:
         mark_unmeasured(C65, f"no ink transition in sweep(s) {blank} of the unconfigured run "
@@ -1789,9 +1801,9 @@ def c65_row():
         if v is None:
             bad[s] = str(e)
             continue
-        off = [k for k in "abc" if transitions(v[k]) != ref[k]]
+        off = [k for k in "abc" if reading(k, v[k]) != ref[k]]
         if off:
-            bad[s] = {k: transitions(v[k]) for k in off}
+            bad[s] = {k: reading(k, v[k]) for k in off}
     results[C65] = not bad
     notes.append(f"C65 unconfigured transitions: a {ref['a']}, b {ref['b']}, c {ref['c']}")
     if bad:
