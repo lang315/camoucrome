@@ -492,21 +492,6 @@ TEST(PerturbRgbaEdgesTest, ExtremeParametersAreClamped) {
   EXPECT_EQ(b, c);
 }
 
-TEST(CanvasNoiseTest, TextOffsetIsPerSeedAndSubPixel) {
-  EXPECT_EQ(TextOffset(0), (std::array<float, 2>{0.0f, 0.0f}));
-  bool varies = false;
-  for (uint64_t seed = 1; seed < 64; ++seed) {
-    const std::array<float, 2> o = TextOffset(seed);
-    EXPECT_EQ(o, TextOffset(seed));
-    for (float v : o) {
-      EXPECT_GE(v, 0.0f);
-      EXPECT_LT(v, 1.0f);
-    }
-    varies |= o != TextOffset(1);
-  }
-  EXPECT_TRUE(varies);
-}
-
 // S2b: the noise is keyed by the 3x3 source patch, not by position. One
 // lone pixel at two places gets the same delta.
 TEST(PerturbRgbaEdgesTest, SamePatchGetsSameNoiseAnywhere) {

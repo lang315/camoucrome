@@ -162,11 +162,6 @@ uint64_t CanvasSeed(const ConfigScope& scope);
 // PerturbMetric per field. Off unless the key is set (owner, 2026-11-03).
 uint64_t TextMetricsSeed(const ConfigScope& scope);
 
-// The per-profile sub-pixel origin of canvas text (canvas noise redesign,
-// target design): {dx, dy}, each in [0, 1), derived from canvas:seed alone
-// (domain canvas-text-offset). {0, 0} for seed 0, so no seed draws as stock.
-std::array<float, 2> TextOffset(uint64_t seed);
-
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_CANVAS_NOISE_H_

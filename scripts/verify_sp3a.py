@@ -48,7 +48,7 @@ Canvas noise redesign rows:
      an arc was drawn first).
   C13 drawImage and createImageBitmap copies agree with getImageData (the
      destination is eligible until the import: an arc was drawn first).
-  C14 the host oracle's text and shape canvases vary over 8 seeds, none stock.
+  C14 the host oracle's shape canvases vary over 8 seeds, none stock; its text canvas is stock.
   C15 text under ctx.scale(40,40) lands within 1 device px of unconfigured (the
       text offset is in device space, so a page cannot magnify it).
   C16 a decoded image drawn onto an eligible canvas reads as unconfigured (any
@@ -1355,7 +1355,7 @@ C17 = "17 readPixels at PACK_ALIGNMENT 8, odd width, agrees with the default lay
 C18 = "18 WebGL2 PACK_ROW_LENGTH/SKIP_PIXELS/SKIP_ROWS read agrees with the default read"
 C19 = "19 readPixels rect past the buffer: in-buffer part equals the default read, not unconfigured"
 C20 = "20 readPixels rejected by GL leaves the buffer untouched"
-C14 = "14 oracle text (>=6) and shape (8) canvases vary over 8 seeds, none stock"
+C14 = "14 oracle shape canvases vary over 8 seeds, none stock; the text canvas is stock for every seed"
 
 # C11 flat drawings (S1)
 if seeded_flat is None or unconf_flat is None:
@@ -1389,8 +1389,10 @@ if errs:
 else:
     texts = {v["text"] for v, _ in oracle_seeded}
     shapes = {v["shape"] for v, _ in oracle_seeded}
-    results[C14] = (len(texts) >= 6 and len(shapes) == 8
-                    and oracle_stock["text"] not in texts and oracle_stock["shape"] not in shapes)
+    # Canvas text carries no noise and no origin shift since release -5 (canvas audit N2: stock rasters canvas text and SVG
+    # text identically, so any shift is a tell): the text canvas is the unconfigured one for every seed.
+    results[C14] = (texts == {oracle_stock["text"]}
+                    and len(shapes) == 8 and oracle_stock["shape"] not in shapes)
     if not results[C14]:
         notes.append(f"C14: text {len(texts)} distinct, stock among them "
                      f"{oracle_stock['text'] in texts}; shape {len(shapes)} distinct, "
