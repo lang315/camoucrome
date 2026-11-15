@@ -1896,10 +1896,14 @@ def c66_row():
 
 c66_row()
 
-# C67: an opaque 2D scene, S unconfigured. Under seed 7 the page reads it with getImageData (N2d), uploads the same
-# canvas to WebGL, draws it NEAREST 1:1 and reads that back (NW). If WebGL noise used the 2D keys, NW would be
-# N2d again, and a page could tell the two paths by comparing them.
-C67_SCENE = """() => {
+# C67: the WebGL upload oracle. A page can upload pixels it chose (an ImageData: clean bytes) to WebGL, draw them
+# NEAREST and read them back: that read carries WebGL's noise on a patch of the page's choosing. If WebGL drew its
+# noise from the same keys as the 2D canvas, the noise on a patch would be the same field in both, so a page could
+# learn it there and strip it from 2D reads of the same patches (canvas audit N4). The scene is an opaque 2D drawing;
+# S is its unconfigured read, N2d its seeded getImageData, NW the seeded WebGL read of S uploaded as ImageData.
+# Where N2d differs from S, shared keys make NW equal N2d; separate keys leave them equal only where WebGL did
+# not move the pixel as 2D did.
+C67_SCENE = """(clean) => {
   const c = document.createElement('canvas'); c.width = 100; c.height = 100;
   const x = c.getContext('2d', { willReadFrequently: true });
   x.fillStyle = '#fff'; x.fillRect(0, 0, 100, 100);
@@ -1922,7 +1926,8 @@ C67_SCENE = """() => {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  const src = new ImageData(new Uint8ClampedArray(clean || n2d), 100, 100);   // clean bytes: no canvas snapshot, no 2D noise
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
   gl.viewport(0, 0, 100, 100); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   const p = new Uint8Array(100 * 100 * 4); gl.readPixels(0, 0, 100, 100, gl.RGBA, gl.UNSIGNED_BYTE, p);
   const dbg = gl.getExtension('WEBGL_debug_renderer_info');
@@ -1931,26 +1936,38 @@ C67_SCENE = """() => {
 
 
 def c67_row():
-    u, ue = session(None, C67_SCENE, extra_flags=GL_ROW_FLAGS, gate=gated())
-    sd, se = session(json.dumps({"canvas:seed": 7}), C67_SCENE, extra_flags=GL_ROW_FLAGS, gate=gated())
-    if gpu_unmeasured(C67, [ue, se], [(u or {}).get("renderer")]):
+    u, ue = session(None, f"() => ({C67_SCENE})(null)", extra_flags=GL_ROW_FLAGS, gate=gated())
+    if u is None or "err" in u:
+        if gpu_unmeasured(C67, [ue], [None]):
+            return
+        results[C67] = False if u is None else None
+        if u is not None:
+            mark_unmeasured(C67, str(u.get("err")))
+        else:
+            notes.append(f"C67: session fault: {ue}")
         return
-    if u is None or sd is None:
+    S = u["n2d"]
+    sd, se = session(json.dumps({"canvas:seed": 7}), f"() => ({C67_SCENE})({json.dumps(S)})",
+                     extra_flags=GL_ROW_FLAGS, gate=gated())
+    if gpu_unmeasured(C67, [ue, se], [u.get("renderer")]):
+        return
+    if sd is None:
         results[C67] = False
-        notes.append(f"C67: session fault: {ue or se}")
+        notes.append(f"C67: session fault: {se}")
         return
-    if "err" in u or "err" in sd:
-        mark_unmeasured(C67, str(u.get("err") or sd.get("err")))
+    if "err" in sd:
+        mark_unmeasured(C67, str(sd.get("err")))
         return
-    S, N, W = u["n2d"], sd["n2d"], sd["nw"]
+    N, W = sd["n2d"], sd["nw"]
     diff = [i for i in range(0, len(S), 4) if S[i:i + 4] != N[i:i + 4]]
     if not diff:
         mark_unmeasured(C67, "no pixel where the seeded 2D read differs from the unconfigured one")
         return
-    differ = sum(1 for i in diff if W[i:i + 4] != N[i:i + 4])
-    frac = differ / len(diff)
-    results[C67] = frac >= 0.9
-    notes.append(f"C67: {len(diff)} pixels carry 2D noise; the WebGL read differs from the 2D read at {differ} ({frac:.0%})")
+    same = sum(1 for i in diff if W[i:i + 4] == N[i:i + 4])
+    frac = same / len(diff)
+    results[C67] = frac <= 0.5
+    notes.append(f"C67: {len(diff)} pixels carry 2D noise; the WebGL read of the same clean pixels equals the 2D read at "
+                 f"{same} ({frac:.0%}; shared keys give 100%, separate keys the chance both moved a pixel alike)")
 
 
 c67_row()
