@@ -2205,7 +2205,9 @@ def c68f_row():
 
 c68f_row()
 
-# C68g: an idle task that walks one flush's recording in one piece is a long task a seeded page does not have. A 3000-op
+# C68g (a GUARD, not a RED row: it also passes on the build that walked a recording in one piece, which the box does not
+# turn into a 'longtask' entry): an idle task that walks one flush's recording in one piece is a long task a seeded page does
+# not have. A 3000-op
 # recording of large circles is drawn once and the page idles for 1.5 s while the mask is walked; a 'longtask' entry (>= 50 ms of main-thread
 # task) would be the walk. The unconfigured run is the control: a long task there is the page's own, not the walk's.
 C68G_SCENE = """async () => {
