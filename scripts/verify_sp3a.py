@@ -1721,6 +1721,7 @@ if REAL_GPU:
     gpu_gate.require_interactive()      # session 0 crashes the GPU process once per launch: UNMEASURED, exit 3
 
 C65 = "C65 text transition points match unconfigured (8 seeds)"
+C65E = "C65e canvas fillText equals drawImage of the same SVG text (16 origins, 8 seeds)"
 C66 = "C66 RGB implementation-format read equals the RGBA read"
 C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
 
@@ -1825,6 +1826,56 @@ def c65_row():
 
 
 c65_row()
+
+# C65e: stock rasters canvas text and SVG <text> identically (measured 2026-11-15: 16 of 16 origins, pixel for pixel), so
+# a text origin moved for fillText alone shows against the SVG text drawn at the same origin: no seed and no stock
+# reference are needed. Equal at every origin for the unconfigured run (else UNMEASURED) and for seeds 1..8.
+C65E_SCENE = """async () => {
+  const W = 200, H = 160, Y = 80, out = [];
+  const svgImage = (x) => new Promise((res, rej) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><text x="${x}" y="${Y}" font-size="48px" font-family="sans-serif" fill="#000">H</text></svg>`;
+    const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('svg image')); im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+  for (let j = 0; j < 16; j++) {
+    const x = 20 + j / 16;
+    const a = document.createElement('canvas'); a.width = W; a.height = H;
+    const ca = a.getContext('2d', { willReadFrequently: true });
+    ca.fillStyle = '#000'; ca.font = '48px sans-serif'; ca.fillText('H', x, Y);
+    const b = document.createElement('canvas'); b.width = W; b.height = H;
+    const cb = b.getContext('2d', { willReadFrequently: true });
+    cb.drawImage(await svgImage(x), 0, 0);
+    const da = ca.getImageData(0, 0, W, H).data, db = cb.getImageData(0, 0, W, H).data;
+    let ink = 0, diff = 0;
+    for (let i = 3; i < da.length; i += 4) { if (da[i] || db[i]) ink++; if (da[i] !== db[i]) diff++; }
+    out.push({ ink, diff });
+  }
+  return out;
+}"""
+
+
+def c65e_row():
+    un, un_e = session(None, C65E_SCENE)
+    if un is None:
+        results[C65E] = False
+        notes.append(f"C65e: session fault: {un_e}")
+        return
+    if any(r["ink"] == 0 for r in un) or any(r["diff"] for r in un):
+        mark_unmeasured(C65E, "the unconfigured run does not read equal: "
+                        f"{sum(1 for r in un if r['diff'])} of 16 origins differ, {sum(1 for r in un if r['ink'] == 0)} blank")
+        return
+    bad = {}
+    for seed in N234_SEEDS:
+        v, e = session(json.dumps({"canvas:seed": seed}), C65E_SCENE)
+        if v is None:
+            bad[seed] = str(e)
+        elif any(r["diff"] for r in v):
+            bad[seed] = f"{sum(1 for r in v if r['diff'])} of 16 origins differ ({max(r['diff'] for r in v)} px at most)"
+    results[C65E] = not bad
+    if bad:
+        notes.append(f"C65e: seeds whose text differs from the SVG text: {bad}")
+
+
+c65e_row()
 
 # C66: the implementation-format read. A framebuffer with an RGB8 attachment reports (RGB, UNSIGNED_BYTE) as its
 # read pair; stock returns the rendered bytes for both reads, so the RGB bytes of an RGB read equal the first three
@@ -2002,7 +2053,7 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 70
+EXPECTED = 71
 
 for name, ok in sorted(results.items()):
     print(f"{'UNMEASURED' if ok is None else 'PASS' if ok else 'FAIL'}  {name}")
