@@ -294,7 +294,7 @@ TEST(LazyCanvasNoiseMaskTest, GenerationNeverRepeatsAcrossResizeAndReset) {
   }
 }
 
-TEST(LazyCanvasNoiseMaskTest, PastTheCapsOnlyTheOldestEventIsAppliedPerAdd) {
+TEST(LazyCanvasNoiseMaskTest, PastTheCapsTheOldestEventIsDroppedUnwalkedPerAdd) {
   std::vector<int> order;
   auto note = [&](int id) {
     return base::BindOnce([](std::vector<int>* order, int id, CanvasNoiseMask&) { order->push_back(id); }, &order, id);
@@ -303,32 +303,89 @@ TEST(LazyCanvasNoiseMaskTest, PastTheCapsOnlyTheOldestEventIsAppliedPerAdd) {
   for (size_t i = 0; i < LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
     lazy.Add(8, 8, 1, note(static_cast<int>(i)));
   }
-  EXPECT_TRUE(order.empty());  // at the cap nothing was built
   EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
-  lazy.Add(8, 8, 1, note(100));  // over it: the oldest, only the oldest
-  EXPECT_EQ(order, std::vector<int>({0}));
+  lazy.Add(8, 8, 1, note(100));  // over the cap: the oldest goes, never walked
   lazy.Add(8, 8, 1, note(101));
-  EXPECT_EQ(order, std::vector<int>({0, 1}));
+  EXPECT_TRUE(order.empty());
   EXPECT_EQ(lazy.pending_events(), LazyCanvasNoiseMask::kMaxPendingEvents);
-  // A read applies the rest, in order.
+  // A read walks the rest, in order: events 0 and 1 are gone.
   EXPECT_FALSE(lazy.has_aa());
-  EXPECT_EQ(order.size(), LazyCanvasNoiseMask::kMaxPendingEvents + 2);
+  EXPECT_EQ(order.size(), LazyCanvasNoiseMask::kMaxPendingEvents);
+  EXPECT_EQ(order.front(), 2);
+  EXPECT_EQ(order.back(), 101);
   for (size_t i = 1; i < order.size(); ++i) {
     EXPECT_LT(order[i - 1], order[i]);
   }
   EXPECT_EQ(lazy.pending_events(), 0u);
 }
 
-TEST(LazyCanvasNoiseMaskTest, TheByteCapAppliesOldestEventsUntilUnderIt) {
+TEST(LazyCanvasNoiseMaskTest, TheMaskAfterADropEqualsTheEagerMaskOfTheRetainedEvents) {
+  // Marks of distinct 4 x 4 blocks on a 100 x 8 canvas, more events than the cap holds.
+  const size_t n = LazyCanvasNoiseMask::kMaxPendingEvents + 5;
+  std::vector<ScriptStep> steps;
+  for (size_t i = 0; i < n; ++i) {
+    steps.push_back({100, 8, static_cast<int64_t>(4 * i), 0, 4, 4, 0, Kind::kAa, true});
+  }
+  LazyCanvasNoiseMask lazy;
+  for (const ScriptStep& s : steps) {
+    lazy.Add(s.w, s.h, 1, Ev(s));
+  }
+  const std::vector<ScriptStep> kept(steps.begin() + 5, steps.end());   // the oldest five were dropped
+  uint64_t aa = 0;
+  EXPECT_EQ(Cells(lazy.view()), EagerCells(kept, kept.size(), -1, &aa));
+  EXPECT_TRUE(lazy.has_aa());
+}
+
+TEST(LazyCanvasNoiseMaskTest, TheByteCapDropsOldestEventsUntilUnderIt) {
   int ran = 0;
   auto count = [&] { return base::BindOnce([](int* ran, CanvasNoiseMask&) { ++*ran; }, &ran); };
   LazyCanvasNoiseMask lazy;
   lazy.Add(8, 8, LazyCanvasNoiseMask::kMaxPendingBytes - 1, count());
+  lazy.Add(8, 8, 2, count());  // over the cap with two events: the oldest is dropped
   EXPECT_EQ(ran, 0);
-  lazy.Add(8, 8, 2, count());  // over the cap with two events: the oldest goes
-  EXPECT_EQ(ran, 1);
   EXPECT_EQ(lazy.pending_events(), 1u);
   EXPECT_EQ(lazy.pending_bytes(), 2u);
+  lazy.view();
+  EXPECT_EQ(ran, 1);
+}
+
+// A dropped opaque fill or clearRect leaves the aa marks of earlier events in
+// place. Those cells sit on uniform opaque or fully transparent pixels, which
+// the noise leaves alone (it moves a pixel toward a differing neighbour with
+// alpha >= 1), so a stale mark there changes nothing a page can see.
+TEST(LazyCanvasNoiseMaskTest, StaleAaMarksOnUniformOrTransparentPixelsStayUnnoised) {
+  constexpr size_t kW = 32, kH = 16;
+  LazyCanvasNoiseMask lazy;
+  lazy.Add(kW, kH, 1, Ev({kW, kH, 0, 0, kW, kH, 0, Kind::kAa, true}));  // the event that is dropped
+  for (size_t i = 0; i < LazyCanvasNoiseMask::kMaxPendingEvents; ++i) {
+    lazy.Add(kW, kH, 1, Ev({kW, kH, 0, 0, 1, 1, 0, Kind::kImported, true}));
+  }
+  EXPECT_FALSE(lazy.has_aa());  // the read walks the retained events: the dropped aa never lands
+  // The dropped event marked the whole canvas aa: make the same stale mask by hand.
+  CanvasNoiseMask stale(kW, kH);
+  stale.MarkRect(0, 0, kW, kH, Kind::kAa);
+  // Left half: an opaque fill; right half: cleared (alpha 0).
+  std::vector<uint8_t> px(kW * kH * 4, 0);
+  for (size_t y = 0; y < kH; ++y) {
+    for (size_t x = 0; x < kW / 2; ++x) {
+      const size_t i = (y * kW + x) * 4;
+      px[i] = 200;
+      px[i + 1] = 30;
+      px[i + 2] = 90;
+      px[i + 3] = 255;
+    }
+  }
+  const std::vector<uint8_t> before = px;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(px.data(), kW, kH, kW * 4, 7, 1.0, 3, 1, stale.view(), false));
+  // The fill's own border against the cleared half is eligible only when the
+  // neighbour has alpha >= 1: it has 0, so nothing moves anywhere.
+  EXPECT_EQ(px, before);
+  // Control: a pixel that really differs from an opaque neighbour does change.
+  px = before;
+  px[(4 * kW + 3) * 4] = 10;
+  const std::vector<uint8_t> edge = px;
+  ASSERT_TRUE(PerturbRgbaEdgesInPlace(px.data(), kW, kH, kW * 4, 7, 1.0, 3, 1, stale.view(), false));
+  EXPECT_NE(px, edge);
 }
 
 TEST(LazyCanvasNoiseMaskTest, ApplyNowAppliesTheWholeQueueThisEventLast) {

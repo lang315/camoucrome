@@ -2254,6 +2254,45 @@ def c68g_row():
 
 c68g_row()
 
+# C69 (release -5, owner rule): past 16 queued flushes the oldest mask job is dropped, never walked. A page draws 3 circles,
+# 300000 more circles (dozens of flushes), then reads once. It must read without error, the same twice (one flush sequence,
+# one result), differ from unconfigured where the last circles are (the kept jobs still mark them), and equal unconfigured
+# on the first circles (their jobs were dropped, so no cell there is marked and no noise lands).
+C69 = "C69 three circles, 300000 more, then one read: reads without error, same twice, noise only on the retained circles (seed 7)"
+C69_SCENE = """async () => {
+  const c = document.createElement('canvas'); c.width = 500; c.height = 40;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f60';
+  for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(12 + i * 20, 20, 8.3, 0, Math.PI * 2); x.fill(); }
+  // a canvas flushes its recording every few thousand ops: 300000 circles at one spot are dozens of flushes
+  for (let i = 0; i < 300000; i++) { x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); }
+  const d = x.getImageData(0, 0, 500, 40).data;
+  const first = [], last = [];
+  for (let y = 0; y < 40; y++) for (let k = 0; k < 500; k++) {
+    const o = (y * 500 + k) * 4;
+    (k < 60 ? first : k >= 340 ? last : []).push(d[o], d[o + 1], d[o + 2], d[o + 3]);
+  }
+  return { first: first.join(','), last: last.join(',') };
+}"""
+
+
+def c69_row():
+    un, ue = session(None, f"() => ({C69_SCENE})()")
+    a, ae = session(json.dumps({"canvas:seed": 7}), f"() => ({C69_SCENE})()")
+    b, be = session(json.dumps({"canvas:seed": 7}), f"() => ({C69_SCENE})()")
+    if un is None or a is None or b is None:
+        results[C69] = False
+        notes.append(f"C69: session fault: {ue or ae or be}")
+        return
+    ok = a == b and a["last"] != un["last"] and a["first"] == un["first"]
+    results[C69] = ok
+    if not ok:
+        notes.append(f"C69: same twice {a == b}; last differs from unconfigured {a['last'] != un['last']}; "
+                     f"first equals unconfigured {a['first'] == un['first']}")
+
+
+c69_row()
+
 # C66: the implementation-format read. A framebuffer with an RGB8 attachment reports (RGB, UNSIGNED_BYTE) as its
 # read pair; stock returns the rendered bytes for both reads, so the RGB bytes of an RGB read equal the first three
 # bytes of the RGBA read. C66a: an RGB8 texture framebuffer with the C6 scene. C66b: an alpha:false default buffer,
@@ -2444,7 +2483,7 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 75   # the soft rows (SOFT_ROWS) are not counted
+EXPECTED = 76   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
