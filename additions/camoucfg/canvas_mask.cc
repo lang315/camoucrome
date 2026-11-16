@@ -184,8 +184,13 @@ void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
   }
   while (pending_.size() > kMaxPendingEvents ||
          (pending_bytes_ > kMaxPendingBytes && pending_.size() > 1)) {
-    StepFront(base::TimeTicks::Max());
+    DropFront();
   }
+}
+
+void LazyCanvasNoiseMask::DropFront() const {
+  pending_bytes_ -= pending_.front().bytes;
+  pending_.erase(pending_.begin());
 }
 
 bool LazyCanvasNoiseMask::ApplyOldest(base::TimeTicks deadline) {

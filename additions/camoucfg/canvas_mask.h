@@ -89,8 +89,11 @@ class CanvasNoiseMask {
 // from an idle task (ApplyOldest), and every reader applies what is left first,
 // in order, so a read pays for the tail only and the mask is byte for byte the
 // one built at each event. A queue past kMaxPendingEvents events or
-// kMaxPendingBytes of retained recordings applies its OLDEST event at each Add
-// (never the whole queue: a frame stalls for one flush's walk, not sixteen).
+// kMaxPendingBytes of retained recordings DROPS its oldest event at each Add,
+// unwalked: a page that draws and flushes in a loop without ever reading (an
+// animation, a benchmark) costs one queue push per flush, and pixels drawn
+// more than that many flushes before a read carry no noise (a cell no event
+// marked is never changed: such pixels read as stock's own).
 class LazyCanvasNoiseMask {
  public:
   // One queued change to the mask of the canvas size it was queued for, worked in slices: Step() works until it
@@ -116,7 +119,7 @@ class LazyCanvasNoiseMask {
   // is replaced first, as a resize does); `bytes` is what the event keeps
   // alive. `apply_now` applies the whole queue, this event last: for an event
   // that holds images, which the queue must not pin. Past a cap the oldest
-  // event is applied.
+  // event is dropped, unwalked.
   void Add(size_t width, size_t height, size_t bytes, std::unique_ptr<Job> job,
            bool apply_now = false);
   void Add(size_t width, size_t height, size_t bytes, Event event,
@@ -145,6 +148,7 @@ class LazyCanvasNoiseMask {
   };
   void Materialize() const;
   void StepFront(base::TimeTicks deadline) const;
+  void DropFront() const;
   void Retire() const;
 
   mutable std::unique_ptr<CanvasNoiseMask> mask_;
