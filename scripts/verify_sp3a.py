@@ -1583,8 +1583,13 @@ gl_row(C38, "teximage", lambda s, u: u["eq"] and s["eq"] and s["h"] != u["h"])
 s2b_row(C39, lambda r: r["region"],
         lambda u: u["e"] > 0 and u["trans"] > 0 and u["dF"] == 0 and u["dC"] == 0,
         lambda s, u: s["dF"] == 0 and s["dC"] == 0 and s["tH"] != u["tH"])
-s2b_row(C40, lambda r: r["flushes"], lambda u: u["e"] > 0 and u["h1"] == u["h2"],
-        lambda s, u: s["h1"] == s["h2"] and s["h1"] != u["h1"])
+# C40 needs the unconfigured drawing to give one picture for one flush or many; a GPU raster does not (the host's GPU
+# canvas, SwiftShader's): then the row has no verdict (UNMEASURED below), it is not a FAIL.
+C40_VACUOUS = s2b_unconf is not None and not (s2b_unconf["flushes"]["e"] > 0
+                                              and s2b_unconf["flushes"]["h1"] == s2b_unconf["flushes"]["h2"])
+if not C40_VACUOUS:
+    s2b_row(C40, lambda r: r["flushes"], lambda u: u["e"] > 0 and u["h1"] == u["h2"],
+            lambda s, u: s["h1"] == s["h2"] and s["h1"] != u["h1"])
 
 def rejected_read_unchanged(s, u):
     return (all(v[k]["n"] == 0 for v in (s, u) for k in ("sub", "full"))
@@ -1776,10 +1781,9 @@ C68D = "C68d a default 200 x 50 canvas keeps its noise where stock rasters it on
 C66 = "C66 RGB implementation-format read equals the RGBA read"
 # Rows outside EXPECTED: UNMEASURED by construction somewhere, so they must not block ALL_PASS, while a measured FAIL
 # still fails the script. C66 and C65d: no reference on the backends measured. C68d: UNMEASURED where the unconfigured
-# default canvas is a CPU canvas (no GPU raster). Under CAMOU_SP3A_GPU_CANVAS=1 also row 40, which needs one picture
-# for one flush or many (a GPU raster does not give it).
-GPU_MODE_SOFT = (C40,)
-SOFT_ROWS = (C66, C65D, C68D) + (GPU_MODE_SOFT if GPU_CANVAS else ())
+# default canvas is a CPU canvas (no GPU raster). Row 40 needs one picture for one flush or many, which a GPU raster
+# does not give (UNMEASURED there, measured on a CPU canvas).
+SOFT_ROWS = (C66, C65D, C68D, C40)
 C67 = "C67 WebGL upload oracle does not de-noise a 2D read"
 
 
@@ -1794,9 +1798,11 @@ def mark_unmeasured(name, why):
     unmeasured[name] = why
 
 
-if GPU_CANVAS:
+if C40_VACUOUS:
     mark_unmeasured(C40, "an unconfigured GPU raster does not give one picture for one flush or many (vacuous); the "
                          "lazy mask's one-or-many equivalence is LazyCanvasNoiseMaskTest")
+elif C40 in results:
+    soft[C40] = results.pop(C40)
 
 # C65: where the ink of a glyph jumps as the draw position moves in 1/64 px steps. Stock quantises glyph positions,
 # so the jump points are CPU constants, the same on every machine; a seed-dependent origin shift moves them.
@@ -2438,7 +2444,7 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 76 - (len(GPU_MODE_SOFT) if GPU_CANVAS else 0)   # the soft rows (SOFT_ROWS) are not counted
+EXPECTED = 75   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
