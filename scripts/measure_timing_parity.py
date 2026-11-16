@@ -36,6 +36,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 
+import finch_switches  # noqa: E402
+
 # Camoufox's constants (browser/tests/playwright/patches/getter-cost-parity.py); change one only with this host's
 # S-against-S spread as the reason.
 SLOWER_FACTOR = 2.0
@@ -526,7 +528,10 @@ def _find_chrome(d):
     raise SystemExit(f"UNMEASURED: no chrome.exe under {d}")
 
 
-FORK_ARMS = ("F", "FH", "FA", "FS", "FN", "F0", "F0P")
+FORK_ARMS = ("F", "FH", "FA", "FS", "FN", "F0", "F0P", "F0V")
+# Seeded stock arms: a launch with fewer active variations than this ran in variations safe mode (compiled defaults).
+STOCK_SEEDED_ARMS = ("S", "S2", "SP", "SA")
+MIN_SEEDED_VARIATIONS = 150
 STOCK_ARMS = ("S", "S2", "SP", "SA", "SE")
 # Arms whose profile is a copy of the seeded stock profile (Finch seed present): stock's own arms and F0P (F0 on that
 # profile); SE is stock on a fresh empty profile. Two arms that tell the profile from the build.
@@ -556,9 +561,22 @@ def arm_spec(arm, ident):
         return None, None, True
     if arm == "SA":
         return None, lo, False
-    if arm in ("S", "S2", "F0", "V", "F0P", "SE"):
+    if arm in ("S", "S2", "F0", "V", "F0P", "F0V", "SE"):
         return None, None, False
     raise KeyError(arm)
+
+
+def launch_argv(arm, argv, switches):
+    """F0V is F0 plus stock's variations switches (--fork-switches); no other arm carries them."""
+    return argv + finch_switches.argv(switches) if arm == "F0V" else argv
+
+
+def seeded_unmeasured(arm, variations):
+    """Why a seeded stock launch does not count (variations safe mode), else None. The fork applies no trials, so
+    its small count is normal and never a reason."""
+    if arm in STOCK_SEEDED_ARMS and (variations is None or variations < MIN_SEEDED_VARIATIONS):
+        return f"seeded stock ran in variations safe mode (active variations {variations}, need >= {MIN_SEEDED_VARIATIONS})"
+    return None
 
 
 def _finch_seed(udd):
@@ -602,6 +620,10 @@ def gpu_gate_family(renderer):
 
 def run_cmd(a):
     arms = a.arms.split(",")
+    if "F0V" in arms and not getattr(a, "fork_switches", None):
+        print("arm F0V needs --fork-switches FILE (JSON from finch_switches.parse/subset)", file=sys.stderr)
+        raise SystemExit(2)
+    switches = json.loads(pathlib.Path(a.fork_switches).read_text(encoding="utf-8")) if getattr(a, "fork_switches", None) else None
     if "S" not in arms:
         sys.exit("refusing a run without arm S: the iteration count and every ratio come from S (stock)")
     import gpu_gate
@@ -672,6 +694,7 @@ def run_cmd(a):
                 if pin_on and isinstance(n, int) and not isinstance(n, bool) and n >= 1:
                     saved, chosen = _pin_self(pin, n)
                     rec["pin_mask"] = sorted(chosen) if chosen else None
+            argv = launch_argv(arm, argv, switches)
             server.results = []
             proc = subprocess.Popen(argv + [url], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if saved is not None:
@@ -694,6 +717,8 @@ def run_cmd(a):
                 rec["unmeasured"] = f"gpu-crash={'unknown' if crashes is None else crashes}"
             elif why:
                 rec["unmeasured"] = why
+            elif seeded_unmeasured(arm, rec["variations"]):
+                rec["unmeasured"] = seeded_unmeasured(arm, rec["variations"])
             elif calib and arm != "S" and res.get("p_n") != calib:
                 rec["unmeasured"] = "the page timed other repetition counts than S's"
             else:
@@ -756,6 +781,7 @@ def main(argv=None):
     r.add_argument("--stock-app")
     r.add_argument("--fork-dir")
     r.add_argument("--snapshot-dir")
+    r.add_argument("--fork-switches", help="JSON from finch_switches (outside the repo), for arm F0V only")
     r.add_argument("--plant", help="test-only: slow this workload down in the S2 arm")
     r.add_argument("--seed-base", type=int, default=1000, help="the fork's identity seed is this plus the launch number")
     t = sub.add_parser("report")

@@ -476,3 +476,40 @@ def test_a_run_without_arm_s_is_refused():
     with pytest.raises(SystemExit) as e:
         m.run_cmd(argparse.Namespace(arms="F0,F"))
     assert "without arm S" in str(e.value)
+
+
+# ---- release -6: F0V (F0 plus stock's variations switches) ----
+
+SW = {"features": {"enable": ["FeatOne<StudyA"], "disable": []}, "trials": "StudyA/GroupA/", "params": ""}
+
+
+def test_f0v_argv_carries_switches_and_other_arms_do_not():
+    # Review Focus 2: the switches reach F0V only.
+    base = ["chrome.exe", "--user-data-dir=x"]
+    assert m.launch_argv("F0V", base, SW) == base + ["--force-fieldtrials=StudyA/GroupA/", "--enable-features=FeatOne<StudyA"]
+    for arm in ("F", "F0", "F0P", "S", "S2", "SE"):
+        assert m.launch_argv(arm, base, SW) == base
+        assert not any(x.startswith("--enable-features=") for x in m.launch_argv(arm, base, SW))
+
+
+def test_f0v_arm_spec_is_f0():
+    assert "F0V" in m.FORK_ARMS and "F0V" not in m.IDENTITY_ARMS
+    assert m.arm_spec("F0V", IDENT) == (None, None, False)
+
+
+def test_f0v_without_switches_file_refused():
+    import argparse
+    with pytest.raises(SystemExit) as e:
+        m.run_cmd(argparse.Namespace(arms="S,F0V", fork_switches=None))
+    assert e.value.code == 2
+
+
+def test_seeded_launch_below_150_variations_dropped():
+    # Review Focus 1: variations safe mode on a seeded stock launch is dropped, never counted fast or slow.
+    for arm in ("S", "S2", "SP", "SA"):
+        assert "safe mode" in m.seeded_unmeasured(arm, 30)
+        assert "safe mode" in m.seeded_unmeasured(arm, None)
+        assert m.seeded_unmeasured(arm, 149)
+        assert m.seeded_unmeasured(arm, 150) is None
+    for arm in ("F", "F0", "F0V", "F0P", "SE"):        # the fork applies no trials: its ~29 is normal
+        assert m.seeded_unmeasured(arm, 29) is None
