@@ -46,3 +46,11 @@ def test_argv_omits_empty():
     assert fs.argv(fs.parse(TEXT)) == [
         "--force-fieldtrials=StudyA/GroupA/*StudyB/GroupB/", "--force-fieldtrial-params=StudyA.GroupA:k/v",
         "--enable-features=FeatOne<StudyA,*FeatTwo<StudyB,FeatThree:p/1", "--disable-features=FeatFour<StudyB"]
+
+
+def test_parse_strips_quotes():
+    quoted = ('--force-fieldtrials="StudyA/GroupA/*StudyB/GroupB/" '
+              '--force-fieldtrial-params="StudyA.GroupA:k/v" '
+              '--enable-features="FeatOne<StudyA,*FeatTwo<StudyB,FeatThree:p/1" '
+              '--disable-features="FeatFour<StudyB"')
+    assert fs.parse(quoted) == fs.parse(TEXT)

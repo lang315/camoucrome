@@ -4,11 +4,11 @@ The text is per-client data (it can carry country, locale, consistency ids): kee
 only features, trials and params; a feature token stays verbatim (`*` default-kept prefix, `<Trial`, `:params`)."""
 import re
 
-_SWITCH = re.compile(r"--([a-z-]+)=(\S*)")
+_SWITCH = re.compile(r"--([a-z-]+)=(?:\"([^\"]*)\"|(\S*))")
 
 
 def parse(text):
-    got = {k: v for k, v in _SWITCH.findall(text)}
+    got = {k: q or v for k, q, v in _SWITCH.findall(text)}
     split = lambda k: [t for t in got.get(k, "").split(",") if t]
     return {"features": {"enable": split("enable-features"), "disable": split("disable-features")},
             "trials": got.get("force-fieldtrials", ""), "params": got.get("force-fieldtrial-params", "")}
