@@ -50,13 +50,17 @@ def main():
     f2 = run(cfg({"locale:tag":"xx-INVALID!!"}))
     r["T9"] = f2["main"]["locale"]=="en-US" and f2["main"]["num"]=="1,234,567.89"
     r["T10"] = f2["worker"].get("locale")=="en-US"
-    # T7-T10 measure nothing when the process already runs as UTC / en-US. Run with e.g.
+    # Candidate order: a rejected locale:tag falls to navigator.language, not en-US.
+    g = run(cfg({"locale:tag":"xx-INVALID!!","navigator.language":"de-DE"}))
+    r["T11"] = g["main"]["locale"]=="de-DE"
+    r["T12"] = g["worker"].get("locale")=="de-DE"
+    # T7-T12 measure nothing when the process already runs as UTC / en-US. Run with e.g.
     # TZ=Etc/GMT-5 LANGUAGE=de (and capture the baseline under the same env).
     if base["main"]["tz"]=="UTC" or base["main"]["locale"]=="en-US":
-        print("UNMEASURED: baseline is UTC or en-US, so T7-T10 cannot go RED; set TZ and LANGUAGE to other values")
+        print("UNMEASURED: baseline is UTC or en-US, so T7-T12 cannot go RED; set TZ and LANGUAGE to other values")
         sys.exit(2)
-    EXPECTED=10
-    for k in ("T1","T2","T3","T4","T5","T6","T7","T8","T9","T10"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    EXPECTED=12
+    for k in ("T1","T2","T3","T4","T5","T6","T7","T8","T9","T10","T11","T12"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
     n=sum(r.values()); print(f"{n}/{EXPECTED} " + ("ALL_PASS" if n==EXPECTED else "FAIL"))
     sys.exit(0 if n==EXPECTED else 1)
 
