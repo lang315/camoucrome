@@ -1,0 +1,69 @@
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+index e2543653d5..5414ead6ce 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -1014,6 +1014,49 @@ SkIRect CamouOpArea(const cc::PaintOp& op,
+   return area.intersect(clip) ? area : SkIRect::MakeEmpty();
+ }
+ 
++// The exact device area of a fill of a pixel-aligned rect, when the coverage
++// raster is known without running it: the rect is drawn plainly (no stroke,
++// path effect, colour filter, image filter or looper), the matrix
++// scales and translates, the mapped edges are whole pixels, and the clip is a
++// plain rect. The raster then covers exactly that area at 255 and nothing
++// else, so marking the area directly gives the cells Merge() of that raster
++// gives (CanvasNoiseMaskTest.ExactAreaMarkEqualsMergeOfFullCoverage). False
++// whenever any of this is unsure: the op is then rastered as before.
++bool CamouAlignedRectArea(const cc::PaintOp& op,
++                          const cc::PaintFlags& flags,
++                          const SkCanvas& canvas,
++                          SkIRect* area) {
++  SkRect local;
++  if (op.GetType() == cc::PaintOpType::kDrawRect) {
++    local = static_cast<const cc::DrawRectOp&>(op).rect;
++  } else if (op.GetType() == cc::PaintOpType::kDrawIRect) {
++    local = SkRect::Make(static_cast<const cc::DrawIRectOp&>(op).rect);
++  } else {
++    return false;
++  }
++  if (flags.getStyle() != cc::PaintFlags::kFill_Style || flags.getPathEffect() ||
++      flags.getColorFilter() || flags.getImageFilter() ||
++      flags.getLooper() || !local.isSorted() || !canvas.isClipRect()) {
++    return false;
++  }
++  const SkMatrix matrix = canvas.getTotalMatrix();
++  if (!matrix.isScaleTranslate()) {
++    return false;
++  }
++  const SkRect device = matrix.mapRect(local);
++  constexpr SkScalar kLimit = 1 << 24;
++  auto whole = [](SkScalar v) {
++    return v == SkScalarFloorToScalar(v) && v > -kLimit && v < kLimit;
++  };
++  if (!whole(device.left()) || !whole(device.top()) || !whole(device.right()) ||
++      !whole(device.bottom())) {
++    return false;
++  }
++  SkIRect r = device.roundOut();
++  *area = r.intersect(canvas.getDeviceClipBounds()) ? r : SkIRect::MakeEmpty();
++  return true;
++}
++
+ // The device pixels a composited draw may set: its clip, or for a layer
+ // with bounds (drawImage with a filter, or a translucent image's shadow)
+ // those bounds grown by the layer's filter, mapped, outset 1 px and
+@@ -1535,6 +1578,14 @@ void Canvas2DRecorderContext::CamouMarkOp(const cc::PaintOp& op,
+     return;
+   }
+   const CamouKind kind = cpu ? CamouKind::kImported : CamouKindOf(*flags);
++  SkIRect exact;
++  if (!cpu &&
++      (kind == CamouKind::kSolidOpaque || kind == CamouKind::kSolid ||
++       kind == CamouKind::kClear) &&
++      CamouAlignedRectArea(op, *flags, canvas, &exact)) {
++    mark_rect(exact, kind);
++    return;
++  }
+   const cc::PaintFlags coverage = CamouCoverageFlags(*flags, kind);
+   merge(CamouOpArea(op, &coverage, canvas), kind,
+         [&] { raster_with(coverage); });
