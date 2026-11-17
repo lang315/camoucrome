@@ -1,0 +1,139 @@
+{
+ "doc": [
+  "The launcher contract every Camoucrome client (client/python, client/go)",
+  "implements. Each client has one test that builds its launch arguments and",
+  "compares them against this file; scripts/verify_sp6b_driver.py measures",
+  "the running browser against the driver contract. Edit here first."
+ ],
+ "driver": {
+  "why": "SP2 D1: the only measured Runtime-domain leak is closed by a CDP driver that never sends Runtime.enable. patchright is that driver; the Go binding uses patchright's Node driver unchanged.",
+  "python": {
+   "package": "patchright",
+   "version": "1.62.3"
+  },
+  "go": {
+   "module": "github.com/mxschmitt/playwright-go",
+   "version": "v0.6201.1",
+   "driver_npm": "patchright-core",
+   "driver_version": "1.62.1",
+   "note": "The module declares its path as github.com/mxschmitt/playwright-go; the playwright-community path fails to resolve. Driver dir layout: <dir>/package/cli.js from `npm pack patchright-core@1.62.1`, <dir>/node from the patchright wheel (driver/node, Node 24); the box's Node 18 is refused by the driver."
+  }
+ },
+ "forbidden_context_options": {
+  "why": "Each duplicates a CAMOU_CONFIG key. A second emulation of the same surface either fails (timezone: kAlreadyInEffect) or silently overrides the fork's value. has_touch / is_mobile emulate touch points and a mobile viewport over navigator.maxTouchPoints and the claimed OS.",
+  "options": [
+   "locale",
+   "timezone_id",
+   "user_agent",
+   "viewport",
+   "screen",
+   "device_scale_factor",
+   "geolocation",
+   "color_scheme",
+   "extra_http_headers",
+   "has_touch",
+   "is_mobile"
+  ]
+ },
+ "launch": {
+  "persistent_context": true,
+  "no_viewport": true,
+  "base_args": [
+   "--no-first-run",
+   "--no-default-browser-check"
+  ],
+  "light_args": [],
+  "why_light_args": "Approach B (2026-10-31): browser-internal flags appended after base_args when a client's light option is on; only flags with gate pass and measured kept in settings/light_flags.json (scripts/test_light_flags.py). Off by default, so browser_argv_expected is unchanged.",
+  "window_size_arg": "--window-size={width},{height}",
+  "why_window_size_arg": "window.innerWidth/innerHeight are not config keys: Chrome takes them from this real window. When the effective config sets window.outerWidth or window.outerHeight, the launch refuses to start with a window larger than a set outer value (equal is allowed); without a window Chrome keeps its default size, which is not checked: innerWidth > outerWidth is a state no real browser shows. camoucrome.gen emits launch.window within its outer size.",
+  "window_position_arg": "--window-position={x},{y}",
+  "dpr_arg": "--force-device-scale-factor={dpr}",
+  "proxy_arg": "--proxy-server={server}",
+  "proxy_bypass_arg": "--proxy-bypass-list={bypass}",
+  "transports": {
+    "pipe": {
+      "args": ["--remote-debugging-pipe"]
+    },
+    "io_pipes": {
+      "os": "windows",
+      "args": ["--remote-debugging-pipe", "--remote-debugging-io-pipes={read},{write}"],
+      "why": "For a spawner that creates its own pipes (fhtool's tdp), not for the patchright and playwright-go clients, which keep the fd 3/4 'pipe' form and the browser_argv_expected set. Upstream AdoptPipes (content/browser/devtools/devtools_agent_host_impl.cc), Windows only: {read} and {write} are decimal HANDLE values in the Chrome process, Chrome reads commands from {read} and writes replies to {write}. The parent creates both pipes and passes the Chrome-side handles through AdditionalInheritedHandles. The spawner emits this form, not the clients. The spawner also owns proxy_arg and proxy_bypass_arg: it adds them itself, server only, never credentials."
+    }
+  },
+  "proxy_option_fields": ["server", "bypass", "username", "password"],
+  "why_proxy_arg": "Measured 2026-10-24 (Python, Node, Go): launch(proxy=...) alone reaches the browser as nothing. ignore_default_args drops Playwright's default argv and --proxy-server is one of its defaults, so the traffic went out on the real address. The launcher adds the flag itself (server only, never credentials: a process list shows argv) and still passes the proxy option to the driver, which answers the 407 with the username and password over its own auth path. The bypass list is Playwright's comma form; Chrome takes it joined by semicolons.",
+  "why_geolocation_permission": "When the effective config carries both geolocation:latitude and geolocation:longitude the launch adds \"geolocation\" to the context's permissions option (merged with the caller's list, no duplicate), so a page's getCurrentPosition is granted the configured point instead of prompting; without both keys nothing is added. A proxy given without geoip warns that timezone, locale and geolocation are not checked against the exit IP.",
+  "pin_cpu_cores": {"option": "pin_cpu_cores", "default": true},
+  "why_pin_cpu_cores": "navigator.hardwareConcurrency is a claim, and a page can measure the real count by timing parallel workers, so a claim above the host's cores is snapped down by the generator (gen.py host_cores) and a claim below them is enforced: the process that spawns Chrome (the Node process, or the patchright/playwright-go driver subprocess) is pinned to that many random CPUs of its allowed set right before the launch call and restored right after, and Chrome and its children inherit the mask. Linux sched_setaffinity (taskset -a) and Windows SetProcessAffinityMask do it; macOS has no affinity API, so it is a no-op there. A pin that cannot be set raises rather than launching unpinned; a client option of the same name (pin_cpu_cores, PinCPUCores, pinCpuCores) turns it off.",
+  "env": {
+   "config": "CAMOU_CONFIG",
+   "config_chunks": "CAMOU_CONFIG_{n}",
+   "config_chunk_chars": 30000,
+   "why_chunks": "Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN); a macOS identity (191 voices, 409 faces, 775 names) is ~140 KB and spawn fails with E2BIG. A config longer than config_chunk_chars goes out as CAMOU_CONFIG_1..N in order, no CAMOU_CONFIG; the reader (AssembleRawConfig) concatenates. 30000 chars is at most 120 KB of UTF-8. The preset goes out the same way (CAMOU_PRESET_1..N, same reader).",
+   "preset": "CAMOU_PRESET",
+   "preset_chunks": "CAMOU_PRESET_{n}",
+   "strict": "CAMOU_CONFIG_STRICT"
+  },
+  "ignore_default_args": true,
+  "headless_arg": "--headless=new",
+  "extra_args_last": true,
+  "why_extra_args_last": "The caller's extra args (the generator's launch.args, e.g. --force-color-profile=srgb on a wide-gamut host) are appended after every other flag, so a later flag wins on argv.",
+  "why_ignore_default_args": "Playwright's default argv carries --disable-features=<18 features>, --enable-features=CDPScreenshotNewSurface, --blink-settings=primaryHoverType=2,..., --hide-scrollbars, --mute-audio, --force-color-profile=srgb, --use-angle=swiftshader-webgl, --disable-blink-features=AutomationControlled and more (measured 2026-09-10 on patchright 1.62). The fork re-adds --force-color-profile=srgb only for a non-modal (wide-gamut) host, as the generator's launch.args, appended last: see extra_args_last. Each moves a page-visible surface off the compiled-defaults position SP7 D3 accepted, so the launcher passes ignore_default_args and exactly the list below.",
+  "accept_lang_arg": "--accept-lang={languages}",
+  "why_accept_lang": "Measured 2026-09-10: a config with locale:tag/navigator.languages fr-FR,fr still sends Accept-Language: en-US,en;q=0.9 (the tree derives nothing for the header; --lang does not change it either). --accept-lang=fr-FR,fr gives fr-FR,fr;q=0.9, Chrome adding the q-values itself. The launcher derives the flag from navigator.languages (else locale:tag) of the effective keys: the preset's locale expanded as preset_loader.cc does ([locale] plus its primary subtag when different), under the explicit config; an explicit member of the preset's OS pair or locale triple re-derives the whole group first (preset_loader.cc OverridePresetGroups), exactly as the browser does.",
+  "extension_args": [
+   "--disable-extensions-except={paths}",
+   "--load-extension={paths}"
+  ],
+  "spki_arg": "--ignore-certificate-errors-spki-list={hashes}",
+  "crash_dumps": {
+   "env": "BREAKPAD_DUMP_LOCATION",
+   "why": "A crash's minidump holds the process's whole environment block -- CAMOU_CONFIG verbatim beside every host variable (measured 2026-10-03 on Windows: a marker in the config was found in the dump as UTF-16, a no-config control had none). Chrome writes it to <profile>/Crashpad unless BREAKPAD_DUMP_LOCATION names another directory (chrome/app/chrome_crash_reporter_client_win.cc GetCrashDumpLocation; the POSIX client reads the same variable), so a kept profile would accumulate a plain-text record of the identity next to the machine's. Every launch creates a temp directory, points the variable at it, and removes it when the context closes or the launch fails; the parent's value is never inherited. Nothing is uploaded either way: the upload URL is empty unless the build is branded and official."
+  },
+  "fontconfig": {
+   "env": "FONTCONFIG_FILE",
+   "files": {
+    "Windows": "settings/fontconfig/windows.conf",
+    "macOS": "settings/fontconfig/macos.conf"
+   },
+   "why": "The claimed OS's font families must resolve on a Linux host (system-ui, the CSS2 keyword fonts and every width-probed family; measurements/2026-09-11-d-gaps.md). The archive ships an OFL bundle in fonts/ and one generated fontconfig per claimed OS beside it (settings/fonts.json, scripts/gen_fontconfig.py); the launcher points FONTCONFIG_FILE at the conf of the claimed OS -- derive.cc ClaimedOs over the effective keys (a recognised ua:osInfo, else ua:platform; the preset's os under the explicit config) -- when a fonts dir is found beside the executable or given explicitly, and refuses to launch when that conf is missing. Linux claim: no env, host fonts are the truth. A Windows or macOS claim on a Linux host with no fonts dir refuses to launch (host fonts would be a tell); other hosts ignore FONTCONFIG_FILE. A FONTCONFIG_FILE in the parent environment is never inherited.",
+   "layout": "<root>/fonts/<family>/*.ttf and <root>/settings/fontconfig/<os>.conf, the same in the repo, the archive and the box's client copy; the conf's <dir> is relative (../../fonts)"
+  },
+  "native_fonts": {
+   "drop": ["fonts:alias", "fonts:aliasLocal"],
+   "why": "On a host whose OS is the claimed OS, the claimed families are the host's real ones. fonts:alias redirects them to the OFL bundle (Arial -> Liberation Sans), and FontCache::GetFontPlatformData returns the alias target's lookup with no fallback, so on Windows -- where the bundle is not installed -- a generated Windows identity lost its real Arial: Arial, Segoe UI, Times New Roman and Verdana all measured the same 1807.99 px (the face the failed alias lookups fell through to, about Segoe UI's own width) where stock Chrome measured 1794.53 / 1808.06 / 1694.34 / 2057.67 (2026-10-04, verify_windows_fonts.py F2 RED through all three clients). The launcher drops both keys from the config before it is encoded when the claimed OS (derive.cc ClaimedOs over the effective keys) equals the host OS. A claimed family the host lacks then shows as missing, which F3 counts."
+  }
+ },
+ "browser_argv_must_not_contain": [
+  "--remote-debugging-port",
+  "--enable-automation",
+  "--variations-server-url",
+  "--enable-field-trial-config"
+ ],
+ "browser_argv_expected": {
+  "why": "C4 of verify_sp6b_driver.py asserts the browser argv EQUALS this set plus --user-data-dir=<dir> and the probe's --no-sandbox; absence of the forbidden flags alone would let a new default slip in.",
+  "args": [
+   "--no-first-run",
+   "--no-default-browser-check",
+   "--headless=new",
+   "--remote-debugging-pipe"
+  ],
+  "headless_self_added": {
+   "why": "Chrome's own --headless=new relaunch appends these; they appear identically with no driver at all (the --dump-dom baseline), so they are Chrome's, not the driver's. Linux only: Chrome appends --noerrdialogs in-process (headless_mode_init.cc), which only Linux's rewritten process title shows, and the other three are IS_LINUX; Windows' Win32_Process command line is the one the driver passed (measured 2026-10-03).",
+   "args": [
+    "--noerrdialogs",
+    "--ozone-platform=headless",
+    "--ozone-override-screen-size=800,600",
+    "--use-angle=swiftshader-webgl"
+   ]
+  }
+ },
+ "per_instance_seeds": {
+  "why": "A preset is a device identity; these are per instance and never part of it (preset_loader.cc emits none). Each client draws them fresh, non-zero uint32, unless the caller pins them. A kept profile keeps its seeds: profile_seeds(user_data_dir) draws them once into profile_file and reads them back on every later launch, so the same profile shows the same canvas and device-ID fingerprint each session. A damaged file is an error, never a redraw. audio:seed was removed on 2026-11-03 (owner ruling after M0: seeded audio values are values no stock run produced); a kept profile's file may still hold it, and it is ignored.",
+  "profile_file": "camoucrome-seeds.json",
+  "keys": [
+   "canvas:seed",
+   "mediaDevices:seed"
+  ]
+ }
+}
