@@ -101,11 +101,28 @@ func TestPinnedSerialises(t *testing.T) {
 	}
 }
 
-func TestPlatformVersionForBuild(t *testing.T) {
-	for build, want := range map[int]string{19045: "10.0.0", 22000: "13.0.0", 22621: "14.0.0", 22631: "15.0.0", 26100: "19.0.0"} {
-		if got := platformVersionForBuild(build); got != want {
-			t.Errorf("build %d: %s, want %s", build, got, want)
+func TestPlatformVersion(t *testing.T) {
+	for _, c := range []struct {
+		dword uint32
+		want  string
+	}{{0x000F0000, "15.0.0"}, {0x00130001, "19.1.0"}, {0x000D0000, "13.0.0"}, {0x00070000, "7.0.0"}} {
+		if got := contractVersion(c.dword); got != c.want {
+			t.Errorf("%#x: %s, want %s", c.dword, got, c.want)
 		}
+	}
+	for build, want := range map[int]string{10240: "1.0.0", 10586: "2.0.0", 14393: "3.0.0", 15063: "4.0.0", 16299: "5.0.0", 17134: "6.0.0"} {
+		if got, ok := preRS5Contract(build); !ok || got != want {
+			t.Errorf("build %d: %s %v, want %s", build, got, ok, want)
+		}
+	}
+	if _, ok := preRS5Contract(17135); ok {
+		t.Error("RS5 uses the registry")
+	}
+	if got := platformVersion(22631, 0, false); got != "19.0.0" {
+		t.Errorf("no contract: %s", got)
+	}
+	if got := platformVersion(22631, 0x000F0000, true); got != "15.0.0" {
+		t.Errorf("contract: %s", got)
 	}
 }
 
