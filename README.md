@@ -216,6 +216,39 @@ An explicit `timezone` or `locale` passed to `generate` always wins. `exit_ip` a
 
 IP Geolocation by [DB-IP](https://db-ip.com), licensed CC BY 4.0.
 
+## Go without Python (client/go/core)
+
+`client/go/core` is a Go module with no dependencies (standard library only) that does what the Python
+generator and launcher do, for a Windows claim on a machine with no Python. The identity pool is embedded.
+
+```go
+import "github.com/lang315/camoucrome/client/go/core"
+
+host, _ := core.ProbeHost()                 // cores, work area, platform version (Windows)
+host.Display = display                      // see below; store it per machine
+id, _ := core.Draw("windows", nil, &host)   // once per account; store the JSON (core.Identity)
+r, err := core.Resolve(id, host, &core.Exit{Timezone: "Europe/Berlin", Country: "DE"}) // every launch
+env, cleanup, _ := core.Env(r, core.LaunchOpts{Strict: true}, os.Environ())
+argv := core.Argv(r, core.LaunchOpts{UserDataDir: dir, Headless: true})
+err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
+```
+
+- **The identity is the account's device.** Draw it once and store it: it holds the whole pool entry, the
+  seeds and a host seed (`hostSeed` is a JSON string), so a later release cannot change it. `Resolve` is
+  deterministic for the same identity, host and exit, and applies the host (cores, window, platform
+  version, display flags) and the exit (time zone, locale, languages, voices, and
+  `webrtc:ipHandlingPolicy=disable_non_proxied_udp`) fresh each time. An invalid zone is an error.
+- **No GPU claim.** The page keeps the real WebGL strings. `core` sets no geolocation either.
+- **Display.** Run `core.DisplayProbeJS` once in a headless page of the fork with no config, pass the
+  result through `core.ParseDisplay` and store it with the machine's `Host`.
+- **The spawner owns the transport and the proxy.** `Argv` emits no `--remote-debugging-*` and no
+  `--proxy-*` flag (`settings/launcher.json` `transports`, including the Windows `io_pipes` form, is the
+  contract for those). It also starts the browser: every Chrome start in the process must go through
+  `core.Pinned`, pinned or not, so a start never inherits another's CPU mask.
+- **Pairing.** `core.ForkVersion` is the fork version the data was generated for (157.0.8103.51; the
+  release's `-N` is in its tag). Pin a commit of this repository, not a tag. `scripts/gen_go_core_data.py`
+  regenerates the embedded pool and tables, and `--check` fails when they are stale.
+
 ## Known limits
 
 - Profiles on one machine stay linkable through what stock Chrome profiles on that machine share too:

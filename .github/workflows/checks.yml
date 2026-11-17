@@ -91,8 +91,12 @@ jobs:
         run: |
           python3 -m pip install -q pytest browserforge==1.2.4 apify_fingerprint_datapoints==0.15.0 maxminddb timezonefinder pycryptodome==3.23.0
           python3 -m pytest -q client/python/tests scripts/
+      - name: go core data matches the generator (full, with the pool)
+        run: python3 scripts/gen_go_core_data.py --check
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
+      - name: go core tests (no dependencies, own module)
+        run: cd client/go/core && go vet ./... && go test ./...
       - name: go rodclient tests
         run: cd client/go/rodclient && go vet ./... && go test ./...
       - uses: actions/setup-node@v4

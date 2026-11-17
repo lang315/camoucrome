@@ -50,6 +50,16 @@
   "dpr_arg": "--force-device-scale-factor={dpr}",
   "proxy_arg": "--proxy-server={server}",
   "proxy_bypass_arg": "--proxy-bypass-list={bypass}",
+  "transports": {
+    "pipe": {
+      "args": ["--remote-debugging-pipe"]
+    },
+    "io_pipes": {
+      "os": "windows",
+      "args": ["--remote-debugging-pipe", "--remote-debugging-io-pipes={read},{write}"],
+      "why": "For a spawner that creates its own pipes (fhtool's tdp), not for the patchright and playwright-go clients, which keep the fd 3/4 'pipe' form and the browser_argv_expected set. Upstream AdoptPipes (content/browser/devtools/devtools_agent_host_impl.cc), Windows only: {read} and {write} are decimal HANDLE values in the Chrome process, Chrome reads commands from {read} and writes replies to {write}. The parent creates both pipes and passes the Chrome-side handles through AdditionalInheritedHandles. The spawner emits this form, not the clients. The spawner also owns proxy_arg and proxy_bypass_arg: it adds them itself, server only, never credentials."
+    }
+  },
   "proxy_option_fields": ["server", "bypass", "username", "password"],
   "why_proxy_arg": "Measured 2026-10-24 (Python, Node, Go): launch(proxy=...) alone reaches the browser as nothing. ignore_default_args drops Playwright's default argv and --proxy-server is one of its defaults, so the traffic went out on the real address. The launcher adds the flag itself (server only, never credentials: a process list shows argv) and still passes the proxy option to the driver, which answers the 407 with the username and password over its own auth path. The bypass list is Playwright's comma form; Chrome takes it joined by semicolons.",
   "why_geolocation_permission": "When the effective config carries both geolocation:latitude and geolocation:longitude the launch adds \"geolocation\" to the context's permissions option (merged with the caller's list, no duplicate), so a page's getCurrentPosition is granted the configured point instead of prompting; without both keys nothing is added. A proxy given without geoip warns that timezone, locale and geolocation are not checked against the exit IP.",

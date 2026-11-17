@@ -1,0 +1,162 @@
+{
+ "normalise": "env entries sorted; BREAKPAD_DUMP_LOCATION value is \u003ctmp\u003e; a value over 100 chars is \u003clen:N sha256:H\u003e. client/go argv has --remote-debugging-pipe filtered out; it has no proxy flags here. Window, position, dpr and the config languages are given; Position is emitted with a non-zero Window. The generator args (args) go AFTER extraArgs (launcher.json extra_args_last): client/go gets extraArgs+args as its ExtraArgs. strict maps to client/go Options.Strict and core LaunchOpts.Strict. The generator args (args) go AFTER extraArgs (launcher.json extra_args_last): client/go gets extraArgs+args as its ExtraArgs. strict maps to client/go Options.Strict and core LaunchOpts.Strict.",
+ "cases": [
+  {
+   "name": "short windows claim on windows host",
+   "hostOS": "Windows",
+   "config": {
+    "locale:tag": "de-DE",
+    "navigator.hardwareConcurrency": 8,
+    "navigator.languages": [
+     "de-DE",
+     "de"
+    ],
+    "timezone:id": "Europe/Berlin",
+    "ua:osInfo": "Windows NT 10.0; Win64; x64",
+    "ua:platform": "Windows"
+   },
+   "window": [
+    1280,
+    720
+   ],
+   "dpr": 1.25,
+   "position": [
+    10,
+    20
+   ],
+   "headless": true,
+   "strict": true,
+   "userDataDir": "/udd",
+   "extraArgs": [
+    "--foo"
+   ],
+   "args": [
+    "--force-color-profile=srgb"
+   ],
+   "wantErr": false,
+   "env": [
+    "BREAKPAD_DUMP_LOCATION=\u003ctmp\u003e",
+    "CAMOU_CONFIG=\u003clen:189 sha256:a17b9765654f740f680bf2a1c5076549da24c17627ed368b199f729f25f300c9\u003e",
+    "CAMOU_CONFIG_STRICT=1"
+   ],
+   "argv": [
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--headless=new",
+    "--user-data-dir=/udd",
+    "--window-size=1280,720",
+    "--window-position=10,20",
+    "--force-device-scale-factor=1.25",
+    "--accept-lang=de-DE,de",
+    "--foo",
+    "--force-color-profile=srgb"
+   ]
+  },
+  {
+   "name": "config over 30000 chars is chunked",
+   "hostOS": "Linux",
+   "config": {
+    "locale:tag": "en-US",
+    "ua:osInfo": "X11; Linux x86_64",
+    "ua:platform": "Linux"
+   },
+   "padChars": 70001,
+   "window": [
+    0,
+    0
+   ],
+   "dpr": 0,
+   "position": [
+    0,
+    0
+   ],
+   "headless": false,
+   "userDataDir": "",
+   "extraArgs": [],
+   "args": [],
+   "wantErr": false,
+   "env": [
+    "BREAKPAD_DUMP_LOCATION=\u003ctmp\u003e",
+    "CAMOU_CONFIG_1=\u003clen:30000 sha256:232f6fe11150805531ae2beaf6507dd72635c9b4d871d925cb5f34e5f63ea665\u003e",
+    "CAMOU_CONFIG_2=\u003clen:30000 sha256:8a6d5f7b1061fefacb7509d5bf23a3227c8a3a6ecfe51dc9f666772c99b75b98\u003e",
+    "CAMOU_CONFIG_3=\u003clen:10086 sha256:21aa2eea0e38f5b53ac418afdc2ac301dca9de27c9fb2d3ad4fb798995d5d71a\u003e"
+   ],
+   "argv": [
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--accept-lang=en-US"
+   ]
+  },
+  {
+   "name": "windows claim on linux host without fonts dir",
+   "hostOS": "Linux",
+   "config": {
+    "locale:tag": "en-US",
+    "ua:osInfo": "Windows NT 10.0; Win64; x64",
+    "ua:platform": "Windows"
+   },
+   "window": [
+    0,
+    0
+   ],
+   "dpr": 0,
+   "position": [
+    0,
+    0
+   ],
+   "headless": true,
+   "userDataDir": "/udd",
+   "extraArgs": [],
+   "args": [],
+   "wantErr": true,
+   "env": null,
+   "argv": null
+  },
+  {
+   "name": "native fonts keys dropped on the same OS",
+   "hostOS": "Windows",
+   "config": {
+    "fonts:alias": {
+     "Arial": "Liberation Sans"
+    },
+    "fonts:aliasLocal": {
+     "x": "y"
+    },
+    "fonts:list": [
+     "Arial"
+    ],
+    "locale:tag": "en-US",
+    "ua:osInfo": "Windows NT 10.0; Win64; x64",
+    "ua:platform": "Windows"
+   },
+   "window": [
+    1920,
+    1040
+   ],
+   "dpr": 1,
+   "position": [
+    0,
+    0
+   ],
+   "headless": true,
+   "userDataDir": "/udd",
+   "extraArgs": [],
+   "args": [],
+   "wantErr": false,
+   "env": [
+    "BREAKPAD_DUMP_LOCATION=\u003ctmp\u003e",
+    "CAMOU_CONFIG=\u003clen:111 sha256:a7a17e197f613ae88f6d77339fc2cf570d775f446b87e398401af60afd0b2695\u003e"
+   ],
+   "argv": [
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--headless=new",
+    "--user-data-dir=/udd",
+    "--window-size=1920,1040",
+    "--window-position=0,0",
+    "--force-device-scale-factor=1",
+    "--accept-lang=en-US"
+   ]
+  }
+ ]
+}
