@@ -1,8 +1,8 @@
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index e2543653d5..5414ead6ce 100644
+index e2543653d5..e3f70d561e 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -1014,6 +1014,49 @@ SkIRect CamouOpArea(const cc::PaintOp& op,
+@@ -1014,6 +1014,50 @@ SkIRect CamouOpArea(const cc::PaintOp& op,
    return area.intersect(clip) ? area : SkIRect::MakeEmpty();
  }
  
@@ -36,7 +36,8 @@ index e2543653d5..5414ead6ce 100644
 +    return false;
 +  }
 +  const SkRect device = matrix.mapRect(local);
-+  constexpr SkScalar kLimit = 1 << 24;
++  // Skia draws a rect past its fixed-point range as a path: leave those to the raster.
++  constexpr SkScalar kLimit = 32767;
 +  auto whole = [](SkScalar v) {
 +    return v == SkScalarFloorToScalar(v) && v > -kLimit && v < kLimit;
 +  };
@@ -52,7 +53,7 @@ index e2543653d5..5414ead6ce 100644
  // The device pixels a composited draw may set: its clip, or for a layer
  // with bounds (drawImage with a filter, or a translucent image's shadow)
  // those bounds grown by the layer's filter, mapped, outset 1 px and
-@@ -1535,6 +1578,14 @@ void Canvas2DRecorderContext::CamouMarkOp(const cc::PaintOp& op,
+@@ -1535,6 +1579,14 @@ void Canvas2DRecorderContext::CamouMarkOp(const cc::PaintOp& op,
      return;
    }
    const CamouKind kind = cpu ? CamouKind::kImported : CamouKindOf(*flags);

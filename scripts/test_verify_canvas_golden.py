@@ -11,8 +11,8 @@ def _full(h="a"):
 
 
 def test_case_names_count_matches_expected():
-    assert len(g.CASE_NAMES) == g.EXPECTED_CASES == 16
-    assert len(set(g.CASE_NAMES)) == 16
+    assert len(g.CASE_NAMES) == g.EXPECTED_CASES == 24
+    assert len(set(g.CASE_NAMES)) == 24
 
 
 def test_check_reports_each_differing_case():

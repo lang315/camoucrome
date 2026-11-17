@@ -70,6 +70,22 @@ TEST(CanvasNoiseMaskTest, FullSolidOpaqueCoverClearsBothMarks) {
   EXPECT_EQ(Cell(m, 12, 12), kNoiseMaskAa);
 }
 
+// The cells exactly kNoiseMaskAa, counted from the mask's own view.
+size_t CountAa(const CanvasNoiseMask& m, size_t dim) {
+  const NoiseMask v = m.view();
+  if (!v.cells) {
+    return 0;
+  }
+  const size_t n = v.stride * ((dim + (size_t{1} << v.shift) - 1) >> v.shift);
+  size_t count = 0;
+  for (size_t i = 0; i < n; ++i) {
+    if (v.cells[i] == kNoiseMaskAa) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 // The mask rule restated naively (the reference of the Apply loop): the same
 // cells, aa count and generation as CanvasNoiseMask for any coverage.
 struct RefMask {
@@ -160,6 +176,7 @@ TEST(CanvasNoiseMaskTest, ApplyEqualsTheNaiveReferenceForAnyCoverage) {
       }
       ASSERT_EQ(m.generation(), ref.gen) << "dim " << dim << " step " << i;
       ASSERT_EQ(m.has_aa(), ref.aa > 0) << "dim " << dim << " step " << i;
+      ASSERT_EQ(CountAa(m, dim), ref.aa) << "dim " << dim << " step " << i;
     }
     for (size_t y = 0; y < std::min<size_t>(dim, 64); ++y)
       for (size_t x = 0; x < std::min<size_t>(dim, 64); ++x)
