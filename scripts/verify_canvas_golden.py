@@ -21,8 +21,10 @@ SEED = json.dumps({"canvas:seed": 987654321})
 GPU_CANVAS = os.environ.get("CAMOU_SP3A_GPU_CANVAS") == "1"
 CASE_NAMES = ["kinds_aa", "kinds_imported", "kinds_clear", "solid_opaque_cover", "solid_alpha", "text",
               "clip_transform", "layers", "harness_ops_64", "harness_ops_4096", "region_read", "idle_then_read",
-              "wrf_canvas", "switch_after_gpu", "read_then_drawimage", "over_cap"]
-EXPECTED_CASES = 16  # harness_ops counts twice
+              "wrf_canvas", "switch_after_gpu", "read_then_drawimage", "over_cap",
+              "rect_int_clip", "rect_aa_clip", "rect_scale2", "rect_rotate", "rect_translate_half", "rect_huge",
+              "rect_skew", "rect_circle_clip"]
+EXPECTED_CASES = 24  # harness_ops counts twice
 _HEX = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -99,6 +101,20 @@ CORPUS_JS = r"""async () => {
   { const [c, x] = mk(); document.body.appendChild(c);
     for (let f = 0; f < 20; f++) { canvasOps(x, 12, f * 12); const t = performance.now(); while (performance.now() - t < 25); await raf(); }
     out.over_cap = read(x); c.remove(); }
+  // The aligned-rect fast path of the walk (canvas-walk-fastpath): each case draws aa arcs first, then an opaque
+  // integer fillRect that the fast path must take (rect_int_clip, rect_scale2, rect_huge) or must leave to the
+  // raster (the others): a wrong predicate marks the rect's bounds where the raster covers less, and the arcs'
+  // aa cells that the raster keeps are cleared.
+  const arcs = (x) => { for (let i = 0; i < 300; i++) { x.fillStyle = i & 1 ? '#f60' : '#06f'; x.beginPath(); x.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); x.fill(); } };
+  const white = (x) => { x.fillStyle = '#fff'; };
+  { const [, x] = mk(); arcs(x); x.save(); x.beginPath(); x.rect(20, 20, 150, 150); x.clip(); white(x); x.fillRect(40, 40, 100, 100); x.restore(); out.rect_int_clip = read(x); }
+  { const [, x] = mk(); arcs(x); x.save(); x.beginPath(); x.rect(10.5, 10.5, 150, 150); x.clip(); white(x); x.fillRect(40, 40, 100, 100); x.fillRect(0, 0, 256, 256); x.restore(); out.rect_aa_clip = read(x); }
+  { const [, x] = mk(); arcs(x); x.save(); x.scale(2, 2); white(x); x.fillRect(20, 20, 60, 60); x.restore(); out.rect_scale2 = read(x); }
+  { const [, x] = mk(); arcs(x); x.save(); x.rotate(0.3); white(x); x.fillRect(60, 20, 80, 80); x.restore(); out.rect_rotate = read(x); }
+  { const [, x] = mk(); arcs(x); x.save(); x.translate(0.5, 0); white(x); x.fillRect(40, 40, 100, 100); x.restore(); out.rect_translate_half = read(x); }
+  { const [, x] = mk(); arcs(x); white(x); x.fillRect(-40000, 0, 80256, 256); out.rect_huge = read(x); }
+  { const [, x] = mk(); arcs(x); x.save(); x.transform(1, 0, 1, 1, 0, 0); white(x); x.fillRect(10, 10, 60, 60); x.restore(); out.rect_skew = read(x); }
+  { const [, x] = mk(); arcs(x); x.save(); x.beginPath(); x.arc(128, 128, 80, 0, 7); x.clip(); white(x); x.fillRect(40, 40, 176, 176); x.restore(); out.rect_circle_clip = read(x); }
   return out;
 }"""
 

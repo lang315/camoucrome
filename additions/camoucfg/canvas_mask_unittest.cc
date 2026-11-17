@@ -2,8 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// The reference and the random coverage index plain vectors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "components/camoucfg/canvas_mask.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -62,6 +68,163 @@ TEST(CanvasNoiseMaskTest, FullSolidOpaqueCoverClearsBothMarks) {
   EXPECT_EQ(Cell(m, 3, 3), 0);
   EXPECT_EQ(Cell(m, 7, 7), kNoiseMaskAa | kNoiseMaskImported);
   EXPECT_EQ(Cell(m, 12, 12), kNoiseMaskAa);
+}
+
+// The cells exactly kNoiseMaskAa, counted from the mask's own view.
+size_t CountAa(const CanvasNoiseMask& m, size_t dim) {
+  const NoiseMask v = m.view();
+  if (!v.cells) {
+    return 0;
+  }
+  const size_t n = v.stride * ((dim + (size_t{1} << v.shift) - 1) >> v.shift);
+  size_t count = 0;
+  for (size_t i = 0; i < n; ++i) {
+    if (v.cells[i] == kNoiseMaskAa) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+// The mask rule restated naively (the reference of the Apply loop): the same
+// cells, aa count and generation as CanvasNoiseMask for any coverage.
+struct RefMask {
+  size_t w, h, shift, stride, rows;
+  std::vector<uint8_t> cells;
+  size_t aa = 0;
+  uint64_t gen = 0;
+  RefMask(size_t w_, size_t h_)
+      : w(w_), h(h_), shift(w_ * h_ > CanvasNoiseMask::kMaxFullResPixels ? 2 : 0),
+        stride((w_ + (size_t{1} << shift) - 1) >> shift),
+        rows((h_ + (size_t{1} << shift) - 1) >> shift) {}
+  void Apply(const std::vector<uint8_t>* cov, size_t cs, int64_t left, int64_t top,
+             int64_t right, int64_t bottom, Kind kind) {
+    const int64_t x0 = std::max<int64_t>(left, 0), y0 = std::max<int64_t>(top, 0);
+    const int64_t x1 = std::min<int64_t>(right, static_cast<int64_t>(w));
+    const int64_t y1 = std::min<int64_t>(bottom, static_cast<int64_t>(h));
+    if (x0 >= x1 || y0 >= y1) return;
+    auto at = [&](int64_t x, int64_t y) -> uint8_t {
+      return cov ? (*cov)[static_cast<size_t>(y - top) * cs + static_cast<size_t>(x - left)] : 255;
+    };
+    bool changed = false;
+    const bool clearing = kind == Kind::kSolidOpaque || kind == Kind::kClear;
+    if (clearing && !cells.empty()) {
+      const int64_t s = int64_t{1} << shift;
+      for (int64_t cy = y0 >> shift; cy <= (y1 - 1) >> shift; ++cy)
+        for (int64_t cx = x0 >> shift; cx <= (x1 - 1) >> shift; ++cx) {
+          uint8_t& cell = cells[static_cast<size_t>(cy) * stride + static_cast<size_t>(cx)];
+          if (cell == 0) continue;
+          const int64_t px1 = std::min<int64_t>((cx + 1) * s, static_cast<int64_t>(w));
+          const int64_t py1 = std::min<int64_t>((cy + 1) * s, static_cast<int64_t>(h));
+          bool full = true;
+          for (int64_t py = cy * s; py < py1 && full; ++py)
+            for (int64_t px = cx * s; px < px1 && full; ++px)
+              full = px >= x0 && px < x1 && py >= y0 && py < y1 && at(px, py) == 255;
+          if (full) {
+            if (cell == kNoiseMaskAa) --aa;
+            cell = 0;
+            changed = true;
+          }
+        }
+    }
+    for (int64_t y = y0; y < y1; ++y)
+      for (int64_t x = x0; x < x1; ++x) {
+        const uint8_t c = at(x, y);
+        if (c == 0) continue;
+        uint8_t bit = 0;
+        if (kind == Kind::kImported) bit = kNoiseMaskImported;
+        else if (kind == Kind::kAa) bit = kNoiseMaskAa;
+        else bit = c == 255 ? 0 : kNoiseMaskAa;
+        if (bit == 0) continue;
+        if (cells.empty()) cells.assign(stride * rows, 0);
+        uint8_t& cell = cells[static_cast<size_t>(y >> shift) * stride + static_cast<size_t>(x >> shift)];
+        if ((cell & bit) != bit) {
+          if (cell == kNoiseMaskAa) --aa;
+          cell |= bit;
+          if (cell == kNoiseMaskAa) ++aa;
+          changed = true;
+        }
+      }
+    if (changed) ++gen;
+  }
+};
+
+TEST(CanvasNoiseMaskTest, ApplyEqualsTheNaiveReferenceForAnyCoverage) {
+  uint32_t seed = 12345;
+  auto next = [&] { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
+  const Kind kinds[] = {Kind::kSolidOpaque, Kind::kSolid, Kind::kClear, Kind::kAa, Kind::kImported};
+  for (const size_t dim : {size_t{16}, size_t{40}, size_t{4100}}) {  // 4100 x 4100 is above the full-resolution cap
+    CanvasNoiseMask m(dim, dim);
+    RefMask ref(dim, dim);
+    for (int i = 0; i < 400; ++i) {
+      const Kind kind = kinds[next() % 5];
+      const int64_t left = static_cast<int64_t>(next() % 60) - 10, top = static_cast<int64_t>(next() % 60) - 10;
+      const size_t w = 1 + next() % 14, h = 1 + next() % 14, cs = w + next() % 3;
+      std::vector<uint8_t> cov(cs * h);
+      const uint32_t mode = next() % 4;  // empty, full, partial, sparse
+      for (auto& v : cov) {
+        const uint32_t r = next() % 8;
+        v = mode == 0 ? 0 : mode == 1 ? 255 : mode == 2 ? (r < 5 ? 255 : r < 7 ? 128 : 0) : (r == 0 ? 255 : 0);
+      }
+      const bool use_cov = next() % 5 != 0;
+      if (use_cov) {
+        m.Merge(cov.data(), cs, left, top, w, h, kind);
+        ref.Apply(&cov, cs, left, top, left + static_cast<int64_t>(w), top + static_cast<int64_t>(h), kind);
+      } else {
+        m.MarkRect(left, top, static_cast<int64_t>(w), static_cast<int64_t>(h), kind);
+        ref.Apply(nullptr, 0, left, top, left + static_cast<int64_t>(w), top + static_cast<int64_t>(h), kind);
+      }
+      ASSERT_EQ(m.generation(), ref.gen) << "dim " << dim << " step " << i;
+      ASSERT_EQ(m.has_aa(), ref.aa > 0) << "dim " << dim << " step " << i;
+      ASSERT_EQ(CountAa(m, dim), ref.aa) << "dim " << dim << " step " << i;
+    }
+    for (size_t y = 0; y < std::min<size_t>(dim, 64); ++y)
+      for (size_t x = 0; x < std::min<size_t>(dim, 64); ++x)
+        ASSERT_EQ(Cell(m, x, y),
+                  ref.cells.empty() ? 0 : ref.cells[(y >> ref.shift) * ref.stride + (x >> ref.shift)])
+            << "dim " << dim << " at " << x << "," << y;
+  }
+}
+
+// The walk's fast path for a pixel-aligned rect marks its exact area instead of
+// rastering it: the cells must be those of Merge() of the full-coverage raster
+// (255 inside, 0 on the outset ring) for every kind that path takes, over
+// prior aa and imported marks, at the canvas edge, on a full-resolution mask
+// and on a coarse one.
+TEST(CanvasNoiseMaskTest, ExactAreaMarkEqualsMergeOfFullCoverage) {
+  struct Area { int64_t x, y, w, h; };
+  const Area areas[] = {{2, 2, 4, 4}, {0, 0, 16, 16}, {0, 3, 5, 1}, {7, 7, 1, 1}, {5, 9, 11, 7}, {3, 0, 2, 40}};
+  const Kind kinds[] = {Kind::kSolidOpaque, Kind::kSolid, Kind::kClear};
+  for (const size_t dim : {size_t{16}, size_t{4100}}) {  // 4100 x 4100 is above the full-resolution cap
+    for (const Kind kind : kinds) {
+      for (const Area& a : areas) {
+        auto prime = [&](CanvasNoiseMask& m) {
+          m.MarkRect(0, 0, 40, 40, Kind::kAa);
+          m.MarkRect(1, 1, 9, 9, Kind::kImported);
+        };
+        CanvasNoiseMask by_merge(dim, dim);
+        CanvasNoiseMask by_mark(dim, dim);
+        prime(by_merge);
+        prime(by_mark);
+        // The op's area is the rect outset by one pixel, with 0 on the ring.
+        const size_t w = static_cast<size_t>(a.w) + 2;
+        const size_t h = static_cast<size_t>(a.h) + 2;
+        std::vector<uint8_t> cover(w * h, 0);
+        for (size_t y = 1; y + 1 < h; ++y)
+          for (size_t x = 1; x + 1 < w; ++x)
+            cover[y * w + x] = 255;
+        by_merge.Merge(cover.data(), w, a.x - 1, a.y - 1, w, h, kind);
+        by_mark.MarkRect(a.x, a.y, a.w, a.h, kind);
+        EXPECT_EQ(by_merge.generation(), by_mark.generation());
+        EXPECT_EQ(by_merge.has_aa(), by_mark.has_aa());
+        for (size_t y = 0; y < std::min<size_t>(dim, 48); ++y)
+          for (size_t x = 0; x < std::min<size_t>(dim, 48); ++x)
+            ASSERT_EQ(Cell(by_merge, x, y), Cell(by_mark, x, y))
+                << "dim " << dim << " kind " << static_cast<int>(kind)
+                << " area " << a.x << "," << a.y << " " << a.w << "x" << a.h << " at " << x << "," << y;
+      }
+    }
+  }
 }
 
 TEST(CanvasNoiseMaskTest, SolidNotOpaqueLeavesMarksOnFullCoverage) {

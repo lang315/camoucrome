@@ -103,34 +103,41 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
       }
     }
   }
+  // The mark of a pixel: fixed for the aa and imported kinds, and for the
+  // solid kinds aa on a partly covered pixel only. A solid kind without a
+  // coverage buffer covers every pixel fully: nothing to mark.
+  const bool solid_kind = kind == Kind::kSolidOpaque || kind == Kind::kSolid ||
+                          kind == Kind::kClear;
+  if (solid_kind && cov.empty()) {
+    if (changed) {
+      ++generation_;
+    }
+    return;
+  }
+  const uint8_t fixed_bit =
+      kind == Kind::kImported ? kNoiseMaskImported : kNoiseMaskAa;
   for (int64_t y = y0; y < y1; ++y) {
+    base::span<const uint8_t> row;  // this row's coverage from x0 on
+    if (!cov.empty()) {
+      row = cov.subspan(
+          static_cast<size_t>(y - top) * coverage_stride +
+              static_cast<size_t>(x0 - left),
+          static_cast<size_t>(x1 - x0));
+    }
+    const size_t cell_row = static_cast<size_t>(y >> shift_) * stride_;
     for (int64_t x = x0; x < x1; ++x) {
-      const uint8_t c = at(x, y);
+      const uint8_t c = row.empty() ? 255 : row[static_cast<size_t>(x - x0)];
       if (c == 0) {
         continue;
       }
-      uint8_t bit = 0;
-      switch (kind) {
-        case Kind::kImported:
-          bit = kNoiseMaskImported;
-          break;
-        case Kind::kAa:
-          bit = kNoiseMaskAa;
-          break;
-        case Kind::kSolidOpaque:
-        case Kind::kSolid:
-        case Kind::kClear:
-          bit = c == 255 ? 0 : kNoiseMaskAa;
-          break;
-      }
+      const uint8_t bit = solid_kind ? (c == 255 ? 0 : kNoiseMaskAa) : fixed_bit;
       if (bit == 0) {
         continue;
       }
       if (cells_.empty()) {
         cells_.assign(stride_ * rows_, 0);
       }
-      uint8_t& cell = cells_[static_cast<size_t>(y >> shift_) * stride_ +
-                             static_cast<size_t>(x >> shift_)];
+      uint8_t& cell = cells_[cell_row + static_cast<size_t>(x >> shift_)];
       if ((cell & bit) != bit) {
         if (cell == kNoiseMaskAa) {
           --aa_cells_;
