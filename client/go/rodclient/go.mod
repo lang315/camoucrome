@@ -4,9 +4,12 @@ go 1.22
 
 replace github.com/lang315/camoucrome/client/go => ../
 
+replace github.com/lang315/camoucrome/client/go/core => ../core
+
 require (
 	github.com/go-rod/rod v0.116.2
 	github.com/lang315/camoucrome/client/go v0.0.0-00010101000000-000000000000
+	github.com/lang315/camoucrome/client/go/core v0.0.0-00010101000000-000000000000
 )
 
 require (
