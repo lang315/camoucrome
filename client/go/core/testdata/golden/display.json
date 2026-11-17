@@ -1,0 +1,56 @@
+[
+ {
+  "display": null,
+  "flags": [],
+  "warning": "display unknown: gamut, bit depth and HDR keep the host's values"
+ },
+ {
+  "display": {
+   "gamut": "srgb",
+   "colorBits": 8,
+   "hdr": false
+  },
+  "flags": [],
+  "warning": null
+ },
+ {
+  "display": {
+   "gamut": "p3",
+   "colorBits": 8,
+   "hdr": false
+  },
+  "flags": [
+   "--force-color-profile=srgb"
+  ],
+  "warning": null
+ },
+ {
+  "display": {
+   "gamut": "rec2020",
+   "colorBits": 10,
+   "hdr": false
+  },
+  "flags": [
+   "--force-color-profile=srgb"
+  ],
+  "warning": "host display is 10-bit: no lever hides it, every profile shows it"
+ },
+ {
+  "display": {
+   "gamut": "srgb",
+   "colorBits": 10,
+   "hdr": true
+  },
+  "flags": [],
+  "warning": "host display is 10-bit, hdr: no lever hides it, every profile shows it"
+ },
+ {
+  "display": {
+   "gamut": "srgb",
+   "colorBits": 8,
+   "hdr": true
+  },
+  "flags": [],
+  "warning": "host display is hdr: no lever hides it, every profile shows it"
+ }
+]
