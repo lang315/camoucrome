@@ -58,7 +58,7 @@ CORPUS_JS = r"""async () => {
   const read = (x, a = 0, b = 0, w = 256, h = 256) => b64(new Uint8Array(x.getImageData(a, b, w, h).data.buffer));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
-  const canvasOps = (cx, n) => { for (let i = 0; i < n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } };
+  const canvasOps = (cx, n, s = 0) => { for (let i = s; i < s + n; i++) { cx.fillStyle = i & 1 ? '#f60' : '#06f'; cx.beginPath(); cx.arc((i * 37) % 256, (i * 91) % 256, 6, 0, 7); cx.fill(); cx.fillRect((i * 13) % 250, (i * 29) % 250, 5, 5); } };
   const solidBg = (x) => { x.fillStyle = '#fff'; x.fillRect(0, 0, 256, 256); };
   const out = {};
   { const [, x] = mk(); const g = x.createLinearGradient(0, 0, 256, 256); g.addColorStop(0, '#f00'); g.addColorStop(0.5, '#0c8'); g.addColorStop(1, '#12f');
@@ -93,7 +93,12 @@ CORPUS_JS = r"""async () => {
   { const [, x] = mk(); canvasOps(x, 100); await raf(); read(x, 0, 0, 8, 8); for (let i = 0; i < 9; i++) read(x, 0, 0, 8, 8);
     canvasOps(x, 100); out.switch_after_gpu = read(x); }
   { const [c1, x1] = mk(); canvasOps(x1, 150); const a = read(x1); const [, x2] = mk(); x2.drawImage(c1, 0, 0); out.read_then_drawimage = a + '|' + read(x2); }
-  { const [, x] = mk(); for (let f = 0; f < 20; f++) { canvasOps(x, 12); await raf(); } out.over_cap = read(x); }
+  // Attached, with a 25 ms busy wait per frame: an idle period between frames would walk the queue and the 16-job cap
+  // would never be reached (measured with the Task 3 instrument: 20 flushes, 4 dropped, 16 walked by the read). Each frame draws
+  // other pixels (start f * 12): a dropped job's pixels must not be redrawn by a later one, or the drop is invisible.
+  { const [c, x] = mk(); document.body.appendChild(c);
+    for (let f = 0; f < 20; f++) { canvasOps(x, 12, f * 12); const t = performance.now(); while (performance.now() - t < 25); await raf(); }
+    out.over_cap = read(x); c.remove(); }
   return out;
 }"""
 
