@@ -318,3 +318,16 @@ def test_layer3_site_term_is_exempt_in_a_binary_but_refused_in_text():
     assert cp.byte_hits(b"see sitehost.example", terms, "notes.md") == ["<layer3-site>"]
     assert cp.byte_hits(b"see sitehost.example", terms, "plain.bin") == ["<layer3-site>"]  # no NUL: text
     assert cp.identity_term_count(terms) == 1
+
+
+def test_allowlisted_commit_and_blob_pass_only_by_exact_object(repo, monkeypatch):
+    commit(repo, "a.md", "near Plantville\n", msg="x\n\nnear Plantville")
+    commit(repo, "a.md", "clean\n")
+    leaked = git(repo, "rev-parse", "HEAD~1").stdout.strip()
+    blob = git(repo, "rev-parse", "HEAD~1:a.md").stdout.strip()
+    assert cp.main(["--range", "HEAD"]) == 1 and cp.main(["--history"]) == 1
+    monkeypatch.setattr(cp, "ALLOW_COMMITS", {leaked: "test"})
+    monkeypatch.setattr(cp, "ALLOW_BLOBS", {blob})
+    assert cp.main(["--range", "HEAD"]) == 0 and cp.main(["--history"]) == 0
+    commit(repo, "b.md", "Plantville again\n", msg="y\n\nPlantville again")
+    assert cp.main(["--range", "HEAD"]) == 1 and cp.main(["--history"]) == 1

@@ -36,6 +36,12 @@ ALLOW_IPS = {
     "156.0.1.1": "a version string in the step2 version tests",
     "205.185.123.167": "tls.peet.ws's own server address in scripts/fixtures/step2/peet.json",
 }
+# Public before the host zone's canonical name became a private term (2026-11-17); the owner accepted them
+# rather than a second history rewrite. Exact objects only: a new commit or blob with the term still fails.
+ALLOW_COMMITS = {"23554f73f7fde49ce389d44aa9f1f691188c11a3": "docs(step2b) message, 2026-10-14"}
+ALLOW_BLOBS = {"447483c8660274a8ae6753c0a385a2faed455fe9", "5daf67ffa0f01641366a55a7429dd6c3972b8953",
+               "79727578d3608a7f940c615b8cbc31e9d46a4fbf", "1757655428d13d0894a7c2e43b2242f6580cb73f",
+               "4c7178ae5ff44f625754bc91c3296e1dbada5f4d", "8c14558250ba7185804508a30317ea7ac39329c2"}
 # The gate's own code, tests and design docs quote the generic patterns as examples: private terms only.
 GATE_FILES = {"scripts/check_privacy.py", "scripts/test_check_privacy.py", "scripts/test_capture_host_oracle.py",
               "scripts/test_measure_step2_scrub.py",
@@ -193,7 +199,8 @@ def _range(revs, terms):
         # no exemption for GitHub-made commits: its web merges carry the owner's offset (all 40 before 2026-10-18)
         if not (ai.endswith(b"+0000") and ci.endswith(b"+0000")):
             bad.append(f"{s}: date offset not +0000 (commit with TZ=UTC)")
-        bad += [f"{s}: message line {i}: {c}" for i, c in hits(msg.decode("utf-8", "replace"), terms)]
+        if sha.decode() not in ALLOW_COMMITS:
+            bad += [f"{s}: message line {i}: {c}" for i, c in hits(msg.decode("utf-8", "replace"), terms)]
         for field, val in (("author name", an), ("author email", ae), ("committer name", cn), ("committer email", ce)):
             bad += [f"{s}: identity ({field}): {c}" for _, c in hits(val.decode("utf-8", "replace"), terms)]
     return bad
@@ -209,7 +216,8 @@ def _history(terms):
                 names[p], path_hits = _name(p, len(names) + 1, terms)
                 bad |= {f"history {h}" for h in path_hits}
     kinds = _git("cat-file", "--batch-check=%(objectname) %(objecttype)", inp="\n".join(path_of).encode()).decode()
-    blobs = [k.split()[0] for k in kinds.splitlines() if k.endswith(" blob") and path_of[k.split()[0]] not in ALLOW_PATHS]
+    blobs = [k.split()[0] for k in kinds.splitlines() if k.endswith(" blob") and path_of[k.split()[0]] not in ALLOW_PATHS
+             and k.split()[0] not in ALLOW_BLOBS]
     data, i = _git("cat-file", "--batch", inp="\n".join(blobs).encode()), 0
     while i < len(data):
         nl = data.index(b"\n", i)
