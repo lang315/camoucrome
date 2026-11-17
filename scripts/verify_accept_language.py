@@ -8,16 +8,19 @@ A1 navigator.languages decides the header, and JS agrees with it.
 A2 only locale:tag: the header follows it.
 A3 an explicit --accept-lang wins over the config.
 A4 no config: the real default (rule 5).
-A5 a language with a CR LF in it is ignored: the browser starts, the header is
-   the default (bad config never crashes).
+A5 a language with a CR LF in it never reaches the header: the browser starts and
+   the header is en-US (fail closed, bad config never crashes).
+A6 an invalid locale:tag sends en-US, not the host's header. Run with LANGUAGE set
+   to something other than en (e.g. de), else A4's default is en-US too.
 """
 import json
+import os
 import sys
 
 import echo_server
 import lib_shell
 
-EXPECTED_ROWS = 5
+EXPECTED_ROWS = 6
 LANGS = "navigator.languages.join()"
 DEFAULT = "en-US,en;q=0.9"
 
@@ -44,9 +47,14 @@ def rows():
     js, al, err = run(fr, ["--accept-lang=ja"])
     yield "A3 an explicit --accept-lang wins", bool(al) and al.startswith("ja"), (js, al, err)
     js, al, err = run({})
-    yield "A4 no config: the real default", al == DEFAULT, (js, al, err)
+    # Under LANGUAGE=<non-en> (needed for A6) the real default is not DEFAULT, but it is not en-US either.
+    real = (bool(al) and not al.startswith("en-US")) if os.environ.get("LANGUAGE") else al == DEFAULT
+    yield "A4 no config: the real default", real, (js, al, err)
     js, al, err = run({"navigator.languages": ["fr\r\nX-Bad: 1"]})
-    yield "A5 a bad language is ignored, no crash", err is None and al == DEFAULT, (js, al, err)
+    yield "A5 a bad language sends en-US, no crash", err is None and bool(al) and al.startswith("en-US") and "bad" not in al.lower(), (js, al, err)
+    js, base_al, err = run({})
+    js, al, err = run({"locale:tag": "xx-INVALID!!"})
+    yield "A6 an invalid locale:tag sends en-US, not the host's", err is None and bool(al) and al.startswith("en-US") and al != base_al, (js, al, base_al, err)
 
 
 def main():

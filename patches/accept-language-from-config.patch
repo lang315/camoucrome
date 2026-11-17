@@ -11,7 +11,7 @@ index 66f9c0d285..9322d2193d 100644
      "//components/collaboration/public:prefs",
      "//components/commerce/core:prefs",
 diff --git a/chrome/browser/prefs/chrome_command_line_pref_store.cc b/chrome/browser/prefs/chrome_command_line_pref_store.cc
-index 3e93688a11..e39dc77345 100644
+index 3e93688a11..27df3e2035 100644
 --- a/chrome/browser/prefs/chrome_command_line_pref_store.cc
 +++ b/chrome/browser/prefs/chrome_command_line_pref_store.cc
 @@ -6,7 +6,9 @@
@@ -41,7 +41,7 @@ index 3e93688a11..e39dc77345 100644
  #include "content/public/common/content_switches.h"
  #include "extensions/buildflags/buildflags.h"
  #include "net/base/port_util.h"
-@@ -105,10 +110,46 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
+@@ -105,10 +110,48 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
      ChromeCommandLinePrefStore::integer_switch_map_[] = {
          {switches::kDiskCacheSize, prefs::kDiskCacheSize}};
  
@@ -49,8 +49,8 @@ index 3e93688a11..e39dc77345 100644
 +
 +// camoucrome: the languages the config claims, in --accept-lang's form, so a
 +// launch without the launcher's flag sends the header navigator.languages
-+// reports. Empty when it claims none, or when one is not a plain tag: config
-+// text must not reach a header.
++// reports. Empty when it claims none; "en-US" when one is not a plain tag:
++// config text must not reach a header, and the host's must not show.
 +std::string CamoucfgLanguages() {
 +  const camoucfg::ConfigScope& scope = camoucfg::GlobalScope();
 +  std::vector<std::string> languages =
@@ -66,7 +66,9 @@ index 3e93688a11..e39dc77345 100644
 +    if (language.empty() || !std::ranges::all_of(language, [](char c) {
 +          return base::IsAsciiAlpha(c) || base::IsAsciiDigit(c) || c == '-';
 +        })) {
-+      return std::string();
++      // Fail closed: Intl falls back to en-US for a broken claim, so the
++      // header must not be the host's.
++      return "en-US";
 +    }
 +  }
 +  return base::JoinString(languages, ",");
