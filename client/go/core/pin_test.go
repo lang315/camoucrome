@@ -2,7 +2,9 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -105,7 +107,7 @@ func TestPlatformVersion(t *testing.T) {
 	for _, c := range []struct {
 		dword uint32
 		want  string
-	}{{0x000F0000, "15.0.0"}, {0x00130001, "19.1.0"}, {0x000D0000, "13.0.0"}, {0x00070000, "7.0.0"}} {
+	}{{0x000F0000, "15.0.0"}, {0x00130001, "19.1.0"}, {0x000D0000, "13.0.0"}, {0x00070000, "7.0.0"}, {0x000A0000, "10.0.0"}} {
 		if got := contractVersion(c.dword); got != c.want {
 			t.Errorf("%#x: %s, want %s", c.dword, got, c.want)
 		}
@@ -131,4 +133,52 @@ func TestProbeHostCores(t *testing.T) {
 	if h, _ := ProbeHost(); h.Cores != 3 {
 		t.Errorf("Cores %d, want 3", h.Cores)
 	}
+}
+
+func TestPinnedReportsBothFailures(t *testing.T) {
+	fakeMask(t, []int{0, 1, 2, 3})
+	boom := errors.New("start failed")
+	n := 0
+	affinitySet = func([]int) error {
+		if n++; n == 2 {
+			return errors.New("restore denied")
+		}
+		return nil
+	}
+	err := Pinned(1, func() error { return boom })
+	if !errors.Is(err, boom) || err == nil || !strings.Contains(err.Error(), "restore denied") {
+		t.Errorf("start and restore errors must both surface: %v", err)
+	}
+	// a pin that half-applied and cannot be undone says so too
+	n = 0
+	affinitySet = func([]int) error { n++; return fmt.Errorf("set %d failed", n) }
+	err = Pinned(1, func() error { t.Error("start ran after a failed pin"); return nil })
+	if err == nil || !strings.Contains(err.Error(), "set 1 failed") || !strings.Contains(err.Error(), "set 2 failed") {
+		t.Errorf("failed pin and failed undo must both surface: %v", err)
+	}
+}
+
+func TestCPUsOfMask(t *testing.T) {
+	if c, err := cpusOfMask(0b1011); err != nil || !slices.Equal(c, []int{0, 1, 3}) {
+		t.Errorf("%v %v", c, err)
+	}
+	if _, err := cpusOfMask(0); err == nil {
+		t.Error("a zero mask (several processor groups) must be an error, not an unpinned launch")
+	}
+}
+
+func TestProbeHostWaitsForPinnedToFinish(t *testing.T) {
+	fakeMask(t, []int{0, 1, 2, 3})
+	inStart, release := make(chan struct{}), make(chan struct{})
+	go Pinned(1, func() error { close(inStart); <-release; return nil })
+	<-inStart
+	done := make(chan struct{})
+	go func() { ProbeHost(); close(done) }()
+	select {
+	case <-done:
+		t.Error("ProbeHost read the mask while a pin was in force")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	<-done
 }
