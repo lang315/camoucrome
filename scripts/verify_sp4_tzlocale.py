@@ -30,7 +30,7 @@ def main():
     if "--capture-baseline" in sys.argv:
         b = run(None)
         with open(BASELINE,"w") as f: json.dump(b,f)
-        print("baseline:", json.dumps(b)); return
+        print("baseline captured (not printed: host values)"); return
     r = {}
     a = run(cfg({"timezone:id":"America/New_York"}))
     r["T1"] = a["main"]["tz"]=="America/New_York" and a["main"]["offset"] in (240,300)
@@ -43,8 +43,20 @@ def main():
     d = run(cfg({}))
     with open(BASELINE) as f: base=json.load(f)
     r["T6"] = d["main"]["tz"]==base["main"]["tz"] and d["main"]["locale"]==base["main"]["locale"]
-    EXPECTED=6
-    for k in ("T1","T2","T3","T4","T5","T6"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    # Fail closed (2026-11-17): a present-but-invalid key never shows the host value.
+    e = run(cfg({"timezone:id":"Not/AZone"}))
+    r["T7"] = e["main"]["tz"]=="UTC" and e["main"]["offset"]==0
+    r["T8"] = e["worker"].get("tz")=="UTC"
+    f2 = run(cfg({"locale:tag":"xx-INVALID!!"}))
+    r["T9"] = f2["main"]["locale"]=="en-US" and f2["main"]["num"]=="1,234,567.89"
+    r["T10"] = f2["worker"].get("locale")=="en-US"
+    # T7-T10 measure nothing when the process already runs as UTC / en-US. Run with e.g.
+    # TZ=Etc/GMT-5 LANGUAGE=de (and capture the baseline under the same env).
+    if base["main"]["tz"]=="UTC" or base["main"]["locale"]=="en-US":
+        print("UNMEASURED: baseline is UTC or en-US, so T7-T10 cannot go RED; set TZ and LANGUAGE to other values")
+        sys.exit(2)
+    EXPECTED=10
+    for k in ("T1","T2","T3","T4","T5","T6","T7","T8","T9","T10"): print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
     n=sum(r.values()); print(f"{n}/{EXPECTED} " + ("ALL_PASS" if n==EXPECTED else "FAIL"))
     sys.exit(0 if n==EXPECTED else 1)
 
