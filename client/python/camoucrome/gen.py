@@ -221,7 +221,7 @@ def gpu_class(renderer):
     if vendor == "NVIDIA":
         return "dgpu"
     if vendor == "AMD":
-        return "dgpu" if ("RX" in name or "Radeon Pro" in name) else None
+        return "dgpu" if (("RX" in name and "Vega" not in name) or "Radeon Pro" in name) else None  # "RX Vega 8/11" are APUs
     dev = gen9_device_id(renderer)
     if dev is not None:
         return "igpu-gen9" if dev in _thread_caps() else None  # no sourced cap (0x5921): any thread count would be unbacked

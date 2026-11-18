@@ -13,6 +13,7 @@ def test_gpu_class_rejects():
     assert gen.gpu_class("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
     assert gen.gpu_class("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)") is None
     assert gen.gpu_class("ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
+    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) RX Vega 11 Graphics (0x000015DD) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None  # an APU
     assert gen.gpu_class("garbage") is None and gen.gpu_class("") is None and gen.gpu_class(None) is None
 
 
