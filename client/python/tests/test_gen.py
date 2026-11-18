@@ -212,7 +212,9 @@ def test_gpu_keys_are_registered_and_carry_no_tables():
 
 
 def test_from_pool_picks_the_os_profile_and_gpu_overrides():
-    out = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="windows-intel-uhd-630-d3d11")
+    # UHD 630 (0x9BC5) ships only in CPUs with 12+ threads: the pool's 4 would drop the claim (the floor)
+    pool = {**POOL, "navigator": {**POOL["navigator"], "hardwareConcurrency": 12}}
+    out = gen.from_pool(pool, "America/New_York", rng=random.Random(1), gpu="windows-intel-uhd-630-d3d11")
     assert "Direct3D11" in out["config"]["webGl:renderer"]
     assert "webGl:renderer" not in gen.from_pool(POOL, "America/New_York", rng=random.Random(1))["config"]  # no host: no claim
     mac = gen.from_pool(POOL, "America/New_York", rng=random.Random(1), gpu="macos-apple-m1-pro-metal")

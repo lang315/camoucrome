@@ -16,7 +16,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "components/camoucfg/derive.h"
 #include "components/camoucfg/domain_validator.h"
-#include "components/camoucfg/gen9_thread_caps.h"
+#include "components/camoucfg/igpu_thread_caps.h"
 #include "components/camoucfg/gl_params.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
@@ -344,25 +344,22 @@ std::vector<Violation> CheckTouchFitsOs(const ConfigScope& scope,
 }
 
 // The renderer (resolved through ResolvedGLString(), so a renderer supplied
-// via webGl:parameters["37446"] is checked too) names an Intel Gen9 device id
-// that a CPU with at most `cap` threads ships with, while
-// navigator.hardwareConcurrency claims more. An unknown id, a non-Gen9
-// renderer or an absent / non-uint hardwareConcurrency constrains nothing.
-// There is no repair this validator applies; new_value is the cap.
+// via webGl:parameters["37446"] is checked too) names an iGPU (an Intel Gen9 or
+// other Intel or AMD iGPU, by vendor + device id) that only CPUs with between
+// `min` and `max` threads ship with, while navigator.hardwareConcurrency
+// claims fewer or more. An unknown id, a non-ANGLE-D3D11 renderer, a row
+// without a sourced floor (below side only) or an absent / non-uint
+// hardwareConcurrency constrains nothing. There is no repair this validator
+// applies; new_value is the floor (below it) or the cap (above it).
 std::vector<Violation> CheckRendererFitsThreads(
     const ConfigScope& scope, const invariants::Invariant& inv) {
   std::optional<std::string> renderer =
       ResolvedGLString(scope, /*is_webgl2=*/false, /*vendor=*/false);
   std::optional<uint32_t> threads = GetUint32(scope, inv.keys[1]);
-  std::optional<uint32_t> device_id;
-  if (renderer.has_value()) {
-    device_id = ParseAngleDeviceId(*renderer);
-  }
-  std::optional<uint32_t> cap;
-  if (device_id.has_value()) {
-    cap = Gen9ThreadCapFor(*device_id);
-  }
-  if (!ThreadsExceedCap(cap, threads)) {
+  std::optional<uint32_t> bound =
+      renderer.has_value() ? ThreadRangeBrokenBound(*renderer, threads)
+                           : std::nullopt;
+  if (!bound.has_value()) {
     return {};
   }
   Violation v;
@@ -370,7 +367,7 @@ std::vector<Violation> CheckRendererFitsThreads(
   v.authoritative_key = std::string(inv.keys[0]);
   v.repaired_key = std::string(inv.keys[1]);
   v.old_value = base::NumberToString(*threads);
-  v.new_value = base::NumberToString(*cap);
+  v.new_value = base::NumberToString(*bound);
   return {v};
 }
 
@@ -523,6 +520,43 @@ std::optional<uint32_t> ParseAngleDeviceId(std::string_view renderer) {
 bool ThreadsExceedCap(std::optional<uint32_t> cap,
                       std::optional<uint32_t> threads) {
   return cap.has_value() && threads.has_value() && *threads > *cap;
+}
+
+bool ThreadsBelowFloor(uint32_t floor, std::optional<uint32_t> threads) {
+  return floor != 0 && threads.has_value() && *threads < floor;
+}
+
+std::optional<uint32_t> ThreadRangeBrokenBound(
+    std::string_view renderer,
+    std::optional<uint32_t> threads) {
+  const IgpuThreadRange* range = IgpuRangeForRenderer(renderer);
+  if (range == nullptr) {
+    return std::nullopt;
+  }
+  if (ThreadsExceedCap(range->max_threads, threads)) {
+    return range->max_threads;
+  }
+  if (ThreadsBelowFloor(range->min_threads, threads)) {
+    return range->min_threads;
+  }
+  return std::nullopt;
+}
+
+const IgpuThreadRange* IgpuRangeForRenderer(std::string_view renderer) {
+  constexpr std::string_view kSuffix = " Direct3D11 vs_5_0 ps_5_0, D3D11)";
+  IgpuVendor vendor;
+  if (renderer.starts_with("ANGLE (Intel, ")) {
+    vendor = IgpuVendor::kIntel;
+  } else if (renderer.starts_with("ANGLE (AMD, ")) {
+    vendor = IgpuVendor::kAmd;
+  } else {
+    return nullptr;
+  }
+  if (!renderer.ends_with(kSuffix)) {
+    return nullptr;
+  }
+  std::optional<uint32_t> id = ParseAngleDeviceId(renderer);
+  return id.has_value() ? IgpuThreadRangeFor(vendor, *id) : nullptr;
 }
 
 std::optional<PairingViolation> CheckPairing(bool renderer_resolves,

@@ -178,9 +178,11 @@ def country_locale(source, zones):
 
 
 def igpu_floors():
-    """{"Intel:0x00009A49": min threads}: settings/webgl/igpu-thread-caps.json rows with a sourced min_threads. Resolve drops the
-    GPU claim when the host's cores fall below it (gen.py from_pool)."""
+    """{"Intel:0x00009A49": min threads}: igpu-thread-caps.json rows and intel-gen9-thread-caps.json rows (vendor Intel) with a
+    sourced min_threads. Resolve drops the GPU claim when the host's cores fall below it (gen.py from_pool)."""
     rows = json.loads((ROOT / "settings" / "webgl" / "igpu-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    rows += [dict(r, vendor="Intel") for r in
+             json.loads((ROOT / "settings" / "webgl" / "intel-gen9-thread-caps.json").read_text(encoding="utf-8"))["rows"]]
     return {f"{r['vendor']}:0x{int(r['device_id'], 16):08X}": r["min_threads"] for r in rows
             if r["max_threads"] is not None and r.get("min_threads") is not None}
 

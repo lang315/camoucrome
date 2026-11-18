@@ -848,11 +848,6 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 0,
    "mediaDevices:speakers": 1,
-   "webGl:vendor": "Google Inc. (Intel)",
-   "webGl:renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
-   "webGl2:vendor": "Google Inc. (Intel)",
-   "webGl2:renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
-   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -1775,7 +1770,9 @@
   },
   "args": [],
   "dpr": 1.25,
-  "warnings": []
+  "warnings": [
+   "host cores snap to 2, below the 4 threads of the claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept"
+  ]
  },
  {
   "seed": 222,
