@@ -235,15 +235,24 @@ func TestSmallScreen(t *testing.T) {
 	}
 }
 
-func TestNoGPUOrGeo(t *testing.T) {
+func TestGPUClaimIsTheFiveKeysAndNoGeo(t *testing.T) {
 	for s := uint64(0); s < 100; s++ {
 		id := mustDraw(t, s, nil)
 		r, err := Resolve(id, goodHost, &Exit{"Europe/Berlin", "DE"})
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, k := range []string{"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer"} {
+			if v, ok := r.Config[k].(string); !ok || v == "" {
+				t.Fatalf("seed %d: %s = %v", s, k, r.Config[k])
+			}
+		}
+		if r.Config["webGpu:blocked"] != true {
+			t.Fatalf("seed %d: webGpu:blocked = %v", s, r.Config["webGpu:blocked"])
+		}
 		for k := range r.Config {
-			if strings.HasPrefix(k, "webgl:") || strings.HasPrefix(k, "geolocation:") {
+			if strings.HasPrefix(k, "geolocation:") ||
+				(strings.HasPrefix(k, "webGl") && (strings.HasSuffix(k, ":parameters") || strings.HasSuffix(k, ":supportedExtensions") || strings.HasSuffix(k, ":shaderPrecisionFormats"))) {
 				t.Fatalf("seed %d sets %s", s, k)
 			}
 		}
@@ -251,6 +260,28 @@ func TestNoGPUOrGeo(t *testing.T) {
 			if strings.HasPrefix(a, "--proxy") || strings.HasPrefix(a, "--remote-debugging") {
 				t.Fatalf("flag %s", a)
 			}
+		}
+	}
+}
+
+// An identity stored before the GPU claim has an Entry without the keys: it keeps the host's GPU.
+func TestResolveEntryWithoutGPUKeys(t *testing.T) {
+	id := mustDraw(t, 3, nil)
+	var e map[string]json.RawMessage
+	if err := json.Unmarshal(id.Entry, &e); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked"} {
+		delete(e, k)
+	}
+	id.Entry, _ = json.Marshal(e)
+	r, err := Resolve(id, goodHost, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range r.Config {
+		if strings.HasPrefix(k, "webGl") {
+			t.Fatalf("old entry sets %s", k)
 		}
 	}
 }

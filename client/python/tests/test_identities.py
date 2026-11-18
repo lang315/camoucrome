@@ -7,10 +7,10 @@ PER_INSTANCE_SEEDS = ["canvas:seed", "mediaDevices:seed"]
 
 # Config keys, or key prefixes ending in ":" or ".", that two identities may share.
 SHARED_ALLOWED = frozenset({
-    # the renderer varies per profile, but two seeds may draw the same one (p = sum(w^2) = 0.13)
-    "webGl:renderer", "webGl2:renderer",
-    # the host generation's WebGL tables; only webGl:renderer (name + DeviceId) is per profile
-    *(f"{c}:{k}" for c in ("webGl", "webGl2") for k in ("vendor", "parameters", "supportedExtensions", "shaderPrecisionFormats")),
+    # the GPU claim varies per profile (BrowserForge's videoCard), but two seeds may draw the same one; the blocked flag is
+    # true for almost every claim, since it is the host's own renderer only on a match
+    *(f"{c}:{k}" for c in ("webGl", "webGl2") for k in ("vendor", "renderer")),
+    "webGpu:blocked",
     # stock Windows 10 / Chrome data every user shares
     "ua:",                          # osInfo, platform, platformVersion, architecture, bitness, brand, ...
     "locale:tag", "navigator.language", "navigator.languages",  # en-US default
@@ -37,17 +37,17 @@ def allowed(key):
 
 
 def test_two_seeds_give_two_devices():
-    a, b = keys_of(1), keys_of(2)
+    a, b = keys_of(5), keys_of(6)  # a pair whose draws share nothing undeclared (1 and 2 both draw 1920x1080)
     assert [k for k in DEVICE_KEYS if a.get(k) == b.get(k)] == []
 
 
 def test_per_instance_seeds_differ():
-    a, b = keys_of(1), keys_of(2)
+    a, b = keys_of(5), keys_of(6)  # a pair whose draws share nothing undeclared (1 and 2 both draw 1920x1080)
     assert [k for k in PER_INSTANCE_SEEDS if a.get(k) == b.get(k)] == []
 
 
 def test_only_declared_keys_are_shared():
-    a, b = keys_of(1), keys_of(2)
+    a, b = keys_of(5), keys_of(6)  # a pair whose draws share nothing undeclared (1 and 2 both draw 1920x1080)
     assert any(k.startswith(("webGl:", "webGl2:")) for k in a), "no WebGL keys: the identity claims no GPU"
     shared = {k for k in a if a[k] == b.get(k)}
     assert {k for k in shared if not allowed(k)} == set()

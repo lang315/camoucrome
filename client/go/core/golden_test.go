@@ -41,6 +41,7 @@ func TestGoldenDeterministic(t *testing.T) {
 	t.Run("cores", func(t *testing.T) {
 		var rows []struct{ Cores, Claim, Want int }
 		golden(t, "cores.json", &rows)
+		// 400 = 12.5 distinct claims x 32 hosts: fewer means the fixture stopped covering the claim values snapCores sees
 		if len(rows) < 400 {
 			t.Fatalf("%d rows", len(rows))
 		}

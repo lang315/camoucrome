@@ -249,6 +249,14 @@
    "type": "string"
   },
   {
+   "name": "kWebGpuBlocked",
+   "key": "webGpu:blocked",
+   "type": "bool",
+   "doc": [
+    "requestAdapter() resolves null, as on a device Chrome blocks; set by the launcher when the claimed GPU is not the host's"
+   ]
+  },
+  {
    "name": "kWebGlParameters",
    "key": "webGl:parameters",
    "type": "dict"

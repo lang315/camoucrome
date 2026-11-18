@@ -32,9 +32,10 @@ OS = "windows"
 PLATFORM = "Windows"
 DATA = ROOT / "client" / "go" / "core" / "data"
 # Left out of a compact entry: the font tables and voices:list (about 31 of 35 KB, rebuilt or recomputed in Go),
-# GPU keys (core never claims a GPU), the seeds (drawn per identity) and the zone (set by Exit or the locale default).
+# the seeds (drawn per identity) and the zone (set by Exit or the locale default).
+# GPU claim keys stay: core resolves them verbatim (webGpu:blocked is always true, since the pool has no host renderer).
 # The locale triple stays: without an Exit it is the entry's own.
-EXCLUDED_PREFIXES = ("fonts:", "webgl:")
+EXCLUDED_PREFIXES = ("fonts:",)
 EXCLUDED_KEYS = {"voices:list", "canvas:seed", "mediaDevices:seed", "timezone:id"}
 # ISO 3166-1 alpha-2 assigned codes = CLDR territoryInfo minus these (CLDR exceptional reservations and codes
 # outside 3166-1); 249 remain, which equals tzdata's iso3166.tab.
