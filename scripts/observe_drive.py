@@ -397,6 +397,8 @@ def build_channels(requests, frames, arm, site=None):
         if r.get("missing"):
             kind, pairs = "missing", []
             missing += 1
+        elif r.get("file"):  # a file-only request (a trace record): kind only, no body to decode
+            kind, pairs = "file", []
         else:
             raw = _b64(r["body_b64"])
             e["bytes"] += len(raw)
@@ -438,7 +440,7 @@ def build_bool_fields(requests, frames, truth, site=None):
     site = site or sites.load()
     n = collections.Counter()
     for r in requests:
-        if not r.get("missing"):
+        if not r.get("missing") and not r.get("file"):
             for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 for s in bool_matches(v, truth):
                     n[(endpoint(r["url"]), path, s)] += 1
@@ -454,7 +456,7 @@ def build_matches(requests, frames, truth, site=None):
     site = site or sites.load()
     n = collections.Counter()
     for r in requests:
-        if not r.get("missing"):
+        if not r.get("missing") and not r.get("file"):
             for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1
@@ -467,16 +469,21 @@ def build_matches(requests, frames, truth, site=None):
             for (e, f, s, enc, weak), c in sorted(n.items())]
 
 
-def write_outputs(out_dir, arm, site=None):
+def write_tables(out_dir, arm, reqs, frames, truth, site=None):
     site = site or sites.load()
+    out_dir = pathlib.Path(out_dir)
+    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm, site), indent=1, sort_keys=True), encoding="utf-8")
+    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth, site), indent=1), encoding="utf-8")
+    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth, site), indent=1), encoding="utf-8")
+
+
+def write_outputs(out_dir, arm, site=None):
     out_dir = pathlib.Path(out_dir)
     reqs = read_jsonl(out_dir / "capture" / "requests.jsonl")
     frames = read_jsonl(out_dir / "capture" / "ws.jsonl")
     tp = out_dir / "truth.json"
     truth = json.loads(tp.read_text(encoding="utf-8")) if tp.exists() else {}
-    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm, site), indent=1, sort_keys=True), encoding="utf-8")
-    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth, site), indent=1), encoding="utf-8")
-    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth, site), indent=1), encoding="utf-8")
+    write_tables(out_dir, arm, reqs, frames, truth, site)
 
 
 FORK_CONFIG = {"humanize:enabled": True, "ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
