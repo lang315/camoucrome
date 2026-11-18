@@ -4,13 +4,14 @@ Every probe-based verification passes --no-sandbox (camoucrome.probe adds it),
 so on Windows none of them exercises what a user's camoucrome.launch() does: a
 sandboxed renderer, whose environment CreateFilteredEnvironment() strips to seven
 variables unless the windows-sandbox-env patch lets CAMOU_* through. And a
-generated identity does not fit one environment string: a Windows one is ~37 KB,
-past CONFIG_CHUNK_CHARS, so it travels as CAMOU_CONFIG_1..N and the renderer
+generated identity does not fit one environment string: a Windows one was ~37 KB,
+past CONFIG_CHUNK_CHARS, so it travelled as CAMOU_CONFIG_1..N and the renderer
 must find every chunk. verify_windows_sandbox_env.py measured the sandbox with a
 one-key config that never chunks; this is the shape users actually send.
 
-K1 the generated Windows identity goes out as CAMOU_CONFIG_1..N, N >= 2, and no
-   CAMOU_CONFIG -- without this every other row could pass on an unchunked config
+K1 the generated Windows identity, fonts:list repeated until it is over one chunk, goes out
+   as CAMOU_CONFIG_1..N, N >= 2, and no CAMOU_CONFIG -- without this every other row could
+   pass on an unchunked config (the bare identity fits one chunk since #205/#208)
 K2 launched through camoucrome.launch() with no --no-sandbox (read back from the
    browser's own command line) under strict
 K3 navigator.hardwareConcurrency in the page is the configured 3. The key is
@@ -38,12 +39,15 @@ import sys
 import tempfile
 import threading
 
+import client_guard
+import k1_config
 from lib_shell import CHROME as EXE, layout
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 sys.path.insert(0, str(CLIENT / "client" / "python"))
 from camoucrome import gen, launch, launcher  # noqa: E402
 from camoucrome.probe import browser_argv  # noqa: E402
+client_guard.require(sys.modules["camoucrome"], CLIENT)
 from patchright.sync_api import sync_playwright  # noqa: E402
 
 SPOOFED = 3
@@ -128,6 +132,8 @@ def read_probe(cmd, url, config_file):
 
 def main():
     config = gen.generate(os="windows", seed=1)["config"]  # generate() returns {config, launch, warnings}
+    # since #205/#208 the Windows identity can fit one chunk; K1 is about the chunked path, so pad it (see k1_config)
+    config = k1_config.over_one_chunk(config, launcher.CONFIG_CHUNK_CHARS)
     config.pop("navigator.hardwareConcurrency", None)
     config["navigator.hardwareConcurrency"] = SPOOFED  # last key, last chunk
     env = launcher.build_env(config)
