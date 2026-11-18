@@ -118,7 +118,7 @@ def draw_pool(n):
     entries, skipped = [], 0
     for seed in range(1, n + 1):
         try:
-            out = gen.generate(OS, seed=seed, host_cores=1024)
+            out = gen.generate(OS, seed=seed, host_cores=1024, host_cpu_vendor=None)
         except (ValueError, RuntimeError):  # a locale with no zone row, or no acceptable sample
             skipped += 1
             continue

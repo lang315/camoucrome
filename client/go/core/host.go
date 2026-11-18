@@ -2,8 +2,31 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+	"strings"
 )
+
+// cpuVendorOf finds GenuineIntel or AuthenticAMD in /proc/cpuinfo or PROCESSOR_IDENTIFIER text.
+func cpuVendorOf(s string) string {
+	for _, v := range []string{intelCPU, amdCPU} {
+		if strings.Contains(s, v) {
+			return v
+		}
+	}
+	return ""
+}
+
+// probeCPUVendor reads /proc/cpuinfo (Linux), else PROCESSOR_IDENTIFIER (Windows); "" when neither answers.
+func probeCPUVendor() string {
+	if b, err := os.ReadFile("/proc/cpuinfo"); err == nil {
+		if len(b) > 4096 {
+			b = b[:4096]
+		}
+		return cpuVendorOf(string(b))
+	}
+	return cpuVendorOf(os.Getenv("PROCESSOR_IDENTIFIER"))
+}
 
 // ProbeHost reads what the OS answers without a browser: the allowed CPUs, the
 // work area and (Windows) the UA-CH platform version. The display needs the
@@ -20,6 +43,7 @@ func ProbeHost() (Host, []string) {
 	} else {
 		h.Cores = runtime.NumCPU()
 	}
+	h.CPUVendor = probeCPUVendor()
 	wa, w := probeWorkArea()
 	h.WorkArea = wa
 	warn = append(warn, w...)

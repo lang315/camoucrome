@@ -29,6 +29,7 @@ type Host struct {
 	WorkArea        [2]int   // availWidth, availHeight in physical px
 	PlatformVersion string   // UA-CH platformVersion, N.N.N
 	Display         *Display // from the display probe
+	CPUVendor       string   // GenuineIntel or AuthenticAMD; "" (unknown) keeps every GPU claim
 }
 
 // Exit is the proxy exit: IANA zone and ISO-3166-1 alpha-2 country.

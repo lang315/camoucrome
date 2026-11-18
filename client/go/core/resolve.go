@@ -15,6 +15,39 @@ var angleIGPURe = regexp.MustCompile(`^ANGLE \((Intel|AMD), .+ \(0x([0-9A-Fa-f]{
 // gpuClaimKeys is gen.py GPU_CLAIM_KEYS.
 var gpuClaimKeys = []string{"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked"}
 
+const (
+	intelCPU = "GenuineIntel"
+	amdCPU   = "AuthenticAMD"
+)
+
+var arcRe = regexp.MustCompile(`Arc\(TM\) A\d{3}`)
+
+// igpuVendor is gen.py igpu_vendor: the CPUID vendor a claimed iGPU implies (AMD APUs ship only with AMD CPUs, Intel iGPUs
+// only with Intel CPUs), "" for a dGPU (NVIDIA, AMD RX/Pro, Intel Arc A-series) or a renderer that is not ANGLE D3D11.
+func igpuVendor(renderer string) string {
+	m := angleIGPURe.FindStringSubmatch(renderer)
+	if m == nil {
+		return ""
+	}
+	name := m[0]
+	if m[1] == "AMD" {
+		if (strings.Contains(name, "RX") && !strings.Contains(name, "Vega")) || strings.Contains(name, "Radeon Pro") {
+			return ""
+		}
+		return amdCPU
+	}
+	if arcRe.MatchString(name) {
+		return ""
+	}
+	return intelCPU
+}
+
+// vendorFits is gen.py vendor_fits: false only when the claim implies a vendor and the host is known to have the other.
+func vendorFits(renderer, host string) bool {
+	want := igpuVendor(renderer)
+	return want == "" || (host != intelCPU && host != amdCPU) || want == host
+}
+
 // igpuFloor is gen.py igpu_thread_floor: the fewest threads the claimed iGPU's CPU family ships with, 0 for none.
 func igpuFloor(renderer string) int {
 	m := angleIGPURe.FindStringSubmatch(renderer)
@@ -66,6 +99,13 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 				delete(cfg, k)
 			}
 			warn = append(warn, fmt.Sprintf("host cores snap to %d, below the %d threads of the claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept", num("navigator.hardwareConcurrency"), floor))
+		}
+		// An iGPU claim beside the other vendor's CPU: Skia's reciprocal estimates show the host's CPU vendor in a CPU-rastered readback.
+		if _, kept := cfg["webGl:renderer"]; kept && !vendorFits(r, h.CPUVendor) {
+			for _, k := range gpuClaimKeys {
+				delete(cfg, k)
+			}
+			warn = append(warn, "the claimed iGPU ships only with the other CPU vendor than this host's: the GPU claim is dropped and the host's real GPU is kept")
 		}
 	}
 

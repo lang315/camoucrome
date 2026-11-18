@@ -35,12 +35,12 @@ def main():
     # 200 seeds, not 60: once gen.py redraws samples with no drawable GPU, seeds 1..60 draw only 11 distinct claims
     # (352 rows), below the Go guard of 400 (12.5 claims x 32 hosts); seeds 1..200 draw 17 (544 rows).
     for seed in range(1, 201):
-        claim = gen.generate(d.OS, seed=seed, host_cores=1024)["config"]["navigator.hardwareConcurrency"]
+        claim = gen.generate(d.OS, seed=seed, host_cores=1024, host_cpu_vendor=None)["config"]["navigator.hardwareConcurrency"]
         for host in range(1, 33):
             if (claim, host) in seen:
                 continue
             seen.add((claim, host))
-            got = gen.generate(d.OS, seed=seed, host_cores=host)["config"]["navigator.hardwareConcurrency"]
+            got = gen.generate(d.OS, seed=seed, host_cores=host, host_cpu_vendor=None)["config"]["navigator.hardwareConcurrency"]
             cores.append({"cores": host, "claim": claim, "want": got})
     write("cores.json", cores)
     write("display.json", [{"display": x, "flags": gen.display_flags(x)[0], "warning": gen.display_flags(x)[1]} for x in DISPLAYS])
@@ -50,7 +50,7 @@ def main():
     for code in ["US", "DE", "PH", "CA", "CH", "JP", "TH", "ID", "BR", "GB", "FR", "TR"]:
         tag = geoip.locale_for(code)  # no fallback: every code here has a locale_zones row
         # the locale triple and voices as gen.from_pool builds them for a given locale
-        cfg = gen.generate(d.OS, seed=1, timezone=zones[tag][0], locale=tag, host_cores=1024)["config"]
+        cfg = gen.generate(d.OS, seed=1, timezone=zones[tag][0], locale=tag, host_cores=1024, host_cpu_vendor=None)["config"]
         exits.append({"country": code, "tag": tag, "languages": cfg["navigator.languages"],
                       "voices": cfg["voices:list"]})
     write("exit.json", exits)
@@ -59,11 +59,11 @@ def main():
     runs = []
     fonts = d.fonts_subset()
     for seed, (hc, pv, disp) in zip([11, 222, 3333], HOSTS):
-        base = gen.generate(d.OS, seed=seed, host_cores=1024)
+        base = gen.generate(d.OS, seed=seed, host_cores=1024, host_cpu_vendor=None)
         entry = {k: v for k, v in base["config"].items()
                  if k not in ("voices:list", "canvas:seed", "mediaDevices:seed", "timezone:id")}
         entry["dpr"] = base["launch"]["dpr"]
-        want = gen.generate(d.OS, seed=seed, host_cores=hc, host_platform_version=pv, host_display=disp)
+        want = gen.generate(d.OS, seed=seed, host_cores=hc, host_platform_version=pv, host_display=disp, host_cpu_vendor=None)
         skip = ("canvas:seed", "mediaDevices:seed", "timezone:id")
         runs.append({"seed": seed, "entry": entry, "host": {"cores": hc, "platformVersion": pv, "display": disp},
                      "config": {k: v for k, v in want["config"].items() if k not in skip},
