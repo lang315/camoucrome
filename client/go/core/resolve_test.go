@@ -236,9 +236,11 @@ func TestSmallScreen(t *testing.T) {
 }
 
 func TestGPUClaimIsTheFiveKeysAndNoGeo(t *testing.T) {
+	big := goodHost
+	big.Cores = 64 // above every iGPU floor: the claim stays
 	for s := uint64(0); s < 100; s++ {
-		id := mustDraw(t, s, nil)
-		r, err := Resolve(id, goodHost, &Exit{"Europe/Berlin", "DE"})
+		id := mustDraw(t, s, &goodHost) // entries that hold the minimum window here
+		r, err := Resolve(id, big, &Exit{"Europe/Berlin", "DE"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -261,6 +263,52 @@ func TestGPUClaimIsTheFiveKeysAndNoGeo(t *testing.T) {
 				t.Fatalf("flag %s", a)
 			}
 		}
+	}
+}
+
+// A host snap below the claimed iGPU's floor drops the five GPU keys (gen.py from_pool); a host above it keeps them.
+func TestHostBelowIGPUFloorDropsTheClaim(t *testing.T) {
+	small, big := goodHost, goodHost
+	small.Cores, big.Cores = 4, 64
+	dropped, kept := 0, 0
+	for s := uint64(0); s < 300; s++ {
+		id := mustDraw(t, s, &goodHost)
+		var e map[string]any
+		if err := json.Unmarshal(id.Entry, &e); err != nil {
+			t.Fatal(err)
+		}
+		floor := igpuFloor(e["webGl:renderer"].(string))
+		rs, err := Resolve(id, small, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rb, err := Resolve(id, big, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := rb.Config["webGl:renderer"]; !ok {
+			t.Fatalf("seed %d: a 64-core host dropped the claim", s)
+		}
+		_, has := rs.Config["webGl:renderer"]
+		if floor > 4 {
+			if has || len(rs.Warnings) == 0 {
+				t.Fatalf("seed %d: floor %d, 4 cores, claim kept = %v", s, floor, has)
+			}
+			for _, k := range gpuClaimKeys {
+				if _, ok := rs.Config[k]; ok {
+					t.Fatalf("seed %d: %s survived the drop", s, k)
+				}
+			}
+			dropped++
+		} else {
+			if !has {
+				t.Fatalf("seed %d: floor %d, 4 cores, claim dropped", s, floor)
+			}
+			kept++
+		}
+	}
+	if dropped < 20 || kept < 20 {
+		t.Fatalf("dropped %d, kept %d: the test did not cover both sides", dropped, kept)
 	}
 }
 

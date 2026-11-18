@@ -4,9 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 var platformVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// angleIGPURe is gen.py ANGLE_D3D11_RE for the two vendors that have iGPU floors.
+var angleIGPURe = regexp.MustCompile(`^ANGLE \((Intel|AMD), .+ \(0x([0-9A-Fa-f]{8})\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$`)
+
+// gpuClaimKeys is gen.py GPU_CLAIM_KEYS.
+var gpuClaimKeys = []string{"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked"}
+
+// igpuFloor is gen.py igpu_thread_floor: the fewest threads the claimed iGPU's CPU family ships with, 0 for none.
+func igpuFloor(renderer string) int {
+	m := angleIGPURe.FindStringSubmatch(renderer)
+	if m == nil {
+		return 0
+	}
+	return tables.floors[m[1]+":0x"+strings.ToUpper(m[2])]
+}
 
 // Resolve applies a Host and an Exit to an Identity. It ports the
 // host-dependent tail of gen.py from_pool, and never claims a GPU or a
@@ -42,6 +58,15 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 		cfg["navigator.hardwareConcurrency"] = float64(snapCores(num("navigator.hardwareConcurrency"), h.Cores))
 	} else {
 		warn = append(warn, "host cores unknown: the claim is kept, and may exceed the host's")
+	}
+	// A host snap below the claimed iGPU's floor drops the GPU claim (gen.py from_pool): the real GPU then matches the real CPU.
+	if r, _ := cfg["webGl:renderer"].(string); r != "" {
+		if floor := igpuFloor(r); floor > 0 && num("navigator.hardwareConcurrency") < floor {
+			for _, k := range gpuClaimKeys {
+				delete(cfg, k)
+			}
+			warn = append(warn, fmt.Sprintf("host cores snap to %d, below the %d threads of the claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept", num("navigator.hardwareConcurrency"), floor))
+		}
 	}
 
 	// 2. platform version (Windows claim).

@@ -1,0 +1,418 @@
+{
+  "read_utc": "2026-11-18",
+  "source": "Intel rows: Intel ARK SKU pages that list the exact Device ID; max_threads is the largest Total Threads of any SKU read that lists it. AMD rows: the device id gives the APU family (pci-ids), max_threads is the highest 'Total Threads / # of Threads' of an AMD SKU of that family.",
+  "note": "Same method as intel-gen9-thread-caps.json with one difference: no walk is complete. Each row's `walk` field says what was not read. An unread SKU can only raise a cap, so a cap here is a lower bound: a claim within it is backed by a real SKU, a real part may have more. Intel ids and AMD ids are separate namespaces (key = vendor + id). Pages were read by lookup agents; every Intel source_url was re-fetched (the page is the named SKU); re-read from the page text: Device ID of 0xA7A8, 0x46A3, 0x9A78, 0x4692, 0x7D67, 0x7D51, Total Threads of 0x7D67 and 0x7D51, and for all 7 AMD rows the SKU page's '# of Threads' and 'Former Codename' (amd.com). The other Intel Total Threads and Device ID lines and the pci-ids family lines are the lookup agents' quotes, not re-read. Ids that never occur in BrowserForge 1.2.4's Windows Chrome renderers (0x8A51, 0x8A5C) were left out. Rows with max_threads null are unsourced and never drawn. min_threads is the smallest Total Threads of any SKU read that lists the id, so it is an upper bound on the true floor (an unread lower SKU would lower it); null = no floor. A claim below it is rejected at generation, and a host snap below it drops the GPU claim.",
+  "rows": [
+    {
+      "vendor": "Intel",
+      "device_id": "0x9A49",
+      "max_threads": 8,
+      "cpu": "Core i7-1185G7",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/208664/intel-core-i71185g7-processor-12m-cache-up-to-4-80-ghz-with-ipu/specifications.html",
+      "walk": "9 sixteen-thread and 6 twelve-thread Tiger Lake SKUs read, none lists it; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 8,
+      "min_note": "i7-1185G7, i7-1165G7: every SKU read is 8"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x9A78",
+      "max_threads": 8,
+      "cpu": "Core i3-1125G4",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/208656/intel-core-i31125g4-processor-8m-cache-up-to-3-70-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 4,
+      "min_note": "i3-1115G4 lists it with 4"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x9A68",
+      "max_threads": 12,
+      "cpu": "Core i5-11260H (also i5-11400H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/213806/intel-core-i511260h-processor-12m-cache-up-to-4-40-ghz/specifications.html",
+      "walk": "all 9 fetched 16-thread SKUs checked, none lists it; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 12,
+      "min_note": "i5-11260H, i5-11400H: 12"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x9A60",
+      "max_threads": 16,
+      "cpu": "Core i9-11980HK (also i9-11950H, i7-11800H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/213800/intel-core-i911980hk-processor-24m-cache-up-to-5-00-ghz/specifications.html",
+      "walk": "16 is the top Tiger Lake tier read",
+      "min_threads": 16,
+      "min_note": "every SKU read is 16"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x46A6",
+      "max_threads": 20,
+      "cpu": "Core i7-12800H (also i9-12900H, i7-12700H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/226059/intel-core-i712800h-processor-24m-cache-up-to-4-80-ghz/specifications.html",
+      "walk": "all 24-thread SKUs read, none lists it; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 12,
+      "min_note": "Core i3-12300HE (12) lists it; the 16-thread P/H parts too"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x46A8",
+      "max_threads": 12,
+      "cpu": "Core i7-1265U (also 1255U, 1245U, 1235U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/226258/intel-core-i71265u-processor-12m-cache-up-to-4-80-ghz/specifications.html",
+      "walk": "all 16-, 20- and 24-thread Alder SKUs read, none lists it; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 12,
+      "min_note": "every SKU read is 12"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x46A3",
+      "max_threads": 16,
+      "cpu": "Core i7-12650H",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/226066/intel-core-i712650h-processor-24m-cache-up-to-4-70-ghz/specifications.html",
+      "walk": "20/24-thread SKUs read, none lists it; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 16,
+      "min_note": "only the i7-12650H read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x46B3",
+      "max_threads": 12,
+      "cpu": "Core i3-1220P",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/226257/intel-core-i31220p-processor-12m-cache-up-to-4-40-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 5,
+      "min_note": "Celeron 7305 (5) lists it; i3-1215U is 8"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x4692",
+      "max_threads": 12,
+      "cpu": "Core i5-12400 (the cell reads 0x4692 / 0x4682)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/134586/intel-core-i512400-processor-18m-cache-up-to-4-40-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 8,
+      "min_note": "i3-12100, i3-12100TE, i3-12100E (8) list it; i5-12400 is 12"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x4680",
+      "max_threads": 24,
+      "cpu": "Core i9-12900KS (also 12900K, 12900)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/225916/intel-core-i912900ks-processor-30m-cache-up-to-5-50-ghz/specifications.html",
+      "walk": "24 is the highest Alder Lake thread count",
+      "min_threads": 16,
+      "min_note": "i5-12600K (16) lists it; the 24-thread K/KS/T/E parts too"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA7A0",
+      "max_threads": 20,
+      "cpu": "Core i9-13900H (also i7-13700H, i9-13900HK)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/232135/intel-core-i913900h-processor-24m-cache-up-to-5-40-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 16,
+      "min_note": "i7-1360P, i5-1340P (16) list it; H parts 20"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA7A1",
+      "max_threads": 12,
+      "cpu": "Core i7-1365U (also i5-1335U, i5-1345U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/232141/intel-core-i71365u-processor-12m-cache-up-to-5-20-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 12,
+      "min_note": "i5-1335U, i5-1345U, i7-1365U: 12"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA7A8",
+      "max_threads": 12,
+      "cpu": "Core i5-13420H",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/232173/intel-core-i513420h-processor-12m-cache-up-to-4-60-ghz/specifications.html",
+      "walk": "i5-13500H, i3-1315U and the HX parts not read; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 12,
+      "min_note": "only the i5-13420H read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA788",
+      "max_threads": 32,
+      "cpu": "Core i9-13980HX (also i9-13900HX, i9-14900HX)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/232138/intel-core-i913980hx-processor-36m-cache-up-to-5-60-ghz/specifications.html",
+      "walk": "32 is the highest Raptor Lake thread count",
+      "min_threads": 20,
+      "min_note": "i7-13650HX (20) lists it; HX parts up to 32"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA780",
+      "max_threads": 32,
+      "cpu": "Core i9-13900K (also 13900KS, 14900, 14900KS)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/230496/intel-core-i913900k-processor-36m-cache-up-to-5-80-ghz/specifications.html",
+      "walk": "32 is the highest Raptor Lake thread count",
+      "min_threads": 24,
+      "min_note": "i7-13700K (24) lists it; K/KS parts 32"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x8A52",
+      "max_threads": 8,
+      "cpu": "Core i7-1065G7 (also i5-1035G7)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/196597/intel-core-i71065g7-processor-8m-cache-up-to-3-90-ghz/specifications.html",
+      "walk": "every client Ice Lake SKU read is 4C/8T or smaller",
+      "min_threads": 8,
+      "min_note": "i7-1065G7, i5-1035G7: 8"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x8A56",
+      "max_threads": 8,
+      "cpu": "Core i5-1035G1",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/196603/intel-core-i51035g1-processor-6m-cache-up-to-3-60-ghz/specifications.html",
+      "walk": "every client Ice Lake SKU read is 4C/8T or smaller",
+      "min_threads": 4,
+      "min_note": "i3-1005G1 (4) lists it; i5-1035G1 is 8"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x8A5A",
+      "max_threads": 8,
+      "cpu": "Core i5-1035G4",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/196591/intel-core-i51035g4-processor-6m-cache-up-to-3-70-ghz/specifications.html",
+      "walk": "every client Ice Lake SKU read is 4C/8T or smaller",
+      "min_threads": 8,
+      "min_note": "only the i5-1035G4 read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x7D55",
+      "max_threads": 22,
+      "cpu": "Core Ultra 9 185H (also 165H, 155H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/236849/intel-core-ultra-9-processor-185h-24m-cache-up-to-5-10-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 18,
+      "min_note": "the 125H/135HL class (18) lists it; 165H/185H are 22"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x7D45",
+      "max_threads": 14,
+      "cpu": "Core Ultra 7 155UL",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/239787/intel-core-ultra-7-processor-155ul-12m-cache-up-to-4-80-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 14,
+      "min_note": "only the Core Ultra 7 155UL read for threads"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x7D41",
+      "max_threads": 14,
+      "cpu": "Core Ultra 7 265U (also 255U)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/241859/intel-core-ultra-7-processor-265u-12m-cache-up-to-5-30-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 14,
+      "min_note": "Core Ultra 7 265U and 255U: 14; 225U's thread row was not read"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x7D51",
+      "max_threads": 16,
+      "cpu": "Core Ultra 9 285H (also 265H)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/241747/intel-core-ultra-9-processor-285h-24m-cache-up-to-5-40-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims); desktop Arrow Lake GPU ids unread",
+      "min_threads": 16,
+      "min_note": "Core Ultra 9 285H, 265H: 16"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x7D67",
+      "max_threads": 24,
+      "cpu": "Core Ultra 9 285HX (also 275HX, 285K)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/242297/intel-core-ultra-9-processor-285hx-36m-cache-up-to-5-50-ghz/specifications.html",
+      "walk": "lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims); desktop Arrow Lake GPU ids unread",
+      "min_threads": 24,
+      "min_note": "285HX, 275HX, 285K: 24"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x64A0",
+      "max_threads": 8,
+      "cpu": "Core Ultra 7 258V (also 288V)",
+      "method": "ark-device-id",
+      "source_url": "https://www.intel.com/content/www/us/en/products/sku/240957/intel-core-ultra-7-processor-258v-12m-cache-up-to-4-80-ghz/specifications.html",
+      "walk": "Lunar Lake SKUs listed 8 cores; lower bound: SKU walk incomplete, an unread SKU listing this id could have more threads (a too-low cap only narrows claims)",
+      "min_threads": 8,
+      "min_note": "Core Ultra 7 258V and Core Ultra 5 226V: 8 (Lunar Lake has no hyper-threading)"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA7A9",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA7AC",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA721",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0xA78B",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x4626",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x4628",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "Intel",
+      "device_id": "0x468B",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "no ARK SKU page read lists it"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x1638",
+      "max_threads": 16,
+      "cpu": "Ryzen 7 5700G",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Cezanne",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/1638",
+      "source_url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-5000-series/amd-ryzen-7-5700g.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 8,
+      "min_note": "Ryzen 3 5400U, 5300G, 5300GE: 8 (amd.com support spec pages)"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x164C",
+      "max_threads": 16,
+      "cpu": "Ryzen 7 5700U",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Lucienne",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/164c",
+      "source_url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-5000-series/amd-ryzen-7-5700u.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 8,
+      "min_note": "Ryzen 3 5300U: 8"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x1636",
+      "max_threads": 16,
+      "cpu": "Ryzen 9 4900HS",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Renoir",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/1636",
+      "source_url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-4000-series/amd-ryzen-9-4900hs.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 4,
+      "min_note": "Ryzen 3 4300U: 4"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x15E7",
+      "max_threads": 16,
+      "cpu": "Ryzen 7 5825U",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Barcelo",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/15e7",
+      "source_url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-5000-series/amd-ryzen-7-5825u.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 8,
+      "min_note": "Ryzen 3 5425U: 8"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x15D8",
+      "max_threads": 8,
+      "cpu": "Ryzen 7 3700U",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Picasso/Raven 2",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/15d8",
+      "source_url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-3000-series/amd-ryzen-7-3700u.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 4,
+      "min_note": "Athlon 300U, 200GE, 3000G: 4"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x15DD",
+      "max_threads": 8,
+      "cpu": "Ryzen 7 2700U",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Raven Ridge",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/15dd",
+      "source_url": "https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-2000-series/amd-ryzen-7-2700u.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 4,
+      "min_note": "Ryzen 3 2200U, Athlon PRO 200GE: 4"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x1506",
+      "max_threads": 8,
+      "cpu": "Ryzen 3 7320U",
+      "method": "pciids-family+amd-sku-page",
+      "family": "Mendocino",
+      "family_url": "https://pci-ids.ucw.cz/read/PC/1002/1506",
+      "source_url": "https://www.amd.com/en/products/processors/laptop/ryzen/7000-series/amd-ryzen-3-7320u.html",
+      "walk": "lower bound: only the named SKU of the family was read; a higher-thread SKU of the family would raise the cap (a too-low cap only narrows claims)",
+      "min_threads": 2,
+      "min_note": "Athlon Silver 7120U: 2"
+    },
+    {
+      "vendor": "AMD",
+      "device_id": "0x1681",
+      "max_threads": null,
+      "method": "unsourced",
+      "note": "Rembrandt: family from pci-ids, no AMD page quoted a thread count"
+    }
+  ]
+}

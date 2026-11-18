@@ -9,11 +9,11 @@ G630 = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00003E92) Direct3D11 vs_5_0 p
 
 
 def test_gpu_class_rejects():
-    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001638) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
-    assert gen.gpu_class("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
+    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001681) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None  # Rembrandt: no sourced cap
+    assert gen.gpu_class("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x0000A7A9) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None  # no sourced cap
     assert gen.gpu_class("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)") is None
     assert gen.gpu_class("ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
-    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) RX Vega 11 Graphics (0x000015DD) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None  # an APU
+    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) RX Vega 11 Graphics (0x00009999) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None  # an APU with no sourced id
     assert gen.gpu_class("garbage") is None and gen.gpu_class("") is None and gen.gpu_class(None) is None
 
 
@@ -22,6 +22,9 @@ def test_gpu_class_accepts():
     assert gen.gpu_class("ANGLE (AMD, AMD Radeon RX 6600 (0x000073FF) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "dgpu"
     assert gen.gpu_class("ANGLE (Intel, Intel(R) Arc(TM) A750 Graphics (0x000056A1) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "dgpu"
     assert gen.gpu_class(G620) == "igpu-gen9"
+    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001638) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "igpu"
+    assert gen.gpu_class("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "igpu"
+    assert gen.gpu_class("ANGLE (AMD, AMD Radeon(TM) RX Vega 11 Graphics (0x000015DD) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "igpu"  # an APU with a sourced id
 
 
 def test_blocked_rule():
