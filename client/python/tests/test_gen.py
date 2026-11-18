@@ -203,17 +203,12 @@ def test_pool_wide_properties_hold_over_unseeded_draws():
         assert set(cfg) <= KEYS
 
 
-def test_webgl_profile_keys_follow_the_claimed_os():
-    profiles = gen.load_profiles()
-    assert "windows-intel-uhd-630-d3d11" in profiles
-    keys = gen.webgl_keys(profiles["windows-intel-uhd-630-d3d11"])
-    assert set(keys) == {"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer",
-                         "webGl:parameters", "webGl2:parameters", "webGl:supportedExtensions", "webGl2:supportedExtensions",
-                         "webGl:shaderPrecisionFormats", "webGl2:shaderPrecisionFormats"}
-    assert keys["webGl:shaderPrecisionFormats"]["35633:36338"] == [127, 127, 23]  # VERTEX_SHADER, HIGH_FLOAT
+def test_gpu_keys_are_registered_and_carry_no_tables():
+    prof = gen.load_profiles()["windows-intel-uhd-630-d3d11"]
+    keys = gen.gpu_keys(prof["vendor"], prof["renderer"], None)
+    assert set(keys) == {"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked"}
     assert set(keys) <= KEYS
     assert "Direct3D11" in keys["webGl:renderer"] and keys["webGl2:renderer"] == keys["webGl:renderer"]
-    assert all(k.isdigit() for k in keys["webGl:parameters"])
 
 
 def test_from_pool_picks_the_os_profile_and_gpu_overrides():
@@ -333,25 +328,29 @@ def test_load_profiles_ignores_the_gpu_pool_file():
 HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
 
 
-def test_gen9_host_swaps_only_name_and_device_id():
-    base = gen.profile_for("Windows")
-    prof, warn = gen.gpu_for("Windows", HOST, random.Random(3))
-    assert warn is None
-    assert gen.gen9_device_id(prof["renderer"]) is not None
-    assert prof["webgl"] == base["webgl"] and prof["webgl2"] == base["webgl2"]
-    assert prof["vendor"] == base["vendor"] == "Google Inc. (Intel)"
+GEN9_FP = {"videoCard": {"renderer": HOST, "vendor": "Google Inc. (Intel)"}}
 
 
-def test_gpu_draw_is_seed_stable_and_varies_across_seeds():
-    draws = {gen.gpu_for("Windows", HOST, random.Random(s))[0]["renderer"] for s in range(40)}
-    assert gen.gpu_for("Windows", HOST, random.Random(7))[0] == gen.gpu_for("Windows", HOST, random.Random(7))[0]
-    assert len(draws) >= 3
+def test_windows_claim_is_the_fingerprints_video_card_when_drawable():
+    prof, warn = gen.gpu_for("Windows", None, random.Random(3), fp=GEN9_FP)
+    assert warn is None and prof == GEN9_FP["videoCard"]
+    # the claim never depends on the host
+    assert gen.gpu_for("Windows", "x", random.Random(3), fp=GEN9_FP) == (prof, None)
+
+
+def test_windows_sample_with_no_drawable_gpu_claims_none_and_is_rejected():
+    fp = {"videoCard": {"renderer": "ANGLE (AMD, AMD Radeon (TM) Graphics (0x00001681) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                        "vendor": "Google Inc. (AMD)"}, "navigator": {"userAgentData": {"platform": "Windows"}}}
+    prof, warn = gen.gpu_for("Windows", None, random.Random(3), fp=fp)
+    assert prof is None and warn
+    assert not gen.gpu_ok(fp, prof)
+    assert gen.gpu_ok({"navigator": {"userAgentData": {"platform": "macOS", "architecture": "arm"}}}, None)
 
 
 def test_gpu_draw_does_not_advance_the_rng():
     rng = random.Random(5)
     state = rng.getstate()
-    gen.gpu_for("Windows", HOST, rng)
+    gen.gpu_for("Windows", HOST, rng, fp=GEN9_FP)
     assert rng.getstate() == state
 
 
@@ -387,25 +386,6 @@ def test_generated_macos_identity_on_a_windows_host_has_no_webgl_claim():
     assert not any(k.startswith(("webGl:", "webGl2:")) for k in cfg)
 
 
-def test_non_gen9_host_keeps_real_gpu_and_warns():
-    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-    prof, warn = gen.gpu_for("Windows", nv, random.Random(1))
-    assert prof is None and "real GPU is kept" in warn
-
-
-@pytest.mark.parametrize("host", [
-    "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
-    "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)"])
-def test_non_d3d11_host_renderer_keeps_the_real_gpu_and_warns(host):
-    prof, warn = gen.gpu_for("Windows", host, random.Random(1))
-    assert prof is None and "not a Windows D3D11" in warn
-
-
-def test_warning_does_not_call_other_intel_parts_non_gen9():
-    odd = "ANGLE (Intel, Intel(R) HD Graphics 530 (0x00001912) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-    assert "not in the supported Intel Gen9 set" in gen.gpu_for("Windows", odd, random.Random(1))[1]
-
-
 def test_gen9_regex_equals_the_pool_scripts():
     sys.path.insert(0, str(ROOT / "scripts"))
     import gen_gpu_pool
@@ -418,13 +398,6 @@ def test_gen9_name_with_unknown_device_id_keeps_real_gpu():
     assert prof is None and warn
 
 
-def test_no_host_renderer_keeps_the_real_gpu_and_warns():
-    """Fail closed: an unknown host must not be given a Gen9 claim it may not back (an RTX host would show
-    nvidia in WebGPU and AV1 hardware decode under an Intel WebGL claim)."""
-    prof, warn = gen.gpu_for("Windows", None, random.Random(1))
-    assert prof is None and "host GPU unknown" in warn and "real GPU is kept" in warn
-
-
 def test_explicit_gpu_still_claims_without_a_host_renderer():
     """--gpu is the deliberate opt-in (tests on a box with no GPU): the named profile, no warning."""
     prof, warn = gen.gpu_for("Windows", None, random.Random(1), gpu="windows-intel-uhd-630-d3d11")
@@ -433,28 +406,20 @@ def test_explicit_gpu_still_claims_without_a_host_renderer():
 
 @pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
                                   "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"])
-def test_generate_without_a_gen9_host_emits_no_webgl_keys(host):
-    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=host)
-    assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
-    assert r["warnings"] and "real GPU is kept" in r["warnings"][0]
+def test_a_host_that_is_not_the_claim_blocks_webgpu(host):
+    r = gen.generate("windows", "Europe/Paris", None, 2, host_renderer=host)["config"]
+    assert r["webGl:renderer"].startswith("ANGLE (NVIDIA") and r["webGpu:blocked"] is True
 
 
 def test_pool_file_declares_its_weights_are_an_assumption():
     assert gen.gen9_pool()["weights_how"].startswith("assumption:")
 
 
-def test_non_gen9_host_emits_no_webgl_keys():
-    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=nv)
-    assert not [k for k in r["config"] if k.startswith(("webGl:", "webGl2:"))]
-    assert r["warnings"] and "real GPU is kept" in r["warnings"][0]
-
-
-def test_generate_with_host_renderer_draws_a_gen9_identity():
-    r = gen.generate("windows", "Europe/Paris", None, 1, host_renderer=HOST)
-    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
-    assert r["config"]["webGl2:renderer"] == r["config"]["webGl:renderer"]
-    assert r["warnings"] == []
+def test_a_gen9_claim_on_a_gen9_host_keeps_the_real_adapter():
+    on_gen9 = [gen.generate("windows", "Europe/Paris", None, sd, host_renderer=HOST)["config"] for sd in range(1, 40)]
+    for c in on_gen9:
+        assert c["webGpu:blocked"] is (gen.gpu_class(c["webGl:renderer"]) != "igpu-gen9")
+    assert {c["webGpu:blocked"] for c in on_gen9} == {True, False}
 
 
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
@@ -462,7 +427,7 @@ def test_generate_with_host_renderer_draws_a_gen9_identity():
 # launch.window and launch.position: those five are pinned in test_gen_linkability; the pin covers every other key.
 PRE_CHANGE = {
     1: {"share:cancelMs": 2543, "canvas:seed": 577090038, "mediaDevices:seed": 3639700192,
-        "rest": "8725d4839e119eae"},  # was c3cf3c0213de1b36 with navigator.languages ["en-US"], before that dcf4b9c17059de9c with navigator.deviceMemory 8
+        "rest": "f362b47c72afc936"},  # re-pinned with the GPU claim (seed 1's first sample had no drawable GPU, so the sample moved, and --gpu now emits no tables); was 8725d4839e119eae, was c3cf3c0213de1b36 with navigator.languages ["en-US"], before that dcf4b9c17059de9c with navigator.deviceMemory 8
     2: {"share:cancelMs": 1015, "canvas:seed": 4106135924, "mediaDevices:seed": 4070888060},
     3: {"share:cancelMs": 1167, "canvas:seed": 1022050302, "mediaDevices:seed": 2337446731},
 }
@@ -509,21 +474,21 @@ def _cli(monkeypatch, capsys, argv, probed):
 
 def test_cli_probe_executable_reads_the_host_renderer_for_the_draw(monkeypatch, capsys):
     r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], HOST)
-    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None and r["config"]["webGpu:blocked"] is False
 
 
-def test_cli_probe_executable_on_a_non_gen9_host_claims_no_gpu(monkeypatch, capsys):
+def test_cli_probe_executable_on_a_non_gen9_host_blocks_webgpu(monkeypatch, capsys):
     nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], nv)
-    assert "webGl:renderer" not in r["config"] and "real GPU is kept" in r["warnings"][0]
+    assert r["config"]["webGpu:blocked"] is True
 
 
-def test_cli_probe_that_fails_claims_no_gpu(monkeypatch, capsys):
+def test_cli_probe_that_fails_blocks_webgpu(monkeypatch, capsys):
     r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], None)
-    assert "webGl:renderer" not in r["config"]
+    assert r["config"]["webGpu:blocked"] is True
 
 
 def test_cli_explicit_host_renderer_wins_over_the_probe(monkeypatch, capsys):
     nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome", "--host-renderer", HOST], nv)
-    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None
+    assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None and r["config"]["webGpu:blocked"] is False

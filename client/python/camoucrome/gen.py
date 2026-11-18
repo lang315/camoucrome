@@ -39,10 +39,10 @@ Never taken, and why:
   screen.colorDepth / pixelDepth   the pool says 32 where real Chrome reports 24/30; the
                                    real value is coherent by construction
   screen.availLeft / availTop      multi-monitor offsets from the pool; the real 0 is fine
-  videoCard (webGl:*)              the pool's strings are not taken; webGl:* comes from
-                                   settings/webgl/ instead -- real-GPU captures whose
-                                   parameter table matches the identity (A3 #2); --gpu
-                                   picks one, default the first profile for the claimed OS
+  videoCard (webGl:*)              taken when gpu_class accepts it (NVIDIA, AMD RX/Pro, Intel Arc A-series,
+                                   Intel Gen9 with a sourced thread cap), else the sample is redrawn. Only
+                                   the four strings and webGpu:blocked are emitted; tables stay the host's.
+                                   --gpu names a captured profile's strings instead
   fonts                            fonts:list is the captured family list of the claimed OS
                                    (settings/fonts.json), which the bundled fontconfig
                                    layer makes resolvable; Linux claims get none
@@ -160,19 +160,13 @@ def precision_keys(spf):
     return {f"{GL_ENUM[s]}:{GL_ENUM[p]}": v for (s, p), v in ((k.split("/"), v) for k, v in spf.items())}
 
 
-def webgl_keys(profile):
-    """The profile's identity, numeric table, extension list and precision formats
-    on both contexts (measured 2026-09-11: the SwiftShader host's precision
-    cells differ from a real GPU's in 8 of 12, so they must be emitted too;
-    contextAttributes agreed in all and stay unemitted)."""
-    return {"webGl:vendor": profile["vendor"], "webGl:renderer": profile["renderer"],
-            "webGl2:vendor": profile["vendor"], "webGl2:renderer": profile["renderer"],
-            "webGl:parameters": profile["webgl"]["parameters"],
-            "webGl2:parameters": profile["webgl2"]["parameters"],
-            "webGl:supportedExtensions": profile["webgl"]["supportedExtensions"],
-            "webGl2:supportedExtensions": profile["webgl2"]["supportedExtensions"],
-            "webGl:shaderPrecisionFormats": precision_keys(profile["webgl"]["shaderPrecisionFormats"]),
-            "webGl2:shaderPrecisionFormats": precision_keys(profile["webgl2"]["shaderPrecisionFormats"])}
+def gpu_keys(vendor, renderer, host_renderer):
+    """The claim's four strings, plus webGpu:blocked: true unless the claim is the host's own renderer. A Gen9 claim on a
+    Gen9 host stays unblocked, because WebGPU masks every Gen9 part to intel/gen-9 (measured 2026-11-04). An unknown host
+    (None) is never equal. Parameters, extensions and precision formats are the host's and are not emitted."""
+    same = renderer == host_renderer or (gen9_device_id(renderer) is not None and gen9_device_id(host_renderer) is not None)
+    return {"webGl:vendor": vendor, "webGl:renderer": renderer, "webGl2:vendor": vendor, "webGl2:renderer": renderer,
+            "webGpu:blocked": not same}
 
 
 def profile_for(platform, gpu=None):
@@ -214,38 +208,47 @@ def gen9_device_id(renderer, ids=None):
     return dev if dev in set(ids if ids is not None else gen9_pool()["device_ids"]) else None
 
 
-def gpu_for(platform, host_renderer, rng, gpu=None):
-    """(profile, warning). A host that is unknown, not a D3D11 renderer or not Intel Gen9 claims no GPU (None: the real
-    GPU is kept); a macOS claim keeps its Apple profile only on a host that reports exactly that renderer. An Intel Gen9 host draws one Gen9 identity per profile seed: name and DeviceId
-    change, every parameter stays the host generation's. The draw uses its own generator seeded from rng's
-    state (as fonts_keys does), so rng is not advanced and later seeded keys do not move.
-    Only renderers with a sourced thread cap (gen9_thread_cap) are drawn; from_pool then holds
-    navigator.hardwareConcurrency to that cap."""
-    base = profile_for(platform, gpu)
-    if gpu or base is None:
+ANGLE_D3D11_RE = re.compile(r"^ANGLE \((NVIDIA|AMD|Intel), (.+) \(0x[0-9A-Fa-f]{8}\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$")
+
+
+def gpu_class(renderer):
+    """"dgpu", "igpu-gen9" or None (not drawable: an iGPU with no sourced thread caps, a software renderer, or a string that is
+    not an ANGLE D3D11 renderer)."""
+    m = ANGLE_D3D11_RE.match(renderer or "")
+    if not m:
+        return None
+    vendor, name = m.groups()
+    if vendor == "NVIDIA":
+        return "dgpu"
+    if vendor == "AMD":
+        return "dgpu" if ("RX" in name or "Radeon Pro" in name) else None
+    dev = gen9_device_id(renderer)
+    if dev is not None:
+        return "igpu-gen9" if dev in _thread_caps() else None  # no sourced cap (0x5921): any thread count would be unbacked
+    return "dgpu" if re.search(r"Arc\(TM\) A\d{3}", name) else None
+
+
+def gpu_for(platform, host_renderer, rng, gpu=None, fp=None):
+    """(profile, warning): {"vendor", "renderer"} or None. Windows without --gpu claims the fingerprint's own videoCard when
+    gpu_class accepts it (the draw is BrowserForge's, joint with cores, memory and screen), else None so generate redraws.
+    --gpu names a captured profile. A macOS claim keeps its Apple profile only on a host that reports exactly that renderer."""
+    if gpu:
+        return profile_for(platform, gpu), None
+    if platform == "Windows":
+        vc = (fp or {}).get("videoCard") or {}
+        if gpu_class(vc.get("renderer")) is None:
+            return None, "the sampled GPU is not a drawable class"
+        return {"vendor": vc["vendor"], "renderer": vc["renderer"]}, None
+    base = profile_for(platform)
+    if base is None or platform != "macOS":
         return base, None
-    if platform == "macOS":
-        # Same rule for the Apple claim: only a host that already reports the claimed part backs it. On any other host the
-        # Apple WebGL string would sit over a different GPU's pixels, WebGPU adapter and decoders.
-        if host_renderer is None:
-            return None, f"host GPU unknown: {SHARED_GPU}; the real GPU is kept"
-        if host_renderer != base["renderer"]:
-            return None, f"host GPU is not the claimed Apple part: {SHARED_GPU}; the real GPU is kept"
-        return base, None
-    if platform != "Windows":
-        return base, None
-    # Fail closed: a host this code cannot identify may not back an Intel claim (an RTX or Arc host shows its own adapter in
-    # WebGPU and AV1 hardware decode under an Intel WebGL string), so it claims no GPU. `--gpu` is the deliberate opt-in.
+    # Only a host that already reports the claimed part backs the Apple claim: on any other host the Apple WebGL string would
+    # sit over a different GPU's pixels, WebGPU adapter and decoders.
     if host_renderer is None:
         return None, f"host GPU unknown: {SHARED_GPU}; the real GPU is kept"
-    if not host_renderer.endswith(", D3D11)"):
-        return None, f"host renderer is not a Windows D3D11 renderer: {SHARED_GPU}; the real GPU is kept"
-    if gen9_device_id(host_renderer) is None:
-        return None, f"host GPU is not in the supported Intel Gen9 set: {SHARED_GPU}; the real GPU is kept"
-    caps = _thread_caps()
-    pool = [r for r in gen9_pool()["renderers"] if r["device_id"] in caps]  # no sourced cap: never drawn
-    pick = random.Random(repr(rng.getstate()) + "gpu").choices(pool, weights=[r["weight"] for r in pool])[0]
-    return {**base, "renderer": pick["renderer"]}, None
+    if host_renderer != base["renderer"]:
+        return None, f"host GPU is not the claimed Apple part: {SHARED_GPU}; the real GPU is kept"
+    return base, None
 
 
 def zone_for(locale, rng):
@@ -475,10 +478,13 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     for k, n in counts.items():
         config[f"mediaDevices:{k}"] = n
     config.update(per_instance_config(rng))
-    profile, warn = gpu_for(platform, host_renderer, rng, gpu)
+    profile, warn = gpu_for(platform, host_renderer, rng, gpu, fp)
     if profile:
-        config.update(webgl_keys(profile))
-        cap = gen9_thread_cap(profile["renderer"]) if host_renderer and not gpu else None
+        keys = gpu_keys(profile["vendor"], profile["renderer"], host_renderer)
+        if platform != "Windows":
+            del keys["webGpu:blocked"]  # an Apple claim is only ever made on its own host
+        config.update(keys)
+        cap = gen9_thread_cap(profile["renderer"]) if gpu_class(profile["renderer"]) == "igpu-gen9" else None
         if cap is not None and config["navigator.hardwareConcurrency"] > cap:
             # own generator: rng stays where it was, so the other seeded keys do not move
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
@@ -536,6 +542,13 @@ def allowed_cpus():
     return len(mask) if mask else _os.cpu_count()
 
 
+def gpu_ok(fp, profile):
+    """A Windows sample with no drawable GPU is rejected, as is an Apple one beside an x86 claim."""
+    if profile is None and fp["navigator"]["userAgentData"]["platform"] == "Windows":
+        return False
+    return arch_fits(fp, profile)
+
+
 def arch_fits(fp, profile):
     """False only for an Apple GPU profile beside a UA-CH architecture that is not arm."""
     return (profile is None or "Apple" not in profile["renderer"]
@@ -567,7 +580,7 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
         fp = asdict(gen.generate())
         # an Apple GPU string over an x86 claim is a cross-surface lie
         if (acceptable(fp) and (not light or dpr_of(fp) == 1)
-                and arch_fits(fp, gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu)[0])
+                and gpu_ok(fp, gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu, fp)[0])
                 and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
                             host_display, host_screen, host_cores)

@@ -34,34 +34,45 @@ def test_caps_file_is_not_a_webgl_profile():
     assert not any(stem.endswith("-thread-caps") for stem in gen.load_profiles())
 
 
-def test_unsourced_renderer_is_never_drawn_and_still_recognised():
-    drawn = {gen.gen9_device_id(gen.gpu_for("Windows", HOST, random.Random(s))[0]["renderer"]) for s in range(500)}
-    assert 0x5921 not in drawn and len(drawn) > 3
+def gen9_seeds():
+    return [s for s in SEEDS if gen.gpu_class(swap(s)["webGl:renderer"]) == "igpu-gen9"]
+
+
+def test_unsourced_renderer_is_never_claimed_and_still_recognised():
+    claimed = {gen.gen9_device_id(swap(s)["webGl:renderer"]) for s in SEEDS}
+    assert 0x5921 not in claimed
     assert 0x5921 in gen.gen9_pool()["device_ids"]
+    assert gen.gpu_class("ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005921) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
     assert gen.gen9_thread_cap("ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005921) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
     assert gen.gen9_thread_cap("ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)") is None
 
 
-def test_threads_never_exceed_the_drawn_gpus_cap():
-    for s in SEEDS:
+def test_threads_never_exceed_the_claimed_gpus_cap():
+    seeds = gen9_seeds()
+    assert len(seeds) > 10
+    for s in seeds:
         cfg = swap(s)
         assert cfg["navigator.hardwareConcurrency"] <= CAP_OF[gen.gen9_device_id(cfg["webGl:renderer"])], s
 
 
 def test_compatible_old_values_are_untouched():
     kept = 0
-    for s in SEEDS:
-        old = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]["navigator.hardwareConcurrency"]
+    for s in gen9_seeds():
         new = swap(s)
-        if old <= CAP_OF[gen.gen9_device_id(new["webGl:renderer"])]:
+        cap = CAP_OF[gen.gen9_device_id(new["webGl:renderer"])]
+        with pytest.MonkeyPatch.context() as m:
+            m.setattr(gen, "gen9_thread_cap", lambda renderer: None)
+            old = swap(s)["navigator.hardwareConcurrency"]
+        if old <= cap:
             assert new["navigator.hardwareConcurrency"] == old, s
             kept += 1
-    assert kept > 20
+    assert kept > 5
 
 
 def test_check_can_fail_when_the_cap_lookup_is_dead(monkeypatch):
     monkeypatch.setattr(gen, "gen9_thread_cap", lambda renderer: None)
-    assert any(swap(s)["navigator.hardwareConcurrency"] > CAP_OF[gen.gen9_device_id(swap(s)["webGl:renderer"])] for s in SEEDS)
+    assert any(swap(s)["navigator.hardwareConcurrency"] > CAP_OF[gen.gen9_device_id(swap(s)["webGl:renderer"])]
+               for s in gen9_seeds())
 
 
 PINNED = {
