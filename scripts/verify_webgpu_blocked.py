@@ -11,7 +11,8 @@ run-interactive.ps1 in session 1, launches three arms from a loopback page (a se
   1  F0: requestAdapter() is non-null in the window and in a dedicated worker (the RED control: it proves the
      check can see an adapter; a null here is UNMEASURED, never a PASS for row 2)
   2  FB: null in both, and the promise resolves (no rejection)
-  3  FB's minimum of 30 requests is >= 0.8 x F0's minimum (the null comes through the real round trip)
+  3  FB's first (cold) request takes >= 0.8 x F0's first (the null comes through the real round trip; the minimum of
+     30 is 0 ms once the adapter is cached, so it cannot show this; a F0 first of 0 is UNMEASURED)
   4  FB: UNMASKED_RENDERER_WEBGL equals the claim in the window and in a worker OffscreenCanvas
   5  FB: Object.getOwnPropertyNames(GPU.prototype) and requestAdapter.toString() equal stock's
   6  WebNN (record only): navigator.ml and createContext({deviceType: "gpu"}) in stock, F0 and FB
@@ -45,7 +46,7 @@ async function adapterProbe(g) {
     try { res = await g.requestAdapter(); } catch (e) { rej = String(e); }
     t.push(performance.now() - t0);
   }
-  return { isNull: res === null, rej, min: Math.min(...t) };
+  return { isNull: res === null, rej, min: Math.min(...t), first: t[0] };
 }
 function renderer(c) {
   const gl = c.getContext('webgl');
@@ -112,11 +113,13 @@ def rows(readings, claim, logs=None):
         out += [(r2, None, why)]
     else:
         out.append((r2, fb["win"]["isNull"] and fb["worker"]["isNull"] and not fb["win"]["rej"] and not fb["worker"]["rej"], None))
-    r3 = f"3 FB latency: min of {REQUESTS} requests >= {LATENCY_FLOOR} x F0's min (window)"
+    r3 = f"3 FB latency: first (cold) request >= {LATENCY_FLOOR} x F0's first (window)"
     if "FB" in unm or "F0" in unm or not red_control:
         out.append((r3, None, unm.get("FB") or unm.get("F0") or "row 1 is not PASS"))
+    elif not f0["win"]["first"] > 0:
+        out.append((r3, None, "F0's first request measured 0 ms: the clock cannot show a round trip"))
     else:
-        out.append((r3, fb["win"]["min"] >= LATENCY_FLOOR * f0["win"]["min"], None))
+        out.append((r3, fb["win"]["first"] >= LATENCY_FLOOR * f0["win"]["first"], None))
     r4 = "4 FB: UNMASKED_RENDERER_WEBGL equals the claim in the window and in a worker OffscreenCanvas"
     if "FB" in unm:
         out.append((r4, None, unm["FB"]))
@@ -141,14 +144,14 @@ def notes(readings, logs):
     lines.append(f"7 console text with the key: {'present' if CONSOLE_TEXT in (logs or {}).get('FB', '') else 'absent'} "
                  f"({CONSOLE_TEXT!r})")
     lines.append(f"  latency min ms: " + ", ".join(
-        f"{a}={((readings.get(a) or {}).get('win') or {}).get('min')}" for a in ("stock", "F0", "FB")))
+        f"{a}=first {((readings.get(a) or {}).get('win') or {}).get('first')} min {((readings.get(a) or {}).get('win') or {}).get('min')}" for a in ("stock", "F0", "FB")))
     return lines
 
 
 def selftest():
     """The RED the brief names: a null adapter in F0 makes row 1 UNMEASURED, and rows 2 and 3 with it."""
     def arm(null, mn, ren="R", crash=0):
-        side = {"isNull": null, "rej": None, "min": mn}
+        side = {"isNull": null, "rej": None, "min": mn, "first": mn}
         return {"win": side, "worker": dict(side), "winRenderer": ren, "workerRenderer": ren,
                 "protoNames": ["a", "b"], "reqToString": "function requestAdapter() { [native code] }",
                 "ml": {"exists": False}, "errors": [], "crash": crash}
@@ -160,6 +163,7 @@ def selftest():
     assert rows(dict(good, FB=arm(True, 9, crash=1)), "R")[1][1] is None, "a GPU crash must be UNMEASURED"
     assert rows(dict(good, FB=arm(False, 9)), "R")[1][1] is False, "a non-null adapter under the key must FAIL"
     assert rows(dict(good, FB=arm(True, 1)), "R")[2][1] is False, "a too-fast null must FAIL the latency row"
+    assert rows(dict(good, F0=arm(False, 0)), "R")[2][1] is None, "a zero F0 first request must be UNMEASURED"
     assert rows(good, "other")[3][1] is False, "a renderer that is not the claim must FAIL"
     assert rows(dict(good, FB={**arm(True, 9), "protoNames": ["a"]}), "R")[4][1] is False
     assert rows(dict(good, stock=None), "R")[4][1] is None
