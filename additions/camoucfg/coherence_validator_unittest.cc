@@ -199,7 +199,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 16> kMutations = {{
+constexpr std::array<Mutation, 17> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -270,6 +270,12 @@ constexpr std::array<Mutation, 16> kMutations = {{
     {"gpu-renderer-fits-threads",
      R"json({"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":16})json",
      "navigator.hardwareConcurrency"},
+    // The floor side: UHD 620 (0x3EA0) ships only on CPUs with at least 4
+    // threads, so 2 is below it. A second entry under the same id; the case
+    // below picks the entry whose config is the one the runner set.
+    {"gpu-renderer-fits-threads",
+     R"json({"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":2})json",
+     "navigator.hardwareConcurrency"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {
@@ -295,9 +301,12 @@ TEST(CoherenceValidatorTest, MutationIsCaughtAndNothingElseIs) {
       << "set CAMOUCFG_TEST_INVARIANT and CAMOU_CONFIG; this case is driven "
          "one process per mutation because the config latches per process";
 
+  // An invariant may have several mutations; the one under test is the entry
+  // whose config the runner set.
+  std::string configured = env->GetVar("CAMOU_CONFIG").value_or(std::string());
   const Mutation* mutation = nullptr;
   for (const Mutation& m : kMutations) {
-    if (m.invariant_id == *which) {
+    if (m.invariant_id == *which && m.config == configured) {
       mutation = &m;
     }
   }

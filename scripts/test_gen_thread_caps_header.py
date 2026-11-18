@@ -75,5 +75,5 @@ def test_cpp_array_sizes():
     inv_h = (CAMOUCFG / "invariants.h").read_text()
     ut = (CAMOUCFG / "coherence_validator_unittest.cc").read_text()
     assert re.search(r"std::array<Invariant, 16> kAllInvariants", inv_h)
-    assert re.search(r"std::array<Mutation, 16> kMutations", ut)
+    assert re.search(r"std::array<Mutation, 17> kMutations", ut)
     assert '"gpu-renderer-fits-threads"' in inv_h and '"gpu-renderer-fits-threads"' in ut

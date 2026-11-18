@@ -97,6 +97,12 @@ declare -A MUTATIONS=(
   [fonts-alias-local-requires-list]='{"fonts:aliasLocal":{"SegoeUI":"Selawik"}}'
 )
 
+# Second mutations of an invariant already in MUTATIONS: "<id>|<tag>" -> config. The case picks the
+# kMutations entry whose config matches CAMOU_CONFIG, so each is its own process like the first.
+declare -A EXTRA_MUTATIONS=(
+  ["gpu-renderer-fits-threads|floor"]='{"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":2}'
+)
+
 declare -a ORDER=(
   RegistryMatchesGeneratedHeader
   EveryInvariantKeyIsDeclaredInTheRegistry
@@ -229,8 +235,11 @@ fi
 # per-mutation run passes -- a run_case per id would clobber the shared slot,
 # recording only the last mutation's result.
 mutation_all_pass=1
-for id in "${!MUTATIONS[@]}"; do
-  mout=$(env CAMOUCFG_TEST_INVARIANT="$id" CAMOU_CONFIG="${MUTATIONS[$id]}" \
+declare -A ALL_MUTATIONS=()
+for id in "${!MUTATIONS[@]}"; do ALL_MUTATIONS[$id]="${MUTATIONS[$id]}"; done
+for key in "${!EXTRA_MUTATIONS[@]}"; do ALL_MUTATIONS[$key]="${EXTRA_MUTATIONS[$key]}"; done
+for id in "${!ALL_MUTATIONS[@]}"; do
+  mout=$(env CAMOUCFG_TEST_INVARIANT="${id%%|*}" CAMOU_CONFIG="${ALL_MUTATIONS[$id]}" \
     "$BINARY" \
     --gtest_filter="CoherenceValidatorTest.MutationIsCaughtAndNothingElseIs" \
     2>&1)
