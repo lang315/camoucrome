@@ -25,6 +25,7 @@ Windows only."""
 import http.server
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
@@ -209,10 +210,14 @@ def free_port():
 def main(argv):
     if "--selftest" in argv[1:]:
         return selftest()
+    import client_guard
     import gpu_gate
     import lib_shell
     import measure_step2 as m2
+    client = os.environ.get("CAMOU_CLIENT", str(pathlib.Path(__file__).resolve().parent.parent))
+    sys.path.insert(0, os.path.join(client, "client", "python"))
     from camoucrome import launcher
+    client_guard.require(sys.modules["camoucrome"], client)
     from measure_timing_parity import _kill_tree
 
     gpu_gate.require_interactive()

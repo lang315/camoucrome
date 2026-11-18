@@ -320,6 +320,9 @@ def main() -> int:
     sys.path.insert(0, str(CLIENT / "scripts"))
     sys.path.insert(0, str(CLIENT / "client" / "python"))
     import oracle_rules
+    import camoucrome
+    import client_guard
+    client_guard.require(camoucrome, CLIENT)
     from patchright.sync_api import sync_playwright
     os.environ["PLAYWRIGHT_NODEJS_PATH"] = node
     pin = oracle_rules.read_pin((CLIENT / "upstream.env").read_text(encoding="utf-8"))
