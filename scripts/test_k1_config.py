@@ -32,3 +32,14 @@ def test_already_long_config_is_unchanged_in_content():
 def test_no_fonts_list_raises():
     with pytest.raises(ValueError):
         k1_config.over_one_chunk({"a": 1}, LIMIT)
+
+
+def test_padding_survives_the_native_font_drop():
+    # -9 on the host: build_env drops fonts:alias* on a Windows host, so a config padded before the drop went out unchunked
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "client" / "python"))
+    from camoucrome import launcher
+    cfg = {"ua:platform": "Windows", "fonts:list": ["Arial"] * 100, "fonts:alias": {f"F{i}": "Arial" for i in range(2000)}}
+    assert launcher.claimed_os(cfg) == "Windows"
+    sent = lambda c: len(json.dumps(launcher.native_config(c, host_os="Windows")))
+    assert sent(k1_config.over_one_chunk(cfg, LIMIT)) <= LIMIT  # the old order: padding eaten by the drop
+    assert sent(k1_config.over_one_chunk(launcher.native_config(cfg, host_os="Windows"), LIMIT)) > LIMIT
