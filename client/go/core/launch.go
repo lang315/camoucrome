@@ -90,10 +90,8 @@ func Env(r Resolved, o LaunchOpts, base []string) (env []string, cleanup func(),
 
 func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, func(), error) {
 	noop := func() {}
-	if o.ExecutablePath != "" {
-		if err := CheckArchive(o.ExecutablePath, r.Config); err != nil {
-			return nil, noop, err
-		}
+	if err := CheckArchive(o.ExecutablePath, r.Config); err != nil {
+		return nil, noop, err
 	}
 	claimed := claimedOS(r.Config)
 	cfg := r.Config

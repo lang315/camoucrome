@@ -37,6 +37,25 @@ function asObject(v) {
   return d;
 }
 
+// Fails closed on a config key the browser would silently ignore (an unknown key only logs a
+// warning, even under strict mode). camoucrome-release.json beside the executable: config_keys
+// present -> any other key throws; a stamp from before config_keys -> webGpu:blocked throws;
+// no stamp (a dev build) -> allowed.
+function checkArchive(executablePath, config) {
+  const keys = Object.keys(asObject(config));
+  let stamp;
+  try {
+    stamp = JSON.parse(fs.readFileSync(path.join(path.dirname(path.resolve(String(executablePath))), 'camoucrome-release.json'), 'utf8'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return;
+    throw e;
+  }
+  const unknown = Array.isArray(stamp.config_keys)
+    ? keys.filter((k) => !stamp.config_keys.includes(k)).sort()
+    : keys.filter((k) => k === 'webGpu:blocked');
+  if (unknown.length) throw new Error(`browser ${stamp.version} does not know config keys: ${unknown.join(', ')}`);
+}
+
 // derive.cc kForms: [ua:osInfo marker, UA-CH platform] in its match order --
 // Android and CrOS before Linux, whose marker their osInfo also contains.
 const OS_INFO_MARKERS = [['Android', 'Android'], ['CrOS', 'Chrome OS'], ['Windows NT', 'Windows'],
@@ -282,6 +301,7 @@ async function launch(chromium, executablePath, {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `
       + 'a second emulation of the same surface fights the fork\'s value');
   }
+  checkArchive(executablePath, config);
   const keys = effectiveKeys(config, preset);
   const outer = [keys['window.outerWidth'], keys['window.outerHeight']];
   // shortcut: no window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
@@ -355,5 +375,5 @@ async function launch(chromium, executablePath, {
   return ctx;
 }
 
-module.exports = { FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
+module.exports = { checkArchive, FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
   acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch, human: require('./human') };

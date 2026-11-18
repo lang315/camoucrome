@@ -40,7 +40,11 @@ func TestCheckArchive(t *testing.T) {
 			t.Errorf("%s: envFor err = %v", c.name, eerr)
 		}
 	}
-	if _, _, err := envFor(Resolved{Config: map[string]any{"webGpu:blocked": true}}, LaunchOpts{}, nil, "Linux"); err != nil {
-		t.Errorf("no ExecutablePath must skip the check: %v", err)
+	_, _, err := envFor(Resolved{Config: map[string]any{"webGpu:blocked": true}}, LaunchOpts{}, nil, "Linux")
+	if err == nil || !strings.Contains(err.Error(), "set LaunchOpts.ExecutablePath") {
+		t.Errorf("empty ExecutablePath + webGpu:blocked must error: %v", err)
+	}
+	if _, _, err := envFor(Resolved{Config: map[string]any{"ua:platform": "x"}}, LaunchOpts{}, nil, "Linux"); err != nil {
+		t.Errorf("empty ExecutablePath without new keys stays allowed: %v", err)
 	}
 }

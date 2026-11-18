@@ -13,11 +13,20 @@ import (
 // webGpuBlocked is the first key a stamp without config_keys cannot be known to take.
 const webGpuBlocked = "webGpu:blocked"
 
+var errNoExe = errors.New("set LaunchOpts.ExecutablePath: this config needs a binary that knows " + webGpuBlocked)
+
 // CheckArchive fails closed on a config the browser would silently ignore (an unknown
 // key only logs a warning, even under strict mode). It reads camoucrome-release.json
 // beside exe: with config_keys, any config key not listed is an error; a stamp from
-// before config_keys refuses webGpu:blocked; no stamp (a dev build) is allowed.
+// before config_keys refuses webGpu:blocked; no stamp (a dev build) is allowed. An empty exe
+// is allowed unless the config has webGpu:blocked.
 func CheckArchive(exe string, cfg map[string]any) error {
+	if exe == "" {
+		if _, ok := cfg[webGpuBlocked]; ok {
+			return errNoExe
+		}
+		return nil
+	}
 	raw, err := os.ReadFile(filepath.Join(filepath.Dir(exe), "camoucrome-release.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
