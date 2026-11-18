@@ -117,6 +117,8 @@ def rows(readings, claim, logs=None):
     r4 = "4 FB: UNMASKED_RENDERER_WEBGL equals the claim in the window and in a worker OffscreenCanvas"
     if "FB" in unm:
         out.append((r4, None, unm["FB"]))
+    elif not claim:  # an identity with no GPU claim (e.g. a stale client on sys.path) has nothing to compare
+        out.append((r4, None, "FB's identity carries no webGl:renderer claim: check which camoucrome client is imported"))
     elif not fb.get("winRenderer") or not fb.get("workerRenderer"):
         out.append((r4, None, "no WEBGL_debug_renderer_info reading (WebGL unavailable)"))
     else:
@@ -165,6 +167,7 @@ def selftest():
     assert ok(dict(good, FN=arm(True, 9)), 1) is False, "a null with the key false must FAIL: the null is not the key's"
     assert ok(dict(good, FN=None), 1) is None
     assert rows(good, "other", logs)[2][1] is False, "a renderer that is not the claim must FAIL"
+    assert rows(good, None, logs)[2][1] is None, "no claim in the identity must be UNMEASURED, not a FAIL or PASS"
     assert ok(dict(good, FB={**arm(True, 9), "protoNames": ["a"]}), 3) is False
     assert ok(dict(good, stock=None), 3) is None
     assert ok(good, 4, logs={"FB": "no warning here"}) is False, "a missing console text must FAIL"
