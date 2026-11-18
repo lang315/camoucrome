@@ -127,7 +127,7 @@ def read_probe(cmd, url, config_file):
 
 
 def main():
-    config = gen.generate(os="windows", seed=1)
+    config = gen.generate(os="windows", seed=1)["config"]  # generate() returns {config, launch, warnings}
     config.pop("navigator.hardwareConcurrency", None)
     config["navigator.hardwareConcurrency"] = SPOOFED  # last key, last chunk
     env = launcher.build_env(config)
