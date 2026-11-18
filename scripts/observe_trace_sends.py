@@ -159,6 +159,10 @@ def main(argv=None):
         print(f"UNMEASURED site: {e}")
         return 3
     requests, frames, counts = assemble(events, a.top_site)
+    if a.top_site and not (counts["http"] or counts["ws"] or counts["ws_undecodable"]):
+        n = sum(e["name"] in ("camou.send.http", "camou.send.ws") for e in events)
+        print(f"UNMEASURED: --top-site matched none of the {n} send(s) (use the SchemefulSite form: scheme://host, no port, registrable domain)")
+        return 2
     truth = json.loads(pathlib.Path(a.truth).read_text(encoding="utf-8"))
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

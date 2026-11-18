@@ -176,3 +176,10 @@ def test_truncated_trace_file_is_read(tmp_path):
 def test_print_truth_js(capsys):
     assert t.main(["--print-truth-js"]) == 0
     assert capsys.readouterr().out.lstrip().startswith("async () =>")
+
+
+def test_top_site_matching_nothing_is_unmeasured(tmp_path, capsys):
+    rc, out = run(tmp_path, [http(1), body(1, 0, 0, PLANTED)], "--top-site", "http://nomatch.test")
+    assert rc == 2
+    assert "UNMEASURED: --top-site matched none of the 1 send(s)" in capsys.readouterr().out
+    assert not (out / "matches.json").exists()

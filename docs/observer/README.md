@@ -514,7 +514,9 @@ The tool joins `camou.send.http/body/file/ws` events as `DecodeTables` does
 once, a request whose fragments do not tile is counted `partial` and not
 decoded, a body that never arrived is `missing`, file elements are length only.
 `<dir>/trace_sends.json` holds the counts (http, ws, partial, missing, cut,
-file, no_site). `no_site` counts sends with no top site (workers, unattributed
+file, no_site). `--top-site` is the SchemefulSite form, `scheme://registrable-domain` with no
+port (`http://127.0.0.1`, `https://facebook.com` for `www.facebook.com`); a
+value that matches none of the sends exits 2. `no_site` counts sends with no top site (workers, unattributed
 requests); with `--top-site` they are kept. A trace with no send events exits 2
 and writes nothing, so an empty result never reads as "nothing sent".
 
