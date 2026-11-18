@@ -44,8 +44,10 @@ function asObject(v) {
 function checkArchive(executablePath, config) {
   const keys = Object.keys(asObject(config));
   let stamp;
+  let exe = path.resolve(String(executablePath));
+  try { exe = fs.realpathSync(exe); } catch { /* a missing exe: the launch fails on its own */ }
   try {
-    stamp = JSON.parse(fs.readFileSync(path.join(path.dirname(path.resolve(String(executablePath))), 'camoucrome-release.json'), 'utf8'));
+    stamp = JSON.parse(fs.readFileSync(path.join(path.dirname(exe), 'camoucrome-release.json'), 'utf8'));
   } catch (e) {
     if (e.code === 'ENOENT') return;
     throw e;

@@ -362,3 +362,13 @@ test('checkArchive fails closed on config keys the browser does not know', () =>
   run(null, { 'webGpu:blocked': true })(); // no stamp: a dev build
   run({ version: 'v' }, undefined)();
 });
+
+test('checkArchive reads the stamp beside a symlinked exe\'s target', () => {
+  const os = require('os');
+  const arch = fs.mkdtempSync(path.join(os.tmpdir(), 'camou-arch-'));
+  const link = fs.mkdtempSync(path.join(os.tmpdir(), 'camou-link-'));
+  fs.writeFileSync(path.join(arch, 'camoucrome-release.json'), '{"version":"v"}');
+  fs.writeFileSync(path.join(arch, 'chrome'), '');
+  fs.symlinkSync(path.join(arch, 'chrome'), path.join(link, 'chrome'));
+  assert.throws(() => c.checkArchive(path.join(link, 'chrome'), { 'webGpu:blocked': true }), /webGpu:blocked/);
+});

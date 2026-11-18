@@ -1,6 +1,7 @@
 """package.py on a fake tree: staging, stamps, archive, and the three refusals."""
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -23,6 +24,8 @@ def tree(tmp_path, monkeypatch):
     (src / "chrome" / "VERSION").write_text(f"MAJOR={major}\nMINOR={minor}\nBUILD={build}\nPATCH={patch}\n")
     (src / "LICENSE").write_text("chromium bsd")
     (src / "chrome" / "data.txt").write_text("x")
+    (src / "components" / "camoucfg").mkdir(parents=True)
+    shutil.copy(package.ROOT / "additions" / "camoucfg" / "keys.h", src / "components" / "camoucfg" / "keys.h")
     monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<dummy>": ["zz-no-such-term"]}))  # the gate needs terms
     subprocess.run(["git", "init", "-q"], cwd=src, check=True)
     subprocess.run(["git", "add", "-A"], cwd=src, check=True)
@@ -172,7 +175,7 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     (root / "settings" / "fontconfig" / "windows.conf").write_text("<fontconfig/>")
     (root / "settings" / "presets").mkdir()
     (root / "settings" / "launcher.json").write_text("{}")
-    (root / "settings" / "keys.json").write_text('{"keys": []}')
+    shutil.copy(package.ROOT / "settings" / "keys.json", root / "settings" / "keys.json")
     (root / "LICENSE").write_text("mpl")
     (root / "additions" / "camoucfg_lgpl").mkdir(parents=True)
     (root / "additions" / "camoucfg_lgpl" / "LICENSE").write_text("lgpl")
@@ -260,7 +263,7 @@ def commit_all(src, msg):
 def test_fingerprint_is_the_same_for_committed_and_uncommitted_change_sets(tree, tmp_path):
     src, out, deps = tree
     pin = rev(src)
-    (src / "components" / "camoucfg").mkdir(parents=True)
+    (src / "components" / "camoucfg").mkdir(parents=True, exist_ok=True)
     (src / "components" / "camoucfg" / "a.cc").write_text("int a;")
     (src / "chrome" / "data.txt").write_text("patched")
     uncommitted = package.tree_fingerprint(src, pin)
@@ -291,7 +294,7 @@ def test_fingerprint_changes_with_the_change_set(tree):
     (src / "chrome" / "data.txt").write_text("other")
     assert package.tree_fingerprint(src, pin) != before
     (src / "chrome" / "data.txt").write_text("x")
-    (src / "components" / "camoucfg").mkdir(parents=True)
+    (src / "components" / "camoucfg").mkdir(parents=True, exist_ok=True)
     (src / "components" / "camoucfg" / "k.h").write_text("#define K")
     assert package.tree_fingerprint(src, pin) != before
 
@@ -363,7 +366,7 @@ def test_fingerprint_orders_camoucfg_files_by_posix_relpath_bytes(tree):
     import hashlib
     src, out, deps = tree
     cfg = src / "components" / "camoucfg"
-    cfg.mkdir(parents=True)
+    (cfg / "keys.h").unlink()  # the fixture's own file; the expected hash covers only the three below
     for n in ("DEPS", "a.cc", "BUILD.gn"):
         (cfg / n).write_text(n)
     expected = hashlib.sha256(b"\n" + b"".join(
@@ -534,3 +537,23 @@ def test_stamp_lists_the_config_keys_of_keys_json(tree, tmp_path):
     want = sorted(k["key"] for k in json.loads((package.ROOT / "settings" / "keys.json").read_text())["keys"])
     assert stamp["config_keys"] == want and "webGpu:blocked" in want
     assert json.loads((tmp_path / "dist" / f"{stamp['name']}.release.json").read_text())["config_keys"] == want
+
+
+def test_stage_refuses_a_keys_h_one_key_short_of_keys_json(tree, tmp_path):
+    src, out, deps = tree
+    h = src / "components" / "camoucfg" / "keys.h"
+    text = h.read_text()
+    block = text.index("kAllKeys")
+    h.write_text(text[:block] + text[block:].replace("    kUaOsInfo,\n", "", 1))  # the real kUaOsInfo constant stays declared
+    with pytest.raises(SystemExit, match="kUaOsInfo"):
+        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+
+
+def test_the_staged_layout_is_where_the_launcher_looks_for_the_stamp(tree, tmp_path):
+    sys.path.insert(0, str(package.ROOT / "client" / "python"))
+    from camoucrome import launcher
+    src, out, deps = tree
+    staging, _ = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    launcher.check_archive(staging / "chrome", {"webGpu:blocked": True})
+    with pytest.raises(ValueError, match="zz:new"):
+        launcher.check_archive(staging / "chrome", {"zz:new": 1})

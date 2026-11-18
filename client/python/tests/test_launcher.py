@@ -539,3 +539,13 @@ def test_launch_runs_the_archive_check_before_spawning(tmp_path):
     (tmp_path / "camoucrome-release.json").write_text('{"version": "v"}')
     with pytest.raises(ValueError, match="webGpu:blocked"):
         camoucrome.launch(None, tmp_path / "chrome", config={"webGpu:blocked": True})
+
+
+def test_check_archive_follows_a_symlinked_exe(tmp_path):
+    arch, link = tmp_path / "a", tmp_path / "l"
+    arch.mkdir(); link.mkdir()
+    (arch / "camoucrome-release.json").write_text('{"version": "v"}')
+    (arch / "chrome").write_bytes(b"")
+    (link / "chrome").symlink_to(arch / "chrome")
+    with pytest.raises(ValueError, match="webGpu:blocked"):
+        camoucrome.launcher.check_archive(link / "chrome", {"webGpu:blocked": True})

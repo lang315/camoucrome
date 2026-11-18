@@ -48,3 +48,19 @@ func TestCheckArchive(t *testing.T) {
 		t.Errorf("empty ExecutablePath without new keys stays allowed: %v", err)
 	}
 }
+
+func TestCheckArchiveFollowsASymlinkedExe(t *testing.T) {
+	arch, link := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(arch, "camoucrome-release.json"), []byte(`{"version":"v"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(arch, "chrome"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(arch, "chrome"), filepath.Join(link, "chrome")); err != nil {
+		t.Skip(err)
+	}
+	if err := CheckArchive(filepath.Join(link, "chrome"), map[string]any{"webGpu:blocked": true}); err == nil {
+		t.Error("stamp beside the symlink target was not read")
+	}
+}

@@ -27,6 +27,9 @@ func CheckArchive(exe string, cfg map[string]any) error {
 		}
 		return nil
 	}
+	if real, err := filepath.EvalSymlinks(exe); err == nil { // a symlinked exe: the stamp sits beside the target
+		exe = real
+	}
 	raw, err := os.ReadFile(filepath.Join(filepath.Dir(exe), "camoucrome-release.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
