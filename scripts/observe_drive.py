@@ -397,6 +397,8 @@ def build_channels(requests, frames, arm, site=None):
         if r.get("missing"):
             kind, pairs = "missing", []
             missing += 1
+        elif r.get("file"):  # a file-only request (a trace record): kind only, no body to decode
+            kind, pairs = "file", []
         else:
             raw = _b64(r["body_b64"])
             e["bytes"] += len(raw)
@@ -438,7 +440,7 @@ def build_bool_fields(requests, frames, truth, site=None):
     site = site or sites.load()
     n = collections.Counter()
     for r in requests:
-        if not r.get("missing"):
+        if not r.get("missing") and not r.get("file"):
             for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 for s in bool_matches(v, truth):
                     n[(endpoint(r["url"]), path, s)] += 1
@@ -454,7 +456,7 @@ def build_matches(requests, frames, truth, site=None):
     site = site or sites.load()
     n = collections.Counter()
     for r in requests:
-        if not r.get("missing"):
+        if not r.get("missing") and not r.get("file"):
             for path, v in fields(_b64(r["body_b64"]), r.get("content_type", ""), site)[1]:
                 for s, enc, weak in match(v, truth):
                     n[(endpoint(r["url"]), path, s, enc, weak)] += 1

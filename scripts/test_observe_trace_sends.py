@@ -11,7 +11,7 @@ import observe_trace_sends as t  # noqa: E402
 CAT = "disabled-by-default-camou.observe.send"
 TRUTH = {"navigator.hardwareConcurrency": 12, "screen.width": 1366, "screen.height": 768,
          "navigator.userAgent": "Mozilla/5.0 (Planted; Test) AppleWebKit/537.36 Chrome/1.2.3.4"}
-SITE = "http://127.0.0.1:8000"
+SITE = "http://127.0.0.1"
 
 
 def b64(b):
@@ -38,6 +38,9 @@ def ws(text, site=SITE, endpoint="127.0.0.1:8000/sock", opcode=1, cut=""):
 
 
 PLANTED = json.dumps({"hc": 12, "scr": "1366x768", "ua": TRUTH["navigator.userAgent"]}).encode()
+
+
+GOOD = [http(99, endpoint="127.0.0.1:8000/good"), body(99, 0, 0, PLANTED)]
 
 
 def run(tmp_path, events, *extra, wrap=True):
@@ -93,10 +96,15 @@ def test_file_element_length_only(tmp_path):
     assert rc == 0
     s = summary(out)
     assert s["file"] == 1 and s["missing"] == 0
+    ep = json.loads((out / "channels.json").read_text())
+    assert ep["posts_captured"] == 1 and ep["posts_missing"] == 0
+    assert ep["endpoints"]["127.0.0.1:8000/collect"]["kinds"] == {"file": 1}
+    assert ep["endpoints"]["127.0.0.1:8000/collect"]["bytes"] == 0
 
 
 def test_missing_body(tmp_path):
-    rc, out = run(tmp_path, [http(1, elements=1), body(2, 0, 0, b"x"), http(3, endpoint="127.0.0.1:8000/other")] )
+    rc, out = run(tmp_path, [http(1, elements=1), body(2, 0, 0, b"x"), http(3, endpoint="127.0.0.1:8000/other"),
+                         http(4, endpoint="127.0.0.1:8000/ok"), body(4, 0, 0, PLANTED)])
     assert rc == 0
     s = summary(out)
     assert s["missing"] == 2  # loaders 1 and 3 have elements>0 and nothing; the orphan body of 2 is dropped
@@ -105,18 +113,18 @@ def test_missing_body(tmp_path):
 
 
 def test_partial_request_not_decoded_but_counted(tmp_path):
-    evs = [http(1), body(1, 0, 5, PLANTED[5:])]  # does not start at offset 0
+    evs = [http(1), body(1, 0, 5, PLANTED[5:])] + GOOD  # does not start at offset 0
     rc, out = run(tmp_path, evs)
     assert rc == 0
     assert summary(out)["partial"] == 1
-    assert matches(out) == []
+    assert not any(m["endpoint"] == "127.0.0.1:8000/collect" for m in matches(out))
 
 
 def test_partial_when_element_missing(tmp_path):
-    evs = [http(1, elements=2), body(1, 0, 0, PLANTED)]  # element 1 never arrived
+    evs = [http(1, elements=2), body(1, 0, 0, PLANTED)] + GOOD  # element 1 never arrived
     rc, out = run(tmp_path, evs)
     assert summary(out)["partial"] == 1
-    assert matches(out) == []
+    assert not any(m["endpoint"] == "127.0.0.1:8000/collect" for m in matches(out))
 
 
 def test_ws_text_frame(tmp_path):
@@ -182,4 +190,81 @@ def test_top_site_matching_nothing_is_unmeasured(tmp_path, capsys):
     rc, out = run(tmp_path, [http(1), body(1, 0, 0, PLANTED)], "--top-site", "http://nomatch.test")
     assert rc == 2
     assert "UNMEASURED: --top-site matched none of the 1 send(s)" in capsys.readouterr().out
+    assert not (out / "matches.json").exists()
+
+
+def test_uint_is_ascii_digits_only():
+    for bad in ("1_0", " 7", "7 ", "\u0661", "-1", "", "1.0", str(2 ** 64)):
+        assert t._uint({"a": bad}, "a") is None, bad
+    assert t._uint({"a": "+7"}, "a") == 7
+    assert t._uint({"a": 7}, "a") == 7
+    assert t._uint({"a": "0"}, "a") == 0
+
+
+def test_loader_with_non_ascii_digit_is_dropped(tmp_path):
+    h = http(1)
+    h["args"]["loader"] = "\u0661"
+    rc, out = run(tmp_path, [h, body(1, 0, 0, PLANTED)] + GOOD)
+    assert rc == 0 and summary(out)["http"] == 1
+
+
+def test_element_index_one_of_one_is_partial(tmp_path):
+    rc, out = run(tmp_path, [http(1, elements=1), body(1, 1, 0, PLANTED)] + GOOD)
+    assert summary(out)["partial"] == 1
+
+
+def test_first_http_event_per_loader_wins(tmp_path):
+    rc, out = run(tmp_path, [http(1, endpoint="127.0.0.1:8000/first"), http(1, endpoint="127.0.0.1:8000/second"),
+                             body(1, 0, 0, PLANTED)])
+    eps = json.loads((out / "channels.json").read_text())["endpoints"]
+    assert list(eps) == ["127.0.0.1:8000/first"]
+
+
+def test_overlapping_offsets_are_partial(tmp_path):
+    rc, out = run(tmp_path, [http(1), body(1, 0, 0, PLANTED[:10]), body(1, 0, 5, PLANTED[5:])] + GOOD)
+    assert summary(out)["partial"] == 1
+
+
+def test_cut_zero_is_not_cut_and_one_is(tmp_path):
+    rc, out = run(tmp_path, [http(1), body(1, 0, 0, PLANTED, cut="0"), http(2, endpoint="127.0.0.1:8000/b"),
+                             body(2, 0, 0, PLANTED, cut="1")])
+    assert summary(out)["cut"] == 1
+
+
+def test_ws_cut_is_counted(tmp_path):
+    rc, out = run(tmp_path, [ws(json.dumps({"hc": 12}), cut=1)])
+    assert rc == 0 and summary(out)["cut"] == 1
+
+
+def test_ws_undecodable_is_counted_not_a_row(tmp_path):
+    bad = ev("camou.send.ws", endpoint="127.0.0.1:8000/sock", site=SITE, origin=SITE, script="", opcode=1, size=3, b64="!!!", cut="")
+    rc, out = run(tmp_path, [bad, ws(json.dumps({"hc": 12}))])
+    assert rc == 0
+    assert summary(out)["ws_undecodable"] == 1 and summary(out)["ws"] == 1
+
+
+def test_top_site_with_only_worker_frames_is_unmeasured(tmp_path, capsys):
+    rc, out = run(tmp_path, [ws(json.dumps({"hc": 12}), site="")], "--top-site", "http://nomatch.test")
+    assert rc == 2
+    assert "UNMEASURED: --top-site matched none of the 1 send(s)" in capsys.readouterr().out
+    assert not (out / "matches.json").exists()
+
+
+def test_only_orphan_bodies_is_unmeasured(tmp_path, capsys):
+    rc, out = run(tmp_path, [body(7, 0, 0, PLANTED)])
+    assert rc == 2
+    assert "UNMEASURED: no usable send" in capsys.readouterr().out
+    assert not (out / "matches.json").exists()
+
+
+def test_http_with_no_elements_is_unmeasured(tmp_path, capsys):
+    rc, out = run(tmp_path, [http(1, elements=0)])
+    assert rc == 2
+    assert "UNMEASURED: no usable send" in capsys.readouterr().out
+
+
+def test_all_partial_or_missing_is_unmeasured_with_reason(tmp_path, capsys):
+    rc, out = run(tmp_path, [http(1), body(1, 0, 5, PLANTED[5:]), http(2, endpoint="127.0.0.1:8000/m")])
+    assert rc == 2
+    assert "UNMEASURED: every request was partial or missing (partial 1, missing 1) and no ws message" in capsys.readouterr().out
     assert not (out / "matches.json").exists()

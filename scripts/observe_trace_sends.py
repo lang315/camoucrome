@@ -9,6 +9,7 @@ import base64
 import binascii
 import json
 import pathlib
+import re
 import sys
 
 import observe_drive as d
@@ -33,11 +34,12 @@ def load_events(path):
 
 
 def _uint(args, key):
-    try:
-        v = int(str(args.get(key, "")).strip())
-    except ValueError:
+    """base::StringToUint64: ASCII digits (one optional '+'), no space, no '_', no sign '-', below 2**64."""
+    text = str(args.get(key, ""))
+    if not re.fullmatch(r"\+?[0-9]+", text):
         return None
-    return v if v >= 0 else None
+    v = int(text)
+    return v if v < 2 ** 64 else None
 
 
 def _cut(args):
@@ -58,12 +60,15 @@ def _site_ok(site, top_site, counts):
     if not site:  # a worker (ws) or an unattributed request: kept, counted apart
         counts["no_site"] += 1
         return True
-    return site == top_site
+    if site == top_site:
+        counts["matched"] += 1
+        return True
+    return False
 
 
 def assemble(events, top_site=""):
     """(requests, frames, counts) in observe_drive's record shapes. Mirrors DecodeTables' loader join."""
-    counts = dict.fromkeys(("http", "ws", "partial", "missing", "cut", "file", "no_site", "ws_undecodable"), 0)
+    counts = dict.fromkeys(("http", "ws", "partial", "missing", "cut", "file", "no_site", "ws_undecodable", "matched"), 0)
     loaders = {}
     frames = []
     for ev in events:
@@ -123,8 +128,9 @@ def assemble(events, top_site=""):
         rec = {"url": "http://" + str(http.get("endpoint", "")), "method": http.get("method", "POST"),
                "content_type": http.get("content_type", ""), "initiator": "", "via": "trace", "cut": ld["cut"]}
         if not body:
-            if ld["files"]:
-                continue  # file elements only: their bytes are never read, nothing to decode
+            if ld["files"]:  # file elements only: a row of kind file, their bytes are never read
+                requests.append({**rec, "body_b64": "", "missing": False, "file": True})
+                continue
             counts["missing"] += 1
             requests.append({**rec, "body_b64": "", "missing": True})
         elif gap:
@@ -159,9 +165,15 @@ def main(argv=None):
         print(f"UNMEASURED site: {e}")
         return 3
     requests, frames, counts = assemble(events, a.top_site)
-    if a.top_site and not (counts["http"] or counts["ws"] or counts["ws_undecodable"]):
+    if a.top_site and not counts["matched"]:  # sends with no site (workers) do not count as a match
         n = sum(e["name"] in ("camou.send.http", "camou.send.ws") for e in events)
         print(f"UNMEASURED: --top-site matched none of the {n} send(s) (use the SchemefulSite form: scheme://host, no port, registrable domain)")
+        return 2
+    if not (counts["http"] or counts["ws"]):
+        print("UNMEASURED: no usable send (only orphan bodies, requests with no elements or undecodable messages)")
+        return 2
+    if not counts["ws"] and not any(not r.get("missing") for r in requests):
+        print(f"UNMEASURED: every request was partial or missing (partial {counts['partial']}, missing {counts['missing']}) and no ws message")
         return 2
     truth = json.loads(pathlib.Path(a.truth).read_text(encoding="utf-8"))
     out = pathlib.Path(a.out)
