@@ -513,3 +513,39 @@ def test_launch_passes_light_through(monkeypatch):
     pw = FakePlaywright()
     camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p", light=True)
     assert "--x-light" in pw.chromium.kw["args"]
+
+
+@pytest.mark.parametrize("stamp,config,bad", [
+    ({"version": "157.0.8103.51"}, {"webGpu:blocked": True}, ["webGpu:blocked"]),  # a -7-like stamp: RED
+    ({"version": "157.0.8103.51"}, {"ua:platform": "Windows", "future:key": 1}, []),
+    ({"version": "v", "config_keys": ["ua:platform", "webGpu:blocked"]}, {"webGpu:blocked": True, "ua:platform": "Windows"}, []),
+    ({"version": "v", "config_keys": ["ua:platform"]}, {"zz:new": 1, "aa:new": 2, "ua:platform": "Windows"}, ["aa:new", "zz:new"]),
+    (None, {"webGpu:blocked": True, "zz:new": 1}, []),  # no stamp: a dev build
+    ({"version": "157.0.8103.51"}, None, []),
+])
+def test_check_archive_fails_closed_on_keys_the_browser_does_not_know(tmp_path, stamp, config, bad):
+    if stamp is not None:
+        (tmp_path / "camoucrome-release.json").write_text(json.dumps(stamp))
+    exe = tmp_path / "chrome"
+    if bad:
+        with pytest.raises(ValueError) as e:
+            camoucrome.launcher.check_archive(exe, config)
+        assert all(k in str(e.value) for k in bad)
+    else:
+        camoucrome.launcher.check_archive(exe, config)
+
+
+def test_launch_runs_the_archive_check_before_spawning(tmp_path):
+    (tmp_path / "camoucrome-release.json").write_text('{"version": "v"}')
+    with pytest.raises(ValueError, match="webGpu:blocked"):
+        camoucrome.launch(None, tmp_path / "chrome", config={"webGpu:blocked": True})
+
+
+def test_check_archive_follows_a_symlinked_exe(tmp_path):
+    arch, link = tmp_path / "a", tmp_path / "l"
+    arch.mkdir(); link.mkdir()
+    (arch / "camoucrome-release.json").write_text('{"version": "v"}')
+    (arch / "chrome").write_bytes(b"")
+    (link / "chrome").symlink_to(arch / "chrome")
+    with pytest.raises(ValueError, match="webGpu:blocked"):
+        camoucrome.launcher.check_archive(link / "chrome", {"webGpu:blocked": True})

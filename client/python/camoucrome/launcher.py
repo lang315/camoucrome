@@ -157,6 +157,26 @@ def config_env(raw, name="CAMOU_CONFIG"):
     return {f"{name}_{n}": c for n, c in enumerate(chunks, 1)}
 
 
+def check_archive(executable_path, config=None):
+    """Fail closed on a config key the browser would silently ignore (an unknown key only logs
+    a warning, even under strict mode). Reads camoucrome-release.json beside the executable:
+    config_keys listed -> any other key raises; a stamp from before config_keys -> webGpu:blocked
+    raises; no stamp (a dev build) -> allowed."""
+    stamp_path = os.path.join(os.path.dirname(os.path.realpath(str(executable_path))), "camoucrome-release.json")
+    if not os.path.exists(stamp_path):
+        return
+    with open(stamp_path) as f:
+        stamp = json.load(f)
+    keys = _as_dict(config)
+    known = stamp.get("config_keys")
+    if known is None:
+        unknown = [k for k in ("webGpu:blocked",) if k in keys]
+    else:
+        unknown = sorted(set(keys) - set(known))
+    if unknown:
+        raise ValueError(f"browser {stamp.get('version')} does not know config keys: {', '.join(unknown)}")
+
+
 def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None,
               crash_dir=None, host_os=None):
     """The child environment: every CAMOU_* of the parent dropped, then the
@@ -310,6 +330,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
         raise ValueError(
             f"{sorted(bad)} must come through CAMOU_CONFIG, not the driver: "
             "a second emulation of the same surface fights the fork's value")
+    check_archive(executable_path, config)
     keys = effective_keys(config, preset)
     outer = (keys.get("window.outerWidth"), keys.get("window.outerHeight"))
     # shortcut: no window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it

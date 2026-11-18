@@ -363,6 +363,13 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 	if _, err := effectiveKeys(o.Config, o.Preset); err != nil {
 		return nil, err
 	}
+	cfg, err := asObject(o.Config)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkArchive(o.ExecutablePath, cfg); err != nil {
+		return nil, err
+	}
 	env := map[string]string{}
 	for _, kv := range base {
 		k, v, _ := strings.Cut(kv, "=")

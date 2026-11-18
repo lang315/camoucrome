@@ -40,6 +40,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -167,6 +168,21 @@ def leak_scan(staging, scan=True):
     return f"scanned:{len(terms)} groups"
 
 
+def config_keys(src):
+    """The key strings the binary knows, for the stamp. The binary knows kAllKeys in the built tree's
+    keys.h, not settings/keys.json: refuse when the two name different keys."""
+    registry = json.loads((ROOT / "settings" / "keys.json").read_text())["keys"]
+    header = (src / "components" / "camoucfg" / "keys.h").read_text()
+    m = re.search(r"kAllKeys\s*=\s*\{(.*?)\};", header, re.S)
+    if not m:
+        sys.exit("refusing: no kAllKeys in the built tree's components/camoucfg/keys.h")
+    built, declared = set(re.findall(r"\bk\w+", m.group(1))), {k["name"] for k in registry}
+    if built != declared:
+        sys.exit(f"refusing: the built tree's keys.h and settings/keys.json differ "
+                 f"(only in keys.h: {sorted(built - declared)}, only in keys.json: {sorted(declared - built)})")
+    return sorted(k["key"] for k in registry)
+
+
 def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False, scan=True):
     args = read_args_gn(out)
     # GN's default is is_component_build = is_debug, and is_debug defaults to
@@ -249,6 +265,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
         "changeset_commit": changeset_commit(changeset),
         "branch_tip": git(src, "rev-parse", "HEAD"), "tree_fingerprint": fingerprint,
+        "config_keys": config_keys(src),
         "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
         "leak_scan": scanned, "credits_placeholder": placeholder,
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),

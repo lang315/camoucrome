@@ -347,3 +347,28 @@ test('light puts light args after base args and off changes nothing', () => {
     c.LIGHT_ARGS.splice(0, c.LIGHT_ARGS.length, ...saved);
   }
 });
+
+test('checkArchive fails closed on config keys the browser does not know', () => {
+  const os = require('os');
+  const run = (stamp, config) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'camou-arch-'));
+    if (stamp) fs.writeFileSync(path.join(dir, 'camoucrome-release.json'), JSON.stringify(stamp));
+    return () => c.checkArchive(path.join(dir, 'chrome'), config);
+  };
+  assert.throws(run({ version: 'v' }, { 'webGpu:blocked': true }), /webGpu:blocked/); // a -7-like stamp: RED
+  run({ version: 'v' }, { 'ua:platform': 'Windows', 'future:key': 1 })();
+  run({ version: 'v', config_keys: ['webGpu:blocked'] }, { 'webGpu:blocked': true })();
+  assert.throws(run({ version: 'v', config_keys: ['ua:platform'] }, { 'zz:new': 1, 'aa:new': 2 }), /aa:new, zz:new/);
+  run(null, { 'webGpu:blocked': true })(); // no stamp: a dev build
+  run({ version: 'v' }, undefined)();
+});
+
+test('checkArchive reads the stamp beside a symlinked exe\'s target', () => {
+  const os = require('os');
+  const arch = fs.mkdtempSync(path.join(os.tmpdir(), 'camou-arch-'));
+  const link = fs.mkdtempSync(path.join(os.tmpdir(), 'camou-link-'));
+  fs.writeFileSync(path.join(arch, 'camoucrome-release.json'), '{"version":"v"}');
+  fs.writeFileSync(path.join(arch, 'chrome'), '');
+  fs.symlinkSync(path.join(arch, 'chrome'), path.join(link, 'chrome'));
+  assert.throws(() => c.checkArchive(path.join(link, 'chrome'), { 'webGpu:blocked': true }), /webGpu:blocked/);
+});

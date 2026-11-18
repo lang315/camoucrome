@@ -228,7 +228,7 @@ host, _ := core.ProbeHost()                 // cores, work area, platform versio
 host.Display = display                      // see below; store it per machine
 id, _ := core.Draw("windows", nil, &host)   // once per account; store the JSON (core.Identity)
 r, err := core.Resolve(id, host, &core.Exit{Timezone: "Europe/Berlin", Country: "DE"}) // every launch
-env, cleanup, _ := core.Env(r, core.LaunchOpts{Strict: true}, os.Environ())
+env, cleanup, err := core.Env(r, core.LaunchOpts{Strict: true, ExecutablePath: exe}, os.Environ()) // exe: the archive's chrome[.exe]; check err
 argv := core.Argv(r, core.LaunchOpts{UserDataDir: dir, Headless: true})
 err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
 ```
