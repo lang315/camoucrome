@@ -57,3 +57,4 @@ webgl-noise-keys.patch
 canvas-text-no-offset.patch
 mask-lazy-cpu-gate.patch
 canvas-walk-fastpath.patch
+webgpu-blocked.patch

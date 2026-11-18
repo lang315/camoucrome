@@ -1,0 +1,41 @@
+diff --git a/third_party/blink/renderer/modules/webgpu/BUILD.gn b/third_party/blink/renderer/modules/webgpu/BUILD.gn
+index f883ab27a4..fd25c7e19e 100644
+--- a/third_party/blink/renderer/modules/webgpu/BUILD.gn
++++ b/third_party/blink/renderer/modules/webgpu/BUILD.gn
+@@ -111,6 +111,7 @@ blink_modules_sources("webgpu") {
+     "wgsl_language_features.h",
+   ]
+   deps = [
++    "//components/camoucfg",
+     "//gpu/command_buffer/client:webgpu_interface",
+     "//services/metrics/public/cpp:ukm_builders",
+     "//skia",
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu.cc b/third_party/blink/renderer/modules/webgpu/gpu.cc
+index 74daeb175a..abf5f39ef7 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu.cc
+@@ -10,6 +10,9 @@
+ #include "base/metrics/histogram_macros.h"
+ #include "base/notreached.h"
+ #include "base/synchronization/waitable_event.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/keys.h"
++#include "components/camoucfg/mask_config.h"
+ #include "gpu/command_buffer/client/webgpu_interface.h"
+ #include "gpu/config/gpu_finch_features.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+@@ -198,6 +201,14 @@ void GPU::OnRequestAdapterCallback(
+ 
+   switch (status) {
+     case wgpu::RequestAdapterStatus::Success:
++      // camoucrome: a claimed GPU that is not the host's resolves null, as on a blocked device. The request has completed,
++      // so the round trip is the real one. The warning is the text RequestAdapterImpl gives a blocked device (the lambda
++      // that runs when CheckContextProvider returns null: "Failed to create WebGPU Context Provider").
++      if (camoucfg::GetBool(camoucfg::ScopeFor(ExecutionContext::From(script_state)), camoucfg::keys::kWebGpuBlocked)
++              .value_or(false)) {
++        error_message = "Failed to create WebGPU Context Provider";
++        break;
++      }
+       gpu_adapter = MakeGarbageCollected<GPUAdapter>(
+           this, std::move(adapter), dawn_control_client_, options);
+       break;
