@@ -32,7 +32,9 @@ def main():
     from camoucrome import gen, geoip
     # cores: the claim and the snapped result both come out of gen.generate (from_pool's host_cores line)
     cores, seen = [], set()
-    for seed in range(1, 61):
+    # 200 seeds, not 60: once gen.py redraws samples with no drawable GPU, seeds 1..60 draw only 11 distinct claims
+    # (352 rows), below the Go guard of 400 (12.5 claims x 32 hosts); seeds 1..200 draw 17 (544 rows).
+    for seed in range(1, 201):
         claim = gen.generate(d.OS, seed=seed, host_cores=1024)["config"]["navigator.hardwareConcurrency"]
         for host in range(1, 33):
             if (claim, host) in seen:

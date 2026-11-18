@@ -276,10 +276,14 @@ def _webgl_keys(ident):
     return [k for k in ident["config"] if k.startswith(("webGl:", "webGl2:"))]
 
 
-def test_the_identity_claims_no_gpu_without_a_host_probe_and_on_a_non_gen9_host():
+def test_the_identity_claims_a_gpu_and_blocks_webgpu_unless_it_is_the_hosts():
+    """Since the GPU claim every Windows identity claims one; layer-3 host baselines now run with a claim."""
     a = ns(aa=False, no_identity=False, identity_seed=13, timezone="Europe/Paris", locale="fr-FR")
-    assert _webgl_keys(ml.build_identity(a)) == []
-    assert _webgl_keys(ml.build_identity(a, {"host_renderer": RTX_HOST})) == []
+    for host in (None, {"host_renderer": RTX_HOST}):
+        cfg = ml.build_identity(a, host)["config"]
+        assert sorted(_webgl_keys(ml.build_identity(a, host))) == ["webGl2:renderer", "webGl2:vendor", "webGl:renderer", "webGl:vendor"]
+        assert cfg["webGpu:blocked"] is True
+        assert not any(k.endswith((":parameters", ":supportedExtensions", ":shaderPrecisionFormats")) for k in cfg)
 
 
 def test_the_identity_draws_a_gen9_gpu_on_a_gen9_host():

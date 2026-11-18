@@ -544,9 +544,9 @@ def read_results(run_dir):
 def build_identity(a, host_draw=None):
     """The fork's generated identity, in the HOST's zone and locale: stock reports the real host zone and the proxy exits in
     the host region, so an identity in another zone would contradict its IP in the fork arm only (spec 3.3).
-    `host_draw` is measure_step2.probe_host_draw(): the host's renderer, fonts, display and Windows build. Without it the
-    identity claims no GPU (gen.gpu_for fails closed); the run passes it, so a Gen9 host draws a Gen9 identity and any other
-    host keeps its real GPU."""
+    `host_draw` is measure_step2.probe_host_draw(): the host's renderer, fonts, display and Windows build. Every Windows
+    identity claims a GPU (the fingerprint's own); the run passes the host's renderer, so webGpu:blocked is false only when the
+    claim is the host's (or both are Gen9)."""
     if a.aa or a.no_identity:
         return None
     if not (a.timezone and a.locale):

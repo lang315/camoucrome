@@ -84,7 +84,8 @@ OS_FORMS = {
 }
 OS_ARG = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
 TASKBAR = {"Windows": 40, "macOS": 25, "Linux": 27}
-MAX_DRAWS = 50
+# 200: the gpu_class rejects make 50 misses about 1 in 12,500 per --light identity; a draw that succeeds within 50 never reaches the extra ones, so no seed moves.
+MAX_DRAWS = 200
 # Measured 2026-09-10 (headless chrome, --window-size WxH, --force-device-
 # scale-factor D, sizes 1528/1600/2048): at D = 1.25 and 1.75 the window
 # comes back exactly 2 px larger on both axes (1528 -> 1530, 2048 -> 2050),
@@ -149,15 +150,6 @@ def load_profiles():
     """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
     return {p.stem: json.loads(p.read_text(encoding="utf-8"))
             for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith(("-pool", "-thread-caps"))}
-
-
-GL_ENUM = {"VERTEX_SHADER": 35633, "FRAGMENT_SHADER": 35632, "LOW_FLOAT": 36336, "MEDIUM_FLOAT": 36337,
-           "HIGH_FLOAT": 36338, "LOW_INT": 36339, "MEDIUM_INT": 36340, "HIGH_INT": 36341}
-
-
-def precision_keys(spf):
-    """Profile cells "VERTEX_SHADER/HIGH_FLOAT" -> the key's "<shadertype>:<precisiontype>" decimal form."""
-    return {f"{GL_ENUM[s]}:{GL_ENUM[p]}": v for (s, p), v in ((k.split("/"), v) for k, v in spf.items())}
 
 
 def gpu_keys(vendor, renderer, host_renderer):
@@ -481,8 +473,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     profile, warn = gpu_for(platform, host_renderer, rng, gpu, fp)
     if profile:
         keys = gpu_keys(profile["vendor"], profile["renderer"], host_renderer)
-        if platform != "Windows":
-            del keys["webGpu:blocked"]  # an Apple claim is only ever made on its own host
+        if platform != "Windows" and not gpu:
+            del keys["webGpu:blocked"]  # the Apple claim without --gpu is only ever made on its own host; --gpu is the opt-in
         config.update(keys)
         cap = gen9_thread_cap(profile["renderer"]) if gpu_class(profile["renderer"]) == "igpu-gen9" else None
         if cap is not None and config["navigator.hardwareConcurrency"] > cap:

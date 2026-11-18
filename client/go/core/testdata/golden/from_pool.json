@@ -35,6 +35,11 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 0,
    "mediaDevices:speakers": 1,
+   "webGl:vendor": "Google Inc. (Intel)",
+   "webGl:renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGl2:vendor": "Google Inc. (Intel)",
+   "webGl2:renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -843,6 +848,11 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 0,
    "mediaDevices:speakers": 1,
+   "webGl:vendor": "Google Inc. (Intel)",
+   "webGl:renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGl2:vendor": "Google Inc. (Intel)",
+   "webGl2:renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -1765,9 +1775,7 @@
   },
   "args": [],
   "dpr": 1.25,
-  "warnings": [
-   "host GPU unknown: the GPU is shared by every profile on this host; the real GPU is kept"
-  ]
+  "warnings": []
  },
  {
   "seed": 222,
@@ -1804,6 +1812,11 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 0,
    "mediaDevices:speakers": 1,
+   "webGl:vendor": "Google Inc. (NVIDIA)",
+   "webGl:renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 (0x00002507) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGl2:vendor": "Google Inc. (NVIDIA)",
+   "webGl2:renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 (0x00002507) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -2621,6 +2634,11 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 0,
    "mediaDevices:speakers": 1,
+   "webGl:vendor": "Google Inc. (NVIDIA)",
+   "webGl:renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 (0x00002507) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGl2:vendor": "Google Inc. (NVIDIA)",
+   "webGl2:renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3050 (0x00002507) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -3556,7 +3574,6 @@
   ],
   "dpr": 1.5,
   "warnings": [
-   "host GPU unknown: the GPU is shared by every profile on this host; the real GPU is kept",
    "host display is 10-bit, hdr: no lever hides it, every profile shows it"
   ]
  },
@@ -3572,7 +3589,7 @@
    "ua:mobile": false,
    "ua:wow64": false,
    "ua:brand": "Google Chrome",
-   "navigator.hardwareConcurrency": 12,
+   "navigator.hardwareConcurrency": 4,
    "navigator.deviceMemory": 8,
    "navigator.maxTouchPoints": 10,
    "screen.width": 1440,
@@ -3596,6 +3613,11 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 1,
    "mediaDevices:speakers": 1,
+   "webGl:vendor": "Google Inc. (Intel)",
+   "webGl:renderer": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGl2:vendor": "Google Inc. (Intel)",
+   "webGl2:renderer": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -4376,7 +4398,7 @@
    "ua:mobile": false,
    "ua:wow64": false,
    "ua:brand": "Google Chrome",
-   "navigator.hardwareConcurrency": 12,
+   "navigator.hardwareConcurrency": 4,
    "navigator.deviceMemory": 8,
    "navigator.maxTouchPoints": 10,
    "screen.width": 1440,
@@ -4400,6 +4422,11 @@
    "mediaDevices:micros": 1,
    "mediaDevices:webcams": 1,
    "mediaDevices:speakers": 1,
+   "webGl:vendor": "Google Inc. (Intel)",
+   "webGl:renderer": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGl2:vendor": "Google Inc. (Intel)",
+   "webGl2:renderer": "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webGpu:blocked": true,
    "fonts:list": [
     "Arial",
     "Arial Black",
@@ -5322,8 +5349,6 @@
   },
   "args": [],
   "dpr": 1,
-  "warnings": [
-   "host GPU unknown: the GPU is shared by every profile on this host; the real GPU is kept"
-  ]
+  "warnings": []
  }
 ]

@@ -54,3 +54,17 @@ def test_gpu_claim_keeps_other_keys():
     for seed, want in fixture.items():
         got = gen.generate("windows", seed=int(seed), host_cores=1024)["config"]
         assert {k: v for k, v in got.items() if not k.startswith(("webGl:", "webGl2:", "webGpu:"))} == want
+
+
+def test_light_identities_always_generate():
+    for s in range(1, 301):
+        gen.generate("windows", seed=s, light=True, host_cores=1024)
+
+
+def test_gpu_opt_in_apple_profile_is_blocked_on_a_host_that_is_not_that_part():
+    mac = gen.profile_for("macOS")["renderer"]
+    cfg = gen.generate("macos", seed=4, gpu="macos-apple-m1-pro-metal", host_renderer=NV)["config"]
+    assert cfg["webGl:renderer"] == mac and cfg["webGpu:blocked"] is True
+    cfg = gen.generate("macos", seed=4, gpu="macos-apple-m1-pro-metal", host_renderer=mac)["config"]
+    assert cfg["webGpu:blocked"] is False
+    assert "webGpu:blocked" not in gen.generate("macos", seed=4, host_renderer=mac)["config"]  # no --gpu: Apple host only, no flag

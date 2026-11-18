@@ -6,17 +6,18 @@ run-interactive.ps1 in session 1, launches three arms from a loopback page (a se
 
   stock  the frozen stock chrome (CAMOU_STOCK_APP), a seeded profile
   F0     the fork, no config
-  FB     the fork under a generated Windows identity with webGpu:blocked = true
+  FN     the fork under a generated Windows identity with webGpu:blocked = false (FB's config, the key flipped)
+  FB     the fork under the same identity with webGpu:blocked = true
 
   1  F0: requestAdapter() is non-null in the window and in a dedicated worker (the RED control: it proves the
      check can see an adapter; a null here is UNMEASURED, never a PASS for row 2)
-  2  FB: null in both, and the promise resolves (no rejection)
-  3  FB's first (cold) request takes >= 0.8 x F0's first (the null comes through the real round trip; the minimum of
-     30 is 0 ms once the adapter is cached, so it cannot show this; a F0 first of 0 is UNMEASURED)
+  2  FB: null in both, and the promise resolves (no rejection); FN, the same config with the key false, is non-null in
+     both, so the null is credited to the key alone
+  3  (record only) cold first request, n=1, dominated by context-provider setup: stock, F0, FN, FB
   4  FB: UNMASKED_RENDERER_WEBGL equals the claim in the window and in a worker OffscreenCanvas
   5  FB: Object.getOwnPropertyNames(GPU.prototype) and requestAdapter.toString() equal stock's
   6  WebNN (record only): navigator.ml and createContext({deviceType: "gpu"}) in stock, F0 and FB
-  7  FB: the console warning text (record only; read from the browser's log file)
+  7  FB: the console warning text is in the browser's log file (FAIL when the log is there and the text is not)
 
 Every row is PASS, FAIL or UNMEASURED. A GPU process crash count above 0 (gpu_gate), a missing report, or a null
 adapter in F0 is UNMEASURED (exit 3). --selftest feeds canned readings through rows() and needs no browser.
@@ -33,7 +34,6 @@ import time
 PAGE_TIMEOUT_S = 120
 IDENTITY_SEED = 1000
 REQUESTS = 30
-LATENCY_FLOOR = 0.8
 CONSOLE_TEXT = "Failed to create WebGPU Context Provider"
 
 PAGE = """<!doctype html><meta charset=utf-8><title>webgpu-blocked</title><body><script>
@@ -92,7 +92,7 @@ def rows(readings, claim, logs=None):
     report (None when it never reported) plus a "crash" count from gpu_gate; `claim` is FB's webGl:renderer."""
     out = []
     unm = {}
-    for arm in ("stock", "F0", "FB"):
+    for arm in ("stock", "F0", "FN", "FB"):
         r = readings.get(arm)
         if r is None or r.get("errors"):
             unm[arm] = f"{arm}: no reading (no report, or a page error)"
@@ -106,20 +106,14 @@ def rows(readings, claim, logs=None):
         both = not f0["win"]["isNull"] and not f0["worker"]["isNull"]
         out.append((r1, True if both else None, None if both else "F0 adapter is null: this host cannot show an adapter"))
     red_control = out[0][1] is True
-    fb = readings.get("FB")
-    r2 = "2 FB (webGpu:blocked): null in the window and the worker, both resolve (no rejection)"
-    if "FB" in unm or not red_control:
-        why = unm.get("FB") or "row 1 is not PASS, so a null here proves nothing"
-        out += [(r2, None, why)]
+    fb, fn = readings.get("FB"), readings.get("FN")
+    r2 = "2 FB (webGpu:blocked): null in the window and the worker, both resolve; FN (same config, key false) non-null in both"
+    if "FB" in unm or "FN" in unm or not red_control:
+        out.append((r2, None, unm.get("FB") or unm.get("FN") or "row 1 is not PASS, so a null here proves nothing"))
     else:
-        out.append((r2, fb["win"]["isNull"] and fb["worker"]["isNull"] and not fb["win"]["rej"] and not fb["worker"]["rej"], None))
-    r3 = f"3 FB latency: first (cold) request >= {LATENCY_FLOOR} x F0's first (window)"
-    if "FB" in unm or "F0" in unm or not red_control:
-        out.append((r3, None, unm.get("FB") or unm.get("F0") or "row 1 is not PASS"))
-    elif not f0["win"]["first"] > 0:
-        out.append((r3, None, "F0's first request measured 0 ms: the clock cannot show a round trip"))
-    else:
-        out.append((r3, fb["win"]["first"] >= LATENCY_FLOOR * f0["win"]["first"], None))
+        nulls = fb["win"]["isNull"] and fb["worker"]["isNull"] and not fb["win"]["rej"] and not fb["worker"]["rej"]
+        control = not fn["win"]["isNull"] and not fn["worker"]["isNull"]
+        out.append((r2, nulls and control, None))
     r4 = "4 FB: UNMASKED_RENDERER_WEBGL equals the claim in the window and in a worker OffscreenCanvas"
     if "FB" in unm:
         out.append((r4, None, unm["FB"]))
@@ -133,40 +127,48 @@ def rows(readings, claim, logs=None):
     else:
         out.append((r5, fb["protoNames"] == readings["stock"]["protoNames"]
                     and fb["reqToString"] == readings["stock"]["reqToString"], None))
+    r7 = f"7 FB: the console warning {CONSOLE_TEXT!r} is in the browser log"
+    log = (logs or {}).get("FB")
+    if "FB" in unm or not log:
+        out.append((r7, None, unm.get("FB") or "no browser log was read"))
+    else:
+        out.append((r7, CONSOLE_TEXT in log, None))
     return out
 
 
 def notes(readings, logs):
     lines = []
-    for arm in ("stock", "F0", "FB"):
+    for arm in ("stock", "F0", "FN", "FB"):
         r = readings.get(arm) or {}
         lines.append(f"6 WebNN {arm}: {json.dumps(r.get('ml'), sort_keys=True)}")
-    lines.append(f"7 console text with the key: {'present' if CONSOLE_TEXT in (logs or {}).get('FB', '') else 'absent'} "
-                 f"({CONSOLE_TEXT!r})")
-    lines.append(f"  latency min ms: " + ", ".join(
-        f"{a}=first {((readings.get(a) or {}).get('win') or {}).get('first')} min {((readings.get(a) or {}).get('win') or {}).get('min')}" for a in ("stock", "F0", "FB")))
+    lines.append("3 INFO cold first request, n=1, dominated by context-provider setup (ms): " + ", ".join(
+        f"{a}={((readings.get(a) or {}).get('win') or {}).get('first')}" for a in ("stock", "F0", "FN", "FB")))
     return lines
 
 
 def selftest():
-    """The RED the brief names: a null adapter in F0 makes row 1 UNMEASURED, and rows 2 and 3 with it."""
+    """The RED the brief names: a null adapter in F0 makes row 1 UNMEASURED, and row 2 with it."""
     def arm(null, mn, ren="R", crash=0):
         side = {"isNull": null, "rej": None, "min": mn, "first": mn}
         return {"win": side, "worker": dict(side), "winRenderer": ren, "workerRenderer": ren,
                 "protoNames": ["a", "b"], "reqToString": "function requestAdapter() { [native code] }",
                 "ml": {"exists": False}, "errors": [], "crash": crash}
-    good = {"stock": arm(False, 10), "F0": arm(False, 10), "FB": arm(True, 9)}
-    v = {n: ok for n, ok, _ in rows(good, "R")}
-    assert list(v.values()) == [True] * 5, v
-    nullf0 = dict(good, F0=arm(True, 10))
-    assert [ok for _, ok, _ in rows(nullf0, "R")][:3] == [None, None, None], "a null F0 adapter must be UNMEASURED"
-    assert rows(dict(good, FB=arm(True, 9, crash=1)), "R")[1][1] is None, "a GPU crash must be UNMEASURED"
-    assert rows(dict(good, FB=arm(False, 9)), "R")[1][1] is False, "a non-null adapter under the key must FAIL"
-    assert rows(dict(good, FB=arm(True, 1)), "R")[2][1] is False, "a too-fast null must FAIL the latency row"
-    assert rows(dict(good, F0=arm(False, 0)), "R")[2][1] is None, "a zero F0 first request must be UNMEASURED"
-    assert rows(good, "other")[3][1] is False, "a renderer that is not the claim must FAIL"
-    assert rows(dict(good, FB={**arm(True, 9), "protoNames": ["a"]}), "R")[4][1] is False
-    assert rows(dict(good, stock=None), "R")[4][1] is None
+    good = {"stock": arm(False, 10), "F0": arm(False, 10), "FN": arm(False, 10), "FB": arm(True, 9)}
+    logs = {"FB": "x " + CONSOLE_TEXT}
+    names = [n for n, _, _ in rows(good, "R", logs)]
+    assert [n[0] for n in names] == ["1", "2", "4", "5", "7"], names
+    assert [ok for _, ok, _ in rows(good, "R", logs)] == [True] * 5
+    ok = lambda r, i, **kw: rows(r, "R", kw.get("logs", logs))[i][1]  # noqa: E731
+    assert ok(dict(good, F0=arm(True, 10)), 0) is None and ok(dict(good, F0=arm(True, 10)), 1) is None, "a null F0 must be UNMEASURED"
+    assert ok(dict(good, FB=arm(True, 9, crash=1)), 1) is None, "a GPU crash must be UNMEASURED"
+    assert ok(dict(good, FB=arm(False, 9)), 1) is False, "a non-null adapter under the key must FAIL"
+    assert ok(dict(good, FN=arm(True, 9)), 1) is False, "a null with the key false must FAIL: the null is not the key's"
+    assert ok(dict(good, FN=None), 1) is None
+    assert rows(good, "other", logs)[2][1] is False, "a renderer that is not the claim must FAIL"
+    assert ok(dict(good, FB={**arm(True, 9), "protoNames": ["a"]}), 3) is False
+    assert ok(dict(good, stock=None), 3) is None
+    assert ok(good, 4, logs={"FB": "no warning here"}) is False, "a missing console text must FAIL"
+    assert ok(good, 4, logs={"FB": ""}) is None, "an unread log is UNMEASURED"
     print("selftest: PASS")
     return 0
 
@@ -223,6 +225,7 @@ def main(argv):
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     ident = m2.identity(IDENTITY_SEED)
     cfg = dict(ident["config"], **{"webGpu:blocked": True})
+    cfg_fn = dict(cfg, **{"webGpu:blocked": False})
     claim = cfg.get("webGl:renderer")
     logs = {}
 
@@ -240,13 +243,14 @@ def main(argv):
             argv_ = [fork_exe, *launcher.BASE_ARGS, f"--user-data-dir={udd}", *dbg]
             env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
         else:
+            cfg_arm = cfg_fn if arm == "FN" else cfg
             udd = tempfile.mkdtemp(prefix="wgb-")
             lo = ident["launch"]
             args = launcher.build_args(tuple(lo["window"]) if lo.get("window") else None, lo.get("dpr"),
-                                       lo.get("args", []), False, udd, launcher.accept_lang_of(cfg),
+                                       lo.get("args", []), False, udd, launcher.accept_lang_of(cfg_arm),
                                        position=tuple(lo["position"]) if lo.get("position") else None)
             argv_ = [fork_exe] + [x for x in args if x != "--remote-debugging-pipe"] + dbg
-            env = launcher.build_env(cfg, fontconfig=launcher.fontconfig_for(cfg, None, None, fork_exe))
+            env = launcher.build_env(cfg_arm, fontconfig=launcher.fontconfig_for(cfg_arm, None, None, fork_exe))
         proc = subprocess.Popen(argv_ + [url], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             deadline = time.monotonic() + PAGE_TIMEOUT_S
@@ -271,11 +275,11 @@ def main(argv):
 
     readings = {}
     with m2.seeded_control(stock_exe):
-        for arm in ("stock", "F0", "FB"):
+        for arm in ("stock", "F0", "FN", "FB"):
             readings[arm] = launch(arm)
             print(f"      {arm}: {json.dumps({k: v for k, v in (readings[arm] or {}).items() if k != 'protoNames'}, sort_keys=True)}",
                   flush=True)
-    verdicts = rows(readings, claim)
+    verdicts = rows(readings, claim, logs)
     for line in notes(readings, logs):
         print("      " + line)
     unm = False
