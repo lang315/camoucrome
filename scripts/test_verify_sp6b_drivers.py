@@ -83,7 +83,7 @@ class JudgeRowTest(unittest.TestCase):
                "timesMs": [1.0], "ua": "ua"}
         base = {"windowKeys": [], "ownNames": 0, "timesMs": [1.0]}
         return v.judge_row(d[0], d[1], d[3] if len(d) > 3 else {},
-                           {"report": rep, "argv": []}, log, base)
+                           {"report": rep, "argv": []}, log, base)[:2]
 
     def test_old_three_tuple_row(self):
         ok, lines = self.judge("go-stock", 5, 0)
@@ -94,6 +94,23 @@ class JudgeRowTest(unittest.TestCase):
         self.assertTrue(any("ok   C1" in l for l in lines))
 
 
+
+
+class TimingOnlyTest(unittest.TestCase):
+    """Which rows get the one C5 retry in main()."""
+    C5 = "C5 stack timing within 15% of baseline"
+
+    def test_green_row_failing_only_c5_is_retried(self):
+        self.assertTrue(v.timing_only("GREEN", {"C1 x": (True, ""), self.C5: (False, "")}))
+
+    def test_c5_with_another_failure_is_not_retried(self):
+        self.assertFalse(v.timing_only("GREEN", {"C1 x": (False, ""), self.C5: (False, "")}))
+
+    def test_red_row_is_not_retried(self):
+        self.assertFalse(v.timing_only("RED", {"C1 x": (True, ""), self.C5: (False, "")}))
+
+    def test_passing_row_is_not_retried(self):
+        self.assertFalse(v.timing_only("GREEN", {"C1 x": (True, ""), self.C5: (True, "")}))
 
 
 class StrayBrowserTest(unittest.TestCase):

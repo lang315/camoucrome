@@ -293,7 +293,15 @@ def judge_row(label, expected, opts, result, log, base):
     lines = [f"{'PASS' if ok else 'FAIL'}  {label} (expected {expected}; ua ...{result['report']['ua'][-28:]})"]
     for name, (r, n) in rows.items():
         lines.append(f"      {'ok  ' if r else 'FAIL'} {name}: {n}")
-    return ok, lines
+    return ok, lines, rows
+
+
+def timing_only(expected, rows):
+    """A GREEN row whose one failing row is C5. The baseline is taken at the start of the run, so load that starts
+    later moves it (2026-11-18: go-patchright +16% while a host job ran); such a row is measured once more against a
+    fresh baseline. A real Runtime.enable leak (+21%, D1) fails both times, and C1 counts it directly."""
+    failed = [n for n, (ok, _) in rows.items() if not ok]
+    return expected == "GREEN" and len(failed) == 1 and failed[0].startswith("C5")
 
 
 def missing_probe(cmd):
@@ -336,7 +344,18 @@ def main():
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False
             continue
-        ok, lines = judge_row(label, expected, opts[0] if opts else {}, result, log, base)
+        ok, lines, rows = judge_row(label, expected, opts[0] if opts else {}, result, log, base)
+        if timing_only(expected, rows):
+            print("\n".join(lines))
+            print(f"      retry {label}: only C5 failed; fresh baseline, then the probe once more")
+            base = baseline(url)
+            PROXY_SEEN.clear()
+            result, log = run_probe(cmd + proxy_args, url)
+            if result is None:
+                print(f"FAIL  {label}: probe did not run on the retry: {log}")
+                verdict = False
+                continue
+            ok, lines, rows = judge_row(label, expected, opts[0] if opts else {}, result, log, base)
         verdict &= ok
         print("\n".join(lines))
     srv.shutdown()
