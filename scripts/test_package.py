@@ -172,6 +172,7 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     (root / "settings" / "fontconfig" / "windows.conf").write_text("<fontconfig/>")
     (root / "settings" / "presets").mkdir()
     (root / "settings" / "launcher.json").write_text("{}")
+    (root / "settings" / "keys.json").write_text('{"keys": []}')
     (root / "LICENSE").write_text("mpl")
     (root / "additions" / "camoucfg_lgpl").mkdir(parents=True)
     (root / "additions" / "camoucfg_lgpl" / "LICENSE").write_text("lgpl")
@@ -525,3 +526,11 @@ def test_release_args_file_itself_passes_the_gate():
     # the committed file and the refusal cannot drift apart
     a = package.parse_args_gn((package.ROOT / "settings" / "release-args.gn").read_text())
     assert a["is_official_build"] == "true" and a["chrome_pgo_phase"] == "2"
+
+
+def test_stamp_lists_the_config_keys_of_keys_json(tree, tmp_path):
+    src, out, deps = tree
+    staging, stamp = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    want = sorted(k["key"] for k in json.loads((package.ROOT / "settings" / "keys.json").read_text())["keys"])
+    assert stamp["config_keys"] == want and "webGpu:blocked" in want
+    assert json.loads((tmp_path / "dist" / f"{stamp['name']}.release.json").read_text())["config_keys"] == want

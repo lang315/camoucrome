@@ -249,6 +249,7 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
         "chromium_tag": env["CHROMIUM_TAG"], "chromium_rev": env["CHROMIUM_REV"],
         "changeset_commit": changeset_commit(changeset),
         "branch_tip": git(src, "rev-parse", "HEAD"), "tree_fingerprint": fingerprint,
+        "config_keys": sorted(k["key"] for k in json.loads((ROOT / "settings" / "keys.json").read_text())["keys"]),
         "args_gn": args, "runtime_deps": len(deps), "fonts": bool(fonts),
         "leak_scan": scanned, "credits_placeholder": placeholder,
         "built": (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec="seconds"),
