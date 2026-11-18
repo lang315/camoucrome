@@ -63,6 +63,12 @@ KNOWN = {
     "mediaCap": ("host decodes H.264 in hardware (powerEfficient), the box has no decoder "
                  "(backlog: powerEfficient claim)",
                  lambda fork: fork.get("mediaCap") == [True, True, False]),
+    # Since #205 a GPU claim carries only the vendor/renderer strings, never a parameter table, so WebGL2 MAX_SAMPLES
+    # is the fork machine's own: SwiftShader's 4 on the box (this verify forces --use-angle=swiftshader), the host's
+    # Intel GPU 16. Excused only while the fork reads SwiftShader's 4, so any other value is compared again.
+    "webgl.maxSamples": ("a claim carries no WebGL parameter table since #205: the box reports SwiftShader's 4, the "
+                         "host its own GPU's 16",
+                         lambda fork: (fork.get("webgl") or {}).get("maxSamples") == 4),
 }
 # Leaves the committed baseline predates (recapture is host work). Known only while the baseline lacks them.
 NOT_IN_BASELINE = {"mediaCapAv1"}
@@ -84,7 +90,9 @@ KNOWN_PREFIX = {
     # (maxTextureDimension2D, maxComputeWorkgroupSizeX, maxBindGroups) that are compared exactly when an adapter
     # exists -- they have no fork-side value to compare. The backlog entry "WebGPU adapter identity" is where this
     # gets measured, on a machine with a GPU.
-    "gpu": ("box has no GPU, fork runs SwiftShader (backlog: WebGPU adapter identity)",
+    # Since #205 the generated identity (no host renderer given) also carries webGpu:blocked=true, so the adapter is
+    # null by design on any machine; the predicate still holds only while the fork reports no adapter.
+    "gpu": ("box has no GPU, fork runs SwiftShader; since #205 a claimed GPU also nulls the adapter (webGpu:blocked; backlog: WebGPU adapter identity)",
             lambda fork: fork.get("gpu") is None),
 }
 

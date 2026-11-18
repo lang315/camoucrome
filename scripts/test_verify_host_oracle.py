@@ -199,3 +199,12 @@ def test_read_pin_refuses_a_file_without_the_tag():
     import pytest
     with pytest.raises(ValueError):
         oracle_rules.read_pin("CHROMIUM_REV=abc\n")
+
+
+def test_maxsamples_is_excused_only_at_swiftshaders_value():
+    """#205: a claim carries no parameter table, so the box's SwiftShader 4 shows; any other value stays a DIFF."""
+    base = {"webgl": {"maxSamples": 16}}
+    diffs, _, _ = vho.compare(base, {"webgl": {"maxSamples": 4}})
+    assert not [d for d in diffs if d[0] == "webgl.maxSamples"]
+    diffs, _, _ = vho.compare(base, {"webgl": {"maxSamples": 8}})
+    assert [d for d in diffs if d[0] == "webgl.maxSamples"]
