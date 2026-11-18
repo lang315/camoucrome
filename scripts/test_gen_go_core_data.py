@@ -37,7 +37,15 @@ def test_compact_entry_rebuilds():
         # ... and the font keys come back from the groups
         for k, v in g.rebuild_fonts(fonts, groups).items():
             assert cfg[k] == v, (seed, k)
-        assert not any(k.startswith("webgl:") for k in cfg)  # no host renderer: gen claims no GPU
+
+
+def test_pool_entries_carry_gpu_claim():
+    pool = g.read_pool(g.DATA / "pool-windows.json.gz")
+    claim = {"webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked"}
+    for e in pool["entries"]:
+        assert claim <= set(e)
+        assert e["webGpu:blocked"] is True  # generated with no host renderer
+        assert not any(k.endswith((":parameters", ":supportedExtensions", ":shaderPrecisionFormats")) for k in e)
 
 
 def test_country_table_covers_iso():
