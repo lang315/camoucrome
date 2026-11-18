@@ -169,6 +169,9 @@ inline constexpr char kWebGlVendor[] = "webGl:vendor";
 inline constexpr char kWebGlRenderer[] = "webGl:renderer";
 inline constexpr char kWebGl2Vendor[] = "webGl2:vendor";
 inline constexpr char kWebGl2Renderer[] = "webGl2:renderer";
+
+// requestAdapter() resolves null, as on a device Chrome blocks; set by the launcher when the claimed GPU is not the host's
+inline constexpr char kWebGpuBlocked[] = "webGpu:blocked";
 inline constexpr char kWebGlParameters[] = "webGl:parameters";
 inline constexpr char kWebGl2Parameters[] = "webGl2:parameters";
 inline constexpr char kWebGlParamsBlock[] =
@@ -376,7 +379,7 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 90> kAllKeys = {
+inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -400,6 +403,7 @@ inline constexpr std::array<std::string_view, 90> kAllKeys = {
     kWebGlRenderer,
     kWebGl2Vendor,
     kWebGl2Renderer,
+    kWebGpuBlocked,
     kWebGlParameters,
     kWebGl2Parameters,
     kWebGlParamsBlock,

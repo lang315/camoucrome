@@ -53,6 +53,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kCanvasSeed, kCanvasNoiseDensity, kCanvasNoiseStrength,
       kTextMetricsSeed,
       kWebGlVendor, kWebGlRenderer, kWebGl2Vendor, kWebGl2Renderer,
+      kWebGpuBlocked,
       kWebGlParameters, kWebGl2Parameters, kWebGlParamsBlock,
       kWebGl2ParamsBlock,
       kWebGlExtensions, kWebGl2Extensions,
