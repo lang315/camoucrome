@@ -9,7 +9,8 @@ past CONFIG_CHUNK_CHARS, so it travelled as CAMOU_CONFIG_1..N and the renderer
 must find every chunk. verify_windows_sandbox_env.py measured the sandbox with a
 one-key config that never chunks; this is the shape users actually send.
 
-K1 the generated Windows identity, fonts:list repeated until it is over one chunk, goes out
+K1 the generated Windows identity (its GPU claim removed, see K3), fonts:list repeated until what
+   build_env sends (after the native-font drop) is over one chunk, goes out
    as CAMOU_CONFIG_1..N, N >= 2, and no CAMOU_CONFIG -- without this every other row could
    pass on an unchunked config (the bare identity fits one chunk since #205/#208)
 K2 launched through camoucrome.launch() with no --no-sandbox (read back from the
@@ -133,7 +134,11 @@ def read_probe(cmd, url, config_file):
 def main():
     config = gen.generate(os="windows", seed=1)["config"]  # generate() returns {config, launch, warnings}
     # since #205/#208 the Windows identity can fit one chunk; K1 is about the chunked path, so pad it (see k1_config)
-    config = k1_config.over_one_chunk(config, launcher.CONFIG_CHUNK_CHARS)
+    # pad what build_env sends: on a Windows host it drops fonts:alias* first (native fonts), which halved the padding (-9)
+    config = k1_config.over_one_chunk(launcher.native_config(config), launcher.CONFIG_CHUNK_CHARS)
+    # K3's spoof of 3 contradicts a claimed iGPU's [floor, cap] (#211), and strict then refuses the launch: no GPU claim here
+    for k in gen.GPU_CLAIM_KEYS:
+        config.pop(k, None)
     config.pop("navigator.hardwareConcurrency", None)
     config["navigator.hardwareConcurrency"] = SPOOFED  # last key, last chunk
     env = launcher.build_env(config)
