@@ -467,16 +467,21 @@ def build_matches(requests, frames, truth, site=None):
             for (e, f, s, enc, weak), c in sorted(n.items())]
 
 
-def write_outputs(out_dir, arm, site=None):
+def write_tables(out_dir, arm, reqs, frames, truth, site=None):
     site = site or sites.load()
+    out_dir = pathlib.Path(out_dir)
+    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm, site), indent=1, sort_keys=True), encoding="utf-8")
+    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth, site), indent=1), encoding="utf-8")
+    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth, site), indent=1), encoding="utf-8")
+
+
+def write_outputs(out_dir, arm, site=None):
     out_dir = pathlib.Path(out_dir)
     reqs = read_jsonl(out_dir / "capture" / "requests.jsonl")
     frames = read_jsonl(out_dir / "capture" / "ws.jsonl")
     tp = out_dir / "truth.json"
     truth = json.loads(tp.read_text(encoding="utf-8")) if tp.exists() else {}
-    (out_dir / "channels.json").write_text(json.dumps(build_channels(reqs, frames, arm, site), indent=1, sort_keys=True), encoding="utf-8")
-    (out_dir / "matches.json").write_text(json.dumps(build_matches(reqs, frames, truth, site), indent=1), encoding="utf-8")
-    (out_dir / "bool_fields.json").write_text(json.dumps(build_bool_fields(reqs, frames, truth, site), indent=1), encoding="utf-8")
+    write_tables(out_dir, arm, reqs, frames, truth, site)
 
 
 FORK_CONFIG = {"humanize:enabled": True, "ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}

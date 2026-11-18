@@ -486,6 +486,42 @@ An event fires at the entry of the binding, before argument and receiver
 checks, so a call that throws (for example a brand-check probe) still counts
 as a read.
 
+## Sent surfaces from a startup trace (external spawner)
+
+A launcher that starts the browser itself (no patchright) gets "Surfaces sent"
+from the startup trace alone. Add the `.send` category; without it the trace
+has no bodies and the tool exits 2 (`UNMEASURED`):
+
+    --trace-startup=-*,disabled-by-default-camou.observe,disabled-by-default-camou.observe.send
+    --trace-startup-format=json --trace-startup-file=<trace.json>
+    --trace-startup-duration=0 --trace-startup-record-mode=record-as-much-as-possible
+    --log-net-log=<net.json>
+
+Close the browser gracefully (`Browser.close`) so the trace is flushed.
+
+Truth: print the reader with `observe_trace_sends.py --print-truth-js`, evaluate
+that async function (with `awaitPromise`) on a `127.0.0.1` secure-context page,
+never on the tracked site (its reads would land in the site's section), and save
+the returned JSON as `truth.json`.
+
+    python3 scripts/observe_trace_sends.py <trace.json> --truth truth.json --out <dir> \
+        [--site facebook] [--top-site https://facebook.com]
+    python3 scripts/observe_report.py <trace.json> <net.json> \
+        --channels <dir>/channels.json --matches <dir>/matches.json
+
+The tool joins `camou.send.http/body/file/ws` events as `DecodeTables` does
+(contract: `additions/camoucfg/observe_tables.h`): a 307/308 repeat is kept
+once, a request whose fragments do not tile is counted `partial` and not
+decoded, a body that never arrived is `missing`, file elements are length only.
+`<dir>/trace_sends.json` holds the counts (http, ws, partial, missing, cut,
+file, no_site). `no_site` counts sends with no top site (workers, unattributed
+requests); with `--top-site` they are kept. A trace with no send events exits 2
+and writes nothing, so an empty result never reads as "nothing sent".
+
+Data rule: the trace, the net log, `truth.json` and the bodies hold values and
+stay on the host. Only `channels.json`, `matches.json`, `bool_fields.json`,
+`trace_sends.json` and the report leave it: names, classes, counts, matches.
+
 ## Behaviour signals
 
 Since the `observe-behaviour` patch the observer also reports (design:
