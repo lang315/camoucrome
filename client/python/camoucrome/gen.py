@@ -221,9 +221,19 @@ def _igpu_floors():
             if r["max_threads"] is not None and r.get("min_threads") is not None}
 
 
+def _gen9_floors():
+    """{device id: min threads} for the Gen9 rows of intel-gen9-thread-caps.json that carry a sourced min_threads."""
+    rows = json.loads((ROOT / "settings" / "webgl" / "intel-gen9-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    return {int(r["device_id"], 16): r["min_threads"] for r in rows
+            if r["max_threads"] is not None and r.get("min_threads") is not None}
+
+
 def igpu_thread_floor(renderer):
-    """Fewest threads any CPU shipping this non-Gen9 iGPU has (min_threads in igpu-thread-caps.json); None when the
-    renderer is not such an iGPU or its row has no sourced floor."""
+    """Fewest threads any CPU shipping this iGPU has (min_threads in intel-gen9-thread-caps.json for Gen9, else
+    igpu-thread-caps.json); None when the renderer is not such an iGPU or its row has no sourced floor."""
+    dev = gen9_device_id(renderer)
+    if dev is not None:
+        return _gen9_floors().get(dev)
     m = ANGLE_D3D11_RE.match(renderer or "")
     return _igpu_floors().get((m.group(1), int(m.group(3), 16))) if m else None
 

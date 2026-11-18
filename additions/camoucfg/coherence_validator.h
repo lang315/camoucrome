@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "components/camoucfg/igpu_thread_caps.h"
 #include "components/camoucfg/mask_config.h"
 
 namespace camoucfg {
@@ -65,10 +66,28 @@ std::optional<PairingViolation> CheckPairing(bool renderer_resolves,
 // group has no hex digits, is not closed by ')', or overflows 32 bits.
 std::optional<uint32_t> ParseAngleDeviceId(std::string_view renderer);
 
+// Pure: the sourced thread range of the iGPU an ANGLE D3D11 renderer names
+// ("ANGLE (<Intel|AMD>, <name> (0x<id>) Direct3D11 vs_5_0 ps_5_0, D3D11)", the
+// shape of gen.py ANGLE_D3D11_RE), keyed by vendor + device id. nullptr for any
+// other shape, another vendor or an id with no sourced cap.
+const IgpuThreadRange* IgpuRangeForRenderer(std::string_view renderer);
+
 // Pure: true iff a cap exists, a thread count exists, and threads > cap. Either
 // side absent constrains nothing.
 bool ThreadsExceedCap(std::optional<uint32_t> cap,
                       std::optional<uint32_t> threads);
+
+// Pure: the bound a thread count breaks, for the iGPU the renderer names:
+// the cap when threads > max_threads, the floor when threads < min_threads
+// (a row without a floor has min_threads 0 and never breaks it). nullopt when
+// the count fits, is absent, or the renderer names no sourced iGPU.
+std::optional<uint32_t> ThreadRangeBrokenBound(
+    std::string_view renderer,
+    std::optional<uint32_t> threads);
+
+// Pure: true iff a floor exists (nonzero), a thread count exists, and
+// threads < floor. Either side absent constrains nothing.
+bool ThreadsBelowFloor(uint32_t floor, std::optional<uint32_t> threads);
 
 // Reads the configuration and reports each API (webGl, webGl2) whose renderer
 // and vendor are not both-present-or-both-absent. "Resolves" mirrors the

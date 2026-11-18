@@ -312,6 +312,39 @@ func TestHostBelowIGPUFloorDropsTheClaim(t *testing.T) {
 	}
 }
 
+// A Gen9 claim (UHD 620, 0x3EA0) has a floor in the embedded table, and a host snap below it drops the claim.
+func TestGen9FloorDropsTheClaim(t *testing.T) {
+	const uhd620 = "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+	if f := igpuFloor(uhd620); f < 4 {
+		t.Fatalf("UHD 620 floor %d, want >= 4", f)
+	}
+	small := goodHost
+	small.Cores = 2
+	dropped := 0
+	for s := uint64(0); s < 1000; s++ {
+		id := mustDraw(t, s, &goodHost)
+		var e map[string]any
+		if err := json.Unmarshal(id.Entry, &e); err != nil {
+			t.Fatal(err)
+		}
+		r, _ := e["webGl:renderer"].(string)
+		if igpuFloor(r) <= 2 || !strings.Contains(r, "Intel(R) UHD Graphics") && !strings.Contains(r, "Intel(R) HD Graphics") {
+			continue
+		}
+		rs, err := Resolve(id, small, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, has := rs.Config["webGl:renderer"]; has {
+			t.Fatalf("seed %d: %s kept on a 2-core host", s, r)
+		}
+		dropped++
+	}
+	if dropped < 5 {
+		t.Fatalf("dropped %d: the test covered too few Gen9 claims", dropped)
+	}
+}
+
 // An identity stored before the GPU claim has an Entry without the keys: it keeps the host's GPU.
 func TestResolveEntryWithoutGPUKeys(t *testing.T) {
 	id := mustDraw(t, 3, nil)

@@ -91,10 +91,12 @@ enum class Relation {
   kTouchFitsOs,
   // keys[0] is kWebGlRenderer, resolved like kRendererBackendFitsOs does
   // (ResolvedGLString); keys[1] is kNavigatorHardwareConcurrency, read with
-  // GetUint32. Violated when the renderer's ANGLE device id has a cap in
-  // kGen9ThreadCaps and keys[1] exceeds it. An unknown id, a non-Gen9
+  // GetUint32. Violated when the renderer's ANGLE vendor + device id has a
+  // row in kIgpuThreadRanges and keys[1] is above its max_threads or below
+  // its min_threads (0 = no floor). An unknown id, a non-ANGLE-D3D11
   // renderer, or an absent / non-uint hardwareConcurrency constrains nothing.
-  // keys[1] is the value the log names as too large; new_value is the cap.
+  // keys[1] is the value the log names as out of range; new_value is the
+  // bound it broke (the cap or the floor).
   kRendererFitsThreads,
 };
 

@@ -641,163 +641,163 @@
  },
  {
   "cores": 1,
-  "claim": 2,
+  "claim": 16,
   "want": 1
  },
  {
   "cores": 2,
-  "claim": 2,
+  "claim": 16,
   "want": 2
  },
  {
   "cores": 3,
-  "claim": 2,
+  "claim": 16,
   "want": 2
  },
  {
   "cores": 4,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 4
  },
  {
   "cores": 5,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 4
  },
  {
   "cores": 6,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 6
  },
  {
   "cores": 7,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 6
  },
  {
   "cores": 8,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 8
  },
  {
   "cores": 9,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 8
  },
  {
   "cores": 10,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 8
  },
  {
   "cores": 11,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 8
  },
  {
   "cores": 12,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 12
  },
  {
   "cores": 13,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 12
  },
  {
   "cores": 14,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 12
  },
  {
   "cores": 15,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 12
  },
  {
   "cores": 16,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 17,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 18,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 19,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 20,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 21,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 22,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 23,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 24,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 25,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 26,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 27,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 28,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 29,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 30,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 31,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 32,
-  "claim": 2,
-  "want": 2
+  "claim": 16,
+  "want": 16
  },
  {
   "cores": 1,
@@ -1438,166 +1438,6 @@
   "cores": 32,
   "claim": 24,
   "want": 24
- },
- {
-  "cores": 1,
-  "claim": 16,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 16,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 16,
-  "want": 2
- },
- {
-  "cores": 4,
-  "claim": 16,
-  "want": 4
- },
- {
-  "cores": 5,
-  "claim": 16,
-  "want": 4
- },
- {
-  "cores": 6,
-  "claim": 16,
-  "want": 6
- },
- {
-  "cores": 7,
-  "claim": 16,
-  "want": 6
- },
- {
-  "cores": 8,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 9,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 10,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 11,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 12,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 13,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 14,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 15,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 16,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 17,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 18,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 19,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 20,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 21,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 22,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 23,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 24,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 25,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 26,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 27,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 28,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 29,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 30,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 31,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 32,
-  "claim": 16,
-  "want": 16
  },
  {
   "cores": 1,
@@ -2078,6 +1918,166 @@
   "cores": 32,
   "claim": 28,
   "want": 28
+ },
+ {
+  "cores": 1,
+  "claim": 2,
+  "want": 1
+ },
+ {
+  "cores": 2,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 3,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 4,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 5,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 6,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 7,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 8,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 9,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 10,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 11,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 12,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 13,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 14,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 15,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 16,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 17,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 18,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 19,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 20,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 21,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 22,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 23,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 24,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 25,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 26,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 27,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 28,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 29,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 30,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 31,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 32,
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 1,

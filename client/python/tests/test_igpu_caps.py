@@ -124,3 +124,52 @@ def test_an_arc_name_with_a_memory_label_is_not_drawable():
         r = f"ANGLE (Intel, {name} (0x{dev:08X}) Direct3D11 vs_5_0 ps_5_0, D3D11)"
         assert gen.gpu_class(r) is None and gen.thread_cap(r) is None
     assert gen.gpu_class("ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "igpu"
+
+
+GEN9 = json.loads((ROOT / "settings" / "webgl" / "intel-gen9-thread-caps.json").read_text(encoding="utf-8"))
+UHD620 = "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
+def test_gen9_floors_are_within_caps_and_looked_up_by_device_id():
+    for r in GEN9["rows"]:
+        if r["max_threads"] is not None and r.get("min_threads") is not None:
+            assert 2 <= r["min_threads"] <= r["max_threads"], r
+            assert r.get("min_note"), r
+    assert FLOOR(UHD620) >= 4  # no CPU that ships UHD 620 has fewer than 4 threads
+    # the name carries no model number: the floor is the device id's
+    assert FLOOR("ANGLE (Intel, Intel(R) UHD Graphics (0x00009B41) Direct3D11 vs_5_0 ps_5_0, D3D11)") == FLOOR(
+        "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00009B41) Direct3D11 vs_5_0 ps_5_0, D3D11)")
+
+
+def test_uhd620_never_draws_fewer_threads_than_its_floor_over_many_seeds():
+    n = 0
+    for cfg in claimed():
+        if cfg["webGl:renderer"] == UHD620:
+            n += 1
+            assert FLOOR(UHD620) <= cfg["navigator.hardwareConcurrency"] <= cap_for(cfg), cfg["navigator.hardwareConcurrency"]
+    assert n > 5
+
+
+def test_a_host_snap_below_a_gen9_floor_drops_the_claim():
+    dropped = 0
+    for s in range(1, 1001):
+        big = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]
+        floor = FLOOR(big.get("webGl:renderer"))
+        if not floor or floor <= 2 or gen.gpu_class(big["webGl:renderer"]) != "igpu-gen9":
+            continue
+        small = gen.generate("windows", "Europe/Paris", None, s, host_cores=2)
+        assert not any(k in small["config"] for k in KEYS), s
+        assert any("GPU claim is dropped" in w for w in small["warnings"])
+        dropped += 1
+    assert dropped > 5
+
+
+def test_go_floors_table_is_every_sourced_floor_of_both_files():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gen_go_core_data", ROOT / "scripts" / "gen_go_core_data.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    want = {f"{v}:0x{d:08X}": t for (v, d), t in gen._igpu_floors().items()}
+    want.update({f"Intel:0x{d:08X}": t for d, t in gen._gen9_floors().items()})
+    assert mod.igpu_floors() == want
+    assert json.loads((ROOT / "client" / "go" / "core" / "data" / "igpu-floors.json").read_text(encoding="utf-8")) == want

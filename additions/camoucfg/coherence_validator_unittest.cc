@@ -17,7 +17,7 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/path_service.h"
-#include "components/camoucfg/gen9_thread_caps.h"
+#include "components/camoucfg/igpu_thread_caps.h"
 #include "components/camoucfg/invariants.h"
 #include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config.h"
@@ -526,17 +526,103 @@ TEST(RendererFitsThreadsTest, TheLastGroupWins) {
             std::optional<uint32_t>(0x2222u));
 }
 
-TEST(RendererFitsThreadsTest, CapLookup) {
-  EXPECT_EQ(Gen9ThreadCapFor(0x5917), std::optional<uint32_t>(8u));
-  EXPECT_EQ(Gen9ThreadCapFor(0x3E91), std::optional<uint32_t>(4u));
-  EXPECT_FALSE(Gen9ThreadCapFor(0x5921));  // unsourced: no cap
-  EXPECT_FALSE(Gen9ThreadCapFor(0xFFFF));
+TEST(RendererFitsThreadsTest, RangeLookup) {
+  const IgpuThreadRange* r = IgpuThreadRangeFor(IgpuVendor::kIntel, 0x5917);
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->max_threads, 8u);
+  r = IgpuThreadRangeFor(IgpuVendor::kIntel, 0x3E91);
+  ASSERT_TRUE(r);
+  EXPECT_EQ(r->max_threads, 4u);
+  EXPECT_FALSE(IgpuThreadRangeFor(IgpuVendor::kIntel, 0x5921));  // unsourced
+  EXPECT_FALSE(IgpuThreadRangeFor(IgpuVendor::kIntel, 0xFFFF));
+  // Vendors are separate id namespaces.
+  EXPECT_FALSE(IgpuThreadRangeFor(IgpuVendor::kAmd, 0x5917));
 }
 
-TEST(RendererFitsThreadsTest, CapTableIsSortedAndUnique) {
-  for (size_t i = 1; i < kGen9ThreadCaps.size(); ++i) {
-    EXPECT_LT(kGen9ThreadCaps[i - 1].device_id, kGen9ThreadCaps[i].device_id);
+TEST(RendererFitsThreadsTest, RangeTableIsSortedAndUnique) {
+  for (size_t i = 1; i < kIgpuThreadRanges.size(); ++i) {
+    const IgpuThreadRange& a = kIgpuThreadRanges[i - 1];
+    const IgpuThreadRange& b = kIgpuThreadRanges[i];
+    EXPECT_TRUE(a.vendor < b.vendor ||
+                (a.vendor == b.vendor && a.device_id < b.device_id));
   }
+  for (const IgpuThreadRange& r : kIgpuThreadRanges) {
+    EXPECT_LE(r.min_threads, r.max_threads);
+    EXPECT_GT(r.max_threads, 0u);
+  }
+}
+
+// kUhd620 is Gen9 0x3EA0: no CPU that ships it has fewer than 4 threads. The
+// AMD string is a row of igpu-thread-caps.json: 0x1638 is "AMD Radeon(TM)
+// Graphics", a Cezanne APU.
+constexpr char kUhd620[] =
+    "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 "
+    "ps_5_0, D3D11)";
+constexpr char kAmdCezanne[] =
+    "ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001638) Direct3D11 vs_5_0 "
+    "ps_5_0, D3D11)";
+
+TEST(RendererFitsThreadsTest, BelowTheFloorBreaksTheFloor) {
+  const IgpuThreadRange* r = IgpuRangeForRenderer(kUhd620);
+  ASSERT_TRUE(r);
+  ASSERT_GE(r->min_threads, 4u);
+  EXPECT_EQ(ThreadRangeBrokenBound(kUhd620, r->min_threads - 1),
+            std::optional<uint32_t>(r->min_threads));
+  EXPECT_EQ(ThreadRangeBrokenBound(kUhd620, 2),
+            std::optional<uint32_t>(r->min_threads));
+}
+
+TEST(RendererFitsThreadsTest, AboveTheCapBreaksTheCap) {
+  const IgpuThreadRange* r = IgpuRangeForRenderer(kUhd620);
+  ASSERT_TRUE(r);
+  EXPECT_EQ(ThreadRangeBrokenBound(kUhd620, r->max_threads + 1),
+            std::optional<uint32_t>(r->max_threads));
+}
+
+TEST(RendererFitsThreadsTest, InsideTheRangeBreaksNothing) {
+  const IgpuThreadRange* r = IgpuRangeForRenderer(kUhd620);
+  ASSERT_TRUE(r);
+  EXPECT_FALSE(ThreadRangeBrokenBound(kUhd620, r->min_threads));
+  EXPECT_FALSE(ThreadRangeBrokenBound(kUhd620, r->max_threads));
+  EXPECT_FALSE(ThreadRangeBrokenBound(kUhd620, std::nullopt));
+}
+
+TEST(RendererFitsThreadsTest, UnknownIdOrShapeBreaksNothing) {
+  // Unsourced Gen9 id (0x5921), an id in no table, a non-ANGLE string, an
+  // NVIDIA dGPU, and a right id behind the wrong vendor.
+  EXPECT_FALSE(ThreadRangeBrokenBound(
+      "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005921) Direct3D11 vs_5_0 "
+      "ps_5_0, D3D11)", 1));
+  EXPECT_FALSE(ThreadRangeBrokenBound(
+      "ANGLE (Intel, Intel(R) UHD Graphics (0x0000FFFF) Direct3D11 vs_5_0 "
+      "ps_5_0, D3D11)", 1));
+  EXPECT_FALSE(ThreadRangeBrokenBound("x (0x00003EA0) y", 1));
+  EXPECT_FALSE(ThreadRangeBrokenBound(
+      "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 "
+      "vs_5_0 ps_5_0, D3D11)", 1));
+  EXPECT_FALSE(ThreadRangeBrokenBound(
+      "ANGLE (AMD, AMD Radeon(TM) Graphics (0x00003EA0) Direct3D11 vs_5_0 "
+      "ps_5_0, D3D11)", 1));
+}
+
+TEST(RendererFitsThreadsTest, AmdRowIsChecked) {
+  const IgpuThreadRange* r = IgpuRangeForRenderer(kAmdCezanne);
+  ASSERT_TRUE(r);
+  EXPECT_TRUE(r->vendor == IgpuVendor::kAmd);
+  EXPECT_EQ(ThreadRangeBrokenBound(kAmdCezanne, r->max_threads + 1),
+            std::optional<uint32_t>(r->max_threads));
+  if (r->min_threads > 0) {
+    EXPECT_EQ(ThreadRangeBrokenBound(kAmdCezanne, r->min_threads - 1),
+              std::optional<uint32_t>(r->min_threads));
+  }
+  EXPECT_FALSE(ThreadRangeBrokenBound(kAmdCezanne, r->max_threads));
+}
+
+TEST(RendererFitsThreadsTest, NoFloorMeansNoLowerBound) {
+  EXPECT_FALSE(ThreadsBelowFloor(0, 1));
+  EXPECT_TRUE(ThreadsBelowFloor(4, 3));
+  EXPECT_FALSE(ThreadsBelowFloor(4, 4));
+  EXPECT_FALSE(ThreadsBelowFloor(4, std::nullopt));
 }
 
 TEST(RendererFitsThreadsTest, OnlyMoreThreadsThanTheCapViolate) {
