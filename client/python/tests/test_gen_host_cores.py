@@ -41,6 +41,8 @@ def test_snap_moves_nothing_else():
     for s in SEEDS:
         a, b = cfg(s, BIG), cfg(s, 2)
         del a["navigator.hardwareConcurrency"], b["navigator.hardwareConcurrency"]
+        for k in gen.GPU_CLAIM_KEYS:  # the one other thing a snap may do: drop an iGPU claim whose CPU family has more threads
+            a.pop(k, None), b.pop(k, None)
         assert a == b
 
 

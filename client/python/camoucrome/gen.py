@@ -84,7 +84,7 @@ OS_FORMS = {
 }
 OS_ARG = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
 TASKBAR = {"Windows": 40, "macOS": 25, "Linux": 27}
-# 200: the gpu_class rejects made 50 misses about 1 in 12,500 per --light identity (figure from before the iGPU classes; fewer rejects now); a draw that succeeds within 50 never reaches the extra ones, so no seed moves.
+# 200: a draw that succeeds within 50 never reaches the extra ones, so no seed moves; the rest absorb the gpu_class and floor rejects (35.8% of 20,000 raw samples: 22.7% class, 13.1% floor, measured 2026-11-18).
 MAX_DRAWS = 200
 # Measured 2026-09-10 (headless chrome, --window-size WxH, --force-device-
 # scale-factor D, sizes 1528/1600/2048): at D = 1.25 and 1.75 the window
@@ -152,6 +152,9 @@ def load_profiles():
             for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith(("-pool", "-thread-caps"))}
 
 
+GPU_CLAIM_KEYS = ("webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked")
+
+
 def gpu_keys(vendor, renderer, host_renderer):
     """The claim's four strings, plus webGpu:blocked: true unless the claim is the host's own renderer. A Gen9 claim on a
     Gen9 host stays unblocked, because WebGPU masks every Gen9 part to intel/gen-9 (measured 2026-11-04). An unknown host
@@ -210,6 +213,21 @@ def _igpu_caps():
     return {(r["vendor"], int(r["device_id"], 16)): r["max_threads"] for r in rows if r["max_threads"] is not None}
 
 
+def _igpu_floors():
+    """{(vendor, device id): min threads} for the rows that carry a sourced min_threads: the smallest Total Threads of any
+    SKU read that lists the id. An iGPU fixes the CPU family, so a claim with fewer threads is a tell."""
+    rows = json.loads((ROOT / "settings" / "webgl" / "igpu-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    return {(r["vendor"], int(r["device_id"], 16)): r["min_threads"] for r in rows
+            if r["max_threads"] is not None and r.get("min_threads") is not None}
+
+
+def igpu_thread_floor(renderer):
+    """Fewest threads any CPU shipping this non-Gen9 iGPU has (min_threads in igpu-thread-caps.json); None when the
+    renderer is not such an iGPU or its row has no sourced floor."""
+    m = ANGLE_D3D11_RE.match(renderer or "")
+    return _igpu_floors().get((m.group(1), int(m.group(3), 16))) if m else None
+
+
 def igpu_thread_cap(renderer):
     """Most threads any CPU/APU shipping this non-Gen9 iGPU has (settings/webgl/igpu-thread-caps.json); None when the
     renderer is not an ANGLE D3D11 Intel or AMD string, or its id has no sourced cap."""
@@ -227,7 +245,7 @@ def gpu_class(renderer):
     """"dgpu", "igpu-gen9", "igpu" or None (not drawable: an iGPU with no sourced thread cap, a software renderer, or a
     string that is not an ANGLE D3D11 renderer)."""
     m = ANGLE_D3D11_RE.match(renderer or "")
-    if not m:
+    if not m or re.search(r"\(\d+GB\)", renderer):  # an Arc name's memory label (16GB) can contradict navigator.deviceMemory
         return None
     vendor, name = m.group(1), m.group(2)
     if vendor == "NVIDIA":
@@ -502,11 +520,21 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         config.update(keys)
         cap = thread_cap(profile["renderer"])
         if cap is not None and config["navigator.hardwareConcurrency"] > cap:
-            # own generator: rng stays where it was, so the other seeded keys do not move
+            # own generator: rng stays where it was, so the other seeded keys do not move. Within [floor, cap]; no step
+            # there (a 24-thread part) means the cap itself, a real SKU's count.
+            floor = igpu_thread_floor(profile["renderer"]) or 0
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
-                [t for t in THREAD_STEPS if t <= cap])
+                [t for t in THREAD_STEPS if floor <= t <= cap] or [cap])
     if host_cores is not None and config["navigator.hardwareConcurrency"] > host_cores:
         config["navigator.hardwareConcurrency"] = max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
+    floor = igpu_thread_floor(profile["renderer"]) if profile else None
+    floor_warn = None
+    if floor and config["navigator.hardwareConcurrency"] < floor:
+        # the host's cores fell below what the claimed iGPU's CPU family ships with: the real GPU then matches the real CPU
+        for k in GPU_CLAIM_KEYS:
+            config.pop(k, None)
+        floor_warn = (f"host cores snap to {config['navigator.hardwareConcurrency']}, below the {floor} threads of the "
+                      f"claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept")
     config.update(fonts_keys(platform, rng, host_families))
     pv_warn = None
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
@@ -549,7 +577,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     else:
         bad_display = None
     launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn, pv_warn, bad_display, dw) if w]}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, floor_warn, pv_warn, bad_display, dw) if w]}
 
 
 def allowed_cpus():
@@ -559,8 +587,12 @@ def allowed_cpus():
 
 
 def gpu_ok(fp, profile):
-    """A Windows sample with no drawable GPU is rejected, as is an Apple one beside an x86 claim."""
+    """A Windows sample with no drawable GPU is rejected, as is an Apple one beside an x86 claim, and one whose thread
+    count is below the claimed iGPU's floor."""
     if profile is None and fp["navigator"]["userAgentData"]["platform"] == "Windows":
+        return False
+    floor = igpu_thread_floor(profile["renderer"]) if profile else None
+    if floor and fp["navigator"]["hardwareConcurrency"] < floor:
         return False
     return arch_fits(fp, profile)
 

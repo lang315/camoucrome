@@ -12,7 +12,7 @@ import (
 	_ "time/tzdata" // zoneinfo for time.LoadLocation: Windows has none of its own
 )
 
-//go:embed data/pool-windows.json.gz data/voices.json data/fonts.json data/country_locale.json data/locale_zones.json data/version.json
+//go:embed data/pool-windows.json.gz data/voices.json data/fonts.json data/country_locale.json data/locale_zones.json data/igpu-floors.json data/version.json
 var dataFS embed.FS
 
 // poolFormat is the Identity.Version this code reads and writes.
@@ -37,6 +37,7 @@ var (
 		remote    []any
 		country   map[string]string
 		zones     map[string][]string // locale -> zones, first is the default
+		floors    map[string]int      // "Intel:0x00009A49" -> fewest threads of the CPU family that iGPU ships with
 		err       error
 	}
 )
@@ -123,7 +124,10 @@ func loadTables() error {
 		if t.err = readJSON("country_locale.json", &t.country); t.err != nil {
 			return
 		}
-		t.err = readJSON("locale_zones.json", &t.zones)
+		if t.err = readJSON("locale_zones.json", &t.zones); t.err != nil {
+			return
+		}
+		t.err = readJSON("igpu-floors.json", &t.floors)
 	})
 	return tables.err
 }

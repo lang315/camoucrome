@@ -177,6 +177,14 @@ def country_locale(source, zones):
     return dict(sorted(rows.items()))
 
 
+def igpu_floors():
+    """{"Intel:0x00009A49": min threads}: settings/webgl/igpu-thread-caps.json rows with a sourced min_threads. Resolve drops the
+    GPU claim when the host's cores fall below it (gen.py from_pool)."""
+    rows = json.loads((ROOT / "settings" / "webgl" / "igpu-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    return {f"{r['vendor']}:0x{int(r['device_id'], 16):08X}": r["min_threads"] for r in rows
+            if r["max_threads"] is not None and r.get("min_threads") is not None}
+
+
 def build_files(n, source):
     """{relative name: JSON value} for every embedded file. The pool is built apart (draw_pool)."""
     voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
@@ -186,6 +194,7 @@ def build_files(n, source):
         "fonts.json": fonts_subset(),
         "country_locale.json": country_locale(source, zones),
         "locale_zones.json": {t: z for t, z in zones.items()},
+        "igpu-floors.json": igpu_floors(),
         "launcher.json": (ROOT / "settings" / "launcher.json").read_text(encoding="utf-8"),  # a byte copy (a str is written as is)
     }
 

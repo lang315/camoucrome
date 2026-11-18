@@ -74,3 +74,53 @@ def test_non_gen9_igpu_claim_is_webgpu_blocked_even_on_a_gen9_host():
     r = (INTEL if vendor == "Intel" else AMD) % dev
     host = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
     assert gen.gpu_keys("x", r, host)["webGpu:blocked"] is True
+
+
+FLOOR = gen.igpu_thread_floor  # the real lookup, kept apart from the RED test's monkeypatch
+KEYS = gen.GPU_CLAIM_KEYS
+
+
+def test_floors_are_within_caps():
+    for r in CAPS["rows"]:
+        if r["max_threads"] is not None and r.get("min_threads") is not None:
+            assert 2 <= r["min_threads"] <= r["max_threads"], r
+
+
+def test_threads_never_fall_below_the_claimed_igpus_floor_over_2000_seeds():
+    n = 0
+    for cfg in claimed():
+        floor = FLOOR(cfg["webGl:renderer"])
+        if floor:
+            n += 1
+            assert floor <= cfg["navigator.hardwareConcurrency"] <= cap_for(cfg), (cfg["webGl:renderer"], cfg["navigator.hardwareConcurrency"])
+    assert n > 200
+
+
+def test_floor_check_can_fail_when_the_floor_is_not_applied(monkeypatch):
+    monkeypatch.setattr(gen, "igpu_thread_floor", lambda renderer: None)
+    assert any(cfg["navigator.hardwareConcurrency"] < FLOOR(cfg["webGl:renderer"]) for cfg in claimed() if FLOOR(cfg["webGl:renderer"]))
+
+
+def test_a_host_snap_below_the_floor_drops_the_five_gpu_keys():
+    dropped = kept = 0
+    for s in range(1, 301):
+        big = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)
+        small = gen.generate("windows", "Europe/Paris", None, s, host_cores=4)  # same draw: the snap consumes no rng
+        floor = FLOOR(big["config"]["webGl:renderer"]) if "webGl:renderer" in big["config"] else None
+        assert all(k in big["config"] for k in KEYS)
+        if floor and floor > 4:
+            assert not any(k in small["config"] for k in KEYS), s
+            assert small["config"]["navigator.hardwareConcurrency"] == 4
+            assert any("GPU claim is dropped" in w for w in small["warnings"])
+            dropped += 1
+        else:
+            assert all(k in small["config"] for k in KEYS), s
+            kept += 1
+    assert dropped > 20 and kept > 20
+
+
+def test_an_arc_name_with_a_memory_label_is_not_drawable():
+    for name, dev in (("Intel(R) Arc(TM) 140V GPU (16GB)", 0x64A0), ("Intel(R) Arc(TM) 140T GPU (32GB)", 0x7D51)):
+        r = f"ANGLE (Intel, {name} (0x{dev:08X}) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        assert gen.gpu_class(r) is None and gen.thread_cap(r) is None
+    assert gen.gpu_class("ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)") == "igpu"
