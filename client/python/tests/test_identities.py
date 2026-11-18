@@ -37,17 +37,17 @@ def allowed(key):
 
 
 def test_two_seeds_give_two_devices():
-    a, b = keys_of(5), keys_of(6)  # a pair whose draws share nothing undeclared (1 and 2 both draw 1920x1080)
+    a, b = keys_of(1), keys_of(17)  # a pair whose draws share nothing undeclared (found by search when the iGPU classes moved the draws)
     assert [k for k in DEVICE_KEYS if a.get(k) == b.get(k)] == []
 
 
 def test_per_instance_seeds_differ():
-    a, b = keys_of(5), keys_of(6)  # a pair whose draws share nothing undeclared (1 and 2 both draw 1920x1080)
+    a, b = keys_of(1), keys_of(17)  # a pair whose draws share nothing undeclared (found by search when the iGPU classes moved the draws)
     assert [k for k in PER_INSTANCE_SEEDS if a.get(k) == b.get(k)] == []
 
 
 def test_only_declared_keys_are_shared():
-    a, b = keys_of(5), keys_of(6)  # a pair whose draws share nothing undeclared (1 and 2 both draw 1920x1080)
+    a, b = keys_of(1), keys_of(17)  # a pair whose draws share nothing undeclared (found by search when the iGPU classes moved the draws)
     assert any(k.startswith(("webGl:", "webGl2:")) for k in a), "no WebGL keys: the identity claims no GPU"
     shared = {k for k in a if a[k] == b.get(k)}
     assert {k for k in shared if not allowed(k)} == set()

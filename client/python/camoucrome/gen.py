@@ -40,7 +40,7 @@ Never taken, and why:
                                    real value is coherent by construction
   screen.availLeft / availTop      multi-monitor offsets from the pool; the real 0 is fine
   videoCard (webGl:*)              taken when gpu_class accepts it (NVIDIA, AMD RX/Pro, Intel Arc A-series,
-                                   Intel Gen9 with a sourced thread cap), else the sample is redrawn. Only
+                                   an Intel or AMD iGPU with a sourced thread cap), else the sample is redrawn. Only
                                    the four strings and webGpu:blocked are emitted; tables stay the host's.
                                    --gpu names a captured profile's strings instead
   fonts                            fonts:list is the captured family list of the claimed OS
@@ -84,7 +84,7 @@ OS_FORMS = {
 }
 OS_ARG = {"windows": "Windows", "macos": "macOS", "linux": "Linux"}
 TASKBAR = {"Windows": 40, "macOS": 25, "Linux": 27}
-# 200: the gpu_class rejects make 50 misses about 1 in 12,500 per --light identity; a draw that succeeds within 50 never reaches the extra ones, so no seed moves.
+# 200: the gpu_class rejects made 50 misses about 1 in 12,500 per --light identity (figure from before the iGPU classes; fewer rejects now); a draw that succeeds within 50 never reaches the extra ones, so no seed moves.
 MAX_DRAWS = 200
 # Measured 2026-09-10 (headless chrome, --window-size WxH, --force-device-
 # scale-factor D, sizes 1528/1600/2048): at D = 1.25 and 1.75 the window
@@ -200,24 +200,48 @@ def gen9_device_id(renderer, ids=None):
     return dev if dev in set(ids if ids is not None else gen9_pool()["device_ids"]) else None
 
 
-ANGLE_D3D11_RE = re.compile(r"^ANGLE \((NVIDIA|AMD|Intel), (.+) \(0x[0-9A-Fa-f]{8}\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$")
+ANGLE_D3D11_RE = re.compile(r"^ANGLE \((NVIDIA|AMD|Intel), (.+) \(0x([0-9A-Fa-f]{8})\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$")
+
+
+def _igpu_caps():
+    """{(vendor, device id): max threads} from settings/webgl/igpu-thread-caps.json; a row with no max_threads is unsourced
+    and left out (an unsourced id is never drawn)."""
+    rows = json.loads((ROOT / "settings" / "webgl" / "igpu-thread-caps.json").read_text(encoding="utf-8"))["rows"]
+    return {(r["vendor"], int(r["device_id"], 16)): r["max_threads"] for r in rows if r["max_threads"] is not None}
+
+
+def igpu_thread_cap(renderer):
+    """Most threads any CPU/APU shipping this non-Gen9 iGPU has (settings/webgl/igpu-thread-caps.json); None when the
+    renderer is not an ANGLE D3D11 Intel or AMD string, or its id has no sourced cap."""
+    m = ANGLE_D3D11_RE.match(renderer or "")
+    return _igpu_caps().get((m.group(1), int(m.group(3), 16))) if m else None
+
+
+def thread_cap(renderer):
+    """The cap of any claimed iGPU (Gen9 or other), else None."""
+    cls = gpu_class(renderer)
+    return gen9_thread_cap(renderer) if cls == "igpu-gen9" else igpu_thread_cap(renderer) if cls == "igpu" else None
 
 
 def gpu_class(renderer):
-    """"dgpu", "igpu-gen9" or None (not drawable: an iGPU with no sourced thread caps, a software renderer, or a string that is
-    not an ANGLE D3D11 renderer)."""
+    """"dgpu", "igpu-gen9", "igpu" or None (not drawable: an iGPU with no sourced thread cap, a software renderer, or a
+    string that is not an ANGLE D3D11 renderer)."""
     m = ANGLE_D3D11_RE.match(renderer or "")
     if not m:
         return None
-    vendor, name = m.groups()
+    vendor, name = m.group(1), m.group(2)
     if vendor == "NVIDIA":
         return "dgpu"
     if vendor == "AMD":
-        return "dgpu" if (("RX" in name and "Vega" not in name) or "Radeon Pro" in name) else None  # "RX Vega 8/11" are APUs
+        if ("RX" in name and "Vega" not in name) or "Radeon Pro" in name:  # "RX Vega 8/11" are APUs
+            return "dgpu"
+        return "igpu" if igpu_thread_cap(renderer) is not None else None
     dev = gen9_device_id(renderer)
     if dev is not None:
         return "igpu-gen9" if dev in _thread_caps() else None  # no sourced cap (0x5921): any thread count would be unbacked
-    return "dgpu" if re.search(r"Arc\(TM\) A\d{3}", name) else None
+    if re.search(r"Arc\(TM\) A\d{3}", name):
+        return "dgpu"
+    return "igpu" if igpu_thread_cap(renderer) is not None else None
 
 
 def gpu_for(platform, host_renderer, rng, gpu=None, fp=None):
@@ -422,8 +446,8 @@ def display_flags(host_display):
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
               host_platform_version=None, host_display=None, host_screen=None, host_cores=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
-    When a host_renderer swaps in a drawn Gen9 GPU, navigator.hardwareConcurrency above that GPU's thread
-    cap (gen9_thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
+    When the claimed GPU is an iGPU (Gen9 or any other sourced class), navigator.hardwareConcurrency above that GPU's thread
+    cap (thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
     a value already within the cap stays as BrowserForge drew it.
     host_cores: a claim above it snaps to the largest THREAD_STEPS value within it (deterministic, nothing drawn);
     None leaves the claim alone."""
@@ -476,7 +500,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         if platform != "Windows" and not gpu:
             del keys["webGpu:blocked"]  # the Apple claim without --gpu is only ever made on its own host; --gpu is the opt-in
         config.update(keys)
-        cap = gen9_thread_cap(profile["renderer"]) if gpu_class(profile["renderer"]) == "igpu-gen9" else None
+        cap = thread_cap(profile["renderer"])
         if cap is not None and config["navigator.hardwareConcurrency"] > cap:
             # own generator: rng stays where it was, so the other seeded keys do not move
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(

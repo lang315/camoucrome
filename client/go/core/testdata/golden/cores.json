@@ -1,163 +1,163 @@
 [
  {
   "cores": 1,
-  "claim": 2,
+  "claim": 12,
   "want": 1
  },
  {
   "cores": 2,
-  "claim": 2,
+  "claim": 12,
   "want": 2
  },
  {
   "cores": 3,
-  "claim": 2,
+  "claim": 12,
   "want": 2
  },
  {
   "cores": 4,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 4
  },
  {
   "cores": 5,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 4
  },
  {
   "cores": 6,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 6
  },
  {
   "cores": 7,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 6
  },
  {
   "cores": 8,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 8
  },
  {
   "cores": 9,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 8
  },
  {
   "cores": 10,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 8
  },
  {
   "cores": 11,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 8
  },
  {
   "cores": 12,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 13,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 14,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 15,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 16,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 17,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 18,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 19,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 20,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 21,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 22,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 23,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 24,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 25,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 26,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 27,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 28,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 29,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 30,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 31,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 32,
-  "claim": 2,
-  "want": 2
+  "claim": 12,
+  "want": 12
  },
  {
   "cores": 1,
@@ -481,166 +481,6 @@
  },
  {
   "cores": 1,
-  "claim": 16,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 16,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 16,
-  "want": 2
- },
- {
-  "cores": 4,
-  "claim": 16,
-  "want": 4
- },
- {
-  "cores": 5,
-  "claim": 16,
-  "want": 4
- },
- {
-  "cores": 6,
-  "claim": 16,
-  "want": 6
- },
- {
-  "cores": 7,
-  "claim": 16,
-  "want": 6
- },
- {
-  "cores": 8,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 9,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 10,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 11,
-  "claim": 16,
-  "want": 8
- },
- {
-  "cores": 12,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 13,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 14,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 15,
-  "claim": 16,
-  "want": 12
- },
- {
-  "cores": 16,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 17,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 18,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 19,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 20,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 21,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 22,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 23,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 24,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 25,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 26,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 27,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 28,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 29,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 30,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 31,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 32,
-  "claim": 16,
-  "want": 16
- },
- {
-  "cores": 1,
   "claim": 8,
   "want": 1
  },
@@ -801,163 +641,323 @@
  },
  {
   "cores": 1,
-  "claim": 14,
+  "claim": 3,
   "want": 1
  },
  {
   "cores": 2,
-  "claim": 14,
+  "claim": 3,
   "want": 2
  },
  {
   "cores": 3,
-  "claim": 14,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 4,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 5,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 6,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 7,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 8,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 9,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 10,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 11,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 12,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 13,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 14,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 15,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 16,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 17,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 18,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 19,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 20,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 21,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 22,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 23,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 24,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 25,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 26,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 27,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 28,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 29,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 30,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 31,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 32,
+  "claim": 3,
+  "want": 3
+ },
+ {
+  "cores": 1,
+  "claim": 2,
+  "want": 1
+ },
+ {
+  "cores": 2,
+  "claim": 2,
+  "want": 2
+ },
+ {
+  "cores": 3,
+  "claim": 2,
   "want": 2
  },
  {
   "cores": 4,
-  "claim": 14,
-  "want": 4
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 5,
-  "claim": 14,
-  "want": 4
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 6,
-  "claim": 14,
-  "want": 6
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 7,
-  "claim": 14,
-  "want": 6
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 8,
-  "claim": 14,
-  "want": 8
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 9,
-  "claim": 14,
-  "want": 8
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 10,
-  "claim": 14,
-  "want": 8
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 11,
-  "claim": 14,
-  "want": 8
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 12,
-  "claim": 14,
-  "want": 12
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 13,
-  "claim": 14,
-  "want": 12
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 14,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 15,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 16,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 17,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 18,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 19,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 20,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 21,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 22,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 23,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 24,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 25,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 26,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 27,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 28,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 29,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 30,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 31,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 32,
-  "claim": 14,
-  "want": 14
+  "claim": 2,
+  "want": 2
  },
  {
   "cores": 1,
@@ -1118,166 +1118,6 @@
   "cores": 32,
   "claim": 10,
   "want": 10
- },
- {
-  "cores": 1,
-  "claim": 12,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 12,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 12,
-  "want": 2
- },
- {
-  "cores": 4,
-  "claim": 12,
-  "want": 4
- },
- {
-  "cores": 5,
-  "claim": 12,
-  "want": 4
- },
- {
-  "cores": 6,
-  "claim": 12,
-  "want": 6
- },
- {
-  "cores": 7,
-  "claim": 12,
-  "want": 6
- },
- {
-  "cores": 8,
-  "claim": 12,
-  "want": 8
- },
- {
-  "cores": 9,
-  "claim": 12,
-  "want": 8
- },
- {
-  "cores": 10,
-  "claim": 12,
-  "want": 8
- },
- {
-  "cores": 11,
-  "claim": 12,
-  "want": 8
- },
- {
-  "cores": 12,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 13,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 14,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 15,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 16,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 17,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 18,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 19,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 20,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 21,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 22,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 23,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 24,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 25,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 26,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 27,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 28,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 29,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 30,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 31,
-  "claim": 12,
-  "want": 12
- },
- {
-  "cores": 32,
-  "claim": 12,
-  "want": 12
  },
  {
   "cores": 1,
@@ -1758,6 +1598,646 @@
   "cores": 32,
   "claim": 24,
   "want": 24
+ },
+ {
+  "cores": 1,
+  "claim": 16,
+  "want": 1
+ },
+ {
+  "cores": 2,
+  "claim": 16,
+  "want": 2
+ },
+ {
+  "cores": 3,
+  "claim": 16,
+  "want": 2
+ },
+ {
+  "cores": 4,
+  "claim": 16,
+  "want": 4
+ },
+ {
+  "cores": 5,
+  "claim": 16,
+  "want": 4
+ },
+ {
+  "cores": 6,
+  "claim": 16,
+  "want": 6
+ },
+ {
+  "cores": 7,
+  "claim": 16,
+  "want": 6
+ },
+ {
+  "cores": 8,
+  "claim": 16,
+  "want": 8
+ },
+ {
+  "cores": 9,
+  "claim": 16,
+  "want": 8
+ },
+ {
+  "cores": 10,
+  "claim": 16,
+  "want": 8
+ },
+ {
+  "cores": 11,
+  "claim": 16,
+  "want": 8
+ },
+ {
+  "cores": 12,
+  "claim": 16,
+  "want": 12
+ },
+ {
+  "cores": 13,
+  "claim": 16,
+  "want": 12
+ },
+ {
+  "cores": 14,
+  "claim": 16,
+  "want": 12
+ },
+ {
+  "cores": 15,
+  "claim": 16,
+  "want": 12
+ },
+ {
+  "cores": 16,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 17,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 18,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 19,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 20,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 21,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 22,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 23,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 24,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 25,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 26,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 27,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 28,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 29,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 30,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 31,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 32,
+  "claim": 16,
+  "want": 16
+ },
+ {
+  "cores": 1,
+  "claim": 7,
+  "want": 1
+ },
+ {
+  "cores": 2,
+  "claim": 7,
+  "want": 2
+ },
+ {
+  "cores": 3,
+  "claim": 7,
+  "want": 2
+ },
+ {
+  "cores": 4,
+  "claim": 7,
+  "want": 4
+ },
+ {
+  "cores": 5,
+  "claim": 7,
+  "want": 4
+ },
+ {
+  "cores": 6,
+  "claim": 7,
+  "want": 6
+ },
+ {
+  "cores": 7,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 8,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 9,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 10,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 11,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 12,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 13,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 14,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 15,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 16,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 17,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 18,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 19,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 20,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 21,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 22,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 23,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 24,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 25,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 26,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 27,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 28,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 29,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 30,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 31,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 32,
+  "claim": 7,
+  "want": 7
+ },
+ {
+  "cores": 1,
+  "claim": 5,
+  "want": 1
+ },
+ {
+  "cores": 2,
+  "claim": 5,
+  "want": 2
+ },
+ {
+  "cores": 3,
+  "claim": 5,
+  "want": 2
+ },
+ {
+  "cores": 4,
+  "claim": 5,
+  "want": 4
+ },
+ {
+  "cores": 5,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 6,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 7,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 8,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 9,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 10,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 11,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 12,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 13,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 14,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 15,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 16,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 17,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 18,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 19,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 20,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 21,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 22,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 23,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 24,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 25,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 26,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 27,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 28,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 29,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 30,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 31,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 32,
+  "claim": 5,
+  "want": 5
+ },
+ {
+  "cores": 1,
+  "claim": 14,
+  "want": 1
+ },
+ {
+  "cores": 2,
+  "claim": 14,
+  "want": 2
+ },
+ {
+  "cores": 3,
+  "claim": 14,
+  "want": 2
+ },
+ {
+  "cores": 4,
+  "claim": 14,
+  "want": 4
+ },
+ {
+  "cores": 5,
+  "claim": 14,
+  "want": 4
+ },
+ {
+  "cores": 6,
+  "claim": 14,
+  "want": 6
+ },
+ {
+  "cores": 7,
+  "claim": 14,
+  "want": 6
+ },
+ {
+  "cores": 8,
+  "claim": 14,
+  "want": 8
+ },
+ {
+  "cores": 9,
+  "claim": 14,
+  "want": 8
+ },
+ {
+  "cores": 10,
+  "claim": 14,
+  "want": 8
+ },
+ {
+  "cores": 11,
+  "claim": 14,
+  "want": 8
+ },
+ {
+  "cores": 12,
+  "claim": 14,
+  "want": 12
+ },
+ {
+  "cores": 13,
+  "claim": 14,
+  "want": 12
+ },
+ {
+  "cores": 14,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 15,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 16,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 17,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 18,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 19,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 20,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 21,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 22,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 23,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 24,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 25,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 26,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 27,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 28,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 29,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 30,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 31,
+  "claim": 14,
+  "want": 14
+ },
+ {
+  "cores": 32,
+  "claim": 14,
+  "want": 14
  },
  {
   "cores": 1,
@@ -1918,646 +2398,6 @@
   "cores": 32,
   "claim": 28,
   "want": 28
- },
- {
-  "cores": 1,
-  "claim": 3,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 3,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 4,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 5,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 6,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 7,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 8,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 9,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 10,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 11,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 12,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 13,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 14,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 15,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 16,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 17,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 18,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 19,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 20,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 21,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 22,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 23,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 24,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 25,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 26,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 27,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 28,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 29,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 30,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 31,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 32,
-  "claim": 3,
-  "want": 3
- },
- {
-  "cores": 1,
-  "claim": 7,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 7,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 7,
-  "want": 2
- },
- {
-  "cores": 4,
-  "claim": 7,
-  "want": 4
- },
- {
-  "cores": 5,
-  "claim": 7,
-  "want": 4
- },
- {
-  "cores": 6,
-  "claim": 7,
-  "want": 6
- },
- {
-  "cores": 7,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 8,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 9,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 10,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 11,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 12,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 13,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 14,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 15,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 16,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 17,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 18,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 19,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 20,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 21,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 22,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 23,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 24,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 25,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 26,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 27,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 28,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 29,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 30,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 31,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 32,
-  "claim": 7,
-  "want": 7
- },
- {
-  "cores": 1,
-  "claim": 11,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 11,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 11,
-  "want": 2
- },
- {
-  "cores": 4,
-  "claim": 11,
-  "want": 4
- },
- {
-  "cores": 5,
-  "claim": 11,
-  "want": 4
- },
- {
-  "cores": 6,
-  "claim": 11,
-  "want": 6
- },
- {
-  "cores": 7,
-  "claim": 11,
-  "want": 6
- },
- {
-  "cores": 8,
-  "claim": 11,
-  "want": 8
- },
- {
-  "cores": 9,
-  "claim": 11,
-  "want": 8
- },
- {
-  "cores": 10,
-  "claim": 11,
-  "want": 8
- },
- {
-  "cores": 11,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 12,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 13,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 14,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 15,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 16,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 17,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 18,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 19,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 20,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 21,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 22,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 23,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 24,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 25,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 26,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 27,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 28,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 29,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 30,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 31,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 32,
-  "claim": 11,
-  "want": 11
- },
- {
-  "cores": 1,
-  "claim": 22,
-  "want": 1
- },
- {
-  "cores": 2,
-  "claim": 22,
-  "want": 2
- },
- {
-  "cores": 3,
-  "claim": 22,
-  "want": 2
- },
- {
-  "cores": 4,
-  "claim": 22,
-  "want": 4
- },
- {
-  "cores": 5,
-  "claim": 22,
-  "want": 4
- },
- {
-  "cores": 6,
-  "claim": 22,
-  "want": 6
- },
- {
-  "cores": 7,
-  "claim": 22,
-  "want": 6
- },
- {
-  "cores": 8,
-  "claim": 22,
-  "want": 8
- },
- {
-  "cores": 9,
-  "claim": 22,
-  "want": 8
- },
- {
-  "cores": 10,
-  "claim": 22,
-  "want": 8
- },
- {
-  "cores": 11,
-  "claim": 22,
-  "want": 8
- },
- {
-  "cores": 12,
-  "claim": 22,
-  "want": 12
- },
- {
-  "cores": 13,
-  "claim": 22,
-  "want": 12
- },
- {
-  "cores": 14,
-  "claim": 22,
-  "want": 12
- },
- {
-  "cores": 15,
-  "claim": 22,
-  "want": 12
- },
- {
-  "cores": 16,
-  "claim": 22,
-  "want": 16
- },
- {
-  "cores": 17,
-  "claim": 22,
-  "want": 16
- },
- {
-  "cores": 18,
-  "claim": 22,
-  "want": 16
- },
- {
-  "cores": 19,
-  "claim": 22,
-  "want": 16
- },
- {
-  "cores": 20,
-  "claim": 22,
-  "want": 20
- },
- {
-  "cores": 21,
-  "claim": 22,
-  "want": 20
- },
- {
-  "cores": 22,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 23,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 24,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 25,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 26,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 27,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 28,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 29,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 30,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 31,
-  "claim": 22,
-  "want": 22
- },
- {
-  "cores": 32,
-  "claim": 22,
-  "want": 22
  },
  {
   "cores": 1,

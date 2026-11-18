@@ -464,16 +464,18 @@ def test_host_families_limit_fonts_list_and_alias_local():
     assert names & set(base["fonts:aliasLocal"]) and not names & set(r["fonts:aliasLocal"])
 
 
-def _cli(monkeypatch, capsys, argv, probed):
+def _cli(monkeypatch, capsys, argv, probed, seed="1"):
     from camoucrome import probe
     monkeypatch.setattr(probe, "host_renderer", lambda exe, *a, **k: probed)
-    monkeypatch.setattr(sys, "argv", ["gen", "--os", "windows", "--timezone", "UTC", "--seed", "1", *argv])
+    monkeypatch.setattr(sys, "argv", ["gen", "--os", "windows", "--timezone", "UTC", "--seed", seed, *argv])
     gen.main()
     return json.loads(capsys.readouterr().out)
 
 
 def test_cli_probe_executable_reads_the_host_renderer_for_the_draw(monkeypatch, capsys):
-    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], HOST)
+    # a seed whose sampled GPU is Gen9 (seed 1 stopped being one when the iGPU classes widened the accepted set)
+    seed = next(s for s in range(1, 200) if gen.gen9_device_id(gen.generate("windows", "UTC", None, s, host_renderer=HOST)["config"]["webGl:renderer"]))
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], HOST, str(seed))
     assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None and r["config"]["webGpu:blocked"] is False
 
 
@@ -490,5 +492,6 @@ def test_cli_probe_that_fails_blocks_webgpu(monkeypatch, capsys):
 
 def test_cli_explicit_host_renderer_wins_over_the_probe(monkeypatch, capsys):
     nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome", "--host-renderer", HOST], nv)
+    seed = next(s for s in range(1, 200) if gen.gen9_device_id(gen.generate("windows", "UTC", None, s, host_renderer=HOST)["config"]["webGl:renderer"]))
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome", "--host-renderer", HOST], nv, str(seed))
     assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None and r["config"]["webGpu:blocked"] is False
