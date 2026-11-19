@@ -2539,6 +2539,8 @@ LEAKS = """async () => {
   gl.readPixels(-8, -8, 71, 72, RGBA, UB, 16);
   const lay2 = new Uint8Array(N); gl.getBufferSubData(PPB, 0, lay2);
   R.layEq = eq(lay, lay2); R.layPbo = H(lay2);
+  R.layDiff = 0; R.layFirst = -1;
+  for (let i = 0; i < N; i++) if (lay[i] !== lay2[i]) { if (R.layDiff++ === 0) R.layFirst = i; }
   R.untouched = lay2.reduce((n, b) => n + (b === 0xAB ? 1 : 0), 0);
   R.layBound = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) === pb; R.layGlerr = gl.getError();
   gl.bindBuffer(PPB, null);
@@ -2595,6 +2597,7 @@ def leaks_rows():
     results[C74] = (noised("tibWorker") and all(a["tibWorker"] == a["drawMain"] for a in arms.values()))
     for arm, a in arms.items():
         notes.append(f"C70-C74 {arm}: view {a['view']} pbo {a['pbo']} lay {a['layPbo']} untouched {a['untouched']} "
+                     f"layEq {a['layEq']} layDiff {a['layDiff']} first {a['layFirst']} layBound {a['layBound']} layGlerr {a['layGlerr']} "
                      f"tibMain {a['tibMain']} drawMain {a['drawMain']} tibWorker {a['tibWorker']}")
 
 
