@@ -1,18 +1,28 @@
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index f4b0524e29..d7667400e2 100644
+index 90948d7e00..4ee725f621 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-@@ -613,7 +613,8 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
-       camou_noised_generation_ != generation) {
+@@ -588,7 +588,8 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedPending(
+   // context.
+   sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
+       *sk_image, scope, /*min_alpha=*/255, camoucfg::NoiseMask(),
+-      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
++      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft,
++      camoucfg::NoiseDomain::kWebGl);
+   if (!noised) {
+     return image;
+   }
+@@ -658,7 +659,8 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
      sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
-         *sk_image, *scope, CamouNoiseMinAlpha(), CamouNoiseMask(),
+         *sk_image, *scope, pending ? uint8_t{255} : CamouNoiseMinAlpha(),
+         pending ? camoucfg::NoiseMask() : CamouNoiseMask(),
 -        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
 +        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft,
-+        CamouNoiseDomain());
++        pending ? camoucfg::NoiseDomain::kWebGl : CamouNoiseDomain());
      if (!noised) {
        return image;
      }
-@@ -673,7 +674,8 @@ SkBitmap CanvasRenderingContext::CamouNoisedRegion(
+@@ -718,7 +720,8 @@ SkBitmap CanvasRenderingContext::CamouNoisedRegion(
          return paint_image.readPixels(dst.info(), dst.writable_addr(),
                                        dst.rowBytes(), src_x, src_y);
        },
@@ -23,10 +33,10 @@ index f4b0524e29..d7667400e2 100644
  
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index a197570b6c..7298868aa7 100644
+index db483798bd..31ee94d695 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-@@ -202,6 +202,11 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -212,6 +212,11 @@ class CORE_EXPORT CanvasRenderingContext
    // The lowest alpha a pixel may have and still change; WebGL is
    // opaque-only.
    virtual uint8_t CamouNoiseMinAlpha() const { return 1; }
@@ -39,7 +49,7 @@ index a197570b6c..7298868aa7 100644
  
    // Called when the entire tab is backgrounded or unbackgrounded.
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index ad40617e4b..957bb2c7b7 100644
+index 3894f944af..42c6ffc4aa 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -643,6 +643,9 @@ class MODULES_EXPORT WebGLRenderingContextBase

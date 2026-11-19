@@ -2483,7 +2483,464 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 76   # the soft rows (SOFT_ROWS) are not counted
+# --- WebGL readback leaks (2026-11-19): C70-C74 ---
+# Two WebGL paths returned the host's raw pixels under canvas:seed: the WebGL2 readPixels overload into a bound
+# PIXEL_PACK_BUFFER (read back with getBufferSubData), and OffscreenCanvas.transferToImageBitmap (main thread and worker).
+# One page function runs every path; it runs in four sessions: no config, seed A, seed B, seed A again.
+C70 = "C70 WebGL2 PBO readPixels + getBufferSubData is noised: seed A != none, A != B, A == A again"
+C71 = "C71 PBO bytes equal the readPixels(view) bytes of the same page (no config and both seeds), binding and GL error intact"
+C72 = "C72 PBO with PACK_ALIGNMENT 8, a rect past the framebuffer and an offset equals the view read; every byte outside the written rect is still 0xAB"
+C72B = "C72b PBO read from an RGBA8 texture FBO (PACK_ROW_LENGTH w + 16, SKIP_PIXELS 3, SKIP_ROWS 2; 64, 600 and a 598 inset) equals the view read"
+C73 = "C73 transferToImageBitmap then 2D getImageData: noised (A != none, A != B, A == A again), equals drawImage(canvas)"
+C74 = "C74 the same in a worker: noised, equal to the main thread's drawImage(canvas) hash"
+LEAKS = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const eq = (a, b) => { if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+  const R = {};
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
+  if (!gl) return { err: 'no-webgl2' };
+  scene(gl, 64, 64);
+  const RGBA = gl.RGBA, UB = gl.UNSIGNED_BYTE, PPB = gl.PIXEL_PACK_BUFFER;
+  // The page's pack buffer binding is part of the state the page left.
+  const view = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, view);
+  const pb = gl.createBuffer(); gl.bindBuffer(PPB, pb); gl.bufferData(PPB, view.length, gl.STREAM_READ);
+  gl.readPixels(0, 0, 64, 64, RGBA, UB, 0);
+  const got = new Uint8Array(view.length); gl.getBufferSubData(PPB, 0, got);
+  R.view = H(view); R.pbo = H(got); R.pboEqView = eq(got, view);
+  R.bound = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) === pb;
+  R.glerr = gl.getError();
+  // PACK_ALIGNMENT 8, a 71 x 72 rect at (-8, -8) (8 px past the framebuffer on two sides), 16 bytes into the buffer.
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 8);
+  const N = 16 + 72 * 288;
+  const lay = new Uint8Array(N).fill(0xAB);
+  gl.bindBuffer(PPB, null);    // a view read is INVALID_OPERATION while a pack buffer is bound
+  gl.readPixels(-8, -8, 71, 72, RGBA, UB, lay, 16);
+  gl.bindBuffer(PPB, pb);
+  gl.bufferData(PPB, new Uint8Array(N).fill(0xAB), gl.STREAM_READ);
+  gl.readPixels(-8, -8, 71, 72, RGBA, UB, 16);
+  const lay2 = new Uint8Array(N); gl.getBufferSubData(PPB, 0, lay2);
+  R.layEq = eq(lay, lay2); R.layPbo = H(lay2);
+  R.layDiff = 0; R.layFirst = -1;
+  for (let i = 0; i < N; i++) if (lay[i] !== lay2[i]) { if (R.layDiff++ === 0) R.layFirst = i; }
+  // The rect's in-framebuffer part: rows 8..71, pixels 8..70 (63 of 71), 288-byte rows, from byte 16.
+  const inRect = new Uint8Array(N);
+  for (let r = 8; r < 72; r++) for (let i = 0; i < 252; i++) inRect[16 + r * 288 + 32 + i] = 1;
+  R.outsideN = 0; R.outsideBad = 0;
+  for (let i = 0; i < N; i++) if (!inRect[i]) { R.outsideN++; if (lay2[i] !== 0xAB) R.outsideBad++; }
+  R.layBound = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) === pb; R.layGlerr = gl.getError();
+  gl.bindBuffer(PPB, null);
+  // A pack-buffer read from an RGBA8 texture framebuffer, against the view read of the same rect and layout.
+  const fboRead = (w, x, y, rw) => {
+    const g = document.createElement('canvas').getContext('webgl2');
+    const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
+    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA8, w, w, 0, g.RGBA, g.UNSIGNED_BYTE, null);
+    const fb = g.createFramebuffer(); g.bindFramebuffer(g.FRAMEBUFFER, fb);
+    g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
+    g.viewport(0, 0, w, w); scene(g, w, w);
+    const rl = w + 16;
+    g.pixelStorei(g.PACK_ROW_LENGTH, rl); g.pixelStorei(g.PACK_SKIP_PIXELS, 3); g.pixelStorei(g.PACK_SKIP_ROWS, 2);
+    const n = (2 * rl + 3) * 4 + (rw - 1) * rl * 4 + rw * 4;
+    const v = new Uint8Array(n).fill(0xAB);
+    g.readPixels(x, y, rw, rw, g.RGBA, g.UNSIGNED_BYTE, v);
+    const b = g.createBuffer(); g.bindBuffer(g.PIXEL_PACK_BUFFER, b);
+    g.bufferData(g.PIXEL_PACK_BUFFER, new Uint8Array(n).fill(0xAB), g.STREAM_READ);
+    g.readPixels(x, y, rw, rw, g.RGBA, g.UNSIGNED_BYTE, 0);
+    const p = new Uint8Array(n); g.getBufferSubData(g.PIXEL_PACK_BUFFER, 0, p);
+    return { eq: eq(v, p), h: H(p), glerr: g.getError() };
+  };
+  R.fbo = [fboRead(64, 0, 0, 64), fboRead(600, 0, 0, 600), fboRead(600, 1, 1, 598)];
+  // transferToImageBitmap, drawn to a 2D canvas and read, against drawImage(canvas) of the same scene.
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  const read2d = (src) => { const c2 = document.createElement('canvas'); c2.width = 64; c2.height = 64;
+    const x = c2.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
+  R.tibMain = read2d(oc.transferToImageBitmap()); R.drawMain = read2d(dom);
+  // Report only: texImage2D of the transferred bitmap and of the canvas, each read back from a texture FBO.
+  const viaTex = (src) => { try {
+    const g = document.createElement('canvas').getContext('webgl2');
+    const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
+    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, src);
+    const fb = g.createFramebuffer(); g.bindFramebuffer(g.FRAMEBUFFER, fb);
+    g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
+    const v = new Uint8Array(64 * 64 * 4); g.readPixels(0, 0, 64, 64, g.RGBA, g.UNSIGNED_BYTE, v); return H(v);
+  } catch (e) { return 'err:' + e.message; } };
+  const oc3 = new OffscreenCanvas(64, 64); scene(oc3.getContext('webgl2'), 64, 64);
+  R.texBitmap = viaTex(oc3.transferToImageBitmap()); R.texCanvas = viaTex(dom);
+  const wsrc = `const H = ${H.toString()}; const scene = ${scene.toString()};
+    onmessage = () => { const oc = new OffscreenCanvas(64, 64); const g = oc.getContext('webgl2');
+      if (!g) { postMessage({ err: 'no-webgl2' }); return; }
+      scene(g, 64, 64); const bmp = oc.transferToImageBitmap();
+      const c2 = new OffscreenCanvas(64, 64); const x = c2.getContext('2d', { willReadFrequently: true });
+      x.drawImage(bmp, 0, 0); postMessage({ tib: H(x.getImageData(0, 0, 64, 64).data) }); };`;
+  R.tibWorker = await new Promise((resolve, reject) => {
+    const w = new Worker(URL.createObjectURL(new Blob([wsrc], { type: 'text/javascript' })));
+    w.onmessage = (e) => resolve(e.data.err ? { err: e.data.err } : e.data.tib);
+    w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    w.postMessage('go');
+  });
+  return R;
+}"""
+
+
+def leaks_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            for row in (C70, C71, C72, C72B, C73, C74):
+                results[row] = False
+            notes.append(f"C70-C74: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(key):    # seed A moves the none value, seed B moves A's, A again reproduces A
+        return (arms["A"][key] != arms["none"][key] and arms["A"][key] != arms["B"][key]
+                and arms["A"][key] == arms["A2"][key])
+
+    # The read path that was already noised must have moved, or "A != none" below measures nothing.
+    if not noised("view"):
+        for row in (C70, C71, C72, C72B, C73, C74):
+            mark_unmeasured(row, "readPixels(view) is not noised across the arms: the scene or the config does not reach the hook")
+        return
+    results[C70] = noised("pbo")
+    results[C71] = all(a["pboEqView"] and a["bound"] and a["glerr"] == 0 for a in arms.values())
+    results[C72] = (all(a["layEq"] and a["layBound"] and a["layGlerr"] == 0 for a in arms.values())
+                    and all(a["outsideBad"] == 0 and a["outsideN"] > 2000 for a in arms.values()) and noised("layPbo"))
+    results[C72B] = all(all(c["eq"] and c["glerr"] == 0 for c in a["fbo"]) for a in arms.values()) and all(
+        arms["A"]["fbo"][i]["h"] != arms["none"]["fbo"][i]["h"] and arms["A"]["fbo"][i]["h"] != arms["B"]["fbo"][i]["h"]
+        and arms["A"]["fbo"][i]["h"] == arms["A2"]["fbo"][i]["h"] for i in range(3))
+    results[C73] = noised("tibMain") and all(a["tibMain"] == a["drawMain"] for a in arms.values())
+    results[C74] = (noised("tibWorker") and all(a["tibWorker"] == a["drawMain"] for a in arms.values()))
+    for arm, a in arms.items():
+        notes.append(f"C70-C74 {arm}: view {a['view']} pbo {a['pbo']} lay {a['layPbo']} outside {a['outsideBad']}/{a['outsideN']} "
+                     f"layEq {a['layEq']} layDiff {a['layDiff']} first {a['layFirst']} layBound {a['layBound']} layGlerr {a['layGlerr']} "
+                     f"tibMain {a['tibMain']} drawMain {a['drawMain']} tibWorker {a['tibWorker']} "
+                     f"fbo {[(c['eq'], c['h']) for c in a['fbo']]} texBitmap {a['texBitmap']} texCanvas {a['texCanvas']}")
+
+
+leaks_rows()
+
+# --- Lazy transferToImageBitmap noise (2026-11-19): C75-C83 ---
+# C85/C86 run PrepareTransferableResource (a mutant that drops the image there fails both) but, on SwiftShader, the
+# MakeAccelerated copy and the MakeUnaccelerated copy do not happen (the image is already CPU-side, so no copy
+# loses the tag): their tag-keeping code has no RED here; it needs a real GPU host run.
+# transferToImageBitmap does no readback: the bitmap is tagged, and every consumer that lets the page read its pixels
+# asks for the noised ones (the field drawImage(webglCanvas) gives). One page function runs every consumer; the
+# reference of each is the same read of the WebGL canvas itself, in the same arm.
+C75 = "C75 drawImage(bitmap) to a willReadFrequently and to a default 2D canvas: noised, equal to drawImage(webglCanvas)"
+C76 = "C76 createPattern(bitmap) fill: noised, equal to createPattern(webglCanvas)"
+C77 = "C77 new VideoFrame(bitmap).copyTo: noised, equal to new VideoFrame(webglCanvas).copyTo"
+C78 = "C78 createImageBitmap(bitmap) plain and cropped: noised, equal to drawImage(webglCanvas) / its crop"
+C79 = "C79 postMessage(bitmap, [bitmap]) to a worker, drawImage there: noised, equal to drawImage(webglCanvas)"
+C80 = "C80 postMessage(bitmap) (structured clone) to a worker, drawImage there: noised, equal to drawImage(webglCanvas)"
+C81 = "C81 bitmaprenderer canvas holding the bitmap: toDataURL, toBlob, drawImage(canvas) noised, equal to the WebGL canvas's"
+C82 = "C82 OffscreenCanvas bitmaprenderer holding the bitmap: convertToBlob noised, equal to the WebGL OffscreenCanvas's"
+C84 = "C84 postMessage(bitmap, [bitmap]) while a second ImageBitmap shares the image (Transfer() must clone it): noised, equal to drawImage(webglCanvas)"
+C83 = "C83 per-frame cost with a seed equals none (transferToImageBitmap 512 and 1080p, and transfer + transferFromImageBitmap display 1080p)"
+LEAKS2 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const Hs = (str) => H(new TextEncoder().encode(str));
+  const R = {};
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  const mkTib = () => { const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
+    return oc.transferToImageBitmap(); };
+  const c2d = (w, h, opts) => { const c = document.createElement('canvas'); c.width = w; c.height = h;
+    return [c, c.getContext('2d', opts)]; };
+  const read2d = (src, wrf) => { const [, x] = c2d(64, 64, wrf ? { willReadFrequently: true } : {});
+    x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, 64, 64).data); };
+  R.ref = read2d(dom, true);
+  R.drawWrf = read2d(mkTib(), true);
+  R.drawGpu = read2d(mkTib(), false);
+  const pat = (src) => { const [, x] = c2d(64, 64, { willReadFrequently: true });
+    x.fillStyle = x.createPattern(src, 'no-repeat'); x.fillRect(0, 0, 64, 64);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  R.patBitmap = pat(mkTib()); R.patCanvas = pat(dom);
+  const vf = async (src) => { try { const f = new VideoFrame(src, { timestamp: 0 });
+    const b = new Uint8Array(f.allocationSize()); await f.copyTo(b); const fmt = f.format; f.close();
+    return fmt + ':' + H(b); } catch (e) { return 'err:' + e.message; } };
+  R.vfBitmap = await vf(mkTib()); R.vfCanvas = await vf(dom);
+  R.cibPlain = read2d(await createImageBitmap(mkTib()), true);
+  const crop = (src, sx) => { const [, x] = c2d(40, 40, { willReadFrequently: true });
+    if (sx) x.drawImage(src, 8, 8, 40, 40, 0, 0, 40, 40); else x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 40, 40).data); };
+  R.cibCrop = crop(await createImageBitmap(mkTib(), 8, 8, 40, 40), false); R.cropRef = crop(dom, true);
+  const wsrc = `const H = ${H.toString()};
+    onmessage = (e) => { const c = new OffscreenCanvas(64, 64); const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(e.data, 0, 0); postMessage(H(x.getImageData(0, 0, 64, 64).data)); };`;
+  const viaWorker = async (mode) => { const b = mkTib();
+    // A second ImageBitmap on the same image: Transfer() cannot move it and must copy it (the clone fallback).
+    const keep = mode === 'xferClone' ? await createImageBitmap(b) : null;
+    const w = new Worker(URL.createObjectURL(new Blob([wsrc], { type: 'text/javascript' })));
+    const r = new Promise((resolve, reject) => { w.onmessage = (e) => resolve(e.data);
+      w.onerror = (e) => reject(new Error(e.message || 'worker error')); });
+    if (mode === 'clone') w.postMessage(b); else w.postMessage(b, [b]);
+    const out = await r; if (keep) keep.close(); return out; };
+  R.xfer = await viaWorker('xfer'); R.clone = await viaWorker('clone'); R.xferClone = await viaWorker('xferClone');
+  const br = () => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    c.getContext('bitmaprenderer').transferFromImageBitmap(mkTib()); return c; };
+  const blobHash = (c) => new Promise((res) => c.toBlob((b) => b.arrayBuffer().then((a) => res(H(new Uint8Array(a))))));
+  R.brData = Hs(br().toDataURL()); R.refData = Hs(dom.toDataURL());
+  R.brBlob = await blobHash(br()); R.refBlob = await blobHash(dom);
+  R.brDraw = read2d(br(), true);
+  const offBlob = async (oc) => H(new Uint8Array(await (await oc.convertToBlob()).arrayBuffer()));
+  const ocw = new OffscreenCanvas(64, 64); scene(ocw.getContext('webgl2'), 64, 64); R.refOffBlob = await offBlob(ocw);
+  const ocb = new OffscreenCanvas(64, 64); ocb.getContext('bitmaprenderer').transferFromImageBitmap(mkTib());
+  R.brOffBlob = await offBlob(ocb);
+  // cost per frame: the transfer alone (worker loop), and transfer + display on a bitmaprenderer canvas
+  const csrc = `onmessage = (e) => { const [w, h, n] = e.data; const oc = new OffscreenCanvas(w, h); const gl = oc.getContext('webgl2');
+    const t = []; for (let r = 0; r < 5; r++) { const a = performance.now();
+      for (let i = 0; i < n; i++) { gl.clearColor(i / n, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); oc.transferToImageBitmap().close(); }
+      t.push((performance.now() - a) / n); }
+    t.sort((a, b) => a - b); postMessage(t[2]); };`;
+  const cost = (w, h) => new Promise((resolve) => { const wk = new Worker(URL.createObjectURL(new Blob([csrc])));
+    wk.onmessage = (e) => resolve(+e.data.toFixed(4)); wk.postMessage([w, h, 20]); });
+  R.cost512 = await cost(512, 512); R.cost1080 = await cost(1920, 1080);
+  { const oc = new OffscreenCanvas(1920, 1080); const gl = oc.getContext('webgl2');
+    const c = document.createElement('canvas'); c.width = 1920; c.height = 1080; const b = c.getContext('bitmaprenderer');
+    const t = []; for (let r = 0; r < 5; r++) { const a = performance.now();
+      for (let i = 0; i < 20; i++) { gl.clearColor(i / 20, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); b.transferFromImageBitmap(oc.transferToImageBitmap()); }
+      t.push((performance.now() - a) / 20); }
+    t.sort((a, b2) => a - b2); R.costShow1080 = +t[2].toFixed(4); }
+  return R;
+}"""
+
+
+def leaks2_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS2, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83, C84):
+                results[row] = False
+            notes.append(f"C75-C83: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(key):    # seed A moves the none value, seed B moves A's, A again reproduces A
+        return (arms["A"][key] != arms["none"][key] and arms["A"][key] != arms["B"][key]
+                and arms["A"][key] == arms["A2"][key])
+
+    def equals(key, ref):   # in every arm, the consumer's value is the WebGL canvas's own read
+        return all(a[key] == a[ref] for a in arms.values())
+
+    if not noised("ref"):
+        for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83, C84):
+            mark_unmeasured(row, "drawImage(webglCanvas) is not noised across the arms: nothing to compare the bitmaps with")
+        return
+    results[C75] = noised("drawWrf") and equals("drawWrf", "ref") and noised("drawGpu") and equals("drawGpu", "ref")
+    results[C76] = noised("patBitmap") and equals("patBitmap", "patCanvas")
+    if any(a["vfBitmap"].startswith("err:") or a["vfCanvas"].startswith("err:") for a in arms.values()):
+        mark_unmeasured(C77, f"VideoFrame unavailable: {arms['A']['vfBitmap']} / {arms['A']['vfCanvas']}")
+    else:
+        results[C77] = noised("vfBitmap") and equals("vfBitmap", "vfCanvas")
+    results[C78] = noised("cibPlain") and equals("cibPlain", "ref") and noised("cibCrop") and equals("cibCrop", "cropRef")
+    results[C79] = noised("xfer") and equals("xfer", "ref")
+    results[C80] = noised("clone") and equals("clone", "ref")
+    results[C84] = noised("xferClone") and equals("xferClone", "ref")
+    results[C81] = (noised("brData") and equals("brData", "refData") and noised("brBlob") and equals("brBlob", "refBlob")
+                    and noised("brDraw") and equals("brDraw", "ref"))
+    results[C82] = noised("brOffBlob") and equals("brOffBlob", "refOffBlob")
+
+    def cheap(key):     # a flag, not a readback: within noise of none (an eager readback was 2.4 and 18 ms)
+        return all(arms[s][key] <= 2 * arms["none"][key] + 0.25 for s in ("A", "B", "A2"))
+
+    results[C83] = cheap("cost512") and cheap("cost1080") and cheap("costShow1080")
+    for arm, a in arms.items():
+        notes.append(f"C75-C83 {arm}: ref {a['ref']} draw {a['drawWrf']}/{a['drawGpu']} pat {a['patBitmap']}/{a['patCanvas']} "
+                     f"vf {a['vfBitmap']}/{a['vfCanvas']} cib {a['cibPlain']} crop {a['cibCrop']}/{a['cropRef']} "
+                     f"xfer {a['xfer']}/{a['xferClone']} clone {a['clone']} br {a['brData']}/{a['refData']} {a['brBlob']}/{a['refBlob']} "
+                     f"{a['brDraw']} off {a['brOffBlob']}/{a['refOffBlob']} "
+                     f"cost {a['cost512']} {a['cost1080']} show {a['costShow1080']} ms")
+
+
+leaks2_rows()
+
+C85 = "C85 bitmaprenderer canvas in the document (the compositor asks for its resource): toDataURL and drawImage(canvas) noised, equal to the WebGL canvas's"
+C86 = "C86 the same with --disable-gpu-compositing"
+LEAKS3 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const Hs = (str) => H(new TextEncoder().encode(str));
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const R = {};
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  const mkTib = () => { const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
+    return oc.transferToImageBitmap(); };
+  const read2d = (src) => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  R.ref = read2d(dom); R.refData = Hs(dom.toDataURL());
+  // In the document, so the compositor asks the context for its resource (PrepareTransferableResource).
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  c.style.cssText = 'position:fixed;left:0;top:0'; document.body.appendChild(c);
+  c.getContext('bitmaprenderer').transferFromImageBitmap(mkTib());
+  const frame = () => new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 300); });
+  for (let i = 0; i < 6; i++) await frame();
+  await new Promise((r) => setTimeout(r, 300));
+  R.brData = Hs(c.toDataURL()); R.brDraw = read2d(c);
+  return R;
+}"""
+
+
+def composited_row(row, flags, label):
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS3, extra_flags=flags)
+        if v is None or "err" in v:
+            results[row] = False
+            notes.append(f"{row[:3]}: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(key):
+        return (arms["A"][key] != arms["none"][key] and arms["A"][key] != arms["B"][key]
+                and arms["A"][key] == arms["A2"][key])
+
+    ok = (noised("brData") and noised("brDraw") and all(a["brData"] == a["refData"] and a["brDraw"] == a["ref"] for a in arms.values()))
+    results[row] = ok
+    notes.append(f"{row[:3]} {label}: " + " | ".join(f"{k} ref {a['ref']} draw {a['brDraw']} data {a['brData']}/{a['refData']}"
+                                                  for k, a in arms.items()))
+
+
+composited_row(C85, GL_ROW_FLAGS, "gpu compositing")
+composited_row(C86, GL_ROW_FLAGS + ["--disable-gpu-compositing"], "software compositing")
+
+# Report only (no row): paths a reviewer flagged as possibly unnoised on a real GPU, measured here on SwiftShader.
+LEAKS4 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const Hs = (str) => H(new TextEncoder().encode(str));
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const R = {};
+  const read2d = (src) => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  R.ref = read2d(dom);
+  // captureStream of a WebGL canvas, read back through a <video>
+  try { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const gl = c.getContext('webgl2', { preserveDrawingBuffer: true }); scene(gl, 64, 64);
+    const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30);
+    await v.play().catch(() => {});
+    let n = 0;
+    await new Promise((res) => { const cb = () => { if (++n >= 5) return res(); scene(gl, 64, 64); v.requestVideoFrameCallback(cb); };
+      scene(gl, 64, 64); v.requestVideoFrameCallback(cb); setTimeout(res, 5000); });
+    R.cap = read2d(v) + ' frames ' + n + ' ' + v.videoWidth + 'x' + v.videoHeight;
+  } catch (e) { R.cap = 'err:' + e.message; }
+  // transferControlToOffscreen: the worker renders, the main thread reads the placeholder canvas
+  try { const c = document.createElement('canvas'); c.width = 64; c.height = 64; document.body.appendChild(c);
+    const off = c.transferControlToOffscreen();
+    const w = new Worker(URL.createObjectURL(new Blob([`const scene = ${scene.toString()};
+      onmessage = (e) => { scene(e.data.getContext('webgl2'), 64, 64); postMessage('drawn'); };`])));
+    await new Promise((res) => { w.onmessage = res; w.postMessage(off, [off]); });
+    for (let i = 0; i < 6; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 300); });
+    R.phUrl = 'n/a'; R.phDraw = 'n/a';
+    try { R.phUrl = Hs(c.toDataURL()); } catch (e) { R.phUrl = 'err:' + e.message; }
+    try { R.phDraw = read2d(c); } catch (e) { R.phDraw = 'err:' + e.message; }
+  } catch (e) { R.phUrl = 'err:' + e.message; R.phDraw = R.phUrl; }
+  return R;
+}"""
+
+
+def report_only():
+    for label, flags in (("default", GL_ROW_FLAGS), ("OneCopyCanvasCapture", GL_ROW_FLAGS + ["--enable-features=OneCopyCanvasCapture"])):
+        row = []
+        for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222}))):
+            v, e = session(cfg, LEAKS4, extra_flags=flags)
+            row.append(f"{name}: " + (f"ERR {e}" if v is None else f"ref {v['ref']} captureStream {v['cap']} "
+                                      f"placeholder toDataURL {v['phUrl']} drawImage {v['phDraw']}"))
+        notes.append(f"REPORT-ONLY (no row) [{label}]: " + " | ".join(row))
+
+
+report_only()
+
+EXPECTED = 94   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
