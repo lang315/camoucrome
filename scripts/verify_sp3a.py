@@ -2940,7 +2940,196 @@ def report_only():
 
 report_only()
 
-EXPECTED = 94   # the soft rows (SOFT_ROWS) are not counted
+# --- transferControlToOffscreen placeholder noise (2026-11-19): C87-C93 ---
+# A worker renders into a canvas the main thread transferred control of; the page reads the placeholder canvas on the main
+# thread. The worker commits its frames with a noise record; the main thread noises the frame when the page reads it, as the
+# worker's own context would (convertToBlob). A 2D worker and a WebGL worker, in every row.
+C87 = "C87 placeholder toBlob and toDataURL equal the worker's own convertToBlob, 2D and WebGL workers: noised (A != none, A != B, A == A again)"
+C88 = "C88 drawImage(placeholder) to 2D, getImageData: noised, equal to the same read of a main-thread canvas with the same scene"
+C89 = "C89 createImageBitmap(placeholder), drawImage, getImageData: noised, equal to the main-thread canvas's read"
+C90 = "C90 captureStream(placeholder) to a video, drawImage, getImageData: noised, equal to the main-thread canvas's read"
+C91 = "C91 two frames: the second read is the second frame's noise (a per-frame cache is not stale)"
+C93 = "C93 worker frame period with a seed within 5 % + 0.3 ms of none at 512 and 1080p (2D static, 2D moving, WebGL; vsync limit off)"
+SOFT_ROWS = SOFT_ROWS + (C90, C93)
+PH_SCENES = """
+  const scene2d = (c, v) => { const x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, c.width, c.height);
+    g.addColorStop(0, v ? '#1f6' : '#f60'); g.addColorStop(1, v ? '#f16' : '#16f'); x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = 'rgba(255,255,255,0.6)'; x.beginPath(); x.arc(c.width / 2 + (v ? 9 : 0), c.height / 2, c.height * 0.3, 0, 7); x.fill();
+    // an imported patch of noisy pixels, somewhere else in each frame: the mask must keep the noise off it, and the mask
+    // changes from one frame to the next (a stale mask would noise the second frame's patch)
+    const patch = new OffscreenCanvas(16, 16); const px = patch.getContext('2d');
+    for (let i = 0; i < 256; i++) { const h = Math.imul(i + 1, 2654435761) >>> 0;
+      px.fillStyle = 'rgb(' + (h & 255) + ',' + ((h >> 8) & 255) + ',' + ((h >> 16) & 255) + ')'; px.fillRect(i % 16, (i / 16) | 0, 1, 1); }
+    x.drawImage(patch, v ? 8 : 40, v ? 8 : 40); };
+  const sceneGl = (c, v) => { const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
+    const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER, 'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, 'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr); gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    const o = v ? 0.15 : 0;
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.9 + o, -0.8, 1, 0, 0, 0.85, -0.6, 0, 1, 0, -0.1, 0.9 - o, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+"""
+LEAKS6 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const Hs = (s) => H(new TextEncoder().encode(s));
+  __SCENES__
+  const wsrc = `const scene2d = ${scene2d.toString()}; const sceneGl = ${sceneGl.toString()};
+    let off = null;
+    onmessage = async (e) => { const [kind, v, o] = e.data;
+      if (o) off = o;
+      const draw = kind === '2d' ? scene2d : sceneGl;
+      // the worker's own noised read of the canvas it renders into, as it is right now
+      if (kind === 'cur') { postMessage(await (await off.convertToBlob()).arrayBuffer()); return; }
+      if (kind === 'ref2d' || kind === 'refgl') { const c = new OffscreenCanvas(64, 64); (kind === 'ref2d' ? scene2d : sceneGl)(c, v);
+        postMessage(await (await c.convertToBlob()).arrayBuffer()); return; }
+      draw(off, v); postMessage('drawn'); };`;
+  const url = URL.createObjectURL(new Blob([wsrc]));
+  const call = (w, msg, tr) => new Promise((r) => { w.onmessage = (e) => r(e.data); w.postMessage(msg, tr || []); });
+  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 250); }); };
+  const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); };
+  const read2d = (src, w, h) => { const d = document.createElement('canvas'); d.width = w; d.height = h;
+    const x = d.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, w, h).data); };
+  const R = {};
+  self.__p = [];
+  for (const kind of ['2d', 'gl']) {
+    const w = new Worker(url);
+    self.__p.push(kind + ' start');
+    const refBytes = new Uint8Array(await call(w, ['ref' + kind, 0]));
+    const ref1Bytes = new Uint8Array(await call(w, ['ref' + kind, 1]));
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64; document.body.appendChild(c);
+    const off = c.transferControlToOffscreen();
+    self.__p.push(kind + ' refs');
+    await call(w, [kind, 0, off], [off]);
+    self.__p.push(kind + ' drawn');
+    await frames(8);
+    self.__p.push(kind + ' frames');
+    const blobBytes = async () => new Uint8Array(await (await new Promise((r) => c.toBlob(r))).arrayBuffer());
+    const r = {};
+    r.blob = H(await blobBytes()); r.refBlob = H(refBytes);
+    r.cur = H(new Uint8Array(await call(w, ['cur', 0])));
+    self.__p.push(kind + ' blob');
+    r.url = Hs(c.toDataURL()); r.refUrl = Hs('data:image/png;base64,' + b64(refBytes));
+    // the same scene on a main-thread canvas: the reference of the reads that go through a 2D canvas
+    const m = document.createElement('canvas'); m.width = 64; m.height = 64; (kind === '2d' ? scene2d : sceneGl)(m, 0);
+    r.draw = read2d(c, 64, 64); r.refDraw = read2d(m, 64, 64);
+    self.__p.push(kind + ' draw');
+    r.cib = read2d(await createImageBitmap(c), 64, 64);
+    self.__p.push(kind + ' cib');
+    try { const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30); v.play().catch(() => {});
+      // the stream only carries frames the worker commits after it started: keep redrawing scene 0 until one arrives
+      let n = 0; const cb = () => { n++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb);
+      for (let i = 0; i < 6 && n < 2; i++) { await call(w, [kind, 0]); await frames(3); }
+      r.cap = n ? read2d(v, 64, 64) : 'noframe'; } catch (e) { r.cap = 'err:' + e.message; }
+    self.__p.push(kind + ' cap');
+    // a second frame
+    const before = r.blob;
+    await call(w, [kind, 1]); await frames(8);
+    // the worker's own read of the same canvas now: the history of its mask (frame 1's patch stays marked) is part of it
+    r.blob2 = H(await blobBytes()); r.refBlob2 = H(new Uint8Array(await call(w, ['cur', 0]))); r.before = before;
+    R[kind] = r; w.terminate();
+  }
+  return R;
+}""".replace("__SCENES__", PH_SCENES)
+LEAKS7 = """async () => {
+  __SCENES__
+  const R = {};
+  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); }); };
+  // static: the same scene every frame (the mask settles after the first); moving: a shape at new cells every frame for 120
+  // frames (the mask changes on every frame of the first lap), and WebGL (no mask).
+  for (const kind of ['2d-static', '2d-move', 'gl']) for (const [w, h] of [[512, 512], [1920, 1080]]) {
+    const wsrc = `const scene2d = ${scene2d.toString()}; const sceneGl = ${sceneGl.toString()};
+      const move2d = (c, n) => { const x = c.getContext('2d'); if (n === 0) { x.fillStyle = '#16f'; x.fillRect(0, 0, c.width, c.height); }
+        const g = x.createRadialGradient(0, 0, 0, 0, 0, 40); g.addColorStop(0, '#fff'); g.addColorStop(1, '#f60');
+        x.save(); x.translate((n * 53) % c.width, (n * 29) % c.height); x.fillStyle = g; x.beginPath(); x.arc(0, 0, 40, 0, 7); x.fill(); x.restore(); };
+      onmessage = async (e) => { const [kind, off] = e.data;
+        const draw = kind === 'gl' ? (c, n) => sceneGl(c, 0) : kind === '2d-move' ? move2d : (c, n) => { if (n === 0) scene2d(c, 0); else c.getContext('2d').fillRect(0, 0, 1, 1); };
+        const ts = []; await new Promise((res) => { let n = 0, last = performance.now();
+          const f = (now) => { ts.push(now - last); last = now; draw(off, n); if (++n < 120) requestAnimationFrame(f); else res(); };
+          requestAnimationFrame(f); });
+        const med = (a) => a.slice().sort((p, q) => p - q)[a.length >> 1];
+        postMessage({ lap1: med(ts.slice(1, 60)), lap2: med(ts.slice(60)) }); };`;
+    const worker = new Worker(URL.createObjectURL(new Blob([wsrc])));
+    const c = document.createElement('canvas'); c.width = w; c.height = h; document.body.appendChild(c);
+    const off = c.transferControlToOffscreen();
+    R[kind + '-' + w] = await new Promise((res) => { worker.onmessage = (e) => res({ lap1: +e.data.lap1.toFixed(2), lap2: +e.data.lap2.toFixed(2) });
+      worker.postMessage([kind, off], [off]); });
+    worker.terminate(); c.remove(); await frames(2);
+  }
+  // proxy for the mask snapshot copy: a 1 byte per pixel copy at 1080p
+  const src = new Uint8Array(1920 * 1080); const t = []; for (let i = 0; i < 30; i++) { const a = performance.now(); src.slice(); t.push(performance.now() - a); }
+  t.sort((p, q) => p - q); R.copy1080 = +t[15].toFixed(3);
+  return R;
+}""".replace("__SCENES__", PH_SCENES)
+
+
+def placeholder_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS6, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            for row in (C87, C88, C89, C91):
+                results[row] = False
+            soft[C90] = False
+            notes.append(f"C87-C91: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(kind, key):
+        return (arms["A"][kind][key] != arms["none"][kind][key] and arms["A"][kind][key] != arms["B"][kind][key]
+                and arms["A"][kind][key] == arms["A2"][kind][key])
+
+    def equals(key, ref):
+        return all(a[k][key] == a[k][ref] for a in arms.values() for k in ("2d", "gl"))
+
+    kinds = ("2d", "gl")
+    results[C87] = (all(noised(k, "blob") and noised(k, "url") for k in kinds) and equals("blob", "refBlob")
+                    and equals("blob", "cur") and equals("url", "refUrl"))
+    results[C88] = all(noised(k, "draw") for k in kinds) and equals("draw", "refDraw")
+    results[C89] = all(noised(k, "cib") for k in kinds) and equals("cib", "refDraw")
+    results[C91] = (equals("blob2", "refBlob2") and all(arms[a][k]["blob2"] != arms[a][k]["blob"] for a in ("A", "B") for k in kinds)
+                    and all(noised(k, "blob2") for k in kinds))
+    capframes = [arms[a][k]["cap"] for a in arms for k in kinds]
+    if any(str(x).startswith(("noframe", "err")) for x in capframes):
+        mark_unmeasured(C90, f"no video frame from captureStream(placeholder): {sorted(set(map(str, capframes)))[:3]}")
+    else:
+        soft[C90] = all(noised(k, "cap") for k in kinds) and equals("cap", "refDraw")
+    for name, a in arms.items():
+        notes.append(f"C87-C91 {name}: " + " | ".join(
+            f"{k}: blob {a[k]['blob']}/{a[k]['refBlob']} url {a[k]['url']}/{a[k]['refUrl']} draw {a[k]['draw']}/{a[k]['refDraw']} "
+            f"cib {a[k]['cib']} cap {a[k]['cap']} blob2 {a[k]['blob2']}/{a[k]['refBlob2']}" for k in kinds))
+    # cost: the worker's frame period, vsync limit off so the push cost is not hidden behind the 16.7 ms tick
+    cost = {}
+    flags = GL_ROW_FLAGS + ["--disable-frame-rate-limit", "--disable-gpu-vsync"]
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS7, extra_flags=flags)
+        if v is None or "err" in v:
+            mark_unmeasured(C93, f"cost session {name}: {e if v is None else v['err']}")
+            return
+        cost[name] = v
+    notes.append("C93 worker frame period ms (lap 1 = mask still growing, lap 2 = settled) and a 2 MB copy: " + " | ".join(
+        f"{n}: " + ", ".join(f"{k} {v['lap1']}/{v['lap2']}" for k, v in c.items() if k != "copy1080") + f", copy1080 {c['copy1080']}"
+        for n, c in cost.items()))
+    keys = [k for k in cost["none"] if k != "copy1080"]
+    if min(cost["none"][k]["lap2"] for k in keys) > 15.5:
+        mark_unmeasured(C93, "the frame period is pinned at the vsync tick even with the limit off: the push cost is below what "
+                             "this harness resolves")
+    else:
+        # within 5 % + 0.3 ms of none (the chunked snapshot copies only the rows a shape touched)
+        soft[C93] = all(cost["A"][k]["lap1"] <= 1.05 * cost["none"][k]["lap1"] + 0.3
+                        and cost["A"][k]["lap2"] <= 1.05 * cost["none"][k]["lap2"] + 0.3 for k in keys)
+
+
+placeholder_rows()
+
+EXPECTED = 98   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
