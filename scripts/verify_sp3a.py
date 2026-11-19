@@ -2646,6 +2646,9 @@ def leaks_rows():
 leaks_rows()
 
 # --- Lazy transferToImageBitmap noise (2026-11-19): C75-C83 ---
+# C85/C86 run PrepareTransferableResource (a mutant that drops the image there fails both) but, on SwiftShader, the
+# MakeAccelerated copy and the MakeUnaccelerated copy do not happen (the image is already CPU-side, so no copy
+# loses the tag): their tag-keeping code has no RED here; it needs a real GPU host run.
 # transferToImageBitmap does no readback: the bitmap is tagged, and every consumer that lets the page read its pixels
 # asks for the noised ones (the field drawImage(webglCanvas) gives). One page function runs every consumer; the
 # reference of each is the same read of the WebGL canvas itself, in the same arm.
@@ -2657,6 +2660,7 @@ C79 = "C79 postMessage(bitmap, [bitmap]) to a worker, drawImage there: noised, e
 C80 = "C80 postMessage(bitmap) (structured clone) to a worker, drawImage there: noised, equal to drawImage(webglCanvas)"
 C81 = "C81 bitmaprenderer canvas holding the bitmap: toDataURL, toBlob, drawImage(canvas) noised, equal to the WebGL canvas's"
 C82 = "C82 OffscreenCanvas bitmaprenderer holding the bitmap: convertToBlob noised, equal to the WebGL OffscreenCanvas's"
+C84 = "C84 postMessage(bitmap, [bitmap]) while a second ImageBitmap shares the image (Transfer() must clone it): noised, equal to drawImage(webglCanvas)"
 C83 = "C83 per-frame cost with a seed equals none (transferToImageBitmap 512 and 1080p, and transfer + transferFromImageBitmap display 1080p)"
 LEAKS2 = """async () => {
   const H = (u8) => { let h = 2166136261;
@@ -2709,11 +2713,15 @@ LEAKS2 = """async () => {
   const wsrc = `const H = ${H.toString()};
     onmessage = (e) => { const c = new OffscreenCanvas(64, 64); const x = c.getContext('2d', { willReadFrequently: true });
       x.drawImage(e.data, 0, 0); postMessage(H(x.getImageData(0, 0, 64, 64).data)); };`;
-  const viaWorker = (transfer) => new Promise((resolve, reject) => {
+  const viaWorker = async (mode) => { const b = mkTib();
+    // A second ImageBitmap on the same image: Transfer() cannot move it and must copy it (the clone fallback).
+    const keep = mode === 'xferClone' ? await createImageBitmap(b) : null;
     const w = new Worker(URL.createObjectURL(new Blob([wsrc], { type: 'text/javascript' })));
-    w.onmessage = (e) => resolve(e.data); w.onerror = (e) => reject(new Error(e.message || 'worker error'));
-    const b = mkTib(); if (transfer) w.postMessage(b, [b]); else w.postMessage(b); });
-  R.xfer = await viaWorker(true); R.clone = await viaWorker(false);
+    const r = new Promise((resolve, reject) => { w.onmessage = (e) => resolve(e.data);
+      w.onerror = (e) => reject(new Error(e.message || 'worker error')); });
+    if (mode === 'clone') w.postMessage(b); else w.postMessage(b, [b]);
+    const out = await r; if (keep) keep.close(); return out; };
+  R.xfer = await viaWorker('xfer'); R.clone = await viaWorker('clone'); R.xferClone = await viaWorker('xferClone');
   const br = () => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
     c.getContext('bitmaprenderer').transferFromImageBitmap(mkTib()); return c; };
   const blobHash = (c) => new Promise((res) => c.toBlob((b) => b.arrayBuffer().then((a) => res(H(new Uint8Array(a))))));
@@ -2749,7 +2757,7 @@ def leaks2_rows():
                       ("A2", json.dumps({"canvas:seed": 1111}))):
         v, e = session(cfg, LEAKS2, extra_flags=GL_ROW_FLAGS)
         if v is None or "err" in v:
-            for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83):
+            for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83, C84):
                 results[row] = False
             notes.append(f"C75-C83: arm {name}: {e if v is None else v['err']}")
             return
@@ -2763,7 +2771,7 @@ def leaks2_rows():
         return all(a[key] == a[ref] for a in arms.values())
 
     if not noised("ref"):
-        for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83):
+        for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83, C84):
             mark_unmeasured(row, "drawImage(webglCanvas) is not noised across the arms: nothing to compare the bitmaps with")
         return
     results[C75] = noised("drawWrf") and equals("drawWrf", "ref") and noised("drawGpu") and equals("drawGpu", "ref")
@@ -2775,6 +2783,7 @@ def leaks2_rows():
     results[C78] = noised("cibPlain") and equals("cibPlain", "ref") and noised("cibCrop") and equals("cibCrop", "cropRef")
     results[C79] = noised("xfer") and equals("xfer", "ref")
     results[C80] = noised("clone") and equals("clone", "ref")
+    results[C84] = noised("xferClone") and equals("xferClone", "ref")
     results[C81] = (noised("brData") and equals("brData", "refData") and noised("brBlob") and equals("brBlob", "refBlob")
                     and noised("brDraw") and equals("brDraw", "ref"))
     results[C82] = noised("brOffBlob") and equals("brOffBlob", "refOffBlob")
@@ -2786,14 +2795,152 @@ def leaks2_rows():
     for arm, a in arms.items():
         notes.append(f"C75-C83 {arm}: ref {a['ref']} draw {a['drawWrf']}/{a['drawGpu']} pat {a['patBitmap']}/{a['patCanvas']} "
                      f"vf {a['vfBitmap']}/{a['vfCanvas']} cib {a['cibPlain']} crop {a['cibCrop']}/{a['cropRef']} "
-                     f"xfer {a['xfer']} clone {a['clone']} br {a['brData']}/{a['refData']} {a['brBlob']}/{a['refBlob']} "
+                     f"xfer {a['xfer']}/{a['xferClone']} clone {a['clone']} br {a['brData']}/{a['refData']} {a['brBlob']}/{a['refBlob']} "
                      f"{a['brDraw']} off {a['brOffBlob']}/{a['refOffBlob']} "
                      f"cost {a['cost512']} {a['cost1080']} show {a['costShow1080']} ms")
 
 
 leaks2_rows()
 
-EXPECTED = 91   # the soft rows (SOFT_ROWS) are not counted
+C85 = "C85 bitmaprenderer canvas in the document (the compositor asks for its resource): toDataURL and drawImage(canvas) noised, equal to the WebGL canvas's"
+C86 = "C86 the same with --disable-gpu-compositing"
+LEAKS3 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const Hs = (str) => H(new TextEncoder().encode(str));
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const R = {};
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  const mkTib = () => { const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
+    return oc.transferToImageBitmap(); };
+  const read2d = (src) => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  R.ref = read2d(dom); R.refData = Hs(dom.toDataURL());
+  // In the document, so the compositor asks the context for its resource (PrepareTransferableResource).
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  c.style.cssText = 'position:fixed;left:0;top:0'; document.body.appendChild(c);
+  c.getContext('bitmaprenderer').transferFromImageBitmap(mkTib());
+  const frame = () => new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 300); });
+  for (let i = 0; i < 6; i++) await frame();
+  await new Promise((r) => setTimeout(r, 300));
+  R.brData = Hs(c.toDataURL()); R.brDraw = read2d(c);
+  return R;
+}"""
+
+
+def composited_row(row, flags, label):
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS3, extra_flags=flags)
+        if v is None or "err" in v:
+            results[row] = False
+            notes.append(f"{row[:3]}: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(key):
+        return (arms["A"][key] != arms["none"][key] and arms["A"][key] != arms["B"][key]
+                and arms["A"][key] == arms["A2"][key])
+
+    ok = (noised("brData") and noised("brDraw") and all(a["brData"] == a["refData"] and a["brDraw"] == a["ref"] for a in arms.values()))
+    results[row] = ok
+    notes.append(f"{row[:3]} {label}: " + " | ".join(f"{k} ref {a['ref']} draw {a['brDraw']} data {a['brData']}/{a['refData']}"
+                                                  for k, a in arms.items()))
+
+
+composited_row(C85, GL_ROW_FLAGS, "gpu compositing")
+composited_row(C86, GL_ROW_FLAGS + ["--disable-gpu-compositing"], "software compositing")
+
+# Report only (no row): paths a reviewer flagged as possibly unnoised on a real GPU, measured here on SwiftShader.
+LEAKS4 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const Hs = (str) => H(new TextEncoder().encode(str));
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const R = {};
+  const read2d = (src) => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  R.ref = read2d(dom);
+  // captureStream of a WebGL canvas, read back through a <video>
+  try { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const gl = c.getContext('webgl2', { preserveDrawingBuffer: true }); scene(gl, 64, 64);
+    const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30);
+    await v.play().catch(() => {});
+    let n = 0;
+    await new Promise((res) => { const cb = () => { if (++n >= 5) return res(); scene(gl, 64, 64); v.requestVideoFrameCallback(cb); };
+      scene(gl, 64, 64); v.requestVideoFrameCallback(cb); setTimeout(res, 5000); });
+    R.cap = read2d(v) + ' frames ' + n + ' ' + v.videoWidth + 'x' + v.videoHeight;
+  } catch (e) { R.cap = 'err:' + e.message; }
+  // transferControlToOffscreen: the worker renders, the main thread reads the placeholder canvas
+  try { const c = document.createElement('canvas'); c.width = 64; c.height = 64; document.body.appendChild(c);
+    const off = c.transferControlToOffscreen();
+    const w = new Worker(URL.createObjectURL(new Blob([`const scene = ${scene.toString()};
+      onmessage = (e) => { scene(e.data.getContext('webgl2'), 64, 64); postMessage('drawn'); };`])));
+    await new Promise((res) => { w.onmessage = res; w.postMessage(off, [off]); });
+    for (let i = 0; i < 6; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 300); });
+    R.phUrl = 'n/a'; R.phDraw = 'n/a';
+    try { R.phUrl = Hs(c.toDataURL()); } catch (e) { R.phUrl = 'err:' + e.message; }
+    try { R.phDraw = read2d(c); } catch (e) { R.phDraw = 'err:' + e.message; }
+  } catch (e) { R.phUrl = 'err:' + e.message; R.phDraw = R.phUrl; }
+  return R;
+}"""
+
+
+def report_only():
+    for label, flags in (("default", GL_ROW_FLAGS), ("OneCopyCanvasCapture", GL_ROW_FLAGS + ["--enable-features=OneCopyCanvasCapture"])):
+        row = []
+        for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222}))):
+            v, e = session(cfg, LEAKS4, extra_flags=flags)
+            row.append(f"{name}: " + (f"ERR {e}" if v is None else f"ref {v['ref']} captureStream {v['cap']} "
+                                      f"placeholder toDataURL {v['phUrl']} drawImage {v['phDraw']}"))
+        notes.append(f"REPORT-ONLY (no row) [{label}]: " + " | ".join(row))
+
+
+report_only()
+
+EXPECTED = 94   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
