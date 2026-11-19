@@ -783,5 +783,253 @@ TEST(MaskSnapshotTest, TheLazyMaskSnapshotEqualsItsView) {
   }
 }
 
+// ---- DeferredMask: the unapplied queue, finished on another thread ----
+
+// A clonable job: one scripted step per allowed slice, as SliceJob, that
+// resumes where it stopped when cloned.
+class CloneJob final : public LazyCanvasNoiseMask::Job {
+ public:
+  CloneJob(std::vector<ScriptStep> steps, int* allowed, size_t next = 0)
+      : steps_(std::move(steps)), allowed_(allowed), next_(next) {}
+  bool Step(CanvasNoiseMask& m, base::TimeTicks deadline) override {
+    while (next_ < steps_.size()) {
+      if (!deadline.is_max() && (*allowed_)-- <= 0) {
+        return false;
+      }
+      Apply(steps_[next_++], m);
+    }
+    return true;
+  }
+  std::unique_ptr<Job> Clone() const override {
+    return std::make_unique<CloneJob>(steps_, allowed_, next_);
+  }
+
+ private:
+  std::vector<ScriptStep> steps_;
+  raw_ptr<int> allowed_;
+  size_t next_;
+};
+
+// Every kind, a merge and a rect each, on one canvas size.
+std::vector<ScriptStep> Script32() {
+  auto steps = Script();
+  steps.resize(5);
+  steps.push_back({32, 32, 1, 1, 30, 30, 200, Kind::kAa, false});
+  steps.push_back({32, 32, 16, 0, 8, 32, 255, Kind::kSolid, false});
+  return steps;
+}
+
+std::vector<ScriptStep> Slice(const std::vector<ScriptStep>& s, size_t a, size_t b) {
+  return std::vector<ScriptStep>(s.begin() + a, s.begin() + b);
+}
+
+TEST(DeferredMaskTest, ReplayEqualsTheEagerMaskWhateverTheJobsHaveWalked) {
+  const auto steps = Script32();
+  const base::TimeTicks later = base::TimeTicks::Now() + base::Hours(1);
+  uint64_t aa = 0;
+  const auto want = EagerCells(steps, steps.size(), -1, &aa);
+  // k slices of the first job walked when the frame is taken: 0 (nothing), 1 and
+  // 2 (partly), 3 (all of it: the job is gone from the queue).
+  for (int k = 0; k <= 3; ++k) {
+    LazyCanvasNoiseMask lazy;
+    int allowed = 0;
+    lazy.Add(32, 32, 1, Ev(steps[0]));
+    lazy.Add(32, 32, 1, Ev(steps[1]));
+    lazy.view();  // the first two applied: the base
+    lazy.Add(32, 32, 1, std::make_unique<CloneJob>(Slice(steps, 2, 5), &allowed));
+    allowed = k;
+    EXPECT_TRUE(lazy.ApplyOldest(later));
+    lazy.Add(32, 32, 1, std::make_unique<CloneJob>(Slice(steps, 5, 7), &allowed));
+    scoped_refptr<const DeferredMask> d;
+    ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred) << k;
+    ASSERT_TRUE(d->base());
+    EXPECT_EQ(d->jobs(), k == 3 ? 1u : 2u);
+    auto replayed = d->Replay();
+    EXPECT_EQ(Cells(replayed->view()), want) << "k=" << k;
+    EXPECT_EQ(replayed->has_aa(), aa != 0);
+    // The worker walks on, one slice, while a copy of the frame is replayed...
+    allowed = 1;
+    EXPECT_TRUE(lazy.ApplyOldest(later));
+    EXPECT_EQ(Cells(d->Replay()->view()), want) << "k=" << k;
+    // ...and its own mask ends as the eager one.
+    EXPECT_EQ(Cells(lazy.view()), want) << "k=" << k;
+    EXPECT_EQ(Cells(d->Replay()->view()), want) << "k=" << k;
+  }
+}
+
+TEST(DeferredMaskTest, NoBaseYetReplaysFromAFreshMask) {
+  const auto steps = Script32();
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  lazy.Add(32, 32, 1, std::make_unique<CloneJob>(Slice(steps, 0, 7), &allowed));
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  EXPECT_FALSE(d->base());
+  uint64_t aa = 0;
+  EXPECT_EQ(Cells(d->Replay()->view()), EagerCells(steps, 7, -1, &aa));
+}
+
+TEST(DeferredMaskTest, ACanvasResizedUnderTheBaseReplaysFromAFreshMask) {
+  const auto steps = Script();
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  lazy.Add(32, 32, 1, Ev(steps[0]));
+  lazy.view();  // a 32 x 32 mask applied...
+  lazy.Add(48, 40, 1, std::make_unique<CloneJob>(Slice(steps, 5, 8), &allowed));
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  EXPECT_FALSE(d->base());  // ...is not the base of a 48 x 40 queue
+  EXPECT_EQ(Cells(d->Replay()->view()), Cells(lazy.view()));
+}
+
+TEST(DeferredMaskTest, TheCapsAreTheQueuesAndTheNotClonableLeaveTheMaskAndTheChainAlone) {
+  const auto steps = Script32();
+  int allowed = 0;
+  auto job = [&](size_t i) {
+    return std::make_unique<CloneJob>(Slice(steps, i, i + 1), &allowed);
+  };
+  scoped_refptr<const DeferredMask> d;
+  {  // nothing queued
+    LazyCanvasNoiseMask lazy;
+    EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kNone);
+  }
+  {  // a queue at the job cap defers whole; the Add past it drops the oldest unwalked job (the lazy mask's own cap) and the
+    // replay is the mask without it, as the worker's own read of that queue is
+    LazyCanvasNoiseMask lazy;
+    std::vector<ScriptStep> all;
+    const size_t cap = LazyCanvasNoiseMask::kMaxDeferredJobs;
+    ASSERT_EQ(cap, LazyCanvasNoiseMask::kMaxPendingEvents);
+    auto add = [&](size_t i) {
+      // the first job marks a cell no other job touches: its drop shows
+      const ScriptStep s = i == 0 ? ScriptStep{32, 32, 0, 0, 1, 1, 0, Kind::kAa, true}
+                                  : ScriptStep{32, 32, static_cast<int64_t>(2 + i), 20, 1, 1, 0, Kind::kAa, true};
+      all.push_back(s);
+      lazy.Add(32, 32, 1, std::make_unique<CloneJob>(std::vector<ScriptStep>{s}, &allowed));
+    };
+    for (size_t i = 0; i < cap; ++i) {
+      add(i);
+    }
+    ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+    EXPECT_EQ(d->jobs(), cap);
+    uint64_t aa = 0;
+    EXPECT_EQ(Cells(d->Replay()->view()), EagerCells(all, cap, -1, &aa));
+    add(cap);  // the 17th job: the first is dropped, unwalked
+    d.reset();
+    ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+    EXPECT_EQ(d->jobs(), cap);
+    const auto replayed = Cells(d->Replay()->view());
+    EXPECT_NE(replayed, EagerCells(all, cap + 1, -1, &aa));  // the drop is visible: no job 0 mark
+    EXPECT_EQ(replayed, Cells(lazy.view()));                 // and it is what the worker's own read gives
+  }
+  {  // one recording past the byte cap is not deferred (the queue keeps it, as its only entry)
+    LazyCanvasNoiseMask lazy;
+    lazy.Add(32, 32, LazyCanvasNoiseMask::kMaxDeferredBytes, job(0));
+    EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+    LazyCanvasNoiseMask big;
+    big.Add(32, 32, LazyCanvasNoiseMask::kMaxDeferredBytes + 1, job(0));
+    d.reset();
+    EXPECT_EQ(big.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kOverCap);
+    EXPECT_FALSE(d);
+  }
+  {  // past the byte cap the Add drops oldest jobs until under it: what is left defers
+    LazyCanvasNoiseMask lazy;
+    const size_t nine_sixteenths = LazyCanvasNoiseMask::kMaxDeferredBytes * 9 / 16;
+    lazy.Add(32, 32, nine_sixteenths, job(0));
+    lazy.Add(32, 32, nine_sixteenths, job(1));
+    d.reset();
+    ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+    EXPECT_EQ(d->jobs(), 1u);
+    EXPECT_LE(d->bytes(), LazyCanvasNoiseMask::kMaxDeferredBytes);
+  }
+  {  // an event cannot be copied
+    LazyCanvasNoiseMask lazy;
+    lazy.Add(32, 32, 1, job(0));
+    lazy.Add(32, 32, 1, Ev(steps[1]));
+    d.reset();
+    EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kNotClonable);
+    uint64_t aa = 0;
+    EXPECT_EQ(Cells(lazy.view()), EagerCells(steps, 2, -1, &aa));  // applied as before
+  }
+  {  // a resize inside the queue
+    LazyCanvasNoiseMask lazy;
+    lazy.Add(32, 32, 1, job(0));
+    lazy.Add(48, 40, 1, job(1));
+    d.reset();
+    EXPECT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kNotClonable);
+  }
+}
+
+TEST(DeferredMaskTest, ADeferThatFailsDoesNotConsumeTheSnapshotChain) {
+  const auto steps = Script32();
+  LazyCanvasNoiseMask lazy;
+  lazy.Add(32, 32, 1, Ev(steps[0]));
+  scoped_refptr<const MaskSnapshot> prev = lazy.Snapshot(nullptr);
+  ASSERT_TRUE(prev);
+  lazy.Add(32, 32, 1, Ev(steps[1]));  // an event: Defer fails
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(prev.get(), &d), LazyCanvasNoiseMask::DeferStatus::kNotClonable);
+  // The chain still works: the next snapshot of `prev` is the live mask.
+  scoped_refptr<const MaskSnapshot> next = lazy.Snapshot(prev.get());
+  ASSERT_TRUE(next);
+  EXPECT_EQ(next->Flatten(), Cells(lazy.view()));
+}
+
+TEST(DeferredMaskTest, ABaseTakenAlongTheChainSharesItsUntouchedChunks) {
+  const auto steps = Script32();
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  lazy.Add(32, 32, 1, Ev(steps[0]));
+  scoped_refptr<const MaskSnapshot> prev = lazy.Snapshot(nullptr);
+  lazy.Add(32, 32, 1, std::make_unique<CloneJob>(Slice(steps, 1, 2), &allowed));
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(prev.get(), &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  ASSERT_TRUE(d->base());
+  ASSERT_EQ(d->base()->chunks.size(), prev->chunks.size());
+  for (size_t i = 0; i < prev->chunks.size(); ++i) {
+    EXPECT_EQ(d->base()->chunks[i], prev->chunks[i]) << i;  // nothing applied: nothing replaced
+  }
+}
+
+TEST(DeferredMaskTest, AMaskFromASnapshotHoldsItsCellsAndItsAaCount) {
+  for (const size_t dim : {size_t{32}, size_t{4100}}) {  // 4100: coarse cells
+    CanvasNoiseMask m(dim, dim);
+    m.MarkRect(2, 2, 8, 8, Kind::kAa);
+    m.MarkRect(5, 5, 2, 2, Kind::kImported);
+    auto snap = m.Snapshot(nullptr);
+    ASSERT_TRUE(snap);
+    CanvasNoiseMask from(*snap);
+    EXPECT_EQ(Cells(from.view()), Cells(m.view())) << dim;
+    EXPECT_EQ(from.has_aa(), m.has_aa()) << dim;
+    // and it goes on as the original does: a clear takes the last aa cell away
+    m.MarkRect(0, 0, static_cast<int64_t>(dim), static_cast<int64_t>(dim), Kind::kImported);
+    from.MarkRect(0, 0, static_cast<int64_t>(dim), static_cast<int64_t>(dim), Kind::kImported);
+    EXPECT_EQ(Cells(from.view()), Cells(m.view())) << dim;
+    EXPECT_FALSE(from.has_aa());
+  }
+  auto none = base::MakeRefCounted<MaskSnapshot>();  // no cell ever written
+  none->width = 32;
+  none->height = 32;
+  EXPECT_TRUE(CanvasNoiseMask(*none).empty());
+}
+
+TEST(DeferredMaskTest, TheRevisionBumpsOnAddSliceAndResetButNotOnDeferOrAnIdleRead) {
+  const auto steps = Script32();
+  LazyCanvasNoiseMask lazy;
+  int allowed = 0;
+  const uint64_t r0 = lazy.revision();
+  lazy.Add(32, 32, 1, std::make_unique<CloneJob>(Slice(steps, 0, 2), &allowed));
+  const uint64_t r1 = lazy.revision();
+  EXPECT_NE(r1, r0);
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  EXPECT_EQ(lazy.revision(), r1);
+  lazy.view();  // applies the queue: slices worked
+  const uint64_t r2 = lazy.revision();
+  EXPECT_NE(r2, r1);
+  lazy.view();  // nothing queued: nothing worked
+  EXPECT_EQ(lazy.revision(), r2);
+  lazy.Reset();
+  EXPECT_NE(lazy.revision(), r2);
+}
 }  // namespace
 }  // namespace camoucfg

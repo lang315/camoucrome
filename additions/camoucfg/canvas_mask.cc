@@ -22,6 +22,17 @@ CanvasNoiseMask::CanvasNoiseMask(size_t width, size_t height)
   dirty_chunks_.assign((rows_ + kChunkRows - 1) / kChunkRows, 1);
 }
 
+CanvasNoiseMask::CanvasNoiseMask(const MaskSnapshot& from)
+    : CanvasNoiseMask(from.width, from.height) {
+  std::vector<uint8_t> cells = from.Flatten();
+  if (cells.size() != stride_ * rows_ || from.shift != shift_) {
+    return;  // not a snapshot of a mask of this size: start empty
+  }
+  cells_ = std::move(cells);
+  aa_cells_ = static_cast<size_t>(
+      std::count(cells_.begin(), cells_.end(), kNoiseMaskAa));
+}
+
 CanvasNoiseMask::~CanvasNoiseMask() = default;
 
 void CanvasNoiseMask::Merge(const uint8_t* coverage, size_t coverage_stride,
@@ -229,6 +240,10 @@ scoped_refptr<const MaskSnapshot> CanvasNoiseMask::Snapshot(
 LazyCanvasNoiseMask::LazyCanvasNoiseMask() = default;
 LazyCanvasNoiseMask::~LazyCanvasNoiseMask() = default;
 
+std::unique_ptr<LazyCanvasNoiseMask::Job> LazyCanvasNoiseMask::Job::Clone() const {
+  return nullptr;
+}
+
 namespace {
 
 // An Event as a job: one slice that always finishes.
@@ -254,6 +269,7 @@ void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
 
 void LazyCanvasNoiseMask::Add(size_t width, size_t height, size_t bytes,
                               std::unique_ptr<Job> job, bool apply_now) {
+  ++revision_;
   pending_.push_back({width, height, bytes, std::move(job)});
   pending_bytes_ += bytes;
   if (apply_now) {
@@ -280,6 +296,7 @@ bool LazyCanvasNoiseMask::ApplyOldest(base::TimeTicks deadline) {
 }
 
 void LazyCanvasNoiseMask::StepFront(base::TimeTicks deadline) const {
+  ++revision_;
   Pending& p = pending_.front();
   if (!mask_ || mask_->width() != p.width || mask_->height() != p.height) {
     Retire();
@@ -299,6 +316,7 @@ void LazyCanvasNoiseMask::Retire() const {
 }
 
 void LazyCanvasNoiseMask::Reset() {
+  ++revision_;
   pending_.clear();
   pending_bytes_ = 0;
   Retire();
@@ -329,6 +347,69 @@ scoped_refptr<const MaskSnapshot> LazyCanvasNoiseMask::Snapshot(
 uint64_t LazyCanvasNoiseMask::generation() const {
   Materialize();
   return mask_ ? retired_generations_ + mask_->generation() + 1 : 0;
+}
+
+LazyCanvasNoiseMask::DeferStatus LazyCanvasNoiseMask::Defer(
+    const MaskSnapshot* prev,
+    scoped_refptr<const DeferredMask>* out) const {
+  if (pending_.empty()) {
+    return DeferStatus::kNone;
+  }
+  if (pending_.size() > kMaxDeferredJobs ||
+      pending_bytes_ > kMaxDeferredBytes) {
+    return DeferStatus::kOverCap;
+  }
+  const size_t width = pending_.front().width;
+  const size_t height = pending_.front().height;
+  std::vector<std::unique_ptr<Job>> jobs;
+  jobs.reserve(pending_.size());
+  for (const Pending& p : pending_) {
+    // StepFront() starts a fresh mask at a change of size: a queue of two
+    // sizes is not one replay.
+    std::unique_ptr<Job> copy;
+    if (p.width == width && p.height == height) {
+      copy = p.job->Clone();
+    }
+    if (!copy) {
+      return DeferStatus::kNotClonable;
+    }
+    jobs.push_back(std::move(copy));
+  }
+  // Only now: Snapshot() consumes the mask's written-chunk marks, so it runs
+  // only when its result is used.
+  scoped_refptr<const MaskSnapshot> base;
+  if (mask_ && mask_->width() == width && mask_->height() == height) {
+    base = mask_->Snapshot(prev);
+  }
+  *out = base::MakeRefCounted<DeferredMask>(
+      width, height, std::move(base), std::move(jobs), pending_bytes_);
+  return DeferStatus::kDeferred;
+}
+
+DeferredMask::DeferredMask(
+    size_t width,
+    size_t height,
+    scoped_refptr<const MaskSnapshot> base,
+    std::vector<std::unique_ptr<LazyCanvasNoiseMask::Job>> jobs,
+    size_t bytes)
+    : width_(width),
+      height_(height),
+      base_(std::move(base)),
+      jobs_(std::move(jobs)),
+      bytes_(bytes) {}
+
+DeferredMask::~DeferredMask() = default;
+
+std::unique_ptr<CanvasNoiseMask> DeferredMask::Replay() const {
+  auto mask = base_ ? std::make_unique<CanvasNoiseMask>(*base_)
+                    : std::make_unique<CanvasNoiseMask>(width_, height_);
+  for (const auto& job : jobs_) {
+    // Each job runs on a copy: this object stays what it was made as.
+    if (std::unique_ptr<LazyCanvasNoiseMask::Job> copy = job->Clone()) {
+      copy->Step(*mask, base::TimeTicks::Max());
+    }
+  }
+  return mask;
 }
 
 }  // namespace camoucfg
