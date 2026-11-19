@@ -39,7 +39,7 @@ index a197570b6c..7298868aa7 100644
  
    // Called when the entire tab is backgrounded or unbackgrounded.
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index ad40617e4b..957bb2c7b7 100644
+index 253f952b3d..fc2a3616fe 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -643,6 +643,9 @@ class MODULES_EXPORT WebGLRenderingContextBase

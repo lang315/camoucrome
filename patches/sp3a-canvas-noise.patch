@@ -1166,8 +1166,27 @@ index d611207944..f7a94aebbe 100644
      "//device/vr/buildflags",
      "//gpu/command_buffer/client:gles2_implementation",
      "//gpu/command_buffer/client:gles2_interface",
+diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+index 9eb36fe26c..a698fdfdba 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -914,6 +914,14 @@ void WebGL2RenderingContextBase::readPixels(GLint x,
+ 
+   ClearIfComposited(kClearCallerOther);
+ 
++  // Camoucrome: with canvas:seed set, the pixels reach the buffer noised, as a
++  // view read gets them (SP3 7.4); a read the noise leaves alone is read below.
++  if (CamouReadPixelsApplies(framebuffer, width, height, format, type) &&
++      CamouReadPixelsToBuffer(framebuffer, x, y, width, height, offset,
++                              buffer)) {
++    return;
++  }
++
+   {
+     ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
+     if (!binder.Succeeded()) {
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index e72f6f7ca6..1584de4191 100644
+index e72f6f7ca6..81def4d280 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,8 +25,14 @@
@@ -1193,7 +1212,19 @@ index e72f6f7ca6..1584de4191 100644
  #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
  #include "third_party/blink/renderer/platform/wtf/text/format.h"
-@@ -5300,6 +5307,41 @@ void WebGLRenderingContextBase::readPixels(
+@@ -826,6 +833,11 @@ ImageBitmap* WebGLRenderingContextBase::TransferToImageBitmapBase(
+   }
+ 
+   auto image = GetDrawingBuffer()->TransferToStaticBitmapImage();
++  // Camoucrome: the bitmap carries the same field as toDataURL() and
++  // drawImage() of this canvas; the 2D canvas it is drawn to leaves imported
++  // pixels alone, so this is the only place it can be applied. No-op when
++  // canvas:seed is unset.
++  image = CamouNoised(std::move(image));
+ 
+   // Per spec, the drawing buffer must be cleared after transferToImageBitmap(),
+   // regardless of preserveDrawingBuffer.
+@@ -5300,6 +5312,41 @@ void WebGLRenderingContextBase::readPixels(
    ReadPixelsHelper(x, y, width, height, format, type, pixels.Get(), 0);
  }
  
@@ -1235,7 +1266,7 @@ index e72f6f7ca6..1584de4191 100644
  void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
                                                   GLint y,
                                                   GLsizei width,
-@@ -5369,6 +5411,43 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5369,6 +5416,36 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
    if (isContextLost() || !GetDrawingBuffer())
      return;
  
@@ -1252,9 +1283,10 @@ index e72f6f7ca6..1584de4191 100644
 +  // a +-1 would leave (R8 and RG8 read G or B as 0; RGBA4 and RGB565 sit on a
 +  // coarser lattice).
 +  //
-+  // KNOWN GAP (documented, not covered here): the WebGL2 readPixels
-+  // overload that targets a bound PIXEL_PACK_BUFFER writes to GPU memory,
-+  // so a later getBufferSubData() returns those pixels un-noised (SP3 7.4).
++  // The WebGL2 readPixels overload that targets a bound PIXEL_PACK_BUFFER does
++  // not come through here: it reads through CamouReadPixelsToBuffer, which
++  // noises the pixels on their way into the buffer (SP3 7.4, closed
++  // 2026-11-19).
 +  //
 +  // CamouReadPixels decides, before the page's read, whether this read is
 +  // noised (for a page framebuffer it queries GL and reads probes into
@@ -1262,24 +1294,16 @@ index e72f6f7ca6..1584de4191 100644
 +  // 8-bit, a rect outside the framebuffer, a layout GL rejects) returns false
 +  // without writing the view, and is read below, straight into the page's
 +  // view, as stock reads it.
-+  if (!buffer && format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 &&
-+      height > 0 &&
-+      (framebuffer ||
-+       (read_buffer_of_default_framebuffer_ != GL_NONE &&
-+        (GetDrawingBuffer()->StorageFormat() == GL_RGBA8 ||
-+         GetDrawingBuffer()->StorageFormat() == GL_RGB8 ||
-+         GetDrawingBuffer()->StorageFormat() == GL_SRGB8_ALPHA8)))) {
-+    if (auto* ec = Host()->GetTopExecutionContext();
-+        ec && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec)) != 0 &&
-+        CamouReadPixels(framebuffer, x, y, width, height, data,
-+                        pixels->IsShared())) {
-+      return;
-+    }
++  if (!buffer &&
++      CamouReadPixelsApplies(framebuffer, width, height, format, type) &&
++      CamouReadPixels(framebuffer, x, y, width, height, data,
++                      pixels->IsShared())) {
++    return;
 +  }
    {
      ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
      if (!binder.Succeeded()) {
-@@ -5378,6 +5457,375 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5378,6 +5455,457 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
    }
  }
  
@@ -1289,7 +1313,8 @@ index e72f6f7ca6..1584de4191 100644
 +                                                GLsizei width,
 +                                                GLsizei height,
 +                                                uint8_t* data,
-+                                                bool shared) {
++                                                bool shared,
++                                                CamouWritten* written) {
 +  // The page buffer's layout; readPixels validated the destination against
 +  // it.
 +  const std::optional<CamouPackLayout> layout =
@@ -1649,6 +1674,87 @@ index e72f6f7ca6..1584de4191 100644
 +      UNSAFE_BUFFERS(std::memcpy(data + at, shared_copy.get() + at, in_w * 4));
 +    }
 +  }
++  if (written) {
++    *written = CamouWritten{offset, row_bytes, in_w, in_h};
++  }
++  return true;
++}
++
++bool WebGLRenderingContextBase::CamouReadPixelsApplies(
++    WebGLFramebuffer* framebuffer,
++    GLsizei width,
++    GLsizei height,
++    GLenum format,
++    GLenum type) {
++  if (!GetDrawingBuffer() || format != GL_RGBA || type != GL_UNSIGNED_BYTE ||
++      width <= 0 || height <= 0) {
++    return false;
++  }
++  if (!framebuffer &&
++      (read_buffer_of_default_framebuffer_ == GL_NONE ||
++       (GetDrawingBuffer()->StorageFormat() != GL_RGBA8 &&
++        GetDrawingBuffer()->StorageFormat() != GL_RGB8 &&
++        GetDrawingBuffer()->StorageFormat() != GL_SRGB8_ALPHA8))) {
++    return false;
++  }
++  auto* ec = Host()->GetTopExecutionContext();
++  return ec && camoucfg::CanvasSeed(camoucfg::ScopeFor(ec)) != 0;
++}
++
++bool WebGLRenderingContextBase::CamouReadPixelsToBuffer(
++    WebGLFramebuffer* framebuffer,
++    GLint x,
++    GLint y,
++    GLsizei width,
++    GLsizei height,
++    int64_t offset,
++    WebGLBuffer* buffer) {
++  const std::optional<CamouPackLayout> layout =
++      CamouLayoutOf(GetPackPixelStoreParams(), width, height);
++  if (!layout || !buffer || !buffer->HasObject() || offset < 0 ||
++      isContextLost() || !GetDrawingBuffer() ||
++      offset + static_cast<int64_t>(layout->extent) > buffer->GetSize()) {
++    return false;
++  }
++  // The page's read as it lands in a view: same layout, same bytes left alone.
++  std::unique_ptr<uint8_t, void (*)(void*)> scratch(
++      static_cast<uint8_t*>(Partitions::BufferTryAlignedZeroedMalloc(
++          layout->extent, 16, "CamouNoisePbo")),
++      &Partitions::BufferAlignedFree);
++  if (!scratch) {
++    return false;
++  }
++  gpu::gles2::GLES2Interface* gl = ContextGL();
++  // CamouReadPixels reads into CPU memory, which GL takes for an offset while
++  // a PIXEL_PACK_BUFFER is bound: unbind it for the reads, then bind the
++  // page's buffer again.
++  gl->BindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++  CamouWritten done;
++  const bool read = CamouReadPixels(framebuffer, x, y, width, height,
++                                    scratch.get(), false, &done);
++  gl->BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->Object());
++  if (!read) {
++    return false;
++  }
++  // Only the in-framebuffer part of each row: stock leaves row padding,
++  // skipped pixels and pixels outside the framebuffer as the buffer had them.
++  const size_t row_len = done.in_w * 4;
++  if (done.in_w && done.row_bytes == row_len) {
++    gl->BufferSubData(GL_PIXEL_PACK_BUFFER,
++                      static_cast<GLintptr>(offset + done.offset),
++                      static_cast<GLsizeiptr>(row_len * done.in_h),
++                      // SAFETY: the rows lie within the layout's extent, which
++                      // `scratch` holds.
++                      UNSAFE_BUFFERS(scratch.get() + done.offset));
++    return true;
++  }
++  for (size_t r = 0; done.in_w && r < done.in_h; ++r) {
++    const size_t at = done.offset + r * done.row_bytes;
++    gl->BufferSubData(GL_PIXEL_PACK_BUFFER, static_cast<GLintptr>(offset + at),
++                      static_cast<GLsizeiptr>(row_len),
++                      // SAFETY: as above.
++                      UNSAFE_BUFFERS(scratch.get() + at));
++  }
 +  return true;
 +}
 +
@@ -1656,7 +1762,7 @@ index e72f6f7ca6..1584de4191 100644
      GLenum target,
      GLsizei samples,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index add96cfd87..ad40617e4b 100644
+index add96cfd87..253f952b3d 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -637,6 +637,12 @@ class MODULES_EXPORT WebGLRenderingContextBase
@@ -1672,7 +1778,35 @@ index add96cfd87..ad40617e4b 100644
    void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) override;
  
    V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret getHTMLOrOffscreenCanvas(
-@@ -1960,6 +1966,24 @@ class MODULES_EXPORT WebGLRenderingContextBase
+@@ -1946,6 +1952,27 @@ class MODULES_EXPORT WebGLRenderingContextBase
+                         GLenum type,
+                         DOMArrayBufferView* pixels,
+                         int64_t offset);
++  // Camoucrome: whether a readPixels of this rect, format and type is one the noise
++  // covers: RGBA / UNSIGNED_BYTE from an 8-bit framebuffer, canvas:seed set.
++  // CamouReadPixels may still turn the read away.
++  bool CamouReadPixelsApplies(WebGLFramebuffer* framebuffer,
++                              GLsizei width,
++                              GLsizei height,
++                              GLenum format,
++                              GLenum type);
++  // The WebGL2 readPixels overload into the bound PIXEL_PACK_BUFFER `buffer`,
++  // `offset` bytes in: the read and noise of CamouReadPixels into CPU scratch,
++  // then the rows' in-framebuffer part into the buffer (BufferSubData), so a
++  // later getBufferSubData() reads the same field as a view read. The pack
++  // buffer binding is as the page left it. False, with the buffer untouched,
++  // when the read is left stock: the caller then reads straight into it.
++  bool CamouReadPixelsToBuffer(WebGLFramebuffer* framebuffer,
++                               GLint x,
++                               GLint y,
++                               GLsizei width,
++                               GLsizei height,
++                               int64_t offset,
++                               WebGLBuffer* buffer);
+ 
+   void RecordANGLEImplementation();
+ 
+@@ -1960,6 +1987,33 @@ class MODULES_EXPORT WebGLRenderingContextBase
                              const Platform::WebGLContextInfo&,
                              const CanvasContextCreationAttributesCore&,
                              Platform::WebGLContextType);
@@ -1687,13 +1821,22 @@ index add96cfd87..ad40617e4b 100644
 +  // neighbours outside the rect come from the framebuffer (a second read of
 +  // the rect plus margin, or only the margin strips for a large rect), each
 +  // checked against the page's read on the lines it covers.
++  // The part of `data` CamouReadPixels wrote: `in_h` rows of `in_w` pixels,
++  // `row_bytes` apart, the first at `offset` bytes. `in_w` 0: nothing.
++  struct CamouWritten {
++    size_t offset = 0;
++    size_t row_bytes = 0;
++    size_t in_w = 0;
++    size_t in_h = 0;
++  };
 +  bool CamouReadPixels(WebGLFramebuffer* framebuffer,
 +                       GLint x,
 +                       GLint y,
 +                       GLsizei width,
 +                       GLsizei height,
 +                       uint8_t* data,
-+                       bool shared);
++                       bool shared,
++                       CamouWritten* written = nullptr);
    static std::unique_ptr<WebGraphicsContext3DProvider>
    CreateContextProviderInternal(CanvasRenderingContextHost*,
                                  const CanvasContextCreationAttributesCore&,
