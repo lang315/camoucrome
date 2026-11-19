@@ -1,5 +1,5 @@
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index 4ee725f621..5a27bb3f98 100644
+index 4ee725f621..e565777280 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 @@ -27,6 +27,8 @@
@@ -24,7 +24,7 @@ index 4ee725f621..5a27bb3f98 100644
  #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
  #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
-@@ -568,28 +572,186 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedPending(
+@@ -568,28 +572,195 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedPending(
    if (!image || !image->CamouWebGlPending()) {
      return image;
    }
@@ -134,6 +134,15 @@ index 4ee725f621..5a27bb3f98 100644
 +        local = noise.deferred->Replay();
 +        mask = local.get();
 +      }
++    }
++    if (!mask) {
++      // A recording that cannot be copied again (Defer() copied it once: not
++      // expected). No mask is guessed and nothing is CHECKed: the frame is read
++      // as it is.
++      if (memo) {
++        memo->mask.reset();
++      }
++      return nullptr;
 +    }
 +    if (memo) {
 +      memo->epoch = noise.deferred->epoch();
@@ -473,10 +482,18 @@ index c277b09ac8..9f427aed02 100644
    void PageVisibilityChanged() override {}
    void Reset() override;
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index e3f70d561e..53512e1de1 100644
+index e3f70d561e..77a4ee210e 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -1198,6 +1198,15 @@ class Canvas2DRecorderContext::CamouWalk final
+@@ -139,6 +139,7 @@
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
++#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkBlendMode.h"
+ #include "third_party/skia/include/core/SkCanvas.h"
+@@ -1198,6 +1199,15 @@ class Canvas2DRecorderContext::CamouWalk final
        : record_(std::move(record)), cpu_(cpu), cover_{width, height} {}
  
    bool Step(camoucfg::CanvasNoiseMask& mask, base::TimeTicks deadline) override;
@@ -492,7 +509,7 @@ index e3f70d561e..53512e1de1 100644
  
   private:
    cc::PaintRecord record_;
-@@ -1230,6 +1239,10 @@ bool CamouHoldsImages(const cc::PaintRecord& record) {
+@@ -1230,6 +1240,10 @@ bool CamouHoldsImages(const cc::PaintRecord& record) {
          op.GetType() == cc::PaintOpType::kDrawRecord) {
        return true;
      }
@@ -503,7 +520,24 @@ index e3f70d561e..53512e1de1 100644
      if (op.IsPaintOpWithFlags()) {
        const cc::PaintFlags& flags =
            static_cast<const cc::PaintOpWithFlags&>(op).flags;
-@@ -1268,7 +1281,7 @@ void Canvas2DRecorderContext::CamouMarkRecord(cc::PaintRecord record,
+@@ -1259,16 +1273,21 @@ void Canvas2DRecorderContext::CamouMarkRecord(cc::PaintRecord record,
+     return;
+   }
+   const bool holds_images = CamouHoldsImages(record);
+-  camou_mask_.Add(static_cast<size_t>(w), static_cast<size_t>(h), bytes,
+-                  std::make_unique<CamouWalk>(std::move(record), cpu, w, h),
+-                  holds_images);
++  {
++    // The queue push and whatever it costs at the cap (shedding, parking, a
++    // walked eviction): the worker's price for a page that reads the frames.
++    TRACE_EVENT0("blink", "CamouMaskAdd");
++    camou_mask_.Add(static_cast<size_t>(w), static_cast<size_t>(h), bytes,
++                    std::make_unique<CamouWalk>(std::move(record), cpu, w, h),
++                    holds_images);
++  }
+   if (!holds_images) {
+     CamouScheduleIdleWalk();
+   }
  }
  
  void Canvas2DRecorderContext::CamouScheduleIdleWalk() {
@@ -512,7 +546,7 @@ index e3f70d561e..53512e1de1 100644
      return;
    }
    ThreadScheduler* const scheduler = ThreadScheduler::Current();
-@@ -1292,6 +1305,19 @@ void Canvas2DRecorderContext::CamouIdleWalk(base::TimeTicks deadline) {
+@@ -1292,6 +1311,19 @@ void Canvas2DRecorderContext::CamouIdleWalk(base::TimeTicks deadline) {
    CamouScheduleIdleWalk();
  }
  
@@ -622,10 +656,10 @@ index c7f18c0587..0f652db848 100644
  
  }  // namespace blink
 diff --git a/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc b/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc
-index 747cd851b0..3ad6e4b563 100644
+index 747cd851b0..7cc7f43ce1 100644
 --- a/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc
 +++ b/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc
-@@ -151,6 +151,28 @@ void OffscreenCanvasPlaceholder::SetOffscreenCanvasResource(
+@@ -151,6 +151,27 @@ void OffscreenCanvasPlaceholder::SetOffscreenCanvasResource(
    ExportedCanvasResource::OnPlaceholderReleasedResource(
        std::move(placeholder_frame_));
    placeholder_frame_ = std::move(new_frame);
@@ -634,13 +668,12 @@ index 747cd851b0..3ad6e4b563 100644
 +}
 +
 +void OffscreenCanvasPlaceholder::CamouSignalFrameRead(uint64_t id) const {
-+  if (id <= camou_signalled_id_) {
++  // The id counts as told only once it is posted: with no worker to post to
++  // (the client is not registered yet) the next read tells it again.
++  if (id <= camou_signalled_id_ || !client_task_runner_) {
 +    return;
 +  }
 +  camou_signalled_id_ = id;
-+  if (!client_task_runner_) {
-+    return;
-+  }
 +  PostCrossThreadTask(
 +      *client_task_runner_, FROM_HERE,
 +      CrossThreadBindOnce(

@@ -464,13 +464,22 @@ DeferredMask::DeferredMask(
 DeferredMask::~DeferredMask() = default;
 
 std::unique_ptr<CanvasNoiseMask> DeferredMask::Replay() const {
+  // Each job runs on a copy: this object stays what it was made as. Defer()
+  // copied every job once, so a copy that fails now is not expected; a mask
+  // without that job would be a wrong mask, so nothing is walked (null).
+  std::vector<std::unique_ptr<LazyCanvasNoiseMask::Job>> copies;
+  copies.reserve(jobs_.size());
+  for (const auto& job : jobs_) {
+    std::unique_ptr<LazyCanvasNoiseMask::Job> copy = job->Clone();
+    if (!copy) {
+      return nullptr;
+    }
+    copies.push_back(std::move(copy));
+  }
   auto mask = base_ ? std::make_unique<CanvasNoiseMask>(*base_)
                     : std::make_unique<CanvasNoiseMask>(width_, height_);
-  for (const auto& job : jobs_) {
-    // Each job runs on a copy: this object stays what it was made as.
-    if (std::unique_ptr<LazyCanvasNoiseMask::Job> copy = job->Clone()) {
-      copy->Step(*mask, base::TimeTicks::Max());
-    }
+  for (const auto& copy : copies) {
+    copy->Step(*mask, base::TimeTicks::Max());
   }
   return mask;
 }
@@ -487,18 +496,24 @@ bool DeferredMask::Continue(CanvasNoiseMask& memo,
       touched_id_ > memo_id) {
     return false;
   }
-  size_t n = 0;
+  // All the copies first: a copy that fails (not expected, see Replay()) must
+  // leave `memo` as it was, for the caller's full replay.
+  std::vector<std::unique_ptr<LazyCanvasNoiseMask::Job>> copies;
   for (size_t i = 0; i < jobs_.size(); ++i) {
     if (ids_[i] <= memo_id) {
       continue;
     }
-    if (std::unique_ptr<LazyCanvasNoiseMask::Job> copy = jobs_[i]->Clone()) {
-      copy->Step(memo, base::TimeTicks::Max());
+    std::unique_ptr<LazyCanvasNoiseMask::Job> copy = jobs_[i]->Clone();
+    if (!copy) {
+      return false;
     }
-    ++n;
+    copies.push_back(std::move(copy));
+  }
+  for (const auto& copy : copies) {
+    copy->Step(memo, base::TimeTicks::Max());
   }
   if (stepped) {
-    *stepped = n;
+    *stepped = copies.size();
   }
   return true;
 }

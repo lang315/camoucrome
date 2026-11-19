@@ -321,14 +321,17 @@ class DeferredMask : public base::RefCountedThreadSafe<DeferredMask> {
                uint64_t touched_id,
                uint64_t epoch);
   // The mask the queue builds, byte for byte (the jobs run to their end on
-  // fresh copies, so any number of replays, on any thread, agree).
+  // fresh copies, so any number of replays, on any thread, agree). Null when a
+  // job cannot be copied again (Defer() copied each once: not expected); the
+  // caller then has no mask and must not guess one.
   std::unique_ptr<CanvasNoiseMask> Replay() const;
   // The same mask, continued from `memo`: the mask an earlier frame of this
   // canvas (same epoch) replayed to, as of its newest job `memo_id`. Only the
   // jobs after `memo_id` are walked, on `memo` itself, which then is this
   // frame's mask. False, memo untouched, when this frame does not continue it
   // (another epoch or size, an older frame, or a base that holds a job past
-  // `memo_id`): replay from scratch then. `*stepped` is the jobs walked.
+  // `memo_id`, or a job that cannot be copied): replay from scratch then.
+  // `*stepped` is the jobs walked.
   bool Continue(CanvasNoiseMask& memo,
                 uint64_t memo_epoch,
                 uint64_t memo_id,

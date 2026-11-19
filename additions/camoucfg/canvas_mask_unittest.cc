@@ -1301,6 +1301,62 @@ TEST(DeferredMaskTest, AParkedJobThatCannotBeCopiedAlsoMakesTheFrameApplyOnTheWo
   EXPECT_EQ(lazy.parked_events(), 0u);
 }
 
+// A job whose copies run out: each Clone() takes one from `left` and fails when none is left.
+class FlakyCloneJob final : public LazyCanvasNoiseMask::Job {
+ public:
+  FlakyCloneJob(std::vector<ScriptStep> steps, int* left) : steps_(std::move(steps)), left_(left) {}
+  bool Step(CanvasNoiseMask& m, base::TimeTicks) override {
+    for (const ScriptStep& s : steps_) {
+      Apply(s, m);
+    }
+    return true;
+  }
+  std::unique_ptr<Job> Clone() const override {
+    if ((*left_)-- <= 0) {
+      return nullptr;
+    }
+    return std::make_unique<FlakyCloneJob>(steps_, left_);
+  }
+
+ private:
+  std::vector<ScriptStep> steps_;
+  raw_ptr<int> left_;
+};
+
+TEST(DeferredMaskTest, ACopyThatFailsAtReplayIsNotSkippedAndLeavesTheMemoAlone) {
+  const auto steps = Script32();
+  LazyCanvasNoiseMask lazy;
+  int left = 2;  // Defer() copies both jobs
+  lazy.Add(32, 32, 1, std::make_unique<FlakyCloneJob>(Slice(steps, 0, 3), &left));
+  lazy.Add(32, 32, 1, std::make_unique<FlakyCloneJob>(Slice(steps, 3, 5), &left));
+  scoped_refptr<const DeferredMask> d;
+  ASSERT_EQ(lazy.Defer(nullptr, &d), LazyCanvasNoiseMask::DeferStatus::kDeferred);
+  EXPECT_EQ(left, 0);
+  // no copy left: no mask (a mask without the jobs would be a wrong one)
+  EXPECT_EQ(d->Replay(), nullptr);
+  CanvasNoiseMask memo(32, 32);
+  size_t stepped = 77;
+  EXPECT_FALSE(d->Continue(memo, d->epoch(), 0, &stepped));
+  EXPECT_TRUE(memo.empty());
+  EXPECT_EQ(stepped, 77u);
+  // one copy left: the first job's copy is made, the second's is not: nothing is walked
+  left = 1;
+  EXPECT_EQ(d->Replay(), nullptr);
+  left = 1;
+  EXPECT_FALSE(d->Continue(memo, d->epoch(), 0, &stepped));
+  EXPECT_TRUE(memo.empty());
+  EXPECT_EQ(stepped, 77u);
+  // copies enough: both agree with the eager mask
+  left = 100;
+  uint64_t aa = 0;
+  auto replayed = d->Replay();
+  ASSERT_NE(replayed, nullptr);
+  EXPECT_EQ(Cells(replayed->view()), EagerCells(steps, 5, -1, &aa));
+  EXPECT_TRUE(d->Continue(memo, d->epoch(), 0, &stepped));
+  EXPECT_EQ(stepped, 2u);
+  EXPECT_EQ(Cells(memo.view()), Cells(replayed->view()));
+}
+
 TEST(DeferredMaskContinueTest, ContinuingAMemoEqualsAFullReplay) {
   const auto steps = Script32();
   LazyCanvasNoiseMask lazy;
