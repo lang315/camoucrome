@@ -1,6 +1,10 @@
+import pathlib
+import sys
+
 import pytest
 
-from camoucrome import gen
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from camoucrome import gen  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
