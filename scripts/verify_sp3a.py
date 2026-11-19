@@ -2534,7 +2534,9 @@ LEAKS = """async () => {
   gl.pixelStorei(gl.PACK_ALIGNMENT, 8);
   const N = 16 + 72 * 288;
   const lay = new Uint8Array(N).fill(0xAB);
+  gl.bindBuffer(PPB, null);    // a view read is INVALID_OPERATION while a pack buffer is bound
   gl.readPixels(-8, -8, 71, 72, RGBA, UB, lay, 16);
+  gl.bindBuffer(PPB, pb);
   gl.bufferData(PPB, new Uint8Array(N).fill(0xAB), gl.STREAM_READ);
   gl.readPixels(-8, -8, 71, 72, RGBA, UB, 16);
   const lay2 = new Uint8Array(N); gl.getBufferSubData(PPB, 0, lay2);
