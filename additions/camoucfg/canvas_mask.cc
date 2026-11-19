@@ -194,8 +194,10 @@ scoped_refptr<const MaskSnapshot> CanvasNoiseMask::Snapshot(
     return nullptr;
   }
   const size_t count = dirty_chunks_.size();
-  // A generation that moved with no chunk marked means a write that did not
-  // mark its chunk: a missed mark is a stale frame, so copy everything.
+  // Every writer marks its chunk (Apply is the only one, with three sites, each
+  // with a unit test). This catches only a path that moved the generation and
+  // marked nothing at all; a missed mark next to another chunk's mark would not
+  // be seen, and would be a stale frame.
   const bool unmarked = prev && prev->generation != generation_ && !any_dirty_;
   const bool shares = prev && !unmarked && prev->width == width_ &&
                       prev->height == height_ && prev->shift == shift_ &&
