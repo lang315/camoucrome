@@ -2948,19 +2948,23 @@ C87 = "C87 placeholder toBlob and toDataURL equal the worker's own convertToBlob
 C88 = "C88 drawImage(placeholder) to 2D, getImageData: noised, equal to the same read of a main-thread canvas with the same scene"
 C89 = "C89 createImageBitmap(placeholder), drawImage, getImageData: noised, equal to the main-thread canvas's read"
 C90 = "C90 captureStream(placeholder) to a video, drawImage, getImageData: noised, equal to the main-thread canvas's read"
-C91 = "C91 two frames: the second read is the second frame's noise (a per-frame cache is not stale)"
-C93 = "C93 worker frame period with a seed within 5 % + 0.3 ms of none at 512 and 1080p (2D static, 2D moving, WebGL; vsync limit off)"
+C91 = ("C91 two frames on a 64 x 256 canvas, the second frame's imported patch in another mask chunk than the first's: the second read is "
+       "the second frame's noise (neither a per-frame cache nor a shared mask chunk is stale)")
+C92 = ("C92 a worker bitmaprenderer on the placeholder (WebGL -> transferToImageBitmap -> transferFromImageBitmap): toBlob, toDataURL and "
+       "drawImage noised, equal to the worker's own read")
+C93 = ("C93 worker frame period with a seed within 3 % + 0.5 ms of none (median of 3), per case: 2D static, 2D moving, 2D heavy (120 paths + 20 text "
+       "lines per frame), WebGL, at 512 and 1080p (vsync limit off, one commit per frame counted from the trace)")
 SOFT_ROWS = SOFT_ROWS + (C90, C93)
 PH_SCENES = """
   const scene2d = (c, v) => { const x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, c.width, c.height);
     g.addColorStop(0, v ? '#1f6' : '#f60'); g.addColorStop(1, v ? '#f16' : '#16f'); x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
-    x.fillStyle = 'rgba(255,255,255,0.6)'; x.beginPath(); x.arc(c.width / 2 + (v ? 9 : 0), c.height / 2, c.height * 0.3, 0, 7); x.fill();
-    // an imported patch of noisy pixels, somewhere else in each frame: the mask must keep the noise off it, and the mask
-    // changes from one frame to the next (a stale mask would noise the second frame's patch)
+    x.fillStyle = 'rgba(255,255,255,0.6)'; x.beginPath(); x.arc(c.width / 2 + (v ? 9 : 0), c.height / 2, c.width * 0.3, 0, 7); x.fill();
+    // an imported patch of noisy pixels, in a different 64-row mask chunk in each frame: the mask must keep the noise off it, and
+    // it changes from one frame to the next (a stale mask or a shared stale chunk would noise the second frame's patch)
     const patch = new OffscreenCanvas(16, 16); const px = patch.getContext('2d');
     for (let i = 0; i < 256; i++) { const h = Math.imul(i + 1, 2654435761) >>> 0;
       px.fillStyle = 'rgb(' + (h & 255) + ',' + ((h >> 8) & 255) + ',' + ((h >> 16) & 255) + ')'; px.fillRect(i % 16, (i / 16) | 0, 1, 1); }
-    x.drawImage(patch, v ? 8 : 40, v ? 8 : 40); };
+    x.drawImage(patch, v ? 8 : 40, v ? 200 : 40); };
   const sceneGl = (c, v) => { const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
     const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
     const pr = gl.createProgram();
@@ -2979,6 +2983,7 @@ LEAKS6 = """async () => {
     for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
     return h.toString(16); };
   const Hs = (s) => H(new TextEncoder().encode(s));
+  const W = 64, HT = 256;
   __SCENES__
   const wsrc = `const scene2d = ${scene2d.toString()}; const sceneGl = ${sceneGl.toString()};
     let off = null;
@@ -2987,23 +2992,22 @@ LEAKS6 = """async () => {
       const draw = kind === '2d' ? scene2d : sceneGl;
       // the worker's own noised read of the canvas it renders into, as it is right now
       if (kind === 'cur') { postMessage(await (await off.convertToBlob()).arrayBuffer()); return; }
-      if (kind === 'ref2d' || kind === 'refgl') { const c = new OffscreenCanvas(64, 64); (kind === 'ref2d' ? scene2d : sceneGl)(c, v);
+      if (kind === 'ref2d' || kind === 'refgl') { const c = new OffscreenCanvas(${W}, ${HT}); (kind === 'ref2d' ? scene2d : sceneGl)(c, v);
         postMessage(await (await c.convertToBlob()).arrayBuffer()); return; }
       draw(off, v); postMessage('drawn'); };`;
   const url = URL.createObjectURL(new Blob([wsrc]));
   const call = (w, msg, tr) => new Promise((r) => { w.onmessage = (e) => r(e.data); w.postMessage(msg, tr || []); });
   const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 250); }); };
   const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); };
-  const read2d = (src, w, h) => { const d = document.createElement('canvas'); d.width = w; d.height = h;
-    const x = d.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, w, h).data); };
+  const read2d = (src) => { const d = document.createElement('canvas'); d.width = W; d.height = HT;
+    const x = d.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, W, HT).data); };
   const R = {};
   self.__p = [];
   for (const kind of ['2d', 'gl']) {
     const w = new Worker(url);
     self.__p.push(kind + ' start');
     const refBytes = new Uint8Array(await call(w, ['ref' + kind, 0]));
-    const ref1Bytes = new Uint8Array(await call(w, ['ref' + kind, 1]));
-    const c = document.createElement('canvas'); c.width = 64; c.height = 64; document.body.appendChild(c);
+    const c = document.createElement('canvas'); c.width = W; c.height = HT; document.body.appendChild(c);
     const off = c.transferControlToOffscreen();
     self.__p.push(kind + ' refs');
     await call(w, [kind, 0, off], [off]);
@@ -3017,60 +3021,133 @@ LEAKS6 = """async () => {
     self.__p.push(kind + ' blob');
     r.url = Hs(c.toDataURL()); r.refUrl = Hs('data:image/png;base64,' + b64(refBytes));
     // the same scene on a main-thread canvas: the reference of the reads that go through a 2D canvas
-    const m = document.createElement('canvas'); m.width = 64; m.height = 64; (kind === '2d' ? scene2d : sceneGl)(m, 0);
-    r.draw = read2d(c, 64, 64); r.refDraw = read2d(m, 64, 64);
+    const m = document.createElement('canvas'); m.width = W; m.height = HT; (kind === '2d' ? scene2d : sceneGl)(m, 0);
+    r.draw = read2d(c); r.refDraw = read2d(m);
     self.__p.push(kind + ' draw');
-    r.cib = read2d(await createImageBitmap(c), 64, 64);
+    r.cib = read2d(await createImageBitmap(c));
     self.__p.push(kind + ' cib');
     try { const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30); v.play().catch(() => {});
       // the stream only carries frames the worker commits after it started: keep redrawing scene 0 until one arrives
       let n = 0; const cb = () => { n++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb);
       for (let i = 0; i < 6 && n < 2; i++) { await call(w, [kind, 0]); await frames(3); }
-      r.cap = n ? read2d(v, 64, 64) : 'noframe'; } catch (e) { r.cap = 'err:' + e.message; }
+      r.cap = n ? read2d(v) : 'noframe'; } catch (e) { r.cap = 'err:' + e.message; }
     self.__p.push(kind + ' cap');
-    // a second frame
+    // a second frame, whose patch is in another mask chunk; the worker's own read of the same canvas now (the history of its
+    // mask, frame 1's patch stays marked, is part of it)
     const before = r.blob;
     await call(w, [kind, 1]); await frames(8);
-    // the worker's own read of the same canvas now: the history of its mask (frame 1's patch stays marked) is part of it
     r.blob2 = H(await blobBytes()); r.refBlob2 = H(new Uint8Array(await call(w, ['cur', 0]))); r.before = before;
     R[kind] = r; w.terminate();
   }
   return R;
 }""".replace("__SCENES__", PH_SCENES)
-LEAKS7 = """async () => {
+# a worker bitmaprenderer on the placeholder: the frames it commits are copies of a WebGL transfer
+LEAKS8 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const Hs = (s) => H(new TextEncoder().encode(s));
+  const W = 64, HT = 256;
   __SCENES__
+  const wsrc = `const sceneGl = ${sceneGl.toString()};
+    let off = null;
+    onmessage = async (e) => { const [kind, o] = e.data; if (o) off = o;
+      if (kind === 'cur') { postMessage(await (await off.convertToBlob()).arrayBuffer()); return; }
+      const oc = new OffscreenCanvas(${W}, ${HT}); sceneGl(oc, 0);
+      off.getContext('bitmaprenderer').transferFromImageBitmap(oc.transferToImageBitmap()); postMessage('drawn'); };`;
+  const w = new Worker(URL.createObjectURL(new Blob([wsrc])));
+  const call = (msg, tr) => new Promise((r) => { w.onmessage = (e) => r(e.data); w.postMessage(msg, tr || []); });
+  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 250); }); };
+  const read2d = (src) => { const d = document.createElement('canvas'); d.width = W; d.height = HT;
+    const x = d.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, W, HT).data); };
+  const c = document.createElement('canvas'); c.width = W; c.height = HT; document.body.appendChild(c);
+  const off = c.transferControlToOffscreen();
+  await call(['br', off], [off]); await frames(8);
   const R = {};
-  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); }); };
-  // static: the same scene every frame (the mask settles after the first); moving: a shape at new cells every frame for 120
-  // frames (the mask changes on every frame of the first lap), and WebGL (no mask).
-  for (const kind of ['2d-static', '2d-move', 'gl']) for (const [w, h] of [[512, 512], [1920, 1080]]) {
-    const wsrc = `const scene2d = ${scene2d.toString()}; const sceneGl = ${sceneGl.toString()};
+  R.blob = H(new Uint8Array(await (await new Promise((r) => c.toBlob(r))).arrayBuffer()));
+  R.cur = H(new Uint8Array(await call(['cur'])));
+  R.url = Hs(c.toDataURL());
+  const m = document.createElement('canvas'); m.width = W; m.height = HT; sceneGl(m, 0);
+  R.draw = read2d(c); R.refDraw = read2d(m);
+  w.terminate();
+  return R;
+}""".replace("__SCENES__", PH_SCENES)
+# the cost cases: [kind, w, h]; each runs 120 rAF frames in a worker that draws into a transferred canvas
+COST_WORKER = """const scene2d = ${scene2d.toString()}; const sceneGl = ${sceneGl.toString()};
       const move2d = (c, n) => { const x = c.getContext('2d'); if (n === 0) { x.fillStyle = '#16f'; x.fillRect(0, 0, c.width, c.height); }
         const g = x.createRadialGradient(0, 0, 0, 0, 0, 40); g.addColorStop(0, '#fff'); g.addColorStop(1, '#f60');
         x.save(); x.translate((n * 53) % c.width, (n * 29) % c.height); x.fillStyle = g; x.beginPath(); x.arc(0, 0, 40, 0, 7); x.fill(); x.restore(); };
+      const heavy2d = (c, n) => { const x = c.getContext('2d'); if (n === 0) { x.fillStyle = '#16f'; x.fillRect(0, 0, c.width, c.height); }
+        x.font = '14px sans-serif';
+        for (let i = 0; i < 120; i++) { const px = (n * 7 + i * 37) % c.width, py = (n * 5 + i * 53) % c.height;
+          x.beginPath(); x.moveTo(px, py); x.bezierCurveTo(px + 30, py - 20, px + 50, py + 40, px + 80, py + 10); x.lineTo(px + 40, py + 60); x.closePath();
+          x.fillStyle = 'rgba(' + ((i * 11) % 255) + ',' + ((i * 23) % 255) + ',' + ((i * 47) % 255) + ',0.6)'; x.fill();
+          x.strokeStyle = '#fff'; x.lineWidth = 2; x.stroke(); }
+        for (let i = 0; i < 20; i++) x.fillText('camoucrome ' + i + ' ' + n, (n * 3 + i * 91) % c.width, (i * 41 + n) % c.height + 14); };
       onmessage = async (e) => { const [kind, off] = e.data;
-        const draw = kind === 'gl' ? (c, n) => sceneGl(c, 0) : kind === '2d-move' ? move2d : (c, n) => { if (n === 0) scene2d(c, 0); else c.getContext('2d').fillRect(0, 0, 1, 1); };
+        const draw = kind === 'gl' ? (c, n) => sceneGl(c, 0) : kind === '2d-move' ? move2d : kind === '2d-heavy' ? heavy2d
+          : (c, n) => { if (n === 0) scene2d(c, 0); else c.getContext('2d').fillRect(0, 0, 1, 1); };
         const ts = []; await new Promise((res) => { let n = 0, last = performance.now();
           const f = (now) => { ts.push(now - last); last = now; draw(off, n); if (++n < 120) requestAnimationFrame(f); else res(); };
           requestAnimationFrame(f); });
         const med = (a) => a.slice().sort((p, q) => p - q)[a.length >> 1];
-        postMessage({ lap1: med(ts.slice(1, 60)), lap2: med(ts.slice(60)) }); };`;
+        postMessage({ lap1: med(ts.slice(1, 60)), lap2: med(ts.slice(60)), n: ts.length }); };"""
+
+
+def cost_js(cases):
+    return """async () => {
+  __SCENES__
+  const R = {};
+  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); }); };
+  for (const [kind, w, h] of __CASES__) {
+    const wsrc = `__WORKER__`;
     const worker = new Worker(URL.createObjectURL(new Blob([wsrc])));
     const c = document.createElement('canvas'); c.width = w; c.height = h; document.body.appendChild(c);
     const off = c.transferControlToOffscreen();
-    R[kind + '-' + w] = await new Promise((res) => { worker.onmessage = (e) => res({ lap1: +e.data.lap1.toFixed(2), lap2: +e.data.lap2.toFixed(2) });
+    R[kind + '-' + w] = await new Promise((res) => { worker.onmessage = (e) => res({ lap1: +e.data.lap1.toFixed(2), lap2: +e.data.lap2.toFixed(2), n: e.data.n });
       worker.postMessage([kind, off], [off]); });
     worker.terminate(); c.remove(); await frames(2);
   }
-  // proxy for the mask snapshot copy: a 1 byte per pixel copy at 1080p
-  const src = new Uint8Array(1920 * 1080); const t = []; for (let i = 0; i < 30; i++) { const a = performance.now(); src.slice(); t.push(performance.now() - a); }
-  t.sort((p, q) => p - q); R.copy1080 = +t[15].toFixed(3);
   return R;
-}""".replace("__SCENES__", PH_SCENES)
+}""".replace("__SCENES__", PH_SCENES).replace("__WORKER__", COST_WORKER).replace("__CASES__", json.dumps(cases))
+
+
+COST_CASES = [[k, w, h] for k in ("2d-static", "2d-move", "2d-heavy", "gl") for (w, h) in ((512, 512), (1920, 1080))]
+
+
+def traced(config, js, flags):
+    """One session under a blink trace: (the page's value, the number of OffscreenCanvas::PushFrame events)."""
+    import threading
+    proc = conn = None
+    try:
+        proc, conn = lib_shell.launch_and_prime(
+            lambda: lib_shell.launch(config, extra_flags=flags),
+            lambda p: lib_shell.attach(p, lambda page: page.goto("about:blank", wait_until="load")))
+        page = conn.page
+        cdp = conn.context.browser.new_browser_cdp_session()
+        events, done = [], threading.Event()
+        cdp.on("Tracing.dataCollected", lambda e: events.extend(e["value"]))
+        cdp.on("Tracing.tracingComplete", lambda e: done.set())
+        cdp.send("Tracing.start", {"categories": "blink", "transferMode": "ReportEvents"})
+        value = page.evaluate(js)
+        cdp.send("Tracing.end")
+        for _ in range(100):
+            if done.is_set():
+                break
+            page.wait_for_timeout(100)
+        return value, sum(1 for ev in events if ev.get("name") == "OffscreenCanvas::PushFrame" and ev.get("ph") in ("X", "B"))
+    except Exception as exc:  # noqa: BLE001 - any fault must become a FAIL
+        return None, exc
+    finally:
+        if conn is not None:
+            conn.close()
+        if proc is not None:
+            lib_shell.shutdown(proc)
 
 
 def placeholder_rows():
     arms = {}
+    arms8 = {}
     for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
                       ("A2", json.dumps({"canvas:seed": 1111}))):
         v, e = session(cfg, LEAKS6, extra_flags=GL_ROW_FLAGS)
@@ -3081,6 +3158,12 @@ def placeholder_rows():
             notes.append(f"C87-C91: arm {name}: {e if v is None else v['err']}")
             return
         arms[name] = v
+        v8, e8 = session(cfg, LEAKS8, extra_flags=GL_ROW_FLAGS)
+        if v8 is None or "err" in v8:
+            results[C92] = False
+            notes.append(f"C92: arm {name}: {e8 if v8 is None else v8['err']}")
+        else:
+            arms8[name] = v8
 
     def noised(kind, key):
         return (arms["A"][kind][key] != arms["none"][kind][key] and arms["A"][kind][key] != arms["B"][kind][key]
@@ -3096,6 +3179,14 @@ def placeholder_rows():
     results[C89] = all(noised(k, "cib") for k in kinds) and equals("cib", "refDraw")
     results[C91] = (equals("blob2", "refBlob2") and all(arms[a][k]["blob2"] != arms[a][k]["blob"] for a in ("A", "B") for k in kinds)
                     and all(noised(k, "blob2") for k in kinds))
+    if len(arms8) == 4:
+        def noised8(key):
+            return (arms8["A"][key] != arms8["none"][key] and arms8["A"][key] != arms8["B"][key]
+                    and arms8["A"][key] == arms8["A2"][key])
+        results[C92] = (noised8("blob") and noised8("url") and noised8("draw")
+                        and all(a["blob"] == a["cur"] and a["draw"] == a["refDraw"] for a in arms8.values()))
+        for name, a in arms8.items():
+            notes.append(f"C92 {name}: blob {a['blob']}/{a['cur']} url {a['url']} draw {a['draw']}/{a['refDraw']}")
     capframes = [arms[a][k]["cap"] for a in arms for k in kinds]
     if any(str(x).startswith(("noframe", "err")) for x in capframes):
         mark_unmeasured(C90, f"no video frame from captureStream(placeholder): {sorted(set(map(str, capframes)))[:3]}")
@@ -3103,33 +3194,60 @@ def placeholder_rows():
         soft[C90] = all(noised(k, "cap") for k in kinds) and equals("cap", "refDraw")
     for name, a in arms.items():
         notes.append(f"C87-C91 {name}: " + " | ".join(
-            f"{k}: blob {a[k]['blob']}/{a[k]['refBlob']} url {a[k]['url']}/{a[k]['refUrl']} draw {a[k]['draw']}/{a[k]['refDraw']} "
+            f"{k}: blob {a[k]['blob']}/{a[k]['refBlob']}/{a[k]['cur']} url {a[k]['url']}/{a[k]['refUrl']} draw {a[k]['draw']}/{a[k]['refDraw']} "
             f"cib {a[k]['cib']} cap {a[k]['cap']} blob2 {a[k]['blob2']}/{a[k]['refBlob2']}" for k in kinds))
+    if os.environ.get("CAMOU_SP3A_NO_COST") == "1":    # a host busy with a build: no timing is worth taking
+        mark_unmeasured(C93, "CAMOU_SP3A_NO_COST=1")
+        return
     # cost: the worker's frame period, vsync limit off so the push cost is not hidden behind the 16.7 ms tick
-    cost = {}
+    # three alternating runs per arm and the median per case: one run of a heavy scene moves by a millisecond or two on its own
+    runs = {"none": [], "A": []}
     flags = GL_ROW_FLAGS + ["--disable-frame-rate-limit", "--disable-gpu-vsync"]
-    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111}))):
-        v, e = session(cfg, LEAKS7, extra_flags=flags)
-        if v is None or "err" in v:
-            mark_unmeasured(C93, f"cost session {name}: {e if v is None else v['err']}")
-            return
-        cost[name] = v
-    notes.append("C93 worker frame period ms (lap 1 = mask still growing, lap 2 = settled) and a 2 MB copy: " + " | ".join(
-        f"{n}: " + ", ".join(f"{k} {v['lap1']}/{v['lap2']}" for k, v in c.items() if k != "copy1080") + f", copy1080 {c['copy1080']}"
-        for n, c in cost.items()))
-    keys = [k for k in cost["none"] if k != "copy1080"]
-    if min(cost["none"][k]["lap2"] for k in keys) > 15.5:
-        mark_unmeasured(C93, "the frame period is pinned at the vsync tick even with the limit off: the push cost is below what "
-                             "this harness resolves")
+    for _ in range(3):
+        for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111}))):
+            v, e = session(cfg, cost_js(COST_CASES), extra_flags=flags)
+            if v is None or "err" in v:
+                mark_unmeasured(C93, f"cost session {name}: {e if v is None else v['err']}")
+                return
+            runs[name].append(v)
+
+    def med(vals):
+        return sorted(vals)[len(vals) // 2]
+
+    cost = {name: {k: {lap: round(med([r[k][lap] for r in rs]), 2) for lap in ("lap1", "lap2")} for k in rs[0]}
+            for name, rs in runs.items()}
+    spread = {k: round(max(r[k]["lap2"] for r in runs["none"]) - min(r[k]["lap2"] for r in runs["none"]), 2) for k in runs["none"][0]}
+    notes.append(f"C93 spread of lap 2 over the three none runs, ms (the noise): {spread}")
+    # one commit per frame: count the worker's PushFrame events under a trace for the two moving 2D cases
+    pushes = {}
+    for case in (["2d-move", 512, 512], ["2d-move", 1920, 1080]):
+        v, n = traced(json.dumps({"canvas:seed": 1111}), cost_js([case]), flags)
+        pushes[f"{case[0]}-{case[1]}"] = (None, None) if v is None else (v[f"{case[0]}-{case[1]}"]["n"], n)
+    notes.append("C93 worker frame period ms, median of 3 (lap 1 = mask still growing, lap 2 = settled), none | seed: " + " ; ".join(
+        f"{k} {cost['none'][k]['lap1']}/{cost['none'][k]['lap2']} | {cost['A'][k]['lap1']}/{cost['A'][k]['lap2']}" for k in cost["none"]))
+    notes.append("C93 commits: rAF frames vs PushFrame events under a trace: " + ", ".join(f"{k} {a} vs {b}" for k, (a, b) in pushes.items()))
+    bad = [k for k, (a, b) in pushes.items() if a is None or b is None or b < 0.9 * a]
+    if bad:
+        mark_unmeasured(C93, f"the frame period is not one commit per rAF frame ({pushes}): the cost of a commit is not what it times")
+        return
+    pinned, over = [], []
+    for k in cost["none"]:
+        for lap in ("lap1", "lap2"):
+            n0, a0 = cost["none"][k][lap], cost["A"][k][lap]
+            if 16.0 <= n0 <= 17.5:      # the frame period is the vsync tick: a commit's cost is hidden in it
+                pinned.append(f"{k}/{lap}")
+            elif a0 > 1.03 * n0 + 0.5:
+                over.append(f"{k}/{lap} {n0}->{a0}")
+    notes.append(f"C93 pinned at the vsync tick (not measured): {pinned}; over 3 % + 0.5 ms: {over}")
+    if len(pinned) == 2 * len(cost["none"]):
+        mark_unmeasured(C93, "every case's frame period is pinned at the vsync tick with the limit off")
     else:
-        # within 5 % + 0.3 ms of none (the chunked snapshot copies only the rows a shape touched)
-        soft[C93] = all(cost["A"][k]["lap1"] <= 1.05 * cost["none"][k]["lap1"] + 0.3
-                        and cost["A"][k]["lap2"] <= 1.05 * cost["none"][k]["lap2"] + 0.3 for k in keys)
+        soft[C93] = not over
 
 
 placeholder_rows()
 
-EXPECTED = 98   # the soft rows (SOFT_ROWS) are not counted
+EXPECTED = 99   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
