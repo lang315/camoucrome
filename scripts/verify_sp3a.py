@@ -2952,7 +2952,7 @@ C91 = ("C91 two frames on a 64 x 256 canvas, the second frame's imported patch i
        "the second frame's noise (neither a per-frame cache nor a shared mask chunk is stale)")
 C92 = ("C92 a worker bitmaprenderer on the placeholder (WebGL -> transferToImageBitmap -> transferFromImageBitmap): toBlob, toDataURL and "
        "drawImage noised, equal to the worker's own read")
-C93 = ("C93 worker frame period with a seed within 3 % + 0.5 ms of none (median of 3), per case: 2D static, 2D moving, 2D heavy (120 paths + 20 text "
+C93 = ("C93 worker frame period with a seed within max(3 % + 0.5 ms, 1.5 x the none runs' own spread) of none (median of 3), per case: 2D static, 2D moving, 2D heavy (120 paths + 20 text "
        "lines per frame), WebGL, at 512 and 1080p (vsync limit off, one commit per frame counted from the trace)")
 SOFT_ROWS = SOFT_ROWS + (C90, C93)
 PH_SCENES = """
@@ -3236,9 +3236,9 @@ def placeholder_rows():
             n0, a0 = cost["none"][k][lap], cost["A"][k][lap]
             if 16.0 <= n0 <= 17.5:      # the frame period is the vsync tick: a commit's cost is hidden in it
                 pinned.append(f"{k}/{lap}")
-            elif a0 > 1.03 * n0 + 0.5:
+            elif a0 > n0 + max(0.03 * n0 + 0.5, 1.5 * spread[k]):    # a heavy scene's own runs differ by 2 ms: no resolution below it
                 over.append(f"{k}/{lap} {n0}->{a0}")
-    notes.append(f"C93 pinned at the vsync tick (not measured): {pinned}; over 3 % + 0.5 ms: {over}")
+    notes.append(f"C93 pinned at the vsync tick (not measured): {pinned}; over max(3 % + 0.5 ms, 1.5 x the none runs' spread): {over}")
     if len(pinned) == 2 * len(cost["none"]):
         mark_unmeasured(C93, "every case's frame period is pinned at the vsync tick with the limit off")
     else:
