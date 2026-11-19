@@ -53,7 +53,7 @@ index a698fdfdba..39038c2f79 100644
      case GL_SHADING_LANGUAGE_VERSION: {
        return WebGLAny(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 81def4d280..7297e7865f 100644
+index 2fd0952b4b..9987f9c9f7 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -28,6 +28,8 @@

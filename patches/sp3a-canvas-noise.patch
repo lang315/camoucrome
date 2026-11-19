@@ -173,7 +173,7 @@ index 784682d6a6..f4b0524e29 100644
 +
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index 46eac9998c..a197570b6c 100644
+index 46eac9998c..a2b32d4b3a 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 @@ -32,6 +32,7 @@
@@ -199,7 +199,7 @@ index 46eac9998c..a197570b6c 100644
  #include "third_party/skia/include/core/SkImageInfo.h"
  #include "third_party/skia/include/core/SkRect.h"
  #include "third_party/skia/include/core/SkRefCnt.h"
-@@ -168,6 +172,36 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -168,6 +172,37 @@ class CORE_EXPORT CanvasRenderingContext
    virtual bool IsOpaque() const = 0;
  
    virtual scoped_refptr<StaticBitmapImage> GetImage() = 0;
@@ -208,8 +208,9 @@ index 46eac9998c..a197570b6c 100644
 +  // by each pixel's 3x3 neighbourhood, on the pixels CamouNoiseMask()
 +  // allows, when CamouNoiseEligible() and canvas:seed is set,
 +  // otherwise `image` itself. Every consumer of this context's pixels
-+  // (getImageData, toDataURL, toBlob, convertToBlob, GetSourceImageForCanvas)
-+  // calls it on the snapshot it takes, so they all read the same field. The
++  // (getImageData, toDataURL, toBlob, convertToBlob, GetSourceImageForCanvas,
++  // WebGL transferToImageBitmap) calls it on the snapshot it takes, so they
++  // all read the same field. The
 +  // canvas's own store, and so the screen, is never touched.
 +  scoped_refptr<StaticBitmapImage> CamouNoised(
 +      scoped_refptr<StaticBitmapImage> image);
@@ -236,7 +237,7 @@ index 46eac9998c..a197570b6c 100644
    virtual bool IsComposited() const = 0;
  
    // Called when the entire tab is backgrounded or unbackgrounded.
-@@ -376,6 +410,19 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -376,6 +411,19 @@ class CORE_EXPORT CanvasRenderingContext
    bool is_context_being_restored_ = false;
  
    void RecordUKMCanvasAccessibility();
@@ -1186,7 +1187,7 @@ index 9eb36fe26c..a698fdfdba 100644
      ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
      if (!binder.Succeeded()) {
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index e72f6f7ca6..81def4d280 100644
+index e72f6f7ca6..2fd0952b4b 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,8 +25,14 @@
@@ -1303,7 +1304,7 @@ index e72f6f7ca6..81def4d280 100644
    {
      ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
      if (!binder.Succeeded()) {
-@@ -5378,6 +5455,457 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+@@ -5378,6 +5455,465 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
    }
  }
  
@@ -1515,6 +1516,7 @@ index e72f6f7ca6..81def4d280 100644
 +  }
 +  // The noise, on the read's in-framebuffer part. A check that fails returns
 +  // from it early and leaves the read as GL wrote it.
++  bool noised = false;
 +  [&] {
 +    // SAFETY: readPixels validated the destination against this pack layout;
 +    // the in-framebuffer part spans these bytes from `offset`.
@@ -1566,6 +1568,7 @@ index e72f6f7ca6..81def4d280 100644
 +      if (!probe || !agrees(probe, in_w * 4, 0, 4, 0, 4, in_w)) {
 +        return;
 +      }
++      noised = true;
 +      camoucfg::PerturbRgbaFromConfig(page.data(), in_w, in_h, row_bytes, scope,
 +                                      camoucfg::RgbaFrame());
 +      return;
@@ -1626,6 +1629,7 @@ index e72f6f7ca6..81def4d280 100644
 +        // SAFETY: `right` holds two pixels per row.
 +        frame.right = UNSAFE_BUFFERS(right.get() + 4);
 +      }
++      noised = true;
 +      camoucfg::PerturbRgbaFromConfig(page.data(), in_w, in_h, row_bytes, scope,
 +                                      frame);
 +      return;
@@ -1654,6 +1658,7 @@ index e72f6f7ca6..81def4d280 100644
 +        return;
 +      }
 +    }
++    noised = true;
 +    camoucfg::PerturbRgbaFromConfig(src.data(), fw, fh, src_rb, scope,
 +                                    camoucfg::RgbaFrame());
 +    for (size_t r = 0; r < in_h; ++r) {
@@ -1675,7 +1680,7 @@ index e72f6f7ca6..81def4d280 100644
 +    }
 +  }
 +  if (written) {
-+    *written = CamouWritten{offset, row_bytes, in_w, in_h};
++    *written = CamouWritten{offset, row_bytes, in_w, in_h, noised};
 +  }
 +  return true;
 +}
@@ -1732,8 +1737,12 @@ index e72f6f7ca6..81def4d280 100644
 +  CamouWritten done;
 +  const bool read = CamouReadPixels(framebuffer, x, y, width, height,
 +                                    scratch.get(), false, &done);
-+  gl->BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->Object());
-+  if (!read) {
++  DrawingBufferClientRestorePixelPackBufferBinding();
++  // Only a read the noise confirmed is uploaded: one GL dropped (no transfer
++  // buffer, a lost context) leaves the scratch zeroed, and uploading that
++  // would replace the page's bytes. The buffer is untouched, so the caller
++  // reads stock.
++  if (!read || !done.noised) {
 +    return false;
 +  }
 +  // Only the in-framebuffer part of each row: stock leaves row padding,
@@ -1762,7 +1771,7 @@ index e72f6f7ca6..81def4d280 100644
      GLenum target,
      GLsizei samples,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index add96cfd87..253f952b3d 100644
+index add96cfd87..3894f944af 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -637,6 +637,12 @@ class MODULES_EXPORT WebGLRenderingContextBase
@@ -1806,7 +1815,7 @@ index add96cfd87..253f952b3d 100644
  
    void RecordANGLEImplementation();
  
-@@ -1960,6 +1987,33 @@ class MODULES_EXPORT WebGLRenderingContextBase
+@@ -1960,6 +1987,36 @@ class MODULES_EXPORT WebGLRenderingContextBase
                              const Platform::WebGLContextInfo&,
                              const CanvasContextCreationAttributesCore&,
                              Platform::WebGLContextType);
@@ -1823,11 +1832,14 @@ index add96cfd87..253f952b3d 100644
 +  // checked against the page's read on the lines it covers.
 +  // The part of `data` CamouReadPixels wrote: `in_h` rows of `in_w` pixels,
 +  // `row_bytes` apart, the first at `offset` bytes. `in_w` 0: nothing.
++  // `noised`: the noise ran, so the page's read was confirmed by its probe
++  // (a read GL dropped, or a lost context, leaves it false).
 +  struct CamouWritten {
 +    size_t offset = 0;
 +    size_t row_bytes = 0;
 +    size_t in_w = 0;
 +    size_t in_h = 0;
++    bool noised = false;
 +  };
 +  bool CamouReadPixels(WebGLFramebuffer* framebuffer,
 +                       GLint x,

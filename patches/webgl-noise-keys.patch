@@ -23,10 +23,10 @@ index f4b0524e29..d7667400e2 100644
  
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index a197570b6c..7298868aa7 100644
+index a2b32d4b3a..1df85f4fd2 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-@@ -202,6 +202,11 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -203,6 +203,11 @@ class CORE_EXPORT CanvasRenderingContext
    // The lowest alpha a pixel may have and still change; WebGL is
    // opaque-only.
    virtual uint8_t CamouNoiseMinAlpha() const { return 1; }
@@ -39,7 +39,7 @@ index a197570b6c..7298868aa7 100644
  
    // Called when the entire tab is backgrounded or unbackgrounded.
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
-index 253f952b3d..fc2a3616fe 100644
+index 3894f944af..42c6ffc4aa 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
 @@ -643,6 +643,9 @@ class MODULES_EXPORT WebGLRenderingContextBase

@@ -29,7 +29,7 @@ index 39038c2f79..231e13aef1 100644
        }
        // Defined but the configured type cannot match this pname's stock JS
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 7297e7865f..8ab4a51ddc 100644
+index 9987f9c9f7..edfba58f20 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -4084,6 +4084,10 @@ void WebGLRenderingContextBase::RecordANGLEImplementation() {
