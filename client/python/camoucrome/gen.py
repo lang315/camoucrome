@@ -817,6 +817,7 @@ def main(argv=None):
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
     ap.add_argument("--host-screen", type=json.loads, help='the host work area as JSON (probe.host_screen): {"availWidth","availHeight"} in physical px; draws that do not fit are rejected')
+    ap.add_argument("--host-cpu-vendor", choices=[INTEL_CPU, AMD_CPU, "none"], help="the host's CPU vendor (default: probed): a claimed iGPU of the other vendor is not drawn; none applies no rule")
     ap.add_argument("--host-cores", type=int, help="the host's CPU count (default: os.cpu_count()): a navigator.hardwareConcurrency claim above it snaps down")
     ap.add_argument("--light", action="store_true", help="light mode (part 3): draw only pool samples with DPR 1")
     a = ap.parse_args(argv)
@@ -828,7 +829,8 @@ def main(argv=None):
     if a.host_screen is not None and not valid_screen(a.host_screen):
         sys.exit('gen: --host-screen must be {"availWidth": <positive int>, "availHeight": <positive int>}')
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen, host_cores=a.host_cores), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen, host_cores=a.host_cores,
+                       **({"host_cpu_vendor": None if a.host_cpu_vendor == "none" else a.host_cpu_vendor} if a.host_cpu_vendor else {})), sys.stdout)
 
 
 if __name__ == "__main__":

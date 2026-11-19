@@ -35,7 +35,8 @@ def build_and_run(tmp_path):
     wheel = next(wheels.glob("camoucrome-*.whl"))
     subprocess.run([str(py), "-m", "pip", "install", "-q", str(wheel), "browserforge==1.2.4"], check=True)
     env = {k: v for k, v in os.environ.items() if k != "CAMOUCROME_ROOT"}
-    out = subprocess.run([str(py), "-m", "camoucrome.gen", "--os", "windows", "--seed", "1", "--host-renderer", GEN9_HOST, "--host-cores", "64"],
+    out = subprocess.run([str(py), "-m", "camoucrome.gen", "--os", "windows", "--seed", "1", "--host-renderer", GEN9_HOST, "--host-cores", "64",
+                          "--host-cpu-vendor", "GenuineIntel"],  # not the runner's own CPU: an AMD runner would drop every Gen9 claim
                          cwd=tmp_path, env=env, capture_output=True, text=True)
     return out
 
