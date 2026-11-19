@@ -2483,7 +2483,124 @@ def c67_row():
 
 c67_row()
 
-EXPECTED = 76   # the soft rows (SOFT_ROWS) are not counted
+# --- WebGL readback leaks (2026-11-19): C70-C74 ---
+# Two WebGL paths returned the host's raw pixels under canvas:seed: the WebGL2 readPixels overload into a bound
+# PIXEL_PACK_BUFFER (read back with getBufferSubData), and OffscreenCanvas.transferToImageBitmap (main thread and worker).
+# One page function runs every path; it runs in four sessions: no config, seed A, seed B, seed A again.
+C70 = "C70 WebGL2 PBO readPixels + getBufferSubData is noised: seed A != none, A != B, A == A again"
+C71 = "C71 PBO bytes equal the readPixels(view) bytes of the same page (no config and both seeds), binding and GL error intact"
+C72 = "C72 PBO with PACK_ALIGNMENT 8, a rect past the framebuffer and an offset equals the view read; untouched bytes survive"
+C73 = "C73 transferToImageBitmap then 2D getImageData: noised (A != none, A != B, A == A again), equals drawImage(canvas)"
+C74 = "C74 the same in a worker: noised, equal to the main thread's drawImage(canvas) hash"
+LEAKS = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const eq = (a, b) => { if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+  const R = {};
+  const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
+  if (!gl) return { err: 'no-webgl2' };
+  scene(gl, 64, 64);
+  const RGBA = gl.RGBA, UB = gl.UNSIGNED_BYTE, PPB = gl.PIXEL_PACK_BUFFER;
+  // The page's pack buffer binding is part of the state the page left.
+  const view = new Uint8Array(64 * 64 * 4); gl.readPixels(0, 0, 64, 64, RGBA, UB, view);
+  const pb = gl.createBuffer(); gl.bindBuffer(PPB, pb); gl.bufferData(PPB, view.length, gl.STREAM_READ);
+  gl.readPixels(0, 0, 64, 64, RGBA, UB, 0);
+  const got = new Uint8Array(view.length); gl.getBufferSubData(PPB, 0, got);
+  R.view = H(view); R.pbo = H(got); R.pboEqView = eq(got, view);
+  R.bound = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) === pb;
+  R.glerr = gl.getError();
+  // PACK_ALIGNMENT 8, a 71 x 72 rect at (-8, -8) (8 px past the framebuffer on two sides), 16 bytes into the buffer.
+  gl.pixelStorei(gl.PACK_ALIGNMENT, 8);
+  const N = 16 + 72 * 288;
+  const lay = new Uint8Array(N).fill(0xAB);
+  gl.readPixels(-8, -8, 71, 72, RGBA, UB, lay, 16);
+  gl.bufferData(PPB, new Uint8Array(N).fill(0xAB), gl.STREAM_READ);
+  gl.readPixels(-8, -8, 71, 72, RGBA, UB, 16);
+  const lay2 = new Uint8Array(N); gl.getBufferSubData(PPB, 0, lay2);
+  R.layEq = eq(lay, lay2); R.layPbo = H(lay2);
+  R.untouched = lay2.reduce((n, b) => n + (b === 0xAB ? 1 : 0), 0);
+  R.layBound = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) === pb; R.layGlerr = gl.getError();
+  gl.bindBuffer(PPB, null);
+  // transferToImageBitmap, drawn to a 2D canvas and read, against drawImage(canvas) of the same scene.
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  const read2d = (src) => { const c2 = document.createElement('canvas'); c2.width = 64; c2.height = 64;
+    const x = c2.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
+  R.tibMain = read2d(oc.transferToImageBitmap()); R.drawMain = read2d(dom);
+  const wsrc = `const H = ${H.toString()}; const scene = ${scene.toString()};
+    onmessage = () => { const oc = new OffscreenCanvas(64, 64); const g = oc.getContext('webgl2');
+      if (!g) { postMessage({ err: 'no-webgl2' }); return; }
+      scene(g, 64, 64); const bmp = oc.transferToImageBitmap();
+      const c2 = new OffscreenCanvas(64, 64); const x = c2.getContext('2d', { willReadFrequently: true });
+      x.drawImage(bmp, 0, 0); postMessage({ tib: H(x.getImageData(0, 0, 64, 64).data) }); };`;
+  R.tibWorker = await new Promise((resolve, reject) => {
+    const w = new Worker(URL.createObjectURL(new Blob([wsrc], { type: 'text/javascript' })));
+    w.onmessage = (e) => resolve(e.data.err ? { err: e.data.err } : e.data.tib);
+    w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    w.postMessage('go');
+  });
+  return R;
+}"""
+
+
+def leaks_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            for row in (C70, C71, C72, C73, C74):
+                results[row] = False
+            notes.append(f"C70-C74: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(key):    # seed A moves the none value, seed B moves A's, A again reproduces A
+        return (arms["A"][key] != arms["none"][key] and arms["A"][key] != arms["B"][key]
+                and arms["A"][key] == arms["A2"][key])
+
+    # The read path that was already noised must have moved, or "A != none" below measures nothing.
+    if not noised("view"):
+        for row in (C70, C71, C72, C73, C74):
+            mark_unmeasured(row, "readPixels(view) is not noised across the arms: the scene or the config does not reach the hook")
+        return
+    results[C70] = noised("pbo")
+    results[C71] = all(a["pboEqView"] and a["bound"] and a["glerr"] == 0 for a in arms.values())
+    results[C72] = (all(a["layEq"] and a["layBound"] and a["layGlerr"] == 0 for a in arms.values())
+                    and all(a["untouched"] > 2000 for a in arms.values()) and noised("layPbo"))
+    results[C73] = noised("tibMain") and all(a["tibMain"] == a["drawMain"] for a in arms.values())
+    results[C74] = (noised("tibWorker") and all(a["tibWorker"] == a["drawMain"] for a in arms.values()))
+    for arm, a in arms.items():
+        notes.append(f"C70-C74 {arm}: view {a['view']} pbo {a['pbo']} lay {a['layPbo']} untouched {a['untouched']} "
+                     f"tibMain {a['tibMain']} drawMain {a['drawMain']} tibWorker {a['tibWorker']}")
+
+
+leaks_rows()
+
+EXPECTED = 81   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
