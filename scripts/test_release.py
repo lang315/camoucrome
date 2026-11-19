@@ -390,6 +390,20 @@ def test_refuses_two_archives_of_one_stamp(monkeypatch, stamps, tmp_path):
     refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(a), "--asset", str(b)))
 
 
+def test_a_zip_and_a_tar_xz_of_one_stamp_proceed(monkeypatch, stamps, tmp_path):
+    """Windows ships the same tree twice: zip for manual install, .tar.xz as the smaller download."""
+    a, b = both_archives(tmp_path, stamps)
+    paths, _ = stamps
+    src = tmp_path / "x" / "camoucrome-x"
+    src.mkdir(parents=True)
+    (src / "chrome.exe").write_bytes(b"MZ clean")
+    (src / "camoucrome-release.json").write_bytes(paths[0].read_bytes())
+    xz = tmp_path / "as" / f"camoucrome-{V}-windows-x64.tar.xz"
+    with tarfile.open(xz, "w:xz") as t:
+        t.add(src, arcname=src.name)
+    assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(a), "--asset", str(xz), "--asset", str(b))) == 0
+
+
 def test_refuses_a_tar_header_holding_a_term(monkeypatch, stamps, tmp_path, capsys):
     # the build account's name rides in uname/gname, which the member data scan never reads
     src = tmp_path / "m.bin"

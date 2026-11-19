@@ -60,7 +60,9 @@ $g = Start-Process .\git-installer.exe -ArgumentList '/VERYSILENT /NORESTART' -W
 if ($g.ExitCode -ne 0) { throw "Git installer exit code $($g.ExitCode)" }
 ```
 
-2. Download the zip and `SHA256SUMS` from the release.
+2. Download the zip and `SHA256SUMS` from the release. From the next release on, the same tree is
+   also published as `camoucrome-<chrome-version>-windows-x64.tar.xz`, about 30 % smaller, for tools
+   that unpack xz themselves. Windows 10's `tar` may not read xz, so the steps below use the zip.
 
 ```powershell
 $ErrorActionPreference = 'Stop'

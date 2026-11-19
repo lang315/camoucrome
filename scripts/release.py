@@ -220,12 +220,16 @@ def main(argv):
                 return refuse(f"{p} is not a readable archive: {e}")
             if len(embedded) != 1 or embedded[0] not in stamp_bytes:
                 return refuse(f"{p}: embedded camoucrome-release.json is missing or matches no --stamp")
-            matched.append(stamp_bytes.index(embedded[0]))
-    # both ways: a platform archive per stamp, once (a forgotten archive made a one-platform draft). No platform
-    # archive at all (an npm or wheel-only asset list) is left alone.
-    if matched and sorted(matched) != list(range(len(stamp_bytes))):
-        missing = [a.stamp[i] for i in range(len(stamp_bytes)) if i not in matched]
-        return refuse(f"no archive embeds {missing}" if missing else "two platform archives embed the same --stamp")
+            # one archive per stamp per format: Windows ships the same tree as .zip and .tar.xz
+            matched.append((stamp_bytes.index(embedded[0]), "zip" if n.lower().endswith(".zip") else "tar"))
+    # both ways: a platform archive per stamp, once per format (a forgotten archive made a one-platform draft). No
+    # platform archive at all (an npm or wheel-only asset list) is left alone.
+    if matched:
+        missing = [a.stamp[i] for i in range(len(stamp_bytes)) if i not in {s for s, _ in matched}]
+        if missing:
+            return refuse(f"no archive embeds {missing}")
+        if len(set(matched)) != len(matched):
+            return refuse("two platform archives embed the same --stamp")
     for p in a.asset:
         try:
             for member, label in scan_archive(p, terms):

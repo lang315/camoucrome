@@ -288,6 +288,10 @@ def archive(staging, platform):
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(staging.rglob("*")):
                 z.write(f, f.relative_to(staging.parent))
+        # The same tree as .tar.xz, the smaller download for tools (201 -> 140 MB on -10); the zip stays for
+        # manual install, since Windows 10's tar may not read xz.
+        with tarfile.open(str(staging) + ".tar.xz", "w:xz", preset=9) as t:
+            t.add(staging, arcname=staging.name, filter=_anonymous)
     else:
         path = pathlib.Path(str(staging) + ".tar.xz")
         with tarfile.open(path, "w:xz") as t:
