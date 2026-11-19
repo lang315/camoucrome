@@ -31,9 +31,20 @@ XE = "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 
 RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
 RTX2 = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3070 (0x00002484) Direct3D11 vs_5_0 ps_5_0, D3D11)"
 FAKE_GEN9 = "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x0000FFFF) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # the shape, an id not in the pool
+RTX4090 = "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # Dawn: lovelace (Ada)
+GTX1060 = "ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 6GB (0x00001C03) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # Dawn: pascal
+RX6800 = "ANGLE (AMD, AMD Radeon RX 6800 (0x000073BF) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # Dawn: rdna-2 (mask 0xFFF0)
+RX6600 = "ANGLE (AMD, AMD Radeon RX 6600 (0x000073FF) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+RX5700 = "ANGLE (AMD, AMD Radeon RX 5700 XT (0x0000731F) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # Dawn: rdna-1
+UHD_9B41 = "ANGLE (Intel, Intel(R) UHD Graphics (0x00009B41) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # Gen9 by Dawn's mask, not in the pool
+NOT_IN_TABLE = "ANGLE (Intel, Intel(R) UHD Graphics (0x0000FFFF) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+SWIFTSHADER = "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
 WEBGPU_PAIRS = [  # (claim, host)
     (RTX, RTX), (G620_A, G620_A), (G620_A, G630), (G620_B, G630), (G630, XE), (XE, G630), (XE, XE), (RTX, G630), (G630, RTX),
-    (RTX, RTX2), (G620_A, None), (RTX, None), (XE, None), (G620_A, ""), (FAKE_GEN9, G630), (G630, FAKE_GEN9), (FAKE_GEN9, FAKE_GEN9)]
+    (RTX, RTX2), (G620_A, None), (RTX, None), (XE, None), (G620_A, ""), (FAKE_GEN9, G630), (G630, FAKE_GEN9), (FAKE_GEN9, FAKE_GEN9),
+    # same-architecture mode: a different SKU of one architecture opens, one vendor with two architectures does not
+    (RTX, RTX4090), (RTX, GTX1060), (RTX4090, RTX), (RX6800, RX6600), (RX6800, RX5700), (RX6800, RTX), (G630, UHD_9B41),
+    (UHD_9B41, G620_A), (XE, UHD_9B41), (RTX, SWIFTSHADER), (G630, NOT_IN_TABLE), (NOT_IN_TABLE, NOT_IN_TABLE), (RX6800, None)]
 
 
 def webgpu_rows(gen):

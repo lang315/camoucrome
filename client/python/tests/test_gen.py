@@ -406,8 +406,8 @@ def test_explicit_gpu_still_claims_without_a_host_renderer():
     assert prof == gen.profile_for("Windows", "windows-intel-uhd-630-d3d11") and warn is None
 
 
-@pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)",
-                                  "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"])
+# an unknown host architecture keeps choice B; a known one is test_gpu_same_architecture.py
+@pytest.mark.parametrize("host", [None, "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"])
 def test_a_host_that_is_not_the_claim_blocks_webgpu(host):
     r = gen.generate("windows", "Europe/Paris", None, 2, host_renderer=host)["config"]
     assert r["webGl:renderer"].startswith("ANGLE (NVIDIA") and r["webGpu:blocked"] is True
@@ -419,9 +419,8 @@ def test_pool_file_declares_its_weights_are_an_assumption():
 
 def test_a_gen9_claim_on_a_gen9_host_keeps_the_real_adapter():
     on_gen9 = [gen.generate("windows", "Europe/Paris", None, sd, host_renderer=HOST, host_cores=64)["config"] for sd in range(1, 40)]
-    for c in on_gen9:
-        assert c["webGpu:blocked"] is (gen.gpu_class(c["webGl:renderer"]) != "igpu-gen9")
-    assert {c["webGpu:blocked"] for c in on_gen9} == {True, False}
+    for c in on_gen9:  # same-architecture mode: a Gen9 host draws only Gen9 claims (or none), all with the real adapter
+        assert gen.gpu_class(c["webGl:renderer"]) == "igpu-gen9" and c["webGpu:blocked"] is False
 
 
 # Pinned from the code before the GPU draw and the font plumbing (seeds 1..3, windows, Europe/Paris).
@@ -481,9 +480,9 @@ def test_cli_probe_executable_reads_the_host_renderer_for_the_draw(monkeypatch, 
     assert gen.gen9_device_id(r["config"]["webGl:renderer"]) is not None and r["config"]["webGpu:blocked"] is False
 
 
-def test_cli_probe_executable_on_a_non_gen9_host_blocks_webgpu(monkeypatch, capsys):
-    nv = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], nv)
+def test_cli_probe_executable_on_an_unknown_host_blocks_webgpu(monkeypatch, capsys):
+    unknown = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
+    r = _cli(monkeypatch, capsys, ["--probe-executable", "/x/chrome"], unknown)
     assert r["config"]["webGpu:blocked"] is True
 
 

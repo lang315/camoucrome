@@ -68,8 +68,8 @@ func TestWebGpuBlockedMatchesPython(t *testing.T) {
 			open++
 		}
 	}
-	if open != 6 {
-		t.Fatalf("%d unblocked rows, want 6: the golden lost a same-family case", open)
+	if open != 11 {
+		t.Fatalf("%d unblocked rows, want 11: the golden lost a same-architecture case", open)
 	}
 }
 
@@ -131,7 +131,7 @@ func TestPoolShareUnblockedOnGen9Host(t *testing.T) {
 			continue
 		}
 		claims++
-		if gen9DeviceID(r) {
+		if gpuArchitecture(r) == "intel/gen-9" {
 			gen9Claims++
 		}
 		id := Identity{Version: poolFormat, OS: "windows", Entry: raw, Seeds: map[string]uint32{"canvas:seed": 1, "mediaDevices:seed": 2}, HostSeed: uint64(i + 1)}

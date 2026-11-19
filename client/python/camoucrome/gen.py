@@ -40,8 +40,11 @@ Never taken, and why:
                                    real value is coherent by construction
   screen.availLeft / availTop      multi-monitor offsets from the pool; the real 0 is fine
   videoCard (webGl:*)              taken when gpu_class accepts it (NVIDIA, AMD RX/Pro, Intel Arc A-series,
-                                   an Intel or AMD iGPU with a sourced thread cap), else the sample is redrawn. Only
-                                   the four strings and webGpu:blocked are emitted; tables stay the host's.
+                                   an Intel or AMD iGPU with a sourced thread cap), else the sample is redrawn.
+                                   With a host renderer of known Dawn architecture (gpu_architecture) the claim
+                                   must share its vendor and architecture; with none in MAX_DRAWS there is no claim
+                                   and the host's GPU shows. Only the four strings and webGpu:blocked are emitted;
+                                   tables stay the host's.
                                    --gpu names a captured profile's strings instead
   fonts                            fonts:list is the captured family list of the claimed OS
                                    (settings/fonts.json), which the bundled fontconfig
@@ -149,17 +152,18 @@ if not (ROOT / "settings" / "webgl").is_dir():
 def load_profiles():
     """settings/webgl/*.json by id: real-GPU captures (scripts/capture_webgl_profile.py)."""
     return {p.stem: json.loads(p.read_text(encoding="utf-8"))
-            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith(("-pool", "-thread-caps"))}
+            for p in sorted((ROOT / "settings" / "webgl").glob("*.json")) if not p.name.startswith("._") and not p.stem.endswith(("-pool", "-thread-caps", "-architectures"))}
 
 
 GPU_CLAIM_KEYS = ("webGl:vendor", "webGl:renderer", "webGl2:vendor", "webGl2:renderer", "webGpu:blocked")
 
 
 def gpu_keys(vendor, renderer, host_renderer):
-    """The claim's four strings, plus webGpu:blocked: true unless the claim is the host's own renderer. A Gen9 claim on a
-    Gen9 host stays unblocked, because WebGPU masks every Gen9 part to intel/gen-9 (measured 2026-11-04). An unknown host
-    (None) is never equal. Parameters, extensions and precision formats are the host's and are not emitted."""
-    same = renderer == host_renderer or (gen9_device_id(renderer) is not None and gen9_device_id(host_renderer) is not None)
+    """The claim's four strings, plus webGpu:blocked: true unless the claim and the host share vendor and Dawn architecture
+    (adapter.info reports only those two, so WebGPU then agrees with the claim, as on a real machine), or the claim is the
+    host's own renderer string. An unknown host (None) is never the same. Parameters, extensions and precision formats are
+    the host's and are not emitted."""
+    same = renderer == host_renderer or same_architecture(renderer, host_renderer)
     return {"webGl:vendor": vendor, "webGl:renderer": renderer, "webGl2:vendor": vendor, "webGl2:renderer": renderer,
             "webGpu:blocked": not same}
 
@@ -270,6 +274,38 @@ def gpu_class(renderer):
     if re.search(r"Arc\(TM\) A\d{3}", name):
         return "dgpu"
     return "igpu" if igpu_thread_cap(renderer) is not None else None
+
+
+def _arch_table():
+    """settings/webgl/gpu-architectures.json: Dawn's device-id -> architecture table at the pin (scripts/gen_gpu_architectures.py)."""
+    global _ARCH
+    if _ARCH is None:
+        _ARCH = json.loads((ROOT / "settings" / "webgl" / "gpu-architectures.json").read_text(encoding="utf-8"))
+    return _ARCH
+
+
+_ARCH = None
+
+
+def gpu_architecture(renderer):
+    """(vendor, Dawn architecture) of an ANGLE D3D11 renderer string, e.g. ("intel", "gen-9"); None for no renderer, a
+    software or non-D3D11 string, or a device id the table does not hold. adapter.info reports exactly these two."""
+    m = ANGLE_D3D11_RE.match(renderer or "")
+    if not m:
+        return None
+    vendor = m.group(1).lower()
+    v = _arch_table()["vendors"].get(vendor)
+    dev = int(m.group(3), 16)
+    for s in v["sets"] if v else ():
+        a = s["ids"].get(f"0x{dev & int(s['mask'], 16):0{len(s['mask']) - 2}X}")
+        if a:
+            return vendor, a
+    return None
+
+
+def same_architecture(claim, host):
+    a = gpu_architecture(claim)
+    return a is not None and a == gpu_architecture(host)
 
 
 INTEL_CPU, AMD_CPU = "GenuineIntel", "AuthenticAMD"
@@ -512,7 +548,7 @@ def display_flags(host_display):
 
 
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
-              host_platform_version=None, host_display=None, host_screen=None, host_cores=None, host_cpu_vendor=None):
+              host_platform_version=None, host_display=None, host_screen=None, host_cores=None, host_cpu_vendor=None, claim_gpu=True):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When the claimed GPU is an iGPU (Gen9 or any other sourced class), navigator.hardwareConcurrency above that GPU's thread
     cap (thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
@@ -562,7 +598,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     for k, n in counts.items():
         config[f"mediaDevices:{k}"] = n
     config.update(per_instance_config(rng))
-    profile, warn = gpu_for(platform, host_renderer, rng, gpu, fp)
+    profile, warn = gpu_for(platform, host_renderer, rng, gpu, fp) if claim_gpu else (None, None)
     if profile:
         keys = gpu_keys(profile["vendor"], profile["renderer"], host_renderer)
         if platform != "Windows" and not gpu:
@@ -575,8 +611,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             floor = igpu_thread_floor(profile["renderer"]) or 0
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if floor <= t <= cap] or [cap])
-    if host_cores is not None and config["navigator.hardwareConcurrency"] > host_cores:
-        config["navigator.hardwareConcurrency"] = max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
+    config["navigator.hardwareConcurrency"] = snap_threads(config["navigator.hardwareConcurrency"], host_cores)
     floor = igpu_thread_floor(profile["renderer"]) if profile else None
     floor_warn = None
     if floor and config["navigator.hardwareConcurrency"] < floor:
@@ -643,7 +678,15 @@ def allowed_cpus():
     return len(mask) if mask else _os.cpu_count()
 
 
-def gpu_ok(fp, profile, host_vendor=None):
+def snap_threads(n, host_cores):
+    """A thread claim above host_cores snaps to the largest THREAD_STEPS value within them (host_cores itself when none fits);
+    None host_cores leaves it."""
+    if host_cores is not None and n > host_cores:
+        return max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
+    return n
+
+
+def gpu_ok(fp, profile, host_vendor=None, host_arch=None):
     """A Windows sample with no drawable GPU is rejected, as is an Apple one beside an x86 claim, and one whose thread
     count is below the claimed iGPU's floor."""
     if profile is None and fp["navigator"]["userAgentData"]["platform"] == "Windows":
@@ -653,6 +696,9 @@ def gpu_ok(fp, profile, host_vendor=None):
         return False
     if profile and not vendor_fits(profile["renderer"], host_vendor):
         return False
+    if (host_arch and profile and fp["navigator"]["userAgentData"]["platform"] == "Windows"
+            and gpu_architecture(profile["renderer"]) != host_arch):
+        return False  # same-architecture mode: a drawn claim needs the host's vendor and architecture
     return arch_fits(fp, profile)
 
 
@@ -686,19 +732,48 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     # browserforge 1.2.4 raises TypeError on every draw when os=None is
     # passed explicitly; the keyword must be absent for "any OS".
     gen = FingerprintGenerator(browser="chrome", **({"os": os} if os else {}))
+    # Same-architecture mode: a drawn Windows claim needs the host's vendor and Dawn architecture. Without one in the budget the
+    # first sample that passed every other rule is kept with no GPU claim, so the host's real GPU shows. An unknown host
+    # architecture (or no host renderer: None) keeps the draw as it was.
+    host_arch = None if gpu else gpu_architecture(host_renderer)
+    spare = None
     for _ in range(MAX_DRAWS):
         fp = asdict(gen.generate())
         # an Apple GPU string over an x86 claim is a cross-surface lie
-        if (acceptable(fp) and (not light or dpr_of(fp) == 1)
-                and gpu_ok(fp, gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu, fp)[0],
-                           None if gpu else host_cpu_vendor)
-                and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
+        if not (acceptable(fp) and (not light or dpr_of(fp) == 1)):
+            continue
+        profile = gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu, fp)[0]
+        vendor = None if gpu else host_cpu_vendor
+        if gpu_ok(fp, profile, vendor) and (host_screen is None or holds_min_window(host_screen, dpr_of(fp))):
+            if host_arch and not gpu_ok(fp, profile, vendor, host_arch):
+                # the real iGPU shows once the claim is gone: its thread count must not sit below the host iGPU's floor
+                if spare is None and snap_threads(fp["navigator"]["hardwareConcurrency"], host_cores) >= (igpu_thread_floor(host_renderer) or 0):
+                    spare = fp
+                continue
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
                             host_display, host_screen, host_cores, host_cpu_vendor)
             if point:  # drawn after the pool, so an identity without an exit IP is unchanged
                 out["config"].update(geolocation_keys(point, rng))
-            return out
+            return _arch_warning(out, host_renderer, host_arch, gpu)
+    if spare is not None:
+        out = from_pool(spare, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
+                        host_display, host_screen, host_cores, host_cpu_vendor, claim_gpu=False)
+        if point:
+            out["config"].update(geolocation_keys(point, rng))
+        out["warnings"].append(f"no pool draw in {MAX_DRAWS} shares the host GPU's vendor and architecture {'/'.join(host_arch)}: "
+                               "no GPU claim, the host's real GPU shows")
+        return out
     raise RuntimeError(f"no acceptable Chrome sample in {MAX_DRAWS} draws for os={os}")
+
+
+def _arch_warning(out, host_renderer, host_arch, gpu):
+    """One warning when a host renderer was given but its architecture is unknown (a software or non-D3D11 renderer, or an id
+    missing from Dawn's table): the draw keeps choice B, a claim from the whole pool with WebGPU blocked. A claim with no
+    webGpu:blocked key (a macOS claim on its own Apple host) is the host's own and needs no warning."""
+    if host_renderer and host_arch is None and not gpu and "webGpu:blocked" in out["config"]:
+        out["warnings"].append("the host GPU's architecture is unknown (no ANGLE D3D11 renderer, or an id Dawn's table lacks): "
+                               "the GPU claim is drawn from the whole pool and WebGPU stays blocked")
+    return out
 
 
 GEO_RADIUS_KM = 2
@@ -736,12 +811,13 @@ def main(argv=None):
                                   "default: a Windows claim draws a Gen9 GPU on a Gen9 host and claims none on any other")
     ap.add_argument("--exit-ip", help="the proxy's exit address: timezone and locale follow where it is (needs --geoip-db or CAMOU_GEOIP_DB)")
     ap.add_argument("--geoip-db", help="a DB-IP Lite or GeoLite2-layout .mmdb")
-    ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): an Intel Gen9 host draws a Gen9 identity per seed")
+    ap.add_argument("--host-renderer", help="the host's WebGL renderer string (probe.host_renderer): a host of a known Dawn architecture draws only claims of that architecture (or none)")
     ap.add_argument("--probe-executable", help="a Chrome binary: launch it once to read the host's WebGL renderer when --host-renderer is not given (a failed probe claims no GPU)")
     ap.add_argument("--host-fonts", action="store_true", help="limit a Windows claim's fonts to the families this host has (Windows only; elsewhere unknown)")
     ap.add_argument("--host-platform-version", help="the host's UA-CH platformVersion (probe.host_platform_version): wins over the pool's")
     ap.add_argument("--host-display", type=json.loads, help='the host display as JSON (probe.host_display): {"gamut","colorBits","hdr"}; a wide-gamut host gets --force-color-profile=srgb in launch.args')
     ap.add_argument("--host-screen", type=json.loads, help='the host work area as JSON (probe.host_screen): {"availWidth","availHeight"} in physical px; draws that do not fit are rejected')
+    ap.add_argument("--host-cpu-vendor", choices=[INTEL_CPU, AMD_CPU, "none"], help="the host's CPU vendor (default: probed): a claimed iGPU of the other vendor is not drawn; none applies no rule")
     ap.add_argument("--host-cores", type=int, help="the host's CPU count (default: os.cpu_count()): a navigator.hardwareConcurrency claim above it snaps down")
     ap.add_argument("--light", action="store_true", help="light mode (part 3): draw only pool samples with DPR 1")
     a = ap.parse_args(argv)
@@ -753,7 +829,8 @@ def main(argv=None):
     if a.host_screen is not None and not valid_screen(a.host_screen):
         sys.exit('gen: --host-screen must be {"availWidth": <positive int>, "availHeight": <positive int>}')
     families = hostfonts.families() if a.host_fonts else None
-    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen, host_cores=a.host_cores), sys.stdout)
+    json.dump(generate(a.os, a.timezone, a.locale, a.seed, a.gpu, a.exit_ip, a.geoip_db, a.host_renderer, families, a.host_platform_version, a.host_display, light=a.light, host_screen=a.host_screen, host_cores=a.host_cores,
+                       **({"host_cpu_vendor": None if a.host_cpu_vendor == "none" else a.host_cpu_vendor} if a.host_cpu_vendor else {})), sys.stdout)
 
 
 if __name__ == "__main__":

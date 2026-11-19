@@ -111,7 +111,7 @@ def test_redraw_does_not_advance_the_callers_rng():
     assert after_redraw == after_kept
 
 
-@pytest.mark.parametrize("host", [None, "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"])
+@pytest.mark.parametrize("host", [None, "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"])  # unknown architecture: draws unchanged
 def test_no_gen9_host_leaves_the_drawn_threads(host):
     for s in range(1, 30):
         base = gen.generate("windows", "Europe/Paris", None, s, host_cores=64)["config"]["navigator.hardwareConcurrency"]
