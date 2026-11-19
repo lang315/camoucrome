@@ -47,6 +47,9 @@ func Draw(os string, seed *uint64, h *Host) (Identity, error) {
 		if h != nil && h.WorkArea[0] > 0 && h.WorkArea[1] > 0 && !holdsMinWindow(h.WorkArea, dpr) {
 			continue
 		}
+		if r, _ := entry["webGl:renderer"].(string); h != nil && !vendorFits(r, h.CPUVendor) {
+			continue // gen.py gpu_ok: a claimed iGPU needs the host's CPU vendor
+		}
 		var groups []string
 		for _, g := range entry["fontGroups"].([]any) {
 			groups = append(groups, g.(string))
@@ -70,5 +73,5 @@ func Draw(os string, seed *uint64, h *Host) (Identity, error) {
 			Seeds:    map[string]uint32{"canvas:seed": nonzero(), "mediaDevices:seed": nonzero()},
 			HostSeed: r.s.Uint64()}, nil
 	}
-	return Identity{}, fmt.Errorf("no pool entry holds a %dx%d window at this work area %v in %d draws", minWindow[0], minWindow[1], h.WorkArea, maxDraws)
+	return Identity{}, fmt.Errorf("no pool entry holds a %dx%d window at this work area %v and CPU vendor %q in %d draws", minWindow[0], minWindow[1], h.WorkArea, h.CPUVendor, maxDraws)
 }

@@ -118,7 +118,7 @@ def draw_pool(n):
     entries, skipped = [], 0
     for seed in range(1, n + 1):
         try:
-            out = gen.generate(OS, seed=seed, host_cores=1024)
+            out = gen.generate(OS, seed=seed, host_cores=1024, host_cpu_vendor=None)
         except (ValueError, RuntimeError):  # a locale with no zone row, or no acceptable sample
             skipped += 1
             continue
@@ -187,6 +187,16 @@ def igpu_floors():
             if r["max_threads"] is not None and r.get("min_threads") is not None}
 
 
+def igpu_ids():
+    """["AMD:0x000015DD", "Intel:0x00009A49", ...]: every (vendor, device id) gen.gpu_class calls an iGPU, i.e. the ids with a
+    sourced thread cap (igpu-thread-caps.json, and intel-gen9-thread-caps.json for Intel). core.igpuVendor classifies by this
+    set alone, so it cannot call an RX Vega 64, an Arc B580 or an unsourced Gen9 id an iGPU when gen.py does not."""
+    from camoucrome import gen
+    ids = {f"{v}:0x{d:08X}" for v, d in gen._igpu_caps()}
+    ids |= {f"Intel:0x{d:08X}" for d in gen._thread_caps()}
+    return sorted(ids)
+
+
 def build_files(n, source):
     """{relative name: JSON value} for every embedded file. The pool is built apart (draw_pool)."""
     voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
@@ -197,6 +207,7 @@ def build_files(n, source):
         "country_locale.json": country_locale(source, zones),
         "locale_zones.json": {t: z for t, z in zones.items()},
         "igpu-floors.json": igpu_floors(),
+        "igpu-ids.json": igpu_ids(),
         "launcher.json": (ROOT / "settings" / "launcher.json").read_text(encoding="utf-8"),  # a byte copy (a str is written as is)
     }
 

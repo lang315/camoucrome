@@ -272,6 +272,46 @@ def gpu_class(renderer):
     return "igpu" if igpu_thread_cap(renderer) is not None else None
 
 
+INTEL_CPU, AMD_CPU = "GenuineIntel", "AuthenticAMD"
+
+
+def igpu_vendor(renderer):
+    """The CPU vendor a claimed iGPU implies (AMD APUs ship only with AMD CPUs, Intel iGPUs only with Intel CPUs), as the
+    CPUID vendor string; None for a dGPU, an undrawable renderer or no renderer."""
+    if gpu_class(renderer) not in ("igpu", "igpu-gen9"):
+        return None
+    return INTEL_CPU if ANGLE_D3D11_RE.match(renderer).group(1) == "Intel" else AMD_CPU
+
+
+def cpu_vendor_of(text):
+    """GenuineIntel / AuthenticAMD found in /proc/cpuinfo or PROCESSOR_IDENTIFIER text, else None."""
+    for v in (INTEL_CPU, AMD_CPU):
+        if v in text:
+            return v
+    return None
+
+
+def cpu_vendor_from(path, env):
+    """The vendor in the file at path (/proc/cpuinfo), else in env (PROCESSOR_IDENTIFIER); None when neither says."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return cpu_vendor_of(f.read(4096))
+    except OSError:
+        return cpu_vendor_of(env)
+
+
+def host_cpu_vendor():
+    """This machine's CPU vendor (/proc/cpuinfo on Linux, PROCESSOR_IDENTIFIER on Windows), None when unreadable."""
+    return cpu_vendor_from("/proc/cpuinfo", _os.environ.get("PROCESSOR_IDENTIFIER", ""))
+
+
+def vendor_fits(renderer, host_vendor):
+    """False only when the claimed iGPU implies a CPU vendor and the host is known to have the other. Skia's reciprocal
+    estimates (RCPPS/RSQRTPS) differ between Intel and AMD, so a CPU-rastered readback shows the host's vendor."""
+    want = igpu_vendor(renderer)
+    return want is None or host_vendor not in (INTEL_CPU, AMD_CPU) or want == host_vendor
+
+
 def gpu_for(platform, host_renderer, rng, gpu=None, fp=None):
     """(profile, warning): {"vendor", "renderer"} or None. Windows without --gpu claims the fingerprint's own videoCard when
     gpu_class accepts it (the draw is BrowserForge's, joint with cores, memory and screen), else None so generate redraws.
@@ -472,7 +512,7 @@ def display_flags(host_display):
 
 
 def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=None, host_families=None,
-              host_platform_version=None, host_display=None, host_screen=None, host_cores=None):
+              host_platform_version=None, host_display=None, host_screen=None, host_cores=None, host_cpu_vendor=None):
     """Pure: one BrowserForge fingerprint dict -> {"config", "launch", "warnings"}.
     When the claimed GPU is an iGPU (Gen9 or any other sourced class), navigator.hardwareConcurrency above that GPU's thread
     cap (thread_cap) is redrawn from THREAD_STEPS within it, so a mobile part never claims 16 threads;
@@ -545,6 +585,13 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             config.pop(k, None)
         floor_warn = (f"host cores snap to {config['navigator.hardwareConcurrency']}, below the {floor} threads of the "
                       f"claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept")
+    vendor_warn = None
+    if profile and not gpu and "webGl:renderer" in config and not vendor_fits(profile["renderer"], host_cpu_vendor):
+        # an iGPU claim beside the other vendor's CPU: the real GPU then matches the real CPU
+        for k in GPU_CLAIM_KEYS:
+            config.pop(k, None)
+        vendor_warn = ("the claimed iGPU ships only with the other CPU vendor than this host's: the GPU claim is dropped "
+                       "and the host's real GPU is kept")
     config.update(fonts_keys(platform, rng, host_families))
     pv_warn = None
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
@@ -587,7 +634,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     else:
         bad_display = None
     launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn, floor_warn, pv_warn, bad_display, dw) if w]}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, floor_warn, vendor_warn, pv_warn, bad_display, dw) if w]}
 
 
 def allowed_cpus():
@@ -596,13 +643,15 @@ def allowed_cpus():
     return len(mask) if mask else _os.cpu_count()
 
 
-def gpu_ok(fp, profile):
+def gpu_ok(fp, profile, host_vendor=None):
     """A Windows sample with no drawable GPU is rejected, as is an Apple one beside an x86 claim, and one whose thread
     count is below the claimed iGPU's floor."""
     if profile is None and fp["navigator"]["userAgentData"]["platform"] == "Windows":
         return False
     floor = igpu_thread_floor(profile["renderer"]) if profile else None
     if floor and fp["navigator"]["hardwareConcurrency"] < floor:
+        return False
+    if profile and not vendor_fits(profile["renderer"], host_vendor):
         return False
     return arch_fits(fp, profile)
 
@@ -615,8 +664,9 @@ def arch_fits(fp, profile):
 
 def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=None, geoip_db=None, host_renderer=None,
              host_families=None, host_platform_version=None, host_display=None, light=False,
-             host_screen=None, host_cores=None):
-    """host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are
+             host_screen=None, host_cores=None, host_cpu_vendor="probe"):
+    """host_cpu_vendor: GenuineIntel / AuthenticAMD; a draw whose iGPU claim needs the other is rejected, and from_pool
+    drops such a claim. Default probes this machine; None applies no rule. host_cores: the CPUs of the machine the browser will run on (default allowed_cpus(), since identities are
     generated on the host); see from_pool. exit_ip (item 13): the zone and locale come from where the address is, unless given explicitly. When it cannot
     be resolved the draw proceeds as without it and a GeoIPWarning says so. light (part 3, L1): only samples with
     DPR 1 are acceptable; a first draw that already has DPR 1 is unchanged.
@@ -624,6 +674,8 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
     work area (fit_window), and a draw is rejected when the host cannot hold MIN_WINDOW at its DPR. None changes nothing."""
     if host_cores is None:
         host_cores = allowed_cpus()
+    if host_cpu_vendor == "probe":
+        host_cpu_vendor = globals()["host_cpu_vendor"]()  # the parameter shadows the probe
     point = None
     if exit_ip:
         timezone, locale, point = _from_exit_ip(exit_ip, geoip_db, timezone, locale)
@@ -638,10 +690,11 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
         fp = asdict(gen.generate())
         # an Apple GPU string over an x86 claim is a cross-surface lie
         if (acceptable(fp) and (not light or dpr_of(fp) == 1)
-                and gpu_ok(fp, gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu, fp)[0])
+                and gpu_ok(fp, gpu_for(fp["navigator"]["userAgentData"]["platform"], host_renderer, rng, gpu, fp)[0],
+                           None if gpu else host_cpu_vendor)
                 and (host_screen is None or holds_min_window(host_screen, dpr_of(fp)))):
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
-                            host_display, host_screen, host_cores)
+                            host_display, host_screen, host_cores, host_cpu_vendor)
             if point:  # drawn after the pool, so an identity without an exit IP is unchanged
                 out["config"].update(geolocation_keys(point, rng))
             return out

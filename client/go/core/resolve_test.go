@@ -411,10 +411,10 @@ func TestStoredFixtures(t *testing.T) {
 		host Host
 		exit *Exit
 	}{
-		{"id-1080p", 101, Host{8, [2]int{1920, 1040}, "10.0.0", &Display{"srgb", 8, false}}, &Exit{"Asia/Jakarta", "ID"}},
-		{"us-laptop", 202, Host{4, [2]int{1366, 728}, "13.0.0", nil}, &Exit{"America/New_York", "US"}},
-		{"de-4k", 303, Host{16, [2]int{3840, 2120}, "15.0.0", &Display{"p3", 10, true}}, &Exit{"Europe/Berlin", "DE"}},
-		{"ph-noexit", 404, Host{6, [2]int{2560, 1400}, "10.0.0", &Display{"srgb", 8, false}}, nil},
+		{"id-1080p", 101, Host{8, [2]int{1920, 1040}, "10.0.0", &Display{"srgb", 8, false}, ""}, &Exit{"Asia/Jakarta", "ID"}},
+		{"us-laptop", 202, Host{4, [2]int{1366, 728}, "13.0.0", nil, ""}, &Exit{"America/New_York", "US"}},
+		{"de-4k", 303, Host{16, [2]int{3840, 2120}, "15.0.0", &Display{"p3", 10, true}, ""}, &Exit{"Europe/Berlin", "DE"}},
+		{"ph-noexit", 404, Host{6, [2]int{2560, 1400}, "10.0.0", &Display{"srgb", 8, false}, ""}, nil},
 		{"unknown-host", 505, Host{}, &Exit{"Asia/Bangkok", "TH"}},
 	}
 	for _, c := range cases {
