@@ -197,13 +197,6 @@ def igpu_ids():
     return sorted(ids)
 
 
-def gen9_ids():
-    """["0x00003EA0", ...]: the device ids gen.gen9_device_id accepts (settings/webgl/intel-gen9-pool.json). core.gen9DeviceID
-    takes the same name shape and this set, so the webGpu:blocked rule cannot differ from gen.gpu_keys on a Gen9 id."""
-    from camoucrome import gen
-    return [f"0x{d:08X}" for d in sorted(gen.gen9_pool()["device_ids"])]
-
-
 def build_files(n, source):
     """{relative name: JSON value} for every embedded file. The pool is built apart (draw_pool)."""
     voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
@@ -215,7 +208,9 @@ def build_files(n, source):
         "locale_zones.json": {t: z for t, z in zones.items()},
         "igpu-floors.json": igpu_floors(),
         "igpu-ids.json": igpu_ids(),
-        "gen9-ids.json": gen9_ids(),
+        # a byte copy of the table scripts/gen_gpu_architectures.py derives from Dawn: core.gpuArchitecture reads it, so a Draw claim
+        # and the webGpu:blocked rule cannot differ from gen.py
+        "gpu-architectures.json": (ROOT / "settings" / "webgl" / "gpu-architectures.json").read_text(encoding="utf-8"),
         "launcher.json": (ROOT / "settings" / "launcher.json").read_text(encoding="utf-8"),  # a byte copy (a str is written as is)
     }
 

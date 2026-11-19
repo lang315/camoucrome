@@ -1,0 +1,330 @@
+{
+ "dawn": {
+  "revision": "3c24c91e70eaf701ae92ab8cc414669cc4c38892",
+  "source": "src/dawn/gpu_info.json",
+  "licence": "Derived from Dawn's src/dawn/gpu_info.json; Dawn is BSD-3-Clause, Copyright The Dawn & Tint Authors (https://dawn.googlesource.com/dawn/+/refs/heads/main/LICENSE)."
+ },
+ "vendors": {
+  "amd": {
+   "id": "0x1002",
+   "sets": [
+    {
+     "mask": "0xFFF0",
+     "ids": {
+      "0x6730": "terascale-2",
+      "0x6740": "terascale-2",
+      "0x6750": "terascale-2",
+      "0x6780": "terascale-2",
+      "0x1300": "gcn-1",
+      "0x1310": "gcn-1",
+      "0x6600": "gcn-1",
+      "0x6610": "gcn-1",
+      "0x6660": "gcn-1",
+      "0x6790": "gcn-1",
+      "0x6800": "gcn-1",
+      "0x6810": "gcn-1",
+      "0x6820": "gcn-1",
+      "0x6830": "gcn-1",
+      "0x6640": "gcn-2",
+      "0x6650": "gcn-2",
+      "0x67A0": "gcn-2",
+      "0x67B0": "gcn-2",
+      "0x9830": "gcn-2",
+      "0x9850": "gcn-2",
+      "0x6900": "gcn-3",
+      "0x6920": "gcn-3",
+      "0x6930": "gcn-3",
+      "0x7300": "gcn-3",
+      "0x9870": "gcn-3",
+      "0x98E0": "gcn-3",
+      "0x67C0": "gcn-4",
+      "0x67D0": "gcn-4",
+      "0x67E0": "gcn-4",
+      "0x67F0": "gcn-4",
+      "0x6980": "gcn-4",
+      "0x6990": "gcn-4",
+      "0x6FD0": "gcn-4",
+      "0x9920": "gcn-4",
+      "0x6940": "gcn-4",
+      "0x66A0": "gcn-5",
+      "0x6860": "gcn-5",
+      "0x6870": "gcn-5",
+      "0x69A0": "gcn-5",
+      "0x15D0": "gcn-5",
+      "0x7310": "rdna-1",
+      "0x7340": "rdna-1",
+      "0x7360": "rdna-1",
+      "0x73A0": "rdna-2",
+      "0x73B0": "rdna-2",
+      "0x73D0": "rdna-2",
+      "0x73E0": "rdna-2",
+      "0x73F0": "rdna-2",
+      "0x7400": "rdna-2",
+      "0x7420": "rdna-2",
+      "0x7430": "rdna-2",
+      "0x1430": "rdna-2",
+      "0x15E0": "rdna-2",
+      "0x1640": "rdna-2",
+      "0x1680": "rdna-2",
+      "0x13C0": "rdna-2",
+      "0x13F0": "rdna-2",
+      "0x7440": "rdna-3",
+      "0x7470": "rdna-3",
+      "0x7480": "rdna-3",
+      "0x1500": "rdna-3",
+      "0x15B0": "rdna-3",
+      "0x15C0": "rdna-3",
+      "0x7450": "rdna-3",
+      "0x1900": "rdna-3",
+      "0x1580": "rdna-3",
+      "0x1110": "rdna-3",
+      "0x7550": "rdna-4",
+      "0x7590": "rdna-4",
+      "0x7380": "cdna-1"
+     }
+    },
+    {
+     "mask": "0xFFFF",
+     "ids": {
+      "0x1636": "gcn-5",
+      "0x1638": "gcn-5",
+      "0x163F": "rdna-2"
+     }
+    }
+   ]
+  },
+  "arm": {
+   "id": "0x13B5",
+   "sets": [
+    {
+     "mask": "0xF0000000",
+     "ids": {
+      "0x00000000": "midgard",
+      "0x60000000": "bifrost",
+      "0x70000000": "bifrost",
+      "0x90000000": "valhall",
+      "0xA0000000": "valhall",
+      "0xB0000000": "valhall",
+      "0xC0000000": "gen-5",
+      "0xD0000000": "gen-5",
+      "0xE0000000": "gen-5"
+     }
+    }
+   ]
+  },
+  "broadcom": {
+   "id": "0x14e4",
+   "sets": [
+    {
+     "mask": "0x0000",
+     "ids": {
+      "0x0000": "videocore"
+     }
+    }
+   ]
+  },
+  "google": {
+   "id": "0x1AE0",
+   "sets": [
+    {
+     "mask": "0xFFFFFFFF",
+     "ids": {
+      "0x0000C0DE": "swiftshader"
+     }
+    }
+   ]
+  },
+  "img tec": {
+   "id": "0x1010",
+   "sets": [
+    {
+     "mask": "0xFF000000",
+     "ids": {
+      "0x00000000": "rogue",
+      "0x22000000": "rogue",
+      "0x24000000": "rogue",
+      "0x1B000000": "furian",
+      "0x35000000": "b-series",
+      "0x36000000": "b-series",
+      "0x71000000": "d-series"
+     }
+    }
+   ]
+  },
+  "intel": {
+   "id": "0x8086",
+   "sets": [
+    {
+     "mask": "0xFF00",
+     "ids": {
+      "0x0100": "gen-7",
+      "0x0400": "gen-7",
+      "0x0A00": "gen-7",
+      "0x0C00": "gen-7",
+      "0x0D00": "gen-7",
+      "0x0F00": "gen-7",
+      "0x1600": "gen-8",
+      "0x2200": "gen-8",
+      "0x1900": "gen-9",
+      "0x3100": "gen-9",
+      "0x3E00": "gen-9",
+      "0x5A00": "gen-9",
+      "0x5900": "gen-9",
+      "0x8700": "gen-9",
+      "0x9B00": "gen-9",
+      "0x8A00": "gen-11",
+      "0x4500": "gen-11",
+      "0x4E00": "gen-11",
+      "0x9800": "gen-11",
+      "0x4600": "gen-12-lp",
+      "0x4C00": "gen-12-lp",
+      "0x4900": "gen-12-lp",
+      "0x9A00": "gen-12-lp",
+      "0xA700": "gen-12-lp",
+      "0x4F00": "gen-12-hp",
+      "0x5600": "gen-12-hp",
+      "0x7D00": "xe-lpg",
+      "0xB600": "xe-lpg",
+      "0x6400": "xe-2-lpg",
+      "0xE200": "xe-2-hpg",
+      "0xB000": "xe-3-lpg",
+      "0xFD00": "xe-3-lpg-xs"
+     }
+    }
+   ]
+  },
+  "mesa": {
+   "id": "0x10005",
+   "sets": [
+    {
+     "mask": "0xFFFFFFFF",
+     "ids": {
+      "0x00000000": "software"
+     }
+    }
+   ]
+  },
+  "microsoft": {
+   "id": "0x1414",
+   "sets": [
+    {
+     "mask": "0xFFFFFFFF",
+     "ids": {
+      "0x0000008C": "warp"
+     }
+    }
+   ]
+  },
+  "nvidia": {
+   "id": "0x10DE",
+   "sets": [
+    {
+     "mask": "0xFFFFFF00",
+     "ids": {
+      "0x00000D00": "fermi",
+      "0x00000F00": "kepler",
+      "0x00001000": "kepler",
+      "0x00001100": "kepler",
+      "0x00001200": "kepler",
+      "0x00001300": "maxwell",
+      "0x00001400": "maxwell",
+      "0x00001600": "maxwell",
+      "0x00001700": "maxwell",
+      "0x00001500": "pascal",
+      "0x00001B00": "pascal",
+      "0x00001C00": "pascal",
+      "0x00001D00": "pascal",
+      "0x00001E00": "turing",
+      "0x00001F00": "turing",
+      "0x00002100": "turing",
+      "0x00002200": "ampere",
+      "0x00002400": "ampere",
+      "0x00002500": "ampere",
+      "0x00002000": "ampere",
+      "0x00002600": "lovelace",
+      "0x00002700": "lovelace",
+      "0x00002800": "lovelace",
+      "0x00002B00": "blackwell",
+      "0x00002C00": "blackwell",
+      "0x00002D00": "blackwell",
+      "0x00002F00": "blackwell"
+     }
+    },
+    {
+     "mask": "0xFF000000",
+     "ids": {
+      "0x1E000000": "kepler",
+      "0x92000000": "maxwell",
+      "0x93000000": "pascal",
+      "0x97000000": "ampere",
+      "0xA5000000": "volta"
+     }
+    }
+   ]
+  },
+  "qualcommpci": {
+   "id": "0x5143",
+   "sets": [
+    {
+     "mask": "0xFF000000",
+     "ids": {
+      "0x04000000": "adreno-4xx",
+      "0x05000000": "adreno-5xx",
+      "0x06000000": "adreno-6xx",
+      "0x07000000": "adreno-7xx",
+      "0x43000000": "adreno-7xx",
+      "0x36000000": "adreno-7xx",
+      "0x37000000": "adreno-7xx",
+      "0x44000000": "adreno-8xx"
+     }
+    }
+   ]
+  },
+  "qualcommacpi": {
+   "id": "0x4D4F4351",
+   "sets": [
+    {
+     "mask": "0xFFFFFF00",
+     "ids": {
+      "0x41333800": "adreno-6xx",
+      "0x36334100": "adreno-6xx",
+      "0x41333400": "adreno-6xx",
+      "0x36333600": "adreno-6xx",
+      "0x37314400": "adreno-7xx",
+      "0x36334300": "adreno-7xx",
+      "0x35464600": "adreno-8xx",
+      "0x36334600": "adreno-8xx"
+     }
+    }
+   ]
+  },
+  "samsung": {
+   "id": "0x144d",
+   "sets": [
+    {
+     "mask": "0xFFFF0000",
+     "ids": {
+      "0x00000000": "rdna-2",
+      "0x01300000": "rdna-2",
+      "0x01700000": "rdna-2",
+      "0x02300000": "rdna-2",
+      "0x02600000": "rdna-3",
+      "0x03600000": "rdna-3"
+     }
+    }
+   ]
+  },
+  "huawei": {
+   "id": "0x19e5",
+   "sets": [
+    {
+     "mask": "0xF0000000",
+     "ids": {
+      "0x10000000": "maleoon",
+      "0x20000000": "maleoon"
+     }
+    }
+   ]
+  }
+ }
+}

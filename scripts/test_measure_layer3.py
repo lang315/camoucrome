@@ -269,7 +269,7 @@ def test_the_identity_carries_exactly_the_given_zone_and_locale():
 
 
 GEN9_HOST = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00009BC5) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-RTX_HOST = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+UNKNOWN_HOST = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"  # no Dawn architecture: the claim is drawn from the whole pool
 
 
 def _webgl_keys(ident):
@@ -279,7 +279,7 @@ def _webgl_keys(ident):
 def test_the_identity_claims_a_gpu_and_blocks_webgpu_unless_it_is_the_hosts():
     """Since the GPU claim every Windows identity claims one; layer-3 host baselines now run with a claim."""
     a = ns(aa=False, no_identity=False, identity_seed=13, timezone="Europe/Paris", locale="fr-FR")
-    for host in (None, {"host_renderer": RTX_HOST}):
+    for host in (None, {"host_renderer": UNKNOWN_HOST}):
         cfg = ml.build_identity(a, host)["config"]
         assert sorted(_webgl_keys(ml.build_identity(a, host))) == ["webGl2:renderer", "webGl2:vendor", "webGl:renderer", "webGl:vendor"]
         assert cfg["webGpu:blocked"] is True

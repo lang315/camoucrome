@@ -14,7 +14,7 @@ import (
 	_ "time/tzdata" // zoneinfo for time.LoadLocation: Windows has none of its own
 )
 
-//go:embed data/pool-windows.json.gz data/voices.json data/fonts.json data/country_locale.json data/locale_zones.json data/igpu-floors.json data/igpu-ids.json data/gen9-ids.json data/version.json
+//go:embed data/pool-windows.json.gz data/voices.json data/fonts.json data/country_locale.json data/locale_zones.json data/igpu-floors.json data/igpu-ids.json data/gpu-architectures.json data/version.json
 var dataFS embed.FS
 
 // poolFormat is the Identity.Version this code reads and writes.
@@ -38,13 +38,19 @@ var (
 		voiceTags []string                   // Windows row tags in file order: "first row of the same language" depends on it
 		remote    []any
 		country   map[string]string
-		zones     map[string][]string // locale -> zones, first is the default
-		floors    map[string]int      // "Intel:0x00009A49" -> fewest threads of the CPU family that iGPU ships with
-		igpuIDs   map[string]bool     // "Intel:0x00009A49": every id gen.gpu_class calls an iGPU
-		gen9IDs   map[uint64]bool     // device ids gen.gen9_device_id accepts
+		zones     map[string][]string  // locale -> zones, first is the default
+		floors    map[string]int       // "Intel:0x00009A49" -> fewest threads of the CPU family that iGPU ships with
+		igpuIDs   map[string]bool      // "Intel:0x00009A49": every id gen.gpu_class calls an iGPU
+		arch      map[string][]archSet // lower-case vendor -> Dawn device-id sets (gen.gpu_architecture)
 		err       error
 	}
 )
+
+// archSet is one Dawn device set: a device id belongs to it when id & mask is one of ids.
+type archSet struct {
+	mask uint64
+	ids  map[uint64]string
+}
 
 func pool() (*poolFile, error) {
 	poolOnce.Do(func() {
@@ -142,18 +148,36 @@ func loadTables() error {
 		for _, id := range ids {
 			t.igpuIDs[id] = true
 		}
-		var g9 []string
-		if t.err = readJSON("gen9-ids.json", &g9); t.err != nil {
+		var af struct {
+			Vendors map[string]struct {
+				Sets []struct {
+					Mask string            `json:"mask"`
+					IDs  map[string]string `json:"ids"`
+				} `json:"sets"`
+			} `json:"vendors"`
+		}
+		if t.err = readJSON("gpu-architectures.json", &af); t.err != nil {
 			return
 		}
-		t.gen9IDs = map[uint64]bool{}
-		for _, id := range g9 {
-			n, err := strconv.ParseUint(strings.TrimPrefix(id, "0x"), 16, 32)
-			if err != nil {
-				t.err = fmt.Errorf("gen9-ids.json: %q: %w", id, err)
-				return
+		t.arch = map[string][]archSet{}
+		for vendor, v := range af.Vendors {
+			for _, s := range v.Sets {
+				mask, err := strconv.ParseUint(strings.TrimPrefix(s.Mask, "0x"), 16, 32)
+				if err != nil {
+					t.err = fmt.Errorf("gpu-architectures.json: %s mask %q: %w", vendor, s.Mask, err)
+					return
+				}
+				set := archSet{mask: mask, ids: map[uint64]string{}}
+				for id, name := range s.IDs {
+					n, err := strconv.ParseUint(strings.TrimPrefix(id, "0x"), 16, 32)
+					if err != nil {
+						t.err = fmt.Errorf("gpu-architectures.json: %s id %q: %w", vendor, id, err)
+						return
+					}
+					set.ids[n] = name
+				}
+				t.arch[vendor] = append(t.arch[vendor], set)
 			}
-			t.gen9IDs[n] = true
 		}
 	})
 	return tables.err

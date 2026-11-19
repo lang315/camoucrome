@@ -44,23 +44,37 @@ func vendorFits(renderer, host string) bool {
 	return want == "" || (host != intelCPU && host != amdCPU) || want == host
 }
 
-// gen9Re is gen.py GEN9_RE.
-var gen9Re = regexp.MustCompile(`^ANGLE \(Intel, Intel\(R\) (U?HD Graphics( 6\d\d)?) \((0x[0-9A-F]{8})\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$`)
+// angleD3D11Re is gen.py ANGLE_D3D11_RE.
+var angleD3D11Re = regexp.MustCompile(`^ANGLE \((NVIDIA|AMD|Intel), (.+) \(0x([0-9A-Fa-f]{8})\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$`)
 
-// gen9DeviceID is gen.py gen9_device_id != None: the name has the Gen9 shape and its id is one of the pool's.
-func gen9DeviceID(renderer string) bool {
-	m := gen9Re.FindStringSubmatch(renderer)
+// gpuArchitecture is gen.py gpu_architecture as "vendor/architecture" (Dawn's names, lower case: "intel/gen-9"), or "" for no
+// renderer, a software or non-D3D11 string, or a device id the table (data/gpu-architectures.json) does not hold.
+func gpuArchitecture(renderer string) string {
+	m := angleD3D11Re.FindStringSubmatch(renderer)
 	if m == nil || loadTables() != nil {
-		return false
+		return ""
 	}
-	n, err := strconv.ParseUint(m[3][2:], 16, 32)
-	return err == nil && tables.gen9IDs[n]
+	vendor := strings.ToLower(m[1])
+	dev, err := strconv.ParseUint(m[3], 16, 32)
+	if err != nil {
+		return ""
+	}
+	for _, s := range tables.arch[vendor] {
+		if a, ok := s.ids[dev&s.mask]; ok {
+			return vendor + "/" + a
+		}
+	}
+	return ""
 }
 
-// webGpuOpen is the rule gen.py gpu_keys uses to leave webGpu:blocked false: the claim is the host's own renderer, or both
-// are Gen9 (WebGPU masks every Gen9 part to intel/gen-9). An unknown host ("") is never open.
+// webGpuOpen is the rule gen.py gpu_keys uses to leave webGpu:blocked false: the claim and the host share vendor and Dawn
+// architecture (adapter.info reports only those), or the claim is the host's own renderer string. An unknown host ("") is never open.
 func webGpuOpen(claim, host string) bool {
-	return host != "" && (claim == host || (gen9DeviceID(claim) && gen9DeviceID(host)))
+	if host == "" {
+		return false
+	}
+	a := gpuArchitecture(claim)
+	return claim == host || (a != "" && a == gpuArchitecture(host))
 }
 
 // igpuFloor is gen.py igpu_thread_floor: the fewest threads the claimed iGPU's CPU family ships with, 0 for none.
