@@ -33,7 +33,7 @@ def test_extraction_builds_vendor_mask_id_architecture(tmp_path):
     t = g.build(FIXTURE, "rev")
     assert set(t["vendors"]) == {"intel", "nvidia", "amd"}  # a comment vendor and one with no devices are left out
     assert t["vendors"]["intel"]["id"] == "0x8086"
-    assert t["vendors"]["intel"]["sets"] == [{"mask": "0xFF00", "ids": {"0x9B00": "gen-9", "0x3E00": "gen-9", "0x9A00": "gen-12-lp"}}]
+    assert t["vendors"]["intel"]["sets"] == [{"mask": "0xFF00", "ids": {"0x9B00": "gen-9", "0x3E00": "gen-9", "0x9A00": "gen-12lp"}}]
     # internal sets are never reported by adapter.info, so they are not in the table
     assert "internal-only" not in json.dumps(t)
     assert t["dawn"]["revision"] == "rev" and "BSD-3-Clause" in t["dawn"]["licence"]
@@ -76,7 +76,7 @@ def test_committed_table_matches_the_measured_points_and_the_families():
     a = lambda v, d: g.architecture(COMMITTED, v, d)
     assert a("Intel", 0x9B41) == "gen-9" and a("Intel", 0x9BC5) == "gen-9"
     assert a("Intel", 0x3E92) == "gen-9" and a("Intel", 0x5917) == "gen-9"
-    assert a("Intel", 0x9A49) == "gen-12-lp"
+    assert a("Intel", 0x9A49) == "gen-12lp"
     assert a("NVIDIA", 0x2504) == "ampere"  # RTX 3060
     assert a("NVIDIA", 0x2684) == "lovelace"  # RTX 4090 (Ada)
     assert a("AMD", 0x73BF) == "rdna-2"  # RX 6800 XT, masked 0x73B0
@@ -87,3 +87,10 @@ def test_committed_table_matches_the_measured_points_and_the_families():
 def test_every_gen9_pool_id_is_gen9_in_dawn():
     ids = json.loads((ROOT / "settings" / "webgl" / "intel-gen9-pool.json").read_text(encoding="utf-8"))["device_ids"]
     assert ids and all(g.architecture(COMMITTED, "Intel", d) == "gen-9" for d in ids)
+
+
+def test_names_follow_dawns_js_enum_case():
+    for dawn, want in {"Gen 12 LP": "gen-12lp", "Gen 12 HP": "gen-12hp", "Xe 2 LPG": "xe-2lpg", "Xe 2 HPG": "xe-2hpg",
+                       "Xe 3 LPG": "xe-3lpg", "Xe 3 LPG XS": "xe-3lpg-xs", "Xe LPG": "xe-lpg", "Gen 9": "gen-9",
+                       "RDNA 2": "rdna-2", "TeraScale 2": "terascale-2", "B Series": "b-series", "Adreno 4xx": "adreno-4xx"}.items():
+        assert g.arch_name(dawn) == want, dawn

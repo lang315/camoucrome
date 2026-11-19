@@ -9,8 +9,7 @@ or from dawn.googlesource.com at DAWN_REVISION). Chrome 157's WebGPU reports ada
 table says which GPUs a page cannot tell apart through WebGPU. Only the derived table is committed, never Dawn's file.
 
 Table: vendors[<lower-case vendor>] = {"id", "sets": [{"mask", "ids": {<masked device id>: <architecture>}}]}. A device id
-matches a set when id & mask is a key of ids (Dawn's own rule). The architecture is Dawn's name lower-cased with spaces as
-hyphens, as adapter.info reports it. Sets Dawn marks internal are never reported and are left out.
+matches a set when id & mask is a key of ids (Dawn's own rule). The architecture is Dawn's name lower-cased by js_enum_case, as adapter.info reports it (Dawn's js_enum_case, see arch_name). Sets Dawn marks internal are never reported and are left out.
 """
 import argparse
 import json
@@ -27,7 +26,12 @@ EXACT = 0xFFFFFFFF  # a set with no mask compares the whole id
 
 
 def arch_name(name):
-    return name.lower().replace(" ", "-")
+    """Dawn's js_enum_case: lower case, words joined by hyphens, except that a letter word right after a number word attaches
+    to it ("Gen 12 LP" -> gen-12lp, "Xe 3 LPG XS" -> xe-3lpg-xs, "Gen 9" -> gen-9)."""
+    out = ""
+    for w in name.lower().split():
+        out += w if out and out.split("-")[-1].isdigit() and w[0].isalpha() else ("-" if out else "") + w
+    return out
 
 
 def build(info, revision):

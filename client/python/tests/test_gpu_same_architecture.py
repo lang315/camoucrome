@@ -30,7 +30,7 @@ def test_gpu_architecture_names_vendor_and_dawn_architecture():
     assert gen.gpu_architecture(RTX3060) == ("nvidia", "ampere") == gen.gpu_architecture(RTX3070)
     assert gen.gpu_architecture(RTX4090) == ("nvidia", "lovelace")
     assert gen.gpu_architecture(RX6800) == ("amd", "rdna-2") == gen.gpu_architecture(RX6600)
-    assert gen.gpu_architecture(XE) == ("intel", "gen-12-lp")
+    assert gen.gpu_architecture(XE) == ("intel", "gen-12lp")
     for none in (None, "", NOT_IN_TABLE, SWIFTSHADER, "llvmpipe (LLVM 15)", "Microsoft Basic Render Driver"):
         assert gen.gpu_architecture(none) is None
 
@@ -105,3 +105,27 @@ def test_gpu_flag_is_not_gated():
     # --gpu names a captured profile on purpose (a test box); the arch rule is for drawn claims only
     out = draw(1, RTX3060, gpu="windows-intel-uhd-630-d3d11")
     assert out["config"]["webGl:renderer"].endswith("D3D11)") and "Intel" in out["config"]["webGl:renderer"]
+
+
+def test_no_claim_fallback_keeps_the_host_igpu_floor():
+    # t6 review of #217: host Arc 0x7D55 (floor 18), 22 cores. The real iGPU shows once the claim is dropped, so the thread count
+    # must not sit below its floor.
+    host = f"ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) {D3D}"
+    floor = gen.igpu_thread_floor(host)
+    assert floor and floor > 8
+    none = 0
+    for seed in range(1, 41):
+        out = gen.generate("windows", seed=seed, host_renderer=host, host_cores=22, host_cpu_vendor=None)
+        if "webGl:renderer" not in out["config"]:
+            none += 1
+            assert out["config"]["navigator.hardwareConcurrency"] >= floor, seed
+    assert none, "fixture: no no-claim draw in 40 seeds"
+
+
+def test_no_architecture_warning_for_a_claim_without_webgpu_key():
+    # a macOS claim on its own Apple host: from_pool deletes webGpu:blocked, and the host architecture is unknown by design
+    apple = "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)"
+    out = {"config": {"webGl:renderer": apple}, "warnings": []}
+    assert gen._arch_warning(out, apple, None, None)["warnings"] == []
+    out = {"config": {"webGl:renderer": UHD630, "webGpu:blocked": True}, "warnings": []}
+    assert len(gen._arch_warning(out, SWIFTSHADER, None, None)["warnings"]) == 1

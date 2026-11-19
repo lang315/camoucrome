@@ -9,14 +9,24 @@ import (
 
 const maxDraws = 50 // gen.py MAX_DRAWS
 
-// DrawWarning is the one warning for a Host whose renderer is given but whose Dawn architecture is unknown (a software or
-// non-D3D11 string, or an id the table lacks): Draw then claims from the whole pool with WebGPU blocked, as before. "" for no
-// renderer, a known architecture, or no Host (gen.py _arch_warning).
-func DrawWarning(h *Host) string {
-	if h == nil || h.Renderer == "" || gpuArchitecture(h.Renderer) != "" {
+// DrawWarning is the one warning for a drawn Identity beside its Host's GPU: the renderer is given but its Dawn architecture is
+// unknown (Draw then claims from the whole pool with WebGPU blocked, as before), or the architecture is known and the pool had no
+// entry of it (the identity has no GPU claim and the real GPU shows). "" for no renderer, a claim of the host's architecture,
+// or no Host (gen.py generate, _arch_warning).
+func DrawWarning(h *Host, id Identity) string {
+	if h == nil || h.Renderer == "" {
 		return ""
 	}
-	return "the host GPU's architecture is unknown (no ANGLE D3D11 renderer, or an id Dawn's table lacks): the GPU claim is drawn from the whole pool and WebGPU stays blocked"
+	var e map[string]any
+	_ = json.Unmarshal(id.Entry, &e)
+	_, claimed := e["webGl:renderer"]
+	switch a := gpuArchitecture(h.Renderer); {
+	case a == "" && claimed:
+		return "the host GPU's architecture is unknown (no ANGLE D3D11 renderer, or an id Dawn's table lacks): the GPU claim is drawn from the whole pool and WebGPU stays blocked"
+	case a != "" && !claimed:
+		return fmt.Sprintf("no pool entry in %d draws shares the host GPU's vendor and architecture %s: no GPU claim, the host's real GPU shows", maxDraws, a)
+	}
+	return ""
 }
 
 // Draw picks a device from the embedded pool for a claimed OS. With seed nil
@@ -93,7 +103,8 @@ func Draw(os string, seed *uint64, h *Host) (Identity, error) {
 			continue // gen.py gpu_ok: a claimed iGPU needs the host's CPU vendor
 		}
 		if rend, _ := entry["webGl:renderer"].(string); hostArch != "" && gpuArchitecture(rend) != hostArch {
-			if spare == nil {
+			// the real iGPU shows once the claim is gone: its thread count must not sit below the host iGPU's floor
+			if n, _ := entry["navigator.hardwareConcurrency"].(float64); spare == nil && snapCores(int(n), h.Cores) >= igpuFloor(h.Renderer) {
 				spare = entry
 			}
 			continue

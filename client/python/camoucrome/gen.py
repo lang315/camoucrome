@@ -611,8 +611,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             floor = igpu_thread_floor(profile["renderer"]) or 0
             config["navigator.hardwareConcurrency"] = random.Random(repr(rng.getstate()) + "gpu-threads").choice(
                 [t for t in THREAD_STEPS if floor <= t <= cap] or [cap])
-    if host_cores is not None and config["navigator.hardwareConcurrency"] > host_cores:
-        config["navigator.hardwareConcurrency"] = max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
+    config["navigator.hardwareConcurrency"] = snap_threads(config["navigator.hardwareConcurrency"], host_cores)
     floor = igpu_thread_floor(profile["renderer"]) if profile else None
     floor_warn = None
     if floor and config["navigator.hardwareConcurrency"] < floor:
@@ -679,6 +678,14 @@ def allowed_cpus():
     return len(mask) if mask else _os.cpu_count()
 
 
+def snap_threads(n, host_cores):
+    """A thread claim above host_cores snaps to the largest THREAD_STEPS value within them (host_cores itself when none fits);
+    None host_cores leaves it."""
+    if host_cores is not None and n > host_cores:
+        return max([t for t in THREAD_STEPS if t <= host_cores], default=host_cores)
+    return n
+
+
 def gpu_ok(fp, profile, host_vendor=None, host_arch=None):
     """A Windows sample with no drawable GPU is rejected, as is an Apple one beside an x86 claim, and one whose thread
     count is below the claimed iGPU's floor."""
@@ -739,7 +746,9 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
         vendor = None if gpu else host_cpu_vendor
         if gpu_ok(fp, profile, vendor) and (host_screen is None or holds_min_window(host_screen, dpr_of(fp))):
             if host_arch and not gpu_ok(fp, profile, vendor, host_arch):
-                spare = spare or fp
+                # the real iGPU shows once the claim is gone: its thread count must not sit below the host iGPU's floor
+                if spare is None and snap_threads(fp["navigator"]["hardwareConcurrency"], host_cores) >= (igpu_thread_floor(host_renderer) or 0):
+                    spare = fp
                 continue
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,
                             host_display, host_screen, host_cores, host_cpu_vendor)
@@ -759,8 +768,9 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
 
 def _arch_warning(out, host_renderer, host_arch, gpu):
     """One warning when a host renderer was given but its architecture is unknown (a software or non-D3D11 renderer, or an id
-    missing from Dawn's table): the draw keeps choice B, a claim from the whole pool with WebGPU blocked."""
-    if host_renderer and host_arch is None and not gpu and "webGl:renderer" in out["config"]:
+    missing from Dawn's table): the draw keeps choice B, a claim from the whole pool with WebGPU blocked. A claim with no
+    webGpu:blocked key (a macOS claim on its own Apple host) is the host's own and needs no warning."""
+    if host_renderer and host_arch is None and not gpu and "webGpu:blocked" in out["config"]:
         out["warnings"].append("the host GPU's architecture is unknown (no ANGLE D3D11 renderer, or an id Dawn's table lacks): "
                                "the GPU claim is drawn from the whole pool and WebGPU stays blocked")
     return out

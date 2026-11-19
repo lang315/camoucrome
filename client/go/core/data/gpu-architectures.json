@@ -176,19 +176,19 @@
       "0x4500": "gen-11",
       "0x4E00": "gen-11",
       "0x9800": "gen-11",
-      "0x4600": "gen-12-lp",
-      "0x4C00": "gen-12-lp",
-      "0x4900": "gen-12-lp",
-      "0x9A00": "gen-12-lp",
-      "0xA700": "gen-12-lp",
-      "0x4F00": "gen-12-hp",
-      "0x5600": "gen-12-hp",
+      "0x4600": "gen-12lp",
+      "0x4C00": "gen-12lp",
+      "0x4900": "gen-12lp",
+      "0x9A00": "gen-12lp",
+      "0xA700": "gen-12lp",
+      "0x4F00": "gen-12hp",
+      "0x5600": "gen-12hp",
       "0x7D00": "xe-lpg",
       "0xB600": "xe-lpg",
-      "0x6400": "xe-2-lpg",
-      "0xE200": "xe-2-hpg",
-      "0xB000": "xe-3-lpg",
-      "0xFD00": "xe-3-lpg-xs"
+      "0x6400": "xe-2lpg",
+      "0xE200": "xe-2hpg",
+      "0xB000": "xe-3lpg",
+      "0xFD00": "xe-3lpg-xs"
      }
     }
    ]

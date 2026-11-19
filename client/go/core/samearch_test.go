@@ -22,7 +22,7 @@ const (
 func TestGPUArchitecture(t *testing.T) {
 	for r, want := range map[string]string{
 		g630: "intel/gen-9", "ANGLE (Intel, Intel(R) UHD Graphics (0x00009B41) " + d3d: "intel/gen-9",
-		"ANGLE (Intel, Intel(R) UHD Graphics (0x00009BC5) " + d3d: "intel/gen-9", xe: "intel/gen-12-lp",
+		"ANGLE (Intel, Intel(R) UHD Graphics (0x00009BC5) " + d3d: "intel/gen-9", xe: "intel/gen-12lp",
 		rtx3060: "nvidia/ampere", rtx3070: "nvidia/ampere", rtx4090: "nvidia/lovelace", rx6800: "amd/rdna-2",
 		"ANGLE (AMD, AMD Radeon RX 6900 (0x0000163F) " + d3d: "amd/rdna-2", // the exact-id set
 		"": "", notIn: "", swift: "", "llvmpipe (LLVM 15)": "",
@@ -37,7 +37,7 @@ func claimsOn(t *testing.T, host string, seeds int) (claims []string, none int) 
 	t.Helper()
 	for s := 1; s <= seeds; s++ {
 		h := goodHost
-		h.Renderer = host
+		h.Cores, h.Renderer = 64, host // many cores: the host iGPU floor never rejects a fallback here
 		r := claimOf(t, mustDraw(t, uint64(s), &h))
 		if r == "" {
 			none++
@@ -94,15 +94,52 @@ func TestUnknownHostDrawsAsBefore(t *testing.T) {
 	}
 }
 
-func TestDrawWarningNamesAnUnknownHostOnly(t *testing.T) {
-	for r, want := range map[string]bool{"": false, g630: false, rtx3060: false, swift: true, notIn: true} {
-		if got := DrawWarning(&Host{Renderer: r}) != ""; got != want {
-			t.Errorf("%q: warning %v, want %v", r, got, want)
+func TestDrawWarning(t *testing.T) {
+	claim := mustDraw(t, 1, &Host{Renderer: g630})
+	none := mustDraw(t, 1, &Host{Renderer: gen8}) // no Gen 8 entry: no claim
+	if claimOf(t, claim) == "" || claimOf(t, none) != "" {
+		t.Fatal("fixtures: want a claim and a no-claim identity")
+	}
+	for _, c := range []struct {
+		host string
+		id   Identity
+		want bool
+	}{{"", claim, false}, {g630, claim, false}, {rtx3060, claim, false}, {swift, claim, true}, {notIn, claim, true},
+		{gen8, none, true}, {"", none, false}} {
+		if got := DrawWarning(&Host{Renderer: c.host}, c.id) != ""; got != c.want {
+			t.Errorf("host %q, claim %q: warning %v, want %v", c.host, claimOf(t, c.id), got, c.want)
 		}
 	}
-	if DrawWarning(nil) != "" {
+	if DrawWarning(nil, claim) != "" {
 		t.Error("a nil host warns")
 	}
+}
+
+// A no-claim fallback must not show a real iGPU beside a thread count below that iGPU's floor (t6 review of #217): host Radeon
+// Graphics 0x15E7, 16 cores, AMD CPU, floor 8.
+func TestNoClaimFallbackKeepsTheHostIGPUFloor(t *testing.T) {
+	host := Host{Cores: 16, CPUVendor: amdCPU, Renderer: "ANGLE (AMD, AMD Radeon(TM) Graphics (0x000015E7) " + d3d}
+	if err := loadTables(); err != nil {
+		t.Fatal(err)
+	}
+	floor := igpuFloor(host.Renderer)
+	if floor == 0 {
+		t.Fatal("fixture: the host has no iGPU floor")
+	}
+	var none int
+	for s := uint64(1); s <= 300; s++ {
+		id := mustDraw(t, s, &host)
+		if claimOf(t, id) != "" {
+			continue
+		}
+		none++
+		var e map[string]any
+		json.Unmarshal(id.Entry, &e)
+		if n := snapCores(int(e["navigator.hardwareConcurrency"].(float64)), host.Cores); n < floor {
+			t.Fatalf("seed %d: no claim with %d threads, below the host iGPU floor %d", s, n, floor)
+		}
+	}
+	t.Logf("%d of 300 no-claim identities, all at or above floor %d", none, floor)
 }
 
 // The pool's share by architecture and how often a host of each architecture draws a claim (reported in the PR; run with -v).
