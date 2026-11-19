@@ -175,14 +175,18 @@ class LazyCanvasNoiseMask {
   using Event = base::OnceCallback<void(CanvasNoiseMask&)>;
   static constexpr size_t kMaxPendingEvents = 16;
   static constexpr size_t kMaxPendingBytes = size_t{16} << 20;
-  // What one frame may carry unapplied (Defer()): the queue's own caps, so a
-  // frame never takes more than the queue holds (Add() drops the oldest
-  // unwalked job past them, as it does for a canvas nobody reads) and pins at
-  // most that much of the recordings until it is dropped. Only a single
+  // What one frame may carry unapplied (Defer()): the queue's own caps plus the
+  // parked jobs' (kMaxParkedJobs / kMaxParkedBytes: the jobs the queue shed
+  // while the last frame carried them). So a frame carries at most 32 jobs and
+  // pins at most 32 MB of the recordings until it is dropped. Only a single
   // recording past the byte cap, which the queue keeps as its last entry, is
   // over it.
   static constexpr size_t kMaxDeferredJobs = kMaxPendingEvents;
   static constexpr size_t kMaxDeferredBytes = kMaxPendingBytes;
+  // A job the queue sheds while the last deferred frame carries it is parked,
+  // not dropped (see NoteSeen()): at most this much, oldest evicted first.
+  static constexpr size_t kMaxParkedJobs = 16;
+  static constexpr size_t kMaxParkedBytes = size_t{16} << 20;
   enum class DeferStatus {
     kNone,         // nothing queued: the mask is as it is, Snapshot() is cheap
     kDeferred,     // a DeferredMask was made, nothing was applied
@@ -204,8 +208,9 @@ class LazyCanvasNoiseMask {
            bool apply_now = false);
   void Add(size_t width, size_t height, size_t bytes, Event event,
            bool apply_now = false);
-  // Works the oldest queued job until `deadline` (it stays queued, part done, when the deadline stops it);
-  // false when none is queued.
+  // Works the oldest job (a parked one first, see NoteSeen()) until `deadline`
+  // (it stays queued, part done, when the deadline stops it); false when none
+  // is queued.
   bool ApplyOldest(base::TimeTicks deadline = base::TimeTicks::Max());
   // The canvas restarts clear: the mask and every queued event are dropped.
   void Reset();
@@ -230,17 +235,51 @@ class LazyCanvasNoiseMask {
 
   size_t pending_events() const { return pending_.size(); }
   size_t pending_bytes() const { return pending_bytes_; }
+  // Jobs still to walk: the queue and the parked ones.
+  bool has_work() const { return !pending_.empty() || !parked_.empty(); }
+  size_t parked_events() const { return parked_.size(); }
+  size_t parked_bytes() const { return parked_bytes_; }
+
+  // The page has read a frame (DeferredMask) whose newest job was `id`: from
+  // now on a job up to `id` that the queue or the parked list would lose is
+  // walked instead. Without it a frame the page read, and a frame it reads
+  // after >16 unread flushes, would disagree about the pixels of the dropped
+  // jobs (the second shows them raw). Jobs shed before the signal arrives sit
+  // in the parked list (only a job the last deferred frame carries is parked),
+  // so a signal that is a few flushes late still finds them. Never applies
+  // anything itself: parked jobs are walked by the idle task, a read, or an
+  // eviction, always in order, before any queued job.
+  void NoteSeen(uint64_t id);
+  // Every job gets a monotonic id at Add (from 1); 0 is "none".
+  uint64_t last_id() const { return next_id_ - 1; }
+  // Changes whenever the mask restarts from nothing (a resize, a Reset): a
+  // memo of an older epoch is not a state of this mask.
+  uint64_t epoch() const { return epoch_; }
+
+  struct Counters {
+    uint64_t signals = 0;         // NoteSeen() calls
+    uint64_t parked_total = 0;    // jobs ever parked
+    uint64_t parked_walked = 0;   // parked jobs walked (idle, read, signal)
+    uint64_t parked_evicted = 0;  // parked jobs dropped unwalked
+    uint64_t seen_walked = 0;     // parked jobs the page had seen, walked at eviction
+  };
+  const Counters& counters() const { return counters_; }
 
  private:
   struct Pending {
     size_t width;
     size_t height;
     size_t bytes;
+    uint64_t id;
     std::unique_ptr<Job> job;
   };
   void Materialize() const;
+  // Works the oldest job: the first parked one, else the queue's first.
   void StepFront(base::TimeTicks deadline) const;
-  void DropFront() const;
+  // The queue is past a cap: its first job is parked (the last deferred frame
+  // carries it) or dropped (none does).
+  void ShedFront() const;
+  void EvictParkedFront() const;
   void Retire() const;
 
   mutable std::unique_ptr<CanvasNoiseMask> mask_;
@@ -249,6 +288,20 @@ class LazyCanvasNoiseMask {
   // Generations the retired masks used up.
   mutable uint64_t retired_generations_ = 0;
   mutable uint64_t revision_ = 0;
+  // Jobs shed from the queue while the last deferred frame carried them, oldest
+  // first, all older than every queued job.
+  mutable std::vector<Pending> parked_;
+  mutable size_t parked_bytes_ = 0;
+  uint64_t next_id_ = 1;
+  // Jobs up to this id were read by the page (NoteSeen).
+  uint64_t seen_floor_ = 0;
+  // The newest job id the last Defer() put in a frame.
+  mutable uint64_t last_deferred_id_ = 0;
+  // The id of the job last stepped, wholly or in part: what the mask holds
+  // comes from jobs up to it.
+  mutable uint64_t touched_id_ = 0;
+  mutable uint64_t epoch_ = 0;
+  mutable Counters counters_;
 };
 
 // The mask of a LazyCanvasNoiseMask as it will be once its queue is applied, in
@@ -263,13 +316,29 @@ class DeferredMask : public base::RefCountedThreadSafe<DeferredMask> {
                size_t height,
                scoped_refptr<const MaskSnapshot> base,
                std::vector<std::unique_ptr<LazyCanvasNoiseMask::Job>> jobs,
-               size_t bytes);
+               std::vector<uint64_t> ids,
+               size_t bytes,
+               uint64_t touched_id,
+               uint64_t epoch);
   // The mask the queue builds, byte for byte (the jobs run to their end on
   // fresh copies, so any number of replays, on any thread, agree).
   std::unique_ptr<CanvasNoiseMask> Replay() const;
+  // The same mask, continued from `memo`: the mask an earlier frame of this
+  // canvas (same epoch) replayed to, as of its newest job `memo_id`. Only the
+  // jobs after `memo_id` are walked, on `memo` itself, which then is this
+  // frame's mask. False, memo untouched, when this frame does not continue it
+  // (another epoch or size, an older frame, or a base that holds a job past
+  // `memo_id`): replay from scratch then. `*stepped` is the jobs walked.
+  bool Continue(CanvasNoiseMask& memo,
+                uint64_t memo_epoch,
+                uint64_t memo_id,
+                size_t* stepped) const;
   const scoped_refptr<const MaskSnapshot>& base() const { return base_; }
   size_t jobs() const { return jobs_.size(); }
   size_t bytes() const { return bytes_; }
+  // The newest job in this frame (0: none).
+  uint64_t last_id() const { return ids_.empty() ? 0 : ids_.back(); }
+  uint64_t epoch() const { return epoch_; }
 
  private:
   friend class base::RefCountedThreadSafe<DeferredMask>;
@@ -278,7 +347,10 @@ class DeferredMask : public base::RefCountedThreadSafe<DeferredMask> {
   const size_t height_;
   const scoped_refptr<const MaskSnapshot> base_;
   const std::vector<std::unique_ptr<LazyCanvasNoiseMask::Job>> jobs_;
+  const std::vector<uint64_t> ids_;
   const size_t bytes_;
+  const uint64_t touched_id_;
+  const uint64_t epoch_;
 };
 
 }  // namespace camoucfg
