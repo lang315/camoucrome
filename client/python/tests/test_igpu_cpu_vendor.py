@@ -31,6 +31,28 @@ def test_igpu_vendor_names_the_cpu_vendor_only_for_igpus():
     assert gen.igpu_vendor(None) is None
 
 
+NOT_IGPU = (  # no sourced thread cap: gpu_class is None, and the Go table must agree (cpuvendor_test.go)
+    "ANGLE (AMD, AMD Radeon RX Vega 64 (0x0000687F) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (AMD, AMD Radeon R9 200 Series (0x00006811) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Intel, Intel(R) Arc(TM) B580 Graphics (0x0000E20B) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Intel, Intel(R) Iris(R) Xe MAX Graphics (0x00004905) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005921) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+)
+
+
+def test_renderers_without_a_sourced_cap_are_not_igpus_and_go_ids_equal_the_python_set():
+    import json
+    assert all(gen.igpu_vendor(r) is None for r in NOT_IGPU)
+    ids = json.loads((pathlib.Path(__file__).resolve().parents[2] / "go" / "core" / "data" / "igpu-ids.json").read_text())
+    want = {f"{v}:0x{d:08X}" for v, d in gen._igpu_caps()} | {f"Intel:0x{d:08X}" for d in gen._thread_caps()}
+    assert ids == sorted(want)
+
+
+def test_cpu_vendor_probe_with_a_missing_path_and_an_empty_env_is_none():
+    assert gen.cpu_vendor_from("/nonexistent/cpuinfo", "") is None
+    assert gen.cpu_vendor_from("/nonexistent/cpuinfo", "AMD64 Family 25, AuthenticAMD") == AMD
+
+
 def test_cpu_vendor_parses_cpuinfo_and_processor_identifier():
     assert gen.cpu_vendor_of("vendor_id\t: GenuineIntel\nmodel name : x") == INTEL
     assert gen.cpu_vendor_of("vendor_id\t: AuthenticAMD") == AMD
@@ -98,3 +120,15 @@ def test_pool_shares_match_the_go_pool_counts():
     entries = json.load(gzip.open(pathlib.Path(__file__).resolve().parents[2] / "go" / "core" / "data" / "pool-windows.json.gz"))["entries"]
     vendors = [gen.igpu_vendor(e["webGl:renderer"]) for e in entries]
     assert (vendors.count(AMD), vendors.count(INTEL), len(entries)) == (634, 2276, 5000)
+
+
+def test_a_floor_drop_does_not_also_warn_about_the_vendor():
+    fp = stored(AMD)
+    out = gen.from_pool(fp, "Europe/Paris", None, rng=random.Random(1), host_cores=2, host_cpu_vendor=INTEL)
+    assert not any(k in out["config"] for k in KEYS)
+    floor = gen.igpu_thread_floor(fp["videoCard"]["renderer"])
+    if floor and floor > 2:  # the floor removed the claim first
+        assert any("GPU claim is dropped" in w for w in out["warnings"])
+        assert not any("CPU vendor" in w for w in out["warnings"])
+    else:
+        assert any("CPU vendor" in w for w in out["warnings"])

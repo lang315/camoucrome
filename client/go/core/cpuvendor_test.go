@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -20,18 +21,70 @@ func TestIGPUVendor(t *testing.T) {
 	cases := map[string]string{
 		"ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x000046A6) Direct3D11 vs_5_0 ps_5_0, D3D11)":   intelCPU,
 		"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)":      intelCPU,
-		"ANGLE (AMD, AMD Radeon(TM) Graphics (0x000015BF) Direct3D11 vs_5_0 ps_5_0, D3D11)":          amdCPU,
+		"ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001636) Direct3D11 vs_5_0 ps_5_0, D3D11)":          amdCPU,
 		"ANGLE (AMD, AMD Radeon RX Vega 11 Graphics (0x000015DD) Direct3D11 vs_5_0 ps_5_0, D3D11)":   amdCPU,
 		"ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics (0x000056A0) Direct3D11 vs_5_0 ps_5_0, D3D11)": "",
 		"ANGLE (AMD, AMD Radeon RX 6800 (0x000073BF) Direct3D11 vs_5_0 ps_5_0, D3D11)":               "",
 		"ANGLE (AMD, AMD Radeon Pro W6800 (0x000073A2) Direct3D11 vs_5_0 ps_5_0, D3D11)":             "",
 		"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)":       "",
 		"": "",
+		// not iGPUs for gen.gpu_class either (no sourced thread cap): the same strings are in test_igpu_cpu_vendor.py
+		"ANGLE (AMD, AMD Radeon RX Vega 64 (0x0000687F) Direct3D11 vs_5_0 ps_5_0, D3D11)":              "",
+		"ANGLE (AMD, AMD Radeon R9 200 Series (0x00006811) Direct3D11 vs_5_0 ps_5_0, D3D11)":           "",
+		"ANGLE (Intel, Intel(R) Arc(TM) B580 Graphics (0x0000E20B) Direct3D11 vs_5_0 ps_5_0, D3D11)":   "",
+		"ANGLE (Intel, Intel(R) Iris(R) Xe MAX Graphics (0x00004905) Direct3D11 vs_5_0 ps_5_0, D3D11)": "",
+		"ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005921) Direct3D11 vs_5_0 ps_5_0, D3D11)":         "",
 	}
 	for r, want := range cases {
 		if got := igpuVendor(r); got != want {
 			t.Errorf("%q: %q, want %q", r, got, want)
 		}
+	}
+}
+
+// fhtool's identity 990001 is an Intel iGPU claim (UHD 0x9B41). Its entry has no webGl keys in testdata/stored, so the claim is
+// set here: it resolves byte-equal with the vendor unset and on an Intel host, and is dropped on an AMD host.
+func TestIntelIGPUClaimResolvesEqualOnAnIntelHostAndUnset(t *testing.T) {
+	const uhd = "ANGLE (Intel, Intel(R) UHD Graphics (0x00009B41) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+	id := mustDraw(t, 990001, &goodHost)
+	var e map[string]any
+	if err := json.Unmarshal(id.Entry, &e); err != nil {
+		t.Fatal(err)
+	}
+	e["webGl:vendor"], e["webGl2:vendor"] = "Google Inc. (Intel)", "Google Inc. (Intel)"
+	e["webGl:renderer"], e["webGl2:renderer"] = uhd, uhd
+	e["webGpu:blocked"] = true
+	id.Entry, _ = json.Marshal(e)
+	resolve := func(vendor string) Resolved {
+		h := goodHost
+		h.Cores, h.CPUVendor = 64, vendor
+		r, err := Resolve(id, h, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	unset, intel, amd := resolve(""), resolve(intelCPU), resolve(amdCPU)
+	if igpuVendor(uhd) != intelCPU {
+		t.Fatal("the claim is not an Intel iGPU")
+	}
+	if unset.Config["webGl:renderer"] != uhd {
+		t.Fatal("the claim did not reach the config")
+	}
+	if !reflect.DeepEqual(unset, intel) {
+		t.Fatal("an Intel host changed an Intel iGPU identity")
+	}
+	if _, ok := amd.Config["webGl:renderer"]; ok {
+		t.Fatal("an AMD host kept an Intel iGPU claim")
+	}
+}
+
+func TestCPUVendorFromMissingSources(t *testing.T) {
+	if got := cpuVendorFrom("/nonexistent/cpuinfo", ""); got != "" {
+		t.Fatalf("missing path and empty env: %q", got)
+	}
+	if got := cpuVendorFrom("/nonexistent/cpuinfo", "AMD64 Family 25, AuthenticAMD"); got != amdCPU {
+		t.Fatalf("env fallback: %q", got)
 	}
 }
 

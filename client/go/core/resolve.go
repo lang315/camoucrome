@@ -20,24 +20,19 @@ const (
 	amdCPU   = "AuthenticAMD"
 )
 
-var arcRe = regexp.MustCompile(`Arc\(TM\) A\d{3}`)
-
 // igpuVendor is gen.py igpu_vendor: the CPUID vendor a claimed iGPU implies (AMD APUs ship only with AMD CPUs, Intel iGPUs
-// only with Intel CPUs), "" for a dGPU (NVIDIA, AMD RX/Pro, Intel Arc A-series) or a renderer that is not ANGLE D3D11.
+// only with Intel CPUs). "" for a dGPU, a renderer that is not ANGLE D3D11, and any id gen.gpu_class does not call an iGPU:
+// data/igpu-ids.json holds exactly those ids (scripts/gen_go_core_data.py), so the two cannot differ on a name.
 func igpuVendor(renderer string) string {
 	m := angleIGPURe.FindStringSubmatch(renderer)
-	if m == nil {
+	if m == nil || loadTables() != nil {
 		return ""
 	}
-	name := m[0]
+	if !tables.igpuIDs[m[1]+":0x"+strings.ToUpper(m[2])] {
+		return ""
+	}
 	if m[1] == "AMD" {
-		if (strings.Contains(name, "RX") && !strings.Contains(name, "Vega")) || strings.Contains(name, "Radeon Pro") {
-			return ""
-		}
 		return amdCPU
-	}
-	if arcRe.MatchString(name) {
-		return ""
 	}
 	return intelCPU
 }

@@ -291,13 +291,18 @@ def cpu_vendor_of(text):
     return None
 
 
-def host_cpu_vendor():
-    """This machine's CPU vendor (/proc/cpuinfo on Linux, PROCESSOR_IDENTIFIER on Windows), None when unreadable."""
+def cpu_vendor_from(path, env):
+    """The vendor in the file at path (/proc/cpuinfo), else in env (PROCESSOR_IDENTIFIER); None when neither says."""
     try:
-        with open("/proc/cpuinfo", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return cpu_vendor_of(f.read(4096))
     except OSError:
-        return cpu_vendor_of(_os.environ.get("PROCESSOR_IDENTIFIER", ""))
+        return cpu_vendor_of(env)
+
+
+def host_cpu_vendor():
+    """This machine's CPU vendor (/proc/cpuinfo on Linux, PROCESSOR_IDENTIFIER on Windows), None when unreadable."""
+    return cpu_vendor_from("/proc/cpuinfo", _os.environ.get("PROCESSOR_IDENTIFIER", ""))
 
 
 def vendor_fits(renderer, host_vendor):
@@ -581,7 +586,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
         floor_warn = (f"host cores snap to {config['navigator.hardwareConcurrency']}, below the {floor} threads of the "
                       f"claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept")
     vendor_warn = None
-    if profile and not gpu and not vendor_fits(profile["renderer"], host_cpu_vendor):
+    if profile and not gpu and "webGl:renderer" in config and not vendor_fits(profile["renderer"], host_cpu_vendor):
         # an iGPU claim beside the other vendor's CPU: the real GPU then matches the real CPU
         for k in GPU_CLAIM_KEYS:
             config.pop(k, None)

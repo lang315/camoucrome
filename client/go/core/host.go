@@ -19,13 +19,17 @@ func cpuVendorOf(s string) string {
 
 // probeCPUVendor reads /proc/cpuinfo (Linux), else PROCESSOR_IDENTIFIER (Windows); "" when neither answers.
 func probeCPUVendor() string {
-	if b, err := os.ReadFile("/proc/cpuinfo"); err == nil {
+	return cpuVendorFrom("/proc/cpuinfo", os.Getenv("PROCESSOR_IDENTIFIER"))
+}
+
+func cpuVendorFrom(path, env string) string {
+	if b, err := os.ReadFile(path); err == nil {
 		if len(b) > 4096 {
 			b = b[:4096]
 		}
 		return cpuVendorOf(string(b))
 	}
-	return cpuVendorOf(os.Getenv("PROCESSOR_IDENTIFIER"))
+	return cpuVendorOf(env)
 }
 
 // ProbeHost reads what the OS answers without a browser: the allowed CPUs, the
