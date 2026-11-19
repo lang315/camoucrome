@@ -1,0 +1,770 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+index 4ee725f621..e565777280 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+@@ -27,6 +27,8 @@
+ 
+ #include "base/byte_size.h"
+ #include "base/strings/stringprintf.h"
++#include <vector>
++
+ #include "components/camoucfg/blink_scope.h"
+ #include "components/camoucfg/canvas_noise.h"
+ #include "components/camoucfg/canvas_readback.h"
+@@ -52,10 +54,12 @@
+ #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
+ #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+ #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/graphics/exported_canvas_resource.h"
+ #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
+ #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
+ #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
+ #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+ #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+ #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+@@ -568,28 +572,195 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedPending(
+   if (!image || !image->CamouWebGlPending()) {
+     return image;
+   }
++  return CamouNoisedWith(std::move(image), /*min_alpha=*/255,
++                         camoucfg::NoiseMask(), camoucfg::NoiseDomain::kWebGl);
++}
++
++scoped_refptr<const CamouFrameNoise>
++CanvasRenderingContext::CamouMakeFrameNoise() {
++  if (!Host() ||
++      !camoucfg::CanvasSeed(
++          camoucfg::ScopeFor(Host()->GetTopExecutionContext()))) {
++    camou_frame_noise_ = nullptr;
++    return nullptr;
++  }
++  if (CamouFrameIsPendingWebGl()) {
++    // The frame copies raw WebGL pixels: the WebGL field, opaque pixels, no mask.
++    if (!camou_pending_noise_) {
++      auto pending = base::MakeRefCounted<CamouFrameNoise>();
++      pending->domain = camoucfg::NoiseDomain::kWebGl;
++      pending->min_alpha = 255;
++      camou_pending_noise_ = std::move(pending);
++    }
++    return camou_pending_noise_;
++  }
++  const uint64_t revision = CamouNoiseRevision();
++  if (camou_frame_noise_ && camou_frame_noise_revision_ == revision) {
++    return camou_frame_noise_;
++  }
++  // A frame is committed at the rate the page draws: the queued recordings of a
++  // 2D mask are not walked here (the walk is the cost of a heavy scene), the
++  // frame carries a copy of them and the page's read walks them.
++  scoped_refptr<const camoucfg::DeferredMask> deferred;
++  const auto status = CamouDeferNoiseMask(camou_mask_snapshot_.get(), &deferred);
++  const char* status_name = "none";
++  switch (status) {
++    case camoucfg::LazyCanvasNoiseMask::DeferStatus::kNone:
++      break;
++    case camoucfg::LazyCanvasNoiseMask::DeferStatus::kDeferred:
++      status_name = "deferred";
++      break;
++    case camoucfg::LazyCanvasNoiseMask::DeferStatus::kOverCap:
++      status_name = "over_cap";
++      break;
++    case camoucfg::LazyCanvasNoiseMask::DeferStatus::kNotClonable:
++      status_name = "not_clonable";
++      break;
++  }
++  TRACE_EVENT_INSTANT2("blink", "CamouFrameNoise", TRACE_EVENT_SCOPE_THREAD,
++                       "defer", status_name, "jobs",
++                       deferred ? static_cast<int>(deferred->jobs()) : 0);
++  {
++    const camoucfg::LazyCanvasNoiseMask::Counters counters =
++        CamouNoiseCounters();
++    TRACE_EVENT_INSTANT2("blink", "CamouParked", TRACE_EVENT_SCOPE_THREAD,
++                         "parked", static_cast<int>(counters.parked_total),
++                         "evicted", static_cast<int>(counters.parked_evicted));
++  }
++  auto noise = base::MakeRefCounted<CamouFrameNoise>();
++  noise->domain = CamouNoiseDomain();
++  noise->min_alpha = CamouNoiseMinAlpha();
++  if (deferred) {
++    noise->deferred = std::move(deferred);
++    if (noise->deferred->base()) {
++      camou_mask_snapshot_ = noise->deferred->base();
++    }
++  } else {
++    if (!CamouNoiseEligible()) {
++      camou_frame_noise_ = nullptr;
++      return nullptr;
++    }
++    noise->mask = CamouNoiseMaskSnapshot(camou_mask_snapshot_.get());
++    camou_mask_snapshot_ = noise->mask;
++  }
++  camou_frame_noise_ = noise;
++  camou_frame_noise_revision_ = revision;
++  return noise;
++}
++
++// static
++sk_sp<SkImage> CanvasRenderingContext::CamouNoisedFrame(
++    scoped_refptr<StaticBitmapImage> image,
++    const CamouFrameNoise& noise,
++    CamouReplayMemo* memo) {
++  if (noise.deferred) {
++    // The queue the worker left unapplied, walked now, here: nothing in the walk
++    // belongs to the worker's thread. A frame that continues the last one's walk
++    // (same canvas, nothing walked past it) walks only its new recordings, on the
++    // memo's mask. A mask with no aa cell is the mask of a context that is not
++    // eligible, which commits no record: the frame as it is.
++    std::unique_ptr<camoucfg::CanvasNoiseMask> local;
++    const camoucfg::CanvasNoiseMask* mask = nullptr;
++    const char* mode = "full";
++    size_t stepped = noise.deferred->jobs();
++    {
++      TRACE_EVENT1("blink", "CamouDeferredReplay", "jobs",
++                   static_cast<int>(noise.deferred->jobs()));
++      if (memo && memo->mask &&
++          noise.deferred->Continue(*memo->mask, memo->epoch, memo->id,
++                                   &stepped)) {
++        mode = "continue";
++        mask = memo->mask.get();
++      } else if (memo) {
++        memo->mask = noise.deferred->Replay();
++        mask = memo->mask.get();
++      } else {
++        local = noise.deferred->Replay();
++        mask = local.get();
++      }
++    }
++    if (!mask) {
++      // A recording that cannot be copied again (Defer() copied it once: not
++      // expected). No mask is guessed and nothing is CHECKed: the frame is read
++      // as it is.
++      if (memo) {
++        memo->mask.reset();
++      }
++      return nullptr;
++    }
++    if (memo) {
++      memo->epoch = noise.deferred->epoch();
++      memo->id = noise.deferred->last_id();
++    }
++    TRACE_EVENT_INSTANT2("blink", "CamouReplayMode", TRACE_EVENT_SCOPE_THREAD,
++                         "mode", mode, "stepped", static_cast<int>(stepped));
++    if (!mask->has_aa()) {
++      return nullptr;
++    }
++    return CamouNoisedSkImage(std::move(image), noise.min_alpha, mask->view(),
++                              noise.domain);
++  }
++  // The page reads this frame: the chunks as one contiguous mask, once.
++  std::vector<uint8_t> cells;
++  camoucfg::NoiseMask mask;
++  if (noise.mask) {
++    cells = noise.mask->Flatten();
++    mask = noise.mask->ViewOf(cells);
++  }
++  return CamouNoisedSkImage(std::move(image), noise.min_alpha, mask,
++                            noise.domain);
++}
++
++void CanvasRenderingContext::CamouFrameRead(uint64_t id) {
++  CamouNoteSeen(id);
++  const camoucfg::LazyCanvasNoiseMask::Counters counters =
++      CamouNoiseCounters();
++  TRACE_EVENT_INSTANT2("blink", "CamouFrameRead", TRACE_EVENT_SCOPE_THREAD,
++                       "id", static_cast<int>(id), "signals",
++                       static_cast<int>(counters.signals));
++  TRACE_EVENT_INSTANT2("blink", "CamouParkedWalk", TRACE_EVENT_SCOPE_THREAD,
++                       "walked", static_cast<int>(counters.parked_walked),
++                       "seen", static_cast<int>(counters.seen_walked));
++}
++
++// static
++sk_sp<SkImage> CanvasRenderingContext::CamouNoisedSkImage(
++    scoped_refptr<StaticBitmapImage> image,
++    uint8_t min_alpha,
++    const camoucfg::NoiseMask& mask,
++    camoucfg::NoiseDomain domain) {
++  if (!image) {
++    return nullptr;
++  }
+   // The global config: every scope resolves to it today, and the image may have
+   // left the context (and its thread) that made it.
+   const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
+   if (!camoucfg::CanvasSeed(scope)) {
+-    return image;
++    return nullptr;
+   }
+   const SkColorType color_type =
+       image->PaintImageForCurrentFrame().GetColorType();
+   if (color_type != kRGBA_8888_SkColorType &&
+       color_type != kBGRA_8888_SkColorType) {
+-    return image;
++    return nullptr;
+   }
+   sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
+   if (!sk_image) {
+-    return image;
++    return nullptr;
+   }
+-  // WebGL: opaque pixels only, no coverage mask: as CamouNoised() on a WebGL
+-  // context.
+-  sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
+-      *sk_image, scope, /*min_alpha=*/255, camoucfg::NoiseMask(),
+-      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft,
+-      camoucfg::NoiseDomain::kWebGl);
++  // As CamouNoised() does on the context that made the pixels.
++  return camoucfg::NoisedCanvasImage(
++      *sk_image, scope, min_alpha, mask,
++      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft, domain);
++}
++
++// static
++scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedWith(
++    scoped_refptr<StaticBitmapImage> image,
++    uint8_t min_alpha,
++    const camoucfg::NoiseMask& mask,
++    camoucfg::NoiseDomain domain) {
++  sk_sp<SkImage> noised = CamouNoisedSkImage(image, min_alpha, mask, domain);
+   if (!noised) {
+     return image;
+   }
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+index 31ee94d695..ecea35ed4d 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+@@ -32,6 +32,7 @@
+ #include "base/memory/scoped_refptr.h"
+ #include "base/notreached.h"
+ #include "cc/paint/paint_flags.h"
++#include "components/camoucfg/canvas_mask.h"
+ #include "components/camoucfg/canvas_noise.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
+@@ -39,6 +40,7 @@
+ #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
+ #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
+ #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
++#include "third_party/blink/renderer/platform/graphics/exported_canvas_resource.h"
+ #include "third_party/blink/renderer/platform/graphics/graphics_types_3d.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+ #include "third_party/blink/renderer/platform/heap/member.h"
+@@ -192,6 +194,34 @@ class CORE_EXPORT CanvasRenderingContext
+   // Every consumer that lets the page read a tagged image's pixels calls this.
+   static scoped_refptr<StaticBitmapImage> CamouNoisedPending(
+       scoped_refptr<StaticBitmapImage> image);
++  // For a context that renders into a transferControlToOffscreen placeholder:
++  // what the main thread needs to noise this frame as CamouNoised() would, or
++  // null when this context carries no noise. Called on the context's thread
++  // when it commits a frame.
++  scoped_refptr<const CamouFrameNoise> CamouMakeFrameNoise();
++  // `image` (a placeholder's frame) as the page may read it, noised by `noise`.
++  // `memo` (the placeholder's, main thread) lets a frame whose recordings
++  // continue the last frame's walk only the new ones.
++  static sk_sp<SkImage> CamouNoisedFrame(
++      scoped_refptr<StaticBitmapImage> image,
++      const CamouFrameNoise& noise,
++      CamouReplayMemo* memo = nullptr);
++  // The page read a frame of this context's placeholder whose newest queued
++  // recording was `id`: runs on this context's thread.
++  void CamouFrameRead(uint64_t id);
++  // The noised pixels of `image` (null when the noise cannot run), and `image`
++  // itself or a new image around them: the one noise call behind
++  // CamouNoisedPending() and CamouNoisedFrame().
++  static sk_sp<SkImage> CamouNoisedSkImage(
++      scoped_refptr<StaticBitmapImage> image,
++      uint8_t min_alpha,
++      const camoucfg::NoiseMask& mask,
++      camoucfg::NoiseDomain domain);
++  static scoped_refptr<StaticBitmapImage> CamouNoisedWith(
++      scoped_refptr<StaticBitmapImage> image,
++      uint8_t min_alpha,
++      const camoucfg::NoiseMask& mask,
++      camoucfg::NoiseDomain domain);
+   // getImageData's path (canvas noise S2c): the pixels of `rect` of `image`
+   // as CamouNoised(image) holds them, reading (from a GPU snapshot too) and
+   // noising only the rect plus a 1 px margin, on the premultiplied
+@@ -209,6 +239,34 @@ class CORE_EXPORT CanvasRenderingContext
+   virtual camoucfg::NoiseMask CamouNoiseMask() const { return {}; }
+   // Bumps whenever CamouNoiseMask() changes; part of the cache key.
+   virtual uint64_t CamouNoiseMaskGeneration() const { return 0; }
++  // Bumps whenever CamouNoiseMask() may change, without applying anything
++  // still queued to compute it (CamouNoiseMaskGeneration() applies it).
++  virtual uint64_t CamouNoiseRevision() const {
++    return CamouNoiseMaskGeneration();
++  }
++  // CamouNoiseMaskSnapshot() when part of the mask is still queued: the same
++  // mask as a DeferredMask, with nothing applied (kDeferred), or a status that
++  // says to apply the queue and snapshot as before.
++  virtual camoucfg::LazyCanvasNoiseMask::DeferStatus CamouDeferNoiseMask(
++      const camoucfg::MaskSnapshot* prev,
++      scoped_refptr<const camoucfg::DeferredMask>* out) const {
++    return camoucfg::LazyCanvasNoiseMask::DeferStatus::kNone;
++  }
++  // CamouNoiseMask() as an immutable snapshot that shares with `prev` (this
++  // context's last one) every row chunk written since; null: no mask.
++  virtual scoped_refptr<const camoucfg::MaskSnapshot> CamouNoiseMaskSnapshot(
++      const camoucfg::MaskSnapshot* prev) const {
++    return nullptr;
++  }
++  // Whether this context shows an image that holds raw WebGL pixels the readback
++  // noise has not touched yet (a bitmaprenderer holding a transferToImageBitmap
++  // result): the frames it commits copy that image, so they carry the WebGL noise.
++  virtual bool CamouFrameIsPendingWebGl() const { return false; }
++  // CamouFrameRead()'s effect on the mask queue, and its counters (trace).
++  virtual void CamouNoteSeen(uint64_t id) {}
++  virtual camoucfg::LazyCanvasNoiseMask::Counters CamouNoiseCounters() const {
++    return {};
++  }
+   // The lowest alpha a pixel may have and still change; WebGL is
+   // opaque-only.
+   virtual uint8_t CamouNoiseMinAlpha() const { return 1; }
+@@ -436,6 +494,13 @@ class CORE_EXPORT CanvasRenderingContext
+   // of its raster form, and the noised raster image.
+   scoped_refptr<StaticBitmapImage> camou_noised_source_;
+   uint32_t camou_noised_from_ = 0;
++  // CamouMakeFrameNoise()'s last record and the mask revision it was made at.
++  scoped_refptr<const CamouFrameNoise> camou_frame_noise_;
++  uint64_t camou_frame_noise_revision_ = 0;
++  // The mask snapshot inside it: the next one shares chunks with this.
++  scoped_refptr<const camoucfg::MaskSnapshot> camou_mask_snapshot_;
++  // The record of a context that only shows pending WebGL pixels: one, immutable.
++  scoped_refptr<const CamouFrameNoise> camou_pending_noise_;
+   uint64_t camou_noised_generation_ = 0;
+   sk_sp<SkImage> camou_noised_;
+ };
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index c775d66e67..6a481069c4 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -135,6 +135,8 @@
+ #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
++#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/skia/include/core/SkImage.h"
+ #include "ui/accessibility/accessibility_features.h"
+ #include "ui/base/resource/resource_scale_factor.h"
+ #include "ui/gfx/geometry/rect_conversions.h"
+@@ -1392,6 +1394,45 @@ const AtomicString HTMLCanvasElement::ImageSourceURL() const {
+       ImageEncoderUtils::kDefaultRequestedMimeType, 0, kFrontBuffer));
+ }
+ 
++scoped_refptr<StaticBitmapImage> HTMLCanvasElement::CamouPlaceholderBitmap()
++    const {
++  ExportedCanvasResource* frame = OffscreenCanvasFrame();
++  if (!frame) {
++    return nullptr;
++  }
++  const CamouFrameNoise* noise = frame->CamouNoise();
++  // The noised pixels are made once per frame; every read wraps them anew. A
++  // frame the noise found nothing to change in is not tried again.
++  if (noise) {
++    if (sk_sp<SkImage> cached = CamouCachedNoisedFrame()) {
++      return UnacceleratedStaticBitmapImage::Create(
++          std::move(cached), CamouCachedOrientation());
++    }
++    if (CamouFrameIsRaw()) {
++      return frame->Bitmap();
++    }
++  }
++  scoped_refptr<StaticBitmapImage> image = frame->Bitmap();
++  if (!noise || !image) {
++    return image;
++  }
++  if (noise->deferred) {
++    // The page is reading these recordings: the worker walks, not drops, them
++    // from now on. Told before the replay, which can take the main thread long
++    // enough for the worker to shed a window's worth of them.
++    CamouSignalFrameRead(noise->deferred->last_id());
++  }
++  sk_sp<SkImage> noised =
++      CanvasRenderingContext::CamouNoisedFrame(image, *noise, &CamouMemo());
++  if (!noised) {
++    SetCamouFrameRaw();
++    return image;
++  }
++  SetCamouCachedNoisedFrame(noised, image->Orientation());
++  return UnacceleratedStaticBitmapImage::Create(std::move(noised),
++                                                image->Orientation());
++}
++
+ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
+     SourceDrawingBuffer source_buffer) const {
+   if (Size().IsEmpty()) {
+@@ -1401,7 +1442,7 @@ scoped_refptr<StaticBitmapImage> HTMLCanvasElement::Snapshot(
+   scoped_refptr<StaticBitmapImage> image_bitmap;
+   if (HasOffscreenCanvasFrame()) {  // Offscreen Canvas
+     DCHECK(OffscreenCanvasFrame()->OriginClean());
+-    image_bitmap = OffscreenCanvasFrame()->Bitmap();
++    image_bitmap = CamouPlaceholderBitmap();
+   } else if (IsWebGL()) {
+     if (context_->CreationAttributes().premultiplied_alpha) {
+       image_bitmap = context_->PaintRenderingResultsToSnapshot(source_buffer);
+@@ -1992,7 +2033,7 @@ HTMLCanvasElement::GetSourceImageForCanvasInternal(SourceImageStatus* status) {
+     // control to an offscreenCanvas. As offscreencanvas with the
+     // TransferControlToOffscreen is asynchronous, this will need to finish the
+     // first Frame in order to have a first OffscreenCanvasFrame.
+-    image = OffscreenCanvasFrame()->Bitmap();
++    image = CamouPlaceholderBitmap();
+   } else {
+     if (IsWebGL() || IsWebGPU()) {
+       // TODO(https://crbug.com/672299): Canvas should produce sRGB images.
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.h b/third_party/blink/renderer/core/html/canvas/html_canvas_element.h
+index eb65a26a49..45dfa366d2 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.h
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.h
+@@ -352,6 +352,9 @@ class CORE_EXPORT HTMLCanvasElement final
+   }
+ 
+   scoped_refptr<StaticBitmapImage> Snapshot(SourceDrawingBuffer) const;
++  // The placeholder's frame as the page may read it: noised, once per frame,
++  // when the worker's context carries noise (canvas:seed set).
++  scoped_refptr<StaticBitmapImage> CamouPlaceholderBitmap() const;
+ 
+   // Returns the cc layer containing the contents. It's the cc layer of
+   // SurfaceLayerBridge() or RenderingContext(), or nullptr if the canvas is not
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index eba1c49127..07f7925731 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -735,6 +735,13 @@ CanvasResourceDispatcher* OffscreenCanvas::GetOrCreateResourceDispatcher() {
+                     }
+                   },
+                   WrapWeakPersistent(this)));
++      placeholder_client_->SetCamouFrameReadCallback(blink::BindRepeating(
++          [](OffscreenCanvas* canvas, uint64_t id) {
++            if (canvas && canvas->context_) {
++              canvas->context_->CamouFrameRead(id);
++            }
++          },
++          WrapWeakPersistent(this)));
+     }
+   }
+   return frame_dispatcher_.get();
+@@ -813,6 +820,11 @@ bool OffscreenCanvas::PushFrame(
+ 
+   auto exported_resource =
+       base::MakeRefCounted<ExportedCanvasResource>(std::move(canvas_resource));
++  if (placeholder_client_ && context_) {
++    // Camoucrome: the main thread noises the placeholder's frame as this
++    // context would noise it (nothing is read back here).
++    exported_resource->SetCamouNoise(context_->CamouMakeFrameNoise());
++  }
+ 
+   auto* dispatcher = GetOrCreateResourceDispatcher();
+   if (placeholder_client_) {
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
+index c277b09ac8..9f427aed02 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
+@@ -299,6 +299,22 @@ class MODULES_EXPORT BaseRenderingContext2D
+   uint64_t CamouNoiseMaskGeneration() const override {
+     return camou_mask_.generation();
+   }
++  uint64_t CamouNoiseRevision() const override {
++    return camou_mask_.revision();
++  }
++  camoucfg::LazyCanvasNoiseMask::DeferStatus CamouDeferNoiseMask(
++      const camoucfg::MaskSnapshot* prev,
++      scoped_refptr<const camoucfg::DeferredMask>* out) const override {
++    return camou_mask_.Defer(prev, out);
++  }
++  void CamouNoteSeen(uint64_t id) override { camou_mask_.NoteSeen(id); }
++  camoucfg::LazyCanvasNoiseMask::Counters CamouNoiseCounters() const override {
++    return camou_mask_.counters();
++  }
++  scoped_refptr<const camoucfg::MaskSnapshot> CamouNoiseMaskSnapshot(
++      const camoucfg::MaskSnapshot* prev) const override {
++    return camou_mask_.Snapshot(prev);
++  }
+   void DisableAccelerationForCanvas2D() final { DisableAcceleration(); }
+   void PageVisibilityChanged() override {}
+   void Reset() override;
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+index e3f70d561e..77a4ee210e 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -139,6 +139,7 @@
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
++#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+ #include "third_party/skia/include/core/SkBitmap.h"
+ #include "third_party/skia/include/core/SkBlendMode.h"
+ #include "third_party/skia/include/core/SkCanvas.h"
+@@ -1198,6 +1199,15 @@ class Canvas2DRecorderContext::CamouWalk final
+       : record_(std::move(record)), cpu_(cpu), cover_{width, height} {}
+ 
+   bool Step(camoucfg::CanvasNoiseMask& mask, base::TimeTicks deadline) override;
++  // A walk that stands where this one stands, for the main thread to finish: the
++  // recording (immutable, its buffer shared, thread safe refcount; a recording
++  // that holds an image is never queued) and the progress (the next op, the
++  // layer state). The coverage canvas is not copied: Get() rebuilds it from the
++  // ops passed. Null once the coverage allocation failed (the worker's walk
++  // marks the whole canvas then; a copy might not fail), and while the walk is
++  // inside a layer: the layer's state lives on the coverage canvas's save stack,
++  // which a copy does not have (the worker applies such a queue itself).
++  std::unique_ptr<camoucfg::LazyCanvasNoiseMask::Job> Clone() const override;
+ 
+  private:
+   cc::PaintRecord record_;
+@@ -1230,6 +1240,10 @@ bool CamouHoldsImages(const cc::PaintRecord& record) {
+         op.GetType() == cc::PaintOpType::kDrawRecord) {
+       return true;
+     }
++    if (op.GetType() == cc::PaintOpType::kSaveLayerFilters &&
++        !static_cast<const cc::SaveLayerFiltersOp&>(op).filters.empty()) {
++      return true;
++    }
+     if (op.IsPaintOpWithFlags()) {
+       const cc::PaintFlags& flags =
+           static_cast<const cc::PaintOpWithFlags&>(op).flags;
+@@ -1259,16 +1273,21 @@ void Canvas2DRecorderContext::CamouMarkRecord(cc::PaintRecord record,
+     return;
+   }
+   const bool holds_images = CamouHoldsImages(record);
+-  camou_mask_.Add(static_cast<size_t>(w), static_cast<size_t>(h), bytes,
+-                  std::make_unique<CamouWalk>(std::move(record), cpu, w, h),
+-                  holds_images);
++  {
++    // The queue push and whatever it costs at the cap (shedding, parking, a
++    // walked eviction): the worker's price for a page that reads the frames.
++    TRACE_EVENT0("blink", "CamouMaskAdd");
++    camou_mask_.Add(static_cast<size_t>(w), static_cast<size_t>(h), bytes,
++                    std::make_unique<CamouWalk>(std::move(record), cpu, w, h),
++                    holds_images);
++  }
+   if (!holds_images) {
+     CamouScheduleIdleWalk();
+   }
+ }
+ 
+ void Canvas2DRecorderContext::CamouScheduleIdleWalk() {
+-  if (camou_idle_walk_posted_ || camou_mask_.pending_events() == 0) {
++  if (camou_idle_walk_posted_ || !camou_mask_.has_work()) {
+     return;
+   }
+   ThreadScheduler* const scheduler = ThreadScheduler::Current();
+@@ -1292,6 +1311,19 @@ void Canvas2DRecorderContext::CamouIdleWalk(base::TimeTicks deadline) {
+   CamouScheduleIdleWalk();
+ }
+ 
++std::unique_ptr<camoucfg::LazyCanvasNoiseMask::Job>
++Canvas2DRecorderContext::CamouWalk::Clone() const {
++  if (cover_.failed || layer_.depth != 0) {
++    return nullptr;
++  }
++  auto copy = std::make_unique<CamouWalk>(record_, cpu_, cover_.width,
++                                          cover_.height);
++  copy->cover_.done = cover_.done;
++  copy->layer_ = layer_;
++  copy->next_op_ = next_op_;
++  return copy;
++}
++
+ bool Canvas2DRecorderContext::CamouWalk::Step(
+     camoucfg::CanvasNoiseMask& mask,
+     base::TimeTicks deadline) {
+diff --git a/third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h b/third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h
+index 708d0e5275..cb8ce1dbaf 100644
+--- a/third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h
++++ b/third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h
+@@ -92,6 +92,10 @@ class MODULES_EXPORT ImageBitmapRenderingContext final
+   bool IsComposited() const final { return true; }
+   scoped_refptr<CanvasResource> GetResourceForPushFrame(
+       bool& should_call_push_frame) override;
++  // Its frames copy the image (Camoucrome: raw WebGL pixels keep their noise).
++  bool CamouFrameIsPendingWebGl() const override {
++    return image_ && image_->CamouWebGlPending();
++  }
+ 
+   cc::Layer* CcLayer() const final;
+ 
+diff --git a/third_party/blink/renderer/platform/graphics/exported_canvas_resource.h b/third_party/blink/renderer/platform/graphics/exported_canvas_resource.h
+index c7f18c0587..0f652db848 100644
+--- a/third_party/blink/renderer/platform/graphics/exported_canvas_resource.h
++++ b/third_party/blink/renderer/platform/graphics/exported_canvas_resource.h
+@@ -6,6 +6,8 @@
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_EXPORTED_CANVAS_RESOURCE_H_
+ 
+ #include "base/memory/scoped_refptr.h"
++#include "components/camoucfg/canvas_mask.h"
++#include "components/camoucfg/canvas_noise.h"
+ #include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
+@@ -16,6 +18,38 @@ namespace blink {
+ class CanvasResource;
+ class StaticBitmapImage;
+ 
++// Camoucrome: what readback noise needs to noise a frame the way the worker's
++// own context would noise it (convertToBlob), taken by the worker at commit
++// and read by the main thread when the placeholder canvas is read. Built once
++// before the frame is shared and never changed after: it is immutable, and
++// frames of one mask generation share one, so a steady animation costs a
++// pointer copy per frame.
++struct PLATFORM_EXPORT CamouFrameNoise
++    : public ThreadSafeRefCounted<CamouFrameNoise> {
++  camoucfg::NoiseDomain domain = camoucfg::NoiseDomain::k2d;
++  uint8_t min_alpha = 1;
++  // The context's coverage mask as it was at commit: an immutable snapshot
++  // whose row chunks are shared with the neighbouring frames' snapshots (a
++  // moving shape changes a few chunks per frame). Null: every pixel may change.
++  scoped_refptr<const camoucfg::MaskSnapshot> mask;
++  // Set instead of `mask` when the context committed the frame with part of its
++  // mask still queued (its recordings not walked yet): the mask is what this
++  // builds, and the main thread builds it, once, when the page reads the frame
++  // (CanvasRenderingContext::CamouNoisedFrame).
++  scoped_refptr<const camoucfg::DeferredMask> deferred;
++};
++
++// What the main thread's last replay of a placeholder's frame ended at: the mask
++// and the newest queued recording it includes. The next frame of the same
++// canvas continues from it (DeferredMask::Continue) instead of walking every
++// recording again; also what keeps the marks of recordings the worker has since
++// dropped, which the page already saw noised.
++struct CamouReplayMemo {
++  std::unique_ptr<camoucfg::CanvasNoiseMask> mask;
++  uint64_t epoch = 0;
++  uint64_t id = 0;
++};
++
+ class PLATFORM_EXPORT ExportedCanvasResource
+     : public ThreadSafeRefCounted<ExportedCanvasResource> {
+  public:
+@@ -28,6 +62,13 @@ class PLATFORM_EXPORT ExportedCanvasResource
+   gfx::Size Size() const;
+   bool OriginClean() const;
+   scoped_refptr<StaticBitmapImage> Bitmap();
++
++  // Set at most once, by the thread that made the frame, before it is shared.
++  void SetCamouNoise(scoped_refptr<const CamouFrameNoise> noise) {
++    CHECK(!camou_noise_);
++    camou_noise_ = std::move(noise);
++  }
++  const CamouFrameNoise* CamouNoise() const { return camou_noise_.get(); }
+   void EndDisplayCompositorAccess(gpu::SharedImageExportResult export_result,
+                                   bool is_lost);
+   void EndDisplayCompositorAccess(gpu::SyncToken export_result, bool is_lost);
+@@ -37,6 +78,7 @@ class PLATFORM_EXPORT ExportedCanvasResource
+ 
+  private:
+   scoped_refptr<CanvasResource> resource_;
++  scoped_refptr<const CamouFrameNoise> camou_noise_;
+ };
+ 
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc b/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc
+index 747cd851b0..7cc7f43ce1 100644
+--- a/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc
++++ b/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.cc
+@@ -151,6 +151,27 @@ void OffscreenCanvasPlaceholder::SetOffscreenCanvasResource(
+   ExportedCanvasResource::OnPlaceholderReleasedResource(
+       std::move(placeholder_frame_));
+   placeholder_frame_ = std::move(new_frame);
++  camou_noised_frame_ = nullptr;
++  camou_frame_raw_ = false;
++}
++
++void OffscreenCanvasPlaceholder::CamouSignalFrameRead(uint64_t id) const {
++  // The id counts as told only once it is posted: with no worker to post to
++  // (the client is not registered yet) the next read tells it again.
++  if (id <= camou_signalled_id_ || !client_task_runner_) {
++    return;
++  }
++  camou_signalled_id_ = id;
++  PostCrossThreadTask(
++      *client_task_runner_, FROM_HERE,
++      CrossThreadBindOnce(
++          [](base::WeakPtr<OffscreenCanvasPlaceholder::Client> client,
++             uint64_t id) {
++            if (client) {
++              client->OnCamouFrameRead(id);
++            }
++          },
++          client_, id));
+ }
+ 
+ void OffscreenCanvasPlaceholder::SetClient(
+diff --git a/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.h b/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.h
+index 49b43667a9..ba6258e229 100644
+--- a/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.h
++++ b/third_party/blink/renderer/platform/graphics/offscreen_canvas_placeholder.h
+@@ -12,6 +12,9 @@
+ #include "base/task/single_thread_task_runner.h"
+ #include "cc/paint/paint_flags.h"
+ #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
++#include "third_party/blink/renderer/platform/graphics/exported_canvas_resource.h"
++#include "third_party/blink/renderer/platform/graphics/image_orientation.h"
++#include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+@@ -56,6 +59,17 @@ class PLATFORM_EXPORT OffscreenCanvasPlaceholder {
+     OffscreenCanvasPlaceholder::AnimationState GetAnimationState() {
+       return animation_state_;
+     }
++    // Camoucrome: the page read a frame whose newest queued 2D recording was
++    // `id` (posted by the placeholder, runs on this client's thread).
++    using CamouFrameReadCallback = base::RepeatingCallback<void(uint64_t)>;
++    void SetCamouFrameReadCallback(CamouFrameReadCallback callback) {
++      camou_frame_read_callback_ = std::move(callback);
++    }
++    void OnCamouFrameRead(uint64_t id) {
++      if (camou_frame_read_callback_) {
++        camou_frame_read_callback_.Run(id);
++      }
++    }
+ 
+    protected:
+     // virtual and protected for testing
+@@ -84,6 +98,7 @@ class PLATFORM_EXPORT OffscreenCanvasPlaceholder {
+         scoped_refptr<blink::ExportedCanvasResource>&& canvas_resource);
+ 
+     base::RepeatingClosure animation_state_callback_;
++    CamouFrameReadCallback camou_frame_read_callback_;
+ 
+     const DOMNodeId placeholder_canvas_id_;
+ 
+@@ -119,6 +134,28 @@ class PLATFORM_EXPORT OffscreenCanvasPlaceholder {
+   void RegisterPlaceholderCanvas(DOMNodeId placeholder_id);
+   void UnregisterPlaceholderCanvas();
+   bool HasOffscreenCanvasFrame() const { return !!placeholder_frame_; }
++  // Camoucrome: the noised pixels of the current frame, made once on the main
++  // thread when the page first reads it. Each read wraps them in a fresh image
++  // (as CamouNoised() does: Transfer() may detach one); a new frame drops them.
++  sk_sp<SkImage> CamouCachedNoisedFrame() const { return camou_noised_frame_; }
++  ImageOrientation CamouCachedOrientation() const {
++    return camou_noised_orientation_;
++  }
++  void SetCamouCachedNoisedFrame(sk_sp<SkImage> image,
++                                 ImageOrientation orientation) const {
++    camou_noised_frame_ = std::move(image);
++    camou_noised_orientation_ = orientation;
++  }
++  // The current frame has nothing to noise (the noise found no cell), so a
++  // read gives the frame as it is without trying again.
++  bool CamouFrameIsRaw() const { return camou_frame_raw_; }
++  void SetCamouFrameRaw() const { camou_frame_raw_ = true; }
++  // Where the replay of the last frame ended (see CamouReplayMemo).
++  CamouReplayMemo& CamouMemo() const { return camou_memo_; }
++  // Tells the worker's context the page has read a frame whose newest queued
++  // recording was `id` (once per id), so the recordings up to it are walked,
++  // not dropped, from now on. A closed canvas or a dead worker: nothing happens.
++  void CamouSignalFrameRead(uint64_t id) const;
+   ExportedCanvasResource* OffscreenCanvasFrame() const {
+     return placeholder_frame_.get();
+   }
+@@ -145,6 +182,11 @@ class PLATFORM_EXPORT OffscreenCanvasPlaceholder {
+ 
+   // Information about the Offscreen Canvas:
+   scoped_refptr<ExportedCanvasResource> placeholder_frame_;
++  mutable sk_sp<SkImage> camou_noised_frame_;
++  mutable ImageOrientation camou_noised_orientation_;
++  mutable bool camou_frame_raw_ = false;
++  mutable uint64_t camou_signalled_id_ = 0;
++  mutable CamouReplayMemo camou_memo_;
+   base::WeakPtr<Client> client_;
+   scoped_refptr<base::SingleThreadTaskRunner> client_task_runner_;
+ 
