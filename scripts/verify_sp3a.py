@@ -2645,7 +2645,155 @@ def leaks_rows():
 
 leaks_rows()
 
-EXPECTED = 82   # the soft rows (SOFT_ROWS) are not counted
+# --- Lazy transferToImageBitmap noise (2026-11-19): C75-C83 ---
+# transferToImageBitmap does no readback: the bitmap is tagged, and every consumer that lets the page read its pixels
+# asks for the noised ones (the field drawImage(webglCanvas) gives). One page function runs every consumer; the
+# reference of each is the same read of the WebGL canvas itself, in the same arm.
+C75 = "C75 drawImage(bitmap) to a willReadFrequently and to a default 2D canvas: noised, equal to drawImage(webglCanvas)"
+C76 = "C76 createPattern(bitmap) fill: noised, equal to createPattern(webglCanvas)"
+C77 = "C77 new VideoFrame(bitmap).copyTo: noised, equal to new VideoFrame(webglCanvas).copyTo"
+C78 = "C78 createImageBitmap(bitmap) plain and cropped: noised, equal to drawImage(webglCanvas) / its crop"
+C79 = "C79 postMessage(bitmap, [bitmap]) to a worker, drawImage there: noised, equal to drawImage(webglCanvas)"
+C80 = "C80 postMessage(bitmap) (structured clone) to a worker, drawImage there: noised, equal to drawImage(webglCanvas)"
+C81 = "C81 bitmaprenderer canvas holding the bitmap: toDataURL, toBlob, drawImage(canvas) noised, equal to the WebGL canvas's"
+C82 = "C82 OffscreenCanvas bitmaprenderer holding the bitmap: convertToBlob noised, equal to the WebGL OffscreenCanvas's"
+C83 = "C83 per-frame cost with a seed equals none (transferToImageBitmap 512 and 1080p, and transfer + transferFromImageBitmap display 1080p)"
+LEAKS2 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const scene = (gl, w, h) => {
+    const sh = (type, src) => { const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER,
+      'attribute vec2 p;attribute vec3 k;varying vec3 v;varying vec2 q;void main(){v=k;q=p;gl_Position=vec4(p,0,1);}'));
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER,
+      'precision mediump float;varying vec3 v;varying vec2 q;void main(){gl_FragColor=vec4(v*(0.75+0.25*sin(q.x*40.0+q.y*17.0)),1);}'));
+    gl.linkProgram(pr); gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(
+      [-0.9, -0.8, 1, 0, 0,  0.85, -0.6, 0, 1, 0,  -0.1, 0.9, 0, 0, 1]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'), lk = gl.getAttribLocation(pr, 'k');
+    gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
+    gl.clearColor(0.2, 0.5, 0.8, 1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  const Hs = (str) => H(new TextEncoder().encode(str));
+  const R = {};
+  const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
+  scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
+  const mkTib = () => { const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
+    return oc.transferToImageBitmap(); };
+  const c2d = (w, h, opts) => { const c = document.createElement('canvas'); c.width = w; c.height = h;
+    return [c, c.getContext('2d', opts)]; };
+  const read2d = (src, wrf) => { const [, x] = c2d(64, 64, wrf ? { willReadFrequently: true } : {});
+    x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, 64, 64).data); };
+  R.ref = read2d(dom, true);
+  R.drawWrf = read2d(mkTib(), true);
+  R.drawGpu = read2d(mkTib(), false);
+  const pat = (src) => { const [, x] = c2d(64, 64, { willReadFrequently: true });
+    x.fillStyle = x.createPattern(src, 'no-repeat'); x.fillRect(0, 0, 64, 64);
+    return H(x.getImageData(0, 0, 64, 64).data); };
+  R.patBitmap = pat(mkTib()); R.patCanvas = pat(dom);
+  const vf = async (src) => { try { const f = new VideoFrame(src, { timestamp: 0 });
+    const b = new Uint8Array(f.allocationSize()); await f.copyTo(b); const fmt = f.format; f.close();
+    return fmt + ':' + H(b); } catch (e) { return 'err:' + e.message; } };
+  R.vfBitmap = await vf(mkTib()); R.vfCanvas = await vf(dom);
+  R.cibPlain = read2d(await createImageBitmap(mkTib()), true);
+  const crop = (src, sx) => { const [, x] = c2d(40, 40, { willReadFrequently: true });
+    if (sx) x.drawImage(src, 8, 8, 40, 40, 0, 0, 40, 40); else x.drawImage(src, 0, 0);
+    return H(x.getImageData(0, 0, 40, 40).data); };
+  R.cibCrop = crop(await createImageBitmap(mkTib(), 8, 8, 40, 40), false); R.cropRef = crop(dom, true);
+  const wsrc = `const H = ${H.toString()};
+    onmessage = (e) => { const c = new OffscreenCanvas(64, 64); const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(e.data, 0, 0); postMessage(H(x.getImageData(0, 0, 64, 64).data)); };`;
+  const viaWorker = (transfer) => new Promise((resolve, reject) => {
+    const w = new Worker(URL.createObjectURL(new Blob([wsrc], { type: 'text/javascript' })));
+    w.onmessage = (e) => resolve(e.data); w.onerror = (e) => reject(new Error(e.message || 'worker error'));
+    const b = mkTib(); if (transfer) w.postMessage(b, [b]); else w.postMessage(b); });
+  R.xfer = await viaWorker(true); R.clone = await viaWorker(false);
+  const br = () => { const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    c.getContext('bitmaprenderer').transferFromImageBitmap(mkTib()); return c; };
+  const blobHash = (c) => new Promise((res) => c.toBlob((b) => b.arrayBuffer().then((a) => res(H(new Uint8Array(a))))));
+  R.brData = Hs(br().toDataURL()); R.refData = Hs(dom.toDataURL());
+  R.brBlob = await blobHash(br()); R.refBlob = await blobHash(dom);
+  R.brDraw = read2d(br(), true);
+  const offBlob = async (oc) => H(new Uint8Array(await (await oc.convertToBlob()).arrayBuffer()));
+  const ocw = new OffscreenCanvas(64, 64); scene(ocw.getContext('webgl2'), 64, 64); R.refOffBlob = await offBlob(ocw);
+  const ocb = new OffscreenCanvas(64, 64); ocb.getContext('bitmaprenderer').transferFromImageBitmap(mkTib());
+  R.brOffBlob = await offBlob(ocb);
+  // cost per frame: the transfer alone (worker loop), and transfer + display on a bitmaprenderer canvas
+  const csrc = `onmessage = (e) => { const [w, h, n] = e.data; const oc = new OffscreenCanvas(w, h); const gl = oc.getContext('webgl2');
+    const t = []; for (let r = 0; r < 5; r++) { const a = performance.now();
+      for (let i = 0; i < n; i++) { gl.clearColor(i / n, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); oc.transferToImageBitmap().close(); }
+      t.push((performance.now() - a) / n); }
+    t.sort((a, b) => a - b); postMessage(t[2]); };`;
+  const cost = (w, h) => new Promise((resolve) => { const wk = new Worker(URL.createObjectURL(new Blob([csrc])));
+    wk.onmessage = (e) => resolve(+e.data.toFixed(4)); wk.postMessage([w, h, 20]); });
+  R.cost512 = await cost(512, 512); R.cost1080 = await cost(1920, 1080);
+  { const oc = new OffscreenCanvas(1920, 1080); const gl = oc.getContext('webgl2');
+    const c = document.createElement('canvas'); c.width = 1920; c.height = 1080; const b = c.getContext('bitmaprenderer');
+    const t = []; for (let r = 0; r < 5; r++) { const a = performance.now();
+      for (let i = 0; i < 20; i++) { gl.clearColor(i / 20, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); b.transferFromImageBitmap(oc.transferToImageBitmap()); }
+      t.push((performance.now() - a) / 20); }
+    t.sort((a, b2) => a - b2); R.costShow1080 = +t[2].toFixed(4); }
+  return R;
+}"""
+
+
+def leaks2_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS2, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83):
+                results[row] = False
+            notes.append(f"C75-C83: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(key):    # seed A moves the none value, seed B moves A's, A again reproduces A
+        return (arms["A"][key] != arms["none"][key] and arms["A"][key] != arms["B"][key]
+                and arms["A"][key] == arms["A2"][key])
+
+    def equals(key, ref):   # in every arm, the consumer's value is the WebGL canvas's own read
+        return all(a[key] == a[ref] for a in arms.values())
+
+    if not noised("ref"):
+        for row in (C75, C76, C77, C78, C79, C80, C81, C82, C83):
+            mark_unmeasured(row, "drawImage(webglCanvas) is not noised across the arms: nothing to compare the bitmaps with")
+        return
+    results[C75] = noised("drawWrf") and equals("drawWrf", "ref") and noised("drawGpu") and equals("drawGpu", "ref")
+    results[C76] = noised("patBitmap") and equals("patBitmap", "patCanvas")
+    if any(a["vfBitmap"].startswith("err:") or a["vfCanvas"].startswith("err:") for a in arms.values()):
+        mark_unmeasured(C77, f"VideoFrame unavailable: {arms['A']['vfBitmap']} / {arms['A']['vfCanvas']}")
+    else:
+        results[C77] = noised("vfBitmap") and equals("vfBitmap", "vfCanvas")
+    results[C78] = noised("cibPlain") and equals("cibPlain", "ref") and noised("cibCrop") and equals("cibCrop", "cropRef")
+    results[C79] = noised("xfer") and equals("xfer", "ref")
+    results[C80] = noised("clone") and equals("clone", "ref")
+    results[C81] = (noised("brData") and equals("brData", "refData") and noised("brBlob") and equals("brBlob", "refBlob")
+                    and noised("brDraw") and equals("brDraw", "ref"))
+    results[C82] = noised("brOffBlob") and equals("brOffBlob", "refOffBlob")
+
+    def cheap(key):     # a flag, not a readback: within noise of none (an eager readback was 2.4 and 18 ms)
+        return all(arms[s][key] <= 2 * arms["none"][key] + 0.25 for s in ("A", "B", "A2"))
+
+    results[C83] = cheap("cost512") and cheap("cost1080") and cheap("costShow1080")
+    for arm, a in arms.items():
+        notes.append(f"C75-C83 {arm}: ref {a['ref']} draw {a['drawWrf']}/{a['drawGpu']} pat {a['patBitmap']}/{a['patCanvas']} "
+                     f"vf {a['vfBitmap']}/{a['vfCanvas']} cib {a['cibPlain']} crop {a['cibCrop']}/{a['cropRef']} "
+                     f"xfer {a['xfer']} clone {a['clone']} br {a['brData']}/{a['refData']} {a['brBlob']}/{a['refBlob']} "
+                     f"{a['brDraw']} off {a['brOffBlob']}/{a['refOffBlob']} "
+                     f"cost {a['cost512']} {a['cost1080']} show {a['costShow1080']} ms")
+
+
+leaks2_rows()
+
+EXPECTED = 91   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
