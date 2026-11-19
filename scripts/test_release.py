@@ -1,3 +1,4 @@
+import io
 import json
 import pathlib
 import sys
@@ -390,18 +391,56 @@ def test_refuses_two_archives_of_one_stamp(monkeypatch, stamps, tmp_path):
     refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(a), "--asset", str(b)))
 
 
+def tar_with_stamp(path, stamp_bytes, link=None):
+    """A platform .tar.xz (or .tgz) embedding stamp_bytes; link adds a symlink member pointing at that target."""
+    path.parent.mkdir(exist_ok=True)
+    mode = "w:gz" if path.name.endswith(".tgz") else "w:xz"
+    with tarfile.open(path, mode) as t:
+        for name, data in (("camoucrome-x/chrome.exe", b"MZ clean"), ("camoucrome-x/camoucrome-release.json", stamp_bytes)):
+            ti = tarfile.TarInfo(name)
+            ti.size = len(data)
+            t.addfile(ti, io.BytesIO(data))
+        if link:
+            ti = tarfile.TarInfo("camoucrome-x/lib.so")
+            ti.type, ti.linkname = tarfile.SYMTYPE, link
+            t.addfile(ti)
+    return path
+
+
 def test_a_zip_and_a_tar_xz_of_one_stamp_proceed(monkeypatch, stamps, tmp_path):
     """Windows ships the same tree twice: zip for manual install, .tar.xz as the smaller download."""
     a, b = both_archives(tmp_path, stamps)
     paths, _ = stamps
-    src = tmp_path / "x" / "camoucrome-x"
-    src.mkdir(parents=True)
-    (src / "chrome.exe").write_bytes(b"MZ clean")
-    (src / "camoucrome-release.json").write_bytes(paths[0].read_bytes())
-    xz = tmp_path / "as" / f"camoucrome-{V}-windows-x64.tar.xz"
-    with tarfile.open(xz, "w:xz") as t:
-        t.add(src, arcname=src.name)
+    xz = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.tar.xz", paths[0].read_bytes())
     assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(a), "--asset", str(xz), "--asset", str(b))) == 0
+
+
+@pytest.mark.parametrize("second", ["windows-x64-again.tar.xz", "windows-x64.tgz"])
+def test_refuses_two_tar_archives_of_one_stamp(monkeypatch, stamps, tmp_path, second):
+    a, b = both_archives(tmp_path, stamps)
+    paths, _ = stamps
+    x1 = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.tar.xz", paths[0].read_bytes())
+    x2 = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-{second}", paths[0].read_bytes())
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=tuple(sum((["--asset", str(x)] for x in (a, x1, x2, b)), [])))
+
+
+def test_refuses_a_windows_stamp_without_its_zip(monkeypatch, stamps, tmp_path, capsys):
+    """The README's manual install unpacks the zip (Windows 10's tar has no xz), so a release without it is broken."""
+    paths, _ = stamps
+    xz = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.tar.xz", paths[0].read_bytes())
+    lx = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-linux-x64.tar.xz", paths[1].read_bytes())
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(xz), "--asset", str(lx)))
+    assert "zip" in capsys.readouterr().err
+
+
+def test_refuses_a_symlink_target_holding_a_term(monkeypatch, stamps, tmp_path, capsys):
+    """tar keeps a symlink's target path in linkname, which the member data scan never reads."""
+    a, b = both_archives(tmp_path, stamps)
+    paths, _ = stamps
+    xz = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.tar.xz", paths[0].read_bytes(),
+                        link=f"/home/{TERM}/lib.so")
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(a), "--asset", str(xz), "--asset", str(b)))
+    assert "private term" in capsys.readouterr().err
 
 
 def test_refuses_a_tar_header_holding_a_term(monkeypatch, stamps, tmp_path, capsys):

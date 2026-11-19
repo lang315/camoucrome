@@ -104,7 +104,8 @@ def tar_owners(path):
     if name.endswith((".tar", ".tgz")) or ".tar." in name:
         with tarfile.open(path) as t:
             for m in t:
-                yield m.name, f"{m.uname}\n{m.gname}".encode()
+                # linkname: a symlink's target path, which the member data scan never reads
+                yield m.name, f"{m.uname}\n{m.gname}\n{m.linkname}".encode()
 
 
 def scan_archive(path, terms):
@@ -230,6 +231,11 @@ def main(argv):
             return refuse(f"no archive embeds {missing}")
         if len(set(matched)) != len(matched):
             return refuse("two platform archives embed the same --stamp")
+        # the README's manual Windows install unpacks the zip: Windows 10's tar (bsdtar 3.5.2, zlib only) has no xz
+        no_zip = [a.stamp[i] for i, b in enumerate(stamp_bytes)
+                  if "windows" in json.loads(b).get("name", "") and (i, "zip") not in matched]
+        if no_zip:
+            return refuse(f"no zip embeds the Windows stamp {no_zip}")
     for p in a.asset:
         try:
             for member, label in scan_archive(p, terms):

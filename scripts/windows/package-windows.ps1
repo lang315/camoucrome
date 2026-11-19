@@ -1,4 +1,4 @@
-# Package the native Windows build (out\Release) into a release zip.
+# Package the native Windows build (out\Release) into a release zip and the same tree as .tar.xz.
 # Launch with: powershell.exe -NoProfile -ExecutionPolicy Bypass -File package-windows.ps1
 # Run from the tree extract; the commit is the change-set commit it was archived from
 # (tree.commit sits beside the tree directory).

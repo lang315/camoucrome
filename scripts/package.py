@@ -342,6 +342,9 @@ def main():
     if not a.no_archive:
         path = archive(staging, a.platform)
         print(f"archive {path} ({path.stat().st_size // (1 << 20)} MB)")
+        xz = pathlib.Path(str(staging) + ".tar.xz")
+        if path.suffix == ".zip" and xz.is_file():
+            print(f"archive {xz} ({xz.stat().st_size // (1 << 20)} MB)")
 
 
 if __name__ == "__main__":
