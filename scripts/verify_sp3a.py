@@ -2959,8 +2959,20 @@ C94 = ("C94 mean OffscreenCanvas::PushFrame per commit under a blink trace, seed
        "(CamouFrameNoise defer=deferred is traced): a commit no longer walks the worker's recordings")
 C95 = ("C95 heavy 2D worker (120 paths + 20 text lines per rAF frame, 12 frames, read, then 20 frames, read, then one frame of 8 heavy scenes applied by the idle walk and a tiny frame on top, read): "
        "the placeholder's toBlob, toDataURL, drawImage equal the worker's own convertToBlob after each, noised (A != none, A != B, A == A again); the second read is past the queue's 16-job cap, so the oldest "
-       "unwalked recording was dropped on both sides alike (traced: a committed frame carried 16)")
-SOFT_ROWS = SOFT_ROWS + (C90, C93, C94)
+       "unwalked recording left the queue (parked) on both sides alike (traced: a committed frame carried 16 and at least one recording was shed)")
+C96 = ("C96 re-read: a heavy 2D worker draws only the top half in 20 rAF frames, then only the bottom half in 40 more without ever idling or reading; the page reads "
+       "after the first 20 (the worker has already shed some of their recordings, and the signal finds them parked) and again after the 40: the top rows of the "
+       "second read equal the first's, and the worker's own read of them (noised: A != none, A != B, A == A again); the trace shows the cap crossed, "
+       "recordings parked, a signal received and seen recordings walked")
+C97 = ("C97 the same reads as C87-C89 and C91 (toBlob, toDataURL, drawImage, createImageBitmap, the second frame) on a 2D scene with no drawn image, so its recordings "
+       "can be carried unapplied: equal to the worker's own read and to a main-thread canvas, noised (A != none, A != B, A == A again); the trace shows frames "
+       "committed deferred")
+C99 = ("C99 a read whose signal outlives its worker: the page reads, the worker is terminated at once, the page reads again (the placeholder keeps its last frame: the same "
+       "noise, no crash), the canvas leaves the page and a second canvas and worker do the same; and with no seed a run emits no frame-noise, signal, parking or replay trace event "
+       "at all (nothing is recorded, posted or parked)")
+C98 = ("C98 captureStream(placeholder) of a busy heavy 2D worker: the main thread's replays of consecutive frames continue the last one's walk (>= half 'continue'), "
+       "and its per-frame cost, seed vs none, is reported")
+SOFT_ROWS = SOFT_ROWS + (C90, C93, C94, C98)
 PH_SCENES = """
   const scene2d = (c, v) => { const x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, c.width, c.height);
     g.addColorStop(0, v ? '#1f6' : '#f60'); g.addColorStop(1, v ? '#f16' : '#16f'); x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
@@ -2984,6 +2996,19 @@ PH_SCENES = """
     gl.enableVertexAttribArray(lk); gl.vertexAttribPointer(lk, 3, gl.FLOAT, false, 20, 8);
     gl.clearColor(0.2, 0.5, 0.8, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, 3); };
 """
+# the same scene without the drawn patch: a drawn image makes the context apply its queue at once, so no frame of it carries recordings
+# unapplied. An aa ellipse stroke in a different mask chunk in each frame takes the patch's place.
+_cut_a = PH_SCENES.index("    // an imported patch")
+_cut_b = PH_SCENES.index("x.drawImage(patch, v ? 8 : 40, v ? 200 : 40); };") + len("x.drawImage(patch, v ? 8 : 40, v ? 200 : 40); };")
+# the patch as 256 one-pixel opaque fillRects (a solid draw clears the cells it covers: the mask keeps noise off them, as it did off the
+# drawn patch) plus an aa ellipse stroke: a replay that is skipped or wrong noises the patch, which the scene's own gradient edges do not show
+PH_SCENES_DEFERRED = (PH_SCENES[:_cut_a] +
+                      "    for (let i = 0; i < 256; i++) { const h = Math.imul(i + 1, 2654435761) >>> 0;\n"
+                      "      x.fillStyle = 'rgb(' + (h & 255) + ',' + ((h >> 8) & 255) + ',' + ((h >> 16) & 255) + ')';\n"
+                      "      x.fillRect((v ? 8 : 40) + i % 16, (v ? 200 : 40) + ((i / 16) | 0), 1, 1); }\n"
+                      "    x.strokeStyle = 'rgba(0,0,0,0.7)'; x.lineWidth = 3; x.beginPath(); x.ellipse(c.width / 2, v ? 120 : 160, 20, 12, 0, 0, 7); x.stroke(); };" +
+                      PH_SCENES[_cut_b:])
+assert PH_SCENES_DEFERRED != PH_SCENES and "drawImage(patch" not in PH_SCENES_DEFERRED
 LEAKS6 = """async () => {
   const H = (u8) => { let h = 2166136261;
     for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
@@ -3047,6 +3072,8 @@ LEAKS6 = """async () => {
   }
   return R;
 }""".replace("__SCENES__", PH_SCENES)
+LEAKS6_DEFERRED = LEAKS6.replace(PH_SCENES, PH_SCENES_DEFERRED)
+assert LEAKS6_DEFERRED != LEAKS6
 # a worker bitmaprenderer on the placeholder: the frames it commits are copies of a WebGL transfer
 LEAKS8 = """async () => {
   const H = (u8) => { let h = 2166136261;
@@ -3261,7 +3288,16 @@ def placeholder_rows():
         soft[C93] = not over
 
 
-placeholder_rows()
+# CAMOU_SP3A_ONLY=ph,c95,c96,c97,c98 runs only those row groups (mutant runs: the rows of the other groups are then absent)
+ONLY = {t for t in os.environ.get("CAMOU_SP3A_ONLY", "").split(",") if t}
+
+
+def want(tag):
+    return not ONLY or tag in ONLY
+
+
+if want("ph"):
+    placeholder_rows()
 
 
 def push_durations(events):
@@ -3301,6 +3337,22 @@ def push_by_status(events):
 def max_defer_jobs(events):
     """The most unwalked recordings any committed frame carried (the 'jobs' trace arg of CamouFrameNoise)."""
     return max([(ev.get("args") or {}).get("jobs", 0) for ev in events if ev.get("name") == "CamouFrameNoise"] or [0])
+
+
+def max_arg(events, name, arg):
+    """The largest value of a trace arg over the instants called `name` (the counters it reports only grow)."""
+    return max([(ev.get("args") or {}).get(arg, 0) for ev in events if ev.get("name") == name] or [0])
+
+
+def replay_stats(events):
+    """(replays, mean ms of a CamouDeferredReplay, {mode: count}) of the main thread's walks of the frames the page read."""
+    durs = [ev["dur"] / 1000.0 for ev in events if ev.get("name") == "CamouDeferredReplay" and ev.get("ph") == "X" and "dur" in ev]
+    modes = {}
+    for ev in events:
+        if ev.get("name") == "CamouReplayMode":
+            m = (ev.get("args") or {}).get("mode", "?")
+            modes[m] = modes.get(m, 0) + 1
+    return len(durs), (sum(durs) / len(durs) if durs else 0.0), modes
 
 
 def defer_counts(events):
@@ -3416,11 +3468,12 @@ def deferral_rows():
             mark_unmeasured(C95, "trace session failed")
         else:
             most = max_defer_jobs(events)
-            notes.append(f"C95 most recordings one committed frame carried unwalked: {most} (the cap is 16)")
+            shed = max_arg(events, "CamouParked", "parked")
+            notes.append(f"C95 most recordings one committed frame carried unwalked: {most} (the cap is 16); recordings shed from the queue and parked: {shed}")
             if any(v["blob" + k] != v["cur" + k] or v["url" + k] != v["refUrl" + k] or v["draw" + k] != v["refDraw" + k] for k in legs):
                 results[C95] = False
-            if most < 16:
-                mark_unmeasured(C95, f"the worker's idle walk kept the backlog at {most} < 16: the drop was not crossed")
+            if most < 16 or shed < 1:
+                mark_unmeasured(C95, f"the worker's idle walk kept the backlog at {most} < 16 / {shed} shed: the cap was not crossed")
     if os.environ.get("CAMOU_SP3A_NO_COST") == "1":
         mark_unmeasured(C94, "CAMOU_SP3A_NO_COST=1")
         return
@@ -3454,7 +3507,10 @@ def deferral_rows():
     # the seeded runs must have deferred frames: a row that measures a build that never defers measures nothing about the deferral
     no_defer = [k for k, cs in deferred.items() if not any(c.get("deferred", 0) for c in cs)]
     notes.append(f"C94 over none + 0.5 ms: {over}; no deferred commit in any seeded run: {no_defer}")
-    soft[C94] = not over and not no_defer
+    low = [k for k, cs in deferred.items()
+           if any(c.get("deferred", 0) < 0.9 * sum(c.values()) for c in cs)]
+    notes.append(f"C94 a seeded run with under 90 % of its commits deferred: {low}")
+    soft[C94] = not over and not no_defer and not low
     # the cost moves to the page's read: report it (not a row). The read of a main-thread canvas and of a placeholder both include
     # the raster and the readback, so each arm's cost is what the seed adds to the same read: seed minus none, per scene
     reads = {"none": [], "A": []}
@@ -3478,9 +3534,254 @@ def deferral_rows():
                        ("main-thread canvas first read", "m1"), ("main-thread canvas again", "m2"))))
 
 
-deferral_rows()
+if want("c95"):
+    deferral_rows()
 
-EXPECTED = 100   # the soft rows (SOFT_ROWS) are not counted
+# the top half only (12 frames), then the bottom half only (40 frames): no worker read, no idle; what the page read of the top must stay
+LEAKS11 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const W = 512, HT = 512, ROWS = 192;
+  const wsrc = `const heavyHalf = (c, n, yo) => { const x = c.getContext('2d'); if (n === 0) { x.fillStyle = '#16f'; x.fillRect(0, 0, c.width, c.height); }
+      x.font = '14px sans-serif';
+      for (let i = 0; i < 120; i++) { const px = (n * 7 + i * 37) % c.width, py = yo + (n * 5 + i * 53) % 256;
+        x.beginPath(); x.moveTo(px, py); x.bezierCurveTo(px + 30, py - 20, px + 50, py + 40, px + 80, py + 10); x.lineTo(px + 40, py + 60); x.closePath();
+        x.fillStyle = 'rgba(' + ((i * 11) % 255) + ',' + ((i * 23) % 255) + ',' + ((i * 47) % 255) + ',0.6)'; x.fill();
+        x.strokeStyle = '#fff'; x.lineWidth = 2; x.stroke(); }
+      for (let i = 0; i < 20; i++) x.fillText('camoucrome ' + i + ' ' + n, (n * 3 + i * 91) % c.width, yo + (i * 41 + n) % 256 + 14); };
+    let off;
+    onmessage = async (e) => { const [k, o, n1, n2] = e.data; if (o) off = o;
+      if (k === 'cur') { postMessage(await (await off.convertToBlob()).arrayBuffer()); return; }
+      let i = 0; const f = () => { heavyHalf(off, i, i < n1 ? 0 : 256); i++; if (i === n1) postMessage('phase1');
+        if (i < n1 + n2) requestAnimationFrame(f); else postMessage('done'); };
+      requestAnimationFrame(f); };`;
+  const w = new Worker(URL.createObjectURL(new Blob([wsrc])));
+  const waiting = {};
+  const wait = (k) => new Promise((r) => { waiting[k] = r; });
+  w.onmessage = (e) => { const k = typeof e.data === 'string' ? e.data : 'cur'; if (waiting[k]) waiting[k](e.data); };
+  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); }); };
+  const top = (src) => { const d = document.createElement('canvas'); d.width = W; d.height = HT;
+    const x = d.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, W, ROWS).data); };
+  const c = document.createElement('canvas'); c.width = W; c.height = HT; document.body.appendChild(c);
+  const off = c.transferControlToOffscreen();
+  const p1 = wait('phase1'), pd = wait('done');
+  w.postMessage(['run', off, 20, 40], [off]);
+  await p1; await frames(2);
+  const R = {};
+  R.r1 = top(c);
+  await pd;
+  R.r2 = top(c);
+  const cur = wait('cur'); w.postMessage(['cur']);
+  R.cur = top(await createImageBitmap(new Blob([new Uint8Array(await cur)], { type: 'image/png' })));
+  w.terminate();
+  return R;
+}"""
+
+
+_a = LEAKS11.index("const wsrc = `") + len("const wsrc = `")
+HALF_WORKER = LEAKS11[_a:LEAKS11.index("`;\n  const w = new Worker")]
+LEAKS13 = """async () => {
+  const H = (u8) => { let h = 2166136261;
+    for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+    return h.toString(16); };
+  const W = 512, HT = 512, ROWS = 192;
+  const wsrc = `__HALF__`;
+  const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); }); };
+  const top = (src) => { const d = document.createElement('canvas'); d.width = W; d.height = HT;
+    const x = d.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); return H(x.getImageData(0, 0, W, ROWS).data); };
+  const R = {};
+  for (const round of [0, 1]) {
+    const w = new Worker(URL.createObjectURL(new Blob([wsrc])));
+    let seen; const p1 = new Promise((r) => { seen = r; });
+    w.onmessage = (e) => { if (e.data === 'phase1') seen(); };
+    const c = document.createElement('canvas'); c.width = W; c.height = HT; document.body.appendChild(c);
+    const off = c.transferControlToOffscreen();
+    w.postMessage(['run', off, 20, 40], [off]);
+    await p1; await frames(2);
+    R['a' + round] = top(c);       // the signal of this read is on its way to the worker
+    w.terminate();                 // the worker dies with it unprocessed
+    await frames(4);
+    R['b' + round] = top(c);       // the placeholder keeps its last frame
+    c.remove();                    // and the canvas leaves the page
+    await frames(2);
+  }
+  R.alive = true;
+  return R;
+}""".replace("__HALF__", HALF_WORKER)
+
+# the same heavy frames on a main-thread canvas, captured: the reference for what a seeded capture costs a main thread that walks its own recordings
+LEAKS14 = """async () => {
+  const W = 512, HT = 512;
+  __HEAVY__
+  const c = document.createElement('canvas'); c.width = W; c.height = HT; document.body.appendChild(c);
+  const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30); v.play().catch(() => {});
+  let n = 0; const cb = () => { n++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb);
+  const t0 = performance.now();
+  await new Promise((res) => { let i = 0; const f = () => { heavy2d(c, i); if (++i < 150) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+  return { frames: n, ms: +(performance.now() - t0).toFixed(0) };
+}""".replace("__HEAVY__", HEAVY2D)
+
+
+def lifecycle_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS13, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v or not v.get("alive"):
+            results[C99] = False
+            notes.append(f"C99: arm {name}: {e if v is None else v}")
+            return
+        arms[name] = v
+    for name, a in arms.items():
+        notes.append(f"C99 {name}: round 1 read {a['a0']} then after terminate {a['b0']}; round 2 read {a['a1']} then {a['b1']}")
+    results[C99] = (all(a["a0"] == a["b0"] and a["a1"] == a["b1"] for a in arms.values())
+                    and arms["A"]["a0"] != arms["none"]["a0"] and arms["A"]["a0"] == arms["A2"]["a0"])
+    # no seed: nothing is recorded, posted or parked, so none of the trace events of this change is emitted
+    v, events = traced_events(None, LEAKS13, GL_ROW_FLAGS)
+    if v is None:
+        notes.append(f"C99: trace session: {events}")
+        mark_unmeasured(C99, "trace session failed")
+        return
+    names = ("CamouFrameNoise", "CamouParked", "CamouParkedWalk", "CamouFrameRead", "CamouReplayMode", "CamouDeferredReplay")
+    seen = {n: sum(1 for ev in events if ev.get("name") == n) for n in names}
+    pushes = sum(1 for ev in events if ev.get("name") == "OffscreenCanvas::PushFrame")
+    notes.append(f"C99 no seed: trace events of this change {seen}; PushFrame events {pushes}")
+    if any(seen.values()):
+        results[C99] = False
+    if results[C99] and pushes < 5:
+        mark_unmeasured(C99, f"only {pushes} PushFrame events in the trace of the unseeded run")
+
+
+def reread_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS11, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            results[C96] = False
+            notes.append(f"C96: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+    for name, a in arms.items():
+        notes.append(f"C96 {name}: top rows read 1 {a['r1']} read 2 {a['r2']} worker's own {a['cur']}")
+    results[C96] = (all(a["r1"] == a["r2"] and a["r2"] == a["cur"] for a in arms.values())
+                    and arms["A"]["r2"] != arms["none"]["r2"] and arms["A"]["r2"] != arms["B"]["r2"] and arms["A"]["r2"] == arms["A2"]["r2"])
+    v, events = traced_events(json.dumps({"canvas:seed": 1111}), LEAKS11, GL_ROW_FLAGS)
+    if v is None:
+        notes.append(f"C96: trace session: {events}")
+        mark_unmeasured(C96, "trace session failed")
+        return
+    parked, evicted = max_arg(events, "CamouParked", "parked"), max_arg(events, "CamouParked", "evicted")
+    signals = max_arg(events, "CamouFrameRead", "signals")
+    walked, seen = max_arg(events, "CamouParkedWalk", "walked"), max_arg(events, "CamouParkedWalk", "seen")
+    notes.append(f"C96 trace: shed and parked {parked}, evicted unwalked {evicted}, signals received {signals}, parked walked {walked}, "
+                 f"seen recordings walked instead of dropped {seen}, most carried by a frame {max_defer_jobs(events)}")
+    if v["r1"] != v["r2"] or v["r2"] != v["cur"]:
+        results[C96] = False
+    if results[C96] and (parked < 1 or signals < 1 or seen + walked < 1):
+        mark_unmeasured(C96, f"the run did not shed, signal and walk (parked {parked}, signals {signals}, walked {walked + seen})")
+
+
+if want("c96"):
+    reread_rows()
+
+
+def deferred_scene_rows():
+    arms = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
+                      ("A2", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS6_DEFERRED, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            results[C97] = False
+            notes.append(f"C97: arm {name}: {e if v is None else v['err']}")
+            return
+        arms[name] = v
+
+    def noised(kind, key):
+        return (arms["A"][kind][key] != arms["none"][kind][key] and arms["A"][kind][key] != arms["B"][kind][key]
+                and arms["A"][kind][key] == arms["A2"][kind][key])
+
+    def equals(key, ref):
+        return all(a["2d"][key] == a["2d"][ref] for a in arms.values())
+
+    results[C97] = (noised("2d", "blob") and noised("2d", "url") and noised("2d", "draw") and noised("2d", "cib") and noised("2d", "blob2")
+                    and equals("blob", "refBlob") and equals("blob", "cur") and equals("url", "refUrl") and equals("draw", "refDraw")
+                    and equals("cib", "refDraw") and equals("blob2", "refBlob2")
+                    and all(arms[a]["2d"]["blob2"] != arms[a]["2d"]["blob"] for a in ("A", "B")))
+    for name, a in arms.items():
+        k = a["2d"]
+        notes.append(f"C97 {name}: blob {k['blob']}/{k['refBlob']}/{k['cur']} url {k['url']}/{k['refUrl']} draw {k['draw']}/{k['refDraw']} "
+                     f"cib {k['cib']} cap {k['cap']} blob2 {k['blob2']}/{k['refBlob2']}")
+    v, events = traced_events(json.dumps({"canvas:seed": 1111}), LEAKS6_DEFERRED, GL_ROW_FLAGS)
+    if v is None:
+        notes.append(f"C97: trace session: {events}")
+        mark_unmeasured(C97, "trace session failed")
+        return
+    counts = defer_counts(events)
+    replays, mean_ms, modes = replay_stats(events)
+    notes.append(f"C97 frames committed by defer status: {counts}; replays on the main thread {replays} (mean {mean_ms:.1f} ms) {modes}")
+    if results[C97] and (not counts.get("deferred") or not replays):
+        mark_unmeasured(C97, f"no frame of the scene was committed deferred / read by a replay ({counts}): the deferred path was not reached")
+
+
+if want("c97"):
+    deferred_scene_rows()
+
+# captureStream(placeholder) of a worker that draws heavy frames without idling: the page reads every frame the stream takes
+LEAKS12 = """async () => {
+  const W = 512, HT = 512;
+  __HEAVY__
+  const wsrc = 'const heavy2d = ' + heavy2d.toString() + '; let off; onmessage = (e) => { const [k, o, n] = e.data; if (o) off = o;' +
+    ' let i = 0; const f = () => { heavy2d(off, i); if (++i < n) requestAnimationFrame(f); else postMessage("done"); }; requestAnimationFrame(f); };';
+  const w = new Worker(URL.createObjectURL(new Blob([wsrc])));
+  const c = document.createElement('canvas'); c.width = W; c.height = HT; document.body.appendChild(c);
+  const off = c.transferControlToOffscreen();
+  const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30); v.play().catch(() => {});
+  let n = 0; const cb = () => { n++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb);
+  const t0 = performance.now();
+  await new Promise((res) => { w.onmessage = () => res(); w.postMessage(['run', off, 150], [off]); });
+  const ms = performance.now() - t0;
+  w.terminate();
+  return { frames: n, ms: +ms.toFixed(0) };
+}""".replace("__HEAVY__", HEAVY2D)
+
+
+def capture_rows():
+    out = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111}))):
+        v, events = traced_events(cfg, LEAKS12, GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            mark_unmeasured(C98, f"capture session {name}: {events if v is None else v['err']}")
+            return
+        out[name] = (v, replay_stats(events), defer_counts(events))
+    (vn, _, _), (va, (replays, mean_ms, modes), counts) = out["none"], out["A"]
+    notes.append(f"C98 captureStream(placeholder), 150 heavy 512 frames, video frames seen / run ms: none {vn['frames']} / {vn['ms']}, seed {va['frames']} / {va['ms']}; "
+                 f"seed: {replays} replays on the main thread, mean {mean_ms:.1f} ms each (per frame read), modes {modes}, commits {counts}")
+    # the reference: the same frames drawn on a main-thread canvas and captured, where the page's own thread walks the recordings
+    ref = {}
+    for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111}))):
+        v, e = session(cfg, LEAKS14, extra_flags=GL_ROW_FLAGS)
+        if v is None or "err" in v:
+            notes.append(f"C98 main-thread canvas reference {name}: {e if v is None else v['err']}")
+            break
+        ref[name] = v
+    if len(ref) == 2:
+        notes.append(f"C98 reference, a MAIN-THREAD canvas with the same 150 frames captured: video frames / run ms: none {ref['none']['frames']} / {ref['none']['ms']}, "
+                     f"seed {ref['A']['frames']} / {ref['A']['ms']} (the walk is the page's own either way: this row reports, it asserts only the continuation)")
+    if replays < 5:
+        mark_unmeasured(C98, f"only {replays} frame reads were replays ({counts}): the stream did not read deferred frames")
+        return
+    cont = modes.get("continue", 0)
+    soft[C98] = cont * 2 >= replays
+
+
+if want("c98"):
+    capture_rows()
+
+if want("c99"):
+    lifecycle_rows()
+
+EXPECTED = 103   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
