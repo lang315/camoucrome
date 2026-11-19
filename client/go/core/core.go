@@ -30,6 +30,7 @@ type Host struct {
 	PlatformVersion string   // UA-CH platformVersion, N.N.N
 	Display         *Display // from the display probe
 	CPUVendor       string   // GenuineIntel or AuthenticAMD; "" (unknown) keeps every GPU claim
+	Renderer        string   // the host's WebGL renderer (RendererProbeJS, ParseRenderer), read in the config-free headless launch DisplayProbeJS uses, never under an identity config; "" (unknown) keeps WebGPU blocked
 }
 
 // Exit is the proxy exit: IANA zone and ISO-3166-1 alpha-2 country.
