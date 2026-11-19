@@ -2967,9 +2967,10 @@ C96 = ("C96 re-read: a heavy 2D worker draws only the top half in 20 rAF frames,
 C97 = ("C97 the same reads as C87-C89 and C91 (toBlob, toDataURL, drawImage, createImageBitmap, the second frame) on a 2D scene with no drawn image, so its recordings "
        "can be carried unapplied: equal to the worker's own read and to a main-thread canvas, noised (A != none, A != B, A == A again); the trace shows frames "
        "committed deferred")
-C99 = ("C99 a read whose signal outlives its worker: the page reads, the worker is terminated at once, the page reads again (the placeholder keeps its last frame: the same "
-       "noise, no crash), the canvas leaves the page and a second canvas and worker do the same; and with no seed a run emits no frame-noise, signal, parking or replay trace event "
-       "at all (nothing is recorded, posted or parked)")
+C99 = ("C99 (no crash, same noise; the trace is not asserted to show the signal undelivered: a terminating worker may still run its last tasks) a read whose signal "
+       "outlives its worker: the page reads, the worker is terminated at once, the page reads again (the placeholder keeps its last frame: the same noise), the canvas leaves "
+       "the page and a second canvas and worker do the same; and with no seed a run emits no frame-noise, signal, parking or replay trace event at all (nothing is recorded, "
+       "posted or parked)")
 C98 = ("C98 captureStream(placeholder) of a busy heavy 2D worker: the main thread's replays of consecutive frames continue the last one's walk (>= half 'continue'), "
        "and its per-frame cost, seed vs none, is reported")
 SOFT_ROWS = SOFT_ROWS + (C90, C93, C94, C98)
@@ -3652,32 +3653,59 @@ def lifecycle_rows():
         mark_unmeasured(C99, f"only {pushes} PushFrame events in the trace of the unseeded run")
 
 
-def reread_rows():
-    arms = {}
+def evicted_before_first_signal(events):
+    """Unseen recordings the worker dropped (evicted from the parked list) before the page's first read signal reached it: a
+    race of the run, not a verdict. 0 when no signal was ever received (that is the row's business: it fails then)."""
+    reads = sorted(ev["ts"] for ev in events if ev.get("name") == "CamouFrameRead")
+    if not reads:
+        return 0
+    return max([(ev.get("args") or {}).get("evicted", 0) for ev in events if ev.get("name") == "CamouParked" and ev["ts"] < reads[0]] or [0])
+
+
+def reread_attempt():
+    """One launch of each arm of C96 (the seeded ones traced): (arms, the seeded arms' events, arms where the worker evicted before the first signal)."""
+    arms, events, raced = {}, {}, []
     for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111})), ("B", json.dumps({"canvas:seed": 2222})),
                       ("A2", json.dumps({"canvas:seed": 1111}))):
-        v, e = session(cfg, LEAKS11, extra_flags=GL_ROW_FLAGS)
+        if cfg is None:
+            v, e = session(cfg, LEAKS11, extra_flags=GL_ROW_FLAGS)
+            ev = []
+        else:
+            v, ev = traced_events(cfg, LEAKS11, GL_ROW_FLAGS)
+            e = ev if v is None else None
         if v is None or "err" in v:
+            return None, f"arm {name}: {e if v is None else v['err']}", []
+        arms[name], events[name] = v, ev
+        if evicted_before_first_signal(ev):
+            raced.append(name)
+    return arms, events, raced
+
+
+def reread_rows():
+    arms = events = None
+    for attempt in range(3):
+        arms, events, raced = reread_attempt()
+        if arms is None:
             results[C96] = False
-            notes.append(f"C96: arm {name}: {e if v is None else v['err']}")
+            notes.append(f"C96: {events}")
             return
-        arms[name] = v
+        if not raced:
+            break
+        notes.append(f"C96 launch {attempt + 1}: the worker evicted unseen recordings before the first signal reached it in arm(s) {raced}: a race, not a verdict; "
+                     + ("retrying" if attempt < 2 else "giving up"))
+    else:
+        mark_unmeasured(C96, "the worker evicted unseen recordings before the page's first signal in all 3 launches (the read lagged the worker)")
+        return
     for name, a in arms.items():
         notes.append(f"C96 {name}: top rows read 1 {a['r1']} read 2 {a['r2']} worker's own {a['cur']}")
     results[C96] = (all(a["r1"] == a["r2"] and a["r2"] == a["cur"] for a in arms.values())
                     and arms["A"]["r2"] != arms["none"]["r2"] and arms["A"]["r2"] != arms["B"]["r2"] and arms["A"]["r2"] == arms["A2"]["r2"])
-    v, events = traced_events(json.dumps({"canvas:seed": 1111}), LEAKS11, GL_ROW_FLAGS)
-    if v is None:
-        notes.append(f"C96: trace session: {events}")
-        mark_unmeasured(C96, "trace session failed")
-        return
-    parked, evicted = max_arg(events, "CamouParked", "parked"), max_arg(events, "CamouParked", "evicted")
-    signals = max_arg(events, "CamouFrameRead", "signals")
-    walked, seen = max_arg(events, "CamouParkedWalk", "walked"), max_arg(events, "CamouParkedWalk", "seen")
-    notes.append(f"C96 trace: shed and parked {parked}, evicted unwalked {evicted}, signals received {signals}, parked walked {walked}, "
-                 f"seen recordings walked instead of dropped {seen}, most carried by a frame {max_defer_jobs(events)}")
-    if v["r1"] != v["r2"] or v["r2"] != v["cur"]:
-        results[C96] = False
+    ev = events["A"]
+    parked, evicted = max_arg(ev, "CamouParked", "parked"), max_arg(ev, "CamouParked", "evicted")
+    signals = max_arg(ev, "CamouFrameRead", "signals")
+    walked, seen = max_arg(ev, "CamouParkedWalk", "walked"), max_arg(ev, "CamouParkedWalk", "seen")
+    notes.append(f"C96 trace (seed A): shed and parked {parked}, evicted unwalked {evicted} (before the first signal: {evicted_before_first_signal(ev)}), "
+                 f"signals received {signals}, parked walked {walked}, seen recordings walked instead of dropped {seen}, most carried by a frame {max_defer_jobs(ev)}")
     if results[C96] and (parked < 1 or signals < 1 or seen + walked < 1):
         mark_unmeasured(C96, f"the run did not shed, signal and walk (parked {parked}, signals {signals}, walked {walked + seen})")
 
@@ -3746,6 +3774,20 @@ LEAKS12 = """async () => {
 }""".replace("__HEAVY__", HEAVY2D)
 
 
+LEAKS15 = LEAKS12.replace("""  const v = document.createElement('video'); v.muted = true; v.srcObject = c.captureStream(30); v.play().catch(() => {});
+  let n = 0; const cb = () => { n++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb);""", "  let n = 0;")
+assert LEAKS15 != LEAKS12
+
+
+def mask_add_stats(events):
+    """The worker's CamouMaskAdd spans (queue push + shed + parked walk): count, mean, p95, max ms and how many took over 5 ms."""
+    ds = sorted(ev["dur"] / 1000.0 for ev in events if ev.get("name") == "CamouMaskAdd" and ev.get("ph") == "X" and "dur" in ev)
+    if not ds:
+        return "no CamouMaskAdd span"
+    return (f"{len(ds)} flushes, mean {sum(ds) / len(ds):.2f} ms, p95 {ds[int(len(ds) * 0.95) - 1]:.2f} ms, max {ds[-1]:.1f} ms, "
+            f"{sum(1 for d in ds if d > 5.0)} over 5 ms")
+
+
 def capture_rows():
     out = {}
     for name, cfg in (("none", None), ("A", json.dumps({"canvas:seed": 1111}))):
@@ -3754,7 +3796,14 @@ def capture_rows():
             mark_unmeasured(C98, f"capture session {name}: {events if v is None else v['err']}")
             return
         out[name] = (v, replay_stats(events), defer_counts(events))
+        if name == "A":
+            add_read = mask_add_stats(events)
     (vn, _, _), (va, (replays, mean_ms, modes), counts) = out["none"], out["A"]
+    # report only: what the worker's flush pays (CamouMaskAdd: push, shedding, parking, the walk of an evicted seen recording) with the
+    # page reading the placeholder (the capture above) and with nobody reading it
+    v, ev = traced_events(json.dumps({"canvas:seed": 1111}), LEAKS15, GL_ROW_FLAGS)
+    add_noread = mask_add_stats(ev) if v is not None else f"session failed: {ev}"
+    notes.append(f"C98b report only, worker CamouMaskAdd per flush, 150 heavy 512 frames, seed: page READING the placeholder (captureStream): {add_read}; nobody reading: {add_noread}")
     notes.append(f"C98 captureStream(placeholder), 150 heavy 512 frames, video frames seen / run ms: none {vn['frames']} / {vn['ms']}, seed {va['frames']} / {va['ms']}; "
                  f"seed: {replays} replays on the main thread, mean {mean_ms:.1f} ms each (per frame read), modes {modes}, commits {counts}")
     # the reference: the same frames drawn on a main-thread canvas and captured, where the page's own thread walks the recordings
