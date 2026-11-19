@@ -1,78 +1,28 @@
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-index f4b0524e29..4ee725f621 100644
+index 90948d7e00..4ee725f621 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
-@@ -556,9 +556,53 @@ CanvasRenderingContext::GetCanvasPerformanceMonitor() {
-   return *monitor;
- }
- 
-+void CanvasRenderingContext::CamouTagTransferred(StaticBitmapImage& image) {
-+  if (CamouNoiseScope(image)) {
-+    image.SetCamouWebGlPending(true);
-+  }
-+}
-+
-+// static
-+scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedPending(
-+    scoped_refptr<StaticBitmapImage> image) {
-+  if (!image || !image->CamouWebGlPending()) {
-+    return image;
-+  }
-+  // The global config: every scope resolves to it today, and the image may have
-+  // left the context (and its thread) that made it.
-+  const camoucfg::ConfigScope& scope = camoucfg::ScopeFor(nullptr);
-+  if (!camoucfg::CanvasSeed(scope)) {
-+    return image;
-+  }
-+  const SkColorType color_type =
-+      image->PaintImageForCurrentFrame().GetColorType();
-+  if (color_type != kRGBA_8888_SkColorType &&
-+      color_type != kBGRA_8888_SkColorType) {
-+    return image;
-+  }
-+  sk_sp<SkImage> sk_image = image->PaintImageForCurrentFrame().GetSwSkImage();
-+  if (!sk_image) {
-+    return image;
-+  }
-+  // WebGL: opaque pixels only, no coverage mask: as CamouNoised() on a WebGL
-+  // context.
-+  sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
-+      *sk_image, scope, /*min_alpha=*/255, camoucfg::NoiseMask(),
+@@ -588,7 +588,8 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoisedPending(
+   // context.
+   sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
+       *sk_image, scope, /*min_alpha=*/255, camoucfg::NoiseMask(),
+-      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
 +      image->Orientation() == ImageOrientationEnum::kOriginBottomLeft,
 +      camoucfg::NoiseDomain::kWebGl);
-+  if (!noised) {
-+    return image;
-+  }
-+  return UnacceleratedStaticBitmapImage::Create(std::move(noised),
-+                                                image->Orientation());
-+}
-+
- const camoucfg::ConfigScope* CanvasRenderingContext::CamouNoiseScope(
-     StaticBitmapImage& image) {
--  if (!Host() || !CamouNoiseEligible()) {
-+  // A pending image is noised whatever context holds or reads it (a
-+  // bitmaprenderer canvas is not eligible by itself: its other images are
-+  // imported pixels, left alone).
-+  if (!Host() || !(CamouNoiseEligible() || image.CamouWebGlPending())) {
-     return nullptr;
+   if (!noised) {
+     return image;
    }
-   const camoucfg::ConfigScope& scope =
-@@ -611,9 +655,12 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
-   const uint64_t generation = CamouNoiseMaskGeneration();
-   if (!camou_noised_ || camou_noised_from_ != sk_image->uniqueID() ||
-       camou_noised_generation_ != generation) {
-+    const bool pending = image->CamouWebGlPending();
+@@ -658,7 +659,8 @@ scoped_refptr<StaticBitmapImage> CanvasRenderingContext::CamouNoised(
      sk_sp<SkImage> noised = camoucfg::NoisedCanvasImage(
--        *sk_image, *scope, CamouNoiseMinAlpha(), CamouNoiseMask(),
+         *sk_image, *scope, pending ? uint8_t{255} : CamouNoiseMinAlpha(),
+         pending ? camoucfg::NoiseMask() : CamouNoiseMask(),
 -        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft);
-+        *sk_image, *scope, pending ? uint8_t{255} : CamouNoiseMinAlpha(),
-+        pending ? camoucfg::NoiseMask() : CamouNoiseMask(),
 +        image->Orientation() == ImageOrientationEnum::kOriginBottomLeft,
 +        pending ? camoucfg::NoiseDomain::kWebGl : CamouNoiseDomain());
      if (!noised) {
        return image;
      }
-@@ -673,7 +720,8 @@ SkBitmap CanvasRenderingContext::CamouNoisedRegion(
+@@ -718,7 +720,8 @@ SkBitmap CanvasRenderingContext::CamouNoisedRegion(
          return paint_image.readPixels(dst.info(), dst.writable_addr(),
                                        dst.rowBytes(), src_x, src_y);
        },
@@ -83,27 +33,10 @@ index f4b0524e29..4ee725f621 100644
  
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-index a2b32d4b3a..6e5ed1914a 100644
+index db483798bd..31ee94d695 100644
 --- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
 +++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
-@@ -183,6 +183,16 @@ class CORE_EXPORT CanvasRenderingContext
-   // canvas's own store, and so the screen, is never touched.
-   scoped_refptr<StaticBitmapImage> CamouNoised(
-       scoped_refptr<StaticBitmapImage> image);
-+  // Lazy noise for a transferToImageBitmap result: marks `image` (a fresh
-+  // transfer of this context, nothing else holds it yet) as holding raw pixels
-+  // when this context would noise a readback of it. No readback here.
-+  void CamouTagTransferred(StaticBitmapImage& image);
-+  // `image` as the page may read it: the same field CamouNoised() gives a WebGL
-+  // canvas's snapshot (one readback), as a new image that is not tagged, when
-+  // `image` is tagged; `image` itself otherwise or when the noise cannot run.
-+  // Every consumer that lets the page read a tagged image's pixels calls this.
-+  static scoped_refptr<StaticBitmapImage> CamouNoisedPending(
-+      scoped_refptr<StaticBitmapImage> image);
-   // getImageData's path (canvas noise S2c): the pixels of `rect` of `image`
-   // as CamouNoised(image) holds them, reading (from a GPU snapshot too) and
-   // noising only the rect plus a 1 px margin, on the premultiplied
-@@ -203,6 +213,11 @@ class CORE_EXPORT CanvasRenderingContext
+@@ -212,6 +212,11 @@ class CORE_EXPORT CanvasRenderingContext
    // The lowest alpha a pixel may have and still change; WebGL is
    // opaque-only.
    virtual uint8_t CamouNoiseMinAlpha() const { return 1; }
