@@ -11,11 +11,54 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
 
 #include "components/camoucfg/canvas_noise.h"
 
 namespace camoucfg {
+
+// A run of cell rows of a mask, immutable once made: shared by every snapshot
+// that holds those rows unchanged.
+class MaskChunk : public base::RefCountedThreadSafe<MaskChunk> {
+ public:
+  explicit MaskChunk(std::vector<uint8_t> bytes);
+  const std::vector<uint8_t>& bytes() const { return bytes_; }
+
+ private:
+  friend class base::RefCountedThreadSafe<MaskChunk>;
+  ~MaskChunk();
+  const std::vector<uint8_t> bytes_;
+};
+
+// The cells of a CanvasNoiseMask at one moment, in row chunks (kChunkRows cell
+// rows each), immutable and safe to hand to another thread: a worker takes one
+// per committed frame and the main thread flattens it when the page reads the
+// frame. A snapshot made from the previous one shares every chunk whose rows
+// did not change, so a frame costs the chunks a shape touched.
+class MaskSnapshot : public base::RefCountedThreadSafe<MaskSnapshot> {
+ public:
+  MaskSnapshot();
+
+  size_t width = 0;
+  size_t height = 0;
+  size_t stride = 0;
+  size_t rows = 0;
+  int shift = 0;
+  uint64_t generation = 0;
+  std::vector<scoped_refptr<const MaskChunk>> chunks;
+
+  // The cells as one contiguous buffer (stride * rows bytes), the layout
+  // CanvasNoiseMask::view() has.
+  std::vector<uint8_t> Flatten() const;
+  // A NoiseMask over `cells` (what Flatten() returned).
+  NoiseMask ViewOf(const std::vector<uint8_t>& cells) const;
+
+ private:
+  friend class base::RefCountedThreadSafe<MaskSnapshot>;
+  ~MaskSnapshot();
+};
 
 // Which pixels of one 2D canvas may carry readback noise (canvas noise S2b,
 // spec section 2). A cell holds kNoiseMaskAa (its value depends on the
@@ -63,6 +106,10 @@ class CanvasNoiseMask {
   NoiseMask view() const;
   // Bumps on every change, so a reader can key a cache on it.
   uint64_t generation() const { return generation_; }
+  // The cells as they are now, as a MaskSnapshot that shares with `prev` (a
+  // snapshot of this mask, or null) every chunk written to since. Null while no
+  // cell was ever written. Clears the written-chunk marks: one consumer.
+  scoped_refptr<const MaskSnapshot> Snapshot(const MaskSnapshot* prev);
   size_t width() const { return width_; }
   size_t height() const { return height_; }
 
@@ -70,6 +117,10 @@ class CanvasNoiseMask {
   // `coverage` == nullptr means 255 everywhere.
   void Apply(const uint8_t* coverage, size_t coverage_stride, int64_t left,
              int64_t top, int64_t right, int64_t bottom, Kind kind);
+  // Every write to cells_ marks the chunk of its cell row (Apply is the only
+  // writer: the clear, the first allocation and the mark).
+  void MarkDirty(size_t cell_row);
+  void MarkAllDirty();
 
   const size_t width_;
   const size_t height_;
@@ -79,6 +130,11 @@ class CanvasNoiseMask {
   std::vector<uint8_t> cells_;
   uint64_t generation_ = 0;
   size_t aa_cells_ = 0;  // cells whose byte equals kNoiseMaskAa
+  // Per chunk of kChunkRows cell rows: written since the last Snapshot(). A new
+  // mask starts all-dirty.
+  static constexpr size_t kChunkRows = 64;
+  std::vector<uint8_t> dirty_chunks_;
+  bool any_dirty_ = true;
 };
 
 // The mask of one 2D canvas, built when a read needs it instead of at every
@@ -135,6 +191,8 @@ class LazyCanvasNoiseMask {
   NoiseMask view() const;
   // Bumps on every change and never repeats, across resizes and resets too.
   uint64_t generation() const;
+  // CanvasNoiseMask::Snapshot() of the mask after the queue is applied.
+  scoped_refptr<const MaskSnapshot> Snapshot(const MaskSnapshot* prev) const;
 
   size_t pending_events() const { return pending_.size(); }
   size_t pending_bytes() const { return pending_bytes_; }

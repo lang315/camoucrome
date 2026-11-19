@@ -18,7 +18,9 @@ CanvasNoiseMask::CanvasNoiseMask(size_t width, size_t height)
       height_(height),
       shift_(width * height > kMaxFullResPixels ? 2 : 0),
       stride_((width + (size_t{1} << shift_) - 1) >> shift_),
-      rows_((height + (size_t{1} << shift_) - 1) >> shift_) {}
+      rows_((height + (size_t{1} << shift_) - 1) >> shift_) {
+  dirty_chunks_.assign((rows_ + kChunkRows - 1) / kChunkRows, 1);
+}
 
 CanvasNoiseMask::~CanvasNoiseMask() = default;
 
@@ -98,6 +100,7 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
             --aa_cells_;
           }
           cell = 0;
+          MarkDirty(static_cast<size_t>(cy));
           changed = true;
         }
       }
@@ -136,6 +139,7 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
       }
       if (cells_.empty()) {
         cells_.assign(stride_ * rows_, 0);
+        MarkAllDirty();
       }
       uint8_t& cell = cells_[cell_row + static_cast<size_t>(x >> shift_)];
       if ((cell & bit) != bit) {
@@ -143,6 +147,7 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
           --aa_cells_;
         }
         cell |= bit;
+        MarkDirty(static_cast<size_t>(y >> shift_));
         if (cell == kNoiseMaskAa) {
           ++aa_cells_;
         }
@@ -153,6 +158,70 @@ void CanvasNoiseMask::Apply(const uint8_t* coverage, size_t coverage_stride,
   if (changed) {
     ++generation_;
   }
+}
+
+void CanvasNoiseMask::MarkDirty(size_t cell_row) {
+  dirty_chunks_[cell_row / kChunkRows] = 1;
+  any_dirty_ = true;
+}
+
+void CanvasNoiseMask::MarkAllDirty() {
+  std::fill(dirty_chunks_.begin(), dirty_chunks_.end(), 1);
+  any_dirty_ = true;
+}
+
+MaskChunk::MaskChunk(std::vector<uint8_t> bytes) : bytes_(std::move(bytes)) {}
+MaskChunk::~MaskChunk() = default;
+MaskSnapshot::MaskSnapshot() = default;
+MaskSnapshot::~MaskSnapshot() = default;
+
+std::vector<uint8_t> MaskSnapshot::Flatten() const {
+  std::vector<uint8_t> flat;
+  flat.reserve(stride * rows);
+  for (const auto& chunk : chunks) {
+    flat.insert(flat.end(), chunk->bytes().begin(), chunk->bytes().end());
+  }
+  return flat;
+}
+
+NoiseMask MaskSnapshot::ViewOf(const std::vector<uint8_t>& cells) const {
+  return {cells.empty() ? nullptr : cells.data(), stride, shift, width, height};
+}
+
+scoped_refptr<const MaskSnapshot> CanvasNoiseMask::Snapshot(
+    const MaskSnapshot* prev) {
+  if (cells_.empty()) {
+    return nullptr;
+  }
+  const size_t count = dirty_chunks_.size();
+  // A generation that moved with no chunk marked means a write that did not
+  // mark its chunk: a missed mark is a stale frame, so copy everything.
+  const bool unmarked = prev && prev->generation != generation_ && !any_dirty_;
+  const bool shares = prev && !unmarked && prev->width == width_ &&
+                      prev->height == height_ && prev->shift == shift_ &&
+                      prev->chunks.size() == count;
+  auto snapshot = base::MakeRefCounted<MaskSnapshot>();
+  snapshot->width = width_;
+  snapshot->height = height_;
+  snapshot->stride = stride_;
+  snapshot->rows = rows_;
+  snapshot->shift = shift_;
+  snapshot->generation = generation_;
+  snapshot->chunks.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    if (shares && !dirty_chunks_[i] && prev->chunks[i]) {
+      snapshot->chunks.push_back(prev->chunks[i]);
+      continue;
+    }
+    const size_t first = i * kChunkRows;
+    const size_t last = std::min(rows_, first + kChunkRows);
+    snapshot->chunks.push_back(base::MakeRefCounted<MaskChunk>(
+        std::vector<uint8_t>(cells_.begin() + first * stride_,
+                             cells_.begin() + last * stride_)));
+  }
+  std::fill(dirty_chunks_.begin(), dirty_chunks_.end(), 0);
+  any_dirty_ = false;
+  return snapshot;
 }
 
 LazyCanvasNoiseMask::LazyCanvasNoiseMask() = default;
@@ -247,6 +316,12 @@ bool LazyCanvasNoiseMask::has_aa() const {
 NoiseMask LazyCanvasNoiseMask::view() const {
   Materialize();
   return mask_ ? mask_->view() : NoiseMask();
+}
+
+scoped_refptr<const MaskSnapshot> LazyCanvasNoiseMask::Snapshot(
+    const MaskSnapshot* prev) const {
+  Materialize();
+  return mask_ ? mask_->Snapshot(prev) : nullptr;
 }
 
 uint64_t LazyCanvasNoiseMask::generation() const {

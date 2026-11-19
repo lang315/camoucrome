@@ -658,5 +658,130 @@ TEST(LazyCanvasNoiseMaskTest, NothingQueuedReadsAsNoMask) {
   EXPECT_EQ(lazy.generation(), 0u);
 }
 
+
+// ---- MaskSnapshot: chunked snapshots that share untouched rows ----
+
+// 100 x 300 cells (shift 0): five chunks of 64 rows, the last of 44.
+constexpr size_t kW = 100;
+constexpr size_t kH = 300;
+
+void ExpectEqualsLive(const CanvasNoiseMask& m, const MaskSnapshot& s) {
+  const std::vector<uint8_t> flat = s.Flatten();
+  const NoiseMask v = m.view();
+  ASSERT_EQ(flat.size(), v.stride * ((v.height + (size_t{1} << v.shift) - 1) >> v.shift));
+  for (size_t i = 0; i < flat.size(); ++i) {
+    ASSERT_EQ(flat[i], UNSAFE_BUFFERS(v.cells[i])) << "cell " << i;
+  }
+}
+
+// Which chunks of `b` are not the very objects of `a`.
+std::vector<size_t> Replaced(const MaskSnapshot& a, const MaskSnapshot& b) {
+  std::vector<size_t> r;
+  for (size_t i = 0; i < b.chunks.size(); ++i) {
+    if (a.chunks[i] != b.chunks[i]) {
+      r.push_back(i);
+    }
+  }
+  return r;
+}
+
+TEST(MaskSnapshotTest, AnEmptyMaskHasNoSnapshotAndTheFirstMarkMakesOne) {
+  CanvasNoiseMask m(kW, kH);
+  EXPECT_EQ(m.Snapshot(nullptr), nullptr);
+  m.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto s = m.Snapshot(nullptr);
+  ASSERT_NE(s, nullptr);
+  EXPECT_EQ(s->chunks.size(), 5u);
+  ExpectEqualsLive(m, *s);
+}
+
+TEST(MaskSnapshotTest, TheMarkWriterReplacesOnlyTheChunkItTouched) {
+  CanvasNoiseMask m(kW, kH);
+  m.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto s1 = m.Snapshot(nullptr);
+  m.MarkRect(10, 200, 5, 5, Kind::kAa);  // row 200: chunk 3
+  auto s2 = m.Snapshot(s1.get());
+  ExpectEqualsLive(m, *s2);
+  EXPECT_EQ(Replaced(*s1, *s2), (std::vector<size_t>{3}));
+}
+
+TEST(MaskSnapshotTest, TheImportedMarkIsAWriterToo) {
+  CanvasNoiseMask m(kW, kH);
+  m.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto s1 = m.Snapshot(nullptr);
+  m.MarkRect(10, 100, 5, 5, Kind::kImported);  // chunk 1
+  auto s2 = m.Snapshot(s1.get());
+  ExpectEqualsLive(m, *s2);
+  EXPECT_EQ(Replaced(*s1, *s2), (std::vector<size_t>{1}));
+}
+
+TEST(MaskSnapshotTest, TheMergeWriterReplacesOnlyTheChunkItTouched) {
+  CanvasNoiseMask m(kW, kH);
+  m.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto s1 = m.Snapshot(nullptr);
+  const std::vector<uint8_t> cov = Coverage(8, 8, 128);
+  m.Merge(cov.data(), 8, 20, 130, 8, 8, Kind::kSolidOpaque);  // partial edge: aa, chunk 2
+  auto s2 = m.Snapshot(s1.get());
+  ExpectEqualsLive(m, *s2);
+  EXPECT_EQ(Replaced(*s1, *s2), (std::vector<size_t>{2}));
+}
+
+TEST(MaskSnapshotTest, TheClearWriterReplacesOnlyTheChunkItClears) {
+  CanvasNoiseMask m(kW, kH);
+  m.MarkRect(10, 10, 5, 5, Kind::kAa);     // chunk 0
+  m.MarkRect(10, 200, 5, 5, Kind::kAa);    // chunk 3
+  auto s1 = m.Snapshot(nullptr);
+  m.MarkRect(0, 0, kW, 64, Kind::kSolidOpaque);  // clears chunk 0's cells only
+  auto s2 = m.Snapshot(s1.get());
+  ExpectEqualsLive(m, *s2);
+  EXPECT_EQ(Replaced(*s1, *s2), (std::vector<size_t>{0}));
+  EXPECT_EQ(Cell(m, 12, 12), 0);
+  EXPECT_EQ(Cell(m, 12, 202), kNoiseMaskAa);
+}
+
+TEST(MaskSnapshotTest, NothingWrittenSharesEveryChunk) {
+  CanvasNoiseMask m(kW, kH);
+  m.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto s1 = m.Snapshot(nullptr);
+  auto s2 = m.Snapshot(s1.get());
+  EXPECT_TRUE(Replaced(*s1, *s2).empty());
+  ExpectEqualsLive(m, *s2);
+}
+
+TEST(MaskSnapshotTest, AFreshMaskSharesNothingWithAnOlderSnapshot) {
+  CanvasNoiseMask a(kW, kH);
+  a.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto sa = a.Snapshot(nullptr);
+  CanvasNoiseMask b(kW, kH);
+  b.MarkRect(10, 10, 5, 5, Kind::kAa);
+  auto sb = b.Snapshot(sa.get());
+  ExpectEqualsLive(b, *sb);
+  EXPECT_EQ(Replaced(*sa, *sb).size(), 5u);
+}
+
+TEST(MaskSnapshotTest, CoarseCellsAboveTheCapFlattenToTheLiveCells) {
+  CanvasNoiseMask m(4097, 4097);  // over kMaxFullResPixels: 4 x 4 pixel cells
+  m.MarkRect(1, 1, 10, 10, Kind::kAa);
+  auto s1 = m.Snapshot(nullptr);
+  ExpectEqualsLive(m, *s1);
+  m.MarkRect(2000, 3000, 10, 10, Kind::kAa);
+  auto s2 = m.Snapshot(s1.get());
+  ExpectEqualsLive(m, *s2);
+  EXPECT_EQ(Replaced(*s1, *s2).size(), 1u);
+}
+
+TEST(MaskSnapshotTest, TheLazyMaskSnapshotEqualsItsView) {
+  LazyCanvasNoiseMask lazy;
+  lazy.Add(kW, kH, 0, base::BindOnce([](CanvasNoiseMask& m) { m.MarkRect(10, 10, 5, 5, Kind::kAa); }));
+  auto s = lazy.Snapshot(nullptr);
+  ASSERT_NE(s, nullptr);
+  const std::vector<uint8_t> flat = s->Flatten();
+  const NoiseMask v = lazy.view();
+  ASSERT_EQ(flat.size(), v.stride * ((v.height + (size_t{1} << v.shift) - 1) >> v.shift));
+  for (size_t i = 0; i < flat.size(); ++i) {
+    ASSERT_EQ(flat[i], UNSAFE_BUFFERS(v.cells[i]));
+  }
+}
+
 }  // namespace
 }  // namespace camoucfg
