@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -41,6 +42,25 @@ func igpuVendor(renderer string) string {
 func vendorFits(renderer, host string) bool {
 	want := igpuVendor(renderer)
 	return want == "" || (host != intelCPU && host != amdCPU) || want == host
+}
+
+// gen9Re is gen.py GEN9_RE.
+var gen9Re = regexp.MustCompile(`^ANGLE \(Intel, Intel\(R\) (U?HD Graphics( 6\d\d)?) \((0x[0-9A-F]{8})\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$`)
+
+// gen9DeviceID is gen.py gen9_device_id != None: the name has the Gen9 shape and its id is one of the pool's.
+func gen9DeviceID(renderer string) bool {
+	m := gen9Re.FindStringSubmatch(renderer)
+	if m == nil || loadTables() != nil {
+		return false
+	}
+	n, err := strconv.ParseUint(m[3][2:], 16, 32)
+	return err == nil && tables.gen9IDs[n]
+}
+
+// webGpuOpen is the rule gen.py gpu_keys uses to leave webGpu:blocked false: the claim is the host's own renderer, or both
+// are Gen9 (WebGPU masks every Gen9 part to intel/gen-9). An unknown host ("") is never open.
+func webGpuOpen(claim, host string) bool {
+	return host != "" && (claim == host || (gen9DeviceID(claim) && gen9DeviceID(host)))
 }
 
 // igpuFloor is gen.py igpu_thread_floor: the fewest threads the claimed iGPU's CPU family ships with, 0 for none.
@@ -102,6 +122,12 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 			}
 			warn = append(warn, "the claimed iGPU ships only with the other CPU vendor than this host's: the GPU claim is dropped and the host's real GPU is kept")
 		}
+	}
+
+	// A kept GPU claim stays blocked for WebGPU unless the host's renderer is the same family (gen.py gpu_keys). Only ever
+	// true to false: a stored identity on a host with no renderer resolves as before.
+	if r, kept := cfg["webGl:renderer"].(string); kept && cfg["webGpu:blocked"] == true && webGpuOpen(r, h.Renderer) {
+		cfg["webGpu:blocked"] = false
 	}
 
 	// 2. platform version (Windows claim).

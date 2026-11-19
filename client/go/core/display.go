@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // DisplayProbeJS is client/python/camoucrome/probe.py HOST_DISPLAY_JS, byte
@@ -30,4 +31,30 @@ func ParseDisplay(raw string) (*Display, error) {
 		return nil, fmt.Errorf("display hdr is missing")
 	}
 	return &Display{Gamut: d.Gamut, ColorBits: d.ColorBits, HDR: *d.HDR}, nil
+}
+
+// RendererProbeJS is client/python/camoucrome/probe.py HOST_GL_JS, byte for byte. Run it in the same headless page as
+// DisplayProbeJS, a config-free headless launch. Never run it under an identity config: the page then reports the
+// claim, not the host, and WebGPU is unblocked for a renderer the host does not have (the real adapter leaks).
+// Pass the result through ParseRenderer.
+const RendererProbeJS = `() => { const g = document.createElement('canvas').getContext('webgl');
+  const e = g && g.getExtension('WEBGL_debug_renderer_info');
+  return e ? g.getParameter(e.UNMASKED_RENDERER_WEBGL) : null; }`
+
+// softwareMarkers is probe.py SOFTWARE_MARKERS.
+var softwareMarkers = []string{"swiftshader", "llvmpipe", "software", "basic render"}
+
+// ParseRenderer mirrors probe.host_renderer on the probe's string: a software renderer or an empty string is no host
+// renderer (pinning it into an identity is a bot tell), so it comes back "" with an error and WebGPU stays blocked.
+func ParseRenderer(s string) (string, error) {
+	low := strings.ToLower(s)
+	if strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("renderer probe returned no renderer")
+	}
+	for _, m := range softwareMarkers {
+		if strings.Contains(low, m) {
+			return "", fmt.Errorf("renderer %q is a software renderer", s)
+		}
+	}
+	return s, nil
 }

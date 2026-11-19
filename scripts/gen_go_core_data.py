@@ -33,7 +33,7 @@ PLATFORM = "Windows"
 DATA = ROOT / "client" / "go" / "core" / "data"
 # Left out of a compact entry: the font tables and voices:list (about 31 of 35 KB, rebuilt or recomputed in Go),
 # the seeds (drawn per identity) and the zone (set by Exit or the locale default).
-# GPU claim keys stay: core resolves them verbatim (webGpu:blocked is always true, since the pool has no host renderer).
+# GPU claim keys stay: webGpu:blocked is always true in the pool (it has no host renderer); Resolve unblocks it for a same-family host.
 # The locale triple stays: without an Exit it is the entry's own.
 EXCLUDED_PREFIXES = ("fonts:",)
 EXCLUDED_KEYS = {"voices:list", "canvas:seed", "mediaDevices:seed", "timezone:id"}
@@ -197,6 +197,13 @@ def igpu_ids():
     return sorted(ids)
 
 
+def gen9_ids():
+    """["0x00003EA0", ...]: the device ids gen.gen9_device_id accepts (settings/webgl/intel-gen9-pool.json). core.gen9DeviceID
+    takes the same name shape and this set, so the webGpu:blocked rule cannot differ from gen.gpu_keys on a Gen9 id."""
+    from camoucrome import gen
+    return [f"0x{d:08X}" for d in sorted(gen.gen9_pool()["device_ids"])]
+
+
 def build_files(n, source):
     """{relative name: JSON value} for every embedded file. The pool is built apart (draw_pool)."""
     voices = json.loads((ROOT / "settings" / "voices.json").read_text(encoding="utf-8"))
@@ -208,6 +215,7 @@ def build_files(n, source):
         "locale_zones.json": {t: z for t, z in zones.items()},
         "igpu-floors.json": igpu_floors(),
         "igpu-ids.json": igpu_ids(),
+        "gen9-ids.json": gen9_ids(),
         "launcher.json": (ROOT / "settings" / "launcher.json").read_text(encoding="utf-8"),  # a byte copy (a str is written as is)
     }
 

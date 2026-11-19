@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"sync"
 
 	_ "time/tzdata" // zoneinfo for time.LoadLocation: Windows has none of its own
 )
 
-//go:embed data/pool-windows.json.gz data/voices.json data/fonts.json data/country_locale.json data/locale_zones.json data/igpu-floors.json data/igpu-ids.json data/version.json
+//go:embed data/pool-windows.json.gz data/voices.json data/fonts.json data/country_locale.json data/locale_zones.json data/igpu-floors.json data/igpu-ids.json data/gen9-ids.json data/version.json
 var dataFS embed.FS
 
 // poolFormat is the Identity.Version this code reads and writes.
@@ -39,6 +41,7 @@ var (
 		zones     map[string][]string // locale -> zones, first is the default
 		floors    map[string]int      // "Intel:0x00009A49" -> fewest threads of the CPU family that iGPU ships with
 		igpuIDs   map[string]bool     // "Intel:0x00009A49": every id gen.gpu_class calls an iGPU
+		gen9IDs   map[uint64]bool     // device ids gen.gen9_device_id accepts
 		err       error
 	}
 )
@@ -138,6 +141,19 @@ func loadTables() error {
 		t.igpuIDs = map[string]bool{}
 		for _, id := range ids {
 			t.igpuIDs[id] = true
+		}
+		var g9 []string
+		if t.err = readJSON("gen9-ids.json", &g9); t.err != nil {
+			return
+		}
+		t.gen9IDs = map[uint64]bool{}
+		for _, id := range g9 {
+			n, err := strconv.ParseUint(strings.TrimPrefix(id, "0x"), 16, 32)
+			if err != nil {
+				t.err = fmt.Errorf("gen9-ids.json: %q: %w", id, err)
+				return
+			}
+			t.gen9IDs[n] = true
 		}
 	})
 	return tables.err

@@ -22,6 +22,25 @@ DISPLAYS = [None, {"gamut": "srgb", "colorBits": 8, "hdr": False}, {"gamut": "p3
             {"gamut": "srgb", "colorBits": 8, "hdr": True}]
 
 
+# Synthetic (claim, host) renderer pairs from the settings files: Gen9 ids from settings/webgl/intel-gen9-pool.json,
+# the Iris Xe and RTX 3060 strings from the golden tests of gen.py. None is a real host.
+G620_A = "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+G620_B = "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+G630 = "ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00003E92) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+XE = "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+RTX = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+RTX2 = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3070 (0x00002484) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+FAKE_GEN9 = "ANGLE (Intel, Intel(R) UHD Graphics 620 (0x0000FFFF) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # the shape, an id not in the pool
+WEBGPU_PAIRS = [  # (claim, host)
+    (RTX, RTX), (G620_A, G620_A), (G620_A, G630), (G620_B, G630), (G630, XE), (XE, G630), (XE, XE), (RTX, G630), (G630, RTX),
+    (RTX, RTX2), (G620_A, None), (RTX, None), (XE, None), (G620_A, ""), (FAKE_GEN9, G630), (G630, FAKE_GEN9), (FAKE_GEN9, FAKE_GEN9)]
+
+
+def webgpu_rows(gen):
+    """gen.gpu_keys's webGpu:blocked for every pair: what core.Resolve must answer for a claim on a host renderer."""
+    return [{"claim": c, "host": h, "blocked": gen.gpu_keys("v", c, h)["webGpu:blocked"]} for c, h in WEBGPU_PAIRS]
+
+
 def write(name, v, indent=1):
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_text(json.dumps(v, indent=indent, ensure_ascii=False, separators=None if indent else (",", ":")) + "\n", encoding="utf-8")
@@ -70,6 +89,7 @@ def main():
                      "args": want["launch"]["args"], "dpr": want["launch"]["dpr"],
                      "warnings": want["warnings"]})
     write("from_pool.json", runs)
+    write("webgpu.json", webgpu_rows(gen))
     print("golden written:", sorted(p.name for p in OUT.iterdir()))
 
 
