@@ -2489,7 +2489,8 @@ c67_row()
 # One page function runs every path; it runs in four sessions: no config, seed A, seed B, seed A again.
 C70 = "C70 WebGL2 PBO readPixels + getBufferSubData is noised: seed A != none, A != B, A == A again"
 C71 = "C71 PBO bytes equal the readPixels(view) bytes of the same page (no config and both seeds), binding and GL error intact"
-C72 = "C72 PBO with PACK_ALIGNMENT 8, a rect past the framebuffer and an offset equals the view read; untouched bytes survive"
+C72 = "C72 PBO with PACK_ALIGNMENT 8, a rect past the framebuffer and an offset equals the view read; every byte outside the written rect is still 0xAB"
+C72B = "C72b PBO read from an RGBA8 texture FBO (PACK_ROW_LENGTH w + 16, SKIP_PIXELS 3, SKIP_ROWS 2; 64, 600 and a 598 inset) equals the view read"
 C73 = "C73 transferToImageBitmap then 2D getImageData: noised (A != none, A != B, A == A again), equals drawImage(canvas)"
 C74 = "C74 the same in a worker: noised, equal to the main thread's drawImage(canvas) hash"
 LEAKS = """async () => {
@@ -2543,9 +2544,33 @@ LEAKS = """async () => {
   R.layEq = eq(lay, lay2); R.layPbo = H(lay2);
   R.layDiff = 0; R.layFirst = -1;
   for (let i = 0; i < N; i++) if (lay[i] !== lay2[i]) { if (R.layDiff++ === 0) R.layFirst = i; }
-  R.untouched = lay2.reduce((n, b) => n + (b === 0xAB ? 1 : 0), 0);
+  // The rect's in-framebuffer part: rows 8..71, pixels 8..70 (63 of 71), 288-byte rows, from byte 16.
+  const inRect = new Uint8Array(N);
+  for (let r = 8; r < 72; r++) for (let i = 0; i < 252; i++) inRect[16 + r * 288 + 32 + i] = 1;
+  R.outsideN = 0; R.outsideBad = 0;
+  for (let i = 0; i < N; i++) if (!inRect[i]) { R.outsideN++; if (lay2[i] !== 0xAB) R.outsideBad++; }
   R.layBound = gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING) === pb; R.layGlerr = gl.getError();
   gl.bindBuffer(PPB, null);
+  // A pack-buffer read from an RGBA8 texture framebuffer, against the view read of the same rect and layout.
+  const fboRead = (w, x, y, rw) => {
+    const g = document.createElement('canvas').getContext('webgl2');
+    const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
+    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA8, w, w, 0, g.RGBA, g.UNSIGNED_BYTE, null);
+    const fb = g.createFramebuffer(); g.bindFramebuffer(g.FRAMEBUFFER, fb);
+    g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
+    g.viewport(0, 0, w, w); scene(g, w, w);
+    const rl = w + 16;
+    g.pixelStorei(g.PACK_ROW_LENGTH, rl); g.pixelStorei(g.PACK_SKIP_PIXELS, 3); g.pixelStorei(g.PACK_SKIP_ROWS, 2);
+    const n = (2 * rl + 3) * 4 + (rw - 1) * rl * 4 + rw * 4;
+    const v = new Uint8Array(n).fill(0xAB);
+    g.readPixels(x, y, rw, rw, g.RGBA, g.UNSIGNED_BYTE, v);
+    const b = g.createBuffer(); g.bindBuffer(g.PIXEL_PACK_BUFFER, b);
+    g.bufferData(g.PIXEL_PACK_BUFFER, new Uint8Array(n).fill(0xAB), g.STREAM_READ);
+    g.readPixels(x, y, rw, rw, g.RGBA, g.UNSIGNED_BYTE, 0);
+    const p = new Uint8Array(n); g.getBufferSubData(g.PIXEL_PACK_BUFFER, 0, p);
+    return { eq: eq(v, p), h: H(p), glerr: g.getError() };
+  };
+  R.fbo = [fboRead(64, 0, 0, 64), fboRead(600, 0, 0, 600), fboRead(600, 1, 1, 598)];
   // transferToImageBitmap, drawn to a 2D canvas and read, against drawImage(canvas) of the same scene.
   const dom = document.createElement('canvas'); dom.width = 64; dom.height = 64;
   scene(dom.getContext('webgl2', { preserveDrawingBuffer: true }), 64, 64);
@@ -2554,6 +2579,17 @@ LEAKS = """async () => {
     return H(x.getImageData(0, 0, 64, 64).data); };
   const oc = new OffscreenCanvas(64, 64); scene(oc.getContext('webgl2'), 64, 64);
   R.tibMain = read2d(oc.transferToImageBitmap()); R.drawMain = read2d(dom);
+  // Report only: texImage2D of the transferred bitmap and of the canvas, each read back from a texture FBO.
+  const viaTex = (src) => { try {
+    const g = document.createElement('canvas').getContext('webgl2');
+    const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
+    g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, src);
+    const fb = g.createFramebuffer(); g.bindFramebuffer(g.FRAMEBUFFER, fb);
+    g.framebufferTexture2D(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.TEXTURE_2D, tex, 0);
+    const v = new Uint8Array(64 * 64 * 4); g.readPixels(0, 0, 64, 64, g.RGBA, g.UNSIGNED_BYTE, v); return H(v);
+  } catch (e) { return 'err:' + e.message; } };
+  const oc3 = new OffscreenCanvas(64, 64); scene(oc3.getContext('webgl2'), 64, 64);
+  R.texBitmap = viaTex(oc3.transferToImageBitmap()); R.texCanvas = viaTex(dom);
   const wsrc = `const H = ${H.toString()}; const scene = ${scene.toString()};
     onmessage = () => { const oc = new OffscreenCanvas(64, 64); const g = oc.getContext('webgl2');
       if (!g) { postMessage({ err: 'no-webgl2' }); return; }
@@ -2576,7 +2612,7 @@ def leaks_rows():
                       ("A2", json.dumps({"canvas:seed": 1111}))):
         v, e = session(cfg, LEAKS, extra_flags=GL_ROW_FLAGS)
         if v is None or "err" in v:
-            for row in (C70, C71, C72, C73, C74):
+            for row in (C70, C71, C72, C72B, C73, C74):
                 results[row] = False
             notes.append(f"C70-C74: arm {name}: {e if v is None else v['err']}")
             return
@@ -2588,24 +2624,28 @@ def leaks_rows():
 
     # The read path that was already noised must have moved, or "A != none" below measures nothing.
     if not noised("view"):
-        for row in (C70, C71, C72, C73, C74):
+        for row in (C70, C71, C72, C72B, C73, C74):
             mark_unmeasured(row, "readPixels(view) is not noised across the arms: the scene or the config does not reach the hook")
         return
     results[C70] = noised("pbo")
     results[C71] = all(a["pboEqView"] and a["bound"] and a["glerr"] == 0 for a in arms.values())
     results[C72] = (all(a["layEq"] and a["layBound"] and a["layGlerr"] == 0 for a in arms.values())
-                    and all(a["untouched"] > 2000 for a in arms.values()) and noised("layPbo"))
+                    and all(a["outsideBad"] == 0 and a["outsideN"] > 2000 for a in arms.values()) and noised("layPbo"))
+    results[C72B] = all(all(c["eq"] and c["glerr"] == 0 for c in a["fbo"]) for a in arms.values()) and all(
+        arms["A"]["fbo"][i]["h"] != arms["none"]["fbo"][i]["h"] and arms["A"]["fbo"][i]["h"] != arms["B"]["fbo"][i]["h"]
+        and arms["A"]["fbo"][i]["h"] == arms["A2"]["fbo"][i]["h"] for i in range(3))
     results[C73] = noised("tibMain") and all(a["tibMain"] == a["drawMain"] for a in arms.values())
     results[C74] = (noised("tibWorker") and all(a["tibWorker"] == a["drawMain"] for a in arms.values()))
     for arm, a in arms.items():
-        notes.append(f"C70-C74 {arm}: view {a['view']} pbo {a['pbo']} lay {a['layPbo']} untouched {a['untouched']} "
+        notes.append(f"C70-C74 {arm}: view {a['view']} pbo {a['pbo']} lay {a['layPbo']} outside {a['outsideBad']}/{a['outsideN']} "
                      f"layEq {a['layEq']} layDiff {a['layDiff']} first {a['layFirst']} layBound {a['layBound']} layGlerr {a['layGlerr']} "
-                     f"tibMain {a['tibMain']} drawMain {a['drawMain']} tibWorker {a['tibWorker']}")
+                     f"tibMain {a['tibMain']} drawMain {a['drawMain']} tibWorker {a['tibWorker']} "
+                     f"fbo {[(c['eq'], c['h']) for c in a['fbo']]} texBitmap {a['texBitmap']} texCanvas {a['texCanvas']}")
 
 
 leaks_rows()
 
-EXPECTED = 81   # the soft rows (SOFT_ROWS) are not counted
+EXPECTED = 82   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
