@@ -1469,7 +1469,21 @@
     "Yu Gothic UI Semilight",
     "Helvetica",
     "Times",
-    "Courier"
+    "Courier",
+    "Angsana New",
+    "AngsanaUPC",
+    "Browallia New",
+    "BrowalliaUPC",
+    "Cordia New",
+    "CordiaUPC",
+    "DilleniaUPC",
+    "EucrosiaUPC",
+    "FreesiaUPC",
+    "IrisUPC",
+    "JasmineUPC",
+    "KodchiangUPC",
+    "Leelawadee",
+    "LilyUPC"
    ],
    "fonts:local": [
     "Arial-Black\tArial Black\tArial Black\tRegular",

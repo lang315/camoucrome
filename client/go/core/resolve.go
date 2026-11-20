@@ -220,6 +220,11 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 		cfg["timezone:id"] = zs[0]
 	}
 
+	// 4b. the locale's supplemental font pack is listed: a Windows with that display language has it (gen.py with_locale_pack).
+	if list, ok := cfg["fonts:list"].([]any); ok {
+		cfg["fonts:list"] = withLocalePack(&tables.fonts, list, tag)
+	}
+
 	// 5. voices follow the locale.
 	voices, err := voiceList(tag)
 	if err != nil {

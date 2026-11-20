@@ -101,6 +101,15 @@ def main():
                      "warnings": want["warnings"]})
     write("from_pool.json", runs)
     write("webgpu.json", webgpu_rows(gen))
+    # with_locale_pack over drawn lists (some with win11 appended) and tags with, without and beyond a matching pack
+    pack_rows = []
+    for seed in (1, 2, 5, 9):
+        for pv in (None, "19.0.0"):
+            lst = gen.generate(d.OS, seed=seed, locale="en-US", host_cores=1024, host_platform_version=pv,
+                               host_cpu_vendor=None)["config"]["fonts:list"]
+            for tag in ("ja-JP", "KO-kr", "zh-Hant-TW", "zh-CN", "en-US", "vi-VN", "ar-SA", "th"):
+                pack_rows.append({"tag": tag, "in": lst, "want": gen.with_locale_pack(lst, tag)})
+    write("locale_pack.json", pack_rows, indent=None)
     print("golden written:", sorted(p.name for p in OUT.iterdir()))
 
 

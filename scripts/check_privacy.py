@@ -61,6 +61,9 @@ GENERIC = {
     "local-clock": re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\s+(?!UTC\b|GMT\b)[A-Z]{2,4}T\b"),
 }
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+# A Windows capability name's version suffix (Language.Fonts.Jpan~~~und-JPAN~0.0.1.0, settings/fonts.json): exempt only
+# right after the "~" that ends the name, never as a bare address.
+CAPABILITY_VERSION = re.compile(r"~0\.0\.1\.0(?![\d.])")
 IPV4 = re.compile(rf"(?<![\d.]){_OCTET}(?:\.{_OCTET}){{3}}(?!\d|\.\d)")
 DOC_NETS = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
 
@@ -126,7 +129,8 @@ def hits(text, terms, generic=True):
             for cat, rx in GENERIC.items():
                 if rx.search(line):
                     out.add((i, cat))
-            if any(_ip_hit(m.group(0)) for m in IPV4.finditer(line)):
+            if any(_ip_hit(m.group(0)) and not CAPABILITY_VERSION.match(line, m.start() - 1)
+                   for m in IPV4.finditer(line)):
                 out.add((i, "ip"))
         low = line.lower()
         for label, n in needles:

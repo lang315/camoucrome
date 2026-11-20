@@ -35,6 +35,8 @@ def collisions(fonts):
         groups = {g: v["families"] for g, v in sorted(fam.get("groups", {}).items())}
         if "win11" in fam:
             groups["win11"] = fam["win11"]["families"]
+        for g, v in sorted(fam.get("supplemental", {}).items()):
+            groups["supplemental:" + g] = v["families"]
         grouped = {f.casefold() for fs in groups.values() for f in fs}
         never = [f for f in fam["list"] if f.casefold() not in always and f.casefold() not in grouped]
         if never:  # captured, in neither base nor a group: every draw hides it

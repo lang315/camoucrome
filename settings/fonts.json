@@ -3565,6 +3565,191 @@
      "Sans Serif Collection"
     ],
     "how": "Appended to fonts:list when the host's UA-CH platformVersion major is >= 13 (Windows 11), whose real platformVersion the identity then carries: CreepJS dates Windows by these fonts ('11': ['Segoe Fluent Icons']). Measured 2026-11-20 UTC on a Windows 11 24H2 (10.0.26100) VM with the fork and no config: each name resolves as a CSS family (width probe) and through local(); the Windows 10 capture above lacks them. 'Segoe UI Variable' alone does not resolve; '<name> Light' and the like are Chromium's weight-suffix fallback, not families. The list is an allow-list, so a family a 21H2-23H2 host lacks stays unresolved. Not in faces: queryLocalFonts lines need a stock capture (specs/2026-11-20-win11-host-fonts-design.md)."
+   },
+   "supplemental": {
+    "arabic": {
+     "capability": "Language.Fonts.Arab~~~und-ARAB~0.0.1.0",
+     "families": [
+      "Aldhabi",
+      "Andalus",
+      "Arabic Typesetting",
+      "Microsoft Uighur",
+      "Sakkal Majalla",
+      "Simplified Arabic",
+      "Simplified Arabic Fixed",
+      "Traditional Arabic",
+      "Urdu Typesetting"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped",
+     "locales": [
+      "ar",
+      "fa",
+      "ur",
+      "ps",
+      "ug",
+      "sd"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "bangla": {
+     "capability": "Language.Fonts.Beng~~~und-BENG~0.0.1.0",
+     "families": [
+      "Shonar Bangla",
+      "Vrinda"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped",
+     "locales": [
+      "bn",
+      "as"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "chinese_simplified": {
+     "capability": "Language.Fonts.Hans~~~und-HANS~0.0.1.0",
+     "families": [
+      "DengXian",
+      "DengXian Light",
+      "FangSong",
+      "KaiTi",
+      "SimHei",
+      "Noto Sans SC",
+      "Noto Serif SC"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped; the Noto Sans/Serif CJK variable fonts were installed by this pack on Windows 11 24H2 (file creation time = the pack's install, 2026-11-20); their weight names (Light, Black ...) resolve through the Windows suffix fallback, 'DemiLight' does not",
+     "locales": [
+      "zh-CN",
+      "zh-SG",
+      "zh-Hans"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "chinese_traditional": {
+     "capability": "Language.Fonts.Hant~~~und-HANT~0.0.1.0",
+     "families": [
+      "DFKai-SB",
+      "MingLiU",
+      "MingLiU_HKSCS",
+      "PMingLiU",
+      "Noto Sans HK",
+      "Noto Sans TC",
+      "Noto Serif HK",
+      "Noto Serif TC"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped; the Noto Sans/Serif CJK variable fonts were installed by this pack on Windows 11 24H2 (file creation time = the pack's install, 2026-11-20); their weight names (Light, Black ...) resolve through the Windows suffix fallback, 'DemiLight' does not",
+     "locales": [
+      "zh-TW",
+      "zh-HK",
+      "zh-MO",
+      "zh-Hant"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "hebrew": {
+     "capability": "Language.Fonts.Hebr~~~und-HEBR~0.0.1.0",
+     "families": [
+      "Aharoni",
+      "David",
+      "FrankRuehl",
+      "Gisha",
+      "Levenim MT",
+      "Miriam",
+      "Miriam Fixed",
+      "Narkisim",
+      "Rod"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped",
+     "locales": [
+      "he",
+      "yi"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "japanese": {
+     "capability": "Language.Fonts.Jpan~~~und-JPAN~0.0.1.0",
+     "families": [
+      "BIZ UDGothic",
+      "BIZ UDMincho Medium",
+      "BIZ UDPGothic",
+      "BIZ UDPMincho Medium",
+      "MS Mincho",
+      "MS PMincho",
+      "Meiryo",
+      "Meiryo UI",
+      "UD Digi Kyokasho N",
+      "UD Digi Kyokasho NK",
+      "UD Digi Kyokasho NP",
+      "Yu Mincho",
+      "Yu Mincho Demibold",
+      "Yu Mincho Light",
+      "Noto Sans JP",
+      "Noto Serif JP"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped; the Noto Sans/Serif CJK variable fonts were installed by this pack on Windows 11 24H2 (file creation time = the pack's install, 2026-11-20); their weight names (Light, Black ...) resolve through the Windows suffix fallback, 'DemiLight' does not",
+     "locales": [
+      "ja"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "korean": {
+     "capability": "Language.Fonts.Kore~~~und-KORE~0.0.1.0",
+     "families": [
+      "Batang",
+      "BatangChe",
+      "Dotum",
+      "DotumChe",
+      "Gulim",
+      "GulimChe",
+      "Gungsuh",
+      "GungsuhChe",
+      "Noto Sans KR",
+      "Noto Serif KR"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped; the Noto Sans/Serif CJK variable fonts were installed by this pack on Windows 11 24H2 (file creation time = the pack's install, 2026-11-20); their weight names (Light, Black ...) resolve through the Windows suffix fallback, 'DemiLight' does not",
+     "locales": [
+      "ko"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    },
+    "thai": {
+     "capability": "Language.Fonts.Thai~~~und-THAI~0.0.1.0",
+     "families": [
+      "Angsana New",
+      "AngsanaUPC",
+      "Browallia New",
+      "BrowalliaUPC",
+      "Cordia New",
+      "CordiaUPC",
+      "DilleniaUPC",
+      "EucrosiaUPC",
+      "FreesiaUPC",
+      "IrisUPC",
+      "JasmineUPC",
+      "KodchiangUPC",
+      "Leelawadee",
+      "LilyUPC"
+     ],
+     "p": 0.03,
+     "p_how": "owner's choice 2026-11-20 (real-world rate unmeasured): each profile carries at most ONE pack beyond its locale's, with probability 1-(1-p)^n over the n packs (about 22% for 8), the pack then drawn uniformly",
+     "how": "families named by the pack's own description (C:\\Windows\\servicing\\Packages\\Microsoft-Windows-LanguageFeatures-Fonts-<script>-Package~*.mum, 'Additional fonts: ...'; Thai has none, so Microsoft Learn 'Font List Windows 10' https://learn.microsoft.com/en-us/typography/fonts/windows_10_font_list, read 2026-11-20 UTC), installed on the owner's Windows 11 24H2 VM 2026-11-20 and kept only where the fork with no config resolved the name as a CSS family (document.fonts.check with an unloaded decoy and a measureText width != monospace); families already in base dropped",
+     "locales": [
+      "th"
+     ],
+     "locales_how": "a profile whose locale:tag matches (equal, or this prefix plus '-') always lists the pack: a Windows with that display language installs it with the language; any other profile draws it at p"
+    }
    }
   },
   "macOS": {

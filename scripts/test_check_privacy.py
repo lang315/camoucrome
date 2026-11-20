@@ -31,6 +31,8 @@ TERMS = {"<host-place>": ["Plantville"], "<host-offset>": ["GMT+0999"]}
     ("ran 16:03-16:37 XST on the host", "local-clock"),
     ("peer 100.101.102.103 up", "ip"),
     ("wsl at 172.20.1.9", "ip"),
+    ("bound to 0.0.1.0 here", "ip"),  # only a capability name's ~version suffix is exempt
+    ("x~ 0.0.1.0", "ip"),
     ("near Plantville", "<host-place>"),
     ("near plantville", "<host-place>"),
     ("date0 GMT+0999 (x)", "<host-offset>"),
@@ -43,6 +45,7 @@ def test_each_category_is_caught(line, cat):
     "Chrome/154.0.0.0 and 154.0.8037.93 and 157.0.8103.51",
     "doc address 203.0.113.7, 127.0.0.1 and 0.0.0.0:54021",
     "fake webrtc ip 192.168.1.37",
+    '"capability": "Language.Fonts.Jpan~~~und-JPAN~0.0.1.0",',
     "~/chromium/src, $HOME/x, /home/runner/work and /home/<user>/x",
     r"C:\Users\user.HOST\AppData and C:\Users\<user>",
     "file:///C:/Users/user.HOST/AppData/x.html",
