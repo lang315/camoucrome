@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>probe</title>
+<input id="t1" type="text"> <input id="t2" type="text"> <button id="go">go</button>
+<span id="ready"></span>
+<script>
+(function () {
+  // L3: hooks first. Frame 0 is "Error", frame 1 the wrapper itself (in probe.html); judge from frame 2.
+  var L3 = [];
+  function hook(obj, name) {
+    var orig = obj[name];
+    obj[name] = function () {
+      var frames = new Error().stack.split("\n").slice(2);
+      if (!frames.some(function (f) { return f.indexOf("/probe.html") >= 0; })) L3.push(frames.join("\n"));
+      return orig.apply(this, arguments);
+    };
+  }
+  hook(Document.prototype, "querySelector");
+  hook(Document.prototype, "getElementsByClassName");
+  hook(Function.prototype, "toString");
+
+  var q = new URLSearchParams(location.search);
+  var arm = q.get("arm") || "", run = q.get("run") || "";
+  var t0 = performance.now();
+
+  function log(id, types, extra) {
+    var out = [];
+    types.forEach(function (t) {
+      document.getElementById(id).addEventListener(t, function (e) { out.push(extra(e)); });
+    });
+    return out;
+  }
+  var kt = ["keydown", "keypress", "beforeinput", "input", "keyup"];
+  function ke(e) {
+    return { type: e.type, key: e instanceof KeyboardEvent ? e.key : null,
+             data: e instanceof InputEvent ? e.data : null, isTrusted: e.isTrusted };
+  }
+  var L5a = log("t1", kt, ke), L5b = log("t2", kt, ke);
+  var L7 = log("go", ["pointerdown", "mousedown", "pointerup", "mouseup", "click"], function (e) {
+    var p = e instanceof PointerEvent;
+    return { type: e.type, isTrusted: e.isTrusted, screenX: e.screenX, screenY: e.screenY,
+             clientX: e.clientX, clientY: e.clientY, button: e.button, buttons: e.buttons, detail: e.detail,
+             pointerId: p ? e.pointerId : null, pointerType: p ? e.pointerType : null, isPrimary: p ? e.isPrimary : null };
+  });
+
+  function median(a) { a = a.slice().sort(function (x, y) { return x - y; }); return a[a.length >> 1]; }
+  function fnv(s) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16);
+  }
+  function batches(fn) {
+    var r = [];
+    for (var b = 0; b < 9; b++) { var s = performance.now(); fn(); r.push(performance.now() - s); }
+    return r;
+  }
+
+  async function run15() {
+    var hit = false;
+    var e = new Error();
+    Object.defineProperty(e, "stack", { get: function () { hit = true; return ""; } });
+    console.debug(e);
+    await new Promise(function (r) { setTimeout(r, 500); });
+    var L1 = hit;
+
+    var L2 = batches(function () { for (var i = 0; i < 10000; i++) void new Error().stack; });
+    var L4 = batches(function () {
+      var d = [];
+      for (var i = 0; i < 2000; i++) { var x = document.createElement("div"); document.body.appendChild(x); d.push(x); }
+      d.forEach(function (x) { x.remove(); });
+    });
+    var L6 = [];
+    for (var b = 0; b < 9; b++) {
+      var urls = [];
+      for (var j = 0; j < 20; j++) urls.push(new URL("/delay?i=" + (b * 20 + j), location.href).href);
+      await Promise.all(urls.map(function (u) { return fetch(u).then(function (r) { return r.text(); }); }));
+      L6.push(median(urls.map(function (u) {
+        var en = performance.getEntriesByName(u)[0];
+        return en.responseStart - en.requestStart;
+      })));
+    }
+    var keys = Object.keys(window).sort();
+    var body = { L1: L1, L2: L2, L3: L3, L4: L4, L5a: L5a, L5b: L5b, L6: L6, L7: L7,
+                 L8: { webdriver: navigator.webdriver, keys: keys.length, hash: fnv(keys.join(",")) },
+                 t: performance.now() - t0 };
+    await fetch("/result?arm=" + encodeURIComponent(arm) + "&run=" + encodeURIComponent(run),
+                { method: "POST", body: JSON.stringify(body) });
+    var d = document.createElement("span"); d.id = "done"; document.body.appendChild(d);
+  }
+  addEventListener("load", function () { setTimeout(run15, 15000); });
+})();
+</script>
