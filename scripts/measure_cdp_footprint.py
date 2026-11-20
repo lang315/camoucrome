@@ -163,7 +163,7 @@ class Run:
         self.n = 0
         self.notes = []
         (self.raw / "results").mkdir(parents=True, exist_ok=True)
-        self.srv, self.port = cdp_footprint_server.serve(self.raw / "results")
+        self.srv, self.port = cdp_footprint_server.serve(self.raw / "results", delay_ms=0)
 
     def rid(self, group, arm):
         self.n += 1

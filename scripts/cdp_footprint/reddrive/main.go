@@ -15,6 +15,7 @@ import (
 
 	"github.com/mafredri/cdp"
 	"github.com/mafredri/cdp/devtool"
+	"github.com/mafredri/cdp/protocol/dom"
 	"github.com/mafredri/cdp/protocol/fetch"
 	"github.com/mafredri/cdp/protocol/input"
 	"github.com/mafredri/cdp/protocol/page"
@@ -31,6 +32,7 @@ type drv struct {
 	ctx  context.Context
 	mu   sync.Mutex
 	m    map[string]int
+	root dom.NodeID
 }
 
 func (d *drv) count(method string) { d.mu.Lock(); d.m[method]++; d.mu.Unlock() }
@@ -85,6 +87,19 @@ func (d *drv) Launch(f *workload.Flags) error {
 		{"Runtime.enable", func() error { return d.c.Runtime.Enable(d.ctx) }},
 		{"Page.enable", func() error { return d.c.Page.Enable(d.ctx, nil) }},
 		{"DOM.enable", func() error { return d.c.DOM.Enable(d.ctx, nil) }},
+		// the DOM agent emits per-insertion events only for a bound parent: bind html>body>#t1 like tdp's ElementE
+		{"DOM.getDocument", func() error {
+			doc, err := d.c.DOM.GetDocument(d.ctx, nil)
+			if err != nil {
+				return err
+			}
+			d.root = doc.Root.NodeID
+			return nil
+		}},
+		{"DOM.querySelector", func() error {
+			_, err := d.c.DOM.QuerySelector(d.ctx, dom.NewQuerySelectorArgs(d.root, "#t1"))
+			return err
+		}},
 		{"Fetch.enable", func() error {
 			pat := "*"
 			return d.c.Fetch.Enable(d.ctx, fetch.NewEnableArgs().SetPatterns([]fetch.RequestPattern{{URLPattern: &pat}}))
