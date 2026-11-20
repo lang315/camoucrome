@@ -3553,7 +3553,19 @@
      "Yu Gothic UI Semilight",
      "Regular"
     ]
-   ]
+   ],
+   "win11": {
+    "min_platform_major": 13,
+    "families": [
+     "Segoe Fluent Icons",
+     "Segoe UI Variable Display",
+     "Segoe UI Variable Text",
+     "Segoe UI Variable Small",
+     "Nirmala Text",
+     "Sans Serif Collection"
+    ],
+    "how": "Appended to fonts:list when the host's UA-CH platformVersion major is >= 13 (Windows 11), whose real platformVersion the identity then carries: CreepJS dates Windows by these fonts ('11': ['Segoe Fluent Icons']). Measured 2026-11-20 UTC on a Windows 11 24H2 (10.0.26100) VM with the fork and no config: each name resolves as a CSS family (width probe) and through local(); the Windows 10 capture above lacks them. 'Segoe UI Variable' alone does not resolve; '<name> Light' and the like are Chromium's weight-suffix fallback, not families. The list is an allow-list, so a family a 21H2-23H2 host lacks stays unresolved. Not in faces: queryLocalFonts lines need a stock capture (specs/2026-11-20-win11-host-fonts-design.md)."
+   }
   },
   "macOS": {
    "ps_names_are_css_families": true,
