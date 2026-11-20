@@ -393,6 +393,24 @@ def test_windows_zip_keeps_the_whole_staging_name(tmp_path):
     assert package.archive(staging, "windows-x64").name == "camoucrome-157.0.8103.51-windows-x64.zip"
 
 
+def test_windows_also_writes_tar_xz_with_the_zip_members(tmp_path):
+    """The .tar.xz is the smaller download for tools (201 -> 140 MB on -10); the zip stays for manual install."""
+    import zipfile
+    staging = tmp_path / "camoucrome-157.0.8103.51-windows-x64"
+    (staging / "locales").mkdir(parents=True)
+    (staging / "chrome.exe").write_bytes(b"MZ")
+    (staging / "locales" / "en-US.pak").write_bytes(b"pak")
+    z = package.archive(staging, "windows-x64")
+    xz = tmp_path / "camoucrome-157.0.8103.51-windows-x64.tar.xz"
+    assert xz.is_file()
+    with zipfile.ZipFile(z) as zf:
+        zip_files = sorted(n for n in zf.namelist() if not n.endswith("/"))
+    with tarfile.open(xz, "r:xz") as t:
+        members = t.getmembers()
+    assert sorted(m.name for m in members if m.isfile()) == zip_files
+    assert all(m.uid == 0 and m.gid == 0 and m.uname == "" and m.gname == "" for m in members)
+
+
 def test_runtime_deps_prunes_symbols_and_test_gpu_layers_by_basename(tmp_path):
     names = ["chrome.dll", "chrome.dll.pdb", "sub/x.exe.pdb", "VkICD_mock_icd.dll", "VkICD_mock_icd.dll.pdb",
              "VkICD_mock_icd.json", "VkLayer_khronos_validation.dll", "VkLayer_khronos_validation.json",
