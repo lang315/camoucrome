@@ -5,6 +5,10 @@ lie (an init script, main world) and passes only if the check named for that lie
 row runs them under a no-op init script, so a harness that always reports problems cannot pass the R rows.
 K6 / R6 run the vendored CreepJS (served under /creep/, index.html with HARNESS appended) against the fork with no
 config (base) and with the generated identity; a CreepJS lie, trash or stealth hit that the base lacks is a problem.
+K7 reads the same identity report for surfaces that must agree (specs/2026-11-20-course-k7-design.md): the Windows
+version its fonts date (CreepJS's own map, which its quoted names keep from matching) must be the one UA-CH
+platformVersion implies, and no detected family may lie outside fonts:list. R7 is the identity with UA-CH 19.0.0 and
+its Windows 10 list (main before #223): K7 must report it.
 
 Box-only: needs patchright and the fork build (lib_shell layout). The pure checks run anywhere.
 """
@@ -12,6 +16,7 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -19,7 +24,7 @@ import threading
 from pathlib import Path
 
 CREEP_DIR = Path(__file__).parent / "third_party" / "creepjs"
-EXPECTED_ROWS = 12  # K1-K6, R1-R4, R6, CTRL
+EXPECTED_ROWS = 14  # K1-K7, R1-R4, R6, R7, CTRL
 # Box calibration (measured there, never guessed here). While either is None, main() refuses to run.
 # Measured on the box 2026-11-13 (out/Default chrome at the pin, generated Windows identity seed 1): the sweep visited
 # 10057 functions (stock Chrome 157 on the Mac: 10073), 0 anomalies. The floor sits about 10% below.
@@ -123,6 +128,7 @@ const i=setInterval(()=>{const fp=window.Fingerprint;
 if(fp){clearInterval(i);try{w(JSON.stringify({lies:Object.fromEntries(Object.entries(fp.lies?.data||{}).map(([k,v])=>[k,v])),
 trash:(fp.trash?.trashBin||[]).map(t=>t.name),stealth:Object.keys(fp.headless?.stealth||{}).filter(k=>fp.headless.stealth[k]),
 workerLied:!!fp.workerScope?.lied,
+fonts:fp.fonts?.fontFaceLoadFonts??null,ua:fp.navigator?.userAgentData?{platform:fp.navigator.userAgentData.platform,platformVersion:fp.navigator.userAgentData.platformVersion}:null,
 missing:['lies','trash','headless','workerScope'].filter(k=>!fp[k]),done:true}))}catch(e){w(JSON.stringify({error:String(e)}))}}
 else if(Date.now()-t0>90000){clearInterval(i);w('{"error": "timeout"}')}},250)})()"""
 CREEP_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -152,6 +158,59 @@ def k6_problems(base, ident):
     out += [f"k6 trash {t}" for t in ident["trash"] if t not in base["trash"]]
     out += [f"k6 stealth {k}" for k in ident["stealth"]]
     return out + (["k6 worker lied"] if ident["workerLied"] else [])
+
+
+# CreepJS's WindowsFonts and getWindows hashMap (creep.js); test_creep_map_matches_vendor holds them to the vendored file
+_WINDOWS_FONTS = {"7": ["Cambria Math", "Lucida Console"], "8": ["Aldhabi", "Gadugi", "Myanmar Text", "Nirmala UI"],
+                  "8.1": ["Leelawadee UI", "Javanese Text", "Segoe UI Emoji"],
+                  "10": ["HoloLens MDL2 Assets", "Segoe MDL2 Assets", "Bahnschrift", "Ink Free"], "11": ["Segoe Fluent Icons"]}
+_WINDOWS_HASH = {"10,11,7,8,8.1": "11", "10,7,8,8.1": "10", "7,8,8.1": "8.1", "11,7,8,8.1": "8.1", "7,8": "8",
+                 "10,7,8": "8", "10,11,7,8": "8", "7": "7", "7,8.1": "7", "10,7,8.1": "7", "10,11,7,8.1": "7"}
+R7_CONFIG = {"ua:platformVersion": "19.0.0"}  # a Windows 11 host's version over the Windows 10 list
+
+
+def creep_windows_fonts():
+    return {k: list(v) for k, v in _WINDOWS_FONTS.items()}
+
+
+def windows_by_fonts(fonts):
+    """The Windows version CreepJS's getWindows dates a font set to, with its quotes stripped; None: no version."""
+    have = {f.strip('"') for f in fonts}
+    m = _WINDOWS_FONTS
+    present = {k for k in ("11", "10", "8.1", "8") if any(x in have for x in m[k])}
+    if all(x in have for x in m["7"]):  # CreepJS requires the complete Windows 7 set
+        present.add("7")
+    return _WINDOWS_HASH.get(",".join(sorted(present)))
+
+
+def windows_by_platform_version(pv):
+    """The Windows version a UA-CH platformVersion implies (0.1-0.3: 7, 8, 8.1; 1-12: 10; 13+: 11); None if malformed."""
+    m = re.fullmatch(r"(\d+)\.(\d+)\.\d+", pv or "")
+    if not m:
+        return None
+    major, minor = int(m[1]), int(m[2])
+    if major == 0:
+        return {1: "7", 2: "8", 3: "8.1"}.get(minor)
+    return "11" if major >= 13 else "10"
+
+
+def k7_problems(ident, cfg):
+    """Surfaces of one identity report that must agree; an absent section is a failure, never clean."""
+    if "error" in ident:
+        return [f"k7 error {ident['error']}"]
+    out = [f"k7 error missing {k}" for k in ("fonts", "ua") if ident.get(k) is None]
+    if out:
+        return out
+    fonts = [f.strip('"') for f in ident["fonts"]]
+    ua = ident["ua"]
+    if ua.get("platform") == "Windows":
+        want, got = windows_by_platform_version(ua.get("platformVersion")), windows_by_fonts(fonts)
+        if want is None or got != want:
+            out.append(f"k7 windows fonts date {got or 'none'}, UA-CH {ua.get('platformVersion')} says {want or 'nothing'}")
+    if "fonts:list" in cfg:
+        allowed = {f.casefold() for f in cfg["fonts:list"]} | {f.casefold() for f in cfg.get("fonts:aliasLocal", {})}
+        out += [f"k7 font outside fonts:list {f}" for f in fonts if f.casefold() not in allowed]
+    return out
 
 
 def k6_note(side, r):
@@ -351,6 +410,8 @@ def main() -> int:
             print(k6_note(side, rep))
         k6 = k6_problems(k6_base, k6_ident)
         rows["K6"] = (not k6, k6)
+        k7 = k7_problems(k6_ident, cfg)
+        rows["K7"] = (not k7, k7)
         try:
             ctrl = grp(CTRL_JS)
         except Exception as e:
@@ -365,6 +426,11 @@ def main() -> int:
                 rows[rid] = (False, [f"did not report: {e}"])
                 continue
             rows[rid] = (r_row_pass(got, expect, ctrl_clean, rid != "R6" or rows["K6"][0]), got)
+        try:
+            got = k7_problems(_creep(pw, CHROME, {**cfg, **R7_CONFIG}, fonts_dir, creep_url, None), {**cfg, **R7_CONFIG})
+        except Exception as e:
+            got = [f"did not report: {e}"]
+        rows["R7"] = (r_row_pass(got, "k7 windows", ctrl_clean, rows["K7"][0]), got)
     srv.shutdown()
     n = 0
     for label, (ok, problems) in rows.items():
