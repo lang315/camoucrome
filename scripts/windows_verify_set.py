@@ -60,7 +60,8 @@ SET = [
     Entry("verify_webgl_capability_identity.py", 13, "stock"),
     Entry("verify_navplatform_bucket.py", 7, "stock"),
     Entry("verify_fonts_ii.py", 6, "stock"),
-    Entry("verify_windows_fonts.py", 5, "stock"),
+    # F6c: NOT MEASURED on a host without a distinct Arial Narrow face (Office-style); FAIL there is the spec's known limit.
+    Entry("verify_windows_fonts.py", 8, "stock", may_skip=("F6c",)),
     # O2 (the Linux-claim RED) fails on the Windows build because windows-oracle.patch's renderer block only
     # enables share/canShare/bluetooth for a Windows or macOS claim and nothing disables them under a Linux claim,
     # while stock Windows Chrome ships them on (measured 2026-10-04: the Linux-claim sub-run differed from the host

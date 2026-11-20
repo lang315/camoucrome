@@ -81,6 +81,19 @@ std::vector<VoiceConfig> GetVoices(const ConfigScope& scope);
 // The gate applies this only to non-generic families (generics always render).
 bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
 
+// IsFontAllowed plus Chromium's Windows family-name suffix fallback
+// (font_cache_skia_win.cc kVariantForSuffix): on a Windows build under a
+// Windows claim, "<listed family> <weight or stretch suffix>" is allowed,
+// because stock Windows Chrome resolves such a name as that family at that
+// weight or stretch. One suffix, the weight table first, the first match in
+// table order; the stripped name must itself be listed, so an unlisted family
+// stays hidden. Only the CSS family walk (font_fallback_list.cc) asks this:
+// src:local() and queryLocalFonts keep IsFontAllowed's exact match, as stock
+// has no suffix fallback there. Any other claim keeps the exact match: a
+// macOS claim keeps fonts:alias, and a suffix name would reach the host's
+// real family while the bare name renders the alias target.
+bool IsFontFamilyOrVariantAllowed(const ConfigScope& scope, std::string_view family);
+
 // fonts-iii: the configured alias target for a requested CSS family
 // (fonts:alias, case-insensitive on the requested name), or nullopt when the
 // key is absent or names no such family. FontCache::GetFontPlatformData looks
@@ -114,6 +127,9 @@ std::vector<std::string> UnrecognisedKeys(const ConfigScope& scope);
 // because this task's file scope was limited to mask_config.h/.cc.
 namespace internal {
 bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family);
+// IsFontFamilyOrVariantAllowed's core; |windows_variants| is the caller's
+// "Windows build under a Windows claim".
+bool IsFontFamilyOrVariantAllowedFrom(const base::DictValue& cfg, std::string_view family, bool windows_variants);
 std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name = false);
 }  // namespace internal
 

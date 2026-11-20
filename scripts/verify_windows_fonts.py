@@ -23,6 +23,14 @@ F4     per-character system fallback (CJK, Thai, emoji in a family nobody has)
        measures as stock within JITTER_TOL (kept as slack: measureText is not jittered): the fallback is the host's real one, which is what a
        Windows host claiming Windows should show. fonts:list does not filter it
        (no patch touches PlatformFallbackFontForCharacter).
+F6a    suffix names of claimed families (Arial Medium, Segoe UI Thin, Calibri Heavy) resolve in window and worker
+       where stock resolves them: Chromium's Windows suffix fallback (font_suffix.py), which the fonts:list gate
+       mirrors since specs/2026-11-20-font-weight-suffix-gate-design.md. RED: a fork without that change.
+F6b    ROG Fonts + " Medium" stays hidden under the identity while stock resolves it. RED: the stock red run, and a
+       mutant gate that strips without re-checking the list.
+F6c    under a list with Arial and without Arial Narrow, "Arial Narrow" measures as Arial at font-stretch:
+       condensed (a machine without the face). NOT MEASURED on a host with no distinct Arial Narrow face. Expected
+       FAIL with the spec's design (Known limits: a listed base reaches an unlisted real suffixed face).
 F3     note, measured: of the identity's fonts:list, how many families stock
        cannot resolve on this host (a real device would have them, so each is
        a tell), and up to 10 names
@@ -44,13 +52,16 @@ from lib_shell import CHROME as EXE, layout  # noqa: E402
 
 HOME, PY, NODE, CLIENT, FONTS_DIR = layout()
 import verify_windows_client as vwc  # noqa: E402  (PROBES, read_probe)
+import font_suffix  # noqa: E402
 
 STOCK = os.environ.get("CAMOU_STOCK_EXE", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 HOST_ONLY = "ROG Fonts"
 REAL = ["Arial", "Segoe UI", "Times New Roman", "Verdana"]
 TEXT = "mmmmmmmmmmlli WWW 0123456789"
+SUFFIX_NAMES = ["Arial Medium", "Segoe UI Thin", "Calibri Heavy"]
+HOST_ONLY_SUFFIX = HOST_ONLY + " Medium"
 FALLBACK_TEXT = "\u6f22\u5b57\u304b\u306a \u0e44\u0e17\u0e22 \U0001F600"
-EXPECTED = 5
+EXPECTED = 8  # F1 F2-py F2-go F2-node F4 F6a F6b F6c (F6c may print NOT MEASURED)
 
 PAGE_TMPL = """<!doctype html><title>fonts</title><script>
 const FAMS = %s, TEXT = %s, FB = %s;
@@ -60,6 +71,8 @@ function measure(ctx) {
   for (const f of FAMS) out[f] = [w('100px "' + f + '", monospace', TEXT), w('100px "' + f + '", serif', TEXT)];
   out.__mono = w('100px monospace', TEXT); out.__serif = w('100px serif', TEXT);
   out.__fallback = w('100px "Camoucrome No Such Family"', FB);
+  out.__narrow = w('100px "Arial Narrow", monospace', TEXT);
+  ctx.fontStretch = 'condensed'; out.__arialCondensed = w('100px Arial, monospace', TEXT); ctx.fontStretch = 'normal';
   return out;
 }
 const SRC = 'const FAMS=' + JSON.stringify(FAMS) + ',TEXT=' + JSON.stringify(TEXT) + ',FB=' + JSON.stringify(FB) + ';' +
@@ -73,7 +86,7 @@ wk.onmessage = e => { const o = document.createElement('pre'); o.id = 'o';
 
 def page(claimed):
     """The page measures HOST_ONLY, REAL and every claimed family (cheap, and the stock read needs them for F3)."""
-    fams = list(dict.fromkeys([HOST_ONLY] + REAL + claimed))
+    fams = list(dict.fromkeys([HOST_ONLY, HOST_ONLY_SUFFIX, "Arial Narrow"] + REAL + SUFFIX_NAMES + claimed))
     return PAGE_TMPL % (json.dumps(fams), json.dumps(TEXT), json.dumps(FALLBACK_TEXT))
 
 
@@ -168,8 +181,20 @@ def main():
         os.unlink(cfg_file)
     results["F4 per-character system fallback measures as stock"] = (
         fm is not None and sm is not None and abs(fm["__fallback"] - sm["__fallback"]) <= JITTER_TOL)
+    results["F6a suffix names of claimed families resolve where stock resolves them (window and worker)"] = (
+        font_suffix.f6a(fm, fw, sm, SUFFIX_NAMES, resolved))
+    results[f"F6b {HOST_ONLY_SUFFIX} hidden in window and worker under the identity, visible to stock"] = (
+        font_suffix.f6b(fm, fw, sm, HOST_ONLY_SUFFIX, resolved))
+    not_measured = []
+    f6c = font_suffix.f6c(fm, sm, claimed, resolved, JITTER_TOL)
+    if f6c is None:
+        not_measured.append("F6c no distinct Arial Narrow face on this host, or the list shows it")
+    else:
+        results["F6c Arial Narrow measures as Arial condensed under a list without it"] = f6c
     srv.shutdown()
     if fm is not None and sm is not None:
+        notes.append(f"F6c widths fork narrow|condensed {fm['__narrow']:.2f}|{fm['__arialCondensed']:.2f}, "
+                     f"stock {sm['__narrow']:.2f}|{sm['__arialCondensed']:.2f}")
         notes.append("F2 widths fork mono|serif/stock: " + "; ".join(
             f"{x}={fm[x][0]:.2f}|{fm[x][1]:.2f}/{sm[x][0]:.2f}" for x in REAL))
         notes.append(f"F4 fallback width fork/stock: {fm['__fallback']:.2f}/{sm['__fallback']:.2f}")
@@ -185,10 +210,12 @@ def main():
                  f"cross-profile finding for backlog item 2, not a failure here")
     for k, v in results.items():
         print(("PASS " if v else "FAIL ") + " " + k)
+    for k in not_measured:
+        print("NOT MEASURED " + k)
     for n in notes:
         print("note:", n[:900])
-    if len(results) != EXPECTED:
-        sys.exit(f"expected {EXPECTED} rows, built {len(results)}")
+    if len(results) + len(not_measured) != EXPECTED:
+        sys.exit(f"expected {EXPECTED} rows, built {len(results) + len(not_measured)}")
     n = sum(results.values())
     print(f"{n} PASS {len(results) - n} FAIL")
     sys.exit(0 if n == len(results) else 1)
