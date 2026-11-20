@@ -25,9 +25,17 @@ if ($proxy -ne 0) {
   exit 3
 }
 
+if (-not (Test-Path $Py)) {
+  'UNMEASURED python missing'
+  'RC=3'
+  exit 3
+}
+
 $argv = @((Join-Path $Dir 'measure_cdp_footprint.py'), '--exe', $Exe, '--drivers', $Dir, '--out', $Out, '--groups', $Groups)
 if ($Arms) { $argv += @('--arms', $Arms) }
 & $Py @argv
 $rc = $LASTEXITCODE
+# a python that never launched leaves $LASTEXITCODE null: that measured nothing
+if ($null -eq $rc) { $rc = 3 }
 "RC=$rc"
 exit $rc
