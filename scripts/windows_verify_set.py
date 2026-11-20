@@ -59,7 +59,7 @@ SET = [
     Entry("verify_webgl_pairing.py", 9, "stock"),
     Entry("verify_webgl_capability_identity.py", 13, "stock"),
     Entry("verify_navplatform_bucket.py", 7, "stock"),
-    Entry("verify_fonts_ii.py", 6, "stock"),
+    Entry("verify_fonts_ii.py", 11, "stock"),
     # F6c: NOT MEASURED on a host without an Arial Narrow face (Office-style). Where the face exists F6c is expected
     # to FAIL (the spec's known limit M1) and turns this entry red on purpose: close the limit or re-file it then.
     Entry("verify_windows_fonts.py", 9, "stock", may_skip=("F6c",)),
