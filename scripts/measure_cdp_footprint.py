@@ -279,9 +279,11 @@ class Run:
             sums[arm] = {"groups": s["groups"], "intl": s["intl"], "requests": s["requests"]["total"], "ajax_bz": s["requests"]["ajax_bz"]} if s else None
         v, details = {}, {}
         red = sums.get("red")
-        dead = bool(red and sums.get("none") and not rows.observer_fail_lines(rows.judge_observer(sums["none"], red)))
+        rl = rows.observer_fail_lines(rows.judge_observer(sums["none"], red)) if red and sums.get("none") else []
+        dead = not rl or rl[0].startswith("UNMEASURED")  # no red summary, or red shows nothing: no live control
         if dead:
-            self.notes.append("F: red shows no difference from none; differences are leads only")
+            self.notes.append("F: red missing or shows no difference from none; differences are leads only" if not red else
+                              "F: red shows no difference from none; differences are leads only")
         for arm in order:
             if sums.get(arm) is None or sums.get("none") is None:
                 v[arm] = rows.UNMEASURED
@@ -332,7 +334,7 @@ def exit_code(table):
     cells = [c for row, v in table.items() if not row.startswith("D.creepjs.") for a, c in v.items() if a in ("tdp", "tdp-main")]
     if rows.FAIL in cells:
         return 1
-    return 3 if not table or rows.UNMEASURED in cells else 0
+    return 3 if not cells or rows.UNMEASURED in cells else 0
 
 
 def main(argv=None):

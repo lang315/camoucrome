@@ -149,6 +149,7 @@ def test_creepjs_rows_never_counted():
     t = m.d_rows({}, ["tdp"])
     assert t["D.creepjs.lies"]["tdp"] == "UNMEASURED"
     assert m.exit_code({"D.creepjs.lies": {"tdp": "UNMEASURED", "tdp-main": "UNMEASURED"}, "L1": {"tdp": "PASS", "tdp-main": "PASS"}}) == 0
+    assert m.exit_code({"D.creepjs.lies": {"tdp": "UNMEASURED", "tdp-main": "UNMEASURED"}}) == 3  # nothing counted measured nothing
 
 
 def test_gate_failure_is_unmeasured(env, monkeypatch):
@@ -244,3 +245,17 @@ def test_reap_ends_orphan_with_profile_path(tmp_path):
     m.reap(prof)
     assert p.wait(10) is not None
     assert p.returncode != 0
+
+
+def test_f_missing_red_summary_is_unmeasured(env, monkeypatch):
+    by = {"none": _sum({"g": 1}), "tdp": _sum({"g": 1}), "tdp-main": _sum({"g": 1}), "red": None}
+
+    def summ(d):
+        r = by[re.search(r"F-(none|tdp-main|tdp|red)-", str(d)).group(1)]
+        if r is None:
+            raise m.observe_judge.MissingInput("x")
+        return r
+    monkeypatch.setattr(m.observe_judge, "summarize", summ)
+    rc, t, _ = env("--groups", "F")
+    assert t["rows"]["F.observer"] == {"none": "PASS", "tdp": "UNMEASURED", "tdp-main": "UNMEASURED", "red": "UNMEASURED"}
+    assert any("red missing" in n for n in t["notes"])
