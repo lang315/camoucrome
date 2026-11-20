@@ -160,8 +160,11 @@ GPU_CANVAS = os.environ.get("CAMOU_SP3A_GPU_CANVAS") == "1"
 # The stock reference of rows 2-5 is a canvas capture, and a CPU canvas and a GPU-rastered one read differently: one
 # baseline per mode. The GPU-canvas one is captured box-locally under CAMOU_SP3A_GPU_CANVAS=1 (SwiftShader is
 # deterministic) with --capture-baseline.
+# The binary kind is in the name too: chrome has window.chrome and content_shell does not, so row 10's winkeys hash
+# differs by one key (224 vs 223) between them. A chrome run (CAMOU_SHELL=chrome) reads chrome-sp3a-stock-canvas*.json.
 BASELINE = os.path.expanduser(
-    "~/camoucrome-verify/baselines/content_shell-sp3a-stock-canvas" + ("-gpu" if GPU_CANVAS else "") + ".json")
+    "~/camoucrome-verify/baselines/" + ("chrome" if os.environ.get("CAMOU_SHELL") == "chrome" else "content_shell")
+    + "-sp3a-stock-canvas" + ("-gpu" if GPU_CANVAS else "") + ".json")
 
 # A fixed, non-trivial 2D scene: a diagonal three-stop gradient, a translucent
 # circle, an opaque rectangle, and anti-aliased text. Content varies across the
