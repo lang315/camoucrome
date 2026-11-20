@@ -5,11 +5,15 @@
     "measured: arm 3w -Flags against two flag-less baselines; kept means the target process fell 10 % in peak and mean, beyond the baselines' spread, CPU rose 10 % at most and no page load rose more than 20 %.",
     "observe-auto -Flags takes only gate=pass. settings/launcher.json launch.light_args holds exactly the kept flags, in this order.",
     "A flag never contains ',' (observe-auto -Flags splits on it).",
-    "Approach B stopped by the owner on 2026-10-31: no flag was kept, so launch.light_args stays []. Run 20261031-133217 was UNMEASURED (one request after the trace ended); its numbers were read and showed no drop."
+    "Approach B stopped by the owner on 2026-10-31: no flag was kept, so launch.light_args stays []. Run 20261031-133217 was UNMEASURED (one request after the trace ended); its numbers were read and showed no drop.",
+    "2026-11-19 (light instance, rental-service goal): three per-instance candidates measured on the fork r9x, N = 10 separate instances, private bytes over blank / wiki / youtube, keep rule >= 15 MB saved per instance plus gate pass plus cross-site navigation time within +20 %. None kept, so launch.light_args stays []."
   ],
   "flags": [
     {"flag": "--js-flags=--optimize-for-size", "targets": "renderer", "gate": "fail", "gate_run": "20261031-110608", "measured": "dropped", "runs": []},
     {"flag": "--num-raster-threads=1", "targets": "renderer", "gate": "pass", "gate_run": "20261031-110608", "measured": "dropped", "runs": ["20261031-125958", "20261031-131619"]},
-    {"flag": "--disable-features=BackForwardCache", "targets": "renderer", "gate": "pass", "gate_run": "20261031-110608", "measured": "dropped", "runs": ["20261031-125958", "20261031-133217"]}
+    {"flag": "--disable-features=BackForwardCache", "targets": "renderer", "gate": "pass", "gate_run": "20261031-110608", "measured": "dropped", "runs": ["20261031-125958", "20261031-133217"]},
+    {"flag": "--disable-features=SpareRendererForSitePerProcess", "targets": "browser", "gate": "fail", "gate_run": "20261119-151622", "measured": "dropped", "runs": [], "note": "saved 17.6 MB per instance (renderers 3 -> 2), but navigator.connection.rtt moved 100 -> 150 in 3 of 3 gate runs (a no-op flag control: 0 of 2), and a cross-site navigation took 40.2 / 41.2 ms against 23.1 / 22.0 ms"},
+    {"flag": "--enable-features=NetworkServiceInProcess", "targets": "browser", "gate": "pending", "gate_run": "", "measured": "dropped", "runs": [], "note": "not applied on Windows: the NetworkService process stays in every arm"},
+    {"flag": "--disable-features=AudioServiceOutOfProcess", "targets": "browser", "gate": "pending", "gate_run": "", "measured": "dropped", "runs": [], "note": "saved 8.3 MB per instance, only on youtube (below 15 MB)"}
   ]
 }
