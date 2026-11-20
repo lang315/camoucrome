@@ -59,3 +59,23 @@ def test_bad_arm_rejected_and_creepjs_traversal(tmp_path):
 def test_probe_html_has_contract_ids():
     for s_ in ('id="ready"', 'id="t1"', 'id="t2"', 'id="go"', "/result?arm="):
         assert s_ in PROBE
+
+
+def test_done_404_while_only_tmp_exists(tmp_path):
+    srv, port = s.serve(tmp_path)
+    (tmp_path / "tdp-r2.json.tmp").write_text("{")
+    code, _ = _get(port, "/done?arm=tdp&run=r2")
+    srv.shutdown()
+    assert code == 404
+
+
+def test_bad_content_length_400(tmp_path):
+    import http.client
+    srv, port = s.serve(tmp_path)
+    c = http.client.HTTPConnection("127.0.0.1", port)
+    c.putrequest("POST", "/result?arm=a&run=b")
+    c.putheader("Content-Length", "abc")
+    c.endheaders()
+    code = c.getresponse().status
+    srv.shutdown()
+    assert code == 400 and not list(tmp_path.iterdir())

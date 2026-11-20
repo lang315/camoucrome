@@ -1,5 +1,6 @@
 """Loopback server of the CDP footprint harness: serves the probe page, receives its result."""
 import http.server
+import os
 import pathlib
 import re
 import threading
@@ -54,7 +55,15 @@ def serve(out_dir, delay_ms=50):
             f = self._target(urllib.parse.parse_qs(u.query))
             if u.path != "/result" or f is None:
                 return self._send(400)
-            f.write_bytes(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+            except ValueError:
+                return self._send(400)
+            if n < 0:
+                return self._send(400)
+            tmp = f.with_name(f.name + ".tmp")
+            tmp.write_bytes(self.rfile.read(n))
+            os.replace(tmp, f)  # /done must never see a partial file
             self._send(200)
 
         def log_message(self, *a):
