@@ -177,6 +177,12 @@ this task's brief explicitly says not to ship. No Blink file was modified for
 Task 3; F4 stands as a regression assertion (see its body below) that this
 stays true and that configuring fonts:list adds no new observable behaviour
 on this path.
+CORRECTION (2026-11-20): the predicate's answer IS observable once the page
+registers a face of the probed name. A never-loaded FontFace decoy makes
+CheckFont() false, so check() was true for a hidden host family and false for
+an absent one. FontCache::IsPlatformFamilyMatchAvailable now applies the
+fonts:list gate, and verify_fonts_ii.py's F-CHECK rows measure that, decoy
+included. F4 still holds for the no-decoy form.
 
 F5 RED-FIRST FINDING (Task 4): first written and run on about:blank (the
 same session as F1-F4, navigate_to=None) it measured "undefined" even

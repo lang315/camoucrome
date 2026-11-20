@@ -73,6 +73,63 @@ def worker_probe(name):
     )
 
 
+ABSENT_FONT = "NoSuchFontXYZ123"
+# A listed host font that local() loads, for the loaded decoy: its full name must be
+# its family name (local() matches full and PostScript names; Lato's is "Lato Regular").
+# Every F-CHECK config lists it.
+LOAD_SRC = HOST_SERIF
+CHECK_LIST = sorted({"Lato", LOAD_SRC})
+
+
+def check_probe(name, worker=False):
+    # document.fonts.check(font, 'a') for [name, ABSENT_FONT] in three forms:
+    #   plain:    no face of that name (true for any name: verify_sp4_fonts F4);
+    #   unloaded: a never-loaded FontFace decoy of each name; check() answers from
+    #             the platform predicate (true: the host has it) or the decoy
+    #             (false: not loaded and its range holds 'a') -- the leak's form;
+    #   loaded:   the decoy replaced by a loaded local(LOAD_SRC) face (true either way).
+    # status is the loaded decoys' FontFace.status: a load that failed would measure
+    # the unloaded form again.
+    names = json.dumps([name, ABSENT_FONT])
+    body = (
+        f"const fs = {'self' if worker else 'document'}.fonts;"
+        f"const names = {names};"
+        "const chk = () => names.map((n) => fs.check('40px \\\"' + n + '\\\"', 'a'));"
+        "const out = {plain: chk()};"
+        "let faces = names.map((n) => new FontFace(n, 'url(/decoy-never-loaded.woff2)'));"
+        "faces.forEach((f) => fs.add(f));"
+        "out.unloaded = chk();"
+        "faces.forEach((f) => fs.delete(f));"
+        f"faces = names.map((n) => new FontFace(n, 'local(\\\"{LOAD_SRC}\\\")'));"
+        "faces.forEach((f) => fs.add(f));"
+        "await Promise.all(faces.map((f) => f.load().catch(() => null)));"
+        "out.loaded = chk();"
+        "out.status = faces.map((f) => f.status);"
+    )
+    if not worker:
+        return f"(async () => {{ {body} return out; }})()"
+    code = f"self.onmessage = async () => {{ {body} self.postMessage(out); }};"
+    return (
+        "(async () => {"
+        f"  const blob = new Blob([{json.dumps(code)}], "
+        "    {type: 'application/javascript'});"
+        "  const w = new Worker(URL.createObjectURL(blob));"
+        "  return await new Promise((res) => {"
+        "    w.onmessage = (e) => res(e.data);"
+        "    w.postMessage(0);"
+        "  });"
+        "})()"
+    )
+
+
+# check_probe answers: a hidden host family must read exactly as the absent name
+# (stock for a family the machine lacks); a listed one as stock.
+HIDDEN = {"plain": [True, True], "unloaded": [False, False], "loaded": [True, True],
+          "status": ["loaded", "loaded"]}
+SHOWN = {"plain": [True, True], "unloaded": [True, False], "loaded": [True, True],
+         "status": ["loaded", "loaded"]}
+
+
 def status_case(key, cfg, js, want):
     config = json.dumps(cfg) if cfg is not None else None
     values, err = lib_shell.session(config, [js])
@@ -110,6 +167,30 @@ status_case(
 status_case(
     "F-WORKER-LISTED listed local() in a worker -> loaded (parity)",
     {"fonts:list": [HOST_FONT, "Lato"]}, worker_probe(HOST_FONT), "loaded")
+
+# --- F-CHECK: document.fonts.check() must not tell a hidden host family from an
+# absent one (RED pre-fix: unloaded [true, false]; FontCache::IsPlatformFamilyMatchAvailable
+# answered for the host) ---
+status_case(
+    "F-CHECK hidden host family reads as absent in check() (RED: unloaded [true, false] pre-fix)",
+    {"fonts:list": CHECK_LIST}, check_probe(HOST_FONT), HIDDEN)
+status_case(
+    "F-CHECK-WORKER hidden host family reads as absent in a worker's check() (parity)",
+    {"fonts:list": CHECK_LIST}, check_probe(HOST_FONT, worker=True), HIDDEN)
+status_case(
+    "F-CHECK-LISTED listed host family answers check() as stock",
+    {"fonts:list": sorted({HOST_FONT, *CHECK_LIST})}, check_probe(HOST_FONT), SHOWN)
+status_case(
+    "F-CHECK-STOCK no fonts:list -> check() as stock",
+    None, check_probe(HOST_FONT), SHOWN)
+if os.name == "nt":
+    # A Windows suffix name of a listed family (font_cache_skia_win.cc strips " semibold"
+    # and finds Segoe UI) answers as stock does: the gate admits it as font_fallback_list
+    # does (#228), under a Windows claim only.
+    status_case(
+        "F-CHECK-SUFFIX listed family's suffix name answers check() as stock (Windows)",
+        {"fonts:list": sorted({"Segoe UI", *CHECK_LIST}), "ua:platform": "Windows"},
+        check_probe("Segoe UI Semibold"), SHOWN)
 
 # --- F-DIRECT: sp4-fonts direct-probe gate still holds (regression) ---
 F_DIRECT = "F-DIRECT excluded measureText falls back (sp4-fonts intact)"

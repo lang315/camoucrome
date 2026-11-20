@@ -27,7 +27,7 @@ index f86d671768..f5cc840919 100644
    }
  
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index db31094c2d..a98a6f7b90 100644
+index db31094c2d..1153fb01e3 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
 @@ -35,9 +35,13 @@
@@ -83,3 +83,17 @@ index db31094c2d..a98a6f7b90 100644
  #if !BUILDFLAG(IS_MAC)
    if (creation_params.CreationType() == kCreateFontByFamily &&
        creation_params.Family() == font_family_names::kSystemUi) {
+@@ -199,6 +235,13 @@ const SimpleFontData* FontCache::FontDataFromFontPlatformData(
+ bool FontCache::IsPlatformFamilyMatchAvailable(
+     const FontDescription& font_description,
+     const AtomicString& family) {
++  // fonts:list: a hidden family answers as one the host lacks, as
++  // FontFallbackList does. document.fonts.check() reads this predicate through
++  // a never-loaded decoy face of the same name.
++  if (!camoucfg::IsFontFamilyOrVariantAllowed(camoucfg::ScopeFor(nullptr),
++                                              family.Utf8())) {
++    return false;
++  }
+   return GetFontPlatformData(
+       font_description,
+       FontFaceCreationParams(AdjustFamilyNameToAvoidUnsupportedFonts(family)),
