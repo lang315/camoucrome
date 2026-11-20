@@ -18,12 +18,17 @@ role_driver = "--exe" in a
 profile = opt("--profile") if role_driver else next(x for x in a if x.startswith("--user-data-dir="))[16:]
 arm = re.search(r"[LDF]-(none|tdp-main|tdp|red)-", profile.replace("\\", "/")).group(1)
 mode = os.environ.get("FAKE_MODE", "pass")
+if mode == "gpu":
+    os.makedirs(profile, exist_ok=True)
+    open(os.path.join(profile, "chrome_debug.log"), "w").write("[1:2] GPU process exited unexpectedly: exit_code=8\n")
 url = opt("--url") if role_driver else a[-1]
 if "/probe.html" in url and mode != "nopost":
     q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
     flag = arm == "red" or (mode == "tdpflag" and arm == "tdp")
     urllib.request.urlopen(urllib.request.Request(url.split("/probe.html")[0] + "/result?arm=%s&run=%s" % (arm, q["run"][0]),
                            json.dumps({"L1": flag}).encode()))
+if role_driver and opt("--mode") == "detector" and mode == "noout" and arm == "tdp":
+    sys.exit(0)
 if role_driver and opt("--mode") == "detector":
     t = "\U0001f534 runtimeEnableLeak\t1ms\t" if arm == "red" else "\U0001f7e2 runtimeEnableLeak\t1ms\t"
     json.dump({"driver": "fake", "text": t}, open(opt("--out"), "w"))
@@ -70,17 +75,66 @@ def test_no_post_times_out_unmeasured(env):
     assert rc == 3 and set(t["rows"]["L1"].values()) == {"UNMEASURED"}
 
 
-def test_exit_codes(env):
-    rc, t, _ = env("--groups", "L", mode="tdpflag")
-    assert rc == 1 and t["rows"]["L1"] == {"tdp": "FAIL", "tdp-main": "PASS", "red": "FAIL"}
-    rc, t, _ = env("--groups", "L", mode="pass")
-    assert rc == 3
-
-
-def test_row_fail_is_exit_1(env, monkeypatch):
+def test_exit_1_when_tdp_fails(env, monkeypatch):
     monkeypatch.setattr(m.rows, "judge_row", lambda row, r: {"tdp": "FAIL", "tdp-main": "PASS", "red": "FAIL"})
     rc, t, _ = env("--groups", "L")
     assert rc == 1
+
+
+def test_exit_3_when_only_unmeasured(env, monkeypatch):
+    monkeypatch.setattr(m.rows, "judge_row", lambda row, r: {"tdp": "PASS", "tdp-main": "UNMEASURED", "red": "FAIL"})
+    rc, t, _ = env("--groups", "L")
+    assert rc == 3
+
+
+def test_all_pass_exit_0(env, monkeypatch):
+    monkeypatch.setattr(m.rows, "judge_row", lambda row, r: {"tdp": "PASS", "tdp-main": "PASS", "red": "FAIL"})
+    rc, t, _ = env("--groups", "L")
+    assert rc == 0
+
+
+def test_empty_table_exit_3(env):
+    rc, t, _ = env("--groups", "X")
+    assert t["rows"] == {} and rc == 3
+
+
+def test_red_fail_alone_does_not_fail(env):
+    assert m.exit_code({"L1": {"none": "PASS", "tdp": "PASS", "tdp-main": "PASS", "red": "FAIL"}}) == 0
+
+
+def test_real_flag_row_fails_tdp(env):
+    rc, t, _ = env("--groups", "L", mode="tdpflag")
+    assert t["rows"]["L1"] == {"tdp": "FAIL", "tdp-main": "PASS", "red": "FAIL"}
+
+
+def test_late_result_without_done_is_unmeasured(env, monkeypatch):
+    monkeypatch.setattr(m, "_ok", lambda url: False)  # the result file exists, /done never held
+    rc, t, _ = env("--groups", "L")
+    assert set(t["rows"]["L1"].values()) == {"UNMEASURED"}
+
+
+def test_gpu_crash_is_unmeasured(env):
+    rc, t, _ = env("--groups", "L", mode="gpu")
+    assert set(t["rows"]["L1"].values()) == {"UNMEASURED"} and any("GPU process crashed" in n for n in t["notes"])
+
+
+def test_driver_without_out_is_unmeasured(env):
+    rc, t, _ = env("--groups", "D", mode="noout")  # only the tdp driver exits without --out; red still trips the control
+    r = t["rows"]["D.rebrowser.runtimeEnableLeak"]
+    assert (r["tdp"], r["tdp-main"], r["red"]) == ("UNMEASURED", "PASS", "FAIL")
+
+
+def test_gate_exception_is_unmeasured(env, monkeypatch):
+    def boom():
+        raise OSError("quser missing")
+    monkeypatch.setattr(m, "gate", boom)
+    rc, t, _ = env("--groups", "L")
+    assert rc == 3 and "L none: gate error OSError" in t["notes"]
+
+
+def test_d_rows_status_mapping():
+    r = m.d_rows({("red", "rebrowser"): {"runtimeEnableLeak": "fail", "a": "pass", "b": "not triggered"}}, ["red"])
+    assert (r["D.rebrowser.a"]["red"], r["D.rebrowser.b"]["red"]) == ("PASS", "UNMEASURED")
 
 
 def test_gate_failure_is_unmeasured(env, monkeypatch):
@@ -98,14 +152,15 @@ def test_d_group_verdicts_and_dead_control(env):
 
 
 def test_raw_deleted_after_judge(env, monkeypatch):
-    seen = []
+    seen, alive = [], []
 
     def summ(d):
+        alive.append([p.exists() for p in seen])  # earlier arms' raw must be gone already
         seen.append(d)
         return {"groups": {"g": 1}, "intl": None, "requests": {"total": 3, "ajax_bz": 0}}
     monkeypatch.setattr(m.observe_judge, "summarize", summ)
     rc, t, out = env("--groups", "L,F")
-    assert len(seen) == 4 and not (out / "raw").exists()
+    assert len(seen) == 4 and not any(map(any, alive)) and not (out / "raw").exists()
     assert t["rows"]["F.observer"] == {"none": "PASS", "tdp": "PASS", "tdp-main": "PASS", "red": "PASS"}
     assert "SECRET" not in (out / "table.json").read_text() + (out / "table.md").read_text()
     env("--groups", "L", "--keep-raw")

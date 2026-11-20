@@ -108,19 +108,21 @@ def launch_none(exe, argv, env, profile, url, wait_s, until=None):
     """The browser as a user opens it: no driver. After wait_s (or once until() holds) close the window gracefully."""
     p = subprocess.Popen([exe, *argv, "--user-data-dir=" + str(profile), url], env=env, start_new_session=os.name != "nt",
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if until:
-        wait_until(until, wait_s)
-    else:
-        time.sleep(wait_s)
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(p.pid)], capture_output=True)
-    else:
-        p.terminate()
     try:
-        p.wait(15)
-    except subprocess.TimeoutExpired:
-        kill_tree(p)
-        p.wait()
+        if until:
+            wait_until(until, wait_s)
+        else:
+            time.sleep(wait_s)
+    finally:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(p.pid)], capture_output=True)
+        else:
+            p.terminate()
+        try:
+            p.wait(15)
+        except subprocess.TimeoutExpired:
+            kill_tree(p)
+            p.wait()
 
 
 def run_driver(cmd, wait):
@@ -169,7 +171,10 @@ class Run:
 
     def launch(self, group, arm, mode, url, wait_s, flags_for=None, until=None, driver_timeout=None):
         """One launch of one arm. Returns (run dir, driver --out path or None) or None when a gate stopped it."""
-        reason = gate()
+        try:
+            reason = gate()
+        except Exception as e:  # noqa: BLE001 - a gate that cannot be read is a gate that failed
+            reason = f"gate error {type(e).__name__}"
         if reason:
             self.notes.append(f"{group} {arm}: {reason}")
             return None
@@ -206,7 +211,8 @@ class Run:
             url = f"http://127.0.0.1:{self.port}/probe.html?arm={arm}&run={run}"
             got = self.launch("L", arm, "probe", url, self.a.l_timeout, until=done)
             f = self.raw / "results" / f"{arm}-{run}.json"
-            results[arm] = json.loads(f.read_text(encoding="utf-8")) if got and f.exists() else None
+            # a result counts only if /done held in time: a late or partial file of a timed-out arm is not a measurement
+            results[arm] = json.loads(f.read_text(encoding="utf-8")) if got and done() and f.exists() else None
         return {row: rows.judge_row(row, results) for row in rows.CLASS}
 
     def group_D(self, order):
@@ -267,7 +273,7 @@ def d_rows(parsed, driven):
     for arm in driven:
         rb, dbi, cj = parsed.get((arm, "rebrowser")), parsed.get((arm, "dbi_bot")), parsed.get((arm, "creepjs"))
         for t, s in (rb or {}).items():
-            table.setdefault(f"D.rebrowser.{t}", {})[arm] = v(s == "fail")
+            table.setdefault(f"D.rebrowser.{t}", {})[arm] = v({"pass": False, "fail": True}.get(s))  # "not triggered" etc. is no pass
         for f, b in (dbi or {}).items():
             table.setdefault(f"D.dbi_bot.{f}", {})[arm] = v(b)
         for row, key in (("headless", "headless"), ("lies", "lies")):
@@ -283,10 +289,12 @@ def d_rows(parsed, driven):
 
 
 def exit_code(table):
-    cells = [(a, c) for v in table.values() for a, c in v.items() if c in (rows.FAIL, rows.UNMEASURED)]
-    if any(c == rows.FAIL and a != "red" for a, c in cells):
+    # Only the tdp and tdp-main verdicts count: red is a positive control whose FAILs are expected on every group
+    # (a dead control already turns the tdp cells UNMEASURED), and none is the baseline.
+    cells = [c for v in table.values() for a, c in v.items() if a in ("tdp", "tdp-main")]
+    if rows.FAIL in cells:
         return 1
-    return 3 if cells and any(c == rows.UNMEASURED for _a, c in cells) else 0
+    return 3 if not table or rows.UNMEASURED in cells else 0
 
 
 def main(argv=None):
