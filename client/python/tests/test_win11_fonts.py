@@ -29,7 +29,7 @@ def test_win11_host_lists_the_win11_families():
 
 
 def test_win10_or_unknown_host_lists_none_of_them():
-    for pv in ("10.0.0", None, "bad"):
+    for pv in ("12.0.0", "10.0.0", None, "bad"):
         assert not set(WIN11) & set(_config(pv)["fonts:list"]), pv
 
 
@@ -49,3 +49,14 @@ def test_win11_set_is_appended_and_the_rest_is_unchanged():
     assert b["fonts:list"] == a["fonts:list"] + WIN11
     assert {k: v for k, v in a.items() if k not in ("fonts:list", "ua:platformVersion")} == \
            {k: v for k, v in b.items() if k not in ("fonts:list", "ua:platformVersion")}
+
+
+def test_non_windows_claim_keeps_its_own_version_and_fonts():
+    c = _config("19.0.0", os="macos")
+    assert c["ua:platformVersion"] != "19.0.0" and not set(WIN11) & set(c["fonts:list"])
+
+
+def test_a_windows_recapture_carries_the_win11_block():
+    sys.path.insert(0, str(gen.ROOT / "scripts"))
+    import capture_fonts_list  # noqa: PLC0415
+    assert "win11" in capture_fonts_list.CARRIED

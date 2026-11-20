@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -36,7 +37,7 @@ func TestWin11HostListsTheWin11Families(t *testing.T) {
 }
 
 func TestWin10OrUnknownHostListsNoneOfThem(t *testing.T) {
-	for _, pv := range []string{"10.0.0", "", "bad"} {
+	for _, pv := range []string{"12.0.0", "10.0.0", "", "bad"} {
 		for _, f := range fontList(t, pv) {
 			for _, w := range win11Want {
 				if f == w {
@@ -54,5 +55,25 @@ func TestWin11DataIsEmbedded(t *testing.T) {
 	w := tables.fonts.Families.Windows.Win11
 	if w.MinPlatformMajor != 13 || !reflect.DeepEqual(w.Families, win11Want) {
 		t.Errorf("embedded win11 = %+v", w)
+	}
+}
+
+// An entry without fonts:list (every host font visible) stays without one: six names alone would hide the rest.
+func TestWin11HostKeepsAnAbsentList(t *testing.T) {
+	h := goodHost
+	h.PlatformVersion = "19.0.0"
+	id := mustDraw(t, 7, &h)
+	var entry map[string]any
+	if err := json.Unmarshal(id.Entry, &entry); err != nil {
+		t.Fatal(err)
+	}
+	delete(entry, "fonts:list")
+	id.Entry, _ = json.Marshal(entry)
+	r, err := Resolve(id, h, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, ok := r.Config["fonts:list"]; ok {
+		t.Errorf("fonts:list = %v, want absent", l)
 	}
 }

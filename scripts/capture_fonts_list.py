@@ -12,6 +12,8 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PATH = ROOT / "settings" / "fonts.json"
+# keys of families.<os> measured apart from this capture, kept across a recapture (gen.fonts_keys reads win11)
+CARRIED = ("ps_names_are_css_families", "ps_names_how", "win11")
 
 
 def winhost_families():
@@ -122,8 +124,8 @@ def main():
     os_key = "Windows" if a.where == "winhost" else "macOS"
     old = d["families"].get(os_key, {})
     d["families"][os_key] = {
-        # measured separately (stock Chrome's CSS matching of PostScript names), carried over
-        **{k: old[k] for k in ("ps_names_are_css_families", "ps_names_how") if k in old},
+        # measured separately (stock Chrome's CSS matching of PostScript names, the Windows 11 families), carried over
+        **{k: old[k] for k in CARRIED if k in old},
         "captured": datetime.date.today().isoformat(),
         "how": how + "; families in families.exclude (vendor software on this host) dropped", "list": fams,
         "os_version": os_version, "platform_version": platform_version,

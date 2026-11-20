@@ -10,6 +10,12 @@ import (
 
 var platformVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
+// majorOf is the major of an N.N.N platformVersion (0 when it does not parse).
+func majorOf(pv string) int {
+	n, _ := strconv.Atoi(strings.SplitN(pv, ".", 2)[0])
+	return n
+}
+
 // angleIGPURe is gen.py ANGLE_D3D11_RE for the two vendors that have iGPU floors.
 var angleIGPURe = regexp.MustCompile(`^ANGLE \((Intel|AMD), .+ \(0x([0-9A-Fa-f]{8})\) Direct3D11 vs_5_0 ps_5_0, D3D11\)$`)
 
@@ -152,8 +158,8 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 		cfg["ua:platformVersion"] = h.PlatformVersion
 		// A Windows 11 version lists the Windows 11 families (gen.py from_pool): fonts date Windows (CreepJS).
 		w := tables.fonts.Families.Windows.Win11
-		if major, _ := strconv.Atoi(strings.SplitN(h.PlatformVersion, ".", 2)[0]); major >= w.MinPlatformMajor {
-			list, _ := cfg["fonts:list"].([]any)
+		// An absent list (every host font visible) stays absent: six names alone would hide the rest.
+		if list, ok := cfg["fonts:list"].([]any); ok && majorOf(h.PlatformVersion) >= w.MinPlatformMajor {
 			listed := map[string]bool{}
 			for _, f := range list {
 				listed[f.(string)] = true
