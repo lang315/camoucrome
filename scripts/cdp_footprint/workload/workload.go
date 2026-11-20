@@ -6,8 +6,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -105,28 +107,48 @@ func (r *Result) write(path string, d Driver) {
 }
 
 // Run executes the mode and returns the process exit code. --out is written on every exit path.
-func Run(name string, d Driver, f *Flags) int {
+// Stop = stdin EOF (Windows has no catchable SIGTERM) or SIGINT/SIGTERM: close the browser, write --out, exit.
+func Run(name string, d Driver, f *Flags) (code int) {
 	r := &Result{Driver: name}
+	var once sync.Once
+	shutdown := func(errMsg string) {
+		once.Do(func() {
+			if errMsg != "" && r.Error == nil {
+				r.Error = &errMsg
+			}
+			d.Close()
+			r.write(f.Out, d)
+		})
+	}
+	stop := func() {
+		msg := ""
+		if f.Mode != "probe" { // in probe mode the stop is the normal end
+			msg = "interrupted"
+		}
+		shutdown(msg)
+		if msg != "" {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	exit := func(code int) int {
-		d.Close()
-		r.write(f.Out, d)
-		return code
-	}
-	go func() { // the orchestrator kills a probe driver with a signal
-		<-sig
-		d.Close()
-		r.write(f.Out, d)
-		os.Exit(0)
+	go func() { <-sig; stop() }()
+	go func() { io.Copy(io.Discard, os.Stdin); stop() }()
+	defer func() {
+		if x := recover(); x != nil {
+			shutdown(fmt.Sprint("panic: ", x))
+			code = 1
+		}
 	}()
 	if err := run(r, d, f); err != nil {
 		s := err.Error()
-		r.Error = &s
 		fmt.Fprintln(os.Stderr, "error:", err)
-		return exit(1)
+		shutdown(s)
+		return 1
 	}
-	return exit(0)
+	shutdown("")
+	return 0
 }
 
 func run(r *Result, d Driver, f *Flags) error {
@@ -163,13 +185,13 @@ func run(r *Result, d Driver, f *Flags) error {
 		if err := d.Eval(RebrowserJS); err != nil {
 			return err
 		}
-		prev, deadline := "", time.Now().Add(120*time.Second)
+		prev, deadline := "\x00", time.Now().Add(120*time.Second)
 		for {
 			t, err := d.EvalString("() => document.body.innerText")
 			if err != nil {
 				return err
 			}
-			if t == prev || time.Now().After(deadline) {
+			if (t != "" && t == prev) || time.Now().After(deadline) {
 				r.Text = &t
 				break
 			}

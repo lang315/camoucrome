@@ -113,7 +113,9 @@ func (d *drv) Launch(f *workload.Flags) error {
 }
 
 func (d *drv) Navigate(url string) error {
-	lf, err := d.c.Page.LoadEventFired(d.ctx)
+	ctx, cancel := context.WithTimeout(d.ctx, 60*time.Second)
+	defer cancel()
+	lf, err := d.c.Page.LoadEventFired(ctx)
 	if err != nil {
 		return err
 	}
@@ -122,9 +124,7 @@ func (d *drv) Navigate(url string) error {
 	if _, err := d.c.Page.Navigate(d.ctx, page.NewNavigateArgs(url)); err != nil {
 		return err
 	}
-	if _, err := lf.Recv(); err != nil {
-		return err
-	}
+	lf.Recv()                                             // a page that never fires load (facebook) is not an error after 60 s
 	return d.Eval("() => { window.__footprint_red = 1 }") // the L8 control
 }
 
