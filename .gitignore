@@ -11,3 +11,4 @@ docs/superpowers/
 client/python/camoucrome/_settings/
 *.egg-info/
 scripts/sp4_tzlocale_baseline.json
+scripts/cdp_footprint/out/

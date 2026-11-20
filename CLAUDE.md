@@ -245,8 +245,13 @@ startup abort instead of a silent fall-back to real values.
   (`scripts/gpu_gate.py`). A nonzero count is `UNMEASURED`, never PASS or
   FAIL. Native Windows builds run at `-j 8`, because WSL's VM holds most of the
   commit limit.
-- **Automated facebook recon** (owner, 2026-10-17) runs only through
-  `scripts/windows/observe-auto.ps1` on the host. It runs arm 1 (logged out)
+- **Automated facebook runs** use `scripts/windows/observe-auto.ps1` on the
+  host, or a measurement harness whose spec the owner approved (named there
+  with its arms; first: `measure_cdp_footprint.py`, 2026-11-20). The limits
+  below bind an approved harness too: one load per arm per run, never
+  scheduled or looped, no credential typing, the owner's session Active, 8 GB
+  commit headroom, no native build, launched detached, verdicts `PASS`,
+  `FAIL` or `UNMEASURED`. `observe-auto.ps1` runs arm 1 (logged out)
   and arm 3 (the backed-up login at
   `D:\camou-win\observe\backup\fb-login-20261017`), one load each, with no
   input. Never schedule it or loop it. Arm 2, the login, stays manual by
@@ -265,6 +270,8 @@ startup abort instead of a silent fall-back to real values.
     "Recalibrating"). A backup made on the old build may expire on its
     first load with the new one (2026-11-12). The owner then logs in again
     by hand (README "Expired login").
+  - Raw output (trace, netlog, cookies, page text) stays on the host; only
+    names and counts leave it.
 - Pre-flight, both cheap and both exist because the omission already happened:
   `python3 scripts/check_additions_build.py` (every `additions/camoucfg` source
   must be in its `BUILD.gn` `sources` — `coherence_validator.cc` sat there
