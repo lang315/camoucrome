@@ -38,8 +38,8 @@ security fixes of newer Chrome, including later patches of its own milestone.** 
 ## Install
 
 `<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
-`<sha>` is a full commit SHA from this repository. For the Latest release, `v157.0.8103.51-10`,
-it is `e53976b1e129bbc5016699bf28af04ad6de1cc5b`; the Go and Node lines below already name it.
+`<sha>` is a full commit SHA from this repository. For the Latest release, `v157.0.8103.51-11`,
+it is `add43b7f8f3ba3a660d1148f81d2e3cfbd6e8769`; the Go and Node lines below already name it.
 `<chrome-version>` is the Chrome version the release is built on.
 
 Run everything below in an elevated PowerShell ("Run as administrator"), because the
@@ -99,9 +99,9 @@ The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`.
 
 Other clients:
 
-- Go: `go get github.com/lang315/camoucrome/client/go@e53976b1e129bbc5016699bf28af04ad6de1cc5b`. Go generates identities by
+- Go: `go get github.com/lang315/camoucrome/client/go@add43b7f8f3ba3a660d1148f81d2e3cfbd6e8769`. Go generates identities by
   calling `python -m camoucrome.gen`, so install the Python package above too.
-- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v157.0.8103.51-10/camoucrome-0.1.5.tgz`.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v157.0.8103.51-11/camoucrome-0.1.5.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 ## Install on Linux (headless server use)
