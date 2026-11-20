@@ -43,6 +43,9 @@ def test_invariant_catches_a_planted_collision():
     win11 = copy.deepcopy(FONTS)
     win11["families"]["Windows"]["win11"]["families"].append("Segoe UI Black")
     assert fs.collisions(win11) == [("Windows", "Segoe UI Black", "Segoe UI")]
+    sup = copy.deepcopy(FONTS)
+    sup["families"]["Windows"]["supplemental"]["japanese"]["families"].append("Calibri Light")
+    assert fs.collisions(sup) == [("Windows", "Calibri Light", "Calibri")]
 
 
 def _cpp_tables(src):

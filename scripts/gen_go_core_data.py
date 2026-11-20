@@ -71,12 +71,14 @@ def rebuild_fonts(fonts, groups):
     families. The reference the Go side ports (client/go/core/fonts.go)."""
     fam = fonts["families"][PLATFORM]
     chosen = set(fam["base"])
+    sup = fam.get("supplemental", {})
     for g in groups:
-        chosen |= set(fam["groups"][g]["families"])
+        if g in fam["groups"]:
+            chosen |= set(fam["groups"][g]["families"])
     families = [f for f in fam["list"] if f in chosen]
     hidden = set(fam["list"]) - chosen
     alias = {k: v for k, v in fonts["alias_map"][PLATFORM].items() if k not in hidden}
-    allowed = families + fonts["extra_allowed"][PLATFORM]
+    allowed = families + fonts["extra_allowed"][PLATFORM] + [f for g in groups if g in sup for f in sup[g]["families"]]
     if fam["ps_names_are_css_families"]:
         for name, v in fam["unique_names"].items():
             target = alias.get(v["family"], v["family"])
@@ -94,7 +96,8 @@ def font_groups(fonts, config):
     """The group names whose families all appear in the drawn fonts:list, verified by rebuilding the font keys."""
     fam = fonts["families"][PLATFORM]
     listed = set(config["fonts:list"])
-    groups = sorted(g for g, v in fam["groups"].items() if set(v["families"]) <= listed)
+    groups = sorted(g for g, v in list(fam["groups"].items()) + list(fam.get("supplemental", {}).items())
+                    if set(v["families"]) <= listed)
     rebuilt = rebuild_fonts(fonts, groups)
     for k, v in rebuilt.items():
         if config.get(k) != v:

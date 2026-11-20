@@ -13,7 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PATH = ROOT / "settings" / "fonts.json"
 # keys of families.<os> measured apart from this capture, kept across a recapture (gen.fonts_keys reads win11)
-CARRIED = ("ps_names_are_css_families", "ps_names_how", "win11")
+CARRIED = ("ps_names_are_css_families", "ps_names_how", "win11", "supplemental")
 
 
 def winhost_families():
