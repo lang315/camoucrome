@@ -1179,6 +1179,11 @@ seeded_w, seeded_w_err = session(CANVAS, WORKER_READBACK)
 seeded_shot, seeded_shot_err = session(CANVAS, None, screenshot=True)
 unconf_shot, unconf_shot_err = session(None, None, screenshot=True)
 native, native_err = session(CANVAS, NATIVE_PROBE)
+# chrome has window.chrome and content_shell does not, so a content_shell baseline cannot hold a chrome window-key
+# hash (224 vs 223 keys). Row 10 then compares the config arm with the no-config arm of the same binary: it is
+# config vs no-config, not vs stock.
+CHROME_RUN = os.environ.get("CAMOU_SHELL") == "chrome"
+native_noconf, native_noconf_err = session(None, NATIVE_PROBE) if CHROME_RUN else (None, None)
 
 # --- OffscreenCanvas.convertToBlob (main thread) for C7 ---
 CONVERT_TO_BLOB = f"""() => new Promise((resolve, reject) => {{
@@ -1280,7 +1285,8 @@ C6 = "6  seeded readPixels of a gradient triangle deterministic, differs from un
 C7 = "7  seeded OffscreenCanvas.convertToBlob deterministic, differs from unconfigured"
 C8 = "8  worker OffscreenCanvas readback deterministic, differs from unconfigured (parity)"
 C9 = "9  DevTools screenshot of a text-free scene identical seeded vs unconfigured"
-C10 = "10 accessors native + window keys unchanged"
+C10 = ("10 accessors native + window keys equal the no-config arm (config vs no-config, not vs stock)"
+       if CHROME_RUN else "10 accessors native + window keys unchanged")
 
 # C1
 if seeded is None:
@@ -1378,14 +1384,18 @@ else:
                      "to draw time / composited output")
 
 # C10 native accessors
-if native is None or baseline is None:
+c10_ref = native_noconf["winkeys"] if CHROME_RUN and native_noconf is not None else (
+    None if CHROME_RUN else bl("winkeys"))
+if native is None or c10_ref is None or (not CHROME_RUN and baseline is None):
     results[C10] = False
     if native_err:
         notes.append(f"C10: {type(native_err).__name__}: {native_err}")
+    if native_noconf_err:
+        notes.append(f"C10: no-config arm {type(native_noconf_err).__name__}: {native_noconf_err}")
 else:
     all_native = (native["toDataURL"] and native["getImageData"]
                   and native["readPixels"])
-    keys_same = native["winkeys"] == bl("winkeys")
+    keys_same = native["winkeys"] == c10_ref
     results[C10] = all_native and keys_same
     if not results[C10]:
         notes.append(f"C10: native={all_native} winkeys_same={keys_same}")
