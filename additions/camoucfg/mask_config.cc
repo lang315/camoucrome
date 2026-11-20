@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/containers/span.h"
+#include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "components/camoucfg/derive.h"
@@ -105,6 +106,20 @@ bool IsFontFamilyOrVariantAllowedFrom(const base::DictValue& cfg, std::string_vi
   return false;
 }
 
+std::string AllowedFamilyListFrom(const base::DictValue& cfg, std::string_view list, bool windows_variants) {
+  if (!HasKeyIn(cfg, keys::kFonts)) {
+    return std::string(list);  // rule 5
+  }
+  std::string out;
+  for (std::string_view name :
+       base::SplitStringPiece(list, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+    if (IsFontFamilyOrVariantAllowedFrom(cfg, name, windows_variants)) {
+      out.append(",").append(name);
+    }
+  }
+  return out;
+}
+
 std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name) {
   const base::DictValue* map = cfg.FindDict(unique_name ? keys::kFontsAliasLocal : keys::kFontsAlias);
   if (!map) {
@@ -123,6 +138,15 @@ std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string
 
 bool IsFontAllowed(const ConfigScope& scope, std::string_view family) {
   return internal::IsFontAllowedFrom(internal::ParsedConfig(), family);
+}
+
+std::string AllowedFamilyList(const ConfigScope& scope, std::string_view list) {
+#if BUILDFLAG(IS_WIN)
+  const bool windows_variants = ClaimedOs(scope) == OsFamily::kWindows;
+#else
+  const bool windows_variants = false;
+#endif
+  return internal::AllowedFamilyListFrom(internal::ParsedConfig(), list, windows_variants);
 }
 
 bool IsFontFamilyOrVariantAllowed(const ConfigScope& scope, std::string_view family) {

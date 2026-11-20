@@ -94,6 +94,14 @@ bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
 // real family while the bare name renders the alias target.
 bool IsFontFamilyOrVariantAllowed(const ConfigScope& scope, std::string_view family);
 
+// A per-script default font list in Chrome's form (",A,B,C"; GenericFontFamilySettings
+// via FontCache::FirstAvailableOrFirst) with only the families
+// IsFontFamilyOrVariantAllowed admits, in order, as ",A,C". None admitted gives
+// "": the name picked from the list renders as a generic, which the gate skips,
+// so a hidden name must never be picked (stock without those fonts resolves no
+// face either). No fonts:list key returns the list verbatim (rule 5).
+std::string AllowedFamilyList(const ConfigScope& scope, std::string_view list);
+
 // fonts-iii: the configured alias target for a requested CSS family
 // (fonts:alias, case-insensitive on the requested name), or nullopt when the
 // key is absent or names no such family. FontCache::GetFontPlatformData looks
@@ -131,6 +139,8 @@ bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family);
 // "Windows build under a Windows claim".
 bool IsFontFamilyOrVariantAllowedFrom(const base::DictValue& cfg, std::string_view family, bool windows_variants);
 std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name = false);
+// AllowedFamilyList's core; |windows_variants| as above.
+std::string AllowedFamilyListFrom(const base::DictValue& cfg, std::string_view list, bool windows_variants);
 }  // namespace internal
 
 }  // namespace camoucfg

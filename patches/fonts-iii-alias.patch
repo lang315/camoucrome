@@ -27,7 +27,7 @@ index f86d671768..f5cc840919 100644
    }
  
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index db31094c2d..1153fb01e3 100644
+index db31094c2d..7b4608934a 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
 @@ -35,9 +35,13 @@
@@ -97,3 +97,16 @@ index db31094c2d..1153fb01e3 100644
    return GetFontPlatformData(
        font_description,
        FontFaceCreationParams(AdjustFamilyNameToAvoidUnsupportedFonts(family)),
+@@ -223,8 +266,10 @@ String FontCache::FirstAvailableOrFirst(const String& families) {
+   // For now we prefer shared code over the cost because a) inputs are
+   // only from grd/xtb and all ASCII, and b) at most only a few times per
+   // setting change/script.
+-  return String::FromUtf8(
+-      gfx::FontList::FirstAvailableOrFirst(families.Utf8()));
++  // fonts:list: only admitted names may be picked; none gives "" (the picked
++  // name renders as a generic, which FontFallbackList does not gate).
++  return String::FromUtf8(gfx::FontList::FirstAvailableOrFirst(
++      camoucfg::AllowedFamilyList(camoucfg::ScopeFor(nullptr), families.Utf8())));
+ }
+ 
+ const SimpleFontData* FontCache::FallbackFontForCharacter(
