@@ -47,8 +47,10 @@ Never taken, and why:
                                    tables stay the host's.
                                    --gpu names a captured profile's strings instead
   fonts                            fonts:list is the captured family list of the claimed OS
-                                   (settings/fonts.json), which the bundled fontconfig
-                                   layer makes resolvable; Linux claims get none
+                                   (settings/fonts.json), drawn per seed and limited to the
+                                   host's families, plus the Windows 11 families on a Windows 11
+                                   host (win11_families); the bundled fontconfig layer makes
+                                   it resolvable off the claimed OS; Linux claims get none
   voices, geolocation              Chrome voice names and GeoIP are their own catalogues;
                                    with an exit IP, geolocation:latitude/longitude are the
                                    database's point for it plus a seeded offset within 2 km;
@@ -639,6 +641,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
         if re.fullmatch(r"\d+\.\d+\.\d+", host_platform_version):  # the host's real OS wins over the pool's and the font capture's claim
             config["ua:platformVersion"] = host_platform_version
+            # Not limited by host_families (fonts_keys limits the captured list): fonts:list only allows, so a Windows 11
+            # family the host lacks stays unresolved and a page cannot tell; Go core has no host font list and matches this.
             config["fonts:list"] = config["fonts:list"] + [f for f in win11_families(host_platform_version)
                                                            if f not in config["fonts:list"]]
         else:

@@ -77,3 +77,29 @@ func TestWin11HostKeepsAnAbsentList(t *testing.T) {
 		t.Errorf("fonts:list = %v, want absent", l)
 	}
 }
+
+// A captured list that already holds a Windows 11 family (a later capture) lists it once.
+func TestWin11FamilyListedOnce(t *testing.T) {
+	h := goodHost
+	h.PlatformVersion = "19.0.0"
+	id := mustDraw(t, 7, &h)
+	var entry map[string]any
+	if err := json.Unmarshal(id.Entry, &entry); err != nil {
+		t.Fatal(err)
+	}
+	entry["fonts:list"] = append(entry["fonts:list"].([]any), win11Want[0])
+	id.Entry, _ = json.Marshal(entry)
+	r, err := Resolve(id, h, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range r.Config["fonts:list"].([]any) {
+		if f == win11Want[0] {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%q listed %d times, want 1", win11Want[0], n)
+	}
+}

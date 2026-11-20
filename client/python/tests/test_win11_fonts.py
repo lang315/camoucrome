@@ -39,9 +39,12 @@ def test_win11_families_never_reach_fonts_local():
     assert not [f for f in c.get("fonts:local", []) if f.split("\t")[2] in WIN11]
 
 
-def test_listed_once_even_when_the_capture_gains_them():
+def test_listed_once_even_when_the_capture_gains_them(monkeypatch):
+    # a later capture (approach B) may already list a Windows 11 family: it stays listed once
+    real = gen.fonts_keys
+    monkeypatch.setattr(gen, "fonts_keys", lambda *a, **k: {**real(*a, **k), "fonts:list": real(*a, **k)["fonts:list"] + [WIN11[0]]})
     c = _config("19.0.0")
-    assert len(c["fonts:list"]) == len(set(c["fonts:list"]))
+    assert c["fonts:list"].count(WIN11[0]) == 1 and set(WIN11) <= set(c["fonts:list"])
 
 
 def test_win11_set_is_appended_and_the_rest_is_unchanged():
