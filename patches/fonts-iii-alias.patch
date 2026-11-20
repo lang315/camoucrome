@@ -1,3 +1,72 @@
+diff --git a/chrome/browser/ui/prefs/BUILD.gn b/chrome/browser/ui/prefs/BUILD.gn
+index 969952d1c1..3d7e38a449 100644
+--- a/chrome/browser/ui/prefs/BUILD.gn
++++ b/chrome/browser/ui/prefs/BUILD.gn
+@@ -44,6 +44,7 @@ source_set("impl") {
+     "//chrome/browser/profiles:profile",
+     "//chrome/browser/themes",
+     "//chrome/browser/ui/zoom",
++    "//components/camoucfg",
+     "//components/language/core/browser",
+     "//components/live_caption:constants",
+     "//components/pref_registry",
+diff --git a/chrome/browser/ui/prefs/prefs_tab_helper.cc b/chrome/browser/ui/prefs/prefs_tab_helper.cc
+index 87dc1b8b9a..3595f6511a 100644
+--- a/chrome/browser/ui/prefs/prefs_tab_helper.cc
++++ b/chrome/browser/ui/prefs/prefs_tab_helper.cc
+@@ -31,6 +31,7 @@
+ #include "chrome/common/pref_names.h"
+ #include "chrome/common/pref_names_util.h"
+ #include "chrome/grit/platform_locale_settings.h"
++#include "components/camoucfg/mask_config.h"
+ #include "components/language/core/browser/pref_names.h"
+ #include "components/pref_registry/pref_registry_syncable.h"
+ #include "components/prefs/overlay_user_pref_store.h"
+@@ -446,7 +447,10 @@ void PrefsTabHelper::RegisterProfilePrefs(
+       std::string value = l10n_util::GetStringUTF8(pref.resource_id);
+ #if PREFS_FONT_LIST
+       if (value.starts_with(',')) {
+-        value = gfx::FontList::FirstAvailableOrFirst(value);
++        // fonts:list: pick among the families it allows only, as stock picks
++        // on a machine without the others (no key: the list as is).
++        value = gfx::FontList::FirstAvailableOrFirst(
++            camoucfg::AllowedFamilyList(camoucfg::GlobalScope(), value));
+       }
+ #else   // !PREFS_FONT_LIST
+       DCHECK(!value.starts_with(','))
+diff --git a/third_party/blink/renderer/core/css/css_font_selector_base.cc b/third_party/blink/renderer/core/css/css_font_selector_base.cc
+index 65b35128ff..082401ad54 100644
+--- a/third_party/blink/renderer/core/css/css_font_selector_base.cc
++++ b/third_party/blink/renderer/core/css/css_font_selector_base.cc
+@@ -5,6 +5,8 @@
+ #include "third_party/blink/renderer/core/css/css_font_selector_base.h"
+ 
+ #include "build/build_config.h"
++#include "components/camoucfg/blink_scope.h"
++#include "components/camoucfg/mask_config.h"
+ #include "third_party/blink/renderer/core/css/css_segmented_font_face.h"
+ #include "third_party/blink/renderer/core/frame/web_feature.h"
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+@@ -18,9 +20,18 @@ namespace blink {
+ AtomicString CSSFontSelectorBase::FamilyNameFromSettings(
+     const FontDescription& font_description,
+     const FontFamily& generic_family_name) {
+-  return FontSelector::FamilyNameFromSettings(
++  AtomicString family = FontSelector::FamilyNameFromSettings(
+       generic_font_family_settings_, font_description, generic_family_name,
+       GetUseCounter());
++  // fonts:list: a generic's settings family renders through the generic, which
++  // FontFallbackList does not gate, so a hidden one answers as not installed
++  // (the browser picked it from a per-script default list, or a user set it).
++  if (!family.empty() &&
++      !camoucfg::IsFontFamilyOrVariantAllowed(camoucfg::ScopeFor(nullptr),
++                                              family.Utf8())) {
++    return g_empty_atom;
++  }
++  return family;
+ }
+ 
+ bool CSSFontSelectorBase::IsPlatformFamilyMatchAvailable(
 diff --git a/third_party/blink/renderer/core/css/local_font_face_source.cc b/third_party/blink/renderer/core/css/local_font_face_source.cc
 index f86d671768..f5cc840919 100644
 --- a/third_party/blink/renderer/core/css/local_font_face_source.cc

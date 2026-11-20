@@ -399,6 +399,41 @@ TEST(IsFontFamilyOrVariantAllowedTest, AbsentKeyAllowsEveryFamily) {
   EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, "Anything Medium", false));
 }
 
+// specs/2026-11-20-generic-font-gate-design.md: a per-script default list
+// (",A,B,C", Chrome's grd form) keeps only the families the gate allows;
+// none allowed gives the first name alone, as stock without those fonts.
+TEST(AllowedFamilyListTest, KeepsAllowedNamesInOrder) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Yu Gothic", "Meiryo"]})", /*strict=*/false);
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Noto Sans JP,Noto Sans CJK JP,Meiryo,Yu Gothic", false),
+            ",Meiryo,Yu Gothic");
+}
+
+TEST(AllowedFamilyListTest, AllHiddenGivesTheFirstName) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Noto Serif JP,Noto Serif CJK JP,Yu Mincho,MS PMincho", false),
+            "Noto Serif JP");
+  base::DictValue empty = ParseConfig(R"({"fonts:list": []})", /*strict=*/false);
+  EXPECT_EQ(AllowedFamilyListFrom(empty, ", Arial ,Times New Roman", false), "Arial");
+  EXPECT_EQ(AllowedFamilyListFrom(empty, ",, ,", false), "");
+}
+
+TEST(AllowedFamilyListTest, AbsentKeyKeepsTheListVerbatim) {
+  base::DictValue cfg = ParseConfig("{}", /*strict=*/false);
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Noto Sans KR, Noto Sans CJK KR ,Malgun Gothic", false),
+            ",Noto Sans KR, Noto Sans CJK KR ,Malgun Gothic");
+}
+
+TEST(AllowedFamilyListTest, TrimsAndSkipsEmptyNames) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ", Arial ,, Foo ,", false), ",Arial");
+}
+
+TEST(AllowedFamilyListTest, WindowsSuffixNameFollowsTheGate) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Arial Medium,Foo", true), ",Arial Medium");
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Arial Medium,Foo", false), "Arial Medium");
+}
+
 // Exercises the real public entry point end-to-end, on the one scenario the
 // process-wide singleton can safely stand in for: the same "nothing sets
 // this key" assumption MaskConfigTest.AbsentKeysReturnNullopt above already
