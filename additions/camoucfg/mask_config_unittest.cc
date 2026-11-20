@@ -351,6 +351,54 @@ TEST(IsFontAllowedTest, PresentButEmptyListAllowsNoFamily) {
   EXPECT_FALSE(IsFontAllowedFrom(cfg, "Arial"));
 }
 
+// specs/2026-11-20-font-weight-suffix-gate-design.md: Chromium's Windows
+// suffix fallback (font_cache_skia_win.cc kVariantForSuffix), mirrored.
+TEST(IsFontFamilyOrVariantAllowedTest, ListedFamilyWithEveryTableSuffix) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  for (const char* suffix :
+       {" thin", " extralight", " ultralight", " light", " regular", " medium", " demibold", " semibold",
+        " extrabold", " ultrabold", " black", " heavy", " ultracondensed", " extracondensed", " condensed",
+        " narrow", " semicondensed", " semiexpanded", " expanded", " extraexpanded", " ultraexpanded"}) {
+    EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, std::string("Arial") + suffix, true)) << suffix;
+  }
+  EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, "ARIAL MEDIUM", true));
+  EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, "Arial", true));
+}
+
+TEST(IsFontFamilyOrVariantAllowedTest, TableOrderAndOneSuffix) {
+  // " extralight" precedes " light": the stripped name is "Foo", not "Foo Extra".
+  base::DictValue extra = ParseConfig(R"({"fonts:list": ["Foo Extra"]})", /*strict=*/false);
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(extra, "Foo ExtraLight", true));
+  // No weight suffix, so the stretch table strips " condensed".
+  base::DictValue bahn = ParseConfig(R"({"fonts:list": ["Bahnschrift Light"]})", /*strict=*/false);
+  EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(bahn, "Bahnschrift Light Condensed", true));
+  // One suffix only: "Arial Light" is not listed, so "Arial Light Medium" stays blocked.
+  base::DictValue arial = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(arial, "Arial Light Medium", true));
+}
+
+TEST(IsFontFamilyOrVariantAllowedTest, UnlistedBaseAndOtherWordsStayBlocked) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, "Calibri Medium", true));
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, "ROG Fonts Medium", true));
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, "Arial Bold", true));  // not in Chromium's tables
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, "Arial SemiLight", true));
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, "Arial Foo", true));
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, " Medium", true));
+}
+
+TEST(IsFontFamilyOrVariantAllowedTest, WithoutWindowsVariantsTheMatchIsExact) {
+  base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
+  EXPECT_FALSE(IsFontFamilyOrVariantAllowedFrom(cfg, "Arial Medium", false));
+  EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, "Arial", false));
+}
+
+TEST(IsFontFamilyOrVariantAllowedTest, AbsentKeyAllowsEveryFamily) {
+  base::DictValue cfg = ParseConfig("{}", /*strict=*/false);
+  EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, "Anything Medium", true));
+  EXPECT_TRUE(IsFontFamilyOrVariantAllowedFrom(cfg, "Anything Medium", false));
+}
+
 // Exercises the real public entry point end-to-end, on the one scenario the
 // process-wide singleton can safely stand in for: the same "nothing sets
 // this key" assumption MaskConfigTest.AbsentKeysReturnNullopt above already

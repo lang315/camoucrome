@@ -25,7 +25,7 @@ index fd79f44bed..5eda8ecc4d 100644
      "+base/mac",
      "+base/win",
 diff --git a/third_party/blink/renderer/platform/fonts/font_fallback_list.cc b/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
-index 0c7b5481b3..229e5e64e4 100644
+index 0c7b5481b3..81c690ada0 100644
 --- a/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_fallback_list.cc
 @@ -29,6 +29,9 @@
@@ -49,8 +49,8 @@ index 0c7b5481b3..229e5e64e4 100644
 +      // unconditionally.
 +      if (!curr_family->FamilyName().empty() &&
 +          (curr_family->FamilyIsGeneric() ||
-+           camoucfg::IsFontAllowed(camoucfg::ScopeFor(nullptr),
-+                                   curr_family->FamilyName().Utf8()))) {
++           camoucfg::IsFontFamilyOrVariantAllowed(camoucfg::ScopeFor(nullptr),
++                                                  curr_family->FamilyName().Utf8()))) {
          if (auto* result = FontCache::Get().GetFontData(
                  font_description, curr_family->FamilyName())) {
            return result;
@@ -66,8 +66,8 @@ index 0c7b5481b3..229e5e64e4 100644
 +    // too.
 +    if (!result && !curr_family->FamilyName().empty() &&
 +        (curr_family->FamilyIsGeneric() ||
-+         camoucfg::IsFontAllowed(camoucfg::ScopeFor(nullptr),
-+                                 curr_family->FamilyName().Utf8()))) {
++         camoucfg::IsFontFamilyOrVariantAllowed(camoucfg::ScopeFor(nullptr),
++                                                curr_family->FamilyName().Utf8()))) {
        result = FontCache::Get().GetFontData(font_description,
                                              curr_family->FamilyName());
      }

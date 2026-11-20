@@ -6,7 +6,10 @@
 
 #include <algorithm>
 
+#include "base/containers/span.h"
 #include "base/strings/string_util.h"
+#include "build/build_config.h"
+#include "components/camoucfg/derive.h"
 #include "components/camoucfg/keys.h"
 #include "components/camoucfg/mask_config_internal.h"
 
@@ -70,6 +73,38 @@ bool IsFontAllowedFrom(const base::DictValue& cfg, std::string_view family) {
   return false;
 }
 
+// Copied from third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc
+// kVariantForSuffix (TypefacesHasWeightSuffix, then TypefacesHasStretchSuffix),
+// in its order. scripts/test_font_suffix.py holds this copy equal to the
+// Python one, and to Chromium's text at a re-pin.
+constexpr std::string_view kWeightSuffixes[] = {
+    " thin",   " extralight", " ultralight", " light",     " regular",   " medium",
+    " demibold", " semibold", " extrabold",  " ultrabold", " black",     " heavy"};
+constexpr std::string_view kStretchSuffixes[] = {
+    " ultracondensed", " extracondensed", " condensed",
+    " narrow",         " semicondensed",  " semiexpanded",
+    " expanded",       " extraexpanded",  " ultraexpanded"};
+
+bool IsFontFamilyOrVariantAllowedFrom(const base::DictValue& cfg, std::string_view family, bool windows_variants) {
+  if (IsFontAllowedFrom(cfg, family)) {
+    return true;
+  }
+  if (!windows_variants) {
+    return false;
+  }
+  // Chromium strips the first matching weight suffix, else the first matching
+  // stretch suffix, and looks up only what is left: one suffix, never two.
+  for (const auto& table : {base::span<const std::string_view>(kWeightSuffixes),
+                            base::span<const std::string_view>(kStretchSuffixes)}) {
+    for (std::string_view suffix : table) {
+      if (base::EndsWith(family, suffix, base::CompareCase::INSENSITIVE_ASCII)) {
+        return IsFontAllowedFrom(cfg, family.substr(0, family.size() - suffix.size()));
+      }
+    }
+  }
+  return false;
+}
+
 std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name) {
   const base::DictValue* map = cfg.FindDict(unique_name ? keys::kFontsAliasLocal : keys::kFontsAlias);
   if (!map) {
@@ -88,6 +123,19 @@ std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string
 
 bool IsFontAllowed(const ConfigScope& scope, std::string_view family) {
   return internal::IsFontAllowedFrom(internal::ParsedConfig(), family);
+}
+
+bool IsFontFamilyOrVariantAllowed(const ConfigScope& scope, std::string_view family) {
+  const base::DictValue& cfg = internal::ParsedConfig();
+  if (internal::IsFontAllowedFrom(cfg, family)) {
+    return true;
+  }
+#if BUILDFLAG(IS_WIN)
+  return ClaimedOs(scope) == OsFamily::kWindows &&
+         internal::IsFontFamilyOrVariantAllowedFrom(cfg, family, /*windows_variants=*/true);
+#else
+  return false;
+#endif
 }
 
 std::optional<std::string> FontAlias(const ConfigScope& scope, std::string_view family, bool unique_name) {
