@@ -11,6 +11,7 @@ run verify_sp4_voices.py
 run verify_fonts_bundle.py
 run verify_host_oracle.py
 run verify_course.py
+run verify_webauthn_coherence.py
 run verify_windows_behaviour.py
 run verify_sp6b_generator.py CAMOU_GEN_N=4
 run verify_crash_dumps.py
