@@ -3,7 +3,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from cdp_footprint_rows import (FAIL, PASS, UNMEASURED, judge_click, judge_keys,  # noqa: E402
+from cdp_footprint_rows import (FAIL, PASS, UNMEASURED, judge_click, judge_flag, judge_keys,  # noqa: E402
                                 judge_observer, judge_row, judge_timing, render)
 
 
@@ -114,7 +114,7 @@ def test_row_l3_and_l8_and_l5():
     l8 = {"none": {"L8": h}, "tdp": {"L8": h}, "tdp-main": {"L8": dict(h, hash="b")}, "red": {"L8": dict(h, webdriver=True)}}
     assert judge_row("L8", l8) == {"tdp": PASS, "tdp-main": FAIL, "red": FAIL}
     s = "camou footprint"
-    good, bad = {"L5": {"a": _typed_all(s)}}, {"L5": {"a": [{"type": "input", "data": "c", "key": None}]}}
+    good, bad = {"L5a": _typed_all(s)}, {"L5a": [{"type": "input", "data": "c", "key": None}]}
     assert judge_row("L5a", {"none": good, "tdp": good, "tdp-main": good, "red": bad}) == \
         {"tdp": PASS, "tdp-main": PASS, "red": FAIL}
 
@@ -137,3 +137,24 @@ def test_empty_observer_summary_is_unmeasured():
 def test_render():
     out = render({"L2": {"none": PASS, "tdp": FAIL}})
     assert "| L2 |" in out and "L2 tdp (class 1)" in out
+
+
+def test_keys_repeated_char_first_occurrence_incomplete_fails():
+    first = [e for e in _typed("o") if e["type"] != "keypress"]
+    assert judge_keys(first + _typed("o"), "oo") == FAIL
+    assert judge_keys(_typed("o") + _typed("o"), "oo") == PASS
+
+
+def test_row_l7():
+    good, bad = {"L7": _sp2b4()}, {"L7": [dict(f, isTrusted=False) for f in _sp2b4()]}
+    assert judge_row("L7", {"none": None, "tdp": good, "tdp-main": good, "red": bad}) == \
+        {"tdp": PASS, "tdp-main": PASS, "red": FAIL}
+
+
+def test_missing_key_is_unmeasured_not_keyerror():
+    ok = {"L3": ["x.js"], "L2": [1.0] * 9}
+    r = judge_row("L3", {"none": {}, "tdp": {}, "tdp-main": {"L3": []}, "red": ok})
+    assert r == {"tdp": UNMEASURED, "tdp-main": PASS, "red": FAIL}
+    r = judge_row("L2", {"none": {}, "tdp": ok, "tdp-main": ok, "red": ok})
+    assert set(r.values()) == {UNMEASURED}
+    assert judge_flag(None, None) == UNMEASURED

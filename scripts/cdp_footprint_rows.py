@@ -16,6 +16,8 @@ def judge_timing(base, arm):
 
 
 def judge_flag(base, arm):
+    if base is None or arm is None:
+        return UNMEASURED
     return FAIL if base != arm else PASS
 
 
@@ -26,12 +28,19 @@ def judge_trap(callers):
 def judge_keys(events, text):
     if not events:
         return UNMEASURED
+    # one complete sequence is consumed per character occurrence, in event order
+    pos = 0
     for c in text:
         want = ["keydown", "beforeinput", "input", "keyup"]
         if c.isprintable():
             want.insert(1, "keypress")
-        it = iter(e["type"] for e in events if c in (e.get("key"), e.get("data")))
-        if not all(w in it for w in want):  # `in` consumes the iterator: ordered subsequence
+        w = 0
+        while pos < len(events) and w < len(want):
+            e = events[pos]
+            pos += 1
+            if c in (e.get("key"), e.get("data")) and e["type"] == want[w]:
+                w += 1
+        if w < len(want):
             return FAIL
     return PASS
 
@@ -51,23 +60,24 @@ def judge_click(fields):
 
 
 def _verdict(row, none, arm):
-    if arm is None or (row in _NEEDS_NONE and none is None):
+    if arm is None or arm.get(row) is None:
         return UNMEASURED
     if row in _TEXT:
-        return judge_keys(arm["L5"][row[-1]], _TEXT[row])
+        return judge_keys(arm[row], _TEXT[row])
     if row == "L7":
-        return judge_click(arm["L7"])
+        return judge_click(arm[row])
     if row == "L3":
-        return judge_trap(arm["L3"])
+        return judge_trap(arm[row])
+    if none is None or none.get(row) is None:
+        return UNMEASURED
     if row in ("L2", "L4", "L6"):
         return judge_timing(none[row], arm[row])
     return judge_flag(none[row], arm[row])
 
 
 def judge_row(row, results):
-    # row "L5a" reads results[arm]["L5"]["a"]; every other row reads results[arm][row]
     none = results.get("none")
-    if row in _NEEDS_NONE and none is None:
+    if row in _NEEDS_NONE and (none is None or none.get(row) is None):
         return {a: UNMEASURED for a in ARMS}
     out = {a: _verdict(row, none, results.get(a)) for a in ARMS}
     if out["red"] != FAIL:
