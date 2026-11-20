@@ -1469,7 +1469,13 @@
     "Yu Gothic UI Semilight",
     "Helvetica",
     "Times",
-    "Courier"
+    "Courier",
+    "Segoe Fluent Icons",
+    "Segoe UI Variable Display",
+    "Segoe UI Variable Text",
+    "Segoe UI Variable Small",
+    "Nirmala Text",
+    "Sans Serif Collection"
    ],
    "fonts:local": [
     "Arial-Black\tArial Black\tArial Black\tRegular",

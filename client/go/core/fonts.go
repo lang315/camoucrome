@@ -18,6 +18,10 @@ type fontsData struct {
 				Family string `json:"family"`
 			} `json:"unique_names"`
 			Faces [][]string `json:"faces"`
+			Win11 struct {
+				MinPlatformMajor int      `json:"min_platform_major"`
+				Families         []string `json:"families"`
+			} `json:"win11"`
 		} `json:"Windows"`
 	} `json:"families"`
 	AliasMap     struct{ Windows map[string]string } `json:"alias_map"`

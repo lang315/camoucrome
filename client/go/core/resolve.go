@@ -150,6 +150,21 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 		warn = append(warn, "host platform version unknown: the entry's value stays")
 	case platformVersionRe.MatchString(h.PlatformVersion):
 		cfg["ua:platformVersion"] = h.PlatformVersion
+		// A Windows 11 version lists the Windows 11 families (gen.py from_pool): fonts date Windows (CreepJS).
+		w := tables.fonts.Families.Windows.Win11
+		if major, _ := strconv.Atoi(strings.SplitN(h.PlatformVersion, ".", 2)[0]); major >= w.MinPlatformMajor {
+			list, _ := cfg["fonts:list"].([]any)
+			listed := map[string]bool{}
+			for _, f := range list {
+				listed[f.(string)] = true
+			}
+			for _, f := range w.Families {
+				if !listed[f] {
+					list = append(list, f)
+				}
+			}
+			cfg["fonts:list"] = list
+		}
 	default:
 		warn = append(warn, fmt.Sprintf("host platform version %q is not N.N.N: ignored", h.PlatformVersion))
 	}

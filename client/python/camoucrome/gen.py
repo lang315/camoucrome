@@ -429,6 +429,13 @@ def fonts_keys(platform, rng=None, host_families=None):
             "ua:platformVersion": fam["platform_version"]}
 
 
+def win11_families(platform_version):
+    """The Windows 11 families (settings/fonts.json families.Windows.win11) for a host whose UA-CH platformVersion is
+    Windows 11, else []: the identity carries the host's version, and fonts date Windows (CreepJS)."""
+    w = json.loads((ROOT / "settings" / "fonts.json").read_text(encoding="utf-8"))["families"]["Windows"]["win11"]
+    return list(w["families"]) if int(platform_version.split(".")[0]) >= w["min_platform_major"] else []
+
+
 def voices_keys(platform, locale="en-US"):
     """voices:list for the claimed OS and locale from settings/voices.json: the locale's language-pack row, else the same
     language's first row, else en-US (only en-US is measured; the rest are quoted), then Chrome's Google network voices
@@ -632,6 +639,8 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
         if re.fullmatch(r"\d+\.\d+\.\d+", host_platform_version):  # the host's real OS wins over the pool's and the font capture's claim
             config["ua:platformVersion"] = host_platform_version
+            config["fonts:list"] = config["fonts:list"] + [f for f in win11_families(host_platform_version)
+                                                           if f not in config["fonts:list"]]
         else:
             pv_warn = f"host platform version {host_platform_version!r} is not N.N.N: ignored"
     config.update(voices_keys(platform, tag))
