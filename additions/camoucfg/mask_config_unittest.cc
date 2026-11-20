@@ -401,18 +401,20 @@ TEST(IsFontFamilyOrVariantAllowedTest, AbsentKeyAllowsEveryFamily) {
 
 // specs/2026-11-20-generic-font-gate-design.md: a per-script default list
 // (",A,B,C", Chrome's grd form) keeps only the families the gate allows;
-// none allowed gives "", never a hidden name.
+// none allowed gives the first name alone, as stock without those fonts.
 TEST(AllowedFamilyListTest, KeepsAllowedNamesInOrder) {
   base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Yu Gothic", "Meiryo"]})", /*strict=*/false);
   EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Noto Sans JP,Noto Sans CJK JP,Meiryo,Yu Gothic", false),
             ",Meiryo,Yu Gothic");
 }
 
-TEST(AllowedFamilyListTest, AllHiddenGivesEmpty) {
+TEST(AllowedFamilyListTest, AllHiddenGivesTheFirstName) {
   base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
-  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Noto Serif JP,Noto Serif CJK JP,Yu Mincho,MS PMincho", false), "");
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Noto Serif JP,Noto Serif CJK JP,Yu Mincho,MS PMincho", false),
+            "Noto Serif JP");
   base::DictValue empty = ParseConfig(R"({"fonts:list": []})", /*strict=*/false);
-  EXPECT_EQ(AllowedFamilyListFrom(empty, ",Arial,Times New Roman", false), "");
+  EXPECT_EQ(AllowedFamilyListFrom(empty, ", Arial ,Times New Roman", false), "Arial");
+  EXPECT_EQ(AllowedFamilyListFrom(empty, ",, ,", false), "");
 }
 
 TEST(AllowedFamilyListTest, AbsentKeyKeepsTheListVerbatim) {
@@ -429,7 +431,7 @@ TEST(AllowedFamilyListTest, TrimsAndSkipsEmptyNames) {
 TEST(AllowedFamilyListTest, WindowsSuffixNameFollowsTheGate) {
   base::DictValue cfg = ParseConfig(R"({"fonts:list": ["Arial"]})", /*strict=*/false);
   EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Arial Medium,Foo", true), ",Arial Medium");
-  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Arial Medium,Foo", false), "");
+  EXPECT_EQ(AllowedFamilyListFrom(cfg, ",Arial Medium,Foo", false), "Arial Medium");
 }
 
 // Exercises the real public entry point end-to-end, on the one scenario the

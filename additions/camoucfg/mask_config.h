@@ -94,12 +94,12 @@ bool IsFontAllowed(const ConfigScope& scope, std::string_view family);
 // real family while the bare name renders the alias target.
 bool IsFontFamilyOrVariantAllowed(const ConfigScope& scope, std::string_view family);
 
-// A per-script default font list in Chrome's form (",A,B,C"; GenericFontFamilySettings
-// via FontCache::FirstAvailableOrFirst) with only the families
+// A per-script default font list in Chrome's form (",A,B,C"; the browser
+// resolves it at pref registration, prefs_tab_helper.cc) with only the families
 // IsFontFamilyOrVariantAllowed admits, in order, as ",A,C". None admitted gives
-// "": the name picked from the list renders as a generic, which the gate skips,
-// so a hidden name must never be picked (stock without those fonts resolves no
-// face either). No fonts:list key returns the list verbatim (rule 5).
+// the first name alone, as stock answers when none is installed; the renderer
+// then gates that name where the generic is used (CSSFontSelectorBase::
+// FamilyNameFromSettings). No fonts:list key returns the list verbatim (rule 5).
 std::string AllowedFamilyList(const ConfigScope& scope, std::string_view list);
 
 // fonts-iii: the configured alias target for a requested CSS family

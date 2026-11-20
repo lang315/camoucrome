@@ -110,14 +110,18 @@ std::string AllowedFamilyListFrom(const base::DictValue& cfg, std::string_view l
   if (!HasKeyIn(cfg, keys::kFonts)) {
     return std::string(list);  // rule 5
   }
+  const std::vector<std::string_view> names =
+      base::SplitStringPiece(list, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
   std::string out;
-  for (std::string_view name :
-       base::SplitStringPiece(list, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+  for (std::string_view name : names) {
     if (IsFontFamilyOrVariantAllowedFrom(cfg, name, windows_variants)) {
       out.append(",").append(name);
     }
   }
-  return out;
+  // None allowed: the first name alone, as stock answers when none is
+  // installed. A hidden name never renders through a generic: the renderer
+  // gates the generic's settings family (CSSFontSelectorBase).
+  return out.empty() && !names.empty() ? std::string(names.front()) : out;
 }
 
 std::optional<std::string> FontAliasFrom(const base::DictValue& cfg, std::string_view family, bool unique_name) {

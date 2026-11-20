@@ -192,6 +192,76 @@ if os.name == "nt":
         {"fonts:list": sorted({"Segoe UI", *CHECK_LIST}), "ua:platform": "Windows"},
         check_probe("Segoe UI Semibold"), SHOWN)
 
+# --- F-GENERIC: a generic family's settings font (the browser's per-script default,
+# picked in prefs_tab_helper.cc) is gated like any family: hidden == absent. Run on chrome:
+# content_shell has no Chrome default font prefs, so it cannot show this path.
+# Linux: sans-serif is "Arial" (locale_settings_linux.grd); fonts:alias maps it to a host
+# font, so it renders only when the list allows Arial (RED pre-fix: hidden renders the alias
+# target). Windows: lang=ko sans-serif is ",Noto Sans KR,Noto Sans CJK KR,Malgun Gothic";
+# Malgun Gothic is a base font, so hiding it is the case (RED pre-fix: hidden == listed).
+GENERIC_TEXT = "mmmmwwwwiiii"
+if os.name == "nt":
+    GENERIC_LANG, GENERIC_FONT, GENERIC_ALIAS = "ko", "Malgun Gothic", None
+else:
+    GENERIC_LANG, GENERIC_FONT, GENERIC_ALIAS = "en", "Arial", "Ubuntu"
+
+
+def generic_probe():
+    # [DOM span width, canvas width, worker OffscreenCanvas width] of sans-serif in GENERIC_LANG
+    # (ctx.lang where the canvas has it; a worker canvas otherwise follows its default script).
+    code = (
+        "self.onmessage = () => { const c = new OffscreenCanvas(10, 10).getContext('2d');"
+        f"  if ('lang' in c) c.lang = '{GENERIC_LANG}'; c.font = '40px sans-serif';"
+        f"  self.postMessage(c.measureText('{GENERIC_TEXT}').width); }};"
+    )
+    return (
+        "(async () => {"
+        f"  const s = document.createElement('span'); s.lang = '{GENERIC_LANG}';"
+        f"  s.style.font = '40px sans-serif'; s.textContent = '{GENERIC_TEXT}';"
+        "  document.body.appendChild(s); const dom = s.getBoundingClientRect().width;"
+        "  const c = document.createElement('canvas'); c.lang = document.documentElement.lang ="
+        f"    '{GENERIC_LANG}'; const x = c.getContext('2d');"
+        f"  if ('lang' in x) x.lang = '{GENERIC_LANG}'; x.font = '40px sans-serif';"
+        f"  const cv = x.measureText('{GENERIC_TEXT}').width;"
+        f"  const blob = new Blob([{json.dumps(code)}], {{type: 'application/javascript'}});"
+        "  const w = new Worker(URL.createObjectURL(blob));"
+        "  const wk = await new Promise((res) => { w.onmessage = (e) => res(e.data); w.postMessage(0); });"
+        "  return [Math.round(dom * 100) / 100, cv, wk];"
+        "})()"
+    )
+
+
+def generic_cfg(listed, alias=True):
+    cfg = {"fonts:list": sorted({HOST_FONT, "Lato"} | ({GENERIC_FONT} if listed else set()))}
+    if GENERIC_ALIAS and alias:
+        cfg["fonts:alias"] = {GENERIC_FONT: GENERIC_ALIAS}
+    if os.name == "nt":
+        cfg["ua:platform"] = "Windows"
+    return json.dumps(cfg)
+
+
+F_GENERIC = "F-GENERIC hidden settings font of a generic answers as absent, window/canvas/worker (RED: renders pre-fix)"
+F_GENERIC_LISTED = "F-GENERIC-LISTED listed settings font of a generic renders as stock"
+gen = {}
+for arm, cfg in (("hidden", generic_cfg(False)), ("listed", generic_cfg(True)),
+                 ("absent", generic_cfg(False, alias=False)), ("stock", None)):
+    values, err = lib_shell.session(cfg, [generic_probe()], shell=lib_shell.CHROME)
+    if err is not None:
+        failed([F_GENERIC, F_GENERIC_LISTED], f"F-GENERIC {arm}", err)
+        break
+    gen[arm] = values[0]
+else:
+    notes.append(f"F-GENERIC measured: {gen}")
+    if os.name == "nt":
+        # The host has Malgun Gothic, so no list makes it absent: hidden must differ from the
+        # listed (= stock) arm in every surface, the listed arm must equal stock.
+        results[F_GENERIC] = all(h != l for h, l in zip(gen["hidden"], gen["listed"]))
+        results[F_GENERIC_LISTED] = gen["listed"] == gen["stock"]
+    else:
+        # Arial is not on the box, so the alias-free config is the absent control.
+        results[F_GENERIC] = gen["hidden"] == gen["absent"] and gen["hidden"] != gen["listed"]
+        results[F_GENERIC_LISTED] = gen["listed"] != gen["absent"]
+
 # --- F-DIRECT: sp4-fonts direct-probe gate still holds (regression) ---
 F_DIRECT = "F-DIRECT excluded measureText falls back (sp4-fonts intact)"
 direct_js = (
