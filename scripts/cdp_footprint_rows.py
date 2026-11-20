@@ -12,7 +12,9 @@ _CLICK_DETAIL = [0, 1, 0, 1, 1]  # as sp2b-4
 def judge_timing(base, arm):
     if len(base) < _MIN_BATCHES or len(arm) < _MIN_BATCHES:
         return UNMEASURED
-    return FAIL if max(arm) < min(base) or max(base) < min(arm) else PASS
+    if min(arm) > max(base):  # only slower than the baseline is a footprint; faster-and-disjoint is noise or a bad baseline
+        return FAIL
+    return UNMEASURED if min(base) > max(arm) else PASS
 
 
 def judge_flag(base, arm):
@@ -38,7 +40,7 @@ def judge_keys(events, text):
         while pos < len(events) and w < len(want):
             e = events[pos]
             pos += 1
-            if c in (e.get("key"), e.get("data")) and e["type"] == want[w]:
+            if e.get("isTrusted") and c in (e.get("key"), e.get("data")) and e["type"] == want[w]:
                 w += 1
         if w < len(want):
             return FAIL
@@ -94,6 +96,11 @@ def judge_observer(base, arm):
     if base["ajax_bz"] != arm["ajax_bz"]:
         lines.append(f"ajax_bz {base['ajax_bz']}->{arm['ajax_bz']}")
     return lines
+
+
+def observer_fail_lines(lines):
+    """judge_observer lines that can fail a row: ajax_bz is information only (the none arm has no driver load wait)."""
+    return [x for x in lines if not x.startswith("ajax_bz")]
 
 
 def render(table):

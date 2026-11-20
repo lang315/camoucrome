@@ -51,13 +51,13 @@ func (f *Flags) Args() ([]string, error) {
 	return a, readJSON(f.ArgsJSON, &a)
 }
 
-// Env is the process env with --env-json merged over it.
+// Env is the child environment exactly as --env-json gives it (build_env already dropped the CAMOU_* of the parent).
 func (f *Flags) Env() ([]string, error) {
 	var m map[string]string
 	if err := readJSON(f.EnvJSON, &m); err != nil {
 		return nil, err
 	}
-	env := os.Environ()
+	var env []string
 	for k, v := range m {
 		env = append(env, k+"="+v)
 	}

@@ -13,6 +13,7 @@ import os
 import pathlib
 import re
 import shutil
+import statistics
 import signal
 import subprocess
 import sys
@@ -74,9 +75,29 @@ def gate():
     return None
 
 
-def gpu_crashed(profile):
+def launch_problem(profile):
+    """None when the launch's debug log reads clean, else why the launch is UNMEASURED."""
     log = pathlib.Path(profile) / "chrome_debug.log"
-    return log.exists() and "GPU process exited unexpectedly" in log.read_text(encoding="utf-8", errors="replace")
+    if not log.exists():
+        return "no debug log"
+    return "GPU process crashed" if "GPU process exited unexpectedly" in log.read_text(encoding="utf-8", errors="replace") else None
+
+
+def reap(profile):
+    """End every process whose command line holds this arm's profile path (a browser a driver's close timeout orphaned)."""
+    p = str(profile)
+    if os.name == "nt":
+        q = p.replace("'", "''")
+        subprocess.run(["powershell", "-NoProfile", "-Command",
+                        f"Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains('{q}') }} "
+                        "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"],
+                       capture_output=True, timeout=60)
+    else:
+        subprocess.run(["pkill", "-f", "--", p], capture_output=True)
+
+
+def on_host():
+    return os.name == "nt"
 
 
 def driver_cmd(drivers, arm):
@@ -162,6 +183,7 @@ class Run:
         self.raw = pathlib.Path(a.out) / "raw"
         self.n = 0
         self.notes = []
+        self.l_details = {}
         (self.raw / "results").mkdir(parents=True, exist_ok=True)
         self.srv, self.port = cdp_footprint_server.serve(self.raw / "results", delay_ms=0)
 
@@ -192,8 +214,10 @@ class Run:
             if arm == "tdp-main":
                 cmd.append("--main-world")
             run_driver(cmd, (lambda p: wait_until(until, wait_s)) if until else (lambda p: wait_until(lambda: p.poll() is not None, driver_timeout)))
-        if gpu_crashed(profile):
-            self.notes.append(f"{group} {arm}: GPU process crashed")
+        reap(profile)
+        problem = launch_problem(profile)
+        if problem:
+            self.notes.append(f"{group} {arm}: {problem}")
             return None
         return d, out
 
@@ -202,6 +226,13 @@ class Run:
             return json.loads(got[1].read_text(encoding="utf-8")).get("text")
         except (OSError, ValueError):
             return None
+
+    def driver_ok(self, got):
+        """A driven arm's result counts only when its driver wrote --out with error == null."""
+        try:
+            return json.loads(got[1].read_text(encoding="utf-8")).get("error") is None
+        except (OSError, ValueError, AttributeError):
+            return False
 
     def group_L(self, order):
         results = {}
@@ -212,14 +243,19 @@ class Run:
             got = self.launch("L", arm, "probe", url, self.a.l_timeout, until=done)
             f = self.raw / "results" / f"{arm}-{run}.json"
             # a result counts only if /done held in time: a late or partial file of a timed-out arm is not a measurement
-            results[arm] = json.loads(f.read_text(encoding="utf-8")) if got and done() and f.exists() else None
+            counts = got and done() and f.exists() and (arm == "none" or self.driver_ok(got))
+            results[arm] = json.loads(f.read_text(encoding="utf-8")) if counts else None
+        for row in ("L2", "L4", "L6"):  # numbers only: the leads behind a timing verdict
+            st = {a: {"min": min(r[row]), "median": statistics.median(r[row]), "max": max(r[row])}
+                  for a, r in results.items() if r and r.get(row)}
+            if st:
+                self.l_details[f"L.timing {row}"] = st
         return {row: rows.judge_row(row, results) for row in rows.CLASS}
 
     def group_D(self, order):
         parsed = {}
         sites = {"rebrowser": ("https://bot-detector.rebrowser.net/", step2_rows.parse_rebrowser),  # measure_step2.DETECTORS
-                 "dbi_bot": ("https://deviceandbrowserinfo.com/are_you_a_bot", step2_rows.parse_dbi),  # measure_step2.DETECTORS
-                 "creepjs": (f"http://127.0.0.1:{self.port}/creepjs/index.html", step2_rows.parse_colon)}
+                 "dbi_bot": ("https://deviceandbrowserinfo.com/are_you_a_bot", step2_rows.parse_dbi)}  # measure_step2.DETECTORS
         for arm in (x for x in order if x != "none"):
             for name, (url, parse) in sites.items():
                 got = self.launch("D", arm, "detector", url, 0, driver_timeout=DETECTOR_TIMEOUT)
@@ -242,6 +278,10 @@ class Run:
                 shutil.rmtree(got[0], ignore_errors=True)  # raw trace, netlog and profile are gone once judged
             sums[arm] = {"groups": s["groups"], "intl": s["intl"], "requests": s["requests"]["total"], "ajax_bz": s["requests"]["ajax_bz"]} if s else None
         v, details = {}, {}
+        red = sums.get("red")
+        dead = bool(red and sums.get("none") and not rows.observer_fail_lines(rows.judge_observer(sums["none"], red)))
+        if dead:
+            self.notes.append("F: red shows no difference from none; differences are leads only")
         for arm in order:
             if sums.get(arm) is None or sums.get("none") is None:
                 v[arm] = rows.UNMEASURED
@@ -251,7 +291,10 @@ class Run:
                 continue
             lines = rows.judge_observer(sums["none"], sums[arm])
             details[arm] = lines
-            v[arm] = rows.UNMEASURED if lines and lines[0].startswith("UNMEASURED") else (rows.FAIL if lines else rows.PASS)
+            fails = rows.observer_fail_lines(lines)
+            v[arm] = rows.UNMEASURED if lines and lines[0].startswith("UNMEASURED") else (rows.FAIL if fails else rows.PASS)
+            if dead and arm in ("tdp", "tdp-main"):
+                v[arm] = rows.UNMEASURED
         return {"F.observer": v}, details
 
 
@@ -262,36 +305,31 @@ def _ok(url):
         return False
 
 
-def _flagged(value):
-    m = re.match(r"\D*(\d+)", value or "")
-    return None if not m else int(m.group(1)) > 0  # shortcut: CreepJS's lines read "<n>% ..." or "<n>"; a line with no leading number is unmeasured
-
-
 def d_rows(parsed, driven):
     v = lambda ok: rows.UNMEASURED if ok is None else (rows.FAIL if ok else rows.PASS)  # noqa: E731
     table = {}
     for arm in driven:
-        rb, dbi, cj = parsed.get((arm, "rebrowser")), parsed.get((arm, "dbi_bot")), parsed.get((arm, "creepjs"))
+        rb, dbi = parsed.get((arm, "rebrowser")), parsed.get((arm, "dbi_bot"))
         for t, s in (rb or {}).items():
             table.setdefault(f"D.rebrowser.{t}", {})[arm] = v({"pass": False, "fail": True}.get(s))  # "not triggered" etc. is no pass
         for f, b in (dbi or {}).items():
             table.setdefault(f"D.dbi_bot.{f}", {})[arm] = v(b)
-        for row, key in (("headless", "headless"), ("lies", "lies")):
-            line = next((val for k, val in (cj or {}).items() if key in k.lower()), None)
-            table.setdefault(f"D.creepjs.{row}", {})[arm] = v(_flagged(line))
+    for row in ("headless", "lies"):  # no none reading to compare with: never a verdict, never counted in exit_code
+        table[f"D.creepjs.{row}"] = {}
     for r in table.values():
         for arm in driven:
             r.setdefault(arm, rows.UNMEASURED)
         r["none"] = NA
-    if (parsed.get(("red", "rebrowser")) or {}).get("runtimeEnableLeak") != "fail":  # dead control: red must trip runtimeEnableLeak
-        table = {r: {a: (NA if a == "none" else rows.UNMEASURED) for a in v_} for r, v_ in table.items()}
+    for name, r in table.items():  # dead control per row: red must FAIL the row itself
+        if name.startswith("D.creepjs.") or r.get("red") != rows.FAIL:
+            r.update({a: rows.UNMEASURED for a in driven})
     return table
 
 
 def exit_code(table):
     # Only the tdp and tdp-main verdicts count: red is a positive control whose FAILs are expected on every group
     # (a dead control already turns the tdp cells UNMEASURED), and none is the baseline.
-    cells = [c for v in table.values() for a, c in v.items() if a in ("tdp", "tdp-main")]
+    cells = [c for row, v in table.items() if not row.startswith("D.creepjs.") for a, c in v.items() if a in ("tdp", "tdp-main")]
     if rows.FAIL in cells:
         return 1
     return 3 if not table or rows.UNMEASURED in cells else 0
@@ -319,6 +357,10 @@ def main(argv=None):
             elif g == "D":
                 order[g] = [x for x in order[g] if x != "none"]
                 table.update(r.group_D(order[g]))
+            elif g == "F" and not on_host():
+                print("UNMEASURED: group F loads facebook and runs on the host only")
+                r.notes.append("F: not run off-host")
+                table["F.observer"] = {a: rows.UNMEASURED for a in order[g]}
             elif g == "F":
                 t, det = r.group_F(order[g])
                 table.update(t)
@@ -327,6 +369,7 @@ def main(argv=None):
         r.srv.shutdown()
         if not a.keep_raw:
             shutil.rmtree(r.raw, ignore_errors=True)
+    details.update(r.l_details)
     out = pathlib.Path(a.out)
     (out / "table.json").write_text(json.dumps({"version": exe_version(a.exe), "rows": table, "order": order, "details": details,
                                                 "notes": r.notes}, indent=1), encoding="utf-8")
@@ -334,5 +377,13 @@ def main(argv=None):
     return exit_code(table)
 
 
+def entry(argv=None):
+    try:
+        return main(argv)
+    except Exception as e:  # noqa: BLE001 - a crash is UNMEASURED; the type and message only, never page text
+        print(f"UNMEASURED: {type(e).__name__}: {e}")
+        return 3
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(entry())

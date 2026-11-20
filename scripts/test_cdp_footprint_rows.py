@@ -14,8 +14,8 @@ def test_timing_overlap_pass():
 def test_timing_no_overlap_fail():
     d = [21, 21.3, 22.5, 23.9, 24.4, 24.5, 24.9, 25.6, 26.3]
     e = [26.7, 27, 28, 28.8, 29.5, 29.6, 29.8, 30.1, 30.5]
-    assert judge_timing(d, e) == FAIL
-    assert judge_timing(e, d) == FAIL
+    assert judge_timing(d, e) == FAIL  # arm slower than the baseline
+    assert judge_timing(e, d) == UNMEASURED  # arm faster and disjoint: not a footprint
 
 
 def test_timing_short_unmeasured():
@@ -158,3 +158,9 @@ def test_missing_key_is_unmeasured_not_keyerror():
     r = judge_row("L2", {"none": {}, "tdp": ok, "tdp-main": ok, "red": ok})
     assert set(r.values()) == {UNMEASURED}
     assert judge_flag(None, None) == UNMEASURED
+
+
+def test_keys_untrusted_events_do_not_count():
+    s = "ab"
+    ev = [dict(e, isTrusted=False) for e in _typed_all(s)]
+    assert judge_keys(ev, s) == FAIL

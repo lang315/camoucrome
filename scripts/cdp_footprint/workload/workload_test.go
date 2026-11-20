@@ -1,6 +1,8 @@
 package workload
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -26,5 +28,17 @@ func TestPreludeDeclaresOnly(t *testing.T) {
 	}
 	if strings.Contains(strings.Replace(Prelude, "function", "", 1), "=") {
 		t.Fatal("Prelude has an assignment")
+	}
+}
+
+func TestEnvIsExactlyTheGivenOne(t *testing.T) {
+	t.Setenv("CAMOU_CONFIG", "stale")
+	p := filepath.Join(t.TempDir(), "env.json")
+	if err := os.WriteFile(p, []byte(`{"A":"1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env, err := (&Flags{EnvJSON: p}).Env()
+	if err != nil || len(env) != 1 || env[0] != "A=1" {
+		t.Fatalf("env = %v, err = %v", env, err)
 	}
 }

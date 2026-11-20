@@ -18,15 +18,15 @@ role_driver = "--exe" in a
 profile = opt("--profile") if role_driver else next(x for x in a if x.startswith("--user-data-dir="))[16:]
 arm = re.search(r"[LDF]-(none|tdp-main|tdp|red)-", profile.replace("\\", "/")).group(1)
 mode = os.environ.get("FAKE_MODE", "pass")
-if mode == "gpu":
-    os.makedirs(profile, exist_ok=True)
-    open(os.path.join(profile, "chrome_debug.log"), "w").write("[1:2] GPU process exited unexpectedly: exit_code=8\n")
+os.makedirs(profile, exist_ok=True)
+if mode != "nolog":
+    open(os.path.join(profile, "chrome_debug.log"), "w").write("[1:2] GPU process exited unexpectedly: exit_code=8\n" if mode == "gpu" else "ok\n")
 url = opt("--url") if role_driver else a[-1]
 if "/probe.html" in url and mode != "nopost":
     q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
     flag = arm == "red" or (mode == "tdpflag" and arm == "tdp")
     urllib.request.urlopen(urllib.request.Request(url.split("/probe.html")[0] + "/result?arm=%s&run=%s" % (arm, q["run"][0]),
-                           json.dumps({"L1": flag}).encode()))
+                           json.dumps({"L1": flag, "L2": [1.0, 2.0, 3.0]}).encode()))
 if role_driver and opt("--mode") == "detector" and mode == "noout" and arm == "tdp":
     sys.exit(0)
 if role_driver and opt("--mode") == "detector":
@@ -37,7 +37,7 @@ if role_driver and opt("--mode") == "facebook":
     sys.exit(0)
 if role_driver:
     sys.stdin.read()  # EOF ends the driver
-    json.dump({"driver": "fake", "text": "SECRET PAGE TEXT"}, open(opt("--out"), "w"))
+    json.dump({"driver": "fake", "text": "SECRET PAGE TEXT", "error": "boom" if mode == "drverr" else None}, open(opt("--out"), "w"))
 else:
     time.sleep(60)
 '''
@@ -54,6 +54,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "gate", lambda: None)
     monkeypatch.setattr(m, "driver_cmd", lambda drivers, arm: [sys.executable, str(fake)])
     monkeypatch.setattr(m, "FB_WAIT", 1)
+    monkeypatch.setattr(m, "on_host", lambda: True)
 
     def run(*extra, mode="pass"):
         monkeypatch.setenv("FAKE_MODE", mode)
@@ -133,8 +134,21 @@ def test_gate_exception_is_unmeasured(env, monkeypatch):
 
 
 def test_d_rows_status_mapping():
-    r = m.d_rows({("red", "rebrowser"): {"runtimeEnableLeak": "fail", "a": "pass", "b": "not triggered"}}, ["red"])
-    assert (r["D.rebrowser.a"]["red"], r["D.rebrowser.b"]["red"]) == ("PASS", "UNMEASURED")
+    red = {"runtimeEnableLeak": "fail", "a": "fail", "b": "fail"}
+    r = m.d_rows({("red", "rebrowser"): red, ("tdp", "rebrowser"): {"runtimeEnableLeak": "pass", "a": "pass", "b": "not triggered"}}, ["red", "tdp"])
+    assert (r["D.rebrowser.a"]["tdp"], r["D.rebrowser.b"]["tdp"]) == ("PASS", "UNMEASURED")
+
+
+def test_d_dead_control_is_per_row():
+    red = {"runtimeEnableLeak": "fail", "a": "pass"}  # red trips one row, not the other
+    r = m.d_rows({("red", "rebrowser"): red, ("tdp", "rebrowser"): {"runtimeEnableLeak": "pass", "a": "pass"}}, ["red", "tdp"])
+    assert r["D.rebrowser.runtimeEnableLeak"]["tdp"] == "PASS" and r["D.rebrowser.a"] == {"red": "UNMEASURED", "tdp": "UNMEASURED", "none": "n/a"}
+
+
+def test_creepjs_rows_never_counted():
+    t = m.d_rows({}, ["tdp"])
+    assert t["D.creepjs.lies"]["tdp"] == "UNMEASURED"
+    assert m.exit_code({"D.creepjs.lies": {"tdp": "UNMEASURED", "tdp-main": "UNMEASURED"}, "L1": {"tdp": "PASS", "tdp-main": "PASS"}}) == 0
 
 
 def test_gate_failure_is_unmeasured(env, monkeypatch):
@@ -146,7 +160,8 @@ def test_gate_failure_is_unmeasured(env, monkeypatch):
 def test_d_group_verdicts_and_dead_control(env):
     rc, t, _ = env("--groups", "D")
     r = t["rows"]["D.rebrowser.runtimeEnableLeak"]
-    assert r == {"none": "n/a", "tdp": "PASS", "tdp-main": "PASS", "red": "FAIL"} and rc == 3  # creepjs and dbi_bot rows have no text: UNMEASURED
+    assert r == {"none": "n/a", "tdp": "PASS", "tdp-main": "PASS", "red": "FAIL"} and rc == 0  # creepjs rows are UNMEASURED and not counted
+    assert set(t["rows"]["D.creepjs.lies"].values()) == {"UNMEASURED", "n/a"}
     assert m.d_rows({("red", "rebrowser"): {"runtimeEnableLeak": "pass"}, ("tdp", "rebrowser"): {"runtimeEnableLeak": "pass"}},
                     ["red", "tdp"])["D.rebrowser.runtimeEnableLeak"]["tdp"] == "UNMEASURED"
 
@@ -161,7 +176,71 @@ def test_raw_deleted_after_judge(env, monkeypatch):
     monkeypatch.setattr(m.observe_judge, "summarize", summ)
     rc, t, out = env("--groups", "L,F")
     assert len(seen) == 4 and not any(map(any, alive)) and not (out / "raw").exists()
-    assert t["rows"]["F.observer"] == {"none": "PASS", "tdp": "PASS", "tdp-main": "PASS", "red": "PASS"}
+    assert t["rows"]["F.observer"] == {"none": "PASS", "tdp": "UNMEASURED", "tdp-main": "UNMEASURED", "red": "PASS"}  # red = none: dead control
+    assert "F: red shows no difference from none; differences are leads only" in t["notes"]
     assert "SECRET" not in (out / "table.json").read_text() + (out / "table.md").read_text()
     env("--groups", "L", "--keep-raw")
     assert (out / "raw").exists()
+
+
+def _fb_summ(by_arm):
+    def summ(d):
+        return by_arm[re.search(r"F-(none|tdp-main|tdp|red)-", str(d)).group(1)]
+    return summ
+
+
+def _sum(groups, bz=0):
+    return {"groups": groups, "intl": None, "requests": {"total": 3, "ajax_bz": bz}}
+
+
+def test_f_live_control_keeps_verdicts(env, monkeypatch):
+    by = {"none": _sum({"g": 1}), "tdp": _sum({"g": 1}), "tdp-main": _sum({"g": 1, "x": 1}), "red": _sum({})}
+    by["red"] = _sum({"g": 1, "y": 1})
+    monkeypatch.setattr(m.observe_judge, "summarize", _fb_summ(by))
+    rc, t, _ = env("--groups", "F")
+    assert t["rows"]["F.observer"] == {"none": "PASS", "tdp": "PASS", "tdp-main": "FAIL", "red": "FAIL"} and rc == 1
+
+
+def test_f_ajax_bz_is_information_only(env, monkeypatch):
+    by = {"none": _sum({"g": 1}, 1), "tdp": _sum({"g": 1}, 9), "tdp-main": _sum({"g": 1}, 9), "red": _sum({"g": 1, "y": 1}, 1)}
+    monkeypatch.setattr(m.observe_judge, "summarize", _fb_summ(by))
+    rc, t, _ = env("--groups", "F")
+    assert t["rows"]["F.observer"]["tdp"] == "PASS"
+    assert any(l.startswith("ajax_bz") for l in t["details"]["F.observer tdp"])
+
+
+def test_driver_error_in_out_is_unmeasured(env):
+    rc, t, _ = env("--groups", "L", mode="drverr")
+    assert set(t["rows"]["L1"].values()) == {"UNMEASURED"}
+
+
+def test_l_timing_details_are_numbers(env):
+    rc, t, _ = env("--groups", "L")
+    assert t["details"]["L.timing L2"]["tdp"] == {"min": 1.0, "median": 2.0, "max": 3.0}
+
+
+def test_entry_exception_exits_3(monkeypatch, capsys):
+    def boom(argv=None):
+        raise RuntimeError("SECRET")
+    monkeypatch.setattr(m, "main", boom)
+    assert m.entry([]) == 3 and "UNMEASURED: RuntimeError" in capsys.readouterr().out
+
+
+def test_missing_debug_log_is_unmeasured(env):
+    rc, t, _ = env("--groups", "L", mode="nolog")
+    assert set(t["rows"]["L1"].values()) == {"UNMEASURED"} and any("no debug log" in n for n in t["notes"])
+
+
+def test_group_f_refused_off_host(env, monkeypatch):
+    monkeypatch.setattr(m, "on_host", lambda: False)
+    rc, t, _ = env("--groups", "F")
+    assert set(t["rows"]["F.observer"].values()) == {"UNMEASURED"} and rc == 3 and "F: not run off-host" in t["notes"]
+
+
+def test_reap_ends_orphan_with_profile_path(tmp_path):
+    import subprocess
+    prof = tmp_path / "profile-xyz"
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", str(prof)])
+    m.reap(prof)
+    assert p.wait(10) is not None
+    assert p.returncode != 0

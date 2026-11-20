@@ -247,7 +247,11 @@ startup abort instead of a silent fall-back to real values.
   commit limit.
 - **Automated facebook runs** use `scripts/windows/observe-auto.ps1` on the
   host, or a measurement harness whose spec the owner approved (named there
-  with its arms; first: `measure_cdp_footprint.py`, 2026-11-20). `observe-auto.ps1` runs arm 1 (logged out)
+  with its arms; first: `measure_cdp_footprint.py`, 2026-11-20). The limits
+  below bind an approved harness too: one load per arm per run, never
+  scheduled or looped, no credential typing, the owner's session Active, 8 GB
+  commit headroom, no native build, launched detached, verdicts `PASS`,
+  `FAIL` or `UNMEASURED`. `observe-auto.ps1` runs arm 1 (logged out)
   and arm 3 (the backed-up login at
   `D:\camou-win\observe\backup\fb-login-20261017`), one load each, with no
   input. Never schedule it or loop it. Arm 2, the login, stays manual by
