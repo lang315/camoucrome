@@ -129,3 +129,70 @@ def test_r6_strict():
     assert verify_course.r_row_pass(["k6 lie Navigator.hardwareConcurrency []"], exp, True, True)
     assert not verify_course.r_row_pass(["k6 lie Navigator.hardwareConcurrency []"], exp, True, False)
     assert not verify_course.r_row_pass(["k6 lie Navigator.hardwareConcurrency []"], exp, False, True)
+
+
+# K7 (specs/2026-11-20-course-k7-design.md): CreepJS reports names quoted, as the vendored build does
+def _q(*names):
+    return [f'"{n}"' for n in names]
+
+
+WIN7 = ("Cambria Math", "Lucida Console")
+WIN8 = ("Gadugi", "Nirmala UI")
+WIN81 = ("Leelawadee UI", "Segoe UI Emoji")
+WIN10 = ("Segoe MDL2 Assets", "Bahnschrift")
+FONTS10 = _q(*WIN7, *WIN8, *WIN81, *WIN10, "Arial")
+FONTS11 = FONTS10 + _q("Segoe Fluent Icons")
+CFG = {"fonts:list": ["Arial", *WIN7, *WIN8, *WIN81, *WIN10, "Segoe Fluent Icons"], "fonts:aliasLocal": {"Arial Bold": "x"}}
+
+
+def test_windows_by_fonts():
+    w = verify_course.windows_by_fonts
+    assert w(FONTS11) == "11" and w(FONTS10) == "10"
+    assert w(_q(*WIN7, *WIN8, *WIN81)) == "8.1"
+    assert w(_q("Cambria Math")) is None and w([]) is None  # an incomplete Windows 7 set dates nothing
+
+
+def test_windows_by_platform_version():
+    v = verify_course.windows_by_platform_version
+    assert [v(p) for p in ("19.0.0", "13.0.0", "12.0.0", "10.0.0", "1.0.0", "0.3.0", "0.2.0", "0.1.0", "bad", None)] == \
+           ["11", "11", "10", "10", "10", "8.1", "8", "7", None, None]
+
+
+def test_creep_map_matches_vendor():
+    src = (verify_course.CREEP_DIR / "creep.js").read_text(encoding="utf-8", errors="replace")
+    block = src[src.index("const WindowsFonts = {"):]
+    block = block[:block.index("};")]
+    got = {k: re.findall(r"'([^']+)'", body) for k, body in re.findall(r"'([\d.]+)': \[(.*?)\]", block, re.S)}
+    assert got == verify_course.creep_windows_fonts()
+
+
+def _rep(fonts, pv="10.0.0", platform="Windows"):
+    return {"lies": {}, "trash": [], "stealth": [], "workerLied": False, "missing": [], "done": True,
+            "fonts": fonts, "ua": {"platform": platform, "platformVersion": pv}}
+
+
+def test_k7():
+    k = verify_course.k7_problems
+    assert k(_rep(FONTS10), CFG) == [] and k(_rep(FONTS11, "19.0.0"), CFG) == []
+    assert k(_rep(FONTS10, "19.0.0"), CFG) == ["k7 windows fonts date 10, UA-CH 19.0.0 says 11"]
+    assert k(_rep(FONTS11, "10.0.0"), CFG) == ["k7 windows fonts date 11, UA-CH 10.0.0 says 10"]
+    assert k(_rep(_q("Arial"), "10.0.0"), CFG) == ["k7 windows fonts date none, UA-CH 10.0.0 says 10"]
+    assert k(_rep(FONTS10 + _q("Arial Bold")), CFG) == []  # an aliasLocal key is allowed
+    assert k(_rep(FONTS10 + _q("ROG Fonts")), CFG) == ["k7 font outside fonts:list ROG Fonts"]
+    assert k(_rep(FONTS10 + _q("ROG Fonts")), {}) == []  # no fonts:list: every font may show (rule 5)
+    assert k(_rep(_q("Helvetica Neue"), "15.7.4", "macOS"), {"fonts:list": ["Helvetica Neue"]}) == []
+    assert k({**_rep(FONTS10), "fonts": None}, CFG) == ["k7 error missing fonts"]
+    assert k({k_: v for k_, v in _rep(FONTS10).items() if k_ != "ua"}, CFG) == ["k7 error missing ua"]
+    assert k({"error": "timeout"}, CFG) == ["k7 error timeout"]
+
+
+def test_harness_reports_fonts_and_ua():
+    h = verify_course.HARNESS
+    assert "fontFaceLoadFonts" in h and "userAgentData" in h and "fonts:" in h and "ua:" in h
+
+
+def test_expected_rows_and_r7():
+    assert verify_course.EXPECTED_ROWS == 14
+    assert verify_course.R7_CONFIG == {"ua:platformVersion": "19.0.0"}
+    assert verify_course.r_row_pass(["k7 windows fonts date 10, UA-CH 19.0.0 says 11"], "k7 windows", True, True)
+    assert not verify_course.r_row_pass(["k7 font outside fonts:list X"], "k7 windows", True, True)
