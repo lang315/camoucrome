@@ -28,9 +28,12 @@ F6a    suffix names of claimed families (Arial Medium, Segoe UI Thin, Calibri He
        mirrors since specs/2026-11-20-font-weight-suffix-gate-design.md. RED: a fork without that change.
 F6b    ROG Fonts + " Medium" stays hidden under the identity while stock resolves it. RED: the stock red run, and a
        mutant gate that strips without re-checking the list.
-F6c    under a list with Arial and without Arial Narrow, "Arial Narrow" measures as Arial at font-stretch:
-       condensed (a machine without the face). NOT MEASURED on a host with no distinct Arial Narrow face. Expected
-       FAIL with the spec's design (Known limits: a listed base reaches an unlisted real suffixed face).
+F6c    under a list with Arial and without Arial Narrow, "Arial Narrow" measures as plain Arial (what stock's
+       suffix path renders on a machine without the face; ctx.font resets the canvas font-stretch, so none is set).
+       NOT MEASURED on a host with no Arial Narrow face distinct from Arial. Expected FAIL with the spec's design
+       (Known limits: a listed base reaches an unlisted real suffixed face).
+F6d    under a macOS identity (fonts:alias kept), "Arial Medium" stays unresolved while stock resolves it: the
+       suffix path runs only under a Windows claim. RED: a mutant gate without the claim check.
 F3     note, measured: of the identity's fonts:list, how many families stock
        cannot resolve on this host (a real device would have them, so each is
        a tell), and up to 10 names
@@ -61,7 +64,7 @@ TEXT = "mmmmmmmmmmlli WWW 0123456789"
 SUFFIX_NAMES = ["Arial Medium", "Segoe UI Thin", "Calibri Heavy"]
 HOST_ONLY_SUFFIX = HOST_ONLY + " Medium"
 FALLBACK_TEXT = "\u6f22\u5b57\u304b\u306a \u0e44\u0e17\u0e22 \U0001F600"
-EXPECTED = 8  # F1 F2-py F2-go F2-node F4 F6a F6b F6c (F6c may print NOT MEASURED)
+EXPECTED = 9  # F1 F2-py F2-go F2-node F4 F6a F6b F6c F6d (F6c may print NOT MEASURED)
 
 PAGE_TMPL = """<!doctype html><title>fonts</title><script>
 const FAMS = %s, TEXT = %s, FB = %s;
@@ -72,7 +75,7 @@ function measure(ctx) {
   out.__mono = w('100px monospace', TEXT); out.__serif = w('100px serif', TEXT);
   out.__fallback = w('100px "Camoucrome No Such Family"', FB);
   out.__narrow = w('100px "Arial Narrow", monospace', TEXT);
-  ctx.fontStretch = 'condensed'; out.__arialCondensed = w('100px Arial, monospace', TEXT); ctx.fontStretch = 'normal';
+  out.__arial = w('100px Arial, monospace', TEXT);
   return out;
 }
 const SRC = 'const FAMS=' + JSON.stringify(FAMS) + ',TEXT=' + JSON.stringify(TEXT) + ',FB=' + JSON.stringify(FB) + ';' +
@@ -111,8 +114,8 @@ def real_ok(r, sm):
             and all(abs(r[f][0] - r[f][1]) <= JITTER_TOL and abs(r[f][0] - sm[f][0]) <= JITTER_TOL for f in REAL))
 
 
-def identity(seed):
-    g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", "windows", "--seed", str(seed)],
+def identity(seed, os_name="windows"):
+    g = subprocess.run([PY, "-m", "camoucrome.gen", "--os", os_name, "--seed", str(seed)],
                        capture_output=True, text=True, timeout=120)
     if g.returncode != 0:
         sys.exit(g.stderr[-500:])
@@ -190,11 +193,17 @@ def main():
     if f6c is None:
         not_measured.append("F6c no distinct Arial Narrow face on this host, or the list shows it")
     else:
-        results["F6c Arial Narrow measures as Arial condensed under a list without it"] = f6c
+        results["F6c Arial Narrow measures as plain Arial under a list without it"] = f6c
+    mac, merr = python_read(url, EXE, identity(1, "macos"))
+    if mac is None:
+        notes.append("F6d: macOS-identity launch failed: " + (merr or "").replace("\n", " | ")[:300])
+        mac = {"main": None, "worker": None}
+    results["F6d Arial Medium stays unresolved under a macOS identity, visible to stock"] = (
+        font_suffix.f6d(mac["main"], mac["worker"], sm, "Arial Medium", resolved))
     srv.shutdown()
     if fm is not None and sm is not None:
-        notes.append(f"F6c widths fork narrow|condensed {fm['__narrow']:.2f}|{fm['__arialCondensed']:.2f}, "
-                     f"stock {sm['__narrow']:.2f}|{sm['__arialCondensed']:.2f}")
+        notes.append(f"F6c widths fork narrow|arial {fm['__narrow']:.2f}|{fm['__arial']:.2f}, "
+                     f"stock {sm['__narrow']:.2f}|{sm['__arial']:.2f}")
         notes.append("F2 widths fork mono|serif/stock: " + "; ".join(
             f"{x}={fm[x][0]:.2f}|{fm[x][1]:.2f}/{sm[x][0]:.2f}" for x in REAL))
         notes.append(f"F4 fallback width fork/stock: {fm['__fallback']:.2f}/{sm['__fallback']:.2f}")

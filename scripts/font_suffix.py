@@ -35,6 +35,10 @@ def collisions(fonts):
         groups = {g: v["families"] for g, v in sorted(fam.get("groups", {}).items())}
         if "win11" in fam:
             groups["win11"] = fam["win11"]["families"]
+        grouped = {f.casefold() for fs in groups.values() for f in fs}
+        never = [f for f in fam["list"] if f.casefold() not in always and f.casefold() not in grouped]
+        if never:  # captured, in neither base nor a group: every draw hides it
+            groups["never-drawn"] = never
         where = {f.casefold(): (g, f) for g, fs in groups.items() for f in fs}
         for g, families in groups.items():
             for f in families:
@@ -62,11 +66,19 @@ def f6b(fm, fw, sm, name, resolved):
 
 
 def f6c(fm, sm, claimed, resolved, tol=TOL):
-    """True/False: under a list with Arial and without Arial Narrow, "Arial Narrow" measures as Arial at
-    font-stretch: condensed (what a machine without the face shows). None: NOT MEASURED -- the host has no distinct
-    Arial Narrow face, or the list shows it."""
+    """True/False: under a list with Arial and without Arial Narrow, "Arial Narrow" measures as plain Arial -- what
+    stock's suffix path renders on a machine without the face, Arial having no condensed face. None: NOT MEASURED --
+    the host has no Arial Narrow face distinct from Arial, or the list shows it."""
     listed = {f.casefold() for f in claimed}
     if (fm is None or sm is None or "arial" not in listed or "arial narrow" in listed
-            or not resolved(sm, "Arial Narrow") or abs(sm["__narrow"] - sm["__arialCondensed"]) <= tol):
+            or not resolved(sm, "Arial Narrow") or abs(sm["__narrow"] - sm["__arial"]) <= tol):
         return None
-    return abs(fm["__narrow"] - fm["__arialCondensed"]) <= tol
+    return abs(fm["__narrow"] - fm["__arial"]) <= tol
+
+
+def f6d(fm, fw, sm, name, resolved):
+    """Under a macOS identity (which keeps fonts:alias) on a Windows build, a suffix name of a listed family stays
+    blocked while stock resolves it: the suffix path runs only under a Windows claim, else "Arial Medium" would reach
+    the host's real Arial while "Arial" renders its alias target."""
+    return (fm is not None and fw is not None and sm is not None and resolved(sm, name)
+            and not resolved(fm, name) and not resolved(fw, name))

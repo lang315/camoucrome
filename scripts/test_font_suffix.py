@@ -37,6 +37,9 @@ def test_invariant_catches_a_planted_collision():
     other = copy.deepcopy(FONTS)  # a base in a different optional group
     other["families"]["Windows"]["groups"]["planted"] = {"families": ["Cascadia Code Heavy"], "p": 0.5}
     assert fs.collisions(other) == [("Windows", "Cascadia Code Heavy", "Cascadia Code")]
+    never = copy.deepcopy(FONTS)  # captured, in neither base nor a group: every draw hides it
+    never["families"]["Windows"]["list"].append("Calibri Medium")
+    assert fs.collisions(never) == [("Windows", "Calibri Medium", "Calibri")]
     win11 = copy.deepcopy(FONTS)
     win11["families"]["Windows"]["win11"]["families"].append("Segoe UI Black")
     assert fs.collisions(win11) == [("Windows", "Segoe UI Black", "Segoe UI")]
@@ -64,7 +67,7 @@ def test_tables_match_chromium():
 
 def _r(**widths):
     """A measure() result: resolved names have widths unlike the bare fallbacks."""
-    base = {"__mono": 1000.0, "__serif": 1100.0, "__narrow": 900.0, "__arialCondensed": 900.0}
+    base = {"__mono": 1000.0, "__serif": 1100.0, "__narrow": 900.0, "__arial": 900.0}
     base.update({k.replace("_", " "): v for k, v in widths.items()})
     return base
 
@@ -94,9 +97,23 @@ def test_f6b():
 
 
 def test_f6c():
-    real_narrow = _r(Arial_Narrow=HIT) | {"__narrow": 800.0, "__arialCondensed": 900.0}
+    real_narrow = _r(Arial_Narrow=HIT) | {"__narrow": 800.0, "__arial": 900.0}
     assert fs.f6c(real_narrow | {"__narrow": 900.0}, real_narrow, ["Arial"], _resolved) is True
     assert fs.f6c(real_narrow, real_narrow, ["Arial"], _resolved) is False  # the fork reaches the real face
     assert fs.f6c(real_narrow, _r(Arial_Narrow=MISS), ["Arial"], _resolved) is None  # host lacks it
     assert fs.f6c(real_narrow, real_narrow, ["Arial", "Arial Narrow"], _resolved) is None  # the list shows it
     assert fs.f6c(real_narrow, real_narrow | {"__narrow": 900.0}, ["Arial"], _resolved) is None  # no distinct face
+
+
+def test_f6d():
+    blocked, shown = _r(Arial_Medium=MISS), _r(Arial_Medium=HIT)
+    assert fs.f6d(blocked, blocked, shown, "Arial Medium", _resolved)  # a macOS claim keeps the exact match
+    assert not fs.f6d(shown, blocked, shown, "Arial Medium", _resolved)  # the mutant without the claim check
+    assert not fs.f6d(blocked, blocked, blocked, "Arial Medium", _resolved)  # stock premise
+
+
+def test_f6c_reference_is_plain_arial():
+    # ctx.font re-derives font-stretch from its shorthand (canvas_rendering_context_2d_state.cc SetFont), so a
+    # fontStretch set before it measures nothing; the reference is what stock's suffix path renders: Arial
+    src = (HERE / "verify_windows_fonts.py").read_text(encoding="utf-8")
+    assert "fontStretch" not in src and "out.__arial = w('100px Arial, monospace', TEXT);" in src
