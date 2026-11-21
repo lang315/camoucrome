@@ -104,6 +104,26 @@ TEST(IsStrictValueTest, OnlyANonEmptyValueOtherThanZeroIsStrict) {
   EXPECT_TRUE(IsStrictValue("00"));
 }
 
+// The browser process refuses startup under strict with a clean exit code when
+// the configuration cannot parse (rather than the CHECK's 0x80000003): the
+// pre-check sees what ParsedConfig would.
+TEST(ConfigsParseTest, OnlyAJsonObjectOrNothingParses) {
+  auto parses = [](const std::map<std::string, std::string>& vars) {
+    return ConfigsParse(EnvFrom(vars));
+  };
+  EXPECT_TRUE(parses({}));                              // a stock run
+  EXPECT_TRUE(parses({{"CAMOU_CONFIG", ""}}));          // present but empty
+  EXPECT_TRUE(parses({{"CAMOU_CONFIG", "{\"a\":1}"}}));
+  EXPECT_TRUE(parses({{"CAMOU_CONFIG_1", "{\"a\":"}, {"CAMOU_CONFIG_2", "1}"}}));
+  EXPECT_FALSE(parses({{"CAMOU_CONFIG", "{"}}));        // the case that CHECKed
+  EXPECT_FALSE(parses({{"CAMOU_CONFIG", "[]"}}));       // JSON, not an object
+  EXPECT_FALSE(parses({{"CAMOU_CONFIG", "{\"a\":1,}"}}));  // RFC: no trailing comma
+  EXPECT_FALSE(parses({{"CAMOU_CONFIG_1", "{\"a\":"}}));    // a chunk gap leaves a prefix
+  EXPECT_FALSE(parses({{"CAMOU_PRESET", "{"}}));
+  EXPECT_TRUE(parses({{"CAMOU_PRESET", "{\"os\":\"Windows\"}"}}));
+  EXPECT_FALSE(parses({{"CAMOU_CONFIG", "{\"a\":1}"}, {"CAMOU_PRESET", "x"}}));
+}
+
 // A gap in the numbered chunks is not silent (audit 2026-10-29, appendix): the
 // chunks after the gap are dropped, what is left is a prefix of the JSON
 // object, and a prefix is never a valid object, so ParseConfig reports it
