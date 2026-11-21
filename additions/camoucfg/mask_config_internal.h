@@ -50,6 +50,15 @@ std::string AssembleRawConfig(EnvGetter get,
 // that wants strict off must be able to say so with CAMOU_CONFIG_STRICT=0.
 bool IsStrictValue(const std::optional<std::string>& value);
 
+// Whether the assembled CAMOU_CONFIG and CAMOU_PRESET (the same transport as
+// ParsedConfig, read through `get`) are JSON objects: an empty one is fine (the
+// normal stock run), malformed JSON or a value that is not an object is not.
+// Logs one error per bad variable. The browser process calls this first thing
+// under CAMOU_CONFIG_STRICT, so it can refuse startup with a clean exit code;
+// the CHECKs in ParseConfig and ParsedConfig stay as the backstop in every
+// other process.
+bool ConfigsParse(EnvGetter get);
+
 // Parses the assembled configuration. The expected shape is a flat JSON
 // object whose keys are dotted or colon-separated strings.
 //

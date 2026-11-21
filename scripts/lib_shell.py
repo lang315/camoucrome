@@ -309,8 +309,9 @@ def launch(config, shell=None, extra_flags=None, strict=False, debug_port=None,
         env["CAMOU_PRESET"] = preset
     if config is not None:
         env["CAMOU_CONFIG"] = config
-    if strict:
-        env["CAMOU_CONFIG_STRICT"] = "1"
+    if strict or isinstance(strict, str):
+        # True: "1". A string is the variable's value itself, "" and "0" included (neither turns strict on).
+        env["CAMOU_CONFIG_STRICT"] = strict if isinstance(strict, str) else "1"
 
     profile = user_data_dir or tempfile.mkdtemp(prefix="camoucrome-verify-")
     # stderr goes to a file, not a pipe. Criterion 6 reads it after the

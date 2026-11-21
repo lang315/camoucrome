@@ -1,3 +1,53 @@
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index 7573be151d..42cef3412a 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -65,6 +65,7 @@
+ #include "components/camoucfg/coherence_validator.h"
+ #include "components/camoucfg/keys.h"
+ #include "components/camoucfg/mask_config.h"
++#include "components/camoucfg/mask_config_internal.h"
+ #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
+ #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
+ #include "components/power_monitor/make_power_monitor_device_source.h"
+@@ -565,6 +566,26 @@ bool UaMetadataKeyHasValue(std::string_view key) {
+ int BrowserMainLoop::EarlyInitialization() {
+   TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
+ 
++  // CAMOU_CONFIG_STRICT with a configuration that is not a JSON object refuses
++  // startup HERE, with the same exit code as the other strict refusals, before
++  // the first parse: ParsedConfig's CHECK would otherwise abort this process
++  // with 0x80000003. That CHECK stays as the backstop in every other process
++  // (none can start once this one has refused).
++  {
++    std::unique_ptr<base::Environment> camou_env = base::Environment::Create();
++    if (camoucfg::internal::IsStrictValue(
++            camou_env->GetVar("CAMOU_CONFIG_STRICT")) &&
++        !camoucfg::internal::ConfigsParse(
++            [&camou_env](const std::string& name) {
++              return camou_env->GetVar(name);
++            })) {
++      LOG(ERROR) << "camoucfg: the configuration is malformed and "
++                    "CAMOU_CONFIG_STRICT is set; refusing to start.";
++      constexpr int kResultCodeUnsupportedParam = 13;  // see below
++      return kResultCodeUnsupportedParam;
++    }
++  }
++
+   // Validate the configuration here, in the browser process, before any
+   // renderer exists.
+   //
+@@ -709,8 +730,8 @@ int BrowserMainLoop::EarlyInitialization() {
+   // their metadata-key iteration -- so its strict refusal is wired in here, with
+   // its own read of the same env var. A half-configured ua: identity refuses
+   // startup only under strict; below strict it is warned only, above.
+-  const bool strict =
+-      base::Environment::Create()->GetVar("CAMOU_CONFIG_STRICT").has_value();
++  const bool strict = camoucfg::internal::IsStrictValue(
++      base::Environment::Create()->GetVar("CAMOU_CONFIG_STRICT"));
+   if (!coherent || (ua_half_configured && strict)) {
+     LOG(ERROR) << "camoucfg: configuration is incoherent and "
+                   "CAMOU_CONFIG_STRICT is set; refusing to start.";
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
 index 3e9699f5bd..976991e9ea 100644
 --- a/content/browser/devtools/protocol/input_handler.cc

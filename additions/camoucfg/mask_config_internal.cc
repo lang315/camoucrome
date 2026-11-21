@@ -73,6 +73,19 @@ bool IsStrictValue(const std::optional<std::string>& value) {
   return value.has_value() && !value->empty() && *value != "0";
 }
 
+bool ConfigsParse(EnvGetter get) {
+  bool ok = true;
+  for (const char* prefix : {"CAMOU_CONFIG", "CAMOU_PRESET"}) {
+    const std::string raw = AssembleRawConfig(get, prefix);
+    if (!raw.empty() &&
+        !base::JSONReader::ReadDict(raw, base::JSON_PARSE_RFC).has_value()) {
+      LOG(ERROR) << "camoucfg: " << prefix << " is not a JSON object";
+      ok = false;
+    }
+  }
+  return ok;
+}
+
 base::DictValue ParseConfig(std::string_view raw, bool strict) {
   if (raw.empty()) {
     return base::DictValue();
@@ -86,9 +99,14 @@ base::DictValue ParseConfig(std::string_view raw, bool strict) {
   std::optional<base::DictValue> parsed =
       base::JSONReader::ReadDict(raw, base::JSON_PARSE_RFC);
   if (!parsed.has_value()) {
-    LOG(ERROR) << "camoucfg: configuration is not a JSON object; its keys "
-               << "are ignored and report real values (a CAMOU_PRESET, if "
-               << "set, still applies)";
+    if (strict) {
+      LOG(ERROR) << "camoucfg: configuration is not a JSON object; refusing "
+                 << "to start because CAMOU_CONFIG_STRICT is set";
+    } else {
+      LOG(ERROR) << "camoucfg: configuration is not a JSON object; its keys "
+                 << "are ignored and report real values (a CAMOU_PRESET, if "
+                 << "set, still applies)";
+    }
     CHECK(!strict) << "camoucfg: refusing to start with an invalid "
                    << "configuration because CAMOU_CONFIG_STRICT is set";
     return base::DictValue();
@@ -268,8 +286,13 @@ const base::DictValue& ParsedConfig() {
       std::optional<base::DictValue> preset =
           base::JSONReader::ReadDict(raw_preset, base::JSON_PARSE_RFC);
       if (!preset.has_value()) {
-        LOG(ERROR) << "camoucfg: preset is not a JSON object; ignored, "
-                   << "explicit configuration still applies";
+        if (strict) {
+          LOG(ERROR) << "camoucfg: preset is not a JSON object; refusing to "
+                     << "start because CAMOU_CONFIG_STRICT is set";
+        } else {
+          LOG(ERROR) << "camoucfg: preset is not a JSON object; ignored, "
+                     << "explicit configuration still applies";
+        }
         CHECK(!strict) << "camoucfg: refusing to start with an invalid "
                        << "preset because CAMOU_CONFIG_STRICT is set";
       } else {
