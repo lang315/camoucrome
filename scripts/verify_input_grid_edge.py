@@ -42,8 +42,9 @@ import verify_sp2e as base
 DSF = 1.25
 FLAGS = ["--remote-allow-origins=*", "--enable-logging=stderr", "--force-device-scale-factor=%s" % DSF,
          "--window-size=" + os.environ.get("IGE_WINDOW", "800,600")]
-HUM = {"humanize:enabled": True, "humanize:minTime": 5, "humanize:maxTime": 15}
+HUM = {"humanize:enabled": True, "humanize:minTime": 80, "humanize:maxTime": 250}  # long paths: many frames, many events
 HUM_GRID = {**HUM, "input:deviceGrid": True}
+HUM_CROSS = {"humanize:enabled": True, "humanize:minTime": 40, "humanize:maxTime": 80, "input:deviceGrid": True}  # 100 legs
 GRID = {"input:deviceGrid": True}
 EPS = 0.02  # device px: float noise of x*dpr
 
@@ -235,7 +236,7 @@ def blink_half_row():
 
 def crossing_row():
     try:
-        with browser(HUM_GRID) as proc:
+        with browser(HUM_CROSS) as proc:
             c, _ = base.open_page(proc)
             m = meta(c)
             y = float(round(m["ih"] / 2))

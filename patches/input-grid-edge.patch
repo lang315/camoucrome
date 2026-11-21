@@ -1,0 +1,155 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 94f80a2d5f..3575f80a7a 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -28,6 +28,9 @@
+ #include "base/trace_event/trace_event.h"
+ #include "base/types/expected.h"
+ #include "build/build_config.h"
++#if defined(USE_AURA)
++#include "ui/aura/window.h"
++#endif
+ #include "components/camoucfg/derive.h"
+ #include "components/camoucfg/input_queue.h"
+ #include "components/camoucfg/keys.h"
+@@ -74,24 +77,40 @@ gfx::PointF CssPixelsToPointF(double x, double y, float scale_factor) {
+   return gfx::PointF(x * scale_factor, y * scale_factor);
+ }
+ 
+-// An OS pointer sits on whole device pixels: a mouse position in DIP is k / dsf.
+-// CDP gives fractional CSS px, which no real mouse can show, so the position of
+-// a mouse event is snapped here, once, at the CDP entry and in root widget
+-// coordinates, before the event is routed to a (possibly out-of-process) frame
+-// whose transform may then legitimately give a fraction, as for a real mouse.
+-// Pen and touch are left as sent. `dsf` is the view's real display scale, the
+-// one `devicePixelRatio` derives from.
+-void SnapMouseToDeviceGrid(blink::WebMouseEvent& event, float dsf) {
++// An OS pointer sits on whole device pixels of the root window: in the content
++// view's DIP a position is k / dsf - origin, `origin` being the view's integer
++// DIP origin in its root window (ViewOriginInRootWindow). CDP gives fractional
++// CSS px, which no real mouse can show, so with `input:deviceGrid` set the
++// position of a mouse event is snapped here, once, at the CDP entry (absent:
++// the stock event, unchanged). Pen and touch are left as sent. `dsf` is the
++// view's hardware display scale, the one devicePixelRatio derives from. The
++// lattice formula is camoucfg::SnapToDeviceGrid.
++void SnapMouseToDeviceGrid(blink::WebMouseEvent& event,
++                           float dsf,
++                           const gfx::Vector2dF& origin) {
+   if (event.pointer_type != blink::WebPointerProperties::PointerType::kMouse) {
+     return;
+   }
+   gfx::PointF p = event.PositionInWidget();
+-  p.SetPoint(static_cast<float>(camoucfg::SnapToDeviceGrid(p.x(), dsf)),
+-             static_cast<float>(camoucfg::SnapToDeviceGrid(p.y(), dsf)));
++  p.SetPoint(
++      static_cast<float>(camoucfg::SnapToDeviceGrid(p.x(), dsf, origin.x())),
++      static_cast<float>(camoucfg::SnapToDeviceGrid(p.y(), dsf, origin.y())));
+   event.SetPositionInWidget(p);
+   event.SetPositionInScreen(p);
+ }
+ 
++// The content view's origin in its root window, in whole DIP: the point the
++// OS pointer's own origin is measured from. Aura only; 0 elsewhere.
++gfx::Vector2dF ViewOriginInRootWindow(RenderWidgetHostViewBase* view) {
++#if defined(USE_AURA)
++  if (aura::Window* window = view->GetNativeView()) {
++    const gfx::Point origin = window->GetBoundsInRootWindow().origin();
++    return gfx::Vector2dF(origin.x(), origin.y());
++  }
++#endif
++  return gfx::Vector2dF();
++}
++
+ gfx::Vector2dF CssPixelsToVector2dF(double x, double y, float scale_factor) {
+   return gfx::Vector2dF(x * scale_factor, y * scale_factor);
+ }
+@@ -1044,15 +1063,6 @@ class InputHandler::InputInjector
+     std::vector<camoucfg::TrajectoryPoint> path = camoucfg::HumanizePath(
+         owner_->last_move_position_, mouse_event.PositionInWidget(), min_ms,
+         max_ms, base::RandUint64());
+-    // Interior points stay on the pointer grid and inside the view: only the
+-    // final point, the driver's own event, may lie outside (a leg that leaves
+-    // the window), and stock then fires the exit sequence from it.
+-    if (RenderWidgetHostViewBase* view = widget_host_->GetView()) {
+-      const gfx::Rect bounds = view->GetViewBounds();
+-      path = camoucfg::ClampPathToView(std::move(path), bounds.width(),
+-                                       bounds.height(),
+-                                       view->GetDeviceScaleFactor());
+-    }
+     const base::TimeTicks now = base::TimeTicks::Now();
+     std::optional<base::TimeDelta> delay;
+     if (path.size() >= 2) {
+@@ -1086,11 +1096,30 @@ class InputHandler::InputInjector
+     // previous move; path.back() is mouse_event's own destination, posted
+     // separately below via the real, unmodified event. Only the interior
+     // points are synthetic.
++    // With input:deviceGrid an interior point is snapped onto the lattice of
++    // the delivered end `e` (already on the lattice from the CDP entry), so the
++    // whole path is on it. ForwardSyntheticMouseMove then drops the points
++    // outside the view, testing the snapped position.
++    const gfx::PointF e = mouse_event.PositionInWidget();
++    const float dsf = widget_host_->GetView()
++                          ? widget_host_->GetView()->GetDeviceScaleFactor()
++                          : 0.0f;
++    const bool grid = camoucfg::GetBool(camoucfg::GlobalScope(),
++                                        camoucfg::keys::kInputDeviceGrid)
++                          .value_or(false);
+     for (size_t i = 1; i + 1 < path.size(); ++i) {
+       blink::WebMouseEvent synthetic(mouse_event);
+-      synthetic.SetPositionInWidget(path[i].x, path[i].y);
+-      synthetic.SetPositionInScreen(gfx::PointF(path[i].x, path[i].y) +
+-                                    screen_offset);
++      gfx::PointF at(path[i].x, path[i].y);
++      if (grid) {
++        at.SetPoint(static_cast<float>(
++                        e.x() + camoucfg::SnapToDeviceGrid(at.x() - e.x(), dsf,
++                                                           0.0)),
++                    static_cast<float>(
++                        e.y() + camoucfg::SnapToDeviceGrid(at.y() - e.y(), dsf,
++                                                           0.0)));
++      }
++      synthetic.SetPositionInWidget(at);
++      synthetic.SetPositionInScreen(at + screen_offset);
+       // Not from the debugger: OnInputEventAck only pops
+       // pending_mouse_callbacks_ for events carrying kFromDebugger, and
+       // this path's only queued callback belongs to the FINAL real event
+@@ -1743,11 +1772,18 @@ void InputHandler::DispatchMouseEvent(
+   }
+ 
+   std::unique_ptr<blink::WebMouseEvent> event = std::move(maybe_event).value();
+-  RenderWidgetHostImpl* root_widget =
+-      host_ ? host_->GetRenderWidgetHost() : nullptr;
+-  if (root_widget && root_widget->GetView()) {
+-    SnapMouseToDeviceGrid(*event,
+-                          root_widget->GetView()->GetDeviceScaleFactor());
++  // Only a session on the root widget: for an OOPIF the coordinates are in the
++  // session frame's space and ScaleFactor carries its CSS zoom, so the lattice
++  // does not apply and the event passes unchanged.
++  RenderWidgetHostImpl* widget = host_ ? host_->GetRenderWidgetHost() : nullptr;
++  if (widget && widget->GetView() &&
++      widget == web_contents_->GetPrimaryMainFrame()->GetRenderWidgetHost() &&
++      camoucfg::GetBool(camoucfg::GlobalScope(),
++                        camoucfg::keys::kInputDeviceGrid)
++          .value_or(false)) {
++    RenderWidgetHostViewBase* view = widget->GetView();
++    SnapMouseToDeviceGrid(*event, view->GetDeviceScaleFactor(),
++                          ViewOriginInRootWindow(view));
+   }
+   HandleMouseEvent(std::move(event), std::move(callback));
+ }
+@@ -2682,7 +2718,14 @@ void InputHandler::ForwardSyntheticMouseMove(
+   if (!handler || !widget) {
+     return;
+   }
+-  if (!handler->PointIsWithinContents(synthetic_event.PositionInWidget())) {
++  // The half-open float test, not PointIsWithinContents: that one calls
++  // gfx::Rect::Contains(int, int) with floats, which truncates toward zero and
++  // lets x or y in (-1, 0) through, where Blink still hit-tests a 1x1 box and
++  // the page gets a move outside the viewport. Gesture commands keep the stock
++  // test.
++  if (!camoucfg::PointInView(
++          synthetic_event.PositionInWidget(),
++          gfx::SizeF(handler->host_->GetView()->GetViewBounds().size()))) {
+     return;
+   }
+   // Stamped with the real time it actually fires, not a value computed at
