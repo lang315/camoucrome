@@ -102,7 +102,7 @@ func TestEnvDropsStaleCamouVarsAndSetsTheTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"PATH": "/bin", "CAMOU_CONFIG": `{"screen.width":1}`,
+	want := map[string]string{"PATH": "/bin", "CAMOU_CONFIG": `{"input:deviceGrid":true,"screen.width":1}`,
 		"CAMOU_PRESET": `{"os":"Windows"}`, "CAMOU_CONFIG_STRICT": "1"}
 	if !reflect.DeepEqual(env, want) {
 		t.Fatalf("env %v != %v", env, want)
@@ -260,8 +260,8 @@ func TestALargeConfigIsChunkedIntoNumberedEnvStrings(t *testing.T) {
 		}
 		joined += c
 	}
-	var back map[string][]string
-	if err := json.Unmarshal([]byte(joined), &back); err != nil || len(back["fonts:local"]) != 700 {
+	var back map[string]any
+	if err := json.Unmarshal([]byte(joined), &back); err != nil || len(back["fonts:local"].([]any)) != 700 || back["input:deviceGrid"] != true {
 		t.Fatalf("chunks do not reassemble: %v", err)
 	}
 }
@@ -324,7 +324,8 @@ func TestBadConfigShapesAreRejected(t *testing.T) {
 func TestTypedNilConfigSetsNothing(t *testing.T) {
 	var m map[string]any
 	env, err := BuildEnv(Options{Config: m, Preset: m}, nil)
-	if err != nil || len(env) != 0 {
+	// no config at all still carries the contract's defaults, and nothing else (no preset)
+	if err != nil || len(env) != 1 || env["CAMOU_CONFIG"] != `{"input:deviceGrid":true}` {
 		t.Fatalf("env %v err %v", env, err)
 	}
 }
@@ -468,15 +469,16 @@ func TestNativeHostDropsFontAliases(t *testing.T) {
 	if g := decode(string(raw), "Windows"); !reflect.DeepEqual(g, got) {
 		t.Fatalf("json string: %v != %v", g, got)
 	}
-	// nothing to drop, or no host OS: the original string reaches the env byte for byte
+	// nothing to drop, or no host OS: the same keys reach the env, under the defaults
 	plain := `{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}`
 	for _, host := range []string{"Windows", ""} {
 		env, _ := buildEnvFor(Options{Config: plain}, nil, host)
-		if env["CAMOU_CONFIG"] != plain {
+		want := `{"fonts:list":["Arial"],"input:deviceGrid":true,"ua:platform":"Windows","x":1}`
+		if env["CAMOU_CONFIG"] != want {
 			t.Fatalf("host %q: %q", host, env["CAMOU_CONFIG"])
 		}
 	}
-	if env, _ := buildEnvFor(Options{Config: string(raw)}, nil, ""); env["CAMOU_CONFIG"] != string(raw) {
+	if env, _ := buildEnvFor(Options{Config: string(raw)}, nil, ""); !strings.Contains(env["CAMOU_CONFIG"], `"input:deviceGrid":true`) {
 		t.Fatalf("empty host dropped: %q", env["CAMOU_CONFIG"])
 	}
 	if g := decode(cfg(), "Linux"); g["fonts:alias"] == nil || g["fonts:aliasLocal"] == nil {
@@ -581,5 +583,36 @@ func TestLightPutsLightArgsAfterBaseArgs(t *testing.T) {
 	want := append(append(append([]string{}, c.Launch.BaseArgs...), "--x-light"), pipe)
 	if got := BuildArgs(Options{Headless: &headed, Light: true}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("light on %v != %v", got, want)
+	}
+}
+
+func TestConfigDefaultsMatchTheContractAndTheCallerWins(t *testing.T) {
+	raw, err := os.ReadFile("../../settings/launcher.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c struct {
+		Launch struct {
+			ConfigDefaults struct {
+				Keys map[string]any `json:"keys"`
+			} `json:"config_defaults"`
+		} `json:"launch"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(c.Launch.ConfigDefaults.Keys, ConfigDefaults) || !reflect.DeepEqual(ConfigDefaults, map[string]any{"input:deviceGrid": true}) {
+		t.Fatalf("contract %v, client %v", c.Launch.ConfigDefaults.Keys, ConfigDefaults)
+	}
+	cfg := map[string]any{"input:deviceGrid": false, "screen.width": 1}
+	env, err := buildEnvFor(Options{Config: cfg}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env["CAMOU_CONFIG"] != `{"input:deviceGrid":false,"screen.width":1}` {
+		t.Fatalf("the caller's false must win: %q", env["CAMOU_CONFIG"])
+	}
+	if cfg["input:deviceGrid"] != false || len(cfg) != 2 {
+		t.Fatalf("the caller's map was touched: %v", cfg)
 	}
 }

@@ -8,6 +8,7 @@ const c = require('..');
 const CONTRACT = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'settings', 'launcher.json')));
 const camel = (s) => s.replace(/_([a-z])/g, (_, ch) => ch.toUpperCase()).replace('extraHttpHeaders', 'extraHTTPHeaders');
 const L = CONTRACT.launch;
+const D = L.config_defaults.keys; // the defaults every launch sets under the caller's config
 
 test('forbidden options match the contract (snake -> Playwright camelCase)', () => {
   assert.deepEqual(new Set(CONTRACT.forbidden_context_options.options.map(camel)), c.FORBIDDEN_OPTIONS);
@@ -36,7 +37,7 @@ test('env drops stale CAMOU vars and sets the transport', () => {
   assert.deepEqual(
     c.buildEnv({ config: { 'screen.width': 1 }, preset: '{"os":"Windows"}', strict: true },
       { CAMOU_CONFIG_1: 'stale', PATH: '/bin' }),
-    { PATH: '/bin', CAMOU_CONFIG: '{"screen.width":1}', CAMOU_PRESET: '{"os":"Windows"}', CAMOU_CONFIG_STRICT: '1' });
+    { PATH: '/bin', CAMOU_CONFIG: '{"input:deviceGrid":true,"screen.width":1}', CAMOU_PRESET: '{"os":"Windows"}', CAMOU_CONFIG_STRICT: '1' });
 });
 
 test('accept-lang follows the config', () => {
@@ -129,7 +130,7 @@ test('launch refuses forbidden options and uses a persistent context without vie
   assert.equal(dir, '/tmp/p');
   assert.equal(opts.viewport, null);
   assert.equal(opts.ignoreDefaultArgs, true);
-  assert.equal(opts.env.CAMOU_CONFIG, '{"a":1}');
+  assert.equal(opts.env.CAMOU_CONFIG, '{"input:deviceGrid":true,"a":1}');
   assert.deepEqual(opts.args, ['--no-first-run', '--no-default-browser-check', '--headless=new',
     '--remote-debugging-pipe', '--user-data-dir=/tmp/p', '--window-size=800,600']);
 });
@@ -158,13 +159,13 @@ test('a large config and preset are chunked into numbered env strings, never spl
   const env = c.buildEnv({ config: big, preset: { fonts: Array(700).fill('x'.repeat(100)) } }, {});
   assert.equal('CAMOU_CONFIG' in env || 'CAMOU_PRESET' in env, false);
   assert.equal('CAMOU_CONFIG_4' in env, false);
-  assert.deepEqual(JSON.parse(env.CAMOU_CONFIG_1 + env.CAMOU_CONFIG_2 + env.CAMOU_CONFIG_3), big);
+  assert.deepEqual(JSON.parse(env.CAMOU_CONFIG_1 + env.CAMOU_CONFIG_2 + env.CAMOU_CONFIG_3), { ...D, ...big });
   assert.ok(env.CAMOU_PRESET_3);
   const raw = `{"k":"${'a'.repeat(L.env.config_chunk_chars - 7)}${'😀'.repeat(20000)}"}`;
   const env2 = c.buildEnv({ config: raw }, {});
   const parts = Object.keys(env2).sort((a, b) => a.length - b.length || a.localeCompare(b)).map((k) => env2[k]);
   for (const p of parts) assert.ok(!/[\uD800-\uDBFF]$|^[\uDC00-\uDFFF]/.test(p), 'a chunk splits a surrogate pair');
-  assert.equal(parts.join(''), raw);
+  assert.deepEqual(JSON.parse(parts.join('')), { ...D, ...JSON.parse(raw) });
 });
 
 test('accept-lang follows the preset locale under the config; bad shapes are rejected', () => {
@@ -284,25 +285,26 @@ test('native host drops font aliases', () => {
   const decoded = (config, hostOs) => JSON.parse(c.buildEnv({ config, hostOs }, {}).CAMOU_CONFIG);
   const got = decoded(cfg, 'Windows');
   assert.deepEqual(got['fonts:list'], ['Arial']);
+  assert.equal(got['input:deviceGrid'], true);
   assert.ok(!('fonts:alias' in got) && !('fonts:aliasLocal' in got));
   assert.deepEqual(decoded(JSON.stringify(cfg), 'Windows'), got);
-  assert.deepEqual(decoded(cfg, 'Linux'), cfg);
-  // nothing to drop, or no host OS: the original string reaches the env byte for byte
+  assert.deepEqual(decoded(cfg, 'Linux'), { ...D, ...cfg });
+  // nothing to drop, or no host OS: the same keys reach the env, under the defaults
   const plain = '{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}';
-  assert.equal(c.buildEnv({ config: plain, hostOs: 'Windows' }, {}).CAMOU_CONFIG, plain);
-  assert.equal(c.buildEnv({ config: JSON.stringify(cfg), hostOs: '' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
+  assert.deepEqual(decoded(plain, 'Windows'), { ...D, ...JSON.parse(plain) });
+  assert.deepEqual(decoded(JSON.stringify(cfg), ''), { ...D, ...cfg });
   assert.deepEqual(c.NATIVE_FONTS_DROP, L.native_fonts.drop);
 });
 
 test('unmapped host keeps aliases for a config that names no OS', () => {
   const cfg = { 'fonts:alias': { Arial: 'Liberation Sans' }, 'fonts:aliasLocal': { ArialMT: 'Liberation Sans' } };
   assert.equal(c.claimedOs(cfg), null); // the value that equalled an unmapped hostOs
-  assert.deepEqual(JSON.parse(c.buildEnv({ config: cfg, hostOs: null }, {}).CAMOU_CONFIG), cfg);
+  assert.deepEqual(JSON.parse(c.buildEnv({ config: cfg, hostOs: null }, {}).CAMOU_CONFIG), { ...D, ...cfg });
 });
 
 test('native host without alias keys encodes the config unchanged', () => {
   const cfg = { 'ua:platform': 'Windows', 'fonts:list': ['Arial'] };
-  assert.equal(c.buildEnv({ config: cfg, hostOs: 'Windows' }, {}).CAMOU_CONFIG, JSON.stringify(cfg));
+  assert.deepEqual(JSON.parse(c.buildEnv({ config: cfg, hostOs: 'Windows' }, {}).CAMOU_CONFIG), { ...D, ...cfg });
 });
 
 test('proxy args match the contract and keep credentials off argv', () => {
@@ -371,4 +373,14 @@ test('checkArchive reads the stamp beside a symlinked exe\'s target', () => {
   fs.writeFileSync(path.join(arch, 'chrome'), '');
   fs.symlinkSync(path.join(arch, 'chrome'), path.join(link, 'chrome'));
   assert.throws(() => c.checkArchive(path.join(link, 'chrome'), { 'webGpu:blocked': true }), /webGpu:blocked/);
+});
+
+test('config defaults match the contract: set with no config, the caller wins, and the caller config is not mutated', () => {
+  assert.deepEqual(c.CONFIG_DEFAULTS, L.config_defaults.keys);
+  assert.deepEqual(L.config_defaults.keys, { 'input:deviceGrid': true });
+  assert.deepEqual(JSON.parse(c.buildEnv({}, {}).CAMOU_CONFIG), D); // no config at all still carries the defaults
+  const cfg = { 'input:deviceGrid': false, 'screen.width': 1 };
+  assert.deepEqual(JSON.parse(c.buildEnv({ config: cfg }, {}).CAMOU_CONFIG), cfg);
+  assert.deepEqual(JSON.parse(c.buildEnv({ config: JSON.stringify(cfg) }, {}).CAMOU_CONFIG), cfg);
+  assert.deepEqual(cfg, { 'input:deviceGrid': false, 'screen.width': 1 });
 });
