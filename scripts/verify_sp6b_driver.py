@@ -318,8 +318,19 @@ def not_applicable(label, osname=None):
     (fds 3/4), which its Windows build refuses ("the pipe transport is unix only", internal/browser/proc_other.go),
     so its row is neither measured nor missing there. Not UNMEASURED: no host setup can change that."""
     if label == "go-rodclient" and (os.name if osname is None else osname) == "nt":
-        return "rodclient has no Windows transport (pipe, unix only); the row runs on the Linux box"
+        return "pipe transport unix-only"
     return None
+
+
+# Rows that must be MEASURED (PASS or FAIL, never N/A or UNMEASURED): the seven drivers on Linux, six on Windows
+# (go-rodclient is N/A there). A literal, not len(DRIVERS) minus a count: a skipped row cannot lower its own bar.
+MEASURED_ROWS = {"posix": 7, "nt": 6}
+
+
+def count_problem(measured, osname=None):
+    """None when exactly the expected number of rows were measured. An N/A row never counts as measured."""
+    want = MEASURED_ROWS["nt" if (os.name if osname is None else osname) == "nt" else "posix"]
+    return None if measured == want else f"expected {want} measured rows, got {measured}"
 
 
 def final_verdict(verdict, unmeasured):
@@ -341,10 +352,11 @@ def main():
           f"stack median {statistics.median(base['timesMs']):.1f} ms, ua ...{base['ua'][-28:]}")
     verdict = True
     unmeasured = False
+    measured = 0
     for label, expected, cmd, *opts in DRIVERS:
         na = not_applicable(label)
         if na:
-            print(f"N/A  {label}: {na}")
+            print(f"N/A {label}: {na}")
             continue
         why = missing_probe(cmd)
         if why:
@@ -353,6 +365,7 @@ def main():
             continue
         PROXY_SEEN.clear()
         result, log = run_probe(cmd + proxy_args, url)
+        measured += 1
         if result is None:
             print(f"FAIL  {label}: probe did not run: {log}")
             verdict = False
@@ -372,6 +385,11 @@ def main():
         verdict &= ok
         print("\n".join(lines))
     srv.shutdown()
+    problem = count_problem(measured) if not unmeasured else None  # a missing probe is already UNMEASURED
+    if problem:
+        print(f"FAIL  {problem}")
+        verdict = False
+    print(f"rows: {measured} measured of {len(DRIVERS)} drivers")
     final = final_verdict(verdict, unmeasured)
     print(final)
     sys.exit(0 if final == "ALL_PASS" else 1)
