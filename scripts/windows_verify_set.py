@@ -54,7 +54,7 @@ SET = [
     Entry("verify_sp3b.py", 9, "stock"),
     Entry("verify_sp4a.py", 6, "stock"),
     Entry("verify_metric_jitter.py", 12, "stock"),
-    Entry("verify_ua_halfconfig_reject.py", 6, "stock"),
+    Entry("verify_ua_halfconfig_reject.py", 17, "stock"),
     Entry("verify_sp5b_domain.py", 5, "stock"),  # D-MEM since #184
     Entry("verify_webgl_pairing.py", 9, "stock"),
     Entry("verify_webgl_capability_identity.py", 13, "stock"),
