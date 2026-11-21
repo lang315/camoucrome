@@ -195,7 +195,8 @@ def main():
     ap.add_argument("--preset")
     ap.add_argument("--window", help="W,H -> --window-size")
     ap.add_argument("--dpr", type=float)
-    ap.add_argument("--strict", action="store_true", help="CAMOU_CONFIG_STRICT=1")
+    ap.add_argument("--strict", action="store_true", help="no-op: strict is the default")
+    ap.add_argument("--lax", action="store_true", help="opt out of CAMOU_CONFIG_STRICT")
     ap.add_argument("--headed", action="store_true")
     ap.add_argument("--extension", action="append", default=[])
     ap.add_argument("--spki", action="append", default=[])
@@ -213,7 +214,7 @@ def main():
         if a.config and a.config.startswith("@"):
             a.config = pathlib.Path(a.config[1:]).read_text(encoding="utf-8")
         ctx = launch(pw, a.executable, config=a.config, preset=a.preset,
-                     strict=a.strict, window=window, dpr=a.dpr, headless=not a.headed,
+                     strict=a.strict, lax=a.lax, window=window, dpr=a.dpr, headless=not a.headed,
                      extensions=a.extension, spki_list=a.spki, args=["--no-sandbox", *a.arg],
                      fonts_dir=a.fonts_dir,
                      proxy={"server": a.proxy, "bypass": a.proxy_bypass, "username": a.proxy_user,

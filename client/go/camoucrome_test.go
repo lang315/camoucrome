@@ -95,6 +95,23 @@ func TestNoForbiddenOptionField(t *testing.T) {
 	}
 }
 
+func TestStrictIsTheDefaultAndLaxUnsetsIt(t *testing.T) {
+	cfg := map[string]int{"screen.width": 1}
+	// an inherited 0 must not turn strict off
+	env, err := buildEnvFor(Options{Config: cfg}, []string{"CAMOU_CONFIG_STRICT=0"}, "Linux")
+	if err != nil || env["CAMOU_CONFIG_STRICT"] != "1" {
+		t.Fatalf("default: env %v err %v", env, err)
+	}
+	// lax drops the variable (the fork reads has_value() in one place), also an inherited 1
+	env, err = buildEnvFor(Options{Config: cfg, Lax: true}, []string{"CAMOU_CONFIG_STRICT=1"}, "Linux")
+	if _, ok := env["CAMOU_CONFIG_STRICT"]; err != nil || ok {
+		t.Fatalf("lax: env %v err %v", env, err)
+	}
+	if _, err = buildEnvFor(Options{Config: cfg, Strict: true, Lax: true}, nil, "Linux"); err == nil || !strings.Contains(err.Error(), "Lax") {
+		t.Fatalf("Strict+Lax: err %v", err)
+	}
+}
+
 func TestEnvDropsStaleCamouVarsAndSetsTheTransport(t *testing.T) {
 	// a Windows host: on a Linux host this Windows claim with no fonts dir is refused
 	env, err := buildEnvFor(Options{Config: map[string]int{"screen.width": 1}, Preset: `{"os":"Windows"}`, Strict: true},
@@ -324,8 +341,8 @@ func TestBadConfigShapesAreRejected(t *testing.T) {
 func TestTypedNilConfigSetsNothing(t *testing.T) {
 	var m map[string]any
 	env, err := BuildEnv(Options{Config: m, Preset: m}, nil)
-	// no config at all still carries the contract's defaults, and nothing else (no preset)
-	if err != nil || len(env) != 1 || env["CAMOU_CONFIG"] != `{"input:deviceGrid":true}` {
+	// no config at all still carries the contract's defaults (deviceGrid, strict), and nothing else (no preset)
+	if err != nil || len(env) != 2 || env["CAMOU_CONFIG"] != `{"input:deviceGrid":true}` || env["CAMOU_CONFIG_STRICT"] != "1" {
 		t.Fatalf("env %v err %v", env, err)
 	}
 }

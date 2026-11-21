@@ -16,6 +16,7 @@ package camoucrome
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,12 +45,16 @@ const CrashDumpsEnv = "BREAKPAD_DUMP_LOCATION"
 
 // Options for Launch. Config and Preset are JSON objects (or raw JSON
 // strings) carried as CAMOU_CONFIG / CAMOU_PRESET; an explicit config key
-// wins over the preset inside the browser.
+// wins over the preset inside the browser. Strict is the default (CAMOU_CONFIG_STRICT=1 is
+// always written): Strict is kept for compatibility and changes nothing, Lax opts out by
+// leaving the variable unset (the fork reads has_value(), so =0 would still count), and
+// both together is an error.
 type Options struct {
 	ExecutablePath string
 	Config         any
 	Preset         any
 	Strict         bool
+	Lax            bool
 	UserDataDir    string // one profile per identity; a temp dir when empty
 	Window         [2]int // --window-size, so inner/outer widths cohere with screen.*
 	DPR            float64
@@ -364,6 +369,9 @@ func nativeConfig(o Options, hostOS string) (any, error) {
 }
 
 func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, error) {
+	if o.Strict && o.Lax {
+		return nil, errors.New("camoucrome: Strict and Lax contradict each other: strict is the default, drop Strict")
+	}
 	if _, err := effectiveKeys(o.Config, o.Preset); err != nil {
 		return nil, err
 	}
@@ -409,7 +417,7 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 			env[k] = c
 		}
 	}
-	if o.Strict {
+	if !o.Lax {
 		env["CAMOU_CONFIG_STRICT"] = "1"
 	}
 	fc := FontconfigFor(o)

@@ -3,6 +3,7 @@ package core
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,6 +94,9 @@ func Env(r Resolved, o LaunchOpts, base []string) (env []string, cleanup func(),
 
 func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, func(), error) {
 	noop := func() {}
+	if o.Strict && o.Lax {
+		return nil, noop, errors.New("Strict and Lax contradict each other: strict is the default, drop Strict")
+	}
 	if err := CheckArchive(o.ExecutablePath, r.Config); err != nil {
 		return nil, noop, err
 	}
@@ -148,7 +152,7 @@ func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, fun
 			env = append(env, fmt.Sprintf("%s_%d=%s", name, c, string(rs[i:min(i+n, len(rs))])))
 		}
 	}
-	if o.Strict {
+	if !o.Lax {
 		env = append(env, contract.Launch.Env.Strict+"=1")
 	}
 	env = append(env, contract.Launch.CrashDumps.Env+"="+crash)

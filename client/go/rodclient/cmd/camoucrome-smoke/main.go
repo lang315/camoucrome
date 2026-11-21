@@ -45,8 +45,8 @@ for (const type of ["mousemove", "mousedown", "mouseup", "click", "pointerdown",
 </script>`
 
 type cfg struct {
-	exe, config, preset      string
-	headed, strict, humanize bool
+	exe, config, preset           string
+	headed, strict, lax, humanize bool
 }
 
 func parseFlags(args []string) (*cfg, error) {
@@ -56,7 +56,8 @@ func parseFlags(args []string) (*cfg, error) {
 	fs.StringVar(&c.config, "config", "", "CAMOU_CONFIG JSON (or @file)")
 	fs.StringVar(&c.preset, "preset", "", "CAMOU_PRESET JSON (or @file)")
 	fs.BoolVar(&c.headed, "headed", false, "not headless")
-	fs.BoolVar(&c.strict, "strict", false, "CAMOU_CONFIG_STRICT=1")
+	fs.BoolVar(&c.strict, "strict", false, "no-op: strict is the default")
+	fs.BoolVar(&c.lax, "lax", false, "opt out of CAMOU_CONFIG_STRICT")
 	fs.BoolVar(&c.humanize, "humanize", false, `add {"humanize:enabled": true} to the config and check the humanized path`)
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -74,7 +75,7 @@ func readArg(v string) (string, error) {
 
 func (c *cfg) options() (camoucrome.Options, error) {
 	headless := !c.headed
-	o := camoucrome.Options{ExecutablePath: c.exe, Headless: &headless, Strict: c.strict, ExtraArgs: []string{"--no-sandbox"}}
+	o := camoucrome.Options{ExecutablePath: c.exe, Headless: &headless, Strict: c.strict, Lax: c.lax, ExtraArgs: []string{"--no-sandbox"}}
 	conf, err := readArg(c.config)
 	if err != nil {
 		return o, err

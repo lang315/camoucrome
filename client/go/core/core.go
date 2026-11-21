@@ -53,7 +53,8 @@ type LaunchOpts struct {
 	UserDataDir string
 	Headless    bool
 	FontsDir    string // bundled font dir; a Windows or macOS claim on a Linux host needs it
-	Strict      bool   // Env sets CAMOU_CONFIG_STRICT=1: a config the browser cannot take aborts the start
+	Strict      bool   // kept for compatibility, changes nothing: strict is the default (CAMOU_CONFIG_STRICT=1 always written). Strict with Lax is an error
+	Lax         bool   // opt-out: CAMOU_CONFIG_STRICT left unset (the fork reads has_value() in one place, so =0 would still count)
 	ExtraArgs   []string
 	// ExecutablePath is the browser binary. Set, Env refuses a config the archive beside it
 	// does not know (CheckArchive).

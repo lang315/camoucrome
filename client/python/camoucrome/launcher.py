@@ -16,7 +16,7 @@ from . import pin
 FORBIDDEN_OPTIONS = frozenset({
     "locale", "timezone_id", "user_agent", "viewport", "screen",
     "device_scale_factor", "geolocation", "color_scheme", "extra_http_headers",
-    "has_touch", "is_mobile",
+    "has_touch", "is_mobile", "env",
 })
 
 BASE_ARGS = ["--no-first-run", "--no-default-browser-check"]
@@ -187,14 +187,20 @@ def with_config_defaults(config):
 
 
 def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None,
-              crash_dir=None, host_os=None):
+              crash_dir=None, host_os=None, lax=False):
     """The child environment: every CAMOU_* of the parent dropped, then the
     given config/preset set. Dropping first is deliberate -- a stale
     CAMOU_CONFIG_1 in the shell would otherwise win over `config`.
     `fontconfig` (from fontconfig_for) sets FONTCONFIG_FILE; the parent's
     is never inherited (a host conf under a Windows claim is a tell).
     `crash_dir` sets BREAKPAD_DUMP_LOCATION; the parent's is never inherited
-    either (it would collect every identity's dumps in one place)."""
+    either (it would collect every identity's dumps in one place).
+    Strict is the default: CAMOU_CONFIG_STRICT=1 is always written, so an inherited
+    empty or 0 cannot turn it off. `lax` is the opt-out and leaves the variable unset
+    (the fork's ua: half-config check reads has_value(), so =0 would still count).
+    `strict` is kept for compatibility and changes nothing; with `lax` it is an error."""
+    if strict and lax:
+        raise ValueError("strict and lax contradict each other: strict is the default, drop strict")
     effective_keys(config, preset)  # raises on a shape the browser would drop
     config = with_config_defaults(native_config(config, preset, host_os))
     env = {k: v for k, v in (os.environ if base is None else base).items()
@@ -202,7 +208,7 @@ def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None
     env.update(config_env(_as_json(config)))
     if preset is not None:
         env.update(config_env(_as_json(preset), "CAMOU_PRESET"))
-    if strict:
+    if not lax:
         env["CAMOU_CONFIG_STRICT"] = "1"
     if fontconfig:
         env[FONTCONFIG_ENV] = fontconfig
@@ -287,7 +293,7 @@ def remove_dir(path, wait=10.0):
 
 
 def launch(playwright, executable_path, *, config=None, preset=None,
-           strict=False, user_data_dir=None, window=None, dpr=None, position=None,
+           strict=False, lax=False, user_data_dir=None, window=None, dpr=None, position=None,
            headless=True, args=(), extensions=(), spki_list=(), fonts_dir=None, proxy=None,
            geoip=None, exit_ip=None, light=False, pin_cpu_cores=True, **options):
     """Launches a persistent context (one profile per identity) and returns it.
@@ -333,6 +339,9 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             raise ValueError("proxy must be a dict with a 'server' URL and no credentials in it "
                              "(username and password are separate keys; argv is visible to every process)")
         options["proxy"] = proxy
+    if "env" in options:
+        raise ValueError("env replaces the whole child environment, CAMOU_CONFIG* and CAMOU_CONFIG_STRICT "
+                         "with it, and the browser would run unspoofed: the launcher builds the env")
     bad = FORBIDDEN_OPTIONS.intersection(options)
     if bad:
         raise ValueError(
@@ -369,7 +378,7 @@ def launch(playwright, executable_path, *, config=None, preset=None,
                 executable_path=str(executable_path),
                 headless=headless,
                 ignore_default_args=True,
-                env=build_env(config, preset, strict,
+                env=build_env(config, preset, strict, lax=lax,
                               fontconfig=fontconfig_for(config, preset, fonts_dir, executable_path),
                               crash_dir=owned[0]),
                 args=build_args(window, dpr, args, headless, user_data_dir,

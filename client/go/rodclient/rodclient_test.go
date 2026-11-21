@@ -46,6 +46,24 @@ func inTemp(t *testing.T, what, dir, prefix string) {
 	}
 }
 
+// What the browser process receives: CAMOU_CONFIG_STRICT=1 by default (also over an inherited 0),
+// and no variable at all with Lax (also over an inherited 1).
+func TestLaunchStrictEnv(t *testing.T) {
+	for _, lax := range []bool{false, true} {
+		inherited := map[bool]string{false: "0", true: "1"}[lax]
+		t.Setenv("CAMOU_CONFIG_STRICT", inherited)
+		_, _, env := capture(t)
+		o := camoucrome.Options{ExecutablePath: "/x/chrome", Config: map[string]any{"a": 1}, Lax: lax}
+		if _, err := Launch(context.Background(), o); !errors.Is(err, errStub) {
+			t.Fatalf("err = %v", err)
+		}
+		got, ok := (*env)["CAMOU_CONFIG_STRICT"]
+		if lax && ok || !lax && got != "1" {
+			t.Errorf("Lax=%v inherited %s: env CAMOU_CONFIG_STRICT = %q (present %v)", lax, inherited, got, ok)
+		}
+	}
+}
+
 func TestLaunchParity(t *testing.T) {
 	root := t.TempDir()
 	fonts := filepath.Join(root, "fonts")

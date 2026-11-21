@@ -37,7 +37,8 @@ func main() {
 	config := flag.String("config", "", "CAMOU_CONFIG JSON")
 	preset := flag.String("preset", "", "CAMOU_PRESET JSON")
 	headed := flag.Bool("headed", false, "not headless")
-	strict := flag.Bool("strict", false, "CAMOU_CONFIG_STRICT=1")
+	strict := flag.Bool("strict", false, "no-op: strict is the default")
+	lax := flag.Bool("lax", false, "opt out of CAMOU_CONFIG_STRICT")
 	// Windows: the sandbox is what strips CAMOU_* from a renderer unless the
 	// windows-sandbox-env patch lets it through, and --no-sandbox hides that.
 	sandbox := flag.Bool("sandbox", false, "omit --no-sandbox")
@@ -64,7 +65,7 @@ func main() {
 	}
 	cleanups = append(cleanups, func() { pw.Stop() })
 	headless := !*headed
-	o := camoucrome.Options{ExecutablePath: *exe, Headless: &headless, Strict: *strict}
+	o := camoucrome.Options{ExecutablePath: *exe, Headless: &headless, Strict: *strict, Lax: *lax}
 	if !*sandbox {
 		o.ExtraArgs = []string{"--no-sandbox"}
 	}

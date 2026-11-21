@@ -104,7 +104,7 @@ func runCase(ctx context.Context, exe, fonts string, strict bool, red string, id
 		delete(r.Config, "webrtc:ipHandlingPolicy")
 	}
 	h := true
-	o := camoucrome.Options{ExecutablePath: exe, Config: r.Config, Strict: strict, Window: r.Window, DPR: r.DPR,
+	o := camoucrome.Options{ExecutablePath: exe, Config: r.Config, Lax: !strict, Window: r.Window, DPR: r.DPR,
 		Position: &r.Position, Headless: &h, FontsDir: fonts, ExtraArgs: append([]string{"--no-sandbox"}, r.Args...)}
 	b, err := rodclient.Launch(ctx, o)
 	if err != nil {
@@ -139,7 +139,7 @@ func runCase(ctx context.Context, exe, fonts string, strict bool, red string, id
 func main() {
 	exe := flag.String("exe", "", "browser binary")
 	n := flag.Int("n", 10, "identities (each runs against 4 exits)")
-	strict := flag.Bool("strict", true, "CAMOU_CONFIG_STRICT=1")
+	strict := flag.Bool("strict", true, "default true: CAMOU_CONFIG_STRICT=1; false runs the fork lax (the variable unset), which hides the refusals this check counts")
 	red := flag.String("red", "", "tz or rtc: fail on purpose")
 	flag.Parse()
 	if *exe == "" {

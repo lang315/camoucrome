@@ -80,8 +80,8 @@ def probe(url, config=None, extra=(), strict=False, headed=False):
     cmd = [PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE, "--url", url]
     if config is not None:
         cmd += ["--config", json.dumps(config)]
-    if strict:
-        cmd.append("--strict")
+    if not strict:
+        cmd.append("--lax")  # strict is the default; this script measures both modes
     if headed:
         cmd.append("--headed")
     cmd += list(extra)

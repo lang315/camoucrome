@@ -234,7 +234,7 @@ host, _ := core.ProbeHost()                 // cores, work area, platform versio
 host.Display = display                      // see below; store it per machine
 id, _ := core.Draw("windows", nil, &host)   // once per account; store the JSON (core.Identity)
 r, err := core.Resolve(id, host, &core.Exit{Timezone: "Europe/Berlin", Country: "DE"}) // every launch
-env, cleanup, err := core.Env(r, core.LaunchOpts{Strict: true, ExecutablePath: exe}, os.Environ()) // exe: the archive's chrome[.exe]; check err
+env, cleanup, err := core.Env(r, core.LaunchOpts{ExecutablePath: exe}, os.Environ()) // exe: the archive's chrome[.exe]; check err
 argv := core.Argv(r, core.LaunchOpts{UserDataDir: dir, Headless: true})
 err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
 ```
@@ -254,6 +254,18 @@ err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
 - **Pairing.** `core.ForkVersion` is the fork version the data was generated for (157.0.8103.51; the
   release's `-N` is in its tag). Pin a commit of this repository, not a tag. `scripts/gen_go_core_data.py`
   regenerates the embedded pool and tables, and `--check` fails when they are stale.
+
+## Strict mode (the default)
+
+Every launcher starts the browser with `CAMOU_CONFIG_STRICT=1`: a config the browser cannot take refuses to
+start instead of running with the real values. An incoherent or malformed (not JSON) config exits with code 13, in chrome and
+content_shell alike (fork PR #242; the `CHECK` stays only as a child-process backstop). Builds before -14 die on that `CHECK` instead for a malformed
+config (exit `0x80000003` on Windows, SIGABRT/SIGTRAP on Linux). Treat 13 as the refusal code. No client reads exit codes: under
+Playwright/patchright `launch` throws and the message carries the exit code, and with rodclient `Launch`
+succeeds and the first CDP call returns `EOF` plus the browser stderr tail, within about 2 s. `strict=True` is kept
+for compatibility and changes nothing. To opt out, pass `lax=True` (Python, Node) or `Lax: true` (Go
+`Options`, `core.LaunchOpts`; the probes take `--lax`): the variable is then left unset, also when the parent
+environment had one. Strict together with lax is an error. `CAMOU_CONFIG_STRICT=0` in your own environment is not an opt-out for the launchers: they overwrite it. A caller `env` option is refused (it would replace the whole child environment).
 
 ## Known limits
 
