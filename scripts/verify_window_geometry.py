@@ -101,7 +101,8 @@ def chrome_ok(w): return 0 <= w["ow"]-w["iw"] <= 200 and 0 <= w["oh"]-w["ih"] <=
 
 def popup_rows(r, ctl, label):
     """r = fork with window.* config, ctl = fork without config (the control). The popup must read what the control's
-    popup reads (its own real geometry), never the main window's claimed one."""
+    popup reads (its own real geometry), never the main window's claimed one. Rows named *-guard watch a surface the
+    fix must NOT change (BarProp); they pass on the old build and under both mutants, by design."""
     rows = {}
     for k in ("popup", "popup_after"):  # tab: headless opens it as its own window; judged headed only (INFO below)
         w, c = r.get(k), ctl.get(k)
@@ -109,8 +110,10 @@ def popup_rows(r, ctl, label):
         rows[f"{label}-{k}-outer"] = ok and (w["ow"], w["oh"]) == (c["ow"], c["oh"])
         rows[f"{label}-{k}-screen"] = ok and (w["sx"], w["sy"]) == (c["sx"], c["sy"])
         rows[f"{label}-{k}-coherent"] = ok and chrome_ok(w)
-        # BarProp must stay exactly as stock in every process: the popup bit is separate from the window features
-        rows[f"{label}-{k}-bars"] = ok and (w["mb"], w["tb"]) == (c["mb"], c["tb"])
+        # GUARD row: BarProp must stay exactly as stock in every process (the popup bit is separate from the window
+        # features). It can only fail if a later change calls Page::SetWindowFeatures; neither the old unconditional
+        # override nor the "bit forced false" mutant can reach it, so it is not evidence that the fix works.
+        rows[f"{label}-{k}-bars-guard"] = ok and (w["mb"], w["tb"]) == (c["mb"], c["tb"])
         rows[f"{label}-{k}-chrome"] = ok and (w["ow"]-w["iw"], w["oh"]-w["ih"]) == (c["ow"]-c["iw"], c["oh"]-c["ih"])
     return rows
 
@@ -121,7 +124,7 @@ def site_rows(r, ctl):
         ok = w is not None and c is not None
         rows[f"S-{k}-outer"] = ok and (w["ow"], w["oh"]) == (c["ow"], c["oh"])
         rows[f"S-{k}-screen"] = ok and (w["sx"], w["sy"]) == (c["sx"], c["sy"])
-        rows[f"S-{k}-bars"] = ok and (w["mb"], w["tb"]) == (c["mb"], c["tb"])
+        rows[f"S-{k}-bars-guard"] = ok and (w["mb"], w["tb"]) == (c["mb"], c["tb"])
         if k in ("same", "noopener", "xsite"):  # the popup windows themselves; xframe-child is an iframe
             rows[f"S-{k}-coherent"] = ok and chrome_ok(w)
     return rows
@@ -179,7 +182,9 @@ def main():
     finish(r, 5 + 1 + 10 + 15 + 3)
 
 def finish(r, expected):
-    for k in r: print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
+    for k in r: print(f"{k}: {'PASS' if r[k] else 'FAIL'}" + (" (guard)" if k.endswith("-guard") else ""))
+    guards = sum(1 for k in r if k.endswith("-guard"))
+    if guards: print(f"{guards} of {len(r)} rows are guards (cannot fail under the old override or the bit-forced-false mutant)")
     n=sum(r.values()); print(f"{n}/{expected} " + ("ALL_PASS" if n==expected and len(r)==expected else "FAIL"))
     sys.exit(0 if n==expected and len(r)==expected else 1)
 
