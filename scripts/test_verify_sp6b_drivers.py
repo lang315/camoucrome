@@ -138,6 +138,26 @@ class MissingProbe(unittest.TestCase):
         self.assertIsNone(v.missing_probe(["node", "probe.js"]))
 
 
+class NotApplicable(unittest.TestCase):
+    def test_only_rodclient_on_windows(self):
+        self.assertEqual("pipe transport unix-only", v.not_applicable("go-rodclient", "nt"))
+        self.assertIsNone(v.not_applicable("go-rodclient", "posix"))
+        for label in ("python-patchright", "go-patchright", "node-patchright", "go-stock"):
+            self.assertIsNone(v.not_applicable(label, "nt"))
+
+    def test_na_never_counts_as_measured(self):
+        # on nt six rows measure; five measured plus the N/A row is not six, and neither is seven
+        self.assertIsNone(v.count_problem(6, "nt"))
+        self.assertIsNone(v.count_problem(7, "posix"))
+        self.assertIn("expected 6", v.count_problem(5, "nt"))
+        self.assertIn("expected 6", v.count_problem(7, "nt"))
+        self.assertIn("expected 7", v.count_problem(6, "posix"))
+
+    def test_literal_matches_the_drivers_list(self):
+        self.assertEqual(v.MEASURED_ROWS["posix"], len(v.DRIVERS))
+        self.assertEqual(v.MEASURED_ROWS["nt"], len(v.DRIVERS) - 1)
+
+
 class FinalVerdict(unittest.TestCase):
     def test_a_failure_wins_over_a_missing_premise(self):
         self.assertEqual(v.final_verdict(False, True), "FAIL")

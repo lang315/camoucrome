@@ -14,6 +14,10 @@ is unreachable: callers get a small vetted `Page`.
   small API below. Its CDP traffic is the measured contract of
   `scripts/verify_sp6b_driver.py` (row `go-rodclient`).
 
+Unix only: the pipe transport (`--remote-debugging-pipe`, fds 3/4) has no Windows
+build, so `Launch` returns "the pipe transport is unix only" there and
+`verify_sp6b_driver` prints `N/A go-rodclient: pipe transport unix-only` on Windows.
+
 ## API
 
 `Launch(ctx, camoucrome.Options, ...Option) (*Browser, error)`, then
