@@ -60,7 +60,7 @@ const fromFile = (v) => (typeof v === 'string' && v.startsWith('@') ? fs.readFil
 (async () => {
   const { chromium } = require(args.driver); // absolute path of the package dir
   const ctx = await camoucrome.launch(chromium, args.executable, {
-    config: fromFile(args.config), preset: fromFile(args.preset), strict: args.strict === true,
+    config: fromFile(args.config), preset: fromFile(args.preset), lax: args.lax === true,
     // Windows: the sandbox strips CAMOU_* from a renderer unless the
     // windows-sandbox-env patch lets it through, and --no-sandbox hides that.
     headless: args.headed !== true, args: args.sandbox === true ? [] : ['--no-sandbox'],

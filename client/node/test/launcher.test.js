@@ -40,6 +40,14 @@ test('env drops stale CAMOU vars and sets the transport', () => {
     { PATH: '/bin', CAMOU_CONFIG: '{"input:deviceGrid":true,"screen.width":1}', CAMOU_PRESET: '{"os":"Windows"}', CAMOU_CONFIG_STRICT: '1' });
 });
 
+test('strict is the default and lax unsets it', () => {
+  // an inherited 0 must not turn strict off; lax drops the variable (the fork reads has_value() in one place)
+  assert.equal(c.buildEnv({ config: { 'screen.width': 1 } }, { CAMOU_CONFIG_STRICT: '0' }).CAMOU_CONFIG_STRICT, '1');
+  assert.equal(c.buildEnv({}, { CAMOU_CONFIG_STRICT: '0' }).CAMOU_CONFIG_STRICT, '1');
+  assert.equal('CAMOU_CONFIG_STRICT' in c.buildEnv({ config: { 'screen.width': 1 }, lax: true }, { CAMOU_CONFIG_STRICT: '1' }), false);
+  assert.throws(() => c.buildEnv({ config: { 'screen.width': 1 }, strict: true, lax: true }, {}), /strict.*lax/);
+});
+
 test('accept-lang follows the config', () => {
   assert.equal(c.acceptLangOf({ 'navigator.languages': ['fr-FR', 'fr'] }), 'fr-FR,fr');
   assert.equal(c.acceptLangOf('{"locale:tag":"de-DE"}'), 'de-DE');
@@ -163,7 +171,7 @@ test('a large config and preset are chunked into numbered env strings, never spl
   assert.ok(env.CAMOU_PRESET_3);
   const raw = `{"k":"${'a'.repeat(L.env.config_chunk_chars - 7)}${'😀'.repeat(20000)}"}`;
   const env2 = c.buildEnv({ config: raw }, {});
-  const parts = Object.keys(env2).sort((a, b) => a.length - b.length || a.localeCompare(b)).map((k) => env2[k]);
+  const parts = Object.keys(env2).filter((k) => k !== 'CAMOU_CONFIG_STRICT').sort((a, b) => a.length - b.length || a.localeCompare(b)).map((k) => env2[k]);
   for (const p of parts) assert.ok(!/[\uD800-\uDBFF]$|^[\uDC00-\uDFFF]/.test(p), 'a chunk splits a surrogate pair');
   assert.deepEqual(JSON.parse(parts.join('')), { ...D, ...JSON.parse(raw) });
 });

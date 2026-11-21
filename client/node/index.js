@@ -154,7 +154,11 @@ function nativeConfig(config, preset, hostOs) {
 // otherwise win), its FONTCONFIG_FILE (a host conf under a Windows claim is
 // a tell) and its BREAKPAD_DUMP_LOCATION (it would collect every identity's
 // dumps in one place), then config/preset/strict set.
-function buildEnv({ config, preset, strict, fontconfig, crashDir, hostOs = HOST_OS } = {}, base = process.env) {
+function buildEnv({ config, preset, strict, lax, fontconfig, crashDir, hostOs = HOST_OS } = {}, base = process.env) {
+  // strict is the default: always written, so an inherited empty or 0 cannot turn it off. lax leaves
+  // the variable unset (the fork's ua: half-config check reads has_value(), so 0 would still count).
+  // strict is kept for compatibility and changes nothing; with lax it is an error.
+  if (strict && lax) throw new Error('strict and lax contradict each other: strict is the default, drop strict');
   effectiveKeys(config, preset);
   config = { ...CONFIG_DEFAULTS, ...asObject(nativeConfig(config, preset, hostOs)) }; // the caller's value wins
   const env = {};
@@ -163,7 +167,7 @@ function buildEnv({ config, preset, strict, fontconfig, crashDir, hostOs = HOST_
   }
   Object.assign(env, chunkEnv(asJson(config), 'CAMOU_CONFIG'));
   if (preset != null) Object.assign(env, chunkEnv(asJson(preset), 'CAMOU_PRESET'));
-  if (strict) env.CAMOU_CONFIG_STRICT = '1';
+  if (!lax) env.CAMOU_CONFIG_STRICT = '1';
   if (fontconfig) env.FONTCONFIG_FILE = fontconfig;
   if (crashDir) env[CRASH_DUMPS_ENV] = crashDir;
   return env;
@@ -290,7 +294,7 @@ function profileSeeds(userDataDir) {
 }
 
 async function launch(chromium, executablePath, {
-  config, preset, strict = false, userDataDir, window, dpr, position, headless = true,
+  config, preset, strict = false, lax = false, userDataDir, window, dpr, position, headless = true,
   args = [], extensions = [], spkiList = [], fontsDir, proxy, geoip, exitIp, python, warn, light = false, pinCpuCores = true, ...options
 } = {}) {
   if (proxy !== undefined) {
@@ -341,7 +345,7 @@ async function launch(chromium, executablePath, {
       executablePath: String(executablePath),
       headless,
       ignoreDefaultArgs: true,
-      env: buildEnv({ config, preset, strict,
+      env: buildEnv({ config, preset, strict, lax,
         fontconfig: fontconfigFor({ config, preset, fontsDir, executablePath }), crashDir: owned[0] }),
       args: buildArgs({ window, dpr, position, extra: args, headless, userDataDir: dir,
         acceptLang: acceptLangOf(config, preset), extensions, spkiList,

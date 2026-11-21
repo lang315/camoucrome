@@ -28,7 +28,7 @@ var reportWait = 20 * time.Second
 
 type cfg struct {
 	exe, url, config, preset, label string
-	headed, strict, sandbox         bool
+	headed, strict, lax, sandbox    bool
 }
 
 var errProxy = errors.New("proxy flags are not supported by rodclient v1")
@@ -43,7 +43,8 @@ func parseFlags(args []string) (*cfg, error) {
 	fs.StringVar(&c.config, "config", "", "CAMOU_CONFIG JSON (or @file)")
 	fs.StringVar(&c.preset, "preset", "", "CAMOU_PRESET JSON (or @file)")
 	fs.BoolVar(&c.headed, "headed", false, "not headless")
-	fs.BoolVar(&c.strict, "strict", false, "CAMOU_CONFIG_STRICT=1")
+	fs.BoolVar(&c.strict, "strict", false, "no-op: strict is the default")
+	fs.BoolVar(&c.lax, "lax", false, "opt out of CAMOU_CONFIG_STRICT")
 	fs.BoolVar(&c.sandbox, "sandbox", false, "omit --no-sandbox")
 	for _, p := range []string{"proxy", "proxy-bypass", "proxy-user", "proxy-pass"} {
 		fs.String(p, "", "rejected: not supported by rodclient v1")
@@ -71,7 +72,7 @@ func parseFlags(args []string) (*cfg, error) {
 
 func (c *cfg) options() camoucrome.Options {
 	headless := !c.headed
-	o := camoucrome.Options{ExecutablePath: c.exe, Headless: &headless, Strict: c.strict}
+	o := camoucrome.Options{ExecutablePath: c.exe, Headless: &headless, Strict: c.strict, Lax: c.lax}
 	if !c.sandbox {
 		o.ExtraArgs = []string{"--no-sandbox"}
 	}

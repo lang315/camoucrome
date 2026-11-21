@@ -120,15 +120,24 @@ func TestEnvDropsInherited(t *testing.T) {
 
 func TestEnvStrict(t *testing.T) {
 	r := Resolved{Config: map[string]any{"ua:platform": "Linux"}}
-	for _, strict := range []bool{false, true} {
-		env, cleanup, err := envFor(r, LaunchOpts{Strict: strict}, []string{"CAMOU_CONFIG_STRICT=1"}, "Linux")
-		if err != nil {
-			t.Fatal(err)
+	for _, lax := range []bool{false, true} {
+		// a parent's 0 must not turn the default off, a parent's 1 must not survive a Lax launch
+		for _, inherited := range []string{"CAMOU_CONFIG_STRICT=0", "CAMOU_CONFIG_STRICT=1"} {
+			env, cleanup, err := envFor(r, LaunchOpts{Lax: lax}, []string{inherited}, "Linux")
+			if err != nil {
+				t.Fatal(err)
+			}
+			cleanup()
+			if got := slices.Contains(env, "CAMOU_CONFIG_STRICT=1"); got == lax {
+				t.Errorf("Lax=%v inherited %s: CAMOU_CONFIG_STRICT=1 present = %v", lax, inherited, got)
+			}
+			if lax && slices.ContainsFunc(env, func(e string) bool { return strings.HasPrefix(e, "CAMOU_CONFIG_STRICT=") }) {
+				t.Errorf("Lax: variable still set: %v", env)
+			}
 		}
-		cleanup()
-		if got := slices.Contains(env, "CAMOU_CONFIG_STRICT=1"); got != strict {
-			t.Errorf("Strict=%v: CAMOU_CONFIG_STRICT present = %v", strict, got)
-		}
+	}
+	if _, _, err := envFor(r, LaunchOpts{Strict: true, Lax: true}, nil, "Linux"); err == nil || !strings.Contains(err.Error(), "Lax") {
+		t.Errorf("Strict+Lax: err %v", err)
 	}
 }
 
@@ -152,7 +161,7 @@ func TestEnvChunks(t *testing.T) {
 		if k == "CAMOU_CONFIG" {
 			t.Fatal("CAMOU_CONFIG set beside chunks")
 		}
-		if strings.HasPrefix(k, "CAMOU_CONFIG_") {
+		if strings.HasPrefix(k, "CAMOU_CONFIG_") && k != "CAMOU_CONFIG_STRICT" {
 			got = append(got, v)
 		}
 	}

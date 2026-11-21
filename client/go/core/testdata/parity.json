@@ -79,7 +79,8 @@
     "BREAKPAD_DUMP_LOCATION=\u003ctmp\u003e",
     "CAMOU_CONFIG_1=\u003clen:30000 sha256:b1004c24c361322ce7ca2abd1eabc8c57e104bd342a727325a5491a2f9508332\u003e",
     "CAMOU_CONFIG_2=\u003clen:30000 sha256:8a6d5f7b1061fefacb7509d5bf23a3227c8a3a6ecfe51dc9f666772c99b75b98\u003e",
-    "CAMOU_CONFIG_3=\u003clen:10110 sha256:bd524d74b989e22c7ab8a8de5f0eab1104319390007215eb42608fed3d6693d4\u003e"
+    "CAMOU_CONFIG_3=\u003clen:10110 sha256:bd524d74b989e22c7ab8a8de5f0eab1104319390007215eb42608fed3d6693d4\u003e",
+    "CAMOU_CONFIG_STRICT=1"
    ],
    "argv": [
     "--no-first-run",
@@ -145,7 +146,8 @@
    "wantErr": false,
    "env": [
     "BREAKPAD_DUMP_LOCATION=\u003ctmp\u003e",
-    "CAMOU_CONFIG=\u003clen:135 sha256:420f509b39540c5fc122a6b4bbf72b99cd1ae506e3353c0a3d9f9c63fba40262\u003e"
+    "CAMOU_CONFIG=\u003clen:135 sha256:420f509b39540c5fc122a6b4bbf72b99cd1ae506e3353c0a3d9f9c63fba40262\u003e",
+    "CAMOU_CONFIG_STRICT=1"
    ],
    "argv": [
     "--no-first-run",

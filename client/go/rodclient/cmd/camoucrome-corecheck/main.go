@@ -104,7 +104,7 @@ func runCase(ctx context.Context, exe, fonts string, strict bool, red string, id
 		delete(r.Config, "webrtc:ipHandlingPolicy")
 	}
 	h := true
-	o := camoucrome.Options{ExecutablePath: exe, Config: r.Config, Strict: strict, Window: r.Window, DPR: r.DPR,
+	o := camoucrome.Options{ExecutablePath: exe, Config: r.Config, Lax: !strict, Window: r.Window, DPR: r.DPR,
 		Position: &r.Position, Headless: &h, FontsDir: fonts, ExtraArgs: append([]string{"--no-sandbox"}, r.Args...)}
 	b, err := rodclient.Launch(ctx, o)
 	if err != nil {

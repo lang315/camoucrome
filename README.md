@@ -231,7 +231,7 @@ host, _ := core.ProbeHost()                 // cores, work area, platform versio
 host.Display = display                      // see below; store it per machine
 id, _ := core.Draw("windows", nil, &host)   // once per account; store the JSON (core.Identity)
 r, err := core.Resolve(id, host, &core.Exit{Timezone: "Europe/Berlin", Country: "DE"}) // every launch
-env, cleanup, err := core.Env(r, core.LaunchOpts{Strict: true, ExecutablePath: exe}, os.Environ()) // exe: the archive's chrome[.exe]; check err
+env, cleanup, err := core.Env(r, core.LaunchOpts{ExecutablePath: exe}, os.Environ()) // exe: the archive's chrome[.exe]; check err
 argv := core.Argv(r, core.LaunchOpts{UserDataDir: dir, Headless: true})
 err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
 ```
@@ -251,6 +251,17 @@ err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
 - **Pairing.** `core.ForkVersion` is the fork version the data was generated for (157.0.8103.51; the
   release's `-N` is in its tag). Pin a commit of this repository, not a tag. `scripts/gen_go_core_data.py`
   regenerates the embedded pool and tables, and `--check` fails when they are stale.
+
+## Strict mode (the default)
+
+Every launcher starts the browser with `CAMOU_CONFIG_STRICT=1`: a config the browser cannot take refuses to
+start instead of running with the real values. An incoherent config exits with code 13; a malformed one (not
+JSON) crashes with a `CHECK` (about `0x80000003` on Windows), so a caller maps both. `strict=True` is kept
+for compatibility and changes nothing. To opt out, pass `lax=True` (Python, Node) or `Lax: true` (Go
+`Options`, `core.LaunchOpts`; the probes take `--lax`): the variable is then left unset, also when the parent
+environment had one. Strict together with lax is an error. The fork reads the variable as a switch in one
+place (`has_value()`), so `CAMOU_CONFIG_STRICT=0` in your own environment is not an opt-out for the launchers:
+they overwrite it.
 
 ## Known limits
 

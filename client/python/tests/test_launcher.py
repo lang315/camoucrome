@@ -42,6 +42,16 @@ def test_env_drops_stale_camou_vars_and_sets_the_transport():
                    "CAMOU_PRESET": '{"os": "Windows"}', "CAMOU_CONFIG_STRICT": "1"}
 
 
+def test_strict_is_the_default_and_lax_unsets_it():
+    base = {"PATH": "/bin", "CAMOU_CONFIG_STRICT": "0"}  # an inherited 0 must not turn strict off
+    assert camoucrome.build_env({"screen.width": 1}, base=base)["CAMOU_CONFIG_STRICT"] == "1"
+    assert camoucrome.build_env(base=base)["CAMOU_CONFIG_STRICT"] == "1"
+    # lax: the variable is absent (the fork reads has_value() in one place), also when the parent had it
+    assert "CAMOU_CONFIG_STRICT" not in camoucrome.build_env({"screen.width": 1}, base={"CAMOU_CONFIG_STRICT": "1"}, lax=True)
+    with pytest.raises(ValueError, match="strict.*lax"):
+        camoucrome.build_env({"screen.width": 1}, strict=True, lax=True)
+
+
 @pytest.fixture(autouse=True)
 def temp_dirs_under_tmp_path(tmp_path, monkeypatch):
     """launch() mkdtemps a crash-dump dir on every call; keep them out of /tmp."""
@@ -437,7 +447,7 @@ def test_native_host_drops_font_aliases():
 
     def decoded(host_os, config=cfg):
         env = camoucrome.build_env(config=config, host_os=host_os, base={})
-        return json.loads("".join(v for k, v in sorted(env.items()) if k.startswith("CAMOU_CONFIG")))
+        return json.loads("".join(v for k, v in sorted(env.items()) if k.startswith("CAMOU_CONFIG") and k != "CAMOU_CONFIG_STRICT"))
 
     got = decoded("Windows")
     assert got["fonts:list"] == ["Arial"] and "fonts:alias" not in got and "fonts:aliasLocal" not in got
