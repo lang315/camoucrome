@@ -39,13 +39,17 @@ if u.path == "/h.html":
         for c in ("plain", "route", "override"):
             cond = c
             h = list(base)
-            if arm == LEAK and c != "plain": h = ["host", "x-a", "accept"]  # reordered and lower-cased
-            if c == "override": h.append("X-Probe")
+            if c == "override": h = ["Host", "X-A", "Accept", "X-Probe"]  # Chromium rebuilds the list on override, for every driver
+            if arm == LEAK and c != "plain": h = ["host", "x-a", "accept"] + (["x-probe"] if c == "override" else [])  # reordered, lower-cased
+            if arm == os.environ.get("FAKE_NOROUTE") and c != "plain": h = list(base)  # the handler never fired: an unrouted request
             req(h)
     else:
         req(base)
 if driver:
-    json.dump({"driver": arm, "acts": {}, "error": None}, open(opt("--out"), "w"))
+    acts = {k: "ok:x" for k in ("focus", "type", "blur", "click", "select", "scroll")}
+    for na in os.environ.get("FAKE_NA", "").split(","):
+        if na.startswith(arm + ":"): acts[na.split(":")[1]] = "n/a: no API"
+    json.dump({"driver": arm, "acts": acts, "error": None}, open(opt("--out"), "w"))
 '''
 
 
@@ -91,15 +95,35 @@ def test_exit_1_when_a_driver_fails():
     assert m.exit_code({"r": {"tdp": "UNMEASURED", "red": "FAIL"}}) == 3
 
 
-def test_h_reordered_lowercased_red_fails_clean_passes_override_modulo_added(env):
+def test_h_rows_red_fails_clean_passes_and_chromium_rebuild_is_its_own_row(env):
     rc, t = env("--groups", "H", "--arms", "control,rod,red")
     for row, v in t["rows"].items():
-        assert v["red"] == "FAIL", row
-        assert v["control"] == "PASS", row  # the added X-Probe is removed before comparing, and its landing is reported
-        assert v["rod"] == "PASS", row
+        if row.endswith("chromium-rebuild"):
+            assert v == {"control": "FAIL"}, row  # raw CDP override FAILs: that is Chromium, not a driver
+            continue
+        assert v["red"] == "FAIL" and v["rod"] == "PASS", row
     assert any("landing" in k for k in t["details"])
+    assert rc == 0  # the raw-CDP FAIL is not a driver cell
+
+
+def test_h_route_handler_that_never_fires_is_not_a_pass(env):
+    import os
+    os.environ["FAKE_NOROUTE"] = "rod"
+    try:
+        rc, t = env("--groups", "H", "--arms", "control,rod,red")
+    finally:
+        del os.environ["FAKE_NOROUTE"]
+    assert t["rows"]["H.fetch.route.vs-plain"]["rod"] == "UNMEASURED"  # no X-Probe landed: interception unproved
+    assert t["rows"]["H.xhr.override.vs-rawcdp"]["rod"] == "FAIL"  # override never landed
+
+
+def test_l9_an_action_that_is_na_voids_its_rows_even_if_another_action_fires_the_event(env, monkeypatch):
+    monkeypatch.setenv("FAKE_NA", "rod:focus")
+    rc, t = env("--groups", "L9", "--arms", "control,rod,red")
+    assert t["rows"]["L9.focus"]["rod"] == "UNMEASURED" and t["rows"]["L9.click"]["rod"] == "PASS"
 
 
 def test_h_dead_control_when_red_is_clean(env):
     rc, t = env("--groups", "H", "--arms", "control,red", leak="nobody")
-    assert {c for v in t["rows"].values() for c in v.values()} <= {"UNMEASURED", "n/a"}
+    cells = {c for k, v in t["rows"].items() if not k.endswith("chromium-rebuild") for c in v.values()}
+    assert cells <= {"UNMEASURED", "n/a"}

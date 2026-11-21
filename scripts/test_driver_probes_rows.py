@@ -88,3 +88,24 @@ def test_unstable_or_thin_samples_are_unmeasured_and_unstable_arm_fails():
 
 def test_override_that_never_landed_fails_not_passes():
     assert r.judge_headers([B, B], [B, B], added="X-Probe")[0] == FAIL
+
+
+def test_stack_row_needs_the_owning_action_ok():
+    res = {"control": {"focus": [fire(LISTENER)]}, "rod": {"focus": [fire(LISTENER)]}, "red": {"focus": [fire(LISTENER, DRIVER)]}}
+    ok = {"focus": "ok:x"}
+    acts = {"control": ok, "rod": {"focus": "n/a: no API", "click": "ok:x"}, "red": ok}
+    assert r.judge_stack_row("focus", res, acts) == {"rod": UNMEASURED, "red": FAIL}
+    acts["rod"] = {"focus": "error:boom"}
+    assert r.judge_stack_row("focus", res, acts)["rod"] == UNMEASURED
+    acts["rod"] = ok
+    assert r.judge_stack_row("focus", res, acts)["rod"] == PASS
+    acts["control"] = {"focus": "n/a"}  # control's action did not run: nothing to compare with
+    assert r.judge_stack_row("focus", res, acts) == {"rod": UNMEASURED, "red": UNMEASURED}
+
+
+def test_required_header_compares_against_the_reference_override():
+    raw = ["Host", "X-A", "X-Probe"]
+    assert r.judge_headers([raw, raw], [raw, raw], required="X-Probe")[0] == PASS
+    assert r.judge_headers([raw, raw], [["Host", "x-a", "X-Probe"]] * 2, required="X-Probe")[0] == FAIL
+    assert r.judge_headers([raw, raw], [["Host", "X-A"]] * 2, required="X-Probe")[0] == FAIL
+    assert r.judge_headers([["Host"]] * 2, [raw, raw], required="X-Probe")[0] == UNMEASURED

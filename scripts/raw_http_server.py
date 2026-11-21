@@ -43,9 +43,11 @@ def serve(out_dir):
                 if not (_NAME.fullmatch(arm) and _NAME.fullmatch(run)):
                     return reply(c, 400)
                 f = out_dir / f"{arm}-{run}.json"
-                tmp = f.with_name(f.name + ".tmp")
-                tmp.write_bytes(rest[:n])
-                os.replace(tmp, f)
+                with lock:  # overlapping posts: the page's list only grows, so the longest body is the latest
+                    if not f.exists() or f.stat().st_size <= n:
+                        tmp = f.with_name(f.name + ".tmp")
+                        tmp.write_bytes(rest[:n])
+                        os.replace(tmp, f)
                 reply(c, 200)
             elif u.path in ("/l9.html", "/h.html"):
                 reply(c, 200, (PAGES / u.path[1:]).read_bytes(), "text/html; charset=utf-8")

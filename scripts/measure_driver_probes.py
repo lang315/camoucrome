@@ -113,7 +113,7 @@ class Run:
             results[arm] = by if ok else None
         table, details = {}, {}
         for ev in rows.EVENTS:
-            table[f"L9.{ev}"] = {"control": rows.NA_CELL, **rows.judge_stack_row(ev, results)}
+            table[f"L9.{ev}"] = {"control": rows.NA_CELL, **rows.judge_stack_row(ev, results, self.acts_by_arm(arms))}
             for a in arms:
                 if a != "control" and results.get(a) and results.get("control"):
                     ex = rows.extras(results["control"].get(ev) or [{"stack": "", "script": None}], results[a].get(ev) or [])
@@ -123,6 +123,9 @@ class Run:
             if results.get(a) is not None:
                 details[f"L9 fires {a}"] = {ev: len(v) for ev, v in sorted(results[a].items())}
         return table, details
+
+    def acts_by_arm(self, arms):
+        return {a: self.acts.get(f"L9 {a}") or {} for a in arms}
 
     def samples(self, start):
         """(cond, kind) -> list of header-name lists, from the raw log entries after index start."""
@@ -150,29 +153,53 @@ class Run:
                 details[f"H.sample {arm} {cond} {kind}"] = ",".join(v[0])
         table = {}
         for kind in ("fetch", "xhr"):
-            for cond in ("route", "override"):
-                added = "X-Probe" if cond == "override" else None
-                for vs in ("plain", "none"):
-                    row = f"H.{kind}.{cond}.vs-{vs}"
-                    cells = {}
-                    for arm in arms:
-                        if arm == "none":
-                            cells[arm] = rows.NA_CELL
-                            continue
-                        base = per.get("none" if vs == "none" else arm, {}).get(("none" if vs == "none" else "plain", kind))
-                        got = per[arm].get((cond, kind))
-                        if not got:  # no request seen under that condition: the driver could not do it, or died
-                            cells[arm] = UNMEASURED
-                            continue
-                        cells[arm], why = rows.judge_headers(base, got, added)
+            def have(arm, cond):
+                return per.get(arm, {}).get((cond, kind))
+
+            def proved(arm):  # interception ran for this arm and kind: its own override landed X-Probe on every request
+                got = have(arm, "override")
+                return bool(got) and all(rows.landing(s, "X-Probe") is not None for s in got)
+
+            def put(row, cells):
+                if cells.get("red") != FAIL:  # the dead-control rule: red must FAIL the row itself
+                    cells = {a: (rows.NA_CELL if cells[a] == rows.NA_CELL else UNMEASURED) for a in cells}
+                table[row] = cells
+
+            for vs in ("plain", "none"):  # route unchanged: only meaningful where interception is proved to have run
+                cells = {}
+                for arm in arms:
+                    got = have(arm, "route")
+                    if arm == "none" or (vs == "plain" and arm == "tdp"):  # tdp's plain is already routed: only vs-none says anything
+                        cells[arm] = rows.NA_CELL
+                    elif not got or not proved(arm):
+                        cells[arm] = UNMEASURED
+                    else:
+                        base = have("none" if vs == "none" else arm, "none" if vs == "none" else "plain")
+                        cells[arm], why = rows.judge_headers(base, got)
                         if why:
-                            details[f"{row} {arm}"] = why
-                        if added and got and (i := rows.landing(got[0], added)) is not None:
-                            details[f"{row} {arm} landing"] = f"{added} at {i} of {len(got[0])}"
-                    # the dead-control rule: red must FAIL the row itself, else nothing in it is a verdict
-                    if cells.get("red") != FAIL:
-                        cells = {a: (rows.NA_CELL if a == "none" else UNMEASURED) for a in arms}
-                    table[row] = cells
+                            details[f"H.{kind}.route.vs-{vs} {arm}"] = why
+                put(f"H.{kind}.route.vs-{vs}", cells)
+            # override: Chromium itself rebuilds the list, so drivers are judged against raw CDP's override, not against plain
+            cells = {}
+            for arm in arms:
+                got = have(arm, "override")
+                if arm in ("none", "control"):
+                    cells[arm] = rows.NA_CELL
+                elif not got:
+                    cells[arm] = UNMEASURED
+                else:
+                    cells[arm], why = rows.judge_headers(have("control", "override"), got, required="X-Probe")
+                    if why:
+                        details[f"H.{kind}.override.vs-rawcdp {arm}"] = why
+                    if (i := rows.landing(got[0], "X-Probe")) is not None:
+                        details[f"H.{kind}.override.vs-rawcdp {arm} landing"] = f"X-Probe at {i} of {len(got[0])}"
+            put(f"H.{kind}.override.vs-rawcdp", cells)
+            # information, no driver verdict: what Chromium does to the list when raw CDP overrides headers
+            base, got = have("none", "none"), have("control", "override")
+            if base and got:
+                v, why = rows.judge_headers(base, got, added="X-Probe")
+                table[f"H.{kind}.override.chromium-rebuild"] = {"control": v}
+                details[f"H.{kind}.override.chromium-rebuild"] = why
         return table, details
 
 

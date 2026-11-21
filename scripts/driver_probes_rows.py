@@ -45,10 +45,26 @@ def judge_stack(control, arm):
     return FAIL if extras(control, arm) else PASS
 
 
-def judge_stack_row(event, results, red="red", control="control"):
-    """results: arm -> {event: [fires]} or None. The red arm must FAIL the row itself, else every arm is UNMEASURED."""
+# The action whose call a row measures. Other actions fire the same events as a side effect (a click focuses), so a
+# cell counts only when its OWN action ran: a driver whose action is n/a or errored must not borrow a PASS from another.
+OWNER = {"focus": "focus", "blur": "blur", "input": "type", "keydown": "type", "click": "click", "mousedown": "click",
+         "pointerdown": "click", "change": "blur", "select": "select", "scroll": "scroll"}
+
+
+def action_ok(acts, event):
+    return str((acts or {}).get(OWNER[event], "")).startswith("ok:")
+
+
+def judge_stack_row(event, results, acts=None, red="red", control="control"):
+    """results: arm -> {event: [fires]} or None. acts: arm -> {action: status}; None = not gated (unit use).
+    A cell whose owning action did not report ok: is UNMEASURED, and a control whose action did not run voids the row.
+    The red arm must FAIL the row itself, else every arm is UNMEASURED."""
     ctl = (results.get(control) or {}).get(event)
+    if acts is not None and not action_ok(acts.get(control), event):
+        ctl = None
     out = {a: judge_stack(ctl, (r or {}).get(event)) for a, r in results.items() if a != control}
+    if acts is not None:
+        out = {a: (v if action_ok(acts.get(a), event) else UNMEASURED) for a, v in out.items()}
     if out.get(red) != FAIL:
         return {a: UNMEASURED for a in out}
     return out
@@ -64,12 +80,17 @@ def _uniform(samples):
     return all(s == samples[0] for s in samples)
 
 
-def judge_headers(base, arm, added=None):
+def judge_headers(base, arm, added=None, required=None):
     """base, arm: lists of samples, each a header-name list (wire order, wire case). added: the one name the arm adds on
     purpose (compared case-insensitively and removed before the comparison). FAIL when the order, case or set differs.
+    required: a name that must be on the wire in both and is NOT removed (the override-vs-raw-CDP compare).
     Samples that disagree among themselves, or too few, are UNMEASURED: no stable reference."""
     if not base or not arm or len(base) < 2 or len(arm) < 2 or not _uniform(base):
         return UNMEASURED, "no stable reference"
+    if required and not all(landing(s, required) is not None for s in base):
+        return UNMEASURED, f"reference lacks {required}"
+    if required and not all(landing(s, required) is not None for s in arm):
+        return FAIL, f"{required} missing from the wire: the override did not land"
     if added and not all(landing(s, added) is not None for s in arm):
         return FAIL, f"{added} missing from the wire: the override did not land"  # absence must not pass
     got = [[n for n in s if not (added and n.lower() == added.lower())] for s in arm]
