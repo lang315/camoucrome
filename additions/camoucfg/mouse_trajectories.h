@@ -84,8 +84,12 @@ inline constexpr float kWindowsNotchCssPx = 100.0f;
 // `v` is returned unchanged when it is not finite, or `dsf` is not finite and
 // > 0, or `origin` is not finite. Pass origin 0 for the lattice of an already
 // delivered point `e`: e + SnapToDeviceGrid(v - e, dsf, 0).
+// When `extent` (the view's size in DIP) is > 0 and `v` itself lies inside
+// [0, extent), the result is kept inside too: a lattice point at or past an
+// edge (x = 799.7 snaps to 800 in an 800-wide view) is replaced by the one a
+// step toward the inside.
 // This one function is the lattice formula; nothing else computes it.
-double SnapToDeviceGrid(double v, float dsf, double origin);
+double SnapToDeviceGrid(double v, float dsf, double origin, double extent = 0.0);
 
 // Whether `p` (widget DIP) is inside a view of `size` DIP: the half-open float
 // test 0 <= x < w, 0 <= y < h. Not gfx::Rect::Contains(int, int), which

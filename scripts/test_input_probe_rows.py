@@ -14,11 +14,12 @@ def ev(t, ts, x=100.0, y=100.0, now=None, **kw):
     return e
 
 
-def log(events, dpr=1.0, secure=True, coalesced=True):
+def log(events, dpr=1.0, secure=True, coalesced=True, oh=600):
     ticks = [[i * F, i * F] for i in range(200)]
     for i, e in enumerate(events):
         e["n"] = i
-    return {"meta": {"dpr": dpr, "iw": 800, "ih": 600, "secure": secure, "coalesced_fn": coalesced}, "ev": events, "raf": ticks}
+    return {"meta": {"dpr": dpr, "iw": 800, "ih": 600, "ow": 800, "oh": oh, "secure": secure, "coalesced_fn": coalesced},
+            "ev": events, "raf": ticks}
 
 
 def many(make, n=R.MIN_N):
@@ -101,6 +102,15 @@ class I3(unittest.TestCase):
         self.assertEqual(v["fy"][0], "FAIL")
         self.assertEqual(v["fx"][0], "PASS")
         self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I3", ctl, ctl)), "PASS")
+
+    def test_an_infobar_makes_the_row_unmeasured(self):
+        """outerHeight - innerHeight is the chrome above the page; an arm with another one has another view origin"""
+        on = [ev("pointermove", i, x=i / 1.25, y=(i + 0.25) / 1.25) for i in range(1, 40)]
+        ctl = [log(on, dpr=1.25, oh=600)] * 4
+        v = R.judge("I3", ctl, [log(on, dpr=1.25, oh=640)] * 4)
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+        self.assertIn("infobar", v["_"][1])
         self.assertEqual(R.row_verdict(R.judge("I3", ctl, ctl)), "PASS")
 
     def test_zero_control_fraction_says_the_origin_is_moot(self):

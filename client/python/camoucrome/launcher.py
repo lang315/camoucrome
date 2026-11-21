@@ -43,7 +43,7 @@ def native_config(config, preset=None, host_os=None):
         return config
     c = json.loads(config) if isinstance(config, str) else config
     if not any(k in c for k in NATIVE_FONTS_DROP):
-        return config  # nothing to drop: the original value, not a re-encoding
+        return config  # nothing to drop: as given (build_env/BuildEnv adds the defaults and re-encodes)
     return {k: v for k, v in c.items() if k not in NATIVE_FONTS_DROP}
 
 

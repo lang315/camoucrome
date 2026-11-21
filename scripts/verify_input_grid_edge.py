@@ -2,7 +2,7 @@
 
 Driven over a raw websocket (Input and Runtime.evaluate only, no Runtime.enable), chrome headless at
 --force-device-scale-factor=1.25, window 800x600 (IGE_WINDOW=WxH overrides). Every row is gated on the page's
-devicePixelRatio == 1.25 and visualViewport.scale == 1, else UNMEASURED. Seven rows, each with its expected count; a row
+devicePixelRatio == 1.25 and visualViewport.scale == 1, else UNMEASURED. Eight rows, each with its expected count; a row
 that cannot run is UNMEASURED, never PASS; any non-PASS row exits 1.
 
   1 gate: no input:deviceGrid, humanize off: 30 awaited moves with fractional CSS px reach the page unchanged
@@ -16,10 +16,18 @@ that cannot run is UNMEASURED, never PASS; any non-PASS row exits 1.
   5 I4 (b), key true, humanize on, 50 legs x = +3 <-> x = -3: 0 pointermove/mousemove/pointerover/mouseover outside
     [0, innerWidth) x [0, innerHeight), exits == 50 (outbound legs), pointerover re-enters == 50 (return legs).
   6 I4 guard: 4 edge legs (centre -> 40 px past each edge): 0 outside events, >= 20 pointermoves seen.
+  9 = row 5 with no input:deviceGrid (raw interior points).
   7 I4 exit signature: each of those 4 legs ends pointerout,pointerleave,mouseout,mouseleave, relatedTarget null.
+  8 I3 right edge, key true, a window whose innerWidth has a point just inside the edge that the plain snap puts outside
+    (iw 803: 802.9 -> 803.2): the page gets the lattice point one step inside (802.4), and no exit.
 
-RED-capable: 1 (a build that snaps without the key), 2 and 3 (no snap), 5 (the old PointIsWithinContents test lets x in
-(-1, 0) through: on that build row 5 counts outside events on the left/top only). 4 is a guard of the Blink half and
+Row 2 also asserts the modal fractions from the page's own geometry: in this headless window the content sits at
+(ow - iw) / 2 across and oh - ih down in its root window, so frac(clientX*dpr) = frac(-dsf*(ow-iw)/2) and
+frac(clientY*dpr) = frac(-dsf*(oh-ih)) (measured 2026-11-21: 143 down -> .25, 0 across -> 0). An origin-blind snap gives 0 on
+both and FAILs.
+
+RED-capable: 1 (a build that snaps without the key), 2 and 3 (no snap, or an origin-blind one), 8 (no keep-inside), 9 (the old
+PointIsWithinContents test lets raw x in (-1, 0) through; 5 passes on the old test too, because the lattice zero is exact). 4 is a guard of the Blink half and
 passes before and after; 6 and 7 are guards. What this cannot see: W vs innerWidth, the window frame and the view's
 origin in its window on Windows -- the host rerun only. The inline page replaces scripts/input_probe/page.html.
 
@@ -44,7 +52,8 @@ FLAGS = ["--remote-allow-origins=*", "--enable-logging=stderr", "--force-device-
          "--window-size=" + os.environ.get("IGE_WINDOW", "800,600")]
 HUM = {"humanize:enabled": True, "humanize:minTime": 80, "humanize:maxTime": 250}  # long paths: many frames, many events
 HUM_GRID = {**HUM, "input:deviceGrid": True}
-HUM_CROSS = {"humanize:enabled": True, "humanize:minTime": 40, "humanize:maxTime": 80, "input:deviceGrid": True}  # 100 legs
+HUM_CROSS_RAW = {"humanize:enabled": True, "humanize:minTime": 40, "humanize:maxTime": 80}  # 100 legs, unsnapped points
+HUM_CROSS = {**HUM_CROSS_RAW, "input:deviceGrid": True}
 GRID = {"input:deviceGrid": True}
 EPS = 0.02  # device px: float noise of x*dpr
 
@@ -65,7 +74,9 @@ R4 = "4 I4a humanize off: a move to x = -0.5 gives one pointermove at -0.5 and o
 R5 = "5 I4b humanize: 50 crossings of x = 0, 0 outside events, 50 exits, 50 re-enters"
 R6 = "6 I4 guard: 4 edge legs, 0 outside events, >= 20 pointermoves seen"
 R7 = "7 I4 exit: 4 exits, each pointerout,pointerleave,mouseout,mouseleave, relatedTarget null"
-ROWS = [R1, R2, R3, R4, R5, R6, R7]
+R8 = "8 I3 right edge: a point inside the edge whose plain snap is outside lands one lattice step inside"
+R9 = "9 I4b humanize, no key: 50 crossings of x = 0 with raw interior points, 0 outside events, 50 exits, 50 re-enters"
+ROWS = [R1, R2, R3, R4, R5, R6, R7, R8, R9]
 EXIT = ["pointerout", "pointerleave", "mouseout", "mouseleave"]
 
 
@@ -119,11 +130,12 @@ def self_test():
 
 
 @contextlib.contextmanager
-def browser(config):
+def browser(config, window=None):
     import lib_shell
+    flags = FLAGS if window is None else FLAGS[:-1] + ["--window-size=" + window]
     proc, primed = lib_shell.launch_and_prime(
         lambda: lib_shell.launch(json.dumps(config) if config else None, shell=lib_shell.CHROME,
-                                 extra_flags=lib_shell.CHROME_FLAGS + FLAGS), prime_page)
+                                 extra_flags=lib_shell.CHROME_FLAGS + flags), prime_page)
     proc.primed = primed
     try:
         yield proc
@@ -147,7 +159,7 @@ def prime_page(proc):
 
 
 def meta(c):
-    m = base.ev(c, "({dpr: devicePixelRatio, iw: innerWidth, ih: innerHeight, scale: visualViewport.scale})")
+    m = base.ev(c, "({dpr: devicePixelRatio, iw: innerWidth, ih: innerHeight, ow: outerWidth, oh: outerHeight, scale: visualViewport.scale})")
     if m["dpr"] != DSF or m["scale"] != 1:
         raise RuntimeError("UNMEASURED: devicePixelRatio %s, page scale %s (need %s and 1)" % (m["dpr"], m["scale"], DSF))
     return m
@@ -202,8 +214,10 @@ def grid_rows():
     else:
         (ox, fx), (oy, fy) = fractions([e["x"] for e in pm], m["dpr"]), fractions([e["y"] for e in pm], m["dpr"])
         frac = (fx, fy)
-        judge(R2, len(pm) == 30 and ox == 0 and oy == 0 and lattice_fraction(fx) and lattice_fraction(fy),
-              "row2 n=%d dpr=%s off_share x=%.2f y=%.2f modal fraction x=%.3f y=%.3f" % (len(pm), m["dpr"], ox, oy, fx, fy))
+        ex, ey = (-DSF * (m["ow"] - m["iw"]) / 2) % 1.0, (-DSF * (m["oh"] - m["ih"])) % 1.0
+        judge(R2, len(pm) == 30 and ox == 0 and oy == 0 and circ(fx, ex) <= EPS and circ(fy, ey) <= EPS,
+              "row2 n=%d dpr=%s off_share x=%.2f y=%.2f modal fraction x=%.3f y=%.3f, from the page's geometry x=%.3f y=%.3f" % (
+                  len(pm), m["dpr"], ox, oy, fx, fy, ex, ey))
     try:
         m, pm = run_moves(HUM_GRID, [(600.37, 150.61), (200.37, 380.61), (650.37, 350.61)])
     except Exception as exc:  # noqa: BLE001
@@ -234,9 +248,9 @@ def blink_half_row():
           "row4 pointermove<0 %s mousemove<0 %s" % ([e["x"] for e in pm], [e["x"] for e in mm]))
 
 
-def crossing_row():
+def crossing_row(config, name):
     try:
-        with browser(HUM_CROSS) as proc:
+        with browser(config) as proc:
             c, _ = base.open_page(proc)
             m = meta(c)
             y = float(round(m["ih"] / 2))
@@ -250,15 +264,49 @@ def crossing_row():
             time.sleep(0.4)
             ev = base.log(c)
     except Exception as exc:  # noqa: BLE001
-        unmeasured([R5], exc)
+        unmeasured([name], exc)
         return
     out = outside(ev, m["iw"], m["ih"])
     left = [e for e in out if e["x"] < 0]
     ex = [s for s, rt in exits(ev) if s == EXIT and rt]
     overs = [e for e in ev if e["t"] == "pointerover"]
-    judge(R5, not out and len(ex) == 50 and len(overs) == 50,
-          "row5 outside=%d (left %d, values %s) exits=%d pointerovers=%d" % (
+    judge(name, not out and len(ex) == 50 and len(overs) == 50,
+          "row5/9 outside=%d (left %d, values %s) exits=%d pointerovers=%d" % (
               len(out), len(left), sorted({round(e["x"], 2) for e in out})[:6], len(ex), len(overs)))
+
+
+def right_edge_row():
+    """A point just inside the right edge whose plain lattice snap lands at or past it (iw 803: 802.9 -> 803.2). innerWidth
+    follows the window width unevenly, so launch widths until one has such a point; none within the range is UNMEASURED."""
+    ev = m = want = None
+    try:
+        for width in range(796, 812):
+            with browser(GRID, window="%d,600" % width) as proc:
+                c, _ = base.open_page(proc)
+                m = meta(c)
+                ox = (m["ow"] - m["iw"]) / 2
+                v = m["iw"] - 0.1
+                plain = round((v + ox) * DSF) / DSF - ox
+                if plain < m["iw"]:
+                    continue
+                want = plain - 1 / DSF  # one lattice step inside
+                y = float(round(m["ih"] / 2))
+                base.move(c, 300.0, y)
+                time.sleep(0.2)
+                take(c, ("pointermove",))
+                base.ev(c, "window.__log = []")
+                base.move(c, v, y)
+                time.sleep(0.3)
+                ev = base.log(c)
+                break
+        if ev is None:
+            raise RuntimeError("UNMEASURED: no window width 796..811 has a point inside the right edge that snaps out")
+    except Exception as exc:  # noqa: BLE001
+        unmeasured([R8], exc)
+        return
+    pm = [e for e in ev if e["t"] == "pointermove"]
+    judge(R8, len(pm) == 1 and abs(pm[0]["x"] - want) < 1e-3 and not outside(ev, m["iw"], m["ih"]) and not exits(ev),
+          "row8 iw=%s sent %.1f want %.1f got %s" % (m["iw"], m["iw"] - 0.1, want, [e["x"] for e in pm]))
 
 
 def edge_rows():
@@ -293,8 +341,10 @@ def main():
         return 0
     grid_rows()
     blink_half_row()
-    crossing_row()
+    crossing_row(HUM_CROSS, R5)
+    crossing_row(HUM_CROSS_RAW, R9)
     edge_rows()
+    right_edge_row()
     for r in ROWS:
         print("%-10s %s" % (results.get(r, "UNMEASURED"), r))
     for n in notes:

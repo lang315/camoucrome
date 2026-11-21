@@ -232,11 +232,30 @@ TEST(MouseTrajectoriesTest, SnapToDeviceGridLandsOnTheLattice) {
               1e-9);
 }
 
-TEST(MouseTrajectoriesTest, SnapToDeviceGridOfADeliveredPointsLattice) {
-  // An interior point snaps onto the lattice of the delivered end `e`.
-  const double e = 99.2;  // a lattice point at dsf 1.25
-  double q = e + SnapToDeviceGrid(57.31 - e, 1.25f, 0);
-  EXPECT_NEAR((q - e) * 1.25, std::round((q - e) * 1.25), 1e-9);
+TEST(MouseTrajectoriesTest, SnapToDeviceGridKeepsAnInsidePointInside) {
+  // 800 DIP at 1.25 is 1000 device px: 799.7 rounds to 800, outside [0, 800).
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(799.7, 1.25f, 0, 0), 800.0);  // no extent
+  EXPECT_NEAR(SnapToDeviceGrid(799.7, 1.25f, 0, 800), 799.2, 1e-9);
+  // The low edge: with origin -2 the lattice has -0.4 and 0.4; 0 rounds down
+  // (half away from zero, on a negative product) to -0.4, outside.
+  EXPECT_NEAR(SnapToDeviceGrid(0.0, 1.25f, -2, 800), 0.4, 1e-9);
+  // A point that was outside stays where the plain snap puts it.
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(-3.7, 1.25f, 0, 800), -4.0);
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(803.7, 1.25f, 0, 800), 804.0);
+  // Every inside input gives an inside lattice point, whatever the origin.
+  for (double origin : {0.0, 3.0, -2.0, 87.0}) {
+    for (int i = 0; i < 4000; ++i) {
+      double v = i * 0.2 + 0.01;
+      if (v >= 800) {
+        break;
+      }
+      double s = SnapToDeviceGrid(v, 1.25f, origin, 800);
+      EXPECT_GE(s, 0) << v << " o=" << origin;
+      EXPECT_LT(s, 800) << v << " o=" << origin;
+      EXPECT_NEAR((s + origin) * 1.25, std::round((s + origin) * 1.25), 1e-9)
+          << v << " o=" << origin;
+    }
+  }
 }
 
 TEST(MouseTrajectoriesTest, SnapToDeviceGridLeavesUnusableInputAlone) {

@@ -219,12 +219,23 @@ WheelNotches QuantizeWheel(double delta_x, double delta_y) {
   return {axis(delta_x), axis(delta_y)};
 }
 
-double SnapToDeviceGrid(double v, float dsf, double origin) {
+double SnapToDeviceGrid(double v,
+                        float dsf,
+                        double origin,
+                        double extent) {
   if (!std::isfinite(v) || !std::isfinite(dsf) || dsf <= 0.0f ||
       !std::isfinite(origin)) {
     return v;
   }
-  return std::round((v + origin) * dsf) / dsf - origin;
+  double snapped = std::round((v + origin) * dsf) / dsf - origin;
+  if (std::isfinite(extent) && extent > 0 && v >= 0 && v < extent) {
+    if (snapped < 0) {
+      snapped += 1.0 / dsf;
+    } else if (snapped >= extent) {
+      snapped -= 1.0 / dsf;
+    }
+  }
+  return snapped;
 }
 
 bool PointInView(gfx::PointF p, gfx::SizeF size) {

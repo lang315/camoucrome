@@ -350,7 +350,7 @@ func nativeConfig(o Options, hostOS string) (any, error) {
 	}
 	if _, a := m[NativeFontsDrop[0]]; !a {
 		if _, b := m[NativeFontsDrop[1]]; !b {
-			return o.Config, nil // nothing to drop: the original value, not a re-encoding
+			return o.Config, nil // nothing to drop: as given (build_env/BuildEnv adds the defaults and re-encodes)
 		}
 	}
 	out := map[string]any{}

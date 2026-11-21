@@ -211,6 +211,11 @@ def judge(row, ctl, arm_logs):
             why = presence(lg, row)
             if why:
                 return {"_": ("UNMEASURED", why)}
+    if row == "I3":   # the view origin (the lattice fractions) moves with the chrome above the page: an infobar changes it
+        chrome = lambda lg: lg["meta"].get("oh", 0) - lg["meta"].get("ih", 0)
+        ctl_h, arm_h = {chrome(lg) for logs in groups.values() for lg in logs}, {chrome(lg) for lg in arm_logs}
+        if not arm_h <= ctl_h:
+            return {"_": ("UNMEASURED", f"outerHeight - innerHeight differs: control {sorted(ctl_h)}, arm {sorted(arm_h)} (an infobar? the view origin is not the control's)")}
     am = [ROWS[row](lg) for lg in arm_logs]
     gm = {g: [ROWS[row](lg) for lg in logs] for g, logs in groups.items()}
     out, by_group = {}, {g: [] for g in groups}
