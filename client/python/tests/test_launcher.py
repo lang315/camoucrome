@@ -69,6 +69,25 @@ class FakePlaywright:
     chromium = FakeChromium()
 
 
+def test_launch_hands_the_browser_strict_by_default_and_unset_with_lax(monkeypatch):
+    # what the browser process receives (the env kwarg of launch_persistent_context), not build_env's return
+    monkeypatch.setenv("CAMOU_CONFIG_STRICT", "0")
+    pw = FakePlaywright()
+    camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p")
+    assert pw.chromium.kw["env"]["CAMOU_CONFIG_STRICT"] == "1"
+    monkeypatch.setenv("CAMOU_CONFIG_STRICT", "1")
+    camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p", lax=True)
+    assert "CAMOU_CONFIG_STRICT" not in pw.chromium.kw["env"]
+    with pytest.raises(ValueError, match="strict.*lax"):
+        camoucrome.launch(pw, "/x/chrome", config={"a": 1}, user_data_dir="/tmp/p", strict=True, lax=True)
+
+
+def test_launch_refuses_a_caller_env():
+    # env would replace the whole child environment, CAMOU_CONFIG* and CAMOU_CONFIG_STRICT with it
+    with pytest.raises(ValueError, match="env"):
+        camoucrome.launch(FakePlaywright(), "/x/chrome", config={"a": 1}, env={"PATH": "/bin"})
+
+
 def test_launch_refuses_forbidden_options():
     with pytest.raises(ValueError, match="timezone_id"):
         camoucrome.launch(FakePlaywright(), "/x/chrome", timezone_id="UTC")

@@ -139,7 +139,7 @@ func runCase(ctx context.Context, exe, fonts string, strict bool, red string, id
 func main() {
 	exe := flag.String("exe", "", "browser binary")
 	n := flag.Int("n", 10, "identities (each runs against 4 exits)")
-	strict := flag.Bool("strict", true, "CAMOU_CONFIG_STRICT=1")
+	strict := flag.Bool("strict", true, "default true: CAMOU_CONFIG_STRICT=1; false runs the fork lax (the variable unset), which hides the refusals this check counts")
 	red := flag.String("red", "", "tz or rtc: fail on purpose")
 	flag.Parse()
 	if *exe == "" {

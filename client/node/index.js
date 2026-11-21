@@ -21,7 +21,7 @@ const { pinned } = require('./pin');
 const FORBIDDEN_OPTIONS = new Set([
   'locale', 'timezoneId', 'userAgent', 'viewport', 'screen',
   'deviceScaleFactor', 'geolocation', 'colorScheme', 'extraHTTPHeaders',
-  'hasTouch', 'isMobile',
+  'hasTouch', 'isMobile', 'env',
 ]);
 const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
 // Mirrors settings/launcher.json "launch.light_args": approach B's kept flags, appended after BASE_ARGS when light is on.
@@ -303,6 +303,10 @@ async function launch(chromium, executablePath, {
         + '(username and password are separate keys; argv is visible to every process)');
     }
     options.proxy = proxy;
+  }
+  if ('env' in options) {
+    throw new Error('env replaces the whole child environment, CAMOU_CONFIG* and CAMOU_CONFIG_STRICT with it, '
+      + 'and the browser would run unspoofed: the launcher builds the env');
   }
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {

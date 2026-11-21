@@ -256,12 +256,14 @@ err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
 
 Every launcher starts the browser with `CAMOU_CONFIG_STRICT=1`: a config the browser cannot take refuses to
 start instead of running with the real values. An incoherent config exits with code 13; a malformed one (not
-JSON) crashes with a `CHECK` (about `0x80000003` on Windows), so a caller maps both. `strict=True` is kept
+JSON) crashes with a `CHECK` (about `0x80000003` on Windows). A caller sees both as a failed start: under
+Playwright/patchright `launch` throws and the message carries `exitCode=13` (or the crash code); with rodclient
+`Launch` succeeds and the first CDP call returns `EOF` plus the browser stderr tail, within about 2 s. `strict=True` is kept
 for compatibility and changes nothing. To opt out, pass `lax=True` (Python, Node) or `Lax: true` (Go
 `Options`, `core.LaunchOpts`; the probes take `--lax`): the variable is then left unset, also when the parent
 environment had one. Strict together with lax is an error. The fork reads the variable as a switch in one
 place (`has_value()`), so `CAMOU_CONFIG_STRICT=0` in your own environment is not an opt-out for the launchers:
-they overwrite it.
+they overwrite it. A caller `env` option is refused (it would replace the whole child environment).
 
 ## Known limits
 

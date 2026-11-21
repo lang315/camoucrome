@@ -143,6 +143,26 @@ test('launch refuses forbidden options and uses a persistent context without vie
     '--remote-debugging-pipe', '--user-data-dir=/tmp/p', '--window-size=800,600']);
 });
 
+test('the browser process receives strict by default and no variable with lax; a caller env is refused', async () => {
+  const calls = [];
+  const ctx = { on: () => {}, close: async () => {} };
+  const chromium = { launchPersistentContext: async (dir, opts) => { calls.push(opts); return ctx; } };
+  const prev = process.env.CAMOU_CONFIG_STRICT;
+  try {
+    process.env.CAMOU_CONFIG_STRICT = '0';
+    await c.launch(chromium, '/x/chrome', { config: { a: 1 }, userDataDir: '/tmp/p' });
+    process.env.CAMOU_CONFIG_STRICT = '1';
+    await c.launch(chromium, '/x/chrome', { config: { a: 1 }, userDataDir: '/tmp/p', lax: true });
+  } finally {
+    if (prev === undefined) delete process.env.CAMOU_CONFIG_STRICT; else process.env.CAMOU_CONFIG_STRICT = prev;
+  }
+  assert.equal(calls[0].env.CAMOU_CONFIG_STRICT, '1');
+  assert.equal('CAMOU_CONFIG_STRICT' in calls[1].env, false);
+  await assert.rejects(c.launch(chromium, '/x/chrome', { config: { a: 1 }, strict: true, lax: true }), /strict.*lax/);
+  await assert.rejects(c.launch(chromium, '/x/chrome', { config: { a: 1 }, env: { PATH: '/bin' } }), /env/);
+  assert.equal(calls.length, 2);
+});
+
 test('fontconfig follows the claimed OS and the contract', () => {
   assert.deepEqual(c.FONTCONFIG_FILES, L.fontconfig.files);
   assert.equal(L.fontconfig.env, 'FONTCONFIG_FILE');

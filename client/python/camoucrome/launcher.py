@@ -16,7 +16,7 @@ from . import pin
 FORBIDDEN_OPTIONS = frozenset({
     "locale", "timezone_id", "user_agent", "viewport", "screen",
     "device_scale_factor", "geolocation", "color_scheme", "extra_http_headers",
-    "has_touch", "is_mobile",
+    "has_touch", "is_mobile", "env",
 })
 
 BASE_ARGS = ["--no-first-run", "--no-default-browser-check"]
@@ -339,6 +339,9 @@ def launch(playwright, executable_path, *, config=None, preset=None,
             raise ValueError("proxy must be a dict with a 'server' URL and no credentials in it "
                              "(username and password are separate keys; argv is visible to every process)")
         options["proxy"] = proxy
+    if "env" in options:
+        raise ValueError("env replaces the whole child environment, CAMOU_CONFIG* and CAMOU_CONFIG_STRICT "
+                         "with it, and the browser would run unspoofed: the launcher builds the env")
     bad = FORBIDDEN_OPTIONS.intersection(options)
     if bad:
         raise ValueError(

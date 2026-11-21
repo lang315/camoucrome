@@ -20,7 +20,7 @@
   }
  },
  "forbidden_context_options": {
-  "why": "Each duplicates a CAMOU_CONFIG key. A second emulation of the same surface either fails (timezone: kAlreadyInEffect) or silently overrides the fork's value. has_touch / is_mobile emulate touch points and a mobile viewport over navigator.maxTouchPoints and the claimed OS.",
+  "why": "Each duplicates a CAMOU_CONFIG key. A second emulation of the same surface either fails (timezone: kAlreadyInEffect) or silently overrides the fork's value. has_touch / is_mobile emulate touch points and a mobile viewport over navigator.maxTouchPoints and the claimed OS. env is not a config key: a caller's env would replace the whole child environment, CAMOU_CONFIG* and CAMOU_CONFIG_STRICT with it, and the browser would run unspoofed.",
   "options": [
    "locale",
    "timezone_id",
@@ -32,7 +32,8 @@
    "color_scheme",
    "extra_http_headers",
    "has_touch",
-   "is_mobile"
+   "is_mobile",
+   "env"
   ]
  },
  "launch": {
