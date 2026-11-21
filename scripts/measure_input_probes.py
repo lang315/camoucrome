@@ -544,8 +544,8 @@ def cmd_report(a):
             if "_" in v:
                 lines.append(f"| {row} | {arm} | {len(good)} | UNMEASURED | {v['_'][1]} |")
                 continue
-            det = "; ".join(f"{k}={x[0]} {x[1]} [{x[2]}]" for k, x in v.items())
-            lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | {det} |")
+            det = "; ".join(f"{k}={x[0]} {x[1]} [{x[2]}]" for k, x in v.items() if k != "_row")
+            lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
     lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame): I1's live RED is rawh; the planted case is the "
               "synthetic fixture. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
     text = "\n".join(lines)

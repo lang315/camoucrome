@@ -198,6 +198,22 @@ class Judging(unittest.TestCase):
         self.assertIn("ctl125: FAIL", v["coalesced_max"][2])
         self.assertIn("ctl1000: PASS", v["coalesced_max"][2])
 
+    def test_mixed_rates_do_not_pass_the_row(self):
+        """an arm with the coalesced count of 1000 Hz but the coalesced SHARE of 125 Hz matches one rate per metric and no
+        real mouse: each metric passes against some group, the row must FAIL"""
+        def pms(cs, share, n=40):   # `share` of the moves carry cs samples, the rest 1
+            k = int(n * share)
+            return [ev("pointermove", i * F, cs=cs if i < k else 1, ps=0) for i in range(n)]
+        groups = {"ctl125": [log(pms(3, 0.9)) for _ in range(4)], "ctl1000": [log(pms(17, 0.2)) for _ in range(4)]}
+        mix = [log(pms(17, 0.9)) for _ in range(4)]       # max 17 as ctl1000, share .9 as ctl125
+        v = R.judge("I2", groups, mix)
+        self.assertEqual(v["coalesced_max"][0], "PASS")
+        self.assertEqual(v["multi"][0], "PASS")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        # one consistent rate passes
+        self.assertEqual(R.row_verdict(R.judge("I2", groups, [log(pms(3, 0.9)) for _ in range(4)])), "PASS")
+        self.assertEqual(R.row_verdict(R.judge("I2", groups, [log(pms(17, 0.2)) for _ in range(4)])), "PASS")
+
     def test_a_wide_control_share_cannot_fail(self):
         v, note = R.metric_verdict("share", 0.1, [0.0, 0.3, 0.6, 0.9], [0.99] * 4)
         self.assertEqual(v, "UNMEASURED")

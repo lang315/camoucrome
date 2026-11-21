@@ -190,10 +190,12 @@ def presence(log, row):
 
 
 def judge(row, ctl, arm_logs):
-    """Per metric: (verdict, arm values, note). ctl: {group: logs} (a control per pointer rate, never pooled) or a list for
-    one group. An arm PASSes a metric when it matches ANY control group (a page cannot know a mouse's rate), FAILs when it
-    matches none, and the metric is UNMEASURED when no group could judge it. A run with the surface missing makes the whole
-    row UNMEASURED: {"_": ("UNMEASURED", why)}."""
+    """Per metric: (verdict, arm values, note); plus "_row": the row's verdict. ctl: {group: logs} (a control per pointer rate,
+    never pooled) or a list for one group. The ROW is judged per group: a group PASSes the row only when it passes EVERY
+    judged metric, because the metrics of one pointer must agree on one polling rate (an arm that matches 125 Hz on one metric
+    and 1000 Hz on another is no mouse). The row PASSes when one group does, FAILs when none does and some group fails it,
+    else it is UNMEASURED. A metric's own verdict is the best any group gives it and is for reading only. A run with the
+    surface missing makes the whole row UNMEASURED: {"_": ("UNMEASURED", why)}."""
     groups = ctl if isinstance(ctl, dict) else {"ctl": ctl}
     for logs in (*groups.values(), arm_logs):
         for lg in logs:
@@ -201,17 +203,24 @@ def judge(row, ctl, arm_logs):
             if why:
                 return {"_": ("UNMEASURED", why)}
     am = [ROWS[row](lg) for lg in arm_logs]
-    out = {}
+    gm = {g: [ROWS[row](lg) for lg in logs] for g, logs in groups.items()}
+    out, by_group = {}, {g: [] for g in groups}
     for name, (kind, floor) in SPEC[row].items():
         a = [x[name] if x else None for x in am]
-        per = {g: metric_verdict(kind, floor, [x[name] if x else None for x in (ROWS[row](lg) for lg in logs)], a)
-               for g, logs in groups.items()}
+        per = {g: metric_verdict(kind, floor, [x[name] if x else None for x in cm], a) for g, cm in gm.items()}
+        for g, (v, _) in per.items():
+            by_group[g].append(v)
         vs = [v for v, _ in per.values()]
         verdict = "INFO" if kind == "info" else "PASS" if "PASS" in vs else "FAIL" if "FAIL" in vs else "UNMEASURED"
         out[name] = (verdict, a, "; ".join(f"{g}: {v} {n}".strip() for g, (v, n) in per.items()))
+    rows = {g: "FAIL" if "FAIL" in vs else "UNMEASURED" if "UNMEASURED" in vs else "PASS" for g, vs in by_group.items()}
+    row_v = "PASS" if "PASS" in rows.values() else "FAIL" if "FAIL" in rows.values() else "UNMEASURED"
+    out["_row"] = (row_v, None, "; ".join(f"{g}: {v}" for g, v in rows.items()))
     return out
 
 
 def row_verdict(per_metric):
+    if "_row" in per_metric:
+        return per_metric["_row"][0]
     v = [x[0] for x in per_metric.values()]
     return "FAIL" if "FAIL" in v else "UNMEASURED" if "UNMEASURED" in v else "PASS"
