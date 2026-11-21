@@ -119,7 +119,7 @@ class H(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def probe(url, config=None, fonts_dir=None):
+def probe(url, config=None, fonts_dir=None, lax=False):
     env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
     env["PLAYWRIGHT_NODEJS_PATH"] = NODE
     cmd = [PY, "-m", "camoucrome.probe", "--driver", "patchright", "--executable", EXE, "--url", url]
@@ -127,6 +127,8 @@ def probe(url, config=None, fonts_dir=None):
         cmd += ["--config", json.dumps(config)]
     if fonts_dir:
         cmd += ["--fonts-dir", fonts_dir]
+    if lax:  # strict is the default; F7 measures the non-strict start
+        cmd.append("--lax")
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=180, env=env)
     if p.returncode != 0:
         sys.exit(f"probe failed: {p.stderr[-600:]}")
@@ -223,7 +225,7 @@ def main():
         notes.append("F4 gen: " + gen.stderr[-300:])
     H.body = page(["Segoe UI", "A", "B"])
     try:
-        r = probe(url, {**WIN, "fonts:alias": {"A": "B", "B": "A", "Segoe UI": "A"}}, fd)
+        r = probe(url, {**WIN, "fonts:alias": {"A": "B", "B": "A", "Segoe UI": "A"}}, fd, lax=True)
         ok = "resolves" in r
     except SystemExit as e:  # probe() exits when chrome dies or the page never reports
         ok, r = False, None
