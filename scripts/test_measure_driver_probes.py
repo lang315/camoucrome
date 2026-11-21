@@ -24,7 +24,8 @@ if u.path == "/l9.html":
     q = urllib.parse.parse_qs(u.query)
     frame = "    at HTMLInputElement.<anonymous> (http://127.0.0.1:%d/l9.html?arm=x&run=y:1:1)" % port
     stack = "Error\n" + frame + ("\n    at pptr:footprint:1:1" if arm == LEAK else "")
-    fires = [{"type": t, "stack": stack, "sites": [], "script": "null"} for t in @EVENTS@]
+    T = @TARGET@
+    fires = [{"type": t, "target": T[t], "stack": stack, "sites": [], "script": "null"} for t in @EVENTS@]
     urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:%d/result?arm=%s&run=%s" % (port, q["arm"][0], q["run"][0]), json.dumps(fires).encode()))
 if u.path == "/h.html":
     cond = urllib.parse.parse_qs(u.query)["c"][0]
@@ -55,9 +56,9 @@ if driver:
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    from driver_probes_rows import EVENTS
+    from driver_probes_rows import EVENTS, TARGET
     fake = tmp_path / "fake.py"
-    fake.write_text(FAKE.replace("@EVENTS@", repr(list(EVENTS))))
+    fake.write_text(FAKE.replace("@EVENTS@", repr(list(EVENTS))).replace("@TARGET@", repr(TARGET)))
     exe = tmp_path / "fakechrome"
     exe.write_text(f"#!{sys.executable}\nimport runpy\nrunpy.run_path({str(fake)!r}, run_name='__main__')\n")
     exe.chmod(0o755)

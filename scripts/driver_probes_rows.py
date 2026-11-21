@@ -51,20 +51,31 @@ OWNER = {"focus": "focus", "blur": "blur", "input": "type", "keydown": "type", "
          "pointerdown": "click", "change": "blur", "select": "select", "scroll": "scroll"}
 
 
+# The element the owning action acts on. A fire counts for a row only if its recorded target is this one: otherwise the
+# action returned ok: but another action's side effect (a click focuses #btn) fired the event, a borrowed fire.
+TARGET = {"focus": "a", "blur": "a", "input": "a", "keydown": "a", "click": "btn", "mousedown": "btn", "pointerdown": "btn",
+          "change": "a", "select": "a", "scroll": "sc"}
+
+
+def owned(event, fires):
+    return [f for f in fires or [] if f.get("target") == TARGET[event]]
+
+
 def action_ok(acts, event):
     return str((acts or {}).get(OWNER[event], "")).startswith("ok:")
 
 
 def judge_stack_row(event, results, acts=None, red="red", control="control"):
     """results: arm -> {event: [fires]} or None. acts: arm -> {action: status}; None = not gated (unit use).
-    A cell whose owning action did not report ok: is UNMEASURED, and a control whose action did not run voids the row.
+    A cell whose owning action did not report ok:, or that has no fire on the owning action's target, is UNMEASURED, and a control whose action did not run voids the row.
     The red arm must FAIL the row itself, else every arm is UNMEASURED."""
     ctl = (results.get(control) or {}).get(event)
-    if acts is not None and not action_ok(acts.get(control), event):
+    if acts is not None and not (action_ok(acts.get(control), event) and owned(event, ctl)):
         ctl = None
     out = {a: judge_stack(ctl, (r or {}).get(event)) for a, r in results.items() if a != control}
     if acts is not None:
-        out = {a: (v if action_ok(acts.get(a), event) else UNMEASURED) for a, v in out.items()}
+        out = {a: (v if action_ok(acts.get(a), event) and owned(event, (results[a] or {}).get(event)) else UNMEASURED)
+               for a, v in out.items()}
     if out.get(red) != FAIL:
         return {a: UNMEASURED for a in out}
     return out

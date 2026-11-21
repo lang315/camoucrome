@@ -6,8 +6,8 @@ import driver_probes_rows as r  # noqa: E402
 from cdp_footprint_rows import FAIL, PASS, UNMEASURED  # noqa: E402
 
 
-def fire(*frames, sites=None, script=None):
-    return {"type": "focus", "stack": "Error\n" + "\n".join(frames), "sites": sites or [], "script": script}
+def fire(*frames, sites=None, script=None, target="a"):
+    return {"type": "focus", "target": target, "stack": "Error\n" + "\n".join(frames), "sites": sites or [], "script": script}
 
 
 LISTENER = "    at HTMLInputElement.<anonymous> (http://127.0.0.1:5001/l9.html?arm=a&run=r1:12:9)"
@@ -109,3 +109,14 @@ def test_required_header_compares_against_the_reference_override():
     assert r.judge_headers([raw, raw], [["Host", "x-a", "X-Probe"]] * 2, required="X-Probe")[0] == FAIL
     assert r.judge_headers([raw, raw], [["Host", "X-A"]] * 2, required="X-Probe")[0] == FAIL
     assert r.judge_headers([["Host"]] * 2, [raw, raw], required="X-Probe")[0] == UNMEASURED
+
+
+def test_borrowed_fire_is_unmeasured():
+    # FocusE returned ok: but fired nothing on #a; a click on #btn fired focus there. That fire is not the focus action's.
+    ok = {"focus": "ok:x"}
+    acts = {"control": ok, "tdp": ok, "red": ok}
+    res = {"control": {"focus": [fire(LISTENER)]}, "tdp": {"focus": [fire(LISTENER, target="btn")]},
+           "red": {"focus": [fire(LISTENER, DRIVER)]}}
+    assert r.judge_stack_row("focus", res, acts) == {"tdp": UNMEASURED, "red": FAIL}
+    res["control"] = {"focus": [fire(LISTENER, target="btn")]}  # a borrowed control fire voids the row too
+    assert r.judge_stack_row("focus", res, acts) == {"tdp": UNMEASURED, "red": UNMEASURED}
