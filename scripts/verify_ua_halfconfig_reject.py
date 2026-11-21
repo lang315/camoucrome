@@ -85,9 +85,16 @@ def expect_starts_silent(name, config):
                  f"{type(err).__name__}: {err}")
 
 
-def expect_strict_exit_13(name, config, refusal=REFUSAL, raw=None, preset=None, forbid=None):
+# chrome is a different startup path from content_shell: it reads the configuration earlier (the pref store, from
+# CreateFeatureList, before BrowserMainLoop::EarlyInitialization), and with no --accept-lang flag. A row that must hold
+# there runs on it, with the flags a raw or fhtool launch has (none beyond headless).
+CHROME_ARGS = {"shell": lib_shell.CHROME, "extra_flags": lib_shell.CHROME_FLAGS + ["--enable-logging=stderr"]}
+
+
+def expect_strict_exit_13(name, config, refusal=REFUSAL, raw=None, preset=None, forbid=None, browser=None):
     """`raw` replaces the JSON-encoded config (a malformed one); `refusal` must be in stderr, `forbid` must not be."""
-    _, err = lib_shell.session(raw if raw is not None else json.dumps(config), ["1"], strict=True, preset=preset)
+    _, err = lib_shell.session(raw if raw is not None else json.dumps(config), ["1"], strict=True, preset=preset,
+                               **(browser or {}))
     if err is None:
         results[name] = False
         notes.append(f"{name}: browser started under CAMOU_CONFIG_STRICT=1 with "
@@ -117,9 +124,9 @@ def expect_strict_exit_13(name, config, refusal=REFUSAL, raw=None, preset=None, 
                      f"(or held the forbidden text): {stderr!r}")
 
 
-def expect_starts(name, config, strict, raw=None, must_log=None):
+def expect_starts(name, config, strict, raw=None, must_log=None, browser=None):
     """The browser starts (err is None); `strict` is the CAMOU_CONFIG_STRICT value (a string) or False."""
-    _, err = lib_shell.session(raw if raw is not None else json.dumps(config), ["1"], strict=strict)
+    _, err = lib_shell.session(raw if raw is not None else json.dumps(config), ["1"], strict=strict, **(browser or {}))
     if err is not None:
         results[name] = False
         notes.append(f"{name}: expected a start, got {type(err).__name__}: {err}")
@@ -168,7 +175,17 @@ expect_strict_exit_13("UH-BADJSON-STRICT '{' under strict exits 13 with a strict
                       None, raw="{", refusal=MALFORMED_REFUSAL, forbid=IGNORED_LINE)
 expect_strict_exit_13("UH-NOTOBJECT-STRICT '[]' under strict exits 13", None, raw="[]", refusal=MALFORMED_REFUSAL)
 expect_strict_exit_13("UH-BADPRESET-STRICT a malformed preset under strict exits 13", FULL,
-                      preset="{", refusal=MALFORMED_REFUSAL)
+                      preset="{", refusal=MALFORMED_REFUSAL, forbid="preset is not a JSON object; ignored")
+# The same on chrome (review of #242: the check was in EarlyInitialization, which chrome reaches after it has already
+# CHECK-aborted in the pref store; content_shell never did). RED on a build with the check only there.
+expect_strict_exit_13("UH-CHROME-BADJSON-STRICT chrome: '{' under strict, no --accept-lang, exits 13",
+                      None, raw="{", refusal=MALFORMED_REFUSAL, forbid=IGNORED_LINE, browser=CHROME_ARGS)
+expect_strict_exit_13("UH-CHROME-BADPRESET-STRICT chrome: a malformed preset under strict exits 13", FULL,
+                      preset="{", refusal=MALFORMED_REFUSAL, browser=CHROME_ARGS)
+expect_starts("UH-CHROME-STRICT-ZERO chrome: ua:platform without ua:osInfo, CAMOU_CONFIG_STRICT=0, starts",
+              PLATFORM_ONLY, "0", browser=CHROME_ARGS)
+expect_starts("UH-CHROME-BADJSON-STRICT-ZERO chrome: '{' under CAMOU_CONFIG_STRICT=0 starts", None, "0", raw="{",
+              browser=CHROME_ARGS)
 # non-strict is unchanged: a malformed configuration is ignored with the old wording, and the browser starts.
 expect_starts("UH-BADJSON-LAX '{' without strict starts and says its keys are ignored", None, False,
               raw="{", must_log=IGNORED_LINE)

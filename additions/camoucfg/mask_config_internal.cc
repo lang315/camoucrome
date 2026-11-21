@@ -86,6 +86,14 @@ bool ConfigsParse(EnvGetter get) {
   return ok;
 }
 
+bool ShouldRefuseMalformedConfig() {
+  std::unique_ptr<base::Environment> env = base::Environment::Create();
+  return IsStrictValue(env->GetVar("CAMOU_CONFIG_STRICT")) &&
+         !ConfigsParse([&env](const std::string& name) {
+           return env->GetVar(name);
+         });
+}
+
 base::DictValue ParseConfig(std::string_view raw, bool strict) {
   if (raw.empty()) {
     return base::DictValue();

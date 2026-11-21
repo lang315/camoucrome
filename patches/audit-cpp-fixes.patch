@@ -1,5 +1,60 @@
+diff --git a/content/app/BUILD.gn b/content/app/BUILD.gn
+index d9b662aab3..89d9a8e879 100644
+--- a/content/app/BUILD.gn
++++ b/content/app/BUILD.gn
+@@ -69,6 +69,7 @@ source_set("content_main_runner_app") {
+ 
+   configs += extra_configs
+   deps = content_app_deps + [
++           "//components/camoucfg",
+            "//components/power_monitor",
+            "//content/browser",
+            "//content/gpu:gpu_sources",
+diff --git a/content/app/DEPS b/content/app/DEPS
+index 45363f3784..d22425ee31 100644
+--- a/content/app/DEPS
++++ b/content/app/DEPS
+@@ -1,6 +1,7 @@
+ include_rules = [
+   "+aidl/org/chromium/base/process_launcher",
+   "+chromeos/startup",
++  "+components/camoucfg/mask_config_internal.h",
+   "+components/discardable_memory",
+   "+components/download",
+   "+components/embedder_support/switches.h",
+diff --git a/content/app/content_main_runner_impl.cc b/content/app/content_main_runner_impl.cc
+index ea24446519..ca41ea940c 100644
+--- a/content/app/content_main_runner_impl.cc
++++ b/content/app/content_main_runner_impl.cc
+@@ -59,6 +59,7 @@
+ #include "base/trace_event/trace_event.h"
+ #include "build/branding_buildflags.h"
+ #include "build/build_config.h"
++#include "components/camoucfg/mask_config_internal.h"
+ #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
+ #include "components/download/public/common/download_task_runner.h"
+ #include "components/power_monitor/make_power_monitor_device_source.h"
+@@ -864,6 +865,18 @@ int ContentMainRunnerImpl::Initialize(ContentMainParams params) {
+   std::string process_type =
+       command_line.GetSwitchValueASCII(switches::kProcessType);
+ 
++  // Camoucrome: refuse a malformed CAMOU_CONFIG / CAMOU_PRESET under
++  // CAMOU_CONFIG_STRICT here, before anything reads the configuration (chrome's
++  // pref store does so in PostEarlyInitialization's CreateFeatureList, ahead of
++  // BrowserMainLoop::EarlyInitialization), with an exit code rather than the
++  // CHECK in ParsedConfig. Browser process only: a child exists only if this
++  // check passed in its parent.
++  if (process_type.empty() && camoucfg::internal::ShouldRefuseMalformedConfig()) {
++    LOG(ERROR) << "camoucfg: the configuration is malformed and "
++                  "CAMOU_CONFIG_STRICT is set; refusing to start.";
++    return camoucfg::internal::kExitCodeBadConfig;
++  }
++
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+   // Must run while the process is still single-threaded, i.e. before the
+   // thread pool (and, in Chrome, the stack sampling profiler) is created below.
 diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
-index 7573be151d..42cef3412a 100644
+index 7573be151d..2cf8702de6 100644
 --- a/content/browser/browser_main_loop.cc
 +++ b/content/browser/browser_main_loop.cc
 @@ -65,6 +65,7 @@
@@ -10,34 +65,7 @@ index 7573be151d..42cef3412a 100644
  #include "components/discardable_memory/service/discardable_shared_memory_manager.h"
  #include "components/memory_pressure/multi_source_memory_pressure_monitor.h"
  #include "components/power_monitor/make_power_monitor_device_source.h"
-@@ -565,6 +566,26 @@ bool UaMetadataKeyHasValue(std::string_view key) {
- int BrowserMainLoop::EarlyInitialization() {
-   TRACE_EVENT0("startup", "BrowserMainLoop::EarlyInitialization");
- 
-+  // CAMOU_CONFIG_STRICT with a configuration that is not a JSON object refuses
-+  // startup HERE, with the same exit code as the other strict refusals, before
-+  // the first parse: ParsedConfig's CHECK would otherwise abort this process
-+  // with 0x80000003. That CHECK stays as the backstop in every other process
-+  // (none can start once this one has refused).
-+  {
-+    std::unique_ptr<base::Environment> camou_env = base::Environment::Create();
-+    if (camoucfg::internal::IsStrictValue(
-+            camou_env->GetVar("CAMOU_CONFIG_STRICT")) &&
-+        !camoucfg::internal::ConfigsParse(
-+            [&camou_env](const std::string& name) {
-+              return camou_env->GetVar(name);
-+            })) {
-+      LOG(ERROR) << "camoucfg: the configuration is malformed and "
-+                    "CAMOU_CONFIG_STRICT is set; refusing to start.";
-+      constexpr int kResultCodeUnsupportedParam = 13;  // see below
-+      return kResultCodeUnsupportedParam;
-+    }
-+  }
-+
-   // Validate the configuration here, in the browser process, before any
-   // renderer exists.
-   //
-@@ -709,8 +730,8 @@ int BrowserMainLoop::EarlyInitialization() {
+@@ -709,22 +710,15 @@ int BrowserMainLoop::EarlyInitialization() {
    // their metadata-key iteration -- so its strict refusal is wired in here, with
    // its own read of the same env var. A half-configured ua: identity refuses
    // startup only under strict; below strict it is warned only, above.
@@ -48,6 +76,23 @@ index 7573be151d..42cef3412a 100644
    if (!coherent || (ua_half_configured && strict)) {
      LOG(ERROR) << "camoucfg: configuration is incoherent and "
                    "CAMOU_CONFIG_STRICT is set; refusing to start.";
+     // Not a bare 1: that is RESULT_CODE_KILLED, and reporting a deliberate,
+-    // explained refusal as a kill would misfile it in crash reporting.
+-    //
+-    // content::ResultCode is frozen -- a static_assert pins
+-    // RESULT_CODE_LAST_CODE at 5 and result_codes.h forbids new values -- so
+-    // there is no content-level code meaning "bad configuration". 13 is what
+-    // chrome::ResultCode calls RESULT_CODE_UNSUPPORTED_PARAM, and
+-    // CrashExitCodeToString(13) already prints that name, so the number is
+-    // accurate even though the symbol is out of reach from //content.
+-    constexpr int kResultCodeUnsupportedParam = 13;
+-    return kResultCodeUnsupportedParam;
++    // explained refusal as a kill would misfile it in crash reporting. See
++    // camoucfg::internal::kExitCodeBadConfig for why 13.
++    return camoucfg::internal::kExitCodeBadConfig;
+   }
+ 
+ #if BUILDFLAG(USE_ZYGOTE)
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
 index 3e9699f5bd..976991e9ea 100644
 --- a/content/browser/devtools/protocol/input_handler.cc

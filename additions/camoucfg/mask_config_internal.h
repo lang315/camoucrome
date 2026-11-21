@@ -59,6 +59,24 @@ bool IsStrictValue(const std::optional<std::string>& value);
 // other process.
 bool ConfigsParse(EnvGetter get);
 
+// The exit code of every deliberate refusal to start (strict mode with an
+// incoherent or malformed configuration). content::ResultCode is frozen (a
+// static_assert pins RESULT_CODE_LAST_CODE and result_codes.h forbids new
+// values), so there is no content-level code for "bad configuration". 13 is
+// what chrome::ResultCode calls RESULT_CODE_UNSUPPORTED_PARAM, and
+// CrashExitCodeToString(13) already prints that name.
+inline constexpr int kExitCodeBadConfig = 13;
+
+// Whether the browser process must refuse to start now: CAMOU_CONFIG_STRICT is
+// set (IsStrictValue) and CAMOU_CONFIG or CAMOU_PRESET is not a JSON object.
+// Reads the real environment. Called by ContentMainRunnerImpl::Initialize, the
+// first thing the browser process does after the command line exists, so that
+// it precedes every configuration read in chrome (ChromeCommandLinePrefStore
+// via CreateFeatureList) and in content_shell, and so the refusal is exit
+// code kExitCodeBadConfig instead of the 0x80000003 CHECK in ParsedConfig,
+// which stays as the backstop in every other process.
+bool ShouldRefuseMalformedConfig();
+
 // Parses the assembled configuration. The expected shape is a flat JSON
 // object whose keys are dotted or colon-separated strings.
 //
