@@ -138,6 +138,14 @@ class MissingProbe(unittest.TestCase):
         self.assertIsNone(v.missing_probe(["node", "probe.js"]))
 
 
+class NotApplicable(unittest.TestCase):
+    def test_only_rodclient_on_windows(self):
+        self.assertIn("no Windows transport", v.not_applicable("go-rodclient", "nt"))
+        self.assertIsNone(v.not_applicable("go-rodclient", "posix"))
+        for label in ("python-patchright", "go-patchright", "node-patchright", "go-stock"):
+            self.assertIsNone(v.not_applicable(label, "nt"))
+
+
 class FinalVerdict(unittest.TestCase):
     def test_a_failure_wins_over_a_missing_premise(self):
         self.assertEqual(v.final_verdict(False, True), "FAIL")

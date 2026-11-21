@@ -313,6 +313,15 @@ def missing_probe(cmd):
     return None
 
 
+def not_applicable(label, osname=None):
+    """Why an arm cannot exist on this OS, or None. rodclient drives the browser over --remote-debugging-pipe
+    (fds 3/4), which its Windows build refuses ("the pipe transport is unix only", internal/browser/proc_other.go),
+    so its row is neither measured nor missing there. Not UNMEASURED: no host setup can change that."""
+    if label == "go-rodclient" and (os.name if osname is None else osname) == "nt":
+        return "rodclient has no Windows transport (pipe, unix only); the row runs on the Linux box"
+    return None
+
+
 def final_verdict(verdict, unmeasured):
     """A defect is never reported as a missing premise: FAIL outranks UNMEASURED."""
     if not verdict:
@@ -333,6 +342,10 @@ def main():
     verdict = True
     unmeasured = False
     for label, expected, cmd, *opts in DRIVERS:
+        na = not_applicable(label)
+        if na:
+            print(f"N/A  {label}: {na}")
+            continue
         why = missing_probe(cmd)
         if why:
             print(f"UNMEASURED  {label}: {why}")
