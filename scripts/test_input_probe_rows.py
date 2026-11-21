@@ -1,0 +1,213 @@
+"""Tests of input_probe_rows: each row has a good log (a real-input shape), a planted bad one that must FAIL (RED), and
+the presence guard."""
+import unittest
+
+import input_probe_rows as R
+
+F = 16.7
+
+
+def ev(t, ts, x=100.0, y=100.0, now=None, **kw):
+    e = {"n": 0, "t": t, "ts": ts, "now": ts if now is None else now, "x": x, "y": y, "b": 0, "bs": 0, "d": 0, "rep": None,
+         "key": None, "rt": None, "cs": -1, "ps": -1, "tr": True, "pt": "mouse"}
+    e.update(kw)
+    return e
+
+
+def log(events, dpr=1.0, secure=True, coalesced=True):
+    ticks = [[i * F, i * F] for i in range(200)]
+    for i, e in enumerate(events):
+        e["n"] = i
+    return {"meta": {"dpr": dpr, "iw": 800, "ih": 600, "secure": secure, "coalesced_fn": coalesced}, "ev": events, "raf": ticks}
+
+
+def many(make, n=R.MIN_N):
+    return [make(i) for i in range(n)]
+
+
+def real_moves(n=60, phase=1.0, per_frame=1):
+    """One dispatch per frame, `phase` ms before the tick, whole-frame gaps."""
+    out = []
+    for i in range(1, n + 1):
+        for _ in range(per_frame):
+            out.append(ev("mousemove", i * F - 5, x=float(i * 3), y=50.0, now=i * F - phase))
+    return out
+
+
+def burst_moves(n=60):
+    """RED: every move at the same instant, several per frame."""
+    return [ev("mousemove", 100.0, x=float(i), y=50.0, now=100.0) for i in range(n)]
+
+
+class I1(unittest.TestCase):
+    def test_real(self):
+        m = R.i1(log(real_moves()))
+        self.assertEqual(m["multi"], 0)
+        self.assertEqual(m["aligned"], 1.0)
+
+    def test_red_zero_interval_fails(self):
+        ctl = [log(real_moves(phase=p)) for p in (0.5, 1.0, 1.5, 0.8)]
+        bad = many(lambda i: log(burst_moves()))
+        v = R.judge("I1", ctl, bad)
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(v["multi"][0], "FAIL")
+
+    def test_real_passes(self):
+        ctl = [log(real_moves(phase=p)) for p in (0.5, 1.0, 1.5, 0.8)]
+        self.assertEqual(R.row_verdict(R.judge("I1", ctl, many(lambda i: log(real_moves(phase=1.2))))), "PASS")
+
+
+class I2(unittest.TestCase):
+    def pm(self, cs, n=30):
+        return [ev("pointermove", i * F, cs=cs, ps=0) for i in range(n)]
+
+    def test_red_single_sample_fails(self):
+        ctl = [log(self.pm(c)) for c in (8, 16, 9, 12)]
+        v = R.judge("I2", ctl, many(lambda i: log(self.pm(1))))
+        self.assertEqual(R.row_verdict(v), "FAIL")
+
+    def test_coalesced_max_alone_fails(self):
+        """control max 3 (125 Hz) and 17 (1000 Hz) against an arm that never coalesces: the metric itself must FAIL"""
+        groups = {"ctl125": [log(self.pm(3)) for _ in range(4)], "ctl1000": [log(self.pm(17)) for _ in range(4)]}
+        v = R.judge("I2", groups, many(lambda i: log(self.pm(1))))
+        self.assertEqual(v["coalesced_max"][0], "FAIL")
+        self.assertEqual(R.judge("I2", groups, many(lambda i: log(self.pm(3))))["coalesced_max"][0], "PASS")
+
+    def test_missing_function_is_unmeasured(self):
+        v = R.judge("I2", many(lambda i: log(self.pm(8), coalesced=False)), many(lambda i: log(self.pm(8))))
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+
+
+class I3(unittest.TestCase):
+    def test_grid(self):
+        # real: whole device pixels, a fixed y offset of .25 device px
+        on = [ev("pointermove", i, x=i / 1.25, y=(i + 0.25) / 1.25) for i in range(1, 40)]
+        off = [ev("pointermove", i, x=i * 0.9 + 0.13, y=i * 0.7 + 0.31) for i in range(1, 40)]
+        self.assertLess(R.i3(log(on, dpr=1.25))["off_share"], 0.01)
+        ctl = [log(on, dpr=1.25)] * 4
+        self.assertEqual(R.row_verdict(R.judge("I3", ctl, [log(off, dpr=1.25)] * 4)), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I3", ctl, ctl)), "PASS")
+
+    def test_dpr_one_is_unmeasured(self):
+        on = [ev("pointermove", i, x=float(i), y=float(i)) for i in range(1, 40)]
+        self.assertEqual(R.row_verdict(R.judge("I3", [log(on, dpr=1.0)] * 4, [log(on, dpr=1.0)] * 4)), "UNMEASURED")
+
+
+class I4(unittest.TestCase):
+    good = ["pointerout", "pointerleave", "mouseout", "mouseleave"]
+
+    def exit(self, types, x=-5.0, rt="null"):
+        return [ev("mousemove", 0.0, x=2.0, y=50.0)] + [ev(t, 1.0, x=x, y=50.0, rt=rt) for t in types]
+
+    def test_outside_coordinates_fail(self):
+        ctl = [log(self.exit(self.good, x=0.0))] * 4
+        # control reports no coordinate outside; the arm sends a move at x=-5
+        bad = log(self.exit(self.good, x=0.0) + [ev("mousemove", 2.0, x=-5.0, y=50.0)])  # a move outside, as no real pointer sends
+        self.assertEqual(R.judge("I4", ctl, [bad] * 4)["outside"][0], "FAIL")
+
+    def test_exit_far_past_the_edge_fails(self):
+        ctl = [log(self.exit(self.good, x=-3.0))] * 4
+        self.assertEqual(R.judge("I4", ctl, [log(self.exit(self.good, x=-60.0))] * 4)["exit_depth"][0], "FAIL")
+        self.assertEqual(R.judge("I4", ctl, [log(self.exit(self.good, x=-5.0))] * 4)["exit_depth"][0], "PASS")
+
+    def test_order(self):
+        ctl = [log(self.exit(self.good, x=0.0))] * 4
+        bad = log(self.exit(["mouseout", "mouseleave"], x=0.0))
+        self.assertEqual(R.judge("I4", ctl, [bad] * 4)["exit_sig"][0], "FAIL")
+        self.assertEqual(R.judge("I4", ctl, [log(self.exit(self.good, x=0.0))] * 4)["exit_sig"][0], "PASS")
+
+
+class I5(unittest.TestCase):
+    def clicks(self, details, right_order, dbl):
+        out = []
+        for d in details:
+            out += [ev("mousedown", 0, d=d), ev("mouseup", 1, d=d), ev("click", 1, d=d)]
+        if dbl:
+            out.append(ev("dblclick", 2, d=2))
+        for t in right_order:
+            out.append(ev(t, 3, b=2))
+        return log(out)
+
+    def test_red(self):
+        ctl = [self.clicks([1, 2, 3], ["mousedown", "mouseup", "contextmenu"], True)] * 4
+        for bad in (self.clicks([1, 1, 1], ["mousedown", "mouseup", "contextmenu"], True),   # detail always 1
+                    self.clicks([1, 2, 3], ["mousedown", "mouseup"], True),                  # no contextmenu
+                    self.clicks([1, 2, 3], ["mousedown", "contextmenu", "mouseup"], True),   # other order
+                    self.clicks([1, 2, 3], ["mousedown", "mouseup", "contextmenu"], False)):  # no dblclick
+            self.assertEqual(R.row_verdict(R.judge("I5", ctl, [bad] * 4)), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I5", ctl, ctl)), "PASS")
+
+    def test_no_click_at_all_is_unmeasured(self):
+        only_move = log([ev("mousemove", i * 10.0) for i in range(10)])
+        self.assertEqual(R.row_verdict(R.judge("I5", [only_move] * 4, [only_move] * 4)), "UNMEASURED")
+
+
+class I6(unittest.TestCase):
+    def keys(self, delay, step, n=20, flag=True):
+        out = [ev("keydown", 0.0, rep=False, key="a")]
+        for i in range(n):
+            out.append(ev("keydown", delay + i * step, rep=flag, key="a"))
+        return log(out)
+
+    def test_red(self):
+        ctl = [self.keys(500, 33), self.keys(500, 34), self.keys(501, 33), self.keys(500, 33)]
+        self.assertEqual(R.row_verdict(R.judge("I6", ctl, ctl)), "PASS")
+        self.assertEqual(R.row_verdict(R.judge("I6", ctl, [self.keys(500, 33, flag=False)] * 4)), "FAIL")   # no repeat flag
+
+    def test_key_timing_is_info_not_judged(self):
+        """the timing is the harness's own in every arm: an arm with no initial delay still PASSes, its numbers are INFO"""
+        ctl = [self.keys(500, 33)] * 4
+        v = R.judge("I6", ctl, [self.keys(30, 5)] * 4)
+        self.assertEqual(R.row_verdict(v), "PASS")
+        self.assertEqual(v["delay"][0], "INFO")
+
+
+class Presence(unittest.TestCase):
+    def test_slow_raf_is_unmeasured(self):
+        slow = log(real_moves())
+        slow["raf"] = [[i * 31.3, i * 31.3] for i in range(100)]
+        self.assertEqual(R.row_verdict(R.judge("I1", [slow] * 4, [slow] * 4)), "UNMEASURED")
+
+    def test_nothing_arrived(self):
+        self.assertEqual(R.row_verdict(R.judge("I4", [log([])] * 4, [log([])] * 4)), "UNMEASURED")
+
+    def test_insecure(self):
+        lg = log([ev("mousemove", 1.0)], secure=False)
+        self.assertEqual(R.row_verdict(R.judge("I3", [lg] * 4, [lg] * 4)), "UNMEASURED")
+
+
+class Judging(unittest.TestCase):
+    def pm(self, cs, n=30):
+        return [ev("pointermove", i * F, cs=cs, ps=0) for i in range(n)]
+
+    def test_min_n(self):
+        three = [log(self.pm(8))] * 3
+        v = R.judge("I2", three, [log(self.pm(1))] * 4)
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+        self.assertIn("need 4", v["multi"][2])
+
+    def test_runs_without_the_metric_are_counted(self):
+        v, note = R.metric_verdict("num", 1.0, [3.0, 3.0, None, None, 3.0], [1.0] * 4)
+        self.assertEqual(v, "UNMEASURED")
+        self.assertIn("2 run(s) lack the metric", note)
+
+    def test_rates_are_judged_apart_and_an_arm_matching_one_passes(self):
+        groups = {"ctl125": [log(self.pm(3)) for _ in range(4)], "ctl1000": [log(self.pm(17)) for _ in range(4)]}
+        v = R.judge("I2", groups, [log(self.pm(17)) for _ in range(4)])
+        self.assertEqual(v["coalesced_max"][0], "PASS")
+        self.assertIn("ctl125: FAIL", v["coalesced_max"][2])
+        self.assertIn("ctl1000: PASS", v["coalesced_max"][2])
+
+    def test_a_wide_control_share_cannot_fail(self):
+        v, note = R.metric_verdict("share", 0.1, [0.0, 0.3, 0.6, 0.9], [0.99] * 4)
+        self.assertEqual(v, "UNMEASURED")
+        self.assertIn("no arm could FAIL", note)
+
+    def test_range_is_widened_by_a_fraction_not_the_whole_range(self):
+        ctl = [10.0, 20.0, 15.0, 12.0]            # range 10, widening max(floor 1, 2.5)
+        self.assertEqual(R.metric_verdict("num", 1.0, ctl, [22.0] * 4)[0], "PASS")
+        self.assertEqual(R.metric_verdict("num", 1.0, ctl, [23.0] * 4)[0], "FAIL")   # the old rule allowed up to 30
+
+
+if __name__ == "__main__":
+    unittest.main()
