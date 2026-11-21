@@ -130,7 +130,7 @@ index 91edfac240..eb271c1ac3 100644
    }
    return hardware_concurrency;
 diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
-index d186df7a75..dc269e4db0 100644
+index d186df7a75..4e52d39fce 100644
 --- a/third_party/blink/renderer/core/frame/local_dom_window.cc
 +++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
 @@ -38,6 +38,7 @@
@@ -141,7 +141,24 @@ index d186df7a75..dc269e4db0 100644
  #include "components/camoucfg/keys.h"
  #include "components/camoucfg/mask_config.h"
  #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-@@ -1712,9 +1713,9 @@ int LocalDOMWindow::outerHeight() const {
+@@ -203,6 +204,16 @@ int RequestAnimationFrame(Document* document,
+                                          FrameCallbackType::kWebExposed);
+ }
+ 
++// A popup reports its own real outer size and position, as stock does: the
++// configured values describe the main window, and a 400 px popup claiming the
++// main window's outer size contradicts its own innerWidth. is_popup is the flag
++// BarProp::visible() already reads, set when the popup's page is created.
++bool IsPopupWindow(const LocalDOMWindow& window) {
++  LocalFrame* frame = window.GetFrame();
++  Page* page = frame ? frame->GetPage() : nullptr;
++  return page && page->GetWindowFeatures().is_popup;
++}
++
+ }  // namespace
+ 
+ class LocalDOMWindow::NetworkStateObserver final
+@@ -1712,9 +1723,10 @@ int LocalDOMWindow::outerHeight() const {
      return 0;
    }
  
@@ -150,11 +167,12 @@ index d186df7a75..dc269e4db0 100644
 -          camoucfg::keys::kWindowOuterHeight)) {
 +  if (const std::optional<int32_t>& v =
 +          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
-+              .window_outer_height) {
++              .window_outer_height;
++      v && !IsPopupWindow(*this)) {
      return *v;
    }
  
-@@ -1750,9 +1751,9 @@ int LocalDOMWindow::outerWidth() const {
+@@ -1750,9 +1762,10 @@ int LocalDOMWindow::outerWidth() const {
      return 0;
    }
  
@@ -163,11 +181,12 @@ index d186df7a75..dc269e4db0 100644
 -          camoucfg::keys::kWindowOuterWidth)) {
 +  if (const std::optional<int32_t>& v =
 +          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
-+              .window_outer_width) {
++              .window_outer_width;
++      v && !IsPopupWindow(*this)) {
      return *v;
    }
  
-@@ -1822,9 +1823,9 @@ int LocalDOMWindow::innerWidth() const {
+@@ -1822,9 +1835,10 @@ int LocalDOMWindow::innerWidth() const {
  }
  
  int LocalDOMWindow::screenX() const {
@@ -176,11 +195,12 @@ index d186df7a75..dc269e4db0 100644
 -          camoucfg::keys::kWindowScreenX)) {
 +  if (const std::optional<int32_t>& v =
 +          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
-+              .window_screen_x) {
++              .window_screen_x;
++      v && !IsPopupWindow(*this)) {
      return *v;
    }
  
-@@ -1853,9 +1854,9 @@ int LocalDOMWindow::screenX() const {
+@@ -1853,9 +1867,10 @@ int LocalDOMWindow::screenX() const {
  }
  
  int LocalDOMWindow::screenY() const {
@@ -189,7 +209,8 @@ index d186df7a75..dc269e4db0 100644
 -          camoucfg::keys::kWindowScreenY)) {
 +  if (const std::optional<int32_t>& v =
 +          camoucfg::Hot(camoucfg::ScopeFor(const_cast<LocalDOMWindow*>(this)))
-+              .window_screen_y) {
++              .window_screen_y;
++      v && !IsPopupWindow(*this)) {
      return *v;
    }
  

@@ -1,0 +1,204 @@
+diff --git a/content/browser/renderer_host/render_view_host_impl.cc b/content/browser/renderer_host/render_view_host_impl.cc
+index 51e84cf8aa..0379911187 100644
+--- a/content/browser/renderer_host/render_view_host_impl.cc
++++ b/content/browser/renderer_host/render_view_host_impl.cc
+@@ -576,6 +576,8 @@ bool RenderViewHostImpl::CreateRenderView(
+   params->never_composited = delegate_->IsNeverComposited();
+   params->window_was_opened_by_another_window =
+       window_was_opened_by_another_window;
++  params->camou_is_popup =
++      frame_tree_node->current_frame_host()->delegate()->IsPopup();
+   params->base_background_color = delegate_->GetBaseBackgroundColor();
+   if (auto* parent_rfh = frame_tree_node->GetParentOrOuterDocument()) {
+     url::Origin outermost_origin =
+diff --git a/content/common/frame.mojom b/content/common/frame.mojom
+index 572c5763b9..e64f45b407 100644
+--- a/content/common/frame.mojom
++++ b/content/common/frame.mojom
+@@ -133,6 +133,11 @@ struct CreateViewParams {
+   // Whether the window associated with this view was created by another window.
+   bool window_was_opened_by_another_window;
+ 
++  // True when this view belongs to a WebContents that was opened as a popup
++  // (WebContents::IsPopup), in whichever process the view is created: the
++  // renderer's own window features exist only in the opener's process.
++  bool camou_is_popup = false;
++
+   // Indicates whether the view is a regular top-level widget or some other
+   // nested "main frame" widget type.
+   ViewWidgetType type;
+diff --git a/content/renderer/agent_scheduling_group.cc b/content/renderer/agent_scheduling_group.cc
+index 77e0ca3563..6503333264 100644
+--- a/content/renderer/agent_scheduling_group.cc
++++ b/content/renderer/agent_scheduling_group.cc
+@@ -31,6 +31,7 @@
+ #include "third_party/blink/public/mojom/worker/worklet_global_scope_creation_params.mojom.h"
+ #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
+ #include "third_party/blink/public/web/web_remote_frame.h"
++#include "third_party/blink/public/web/camou_popup.h"
+ #include "third_party/blink/public/web/web_view.h"
+ #include "third_party/blink/public/web/web_view_client.h"
+ 
+@@ -240,6 +241,9 @@ blink::WebView* AgentSchedulingGroup::CreateWebView(
+ 
+   web_view->SetRendererPreferences(params->renderer_preferences);
+   web_view->SetWebPreferences(params->web_preferences);
++  if (params->camou_is_popup) {
++    blink::CamouMarkPopupView(web_view);
++  }
+ 
+   const bool is_for_nested_main_frame =
+       params->type != mojom::ViewWidgetType::kTopLevel;
+diff --git a/third_party/blink/public/BUILD.gn b/third_party/blink/public/BUILD.gn
+index 9626911f42..932089c771 100644
+--- a/third_party/blink/public/BUILD.gn
++++ b/third_party/blink/public/BUILD.gn
+@@ -255,6 +255,7 @@ source_set("blink_headers") {
+     "platform/websocket_handshake_throttle.h",
+     "platform/websocket_handshake_throttle_provider.h",
+     "web/blink.h",
++    "web/camou_popup.h",
+     "web/extension_script_streamer.h",
+     "web/modules/autofill/web_form_element_observer.h",
+     "web/modules/canvas/canvas_test_utils.h",
+diff --git a/third_party/blink/public/web/camou_popup.h b/third_party/blink/public/web/camou_popup.h
+new file mode 100644
+index 0000000000..7d2b87d008
+--- /dev/null
++++ b/third_party/blink/public/web/camou_popup.h
+@@ -0,0 +1,24 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_WEB_CAMOU_POPUP_H_
++#define THIRD_PARTY_BLINK_PUBLIC_WEB_CAMOU_POPUP_H_
++
++#include "third_party/blink/public/platform/web_common.h"
++
++namespace blink {
++
++class WebView;
++
++// Marks the view's page as belonging to a WebContents opened as a popup. The
++// browser sends the bit in CreateViewParams to every view of that WebContents,
++// so a popup in a new process (noopener, a cross-site navigation, a cross-site
++// iframe) knows what the opener's renderer knew from its window features.
++// Deliberately separate from Page::SetWindowFeatures: BarProp
++// (window.menubar.visible) reads those and must stay as stock.
++BLINK_EXPORT void CamouMarkPopupView(WebView* view);
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_WEB_CAMOU_POPUP_H_
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index 4e52d39fce..5a481023d4 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -130,6 +130,7 @@
+ #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "third_party/blink/renderer/core/page/create_window.h"
++#include "third_party/blink/renderer/core/page/camou_popup.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
+ #include "third_party/blink/renderer/core/page/scrolling/sync_scroll_attempt_heuristic.h"
+@@ -211,7 +212,7 @@ int RequestAnimationFrame(Document* document,
+ bool IsPopupWindow(const LocalDOMWindow& window) {
+   LocalFrame* frame = window.GetFrame();
+   Page* page = frame ? frame->GetPage() : nullptr;
+-  return page && page->GetWindowFeatures().is_popup;
++  return page && (page->GetWindowFeatures().is_popup || IsCamouPopupPage(*page));
+ }
+ 
+ }  // namespace
+diff --git a/third_party/blink/renderer/core/page/build.gni b/third_party/blink/renderer/core/page/build.gni
+index 55bf206f50..bfed61507d 100644
+--- a/third_party/blink/renderer/core/page/build.gni
++++ b/third_party/blink/renderer/core/page/build.gni
+@@ -5,6 +5,8 @@
+ blink_core_sources_page = [
+   "autoscroll_controller.cc",
+   "autoscroll_controller.h",
++  "camou_popup.cc",
++  "camou_popup.h",
+   "chrome_client.cc",
+   "chrome_client.h",
+   "chrome_client_impl.cc",
+diff --git a/third_party/blink/renderer/core/page/camou_popup.cc b/third_party/blink/renderer/core/page/camou_popup.cc
+new file mode 100644
+index 0000000000..e0271e0c5d
+--- /dev/null
++++ b/third_party/blink/renderer/core/page/camou_popup.cc
+@@ -0,0 +1,45 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "third_party/blink/renderer/core/page/camou_popup.h"
++
++#include "third_party/blink/public/web/camou_popup.h"
++#include "third_party/blink/renderer/core/exported/web_view_impl.h"
++#include "third_party/blink/renderer/core/page/page.h"
++#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
++#include "third_party/blink/renderer/platform/supplementable.h"
++
++namespace blink {
++
++namespace {
++
++class CamouPopupMarker final : public GarbageCollected<CamouPopupMarker>,
++                               public Supplement<Page> {
++ public:
++  static const char kSupplementName[];
++
++  explicit CamouPopupMarker(Page& page) : Supplement<Page>(page) {}
++
++  void Trace(Visitor* visitor) const override {
++    Supplement<Page>::Trace(visitor);
++  }
++};
++
++const char CamouPopupMarker::kSupplementName[] = "CamouPopupMarker";
++
++}  // namespace
++
++bool IsCamouPopupPage(const Page& page) {
++  return Supplement<Page>::From<CamouPopupMarker>(page) != nullptr;
++}
++
++void CamouMarkPopupView(WebView* view) {
++  Page* page = To<WebViewImpl>(view)->GetPage();
++  if (page && !IsCamouPopupPage(*page)) {
++    Supplement<Page>::ProvideTo(*page,
++                                MakeGarbageCollected<CamouPopupMarker>(*page));
++  }
++}
++
++}  // namespace blink
+diff --git a/third_party/blink/renderer/core/page/camou_popup.h b/third_party/blink/renderer/core/page/camou_popup.h
+new file mode 100644
+index 0000000000..34ed266f33
+--- /dev/null
++++ b/third_party/blink/renderer/core/page/camou_popup.h
+@@ -0,0 +1,20 @@
++// Copyright 2026 The Camoucrome Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_PAGE_CAMOU_POPUP_H_
++#define THIRD_PARTY_BLINK_RENDERER_CORE_PAGE_CAMOU_POPUP_H_
++
++#include "third_party/blink/renderer/core/core_export.h"
++
++namespace blink {
++
++class Page;
++
++// True when the browser marked this page's WebContents as a popup
++// (CamouMarkPopupView). Independent of Page::GetWindowFeatures().
++CORE_EXPORT bool IsCamouPopupPage(const Page& page);
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_PAGE_CAMOU_POPUP_H_
