@@ -26,12 +26,13 @@ import (
 )
 
 type drv struct {
-	cmd  *exec.Cmd
-	conn *rpcc.Conn
-	c    *cdp.Client
-	ctx  context.Context
-	mu   sync.Mutex
-	m    map[string]int
+	cmd    *exec.Cmd
+	conn   *rpcc.Conn
+	c      *cdp.Client
+	ctx    context.Context
+	mu     sync.Mutex
+	m      map[string]int
+	native bool
 }
 
 func (d *drv) count(method string) { d.mu.Lock(); d.m[method]++; d.mu.Unlock() }
@@ -47,7 +48,7 @@ func (d *drv) Methods() map[string]int {
 }
 
 func (d *drv) Launch(f *workload.Flags) error {
-	d.ctx, d.m = context.Background(), map[string]int{}
+	d.ctx, d.m, d.native = context.Background(), map[string]int{}, f.Native
 	args, err := f.Args()
 	if err != nil {
 		return err
@@ -91,10 +92,17 @@ func (d *drv) Launch(f *workload.Flags) error {
 			return d.c.Fetch.Enable(d.ctx, fetch.NewEnableArgs().SetPatterns([]fetch.RequestPattern{{URLPattern: &pat}}))
 		}},
 	} {
+		// the driver probes: native has no Runtime.enable (and no eval), and routing starts only with Route
+		if (d.native && s.name == "Runtime.enable") || (probeMode(f.Mode) && s.name == "Fetch.enable") {
+			continue
+		}
 		d.count(s.name)
 		if err := s.do(); err != nil {
 			return fmt.Errorf("%s: %w", s.name, err)
 		}
+	}
+	if probeMode(f.Mode) {
+		return nil
 	}
 	rp, err := d.c.Fetch.RequestPaused(d.ctx)
 	if err != nil {
@@ -136,6 +144,9 @@ func (d *drv) Navigate(url string) error {
 	if _, err := d.c.DOM.QuerySelector(d.ctx, dom.NewQuerySelectorArgs(doc.Root.NodeID, "#t1")); err != nil {
 		return err
 	}
+	if d.native {
+		return nil
+	}
 	return d.Eval("() => { window.__footprint_red = 1 }") // the L8 control
 }
 
@@ -161,6 +172,9 @@ func (d *drv) EvalString(js string) (string, error) {
 }
 
 func (d *drv) WaitSelector(sel string) error {
+	if d.native {
+		return d.nativeWait(sel)
+	}
 	for i := 0; i < 150; i++ {
 		r, err := d.evalRaw("() => document.querySelector('" + sel + "') !== null")
 		if err == nil && string(r.Result.Value) == "true" {
