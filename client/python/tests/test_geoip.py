@@ -254,7 +254,9 @@ def test_launch_warns_on_a_contradicting_zone_and_still_launches():
     cfg = {"timezone:id": "Asia/Tokyo"}
     with pytest.warns(geoip.GeoIPWarning, match="contradicts"):
         camoucrome.launch(pw, "/x/chrome", config=cfg, user_data_dir="/tmp/p", geoip=FIXTURE, exit_ip="192.0.2.5")
-    assert json.loads(pw.chromium.kw["env"]["CAMOU_CONFIG"]) == cfg  # not rewritten
+    # the zone is not rewritten; the launcher's own defaults (launcher.json launch.config_defaults) are merged in
+    assert json.loads(pw.chromium.kw["env"]["CAMOU_CONFIG"]) == {**camoucrome.launcher.CONFIG_DEFAULTS, **cfg}
+    assert json.loads(pw.chromium.kw["env"]["CAMOU_CONFIG"])["timezone:id"] == "Asia/Tokyo"
 
 
 def test_launch_checks_the_zone_a_preset_gives_and_the_explicit_config_wins():
