@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>l9</title>
+<style>body{margin:0}#a,#b,#btn,#sc{position:absolute;left:10px;width:120px;height:24px;box-sizing:border-box}
+#a{top:10px}#b{top:50px}#btn{top:90px}#sc{top:130px;height:60px;overflow:auto}</style>
+<input id="a" type="text"><input id="b" type="text"><button id="btn">go</button>
+<div id="sc"><div style="height:600px">x</div></div>
+<span id="ready"></span>
+<script>
+// L9: listeners that run synchronously inside a driver action record what a page can read of the caller.
+(function () {
+  var q = new URLSearchParams(location.search);
+  var arm = q.get("arm") || "", run = q.get("run") || "";
+  var sites = null, fires = [], sent = 0;
+  Error.prepareStackTrace = function (e, cs) {
+    sites = cs.map(function (c) { return [c.getFunctionName(), c.getFileName(), c.isEval()].join("|"); });
+    return String(e) + cs.map(function (c) { return "\n    at " + c; }).join("");
+  };
+  ["focus", "blur", "input", "keydown", "click", "mousedown", "pointerdown", "change", "select", "scroll"].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      var stack = new Error().stack;
+      fires.push({ type: t, target: e.target.id || e.target.nodeName, stack: stack, sites: sites,
+                   script: String(document.currentScript), isTrusted: e.isTrusted });
+    }, true);
+  });
+  setInterval(function () {
+    if (fires.length === sent) return;
+    sent = fires.length;
+    fetch("/result?arm=" + encodeURIComponent(arm) + "&run=" + encodeURIComponent(run), { method: "POST", body: JSON.stringify(fires) });
+  }, 400);
+})();
+</script>

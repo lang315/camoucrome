@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>h</title>
+<script>
+// H: after a pause (the driver has set its routing up), the same fetches and XHRs on every load, one condition per load.
+(function () {
+  var c = new URLSearchParams(location.search).get("c") || "";
+  setTimeout(function () {
+    for (var i = 0; i < 3; i++) {
+      fetch("/hdr?c=" + c + "&k=fetch&i=" + i, { cache: "no-store", headers: { "X-A": "1", "x-lower": "2", "Content-Type": "text/plain" } });
+      var x = new XMLHttpRequest();
+      x.open("GET", "/hdr?c=" + c + "&k=xhr&i=" + i);
+      x.setRequestHeader("X-A", "1");
+      x.setRequestHeader("x-lower", "2");
+      x.send();
+    }
+  }, 1500);
+})();
+</script>
