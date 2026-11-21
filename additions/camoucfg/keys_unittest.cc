@@ -50,6 +50,7 @@ TEST(CamoucfgKeysTest, EveryDeclaredConstantIsInAllKeys) {
       kUaPlatform, kUaPlatformVersion, kUaArchitecture, kUaBitness,
       kUaModel, kUaMobile, kUaWow64, kUaBrand,
       kHumanizeEnabled, kHumanizeMinTime, kHumanizeMaxTime, kShowCursor,
+      kInputDeviceGrid,
       kCanvasSeed, kCanvasNoiseDensity, kCanvasNoiseStrength,
       kTextMetricsSeed,
       kWebGlVendor, kWebGlRenderer, kWebGl2Vendor, kWebGl2Renderer,

@@ -346,7 +346,7 @@ def run_arm(arm, i, a, srv, st, out):
         else:
             from patchright.sync_api import sync_playwright
             pw = sync_playwright().start()
-            cfg = {"humanize:enabled": arm in ("rawh", "human")}
+            cfg = {"humanize:enabled": arm in ("rawh", "human"), "input:deviceGrid": True}  # the launcher's own default, pinned so the arms measure the shipped config
             ctx = launcher.launch(pw, a.fork_exe, config=cfg, user_data_dir=udd, window=WIN, position=POS, dpr=DPR, headless=False)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(url)

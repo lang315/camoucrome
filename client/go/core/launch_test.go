@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -99,7 +100,7 @@ func TestEnvDropsInherited(t *testing.T) {
 			}
 		}
 	}
-	if !slices.Contains(env, "PATH=/bin") || !slices.Contains(env, `CAMOU_CONFIG={"ua:platform":"Linux"}`) {
+	if !slices.Contains(env, "PATH=/bin") || !slices.Contains(env, `CAMOU_CONFIG={"input:deviceGrid":true,"ua:platform":"Linux"}`) {
 		t.Errorf("env lost PATH or the config: %v", env)
 	}
 	var crash string
@@ -133,6 +134,7 @@ func TestEnvStrict(t *testing.T) {
 
 func TestEnvChunks(t *testing.T) {
 	cfg := map[string]any{"ua:platform": "Linux", "pad": ""}
+	cfg["input:deviceGrid"] = true // the contract's default, which envFor adds under the caller's config
 	base, _ := json.Marshal(cfg)
 	cfg["pad"] = strings.Repeat("é", 70001-len([]rune(string(base)))) // multi-byte: chunks count characters
 	want, _ := json.Marshal(cfg)
@@ -210,5 +212,23 @@ func TestArgvOrderAndNoTransport(t *testing.T) {
 		if strings.HasPrefix(a, "--remote-debugging") || strings.HasPrefix(a, "--proxy") {
 			t.Errorf("spawner-owned flag %s", a)
 		}
+	}
+}
+
+func TestConfigDefaultsComeFromTheContractAndTheCallerWins(t *testing.T) {
+	if !reflect.DeepEqual(contract.Launch.ConfigDefaults.Keys, map[string]any{"input:deviceGrid": true}) {
+		t.Fatalf("contract defaults %v", contract.Launch.ConfigDefaults.Keys)
+	}
+	cfg := map[string]any{"input:deviceGrid": false, "ua:platform": "Linux"}
+	env, cleanup, err := envFor(Resolved{Config: cfg}, LaunchOpts{}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if !slices.Contains(env, `CAMOU_CONFIG={"input:deviceGrid":false,"ua:platform":"Linux"}`) {
+		t.Errorf("the caller's false must win: %v", env)
+	}
+	if cfg["input:deviceGrid"] != false || len(cfg) != 2 {
+		t.Errorf("the caller's map was touched: %v", cfg)
 	}
 }

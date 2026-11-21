@@ -90,6 +90,12 @@
    "env": "BREAKPAD_DUMP_LOCATION",
    "why": "A crash's minidump holds the process's whole environment block -- CAMOU_CONFIG verbatim beside every host variable (measured 2026-10-03 on Windows: a marker in the config was found in the dump as UTF-16, a no-config control had none). Chrome writes it to <profile>/Crashpad unless BREAKPAD_DUMP_LOCATION names another directory (chrome/app/chrome_crash_reporter_client_win.cc GetCrashDumpLocation; the POSIX client reads the same variable), so a kept profile would accumulate a plain-text record of the identity next to the machine's. Every launch creates a temp directory, points the variable at it, and removes it when the context closes or the launch fails; the parent's value is never inherited. Nothing is uploaded either way: the upload URL is empty unless the build is branded and official."
   },
+  "config_defaults": {
+   "keys": {
+    "input:deviceGrid": true
+   },
+   "why": "Config keys every launch sets under the caller's own config (the caller's value wins; a caller that sets the key false turns it off). input:deviceGrid snaps CDP mouse positions to the lattice a real pointer gives (I3, 2026-11-21); the browser leaves the event as sent when the key is absent, so the launchers carry the default. check_archive reads the caller's config, not the defaults: a browser that predates the key logs one warning for it and ignores it."
+  },
   "fontconfig": {
    "env": "FONTCONFIG_FILE",
    "files": {

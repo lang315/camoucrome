@@ -10,6 +10,7 @@
 
 #include "base/time/time.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/size_f.h"
 
 // Human-like mouse movement generator. Ported from the camoufox project's
 // additions/camoucfg/MouseTrajectories.hpp, itself adapted from:
@@ -74,6 +75,26 @@ WheelNotches QuantizeWheel(double delta_x, double delta_y);
 // The page-visible deltaY of one notch on Windows at DPR 1, measured on stock
 // Chrome 154 (docs/superpowers/measurements/2026-10-sp2c-wheel.md).
 inline constexpr float kWindowsNotchCssPx = 100.0f;
+
+// A coordinate (widget DIP) on the lattice a real pointer lands on. An OS
+// pointer sits on k / dsf in ROOT-WINDOW DIP, and the content view sits at an
+// integer DIP origin `origin` in its root window, so the lattice in view
+// coordinates is k / dsf - origin:
+//   round((v + origin) * dsf) / dsf - origin,  half away from zero.
+// `v` is returned unchanged when it is not finite, or `dsf` is not finite and
+// > 0, or `origin` is not finite. Pass origin 0 for the lattice of an already
+// delivered point `e`: e + SnapToDeviceGrid(v - e, dsf, 0).
+// When `extent` (the view's size in DIP) is > 0 and `v` itself lies inside
+// [0, extent), the result is kept inside too: a lattice point at or past an
+// edge (x = 799.7 snaps to 800 in an 800-wide view) is replaced by the one a
+// step toward the inside.
+// This one function is the lattice formula; nothing else computes it.
+double SnapToDeviceGrid(double v, float dsf, double origin, double extent = 0.0);
+
+// Whether `p` (widget DIP) is inside a view of `size` DIP: the half-open float
+// test 0 <= x < w, 0 <= y < h. Not gfx::Rect::Contains(int, int), which
+// truncates a float toward zero and so accepts x in (-1, 0). False for NaN.
+bool PointInView(gfx::PointF p, gfx::SizeF size);
 
 }  // namespace camoucfg
 

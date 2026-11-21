@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "components/camoucfg_lgpl/cursory.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace camoucfg {
 namespace {
@@ -216,6 +217,29 @@ WheelNotches QuantizeWheel(double delta_x, double delta_y) {
     return static_cast<int>(d > 0 ? n : -n);
   };
   return {axis(delta_x), axis(delta_y)};
+}
+
+double SnapToDeviceGrid(double v,
+                        float dsf,
+                        double origin,
+                        double extent) {
+  if (!std::isfinite(v) || !std::isfinite(dsf) || dsf <= 0.0f ||
+      !std::isfinite(origin)) {
+    return v;
+  }
+  double snapped = std::round((v + origin) * dsf) / dsf - origin;
+  if (std::isfinite(extent) && extent > 0 && v >= 0 && v < extent) {
+    if (snapped < 0) {
+      snapped += 1.0 / dsf;
+    } else if (snapped >= extent) {
+      snapped -= 1.0 / dsf;
+    }
+  }
+  return snapped;
+}
+
+bool PointInView(gfx::PointF p, gfx::SizeF size) {
+  return gfx::RectF(size).Contains(p);
 }
 
 }  // namespace camoucfg

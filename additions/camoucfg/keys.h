@@ -378,8 +378,15 @@ inline constexpr char kAudioSampleRate[] = "audio:sampleRate";
 // in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real.
 inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 
+// Snap the position of every CDP mouse event (Input.dispatchMouseEvent: move, press, release, wheel) to the device-pixel lattice an
+// OS pointer gives, in InputHandler::DispatchMouseEvent, and the interior points of a humanized path onto the lattice of the path's
+// end. CDP sends fractional CSS px, which no real mouse can show (I3, 2026-11-21: 97-99% of moves off the grid). A synthetic `input:`
+// namespace, no JS property path. Root-widget sessions and pointerType mouse only. Absent or false => the event is forwarded as sent
+// (rule 5: an unconfigured build forwards the stock event); the launchers set it true by default (settings/launcher.json).
+inline constexpr char kInputDeviceGrid[] = "input:deviceGrid";
+
 // Every key above, in registry order.
-inline constexpr std::array<std::string_view, 91> kAllKeys = {
+inline constexpr std::array<std::string_view, 92> kAllKeys = {
     kUaOsInfo,
     kNavigatorHardwareConcurrency,
     kNavigatorUserAgent,
@@ -471,6 +478,7 @@ inline constexpr std::array<std::string_view, 91> kAllKeys = {
     kShareCancelMs,
     kAudioSampleRate,
     kAudioBufferFrames,
+    kInputDeviceGrid,
 };
 
 // The UA client-hint keys, without kUaOsInfo.

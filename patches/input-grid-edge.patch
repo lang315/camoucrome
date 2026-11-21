@@ -1,0 +1,141 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 976991e9ea..7dbcae7e6a 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -66,6 +66,10 @@
+ #include "ui/gfx/geometry/point_f.h"
+ #include "ui/gfx/range/range.h"
+ 
++#if defined(USE_AURA)
++#include "ui/aura/window.h"
++#endif
++
+ namespace content::protocol {
+ 
+ namespace {
+@@ -74,6 +78,42 @@ gfx::PointF CssPixelsToPointF(double x, double y, float scale_factor) {
+   return gfx::PointF(x * scale_factor, y * scale_factor);
+ }
+ 
++// An OS pointer sits on whole device pixels of the root window: in the content
++// view's DIP a position is k / dsf - origin, `origin` being the view's integer
++// DIP origin in its root window (ViewOriginInRootWindow). CDP gives fractional
++// CSS px, which no real mouse can show, so with `input:deviceGrid` set the
++// position of a mouse event is snapped here, once, at the CDP entry (absent:
++// the stock event, unchanged). Pen and touch are left as sent. `dsf` is the
++// view's hardware display scale, the one devicePixelRatio derives from. The
++// lattice formula is camoucfg::SnapToDeviceGrid.
++void SnapMouseToDeviceGrid(blink::WebMouseEvent& event,
++                           float dsf,
++                           const gfx::Vector2dF& origin,
++                           const gfx::Size& extent) {
++  if (event.pointer_type != blink::WebPointerProperties::PointerType::kMouse) {
++    return;
++  }
++  gfx::PointF p = event.PositionInWidget();
++  p.SetPoint(static_cast<float>(camoucfg::SnapToDeviceGrid(
++                 p.x(), dsf, origin.x(), extent.width())),
++             static_cast<float>(camoucfg::SnapToDeviceGrid(
++                 p.y(), dsf, origin.y(), extent.height())));
++  event.SetPositionInWidget(p);
++  event.SetPositionInScreen(p);
++}
++
++// The content view's origin in its root window, in whole DIP: the point the
++// OS pointer's own origin is measured from. Aura only; 0 elsewhere.
++gfx::Vector2dF ViewOriginInRootWindow(RenderWidgetHostViewBase* view) {
++#if defined(USE_AURA)
++  if (aura::Window* window = view->GetNativeView()) {
++    const gfx::Point origin = window->GetBoundsInRootWindow().origin();
++    return gfx::Vector2dF(origin.x(), origin.y());
++  }
++#endif
++  return gfx::Vector2dF();
++}
++
+ gfx::Vector2dF CssPixelsToVector2dF(double x, double y, float scale_factor) {
+   return gfx::Vector2dF(x * scale_factor, y * scale_factor);
+ }
+@@ -1059,11 +1099,34 @@ class InputHandler::InputInjector
+     // previous move; path.back() is mouse_event's own destination, posted
+     // separately below via the real, unmodified event. Only the interior
+     // points are synthetic.
++    // With input:deviceGrid an interior point is snapped like the CDP entry
++    // does (same lattice, same live origin, kept inside the view), on a
++    // root-widget session only, so the whole path is on it.
++    // ForwardSyntheticMouseMove then drops the points outside the view,
++    // testing the snapped position.
++    RenderWidgetHostViewBase* view = widget_host_->GetView();
++    const bool grid =
++        view &&
++        widget_host_.get() == owner_->web_contents_->GetPrimaryMainFrame()
++                                  ->GetRenderWidgetHost() &&
++        camoucfg::GetBool(camoucfg::GlobalScope(),
++                          camoucfg::keys::kInputDeviceGrid)
++            .value_or(false);
++    const float dsf = grid ? view->GetDeviceScaleFactor() : 0.0f;
++    const gfx::Vector2dF origin =
++        grid ? ViewOriginInRootWindow(view) : gfx::Vector2dF();
++    const gfx::Size extent = grid ? view->GetViewBounds().size() : gfx::Size();
+     for (size_t i = 1; i + 1 < path.size(); ++i) {
+       blink::WebMouseEvent synthetic(mouse_event);
+-      synthetic.SetPositionInWidget(path[i].x, path[i].y);
+-      synthetic.SetPositionInScreen(gfx::PointF(path[i].x, path[i].y) +
+-                                    screen_offset);
++      gfx::PointF at(path[i].x, path[i].y);
++      if (grid) {
++        at.SetPoint(static_cast<float>(camoucfg::SnapToDeviceGrid(
++                        at.x(), dsf, origin.x(), extent.width())),
++                    static_cast<float>(camoucfg::SnapToDeviceGrid(
++                        at.y(), dsf, origin.y(), extent.height())));
++      }
++      synthetic.SetPositionInWidget(at);
++      synthetic.SetPositionInScreen(at + screen_offset);
+       // Not from the debugger: OnInputEventAck only pops
+       // pending_mouse_callbacks_ for events carrying kFromDebugger, and
+       // this path's only queued callback belongs to the FINAL real event
+@@ -1715,7 +1778,22 @@ void InputHandler::DispatchMouseEvent(
+     return;
+   }
+ 
+-  HandleMouseEvent(std::move(maybe_event).value(), std::move(callback));
++  std::unique_ptr<blink::WebMouseEvent> event = std::move(maybe_event).value();
++  // Only a session on the root widget: for an OOPIF the coordinates are in the
++  // session frame's space and ScaleFactor carries its CSS zoom, so the lattice
++  // does not apply and the event passes unchanged.
++  RenderWidgetHostImpl* widget = host_ ? host_->GetRenderWidgetHost() : nullptr;
++  if (widget && widget->GetView() &&
++      widget == web_contents_->GetPrimaryMainFrame()->GetRenderWidgetHost() &&
++      camoucfg::GetBool(camoucfg::GlobalScope(),
++                        camoucfg::keys::kInputDeviceGrid)
++          .value_or(false)) {
++    RenderWidgetHostViewBase* view = widget->GetView();
++    SnapMouseToDeviceGrid(*event, view->GetDeviceScaleFactor(),
++                          ViewOriginInRootWindow(view),
++                          view->GetViewBounds().size());
++  }
++  HandleMouseEvent(std::move(event), std::move(callback));
+ }
+ 
+ void InputHandler::HandleMouseEvent(
+@@ -2648,7 +2726,19 @@ void InputHandler::ForwardSyntheticMouseMove(
+   if (!handler || !widget) {
+     return;
+   }
+-  if (!handler->PointIsWithinContents(synthetic_event.PositionInWidget())) {
++  // The half-open float test, not PointIsWithinContents: that one calls
++  // gfx::Rect::Contains(int, int) with floats, which truncates toward zero and
++  // lets x or y in (-1, 0) through, where Blink still hit-tests a 1x1 box and
++  // the page gets a move outside the viewport. Gesture commands keep the stock
++  // test.
++  // The point is in the TARGET widget's coordinates (a root-session move that
++  // lands in an out-of-process iframe is in the iframe's), so the bounds are
++  // the target view's, not the session frame's (host_, which is null once the
++  // frame is gone).
++  RenderWidgetHostViewBase* view = widget->GetView();
++  if (!view ||
++      !camoucfg::PointInView(synthetic_event.PositionInWidget(),
++                             gfx::SizeF(view->GetViewBounds().size()))) {
+     return;
+   }
+   // Stamped with the real time it actually fires, not a value computed at

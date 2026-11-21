@@ -12,6 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 CONTRACT = json.loads((pathlib.Path(__file__).resolve().parents[3]
                        / "settings" / "launcher.json").read_text())
+D = CONTRACT["launch"]["config_defaults"]["keys"]  # set under the caller's config on every launch
 
 
 def test_forbidden_options_match_the_contract():
@@ -37,7 +38,7 @@ def test_args_match_the_contract():
 def test_env_drops_stale_camou_vars_and_sets_the_transport():
     env = camoucrome.build_env({"screen.width": 1}, {"os": "Windows"}, strict=True,
                                base={"CAMOU_CONFIG_1": "stale", "PATH": "/bin"})
-    assert env == {"PATH": "/bin", "CAMOU_CONFIG": '{"screen.width": 1}',
+    assert env == {"PATH": "/bin", "CAMOU_CONFIG": '{"input:deviceGrid": true, "screen.width": 1}',
                    "CAMOU_PRESET": '{"os": "Windows"}', "CAMOU_CONFIG_STRICT": "1"}
 
 
@@ -71,7 +72,7 @@ def test_launch_uses_persistent_context_without_viewport_emulation():
     kw = pw.chromium.kw
     assert kw["no_viewport"] is True and kw["headless"] is True
     assert kw["ignore_default_args"] is True
-    assert kw["env"]["CAMOU_CONFIG"] == '{"a": 1}'
+    assert kw["env"]["CAMOU_CONFIG"] == '{"input:deviceGrid": true, "a": 1}'
     assert kw["args"] == ["--no-first-run", "--no-default-browser-check", "--headless=new",
                           "--remote-debugging-pipe", "--user-data-dir=/tmp/p", "--window-size=800,600"]
 
@@ -166,7 +167,7 @@ def test_a_large_config_is_chunked_into_numbered_env_strings():
     assert "CAMOU_CONFIG" not in env
     parts = [env[f"CAMOU_CONFIG_{n}"] for n in range(1, 4)]
     assert "CAMOU_CONFIG_4" not in env and all(len(p) <= 30000 for p in parts)
-    assert json.loads("".join(parts)) == big
+    assert json.loads("".join(parts)) == {**D, **big}
 
 
 def test_accept_lang_follows_the_preset_locale_under_the_config():
@@ -440,12 +441,12 @@ def test_native_host_drops_font_aliases():
 
     got = decoded("Windows")
     assert got["fonts:list"] == ["Arial"] and "fonts:alias" not in got and "fonts:aliasLocal" not in got
-    assert decoded("Windows", json.dumps(cfg)) == got  # a JSON string is filtered too
-    assert decoded("Linux") == cfg
-    # nothing to drop, or no host OS: the original string reaches the env byte for byte
+    assert decoded("Windows", json.dumps(cfg)) == got and got["input:deviceGrid"] is True  # a JSON string is filtered too
+    assert decoded("Linux") == {**D, **cfg}
+    # nothing to drop, or no host OS: the same keys reach the env, under the defaults
     plain = '{"ua:platform":  "Windows", "fonts:list": ["Arial"], "x": 1.0}'
-    assert camoucrome.build_env(config=plain, host_os="Windows", base={})["CAMOU_CONFIG"] == plain
-    assert camoucrome.build_env(config=json.dumps(cfg), host_os="", base={})["CAMOU_CONFIG"] == json.dumps(cfg)
+    assert decoded("Windows", plain) == {**D, **json.loads(plain)}
+    assert decoded("", json.dumps(cfg)) == {**D, **cfg}
     nokey = {"fonts:list": ["Arial"]}
     assert camoucrome.launcher.native_config(nokey, None, "") is nokey
     contract = json.loads((ROOT / "settings" / "launcher.json").read_text())["launch"]["native_fonts"]
@@ -549,3 +550,13 @@ def test_check_archive_follows_a_symlinked_exe(tmp_path):
     (link / "chrome").symlink_to(arch / "chrome")
     with pytest.raises(ValueError, match="webGpu:blocked"):
         camoucrome.launcher.check_archive(link / "chrome", {"webGpu:blocked": True})
+
+
+def test_config_defaults_match_the_contract_and_the_caller_wins():
+    assert camoucrome.launcher.CONFIG_DEFAULTS == D == {"input:deviceGrid": True}
+    only = camoucrome.build_env(base={})  # no config at all still carries the defaults
+    assert json.loads(only["CAMOU_CONFIG"]) == D
+    cfg = {"input:deviceGrid": False, "screen.width": 1}
+    assert json.loads(camoucrome.build_env(cfg, base={})["CAMOU_CONFIG"]) == cfg
+    assert json.loads(camoucrome.build_env(json.dumps(cfg), base={})["CAMOU_CONFIG"]) == cfg
+    assert cfg == {"input:deviceGrid": False, "screen.width": 1}  # the caller's dict is not mutated

@@ -33,6 +33,9 @@ var contract struct {
 		NativeFonts struct {
 			Drop []string `json:"drop"`
 		} `json:"native_fonts"`
+		ConfigDefaults struct {
+			Keys map[string]any `json:"keys"`
+		} `json:"config_defaults"`
 	} `json:"launch"`
 }
 
@@ -94,13 +97,16 @@ func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, fun
 		return nil, noop, err
 	}
 	claimed := claimedOS(r.Config)
-	cfg := r.Config
+	// A copy, so the caller's map is never touched: the contract's config_defaults go under it (the caller's value wins).
+	cfg := make(map[string]any, len(r.Config)+len(contract.Launch.ConfigDefaults.Keys))
+	for k, v := range contract.Launch.ConfigDefaults.Keys {
+		cfg[k] = v
+	}
+	for k, v := range r.Config {
+		cfg[k] = v
+	}
 	if host != "" && claimed == host {
 		// Those families are real on this host; an alias to the uninstalled bundle would hide them.
-		cfg = make(map[string]any, len(r.Config))
-		for k, v := range r.Config {
-			cfg[k] = v
-		}
 		for _, k := range contract.Launch.NativeFonts.Drop {
 			delete(cfg, k)
 		}

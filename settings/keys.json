@@ -745,6 +745,18 @@
     "frame count too (Windows 441 at 44100 = 0.01 s; macOS 256 = 0.00533 s; the box's PulseAudio 512). The renderer renders",
     "in that quantum and the device stream keeps its own size (the resampler/FIFO absorbs it). Clamped to 64..16384. Absent => real."
    ]
+  },
+  {
+   "name": "kInputDeviceGrid",
+   "key": "input:deviceGrid",
+   "type": "bool",
+   "doc": [
+    "Snap the position of every CDP mouse event (Input.dispatchMouseEvent: move, press, release, wheel) to the device-pixel lattice an",
+    "OS pointer gives, in InputHandler::DispatchMouseEvent, and the interior points of a humanized path onto the lattice of the path's",
+    "end. CDP sends fractional CSS px, which no real mouse can show (I3, 2026-11-21: 97-99% of moves off the grid). A synthetic `input:`",
+    "namespace, no JS property path. Root-widget sessions and pointerType mouse only. Absent or false => the event is forwarded as sent",
+    "(rule 5: an unconfigured build forwards the stock event); the launchers set it true by default (settings/launcher.json)."
+   ]
   }
  ]
 }

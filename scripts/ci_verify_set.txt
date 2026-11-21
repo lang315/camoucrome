@@ -17,6 +17,7 @@ run verify_sp6b_generator.py CAMOU_GEN_N=4
 run verify_crash_dumps.py
 run verify_sp6b_driver.py
 run verify_sp2e.py
+run verify_input_grid_edge.py
 run verify_sp2b.py
 run verify_sp7_codecs.py
 run verify_sp7_fieldtrial.py

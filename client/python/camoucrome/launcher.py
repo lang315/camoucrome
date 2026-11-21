@@ -43,7 +43,7 @@ def native_config(config, preset=None, host_os=None):
         return config
     c = json.loads(config) if isinstance(config, str) else config
     if not any(k in c for k in NATIVE_FONTS_DROP):
-        return config  # nothing to drop: the original value, not a re-encoding
+        return config  # nothing to drop: as given (build_env/BuildEnv adds the defaults and re-encodes)
     return {k: v for k, v in c.items() if k not in NATIVE_FONTS_DROP}
 
 
@@ -177,6 +177,15 @@ def check_archive(executable_path, config=None):
         raise ValueError(f"browser {stamp.get('version')} does not know config keys: {', '.join(unknown)}")
 
 
+# settings/launcher.json launch.config_defaults.keys: set under the caller's config on every launch.
+CONFIG_DEFAULTS = {"input:deviceGrid": True}
+
+
+def with_config_defaults(config):
+    """The config with CONFIG_DEFAULTS under it: the caller's own value for a key wins."""
+    return {**CONFIG_DEFAULTS, **_as_dict(config)}
+
+
 def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None,
               crash_dir=None, host_os=None):
     """The child environment: every CAMOU_* of the parent dropped, then the
@@ -187,11 +196,10 @@ def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None
     `crash_dir` sets BREAKPAD_DUMP_LOCATION; the parent's is never inherited
     either (it would collect every identity's dumps in one place)."""
     effective_keys(config, preset)  # raises on a shape the browser would drop
-    config = native_config(config, preset, host_os)
+    config = with_config_defaults(native_config(config, preset, host_os))
     env = {k: v for k, v in (os.environ if base is None else base).items()
            if not k.startswith("CAMOU_") and k not in (FONTCONFIG_ENV, CRASH_DUMPS_ENV)}
-    if config is not None:
-        env.update(config_env(_as_json(config)))
+    env.update(config_env(_as_json(config)))
     if preset is not None:
         env.update(config_env(_as_json(preset), "CAMOU_PRESET"))
     if strict:

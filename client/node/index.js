@@ -28,6 +28,8 @@ const BASE_ARGS = ['--no-first-run', '--no-default-browser-check'];
 const LIGHT_ARGS = [];
 const SEED_KEYS = ['canvas:seed', 'mediaDevices:seed'];
 const SEEDS_FILE = 'camoucrome-seeds.json'; // launcher.json per_instance_seeds.profile_file
+// settings/launcher.json launch.config_defaults.keys: set under the caller's config on every launch.
+const CONFIG_DEFAULTS = { 'input:deviceGrid': true };
 
 const asJson = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 
@@ -142,7 +144,7 @@ const HOST_OS = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[process.pl
 function nativeConfig(config, preset, hostOs) {
   if (!hostOs || config == null || claimedOs(config, preset) !== hostOs) return config;
   const parsed = typeof config === 'string' ? JSON.parse(config) : config;
-  if (!NATIVE_FONTS_DROP.some((k) => k in parsed)) return config; // the original value, not a re-encoding
+  if (!NATIVE_FONTS_DROP.some((k) => k in parsed)) return config; // nothing to drop: as given (buildEnv adds the defaults and re-encodes)
   const c = { ...parsed };
   for (const k of NATIVE_FONTS_DROP) delete c[k];
   return c;
@@ -154,12 +156,12 @@ function nativeConfig(config, preset, hostOs) {
 // dumps in one place), then config/preset/strict set.
 function buildEnv({ config, preset, strict, fontconfig, crashDir, hostOs = HOST_OS } = {}, base = process.env) {
   effectiveKeys(config, preset);
-  config = nativeConfig(config, preset, hostOs);
+  config = { ...CONFIG_DEFAULTS, ...asObject(nativeConfig(config, preset, hostOs)) }; // the caller's value wins
   const env = {};
   for (const [k, v] of Object.entries(base)) {
     if (!k.startsWith('CAMOU_') && k !== 'FONTCONFIG_FILE' && k !== CRASH_DUMPS_ENV) env[k] = v;
   }
-  if (config != null) Object.assign(env, chunkEnv(asJson(config), 'CAMOU_CONFIG'));
+  Object.assign(env, chunkEnv(asJson(config), 'CAMOU_CONFIG'));
   if (preset != null) Object.assign(env, chunkEnv(asJson(preset), 'CAMOU_PRESET'));
   if (strict) env.CAMOU_CONFIG_STRICT = '1';
   if (fontconfig) env.FONTCONFIG_FILE = fontconfig;
@@ -377,5 +379,5 @@ async function launch(chromium, executablePath, {
   return ctx;
 }
 
-module.exports = { checkArchive, FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
+module.exports = { checkArchive, CONFIG_DEFAULTS, FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
   acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch, human: require('./human') };

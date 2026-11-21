@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/size_f.h"
 
 namespace camoucfg {
 namespace {
@@ -204,6 +205,80 @@ TEST(MouseTrajectoriesTest, HumanizePathSanitizesBounds) {
     EXPECT_GT(path.back().offset, base::TimeDelta());
     EXPECT_LE(path.back().offset, kCap);
   }
+}
+
+TEST(MouseTrajectoriesTest, SnapToDeviceGridLandsOnTheLattice) {
+  // origin 0: k / dsf.
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(100.37, 1.25f, 0), 100.0);
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(-3.7, 1.25f, 0), -4.0);  // half away
+  EXPECT_EQ(SnapToDeviceGrid(7.4, 1.0f, 0), 7.0);
+  // origin o: k / dsf - o, so (snap + o) * dsf is a whole number. At dsf 1.25
+  // an origin of 1 DIP puts the page's own grid at a fraction of .25.
+  for (double origin : {0.0, 1.0, 3.0, 85.0}) {
+    for (int i = 0; i < 1000; ++i) {
+      double v = i * 0.7319 + 0.37;
+      double s = SnapToDeviceGrid(v, 1.25f, origin);
+      EXPECT_NEAR((s + origin) * 1.25, std::round((s + origin) * 1.25), 1e-9)
+          << v << " o=" << origin;
+      EXPECT_LE(std::abs(s - v), 0.4 + 1e-9);
+    }
+  }
+  // The measured host layout (H2 control, 2026-11-21): the view sits at
+  // (8, 87) DIP in its window, dsf 1.25. clientX * dpr is integral (8 % 4 == 0)
+  // and clientY * dpr has the fraction .25, frac(-1.25 * 87).
+  EXPECT_NEAR(std::remainder(SnapToDeviceGrid(300.4, 1.25f, 8) * 1.25, 1.0), 0.0,
+              1e-9);
+  EXPECT_NEAR(std::remainder(SnapToDeviceGrid(300.4, 1.25f, 87) * 1.25, 1.0), 0.25,
+              1e-9);
+}
+
+TEST(MouseTrajectoriesTest, SnapToDeviceGridKeepsAnInsidePointInside) {
+  // 800 DIP at 1.25 is 1000 device px: 799.7 rounds to 800, outside [0, 800).
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(799.7, 1.25f, 0, 0), 800.0);  // no extent
+  EXPECT_NEAR(SnapToDeviceGrid(799.7, 1.25f, 0, 800), 799.2, 1e-9);
+  // The low edge: with origin -2 the lattice has -0.4 and 0.4; 0 rounds down
+  // (half away from zero, on a negative product) to -0.4, outside.
+  EXPECT_NEAR(SnapToDeviceGrid(0.0, 1.25f, -2, 800), 0.4, 1e-9);
+  // A point that was outside stays where the plain snap puts it.
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(-3.7, 1.25f, 0, 800), -4.0);
+  EXPECT_DOUBLE_EQ(SnapToDeviceGrid(803.7, 1.25f, 0, 800), 804.0);
+  // Every inside input gives an inside lattice point, whatever the origin.
+  for (double origin : {0.0, 3.0, -2.0, 87.0}) {
+    for (int i = 0; i < 4000; ++i) {
+      double v = i * 0.2 + 0.01;
+      if (v >= 800) {
+        break;
+      }
+      double s = SnapToDeviceGrid(v, 1.25f, origin, 800);
+      EXPECT_GE(s, 0) << v << " o=" << origin;
+      EXPECT_LT(s, 800) << v << " o=" << origin;
+      EXPECT_NEAR((s + origin) * 1.25, std::round((s + origin) * 1.25), 1e-9)
+          << v << " o=" << origin;
+    }
+  }
+}
+
+TEST(MouseTrajectoriesTest, SnapToDeviceGridLeavesUnusableInputAlone) {
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_EQ(SnapToDeviceGrid(10.3, 0.0f, 0), 10.3);
+  EXPECT_EQ(SnapToDeviceGrid(10.3, -1.0f, 0), 10.3);
+  EXPECT_EQ(SnapToDeviceGrid(10.3, nan, 0), 10.3);
+  EXPECT_EQ(SnapToDeviceGrid(10.3, 1.25f, nan), 10.3);
+  EXPECT_TRUE(std::isnan(SnapToDeviceGrid(nan, 1.25f, 0)));
+}
+
+TEST(MouseTrajectoriesTest, PointInViewIsAHalfOpenFloatTest) {
+  const gfx::SizeF size(800, 600);
+  // x or y in (-1, 0): the integer Rect::Contains truncates these to 0 and
+  // accepts them.
+  EXPECT_FALSE(PointInView({-0.5f, 10}, size));
+  EXPECT_FALSE(PointInView({10, -0.5f}, size));
+  EXPECT_FALSE(PointInView({-0.8f, 10}, size));
+  EXPECT_FALSE(PointInView({800, 0}, size));
+  EXPECT_FALSE(PointInView({0, 600}, size));
+  EXPECT_FALSE(PointInView({std::numeric_limits<float>::quiet_NaN(), 5}, size));
+  EXPECT_TRUE(PointInView({0, 0}, size));
+  EXPECT_TRUE(PointInView({799.2f, 599.2f}, size));
 }
 
 }  // namespace

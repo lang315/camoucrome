@@ -327,6 +327,10 @@ func BuildEnv(o Options, base []string) (map[string]string, error) {
 	return buildEnvFor(o, base, hostOS)
 }
 
+// ConfigDefaults mirrors settings/launcher.json launch.config_defaults.keys:
+// set under the caller's config on every launch (the caller's value wins).
+var ConfigDefaults = map[string]any{"input:deviceGrid": true}
+
 // NativeFontsDrop mirrors settings/launcher.json launch.native_fonts.drop.
 var NativeFontsDrop = []string{"fonts:alias", "fonts:aliasLocal"}
 
@@ -346,7 +350,7 @@ func nativeConfig(o Options, hostOS string) (any, error) {
 	}
 	if _, a := m[NativeFontsDrop[0]]; !a {
 		if _, b := m[NativeFontsDrop[1]]; !b {
-			return o.Config, nil // nothing to drop: the original value, not a re-encoding
+			return o.Config, nil // nothing to drop: as given (build_env/BuildEnv adds the defaults and re-encodes)
 		}
 	}
 	out := map[string]any{}
@@ -377,9 +381,18 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 			env[k] = v
 		}
 	}
-	config, err := nativeConfig(o, hostOS)
+	native, err := nativeConfig(o, hostOS)
 	if err != nil {
 		return nil, err
+	}
+	config, err := asObject(native) // a fresh map: the caller's is never touched
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range ConfigDefaults {
+		if _, set := config[k]; !set {
+			config[k] = v
+		}
 	}
 	for name, v := range map[string]any{"CAMOU_CONFIG": config, "CAMOU_PRESET": o.Preset} {
 		if v == nil {
