@@ -73,7 +73,9 @@
    "why_chunks": "Linux caps one environment string at 128 KiB (MAX_ARG_STRLEN); a macOS identity (191 voices, 409 faces, 775 names) is ~140 KB and spawn fails with E2BIG. A config longer than config_chunk_chars goes out as CAMOU_CONFIG_1..N in order, no CAMOU_CONFIG; the reader (AssembleRawConfig) concatenates. 30000 chars is at most 120 KB of UTF-8. The preset goes out the same way (CAMOU_PRESET_1..N, same reader).",
    "preset": "CAMOU_PRESET",
    "preset_chunks": "CAMOU_PRESET_{n}",
-   "strict": "CAMOU_CONFIG_STRICT"
+   "strict": "CAMOU_CONFIG_STRICT",
+   "strict_default": true,
+   "why_strict_default": "Every launch writes CAMOU_CONFIG_STRICT=1 unless the caller opts out (lax, Lax, lax: true), so an inherited empty or 0 cannot turn it off. Lax leaves the variable unset, also when the parent had one. strict together with lax is an error. A caller env option is refused (forbidden_context_options)."
   },
   "ignore_default_args": true,
   "headless_arg": "--headless=new",

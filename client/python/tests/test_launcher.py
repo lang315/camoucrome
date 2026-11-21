@@ -581,6 +581,10 @@ def test_check_archive_follows_a_symlinked_exe(tmp_path):
         camoucrome.launcher.check_archive(link / "chrome", {"webGpu:blocked": True})
 
 
+def test_contract_declares_strict_default():
+    assert CONTRACT["launch"]["env"]["strict_default"] is True
+
+
 def test_config_defaults_match_the_contract_and_the_caller_wins():
     assert camoucrome.launcher.CONFIG_DEFAULTS == D == {"input:deviceGrid": True}
     only = camoucrome.build_env(base={})  # no config at all still carries the defaults
