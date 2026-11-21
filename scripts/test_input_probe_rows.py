@@ -88,6 +88,27 @@ class I3(unittest.TestCase):
         self.assertEqual(R.row_verdict(R.judge("I3", ctl, [log(off, dpr=1.25)] * 4)), "FAIL")
         self.assertEqual(R.row_verdict(R.judge("I3", ctl, ctl)), "PASS")
 
+    def test_modal_fraction_must_be_the_controls(self):
+        """host H2 control: view origin (8, 87) at dsf 1.25 -> x 0.00, y 0.25. A lattice with y 0 (origin-blind snap) is ON a grid
+        and passes off_share, but is not the control's: FAIL on fy. A lattice at the control's fractions PASSes."""
+        ctl = [log([ev("pointermove", i, x=i / 1.25, y=(i + 0.25) / 1.25) for i in range(1, 40)], dpr=1.25)] * 4
+        blind = [log([ev("pointermove", i, x=i / 1.25, y=i / 1.25) for i in range(1, 40)], dpr=1.25)] * 4
+        m = R.i3(ctl[0])
+        self.assertAlmostEqual(m["fx"], 0.0, places=3)
+        self.assertAlmostEqual(m["fy"], 0.25, places=3)
+        v = R.judge("I3", ctl, blind)
+        self.assertEqual(v["off_share"][0], "PASS")
+        self.assertEqual(v["fy"][0], "FAIL")
+        self.assertEqual(v["fx"][0], "PASS")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I3", ctl, ctl)), "PASS")
+
+    def test_zero_control_fraction_says_the_origin_is_moot(self):
+        zero = [log([ev("pointermove", i, x=i / 1.25, y=i / 1.25) for i in range(1, 40)], dpr=1.25)] * 4
+        v = R.judge("I3", zero, zero)
+        self.assertIn("moot", v["fy"][2])
+        self.assertEqual(R.row_verdict(v), "PASS")
+
     def test_dpr_one_is_unmeasured(self):
         on = [ev("pointermove", i, x=float(i), y=float(i)) for i in range(1, 40)]
         self.assertEqual(R.row_verdict(R.judge("I3", [log(on, dpr=1.0)] * 4, [log(on, dpr=1.0)] * 4)), "UNMEASURED")

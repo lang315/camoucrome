@@ -64,12 +64,15 @@ def i3(log):
     mv = [e for e in evs(log, "pointermove") if e["x"] is not None]
     if not mv:
         return None
-    off = []
+    off, modes = [], {}
     for k in ("x", "y"):
         fr = [(e[k] * dpr) % 1.0 for e in mv]
-        mode = statistics.mode(round(f, 3) for f in fr)
-        off += [min(abs(f - mode), 1 - abs(f - mode)) > DPR_EPS for f in fr]
-    return {"moves": len(mv), "dpr": dpr, "off_share": sum(off) / len(off)}
+        modes[k] = statistics.mode(round(f, 3) for f in fr)
+        off += [min(abs(f - modes[k]), 1 - abs(f - modes[k])) > DPR_EPS for f in fr]
+    # fx, fy: the axis's modal fractional part. A real pointer lands on k/dsf in ROOT-WINDOW DIP and the view sits at an integer DIP
+    # origin o in its window, so frac(clientY*dpr) = frac(-dsf*o_y) (host H2 control: x 0.00, y 0.25 at origin (8, 87)). A single
+    # fraction per axis is not enough: it must be the control's.
+    return {"moves": len(mv), "dpr": dpr, "off_share": sum(off) / len(off), "fx": modes["x"] % 1.0, "fy": modes["y"] % 1.0}
 
 
 def _runs(log, kinds):
@@ -138,7 +141,7 @@ EXPECT_DPR = 1.25       # the probes run at this device scale factor; I3 means n
 SPEC = {
     "I1": {"multi": ("share", 0.05), "aligned": ("share", 0.10), "short": ("share", 0.10), "gap_med": ("num", 2.0)},
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
-    "I3": {"off_share": ("share", 0.05)},
+    "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},
     "I4": {"exit_sig": ("eq", 0), "outside": ("zero", 0), "exit_depth": ("num", 6.0), "exit_rt": ("eq", 0), "reenter": ("eq", 0)},
     "I5": {"right": ("eq", 0), "click_detail": ("eq", 0), "dblclick": ("eq", 0), "contextmenu": ("eq", 0)},
     # The key timing is authored by the harness in every arm (the control from the host's keyboard settings, the driven arms
@@ -161,6 +164,12 @@ def metric_verdict(kind, floor, ctl, arm, min_n=MIN_N):
         m = max(floor, WIDEN * (hi - lo))
         med = statistics.median(a)
         return ("PASS" if lo - m <= med <= hi + m else "FAIL"), f"ctl {lo:.3g}-{hi:.3g} +-{m:.3g}"
+    if kind == "mode":   # a fractional part (circular): every arm value within `floor` of one the control shows. Same window, same view origin.
+        def near(x, y):
+            return min(abs(x - y), 1 - abs(x - y)) <= floor
+        moot = all(near(w, 0.0) for w in c)
+        note = "control fraction 0: the view origin is moot at this layout" if moot else f"ctl modal fractions {sorted({round(w, 3) for w in c})}"
+        return ("PASS" if all(any(near(v, w) for w in c) for v in a) else "FAIL"), note
     if kind == "zero":   # a real pointer never reports outside the viewport: the control must show 0 and so must the arm
         return ("PASS" if max(c) == 0 and max(a) == 0 else "FAIL"), ""
     key = repr
