@@ -19,7 +19,8 @@ def cfg(d): return json.dumps(d)
 POPUP = r"""(async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const read = w => ({ow:w.outerWidth, oh:w.outerHeight, iw:w.innerWidth, ih:w.innerHeight,
-                      sx:w.screenX, sy:w.screenY});
+                      sx:w.screenX, sy:w.screenY,
+                      mb:w.menubar.visible, tb:w.toolbar.visible});
   const out = {top: read(window)};
   const p = window.open('about:blank', '', 'popup=yes,width=400,height=300,left=50,top=60');
   await sleep(1000);
@@ -43,7 +44,8 @@ def popup_run(config):
 # read through a window handle. Each target page reads its own geometry and POSTs it to this server, which also serves
 # the pages on two hosts: 127.0.0.1 and localhost are different sites (the same host on another port is same-site).
 GEO_JS = """
-const g = () => ({ow:outerWidth, oh:outerHeight, iw:innerWidth, ih:innerHeight, sx:screenX, sy:screenY});
+const g = () => ({ow:outerWidth, oh:outerHeight, iw:innerWidth, ih:innerHeight, sx:screenX, sy:screenY,
+  mb:menubar.visible, tb:toolbar.visible});
 const label = new URLSearchParams(location.search).get('label');
 const send = () => navigator.sendBeacon('http://127.0.0.1:__P__/report', JSON.stringify({label, geo:g()}));
 setTimeout(send, 400); setTimeout(send, 1500);
@@ -107,6 +109,8 @@ def popup_rows(r, ctl, label):
         rows[f"{label}-{k}-outer"] = ok and (w["ow"], w["oh"]) == (c["ow"], c["oh"])
         rows[f"{label}-{k}-screen"] = ok and (w["sx"], w["sy"]) == (c["sx"], c["sy"])
         rows[f"{label}-{k}-coherent"] = ok and chrome_ok(w)
+        # BarProp must stay exactly as stock in every process: the popup bit is separate from the window features
+        rows[f"{label}-{k}-bars"] = ok and (w["mb"], w["tb"]) == (c["mb"], c["tb"])
         rows[f"{label}-{k}-chrome"] = ok and (w["ow"]-w["iw"], w["oh"]-w["ih"]) == (c["ow"]-c["iw"], c["oh"]-c["ih"])
     return rows
 
@@ -117,6 +121,7 @@ def site_rows(r, ctl):
         ok = w is not None and c is not None
         rows[f"S-{k}-outer"] = ok and (w["ow"], w["oh"]) == (c["ow"], c["oh"])
         rows[f"S-{k}-screen"] = ok and (w["sx"], w["sy"]) == (c["sx"], c["sy"])
+        rows[f"S-{k}-bars"] = ok and (w["mb"], w["tb"]) == (c["mb"], c["tb"])
         if k in ("same", "noopener", "xsite"):  # the popup windows themselves; xframe-child is an iframe
             rows[f"S-{k}-coherent"] = ok and chrome_ok(w)
     return rows
@@ -170,8 +175,8 @@ def main():
     # INFO, not counted: headless opens a no-feature window.open as its own window, and stock's iframe reads
     # the top's inner size (unexplained); both are judged on headed chrome on the host.
     for k in ("tab", "iframe"): print(f"INFO {k}: control {ctl[k]} config {got[k]}")
-    # 5 W + P0 + 2 windows x 4 + 5 site labels x 2 + 3 site popups x coherent; literals, not len(r)
-    finish(r, 5 + 1 + 8 + 10 + 3)
+    # 5 W + P0 + 2 windows x 5 + 5 site labels x 3 + 3 site popups x coherent; literals, not len(r)
+    finish(r, 5 + 1 + 10 + 15 + 3)
 
 def finish(r, expected):
     for k in r: print(f"{k}: {'PASS' if r[k] else 'FAIL'}")
