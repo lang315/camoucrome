@@ -209,10 +209,15 @@ SPEC = {
            "covered": ("info", 0)},   # the share of moves inside the tick log: the row is UNMEASURED below COVERED_MIN (presence)
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
     # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
-    "I2b": {"spacing_med": ("pool", 0.25), "spacing_sd": ("pool", 0.40), "core_share": ("pool", 0.10), "tail_share": ("pool", 0.05)},
-    # whole_share: the control's stamps are partly whole ms (host 2026-11-22, 4-6 runs: .17-.28; chance for the 0.05 window is .10),
-    # the pooled value of ours must lie within +-.12 of the control's pooled value (kind "pool"): a continuous stamp (.09-.10) fails. repeats: stock drops same-position moves
-    "I2c": {"whole_share": ("pool", 0.12), "repeat_share": ("pool", 0.01), "repeat": ("info", 0)},
+    "I2b": {"spacing_med": ("pool", 0.25), "spacing_sd": ("pool", 0.25), "core_share": ("pool", 0.037), "tail_share": ("pool", 0.032)},
+    # whole_share: the control's stamps are partly whole ms (3 host sessions, 2026-11-22, session means .280/.256/.240; chance for the 0.05 window
+    # is .10), ours must stay within the tolerance of the control's pooled value: a continuous stamp (.09-.10) fails. repeats: stock drops same-position moves
+    # pool tolerances: ONE rule, tol = max(FLOOR, 3 x sd of the control's session means), the sd over the 3 sessions of 2026-11-22 (r15, s2, s3;
+    # 6 runs each, every run weighs the same); FLOOR is .03 for a share (about one run's own spread: core_share run sd .036), .25 ms for
+    # spacing_med / spacing_sd, .01 for repeat_share (the old floors). Session-mean sd -> 3 sd: core .0124 -> .037, tail .0105 -> .032,
+    # whole .0201 -> .060, spacing_sd .070 -> .21 (floor .25), spacing_med .0096 -> .029 (floor .25), repeat_share 0 -> .01 (floor).
+    # Three sessions are a thin sample of the between-session sd; recompute with every new control session (PooledBand.test_tolerances_follow_the_rule).
+    "I2c": {"whole_share": ("pool", 0.060), "repeat_share": ("pool", 0.01), "repeat": ("info", 0)},
     # pointerrawupdate: the sd of now - timeStamp is the control's (floor 0.5 ms), back-to-back events are not (a back-to-back burst has pair_share ~.5)
     "I7": {"lat_sd": ("num", 0.5), "pair_share": ("share", 0.02), "pairs": ("info", 0)},
     "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},
@@ -242,13 +247,17 @@ def metric_verdict(kind, floor, ctl, arm, min_n=MIN_N):
         return "UNMEASURED", f"n ctl {len(c)}/{len(ctl)}, arm {len(a)}/{len(arm)} (need {min_n}; {len(ctl) - len(c) + len(arm) - len(a)} run(s) lack the metric)"
     if kind == "pool":
         # pooled over the runs, not the control's range in this session: that range moves between host sessions (-14 / -15 / run 7)
-        # while the pooled value does not (core_share .593 / .595, whole_share .282 / .255 across sessions s1 / s2). `floor` is the
-        # tolerance on the pooled difference, measured between sessions (see measurements/2026-11-22-input-band-judge.md).
+        # while the pooled value does not (core_share .593 / .597 / .616, whole_share .280 / .256 / .240 across the 3 sessions). `floor` is the
+        # tolerance on the pooled difference, from the control's between-session spread (rule above SPEC; measurements/2026-11-22-input-band-judge.md).
+        # Percentile bootstrap over 6 runs is narrow (small n understates the spread): the interval is a floor on the uncertainty, not a guarantee.
         d, lo, hi = pool_diff(c, a)
         note = f"diff {d:+.3g} [{lo:+.3g}, {hi:+.3g}] tol +-{floor:g}"
-        if (hi - lo) / 2 > floor:   # the interval is wider than the tolerance: too few runs to tell
-            return "UNMEASURED", note + " (interval wider than the tolerance)"
-        return ("PASS" if abs(d) <= floor else "FAIL"), note
+        # tol is the smallest difference called a tell; a 6-run interval cannot prove equivalence inside it, so PASS asks only the point
+        if abs(d) <= floor:
+            return "PASS", note
+        if hi < -floor or lo > floor:      # the point and the whole interval lie outside the tolerance
+            return "FAIL", note
+        return "UNMEASURED", note + " (point outside the tolerance, interval straddles it)"
     if kind in ("num", "share"):
         lo, hi = min(c), max(c)
         if kind == "share" and hi - lo >= 0.5:
