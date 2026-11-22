@@ -519,6 +519,22 @@ class PooledBand(unittest.TestCase):
         # straddle: point outside the tolerance, interval across it
         self.assertEqual(self.v("I2b", "core_share", ctl, [x - .045 for x in ctl]), "UNMEASURED")
 
+    def test_scattered_arm_with_the_controls_mean_is_unmeasured(self):
+        """point inside the tolerance (diff -.0007) but the interval is +-.17: not a match"""
+        self.assertEqual(self.v("I2c", "whole_share", self.CTL[1]["whole_share"], [0, .5, 0, .5, .03, .5]), "UNMEASURED")
+
+    def test_leave_one_out_tolerance_judges_the_held_out_session(self):
+        """tol from two sessions, the third judged against each of the two: 0 FAIL (the rule is not fitted to the session it judges)"""
+        import statistics
+        got = []
+        for k in range(3):
+            rest = [c for i, c in enumerate(self.CTL) if i != k]
+            for n in ("spacing_sd", "core_share", "tail_share", "whole_share"):
+                tol = max(self.FLOOR[n], 3 * statistics.stdev(statistics.mean(c[n]) for c in rest))
+                got += [R.metric_verdict("pool", tol, c[n], self.CTL[k][n])[0] for c in rest]
+        self.assertEqual(len(got), 24)
+        self.assertEqual((got.count("PASS"), got.count("UNMEASURED"), got.count("FAIL")), (23, 1, 0))   # the 1: whole_share, session 1 vs 3, tol .034
+
     def test_control_of_one_session_passes_against_every_other(self):
         for row, names in (("I2b", ("spacing_med", "spacing_sd", "core_share", "tail_share")), ("I2c", ("whole_share", "repeat_share"))):
             for n in names:

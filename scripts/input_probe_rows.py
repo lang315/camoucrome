@@ -201,7 +201,9 @@ MIN_N = 4               # runs per group (each control rate, and the arm) a verd
 WIDEN = 0.25            # a numeric verdict widens the control's range by this fraction of it (never less than the floor)
 COVERED_MIN = 0.9      # I1: the share of moves that lie inside the logged tick range a verdict needs
 EXPECT_DPR = 1.25       # the probes run at this device scale factor; I3 means nothing at 1
-# metric -> (kind, floor). pool: the arm's mean over runs minus the control's, within +-floor (a run-level bootstrap interval wider than floor is UNMEASURED); num: the arm's median must lie in the control's range widened by max(floor, WIDEN * range);
+# metric -> (kind, floor). pool (rule B): d = the arm's mean over runs minus the control's, tol = floor (rule below); PASS when |d| <= tol and the 95 % run-level
+# bootstrap interval is no wider than 2 x tol (half-width); FAIL when the point and the whole interval lie outside +-tol; else UNMEASURED (the point is outside and
+# the interval straddles, or the point is inside but the interval is too wide to say a scattered arm matches); num: the arm's median must lie in the control's range widened by max(floor, WIDEN * range);
 # share: the same for a 0..1 share, UNMEASURED when the control's own range is 0.5 or more (it could never FAIL);
 # zero: control and arm both 0; eq: every arm value is one of the control's; info: reported, never judged.
 SPEC = {
@@ -254,6 +256,8 @@ def metric_verdict(kind, floor, ctl, arm, min_n=MIN_N):
         note = f"diff {d:+.3g} [{lo:+.3g}, {hi:+.3g}] tol +-{floor:g}"
         # tol is the smallest difference called a tell; a 6-run interval cannot prove equivalence inside it, so PASS asks only the point
         if abs(d) <= floor:
+            if (hi - lo) / 2 > 2 * floor:   # a scattered arm can have a mean on the control's: too wide to call it a match
+                return "UNMEASURED", note + " (point inside the tolerance, interval wider than 2 x tol)"
             return "PASS", note
         if hi < -floor or lo > floor:      # the point and the whole interval lie outside the tolerance
             return "FAIL", note
