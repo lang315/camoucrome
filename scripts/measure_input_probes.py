@@ -43,7 +43,7 @@ WIN = (1000, 700)
 POS = (360, 160)
 ARMS = ("ctl125", "ctl1000", "raw", "rawh", "human", "red")
 CTL = ("ctl125", "ctl1000")
-PHASE_OF = {"I1": "move", "I2": "move", "I2b": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key"}
+PHASE_OF = {"I1": "move", "I2": "move", "I2b": "move", "I2c": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key", "I7": "move"}
 PHASES = ("move", "edge", "click", "key")
 FLUSH_S = 0.8       # the page posts every 300 ms and learns a phase on the reply
 
@@ -561,7 +561,7 @@ def cmd_report(a):
             lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
     lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame); the planted case is the "
               "synthetic fixture. I1 is UNMEASURED when fewer than 90 % of the moves lie inside the tick log. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
-    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those after a skipped frame (gap > 25 ms) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms | list max | list p99 |",
+    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those on a frame that came > 25 ms after the one before (page rAF ticks) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms | list max | list p99 |",
               "|---|---|---|---|---|---|---|---|---|---|---|"]
     for arm, rs in by.items():
         good = measured(rs)
@@ -583,7 +583,7 @@ def cmd_report(a):
             sizes += [e["cs"] for e in pm if e["cs"] >= 0]
             n += len(pm)
             over += sum(1 for e in pm if e["cs"] > cap)
-            skip += sum(1 for x, y in zip(pm, pm[1:]) if y["ts"] - x["ts"] > 25.0 and y["cs"] > cap)
+            skip += R.after_skip(lg, 25.0, cap)
         lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} | {max(sizes, default=0)} | {sorted(sizes)[len(sizes) * 99 // 100] if sizes else 0} |")
     text = "\n".join(lines)
     (pathlib.Path(a.dir) / "table.md").write_text(text + "\n", encoding="utf-8")

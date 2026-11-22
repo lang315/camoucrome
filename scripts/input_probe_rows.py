@@ -69,6 +69,50 @@ def i2b(log):
     return {"spacing_n": len(gaps), "spacing_med": _med(gaps), "spacing_sd": statistics.pstdev(gaps)}
 
 
+def i2c(log):
+    """Two properties of the coalesced lists. `whole_share`: the share of intra-event stamp gaps that are whole ms
+    (abs(gap - round(gap)) < 0.05): the control's stamps may be OS-quantized, ours continuous; INFO until the control's shape is
+    known. `repeat`: neighbouring coalesced samples (across the flattened lists, in order) at the same (x, y), which stock
+    drops on Windows; `repeat_share` is it over the neighbour pairs. Needs the page's `cxy`."""
+    gaps, pos = [], []
+    for e in evs(log, "pointermove"):
+        c = e.get("cts") or []
+        gaps += [b - a for a, b in zip(c, c[1:])]
+        pos += e.get("cxy") or []
+    if not gaps:
+        return None
+    rep = sum(1 for a, b in zip(pos, pos[1:]) if a == b) if pos else None
+    return {"gaps": len(gaps), "whole_share": sum(1 for g in gaps if abs(g - round(g)) < 0.05) / len(gaps),
+            "repeat": rep, "repeat_share": rep / (len(pos) - 1) if pos and len(pos) > 1 else None}
+
+
+def i7(log):
+    """pointerrawupdate: `lat_sd`, the sd of now - timeStamp (a real mouse delivers each report as it arrives, so the latency
+    is steady; a burst forwarded back to back makes it grow within the burst), and `pairs`, the neighbouring events whose
+    `now` lie within 0.5 ms but whose timeStamps are 2 ms or more apart; `pair_share` is it over the neighbour pairs."""
+    raw = evs(log, "pointerrawupdate")
+    if len(raw) < 2:
+        return None
+    pairs = sum(1 for a, b in zip(raw, raw[1:]) if abs(b["now"] - a["now"]) < 0.5 and abs(b["ts"] - a["ts"]) >= 2.0)
+    return {"raw": len(raw), "lat_sd": statistics.pstdev([e["now"] - e["ts"] for e in raw]), "pairs": pairs,
+            "pair_share": pairs / (len(raw) - 1)}
+
+
+def after_skip(log, thr=25.0, cap=None):
+    """Pointermoves that ride a frame arriving more than `thr` ms after the one before (a skipped frame), read from the page's
+    own rAF ticks and the move's `now`, never from head timeStamps: an authored stamp run is contiguous, so a merged
+    two-bucket list always shows a 2-frame head gap. With `cap`, only moves whose coalesced list is longer than it."""
+    ticks = [n for _, n in log["raf"]]
+    out = 0
+    for e in evs(log, "pointermove"):
+        if cap is not None and e["cs"] <= cap:
+            continue
+        i = next((k for k, t in enumerate(ticks) if t >= e["now"]), None)
+        if i and ticks[i] - ticks[i - 1] > thr:
+            out += 1
+    return out
+
+
 def i3(log):
     """The device-pixel grid, from pointermove (a MouseEvent's clientX is whole CSS px; a PointerEvent's is not). A pointer
     on whole device pixels has clientX*dpr integral up to the viewport's fixed offset, so each axis shows ONE fractional
@@ -144,7 +188,7 @@ def i6(log):
             "interval_sd": statistics.pstdev(gaps) if len(gaps) > 1 else None}
 
 
-ROWS = {"I1": i1, "I2": i2, "I2b": i2b, "I3": i3, "I4": i4, "I5": i5, "I6": i6}
+ROWS = {"I1": i1, "I2": i2, "I2b": i2b, "I2c": i2c, "I3": i3, "I4": i4, "I5": i5, "I6": i6, "I7": i7}
 MIN_N = 4               # runs per group (each control rate, and the arm) a verdict needs
 WIDEN = 0.25            # a numeric verdict widens the control's range by this fraction of it (never less than the floor)
 COVERED_MIN = 0.9      # I1: the share of moves that lie inside the logged tick range a verdict needs
@@ -158,6 +202,10 @@ SPEC = {
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
     # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
     "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25)},
+    # whole_share: INFO until the control's shape is known (does the OS quantize its stamps?); repeats: stock drops same-position moves
+    "I2c": {"whole_share": ("info", 0), "repeat_share": ("share", 0.01), "repeat": ("info", 0)},
+    # pointerrawupdate: the sd of now - timeStamp is the control's (floor 0.5 ms), back-to-back events are not (a back-to-back burst has pair_share ~.5)
+    "I7": {"lat_sd": ("num", 0.5), "pair_share": ("share", 0.02), "pairs": ("info", 0)},
     "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},
     "I4": {"exit_sig": ("eq", 0), "outside": ("zero", 0), "exit_depth": ("num", 6.0), "exit_rt": ("eq", 0), "reenter": ("eq", 0)},
     "I5": {"right": ("eq", 0), "click_detail": ("eq", 0), "dblclick": ("eq", 0), "contextmenu": ("eq", 0)},
@@ -207,6 +255,8 @@ def presence(log, row):
         return f"dpr {m.get('dpr')} is not {EXPECT_DPR}: whole CSS pixels pass the grid trivially"
     if not [e for e in log["ev"] if e["tr"]]:
         return "no trusted event arrived"
+    if row == "I7" and not [e for e in log["ev"] if e["tr"] and e["t"] == "pointerrawupdate"]:
+        return "no pointerrawupdate arrived (not a secure context, or the listener saw no move)"
     if row == "I5" and not [e for e in log["ev"] if e["tr"] and e["t"] == "mousedown"]:
         return "no mousedown arrived: no click was measured"
     f = frame_ms(log)

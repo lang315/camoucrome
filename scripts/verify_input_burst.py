@@ -42,7 +42,7 @@ HUM = {"humanize:enabled": True, "humanize:minTime": 500, "humanize:maxTime": 80
 PAGE = (b"<!doctype html><body style='margin:0;height:3000px'><script>"
         b"window.__log=[];window.__seq=0;"
         b"addEventListener('pointermove',e=>{const c=e.getCoalescedEvents();"
-        b"__log.push({ts:e.timeStamp,cs:c.length,cts:c.map(x=>x.timeStamp),ps:e.getPredictedEvents().length,"
+        b"__log.push({ts:e.timeStamp,now:performance.now(),cs:c.length,cts:c.map(x=>x.timeStamp),ps:e.getPredictedEvents().length,"
         b"k:'move',seq:++__seq,x:e.clientX,y:e.clientY,mx:e.movementX,my:e.movementY,cmx:c.map(x=>x.movementX),cmy:c.map(x=>x.movementY),"
         b"fn:typeof e.getCoalescedEvents==='function',secure:isSecureContext})},{capture:true,passive:true});"
         b"addEventListener('pointerdown',e=>{__log.push({k:'down',x:e.clientX,y:e.clientY,seq:++__seq})},true);"
@@ -198,7 +198,8 @@ def hops_row(hz, url):
         results[R5] = "FAIL"
     sizes = sorted(e["cs"] for e in log)
     # the tell: a frame with no pointermove, then one with a double list (two bursts in one frame)
-    skip_double = sum(1 for a, b in zip(log, log[1:]) if b["ts"] - a["ts"] > 25.0 and b["cs"] > cap)
+    # (by `now`, the page's own clock: the head timeStamps of authored bursts are contiguous, so their gap is a frame pair by construction)
+    skip_double = sum(1 for a, b in zip(log, log[1:]) if b["now"] - a["now"] > 25.0 and b["cs"] > cap)
     print("      row5 %d Hz n=%d max=%d (cap %d) multi=%.2f predicted=%.2f spacing median=%s sd=%s; sizes p50/p90/p99 %s/%s/%s, %d above the cap, %d of them after a skipped frame" % (
         hz, m["n"], m["max"], cap, m["multi"], m["predicted"], m["gap_med"], sd,
         sizes[len(sizes) // 2], sizes[len(sizes) * 9 // 10], sizes[len(sizes) * 99 // 100], sum(1 for x in sizes if x > cap), skip_double))

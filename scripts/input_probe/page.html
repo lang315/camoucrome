@@ -4,23 +4,25 @@
 <style>html,body{margin:0;height:100%;overflow:hidden;background:#fff}#t{position:fixed;inset:0}#k{position:fixed;left:8px;top:8px;width:120px}</style>
 <div id="t"></div><input id="k" autocomplete="off">
 <script>
-// Input-probe page (rows I1-I6). Passive: it only listens and logs raw events. A snapshot of the whole log is POSTed
+// Input-probe page (rows I1-I7). Passive: it only listens and logs raw events. A snapshot of the whole log is POSTed
 // every 300 ms while it changes (every tick is kept: a ring that dropped the early ticks made I1 pair early moves with a far later one) (the reply names the phase the harness is in, which tags later events), so a run with no driver (SendInput control) is read the same way as a driven one.
 const q = new URLSearchParams(location.search);
 const L = [], RAF = [];
 let dirty = true, seq = 0, PH = 'boot';
 const cc = e => (typeof e.getCoalescedEvents === 'function' && e.type === 'pointermove') ? e.getCoalescedEvents().length : -1;
 const cts = e => (typeof e.getCoalescedEvents === 'function' && e.type === 'pointermove') ? e.getCoalescedEvents().map(c => c.timeStamp) : null;
+const cxy = e => (typeof e.getCoalescedEvents === 'function' && e.type === 'pointermove') ? e.getCoalescedEvents().map(c => [c.clientX, c.clientY]) : null;
 const pc = e => (typeof e.getPredictedEvents === 'function' && e.type === 'pointermove') ? e.getPredictedEvents().length : -1;
 function rec(e) {
   if (/enter|leave/.test(e.type) && e.target !== document.documentElement) return;   // one per ancestor otherwise
   L.push({n: seq++, t: e.type, ts: e.timeStamp, now: performance.now(), x: e.clientX, y: e.clientY, b: e.button,
           bs: e.buttons, d: e.detail, rep: e.repeat === undefined ? null : e.repeat, key: e.key === undefined ? null : e.key,
-          rt: 'relatedTarget' in e ? (e.relatedTarget === null ? 'null' : 'node') : null, cs: cc(e), ps: pc(e), cts: cts(e),
+          rt: 'relatedTarget' in e ? (e.relatedTarget === null ? 'null' : 'node') : null, cs: cc(e), ps: pc(e), cts: cts(e), cxy: cxy(e),
           tr: e.isTrusted, pt: e.pointerType || null, ph: PH});
   dirty = true;
 }
-const TYPES = ['pointermove', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'contextmenu',
+// pointerrawupdate (I7) is logged with its timeStamp and performance.now(): a burst forwarded back to back shows two at one `now`
+const TYPES = ['pointerrawupdate', 'pointermove', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click', 'dblclick', 'contextmenu',
   'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave',
   'keydown', 'keyup', 'keypress'];
 // enter/leave do not bubble and window's capture never sees them: the document gets those, the window the rest, so none is logged twice
