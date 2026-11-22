@@ -286,3 +286,39 @@ func TestResolveDropRaisesToTheFloorItself(t *testing.T) {
 		t.Errorf("cores-floor drop: claim kept or cores %v, want dropped and 18", r.Config["navigator.hardwareConcurrency"])
 	}
 }
+
+// A floor that is no thread step (14, 18, 24) must not make Draw fail: the spare entry is valid when the host reaches the floor,
+// and its cores are raised to it. 400 seeds, every one must draw, and every spare's cores must meet the floor.
+func TestDrawNonStepFloorHostsAlwaysDraw(t *testing.T) {
+	for _, c := range []struct {
+		host  string
+		cores int
+	}{
+		{"ANGLE (Intel, Intel(R) Graphics (0x00007D45) " + d3d, 14},
+		{"ANGLE (Intel, Intel(R) Graphics (0x00007D55) " + d3d, 18},
+		{"ANGLE (Intel, Intel(R) UHD Graphics 770 (0x0000A780) " + d3d, 32},
+	} {
+		h := goodHost
+		h.Cores, h.Renderer = c.cores, c.host
+		var failed int
+		for s := uint64(1); s <= 400; s++ {
+			id, err := Draw("windows", &s, &h)
+			if err != nil {
+				failed++
+				continue
+			}
+			var e map[string]any
+			if err := json.Unmarshal(id.Entry, &e); err != nil {
+				t.Fatal(err)
+			}
+			if _, claimed := e["webGl:renderer"]; !claimed {
+				if n, _ := e["navigator.hardwareConcurrency"].(float64); snapCores(int(n), c.cores) < igpuFloor(c.host) && int(n) < igpuFloor(c.host) {
+					t.Errorf("host %q seed %d: spare with %v cores, below the floor", c.host, s, n)
+				}
+			}
+		}
+		if failed != 0 {
+			t.Errorf("host %q cores %d: %d/400 draws failed", c.host, c.cores, failed)
+		}
+	}
+}
