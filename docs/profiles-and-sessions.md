@@ -51,6 +51,10 @@ pool entry, so a later release's data cannot change the entry.
 - **One-time change on update.** An identity drawn before same-architecture `Draw` (`client/go/core` of `-8` and
   `-9`), or drawn without a host renderer, can lose a GPU claim of another architecture on its first launch
   after this check ships. That is a one-time fingerprint change, and a site may re-check the device.
+  Also, on a host whose iGPU floor is not a thread step (Meteor Lake 0x7D45, 0x7D55, 0x7D41, 0x7D67, and 0x46B3,
+  0xA780), an identity whose iGPU claim is dropped for the cores floor now reports `hardwareConcurrency` raised to
+  the host iGPU's floor (for example 12 to 14, 16 to 18) on its first launch after the update. This happens with no
+  host move, and also to freshly drawn identities.
 
 ## What was measured
 

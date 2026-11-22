@@ -272,7 +272,7 @@ func TestResolveDropRaisesToTheFloorItself(t *testing.T) {
 		if got := resolve(rtx3060, 8, h).Config["navigator.hardwareConcurrency"]; got != float64(c.want) {
 			t.Errorf("arch drop, host %q cores %d: %v, want %d", c.host, c.cores, got, c.want)
 		}
-		// 2. CPU vendor drop: an Intel iGPU claim on an AMD CPU host of the same architecture as the claim
+		// 2. CPU vendor drop (a synthetic path: an Intel iGPU claim beside an AMD CPU never occurs on a real host): an Intel iGPU claim on an AMD CPU host of the same architecture as the claim
 		h.CPUVendor = amdCPU
 		if got := resolve(c.host, 8, h).Config["navigator.hardwareConcurrency"]; got != float64(c.want) {
 			t.Errorf("vendor drop, host %q cores %d: %v, want %d", c.host, c.cores, got, c.want)
