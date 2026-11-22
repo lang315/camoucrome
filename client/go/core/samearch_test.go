@@ -300,7 +300,7 @@ func TestDrawNonStepFloorHostsAlwaysDraw(t *testing.T) {
 	} {
 		h := goodHost
 		h.Cores, h.Renderer = c.cores, c.host
-		var failed int
+		var failed, raised int
 		for s := uint64(1); s <= 400; s++ {
 			id, err := Draw("windows", &s, &h)
 			if err != nil {
@@ -312,13 +312,20 @@ func TestDrawNonStepFloorHostsAlwaysDraw(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, claimed := e["webGl:renderer"]; !claimed {
-				if n, _ := e["navigator.hardwareConcurrency"].(float64); snapCores(int(n), c.cores) < igpuFloor(c.host) && int(n) < igpuFloor(c.host) {
+				n, _ := e["navigator.hardwareConcurrency"].(float64)
+				if snapCores(int(n), c.cores) < igpuFloor(c.host) {
 					t.Errorf("host %q seed %d: spare with %v cores, below the floor", c.host, s, n)
+				}
+				if int(n) == igpuFloor(c.host) {
+					raised++
 				}
 			}
 		}
 		if failed != 0 {
 			t.Errorf("host %q cores %d: %d/400 draws failed", c.host, c.cores, failed)
+		}
+		if raised == 0 && c.cores == igpuFloor(c.host) {
+			t.Errorf("host %q cores %d: no spare carries the floor itself: the raise path was not reached", c.host, c.cores)
 		}
 	}
 }

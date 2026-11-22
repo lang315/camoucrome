@@ -127,6 +127,7 @@ func TestGoldenDeterministic(t *testing.T) {
 				Cores           int
 				PlatformVersion string
 				Display         *Display
+				Renderer        string
 			}
 			Config map[string]any
 			Args   []string
@@ -136,7 +137,7 @@ func TestGoldenDeterministic(t *testing.T) {
 		for _, run := range runs {
 			entry, _ := json.Marshal(run.Entry)
 			id := Identity{Version: 1, OS: "windows", Entry: entry, Seeds: map[string]uint32{"canvas:seed": 1, "mediaDevices:seed": 2}, HostSeed: 1}
-			r, err := Resolve(id, Host{Cores: run.Host.Cores, PlatformVersion: run.Host.PlatformVersion, Display: run.Host.Display}, nil)
+			r, err := Resolve(id, Host{Cores: run.Host.Cores, PlatformVersion: run.Host.PlatformVersion, Display: run.Host.Display, Renderer: run.Host.Renderer}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

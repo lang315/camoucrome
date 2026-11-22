@@ -55,7 +55,7 @@ pool entry, so a later release's data cannot change the entry.
   0xA780), an identity whose iGPU claim is dropped for the cores floor now reports `hardwareConcurrency` raised to
   the host iGPU's floor (for example 12 to 14, 16 to 18) on its first launch after the update. This happens with no
   host move, and also to freshly drawn identities.
-  `Draw` on such a host used to fail for many seeds (`no pool entry holds a 800x500 window ...`). It now draws a
+  `Draw` on such a host used to return an error for many seeds (the Python `generate` raised `RuntimeError`). It now draws a
   spare entry with no GPU claim whenever the host reaches the floor, and raises that entry's cores to it. Seeds
   that drew a spare on those hosts can draw another entry than before; a drawn identity is stored, so only a new
   draw is affected.

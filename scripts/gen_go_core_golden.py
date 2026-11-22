@@ -47,6 +47,41 @@ WEBGPU_PAIRS = [  # (claim, host)
     (UHD_9B41, G620_A), (XE, UHD_9B41), (RTX, SWIFTSHADER), (G630, NOT_IN_TABLE), (NOT_IN_TABLE, NOT_IN_TABLE), (RX6800, None)]
 
 
+# Meteor Lake 0x7D45: its floor, 14 threads, is no THREAD_STEPS value (synthetic host, no real machine).
+UHD770 = "ANGLE (Intel, Intel(R) UHD Graphics 770 (0x0000A780) Direct3D11 vs_5_0 ps_5_0, D3D11)"  # floor 24, cap 32
+MTL = "ANGLE (Intel, Intel(R) Graphics (0x00007D45) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
+def drop_raise_run(gen):
+    """A from_pool run whose iGPU claim is dropped for the cores floor on a host whose own iGPU floor is no thread step: the
+    cores are raised to that floor (Go core Resolve's dropClaim must agree). The claim is synthetic: the first acceptable sample
+    with its GPU and thread count set to a UHD 770 (floor 24, a real SKU count) on 24 threads."""
+    import random
+    from dataclasses import asdict
+    from browserforge.fingerprints import FingerprintGenerator
+    bf = FingerprintGenerator(browser="chrome", os=d.OS)
+    for seed in range(1, 200):
+        random.seed(seed)
+        fp = asdict(bf.generate())
+        if not gen.acceptable(fp):
+            continue
+        fp["videoCard"] = {"vendor": "Google Inc. (Intel)", "renderer": UHD770}
+        fp["navigator"]["hardwareConcurrency"] = 24
+        base = gen.from_pool(fp, rng=random.Random(seed), host_cores=1024, host_cpu_vendor=None)
+        entry = {k: v for k, v in base["config"].items()
+                 if k not in ("voices:list", "canvas:seed", "mediaDevices:seed", "timezone:id")}
+        entry["dpr"] = base["launch"]["dpr"]
+        want = gen.from_pool(fp, rng=random.Random(seed), host_renderer=MTL, host_cores=14, host_platform_version="10.0.0",
+                             host_cpu_vendor=None)
+        skip = ("canvas:seed", "mediaDevices:seed", "timezone:id")
+        assert entry["webGl:renderer"] == UHD770 and entry["navigator.hardwareConcurrency"] == 24
+        assert "webGl:renderer" not in want["config"] and want["config"]["navigator.hardwareConcurrency"] == 14
+        return {"seed": seed, "entry": entry, "host": {"cores": 14, "platformVersion": "10.0.0", "display": None, "renderer": MTL},
+                "config": {k: v for k, v in want["config"].items() if k not in skip},
+                "args": want["launch"]["args"], "dpr": want["launch"]["dpr"], "warnings": want["warnings"]}
+    raise SystemExit("no acceptable sample")
+
+
 def webgpu_rows(gen):
     """gen.gpu_keys's webGpu:blocked for every pair: what core.Resolve must answer for a claim on a host renderer."""
     return [{"claim": c, "host": h, "blocked": gen.gpu_keys("v", c, h)["webGpu:blocked"]} for c, h in WEBGPU_PAIRS]
@@ -99,6 +134,7 @@ def main():
                      "config": {k: v for k, v in want["config"].items() if k not in skip},
                      "args": want["launch"]["args"], "dpr": want["launch"]["dpr"],
                      "warnings": want["warnings"]})
+    runs.append(drop_raise_run(gen))
     write("from_pool.json", runs)
     write("webgpu.json", webgpu_rows(gen))
     # with_locale_pack over drawn lists (some with win11 appended) and tags with, without and beyond a matching pack
