@@ -8,8 +8,9 @@ Arms (all on the Windows host, one launch per arm and run, every row in one page
   rawh             the same with humanize:enabled
   human            fork + camoucrome.human (click only: rows I1-I3; the rest is n/a, no API)
   red              the planted bad arm: back-to-back moves, clickCount 1, no right click. Its I1 row cannot fail live: Chrome's
-                   input router coalesces a burst to one move per frame; I1's live RED is rawh (humanize timers off the frame
-                   start), the synthetic fixture holds the planted case (test_input_probe_rows)
+                   input router coalesces a burst to one move per frame; the synthetic fixture holds the planted case
+                   (test_input_probe_rows). I1 has no live RED: rawh's old FAIL (.42) was the page's tick ring, not the browser
+                   (measurements/2026-11-22-input-p0.md); I2 and I2b (coalesced list, stamp spacing) are what rawh fails live
 
   python measure_input_probes.py run --stock-exe PATH --fork-exe PATH --out DIR [--runs 6] [--arms ...] [--fork-version X]
   (CAMOU_WSL_USER names the WSL user that reads the build lock; the fork must be the pin in upstream.env or --fork-version)
@@ -42,7 +43,7 @@ WIN = (1000, 700)
 POS = (360, 160)
 ARMS = ("ctl125", "ctl1000", "raw", "rawh", "human", "red")
 CTL = ("ctl125", "ctl1000")
-PHASE_OF = {"I1": "move", "I2": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key"}
+PHASE_OF = {"I1": "move", "I2": "move", "I2b": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key"}
 PHASES = ("move", "edge", "click", "key")
 FLUSH_S = 0.8       # the page posts every 300 ms and learns a phase on the reply
 
@@ -546,8 +547,8 @@ def cmd_report(a):
                 continue
             det = "; ".join(f"{k}={x[0]} {x[1]} [{x[2]}]" for k, x in v.items() if k != "_row")
             lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
-    lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame): I1's live RED is rawh; the planted case is the "
-              "synthetic fixture. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
+    lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame); the planted case is the "
+              "synthetic fixture. I1 is UNMEASURED when fewer than 90 % of the moves lie inside the tick log. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
     text = "\n".join(lines)
     (pathlib.Path(a.dir) / "table.md").write_text(text + "\n", encoding="utf-8")
     print(text)

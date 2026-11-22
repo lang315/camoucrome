@@ -30,15 +30,16 @@ def i1(log):
     f = frame_ms(log)
     if not mv or not f or len(ticks) < 10:
         return None
+    # only moves inside the logged tick range: one before the first tick has no tick of its own (P0b 2026-11-22: it was paired
+    # with a far later one). `covered` is the share judged; the row is UNMEASURED below COVERED_MIN (see presence).
+    inside = [e for e in mv if ticks[0] <= e["now"] <= ticks[-1]]
     per, lead = {}, []
-    for e in mv:
+    for e in inside:
         nxt = next((t for t in ticks if t >= e["now"]), None)
-        if nxt is None:
-            continue
         per[nxt] = per.get(nxt, 0) + 1
         lead.append(nxt - e["now"])
     gaps = [b["ts"] - a["ts"] for a, b in zip(mv, mv[1:])]
-    return {"moves": len(mv), "frame_ms": f,
+    return {"moves": len(mv), "covered": len(inside) / len(mv), "frame_ms": f,
             "multi": sum(1 for c in per.values() if c > 1) / len(per) if per else None,
             "aligned": sum(1 for x in lead if x <= EDGE_MS) / len(lead) if lead else None,
             "gap_med": _med(gaps), "gap_min": min(gaps) if gaps else None,
@@ -54,6 +55,18 @@ def i2(log):
     return {"moves": len(pm), "coalesced_med": _med(c), "coalesced_max": max(c),
             "multi": sum(1 for x in c if x > 1) / len(c),
             "predicted": sum(1 for e in pm if e["ps"] > 0) / len(pm)}
+
+
+def i2b(log):
+    """Spacing of the getCoalescedEvents() timeStamps inside one pointermove: a mouse reports every 8 ms (125 Hz) or 1 ms
+    (1000 Hz), so the samples of one frame are that far apart. Median and sd over every intra-event gap."""
+    gaps = []
+    for e in evs(log, "pointermove"):
+        c = e.get("cts") or []
+        gaps += [b - a for a, b in zip(c, c[1:])]
+    if not gaps:
+        return None
+    return {"spacing_n": len(gaps), "spacing_med": _med(gaps), "spacing_sd": statistics.pstdev(gaps)}
 
 
 def i3(log):
@@ -131,9 +144,10 @@ def i6(log):
             "interval_sd": statistics.pstdev(gaps) if len(gaps) > 1 else None}
 
 
-ROWS = {"I1": i1, "I2": i2, "I3": i3, "I4": i4, "I5": i5, "I6": i6}
+ROWS = {"I1": i1, "I2": i2, "I2b": i2b, "I3": i3, "I4": i4, "I5": i5, "I6": i6}
 MIN_N = 4               # runs per group (each control rate, and the arm) a verdict needs
 WIDEN = 0.25            # a numeric verdict widens the control's range by this fraction of it (never less than the floor)
+COVERED_MIN = 0.9      # I1: the share of moves that lie inside the logged tick range a verdict needs
 EXPECT_DPR = 1.25       # the probes run at this device scale factor; I3 means nothing at 1
 # metric -> (kind, floor). num: the arm's median must lie in the control's range widened by max(floor, WIDEN * range);
 # share: the same for a 0..1 share, UNMEASURED when the control's own range is 0.5 or more (it could never FAIL);
@@ -141,6 +155,8 @@ EXPECT_DPR = 1.25       # the probes run at this device scale factor; I3 means n
 SPEC = {
     "I1": {"multi": ("share", 0.05), "aligned": ("share", 0.10), "short": ("share", 0.10), "gap_med": ("num", 2.0)},
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
+    # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
+    "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25)},
     "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},
     "I4": {"exit_sig": ("eq", 0), "outside": ("zero", 0), "exit_depth": ("num", 6.0), "exit_rt": ("eq", 0), "reenter": ("eq", 0)},
     "I5": {"right": ("eq", 0), "click_detail": ("eq", 0), "dblclick": ("eq", 0), "contextmenu": ("eq", 0)},
@@ -184,7 +200,7 @@ def presence(log, row):
     m = log.get("meta") or {}
     if not m.get("secure"):
         return "not a secure context"
-    if row == "I2" and not m.get("coalesced_fn"):
+    if row in ("I2", "I2b") and not m.get("coalesced_fn"):
         return "getCoalescedEvents is not a function"
     if row == "I3" and m.get("dpr") != EXPECT_DPR:
         return f"dpr {m.get('dpr')} is not {EXPECT_DPR}: whole CSS pixels pass the grid trivially"
@@ -195,6 +211,10 @@ def presence(log, row):
     f = frame_ms(log)
     if row == "I1" and not (f and FRAME_OK[0] <= f <= FRAME_OK[1]):
         return f"rAF interval {f and round(f, 1)} ms is not the 60 Hz display's (live RDP session?)"
+    if row == "I1":
+        m1 = i1(log)
+        if m1 and m1["covered"] < COVERED_MIN:
+            return f"covered {m1['covered']:.2f} < {COVERED_MIN}: the tick log does not span the moves"
     return None
 
 

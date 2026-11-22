@@ -58,6 +58,72 @@ class I1(unittest.TestCase):
         self.assertEqual(R.row_verdict(R.judge("I1", ctl, many(lambda i: log(real_moves(phase=1.2))))), "PASS")
 
 
+class I1Covered(unittest.TestCase):
+    """2026-11-22 P0b: page.html once kept only the last 6000 ticks; moves older than the first tick were paired with a far
+    later one, so `aligned` read the covered share (.42), not the browser."""
+
+    def ring_log(self, drop):
+        """real_moves(), but the tick log lost its first `drop` ticks (the old ring)"""
+        lg = log(real_moves())
+        lg["raf"] = lg["raf"][drop:]
+        return lg
+
+    def test_full_ring_is_covered(self):
+        m = R.i1(log(real_moves()))
+        self.assertEqual(m["covered"], 1.0)
+        self.assertEqual(m["aligned"], 1.0)
+
+    def test_old_ring_judges_only_covered_moves(self):
+        m = R.i1(self.ring_log(30))      # ticks 30.. : the moves before them have no tick
+        self.assertAlmostEqual(m["covered"], 0.5, delta=0.05)
+        self.assertEqual(m["aligned"], 1.0)   # among the covered moves, as P0b found
+
+    def test_old_ring_is_unmeasured_not_fail(self):
+        ctl = [log(real_moves(phase=p)) for p in (0.5, 1.0, 1.5, 0.8)]
+        v = R.judge("I1", ctl, many(lambda i: self.ring_log(30)))
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+        self.assertIn("covered", v["_"][1])
+
+    def test_covered_ring_passes(self):
+        ctl = [log(real_moves(phase=p)) for p in (0.5, 1.0, 1.5, 0.8)]
+        self.assertEqual(R.row_verdict(R.judge("I1", ctl, many(lambda i: self.ring_log(2)))), "PASS")
+
+
+class I2b(unittest.TestCase):
+    """spacing of the getCoalescedEvents() timeStamps inside one pointermove"""
+
+    def pm(self, step, n=30, k=4, sd=0.0):
+        out = []
+        for i in range(n):
+            base = i * F * 10
+            out.append(ev("pointermove", base, cs=k, ps=1,
+                          cts=[base - (k - 1 - j) * step + ((-1) ** j) * sd for j in range(k)]))
+        return out
+
+    def groups(self):
+        return {"ctl125": [log(self.pm(8.0, sd=0.1)) for _ in range(4)], "ctl1000": [log(self.pm(1.0, k=17, sd=0.05)) for _ in range(4)]}
+
+    def test_metrics(self):
+        m = R.i2b(log(self.pm(8.0)))
+        self.assertAlmostEqual(m["spacing_med"], 8.0)
+        self.assertEqual(m["spacing_n"], 90)
+
+    def test_matching_rate_passes(self):
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(8.1, sd=0.1))))), "PASS")
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(1.05, k=17, sd=0.05))))), "PASS")
+
+    def test_red_equal_stamps_fail(self):
+        v = R.judge("I2b", self.groups(), many(lambda i: log(self.pm(0.0))))
+        self.assertEqual(R.row_verdict(v), "FAIL")
+
+    def test_red_wrong_rate_fails(self):
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(4.0))))), "FAIL")
+
+    def test_red_one_sample_per_frame_is_not_pass(self):
+        single = [ev("pointermove", i * F, cs=1, ps=0, cts=[i * F]) for i in range(30)]
+        self.assertNotEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(single)))), "PASS")
+
+
 class I2(unittest.TestCase):
     def pm(self, cs, n=30):
         return [ev("pointermove", i * F, cs=cs, ps=0) for i in range(n)]

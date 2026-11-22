@@ -5,17 +5,18 @@
 <div id="t"></div><input id="k" autocomplete="off">
 <script>
 // Input-probe page (rows I1-I6). Passive: it only listens and logs raw events. A snapshot of the whole log is POSTed
-// every 300 ms while it changes (the reply names the phase the harness is in, which tags later events), so a run with no driver (SendInput control) is read the same way as a driven one.
+// every 300 ms while it changes (every tick is kept: a ring that dropped the early ticks made I1 pair early moves with a far later one) (the reply names the phase the harness is in, which tags later events), so a run with no driver (SendInput control) is read the same way as a driven one.
 const q = new URLSearchParams(location.search);
 const L = [], RAF = [];
 let dirty = true, seq = 0, PH = 'boot';
 const cc = e => (typeof e.getCoalescedEvents === 'function' && e.type === 'pointermove') ? e.getCoalescedEvents().length : -1;
+const cts = e => (typeof e.getCoalescedEvents === 'function' && e.type === 'pointermove') ? e.getCoalescedEvents().map(c => c.timeStamp) : null;
 const pc = e => (typeof e.getPredictedEvents === 'function' && e.type === 'pointermove') ? e.getPredictedEvents().length : -1;
 function rec(e) {
   if (/enter|leave/.test(e.type) && e.target !== document.documentElement) return;   // one per ancestor otherwise
   L.push({n: seq++, t: e.type, ts: e.timeStamp, now: performance.now(), x: e.clientX, y: e.clientY, b: e.button,
           bs: e.buttons, d: e.detail, rep: e.repeat === undefined ? null : e.repeat, key: e.key === undefined ? null : e.key,
-          rt: 'relatedTarget' in e ? (e.relatedTarget === null ? 'null' : 'node') : null, cs: cc(e), ps: pc(e),
+          rt: 'relatedTarget' in e ? (e.relatedTarget === null ? 'null' : 'node') : null, cs: cc(e), ps: pc(e), cts: cts(e),
           tr: e.isTrusted, pt: e.pointerType || null, ph: PH});
   dirty = true;
 }
@@ -36,7 +37,7 @@ setInterval(() => {
   if (!dirty) return;
   dirty = false;
   fetch('/result?arm=' + encodeURIComponent(q.get('arm')) + '&run=' + encodeURIComponent(q.get('run')),
-        {method: 'POST', body: JSON.stringify({meta: meta(), ev: L, raf: RAF.slice(-6000)})})
+        {method: 'POST', body: JSON.stringify({meta: meta(), ev: L, raf: RAF})})
     .then(r => r.text()).then(t => { PH = t; }).catch(() => { dirty = true; });
 }, 300);
 </script>
