@@ -561,8 +561,8 @@ def cmd_report(a):
             lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
     lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame); the planted case is the "
               "synthetic fixture. I1 is UNMEASURED when fewer than 90 % of the moves lie inside the tick log. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
-    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those after a skipped frame (gap > 25 ms) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms |",
-              "|---|---|---|---|---|---|---|---|---|"]
+    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those after a skipped frame (gap > 25 ms) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms | list max | list p99 |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
     for arm, rs in by.items():
         good = measured(rs)
         if not good:
@@ -570,6 +570,7 @@ def cmd_report(a):
         hz = good[0].get("polling_hz") or 125
         cap = 18 if hz == 1000 else 4
         n = over = skip = ticks = g25 = g40 = 0
+        sizes = []
         for r in good:
             lg = split(r["snap"], "I2")
             mv = [e["now"] for e in lg["ev"]]
@@ -579,10 +580,11 @@ def cmd_report(a):
             g25 += sum(1 for x in gp if x > 25)
             g40 += sum(1 for x in gp if x > 40)
             pm = R.evs(lg, "pointermove")
+            sizes += [e["cs"] for e in pm if e["cs"] >= 0]
             n += len(pm)
             over += sum(1 for e in pm if e["cs"] > cap)
             skip += sum(1 for x, y in zip(pm, pm[1:]) if y["ts"] - x["ts"] > 25.0 and y["cs"] > cap)
-        lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} |")
+        lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} | {max(sizes, default=0)} | {sorted(sizes)[len(sizes) * 99 // 100] if sizes else 0} |")
     text = "\n".join(lines)
     (pathlib.Path(a.dir) / "table.md").write_text(text + "\n", encoding="utf-8")
     print(text)

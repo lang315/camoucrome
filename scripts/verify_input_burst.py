@@ -16,6 +16,9 @@ that cannot run is UNMEASURED, never PASS; any non-PASS row exits 1.
     spacing sd inside an event is printed. A path's last partial burst must not land in the frame of the
     burst before it.
   6 movementX/Y: the head event's movement is the sum over its coalesced list, and the heads sum to the distance moved.
+  7 move then click at once (the command of a humanized move now resolves when its last event is forwarded, not on its ack):
+    10 times a CDP move to a point and, the moment its reply arrives, a press and release there. Every pointerdown lies on
+    the move's end point, comes after every pointermove of that move (sequence numbers), and a click follows.
 
 RED-capable: 1, 2 and 4 against a build that posts one task per sample (coalesced lists of 1, no spacing), 1 and 2 against
 a rate that is not the key's (the spacing medians differ 8x), 3 against stamps set to Now() in a burst.
@@ -37,11 +40,13 @@ FLAGS = ["--remote-allow-origins=*", "--enable-logging=stderr", "--window-size="
 HUM = {"humanize:enabled": True, "humanize:minTime": 500, "humanize:maxTime": 800}   # long paths: many frames
 
 PAGE = (b"<!doctype html><body style='margin:0;height:3000px'><script>"
-        b"window.__log=[];"
+        b"window.__log=[];window.__seq=0;"
         b"addEventListener('pointermove',e=>{const c=e.getCoalescedEvents();"
         b"__log.push({ts:e.timeStamp,cs:c.length,cts:c.map(x=>x.timeStamp),ps:e.getPredictedEvents().length,"
-        b"x:e.clientX,y:e.clientY,mx:e.movementX,my:e.movementY,cmx:c.map(x=>x.movementX),cmy:c.map(x=>x.movementY),"
+        b"k:'move',seq:++__seq,x:e.clientX,y:e.clientY,mx:e.movementX,my:e.movementY,cmx:c.map(x=>x.movementX),cmy:c.map(x=>x.movementY),"
         b"fn:typeof e.getCoalescedEvents==='function',secure:isSecureContext})},{capture:true,passive:true});"
+        b"addEventListener('pointerdown',e=>{__log.push({k:'down',x:e.clientX,y:e.clientY,seq:++__seq})},true);"
+        b"addEventListener('click',e=>{__log.push({k:'click',x:e.clientX,y:e.clientY,seq:++__seq})},true);"
         b"</script>")
 
 results, notes = {}, []
@@ -51,7 +56,8 @@ R3 = "3 timeStamps never go back across events and coalesced lists"
 R4 = "4 humanize off: the path is not resampled (coalesced lists of 1)"
 R5 = "5 120 short hops: the largest coalesced list is one frame's samples at each rate"
 R6 = "6 movementX/Y: the head is the sum of its coalesced list, the heads sum to the distance"
-ROWS = [R1, R2, R3, R4, R5, R6]
+R7 = "7 move then click at once: the press lands on the move's end, after all its pointermoves, and a click follows"
+ROWS = [R1, R2, R3, R4, R5, R6, R7]
 HOPS = [(300.0 + 14.0 * i, 300.0 + (i % 7)) for i in range(120)]
 LEGS = [(780.0, 120.0), (120.0, 480.0), (700.0, 460.0), (200.0, 140.0), (760.0, 300.0), (140.0, 300.0)]
 
@@ -199,6 +205,34 @@ def hops_row(hz, url):
     return log
 
 
+def move_click_row(url):
+    """Humanize on: move, and at once press and release at the same point."""
+    try:
+        with browser({**HUM, "humanize:minTime": 80, "humanize:maxTime": 200}, url) as proc:
+            c, _ = base.open_page(proc)
+            ok, notes_ = 0, []
+            for i in range(10):
+                x, y = 200.0 + 50 * i, 150.0 + 20 * (i % 5)
+                base.ev(c, "window.__log = []")
+                base.move(c, x, y)
+                c.call("Input.dispatchMouseEvent", base.mouse("mousePressed", x, y, button="left", buttons=1, clickCount=1), 30)
+                c.call("Input.dispatchMouseEvent", base.mouse("mouseReleased", x, y, button="left", buttons=0, clickCount=1), 30)
+                time.sleep(0.3)
+                lg = base.ev(c, "window.__log")
+                downs = [e for e in lg if e.get("k") == "down"]
+                moves = [e for e in lg if e.get("k") == "move"]
+                clicks = [e for e in lg if e.get("k") == "click"]
+                good = (len(downs) == 1 and len(clicks) == 1 and abs(downs[0]["x"] - x) < 1.0 and abs(downs[0]["y"] - y) < 1.0
+                        and all(m["seq"] < downs[0]["seq"] for m in moves) and clicks[0]["seq"] > downs[0]["seq"])
+                ok += good
+                if not good:
+                    notes_.append("hop %d: downs %d clicks %d down %s" % (i, len(downs), len(clicks), downs[:1]))
+    except Exception as exc:  # noqa: BLE001
+        unmeasured([R7], exc)
+        return
+    judge(R7, ok == 10, "row7 %d of 10 move+click pairs in order on the end point %s" % (ok, notes_[:2]))
+
+
 def self_test():
     log = [{"ts": 16.0, "cs": 3, "cts": [0.0, 8.0, 16.0], "ps": 1}, {"ts": 32.0, "cs": 2, "cts": [24.0, 32.0], "ps": 1}]
     m = metrics(log)
@@ -230,6 +264,7 @@ def main():
         else:
             m = metrics(off)
             judge(R4, m["n"] >= 4 and m["max"] == 1, "row4 humanize off n=%d max coalesced=%d" % (m["n"], m["max"]))
+        move_click_row(url)
         h = [hops_row(hz, url) for hz in (125, 1000)]
         if all(h):
             judge(R6, all(movement_ok(x) for x in h + logs), "row6 %d run(s) checked" % (len(h) + len(logs)))
