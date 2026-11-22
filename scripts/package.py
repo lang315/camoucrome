@@ -282,12 +282,27 @@ def _anonymous(ti):
     return ti
 
 
+def zip_time(built):
+    """The stamp's `built` as a zip date_time: UTC, 2 s grain."""
+    t = datetime.datetime.fromisoformat(built).astimezone(datetime.timezone.utc)
+    return (t.year, t.month, t.day, t.hour, t.minute, t.second - t.second % 2)
+
+
 def archive(staging, platform):
     if platform.startswith("win"):
         path = pathlib.Path(str(staging) + ".zip")
+        # One entry time for every member, from the stamp: a file's own mtime would be stored in the packager's local time.
+        when = zip_time(json.loads((staging / "camoucrome-release.json").read_text())["built"])
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(staging.rglob("*")):
-                z.write(f, f.relative_to(staging.parent))
+                zi = zipfile.ZipInfo.from_file(f, f.relative_to(staging.parent))
+                zi.date_time = when
+                if zi.is_dir():
+                    z.writestr(zi, b"")
+                    continue
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                with open(f, "rb") as src, z.open(zi, "w", force_zip64=zi.file_size > zipfile.ZIP64_LIMIT) as dst:
+                    shutil.copyfileobj(src, dst)
         # The same tree as .tar.xz, the smaller download for tools (201 -> 140 MB on -10); the zip stays for
         # manual install, since Windows 10's tar may not read xz.
         with tarfile.open(str(staging) + ".tar.xz", "w:xz", preset=9) as t:

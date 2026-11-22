@@ -1,5 +1,6 @@
 """package.py on a fake tree: staging, stamps, archive, and the three refusals."""
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -385,11 +386,19 @@ def test_gn_is_launched_by_its_resolved_path(tree, monkeypatch):
     assert seen[0][0] == "/depot/gn.bat"
 
 
+BUILT = "2026-11-22T10:20:31+00:00"
+
+
+def stamped(staging, built=BUILT):
+    (staging / "camoucrome-release.json").write_text(json.dumps({"built": built}))
+
+
 def test_windows_zip_keeps_the_whole_staging_name(tmp_path):
     """with_suffix would eat the version's last component (.48-windows-x64)."""
     staging = tmp_path / "camoucrome-157.0.8103.51-windows-x64"
     staging.mkdir()
     (staging / "chrome.exe").write_bytes(b"MZ")
+    stamped(staging)
     assert package.archive(staging, "windows-x64").name == "camoucrome-157.0.8103.51-windows-x64.zip"
 
 
@@ -400,6 +409,7 @@ def test_windows_also_writes_tar_xz_with_the_zip_members(tmp_path):
     (staging / "locales").mkdir(parents=True)
     (staging / "chrome.exe").write_bytes(b"MZ")
     (staging / "locales" / "en-US.pak").write_bytes(b"pak")
+    stamped(staging)
     z = package.archive(staging, "windows-x64")
     xz = tmp_path / "camoucrome-157.0.8103.51-windows-x64.tar.xz"
     assert xz.is_file()
@@ -409,6 +419,33 @@ def test_windows_also_writes_tar_xz_with_the_zip_members(tmp_path):
         members = t.getmembers()
     assert sorted(m.name for m in members if m.isfile()) == zip_files
     assert all(m.uid == 0 and m.gid == 0 and m.uname == "" and m.gname == "" for m in members)
+
+
+def test_windows_zip_entries_take_the_stamps_utc_build_time(tmp_path):
+    """Every entry, directories included, carries the stamp's `built` at 2 s grain, under a non-UTC TZ."""
+    import time
+    import zipfile
+    staging = tmp_path / "camoucrome-157.0.8103.51-windows-x64"
+    (staging / "locales").mkdir(parents=True)
+    (staging / "chrome.exe").write_bytes(b"MZ")
+    (staging / "locales" / "en-US.pak").write_bytes(b"pak")
+    stamped(staging)
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "Asia/Tokyo"
+    time.tzset()
+    try:
+        z = package.archive(staging, "windows-x64")
+    finally:
+        if old is None:
+            del os.environ["TZ"]
+        else:
+            os.environ["TZ"] = old
+        time.tzset()
+    with zipfile.ZipFile(z) as zf:
+        infos = zf.infolist()
+        assert any(i.is_dir() for i in infos) and any(not i.is_dir() for i in infos)
+        assert {i.date_time for i in infos} == {(2026, 11, 22, 10, 20, 30)}
+        assert all(i.compress_type == zipfile.ZIP_DEFLATED for i in infos if not i.is_dir())
 
 
 def test_runtime_deps_prunes_symbols_and_test_gpu_layers_by_basename(tmp_path):

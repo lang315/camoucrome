@@ -221,6 +221,16 @@ def main(argv):
                 return refuse(f"{p} is not a readable archive: {e}")
             if len(embedded) != 1 or embedded[0] not in stamp_bytes:
                 return refuse(f"{p}: embedded camoucrome-release.json is missing or matches no --stamp")
+            if n.lower().endswith(".zip"):
+                try:
+                    when = package.zip_time(json.loads(embedded[0])["built"])
+                    with zipfile.ZipFile(p) as z:
+                        odd = [i.filename for i in z.infolist() if i.date_time != when]
+                except (ValueError, KeyError, TypeError, zipfile.BadZipFile) as e:
+                    return refuse(f"{p}: the embedded stamp's `built` or the entry times are unreadable: {e}")
+                if odd:
+                    return refuse(f"{p}: entry time differs from the stamp's `built`: {odd[0]}"
+                                  + (f" (+{len(odd) - 1} more)" if len(odd) > 1 else ""))
             # one archive per stamp per format: Windows ships the same tree as .zip and .tar.xz
             matched.append((stamp_bytes.index(embedded[0]), "zip" if n.lower().endswith(".zip") else "tar"))
     # both ways: a platform archive per stamp, once per format (a forgotten archive made a one-platform draft). No

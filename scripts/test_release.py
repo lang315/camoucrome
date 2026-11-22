@@ -12,6 +12,7 @@ import release  # noqa: E402
 
 V = "157.0.8103.51"
 SHA = "a" * 40
+BUILT = "2026-11-22T10:20:31+00:00"
 
 
 class Gh:
@@ -36,7 +37,7 @@ def stamps(tmp_path):
     for plat in ("windows-x64", "linux-x64"):
         p = tmp_path / f"{plat}.json"
         p.write_text(json.dumps({"name": plat, "version": V, "chromium_tag": V, "chromium_rev": "r",
-                                 "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": "b",
+                                 "changeset_commit": SHA, "branch_tip": plat, "tree_fingerprint": "f", "built": BUILT,
                                  "credits_placeholder": False}))
         out.append(p)
     notes = tmp_path / "notes.md"
@@ -351,13 +352,29 @@ def test_refuses_notes_without_the_full_sha(monkeypatch, stamps, tmp_path):
     refused(monkeypatch, Gh(), stamps, tmp_path)
 
 
-def archive_with_stamp(path, stamp_bytes):
+def archive_with_stamp(path, stamp_bytes, when=release.package.zip_time(BUILT)):
     path.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(path, "w") as z:
-        z.writestr("camoucrome-x/chrome.exe", b"MZ clean")
-        if stamp_bytes is not None:
-            z.writestr("camoucrome-x/camoucrome-release.json", stamp_bytes)
+        for name, data in (("camoucrome-x/chrome.exe", b"MZ clean"), ("camoucrome-x/camoucrome-release.json", stamp_bytes)):
+            if data is not None:
+                z.writestr(zipfile.ZipInfo(name, when), data)
     return path
+
+
+def test_refuses_a_zip_entry_time_that_is_not_the_stamps_built(monkeypatch, stamps, tmp_path, capsys):
+    paths, _ = stamps
+    z = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.zip", paths[0].read_bytes(),
+                           when=(2026, 11, 22, 3, 20, 30))  # not the stamp's time
+    refused(monkeypatch, Gh(), stamps, tmp_path, extra=("--asset", str(z)))
+    err = capsys.readouterr().err
+    assert "camoucrome-x/chrome.exe" in err and "entry time" in err
+
+
+def test_a_zip_with_the_stamps_entry_time_passes(monkeypatch, stamps, tmp_path):
+    paths, _ = stamps
+    z = archive_with_stamp(tmp_path / "as" / f"camoucrome-{V}-windows-x64.zip", paths[0].read_bytes())
+    t = tar_with_stamp(tmp_path / "as" / f"camoucrome-{V}-linux-x64.tar.xz", paths[1].read_bytes())
+    assert run(monkeypatch, Gh(), stamps, extra=("--asset", str(z), "--asset", str(t))) == 0
 
 
 @pytest.mark.parametrize("embedded", [b'{"changeset_commit": "old"}', None])
