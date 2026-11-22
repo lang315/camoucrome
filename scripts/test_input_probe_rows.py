@@ -112,6 +112,29 @@ class I2b(unittest.TestCase):
         self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(8.1, sd=0.1))))), "PASS")
         self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(1.05, k=17, sd=0.05))))), "PASS")
 
+    def shaped(self, core, n=200, tail=0.1, k=2):
+        """one gap per pointermove: `core` of them 8.0 +-0.1, `tail` of them 4 or 12, the rest 8 +-1.5 (the control's shape: a peak and a tail)"""
+        out = []
+        for i in range(n):
+            f = (i * 0.618) % 1.0
+            g = 8.0 + (0.1 if i % 2 else -0.1) if f < core else (4.0 + (i % 2) * 8.0 if f < core + tail else 8.0 + (1.5 if i % 2 else -1.5))
+            out.append(ev("pointermove", i * 100.0, cs=2, ps=1, cts=[i * 100.0 - g, i * 100.0]))
+        return out
+
+    def test_gap_shape_metrics(self):
+        m = R.i2b(log(self.shaped(0.6)))
+        self.assertAlmostEqual(m["core_share"], 0.6, delta=0.05)
+        self.assertAlmostEqual(m["tail_share"], 0.1, delta=0.05)
+
+    def test_red_flat_spread_fails_the_shape(self):
+        """same median and sd as the control, but no peak: the uniform +-3 ms jitter of option B"""
+        groups = {"ctl125": [log(self.shaped(0.6)) for _ in range(4)]}
+        flat = many(lambda i: log([ev("pointermove", j * 100.0, cs=2, ps=1, cts=[j * 100.0 - (8.0 + ((j * 0.618) % 1.0 - 0.5) * 6), j * 100.0]) for j in range(200)]))
+        v = R.judge("I2b", groups, flat)
+        self.assertEqual(v["core_share"][0], "FAIL")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I2b", groups, many(lambda i: log(self.shaped(0.6))))), "PASS")
+
     def test_red_equal_stamps_fail(self):
         v = R.judge("I2b", self.groups(), many(lambda i: log(self.pm(0.0))))
         self.assertEqual(R.row_verdict(v), "FAIL")

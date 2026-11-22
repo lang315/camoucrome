@@ -66,7 +66,12 @@ def i2b(log):
         gaps += [b - a for a, b in zip(c, c[1:])]
     if not gaps:
         return None
-    return {"spacing_n": len(gaps), "spacing_med": _med(gaps), "spacing_sd": statistics.pstdev(gaps)}
+    med = _med(gaps)
+    # the shape: stock's gaps at 125 Hz are a peak (56 % within +-0.25 ms of the median) with a tail (the rest, some of it
+    # 2 ms or more away): the median and sd alone cannot tell that from a flat jitter of the same sd
+    return {"spacing_n": len(gaps), "spacing_med": med, "spacing_sd": statistics.pstdev(gaps),
+            "core_share": sum(1 for g in gaps if abs(g - med) <= 0.25) / len(gaps),
+            "tail_share": sum(1 for g in gaps if abs(g - med) > 2.0) / len(gaps)}
 
 
 def i2c(log):
@@ -201,7 +206,7 @@ SPEC = {
            "covered": ("info", 0)},   # the share of moves inside the tick log: the row is UNMEASURED below COVERED_MIN (presence)
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
     # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
-    "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25)},
+    "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25), "core_share": ("share", 0.10), "tail_share": ("share", 0.05)},
     # whole_share: INFO until the control's shape is known (does the OS quantize its stamps?); repeats: stock drops same-position moves
     "I2c": {"whole_share": ("info", 0), "repeat_share": ("share", 0.01), "repeat": ("info", 0)},
     # pointerrawupdate: the sd of now - timeStamp is the control's (floor 0.5 ms), back-to-back events are not (a back-to-back burst has pair_share ~.5)
