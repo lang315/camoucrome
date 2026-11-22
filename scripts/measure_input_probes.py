@@ -82,6 +82,7 @@ def edge_legs(w, h):
 class State:
     phase = "boot"
     snap = None
+    drops = 0     # deltas that left a hole in the log (not a resend of what is held): a run with one is UNMEASURED
 
 
 def serve(out_dir):
@@ -112,13 +113,17 @@ def serve(out_dir):
                 d = None
             if d is not None:
                 # the page sends only what is new, from evFrom / rafFrom on; a delta that does not continue what is held is dropped
-                # (the page re-sends from its own sent mark, so the log never has a hole)
+                # The page advances its sent mark on any reply, so a delta lost after a reply that was sent leaves a hole for
+                # good: counted in st.drops (a resend of what is held is not a hole), and the run is UNMEASURED.
                 cur = st.snap if st.snap and "ev" in st.snap else {"meta": d["meta"], "ev": [], "raf": []}
-                if d.get("evFrom", 0) == len(cur["ev"]) and d.get("rafFrom", 0) == len(cur["raf"]):
+                ef, rf = d.get("evFrom", 0), d.get("rafFrom", 0)
+                if ef == len(cur["ev"]) and rf == len(cur["raf"]):
                     cur["meta"] = d["meta"]
                     cur["ev"] += d["ev"]
                     cur["raf"] += d["raf"]
                     st.snap = cur
+                elif ef > len(cur["ev"]) or rf > len(cur["raf"]):
+                    st.drops += 1
             self._send(st.phase.encode())
 
         def log_message(self, *a):
@@ -339,7 +344,7 @@ def run_arm(arm, i, a, srv, st, out):
     rec = {"arm": arm, "run": i, "unmeasured": None}
     url = f"http://127.0.0.1:{srv.server_port}/page.html?arm={arm}&run={i}"
     udd = tempfile.mkdtemp(prefix="input-probe-")
-    st.snap, st.phase = None, "boot"
+    st.snap, st.phase, st.drops = None, "boot", 0
     proc = ctx = pw = None
     try:
         import input_probe_sendinput as si
@@ -437,6 +442,8 @@ def run_arm(arm, i, a, srv, st, out):
         rec["boot_moves"] = sum(1 for e in st.snap["ev"] if e.get("ph") == "boot" and e["t"] == "pointermove")
         if idle_strays(st.snap):
             rec["unmeasured"] = f"{idle_strays(st.snap)} stray move(s) outside the gestures"
+        if st.drops:
+            rec["unmeasured"] = f"{st.drops} probe-page delta(s) left a hole in the log"
         return rec
     except Exception as ex:   # noqa: BLE001 - any failure of a launch is that launch's UNMEASURED, never a missing record
         rec["unmeasured"] = f"error: {type(ex).__name__}: {ex}"[:300]

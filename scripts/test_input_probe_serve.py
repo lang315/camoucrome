@@ -24,6 +24,10 @@ class Serve(unittest.TestCase):
                 self.assertEqual(st.snap["meta"], {"a": 2})
                 post(srv, {"meta": {}, "evFrom": 9, "ev": [{"n": 9}], "rafFrom": 3, "raf": []})   # a hole: dropped
                 self.assertEqual(len(st.snap["ev"]), 3)
+                self.assertEqual(st.drops, 1)    # a hole is counted: the run is UNMEASURED
+                post(srv, {"meta": {}, "evFrom": 0, "ev": [{"n": 0}, {"n": 1}], "rafFrom": 0, "raf": [[1, 1]]})   # a resend of what is held: not a drop
+                self.assertEqual(st.drops, 1)
+                self.assertEqual(len(st.snap["ev"]), 3)
             finally:
                 srv.shutdown()
 
