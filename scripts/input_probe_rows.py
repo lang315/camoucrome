@@ -1,6 +1,7 @@
 """Judge of the input probes (plan 2026-11-21-input-probes.md, rows I1-I6). Pure: a snapshot of page.html's log in,
 metrics and verdicts out. A driven arm FAILs a row when it is distinguishable from the control (stock Chrome under OS
 input) beyond the control's own run-to-run spread."""
+import random
 import statistics
 
 MIN_GAPS = 50          # I2b needs this many coalesced stamp gaps in a run before it says anything
@@ -200,7 +201,7 @@ MIN_N = 4               # runs per group (each control rate, and the arm) a verd
 WIDEN = 0.25            # a numeric verdict widens the control's range by this fraction of it (never less than the floor)
 COVERED_MIN = 0.9      # I1: the share of moves that lie inside the logged tick range a verdict needs
 EXPECT_DPR = 1.25       # the probes run at this device scale factor; I3 means nothing at 1
-# metric -> (kind, floor). num: the arm's median must lie in the control's range widened by max(floor, WIDEN * range);
+# metric -> (kind, floor). pool: the arm's mean over runs minus the control's, within +-floor (a run-level bootstrap interval wider than floor is UNMEASURED); num: the arm's median must lie in the control's range widened by max(floor, WIDEN * range);
 # share: the same for a 0..1 share, UNMEASURED when the control's own range is 0.5 or more (it could never FAIL);
 # zero: control and arm both 0; eq: every arm value is one of the control's; info: reported, never judged.
 SPEC = {
@@ -208,10 +209,10 @@ SPEC = {
            "covered": ("info", 0)},   # the share of moves inside the tick log: the row is UNMEASURED below COVERED_MIN (presence)
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
     # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
-    "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25), "core_share": ("share", 0.10), "tail_share": ("share", 0.05)},
+    "I2b": {"spacing_med": ("pool", 0.25), "spacing_sd": ("pool", 0.40), "core_share": ("pool", 0.10), "tail_share": ("pool", 0.05)},
     # whole_share: the control's stamps are partly whole ms (host 2026-11-22, 4-6 runs: .17-.28; chance for the 0.05 window is .10),
-    # ours must lie in its band (+-.05): a continuous stamp (.09-.10) fails. repeats: stock drops same-position moves
-    "I2c": {"whole_share": ("share", 0.05), "repeat_share": ("share", 0.01), "repeat": ("info", 0)},
+    # the pooled value of ours must lie within +-.12 of the control's pooled value (kind "pool"): a continuous stamp (.09-.10) fails. repeats: stock drops same-position moves
+    "I2c": {"whole_share": ("pool", 0.12), "repeat_share": ("pool", 0.01), "repeat": ("info", 0)},
     # pointerrawupdate: the sd of now - timeStamp is the control's (floor 0.5 ms), back-to-back events are not (a back-to-back burst has pair_share ~.5)
     "I7": {"lat_sd": ("num", 0.5), "pair_share": ("share", 0.02), "pairs": ("info", 0)},
     "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},
@@ -223,6 +224,15 @@ SPEC = {
 }
 
 
+def pool_diff(ctl, arm, draws=2000):
+    """Pooled difference arm - control (the mean of the per-run values) and its 95 % interval from a run-level bootstrap
+    (runs are the clusters: resample the control's runs and the arm's runs, each with replacement; seeded, so a rerun agrees)."""
+    rng = random.Random(0)
+    mean = lambda v: sum(v) / len(v)
+    d = sorted(mean(rng.choices(arm, k=len(arm))) - mean(rng.choices(ctl, k=len(ctl))) for _ in range(draws))
+    return mean(arm) - mean(ctl), d[int(0.025 * draws)], d[int(0.975 * draws)]
+
+
 def metric_verdict(kind, floor, ctl, arm, min_n=MIN_N):
     """ctl, arm: one value per run (None: the run lacked the metric). Returns (PASS|FAIL|UNMEASURED|INFO, note)."""
     if kind == "info":
@@ -230,6 +240,15 @@ def metric_verdict(kind, floor, ctl, arm, min_n=MIN_N):
     c, a = [v for v in ctl if v is not None], [v for v in arm if v is not None]
     if len(c) < min_n or len(a) < min_n:
         return "UNMEASURED", f"n ctl {len(c)}/{len(ctl)}, arm {len(a)}/{len(arm)} (need {min_n}; {len(ctl) - len(c) + len(arm) - len(a)} run(s) lack the metric)"
+    if kind == "pool":
+        # pooled over the runs, not the control's range in this session: that range moves between host sessions (-14 / -15 / run 7)
+        # while the pooled value does not (core_share .593 / .595, whole_share .282 / .255 across sessions s1 / s2). `floor` is the
+        # tolerance on the pooled difference, measured between sessions (see measurements/2026-11-22-input-band-judge.md).
+        d, lo, hi = pool_diff(c, a)
+        note = f"diff {d:+.3g} [{lo:+.3g}, {hi:+.3g}] tol +-{floor:g}"
+        if (hi - lo) / 2 > floor:   # the interval is wider than the tolerance: too few runs to tell
+            return "UNMEASURED", note + " (interval wider than the tolerance)"
+        return ("PASS" if abs(d) <= floor else "FAIL"), note
     if kind in ("num", "share"):
         lo, hi = min(c), max(c)
         if kind == "share" and hi - lo >= 0.5:

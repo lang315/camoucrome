@@ -442,6 +442,63 @@ class I2c(unittest.TestCase):
         self.assertEqual(R.row_verdict(R.judge("I2c", groups, many(lambda i: lg()))), "UNMEASURED")
 
 
+class PooledBand(unittest.TestCase):
+    """I2b / I2c metrics are judged on the pooled difference with a run-level interval, not on the control's range in the same
+    session. Per-run values are the host's (-15 = s1, a second session = s2, 2026-11-22, 6 runs each, 125 Hz control)."""
+    CTL1 = {"core_share": [.571, .574, .533, .626, .629, .624], "whole_share": [.278, .291, .266, .276, .290, .278],
+            "spacing_sd": [1.143, 1.356, 1.340, 1.092, 1.305, 1.089], "tail_share": [.069, .143, .111, .103, .139, .098]}
+    CTL2 = {"core_share": [.603, .563, .607, .605, .608, .594], "whole_share": [.273, .249, .258, .259, .233, .262],
+            "spacing_sd": [1.053, 1.062, 1.190, .969, 1.018, 1.194], "tail_share": [.095, .090, .102, .078, .078, .094]}
+    HUMAN1 = {"core_share": [.400, .427, .465, .449, .477, .461], "whole_share": [.194, .160, .244, .116, .201, .200]}
+    HUMAN2 = {"core_share": [.377, .403, .432, .510, .407, .476], "whole_share": [.201, .229, .158, .238, .271, .231]}
+    RAWH = {"core_share": [.347, .395, .388, .381, .402, .388], "spacing_sd": [2.653, 2.252, 2.158, 2.346, 2.213, 2.368]}
+
+    def v(self, row, name, ctl, arm):
+        kind, tol = R.SPEC[row][name]
+        return R.metric_verdict(kind, tol, ctl, arm)[0]
+
+    def test_interval_is_seeded_and_brackets_the_difference(self):
+        d, lo, hi = R.pool_diff(self.CTL1["core_share"], self.HUMAN1["core_share"])
+        self.assertEqual((d, lo, hi), R.pool_diff(self.CTL1["core_share"], self.HUMAN1["core_share"]))
+        self.assertTrue(lo < d < hi)
+
+    def test_red_old_range_flips_human_whole_share_between_sessions(self):
+        """the old rule: s1's human (.12-.24) falls under its control (.266-.291) -.05, s2's (.16-.27) does not"""
+        old = lambda ctl, arm: R.metric_verdict("share", 0.05, ctl, arm)[0]
+        self.assertEqual(old(self.CTL1["whole_share"], self.HUMAN1["whole_share"]), "FAIL")
+        self.assertEqual(old(self.CTL2["whole_share"], self.HUMAN2["whole_share"]), "PASS")
+
+    def test_stable_human_whole_share(self):
+        for ctl, h in ((self.CTL1, self.HUMAN1), (self.CTL2, self.HUMAN2), (self.CTL1, self.HUMAN2), (self.CTL2, self.HUMAN1)):
+            self.assertEqual(self.v("I2c", "whole_share", ctl["whole_share"], h["whole_share"]), "PASS")
+
+    def test_stable_human_core_share_fails_in_every_session(self):
+        for ctl, h in ((self.CTL1, self.HUMAN1), (self.CTL2, self.HUMAN2), (self.CTL1, self.HUMAN2), (self.CTL2, self.HUMAN1)):
+            self.assertEqual(self.v("I2b", "core_share", ctl["core_share"], h["core_share"]), "FAIL")
+
+    def test_control_of_one_session_passes_against_the_other(self):
+        for row, names in (("I2b", ("core_share", "spacing_sd", "tail_share")), ("I2c", ("whole_share",))):
+            for n in names:
+                self.assertEqual(self.v(row, n, self.CTL1[n], self.CTL2[n]), "PASS", n)
+                self.assertEqual(self.v(row, n, self.CTL2[n], self.CTL1[n]), "PASS", n)
+
+    def test_red_continuous_stamps_fail_i2c(self):
+        cont = [.09, .10, .095, .10, .09, .10]
+        for ctl in (self.CTL1, self.CTL2):
+            self.assertEqual(self.v("I2c", "whole_share", ctl["whole_share"], cont), "FAIL")
+
+    def test_red_rawh_fails_i2b(self):
+        for n in ("core_share", "spacing_sd"):
+            self.assertEqual(self.v("I2b", n, self.CTL1[n], self.RAWH[n]), "FAIL", n)
+            self.assertEqual(self.v("I2b", n, self.CTL2[n], self.RAWH[n]), "FAIL", n)
+
+    def test_too_few_runs_are_unmeasured(self):
+        self.assertEqual(self.v("I2b", "core_share", self.CTL1["core_share"], self.RAWH["core_share"][:3]), "UNMEASURED")
+
+    def test_wide_interval_is_unmeasured(self):
+        self.assertEqual(self.v("I2c", "whole_share", self.CTL1["whole_share"], [.0, .5, .0, .5, .0, .5]), "UNMEASURED")
+
+
 class AfterSkip(unittest.TestCase):
     """review item 2: a frame is skipped when the rAF tick the event rides on follows its predecessor by > 25 ms. The head
     timeStamp gap says nothing: an authored stamp run is contiguous."""
