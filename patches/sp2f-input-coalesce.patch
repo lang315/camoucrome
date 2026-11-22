@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index 7dbcae7e6a..940a4c7acf 100644
+index 7dbcae7e6a..ecaeaaf0dc 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -6,6 +6,8 @@
@@ -19,7 +19,15 @@ index 7dbcae7e6a..940a4c7acf 100644
  #include "base/trace_event/trace_event.h"
  #include "base/types/expected.h"
  #include "build/build_config.h"
-@@ -733,6 +736,80 @@ class FailSafe {
+@@ -58,6 +61,7 @@
+ #include "third_party/blink/public/common/page/page_zoom.h"
+ #include "ui/base/clipboard/clipboard_constants.h"
+ #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-shared.h"
++#include "ui/display/screen.h"
+ #include "ui/events/base_event_utils.h"
+ #include "ui/events/blink/web_input_event_traits.h"
+ #include "ui/events/event_constants.h"
+@@ -733,6 +737,84 @@ class FailSafe {
    std::unique_ptr<BackendCallback> callback_;
  };
  
@@ -54,12 +62,14 @@ index 7dbcae7e6a..940a4c7acf 100644
 +                    std::vector<Step> steps,
 +                    std::unique_ptr<blink::WebMouseEvent> final_event,
 +                    base::TimeTicks final_at,
++                    bool skip_final,
 +                    std::unique_ptr<DispatchMouseEventCallback> callback)
 +      : handler_(std::move(handler)),
 +        widget_(std::move(widget)),
 +        steps_(std::move(steps)),
 +        final_event_(std::move(final_event)),
 +        final_at_(final_at),
++        skip_final_(skip_final),
 +        callback_(std::move(callback)) {}
 +
 +  void Start() { Arm(); }
@@ -82,7 +92,8 @@ index 7dbcae7e6a..940a4c7acf 100644
 +      return;
 +    }
 +    InputHandler::ForwardHumanizedMouseEventCompletion(
-+        handler_, widget_, std::move(final_event_), std::move(callback_), true);
++        handler_, widget_, std::move(final_event_), std::move(callback_), true,
++        skip_final_);
 +    base::SingleThreadTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE,
 +                                                                  this);
 +  }
@@ -93,6 +104,7 @@ index 7dbcae7e6a..940a4c7acf 100644
 +  size_t next_ = 0;
 +  std::unique_ptr<blink::WebMouseEvent> final_event_;
 +  base::TimeTicks final_at_;
++  bool skip_final_;
 +  std::unique_ptr<DispatchMouseEventCallback> callback_;
 +  base::DeadlineTimer timer_;
 +};
@@ -100,7 +112,7 @@ index 7dbcae7e6a..940a4c7acf 100644
  class InputHandler::InputInjector
      : public RenderWidgetHost::InputEventObserver {
   public:
-@@ -1066,6 +1143,19 @@ class InputHandler::InputInjector
+@@ -1066,11 +1148,38 @@ class InputHandler::InputInjector
      std::vector<camoucfg::TrajectoryPoint> path = camoucfg::HumanizePath(
          owner_->last_move_position_, mouse_event.PositionInWidget(), min_ms,
          max_ms, base::RandUint64());
@@ -120,16 +132,35 @@ index 7dbcae7e6a..940a4c7acf 100644
      const base::TimeTicks now = base::TimeTicks::Now();
      std::optional<base::TimeDelta> delay;
      if (path.size() >= 2) {
-@@ -1082,7 +1172,7 @@ class InputHandler::InputInjector
+       delay = owner_->queue_clock_.Reserve(now, path.back().offset);
+     }
++    if (!delay && !NamesAButton(mouse_event) &&
++        owner_->last_move_widget_.get() == widget_host_.get() &&
++        mouse_event.PositionInWidget() == owner_->last_move_position_) {
++      // A move onto the point the pointer is on: stock Chrome under OS input
++      // reports none, so nothing is forwarded; the command still completes,
++      // a frame later like the others.
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++          FROM_HERE,
++          base::BindOnce(&InputHandler::ForwardHumanizedMouseEventCompletion,
++                         owner_->weak_factory_.GetWeakPtr(), widget_host_,
++                         std::make_unique<blink::WebMouseEvent>(mouse_event),
++                         std::move(callback), true, true));
++      return true;
++    }
+     if (!delay) {
+       base::TimeDelta behind = owner_->queue_clock_.BookStockSlot(now);
+       if (behind.is_zero()) {
+@@ -1082,7 +1191,7 @@ class InputHandler::InputInjector
            base::BindOnce(&InputHandler::ForwardHumanizedMouseEventCompletion,
                           owner_->weak_factory_.GetWeakPtr(), widget_host_,
                           std::make_unique<blink::WebMouseEvent>(mouse_event),
 -                         std::move(callback)),
-+                         std::move(callback), false),
++                         std::move(callback), false, false),
            behind);
        owner_->last_move_widget_ = widget_host_;
        owner_->last_move_position_ = mouse_event.PositionInWidget();
-@@ -1116,6 +1206,18 @@ class InputHandler::InputInjector
+@@ -1116,6 +1225,18 @@ class InputHandler::InputInjector
      const gfx::Vector2dF origin =
          grid ? ViewOriginInRootWindow(view) : gfx::Vector2dF();
      const gfx::Size extent = grid ? view->GetViewBounds().size() : gfx::Size();
@@ -148,7 +179,7 @@ index 7dbcae7e6a..940a4c7acf 100644
      for (size_t i = 1; i + 1 < path.size(); ++i) {
        blink::WebMouseEvent synthetic(mouse_event);
        gfx::PointF at(path[i].x, path[i].y);
-@@ -1125,6 +1227,10 @@ class InputHandler::InputInjector
+@@ -1125,6 +1246,10 @@ class InputHandler::InputInjector
                      static_cast<float>(camoucfg::SnapToDeviceGrid(
                          at.y(), dsf, origin.y(), extent.height())));
        }
@@ -159,7 +190,7 @@ index 7dbcae7e6a..940a4c7acf 100644
        synthetic.SetPositionInWidget(at);
        synthetic.SetPositionInScreen(at + screen_offset);
        // Not from the debugger: OnInputEventAck only pops
-@@ -1134,20 +1240,25 @@ class InputHandler::InputInjector
+@@ -1134,20 +1259,32 @@ class InputHandler::InputInjector
        // callback against whichever ack happens to arrive first.
        synthetic.SetModifiers(mouse_event.GetModifiers() &
                               ~blink::WebInputEvent::kFromDebugger);
@@ -178,37 +209,45 @@ index 7dbcae7e6a..940a4c7acf 100644
 -                       std::make_unique<blink::WebMouseEvent>(mouse_event),
 -                       std::move(callback)),
 -        *delay + path.back().offset);
-+    // The last sample on the point of the final event would be a repeat of it.
-+    if (!steps.empty() && last == mouse_event.PositionInWidget()) {
++    // A real mouse never reports a move onto the point it is on, and stock drops
++    // one: a final event on the point the last report left the pointer at is not
++    // forwarded (the command only completes). With a button down the final event
++    // carries the drag's ack and is always forwarded, so there the last sample
++    // on its point is the one dropped.
++    const bool button_down = NamesAButton(mouse_event);
++    const bool at_end = last == mouse_event.PositionInWidget();
++    if (at_end && button_down && !steps.empty()) {
 +      steps.pop_back();
 +    }
++    const bool skip_final = at_end && !button_down;
 +    base::TimeTicks final_at = start + path.back().offset;
 +    // A drag's final event keeps the debugger bit (its ack starts the drag),
 +    // so it cannot merge with the samples before it and would be a second
 +    // pointermove in their frame: it goes out a frame (20 ms) after the last
 +    // sample, alone.
-+    if (NamesAButton(mouse_event) && !steps.empty()) {
++    if (button_down && !steps.empty()) {
 +      final_at = std::max(final_at, steps.back().at + base::Milliseconds(20));
 +    }
 +    (new InputHandler::PreciseSamplePump(
 +         handler, widget_host_, std::move(steps),
 +         std::make_unique<blink::WebMouseEvent>(mouse_event), final_at,
-+         std::move(callback)))
++         skip_final, std::move(callback)))
 +        ->Start();
  
      owner_->last_move_widget_ = widget_host_;
      owner_->last_move_position_ = mouse_event.PositionInWidget();
-@@ -2754,7 +2865,8 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -2754,7 +2891,9 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
      base::WeakPtr<InputHandler> handler,
      base::WeakPtr<RenderWidgetHostImpl> widget,
      std::unique_ptr<blink::WebMouseEvent> mouse_event,
 -    std::unique_ptr<DispatchMouseEventCallback> callback) {
 +    std::unique_ptr<DispatchMouseEventCallback> callback,
-+    bool resampled) {
++    bool resampled,
++    bool skip_forward) {
    if (!handler || !widget) {
      callback->sendFailure(Response::InternalError());
      return;
-@@ -2768,6 +2880,23 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -2768,6 +2907,49 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
    // its dispatch-time stamp, which is older than every interior point, so the
    // page would see the final mousemove's timeStamp go backwards.
    mouse_event->SetTimeStamp(base::TimeTicks::Now());
@@ -216,8 +255,8 @@ index 7dbcae7e6a..940a4c7acf 100644
 +  // it, without kFromDebugger: the renderer merges only moves whose modifiers
 +  // are equal, so a debugger-marked last event stayed a second pointermove
 +  // inside the frame of the samples before it (2026-11-22: one in six
-+  // pointermoves of a humanized run). The command then completes when the
-+  // event is forwarded, not on its ack (OnInputEventAck matches only
++  // pointermoves of a humanized run). The command then completes a frame after
++  // the event is forwarded, not on its ack (OnInputEventAck matches only
 +  // debugger-marked events), except with a mouse button down: a drag starts on
 +  // the ack (HandleMouseEvent), so that move keeps the bit and the stock ack
 +  // path. `resampled` false is the stock-slot fallback: it keeps the stock
@@ -225,15 +264,41 @@ index 7dbcae7e6a..940a4c7acf 100644
 +  if (resampled && !NamesAButton(*mouse_event)) {
 +    mouse_event->SetModifiers(mouse_event->GetModifiers() &
 +                              ~blink::WebInputEvent::kFromDebugger);
-+    widget->ForwardMouseEvent(*mouse_event);
-+    callback->sendSuccess();
++    if (!skip_forward) {
++      widget->ForwardMouseEvent(*mouse_event);
++    }
++    // The command resolves one display frame after the forward: the renderer
++    // dispatches the move at its next frame, and a driver that sends its next
++    // command at once (small mouse.move steps) made the queue dispatch the
++    // moves of that path outside a frame (2026-11-22: 12 % of the pointermoves
++    // of a stepped gesture, aligned 0.88; one frame of delay: 1.00). The refresh
++    // is the display's the page is on, 60 Hz when unknown.
++    double refresh_hz = 60.0;
++    RenderWidgetHostViewBase* view = widget->GetView();
++    display::Screen* screen = display::Screen::Get();
++    if (view && view->GetNativeView() && screen) {
++      const float freq =
++          screen->GetDisplayNearestView(view->GetNativeView())
++              .display_frequency();
++      if (freq >= 24.0f && freq <= 500.0f) {
++        refresh_hz = freq;
++      }
++    }
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
++        FROM_HERE,
++        base::BindOnce(
++            [](std::unique_ptr<DispatchMouseEventCallback> callback) {
++              callback->sendSuccess();
++            },
++            std::move(callback)),
++        base::Seconds(1.0 / refresh_hz));
 +    return;
 +  }
    handler->EnsureInjector(widget.get())
        ->ForwardMouseEventNow(*mouse_event, std::move(callback));
  }
 diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
-index cd4abb4e7f..0fa92068ce 100644
+index cd4abb4e7f..a7a1e60728 100644
 --- a/content/browser/devtools/protocol/input_handler.h
 +++ b/content/browser/devtools/protocol/input_handler.h
 @@ -192,6 +192,7 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
@@ -244,19 +309,21 @@ index cd4abb4e7f..0fa92068ce 100644
    class DragController {
     public:
      // `handler` must live as long as the drag controller.
-@@ -355,11 +356,14 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+@@ -355,11 +356,16 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
        base::WeakPtr<InputHandler> handler,
        base::WeakPtr<RenderWidgetHostImpl> widget,
        blink::WebMouseEvent synthetic_event);
 +  // `resampled`: the final event of a path whose samples went out one by one (the
-+  // pump); false is the stock slot.
++  // pump); false is the stock slot. `skip_forward`: the event sits on the point the
++  // pointer is at, so it is not forwarded; the command still completes.
    static void ForwardHumanizedMouseEventCompletion(
        base::WeakPtr<InputHandler> handler,
        base::WeakPtr<RenderWidgetHostImpl> widget,
        std::unique_ptr<blink::WebMouseEvent> mouse_event,
 -      std::unique_ptr<DispatchMouseEventCallback> callback);
 +      std::unique_ptr<DispatchMouseEventCallback> callback,
-+      bool resampled);
++      bool resampled,
++      bool skip_forward);
    // Delayed-task callbacks for InputInjector::ScheduleNotches (SP2c). Static
    // for the same reason as SP2b's: the scheduling injector self-destructs.
    static void ForwardSyntheticWheelNotch(

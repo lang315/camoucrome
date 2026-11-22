@@ -25,8 +25,13 @@ that cannot run is UNMEASURED, never PASS; any non-PASS row exits 1.
   9 no two neighbouring coalesced samples (across the lists, in order) on one (x, y), at 125 Hz, in the 6-leg and 120-hop runs.
   10 move, then at once a main-world read of :hover (the command returns when the last event is forwarded, not when the page
     handled it): 20 times, alternating a point inside and outside a box; reported with the count that read the new state.
-  11 Input.setIgnoreInputEvents(true): a humanized move returns, no event reaches the page (the final event included), and
-    after it is lifted the next move arrives.
+  11 Input.setIgnoreInputEvents(true): the same move without it shows events (so the row can see them), with it none reaches
+    the page (the final event included), and after it is lifted the next move arrives. The code site of the gate is not
+    known (removing the check in RenderWidgetHostImpl::ForwardMouseEventWithLatencyInfo left the row green).
+  13 a driver's own small steps (125 Hz min-jerk sweep of mouse.move, humanize on, a few steps repeated): at least 97 % of the
+    pointermoves are dispatched within 2.5 ms before a rAF tick (the command resolves a frame after the final event, so the
+    next command's samples do not make the queue dispatch outside a frame: 0.88 without it), and no coalesced sample
+    repeats a position (a repeated destination is not forwarded).
   12 a humanized drag (button down, buttons=1): the move arrives, no two pointermoves of one path less than 6 ms apart
     (the final event of a button-down move keeps the debugger bit and cannot merge).
 
@@ -55,6 +60,7 @@ PAGE = (b"<!doctype html><body style='margin:0;height:3000px'><div id=h style='p
         b"__log.push({ts:e.timeStamp,now:performance.now(),cs:c.length,cts:c.map(x=>x.timeStamp),ps:e.getPredictedEvents().length,"
         b"k:'move',seq:++__seq,x:e.clientX,y:e.clientY,mx:e.movementX,my:e.movementY,cmx:c.map(x=>x.movementX),cmy:c.map(x=>x.movementY),cxy:c.map(x=>[x.clientX,x.clientY]),"
         b"fn:typeof e.getCoalescedEvents==='function',secure:isSecureContext})},{capture:true,passive:true});"
+        b"window.__raf=[];requestAnimationFrame(function t(){__raf.push(performance.now());requestAnimationFrame(t)});"
         b"addEventListener('pointerrawupdate',e=>{__log.push({k:'raw',ts:e.timeStamp,now:performance.now(),seq:++__seq})},true);"
         b"addEventListener('pointerdown',e=>{__log.push({k:'down',x:e.clientX,y:e.clientY,seq:++__seq})},true);"
         b"addEventListener('click',e=>{__log.push({k:'click',x:e.clientX,y:e.clientY,seq:++__seq})},true);"
@@ -78,7 +84,8 @@ R9 = "9 no repeated (x, y) between neighbouring coalesced samples"
 R10 = "10 move, then at once a read of :hover: the new state"
 R11 = "11 setIgnoreInputEvents: the move returns and nothing reaches the page, a later move does"
 R12 = "12 a humanized drag (buttons=1): no two pointermoves of one path within 6 ms"
-ROWS = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12]
+R13 = "13 a driver's own small steps: dispatched at the frame, no repeated position"
+ROWS = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12, R13]
 HOPS = [(300.0 + 14.0 * i, 300.0 + (i % 7)) for i in range(120)]
 LEGS = [(780.0, 120.0), (120.0, 480.0), (700.0, 460.0), (200.0, 140.0), (760.0, 300.0), (140.0, 300.0)]
 
@@ -316,6 +323,10 @@ def ignore_row(url):
     try:
         with browser({**HUM, "humanize:minTime": 80, "humanize:maxTime": 200}, url) as proc:
             c, _ = base.open_page(proc)
+            base.ev(c, "window.__log = []")
+            base.move(c, 400.0, 250.0, timeout_s=10)   # the measuring RED: the same move, not ignored, must show events
+            time.sleep(0.4)
+            seen = len(base.ev(c, "window.__log"))
             c.call("Input.setIgnoreInputEvents", {"ignore": True})
             base.ev(c, "window.__log = []")
             t0 = time.monotonic()
@@ -331,7 +342,37 @@ def ignore_row(url):
     except Exception as exc:  # noqa: BLE001
         unmeasured([R11], exc)
         return
-    judge(R11, leaked == 0 and after > 0, "row11 ignoring: returned in %.2f s, %d events reached the page; after lifting: %d moves" % (took, leaked, after))
+    judge(R11, seen > 0 and leaked == 0 and after > 0, "row11 not ignored: %d events; ignoring: returned in %.2f s, %d events reached the page; after lifting: %d moves" % (seen, took, leaked, after))
+
+
+def stepped_row(url):
+    def minjerk(t):
+        return 10 * t ** 3 - 15 * t ** 4 + 6 * t ** 5
+    try:
+        with browser({"humanize:enabled": True}, url) as proc:
+            c, _ = base.open_page(proc)
+            base.ev(c, "window.__log = []")
+            t0 = time.monotonic()
+            n = 150
+            for i in range(n + 1):
+                while time.monotonic() - t0 < i * 8.0 / 1000.0:
+                    time.sleep(0.0005)
+                u = minjerk(i / n)
+                x, y = round(150.0 + 600.0 * u, 2), round(150.0 + 30.0 * u, 2)
+                base.move(c, x, y)
+                if i % 25 == 0:
+                    base.move(c, x, y)   # a repeated destination
+            time.sleep(0.5)
+            log, raf = base.ev(c, "window.__log"), base.ev(c, "window.__raf")
+    except Exception as exc:  # noqa: BLE001
+        unmeasured([R13], exc)
+        return
+    mv = moves_of(log)
+    lead = [next(t for t in raf if t >= e["now"]) - e["now"] for e in mv if raf and raf[-1] >= e["now"]]
+    rep, _ = repeats(mv)
+    share = sum(1 for x in lead if x <= 2.5) / len(lead) if lead else 0.0
+    judge(R13, len(mv) >= 100 and share >= 0.97 and rep == 0,
+          "row13 %d pointermoves, %.3f dispatched within 2.5 ms before a tick, %d repeated positions" % (len(mv), share, rep))
 
 
 def drag_row(url):
@@ -408,6 +449,7 @@ def main():
         hover_row(url)
         ignore_row(url)
         drag_row(url)
+        stepped_row(url)
         if all(h):
             judge(R6, all(movement_ok(x) for x in h + logs), "row6 %d run(s) checked, each head against its own list" % (len(h) + len(logs)))
         else:
