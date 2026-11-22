@@ -15,6 +15,25 @@ them goes back to an old state or changes all at once, a site can re-check the d
   client hints of every profile at once. A site may then re-check the device, or end an older session once. Open
   the profile as usual and log in again by hand if asked. Do not go back to a copy made before the update.
 
+## Go core: store one identity, resolve it every launch
+
+`core.Draw` returns a `core.Identity`. Store its JSON once per identity, next to the profile. It holds the full
+pool entry, so a later release's data cannot change it.
+
+- **On every launch**, call `Resolve(id, ProbeHost(), exit)` and launch with the result.
+- **These fields must stay byte-stable:** `version`, `os`, `entry`, `seeds`, and `hostSeed` (a string, to keep 64
+  bits). Never re-serialize the file through a type that rounds numbers.
+- **These change per launch**, from the host and the exit: the core count snaps to the host, `platformVersion`,
+  the window fit, and the time zone and locale.
+- **Migration rule:** `Resolve` refuses a `version` this code does not read, and returns an error. Keep the file.
+  Do not draw a new identity silently: a site that knew the old one sees a different device.
+- **Keep one `user_data_dir` per identity.** Never start a fresh profile for an identity that has already logged in
+  to a site account.
+- **Moving an identity** to another host or another proxy country changes what a site sees. `Resolve` can drop the
+  GPU claim (the host's cores fall below the claimed iGPU's floor, the CPU vendor does not fit, or the host GPU has
+  another Dawn architecture), and the time zone changes. `Resolved.Warnings` names each such change: log every line.
+  If the host's renderer is unknown (`""`), the architecture is not checked and the claim stays.
+
 ## What was measured
 
 The tracking observer (`docs/observer/README.md`) loads facebook unattended. Each run copies a backed-up

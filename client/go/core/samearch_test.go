@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -166,5 +167,35 @@ func TestDrawRateByArchitecture(t *testing.T) {
 	for a, n := range share {
 		claims, none := claimsOn(t, sample[a], 300)
 		t.Logf("%-18s %5.1f%% of the pool; host of it draws a claim in %d of 300 seeds (%d none)", a, 100*float64(n)/float64(len(p.Entries)), len(claims), none)
+	}
+}
+
+// A stored identity is re-resolved on a host that may have another GPU architecture: the claim must go with a warning
+// (rule 4), not stay. An unknown host renderer keeps the claim, as before.
+func TestResolveDropsAClaimOfAnotherHostArchitecture(t *testing.T) {
+	id := withClaim(t, rtx3060, true)
+	claimed := func(r Resolved) bool { _, ok := r.Config["webGl:renderer"]; return ok }
+	cases := []struct {
+		name, host string
+		keep       bool
+	}{
+		{"other architecture, same vendor", rtx4090, false},
+		{"same architecture", rtx3070, true},
+		{"unknown renderer", "", true},
+	}
+	for _, c := range cases {
+		r := resolveOn(t, id, c.host)
+		if claimed(r) != c.keep {
+			t.Errorf("%s: claim kept = %v, want %v", c.name, claimed(r), c.keep)
+		}
+		var n int
+		for _, w := range r.Warnings {
+			if strings.Contains(w, "architecture") {
+				n++
+			}
+		}
+		if want := map[bool]int{true: 0, false: 1}[c.keep]; n != want {
+			t.Errorf("%s: %d architecture warnings, want %d: %v", c.name, n, want, r.Warnings)
+		}
 	}
 }

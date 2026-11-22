@@ -144,6 +144,17 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 		}
 	}
 
+	// Same-architecture mode (Draw): a stored claim of another Dawn architecture than the host's is dropped, so an identity moved
+	// to another GPU keeps no claim the host cannot back. An unknown host renderer keeps the claim.
+	if r, kept := cfg["webGl:renderer"].(string); kept && r != "" && h.Renderer != "" {
+		if hostArch := gpuArchitecture(h.Renderer); hostArch != "" && gpuArchitecture(r) != hostArch {
+			for _, k := range gpuClaimKeys {
+				delete(cfg, k)
+			}
+			warn = append(warn, fmt.Sprintf("the claimed GPU is not of the host GPU's architecture %s: the GPU claim is dropped and the host's real GPU is kept", hostArch))
+		}
+	}
+
 	// A kept GPU claim stays blocked for WebGPU unless the host's renderer is the same family (gen.py gpu_keys). Only ever
 	// true to false: a stored identity on a host with no renderer resolves as before.
 	if r, kept := cfg["webGl:renderer"].(string); kept && cfg["webGpu:blocked"] == true && webGpuOpen(r, h.Renderer) {
