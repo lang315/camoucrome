@@ -247,10 +247,10 @@ err = core.Pinned(r.Cores, func() error { return spawn(env, argv) })
   deterministic for the same identity, host and exit, and applies the host (cores, window, platform
   version, display flags) and the exit (time zone, locale, languages, voices, and
   `webrtc:ipHandlingPolicy=disable_non_proxied_udp`) fresh each time. An invalid zone is an error.
-- **GPU claim.** `Draw` claims a GPU only of the host's vendor and Dawn architecture, and only when `host.Renderer`
-  is set (`core.RendererProbeJS` + `core.ParseRenderer`). `Resolve` drops a stored claim of another architecture,
-  with a warning; with no `Renderer` it checks nothing. Without a claim the page keeps the real WebGL strings.
-  `core` sets no geolocation.
+- **GPU claim.** With `host.Renderer` set to a known architecture (`core.RendererProbeJS` + `core.ParseRenderer`),
+  `Draw` claims only that vendor and architecture; otherwise it claims from the whole pool with WebGPU blocked.
+  `Resolve` drops a stored claim of another architecture, with a warning; with no `Renderer` it checks nothing.
+  Without a claim the page keeps the real WebGL strings. `core` sets no geolocation.
 - **Display.** Run `core.DisplayProbeJS` once in a headless page of the fork with no config, pass the
   result through `core.ParseDisplay` and store it with the machine's `Host`.
 - **The spawner owns the transport and the proxy.** `Argv` emits no `--remote-debugging-*` and no

@@ -127,20 +127,30 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 	} else {
 		warn = append(warn, "host cores unknown: the claim is kept, and may exceed the host's")
 	}
+	// dropClaim removes the GPU claim and warns. The host's real iGPU then shows, so its CPU family's thread floor must hold
+	// (Draw's spare guard, draw.go): a lower count is raised to the floor itself, a real SKU count the host has, or kept with a warning.
+	dropClaim := func(why string) {
+		for _, k := range gpuClaimKeys {
+			delete(cfg, k)
+		}
+		warn = append(warn, why)
+		if floor, n := igpuFloor(h.Renderer), num("navigator.hardwareConcurrency"); floor > 0 && h.Cores > 0 && n < floor {
+			if floor <= h.Cores {
+				cfg["navigator.hardwareConcurrency"] = float64(floor)
+				warn = append(warn, fmt.Sprintf("the host's real iGPU ships with at least %d threads: navigator.hardwareConcurrency is raised from %d to %d", floor, n, floor))
+			} else {
+				warn = append(warn, fmt.Sprintf("the host has fewer than the %d threads its real iGPU ships with: the thread count stays %d", floor, n))
+			}
+		}
+	}
 	// A host snap below the claimed iGPU's floor drops the GPU claim (gen.py from_pool): the real GPU then matches the real CPU.
 	if r, _ := cfg["webGl:renderer"].(string); r != "" {
 		if floor := igpuFloor(r); floor > 0 && num("navigator.hardwareConcurrency") < floor {
-			for _, k := range gpuClaimKeys {
-				delete(cfg, k)
-			}
-			warn = append(warn, fmt.Sprintf("host cores snap to %d, below the %d threads of the claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept", num("navigator.hardwareConcurrency"), floor))
+			dropClaim(fmt.Sprintf("host cores snap to %d, below the %d threads of the claimed GPU's CPU family: the GPU claim is dropped and the host's real GPU is kept", num("navigator.hardwareConcurrency"), floor))
 		}
 		// An iGPU claim beside the other vendor's CPU: Skia's reciprocal estimates show the host's CPU vendor in a CPU-rastered readback.
 		if _, kept := cfg["webGl:renderer"]; kept && !vendorFits(r, h.CPUVendor) {
-			for _, k := range gpuClaimKeys {
-				delete(cfg, k)
-			}
-			warn = append(warn, "the claimed iGPU ships only with the other CPU vendor than this host's: the GPU claim is dropped and the host's real GPU is kept")
+			dropClaim("the claimed iGPU ships only with the other CPU vendor than this host's: the GPU claim is dropped and the host's real GPU is kept")
 		}
 	}
 
@@ -148,26 +158,7 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 	// to another GPU keeps no claim the host cannot back. An unknown host renderer keeps the claim.
 	if r, kept := cfg["webGl:renderer"].(string); kept && r != "" && h.Renderer != "" {
 		if hostArch := gpuArchitecture(h.Renderer); hostArch != "" && gpuArchitecture(r) != hostArch {
-			for _, k := range gpuClaimKeys {
-				delete(cfg, k)
-			}
-			warn = append(warn, fmt.Sprintf("the claimed GPU is not of the host GPU's architecture %s: the GPU claim is dropped and the host's real GPU is kept", hostArch))
-			// The host's real iGPU now shows: its CPU family's thread floor must hold (Draw's spare guard, draw.go).
-			if floor, n := igpuFloor(h.Renderer), num("navigator.hardwareConcurrency"); floor > 0 && h.Cores > 0 && n < floor {
-				raised := 0
-				for _, t := range threadSteps {
-					if t >= floor && t <= h.Cores {
-						raised = t
-						break
-					}
-				}
-				if raised > 0 {
-					cfg["navigator.hardwareConcurrency"] = float64(raised)
-					warn = append(warn, fmt.Sprintf("the host's real iGPU ships with at least %d threads: navigator.hardwareConcurrency is raised from %d to %d", floor, n, raised))
-				} else {
-					warn = append(warn, fmt.Sprintf("the host has fewer than the %d threads its real iGPU ships with: the thread count stays %d", floor, n))
-				}
-			}
+			dropClaim(fmt.Sprintf("the claimed GPU is not of the host GPU's architecture %s: the GPU claim is dropped and the host's real GPU is kept", hostArch))
 		}
 	}
 

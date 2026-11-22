@@ -33,7 +33,7 @@ pool entry, so a later release's data cannot change the entry.
   stays whatever the host's GPU is.
 - **These fields must stay byte-stable:** `version`, `os`, `entry`, `seeds`, and `hostSeed` (a string, to keep 64
   bits). Never re-serialize the file through a type that rounds numbers.
-- **These change per launch**, from the host and the exit: the core count (snapped to the host), `platformVersion`,
+- **These change per launch**, from the host and the exit: the core count (snapped to the host, or raised to the host iGPU's floor after a GPU claim is dropped), `platformVersion`,
   the window fit, the display flags, the time zone, `navigator.language` and `navigator.languages`, `fonts:list`
   (the Windows 11 families and the locale's font pack), `voices:list`, `webrtc:ipHandlingPolicy`, `webGpu:blocked`,
   and whether the GPU claim is kept.
@@ -45,8 +45,8 @@ pool entry, so a later release's data cannot change the entry.
   to a site account.
 - **Moving an identity** to another host or another proxy country changes what a site sees. `Resolve` can drop the
   GPU claim (the host's cores fall below the claimed iGPU's floor, the CPU vendor does not fit, or the host GPU has
-  another Dawn architecture). When it drops a claim for a different architecture, it also raises a thread count that
-  is below the host's real iGPU floor, if the host has enough threads. The time zone changes with the exit.
+  another Dawn architecture). After any such drop it raises a thread count that is below the host's real iGPU floor
+  to that floor, if the host has that many threads, and warns if it has not. The time zone changes with the exit.
   `Resolved.Warnings` names each such change: log every line.
 - **One-time change on update.** An identity drawn before same-architecture `Draw` (`client/go/core` of `-8` and
   `-9`), or drawn without a host renderer, can lose a GPU claim of another architecture on its first launch

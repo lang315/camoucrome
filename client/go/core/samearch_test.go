@@ -239,3 +239,50 @@ func TestResolveArchDropKeepsTheHostIGPUFloor(t *testing.T) {
 		}
 	}
 }
+
+// The floor is raised to itself, not to a thread step: floors 24, 14 and 18 are real SKU counts. The other two drops
+// (cores below the claimed iGPU's floor, the CPU vendor) leave the real iGPU the same floor.
+func TestResolveDropRaisesToTheFloorItself(t *testing.T) {
+	const (
+		uhd770 = "ANGLE (Intel, Intel(R) UHD Graphics 770 (0x0000A780) " + d3d // floor 24
+		ultra  = "ANGLE (Intel, Intel(R) Graphics (0x00007D45) " + d3d         // floor 14
+		ultra5 = "ANGLE (Intel, Intel(R) Graphics (0x00007D55) " + d3d         // floor 18
+	)
+	resolve := func(claim string, entryCores int, h Host) Resolved {
+		id := withClaim(t, claim, true)
+		var e map[string]any
+		if err := json.Unmarshal(id.Entry, &e); err != nil {
+			t.Fatal(err)
+		}
+		e["navigator.hardwareConcurrency"] = float64(entryCores)
+		id.Entry, _ = json.Marshal(e)
+		r, err := Resolve(id, h, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	for _, c := range []struct {
+		host        string
+		cores, want int
+	}{{uhd770, 32, 24}, {uhd770, 24, 24}, {ultra, 14, 14}, {ultra5, 20, 18}} {
+		h := goodHost
+		h.Cores, h.Renderer = c.cores, c.host
+		// 1. arch drop
+		if got := resolve(rtx3060, 8, h).Config["navigator.hardwareConcurrency"]; got != float64(c.want) {
+			t.Errorf("arch drop, host %q cores %d: %v, want %d", c.host, c.cores, got, c.want)
+		}
+		// 2. CPU vendor drop: an Intel iGPU claim on an AMD CPU host of the same architecture as the claim
+		h.CPUVendor = amdCPU
+		if got := resolve(c.host, 8, h).Config["navigator.hardwareConcurrency"]; got != float64(c.want) {
+			t.Errorf("vendor drop, host %q cores %d: %v, want %d", c.host, c.cores, got, c.want)
+		}
+	}
+	// 3. cores-floor drop: a claimed iGPU of floor 24 with 8 entry cores, on a host of the same iGPU with 32 cores
+	h := goodHost
+	h.Cores, h.Renderer = 32, ultra5
+	r := resolve(uhd770, 8, h)
+	if _, kept := r.Config["webGl:renderer"]; kept || r.Config["navigator.hardwareConcurrency"] != float64(18) {
+		t.Errorf("cores-floor drop: claim kept or cores %v, want dropped and 18", r.Config["navigator.hardwareConcurrency"])
+	}
+}
