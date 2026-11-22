@@ -204,6 +204,78 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
   return path;
 }
 
+std::vector<TrajectoryPoint> ResampleToPollRate(
+    const std::vector<TrajectoryPoint>& path, uint32_t hz, uint64_t seed) {
+  if (path.size() < 2 || hz == 0) {
+    return path;
+  }
+  for (size_t i = 1; i < path.size(); ++i) {
+    if (path[i].offset <= path[i - 1].offset) {
+      return path;
+    }
+  }
+  const double period = 1000.0 / hz;
+  // Spacing tolerance: the jitter of a point is half of it, so two neighbours
+  // differ by at most the whole. The samples are delivered in real time and
+  // stamped when they are forwarded, so the spread a page sees comes from the
+  // timers (stock's own at 125 Hz: 56 % of the gaps within 8 +-0.25 ms, the rest
+  // a tail, measured 2026-11-22 with SendInput): the authored part stays tiny.
+  // 1000 Hz keeps +-0.1 ms: no true 1 kHz control exists, unverified.
+  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 0.2 : period / 16;
+  const double jitter = tol / 2;
+  const size_t n = path.size();
+  std::vector<double> t(n);
+  for (size_t i = 0; i < n; ++i) {
+    t[i] = path[i].offset.InMillisecondsF();
+  }
+  // Tangent of the curve in time at each knot (finite differences; one-sided
+  // at the ends).
+  std::vector<double> mx(n), my(n);
+  for (size_t i = 0; i < n; ++i) {
+    size_t a = i == 0 ? 0 : i - 1;
+    size_t b = i + 1 == n ? n - 1 : i + 1;
+    mx[i] = (path[b].x - path[a].x) / (t[b] - t[a]);
+    my[i] = (path[b].y - path[a].y) / (t[b] - t[a]);
+  }
+  auto at = [&](size_t seg, double ms) {
+    // The offset is whole microseconds: evaluate where it will be read.
+    ms = base::Microseconds(std::llround(ms * 1000.0)).InMillisecondsF();
+    double h = t[seg + 1] - t[seg];
+    double u = (ms - t[seg]) / h;
+    double u2 = u * u, u3 = u2 * u;
+    double h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u;
+    double h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+    return TrajectoryPoint{
+        h00 * path[seg].x + h10 * h * mx[seg] + h01 * path[seg + 1].x +
+            h11 * h * mx[seg + 1],
+        h00 * path[seg].y + h10 * h * my[seg] + h01 * path[seg + 1].y +
+            h11 * h * my[seg + 1],
+        base::Microseconds(std::llround(ms * 1000.0))};
+  };
+
+  SplitMix64 rng(seed);
+  std::vector<TrajectoryPoint> out;
+  out.push_back(path.front());
+  const double end = t.back();
+  size_t seg = 0;
+  double prev = t.front();
+  for (int k = 1;; ++k) {
+    double nominal = t.front() + k * period;
+    if (end - nominal < period / 2) {
+      break;  // too close to the end: the end itself takes its place
+    }
+    double ms = nominal + rng.NextUniform(-jitter, jitter);
+    ms = std::max(ms, prev + period / 4);  // strictly increasing
+    prev = ms;
+    while (seg + 2 < n && ms >= t[seg + 1]) {
+      ++seg;
+    }
+    out.push_back(at(seg, ms));
+  }
+  out.push_back(path.back());
+  return out;
+}
+
 WheelNotches QuantizeWheel(double delta_x, double delta_y) {
   if (!std::isfinite(delta_x) || !std::isfinite(delta_y)) {
     return {0, 0};
@@ -236,6 +308,10 @@ double SnapToDeviceGrid(double v,
     }
   }
   return snapped;
+}
+
+bool IsRepeatedPosition(gfx::PointF last, gfx::PointF p, gfx::SizeF size) {
+  return p == last && PointInView(p, size);
 }
 
 bool PointInView(gfx::PointF p, gfx::SizeF size) {

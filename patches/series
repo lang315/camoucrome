@@ -61,3 +61,4 @@ webgpu-blocked.patch
 offscreen-placeholder-noise.patch
 popup-window-bit.patch
 input-grid-edge.patch
+sp2f-input-coalesce.patch

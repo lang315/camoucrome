@@ -408,6 +408,26 @@
         "constrains nothing. This validator only reports; new_value is the",
         "bound that was broken (the cap or the floor)."
       ]
+    },
+    {
+      "id": "input-polling-rate-is-a-mouse-rate",
+      "keys": [
+        "input:pollingHz",
+        "input:pollingHz"
+      ],
+      "relation": "polling-rate-is-mouse",
+      "policy": "report",
+      "repair": "set input:pollingHz to 125 or 1000, or drop it (absent means 125)",
+      "why": [
+        "input:pollingHz names the polling rate of the claimed USB mouse. The",
+        "humanized path is resampled to that rate (8 ms +-3 at 125 Hz, 1 ms",
+        "+-0.1 at 1000 Hz) and the page reads the spacing of getCoalescedEvents()",
+        "timeStamps. 125 and 1000 are the rates the resampler is measured at",
+        "(I2b, measurements/2026-11-21-input-probes.md); any other value would be",
+        "a mouse nobody has with a spacing nobody measured. The relation is unary",
+        "and the table is binary, so both keys are input:pollingHz. Absent or",
+        "non-integer constrains nothing; new_value is 125, the common mouse."
+      ]
     }
   ]
 }

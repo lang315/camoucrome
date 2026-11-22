@@ -65,7 +65,7 @@ def test_a_gen9_floor_reaches_the_header():
 
 def test_registry_entry():
     inv = json.loads((ROOT / "settings/invariants.json").read_text())["invariants"]
-    assert len(inv) == 16
+    assert len(inv) == 17
     e = next(e for e in inv if e["id"] == "gpu-renderer-fits-threads")
     assert e["keys"] == ["webGl:renderer", "navigator.hardwareConcurrency"]
     assert e["relation"] == "renderer-fits-threads" and e["policy"] == "report"
@@ -74,6 +74,6 @@ def test_registry_entry():
 def test_cpp_array_sizes():
     inv_h = (CAMOUCFG / "invariants.h").read_text()
     ut = (CAMOUCFG / "coherence_validator_unittest.cc").read_text()
-    assert re.search(r"std::array<Invariant, 16> kAllInvariants", inv_h)
-    assert re.search(r"std::array<Mutation, 17> kMutations", ut)
+    assert re.search(r"std::array<Invariant, 17> kAllInvariants", inv_h)
+    assert re.search(r"std::array<Mutation, 18> kMutations", ut)
     assert '"gpu-renderer-fits-threads"' in inv_h and '"gpu-renderer-fits-threads"' in ut

@@ -60,6 +60,21 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
                                           int max_ms,
                                           uint64_t seed);
 
+// The path as a mouse reports it: one sample every 1000 / `hz` ms (a USB mouse at
+// 125 or 1000 Hz) instead of one per Cursory frame. The samples sit on a grid of
+// that period, each moved by a small jitter so that two neighbours are the
+// period apart within +-0.2 ms at 125 Hz (the caller delivers them in real time,
+// so the timers add the rest of the spread a mouse shows) and +-0.1 ms at 1000 Hz
+// (other rates: +-1/16 of the period). Their positions lie on the curve through every input
+// point: a cubic Hermite in time, exact at each input offset and exact for
+// straight constant-speed motion. The first sample is path.front() at offset 0,
+// the last is path.back() at its offset (the total duration is unchanged); a
+// grid sample within half a period of the end is dropped for it. Offsets
+// strictly increase. Deterministic per seed. Returns `path` unchanged when it
+// has fewer than 2 points, `hz` is 0, or the offsets do not increase.
+std::vector<TrajectoryPoint> ResampleToPollRate(
+    const std::vector<TrajectoryPoint>& path, uint32_t hz, uint64_t seed);
+
 // A wheel turns in whole notches. Signed notch counts per axis for a CDP
 // wheel delta: |d| / 100 rounded half away from zero, at least 1 for a
 // non-zero delta (Camoufox's rule), clamped to kMaxWheelNotches. A zero or
@@ -95,6 +110,13 @@ double SnapToDeviceGrid(double v, float dsf, double origin, double extent = 0.0)
 // test 0 <= x < w, 0 <= y < h. Not gfx::Rect::Contains(int, int), which
 // truncates a float toward zero and so accepts x in (-1, 0). False for NaN.
 bool PointInView(gfx::PointF p, gfx::SizeF size);
+
+// Whether a move to `p` repeats the point the pointer is at (`last`): a mouse
+// never reports one and stock drops it, so it is not forwarded. Only inside the
+// view: a point outside is not where the pointer is (it is dropped when it is
+// forwarded), and an event outside is how the page learns the pointer left, so
+// it is never a repeat.
+bool IsRepeatedPosition(gfx::PointF last, gfx::PointF p, gfx::SizeF size);
 
 }  // namespace camoucfg
 

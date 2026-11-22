@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <tuple>
 #include <utility>
+#include <vector>
 
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -267,6 +269,19 @@ TEST(MouseTrajectoriesTest, SnapToDeviceGridLeavesUnusableInputAlone) {
   EXPECT_TRUE(std::isnan(SnapToDeviceGrid(nan, 1.25f, 0)));
 }
 
+TEST(MouseTrajectoriesTest, OnlyAMoveInsideTheViewCanBeARepeat) {
+  const gfx::SizeF size(800, 600);
+  EXPECT_TRUE(IsRepeatedPosition({10, 20}, {10, 20}, size));
+  EXPECT_FALSE(IsRepeatedPosition({10, 20}, {10, 21}, size));
+  // The same point outside the view is the pointer's exit, never a repeat: its
+  // event is how the page learns the pointer left.
+  EXPECT_FALSE(IsRepeatedPosition({-3, 300}, {-3, 300}, size));
+  EXPECT_FALSE(IsRepeatedPosition({800, 20}, {800, 20}, size));
+  EXPECT_FALSE(IsRepeatedPosition({std::numeric_limits<float>::quiet_NaN(), 5},
+                                  {std::numeric_limits<float>::quiet_NaN(), 5},
+                                  size));
+}
+
 TEST(MouseTrajectoriesTest, PointInViewIsAHalfOpenFloatTest) {
   const gfx::SizeF size(800, 600);
   // x or y in (-1, 0): the integer Rect::Contains truncates these to 0 and
@@ -279,6 +294,109 @@ TEST(MouseTrajectoriesTest, PointInViewIsAHalfOpenFloatTest) {
   EXPECT_FALSE(PointInView({std::numeric_limits<float>::quiet_NaN(), 5}, size));
   EXPECT_TRUE(PointInView({0, 0}, size));
   EXPECT_TRUE(PointInView({799.2f, 599.2f}, size));
+}
+
+// A Cursory-like path: one point per 16.7 ms along a curve (x quadratic in t).
+std::vector<TrajectoryPoint> CursoryLike(int points) {
+  std::vector<TrajectoryPoint> path;
+  for (int i = 0; i < points; ++i) {
+    double t = i * 16.7;
+    path.push_back({t * 0.3 + t * t * 0.0004, 50 + t * 0.1,
+                    base::Milliseconds(t)});
+  }
+  return path;
+}
+
+std::vector<double> Gaps(const std::vector<TrajectoryPoint>& path) {
+  std::vector<double> gaps;
+  for (size_t i = 1; i < path.size(); ++i) {
+    gaps.push_back((path[i].offset - path[i - 1].offset).InMillisecondsF());
+  }
+  return gaps;
+}
+
+TEST(MouseTrajectoriesTest, ResampleSpacingMatchesTheRate) {
+  const auto in = CursoryLike(60);
+  for (auto [hz, period, tol] :
+       {std::tuple{125u, 8.0, 0.2}, std::tuple{1000u, 1.0, 0.1}}) {
+    auto out = ResampleToPollRate(in, hz, 42);
+    ASSERT_GT(out.size(), in.size()) << hz;
+    std::vector<double> gaps = Gaps(out);
+    // every gap but the last (the end takes the place of a grid sample)
+    for (size_t i = 0; i + 1 < gaps.size(); ++i) {
+      EXPECT_GT(gaps[i], period - tol - 1e-6) << hz << " " << i;
+      EXPECT_LT(gaps[i], period + tol + 1e-6) << hz << " " << i;
+    }
+    EXPECT_GT(gaps.back(), period / 2 - tol - 1e-6) << hz;
+    EXPECT_LT(gaps.back(), period * 1.5 + tol) << hz;
+  }
+}
+
+TEST(MouseTrajectoriesTest, ResampleIsMonotonicAndKeepsTheEnds) {
+  const auto in = CursoryLike(40);
+  for (uint32_t hz : {125u, 1000u}) {
+    auto out = ResampleToPollRate(in, hz, 7);
+    for (size_t i = 1; i < out.size(); ++i) {
+      EXPECT_GT(out[i].offset, out[i - 1].offset);
+    }
+    EXPECT_EQ(out.front().x, in.front().x);
+    EXPECT_EQ(out.front().offset, in.front().offset);
+    EXPECT_EQ(out.back().x, in.back().x);
+    EXPECT_EQ(out.back().y, in.back().y);
+    EXPECT_EQ(out.back().offset, in.back().offset);  // duration unchanged
+  }
+}
+
+TEST(MouseTrajectoriesTest, ResampleStaysOnTheCurveThroughTheInputPoints) {
+  // Constant-speed straight motion: the interpolant is exact, so every sample
+  // lies on the line, which every input point lies on (up to the microsecond
+  // the offsets are stored in: 1 us at 0.5 px/ms is 5e-4 px).
+  std::vector<TrajectoryPoint> in;
+  for (int i = 0; i < 30; ++i) {
+    double t = i * 16.7;
+    in.push_back({100 + 0.5 * t, 200 - 0.25 * t, base::Milliseconds(t)});
+  }
+  for (uint32_t hz : {125u, 1000u}) {
+    for (const auto& p : ResampleToPollRate(in, hz, 3)) {
+      double t = p.offset.InMillisecondsF();
+      EXPECT_NEAR(p.x, 100 + 0.5 * t, 1e-3);
+      EXPECT_NEAR(p.y, 200 - 0.25 * t, 1e-3);
+    }
+  }
+  // Curved input: a sample that lands within a millisecond of an input point
+  // is within the curve's slope of it.
+  const auto curved = CursoryLike(30);
+  for (const auto& p : ResampleToPollRate(curved, 1000, 5)) {
+    for (const auto& q : curved) {
+      if (std::abs((p.offset - q.offset).InMillisecondsF()) < 0.05) {
+        EXPECT_NEAR(p.x, q.x, 0.05);
+        EXPECT_NEAR(p.y, q.y, 0.05);
+      }
+    }
+  }
+}
+
+TEST(MouseTrajectoriesTest, ResampleIsDeterministicPerSeedAndVariesWithIt) {
+  const auto in = CursoryLike(20);
+  auto a = ResampleToPollRate(in, 125, 9);
+  auto b = ResampleToPollRate(in, 125, 9);
+  auto c = ResampleToPollRate(in, 125, 10);
+  ASSERT_EQ(a.size(), b.size());
+  bool differs = false;
+  for (size_t i = 1; i + 1 < a.size() && i + 1 < c.size(); ++i) {
+    EXPECT_EQ(a[i].offset, b[i].offset);
+    differs |= a[i].offset != c[i].offset;
+  }
+  EXPECT_TRUE(differs);
+}
+
+TEST(MouseTrajectoriesTest, ResampleReturnsUnusableInputUnchanged) {
+  const auto in = CursoryLike(5);
+  EXPECT_EQ(ResampleToPollRate(in, 0, 1).size(), in.size());
+  EXPECT_EQ(ResampleToPollRate({in[0]}, 125, 1).size(), 1u);
+  auto flat = in;
+  flat[2].offset = flat[1].offset;  // not increasing
+  EXPECT_EQ(ResampleToPollRate(flat, 125, 1).size(), flat.size());
 }
 
 }  // namespace

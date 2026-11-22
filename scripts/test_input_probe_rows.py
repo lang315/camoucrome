@@ -58,6 +58,100 @@ class I1(unittest.TestCase):
         self.assertEqual(R.row_verdict(R.judge("I1", ctl, many(lambda i: log(real_moves(phase=1.2))))), "PASS")
 
 
+class I1Covered(unittest.TestCase):
+    """2026-11-22 P0b: page.html once kept only the last 6000 ticks; moves older than the first tick were paired with a far
+    later one, so `aligned` read the covered share (.42), not the browser."""
+
+    def ring_log(self, drop):
+        """real_moves(), but the tick log lost its first `drop` ticks (the old ring)"""
+        lg = log(real_moves())
+        lg["raf"] = lg["raf"][drop:]
+        return lg
+
+    def test_full_ring_is_covered(self):
+        m = R.i1(log(real_moves()))
+        self.assertEqual(m["covered"], 1.0)
+        self.assertEqual(m["aligned"], 1.0)
+
+    def test_old_ring_judges_only_covered_moves(self):
+        m = R.i1(self.ring_log(30))      # ticks 30.. : the moves before them have no tick
+        self.assertAlmostEqual(m["covered"], 0.5, delta=0.05)
+        self.assertEqual(m["aligned"], 1.0)   # among the covered moves, as P0b found
+
+    def test_old_ring_is_unmeasured_not_fail(self):
+        ctl = [log(real_moves(phase=p)) for p in (0.5, 1.0, 1.5, 0.8)]
+        v = R.judge("I1", ctl, many(lambda i: self.ring_log(30)))
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+        self.assertIn("covered", v["_"][1])
+
+    def test_covered_ring_passes(self):
+        ctl = [log(real_moves(phase=p)) for p in (0.5, 1.0, 1.5, 0.8)]
+        self.assertEqual(R.row_verdict(R.judge("I1", ctl, many(lambda i: self.ring_log(2)))), "PASS")
+
+
+class I2b(unittest.TestCase):
+    """spacing of the getCoalescedEvents() timeStamps inside one pointermove"""
+
+    def pm(self, step, n=30, k=4, sd=0.0):
+        out = []
+        for i in range(n):
+            base = i * F * 10
+            out.append(ev("pointermove", base, cs=k, ps=1,
+                          cts=[base - (k - 1 - j) * step + ((-1) ** j) * sd for j in range(k)]))
+        return out
+
+    def groups(self):
+        return {"ctl125": [log(self.pm(8.0, sd=0.1)) for _ in range(4)], "ctl1000": [log(self.pm(1.0, k=17, sd=0.05)) for _ in range(4)]}
+
+    def test_metrics(self):
+        m = R.i2b(log(self.pm(8.0)))
+        self.assertAlmostEqual(m["spacing_med"], 8.0)
+        self.assertEqual(m["spacing_n"], 90)
+
+    def test_matching_rate_passes(self):
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(8.1, sd=0.1))))), "PASS")
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(1.05, k=17, sd=0.05))))), "PASS")
+
+    def shaped(self, core, n=200, tail=0.1, k=2):
+        """one gap per pointermove: `core` of them 8.0 +-0.1, `tail` of them 4 or 12, the rest 8 +-1.5 (the control's shape: a peak and a tail)"""
+        out = []
+        for i in range(n):
+            f = (i * 0.618) % 1.0
+            g = 8.0 + (0.1 if i % 2 else -0.1) if f < core else (4.0 + (i % 2) * 8.0 if f < core + tail else 8.0 + (1.5 if i % 2 else -1.5))
+            out.append(ev("pointermove", i * 100.0, cs=2, ps=1, cts=[i * 100.0 - g, i * 100.0]))
+        return out
+
+    def test_gap_shape_metrics(self):
+        m = R.i2b(log(self.shaped(0.6)))
+        self.assertAlmostEqual(m["core_share"], 0.6, delta=0.05)
+        self.assertAlmostEqual(m["tail_share"], 0.1, delta=0.05)
+
+    def test_red_flat_spread_fails_the_shape(self):
+        """same median and sd as the control, but no peak: the uniform +-3 ms jitter of option B"""
+        groups = {"ctl125": [log(self.shaped(0.6)) for _ in range(4)]}
+        flat = many(lambda i: log([ev("pointermove", j * 100.0, cs=2, ps=1, cts=[j * 100.0 - (8.0 + ((j * 0.618) % 1.0 - 0.5) * 6), j * 100.0]) for j in range(200)]))
+        v = R.judge("I2b", groups, flat)
+        self.assertEqual(v["core_share"][0], "FAIL")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I2b", groups, many(lambda i: log(self.shaped(0.6))))), "PASS")
+
+    def test_too_few_gaps_are_not_a_verdict(self):
+        few = self.pm(8.0, n=R.MIN_GAPS // 3 - 1)
+        self.assertIsNone(R.i2b(log(few)))
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(few)))), "UNMEASURED")
+
+    def test_red_equal_stamps_fail(self):
+        v = R.judge("I2b", self.groups(), many(lambda i: log(self.pm(0.0))))
+        self.assertEqual(R.row_verdict(v), "FAIL")
+
+    def test_red_wrong_rate_fails(self):
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(self.pm(4.0))))), "FAIL")
+
+    def test_red_one_sample_per_frame_is_not_pass(self):
+        single = [ev("pointermove", i * F, cs=1, ps=0, cts=[i * F]) for i in range(30)]
+        self.assertNotEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(single)))), "PASS")
+
+
 class I2(unittest.TestCase):
     def pm(self, cs, n=30):
         return [ev("pointermove", i * F, cs=cs, ps=0) for i in range(n)]
@@ -254,6 +348,119 @@ class Judging(unittest.TestCase):
         ctl = [10.0, 20.0, 15.0, 12.0]            # range 10, widening max(floor 1, 2.5)
         self.assertEqual(R.metric_verdict("num", 1.0, ctl, [22.0] * 4)[0], "PASS")
         self.assertEqual(R.metric_verdict("num", 1.0, ctl, [23.0] * 4)[0], "FAIL")   # the old rule allowed up to 30
+
+
+class I7(unittest.TestCase):
+    """pointerrawupdate: a real mouse delivers each report as it arrives, so now - timeStamp is a small constant-ish latency;
+    a burst forwarded back to back shows several events at one `now` whose timeStamps lie 8 ms apart (PR #244 review item 1)."""
+
+    def raw(self, n=60, burst=1, lat=1.0, step=8.0, jitter=0.1):
+        out = []
+        for i in range(n):
+            base = i * step * burst
+            for j in range(burst):
+                ts = base + j * step
+                now = base + (burst - 1) * step + lat if burst > 1 else ts + lat + ((-1) ** i) * jitter
+                out.append(ev("pointerrawupdate", ts, now=now))
+        return out
+
+    def groups(self):
+        return {"ctl125": [log(self.raw(jitter=j)) for j in (0.1, 0.15, 0.2, 0.12)]}
+
+    def test_metrics(self):
+        m = R.i7(log(self.raw(burst=2)))
+        self.assertEqual(m["pairs"], 60)
+        self.assertGreater(m["lat_sd"], 3.0)
+        self.assertEqual(R.i7(log(self.raw()))["pairs"], 0)
+
+    def test_real_time_passes(self):
+        v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(jitter=0.13))))
+        self.assertEqual(R.row_verdict(v), "PASS")
+
+    def test_red_back_to_back_burst_fails(self):
+        v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(burst=2))))
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(v["pair_share"][0], "FAIL")
+
+    def test_a_handful_of_raw_events_is_not_a_verdict(self):
+        """two raw events must not decide the row: a minimum count"""
+        v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(n=R.MIN_RAW - 1))))
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+
+    def test_no_raw_events_is_unmeasured(self):
+        v = R.judge("I7", self.groups(), many(lambda i: log([ev("pointermove", i * 8.0, cs=1, ps=0) for i in range(30)])))
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+
+
+class I2c(unittest.TestCase):
+    """quantization of the coalesced stamps (INFO) and repeated positions inside the coalesced lists"""
+
+    def pm(self, gap, xy_step=1.0, n=20, k=4):
+        out = []
+        for i in range(n):
+            base = i * 100.0
+            out.append(ev("pointermove", base, cs=k, ps=0, cts=[base - (k - 1 - j) * gap for j in range(k)],
+                          cxy=[[float(i * 10 + j * xy_step), 5.0] for j in range(k)]))
+        return out
+
+    def test_whole_ms_share(self):
+        self.assertEqual(R.i2c(log(self.pm(8.0)))["whole_share"], 1.0)
+        self.assertEqual(R.i2c(log(self.pm(8.37)))["whole_share"], 0.0)
+
+    def test_repeat_counts_neighbours_on_one_point(self):
+        m = R.i2c(log(self.pm(8.0, xy_step=0.0)))
+        self.assertEqual(m["repeat"], 20 * 3)
+        self.assertEqual(R.i2c(log(self.pm(8.0)))["repeat"], 0)
+
+    def test_red_repeats_fail(self):
+        groups = {"ctl125": [log(self.pm(8.0)) for _ in range(4)]}
+        v = R.judge("I2c", groups, many(lambda i: log(self.pm(8.0, xy_step=0.0))))
+        self.assertEqual(v["repeat_share"][0], "FAIL")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(v["whole_share"][0], "PASS")
+
+    def quant(self, share, n=200):
+        """gaps of one coalesced pair per move: `share` of them whole ms (8.0), the rest 8.37"""
+        return [ev("pointermove", i * 100.0, cs=2, ps=0, cts=[i * 100.0 - (8.0 if (i * 0.618) % 1.0 < share else 8.37), i * 100.0],
+                   cxy=[[float(i), 1.0], [float(i) + 1, 1.0]]) for i in range(n)]
+
+    def test_red_continuous_stamps_fail_against_a_quantized_control(self):
+        """the control's stamps are partly whole ms (host: .17-.28); ours continuous (.10 is chance for the window)"""
+        groups = {"ctl125": [log(self.quant(0.25)) for _ in range(4)]}
+        v = R.judge("I2c", groups, many(lambda i: log(self.quant(0.0))))
+        self.assertEqual(v["whole_share"][0], "FAIL")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I2c", groups, many(lambda i: log(self.quant(0.25))))), "PASS")
+
+    def test_clean_passes(self):
+        groups = {"ctl125": [log(self.pm(8.0)) for _ in range(4)]}
+        self.assertEqual(R.row_verdict(R.judge("I2c", groups, many(lambda i: log(self.pm(8.0))))), "PASS")
+
+    def test_page_without_positions_is_unmeasured(self):
+        lg = lambda: log([ev("pointermove", i * 100.0, cs=2, ps=0, cts=[i * 100.0 - 8, i * 100.0]) for i in range(20)])
+        groups = {"ctl125": [lg() for _ in range(4)]}
+        self.assertEqual(R.row_verdict(R.judge("I2c", groups, many(lambda i: lg()))), "UNMEASURED")
+
+
+class AfterSkip(unittest.TestCase):
+    """review item 2: a frame is skipped when the rAF tick the event rides on follows its predecessor by > 25 ms. The head
+    timeStamp gap says nothing: an authored stamp run is contiguous."""
+
+    def test_uses_ticks_not_head_stamps(self):
+        lg = log([ev("pointermove", 100.0, now=100.0, cs=2), ev("pointermove", 200.0, now=200.0, cs=2)])
+        lg["raf"] = [[t, t] for t in (0.0, 16.7, 33.4, 50.1, 66.8, 83.5, 100.2, 116.9, 133.6, 150.3, 167.0, 183.7, 200.4)]
+        self.assertEqual(R.after_skip(lg, 25.0), 0)        # head gap 100 ms, every frame on time
+        lg["raf"] = [[t, t] for t in (0.0, 16.7, 33.4, 50.1, 66.8, 83.5, 100.2, 150.0, 166.7, 183.4, 200.1)]
+        lg["ev"][0]["now"] = 110.0                         # rides the tick at 150.0, 49.8 ms after the one before
+        self.assertEqual(R.after_skip(lg, 25.0), 1)        # only the first move rides the late tick
+
+
+class PageLogs(unittest.TestCase):
+    def test_page_logs_what_i7_and_i2c_read(self):
+        import pathlib
+        page = (pathlib.Path(__file__).parent / "input_probe" / "page.html").read_text(encoding="utf-8")
+        self.assertIn("'pointerrawupdate'", page)
+        self.assertIn("cxy: cxy(e)", page)
 
 
 if __name__ == "__main__":

@@ -8,8 +8,9 @@ Arms (all on the Windows host, one launch per arm and run, every row in one page
   rawh             the same with humanize:enabled
   human            fork + camoucrome.human (click only: rows I1-I3; the rest is n/a, no API)
   red              the planted bad arm: back-to-back moves, clickCount 1, no right click. Its I1 row cannot fail live: Chrome's
-                   input router coalesces a burst to one move per frame; I1's live RED is rawh (humanize timers off the frame
-                   start), the synthetic fixture holds the planted case (test_input_probe_rows)
+                   input router coalesces a burst to one move per frame; the synthetic fixture holds the planted case
+                   (test_input_probe_rows). I1 has no live RED: rawh's old FAIL (.42) was the page's tick ring, not the browser
+                   (measurements/2026-11-22-input-p0.md); I2 and I2b (coalesced list, stamp spacing) are what rawh fails live
 
   python measure_input_probes.py run --stock-exe PATH --fork-exe PATH --out DIR [--runs 6] [--arms ...] [--fork-version X]
   (CAMOU_WSL_USER names the WSL user that reads the build lock; the fork must be the pin in upstream.env or --fork-version)
@@ -42,7 +43,7 @@ WIN = (1000, 700)
 POS = (360, 160)
 ARMS = ("ctl125", "ctl1000", "raw", "rawh", "human", "red")
 CTL = ("ctl125", "ctl1000")
-PHASE_OF = {"I1": "move", "I2": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key"}
+PHASE_OF = {"I1": "move", "I2": "move", "I2b": "move", "I2c": "move", "I3": "move", "I4": "edge", "I5": "click", "I6": "key", "I7": "move"}
 PHASES = ("move", "edge", "click", "key")
 FLUSH_S = 0.8       # the page posts every 300 ms and learns a phase on the reply
 
@@ -81,6 +82,7 @@ def edge_legs(w, h):
 class State:
     phase = "boot"
     snap = None
+    drops = 0     # deltas that left a hole in the log (not a resend of what is held): a run with one is UNMEASURED
 
 
 def serve(out_dir):
@@ -106,9 +108,22 @@ def serve(out_dir):
         def do_POST(self):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             try:
-                st.snap = json.loads(body)
+                d = json.loads(body)
             except ValueError:
-                pass
+                d = None
+            if d is not None:
+                # the page sends only what is new, from evFrom / rafFrom on; a delta that does not continue what is held is dropped
+                # The page advances its sent mark on any reply, so a delta lost after a reply that was sent leaves a hole for
+                # good: counted in st.drops (a resend of what is held is not a hole), and the run is UNMEASURED.
+                cur = st.snap if st.snap and "ev" in st.snap else {"meta": d["meta"], "ev": [], "raf": []}
+                ef, rf = d.get("evFrom", 0), d.get("rafFrom", 0)
+                if ef == len(cur["ev"]) and rf == len(cur["raf"]):
+                    cur["meta"] = d["meta"]
+                    cur["ev"] += d["ev"]
+                    cur["raf"] += d["raf"]
+                    st.snap = cur
+                elif ef > len(cur["ev"]) or rf > len(cur["raf"]):
+                    st.drops += 1
             self._send(st.phase.encode())
 
         def log_message(self, *a):
@@ -329,7 +344,7 @@ def run_arm(arm, i, a, srv, st, out):
     rec = {"arm": arm, "run": i, "unmeasured": None}
     url = f"http://127.0.0.1:{srv.server_port}/page.html?arm={arm}&run={i}"
     udd = tempfile.mkdtemp(prefix="input-probe-")
-    st.snap, st.phase = None, "boot"
+    st.snap, st.phase, st.drops = None, "boot", 0
     proc = ctx = pw = None
     try:
         import input_probe_sendinput as si
@@ -347,6 +362,9 @@ def run_arm(arm, i, a, srv, st, out):
             from patchright.sync_api import sync_playwright
             pw = sync_playwright().start()
             cfg = {"humanize:enabled": arm in ("rawh", "human"), "input:deviceGrid": True}  # the launcher's own default, pinned so the arms measure the shipped config
+            if a.polling_hz:
+                cfg["input:pollingHz"] = a.polling_hz   # a build before 2026-11-22 refuses the key: leave it out for the old binary
+            rec["polling_hz"] = a.polling_hz or None
             ctx = launcher.launch(pw, a.fork_exe, config=cfg, user_data_dir=udd, window=WIN, position=POS, dpr=DPR, headless=False)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(url)
@@ -424,6 +442,8 @@ def run_arm(arm, i, a, srv, st, out):
         rec["boot_moves"] = sum(1 for e in st.snap["ev"] if e.get("ph") == "boot" and e["t"] == "pointermove")
         if idle_strays(st.snap):
             rec["unmeasured"] = f"{idle_strays(st.snap)} stray move(s) outside the gestures"
+        if st.drops:
+            rec["unmeasured"] = f"{st.drops} probe-page delta(s) left a hole in the log"
         return rec
     except Exception as ex:   # noqa: BLE001 - any failure of a launch is that launch's UNMEASURED, never a missing record
         rec["unmeasured"] = f"error: {type(ex).__name__}: {ex}"[:300]
@@ -546,8 +566,32 @@ def cmd_report(a):
                 continue
             det = "; ".join(f"{k}={x[0]} {x[1]} [{x[2]}]" for k, x in v.items() if k != "_row")
             lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
-    lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame): I1's live RED is rawh; the planted case is the "
-              "synthetic fixture. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
+    lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame); the planted case is the "
+              "synthetic fixture. I1 is UNMEASURED when fewer than 90 % of the moves lie inside the tick log. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
+    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those on a frame that came > 25 ms after the one before (page rAF ticks) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms | list max | list p99 |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for arm, rs in by.items():
+        good = measured(rs)
+        if not good:
+            continue
+        hz = good[0].get("polling_hz") or 125
+        cap = 18 if hz == 1000 else 4
+        n = over = skip = ticks = g25 = g40 = 0
+        sizes = []
+        for r in good:
+            lg = split(r["snap"], "I2")
+            mv = [e["now"] for e in lg["ev"]]
+            tt = [b for _, b in lg["raf"] if mv and min(mv) <= b <= max(mv)]   # the ticks of the move phase only
+            gp = [b - a for a, b in zip(tt, tt[1:])]
+            ticks += len(tt)
+            g25 += sum(1 for x in gp if x > 25)
+            g40 += sum(1 for x in gp if x > 40)
+            pm = R.evs(lg, "pointermove")
+            sizes += [e["cs"] for e in pm if e["cs"] >= 0]
+            n += len(pm)
+            over += sum(1 for e in pm if e["cs"] > cap)
+            skip += R.after_skip(lg, 25.0, cap)
+        lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} | {max(sizes, default=0)} | {sorted(sizes)[len(sizes) * 99 // 100] if sizes else 0} |")
     text = "\n".join(lines)
     (pathlib.Path(a.dir) / "table.md").write_text(text + "\n", encoding="utf-8")
     print(text)
@@ -563,6 +607,7 @@ def main(argv=None):
     r.add_argument("--out", required=True)
     r.add_argument("--runs", type=int, default=6)
     r.add_argument("--arms", default=",".join(ARMS))
+    r.add_argument("--polling-hz", type=int, default=None, choices=(125, 1000), help="input:pollingHz of the fork arms (default: unset, the build reads 125)")
     r.add_argument("--fork-version", default=None, help="the pinned build (default: CHROMIUM_TAG of upstream.env)")
     p = sub.add_parser("report")
     p.add_argument("dir")
