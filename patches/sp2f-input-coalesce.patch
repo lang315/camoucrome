@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index 7dbcae7e6a..8adbc53948 100644
+index 7dbcae7e6a..891a01e276 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -6,6 +6,8 @@
@@ -122,7 +122,7 @@ index 7dbcae7e6a..8adbc53948 100644
  class InputHandler::InputInjector
      : public RenderWidgetHost::InputEventObserver {
   public:
-@@ -1066,10 +1158,47 @@ class InputHandler::InputInjector
+@@ -1066,10 +1158,49 @@ class InputHandler::InputInjector
      std::vector<camoucfg::TrajectoryPoint> path = camoucfg::HumanizePath(
          owner_->last_move_position_, mouse_event.PositionInWidget(), min_ms,
          max_ms, base::RandUint64());
@@ -160,18 +160,20 @@ index 7dbcae7e6a..8adbc53948 100644
 +            owner_->last_move_position_, mouse_event.PositionInWidget(),
 +            gfx::SizeF(target_view->GetViewBounds().size()))) {
 +      // Nothing is forwarded; the command still completes, a frame later like
-+      // the others.
-+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++      // the others, booked in the queue so its reply follows the replies of
++      // the moves sent before it.
++      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
 +          FROM_HERE,
 +          base::BindOnce(&InputHandler::ForwardHumanizedMouseEventCompletion,
 +                         owner_->weak_factory_.GetWeakPtr(), widget_host_,
 +                         std::make_unique<blink::WebMouseEvent>(mouse_event),
-+                         std::move(callback), true, true));
++                         std::move(callback), true, true),
++          owner_->queue_clock_.BookStockSlot(now));
 +      return true;
      }
      if (!delay) {
        base::TimeDelta behind = owner_->queue_clock_.BookStockSlot(now);
-@@ -1082,7 +1211,7 @@ class InputHandler::InputInjector
+@@ -1082,7 +1213,7 @@ class InputHandler::InputInjector
            base::BindOnce(&InputHandler::ForwardHumanizedMouseEventCompletion,
                           owner_->weak_factory_.GetWeakPtr(), widget_host_,
                           std::make_unique<blink::WebMouseEvent>(mouse_event),
@@ -180,7 +182,7 @@ index 7dbcae7e6a..8adbc53948 100644
            behind);
        owner_->last_move_widget_ = widget_host_;
        owner_->last_move_position_ = mouse_event.PositionInWidget();
-@@ -1116,6 +1245,20 @@ class InputHandler::InputInjector
+@@ -1116,6 +1247,20 @@ class InputHandler::InputInjector
      const gfx::Vector2dF origin =
          grid ? ViewOriginInRootWindow(view) : gfx::Vector2dF();
      const gfx::Size extent = grid ? view->GetViewBounds().size() : gfx::Size();
@@ -201,7 +203,7 @@ index 7dbcae7e6a..8adbc53948 100644
      for (size_t i = 1; i + 1 < path.size(); ++i) {
        blink::WebMouseEvent synthetic(mouse_event);
        gfx::PointF at(path[i].x, path[i].y);
-@@ -1125,6 +1268,13 @@ class InputHandler::InputInjector
+@@ -1125,6 +1270,13 @@ class InputHandler::InputInjector
                      static_cast<float>(camoucfg::SnapToDeviceGrid(
                          at.y(), dsf, origin.y(), extent.height())));
        }
@@ -215,7 +217,7 @@ index 7dbcae7e6a..8adbc53948 100644
        synthetic.SetPositionInWidget(at);
        synthetic.SetPositionInScreen(at + screen_offset);
        // Not from the debugger: OnInputEventAck only pops
-@@ -1134,20 +1284,35 @@ class InputHandler::InputInjector
+@@ -1134,20 +1286,35 @@ class InputHandler::InputInjector
        // callback against whichever ack happens to arrive first.
        synthetic.SetModifiers(mouse_event.GetModifiers() &
                               ~blink::WebInputEvent::kFromDebugger);
@@ -264,7 +266,7 @@ index 7dbcae7e6a..8adbc53948 100644
  
      owner_->last_move_widget_ = widget_host_;
      owner_->last_move_position_ = mouse_event.PositionInWidget();
-@@ -1532,6 +1697,16 @@ InputHandler::InputHandler(bool allow_file_access,
+@@ -1532,6 +1699,16 @@ InputHandler::InputHandler(bool allow_file_access,
  
  InputHandler::~InputHandler() = default;
  
@@ -281,7 +283,7 @@ index 7dbcae7e6a..8adbc53948 100644
  // static
  std::vector<InputHandler*> InputHandler::ForAgentHost(
      DevToolsAgentHostImpl* host) {
-@@ -2754,7 +2929,9 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -2754,7 +2931,9 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
      base::WeakPtr<InputHandler> handler,
      base::WeakPtr<RenderWidgetHostImpl> widget,
      std::unique_ptr<blink::WebMouseEvent> mouse_event,
@@ -292,7 +294,7 @@ index 7dbcae7e6a..8adbc53948 100644
    if (!handler || !widget) {
      callback->sendFailure(Response::InternalError());
      return;
-@@ -2768,6 +2945,49 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -2768,6 +2947,49 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
    // its dispatch-time stamp, which is older than every interior point, so the
    // page would see the final mousemove's timeStamp go backwards.
    mouse_event->SetTimeStamp(base::TimeTicks::Now());

@@ -205,7 +205,7 @@ R7 = "7 hostile bounds (900/100, -5/0, max=1e9): path ends at target within 10 s
 R8 = "8 no config, and humanize:enabled=false: 3 mouseMoved calls give exactly 3 mousemoves (1 each), in both launches"
 R9 = "9 verify_sp2c.py (Windows-claim wheel) exits 0"
 R10 = "10 overflow keeps order: 14 un-awaited moves (1 s each, past the 10 s cap): 14/14 replies, the 10 path targets and target 13 seen, final events in submission order, last event is target 13 (a refused 17 ms slot target 10-12 may be merged by Chromium)"
-R11 = "11 zero-length move waits for the queue: its event is in the tail after the path, its reply after the first reply"
+R11 = "11 zero-length move keeps submission order: its reply after the first reply, the path ends at the target, no event at the target before the path starts"
 EXPECTED = 11
 
 
