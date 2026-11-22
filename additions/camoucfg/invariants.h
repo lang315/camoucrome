@@ -98,6 +98,11 @@ enum class Relation {
   // keys[1] is the value the log names as out of range; new_value is the
   // bound it broke (the cap or the floor).
   kRendererFitsThreads,
+  // keys[0] and keys[1] are both kInputPollingHz (one key; the table is binary).
+  // Violated when it is present, read as GetUint32, and neither 125 nor 1000,
+  // the two rates of a USB mouse the burst resampler produces. Repair:
+  // kInputPollingHz <- 125.
+  kPollingRateIsMouse,
 };
 
 struct Invariant {
@@ -114,7 +119,7 @@ struct Invariant {
 // without a mutation exercising it, is what the guard tests exist to catch:
 // RegistryMatchesGeneratedHeader for the first, MutationsExistForEveryInvariant
 // for the second.
-inline constexpr std::array<Invariant, 16> kAllInvariants = {{
+inline constexpr std::array<Invariant, 17> kAllInvariants = {{
     {"ua-os-family-agrees",
      Relation::kSameOsFamily,
      Policy::kReport,
@@ -183,6 +188,10 @@ inline constexpr std::array<Invariant, 16> kAllInvariants = {{
      Relation::kRendererFitsThreads,
      Policy::kReport,
      {keys::kWebGlRenderer, keys::kNavigatorHardwareConcurrency}},
+    {"input-polling-rate-is-a-mouse-rate",
+     Relation::kPollingRateIsMouse,
+     Policy::kReport,
+     {keys::kInputPollingHz, keys::kInputPollingHz}},
 }};
 
 // Not wrapped in an anonymous namespace: Google's style guide forbids one in
@@ -368,6 +377,21 @@ static_assert(EveryRendererFitsThreadsEntryUsesTheRendererThreadsPair(),
               "a kRendererFitsThreads entry must name {webGl:renderer, "
               "navigator.hardwareConcurrency}: CheckRendererFitsThreads() "
               "resolves the renderer and reads the thread count itself");
+
+// CheckPollingRateIsMouse() reads kInputPollingHz regardless of the names.
+constexpr bool EveryPollingRateEntryUsesThePollingKey() {
+  for (const Invariant& inv : kAllInvariants) {
+    if (inv.relation == Relation::kPollingRateIsMouse &&
+        (inv.keys[0] != keys::kInputPollingHz ||
+         inv.keys[1] != keys::kInputPollingHz)) {
+      return false;
+    }
+  }
+  return true;
+}
+static_assert(EveryPollingRateEntryUsesThePollingKey(),
+              "a kPollingRateIsMouse entry must name {input:pollingHz, "
+              "input:pollingHz}");
 
 }  // namespace camoucfg::invariants
 

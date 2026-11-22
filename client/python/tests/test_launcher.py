@@ -593,3 +593,25 @@ def test_config_defaults_match_the_contract_and_the_caller_wins():
     assert json.loads(camoucrome.build_env(cfg, base={})["CAMOU_CONFIG"]) == cfg
     assert json.loads(camoucrome.build_env(json.dumps(cfg), base={})["CAMOU_CONFIG"]) == cfg
     assert cfg == {"input:deviceGrid": False, "screen.width": 1}  # the caller's dict is not mutated
+
+
+PINNED_POLLING = [125, 1000, 125, 1000, 125, 1000, 1000, 125, 1000, 125]  # seeds 1..10; the Go and Node clients assert the same table
+
+
+def test_polling_hz_is_derived_from_the_canvas_seed_about_70_30():
+    assert [camoucrome.polling_hz(s) for s in range(1, 11)] == PINNED_POLLING
+    rates = [camoucrome.polling_hz(s) for s in range(1, 20001)]
+    assert set(rates) == {125, 1000}
+    assert 0.27 < rates.count(1000) / len(rates) < 0.33
+
+
+def test_launch_sets_the_polling_rate_from_the_seed_and_the_caller_wins():
+    contract = CONTRACT["launch"]["config_defaults"]["derived"]["input:pollingHz"]
+    assert contract["from"] == "canvas:seed"
+    env = lambda cfg: json.loads(camoucrome.build_env(cfg, base={})["CAMOU_CONFIG"])
+    for seed in (1, 2, 4, 12345):
+        assert env({"canvas:seed": seed})["input:pollingHz"] == camoucrome.polling_hz(seed)   # a kept profile keeps its mouse
+    assert env({"canvas:seed": 2, "input:pollingHz": 125})["input:pollingHz"] == 125            # the caller's value wins
+    assert "input:pollingHz" not in env({"screen.width": 1})                                    # no seed: no claim (the build reads 125)
+    for bad in (0, 2 ** 32, "7", True, 1.5):
+        assert "input:pollingHz" not in env({"canvas:seed": bad}), bad

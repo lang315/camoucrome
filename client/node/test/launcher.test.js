@@ -412,3 +412,17 @@ test('config defaults match the contract: set with no config, the caller wins, a
   assert.deepEqual(JSON.parse(c.buildEnv({ config: JSON.stringify(cfg) }, {}).CAMOU_CONFIG), cfg);
   assert.deepEqual(cfg, { 'input:deviceGrid': false, 'screen.width': 1 });
 });
+
+test('input:pollingHz follows the canvas seed (3 in 10 give 1000 Hz), the caller wins, no seed no key', () => {
+  assert.equal(L.config_defaults.derived['input:pollingHz'].from, 'canvas:seed');
+  // the table the Python and Go clients assert too: one rule in three languages
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c.pollingHz), [125, 1000, 125, 1000, 125, 1000, 1000, 125, 1000, 125]);
+  let n = 0;
+  for (let s = 1; s <= 20000; s++) if (c.pollingHz(s) === 1000) n++;
+  assert.ok(n > 5400 && n < 6600, `${n} of 20000`);
+  const env = (config) => JSON.parse(c.buildEnv({ config }, {}).CAMOU_CONFIG);
+  for (const seed of [1, 2, 4, 12345]) assert.equal(env({ 'canvas:seed': seed })['input:pollingHz'], c.pollingHz(seed));
+  assert.equal(env({ 'canvas:seed': 2, 'input:pollingHz': 125 })['input:pollingHz'], 125);
+  assert.ok(!('input:pollingHz' in env({ 'screen.width': 1 })));
+  for (const bad of [0, 2 ** 32, '7', true, 1.5]) assert.ok(!('input:pollingHz' in env({ 'canvas:seed': bad })), String(bad));
+});

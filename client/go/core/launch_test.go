@@ -241,3 +241,44 @@ func TestConfigDefaultsComeFromTheContractAndTheCallerWins(t *testing.T) {
 		t.Errorf("the caller's map was touched: %v", cfg)
 	}
 }
+
+func TestEnvSetsThePollingRateFromTheSeed(t *testing.T) {
+	// the table the Python, Node and top-level Go clients assert too: one rule in three languages
+	for i, w := range []uint32{125, 1000, 125, 1000, 125, 1000, 1000, 125, 1000, 125} {
+		if got := PollingHz(uint32(i + 1)); got != w {
+			t.Errorf("PollingHz(%d) = %d, want %d", i+1, got, w)
+		}
+	}
+	polling := func(cfg map[string]any) (any, bool) {
+		env, cleanup, err := envFor(Resolved{Config: cfg}, LaunchOpts{}, nil, "Linux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cleanup()
+		for _, kv := range env {
+			if raw, ok := strings.CutPrefix(kv, "CAMOU_CONFIG="); ok {
+				var got map[string]any
+				if err := json.Unmarshal([]byte(raw), &got); err != nil {
+					t.Fatal(err)
+				}
+				v, has := got["input:pollingHz"]
+				return v, has
+			}
+		}
+		t.Fatal("no CAMOU_CONFIG")
+		return nil, false
+	}
+	for _, seed := range []float64{1, 2, 4, 12345} {
+		if v, _ := polling(map[string]any{"canvas:seed": seed}); v != float64(PollingHz(uint32(seed))) {
+			t.Errorf("seed %v: %v", seed, v)
+		}
+	}
+	if v, _ := polling(map[string]any{"canvas:seed": 2.0, "input:pollingHz": 125.0}); v != 125.0 {
+		t.Errorf("the caller's value must win: %v", v)
+	}
+	for _, cfg := range []map[string]any{{"ua:platform": "Linux"}, {"canvas:seed": 0.0}, {"canvas:seed": 1.5}, {"canvas:seed": 4294967296.0}} {
+		if _, ok := polling(cfg); ok {
+			t.Errorf("%v must not derive", cfg)
+		}
+	}
+}

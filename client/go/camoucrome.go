@@ -402,6 +402,11 @@ func buildEnvFor(o Options, base []string, hostOS string) (map[string]string, er
 			config[k] = v
 		}
 	}
+	if _, set := config[PollingKey]; !set {
+		if hz, ok := derivedPollingHz(config["canvas:seed"]); ok {
+			config[PollingKey] = hz
+		}
+	}
 	for name, v := range map[string]any{"CAMOU_CONFIG": config, "CAMOU_PRESET": o.Preset} {
 		if v == nil {
 			continue

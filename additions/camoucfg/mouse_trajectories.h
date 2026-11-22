@@ -60,6 +60,20 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
                                           int max_ms,
                                           uint64_t seed);
 
+// The path as a mouse reports it: one sample every 1000 / `hz` ms (a USB mouse at
+// 125 or 1000 Hz) instead of one per Cursory frame. The samples sit on a grid of
+// that period, each moved by HID-like jitter so that two neighbours are the
+// period apart within +-0.5 ms at 125 Hz and +-0.1 ms at 1000 Hz (other rates:
+// +-1/16 of the period). Their positions lie on the curve through every input
+// point: a cubic Hermite in time, exact at each input offset and exact for
+// straight constant-speed motion. The first sample is path.front() at offset 0,
+// the last is path.back() at its offset (the total duration is unchanged); a
+// grid sample within half a period of the end is dropped for it. Offsets
+// strictly increase. Deterministic per seed. Returns `path` unchanged when it
+// has fewer than 2 points, `hz` is 0, or the offsets do not increase.
+std::vector<TrajectoryPoint> ResampleToPollRate(
+    const std::vector<TrajectoryPoint>& path, uint32_t hz, uint64_t seed);
+
 // A wheel turns in whole notches. Signed notch counts per axis for a CDP
 // wheel delta: |d| / 100 rounded half away from zero, at least 1 for a
 // non-zero delta (Camoufox's rule), clamped to kMaxWheelNotches. A zero or

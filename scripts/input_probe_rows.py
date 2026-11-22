@@ -153,7 +153,8 @@ EXPECT_DPR = 1.25       # the probes run at this device scale factor; I3 means n
 # share: the same for a 0..1 share, UNMEASURED when the control's own range is 0.5 or more (it could never FAIL);
 # zero: control and arm both 0; eq: every arm value is one of the control's; info: reported, never judged.
 SPEC = {
-    "I1": {"multi": ("share", 0.05), "aligned": ("share", 0.10), "short": ("share", 0.10), "gap_med": ("num", 2.0)},
+    "I1": {"multi": ("share", 0.05), "aligned": ("share", 0.10), "short": ("share", 0.10), "gap_med": ("num", 2.0),
+           "covered": ("info", 0)},   # the share of moves inside the tick log: the row is UNMEASURED below COVERED_MIN (presence)
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
     # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
     "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25)},

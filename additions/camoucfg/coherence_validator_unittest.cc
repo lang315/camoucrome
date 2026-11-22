@@ -132,6 +132,10 @@ TEST(CoherenceValidatorTest, RegistryMatchesGeneratedHeader) {
       EXPECT_EQ(header_entry->relation,
                 invariants::Relation::kRendererFitsThreads)
           << *id;
+    } else if (*relation == "polling-rate-is-mouse") {
+      EXPECT_EQ(header_entry->relation,
+                invariants::Relation::kPollingRateIsMouse)
+          << *id;
     } else if (*relation == "touch-fits-os") {
       EXPECT_EQ(header_entry->relation, invariants::Relation::kTouchFitsOs)
           << *id;
@@ -199,7 +203,7 @@ struct Mutation {
   std::string_view expect_repaired;  // the key the validator should name
 };
 
-constexpr std::array<Mutation, 17> kMutations = {{
+constexpr std::array<Mutation, 18> kMutations = {{
     {"ua-os-family-agrees",
      R"({"ua:osInfo":"Windows NT 10.0; Win64; x64","ua:platform":"Linux"})",
      "ua:platform"},
@@ -276,6 +280,9 @@ constexpr std::array<Mutation, 17> kMutations = {{
     {"gpu-renderer-fits-threads",
      R"json({"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00003EA0) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":2})json",
      "navigator.hardwareConcurrency"},
+    // 500 Hz is no rate the resampler produces.
+    {"input-polling-rate-is-a-mouse-rate", R"({"input:pollingHz":500})",
+     "input:pollingHz"},
 }};
 
 TEST(CoherenceValidatorTest, MutationsExistForEveryInvariant) {

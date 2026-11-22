@@ -95,6 +95,7 @@ declare -A MUTATIONS=(
   [gpu-renderer-fits-threads]='{"webGl:vendor":"Google Inc. (Intel)","webGl:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","webGl2:vendor":"Google Inc. (Intel)","webGl2:renderer":"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)","navigator.hardwareConcurrency":16}'
   [fonts-alias-requires-list]='{"fonts:alias":{"Segoe UI":"Selawik"}}'
   [fonts-alias-local-requires-list]='{"fonts:aliasLocal":{"SegoeUI":"Selawik"}}'
+  [input-polling-rate-is-a-mouse-rate]='{"input:pollingHz":500}'
 )
 
 # Second mutations of an invariant already in MUTATIONS: "<id>|<tag>" -> config. The case picks the

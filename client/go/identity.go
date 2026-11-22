@@ -20,6 +20,46 @@ var SeedKeys = []string{"canvas:seed", "mediaDevices:seed"}
 // SeedsFile mirrors settings/launcher.json "per_instance_seeds.profile_file".
 const SeedsFile = "camoucrome-seeds.json"
 
+// PollingHz is the claimed mouse's polling rate for a profile, drawn from its canvas seed so a kept profile keeps its mouse: 1000 Hz
+// for 3 in 10 seeds, else 125 (the Python and Node clients apply the same rule; settings/launcher.json per_instance_seeds.derived).
+func PollingHz(canvasSeed uint32) uint32 {
+	if h := canvasSeed * 2654435761; (h>>16)%10 < 3 {
+		return 1000
+	}
+	return 125
+}
+
+// PollingKey is the config key PollingHz fills.
+const PollingKey = "input:pollingHz"
+
+// derivedPollingHz is PollingHz of a config's canvas:seed, when that is a whole number in 1..2^32-1 (any JSON number kind).
+func derivedPollingHz(seed any) (uint32, bool) {
+	var f float64
+	switch v := seed.(type) {
+	case uint32:
+		f = float64(v)
+	case int:
+		f = float64(v)
+	case int64:
+		f = float64(v)
+	case uint64:
+		f = float64(v)
+	case float64:
+		f = v
+	case json.Number:
+		var err error
+		if f, err = v.Float64(); err != nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+	if f != float64(uint32(f)) || f < 1 {
+		return 0, false
+	}
+	return PollingHz(uint32(f)), true
+}
+
 // PerInstanceConfig draws a fresh non-zero uint32 for every SeedKeys entry.
 // Merge explicit keys over it and pass it as Options.Config beside
 // Options.Preset. A nil reader uses crypto/rand.

@@ -10,6 +10,15 @@ import tempfile
 # Mirrors settings/launcher.json "per_instance_seeds"; the test asserts it.
 SEED_KEYS = ("canvas:seed", "mediaDevices:seed")
 SEEDS_FILE = "camoucrome-seeds.json"
+POLLING_KEY = "input:pollingHz"
+
+
+def polling_hz(seed):
+    """The claimed mouse's polling rate for a profile, drawn from its canvas seed so a kept profile keeps its mouse: 1000 Hz
+    for 3 in 10 seeds, else 125. launch() fills input:pollingHz with it when the config has a canvas:seed and no
+    input:pollingHz (CONFIG_DERIVED in settings/launcher.json); the Go and Node clients apply the same rule."""
+    h = (seed * 2654435761) & 0xFFFFFFFF
+    return 1000 if (h >> 16) % 10 < 3 else 125
 
 
 def per_instance_config(rng=None):

@@ -109,6 +109,12 @@ func envFor(r Resolved, o LaunchOpts, base []string, host string) ([]string, fun
 	for k, v := range r.Config {
 		cfg[k] = v
 	}
+	// launch.config_defaults.derived: the mouse's polling rate follows the profile's canvas:seed (Resolve stays as stored identities resolved it).
+	if _, set := cfg["input:pollingHz"]; !set {
+		if seed, ok := cfg["canvas:seed"].(float64); ok && seed >= 1 && seed == float64(uint32(seed)) {
+			cfg["input:pollingHz"] = float64(PollingHz(uint32(seed)))
+		}
+	}
 	if host != "" && claimed == host {
 		// Those families are real on this host; an alias to the uninstalled bundle would hide them.
 		for _, k := range contract.Launch.NativeFonts.Drop {

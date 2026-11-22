@@ -161,6 +161,8 @@ function buildEnv({ config, preset, strict, lax, fontconfig, crashDir, hostOs = 
   if (strict && lax) throw new Error('strict and lax contradict each other: strict is the default, drop strict');
   effectiveKeys(config, preset);
   config = { ...CONFIG_DEFAULTS, ...asObject(nativeConfig(config, preset, hostOs)) }; // the caller's value wins
+  const seed = config['canvas:seed'];
+  if (!('input:pollingHz' in config) && Number.isInteger(seed) && seed >= 1 && seed <= 0xffffffff) config['input:pollingHz'] = pollingHz(seed);
   const env = {};
   for (const [k, v] of Object.entries(base)) {
     if (!k.startsWith('CAMOU_') && k !== 'FONTCONFIG_FILE' && k !== CRASH_DUMPS_ENV) env[k] = v;
@@ -234,6 +236,13 @@ function buildArgs({ window, dpr, position, extra = [], headless = true, userDat
     if (proxyBypass) args.push(`--proxy-bypass-list=${proxyBypass.split(',').map((h) => h.trim()).filter(Boolean).join(';')}`);
   }
   return args.concat(extra);
+}
+
+// The claimed mouse's polling rate for a profile, drawn from its canvas seed so a kept profile keeps its mouse: 1000 Hz for 3 in
+// 10 seeds, else 125 (the Python and Go clients apply the same rule; launch.config_defaults.derived in settings/launcher.json).
+function pollingHz(seed) {
+  const h = Math.imul(seed, 2654435761) >>> 0;
+  return (h >>> 16) % 10 < 3 ? 1000 : 125;
 }
 
 // Fresh non-zero uint32 seeds; merge explicit keys over the result.
@@ -388,4 +397,4 @@ async function launch(chromium, executablePath, {
 }
 
 module.exports = { checkArchive, CONFIG_DEFAULTS, FORBIDDEN_OPTIONS, BASE_ARGS, LIGHT_ARGS, SEED_KEYS, FONTCONFIG_FILES, NATIVE_FONTS_DROP, CRASH_DUMPS_ENV, buildEnv, buildArgs,
-  acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, profileSeeds, launch, human: require('./human') };
+  acceptLangOf, claimedOs, effectiveKeys, fontconfigFor, perInstanceConfig, pollingHz, profileSeeds, launch, human: require('./human') };

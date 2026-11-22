@@ -419,6 +419,25 @@ bool GLStringResolves(const ConfigScope& scope, bool is_webgl2, bool vendor) {
   return param.has_value() && std::holds_alternative<std::string>(*param);
 }
 
+// input:pollingHz must be a rate a mouse has and the resampler produces: 125 or
+// 1000. Absent constrains nothing (the build reads it as 125); a value of
+// another type is GetUint32's nullopt and also constrains nothing.
+std::vector<Violation> CheckPollingRateIsMouse(
+    const ConfigScope& scope,
+    const invariants::Invariant& inv) {
+  std::optional<uint32_t> hz = GetUint32(scope, inv.keys[0]);
+  if (!hz.has_value() || *hz == 125 || *hz == 1000) {
+    return {};
+  }
+  Violation v;
+  v.invariant_id = inv.id;
+  v.authoritative_key = std::string(inv.keys[0]);
+  v.repaired_key = std::string(inv.keys[0]);
+  v.old_value = base::NumberToString(*hz);
+  v.new_value = "125";
+  return {v};
+}
+
 }  // namespace
 
 std::vector<Violation> Validate(const ConfigScope& scope) {
@@ -477,6 +496,11 @@ std::vector<Violation> Validate(const ConfigScope& scope) {
       }
       case invariants::Relation::kRendererFitsThreads: {
         std::vector<Violation> found = CheckRendererFitsThreads(scope, inv);
+        violations.insert(violations.end(), found.begin(), found.end());
+        break;
+      }
+      case invariants::Relation::kPollingRateIsMouse: {
+        std::vector<Violation> found = CheckPollingRateIsMouse(scope, inv);
         violations.insert(violations.end(), found.begin(), found.end());
         break;
       }
