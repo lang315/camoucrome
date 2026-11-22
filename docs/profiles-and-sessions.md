@@ -57,7 +57,8 @@ pool entry, so a later release's data cannot change the entry.
   host move, and also to freshly drawn identities.
   `Draw` on such a host used to return an error for many seeds (the Python `generate` raised `RuntimeError`). It now draws a
   spare entry with no GPU claim whenever the host reaches the floor, and raises that entry's cores to it. Seeds
-  that drew a spare on those hosts can draw another entry than before; a drawn identity is stored, so only a new
+  that drew a spare on those hosts (mainly Meteor Lake and UHD 770; a rare-architecture iGPU host whose first spare has
+  fewer threads than the floor can change too) can draw another entry than before; a drawn identity is stored, so only a new
   draw is affected.
 
 ## What was measured

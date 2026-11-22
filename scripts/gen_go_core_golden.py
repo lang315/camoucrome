@@ -56,6 +56,7 @@ def drop_raise_run(gen):
     """A from_pool run whose iGPU claim is dropped for the cores floor on a host whose own iGPU floor is no thread step: the
     cores are raised to that floor (Go core Resolve's dropClaim must agree). The claim is synthetic: the first acceptable sample
     with its GPU and thread count set to a UHD 770 (floor 24, a real SKU count) on 24 threads."""
+    # Go and Python agree here only because the cores-floor drop fires before Go's architecture drop (same drop, same raise).
     import random
     from dataclasses import asdict
     from browserforge.fingerprints import FingerprintGenerator
