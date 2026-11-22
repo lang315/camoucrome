@@ -108,6 +108,10 @@ class ZeroLengthTest(unittest.TestCase):
         ev = [(9, 1, 0.5), (1, 1, 1.0), (5, 1, 2.0), (9, 1, 3.0)]
         self.assertTrue(a.tail_violations(ev, (9, 1)))
 
+    def test_path_touching_target_early_is_green(self):
+        ev = [(1, 1, 1.0), (9, 1, 2.0), (8, 1, 3.0), (9, 1, 4.0)]
+        self.assertEqual(a.tail_violations(ev, (9, 1)), [])
+
     def test_no_event(self):
         self.assertTrue(a.tail_violations([(1, 1, 1.0)], (9, 1)))
 

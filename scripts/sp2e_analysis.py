@@ -121,14 +121,19 @@ def final_order_violations(xs, targets, n_paths=N_PATHS):
 
 def tail_violations(events, target):
     """events: [(x, y, t)] in arrival order. A zero-length move to `target`
-    queued behind the move that ends there: every event at `target` must be a
-    contiguous tail (nothing overtook the path), timestamps non-decreasing."""
+    queued behind the move that ends there: the path ends at `target` and no
+    event at `target` comes first (nothing overtook the path). The path's own
+    jittered samples may touch `target` before it settles there, so the
+    events at `target` are not required to be one contiguous tail. Timestamps
+    non-decreasing. This is NOT the guard for the zero-length move's place in
+    the queue: it emits no event (sp2f skips a repeat), so reply order
+    (`reply_before`) is what proves it waited."""
     out = []
-    at = [i for i, (x, y, _) in enumerate(events) if (x, y) == target]
-    if not at:
-        return ["no event at the target"]
-    if at != list(range(at[0], len(events))):
-        out.append("events at the target are not the tail (stock overtook the path): %s of %d" % (at, len(events)))
+    if not events or (events[-1][0], events[-1][1]) != target:
+        return ["no event at the target" if not any((x, y) == target for x, y, _ in events)
+                else "the last event is not at the target"]
+    if (events[0][0], events[0][1]) == target:
+        out.append("the first event is at the target (stock overtook the path)")
     ts = [t for _, _, t in events]
     if any(b < a for a, b in zip(ts, ts[1:])):
         out.append("timestamps go backwards")
