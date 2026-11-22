@@ -152,6 +152,22 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 				delete(cfg, k)
 			}
 			warn = append(warn, fmt.Sprintf("the claimed GPU is not of the host GPU's architecture %s: the GPU claim is dropped and the host's real GPU is kept", hostArch))
+			// The host's real iGPU now shows: its CPU family's thread floor must hold (Draw's spare guard, draw.go).
+			if floor, n := igpuFloor(h.Renderer), num("navigator.hardwareConcurrency"); floor > 0 && h.Cores > 0 && n < floor {
+				raised := 0
+				for _, t := range threadSteps {
+					if t >= floor && t <= h.Cores {
+						raised = t
+						break
+					}
+				}
+				if raised > 0 {
+					cfg["navigator.hardwareConcurrency"] = float64(raised)
+					warn = append(warn, fmt.Sprintf("the host's real iGPU ships with at least %d threads: navigator.hardwareConcurrency is raised from %d to %d", floor, n, raised))
+				} else {
+					warn = append(warn, fmt.Sprintf("the host has fewer than the %d threads its real iGPU ships with: the thread count stays %d", floor, n))
+				}
+			}
 		}
 	}
 

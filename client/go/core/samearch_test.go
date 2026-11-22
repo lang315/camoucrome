@@ -188,6 +188,13 @@ func TestResolveDropsAClaimOfAnotherHostArchitecture(t *testing.T) {
 		if claimed(r) != c.keep {
 			t.Errorf("%s: claim kept = %v, want %v", c.name, claimed(r), c.keep)
 		}
+		if !c.keep {
+			for _, k := range gpuClaimKeys {
+				if _, ok := r.Config[k]; ok {
+					t.Errorf("%s: %s survived the drop", c.name, k)
+				}
+			}
+		}
 		var n int
 		for _, w := range r.Warnings {
 			if strings.Contains(w, "architecture") {
@@ -196,6 +203,39 @@ func TestResolveDropsAClaimOfAnotherHostArchitecture(t *testing.T) {
 		}
 		if want := map[bool]int{true: 0, false: 1}[c.keep]; n != want {
 			t.Errorf("%s: %d architecture warnings, want %d: %v", c.name, n, want, r.Warnings)
+		}
+	}
+}
+
+// After the architecture drop the host's real iGPU shows: a stored entry with fewer threads than its floor is raised to the
+// smallest thread step the host allows, or kept with a warning when the host cannot reach the floor.
+func TestResolveArchDropKeepsTheHostIGPUFloor(t *testing.T) {
+	id := withClaim(t, rtx3060, true)
+	var e map[string]any
+	if err := json.Unmarshal(id.Entry, &e); err != nil {
+		t.Fatal(err)
+	}
+	e["navigator.hardwareConcurrency"] = float64(4)
+	id.Entry, _ = json.Marshal(e)
+	for _, c := range []struct {
+		cores, want int
+		warn        string
+	}{{16, 8, "raised from 4 to 8"}, {4, 4, "fewer than the 8 threads"}} {
+		h := goodHost
+		h.Cores, h.Renderer = c.cores, xe // Iris Xe 0x9A49: floor 8
+		r, err := Resolve(id, h, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Config["navigator.hardwareConcurrency"]; got != float64(c.want) {
+			t.Errorf("host cores %d: hardwareConcurrency %v, want %d", c.cores, got, c.want)
+		}
+		var found bool
+		for _, w := range r.Warnings {
+			found = found || strings.Contains(w, c.warn)
+		}
+		if !found {
+			t.Errorf("host cores %d: no warning containing %q: %v", c.cores, c.warn, r.Warnings)
 		}
 	}
 }

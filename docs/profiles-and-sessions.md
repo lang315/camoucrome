@@ -18,21 +18,39 @@ them goes back to an old state or changes all at once, a site can re-check the d
 ## Go core: store one identity, resolve it every launch
 
 `core.Draw` returns a `core.Identity`. Store its JSON once per identity, next to the profile. It holds the full
-pool entry, so a later release's data cannot change it.
+pool entry, so a later release's data cannot change the entry.
 
-- **On every launch**, call `Resolve(id, ProbeHost(), exit)` and launch with the result.
+- **Probe the host the same way before `Draw` and before every `Resolve`:**
+
+  ```go
+  host, warn := core.ProbeHost()   // log every line of warn
+  host.Display = display           // from core.DisplayProbeJS + ParseDisplay, stored per machine
+  host.Renderer, _ = core.ParseRenderer(rendererString) // from core.RendererProbeJS, run in a config-free headless page
+  r, err := core.Resolve(id, host, exit)
+  ```
+
+  `ProbeHost` does not set `Renderer`. An empty `Renderer` skips the GPU architecture check, so a stored GPU claim
+  stays whatever the host's GPU is.
 - **These fields must stay byte-stable:** `version`, `os`, `entry`, `seeds`, and `hostSeed` (a string, to keep 64
   bits). Never re-serialize the file through a type that rounds numbers.
-- **These change per launch**, from the host and the exit: the core count snaps to the host, `platformVersion`,
-  the window fit, and the time zone and locale.
+- **These change per launch**, from the host and the exit: the core count (snapped to the host), `platformVersion`,
+  the window fit, the display flags, the time zone, `navigator.language` and `navigator.languages`, `fonts:list`
+  (the Windows 11 families and the locale's font pack), `voices:list`, `webrtc:ipHandlingPolicy`, `webGpu:blocked`,
+  and whether the GPU claim is kept.
+- **The stored identity is fixed, the tables it resolves against are not.** Fonts, voices, GPU architectures and
+  thread floors ship with each release, so the same identity can resolve differently after an update.
 - **Migration rule:** `Resolve` refuses a `version` this code does not read, and returns an error. Keep the file.
   Do not draw a new identity silently: a site that knew the old one sees a different device.
 - **Keep one `user_data_dir` per identity.** Never start a fresh profile for an identity that has already logged in
   to a site account.
 - **Moving an identity** to another host or another proxy country changes what a site sees. `Resolve` can drop the
   GPU claim (the host's cores fall below the claimed iGPU's floor, the CPU vendor does not fit, or the host GPU has
-  another Dawn architecture), and the time zone changes. `Resolved.Warnings` names each such change: log every line.
-  If the host's renderer is unknown (`""`), the architecture is not checked and the claim stays.
+  another Dawn architecture). When it drops a claim for a different architecture, it also raises a thread count that
+  is below the host's real iGPU floor, if the host has enough threads. The time zone changes with the exit.
+  `Resolved.Warnings` names each such change: log every line.
+- **One-time change on update.** An identity drawn before same-architecture `Draw` (`client/go/core` of `-8` and
+  `-9`), or drawn without a host renderer, can lose a GPU claim of another architecture on its first launch
+  after this check ships. That is a one-time fingerprint change, and a site may re-check the device.
 
 ## What was measured
 

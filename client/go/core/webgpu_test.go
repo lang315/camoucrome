@@ -67,6 +67,9 @@ func TestWebGpuBlockedMatchesPython(t *testing.T) {
 			if _, kept := cfg["webGl:renderer"]; kept {
 				t.Errorf("claim %q on host %q: kept beside another architecture", r.Claim, host)
 			}
+			if !r.Blocked {
+				t.Errorf("claim %q on host %q: golden row is open, but the architectures differ", r.Claim, host)
+			}
 			continue
 		}
 		got := cfg["webGpu:blocked"]
