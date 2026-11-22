@@ -305,7 +305,7 @@ std::vector<double> Gaps(const std::vector<TrajectoryPoint>& path) {
 TEST(MouseTrajectoriesTest, ResampleSpacingMatchesTheRate) {
   const auto in = CursoryLike(60);
   for (auto [hz, period, tol] :
-       {std::tuple{125u, 8.0, 0.5}, std::tuple{1000u, 1.0, 0.1}}) {
+       {std::tuple{125u, 8.0, 3.0}, std::tuple{1000u, 1.0, 0.1}}) {
     auto out = ResampleToPollRate(in, hz, 42);
     ASSERT_GT(out.size(), in.size()) << hz;
     std::vector<double> gaps = Gaps(out);

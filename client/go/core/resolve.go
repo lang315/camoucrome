@@ -92,15 +92,6 @@ func igpuFloor(renderer string) int {
 	return tables.floors[m[1]+":0x"+strings.ToUpper(m[2])]
 }
 
-// PollingHz is the claimed mouse's polling rate for a profile, drawn from its canvas seed so a kept profile keeps its mouse: 1000 Hz
-// for 3 in 10 seeds, else 125 (the Python, Node and top-level Go clients apply the same rule). envFor sets input:pollingHz with it.
-func PollingHz(canvasSeed uint32) uint32 {
-	if h := canvasSeed * 2654435761; (h>>16)%10 < 3 {
-		return 1000
-	}
-	return 125
-}
-
 // Resolve applies a Host and an Exit to an Identity. It ports the
 // host-dependent tail of gen.py from_pool, and never claims a GPU or a
 // geolocation. The random steps (window fit) draw from the identity's

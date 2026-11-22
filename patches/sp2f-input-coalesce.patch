@@ -1,5 +1,5 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index 7dbcae7e6a..578b736f00 100644
+index 7dbcae7e6a..9d643f8cf1 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
 @@ -6,6 +6,8 @@
@@ -193,7 +193,7 @@ index 7dbcae7e6a..578b736f00 100644
    if (!handler || !widget) {
      callback->sendFailure(Response::InternalError());
      return;
-@@ -2767,7 +2824,12 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -2767,7 +2824,34 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
    // Re-stamped like the synthetic moves before it: the event still carries
    // its dispatch-time stamp, which is older than every interior point, so the
    // page would see the final mousemove's timeStamp go backwards.
@@ -204,6 +204,28 @@ index 7dbcae7e6a..578b736f00 100644
 +  mouse_event->SetTimeStamp(stamp.is_null()
 +                                ? base::TimeTicks::Now()
 +                                : std::min(stamp, base::TimeTicks::Now()));
++  // The end of a path is forwarded with the burst's own modifiers, without
++  // kFromDebugger: the renderer merges only moves whose modifiers are equal,
++  // so a debugger-marked last event stayed a second pointermove inside the
++  // frame of the burst before it (2026-11-22: one in six pointermoves of a
++  // humanized run, 273 + 106 + 90 pairs at gap 0). The command then completes
++  // when the event is forwarded, not on its ack (OnInputEventAck matches only
++  // debugger-marked events), except with a mouse button down: a drag starts on
++  // the ack (HandleMouseEvent), so that move keeps the bit and the stock
++  // ack path. A null stamp is the stock-slot fallback: it keeps the stock path.
++  constexpr int kButtons =
++      blink::WebInputEvent::kLeftButtonDown |
++      blink::WebInputEvent::kMiddleButtonDown |
++      blink::WebInputEvent::kRightButtonDown |
++      blink::WebInputEvent::kBackButtonDown |
++      blink::WebInputEvent::kForwardButtonDown;
++  if (!stamp.is_null() && (mouse_event->GetModifiers() & kButtons) == 0) {
++    mouse_event->SetModifiers(mouse_event->GetModifiers() &
++                              ~blink::WebInputEvent::kFromDebugger);
++    widget->ForwardMouseEvent(*mouse_event);
++    callback->sendSuccess();
++    return;
++  }
    handler->EnsureInjector(widget.get())
        ->ForwardMouseEventNow(*mouse_event, std::move(callback));
  }

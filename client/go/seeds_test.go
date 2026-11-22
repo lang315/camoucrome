@@ -146,22 +146,3 @@ func TestProfileSeedsRefuseADamagedFileRatherThanRedraw(t *testing.T) {
 		}
 	}
 }
-
-func TestPollingHzRule(t *testing.T) {
-	// the table the Python and Node clients assert too: one rule in three languages
-	want := []uint32{125, 1000, 125, 1000, 125, 1000, 1000, 125, 1000, 125}
-	for i, w := range want {
-		if got := PollingHz(uint32(i + 1)); got != w {
-			t.Errorf("PollingHz(%d) = %d, want %d", i+1, got, w)
-		}
-	}
-	n := 0
-	for s := uint32(1); s <= 20000; s++ {
-		if PollingHz(s) == 1000 {
-			n++
-		}
-	}
-	if n < 5400 || n > 6600 {
-		t.Errorf("%d of 20000 seeds give 1000 Hz, want about 30%%", n)
-	}
-}

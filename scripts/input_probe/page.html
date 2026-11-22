@@ -33,11 +33,17 @@ function meta() {
           secure: isSecureContext, coalesced_fn: typeof PointerEvent.prototype.getCoalescedEvents === 'function',
           predicted_fn: typeof PointerEvent.prototype.getPredictedEvents === 'function', ua: navigator.userAgent};
 }
+// Only what is new is sent (evFrom / rafFrom say where it starts): a whole-log snapshot grows to megabytes, and stringifying it
+// every 300 ms janks the main thread, which skips frames (2026-11-22: rAF gaps over 25 ms 3 % in a 60 s run, 0 in a short one).
+let sentEv = 0, sentRaf = 0, inflight = false;
 setInterval(() => {
-  if (!dirty) return;
+  if (!dirty || inflight) return;
   dirty = false;
+  inflight = true;
+  const ne = L.length, nr = RAF.length;
   fetch('/result?arm=' + encodeURIComponent(q.get('arm')) + '&run=' + encodeURIComponent(q.get('run')),
-        {method: 'POST', body: JSON.stringify({meta: meta(), ev: L, raf: RAF})})
-    .then(r => r.text()).then(t => { PH = t; }).catch(() => { dirty = true; });
+        {method: 'POST', body: JSON.stringify({meta: meta(), evFrom: sentEv, ev: L.slice(sentEv, ne), rafFrom: sentRaf, raf: RAF.slice(sentRaf, nr)})})
+    .then(r => r.text()).then(t => { PH = t; sentEv = ne; sentRaf = nr; }).catch(() => { dirty = true; })
+    .finally(() => { inflight = false; });
 }, 300);
 </script>

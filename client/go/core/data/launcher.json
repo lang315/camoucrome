@@ -97,13 +97,6 @@
    "keys": {
     "input:deviceGrid": true
    },
-   "derived": {
-    "input:pollingHz": {
-     "from": "canvas:seed",
-     "rule": "1000 when (((seed * 2654435761) mod 2^32) >> 16) mod 10 < 3, else 125 (about 30 % / 70 %)",
-     "why": "The claimed mouse's polling rate, per profile: a profile's canvas:seed is stable (profile_seeds), so its mouse is too. Set only when the config has a canvas:seed and no input:pollingHz of its own. Same rule in the Python, Go and Node clients."
-    }
-   },
    "why": "Config keys every launch sets under the caller's own config (the caller's value wins; a caller that sets the key false turns it off). input:deviceGrid snaps CDP mouse positions to the lattice a real pointer gives (I3, 2026-11-21); the browser leaves the event as sent when the key is absent, so the launchers carry the default. check_archive reads the caller's config, not the defaults: a browser that predates the key logs one warning for it and ignores it."
   },
   "fontconfig": {

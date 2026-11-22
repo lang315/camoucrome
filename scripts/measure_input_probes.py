@@ -107,9 +107,18 @@ def serve(out_dir):
         def do_POST(self):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             try:
-                st.snap = json.loads(body)
+                d = json.loads(body)
             except ValueError:
-                pass
+                d = None
+            if d is not None:
+                # the page sends only what is new, from evFrom / rafFrom on; a delta that does not continue what is held is dropped
+                # (the page re-sends from its own sent mark, so the log never has a hole)
+                cur = st.snap if st.snap and "ev" in st.snap else {"meta": d["meta"], "ev": [], "raf": []}
+                if d.get("evFrom", 0) == len(cur["ev"]) and d.get("rafFrom", 0) == len(cur["raf"]):
+                    cur["meta"] = d["meta"]
+                    cur["ev"] += d["ev"]
+                    cur["raf"] += d["raf"]
+                    st.snap = cur
             self._send(st.phase.encode())
 
         def log_message(self, *a):
@@ -348,6 +357,9 @@ def run_arm(arm, i, a, srv, st, out):
             from patchright.sync_api import sync_playwright
             pw = sync_playwright().start()
             cfg = {"humanize:enabled": arm in ("rawh", "human"), "input:deviceGrid": True}  # the launcher's own default, pinned so the arms measure the shipped config
+            if a.polling_hz:
+                cfg["input:pollingHz"] = a.polling_hz   # a build before 2026-11-22 refuses the key: leave it out for the old binary
+            rec["polling_hz"] = a.polling_hz or None
             ctx = launcher.launch(pw, a.fork_exe, config=cfg, user_data_dir=udd, window=WIN, position=POS, dpr=DPR, headless=False)
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(url)
@@ -549,6 +561,28 @@ def cmd_report(a):
             lines.append(f"| {row} | {arm} | {len(good)} | {R.row_verdict(v)} | per rate: {v['_row'][2]}; {det} |")
     lines += ["", "red's I1 cannot fail live (Chrome coalesces a burst to one move per frame); the planted case is the "
               "synthetic fixture. I1 is UNMEASURED when fewer than 90 % of the moves lie inside the tick log. I6's key timing is authored by the harness in every arm and is INFO, not judged."]
+    lines += ["", "| arm | n | polling | pointermoves | coalesced list > cap | of those after a skipped frame (gap > 25 ms) | rAF ticks | rAF gaps > 25 ms | rAF gaps > 40 ms |",
+              "|---|---|---|---|---|---|---|---|---|"]
+    for arm, rs in by.items():
+        good = measured(rs)
+        if not good:
+            continue
+        hz = good[0].get("polling_hz") or 125
+        cap = 18 if hz == 1000 else 4
+        n = over = skip = ticks = g25 = g40 = 0
+        for r in good:
+            lg = split(r["snap"], "I2")
+            mv = [e["now"] for e in lg["ev"]]
+            tt = [b for _, b in lg["raf"] if mv and min(mv) <= b <= max(mv)]   # the ticks of the move phase only
+            gp = [b - a for a, b in zip(tt, tt[1:])]
+            ticks += len(tt)
+            g25 += sum(1 for x in gp if x > 25)
+            g40 += sum(1 for x in gp if x > 40)
+            pm = R.evs(lg, "pointermove")
+            n += len(pm)
+            over += sum(1 for e in pm if e["cs"] > cap)
+            skip += sum(1 for x, y in zip(pm, pm[1:]) if y["ts"] - x["ts"] > 25.0 and y["cs"] > cap)
+        lines.append(f"| {arm} | {len(good)} | {hz} (cap {cap}) | {n} | {over} | {skip} | {ticks} | {g25} | {g40} |")
     text = "\n".join(lines)
     (pathlib.Path(a.dir) / "table.md").write_text(text + "\n", encoding="utf-8")
     print(text)
@@ -564,6 +598,7 @@ def main(argv=None):
     r.add_argument("--out", required=True)
     r.add_argument("--runs", type=int, default=6)
     r.add_argument("--arms", default=",".join(ARMS))
+    r.add_argument("--polling-hz", type=int, default=None, choices=(125, 1000), help="input:pollingHz of the fork arms (default: unset, the build reads 125)")
     r.add_argument("--fork-version", default=None, help="the pinned build (default: CHROMIUM_TAG of upstream.env)")
     p = sub.add_parser("report")
     p.add_argument("dir")

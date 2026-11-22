@@ -385,9 +385,9 @@ inline constexpr char kAudioBufferFrames[] = "audio:bufferFrames";
 // (rule 5: an unconfigured build forwards the stock event); the launchers set it true by default (settings/launcher.json).
 inline constexpr char kInputDeviceGrid[] = "input:deviceGrid";
 
-// Polling rate of the claimed USB mouse, 125 or 1000. With humanize:enabled, a CDP move's path is resampled to one sample per period
-// (8 ms +-0.5 at 125 Hz, 1 ms +-0.1 at 1000 Hz) and each frame's samples are forwarded back to back with their authored timeStamps,
-// so getCoalescedEvents() holds a real mouse's samples (I2, I2b). Drawn per profile by the launchers (about 70 % 125, 30 % 1000).
+// Polling rate of the claimed USB mouse, 125 or 1000 (1000 is UNVERIFIED: no true 1 kHz control exists, 2026-11-22 host run). With humanize:enabled, a CDP move's path is resampled to one sample per period
+// (8 ms +-3 at 125 Hz, 1 ms +-0.1 at 1000 Hz) and each frame's samples are forwarded back to back with their authored timeStamps,
+// so getCoalescedEvents() holds a real mouse's samples (I2, I2b). The launchers do not set it: absent means 125.
 // A synthetic `input:` namespace, no JS property path. Absent or any other value => 125 (the common mouse); with humanize off the
 // path is not resampled.
 inline constexpr char kInputPollingHz[] = "input:pollingHz";

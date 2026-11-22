@@ -8,7 +8,6 @@ import tempfile
 import time
 
 from . import pin
-from .identity import polling_hz
 
 # Mirrors settings/launcher.json "forbidden_context_options"; tests/test_launcher.py
 # asserts the two agree. Each of these duplicates a CAMOU_CONFIG key: a second
@@ -183,13 +182,8 @@ CONFIG_DEFAULTS = {"input:deviceGrid": True}
 
 
 def with_config_defaults(config):
-    """The config with CONFIG_DEFAULTS under it: the caller's own value for a key wins. input:pollingHz is derived from the
-    config's canvas:seed when it has one and no input:pollingHz (launch.config_defaults.derived)."""
-    cfg = {**CONFIG_DEFAULTS, **_as_dict(config)}
-    seed = cfg.get("canvas:seed")
-    if "input:pollingHz" not in cfg and type(seed) is int and 1 <= seed <= 0xFFFFFFFF:
-        cfg["input:pollingHz"] = polling_hz(seed)
-    return cfg
+    """The config with CONFIG_DEFAULTS under it: the caller's own value for a key wins."""
+    return {**CONFIG_DEFAULTS, **_as_dict(config)}
 
 
 def build_env(config=None, preset=None, strict=False, base=None, fontconfig=None,
