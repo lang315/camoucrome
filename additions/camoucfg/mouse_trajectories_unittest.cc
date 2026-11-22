@@ -269,6 +269,19 @@ TEST(MouseTrajectoriesTest, SnapToDeviceGridLeavesUnusableInputAlone) {
   EXPECT_TRUE(std::isnan(SnapToDeviceGrid(nan, 1.25f, 0)));
 }
 
+TEST(MouseTrajectoriesTest, OnlyAMoveInsideTheViewCanBeARepeat) {
+  const gfx::SizeF size(800, 600);
+  EXPECT_TRUE(IsRepeatedPosition({10, 20}, {10, 20}, size));
+  EXPECT_FALSE(IsRepeatedPosition({10, 20}, {10, 21}, size));
+  // The same point outside the view is the pointer's exit, never a repeat: its
+  // event is how the page learns the pointer left.
+  EXPECT_FALSE(IsRepeatedPosition({-3, 300}, {-3, 300}, size));
+  EXPECT_FALSE(IsRepeatedPosition({800, 20}, {800, 20}, size));
+  EXPECT_FALSE(IsRepeatedPosition({std::numeric_limits<float>::quiet_NaN(), 5},
+                                  {std::numeric_limits<float>::quiet_NaN(), 5},
+                                  size));
+}
+
 TEST(MouseTrajectoriesTest, PointInViewIsAHalfOpenFloatTest) {
   const gfx::SizeF size(800, 600);
   // x or y in (-1, 0): the integer Rect::Contains truncates these to 0 and

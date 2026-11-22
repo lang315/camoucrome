@@ -3,6 +3,8 @@ metrics and verdicts out. A driven arm FAILs a row when it is distinguishable fr
 input) beyond the control's own run-to-run spread."""
 import statistics
 
+MIN_GAPS = 50          # I2b needs this many coalesced stamp gaps in a run before it says anything
+MIN_RAW = 50           # I7 needs this many pointerrawupdate events
 EDGE_MS = 2.5          # camoufox #978: "within 2.5 ms of a rAF callback"
 DPR_EPS = 2e-3         # float32 clientX: a pointer on device pixels shows its grid up to ~1e-4 device px
 
@@ -64,7 +66,7 @@ def i2b(log):
     for e in evs(log, "pointermove"):
         c = e.get("cts") or []
         gaps += [b - a for a, b in zip(c, c[1:])]
-    if not gaps:
+    if len(gaps) < MIN_GAPS:   # a handful of gaps is not a spacing
         return None
     med = _med(gaps)
     # the shape: stock's gaps at 125 Hz are a peak (56 % within +-0.25 ms of the median) with a tail (the rest, some of it
@@ -96,7 +98,7 @@ def i7(log):
     is steady; a burst forwarded back to back makes it grow within the burst), and `pairs`, the neighbouring events whose
     `now` lie within 0.5 ms but whose timeStamps are 2 ms or more apart; `pair_share` is it over the neighbour pairs."""
     raw = evs(log, "pointerrawupdate")
-    if len(raw) < 2:
+    if len(raw) < MIN_RAW:   # a handful of events is not a latency
         return None
     pairs = sum(1 for a, b in zip(raw, raw[1:]) if abs(b["now"] - a["now"]) < 0.5 and abs(b["ts"] - a["ts"]) >= 2.0)
     return {"raw": len(raw), "lat_sd": statistics.pstdev([e["now"] - e["ts"] for e in raw]), "pairs": pairs,
@@ -207,8 +209,9 @@ SPEC = {
     "I2": {"multi": ("share", 0.10), "coalesced_max": ("num", 1.0), "predicted": ("share", 0.10)},
     # per-rate groups: the control's range is 8 ms at 125 Hz and 1 ms at 1000 Hz, so a floor this small keeps the rates apart
     "I2b": {"spacing_med": ("num", 0.25), "spacing_sd": ("num", 0.25), "core_share": ("share", 0.10), "tail_share": ("share", 0.05)},
-    # whole_share: INFO until the control's shape is known (does the OS quantize its stamps?); repeats: stock drops same-position moves
-    "I2c": {"whole_share": ("info", 0), "repeat_share": ("share", 0.01), "repeat": ("info", 0)},
+    # whole_share: the control's stamps are partly whole ms (host 2026-11-22, 4-6 runs: .17-.28; chance for the 0.05 window is .10),
+    # ours must lie in its band (+-.05): a continuous stamp (.09-.10) fails. repeats: stock drops same-position moves
+    "I2c": {"whole_share": ("share", 0.05), "repeat_share": ("share", 0.01), "repeat": ("info", 0)},
     # pointerrawupdate: the sd of now - timeStamp is the control's (floor 0.5 ms), back-to-back events are not (a back-to-back burst has pair_share ~.5)
     "I7": {"lat_sd": ("num", 0.5), "pair_share": ("share", 0.02), "pairs": ("info", 0)},
     "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},

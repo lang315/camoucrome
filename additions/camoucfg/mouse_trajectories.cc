@@ -310,6 +310,10 @@ double SnapToDeviceGrid(double v,
   return snapped;
 }
 
+bool IsRepeatedPosition(gfx::PointF last, gfx::PointF p, gfx::SizeF size) {
+  return p == last && PointInView(p, size);
+}
+
 bool PointInView(gfx::PointF p, gfx::SizeF size) {
   return gfx::RectF(size).Contains(p);
 }

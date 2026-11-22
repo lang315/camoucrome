@@ -111,6 +111,13 @@ double SnapToDeviceGrid(double v, float dsf, double origin, double extent = 0.0)
 // truncates a float toward zero and so accepts x in (-1, 0). False for NaN.
 bool PointInView(gfx::PointF p, gfx::SizeF size);
 
+// Whether a move to `p` repeats the point the pointer is at (`last`): a mouse
+// never reports one and stock drops it, so it is not forwarded. Only inside the
+// view: a point outside is not where the pointer is (it is dropped when it is
+// forwarded), and an event outside is how the page learns the pointer left, so
+// it is never a repeat.
+bool IsRepeatedPosition(gfx::PointF last, gfx::PointF p, gfx::SizeF size);
+
 }  // namespace camoucfg
 
 #endif  // COMPONENTS_CAMOUCFG_MOUSE_TRAJECTORIES_H_

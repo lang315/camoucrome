@@ -135,6 +135,11 @@ class I2b(unittest.TestCase):
         self.assertEqual(R.row_verdict(v), "FAIL")
         self.assertEqual(R.row_verdict(R.judge("I2b", groups, many(lambda i: log(self.shaped(0.6))))), "PASS")
 
+    def test_too_few_gaps_are_not_a_verdict(self):
+        few = self.pm(8.0, n=R.MIN_GAPS // 3 - 1)
+        self.assertIsNone(R.i2b(log(few)))
+        self.assertEqual(R.row_verdict(R.judge("I2b", self.groups(), many(lambda i: log(few)))), "UNMEASURED")
+
     def test_red_equal_stamps_fail(self):
         v = R.judge("I2b", self.groups(), many(lambda i: log(self.pm(0.0))))
         self.assertEqual(R.row_verdict(v), "FAIL")
@@ -377,6 +382,11 @@ class I7(unittest.TestCase):
         self.assertEqual(R.row_verdict(v), "FAIL")
         self.assertEqual(v["pair_share"][0], "FAIL")
 
+    def test_a_handful_of_raw_events_is_not_a_verdict(self):
+        """two raw events must not decide the row: a minimum count"""
+        v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(n=R.MIN_RAW - 1))))
+        self.assertEqual(R.row_verdict(v), "UNMEASURED")
+
     def test_no_raw_events_is_unmeasured(self):
         v = R.judge("I7", self.groups(), many(lambda i: log([ev("pointermove", i * 8.0, cs=1, ps=0) for i in range(30)])))
         self.assertEqual(R.row_verdict(v), "UNMEASURED")
@@ -407,7 +417,20 @@ class I2c(unittest.TestCase):
         v = R.judge("I2c", groups, many(lambda i: log(self.pm(8.0, xy_step=0.0))))
         self.assertEqual(v["repeat_share"][0], "FAIL")
         self.assertEqual(R.row_verdict(v), "FAIL")
-        self.assertEqual(v["whole_share"][0], "INFO")
+        self.assertEqual(v["whole_share"][0], "PASS")
+
+    def quant(self, share, n=200):
+        """gaps of one coalesced pair per move: `share` of them whole ms (8.0), the rest 8.37"""
+        return [ev("pointermove", i * 100.0, cs=2, ps=0, cts=[i * 100.0 - (8.0 if (i * 0.618) % 1.0 < share else 8.37), i * 100.0],
+                   cxy=[[float(i), 1.0], [float(i) + 1, 1.0]]) for i in range(n)]
+
+    def test_red_continuous_stamps_fail_against_a_quantized_control(self):
+        """the control's stamps are partly whole ms (host: .17-.28); ours continuous (.10 is chance for the window)"""
+        groups = {"ctl125": [log(self.quant(0.25)) for _ in range(4)]}
+        v = R.judge("I2c", groups, many(lambda i: log(self.quant(0.0))))
+        self.assertEqual(v["whole_share"][0], "FAIL")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+        self.assertEqual(R.row_verdict(R.judge("I2c", groups, many(lambda i: log(self.quant(0.25))))), "PASS")
 
     def test_clean_passes(self):
         groups = {"ctl125": [log(self.pm(8.0)) for _ in range(4)]}
