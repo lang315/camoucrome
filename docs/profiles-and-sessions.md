@@ -15,6 +15,52 @@ them goes back to an old state or changes all at once, a site can re-check the d
   client hints of every profile at once. A site may then re-check the device, or end an older session once. Open
   the profile as usual and log in again by hand if asked. Do not go back to a copy made before the update.
 
+## Go core: store one identity, resolve it every launch
+
+`core.Draw` returns a `core.Identity`. Store its JSON once per identity, next to the profile. It holds the full
+pool entry, so a later release's data cannot change the entry.
+
+- **Probe the host the same way before `Draw` and before every `Resolve`:**
+
+  ```go
+  host, warn := core.ProbeHost()   // log every line of warn
+  host.Display = display           // from core.DisplayProbeJS + ParseDisplay, stored per machine
+  host.Renderer, _ = core.ParseRenderer(rendererString) // from core.RendererProbeJS, run in a config-free headless page
+  r, err := core.Resolve(id, host, exit)
+  ```
+
+  `ProbeHost` does not set `Renderer`. An empty `Renderer` skips the GPU architecture check, so a stored GPU claim
+  stays whatever the host's GPU is.
+- **These fields must stay byte-stable:** `version`, `os`, `entry`, `seeds`, and `hostSeed` (a string, to keep 64
+  bits). Never re-serialize the file through a type that rounds numbers.
+- **These change per launch**, from the host and the exit: the core count (snapped to the host, or raised to the host iGPU's floor after a GPU claim is dropped), `platformVersion`,
+  the window fit, the display flags, the time zone, `navigator.language` and `navigator.languages`, `fonts:list`
+  (the Windows 11 families and the locale's font pack), `voices:list`, `webrtc:ipHandlingPolicy`, `webGpu:blocked`,
+  and whether the GPU claim is kept.
+- **The stored identity is fixed, the tables it resolves against are not.** Fonts, voices, GPU architectures and
+  thread floors ship with each release, so the same identity can resolve differently after an update.
+- **Migration rule:** `Resolve` refuses a `version` this code does not read, and returns an error. Keep the file.
+  Do not draw a new identity silently: a site that knew the old one sees a different device.
+- **Keep one `user_data_dir` per identity.** Never start a fresh profile for an identity that has already logged in
+  to a site account.
+- **Moving an identity** to another host or another proxy country changes what a site sees. `Resolve` can drop the
+  GPU claim (the host's cores fall below the claimed iGPU's floor, the CPU vendor does not fit, or the host GPU has
+  another Dawn architecture). After any such drop it raises a thread count that is below the host's real iGPU floor
+  to that floor, if the host has that many threads, and warns if it has not. The time zone changes with the exit.
+  `Resolved.Warnings` names each such change: log every line.
+- **One-time change on update.** An identity drawn before same-architecture `Draw` (`client/go/core` of `-8` and
+  `-9`), or drawn without a host renderer, can lose a GPU claim of another architecture on its first launch
+  after this check ships. That is a one-time fingerprint change, and a site may re-check the device.
+  Also, on a host whose iGPU floor is not a thread step (Meteor Lake 0x7D45, 0x7D55, 0x7D41, 0x7D67, and 0x46B3,
+  0xA780), an identity whose iGPU claim is dropped for the cores floor now reports `hardwareConcurrency` raised to
+  the host iGPU's floor (for example 12 to 14, 16 to 18) on its first launch after the update. This happens with no
+  host move, and also to freshly drawn identities.
+  `Draw` on such a host used to return an error for many seeds (the Python `generate` raised `RuntimeError`). It now draws a
+  spare entry with no GPU claim whenever the host reaches the floor, and raises that entry's cores to it. Seeds
+  that drew a spare on those hosts (mainly Meteor Lake and UHD 770; a rare-architecture iGPU host whose first spare has
+  fewer threads than the floor can change too) can draw another entry than before; a drawn identity is stored, so only a new
+  draw is affected.
+
 ## What was measured
 
 The tracking observer (`docs/observer/README.md`) loads facebook unattended. Each run copies a backed-up

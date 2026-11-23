@@ -60,7 +60,19 @@ func TestWebGpuBlockedMatchesPython(t *testing.T) {
 		if r.Host != nil {
 			host = *r.Host
 		}
-		got := resolveOn(t, withClaim(t, r.Claim, true), host).Config["webGpu:blocked"]
+		cfg := resolveOn(t, withClaim(t, r.Claim, true), host).Config
+		// A claim of another known architecture than the host's is dropped (same-architecture mode, TestResolveDropsAClaimOfAnotherHostArchitecture),
+		// so gen.gpu_keys's blocked has no claim to apply to: the pair is only a rule row, not a resolvable identity.
+		if a := gpuArchitecture(host); a != "" && gpuArchitecture(r.Claim) != a {
+			if _, kept := cfg["webGl:renderer"]; kept {
+				t.Errorf("claim %q on host %q: kept beside another architecture", r.Claim, host)
+			}
+			if !r.Blocked {
+				t.Errorf("claim %q on host %q: golden row is open, but the architectures differ", r.Claim, host)
+			}
+			continue
+		}
+		got := cfg["webGpu:blocked"]
 		if got != r.Blocked {
 			t.Errorf("claim %q on host %q: blocked %v, want %v", r.Claim, host, got, r.Blocked)
 		}

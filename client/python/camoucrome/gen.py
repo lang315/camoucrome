@@ -672,6 +672,19 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
             config.pop(k, None)
         vendor_warn = ("the claimed iGPU ships only with the other CPU vendor than this host's: the GPU claim is dropped "
                        "and the host's real GPU is kept")
+    floor_raise_warn = None
+    host_floor = igpu_thread_floor(host_renderer)
+    if (floor_warn or vendor_warn or not claim_gpu) and host_floor and host_cores is not None \
+            and config["navigator.hardwareConcurrency"] < host_floor:
+        # the host's real iGPU shows now: its CPU family's thread floor must hold (Go core dropClaim). The floor itself is a
+        # real SKU count (14, 18, 24 are no THREAD_STEPS value), so it is raised to when the host has that many threads.
+        if host_floor <= host_cores:
+            floor_raise_warn = (f"the host's real iGPU ships with at least {host_floor} threads: navigator.hardwareConcurrency "
+                                f"is raised from {config['navigator.hardwareConcurrency']} to {host_floor}")
+            config["navigator.hardwareConcurrency"] = host_floor
+        else:
+            floor_raise_warn = (f"the host has fewer than the {host_floor} threads its real iGPU ships with: the thread count "
+                                f"stays {config['navigator.hardwareConcurrency']}")
     config.update(fonts_keys(platform, rng, host_families))
     pv_warn = None
     if host_platform_version and platform == "Windows":  # the host is Windows; a macOS or Linux claim keeps its own
@@ -720,7 +733,7 @@ def from_pool(fp, timezone=None, locale=None, rng=None, gpu=None, host_renderer=
     else:
         bad_display = None
     launch["args"], dw = display_flags(host_display) if host_display is not None else ([], None)
-    return {"config": config, "launch": launch, "warnings": [w for w in (warn, floor_warn, vendor_warn, pv_warn, bad_display, dw) if w]}
+    return {"config": config, "launch": launch, "warnings": [w for w in (warn, floor_warn, vendor_warn, floor_raise_warn, pv_warn, bad_display, dw) if w]}
 
 
 def allowed_cpus():
@@ -798,7 +811,10 @@ def generate(os=None, timezone=None, locale=None, seed=None, gpu=None, exit_ip=N
         if gpu_ok(fp, profile, vendor) and (host_screen is None or holds_min_window(host_screen, dpr_of(fp))):
             if host_arch and not gpu_ok(fp, profile, vendor, host_arch):
                 # the real iGPU shows once the claim is gone: its thread count must not sit below the host iGPU's floor
-                if spare is None and snap_threads(fp["navigator"]["hardwareConcurrency"], host_cores) >= (igpu_thread_floor(host_renderer) or 0):
+                # (a floor that is no THREAD_STEPS value is met by raising the cores to it: from_pool does that for a spare)
+                floor = igpu_thread_floor(host_renderer) or 0
+                if spare is None and (snap_threads(fp["navigator"]["hardwareConcurrency"], host_cores) >= floor
+                                      or (host_cores is not None and floor <= host_cores)):
                     spare = fp
                 continue
             out = from_pool(fp, timezone, locale, rng, gpu, host_renderer, host_families, host_platform_version,

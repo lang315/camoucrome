@@ -104,7 +104,12 @@ func Draw(os string, seed *uint64, h *Host) (Identity, error) {
 		}
 		if rend, _ := entry["webGl:renderer"].(string); hostArch != "" && gpuArchitecture(rend) != hostArch {
 			// the real iGPU shows once the claim is gone: its thread count must not sit below the host iGPU's floor
-			if n, _ := entry["navigator.hardwareConcurrency"].(float64); spare == nil && snapCores(int(n), h.Cores) >= igpuFloor(h.Renderer) {
+			// A floor that is no thread step (14, 18, 24: real SKU counts) is met by raising the cores to it, as Resolve's dropClaim does.
+			n, _ := entry["navigator.hardwareConcurrency"].(float64)
+			if floor := igpuFloor(h.Renderer); spare == nil && (snapCores(int(n), h.Cores) >= floor || floor <= h.Cores) {
+				if snapCores(int(n), h.Cores) < floor {
+					entry["navigator.hardwareConcurrency"] = float64(floor)
+				}
 				spare = entry
 			}
 			continue
