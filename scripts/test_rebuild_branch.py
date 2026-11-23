@@ -46,6 +46,8 @@ def env(tmp_path):
     (root / "settings").mkdir()
     (root / "patches").mkdir()
     shutil.copy(SCRIPT, root / "scripts" / "rebuild_branch.sh")
+    for n in ("lib_additions.sh", "additions_map.txt"):
+        shutil.copy(SCRIPT.parent / n, root / "scripts" / n)
     (root / "upstream.env").write_text(f"CHROMIUM_REV={rev}\nCHROMIUM_TAG=0.0.0.0\n")
     (root / "additions" / "camoucfg" / "x.cc").write_text("// x\n")
     (root / "settings" / "invariants.json").write_text("{}\n")

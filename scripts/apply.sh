@@ -27,14 +27,10 @@ if [ "$HEAD_REV" != "$CHROMIUM_REV" ]; then
   fi
 fi
 
+# shellcheck source=lib_additions.sh
+. "$ROOT/scripts/lib_additions.sh"
 echo "copying additions"
-mkdir -p "$SRC/components/camoucfg"
-cp "$ROOT"/additions/camoucfg/* "$SRC/components/camoucfg/"
-# LGPL sibling: flat except data/, hence cp -R.
-if [ -d "$ROOT/additions/camoucfg_lgpl" ]; then
-  mkdir -p "$SRC/components/camoucfg_lgpl"
-  cp -R "$ROOT"/additions/camoucfg_lgpl/. "$SRC/components/camoucfg_lgpl/"
-fi
+copy_additions "$ROOT" "$SRC"
 
 # The invariant registry lives in settings/ in this repository and beside the
 # header in the tree. That is the one place the two layouts differ, and it is
@@ -54,7 +50,7 @@ echo "applying patches"
 # The process substitution's exit status is invisible to set -e, so a missing
 # or empty series would otherwise apply nothing and still print "done".
 [ -s "$ROOT/patches/series" ] || { echo "error: $ROOT/patches/series is missing or empty" >&2; exit 1; }
-mapfile -t PATCHES < <(grep -v '^#' "$ROOT/patches/series" | sed '/^$/d; s#^#'"$ROOT"'/patches/#')
+mapfile -t PATCHES < <(series_list "$ROOT/patches/series" | sed "s#^#$ROOT/patches/#")
 [ "${#PATCHES[@]}" -gt 0 ] || { echo "error: $ROOT/patches/series lists no patches" >&2; exit 1; }
 applied=0
 for patch in "${PATCHES[@]}"; do

@@ -17,7 +17,10 @@ import tempfile
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-OLD_BLOCK = """rm -rf "$ROOT/additions/camoucfg_lgpl"
+OLD_BLOCK = """rm -rf "$ROOT/additions/camoucfg"
+mkdir -p "$ROOT/additions/camoucfg"
+git -C "$SRC" archive "$BRANCH" components/camoucfg | tar -x -C "$ROOT/additions" --strip-components=1
+rm -rf "$ROOT/additions/camoucfg_lgpl"
 mkdir -p "$ROOT/additions/camoucfg_lgpl"
 git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$ROOT/additions" --strip-components=1
 """
@@ -41,8 +44,9 @@ def current_script():
 
 def old_script():
     s = current_script()
-    i = s.index("# A branch without the dir")
-    j = s.index("\nfi\n", i) + len("\nfi\n")
+    i = s.index("while read -r a t; do\n  if git")
+    end = "done < <(additions_map)\n"
+    j = s.index(end, i) + len(end)
     return s[:i] + OLD_BLOCK + s[j:]
 
 
@@ -75,6 +79,8 @@ class ExportLgpl:
 
             (root / "scripts").mkdir(parents=True)
             (root / "scripts/export.sh").write_text(self.script_text or current_script())
+            for n in ("lib_additions.sh", "additions_map.txt"):
+                shutil.copy(REPO / "scripts" / n, root / "scripts" / n)
             (root / "upstream.env").write_text(f"CHROMIUM_REV={rev}\n")
             for d in ("patches", "settings", "additions/camoucfg"):
                 (root / d).mkdir(parents=True)
