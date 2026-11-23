@@ -453,3 +453,23 @@ func TestStoredFixtures(t *testing.T) {
 		t.Errorf("%d stored fixtures, want 5", len(m))
 	}
 }
+
+// A stored identity whose fonts:list holds a non-string is an error naming the key, not a panic in the font steps.
+func TestResolveRejectsNonStringFont(t *testing.T) {
+	for _, bad := range []string{`1`, `null`} {
+		id := mustDraw(t, 7, &goodHost)
+		entry := map[string]any{}
+		if err := json.Unmarshal(id.Entry, &entry); err != nil {
+			t.Fatal(err)
+		}
+		entry["fonts:list"] = json.RawMessage(`["Arial",` + bad + `]`)
+		var err error
+		if id.Entry, err = json.Marshal(entry); err != nil {
+			t.Fatal(err)
+		}
+		// Windows 11 platform version and a locale with a pack reach both font steps
+		if _, err := Resolve(id, Host{Cores: 8, WorkArea: [2]int{1920, 1040}, PlatformVersion: "19.0.0"}, nil); err == nil || !strings.Contains(err.Error(), "fonts:list[1]") {
+			t.Errorf("%s: err = %v, want one naming fonts:list[1]", bad, err)
+		}
+	}
+}

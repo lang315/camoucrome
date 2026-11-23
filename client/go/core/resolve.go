@@ -108,6 +108,14 @@ func Resolve(id Identity, h Host, exit *Exit) (Resolved, error) {
 	if err := json.Unmarshal(id.Entry, &cfg); err != nil {
 		return Resolved{}, fmt.Errorf("identity entry: %w", err)
 	}
+	// A stored identity is opaque JSON a caller may have hand-edited or truncated: the font steps below read the list unchecked.
+	if list, ok := cfg["fonts:list"].([]any); ok {
+		for i, f := range list {
+			if _, ok := f.(string); !ok {
+				return Resolved{}, fmt.Errorf("identity entry: fonts:list[%d] is %T, want a string", i, f)
+			}
+		}
+	}
 	dpr, _ := cfg["dpr"].(float64)
 	delete(cfg, "dpr")
 	num := func(k string) int { v, _ := cfg[k].(float64); return int(v) }
