@@ -25,6 +25,10 @@ of them) -- PRUNE drops that tree (and pyproto/, 36 protobuf Python files a
 build tool lists as data), and the extracted archive is verified to
 open the bundled DevTools front end.
 
+The stale-input check judges only build inputs (the Chromium tree's C++ diff against the pin, additions/,
+patches/, and settings/ outside RUNTIME_SETTINGS), so a merge that touched only scripts/, client/ or docs/
+cannot trip it; --allow-stale REASON overrides it. See stale_sources() for what it misses.
+
 Refusals, each a measured trap: a component build (out/Default -- the .so
 graph is not what ships); a chrome/VERSION that disagrees with upstream.env's
 tag (version honesty); a runtime dep GN lists that is not on disk (a build
@@ -118,6 +122,46 @@ def tree_fingerprint(src, rev):
     return h.hexdigest()
 
 
+# settings/ entries the binary never compiles, each with its reader. Anything NOT listed counts as a build
+# input (fail closed): keys.json (gen_keys.py -> keys.h), invariants.json (exported from the box, copied in by
+# apply.sh), build-args.gn / release-args.gn (the build's args), and any new file until it is vouched for here.
+RUNTIME_SETTINGS = (
+    "presets/",              # CAMOU_PRESET at run time (preset_loader.cc reads the env), shipped by package.py
+    "webgl/",                # capture_webgl_profile.py, verify_*.py; gen_thread_caps_header.py writes additions/camoucfg/igpu_thread_caps.h, which is judged itself
+    "fonts.json",            # fetch_fonts.py, gen_fontconfig.py, package.py (font bundle manifest)
+    "fontconfig/",           # package.py ships it, client/go/core/launch.go reads it
+    "locale_zones.json",     # clients (zone_of) and gen_go_core_data.py
+    "launcher.json",         # package.py ships it, the three launchers implement it
+    "sites/",                # observe_drive.py, measure_layer3.py (scripts only)
+    "accepted_defaults.json",  # measure_step2.py, observe_unlink.py (scripts only)
+    "machine_constants.json",  # measure_step2.py, step2_rows.py (scripts only)
+)
+
+
+def stale_sources(src, out, rev, root=None):
+    """Build inputs newer than the main binary: C++ files of the Chromium tree that differ from the pin (the
+    change set as applied, plus untracked ones), and the change set's own files in the repo (additions/,
+    patches/, settings/ minus RUNTIME_SETTINGS). scripts/, client/, docs/ never count.
+    shortcut: mtime vs the main binary only. It catches an edit made after the build, not the `touch -r`
+    replay (source mtime kept OLD, object older than the new content), which needs the build tool's
+    source-to-object map; upgrade when siso can be queried from here (ledger L72)."""
+    root = pathlib.Path(root or ROOT)
+    binary = next((out / b for b in ("chrome", "chrome.exe") if (out / b).is_file()), None)
+    if binary is None:
+        return []
+    built = binary.stat().st_mtime
+    names = set(git(src, "diff", "--name-only", "--no-renames", rev, "--", ".").splitlines())
+    names |= set(git(src, "ls-files", "--others", "--exclude-standard").splitlines())
+    stale = [n for n in names if n.endswith((".cc", ".h")) and (src / n).is_file() and (src / n).stat().st_mtime > built]
+    for top in ("additions", "patches", "settings"):
+        for f in (root / top).rglob("*") if (root / top).is_dir() else []:
+            rel = f.relative_to(root).as_posix()
+            if f.is_file() and not (top == "settings" and rel[len("settings/"):].startswith(RUNTIME_SETTINGS)) \
+                    and f.stat().st_mtime > built:
+                stale.append(rel)
+    return sorted(stale)
+
+
 def runtime_deps(src, out, file=None):
     """Paths relative to `out`, as GN emits them (../../ for source files)."""
     if file:
@@ -183,7 +227,7 @@ def config_keys(src):
     return sorted(k["key"] for k in registry)
 
 
-def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False, scan=True):
+def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=None, no_fonts=False, scan=True, allow_stale=None):
     args = read_args_gn(out)
     # GN's default is is_component_build = is_debug, and is_debug defaults to
     # true: only an explicit false (or an explicit is_debug = false) is a release.
@@ -230,6 +274,12 @@ def stage(src, out, deps, platform, dist, allow_component, now=None, changeset=N
     if missing:
         sys.exit(f"{len(missing)} runtime dep(s) GN lists are not on disk (build unfinished?): "
                  f"{missing[:5]}")
+    stale = stale_sources(src, out, env["CHROMIUM_REV"], ROOT)
+    if stale and allow_stale:
+        print(f"warning: {len(stale)} changed source(s) newer than the main binary, allowed: {allow_stale}", file=sys.stderr)
+    elif stale:
+        sys.exit(f"refusing: {len(stale)} changed source(s) are newer than the main binary, so the build is stale "
+                 f"(rebuild out dir first, or --allow-stale REASON for a deliberate case): {stale[:5]}")
     name = f"camoucrome-{version}-{platform}"
     staging = pathlib.Path(dist) / name
     if staging.exists():
@@ -342,6 +392,8 @@ def main():
                     help="skip the staged-bytes private-term scan (release.py scans the archive instead)")
     ap.add_argument("--changeset-commit", metavar="SHA",
                     help="change-set commit to stamp (required when the script is not inside a git checkout)")
+    ap.add_argument("--allow-stale", metavar="REASON",
+                    help="package although a changed C++ source is newer than the main binary; the reason is printed")
     ap.add_argument("--check", nargs="+", metavar="STAMP")
     a = ap.parse_args()
     if a.check:
@@ -352,7 +404,7 @@ def main():
     out = (src / a.out).resolve()
     deps = runtime_deps(src, out, a.runtime_deps_file)
     staging, stamp = stage(src, out, deps, a.platform, a.dist, a.allow_component,
-                           changeset=a.changeset_commit, no_fonts=a.no_fonts, scan=not a.no_leak_scan)
+                           changeset=a.changeset_commit, no_fonts=a.no_fonts, scan=not a.no_leak_scan, allow_stale=a.allow_stale)
     print(f"staged {stamp['runtime_deps']} runtime deps -> {staging}")
     if not a.no_archive:
         path = archive(staging, a.platform)

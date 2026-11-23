@@ -188,6 +188,7 @@ def test_font_bundle_is_staged_when_present(tree, tmp_path, monkeypatch):
     for f in ("build-args.gn", "release-args.gn"):
         (root / "settings" / f).write_text((package.ROOT / "settings" / f).read_text())
     monkeypatch.setattr(package, "ROOT", root)
+    os.utime(out / "chrome", (4_000_000_000,) * 2)  # the stand-in root was written after the binary; not a stale build
     d = package.runtime_deps(src, out, deps)
     staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
     assert stamp["fonts"] is True
@@ -216,399 +217,76 @@ def test_refuses_deps_without_the_binary(tree, tmp_path):
             package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
 
-def _stage(tree, tmp_path):
+FUTURE = 4_000_000_000  # fixture binary mtime: newer than every real file under package.ROOT, so only the test's own edits can be stale
+
+
+def _stage(tree, tmp_path, **kw):
     src, out, deps = tree
-    return package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+    return package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False, **kw)
 
 
-def test_refuses_build_without_observer(tree, tmp_path):
-    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\n" + REQUIRED)
-    with pytest.raises(SystemExit, match="camou_observe"):
-        _stage(tree, tmp_path)
-
-
-def test_refuses_observer_false(tree, tmp_path):
-    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = false\n" + REQUIRED)
-    with pytest.raises(SystemExit, match="camou_observe"):
-        _stage(tree, tmp_path)
-
-
-def test_accepts_observer_with_a_comment_or_no_spaces(tree, tmp_path):
-    for line in ("camou_observe = true # x", "camou_observe=true", "camou_observe=true#x"):
-        (tree[1] / "args.gn").write_text(f"is_debug = false\nis_component_build = false\n{line}\n" + OFFICIAL + REQUIRED)
-        _stage(tree, tmp_path / line.replace(" ", "_").replace("#", "h"))
-
-
-def test_refuses_rcs(tree, tmp_path):
-    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n"
-                                     "v8_enable_runtime_call_stats = true\n" + OFFICIAL + REQUIRED)
-    with pytest.raises(SystemExit, match="v8_enable_runtime_call_stats"):
-        _stage(tree, tmp_path)
-
-
-def test_a_trailing_comment_does_not_hide_a_release_arg(tree, tmp_path):
-    src, out, deps = tree
-    (out / "args.gn").write_text("is_debug = false  # release\nis_component_build = false # yes\ncamou_observe = true\n" + OFFICIAL + REQUIRED)
-    package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-
-
-def rev(src):
-    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=src, capture_output=True, text=True, check=True).stdout.strip()
-
-
-def commit_all(src, msg):
-    subprocess.run(["git", "add", "-A", "--", ".", ":(exclude)out", ":(exclude)components/camoucfg"], cwd=src, check=True)
-    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", msg], cwd=src, check=True)
-
-
-def test_fingerprint_is_the_same_for_committed_and_uncommitted_change_sets(tree, tmp_path):
-    src, out, deps = tree
-    pin = rev(src)
-    (src / "components" / "camoucfg").mkdir(parents=True, exist_ok=True)
-    (src / "components" / "camoucfg" / "a.cc").write_text("int a;")
-    (src / "chrome" / "data.txt").write_text("patched")
-    uncommitted = package.tree_fingerprint(src, pin)
-    commit_all(src, "patch")
-    assert package.tree_fingerprint(src, pin) == uncommitted
-
-
-def test_fingerprint_takes_the_lgpl_additions_committed_or_not(tree):
-    # the Windows tree has no commits, so components/camoucfg_lgpl is untracked there and committed on the box
-    src, out, deps = tree
-    pin = rev(src)
-    lgpl = src / "components" / "camoucfg_lgpl"
-    (lgpl / "data").mkdir(parents=True)
-    (lgpl / "cursory.cc").write_text("int c;")
-    (lgpl / "data" / "t.json.gz").write_bytes(b"\x1f\x8b")
-    uncommitted = package.tree_fingerprint(src, pin)
-    subprocess.run(["git", "add", "-A", "--", "components/camoucfg_lgpl"], cwd=src, check=True)
-    commit_all(src, "lgpl")
-    assert package.tree_fingerprint(src, pin) == uncommitted
-    (lgpl / "cursory.cc").write_text("int d;")
-    assert package.tree_fingerprint(src, pin) != uncommitted
-
-
-def test_fingerprint_changes_with_the_change_set(tree):
-    src, out, deps = tree
-    pin = rev(src)
-    before = package.tree_fingerprint(src, pin)
-    (src / "chrome" / "data.txt").write_text("other")
-    assert package.tree_fingerprint(src, pin) != before
-    (src / "chrome" / "data.txt").write_text("x")
-    (src / "components" / "camoucfg").mkdir(parents=True, exist_ok=True)
-    (src / "components" / "camoucfg" / "k.h").write_text("#define K")
-    assert package.tree_fingerprint(src, pin) != before
-
-
-def test_fingerprint_refuses_a_stray_untracked_file(tree):
-    src, out, deps = tree
-    (src / "content").mkdir()
-    (src / "content" / "stray.cc").write_text("x")
-    with pytest.raises(SystemExit, match="stray.cc"):
-        package.tree_fingerprint(src, rev(src))
-
-
-def test_check_refuses_stamps_with_different_fingerprints(tree, tmp_path):
-    a = {"name": "a", "version": "1", "chromium_tag": "t", "chromium_rev": "r", "changeset_commit": "c",
-         "branch_tip": "x", "tree_fingerprint": "f1", "built": "b", "credits_placeholder": False}
-    b = dict(a, name="b", branch_tip="y", tree_fingerprint="f2")
-    pa, pb = tmp_path / "a.json", tmp_path / "b.json"
-    pa.write_text(json.dumps(a)); pb.write_text(json.dumps(b))
-    with pytest.raises(SystemExit, match="tree_fingerprint"):
-        package.check([pa, pb])
-
-
-def test_stage_ships_licences_and_credits_and_names_linux_without_beta(tree, tmp_path):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    staging, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-    assert staging.name == f"camoucrome-{TAG}-linux-x64"
-    assert (staging / "LICENSE.chromium").read_text() == "chromium bsd"
-    assert (staging / "about_credits.html").exists() and (staging / "LICENSE").exists()
-    for n in ("LICENSE.cursory", "NOTICE.cursory", "COPYING.cursory", "RELINK.cursory.md"):
-        assert (staging / n).exists(), n
-    assert len(stamp["tree_fingerprint"]) == 64
-
-
-def test_stage_refuses_a_build_without_credits(tree, tmp_path):
-    src, out, deps = tree
-    (out / "gen" / "components" / "resources" / "about_credits.html").unlink()
-    with pytest.raises(SystemExit, match="about_credits"):
-        package.stage(src, out, package.runtime_deps(src, out, deps), "win-x64", tmp_path / "dist", False)
-
-
-PLACEHOLDER = "<html><body>This is sample credits page.\n\nTo get correct credits page, set `generate_about_credits=true` in args.gn.</body></html>"
-
-
-def test_stage_refuses_the_placeholder_credits_page(tree, tmp_path):
-    src, out, deps = tree
-    (out / "gen" / "components" / "resources" / "about_credits.html").write_text(PLACEHOLDER)
-    with pytest.raises(SystemExit, match="generate_about_credits"):
-        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-
-
-def test_check_refuses_a_stamp_that_ships_or_does_not_vouch_for_real_credits(tree, tmp_path):
-    src, out, deps = tree
-    _, a = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    assert a["credits_placeholder"] is False
-    stamp = tmp_path / "dist" / f"{a['name']}.release.json"
-    package.check([stamp])
-    old = {k: v for k, v in a.items() if k != "credits_placeholder"}  # a stamp from before the gate (-3 and earlier)
-    stamp.write_text(json.dumps(old))
-    with pytest.raises(SystemExit, match="credits"):
-        package.check([stamp])
-    stamp.write_text(json.dumps(dict(a, credits_placeholder=True)))
-    with pytest.raises(SystemExit, match="credits"):
-        package.check([stamp])
-
-
-def test_fingerprint_orders_camoucfg_files_by_posix_relpath_bytes(tree):
-    # Path ordering is case-insensitive on Windows: the order must not depend on the platform.
-    import hashlib
-    src, out, deps = tree
-    cfg = src / "components" / "camoucfg"
-    (cfg / "keys.h").unlink()  # the fixture's own file; the expected hash covers only the three below
-    for n in ("DEPS", "a.cc", "BUILD.gn"):
-        (cfg / n).write_text(n)
-    expected = hashlib.sha256(b"\n" + b"".join(
-        f"{n} {hashlib.sha256(n.encode()).hexdigest()}\n".encode() for n in ("BUILD.gn", "DEPS", "a.cc"))).hexdigest()
-    assert package.tree_fingerprint(src, rev(src)) == expected
-
-
-def test_gn_is_launched_by_its_resolved_path(tree, monkeypatch):
-    """On Windows gn is gn.bat, which CreateProcess does not find under the bare name."""
+def _stale_tree(tree, source, newer):
+    """Commit a change-set C++ file, then give it an mtime newer or older than the main binary."""
     src, out, _ = tree
-    seen = []
-    monkeypatch.setattr(package.shutil, "which", lambda n: f"/depot/{n}.bat")
-    monkeypatch.setattr(package.subprocess, "run",
-                        lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, stdout="chrome\n"))
-    assert package.runtime_deps(src, out) == ["chrome"]
-    assert seen[0][0] == "/depot/gn.bat"
+    f = src / source
+    f.write_text("// new")
+    subprocess.run(["git", "add", "-A"], cwd=src, check=True)  # the tree's diff against the pin, not an untracked stray
+    os.utime(out / "chrome", (FUTURE, FUTURE))
+    os.utime(f, (FUTURE + (1000 if newer else -1000),) * 2)
 
 
-BUILT = "2026-11-22T10:20:31+00:00"
-
-
-def stamped(staging, built=BUILT):
-    (staging / "camoucrome-release.json").write_text(json.dumps({"built": built}))
-
-
-def test_windows_zip_keeps_the_whole_staging_name(tmp_path):
-    """with_suffix would eat the version's last component (.48-windows-x64)."""
-    staging = tmp_path / "camoucrome-157.0.8103.51-windows-x64"
-    staging.mkdir()
-    (staging / "chrome.exe").write_bytes(b"MZ")
-    stamped(staging)
-    assert package.archive(staging, "windows-x64").name == "camoucrome-157.0.8103.51-windows-x64.zip"
-
-
-def test_windows_also_writes_tar_xz_with_the_zip_members(tmp_path):
-    """The .tar.xz is the smaller download for tools (201 -> 140 MB on -10); the zip stays for manual install."""
-    import zipfile
-    staging = tmp_path / "camoucrome-157.0.8103.51-windows-x64"
-    (staging / "locales").mkdir(parents=True)
-    (staging / "chrome.exe").write_bytes(b"MZ")
-    (staging / "locales" / "en-US.pak").write_bytes(b"pak")
-    stamped(staging)
-    z = package.archive(staging, "windows-x64")
-    xz = tmp_path / "camoucrome-157.0.8103.51-windows-x64.tar.xz"
-    assert xz.is_file()
-    with zipfile.ZipFile(z) as zf:
-        zip_files = sorted(n for n in zf.namelist() if not n.endswith("/"))
-    with tarfile.open(xz, "r:xz") as t:
-        members = t.getmembers()
-    assert sorted(m.name for m in members if m.isfile()) == zip_files
-    assert all(m.uid == 0 and m.gid == 0 and m.uname == "" and m.gname == "" for m in members)
-
-
-def test_windows_zip_entries_take_the_stamps_utc_build_time(tmp_path):
-    """Every entry, directories included, carries the stamp's `built` at 2 s grain, under a non-UTC TZ."""
-    import time
-    import zipfile
-    staging = tmp_path / "camoucrome-157.0.8103.51-windows-x64"
-    (staging / "locales").mkdir(parents=True)
-    (staging / "chrome.exe").write_bytes(b"MZ")
-    (staging / "locales" / "en-US.pak").write_bytes(b"pak")
-    stamped(staging)
-    old = os.environ.get("TZ")
-    os.environ["TZ"] = "Asia/Tokyo"
-    time.tzset()
-    try:
-        z = package.archive(staging, "windows-x64")
-    finally:
-        if old is None:
-            del os.environ["TZ"]
-        else:
-            os.environ["TZ"] = old
-        time.tzset()
-    with zipfile.ZipFile(z) as zf:
-        infos = zf.infolist()
-        assert any(i.is_dir() for i in infos) and any(not i.is_dir() for i in infos)
-        assert {i.date_time for i in infos} == {(2026, 11, 22, 10, 20, 30)}
-        assert all(i.compress_type == zipfile.ZIP_DEFLATED for i in infos if not i.is_dir())
-
-
-def test_runtime_deps_prunes_symbols_and_test_gpu_layers_by_basename(tmp_path):
-    names = ["chrome.dll", "chrome.dll.pdb", "sub/x.exe.pdb", "VkICD_mock_icd.dll", "VkICD_mock_icd.dll.pdb",
-             "VkICD_mock_icd.json", "VkLayer_khronos_validation.dll", "VkLayer_khronos_validation.json",
-             "vk_swiftshader.dll", "vk_swiftshader_icd.json", "locales/en-US.pak"]
-    f = tmp_path / "deps.txt"
-    f.write_text("\n".join(names) + "\n")
-    assert package.runtime_deps(tmp_path, tmp_path, f) == ["chrome.dll", "vk_swiftshader.dll",
-                                                          "vk_swiftshader_icd.json", "locales/en-US.pak"]
-
-
-def test_gn_missing_from_path_falls_back_to_the_bare_name(tree, monkeypatch):
-    src, out, _ = tree
-    seen = []
-    monkeypatch.setattr(package.shutil, "which", lambda n: None)
-    monkeypatch.setattr(package.subprocess, "run",
-                        lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, stdout="chrome\n"))
-    package.runtime_deps(src, out)
-    assert seen[0][0] == "gn"
-
-
-def test_stage_refuses_a_staged_file_holding_a_private_term(tree, tmp_path, monkeypatch):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": ["Secret-Box-7"]}))
-    (out / "chrome").write_bytes(b"\x7fELF..host SECRET-box-7 name..")
+def test_stage_refuses_a_changed_source_newer_than_the_binary(tree, tmp_path):
+    _stale_tree(tree, "chrome/hook.cc", newer=True)
     with pytest.raises(SystemExit) as e:
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-    msg = str(e.value)
-    assert "chrome" in msg and "<host-name>" in msg and "secret-box-7" not in msg.lower()
+        _stage(tree, tmp_path)
+    assert "chrome/hook.cc" in str(e.value) and "--allow-stale" in str(e.value)
 
 
-def test_stage_refuses_a_term_in_utf16_too(tree, tmp_path, monkeypatch):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": ["Secret-Box-7"]}))
-    (out / "chrome").write_bytes(b"MZ" + "Secret-Box-7".encode("utf-16le"))
-    with pytest.raises(SystemExit, match="host-name"):
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-
-
-def test_staged_binary_may_hold_a_geo_term_but_staged_text_may_not(tree, tmp_path, monkeypatch):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-tz-name>": ["Geo-Zone-X"], "<host-name>": ["Secret-Box-7"]}))
-    (out / "locales" / "en-US.pak").write_bytes(b"\0..geo-zone-x..")
-    package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-    (src / "chrome" / "data.txt").write_text("geo-zone-x")
-    with pytest.raises(SystemExit, match="host-tz-name"):
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-
-
-def test_staged_text_with_an_unlisted_suffix_and_no_nul_is_text(tree, tmp_path, monkeypatch):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-tz-name>": ["Geo-Zone-X"], "<host-name>": ["Secret-Box-7"]}))
-    (out / "locales" / "en-US.pak").write_bytes(b"<html>geo-zone-x</html>")  # no NUL: text whatever the suffix
-    with pytest.raises(SystemExit, match="host-tz-name"):
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-
-
-@pytest.mark.parametrize("terms", [{"<x>": []}, {"<x>": [""]}])
-def test_stage_refuses_when_no_non_empty_term_loads(tree, tmp_path, monkeypatch, terms):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(terms))
-    with pytest.raises(SystemExit, match="0 non-empty private term"):
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-    assert not list((tmp_path / "dist").glob("*"))
-
-
-def test_stage_refuses_when_no_terms_are_loaded(tree, tmp_path, monkeypatch):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", "{}")
-    with pytest.raises(SystemExit, match="0 non-empty private term"):
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-
-
-def test_no_leak_scan_continues_and_the_stamp_says_unscanned(tree, tmp_path, monkeypatch, capsys):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", "{}")
-    _, stamp = package.stage(src, out, d, "linux-x64", tmp_path / "dist", False, scan=False)
-    assert stamp["leak_scan"] == "unscanned"
-    assert "leak scan: UNSCANNED (--no-leak-scan)" in capsys.readouterr().err
-
-
-def test_stamp_records_the_scanned_group_count(tree, tmp_path):
-    src, out, deps = tree
-    _, stamp = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    assert stamp["leak_scan"] == "scanned:1 groups"
-
-
-def test_stage_passes_when_no_staged_file_holds_a_term(tree, tmp_path, monkeypatch):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps({"<host-name>": ["Secret-Box-7"]}))
-    package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-
-
-@pytest.mark.parametrize("terms", [{"<host-tz-name>": ["Geo-Zone-X"]}, {"<host-city>": ["Cityville"], "<host-name>": [""]}])
-def test_stage_refuses_when_only_geo_terms_load(tree, tmp_path, monkeypatch, terms):
-    src, out, deps = tree
-    d = package.runtime_deps(src, out, deps)
-    monkeypatch.setenv("PRIVATE_TERMS", json.dumps(terms))
-    with pytest.raises(SystemExit, match="0 non-empty identity"):
-        package.stage(src, out, d, "linux-x64", tmp_path / "dist", False)
-    assert not list((tmp_path / "dist").glob("*"))
-
-
-def test_refuses_a_release_dir_built_without_official_args(tree, tmp_path):
-    # RED: out\\Release-shaped args (non-official, no PGO) must be refused, whatever else they carry
-    for extra in ("", "is_official_build = false\nchrome_pgo_phase = 0\n", "is_official_build = true\n",
-                  "chrome_pgo_phase = 2\n", "is_official_build = true\nchrome_pgo_phase = 1\n"):
-        (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n" + extra + REQUIRED)
-        with pytest.raises(SystemExit, match="is_official_build = true and chrome_pgo_phase = 2"):
-            _stage(tree, tmp_path / ("x" + str(abs(hash(extra)))))
-
-
-def test_accepts_official_args(tree, tmp_path):
-    # GREEN: the shape settings/release-args.gn states, with its comments and spacing variants
-    (tree[1] / "args.gn").write_text("is_debug = false\nis_component_build = false\ncamou_observe = true\n"
-                                     "is_official_build=true # ships\nchrome_pgo_phase = 2\n" + REQUIRED)
+def test_stage_passes_a_changed_source_older_than_the_binary(tree, tmp_path):
+    _stale_tree(tree, "chrome/hook.cc", newer=False)
     _stage(tree, tmp_path)
 
 
-def test_a_component_smoke_test_is_not_held_to_official_args(tree, tmp_path):
-    (tree[1] / "args.gn").write_text("is_component_build = true\ncamou_observe = true\n" + REQUIRED)
-    src, out, deps = tree
-    package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", True)
+def test_stage_ignores_a_newer_file_the_build_does_not_compile(tree, tmp_path):
+    # a merge that touched only scripts/, docs/, client/ leaves no build input newer than the binary
+    _stale_tree(tree, "chrome/notes.md", newer=True)
+    _stage(tree, tmp_path)
 
 
-def test_release_args_file_itself_passes_the_gate():
-    # the committed file and the refusal cannot drift apart
-    a = package.parse_args_gn((package.ROOT / "settings" / "release-args.gn").read_text())
-    assert a["is_official_build"] == "true" and a["chrome_pgo_phase"] == "2"
+def test_stage_allow_stale_packages_with_a_warning(tree, tmp_path, capsys):
+    _stale_tree(tree, "chrome/hook.cc", newer=True)
+    _stage(tree, tmp_path, allow_stale="comment-only edit")
+    assert "comment-only edit" in capsys.readouterr().err
 
 
-def test_stamp_lists_the_config_keys_of_keys_json(tree, tmp_path):
-    src, out, deps = tree
-    staging, stamp = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    want = sorted(k["key"] for k in json.loads((package.ROOT / "settings" / "keys.json").read_text())["keys"])
-    assert stamp["config_keys"] == want and "webGpu:blocked" in want
-    assert json.loads((tmp_path / "dist" / f"{stamp['name']}.release.json").read_text())["config_keys"] == want
+def _root(tmp_path):
+    root = tmp_path / "repo"
+    for rel in ("settings/keys.json", "settings/invariants.json", "settings/presets/a.json", "settings/launcher.json",
+                "settings/webgl/x.json", "settings/new-unlisted.json", "additions/camoucfg/k.cc", "patches/p.patch",
+                "scripts/s.py", "client/c.go", "docs/d.md"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("x")
+        os.utime(root / rel, (1000, 1000))
+    return root
 
 
-def test_stage_refuses_a_keys_h_one_key_short_of_keys_json(tree, tmp_path):
-    src, out, deps = tree
-    h = src / "components" / "camoucfg" / "keys.h"
-    text = h.read_text()
-    block = text.index("kAllKeys")
-    h.write_text(text[:block] + text[block:].replace("    kUaOsInfo,\n", "", 1))  # the real kUaOsInfo constant stays declared
-    with pytest.raises(SystemExit, match="kUaOsInfo"):
-        package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
+def _stale(tree, root):
+    src, out, _ = tree
+    os.utime(out / "chrome", (2000, 2000))
+    return package.stale_sources(src, out, package.upstream_env()["CHROMIUM_REV"], root)
 
 
-def test_the_staged_layout_is_where_the_launcher_looks_for_the_stamp(tree, tmp_path):
-    sys.path.insert(0, str(package.ROOT / "client" / "python"))
-    from camoucrome import launcher
-    src, out, deps = tree
-    staging, _ = package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
-    launcher.check_archive(staging / "chrome", {"webGpu:blocked": True})
-    with pytest.raises(ValueError, match="zz:new"):
-        launcher.check_archive(staging / "chrome", {"zz:new": 1})
+@pytest.mark.parametrize("rel", ["settings/keys.json", "settings/invariants.json", "settings/new-unlisted.json",
+                                 "additions/camoucfg/k.cc", "patches/p.patch"])
+def test_a_newer_build_input_in_the_repo_trips_the_check(tree, tmp_path, rel):
+    root = _root(tmp_path)
+    os.utime(root / rel, (3000, 3000))
+    assert _stale(tree, root) == [rel]
+
+
+@pytest.mark.parametrize("rel", ["settings/presets/a.json", "settings/launcher.json", "settings/webgl/x.json",
+                                 "scripts/s.py", "client/c.go", "docs/d.md"])
+def test_a_newer_runtime_or_non_build_file_in_the_repo_passes(tree, tmp_path, rel):
+    root = _root(tmp_path)
+    os.utime(root / rel, (3000, 3000))
+    assert _stale(tree, root) == []

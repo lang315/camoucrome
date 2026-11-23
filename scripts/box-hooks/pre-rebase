@@ -1,0 +1,29 @@
+#!/bin/sh
+# pre-rebase hook for the build box's Chromium checkout (~/chromium/src). NOT for the Mac clone:
+# scripts/hooks/ is the Mac's core.hooksPath, so this lives in scripts/box-hooks/.
+#
+# Install on the box (once, from the runner's clone of the repo):
+#   git -C ~/chromium/src config core.hooksPath ~/camoucrome/scripts/box-hooks
+#   (or: ln -s <repo>/scripts/box-hooks/pre-rebase ~/chromium/src/.git/hooks/pre-rebase)
+# Check:  git -C ~/chromium/src config core.hooksPath
+#
+# Refuses a rebase of camoucrome/main that would replay more than 3 commits, which also covers
+# `rebase -i` and --autosquash (git passes the same <upstream> [<branch>]). Why: a rebase rewrites
+# the mtimes of every file the replayed commits touch, and siso then rebuilds them (about 9.5k steps
+# on 2026-11-21, 29k on 2026-11-14). Fold the change into the TIP commit, or add a new patch (a new
+# commit at the tip), then export. Override on purpose: CAMOU_ALLOW_DEEP_REBASE=1 git rebase ...
+# Arguments (git help hooks): $1 = upstream, $2 = branch being rebased (empty: the current branch).
+N=3
+[ "${CAMOU_ALLOW_DEEP_REBASE:-}" = 1 ] && exit 0
+branch=${2:-$(git symbolic-ref --short -q HEAD)}
+[ "$branch" = camoucrome/main ] || exit 0
+# an empty upstream (rebase --root) counts every commit
+if [ -n "$1" ]; then n=$(git rev-list --count "$1..$branch") || exit 1; else n=$(git rev-list --count "$branch"); fi
+if [ "$n" -gt "$N" ]; then
+    echo "pre-rebase: refused. This rebase replays $n commits of camoucrome/main (limit $N)." >&2
+    echo "It would rewrite file mtimes and force a rebuild of thousands of steps." >&2
+    echo "Fold the change into the tip commit, or add a new patch at the tip, then run scripts/export.sh." >&2
+    echo "To do it anyway: CAMOU_ALLOW_DEEP_REBASE=1 git rebase ..." >&2
+    exit 1
+fi
+exit 0
