@@ -308,6 +308,14 @@ async function launch(chromium, executablePath, {
     throw new Error('env replaces the whole child environment, CAMOU_CONFIG* and CAMOU_CONFIG_STRICT with it, '
       + 'and the browser would run unspoofed: the launcher builds the env');
   }
+  // Not in FORBIDDEN_OPTIONS (that set mirrors launcher.json's context options): these two are the launcher's own launch keys.
+  for (const k of ['ignoreDefaultArgs', 'executablePath']) {
+    if (k in options) {
+      throw new Error(`${k} is set by the launcher and cannot be passed in options: `
+        + (k === 'executablePath' ? 'checkArchive reads the positional path, so another binary would skip the archive key check'
+          : 'Playwright\'s default argv (--disable-features, --mute-audio, --hide-scrollbars) moves page-visible surfaces'));
+    }
+  }
   const bad = Object.keys(options).filter((k) => FORBIDDEN_OPTIONS.has(k));
   if (bad.length) {
     throw new Error(`${JSON.stringify(bad)} must come through CAMOU_CONFIG, not the driver: `

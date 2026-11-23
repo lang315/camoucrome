@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Golden fixtures for client/go/core: what gen.py's deterministic steps answer, written to
-client/go/core/testdata/golden/*.json. Run under the pinned venv (gen_go_core_data.py's PINS).
+client/go/core/testdata/golden/*.json. With --check it writes to a temp dir instead and fails (rc 1) on any file that differs. Run under the pinned venv (gen_go_core_data.py's PINS).
 Go's TestGoldenDeterministic compares itself to these key by key. The random host steps (window fit) have
 no golden: they are tested by invariants."""
 import json
 import pathlib
 import sys
+import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gen_go_core_data as d  # noqa: E402
@@ -93,6 +94,23 @@ def write(name, v, indent=1):
     (OUT / name).write_text(json.dumps(v, indent=indent, ensure_ascii=False, separators=None if indent else (",", ":")) + "\n", encoding="utf-8")
 
 
+def check():
+    """Regenerate into a temp dir and compare all files with the committed golden."""
+    global OUT
+    want = OUT
+    with tempfile.TemporaryDirectory() as tmp:
+        OUT = pathlib.Path(tmp)
+        try:
+            main()
+            names = sorted({p.name for p in want.iterdir()} | {p.name for p in OUT.iterdir()})
+            bad = [n for n in names if not (want / n).exists() or not (OUT / n).exists() or (want / n).read_bytes() != (OUT / n).read_bytes()]
+        finally:
+            OUT = want
+    if bad:
+        sys.exit("golden differs from gen.py: " + ", ".join(bad) + " (a parity bug until proven a refresh; regenerate only after review)")
+    print("golden fresh:", len(names), "files")
+
+
 def main():
     d.check_pins()
     from camoucrome import gen, geoip
@@ -151,4 +169,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    check() if sys.argv[1:] == ["--check"] else main()

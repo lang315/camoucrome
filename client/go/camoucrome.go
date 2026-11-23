@@ -504,6 +504,21 @@ func Launch(pw *playwright.Playwright, o Options) (playwright.BrowserContext, er
 	return launch(pw.Chromium, o)
 }
 
+// EffectiveKeys is the config the browser will read: the preset's keys under the explicit Config. rodclient uses it
+// for the launch rules it shares with Launch.
+func EffectiveKeys(config, preset any) (map[string]any, error) { return effectiveKeys(config, preset) }
+
+// CheckWindow refuses a Window larger than the claimed window.outerWidth/outerHeight in keys.
+func CheckWindow(o Options, keys map[string]any) error {
+	ow, _ := keys["window.outerWidth"].(float64)
+	oh, _ := keys["window.outerHeight"].(float64)
+	// shortcut: no Window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
+	if o.Window != [2]int{} && ((ow != 0 && float64(o.Window[0]) > ow) || (oh != 0 && float64(o.Window[1]) > oh)) {
+		return fmt.Errorf("window %v exceeds window.outerWidth/outerHeight [%v %v]: innerWidth/innerHeight would exceed the claimed outer size", o.Window, ow, oh)
+	}
+	return nil
+}
+
 // persistentLauncher is the one method of playwright.BrowserType that Launch
 // calls; the tests give it a fake.
 type persistentLauncher interface {
@@ -518,11 +533,8 @@ func launch(bt persistentLauncher, o Options) (playwright.BrowserContext, error)
 	if err != nil {
 		return nil, err
 	}
-	ow, _ := keys["window.outerWidth"].(float64)
-	oh, _ := keys["window.outerHeight"].(float64)
-	// shortcut: no Window leaves Chrome's default size, which can exceed a small claimed outer; derive one from outer when a measurement shows it
-	if o.Window != [2]int{} && ((ow != 0 && float64(o.Window[0]) > ow) || (oh != 0 && float64(o.Window[1]) > oh)) {
-		return nil, fmt.Errorf("window %v exceeds window.outerWidth/outerHeight [%v %v]: innerWidth/innerHeight would exceed the claimed outer size", o.Window, ow, oh)
+	if err := CheckWindow(o, keys); err != nil {
+		return nil, err
 	}
 	if o.GeoIP != "" {
 		o.warn(CheckGeoIP(o))

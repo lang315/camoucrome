@@ -93,6 +93,8 @@ jobs:
           python3 -m pytest -q client/python/tests scripts/
       - name: go core data matches the generator (full, with the pool)
         run: python3 scripts/gen_go_core_data.py --check
+      - name: go core golden matches gen.py (all 8 files)
+        run: python3 scripts/gen_go_core_golden.py --check
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
       - name: go core tests (no dependencies, own module)
@@ -129,6 +131,10 @@ jobs:
       - name: go client tests
         if: ${{ !cancelled() }}
         run: cd client/go && go vet ./... && go test ./...
+      # Its own module, so the step above never reaches it; pin_windows.go and host_windows.go build only here.
+      - name: go core tests (own module)
+        if: ${{ !cancelled() }}
+        run: cd client/go/core && go vet ./... && go test ./...
       - name: node client tests
         if: ${{ !cancelled() }}
         run: cd client/node && npm test

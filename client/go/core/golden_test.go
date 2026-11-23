@@ -75,6 +75,10 @@ func TestGoldenDeterministic(t *testing.T) {
 			Warning *string
 		}
 		golden(t, "display.json", &rows)
+		// a generator that wrote [] would run the loop zero times and pass: the floor is today's row count
+		if len(rows) < 6 {
+			t.Fatalf("%d display rows, want at least 6", len(rows))
+		}
 		for _, r := range rows {
 			flags, warn := displayFlags(r.Display)
 			want := ""
@@ -92,6 +96,10 @@ func TestGoldenDeterministic(t *testing.T) {
 			List []any
 		}
 		golden(t, "voices.json", &rows)
+		// a generator that wrote [] would run the loop zero times and pass: the floor is today's row count
+		if len(rows) < 12 {
+			t.Fatalf("%d voices rows, want at least 12", len(rows))
+		}
 		for _, r := range rows {
 			got, err := voiceList(r.Tag)
 			if err != nil || !reflect.DeepEqual(got, r.List) {
@@ -106,6 +114,10 @@ func TestGoldenDeterministic(t *testing.T) {
 			Voices       []any
 		}
 		golden(t, "exit.json", &rows)
+		// a generator that wrote [] would run the loop zero times and pass: the floor is today's row count
+		if len(rows) < 12 {
+			t.Fatalf("%d exit rows, want at least 12", len(rows))
+		}
 		for _, r := range rows {
 			tag, w := localeFor(r.Country)
 			if tag != r.Tag || w != "" {
@@ -134,6 +146,10 @@ func TestGoldenDeterministic(t *testing.T) {
 			DPR    float64
 		}
 		golden(t, "from_pool.json", &runs)
+		// a generator that wrote [] would run the loop zero times and pass: the floor is today's row count
+		if len(runs) < 4 {
+			t.Fatalf("%d from_pool rows, want at least 4", len(runs))
+		}
 		for _, run := range runs {
 			entry, _ := json.Marshal(run.Entry)
 			id := Identity{Version: 1, OS: "windows", Entry: entry, Seeds: map[string]uint32{"canvas:seed": 1, "mediaDevices:seed": 2}, HostSeed: 1}
