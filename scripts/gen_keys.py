@@ -21,6 +21,8 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lib_additions import series  # noqa: E402
 REGISTRY = os.path.join(ROOT, "settings", "keys.json")
 HEADER = os.path.join(ROOT, "additions", "camoucfg", "keys.h")
 UNITTEST = os.path.join(ROOT, "additions", "camoucfg", "keys_unittest.cc")
@@ -153,8 +155,7 @@ def check(keys, rendered):
 def patch_literal_hits(patches_dir):
     """(patch, line) literal-key hits that survive the series: a call a later
     patch in `series` removes again never reaches the applied tree."""
-    with open(os.path.join(patches_dir, "series")) as f:
-        names = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    names = series(os.path.join(patches_dir, "series"))
     hits, removed_later = [], set()
     for name in reversed(names):
         with open(os.path.join(patches_dir, name)) as f:

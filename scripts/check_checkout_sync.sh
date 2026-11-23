@@ -26,6 +26,8 @@ SRC="${2:-$HOME/chromium/src}"
 BRANCH="${3:-camoucrome/main}"
 CONTROL="${CONTROL_PATH:-$HOME/.ssh/cm-buildpc}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib_additions.sh
+. "$ROOT/scripts/lib_additions.sh"
 
 # Mirrors apply.sh: additions/camoucfg/* land in components/camoucfg/, and
 # settings/invariants.json lands beside them. That one asymmetry is deliberate
@@ -33,15 +35,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # from a glob of the tree.
 declare -a REPO_FILES=()
 declare -a TREE_FILES=()
-for f in "$ROOT"/additions/camoucfg/*; do
-  REPO_FILES+=("$f")
-  TREE_FILES+=("components/camoucfg/$(basename "$f")")
-done
-# components/camoucfg_lgpl is mirrored whole, subdirectories included (data/).
-while IFS= read -r f; do
-  REPO_FILES+=("$f")
-  TREE_FILES+=("components/camoucfg_lgpl/${f#"$ROOT"/additions/camoucfg_lgpl/}")
-done < <([ -d "$ROOT/additions/camoucfg_lgpl" ] && find "$ROOT/additions/camoucfg_lgpl" -type f | sort)
+# Every dir in scripts/additions_map.txt is mirrored whole, subdirectories included (data/).
+while read -r a t; do
+  while IFS= read -r f; do
+    REPO_FILES+=("$f")
+    TREE_FILES+=("$t/${f#"$ROOT/$a/"}")
+  done < <([ -d "$ROOT/$a" ] && find "$ROOT/$a" -type f | sort)
+done < <(additions_map)
 REPO_FILES+=("$ROOT/settings/invariants.json")
 TREE_FILES+=("components/camoucfg/invariants.json")
 
@@ -66,14 +66,16 @@ done
 # excluded for the reasons above).
 # A failing git (no such branch, not a repo) must print something here, or the
 # section is empty and reads as "in sync".
-remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . ':(exclude)components/camoucfg' ':(exclude)components/camoucfg_lgpl' || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' ':(exclude)components/camoucfg' ':(exclude)components/camoucfg_lgpl' | grep '^??' || true; echo BUILDTREE_END"$'\n'
+EXCL_Q="" EXCL_DQ=""
+while read -r a t; do EXCL_Q+=" ':(exclude)$t'"; EXCL_DQ+=" \":(exclude)$t\""; done < <(additions_map)
+remote_script+="echo BUILDTREE_BEGIN; git diff '$BRANCH' --stat -- . $EXCL_Q || echo 'git diff $BRANCH failed (no such branch?)'; git status --porcelain --untracked-files=all -- . ':(exclude)out' $EXCL_Q | grep '^??' || true; echo BUILDTREE_END"$'\n'
 # And the repo's patches/ against the branch: each commit's diff, generated
 # exactly as export.sh generates it, hashed on the far side. A hand-edited
 # patches/*.patch or a stale series reads as a mismatch below.
 . "$ROOT/upstream.env"
 remote_script+="PIN=$CHROMIUM_REV"$'\n'
 remote_script+='for c in $(git rev-list --reverse --first-parent "$PIN..'"$BRANCH"'"); do
-  d=$(git diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ":(exclude)components/camoucfg" ":(exclude)components/camoucfg_lgpl" | sha256sum | cut -d" " -f1)
+  d=$(git diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . '"$EXCL_DQ"' | sha256sum | cut -d" " -f1)
   [ "$d" = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ] || echo "PATCH $(git log -1 --format=%s "$c").patch $d"
 done'$'\n'
 # On the build box itself (the self-hosted runner, or a shell in WSL) there is
@@ -121,7 +123,7 @@ if [ -n "$buildtree" ]; then
   fails=$((fails + 1))
 fi
 
-want=$(grep -v '^#' "$ROOT/patches/series" | sed '/^$/d' | while read -r p; do
+want=$(series_list "$ROOT/patches/series" | while read -r p; do
   echo "PATCH $p $( (shasum -a 256 "$ROOT/patches/$p" 2>/dev/null || sha256sum "$ROOT/patches/$p" 2>/dev/null || echo MISSING) | cut -d' ' -f1)"
 done)
 got=$(printf '%s\n' "$remote_out" | grep '^PATCH ')

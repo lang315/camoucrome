@@ -29,6 +29,8 @@ BRANCH="${2:-camoucrome/main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=../upstream.env
 . "$ROOT/upstream.env"
+# shellcheck source=lib_additions.sh
+. "$ROOT/scripts/lib_additions.sh"
 
 if [ "$(git -C "$SRC" merge-base "$CHROMIUM_REV" "$BRANCH")" != "$CHROMIUM_REV" ]; then
   echo "error: $BRANCH is not based on the pinned $CHROMIUM_REV (upstream.env)" >&2
@@ -54,16 +56,19 @@ for c in "${COMMITS[@]}"; do
   NAMES+=("$name")
 done
 
+EXCLUDES=()
+while read -r a t; do EXCLUDES+=(":(exclude)$t"); done < <(additions_map)
+
 rm -f "$ROOT"/patches/*.patch
 : > "$ROOT/patches/series"
 for i in "${!COMMITS[@]}"; do
   c="${COMMITS[$i]}"; name="${NAMES[$i]}"
-  # components/camoucfg and components/camoucfg_lgpl are additions/, exported whole from the tip below; a
-  # commit that only touches it produces no patch and no series line.
+  # The tree dirs in scripts/additions_map.txt are additions/, exported whole from the tip below; a
+  # commit that only touches them produces no patch and no series line.
   # Pinned flags: user config (diff.noprefix, mnemonicPrefix, an external
   # driver) must not change the bytes of a patch, and neither may the object
   # store's size: git's auto-abbrev grows with it (10 -> 11 hex, 2026-10-23).
-  git -C "$SRC" diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . ':(exclude)components/camoucfg' ':(exclude)components/camoucfg_lgpl' > "$ROOT/patches/$name.patch"
+  git -C "$SRC" diff --no-ext-diff --no-color --abbrev=10 --src-prefix=a/ --dst-prefix=b/ "$c^" "$c" -- . "${EXCLUDES[@]}" > "$ROOT/patches/$name.patch"
   if [ -s "$ROOT/patches/$name.patch" ]; then
     echo "$name.patch" >> "$ROOT/patches/series"
     echo "  $name.patch"
@@ -73,24 +78,22 @@ for i in "${!COMMITS[@]}"; do
   fi
 done
 
-rm -rf "$ROOT/additions/camoucfg"
-mkdir -p "$ROOT/additions/camoucfg"
-git -C "$SRC" archive "$BRANCH" components/camoucfg | tar -x -C "$ROOT/additions" --strip-components=1
+# Each mapped dir is replaced whole by the branch's copy, extracted to a temp dir first so a failing archive
+# cannot leave additions/ emptied. A mapped dir absent on the branch is an error, checked for all of them
+# before anything is replaced.
+while read -r a t; do
+  git -C "$SRC" cat-file -e "$BRANCH:$t" 2>/dev/null || { echo "error: $t (additions_map.txt: $a) is absent on $BRANCH" >&2; exit 1; }
+done < <(additions_map)
+while read -r a t; do
+  d="$(mktemp -d)"
+  mkdir -p "$d/new"
+  git -C "$SRC" archive "$BRANCH" "$t" | tar -x -C "$d/new" --strip-components="$(awk -F/ '{print NF}' <<< "$t")"
+  rm -rf "${ROOT:?}/$a"
+  mv "$d/new" "$ROOT/$a"
+  rmdir "$d"
+done < <(additions_map)
 # The one place the two layouts differ (see apply.sh): the registry is edited
 # in settings/ and read from beside the header in the tree.
 mv "$ROOT/additions/camoucfg/invariants.json" "$ROOT/settings/invariants.json"
-
-# A branch without the dir (older than the LGPL slice) is a no-op here. Otherwise
-# extract to a temp dir first, so a failing archive cannot leave additions/ emptied.
-if git -C "$SRC" cat-file -e "$BRANCH:components/camoucfg_lgpl" 2>/dev/null; then
-  t="$(mktemp -d)"
-  mkdir -p "$t/new"
-  git -C "$SRC" archive "$BRANCH" components/camoucfg_lgpl | tar -x -C "$t/new" --strip-components=2
-  rm -rf "$ROOT/additions/camoucfg_lgpl"
-  mv "$t/new" "$ROOT/additions/camoucfg_lgpl"
-  rmdir "$t"
-else
-  echo "  components/camoucfg_lgpl absent on $BRANCH: additions/camoucfg_lgpl left as is"
-fi
 
 echo "exported ${#COMMITS[@]} commits from $BRANCH. Gate: git status --porcelain additions patches settings"

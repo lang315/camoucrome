@@ -22,6 +22,8 @@ BRANCH="${3:-camoucrome/main}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=../upstream.env
 . "$ROOT/upstream.env"
+# shellcheck source=lib_additions.sh
+. "$ROOT/scripts/lib_additions.sh"
 
 if git -C "$SRC" show-ref --quiet "refs/heads/$BRANCH"; then
   echo "error: $BRANCH already exists in $SRC; remove its worktree and branch first" >&2
@@ -60,21 +62,17 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 git -C "$SRC" worktree add -q -b "$TMP" "$WT" "$CHROMIUM_REV"
-mkdir -p "$WT/components/camoucfg"
-cp "$ROOT"/additions/camoucfg/* "$WT/components/camoucfg/"
-if [ -d "$ROOT/additions/camoucfg_lgpl" ]; then
-  mkdir -p "$WT/components/camoucfg_lgpl"
-  cp -R "$ROOT"/additions/camoucfg_lgpl/. "$WT/components/camoucfg_lgpl/"
-fi
+copy_additions "$ROOT" "$WT"
 cp "$ROOT/settings/invariants.json" "$WT/components/camoucfg/invariants.json"
-while read -r p || [ -n "$p" ]; do
-  case "$p" in ""|\#*) continue ;; esac
+SERIES="$(series_list "$ROOT/patches/series")"
+while read -r p; do
+  [ -n "$p" ] || continue  # an empty series is one empty line here
   CURRENT="$p"
   git -C "$WT" apply --3way "$ROOT/patches/$p"
   git -C "$WT" add -A
   git -C "$WT" -c user.name=camoucrome -c user.email=camoucrome@localhost commit -q -m "${p%.patch}"
   echo "  ${p%.patch}"
-done < "$ROOT/patches/series"
+done <<< "$SERIES"
 CURRENT="rename"
 git -C "$WT" branch -m "$TMP" "$BRANCH"
 echo "$BRANCH: $(git -C "$WT" rev-list --count "$CHROMIUM_REV..HEAD") commits above $CHROMIUM_REV at $WT"

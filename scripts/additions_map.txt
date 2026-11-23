@@ -1,0 +1,4 @@
+# additions/<dir> -> its place in the Chromium tree. One pair per line, whitespace-separated.
+# Read by lib_additions.sh and lib_additions.py; same comment/blank rule as patches/series.
+additions/camoucfg components/camoucfg
+additions/camoucfg_lgpl components/camoucfg_lgpl

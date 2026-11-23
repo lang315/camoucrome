@@ -17,11 +17,11 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from lib_additions import series, tree_dir  # noqa: E402
 EXC_FILE = ROOT / "settings" / "checkdeps_exceptions.json"
 
-# apply.sh copies additions/camoucfg/* flat into components/camoucfg/; there is
-# no other additions/ subtree. Anything else maps verbatim (additions/<p> -> <p>).
-ADDITIONS_MAP = {"camoucfg": "components/camoucfg"}
+# additions/ -> tree: scripts/additions_map.txt, through lib_additions.
 
 
 # checkdeps reads the includes of source files, so only those widen the set: a BUILD.gn or DEPS hunk
@@ -47,17 +47,14 @@ def minimal(dirs):
 
 def change_set_dirs():
     dirs = set()
-    for line in (ROOT / "patches" / "series").read_text().splitlines():
-        if line.strip() and not line.startswith("#"):
-            dirs |= dirs_from_patch((ROOT / "patches" / line.strip()).read_text())
+    for name in series(ROOT / "patches" / "series"):
+        dirs |= dirs_from_patch((ROOT / "patches" / name).read_text())
     add = ROOT / "additions"
     for f in add.rglob("*"):
         if f.is_file() and f.name.endswith(SOURCE_EXT):
-            rel = f.relative_to(add).parent.as_posix()
-            top, _, rest = rel.partition("/")
-            rel = ADDITIONS_MAP.get(top, top) + ("/" + rest if rest else "")
-            if rel != ".":
-                dirs.add(rel)
+            rel = f.relative_to(ROOT).parent.as_posix()
+            if rel != "additions":  # a root-level file would mean checking the whole tree
+                dirs.add(tree_dir(rel))
     return dirs
 
 

@@ -46,6 +46,8 @@ jobs:
         run: python3 scripts/gen_cursory_table.py --check
       - name: keys.h matches keys.json and every call site
         run: python3 scripts/gen_keys.py --check
+      - name: invariants.h matches invariants.json
+        run: python3 scripts/gen_invariants.py --check
       - name: human_params.* match settings/human_input.json
         run: python3 scripts/gen_human_input.py --check
       - name: igpu_thread_caps.h matches the caps JSON
@@ -55,9 +57,11 @@ jobs:
       - name: patches/series names existing patches, once each
         run: |
           set -e
-          while read -r p; do [ -z "$p" ] && continue; test -f "patches/$p" || { echo "missing patches/$p"; exit 1; }; done < patches/series
-          test "$(sort patches/series | uniq -d | wc -l)" -eq 0
-          for f in patches/*.patch; do grep -qx "$(basename "$f")" patches/series || { echo "$f not in series"; exit 1; }; done
+          . scripts/lib_additions.sh
+          list="$(series_list patches/series)"
+          while read -r p; do [ -z "$p" ] && continue; test -f "patches/$p" || { echo "missing patches/$p"; exit 1; }; done <<< "$list"
+          test "$(sort <<< "$list" | uniq -d | wc -l)" -eq 0
+          for f in patches/*.patch; do grep -qx "$(basename "$f")" <<< "$list" || { echo "$f not in series"; exit 1; }; done
       - name: settings JSON parses and invariants/keys agree
         run: |
           python3 - <<'EOF2'
