@@ -1,0 +1,148 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 891a01e276..1f62a36a32 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -754,9 +754,10 @@ bool NamesAButton(const blink::WebMouseEvent& event) {
+ // Delivers a humanized path in real time: each interior sample at its own time,
+ // then the path's final event, each by a precise timer (DeadlineTimer with
+ // DelayPolicy::kPrecise, which on Windows turns on the high-resolution timer)
+-// and stamped by the forward itself. The InputHandler owns it (AddPump): it is
+-// erased after the final event, and destroyed, its command failed, with the
+-// handler.
++// and stamped with the time each was authored for (NextPumpStamp), not the time
++// the timer fired: the UI thread's timers wake on whole ms. The InputHandler
++// owns it (AddPump): it is erased after the final event, and destroyed, its
++// command failed, with the handler.
+ class InputHandler::PreciseSamplePump {
+  public:
+   struct Step {
+@@ -800,11 +801,18 @@ class InputHandler::PreciseSamplePump {
+ 
+   void Fire() {
+     if (next_ < steps_.size()) {
+-      InputHandler::ForwardSyntheticMouseMove(handler_, widget_,
+-                                              steps_[next_++].event);
++      InputHandler::ForwardSyntheticMouseMove(
++          handler_, widget_, steps_[next_].event, steps_[next_].at);
++      ++next_;
+       Arm();
+       return;
+     }
++    // The final event of a path with no button down is stamped like the
++    // samples, at the time it was authored for; a drag's final event is
++    // stamped when it is forwarded (the completion).
++    if (handler_ && !NamesAButton(*final_event_)) {
++      final_event_->SetTimeStamp(handler_->NextPumpStamp(final_at_));
++    }
+     InputHandler::ForwardHumanizedMouseEventCompletion(
+         handler_, widget_, std::move(final_event_), std::move(callback_), true,
+         skip_final_);
+@@ -1248,10 +1256,10 @@ class InputHandler::InputInjector
+         grid ? ViewOriginInRootWindow(view) : gfx::Vector2dF();
+     const gfx::Size extent = grid ? view->GetViewBounds().size() : gfx::Size();
+     // One sample per report of the claimed mouse, each forwarded at its own
+-    // time by a precise timer and stamped when it is forwarded (the pump
+-    // below): the renderer merges what arrives within a frame into one
+-    // pointermove, as it does for a real mouse, and a pointerrawupdate
+-    // listener sees each report arrive in real time (I7).
++    // time by a precise timer and stamped with that time (the pump below): the
++    // renderer merges what arrives within a frame into one pointermove, as it
++    // does for a real mouse, and a pointerrawupdate listener sees each report
++    // arrive in real time, at most ~2 ms after its stamp (I7).
+     const base::TimeTicks start = now + *delay;
+     std::vector<InputHandler::PreciseSamplePump::Step> steps;
+     // A real mouse reports no move that leaves the pointer where it is, and
+@@ -1709,6 +1717,15 @@ void InputHandler::ErasePump(PreciseSamplePump* pump) {
+   });
+ }
+ 
++base::TimeTicks InputHandler::NextPumpStamp(base::TimeTicks at) {
++  const base::TimeTicks now = base::TimeTicks::Now();
++  base::TimeTicks stamp =
++      std::min(std::max(at, now - base::Milliseconds(2)), now);
++  stamp = std::max(stamp, last_pump_stamp_ + base::Microseconds(1));
++  last_pump_stamp_ = stamp;
++  return stamp;
++}
++
+ // static
+ std::vector<InputHandler*> InputHandler::ForAgentHost(
+     DevToolsAgentHostImpl* host) {
+@@ -2899,7 +2916,8 @@ bool InputHandler::PointIsWithinContents(gfx::PointF point) const {
+ void InputHandler::ForwardSyntheticMouseMove(
+     base::WeakPtr<InputHandler> handler,
+     base::WeakPtr<RenderWidgetHostImpl> widget,
+-    blink::WebMouseEvent synthetic_event) {
++    blink::WebMouseEvent synthetic_event,
++    base::TimeTicks authored_time) {
+   if (!handler || !widget) {
+     return;
+   }
+@@ -2918,11 +2936,10 @@ void InputHandler::ForwardSyntheticMouseMove(
+                              gfx::SizeF(view->GetViewBounds().size()))) {
+     return;
+   }
+-  // Stamped with the real time it actually fires, not a value computed at
+-  // schedule time: with a real posted delay (see InputInjector::
+-  // SchedulePath's own comment on why), "now" already carries the
+-  // non-uniform spacing HumanizePath generated.
+-  synthetic_event.SetTimeStamp(base::TimeTicks::Now());
++  // Stamped with the time the pump authored it for, held to the window
++  // NextPumpStamp gives, not with the time the timer fired: that one carries
++  // the UI thread's whole-ms wake-ups, which no mouse's stream shows (I2b).
++  synthetic_event.SetTimeStamp(handler->NextPumpStamp(authored_time));
+   widget->ForwardMouseEvent(synthetic_event);
+ }
+ 
+@@ -2943,10 +2960,17 @@ void InputHandler::ForwardHumanizedMouseEventCompletion(
+   // InputInjector::InjectMouseEvent). ForwardMouseEventNow is the same
+   // stock delivery path a non-humanized move takes -- callback resolves on
+   // this event's ack, exactly like today.
+-  // Re-stamped like the synthetic moves before it: the event still carries
+-  // its dispatch-time stamp, which is older than every interior point, so the
+-  // page would see the final mousemove's timeStamp go backwards.
+-  mouse_event->SetTimeStamp(base::TimeTicks::Now());
++  // The event still carries its dispatch-time stamp, which is older than every
++  // interior point, so the page would see the final mousemove's timeStamp go
++  // backwards. A path the pump delivered has its final event re-stamped by the
++  // pump (NextPumpStamp); the stock slot is re-stamped now, and so is a drag's
++  // final event, through the pump's clock so the next path's first sample is
++  // stamped after it.
++  if (!resampled) {
++    mouse_event->SetTimeStamp(base::TimeTicks::Now());
++  } else if (NamesAButton(*mouse_event)) {
++    mouse_event->SetTimeStamp(handler->NextPumpStamp(base::TimeTicks::Now()));
++  }
+   // The end of a path is forwarded with the modifiers of the samples before
+   // it, without kFromDebugger: the renderer merges only moves whose modifiers
+   // are equal, so a debugger-marked last event stayed a second pointermove
+diff --git a/content/browser/devtools/protocol/input_handler.h b/content/browser/devtools/protocol/input_handler.h
+index cc3ce27666..3042fe0e65 100644
+--- a/content/browser/devtools/protocol/input_handler.h
++++ b/content/browser/devtools/protocol/input_handler.h
+@@ -199,6 +199,15 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+   void AddPump(std::unique_ptr<PreciseSamplePump> pump);
+   void ErasePump(PreciseSamplePump* pump);
+   std::vector<std::unique_ptr<PreciseSamplePump>> pumps_;
++  // The stamp of a pumped event: its authored time `at` (the pump fires at or
++  // after it), but never more than 2 ms before now (stock Windows stamps at
++  // UI-thread processing time, ui/events/win/events_win_utils.cc, so a stall
++  // must not release a run of samples stamped 8 ms apart), never after now
++  // (but for the 1 us that keeps it after the last one), and strictly after
++  // the stamp the handler gave before, across commands. A stock slot's Now()
++  // stamp does not update it (rare, at most 2 ms).
++  base::TimeTicks NextPumpStamp(base::TimeTicks at);
++  base::TimeTicks last_pump_stamp_;
+   class DragController {
+    public:
+     // `handler` must live as long as the drag controller.
+@@ -361,7 +370,8 @@ class InputHandler : public DevToolsDomainHandler, public Input::Backend {
+   static void ForwardSyntheticMouseMove(
+       base::WeakPtr<InputHandler> handler,
+       base::WeakPtr<RenderWidgetHostImpl> widget,
+-      blink::WebMouseEvent synthetic_event);
++      blink::WebMouseEvent synthetic_event,
++      base::TimeTicks authored_time);
+   // `resampled`: the final event of a path whose samples went out one by one (the
+   // pump); false is the stock slot. `skip_forward`: the event sits on the point the
+   // pointer is at, so it is not forwarded; the command still completes.
