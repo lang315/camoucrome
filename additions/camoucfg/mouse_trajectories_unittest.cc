@@ -5,8 +5,11 @@
 #include "components/camoucfg/mouse_trajectories.h"
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <cmath>
 #include <limits>
+#include <random>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -318,7 +321,7 @@ std::vector<double> Gaps(const std::vector<TrajectoryPoint>& path) {
 TEST(MouseTrajectoriesTest, ResampleSpacingMatchesTheRate) {
   const auto in = CursoryLike(60);
   for (auto [hz, period, tol] :
-       {std::tuple{125u, 8.0, 0.2}, std::tuple{1000u, 1.0, 0.1}}) {
+       {std::tuple{125u, 8.0, 1.1}, std::tuple{1000u, 1.0, 0.1}}) {
     auto out = ResampleToPollRate(in, hz, 42);
     ASSERT_GT(out.size(), in.size()) << hz;
     std::vector<double> gaps = Gaps(out);
@@ -330,6 +333,105 @@ TEST(MouseTrajectoriesTest, ResampleSpacingMatchesTheRate) {
     EXPECT_GT(gaps.back(), period / 2 - tol - 1e-6) << hz;
     EXPECT_LT(gaps.back(), period * 1.5 + tol) << hz;
   }
+}
+
+// Blink's TimeClamper (core/timing/time_clamper.cc) for event.timeStamp: the
+// time is cut to its 100 us interval, and rounded up to the next one when it is
+// past a pseudorandom threshold of that interval (a murmur hash of the interval
+// and a per-process secret).
+double ClampedMs(int64_t us, uint64_t secret) {
+  auto murmur = [](uint64_t v) {
+    v ^= v >> 33;
+    v *= uint64_t{0xFF51AFD7ED558CCD};
+    v ^= v >> 33;
+    v *= uint64_t{0xC4CEB9FE1A85EC53};
+    v ^= v >> 33;
+    return v;
+  };
+  const int64_t clamped = us - us % 100;
+  const uint64_t bits =
+      (murmur(static_cast<uint64_t>(clamped) ^ secret) &
+       uint64_t{0x000FFFFFFFFFFFFF}) |
+      uint64_t{0x3FF0000000000000};
+  double u = std::bit_cast<double>(bits) - 1;
+  return static_cast<double>(us >= clamped + 100 * u ? clamped + 100
+                                                     : clamped) /
+         1000.0;
+}
+
+// The wake of the UI thread after the pacer, measured on the host
+// (2026-11-23, 10 000 samples, idle): quantiles in microseconds. The samples
+// are forwarded this late after the time the generator gives them, and stamped
+// Now().
+double WakeNoiseUs(std::mt19937_64& rng) {
+  static constexpr std::array<std::pair<double, double>, 5> kQuantiles = {
+      {{0.0, 5.0}, {0.5, 77.0}, {0.9, 108.0}, {0.99, 254.0}, {1.0, 952.0}}};
+  const double u = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+  for (size_t i = 1; i < kQuantiles.size(); ++i) {
+    if (u <= kQuantiles[i].first) {
+      const double f = (u - kQuantiles[i - 1].first) /
+                       (kQuantiles[i].first - kQuantiles[i - 1].first);
+      return kQuantiles[i - 1].second +
+             f * (kQuantiles[i].second - kQuantiles[i - 1].second);
+    }
+  }
+  return kQuantiles.back().second;
+}
+
+// A guard on the generator's shape, not a stand-in for the host judge (the host
+// rows measure the real timer): I2b core_share and I2c whole_share as the page
+// reads them: the sample times
+// plus the pacer's wake noise, through the TimeClamper, from an arbitrary time
+// origin. The control's values are .62 (the mean of 5 host sessions, +-.037) and
+// .258 (+-.060). The old +-0.25 ms jitter gave 1.00 and .10; with the same wake
+// noise the generator of round 1 (+-0.5 ms, 28 % repeats) gives .58 and .21,
+// and the generator before it (+-0.2 ms, no repeats) .95 and .10.
+TEST(MouseTrajectoriesTest, Resample125HzCoreAndWholeShareMatchAMouseStream) {
+  const auto in = CursoryLike(60);
+  int core = 0;
+  int whole = 0;
+  int total = 0;
+  for (uint64_t seed = 1; seed <= 300; ++seed) {
+    std::mt19937_64 rng(seed);
+    const int64_t origin_us = 1'000'000'000 + static_cast<int64_t>(seed * 7919);
+    std::vector<double> stamps_ms;
+    auto out = ResampleToPollRate(in, 125, seed);
+    for (size_t i = 1; i + 1 < out.size(); ++i) {  // interior samples only
+      const int64_t us = origin_us + out[i].offset.InMicroseconds() +
+                         std::llround(WakeNoiseUs(rng));
+      stamps_ms.push_back(ClampedMs(us, seed * 0x9E3779B97F4A7C15));
+    }
+    for (size_t i = 1; i < stamps_ms.size(); ++i) {
+      const double gap = stamps_ms[i] - stamps_ms[i - 1];
+      ++total;
+      core += std::abs(gap - 8.0) <= 0.25 + 1e-9;
+      whole += std::abs(gap - std::round(gap)) < 0.05;
+    }
+  }
+  const double core_share = static_cast<double>(core) / total;
+  const double whole_share = static_cast<double>(whole) / total;
+  EXPECT_GT(core_share, 0.595) << core_share;
+  EXPECT_LT(core_share, 0.665) << core_share;
+  EXPECT_GT(whole_share, 0.205) << whole_share;
+  EXPECT_LT(whole_share, 0.285) << whole_share;
+}
+
+TEST(MouseTrajectoriesTest, PacerSleepsUntilTheLeadBeforeTheDeadline) {
+  const base::TimeDelta lead = base::Microseconds(kPacerLeadMicroseconds);
+  EXPECT_EQ(PacerSleepBefore(base::Milliseconds(8), lead),
+            base::Microseconds(8000 - kPacerLeadMicroseconds));
+  EXPECT_EQ(PacerSleepBefore(lead + base::Microseconds(1), lead),
+            base::Microseconds(1));
+  EXPECT_EQ(PacerSleepBefore(base::Seconds(10), base::Microseconds(0)),
+            base::Seconds(10));
+}
+
+TEST(MouseTrajectoriesTest, PacerDoesNotSleepWithinTheLeadOrAfterTheDeadline) {
+  const base::TimeDelta lead = base::Microseconds(kPacerLeadMicroseconds);
+  EXPECT_FALSE(PacerSleepBefore(lead, lead).has_value());
+  EXPECT_FALSE(PacerSleepBefore(base::Microseconds(500), lead).has_value());
+  EXPECT_FALSE(PacerSleepBefore(base::TimeDelta(), lead).has_value());
+  EXPECT_FALSE(PacerSleepBefore(base::Milliseconds(-3), lead).has_value());
 }
 
 TEST(MouseTrajectoriesTest, ResampleIsMonotonicAndKeepsTheEnds) {

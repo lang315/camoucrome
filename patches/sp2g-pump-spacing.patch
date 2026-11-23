@@ -1,0 +1,266 @@
+diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
+index 891a01e276..37e306f98c 100644
+--- a/content/browser/devtools/protocol/input_handler.cc
++++ b/content/browser/devtools/protocol/input_handler.cc
+@@ -74,6 +74,24 @@
+ #include "ui/aura/window.h"
+ #endif
+ 
++#if BUILDFLAG(IS_WIN)
++#include <windows.h>
++
++#include <array>
++#include <atomic>
++
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "base/task/thread_type.h"
++#include "base/threading/platform_thread.h"
++#include "base/time/time.h"
++#include "base/win/scoped_handle.h"
++
++// <windows.h> defines CreateEvent as CreateEventW (UNICODE), which would rename
++// NativeInputEventBuilder::CreateEvent below.
++#undef CreateEvent
++#endif
++
+ namespace content::protocol {
+ 
+ namespace {
+@@ -751,12 +769,146 @@ bool NamesAButton(const blink::WebMouseEvent& event) {
+ }
+ }  // namespace
+ 
++#if BUILDFLAG(IS_WIN)
++#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
++#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
++#endif
++
++// Waits for the deadlines of one humanized path on a thread of its own, and
++// posts a task to the UI thread at each. The UI thread cannot wait that
++// precisely: its wait takes a whole-ms timeout (message_pump_win.cc,
++// GetSleepTimeoutMs rounds up) and returns on the 1 ms system tick, so a
++// delayed task runs 0 to 1.1 ms after its time (median 0.9 ms on the host,
++// 2026-11-23), and a page that reads event.timeStamp against performance.now()
++// in a pointerrawupdate handler sees that lateness. Here a high-resolution
++// waitable timer sleeps until camoucfg::kPacerLeadMicroseconds before a
++// deadline (it fires up to about 1.1 ms late, so never after the deadline), and
++// this thread waits out the rest on the clock, so each sample is posted within
++// about 0.1 ms of its time. The thread exists only while the path does, and
++// sleeps in the timer wait between samples (no CPU); it spins for about 1 ms in
++// 8 only on its own thread, never on the UI thread. Its type is kPresentation,
++// THREAD_PRIORITY_ABOVE_NORMAL (base/threading/platform_thread_win.cc): at
++// normal priority the host starved it under a CPU-saturating page.
++class PumpPacer final : public base::PlatformThread::Delegate,
++                        public base::RefCountedThreadSafe<PumpPacer> {
++ public:
++  // Null when the timer cannot be created (Windows before 10 1803): the pump
++  // then arms a DeadlineTimer per sample, as it does off Windows.
++  static scoped_refptr<PumpPacer> Create(
++      std::vector<base::TimeTicks> deadlines,
++      scoped_refptr<base::SingleThreadTaskRunner> runner,
++      base::RepeatingClosure fire) {
++    base::win::ScopedHandle timer(::CreateWaitableTimerExW(
++        nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
++        TIMER_ALL_ACCESS));
++    base::win::ScopedHandle cancel(
++        ::CreateEventW(nullptr, /*bManualReset=*/TRUE, FALSE, nullptr));
++    if (!timer.is_valid() || !cancel.is_valid()) {
++      return nullptr;
++    }
++    return scoped_refptr<PumpPacer>(
++        new PumpPacer(std::move(timer), std::move(cancel),
++                      std::move(deadlines), std::move(runner),
++                      std::move(fire)));
++  }
++
++  // False when the thread cannot start; the caller then uses its own timer.
++  bool Start() {
++    AddRef();  // the thread's reference, dropped when it returns
++    if (base::PlatformThread::CreateNonJoinableWithType(
++            0, this, base::ThreadType::kPresentation)) {
++      return true;
++    }
++    Release();
++    return false;
++  }
++
++  // From any thread. The thread stops at its next check and posts no more.
++  void Cancel() {
++    cancelled_.store(true, std::memory_order_relaxed);
++    ::SetEvent(cancel_.get());
++  }
++
++  void ThreadMain() override {
++    base::PlatformThread::SetName("InputPacer");
++    for (const base::TimeTicks deadline : deadlines_) {
++      if (!WaitUntil(deadline)) {
++        break;
++      }
++      runner_->PostTask(FROM_HERE, fire_);
++    }
++    Release();  // may delete this: nothing after it
++  }
++
++ private:
++  friend class base::RefCountedThreadSafe<PumpPacer>;
++
++  PumpPacer(base::win::ScopedHandle timer,
++            base::win::ScopedHandle cancel,
++            std::vector<base::TimeTicks> deadlines,
++            scoped_refptr<base::SingleThreadTaskRunner> runner,
++            base::RepeatingClosure fire)
++      : timer_(std::move(timer)),
++        cancel_(std::move(cancel)),
++        deadlines_(std::move(deadlines)),
++        runner_(std::move(runner)),
++        fire_(std::move(fire)) {}
++  ~PumpPacer() override = default;
++
++  // False when cancelled. A failed wait never drops a sample: it is posted
++  // late, so the command it belongs to always completes.
++  bool WaitUntil(base::TimeTicks deadline) {
++    const std::optional<base::TimeDelta> sleep = camoucfg::PacerSleepBefore(
++        deadline - base::TimeTicks::Now(),
++        base::Microseconds(camoucfg::kPacerLeadMicroseconds));
++    if (sleep) {
++      LARGE_INTEGER due;
++      due.QuadPart = -sleep->InMicroseconds() * 10;  // relative, 100 ns units
++      DWORD result = WAIT_FAILED;
++      if (::SetWaitableTimerEx(timer_.get(), &due, 0, nullptr, nullptr, nullptr,
++                               0)) {
++        const std::array<HANDLE, 2> handles = {timer_.get(), cancel_.get()};
++        result = ::WaitForMultipleObjects(static_cast<DWORD>(handles.size()),
++                                          handles.data(), FALSE, INFINITE);
++        if (result == WAIT_OBJECT_0 + 1) {
++          return false;  // cancelled
++        }
++      }
++      if (result != WAIT_OBJECT_0) {
++        // The timer is unusable (it could not be set, or the wait failed): a
++        // coarse wait in ms, the sample is late, never lost, and no spin.
++        if (::WaitForSingleObject(cancel_.get(),
++                                  static_cast<DWORD>(
++                                      sleep->InMilliseconds())) == WAIT_OBJECT_0) {
++          return false;  // cancelled
++        }
++      }
++    }
++    while (base::TimeTicks::Now() < deadline) {
++      if (cancelled_.load(std::memory_order_relaxed)) {
++        return false;
++      }
++      YieldProcessor();
++    }
++    return !cancelled_.load(std::memory_order_relaxed);
++  }
++
++  base::win::ScopedHandle timer_;
++  base::win::ScopedHandle cancel_;
++  std::atomic<bool> cancelled_{false};
++  const std::vector<base::TimeTicks> deadlines_;
++  const scoped_refptr<base::SingleThreadTaskRunner> runner_;
++  const base::RepeatingClosure fire_;
++};
++#endif  // BUILDFLAG(IS_WIN)
++
+ // Delivers a humanized path in real time: each interior sample at its own time,
+-// then the path's final event, each by a precise timer (DeadlineTimer with
+-// DelayPolicy::kPrecise, which on Windows turns on the high-resolution timer)
+-// and stamped by the forward itself. The InputHandler owns it (AddPump): it is
+-// erased after the final event, and destroyed, its command failed, with the
+-// handler.
++// then the path's final event, and stamped by the forward itself. On Windows a
++// PumpPacer thread posts each one to the UI thread within about 0.1 ms of its
++// time; elsewhere, and when the pacer cannot start, each is a precise timer
++// (DeadlineTimer with DelayPolicy::kPrecise, which on Windows turns on the
++// high-resolution timer). The InputHandler owns it (AddPump): it is erased
++// after the final event, and destroyed, its command failed, with the handler.
+ class InputHandler::PreciseSamplePump {
+  public:
+   struct Step {
+@@ -780,15 +932,59 @@ class InputHandler::PreciseSamplePump {
+         callback_(std::move(callback)) {}
+ 
+   ~PreciseSamplePump() {
++#if BUILDFLAG(IS_WIN)
++    if (pacer_) {
++      pacer_->Cancel();
++    }
++    if (high_res_timer_) {
++      base::Time::ActivateHighResolutionTimer(false);
++    }
++#endif
+     if (callback_) {
+       callback_->sendFailure(Response::ServerError(
+           "The DevTools session closed before the move finished"));
+     }
+   }
+ 
+-  void Start() { Arm(); }
++  void Start() {
++#if BUILDFLAG(IS_WIN)
++    std::vector<base::TimeTicks> deadlines;
++    deadlines.reserve(steps_.size() + 1);
++    for (const Step& step : steps_) {
++      deadlines.push_back(step.at);
++    }
++    deadlines.push_back(final_at_);
++    pacer_ = PumpPacer::Create(
++        std::move(deadlines), base::SingleThreadTaskRunner::GetCurrentDefault(),
++        base::BindRepeating(&PreciseSamplePump::Fire,
++                            weak_factory_.GetWeakPtr()));
++    if (pacer_) {
++      // As long as the path lasts the system timer stays at 1 ms, as when the
++      // pump's kPrecise tasks were queued (the UI thread asks for it while one
++      // is: thread_controller_with_message_pump_impl.cc): the browser's timer
++      // environment is the one of -15.
++      base::Time::ActivateHighResolutionTimer(true);
++      high_res_timer_ = true;
++      if (pacer_->Start()) {
++        return;
++      }
++      base::Time::ActivateHighResolutionTimer(false);
++      high_res_timer_ = false;
++      pacer_.reset();
++    }
++#endif
++    Arm();
++  }
+ 
+  private:
++  bool Paced() const {
++#if BUILDFLAG(IS_WIN)
++    return !!pacer_;
++#else
++    return false;
++#endif
++  }
++
+   void Arm() {
+     // Absolute times: a late timer moves when a sample goes out, never when
+     // the next one does.
+@@ -802,7 +998,9 @@ class InputHandler::PreciseSamplePump {
+     if (next_ < steps_.size()) {
+       InputHandler::ForwardSyntheticMouseMove(handler_, widget_,
+                                               steps_[next_++].event);
+-      Arm();
++      if (!Paced()) {
++        Arm();
++      }
+       return;
+     }
+     InputHandler::ForwardHumanizedMouseEventCompletion(
+@@ -823,6 +1021,12 @@ class InputHandler::PreciseSamplePump {
+   bool skip_final_;
+   std::unique_ptr<DispatchMouseEventCallback> callback_;
+   base::DeadlineTimer timer_;
++#if BUILDFLAG(IS_WIN)
++  scoped_refptr<PumpPacer> pacer_;
++  bool high_res_timer_ = false;
++  // Last: invalidated first, so a task the pacer posted late finds no pump.
++  base::WeakPtrFactory<PreciseSamplePump> weak_factory_{this};
++#endif
+ };
+ 
+ class InputHandler::InputInjector

@@ -6,6 +6,7 @@
 #define COMPONENTS_CAMOUCFG_MOUSE_TRAJECTORIES_H_
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "base/time/time.h"
@@ -63,8 +64,10 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
 // The path as a mouse reports it: one sample every 1000 / `hz` ms (a USB mouse at
 // 125 or 1000 Hz) instead of one per Cursory frame. The samples sit on a grid of
 // that period, each moved by a small jitter so that two neighbours are the
-// period apart within +-0.2 ms at 125 Hz (the caller delivers them in real time,
-// so the timers add the rest of the spread a mouse shows) and +-0.1 ms at 1000 Hz
+// period apart within +-1.1 ms at 125 Hz (the caller forwards each sample within about 0.1 ms of
+// its time here and stamps Now(); the spread is the one a mouse's stream shows,
+// and 40 % of the samples repeat the jitter of the one before: a gap of exactly
+// one period) and +-0.1 ms at 1000 Hz
 // (other rates: +-1/16 of the period). Their positions lie on the curve through every input
 // point: a cubic Hermite in time, exact at each input offset and exact for
 // straight constant-speed motion. The first sample is path.front() at offset 0,
@@ -74,6 +77,19 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
 // has fewer than 2 points, `hz` is 0, or the offsets do not increase.
 std::vector<TrajectoryPoint> ResampleToPollRate(
     const std::vector<TrajectoryPoint>& path, uint32_t hz, uint64_t seed);
+
+// The pacer that delivers a humanized path (Windows: a thread with a
+// high-resolution waitable timer) sleeps on the timer until `lead` before a
+// deadline, because the timer fires up to about 1.1 ms late, and waits out the
+// rest on the clock. kPacerLeadMicroseconds is measured on the host: the timer's
+// lateness has p99 1.09 ms and max 1.4 ms, the wake of the UI thread after the
+// pacer 0.04-0.07 ms. PacerSleepBefore(remaining, lead) is how long to sleep on
+// the timer when `remaining` is the time to the deadline, or nullopt when
+// `remaining <= lead` (no timer: wait on the clock only; also when the deadline
+// has passed).
+inline constexpr int kPacerLeadMicroseconds = 1200;
+std::optional<base::TimeDelta> PacerSleepBefore(base::TimeDelta remaining,
+                                                base::TimeDelta lead);
 
 // A wheel turns in whole notches. Signed notch counts per axis for a CDP
 // wheel delta: |d| / 100 rounded half away from zero, at least 1 for a
