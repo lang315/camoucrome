@@ -93,6 +93,8 @@ jobs:
           python3 -m pytest -q client/python/tests scripts/
       - name: go core data matches the generator (full, with the pool)
         run: python3 scripts/gen_go_core_data.py --check
+      - name: go core golden matches gen.py (all 8 files)
+        run: python3 scripts/gen_go_core_golden.py --check
       - name: go client tests
         run: cd client/go && go vet ./... && go test ./...
       - name: go core tests (no dependencies, own module)
