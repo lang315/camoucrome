@@ -141,3 +141,27 @@ func TestLaunchRejectsProxy(t *testing.T) {
 		t.Fatal("process started despite proxy")
 	}
 }
+
+// A Window larger than the claimed outer size is refused before anything starts (camoucrome.Launch's rule).
+func TestLaunchRefusesWindowOverOuter(t *testing.T) {
+	called := false
+	old := startFn
+	t.Cleanup(func() { startFn = old })
+	startFn = func(context.Context, string, []string, map[string]string) (*browser.Proc, error) {
+		called = true
+		return nil, errStub
+	}
+	o := camoucrome.Options{ExecutablePath: "/x/chrome", Window: [2]int{1000, 700},
+		Config: map[string]any{"window.outerWidth": 800, "window.outerHeight": 900}}
+	_, err := Launch(context.Background(), o)
+	if err == nil || errors.Is(err, errStub) || !strings.Contains(err.Error(), "exceeds window.outerWidth") {
+		t.Fatalf("err = %v, want the outer-size refusal", err)
+	}
+	if called {
+		t.Error("startFn ran after the refusal")
+	}
+	o.Window = [2]int{800, 900} // equal fits
+	if _, err := Launch(context.Background(), o); !errors.Is(err, errStub) {
+		t.Fatalf("a fitting window: err = %v, want the stub", err)
+	}
+}

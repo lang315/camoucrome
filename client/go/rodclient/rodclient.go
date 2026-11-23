@@ -16,6 +16,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 
 	camoucrome "github.com/lang315/camoucrome/client/go"
+	"github.com/lang315/camoucrome/client/go/core"
 	"github.com/lang315/camoucrome/client/go/rodclient/internal/browser"
 )
 
@@ -72,6 +73,13 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 			}
 		}
 	}
+	keys, err := camoucrome.EffectiveKeys(o.Config, o.Preset)
+	if err != nil {
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
+	}
+	if err := camoucrome.CheckWindow(o, keys); err != nil {
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
+	}
 	env, err := camoucrome.BuildEnv(o, os.Environ())
 	if err != nil {
 		return nil, fmt.Errorf("rodclient: launch: %w", err)
@@ -91,7 +99,20 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 		b.owned = append(b.owned, o.UserDataDir)
 	}
 	argv := camoucrome.BuildArgs(o)
-	p, err := startFn(context.WithoutCancel(ctx), o.ExecutablePath, argv, env)
+	var p *browser.Proc
+	start := func() (err error) {
+		p, err = startFn(context.WithoutCancel(ctx), o.ExecutablePath, argv, env)
+		return
+	}
+	// The same pin as camoucrome.Launch: this process spawns Chrome, so core.Pinned pins it (camoucrome's own pinned looks for a playwright driver child).
+	if n, ok := keys["navigator.hardwareConcurrency"].(float64); ok && n >= 1 && n == float64(int(n)) && (o.PinCPUCores == nil || *o.PinCPUCores) {
+		err = core.Pinned(int(n), start)
+		if err != nil && p != nil { // the browser started but the mask was not restored: no browser may run unowned
+			p.Stop()
+		}
+	} else {
+		err = start()
+	}
 	if err != nil {
 		b.removeOwned()
 		return nil, fmt.Errorf("rodclient: launch: %w", err)
