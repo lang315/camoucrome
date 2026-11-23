@@ -1,0 +1,25 @@
+# Every scripts/measure_*.py, with where it runs (scripts/ci_verify_set.py check; scripts/test_ci_verify_set.py fails on a missing one).
+#   measure <script>  # where=<box|host|manual|retired>: why
+# where: box = the build box (WSL content_shell), host = the Windows host in session 1, manual = by hand, retired = dead (kept, not deleted).
+
+measure measure_audio_text.py  # where=box: runs on the box (WSL content_shell)
+measure measure_canvas_cost.py  # where=box: runs on the box (WSL content_shell)
+measure measure_canvas_noise.py  # where=host: docstring: runs on the Windows host
+measure measure_cdp_footprint.py  # where=host: docstring: runs on the Windows host
+measure measure_cdp_timing.py  # where=box: runs on the box (WSL content_shell)
+measure measure_d_gaps.py  # where=retired: named dead by the 2026-11-22 project review (Task 2 F4)
+measure measure_driver_probes.py  # where=box: runs on the box (WSL content_shell)
+measure measure_input_probes.py  # where=host: docstring: runs on the Windows host
+measure measure_layer3.py  # where=host: docstring: runs on the Windows host
+measure measure_netinfo.py  # where=host: docstring: runs on the Windows host
+measure measure_observe_cost.py  # where=host: docstring: runs on the Windows host
+measure measure_remote_voices.py  # where=host: docstring: runs on the Windows host
+measure measure_sp2b_attach.py  # where=retired: named dead by the 2026-11-22 project review (Task 2 F4)
+measure measure_sp2b_input.py  # where=box: runs on the box (WSL content_shell)
+measure measure_sp2b_runtime.py  # where=box: runs on the box (WSL content_shell)
+measure measure_sp2b_stack.py  # where=retired: named dead by the 2026-11-22 project review (Task 2 F4)
+measure measure_sp7_components.py  # where=retired: named dead by the 2026-11-22 project review (Task 2 F4)
+measure measure_stderr_capture_race.py  # where=manual: reproduces a fixed bug by hand
+measure measure_step2.py  # where=host: docstring: runs on the Windows host
+measure measure_text_pixels.py  # where=box: runs on the box (WSL content_shell)
+measure measure_timing_parity.py  # where=host: docstring: runs on the Windows host

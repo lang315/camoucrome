@@ -39,9 +39,17 @@ jobs:
           cd "$SRC"
           test "$(git rev-parse --abbrev-ref HEAD)" = camoucrome/main || { echo "not on camoucrome/main"; exit 1; }
           n=$(git status --porcelain | wc -l); test "$n" -eq 0 || { echo "checkout dirty ($n paths): a slice is in progress, re-run later"; exit 1; }
-          ! pgrep -f "ninja -C out/(Default|Release)" >/dev/null || { echo "a ninja is already running in this checkout"; exit 1; }
-          # A Windows build on the same PC is invisible to pgrep; it holds this lock instead.
-          bash "$GITHUB_WORKSPACE/scripts/build_lock.sh" status
+          # A running ninja or a held lock (a Windows build on the same PC is invisible to pgrep; it holds the lock) is waited
+          # for, one line per minute, up to 60 min (the job's timeout is 180); a dirty checkout above stays fail-fast.
+          waited=0
+          while :; do
+            why=""
+            if pgrep -f "ninja -C out/(Default|Release)" >/dev/null; then why="a ninja is already running in this checkout"
+            elif ! lock=$(bash "$GITHUB_WORKSPACE/scripts/build_lock.sh" status); then why="$lock"; fi
+            [ -z "$why" ] && break
+            [ "$waited" -lt 60 ] || { echo "$why (still after 60 min)"; exit 1; }
+            waited=$((waited + 1)); echo "$why; waiting, minute $waited of 60"; sleep 60
+          done
       - name: pushed change set == built checkout
         run: bash scripts/check_checkout_sync.sh
       - name: pre-flight checks
@@ -116,9 +124,10 @@ jobs:
           source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           cd "$VERIFY"
           rc=0
-          # exit 3 is UNMEASURED (a premise the box cannot give, e.g. no X server for a headed launch): printed loudly, not a pass
-          # and not a failure; a script whose FAIL rows exist exits 1 whatever else is unmeasured
-          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 && st=0 || st=$?; if [ $st -eq 0 ]; then tail -1 "/tmp/$1.log"; elif [ $st -eq 3 ]; then echo "UNMEASURED $1 (exit 3, not a pass)"; grep -E "UNMEASURED" "/tmp/$1.log" | head -4 || true; else echo "FAILED $1"; grep -E "FAIL|DIFF|Error" "/tmp/$1.log" | head -12 || true; echo "-- tail of $1.log:"; tail -15 "/tmp/$1.log"; return 1; fi; }
+          # exit 3 is UNMEASURED (a premise the box cannot give, e.g. no X server for a headed launch). It fails the job unless the
+          # line in ci_verify_set.txt says `unmeasured-ok` (OK3=1 here): an undeclared 3 is a verify that stopped measuring. A
+          # script that has FAIL rows exits 1 whatever else is unmeasured (lib_shell._exit_if_unmeasured), so 3 never hides a FAIL
+          run() { echo "== $1"; "$VERIFY/venv/bin/python3" "$@" > "/tmp/$1.log" 2>&1 && st=0 || st=$?; if [ $st -eq 0 ]; then tail -1 "/tmp/$1.log"; elif [ $st -eq 3 ] && [ "${OK3:-0}" = 1 ]; then echo "UNMEASURED $1 (exit 3, declared unmeasured-ok, not a pass)"; grep -E "UNMEASURED" "/tmp/$1.log" | head -4 || true; else echo "FAILED $1"; [ $st -ne 3 ] || echo "exit 3 (UNMEASURED) and ci_verify_set.txt does not declare unmeasured-ok for it"; grep -E "FAIL|DIFF|Error|UNMEASURED" "/tmp/$1.log" | head -12 || true; echo "-- tail of $1.log:"; tail -15 "/tmp/$1.log"; return 1; fi; }
           # The scripts and their order come from scripts/ci_verify_set.txt (every verify_*.py is listed there, run or skipped
           # with a reason, and scripts/test_ci_verify_set.py fails on one that is not). A `run` line may carry KEY=VAL words:
           # verify_sp6b_generator takes CAMOU_GEN_N=4 (seeds 1000..1003 include a DPR 1.5 identity and 1.25 identities of
@@ -129,7 +138,8 @@ jobs:
           #   at camoucrome-go/camoucrome-probe, rebuilt from client/go by the step "Go probe" so it never lags the client; the rodclient probe at
           #   camoucrome-go/camoucrome-probe-rodclient, rebuilt by the step "rodclient probe".
           while read -r script envs; do
-            ( [ -z "$envs" ] || export $envs; run "$script" ) || rc=1
+            ok=0; case "$envs" in unmeasured-ok*) ok=1; envs="${envs#unmeasured-ok}"; envs="${envs# }";; esac
+            ( [ -z "$envs" ] || export $envs; OK3=$ok run "$script" ) || rc=1
           done < <(python3 "$GITHUB_WORKSPACE/scripts/ci_verify_set.py" list)
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md): a missing arg fails the job, because a
           # skipped verify_observe left the observer's checks out and the job green

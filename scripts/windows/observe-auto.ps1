@@ -67,7 +67,9 @@ if ($FlagList.Count) {
 if (Test-Path $WarmRoot) {
   $stale = @(Get-ChildItem $WarmRoot -Directory | Where-Object { $_.Name -ne $WarmFrom -and $_.CreationTimeUtc -lt (Get-Date).ToUniversalTime().AddHours(-24) })
   $stale | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-  if ($stale.Count) { "WARM deleted $($stale.Count) stale" }
+  $left = @($stale | Where-Object { Test-Path $_.FullName })
+  if ($stale.Count) { "WARM deleted $($stale.Count - $left.Count) of $($stale.Count) stale" }
+  foreach ($l in $left) { "WARM delete FAILED $($l.FullName) (delete it by hand)" }
 }
 $Arms = @($Arms | ForEach-Object { if ($_ -in 'lf', 'lc', 'lu') { foreach ($i in 1..3) { "$_$i" } } else { $_ } })
 $Unlink = @('lf1', 'lf2', 'lf3', 'lc1', 'lc2', 'lc3')
@@ -231,7 +233,7 @@ try {
     if ($a -in $LoginUnlink) {
       # a logged-in copy outlives no sub-arm (spec S5 section 2)
       Remove-Item (Join-Path $run "profile-arm$a") -Recurse -Force -ErrorAction SilentlyContinue
-      if (Test-Path (Join-Path $run "profile-arm$a")) { "PROFILE delete FAILED arm$a (delete it by hand)" } else { "PROFILE deleted arm$a" }
+      if (Test-Path (Join-Path $run "profile-arm$a")) { "PROFILE delete FAILED arm$a (delete it by hand)"; $worst = [math]::Max($worst, 3) } else { "PROFILE deleted arm$a" }
     }
     if ($timedOut) { continue }
     # a recon that threw, or one that never made this arm's dir, measured nothing: judging a dir that
@@ -323,7 +325,10 @@ try {
     if (Test-Path (Join-Path $WarmRoot $WarmFrom)) { "WARM delete FAILED $WarmFrom (delete it by hand)" } else { "WARM deleted $WarmFrom" }
   }
   Remove-Item (Join-Path $run 'profile-arm*') -Recurse -Force -ErrorAction SilentlyContinue
-  Get-ChildItem $run -Recurse -Filter 'cookies.db' -ErrorAction SilentlyContinue | Remove-Item -Force
+  Get-ChildItem $run -Recurse -Filter 'cookies.db' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  # a logged-in profile copy or cookie file that survives the delete is a leak: say so and end UNMEASURED (exit 3)
+  $survivors = @(Get-ChildItem $run -Filter 'profile-arm*' -ErrorAction SilentlyContinue) + @(Get-ChildItem $run -Recurse -Filter 'cookies.db' -ErrorAction SilentlyContinue)
+  foreach ($sv in $survivors) { "PROFILE delete FAILED $($sv.FullName) (delete it by hand)"; $worst = [math]::Max($worst, 3) }
   # the driver's raw captures (bodies, WebSocket payloads, truth) and the saved document HTML stay only until the report is done;
   # resources\js (public Meta code) and truth.json stay on the host
   $raw = @(Get-ChildItem $run -Directory -Recurse -Filter 'capture' -ErrorAction SilentlyContinue) +

@@ -1,7 +1,10 @@
 # The browser verifies build-verify.yml runs on the box, one per line (scripts/ci_verify_set.py checks it).
-#   run <script> [KEY=VAL ...]   run it in the job, in this order; a nonzero exit fails the job
+#   run <script> [unmeasured-ok] [KEY=VAL ...]   run it in the job, in this order; a nonzero exit fails the job, and so
+#                                  does exit 3 (UNMEASURED) unless the line carries `unmeasured-ok` (the verify cannot be
+#                                  measured on the runner; name why in a comment above it)
 #   external <script>  # why     run by its own workflow step
-#   skip <script>  # why         not run in CI (a reason is required)
+#   skip <script>  # where=<box|host|manual|retired>: why   not run in CI. where says who runs it: box = a runner candidate,
+#                                  host = the Windows host, manual = by hand, retired = dead (a reason is required)
 # Every scripts/verify_*.py must appear exactly once, so a new verify has to be put here on purpose.
 # "not yet evaluated" means nobody has timed it or checked that it passes on the runner's out/Default build.
 
@@ -9,7 +12,8 @@ run verify_sp1a_chrome.py
 run verify_sp2c.py
 run verify_sp4_voices.py
 run verify_fonts_bundle.py
-run verify_host_oracle.py
+# unmeasured-ok: exit 3 only when the Windows GPU-crash gate reads nonzero or unreadable (os.name == "nt"); never on the Linux runner
+run verify_host_oracle.py unmeasured-ok
 run verify_course.py
 run verify_webauthn_coherence.py
 run verify_windows_behaviour.py
@@ -19,7 +23,8 @@ run verify_sp6b_driver.py
 run verify_sp2e.py
 run verify_input_grid_edge.py
 run verify_input_burst.py
-run verify_sp2b.py
+# unmeasured-ok: exit 3 when the humanize session ran on throttled frames (sp2b_analysis.throttled; #154): the window was measured, not the hook
+run verify_sp2b.py unmeasured-ok
 run verify_sp7_codecs.py
 run verify_sp7_fieldtrial.py
 run verify_sp1b.py
@@ -37,54 +42,54 @@ run verify_webgl_capability_identity.py
 # write args.gn). Without it the credits page is the 433-character placeholder and the script fails.
 run verify_credits.py
 # verify_sp6b_launcher: L4 (headed launch) is UNMEASURED, exit 3, when no X server answers; the runner has no display.
-run verify_sp6b_launcher.py
+run verify_sp6b_launcher.py unmeasured-ok
 run verify_accept_language.py LANGUAGE=de  # A6 needs a non-en default, else the header cannot differ from the fallback
 run verify_device_memory_hint.py
 run verify_finch_defaults.py
 run verify_href_translate.py
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
 external verify_observer_page.py  # has its own step in build-verify.yml, after verify_observe.py (same camou_observe = true)
-skip verify_chrome_object.py  # not yet evaluated for the runner
-skip verify_font_metrics.py  # not yet evaluated for the runner
-skip verify_geo_ii_cadence.py  # not yet evaluated for the runner
-skip verify_geoip_pixelscan.py  # not yet evaluated for the runner
-skip verify_media_ii.py  # not yet evaluated for the runner
-skip verify_light_flag.py  # runs on the Windows host in session 1 (GPU process), not on the runner
-skip verify_uvpa.py  # Windows host only: compares stock and the fork on the host (Windows Hello), in session 1
-skip verify_navplatform_derive.py  # not yet evaluated for the runner
-skip verify_phantom.py  # not yet evaluated for the runner
-skip verify_pixels_real.py  # not yet evaluated for the runner
-skip verify_px_arms.py  # not yet evaluated for the runner
-skip verify_review_2026_09_24.py  # not yet evaluated for the runner
-skip verify_s3_host.py  # not yet evaluated for the runner
-skip verify_s3_media.py  # not yet evaluated for the runner
-skip verify_s3b_phantom_out.py  # not yet evaluated for the runner
-skip verify_sp0.py  # not yet evaluated for the runner
-skip verify_sp1a.py  # not yet evaluated for the runner
-skip verify_sp2.py  # not yet evaluated for the runner
-skip verify_sp3a.py  # not yet evaluated for the runner
-skip verify_sp4_audio.py  # not yet evaluated for the runner
-skip verify_sp4_battery.py  # not yet evaluated for the runner
-skip verify_sp4_fonts.py  # not yet evaluated for the runner
-skip verify_sp4_geo.py  # not yet evaluated for the runner
-skip verify_sp4_media.py  # not yet evaluated for the runner
-skip verify_sp4_tzlocale.py  # not yet evaluated for the runner
-skip verify_sp4_webrtc.py  # not yet evaluated for the runner
-skip verify_sp5a.py  # not yet evaluated for the runner
-skip verify_sp5b_preset.py  # not yet evaluated for the runner
-skip verify_sp7_phonehome.py  # not yet evaluated for the runner
-skip verify_voices_ii.py  # not yet evaluated for the runner
-skip verify_voices_pause.py  # not yet evaluated for the runner
-skip verify_voices_remote.py  # not yet evaluated for the runner
-skip verify_webgl_profile.py  # not yet evaluated for the runner
-skip verify_webrtc_ii.py  # not yet evaluated for the runner
-skip verify_webrtc_ii_fakeip.py  # not yet evaluated for the runner
-skip verify_webrtc_realproxy.py  # not yet evaluated for the runner
-skip verify_window_geometry.py  # not yet evaluated for the runner
-skip verify_window_position.py  # not yet evaluated for the runner
-skip verify_windows_client.py  # Windows host only (windows_verify_set.py)
-skip verify_windows_fonts.py  # Windows host only (windows_verify_set.py)
-skip verify_windows_sandbox_env.py  # Windows host only (windows_verify_set.py)
-skip verify_observe_drive.py  # dry run of the Windows-host driver against a local page; run by hand on the box (not yet evaluated for the runner)
-skip verify_canvas_golden.py  # golden file is box-local, captured per build by hand (canvas2d_read loop)
-skip verify_webgpu_blocked.py  # host-only: the box returns a null adapter (run on the Windows host through run-interactive.ps1)
+skip verify_chrome_object.py  # where=host: not yet evaluated for the runner
+skip verify_font_metrics.py  # where=box: not yet evaluated for the runner
+skip verify_geo_ii_cadence.py  # where=box: not yet evaluated for the runner
+skip verify_geoip_pixelscan.py  # where=host: not yet evaluated for the runner
+skip verify_media_ii.py  # where=box: not yet evaluated for the runner
+skip verify_light_flag.py  # where=host: runs on the Windows host in session 1 (GPU process), not on the runner
+skip verify_uvpa.py  # where=host: Windows host only: compares stock and the fork on the host (Windows Hello), in session 1
+skip verify_navplatform_derive.py  # where=box: not yet evaluated for the runner
+skip verify_phantom.py  # where=box: not yet evaluated for the runner
+skip verify_pixels_real.py  # where=host: not yet evaluated for the runner
+skip verify_px_arms.py  # where=box: not yet evaluated for the runner
+skip verify_review_2026_09_24.py  # where=box: not yet evaluated for the runner
+skip verify_s3_host.py  # where=host: not yet evaluated for the runner
+skip verify_s3_media.py  # where=box: not yet evaluated for the runner
+skip verify_s3b_phantom_out.py  # where=box: not yet evaluated for the runner
+skip verify_sp0.py  # where=box: not yet evaluated for the runner
+skip verify_sp1a.py  # where=box: not yet evaluated for the runner
+skip verify_sp2.py  # where=box: not yet evaluated for the runner
+skip verify_sp3a.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_audio.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_battery.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_fonts.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_geo.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_media.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_tzlocale.py  # where=box: not yet evaluated for the runner
+skip verify_sp4_webrtc.py  # where=box: not yet evaluated for the runner
+skip verify_sp5a.py  # where=box: not yet evaluated for the runner
+skip verify_sp5b_preset.py  # where=box: not yet evaluated for the runner
+skip verify_sp7_phonehome.py  # where=box: not yet evaluated for the runner
+skip verify_voices_ii.py  # where=box: not yet evaluated for the runner
+skip verify_voices_pause.py  # where=box: not yet evaluated for the runner
+skip verify_voices_remote.py  # where=host: not yet evaluated for the runner
+skip verify_webgl_profile.py  # where=box: not yet evaluated for the runner
+skip verify_webrtc_ii.py  # where=box: not yet evaluated for the runner
+skip verify_webrtc_ii_fakeip.py  # where=box: not yet evaluated for the runner
+skip verify_webrtc_realproxy.py  # where=host: not yet evaluated for the runner
+skip verify_window_geometry.py  # where=box: not yet evaluated for the runner
+skip verify_window_position.py  # where=host: not yet evaluated for the runner
+skip verify_windows_client.py  # where=host: Windows host only (windows_verify_set.py)
+skip verify_windows_fonts.py  # where=host: Windows host only (windows_verify_set.py)
+skip verify_windows_sandbox_env.py  # where=host: Windows host only (windows_verify_set.py)
+skip verify_observe_drive.py  # where=manual: dry run of the Windows-host driver against a local page; run by hand on the box (not yet evaluated for the runner)
+skip verify_canvas_golden.py  # where=manual: golden file is box-local, captured per build by hand (canvas2d_read loop)
+skip verify_webgpu_blocked.py  # where=host: host-only: the box returns a null adapter (run on the Windows host through run-interactive.ps1)

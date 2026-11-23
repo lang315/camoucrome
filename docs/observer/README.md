@@ -163,13 +163,15 @@ the worst arm's code.
 
 | verdict | exit | condition |
 |---|---|---|
-| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; a URL request that started after the trace's last event, or a netlog that began more than 5 s before the trace (the netlog's own end is not checked: it runs past the trace on socket and QUIC teardown, 10.5 s in a 405 s arm); `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout |
+| `UNMEASURED` | 3 | `run.json` missing; `low_memory_kill`; `session != 1`; `session_state != Active`; `report_rc != 0`; `left > 0`; a URL request that started after the trace's last event, or a netlog that began more than 5 s before the trace (the netlog's own end is not checked: it runs past the trace on socket and QUIC teardown, 10.5 s in a 405 s arm); `discarded > 0` or buffer stats missing; `intl` is `null` (blind); arm 3 without cookies named `c_user` and `xs` (session expired); a GPU process crash line in the debug log; a failed gate; a timeout; a profile copy or `cookies.db` that survives the final delete (`PROFILE delete FAILED <path>`) |
 | `FAIL` | 1 | a baseline required group, `intl` included, has 0 calls on the facebook site |
 | `PASS` | 0 | every required group is still above 0 |
 | `INFO` | — | count change against the baseline, new group, new Intl built-in, `/ajax/bz` and total requests |
 
 `<run dir>` is `D:\camou-win\observe\auto\<yyyyMMdd-HHmmss>`. The command
-deletes the profile copies and `cookies.db` when it finishes. What stays on
+deletes the profile copies and `cookies.db` when it finishes, checks that they
+are gone, and prints `PROFILE delete FAILED <path> (delete it by hand)` with
+exit 3 when one is not. The stale-warm sweep prints the count it removed. What stays on
 the host:
 - `arm<N>\trace.json`, `net.json`, `report.md`;
 - `arm<N>\summary.json`, which holds names and counts only;

@@ -452,15 +452,36 @@ def x_server_answers(display, timeout=3.0, sock_dir="/tmp/.X11-unix"):
 
 
 _UNMEASURED = []  # gate lines printed by this process; a standalone verify must not exit 0 after one
+_STATUS = {"failed": False}  # set when the process called sys.exit(nonzero) or died on an uncaught exception
 
 
-def _exit_if_unmeasured(lines, exit=os._exit):
-    """atexit: a run that printed an UNMEASURED line ends rc 3, whatever its rows said."""
+def _exit_if_unmeasured(lines, exit=os._exit, status=_STATUS):
+    """atexit: a run that printed an UNMEASURED line ends rc 3 unless it already failed (then rc 1, so exit 3 never hides a FAIL)."""
     if lines:
         import sys
-        print(f"UNMEASURED: {len(lines)} launch(es) unmeasured; exit 3", flush=True)
+        rc = 1 if status["failed"] else 3
+        print(f"UNMEASURED: {len(lines)} launch(es) unmeasured; exit {rc}", flush=True)
         sys.stdout.flush()
-        exit(3)
+        exit(rc)
+
+
+def _watch_failure(status=_STATUS):
+    """atexit cannot read the exit code, so record it: wrap sys.exit and sys.excepthook. Every verify ends
+    in sys.exit(0 if all-PASS else 1) or an uncaught exception; a bare `raise SystemExit` is not seen, nor is a
+    `from sys import exit` bound before this wrap (none in scripts/verify_*.py or lib_shell.py)."""
+    import sys
+    real_exit, real_hook = sys.exit, sys.excepthook
+
+    def watched_exit(code=None):
+        if code not in (None, 0, 3):  # 3 is the deliberate UNMEASURED exit, not a failure
+            status["failed"] = True
+        real_exit(code)
+
+    def watched_hook(*a):
+        status["failed"] = True
+        real_hook(*a)
+
+    sys.exit, sys.excepthook = watched_exit, watched_hook
 
 
 def gpu_gate_line(proc, osname=None, reader=None):
@@ -489,6 +510,7 @@ def _mark_unmeasured(line):
     print(line, flush=True)
     if not _UNMEASURED:
         import atexit
+        _watch_failure()
         atexit.register(_exit_if_unmeasured, _UNMEASURED)
     _UNMEASURED.append(line)
 
