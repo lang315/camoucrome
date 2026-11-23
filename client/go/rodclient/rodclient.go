@@ -64,6 +64,13 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
+	keys, err := camoucrome.EffectiveKeys(o.Config, o.Preset)
+	if err != nil {
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
+	}
+	if err := camoucrome.CheckWindow(o, keys); err != nil {
+		return nil, fmt.Errorf("rodclient: launch: %w", err)
+	}
 	if o.GeoIP != "" { // o.warn is unexported, so mirror it here
 		for _, m := range camoucrome.CheckGeoIP(o) {
 			if o.Warn != nil {
@@ -72,13 +79,6 @@ func Launch(ctx context.Context, o camoucrome.Options, opts ...Option) (*Browser
 				fmt.Fprintln(os.Stderr, "camoucrome: "+m)
 			}
 		}
-	}
-	keys, err := camoucrome.EffectiveKeys(o.Config, o.Preset)
-	if err != nil {
-		return nil, fmt.Errorf("rodclient: launch: %w", err)
-	}
-	if err := camoucrome.CheckWindow(o, keys); err != nil {
-		return nil, fmt.Errorf("rodclient: launch: %w", err)
 	}
 	env, err := camoucrome.BuildEnv(o, os.Environ())
 	if err != nil {

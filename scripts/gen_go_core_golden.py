@@ -97,10 +97,15 @@ def write(name, v, indent=1):
 def check():
     """Regenerate into a temp dir and compare all files with the committed golden."""
     global OUT
-    want, OUT = OUT, pathlib.Path(tempfile.mkdtemp())
-    main()
-    names = sorted({p.name for p in want.iterdir()} | {p.name for p in OUT.iterdir()})
-    bad = [n for n in names if not (want / n).exists() or not (OUT / n).exists() or (want / n).read_bytes() != (OUT / n).read_bytes()]
+    want = OUT
+    with tempfile.TemporaryDirectory() as tmp:
+        OUT = pathlib.Path(tmp)
+        try:
+            main()
+            names = sorted({p.name for p in want.iterdir()} | {p.name for p in OUT.iterdir()})
+            bad = [n for n in names if not (want / n).exists() or not (OUT / n).exists() or (want / n).read_bytes() != (OUT / n).read_bytes()]
+        finally:
+            OUT = want
     if bad:
         sys.exit("golden differs from gen.py: " + ", ".join(bad) + " (a parity bug until proven a refresh; regenerate only after review)")
     print("golden fresh:", len(names), "files")
