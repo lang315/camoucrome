@@ -76,3 +76,46 @@ def test_build_verify_syncs_scripts_and_settings_with_delete():
 def test_run_prints_the_tail_of_a_failing_log():
     # the row detail lines ("n=.. span=..") do not match FAIL|DIFF|Error, so without the tail a CI failure hides its numbers
     assert 'tail -15 "/tmp/$1.log"' in text("build-verify.yml")
+
+
+def _run_fn():
+    import re
+    m = re.search(r"^ +(run\(\) \{.*\})$", text("build-verify.yml"), re.M)
+    assert m, "run() not found in build-verify.yml"
+    return m.group(1)
+
+
+def _call_run(tmp_path, rc, ok):
+    import os
+    import subprocess
+    py = tmp_path / "venv" / "bin" / "python3"
+    py.parent.mkdir(parents=True)
+    py.write_text(f"#!/bin/sh\necho 'UNMEASURED  no X'\nexit {rc}\n")
+    py.chmod(0o755)
+    env = dict(os.environ, VERIFY=str(tmp_path), OK3="1" if ok else "0")
+    return subprocess.run(["bash", "-c", _run_fn() + '\nrun verify_r6test.py'], env=env, capture_output=True, text=True)
+
+
+def test_run_fails_an_exit_3_the_line_did_not_declare(tmp_path):
+    r = _call_run(tmp_path, 3, False)
+    assert r.returncode != 0 and "FAILED verify_r6test.py" in r.stdout
+
+
+def test_run_lets_a_declared_exit_3_through_loudly(tmp_path):
+    r = _call_run(tmp_path, 3, True)
+    assert r.returncode == 0 and "UNMEASURED verify_r6test.py" in r.stdout
+
+
+def test_run_still_fails_exit_1_even_when_unmeasured_ok(tmp_path):
+    assert _call_run(tmp_path, 1, True).returncode != 0
+
+
+def test_the_loop_passes_unmeasured_ok_to_run():
+    assert 'OK3=$ok run "$script"' in text("build-verify.yml")
+
+
+def test_a_busy_box_is_waited_for_a_dirty_checkout_is_not():
+    t = text("build-verify.yml")
+    step = t[t.index("checkout is clean and no build is running"):t.index("pushed change set == built checkout")]
+    assert "sleep 60" in step and "minute" in step
+    assert step.index("checkout dirty") < step.index("sleep 60")
