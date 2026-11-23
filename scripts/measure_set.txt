@@ -12,6 +12,7 @@ measure measure_driver_probes.py  # where=box: runs on the box (WSL content_shel
 measure measure_input_probes.py  # where=host: docstring: runs on the Windows host
 measure measure_layer3.py  # where=host: docstring: runs on the Windows host
 measure measure_netinfo.py  # where=host: docstring: runs on the Windows host
+measure measure_page_feel.py  # where=host: docstring: runs on the Windows host (session 1), a counter worker in a COOP/COEP page
 measure measure_observe_cost.py  # where=host: docstring: runs on the Windows host
 measure measure_remote_voices.py  # where=host: docstring: runs on the Windows host
 measure measure_sp2b_attach.py  # where=retired: named dead by the 2026-11-22 project review (Task 2 F4)

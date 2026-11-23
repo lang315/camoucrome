@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <vector>
 
 #include "base/check_op.h"
@@ -216,23 +217,23 @@ std::vector<TrajectoryPoint> ResampleToPollRate(
   }
   const double period = 1000.0 / hz;
   // Spacing tolerance: the jitter of a point is half of it, so two neighbours
-  // differ by at most the whole. The caller stamps each sample with its time
-  // here, not with the time a timer fired (the UI thread's timers wake on whole
-  // ms, which spread the gaps of 125 Hz by up to 1 ms in a way no mouse does),
-  // so the spread a page sees is this one. At 125 Hz two neighbours differ by
-  // at most 1.0 ms (the jitter of a point is +-0.5 ms), and kWholeShare of the
-  // samples take the jitter of the one before: their gap is exactly 8 ms. The
-  // page reads a stamp through Blink's TimeClamper (a random rounding threshold
-  // per 100 us), under which an exact 8 ms gap is a whole ms two times in
-  // three. The shape is fitted so that 59-62 % of the gaps lie within 8 +-0.25
-  // ms (I2b core_share) and 24-28 % are whole ms (I2c whole_share), as in
-  // stock's own 125 Hz stream, pooled over 3 host sessions with SendInput
-  // (2026-11-22). The unit test repeats the fit under the TimeClamper's rule.
-  // The stream's tail (a gap of 10 ms then one of 5) is the harness's own and
-  // is not imitated. 1000 Hz keeps +-0.1 ms: no true 1 kHz control exists,
-  // unverified.
-  constexpr double kWholeShare = 0.28;
-  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 1.0 : period / 16;
+  // differ by at most the whole. The caller forwards each sample within about
+  // 0.1 ms of its time here (a pacer thread, not the UI thread's whole-ms wait)
+  // and stamps Now(), as stock does, so the gaps a page reads are these plus
+  // that small wake noise. At 125 Hz two neighbours differ by at most 1.1 ms
+  // (the jitter of a point is +-0.55 ms), and kWholeShare of the samples take
+  // the jitter of the one before: their gap is exactly 8 ms. The page reads a
+  // stamp through Blink's TimeClamper (a random rounding threshold per 100 us),
+  // under which an exact 8 ms gap is a whole ms two times in three, less the
+  // wake noise. The shape is fitted, with the wake noise measured on the host
+  // (2026-11-23), so that 59-66 % of the gaps lie within 8 +-0.25 ms (I2b
+  // core_share) and 21-29 % are whole ms (I2c whole_share), as in stock's own
+  // 125 Hz stream, pooled over the host sessions with SendInput. The unit test
+  // repeats the fit under the TimeClamper's rule. The stream's tail (a gap of
+  // 10 ms then one of 5) is the harness's own and is not imitated. 1000 Hz
+  // keeps +-0.1 ms: no true 1 kHz control exists, unverified.
+  constexpr double kWholeShare = 0.40;
+  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 1.1 : period / 16;
   const double jitter = tol / 2;
   const size_t n = path.size();
   std::vector<double> t(n);
@@ -333,6 +334,14 @@ bool IsRepeatedPosition(gfx::PointF last, gfx::PointF p, gfx::SizeF size) {
 
 bool PointInView(gfx::PointF p, gfx::SizeF size) {
   return gfx::RectF(size).Contains(p);
+}
+
+std::optional<base::TimeDelta> PacerSleepBefore(base::TimeDelta remaining,
+                                                base::TimeDelta lead) {
+  if (remaining <= lead) {
+    return std::nullopt;
+  }
+  return remaining - lead;
 }
 
 }  // namespace camoucfg
