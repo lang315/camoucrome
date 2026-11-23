@@ -209,6 +209,19 @@ startup abort instead of a silent fall-back to real values.
   suite, client tests, the main browser verifies. It refuses a dirty checkout
   or a running ninja rather than racing them; `gh workflow run build-verify`
   re-runs by hand (`measurements/2026-09-13-ci-build-verify.md`).
+- **Box evidence before the merge:** a push runs `build-verify` only on
+  `main`, and 7 of the 10 verify failures that reached `main` between
+  2026-10-29 and 2026-11-22 would have shown on the branch. Before the
+  local merge of a PR that touches `additions/`, `patches/`, `settings/`,
+  `scripts/` or `client/`, run
+  `gh workflow run build-verify --ref <branch>` and merge only on a green
+  run. First check that no other `build-verify` run is in progress and
+  that no host run is going (a run takes the build lock). The sync gate
+  compares the branch with `~/chromium/src`, so for a change-set branch the
+  box checkout must already hold the branch's commits. A green dispatch is
+  proven only for a branch that leaves the change set alone (runs
+  42391141213 and 45044941772). The dispatch leaves the box's verify
+  mirror at the branch's scripts until the next run on `main`.
 - **One build at a time:** the box has 32 GB of RAM, shared by Windows and
   the WSL VM (capped at 26 GB plus 12 GB swap in `.wslconfig`), so every
   Chromium build (WSL or the native Windows tree) takes
