@@ -37,7 +37,7 @@ import sp2e_analysis as an
 
 WIN = {"ua:osInfo": "Windows NT 10.0; Win64; x64", "ua:platform": "Windows"}
 HUM = {"humanize:enabled": True}  # default bounds 80..1200 ms
-PRIME = (100.0, 200.0)
+PRIME = (60.0, 200.0)  # row 10's first target is x=100: a PRIME there made it a zero-length move, seen only by rounding
 
 PAGE = ("<!doctype html><body style='margin:0;height:40000px'><script>"
         "window.__log=[];"

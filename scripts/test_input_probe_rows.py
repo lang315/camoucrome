@@ -382,6 +382,19 @@ class I7(unittest.TestCase):
         self.assertEqual(R.row_verdict(v), "FAIL")
         self.assertEqual(v["pair_share"][0], "FAIL")
 
+    def test_red_constant_extra_delay_fails_on_mean_and_ks(self):
+        """round 1 shape (r16b): steady (sd passes) but ~1.1 ms later than the control, a different distribution"""
+        v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(lat=2.1, jitter=0.13))))
+        self.assertEqual(v["lat_sd"][0], "PASS")
+        self.assertEqual(v["pair_share"][0], "PASS")
+        self.assertEqual(v["lat_mean"][0], "FAIL")
+        self.assertEqual(v["lat_ks"][0], "FAIL")
+        self.assertEqual(R.row_verdict(v), "FAIL")
+
+    def test_small_mean_shift_inside_tolerance_passes(self):
+        v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(lat=1.1, jitter=0.13))))
+        self.assertEqual(v["lat_mean"][0], "PASS")
+
     def test_a_handful_of_raw_events_is_not_a_verdict(self):
         """two raw events must not decide the row: a minimum count"""
         v = R.judge("I7", self.groups(), many(lambda i: log(self.raw(n=R.MIN_RAW - 1))))
