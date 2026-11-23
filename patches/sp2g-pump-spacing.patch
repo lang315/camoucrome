@@ -1,8 +1,8 @@
 diff --git a/content/browser/devtools/protocol/input_handler.cc b/content/browser/devtools/protocol/input_handler.cc
-index 891a01e276..7129cf359d 100644
+index 891a01e276..37e306f98c 100644
 --- a/content/browser/devtools/protocol/input_handler.cc
 +++ b/content/browser/devtools/protocol/input_handler.cc
-@@ -74,6 +74,20 @@
+@@ -74,6 +74,24 @@
  #include "ui/aura/window.h"
  #endif
  
@@ -18,12 +18,16 @@ index 891a01e276..7129cf359d 100644
 +#include "base/threading/platform_thread.h"
 +#include "base/time/time.h"
 +#include "base/win/scoped_handle.h"
++
++// <windows.h> defines CreateEvent as CreateEventW (UNICODE), which would rename
++// NativeInputEventBuilder::CreateEvent below.
++#undef CreateEvent
 +#endif
 +
  namespace content::protocol {
  
  namespace {
-@@ -751,12 +765,146 @@ bool NamesAButton(const blink::WebMouseEvent& event) {
+@@ -751,12 +769,146 @@ bool NamesAButton(const blink::WebMouseEvent& event) {
  }
  }  // namespace
  
@@ -175,7 +179,7 @@ index 891a01e276..7129cf359d 100644
  class InputHandler::PreciseSamplePump {
   public:
    struct Step {
-@@ -780,15 +928,59 @@ class InputHandler::PreciseSamplePump {
+@@ -780,15 +932,59 @@ class InputHandler::PreciseSamplePump {
          callback_(std::move(callback)) {}
  
    ~PreciseSamplePump() {
@@ -236,7 +240,7 @@ index 891a01e276..7129cf359d 100644
    void Arm() {
      // Absolute times: a late timer moves when a sample goes out, never when
      // the next one does.
-@@ -802,7 +994,9 @@ class InputHandler::PreciseSamplePump {
+@@ -802,7 +998,9 @@ class InputHandler::PreciseSamplePump {
      if (next_ < steps_.size()) {
        InputHandler::ForwardSyntheticMouseMove(handler_, widget_,
                                                steps_[next_++].event);
@@ -247,7 +251,7 @@ index 891a01e276..7129cf359d 100644
        return;
      }
      InputHandler::ForwardHumanizedMouseEventCompletion(
-@@ -823,6 +1017,12 @@ class InputHandler::PreciseSamplePump {
+@@ -823,6 +1021,12 @@ class InputHandler::PreciseSamplePump {
    bool skip_final_;
    std::unique_ptr<DispatchMouseEventCallback> callback_;
    base::DeadlineTimer timer_;
