@@ -600,6 +600,7 @@ def test_stage_refuses_a_keys_h_one_key_short_of_keys_json(tree, tmp_path):
     text = h.read_text()
     block = text.index("kAllKeys")
     h.write_text(text[:block] + text[block:].replace("    kUaOsInfo,\n", "", 1))  # the real kUaOsInfo constant stays declared
+    os.utime(out / "chrome", (h.stat().st_mtime + 100,) * 2)  # the edit is part of the build: not the stale-source refusal
     with pytest.raises(SystemExit, match="kUaOsInfo"):
         package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False)
 
@@ -612,3 +613,49 @@ def test_the_staged_layout_is_where_the_launcher_looks_for_the_stamp(tree, tmp_p
     launcher.check_archive(staging / "chrome", {"webGpu:blocked": True})
     with pytest.raises(ValueError, match="zz:new"):
         launcher.check_archive(staging / "chrome", {"zz:new": 1})
+
+
+def _stage_stale(tree, tmp_path, **kw):
+    src, out, deps = tree
+    return package.stage(src, out, package.runtime_deps(src, out, deps), "linux-x64", tmp_path / "dist", False, **kw)
+
+
+def _changed_source(tree, source, newer):
+    """A change-set file in the Chromium tree, with an mtime newer or older than the main binary."""
+    src, out, _ = tree
+    f = src / source
+    f.write_text("// new")
+    subprocess.run(["git", "add", "-A"], cwd=src, check=True)  # tracked, so `git diff <pin>` lists it
+    os.utime(out / "chrome", (2_000_000, 2_000_000))
+    os.utime(f, (2_001_000 if newer else 1_999_000,) * 2)
+
+
+def test_stage_refuses_a_changed_source_newer_than_the_binary(tree, tmp_path):
+    _changed_source(tree, "chrome/hook.cc", newer=True)
+    with pytest.raises(SystemExit) as e:
+        _stage_stale(tree, tmp_path)
+    assert "chrome/hook.cc" in str(e.value) and "--allow-stale" in str(e.value)
+
+
+def test_stage_passes_a_changed_source_older_than_the_binary(tree, tmp_path):
+    _changed_source(tree, "chrome/hook.cc", newer=False)
+    _stage_stale(tree, tmp_path)
+
+
+def test_stage_ignores_a_newer_file_that_is_not_cpp(tree, tmp_path):
+    _changed_source(tree, "chrome/notes.md", newer=True)
+    _stage_stale(tree, tmp_path)
+
+
+def test_stage_allow_stale_packages_with_a_warning(tree, tmp_path, capsys):
+    _changed_source(tree, "chrome/hook.cc", newer=True)
+    _stage_stale(tree, tmp_path, allow_stale="comment-only edit")
+    assert "comment-only edit" in capsys.readouterr().err
+
+
+def test_repo_file_mtimes_are_not_judged(tree, tmp_path):
+    # a git pull after the build makes repo files newer with identical content; the sync gate compares content
+    src, out, _ = tree
+    os.utime(out / "chrome", (1_000, 1_000))
+    _stage_stale(tree, tmp_path)
+
