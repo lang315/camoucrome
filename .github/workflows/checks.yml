@@ -131,6 +131,10 @@ jobs:
       - name: go client tests
         if: ${{ !cancelled() }}
         run: cd client/go && go vet ./... && go test ./...
+      # Its own module, so the step above never reaches it; pin_windows.go and host_windows.go build only here.
+      - name: go core tests (own module)
+        if: ${{ !cancelled() }}
+        run: cd client/go/core && go vet ./... && go test ./...
       - name: node client tests
         if: ${{ !cancelled() }}
         run: cd client/node && npm test
