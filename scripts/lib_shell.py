@@ -467,12 +467,13 @@ def _exit_if_unmeasured(lines, exit=os._exit, status=_STATUS):
 
 def _watch_failure(status=_STATUS):
     """atexit cannot read the exit code, so record it: wrap sys.exit and sys.excepthook. Every verify ends
-    in sys.exit(0 if all-PASS else 1) or an uncaught exception; a bare `raise SystemExit` is not seen."""
+    in sys.exit(0 if all-PASS else 1) or an uncaught exception; a bare `raise SystemExit` is not seen, nor is a
+    `from sys import exit` bound before this wrap (none in scripts/verify_*.py or lib_shell.py)."""
     import sys
     real_exit, real_hook = sys.exit, sys.excepthook
 
     def watched_exit(code=None):
-        if code not in (None, 0):
+        if code not in (None, 0, 3):  # 3 is the deliberate UNMEASURED exit, not a failure
             status["failed"] = True
         real_exit(code)
 
