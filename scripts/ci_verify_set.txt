@@ -12,7 +12,8 @@ run verify_sp1a_chrome.py
 run verify_sp2c.py
 run verify_sp4_voices.py
 run verify_fonts_bundle.py
-run verify_host_oracle.py
+# unmeasured-ok: exit 3 only when the Windows GPU-crash gate reads nonzero or unreadable (os.name == "nt"); never on the Linux runner
+run verify_host_oracle.py unmeasured-ok
 run verify_course.py
 run verify_webauthn_coherence.py
 run verify_windows_behaviour.py
@@ -22,7 +23,8 @@ run verify_sp6b_driver.py
 run verify_sp2e.py
 run verify_input_grid_edge.py
 run verify_input_burst.py
-run verify_sp2b.py
+# unmeasured-ok: exit 3 when the humanize session ran on throttled frames (sp2b_analysis.throttled; #154): the window was measured, not the hook
+run verify_sp2b.py unmeasured-ok
 run verify_sp7_codecs.py
 run verify_sp7_fieldtrial.py
 run verify_sp1b.py

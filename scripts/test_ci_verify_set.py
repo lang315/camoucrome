@@ -76,9 +76,10 @@ def test_unmeasured_ok_is_kept_by_the_parser_and_the_listing():
     assert cv.listing(e) == ["verify_a.py unmeasured-ok X=1", "verify_b.py"]
 
 
-def test_only_the_launcher_is_declared_unmeasured_ok():
-    # the one verify that ended UNMEASURED in the last green run (45096877347): no X server for a headed launch
-    assert [e.script for e in cv.load() if e.unmeasured_ok] == ["verify_sp6b_launcher.py"]
+def test_only_verifies_whose_exit_3_is_an_environment_premise_are_declared_unmeasured_ok():
+    # launcher: no X server; sp2b: throttled frames (#154); host_oracle: Windows GPU-crash gate. verify_observer_page cannot
+    # exit 3 (no row is ever built unmeasured), so a 3 there means the check broke: it stays undeclared.
+    assert sorted(e.script for e in cv.load() if e.unmeasured_ok) == ["verify_host_oracle.py", "verify_sp2b.py", "verify_sp6b_launcher.py"]
 
 
 def test_unmeasured_ok_is_for_run_lines_only():
