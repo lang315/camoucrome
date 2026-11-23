@@ -2,10 +2,13 @@
 # pre-rebase hook for the build box's Chromium checkout (~/chromium/src). NOT for the Mac clone:
 # scripts/hooks/ is the Mac's core.hooksPath, so this lives in scripts/box-hooks/.
 #
-# Install on the box (once, from the runner's clone of the repo):
-#   git -C ~/chromium/src config core.hooksPath ~/camoucrome/scripts/box-hooks
-#   (or: ln -s <repo>/scripts/box-hooks/pre-rebase ~/chromium/src/.git/hooks/pre-rebase)
-# Check:  git -C ~/chromium/src config core.hooksPath
+# Install on the box (once; not done by any merge): copy it, so a CI checkout of the runner's clone
+# cannot change it under a running rebase, into the shared git dir's hooks (every worktree of that
+# git dir, ~/chromium-<ver> trees included, gets it; it acts only on camoucrome/main):
+#   cp ~/actions-runner/_work/camoucrome/camoucrome/scripts/box-hooks/pre-rebase "$(git -C ~/chromium/src rev-parse --git-common-dir)/hooks/pre-rebase"
+#   chmod +x "$(git -C ~/chromium/src rev-parse --git-common-dir)/hooks/pre-rebase"
+# Check:  ls -l "$(git -C ~/chromium/src rev-parse --git-common-dir)/hooks/pre-rebase"
+# It never fires on `git commit` or `git commit --amend` (a new tip patch, or an amended tip): only on `git rebase`.
 #
 # Refuses a rebase of camoucrome/main that would replay more than 3 commits, which also covers
 # `rebase -i` and --autosquash (git passes the same <upstream> [<branch>]). Why: a rebase rewrites
