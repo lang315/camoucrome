@@ -79,18 +79,18 @@ for i in "${!COMMITS[@]}"; do
 done
 
 # Each mapped dir is replaced whole by the branch's copy, extracted to a temp dir first so a failing archive
-# cannot leave additions/ emptied. A branch without the dir (older than the LGPL slice) leaves it as is.
+# cannot leave additions/ emptied. A mapped dir absent on the branch is an error, checked for all of them
+# before anything is replaced.
 while read -r a t; do
-  if git -C "$SRC" cat-file -e "$BRANCH:$t" 2>/dev/null; then
-    d="$(mktemp -d)"
-    mkdir -p "$d/new"
-    git -C "$SRC" archive "$BRANCH" "$t" | tar -x -C "$d/new" --strip-components="$(awk -F/ '{print NF}' <<< "$t")"
-    rm -rf "${ROOT:?}/$a"
-    mv "$d/new" "$ROOT/$a"
-    rmdir "$d"
-  else
-    echo "  $t absent on $BRANCH: $a left as is"
-  fi
+  git -C "$SRC" cat-file -e "$BRANCH:$t" 2>/dev/null || { echo "error: $t (additions_map.txt: $a) is absent on $BRANCH" >&2; exit 1; }
+done < <(additions_map)
+while read -r a t; do
+  d="$(mktemp -d)"
+  mkdir -p "$d/new"
+  git -C "$SRC" archive "$BRANCH" "$t" | tar -x -C "$d/new" --strip-components="$(awk -F/ '{print NF}' <<< "$t")"
+  rm -rf "${ROOT:?}/$a"
+  mv "$d/new" "$ROOT/$a"
+  rmdir "$d"
 done < <(additions_map)
 # The one place the two layouts differ (see apply.sh): the registry is edited
 # in settings/ and read from beside the header in the tree.

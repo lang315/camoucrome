@@ -1,7 +1,7 @@
 """export.sh and the camoucfg_lgpl directory.
 
 Runs scripts/export.sh against a throwaway Chromium-like git repo.
-  - branch without components/camoucfg_lgpl: exit 0, additions/camoucfg_lgpl kept
+  - branch without components/camoucfg_lgpl: exit 1 naming it, nothing under additions/ replaced
   - branch with it: additions/camoucfg_lgpl replaced by the branch's content
   - OLD_BLOCK (the pre-fix wipe-then-archive, inlined so no commit is needed)
     swapped in for the guarded block loses the sentinel: the first case can fail.
@@ -44,9 +44,10 @@ def current_script():
 
 def old_script():
     s = current_script()
-    i = s.index("while read -r a t; do\n  if git")
+    i = s.index("# Each mapped dir is replaced whole")
     end = "done < <(additions_map)\n"
-    j = s.index(end, i) + len(end)
+    j = s.index("# The one place the two layouts differ")
+    j = s.rindex(end, i, j) + len(end)
     return s[:i] + OLD_BLOCK + s[j:]
 
 
@@ -84,6 +85,7 @@ class ExportLgpl:
             (root / "upstream.env").write_text(f"CHROMIUM_REV={rev}\n")
             for d in ("patches", "settings", "additions/camoucfg"):
                 (root / d).mkdir(parents=True)
+            (root / "additions/camoucfg/stale").write_text("stale\n")
             sentinel = root / "additions/camoucfg_lgpl/sentinel"
             sentinel.parent.mkdir()
             sentinel.write_text("keep\n")
@@ -92,6 +94,9 @@ class ExportLgpl:
             out = r.stdout + r.stderr
             self.assertEqual(r.returncode == 0, self.expect_rc0, out)
             self.assertEqual(sentinel.exists(), self.sentinel_survives, out)
+            if not self.with_lgpl and self.expect_rc0 is False and self.script_text is None:
+                self.assertIn("components/camoucfg_lgpl", r.stderr)
+                self.assertTrue((root / "additions/camoucfg/stale").exists(), out)  # camoucfg not replaced either
             if self.with_lgpl:
                 lg = root / "additions/camoucfg_lgpl"
                 self.assertEqual((lg / "new.txt").read_text(), "new\n")
@@ -99,7 +104,8 @@ class ExportLgpl:
 
 
 class BranchWithoutLgpl(ExportLgpl, unittest.TestCase):
-    pass
+    """A mapped dir absent on the branch fails closed, before any dir is replaced."""
+    expect_rc0 = False
 
 
 class BranchWithLgpl(ExportLgpl, unittest.TestCase):
