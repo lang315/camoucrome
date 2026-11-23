@@ -38,8 +38,8 @@ security fixes of newer Chrome, including later patches of its own milestone.** 
 ## Install
 
 `<tag>` is the release tag, `v<chrome-version>-<n>`, as shown on the release page.
-`<sha>` is a full commit SHA from this repository. For the Latest release, `v157.0.8103.51-15`,
-it is `6245598c258e70f1e2b881cd0eb06ad0405f6a08`; the Go and Node lines below already name it.
+`<sha>` is a full commit SHA from this repository. For the Latest release, `v157.0.8103.51-16`,
+it is `e353ec0a76b154c85a292e3336d94344631542d0`; the Go and Node lines below already name it.
 `<chrome-version>` is the Chrome version the release is built on.
 
 Run everything below in an elevated PowerShell ("Run as administrator"), because the
@@ -99,9 +99,9 @@ The archive carries `LICENSE`, `LICENSE.chromium` and `about_credits.html`.
 
 Other clients:
 
-- Go: `go get github.com/lang315/camoucrome/client/go@6245598c258e70f1e2b881cd0eb06ad0405f6a08`. Go generates identities by
+- Go: `go get github.com/lang315/camoucrome/client/go@e353ec0a76b154c85a292e3336d94344631542d0`. Go generates identities by
   calling `python -m camoucrome.gen`, so install the Python package above too.
-- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v157.0.8103.51-15/camoucrome-0.1.6.tgz`.
+- Node: `npm install https://github.com/lang315/camoucrome/releases/download/v157.0.8103.51-16/camoucrome-0.1.7.tgz`.
   Node also calls `python -m camoucrome.gen`, so install the Python package above too.
 
 **BREAKING in `v157.0.8103.51-14`: the clients are strict by default** (a malformed or incoherent config exits 13 instead of falling
@@ -112,7 +112,7 @@ back to real values; lax is the opt-out), and the Node and Python clients refuse
 The archive is on the same release: `camoucrome-<chrome-version>-linux-x64.tar.xz` (releases up to
 `v156.0.8078.48-4` name it `...-linux-x64-beta.tar.xz`).
 
-**`v157.0.8103.51-15` is Windows only and has no Linux archive. On Linux, use `v157.0.8103.51-12`**
+**`v157.0.8103.51-16` is Windows only and has no Linux archive. On Linux, use `v157.0.8103.51-12`**
 (`<tag>` below; its commit is `0eb6cbfb1a2f5639d9aeb602a60228ba2ddf0a62`).
 
 1. As root, install the shared libraries the browser needs, plus Python 3, `git` and `xz`. Fedora and RHEL:
