@@ -318,7 +318,7 @@ std::vector<double> Gaps(const std::vector<TrajectoryPoint>& path) {
 TEST(MouseTrajectoriesTest, ResampleSpacingMatchesTheRate) {
   const auto in = CursoryLike(60);
   for (auto [hz, period, tol] :
-       {std::tuple{125u, 8.0, 0.7}, std::tuple{1000u, 1.0, 0.1}}) {
+       {std::tuple{125u, 8.0, 0.8}, std::tuple{1000u, 1.0, 0.1}}) {
     auto out = ResampleToPollRate(in, hz, 42);
     ASSERT_GT(out.size(), in.size()) << hz;
     std::vector<double> gaps = Gaps(out);
@@ -332,34 +332,36 @@ TEST(MouseTrajectoriesTest, ResampleSpacingMatchesTheRate) {
   }
 }
 
-// I2b: a real 125 Hz stream has 59 % of its gaps within 8 +-0.25 ms (the
-// control's pooled .593 / .597 / .616); the gaps of the old +-0.2 ms jitter were
-// all inside it.
-TEST(MouseTrajectoriesTest, Resample125HzGapsHaveTheShapeOfAMouseStream) {
+// I2b core_share and I2c whole_share as the page reads them: the stamps are
+// coarsened to 0.1 ms and start at an arbitrary phase. The control's pooled
+// values are .60 (+-.037) and .26 (+-.06); the old +-0.2 ms jitter gave 1.00
+// and .10.
+TEST(MouseTrajectoriesTest, Resample125HzCoreAndWholeShareMatchAMouseStream) {
   const auto in = CursoryLike(60);
   int core = 0;
+  int whole = 0;
   int total = 0;
   for (uint64_t seed = 1; seed <= 200; ++seed) {
-    std::vector<double> gaps = Gaps(ResampleToPollRate(in, 125, seed));
-    for (size_t i = 0; i + 1 < gaps.size(); ++i) {  // not the end's gap
+    const int64_t phase_us = static_cast<int64_t>(seed * 37 % 100);
+    std::vector<double> stamps_ms;
+    auto out = ResampleToPollRate(in, 125, seed);
+    for (size_t i = 1; i + 1 < out.size(); ++i) {  // interior samples only
+      int64_t us = 1'000'000'000 + phase_us + out[i].offset.InMicroseconds();
+      stamps_ms.push_back(static_cast<double>(us / 100 * 100) / 1000.0);
+    }
+    for (size_t i = 1; i < stamps_ms.size(); ++i) {
+      const double gap = stamps_ms[i] - stamps_ms[i - 1];
       ++total;
-      core += std::abs(gaps[i] - 8.0) <= 0.25;
+      core += std::abs(gap - 8.0) <= 0.25;
+      whole += std::abs(gap - std::round(gap)) < 0.05;
     }
   }
-  const double share = static_cast<double>(core) / total;
-  EXPECT_GT(share, 0.55);
-  EXPECT_LT(share, 0.63);
-}
-
-// The 1000 Hz spread is unchanged: no true 1 kHz control exists.
-TEST(MouseTrajectoriesTest, Resample1000HzKeepsItsTightSpread) {
-  const auto in = CursoryLike(60);
-  for (uint64_t seed = 1; seed <= 20; ++seed) {
-    std::vector<double> gaps = Gaps(ResampleToPollRate(in, 1000, seed));
-    for (size_t i = 0; i + 1 < gaps.size(); ++i) {
-      EXPECT_LE(std::abs(gaps[i] - 1.0), 0.1 + 1e-6);
-    }
-  }
+  const double core_share = static_cast<double>(core) / total;
+  const double whole_share = static_cast<double>(whole) / total;
+  EXPECT_GT(core_share, 0.565) << core_share;
+  EXPECT_LT(core_share, 0.64) << core_share;
+  EXPECT_GT(whole_share, 0.20) << whole_share;
+  EXPECT_LT(whole_share, 0.32) << whole_share;
 }
 
 TEST(MouseTrajectoriesTest, ResampleIsMonotonicAndKeepsTheEnds) {

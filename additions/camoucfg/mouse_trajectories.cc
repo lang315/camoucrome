@@ -219,12 +219,17 @@ std::vector<TrajectoryPoint> ResampleToPollRate(
   // differ by at most the whole. The caller stamps each sample with its time
   // here, not with the time a timer fired (the UI thread's timers wake on whole
   // ms, which spread the gaps of 125 Hz by up to 1 ms in a way no mouse does),
-  // so the spread a page sees is this one. At 125 Hz it is +-0.7 ms: the gap
-  // is then triangular and 59 % of the gaps lie within 8 +-0.25 ms, as with
-  // stock's own 125 Hz stream (pooled 2026-11-22 with SendInput, sessions
-  // .593 / .597 / .616). 1000 Hz keeps +-0.1 ms: no true 1 kHz control exists,
-  // unverified.
-  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 0.7 : period / 16;
+  // so the spread a page sees is this one. At 125 Hz it is +-0.8 ms, and
+  // kWholeShare of the samples take the jitter of the one before: their gap is
+  // exactly 8 ms, as 24-30 % of a real 125 Hz stream's gaps are whole ms (I2c
+  // whole_share) while 59-62 % lie within 8 +-0.25 ms (I2b core_share). Both
+  // are fitted by simulation to stock's own stream, pooled over 3 host
+  // sessions with SendInput (2026-11-22), with stamps coarsened to 0.1 ms
+  // (the unit test repeats the fit); its tail (a gap of 10 ms then one of 5)
+  // is the harness's own and is not imitated. 1000 Hz keeps +-0.1 ms: no true
+  // 1 kHz control exists, unverified.
+  constexpr double kWholeShare = 0.16;
+  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 0.8 : period / 16;
   const double jitter = tol / 2;
   const size_t n = path.size();
   std::vector<double> t(n);
@@ -262,12 +267,18 @@ std::vector<TrajectoryPoint> ResampleToPollRate(
   const double end = t.back();
   size_t seg = 0;
   double prev = t.front();
+  double prev_j = 0.0;
   for (int k = 1;; ++k) {
     double nominal = t.front() + k * period;
     if (end - nominal < period / 2) {
       break;  // too close to the end: the end itself takes its place
     }
-    double ms = nominal + rng.NextUniform(-jitter, jitter);
+    double j = rng.NextUniform(-jitter, jitter);
+    if (hz == 125 && k > 1 && rng.NextUniform(0.0, 1.0) < kWholeShare) {
+      j = prev_j;  // a gap of exactly one period
+    }
+    prev_j = j;
+    double ms = nominal + j;
     ms = std::max(ms, prev + period / 4);  // strictly increasing
     prev = ms;
     while (seg + 2 < n && ms >= t[seg + 1]) {
