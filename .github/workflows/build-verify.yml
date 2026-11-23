@@ -31,14 +31,10 @@ jobs:
     runs-on: [self-hosted, buildpc-wsl]
     timeout-minutes: 180
     steps:
-      # $HOME, not a literal home path: the repository is public (spec 2026-10-18), and env: does not expand ~
-      - name: box paths
-        run: |
-          { echo "SRC=$HOME/chromium/src"; echo "VERIFY=$HOME/camoucrome-verify"
-            echo "CLIENT=$HOME/camoucrome-client"; echo "PLAYWRIGHT_NODEJS_PATH=$HOME/camoucrome-driver/node"; } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - name: checkout is clean and no build is running
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           set -e
           cd "$SRC"
           test "$(git rev-parse --abbrev-ref HEAD)" = camoucrome/main || { echo "not on camoucrome/main"; exit 1; }
@@ -50,6 +46,7 @@ jobs:
         run: bash scripts/check_checkout_sync.sh
       - name: pre-flight checks
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           python3 scripts/check_additions_build.py
           python3 scripts/check_lgpl_boundary.py
           python3 scripts/gen_cursory_table.py --check
@@ -58,6 +55,7 @@ jobs:
           python3 scripts/check_patch_deps.py --src "$SRC"
       - name: sync the client tree the verifies import
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           # --delete so a module removed from the repo cannot linger and still
           # import; baselines/ keeps box-local captures, so it is not mirrored.
           rsync -a --delete --exclude '*.egg-info' --exclude node_modules --exclude __pycache__ client/ "$CLIENT/client/"
@@ -76,6 +74,7 @@ jobs:
           "$VERIFY/venv/bin/python3" -m pip install -q pycryptodome==3.23.0 2>&1 | tail -1
       - name: build out/Default (chrome, content_shell, components_unittests)
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           export PATH=$HOME/depot_tools:$PATH
           L="$GITHUB_WORKSPACE/scripts/build_lock.sh"; OWNER="ci run $GITHUB_RUN_ID"
           bash "$L" acquire "$OWNER"
@@ -85,6 +84,7 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/ci_checks.py" steps /tmp/build.txt
       - name: camoucfg unit suites
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           cd "$SRC"
           F=$(grep -hoE '^TEST(_F)?\(\w+' components/camoucfg/*_unittest.cc components/camoucfg_lgpl/*_unittest.cc | sed -E 's/^TEST(_F)?\(//' | sort -u | grep -v CoherenceValidatorTest | sed 's/$/.*/' | paste -sd:)
           test -n "$F" || { echo "no camoucfg test suites found in components/camoucfg*/*_unittest.cc"; exit 1; }
@@ -99,6 +99,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/scripts/run_coherence_tests.sh" 2>&1 | tail -1
       - name: client tests
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           CAMOU_CHROMIUM_SRC="$SRC" "$VERIFY/venv/bin/python3" -m pytest -q client/python/tests scripts/test_font_suffix.py scripts/test_fonts.py scripts/test_gen_keys.py scripts/test_winhost.py scripts/test_capture_wheel_oracle.py scripts/test_package.py scripts/test_check_patch_deps.py scripts/test_build_lock.py scripts/test_windows_verify_set.py scripts/test_gpu_gate.py scripts/test_step2_rows.py scripts/test_verify_d_pointer_touch.py scripts/test_verify_sp7_phonehome.py scripts/test_observe_report.py scripts/test_observe_judge.py scripts/test_verify_observe.py scripts/test_lib_ws_server.py scripts/test_measure_audio_text.py scripts/test_measure_observe_cost.py scripts/test_observer_live.py scripts/test_verify_course.py scripts/test_verify_webauthn_coherence.py 2>&1 | tail -1
           (cd client/go && go test ./... 2>&1 | tail -2)
           (cd client/go/rodclient && go test ./... 2>&1 | tail -2)
@@ -112,6 +113,7 @@ jobs:
           cd client/go/rodclient && go build -o "$HOME/camoucrome-go/camoucrome-probe-rodclient" ./cmd/camoucrome-probe-rodclient
       - name: browser verifies
         run: |
+          source "$GITHUB_WORKSPACE/scripts/ci_paths.sh"
           cd "$VERIFY"
           rc=0
           # exit 3 is UNMEASURED (a premise the box cannot give, e.g. no X server for a headed launch): printed loudly, not a pass
@@ -132,6 +134,16 @@ jobs:
           # needs camou_observe = true in out/Default/args.gn (docs/observer/README.md): a missing arg fails the job, because a
           # skipped verify_observe left the observer's checks out and the job green
           if grep -q '^camou_observe = true' "$HOME/chromium/src/out/Default/args.gn"; then run verify_observe.py || rc=1; run verify_observer_page.py || rc=1; else echo "FAILED verify_observe.py: camou_observe = true is not in out/Default/args.gn"; rc=1; fi
+          exit $rc
+      # check_privacy prints file and category, never the matched text; a hit fails here, before the upload
+      - name: scan verify logs for host paths
+        if: always()
+        run: |
+          rc=0
+          for f in /tmp/verify_*.log; do
+            [ -e "$f" ] || continue
+            python3 scripts/check_privacy.py --file "$f" > /tmp/privacy_scan.txt 2>&1 || { echo "host-identifying data in $(basename "$f"): $(wc -l < /tmp/privacy_scan.txt) lines"; rc=1; }
+          done
           exit $rc
       - name: logs
         if: always()

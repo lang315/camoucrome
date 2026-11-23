@@ -164,7 +164,7 @@ def crash(url):
 
 def main():
     os.environ.pop("BREAKPAD_DUMP_LOCATION", None)  # the scenario is no client
-    print(f"binary: {lib_shell.CHROME}")
+    print(f"binary: {str(lib_shell.CHROME).replace(str(pathlib.Path.home()), '~')}")
     rows = [("C1", "renderer crash", "chrome://crash"),
             ("C2", "browser crash", None)]
     passed = failed = 0
