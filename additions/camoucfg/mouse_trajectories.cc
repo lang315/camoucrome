@@ -216,12 +216,15 @@ std::vector<TrajectoryPoint> ResampleToPollRate(
   }
   const double period = 1000.0 / hz;
   // Spacing tolerance: the jitter of a point is half of it, so two neighbours
-  // differ by at most the whole. The samples are delivered in real time and
-  // stamped when they are forwarded, so the spread a page sees comes from the
-  // timers (stock's own at 125 Hz: 56 % of the gaps within 8 +-0.25 ms, the rest
-  // a tail, measured 2026-11-22 with SendInput): the authored part stays tiny.
-  // 1000 Hz keeps +-0.1 ms: no true 1 kHz control exists, unverified.
-  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 0.2 : period / 16;
+  // differ by at most the whole. The caller stamps each sample with its time
+  // here, not with the time a timer fired (the UI thread's timers wake on whole
+  // ms, which spread the gaps of 125 Hz by up to 1 ms in a way no mouse does),
+  // so the spread a page sees is this one. At 125 Hz it is +-0.7 ms: the gap
+  // is then triangular and 59 % of the gaps lie within 8 +-0.25 ms, as with
+  // stock's own 125 Hz stream (pooled 2026-11-22 with SendInput, sessions
+  // .593 / .597 / .616). 1000 Hz keeps +-0.1 ms: no true 1 kHz control exists,
+  // unverified.
+  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 0.7 : period / 16;
   const double jitter = tol / 2;
   const size_t n = path.size();
   std::vector<double> t(n);
