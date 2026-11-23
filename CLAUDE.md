@@ -91,29 +91,39 @@ recreated to remove them; spec `docs/superpowers/specs/2026-10-18-public-repo-sc
 
 ## Read first
 
-`docs/superpowers/` (specs, plans, measurements) is local, not in git, since
-the 2026-10-18 recreate (`.gitignore`). Its history up to then is in git. A
-fresh clone restores the folder with
-`git archive f46525dde7 docs/superpowers | tar -x`, and new specs and plans stay in
-the local folder.
+`docs/superpowers/` (specs, plans, measurements) is not in this repository
+since the 2026-10-18 recreate (`.gitignore`). Since 2026-11-23 it is its own
+git repository in the owner's main clone, backed up to a **private** remote.
+Commit and push it there after each edit, and never add that remote to this
+public repository. A fresh clone of this repository restores only the folder
+as it was on 2026-10-18:
+`git archive f46525dde7 docs/superpowers | tar -x`. That copy lacks the 10-24
+roadmap and every spec, plan and measurement written since. A session
+without the owner's folder asks the owner, and never recreates the roadmap
+from the old copy.
 
 - **[`docs/superpowers/specs/00-conventions.md`](docs/superpowers/specs/00-conventions.md)**
-  — the authoritative architecture decisions every spec assumes. Non-negotiable
-  rules, the config API shape, the build environment, and (most importantly) the
+  — the architecture decisions every spec assumes. Non-negotiable rules, the
+  config API shape, the build environment, and (most importantly) the
   catalogue of ways a check can report success while measuring nothing. Read it
-  before writing or verifying anything.
+  before writing or verifying anything. It has not changed since 2026-10-18;
+  where it and this file differ, this file wins.
 - **[`docs/superpowers/plans/2026-10-24-long-term-roadmap.md`](docs/superpowers/plans/2026-10-24-long-term-roadmap.md)**
-  — what comes next and in what order: steps 4 to 7, the operations lane,
-  the ranked backlog, and a dated status per step. It succeeds
-  `2026-10-02-long-term-roadmap.md`, which keeps steps 0 to 3 and the full
-  text of every backlog item. **After you push a PR (opened, updated or
-  merged), update this roadmap's status:** what the PR finished, what it left
-  open, and the date. Edit the copy in the main clone; worktree copies of
-  `docs/superpowers/` are not kept in sync.
-- **[`docs/superpowers/plans/2026-09-02-followon-roadmap.md`](docs/superpowers/plans/2026-09-02-followon-roadmap.md)**
-  — per-slice status ledger for the follow-on arc (shipped / partial / open);
-  each slice's residual detail lives in its own measurement doc, not in the
-  roadmap.
+  — what comes next and in what order. Its "Current state" block at the top
+  is the status in one screen. Steps 4 to 7, the operations lane and the
+  ranked backlog follow it. The dated log is in
+  `docs/superpowers/plans/2026-10-24-roadmap-log.md`. **After you push a PR
+  (opened, updated or merged):**
+  - append one dated line to the log: what the PR finished, what it left
+    open;
+  - rewrite (do not append to) "Current state" if the status changed.
+
+  Edit the copies in the main clone; worktree copies of `docs/superpowers/`
+  are not kept in sync.
+- Frozen since 2026-10-18, history only, never a source of open work:
+  `plans/2026-10-02-long-term-roadmap.md` (steps 0 to 3 and the full text of
+  the backlog items) and `plans/2026-09-02-followon-roadmap.md` (the per-slice
+  ledger of the follow-on arc; its "partial" rows are not current).
 
 ## Repository layout
 
@@ -123,14 +133,20 @@ the local folder.
 | `patches/` | diffs against files that **already exist** in Chromium |
 | `settings/` | `invariants.json` (cross-surface invariant registry, SP5), `keys.json` (key registry), `presets/` (captured device presets, SP5b), `launcher.json` (the client contract), `build-args.gn` (canonical GN args, incl. the proprietary-codec pair) `release-args.gn` (the non-component release shape `package.py` expects), `fonts.json` (the OFL font bundle manifest + captured Windows/macOS family lists + generated alias maps), `fontconfig/` (generated per-OS confs), `webgl/` (captured GPU profiles) and `locale_zones.json` (locale → plausible IANA zones) |
 | `scripts/` | `apply.sh` (the applier), `verify_*.py` (per-slice browser verifications), `package.py` (release archive from GN's runtime-deps list; refuses a component build, an off-pin version, a missing dep, mismatched stamps), `winhost.py` (stock Chrome on the box's Windows host over ssh: headless `--dump-dom`, headed CDP), `capture_*.py` (baselines, presets, WebGL profiles, font lists, the Windows host oracle), `verify_host_oracle.py` (the fork under a generated Windows identity vs stock Chrome on the host, every differing leaf as a line), `verify_windows_behaviour.py` (the exposed interfaces called, not only enumerated: `share()` under a claim, voices per locale) |
-| `client/` | the launchers: `client/python/camoucrome` (patchright), `client/go` (`playwright-go` on the `patchright-core` driver) and `client/node` (patchright). All three implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
+| `client/` | the launchers: `client/python/camoucrome` (patchright; also the identity generator `gen.py`, which the Go client execs), `client/go` (`playwright-go` on the `patchright-core` driver), `client/go/core` (its own Go module: identity resolve, env/argv and launch with no driver, the path fhtool uses; data embedded from `settings/` and gated by `gen_go_core_data.py --check`), `client/go/rodclient` (go-rod over a pipe, unix only) and `client/node` (patchright). All implement `settings/launcher.json`; `scripts/verify_sp6b_driver.py` measures them against the driver contract with stock drivers as RED rows |
+| `additions/camoucfg_lgpl/` | the LGPL component `//components/camoucfg_lgpl` (Cursory trajectories), kept apart for its license |
+| `scripts/ci_verify_set.txt` | which `verify_*.py` CI runs, skips or runs elsewhere; every verify must be listed once (`test_ci_verify_set.py`) |
 | `docs/superpowers/{specs,plans,measurements}/` | design specs, implementation plans, and per-slice surface measurements |
 | `docs/observer/` | the tracking observer (`camou_observe = true`, shipped in releases as `chrome://observer`): operator guide `README.md`, `followups.md`; report `scripts/observe_report.py`, verifies `scripts/verify_observe.py` and `scripts/verify_observer_page.py` |
 | `baselines/` | stock reference captures; ten are committed (`git ls-files baselines`). `*-653674df29-*` and `content_shell-8103-stock-ua.json` are pristine captures of the build at the pin; `chrome-8103-*` are captures of stock Chrome 157.0.8103.50 on the Windows host; the rest are build-host-local and regenerable. Every one is recaptured at a re-pin, never edited (`docs/superpowers/measurements/2026-10-repin.md`) |
 
 New files go in `additions/`, edits to existing files go in `patches/`. This
 split (from Camoufox, held across ~64 patches) keeps rebase conflicts confined to
-the small diffs.
+the small diffs. `apply.sh` copies only `additions/camoucfg` and
+`additions/camoucfg_lgpl`, so a new file anywhere else in the tree (22 today,
+e.g. `chrome/browser/ui/webui/observer/*`) is created by its patch. Putting a
+large inline body in a new patch-created sibling file, with one-line call sites
+in the upstream file, also keeps re-pin conflicts small (`popup-window-bit`).
 
 ## The config layer (`//components/camoucfg`)
 
@@ -172,13 +188,16 @@ Blink file is 1–3 min. The verification target is **`content_shell`** (small,
 still exposes the DevTools protocol), not `chrome`.
 
 Repo lives on the Mac; the build and every `verify_*.py` run on the WSL box
-(`ssh buildpc`). Config reaches a build through the environment: `CAMOU_CONFIG`
+(`buildpc`, reached through the sshgate tool). Config reaches a build through the environment: `CAMOU_CONFIG`
 holding a JSON object (or `CAMOU_CONFIG_1..N` concatenated in order, for
 argv-length limits). `CAMOU_PRESET` (same transport) carries a preset from
 `settings/presets/` that `ParsedConfig()` expands into keys underneath the
 explicit config (explicit wins; `preset_loader.cc` has the field table).
-`CAMOU_CONFIG_STRICT=1` turns unparseable config into a
-startup abort instead of a silent fall-back to real values.
+`CAMOU_CONFIG_STRICT=1` turns unparseable or incoherent config into a
+startup refusal (exit 13) instead of a silent fall-back to real values. Every
+client launcher sets it by default (`settings/launcher.json`
+`strict_default`); a bare `content_shell` run under a verify is lax unless the
+verify sets it.
 
 - Apply the change set: `scripts/apply.sh <chromium-src>` (copies `additions/`,
   then `git apply --3way` each patch in `patches/series` order — semantic, not
@@ -199,10 +218,12 @@ startup abort instead of a silent fall-back to real values.
   `~/camoucrome-verify/venv/bin/python3` (bare `python3` lacks `playwright`).
   They drive `content_shell` over CDP via `lib_shell.session(config, [js...])`.
 - Unit tests: the `components_unittests` target. `--gtest_filter='Camoucfg*'`
-  matches **1 of 22** suites (only `CamoucfgKeysTest`) — filter by suite name.
+  matches **2 of 50** suites (`CamoucfgKeysTest`, `CamoucfgHotConfigTest`) —
+  filter by suite name.
   `CoherenceValidatorTest.*` cannot run in one invocation: config is read once
   per process and cached, so one process can only latch one `CAMOU_CONFIG`. Use
-  `scripts/run_coherence_tests.sh` (one process per case, asserts 6/6).
+  `scripts/run_coherence_tests.sh` (one process per case; it asks the binary
+  for the case count and asserts every case passed).
 - **CI on the box:** `.github/workflows/build-verify.yml` runs on the
   self-hosted runner `buildpc-wsl` (WSL on the build PC) at every push that
   touches the change set: sync gate, `out/Default` build, every camoucfg
@@ -265,8 +286,8 @@ startup abort instead of a silent fall-back to real values.
   scheduled or looped, no credential typing, the owner's session Active, 8 GB
   commit headroom, no native build, launched detached, verdicts `PASS`,
   `FAIL` or `UNMEASURED`. `observe-auto.ps1` runs arm 1 (logged out)
-  and arm 3 (the backed-up login at
-  `D:\camou-win\observe\backup\fb-login-20261017`), one load each, with no
+  and arm 3 (the backed-up login named by `backup` in the site's
+  `site.json`, or `-Backup`), one load each, with no
   input. Never schedule it or loop it. Arm 2, the login, stays manual by
   the owner, and tooling never types credentials.
   - The backup is never read for values, never copied off the host and
