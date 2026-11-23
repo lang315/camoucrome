@@ -301,7 +301,7 @@ with sync_playwright() as pw:
 """
     env = {k: v for k, v in os.environ.items() if not k.startswith("CAMOU_")}
     env["PLAYWRIGHT_NODEJS_PATH"] = NODE
-    p = subprocess.run([PY, "-c", script], capture_output=True, text=True, timeout=300, env=env)
+    p = subprocess.run([PY, "-"], input=script, capture_output=True, text=True, timeout=300, env=env)  # stdin: the identity is past Windows' 32767-char command line
     if p.returncode != 0:
         return {"error": p.stderr[-400:].replace("\n", " | ")}
     return json.loads(p.stdout.strip().splitlines()[-1])

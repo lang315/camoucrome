@@ -45,11 +45,11 @@ def _run_as_script(monkeypatch, capsys):
     import types
     import verify_windows_behaviour
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd, input=None, **kw):
         if "camoucrome.gen" in cmd:  # gen(): the config carries the claim, nothing else
             out = json.dumps({"config": {"claim": cmd[cmd.index("--os") + 1]}})
         else:  # iface_probe(): the page's answer, by the claim found in the embedded config
-            claim = next(c for c in ("linux", "windows", "macos") if f'\\"claim\\": \\"{c}\\"' in cmd[2])
+            claim = next(c for c in ("linux", "windows", "macos") if f'\\"claim\\": \\"{c}\\"' in input)
             out = json.dumps(v.iface_expect(claim))
         return subprocess.CompletedProcess(cmd, 0, out, "")
 
