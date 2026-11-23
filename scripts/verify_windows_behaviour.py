@@ -266,10 +266,6 @@ def audio_rows(win, lin):
     }
 
 
-if __name__ == "__main__":
-    main()
-
-
 IFACE_PAGE = b"""<!doctype html><title>iface</title><pre id=o></pre><script>
 document.getElementById('o').textContent = JSON.stringify({share: typeof navigator.share, bluetooth: typeof navigator.bluetooth});
 </script>"""
@@ -321,3 +317,7 @@ def interface_rows(win, lin, mac):
         "B2 Windows claim: navigator.share a function and navigator.bluetooth an object": iface_ok("windows", seen["windows"]),
         "B3 macOS claim: navigator.share a function and navigator.bluetooth an object": iface_ok("macos", seen["macos"]),
     }
+
+
+if __name__ == "__main__":
+    main()
