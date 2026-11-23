@@ -219,17 +219,20 @@ std::vector<TrajectoryPoint> ResampleToPollRate(
   // differ by at most the whole. The caller stamps each sample with its time
   // here, not with the time a timer fired (the UI thread's timers wake on whole
   // ms, which spread the gaps of 125 Hz by up to 1 ms in a way no mouse does),
-  // so the spread a page sees is this one. At 125 Hz it is +-0.8 ms, and
-  // kWholeShare of the samples take the jitter of the one before: their gap is
-  // exactly 8 ms, as 24-30 % of a real 125 Hz stream's gaps are whole ms (I2c
-  // whole_share) while 59-62 % lie within 8 +-0.25 ms (I2b core_share). Both
-  // are fitted by simulation to stock's own stream, pooled over 3 host
-  // sessions with SendInput (2026-11-22), with stamps coarsened to 0.1 ms
-  // (the unit test repeats the fit); its tail (a gap of 10 ms then one of 5)
-  // is the harness's own and is not imitated. 1000 Hz keeps +-0.1 ms: no true
-  // 1 kHz control exists, unverified.
-  constexpr double kWholeShare = 0.16;
-  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 0.8 : period / 16;
+  // so the spread a page sees is this one. At 125 Hz two neighbours differ by
+  // at most 1.0 ms (the jitter of a point is +-0.5 ms), and kWholeShare of the
+  // samples take the jitter of the one before: their gap is exactly 8 ms. The
+  // page reads a stamp through Blink's TimeClamper (a random rounding threshold
+  // per 100 us), under which an exact 8 ms gap is a whole ms two times in
+  // three. The shape is fitted so that 59-62 % of the gaps lie within 8 +-0.25
+  // ms (I2b core_share) and 24-28 % are whole ms (I2c whole_share), as in
+  // stock's own 125 Hz stream, pooled over 3 host sessions with SendInput
+  // (2026-11-22). The unit test repeats the fit under the TimeClamper's rule.
+  // The stream's tail (a gap of 10 ms then one of 5) is the harness's own and
+  // is not imitated. 1000 Hz keeps +-0.1 ms: no true 1 kHz control exists,
+  // unverified.
+  constexpr double kWholeShare = 0.28;
+  const double tol = hz >= 1000 ? 0.1 : hz == 125 ? 1.0 : period / 16;
   const double jitter = tol / 2;
   const size_t n = path.size();
   std::vector<double> t(n);

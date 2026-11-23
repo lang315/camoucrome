@@ -63,8 +63,8 @@ std::vector<TrajectoryPoint> HumanizePath(gfx::PointF start,
 // The path as a mouse reports it: one sample every 1000 / `hz` ms (a USB mouse at
 // 125 or 1000 Hz) instead of one per Cursory frame. The samples sit on a grid of
 // that period, each moved by a small jitter so that two neighbours are the
-// period apart within +-0.8 ms at 125 Hz (the caller stamps each sample with
-// its time here; the spread is the one a mouse's stream shows, and 16 % of the
+// period apart within +-1.0 ms at 125 Hz (the caller stamps each sample with
+// its time here; the spread is the one a mouse's stream shows, and 28 % of the
 // samples repeat the jitter of the one before: a gap of exactly one period) and +-0.1 ms at 1000 Hz
 // (other rates: +-1/16 of the period). Their positions lie on the curve through every input
 // point: a cubic Hermite in time, exact at each input offset and exact for
