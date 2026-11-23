@@ -143,6 +143,12 @@ test('launch refuses forbidden options and uses a persistent context without vie
     '--remote-debugging-pipe', '--user-data-dir=/tmp/p', '--window-size=800,600']);
 });
 
+test('launch refuses options that would override the launcher\'s ignoreDefaultArgs and executablePath', async () => {
+  const chromium = { launchPersistentContext: async () => assert.fail('must not launch') };
+  await assert.rejects(c.launch(chromium, '/x/chrome', { config: { a: 1 }, ignoreDefaultArgs: false }), /ignoreDefaultArgs/);
+  await assert.rejects(c.launch(chromium, '/x/chrome', { config: { a: 1 }, executablePath: '/other/chrome' }), /executablePath/);
+});
+
 test('the browser process receives strict by default and no variable with lax; a caller env is refused', async () => {
   const calls = [];
   const ctx = { on: () => {}, close: async () => {} };
