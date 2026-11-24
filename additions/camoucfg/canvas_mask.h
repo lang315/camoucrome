@@ -149,12 +149,14 @@ class DeferredMask;
 // needs alive (a flushed recording). The owner applies the queue event by event
 // from an idle task (ApplyOldest), and every reader applies what is left first,
 // in order, so a read pays for the tail only and the mask is byte for byte the
-// one built at each event. A queue past kMaxPendingEvents events or
-// kMaxPendingBytes of retained recordings DROPS its oldest event at each Add,
-// unwalked: a page that draws and flushes in a loop without ever reading (an
-// animation, a benchmark) costs one queue push per flush, and pixels drawn
-// more than that many flushes before a read carry no noise (a cell no event
-// marked is never changed: such pixels read as stock's own).
+// one built at each event. Past kMaxPendingEvents queued jobs the two oldest
+// are merged into one (no pixel work), so the count of flushes never loses a
+// mark. Past kMaxPendingBytes of retained recordings the oldest recording (or
+// the oldest part of a merge) is released unwalked, as the queue did before
+// merging: walking it there would put the walk on the draw. Events (a put)
+// keep no recording alive and are walked there instead. So a page that draws
+// and flushes in a loop without ever reading (an animation, a benchmark)
+// costs one queue push per flush.
 class LazyCanvasNoiseMask {
  public:
   // One queued change to the mask of the canvas size it was queued for, worked in slices: Step() works until it
@@ -170,11 +172,17 @@ class LazyCanvasNoiseMask {
     // thread may work it while this one goes on; null when the job cannot be
     // copied (an Event). Const and safe to call while no thread Steps the job.
     virtual std::unique_ptr<Job> Clone() const;
+    // An Event: it keeps no recording alive, so the byte cap walks it rather
+    // than drop it.
+    virtual bool IsEvent() const;
   };
   // A change that is done in one go.
   using Event = base::OnceCallback<void(CanvasNoiseMask&)>;
   static constexpr size_t kMaxPendingEvents = 16;
   static constexpr size_t kMaxPendingBytes = size_t{16} << 20;
+  // Each queued job is accounted at least this much, so zero-byte events are
+  // bounded by the byte cap too.
+  static constexpr size_t kMinPartBytes = 256;
   // What one frame may carry unapplied (Defer()): the queue's own caps plus the
   // parked jobs' (kMaxParkedJobs / kMaxParkedBytes: the jobs the queue shed
   // while the last frame carried them). So a frame carries at most 32 jobs and
@@ -201,9 +209,10 @@ class LazyCanvasNoiseMask {
 
   // Queues `event` for a canvas of `width` x `height` (a mask of another size
   // is replaced first, as a resize does); `bytes` is what the event keeps
-  // alive. `apply_now` applies the whole queue, this event last: for an event
-  // that holds images, which the queue must not pin. Past a cap the oldest
-  // event is dropped, unwalked.
+  // alive (at least kMinPartBytes is accounted). `apply_now` applies the whole
+  // queue, this event last: for an event that holds images, which the queue
+  // must not pin. Past the count cap the two oldest jobs are merged; past the
+  // byte cap the oldest recording is dropped (an event is walked).
   void Add(size_t width, size_t height, size_t bytes, std::unique_ptr<Job> job,
            bool apply_now = false);
   void Add(size_t width, size_t height, size_t bytes, Event event,
@@ -260,8 +269,10 @@ class LazyCanvasNoiseMask {
     uint64_t signals = 0;         // NoteSeen() calls
     uint64_t parked_total = 0;    // jobs ever parked
     uint64_t parked_walked = 0;   // parked jobs walked (idle, read, signal)
-    uint64_t parked_evicted = 0;  // parked jobs dropped unwalked
+    uint64_t parked_evicted = 0;  // parked jobs dropped at eviction (the page had not seen them)
     uint64_t seen_walked = 0;     // parked jobs the page had seen, walked at eviction
+    uint64_t merged_total = 0;    // jobs merged into the job before them (count cap)
+    uint64_t dropped_total = 0;   // recordings (or merge parts) dropped unwalked (byte cap)
   };
   const Counters& counters() const { return counters_; }
 
@@ -270,14 +281,26 @@ class LazyCanvasNoiseMask {
     size_t width;
     size_t height;
     size_t bytes;
-    uint64_t id;
+    uint64_t id;  // a merged job has its newest part's id
     std::unique_ptr<Job> job;
+    bool merged = false;  // `job` is a MergedJob
   };
   void Materialize() const;
   // Works the oldest job: the first parked one, else the queue's first.
   void StepFront(base::TimeTicks deadline) const;
-  // The queue is past a cap: its first job is parked (the last deferred frame
-  // carries it) or dropped (none does).
+  // The queue is past the byte cap: its first job is parked (the last deferred
+  // frame carries it), or its oldest part is walked (an event) or dropped
+  // unwalked (a recording).
+  void DropFront() const;
+  // Moves the queue's first job to the parked list, evicting past its caps.
+  void ParkFront() const;
+  // The mask the job `p` is walked on: a fresh one when its size changed.
+  CanvasNoiseMask& MaskFor(const Pending& p) const;
+  // Merges the oldest two queued jobs of one size that no deferred frame
+  // splits (both carried by the last frame, or neither); false when none.
+  bool MergeOldestPair() const;
+  // The queue is past the count cap and nothing merges: its first job is
+  // walked, after the parked jobs (the count route never drops).
   void ShedFront() const;
   void EvictParkedFront() const;
   void Retire() const;

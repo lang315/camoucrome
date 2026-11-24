@@ -2,7 +2,7 @@
 that leave a canvas through EVERY page-reachable readback path carry
 deterministic noise, while an unconfigured build stays byte-identical to stock.
 
-Sixty-three criteria, all driven with Playwright's sync API over content_shell's CDP,
+A hundred and four criteria, all driven with Playwright's sync API over content_shell's CDP,
 the same shape as verify_sp2b.py / verify_sp1a.py -- a fault in any one session
 becomes FAIL lines, never a traceback that discards results already collected.
 
@@ -130,6 +130,11 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
   C53 the C18 layout (WebGL2 PACK_ROW_LENGTH / SKIP_PIXELS / SKIP_ROWS) read
       from a page framebuffer agrees with the default layout; every byte
       outside the layout is untouched.
+
+  C101 a page draws 100 heavy 2D frames on one canvas with no read, then reads once: the seeded read is
+      noised and stable; its time against none is reported (the read walks the backlog, rule D3).
+  C102 overdraw elision: a clearRect of the whole canvas drops the queued mask jobs (CamouElided) and the
+      next draw reads noised; a partial or clipped clear, a full-canvas fillRect, and no seed drop none.
 
 The "stock" reference is a PERSISTED baseline captured once from a STOCK
 content_shell (before the Blink edit exists), into baselines/, exactly as
@@ -2264,45 +2269,6 @@ def c68g_row():
 
 c68g_row()
 
-# C69 (release -5, owner rule): past 16 queued flushes the oldest mask job is dropped, never walked. A page draws 3 circles,
-# 300000 more circles (dozens of flushes), then reads once. It must read without error, the same twice (one flush sequence,
-# one result), differ from unconfigured where the last circles are (the kept jobs still mark them), and equal unconfigured
-# on the first circles (their jobs were dropped, so no cell there is marked and no noise lands).
-C69 = "C69 three circles, 300000 more, then one read: reads without error, same twice, noise only on the retained circles (seed 7)"
-C69_SCENE = """async () => {
-  const c = document.createElement('canvas'); c.width = 500; c.height = 40;
-  const x = c.getContext('2d');
-  x.fillStyle = '#f60';
-  for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(12 + i * 20, 20, 8.3, 0, Math.PI * 2); x.fill(); }
-  // a canvas flushes its recording every few thousand ops: 300000 circles at one spot are dozens of flushes
-  for (let i = 0; i < 300000; i++) { x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); }
-  const d = x.getImageData(0, 0, 500, 40).data;
-  const first = [], last = [];
-  for (let y = 0; y < 40; y++) for (let k = 0; k < 500; k++) {
-    const o = (y * 500 + k) * 4;
-    (k < 60 ? first : k >= 340 ? last : []).push(d[o], d[o + 1], d[o + 2], d[o + 3]);
-  }
-  return { first: first.join(','), last: last.join(',') };
-}"""
-
-
-def c69_row():
-    un, ue = session(None, f"() => ({C69_SCENE})()")
-    a, ae = session(json.dumps({"canvas:seed": 7}), f"() => ({C69_SCENE})()")
-    b, be = session(json.dumps({"canvas:seed": 7}), f"() => ({C69_SCENE})()")
-    if un is None or a is None or b is None:
-        results[C69] = False
-        notes.append(f"C69: session fault: {ue or ae or be}")
-        return
-    ok = a == b and a["last"] != un["last"] and a["first"] == un["first"]
-    results[C69] = ok
-    if not ok:
-        notes.append(f"C69: same twice {a == b}; last differs from unconfigured {a['last'] != un['last']}; "
-                     f"first equals unconfigured {a['first'] == un['first']}")
-
-
-c69_row()
-
 # C66: the implementation-format read. A framebuffer with an RGB8 attachment reports (RGB, UNSIGNED_BYTE) as its
 # read pair; stock returns the rendered bytes for both reads, so the RGB bytes of an RGB read equal the first three
 # bytes of the RGBA read. C66a: an RGB8 texture framebuffer with the C6 scene. C66b: an alpha:false default buffer,
@@ -2969,11 +2935,11 @@ C94 = ("C94 mean OffscreenCanvas::PushFrame per commit under a blink trace, seed
        "(CamouFrameNoise defer=deferred is traced): a commit no longer walks the worker's recordings")
 C95 = ("C95 heavy 2D worker (120 paths + 20 text lines per rAF frame, 12 frames, read, then 20 frames, read, then one frame of 8 heavy scenes applied by the idle walk and a tiny frame on top, read): "
        "the placeholder's toBlob, toDataURL, drawImage equal the worker's own convertToBlob after each, noised (A != none, A != B, A == A again); the second read is past the queue's 16-job cap, so the oldest "
-       "unwalked recording left the queue (parked) on both sides alike (traced: a committed frame carried 16 and at least one recording was shed)")
+       "unwalked recordings were merged (or parked) on both sides alike (traced: a committed frame carried 16 and at least one recording was merged or shed)")
 C96 = ("C96 re-read: a heavy 2D worker draws only the top half in 20 rAF frames, then only the bottom half in 40 more without ever idling or reading; the page reads "
-       "after the first 20 (the worker has already shed some of their recordings, and the signal finds them parked) and again after the 40: the top rows of the "
-       "second read equal the first's, and the worker's own read of them (noised: A != none, A != B, A == A again); the trace shows the cap crossed, "
-       "recordings parked, a signal received and seen recordings walked")
+       "after the first 20 (the worker has already merged some of their recordings) and again after the 40: the top rows of the "
+       "second read equal the first's, and the worker's own read of them (noised: A != none, A != B, A == A again); the trace shows the cap crossed "
+       "(recordings merged, or parked and then walked) and a signal received")
 C97 = ("C97 the same reads as C87-C89 and C91 (toBlob, toDataURL, drawImage, createImageBitmap, the second frame) on a 2D scene with no drawn image, so its recordings "
        "can be carried unapplied: equal to the worker's own read and to a main-thread canvas, noised (A != none, A != B, A == A again); the trace shows frames "
        "committed deferred")
@@ -3471,8 +3437,9 @@ def deferral_rows():
         for name, a in arms.items():
             notes.append(f"C95 {name}: " + " ; ".join(f"leg {k}: blob {a['blob' + k]}/{a['cur' + k]} url {a['url' + k]}/{a['refUrl' + k]} "
                                                       f"draw {a['draw' + k]}/{a['refDraw' + k]}" for k in legs))
-        # the second leg's read is after more than 16 unread flushes: the queue's cap (16) drops the oldest recording unwalked, on
-        # the worker's own read and on the frame alike. The trace shows the backlog did reach the cap, else the row did not cross it
+        # the second leg's read is after more than 16 unread flushes: past the queue's cap (16) the oldest recordings are merged
+        # (2026-11-24, rule D2), on the worker's own read and on the frame alike. The trace shows the backlog did reach the cap, else
+        # the row did not cross it
         v, events = traced_events(json.dumps({"canvas:seed": 1111}), LEAKS10, GL_ROW_FLAGS)
         if v is None:
             notes.append(f"C95: trace session: {events}")
@@ -3480,11 +3447,13 @@ def deferral_rows():
         else:
             most = max_defer_jobs(events)
             shed = max_arg(events, "CamouParked", "parked")
-            notes.append(f"C95 most recordings one committed frame carried unwalked: {most} (the cap is 16); recordings shed from the queue and parked: {shed}")
+            merged = max_arg(events, "CamouMerged", "merged")
+            notes.append(f"C95 most recordings one committed frame carried unwalked: {most} (the cap is 16); recordings merged {merged}, "
+                         f"shed from the queue and parked {shed}")
             if any(v["blob" + k] != v["cur" + k] or v["url" + k] != v["refUrl" + k] or v["draw" + k] != v["refDraw" + k] for k in legs):
                 results[C95] = False
-            if most < 16 or shed < 1:
-                mark_unmeasured(C95, f"the worker's idle walk kept the backlog at {most} < 16 / {shed} shed: the cap was not crossed")
+            if most < 16 or shed + merged < 1:
+                mark_unmeasured(C95, f"the worker's idle walk kept the backlog at {most} < 16 / {merged} merged, {shed} shed: the cap was not crossed")
     if os.environ.get("CAMOU_SP3A_NO_COST") == "1":
         mark_unmeasured(C94, "CAMOU_SP3A_NO_COST=1")
         return
@@ -3653,7 +3622,7 @@ def lifecycle_rows():
         notes.append(f"C99: trace session: {events}")
         mark_unmeasured(C99, "trace session failed")
         return
-    names = ("CamouFrameNoise", "CamouParked", "CamouParkedWalk", "CamouFrameRead", "CamouReplayMode", "CamouDeferredReplay")
+    names = ("CamouFrameNoise", "CamouParked", "CamouMerged", "CamouParkedWalk", "CamouFrameRead", "CamouReplayMode", "CamouDeferredReplay")
     seen = {n: sum(1 for ev in events if ev.get("name") == n) for n in names}
     pushes = sum(1 for ev in events if ev.get("name") == "OffscreenCanvas::PushFrame")
     notes.append(f"C99 no seed: trace events of this change {seen}; PushFrame events {pushes}")
@@ -3712,12 +3681,15 @@ def reread_rows():
                     and arms["A"]["r2"] != arms["none"]["r2"] and arms["A"]["r2"] != arms["B"]["r2"] and arms["A"]["r2"] == arms["A2"]["r2"])
     ev = events["A"]
     parked, evicted = max_arg(ev, "CamouParked", "parked"), max_arg(ev, "CamouParked", "evicted")
+    merged = max_arg(ev, "CamouMerged", "merged")
     signals = max_arg(ev, "CamouFrameRead", "signals")
     walked, seen = max_arg(ev, "CamouParkedWalk", "walked"), max_arg(ev, "CamouParkedWalk", "seen")
-    notes.append(f"C96 trace (seed A): shed and parked {parked}, evicted unwalked {evicted} (before the first signal: {evicted_before_first_signal(ev)}), "
+    notes.append(f"C96 trace (seed A): merged {merged}, shed and parked {parked}, evicted unwalked {evicted} (before the first signal: {evicted_before_first_signal(ev)}), "
                  f"signals received {signals}, parked walked {walked}, seen recordings walked instead of dropped {seen}, most carried by a frame {max_defer_jobs(ev)}")
-    if results[C96] and (parked < 1 or signals < 1 or seen + walked < 1):
-        mark_unmeasured(C96, f"the run did not shed, signal and walk (parked {parked}, signals {signals}, walked {walked + seen})")
+    # rule D2 (2026-11-24): past the cap recordings merge; a run that parks must still walk what it parked
+    crossed = merged >= 1 or (parked >= 1 and seen + walked >= 1)
+    if results[C96] and (not crossed or signals < 1):
+        mark_unmeasured(C96, f"the run did not cross the cap and signal (merged {merged}, parked {parked}, walked {walked + seen}, signals {signals})")
 
 
 if want("c96"):
@@ -3840,7 +3812,131 @@ if want("c98"):
 if want("c99"):
     lifecycle_rows()
 
-EXPECTED = 103   # the soft rows (SOFT_ROWS) are not counted
+# C69: many flushes and no read between them must not lose the marks of the first. A canvas outside the page flushes its recording at
+# the end of every task that drew on it (FinalizeFrame; a worker's OffscreenCanvas does not, measured on the box). The 64 tasks are
+# MessageChannel messages queued at once, so they run back to back and every flush is still queued when the read comes. The first
+# circles must read noised: they differ from the unconfigured read. The trace proves the flushes happened (a coalesced or CPU-rastered
+# run queues nothing and is UNMEASURED, not PASS).
+C69A = ("C69a a canvas outside the page: three circles, then 64 MessageChannel tasks of one arc each queued at once (one flush each), "
+        "then one read: the same in two seeded runs, and the first circles read differently from unconfigured (seed 7); fewer than 40 "
+        "traced flushes, or last arcs that read like unconfigured, is UNMEASURED")
+C69A_MIN_FLUSHES = 40
+C69A_SCENE = """async () => {
+  const c = document.createElement('canvas'); c.width = 500; c.height = 40; const x = c.getContext('2d'); x.fillStyle = '#f60';
+  for (let j = 0; j < 3; j++) { x.beginPath(); x.arc(12 + j * 20, 20, 8.3, 0, Math.PI * 2); x.fill(); }
+  const ch = new MessageChannel(); let n = 0;
+  await new Promise((done) => { ch.port1.onmessage = (e) => { const i = e.data;
+      x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); if (++n === 64) done(); };
+    for (let i = 0; i < 64; i++) ch.port2.postMessage(i); });
+  const d = x.getImageData(0, 0, 500, 40).data; const first = [], last = [];
+  for (let y = 0; y < 40; y++) for (let q = 0; q < 500; q++) { const o = (y * 500 + q) * 4;
+    (q < 60 ? first : q >= 340 ? last : []).push(d[o], d[o + 1], d[o + 2], d[o + 3]); }
+  return { first: first.join(','), last: last.join(',') };
+}"""
+
+
+def c69a_row():
+    seed = json.dumps({"canvas:seed": 7})
+    un, ue = session(None, C69A_SCENE, extra_flags=GL_ROW_FLAGS)
+    a, ae = session(seed, C69A_SCENE, extra_flags=GL_ROW_FLAGS)
+    b, events = traced_events(seed, C69A_SCENE, GL_ROW_FLAGS)
+    if un is None or a is None or b is None:
+        results[C69A] = False
+        notes.append(f"C69a: session fault: {ue or ae or events}")
+        return
+    flushes = sum(1 for e in events if e.get("name") == "CamouMaskAdd" and e.get("ph") in ("X", "B"))
+    notes.append(f"C69a: {flushes} traced flushes; same twice {a == b}; first differs from unconfigured {a['first'] != un['first']}")
+    if flushes < C69A_MIN_FLUSHES or a["last"] == un["last"]:
+        mark_unmeasured(C69A, f"{flushes} traced flushes (need {C69A_MIN_FLUSHES}), last arcs differ from unconfigured "
+                              f"{a['last'] != un['last']}: the queue was not exercised")
+        return
+    results[C69A] = a == b and a["first"] != un["first"]
+
+
+if want("c69"):
+    c69a_row()
+
+C102 = ("C102 overdraw elision: after 30000 draws (queued, unwalked), a clearRect of the whole canvas drops the queued mask jobs (a "
+        "CamouElided trace instant), and the arc drawn after it reads noised; a partial clear, a clipped clear, an alpha or opaque "
+        "full-canvas fillRect, and an unseeded page emit none")
+# a bare 2D canvas, one task: 30000 iterations of the timing plant's ops (about 4 MB, past Blink's 2 MB auto-flush) queue mask jobs that
+# the idle walk cannot reach before the clear. Blink's own overdraw check (CheckOverdraw) decides; it covers clearRect only, so a
+# full-canvas fillRect is not elided (reported, not a defect).
+ELIDE_SCENE = """() => {""" + HASH_FN + """
+  const c = document.createElement('canvas'); c.width = 300; c.height = 200; const x = c.getContext('2d');
+  for (let i = 0; i < 30000; i++) { x.fillStyle = i & 1 ? '#f60' : '#06f'; x.beginPath(); x.arc((i * 37) % 300, (i * 91) % 200, 6, 0, 7);
+    x.fill(); x.fillRect((i * 13) % 290, (i * 29) % 190, 5, 5); }
+  x.save(); __CLEAR__ x.restore();
+  x.fillStyle = 'rgb(128,128,128)'; x.beginPath(); x.arc(150, 100, 55.3, 0, Math.PI * 2); x.fill();
+  return { h: H(x.getImageData(0, 0, 300, 200).data) };
+}"""
+ELIDE_ARMS = {
+    "full": "x.clearRect(0, 0, 300, 200);",
+    "partial": "x.clearRect(0, 0, 299, 200);",
+    "clipped": "x.beginPath(); x.rect(0, 0, 150, 200); x.clip(); x.clearRect(0, 0, 300, 200);",
+    "alpha-fill": "x.fillStyle = 'rgba(0,0,0,0.5)'; x.fillRect(0, 0, 300, 200);",
+    "opaque-fill": "x.fillStyle = '#000'; x.fillRect(0, 0, 300, 200);",
+}
+
+
+def c102_row():
+    seed = json.dumps({"canvas:seed": 1111})
+    got = {}
+    for arm, clear in list(ELIDE_ARMS.items()) + [("full-unseeded", ELIDE_ARMS["full"])]:
+        v, ev = traced_events(None if arm == "full-unseeded" else seed, ELIDE_SCENE.replace("__CLEAR__", clear), GL_ROW_FLAGS)
+        if v is None:
+            mark_unmeasured(C102, f"arm {arm}: {ev}")
+            return
+        got[arm] = (sum(1 for e in ev if e.get("name") == "CamouElided"), max_arg(ev, "CamouElided", "jobs"), v["h"])
+    notes.append("C102 CamouElided (events, max jobs) per arm: " + ", ".join(f"{a} {n}/{j}" for a, (n, j, _) in got.items()))
+    noised = got["full"][2] != got["full-unseeded"][2]
+    notes.append(f"C102 the arc after the full clear reads {'noised' if noised else 'EQUAL to unseeded'}")
+    results[C102] = (got["full"][0] >= 1 and got["full"][1] >= 1 and noised
+                     and all(n == 0 for a, (n, _, _) in got.items() if a != "full"))
+
+
+if want("c102"):
+    c102_row()
+
+C101 = ("C101 a page draws 100 heavy 2D frames (120 paths + 20 text lines each) on one canvas with no read between, then reads it once: the "
+        "seeded read is noised (differs from none) and the same in all 3 runs; the read time, seed against none (median of 3), is reported, not "
+        "judged: rule D3 pays the backlog's walk at the read")
+SOFT_ROWS = SOFT_ROWS + (C101,)
+# a main-thread canvas: every frame's recording stays queued (merged past 16) until the one read walks it; a worker's placeholder
+# would not show this backlog (a frame past the deferred cap is walked at its commit)
+C101_SCENE = """async () => {""" + HASH_FN + """
+  __HEAVY__
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  for (let i = 0; i < 100; i++) heavy2d(c, i);
+  const x = c.getContext('2d');
+  const t0 = performance.now(); const data = x.getImageData(0, 0, 512, 512).data; const ms = performance.now() - t0;
+  return { ms, h: H(data) };
+}""".replace("__HEAVY__", HEAVY2D)
+
+
+def c101_row():
+    runs = {"none": [], "seed": []}
+    hashes = {"none": set(), "seed": set()}
+    for _ in range(3):
+        for arm, cfg in (("none", None), ("seed", json.dumps({"canvas:seed": 1111}))):
+            v, e = session(cfg, C101_SCENE, extra_flags=GL_ROW_FLAGS)
+            if v is None:
+                mark_unmeasured(C101, f"arm {arm}: {e}")
+                return
+            runs[arm].append(v["ms"])
+            hashes[arm].add(v["h"])
+    med = {k: sorted(v)[1] for k, v in runs.items()}
+    spread = max(runs["none"]) - min(runs["none"])
+    soft[C101] = len(hashes["seed"]) == 1 and not (hashes["seed"] & hashes["none"])
+    notes.append(f"C101 read ms, median of 3 (reported, rule D3): none {med['none']:.1f} seed {med['seed']:.1f} "
+                 f"(the walk at the read: {med['seed'] - med['none']:+.1f}; none spread {spread:.1f}); "
+                 f"read hashes none {sorted(hashes['none'])} seed {sorted(hashes['seed'])}")
+
+
+if want("c101"):
+    c101_row()
+
+EXPECTED = 104   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
