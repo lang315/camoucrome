@@ -352,7 +352,7 @@ def judge(row, ctl, arm_logs):
                 ks = _lat_ks(cm, am)
                 if any(v is not None for v in ks[1]) or not a:   # the shown arm values: the first group that has a control
                     a = ks[1] if not any(v is not None for v in a) else a
-                per[g] = metric_verdict(kind, floor, ks[0], a)
+                per[g] = metric_verdict(kind, floor, ks[0], ks[1])   # each group's own arm KS: it depends on that group's control pool
         else:
             a = [x[name] if x else None for x in am]
             per = {g: metric_verdict(kind, floor, [x[name] if x else None for x in cm], a) for g, cm in gm.items()}
