@@ -1,0 +1,16 @@
+diff --git a/chrome/renderer/chrome_content_renderer_client.cc b/chrome/renderer/chrome_content_renderer_client.cc
+index db3c971c7f..a5992d3bf4 100644
+--- a/chrome/renderer/chrome_content_renderer_client.cc
++++ b/chrome/renderer/chrome_content_renderer_client.cc
+@@ -1543,6 +1543,11 @@ void ChromeContentRendererClient::
+         claimed == camoucfg::OsFamily::kMac) {
+       blink::WebRuntimeFeatures::EnableWebShare(true);
+       blink::WebRuntimeFeatures::EnableFeatureFromString("WebBluetooth", true);
++    } else if (claimed == camoucfg::OsFamily::kLinux) {
++      // Camoucrome (b1-linux-claim-interfaces): a Windows or macOS build
++      // under a Linux claim must not keep what the #if above turned on.
++      blink::WebRuntimeFeatures::EnableWebShare(false);
++      blink::WebRuntimeFeatures::EnableFeatureFromString("WebBluetooth", false);
+     }
+   }
+ 

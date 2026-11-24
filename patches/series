@@ -63,3 +63,4 @@ popup-window-bit.patch
 input-grid-edge.patch
 sp2f-input-coalesce.patch
 sp2g-pump-spacing.patch
+b1-linux-claim-interfaces.patch
