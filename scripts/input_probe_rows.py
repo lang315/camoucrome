@@ -4,6 +4,8 @@ input) beyond the control's own run-to-run spread."""
 import random
 import statistics
 
+from cursory_stats import ks_statistic
+
 MIN_GAPS = 50          # I2b needs this many coalesced stamp gaps in a run before it says anything
 MIN_RAW = 50           # I7 needs this many pointerrawupdate events
 EDGE_MS = 2.5          # camoufox #978: "within 2.5 ms of a rAF callback"
@@ -96,14 +98,16 @@ def i2c(log):
 
 def i7(log):
     """pointerrawupdate: `lat_sd`, the sd of now - timeStamp (a real mouse delivers each report as it arrives, so the latency
-    is steady; a burst forwarded back to back makes it grow within the burst), and `pairs`, the neighbouring events whose
+    is steady; a burst forwarded back to back makes it grow within the burst), `lat_mean`, its mean (a constant delay moves it, not the sd),
+    `lat` the latencies themselves (judge() derives `lat_ks` from them), and `pairs`, the neighbouring events whose
     `now` lie within 0.5 ms but whose timeStamps are 2 ms or more apart; `pair_share` is it over the neighbour pairs."""
     raw = evs(log, "pointerrawupdate")
     if len(raw) < MIN_RAW:   # a handful of events is not a latency
         return None
     pairs = sum(1 for a, b in zip(raw, raw[1:]) if abs(b["now"] - a["now"]) < 0.5 and abs(b["ts"] - a["ts"]) >= 2.0)
-    return {"raw": len(raw), "lat_sd": statistics.pstdev([e["now"] - e["ts"] for e in raw]), "pairs": pairs,
-            "pair_share": pairs / (len(raw) - 1)}
+    lat = [e["now"] - e["ts"] for e in raw]
+    return {"raw": len(raw), "lat_sd": statistics.pstdev(lat), "lat_mean": statistics.fmean(lat), "pairs": pairs,
+            "pair_share": pairs / (len(raw) - 1), "lat": lat}
 
 
 def after_skip(log, thr=25.0, cap=None):
@@ -221,7 +225,9 @@ SPEC = {
     # Three sessions are a thin sample of the between-session sd; recompute with every new control session (PooledBand.test_tolerances_follow_the_rule).
     "I2c": {"whole_share": ("pool", 0.060), "repeat_share": ("pool", 0.01), "repeat": ("info", 0)},
     # pointerrawupdate: the sd of now - timeStamp is the control's (floor 0.5 ms), back-to-back events are not (a back-to-back burst has pair_share ~.5)
-    "I7": {"lat_sd": ("num", 0.5), "pair_share": ("share", 0.02), "pairs": ("info", 0)},
+    # lat_mean: arm - control pooled, tol 0.15 ms (r16b round 1 read +1.09 ms). lat_ks: per run, the KS distance of the run's latencies to the control group's
+    # pooled latencies (a control run against the others'), then the pool rule: tol .25 (I2b rounds: r16c .102/.151, -15 .083/.122; r16b round 1 .76).
+    "I7": {"lat_sd": ("num", 0.5), "lat_mean": ("pool", 0.15), "lat_ks": ("pool", 0.25), "pair_share": ("share", 0.02), "pairs": ("info", 0)},
     "I3": {"off_share": ("share", 0.05), "fx": ("mode", DPR_EPS), "fy": ("mode", DPR_EPS)},
     "I4": {"exit_sig": ("eq", 0), "outside": ("zero", 0), "exit_depth": ("num", 6.0), "exit_rt": ("eq", 0), "reenter": ("eq", 0)},
     "I5": {"right": ("eq", 0), "click_detail": ("eq", 0), "dblclick": ("eq", 0), "contextmenu": ("eq", 0)},
@@ -309,6 +315,15 @@ def presence(log, row):
     return None
 
 
+def _lat_ks(ctl, arm):
+    """I7 lat_ks for one control group: (control runs vs the others pooled, arm runs vs all control runs pooled); None for a run without latencies."""
+    pooled = lambda skip: [v for j, x in enumerate(ctl) if x and j != skip for v in x["lat"]]
+    ks = lambda x, i: ks_statistic(x["lat"], pooled(i)) if x and pooled(i) else None   # no control latencies: the run lacks the metric
+    c = [ks(x, i) for i, x in enumerate(ctl)]
+    a = [ks(x, -1) for x in arm]
+    return c, a
+
+
 def judge(row, ctl, arm_logs):
     """Per metric: (verdict, arm values, note); plus "_row": the row's verdict. ctl: {group: logs} (a control per pointer rate,
     never pooled) or a list for one group. The ROW is judged per group: a group PASSes the row only when it passes EVERY
@@ -331,8 +346,16 @@ def judge(row, ctl, arm_logs):
     gm = {g: [ROWS[row](lg) for lg in logs] for g, logs in groups.items()}
     out, by_group = {}, {g: [] for g in groups}
     for name, (kind, floor) in SPEC[row].items():
-        a = [x[name] if x else None for x in am]
-        per = {g: metric_verdict(kind, floor, [x[name] if x else None for x in cm], a) for g, cm in gm.items()}
+        if name == "lat_ks":
+            a, per = [], {}
+            for g, cm in gm.items():
+                ks = _lat_ks(cm, am)
+                if any(v is not None for v in ks[1]) or not a:   # the shown arm values: the first group that has a control
+                    a = ks[1] if not any(v is not None for v in a) else a
+                per[g] = metric_verdict(kind, floor, ks[0], ks[1])   # each group's own arm KS: it depends on that group's control pool
+        else:
+            a = [x[name] if x else None for x in am]
+            per = {g: metric_verdict(kind, floor, [x[name] if x else None for x in cm], a) for g, cm in gm.items()}
         for g, (v, _) in per.items():
             by_group[g].append(v)
         vs = [v for v, _ in per.values()]
