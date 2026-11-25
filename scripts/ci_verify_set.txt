@@ -47,6 +47,9 @@ run verify_accept_language.py LANGUAGE=de  # A6 needs a non-en default, else the
 run verify_device_memory_hint.py
 run verify_finch_defaults.py
 run verify_href_translate.py
+# verify_sp3a: the runner's default 2D canvas is a CPU canvas, so without CAMOU_SP3A_GPU_CANVAS=1 the script exits 3 at its
+# canvas probe and measures nothing. Rows 40, C65d and C66 read UNMEASURED there (SOFT_ROWS, outside EXPECTED): rc 0.
+run verify_sp3a.py CAMOU_SP3A_GPU_CANVAS=1
 external verify_observe.py  # has its own step in build-verify.yml (needs camou_observe = true in out/Default/args.gn)
 external verify_observer_page.py  # has its own step in build-verify.yml, after verify_observe.py (same camou_observe = true)
 skip verify_chrome_object.py  # where=host: not yet evaluated for the runner
@@ -67,7 +70,6 @@ skip verify_s3b_phantom_out.py  # where=box: not yet evaluated for the runner
 skip verify_sp0.py  # where=box: not yet evaluated for the runner
 skip verify_sp1a.py  # where=box: not yet evaluated for the runner
 skip verify_sp2.py  # where=box: not yet evaluated for the runner
-skip verify_sp3a.py  # where=box: not yet evaluated for the runner
 skip verify_sp4_audio.py  # where=box: not yet evaluated for the runner
 skip verify_sp4_battery.py  # where=box: not yet evaluated for the runner
 skip verify_sp4_fonts.py  # where=box: not yet evaluated for the runner
