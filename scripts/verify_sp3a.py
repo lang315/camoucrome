@@ -131,6 +131,8 @@ Canvas noise S2b rows (patch-keyed field, per-region eligibility):
       from a page framebuffer agrees with the default layout; every byte
       outside the layout is untouched.
 
+  C100 an arc, then N one-pixel putImageData calls, then one getImageData of the arc's box, all in one task
+      (N = 0, 1, 20, 40, 200): each seeded read differs from the unseeded read of the same scene.
   C101 a page draws 100 heavy 2D frames on one canvas with no read, then reads once: the seeded read is
       noised and stable; its time against none is reported (the read walks the backlog, rule D3).
   C102 overdraw elision: a clearRect of the whole canvas drops the queued mask jobs (CamouElided) and the
@@ -3813,11 +3815,12 @@ if want("c99"):
     lifecycle_rows()
 
 # C69: many flushes and no read between them must not lose the marks of the first. A canvas outside the page flushes its recording at
-# the end of every task that drew on it (FinalizeFrame; a worker's OffscreenCanvas does not, measured on the box). The 64 tasks are
-# MessageChannel messages queued at once, so they run back to back and every flush is still queued when the read comes. The first
+# the end of every task that drew on it (FinalizeFrame; a worker's OffscreenCanvas does not, measured on the box). The 160 tasks are
+# MessageChannel messages queued at once (64 gave only 32 traced flushes on -17 on the real GPU, under the floor of 40), so they
+# run back to back and every flush is still queued when the read comes. The first
 # circles must read noised: they differ from the unconfigured read. The trace proves the flushes happened (a coalesced or CPU-rastered
 # run queues nothing and is UNMEASURED, not PASS).
-C69A = ("C69a a canvas outside the page: three circles, then 64 MessageChannel tasks of one arc each queued at once (one flush each), "
+C69A = ("C69a a canvas outside the page: three circles, then 160 MessageChannel tasks of one arc each queued at once (one flush each), "
         "then one read: the same in two seeded runs, and the first circles read differently from unconfigured (seed 7); fewer than 40 "
         "traced flushes, or last arcs that read like unconfigured, is UNMEASURED")
 C69A_MIN_FLUSHES = 40
@@ -3826,8 +3829,8 @@ C69A_SCENE = """async () => {
   for (let j = 0; j < 3; j++) { x.beginPath(); x.arc(12 + j * 20, 20, 8.3, 0, Math.PI * 2); x.fill(); }
   const ch = new MessageChannel(); let n = 0;
   await new Promise((done) => { ch.port1.onmessage = (e) => { const i = e.data;
-      x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); if (++n === 64) done(); };
-    for (let i = 0; i < 64; i++) ch.port2.postMessage(i); });
+      x.beginPath(); x.arc(400, 20, 6.3 + (i & 1) * 0.5, 0, Math.PI * 2); x.fill(); if (++n === 160) done(); };
+    for (let i = 0; i < 160; i++) ch.port2.postMessage(i); });
   const d = x.getImageData(0, 0, 500, 40).data; const first = [], last = [];
   for (let y = 0; y < 40; y++) for (let q = 0; q < 500; q++) { const o = (y * 500 + q) * 4;
     (q < 60 ? first : q >= 340 ? last : []).push(d[o], d[o + 1], d[o + 2], d[o + 3]); }
@@ -3898,6 +3901,53 @@ def c102_row():
 if want("c102"):
     c102_row()
 
+C100 = ("C100 an arc (non-integer radius), then N one-pixel putImageData far from it, then getImageData of the arc's box, all in one task "
+        "(N = 0, 1, 20, 40, 200): each seeded read differs from the unseeded read of the same scene")
+# a bare 2D canvas (the default one, GPU-rastered on a GPU host or under CAMOU_SP3A_GPU_CANVAS=1); no await and no read between the draw
+# and the final read. The arc is what carries noise (text alone reads stock). The put goes at (290, 5), outside the box that is read.
+PUT_BURST = """() => {""" + HASH_FN + """
+  const n = __N__;
+  const c = document.createElement('canvas'); c.width = 300; c.height = 200;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 300, 200);
+  ctx.fillStyle = 'rgb(128,128,128)'; ctx.beginPath(); ctx.arc(150, 100, 55.3, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < n; i++) ctx.putImageData(new ImageData(1, 1), 290, 5);
+  return { h: H(ctx.getImageData(90, 40, 120, 120).data) };
+}"""
+
+
+def put_burst_rows():
+    # CAMOU_SP3A_PUT_SEED_OFF=1: the mutant, the seeded arm runs unseeded, so every arm must equal raw (UNMEASURED, not PASS).
+    # CAMOU_SP3A_PUT_EXTRA: burst sizes after 0, 1, 20 (default 40,200).
+    seed = None if os.environ.get("CAMOU_SP3A_PUT_SEED_OFF") == "1" else json.dumps({"canvas:seed": 1111})
+    extra = [int(t) for t in os.environ.get("CAMOU_SP3A_PUT_EXTRA", "40,200").split(",") if t]
+    differs = {}
+    for n in [0, 1, 20] + extra:
+        js = PUT_BURST.replace("__N__", str(n))
+        a, ea = session(seed, js, extra_flags=GL_ROW_FLAGS, gate=REAL_GPU)
+        r, er = session(None, js, extra_flags=GL_ROW_FLAGS, gate=REAL_GPU)
+        if a is None or r is None:
+            err = ea if a is None else er
+            if REAL_GPU and type(err).__name__ == "GpuCrashed":   # a crashed GPU process: no verdict, never FAIL
+                mark_unmeasured(C100, f"N={n}: {err}")
+            else:
+                results[C100] = False
+            notes.append(f"C100: N={n}: {err}")
+            return
+        differs[n] = a["h"] != r["h"]
+        notes.append(f"C100 N={n}: seeded {a['h']} raw {r['h']} -> {'differs' if differs[n] else 'EQUALS raw'}")
+    if not differs[0]:
+        mark_unmeasured(C100, "N=0 equals raw: no noise on this canvas (wrong raster path, or no seed)")
+    elif not differs[1]:
+        results[C100] = False
+        notes.append("C100: N=1 equals raw while N=0 differs")
+    else:
+        results[C100] = all(differs.values())
+
+
+if want("c100"):
+    put_burst_rows()
+
 C101 = ("C101 a page draws 100 heavy 2D frames (120 paths + 20 text lines each) on one canvas with no read between, then reads it once: the "
         "seeded read is noised (differs from none) and the same in all 3 runs; the read time, seed against none (median of 3), is reported, not "
         "judged: rule D3 pays the backlog's walk at the read")
@@ -3936,7 +3986,7 @@ def c101_row():
 if want("c101"):
     c101_row()
 
-EXPECTED = 104   # the soft rows (SOFT_ROWS) are not counted
+EXPECTED = 105   # the soft rows (SOFT_ROWS) are not counted
 
 for name, ok in sorted({**results, **soft}.items()):
     print(f"{'UNMEASURED' if name in unmeasured else 'PASS' if ok else 'FAIL'}  {name}")
